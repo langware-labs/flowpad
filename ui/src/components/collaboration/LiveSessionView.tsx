@@ -31,6 +31,7 @@ import { useAuth, useEntitiesQuery } from '@sdk/react/hooks';
 import { useEntity } from '@src/hooks/entity-hooks/useEntity';
 import { truncate } from '@src/components/hooks/event-summaries';
 import { LatestScroll } from '@src/components/conversation/LatestScroll';
+import { useApproveLiveSession } from './useApproveLiveSession';
 
 /**
  * Client-side resolver seam for the live-session state: today it's the watched
@@ -201,6 +202,8 @@ export function LiveSessionView({ sessionId }: { sessionId: string }) {
     [messages, startingMessageId],
   );
 
+  const { approve, picker: approvePicker } = useApproveLiveSession();
+
   const runAction = useCallback(
     async (verb: string, fn: () => Promise<void>) => {
       setBusy(verb);
@@ -258,6 +261,7 @@ export function LiveSessionView({ sessionId }: { sessionId: string }) {
 
   return (
     <div className="flex h-full flex-col" data-testid="live-session-view">
+      {approvePicker}
       <div className="flex flex-shrink-0 items-center gap-2 border-b px-4 py-1.5">
         {conversationId && (
           <button
@@ -300,7 +304,7 @@ export function LiveSessionView({ sessionId }: { sessionId: string }) {
               <>
                 <Button
                   size="sm"
-                  onClick={() => void runAction('approve', () => session.approve())}
+                  onClick={() => void runAction('approve', () => approve(session))}
                   disabled={!!busy}
                   data-testid="live-session-approve"
                 >

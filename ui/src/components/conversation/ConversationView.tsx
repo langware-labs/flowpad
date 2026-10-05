@@ -56,6 +56,7 @@ import { sessionRole, useConversationSessions } from '@src/hooks/useConversation
 import { useMyEmail } from '@src/hooks/use-my-email';
 import { taskIt, useMessageTasks } from './task-it';
 import { conversationMessagesRequest } from './conversation-messages-query';
+import { useApproveLiveSession } from '@src/components/collaboration/useApproveLiveSession';
 
 interface ConversationViewProps {
   conversationId: string;
@@ -123,6 +124,7 @@ export function ConversationView({
   // Every live session of this conversation, resolved ONCE and handed down:
   // the feed pins each to its opening message; each card reads its own row.
   const { byId: sessionsById, anchors: sessionAnchors } = useConversationSessions(conversationId);
+  const { approve: approveSession, picker: approveSessionPicker } = useApproveLiveSession();
 
   // Member roster used to resolve a message's hub-authoritative sender_id to
   // a display name. `useMembers` is the single precedence point: the live
@@ -153,7 +155,10 @@ export function ConversationView({
     [agentId, agentScope?.flow_message_ids],
   );
   const pointers = useMemo(
-    () => (conversation?.conversationMessageIds ?? []).filter((pointer) => !allowedMessageIds || allowedMessageIds.has(pointer.id)),
+    () =>
+      (conversation?.conversationMessageIds ?? []).filter(
+        (pointer) => !allowedMessageIds || allowedMessageIds.has(pointer.id),
+      ),
     // conversationMessageIds is a parsed view over the message_ids JSON field.
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [conversation?.message_ids, allowedMessageIds],
@@ -228,7 +233,10 @@ export function ConversationView({
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps -- logs a count, not a dependency
   }, [conversationId, messagesLoaded, messagesError]);
-  const conversationMessagesKey = conversationMessages.map((message) => message.id).sort().join(',');
+  const conversationMessagesKey = conversationMessages
+    .map((message) => message.id)
+    .sort()
+    .join(',');
   useEffect(() => {
     if (!agentId || !conversationMessagesKey) return;
     // Source projection writes the FlowMessage and the conversation pointer in
@@ -325,7 +333,9 @@ export function ConversationView({
       };
     }
     const jump = () =>
-      document.querySelector(`[data-testid="message-bubble-${parent.id}"]`)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      document
+        .querySelector(`[data-testid="message-bubble-${parent.id}"]`)
+        ?.scrollIntoView({ block: 'center', behavior: 'smooth' });
     return { ...messageSummary(parent, t`Someone`), onJump: jump };
   };
 
@@ -333,8 +343,8 @@ export function ConversationView({
   // SELECTED dock, keep its DataSource due (request_poll on an interval) so
   // new messages land fast; deselect and the requests stop on their own.
   const attentionSourceId = agentId
-    ? agentScope?.source_id ?? undefined
-    : conversation?.channel_source_id ?? undefined;
+    ? (agentScope?.source_id ?? undefined)
+    : (conversation?.channel_source_id ?? undefined);
   useAttentionPolling(attentionSourceId, conversationId);
 
   // The ingest sync boundary is too early: stream inbox projection runs as a detached
@@ -345,11 +355,7 @@ export function ConversationView({
     'stream_inbox.*.message.projected',
     () => {
       if (!agentId || !attentionSourceId) return;
-      void Promise.all([
-        refetch(),
-        refetchConversationMessages(),
-        refreshAgentScope(),
-      ]).catch(() => {
+      void Promise.all([refetch(), refetchConversationMessages(), refreshAgentScope()]).catch(() => {
         // Keep the already-rendered thread during a transient refresh failure.
       });
     },
@@ -374,13 +380,14 @@ export function ConversationView({
   // the loaded messages would undercount a long thread; MessageThread carries
   // the real number and this is the only reason the entity is fetched here.
   const threadsRequest = useMemo(
-    () => new QueryRequest({
-      type: MessageThread.type,
-      name: `threads:${conversationId}`,
-      query: new QueryFilter({
-        match: { op: '$EQ', operands: ['conversation_id', conversationId] },
+    () =>
+      new QueryRequest({
+        type: MessageThread.type,
+        name: `threads:${conversationId}`,
+        query: new QueryFilter({
+          match: { op: '$EQ', operands: ['conversation_id', conversationId] },
+        }),
       }),
-    }),
     [conversationId],
   );
   // The packed view reads the counts; a thread-filtered view reads its own row for the header.
@@ -389,7 +396,12 @@ export function ConversationView({
   });
   const currentThread = threadId ? (threads.find((th) => th.id === threadId) ?? null) : null;
   const threadCounts = useMemo(
-    () => new Map(threads.filter((th) => !agentId || agentScope?.thread_ids.includes(th.id ?? '')).map((th) => [th.id ?? '', th.message_count ?? 0])),
+    () =>
+      new Map(
+        threads
+          .filter((th) => !agentId || agentScope?.thread_ids.includes(th.id ?? ''))
+          .map((th) => [th.id ?? '', th.message_count ?? 0]),
+      ),
     [agentId, agentScope?.thread_ids, threads],
   );
 
@@ -656,7 +668,11 @@ export function ConversationView({
   const handleRefresh = useCallback(async () => {
     setHubSyncing(true);
     try {
-      await Promise.allSettled([fetchConversations(agentId ?? undefined), syncConversationMessages(conversationId, agentId ?? undefined), refreshMembers()]);
+      await Promise.allSettled([
+        fetchConversations(agentId ?? undefined),
+        syncConversationMessages(conversationId, agentId ?? undefined),
+        refreshMembers(),
+      ]);
       await refetch();
     } finally {
       setHubSyncing(false);
@@ -690,7 +706,11 @@ export function ConversationView({
   );
   const sessionHost = useMemo(
     () =>
-      conversation?.remote === true && rosterReady && (participants ?? []).length === 2 && !!cloudUserId && !!otherParticipant?.user_id
+      conversation?.remote === true &&
+      rosterReady &&
+      (participants ?? []).length === 2 &&
+      !!cloudUserId &&
+      !!otherParticipant?.user_id
         ? { userId: otherParticipant.user_id, name: otherParticipant.name ?? otherParticipant.email ?? null }
         : null,
     [conversation?.remote, rosterReady, participants, cloudUserId, otherParticipant],
@@ -736,6 +756,7 @@ export function ConversationView({
 
   return (
     <div className="space-y-3">
+      {approveSessionPicker}
       <div className="flex items-center justify-end gap-1">
         {canPickup && (
           <button
@@ -811,7 +832,7 @@ export function ConversationView({
                     promptCount={item.promptCount}
                     replyCount={item.replyCount}
                     onOpen={() => openLiveSession(item.sessionId)}
-                    onApprove={role === 'host' && session ? () => session.approve() : undefined}
+                    onApprove={role === 'host' && session ? () => approveSession(session) : undefined}
                     onDecline={role === 'host' && session ? () => session.decline() : undefined}
                   />
                 </div>
@@ -824,7 +845,9 @@ export function ConversationView({
 
       {/* A channel's conversation is answered by the owning agent's run, not by this pane —
           so show that run working, and a caller mid-sentence, while it happens. */}
-      {channel && <ConversationLiveActivity conversationId={conversationId} run={convRun} messageCount={pointers.length} />}
+      {channel && (
+        <ConversationLiveActivity conversationId={conversationId} run={convRun} messageCount={pointers.length} />
+      )}
 
       {showSoloNotice && (
         <p data-testid="solo-participant-notice" className="text-[11px] italic text-muted-foreground/70">
@@ -843,11 +866,7 @@ export function ConversationView({
           only when the send resolves. Copy that promised "drafted" was simply
           wrong half the time. The reply itself arrives in the feed by the
           ordinary ingest route once it exists. */}
-      {sendingText && (
-        <SessionEventLine
-          text={t`Sending in ${channelSpec?.title}: “${sendingText}”`}
-        />
-      )}
+      {sendingText && <SessionEventLine text={t`Sending in ${channelSpec?.title}: “${sendingText}”`} />}
       <MessageComposer
         conversationId={conversationId}
         onSent={() => void refetch()}
@@ -858,7 +877,11 @@ export function ConversationView({
         agentId={agentId ?? undefined}
         sessionHost={channelSpec && !channelSpec.hosts_sessions ? null : sessionHost}
         channelAcceptsFiles={!!channelSpec?.accepts_attachments}
-        replyTo={replyTo ? { id: replyTo.id ?? '', ...messageSummary(replyTo, t`Someone`), inThread: !channelSpec?.quotes } : null}
+        replyTo={
+          replyTo
+            ? { id: replyTo.id ?? '', ...messageSummary(replyTo, t`Someone`), inThread: !channelSpec?.quotes }
+            : null
+        }
         onClearReply={() => setReplyTo(null)}
         threadTarget={threadTarget}
         onTaskIt={handleTaskIt}

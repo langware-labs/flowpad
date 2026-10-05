@@ -684,7 +684,9 @@ async def run_session_turn(
         try:
             from flow_sdk.builtin.project import Project
 
-            project_id = getattr(conversation, "project_id", None)
+            # The session's own project first: in a person-to-person chat (no
+            # project by design) the host picks it at approval.
+            project_id = session.project_id or getattr(conversation, "project_id", None)
             if not project_id:
                 raise _TurnFailed("this conversation is not linked to a project on the host")
             project = await Project.get_one({"id": project_id})
@@ -1086,8 +1088,13 @@ async def process_inbound_prompt(fm_id: str, conversation_id: str) -> None:
         if not any(_is_prompt_attachment(a) for a in (fm.attachment or [])):
             return  # nothing to run
         conv = await Conversation.get_one({"id": conversation_id})
-        if not conv or not getattr(conv, "project_id", None):
-            return  # no project mapped → nothing can run here
+        if not conv:
+            return
+        # A project-less chat (person-to-person, by design) still hosts live
+        # sessions — the host picks the project at approval, onto the session.
+        # A loose prompt with no session has nowhere to run: ignored, as before.
+        if not getattr(conv, "project_id", None) and not getattr(fm, "remote_worker_session_id", None):
+            return
 
         someone_typeid = str(TypeId(type="user", id=local_id)) if local_id else ""
         # The host's identity on the session is the CLOUD user id — the id the
@@ -1132,6 +1139,13 @@ async def process_inbound_prompt(fm_id: str, conversation_id: str) -> None:
         # opening prompt must not run after a follow-up that landed while its
         # approval was still being written).
         if needs_consent:
+            # A standing grant pre-approves the GUEST, not a place to run: with
+            # no project anywhere the session waits for the host to pick one.
+            project_id = await session.run_project_id()
+            if project_id is None:
+                logger.info("[session] standing grant but no project for session=%s → pending", session.id)
+                return
+            session.project_id = project_id
             if not await session.approve(via=ApprovedVia.STANDING_GRANT, someone_typeid=someone_typeid):
                 return
         await redrive_session_prompts(session, conv=conv, local_user=local_user)
