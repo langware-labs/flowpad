@@ -72,8 +72,8 @@ class FakeHubStore:
         self.values.get(eid, {}).pop(sub_path, None)
         return {}
 
-    async def deploy(self, entity, environment=None, *, require=None):
-        self.deploys.append({"environment": environment, "require": list(require or [])})
+    async def deploy(self, entity, environment=None, *, provider=None, require=None):
+        self.deploys.append({"environment": environment, "provider": provider, "require": list(require or [])})
         return {"deployment": {}, "secrets": {"placed": sorted(require or []), "failed": {}}}
 
 

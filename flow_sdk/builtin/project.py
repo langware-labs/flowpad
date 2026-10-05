@@ -2434,7 +2434,7 @@ class Project(Entity):
             return ApiFailResponse(message="deploy requires an authenticated user", status_code=401)
         try:
             await self.ensure_on_hub()
-            data = await deploy_entity_to_cloud(self)
+            data = await deploy_entity_to_cloud(self, provider="e2b")
         except Exception as exc:
             return ApiFailResponse(message=f"deploy failed: {exc}")
         return ApiSuccessResponse(data={"project_id": self.id, **data})

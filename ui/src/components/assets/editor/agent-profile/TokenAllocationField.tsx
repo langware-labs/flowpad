@@ -1,4 +1,4 @@
-import type { Agent, AgentTokenAllocation } from '@sdk';
+import type { Agent, AgentTokenAllocation, CloudDeployProvider } from '@sdk';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { useEffect, useMemo, useState } from 'react';
 import { Info, Loader2, Settings2 } from 'lucide-react';
@@ -22,6 +22,8 @@ export interface TokenAllocationFieldProps {
   agent: Agent;
   /** The environment the deployment is planned in (Configure plans it first). */
   environment: string;
+  /** The hub provider the deployment lands on — its placement is per provider. */
+  provider: CloudDeployProvider;
   /** `null` = unchecked: the agent spends its owner's capped default. */
   value: AgentTokenAllocation | null;
   onChange: (next: AgentTokenAllocation | null) => void;
@@ -34,7 +36,14 @@ export interface TokenAllocationFieldProps {
  * plans the deployment with this allocation (so it exists) and opens it in the LLM endpoint editor for the
  * rest of its limits.
  */
-export function TokenAllocationField({ agent, environment, value, onChange, disabled }: TokenAllocationFieldProps) {
+export function TokenAllocationField({
+  agent,
+  environment,
+  provider,
+  value,
+  onChange,
+  disabled,
+}: TokenAllocationFieldProps) {
   const { t } = useLingui();
   // The hub endpoints offered to this person, as the desk's funding view knows them; allocating from one
   // takes administering it (the hub checks the same right).
@@ -133,7 +142,13 @@ export function TokenAllocationField({ agent, environment, value, onChange, disa
               data-testid="token-allocation-budget"
             />
             <ModelField value={value} onChange={onChange} disabled={disabled} />
-            <ConfigureButton agent={agent} environment={environment} value={value} disabled={disabled} />
+            <ConfigureButton
+              agent={agent}
+              environment={environment}
+              provider={provider}
+              value={value}
+              disabled={disabled}
+            />
           </div>
         </div>
       )}
@@ -181,11 +196,13 @@ function ModelField({
 function ConfigureButton({
   agent,
   environment,
+  provider,
   value,
   disabled,
 }: {
   agent: Agent;
   environment: string;
+  provider: CloudDeployProvider;
   value: AgentTokenAllocation;
   disabled?: boolean;
 }) {
@@ -196,7 +213,7 @@ function ConfigureButton({
   const configure = async () => {
     setConfiguring(true);
     try {
-      const planned = await agent.planDeployment(environment, value);
+      const planned = await agent.planDeployment(environment, provider, value);
       const allocation = planned.deployment?.llm_endpoint_typeid;
       if (allocation) openLlmEndpoint(navigation, allocation);
     } catch (e) {
