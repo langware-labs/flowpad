@@ -85,9 +85,17 @@ msgstr ".env.local is not ignored by git here, so a value written there would be
 #~ msgid ".env.local is not ignored by git in this project, so a value written there would be committable. Add it to .gitignore first."
 #~ msgstr ".env.local is not ignored by git in this project, so a value written there would be committable. Add it to .gitignore first."
 
+#: src/components/collaboration/LiveSessionView.tsx
+msgid "· local"
+msgstr "· local"
+
 #: src/components/git/BranchPicker.tsx
 msgid "· pick a branch"
 msgstr "· pick a branch"
+
+#: src/components/collaboration/LiveSessionView.tsx
+msgid "· remote"
+msgstr "· remote"
 
 #. placeholder {0}: wizard.label || wizard.name
 #: src/components/assets/editor/wizard/WizardViewer.tsx
@@ -218,6 +226,11 @@ msgstr "{0, plural, one {# item cut} other {# items cut}}"
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 msgid "{0, plural, one {# item} other {# items}}"
 msgstr "{0, plural, one {# item} other {# items}}"
+
+#. placeholder {0}: promptCount + replyCount
+#: src/components/conversation/SessionCard.tsx
+msgid "{0, plural, one {# message} other {# messages}}"
+msgstr "{0, plural, one {# message} other {# messages}}"
 
 #~ msgid "{0, plural, one {# person on this team has no email address, so they can't be invited.} other {# people on this team have no email address, so they can't be invited.}}"
 #~ msgstr "{0, plural, one {# person on this team has no email address, so they can't be invited.} other {# people on this team have no email address, so they can't be invited.}}"
@@ -775,8 +788,8 @@ msgid "{folderName} has changes that haven't been pushed yet. The receiver can o
 msgstr "{folderName} has changes that haven't been pushed yet. The receiver can only pull what's on the remote."
 
 #: src/components/conversation/SessionCard.tsx
-msgid "{guest} wants to run prompts here"
-msgstr "{guest} wants to run prompts here"
+#~ msgid "{guest} wants to run prompts here"
+#~ msgstr "{guest} wants to run prompts here"
 
 #: src/components/collaboration/LiveSessionView.tsx
 msgid "{guestName} wants to run prompts on your machine."
@@ -787,8 +800,8 @@ msgid "{host} can't be shown inside Flowpad."
 msgstr "{host} can't be shown inside Flowpad."
 
 #: src/components/conversation/SessionCard.tsx
-msgid "{host} paused the session"
-msgstr "{host} paused the session"
+#~ msgid "{host} paused the session"
+#~ msgstr "{host} paused the session"
 
 #: src/components/collaboration/LiveSessionView.tsx
 msgid "{hostName} declined the live session."
@@ -803,8 +816,12 @@ msgid "{hostName} reviews"
 msgstr "{hostName} reviews"
 
 #: src/components/conversation/MessageComposer.tsx
-msgid "{hostName} reviews before sending"
-msgstr "{hostName} reviews before sending"
+#~ msgid "{hostName} reviews before sending"
+#~ msgstr "{hostName} reviews before sending"
+
+#: src/components/collaboration/LiveSessionView.tsx
+msgid "{hostName}'s Claude Code"
+msgstr "{hostName}'s Claude Code"
 
 #. placeholder {0}: ignored !== 1 ? 's' : ''
 #: src/components/lens-viewer/CloudSearchResultsModal.tsx
@@ -934,8 +951,8 @@ msgid "{projectName} shared"
 msgstr "{projectName} shared"
 
 #: src/components/conversation/SessionCard.tsx
-msgid "{promptCount, plural, one {# prompt} other {# prompts}}"
-msgstr "{promptCount, plural, one {# prompt} other {# prompts}}"
+#~ msgid "{promptCount, plural, one {# prompt} other {# prompts}}"
+#~ msgstr "{promptCount, plural, one {# prompt} other {# prompts}}"
 
 #. placeholder {0}: names.length
 #: src/components/connections-manager.tsx
@@ -956,8 +973,8 @@ msgid "{repeats} of these already have a budget in {teamName}; their caps will b
 msgstr "{repeats} of these already have a budget in {teamName}; their caps will be updated."
 
 #: src/components/conversation/SessionCard.tsx
-msgid "{replyCount, plural, one {# reply} other {# replies}}"
-msgstr "{replyCount, plural, one {# reply} other {# replies}}"
+#~ msgid "{replyCount, plural, one {# reply} other {# replies}}"
+#~ msgstr "{replyCount, plural, one {# reply} other {# replies}}"
 
 #: src/components/automations/automation-words.ts
 msgid "{s}s"
@@ -3156,8 +3173,6 @@ msgid "auto-login off"
 msgstr "auto-login off"
 
 #: src/components/collaboration/LiveSessionView.tsx
-#: src/components/conversation/MessageComposer.tsx
-#: src/components/conversation/MessageComposer.tsx
 msgid "Auto-send"
 msgstr "Auto-send"
 
@@ -3218,8 +3233,12 @@ msgid "available to pull"
 msgstr "available to pull"
 
 #: src/components/conversation/SessionCard.tsx
-msgid "Awaiting {host}"
-msgstr "Awaiting {host}"
+#~ msgid "Awaiting {host}"
+#~ msgstr "Awaiting {host}"
+
+#: src/components/conversation/SessionCard.tsx
+msgid "awaiting approval"
+msgstr "awaiting approval"
 
 #: src/components/settings-view/settings-utils.ts
 msgid "AWS Auth Refresh"
@@ -5103,6 +5122,10 @@ msgstr "Connect to GitHub"
 msgid "Connect your GitHub account to open it. Whoever shared the sandbox can't do this for you."
 msgstr "Connect your GitHub account to open it. Whoever shared the sandbox can't do this for you."
 
+#: src/components/conversation/SessionCard.tsx
+msgid "connected"
+msgstr "connected"
+
 #: src/components/account/hub-status-visuals.ts
 #: src/components/account/user-info.tsx
 #: src/components/connections-manager/connection-state-visual.ts
@@ -5119,6 +5142,10 @@ msgstr "Connected · {0}"
 #: src/components/connections-manager.tsx
 msgid "Connected in this browser {0}"
 msgstr "Connected in this browser {0}"
+
+#: src/components/collaboration/LiveSessionView.tsx
+msgid "Connected to {hostName}'s machine — the last prompt failed."
+msgstr "Connected to {hostName}'s machine — the last prompt failed."
 
 #: src/components/collaboration/LiveSessionView.tsx
 msgid "Connected to {hostName}'s machine."
@@ -6217,6 +6244,10 @@ msgstr "Could not start room"
 msgid "Could not start sign-in"
 msgstr "Could not start sign-in"
 
+#: src/components/conversation/ConversationView.tsx
+msgid "Could not start the live session"
+msgstr "Could not start the live session"
+
 #: src/components/entity-execution-panel/EntityExecutionPanel.tsx
 #: src/components/terminal/interactive-terminal/ChatComposerBar.tsx
 msgid "Could not stop"
@@ -6937,8 +6968,12 @@ msgid "Decline failed"
 msgstr "Decline failed"
 
 #: src/components/conversation/SessionCard.tsx
-msgid "Declined"
-msgstr "Declined"
+msgid "declined"
+msgstr "declined"
+
+#: src/components/conversation/SessionCard.tsx
+#~ msgid "Declined"
+#~ msgstr "Declined"
 
 #: src/i18n/pref-labels.ts
 msgid "Deduplicate errors"
@@ -7760,6 +7795,7 @@ msgstr "Discard unsaved changes and go back to stream inbox"
 #: src/components/account/user-info.tsx
 #: src/components/collaboration/LiveSessionView.tsx
 #: src/components/collaboration/SharedSessionView.tsx
+#: src/components/conversation/SessionCard.tsx
 msgid "Disconnect"
 msgstr "Disconnect"
 
@@ -8131,8 +8167,8 @@ msgstr "Each person gets their own budget drawn from this team. Leave the amount
 #~ msgstr "Each place has its own config, schedules and email."
 
 #: src/components/conversation/MessageComposer.tsx
-msgid "Each reply lands in the session as soon as it is ready."
-msgstr "Each reply lands in the session as soon as it is ready."
+#~ msgid "Each reply lands in the session as soon as it is ready."
+#~ msgstr "Each reply lands in the session as soon as it is ready."
 
 #: src/hooks/use-add-context-folder.tsx
 msgid "Each selected project's folder is added as a context folder."
@@ -8461,8 +8497,11 @@ msgstr "End room"
 msgid "End time"
 msgstr "End time"
 
-#: src/components/assets/editor/agent-profile/deployment/ThreadStatus.tsx
 #: src/components/conversation/SessionCard.tsx
+msgid "ended"
+msgstr "ended"
+
+#: src/components/assets/editor/agent-profile/deployment/ThreadStatus.tsx
 msgid "Ended"
 msgstr "Ended"
 
@@ -11988,6 +12027,10 @@ msgstr "Last message"
 msgid "Last opened"
 msgstr "Last opened"
 
+#: src/components/conversation/SessionCard.tsx
+msgid "Last prompt failed"
+msgstr "Last prompt failed"
+
 #: src/components/conversation/AttachmentDownloadWarning.tsx
 msgid "Last success"
 msgstr "Last success"
@@ -12013,8 +12056,8 @@ msgstr "Last test paid with that key"
 #~ msgstr "last triggered"
 
 #: src/components/conversation/SessionCard.tsx
-msgid "Last turn failed"
-msgstr "Last turn failed"
+#~ msgid "Last turn failed"
+#~ msgstr "Last turn failed"
 
 #: src/components/triggers-view/FsopTriggerDetail.tsx
 #~ msgid "last_seen_mtime"
@@ -12102,8 +12145,8 @@ msgid "Leave empty to keep"
 msgstr "Leave empty to keep"
 
 #: src/components/conversation/MessageComposer.tsx
-msgid "Leave live session mode"
-msgstr "Leave live session mode"
+#~ msgid "Leave live session mode"
+#~ msgstr "Leave live session mode"
 
 #: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Leave this conversation?"
@@ -12317,8 +12360,8 @@ msgid "Live — speak now"
 msgstr "Live — speak now"
 
 #: src/components/conversation/SessionCard.tsx
-msgid "Live · {guest}'s session"
-msgstr "Live · {guest}'s session"
+#~ msgid "Live · {guest}'s session"
+#~ msgstr "Live · {guest}'s session"
 
 #: src/components/milkdown-editor/plugins/fence-render/renderers/breadcrumb.ts
 msgid "live · stale"
@@ -12329,8 +12372,8 @@ msgid "Live call"
 msgstr "Live call"
 
 #: src/components/conversation/SessionCard.tsx
-msgid "Live on {host}'s machine"
-msgstr "Live on {host}'s machine"
+#~ msgid "Live on {host}'s machine"
+#~ msgstr "Live on {host}'s machine"
 
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
@@ -12342,21 +12385,29 @@ msgstr "live row"
 msgid "Live Session"
 msgstr "Live Session"
 
+#: src/components/conversation/SessionCard.tsx
+msgid "Live session · {other}"
+msgstr "Live session · {other}"
+
 #: src/routes/loaders/load-dock-pointer.ts
 msgid "Live session not found"
 msgstr "Live session not found"
 
 #: src/components/conversation/MessageComposer.tsx
-msgid "Live session on {hostName}'s machine"
-msgstr "Live session on {hostName}'s machine"
+#~ msgid "Live session on {hostName}'s machine"
+#~ msgstr "Live session on {hostName}'s machine"
 
 #: src/components/collaboration/LiveSessionView.tsx
 msgid "Live session with {guestName} on your machine · {status}"
 msgstr "Live session with {guestName} on your machine · {status}"
 
+#: src/components/collaboration/LiveSessionView.tsx
+msgid "Live session with {otherName}"
+msgstr "Live session with {otherName}"
+
 #: src/components/conversation/MessageComposer.tsx
-msgid "Live session: run a prompt on {hostName}'s machine"
-msgstr "Live session: run a prompt on {hostName}'s machine"
+#~ msgid "Live session: run a prompt on {hostName}'s machine"
+#~ msgstr "Live session: run a prompt on {hostName}'s machine"
 
 #: src/components/harness-login/HarnessLoginModal.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
@@ -14602,6 +14653,7 @@ msgstr "No process ID specified"
 msgid "No process selected."
 msgstr "No process selected."
 
+#: src/components/collaboration/useApproveLiveSession.tsx
 #: src/components/new-conversation-dialog/NewConversationDialog.tsx
 msgid "No project"
 msgstr "No project"
@@ -14671,9 +14723,17 @@ msgstr "No prompts queued. Add one below."
 msgid "No prompts yet"
 msgstr "No prompts yet"
 
+#: src/components/collaboration/LiveSessionView.tsx
+msgid "No prompts yet — {guestName}'s prompts will run here, in your Claude Code."
+msgstr "No prompts yet — {guestName}'s prompts will run here, in your Claude Code."
+
 #: src/components/prompt-library/PromptLibraryMenu.tsx
 msgid "No prompts yet — create one below."
 msgstr "No prompts yet — create one below."
+
+#: src/components/collaboration/LiveSessionView.tsx
+msgid "No prompts yet — type one below; it runs in Claude Code on {hostName}'s machine."
+msgstr "No prompts yet — type one below; it runs in Claude Code on {hostName}'s machine."
 
 #: src/components/terminal/interactive-terminal/pty-events-viewer/PTYEventsViewer.tsx
 msgid "No PTY events have fired yet."
@@ -14973,8 +15033,8 @@ msgid "No triggers configured for this hook"
 msgstr "No triggers configured for this hook"
 
 #: src/components/collaboration/LiveSessionView.tsx
-msgid "No turns yet — send a prompt below to start working on {hostName}'s machine."
-msgstr "No turns yet — send a prompt below to start working on {hostName}'s machine."
+#~ msgid "No turns yet — send a prompt below to start working on {hostName}'s machine."
+#~ msgstr "No turns yet — send a prompt below to start working on {hostName}'s machine."
 
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "No types match filter"
@@ -15660,7 +15720,6 @@ msgstr "Only the steps below"
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/conversation/ConversationTasksPanel.tsx
-#: src/components/conversation/SessionCard.tsx
 #: src/components/conversation/task-it.tsx
 #: src/components/entity-context/EntityContextPanel.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
@@ -16193,6 +16252,10 @@ msgstr "Open the live session"
 #: src/components/conversation/ConversationContextPanel.tsx
 msgid "Open the live session in a terminal"
 msgstr "Open the live session in a terminal"
+
+#: src/components/conversation/MessageComposer.tsx
+msgid "Open the live session on {hostName}'s machine"
+msgstr "Open the live session on {hostName}'s machine"
 
 #: src/components/conversation/ConversationView.tsx
 msgid "Open the message this replies to"
@@ -16770,13 +16833,13 @@ msgstr "Pause machine"
 msgid "Pause this machine"
 msgstr "Pause this machine"
 
+#: src/components/conversation/SessionCard.tsx
 #: src/components/stream-inbox-view/AttachedChannelsBar.tsx
 msgid "paused"
 msgstr "paused"
 
 #: src/components/assets/editor/agent-profile/AgentPlaceCard.tsx
 #: src/components/assets/editor/agent-profile/AgentPlacesColumn.tsx
-#: src/components/conversation/SessionCard.tsx
 #: src/pages/hub-home/HubHome.tsx
 msgid "Paused"
 msgstr "Paused"
@@ -17535,6 +17598,14 @@ msgstr "Prompt created"
 msgid "Prompt file"
 msgstr "Prompt file"
 
+#: src/components/collaboration/LiveSessionView.tsx
+msgid "Prompt for Claude Code on {hostName}'s machine…"
+msgstr "Prompt for Claude Code on {hostName}'s machine…"
+
+#: src/components/collaboration/LiveSessionView.tsx
+msgid "Prompt for your Claude Code…"
+msgstr "Prompt for your Claude Code…"
+
 #: src/components/prompt-library/PromptLibraryMenu.tsx
 #: src/components/terminal/interactive-terminal/TerminalBottomRibbon.tsx
 msgid "Prompt Library"
@@ -17574,8 +17645,8 @@ msgid "Prompt to run"
 msgstr "Prompt to run"
 
 #: src/components/conversation/MessageComposer.tsx
-msgid "Prompt to run on {hostName}'s machine…"
-msgstr "Prompt to run on {hostName}'s machine…"
+#~ msgid "Prompt to run on {hostName}'s machine…"
+#~ msgstr "Prompt to run on {hostName}'s machine…"
 
 #: src/components/conversation/attachment-actions/PromptAttachmentPreview.tsx
 msgid "Prompt to run:"
@@ -18625,12 +18696,12 @@ msgid "Replay…"
 msgstr "Replay…"
 
 #: src/components/conversation/MessageComposer.tsx
-msgid "Replies"
-msgstr "Replies"
+#~ msgid "Replies"
+#~ msgstr "Replies"
 
 #: src/components/conversation/MessageComposer.tsx
-msgid "Replies wait as drafts until {hostName} sends them."
-msgstr "Replies wait as drafts until {hostName} sends them."
+#~ msgid "Replies wait as drafts until {hostName} sends them."
+#~ msgstr "Replies wait as drafts until {hostName} sends them."
 
 #: src/components/collaboration/LiveSessionView.tsx
 msgid "Replies:"
@@ -18736,17 +18807,25 @@ msgstr "Request"
 msgid "Request status"
 msgstr "Request status"
 
+#: src/components/conversation/SessionCard.tsx
+msgid "requested"
+msgstr "requested"
+
 #: src/components/hub/AddMachineDialog.tsx
 msgid "Requested"
 msgstr "Requested"
 
 #: src/components/conversation/SessionCard.tsx
-msgid "Requesting access to {host}'s machine"
-msgstr "Requesting access to {host}'s machine"
+#~ msgid "Requesting access to {host}'s machine"
+#~ msgstr "Requesting access to {host}'s machine"
 
 #: src/components/collaboration/LiveSessionView.tsx
 msgid "Requesting access to {hostName}'s machine…"
 msgstr "Requesting access to {hostName}'s machine…"
+
+#: src/components/conversation/SessionCard.tsx
+msgid "requesting…"
+msgstr "requesting…"
 
 #: src/components/account/secrets-section.tsx
 msgid "Requesting…"
@@ -18987,6 +19066,8 @@ msgstr "Resumed — it polls on the next tick."
 #: src/components/assets/editor/markdown/MarkdownEditor.tsx
 #: src/components/assets/editor/MissingAssetCard.tsx
 #: src/components/conversation/MessageBubble.tsx
+#: src/components/conversation/SessionCard.tsx
+#: src/components/conversation/SessionEventLine.tsx
 #: src/components/graph-view/webglSupport.tsx
 #: src/components/helpdesk/HelpdeskLoadDialog.tsx
 #: src/components/machine-overview/machine-overview.tsx
@@ -19095,8 +19176,8 @@ msgid "Review prompts"
 msgstr "Review prompts"
 
 #: src/components/conversation/MessageComposer.tsx
-msgid "Review replies"
-msgstr "Review replies"
+#~ msgid "Review replies"
+#~ msgstr "Review replies"
 
 #: src/components/conversation/asset-review/AssetReviewDialog.tsx
 msgid "Review the shared project and install it."
@@ -19311,6 +19392,10 @@ msgstr "Run in terminal"
 msgid "Run it"
 msgstr "Run it"
 
+#: src/components/collaboration/useApproveLiveSession.tsx
+msgid "Run it in this machine's live-session temp folder — always the same folder"
+msgstr "Run it in this machine's live-session temp folder — always the same folder"
+
 #: src/components/automations/AutomationRow.tsx
 msgid "Run it once now, even if it is off. It shows up in Runs as a test."
 msgstr "Run it once now, even if it is off. It shows up in Runs as a test."
@@ -19483,9 +19568,17 @@ msgstr "Runs of this flow"
 #~ msgid "Runs on"
 #~ msgstr "Runs on"
 
+#: src/components/collaboration/LiveSessionView.tsx
+msgid "Runs on {hostName}'s machine, in their Claude Code · Enter to send"
+msgstr "Runs on {hostName}'s machine, in their Claude Code · Enter to send"
+
 #: src/components/assets/editor/markdown/PlainMarkdownAssetEditor.tsx
 msgid "Runs on this file"
 msgstr "Runs on this file"
+
+#: src/components/collaboration/LiveSessionView.tsx
+msgid "Runs on your machine, in your Claude Code · Enter to send"
+msgstr "Runs on your machine, in your Claude Code · Enter to send"
 
 #: src/components/assets/editor/agent-profile/AgentPlaceCard.tsx
 msgid "Runs only while this computer is awake"
@@ -20520,12 +20613,12 @@ msgid "Session not found"
 msgstr "Session not found"
 
 #: src/components/conversation/SessionCard.tsx
-msgid "Session requested"
-msgstr "Session requested"
+#~ msgid "Session requested"
+#~ msgstr "Session requested"
 
 #: src/components/conversation/MessageComposer.tsx
-msgid "Session settings"
-msgstr "Session settings"
+#~ msgid "Session settings"
+#~ msgstr "Session settings"
 
 #: src/components/hooks-manager/HookForm.tsx
 #: src/components/hooks-view/HookEditor.tsx
@@ -21824,6 +21917,10 @@ msgstr "Start a collaboration"
 #: src/components/terminal/interactive-terminal/SimpleChatPane.tsx
 msgid "Start a conversation"
 msgstr "Start a conversation"
+
+#: src/components/conversation/MessageComposer.tsx
+msgid "Start a live session on {hostName}'s machine"
+msgstr "Start a live session on {hostName}'s machine"
 
 #: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Start a new conversation"
@@ -25299,6 +25396,10 @@ msgstr "Walks the filesystem and re-indexes only entries whose source changed si
 msgid "Walks the filesystem and reports per-type counts and sizes (and, soon, the diff against the index). Read-only — no DB writes, no <0>last_indexed_at</0> bump."
 msgstr "Walks the filesystem and reports per-type counts and sizes (and, soon, the diff against the index). Read-only — no DB writes, no <0>last_indexed_at</0> bump."
 
+#: src/components/conversation/SessionCard.tsx
+msgid "wants to run prompts on your machine"
+msgstr "wants to run prompts on your machine"
+
 #: src/components/triggers-view/FsopTriggerDetail.tsx
 #~ msgid "Watch"
 #~ msgstr "Watch"
@@ -25768,6 +25869,10 @@ msgstr "Working on {hostName}'s machine…"
 msgid "Working Tree"
 msgstr "Working Tree"
 
+#: src/components/conversation/SessionCard.tsx
+msgid "working…"
+msgstr "working…"
+
 #: src/components/chats-navigator/ChatHistoryRow.tsx
 #: src/components/project-setup/ProjectSetupDialog.tsx
 #: src/components/setup-wizard/SetupWizardDialog.tsx
@@ -25864,6 +25969,10 @@ msgstr "Yesterday"
 msgid "yesterday {hhmm}"
 msgstr "yesterday {hhmm}"
 
+#: src/components/collaboration/LiveSessionView.tsx
+msgid "you"
+msgstr "you"
+
 #: src/components/assets/editor/task/DelegationBlock.tsx
 #: src/components/conversation/ChannelMessageExtras.tsx
 #: src/components/conversation/FlowMessageBubble.tsx
@@ -25900,8 +26009,8 @@ msgid "You become the host — you decide what gets shared into the room."
 msgstr "You become the host — you decide what gets shared into the room."
 
 #: src/components/conversation/MessageComposer.tsx
-msgid "You can change this later inside the session."
-msgstr "You can change this later inside the session."
+#~ msgid "You can change this later inside the session."
+#~ msgstr "You can change this later inside the session."
 
 #: src/components/version-popover/diagnose-modal.tsx
 msgid "You can close this window."
@@ -26038,6 +26147,10 @@ msgstr "Your budget, what you burned, and when it resets — for you, your team 
 #: src/components/token-plan/TokenPlanChip.tsx
 msgid "your budget: {short}"
 msgstr "your budget: {short}"
+
+#: src/components/collaboration/LiveSessionView.tsx
+msgid "your Claude Code"
+msgstr "your Claude Code"
 
 #: src/pages/entry/InstallLanding.tsx
 msgid "Your CloudNSite workspace is ready"
