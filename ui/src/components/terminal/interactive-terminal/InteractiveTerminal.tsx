@@ -265,6 +265,9 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
   // `on_connected done`).
   const activeRef = useRef(active);
   activeRef.current = active;
+  // Only the view on screen sizes the PTY — its one winsize is shared by every
+  // client attached to it, and a hidden view's grid is stale.
+  const onScreen = () => activeRef.current && document.visibilityState !== 'hidden';
   const shellReadyRef = useRef(false);
   shellReadyRef.current = shellReady;
   // With the chat pane over the xterm, the chat is what the user sees — its
@@ -775,10 +778,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
             if (term.rows > 0 && xtermContainerRef.current?.offsetHeight) {
               commitCellHeight(xtermContainerRef.current.offsetHeight / term.rows);
             }
-            const shell = shellRef.current;
-            if (shell?.connected) {
-              void shell.resize(term.cols, term.rows);
-            }
+            if (onScreen()) void shellRef.current?.resize(term.cols, term.rows);
           } catch {
             /* ignore */
           }
@@ -1053,9 +1053,10 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
   const handlePtyResize = useCallback(
     (cols: number, rows: number) => {
       if (isTransitioningRef.current) return;
+      if (!onScreen()) return;
       const shell = shellRef.current;
-      if (!shell?.connected) return;
-
+      if (!shell) return;
+      // Not gated on `connected`: the shell keeps the size and its attach asserts it.
       try {
         void shell.resize(cols, rows);
       } catch (e) {
@@ -1150,6 +1151,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
     onChunk: (chunk) => ptySyncRef.current.processChunk(chunk),
     write: writeLive,
     recoveredFor: (msg) => Boolean(process && msg?.process_id === process.id),
+    ownsSize: onScreen,
     onAttached: ({ source, wrote, ms, historyKb }) => {
       // Signal buffer ready once xterm has processed the history and backlog writes.
       if (wrote) {
@@ -1320,10 +1322,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
               commitCellHeight(container.offsetHeight / term.rows);
             }
             // Send updated dimensions to the new PTY
-            const shell = shellRef.current;
-            if (shell?.connected) {
-              void shell.resize(term.cols, term.rows);
-            }
+            if (onScreen()) void shellRef.current?.resize(term.cols, term.rows);
           } catch {
             /* ignore */
           }
@@ -1489,6 +1488,29 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
       console.warn('[InteractiveTerminal] reassertGeometry failed:', e);
     }
   }, [handlePtyResize]);
+
+  // The tab coming back on screen re-asserts its size: the window regaining focus
+  // or the browser tab turning visible changes neither `active` nor the layout,
+  // so nothing else would notice another client resized the PTY meanwhile. Off
+  // screen the view lets go, so a reconnect never re-asserts its stale grid.
+  useEffect(() => {
+    if (!terminalReady) return;
+    if (!active) {
+      shellRef.current?.releaseSize();
+      return;
+    }
+    const onVisibility = () => {
+      if (document.visibilityState === 'hidden') shellRef.current?.releaseSize();
+      else reassertGeometry();
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+    window.addEventListener('focus', reassertGeometry);
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibility);
+      window.removeEventListener('focus', reassertGeometry);
+    };
+  }, [active, terminalReady, reassertGeometry]);
+  useEffect(() => () => shellRef.current?.releaseSize(), []);
 
   const handleContainerClick = () => {
     terminalRef.current?.focus();

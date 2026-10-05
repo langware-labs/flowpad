@@ -192,17 +192,12 @@ const TerminalPanelBody: React.FC<{
   );
   const { data: shell } = useEntity<Shell>(!isProcess && targetId ? new TypeId(Shell.type, targetId) : null);
   const [runtimeStatus, setRuntimeStatus] = useState<ProcessRuntimeStatus>('idle');
-  const getSurfaceDims = React.useCallback(
-    () => ({ cols: estimateCols(window.innerWidth), rows: estimateRows(window.innerHeight) }),
-    [],
-  );
   // Transport reconciliation belongs to the always-mounted panel, not the
   // InteractiveTerminal child hidden by the startup gate. This records the
   // opening mode during `/open`, retains any URL mode change made meanwhile,
   // and performs it only after the startup mutation is ready.
   const reconciledProcess = useProcessSurface({
     process: isActive ? process : null,
-    getDims: getSurfaceDims,
     canSwitch: runtimeStatus === 'ready',
     subscribeToProcess: false,
   });
