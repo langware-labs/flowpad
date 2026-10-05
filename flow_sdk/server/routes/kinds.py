@@ -3,7 +3,7 @@
 ``GET /api/v1/kinds/{kind}``: the fields of a registered kind with their shapes and meanings, so an
 editor can build its form from the definition (a ``data_spec`` folder's ``description``s ride
 along). ``GET /api/v1/editors/{typeid}``: the apps that edit an entity, best first
-(``flow_sdk.assets.editors``). Standard envelope, so the SDK reads them through ``apiClient``.
+(``flow_sdk.builtin.faas.editors``). Standard envelope, so the SDK reads them through ``apiClient``.
 """
 
 from __future__ import annotations
@@ -33,18 +33,17 @@ def kind_form(kind: str) -> dict | None:
             "subkind": "dataset",
             "slots": {k: to_authoring_form(v) for k, v in slots.items() if v is not None and v.model_fields},
         }
+    # A kind a data spec FOLDER defines keeps the forms its author wrote (``enum:``, ``?``).
+    authored = getattr(shape, "__authoring__", None) or {}
     fields = {}
     for name, field in shape.model_fields.items():
-        try:
-            form = to_authoring_form(field.annotation)
-        except NoAuthoringForm:
-            form = None
-        authored = (getattr(shape, "__field_forms__", None) or {}).get(name)
-        fields[name] = {
-            "shape": authored or form,
-            "description": field.description or "",
-            "required": field.is_required(),
-        }
+        form = authored.get(name)
+        if form is None:
+            try:
+                form = to_authoring_form(field.annotation)
+            except NoAuthoringForm:
+                form = None
+        fields[name] = {"shape": form, "description": field.description or "", "required": field.is_required()}
     return {"kind": kind, "subkind": "record", "description": shape.__doc__ or "", "fields": fields}
 
 
@@ -58,7 +57,7 @@ async def get_kind(kind: str) -> ApiResponse:
 
 @router.get("/api/v1/editors/{typeid}")
 async def get_editors(typeid: str) -> ApiResponse:
-    from flow_sdk.assets.editors import editors_for  # noqa: PLC0415
+    from flow_sdk.builtin.faas.editors import editors_for  # noqa: PLC0415
     from flow_sdk.core.entity.entity_model import Entity  # noqa: PLC0415
 
     subject = await Entity.get_by_typeid(typeid)

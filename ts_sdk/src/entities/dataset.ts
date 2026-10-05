@@ -118,7 +118,7 @@ export class Dataset extends APIEntity<Dataset> implements IDataset {
   }
 
   /** The output shape of one row, in authoring form (`{field: kind}`), or null — null too when
-   *  `spec` NAMES a kind: that shape lives in the kind (see `GET /api/v1/agent/kind/<kind>`). */
+   *  `spec` NAMES a kind: that shape lives in the kind (see `GET /api/v1/kinds/<kind>`). */
   get outputShape(): unknown {
     return typeof this.spec === 'string' ? null : (this.spec?.examples?.[0]?.output ?? null);
   }
@@ -145,6 +145,11 @@ export class Dataset extends APIEntity<Dataset> implements IDataset {
   /** Typed rows in — each checked against the declared shape; one bad row writes nothing. */
   async append(rows: DatasetRowInput[]): Promise<{ example_ids: string[]; num_examples: number }> {
     return this.post('append', { rows });
+  }
+
+  /** Every example with its slots' values, in one read. */
+  async rows(): Promise<{ rows: DatasetRow[] }> {
+    return this.get('rows');
   }
 
   /** One example with its slots' values. */

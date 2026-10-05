@@ -165,14 +165,69 @@ def test_indexing_a_definition_again_keeps_the_classes_rows_were_written_with(tm
     ns = _ns()
     ds = tmp_path / "agentic-assets" / "dataset" / "nav"
     ds.mkdir(parents=True)
-    (ds / "dataset.json").write_text(json.dumps({"metadata": {"data_layout": "io_folder", "spec": f"--{ns}--.nav.dataset"}, "data": {}}))
+    (ds / "dataset.json").write_text(
+        json.dumps({"metadata": {"data_layout": "io_folder", "spec": f"--{ns}--.nav.dataset"}, "data": {}})
+    )
     _nav_tree(ds, ns)
     read_asset_data(ds, SchemaRegistry.get("dataset"), identity="0b7c3a2e-6f1d-4c3b-8a2e-0f1e2d3c4b5a")
-    d = Dataset(id="0b7c3a2e-6f1d-4c3b-8a2e-0f1e2d3c4b5a", name="nav", asset_ref=str(ds), data_layout="io_folder", spec=f"--{ns}--.nav.dataset")
+    declared.load_root(ds)  # what indexing the nested data spec folders does
+    d = Dataset(
+        id="0b7c3a2e-6f1d-4c3b-8a2e-0f1e2d3c4b5a",
+        name="nav",
+        asset_ref=str(ds),
+        data_layout="io_folder",
+        spec=f"--{ns}--.nav.dataset",
+    )
     row = d.row_type
-    FolderLayout().append_many(ds, [(row(kind=ExampleKind.EVAL, input={"utterance": "hi"}, context={"candidates": []},
-                                        ground_truth={"route": "agentic"}), None)], dataset_id=d.id)
+    FolderLayout().append_many(
+        ds,
+        [
+            (
+                row(
+                    kind=ExampleKind.EVAL,
+                    input={"utterance": "hi"},
+                    context={"candidates": []},
+                    ground_truth={"route": "agentic"},
+                ),
+                None,
+            )
+        ],
+        dataset_id=d.id,
+    )
     for folder in declared.data_spec_folders(ds):  # the indexer reaching every definition again
         declared.register_folder(folder)
     assert d.validate_rows() == []
     assert (ds / "examples/0001/input/request.json").is_file()
+
+
+def test_a_changed_definition_rebuilds_and_rows_written_before_still_read(tmp_path):
+    """A REAL rebuild (the document changed) replaces the registered class; a class built earlier
+    still holds the old one. A file is named by the class's own registered tag, so the old class
+    keeps its name -- ``request.json``, never ``declared_..._request.json``."""
+    from flow_sdk.builtin.dataset import Dataset
+    from flow_sdk.schema.data_spec.dataset_spec import ExampleKind
+    from flow_sdk.schema.data_spec.layout import FolderLayout
+
+    ns = _ns()
+    ds = tmp_path / "agentic-assets" / "dataset" / "nav"
+    ds.mkdir(parents=True)
+    _nav_tree(ds, ns)
+    declared.load_root(ds)
+    d = Dataset(
+        id="1c8d3a2e-6f1d-4c3b-8a2e-0f1e2d3c4b5a",
+        name="nav",
+        asset_ref=str(ds),
+        data_layout="io_folder",
+        spec=f"--{ns}--.nav.dataset",
+    )
+    FolderLayout().append_many(
+        ds,
+        [(d.row_type(kind=ExampleKind.EVAL, input={"utterance": "hi"}, context={"candidates": []}), None)],
+        dataset_id=d.id,
+    )
+    request = next(f for f in declared.data_spec_folders(ds) if f.name == "nav.request")
+    doc = json.loads((request / "data_spec.json").read_text())
+    doc["fields"]["utterance"]["description"] = "exactly what was typed"
+    (request / "data_spec.json").write_text(json.dumps(doc))
+    assert declared.register_folder(request) == ""
+    assert d.validate_rows() == []

@@ -287,13 +287,6 @@ def read_asset_data(path: Path, info: Any, *, identity: str | None = None):
         if len(records) != 1:
             raise ValueError("Asset reader must return one record")
         return records[0]
-    # An asset's OWN nested data specs define kinds its document may name -- a dataset carrying
-    # the definitions of its rows. The walk reaches the parent before its children, so without
-    # registering them first the header read finds an unknown kind and drops the spec.
-    if (layout.root / "agentic-assets").is_dir():
-        from flow_sdk.schema.data_spec import declared  # noqa: PLC0415 — builds classes; keep off the import path
-
-        declared.load_root(layout.root)
     data, header = read_main(info, layout.root, field_data=read_asset_fields(layout.root, info))
     if info.rows_field and info.rows_layout_field:
         from flow_sdk.schema.data_spec.dataset_spec import DEFAULT_DATASET_SPEC, DataLayoutEnum

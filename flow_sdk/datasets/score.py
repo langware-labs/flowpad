@@ -32,13 +32,19 @@ def matches(output: Any, gold: Any) -> bool:
     return output == gold
 
 
+def golds(row: ExampleSpec) -> list:
+    """A row's gold answers as a list: one, several, or none."""
+    gt = row.ground_truth
+    return [] if gt is None else (gt if isinstance(gt, list) else [gt])
+
+
 def is_correct(row: ExampleSpec) -> bool | None:
     """True / False when the row has both an output and a gold; None when it cannot be scored."""
-    if row.output is None or row.ground_truth is None:
+    answers = golds(row)
+    if row.output is None or not answers:
         return None
-    golds = row.ground_truth if isinstance(row.ground_truth, list) else [row.ground_truth]
     outputs = row.output if isinstance(row.output, list) else [row.output]
-    return all(any(matches(out, gold) for gold in golds) for out in outputs)
+    return all(any(matches(out, gold) for gold in answers) for out in outputs)
 
 
 def score(rows: Iterable[ExampleSpec]) -> dict:
@@ -56,4 +62,4 @@ def score(rows: Iterable[ExampleSpec]) -> dict:
     }
 
 
-__all__ = ["is_correct", "matches", "score"]
+__all__ = ["golds", "is_correct", "matches", "score"]

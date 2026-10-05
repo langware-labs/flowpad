@@ -34,7 +34,7 @@ from types import ModuleType
 from typing import TYPE_CHECKING, Iterator, Optional
 
 from flow_sdk.assets.placement import AGENTIC_ASSETS_DIR
-from flow_sdk.assets.project_manifest import namespace_for
+from flow_sdk.assets.project_manifest import asset_namespace
 from flow_sdk.schema.data_spec._namespace import loading as loading_ns
 from flow_sdk.schema.data_spec.data_driver_spec import SOURCE_FILE, DataDriverSpec, ReflectMode
 from flow_sdk.sources.base import Family, Source
@@ -121,7 +121,7 @@ def _importing(folder: Path, manifest: DataDriverSpec, *, shipped: bool) -> "Ite
     """
     # What we ship is ours. Otherwise the driver's own declaration, else its
     # project's — a project names its namespace once and its assets inherit it.
-    ns = "" if shipped else (manifest.ns or namespace_for(folder))
+    ns = asset_namespace(folder, manifest.ns, shipped=shipped)
     if not shipped and not ns:
         raise DriverLoadError(
             f"{folder} declares no `ns`: an externally authored data driver must name the "

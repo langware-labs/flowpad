@@ -53,7 +53,11 @@ def kind_of(spec: type) -> str:
     """
     from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415 — cycle-safe: lazy
 
-    kind = SchemaRegistry.kind_for(spec)
+    # The tag the class was REGISTERED under, stamped on the class itself (its own ``__dict__``, so an
+    # unregistered subclass is not named after its parent). A same-definition re-registration
+    # drops the OLD class from the registry's inverse map, and a class built earlier that still
+    # holds it would otherwise lose its name -- and its files (``declared_x.json`` for ``x.json``).
+    kind = spec.__dict__.get("__spec_tag__") or SchemaRegistry.kind_for(spec)
     if kind:
         return kind
     # A pydantic parametrization inherits its origin's kind and deliberately

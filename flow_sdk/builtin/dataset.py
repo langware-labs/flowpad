@@ -236,25 +236,28 @@ class Dataset(Entity):
         return layout.append_many(self._folder(), batch, dataset_id=self.id)
 
     async def annotate(self, example_id: str, ground_truth: Any, *, by: str = "") -> None:
-        """One example's gold label, validated against the output shape
-        (``ValidationError``) and written as ``ground_truth/label.json``."""
+        """One example's gold label -- a value, or a LIST of acceptable answers -- validated against
+        the output shape (``ValidationError``). It REPLACES any gold the example had. The gold of a
+        named shape is written as the shape's own document (``ground_truth/decision.json``) so it
+        reads back exactly as the walker writes it; any other as ``ground_truth/label.json``."""
         from pydantic import TypeAdapter  # noqa: PLC0415
 
-        from flow_sdk.schema.data_spec.layout import dataset_layout_for  # noqa: PLC0415
+        from flow_sdk.schema.data_spec.layout import (  # noqa: PLC0415
+            ANNOTATION_FILE,
+            _main_document,
+            dataset_layout_for,
+        )
 
         shape = self.output_shape
-        golds = ground_truth if isinstance(ground_truth, list) else None
-        checked = [TypeAdapter(shape).validate_python(g) for g in golds] if golds is not None else TypeAdapter(shape).validate_python(ground_truth)
-        dump = lambda g: g.model_dump(mode="json") if hasattr(g, "model_dump") else g  # noqa: E731
-        payload = [dump(g) for g in checked] if golds is not None else dump(checked)
-        layout = dataset_layout_for(self.data_layout)
-        if getattr(shape, "spec_kind", "") and hasattr(layout, "annotate"):
-            from flow_sdk.schema.data_spec.layout import _main_document  # noqa: PLC0415
-
-            # A named shape: write its own main document, so the gold reads back as written.
-            layout.annotate(self._folder(), example_id, payload, dataset_id=self.id, by=by, main=_main_document(shape))
-        else:
-            layout.annotate(self._folder(), example_id, payload, dataset_id=self.id, by=by)
+        adapter = TypeAdapter(list[shape] if isinstance(ground_truth, list) else shape)
+        payload = adapter.dump_python(adapter.validate_python(ground_truth), mode="json")
+        # A NAMED shape has a document name of its own; an inline one (``{"sentiment": "string"}``)
+        # would get a hash-named file, so it keeps the shape-agnostic ``label.json``.
+        named = bool(getattr(shape, "spec_kind", ""))
+        dataset_layout_for(self.data_layout).annotate(
+            self._folder(), example_id, payload, dataset_id=self.id, by=by,
+            main=_main_document(shape) if named else ANNOTATION_FILE,
+        )
 
     @property
     def row_type(self) -> Any:
@@ -304,13 +307,18 @@ class Dataset(Entity):
     def validate_rows(self) -> list[dict]:
         """Every row read as the declared shape: ``[{example_id, error}]`` for the rows that do not
         fit. Indexing reads rows as artifacts on purpose (fast, never fatal); this is the check."""
-        from flow_sdk.schema.data_spec.layout import FolderLayout, _example_dirs, example_id  # noqa: PLC0415
+        from flow_sdk.schema.data_spec.layout import (  # noqa: PLC0415
+            FolderLayout,
+            _example_dirs,
+            _ReadShape,  # noqa: PLC0415
+            example_id,
+        )
 
         row_type = self._typed_rows_or_raise()
-        layout, problems = FolderLayout(), []
+        layout, problems, shape = FolderLayout(), [], _ReadShape.of(row_type)
         for ex_dir in _example_dirs(self._folder()):
             try:
-                layout.read_typed(ex_dir, row_type, dataset_id=self.id)
+                layout.read_typed(ex_dir, row_type, dataset_id=self.id, shape=shape)
             except ValidationError as exc:
                 first = exc.errors(include_url=False)[0]
                 where = ".".join(str(p) for p in first.get("loc", ()))
@@ -332,16 +340,22 @@ class Dataset(Entity):
 
     @classmethod
     def at(cls, folder: "Path | str") -> "Dataset":
-        """The dataset whose folder this is, read from disk alone -- no index, no DB row. For a
-        shipped dataset, a script, or a test: the same entity indexing would build."""
-        from flow_sdk.assets.serialization import read_asset_data  # noqa: PLC0415
-        from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+        """The dataset whose folder this is, read from disk alone -- no index, no DB row (the generic
+        ``Entity.from_fs_ref``). For a shipped dataset, a script, or a test."""
+        from flow_sdk.fs_store.fs_ref import FSRef  # noqa: PLC0415
 
-        folder = Path(folder)
-        info = SchemaRegistry.get("dataset")
-        record = read_asset_data(folder, info, identity=info.read_identity(info.layout_of(folder, verify=True)))
-        meta = {k: v for k, v in record.meta_dict().items() if k in cls.model_fields and k != "examples"}
-        return cls(**{**meta, "asset_ref": str(folder)})
+        found = cls.from_fs_ref(FSRef(Path(folder), read_only=True), "dataset")
+        if found is None:
+            raise LookupError(f"{folder} is not a dataset folder")
+        return found
+
+    @action.get(action_name="rows")
+    async def rows_action(self):
+        """Every example with its slots' VALUES, in one read -- what an editor shows on open."""
+        try:
+            return ApiSuccessResponse(data={"rows": [r.model_dump(mode="json") for r in self.read_rows()]})
+        except (ValueError, ValidationError) as exc:
+            return ApiFailResponse(message=str(exc), status_code=400)
 
     @action.post(action_name="score")
     async def score_action(self):
