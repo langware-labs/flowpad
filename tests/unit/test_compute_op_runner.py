@@ -397,6 +397,45 @@ async def test_an_agent_rung_with_nobody_to_run_it_says_what_the_person_can_do(t
     assert "install jq: nope" in answer.detail, "what the automatic install said stays, as the detail"
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("code", [0x8A15010C, 1223, 0x800704C7, -1978334964])
+async def test_declining_the_permission_prompt_ends_the_ladder_with_a_plain_sentence(tmp_path, code):
+    """A person who said no to the Windows prompt has answered. An agent rung that then tries the same install
+    another way asks again (and spent forty minutes "working" on a Windows VM) — so the ladder stops there."""
+    launched: list[str] = []
+
+    async def launch(**_kw):
+        launched.append("agent")
+        return PromptResult.satisfied("The agent finished.")
+
+    def code_for(command):
+        return code if command.startswith("install") else 1
+
+    spec = _spec(attempts=[{"subkind": "agent", "exe_data": {"agent": "provisioner", "prompt": "do it"}}])
+    answer = await _run_op(spec, _shell(code_for), launch, tmp_path=tmp_path)
+
+    assert answer.exit_code is ExitCode.NOT_YET
+    assert launched == [], "no agent after a decline"
+    assert answer.detail == (
+        "jq wasn't installed: the installation was cancelled (the Windows permission prompt or the installer "
+        "was declined). Run setup again when you are ready."
+    )
+
+
+@pytest.mark.asyncio
+async def test_any_other_failure_still_goes_on_to_the_next_rung(tmp_path):
+    launched: list[str] = []
+
+    async def launch(**_kw):
+        launched.append("agent")
+        return PromptResult.satisfied("The agent finished.")
+
+    spec = _spec(attempts=[{"subkind": "agent", "exe_data": {"agent": "provisioner", "prompt": "do it"}}])
+    await _run_op(spec, _shell(lambda c: 5 if c.startswith("install") else 1), launch, tmp_path=tmp_path)
+
+    assert launched == ["agent"]
+
+
 # ── a Windows permission prompt is the person's turn, not a hang ─────────────
 
 

@@ -246,10 +246,11 @@ async def run_op(
         # already found out.
         history = [f"{tried_as}: {answer.detail}"]
         for rung in spec.attempts:
-            if answer.exit_code is not ExitCode.NOT_YET or _check_ran_out(answer):
+            if answer.exit_code is not ExitCode.NOT_YET or _check_ran_out(answer) or _declined(answer):
                 # A check that ran out of time gave no verdict: the goal may well hold already, and a
                 # costlier rung cannot make a slow machine answer faster — it would change a machine
-                # that may be fine. The timeout is the report.
+                # that may be fine. The timeout is the report. A person who declined the Windows permission
+                # prompt has answered: an agent that goes on to try the same thing another way is asking again.
                 break
             # The rung before this one did not reach the goal: this one takes the SAME
             # goal, with the same check as its verdict — never the caller's executor,
@@ -295,6 +296,18 @@ def _adopt_installed_path() -> None:
             adopt_path(terminal)
     except Exception:  # noqa: BLE001 — a PATH refresh is a courtesy to later spawns, never a verdict
         pass
+
+
+#: What a command's exit code says when the person declined the Windows permission prompt or cancelled the
+#: installer (winget answers both the same way): winget's INSTALL_CANCELLED_BY_USER (0x8A15010C) and Windows' own ERROR_CANCELLED (1223, or
+#: 0x800704C7 as an HRESULT). A process exit code is a DWORD, so it is compared unsigned.
+_DECLINED_EXIT_CODES = frozenset({0x8A15010C, 1223, 0x800704C7})
+
+
+def _declined(answer: ReturnedValue) -> bool:
+    """The call ran and its exit code says the person said no — an answer, not a failure to retry another way."""
+    code = getattr(answer, "returncode", None)
+    return bool(answer.ran and code is not None and (code & 0xFFFFFFFF) in _DECLINED_EXIT_CODES)
 
 
 def _check_ran_out(answer: ReturnedValue) -> bool:
@@ -405,7 +418,12 @@ async def _call_and_check(
         )
         return _with_value(spec, done, said=after)
     reason = _reason(call)
-    if after.timed_out:
+    if _declined(call):
+        detail = (
+            f"{spec.display_label} wasn't installed: the installation was cancelled (the Windows permission "
+            "prompt or the installer was declined). Run setup again when you are ready."
+        )
+    elif after.timed_out:
         budget = spec.completion_check.timeout(CHECK_TIMEOUT) if spec.completion_check else CHECK_TIMEOUT
         detail = (
             f"{spec.display_label}: the {spec.subkind} call ran, but its check did not answer within "
