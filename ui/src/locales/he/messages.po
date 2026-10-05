@@ -3922,6 +3922,10 @@ msgstr "בחר מסמך מהסרגל הצדדי כדי לצפות בתוכנו"
 msgid "Choose a file instead"
 msgstr ""
 
+#: src/components/assets/editor/agent-profile/TokenAllocationField.tsx
+msgid "Choose a model…"
+msgstr ""
+
 #: src/components/install/AddAssetDialog.tsx
 msgid "Choose a project"
 msgstr ""
@@ -9197,6 +9201,7 @@ msgstr "סנן קבצים"
 msgid "Filter logs..."
 msgstr "סנן יומנים..."
 
+#: src/components/assets/editor/agent-profile/TokenAllocationField.tsx
 #: src/components/llm-endpoints/ModelsList.tsx
 msgid "Filter models…"
 msgstr ""
@@ -12070,6 +12075,10 @@ msgstr "טוען הודעה…"
 msgid "Loading metrics..."
 msgstr "טוען מדדים..."
 
+#: src/components/assets/editor/agent-profile/TokenAllocationField.tsx
+msgid "Loading models…"
+msgstr ""
+
 #: src/components/organization/organization-page.tsx
 msgid "Loading organizations…"
 msgstr ""
@@ -12797,6 +12806,7 @@ msgid "model"
 msgstr "מודל"
 
 #: src/components/assets/editor/agent-profile/AgentPlaceConfig.tsx
+#: src/components/assets/editor/agent-profile/TokenAllocationField.tsx
 #: src/components/assets/editor/agent-profile/TokenAllocationField.tsx
 #: src/components/assets/editor/agent-profile/TokenAllocationField.tsx
 #: src/components/entity-execution-panel/ExecutionSettingsPopover.tsx
@@ -13931,6 +13941,7 @@ msgstr "אין הודעות עדיין."
 msgid "No metrics data available"
 msgstr "אין נתוני מדדים זמינים"
 
+#: src/components/assets/editor/agent-profile/TokenAllocationField.tsx
 #: src/components/llm-endpoints/ModelsList.tsx
 msgid "No models."
 msgstr ""
