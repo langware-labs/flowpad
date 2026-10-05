@@ -35,9 +35,11 @@ def _parse_trigger(trigger_type: str, expr: str):
         run_date = datetime.fromisoformat(expr)
         return DateTrigger(run_date=run_date)
     else:
-        # Default: cron
-        from apscheduler.triggers.cron import CronTrigger
-        return CronTrigger.from_crontab(expr)
+        # Default: cron — through the Trigger parser, which reads the crontab
+        # day-of-week the crontab way (APScheduler 3.x counts Monday as 0).
+        from flow_sdk.builtin.trigger import _parse_trigger as _parse_crontab
+
+        return _parse_crontab("cron", expr)
 
 
 def _parse_interval_expr(expr: str) -> int:
