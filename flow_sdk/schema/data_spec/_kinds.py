@@ -115,6 +115,10 @@ def _load_value_kinds(ns: "str | None") -> None:
     from flow_sdk.ingest import driver_registry  # noqa: PLC0415
 
     if ns is None:
+        # Kinds a FOLDER defines first: a driver's code may name them, never the other way round.
+        from flow_sdk.schema.data_spec import declared  # noqa: PLC0415
+
+        declared.ensure_shipped()
         driver_registry.load_driver_value_kinds()
     else:
         driver_registry.load_namespace_value_kinds(ns)

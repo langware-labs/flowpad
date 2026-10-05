@@ -208,6 +208,7 @@ EXPECTED = {
     "DATA_SOURCE": "data_source",
     "CREDENTIAL": "credential",
     "DATA_DRIVER": "data_driver",
+    "DATA_SPEC": "data_spec",
     "SOURCE_ITEM": "source_item",
     # The stream inbox projection's thread grouping — additive member, no existing
     # value changed.
