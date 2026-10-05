@@ -337,6 +337,23 @@ class RemoteWorkerSession(Entity):
             return None
         return await cls.get_one({"id": session_id})
 
+    @classmethod
+    async def open_for_conversation(cls, conversation_id: str | None) -> Optional["RemoteWorkerSession"]:
+        """The conversation's open live session — its newest one not ENDED/DECLINED.
+
+        A conversation holds ONE open session: every prompt sent in it joins
+        that session (queued while PENDING, re-run after an ERROR) until either
+        side ends it; only then does the next prompt open another. A lookup on
+        the natural key, never a derived id.
+        """
+        if not conversation_id:
+            return None
+        rows = await cls.get_all({"conversation_id": conversation_id})
+        open_rows = [r for r in rows if not is_terminal(r.status)]
+        if not open_rows:
+            return None
+        return max(open_rows, key=lambda r: r.started_at or r.last_activity_at or "")
+
     def mark_activity(self, status: str | None = None) -> None:
         """Stamp host-authoritative activity; caller saves."""
         self.last_activity_at = _now_iso()

@@ -12,10 +12,14 @@ id: 63f697dd-b987-4ff5-94e2-cd42496559b5
 **The decision (2026-09-06):** there is ONE way to run a prompt on a
 collaborator's machine, and it is a session.
 
-1. **Every prompt request is a session.** A prompt sent from the conversation
-   composer starts a new `RemoteWorkerSession` whose `starting_message_id` is
-   that message. Several sessions may coexist in a conversation; the host's
-   worker stays one headless `AgenticProcess` per (conversation, host).
+1. **Every prompt request is a session turn, and a conversation holds ONE open
+   session** (amended 2026-10-05). A prompt sent from the conversation composer
+   joins the conversation's open session (`RemoteWorkerSession.open_for_conversation`:
+   newest not ENDED/DECLINED) — queued while it is PENDING, run in order once
+   approved, run again after an ERROR. Only when there is none does it start a
+   new session whose `starting_message_id` is that message. So one conversation
+   shows one card until either side ends the session. The host's worker stays one
+   headless `AgenticProcess` per (conversation, host).
 2. **The starting message carries a compact horizontal session card** (status,
    host, `N prompts · M replies`, Approve/Decline for the host, Open).
 3. **Follow-up prompts never render in the main thread** — only in the session
@@ -49,7 +53,13 @@ terminal → ignore; PAUSED → bounce (marker + system line); IDLE/RUNNING/ERRO
 run; PENDING/DRAFT/none → run with a standing grant (approve, `approved_via=standing_grant`,
 redrive queued turns), else park at PENDING. The session is resolved-or-minted
 BEFORE the gate; an unstamped prompt finds its session by
-`starting_message_id == fm.id` (natural-key lookup, never a deterministic id).
+`starting_message_id == fm.id`, else joins the conversation's open session
+(natural-key lookups, never a deterministic id).
+
+**A failed turn is not a session state for the user.** `ERROR` keeps the session
+live (the card reads "Live" with a "Last prompt failed" mark). The guest's
+**Retry** re-sends the failed prompt into the same session — the follow-up path,
+so it is hub-optional like any turn (`failedPromptOf`, `useRetryFailedPrompt`).
 Per-turn idempotency stays on `FlowMessage.prompt_auto_handled` (local-only).
 
 **Deleted, not deprecated:** `execute-prompt`, `approve-prompt`,

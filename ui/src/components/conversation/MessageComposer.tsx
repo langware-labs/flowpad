@@ -1,5 +1,16 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { Boxes, ChevronDown, File as FileIcon, MessagesSquare, MonitorPlay, Paperclip, Send, Smile, Trash2, X } from 'lucide-react';
+import {
+  Boxes,
+  ChevronDown,
+  File as FileIcon,
+  MessagesSquare,
+  MonitorPlay,
+  Paperclip,
+  Send,
+  Smile,
+  Trash2,
+  X,
+} from 'lucide-react';
 import type { AssetDescriptor, FlowMessage } from '@sdk';
 import { SessionReplyPolicy } from '@sdk';
 import type { TaskableMessage } from '@sdk/entities/task';
@@ -575,64 +586,70 @@ export function MessageComposer({
     >
       <MonitorPlay className="h-3.5 w-3.5 shrink-0" />
       <span className="min-w-0 flex-1 truncate font-medium">
-        <Trans>Live session on {hostName}'s machine</Trans>
+        {sessionHost?.hasOpenSession ? (
+          <Trans>Adds to the live session on {hostName}'s machine</Trans>
+        ) : (
+          <Trans>Live session on {hostName}'s machine</Trans>
+        )}
       </span>
-      <Popover>
-        <PopoverTrigger asChild>
-          <button
-            type="button"
-            disabled={isDisabled}
-            title={t`Session settings`}
-            data-testid="composer-session-settings"
-            className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 hover:bg-emerald-500/15 disabled:opacity-40"
-          >
-            {replyPolicy === SessionReplyPolicy.REVIEW ? <Trans>Review replies</Trans> : <Trans>Auto-send</Trans>}
-            <ChevronDown className="h-3 w-3" />
-          </button>
-        </PopoverTrigger>
-        <PopoverContent side="top" align="end" className="w-64 p-3 text-xs">
-          <p className="mb-2 font-medium text-foreground">
-            <Trans>Replies</Trans>
-          </p>
-          <div role="radiogroup" className="flex flex-col gap-1.5">
-            <label className="flex cursor-pointer items-start gap-2">
-              <input
-                type="radio"
-                name="reply-policy"
-                checked={replyPolicy === SessionReplyPolicy.AUTO}
-                onChange={() => setReplyPolicy(SessionReplyPolicy.AUTO)}
-                data-testid="composer-reply-policy-auto"
-                className="mt-0.5"
-              />
-              <span>
-                <Trans>Auto-send</Trans>
-                <span className="block text-muted-foreground">
-                  <Trans>Each reply lands in the session as soon as it is ready.</Trans>
+      {!sessionHost?.hasOpenSession && (
+        <Popover>
+          <PopoverTrigger asChild>
+            <button
+              type="button"
+              disabled={isDisabled}
+              title={t`Session settings`}
+              data-testid="composer-session-settings"
+              className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 hover:bg-emerald-500/15 disabled:opacity-40"
+            >
+              {replyPolicy === SessionReplyPolicy.REVIEW ? <Trans>Review replies</Trans> : <Trans>Auto-send</Trans>}
+              <ChevronDown className="h-3 w-3" />
+            </button>
+          </PopoverTrigger>
+          <PopoverContent side="top" align="end" className="w-64 p-3 text-xs">
+            <p className="mb-2 font-medium text-foreground">
+              <Trans>Replies</Trans>
+            </p>
+            <div role="radiogroup" className="flex flex-col gap-1.5">
+              <label className="flex cursor-pointer items-start gap-2">
+                <input
+                  type="radio"
+                  name="reply-policy"
+                  checked={replyPolicy === SessionReplyPolicy.AUTO}
+                  onChange={() => setReplyPolicy(SessionReplyPolicy.AUTO)}
+                  data-testid="composer-reply-policy-auto"
+                  className="mt-0.5"
+                />
+                <span>
+                  <Trans>Auto-send</Trans>
+                  <span className="block text-muted-foreground">
+                    <Trans>Each reply lands in the session as soon as it is ready.</Trans>
+                  </span>
                 </span>
-              </span>
-            </label>
-            <label className="flex cursor-pointer items-start gap-2">
-              <input
-                type="radio"
-                name="reply-policy"
-                checked={replyPolicy === SessionReplyPolicy.REVIEW}
-                onChange={() => setReplyPolicy(SessionReplyPolicy.REVIEW)}
-                data-testid="composer-reply-policy-review"
-                className="mt-0.5"
-              />
-              <span>
-                <Trans>{hostName} reviews before sending</Trans>
-                <span className="block text-muted-foreground">
-                  <Trans>Replies wait as drafts until {hostName} sends them.</Trans>
+              </label>
+              <label className="flex cursor-pointer items-start gap-2">
+                <input
+                  type="radio"
+                  name="reply-policy"
+                  checked={replyPolicy === SessionReplyPolicy.REVIEW}
+                  onChange={() => setReplyPolicy(SessionReplyPolicy.REVIEW)}
+                  data-testid="composer-reply-policy-review"
+                  className="mt-0.5"
+                />
+                <span>
+                  <Trans>{hostName} reviews before sending</Trans>
+                  <span className="block text-muted-foreground">
+                    <Trans>Replies wait as drafts until {hostName} sends them.</Trans>
+                  </span>
                 </span>
-              </span>
-            </label>
-          </div>
-          <p className="mt-2 text-muted-foreground">
-            <Trans>You can change this later inside the session.</Trans>
-          </p>
-        </PopoverContent>
-      </Popover>
+              </label>
+            </div>
+            <p className="mt-2 text-muted-foreground">
+              <Trans>You can change this later inside the session.</Trans>
+            </p>
+          </PopoverContent>
+        </Popover>
+      )}
     </div>
   ) : null;
 

@@ -13,7 +13,8 @@ describe('sessionCardState', () => {
     [RemoteWorkerSessionStatus.PAUSED, 'paused'],
     [RemoteWorkerSessionStatus.ENDED, 'ended'],
     [RemoteWorkerSessionStatus.DECLINED, 'declined'],
-    [RemoteWorkerSessionStatus.ERROR, 'error'],
+    // A failed turn is not a session state: the session stays live (the card marks the prompt).
+    [RemoteWorkerSessionStatus.ERROR, 'active'],
     ['garbage', 'requesting'],
   ])('%s → %s', (status, expected) => {
     expect(sessionCardState(status)).toBe(expected);

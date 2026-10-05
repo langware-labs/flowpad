@@ -18,6 +18,10 @@ export interface SessionCardProps {
   /** Host + pending only. */
   onApprove?: () => Promise<void>;
   onDecline?: () => Promise<void>;
+  /** The session's last prompt failed and nothing answered it since. */
+  lastPromptFailed?: boolean;
+  /** Guest only: send the failed prompt again into this session. */
+  onRetry?: () => Promise<void>;
 }
 
 const TONE: Record<SessionCardState, string> = {
@@ -27,7 +31,6 @@ const TONE: Record<SessionCardState, string> = {
   paused: 'border-border text-muted-foreground',
   ended: 'border-border text-muted-foreground',
   declined: 'border-red-500/40 text-red-700 dark:text-red-300',
-  error: 'border-red-500/40 text-red-700 dark:text-red-300',
 };
 
 const DOT: Record<SessionCardState, string> = {
@@ -37,7 +40,6 @@ const DOT: Record<SessionCardState, string> = {
   paused: 'bg-muted-foreground',
   ended: 'bg-muted-foreground',
   declined: 'bg-red-500',
-  error: 'bg-red-500',
 };
 
 /**
@@ -46,9 +48,20 @@ const DOT: Record<SessionCardState, string> = {
  * for the host while pending, and Open for everyone. One row, never a stack —
  * the session view is where the turns live.
  */
-export function SessionCard({ sessionId, session, role, promptCount, replyCount, onOpen, onApprove, onDecline }: SessionCardProps) {
+export function SessionCard({
+  sessionId,
+  session,
+  role,
+  promptCount,
+  replyCount,
+  onOpen,
+  onApprove,
+  onDecline,
+  lastPromptFailed,
+  onRetry,
+}: SessionCardProps) {
   const { t } = useLingui();
-  const [busy, setBusy] = useState<'approve' | 'decline' | null>(null);
+  const [busy, setBusy] = useState<'approve' | 'decline' | 'retry' | null>(null);
   const state = sessionCardState(session?.status);
   const running = session?.status === RemoteWorkerSessionStatus.RUNNING;
   const host = session?.host_name?.trim() || t`the host`;
@@ -69,12 +82,10 @@ export function SessionCard({ sessionId, session, role, promptCount, replyCount,
         return t`Ended`;
       case 'declined':
         return t`Declined`;
-      case 'error':
-        return t`Last turn failed`;
     }
   })();
 
-  const run = async (which: 'approve' | 'decline', fn?: () => Promise<void>) => {
+  const run = async (which: 'approve' | 'decline' | 'retry', fn?: () => Promise<void>) => {
     if (!fn || busy) return;
     setBusy(which);
     try {
@@ -113,6 +124,28 @@ export function SessionCard({ sessionId, session, role, promptCount, replyCount,
         {' · '}
         <Plural value={replyCount} one="# reply" other="# replies" />
       </span>
+      {lastPromptFailed && (
+        <>
+          <span className="text-muted-foreground/70">·</span>
+          <span className="shrink-0 font-medium text-red-700 dark:text-red-300" data-testid="session-card-failed">
+            <Trans>Last prompt failed</Trans>
+          </span>
+          {onRetry && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                void run('retry', onRetry);
+              }}
+              disabled={!!busy}
+              data-testid="session-card-retry"
+              className="rounded border border-border px-2 py-0.5 font-medium text-foreground transition-colors hover:bg-muted disabled:opacity-50"
+            >
+              <Trans>Retry</Trans>
+            </button>
+          )}
+        </>
+      )}
       {role === 'host' && state === 'pending' && (
         <>
           <button

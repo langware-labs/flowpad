@@ -4,6 +4,9 @@ import type { SendReplyExtras } from '@sdk/entities/notifications';
 export interface SessionHost {
   userId: string;
   name: string | null;
+  /** The conversation already has an open live session: a prompt sent now
+   *  joins it (the backend's one-open-session rule) instead of opening one. */
+  hasOpenSession?: boolean;
 }
 
 /**

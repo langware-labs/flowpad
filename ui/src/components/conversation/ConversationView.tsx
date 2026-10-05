@@ -16,6 +16,7 @@ import {
   TypeId,
   latestPointer,
   ChannelTransport,
+  isSessionTerminal,
   toplog,
 } from '@sdk';
 import { claimTabSwitchReady, sinceTabSwitch } from '@src/navigation/tab-switch-state';
@@ -57,6 +58,8 @@ import { useMyEmail } from '@src/hooks/use-my-email';
 import { taskIt, useMessageTasks } from './task-it';
 import { conversationMessagesRequest } from './conversation-messages-query';
 import { useApproveLiveSession } from '@src/components/collaboration/useApproveLiveSession';
+import { failedPromptOf } from './session-turns';
+import { useRetryFailedPrompt } from './useRetryFailedPrompt';
 
 interface ConversationViewProps {
   conversationId: string;
@@ -125,6 +128,7 @@ export function ConversationView({
   // the feed pins each to its opening message; each card reads its own row.
   const { byId: sessionsById, anchors: sessionAnchors } = useConversationSessions(conversationId);
   const { approve: approveSession, picker: approveSessionPicker } = useApproveLiveSession();
+  const retryFailedPrompt = useRetryFailedPrompt();
 
   // Member roster used to resolve a message's hub-authoritative sender_id to
   // a display name. `useMembers` is the single precedence point: the live
@@ -431,6 +435,18 @@ export function ConversationView({
     ].sort((a, b) => a.sortAt - b.sortAt);
   }, [orderedItems, messagesById, threadId, threadCounts, sessionAnchors]);
 
+  // Each live session's failed prompt (nothing answered it since), so its card can offer Retry.
+  const failedPromptBySession = useMemo(() => {
+    const bySession = new Map<string, FlowMessage[]>();
+    for (const item of orderedItems) {
+      const fm = item.kind === ConversationItemKind.POINTER ? messagesById.get(item.messageId) : item.draft;
+      const sid = fm?.remote_worker_session_id;
+      if (!fm || !sid) continue;
+      bySession.set(sid, [...(bySession.get(sid) ?? []), fm]);
+    }
+    return new Map([...bySession].map(([sid, fms]) => [sid, failedPromptOf(fms)]));
+  }, [orderedItems, messagesById]);
+
   // Where the composer of an open thread writes: a native thread joins its root; a channel whose
   // replies only thread (email, Slack) answers the thread's newest message; a quoting channel's
   // thread is the chat itself, so a plain send already lands in it.
@@ -711,9 +727,13 @@ export function ConversationView({
       (participants ?? []).length === 2 &&
       !!cloudUserId &&
       !!otherParticipant?.user_id
-        ? { userId: otherParticipant.user_id, name: otherParticipant.name ?? otherParticipant.email ?? null }
+        ? {
+            userId: otherParticipant.user_id,
+            name: otherParticipant.name ?? otherParticipant.email ?? null,
+            hasOpenSession: [...sessionsById.values()].some((s) => !isSessionTerminal(s.status)),
+          }
         : null,
-    [conversation?.remote, rosterReady, participants, cloudUserId, otherParticipant],
+    [conversation?.remote, rosterReady, participants, cloudUserId, otherParticipant, sessionsById],
   );
   const openLiveSession = useCallback(
     (sessionId: string) => {
@@ -834,6 +854,17 @@ export function ConversationView({
                     onOpen={() => openLiveSession(item.sessionId)}
                     onApprove={role === 'host' && session ? () => approveSession(session) : undefined}
                     onDecline={role === 'host' && session ? () => session.decline() : undefined}
+                    lastPromptFailed={!!failedPromptBySession.get(item.sessionId)}
+                    onRetry={
+                      role === 'guest' && failedPromptBySession.get(item.sessionId) && conversationId
+                        ? () =>
+                            retryFailedPrompt(
+                              conversationId,
+                              item.sessionId,
+                              failedPromptBySession.get(item.sessionId)!.text,
+                            )
+                        : undefined
+                    }
                   />
                 </div>
               );

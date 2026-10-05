@@ -903,27 +903,34 @@ async def handle_add_message(
     remote_worker_session_id = (body.get("remote_worker_session_id") or "").strip() or None
     sendable_kind = FlowMessageKind.sendable((body.get("kind") or "").strip() or None)
     message_kind = sendable_kind.value if sendable_kind else None
-    # Every prompt is a session turn. A prompt WITHOUT a session id opens a new
-    # session: the sender mints the id here (uuid4; the host validates-on-adopt)
-    # and the opening proposal (reply policy) rides the start marker on the
-    # carrier attachment. A prompt WITH a session id is a follow-up turn.
+    # Every prompt is a session turn, and a conversation holds ONE open session.
+    # A prompt WITHOUT a session id joins the conversation's open session; only
+    # when there is none does it open a new one: the sender mints the id here
+    # (uuid4; the host validates-on-adopt) and the opening proposal (reply
+    # policy) rides the start marker on the carrier attachment. A prompt WITH a
+    # session id is a follow-up turn.
+    from flow_sdk.builtin.remote_worker_session import RemoteWorkerSession, ReplyPolicy  # noqa: PLC0415
     from flow_sdk.schema.data_spec.session_spec import SessionStartSettings  # noqa: PLC0415
 
     is_prompt_send = bool(prompt_text_preview or prompt_files_preview)
     start_settings: Optional[SessionStartSettings] = None
+    # Refused whenever sent, even on a send that joins a session and won't use it.
+    raw_policy = (body.get("reply_policy") or "").strip() or ReplyPolicy.AUTO.value
+    try:
+        reply_policy = ReplyPolicy(raw_policy).value
+    except ValueError:
+        return ApiFailResponse(message="reply_policy must be 'auto' or 'review'", status_code=400)
+    if is_prompt_send and not remote_worker_session_id:
+        open_session = await RemoteWorkerSession.open_for_conversation(conversation_id)
+        if open_session is not None:
+            remote_worker_session_id = open_session.id
     if is_prompt_send and not remote_worker_session_id:
         from flow_sdk.api.api_types.identifier import mint_uuid  # noqa: PLC0415
-        from flow_sdk.builtin.remote_worker_session import ReplyPolicy  # noqa: PLC0415
 
-        raw_policy = (body.get("reply_policy") or "").strip() or ReplyPolicy.AUTO.value
-        try:
-            reply_policy = ReplyPolicy(raw_policy).value
-        except ValueError:
-            return ApiFailResponse(message="reply_policy must be 'auto' or 'review'", status_code=400)
         remote_worker_session_id = mint_uuid()
         start_settings = SessionStartSettings(reply_policy=reply_policy)
     elif remote_worker_session_id and is_prompt_send:
-        from flow_sdk.builtin.remote_worker_session import RemoteWorkerSession, is_terminal  # noqa: PLC0415
+        from flow_sdk.builtin.remote_worker_session import is_terminal  # noqa: PLC0415
 
         existing_session = await RemoteWorkerSession.resolve_state(remote_worker_session_id)
         if existing_session is not None and is_terminal(existing_session.status):
