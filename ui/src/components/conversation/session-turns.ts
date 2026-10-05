@@ -18,7 +18,7 @@ export function promptTextOf(fm: FlowMessage): string {
 }
 
 /** True when the message carries a prompt for the host to run. */
-function carriesPrompt(fm: FlowMessage): boolean {
+export function carriesPrompt(fm: FlowMessage): boolean {
   return (fm.attachment ?? []).some(
     (a) =>
       (a?.attachment_type === AttachmentType.TYPE_ID && (a.data ?? '').startsWith('prompt-')) ||

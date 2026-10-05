@@ -141,6 +141,25 @@ def _has_prompt_attachment(attachments: Any) -> bool:
     return False
 
 
+def _is_session_request(attachments: Any) -> bool:
+    """True iff ``attachments`` carry a guest's ``requested`` live-session line —
+    a session opened before any prompt (its carrier marker names the event)."""
+    import json as _json  # noqa: PLC0415
+
+    for att in attachments or []:
+        data = att.get("data") if isinstance(att, dict) else getattr(att, "data", None)
+        if not (isinstance(data, str) and data.startswith("remote_worker_session-")):
+            continue
+        raw = att.get("prompt_preview") if isinstance(att, dict) else getattr(att, "prompt_preview", None)
+        try:
+            marker = _json.loads(raw or "")
+        except (TypeError, ValueError):
+            continue
+        if isinstance(marker, dict) and marker.get("live_session_event") == "requested":
+            return True
+    return False
+
+
 # In-flight bundle pulls keyed by fm_id — guards against the bridge
 # scheduling two concurrent downloads for the same FM (CREATE-with-READY
 # arriving before the UPDATE-to-READY, or two UPDATEs in quick succession).
@@ -754,6 +773,12 @@ class HubWsBridge:
                             from flow_sdk.app.actions.execute_prompt import process_inbound_prompt
 
                             asyncio.create_task(process_inbound_prompt(fm_id, conversation_id))
+                    elif _is_session_request(payload.get("attachment")):
+                        # A session opened before any prompt: the host's own
+                        # identity on the row, and a standing grant's approval.
+                        from flow_sdk.app.actions.execute_prompt import process_session_request
+
+                        asyncio.create_task(process_session_request(fm_id, conversation_id))
                 except Exception as _err:
                     logger.warning(
                         "[bridge] inbound persist failed fm=%s (non-fatal): %s",

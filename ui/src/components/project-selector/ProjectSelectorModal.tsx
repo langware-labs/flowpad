@@ -2,6 +2,7 @@ import { Button } from '@src/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
 import { Plus } from 'lucide-react';
 import { useLingui } from '@lingui/react/macro';
+import type { ReactNode } from 'react';
 import { ProjectSelector, type ProjectSelectorItem } from './ProjectSelector';
 
 export interface ProjectSelectorModalProps {
@@ -17,6 +18,8 @@ export interface ProjectSelectorModalProps {
   onCreateNew?: () => void;
   /** Ids to hide from the list — see `ProjectSelectorProps.excludeIds`. */
   excludeIds?: ReadonlyArray<string>;
+  /** An extra control beside the title (e.g. "No project"). */
+  headerAction?: ReactNode;
 }
 
 /**
@@ -33,6 +36,7 @@ export function ProjectSelectorModal({
   title,
   onCreateNew,
   excludeIds,
+  headerAction,
 }: ProjectSelectorModalProps) {
   const { t } = useLingui();
   const displayTitle = title ?? t`Select project`;
@@ -42,6 +46,7 @@ export function ProjectSelectorModal({
         <DialogHeader>
           <div className="flex items-center justify-between gap-2 pe-8">
             <DialogTitle>{displayTitle}</DialogTitle>
+            {headerAction}
             {onCreateNew && (
               <Button
                 variant="ghost"

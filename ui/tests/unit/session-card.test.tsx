@@ -27,6 +27,7 @@ function renderCard(props: Partial<Parameters<typeof SessionCard>[0]> = {}) {
       onOpen={props.onOpen ?? onOpen}
       onApprove={props.onApprove}
       onDecline={props.onDecline}
+      onDisconnect={props.onDisconnect}
       lastPromptFailed={props.lastPromptFailed}
       onRetry={props.onRetry}
     />,
@@ -34,53 +35,74 @@ function renderCard(props: Partial<Parameters<typeof SessionCard>[0]> = {}) {
   return { onOpen };
 }
 
-describe('SessionCard', () => {
+describe("SessionCard — the session's one line in the conversation", () => {
   afterEach(() => cleanup());
 
-  it('host + pending shows Approve/Decline and calls onApprove once', async () => {
+  it('names the session after the other side and its status — no Open button', () => {
+    renderCard({ session: session(RemoteWorkerSessionStatus.PENDING), role: 'guest' });
+    expect(screen.getByTestId('session-card-name').textContent).toBe('Live session · Sam');
+    expect(screen.getByTestId('session-card-status').textContent).toBe('awaiting approval');
+    expect(screen.queryByTestId('session-card-open')).toBeNull();
+    expect(screen.queryByText('Open')).toBeNull();
+  });
+
+  it('the whole line opens the session and never touches window.location', () => {
+    const before = window.location.href;
+    const { onOpen } = renderCard({ session: session(RemoteWorkerSessionStatus.IDLE) });
+    fireEvent.click(screen.getByTestId('session-card'));
+    expect(onOpen).toHaveBeenCalledTimes(1);
+    expect(window.location.href).toBe(before);
+  });
+
+  it('host + pending: Approve/Decline once, on the line', async () => {
     const onApprove = vi.fn().mockResolvedValue(undefined);
-    renderCard({ session: session(RemoteWorkerSessionStatus.PENDING), role: 'host', onApprove });
-    expect(screen.getByTestId('session-card').getAttribute('data-status')).toBe('pending');
-    expect(screen.getByText(/Dana wants to run prompts here/)).toBeTruthy();
+    const { onOpen } = renderCard({
+      session: session(RemoteWorkerSessionStatus.PENDING),
+      role: 'host',
+      onApprove,
+      onDecline: vi.fn(),
+    });
+    expect(screen.getByTestId('session-card-name').textContent).toBe('Live session · Dana');
+    expect(screen.getByTestId('session-card-status').textContent).toBe('wants to run prompts on your machine');
     fireEvent.click(screen.getByTestId('session-card-approve'));
-    fireEvent.click(screen.getByTestId('session-card-approve')); // busy guard
+    expect(onOpen).not.toHaveBeenCalled();
     await Promise.resolve();
     expect(onApprove).toHaveBeenCalledTimes(1);
     expect(screen.getByTestId('session-card-decline')).toBeTruthy();
+    expect(screen.queryByTestId('session-card-disconnect')).toBeNull();
   });
 
-  it('guest + pending shows "Awaiting <host>" and no Approve', () => {
+  it('guest + pending: no Approve', () => {
     renderCard({ session: session(RemoteWorkerSessionStatus.PENDING), role: 'guest', onApprove: vi.fn() });
-    expect(screen.getByText('Awaiting Sam')).toBeTruthy();
     expect(screen.queryByTestId('session-card-approve')).toBeNull();
   });
 
-  it('active shows counts and pulses while running', () => {
-    renderCard({ session: session(RemoteWorkerSessionStatus.RUNNING), promptCount: 2, replyCount: 1 });
-    expect(screen.getByTestId('session-card').getAttribute('data-status')).toBe('active');
-    expect(screen.getByTestId('session-card-counts').textContent).toContain('2 prompts');
-    expect(screen.getByTestId('session-card-counts').textContent).toContain('1 reply');
-    expect(screen.getByText("Live on Sam's machine")).toBeTruthy();
+  it.each(['host', 'guest'] as const)('%s + live: message count, time since approval, red Disconnect', async (role) => {
+    const onDisconnect = vi.fn().mockResolvedValue(undefined);
+    const approvedAt = new Date(Date.now() - 125_000).toISOString();
+    renderCard({
+      session: session(RemoteWorkerSessionStatus.IDLE, { approved_at: approvedAt }),
+      role,
+      promptCount: 2,
+      replyCount: 1,
+      onApprove: vi.fn(),
+      onDisconnect,
+    });
+    expect(screen.getByTestId('session-card-status').textContent).toBe('connected');
+    expect(screen.getByTestId('session-card-counts').textContent).toBe('3 messages');
+    expect(screen.getByTestId('session-card-elapsed').textContent).toMatch(/^2:0\d$/);
+    expect(screen.queryByTestId('session-card-approve')).toBeNull(); // approval is once
+    const disconnect = screen.getByTestId('session-card-disconnect');
+    expect(disconnect.className).toContain('bg-destructive');
+    fireEvent.click(disconnect);
+    await Promise.resolve();
+    expect(onDisconnect).toHaveBeenCalledTimes(1);
+  });
+
+  it('pulses while a prompt runs', () => {
+    renderCard({ session: session(RemoteWorkerSessionStatus.RUNNING) });
+    expect(screen.getByTestId('session-card-status').textContent).toBe('working…');
     expect(screen.getByTestId('session-card').querySelector('.animate-pulse')).toBeTruthy();
-  });
-
-  it.each([
-    [RemoteWorkerSessionStatus.PAUSED, 'paused'],
-    [RemoteWorkerSessionStatus.ENDED, 'ended'],
-    [RemoteWorkerSessionStatus.DECLINED, 'declined'],
-  ])('%s renders its state and no lifecycle buttons', (status, state) => {
-    renderCard({ session: session(status), role: 'host', onApprove: vi.fn(), onDecline: vi.fn() });
-    expect(screen.getByTestId('session-card').getAttribute('data-status')).toBe(state);
-    expect(screen.queryByTestId('session-card-approve')).toBeNull();
-    expect(screen.queryByTestId('session-card-decline')).toBeNull();
-  });
-
-  it('Open calls onOpen and never touches window.location', () => {
-    const before = window.location.href;
-    const { onOpen } = renderCard({ session: session(RemoteWorkerSessionStatus.IDLE) });
-    fireEvent.click(screen.getByTestId('session-card-open'));
-    expect(onOpen).toHaveBeenCalledTimes(1);
-    expect(window.location.href).toBe(before);
   });
 
   it('a failed last prompt keeps the session live and offers the guest Retry, once', async () => {
@@ -91,10 +113,9 @@ describe('SessionCard', () => {
       onRetry,
     });
     expect(screen.getByTestId('session-card').getAttribute('data-status')).toBe('active');
-    expect(screen.getByText("Live on Sam's machine")).toBeTruthy();
     expect(screen.getByTestId('session-card-failed').textContent).toBe('Last prompt failed');
     fireEvent.click(screen.getByTestId('session-card-retry'));
-    expect(onOpen).not.toHaveBeenCalled(); // Retry does not open the session
+    expect(onOpen).not.toHaveBeenCalled();
     expect((screen.getByTestId('session-card-retry') as HTMLButtonElement).disabled).toBe(true); // busy guard
     await Promise.resolve();
     expect(onRetry).toHaveBeenCalledTimes(1);
@@ -104,6 +125,24 @@ describe('SessionCard', () => {
     renderCard({ session: session(RemoteWorkerSessionStatus.ERROR), role: 'host', lastPromptFailed: true });
     expect(screen.getByTestId('session-card-failed')).toBeTruthy();
     expect(screen.queryByTestId('session-card-retry')).toBeNull();
+  });
+
+  it.each([
+    [RemoteWorkerSessionStatus.ENDED, 'ended'],
+    [RemoteWorkerSessionStatus.DECLINED, 'declined'],
+  ])('%s is text only — no buttons, no counter', (status, text) => {
+    renderCard({
+      session: session(status),
+      role: 'host',
+      onApprove: vi.fn(),
+      onDecline: vi.fn(),
+      onDisconnect: vi.fn(),
+    });
+    expect(screen.getByTestId('session-card-status').textContent).toBe(text);
+    for (const action of ['approve', 'decline', 'disconnect', 'retry']) {
+      expect(screen.queryByTestId(`session-card-${action}`)).toBeNull();
+    }
+    expect(screen.queryByTestId('session-card-counts')).toBeNull();
   });
 
   it('null session renders "requesting"', () => {

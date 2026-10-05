@@ -1,18 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import {
-  Boxes,
-  ChevronDown,
-  File as FileIcon,
-  MessagesSquare,
-  MonitorPlay,
-  Paperclip,
-  Send,
-  Smile,
-  Trash2,
-  X,
-} from 'lucide-react';
+import { Boxes, File as FileIcon, MessagesSquare, MonitorPlay, Paperclip, Send, Smile, Trash2, X } from 'lucide-react';
 import type { AssetDescriptor, FlowMessage } from '@sdk';
-import { SessionReplyPolicy } from '@sdk';
 import type { TaskableMessage } from '@sdk/entities/task';
 import { sendReply, sendToChannel } from '@sdk/entities/notifications';
 import { useCloudLoginGate } from '@src/hooks/use-cloud-login-gate';
@@ -23,7 +11,6 @@ import { MAX_FILE_SIZE_LABEL } from './constants';
 import { AssetRefChips, useAssetRefSelection } from './AttachMenu';
 import { mergePickedFiles } from './FileAttachmentPicker';
 import { EmojiPicker } from './EmojiPicker';
-import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
 import { buildSessionStartExtras, type SessionHost } from './session-start';
 import { useLocalUser } from './useLocalUser';
 import { TaskItIcon, taskItHint } from './task-it';
@@ -51,10 +38,17 @@ interface MessageComposerProps {
    *  session id (the backend appends the snapshot-carrier attachment). Set by
    *  LiveSessionView; the plain conversation composer leaves it unset. */
   liveSessionId?: string;
-  /** The participant whose machine a prompt runs on. When set, the composer
-   *  offers the live-session icon: a send in live-session mode opens a NEW
-   *  session (the backend mints it). Null = plain chat box. */
+  /** The participant whose machine a prompt runs on. When set (with
+   *  `onStartLiveSession`), the composer offers the live-session icon. Null = plain chat box. */
   sessionHost?: SessionHost | null;
+  /** The live-session icon: open the conversation's live session (starting one
+   *  if none is open) — the caller navigates to it. */
+  onStartLiveSession?: () => void;
+  /** `terminal`: the live-session view's input — a mono prompt line (`❯`) whose
+   *  sends run on the other machine. */
+  variant?: 'chat' | 'terminal';
+  /** Put the cursor in the box on mount (the session view waiting for a prompt). */
+  autoFocus?: boolean;
   /** Fires after a successful send (fresh reply OR draft promoted to a reply). */
   onSent?: () => void;
   /**
@@ -169,6 +163,9 @@ export function MessageComposer({
   onChannelSent,
   liveSessionId,
   sessionHost,
+  onStartLiveSession,
+  variant = 'chat',
+  autoFocus = false,
   onSent,
   draft,
   onAfterDiscard,
@@ -188,12 +185,8 @@ export function MessageComposer({
   const [text, setText] = useState(draft?.text ?? '');
   const [files, setFiles] = useState<File[]>([]);
   const [assetRefs, setAssetRefs] = useState<AssetDescriptor[]>([]);
-  // Live-session mode: the typed text is the prompt that opens a session on the
-  // host's machine (not a chat line). Off by default; sticky until toggled.
-  const [promptMode, setPromptMode] = useState(false);
   // "Task it" on send: the next send also becomes a task. One send's worth — resets after it.
   const [taskItOn, setTaskItOn] = useState(false);
-  const [replyPolicy, setReplyPolicy] = useState<SessionReplyPolicy>(SessionReplyPolicy.AUTO);
   const [sending, setSending] = useState(false);
   const [discarding, setDiscarding] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -203,8 +196,11 @@ export function MessageComposer({
 
   // The session-start control lives on the plain conversation composer only:
   // inside a session view every send is already a turn of that session.
-  const canStartSession = !!sessionHost && !liveSessionId && !isDraftMode;
-  const startsSession = canStartSession && promptMode;
+  const canStartSession = !!sessionHost && !!onStartLiveSession && !liveSessionId && !isDraftMode;
+  const terminal = variant === 'terminal';
+  useEffect(() => {
+    if (autoFocus) textareaRef.current?.focus();
+  }, [autoFocus]);
   const isBusy = sending || discarding;
   const isDisabled = disabled || isBusy;
   // A channel carries files only when its spec says so — offering the paperclip anywhere else would
@@ -319,7 +315,7 @@ export function MessageComposer({
     // body): the host's gate keys on the attachment, and the backend
     // synthesizes the placeholder body. A new session's opening proposal
     // (reply policy) rides along; the backend mints the session id.
-    const isPromptSend = !!trimmed && (!!liveSessionId || startsSession);
+    const isPromptSend = !!trimmed && !!liveSessionId;
     const messageBody = isPromptSend ? '' : trimmed;
     const outgoingFiles = isPromptSend ? undefined : files.length > 0 ? files : undefined;
     const extras: NonNullable<Parameters<typeof sendReply>[3]> = isPromptSend
@@ -327,7 +323,7 @@ export function MessageComposer({
           text: trimmed,
           files,
           sessionId: liveSessionId ?? null,
-          replyPolicy: liveSessionId ? null : replyPolicy,
+          replyPolicy: null,
         })
       : {};
     // Assets (skill/agent/markdown/spec) ride as assetReferences.
@@ -557,104 +553,31 @@ export function MessageComposer({
     </>
   );
 
-  /** Live-session mode: ONE icon in the attach row enters it (the typed text becomes the prompt
-   *  that opens a session on the host's machine). While it is on, a strip above the box names the
-   *  mode and holds the reply policy; the icon leaves it. Rendered on the plain conversation composer only. */
+  /** The live-session icon: opens the conversation's live session (starting one when none is
+   *  open) — the turns are typed in the session view, never in this box. */
   const hostName = sessionHost?.name?.trim() || t`the other participant`;
   const sessionToggle = canStartSession ? (
     <button
       type="button"
-      onClick={() => setPromptMode((v) => !v)}
+      onClick={() => onStartLiveSession?.()}
       disabled={isDisabled}
-      aria-pressed={promptMode}
-      title={promptMode ? t`Leave live session mode` : t`Live session: run a prompt on ${hostName}'s machine`}
+      title={
+        sessionHost?.hasOpenSession
+          ? t`Open the live session on ${hostName}'s machine`
+          : t`Start a live session on ${hostName}'s machine`
+      }
       data-testid="composer-session-toggle"
       className={cn(
         ICON_BUTTON_CLASS,
-        promptMode &&
-          'bg-emerald-500/15 text-emerald-700 hover:bg-emerald-500/15 hover:text-emerald-700 dark:text-emerald-300',
+        sessionHost?.hasOpenSession && 'text-emerald-700 hover:text-emerald-700 dark:text-emerald-300',
       )}
     >
       <MonitorPlay className="h-3.5 w-3.5" />
     </button>
   ) : null;
 
-  const sessionModeBar = startsSession ? (
-    <div
-      className="flex items-center gap-2 rounded-md border border-emerald-500/40 bg-emerald-500/10 px-2 py-1 text-xs text-emerald-700 dark:text-emerald-300"
-      data-testid="composer-session-mode"
-    >
-      <MonitorPlay className="h-3.5 w-3.5 shrink-0" />
-      <span className="min-w-0 flex-1 truncate font-medium">
-        {sessionHost?.hasOpenSession ? (
-          <Trans>Adds to the live session on {hostName}'s machine</Trans>
-        ) : (
-          <Trans>Live session on {hostName}'s machine</Trans>
-        )}
-      </span>
-      {!sessionHost?.hasOpenSession && (
-        <Popover>
-          <PopoverTrigger asChild>
-            <button
-              type="button"
-              disabled={isDisabled}
-              title={t`Session settings`}
-              data-testid="composer-session-settings"
-              className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 hover:bg-emerald-500/15 disabled:opacity-40"
-            >
-              {replyPolicy === SessionReplyPolicy.REVIEW ? <Trans>Review replies</Trans> : <Trans>Auto-send</Trans>}
-              <ChevronDown className="h-3 w-3" />
-            </button>
-          </PopoverTrigger>
-          <PopoverContent side="top" align="end" className="w-64 p-3 text-xs">
-            <p className="mb-2 font-medium text-foreground">
-              <Trans>Replies</Trans>
-            </p>
-            <div role="radiogroup" className="flex flex-col gap-1.5">
-              <label className="flex cursor-pointer items-start gap-2">
-                <input
-                  type="radio"
-                  name="reply-policy"
-                  checked={replyPolicy === SessionReplyPolicy.AUTO}
-                  onChange={() => setReplyPolicy(SessionReplyPolicy.AUTO)}
-                  data-testid="composer-reply-policy-auto"
-                  className="mt-0.5"
-                />
-                <span>
-                  <Trans>Auto-send</Trans>
-                  <span className="block text-muted-foreground">
-                    <Trans>Each reply lands in the session as soon as it is ready.</Trans>
-                  </span>
-                </span>
-              </label>
-              <label className="flex cursor-pointer items-start gap-2">
-                <input
-                  type="radio"
-                  name="reply-policy"
-                  checked={replyPolicy === SessionReplyPolicy.REVIEW}
-                  onChange={() => setReplyPolicy(SessionReplyPolicy.REVIEW)}
-                  data-testid="composer-reply-policy-review"
-                  className="mt-0.5"
-                />
-                <span>
-                  <Trans>{hostName} reviews before sending</Trans>
-                  <span className="block text-muted-foreground">
-                    <Trans>Replies wait as drafts until {hostName} sends them.</Trans>
-                  </span>
-                </span>
-              </label>
-            </div>
-            <p className="mt-2 text-muted-foreground">
-              <Trans>You can change this later inside the session.</Trans>
-            </p>
-          </PopoverContent>
-        </Popover>
-      )}
-    </div>
-  ) : null;
-
   // Offered on the plain reply box only: a channel send returns no message id, a prompt is a run.
-  const canTaskIt = !!onTaskIt && !channel && !isDraftMode && !liveSessionId && !startsSession;
+  const canTaskIt = !!onTaskIt && !channel && !isDraftMode && !liveSessionId;
   const taskItToggle = canTaskIt ? (
     <button
       type="button"
@@ -800,13 +723,16 @@ export function MessageComposer({
           </button>
         </div>
       )}
-      {sessionModeBar}
       <div
         onDragOver={onDragOver}
         onDragLeave={onDragLeave}
         onDrop={onDrop}
+        data-variant={variant}
         className={cn(
-          'flex items-end gap-2 rounded-md border border-border bg-background px-2 py-1.5 transition-colors focus-within:border-primary/50',
+          'flex items-end gap-2 rounded-md border px-2 py-1.5 transition-colors',
+          terminal
+            ? 'border-emerald-500/40 bg-zinc-950 font-mono text-zinc-100 focus-within:border-emerald-400/70'
+            : 'border-border bg-background focus-within:border-primary/50',
           dragging && 'border-primary bg-primary/5',
         )}
       >
@@ -814,22 +740,27 @@ export function MessageComposer({
           {attachButtons}
           {sessionToggle}
         </div>
+        {terminal && (
+          <span className="select-none self-center text-sm text-emerald-400" aria-hidden>
+            ❯
+          </span>
+        )}
         <textarea
           ref={textareaRef}
           value={text}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={handleKeyDown}
           onPaste={(e) => void handlePaste(e)}
-          placeholder={
-            dragging
-              ? t`Drop files here`
-              : startsSession
-                ? t`Prompt to run on ${hostName}'s machine…`
-                : (placeholder ?? t`Reply to sender…`)
-          }
+          placeholder={dragging ? t`Drop files here` : (placeholder ?? t`Reply to sender…`)}
           rows={1}
           disabled={isDisabled}
-          className="min-h-[1.5rem] flex-1 resize-none overflow-y-auto bg-transparent px-1 py-1 text-sm text-foreground outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50"
+          data-testid={terminal ? 'live-session-input' : undefined}
+          className={cn(
+            'min-h-[1.5rem] flex-1 resize-none overflow-y-auto bg-transparent px-1 py-1 text-sm outline-none disabled:cursor-not-allowed disabled:opacity-50',
+            terminal
+              ? 'font-mono text-zinc-100 placeholder:text-zinc-500'
+              : 'text-foreground placeholder:text-muted-foreground',
+          )}
         />
         {taskItToggle}
         {sendButton}

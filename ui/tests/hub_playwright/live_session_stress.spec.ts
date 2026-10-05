@@ -12,7 +12,16 @@
 import { chromium, expect, test, type Browser } from '@playwright/test';
 
 import { BOB, assertPreconditions } from './helpers';
-import { HOST_PROJECT_ID, aliceCloudId, revokeAliceGrantsOnBob, sendFollowUp, sendOpeningPrompt, sessionCards, setupLiveConversation, shot } from './_live_session_setup';
+import {
+  HOST_PROJECT_ID,
+  aliceCloudId,
+  revokeAliceGrantsOnBob,
+  sendFollowUp,
+  sendOpeningPrompt,
+  sessionCards,
+  setupLiveConversation,
+  shot,
+} from './_live_session_setup';
 
 const SPEC_BUDGET_MS = 480_000;
 const ALL_TURNS_BUDGET_MS = 360_000;
@@ -23,8 +32,14 @@ const TURNS = 1 + FOLLOW_UPS + THREAD_PROMPTS;
 async function grantAliceOnBob() {
   const id = await aliceCloudId();
   const r = await fetch(`${BOB.backendUrl}/api/v1/graph/contact_permission`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ type: 'contact_permission', contact_user_id: id, project_id: null, allowed_actions: ['auto_approve_session'] }),
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      type: 'contact_permission',
+      contact_user_id: id,
+      project_id: null,
+      allowed_actions: ['auto_approve_session'],
+    }),
   });
   if (!r.ok) throw new Error(`grant failed: ${r.status} ${await r.text()}`);
 }
@@ -43,7 +58,7 @@ test('browser stress: 10 rapid follow-ups + 3 thread prompts join the one open s
     await expect(sessionCards(alice.page).first()).toHaveAttribute('data-status', 'active', { timeout: 5_000 });
 
     // fire 10 follow-ups back-to-back from the session view, no waiting
-    await sessionCards(alice.page).first().getByTestId('session-card-open').click();
+    await sessionCards(alice.page).first().click();
     await alice.page.waitForURL(/\/dock\/live_session\//, { timeout: 5_000 });
     for (let i = 1; i <= FOLLOW_UPS; i++) {
       await sendFollowUp(alice.page, `Reply with exactly the text ${m(i)} and nothing else.`);
@@ -69,7 +84,7 @@ test('browser stress: 10 rapid follow-ups + 3 thread prompts join the one open s
     expect(threadTexts.filter((t) => t.includes('SX-')).length).toBe(1);
 
     // first session view: replies in send order, one per prompt
-    await first.getByTestId('session-card-open').click();
+    await first.click();
     await alice.page.waitForURL(/\/dock\/live_session\//, { timeout: 5_000 });
     const replies = alice.page.getByTestId('live-session-reply');
     await expect(replies).toHaveCount(TURNS, { timeout: 5_000 });
@@ -79,7 +94,9 @@ test('browser stress: 10 rapid follow-ups + 3 thread prompts join the one open s
 
     // one worker on the host, no lock errors
     const procs = await fetch(`${BOB.backendUrl}/api/v1/graph/agentic_process`).then((r) => r.json());
-    const mine = ((procs?.data ?? []) as Array<Record<string, unknown>>).filter((p) => p.target_typeid_str === `conversation-${convId}`);
+    const mine = ((procs?.data ?? []) as Array<Record<string, unknown>>).filter(
+      (p) => p.target_typeid_str === `conversation-${convId}`,
+    );
     expect(mine.length).toBe(1);
   } finally {
     await browser.close();

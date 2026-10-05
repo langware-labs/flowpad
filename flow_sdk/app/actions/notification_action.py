@@ -1201,6 +1201,74 @@ async def handle_add_message(
     return ApiSuccessResponse(data=_fm_response_fields(reply_fm, conv))
 
 
+async def handle_start_live_session(conversation_id: str, body: dict, someone_typeid: str) -> ApiResponse:
+    """Open the conversation's live session before any prompt — answer the session.
+
+    The guest clicks the live-session button and lands in the session view with
+    the cursor waiting for the first prompt, so the session has to exist first.
+    One open session per conversation: an open one is answered as-is. Otherwise
+    the guest row starts PENDING and a ``requested`` lifecycle line goes to the
+    host — it carries the ``session_start`` marker (so the host's desktop is
+    notified, as for an opening prompt) and the snapshot (so the host's mirror
+    materializes PENDING with its Approve request). The line is the session's
+    starting message: the one line the conversation shows for it.
+    """
+    from flow_sdk.app.actions.execute_prompt import _peer_of, emit_session_event  # noqa: PLC0415
+    from flow_sdk.builtin.flow_message import SESSION_START_MARKER_KEY  # noqa: PLC0415
+    from flow_sdk.builtin.remote_worker_session import (  # noqa: PLC0415
+        RemoteWorkerSession,
+        RemoteWorkerSessionStatus,
+        ReplyPolicy,
+    )
+
+    conv = await Conversation.get_one({"id": conversation_id})
+    if conv is None:
+        return ApiFailResponse(message=f"Conversation not found: {conversation_id}", status_code=404)
+    open_session = await RemoteWorkerSession.open_for_conversation(conv.id)
+    if open_session is not None:
+        return ApiSuccessResponse(data=open_session.model_dump(mode="json"))
+
+    raw_policy = str(body.get("reply_policy") or "").strip() or ReplyPolicy.AUTO.value
+    try:
+        reply_policy = ReplyPolicy(raw_policy).value
+    except ValueError:
+        return ApiFailResponse(message="reply_policy must be 'auto' or 'review'", status_code=400)
+
+    sender = await User.current_sender_participant(None)
+    sender_id = sender.get("user_id") or None
+    sender_name = sender.get("name") or ""
+    host_id, host_name, _ = _peer_of(conv, sender_id)
+    if not host_id:
+        return ApiFailResponse(
+            message="a live session runs on the other participant's machine — this conversation has none",
+            status_code=400,
+        )
+
+    session = RemoteWorkerSession(
+        conversation_id=conv.id,
+        guest_user_id=sender_id,
+        guest_name=sender_name or None,
+        host_user_id=host_id,
+        host_name=host_name,
+        reply_policy=reply_policy,
+        status=RemoteWorkerSessionStatus.PENDING,
+    )
+    session.mark_activity()
+    await session.save(someone_typeid)
+    starting_id = await emit_session_event(
+        session,
+        "requested",
+        someone_typeid,
+        # Read on BOTH sides (the guest's session view shows it too): no "your".
+        text=f"{sender_name or 'Your collaborator'} asks {host_name or 'the host'} for a live session",
+        marker_extra={SESSION_START_MARKER_KEY: {"reply_policy": reply_policy}},
+    )
+    if starting_id:
+        session.starting_message_id = starting_id
+        await session.save(someone_typeid)
+    return ApiSuccessResponse(data=session.model_dump(mode="json"))
+
+
 def _copy_clone_storage(src_fm: "FlowMessage", clone_fm: "FlowMessage") -> None:
     """Copy FILE / PROMPT-file bytes from the source message's embedded storage
     into the clone's. Embedded storage is keyed by entity id, so the cloned

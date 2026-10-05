@@ -20,8 +20,21 @@ collaborator's machine, and it is a session.
    new session whose `starting_message_id` is that message. So one conversation
    shows one card until either side ends the session. The host's worker stays one
    headless `AgenticProcess` per (conversation, host).
-2. **The starting message carries a compact horizontal session card** (status,
-   host, `N prompts · M replies`, Approve/Decline for the host, Open).
+2. **A session is ONE line in the conversation** (amended 2026-10-05):
+   `Live session · <other side>` and its status — awaiting / Approve·Decline
+   for the host (once) / connected with `N messages`, the time since approval
+   and a red Disconnect (either side) / ended. The whole line opens the session
+   view; the opening prompt (or request) is not drawn as a bubble.
+   **The composer's live-session icon opens the session** — it is not a typing
+   mode: `POST conversation/<id>/live-session` answers the open session, or
+   starts one (guest row PENDING + a `requested` SESSION_EVENT whose carrier
+   holds `session_start` and the snapshot — the host's mirror materializes
+   PENDING from it and is notified like an opening prompt; that line is the
+   session's `starting_message_id`). The guest lands in the session view with
+   the cursor in a terminal-style `❯` input; prompts are typed there.
+   **"No project"** at Approve (`scratch: true`) runs the session in the
+   instance's one temp folder, `<instance_dir>/live-session-scratch` (host-only
+   `workdir`; protected, so no Project is minted; never machine-wide).
 3. **Follow-up prompts never render in the main thread** — only in the session
    view (`/dock/live_session/<id>`).
 4. **Replies never render in the main thread** either, including review drafts.

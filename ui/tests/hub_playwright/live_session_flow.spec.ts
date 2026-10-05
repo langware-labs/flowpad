@@ -32,7 +32,12 @@
 import { chromium, expect, test, type Browser, type Page } from '@playwright/test';
 
 import { assertPreconditions } from './helpers';
-import { HOST_PROJECT_ID, sessionCards as sessionCard, sendOpeningPrompt, setupLiveConversation } from './_live_session_setup';
+import {
+  HOST_PROJECT_ID,
+  sessionCards as sessionCard,
+  sendOpeningPrompt,
+  setupLiveConversation,
+} from './_live_session_setup';
 
 // Authored budget for a spec whose one slow leg is a real LLM turn.
 // do not increase timeout without approval
@@ -66,7 +71,9 @@ test('live session: alice prompts → bob approves → reply only in the session
     const tSent = Date.now();
     await sendOpeningPrompt(alice.page, promptText);
 
-    await expect(sessionCard(alice.page).first()).toHaveAttribute('data-status', /pending|requesting/, { timeout: 2_000 });
+    await expect(sessionCard(alice.page).first()).toHaveAttribute('data-status', /pending|requesting/, {
+      timeout: 2_000,
+    });
 
     // 4. bob sees the pending card and approves
     const bobCard = sessionCard(bob.page).first();
@@ -86,7 +93,7 @@ test('live session: alice prompts → bob approves → reply only in the session
     await expectNoSessionRowsInThread(bob.page, promptText);
 
     // 6. the session view holds the exchange
-    await sessionCard(alice.page).first().getByTestId('session-card-open').click();
+    await sessionCard(alice.page).first().click();
     await alice.page.waitForURL(/\/dock\/live_session\/[0-9a-f-]+/, { timeout: 5_000 });
     await expect(alice.page.getByTestId('live-session-title')).toContainText(marker.slice(0, 8), { timeout: 2_000 });
     await expect(alice.page.getByTestId('live-session-reply')).toHaveCount(1, { timeout: 2_000 });

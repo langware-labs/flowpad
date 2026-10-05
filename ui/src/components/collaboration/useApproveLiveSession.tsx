@@ -2,6 +2,7 @@ import type { RemoteWorkerSession } from '@sdk';
 import { useLingui } from '@lingui/react/macro';
 import { useCallback, useMemo, useRef, useState, type ReactNode } from 'react';
 import { ProjectSelectorModal } from '@src/components/project-selector';
+import { Button } from '@src/components/ui/button';
 import { projectEntitiesToSelectorItems } from '@src/components/project-selector/project-items';
 import { useProjects } from '@src/hooks/use-projects';
 
@@ -16,9 +17,9 @@ export interface ApproveLiveSession {
 
 /**
  * The host's Approve, shared by the live-session view and the session card in
- * the conversation. The backend refuses an approval with no project (409) rather
- * than approving a turn that can only fail, so the project is asked for here,
- * before the call.
+ * the conversation. The backend refuses an approval with nowhere to run (409)
+ * rather than approving a turn that can only fail, so the place is asked for
+ * here, before the call: a project, or "No project" — the instance's temp folder.
  */
 export function useApproveLiveSession(): ApproveLiveSession {
   const { t } = useLingui();
@@ -41,17 +42,18 @@ export function useApproveLiveSession(): ApproveLiveSession {
     setPending(null);
   }, []);
 
-  const onSelect = useCallback(
-    (projectId: string) => {
+  const choose = useCallback(
+    (where: { projectId?: string; scratch?: boolean }) => {
       const session = pending;
       const done = settle.current;
       settle.current = null;
       setPending(null);
       if (!session || !done) return;
-      session.approve(undefined, projectId).then(done.resolve, done.reject);
+      session.approve(undefined, where.projectId, { scratch: where.scratch }).then(done.resolve, done.reject);
     },
     [pending],
   );
+  const onSelect = useCallback((projectId: string) => choose({ projectId }), [choose]);
 
   const picker = (
     <ProjectSelectorModal
@@ -62,6 +64,18 @@ export function useApproveLiveSession(): ApproveLiveSession {
       onSelect={onSelect}
       isLoading={isLoading}
       title={t`Run this live session in which project?`}
+      headerAction={
+        <Button
+          size="sm"
+          variant="outline"
+          className="h-7 shrink-0"
+          onClick={() => choose({ scratch: true })}
+          title={t`Run it in this machine's live-session temp folder — always the same folder`}
+          data-testid="live-session-no-project"
+        >
+          {t`No project`}
+        </Button>
+      }
     />
   );
 
