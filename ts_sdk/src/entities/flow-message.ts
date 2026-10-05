@@ -122,11 +122,12 @@ export function isAttachmentMissing(
 
 /** Delivery receipt. Mirrors the hub-side schema. Monotonic transitions only:
  *  created → sent → delivered → received.
+ *  - pending_send: composed while signed out; held locally until a login sends it (🕐 Pending)
  *  - created:   local only, hub has not accepted it (🕐 Pending)
  *  - sent:      accepted/stored on the hub (✓)
  *  - delivered: recipient's client pulled it (✓✓)
  *  - received:  recipient read it (✓✓ blue) */
-export type DeliveryStatus = 'created' | 'sent' | 'delivered' | 'received';
+export type DeliveryStatus = 'pending_send' | 'created' | 'sent' | 'delivered' | 'received';
 
 /** Named event types emitted by ``Conversation`` and ``FlowMessage``. Use
  *  these instead of bare strings so call sites are typo-proof:
