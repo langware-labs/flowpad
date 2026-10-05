@@ -5,7 +5,7 @@ hits — no business logic lives here (mirrors ``flow record``). Commands:
 
     flow conversation list                       — list conversations
     flow conversation summary <id>               — one line per message
-    flow conversation show <id> [--last N]       — full messages, oldest-first
+    flow conversation show <id> [--last N] [--thread T] — full messages, oldest-first
     flow conversation message <msg-id>           — one message in full
     flow conversation send <id> <message>        — add a text message
     flow conversation attach <id> <target> <msg> — add a message + attachment
@@ -133,6 +133,14 @@ def _message_id(value: str) -> str:
     return _bare_id(value, "flow_message", "message_id")
 
 
+def _thread_ref(value: str) -> str:
+    """A thread named by its id or by a message in it — either TypeId form, or bare."""
+    tid = _entity_typeid_or_none((value or "").strip().replace("/", "-", 1))
+    if tid is not None and tid.type in ("message_thread", "flow_message"):
+        return tid.id
+    return _bare_id(value, "message_thread", "thread")
+
+
 def _conv_summary_row(conv: dict) -> dict:
     """Trim a full conversation dump down to the fields ``list`` reports."""
     parts = [
@@ -201,6 +209,8 @@ def _render_message(m: dict) -> str:
     head = f"── {m.get('ts') or '?'} · {m.get('sender')} ({m.get('from')}) · {status} · msg {m.get('id')}"
     if m.get("reply_to_id"):
         head += f" · reply to {m['reply_to_id']}"
+    if m.get("thread_id"):
+        head += f" · 🧵 {m.get('thread_title') or m['thread_id']}"
     lines = [head]
     text = (m.get("text") or "").rstrip()
     lines.append(text if text else "(no text)")
@@ -219,9 +229,17 @@ def _render_transcript(data: dict) -> str:
     lines = [
         f"Conversation: {data.get('title') or '(untitled)'}  [conversation-{data.get('id')}]",
         f"Participants: {people or '(none)'}",
-        f"Messages: showing {shown} of {total}, oldest first",
-        "",
     ]
+    threads = data.get("threads") or []
+    if threads:
+        lines.append("Threads:")
+        lines.extend(
+            f"  {'▶ ' if t['id'] == data.get('thread_id') else ''}🧵 {t.get('title') or '(untitled)'} · "
+            f"{t.get('message_count', 0)} messages · {t.get('channel')} · thread {t['id']}"
+            for t in threads
+        )
+    scope = "in this thread" if data.get("thread_id") else "oldest first"
+    lines += [f"Messages: showing {shown} of {total}, {scope}", ""]
     lines.extend(_render_message(m) + "\n" for m in data.get("messages") or [])
     return "\n".join(lines).rstrip() + "\n"
 
@@ -239,6 +257,10 @@ def show_conversation(
     since: Annotated[
         Optional[str], typer.Option("--since", help="Only messages at/after this ISO timestamp.")
     ] = None,
+    thread: Annotated[
+        Optional[str],
+        typer.Option("--thread", help="Only one thread: its id (listed in the header), or any message id in it."),
+    ] = None,
     as_json: Annotated[bool, typer.Option("--json", help="Emit the structured envelope instead of text.")] = False,
 ) -> None:
     cid = _conversation_id(conversation_id)
@@ -249,6 +271,8 @@ def show_conversation(
         payload["last"] = last
     if since:
         payload["since"] = since
+    if thread:
+        payload["thread"] = _thread_ref(thread)
     url = _graph_url(_discover_port(), "conversation-transcript")
     data = _post_json(url, payload, not_found_hint=f"Conversation not found: {cid}")
     if as_json:
@@ -295,6 +319,9 @@ def _emit_send_result(conversation_id: str, data: dict) -> None:
             "flow_message_id": data.get("flow_message_id") or data.get("id"),
             "message_count": data.get("message_count"),
             "delivery_status": delivery_status,
+            "reply_to_id": data.get("reply_to_id"),
+            "thread_root_id": data.get("thread_root_id"),
+            "thread_id": data.get("thread_id"),
             # Composed offline / not logged in → saved locally, NOT delivered.
             "pending": delivery_status == "pending_send",
             "attachment": data.get("attachment") or [],
@@ -309,14 +336,24 @@ def _emit_send_result(conversation_id: str, data: dict) -> None:
 def send_message(
     conversation_id: Annotated[str, typer.Argument(help=_CONV_ID_HELP)],
     message: Annotated[str, typer.Argument(help="Message text to send.")],
+    reply_to: Annotated[
+        Optional[str],
+        typer.Option(
+            "--reply-to",
+            help="Message id to answer: the reply quotes it and joins the thread rooted at it.",
+        ),
+    ] = None,
 ) -> None:
     cid = _conversation_id(conversation_id)
     if not (message or "").strip():
         _fail(EXIT_INVALID_ARG, "INVALID_ARG", "message is required")
     port = _discover_port()
+    body: dict = {"text": message}
+    if reply_to:
+        body["reply_to_id"] = _message_id(reply_to)
     data = _post_json(
         _add_message_url(port, cid),
-        {"text": message},
+        body,
         not_found_hint=f"Conversation not found: {cid}",
     )
     _emit_send_result(cid, data)

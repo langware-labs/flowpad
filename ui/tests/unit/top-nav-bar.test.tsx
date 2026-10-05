@@ -27,6 +27,19 @@ const setContext = vi.hoisted(() => vi.fn());
 const routerNavigate = vi.hoisted(() => vi.fn());
 
 vi.mock('@src/navigation/use-history-nav', () => ({ useHistoryNav: () => nav }));
+// The magic line asks the backend navigator first; by default it answers like a box with no
+// decision API -- `agentic` -- so every ask below is today's ask.
+const navigatorRoute = vi.hoisted(() =>
+  vi.fn(async () => ({
+    route: 'agentic',
+    target: null,
+    verb: 'show',
+    confidence: 0,
+    reason: 'no_endpoint',
+    latency_ms: 0,
+  })),
+);
+vi.mock('@sdk/decision', () => ({ navigatorRoute }));
 // The bar's Home falls back to the app root through the router.
 vi.mock('react-router', async (importOriginal) => ({
   ...(await importOriginal<typeof import('react-router')>()),
@@ -478,8 +491,47 @@ describe('the navigation bar', () => {
       expect(document.activeElement).toBe(input);
 
       await user.type(input, 'tidy the docs{Enter}');
-      expect(assistant.current!.ask).toHaveBeenCalledWith('tidy the docs', expect.anything());
+      await waitFor(() => expect(assistant.current!.ask).toHaveBeenCalledWith('tidy the docs', expect.anything()));
+      expect(navigatorRoute).toHaveBeenCalledWith('tidy the docs', expect.anything());
+      expect(openDock).not.toHaveBeenCalled();
       expect(screen.getByTestId('top-nav-address')).toBeTruthy();
+    });
+
+    it('opens a plain request without an assistant turn when the navigator is sure', async () => {
+      navigatorRoute.mockResolvedValueOnce({
+        route: 'quick',
+        target: { kind: 'view', value: 'data-sources' },
+        verb: 'show',
+        confidence: 1,
+        reason: 'rule',
+        latency_ms: 0,
+      });
+      const user = userEvent.setup();
+      renderBar();
+
+      await user.click(screen.getByTestId('top-nav-address'));
+      await user.type(screen.getByTestId('top-nav-ask-input'), 'open data sources{Enter}');
+      await waitFor(() => expect(openDock).toHaveBeenCalledTimes(1));
+      expect((openDock.mock.calls[0][0] as { viewType: string }).viewType).toBe('data-sources');
+      expect(assistant.current!.ask).not.toHaveBeenCalled();
+    });
+
+    it('asks as today when the target opens nothing here', async () => {
+      navigatorRoute.mockResolvedValueOnce({
+        route: 'quick',
+        target: { kind: 'view', value: 'no-such-screen' },
+        verb: 'show',
+        confidence: 0.99,
+        reason: 'decision',
+        latency_ms: 0,
+      });
+      const user = userEvent.setup();
+      renderBar();
+
+      await user.click(screen.getByTestId('top-nav-address'));
+      await user.type(screen.getByTestId('top-nav-ask-input'), 'open the thing{Enter}');
+      await waitFor(() => expect(assistant.current!.ask).toHaveBeenCalledWith('open the thing', expect.anything()));
+      expect(openDock).not.toHaveBeenCalled();
     });
 
     it('says what the dead space does, and a click on that hint asks', async () => {

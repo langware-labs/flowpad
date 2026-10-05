@@ -16,6 +16,7 @@ import { AddressField } from './AddressField';
 import { AddressSearchField } from './AddressSearchField';
 import { NewChatButton } from './NewChatButton';
 import { RuntimeChip } from './RuntimeChip';
+import { askOrOpen } from './route-ask';
 import { TopBarActions } from './TopBarActions';
 import { useEntityBreadcrumbs } from './use-entity-breadcrumbs';
 
@@ -101,7 +102,17 @@ export function TopNavBar() {
       ) : mode === 'ask' && assistant ? (
         <AddressAskField
           onAsk={(text, rect) =>
-            assistant.ask(text, { rect: rect && { x: rect.left, y: rect.top, width: rect.width, height: rect.height } })
+            // A plain "open X" opens X with no assistant turn when the hub has a decision API;
+            // anything else -- or no decision API at all -- is today's ask, unchanged.
+            void askOrOpen(text, {
+              page: `${window.location.pathname}${window.location.search}`,
+              projectTypeId: project?.id ? `project-${project.id}` : null,
+              open: (dock) => navigation.openDock(dock),
+              fallback: () =>
+                assistant.ask(text, {
+                  rect: rect && { x: rect.left, y: rect.top, width: rect.width, height: rect.height },
+                }),
+            })
           }
           onClose={() => setMode('address')}
         />

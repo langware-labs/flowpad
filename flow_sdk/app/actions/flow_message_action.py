@@ -4428,8 +4428,9 @@ async def conversation_summary() -> ApiResponse:
 @action.post(action_name="conversation-transcript", types=None)
 async def conversation_transcript() -> ApiResponse:
     """Unabridged read of one conversation — ``Conversation.transcript()``:
-    full text, timestamps, message ids, you/them, attachments with their local
-    paths. ``last`` / ``since`` (ISO) narrow it. Same row gate as
+    full text, timestamps, message ids, you/them, threads, attachments with
+    their local paths. ``thread`` (a thread id, or a message in it), ``last``
+    and ``since`` (ISO) narrow it. Same row gate as
     ``conversation-summary``; local reads only."""
     try:
         request_info = get_current_request_info()
@@ -4447,10 +4448,15 @@ async def conversation_transcript() -> ApiResponse:
         conv = await Conversation.get_one({"id": conv_id})
         if conv is None:
             return ApiFailResponse(message="conversation not found", status_code=404)
+        thread_ref = str(body.get("thread") or "").strip()
+        thread_id = await conv.resolve_thread_id(thread_ref) if thread_ref else None
+        if thread_ref and thread_id is None:
+            return ApiFailResponse(message=f"no thread {thread_ref!r} in this conversation", status_code=400)
         data = await conv.transcript(
             self_ids=await User.self_ids(),
             last=int(last) if last is not None else None,
             since=since,
+            thread_id=thread_id,
         )
         return ApiSuccessResponse(data=data)
     except Exception as e:
