@@ -386,7 +386,7 @@ export const PREF_REGISTRY: Record<PrefKey, PrefInfo> = {
     description:
       'Project create indexes once, as the project is created. First selection indexes the first time you open a project. Every selection re-indexes on each switch into it — note that even a Fast run still walks the whole project, so this is the expensive option on large trees.',
     dataType: PrefDataType.STRING,
-    defaultValue: 'first_selection',
+    defaultValue: 'every_selection',
     options: AUTO_INDEX_TRIGGER_OPTIONS,
   },
   [PrefKey.AUTO_INDEX_FUNCTION]: {
