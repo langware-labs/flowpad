@@ -1,0 +1,8 @@
+{
+  "route": "quick",
+  "target": {
+    "kind": "view",
+    "value": "settings"
+  },
+  "verb": "show"
+}

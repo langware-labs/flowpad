@@ -1,0 +1,41 @@
+{
+  "type": "data_spec",
+  "id": "c91bde31-4343-4c8c-a621-4f95216e5869",
+  "name": "navigator.context",
+  "fields": {
+    "CurrentProjectTypeId": {
+      "shape": "?string",
+      "description": "The project in scope, as project-<id>."
+    },
+    "CurrentProcessTypeId": {
+      "shape": "?string",
+      "description": "The agentic process (session) in scope."
+    },
+    "CurrentActiveEntityTypeId": {
+      "shape": "?string",
+      "description": "The entity on screen, when one is."
+    },
+    "active_entity_title": {
+      "shape": "?string",
+      "description": "Its title, as the person reads it."
+    },
+    "project_name": {
+      "shape": "?string",
+      "description": "The project's name."
+    },
+    "project_path": {
+      "shape": "?string",
+      "description": "The project's folder."
+    },
+    "last_shown": {
+      "shape": "?navigator.shown",
+      "description": "What was shown last -- what 'it' / 'again' refer to."
+    },
+    "candidates": {
+      "shape": [
+        "navigator.candidate"
+      ],
+      "description": "Full-text search matches for the request's content words."
+    }
+  }
+}

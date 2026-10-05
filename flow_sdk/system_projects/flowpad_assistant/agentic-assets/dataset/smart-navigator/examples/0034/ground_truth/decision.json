@@ -1,0 +1,8 @@
+{
+  "route": "quick",
+  "target": {
+    "kind": "file",
+    "value": "/Users/dana/Flowpad workspace/flowpad-oss/README.md"
+  },
+  "verb": "show"
+}

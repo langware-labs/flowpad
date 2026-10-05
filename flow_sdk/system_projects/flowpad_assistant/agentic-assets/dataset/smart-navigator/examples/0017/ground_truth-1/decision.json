@@ -1,0 +1,8 @@
+{
+  "route": "quick",
+  "target": {
+    "kind": "view",
+    "value": "hub/token-plan"
+  },
+  "verb": "show"
+}

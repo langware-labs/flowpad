@@ -1,0 +1,15 @@
+{
+  "type": "data_spec",
+  "id": "7fb5128c-0329-47be-bd98-ccbb86932218",
+  "name": "navigator.request",
+  "fields": {
+    "utterance": {
+      "shape": "string",
+      "description": "Exactly what the person typed into the magic line."
+    },
+    "page": {
+      "shape": "?string",
+      "description": "The dock address they were on, e.g. /dock/home."
+    }
+  }
+}

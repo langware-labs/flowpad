@@ -307,6 +307,40 @@ class Dataset(Entity):
                 problems.append({"example_id": example_id(self.id, ex_dir.name), "error": f"{where}: {first.get('msg')}"})
         return problems
 
+    def read_rows(self) -> list:
+        """Every row read as the declared shape (raises on a row that does not fit -- ``validate_rows``
+        names them one by one)."""
+        from flow_sdk.schema.data_spec.layout import FolderLayout  # noqa: PLC0415
+
+        return FolderLayout().read(self._folder(), self._typed_rows_or_raise(), dataset_id=self.id)
+
+    def score(self) -> dict:
+        """Each recorded ``output`` against its gold answers (``flow_sdk.datasets.score``)."""
+        from flow_sdk.datasets.score import score  # noqa: PLC0415
+
+        return score(self.read_rows())
+
+    @classmethod
+    def at(cls, folder: "Path | str") -> "Dataset":
+        """The dataset whose folder this is, read from disk alone -- no index, no DB row. For a
+        shipped dataset, a script, or a test: the same entity indexing would build."""
+        from flow_sdk.assets.serialization import read_asset_data  # noqa: PLC0415
+        from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+
+        folder = Path(folder)
+        info = SchemaRegistry.get("dataset")
+        record = read_asset_data(folder, info, identity=info.read_identity(info.layout_of(folder, verify=True)))
+        meta = {k: v for k, v in record.meta_dict().items() if k in cls.model_fields and k != "examples"}
+        return cls(**{**meta, "asset_ref": str(folder)})
+
+    @action.post(action_name="score")
+    async def score_action(self):
+        """Recorded outputs scored against the gold → ``{rows, scored, correct, accuracy, wrong}``."""
+        try:
+            return ApiSuccessResponse(data=self.score())
+        except (ValueError, ValidationError) as exc:
+            return ApiFailResponse(message=str(exc), status_code=400)
+
     @action.post(action_name="append")
     async def append_action(self):
         """``{"rows": [...]}`` → ``{"example_ids", "num_examples"}``; a row that does not fit is a 400
