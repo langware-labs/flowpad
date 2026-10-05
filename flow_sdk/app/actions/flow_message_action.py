@@ -2679,6 +2679,7 @@ async def handle_send_draft(fm_id: str, someone_typeid: str) -> ApiResponse:
         _notify_ui_conversation_updated,
         _send_conversation_message_header,
     )
+    from flow_sdk.builtin.flow_message import DeliveryStatus  # noqa: PLC0415
     from flow_sdk.cli.auth.hub_login import is_logged_in
 
     fm = await FlowMessage.get_one({"id": fm_id})
@@ -2694,10 +2695,12 @@ async def handle_send_draft(fm_id: str, someone_typeid: str) -> ApiResponse:
         return ApiFailResponse(message=f"Conversation not found: {fm.conversation_id}")
 
     fm.is_draft = False
+    # Sent from here: the outbox's "mine" from now on.
+    fm.outbound = True
 
     # For remote conversations, attempt the hub send BEFORE committing any
-    # local state. ``_send_conversation_message_header`` returns False on
-    # any failure; in that case we abort cleanly — the FM row stays as a
+    # local state. ``_send_conversation_message_header`` answers WHY on any
+    # failure; in that case we abort cleanly — the FM row stays as a
     # draft in DB (the in-memory ``is_draft=False`` is discarded), no
     # pointer is appended, and the user can retry. This prevents the
     # phantom "local says sent, hub doesn't know" state and avoids
@@ -2711,14 +2714,17 @@ async def handle_send_draft(fm_id: str, someone_typeid: str) -> ApiResponse:
 
         fm.body_status = BodyStatus.UPLOADING
     if is_remote_send:
-        if not await _send_conversation_message_header(conv, fm):
+        failure = await _send_conversation_message_header(conv, fm)
+        if failure is not None:
             return ApiFailResponse(
-                message="Hub send failed; draft preserved for retry",
+                message=f"Hub send failed; draft preserved for retry: {failure.message}",
                 status_code=503,
+                data={"error_code": failure.kind.value, "hub_status": failure.status},
             )
         # Hub confirmed. Mark the local row as a hub mirror so re-sync
         # treats it as a refreshable counterpart (same as received messages).
         fm.remote = True
+        fm.delivery_status = DeliveryStatus.SENT.value
 
     # Persist the finalised FM (is_draft=False, possibly remote=True) BEFORE
     # appending the pointer, so the pointer projection sees the sent state
@@ -2733,10 +2739,8 @@ async def handle_send_draft(fm_id: str, someone_typeid: str) -> ApiResponse:
 
     _notify_ui_conversation_updated(conv.id, "", fm.id)
 
-    if is_remote_send and getattr(fm, "body_status", None) == "uploading":
-        from flow_sdk.app.actions.notification_action import _upload_body_and_finalize  # noqa: PLC0415
-
-        asyncio.create_task(_upload_body_and_finalize(fm, conv.id))
+    if is_remote_send:
+        conv.kick_delivery()  # the body, if it has one — owed on the row until the hub has it
 
     # A drafted STARTING prompt sat at DRAFT on the sender's session row;
     # sending it is the request for access.

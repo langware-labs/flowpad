@@ -20,6 +20,7 @@ import asyncio
 import contextlib as _contextlib
 import logging
 import uuid as _uuid
+from contextvars import ContextVar
 from typing import Any, Awaitable, Callable, Optional
 
 import httpx
@@ -45,6 +46,27 @@ logger = logging.getLogger(__name__)
 # off the client itself) or when the running loop is not the one it was built on.
 _shared_client: "FlowpadClient | None" = None
 _shared_client_loop: "asyncio.AbstractEventLoop | None" = None
+
+
+#: Whether the last hub call could not reach the hub (nothing answered, or it answered 5xx/408/425/429).
+#: The first call that reaches it afterwards drains the outbox once: it is the one moment the hub is
+#: known to be back that no other transition sees -- an HTTP failure while the WebSocket stayed up.
+_hub_unreachable = False
+#: Set while the outbox drains, so a drain never sets off another (a message that keeps failing beside
+#: one that succeeds would otherwise drain in a loop).
+outbox_draining: ContextVar[bool] = ContextVar("outbox_draining", default=False)
+
+
+def _note_reach(status_code: int) -> None:
+    """Record whether this call reached the hub; on the edge back, drain the outbox."""
+    global _hub_unreachable
+    if status_code == 0 or classify_hub_failure(status_code) is HubFailureKind.SERVER_ERROR:
+        _hub_unreachable = True
+    elif _hub_unreachable and not outbox_draining.get():
+        _hub_unreachable = False
+        from flow_sdk.stream_inbox.catchup import start_outbox_drain  # noqa: PLC0415 — catchup imports this module
+
+        start_outbox_drain("hub reachable again")
 
 
 @_contextlib.asynccontextmanager
@@ -116,7 +138,9 @@ async def _send(
         raise HubError(401, "auth expired", kind=HubFailureKind.SIGNED_OUT) from e
     except Exception as e:  # noqa: BLE001
         logger.warning("[hub] %s %s transport error: %s", method, url, e)
+        _note_reach(0)
         raise HubError(0, str(e)) from e
+    _note_reach(resp.status_code)
     if resp.status_code != 200:
         logger.warning("[hub] %s %s returned %s: %s", method, url, resp.status_code, resp.text[:200])
         raise HubError(resp.status_code, _extract_reason(resp), code=_extract_error_code(resp))
@@ -376,6 +400,7 @@ async def hub_get(
         async with _hub_client() as client:
             logger.info("[hub] GET %s params=%s", url, params)
             resp = await client.request("GET", url, params=params or {}, timeout=timeout)
+            _note_reach(resp.status_code)
             if resp.status_code == 200:
                 result = resp.content if raw else resp.json().get("data") or {}
                 return result
