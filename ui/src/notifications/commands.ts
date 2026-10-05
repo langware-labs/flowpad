@@ -63,12 +63,14 @@ registerCommand('terminal.terminate', (args) => {
   if (args.typeId) void tabManager.closeTarget(String(args.typeId));
 });
 
-// `Resolve` on a failed-push toast: launch an agentic process in the current
-// project, seeded with a conflict-resolution prompt for the given branch. Uses
+// `Resolve` on a failed push/pull toast: launch an agentic process in the current
+// project, seeded with a conflict-resolution prompt for the given branch
+// (`origin: 'pull'` finishes the rebase without pushing). Uses
 // dataContext.project/computeNode (AgenticProcess.openTab default).
 registerCommand('git.resolve-conflict', (args) => {
   const branch = String(args.branch ?? '');
-  void AgenticProcess.openTab('claude_code', gitResolvePrompt(branch)).catch((e: unknown) => {
+  const origin = args.origin === 'pull' ? 'pull' : 'push';
+  void AgenticProcess.openTab('claude_code', gitResolvePrompt(branch, origin)).catch((e: unknown) => {
     notify.error({ title: t`Could not start resolver`, message: String(e) });
   });
 });
