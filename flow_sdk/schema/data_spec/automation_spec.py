@@ -84,6 +84,8 @@ class FileWhen(DataSpec):
     path: str
     glob: Optional[str] = None
     recursive: bool = False
+    #: The path is a folder (browse it) rather than one file (open it).
+    is_folder: bool = False
 
 
 class HookWhen(DataSpec):

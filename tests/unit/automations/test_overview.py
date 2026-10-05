@@ -129,3 +129,9 @@ async def test_a_builtin_step_says_what_it_does():
     (part,) = await describe_then(rule(TriggerType.TAG, actions=[
         TriggerAction(action_type=ActionType.CALLBACK, callback_name="test_overview_described")]))
     assert part.kind == "builtin_step" and part.detail == "Re-reads the toplog filter and tells the UI."
+
+
+def test_a_watched_folder_is_marked_browsable(tmp_path):
+    folder = describe_when(rule(TriggerType.FSOP, watch_path=str(tmp_path)))
+    one_file = describe_when(rule(TriggerType.FSOP, watch_path=str(tmp_path / "a.json")))
+    assert folder.file.is_folder is True and one_file.file.is_folder is False

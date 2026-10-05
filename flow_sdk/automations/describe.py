@@ -9,6 +9,7 @@ callback name or a TypeId means.
 from __future__ import annotations
 
 import logging
+import os
 from functools import lru_cache
 from typing import Any, Optional
 
@@ -72,8 +73,9 @@ def describe_when(trigger: Any, catalog: Optional[dict[str, tuple[str, str]]] = 
         label = event.title or event.pattern or "an event"
         return WhenPart(kind=kind, text=f"When {label} happens", event=event)
     if kind == "file":
-        file = FileWhen(path=str(trigger.watch_path or ""), glob=trigger.watch_glob or None,
-                        recursive=bool(trigger.recursive))
+        path = str(trigger.watch_path or "")
+        file = FileWhen(path=path, glob=trigger.watch_glob or None, recursive=bool(trigger.recursive),
+                        is_folder=bool(path) and os.path.isdir(path))
         what = f"{file.glob} in {file.path}" if file.glob else file.path or "a file"
         return WhenPart(kind=kind, text=f"When {what} changes", file=file)
     hook = HookWhen(events=list(trigger.hook_events or []))
