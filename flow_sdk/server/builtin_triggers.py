@@ -157,6 +157,9 @@ async def _upsert_one(spec: dict[str, Any], *, existing: "Optional[Trigger]" = N
     place — the fields it cares about (cron expr, watch_path, etc.) only
     matter at registration time anyway.
     """
+    # A seed is Flowpad's own: without this the row took its scope from the path
+    # it landed under, which reads as "user" and lists every seed as the person's.
+    spec = {"scope": "system", **spec}
     uname = spec["uname"]
     if existing is None:
         # Only when the caller has not already read it. A reconcile that reads
@@ -415,3 +418,69 @@ async def reconcile_wizard_triggers() -> None:
             _log.info("retired derived wizard trigger %r (now a child asset)", row.uname)
         except Exception:
             _log.exception("Could not retire legacy wizard trigger %r", row.uname)
+
+
+#: Seeded rows have no asset folder of their own; the sweep below never reads them.
+SERVICE_TRIGGER_UNAME_PREFIX = "builtin_"
+
+
+def stale_trigger_reason(row: Trigger) -> Optional[str]:
+    """Why this row should go, or None to keep it. Pure — the sweep's whole decision.
+
+    Two kinds of stale, decided by different evidence:
+
+    * A **foreign copy** (a shipped trigger under another install — see
+      ``trigger_arming.is_foreign_copy``) whose file is gone. Location is the
+      evidence, so a vanished parent does not keep it: that install was removed.
+    * Any other asset-backed row whose file is gone while its parent folder is
+      still there (``source_unreachable`` False). A missing parent means "can't
+      tell" — an unmounted volume — and the row stays.
+
+    Seeds (``builtin_*``) and hook rules (``discover`` owns those) are never stale here.
+    A foreign copy whose file still exists stays too: it is never armed, and
+    deleting it would only churn — the next walk of that folder re-adds it.
+    """
+    from flow_sdk.builtin.trigger_arming import is_foreign_copy  # noqa: PLC0415
+    from flow_sdk.fs_store.path_utils import source_unreachable  # noqa: PLC0415
+
+    if str(row.uname or "").startswith(SERVICE_TRIGGER_UNAME_PREFIX):
+        return None
+    if str(row.trigger_type) == TriggerType.HOOK.value:
+        return None
+    ref = str(row.asset_ref or "")
+    if not ref or os.path.exists(ref):
+        return None
+    if is_foreign_copy(ref):
+        return "foreign install copy, file gone"
+    if not source_unreachable(ref):
+        return "asset folder deleted"
+    return None
+
+
+async def reap_stale_trigger_rows() -> int:
+    """Disarm and delete trigger ROWS whose asset is gone. Never touches files.
+
+    Runs at boot beside ``reconcile_wizard_triggers`` (before ``app.ready``), so
+    a wizard whose folder is gone cannot fire once more on the way out. Returns
+    how many rows went.
+    """
+    from flow_sdk.builtin.trigger_arming import disarm_trigger  # noqa: PLC0415
+
+    try:
+        rows = await Trigger.get_all({})
+    except Exception:
+        _log.exception("Could not read triggers for the stale sweep")
+        return 0
+    reaped = 0
+    for row in rows:
+        reason = stale_trigger_reason(row)
+        if reason is None:
+            continue
+        await disarm_trigger(str(row.id))
+        try:
+            await row.delete()
+            reaped += 1
+            _log.info("reaped stale trigger %r (%s): %s", row.name, reason, row.asset_ref)
+        except Exception:
+            _log.exception("Could not reap stale trigger %r", row.name)
+    return reaped

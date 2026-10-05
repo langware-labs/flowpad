@@ -29,6 +29,25 @@ from flow_sdk.instance_settings import get_instance_settings
 MAX_ENTRIES = 1000
 DROP_COUNT = 200
 
+#: Longest ``cause_data`` excerpt a row keeps, in characters of its JSON form.
+CAUSE_DATA_MAX_CHARS = 300
+
+
+def cap_cause_data(data: Any) -> Any:
+    """``data`` when its JSON is short enough, else a string excerpt marked as cut.
+
+    The excerpt is for a person reading a run ("which file", "which tab"); the
+    full envelope stays reachable through ``cause_event_id``."""
+    if data is None:
+        return None
+    try:
+        text = json.dumps(data, default=str)
+    except (TypeError, ValueError):
+        text = str(data)
+    if len(text) <= CAUSE_DATA_MAX_CHARS:
+        return data
+    return {"_excerpt": text[:CAUSE_DATA_MAX_CHARS], "_cut": len(text) - CAUSE_DATA_MAX_CHARS}
+
 
 def _trigger_log_dir() -> Path:
     return get_instance_settings().records_root / "trigger_log"
@@ -73,8 +92,18 @@ def append_entry(rule_name: str, entry_dict: dict[str, Any]) -> None:
         "trigger_id": entry_dict.get("trigger_id"),
         "trigger_type": entry_dict.get("trigger_type"),
         # Why a fire did NOT happen: storm | confirm_failed | disabled |
-        # self_loop. Null on a real fire.
+        # self_loop | already_fired. Null on a real fire.
         "reason_code": entry_dict.get("reason_code"),
+        # ── run outcome (docs/automations.md) ───────────────────────────────
+        # What a run detail needs to answer "what happened": the plain error
+        # when an action or the flow activation failed, how long dispatch took,
+        # a SHORT excerpt of the causing data (capped by `cap_cause_data` — this
+        # file is rewritten on every append and polled, so never a payload), and
+        # the hash of the rule's spec at fire time ("Not tested yet" compares it).
+        "error": entry_dict.get("error"),
+        "duration_ms": entry_dict.get("duration_ms"),
+        "cause_data": entry_dict.get("cause_data"),
+        "spec_hash": entry_dict.get("spec_hash"),
     }
 
     entries: list[str] = []
