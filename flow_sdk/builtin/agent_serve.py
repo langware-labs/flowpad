@@ -183,6 +183,13 @@ class TurnEngine:
         )
         return next((p for p in existing if str(getattr(p, "status", "")) != ProcessStatus.FAILED.value), None)
 
+    async def _current_model(self) -> Optional[str]:
+        """The model this placement runs the agent on now: its place override, else the definition's."""
+        current = await type(self.agent).get_by_id(str(self.agent.id)) or self.agent
+        place = current.place_for(self.deployment.id) if self.deployment is not None else None
+        overridden = place.overrides().get("model") if place is not None else None
+        return overridden or getattr(current, "model", None) or None
+
     async def process_for(self, session: str, *, name: Optional[str] = None, context: Optional[dict] = None):
         """The session's process on this placement — :meth:`find_process`, else a new one."""
         if not self.workdir:
@@ -196,9 +203,17 @@ class TurnEngine:
                 except Exception:  # noqa: BLE001 — a stale shell does not break reuse
                     pass
             wanted = {"workdir": workdir, "visible": False, "pty_mode": False}
-            if any(getattr(process, k) != v for k, v in wanted.items()):
-                for k, v in wanted.items():
-                    setattr(process, k, v)
+            changed = any(getattr(process, k) != v for k, v in wanted.items())
+            for k, v in wanted.items():
+                setattr(process, k, v)
+            # The session was made with the definition of its day; the model is the definition's NOW
+            # (an update that moved the agent to another model must not leave every ongoing
+            # conversation on the old one -- on a hub endpoint, one it may no longer price).
+            model = await self._current_model()
+            if model and (process.cli_config or {}).get("model") != model:
+                process.cli_config = {**(process.cli_config or {}), "model": model}
+                changed = True
+            if changed:
                 await process.save()
             return process
         options: dict[str, Any] = {"visible": False, "pty_mode": False}
