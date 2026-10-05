@@ -472,6 +472,43 @@ async def hub_post(
     raise HubError(resp.status_code, reason, code=_extract_error_code(resp))
 
 
+async def hub_invoke_raw(
+    entity_type: BuiltinEntityType | str,
+    entity_id: str,
+    sub_path: str,
+    payload: Any,
+    *,
+    method: str = "POST",
+) -> tuple[int, Any]:
+    """Call a hub passthrough (``<type>/<id>/invoke/<sub_path>``) and return the UPSTREAM answer.
+
+    ``hub_post`` cannot carry it: an ``invoke`` answers the vendor's own body, not the hub
+    envelope, and ``hub_post`` keeps only ``data`` -- a Jev decision came back ``{}``. So this
+    returns ``(status, parsed JSON)`` for every status and lets the caller fold it; the hub's
+    own refusals (403/429/503 with ``{error, message}``) arrive the same way.
+
+    Same client, auth and Local-privacy gate as every other hub call (``hub_graph_url`` is
+    ``None`` in Local mode or offline, and so is the answer: ``(0, None)``).
+    Raises ``HubError(0, ...)`` on transport failure and ``HubError(401)`` on an expired login.
+    """
+    url = hub_graph_url(entity_type, entity_id, "invoke", sub_path)
+    if not url:
+        return 0, None
+    try:
+        async with _hub_client() as client:
+            resp = await client.request(method, url, json=payload, timeout=httpx.Timeout(10))
+    except HubAuthExpiredError as e:
+        raise HubError(401, "auth expired") from e
+    except Exception as e:
+        logger.warning("[hub] invoke %s transport error: %s", url, e)
+        raise HubError(0, str(e)) from e
+    try:
+        body = resp.json()
+    except ValueError:
+        body = resp.text[:500]
+    return resp.status_code, body
+
+
 async def _hub_post_streamed_upload(
     url: str,
     files: dict,

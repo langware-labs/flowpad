@@ -819,6 +819,10 @@ msgstr "{left} of {limit} requests left {windowText}"
 msgid "{listed} to invite"
 msgstr "{listed} to invite"
 
+#: src/components/conversation/ThreadHeader.tsx
+msgid "{messageCount, plural, one {# message} other {# messages}}"
+msgstr "{messageCount, plural, one {# message} other {# messages}}"
+
 #: src/components/agents/AgentAvatar.tsx
 msgid "{name} avatar"
 msgstr "{name} avatar"
@@ -2068,6 +2072,10 @@ msgstr "All hooks"
 msgid "All languages"
 msgstr "All languages"
 
+#: src/components/conversation/ThreadHeader.tsx
+msgid "All messages"
+msgstr "All messages"
+
 #: src/components/credentials/CredentialDialog.tsx
 msgid "All my projects"
 msgstr "All my projects"
@@ -3019,6 +3027,10 @@ msgstr "Auto-updates check hourly."
 #~ msgid "Automatic"
 #~ msgstr "Automatic"
 
+#: src/components/llm-sources/LlmSourcesView.tsx
+msgid "available"
+msgstr "available"
+
 #: src/components/capabilities-view/CapabilitiesView.tsx
 #: src/components/capabilities-view/CapabilitiesView.tsx
 msgid "Available"
@@ -3078,6 +3090,10 @@ msgstr "AWS region for Bedrock"
 #: src/journey/JourneyTray.tsx
 msgid "Back"
 msgstr "Back"
+
+#: src/components/conversation/ThreadHeader.tsx
+msgid "Back to every message in this conversation"
+msgstr "Back to every message in this conversation"
 
 #: src/components/graph-view/ui/TopBar.tsx
 msgid "Back to full graph"
@@ -6580,6 +6596,10 @@ msgstr "Debug logging"
 #~ msgid "DEBUG: remove 6 tools"
 #~ msgstr "DEBUG: remove 6 tools"
 
+#: src/components/llm-sources/LlmSourcesView.tsx
+msgid "Decision API"
+msgstr "Decision API"
+
 #: src/i18n/type-labels.ts
 msgid "Deck Template"
 msgstr "Deck Template"
@@ -7798,6 +7818,10 @@ msgstr "Each selected project's folder is added as a context folder."
 #: src/components/setup-wizard/SetupWizardDialog.tsx
 msgid "Each stage is a guided run. Close it any time — running it again picks up where it stopped."
 msgstr "Each stage is a guided run. Close it any time — running it again picks up where it stopped."
+
+#: src/components/conversation/ConversationView.tsx
+msgid "Earlier message"
+msgstr "Earlier message"
 
 #~ msgid "earlier output dropped — this is the tail"
 #~ msgstr "earlier output dropped — this is the tail"
@@ -10709,6 +10733,10 @@ msgstr "in this project"
 #: src/components/token-plan/token-plan-math.ts
 msgid "in this window"
 msgstr "in this window"
+
+#: src/components/conversation/MessageComposer.tsx
+msgid "In thread"
+msgstr "In thread"
 
 #: src/components/token-plan/token-plan-math.ts
 msgid "in total"
@@ -15425,6 +15453,10 @@ msgstr "Open the live session"
 msgid "Open the live session in a terminal"
 msgstr "Open the live session in a terminal"
 
+#: src/components/conversation/ConversationView.tsx
+msgid "Open the message this replies to"
+msgstr "Open the message this replies to"
+
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Open the page again"
 msgstr "Open the page again"
@@ -17021,6 +17053,10 @@ msgstr "Queued messages"
 msgid "Quick create"
 msgstr "Quick create"
 
+#: src/components/llm-sources/LlmSourcesView.tsx
+msgid "quick requests open without an assistant turn"
+msgstr "quick requests open without an assistant turn"
+
 #: src/components/asset-counters/AssetListView.tsx
 #: src/components/asset-counters/AssetListView.tsx
 msgid "Quick search"
@@ -18386,8 +18422,8 @@ msgid "Run from your terminal, then restart Flowpad:"
 msgstr "Run from your terminal, then restart Flowpad:"
 
 #: src/components/version-popover/version-popover.tsx
-msgid "Run from your terminal:"
-msgstr "Run from your terminal:"
+#~ msgid "Run from your terminal:"
+#~ msgstr "Run from your terminal:"
 
 #: src/components/code-block-run-button.tsx
 #: src/components/code-block-run-button.tsx
@@ -22652,6 +22688,8 @@ msgid "This worker has no session to view yet."
 msgstr "This worker has no session to view yet."
 
 #: src/components/assets/editor/agent-profile/deployment/AgentDeploymentPage.tsx
+#: src/components/conversation/MessageComposer.tsx
+#: src/components/conversation/ThreadHeader.tsx
 #: src/i18n/pref-labels.ts
 msgid "Thread"
 msgstr "Thread"

@@ -255,6 +255,26 @@ class DefaultFundingSpec(DataSpec):
     reason: str = ""
 
 
+class DecisionApiSpec(DataSpec):
+    """Can this box take fast decisions: is there a hub ``APIEndpoint`` marked ``decision``.
+
+    Box-wide, not per harness -- a decision is not a harness turn. When it is not available the
+    navigator is off and every ask takes the ordinary agent path, so ``reason`` is a fact to
+    show, never an error.
+    """
+
+    spec_kind: ClassVar[str] = "funding.decision"
+
+    available: bool = False
+    #: The endpoint ``decide()`` would use, as ``api_endpoint-<id>``.
+    endpoint: str = ""
+    name: str = ""
+    #: The vendor host it fronts (``api.typesafe.ai``).
+    host: str = ""
+    #: Why not, when ``available`` is False.
+    reason: str = ""
+
+
 class FundingStatusSpec(DataSpec):
     """What funds each harness, layered ON TOP of the status record (``core.status``).
 
@@ -281,3 +301,5 @@ class FundingStatusSpec(DataSpec):
     active_for: list[str]
     binding: FundingBindingSpec | None = None
     default: DefaultFundingSpec = DefaultFundingSpec()
+    #: The decision API (box-wide): what answers a fast decision, or why nothing does.
+    decision: DecisionApiSpec = DecisionApiSpec()

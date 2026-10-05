@@ -16,12 +16,13 @@ import {
   llmSourcesService,
   sameLlmSource,
   selectKindFor,
+  type DecisionApi,
   type LLMEndpointOffer,
   type LLMSource,
   remedyFor,
 } from '@sdk';
 import { Trans, useLingui } from '@lingui/react/macro';
-import { AlertCircle, ArrowUpRight, Check, KeyRound, Loader2, Waypoints } from 'lucide-react';
+import { AlertCircle, ArrowUpRight, Check, KeyRound, Loader2, Route, Waypoints } from 'lucide-react';
 import { useCallback, useMemo } from 'react';
 
 import { openHarnessLoginModal } from '@src/components/harness-login/harness-login-store';
@@ -46,6 +47,52 @@ import {
   workerOf,
 } from './use-llm-sources';
 import { visibleSources } from './visible-sources';
+
+/**
+ * The decision API — box-wide, so it sits beside the per-harness picture rather than inside
+ * it. Available means the magic line can open a screen without starting an assistant turn;
+ * not available means every ask takes the ordinary path, which is why the reason reads as a
+ * fact, not an error. The sentence is the backend's, verbatim.
+ */
+function DecisionApiRow({ decision }: { decision: DecisionApi }) {
+  return (
+    <section
+      className="flex items-start gap-3 rounded-lg border border-border/60 px-3 py-2"
+      data-testid="llm-sources-decision"
+    >
+      <span
+        className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${decision.available ? 'bg-emerald-400' : 'bg-muted-foreground/40'}`}
+      />
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-2 text-sm font-medium">
+          <Route className="h-3.5 w-3.5" />
+          <Trans>Decision API</Trans>
+          {decision.available && (
+            <Badge variant="outline" className={TONE.emerald} data-testid="llm-sources-decision-available">
+              <Trans>available</Trans>
+            </Badge>
+          )}
+        </div>
+        <div className="mt-0.5 flex items-center gap-1 text-xs text-muted-foreground">
+          {decision.available ? (
+            <span className="truncate">
+              {decision.name}
+              {decision.host ? ` · ${decision.host}` : ''} —{' '}
+              <Trans>quick requests open without an assistant turn</Trans>
+            </span>
+          ) : (
+            <>
+              <AlertCircle className="h-3 w-3 shrink-0 text-amber-500" />
+              <span className="truncate" data-testid="llm-sources-decision-reason">
+                {decision.reason}
+              </span>
+            </>
+          )}
+        </div>
+      </div>
+    </section>
+  );
+}
 
 function SourceRow({
   source,
@@ -348,6 +395,8 @@ export function LlmSourcesView({ pointer }: { pointer?: string }) {
           );
         })}
       </section>
+
+      {status.decision && <DecisionApiRow decision={status.decision} />}
 
       {/* A stated preference that is NOT in force — the box is signed out of Flowpad while
           Claude is set to use it. Sits above the list because it explains the whole page:

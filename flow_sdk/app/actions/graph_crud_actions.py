@@ -209,7 +209,8 @@ async def handle_delete_by_id():
             status_code=403,
             detail=f"Delete entity failed: {target_typeid.type}(id:{target_typeid.id})",
         )
-    return ApiSuccessResponse[bool](data=is_deleted, message="Entity was deleted successfully.")
+    # A delete may answer what it removed (a cascade's ids); the route answers whether it did.
+    return ApiSuccessResponse[bool](data=bool(is_deleted), message="Entity was deleted successfully.")
 
 
 @action.all(action_name="update", methods=["put", "patch"], types="all")

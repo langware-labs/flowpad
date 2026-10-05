@@ -81,6 +81,7 @@ class ConversationStatus(StrEnum):
 
 if TYPE_CHECKING:  # pragma: no cover
     from flow_sdk.builtin.flow_message import FlowMessage
+    from flow_sdk.builtin.message_thread import MessageThread
     from flow_sdk.cloud_client.client import FlowpadClient
 
 
@@ -317,13 +318,26 @@ class Conversation(ProjectedFields, Entity):
         """What this conversation's channel is — the traits every surface reads."""
         return channel_spec(self.channel, self.channel_provider)
 
-    async def send(self, body: str, *, reply_to=None, files=()):
-        """Continue this conversation on its channel: to whom it is with, on its own thread — whether
-        they wrote last or only we have (a conversation we started). Answers the channel's ``SendOutcome``.
+    async def send(self, body: str, *, reply_to=None, in_thread=None, files=()):
+        """Continue this conversation on its channel — Flowpad's own chat or a data source's.
 
-        ``reply_to`` (one of ``messages()``, or its id) quotes that message — on a channel whose
-        replies only thread, the reply lands in its thread. ``files`` are paths or ``MessageFile``s;
-        one the channel cannot take is refused before anything is sent."""
+        ``reply_to`` (one of ``messages()``, or its id) answers that message: it quotes it where the
+        channel quotes (WhatsApp, Telegram, Flowpad) and lands in its thread everywhere. ``in_thread``
+        (a ``MessageThread`` of this conversation, or its id) writes into that thread without
+        quoting anyone. On a data source channel the send goes to whom the conversation is with —
+        whether they wrote last or only we have — and answers the channel's ``SendOutcome``;
+        ``files`` are paths or ``MessageFile``s, and one the channel cannot take is refused before
+        anything is sent. On Flowpad's own chat it is the app's own send (``add_message``) and
+        answers the new ``FlowMessage``."""
+        from flow_sdk.schema.data_spec.channel_spec import ChannelTransport  # noqa: PLC0415
+
+        reply_id = str(getattr(reply_to, "id", reply_to) or "") or None
+        thread = await self._thread_of(in_thread) if in_thread is not None and reply_id is None else None
+        if self.channel_spec.transport == ChannelTransport.FLOWPAD:
+            if files:
+                raise ValueError("files on Flowpad's own chat ride add_message's attachments, not send()")
+            return await self._send_native(body, reply_to_id=reply_id, thread_root_id=thread.thread_key if thread else None)
+
         from flow_sdk.stream_inbox.outbound import (  # noqa: PLC0415
             outgoing_files,
             quoting,
@@ -332,15 +346,66 @@ class Conversation(ProjectedFields, Entity):
         )
 
         target = await resolve_reply_target(str(self.id))
-        if reply_to is not None:
-            target = await quoting(target, reply_to)
-        return await send_to(str(self.id), target, body, files=outgoing_files(target, files), quote=reply_to is not None)
+        if reply_id is not None:
+            target = await quoting(target, reply_id)
+        elif thread is not None:
+            # Into the thread: address its newest message. A channel whose replies only thread
+            # (email, Slack) files it there; a quoting channel's thread is the chat, and
+            # quote=False keeps the message unquoted.
+            newest = (await self.messages(thread=thread.id))[-1:]
+            if newest:
+                target = await quoting(target, newest[0])
+        return await send_to(str(self.id), target, body, files=outgoing_files(target, files), quote=reply_id is not None)
 
-    async def messages(self) -> list:
-        """This conversation's messages, oldest first."""
+    async def _thread_of(self, ref) -> "MessageThread":
+        from flow_sdk.builtin.message_thread import MessageThread  # noqa: PLC0415
+
+        thread_id = await self.resolve_thread_id(str(getattr(ref, "id", ref) or ""))
+        thread = await MessageThread.get_one({"id": thread_id}) if thread_id else None
+        if thread is None:
+            raise ValueError(f"no thread {ref!r} in this conversation")
+        return thread
+
+    async def _send_native(self, body: str, *, reply_to_id: Optional[str], thread_root_id: Optional[str]):
+        """Flowpad's own chat: the same handler the composer's send reaches (``add_message``),
+        queued as ``pending_send`` while there is no cloud login, refused in Local mode."""
+        from flow_sdk.app.actions.notification_action import handle_add_message  # noqa: PLC0415
+        from flow_sdk.app.actions.share_action import (  # noqa: PLC0415
+            LOCAL_MODE_SHARE_MESSAGE,
+            _local_mode_share_blocked,
+        )
+        from flow_sdk.builtin.flow_message import FlowMessage  # noqa: PLC0415
+        from flow_sdk.cli.auth.hub_login import is_logged_in  # noqa: PLC0415
+        from flow_sdk.fs_store.type_id import TypeId  # noqa: PLC0415
+
+        if _local_mode_share_blocked():
+            raise PermissionError(LOCAL_MODE_SHARE_MESSAGE)
+        request: dict = {"conversation_id": str(self.id), "text": body}
+        if reply_to_id:
+            request["reply_to_id"] = reply_to_id
+        elif thread_root_id:
+            request["thread_root_id"] = thread_root_id
+        from flow_sdk.server.routes.bootstrap import get_or_create_local_user  # noqa: PLC0415
+
+        me = await get_or_create_local_user()
+        someone = str(TypeId(type="user", id=me.id))
+        response = await handle_add_message(request, someone, pending_send=not is_logged_in())
+        if getattr(response, "status", "") != "SUCCESS":
+            raise ValueError(getattr(response, "message", None) or "send refused")
+        return await FlowMessage.get_one({"id": response.data["flow_message_id"]})
+
+    async def messages(self, *, thread=None) -> list:
+        """This conversation's messages, oldest first — only one thread's with ``thread`` (a
+        ``MessageThread`` or its id, or a message in it)."""
         from flow_sdk.builtin.flow_message import FlowMessage  # noqa: PLC0415
 
-        rows = await FlowMessage.get_all({"match": {"conversation_id": str(self.id)}})
+        match: dict = {"conversation_id": str(self.id)}
+        if thread is not None:
+            thread_id = await self.resolve_thread_id(str(getattr(thread, "id", thread) or ""))
+            if thread_id is None:
+                return []
+            match["thread_id"] = thread_id
+        rows = await FlowMessage.get_all({"match": match})
         # Event time first (a backfill lands in message time), then arrival.
         return sorted(rows, key=lambda m: str(m.sent_at or m.created_date or ""))
 
@@ -917,7 +982,9 @@ class Conversation(ProjectedFields, Entity):
         from flow_sdk.builtin.flow_message import FlowMessage  # noqa: PLC0415
         from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp  # noqa: PLC0415
 
-        refs = sorted(self.message_refs(), key=_ref_sort_key)
+        # The row's projection, not this object's: a send since this object was loaded re-projected it.
+        current = await Conversation.get_one({"id": str(self.id)}) if self.id else None
+        refs = sorted((current or self).message_refs(), key=_ref_sort_key)
         if since is not None:
             refs = [r for r in refs if _ref_sort_key(r) >= (1, since.timestamp())]
         if last is not None:
@@ -929,24 +996,65 @@ class Conversation(ProjectedFields, Entity):
         by_id = {fm.id: fm for fm in rows}
         return [by_id[pid] for pid in ids if pid in by_id]
 
+    async def threads(self) -> list["MessageThread"]:
+        """This conversation's threads (channel and native), oldest first."""
+        from flow_sdk.builtin.message_thread import MessageThread  # noqa: PLC0415
+
+        rows = await MessageThread.get_all({"match": {"conversation_id": self.id}})
+        return sorted(rows, key=lambda t: str(t.created_date or ""))
+
+    async def resolve_thread_id(self, ref: str) -> Optional[str]:
+        """The id of the thread ``ref`` names in this conversation: a thread id, or the id of a
+        message in it (its root, for a native thread). None when neither."""
+        from flow_sdk.builtin.flow_message import FlowMessage  # noqa: PLC0415
+
+        ref = (ref or "").strip()
+        if not ref:
+            return None
+        if any(t.id == ref for t in await self.threads()):
+            return ref
+        fm = await FlowMessage.get_one({"id": ref})
+        if fm is not None and fm.conversation_id == self.id and fm.thread_id:
+            return fm.thread_id
+        return None
+
     async def transcript(
         self,
         *,
         self_ids: frozenset[str] | set[str] = frozenset(),
         last: Optional[int] = None,
         since: Optional[datetime] = None,
+        thread_id: Optional[str] = None,
     ) -> dict:
-        """The unabridged read of this conversation for an agent: header plus
-        ``FlowMessage.read_entry`` per message, oldest-first. ``since`` keeps
-        messages at/after that instant; ``last`` then keeps the newest N.
-        Local reads only — the same residence ``summary`` reads."""
-        msgs = await self._messages_oldest_first(last=last, since=since)
+        """The unabridged read of this conversation for an agent: header, its threads, and
+        ``FlowMessage.read_entry`` per message (with its thread's title), oldest-first.
+        ``thread_id`` keeps one thread; ``since`` keeps messages at/after that instant;
+        ``last`` then keeps the newest N. Local reads only — the same residence ``summary`` reads."""
+        if thread_id:
+            msgs = [m for m in await self._messages_oldest_first(since=since) if m.thread_id == thread_id]
+            if last is not None:
+                msgs = msgs[-last:] if last > 0 else []
+        else:
+            msgs = await self._messages_oldest_first(last=last, since=since)
+        threads = await self.threads()
+        titles = {t.id: t.title or "" for t in threads}
+        entries = []
+        for m in msgs:
+            entry = m.read_entry(self_ids)
+            if m.thread_id:
+                entry["thread_title"] = titles.get(m.thread_id, "")
+            entries.append(entry)
         return {
             "id": self.id,
             "title": self.title or "",
             "participants": [member_label(p) for p in (self.members or [])],
             "message_count": self.message_count,
-            "messages": [m.read_entry(self_ids) for m in msgs],
+            "threads": [
+                {"id": t.id, "title": t.title or "", "channel": t.channel, "message_count": t.message_count}
+                for t in threads
+            ],
+            "thread_id": thread_id,
+            "messages": entries,
         }
 
     async def add_message(
@@ -962,6 +1070,8 @@ class Conversation(ProjectedFields, Entity):
         cloned_from_sender_id: Optional[str] = None,
         remote_worker_session_id: Optional[str] = None,
         kind: Optional[str] = None,
+        reply_to_id: Optional[str] = None,
+        thread_root_id: Optional[str] = None,
     ) -> dict:
         """Append a FlowMessage to this conversation on the hub.
 
@@ -1018,6 +1128,12 @@ class Conversation(ProjectedFields, Entity):
             body["remote_worker_session_id"] = remote_worker_session_id
         if kind:
             body["kind"] = kind
+        # The quote and the native thread — mirrored on the hub FlowMessage schema,
+        # so every member's copy carries them (``stream_inbox.native_threads``).
+        if reply_to_id:
+            body["reply_to_id"] = reply_to_id
+        if thread_root_id:
+            body["thread_root_id"] = thread_root_id
         body["conversation_id"] = self.id
         path = build_hub_url(self, action="add_message")
         async with FlowpadClient(ApiConfig.from_env(), api_key=creds.api_key) as client:

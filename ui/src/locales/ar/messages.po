@@ -819,6 +819,10 @@ msgstr ""
 msgid "{listed} to invite"
 msgstr ""
 
+#: src/components/conversation/ThreadHeader.tsx
+msgid "{messageCount, plural, one {# message} other {# messages}}"
+msgstr ""
+
 #: src/components/agents/AgentAvatar.tsx
 msgid "{name} avatar"
 msgstr ""
@@ -2068,6 +2072,10 @@ msgstr "جميع الخطافات"
 msgid "All languages"
 msgstr "جميع اللغات"
 
+#: src/components/conversation/ThreadHeader.tsx
+msgid "All messages"
+msgstr ""
+
 #: src/components/credentials/CredentialDialog.tsx
 msgid "All my projects"
 msgstr ""
@@ -3019,6 +3027,10 @@ msgstr "يتم التحقق من التحديثات تلقائياً كل ساع
 #~ msgid "Automatic"
 #~ msgstr "تلقائي"
 
+#: src/components/llm-sources/LlmSourcesView.tsx
+msgid "available"
+msgstr ""
+
 #: src/components/capabilities-view/CapabilitiesView.tsx
 #: src/components/capabilities-view/CapabilitiesView.tsx
 msgid "Available"
@@ -3078,6 +3090,10 @@ msgstr "منطقة AWS لخدمة Bedrock"
 #: src/journey/JourneyTray.tsx
 msgid "Back"
 msgstr "رجوع"
+
+#: src/components/conversation/ThreadHeader.tsx
+msgid "Back to every message in this conversation"
+msgstr ""
 
 #: src/components/graph-view/ui/TopBar.tsx
 msgid "Back to full graph"
@@ -6580,6 +6596,10 @@ msgstr "تسجيل التصحيح"
 #~ msgid "DEBUG: remove 6 tools"
 #~ msgstr ""
 
+#: src/components/llm-sources/LlmSourcesView.tsx
+msgid "Decision API"
+msgstr ""
+
 #: src/i18n/type-labels.ts
 msgid "Deck Template"
 msgstr "قالب العرض التقديمي"
@@ -7797,6 +7817,10 @@ msgstr "يُضاف مجلد كل مشروع محدد كمجلد سياق."
 
 #: src/components/setup-wizard/SetupWizardDialog.tsx
 msgid "Each stage is a guided run. Close it any time — running it again picks up where it stopped."
+msgstr ""
+
+#: src/components/conversation/ConversationView.tsx
+msgid "Earlier message"
 msgstr ""
 
 #~ msgid "earlier output dropped — this is the tail"
@@ -10708,6 +10732,10 @@ msgstr ""
 
 #: src/components/token-plan/token-plan-math.ts
 msgid "in this window"
+msgstr ""
+
+#: src/components/conversation/MessageComposer.tsx
+msgid "In thread"
 msgstr ""
 
 #: src/components/token-plan/token-plan-math.ts
@@ -15425,6 +15453,10 @@ msgstr "فتح الجلسة الحية"
 msgid "Open the live session in a terminal"
 msgstr "فتح الجلسة الحية في المحطة الطرفية"
 
+#: src/components/conversation/ConversationView.tsx
+msgid "Open the message this replies to"
+msgstr ""
+
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Open the page again"
 msgstr ""
@@ -17021,6 +17053,10 @@ msgstr "الرسائل في قائمة الانتظار"
 msgid "Quick create"
 msgstr "الإنشاء السريع"
 
+#: src/components/llm-sources/LlmSourcesView.tsx
+msgid "quick requests open without an assistant turn"
+msgstr ""
+
 #: src/components/asset-counters/AssetListView.tsx
 #: src/components/asset-counters/AssetListView.tsx
 msgid "Quick search"
@@ -18386,8 +18422,8 @@ msgid "Run from your terminal, then restart Flowpad:"
 msgstr "يُرجى التنفيذ من الطرفية، ثم إعادة تشغيل Flowpad:"
 
 #: src/components/version-popover/version-popover.tsx
-msgid "Run from your terminal:"
-msgstr "يُرجى التنفيذ من الطرفية:"
+#~ msgid "Run from your terminal:"
+#~ msgstr "يُرجى التنفيذ من الطرفية:"
 
 #: src/components/code-block-run-button.tsx
 #: src/components/code-block-run-button.tsx
@@ -22652,6 +22688,8 @@ msgid "This worker has no session to view yet."
 msgstr "هذا العامل ليس لديه جلسة للعرض بعد."
 
 #: src/components/assets/editor/agent-profile/deployment/AgentDeploymentPage.tsx
+#: src/components/conversation/MessageComposer.tsx
+#: src/components/conversation/ThreadHeader.tsx
 #: src/i18n/pref-labels.ts
 msgid "Thread"
 msgstr "خيط"
