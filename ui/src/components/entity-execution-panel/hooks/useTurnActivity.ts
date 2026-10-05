@@ -21,7 +21,9 @@ function lastTurnStart(process: AgenticProcess): number | null {
     const it = items[i];
     const role = it.attributes?.role as string | undefined;
     if (it.elementType === 'user-message' || (it.elementType === 'chat' && role === 'user')) {
-      return tsToMs(it.timestamp);
+      // A just-sent prompt's echo carries the browser's submit time; its `t` is the host's
+      // (for ordering), which a skewed host would turn into a clock that starts at minutes.
+      return tsToMs((it.attributes?.['submitted-at'] as string | undefined) ?? it.timestamp);
     }
   }
   return null;
