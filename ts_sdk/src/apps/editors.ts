@@ -1,5 +1,5 @@
 /**
- * Which apps edit a thing, best first — the backend's one rule (`flow_sdk/assets/editors.py`):
+ * Which apps edit a thing, best first — the backend's one rule (`flow_sdk/builtin/faas/editors.py`):
  * an editor NESTED in the subject, then one whose `edits` covers the subject's declared kind, then
  * one that `edits` its type. `why` says which.
  */

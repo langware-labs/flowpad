@@ -20,7 +20,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 from flow_sdk.core.navigator import MIN_CONFIDENCE, NavigatorRoute, route
-from flow_sdk.datasets.score import is_correct, matches
+from flow_sdk.datasets.score import golds, is_correct, matches, score
 
 SHIPPED = Path(__file__).resolve().parents[1] / (
     "system_projects/flowpad_assistant/agentic-assets/dataset/smart-navigator"
@@ -38,20 +38,15 @@ def decision_of(answer: NavigatorRoute) -> dict:
     return out
 
 
-def _golds(row: Any) -> list:
-    gt = row.ground_truth
-    return [] if gt is None else (gt if isinstance(gt, list) else [gt])
-
-
 def _expected_route(row: Any) -> Optional[str]:
-    golds = _golds(row)
-    return golds[0].route if golds else None
+    answers = golds(row)
+    return answers[0].route if answers else None
 
 
 def _target_ok(row: Any) -> bool:
     """The output opened a right target (its verb aside -- coverage is where the verb counts)."""
     opened = {"route": row.output.route, "target": row.output.target}
-    return any(matches(opened, {"route": g.route, "target": g.target}) for g in _golds(row))
+    return any(matches(opened, {"route": g.route, "target": g.target}) for g in golds(row))
 
 
 def _pct(n: int, d: int) -> Optional[float]:
@@ -60,30 +55,31 @@ def _pct(n: int, d: int) -> Optional[float]:
 
 def metrics(rows: list) -> dict:
     """The routing metrics over rows that carry both a gold and an output."""
-    scored = [r for r in rows if r.output is not None and _golds(r)]
+    scored = [r for r in rows if r.output is not None and golds(r)]
     quick_out = [r for r in scored if r.output.route == "quick"]
     quick_gold = [r for r in scored if _expected_route(r) == "quick"]
     agentic_gold = [r for r in scored if _expected_route(r) == "agentic"]
+    totals = score(scored)
     return {
-        "scored": len(scored),
-        "correct": sum(1 for r in scored if is_correct(r)),
+        "scored": totals["scored"],
+        "correct": totals["correct"],
+        "wrong": totals["wrong"],
         "precision": _pct(sum(1 for r in quick_out if _target_ok(r)), len(quick_out)),
         "coverage": _pct(sum(1 for r in quick_gold if is_correct(r)), len(quick_gold)),
         "agentic_recall": _pct(sum(1 for r in agentic_gold if r.output.route == "agentic"), len(agentic_gold)),
         "confident_wrong": sum(
             1 for r in quick_out if (r.output.confidence or 0) >= MIN_CONFIDENCE and not _target_ok(r)
         ),
-        "wrong": [r.id for r in scored if not is_correct(r)],
     }
 
 
-async def evaluate(dataset: Any, *, kinds: tuple[str, ...] = ("eval",)) -> dict:
-    """Run every row of the given kinds, score it, and return the metrics plus each row's output.
+async def evaluate(dataset: Any) -> dict:
+    """Run every ``eval`` row, score it, and return the metrics plus each row's output.
 
     Nothing is written: a shipped dataset is read-only, and a run's outputs are a report, not a
     label. ``latency_ms`` is end to end per row (a rule hit costs ~0, a decision a round trip).
     """
-    rows = [r for r in dataset.read_rows() if r.kind.value in kinds]
+    rows = [r for r in dataset.read_rows() if r.kind.value == "eval"]
     out_type = dataset.output_shape
     timed, ran = [], []
     for row in rows:
@@ -101,7 +97,9 @@ async def evaluate(dataset: Any, *, kinds: tuple[str, ...] = ("eval",)) -> dict:
     report = metrics(ran)
     report["latency_ms"] = {
         "p50": round(statistics.median(timed), 1) if timed else None,
-        "p95": round(sorted(timed)[max(0, round(0.95 * (len(timed) - 1)))], 1) if timed else None,
+        "p95": round(statistics.quantiles(timed, n=20)[-1], 1)
+        if len(timed) > 1
+        else (round(timed[0], 1) if timed else None),
     }
     report["outputs"] = {r.id: r.output.model_dump(mode="json") for r in ran}
     return report

@@ -22,7 +22,6 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO))
-DEFAULT = REPO / "flow_sdk/system_projects/flowpad_assistant/agentic-assets/dataset/smart-navigator"
 CONTEXT_KEYS = (
     "CurrentProjectTypeId",
     "CurrentProcessTypeId",
@@ -82,6 +81,8 @@ async def main(cases_path: Path, folder: Path) -> None:
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("cases", type=Path)
-    ap.add_argument("--dataset", type=Path, default=DEFAULT)
+    from flow_sdk.core.navigator_eval import SHIPPED
+
+    ap.add_argument("--dataset", type=Path, default=SHIPPED)
     a = ap.parse_args()
     asyncio.run(main(a.cases, a.dataset))

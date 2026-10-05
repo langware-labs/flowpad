@@ -11,11 +11,9 @@
  * shipped on its own with `edits: ["dataset"]`, opened with `?subject=dataset-<id>`.
  */
 import apiClient from '../client';
-import { dataManager } from '../APIEntity';
-import { TypeId } from '../models/TypeId';
 import { initSdk } from '../main';
-import { Dataset } from '../entities/dataset';
-import { appOption, applyHostTheme, resolveAppHost } from './host';
+import { DATASET_FIELD_KINDS, Dataset, coerceToKind } from '../entities/dataset';
+import { applyHostTheme, resolveAppHost } from './host';
 
 interface FieldDef {
   shape: unknown;
@@ -79,15 +77,20 @@ export function summarize(value: unknown): string {
   return JSON.stringify(v);
 }
 
+const PRIMITIVES: ReadonlySet<string> = new Set(DATASET_FIELD_KINDS);
+
 const kindCache = new Map<string, Promise<KindForm | null>>();
-/** A registered kind's definition, or null for a primitive / enum / unknown name. */
+/** A registered kind's definition, or null for a primitive / enum / unknown name. A failed
+ *  lookup is not remembered, so a transient error is retried on the next open. */
 export function kindForm(kind: string): Promise<KindForm | null> {
-  if (!kind || kind.startsWith('enum:') || ['string', 'int', 'float', 'bool'].includes(kind))
-    return Promise.resolve(null);
+  if (!kind || kind.startsWith('enum:') || PRIMITIVES.has(kind)) return Promise.resolve(null);
   if (!kindCache.has(kind)) {
     kindCache.set(
       kind,
-      apiClient.get<KindForm>(`/api/v1/kinds/${encodeURIComponent(kind)}`).catch(() => null),
+      apiClient.get<KindForm>(`/api/v1/kinds/${encodeURIComponent(kind)}`).catch(() => {
+        kindCache.delete(kind);
+        return null;
+      }),
     );
   }
   return kindCache.get(kind)!;
@@ -128,7 +131,7 @@ async function fieldInput(name: string, def: FieldDef, value: any): Promise<[HTM
     return [group, read];
   }
   // A list, a map, or an unknown shape: edited as JSON, checked by the server on save.
-  if (typeof shape !== 'string' || !['string', 'int', 'float', 'bool'].includes(shape)) {
+  if (typeof shape !== 'string' || !PRIMITIVES.has(shape)) {
     const ta = document.createElement('textarea');
     ta.rows = 3;
     ta.className = 'mono';
@@ -139,26 +142,17 @@ async function fieldInput(name: string, def: FieldDef, value: any): Promise<[HTM
   const input = document.createElement('input');
   input.dataset.testid = `dataset-editor-field-${name}`;
   input.value = value ?? '';
-  return [
-    input,
-    () => {
-      if (input.value === '') return optional ? null : '';
-      return shape === 'int'
-        ? parseInt(input.value, 10)
-        : shape === 'float'
-          ? Number(input.value)
-          : shape === 'bool'
-            ? input.value === 'true'
-            : input.value;
-    },
-  ];
+  return [input, () => (input.value === '' ? (optional ? null : '') : coerceToKind(shape, input.value))];
 }
 
 function fieldRow(name: string, def: FieldDef, el: HTMLElement): HTMLElement {
   const f = document.createElement('label');
   f.className = 'field';
   const l = document.createElement('span');
-  l.innerHTML = `<span class="mono">${name}</span>${def.description ? `<div class="muted small">${def.description}</div>` : ''}`;
+  l.append(Object.assign(document.createElement('span'), { className: 'mono', textContent: name }));
+  if (def.description) {
+    l.append(Object.assign(document.createElement('div'), { className: 'muted small', textContent: def.description }));
+  }
   f.append(l, el);
   return f;
 }
@@ -182,9 +176,8 @@ export async function mountDatasetEditor(root: HTMLElement = document.body): Pro
 
 async function run($: (id: string) => HTMLElement): Promise<void> {
   await initSdk({ setupWorkspace: false });
-  const { subject } = await resolveAppHost();
-  const found: any =
-    subject ?? (appOption('subject') ? await dataManager.getByTypeId(new TypeId(appOption('subject')!)) : null);
+  // Nested: the dataset containing this app. Matched by kind: `?subject=` (resolveAppHost reads both).
+  const found: any = (await resolveAppHost()).subject;
   if (!found || found.type !== 'dataset') throw new Error('this editor needs a dataset to edit');
   // The lookup answers a plain row; the actions (examples, annotate, validate) live on the class.
   const dataset: any = found instanceof Dataset ? found : new Dataset(found);
@@ -195,10 +188,7 @@ async function run($: (id: string) => HTMLElement): Promise<void> {
   const goldKind = typeof form?.slots?.output === 'string' ? (form.slots.output as string) : '';
   const gold = goldKind ? await kindForm(goldKind) : null;
 
-  const { examples } = await dataset.listExamples();
-  const rows = await Promise.all(
-    examples.map((e: any) => dataset.example(e.example_id).then((r: any) => ({ ...r, id: e.example_id }))),
-  );
+  const { rows } = await dataset.rows(); // every example with its values, in one request
   const counts = () => `${rows.length} examples · ${rows.filter((r) => r.ground_truth != null).length} labelled`;
   $('counts').textContent = counts();
 
@@ -271,7 +261,7 @@ async function run($: (id: string) => HTMLElement): Promise<void> {
         msg.className = 'small err';
       }
     });
-    box.append(Object.assign(document.createElement('div'), {}), save, msg);
+    box.append(save, msg);
     td.append(box);
     holder.append(td);
     tr.after(holder);

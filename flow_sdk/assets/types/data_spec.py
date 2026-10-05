@@ -13,11 +13,6 @@ def derive_data_spec(data: dict, root: Path, header_raw: dict) -> None:
     kind did not register -- a duplicate, a type name, a name nobody defines -- or ``""``.
     """
     from flow_sdk.schema.data_spec import declared  # noqa: PLC0415 — builds classes; keep off the import path
-    from flow_sdk.schema.data_spec.data_spec_spec import DataSpecDocSpec  # noqa: PLC0415
 
-    try:
-        doc = DataSpecDocSpec.model_validate({k: v for k, v in header_raw.items() if k in DataSpecDocSpec.model_fields})
-        data["subkind"] = doc.resolved_subkind
-    except Exception:  # noqa: BLE001 -- the registration below names what is wrong
-        data["subkind"] = None
     data["error"] = declared.register_folder(root)
+    data["subkind"] = declared.subkind_of(root)

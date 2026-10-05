@@ -143,7 +143,7 @@ class DatasetLayout:
         raise NotImplementedError("append is io_folder only — a CSV dataset is rewritten whole")
 
     def annotate(self, folder, example_id_: str, ground_truth: Any, *, dataset_id: str, by: str = "",
-                 main: str = "label.json") -> Path:
+                 main: str = ANNOTATION_FILE) -> Path:
         raise NotImplementedError("annotate is io_folder only — a CSV dataset is rewritten whole")
 
     def index(self, folder, *, dataset_id: str) -> list[dict[str, Any]]:

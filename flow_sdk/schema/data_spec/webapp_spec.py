@@ -72,7 +72,7 @@ class WebappManifestSpec(DataSpec):
     kind: str = WEBAPP_KIND
     #: What an EDITOR edits beyond what contains it: kinds (``navigator.dataset``, or an
     #: ancestor like ``navigator``) and type names (``dataset``). Matched by
-    #: ``flow_sdk.assets.editors`` -- a nested editor needs none of this.
+    #: ``flow_sdk.builtin.faas.editors`` -- a nested editor needs none of this.
     edits: list[str] = []
     #: The subdir actually served, relative to the app folder. ``.`` for a
     #: static app that has no build step; ``dist`` for a toolchain that emits one.

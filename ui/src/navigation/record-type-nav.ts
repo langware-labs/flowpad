@@ -170,7 +170,7 @@ export const RECORD_TYPE_NAV: Partial<Record<string, RecordTypeNav>> = {
     },
   },
   // A dataset opens in the app that edits it: its own nested editor, else one matching its
-  // declared kind, else the generic dataset editor (`flow_sdk/assets/editors.py`). No editor at
+  // declared kind, else the generic dataset editor (`flow_sdk/builtin/faas/editors.py`). No editor at
   // all falls back to the folder, like any asset without an editor.
   dataset: {
     primaryAction: async (r, navigation) => {

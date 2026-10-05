@@ -404,7 +404,7 @@ Indexing still reads rows as artifacts (fast, never fatal); `validate` is the ch
 
 ## Editors
 
-A dataset opens in the app that edits it (`flow_sdk/assets/editors.py`, `GET /api/v1/editors/<typeid>`):
+A dataset opens in the app that edits it (`flow_sdk/builtin/faas/editors.py`, `GET /api/v1/editors/<typeid>`):
 its own nested editor (`<dataset>/agentic-assets/webapp/<name>/`, kind `application.web.editor`),
 else an editor whose `webapp.json` `edits` names the dataset's kind or an ancestor of it (most
 specific first), else one that edits the `dataset` type — the shipped generic editor. The SDK app
