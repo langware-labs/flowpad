@@ -129,14 +129,9 @@ async def _get_or_create_flow(name: str) -> tuple[GraphWorkflow | None, bool]:
 
 
 async def _seed_mini_analyzer() -> None:
-    # The trigger's words are kept current on every boot, even when the flow is
-    # left alone below — an install seeded before it had a description gets one.
-    existing = await _find_mini_trigger()
-    if existing is not None and (existing.name, existing.description) != (MINI_TRIGGER_NAME, MINI_TRIGGER_DESCRIPTION):
-        existing.name = MINI_TRIGGER_NAME
-        existing.description = MINI_TRIGGER_DESCRIPTION
-        await existing.update()
-
+    # The trigger is upserted on every boot, even when the flow is left alone
+    # below — an install seeded under older words gets the current ones.
+    trigger = await _mini_trigger()
     flow, created = await _get_or_create_flow("mini-analyzer")
     folder = flow.folder if flow else None
     if flow is None or folder is None:
@@ -152,43 +147,40 @@ async def _seed_mini_analyzer() -> None:
         if not _graph_has_retired_shapes(doc):
             return
 
-    trigger = await _mini_trigger()
     (folder / "scripts").mkdir(exist_ok=True)
     (folder / "scripts" / "mini_analyzer.py").write_text(MINI_ANALYZER_SCRIPT, encoding="utf-8")
     graph.write_text(_doc(flow.id, "mini-analyzer", _mini_nodes(trigger.id), _MINI_EDGES), encoding="utf-8")
     logger.info("set_service_graph_workflows: %s mini-analyzer (%s)", "seeded" if created else "migrated", flow.id)
 
 
-#: What the Automations screen tells a person about the mini-analyzer's trigger.
-MINI_TRIGGER_NAME = "Daily self-check"
-#: The name it was seeded under before it had a plain one — found by either.
-_MINI_TRIGGER_OLD_NAME = "Mini analyzer (manual)"
-MINI_TRIGGER_DESCRIPTION = "A quick daily check that Flowpad is working. It stays on this computer."
-
-
-async def _find_mini_trigger():
-    from flow_sdk.builtin.trigger import Trigger
-
-    return (await Trigger.get_one({"name": MINI_TRIGGER_NAME})
-            or await Trigger.get_one({"name": _MINI_TRIGGER_OLD_NAME}))
+#: The mini-analyzer's trigger, seeded like every other built-in: found by its
+#: uname, its words kept current from here on every boot.
+MINI_TRIGGER_SPEC: dict = {
+    "uname": "builtin_mini_analyzer",
+    "name": "Daily self-check",
+    "description": "A quick daily check that Flowpad is working. It stays on this computer.",
+    "trigger_type": "schedule",
+    "sched_trigger_type": "interval",
+    "expr": "24h",
+}
 
 
 async def _mini_trigger():
     from flow_sdk.builtin.trigger import Trigger
+    from flow_sdk.server.builtin_triggers import _upsert_one
 
-    trigger = await _find_mini_trigger()
-    if trigger is None:
-        trigger = Trigger(
-            name=MINI_TRIGGER_NAME,
-            description=MINI_TRIGGER_DESCRIPTION,
-            trigger_type="schedule",
-            sched_trigger_type="interval",
-            expr="24h",
-            scope="system",
-        )
-        await trigger.save()
-        await trigger._register_schedule_job()
-    return trigger
+    uname = MINI_TRIGGER_SPEC["uname"]
+    existing = await Trigger.get_by_uname(uname)
+    if existing is None:
+        # Seeded by name before it had a uname: adopt that row, don't mint a second.
+        for legacy_name in ("Mini analyzer (manual)", MINI_TRIGGER_SPEC["name"]):
+            existing = await Trigger.get_one({"name": legacy_name})
+            if existing is not None and not existing.uname:
+                existing.uname = uname
+                break
+            existing = None
+    await _upsert_one(MINI_TRIGGER_SPEC, existing=existing)
+    return existing or await Trigger.get_by_uname(uname)
 
 
 def _mini_nodes(trigger_id: str) -> list[dict]:
