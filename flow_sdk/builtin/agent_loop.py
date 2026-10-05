@@ -20,6 +20,7 @@ running:
 
 The app's ``AgentServer`` starts this process and starts it again if it dies.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -65,14 +66,23 @@ async def _state(deployment_id: str) -> Optional[_State]:
 
 
 async def run(deployment_id: str, *, stop: Optional[asyncio.Event] = None, loop=None) -> None:
-    """Run the deployment's loop until the deployment ends (or *stop* is set)."""
+    """Run the deployment's loop until the deployment ends (or *stop* is set).
+
+    The deployment's turns run in THIS process, so the app's keep-alive cannot see them: this
+    process reports its own, or a hub sandbox pauses under an agent working with nobody watching."""
+    from flow_sdk.compute.keep_alive import run_keep_alive_loop  # noqa: PLC0415
+
     stop = stop or asyncio.Event()
-    while not stop.is_set():
-        state = await _state(deployment_id)
-        if state is None:
-            logger.info("deployment %s: no longer runs here — the loop ends", deployment_id)
-            return
-        await _serve_until_changed(deployment_id, state, stop, loop)
+    keep_alive = asyncio.create_task(run_keep_alive_loop(), name="keep-alive")
+    try:
+        while not stop.is_set():
+            state = await _state(deployment_id)
+            if state is None:
+                logger.info("deployment %s: no longer runs here — the loop ends", deployment_id)
+                return
+            await _serve_until_changed(deployment_id, state, stop, loop)
+    finally:
+        keep_alive.cancel()
 
 
 async def _serve_until_changed(deployment_id: str, state: _State, stop: asyncio.Event, loop=None) -> None:
@@ -83,20 +93,28 @@ async def _serve_until_changed(deployment_id: str, state: _State, stop: asyncio.
 
     await hold_positions(state.deployment, state.sources)
     own = {str(s.id) for s in state.sources}
-    logger.info("deployment %s: %s answers %d channel(s)", deployment_id, state.agent.name or state.agent.id,
-                len(state.sources))
+    logger.info(
+        "deployment %s: %s answers %d channel(s)", deployment_id, state.agent.name or state.agent.id, len(state.sources)
+    )
     stopping = asyncio.create_task(stop.wait())
-    task = (asyncio.create_task(serve(state.agent, state.deployment, sources=state.sources, poll_every=POLL_SECONDS, loop=loop))
-            if state.sources else None)
+    task = (
+        asyncio.create_task(
+            serve(state.agent, state.deployment, sources=state.sources, poll_every=POLL_SECONDS, loop=loop)
+        )
+        if state.sources
+        else None
+    )
     try:
         while not stop.is_set():
             await dispatch_due_sources(only=own)
-            done, _ = await asyncio.wait({stopping, *([task] if task else [])}, timeout=RECHECK_SECONDS,
-                                         return_when=asyncio.FIRST_COMPLETED)
+            done, _ = await asyncio.wait(
+                {stopping, *([task] if task else [])}, timeout=RECHECK_SECONDS, return_when=asyncio.FIRST_COMPLETED
+            )
             if task is not None and task in done:
                 if not task.cancelled() and task.exception() is not None:
-                    logger.error("deployment %s: the loop failed — started again", deployment_id,
-                                 exc_info=task.exception())
+                    logger.error(
+                        "deployment %s: the loop failed — started again", deployment_id, exc_info=task.exception()
+                    )
                 await asyncio.sleep(RESTART_SECONDS)
                 return
             if stopping in done:
@@ -147,7 +165,9 @@ def main(deployment_id: Optional[str] = None, loop=None) -> None:
     if lock is None:
         logger.info("deployment %s already runs in another process — nothing to do here", deployment_id)
         return
-    logger.info("deployment %s: pid %s, instance %s", deployment_id, os.getpid(), os.environ.get("FLOW_INSTANCE", "prod"))
+    logger.info(
+        "deployment %s: pid %s, instance %s", deployment_id, os.getpid(), os.environ.get("FLOW_INSTANCE", "prod")
+    )
 
     async def _main() -> None:
         from flow_sdk.tags.relay import start_relay_to_app  # noqa: PLC0415
