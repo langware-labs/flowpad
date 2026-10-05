@@ -280,7 +280,7 @@ class TurnEngine:
                 # Died mid-turn. Did the agent finish? The transcript knows -- when there is one. A worker that
                 # never came up (it could not spawn) left none, and waiting for it would wait out the budget on
                 # every redelivery, so the message would never be answered: nothing ran, so it runs now.
-                text = await _capture_assistant_reply(ap) if has_transcript(ap) else ""
+                text = await _left_reply(ap, prior) if has_transcript(ap) else ""
                 if text:
                     await stamp_turn(ap, turn.key, done_record(prior, text))
                     yield done(PromptResult.satisfied(
@@ -343,6 +343,36 @@ def _transcript_file(ap):
     except Exception:  # noqa: BLE001 — same answer: nothing to read
         return None, desc
     return (path if path is not None and path.exists() else None), desc
+
+
+async def _left_reply(ap, started: dict) -> str:
+    """What a turn that died mid-way left as its reply — ``""`` when it left none, so it runs again.
+
+    While the OS process that took the turn is alive, its worker may yet finish: wait for it, as
+    ``_capture_assistant_reply`` does. Once that process is gone (the box restarted, the loop was
+    killed) nothing more is ever written, and waiting for a terminal marker a dead worker never
+    writes stalled the redelivery -- and every message queued behind it -- for the whole budget.
+    So the transcript is read as it stands: a reply counts only when its tail COMPLETED and the
+    file was written after the turn began (otherwise the completed tail is the previous turn's).
+    """
+    from flow_sdk.app.actions.execute_prompt import (  # noqa: PLC0415
+        _capture_assistant_reply,
+        _last_turn_assistant_text,
+    )
+    from flow_sdk.builtin.agentic_process.status_predicates import _pid_alive  # noqa: PLC0415
+    from flow_sdk.transcript_analyzer.worker_status import WorkerStatus  # noqa: PLC0415
+
+    owner = started.get(OWNER_PID)
+    if not isinstance(owner, int) or owner == os.getpid() or _pid_alive(owner):
+        return await _capture_assistant_reply(ap)
+    path, _ = _transcript_file(ap)
+    try:
+        began = datetime.fromisoformat(str(started.get("at"))).timestamp()
+    except ValueError:
+        return ""
+    if path is None or path.stat().st_mtime <= began or ap.driver.tail_status(path) is not WorkerStatus.COMPLETE:
+        return ""
+    return _last_turn_assistant_text(transcript_entries(ap))
 
 
 def has_transcript(ap) -> bool:
