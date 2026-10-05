@@ -31,6 +31,9 @@ export enum PrefKey {
   SOUND_ENABLED = 'preferences.notifications.sound_enabled',
   SOUND_KEY = 'preferences.notifications.sound_key',
   SHARE_MESSAGE_STATUS = 'preferences.notifications.share_message_status',
+  /** Signed out, a search-line request asks whether to sign in for smart navigation: 'ask' | 'skip'.
+   *  The prompt's "Don't ask again" writes 'skip' (ui/src/navigation/smart-ask.ts). */
+  SMART_NAVIGATION_SIGNIN = 'preferences.notifications.smart_navigation_signin',
   SCROLLBACK_LINES = 'preferences.advanced.scrollback_lines',
   EXPERIMENTAL_FLAGS = 'preferences.advanced.experimental_flags',
   INDEXER_BACKEND = 'preferences.advanced.indexer_backend',
@@ -288,6 +291,20 @@ export const PREF_REGISTRY: Record<PrefKey, PrefInfo> = {
     description: 'Let other participants see when messages are delivered or read.',
     dataType: PrefDataType.BOOL,
     defaultValue: true,
+  },
+  [PrefKey.SMART_NAVIGATION_SIGNIN]: {
+    key: PrefKey.SMART_NAVIGATION_SIGNIN,
+    surfaced: true,
+    category: 'notifications',
+    label: 'Sign-in prompt for smart navigation',
+    description:
+      'When you are signed out, ask whether to sign in so the search line can open screens directly.',
+    dataType: PrefDataType.STRING,
+    defaultValue: 'ask',
+    options: [
+      { value: 'ask', label: 'Ask every time' },
+      { value: 'skip', label: "Don't ask" },
+    ],
   },
   [PrefKey.SMART_NAVIGATION_LOG]: {
     key: PrefKey.SMART_NAVIGATION_LOG,

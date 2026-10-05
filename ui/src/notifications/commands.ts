@@ -36,9 +36,10 @@ export function navigateTo(href: string): void {
   else window.location.assign(href);
 }
 
-/** Run a notification action: imperative `command`, else URL-first `href`. */
-export function runAction(action: NotificationAction, id: string): void {
-  if (action.command) runCommand(action.command, action.args ?? {}, { id });
+/** Run a notification action: imperative `command`, else URL-first `href`. `extra` is merged into
+ *  the command's args — what the toast itself knows at click time (the `remember` box). */
+export function runAction(action: NotificationAction, id: string, extra?: CommandArgs): void {
+  if (action.command) runCommand(action.command, { ...action.args, ...extra }, { id });
   else if (action.href) navigateTo(action.href);
 }
 

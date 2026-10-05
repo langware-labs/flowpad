@@ -73,7 +73,11 @@ vi.mock('@src/components/top-nav-bar/TopBarActions', () => ({ TopBarActions: () 
 vi.mock('@src/components/open-project-component/open-project-component', () => ({
   OpenProjectComponent: ({ open }: { open: boolean }) => (open ? <div data-testid="project-switcher" /> : null),
 }));
-vi.mock('@src/notifications', () => ({ notify: { error: vi.fn(), success: vi.fn() } }));
+/** The sign-in question smart-ask.ts puts in front of a signed-out request. */
+const askNotification = vi.hoisted(() => vi.fn());
+vi.mock('@src/notifications', () => ({ notify: { error: vi.fn(), success: vi.fn() }, askNotification }));
+/** Signed in by default, so every ask below is today's ask; one case signs out. */
+const signedIn = vi.hoisted(() => ({ current: true }));
 /** The open project buckets behind the chip's list. Mocking the tab manager is
  *  mandatory here: unmocked, the hook starts the real one against the unit
  *  tier's no-backend host. */
@@ -103,6 +107,12 @@ vi.mock('@sdk', async (importOriginal) => {
     dataContext: Object.assign(Object.create(Object.getPrototypeOf(actual.dataContext)), actual.dataContext, {
       setContextEntityTypeId: setContext,
     }),
+    // The real manager with only `isLoggedIn` swapped (a getter on its prototype).
+    cloudManager: Object.defineProperty(
+      Object.assign(Object.create(Object.getPrototypeOf(actual.cloudManager)), actual.cloudManager),
+      'isLoggedIn',
+      { get: () => signedIn.current },
+    ),
   };
 });
 
@@ -472,6 +482,24 @@ describe('the navigation bar', () => {
   describe('ask mode', () => {
     beforeEach(() => {
       assistant.current = { ask: vi.fn() };
+      signedIn.current = true;
+    });
+
+    it('signed out, holds the request on the sign-in question, then asks as today on Continue', async () => {
+      signedIn.current = false;
+      let answer!: (a: { value: string; remember: boolean }) => void;
+      askNotification.mockReturnValueOnce(new Promise((resolve) => (answer = resolve)));
+      const user = userEvent.setup();
+      renderBar();
+
+      await user.click(screen.getByTestId('top-nav-address'));
+      await user.type(screen.getByTestId('top-nav-ask-input'), 'open data sources{Enter}');
+      await waitFor(() => expect(askNotification).toHaveBeenCalledTimes(1));
+      expect(assistant.current!.ask).not.toHaveBeenCalled();
+      expect(navigationDecision).not.toHaveBeenCalled();
+
+      answer({ value: 'continue', remember: false });
+      await waitFor(() => expect(assistant.current!.ask).toHaveBeenCalledWith('open data sources', expect.anything()));
     });
 
     it('turns the pill into an assistant prompt on a dead-space click, and sends it on Enter', async () => {

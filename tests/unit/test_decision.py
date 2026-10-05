@@ -196,6 +196,23 @@ async def test_signed_out_asks_nothing_and_finds_nothing(env, monkeypatch) -> No
     assert await decision_endpoints() == [] and asked == []
 
 
+async def test_signing_out_drops_the_listing_taken_while_signed_in(env, monkeypatch) -> None:
+    """A listing is what THIS login may call. After sign-out it is nothing -- not the last listing
+    from before it, which used to keep the navigator's rules acting as if a decision API were on
+    offer until the backend restarted."""
+    from flow_sdk.cli.app_config import clear_user
+    from flow_sdk.cli.auth.hub_login import delete_api_key
+    from flow_sdk.instance_settings.api_endpoint import decision_endpoints
+
+    _login()
+    _hub(monkeypatch, listing={"data": []}, catalog=[DECIDER])
+    assert [o.id for o in await decision_endpoints()] == [DECIDER["id"]]
+    delete_api_key()
+    clear_user()
+    assert await decision_endpoints() == []
+    assert await decision_endpoints(cached_only=True) == []
+
+
 async def test_decide_goes_through_the_endpoint_marked_decision(env, monkeypatch) -> None:
     from flow_sdk.decision import decide
 
