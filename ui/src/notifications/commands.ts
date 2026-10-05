@@ -2,6 +2,7 @@ import { t } from '@lingui/core/macro';
 import { oauthService, OAUTH_PROVIDERS, copyToClipboard, AgenticProcess, snifferManager, tabManager } from '@sdk';
 import { gitResolvePrompt } from '@src/components/status-bar/gitResolvePrompt';
 import { notify } from './notify';
+import { settleAsk } from './pending-asks';
 import type { NotificationAction } from './types';
 
 /**
@@ -19,6 +20,14 @@ const registry = new Map<string, CommandHandler>();
 export function registerCommand(name: string, fn: CommandHandler): void {
   registry.set(name, fn);
 }
+
+// The answer to an `askNotification` button. Built in here rather than registered by ask.ts as it
+// loads: ask.ts can load while THIS module is still loading (notify → the toast UI → … → the
+// notifications index → ask.ts), and a registration then reaches `registry` before it exists.
+registry.set('notification.answer', (args, ctx) => {
+  settleAsk(ctx.id, { value: String(args.value), remember: args.remember === true });
+  notify.dismiss(ctx.id);
+});
 
 export function runCommand(name: string, args: CommandArgs, ctx: { id: string }): void {
   const fn = registry.get(name);
