@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { Plus } from 'lucide-react';
-import type { TypeId } from '@sdk';
+import type { HelpOrigin, TypeId } from '@sdk';
 import { FlowIcon } from '@sdk/react/FlowIcon';
 import { NavBadge } from '@src/components/ui/nav-badge';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
@@ -27,10 +27,13 @@ import { workspaceToolbarButton } from './workspace-toolbar-button';
 export function VibeAssignTaskButton({
   projectId,
   sessionTypeId,
+  origin = 'vibe',
 }: {
   projectId: string | null;
   /** Active vibe session — supplies the optional transcript. */
   sessionTypeId: TypeId | null;
+  /** Where the ask is made from — the Flowpad Assistant reuses this button. */
+  origin?: HelpOrigin;
 }) {
   const { t } = useLingui();
   const { navigation } = useDockNavigation();
@@ -117,7 +120,7 @@ export function VibeAssignTaskButton({
           onOpenChange={setDialogOpen}
           projectId={projectId}
           sessionTypeId={sessionTypeId}
-          origin="vibe"
+          origin={origin}
           openTasks={rows}
           onOpenExisting={(row) => {
             setDialogOpen(false);
