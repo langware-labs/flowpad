@@ -165,6 +165,26 @@ describe('WebUrlDisplay', () => {
     await waitFor(() => expect(screen.queryByTestId('web-url-warning')).toBeNull());
   });
 
+  it('a show of this page makes even a REMOUNTED display look again — not the cached verdict', async () => {
+    // The same show that reports the repair also re-pins the session display, which
+    // remounts it; the re-check queued in the old instance never runs.
+    mocks.post.mockResolvedValueOnce(status({ reachable: false, http_status: null, nav_error: 'connection_refused' }));
+    const first = render(<WebUrlDisplay url={URL_} />);
+    await screen.findByTestId('web-url-warning');
+
+    mocks.post.mockResolvedValue(status({}));
+    dataManager.emit('on_entity_event', new TypeId('agentic_process', '0b9a3f0e-1c2d-4e5f-8a6b-7c8d9e0f1a2b'), 'on_show', {
+      kind: 'dock',
+      view_type: 'web-app',
+      pointer: pointerForWebUrl(URL_),
+    });
+    first.unmount();
+
+    render(<WebUrlDisplay url={URL_} />);
+    await waitFor(() => expect(mocks.post.mock.calls.length).toBeGreaterThanOrEqual(2));
+    await waitFor(() => expect(screen.queryByTestId('web-url-warning')).toBeNull());
+  });
+
   it('shows the page untouched when the check itself fails, and tries again next mount', async () => {
     mocks.post.mockRejectedValue(new Error('backend down'));
     const first = render(<WebUrlDisplay url={URL_} />);

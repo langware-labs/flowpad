@@ -1,5 +1,6 @@
 import { AgenticProcess, dataManager, webUrlFromPointer, type TypeId } from '@sdk';
 import { useEffect } from 'react';
+import { forgetWebpageStatus } from './useWebpageStatus';
 
 /**
  * Refresh when the backend shows THIS page again.
@@ -8,7 +9,8 @@ import { useEffect } from 'react';
  * the page changes when the server behind it comes back. The backend knows: a
  * `navigate` op that repaired a dead server (an `auto_open` op's agent rung) shows
  * the same place again — a live `on_show` event carrying the same `web-app`
- * pointer. That is exactly "look again", so it re-checks and reloads the frame.
+ * pointer. That is exactly "look again", so it forgets the cached check, re-checks
+ * and reloads the frame.
  */
 export function useReshowRefresh(url: string, refresh: () => void): void {
   useEffect(() => {
@@ -16,6 +18,9 @@ export function useReshowRefresh(url: string, refresh: () => void): void {
       if (event !== 'on_show' || typeId.type !== AgenticProcess.type) return;
       if (payload?.kind !== 'dock' || payload.view_type !== 'web-app') return;
       if (webUrlFromPointer(payload.pointer as string | undefined) !== url) return;
+      // First, and synchronously: the same show often remounts this display, and a
+      // remounted one must not read the old verdict back from the check cache.
+      forgetWebpageStatus(url);
       refresh();
     };
     dataManager.on('on_entity_event', onEntityEvent);
