@@ -1818,7 +1818,10 @@ async def helpdesk_start_ticket() -> ApiResponse:
         from flow_sdk.app.actions.materialize_flow_message import ensure_conversation_entity  # noqa: PLC0415
         from flow_sdk.builtin.conversation import ConversationKind  # noqa: PLC0415
 
-        title = text if len(text) <= 60 else f"{text[:60].rstrip()}…"
+        # The first line, cut to 60 — the hub titles the desk's copy by the same rule
+        # (``_ticket_title``), and a different one here would flip on the next hub push.
+        first_line = next((part.strip() for part in text.splitlines() if part.strip()), text)
+        title = first_line if len(first_line) <= 60 else f"{first_line[:60].rstrip()}…"
         # Hub-owned conversation: no local project_id (mirrors how received
         # remote conversations materialize); carry the helpdesk project as the
         # remote project identity for traceability.

@@ -15,6 +15,7 @@ from flow_sdk.api.api_types.identifier import is_valid_entity_id
 from flow_sdk.builtin.helpdesk import Helpdesk
 from flow_sdk.builtin.project import Project, mount_key, scoped_assets
 from flow_sdk.fs_store.path_utils import is_path_under
+from flow_sdk.schema.types import EntityType
 
 log = logging.getLogger(__name__)
 
@@ -61,6 +62,11 @@ async def resolve_adopted_helpdesk(project_id: str) -> AdoptedHelpdesk | None:
     roots = project.direct_context_roots()
     if not roots:
         return None
+
+    # A desk declared in the project is a row only once the project is indexed, and that
+    # first index runs detached on open: a ticket filed right after opening read no desk
+    # and went, silently, to the hub's default one. Index the declared desks now if missing.
+    await project.index_missing_assets("helpdesk", {EntityType.HELPDESK.value}, lambda _candidate: True)
 
     # Independent reads: neither feeds the other, so pay one round trip, not two.
     all_desks, projects_by_mount = await asyncio.gather(Helpdesk.get_all(), Project.index_by_mount())
