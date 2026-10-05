@@ -130,16 +130,6 @@ def ensure_project_namespace(project) -> None:
         namespace_roots.remember(spec.ns, mount)
 
 
-def _hub_origin_of(entity: Entity):
-    """The asset's hub-repo origin once it has been published into its project's repo, else None."""
-    from flow_sdk.assets.hub_repo_sync import hub_origin_of  # noqa: PLC0415
-    from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
-
-    info = SchemaRegistry.get(entity.get_type())
-    ref = getattr(entity, "asset_ref", None)
-    return hub_origin_of(entity, info.storage_root_for(Path(str(ref))) if info is not None and ref else None)
-
-
 async def origin_for_asset(asset_ref: str):
     """WHERE a reader can fetch this asset: its repo's ``GitOrigin`` (repo,
     branch, commit, rel_path) when the checkout has a usable remote, else the
@@ -200,6 +190,8 @@ async def set_published(entity: Entity, *, published: bool, project_id: str | No
             raise PublishRefused(
                 "carrier_mismatch", f"the file already carries id {committed}, not this row's {entity.id}"
             )
+        from flow_sdk.assets.hub_repo_sync import published_origin  # noqa: PLC0415
+
         # The row reflects the stamped carrier before the manifest names it.
         resolved = await resolve_asset(asset_ref, write=False, type_name=type_name, owner_id=str(entity.id))
         await index_one(resolved, notify=True, scope=getattr(entity, "scope", None), project_id=str(project.id))
@@ -210,7 +202,7 @@ async def set_published(entity: Entity, *, published: bool, project_id: str | No
                 rel_path=rel_path,
                 name=str(getattr(entity, "name", "") or ""),
                 description=str(getattr(entity, "description", "") or ""),
-                origin=_hub_origin_of(entity) or await origin_for_asset(asset_ref),
+                origin=published_origin(entity) or await origin_for_asset(asset_ref),
             ),
         )
         await ensure_manifest_indexed(project)
@@ -452,9 +444,10 @@ async def _point_row_at_hub_repo(entity: Entity, project) -> None:
     folder could offer; a reader installs from the row's origin, so it must name
     the place every member can actually reach.
     """
+    from flow_sdk.assets.hub_repo_sync import published_origin  # noqa: PLC0415
     from flow_sdk.assets.project_manifest import make_entry, publish, rel_path_for  # noqa: PLC0415
 
-    origin = _hub_origin_of(entity)
+    origin = published_origin(entity)
     mount = _mount_of(project)
     rel_path = rel_path_for(mount, Path(str(entity.asset_ref))) if mount is not None and origin else None
     if rel_path is None:

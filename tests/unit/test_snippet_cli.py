@@ -28,7 +28,7 @@ def sent_body(monkeypatch):
 
     def _fake_post(url, body, timeout=None, on_error=None):
         captured.update(body)
-        return {"kind": "vfs", "path": body.get("path")}
+        return {"exit_code": 0, "delivered": True, "value": {"kind": "vfs", "path": body.get("path")}}
 
     monkeypatch.setattr(show_cmd, "_discover_port", lambda: 9999)
     monkeypatch.setattr(show_cmd, "_post_graph_json", _fake_post)
@@ -46,7 +46,7 @@ def test_stdin_code_lands_in_the_os_temp_dir_and_is_shown(sent_body, tmp_path, m
         assert sent.name == "t-cli-stdin.py"
         assert sent.read_text() == CODE
         assert not any(tmp_path.iterdir()), "nothing may be written into the caller's folder"
-        assert json.loads(result.stdout)["path"] == str(sent)
+        assert json.loads(result.stdout)["value"]["path"] == str(sent)
     finally:
         sent.unlink(missing_ok=True)
 

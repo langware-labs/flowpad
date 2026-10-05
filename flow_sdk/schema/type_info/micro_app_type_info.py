@@ -34,7 +34,7 @@ MICRO_APP = TypeInfo(
     asset_spec=WebappManifestSpec,
     derive_fields_fn=derive_webapp,
     fts_content=("name", "title", "description"),
-    index_fields=["name", "kind"],
+    index_fields=["name", "kind", "edits"],
     post_sync_fn=place_indexed_webapp,
     orphan_cascade_fn=unplace_webapp,
     # DERIVED, not a capsule: `webapp.json` deliberately carries no id, so the

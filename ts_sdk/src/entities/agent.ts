@@ -169,10 +169,12 @@ export class Agent extends APIEntity<Agent> {
    *  with `use(…, true)` — auto-launch included — delivered via
    *  the prompt queue. Independent of `auto_launch`. */
   auto_launch_prompt?: string;
-  /** Tabs every new session as this agent opens with — `Tab.pointer` JSON, a file
-   *  named inside the agent's project. The first is the session's active display.
-   *  Opened by the backend (`Agent.use`); the frontend only renders them. */
-  auto_open?: { viewType: string; pointer: string }[] | null;
+  /** What every new session as this agent opens with: a place (`Tab.pointer` JSON, a
+   *  file named inside the agent's project), a `navigate` compute op in the agent's
+   *  project that repairs it when it cannot be used yet (`{op}`), or a wizard
+   *  (`{wizard}`). The first place is the session's active display. Opened and
+   *  repaired by the backend (`Agent.use`); the frontend only renders them. */
+  auto_open?: ({ viewType: string; pointer: string } | { op: string } | { wizard: string })[] | null;
   /** Per-place launch overrides, keyed by Deployment id (agent.json `places`). */
   places?: AgentPlaceSpecWire[] | null;
   /** Deployment id of the one place that answers this agent's email. */

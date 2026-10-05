@@ -332,13 +332,17 @@ class GraphWorkflowManager:
         self._arm_subscriptions(loaded)
         return loaded
 
-    async def flows_referencing_trigger(self, trigger_id: str) -> list[_LoadedFlow]:
-        out: list[_LoadedFlow] = []
+    async def enabled_flows(self) -> list[tuple[GraphWorkflow, _LoadedFlow]]:
+        """Every enabled workflow with its row, loaded. The one walk over all of them."""
+        out: list[tuple[GraphWorkflow, _LoadedFlow]] = []
         for entity in await GraphWorkflow.get_all({}):
             loaded = await self.load_flow(entity.id, entity)
-            if loaded and loaded.enabled and trigger_id in loaded.doc.trigger_ids():
-                out.append(loaded)
+            if loaded and loaded.enabled:
+                out.append((entity, loaded))
         return out
+
+    async def flows_referencing_trigger(self, trigger_id: str) -> list[_LoadedFlow]:
+        return [loaded for _, loaded in await self.enabled_flows() if trigger_id in loaded.doc.trigger_ids()]
 
     # ── graph-level bus subscriptions (phase 5) ───────────────────────────────
 

@@ -22,6 +22,7 @@ from flow_sdk.api.api_types.api_field import APIField, Sharing
 from flow_sdk.core import Entity
 from flow_sdk.fs_store.origin.cloud_origin import CloudOrigin, CloudOriginLocal
 from flow_sdk.fs_store.type_id import TypeId
+from flow_sdk.schema.data_spec.hub_failure_spec import HubFailure
 from flow_sdk.schema.data_spec.message_reaction_spec import MessageReaction
 from flow_sdk.schema.data_spec.message_sender_spec import MessageSender, SenderKind
 from flow_sdk.schema.data_spec.spec import DataSpec
@@ -64,13 +65,17 @@ class BodyStatus(str, Enum):
     NA        — no body needed (text-only, or inline-only attachments).
     UPLOADING — sender is staging the body; receivers must wait.
     READY     — body is available at fs/download/<BODY_FILENAME>.
+    FAILED    — an upload attempt failed; the sender's outbox retries it. Receivers
+                wait exactly as for UPLOADING (the hub has stamped it since its own
+                upload errors; a client without it could not even parse such a row).
 
-    Transitions enforced hub-side: NA is terminal; UPLOADING → READY only.
+    NA is terminal; UPLOADING / FAILED → READY.
     """
 
     NA = "na"
     UPLOADING = "uploading"
     READY = "ready"
+    FAILED = "failed"
 
 
 class FlowMessageKind(str, Enum):
@@ -168,7 +173,7 @@ BODY_FILENAME = "body.flowmsg"
 
 # Coalesce concurrent ``upload_body`` calls for the same FM id. Two callers can
 # race the body upload for one FM — the auto background upload
-# (``_finalize_message_dispatch`` → ``asyncio.create_task(_upload_body_and_finalize)``)
+# (``Conversation.deliver`` → ``_upload_body_and_finalize``, from a send or the outbox)
 # and an explicit ``upload_body`` action — and the hub's ``fs/upload`` is not
 # concurrency-safe for one VFSPath: two concurrent sessions to the same object
 # path clobber each other and the blob is lost (receiver download 404 → 500).
@@ -650,6 +655,43 @@ class FlowMessage(Entity):
     # hub refresh. A parked prompt (session PENDING) stays False until approve
     # re-drives it.
     prompt_auto_handled: bool = APIField(default=False, sharing=Sharing.HUB_WRITE)
+    # The outbox. ``outbound`` marks a message THIS machine wrote to send — set once, where it is
+    # composed, never by a hub refresh — so "what do I still owe the hub" never depends on
+    # ``sender_id`` (empty while signed out) or on who the hub says created it. While the hub
+    # has not taken it, ``delivery_failure`` says why; it is cleared the moment it lands.
+    # Both PRIVATE: facts about this machine's sending, meaningless anywhere else.
+    outbound: bool = APIField(default=False, sharing=Sharing.PRIVATE)
+    delivery_failure: Optional[HubFailure] = APIField(default=None, sharing=Sharing.PRIVATE)
+
+    @property
+    def owes_delivery(self) -> bool:
+        """Whether this is a message I sent that the hub does not fully have yet.
+
+        THE outbox predicate: the header not accepted (below SENT), or accepted with a body
+        still owed. ``pending_send`` rows count however they were written — the logged-out
+        composer has always meant "send this later".
+        """
+        # ``kind`` is a bare str once validated (use_enum_values), the enum only as an untouched default.
+        if self.is_draft or getattr(self.kind, "value", self.kind) == FlowMessageKind.INVITATION.value:
+            return False
+        if not (self.outbound or self.delivery_status == DeliveryStatus.PENDING_SEND.value):
+            return False
+        if delivery_rank(self.delivery_status) < delivery_rank(DeliveryStatus.SENT):
+            return True
+        return self.body_status in (BodyStatus.UPLOADING, BodyStatus.FAILED)
+
+    async def mark_sent(self) -> None:
+        """The hub took the header: SENT, remote, and no failure left to show."""
+        if delivery_advances(self.delivery_status, DeliveryStatus.SENT):
+            self.delivery_status = DeliveryStatus.SENT.value
+        self.remote = True
+        self.delivery_failure = None
+        await self.save()
+
+    async def record_delivery_failure(self, failure: HubFailure) -> None:
+        """Why the hub does not have it yet — kept until it lands, broadcast to the sender's UI."""
+        self.delivery_failure = failure
+        await self.save()
 
     @classmethod
     def preserved_fields_on_save(cls, current_data: dict) -> tuple[str, ...]:

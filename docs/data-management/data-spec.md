@@ -329,3 +329,26 @@ type with no spec.
 - [Schema Registry](schema-registry.md) — `register_kind` / `kind_type` / `kind_for`
 - [Dataset Layout](datasets.md) — the on-disk grammar and the `spec` authoring form
 - [Tags](../tags.md) — the taxonomy `spec_kind` draws from
+
+## Kinds defined by a folder
+
+`agentic-assets/data_spec/<full.kind>/` is a `data_spec` asset: `data_spec.json` (an entity
+document) plus `description.md`. Indexing it registers the kind it defines — the folder name, the
+full dot path, never relative to where it is nested — under its project's namespace (ours when
+shipped). It may nest further data specs in its own `agentic-assets/`, at any depth.
+
+```json
+{"type": "data_spec", "fields": {
+  "route":  {"shape": "enum:quick|agentic", "description": "quick: open now; agentic: ask"},
+  "target": {"shape": "?navigator.target",  "description": "what to open"}}}
+```
+
+* **The subkind is optional.** Implicit: `fields` is a `record`, `examples` (`input` / `output` /
+  `context` → shapes) a `dataset`. Explicit: `"subkind"` declared and checked against the body.
+  None: no body — a documentation node that registers nothing.
+* **Form additions** (input side only): `?<shape>` may be absent, `enum:a|b` is one of these
+  strings, `{"*": <shape>}` is a map. A hand-written spec renders exactly as before.
+* **Failures are recorded, never raised**: a duplicate kind, a name nobody defines, a bad `ns` —
+  the row's `error` says which.
+
+See [ontology](../ontology.md#coverage--every-path-a-kind-is-minted), path 5.

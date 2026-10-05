@@ -214,6 +214,11 @@ class DataDriverSpec(DataSpec):
     webhook: Optional[DriverWebhookSpec] = None
     #: The wizards a source of this driver is set up with, in order (``setup_stage_spec.py``).
     setup_wizards: list[SetupStageSpec] = Field(default_factory=list)
+    #: Drivers that are ONE choice to a person ("WhatsApp") and several ways to it (Flowpad's number, your
+    #: own Meta app): the picker shows one tile for the group, and choosing it opens the group's setup
+    #: phase, where each member is a card. ``group_order`` orders the cards (lowest first).
+    group: str = ""
+    group_order: int = 0
 
     @field_validator("setup_wizards")
     @classmethod

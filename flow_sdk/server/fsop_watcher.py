@@ -46,7 +46,9 @@ async def _fire(
     fires must not mutate counter / last_triggered / last_seen_* — those are
     the "real fires" surfaces in the UI list/detail and the catch-up anchor.
     """
-    if not trigger.enabled or not changes:
+    # A test runs even when the rule is switched off: *Run once now* is how
+    # someone checks a rule before turning it on.
+    if (not trigger.enabled and not is_test) or not changes:
         return
 
     if not is_test:
@@ -78,12 +80,14 @@ async def _fire(
     # were inlined copies until the bus emitters landed and made a third
     # duplicated concern obvious; the fire contract (the `envelope=` kwarg,
     # `trigger.failed` emission) now has one home instead of three.
-    from flow_sdk.builtin.trigger import activate_flows_for_trigger, dispatch_trigger_actions
+    from flow_sdk.builtin.trigger import activate_flows_for_trigger, run_trigger_actions
 
+    flow_error = None
     if not is_test and trigger.id:
-        await activate_flows_for_trigger(trigger.id, trigger.name or trigger.id,
-                                         trigger=trigger)
-    await dispatch_trigger_actions(trigger, changes=changes)
+        flow_error = await activate_flows_for_trigger(trigger.id, trigger.name or trigger.id,
+                                                      trigger=trigger)
+    outcome = await run_trigger_actions(trigger, changes=changes)
+    error = "; ".join(e for e in (flow_error, outcome.error) if e) or None
 
     # One log row per fire. Cap paths persisted; `changes_total` is the truth.
     first = changes[0]
@@ -111,6 +115,7 @@ async def _fire(
     )
 
     try:
+        from flow_sdk.automations.fingerprint import spec_hash
         from flow_sdk.fs_store.operations.trigger_log import append_entry as _append_trigger_log_entry
 
         _append_trigger_log_entry(
@@ -142,7 +147,10 @@ async def _fire(
                 "event_id": event_id,
                 "actor": "system",
                 "actions": [{"action_type": str(a.action_type)} for a in trigger.actions],
-                "agentic_process_id": None,
+                "agentic_process_id": outcome.process_id,
+                "error": error,
+                "duration_ms": outcome.duration_ms,
+                "spec_hash": spec_hash(trigger),
             },
         )
     except Exception:
@@ -325,7 +333,9 @@ class FSOpWatcher:
             pass
 
     def _spawn_task(self, trigger: Trigger) -> None:
-        if not trigger.id:
+        from flow_sdk.builtin.trigger_arming import trigger_runs_here
+
+        if not trigger.id or not trigger_runs_here(trigger):
             return
         tid = trigger.id
         task = asyncio.create_task(_run_watch_for(trigger), name=f"FSOp:{tid}")

@@ -270,12 +270,7 @@ function TriggerRows({ wizard }: { wizard: Wizard }) {
               variant="ghost"
               className="h-6 gap-1 px-1.5 text-[11px]"
               data-testid={`wizard-trigger-open-${index}`}
-              onClick={() =>
-                // `system: true` is required, not decorative: a wizard's trigger
-                // is system-scoped, so the Events screen hides it without this
-                // and the link lands on an empty list.
-                navigation.openDock(DockPointer.forEvents(row.id, { system: true }))
-              }
+              onClick={() => navigation.openDock(DockPointer.forAutomations({ trigger: row.id }))}
             >
               <ExternalLink className="h-3 w-3" />
               <Trans>Open trigger</Trans>

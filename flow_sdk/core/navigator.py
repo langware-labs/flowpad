@@ -10,14 +10,13 @@ With a decision API, the cascade the benchmark settled on (50 cases x 3 reps, Je
 hub: 100% right when it acts, 92% of navigation handled, every reasoning request sent on):
 
 1. **rules** -- a literal URL / path / port / "search for X", or an exact screen name or
-   alias from ``VIEW_META``: answered with no model at all;
-2. **one decision** -- a ``choice`` over every screen (``VIEW_META``), the request's
-   context and full-text candidates, plus ``agentic``;
+   alias from the map: answered with no model at all;
+2. **one decision** -- a ``choice`` over every screen on the map (``navigation_map``), what is
+   in context where the person is (``navigation.here``) and full-text candidates, plus ``agentic``;
 3. act only at confidence >= ``MIN_CONFIDENCE``. Below it the answer is ``agentic``: an
    unsure guess opens a confidently wrong screen, which is worse than a slower answer.
 
-Every screen offered is a real address (``parse_dock_url``), so no answer can name a
-screen that does not exist.
+Every screen offered is a place on the map, so no answer can name a screen that does not exist.
 """
 
 from __future__ import annotations
@@ -26,7 +25,7 @@ import logging
 import re
 from typing import Any, Literal, Optional
 
-from flow_sdk.core.dock_address import VIEW_META, PointerRequirement, parse_dock_url
+from flow_sdk.core.navigation import kind, navigation_map
 from flow_sdk.schema.data_spec.navigator_spec import NavigationTarget, NavigatorRoute
 
 logger = logging.getLogger(__name__)
@@ -38,37 +37,7 @@ CANDIDATE_LIMIT = 5
 
 # ── the label space ──────────────────────────────────────────────────────────
 
-# Events has four slugs for one screen; offering all four asks the model to choose between
-# identical screens.
-_EVENT_TWINS = {"triggers", "signals", "cron"}
 _SKIP = {"assistant"}  # the assistant is where the request was typed
-SUBVIEWS = {
-    "credentials/api-keys": "Credentials > API keys tab",
-    "credentials/environment": "Credentials > Environment variables tab",
-    "credentials/connections": "Credentials > Connections (OAuth accounts) tab",
-    "machine/processes": "Machine > running processes",
-    "machine/network": "Machine > network / ports",
-    "machine/secrets": "Machine > machine secrets",
-    "ai-config/llm-apis": "AI Configuration > LLM APIs tab",
-    "ai-config/clis": "AI Configuration > CLIs tab",
-    "assets/list/skill": "Assets filtered to skills",
-    "assets/list/agent": "Assets filtered to agents",
-    "assets/list/prompt": "Assets filtered to prompts",
-    "hub/token-plan/me": "Hub token plan > my budget",
-    "hub/token-plan/team": "Hub token plan > team budget",
-}
-#: entity type -> OTHER screens that take that entity's id as their pointer. Only screens that
-#: differ from opening the entity itself: offering ``conversation/<id>`` beside the conversation
-#: entity is the same destination twice, and the two split the probability until neither clears
-#: ``MIN_CONFIDENCE`` (measured: 0.59 / 0.53, both sent to the assistant).
-_POINTER_VIEWS = {
-    "project": [("graph", "Dependency graph"), ("helpdesk", "Help desk / support portal")],
-    "agentic_process": [
-        ("lens", "Transcript (Lens)"),
-        ("agentic_process", "Process screen"),
-        ("diff", "Diff / changes"),
-    ],
-}
 AGENTIC = (
     "Not a plain open: the request needs reasoning, an answer or explanation, creating / changing / "
     "sending / deleting / restarting something, setup or connecting, diagnosis, several steps, or the "
@@ -86,29 +55,26 @@ VERB = {
 }
 
 
+def _address(place: Any, pointer: str = "") -> str:
+    prefix = "hub/" if list(place.pages) == ["hub"] else ""
+    return f"{prefix}{place.view}" + (f"/{pointer}" if pointer else "")
+
+
 def _static_options() -> tuple[dict[str, str], dict[str, str]]:
-    """``{option key: description}`` for every addressable screen, and ``{name: key}`` for the rules."""
+    """``{option key: description}`` for every place on the map that needs no pointer, its
+    subplaces, and ``{name: key}`` for the rules."""
     options: dict[str, str] = {}
     names: dict[str, str] = {}
-    event_aliases: list[str] = []
-    for vt, meta in VIEW_META.items():
-        slug = vt.value
-        if not meta.addressable or meta.pointer == PointerRequirement.REQUIRED or slug in _SKIP:
+    for place in navigation_map().places:
+        if place.pointer == "required" or place.view in _SKIP:
             continue
-        if slug in _EVENT_TWINS or slug == "events":
-            event_aliases += [slug, *meta.aliases]
-            continue
-        key = f"view:hub/{slug}" if meta.pages == ("hub",) else f"view:{slug}"
-        aka = ", ".join(meta.aliases)
-        options[key] = f"Screen '{meta.label}'" + (f" (also called: {aka})" if aka else "")
-        for name in (meta.label, *meta.aliases):
+        key = f"view:{_address(place)}"
+        aka = ", ".join(place.aliases)
+        options[key] = f"Screen '{place.label}'" + (f" (also called: {aka})" if aka else "")
+        for name in (place.label, *place.aliases):
             names.setdefault(name.lower(), key)
-    options["view:events"] = "Screen 'Events' (also called: " + ", ".join(dict.fromkeys(event_aliases)) + ")"
-    for name in ("events", *event_aliases):
-        names.setdefault(name.lower(), "view:events")
-    for addr, desc in SUBVIEWS.items():
-        if parse_dock_url(f"/dock/{addr}") is not None:
-            options[f"view:{addr}"] = f"Screen '{desc}'"
+        for sub in place.subplaces:
+            options[f"view:{_address(place, sub.pointer)}"] = f"Screen '{sub.label}'"
     return options, names
 
 
@@ -131,9 +97,12 @@ def _entity_options(typeid: str, title: str, why: str) -> dict[str, str]:
         if kind == "artifact"
         else f"entity:{typeid}": f"{'Launch app' if kind == 'artifact' else 'Open the ' + noun} {name} ({why})"
     }
-    for view, label in _POINTER_VIEWS.get(kind, []):
-        if parse_dock_url(f"/dock/{view}/{ident}") is not None:
-            out[f"view:{view}/{ident}"] = f"{label} of {noun} {name} ({why})"
+    for place in navigation_map().places:
+        if kind in place.opens:
+            # The aliases are the words a person uses ("transcript" for the Lens): measured,
+            # the label alone left "open this session's transcript" under the bar.
+            screen = " / ".join((place.label, *place.aliases))
+            out[f"view:{_address(place, ident)}"] = f"{screen} of {noun} {name} ({why})"
     return out
 
 
@@ -195,12 +164,46 @@ def _literal(utterance: str) -> Optional[NavigationTarget]:
     return None
 
 
+#: How far a typed screen name may be from a real one and still open it: one keyboard slip -- a
+#: letter missing, extra, wrong, or two swapped ("connecitons" -> connections). Similarity ratios
+#: could not tell that from a near-name: "connectors" (Data sources) scored 0.857 beside 0.909.
+TYPO_EDITS = 1
+
+
+def _slips(a: str, b: str) -> int:
+    """Edits from ``a`` to ``b`` counting an adjacent swap as one (optimal string alignment)."""
+    if abs(len(a) - len(b)) > TYPO_EDITS:
+        return TYPO_EDITS + 1
+    prev2, prev = None, list(range(len(b) + 1))
+    for i in range(1, len(a) + 1):
+        cur = [i] + [0] * len(b)
+        for j in range(1, len(b) + 1):
+            cur[j] = min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] != b[j - 1]))
+            if prev2 is not None and i > 1 and j > 1 and a[i - 1] == b[j - 2] and a[i - 2] == b[j - 1]:
+                cur[j] = min(cur[j], prev2[j - 2] + 1)
+        prev2, prev = prev, cur
+    return prev[-1]
+
+
+def _screen_named(core: str) -> Optional[str]:
+    """The option key ``core`` names: exactly, else as one slip from exactly one screen's name.
+    Short words never count as typos -- "tags" is one slip from "tasks"."""
+    names = static_options()[1]
+    if key := names.get(core):
+        return key
+    if len(core) < 6:
+        return None
+    keys = {key for name, key in names.items() if _slips(core, name) <= TYPO_EDITS}
+    return keys.pop() if len(keys) == 1 else None
+
+
 def rule_hit(utterance: str) -> Optional[NavigationTarget]:
-    """A literal, or an exact screen name / alias once the leading verb is stripped."""
+    """A literal, or a screen name / alias once the leading verb is stripped -- exact, or a typo of
+    exactly one name (live: "open connecitons" went to the model at 0.63 and on to the assistant)."""
     if literal := _literal(utterance):
         return literal
     core = _LEAD.sub("", utterance.strip().rstrip("!?.").lower()).strip()
-    key = static_options()[1].get(core)
+    key = _screen_named(core) if core else None
     return NavigationTarget(kind="view", value=key[len("view:") :]) if key else None
 
 
@@ -232,16 +235,12 @@ async def _candidates(utterance: str) -> list[dict[str, str]]:
     return out
 
 
-def options_for(utterance: str, context: dict[str, Any], candidates: list[dict[str, str]]) -> dict[str, str]:
+def options_for(here: Any, candidates: list[dict[str, str]]) -> dict[str, str]:
+    """The map's screens, what ``here`` has in context, the search matches, and ``agentic``."""
     options = dict(static_options()[0])
-    for key, why in (
-        ("CurrentProjectTypeId", "current project"),
-        ("CurrentProcessTypeId", "current session"),
-        ("CurrentActiveEntityTypeId", "on screen now"),
-    ):
-        if typeid := context.get(key):
-            title = context.get("active_entity_title", "") if key == "CurrentActiveEntityTypeId" else ""
-            options.update(_entity_options(str(typeid), str(title or ""), why))
+    for slot, why in (("project", "current project"), ("process", "current session"), ("entity", "on screen now")):
+        if ref := getattr(here, slot, None):
+            options.update(_entity_options(ref.typeid, ref.title or "", why))
     for cand in candidates:
         options.update(_entity_options(cand["typeid"], cand.get("title", ""), "search match"))
     options["agentic"] = AGENTIC
@@ -251,7 +250,23 @@ def options_for(utterance: str, context: dict[str, Any], candidates: list[dict[s
 # ── the route ────────────────────────────────────────────────────────────────
 
 
-async def route(utterance: str, *, page: str = "", context: Optional[dict[str, Any]] = None) -> NavigatorRoute:
+def _offered(answer: NavigatorRoute, candidates: list[dict[str, str]]) -> NavigatorRoute:
+    """Keep the search matches the decision was offered on the answer (``answer.offered``), so a
+    caller can record exactly what was on the table. Run detail, not part of the answer's shape."""
+    answer._offered = list(candidates)
+    return answer
+
+
+async def route(
+    utterance: str,
+    *,
+    here: Any = None,
+    candidates: Optional[list[dict[str, str]]] = None,
+) -> NavigatorRoute:
+    """``here``: where the person is (a ``navigation.here`` or its dict; ``navigation.here_from``
+    builds one from a tab). ``candidates``: the search matches to offer -- searched for when None.
+    An eval passes the ones its row recorded, so a run is judged on the same options the row was
+    labelled against."""
     from flow_sdk.decision import DecisionError, DecisionSpec, decide, decision_endpoints  # noqa: PLC0415
 
     utterance = (utterance or "").strip()
@@ -263,20 +278,21 @@ async def route(utterance: str, *, page: str = "", context: Optional[dict[str, A
     if hit := rule_hit(utterance):
         return NavigatorRoute(route="quick", target=hit, verb=_verb(utterance), confidence=1.0, reason="rule")
 
-    context = context or {}
-    candidates = await _candidates(utterance)
+    here = kind("navigation.here").model_validate(here or {})
+    if candidates is None:
+        candidates = await _candidates(utterance)
     spec = DecisionSpec(
         state={
             "utterance": utterance,
-            "page": page,
-            "context": {k: v for k, v in context.items() if v},
+            "page": here.address or "",
+            "context": here.model_dump(mode="json", exclude_none=True, exclude={"address", "view", "pointer", "page"}),
             "candidates": candidates,
         },
         questions={
             "target": {
                 "type": "choice",
                 "instructions": INSTRUCTIONS,
-                "options": options_for(utterance, context, candidates),
+                "options": options_for(here, candidates),
             },
             "verb": VERB,
         },
@@ -284,22 +300,27 @@ async def route(utterance: str, *, page: str = "", context: Optional[dict[str, A
     try:
         result = await decide(spec)
     except DecisionError as exc:
-        return NavigatorRoute(route="agentic", reason=exc.reason)
+        return _offered(NavigatorRoute(route="agentic", reason=exc.reason), candidates)
     key = result.pick("target", min=MIN_CONFIDENCE)
     answer = result.answers.get("target")
     confidence = float(getattr(answer, "confidence", 0.0))
     if key is None:
-        return NavigatorRoute(route="agentic", reason="unsure", confidence=confidence, latency_ms=result.latency_ms)
+        answer = NavigatorRoute(route="agentic", reason="unsure", confidence=confidence, latency_ms=result.latency_ms)
+        return _offered(answer, candidates)
     if key == "agentic":
-        return NavigatorRoute(route="agentic", reason="agentic", confidence=confidence, latency_ms=result.latency_ms)
+        answer = NavigatorRoute(route="agentic", reason="agentic", confidence=confidence, latency_ms=result.latency_ms)
+        return _offered(answer, candidates)
     verb = result.pick("verb") or "show"
-    return NavigatorRoute(
-        route="quick",
-        target=_target_of(key),
-        verb="navigate" if verb == "navigate" else "show",
-        confidence=confidence,
-        reason="decision",
-        latency_ms=result.latency_ms,
+    return _offered(
+        NavigatorRoute(
+            route="quick",
+            target=_target_of(key),
+            verb="navigate" if verb == "navigate" else "show",
+            confidence=confidence,
+            reason="decision",
+            latency_ms=result.latency_ms,
+        ),
+        candidates,
     )
 
 

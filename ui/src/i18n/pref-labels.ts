@@ -48,6 +48,8 @@ const PREF_LABELS: Partial<Record<PrefKey, MessageDescriptor>> = {
   [PrefKey.SOUND_ENABLED]: msg`Play a sound when an agent is waiting for me`,
   [PrefKey.SOUND_KEY]: msg`Sound`,
   [PrefKey.SHARE_MESSAGE_STATUS]: msg`Share message status`,
+  [PrefKey.SMART_NAVIGATION_SIGNIN]: msg`Sign-in prompt for smart navigation`,
+  [PrefKey.SMART_NAVIGATION_LOG]: msg`Smart navigation log`,
   [PrefKey.SCROLLBACK_LINES]: msg`Terminal scrollback lines`,
   [PrefKey.EXPERIMENTAL_FLAGS]: msg`Experimental flags`,
   [PrefKey.INDEXER_BACKEND]: msg`Indexer backend`,
@@ -71,6 +73,8 @@ const PREF_DESCRIPTIONS: Partial<Record<PrefKey, MessageDescriptor>> = {
   [PrefKey.BUFFER_SYNC_UPDATES]: msg`Buffer PTY writes between sync markers to prevent visible scroll jumps during TUI redraws.`,
   [PrefKey.SOUND_KEY]: msg`Plays each time an agentic process becomes ready for your input.`,
   [PrefKey.SHARE_MESSAGE_STATUS]: msg`Let other participants see when messages are delivered or read.`,
+  [PrefKey.SMART_NAVIGATION_SIGNIN]: msg`When you are signed out, ask whether to sign in so the search line can open screens directly.`,
+  [PrefKey.SMART_NAVIGATION_LOG]: msg`Collect every smart-navigation decision (what you typed, where, what opened) in the SmartNavigationLog dataset, to review and train on. It lives in Flowpad's temp folder, which is cleared now and then.`,
   [PrefKey.SCROLLBACK_LINES]: msg`How many lines of terminal output to retain in the scrollback buffer.`,
   [PrefKey.EXPERIMENTAL_FLAGS]: msg`Free-form JSON for experimental feature toggles. Invalid JSON is not saved.`,
   [PrefKey.INDEXER_BACKEND]: msg`Which engine runs filesystem indexing: the built-in Python FSIndexer, or the external Rust indexer (requires FLOWPAD_RS_INDEXER_BIN on the server; silently falls back to Python when unavailable). Takes effect on the next index run.`,
@@ -97,6 +101,8 @@ const PREF_DESCRIPTIONS: Partial<Record<PrefKey, MessageDescriptor>> = {
  * registry rather than translated in one place and not the other.
  */
 const PREF_OPTION_LABELS: Record<string, MessageDescriptor> = {
+  'preferences.notifications.smart_navigation_signin:ask': msg`Ask every time`,
+  'preferences.notifications.smart_navigation_signin:skip': msg`Don't ask`,
   'preferences.general.default_terminal:builtin_xterm': msg`In-app only`,
   'preferences.general.default_terminal:external_terminal': msg`Also open sidecar OS Terminal`,
   'preferences.auto_index.index_type:fast': msg`Fast`,

@@ -1,0 +1,9 @@
+{
+  "route": "quick",
+  "target": {
+    "kind": "file",
+    "value": "~/notes/plan.md"
+  },
+  "verb": "show",
+  "confidence": null
+}

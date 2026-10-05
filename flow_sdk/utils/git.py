@@ -24,20 +24,16 @@ def _git_token_auth(token: Optional[str]) -> Tuple[list[str], Optional[dict]]:
 
     The argv installs an inline `credential.helper` that names the env var; the
     env carries the token itself (never argv, never the on-disk URL) plus
-    GIT_TERMINAL_PROMPT=0 so a bad/absent token fails fast instead of hanging.
+    ``NO_PROMPT_ENV`` so a bad/absent token fails fast instead of hanging.
     `([], None)` when there's no token — a plain public clone.
     """
-    from flow_sdk.utils.git_folder import CREDENTIAL_HELPER, GIT_TOKEN_ENV  # noqa: PLC0415
+    from flow_sdk.utils.git_folder import CREDENTIAL_HELPER_ARGS, GIT_TOKEN_ENV, NO_PROMPT_ENV  # noqa: PLC0415
 
-    # GIT_TERMINAL_PROMPT=0 on BOTH branches: without a token a private or
-    # mistyped URL must fail fast, not block on a credential prompt until the
-    # command timeout.
+    # NO_PROMPT_ENV on BOTH branches: without a token a private or mistyped URL
+    # must fail fast, not block on a credential prompt until the command timeout.
     if not token:
-        return [], {**os.environ, "GIT_TERMINAL_PROMPT": "0"}
-    return (
-        ["-c", f"credential.helper={CREDENTIAL_HELPER}"],
-        {**os.environ, GIT_TOKEN_ENV: token, "GIT_TERMINAL_PROMPT": "0"},
-    )
+        return [], {**os.environ, **NO_PROMPT_ENV}
+    return list(CREDENTIAL_HELPER_ARGS), {**os.environ, GIT_TOKEN_ENV: token, **NO_PROMPT_ENV}
 
 
 @dataclass
@@ -354,7 +350,6 @@ async def git_remote_access(clone_url: str, token: Optional[str] = None) -> Tupl
     """
     try:
         auth_args, env = _git_token_auth(token)
-        env = {**(env or os.environ), "GIT_TERMINAL_PROMPT": "0"}
         cmd = ["git", *auth_args, "ls-remote", "--symref", clone_url, "HEAD"]
 
         def _run():

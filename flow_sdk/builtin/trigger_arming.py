@@ -15,17 +15,45 @@ So arming is a function, called from both.
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 from typing import Any
 
 _log = logging.getLogger(__name__)
 
 
-async def arm_trigger(entity: Any) -> None:
+def is_foreign_copy(asset_ref: str | None) -> bool:
+    """True when ``asset_ref`` sits in a shipped system project of ANOTHER install.
+
+    The same shipped trigger exists once per install on the machine — an older
+    interpreter's tool env, a repo checkout opened as a project — and each copy
+    indexes as its own row. Only the RUNNING install's copy is this backend's
+    code; arming the others fires the same wizard once per copy (the 4×
+    "Developer toolchain" rows). Ancestor form, as ``Wizard.is_shipped`` reads it.
+    In an editable checkout the running install IS the repo, so it still arms.
+    """
+    if not asset_ref:
+        return False
+    from flow_sdk.config import is_running_install_path, is_system_project_path  # noqa: PLC0415
+
+    ref = Path(asset_ref)
+    if not any(is_system_project_path(p) for p in ref.parents):
+        return False
+    return not is_running_install_path(ref)
+
+
+def trigger_runs_here(entity: Any) -> bool:
+    """The location half of "may this row be armed here": not a foreign copy."""
+    return not is_foreign_copy(str(getattr(entity, "asset_ref", "") or ""))
+
+
+async def arm_trigger(entity: Any, *, replace: bool = False) -> None:
     """Subscribe this trigger to whatever fires it. Idempotent.
 
     Safe to call again on every re-index: ``register_tag_trigger``
     unregisters-then-registers, the FSOp arm is guarded on the watcher's task
-    table, and a schedule job is replaced by id.
+    table, and a schedule job is replaced by id. ``replace=True`` (a create or
+    an edit) restarts an FSOp watch even when one is running — its path or
+    pattern may have changed.
     """
     from flow_sdk.schema.data_spec.trigger_types import TriggerType
 
@@ -40,7 +68,7 @@ async def arm_trigger(entity: Any) -> None:
             # starts; this covers one that arrives after.
             from flow_sdk.server.fsop_watcher import fsop_watcher  # noqa: PLC0415
 
-            if len(fsop_watcher) and entity.id not in fsop_watcher._tasks:
+            if replace or (len(fsop_watcher) and entity.id not in fsop_watcher._tasks):
                 await fsop_watcher.on_trigger_saved(entity)
         elif entity.trigger_type == TriggerType.TAG:
             from flow_sdk.builtin.tag_triggers import register_tag_trigger  # noqa: PLC0415
@@ -60,6 +88,8 @@ async def runs_here(entity: Any) -> bool:
     machine's schedule, holds the file but never arms it. No ``runs_on`` is the
     legacy rule: every machine that indexes it.
     """
+    if not trigger_runs_here(entity):
+        return False
     runs_on = str(getattr(entity, "runs_on", "") or "")
     if not runs_on:
         return True

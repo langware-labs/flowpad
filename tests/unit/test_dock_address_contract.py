@@ -103,7 +103,7 @@ def test_normalize_retired_resolves_forward(retired):
 
 
 def test_normalize_retired_passes_live_views_through():
-    assert normalize_retired(ViewType.EVENTS, "x") == (ViewType.EVENTS, "x")
+    assert normalize_retired(ViewType.SEARCH, "x") == (ViewType.SEARCH, "x")
 
 
 def test_view_meta_covers_every_view_type():
@@ -204,6 +204,9 @@ def test_retirement_targets_name_a_real_subview(retired):
     target = CONTRACT["retired_views"][retired]
     if target["view_type"] == ViewType.CREDENTIALS.value:
         CredentialsSubview(target["pointer"])
+    elif target["view_type"] == ViewType.AUTOMATIONS.value:
+        # The list ("") or one of its places (automations-pointer.ts).
+        assert target["pointer"] in ("", "runs", "bus")
     else:
         assert target["view_type"] == ViewType.ASSETS.value
         assert target["pointer"].startswith("list/")
@@ -252,6 +255,11 @@ def test_unaddressable_views_are_exactly_the_retired_and_folded_ones():
         "environment",
         "connections",
         "api-keys",
+        # the Events screen and its aliases, forwarded to Automations
+        "events",
+        "triggers",
+        "signals",
+        "cron",
         # folded away
         "skills",
         "session",

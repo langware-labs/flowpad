@@ -38,6 +38,13 @@ describe('agent counters', () => {
     expect(runningRows(rows).map((r) => r.agent.id)).toEqual(['z']);
   });
 
+  it("Flowpad's own (system-scope) agents are neither counted nor listed", () => {
+    const vibe = { ...agent('v', 'Vibe'), scope: 'system' } as unknown as Agent;
+    const mine = { ...agent('m', 'Mine'), scope: 'user' } as unknown as Agent;
+    const rows = toAgentRows([vibe, mine, amy], new Map());
+    expect(rows.map((r) => r.agent.id)).toEqual(['a', 'm']);
+  });
+
   it('source is the folder above agentic-assets', () => {
     expect(agentSource(agent('x', 'X', '/Users/me/proj/agentic-assets/agent/x'))).toBe('proj');
     expect(agentSource(agent('y', 'Y', '/Users/me/other/y'))).toBe('other');

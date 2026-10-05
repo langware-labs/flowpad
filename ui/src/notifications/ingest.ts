@@ -1,5 +1,7 @@
 import { t } from '@lingui/core/macro';
-import { cloudManager, connectionManager, ContextEventType, dataContext } from '@sdk';
+import { cloudManager, connectionManager, ContextEventType, dataContext, type IEntity, TypeId } from '@sdk';
+import { subscribeToEntityOps } from '@sdk/FlowSync/entity-ops';
+import { DockPointer } from '@src/navigation/DockPointer';
 import { ViewType } from '@src/types/ViewType';
 import type { NotificationAction } from './types';
 import { dismiss, notify } from './notify';
@@ -249,6 +251,45 @@ function onFlowDataEvent(typeId: unknown, flowData: Record<string, unknown>): vo
   void handleFlowData(typeId, flowData);
 }
 
+// --- a help request / message that did not reach the hub ---------------------
+
+/** The failure kind each message last told the person about — so a retry that fails the same way
+ *  (every startup, sign-in and reconnect retries) does not toast again. */
+const deliveryToldKind = new Map<string, string>();
+
+function onFlowMessageOp(typeId: TypeId, _op: unknown, data: IEntity | undefined): void {
+  const fm = data as
+    | {
+        outbound?: boolean;
+        delivery_status?: string;
+        body_status?: string;
+        conversation_id?: string | null;
+        delivery_failure?: { kind: string; message: string } | null;
+      }
+    | undefined;
+  if (!fm?.outbound) return;
+  const owed = fm.delivery_status === 'created' || fm.delivery_status === 'pending_send' || fm.body_status === 'failed';
+  const failure = owed ? fm.delivery_failure : null;
+  const key = typeId.id;
+  if (!failure) {
+    if (deliveryToldKind.delete(key)) dismiss(`delivery:${key}`);
+    return;
+  }
+  if (deliveryToldKind.get(key) === failure.kind) return;
+  deliveryToldKind.set(key, failure.kind);
+  const open: NotificationAction[] = fm.conversation_id
+    ? [{ label: t`Open`, href: DockPointer.forConversation(fm.conversation_id).toUrl() }]
+    : [];
+  notify({
+    id: `delivery:${key}`,
+    level: failure.kind === 'signed_out' || failure.kind === 'offline' ? 'warning' : 'error',
+    title: failure.kind === 'signed_out' ? t`Saved — it will send after you sign in` : t`Not sent yet`,
+    message: failure.message,
+    actions: failure.kind === 'signed_out' ? [{ label: t`Sign in`, command: 'cloud.signin' }, ...open] : open,
+    forceToast: true,
+  });
+}
+
 /** Wire all WS-driven notifications. Call once at app start; returns a cleanup fn. */
 export function initNotificationIngest(): () => void {
   flushBootstrapNotice();
@@ -256,6 +297,7 @@ export function initNotificationIngest(): () => void {
   cloudManager.on('hub_client_error', handleHubClientError);
   cloudManager.on('connection_status_changed', handleCloudConnectionStatus);
   connectionManager.on('on_flow_data', onFlowDataEvent);
+  const offFlowMessages = subscribeToEntityOps('flow_message', onFlowMessageOp, { ops: ['update', 'create'] });
   // Catch a box that already booted into an errored connection before this wired up.
   handleCloudConnectionStatus();
 
@@ -276,5 +318,6 @@ export function initNotificationIngest(): () => void {
     cloudManager.off('hub_client_error', handleHubClientError);
     cloudManager.off('connection_status_changed', handleCloudConnectionStatus);
     connectionManager.off('on_flow_data', onFlowDataEvent);
+    offFlowMessages();
   };
 }

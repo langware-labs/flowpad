@@ -78,7 +78,28 @@ export class FSManager {
   async updateDocument(typeid: TypeId, path: string, patch: DocumentPatch): Promise<AssetDocument> {
     const action = this.createFSAction(typeid, 'document', path, 'POST');
     action.bodyParameters = { ...patch };
-    return dataManager.callAction<DocumentPatch, AssetDocument>(action);
+    const saved = await dataManager.callAction<DocumentPatch, AssetDocument>(action);
+    this.announceWrite();
+    return saved;
+  }
+
+  // ---- write notices --------------------------------------------------------
+
+  private writeListeners = new Set<() => void>();
+
+  /**
+   * Subscribe to "a file was written through this client" (``writeFile`` /
+   * ``updateDocument`` settled). A write to an asset in a git checkout is
+   * auto-committed server-side with no event of its own, so views of git state
+   * (the footer push button) listen here to re-ask. Returns the unsubscribe.
+   */
+  onFileWritten(listener: () => void): () => void {
+    this.writeListeners.add(listener);
+    return () => { this.writeListeners.delete(listener); };
+  }
+
+  private announceWrite(): void {
+    this.writeListeners.forEach((fn) => fn());
   }
   private static instance: FSManager;
 
@@ -624,6 +645,7 @@ export class FSManager {
     const actionInfo = this.createFSAction(typeid, 'write', path, 'POST');
     actionInfo.bodyParameters = { content };
     const item = await dataManager.callAction<{ content: string }, FSEntry>(actionInfo);
+    this.announceWrite();
     return new FSEntry(item);
   }
 

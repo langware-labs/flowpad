@@ -1,0 +1,21 @@
+{
+  "utterance": "open this source",
+  "here": {
+    "view": "data-sources",
+    "pointer": null,
+    "page": "desk",
+    "address": "/dock/data-sources",
+    "project": {
+      "typeid": "project-6f1c2a7e-3b4d-4e5f-8a9b-0c1d2e3f4a5b",
+      "title": "flowpad-oss",
+      "path": "/Users/dana/Flowpad workspace/flowpad-oss"
+    },
+    "process": null,
+    "entity": {
+      "typeid": "data_source-0d5e6f7a-8b9c-4d4e-8f5a-6b7c8d9e0f1a",
+      "title": "gmail-work",
+      "path": null
+    },
+    "last_shown": null
+  }
+}

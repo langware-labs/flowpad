@@ -95,7 +95,59 @@ def _parse_trigger(sched_trigger_type: str, expr: str, tz: Optional[str] = None)
         return DateTrigger(run_date=run_date, timezone=tz)
     else:
         from apscheduler.triggers.cron import CronTrigger
+        fields = expr.split()
+        if len(fields) == 5:
+            # APScheduler 3.x passes the day-of-week field through with ITS
+            # numbering (0 = Monday), so the crontab "1-5" every builder writes
+            # fired Tuesday to Saturday. Spell the days out by name instead.
+            fields[4] = crontab_weekdays_as_names(fields[4])
+            expr = " ".join(fields)
         return CronTrigger.from_crontab(expr, timezone=tz)
+
+
+_CRONTAB_DAY_NAMES = ("sun", "mon", "tue", "wed", "thu", "fri", "sat")
+
+
+def crontab_weekdays_as_names(field: str) -> str:
+    """A crontab day-of-week field (0 or 7 = Sunday) as an explicit list of day names.
+
+    Expanded, never translated range for range: a crontab range that starts on
+    Sunday ("0-3") would become "sun-wed", which APScheduler (Sunday last)
+    rejects as backwards. ``*`` stays ``*``; a field that does not parse is
+    returned unchanged so APScheduler reports the error."""
+    if field == "*":
+        return field
+    days: set[int] = set()
+    try:
+        for part in field.lower().split(","):
+            step = 1
+            if "/" in part:
+                part, step_text = part.split("/", 1)
+                step = int(step_text)
+            if part in ("*", ""):
+                lo, hi = 0, 6
+            elif "-" in part:
+                a, b = part.split("-", 1)
+                lo, hi = _crontab_day(a), _crontab_day(b)
+                if hi == 0:
+                    hi = 7  # "5-7"/"5-0": Friday through Sunday
+            else:
+                lo = hi = _crontab_day(part)
+                if step != 1:
+                    hi = 6
+            days.update(d % 7 for d in range(lo, hi + 1, step))
+    except ValueError:
+        return field
+    return ",".join(_CRONTAB_DAY_NAMES[d] for d in sorted(days))
+
+
+def _crontab_day(token: str) -> int:
+    if token in _CRONTAB_DAY_NAMES:
+        return _CRONTAB_DAY_NAMES.index(token)
+    day = int(token)
+    if not 0 <= day <= 7:
+        raise ValueError(token)
+    return day
 
 
 def _parse_interval_expr(expr: str) -> int:
@@ -112,6 +164,16 @@ def _parse_interval_expr(expr: str) -> int:
     return int(expr)
 
 
+def _schedule_problem(expr: str, sched_trigger_type: Optional[str], tz: Optional[str]) -> Optional[str]:
+    """Why a schedule can't be armed, in words — or None. Checked on save, so a bad
+    expression is a 422 rather than a row that silently never runs."""
+    try:
+        _parse_trigger(sched_trigger_type or "cron", expr, tz)
+    except Exception as exc:  # noqa: BLE001 — APScheduler raises ValueError, zoneinfo KeyError
+        return f"That schedule can't be read: {exc}"
+    return None
+
+
 def _scheduled_next_run(trigger_id: str) -> Optional[datetime]:
     """The scheduler's next run for this trigger's job, or None when it has none."""
     try:
@@ -124,73 +186,101 @@ def _scheduled_next_run(trigger_id: str) -> Optional[datetime]:
 
 
 async def activate_flows_for_trigger(trigger_id: str, trigger_name: str,
-                                     envelope=None, trigger: "Trigger" = None) -> None:
+                                     envelope=None, trigger: "Trigger" = None) -> Optional[str]:
     """Flow activation on any trigger fire — THE shared step for every trigger
     kind (schedule / fsop / tag): enters a run in each flow whose trigger
     node references this Trigger entity. ``envelope`` (tag fires only)
-    preserves the triggering FlowEvent's id/actor onto the run entry."""
+    preserves the triggering FlowEvent's id/actor onto the run entry.
+
+    Returns the error message when activation failed, else None — so a fire's
+    log row can say what broke instead of only the bus knowing."""
     from flow_sdk.builtin.trigger_on_tag import emit_trigger_failed
 
     try:
         from flow_sdk.graph_workflow_manager import get_graph_workflow_manager
 
         await get_graph_workflow_manager().on_trigger_fired(trigger_id, envelope=envelope)
+        return None
     except Exception as exc:
         logger.exception("Trigger %s: flow activation failed", trigger_name)
         # `trigger.failed` is emitted HERE, not at a call site: this except is
         # where the failure is actually caught, and it is the one outcome the
-        # events screen exists to show that has no natural home above.
+        # Automations runs exist to show that has no natural home above.
         emit_trigger_failed(
             trigger_id, str(trigger.trigger_type) if trigger else "", trigger_name,
             stage="flow_activation", error=str(exc),
             project_id=trigger.project_id if trigger else None,
         )
+        return f"Workflow activation failed: {exc}"
 
 
-async def dispatch_trigger_actions(trigger: "Trigger", changes: list) -> list[Any]:
+class DispatchOutcome:
+    """What one dispatch did: each handler's answer, the errors, how long it took.
+
+    In-process only — the log row is what travels. ``process_id`` is the run a
+    RUN_AGENT action started, the handle a run detail links to."""
+
+    __slots__ = ("results", "errors", "duration_ms")
+
+    def __init__(self, results: list[Any], errors: list[str], duration_ms: int) -> None:
+        self.results = results
+        self.errors = errors
+        self.duration_ms = duration_ms
+
+    @property
+    def process_id(self) -> Optional[str]:
+        from flow_sdk.builtin.agent_run import process_id_of  # noqa: PLC0415
+
+        return next((pid for pid in map(process_id_of, self.results) if pid), None)
+
+    @property
+    def error(self) -> Optional[str]:
+        return "; ".join(self.errors) or None
+
+
+async def run_trigger_actions(trigger: "Trigger", changes: list) -> DispatchOutcome:
     """Action dispatch on any trigger fire — THE shared loop for every trigger
     kind. Per-action try/except so one bad handler can't skip the rest.
     ``changes`` is empty for schedule/tag fires; FSOp passes its batch.
 
-    Returns what each handler returned (None for most) — how a fire learns the
-    process a RUN_AGENT action started, for its log entry."""
+    A failing action is reported three ways: logged, emitted as
+    ``trigger.failed``, and returned in ``errors`` for the fire's log row."""
+    import time  # noqa: PLC0415
+
     from flow_sdk.builtin.trigger_on_tag import emit_trigger_failed
 
+    started = time.monotonic()
     results: list[Any] = []
+    errors: list[str] = []
     for action in trigger.actions:
         try:
             handler = get_action_handler(action.action_type)
             if handler is None:
                 logger.warning("Trigger %s: no handler for action_type=%s",
                                trigger.name, action.action_type)
+                errors.append(f"No handler for action {action.action_type}")
                 continue
             results.append(await handler.execute(trigger, action=action, changes=changes))
         except Exception as exc:
             logger.exception("Trigger %s: action %s raised during dispatch",
                              trigger.name, action.action_type)
+            errors.append(f"{action.action_type}: {exc}")
             emit_trigger_failed(
                 trigger.id or "", str(trigger.trigger_type), trigger.name or trigger.id or "",
                 stage="action", error=str(exc), action_type=str(action.action_type),
                 project_id=trigger.project_id,
             )
-    return results
+    return DispatchOutcome(results, errors, int((time.monotonic() - started) * 1000))
 
 
 async def _fire_schedule_job(trigger_id: str) -> None:
     """Callback executed by APScheduler when a schedule trigger fires.
 
-    Dispatches via the action handler registry (same path as FSOp's ``_fire``
-    in ``server/fsop_watcher.py:_fire``) so any ``actions`` declared on the
-    Trigger entity run — CALLBACK and RUN_SCRIPT included. Per-action try/except
-    so one bad handler can't skip the rest.
-
-    Legacy ``instruction`` path is preserved as a back-compat fallback for
-    schedule triggers that pre-date the actions list (it spawns an
-    AgenticProcess with the prompt).
+    The gates and the bookkeeping live here; the work is ``run_schedule_fire``,
+    which *Run once now* shares without the gates.
     """
     try:
         from flow_sdk.builtin.trigger_on_tag import emit_trigger_fired
-        from flow_sdk.fs_store.operations.trigger_log import append_entry as _append_trigger_log_entry
 
         entity = await Trigger.get_by_id(trigger_id)
         if not (entity and entity.enabled):
@@ -220,56 +310,76 @@ async def _fire_schedule_job(trigger_id: str) -> None:
                     "sched_trigger_type": entity.sched_trigger_type or "cron"},
             project_id=entity.project_id,
         )
-
-        # Shared fire steps (same helpers as fsop/tag): flow activation +
-        # action dispatch. ``changes`` is empty for schedule fires — RUN_SCRIPT
-        # then reports CHANGES_COUNT=0 / FIRST_*="" to the script.
-        await activate_flows_for_trigger(trigger_id, entity.name or trigger_id, trigger=entity)
-        results = await dispatch_trigger_actions(entity, changes=[])
-
-        # A RUN_AGENT action answers with the run it started — its ``executor``
-        # is the log entry's handle on the run, same field the legacy spawn below
-        # fills.
-        from flow_sdk.builtin.agent_run import process_id_of  # noqa: PLC0415
-
-        process_id: Optional[str] = next((pid for pid in map(process_id_of, results) if pid), None)
-
-        # Legacy back-compat: schedule triggers with ``instruction`` set spawn
-        # an AgenticProcess. Pre-dates the actions list; kept so existing
-        # user-created schedules keep working.
-        if entity.instruction:
-            try:
-                from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess
-                proc = AgenticProcess(
-                    instruction_content=entity.instruction,
-                    workdir=entity.workdir,
-                    target_typeid_str=str(entity.typeid),
-                    project_id=entity.project_id,
-                    visible=False,
-                    name=f"Trigger: {entity.name}" if entity.name else "Trigger",
-                )
-                await proc.save()
-                await proc.start_pty(instruction=entity.instruction, visible=False)
-                process_id = proc.id
-            except Exception as e:
-                logger.error(f"Schedule trigger {entity.name}: failed to spawn process: {e}")
-
-        _append_trigger_log_entry(entity.name, {
-            "hook_event": "schedule_fire",
-            "trigger": True,
-            "reason": f"Scheduled ({entity.sched_trigger_type or 'cron'}): {entity.expr}",
-            "is_test": False,
-            "rule_name": entity.name,
-            "trigger_id": trigger_id,
-            "trigger_type": str(entity.trigger_type),
-            "event_id": event_id,
-            "actor": "system",
-            "actions": [{"action_type": str(a.action_type)} for a in entity.actions],
-            "agentic_process_id": process_id,
-        })
-        logger.debug(f"Schedule trigger {entity.name} fired (counter={entity.counter}, process_id={process_id})")
+        await run_schedule_fire(entity, event_id, is_test=False)
     except Exception as e:
         logger.error(f"Schedule trigger fire error for {trigger_id}: {e}")
+
+
+async def run_schedule_fire(entity: "Trigger", event_id: Optional[str], *, is_test: bool) -> None:
+    """The work of one schedule fire, and its log row.
+
+    Dispatches via the action handler registry (same path as FSOp's ``_fire``
+    in ``server/fsop_watcher.py:_fire``) so any ``actions`` declared on the
+    Trigger entity run — CALLBACK and RUN_SCRIPT included.
+
+    Legacy ``instruction`` path is preserved as a back-compat fallback for
+    schedule triggers that pre-date the actions list (it spawns an
+    AgenticProcess with the prompt).
+    """
+    from flow_sdk.automations.fingerprint import spec_hash  # noqa: PLC0415
+    from flow_sdk.fs_store.operations.trigger_log import append_entry as _append_trigger_log_entry
+
+    trigger_id = entity.id or ""
+    # Shared fire steps (same helpers as fsop/tag): flow activation +
+    # action dispatch. ``changes`` is empty for schedule fires — RUN_SCRIPT
+    # then reports CHANGES_COUNT=0 / FIRST_*="" to the script.
+    flow_error = await activate_flows_for_trigger(trigger_id, entity.name or trigger_id, trigger=entity)
+    outcome = await run_trigger_actions(entity, changes=[])
+    errors = [e for e in (flow_error, outcome.error) if e]
+
+    # A RUN_AGENT action answers with the run it started — its ``executor``
+    # is the log entry's handle on the run, same field the legacy spawn below
+    # fills.
+    process_id: Optional[str] = outcome.process_id
+
+    # Legacy back-compat: schedule triggers with ``instruction`` set spawn
+    # an AgenticProcess. Pre-dates the actions list; kept so existing
+    # user-created schedules keep working.
+    if entity.instruction:
+        try:
+            from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess
+            proc = AgenticProcess(
+                instruction_content=entity.instruction,
+                workdir=entity.workdir,
+                target_typeid_str=str(entity.typeid),
+                project_id=entity.project_id,
+                visible=False,
+                name=f"Trigger: {entity.name}" if entity.name else "Trigger",
+            )
+            await proc.save()
+            await proc.start_pty(instruction=entity.instruction, visible=False)
+            process_id = proc.id
+        except Exception as e:
+            logger.error(f"Schedule trigger {entity.name}: failed to spawn process: {e}")
+            errors.append(f"Could not start the agent: {e}")
+
+    _append_trigger_log_entry(entity.name, {
+        "hook_event": "schedule_fire",
+        "trigger": True,
+        "reason": f"Scheduled ({entity.sched_trigger_type or 'cron'}): {entity.expr}",
+        "is_test": is_test,
+        "rule_name": entity.name,
+        "trigger_id": trigger_id,
+        "trigger_type": str(entity.trigger_type),
+        "event_id": event_id,
+        "actor": "system",
+        "actions": [{"action_type": str(a.action_type)} for a in entity.actions],
+        "agentic_process_id": process_id,
+        "error": "; ".join(errors) or None,
+        "duration_ms": outcome.duration_ms,
+        "spec_hash": spec_hash(entity),
+    })
+    logger.debug(f"Schedule trigger {entity.name} fired (counter={entity.counter}, process_id={process_id})")
 
 
 class Trigger(Entity):
@@ -299,6 +409,19 @@ class Trigger(Entity):
     def is_file_backed(self) -> bool:
         """Only triggers adopted from a document have a filesystem asset."""
         return bool(self.asset_ref)
+
+    @property
+    def is_builtin(self) -> bool:
+        """Flowpad's own: seeded (``builtin_*``), system-scoped, or shipped in the
+        running install. Read-only to people — the screen lists it under "Built
+        into Flowpad", and update/delete refuse it."""
+        if str(self.scope or "") == "system" or str(getattr(self, "uname", "") or "").startswith("builtin_"):
+            return True
+        if self.asset_ref:
+            from flow_sdk.config import is_running_install_path  # noqa: PLC0415
+
+            return is_running_install_path(self.asset_ref)
+        return False
 
     #: RUNTIME STATE. `Persist.TRUE` puts these in the SHADOW record (under flow
     #: home, never the asset folder, never git) rather than leaving them to the
@@ -421,6 +544,12 @@ class Trigger(Entity):
     # ── Discovery ─────────────────────────────────────────────────────────────
 
     @classmethod
+    async def every(cls) -> list["Trigger"]:
+        """Every rule on this machine. The automations screen and the boot sweep of stale rows read
+        them all, and the set is small; this is the one walk over it."""
+        return await cls.get_all({})
+
+    @classmethod
     async def list_by_type(cls, trigger_type: "TriggerType") -> list["Trigger"]:
         """List all Trigger entities of the given type."""
         return await cls.get_all({"trigger_type": trigger_type.value})
@@ -477,29 +606,6 @@ class Trigger(Entity):
         if run_date.tzinfo is None or last_run.tzinfo is None:
             run_date, last_run = run_date.replace(tzinfo=None), last_run.replace(tzinfo=None)
         return last_run >= run_date
-
-    async def _reschedule_job(self) -> None:
-        """Reschedule an existing APScheduler job after update."""
-        if not self.id or not self.expr:
-            return
-        try:
-            from flow_sdk.server.scheduler import _job_registration_lock
-
-            scheduler = _get_scheduler()
-            if scheduler:
-                async with _job_registration_lock:
-                    trigger = _parse_trigger(self.sched_trigger_type or "cron", self.expr, self.timezone)
-                    job = scheduler.reschedule_job(self.id, trigger=trigger)
-                    if job:
-                        if self.enabled:
-                            job.resume()
-                        else:
-                            job.pause()
-                        if job.next_run_time:
-                            self.next_run = job.next_run_time
-                            await self.update()
-        except Exception as e:
-            logger.warning(f"Failed to reschedule trigger {self.id}: {e}")
 
     # ── Hook trigger logic ────────────────────────────────────────────────────
 
@@ -584,65 +690,54 @@ class Trigger(Entity):
         request_info = get_current_request_info()
         body = await request_info.get_post_data() if request_info else {}
         if not body:
-            return ApiFailResponse(message="Request body required")
+            return ApiFailResponse(message="Request body required", status_code=422)
 
         name = body.get("name", "")
         if not name:
-            return ApiFailResponse(message="name is required")
+            return ApiFailResponse(message="name is required", status_code=422)
 
         trigger_type = body.get("trigger_type", "hook")
 
-        kwargs: dict[str, Any] = {
-            "name": name,
-            "description": body.get("description"),
-            "enabled": body.get("enabled", True),
-            "trigger_type": trigger_type,
-            "scope": body.get("scope", "user"),
-        }
+        # Every field a person sets (the builder sends them; `check_spec` reads the
+        # same list), so an automation created here is complete — not a schedule
+        # whose actions, timezone or watch glob were silently dropped.
+        from flow_sdk.automations.check import SPEC_FIELDS  # noqa: PLC0415
+
+        kwargs: dict[str, Any] = {k: body[k] for k in SPEC_FIELDS if k in body}
+        kwargs.update(name=name, trigger_type=trigger_type, enabled=body.get("enabled", True),
+                      scope=body.get("scope", "user"))
 
         if trigger_type == "tag":
             from flow_sdk.builtin.tag_triggers import validate_tag_trigger
             problem = validate_tag_trigger(body.get("tag_pattern"))
             if problem:
-                return ApiFailResponse(message=problem)
-            kwargs["tag_pattern"] = body["tag_pattern"]
-            for field in ("tag_target", "tag_scope", "max_fires_per_minute", "confirm"):
-                if field in body:
-                    kwargs[field] = body[field]
+                return ApiFailResponse(message=problem, status_code=422)
         if trigger_type == "schedule":
-            kwargs["expr"] = body.get("expr", "* * * * *")
-            kwargs["sched_trigger_type"] = body.get("sched_trigger_type", "cron")
-            if "instruction" in body:
-                kwargs["instruction"] = body["instruction"]
-            if "workdir" in body:
-                kwargs["workdir"] = body["workdir"]
-            if "project_id" in body:
-                kwargs["project_id"] = body["project_id"]
-        else:
-            if "mask" in body:
-                kwargs["mask"] = body["mask"]
-            if "action" in body:
-                action_data = body["action"]
-                kwargs["action"] = TriggerAction(**action_data) if isinstance(action_data, dict) else action_data
-            if "hook_events" in body:
-                kwargs["hook_events"] = body["hook_events"]
-            if "log_mode" in body:
-                kwargs["log_mode"] = body["log_mode"]
+            kwargs.setdefault("expr", "* * * * *")
+            kwargs.setdefault("sched_trigger_type", "cron")
+            problem = _schedule_problem(kwargs["expr"], kwargs["sched_trigger_type"], kwargs.get("timezone"))
+            if problem:
+                return ApiFailResponse(message=problem, status_code=422)
+        if trigger_type == "fsop":
+            try:
+                _validate_watch_path(kwargs.get("watch_path"))
+            except ValueError as exc:
+                return ApiFailResponse(message=str(exc), status_code=422)
+        if "action" in body and "actions" not in body:
+            action_data = body["action"]
+            kwargs["action"] = TriggerAction(**action_data) if isinstance(action_data, dict) else action_data
 
-        entity = cls(**kwargs)
+        try:
+            entity = cls(**kwargs)
+        except ValueError as exc:  # pydantic ValidationError is a ValueError
+            return ApiFailResponse(message=f"That automation can't be saved: {exc}", status_code=422)
         await entity.save()
+        # The one arming seam: it also applies the "runs here" gates (another
+        # install's copy, a schedule placed on another machine) the indexer path
+        # gets — a rule made here must not be armed by a different rule.
+        from flow_sdk.builtin.trigger_arming import arm_trigger  # noqa: PLC0415
 
-        if trigger_type == "schedule":
-            await entity._register_schedule_job()
-        elif trigger_type == "fsop":
-            # Mirror the schedule pattern: hand the freshly-saved trigger to
-            # the FSOp watcher so its awatch task is spawned immediately
-            # (without waiting for the next server boot).
-            from flow_sdk.server.fsop_watcher import fsop_watcher
-            await fsop_watcher.on_trigger_saved(entity)
-        elif trigger_type == "tag":
-            from flow_sdk.builtin.tag_triggers import register_tag_trigger
-            register_tag_trigger(entity)
+        await arm_trigger(entity, replace=True)
 
         return ApiSuccessResponse(data=entity)
 
@@ -655,22 +750,44 @@ class Trigger(Entity):
         request_info = get_current_request_info()
         body = await request_info.get_post_data() if request_info else {}
         if not body:
-            return ApiFailResponse(message="Request body required")
+            return ApiFailResponse(message="Request body required", status_code=422)
 
-        for field in ("name", "description", "enabled", "scope", "expr",
-                      "sched_trigger_type", "log_mode", "trigger_type",
-                      "instruction", "workdir", "project_id",
-                      "tag_pattern", "tag_target", "tag_scope",
-                      "max_fires_per_minute", "confirm"):
+        from flow_sdk.automations.check import SPEC_FIELDS  # noqa: PLC0415
+        from flow_sdk.automations.spec_file import SpecFileError, document_path, rewrite  # noqa: PLC0415
+
+        if self.is_builtin and set(body) - {"log_mode"}:
+            return ApiFailResponse(message="This automation is built into Flowpad and can't be changed here.",
+                                   status_code=409)
+        if document_path(self) is not None:
+            # Defined in a trigger.json: the FILE is the truth and the row its
+            # index, so a row-only write would be reverted by the next re-index.
+            try:
+                fresh = await rewrite(self, {k: body[k] for k in SPEC_FIELDS if k in body})
+            except SpecFileError as exc:
+                return ApiFailResponse(message=str(exc), status_code=exc.status_code)
+            return ApiSuccessResponse(data=fresh)
+
+        for field in SPEC_FIELDS | {"scope", "log_mode"}:
             if field in body:
-                setattr(self, field, body[field])
-        if "mask" in body:
-            self.mask = body["mask"]
-        if "action" in body:
+                value = body[field]
+                if field == "actions":
+                    value = [TriggerAction(**a) if isinstance(a, dict) else a for a in value or []]
+                    # The validator that keeps legacy `action` = actions[0] runs only
+                    # at construction; an in-place edit has to keep them agreeing.
+                    self.action = value[0] if value else TriggerAction(action_type=ActionType.NOP)
+                setattr(self, field, value)
+        if "action" in body and "actions" not in body:
             action_data = body["action"]
             self.action = TriggerAction(**action_data) if isinstance(action_data, dict) else action_data
-        if "hook_events" in body:
-            self.hook_events = body["hook_events"]
+        if self.trigger_type == "schedule":
+            problem = _schedule_problem(self.expr or "", self.sched_trigger_type, self.timezone)
+            if problem:
+                return ApiFailResponse(message=problem, status_code=422)
+        if self.trigger_type == "fsop" and "watch_path" in body:
+            try:
+                _validate_watch_path(self.watch_path)
+            except ValueError as exc:
+                return ApiFailResponse(message=str(exc), status_code=422)
 
         if self.trigger_type == "tag":
             # Mirror create: a bad pattern must FAIL the update, not silently
@@ -678,32 +795,37 @@ class Trigger(Entity):
             from flow_sdk.builtin.tag_triggers import validate_tag_trigger
             problem = validate_tag_trigger(self.tag_pattern)
             if problem:
-                return ApiFailResponse(message=problem)
+                return ApiFailResponse(message=problem, status_code=422)
 
         await self.update()
+        from flow_sdk.builtin.trigger_arming import arm_trigger  # noqa: PLC0415
 
-        if self.trigger_type == "schedule":
-            await self._reschedule_job()
-        elif self.trigger_type == "fsop":
-            # Re-spawn the watcher's task — config (watch_path / recursive /
-            # glob / actions) may have changed; on_trigger_saved cancels the
-            # existing task and starts a fresh one.
-            from flow_sdk.server.fsop_watcher import fsop_watcher
-            await fsop_watcher.on_trigger_saved(self)
-        elif self.trigger_type == "tag":
-            # Re-arm (replace) — pattern/filters/enabled may have changed.
-            from flow_sdk.builtin.tag_triggers import register_tag_trigger
-            register_tag_trigger(self)
+        await arm_trigger(self, replace=True)  # re-arm: pattern / schedule / watch may have changed
 
         return ApiSuccessResponse(data=self)
 
     @core_action.delete(action_name="delete")
     async def delete_action(self, request: Request) -> ApiResponse:
-        """DELETE /api/v1/graph/trigger/{id}"""
+        """DELETE /api/v1/graph/trigger/{id}
+
+        A file-defined automation goes with its folder — disarm, folder, row, in
+        that order, or the indexer resurrects a row whose folder is still on
+        disk. Flowpad's own are refused."""
+        from flow_sdk.automations.spec_file import document_path  # noqa: PLC0415
+
+        if self.is_builtin:
+            return ApiFailResponse(message="This automation is built into Flowpad and can't be deleted.",
+                                   status_code=409)
         if self.id:
             from flow_sdk.builtin.trigger_arming import disarm_trigger
 
             await disarm_trigger(self.id)
+        document = document_path(self)
+        if document is not None:
+            import asyncio  # noqa: PLC0415
+            import shutil  # noqa: PLC0415
+
+            await asyncio.to_thread(shutil.rmtree, document.parent)
 
         await self.delete()
         return ApiSuccessResponse(data={"deleted": True})
@@ -722,7 +844,7 @@ class Trigger(Entity):
 
         request_info = get_current_request_info()
         if not request_info:
-            return ApiFailResponse(message=ErrorMessage.REQUEST_INFO_NOT_AVAILABLE)
+            return ApiFailResponse(message=ErrorMessage.REQUEST_INFO_NOT_AVAILABLE, status_code=500)
 
         method = request.method.upper()
         sub_action = request_info.sub_path
@@ -739,16 +861,16 @@ class Trigger(Entity):
         elif method == HttpMethod.POST.value:
             body = await request_info.get_post_data()
             if not body:
-                return ApiFailResponse(message=ErrorMessage.REQUEST_BODY_REQUIRED)
+                return ApiFailResponse(message=ErrorMessage.REQUEST_BODY_REQUIRED, status_code=422)
 
             agent_hook_id = body.get("agent_hook_id")
             if not agent_hook_id:
-                return ApiFailResponse(message=ErrorMessage.AGENT_HOOK_ID_REQUIRED)
+                return ApiFailResponse(message=ErrorMessage.AGENT_HOOK_ID_REQUIRED, status_code=422)
 
             try:
                 agent_hook_typeid = TypeId.model_validate(agent_hook_id)
             except Exception as e:
-                return ApiFailResponse(message=f"{ErrorMessage.INVALID_AGENT_HOOK_ID_FORMAT}: {e}")
+                return ApiFailResponse(message=f"{ErrorMessage.INVALID_AGENT_HOOK_ID_FORMAT}: {e}", status_code=422)
 
             if sub_action == RelationshipSubAction.ADD:
                 await self.connect_to_agent_hook(agent_hook_typeid)
@@ -759,20 +881,16 @@ class Trigger(Entity):
                 return ApiSuccessResponse(message=SuccessMessage.AGENT_HOOK_DISCONNECTED)
 
             else:
-                return ApiFailResponse(message=f"{ErrorMessage.UNKNOWN_SUB_ACTION}: {sub_action}")
+                return ApiFailResponse(message=f"{ErrorMessage.UNKNOWN_SUB_ACTION}: {sub_action}", status_code=404)
 
-        return ApiFailResponse(message=f"{ErrorMessage.METHOD_NOT_ALLOWED} agent_hook")
+        return ApiFailResponse(message=f"{ErrorMessage.METHOD_NOT_ALLOWED} agent_hook", status_code=405)
 
     @core_action.get(action_name="fires")
     async def fires_action(cls, request: Request) -> ApiResponse:
         """
-        GET /api/v1/graph/trigger/fires — recent outcomes across ALL rules,
-        newest first.
-
-        The per-rule ``{id}/log`` action answers "what did THIS rule do"; the
-        events screen asks "what has been happening", which would otherwise cost
-        one request per rule on every poll. ``discover(None)`` already reads
-        across rules — this just exposes it and sorts.
+        GET /api/v1/graph/trigger/fires — raw history rows across ALL rules,
+        newest first. Scripts and tests read these; the Automations screen
+        reads ``runs``, which folds the same rows into runs.
 
         Rows are the durable half of a fire; the matching ``trigger.*`` envelope
         is the live half, joined by ``event_id``. They are read separately
@@ -785,6 +903,178 @@ class Trigger(Entity):
         from flow_sdk.fs_store.operations.trigger_log import discover as _discover_trigger_log
 
         return ApiSuccessResponse(data=_discover_trigger_log(None, limit=limit))
+
+    # ── Automations (docs/automations.md) ─────────────────────────────────────
+    # Thin doors over ``flow_sdk/automations``; every answer is an
+    # ``automation.*`` DataSpec, dumped. The UI reaches these only through the
+    # TS SDK's ``Trigger`` methods.
+
+    @core_action.get(action_name="overview")
+    async def overview_action(cls, request: Request) -> ApiResponse:
+        """GET /api/v1/graph/trigger/overview — every automation as a sentence with its health.
+
+        ``?include_inactive=true`` also lists copies under other installs (never armed)."""
+        from flow_sdk.automations.overview import overview  # noqa: PLC0415
+
+        params = get_current_request_info().request_parameters or {}
+        include_inactive = str(params.get("include_inactive", "false")).lower() == "true"
+        rows = await overview(include_inactive=include_inactive)
+        return ApiSuccessResponse(data=[r.model_dump(mode="json") for r in rows])
+
+    @core_action.get(action_name="next_runs")
+    async def next_runs_action(cls, request: Request) -> ApiResponse:
+        """GET /api/v1/graph/trigger/next_runs?expr=&sched_trigger_type=&timezone=&n=5
+
+        When a schedule — saved or still being edited — fires next, plus how it
+        reads. A bad expression is a 422 that says what is wrong."""
+        from flow_sdk.automations.schedule import next_fire_times, read_schedule, schedule_text  # noqa: PLC0415
+
+        params = get_current_request_info().request_parameters or {}
+        expr = str(params.get("expr") or "").strip()
+        kind = str(params.get("sched_trigger_type") or "cron")
+        tz = str(params.get("timezone") or "") or None
+        try:
+            count = max(1, min(20, int(params.get("n", 5))))
+            times = next_fire_times(expr, kind, tz, count)
+        except (ValueError, KeyError, TypeError) as exc:
+            return ApiFailResponse(message=f"That schedule can't be read: {exc}", status_code=422)
+        schedule = read_schedule(expr, kind, tz)
+        return ApiSuccessResponse(data={
+            "times": [t.isoformat() for t in times],
+            "schedule": schedule.model_dump(mode="json"),
+            "text": schedule_text(schedule),
+        })
+
+    @core_action.post(action_name="check")
+    async def check_action(self, request: Request) -> ApiResponse:
+        """POST /api/v1/graph/trigger/{id}/check — *Check*: would it run, and what would it do.
+
+        No side effects. Optional body ``{"event": {tag, target?, scope?}}``
+        checks an event automation against that event, field by field."""
+        from flow_sdk.automations.check import check  # noqa: PLC0415
+
+        request_info = get_current_request_info()
+        body = (await request_info.get_post_data() if request_info else None) or {}
+        event = body.get("event") if isinstance(body, dict) else None
+        result = await check(self, event if isinstance(event, dict) else None)
+        return ApiSuccessResponse(data=result.model_dump(mode="json"))
+
+    @core_action.post(action_name="check_spec")
+    async def check_spec_action(cls, request: Request) -> ApiResponse:
+        """POST /api/v1/graph/trigger/check_spec — *Check* for an automation not saved yet.
+
+        Body ``{"spec": {<trigger fields>}, "event"?: {...}}``. Fields the entity
+        rejects are a 422 with the reason."""
+        from pydantic import ValidationError  # noqa: PLC0415
+
+        from flow_sdk.automations.check import check, trigger_from_spec  # noqa: PLC0415
+
+        request_info = get_current_request_info()
+        body = (await request_info.get_post_data() if request_info else None) or {}
+        try:
+            draft = trigger_from_spec(body.get("spec") or {})
+        except (ValidationError, ValueError, TypeError) as exc:
+            return ApiFailResponse(message=f"That automation can't be read: {exc}", status_code=422)
+        event = body.get("event")
+        result = await check(draft, event if isinstance(event, dict) else None)
+        return ApiSuccessResponse(data=result.model_dump(mode="json"))
+
+    @core_action.get(action_name="samples")
+    async def samples_action(self, request: Request) -> ApiResponse:
+        """GET /api/v1/graph/trigger/{id}/samples — recent real events to test this automation with."""
+        from flow_sdk.automations.samples import samples_for  # noqa: PLC0415
+
+        return ApiSuccessResponse(data=samples_for(self))
+
+    @core_action.get(action_name="recent_events")
+    async def recent_events_action(cls, request: Request) -> ApiResponse:
+        """GET /api/v1/graph/trigger/recent_events?pattern=&target= — recent forwarded events a
+        pattern would receive (for an automation not saved yet)."""
+        from flow_sdk.automations.samples import forwarded_matching  # noqa: PLC0415
+
+        params = get_current_request_info().request_parameters or {}
+        pattern = str(params.get("pattern") or "")
+        if not pattern:
+            return ApiSuccessResponse(data=[])
+        return ApiSuccessResponse(data=forwarded_matching(pattern, str(params.get("target") or "") or None))
+
+    @core_action.get(action_name="bus_map")
+    async def bus_map_action(cls, request: Request) -> ApiResponse:
+        """GET /api/v1/graph/trigger/bus_map — every event type, how often it happened since the
+        app started, which automations listen, and what they do."""
+        from flow_sdk.automations.bus_map import bus_map  # noqa: PLC0415
+
+        return ApiSuccessResponse(data=(await bus_map()).model_dump(mode="json"))
+
+    @core_action.post(action_name="match_pattern")
+    async def match_pattern_action(cls, request: Request) -> ApiResponse:
+        """POST /api/v1/graph/trigger/match_pattern — the pattern sandbox.
+
+        Body ``{"pattern", "target_filter"?, "event": {tag, target, scope?}}`` →
+        ``{"matches": bool, "parts": {tag, target, scope}, "problem"}``. Nothing is saved."""
+        from flow_sdk.tags.bus import explain_subscription_match  # noqa: PLC0415
+        from flow_sdk.tags.grammar import tag_pattern_problem  # noqa: PLC0415
+
+        request_info = get_current_request_info()
+        body = (await request_info.get_post_data() if request_info else None) or {}
+        pattern = str(body.get("pattern") or "")
+        problem = tag_pattern_problem(pattern) if pattern != "*" else None
+        event = body.get("event") or {}
+        parts = explain_subscription_match(pattern, str(event.get("tag") or ""), str(event.get("target") or ""),
+                                           target_filter=body.get("target_filter") or None,
+                                           scope_filter=body.get("scope_filter") or None,
+                                           scope=list(event.get("scope") or []))
+        return ApiSuccessResponse(data={"matches": problem is None and all(parts.values()),
+                                        "parts": parts, "problem": problem})
+
+    @core_action.get(action_name="runs")
+    async def runs_action(cls, request: Request) -> ApiResponse:
+        """GET /api/v1/graph/trigger/runs?trigger_id=&status=&include_tests=true&include_builtin=true&limit=200
+
+        Runs newest first — one automation's when ``trigger_id`` is given, else
+        every automation's. ``include_builtin=false`` leaves out Flowpad's own (a
+        transcript watcher fires on every step of an agent's work and would bury
+        everything else). Each launched agent run is asked how it ended."""
+        from flow_sdk.automations.runs import fold, join_processes, rows_for  # noqa: PLC0415
+        from flow_sdk.fs_store.operations.trigger_log import discover  # noqa: PLC0415
+
+        params = get_current_request_info().request_parameters or {}
+        limit = max(1, min(1000, int(params.get("limit", 200))))
+        trigger_id = str(params.get("trigger_id") or "") or None
+        if trigger_id:
+            # Every file is read (a renamed rule's old rows sit under its old name),
+            # but only this rule's recent rows from each.
+            row = await cls.get_by_id(trigger_id)
+            rows = rows_for(trigger_id, row.name if row else None,
+                            discover(None, limit=10_000, per_rule=limit * 2))
+        elif str(params.get("include_builtin", "true")).lower() == "false":
+            builtin = {str(t.id) for t in await cls.every() if t.is_builtin}
+            rows = [r for r in discover(None, limit=10_000, per_rule=limit * 2)
+                    if r.get("trigger_id") not in builtin][: limit * 2]
+        else:
+            rows = discover(None, limit=limit * 2)
+        runs = fold(rows)
+        if str(params.get("include_tests", "true")).lower() == "false":
+            runs = [r for r in runs if not r.is_test]
+        runs = await join_processes(runs[:limit])
+        status = str(params.get("status") or "")
+        if status:
+            runs = [r for r in runs if r.status == status]
+        return ApiSuccessResponse(data=[r.model_dump(mode="json") for r in runs])
+
+    @core_action.get(action_name="run")
+    async def run_action(cls, request: Request) -> ApiResponse:
+        """GET /api/v1/graph/trigger/run?id=<log row id> — one run, with its agent run's outcome."""
+        from flow_sdk.automations.runs import fold, join_processes  # noqa: PLC0415
+        from flow_sdk.fs_store.operations.trigger_log import discover  # noqa: PLC0415
+
+        params = get_current_request_info().request_parameters or {}
+        run_id = str(params.get("id") or "")
+        for run in fold(discover(None, limit=5000)):
+            if run.id == run_id:
+                (joined,) = await join_processes([run])
+                return ApiSuccessResponse(data=joined.model_dump(mode="json"))
+        return ApiFailResponse(message="That run is no longer in the history.", status_code=404)
 
     @core_action.get(action_name="discover")
     async def discover_action(cls, request: Request) -> ApiResponse:
@@ -813,77 +1103,27 @@ class Trigger(Entity):
             triggers.append(existing)
         return ApiSuccessResponse(data=triggers)
 
-    @core_action.post(action_name="fire")
-    async def fire_action(self, request: Request) -> ApiResponse:
-        """Alias for ``/test`` — POST /api/v1/graph/trigger/{id}/fire fires
-        the trigger immediately. Same body+response shape as ``test_action``.
-        Kept because the natural verb for a trigger is "fire"; the original
-        endpoint was named "test" before that distinction mattered.
-        """
-        return await self.test_action(request)
-
     @core_action.post(action_name="test")
     async def test_action(self, request: Request) -> ApiResponse:
         """
-        POST /api/v1/graph/trigger/{id}/test — fire the trigger immediately.
-        For schedule triggers: fires the schedule job.
-        For hook triggers: runs the rule against a mock UserPromptSubmit event.
-        Also reachable as POST /api/v1/graph/trigger/{id}/fire.
+        POST /api/v1/graph/trigger/{id}/test — *Run once now*.
+
+        One rule for every kind (``automations/run_once.py``): runs even when the
+        automation is off, spends nothing a real fire spends, logs ``is_test``.
+        Optional body ``{"event": {tag, target?, data?}}`` picks the envelope an
+        event rule runs with. Answers ``automation.run_once`` at once; the work
+        continues in the background and shows up in the automation's runs.
         """
-        if self.trigger_type == "schedule":
-            await _fire_schedule_job(self.id)
-            # Reload to get updated counter
-            updated = await Trigger.get_by_id(self.id)
-            return ApiSuccessResponse(data={"status": "fired", "counter": updated.counter if updated else self.counter})
+        from flow_sdk.automations.run_once import RunOnceRefused, run_once  # noqa: PLC0415
 
-        if self.trigger_type == "fsop":
-            # Synthetic FSOp fire: real action dispatch (callback / script runs
-            # for real, marked is_test=True in the invocations log so it's
-            # visually distinguishable). Matches the precedent set by schedule:
-            # "Test" really runs the action. Lets the user verify wiring.
-            if not self.enabled:
-                return ApiFailResponse(message="Trigger is disabled — enable it before testing.")
-            if not self.watch_path:
-                return ApiFailResponse(message="Trigger has no watch_path configured.")
-            from pathlib import Path as _Path
-
-            from flow_sdk.builtin.change_event import ChangeEvent
-            from flow_sdk.server.fsop_watcher import _fire as _fsop_fire
-            test_event = ChangeEvent(path=_Path(self.watch_path), change_type="test")
-            await _fsop_fire(self, [test_event], is_test=True)
-            updated = await Trigger.get_by_id(self.id) if self.id else self
-            return ApiSuccessResponse(data={"status": "fired", "counter": updated.counter if updated else self.counter, "is_test": True})
-
-        # Hook trigger test
-        if not self.path:
-            return ApiFailResponse(message="Trigger has no filesystem path")
-        from pathlib import Path
-
-        from flow_sdk.rules.activation_rule import ActivationRule
-        record_file = Path(self.path) / "record.json"
-        if not record_file.exists():
-            return ApiFailResponse(message=f"record.json not found at {self.path}")
-        rule = ActivationRule.load_record(record_file)
-        mock_data = {
-            "hookEvent": "UserPromptSubmit",
-            "hook_event_name": "UserPromptSubmit",
-            "prompt": "",
-            "cwd": "",
-        }
-        result = rule.run(mock_data, [])
+        request_info = get_current_request_info()
+        body = (await request_info.get_post_data() if request_info else None) or {}
+        event = body.get("event") if isinstance(body, dict) else None
         try:
-            from flow_sdk.fs_store.operations.trigger_log import append_entry as _append_trigger_log_entry
-            _append_trigger_log_entry(rule.name, {
-                "hook_event": "UserPromptSubmit",
-                "trigger": result.trigger,
-                "reason": result.reason or "",
-                "is_test": True,
-                "rule_name": rule.name,
-                "actions": [a.type for a in result.actions] if result.actions else [],
-            })
-        except Exception:
-            pass
-        return ApiSuccessResponse(data=result.to_dict())
+            started = await run_once(self, event if isinstance(event, dict) else None)
+        except RunOnceRefused as exc:
+            return ApiFailResponse(message=str(exc), status_code=422)
+        return ApiSuccessResponse(data=started.model_dump(mode="json"))
 
     @core_action.all(action_name="trigger-content")
     async def trigger_content_action(self, request: Request) -> ApiResponse:
@@ -895,7 +1135,8 @@ class Trigger(Entity):
         - PUT /api/v1/graph/trigger/{id}/trigger-content -> write trigger.py
         """
         if not self.path:
-            return ApiFailResponse(message="Trigger has no filesystem path")
+            return ApiFailResponse(message="This automation has no rule code: only agent rules from a rule folder do.",
+                                   status_code=404)
         from pathlib import Path
 
         from flow_sdk.assets.directory import AssetDir
@@ -905,7 +1146,7 @@ class Trigger(Entity):
         method = request.method.upper()
         if method == "GET":
             if not trigger_file.exists():
-                return ApiFailResponse(message="trigger.py not found")
+                return ApiFailResponse(message="trigger.py not found", status_code=404)
             content = directory.read_asset("trigger.py")
             return ApiSuccessResponse(data={"content": content})
         elif method == "PUT":
@@ -914,7 +1155,7 @@ class Trigger(Entity):
             content = (body or {}).get("content", "")
             directory.load_asset("trigger.py", content=content)
             return ApiSuccessResponse(data={"saved": True})
-        return ApiFailResponse(message=f"{ErrorMessage.METHOD_NOT_ALLOWED} trigger-content")
+        return ApiFailResponse(message=f"{ErrorMessage.METHOD_NOT_ALLOWED} trigger-content", status_code=405)
 
     @core_action.get(action_name="log")
     async def log_action(self, request: Request) -> ApiResponse:
@@ -938,12 +1179,12 @@ class Trigger(Entity):
         PATCH /api/v1/graph/trigger/{id}/meta — update log_mode.
         """
         if request.method.upper() != "PATCH":
-            return ApiFailResponse(message=f"{ErrorMessage.METHOD_NOT_ALLOWED} meta")
+            return ApiFailResponse(message=f"{ErrorMessage.METHOD_NOT_ALLOWED} meta", status_code=405)
         request_info = get_current_request_info()
         body = await request_info.get_post_data() if request_info else {}
         log_mode = (body or {}).get("log_mode")
         if log_mode not in ("all", "activations"):
-            return ApiFailResponse(message="log_mode must be 'all' or 'activations'")
+            return ApiFailResponse(message="log_mode must be 'all' or 'activations'", status_code=422)
         self.log_mode = log_mode
         await self.update()
         if self.path:
@@ -958,21 +1199,3 @@ class Trigger(Entity):
                 except Exception:
                     pass
         return ApiSuccessResponse(data={"log_mode": log_mode})
-
-    @core_action.get(action_name="sync_schedule")
-    async def sync_schedule_action(self, request: Request) -> ApiResponse:
-        """
-        GET /api/v1/graph/trigger/{id}/sync_schedule — sync next_run from APScheduler.
-        """
-        if self.trigger_type != "schedule":
-            return ApiFailResponse(message="sync_schedule is only for schedule triggers")
-        try:
-            scheduler = _get_scheduler()
-            if scheduler and self.id:
-                job = scheduler.get_job(self.id)
-                if job and job.next_run_time != self.next_run:
-                    self.next_run = job.next_run_time
-                    await self.update()
-        except Exception as e:
-            logger.debug(f"Scheduler sync error for {self.id}: {e}")
-        return ApiSuccessResponse(data=self)

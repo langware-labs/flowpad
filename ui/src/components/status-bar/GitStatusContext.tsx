@@ -5,6 +5,8 @@ interface GitStatusContextValue {
   computeNodeId: string | null;
   workdir: string | null;
   count: number | null;
+  ahead: number;
+  behind: number;
   hasRepo: boolean;
   branch: string | null;
   refresh: () => void;
@@ -13,8 +15,8 @@ interface GitStatusContextValue {
 const GitStatusContext = createContext<GitStatusContextValue | null>(null);
 
 /**
- * Single shared git-status source for the footer. Both the pending-changes pill
- * and the push button read from this one instance, so a push (or the 10-minute
+ * Single shared git-status source for the footer. The pending-changes pill, the
+ * push button and the pull button read from this one instance, so a push (or the 10-minute
  * poll, or a project switch) refreshes them together — no second fetch, no
  * stale pill after a push.
  */
@@ -23,10 +25,10 @@ export const GitStatusProvider: React.FC<{
   workdir: string | null;
   children: React.ReactNode;
 }> = ({ computeNodeId, workdir, children }) => {
-  const { count, hasRepo, branch, refresh } = useGitChangeCount(computeNodeId, workdir);
+  const { count, ahead, behind, hasRepo, branch, refresh } = useGitChangeCount(computeNodeId, workdir);
   const value = useMemo<GitStatusContextValue>(
-    () => ({ computeNodeId, workdir, count, hasRepo, branch, refresh }),
-    [computeNodeId, workdir, count, hasRepo, branch, refresh],
+    () => ({ computeNodeId, workdir, count, ahead, behind, hasRepo, branch, refresh }),
+    [computeNodeId, workdir, count, ahead, behind, hasRepo, branch, refresh],
   );
   return <GitStatusContext.Provider value={value}>{children}</GitStatusContext.Provider>;
 };

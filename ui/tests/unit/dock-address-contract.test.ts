@@ -94,7 +94,7 @@ describe('dock-address contract (shared fixture)', () => {
   });
 
   it('passes a live view through the retirement resolver untouched', () => {
-    const live = { viewType: ViewType.EVENTS, pointer: 'x' };
+    const live = { viewType: ViewType.SEARCH, pointer: 'x' };
     expect(normalizeRetiredDockPointer(live)).toEqual(live);
   });
 

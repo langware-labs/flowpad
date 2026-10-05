@@ -78,7 +78,7 @@ describe('the wizard trigger section', () => {
     expect(screen.getByTestId('wizard-no-triggers').textContent).toContain('agentic-assets/trigger/');
   });
 
-  it('opens the trigger with system scope, or the link lands on an empty list', () => {
+  it('opens the trigger on its own Automations page', () => {
     rows.triggers = [{ id: 't1', parent_type_id: WIZARD_KEY, tag_pattern: 'app.ready' }];
     renderForm();
 
@@ -86,9 +86,6 @@ describe('the wizard trigger section', () => {
 
     expect(nav.openDock).toHaveBeenCalledTimes(1);
     const pointer = nav.openDock.mock.calls[0][0] as { options?: Record<string, string> };
-    expect(pointer.options?.trigger).toBe('t1');
-    // A wizard's trigger is system-scoped; without this the Events screen hides
-    // it and "Open trigger" arrives at nothing.
-    expect(pointer.options?.system).toBe('1');
+    expect(pointer.options).toEqual({ trigger: 't1' });
   });
 });

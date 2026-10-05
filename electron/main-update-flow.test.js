@@ -20,11 +20,13 @@ const { EventEmitter } = require('events');
 const MAIN = path.join(__dirname, 'main.js');
 const EXPOSE = `
 module.exports.__t = {
-  offerDesktopUpdate, showDesktopReadyPrompt, installAndStartBackend, showStartupErrorPanel, reportStartupCrash, checkPackageUpdateInBackground,
+  offerDesktopUpdate, offerPostponedRestartPrompt, backendWaitAborted, showDesktopReadyPrompt, installAndStartBackend, showStartupErrorPanel, reportStartupCrash, checkPackageUpdateInBackground,
   setupElectronAutoUpdater, readyReminder, pendingEngineStore, restartApplier,
   getState: () => ({ pendingDesktopVersion, offeredDesktopVersion, desktopDownloadedVersion, deferredDesktopVersion,
                      desktopRestartPromptOpen, packageUpdateInFlight }),
   setMainWindow: (w) => { mainWindow = w; },
+  setBackendReady: (v) => { backendReady = v; },
+  setQuitting: (v) => { isQuitting = v; },
   setUvManager: (u) => { uvManager = u; },
   getUvManager: () => uvManager,
 };`;
@@ -71,7 +73,7 @@ function load(opts = {}) {
   const uv = { calls: [], deferred: [], upgrades: [], checks: 0 };
   class FakeUv {
     constructor() { Object.assign(this, { _isInstalling: false }); uv.instance = this; }
-    getInstalledFlowBin() { return '/fake/bin/flow'; }
+    getInstalledFlowBin() { return opts.installed === false ? null : '/fake/bin/flow'; }
     hadInterruptedInstall() { return false; }
     getInstalledVersionSync() { return opts.engine || '0.2.168'; }
     async _pypiUpdateStatus() { return opts.engineStatus === undefined ? { currentVersion: '0.2.168', latestVersion: '0.2.180', required: true } : opts.engineStatus; }
@@ -114,6 +116,7 @@ function load(opts = {}) {
   const win = { isDestroyed: () => false, isMinimized: () => false, webContents: { send(ch, d) { win.sent.push([ch, d]); } }, sent: [], loadFile: async () => {}, loadURL() {}, show() {}, hide() {}, focus() {} };
   t.setMainWindow(win);
   t.setUvManager(new FakeUv());
+  t.setBackendReady(opts.backendReady !== false); // the app is up unless a test says it is still starting
   return { t, processHandlers, sent: win.sent, releaseDialog: () => releaseDialog(), autoUpdater, dialogCalls, intervals, uv, logLines, userData, statePath: path.join(userData, 'pending-engine.json'), readState: () => { try { return JSON.parse(fs.readFileSync(path.join(userData, 'pending-engine.json'), 'utf8')); } catch { return null; } } };
 }
 
@@ -144,6 +147,28 @@ const reminderTimer = (env) => env.intervals.find((i) => i.ms === REMINDER_MS);
     eq(env.readState().consented, true, '"Restart now" = agreement to install the saved engine version');
     eq(env.autoUpdater.quits, [[true, true]], 'quitAndInstall(silent, relaunch)');
     eq(env.uv.stopped, 1, 'the backend was stopped first');
+  }
+
+  // ── download finishes while FlowPad is still starting: no restart prompt until the app is up ──
+  {
+    const env = load({ backendReady: false, dialogResponses: [0 /* Update now */, 0 /* Restart now */] });
+    env.t.setupElectronAutoUpdater();
+    await env.t.offerDesktopUpdate('0.2.48');
+    env.autoUpdater.emit('update-downloaded', { version: '0.2.48' }); await tick();
+    eq(env.dialogCalls.length, 1, 'still starting: the "Restart now" prompt is held back');
+    eq(env.autoUpdater.quits, [], 'and nothing restarts');
+    env.t.setBackendReady(true); env.t.offerPostponedRestartPrompt(); await tick(); await tick(); await tick();
+    eq(env.dialogCalls.length, 2, 'once the app is up the prompt appears');
+    eq(env.autoUpdater.quits, [[true, true]], 'and "Restart now" installs');
+  }
+
+  // ── a restart-to-update stops the backend mid-wait: that is not a startup failure (no error screen) ──
+  {
+    const env = load();
+    eq(env.t.backendWaitAborted({ ready: false, reason: 'launcher-failed' }), false, 'a real launcher failure still reaches the error panel');
+    env.t.setQuitting(true);
+    eq(env.t.backendWaitAborted({ ready: false, reason: 'launcher-failed' }), true, 'while quitting for an update, launcher-failed is swallowed');
+    eq(env.t.backendWaitAborted({ ready: false, reason: 'quitting' }), true, 'and so is the explicit quitting reason');
   }
 
   // ── desktop + engine, "Later" → reminders every 90 minutes ───────────────
@@ -184,6 +209,17 @@ const reminderTimer = (env) => env.intervals.find((i) => i.ms === REMINDER_MS);
     await env.t.checkPackageUpdateInBackground();
     eq(env.uv.checks, 0, 'no separate engine dialog while the desktop update is pending');
     ok(env.logLines.some((l) => /package check skipped: desktop 0\.2\.48 is pending/.test(l)), 'and it says why');
+  }
+
+  // ── nothing installed: no "update" ──────────────────────────────────────
+  {
+    const env = load({ installed: false });
+    await env.t.checkPackageUpdateInBackground();
+    eq(env.uv.checks, 0, 'flowpad is not installed (first-time setup failed): the periodic check offers no update');
+    ok(env.logLines.some((l) => /package check skipped: flowpad is not installed/.test(l)), 'and it says why');
+    const installed = load({});
+    await installed.t.checkPackageUpdateInBackground();
+    eq(installed.uv.checks, 1, 'an installed flowpad is still checked');
   }
 
   // ── desktop only ────────────────────────────────────────────────────────

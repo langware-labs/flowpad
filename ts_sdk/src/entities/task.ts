@@ -404,18 +404,31 @@ export class Task extends APIEntity<Task> implements ITask {
     const text = (message.text ?? '').trim();
     const base = taskTitleFromText(text) || (message.sender_name ? `Message from ${message.sender_name}` : 'Message');
     const scope = opts.project?.typeId ? [opts.project.typeId] : [];
-    // A task is a folder named by its title, unique in its scope, and two messages can open with
-    // the same line. The title here is ours to pick, so the next free one ("… (2)") is the answer.
-    for (let n = 1; ; n++) {
-      const task = new Task({
-        title: n === 1 ? base : `${base} (${n})`,
+    return Task.createWithFreeTitle(
+      {
+        title: base,
         description: text || undefined,
         assignee: opts.me || undefined,
         reporter: opts.me || undefined,
         sender_name: message.sender_name ?? null,
         origin_conversation: message.conversation_id ?? null,
         origin_message: message.id ?? null,
-      });
+      },
+      scope,
+    );
+  }
+
+  /**
+   * Create a task under `fields.title`, or the next free one ("… (2)") when that name is taken.
+   * A task is a folder named by its title, unique in its scope, so a title the caller derived
+   * (a message's first line, a help request typed again) can collide with one already there.
+   */
+  static async createWithFreeTitle(
+    fields: ConstructorParameters<typeof Task>[0] & { title: string },
+    scope: import('../models/TypeId').TypeId[] = [],
+  ): Promise<Task> {
+    for (let n = 1; ; n++) {
+      const task = new Task({ ...fields, title: n === 1 ? fields.title : `${fields.title} (${n})` });
       try {
         return await task.save(scope);
       } catch (err) {

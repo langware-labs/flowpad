@@ -134,6 +134,7 @@ def step(
     source_id: str,
     name: str,
     check: Annotated[bool, typer.Option("--check", help="Only answer whether the step's goal already holds.")] = False,
+    value: Annotated[bool, typer.Option("--value", help="Print only what the step shows the person (JSON).")] = False,
 ) -> None:
     """The step's ``ReturnedValue``, and its exit code as this command's (0 done, 1 not yet, 4 no such step).
     The values a wizard bound (``FLOWPAD_WIZARD_INPUT_<NAME>``) go along as ``values``, lower-cased — env,
@@ -147,6 +148,12 @@ def step(
     if code:
         typer.echo(answer.get("detail") or f"{name}: not done", err=True)
         raise typer.Exit(code)
+    if value:
+        # A wizard step's check binds this as its value (``{{name.key}}`` in the next question).
+        import json  # noqa: PLC0415
+
+        typer.echo(json.dumps(((answer.get("value") or {}).get("shown")) or {}))  # a SetupShown, or {}
+        return
     ok({"step": name, "answer": answer})
 
 

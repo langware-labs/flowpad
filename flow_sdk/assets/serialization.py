@@ -402,6 +402,45 @@ def _commit_identity(info: Any, root: Path, obj: Any) -> str:
     return str(info.stamp_id(FSRef(_asset_ref(info, root)), str(entity_id)))
 
 
+_NOT_ON_OBJ = object()
+
+
+def _patch_entity_main(obj: Any, info: Any, main: Path) -> None:
+    """A save of an entity document that EXISTS writes only the keys whose value it changes.
+
+    The file is the author's: a save that changed nothing in it — a record-only save (publish state,
+    status), or the hub echoing back the row it was just sent — leaves its bytes alone. Re-rendering it
+    wholesale wrote every entity default (``skills: []``, ``intro: ""``) into a hand-written file, so a
+    just-published agent read as changed. A key the file does not have reads back as the entity's
+    default, so a default is not a change. Unknown keys and key order survive (``patch_entity_document``)."""
+    from flow_sdk.assets.document import DocumentPatch  # noqa: PLC0415
+    from flow_sdk.assets.entity_document import IDENTITY_KEYS, patch_entity_document, read_entity_document  # noqa: PLC0415
+
+    # The file's key → the field it holds (a spec may name a field by alias: ``data_driver_name``).
+    field_of = {(f.alias or name): name for name, f in info.asset_spec.model_fields.items()}
+    wanted = {key: value for key, value in _frontmatter(obj, info).items() if key not in IDENTITY_KEYS}
+    current = read_entity_document(main, info).fields
+    set_fields = {
+        key: value for key, value in wanted.items()
+        if (current[key] != value if key in current else not _reads_back_as(obj, info, field_of.get(key, key), value))
+    }
+    # A key the entity now leaves unset (``None`` = inherit) is removed; a key the spec does not know is kept.
+    drop = tuple(key for key in current if key not in wanted and key in field_of and getattr(obj, field_of[key], _NOT_ON_OBJ) is None)
+    body = getattr(obj, info.body_file, None) if info.body_file else None
+    patch_entity_document(main, DocumentPatch(set_fields=set_fields, drop_fields=drop, body=body), info=info)
+
+
+def _reads_back_as(obj: Any, info: Any, name: str, value: Any) -> bool:
+    """Would a file WITHOUT field ``name`` load as ``value``? The folder names a path-named asset; any
+    other absent field loads as the entity's default."""
+    from pydantic_core import to_jsonable_python  # noqa: PLC0415
+
+    if name == "name" and info.name_from_path:
+        return True
+    field = type(obj).model_fields.get(name)
+    return field is not None and to_jsonable_python(field.get_default(call_default_factory=True)) == value
+
+
 def _write_main(obj: Any, info: Any, root: Path, main: Optional[Path]) -> None:
     from flow_sdk.assets.document import read_document_bytes, write_document
     from flow_sdk.assets.frontmatter import _atomic_write_text
@@ -413,11 +452,10 @@ def _write_main(obj: Any, info: Any, root: Path, main: Optional[Path]) -> None:
     # Both substrates are atomic and skip a byte-identical rewrite, so a
     # no-op save never churns the mtime the hash sentinel keys on.
     if info is not None and info.is_entity_document:
-        from flow_sdk.schema.data_spec.layout import load_json_dict  # noqa: PLC0415
-
-        # One parse of what is there, for the two keys the spec does not carry: the id and the counter.
-        existing = load_json_dict(main) if main.is_file() else {}
-        _atomic_write_text(main, render_entity_json(obj, info, entity_id=existing.get("id"), version=existing.get("version")))
+        if main.is_file():
+            _patch_entity_main(obj, info, main)
+            return
+        _atomic_write_text(main, render_entity_json(obj, info))
         write_entity_bodies(obj, info, root)
         return
     if info is None or info.asset_spec is None:

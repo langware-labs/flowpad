@@ -70,6 +70,7 @@ from .routes import (
     hooks_router,
     ingest_router,
     journeys_router,
+    kinds_router,
     markdown_index_router,
     navigate_router,
     privacy_router,
@@ -335,7 +336,7 @@ async def _app_ready_signal() -> None:
     try:
         from flow_sdk._version import __version__
         from flow_sdk.instance_settings import get_instance_settings
-        from flow_sdk.server.builtin_triggers import reconcile_wizard_triggers
+        from flow_sdk.server.builtin_triggers import reap_stale_trigger_rows, reconcile_wizard_triggers
         from flow_sdk.server.routes.bootstrap import first_bootstrap_served, system_content_ready
         from flow_sdk.tags import target_of
         from flow_sdk.tags.bus import make_tag_event, publish_tag
@@ -349,6 +350,7 @@ async def _app_ready_signal() -> None:
             await _asyncio.gather(_system_content_index_task, return_exceptions=True)
 
         await reconcile_wizard_triggers()
+        await reap_stale_trigger_rows()
         system_content_ready.set()
 
         # make+publish rather than emit: `emit` returns None when nothing is
@@ -870,6 +872,7 @@ server.add_router(activity_router)
 server.add_router(docs_graph_router)
 server.add_router(semantic_checker_router)
 server.add_router(capabilities_router)
+server.add_router(kinds_router)
 server.add_router(toplog_router)
 server.add_router(graph_workflows_router)
 server.add_router(agents_router)

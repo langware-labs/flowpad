@@ -692,12 +692,12 @@ MANAGED_END = "# <<< flowpad llm <<<"
 
 @dataclass(frozen=True)
 class UserBinding:
-    """Where a harness reads its funding from by DEFAULT, and what to put there.
+    """Where a harness reads its funding from by DEFAULT, and what older versions put there.
 
-    ``fmt`` says how the caller must apply it, because only the caller owns the filesystem:
+    Read only to remove those writes (see ``user_binding``). ``fmt`` says how:
 
-    * ``json``    — deep-merge ``merge`` into the existing document (never overwrite it);
-    * ``toml`` / ``profile`` — replace the managed region of the file with ``lines``.
+    * ``json``    — prune exactly the leaves ``merge`` names (the user's own keys survive);
+    * ``toml`` / ``profile`` — drop the managed region of the file.
 
     ``path`` is relative to the user's home. ``note`` explains a harness that has no file of its
     own, and is rendered verbatim.
@@ -803,7 +803,10 @@ def shell_binding(worker_type: str, auth: WorkerApiAuth) -> ShellBinding:
 
 
 def user_binding(worker_type: str, auth: WorkerApiAuth) -> UserBinding:
-    """*auth* written where *worker_type* looks by default, so EVERY terminal is funded."""
+    """*auth* as older versions wrote it where *worker_type* looks by default.
+
+    Nothing writes this any more -- those files belong to the machine, not to an instance. It is
+    kept so ``flow llm user clear`` can name exactly the leaves / region to take back out."""
     spec = driver_api_auth_spec(worker_type)
     if spec is None or not spec.user_config_path:
         return UserBinding(note=f"{worker_type} cannot be configured box-wide")

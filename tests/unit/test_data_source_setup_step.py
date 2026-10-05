@@ -15,7 +15,7 @@ from flow_sdk.builtin.data_driver import DataDriver
 from flow_sdk.builtin.data_source import DataSource
 from flow_sdk.schema.data_spec.returned_value_spec import ExitCode, ReturnedValue
 from flow_sdk.schema.data_spec.webhook_spec import DriverWebhookSpec
-from flow_sdk.sources.setup_steps import SourceUpdateSpec, setup_step
+from flow_sdk.sources.setup_steps import SetupShown, SourceUpdateSpec, setup_step
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.timeout(30)]  # do not increase timeout without approval
 
@@ -43,6 +43,13 @@ def stub(request, monkeypatch):
                 config={"app_id": values["app_id"]}, allowed_senders=[values["me"]], secrets={"secret": values["secret"]},
             )
             return ReturnedValue.satisfied("app stored", value=update)
+
+        @setup_step("show")
+        async def _show(self, *, check: bool, values: Mapping[str, str]) -> ReturnedValue:
+            shown = SetupShown(name="Bot", link="https://example.test/link?c=AB", code="AB")
+            if check:
+                return ReturnedValue.satisfied("live", value=SourceUpdateSpec(shown=shown), ran=False)
+            return ReturnedValue.satisfied("ready", value=SourceUpdateSpec(owner=values["owner"], shown=shown))
 
     driver = DataDriver.for_class(
         _Stub, kind="datasource.test.stub",
@@ -111,6 +118,46 @@ async def test_check_only_asks_and_keeps_nothing(stub):
     assert kept == {"saves": 0, "credentials": []}
 
 
+async def test_a_step_moves_the_owner_and_shows_without_keeping_what_it_shows(stub):
+    """``owner`` lands on the row (a channel answered by one agent); ``shown`` goes back to the wizard — the
+    next question binds it — and is never stored."""
+    name, kept = stub
+    source = DataSource(provider=name, name="bot", config={})
+    agent = f"agent-{mint_uuid()}"
+
+    answer = await source.step("show", values={"owner": agent})
+
+    assert answer.ok and str(source.owner) == agent and kept["saves"] == 1
+    assert answer.value["shown"]["link"] == "https://example.test/link?c=AB" and source.config == {}
+    checked = await source.step("show", check=True)
+    assert checked.ok and checked.value["shown"]["code"] == "AB" and kept["saves"] == 1, "a check shows, keeps nothing"
+
+
+async def test_nudge_wakes_only_the_healthy_sources_of_that_driver(stub, monkeypatch):
+    from flow_sdk.ingest import poller
+
+    name, _ = stub
+    rows = [DataSource(provider=name, name="a"), DataSource(provider=name, name="b")]
+    asked: list = []
+    rang: list = []
+
+    async def get_all(query):
+        asked.append(query)
+        return rows
+
+    async def save_runtime(self):
+        pass
+
+    monkeypatch.setattr(DataSource, "get_all", classmethod(lambda cls, q: get_all(q)))
+    monkeypatch.setattr(DataSource, "save_runtime", save_runtime)
+    monkeypatch.setattr(DataSource, "poll_refusal", lambda self: "parked" if self.name == "b" else None)
+    monkeypatch.setattr(DataSource, "note_attention", lambda self: None)
+    monkeypatch.setattr(poller, "wake_attention_lane", lambda: rang.append(1))
+
+    assert await DataSource.nudge(name) == 1
+    assert asked == [{"provider": name}] and rang == [1]
+
+
 async def test_an_undeclared_step_is_not_found(stub):
     name, _ = stub
     assert (await DataSource(provider=name, name="bot").step("nope")).exit_code is ExitCode.NOT_FOUND
@@ -160,3 +207,29 @@ async def test_first_turn_holds_once_an_allowed_sender_spoke_and_an_answer_follo
     assert (await source.step("first-turn", check=True)).exit_code is ExitCode.NOT_YET, "no answer after the person yet"
     rows.append(item("15550001111", "2026-09-28T10:01:05"))
     assert (await source.step("first-turn", check=True)).exit_code is ExitCode.OK
+
+
+async def test_the_hubs_source_nudge_wakes_the_driver_it_names(monkeypatch):
+    """The hub names the driver as data (``source_nudge``) — the bridge knows no driver."""
+    from flow_sdk.cloud_client import hub_bridge
+
+    class _Manager:
+        def __init__(self):
+            self.handlers = {}
+
+        def register_handler(self, kind, handler):
+            self.handlers[kind] = handler
+
+    woke: list = []
+
+    async def nudge(provider):
+        woke.append(provider)
+        return 1
+
+    monkeypatch.setattr(DataSource, "nudge", nudge)
+    manager = _Manager()
+    hub_bridge.HubWsBridge(manager).install()
+
+    await manager.handlers["source_nudge"]({"message_type": "source_nudge", "driver": "some_driver"})
+    await manager.handlers["source_nudge"]({"message_type": "source_nudge"})
+    assert woke == ["some_driver"]

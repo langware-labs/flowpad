@@ -298,10 +298,15 @@ export function ConversationView({
   // differently; the next send quotes it).
   const [replyTo, setReplyTo] = useState<FlowMessage | null>(null);
   useEffect(() => setReplyTo(null), [conversationId]);
-  // What the channel lets a person do to one message. Reply is the channel's `replies` trait —
-  // Flowpad's own chat included; React needs a source to carry it.
+  // What the channel lets a person do to one message — read off its spec. Reply is the `replies`
+  // trait (Flowpad's own chat included); a native message is answered by its hub id, a channel's
+  // by its origin.
   const channelTraits = channelSpec
-    ? { quotes: !!channelSpec.quotes, reacts: !!(channel && channelSpec.reacts), native: !channel }
+    ? {
+        quotes: !!channelSpec.quotes,
+        reacts: !!channelSpec.reacts,
+        native: channelSpec.transport === ChannelTransport.Flowpad,
+      }
     : null;
   const quotedFor = (fm: FlowMessage | null) => {
     if (!fm?.reply_to_id) return null;

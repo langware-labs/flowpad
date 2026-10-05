@@ -86,6 +86,21 @@ OutputSpecT = TypeVar("OutputSpecT")
 ContextSpecT = TypeVar("ContextSpecT")
 
 
+def _generic_args(cls: type) -> tuple:
+    """The type arguments of ``cls``'s parametrization -- its own, else the nearest base's.
+
+    A NAMED subclass (``class NavDataset(DatasetSpec[NavExample]): spec_kind = ...``) is how a
+    shape becomes a registered kind, and pydantic gives that subclass empty generic args: the
+    arguments live on the parametrized base it extends. Reading only the class's own metadata
+    answered "no slot types" for every named dataset kind, so ``Dataset.input_shape`` was None.
+    """
+    for klass in cls.__mro__:
+        args = (getattr(klass, "__pydantic_generic_metadata__", None) or {}).get("args")
+        if args:
+            return args
+    return ()
+
+
 class ExampleSpec(DataSpec, Generic[InputSpecT, OutputSpecT, ContextSpecT]):
     """One example: ``input`` + ``output`` + ``context``, plus the gold answer.
 
@@ -117,8 +132,8 @@ class ExampleSpec(DataSpec, Generic[InputSpecT, OutputSpecT, ContextSpecT]):
     def slot_type(cls, slot: int) -> Any:
         """The ``I``/``O``/``C`` of a parametrization, by slot. THE one place
         that knows the generic arg order — no caller reaches into pydantic."""
-        args = cls.__pydantic_generic_metadata__["args"]
-        return args[slot] if args and slot < len(args) else None
+        args = _generic_args(cls)
+        return args[slot] if slot < len(args) else None
 
     @classmethod
     def input_type(cls) -> Any:
@@ -148,7 +163,7 @@ class DatasetSpec(DataSpec, Generic[ExampleSpecT]):
     @classmethod
     def example_type(cls) -> type:
         """The ``E`` of a parametrization."""
-        (e,) = cls.__pydantic_generic_metadata__["args"] or (ExampleSpec,)
+        (e,) = _generic_args(cls) or (ExampleSpec,)
         return e
 
     @classmethod

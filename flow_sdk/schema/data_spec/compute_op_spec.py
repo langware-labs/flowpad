@@ -45,11 +45,13 @@ from pydantic import Field, model_validator
 
 from flow_sdk._compat import StrEnum
 from flow_sdk.schema.data_spec import AssetDocumentSpec, DataSpec
+from flow_sdk.schema.data_spec.dock_pointer_spec import DockPointerSpec
 from flow_sdk.schema.data_spec.io.native import Text
 from flow_sdk.schema.data_spec.returned_value_spec import (
     AskResult,
     CliResult,
     ExitCode,
+    NavigateResult,
     PromptResult,
     ReturnedValue,
 )
@@ -81,11 +83,13 @@ SETUP_TIMEOUT = 600.0
 class OpSubkind(StrEnum):
     """Who does the work. The order is the cost order.
 
+    ``navigate`` shows a place and answers whether it can be used there;
     ``cli`` is a subprocess; ``prompt`` is a model with no tools; ``agent`` is a
     spawned harness carrying an Agent's identity, with tools; ``ask`` is a
     person — the most expensive thing to spend.
     """
 
+    NAVIGATE = "navigate"
     CLI = "cli"
     PROMPT = "prompt"
     AGENT = "agent"
@@ -117,6 +121,10 @@ class ExeData(DataSpec):
     #: Is the op's value what the CHECK prints once the goal holds (``flow
     #: secret get`` prints the secret), rather than what the call returned?
     VALUE_FROM_CHECK: ClassVar[bool] = False
+    #: Is the call its OWN completion check? Calling it again is the proof — so the op
+    #: is convergent with no ``completion_check``, and its ``attempts`` are judged by
+    #: calling it once more after each.
+    SELF_CHECKING: ClassVar[bool] = False
 
     def timeout(self, default: Optional[float] = None) -> float:
         """This call's budget: its own when set, else the role's default."""
@@ -181,6 +189,25 @@ class AgentOp(ExeData):
         return self
 
 
+class NavigateOp(ExeData):
+    """Show a place, and answer whether it can be used there (``flow_sdk.core.navigate``).
+
+    Its own completion check: navigating again after a repair is the proof, and it
+    shows the place once more — which is what makes a display that was waiting on a
+    dead server reload. Only ``NOT_YET`` (resolved, not usable yet) is worth the
+    op's ``attempts``; a place that does not exist here, or a page that refuses to
+    be framed, is not something an agent can fix.
+    """
+
+    spec_kind: ClassVar[str] = "compute_op.navigate"
+    ANSWER: ClassVar[type[ReturnedValue]] = NavigateResult
+    SELF_CHECKING: ClassVar[bool] = True
+
+    #: Where to go. Absent ⇒ the wizard input ``pointer`` (``FLOWPAD_WIZARD_INPUT_POINTER``,
+    #: the JSON of a ``DockPointerSpec``), so one op can open what a step binds.
+    target: Optional[DockPointerSpec] = None
+
+
 class AskOp(ExeData):
     """A person, asked for the op's declared output."""
 
@@ -216,6 +243,10 @@ class AskOp(ExeData):
     #: question nobody could be shown is abandoned at once instead: without
     #: that, a headless instance would wait forever holding the wizard's slot.
     until_answered: bool = False
+    #: The person's answer is not the proof: on Send the op's completion check runs, and while it does
+    #: not hold the question stays open with the check's own reason under it ("not connected yet —
+    #: send the message from your phone first"). A gate a person cannot click past.
+    recheck: bool = False
 
     @model_validator(mode="after")
     def _no_deadline_means_no_deadline(self) -> "AskOp":
@@ -232,6 +263,7 @@ class AskOp(ExeData):
 
 #: Which ``exe_data`` class each subkind carries — the whole dispatch table.
 EXE_DATA: dict[OpSubkind, type[ExeData]] = {
+    OpSubkind.NAVIGATE: NavigateOp,
     OpSubkind.CLI: CliOp,
     OpSubkind.PROMPT: PromptOp,
     OpSubkind.AGENT: AgentOp,
@@ -321,7 +353,7 @@ class ComputeOpSpec(AssetDocumentSpec):
     description: str = ""
     subkind: OpSubkind = OpSubkind.CLI
     #: The call itself — the DataSpec ``compute_op.<subkind>``.
-    exe_data: Union[CliOp, PromptOp, AgentOp, AskOp]
+    exe_data: Union[NavigateOp, CliOp, PromptOp, AgentOp, AskOp]
     #: The kind of what this op RETURNS: a registered DataSpec kind, or a
     #: primitive (``string`` / ``int`` / ``float`` / ``bool``). Absent ⇒ no value.
     output_spec_kind: Optional[str] = None
@@ -362,6 +394,8 @@ class ComputeOpSpec(AssetDocumentSpec):
     def _attempts_need_a_check(self) -> "ComputeOpSpec":
         if self.completion_check is not None and self.status_check:
             raise ValueError(f"{self.name or 'this op'}: a completion_check or a status_check, not both")
+        if self.exe_data.SELF_CHECKING and (self.completion_check is not None or self.status_check):
+            raise ValueError(f"{self.name or 'this op'}: a {self.subkind} op is its own check — it takes no other")
         if self.attempts and not self.convergent:
             raise ValueError(
                 f"{self.name or 'this op'}: attempts need a completion_check — nothing else can say one missed"
@@ -391,7 +425,7 @@ class ComputeOpSpec(AssetDocumentSpec):
     @property
     def convergent(self) -> bool:
         """True when this op can answer "already done" without doing anything."""
-        return self.completion_check is not None or bool(self.status_check)
+        return self.completion_check is not None or bool(self.status_check) or self.exe_data.SELF_CHECKING
 
     def verdict_of(self, said: CliResult) -> ExitCode:
         """Read one completion-check run: ``OK`` the goal holds, ``NOT_APPLICABLE``

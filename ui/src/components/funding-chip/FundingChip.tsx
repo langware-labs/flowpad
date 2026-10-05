@@ -69,17 +69,24 @@ export function FundingChip() {
   const resolved = status.resolved?.[kind] ?? null;
   const blocked = status.blocked?.[kind] ?? '';
   const glyph = glyphForFundingKind(endpointOf(status, resolved ?? undefined)?.kind);
+  // Nothing funds the harness, so the next spawn will fail. A tooltip alone waits to be
+  // hovered; a flashing light-red background says it at rest.
+  const unfunded = !resolved;
 
   return (
     <button
       type="button"
       onClick={() => openHarnessLoginModal()}
-      className="flex items-center gap-1 rounded-sm px-1.5 text-[10px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+      className={cn(
+        'flex items-center gap-1 rounded-sm px-1.5 text-[10px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground',
+        unfunded && 'animate-unfunded-flash motion-reduce:animate-none motion-reduce:bg-red-400/30',
+      )}
       // The backend owns this sentence — it is the only place a stuck harness explains itself,
       // and rewriting it here would be a second author for the same fact.
       title={`${harnessLabel} · ${blocked || t(glyph.label)}`}
       aria-label={t`Agent funding`}
       data-testid="funding-chip-trigger"
+      data-unfunded={unfunded || undefined}
     >
       <glyph.Icon className={cn('h-3.5 w-3.5', glyph.className)} />
       <harnessMeta.Icon className={cn('h-3.5 w-3.5', harnessMeta.iconClassName)} />

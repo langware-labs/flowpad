@@ -37,7 +37,7 @@ logger = logging.getLogger(__name__)
 
 
 def _announce_needs_review(source, row, consumer: str) -> None:
-    """The review signal: a tag the Events screen renders, beside the log line."""
+    """The review signal: a tag the event bus shows, beside the log line."""
     from flow_sdk.tags import emit_tag, target_of  # noqa: PLC0415
 
     emit_tag(

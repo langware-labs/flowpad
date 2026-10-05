@@ -215,6 +215,14 @@ export interface ProjectSetupRun {
   result: { exit_code?: number; steps?: Record<string, { exit_code?: number; detail?: string }> } | null;
 }
 
+/** One of `POST new-cloud-projects` — a `ProjectOpenLinkSpec` set-up link. */
+export interface NewCloudProjectLink {
+  project_id: string;
+  /** A project origin as JSON — what the set-up dialog clones. */
+  git_origin: string;
+  title?: string;
+}
+
 /** `GET project/<id>/home-page` — `Project.open_home_page()`. */
 export interface ProjectHomePage {
   /** The declared asset's TypeId, once it resolves inside this project. */
@@ -791,6 +799,14 @@ export class Project extends APIEntity<Project> {
    *  Returns the list as now declared. */
   async setEnvFiles(paths: string[]): Promise<{ env_files: string[] }> {
     return this.post<{ env_files: string[] }>('set-env-files', { paths });
+  }
+
+  /** The hub projects this desktop has never seen (`POST new-cloud-projects`), mirrored
+   *  locally as file-less rows — each as the `?action=open` set-up link's params. */
+  static async newFromHub(): Promise<NewCloudProjectLink[]> {
+    const actionInfo = new ActionInfo('new-cloud-projects', null, null, 'POST');
+    const data = await dataManager.callAction<void, { projects?: NewCloudProjectLink[] }>(actionInfo);
+    return data?.projects ?? [];
   }
 
   /** Is this project ready here (`GET project/<id>/setup-requirements`)? Static: callers hold an id. */

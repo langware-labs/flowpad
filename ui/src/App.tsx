@@ -86,11 +86,12 @@ const GlobalEvents = () => {
   // Re-report browser_context (incl. the current URL) on every navigation.
   // The reporter's mobx autorun only fires on context-slot changes, so a
   // pure-URL move (e.g. leaving a conversation for Home) wouldn't otherwise
-  // refresh the pathname the backend reads to tell what page is open.
-  const { pathname } = useLocation();
+  // refresh the pathname the backend reads to tell what page is open. The query too:
+  // `CurrentUrl` carries viewMode / scope / focus, which change without the path.
+  const { pathname, search } = useLocation();
   useEffect(() => {
     dataContext.resendBrowserContext();
-  }, [pathname]);
+  }, [pathname, search]);
   return null;
 };
 

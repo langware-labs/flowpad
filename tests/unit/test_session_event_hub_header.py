@@ -47,7 +47,7 @@ async def test_session_event_header_reaches_hub():
     assert isinstance(fm.kind, str) and not isinstance(fm.kind, FlowMessageKind)
 
     conv, calls = _recording_conversation()
-    assert await _send_conversation_message_header(conv, fm) is True
+    assert await _send_conversation_message_header(conv, fm) is None  # None = the hub has it
     assert len(calls) == 1
     # The discriminator must survive to the hub — without it the receiver
     # renders the lifecycle line as an ordinary chat bubble.
@@ -62,6 +62,6 @@ async def test_ordinary_message_header_sends_no_kind():
     assert isinstance(fm.kind, FlowMessageKind)
 
     conv, calls = _recording_conversation()
-    assert await _send_conversation_message_header(conv, fm) is True
+    assert await _send_conversation_message_header(conv, fm) is None  # None = the hub has it
     # USER is implicit; only SESSION_EVENT is sendable, so nothing is sent.
     assert calls[0]["kind"] is None

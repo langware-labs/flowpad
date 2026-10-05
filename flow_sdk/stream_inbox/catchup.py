@@ -16,30 +16,24 @@ Two transitions qualify, and both call :func:`start_hub_catchup`:
   the hub had no connection to fan out to.
 
 The transition has TWO halves and they are symmetric. Pulling the backlog is
-what we missed while away; :func:`flush_pending_outbox` is what we QUEUED while
-away. A send composed with no cloud session is stored ``pending_send`` and not
-pushed, and until this existed the only thing that ever flushed it was
-``Conversation.share()`` creating the hub row — so a message typed into an
-ALREADY-shared conversation had no moment to be sent in, and sat in the thread
-looking sent, forever. Both halves belong to the same transition, so they run
-in the same task. This paragraph is the one place that story is told; the
-outbox's other touchpoints (``Conversation.deliver_pending_messages``,
+what we missed while away; :func:`flush_pending_outbox` is what we still OWE:
+every message composed here that the hub has not fully taken
+(``FlowMessage.owes_delivery``) — typed while signed out (``pending_send``), a
+push that failed while online, a body upload a restart cut short. Each is handed
+to ``Conversation.deliver``, the one path a fresh send also takes, and each
+attempt leaves its outcome on the message (SENT, or ``delivery_failure``).
+
+The outbox is drained on every moment the hub may have become reachable:
+backend startup, login, the WebSocket coming back
+(``ws_client._catch_up_after_reconnect``), and the first hub call that succeeds
+after one that could not reach it (``hub_http``'s reachability edge) — the case
+where HTTP failed while the socket stayed up. This paragraph is the one place
+that story is told; the outbox's other touchpoints (``Conversation.deliver``,
 ``handle_add_message``) point here rather than restating it.
 
-Two known edges, both currently benign, both worth knowing before adding a
-third transition:
-
-* A message queued into a conversation that was NEVER shared keeps
-  ``pending_send`` for good. ``share_action`` stamps that status from
-  ``is_logged_in()`` alone, without consulting ``remote``, so such a row exists
-  — but there is no hub row to push it to and no recipient waiting, and
-  ``share()`` flushes it if the conversation is ever shared. Nothing is lost;
-  the status is simply pessimistic until then.
-* ``cloud_client.ws_client._catch_up_after_reconnect`` is a THIRD resync hook
-  and pulls only. It cannot strand anything today — ``pending_send`` requires
-  being logged out, and losing credentials also drops the socket, so login's
-  catch-up has already run by the time the WS is back — but if ``pending_send``
-  is ever decoupled from ``is_logged_in()``, that hook needs this half too.
+A message queued into a conversation that was NEVER shared stays owed for good:
+there is no hub row to push it to and no recipient waiting, and ``share()``
+delivers it if the conversation is ever shared.
 """
 
 from __future__ import annotations
@@ -83,52 +77,69 @@ async def run_hub_catchup(reason: str) -> None:
 
 
 async def flush_pending_outbox(reason: str) -> None:
-    """Push messages composed while there was no hub session (see module docstring).
+    """Deliver everything this machine still owes the hub (see the module docstring).
 
-    Reuses ``Conversation.deliver_pending_messages`` — the same send pipeline a
-    normal reply takes — rather than a second push path that could drift from it.
-    Only already-remote conversations are touched; a still-local one has no hub
-    row to append to.
+    "Owed" is ``FlowMessage.owes_delivery`` — a message composed here that the hub has not
+    accepted, or whose body it is still missing, however that happened: typed while signed out,
+    a push that failed while online, an upload a restart cut short. Each owing conversation is
+    handed to ``Conversation.deliver``, the same path a fresh send takes.
 
-    Sequential on purpose. The common case is a single conversation, and the
-    per-conversation work writes rows, so fanning out with ``gather`` would buy
-    almost nothing and put concurrent writers on the SQLite connection.
-    Best-effort per conversation: one unreachable thread must not strand the
-    rest, and a message that fails to push stays local for the next transition.
+    Sequential on purpose: the common case is one conversation, and each writes rows. Best-effort
+    per conversation — one unreachable thread must not strand the rest; whatever still fails
+    stays owed, with its reason on the message, for the next transition.
     """
+    from flow_sdk.cloud_client.transport.hub_http import outbox_draining  # noqa: PLC0415
+
+    token = outbox_draining.set(True)
+    try:
+        await _flush(reason)
+    finally:
+        outbox_draining.reset(token)
+
+
+async def _flush(reason: str) -> None:
     from flow_sdk.builtin.conversation import Conversation  # noqa: PLC0415
-    from flow_sdk.builtin.flow_message import DeliveryStatus, FlowMessage  # noqa: PLC0415
+    from flow_sdk.builtin.flow_message import BodyStatus, DeliveryStatus, FlowMessage  # noqa: PLC0415
     from flow_sdk.db.drivers.query import QueryFilter  # noqa: PLC0415
 
-    queued = await FlowMessage.get_all(
-        QueryFilter(match={"delivery_status": DeliveryStatus.PENDING_SEND.value}),
-        hydrate=False,
-    )
-    conversation_ids = {cid for fm in queued if (cid := getattr(fm, "conversation_id", ""))}
+    candidates: list = []
+    for match in (
+        {"delivery_status": DeliveryStatus.PENDING_SEND.value},
+        {"outbound": True, "delivery_status": DeliveryStatus.CREATED.value},
+        {"outbound": True, "body_status": BodyStatus.UPLOADING.value},
+        {"outbound": True, "body_status": BodyStatus.FAILED.value},
+    ):
+        candidates.extend(await FlowMessage.get_all(QueryFilter(match=match), hydrate=False))
+    conversation_ids = {fm.conversation_id for fm in candidates if fm.owes_delivery and fm.conversation_id}
     if not conversation_ids:
         return
 
     flushed = 0
     for conversation_id in conversation_ids:
         conversation = await Conversation.get_one({"id": conversation_id})
-        if conversation is None or not getattr(conversation, "remote", False):
+        if conversation is None or not conversation.hub_bound:
             continue
         try:
-            await conversation.deliver_pending_messages()
+            await conversation.deliver()
             flushed += 1
         except Exception:  # noqa: BLE001
             logger.info(
-                "[stream-inbox] outbox flush (%s) failed for conversation %s",
-                reason,
-                conversation_id,
-                exc_info=True,
+                "[stream-inbox] outbox flush (%s) failed for conversation %s", reason, conversation_id, exc_info=True
             )
     logger.info(
-        "[stream-inbox] outbox flush (%s): pushed queued messages for %d of %d conversation(s)",
+        "[stream-inbox] outbox flush (%s): delivered %d of %d owing conversation(s)",
         reason,
         flushed,
         len(conversation_ids),
     )
+
+
+def start_outbox_drain(reason: str) -> None:
+    """``flush_pending_outbox`` off the caller's path (the hub-reachable edge fires inside a hub call)."""
+    try:
+        asyncio.get_running_loop().create_task(flush_pending_outbox(reason))
+    except RuntimeError:  # no loop: a synchronous caller; the next transition drains instead
+        pass
 
 
 def start_hub_catchup(reason: str) -> None:

@@ -102,8 +102,9 @@ def patch_entity_document(
         body_changed = new_body != before.body
         if fields == before.fields and not body_changed:
             return before
-        spec_fields = info.asset_spec.model_fields
-        info.asset_spec.model_validate({key: value for key, value in fields.items() if key in spec_fields})
+        # The file's keys are the spec's ALIASES where it declares one (``data_driver_name``), its names otherwise.
+        spec_keys = {f.alias or name for name, f in info.asset_spec.model_fields.items()}
+        info.asset_spec.model_validate({key: value for key, value in fields.items() if key in spec_keys})
         identity = {key: doc[key] for key in ("type", "id") if key in doc}
         document = {"type": info.type_name, **identity, **fields}
         # Decide the version against the dicts, then render once — the text is the OUTPUT, not a comparison key.

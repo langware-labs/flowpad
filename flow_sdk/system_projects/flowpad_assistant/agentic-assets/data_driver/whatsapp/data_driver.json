@@ -1,10 +1,12 @@
 {
   "schema": 1,
   "name": "whatsapp",
-  "title": "WhatsApp",
+  "title": "Your own WhatsApp bot",
   "icon_name": "WhatsApp",
   "description": "A WhatsApp business number on Meta's Cloud API — people message it, an agent answers. Messages arrive by webhook, so Meta must be able to reach this instance.",
   "kind": "datasource.api.whatsapp",
+  "group": "WhatsApp",
+  "group_order": 1,
   "auth": {
     "credential": "whatsapp",
     "vars": {
