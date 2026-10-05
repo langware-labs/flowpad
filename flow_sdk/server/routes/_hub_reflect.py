@@ -460,3 +460,14 @@ async def mirror_hub_response_into_local(entity: Entity, action_name: str, hub_r
                     await save()
             except Exception as e:  # noqa: BLE001
                 logger.debug("[hub-reflect] mirror save failed for %s: %s", entity.type, e)
+                return
+            # A changed roster is also what the address book learns from: the
+            # conversation sync skips a roster it finds already stored, so a
+            # member email that arrived here would otherwise never reach the
+            # contact. Same equality gate — an unchanged roster learns nothing.
+            try:
+                from flow_sdk.app.actions.flow_message_action import _learn_address_book  # noqa: PLC0415
+
+                await _learn_address_book(new_participants)
+            except Exception as e:  # noqa: BLE001
+                logger.debug("[hub-reflect] contact learn failed for %s: %s", entity.type, e)
