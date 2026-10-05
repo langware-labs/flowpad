@@ -6,6 +6,8 @@
  *   not shared with me, not another project's) are listed, each opening the conversation it was
  *   asked in; the icon counts the messages waiting across them; with none open it asks anew.
  * - Asking the same person again in the same project offers the open conversation.
+ * - Asking is ONE `ask-for-help` call (a person recipient, files multipart) — the backend writes the
+ *   task, the conversation and the message, and delivers them (docs/collab/ask-for-help.md).
  */
 import '@testing-library/jest-dom/vitest';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
@@ -37,10 +39,10 @@ vi.mock('@src/navigation/useDockNavigation', () => ({
   useDockNavigation: () => ({ navigation: { openDock: h.openDock }, currentDock: null }),
 }));
 
-import { fsManager, Task, TaskKind } from '@sdk';
+import { dataManager, Task, TaskKind } from '@sdk';
 import { ContactPicker } from '@src/components/contact-picker/ContactPicker';
 import { VibeAssignTaskButton } from '@src/pages/flow-page/VibeAssignTaskButton';
-import { VibeAssignTaskDialog } from '@src/pages/flow-page/VibeAssignTaskDialog';
+import { AskForHelpDialog } from '@src/components/help/AskForHelpDialog';
 
 afterEach(() => {
   cleanup();
@@ -82,9 +84,9 @@ describe('ContactPicker', () => {
   });
 });
 
-describe('VibeAssignTaskDialog', () => {
+describe('AskForHelpDialog', () => {
   it('enables Assign when the email was typed and the user moved on to the title', () => {
-    render(<VibeAssignTaskDialog open onOpenChange={() => {}} projectId={null} sessionTypeId={null} />);
+    render(<AskForHelpDialog open onOpenChange={() => {}} projectId={null} sessionTypeId={null} origin="vibe" />);
 
     // The user's path: type the email, move straight on to the title — no Enter.
     const person = screen.getByTestId('vibe-assign-person');
@@ -165,15 +167,16 @@ describe('VibeAssignTaskButton — the current task button', () => {
   });
 });
 
-describe('VibeAssignTaskDialog — asking again', () => {
+describe('AskForHelpDialog — asking again', () => {
   const renderWith = (email: string, onOpenExisting = vi.fn()) => {
     const row = { task: helpTask(), conversationId: 'conv-1', unread: 0 };
     render(
-      <VibeAssignTaskDialog
+      <AskForHelpDialog
         open
         onOpenChange={() => {}}
         projectId={P1}
         sessionTypeId={null}
+        origin="vibe"
         openTasks={[row]}
         onOpenExisting={onOpenExisting}
       />,
@@ -199,37 +202,22 @@ describe('VibeAssignTaskDialog — asking again', () => {
     expect(screen.queryByTestId('vibe-assign-already-asked')).not.toBeInTheDocument();
   });
 
-  it('a new request is a Vibe task, so the button lists it', async () => {
-    const saved: Task[] = [];
-    vi.spyOn(Task.prototype, 'save').mockImplementation(function (this: Task) {
-      saved.push(this);
-      return Promise.resolve(this);
+  /** Fill the required fields, run `attach`, submit; returns the one `ask-for-help` call. */
+  async function submit(attach: () => void | Promise<void> = () => {}) {
+    const calls: unknown[] = [];
+    vi.spyOn(dataManager, 'callAction').mockImplementation(async (info) => {
+      if (info.name === 'ask-for-help') {
+        calls.push(info.bodyParameters);
+        return {
+          conversation_id: 'conv-9',
+          task_id: 't-9',
+          message_id: 'm-9',
+          delivery: { header: 'sent', body: null, failure: null },
+        };
+      }
+      return { desks: [], default_state: 'known' };
     });
-    const assign = vi.spyOn(Task.prototype, 'assign').mockResolvedValue({ conversationId: 'conv-9', self: false });
-    render(<VibeAssignTaskDialog open onOpenChange={() => {}} projectId={P1} sessionTypeId={null} />);
-    const person = screen.getByTestId('vibe-assign-person');
-    fireEvent.change(person, { target: { value: 'bob@x.com' } });
-    fireEvent.blur(person);
-    fireEvent.change(screen.getByTestId('vibe-assign-title'), { target: { value: 'Popout button is disabled' } });
-
-    act(() => {
-      fireEvent.click(screen.getByTestId('vibe-assign-submit'));
-    });
-
-    await waitFor(() => expect(assign).toHaveBeenCalledTimes(1));
-    expect(saved[0].kind).toBe(TaskKind.VIBE);
-  });
-
-  /** Fill the required fields, run `attach`, submit; returns the spies. */
-  async function submitWithFiles(attach: () => void | Promise<void>) {
-    const artifactsAtSave: unknown[] = [];
-    vi.spyOn(Task.prototype, 'save').mockImplementation(function (this: Task) {
-      artifactsAtSave.push(this.artifacts);
-      return Promise.resolve(this);
-    });
-    const assign = vi.spyOn(Task.prototype, 'assign').mockResolvedValue({ conversationId: 'conv-9', self: false });
-    const upload = vi.spyOn(fsManager, 'uploadFile').mockResolvedValue({} as never);
-    render(<VibeAssignTaskDialog open onOpenChange={() => {}} projectId={P1} sessionTypeId={null} />);
+    render(<AskForHelpDialog open onOpenChange={() => {}} projectId={P1} sessionTypeId={null} origin="vibe" />);
     const person = screen.getByTestId('vibe-assign-person');
     fireEvent.change(person, { target: { value: 'bob@x.com' } });
     fireEvent.blur(person);
@@ -238,24 +226,33 @@ describe('VibeAssignTaskDialog — asking again', () => {
     act(() => {
       fireEvent.click(screen.getByTestId('vibe-assign-submit'));
     });
-    await waitFor(() => expect(assign).toHaveBeenCalledTimes(1));
-    return { artifactsAtSave, assign, upload };
+    await waitFor(() => expect(calls).toHaveLength(1));
+    return calls[0];
   }
 
-  it('a file picked with "+" is stored in the task folder before the task is assigned', async () => {
-    const shot = new File([new Uint8Array([1, 2, 3])], 'shot.png', { type: 'image/png' });
-    const { artifactsAtSave, assign, upload } = await submitWithFiles(() => {
-      fireEvent.change(screen.getByTestId('vibe-assign-attach-input'), { target: { files: [shot] } });
+  it('asking a person is one request, to them, from this project', async () => {
+    const body = (await submit()) as Record<string, unknown>;
+    expect(body).toMatchObject({
+      recipient: { kind: 'person', email: 'bob@x.com' },
+      title: 'Popout button is disabled',
+      project_id: P1,
+      origin: 'vibe',
     });
-
-    expect(upload).toHaveBeenCalledWith(expect.anything(), '/attachments', shot);
-    // Second save records the file on the task; the assign (which packs the folder) comes after.
-    expect(artifactsAtSave.at(-1)).toEqual([{ vfs: 'attachments/shot.png', label: 'shot.png' }]);
-    expect(upload.mock.invocationCallOrder[0]).toBeLessThan(assign.mock.invocationCallOrder[0]);
+    expect(typeof body.conversation_id).toBe('string'); // the asker's id: a resend is the same request
   });
 
-  it('a pasted screenshot goes through the annotator and onto the task', async () => {
-    const { artifactsAtSave, upload } = await submitWithFiles(async () => {
+  it('a file picked with "+" rides with the request', async () => {
+    const shot = new File([new Uint8Array([1, 2, 3])], 'shot.png', { type: 'image/png' });
+    const form = (await submit(() => {
+      fireEvent.change(screen.getByTestId('vibe-assign-attach-input'), { target: { files: [shot] } });
+    })) as FormData;
+
+    expect(form.getAll('files').map((f) => (f as File).name)).toEqual(['shot.png']);
+    expect(JSON.parse(form.get('request') as string).recipient.email).toBe('bob@x.com');
+  });
+
+  it('a pasted screenshot goes through the annotator and rides with the request', async () => {
+    const form = (await submit(async () => {
       const image = new File([new Uint8Array([9])], 'image.png', { type: 'image/png' });
       fireEvent.paste(screen.getByTestId('vibe-assign-notes'), {
         clipboardData: {
@@ -266,17 +263,10 @@ describe('VibeAssignTaskDialog — asking again', () => {
         },
       });
       await waitFor(() => expect(screen.getByText(/screenshot/i)).toBeInTheDocument());
-    });
+    })) as FormData;
 
-    expect(upload).toHaveBeenCalledTimes(1);
-    const entries = artifactsAtSave.at(-1) as { vfs: string }[];
-    expect(entries).toHaveLength(1);
-    expect(entries[0].vfs).toMatch(/^attachments\/screenshot.*\.png$/);
-  });
-
-  it('no files: one save, nothing uploaded', async () => {
-    const { artifactsAtSave, upload } = await submitWithFiles(() => {});
-    expect(upload).not.toHaveBeenCalled();
-    expect(artifactsAtSave).toHaveLength(1);
+    const names = form.getAll('files').map((f) => (f as File).name);
+    expect(names).toHaveLength(1);
+    expect(names[0]).toMatch(/^screenshot.*\.png$/);
   });
 });

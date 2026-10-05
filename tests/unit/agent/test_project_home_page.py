@@ -19,6 +19,7 @@ import pytest
 from flow_sdk.assets import project_manifest as manifest
 from flow_sdk.responses.response import ApiSuccessResponse
 from flow_sdk.schema.data_spec.project_manifest_spec import ProjectManifestSpec
+from tests.unit.agent._seed import checkout_agent
 from tests.unit.agent._seed import seed_agent as _agent
 from tests.unit.agent._seed import seed_project as _project
 
@@ -169,3 +170,15 @@ async def test_the_set_action_updates_the_indexed_manifest_row(tmp_path):
     await project.set_home_page_action(typeid="")
     row = await ProjectManifest.get_one({"project_id": str(project.id)})
     assert row.home_page is None
+
+
+# ── first open: the home page is indexed before it is looked up ─────────────
+
+
+async def test_a_never_indexed_home_page_agent_resolves_on_the_first_open(tmp_path):
+    root = tmp_path / "fresh"
+    project = await _project(root)
+    typeid = checkout_agent(root, "greeter")
+    _declare(root, typeid)
+
+    assert await project.open_home_page() == {"asset": typeid, "type": "agent"}

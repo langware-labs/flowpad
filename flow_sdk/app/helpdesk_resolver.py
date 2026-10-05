@@ -15,6 +15,7 @@ from flow_sdk.api.api_types.identifier import is_valid_entity_id
 from flow_sdk.builtin.helpdesk import Helpdesk
 from flow_sdk.builtin.project import Project, mount_key, scoped_assets
 from flow_sdk.fs_store.path_utils import is_path_under
+from flow_sdk.schema.types import EntityType
 
 log = logging.getLogger(__name__)
 
@@ -43,8 +44,9 @@ async def resolve_adopted_helpdesk(project_id: str) -> AdoptedHelpdesk | None:
     are ordered by canonical asset path and then entity id, so database row
     order can never change which Hub queue receives a ticket.
 
-    Resolution is read-only — a context root whose Project projection has not
-    been indexed yet is never minted here, on an open/ticket path.
+    Resolution writes only the desks' own rows: a declared desk not yet indexed
+    is indexed here (the project's first index runs detached on open). A context
+    root whose Project projection has not been indexed yet is never minted here.
 
     It is not SKIPPED either, which it used to be. A desk attached by path
     rather than through the git flow has no Project of its own, and requiring
@@ -61,6 +63,10 @@ async def resolve_adopted_helpdesk(project_id: str) -> AdoptedHelpdesk | None:
     roots = project.direct_context_roots()
     if not roots:
         return None
+
+    # Before the detached first index lands, a declared desk has no row and the ticket
+    # would go, silently, to the hub's default desk.
+    await project.index_missing_assets("helpdesk", {EntityType.HELPDESK.value}, lambda _candidate: True)
 
     # Independent reads: neither feeds the other, so pay one round trip, not two.
     all_desks, projects_by_mount = await asyncio.gather(Helpdesk.get_all(), Project.index_by_mount())

@@ -19,7 +19,7 @@ from datetime import datetime
 from typing import Optional
 
 from flow_sdk._compat import UTC
-from flow_sdk.builtin.conversation import Conversation
+from flow_sdk.builtin.conversation import Conversation, conversation_row_lock
 from flow_sdk.builtin.flow_message import FlowMessage, derive_session_fields, session_snapshot_from_header
 from flow_sdk.core.entity.entity_model import remote_reflection
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
@@ -74,81 +74,82 @@ async def ensure_conversation_entity(
     instead of stamping the local request user. Sender-side callers omit both
     (a locally-born conversation IS created by the local user).
     """
-    conv = await Conversation.get_one({"id": conversation_id})
-    title_clean = (title or "").strip() or None
-    if conv is None:
-        # Derive the owning project from the shared/target entity (the parent
-        # Task here), deterministically and once — the same rule the local
-        # create path uses. Falls back to a caller-supplied ``project_id``; a
-        # pure entity-less cross-user chat stays project-less (None) by design.
-        if parent_typeid is not None:
-            project_id = await Conversation.resolve_project_id([str(parent_typeid)], fallback=project_id)
-        payload: dict = {"id": conversation_id}
-        if created_by:
-            payload["created_by"] = created_by
-        if remote:
-            payload["remote"] = True
-        if project_id:
-            payload["project_id"] = project_id
-        if remote_project_id:
-            payload["remote_project_id"] = remote_project_id
-        if remote_project_name:
-            payload["remote_project_name"] = remote_project_name
-        if participants:
-            payload["members"] = list(participants)  # roster cache field (wire key is ``participants``)
-        if title_clean:
-            payload["title"] = title_clean
-        if parent_typeid is not None:
-            payload["shared_context_entities"] = [str(parent_typeid)]
-        # Whose stream inbox lists it. The thread that minted it says for an ingested
-        # conversation; every other path is the local user's. Distinct from
-        # ``someone_typeid`` (the save-time attribution stamp) and from
-        # ``created_by`` (the hub's creator mirror).
-        resolved_owner = owner
-        if resolved_owner is None:
-            from flow_sdk.stream_inbox.projection import default_owner  # noqa: PLC0415
+    async with conversation_row_lock(conversation_id):
+        conv = await Conversation.get_one({"id": conversation_id})
+        title_clean = (title or "").strip() or None
+        if conv is None:
+            # Derive the owning project from the shared/target entity (the parent
+            # Task here), deterministically and once — the same rule the local
+            # create path uses. Falls back to a caller-supplied ``project_id``; a
+            # pure entity-less cross-user chat stays project-less (None) by design.
+            if parent_typeid is not None:
+                project_id = await Conversation.resolve_project_id([str(parent_typeid)], fallback=project_id)
+            payload: dict = {"id": conversation_id}
+            if created_by:
+                payload["created_by"] = created_by
+            if remote:
+                payload["remote"] = True
+            if project_id:
+                payload["project_id"] = project_id
+            if remote_project_id:
+                payload["remote_project_id"] = remote_project_id
+            if remote_project_name:
+                payload["remote_project_name"] = remote_project_name
+            if participants:
+                payload["members"] = list(participants)  # roster cache field (wire key is ``participants``)
+            if title_clean:
+                payload["title"] = title_clean
+            if parent_typeid is not None:
+                payload["shared_context_entities"] = [str(parent_typeid)]
+            # Whose stream inbox lists it. The thread that minted it says for an ingested
+            # conversation; every other path is the local user's. Distinct from
+            # ``someone_typeid`` (the save-time attribution stamp) and from
+            # ``created_by`` (the hub's creator mirror).
+            resolved_owner = owner
+            if resolved_owner is None:
+                from flow_sdk.stream_inbox.projection import default_owner  # noqa: PLC0415
 
-            resolved_owner = await default_owner()
-        if resolved_owner is not None:
-            payload["owner"] = str(resolved_owner)
-        conv = Conversation.model_validate(payload)
-        conv.id = conversation_id
-        # Remote bare row → reflect (preserve hub attribution); local → normal stamp.
-        with remote_reflection() if remote else nullcontext():
-            conv = await conv.save(someone_typeid, notify=False)
-    else:
-        dirty = False
-        if owner is not None and getattr(conv, "owner", None) is None:
-            # A pre-owner row being touched by a caller that knows the owner:
-            # stamp it, so the stream inbox filter finds it without the backfill.
-            conv.owner = owner
-            dirty = True
-        if participants and not (conv.members or []):
-            # Backfill the roster from the bundle so the reply-recipient
-            # resolver can find the other party's email.
-            conv.members = list(participants)
-            dirty = True
-        if title_clean and not (conv.title or "").strip():
-            # Backfill title on first receive — keep an existing local override.
-            conv.title = title_clean
-            dirty = True
-        if parent_typeid is not None:
-            # Backfill the parent link on an existing local conv. Recipients
-            # often have a bare Conversation row materialized by the
-            # invitation-preview flow before the bundle unpack runs; that
-            # earlier row has no ``shared_context_entities``. Without this
-            # backfill, ``conversation.firstContextOfType('task')`` returns
-            # null on the recipient, ``useConversation`` resolves a null
-            # task, and the Implement Plan / Approve & Execute chips never
-            # render (they gate on task presence).
-            parent_str = str(parent_typeid)
-            existing_ctx = list(conv.shared_context_entities or [])
-            existing_strs = {str(t) for t in existing_ctx}
-            if parent_str not in existing_strs:
-                conv.shared_context_entities = existing_ctx + [parent_str]
+                resolved_owner = await default_owner()
+            if resolved_owner is not None:
+                payload["owner"] = str(resolved_owner)
+            conv = Conversation.model_validate(payload)
+            conv.id = conversation_id
+            # Remote bare row → reflect (preserve hub attribution); local → normal stamp.
+            with remote_reflection() if remote else nullcontext():
+                conv = await conv.save(someone_typeid, notify=False)
+        else:
+            dirty = False
+            if owner is not None and getattr(conv, "owner", None) is None:
+                # A pre-owner row being touched by a caller that knows the owner:
+                # stamp it, so the stream inbox filter finds it without the backfill.
+                conv.owner = owner
                 dirty = True
-        if dirty:
-            conv = await conv.save(someone_typeid, notify=False)
+            if participants and not (conv.members or []):
+                # Backfill the roster from the bundle so the reply-recipient
+                # resolver can find the other party's email.
+                conv.members = list(participants)
+                dirty = True
+            if title_clean and not (conv.title or "").strip():
+                # Backfill title on first receive — keep an existing local override.
+                conv.title = title_clean
+                dirty = True
+            if parent_typeid is not None:
+                # Backfill the parent link on an existing local conv. Recipients
+                # often have a bare Conversation row materialized by the
+                # invitation-preview flow before the bundle unpack runs; that
+                # earlier row has no ``shared_context_entities``. Without this
+                # backfill, ``conversation.firstContextOfType('task')`` returns
+                # null on the recipient, ``useConversation`` resolves a null
+                # task, and the Implement Plan / Approve & Execute chips never
+                # render (they gate on task presence).
+                parent_str = str(parent_typeid)
+                existing_ctx = list(conv.shared_context_entities or [])
+                existing_strs = {str(t) for t in existing_ctx}
+                if parent_str not in existing_strs:
+                    conv.shared_context_entities = existing_ctx + [parent_str]
+                    dirty = True
+            if dirty:
+                conv = await conv.save(someone_typeid, notify=False)
 
     if parent_typeid is not None and parent_typeid.type == BuiltinEntityType.TASK.value:
         parent_id = parent_typeid.id

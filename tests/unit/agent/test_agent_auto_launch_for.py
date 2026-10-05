@@ -13,7 +13,8 @@ from datetime import datetime, timedelta, timezone
 import pytest
 
 from flow_sdk.builtin.agent import Agent
-from tests.unit.agent._seed import seed_agent as _agent, seed_project as _project
+from flow_sdk.core import Entity
+from tests.unit.agent._seed import checkout_agent, seed_agent as _agent, seed_project as _project
 
 
 class _FakeQueue:
@@ -193,3 +194,17 @@ async def test_a_failed_session_open_leaves_the_mark_unset_so_the_next_open_retr
     outcome = await Agent.auto_launch_for(project.id)
     assert outcome is not None and outcome.agent.id == agent.id
     assert Agent.auto_launched_ids(project.id) == [agent.id]
+
+
+async def test_a_never_indexed_agent_launches_on_the_first_open(tmp_path, used):
+    """A fresh checkout's first open: the row does not exist yet, and only the agent
+    that launches itself is indexed for it — the rest wait for the walk."""
+    root = tmp_path / "fresh"
+    project = await _project(root)
+    launcher = checkout_agent(root, "launcher", auto_launch=True)
+    plain = checkout_agent(root, "plain")
+
+    outcome = await Agent.auto_launch_for(project.id)
+
+    assert outcome is not None and f"agent-{outcome.agent.id}" == launcher
+    assert await Entity.get_by_typeid(plain) is None

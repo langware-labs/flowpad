@@ -181,6 +181,7 @@ with the shipped one and one of them would lose in silence.
 | 2 | `register_builtin_kinds()` (`_kinds.py`) — explicit SDK kinds (`fs_ref`)                | always ours                                                  |
 | 3 | an asset loaded from a folder — `load_driver`, and the lazy loaders keyed by NAMESPACE (`_kinds.py`) | declared by `_importing`; an external naming none is refused |
 | 4 | an `asset_spec` registered under its type name (rule 4)                                 | the type's own project                                       |
+| 5 | a `data_spec` FOLDER (`agentic-assets/data_spec/<full.kind>/data_spec.json`) — built from its document, not imported (`flow_sdk/schema/data_spec/declared.py`) | declared by the loader's `loading(ns)`: ours if shipped, else the document's `ns`, else its project's; an external naming none is refused |
 
 Paths 1 and 3 are one mechanism: loading an asset imports its module, and the
 class declaration is what registers. Scoping the declaration to that import
@@ -210,12 +211,18 @@ await), and filled by the paths that can: the manifest's post-sync hook, project
 creation, and the boot sweep. It is a cache of a fact on disk — an empty map means
 "nobody has told us yet", never "no such namespace", so a miss is never memoized.
 
-Which says what an asset CANNOT do: a folder with no module to import mints
-nothing. A `compute_op` asset is `compute_op.json` plus `setup.md`, so an op's
-`output_spec_kind` names a primitive or a kind flow_sdk registers — never a shape
-the op declares for itself. The day one needs to, the mechanism already exists: the
-asset's kinds are namespaced by its project, and the external loader already imports
-that project's assets. Not a second mechanism.
+A folder with no MODULE still mints a kind when it is a `data_spec` folder (path 5):
+`declared.py` builds the class from `data_spec.json` inside `loading(ns)`, so it
+registers through the same class hook as path 1 — one mechanism, handed a class two
+ways. The miss loaders load these first (ours: the shipped tree; an external's: its
+project root, within the namespace's one claim), since a driver's code may name them.
+A rebuilt kind replaces its registered class while classes built earlier keep pointing
+at the old one; that old class still answers its kind, because `io/names.kind_of` reads
+the tag stamped on the class (`__spec_tag__`) before the registry's inverse map. An
+unchanged folder is not rebuilt at all — a cost saving, not a correctness rule.
+Dependencies build first, and a name still resolving to `Any` is an error, never a
+field that accepts anything. Any other asset folder (a `compute_op`) mints nothing of
+its own: its `output_spec_kind` names a primitive, a code kind, or a data spec folder.
 
 ## Not yet done
 

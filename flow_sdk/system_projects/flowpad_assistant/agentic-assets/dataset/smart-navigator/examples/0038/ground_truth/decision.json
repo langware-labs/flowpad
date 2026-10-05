@@ -1,0 +1,9 @@
+{
+  "route": "quick",
+  "target": {
+    "kind": "view",
+    "value": "shell"
+  },
+  "verb": "show",
+  "confidence": null
+}

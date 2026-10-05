@@ -27,6 +27,8 @@ from pathlib import Path
 from typing import Literal, Optional
 from urllib.parse import urlsplit
 
+from pydantic import ConfigDict
+
 from flow_sdk.config import PLATFORM_DARWIN, PLATFORM_WIN32
 from flow_sdk.schema.data_spec.spec import DataSpec
 
@@ -157,6 +159,15 @@ class BrowserProfiles(DataSpec):
     """``GET /api/v1/browser-profiles``."""
 
     browsers: list[Browser]
+
+
+class ProfileChoice(DataSpec):
+    """One profile of one browser — where a page the backend opens (e.g. cloud sign-in) should land."""
+
+    model_config = ConfigDict(frozen=True)
+
+    browser: str
+    profile: str
 
 
 class OpenInProfileRequest(DataSpec):

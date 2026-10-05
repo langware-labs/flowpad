@@ -1,0 +1,9 @@
+{
+  "route": "quick",
+  "target": {
+    "kind": "view",
+    "value": "automations"
+  },
+  "verb": "show",
+  "confidence": null
+}

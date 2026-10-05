@@ -4,6 +4,7 @@
 from . import (  # noqa: F401
     add_translation_action,
     address_book_action,
+    ask_for_help_action,
     context_resolve_action,
     context_share_action,
     diagnose_action,

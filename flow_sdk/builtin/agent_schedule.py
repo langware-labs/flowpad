@@ -23,7 +23,6 @@ import shutil
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Optional
 
-from pydantic import ValidationError
 
 from flow_sdk.schema.data_spec.trigger_spec import TriggerSpec
 
@@ -96,23 +95,18 @@ def _document(body: dict[str, Any], base: Optional[dict[str, Any]]) -> dict[str,
 
 
 def _validate(doc: dict[str, Any]) -> TriggerSpec:
-    """Parse the document AND the clock, so a bad cron fails the save, not the fire."""
+    """Parse the document AND the clock, so a bad cron fails the save, not the fire —
+    the shared automation-file check, plus "this has to be a schedule"."""
+    from flow_sdk.automations.spec_file import SpecFileError, validate  # noqa: PLC0415
+
     try:
-        spec = TriggerSpec.model_validate(doc)
-    except ValidationError as exc:
-        first = exc.errors(include_url=False)[0]
-        where = ".".join(str(part) for part in first.get("loc", ())) or "schedule"
-        raise ScheduleError(f"{where}: {first.get('msg', 'is invalid')}") from exc
+        spec = validate(doc)
+    except SpecFileError as exc:
+        raise ScheduleError(str(exc)) from exc
     if spec.schedule is None:
         raise ScheduleError("this trigger is not a schedule")
     if spec.schedule.every not in SCHEDULE_KINDS:
         raise ScheduleError(f"every must be one of {', '.join(SCHEDULE_KINDS)}")
-    from flow_sdk.builtin.trigger import _parse_trigger  # noqa: PLC0415
-
-    try:
-        _parse_trigger(spec.schedule.every, spec.schedule.expr, spec.schedule.timezone or None)
-    except Exception as exc:  # noqa: BLE001 — APScheduler raises ValueError/ZoneInfo errors alike
-        raise ScheduleError(f"invalid {spec.schedule.every} schedule {spec.schedule.expr!r}: {exc}") from exc
     return spec
 
 

@@ -44,7 +44,7 @@ PREF_AUTO_INDEX_FUNCTION = "preferences.auto_index.index_function"
 
 DEFAULT_AUTO_INDEX_ENABLED = True
 DEFAULT_AUTO_INDEX_TYPE = "fast"
-DEFAULT_AUTO_INDEX_TRIGGER = "first_selection"
+DEFAULT_AUTO_INDEX_TRIGGER = "every_selection"
 DEFAULT_AUTO_INDEX_FUNCTION = "subprocess"
 
 # Epoch-ms of the last auto-index, in the project record's shadow metadata.

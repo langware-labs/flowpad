@@ -5,7 +5,9 @@ The shapes only; the routing lives in ``flow_sdk.core.navigator``.
 
 from __future__ import annotations
 
-from typing import ClassVar, Literal, Optional
+from typing import Any, ClassVar, Literal, Optional
+
+from pydantic import PrivateAttr
 
 from flow_sdk.schema.data_spec.spec import DataSpec
 
@@ -35,3 +37,9 @@ class NavigatorRoute(DataSpec):
     #: ``unsure``, ``agentic``, a ``DecisionError`` reason).
     reason: str = ""
     latency_ms: float = 0.0
+    #: The search matches the decision was offered (run detail, never serialized).
+    _offered: list[dict[str, Any]] = PrivateAttr(default_factory=list)
+
+    @property
+    def offered(self) -> list[dict[str, Any]]:
+        return self._offered

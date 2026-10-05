@@ -17,8 +17,6 @@ from .dep_graph import router as dep_graph_router
 from .detection import router as detection_router
 from .directory import router as directory_router
 from .display import router as display_router
-from .snippet import router as snippet_router
-from .shell import router as shell_router
 from .docs_graph import router as docs_graph_router
 from .favorites import router as favorites_router
 from .git import router as git_router
@@ -28,6 +26,7 @@ from .health import health_router
 from .hooks import router as hooks_router
 from .ingest import router as ingest_router
 from .journeys import router as journeys_router
+from .kinds import router as kinds_router
 from .markdown_index import router as markdown_index_router
 from .navigate import router as navigate_router
 from .privacy import router as privacy_router
@@ -36,6 +35,8 @@ from .pty_stream import router as pty_stream_router
 from .runs import router as runs_router
 from .search import router as search_router
 from .semantic_checker import router as semantic_checker_router
+from .shell import router as shell_router
+from .snippet import router as snippet_router
 from .subgraph import router as subgraph_router
 from .tags import router as tags_router
 from .testing import router as testing_router
@@ -92,6 +93,7 @@ __all__ = [
     "semantic_checker_router",
     "pty_stream_router",
     "capabilities_router",
+    "kinds_router",
     "toplog_router",
     "graph_workflows_router",
     "agents_router",

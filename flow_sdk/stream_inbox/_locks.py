@@ -33,8 +33,15 @@ def loop_lock(registry: "weakref.WeakKeyDictionary") -> asyncio.Lock:
 
 
 def keyed_loop_lock(registry: "weakref.WeakKeyDictionary", key: str) -> asyncio.Lock:
-    """The calling loop's lock for *key* from ``registry`` — one lock per (loop, key)."""
-    per_loop = registry.setdefault(asyncio.get_running_loop(), {})
+    """The calling loop's lock for *key* from ``registry`` — one lock per (loop, key).
+
+    Weak-valued: a key's lock lives only while someone holds or awaits it, so a registry
+    keyed by something unbounded (a conversation id) does not grow for the process's life.
+    A lock nobody references is unlocked, so minting a fresh one later changes nothing.
+    """
+    per_loop = registry.get(asyncio.get_running_loop())
+    if per_loop is None:
+        per_loop = registry[asyncio.get_running_loop()] = weakref.WeakValueDictionary()
     lock = per_loop.get(key)
     if lock is None:
         lock = per_loop[key] = asyncio.Lock()

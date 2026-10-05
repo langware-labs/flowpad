@@ -112,7 +112,9 @@ const GenericSubgraphView = lazyWebglView(() =>
 const GraphWorkflowsView = lazy(() =>
   import('@src/components/graph-workflows/GraphWorkflowsView').then((m) => ({ default: m.GraphWorkflowsView })),
 );
-const EventsView = lazy(() => import('@src/components/events/EventsView').then((m) => ({ default: m.EventsView })));
+const AutomationsView = lazy(() =>
+  import('@src/components/automations/AutomationsView').then((m) => ({ default: m.AutomationsView })),
+);
 const AssetListView = lazy(() =>
   import('@src/components/asset-counters/AssetListView').then((m) => ({ default: m.AssetListView })),
 );
@@ -414,15 +416,12 @@ function ContentPanelBody({
         return (
           <ExplorerView onFileSelect={handleExplorerFileSelect} />
         );
-      // The merged Events screen. TRIGGERS / SIGNALS / CRON are aliases, not
-      // redirects — every bookmarked URL keeps resolving to the same screen.
-      case ViewType.EVENTS:
-      case ViewType.TRIGGERS:
-      case ViewType.SIGNALS:
-      case ViewType.CRON:
+      // The retired events / triggers / signals / cron ids are rewritten to this
+      // before render (retired-views.ts).
+      case ViewType.AUTOMATIONS:
         return (
           <Suspense fallback={<PrimaryContentFallback />}>
-            <EventsView />
+            <AutomationsView />
           </Suspense>
         );
       case ViewType.CAPABILITIES:

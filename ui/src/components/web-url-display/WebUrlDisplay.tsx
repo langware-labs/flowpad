@@ -5,6 +5,7 @@ import { Trans } from '@lingui/react/macro';
 import { ExternalLink, Globe, ShieldAlert } from 'lucide-react';
 import { forwardRef, useCallback, useImperativeHandle, useRef } from 'react';
 import { classifyWebpageStatus } from './classify';
+import { useReshowRefresh } from './useReshowRefresh';
 import { useWebpageStatus } from './useWebpageStatus';
 
 export interface WebUrlDisplayProps {
@@ -49,6 +50,8 @@ export const WebUrlDisplay = forwardRef<PersistentIframeHandle, WebUrlDisplayPro
     recheck();
     frameRef.current?.refresh();
   }, [recheck]);
+  // A repair that brought the server back shows this page again: look again.
+  useReshowRefresh(url, refresh);
 
   useImperativeHandle(
     ref,

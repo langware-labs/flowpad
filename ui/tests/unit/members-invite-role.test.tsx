@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { TypeId } from '@sdk';
 import { MembersAvatarStack } from '@src/components/conversation/MembersAvatarStack';
@@ -185,6 +185,16 @@ describe('invite form — type, pick a role, Add to the list, Apply', () => {
       add();
 
       expect(rowRole('noa@example.com')).toBeTruthy();
+    });
+
+    it('shows a suggestion its email beneath the name, and none for a hub-only contact', () => {
+      openInvite(PROJECT_ROLES);
+
+      type('gadi');
+      const gadi = screen.getByTestId('members-invite-suggestion-u-gadi');
+      expect(within(gadi).getByTestId('member-subtitle').textContent).toBe('gadi@example.com');
+      const tunes = screen.getByTestId('members-invite-suggestion-u-tunes');
+      expect(within(tunes).queryByTestId('member-subtitle')).toBeNull();
     });
 
     it('adds on Enter, like the button', () => {

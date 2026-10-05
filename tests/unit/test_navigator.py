@@ -11,7 +11,7 @@ from __future__ import annotations
 import pytest
 
 import flow_sdk.decision as decision
-from flow_sdk.core import navigator
+from flow_sdk.core import navigation, navigator
 from flow_sdk.core.dock_address import parse_dock_url
 from flow_sdk.external_apis.decision import DecisionError
 from flow_sdk.schema.data_spec.api_endpoint_spec import APIEndpointOffer
@@ -70,6 +70,8 @@ async def test_without_a_decision_api_every_ask_is_todays_even_an_exact_screen_n
         ("open the app on port 5173", "webapp", "5173", "show"),
         ("search for widget", "view", "search?q=widget", "show"),
         ("open ~/notes/plan.md", "file", "~/notes/plan.md", "show"),
+        ("open connecitons", "view", "credentials", "show"),  # a typo of one name (logged live)
+        ("show me prefrences", "view", "preferences", "show"),
     ],
 )
 async def test_a_rule_answers_before_the_model(hub, utterance, kind, value, verb):
@@ -80,10 +82,11 @@ async def test_a_rule_answers_before_the_model(hub, utterance, kind, value, verb
 
 async def test_a_confident_decision_opens_it(hub):
     hub["answer"] = (f"entity:{TASK}", 0.97, "show")
-    r = await navigator.route("open the zoom oauth task", page="/dock/home")
+    r = await navigator.route("open the zoom oauth task", here={"view": "home", "address": "/dock/home"})
     assert (r.route, r.target.kind, r.target.value, r.reason) == ("quick", "entity", TASK, "decision")
     spec = hub["specs"][0]
     assert spec.state["utterance"] == "open the zoom oauth task" and spec.state["candidates"][0]["typeid"] == TASK
+    assert spec.state["page"] == "/dock/home"
     assert "agentic" in spec.questions["target"].options and f"entity:{TASK}" in spec.questions["target"].options
 
 
@@ -115,8 +118,26 @@ def test_an_entity_is_offered_once_unless_its_id_opens_a_different_screen():
     """``conversation/<id>`` beside the conversation entity is the same place twice; the two split
     the probability until neither clears the bar (measured 0.59 / 0.53)."""
     conv = "conversation-1e6f7a8b-9c0d-4e5f-9a6b-7c8d9e0f1a2b"
-    opts = navigator.options_for("x", {}, [{"typeid": conv, "type": "conversation", "title": "Dana"}])
+    opts = navigator.options_for(None, [{"typeid": conv, "type": "conversation", "title": "Dana"}])
     assert [k for k in opts if conv.split("-", 1)[1] in k] == [f"entity:{conv}"]
     proj = "project-6f1c2a7e-3b4d-4e5f-8a9b-0c1d2e3f4a5b"
-    opts = navigator.options_for("x", {"CurrentProjectTypeId": proj}, [])
+    here = navigation.kind("navigation.here").model_validate({"project": {"typeid": proj}})
+    opts = navigator.options_for(here, [])
     assert {f"entity:{proj}", f"view:graph/{proj.split('-', 1)[1]}"} <= set(opts)
+
+
+def test_a_screen_an_entity_opens_is_offered_in_the_words_people_use():
+    """Measured live: offered as bare "Lens", "open this session's transcript" fell under the bar
+    (0.3); with the screen's aliases it opens."""
+    proc = "agentic_process-7a2b3c4d-5e6f-4a1b-9c2d-3e4f5a6b7c8d"
+    here = navigation.kind("navigation.here").model_validate({"process": {"typeid": proc, "title": "refactor"}})
+    lens = navigator.options_for(here, [])[f"view:lens/{proc.split('-', 1)[1]}"]
+    assert "transcript" in lens and "'refactor'" in lens
+
+
+@pytest.mark.parametrize("utterance", ["open tags", "open tasks", "open agentz stuff", "open the thing"])
+def test_a_typo_rule_never_turns_one_screen_into_another(utterance):
+    """Look-alike screens (tasks / tags ~0.67) and loose phrases stay below the typo bar."""
+    hit = navigator.rule_hit(utterance)
+    core = utterance.split(" ", 1)[1]
+    assert hit is None or hit.value.split("/")[0].replace("-", " ") in (core, core.rstrip("s")), hit

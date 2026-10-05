@@ -168,7 +168,8 @@ async def list_schema_views():
         {
           ok: true,
           views: [ { view_type, label, aliases, page, pointer: none|optional|required,
-                     folds_pointer, scope_keyed, folds_sub_pointer, can_be_tab } ]
+                     folds_pointer, scope_keyed, folds_sub_pointer, can_be_tab,
+                     pointer_form, provides, opens, subplaces } ]
         }
     """
     from flow_sdk.core import dock_address as da  # noqa: PLC0415
@@ -186,6 +187,12 @@ async def list_schema_views():
             # Pointer-bearing views are asked with a placeholder so the answer
             # reflects the addressable form, not the bare-viewType form.
             "can_be_tab": da.can_be_tab(view, "x"),
+            # The map's half (``navigation.place``): what the pointer is, what the screen
+            # puts in context, which entity ids it opens, and its named tabs.
+            "pointer_form": meta.pointer_form,
+            "provides": list(meta.provides),
+            "opens": list(meta.opens),
+            "subplaces": [{"pointer": p, "label": label} for p, label in meta.subplaces],
         }
         for view, meta in da.VIEW_META.items()
         if meta.addressable

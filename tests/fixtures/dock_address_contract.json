@@ -50,6 +50,7 @@
     "preferences",
     "agentic_process",
     "search",
+    "automations",
     "events",
     "triggers",
     "capabilities",
@@ -126,6 +127,22 @@
     "skills": {
       "view_type": "assets",
       "pointer": "list/skill"
+    },
+    "events": {
+      "view_type": "automations",
+      "pointer": ""
+    },
+    "triggers": {
+      "view_type": "automations",
+      "pointer": ""
+    },
+    "cron": {
+      "view_type": "automations",
+      "pointer": ""
+    },
+    "signals": {
+      "view_type": "automations",
+      "pointer": "bus"
     }
   },
   "view_meta": {
@@ -433,8 +450,16 @@
       "folds_sub_pointer": false,
       "chrome": "workspace"
     },
-    "events": {
+    "automations": {
       "addressable": true,
+      "pointer": "optional",
+      "folds_pointer": true,
+      "scope_keyed": false,
+      "folds_sub_pointer": false,
+      "chrome": "workspace"
+    },
+    "events": {
+      "addressable": false,
       "pointer": "none",
       "folds_pointer": false,
       "scope_keyed": false,
@@ -442,7 +467,7 @@
       "chrome": "workspace"
     },
     "triggers": {
-      "addressable": true,
+      "addressable": false,
       "pointer": "none",
       "folds_pointer": false,
       "scope_keyed": false,
@@ -466,7 +491,7 @@
       "chrome": "workspace"
     },
     "signals": {
-      "addressable": true,
+      "addressable": false,
       "pointer": "none",
       "folds_pointer": false,
       "scope_keyed": false,
@@ -498,7 +523,7 @@
       "chrome": "workspace"
     },
     "cron": {
-      "addressable": true,
+      "addressable": false,
       "pointer": "none",
       "folds_pointer": false,
       "scope_keyed": false,
@@ -724,10 +749,10 @@
       "tab_hash": "conversation|6ba7b810-9dad-41d1-80b4-00c04fd430c8"
     },
     {
-      "name": "pointerless singleton keys on the empty pointer",
-      "view_type": "events",
+      "name": "a folded view keys on the view alone",
+      "view_type": "automations",
       "pointer": null,
-      "tab_hash": "events|"
+      "tab_hash": "automations|"
     },
     {
       "name": "preferences folds every category into one tab",
@@ -808,12 +833,43 @@
       "url": "/dock/stream_inbox?conversation=6ba7b810-9dad-41d1-80b4-00c04fd430c8"
     },
     {
-      "name": "events with a rule selected",
-      "view_type": "events",
+      "name": "automations with one open",
+      "view_type": "automations",
       "options": {
         "trigger": "550e8400-e29b-41d4-a716-446655440000"
       },
-      "url": "/dock/events?trigger=550e8400-e29b-41d4-a716-446655440000"
+      "url": "/dock/automations?trigger=550e8400-e29b-41d4-a716-446655440000"
+    },
+    {
+      "name": "automations list",
+      "view_type": "automations",
+      "url": "/dock/automations"
+    },
+    {
+      "name": "automations runs with a run open",
+      "view_type": "automations",
+      "pointer": "runs",
+      "options": {
+        "run": "550e8400-e29b-41d4-a716-446655440001"
+      },
+      "url": "/dock/automations/runs?run=550e8400-e29b-41d4-a716-446655440001"
+    },
+    {
+      "name": "automations event bus on one tag",
+      "view_type": "automations",
+      "pointer": "bus",
+      "options": {
+        "tag": "app.ready"
+      },
+      "url": "/dock/automations/bus?tag=app.ready"
+    },
+    {
+      "name": "automations creating a schedule",
+      "view_type": "automations",
+      "options": {
+        "creating": "schedule"
+      },
+      "url": "/dock/automations?creating=schedule"
     },
     {
       "name": "entity pointer",

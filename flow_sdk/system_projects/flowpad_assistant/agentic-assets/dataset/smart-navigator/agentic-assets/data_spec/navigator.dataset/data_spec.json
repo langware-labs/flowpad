@@ -1,0 +1,10 @@
+{
+  "type": "data_spec",
+  "id": "46ef85fa-2217-4506-a5f6-ab731f1b7445",
+  "name": "navigator.dataset",
+  "examples": {
+    "input": "navigator.request",
+    "context": "navigator.context",
+    "output": "navigator.decision"
+  }
+}

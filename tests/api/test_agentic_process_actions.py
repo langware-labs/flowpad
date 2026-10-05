@@ -101,7 +101,7 @@ async def test_show_view_resolves_a_screen_and_persists_it(bootstrapped_client, 
 
     resp = await bootstrapped_client.post(f"{base}/show", json={"view": "assets/list/skill"})
     assert resp.status_code == 200, resp.text
-    shown = ApiResponse(**resp.json()).data
+    shown = ApiResponse(**resp.json()).data["value"]
     assert shown["kind"] == "dock"
     assert shown["view_type"] == "assets"
     assert shown["pointer"] == "list/skill"
@@ -124,7 +124,7 @@ async def test_show_url_opens_a_web_page_in_the_display(bootstrapped_client, use
 
     resp = await bootstrapped_client.post(f"{base}/show", json={"url": "https://metallb.io/installation/"})
     assert resp.status_code == 200, resp.text
-    shown = ApiResponse(**resp.json()).data
+    shown = ApiResponse(**resp.json()).data["value"]
     assert shown == {"kind": "url", "url": "https://metallb.io/installation/"}
     row = await get_agentic_process(bootstrapped_client, pid)
     assert row["context_data"]["last_shown"] == shown
@@ -162,7 +162,7 @@ async def test_show_app_addresses_the_artifact_and_derives_the_runtime(bootstrap
 
     resp = await bootstrapped_client.post(f"{base}/show", json={"artifact_id": artifact_id})
     assert resp.status_code == 200, resp.text
-    shown = ApiResponse(**resp.json()).data
+    shown = ApiResponse(**resp.json()).data["value"]
     assert shown["kind"] == "app"
     assert shown["artifact_id"] == artifact_id
     assert shown["typeid"] == f"artifact-{artifact_id}"
@@ -187,7 +187,8 @@ async def test_show_app_rejects_a_bad_artifact_id(bootstrapped_client, user):
     missing = await bootstrapped_client.post(
         f"{base}/show", json={"artifact_id": "6ba7b810-9dad-41d1-80b4-00c04fd430c8"}
     )
-    assert missing.status_code == 404, missing.text
+    assert missing.status_code == 200, missing.text
+    assert ApiResponse(**missing.json()).data["exit_code"] == 4
 
     row = await get_agentic_process(bootstrapped_client, pid)
     assert "last_shown" not in (row.get("context_data") or {})
@@ -200,7 +201,7 @@ async def test_show_view_carries_query_options(bootstrapped_client, user):
 
     resp = await bootstrapped_client.post(f"{base}/show", json={"view": "search?q=dock-address"})
     assert resp.status_code == 200, resp.text
-    shown = ApiResponse(**resp.json()).data
+    shown = ApiResponse(**resp.json()).data["value"]
     assert shown["view_type"] == "search"
     assert shown["options"] == {"q": "dock-address"}
 
@@ -232,7 +233,7 @@ async def test_show_last_shown_survives_stale_process_save(bootstrapped_client, 
 
     resp = await bootstrapped_client.post(f"{base}/show", json={"port": 3000})
     assert resp.status_code == 200, resp.text
-    shown = ApiResponse(**resp.json()).data
+    shown = ApiResponse(**resp.json()).data["value"]
     assert shown["kind"] == "app"
 
     row = await get_agentic_process(bootstrapped_client, pid)
@@ -254,8 +255,8 @@ async def test_show_appends_display_stack_with_dedupe(bootstrapped_client, user)
     pid = await create_agentic_process(bootstrapped_client, visible=False, pty_mode=False)
     base = f"/api/v1/graph/agentic_process/{pid}"
 
-    r1 = ApiResponse(**(await bootstrapped_client.post(f"{base}/show", json={"port": 3000})).json()).data
-    r2 = ApiResponse(**(await bootstrapped_client.post(f"{base}/show", json={"port": 4000})).json()).data
+    r1 = ApiResponse(**(await bootstrapped_client.post(f"{base}/show", json={"port": 3000})).json()).data["value"]
+    r2 = ApiResponse(**(await bootstrapped_client.post(f"{base}/show", json={"port": 4000})).json()).data["value"]
 
     row = await get_agentic_process(bootstrapped_client, pid)
     stack = row["context_data"]["display_stack"]
@@ -983,8 +984,8 @@ async def test_showing_a_port_registers_its_dev_endpoint_once(bootstrapped_clien
     pid = await create_agentic_process(bootstrapped_client)
     base = f"/api/v1/graph/agentic_process/{pid}"
 
-    first = ApiResponse(**(await bootstrapped_client.post(f"{base}/show", json={"port": 5173})).json()).data
-    again = ApiResponse(**(await bootstrapped_client.post(f"{base}/show", json={"port": 5173})).json()).data
+    first = ApiResponse(**(await bootstrapped_client.post(f"{base}/show", json={"port": 5173})).json()).data["value"]
+    again = ApiResponse(**(await bootstrapped_client.post(f"{base}/show", json={"port": 5173})).json()).data["value"]
 
     assert first["kind"] == "app" and first["runtime"] == "dev"
     assert first["typeid"] == f"service_endpoint-{first['endpoint_id']}"
@@ -997,9 +998,12 @@ async def test_showing_a_port_registers_its_dev_endpoint_once(bootstrapped_clien
 async def test_a_dev_endpoint_is_probed_where_it_runs(bootstrapped_client, user):
     """Nothing listens on the port: the probe says so, where the browser only sees `onload`."""
     pid = await create_agentic_process(bootstrapped_client)
-    shown = ApiResponse(
+    answer = ApiResponse(
         **(await bootstrapped_client.post(f"/api/v1/graph/agentic_process/{pid}/show", json={"port": 1})).json()
     ).data
+    # `flow show` now SAYS so: shown, but nothing answers there yet (exit 1).
+    assert answer["exit_code"] == 1 and answer["verdict"] == "not_running", answer
+    shown = answer["value"]
 
     resp = await bootstrapped_client.post(f"/api/v1/graph/service_endpoint/{shown['endpoint_id']}/probe")
 

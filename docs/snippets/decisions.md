@@ -156,14 +156,16 @@ closed `reason`. The types mirror `decision_spec.py` by hand, kept in step by
 ```python
 from flow_sdk.core.navigator import route
 
-answer = await route("open data sources", page="/dock/home")
+answer = await route("open data sources", here={"view": "home", "address": "/dock/home"})
 answer.route, answer.target   # ('quick', NavigationTarget(kind='view', value='data-sources'))
 ```
 
-`navigator.route` is what the top bar asks before starting an assistant turn
-(`compute_node/@local/navigator-route`). Rules first (a URL, path, port, "search for X", an
-exact screen name or alias), then one decision over every screen, the context and full-text
-candidates, acted on only at ≥ 0.85. **With no decision API on the hub it answers `agentic`
+`navigator.route` is the engine of **NavigationDecision** (`flow_sdk/core/navigation_decision.py`),
+which the top bar asks before starting an assistant turn (`compute_node/@local/navigation-decision`,
+sending only the utterance -- the backend reads where the tab is as `navigation.here`, and answers
+a dock to navigate OR the prompt; see `docs/navigation/navigation-spec.md`). Rules first (a
+URL, path, port, "search for X", an exact screen name or alias), then one decision over every
+place on the map, what is in context here and full-text candidates, acted on only at ≥ 0.85. **With no decision API on the hub it answers `agentic`
 for everything, rules included**, so the magic line behaves exactly as before. Measured
 through this function (50 cases × 3, Jev via the local hub): 100% right when it acts, 92% of
 navigation handled, every reasoning request sent to the assistant, P95 329 ms.

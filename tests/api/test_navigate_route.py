@@ -1,7 +1,9 @@
-"""Tests for POST /api/v1/agent/navigate/entity.
+"""Tests for POST /api/v1/agent/navigate/{entity,file,view}.
 
-Error contract is critical — the CLI (and therefore the agent) maps
-HTTP status + error_code to exit codes. Each case locks that mapping.
+Every OUTCOME is a ``NavigateResult`` in a success envelope, and its
+``exit_code`` is the CLI's exit code (0 shown · 1 not yet — no browser open,
+or not usable yet · 4 not found); only malformed input is an HTTP 400.
+Each case locks that mapping.
 
 We avoid calling ``/api/v1/graph/bootstrap`` in the "needs a real entity"
 tests because system-project enumeration makes it slow (multi-second) on
@@ -17,6 +19,14 @@ from starlette.testclient import TestClient
 from tests.unit._project_names import unique_project_name
 
 pytestmark = pytest.mark.usefixtures("reset_db_for_testclient")
+
+
+def _answer(resp) -> dict:
+    """The ``NavigateResult`` a navigate route answered with."""
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["status"] == "SUCCESS", body
+    return body["data"]
 
 
 def _consume_confirmation(ws):
@@ -80,8 +90,8 @@ async def _make_project() -> str:
 
 
 @pytest.mark.asyncio
-async def test_navigate_entity_not_found_returns_404():
-    """Unknown id → 404 ENTITY_NOT_FOUND (maps to CLI exit 4)."""
+async def test_navigate_entity_not_found_is_not_found():
+    """Unknown id → NOT_FOUND (CLI exit 4)."""
     from flow_sdk.server.app import app
 
     with TestClient(app) as client:
@@ -94,14 +104,12 @@ async def test_navigate_entity_not_found_returns_404():
                 json={"typeid": f"project-{uuid.uuid4()}"},
             )
 
-            assert resp.status_code == 404
-            body = resp.json()
-            assert body["ok"] is False
-            assert body["error_code"] == "ENTITY_NOT_FOUND"
+            answer = _answer(resp)
+            assert answer["exit_code"] == 4 and answer["verdict"] == "not_found"
 
 
 @pytest.mark.asyncio
-async def test_navigate_unknown_type_returns_404():
+async def test_navigate_unknown_type_is_not_found():
     """Unknown type collapses to ENTITY_NOT_FOUND (per alert #8 in /qca)."""
     from flow_sdk.server.app import app
 
@@ -114,9 +122,7 @@ async def test_navigate_unknown_type_returns_404():
                 json={"typeid": f"no_such_type-{uuid.uuid4()}"},
             )
 
-            assert resp.status_code == 404
-            body = resp.json()
-            assert body["error_code"] == "ENTITY_NOT_FOUND"
+            assert _answer(resp)["exit_code"] == 4
 
 
 @pytest.mark.asyncio
@@ -129,15 +135,17 @@ async def test_navigate_invalid_typeid_returns_error():
             "/api/v1/agent/navigate/entity",
             json={"typeid": "not-a-valid-typeid-because-id-isnt-a-real-identifier"},
         )
-        # Depending on identifier-validator, this is 400 (parse) or 404 (miss).
-        # Both are agent-compatible failures.
-        assert resp.status_code in (400, 404)
-        assert resp.json()["ok"] is False
+        # Depending on the identifier validator, a malformed request (400) or a
+        # miss (a NOT_FOUND answer). Both are agent-compatible failures.
+        if resp.status_code == 400:
+            assert resp.json()["ok"] is False
+        else:
+            assert _answer(resp)["exit_code"] == 4
 
 
 @pytest.mark.asyncio
-async def test_navigate_no_active_tab_returns_409():
-    """No open WS connections → 409 NO_ACTIVE_TAB (maps to CLI exit 3)."""
+async def test_navigate_no_active_tab_is_not_yet():
+    """No open WS connections → NOT_YET, verdict no_browser (CLI exit 1)."""
     from flow_sdk.server.app import app
 
     project_id = await _make_project()
@@ -149,10 +157,9 @@ async def test_navigate_no_active_tab_returns_409():
             json={"typeid": f"project-{project_id}"},
         )
 
-        assert resp.status_code == 409
-        body = resp.json()
-        assert body["ok"] is False
-        assert body["error_code"] == "NO_ACTIVE_TAB"
+        answer = _answer(resp)
+        assert answer["exit_code"] == 1 and answer["verdict"] == "no_browser"
+        assert answer["delivered"] is False
 
 
 @pytest.mark.asyncio
@@ -181,12 +188,11 @@ async def test_navigate_success_sends_ui_command_to_active_tab():
                 "/api/v1/agent/navigate/entity",
                 json={"typeid": f"project-{project_id}"},
             )
-            assert resp.status_code == 200
-            body = resp.json()
-            assert body["ok"] is True
+            body = _answer(resp)
+            assert body["exit_code"] == 0 and body["delivered"] is True
             assert body["connection_id"] == connection_id
-            assert body["type"] == "project"
-            assert body["id"] == project_id
+            assert body["value"]["type"] == "project"
+            assert body["value"]["id"] == project_id
 
             msg = _receive_ui_command(ws)
             assert msg["message_type"] == "ui_command"
@@ -232,6 +238,7 @@ async def test_navigate_file_unindexed_falls_back_to_vfs(tmp_path):
     """
     from flow_sdk.server.app import app
 
+    (tmp_path / "hello.md").write_text("# hello")
     path = _canonical(str(tmp_path / "hello.md"))
 
     with TestClient(app) as client:
@@ -244,17 +251,29 @@ async def test_navigate_file_unindexed_falls_back_to_vfs(tmp_path):
             _flush(ws)
 
             resp = client.post("/api/v1/agent/navigate/file", json={"path": path})
-            assert resp.status_code == 200
-            body = resp.json()
-            assert body["ok"] is True
-            assert body["mode"] == "vfs"
-            assert body["path"] == path
+            body = _answer(resp)
+            assert body["exit_code"] == 0
+            assert body["value"]["kind"] == "vfs"
+            assert body["value"]["path"] == path
             assert body["connection_id"] == connection_id
 
             msg = _receive_ui_command(ws)
             assert msg["message_type"] == "ui_command"
             assert msg["kind"] == "navigate_vfs"
             assert msg["path"] == path
+
+
+@pytest.mark.asyncio
+async def test_navigate_file_that_does_not_exist_is_not_found(tmp_path):
+    """A path with nothing behind it answers NOT_FOUND (exit 4) — no longer a silent success."""
+    from flow_sdk.server.app import app
+
+    path = _canonical(str(tmp_path / "never-written.md"))
+    with TestClient(app) as client:
+        with client.websocket_connect(f"/api/v1/connect/ws/{uuid.uuid4()}") as ws:
+            _consume_confirmation(ws)
+            answer = _answer(client.post("/api/v1/agent/navigate/file", json={"path": path}))
+            assert answer["exit_code"] == 4 and answer["verdict"] == "not_found"
 
 
 @pytest.mark.asyncio
@@ -275,12 +294,11 @@ async def test_navigate_file_indexed_navigates_to_entity(tmp_path):
             _flush(ws)
 
             resp = client.post("/api/v1/agent/navigate/file", json={"path": path})
-            assert resp.status_code == 200
-            body = resp.json()
-            assert body["ok"] is True
-            assert body["mode"] == "entity"
-            assert body["type"] == "markdown"
-            assert body["id"] == md_id
+            body = _answer(resp)
+            assert body["exit_code"] == 0
+            assert body["value"]["kind"] == "entity"
+            assert body["value"]["type"] == "markdown"
+            assert body["value"]["id"] == md_id
 
             msg = _receive_ui_command(ws)
             assert msg["message_type"] == "ui_command"
@@ -290,16 +308,17 @@ async def test_navigate_file_indexed_navigates_to_entity(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_navigate_file_no_active_tab_returns_409(tmp_path):
-    """No open WS connection → 409 NO_ACTIVE_TAB (CLI exit 3)."""
+async def test_navigate_file_no_active_tab_is_not_yet(tmp_path):
+    """No open WS connection → NOT_YET, verdict no_browser (CLI exit 1)."""
     from flow_sdk.server.app import app
 
+    (tmp_path / "hello.md").write_text("# hello")
     path = _canonical(str(tmp_path / "hello.md"))
 
     with TestClient(app) as client:
         resp = client.post("/api/v1/agent/navigate/file", json={"path": path})
-        assert resp.status_code == 409
-        assert resp.json()["error_code"] == "NO_ACTIVE_TAB"
+        answer = _answer(resp)
+        assert answer["exit_code"] == 1 and answer["verdict"] == "no_browser"
 
 
 @pytest.mark.asyncio
@@ -331,8 +350,7 @@ async def test_navigate_picks_focused_tab_when_multiple_connected():
                     "/api/v1/agent/navigate/entity",
                     json={"typeid": f"project-{project_id}"},
                 )
-                assert resp.status_code == 200
-                assert resp.json()["connection_id"] == id_fg
+                assert _answer(resp)["connection_id"] == id_fg
 
                 msg = _receive_ui_command(ws_fg)
                 assert msg["message_type"] == "ui_command"
@@ -367,7 +385,7 @@ async def test_navigate_view_rejects_bad_addresses_before_touching_the_ui(addres
         assert resp.json()["error_code"] == "INVALID_VIEW"
 
 
-async def test_navigate_view_entity_shaped_pointer_that_names_nothing_is_404():
+async def test_navigate_view_entity_shaped_pointer_that_names_nothing_is_not_found():
     """`conversation/<bogus>` fails here rather than opening a broken dock."""
     from flow_sdk.server.app import app
 
@@ -376,18 +394,17 @@ async def test_navigate_view_entity_shaped_pointer_that_names_nothing_is_404():
             "/api/v1/agent/navigate/view",
             json={"view": f"conversation/{uuid.uuid4()}"},
         )
-        assert resp.status_code == 404
-        assert resp.json()["error_code"] == "ENTITY_NOT_FOUND"
+        assert _answer(resp)["exit_code"] == 4
 
 
-async def test_navigate_view_no_active_tab_returns_409():
+async def test_navigate_view_no_active_tab_is_not_yet():
     """Same targeting contract as the other navigate verbs (`_pick_target`)."""
     from flow_sdk.server.app import app
 
     with TestClient(app) as client:
-        resp = client.post("/api/v1/agent/navigate/view", json={"view": "events"})
-        assert resp.status_code == 409
-        assert resp.json()["error_code"] == "NO_ACTIVE_TAB"
+        resp = client.post("/api/v1/agent/navigate/view", json={"view": "automations"})
+        answer = _answer(resp)
+        assert answer["exit_code"] == 1 and answer["verdict"] == "no_browser"
 
 
 async def test_navigate_view_sends_navigate_dock_to_the_active_tab():
@@ -403,16 +420,15 @@ async def test_navigate_view_sends_navigate_dock_to_the_active_tab():
             )
             _flush(ws)
 
-            resp = client.post("/api/v1/agent/navigate/view", json={"view": "events"})
-            assert resp.status_code == 200
-            body = resp.json()
-            assert body["ok"] is True
-            assert body["mode"] == "dock"
-            assert body["view_type"] == "events"
+            resp = client.post("/api/v1/agent/navigate/view", json={"view": "automations"})
+            body = _answer(resp)
+            assert body["exit_code"] == 0
+            assert body["value"]["kind"] == "dock"
+            assert body["value"]["view_type"] == "automations"
 
             msg = _receive_ui_command(ws)
             assert msg["kind"] == "navigate_dock"
-            assert msg["view_type"] == "events"
+            assert msg["view_type"] == "automations"
             # A pointerless view omits the key rather than sending null (the
             # payload shape; see `dock_target`). The frontend reads it with `??`.
             assert msg.get("pointer") is None

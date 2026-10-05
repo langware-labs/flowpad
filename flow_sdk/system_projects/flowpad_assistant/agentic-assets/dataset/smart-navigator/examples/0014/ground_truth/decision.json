@@ -1,0 +1,9 @@
+{
+  "route": "quick",
+  "target": {
+    "kind": "view",
+    "value": "stream_inbox"
+  },
+  "verb": "show",
+  "confidence": null
+}

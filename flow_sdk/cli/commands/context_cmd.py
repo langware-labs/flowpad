@@ -107,6 +107,7 @@ def list_context(
             {
                 "connection_id": body.get("connection_id"),
                 "context": body.get("context") or {},
+                "here": body.get("here") or {},
             }
         )
         return

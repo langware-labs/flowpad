@@ -7,7 +7,7 @@
  */
 
 import { t } from '@lingui/core/macro';
-import type { PushKind } from '@sdk';
+import type { PullKind, PushKind } from '@sdk';
 import { ViewMode } from '@src/components/view-mode';
 
 export type PublishState = 'no-repo' | 'local-only' | 'aligned' | 'unpublished';
@@ -155,6 +155,69 @@ export function pushToastCopy(
         level: 'error',
         title: advanced ? 'Push failed' : "Couldn't publish",
         message: advanced ? raw || 'Push failed.' : 'Something went wrong. Please try again.',
+        resolvable: false,
+      };
+  }
+}
+
+/**
+ * Plain-language toast for a pull outcome — the inbound twin of
+ * ``pushToastCopy``: Standard says "updates from the cloud", Advanced says pull.
+ */
+export function pullToastCopy(
+  kind: PullKind,
+  mode: ViewMode,
+  opts: { branch?: string | null; message?: string } = {},
+): PushToast {
+  const advanced = isAdvanced(mode);
+  const raw = opts.message?.trim() || '';
+  switch (kind) {
+    case 'pulled':
+      return {
+        level: 'success',
+        title: t`Updated`,
+        message:
+          advanced && opts.branch ? `Pulled ${opts.branch}.` : t`You now have the latest changes from the cloud.`,
+        resolvable: false,
+      };
+    case 'nothing':
+      return {
+        level: 'success',
+        title: t`Already up to date`,
+        message: t`There is nothing new in the cloud.`,
+        resolvable: false,
+      };
+    // Unlike push, the resolver is offered in every view: a pull conflict leaves
+    // the project mid-rebase, and "switch views" is no way out of that.
+    case 'conflict':
+      return advanced
+        ? {
+            level: 'error',
+            title: t`Pull hit a conflict`,
+            message: raw || 'A rebase conflict is in progress.',
+            resolvable: true,
+          }
+        : {
+            level: 'error',
+            title: t`Couldn't update`,
+            message: t`Someone else changed the same thing. Let the assistant merge the two versions.`,
+            resolvable: true,
+          };
+    case 'network':
+      return {
+        level: 'error',
+        title: t`Couldn't reach the server`,
+        message: t`Check your connection and try again.`,
+        resolvable: false,
+      };
+    case 'permission':
+    case 'no_remote':
+    case 'no_repo':
+    default:
+      return {
+        level: 'error',
+        title: advanced ? 'Pull failed' : t`Couldn't update`,
+        message: advanced ? raw || 'Pull failed.' : t`Something went wrong. Please try again.`,
         resolvable: false,
       };
   }

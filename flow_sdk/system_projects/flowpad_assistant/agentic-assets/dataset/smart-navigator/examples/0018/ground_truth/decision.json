@@ -1,0 +1,9 @@
+{
+  "route": "quick",
+  "target": {
+    "kind": "view",
+    "value": "search?q=widget"
+  },
+  "verb": "show",
+  "confidence": null
+}

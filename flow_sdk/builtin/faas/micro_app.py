@@ -26,6 +26,8 @@ class WebApp(Entity):
     asset_ref: str = APIField(default="", sharing=Sharing.PRIVATE)
     description: Optional[str] = APIField(default=None, description="What the app is, for the asset browser")
     kind: KindStr = APIField(default="application.web", description="Dot-path ontology kind")
+    #: What an editor edits beyond its parent: kinds and type names (``flow_sdk.builtin.faas.editors``).
+    edits: List[str] = APIField(default_factory=list, description="Kinds and types this editor edits")
     build: str = APIField(default=".", description="Served subdir inside the app folder")
     #: What the app exposes when placed — the templates a placement turns into
     #: ``ServiceEndpoint`` rows (``webapp_placement.expose_project_endpoints``).

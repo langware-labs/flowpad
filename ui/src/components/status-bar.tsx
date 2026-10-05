@@ -1,5 +1,6 @@
 import { Trans, useLingui } from '@lingui/react/macro';
 import { GitStatusProvider } from '@src/components/status-bar/GitStatusContext';
+import { GitPullButton } from '@src/components/status-bar/GitPullButton';
 import { GitPushButton } from '@src/components/status-bar/GitPushButton';
 import { GitStatusPill } from '@src/components/status-bar/GitStatusPill';
 import { OpenProjectComponent } from '@src/components/open-project-component/open-project-component';
@@ -132,6 +133,7 @@ export function StatusBar({ className = '' }: StatusBarProps) {
         )}
         <GitStatusProvider computeNodeId={computeNode?.id ?? null} workdir={gitWorkdir}>
           <GitStatusPill />
+          <GitPullButton />
           <GitPushButton />
         </GitStatusProvider>
       </div>

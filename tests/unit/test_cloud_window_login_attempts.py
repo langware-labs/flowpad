@@ -73,6 +73,22 @@ async def test_cancel_leaves_logging_in_and_silences_the_timer(window):
 
 
 @pytest.mark.asyncio
+async def test_a_chosen_profile_opens_the_sign_in_there_not_in_the_default_browser(window, monkeypatch):
+    import flow_sdk.core.browser_profiles as browser_profiles
+
+    opened: list = []
+    monkeypatch.setattr(cloud_login.webbrowser, "open", lambda url: opened.append(("default", url)))
+    monkeypatch.setattr(browser_profiles, "open_in_profile", lambda req: opened.append(("profile", req)))
+
+    choice = browser_profiles.ProfileChoice(browser="chrome", profile="Profile 1")
+    await cloud_login._login_by_window(5.0, choice)
+
+    assert opened == [
+        ("profile", browser_profiles.OpenInProfileRequest(browser="chrome", profile="Profile 1", url="https://hub/login"))
+    ]
+
+
+@pytest.mark.asyncio
 async def test_login_cancel_without_an_id_stops_the_browser_sign_in(monkeypatch):
     """`POST /login/cancel` pairs with plain `POST /login`; an id still means a correlated session."""
     from flow_sdk.server.routes import cloud

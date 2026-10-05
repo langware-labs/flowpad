@@ -44,10 +44,10 @@ conversation rather than as a data driver, since native messages arrive live thr
 the hub mirror and there is nothing to poll. The projection's `Conversation.adopt_channel`
 replaces that home channel with the source's channel when it places the first message (a
 help desk ticket is born `flowpad` and becomes `helpdesk`); a source channel is never
-overwritten. What a channel IS — chip, transport, attachments, quotes, reactions, sessions — is
+overwritten. What a channel IS — chip, transport, attachments, replies, quotes, reactions, sessions — is
 `Conversation.channel_spec` (`ChannelSpec`, `schema/data_spec/channel_spec.py`); surfaces
 read those traits and never test the channel's name or treat a missing channel as "ours". A
-source channel's `accepts_attachments`, `quotes` and `reacts` are read off the class of the driver
+source channel's `accepts_attachments`, `replies`, `quotes` and `reacts` are read off the class of the driver
 behind it — `Conversation.channel_provider` (PRIVATE, stamped with `channel_source_id`), because two
 drivers can speak one channel (WhatsApp's Cloud API and an external WhatsApp connector are both `whatsapp`).
 
@@ -86,6 +86,14 @@ ids (RFC `Message-ID` vs the Gmail API id) and thread ids (`address:decimal`
 `X-GM-THRID` vs hex `threadId`) share no identity, so no key merges them
 honestly. Don't watch one mailbox through two transports.
 
+**Flowpad's own chat threads the same way.** A native thread is the reply chain
+rooted at one message: its key is `("flowpad", <root message id>, <local owner>, "")`,
+resolved through the same `resolve_thread`. Only `FlowMessage.thread_root_id`
+travels between members (with `reply_to_id`, the quote — both mirrored on the
+hub `FlowMessage`); each machine resolves it to its own row and stamps
+`thread_id` on send and on materialize (`stream_inbox/native_threads.py`), and a
+root that lands after its replies joins their thread (`heal_thread_root`).
+
 **Attribution.** `_sender_for` maps an author that is one of the source's
 own addresses (`account_identities`, plus `account_key` for legacy rows,
 folded through `normalize_email`) to the local user — or to the Agent when
@@ -98,7 +106,8 @@ This is load-bearing: the unread rule gates on the sender, so a Sent-folder
 item attributed to a stranger would count as unread mail. `reply_to_id` is
 two lookups (the parent item by its origin — same kind and namespace, the
 reply's `reply_to_external_id` as key — then its message by
-`source_item_id`) and is an accepted loss when the parent has not arrived.
+`source_item_id`); a parent that arrives after its reply links it then
+(`_heal_replies_to`, from the items answering it on the same source).
 `envelope` — sender, recipients, subject and event time as `UserProfile`s — is
 read from the item's payload and stamped PRIVATE, like `sent_at`; the message
 bubble renders it and derives nothing.

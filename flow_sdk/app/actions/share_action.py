@@ -276,17 +276,17 @@ async def share_entity() -> ApiResponse:
 
     # Persist ``remote=True`` on other local rows so downstream consumers
     # (notably ``handle_add_message``'s ``is_remote_send`` gate) treat the
-    # entity as hub-bound.
+    # entity as hub-bound. Unconditional, like the Project save above: ``share()``
+    # already set it in memory, so a "skip if remote" check never wrote it.
     elif "remote" in entity_model.model_fields:
-        if getattr(entity, "remote", None) is not True:
-            entity.remote = True
-            try:
-                await entity.save(request_info.someone_typeid)
-            except Exception as e:  # noqa: BLE001
-                logger.warning(
-                    "[share] persisting remote=True on local %s %s failed (non-fatal): %s",
-                    target.type, target.id, e,
-                )
+        entity.remote = True
+        try:
+            await entity.save(request_info.someone_typeid)
+        except Exception as e:  # noqa: BLE001
+            logger.warning(
+                "[share] persisting remote=True on local %s %s failed (non-fatal): %s",
+                target.type, target.id, e,
+            )
     return ApiSuccessResponse(data=entity)
 
 
@@ -305,7 +305,6 @@ async def conversation_add_message() -> ApiResponse:
     The conversation id is taken from the URL — it is the source of truth.
     """
     from flow_sdk.app.actions.notification_action import handle_add_message  # noqa: PLC0415
-    from flow_sdk.cli.auth.hub_login import is_logged_in  # noqa: PLC0415
 
     request_info = get_current_request_info()
     if not request_info or not request_info.target_entity_typeid:
@@ -324,21 +323,26 @@ async def conversation_add_message() -> ApiResponse:
     # overwrite any stale id a caller might also have put in the body.
     body["conversation_id"] = request_info.target_entity_typeid.id
 
-    # Drafts are local-only (no hub push) and stay allowed; only real sends
-    # touch the cloud — those are blocked in Local mode. When cloud login is
-    # unavailable we no longer refuse the send: the message is persisted locally
-    # as ``pending_send`` (queued, not delivered) so nothing is lost, and a
-    # later re-send (once logged in) flushes it. Local mode stays a hard block.
-    pending_send = False
-    if not bool(body.get("is_draft")):
-        if _local_mode_share_blocked():
-            return ApiFailResponse(message=LOCAL_MODE_SHARE_MESSAGE)
-        if not is_logged_in():
-            pending_send = True
-
+    blocked, pending_send = add_message_gate(body)
+    if blocked:
+        return ApiFailResponse(message=blocked)
     return await handle_add_message(
         body, request_info.someone_typeid, pending_send=pending_send,
     )
+
+
+def add_message_gate(body: dict) -> "tuple[str | None, bool]":
+    """``(refusal, pending_send)`` for one add_message body — THE send gate, for the route and
+    ``Conversation.send`` alike. Drafts are local-only (no hub push) and always pass. A real send
+    is refused in Local mode; without cloud login it is not refused but persisted locally as
+    ``pending_send`` (queued, not delivered) and flushed once logged in."""
+    from flow_sdk.cli.auth.hub_login import is_logged_in  # noqa: PLC0415
+
+    if bool(body.get("is_draft")):
+        return None, False
+    if _local_mode_share_blocked():
+        return LOCAL_MODE_SHARE_MESSAGE, False
+    return None, not is_logged_in()
 
 
 @action.post(action_name="forward", types=["flow_message"])

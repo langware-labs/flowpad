@@ -1,0 +1,13 @@
+{
+  "metadata": {
+    "kind": "test"
+  },
+  "data": {
+    "case": "26c",
+    "category": "G.abstain",
+    "tags": [
+      "no-target"
+    ],
+    "note": "no candidate exists -> must not invent one"
+  }
+}
