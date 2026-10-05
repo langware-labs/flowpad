@@ -874,6 +874,10 @@ msgstr ""
 #~ msgid "{name} has no account to sign into — it runs on an LLM key. Add one under “LLM API keys” above and pick it here."
 #~ msgstr ""
 
+#: src/components/task-receive/use-shared-project-warnings.ts
+msgid "{name} is not set up on this machine"
+msgstr ""
+
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "{name} isn't installed on this computer yet."
 msgstr ""
@@ -1337,6 +1341,10 @@ msgstr ""
 
 #: src/components/quick-create/McpCreateDialog.tsx
 msgid "a server someone else hosts"
+msgstr ""
+
+#: src/components/task-receive/use-shared-project-warnings.ts
+msgid "a shared project"
 msgstr ""
 
 #~ msgid "A source is one remote account or feed set. The poller syncs it on the heartbeat."
@@ -11699,6 +11707,10 @@ msgstr ""
 msgid "It was added as an ordinary context folder instead, so agents can still read it. Remove it if that is not what you wanted."
 msgstr ""
 
+#: src/components/task-receive/use-shared-project-warnings.ts
+msgid "It was shared with you, but its files are not here yet."
+msgstr ""
+
 #: src/components/milkdown-editor/MilkdownEditor.tsx
 msgid "Italic"
 msgstr "مائل"
@@ -20581,6 +20593,7 @@ msgid "Set public"
 msgstr ""
 
 #: src/components/capabilities-view/CapabilitiesView.tsx
+#: src/components/task-receive/use-shared-project-warnings.ts
 #: src/journey/SetupJourneyButton.tsx
 msgid "Set up"
 msgstr "إعداد"

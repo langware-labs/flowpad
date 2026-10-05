@@ -6,6 +6,7 @@ import { useDockNavigation } from '@src/navigation';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useContext, useWarnings } from '@sdk/react/hooks';
 import { useSetupIncompleteWarning } from '@src/components/setup-incomplete/use-setup-incomplete-warning';
+import { useSharedProjectWarnings } from '@src/components/task-receive/use-shared-project-warnings';
 import { openProjectSetup } from '@src/components/project-setup/project-setup-store';
 import { notificationText, runAction, runCommand, useAlertStore } from '@src/notifications';
 import type { NotificationData, NotificationLevel } from '@src/notifications';
@@ -234,9 +235,10 @@ function AlertItem({ alert, onDismiss }: { alert: NotificationData; onDismiss: (
 export function WarningsPopover() {
   const { warnings: derivedWarnings } = useWarnings();
   const setupWarning = useSetupIncompleteWarning();
+  const sharedProjectWarnings = useSharedProjectWarnings();
   const warnings = useMemo(
-    () => (setupWarning ? [...derivedWarnings, setupWarning] : derivedWarnings),
-    [derivedWarnings, setupWarning],
+    () => [...derivedWarnings, ...(setupWarning ? [setupWarning] : []), ...sharedProjectWarnings],
+    [derivedWarnings, setupWarning, sharedProjectWarnings],
   );
   const alerts = useAlertStore((s) => s.alerts);
   const dismissAlert = useAlertStore((s) => s.dismiss);

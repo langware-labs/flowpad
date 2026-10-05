@@ -117,6 +117,12 @@ const restartApplier = createRestartApplier({
   setQuitting: (v) => { isQuitting = v; },
   hideWindow: () => { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.hide(); },
   showWindow: () => { if (mainWindow && !mainWindow.isDestroyed()) { mainWindow.show(); mainWindow.focus(); } },
+  // The silent installer runs with no window of ours for ~30s, then the new desktop installs the engine: say so.
+  notifyInstalling: () => {
+    if (Notification.isSupported()) {
+      new Notification({ title: 'FlowPad is updating', body: 'Installing the update. FlowPad will reopen by itself in about a minute.', silent: true }).show();
+    }
+  },
   onFailure: (err) => {
     // The desktop could not be applied (for example an app running from a temporary macOS location): do not hold
     // engine updates back for a desktop that will not arrive this session.
@@ -330,6 +336,13 @@ let pendingDesktopVersion = null;
 let offeredDesktopVersion = null;
 // The desktop version that finished downloading and waits for a restart.
 let desktopDownloadedVersion = null;
+// The restart prompt was held back because the backend was still starting.
+let desktopRestartPromptPostponed = false;
+function offerPostponedRestartPrompt() {
+  if (!desktopRestartPromptPostponed || !desktopDownloadedVersion) return;
+  desktopRestartPromptPostponed = false;
+  showDesktopReadyPrompt(desktopDownloadedVersion).catch((err) => log.warn(`[electron-updater] restart prompt failed: ${err.message}`));
+}
 
 // The engine version offered together with a desktop update, saved for the NEW desktop to install (update-plan.js).
 function pendingEnginePath() {
@@ -360,6 +373,13 @@ async function showDesktopReadyPrompt(version) {
     return;
   }
   if (desktopRestartPromptOpen || restartApplier.busy) return;
+  if (!backendReady && !startupFailed) {
+    // Still booting: "Restart now" would kill the half-started backend (an error screen) and read as an
+    // instant update. Offered once the backend is up (offerPostponedRestartPrompt).
+    desktopRestartPromptPostponed = true;
+    log.info('[electron-updater] restart prompt postponed: FlowPad is still starting');
+    return;
+  }
   if (packageUpdateInFlight || (uvManager && uvManager.isInstalling())) {
     // Another update dialog (or an install) is up right now: do not stack a second one. The periodic check
     // re-emits this from the cached download; quitting meanwhile still installs it (autoInstallOnAppQuit).
@@ -1368,6 +1388,12 @@ async function installAndStartBackend() {
   return { ok: true, backendJustUpgraded };
 }
 
+// The wait ended because the app is quitting. `isQuitting` also covers a restart-to-update that stopped the backend
+// under the wait (`launcher-failed`): that is not a startup failure, so it must not reach the error panel.
+function backendWaitAborted(backendWait) {
+  return backendWait.reason === 'quitting' || isQuitting;
+}
+
 async function startApp() {
   // Kick off the desktop wrapper update check immediately at launch — runs in
   // parallel with backend startup and is a no-op when the app isn't packaged.
@@ -1448,7 +1474,7 @@ async function startApp() {
   sendStatus('Waiting for server');
   const waitOpts = backendJustUpgraded ? { maxChecks: POST_UPGRADE_HEALTH_CHECKS } : undefined;
   const backendWait = await waitForBackend(waitOpts);
-  if (backendWait.reason === 'quitting') return;
+  if (backendWaitAborted(backendWait)) return;
   backendReady = backendWait.ready;
 
   if (!backendWait.ready) {
@@ -1525,6 +1551,7 @@ async function startApp() {
       log.info(`[nav] could not clear startup history: ${err.message}`);
     }
   });
+  mainWindow.webContents.once('did-finish-load', () => offerPostponedRestartPrompt()); // the app is on screen: a held-back "Restart now" can show
   mainWindow.loadURL(startUrl);
 
   // Open DevTools in development
