@@ -23,9 +23,9 @@ nothing is signed and nothing is stored but the binding itself -- it is how a fo
 runs on someone's budget without an account. The id is the credential: treat it like one.
 
 ``shell`` (the default, no prefix) persists nothing — it prints exports for the current
-terminal. ``user`` is the box: the SAME write the picker's **Use** button makes, plus each
-harness's own config file, because on a box whose only consumer is a person at a prompt the
-selection alone would fund nothing. ``project`` pins rung 2, so every worker in that project
+terminal. ``user`` is this instance: the SAME select the picker's **Use** button makes, and
+nothing else -- the machine's harness configs (``~/.claude/settings.json`` and friends) are
+never written. ``project`` pins rung 2, so every worker in that project
 spends the named endpoint.
 
 Error contract (parsed by agents — keep stable)::
@@ -387,18 +387,7 @@ def _emit_exports(binding: dict, workers: list[str]) -> None:
             typer.echo(f"export {name}={shlex.quote(str(value))}")
 
 
-# ── user scope: write where each harness looks by default ────────────────────
-
-
-def _deep_merge(base: dict, fragment: dict) -> None:
-    """*fragment* laid over *base*, recursing into dicts. Anything the user put there that we
-    do not name survives — this writes into ``~/.claude/settings.json``, which is a file people
-    hand-edit, and eating their settings would be far worse than not funding a harness."""
-    for key, value in fragment.items():
-        if isinstance(value, dict) and isinstance(base.get(key), dict):
-            _deep_merge(base[key], value)
-        else:
-            base[key] = value
+# ── user clear: remove what older versions wrote box-wide ─────────────────────
 
 
 def _prune(base: dict, fragment: dict) -> None:
@@ -421,43 +410,33 @@ def _profile_name() -> str:
     """The startup file the user's shell actually reads.
 
     ``~/.profile`` is the POSIX answer and the wrong one on a default macOS box: a non-login zsh
-    reads ``~/.zshrc`` and never sources ``.profile``, so writing there would report success and
-    fund nothing. The harness declares that it is profile-configured; which file that means is a
+    reads ``~/.zshrc`` and never sources ``.profile``, so that is where older versions wrote. The harness declares that it is profile-configured; which file that means is a
     fact about this machine, so it is resolved by the side that owns the filesystem.
     """
     shell = Path(os.environ.get("SHELL", "")).name
     return {"zsh": ".zshrc", "bash": ".bashrc"}.get(shell, ".profile")
 
 
-def _write_user_config(worker: str, spec: dict, *, remove: bool = False) -> str:
-    """Apply one harness's box-wide config. Returns a line to print, or ``""``."""
-    fmt, rel = spec.get("fmt") or "", spec.get("path") or ""
-    if not fmt or not rel:
-        return f"  {worker}: {spec.get('note') or 'nothing to write'}"
+def _remove_user_config(worker: str, spec: dict) -> str:
+    """Take one harness's legacy box-wide config back out. Returns a line to print."""
+    rel = spec["path"]
     if rel == ".profile":
         rel = _profile_name()
     path = Path.home() / rel
-    path.parent.mkdir(parents=True, exist_ok=True)
-
-    if fmt == "json":
+    if not path.exists():
+        return f"  {worker}: nothing in ~/{rel}"
+    if spec.get("fmt") == "json":
         try:
-            current = json.loads(path.read_text()) if path.exists() else {}
+            current = json.loads(path.read_text())
         except ValueError:
-            current = {}
-        if remove:
-            _prune(current, spec.get("merge") or {})
-        else:
-            _deep_merge(current, spec.get("merge") or {})
+            return f"  {worker}: ~/{rel} is not JSON, left as is"
+        _prune(current, spec.get("merge") or {})
         path.write_text(json.dumps(current, indent=2) + "\n")
     else:
         from flow_sdk.builtin.agentic_process.cli_drivers.api_auth import apply_managed_block
 
-        existing = path.read_text() if path.exists() else ""
-        path.write_text(apply_managed_block(existing, [] if remove else list(spec.get("lines") or [])))
-
-    verb = "cleared" if remove else "wrote"
-    note = f"  ({spec['note']})" if spec.get("note") else ""
-    return f"  {worker}: {verb} ~/{rel}{note}"
+        path.write_text(apply_managed_block(path.read_text(), []))
+    return f"  {worker}: cleared ~/{rel}"
 
 
 # ── commands ─────────────────────────────────────────────────────────────────
@@ -574,7 +553,7 @@ def _probe_public_endpoint(typeid: str, hub: str) -> str:
     return origin
 
 
-@user_app.command("use", help="Make a source this box's default. A PUBLIC hub endpoint's id works with no login.")
+@user_app.command("use", help="Make a source this instance's default. A PUBLIC hub endpoint's id works with no login.")
 def _use_box(
     ref: Annotated[str, typer.Argument(help="Row number, endpoint id, or name prefix.")],
     harness: Annotated[str, typer.Argument(help="all (default) or one harness.")] = "all",
@@ -625,15 +604,12 @@ def _use_box(
             payload.update(name=row.name, public=True, hub_origin=row.public_hub)
         _op("select", payload)
         typer.echo(f"  {worker} -> {row.name}")
-    # The selection is the whole effect: it lives in THIS instance and funds the workers this
-    # instance spawns. Nothing is written where a harness looks by default (~/.claude/settings.json,
-    # ~/.codex/config.toml, the shell profile, opencode.json) -- those files belong to the machine,
-    # every instance and every terminal reads them, and a running `claude` re-reads its settings
-    # live. Writing them from a test instance re-routed the user's own sessions to that instance's
-    # endpoint (2026-10-05). A terminal that wants this source asks for it: eval "$(flow llm use N)".
+    # The selection is the whole effect. The harnesses' own config files belong to the machine --
+    # every instance and terminal reads them -- so they are never written; a terminal that wants
+    # this source asks for it: eval "$(flow llm use N)".
 
 
-@user_app.command("clear", help="Drop this box's endpoint binding.")
+@user_app.command("clear", help="Drop this instance's endpoint binding.")
 def _clear_box() -> None:
     # Read what we wrote BEFORE dropping the binding — the specs are derived from the bound
     # endpoint, so afterwards there is nothing left to say which leaves were ours.
@@ -648,7 +624,7 @@ def _clear_box() -> None:
     for worker, entry in specs.items():
         spec = (entry or {}).get("user") or {}
         if spec.get("path"):
-            typer.echo(_write_user_config(worker, spec, remove=True))
+            typer.echo(_remove_user_config(worker, spec))
 
 
 @project_app.command("use", help="Pin an endpoint for every worker in a project.")
