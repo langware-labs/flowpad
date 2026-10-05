@@ -21585,6 +21585,9 @@ msgid "Someone"
 msgstr ""
 
 #: src/lib/publish-state.ts
+msgid "Someone else changed the same thing. Let the assistant merge the two versions."
+msgstr ""
+
 #: src/lib/publish-state.ts
 msgid "Someone else changed this too. Switch to Advanced view to merge."
 msgstr "מישהו אחר שינה את זה גם כן. יש לעבור לתצוגה המתקדמת כדי למזג."
