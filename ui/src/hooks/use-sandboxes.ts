@@ -415,7 +415,9 @@ export function useSandboxes() {
 
   const { data: nodes, isLoading, refetch } = useEntitiesQuery<ComputeNode>(sandboxesRequest, { enabled: !!user });
 
-  const sandboxes = useMemo(() => (nodes ?? []).filter(isSandbox), [nodes]);
+  // Every machine the user can reach — agent deployment machines carry no workspace
+  // flavor, and filtering on it hid all of them.
+  const sandboxes = useMemo(() => nodes ?? [], [nodes]);
   // `createSandbox` only needs the list to pick the next auto-name. Reading it
   // through a ref keeps the callback stable across every refetch — including the
   // one it triggers itself — so consumers holding it as a prop don't re-render.

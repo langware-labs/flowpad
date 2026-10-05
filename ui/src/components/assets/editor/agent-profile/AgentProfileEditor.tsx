@@ -20,6 +20,7 @@ import { Button } from '@src/components/ui/button';
 import { AgentPlacesColumn } from './AgentPlacesColumn';
 import { AgentRequestLine } from './AgentRequestLine';
 import { AgentListField, AgentPhoneField, AgentSelectField } from './AgentProfileFields';
+import { AgentVisibilitySection } from './AgentVisibilitySection';
 import { useAgentMcpSync } from './use-agent-mcp-sync';
 import { invalidateGitPreflight } from '@src/hooks/use-git-share-preflight';
 import type { AgentDocumentPatch } from './agent-fields';
@@ -469,6 +470,8 @@ export function AgentProfileEditor({ agent, mainRef }: AgentProfileEditorProps) 
                     onCommit={(v) => void save({ additional_dirs: v ?? [] })}
                   />
                 </div>
+                {/* Sharing and the public grant land on the published hub row — nothing to toggle on the hub's own read-only view. */}
+                {!hub && <AgentVisibilitySection agent={agent} version={version} />}
               </div>
             </details>
           </fieldset>
