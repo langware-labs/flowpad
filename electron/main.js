@@ -1388,6 +1388,12 @@ async function installAndStartBackend() {
   return { ok: true, backendJustUpgraded };
 }
 
+// The wait ended because the app is quitting. `isQuitting` also covers a restart-to-update that stopped the backend
+// under the wait (`launcher-failed`): that is not a startup failure, so it must not reach the error panel.
+function backendWaitAborted(backendWait) {
+  return backendWait.reason === 'quitting' || isQuitting;
+}
+
 async function startApp() {
   // Kick off the desktop wrapper update check immediately at launch — runs in
   // parallel with backend startup and is a no-op when the app isn't packaged.
@@ -1468,8 +1474,7 @@ async function startApp() {
   sendStatus('Waiting for server');
   const waitOpts = backendJustUpgraded ? { maxChecks: POST_UPGRADE_HEALTH_CHECKS } : undefined;
   const backendWait = await waitForBackend(waitOpts);
-  // `isQuitting`: a restart-to-update stopped the backend under us — not a startup failure, no error screen.
-  if (backendWait.reason === 'quitting' || isQuitting) return;
+  if (backendWaitAborted(backendWait)) return;
   backendReady = backendWait.ready;
 
   if (!backendWait.ready) {

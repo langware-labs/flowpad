@@ -20,12 +20,13 @@ const { EventEmitter } = require('events');
 const MAIN = path.join(__dirname, 'main.js');
 const EXPOSE = `
 module.exports.__t = {
-  offerDesktopUpdate, offerPostponedRestartPrompt, showDesktopReadyPrompt, installAndStartBackend, showStartupErrorPanel, reportStartupCrash, checkPackageUpdateInBackground,
+  offerDesktopUpdate, offerPostponedRestartPrompt, backendWaitAborted, showDesktopReadyPrompt, installAndStartBackend, showStartupErrorPanel, reportStartupCrash, checkPackageUpdateInBackground,
   setupElectronAutoUpdater, readyReminder, pendingEngineStore, restartApplier,
   getState: () => ({ pendingDesktopVersion, offeredDesktopVersion, desktopDownloadedVersion, deferredDesktopVersion,
                      desktopRestartPromptOpen, packageUpdateInFlight }),
   setMainWindow: (w) => { mainWindow = w; },
   setBackendReady: (v) => { backendReady = v; },
+  setQuitting: (v) => { isQuitting = v; },
   setUvManager: (u) => { uvManager = u; },
   getUvManager: () => uvManager,
 };`;
@@ -159,6 +160,15 @@ const reminderTimer = (env) => env.intervals.find((i) => i.ms === REMINDER_MS);
     env.t.setBackendReady(true); env.t.offerPostponedRestartPrompt(); await tick(); await tick(); await tick();
     eq(env.dialogCalls.length, 2, 'once the app is up the prompt appears');
     eq(env.autoUpdater.quits, [[true, true]], 'and "Restart now" installs');
+  }
+
+  // ── a restart-to-update stops the backend mid-wait: that is not a startup failure (no error screen) ──
+  {
+    const env = load();
+    eq(env.t.backendWaitAborted({ ready: false, reason: 'launcher-failed' }), false, 'a real launcher failure still reaches the error panel');
+    env.t.setQuitting(true);
+    eq(env.t.backendWaitAborted({ ready: false, reason: 'launcher-failed' }), true, 'while quitting for an update, launcher-failed is swallowed');
+    eq(env.t.backendWaitAborted({ ready: false, reason: 'quitting' }), true, 'and so is the explicit quitting reason');
   }
 
   // ── desktop + engine, "Later" → reminders every 90 minutes ───────────────
