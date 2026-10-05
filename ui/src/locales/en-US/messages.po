@@ -720,6 +720,10 @@ msgstr "{baseTitle} · {0}"
 #~ msgid "{baseTitle} · {environment}"
 #~ msgstr "{baseTitle} · {environment}"
 
+#: src/components/status-bar/GitPullButton.tsx
+msgid "{behind} new changes in the cloud — pull them"
+msgstr "{behind} new changes in the cloud — pull them"
+
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "{changedCount} changed"
 msgstr "{changedCount} changed"
@@ -1178,6 +1182,10 @@ msgstr "1 hour"
 #: src/components/chats-navigator/ChatHistoryRow.tsx
 msgid "1 message"
 msgstr "1 message"
+
+#: src/components/status-bar/GitPullButton.tsx
+msgid "1 new change in the cloud — pull it"
+msgstr "1 new change in the cloud — pull it"
 
 #: src/components/code-editor/SnippetView.tsx
 msgid "1 problem"
@@ -2337,6 +2345,10 @@ msgstr "already running"
 #: src/pages/entry/LaunchLanding.tsx
 msgid "Already signed in, launch sandbox"
 msgstr "Already signed in, launch sandbox"
+
+#: src/lib/publish-state.ts
+msgid "Already up to date"
+msgstr "Already up to date"
 
 #: src/components/automations/blocks/ThenBlock.tsx
 msgid "Also"
@@ -4013,6 +4025,7 @@ msgstr "Check for new messages"
 msgid "Check the address, or try opening it in your browser."
 msgstr "Check the address, or try opening it in your browser."
 
+#: src/lib/publish-state.ts
 #: src/lib/publish-state.ts
 msgid "Check your connection and try again."
 msgstr "Check your connection and try again."
@@ -6360,6 +6373,7 @@ msgid "Couldn’t reach the backend."
 msgstr "Couldn’t reach the backend."
 
 #: src/lib/publish-state.ts
+#: src/lib/publish-state.ts
 msgid "Couldn't reach the server"
 msgstr "Couldn't reach the server"
 
@@ -6413,6 +6427,11 @@ msgstr "Couldn't start GitHub connection."
 #: src/pages/entry/OpenSandboxLanding.tsx
 msgid "Couldn't start the GitHub connection."
 msgstr "Couldn't start the GitHub connection."
+
+#: src/lib/publish-state.ts
+#: src/lib/publish-state.ts
+msgid "Couldn't update"
+msgstr "Couldn't update"
 
 #: src/components/account/db-stats.tsx
 msgid "Count"
@@ -17712,6 +17731,7 @@ msgid "Published when you deploy"
 msgstr "Published when you deploy"
 
 #: src/components/data-sources/DataSourceRow.tsx
+#: src/components/status-bar/GitPullButton.tsx
 msgid "Pull"
 msgstr "Pull"
 
@@ -17737,6 +17757,10 @@ msgstr "Pull changes now"
 #: src/components/task-receive/IncomingTaskDialog.tsx
 msgid "Pull failed."
 msgstr "Pull failed."
+
+#: src/lib/publish-state.ts
+msgid "Pull hit a conflict"
+msgstr "Pull hit a conflict"
 
 #: src/components/conversation/AttachmentDownloadWarning.tsx
 msgid "pulled, but arrived short"
@@ -21550,6 +21574,7 @@ msgid "Someone"
 msgstr "Someone"
 
 #: src/lib/publish-state.ts
+#: src/lib/publish-state.ts
 msgid "Someone else changed this too. Switch to Advanced view to merge."
 msgstr "Someone else changed this too. Switch to Advanced view to merge."
 
@@ -21568,6 +21593,10 @@ msgstr "Something went wrong opening this link. Try again in a moment."
 #: src/components/agent-layout/error-screen/error-screen.tsx
 msgid "Something went wrong while loading this page."
 msgstr "Something went wrong while loading this page."
+
+#: src/lib/publish-state.ts
+msgid "Something went wrong. Please try again."
+msgstr "Something went wrong. Please try again."
 
 #: src/components/terminal/HistoryModal.tsx
 msgid "Sort by time"
@@ -23112,6 +23141,10 @@ msgstr "There are merge conflicts in <0>{localPath}</0>. Please resolve them and
 msgid "There is nothing left to send — add a message first."
 msgstr "There is nothing left to send — add a message first."
 
+#: src/lib/publish-state.ts
+msgid "There is nothing new in the cloud."
+msgstr "There is nothing new in the cloud."
+
 #: src/components/project-home/VibeAgentsCard.tsx
 msgid "These agents are added on top of the standard vibe agent, in the order shown, every vibe session."
 msgstr "These agents are added on top of the standard vibe agent, in the order shown, every vibe session."
@@ -24580,6 +24613,10 @@ msgstr "Update plan based on <plan-note> sections"
 msgid "Update values"
 msgstr "Update values"
 
+#: src/lib/publish-state.ts
+msgid "Updated"
+msgstr "Updated"
+
 #. placeholder {0}: draft.name.trim()
 #. placeholder {0}: editing.name
 #: src/components/data-sources/DataSourceDialog.tsx
@@ -25850,6 +25887,10 @@ msgstr "You have access to this {label}."
 #: src/components/open-project-component/use-open-project.ts
 msgid "You must be logged in"
 msgstr "You must be logged in"
+
+#: src/lib/publish-state.ts
+msgid "You now have the latest changes from the cloud."
+msgstr "You now have the latest changes from the cloud."
 
 #: src/components/stream-inbox-view/StreamInboxView.tsx
 #: src/components/stream-inbox-view/StreamInboxView.tsx
