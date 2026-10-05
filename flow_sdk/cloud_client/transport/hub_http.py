@@ -272,6 +272,9 @@ async def get_info() -> Optional[dict[str, Any]]:
                     "helpdesk_portal_git_url": (
                         helpdesk_portal_git_url if isinstance(helpdesk_portal_git_url, str) else None
                     ),
+                    # What the hub promises beyond its shape (``idempotent_guest_conversation``);
+                    # empty on a hub older than the field — which is exactly the answer for it.
+                    "capabilities": [c for c in (data.get("capabilities") or []) if isinstance(c, str)],
                 }
             return {"version": None}
     except Exception as e:  # noqa: BLE001

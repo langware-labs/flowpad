@@ -1499,24 +1499,55 @@ class HelpdeskTarget(NamedTuple):
     portal_git_url: Optional[str] = None
 
 
+#: Instance preference holding the last default desk the hub advertised — what a desk resolves to
+#: while the hub cannot be asked (an ask for help typed offline, the guides opened offline).
+LAST_KNOWN_DESK_PREF = "helpdesk.default"
+
+
+def _last_known_desk() -> Optional[HelpdeskTarget]:
+    from flow_sdk.preferences import read_instance_pref  # noqa: PLC0415
+
+    known = read_instance_pref(LAST_KNOWN_DESK_PREF, None)
+    if isinstance(known, dict) and isinstance(known.get("project_id"), str) and known["project_id"].strip():
+        return HelpdeskTarget(known["project_id"], known.get("portal_git_url") or None)
+    return None
+
+
 async def _hub_default_helpdesk() -> Optional[HelpdeskTarget]:
-    """The deployment's default help desk, from the hub's ``/version``.
+    """The deployment's default help desk, from the hub's ``/version`` — or, when the hub cannot be
+    reached, the last one it advertised here.
 
-    ``None`` when the hub is unreachable or doesn't advertise one. This is the
-    terminal fallback for :func:`resolve_helpdesk` — the end of every support
-    chain. See the hub's ``ensure_helpdesk_project``.
+    ``None`` when the hub says it has none, or it was never reached from this instance. This is the
+    terminal fallback for :func:`resolve_helpdesk` — the end of every support chain. See the hub's
+    ``ensure_helpdesk_project``.
     """
-    try:
-        from flow_sdk.cloud_client.transport.hub_http import get_info  # noqa: PLC0415
+    from flow_sdk.cloud_client.transport.hub_http import get_info  # noqa: PLC0415
+    from flow_sdk.preferences import write_instance_pref  # noqa: PLC0415
 
-        info = await get_info() or {}
-        pid = info.get("helpdesk_project_id")
-        if isinstance(pid, str) and pid.strip():
-            portal = info.get("helpdesk_portal_git_url")
-            return HelpdeskTarget(pid, portal if isinstance(portal, str) and portal.strip() else None)
-        return None
+    try:
+        info = await get_info()
     except Exception:  # noqa: BLE001
+        info = None
+    if info is None:
+        return _last_known_desk()
+    pid = info.get("helpdesk_project_id")
+    if not (isinstance(pid, str) and pid.strip()):
         return None
+    portal = info.get("helpdesk_portal_git_url")
+    target = HelpdeskTarget(pid, portal if isinstance(portal, str) and portal.strip() else None)
+    if target != _last_known_desk():
+        write_instance_pref(LAST_KNOWN_DESK_PREF, {"project_id": target.project_id, "portal_git_url": target.portal_git_url})
+    return target
+
+
+async def resolve_desk_here(project_id: Optional[str] = None) -> Optional[HelpdeskTarget]:
+    """The nearest desk WITHOUT asking the network: the project's own or adopted desk, else the last
+    one the hub advertised. For capturing a request — which must never wait on the hub."""
+    if project_id:
+        adopted = await resolve_adopted_helpdesk(project_id)
+        if adopted is not None:
+            return HelpdeskTarget(adopted.queue_project_id)
+    return _last_known_desk()
 
 
 async def resolve_helpdesk(project_id: Optional[str] = None) -> Optional[HelpdeskTarget]:

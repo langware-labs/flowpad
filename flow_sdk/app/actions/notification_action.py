@@ -542,7 +542,9 @@ async def _send_conversation_message_header(conv: "Conversation", reply_fm: "Flo
         shared_context_entities = [str(c) for c in (reply_fm.shared_context_entities or [])]
         kind_value = getattr(reply_fm.kind, "value", reply_fm.kind)
         sendable_kind = FlowMessageKind.sendable(kind_value) if reply_fm.kind else None
-        await conv.add_message(
+        from flow_sdk.builtin.flow_message import BodyStatus  # noqa: PLC0415
+
+        stored = await conv.add_message(
             reply_fm.text,
             sender_name=reply_fm.sender_name or None,
             sender_id=reply_fm.sender_id or None,
@@ -556,6 +558,11 @@ async def _send_conversation_message_header(conv: "Conversation", reply_fm: "Flo
             reply_to_id=reply_fm.reply_to_id or None,
             thread_root_id=reply_fm.thread_root_id or None,
         )
+        # The hub decides whether a body is owed. A replay answers with the row it already stored,
+        # and one first sent text-only over the socket has none: uploading one now would be refused
+        # (NA is terminal) and leave the message looking undelivered for good.
+        if isinstance(stored, dict) and stored.get("body_status") == BodyStatus.NA.value:
+            reply_fm.body_status = BodyStatus.NA
         return None
     except HubError as e:
         logger.warning("[append_conversation] hub add_message header failed: %s", e)

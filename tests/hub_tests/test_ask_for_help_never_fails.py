@@ -247,7 +247,9 @@ async def desk(hub_base_url, bob_token):
     """A desk the HELPER owns, so this instance is a real guest of it. Deleted after."""
     async with httpx.AsyncClient(timeout=20) as h:
         auth = {"Authorization": f"Bearer {bob_token}"}
-        r = await h.post(f"{hub_base_url}/api/v1/graph/project", headers=auth, json={"name": f"desk-{uuid.uuid4().hex[:8]}"})
+        r = await h.post(
+            f"{hub_base_url}/api/v1/graph/project", headers=auth, json={"name": f"desk-{uuid.uuid4().hex[:8]}"}
+        )
         assert r.status_code == 200, r.text
         desk_id = r.json()["data"]["id"]
         on = await h.post(
@@ -261,23 +263,40 @@ async def desk(hub_base_url, bob_token):
     finally:
         async with httpx.AsyncClient(timeout=20) as h:
             gone = await h.request(
-                "DELETE", f"{hub_base_url}/api/v1/graph/project/{desk_id}", headers={"Authorization": f"Bearer {bob_token}"}, json={}
+                "DELETE",
+                f"{hub_base_url}/api/v1/graph/project/{desk_id}",
+                headers={"Authorization": f"Bearer {bob_token}"},
+                json={},
             )
         assert gone.status_code < 400, f"LEAKED desk project {desk_id}: {gone.text[:200]}"
 
 
 async def _open_ticket(desk_id: str, text: str):
-    """``helpdesk-start-ticket`` exactly as the dialog calls it; routing pinned to ``desk_id``."""
-    from flow_sdk.app.actions import flow_message_action as fma
+    """``ask-for-help`` to a desk, exactly as the dialog sends it."""
+    from flow_sdk.app.actions import ask_for_help_action as afh
     from flow_sdk.server.routes.bootstrap import get_or_create_local_user
 
     someone = (await get_or_create_local_user()).typeid
-    request = SimpleNamespace(someone_typeid=someone, get_post_data=AsyncMock(return_value={"text": text, "project_id": ""}))
-    with (
-        patch.object(fma, "get_current_request_info", return_value=request),
-        patch.object(fma, "resolve_helpdesk", AsyncMock(return_value=fma.HelpdeskTarget(desk_id))),
-    ):
-        return await fma.helpdesk_start_ticket()
+    body = {"recipient": {"kind": "desk", "desk_project_id": desk_id}, "text": text, "origin": "footer"}
+    request = SimpleNamespace(someone_typeid=someone, get_post_data=AsyncMock(return_value=body))
+    with patch.object(afh, "get_current_request_info", return_value=request):
+        return await afh.ask_for_help()
+
+
+def _sent_stamp_fails_once():
+    """The one local write left after the hub accepts a ticket — failing once, as a locked DB does."""
+    from flow_sdk.builtin.flow_message import FlowMessage
+
+    real = FlowMessage.mark_sent
+    calls = {"n": 0}
+
+    async def mark_sent(self):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise sqlite3.OperationalError("database is locked")
+        return await real(self)
+
+    return patch.object(FlowMessage, "mark_sent", mark_sent), calls
 
 
 async def _tickets_with(base: str, desk_owner_token: str, desk_id: str, text: str) -> list[dict]:
@@ -320,56 +339,56 @@ async def test_a_ticket_typed_while_the_hub_is_down_is_kept_and_reaches_the_desk
     )
 
 
-async def test_a_ticket_the_hub_accepted_is_reported_open_even_if_the_local_copy_fails(
-    hub_session, bob_token, desk
-):
-    """The hub creates the ticket; then the first local write hits a local error (``database is
-    locked`` — a real, recurring one here). Nothing after the hub call is guarded, so the user is
-    told the ticket FAILED while the desk has it. They resend: two tickets."""
+async def test_a_ticket_the_hub_accepted_is_reported_open_even_if_the_local_copy_fails(hub_session, bob_token, desk):
+    """The hub opens the ticket; then the one local write after it (marking the request sent) hits a
+    local error (``database is locked`` - a real, recurring one here). The request is already written
+    here, so the person must be told it is open - and the next delivery must not open a second."""
     base = hub_session["base_url"]
     text = f"my agent is stuck {uuid.uuid4().hex[:8]}"
 
-    locked = AsyncMock(side_effect=sqlite3.OperationalError("database is locked"))
-    with patch("flow_sdk.app.actions.materialize_flow_message.ensure_conversation_entity", locked):
+    stamp, calls = _sent_stamp_fails_once()
+    with stamp:
         response = await _open_ticket(desk, text)
+        assert calls["n"], "precondition: the post-accept local write must have been hit"
+        on_desk = await _eventually(lambda: _tickets_with(base, bob_token, desk, text))
+        assert on_desk, "precondition: the hub must have accepted the ticket"
+        assert _ok(response), (
+            f"the desk HAS the ticket, but the requester was told {response.message!r} — "
+            "a resend from them opens a duplicate"
+        )
+        await _recover()
 
-    on_desk = await _eventually(lambda: _tickets_with(base, bob_token, desk, text))
-    assert on_desk, "precondition: the hub must have accepted the ticket"
-    assert _ok(response), (
-        f"the desk HAS the ticket, but the requester was told {response.message!r} — "
-        "a resend from them opens a duplicate"
-    )
+    assert len(await _tickets_with(base, bob_token, desk, text)) == 1, "the redelivery opened a second ticket"
 
 
-async def test_the_requester_sees_their_own_opening_line_after_one_failed_local_write(hub_session, desk):
-    """One transient local failure while copying the ticket's first message (the guest's own
-    words): the action logs "opening line not found", stalls, and answers SUCCESS — the requester
-    opens their ticket and it does not contain what they wrote."""
-    from flow_sdk.app.actions import flow_message_action as fma
-    from flow_sdk.builtin.flow_message import FlowMessage
+async def test_the_requester_sees_their_own_opening_line_after_one_failed_local_write(hub_session, bob_token, desk):
+    """One transient local failure after the hub took the ticket must not cost the requester their own
+    words: the line they typed is in their ticket, and is marked sent once delivery runs again."""
+    from flow_sdk.builtin.flow_message import DeliveryStatus, FlowMessage
     from flow_sdk.db.drivers.query import QueryFilter
 
+    base = hub_session["base_url"]
     text = f"the deploy hangs {uuid.uuid4().hex[:8]}"
-    real = fma._process_single_hub_message
-    calls = {"n": 0}
 
-    async def locked_once(raw):
-        calls["n"] += 1
-        if calls["n"] == 1:
-            raise sqlite3.OperationalError("database is locked")
-        return await real(raw)
-
-    with patch.object(fma, "_process_single_hub_message", locked_once):
+    stamp, calls = _sent_stamp_fails_once()
+    with stamp:
         response = await _open_ticket(desk, text)
-    assert _ok(response), f"precondition: the ticket must open, got {response.message!r}"
-    assert calls["n"], "precondition: the injected local failure must have been hit"
+        assert _ok(response), f"precondition: the ticket must open, got {response.message!r}"
+        assert calls["n"], "precondition: the injected local failure must have been hit"
 
-    conv_id = response.data["conversation_id"]
-    mine = await FlowMessage.get_all(QueryFilter(match={"conversation_id": conv_id}), hydrate=False)
-    assert any(text in (m.text or "") for m in mine), (
-        f"the requester's ticket {conv_id[:8]} holds {len(mine)} message(s) and none is the request "
-        "they typed — one failed local write lost it for good"
+        conv_id = response.data["conversation_id"]
+        mine = await FlowMessage.get_all(QueryFilter(match={"conversation_id": conv_id}), hydrate=False)
+        assert any(text in (m.text or "") for m in mine), (
+            f"the requester's ticket {conv_id[:8]} holds {len(mine)} message(s) and none is the request "
+            "they typed — one failed local write lost it for good"
+        )
+        await _recover()
+
+    line = next(
+        m for m in await FlowMessage.get_all(QueryFilter(match={"conversation_id": conv_id})) if text in (m.text or "")
     )
+    assert line.delivery_status != DeliveryStatus.CREATED.value, "delivery never marked the line sent"
+    assert len(await _tickets_with(base, bob_token, desk, text)) == 1
 
 
 @pytest.mark.parametrize(
@@ -379,9 +398,11 @@ async def test_the_requester_sees_their_own_opening_line_after_one_failed_local_
         pytest.param("signed-out", "sign in", id="signed-out"),
     ],
 )
-async def test_a_failed_ticket_says_why(hub_session, hub_faults, desk, break_it, expected, monkeypatch):
-    """Every hub failure collapses into ``hub unreachable``: a 502 page, a signed-out backend and
-    a dead network all read the same, so neither the user nor support can tell them apart."""
+async def test_a_failed_ticket_says_why(hub_session, hub_faults, bob_token, desk, break_it, expected, monkeypatch):
+    """A request that could not reach the desk is KEPT and says why: a 502 page, a signed-out backend
+    and a dead network each read as what they are, so neither the user nor support confuse them -
+    and nothing the person is told claims it arrived."""
+    base = hub_session["base_url"]
     text = f"why did it fail {uuid.uuid4().hex[:8]}"
     if break_it == "502":
         hub_faults.fail("POST", rf"/project/{desk}/start_guest_conversation$", answer="502")
@@ -389,7 +410,54 @@ async def test_a_failed_ticket_says_why(hub_session, hub_faults, desk, break_it,
         monkeypatch.setattr("flow_sdk.cli.auth.credentials.load_credentials", lambda *a, **k: None)
 
     response = await _open_ticket(desk, text)
-    assert not _ok(response), "precondition: this break must fail the send"
-    assert expected in (response.message or "").lower(), (
-        f"the failure is reported as {response.message!r} — it does not say {expected!r}"
-    )
+    assert _ok(response), f"the request must be kept, got {response.message!r}"
+    failure = response.data["delivery"]["failure"]
+    assert failure, "precondition: this break must keep the request from the desk"
+    assert expected in failure["message"].lower(), f"the failure reads {failure!r} — it does not say {expected!r}"
+    assert "<html" not in failure["message"]
+    assert not await _tickets_with(base, bob_token, desk, text), "nothing may reach the desk through this break"
+
+
+async def test_a_person_asked_while_the_hub_is_down_gets_the_ask_once_and_only_once(
+    hub_session, hub_faults, bob_token, task_storage
+):
+    """Every hub write of a person ask fails (task, its invite, the conversation, the message): the
+    ask is kept, and once the hub is back the helper has ONE conversation holding ONE message — and a
+    second recovery changes nothing. (Was: any failure after the first step left Retry stuck forever
+    on 'User has already accepted', or duplicated the conversation.)"""
+    from flow_sdk.app.actions import ask_for_help_action as afh
+    from flow_sdk.server.routes.bootstrap import get_or_create_local_user
+    from tests.hub_tests.conftest import _resolve_identities
+
+    base = hub_session["base_url"]
+    _, helper_email = _resolve_identities()
+    title = f"help me ship {uuid.uuid4().hex[:8]}"
+    someone = (await get_or_create_local_user()).typeid
+    body = {"recipient": {"kind": "person", "email": helper_email}, "title": title, "text": title}
+    request = SimpleNamespace(someone_typeid=someone, get_post_data=AsyncMock(return_value=body))
+
+    rule = hub_faults.fail("POST", r"/graph/(task|conversation)(/|$)")
+    with patch.object(afh, "get_current_request_info", return_value=request):
+        response = await afh.ask_for_help()
+    assert rule.hits, "precondition: the hub writes must have been refused"
+    assert _ok(response), f"the ask must be kept, got {response.message!r}"
+
+    hub_faults.heal()
+
+    conv_id = response.data["conversation_id"]
+
+    async def helper_messages():
+        async with httpx.AsyncClient(timeout=10) as h:
+            r = await h.get(
+                f"{base}/api/v1/graph/conversation/{conv_id}/flow_message", headers={"Authorization": f"Bearer {bob_token}"}
+            )
+        return len(r.json().get("data") or []) if r.status_code == 200 else 0
+
+    await _recover()
+    assert await _eventually(helper_messages) == 1, "the helper must have the ask, once"
+    from flow_sdk.stream_inbox.catchup import flush_pending_outbox
+
+    await flush_pending_outbox("test: again")  # the half that could deliver twice
+    assert await helper_messages() == 1, "delivering again must not deliver it twice"
+    convs = [c for c in (await _hub(base, bob_token, "GET", "/graph/conversation") or []) if c.get("title") == title]
+    assert [c["id"] for c in convs] == [conv_id], "one ask, one conversation"
