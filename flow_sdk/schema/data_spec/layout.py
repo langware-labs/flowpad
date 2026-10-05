@@ -404,7 +404,8 @@ def _typed_occurrence(shape: type, slot_dir: Path, main: str) -> Any:
 
     The walker's own main document (``decision.json`` for ``navigator.decision``) is read by the
     walker. A gold label written by ``annotate`` is ``label.json`` -- the one name ``annotate``
-    can write without knowing the shape -- and is the shape's JSON, so it validates directly.
+    can write without knowing the shape -- and is the shape's JSON, returned as-is for the row's
+    own validation to check.
     Without that second arm an annotated example could never be read back typed.
     """
     from flow_sdk.schema.data_spec.io import load as _load  # noqa: PLC0415 — cycle-safe
@@ -413,8 +414,25 @@ def _typed_occurrence(shape: type, slot_dir: Path, main: str) -> Any:
         return _load(shape, slot_dir)
     label = slot_dir / ANNOTATION_FILE
     if label.is_file():
-        return shape.model_validate(load_json_dict(label))
+        # The raw JSON: the row's own validation checks it, so an error names its slot
+        # (``ground_truth.route``), not just the field inside it.
+        return load_json_dict(label)
     return None
+
+
+class _ReadShape:
+    """What reading rows of ``spec`` needs from it -- pure functions of the shape, so computed
+    once per read, never once per example."""
+
+    __slots__ = ("typed", "mains", "artifact")
+
+    def __init__(self, typed: dict, mains: dict, artifact: dict) -> None:
+        self.typed, self.mains, self.artifact = typed, mains, artifact
+
+    @classmethod
+    def of(cls, spec: type) -> "_ReadShape":
+        typed = _typed_slots(spec)
+        return cls(typed, {base: _main_document(shape) for base, shape in typed.items()}, _declared_artifact(spec))
 
 
 class FolderLayout(DatasetLayout):
@@ -423,52 +441,57 @@ class FolderLayout(DatasetLayout):
     name = DataLayoutEnum.IO_FOLDER.value
 
     def read(self, folder, spec, *, dataset_id, field_spec=None, delimiter=","):
-
+        shape = _ReadShape.of(spec)
         rows = []
-        typed = _typed_slots(spec)
-        # Pure functions of the shape — hoisted out of the per-example loop.
-        mains = {base: _main_document(shape) for base, shape in typed.items()}
-        artifact = _declared_artifact(spec)
         for ex_dir in _example_dirs(folder):
-            row = self.read_example(ex_dir)
-            if row is None:
-                continue  # no input DATA in any form → not an example
-            # A slot whose declared shape is an ordinary ``DataSpec`` was
-            # written by the generic walker, so it is read by the same one.
-            # ``read_example`` classifies bytes on disk and cannot know the
-            # declared type; this is the one place that does.
-            for base, shape in typed.items():
-                # A2: read what was WRITTEN. The write side decides per value,
-                # so a slot holding an artifact went down the artifact path even
-                # though its declared shape is a plain ``DataSpec``. Keying the
-                # read on the walker's own main document makes the two agree by
-                # looking, instead of by two rules that can drift.
-                #
-                # Every occurrence, not only the bare folder: N values are written as
-                # ``«slot»-1/``, ``«slot»-2/`` (a list of acceptable gold answers), and
-                # reading just ``«slot»/`` left those as raw folders that failed the
-                # typed validation below.
-                held = row.get(base)
-                if isinstance(held, list):
-                    loaded = [_typed_occurrence(shape, ex_dir / f"{base}-{n}", mains[base])
-                              for n in range(1, len(held) + 1)]
-                    if all(v is not None for v in loaded):
-                        row[base] = loaded
-                elif (value := _typed_occurrence(shape, ex_dir / base, mains[base])) is not None:
-                    row[base] = value
-            # A slot the spec declares as a ``FileRef`` comes back as one, not
-            # as the folder the scan saw it sitting in. The scan classifies
-            # BYTES and is right about them; only the spec knows which was
-            # meant, and without asking it `write` → `read` was not identity.
-            for base in artifact:
-                held = row.get(base)
-                if isinstance(held, FolderSpec) and len(held.files) == 1:
-                    (only,) = held.files.values()
-                    if isinstance(only, FileRef):
-                        row[base] = only
-            row["id"] = example_id(dataset_id, ex_dir.name)
-            rows.append(spec.model_validate(row))
+            row = self.read_typed(ex_dir, spec, dataset_id=dataset_id, shape=shape)
+            if row is not None:
+                rows.append(row)
         return rows
+
+    def read_typed(self, ex_dir: Path, spec: type, *, dataset_id: str, shape: "Optional[_ReadShape]" = None) -> Any:
+        """ONE example as ``spec``; None when the folder holds no input data. A row that does not
+        fit the spec raises its ``ValidationError``, so a caller can say which row and why."""
+        shape = shape or _ReadShape.of(spec)
+        typed, mains, artifact = shape.typed, shape.mains, shape.artifact
+        row = self.read_example(ex_dir)
+        if row is None:
+            return None  # no input DATA in any form → not an example
+        # A slot whose declared shape is an ordinary ``DataSpec`` was
+        # written by the generic walker, so it is read by the same one.
+        # ``read_example`` classifies bytes on disk and cannot know the
+        # declared type; this is the one place that does.
+        for base, shape in typed.items():
+            # A2: read what was WRITTEN. The write side decides per value,
+            # so a slot holding an artifact went down the artifact path even
+            # though its declared shape is a plain ``DataSpec``. Keying the
+            # read on the walker's own main document makes the two agree by
+            # looking, instead of by two rules that can drift.
+            #
+            # Every occurrence, not only the bare folder: N values are written as
+            # ``«slot»-1/``, ``«slot»-2/`` (a list of acceptable gold answers), and
+            # reading just ``«slot»/`` left those as raw folders that failed the
+            # typed validation below.
+            held = row.get(base)
+            if isinstance(held, list):
+                loaded = [_typed_occurrence(shape, ex_dir / f"{base}-{n}", mains[base])
+                          for n in range(1, len(held) + 1)]
+                if all(v is not None for v in loaded):
+                    row[base] = loaded
+            elif (value := _typed_occurrence(shape, ex_dir / base, mains[base])) is not None:
+                row[base] = value
+        # A slot the spec declares as a ``FileRef`` comes back as one, not
+        # as the folder the scan saw it sitting in. The scan classifies
+        # BYTES and is right about them; only the spec knows which was
+        # meant, and without asking it `write` → `read` was not identity.
+        for base in artifact:
+            held = row.get(base)
+            if isinstance(held, FolderSpec) and len(held.files) == 1:
+                (only,) = held.files.values()
+                if isinstance(only, FileRef):
+                    row[base] = only
+        row["id"] = example_id(dataset_id, ex_dir.name)
+        return spec.model_validate(row)
 
     @staticmethod
     def _scan(ex_dir: Path) -> tuple[dict[str, dict[Optional[int], Path]], list[Path]]:

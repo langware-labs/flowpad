@@ -8,6 +8,7 @@ import uuid
 from pathlib import Path
 
 import pytest
+
 from tests.unit._project_names import unique_project_name
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.usefixtures("fresh_user_scope")]
@@ -173,3 +174,72 @@ async def test_examples_listing_reports_promoted_items_and_gold(bootstrapped_cli
     )
     listed = (await client.get(f"/api/v1/graph/dataset/{ds['id']}/examples")).json()["data"]["examples"]
     assert listed[0]["annotated"] is True
+
+
+# ── typed rows: append / example / validate on a dataset whose spec is a DECLARED kind ─────
+
+
+def _declare_nav_kinds(root: Path) -> str:
+    """Define the row kinds as data spec FOLDERS (no Python) and register them; returns the tag."""
+    from flow_sdk.schema.data_spec import declared
+
+    ns = f"apitest{uuid.uuid4().hex[:8]}"
+
+    def spec(parent: Path, kind: str, body: dict) -> Path:
+        folder = parent / "agentic-assets" / "data_spec" / kind
+        folder.mkdir(parents=True)
+        (folder / "data_spec.json").write_text(json.dumps({"type": "data_spec", "ns": ns, **body}))
+        return folder
+
+    top = spec(root, "nav.dataset", {"examples": {"input": "nav.request", "output": "nav.decision"}})
+    spec(top, "nav.request", {"fields": {"utterance": {"shape": "string"}}})
+    spec(top, "nav.decision", {"fields": {"route": {"shape": "enum:quick|agentic"}, "target": {"shape": "?string"}}})
+    assert set(declared.load_root(root).values()) == {""}
+    return f"--{ns}--.nav.dataset"
+
+
+async def test_typed_rows_append_read_annotate_and_validate(bootstrapped_client, user, tmp_path):
+    client = bootstrapped_client
+    pid = await _project(client, tmp_path)
+    tag = _declare_nav_kinds(tmp_path / "kinds")
+    resp = await client.post(
+        f"/api/v1/graph/project/{pid}/dataset",
+        json={"type": "dataset", "name": "nav", "title": "Nav", "data_layout": "io_folder", "spec": tag},
+    )
+    assert resp.json().get("status") == "SUCCESS", resp.text
+    ds = resp.json()["data"]
+    base = f"/api/v1/graph/dataset/{ds['id']}"
+
+    # One bad row (an enum value the kind does not allow) refuses the whole batch: nothing written.
+    bad = await client.post(f"{base}/append", json={"rows": [
+        {"input": {"utterance": "open data sources"}, "ground_truth": {"route": "quick", "target": "view:data-sources"}},
+        {"input": {"utterance": "x"}, "ground_truth": {"route": "maybe"}},
+    ]})
+    assert bad.status_code == 400 and bad.json()["data"]["errors"], bad.text
+    assert not list((Path(ds["asset_ref"]) / "examples").glob("*")), "a refused batch writes no example"
+
+    resp = await client.post(f"{base}/append", json={"rows": [
+        {"kind": "eval", "input": {"utterance": "open data sources"},
+         "ground_truth": [{"route": "quick", "target": "view:data-sources"}, {"route": "quick", "target": "view:connectors"}],
+         "data": {"tags": ["alias"]}},
+        {"input": {"utterance": "summarize the zoom task"}},
+    ]})
+    assert resp.status_code == 200, resp.text
+    first, second = resp.json()["data"]["example_ids"]
+    assert resp.json()["data"]["num_examples"] == 2
+
+    got = (await client.get(f"{base}/example/{first}")).json()["data"]
+    assert got["input"] == {"utterance": "open data sources"}
+    assert got["ground_truth"] == [{"route": "quick", "target": "view:data-sources"}, {"route": "quick", "target": "view:connectors"}]
+    assert got["kind"] == "eval" and got["data"] == {"tags": ["alias"]}
+
+    resp = await client.post(f"{base}/annotate", json={"example_id": second, "ground_truth": {"route": "agentic"}})
+    assert resp.status_code == 200 and resp.json()["data"]["num_annotated"] == 2, resp.text
+    assert (await client.get(f"{base}/example/{second}")).json()["data"]["ground_truth"] == {"route": "agentic", "target": None}
+
+    checked = (await client.post(f"{base}/validate")).json()["data"]
+    assert checked == {"checked": 2, "problems": []}, checked
+    # A hand-edited row that no longer fits is named, not fatal.
+    (Path(ds["asset_ref"]) / "examples" / "0002" / "ground_truth" / "label.json").write_text('{"route": "sideways"}')
+    problems = (await client.post(f"{base}/validate")).json()["data"]["problems"]
+    assert [p["example_id"] for p in problems] == [second] and "ground_truth" in problems[0]["error"], problems
