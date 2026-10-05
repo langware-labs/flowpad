@@ -2,7 +2,7 @@
   "schema": 1,
   "name": "flow_whatsapp",
   "title": "Flow — no setup",
-  "icon_name": "WhatsApp",
+  "icon_name": "Flowpad",
   "description": "Talk to Flow, Flowpad's own assistant, on WhatsApp. Nothing to set up at Meta — link your phone once and Flow answers, acting on your Flowpad.",
   "kind": "datasource.cloud.whatsapp",
   "group": "WhatsApp",
