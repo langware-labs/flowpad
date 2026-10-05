@@ -1276,6 +1276,37 @@ ok(!mgr.isToolDirLockedError(null), 'null error → not a lock (no throw)');
   }
 
   {
+    // stop() while the monitor is still BOOTING: `flow stop` says service_busy, the port has no listener yet, so
+    // only the venv drain ends the monitor that would otherwise start its server under us (seen in two desktop logs:
+    // the old backend ran on ~30s after "Restart now"). A normal stop does not drain.
+    const order = [];
+    const make = (flowStopResult) => {
+      const m = new UvManager(silentLog);
+      m._flowStop = async () => { order.push('flowStop'); return flowStopResult; };
+      m._killPort = async () => { order.push('killPort'); };
+      m._drainVenvProcesses = async () => { order.push('drain'); };
+      return m;
+    };
+    await make({ busy: true }).stop();
+    eq(order, ['flowStop', 'killPort', 'drain'], 'stop: a busy (still-starting) instance is drained by its venv after the port kill');
+    order.length = 0;
+    await make({ busy: false }).stop();
+    eq(order, ['flowStop', 'killPort'], 'stop: a clean flow stop does not drain');
+    order.length = 0;
+    await make(undefined).stop();
+    eq(order, ['flowStop', 'killPort'], 'stop: no verdict from flow stop does not drain');
+
+    const m = new UvManager(silentLog);
+    m._flowBin = null;
+    m._run = async () => { const e = new Error('Command failed'); e.stderr = "service_busy: Instance 'prod' is temporarily owned"; throw e; };
+    eq(await m._flowStop(), { busy: true }, '_flowStop: service_busy on stderr is reported as busy');
+    m._run = async () => { throw new Error('boom'); };
+    eq(await m._flowStop(), { busy: false }, '_flowStop: any other failure is not "busy"');
+    m._run = async () => ({ stdout: '' });
+    eq(await m._flowStop(), { busy: false }, '_flowStop: success is not busy');
+  }
+
+  {
     // deferPackageVersion: the periodic check must not re-offer a version the
     // user already answered "Later" to (from any dialog).
     const m = new UvManager(silentLog);
