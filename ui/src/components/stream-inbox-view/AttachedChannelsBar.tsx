@@ -150,18 +150,38 @@ export function AttachedChannelsBar({ owner, rows, specFor, selected, onSelected
         />
       ))}
       {filtering ? (
-        <Button variant="ghost" size="icon" className={CONTROL} onClick={() => onSelectedChange(new Set())} aria-label={t`Show all channels`} data-testid="attached-channels-clear">
+        <Button
+          variant="ghost"
+          size="icon"
+          className={CONTROL}
+          onClick={() => onSelectedChange(new Set())}
+          aria-label={t`Show all channels`}
+          data-testid="attached-channels-clear"
+        >
           <X />
         </Button>
       ) : (
         <>
           <CallControls rows={rows} specFor={specFor} />
-          <Button variant="ghost" size="icon" className={CONTROL} onClick={() => setAddOpen(true)} aria-label={t`Add a source`} data-testid="attached-channels-add">
+          <Button
+            variant="ghost"
+            size="icon"
+            className={CONTROL}
+            onClick={() => setAddOpen(true)}
+            aria-label={t`Add a source`}
+            data-testid="attached-channels-add"
+          >
             <Plus />
           </Button>
           <Popover>
             <PopoverTrigger asChild>
-              <Button variant="ghost" size="icon" className={CONTROL} aria-label={t`Channel details`} data-testid="attached-channels-details">
+              <Button
+                variant="ghost"
+                size="icon"
+                className={CONTROL}
+                aria-label={t`Channel details`}
+                data-testid="attached-channels-details"
+              >
                 <SlidersHorizontal />
               </Button>
             </PopoverTrigger>
@@ -251,7 +271,9 @@ function ChannelMark({
           data-state={state}
         >
           <Icon className="size-[17px]" />
-          {state === 'on' && <span className="absolute -bottom-0.5 -end-0.5 size-2.5 rounded-full border-2 border-background bg-emerald-500" />}
+          {state === 'on' && (
+            <span className="absolute -bottom-0.5 -end-0.5 size-2.5 rounded-full border-2 border-background bg-emerald-500" />
+          )}
           {state === 'parked' && (
             <span className="absolute -bottom-0.5 -end-0.5 grid size-3.5 place-items-center rounded-full border-2 border-background bg-amber-500 text-[9px] font-bold leading-none text-white">
               !
@@ -259,7 +281,7 @@ function ChannelMark({
           )}
           {count > 1 && (
             <span
-              className="absolute -start-1 -top-1 min-w-4 rounded-full border-2 border-background bg-muted px-1 text-[9px] font-semibold leading-3 text-foreground tabular-nums"
+              className="absolute -start-1 -top-1 min-w-4 rounded-full border-2 border-background bg-muted px-1 text-[9px] font-semibold tabular-nums leading-3 text-foreground"
               data-testid="attached-channel-count"
             >
               {count}
@@ -268,7 +290,12 @@ function ChannelMark({
         </button>
       </HoverCardTrigger>
       <HoverCardContent align="start" className="w-72 p-0">
-        <ChannelList title={`${title} · ${stateLabel}`} sources={group.sources} specFor={specFor(spec)} onDelete={onDelete} />
+        <ChannelList
+          title={`${title} · ${stateLabel}`}
+          sources={group.sources}
+          specFor={specFor(spec)}
+          onDelete={onDelete}
+        />
       </HoverCardContent>
     </HoverCard>
   );
@@ -293,33 +320,58 @@ export function ChannelList({
   const { t } = useLingui();
   return (
     <>
-      <div className="px-3 pb-1 pt-2.5 font-mono text-[10px] uppercase tracking-wider text-muted-foreground">{title}</div>
+      <div className="px-3 pb-1 pt-2.5 font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+        {title}
+      </div>
       {sources.map((source) => (
         <ChannelRow key={source.id} source={source} spec={specFor(source.provider)} onDelete={() => onDelete(source)} />
       ))}
-      {sources.length === 0 && <div className="px-3 py-2 text-xs text-muted-foreground">{t`No channel is attached yet.`}</div>}
+      {sources.length === 0 && (
+        <div className="px-3 py-2 text-xs text-muted-foreground">{t`No channel is attached yet.`}</div>
+      )}
       {footer}
     </>
   );
 }
 
 /** A spec already in hand, as the lookup `ChannelList` expects. */
-const specFor = (spec: DataDriver | undefined): SpecFor => () => spec;
+const specFor =
+  (spec: DataDriver | undefined): SpecFor =>
+  () =>
+    spec;
 
 /** One line of a channel list: glyph, name, its setup note, the on/off switch
  *  and a delete. A parked row's setup note IS its verify control — pressing
  *  the step it names re-runs the check. */
-function ChannelRow({ source, spec, onDelete }: { source: DataSource; spec: DataDriver | undefined; onDelete: () => void }) {
+function ChannelRow({
+  source,
+  spec,
+  onDelete,
+}: {
+  source: DataSource;
+  spec: DataDriver | undefined;
+  onDelete: () => void;
+}) {
   const { t } = useLingui();
   const { toggle, busy } = useSourceToggle(source);
   const { verify, busy: verifying } = useSourceVerify(source);
   const Icon = sourceIcon(spec, source.channel);
   const state = stateOf(source);
   return (
-    <div className="flex items-center gap-2.5 px-3 py-2 text-[13px]" data-testid="attached-channel-row" data-provider={source.provider}>
+    <div
+      className="flex items-center gap-2.5 px-3 py-2 text-[13px]"
+      data-testid="attached-channel-row"
+      data-provider={source.provider}
+    >
       <Icon className="size-4 shrink-0" />
       <span className="min-w-0 flex-1">
         <span className="block truncate">{source.name || source.provider}</span>
+        {/* Which account it is — the connected phone, the mailbox address. */}
+        {source.account_key && (
+          <span className="block truncate text-[11px] text-muted-foreground" data-testid="attached-channel-account">
+            {source.account_key}
+          </span>
+        )}
         {state === 'parked' && source.setup_detail && (
           <button
             type="button"
