@@ -1,6 +1,6 @@
 import type { RemoteWorkerSession, SessionRememberScope } from '@sdk';
 import { useLingui } from '@lingui/react/macro';
-import { useCallback, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useMemo, useState, type ReactNode } from 'react';
 import { ProjectSelectorModal } from '@src/components/project-selector';
 import { Button } from '@src/components/ui/button';
 import { projectEntitiesToSelectorItems } from '@src/components/project-selector/project-items';
@@ -23,39 +23,39 @@ export interface ApproveLiveSession {
  */
 export function useApproveLiveSession(): ApproveLiveSession {
   const { t } = useLingui();
-  const [pending, setPending] = useState<RemoteWorkerSession | null>(null);
-  // "Approve" remembers the guest; "Approve once" does not. Held across the picker.
-  const rememberRef = useRef<SessionRememberScope | undefined>(undefined);
-  const settle = useRef<{ resolve: () => void; reject: (e: unknown) => void } | null>(null);
+  // The approval waiting on the picker: which session, whether to remember the guest
+  // ("Approve" does, "Approve once" does not), and the caller's promise to settle.
+  const [pending, setPending] = useState<{
+    session: RemoteWorkerSession;
+    remember?: SessionRememberScope;
+    resolve: () => void;
+    reject: (e: unknown) => void;
+  } | null>(null);
   const { projects, isLoading } = useProjects({ enabled: !!pending });
   const items = useMemo(() => projectEntitiesToSelectorItems(projects).filter((p) => !!p.path), [projects]);
 
   const approve = useCallback(
     async (session: RemoteWorkerSession, options: { remember?: SessionRememberScope } = {}) => {
       if (!(await session.needsProjectToApprove())) return session.approve(options.remember);
-      rememberRef.current = options.remember;
-      return new Promise<void>((resolve, reject) => {
-        settle.current = { resolve, reject };
-        setPending(session);
-      });
+      return new Promise<void>((resolve, reject) =>
+        setPending({ session, remember: options.remember, resolve, reject }),
+      );
     },
     [],
   );
 
   const close = useCallback(() => {
-    settle.current?.resolve();
-    settle.current = null;
+    pending?.resolve();
     setPending(null);
-  }, []);
+  }, [pending]);
 
   const choose = useCallback(
     (where: { projectId?: string; scratch?: boolean }) => {
-      const session = pending;
-      const done = settle.current;
-      settle.current = null;
+      if (!pending) return;
       setPending(null);
-      if (!session || !done) return;
-      session.approve(rememberRef.current, where.projectId, { scratch: where.scratch }).then(done.resolve, done.reject);
+      pending.session
+        .approve(pending.remember, where.projectId, { scratch: where.scratch })
+        .then(pending.resolve, pending.reject);
     },
     [pending],
   );

@@ -909,16 +909,14 @@ async def handle_add_message(
     # (uuid4; the host validates-on-adopt) and the opening proposal (reply
     # policy) rides the start marker on the carrier attachment. A prompt WITH a
     # session id is a follow-up turn.
-    from flow_sdk.builtin.remote_worker_session import RemoteWorkerSession, ReplyPolicy  # noqa: PLC0415
+    from flow_sdk.builtin.remote_worker_session import RemoteWorkerSession  # noqa: PLC0415
     from flow_sdk.schema.data_spec.session_spec import SessionStartSettings  # noqa: PLC0415
 
     is_prompt_send = bool(prompt_text_preview or prompt_files_preview)
     start_settings: Optional[SessionStartSettings] = None
     # Refused whenever sent, even on a send that joins a session and won't use it.
-    raw_policy = (body.get("reply_policy") or "").strip() or ReplyPolicy.AUTO.value
-    try:
-        reply_policy = ReplyPolicy(raw_policy).value
-    except ValueError:
+    reply_policy = _reply_policy_of(body)
+    if reply_policy is None:
         return ApiFailResponse(message="reply_policy must be 'auto' or 'review'", status_code=400)
     if is_prompt_send and not remote_worker_session_id:
         open_session = await RemoteWorkerSession.open_for_conversation(conversation_id)
@@ -1201,6 +1199,17 @@ async def handle_add_message(
     return ApiSuccessResponse(data=_fm_response_fields(reply_fm, conv))
 
 
+def _reply_policy_of(body: dict) -> Optional[str]:
+    """The session reply policy a send proposes (default auto); None when invalid."""
+    from flow_sdk.builtin.remote_worker_session import ReplyPolicy  # noqa: PLC0415
+
+    raw = str(body.get("reply_policy") or "").strip() or ReplyPolicy.AUTO.value
+    try:
+        return ReplyPolicy(raw).value
+    except ValueError:
+        return None
+
+
 async def handle_start_live_session(conversation_id: str, body: dict, someone_typeid: str) -> ApiResponse:
     """Open the conversation's live session before any prompt — answer the session.
 
@@ -1218,8 +1227,8 @@ async def handle_start_live_session(conversation_id: str, body: dict, someone_ty
     from flow_sdk.builtin.remote_worker_session import (  # noqa: PLC0415
         RemoteWorkerSession,
         RemoteWorkerSessionStatus,
-        ReplyPolicy,
     )
+    from flow_sdk.schema.data_spec.session_spec import SessionStartSettings  # noqa: PLC0415
 
     conv = await Conversation.get_one({"id": conversation_id})
     if conv is None:
@@ -1228,10 +1237,8 @@ async def handle_start_live_session(conversation_id: str, body: dict, someone_ty
     if open_session is not None:
         return ApiSuccessResponse(data=open_session.model_dump(mode="json"))
 
-    raw_policy = str(body.get("reply_policy") or "").strip() or ReplyPolicy.AUTO.value
-    try:
-        reply_policy = ReplyPolicy(raw_policy).value
-    except ValueError:
+    reply_policy = _reply_policy_of(body)
+    if reply_policy is None:
         return ApiFailResponse(message="reply_policy must be 'auto' or 'review'", status_code=400)
 
     sender = await User.current_sender_participant(None)
@@ -1261,7 +1268,7 @@ async def handle_start_live_session(conversation_id: str, body: dict, someone_ty
         someone_typeid,
         # Read on BOTH sides (the guest's session view shows it too): no "your".
         text=f"{sender_name or 'Your collaborator'} asks {host_name or 'the host'} for a live session",
-        marker_extra={SESSION_START_MARKER_KEY: {"reply_policy": reply_policy}},
+        marker_extra={SESSION_START_MARKER_KEY: SessionStartSettings(reply_policy=reply_policy).model_dump()},
     )
     if starting_id:
         session.starting_message_id = starting_id

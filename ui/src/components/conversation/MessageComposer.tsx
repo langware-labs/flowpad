@@ -309,12 +309,8 @@ export function MessageComposer({
     if (!trimmed && files.length === 0 && assetRefs.length === 0) {
       return;
     }
-    // A prompt send — a follow-up inside a session view, or a NEW session from
-    // the conversation composer in live-session mode. The typed text IS the prompt
-    // that runs on the host, so it rides as a PROMPT attachment (not a plain
-    // body): the host's gate keys on the attachment, and the backend
-    // synthesizes the placeholder body. A new session's opening proposal
-    // (reply policy) rides along; the backend mints the session id.
+    // Inside a session view every send is a prompt: it rides as a PROMPT
+    // attachment (the host's gate keys on it; the backend synthesizes the body).
     const isPromptSend = !!trimmed && !!liveSessionId;
     const messageBody = isPromptSend ? '' : trimmed;
     const outgoingFiles = isPromptSend ? undefined : files.length > 0 ? files : undefined;
@@ -323,7 +319,6 @@ export function MessageComposer({
           text: trimmed,
           files,
           sessionId: liveSessionId ?? null,
-          replyPolicy: null,
         })
       : {};
     // Assets (skill/agent/markdown/spec) ride as assetReferences.
@@ -388,7 +383,7 @@ export function MessageComposer({
             Object.keys(extras).length > 0 ? extras : undefined,
           );
           if (replyTo) onClearReply?.();
-          if (taskItOn && sent.id && !isPromptSend) {
+          if (taskItOn && sent.id) {
             onTaskIt?.({
               id: sent.id,
               text: messageBody,

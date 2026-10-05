@@ -195,8 +195,6 @@ _SESSION_EVENT_TEXTS = {
     "ended": "{actor} ended the live session",
     "prompt_bounced": "Live session is paused — prompt not run",
     "settings_changed": "{actor} changed the session settings",
-    # The guest's line (it opens a session before any prompt) — sent with its own text.
-    "requested": "{actor} was asked for a live session",
 }
 
 
@@ -1122,16 +1120,7 @@ async def process_inbound_prompt(fm_id: str, conversation_id: str) -> None:
         if not getattr(conv, "project_id", None) and not getattr(fm, "remote_worker_session_id", None):
             return
 
-        someone_typeid = str(TypeId(type="user", id=local_id)) if local_id else ""
-        # The host's identity on the session is the CLOUD user id — the id the
-        # guest's roster carries and the UI compares against (`isHost`); the
-        # local user is the fallback. One resolver for that chain.
-        from flow_sdk.builtin.user import User  # noqa: PLC0415
-
-        who = await User.current_sender_participant()
-        host_id = who.get("user_id") or local_id
-        host_name = who.get("name") or None
-        session = await resolve_or_mint_session(fm, conv, host_user_id=host_id, host_name=host_name)
+        session, host_id, someone_typeid = await _host_session_for(fm, conv, local_id)
 
         needs_consent = session.status in UNAPPROVED_STATUSES or not session.status
         standing = needs_consent and await _standing_grant(conv, host_id, fm.sender_id)
@@ -1162,12 +1151,11 @@ async def process_inbound_prompt(fm_id: str, conversation_id: str) -> None:
 
 async def _standing_grant(conv: "Conversation", host_id: Optional[str], sender_id: Optional[str]) -> bool:
     """Does the host hold a standing grant pre-approving this guest's sessions?"""
-    from flow_sdk.builtin.contact_permission import ContactPermission, PermissionAction, _grants  # noqa: PLC0415
+    from flow_sdk.builtin.contact_permission import ContactPermission, PermissionAction  # noqa: PLC0415
 
     # Roster ids are CLOUD ids — exclude the host's cloud id, not the local one.
     peer_id, _peer_name, contact_email = _peer_of(conv, host_id)
-    return _grants(
-        await ContactPermission.get_all(),
+    return await ContactPermission.grants(
         action=PermissionAction.AUTO_APPROVE_SESSION.value,
         contact_user_id=sender_id,
         contact_email=contact_email if peer_id == sender_id else None,
@@ -1193,6 +1181,24 @@ async def _approve_by_standing_grant(session: "RemoteWorkerSession", someone_typ
     return await session.approve(via=ApprovedVia.STANDING_GRANT, someone_typeid=someone_typeid)
 
 
+async def _host_session_for(
+    fm: "FlowMessage", conv: "Conversation", local_id: Optional[str]
+) -> tuple["RemoteWorkerSession", Optional[str], str]:
+    """The host side of an inbound session message: (session, host id, someone).
+
+    The host's identity on the session is the CLOUD user id — the id the guest's
+    roster carries and the UI compares against (``isHost``); the local user is
+    the fallback. One resolver for that chain, shared by prompts and requests.
+    """
+    from flow_sdk.builtin.user import User  # noqa: PLC0415
+
+    who = await User.current_sender_participant()
+    host_id = who.get("user_id") or local_id
+    session = await resolve_or_mint_session(fm, conv, host_user_id=host_id, host_name=who.get("name") or None)
+    someone_typeid = str(TypeId(type="user", id=local_id)) if local_id else ""
+    return session, host_id, someone_typeid
+
+
 async def process_session_request(fm_id: str, conversation_id: str) -> None:
     """The host side of a guest's ``requested`` line (a session opened before any prompt).
 
@@ -1205,7 +1211,6 @@ async def process_session_request(fm_id: str, conversation_id: str) -> None:
         from flow_sdk.builtin.conversation import Conversation  # noqa: PLC0415
         from flow_sdk.builtin.flow_message import FlowMessage  # noqa: PLC0415
         from flow_sdk.builtin.remote_worker_session import UNAPPROVED_STATUSES  # noqa: PLC0415
-        from flow_sdk.builtin.user import User  # noqa: PLC0415
         from flow_sdk.server.routes.bootstrap import get_or_create_local_user  # noqa: PLC0415
 
         fm = await FlowMessage.get_one({"id": fm_id})
@@ -1216,14 +1221,11 @@ async def process_session_request(fm_id: str, conversation_id: str) -> None:
         local_id = local_user.id if local_user else None
         if fm.sender_id and local_id and fm.sender_id == local_id:
             return  # our own request
-        who = await User.current_sender_participant()
-        host_id = who.get("user_id") or local_id
-        session = await resolve_or_mint_session(fm, conv, host_user_id=host_id, host_name=who.get("name") or None)
+        session, host_id, someone_typeid = await _host_session_for(fm, conv, local_id)
         logger.info("[session] request fm=%s session=%s status=%s", fm.id, session.id, session.status)
         if session.status not in UNAPPROVED_STATUSES:
             return
         if await _standing_grant(conv, host_id, fm.sender_id):
-            someone_typeid = str(TypeId(type="user", id=local_id)) if local_id else ""
             await _approve_by_standing_grant(session, someone_typeid)
     except Exception as e:  # noqa: BLE001
         logger.warning("[session] process_session_request failed: %s", e, exc_info=True)

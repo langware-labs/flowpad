@@ -32,13 +32,9 @@ import { useEntity } from '@src/hooks/entity-hooks/useEntity';
 import { truncate } from '@src/components/hooks/event-summaries';
 import { LatestScroll } from '@src/components/conversation/LatestScroll';
 import { useApproveLiveSession } from './useApproveLiveSession';
-import {
-  carriesPrompt,
-  failedPromptOf,
-  promptTextOf,
-  resultTextOf,
-  sessionEventOf,
-} from '@src/components/conversation/session-turns';
+import { failedPromptOf, promptTextOf, resultTextOf } from '@src/components/conversation/session-turns';
+import { isPromptMessage } from '@src/components/conversation/attachment-actions/prompt-attachment';
+import { sessionRole } from '@src/hooks/useConversationSessions';
 import { useRetryFailedPrompt } from '@src/components/conversation/useRetryFailedPrompt';
 
 /**
@@ -186,16 +182,12 @@ export function LiveSessionView({ sessionId }: { sessionId: string }) {
   // The session is named after its first prompt (a session opened before any
   // prompt starts with its `requested` line, which names nothing). Memoized: the
   // scan reads every message's attachments, on a list that grows.
-  const firstPrompt = useMemo(() => messages.find((m) => carriesPrompt(m)) ?? null, [messages]);
+  const firstPrompt = useMemo(() => messages.find((m) => isPromptMessage(m)) ?? null, [messages]);
 
   const { approve, picker: approvePicker } = useApproveLiveSession();
   const retryFailedPrompt = useRetryFailedPrompt();
   // The prompt the host failed to run and nothing answered since — its failed line offers Retry.
   const failed = useMemo(() => failedPromptOf(messages), [messages]);
-  const lastFailedLine = useMemo(
-    () => [...messages].reverse().find((m) => sessionEventOf(m) === 'failed') ?? null,
-    [messages],
-  );
 
   const runAction = useCallback(
     async (verb: string, fn: () => Promise<void>) => {
@@ -218,7 +210,7 @@ export function LiveSessionView({ sessionId }: { sessionId: string }) {
     );
   }
 
-  const isHost = session.isHost(cloudUser?.id ?? null) || !!session.host_process_id;
+  const isHost = sessionRole(session, cloudUser?.id) === 'host';
   const status = session.status;
   const terminal = isSessionTerminal(status);
   const hostName = session.host_name ?? 'the host';
@@ -442,7 +434,7 @@ export function LiveSessionView({ sessionId }: { sessionId: string }) {
             {messages.map((fm) => {
               if (fm.kind === FlowMessageKind.SESSION_EVENT) {
                 const retry =
-                  !isHost && failed && conversationId && sessionEventOf(fm) === 'failed' && fm === lastFailedLine
+                  !isHost && failed && conversationId && fm === failed.line
                     ? () => void runAction('retry', () => retryFailedPrompt(conversationId, sessionId, failed.text))
                     : undefined;
                 return (

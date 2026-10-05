@@ -445,7 +445,9 @@ export function ConversationView({
       const fm = item.kind === ConversationItemKind.POINTER ? messagesById.get(item.messageId) : item.draft;
       const sid = fm?.remote_worker_session_id;
       if (!fm || !sid) continue;
-      bySession.set(sid, [...(bySession.get(sid) ?? []), fm]);
+      const fms = bySession.get(sid);
+      if (fms) fms.push(fm);
+      else bySession.set(sid, [fm]);
     }
     return new Map([...bySession].map(([sid, fms]) => [sid, failedPromptOf(fms)]));
   }, [orderedItems, messagesById]);
@@ -731,7 +733,6 @@ export function ConversationView({
       !!cloudUserId &&
       !!otherParticipant?.user_id
         ? {
-            userId: otherParticipant.user_id,
             name: otherParticipant.name ?? otherParticipant.email ?? null,
             hasOpenSession: [...sessionsById.values()].some((s) => !isSessionTerminal(s.status)),
           }

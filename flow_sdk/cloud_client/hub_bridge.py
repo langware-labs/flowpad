@@ -144,20 +144,9 @@ def _has_prompt_attachment(attachments: Any) -> bool:
 def _is_session_request(attachments: Any) -> bool:
     """True iff ``attachments`` carry a guest's ``requested`` live-session line —
     a session opened before any prompt (its carrier marker names the event)."""
-    import json as _json  # noqa: PLC0415
+    from flow_sdk.builtin.flow_message import LIVE_SESSION_EVENT_MARKER_KEY, carrier_marker  # noqa: PLC0415
 
-    for att in attachments or []:
-        data = att.get("data") if isinstance(att, dict) else getattr(att, "data", None)
-        if not (isinstance(data, str) and data.startswith("remote_worker_session-")):
-            continue
-        raw = att.get("prompt_preview") if isinstance(att, dict) else getattr(att, "prompt_preview", None)
-        try:
-            marker = _json.loads(raw or "")
-        except (TypeError, ValueError):
-            continue
-        if isinstance(marker, dict) and marker.get("live_session_event") == "requested":
-            return True
-    return False
+    return (carrier_marker(attachments or []) or {}).get(LIVE_SESSION_EVENT_MARKER_KEY) == "requested"
 
 
 # In-flight bundle pulls keyed by fm_id — guards against the bridge

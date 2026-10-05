@@ -91,6 +91,9 @@ export function SessionCard({
   const guest = session?.guest_name?.trim() || t`the guest`;
   const other = role === 'host' ? guest : host;
   const Icon = iconForType(RemoteWorkerSession.type);
+  // The host answering a request; a failed prompt on a live session.
+  const answering = role === 'host' && state === 'pending';
+  const failedLive = !!lastPromptFailed && state === 'active';
 
   const status = (() => {
     switch (state) {
@@ -173,29 +176,31 @@ export function SessionCard({
           {session?.approved_at && <SinceApproved approvedAt={session.approved_at} />}
         </>
       )}
-      {lastPromptFailed && state === 'active' && (
+      {failedLive && (
         <span className="shrink-0 font-medium text-red-700 dark:text-red-300" data-testid="session-card-failed">
           <Trans>Last prompt failed</Trans>
         </span>
       )}
       <span className="ms-auto flex shrink-0 items-center gap-1.5">
-        {lastPromptFailed &&
-          state === 'active' &&
+        {failedLive &&
           button('retry', onRetry, 'border border-border text-foreground hover:bg-muted', <Trans>Retry</Trans>)}
-        {role === 'host' &&
-          state === 'pending' &&
-          button('approve', onApprove, 'bg-blue-600 text-white hover:bg-blue-500', <Trans>Approve</Trans>)}
-        {role === 'host' &&
-          state === 'pending' &&
-          button(
-            'approve-once',
-            onApproveOnce,
-            'border border-border text-foreground hover:bg-muted',
-            <Trans>Approve once</Trans>,
-          )}
-        {role === 'host' &&
-          state === 'pending' &&
-          button('decline', onDecline, 'border border-border text-foreground hover:bg-muted', <Trans>Decline</Trans>)}
+        {answering && (
+          <>
+            {button('approve', onApprove, 'bg-blue-600 text-white hover:bg-blue-500', <Trans>Approve</Trans>)}
+            {button(
+              'approve-once',
+              onApproveOnce,
+              'border border-border text-foreground hover:bg-muted',
+              <Trans>Approve once</Trans>,
+            )}
+            {button(
+              'decline',
+              onDecline,
+              'border border-border text-foreground hover:bg-muted',
+              <Trans>Decline</Trans>,
+            )}
+          </>
+        )}
         {(state === 'active' || state === 'paused') &&
           button(
             'disconnect',
