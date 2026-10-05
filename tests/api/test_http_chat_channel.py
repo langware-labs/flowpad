@@ -213,6 +213,26 @@ async def test_ask_is_one_message_and_its_answer_continuing_one_conversation(dep
     assert worker.received_prompts == ["hello there", "and again"]
 
 
+async def test_asking_again_with_the_message_id_is_the_same_message_answered_once(deployed, bootstrapped_client, worker):
+    """A hub re-asks after a 504 with its own message id: the channel holds ONE message, the agent runs one
+    turn, and the re-ask gets that turn's answer -- not a second copy answered (or refused) again."""
+    agent, _deployment, chat = deployed
+    ask = {"text": "only once", "message_id": "wamid.ONE"}
+    first = await bootstrapped_client.post(f"/api/v1/graph/agent/{agent.id}/ask", json=ask)
+    assert first.status_code == 200, first.text
+    conversation_id = first.json()["data"]["conversation_id"]
+
+    again = await bootstrapped_client.post(
+        f"/api/v1/graph/agent/{agent.id}/ask", json={**ask, "conversation_id": conversation_id}
+    )
+
+    assert again.status_code == 200, again.text
+    assert again.json()["data"]["answer"] == first.json()["data"]["answer"]
+    assert worker.received_prompts == ["only once"]
+    asked = [i for i in await SourceItem.get_all({"data_source_id": chat.backend.data_source_id}) if i.body == "only once"]
+    assert len(asked) == 1
+
+
 async def test_ask_refuses_no_text_and_a_disabled_agent(deployed, bootstrapped_client):
     agent, _deployment, _chat = deployed
     empty = await bootstrapped_client.post(f"/api/v1/graph/agent/{agent.id}/ask", json={"text": "  "})

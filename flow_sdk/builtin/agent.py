@@ -1200,7 +1200,7 @@ class Agent(Entity):
 
     @action.post(action_name="ask")
     async def ask_action(self):
-        """`POST /agent/<id>/ask {"text", "conversation_id"?}` → `{answer, conversation_id}` — one message to
+        """`POST /agent/<id>/ask {"text", "conversation_id"?, "message_id"?}` → `{answer, conversation_id}` — one message to
         this agent and its reply.
 
         What a hub uses to talk to the agent it placed on this machine (a person's WhatsApp message, routed
@@ -1229,8 +1229,12 @@ class Agent(Entity):
         endpoint = await ServiceEndpoint.find_existing(str(deployment.typeid), CHAT)
         if endpoint is None:
             return ApiFailResponse(message="this agent's chat channel could not be made", status_code=500)
-        request = {"messages": [{"role": "user", "content": text}],
-                   "metadata": {"conversation_id": str(body.get("conversation_id") or "")}}
+        # ``message_id`` names the caller's message, so asking again (after a 504) waits on the SAME
+        # message and its reply -- a fresh copy would be a second turn, answered twice or refused.
+        metadata = {"conversation_id": str(body.get("conversation_id") or "")}
+        if str(body.get("message_id") or "").strip():
+            metadata["message_id"] = str(body["message_id"]).strip()
+        request = {"messages": [{"role": "user", "content": text}], "metadata": metadata}
         outcome = await service_channel.ask(endpoint, "hub", request)
         if not isinstance(outcome, tuple):
             detail = json.loads(bytes(outcome.body) or b"{}").get("error") or {}
