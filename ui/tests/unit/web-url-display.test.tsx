@@ -29,6 +29,7 @@ vi.mock('@src/components/persistent-iframe', async () => {
 const { WebUrlDisplay } = await import('@src/components/web-url-display/WebUrlDisplay');
 const { classifyWebpageStatus } = await import('@src/components/web-url-display/classify');
 const { clearWebpageStatusCache } = await import('@src/components/web-url-display/useWebpageStatus');
+const { dataManager, pointerForWebUrl, TypeId } = await import('@sdk');
 
 const URL_ = 'https://github.com/langware-labs/flowpad-hub/pull/1138';
 
@@ -134,6 +135,32 @@ describe('WebUrlDisplay', () => {
 
     mocks.post.mockResolvedValueOnce(status({}));
     fireEvent.click(screen.getByTestId('web-url-retry'));
+    await waitFor(() => expect(mocks.post).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(screen.queryByTestId('web-url-warning')).toBeNull());
+  });
+
+  it('looks again when the backend shows this page again — a repaired server', async () => {
+    // An auto_open op whose agent rung brought the server back navigates again:
+    // a live `on_show` with the same web-app pointer. No click.
+    mocks.post.mockResolvedValueOnce(status({ reachable: false, http_status: null, nav_error: 'connection_refused' }));
+    render(<WebUrlDisplay url={URL_} />);
+    expect((await screen.findByTestId('web-url-warning')).getAttribute('data-issue')).toBe('unreachable');
+
+    const session = new TypeId('agentic_process', '0b9a3f0e-1c2d-4e5f-8a6b-7c8d9e0f1a2b');
+    dataManager.emit('on_entity_event', session, 'on_show', {
+      kind: 'dock',
+      view_type: 'web-app',
+      pointer: pointerForWebUrl('https://example.com/other'),
+    });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(mocks.post).toHaveBeenCalledTimes(1);
+
+    mocks.post.mockResolvedValueOnce(status({}));
+    dataManager.emit('on_entity_event', session, 'on_show', {
+      kind: 'dock',
+      view_type: 'web-app',
+      pointer: pointerForWebUrl(URL_),
+    });
     await waitFor(() => expect(mocks.post).toHaveBeenCalledTimes(2));
     await waitFor(() => expect(screen.queryByTestId('web-url-warning')).toBeNull());
   });
