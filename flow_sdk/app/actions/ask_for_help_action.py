@@ -181,6 +181,10 @@ async def _write_opening_message(conv, task, ask: AskForHelpRequest, files, some
 
     chips = [*ask.context, *([str(task.typeid)] if task else [])]
     text = ask.text.strip()
+    asked_title = ask.title.strip()
+    if task and asked_title and task.title != asked_title and text.startswith(asked_title):
+        # The task took the next free title ("… (2)"): the message names the task it carries.
+        text = task.title + text[len(asked_title) :]
     if conv.kind == ConversationKind.HELPDESK.value or conv.kind == ConversationKind.HELPDESK:
         # A guest cannot list a ticket's messages on the desk before staff pick it up, so the
         # session the asker CHOSE to attach also travels as text the desk can read at once.

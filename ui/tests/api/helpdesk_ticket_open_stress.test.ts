@@ -1,6 +1,6 @@
 /**
  * Stress HARNESS (records, does not assert): opening support tickets, through the call the
- * Help desk dialog makes (`startHelpdeskTicket(text, project.id)`), on a real hub-logged-in
+ * Help desk dialog makes (`askForHelp` to a desk, from `project.id`), on a real hub-logged-in
  * backend. Every open is
  * recorded (text, project, returned conversation + desk, error, ms) to STRESS_OUT so the
  * requester's local rows and the desk's queue can be checked against it.
@@ -9,7 +9,7 @@
  *      vitest --project api <this>
  */
 import fs from 'node:fs';
-import { startHelpdeskTicket } from '@sdk';
+import { askForHelp } from '@sdk';
 import { afterAll, beforeEach, describe, it } from 'vitest';
 import { errorMessage } from '@src/lib/error-message';
 import { hubLoggedInSetup } from '../utils/ask-for-help';
@@ -33,9 +33,9 @@ async function open(scenario: string, text: string, projectId: string | null = P
   const started = performance.now();
   const outcome: Outcome = { scenario, text, projectId, ms: 0 };
   try {
-    const res = await startHelpdeskTicket(text, projectId);
+    const res = await askForHelp({ recipient: { kind: 'desk' }, text, project_id: projectId });
     outcome.conversationId = res.conversation_id;
-    outcome.deskId = res.project_id;
+    outcome.deskId = res.delivery.failure ? undefined : 'delivered';
   } catch (e) {
     outcome.error = errorMessage(e, String(e));
   }

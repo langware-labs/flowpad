@@ -51,6 +51,7 @@ export * from './siteconfig';
 export * from './conversation';
 export * from './conversation-send';
 export * from './helpdesk';
+export * from './help-request';
 export * from './contact-permission';
 export * from './contacts-group';
 export * from './tag';

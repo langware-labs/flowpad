@@ -5,7 +5,7 @@
  *   dev-1 = GUEST (opens a support ticket)   dev-2 = STAFF (answers it)
  *
  * Proves the v1 contract AND the authorization hardening:
- *   1. The guest opens a ticket via `startHelpdeskTicket` — routed through the
+ *   1. The guest opens a ticket via `askForHelp` (to a desk) — routed through the
  *      hub help desk project, landing locally as a `kind=helpdesk`, remote
  *      conversation. The guest gets only a minimal `guest` role on it.
  *   2. A guest CANNOT enumerate the staff queue (`helpdesk_conversations`) or
@@ -95,7 +95,7 @@ beforeEach((context: any) => {
 const openedTickets: string[] = [];
 
 async function openTicket(text: string): Promise<{ conversation_id: string }> {
-  const started = await guest.sdk.startHelpdeskTicket(text);
+  const started = await guest.sdk.askForHelp({ recipient: { kind: 'desk' }, text });
   if (started?.conversation_id) openedTickets.push(started.conversation_id);
   return started;
 }

@@ -1536,7 +1536,9 @@ async def _hub_default_helpdesk() -> Optional[HelpdeskTarget]:
     portal = info.get("helpdesk_portal_git_url")
     target = HelpdeskTarget(pid, portal if isinstance(portal, str) and portal.strip() else None)
     if target != _last_known_desk():
-        write_instance_pref(LAST_KNOWN_DESK_PREF, {"project_id": target.project_id, "portal_git_url": target.portal_git_url})
+        write_instance_pref(
+            LAST_KNOWN_DESK_PREF, {"project_id": target.project_id, "portal_git_url": target.portal_git_url}
+        )
     return target
 
 
@@ -1573,58 +1575,6 @@ async def resolve_helpdesk(project_id: Optional[str] = None) -> Optional[Helpdes
     return await _hub_default_helpdesk()
 
 
-async def _ticket_context_typeids(project_id: Optional[str]) -> tuple[list[str], Optional[str]]:
-    """``(context_typeids, session_typeid)`` for a ticket.
-
-    The context list is what the desk needs to triage: the requester's project,
-    the agent session they were running when they asked, and that session's
-    transcript. The session typeid is returned separately because it is also
-    the thing whose BYTES get attached — naming a transcript and shipping one
-    are different jobs, and only the second gives the assignee something to
-    open.
-
-    Best-effort by design — a ticket must never fail to open because context
-    could not be gathered. Returns ``([], None)`` rather than raising.
-
-    The session is resolved as the project's most recently active
-    ``AgenticProcess``, which is what "what was I doing when this went wrong"
-    means from the requester's side.
-    """
-    out: list[str] = []
-    session_typeid: Optional[str] = None
-    if not project_id:
-        return out, session_typeid
-    try:
-        from flow_sdk.builtin.project import Project  # noqa: PLC0415
-
-        project = await Project.get_by_id(project_id)
-        if project is None:
-            return out, session_typeid
-        out.append(str(project.typeid))
-
-        from flow_sdk.builtin.agentic_process.agentic_process import (  # noqa: PLC0415
-            AgenticProcess,
-        )
-
-        # AgenticProcess is project-FIELD scoped, not graph-scoped — a scoped
-        # query returns 0 rows. Filter on the field.
-        processes = await AgenticProcess.get_all({"project_id": project_id})
-        latest = max(
-            (p for p in processes if getattr(p, "updated_date", None)),
-            key=lambda p: p.updated_date,
-            default=None,
-        )
-        if latest is not None:
-            out.append(str(latest.typeid))
-            session_id = getattr(latest, "session_id", None)
-            if session_id:
-                session_typeid = f"claude_session-{session_id}"
-                out.append(session_typeid)
-    except Exception as e:  # noqa: BLE001
-        logger.info("[helpdesk-start-ticket] context gather skipped: %s", e)
-    return out, session_typeid
-
-
 #: How much transcript rides with a ticket. Enough for an assignee to see what
 #: the agent actually tried; short enough that a desk is not handed a customer's
 #: entire working session. The tail, not the head — the failure is at the end.
@@ -1632,22 +1582,11 @@ TICKET_TRANSCRIPT_CHARS = 4000
 
 
 async def _ticket_transcript_excerpt(session_typeid: Optional[str]) -> Optional[str]:
-    """A readable tail of the requester's session, for the ticket body.
+    """A readable tail of a session the asker attached, for the ticket's text.
 
-    A support ticket cannot carry the transcript as BYTES. The requester holds
-    the ``guest`` role on someone else's desk, and that role is deliberately
-    narrow — it permits ``start_guest_conversation`` and nothing else. A guest
-    can read the conversation they opened but cannot list its child messages
-    (the children route 401s), so there is no local message to attach a body
-    to and no way to address one on the hub. The bundle path
-    (``agenticProcessShareSource`` → ``upload_body``) needs both.
-
-    Sending the text is what makes the ticket answerable inside the permissions
-    that exist. The ``type_id`` attachment still travels alongside it, so once
-    the assignee picks the ticket up — and both sides are participants — the
-    full session can be pulled through the ordinary share path.
-
-    Best-effort: an unreadable or missing transcript yields ``None``.
+    A desk can read a ticket's text before anyone picks it up, but not its attachments — so the
+    session the person CHOSE to include also travels as text (``ask-for-help`` builds it only from
+    a session named in the request's context). Best-effort: unreadable or missing yields ``None``.
     """
     if not session_typeid or not session_typeid.startswith("claude_session-"):
         return None
@@ -1693,182 +1632,11 @@ async def _ticket_transcript_excerpt(session_typeid: Optional[str]) -> Optional[
         return None
 
 
-async def _adopt_opening_line(conv_id: str, conv_data: dict, text: str) -> None:
-    """Land the ticket's opening line — the guest's own words — locally.
-
-    The hub fans a message out to every participant BUT its sender, and a
-    guest may not list a ticket's children (their role is read + add_message
-    + leave, so they cannot enumerate the staff behind the brand). So the one
-    message nobody will ever push to the guest is the one they wrote to open
-    the ticket. ``add_message`` returns the stored row for exactly this reason;
-    ``start_guest_conversation`` returns the conversation alone.
-
-    Two sources, in order: the hub's own answer (``first_message``, once the
-    hub ships it), else the class-level message list the guest IS allowed to
-    read — it spans their tickets without naming a conversation, so the
-    opening line is found by what only its author knows: my id, my exact
-    text, written no earlier than the ticket. Idempotent: a row already here
-    (a member requester whose listing succeeded) is left alone.
-    ``_process_single_hub_message`` files the row under the ticket and
-    appends its pointer; nothing here repeats that.
-    """
-    from flow_sdk.db.drivers.query import QueryFilter  # noqa: PLC0415
-
-    if await FlowMessage.get_all(QueryFilter(match={"conversation_id": conv_id}, limit=1), hydrate=False):
-        return
-    raw = conv_data.get("first_message")
-    if not isinstance(raw, dict) or not raw.get("id"):
-        me = await _current_cloud_user_id()
-        since = str(conv_data.get("created_date") or "")
-        raw = min(
-            (
-                r
-                for r in (await _fetch_raw_messages_from_hub(since or None) or [])
-                if str(r.get("sender_id") or "") == (me or "")
-                and str(r.get("text") or "").strip() == text.strip()
-                and str(r.get("created_date") or "") >= since
-            ),
-            key=lambda r: str(r.get("created_date") or ""),
-            default=None,
-        )
-    if not raw:
-        logger.warning("[helpdesk-start-ticket] %s: opening line not found on the hub", conv_id[:8])
-        return
-    await _process_single_hub_message({**raw, "conversation_id": raw.get("conversation_id") or conv_id})
-
-
 def _ticket_title(text: str) -> str:
     """A ticket's title for a hub that does not title it: the first line, cut to 60 and "…"
     — the hub's own rule (``Project.start_guest_conversation``)."""
     line = next((part.strip() for part in text.splitlines() if part.strip()), text)
     return line if len(line) <= 60 else f"{line[:60].rstrip()}…"
-
-
-@action.post(action_name="helpdesk-start-ticket", types=None)
-async def helpdesk_start_ticket() -> ApiResponse:
-    """Open a support ticket — a guest-authored ``helpdesk`` conversation under
-    the resolved helpdesk project.
-
-    Routes through the hub (``Project.start_guest_conversation``), then
-    materializes the conversation + first message locally as a hub-mirrored
-    ``kind=helpdesk`` row so it appears in the guest's UI immediately (the hub
-    fanout skips the sender, so the local backend is this row's source of
-    truth). Returns the new conversation id for navigation.
-    """
-    try:
-        request_info = get_current_request_info()
-        if not request_info or not request_info.someone_typeid:
-            return ApiFailResponse(message="No authenticated user in request context")
-        someone_typeid = request_info.someone_typeid
-
-        body = await request_info.get_post_data() or {}
-        text = (body.get("text") or body.get("message") or "").strip()
-        if not text:
-            return ApiFailResponse(message="text is required")
-
-        project_id = (body.get("project_id") or "").strip()
-        target = await resolve_helpdesk(project_id or None)
-        if not target:
-            return ApiFailResponse(message="Help desk is unavailable on this hub")
-        helpdesk_id = target.project_id
-
-        # Context rides with the ticket. A desk answering for someone else's
-        # project cannot triage from prose alone — "which engagement is this,
-        # and what was the agent doing?" is the first question every time, and
-        # a round trip to ask it is the difference between a ticket answered
-        # today and one answered tomorrow.
-        #
-        # ``FlowMessage.context`` is a TypeId list the hub stores without
-        # inspecting, so this needs nothing hub-side. Ids only: the desk is a
-        # different machine and cannot read the requester's disk. Transcript
-        # BYTES travel separately, through the share bundle
-        # (``agenticProcessShareSource`` → ``upload_body``) — the assignee
-        # pulls them once they pick the ticket up.
-        hub_body: dict = {"text": text}
-        ticket_context, session_typeid = await _ticket_context_typeids(project_id or None)
-        if ticket_context:
-            hub_body["context"] = ticket_context
-
-        # The session rides two ways, because neither alone is enough. The
-        # ``type_id`` attachment is the durable reference the assignee resolves
-        # after pickup; the excerpt is what makes the ticket answerable BEFORE
-        # then, since a guest cannot upload a body bundle to someone else's
-        # desk (see ``_ticket_transcript_excerpt``).
-        excerpt = await _ticket_transcript_excerpt(session_typeid)
-        if session_typeid:
-            hub_body["attachment"] = [
-                # Lowercase: the wire value is the enum VALUE (``type_id``),
-                # not its Python name. The hub validates strictly and rejects
-                # ``TYPE_ID`` with a 400.
-                {"attachment_type": "type_id", "data": session_typeid}
-            ]
-        if excerpt:
-            hub_body["text"] = f"{text}\n\n--- agent session (last {TICKET_TRANSCRIPT_CHARS} chars) ---\n{excerpt}"
-
-        try:
-            conv_data = await hub_request(
-                "POST", BuiltinEntityType.PROJECT, helpdesk_id, "start_guest_conversation", payload=hub_body
-            )
-        except HubError as e:
-            return e.fail_response("Could not open support ticket")
-        conv_id = conv_data.get("id")
-        if not conv_id:
-            return ApiFailResponse(message="Hub did not return a conversation")
-
-        from flow_sdk.cloud_client.hub_bridge import hub_ws_bridge  # noqa: PLC0415
-
-        hub_ws_bridge.remember_hub_conversation(conv_id)
-
-        from flow_sdk.app.actions.materialize_flow_message import ensure_conversation_entity  # noqa: PLC0415
-        from flow_sdk.builtin.conversation import ConversationKind  # noqa: PLC0415
-
-        # The hub titles the ticket; adopt its title so the next hub push can't flip ours.
-        title = conv_data.get("title") or _ticket_title(text)
-        # Hub-owned conversation: no local project_id (mirrors how received
-        # remote conversations materialize); carry the helpdesk project as the
-        # remote project identity for traceability.
-        await ensure_conversation_entity(
-            conv_id,
-            parent_typeid=None,
-            remote_project_id=helpdesk_id,
-            title=title,
-            someone_typeid=someone_typeid,
-        )
-
-        # Pull the first (guest) message from the hub into the local store. Do
-        # this BEFORE stamping kind/remote — the message sync re-materializes the
-        # conversation from the hub and would otherwise clobber kind back to the
-        # default. Our stamp must be the LAST write.
-        try:
-            await _fetch_conversation_messages(conv_id, someone_typeid)
-        except Exception as e:  # noqa: BLE001
-            logger.warning("[helpdesk-start-ticket] message sync failed (non-fatal): %s", e)
-        await _adopt_opening_line(conv_id, conv_data, hub_body["text"])
-
-        conv = await Conversation.get_one({"id": conv_id})
-        if conv:
-            conv.kind = ConversationKind.HELPDESK
-            conv.remote = True
-            # Carry the hub owner VERBATIM when present; never mask a genuinely
-            # null hub owner with a stale local value. Reflection keeps the
-            # save from re-stamping updated_by with the local user.
-            if conv_data.get("initiated_by") is not None:
-                conv.created_by = conv_data["initiated_by"]
-            with remote_reflection():
-                await conv.save(someone_typeid, notify=False)
-
-        return ApiSuccessResponse(
-            data={
-                "conversation_id": conv_id,
-                "project_id": helpdesk_id,
-                "context": ticket_context,
-                "session": session_typeid,
-                "transcript_included": bool(excerpt),
-            }
-        )
-    except Exception as e:
-        logger.error("[flow_message_action] helpdesk-start-ticket error: %s", e, exc_info=True)
-        return ApiFailResponse(message=f"Failed to start support ticket: {str(e)}")
 
 
 @action.post(action_name="conversation-pickup", types=None)

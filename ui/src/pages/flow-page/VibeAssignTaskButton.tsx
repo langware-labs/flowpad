@@ -9,7 +9,7 @@ import { useMyVibeTasks, type VibeTaskRow } from '@src/hooks/use-my-vibe-tasks';
 import { cn } from '@src/lib/utils';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { VibeAssignTaskDialog } from './VibeAssignTaskDialog';
+import { AskForHelpDialog } from '@src/components/help/AskForHelpDialog';
 import { workspaceToolbarButton } from './workspace-toolbar-button';
 
 /**
@@ -112,11 +112,12 @@ export function VibeAssignTaskButton({
       )}
 
       {dialogOpen && (
-        <VibeAssignTaskDialog
+        <AskForHelpDialog
           open={dialogOpen}
           onOpenChange={setDialogOpen}
           projectId={projectId}
           sessionTypeId={sessionTypeId}
+          origin="vibe"
           openTasks={rows}
           onOpenExisting={(row) => {
             setDialogOpen(false);
