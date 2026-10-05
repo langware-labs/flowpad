@@ -1,6 +1,7 @@
 /**
  * The three failures the "Ask someone for help" stress run found (2026-10-05), each on the real
- * path against a real hub-logged-in backend (run with FLOW_INSTANCE=<instance_ctl instance>).
+ * path against a real hub-logged-in backend (run with FLOW_INSTANCE=<instance_ctl instance>); on a
+ * backend with no hub login, CI's, they are skipped.
  *
  * 1. A new conversation's first message never reaches the hub. `share` pushes the conversation
  *    and `Entity.share()` flips `remote` in MEMORY, so `share_entity`'s "persist remote=True"
@@ -23,7 +24,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterAll, afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { uploadFilesToTask } from '@src/components/assets/editor/task/task-attachment-upload';
-import { askForHelp, hubLoggedInSetup, png } from '../utils/ask-for-help';
+import { askForHelp, hubLoggedInSetupOrSkip, png } from '../utils/ask-for-help';
 import { getTestSignupInfo, trackCreatedRows } from '../utils/test-utils';
 
 const HELPER = 'helper@local.test';
@@ -34,8 +35,8 @@ describe('Ask someone for help — stress-run failures', () => {
   const { created: cleanupTasks } = trackCreatedRows(Task.type);
   let projectId = '';
 
-  beforeEach(async (ctx: { task: { name: string } }) => {
-    await hubLoggedInSetup(signupInfo, ctx.task.name);
+  beforeEach(async (ctx) => {
+    await hubLoggedInSetupOrSkip(signupInfo, ctx);
     // One project for the file: `trackCreatedRows` deletes after EACH test, too early for it.
     if (!projectId) projectId = (await new Project({ name: projectDir }).save([])).id;
   });
