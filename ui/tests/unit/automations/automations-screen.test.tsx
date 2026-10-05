@@ -140,6 +140,14 @@ describe('My automations', () => {
     expect(pointer.options).toEqual({ creating: 'schedule' });
   });
 
+  it('with none of your own, Flowpad’s own are still listed, folded', () => {
+    state.automations = [automation({ id: 'b', group: 'builtin', read_only: true })];
+    render(<AutomationsView />);
+    expect(screen.getByTestId('automation-kind-gallery')).toBeTruthy();
+    fireEvent.click(screen.getByTestId('automations-builtin-toggle'));
+    expect(screen.getByTestId('automation-row-b')).toBeTruthy();
+  });
+
   it('a starter opens the builder prefilled', () => {
     render(<AutomationsView />);
     fireEvent.click(screen.getByTestId('automation-recipe-morning-briefing'));
