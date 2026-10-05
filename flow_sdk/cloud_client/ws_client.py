@@ -49,6 +49,20 @@ logger = logging.getLogger(__name__)
 AUTH_WS_STATUS_CODES = {401, 403, 412, 424}
 AUTH_WS_CLOSE_CODES = {1008}
 HUB_WS_VERIFY_TIMEOUT_SECONDS = 10.0
+
+# Frames the hub pushes on its own — fan-out, keepalive — never the reply to a request.
+_HUB_PUSH_TYPES = frozenset(
+    {"data_op_msg", "broadcast", "entity_msg", "flow_data_msg", "ping", "pong", "status_changed_msg", "tag_msg"}
+)
+
+
+def _is_hub_push(raw_message: str | bytes) -> bool:
+    """A frame the hub pushed unasked. Anything else, unparseable included, is a reply."""
+    try:
+        frame = json.loads(raw_message)
+    except (TypeError, ValueError):
+        return False
+    return isinstance(frame, dict) and frame.get("message_type") in _HUB_PUSH_TYPES
 HUB_WS_START_TIMEOUT_SECONDS = 5.0
 
 
@@ -740,8 +754,16 @@ class HubWebSocketManager:
             async with connect_hub_websocket(config or self.config, connection_id=str(uuid.uuid4())) as websocket:
                 await websocket.send(APIMessage(direct_resource_type="user").model_dump_json())
                 # The hub's opening ``ws_ready_msg`` greeting is consumed by
-                # ``connect_hub_websocket`` — the next frame is the reply.
-                raw_message = await asyncio.wait_for(websocket.recv(), timeout=HUB_WS_VERIFY_TIMEOUT_SECONDS)
+                # ``connect_hub_websocket``. The reply is the next frame that is
+                # not a push: the hub may fan out a ``data_op_msg`` (e.g. a
+                # conversation just shared) to this socket first, and reading
+                # that as the reply failed verification. One budget for the lot.
+                deadline = asyncio.get_running_loop().time() + HUB_WS_VERIFY_TIMEOUT_SECONDS
+                while True:
+                    remaining = deadline - asyncio.get_running_loop().time()
+                    raw_message = await asyncio.wait_for(websocket.recv(), timeout=max(remaining, 0))
+                    if not _is_hub_push(raw_message):
+                        break
         except HubWebSocketAuthError:
             await self._set_state(
                 HubConnectionStatus.AUTH_REJECTED,
