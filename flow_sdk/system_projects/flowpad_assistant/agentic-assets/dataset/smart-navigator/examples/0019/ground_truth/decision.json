@@ -4,5 +4,6 @@
     "kind": "view",
     "value": "assets/list/skill"
   },
-  "verb": "show"
+  "verb": "show",
+  "confidence": null
 }

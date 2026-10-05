@@ -14,6 +14,7 @@ from flow_sdk.schema.data_spec.api_endpoint_spec import APIEndpointOffer
 from flow_sdk.schema.data_spec.decision_spec import ChoiceAnswer, DecisionResult
 
 PATH = "/api/v1/graph/compute_node/@local/decision"
+NAV = "/api/v1/graph/compute_node/@local/navigator-route"
 SPEC = {
     "state": {"utterance": "open data sources"},
     "questions": {"target": {"type": "choice", "instructions": "?", "options": {"a": "A", "agentic": "else"}}},
@@ -83,3 +84,38 @@ async def test_a_failure_carries_its_closed_reason(bootstrapped_client, hub, rea
     assert body["status"] == "FAIL"
     assert body["data"] == {"reason": reason}
     assert (body.get("status_code") or r.status_code) == status
+
+
+@pytest.mark.asyncio
+async def test_navigator_route_reads_where_the_active_tab_is(bootstrapped_client, monkeypatch):
+    """The magic line sends only what was typed; the route reads the tab's own browser context as
+    ``navigation.here`` -- its address, and the entity open there."""
+    import flow_sdk.decision as decision
+    from flow_sdk.server.routes import websocket
+
+    specs: list = []
+
+    async def _decide(spec, *, endpoint=None):
+        specs.append(spec)
+        return DecisionResult(answers={"target": ChoiceAnswer(choice="agentic", confidence=0.99)})
+
+    async def _endpoints(**kwargs):
+        return [OFFER]
+
+    monkeypatch.setattr(decision, "decide", _decide)
+    monkeypatch.setattr(decision, "decision_endpoints", _endpoints)
+    asset = "markdown-0d5e6f7a-8b9c-4d4e-8f5a-6b7c8d9e0f1a"
+    url = f"/dock/assets/{asset}?viewMode=edit"
+    monkeypatch.setattr(
+        websocket,
+        "_active_connections",
+        {
+            "tab-1": websocket.ConnectionInfo(
+                ws=object(), is_tab=True, browser_context={"CurrentUrl": url, "CurrentActiveEntityTypeId": asset}
+            )
+        },
+    )
+    body = (await bootstrapped_client.post(f"{NAV}", json={"utterance": "summarize this doc"})).json()
+    assert body["data"]["route"] == "agentic"
+    assert specs[0].state["page"] == url and specs[0].state["context"]["entity"]["typeid"] == asset
+    assert f"entity:{asset}" in specs[0].questions["target"].options, "what is open is offered as 'this'"

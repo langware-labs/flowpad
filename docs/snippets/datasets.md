@@ -18,13 +18,16 @@ pinned by `tests/unit/test_data_spec/test_declared_kinds.py`,
 ```
 dataset/smart-navigator/
   dataset.json                          # metadata.spec: "navigator.dataset"
+  map.json                              # reference: the navigation map, for browsing
   agentic-assets/
+    data_spec/navigation.map/ .place/ .subplace/   # the map (screens)
+    data_spec/navigation.here/ .ref/ .shown/       # you are here
     data_spec/navigator.dataset/        # {"examples": {"input": "navigator.request", ...}}
       agentic-assets/data_spec/
         navigator.request/  navigator.context/  navigator.decision/
     webapp/editor/                      # optional: the dataset's own editor
   examples/0001/
-    input/request.json  context/context.json  ground_truth/decision.json  example.json
+    input/request.json  context/candidates/  ground_truth/decision.json  example.json
 ```
 
 ```json
@@ -47,6 +50,7 @@ nav = Dataset.at(SHIPPED)                 # the entity from disk alone -- no ind
 summary = (nav.spec, nav.num_examples, nav.kind_counts)   # ('navigator.dataset', 52, {'eval': 50, 'test': 2})
 rows = nav.read_rows()
 first = rows[0].input.utterance           # 'open data sources'
+where = rows[0].input.here.view           # 'home' -- the navigation.here it was typed on
 problems = nav.validate_rows()            # [] -- every row fits navigator.dataset
 ```
 

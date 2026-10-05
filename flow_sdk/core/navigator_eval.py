@@ -8,7 +8,7 @@ The metrics are the ones the routing benchmark settled the design with:
 * **confident-wrong** -- quick answers at >= ``MIN_CONFIDENCE`` that open the wrong thing: the
   failure the design exists to avoid.
 
-Each row is run on ITS OWN recorded context and search candidates, so a run is judged on the
+Each row is run on ITS OWN recorded ``here`` and search candidates, so a run is judged on the
 options the row was labelled against, not on whatever this machine's search finds today.
 """
 
@@ -25,8 +25,6 @@ from flow_sdk.datasets.score import golds, is_correct, matches, score
 SHIPPED = Path(__file__).resolve().parents[1] / (
     "system_projects/flowpad_assistant/agentic-assets/dataset/smart-navigator"
 )
-#: ``navigator.context`` fields the navigator reads as context (the rest is description).
-_CONTEXT_KEYS = ("CurrentProjectTypeId", "CurrentProcessTypeId", "CurrentActiveEntityTypeId", "active_entity_title")
 
 
 def decision_of(answer: NavigatorRoute) -> dict:
@@ -86,12 +84,8 @@ async def evaluate(dataset: Any) -> dict:
         ctx = row.context.model_dump(mode="json") if row.context is not None else {}
         candidates = [c for c in (ctx.get("candidates") or []) if c.get("typeid")]
         started = time.perf_counter()
-        answer = await route(
-            row.input.utterance,
-            page=row.input.page or "",
-            context={k: ctx[k] for k in _CONTEXT_KEYS if ctx.get(k)},
-            candidates=candidates,
-        )
+        here = row.input.here.model_dump(mode="json", exclude_none=True) if row.input.here else None
+        answer = await route(row.input.utterance, here=here, candidates=candidates)
         timed.append((time.perf_counter() - started) * 1000)
         ran.append(row.model_copy(update={"output": out_type.model_validate(decision_of(answer))}))
     report = metrics(ran)

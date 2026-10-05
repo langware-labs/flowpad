@@ -4,5 +4,6 @@
     "kind": "view",
     "value": "tasks"
   },
-  "verb": "show"
+  "verb": "show",
+  "confidence": null
 }

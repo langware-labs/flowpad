@@ -4,5 +4,6 @@
     "kind": "entity",
     "value": "agent-3a8b9c0d-1e2f-4a7b-9c8d-9e0f1a2b3c4d"
   },
-  "verb": "show"
+  "verb": "show",
+  "confidence": null
 }

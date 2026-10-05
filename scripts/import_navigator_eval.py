@@ -22,15 +22,38 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO))
-CONTEXT_KEYS = (
-    "CurrentProjectTypeId",
-    "CurrentProcessTypeId",
-    "CurrentActiveEntityTypeId",
-    "active_entity_title",
-    "project_name",
-    "project_path",
-    "last_shown",
-)
+
+
+def here_of(page: str | None, ctx: dict) -> dict | None:
+    """A case's page + context slots as a ``navigation.here``: the place its page names, and the
+    project, session, open entity and last display it recorded."""
+    from flow_sdk.core.dock_address import parse_dock_url
+
+    here: dict = {}
+    if page and (addr := parse_dock_url(page)) is not None:
+        here = {"view": addr.view_type.value, "pointer": addr.pointer, "page": addr.page.value, "address": page}
+    if ctx.get("CurrentProjectTypeId"):
+        here["project"] = {
+            "typeid": ctx["CurrentProjectTypeId"],
+            "title": ctx.get("project_name"),
+            "path": ctx.get("project_path"),
+        }
+    entity = ctx.get("CurrentActiveEntityTypeId")
+    if ctx.get("CurrentProcessTypeId"):
+        here["process"] = {"typeid": ctx["CurrentProcessTypeId"]}
+        if ctx["CurrentProcessTypeId"] == entity:
+            here["process"]["title"] = ctx.get("active_entity_title")
+    if entity:
+        here["entity"] = {"typeid": entity, "title": ctx.get("active_entity_title")}
+    if ctx.get("last_shown"):
+        here["last_shown"] = ctx["last_shown"]
+    return _drop_none(here) or None
+
+
+def _drop_none(value):
+    if isinstance(value, dict):
+        return {k: _drop_none(v) for k, v in value.items() if v is not None}
+    return value
 
 
 def decision(key: str, verb: str | None) -> dict:
@@ -42,12 +65,11 @@ def decision(key: str, verb: str | None) -> dict:
 
 
 def row(case: dict) -> dict:
-    ctx = {k: case["context"].get(k) for k in CONTEXT_KEYS if case["context"].get(k) is not None}
-    ctx["candidates"] = [{k: v for k, v in c.items() if v} for c in case["candidates"]]
+    ctx = {"candidates": [{k: v for k, v in c.items() if v} for c in case["candidates"]]}
     golds = [decision(k, case.get("verb")) for k in [case["expected"], *case.get("alt", [])]]
     return {
         "kind": "test" if str(case["category"]).startswith("G") else "eval",
-        "input": {"utterance": case["utterance"], "page": case.get("page") or None},
+        "input": _drop_none({"utterance": case["utterance"], "here": here_of(case.get("page"), case["context"])}),
         "context": ctx,
         "ground_truth": golds if len(golds) > 1 else golds[0],
         "data": {

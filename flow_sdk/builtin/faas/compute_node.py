@@ -1644,15 +1644,22 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
 
     @action.all(action_name="navigator-route", methods=["post"])
     async def _navigator_route_action(self) -> ApiResponse:
-        """``POST {utterance, page?, context?}`` -> ``NavigatorRoute``: open something now, or
-        hand the request to the assistant. Never fails: anything missing or unsure is
-        ``route: "agentic"``, and with no decision API on the hub that is every answer."""
+        """``POST {utterance, here?}`` -> ``NavigatorRoute``: open something now, or hand the
+        request to the assistant. ``here`` defaults to where the active tab is -- its own
+        ``browser_context`` (``navigation.here_from``), so the UI sends only what was typed.
+        Never fails: anything missing or unsure is ``route: "agentic"``, and with no decision
+        API on the hub that is every answer."""
+        from flow_sdk.core.navigation import here_from  # noqa: PLC0415
         from flow_sdk.core.navigator import route  # noqa: PLC0415
+        from flow_sdk.server.routes.websocket import get_active_connection_info  # noqa: PLC0415
 
         request_info = get_current_request_info()
         body = (await request_info.get_post_data() if request_info else {}) or {}
-        context = body.get("context") if isinstance(body.get("context"), dict) else {}
-        answer = await route(str(body.get("utterance") or ""), page=str(body.get("page") or ""), context=context)
+        here = body.get("here") if isinstance(body.get("here"), dict) else None
+        if here is None:
+            active = get_active_connection_info()
+            here = await here_from(active[1].browser_context if active else {})
+        answer = await route(str(body.get("utterance") or ""), here=here)
         return ApiSuccessResponse(data=answer.model_dump(mode="json"))
 
     @action.all(action_name="llm-endpoint", methods=["get", "post", "delete"])

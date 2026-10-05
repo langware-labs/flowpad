@@ -4,5 +4,6 @@
     "kind": "view",
     "value": "credentials/api-keys"
   },
-  "verb": "show"
+  "verb": "show",
+  "confidence": null
 }

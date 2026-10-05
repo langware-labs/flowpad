@@ -4,5 +4,6 @@
     "kind": "view",
     "value": "rag"
   },
-  "verb": "show"
+  "verb": "show",
+  "confidence": null
 }

@@ -4,5 +4,6 @@
     "kind": "view",
     "value": "credentials/connections"
   },
-  "verb": "show"
+  "verb": "show",
+  "confidence": null
 }

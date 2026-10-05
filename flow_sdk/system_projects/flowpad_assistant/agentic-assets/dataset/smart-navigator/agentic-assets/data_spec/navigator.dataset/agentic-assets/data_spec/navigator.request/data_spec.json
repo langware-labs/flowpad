@@ -7,9 +7,9 @@
       "shape": "string",
       "description": "Exactly what the person typed into the magic line."
     },
-    "page": {
-      "shape": "?string",
-      "description": "The dock address they were on, e.g. /dock/home."
+    "here": {
+      "shape": "?navigation.here",
+      "description": "Where they were when they typed it."
     }
   }
 }

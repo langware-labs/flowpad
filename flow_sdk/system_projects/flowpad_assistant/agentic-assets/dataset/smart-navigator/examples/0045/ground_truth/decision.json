@@ -1,5 +1,6 @@
 {
   "route": "agentic",
   "target": null,
-  "verb": null
+  "verb": null,
+  "confidence": null
 }

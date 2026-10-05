@@ -4,5 +4,6 @@
     "kind": "view",
     "value": "preferences"
   },
-  "verb": "navigate"
+  "verb": "navigate",
+  "confidence": null
 }

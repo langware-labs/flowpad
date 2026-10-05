@@ -4,5 +4,6 @@
     "kind": "url",
     "value": "https://linear.app"
   },
-  "verb": "show"
+  "verb": "show",
+  "confidence": null
 }

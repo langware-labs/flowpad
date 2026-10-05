@@ -1,3 +1,3 @@
 # navigator.request
 
-What was typed, and where.
+Mechanism: a row's input -- what was typed, and where.
