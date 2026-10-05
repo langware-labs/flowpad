@@ -654,6 +654,7 @@ class Project(Entity):
             spec = set_home_page(Path(self.fs_storage_mount_path), typeid)
         except ManifestError as exc:
             return ApiFailResponse(message=str(exc), status_code=400)
+        await self._reindex_manifest()
         return ApiSuccessResponse(data={"home_page": spec.home_page})
 
     @action.post(action_name="set-env-files")
@@ -674,7 +675,16 @@ class Project(Entity):
             spec = set_env_files(Path(self.fs_storage_mount_path), [str(p) for p in paths or []])
         except ManifestError as exc:
             return ApiFailResponse(message=str(exc), status_code=400)
+        await self._reindex_manifest()
         return ApiSuccessResponse(data={"env_files": spec.env_files})
+
+    async def _reindex_manifest(self) -> None:
+        """Re-index ``project_manifest.json`` after a field write. The row is the
+        projection every reader queries (the home-page picker, Credentials), and
+        nothing else re-indexes it — without this a saved value stays invisible."""
+        from flow_sdk.builtin.project_manifest import ensure_manifest_indexed  # noqa: PLC0415
+
+        await ensure_manifest_indexed(self)
 
     async def _own_asset(self, typeid: str) -> Entity | None:
         """The entity ``typeid`` names, if it lives in this Project or a direct
