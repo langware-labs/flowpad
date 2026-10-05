@@ -22,7 +22,7 @@ import type { DockPointer } from '@src/navigation/DockPointer';
 
 type Handlers = { open: (dock: DockPointer) => void; ask: (prompt: string) => void };
 
-export const SMART_NAVIGATION_SIGNIN_ASK_ID = 'smart-navigation-signin';
+const SIGNIN_ASK_ID = 'smart-navigation-signin';
 
 /** Asked once per page session: after any answer, the rest of the session is not asked again. */
 let askedThisSession = false;
@@ -42,7 +42,7 @@ export async function smartAskOrOpen(text: string, handlers: Handlers): Promise<
 
   askedThisSession = true;
   const { value, remember } = await askNotification({
-    id: SMART_NAVIGATION_SIGNIN_ASK_ID,
+    id: SIGNIN_ASK_ID,
     title: t`Smart navigation requires sign-in`,
     message: t`Sign in and requests like "open data sources" open the screen directly.`,
     choices: [

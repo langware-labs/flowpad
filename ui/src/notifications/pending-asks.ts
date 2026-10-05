@@ -1,9 +1,9 @@
 /**
- * The open questions `notify.ask` is waiting on, by notification id.
+ * The open questions `askNotification` is waiting on, by notification id.
  *
- * Its own module because three places settle one — the `notification.answer` command
- * (`ask.ts`), `notify.dismiss` (`notify.ts`) and the toast's × (`NotificationOutlet.tsx`) —
- * and `ask.ts` imports `notify`, so living there would make an import cycle.
+ * Its own module because both the answer (`notification.answer`, `ask.ts`) and every close
+ * (`closeShown` and the toast's `onDismiss`, `notify.ts`) settle one, and `ask.ts` imports
+ * `notify` — living in either would make an import cycle.
  */
 
 export interface AskAnswer {

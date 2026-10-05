@@ -84,14 +84,22 @@ function dispatch(input: NotificationInput): string {
   sonnerToast.custom((toastId) => renderToast(data, String(toastId)), {
     id,
     duration: ms === null ? Infinity : ms,
+    // However the toast goes — its ×, a swipe, a timer — a question in it is answered "no answer".
+    onDismiss: () => settleAsk(id),
   });
   return id;
 }
 
-function dismiss(id: string): void {
-  settleAsk(id); // a question closed without an answer resolves, never hangs
+/** Take `id` off whichever surface shows it (toast or centered dialog) and answer any question in
+ *  it with "no answer" — but leave the badge feed and the alert log alone. */
+export function closeShown(id: string): void {
+  settleAsk(id);
   sonnerToast.dismiss(id);
   useCenterStore.getState().remove(id);
+}
+
+function dismiss(id: string): void {
+  closeShown(id);
   useBadgeStore.getState().remove(id);
   useAlertStore.getState().dismiss(id);
 }

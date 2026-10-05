@@ -1,7 +1,7 @@
 import { notify } from './notify';
 import { registerCommand } from './commands';
 import { holdAsk, settleAsk, type AskAnswer } from './pending-asks';
-import type { NotificationLocation } from './types';
+import type { NotificationInput } from './types';
 
 /**
  * A notification that asks: a sticky toast with one button per choice and, optionally, a
@@ -13,33 +13,20 @@ import type { NotificationLocation } from './types';
  * value — so remembering is the CALLER's business: it writes the answer into the preference the
  * question belongs to, which is what makes "don't ask again" a setting the person can see and undo.
  */
-export interface AskInput {
+export type AskInput = Pick<NotificationInput, 'title' | 'message' | 'remember' | 'location'> & {
   id: string;
-  title: string;
-  message?: string;
   /** In order; the first renders as the primary button. */
   choices: { value: string; label: string }[];
-  /** Present → the toast shows this checkbox (unticked). */
-  remember?: { label: string };
-  /** `center` when the question must be answered before anything goes on (default `corner`). */
-  location?: NotificationLocation;
-}
+};
 
 export function askNotification(input: AskInput): Promise<AskAnswer> {
   return new Promise((resolve) => {
     holdAsk(input.id, resolve);
+    const { choices, ...shown } = input;
     notify.info({
-      id: input.id,
-      title: input.title,
-      message: input.message,
-      remember: input.remember,
-      location: input.location,
+      ...shown,
       durationMs: null,
-      actions: input.choices.map((c) => ({
-        label: c.label,
-        command: 'notification.answer',
-        args: { value: c.value },
-      })),
+      actions: choices.map((c) => ({ label: c.label, command: 'notification.answer', args: { value: c.value } })),
     });
   });
 }
