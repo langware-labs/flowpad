@@ -3002,8 +3002,7 @@ class AgenticProcess(Entity):
                 if not url.startswith(("http://", "https://")):
                     raise InvalidDisplayTarget(f"Not a web address: {url!r}")
                 payload = await resolve_display_target(link=url)
-                await self.on_show(payload)
-                return ApiSuccessResponse(data=payload)
+                return await self._show_answer(payload)
             typeid = str(body.get("typeid") or "").strip() or None
             if body.get("port") is not None:
                 typeid = await self._dev_server_typeid(body.get("port"), body.get("name"))
@@ -3017,10 +3016,20 @@ class AgenticProcess(Entity):
         except InvalidDisplayTarget as e:
             return ApiFailResponse(message=str(e), status_code=400)
         except DisplayTargetNotFound as e:
-            return ApiFailResponse(message=str(e), status_code=404)
+            from flow_sdk.schema.data_spec.returned_value_spec import NavigateResult  # noqa: PLC0415
 
-        await self.on_show(payload)
-        return ApiSuccessResponse(data=payload)
+            return ApiSuccessResponse(data=NavigateResult.not_found(str(e), verdict="not_found").model_dump(mode="json"))
+
+        return await self._show_answer(payload)
+
+    async def _show_answer(self, payload: dict) -> ApiSuccessResponse:
+        """Show *payload* in this process's display and answer a ``NavigateResult``
+        (``flow_sdk.core.navigate.show_target``): shown, and whether the place can be
+        used — a dead dev server answers ``NOT_YET`` instead of a silent success."""
+        from flow_sdk.core.navigate import show_target  # noqa: PLC0415
+
+        result = await show_target(payload, process=self)
+        return ApiSuccessResponse(data=result.model_dump(mode="json"))
 
     # ── Agent-facing terminal ───────────────────────────────────────────────
     #

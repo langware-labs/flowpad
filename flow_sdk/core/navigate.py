@@ -305,3 +305,42 @@ async def navigate(
     if not result.ok:
         logger.info("navigate %s → %s (%s) %s", pointer, result.exit_code.name, result.verdict, result.detail)
     return result
+
+
+# ── a resolved display target (the routes and ``flow show``) ──────────────────
+
+
+async def probe_display_target(target: dict[str, Any]) -> tuple[ExitCode, Optional[str], str]:
+    """``probe_target`` for a display target as ``resolve_display_target`` returns it."""
+    from flow_sdk.core.display_target import DisplayTargetKind  # noqa: PLC0415
+
+    kind = target.get("kind")
+    if kind == DisplayTargetKind.URL and target.get("url"):
+        return await probe_web_url(str(target["url"]))
+    if kind == DisplayTargetKind.VFS and target.get("path"):
+        return await probe_target("", "", Path(str(target["path"])))
+    if kind == DisplayTargetKind.APP and str(target.get("typeid") or "").startswith("service_endpoint-"):
+        return await _probe_endpoint(str(target["typeid"]).split("-", 1)[1])
+    if kind == DisplayTargetKind.DOCK:
+        return await probe_target(str(target.get("view_type") or ""), str(target.get("pointer") or ""), None)
+    return ExitCode.OK, None, ""  # an entity: resolving it was the check
+
+
+async def show_target(
+    target: dict[str, Any],
+    *,
+    process: Optional["AgenticProcess"] = None,
+    connection_id: Optional[str] = None,
+) -> NavigateResult:
+    """Deliver an already-resolved display target and probe it — ``navigate`` for a
+    caller that resolved the address itself (``flow show``, ``/agent/navigate/*``).
+    The display target is the answer's ``value``."""
+    pointer = ""
+    if target.get("view_type"):
+        pointer = tab_pointer_json(str(target["view_type"]), str(target.get("pointer") or ""))
+    probed = await probe_display_target(target)
+    if probed[0] is ExitCode.NOT_FOUND:
+        # Nothing there is not worth a screen: answered before delivery, whoever is watching.
+        return NavigateResult.not_found(probed[2], verdict=probed[1], pointer=pointer, value=target)
+    delivered = await deliver(pointer, target, process=process, connection_id=connection_id)
+    return _verdict(delivered, probed).model_copy(update={"value": target})

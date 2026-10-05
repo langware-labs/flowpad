@@ -749,7 +749,7 @@ def test_an_already_open_app_is_steered_rather_than_a_second_window_opened(monke
 
         @staticmethod
         def json():
-            return {"ok": True}
+            return {"status": "SUCCESS", "data": {"exit_code": 0, "delivered": True}}
 
     monkeypatch.setattr(llm_cmd, "_local_post", lambda url, **kw: posted.append((url, kw.get("json") or {})) or _Resp())
     monkeypatch.setattr("webbrowser.open", lambda _u: pytest.fail("a second window was opened"))
@@ -769,7 +769,7 @@ def test_no_listening_tab_falls_back_to_a_browser(monkeypatch):
 
         @staticmethod
         def json():
-            return {"ok": False, "error_code": "NO_ACTIVE_TAB"}
+            return {"status": "SUCCESS", "data": {"exit_code": 1, "delivered": False, "verdict": "no_browser"}}
 
     monkeypatch.setattr(llm_cmd, "_local_post", lambda url, **kw: _Refused())
     assert llm_cmd._steer_open_app(6060) is False

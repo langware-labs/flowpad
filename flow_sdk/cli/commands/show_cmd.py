@@ -11,11 +11,15 @@ The target process is the calling AgenticProcess (``FLOWPAD_EXECUTION_SCOPE``,
 injected into every worker) or an explicit ``--process``. The command POSTs to
 the entity action ``/api/v1/graph/agentic_process/<id>/show``.
 
-Error contract (agents parse these):
+Every show answers a ``NavigateResult``; its ``exit_code`` IS the exit code
+(the same enum ``flow op`` exits with):
 
-    exit 0 — show event recorded (NOT a guarantee anyone is watching)
+    exit 0 — shown, and it can be used (NOT a guarantee anyone is watching)
+    exit 1 — shown, but it cannot be used yet — nothing answers at that address,
+             or the server errors (see "verdict"); fix it, then show it again
+    exit 4 — not found (typeid form, a missing file, an entity-shaped view pointer)
+    exit 7 — refused: the page refuses to be shown inside Flowpad
     exit 2 — invalid arguments (malformed typeid/port/view, no process scope)
-    exit 4 — entity not found (typeid form, or an entity-shaped view pointer)
     exit 5 — connection error (server unreachable)
 """
 
@@ -30,12 +34,20 @@ from typing_extensions import Annotated
 
 from flow_sdk.cli.commands._common import (
     caller_abs_path as _caller_abs_path,
+)
+from flow_sdk.cli.commands._common import (
     discover_port as _discover_port,
+)
+from flow_sdk.cli.commands._common import (
     fail as _fail,
-    ok as _ok,
+)
+from flow_sdk.cli.commands._common import (
     post_graph_json as _post_graph_json,
+)
+from flow_sdk.cli.commands._common import (
     resolve_process_id as _resolve_process_id,
 )
+from flow_sdk.cli.commands.navigate_cmd import emit_navigate_result
 
 show_app = typer.Typer(
     name="show",
@@ -72,7 +84,7 @@ def _post_show(process_opt: Optional[str], body: dict, extra: Optional[dict] = N
         _fail(EXIT_CONNECTION_ERROR, "SERVER_ERROR", message)
 
     data = _post_graph_json(url, body, timeout=5, on_error=_on_error)
-    _ok({"process_id": process_id, **data, **(extra or {})})
+    emit_navigate_result(data, {"process_id": process_id, **(extra or {})})
 
 
 @show_app.command(
