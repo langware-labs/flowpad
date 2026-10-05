@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, clipboard, Notification, Menu } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, clipboard, Notification, Menu, powerMonitor } = require('electron');
 const { autoUpdater } = require('electron-updater');
 const { describeStartupFailure, summarizeOutput } = require('./startup-error');
 const { buildSupportZip, buildMailtoUrl, supportSubject, redact } = require('./support-bundle');
@@ -14,6 +14,7 @@ const log = require('electron-log');
 const crypto = require('crypto');
 const UvManager = require('./uv-manager');
 const { createShutdown, relaunchAfterStop } = require('./shutdown');
+const { createQuitGate, quitDialogOptions, QUIT_RESPONSE } = require('./quit-gate');
 const { waitForBackend: runBackendGate, createLogActivityProbe, createChangeProbe } = require('./backend-wait');
 const { SOD_KEY_KEYCHAIN_SERVICE } = UvManager;
 
@@ -642,6 +643,27 @@ let pendingBackendStop = null;
 // but the backend is stopped — so a "reopen" must relaunch from scratch rather
 // than refocus the dead window. See the second-instance handler.
 let startupFailed = false;
+// True once the backend answered its health check — from then on a quit is
+// "quit FlowPad", before it "stop the startup" (quit-gate.js).
+let backendReady = false;
+
+function quitPhase() {
+  if (uvManager && uvManager.isInstalling()) return 'installing';
+  return backendReady ? 'running' : 'starting';
+}
+
+// Every quit asks first — see quit-gate.js and the before-quit handler.
+const quitGate = createQuitGate({
+  confirm: async (phase) => {
+    const parent = mainWindow && !mainWindow.isDestroyed() ? mainWindow : undefined;
+    const hasInstallMarker = !!(uvManager && uvManager.hasInstallMarker());
+    const { response } = await dialog.showMessageBox(parent, quitDialogOptions(phase, { hasInstallMarker }));
+    return response === QUIT_RESPONSE;
+  },
+  log,
+});
+// Automation that drives the packaged app (it quits it at the end of a run) has nobody to answer the dialog.
+if (process.env.FLOWPAD_SKIP_QUIT_CONFIRM === '1') quitGate.allow('FLOWPAD_SKIP_QUIT_CONFIRM=1');
 
 // Deep link that arrived before the window was ready to navigate.
 let pendingDeepLink = null;
@@ -1019,6 +1041,18 @@ function createWindow() {
     }
   });
 
+  // The X does not close the window by itself: it asks to quit, and before-quit
+  // asks the user (quit-gate.js). Closing first and asking after would leave
+  // nothing to cancel back to.
+  mainWindow.on('close', (event) => {
+    if (isQuitting || startupFailed || quitGate.isConfirmed()) return;
+    event.preventDefault();
+    app.quit();
+  });
+
+  // Windows is logging off or shutting down: nobody is there to answer.
+  mainWindow.on('session-end', () => quitGate.allow('the Windows session is ending'));
+
   // Handle window closed
   mainWindow.on('closed', () => {
     mainWindow = null;
@@ -1078,7 +1112,10 @@ async function waitForBackend({
       if (fromServerLog) showPhase(lastBootLine(serverLogDir));
       return fromLauncher || fromServerLog;
     },
-    aborted: () => (launch && launch.exit && launch.exit.code !== 0 ? 'launcher-failed' : null),
+    aborted: () => {
+      if (isQuitting) return 'quitting'; // the backend is being stopped — nothing left to wait for
+      return launch && launch.exit && launch.exit.code !== 0 ? 'launcher-failed' : null;
+    },
     maxChecks,
     stallChecks: LOG_STALL_CHECKS,
     hardCapChecks: MAX_EXTENDED_HEALTH_CHECKS,
@@ -1089,6 +1126,8 @@ async function waitForBackend({
 
   if (result.ready) {
     log.info(`Backend is ready! (${result.elapsedSec}s, ${result.checks} checks${result.extended ? ', extended on reported progress' : ''})`);
+  } else if (result.reason === 'quitting') {
+    log.info(`[startup] stopped waiting for the backend: the app is quitting (${result.elapsedSec}s)`);
   } else {
     log.error(`Backend failed to start: ${result.reason} after ${result.elapsedSec}s (${result.checks} checks)`);
   }
@@ -1227,6 +1266,8 @@ async function installAndStartBackend() {
       // the desktop is downloaded in the background and the engine is updated by the NEW desktop after the
       // restart. The engine is only upgraded here, by the running desktop, when it is the only update.
       const desktopLatest = await getDesktopUpdateVersion();
+      // The user may have quit while that check ran: no update dialog over a closing app.
+      if (isQuitting) return { ok: false };
 
       if (desktopLatest) {
         await offerDesktopUpdate(desktopLatest);
@@ -1286,10 +1327,11 @@ async function installAndStartBackend() {
       await uvManager.start();
     }
   } catch (error) {
-    if (installQuitConfirmed) {
-      // The user chose "Quit anyway" during an install: the abort is why we are here. Do not
-      // show the error panel (it would re-show the window we just hid); the app is quitting.
-      log.info('[startup] install aborted by the user quitting');
+    if (isQuitting || (error && error.quitInProgress)) {
+      // The user quit mid-startup: the aborted install, or the start refused by
+      // UvManager.close(), is why we are here. Do not show the error panel (it
+      // would re-show the window we just hid); the app is quitting.
+      log.info(`[startup] stopped by the user quitting: ${error && error.message}`);
       return { ok: false };
     }
     log.error(`Failed to start Python backend: ${String(error?.message || error).split('\n')[0]}`);
@@ -1343,7 +1385,22 @@ async function startApp() {
   if (process.platform === 'darwin' && !isDev) {
     await offerMoveToApplications({
       platform: process.platform,
-      app,
+      // The move quits the app to relaunch it from /Applications — the user already said yes to that.
+      app: {
+        getVersion: () => app.getVersion(),
+        isPackaged: app.isPackaged,
+        isInApplicationsFolder: () => app.isInApplicationsFolder(),
+        moveToApplicationsFolder: (opts) => {
+          quitGate.allow('moving to Applications');
+          let moved = false;
+          try {
+            moved = app.moveToApplicationsFolder(opts);
+            return moved;
+          } finally {
+            if (!moved) quitGate.revoke('the move to Applications did not happen');
+          }
+        },
+      },
       dialog,
       execPath: process.execPath,
       readState: () => { try { return JSON.parse(fs.readFileSync(locationPromptStatePath(), 'utf8')); } catch { return null; } },
@@ -1364,6 +1421,7 @@ async function startApp() {
     // seconds — no relaunch, no terminal.
     let result = await installAndStartBackend();
     while (!result.ok) {
+      if (isQuitting) return;
       await waitForRetryRequest();
       log.info('[startup] retry requested from the error panel');
       startupFailed = false;
@@ -1384,6 +1442,8 @@ async function startApp() {
   sendStatus('Waiting for server');
   const waitOpts = backendJustUpgraded ? { maxChecks: POST_UPGRADE_HEALTH_CHECKS } : undefined;
   const backendWait = await waitForBackend(waitOpts);
+  if (backendWait.reason === 'quitting') return;
+  backendReady = backendWait.ready;
 
   if (!backendWait.ready) {
     // Try to gather diagnostics for the error dialog
@@ -1500,7 +1560,11 @@ process.on('unhandledRejection', (reason) => {
 });
 
 // App lifecycle events
-app.whenReady().then(startApp).catch((err) => reportStartupCrash(err, 'startApp'));
+app.whenReady().then(() => {
+  // macOS / Linux shutting down or logging out: nobody is there to answer.
+  powerMonitor.on('shutdown', () => quitGate.allow('the system is shutting down'));
+  return startApp();
+}).catch((err) => reportStartupCrash(err, 'startApp'));
 
 app.on('window-all-closed', () => {
   log.info('All windows closed');
@@ -1531,44 +1595,20 @@ app.on('activate', () => {
   }
 });
 
-// Quitting while `uv tool install` is replacing the venv would leave a
-// half-written environment (and, before this, an orphaned uv holding the tool
-// lock). Ask first; on "Quit anyway" the install is aborted and the next launch
-// repairs it (UvManager.hadInterruptedInstall).
-let installQuitDialogOpen = false;
-let installQuitConfirmed = false;
-
+// Every quit — the window's X (it routes here, see createWindow), Cmd+Q,
+// Alt+F4, the dock — asks first (quit-gate.js). Only on "Quit" does the
+// shutdown run. Quitting while `uv tool install` is replacing the venv aborts
+// it and the next launch repairs it (UvManager.hadInterruptedInstall).
+// Nothing to ask when there is no window to ask over (the single-instance
+// exit) or when the startup already failed (the backend is stopped; the panel
+// has its own Quit button).
 app.on('before-quit', (event) => {
   if (isQuitting) return;
-  if (uvManager && uvManager.isInstalling() && !installQuitConfirmed) {
+  const askFirst = !quitGate.isConfirmed() && !startupFailed && mainWindow && !mainWindow.isDestroyed();
+  if (askFirst) {
     event.preventDefault();
-    if (installQuitDialogOpen) return;
-    installQuitDialogOpen = true;
-    const parent = mainWindow && !mainWindow.isDestroyed() ? mainWindow : undefined;
-    dialog.showMessageBox(parent, {
-      type: 'warning',
-      title: 'Update in progress',
-      message: 'FlowPad is installing its components.',
-      detail: uvManager.hasInstallMarker()
-        ? 'Quitting now interrupts it. FlowPad will repair the installation the next time it starts.'
-        : 'Quitting now interrupts it and may leave the installation incomplete. If FlowPad does not start next time, reinstall it.',
-      buttons: ['Keep waiting', 'Quit anyway'],
-      defaultId: 0,
-      cancelId: 0,
-    }).then(({ response }) => {
-      if (response === 1) {
-        installQuitConfirmed = true;
-        uvManager.abortInstall();
-        app.quit();
-      } else if (!mainWindow || mainWindow.isDestroyed()) {
-        // The window was closed to trigger this quit. "Keep waiting" must not leave a
-        // running install with nothing on screen (and startApp still needs a window).
-        createWindow();
-      }
-    }).catch((err) => {
-      log.warn(`[quit] install-in-progress dialog failed: ${err.message}`);
-    }).finally(() => {
-      installQuitDialogOpen = false;
+    quitGate.request(quitPhase()).then((yes) => {
+      if (yes) app.quit();
     });
     return;
   }
@@ -1583,6 +1623,11 @@ app.on('before-quit', (event) => {
 
   if (uvManager) {
     event.preventDefault();
+
+    // First refuse anything new: the startup chain is still running and would
+    // otherwise launch `flow start` after the stop below — a detached backend
+    // outliving the app. Also aborts a running install.
+    uvManager.close();
 
     // Graceful shutdown: flow stop, then kill any remaining processes on port.
     // We exit only once that has finished — see shutdown.js for why exiting
