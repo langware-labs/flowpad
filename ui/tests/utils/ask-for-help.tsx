@@ -6,7 +6,7 @@ import { fireEvent, render, waitFor, within } from '@testing-library/react';
 import { dataContext } from '@sdk';
 import { cloudManager } from '@sdk/services/cloud_login';
 import { expect, vi } from 'vitest';
-import { VibeAssignTaskDialog } from '@src/pages/flow-page/VibeAssignTaskDialog';
+import { AskForHelpDialog } from '@src/components/help/AskForHelpDialog';
 import { apiTestSetup } from './test-utils';
 
 /** `apiTestSetup`, plus the hub login the app's boot reads (main.ts → cloudManager) and the
@@ -26,27 +26,22 @@ export function png(name: string, size: number): File {
 
 export interface AskOutcome {
   taskId?: string;
+  conversationId?: string;
   error?: string;
   ms: number;
 }
 
-/** One ask through the real dialog: person, title, files, Assign — until it is assigned or
- *  shows its error row. Scoped to its own dialog, so several can run at once. */
+/** One ask through the real dialog: person, title, files, Ask — until it is saved or shows its
+ *  error row. Scoped to its own dialog, so several can run at once. */
 export async function askForHelp(opts: {
   projectId: string | null;
   to: string;
   title: string;
   files?: File[];
 }): Promise<AskOutcome> {
-  const onAssigned = vi.fn();
+  const onAsked = vi.fn();
   const { container, unmount } = render(
-    <VibeAssignTaskDialog
-      open
-      onOpenChange={() => {}}
-      projectId={opts.projectId}
-      sessionTypeId={null}
-      onAssigned={onAssigned}
-    />,
+    <AskForHelpDialog open onOpenChange={() => {}} projectId={opts.projectId} origin="vibe" onAsked={onAsked} />,
   );
   // Radix portals the dialog to body: the newest one is this render's.
   const dialogs = container.ownerDocument.querySelectorAll('[role="dialog"]');
@@ -66,11 +61,13 @@ export async function askForHelp(opts: {
   fireEvent.click(q.getByTestId('vibe-assign-submit'));
   const errorRow = () => dialog.querySelector('p.border-destructive\\/60');
   // The tier's own test cap; an ask that takes longer is a finding.
-  await waitFor(() => expect(onAssigned.mock.calls.length > 0 || errorRow() !== null).toBe(true), {
+  await waitFor(() => expect(onAsked.mock.calls.length > 0 || errorRow() !== null).toBe(true), {
     timeout: 15000,
   });
+  const asked = onAsked.mock.calls[0]?.[0] as { task_id?: string; conversation_id?: string } | undefined;
   const outcome: AskOutcome = {
-    taskId: onAssigned.mock.calls[0]?.[0] as string | undefined,
+    taskId: asked?.task_id ?? undefined,
+    conversationId: asked?.conversation_id,
     error: errorRow()?.textContent ?? undefined,
     ms: Math.round(performance.now() - started),
   };

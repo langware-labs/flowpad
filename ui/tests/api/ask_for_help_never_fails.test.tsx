@@ -24,9 +24,8 @@ import { MemoryRouter } from 'react-router';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 import { HelpdeskAsk } from '@src/components/helpdesk/HelpdeskAsk';
 import { HelpdeskLoadDialog } from '@src/components/helpdesk/HelpdeskLoadDialog';
-import { HelpdeskRequestDialog } from '@src/components/helpdesk/HelpdeskRequestDialog';
 import { notify } from '@src/notifications';
-import { VibeAssignTaskDialog } from '@src/pages/flow-page/VibeAssignTaskDialog';
+import { AskForHelpDialog } from '@src/components/help/AskForHelpDialog';
 import { apiTestSetup, getTestSignupInfo, trackCreatedRows } from '../utils/test-utils';
 
 // The portal's chat surface is not under test — only whether a person is reachable beside it.
@@ -36,7 +35,10 @@ vi.mock('@src/components/entity-execution-panel', () => ({
 // The real desk ships `.claude/agents/support.md`, so on every real install this hook finds an agent.
 vi.mock('@src/components/helpdesk/useHelpdeskAgent', () => ({
   HELPDESK_AGENT_NAME: 'support',
-  useHelpdeskAgent: () => ({ agent: { id: 'a0000000-0000-4000-8000-000000000001', asset_ref: 'support.md' }, ready: true }),
+  useHelpdeskAgent: () => ({
+    agent: { id: 'a0000000-0000-4000-8000-000000000001', asset_ref: 'support.md' },
+    ready: true,
+  }),
 }));
 
 const HUB = process.env.HUB ?? 'http://localhost:8093';
@@ -76,9 +78,14 @@ async function asHelper<T>(p: string): Promise<T> {
 
 /** What the helper received for this ask: their conversations with this title, and each one's messages. */
 async function helperReceived(title: string) {
-  const convs = (await asHelper<{ id: string; title?: string }[]>('/graph/conversation')).filter((c) => c.title === title);
+  const convs = (await asHelper<{ id: string; title?: string }[]>('/graph/conversation')).filter(
+    (c) => c.title === title,
+  );
   return Promise.all(
-    convs.map(async (c) => ({ id: c.id, messages: await asHelper<{ text?: string }[]>(`/graph/conversation/${c.id}/flow_message`) })),
+    convs.map(async (c) => ({
+      id: c.id,
+      messages: await asHelper<{ text?: string }[]>(`/graph/conversation/${c.id}/flow_message`),
+    })),
   );
 }
 
@@ -93,7 +100,8 @@ async function eventually<T>(probe: () => Promise<T>, ok: (v: T) => boolean): Pr
 }
 
 /** The helper instance's own hub socket — "the helper is offline" is this being down. */
-const helperSocket = (verb: 'connect' | 'disconnect') => fetch(`${HELPER_API}/api/v1/cloud/ws/${verb}`, { method: 'POST' });
+const helperSocket = (verb: 'connect' | 'disconnect') =>
+  fetch(`${HELPER_API}/api/v1/cloud/ws/${verb}`, { method: 'POST' });
 
 // ---------------------------------------------------------------------------
 // Driving the Vibe dialog the way a person does
@@ -103,7 +111,15 @@ const helperSocket = (verb: 'connect' | 'disconnect') => fetch(`${HELPER_API}/ap
 function AskHost({ onAssigned }: { onAssigned: (id: string) => void }) {
   const [open, setOpen] = useState(true);
   return open ? (
-    <VibeAssignTaskDialog open onOpenChange={setOpen} projectId={null} sessionTypeId={null} onAssigned={onAssigned} />
+    <MemoryRouter>
+      <AskForHelpDialog
+        open
+        onOpenChange={setOpen}
+        projectId={null}
+        origin="vibe"
+        onAsked={(r) => onAssigned(r.task_id ?? r.conversation_id)}
+      />
+    </MemoryRouter>
   ) : (
     <div data-testid="dialog-closed" />
   );
@@ -152,70 +168,76 @@ describe.skipIf(!HELPER_EMAIL)('Ask for help never fails', () => {
   // Ask someone for help (Vibe)
   // -------------------------------------------------------------------------
 
-  describe.each(['assign-task', 'share', 'add_message', 'link-conversation'])(
-    'one request of the Assign chain does not come back: %s',
-    (step) => {
-      it('the retry delivers the ask exactly once', async () => {
-        const title = `help ${step} ${Date.now()}`;
-        failOnce(step);
-        const onAssigned = vi.fn();
-        render(<AskHost onAssigned={onAssigned} />);
-        const { dialog, submit } = fillAndAssign(title);
-
-        // The user sees it failed and presses Assign again — the one recovery the dialog offers.
-        await waitFor(() => expect(dialog.textContent).toContain('injected'), { timeout: 10000 });
-        submit();
-        await waitFor(
-          () => expect(onAssigned, `the retry did not go through — the dialog says: ${dialog.textContent}`).toHaveBeenCalled(),
-          { timeout: 10000 },
-        );
-
-        const got = await eventually(
-          () => helperReceived(title),
-          (cs) => cs.length > 0 && cs.every((c) => c.messages.length > 0),
-        );
-        expect(
-          got.map((c) => c.messages.length),
-          `the helper got ${got.length} conversation(s) for one ask, holding ${got.map((c) => c.messages.length)} message(s)`,
-        ).toEqual([1]);
+  describe.each(['before', 'after'])('the answer to Ask is lost %s the request was saved', (when) => {
+    it('asking again delivers the ask exactly once', async () => {
+      const title = `help lost ${when} ${Date.now()}`;
+      const real = dataManager.callAction.bind(dataManager);
+      let armed = true;
+      vi.spyOn(dataManager, 'callAction').mockImplementation(async (info) => {
+        if (armed && info.name === 'ask-for-help') {
+          armed = false;
+          if (when === 'after') await real(info); // the backend wrote it; the answer never came back
+          throw new Error('injected: the answer did not come back');
+        }
+        return real(info);
       });
-    },
-  );
+      const onAssigned = vi.fn();
+      render(<AskHost onAssigned={onAssigned} />);
+      const { dialog, submit } = fillAndAssign(title);
 
-  it('closing the dialog while it sends does not hide a failed ask', async () => {
+      // The person sees it failed and presses Ask again — the same request (same id).
+      await waitFor(() => expect(dialog.textContent).toContain('injected'), { timeout: 10000 });
+      submit();
+      await waitFor(
+        () =>
+          expect(
+            onAssigned,
+            `asking again did not go through — the dialog says: ${dialog.textContent}`,
+          ).toHaveBeenCalled(),
+        { timeout: 10000 },
+      );
+
+      const got = await eventually(
+        () => helperReceived(title),
+        (cs) => cs.length > 0 && cs.every((c) => c.messages.length > 0),
+      );
+      expect(
+        got.map((c) => c.messages.length),
+        `the helper got ${got.length} conversation(s) for one ask, holding ${got.map((c) => c.messages.length)} message(s)`,
+      ).toEqual([1]);
+    });
+  });
+
+  it('the dialog cannot be closed while the request is saved, and says so once it is', async () => {
     const title = `closed early ${Date.now()}`;
-    const errors = vi.spyOn(notify, 'error');
-    const warnings = vi.spyOn(notify, 'warning');
-    // The message leg is slow, then does not come back.
+    const told = vi.spyOn(notify, 'success');
     const real = dataManager.callAction.bind(dataManager);
     let release!: () => void;
     const held = new Promise<void>((r) => (release = r));
-    let reached = false;
     vi.spyOn(dataManager, 'callAction').mockImplementation(async (info) => {
-      if (info.name === 'add_message') {
-        reached = true;
-        await held;
-        throw new Error('injected: add_message did not come back');
-      }
+      if (info.name === 'ask-for-help') await held;
       return real(info);
     });
 
     render(<AskHost onAssigned={() => {}} />);
     fillAndAssign(title);
-    // Wait until the chain is in flight, then close the dialog (Escape) — it unmounts.
-    await waitFor(() => expect(document.querySelector('[data-testid="vibe-assign-submit"]')).toBeDisabled(), { timeout: 10000 });
+    await waitFor(() => expect(document.querySelector('[data-testid="vibe-assign-submit"]')).toBeDisabled(), {
+      timeout: 10000,
+    });
     fireEvent.keyDown(document.activeElement ?? document.body, { key: 'Escape' });
-    await waitFor(() => expect(document.querySelector('[data-testid="dialog-closed"]')).not.toBeNull());
-    await waitFor(() => expect(reached, 'precondition: the send must reach the message step').toBe(true), { timeout: 10000 });
+    await act(() => new Promise((r) => setTimeout(r, 200)));
+    expect(
+      document.querySelector('[data-testid="dialog-closed"]'),
+      'closing mid-save would lose what was typed',
+    ).toBeNull();
+
     await act(async () => {
       release();
-      await new Promise((r) => setTimeout(r, 1000));
     });
-
-    expect(
-      errors.mock.calls.length + warnings.mock.calls.length,
-      'the ask failed after the dialog closed and the user was told nothing — they believe it was sent',
-    ).toBeGreaterThan(0);
+    await waitFor(() => expect(document.querySelector('[data-testid="dialog-closed"]')).not.toBeNull(), {
+      timeout: 15000,
+    });
+    expect(told, 'the person must be told the ask went').toHaveBeenCalled();
   });
 
   it('a helper who was offline when asked finds the task on their board when they come back', async () => {
@@ -242,7 +264,10 @@ describe.skipIf(!HELPER_EMAIL)('Ask for help never fails', () => {
   it('the help desk portal offers a person even when the desk ships a support agent', async () => {
     const project = new Project({ id: 'b0000000-0000-4000-8000-000000000001', name: 'Help Desk' });
     const { container } = render(<HelpdeskAsk project={project} />);
-    expect(container.querySelector('[data-testid="support-agent-chat"]'), 'precondition: the agent chat renders').not.toBeNull();
+    expect(
+      container.querySelector('[data-testid="support-agent-chat"]'),
+      'precondition: the agent chat renders',
+    ).not.toBeNull();
     expect(
       container.querySelector('[data-testid="helpdesk-ask-button"]'),
       'the support agent tells users to "use Ask for help to reach a person" — there is no such button on the page',
@@ -255,50 +280,71 @@ describe.skipIf(!HELPER_EMAIL)('Ask for help never fails', () => {
       'indexing the help desk fails',
       () => vi.spyOn(systemTools, 'fastScanProject').mockRejectedValue(new Error('injected: index failed')),
     ],
-  ])('%s → the user can still ask a person', async (_label, breakIt) => {
-    breakIt();
-    // Force the index step to run even on a warm checkout.
-    vi.spyOn(systemTools, 'projectNeverIndexed').mockResolvedValue(true);
-    const onNoPortal = vi.fn();
-    const onClose = vi.fn();
-    render(
-      <MemoryRouter>
-        <HelpdeskLoadDialog open onClose={onClose} onNoPortal={onNoPortal} />
-      </MemoryRouter>,
-    );
+  ])(
+    '%s → the user can still ask a person',
+    async (_label, breakIt) => {
+      breakIt();
+      // Force the index step to run even on a warm checkout.
+      vi.spyOn(systemTools, 'projectNeverIndexed').mockResolvedValue(true);
+      const onNoPortal = vi.fn();
+      const onClose = vi.fn();
+      render(
+        <MemoryRouter>
+          <HelpdeskLoadDialog open onClose={onClose} onNoPortal={onNoPortal} />
+        </MemoryRouter>,
+      );
 
-    await waitFor(
-      () => expect(document.querySelector('[data-testid="helpdesk-load-retry"]') ?? (onNoPortal.mock.calls.length ? true : null)).toBeTruthy(),
-      { timeout: 60000 },
-    );
-    expect(
-      onNoPortal,
-      'loading the guides failed and the dialog offers only Retry — asking a person needs none of what failed',
-    ).toHaveBeenCalled();
-  }, 70000);
+      await waitFor(
+        () =>
+          expect(
+            document.querySelector('[data-testid="helpdesk-load-retry"]') ??
+              (onNoPortal.mock.calls.length ? true : null),
+          ).toBeTruthy(),
+        { timeout: 60000 },
+      );
+      expect(
+        onNoPortal,
+        'loading the guides failed and the dialog offers only Retry — asking a person needs none of what failed',
+      ).toHaveBeenCalled();
+    },
+    70000,
+  );
 
-  it('closing the sign-in window tells the user their question was not sent', async () => {
-    const errors = vi.spyOn(notify, 'error');
+  it('closing the sign-in window tells the user their question is saved and will send after sign-in', async () => {
     const warnings = vi.spyOn(notify, 'warning');
-    // Signed out, as a first-time user is.
+    // Signed out, as a first-time user is: the backend keeps the ask and says why it is waiting.
     dataContext.setCloudLoggedIn(false);
     onTestFinished(() => dataContext.setCloudLoggedIn(true));
     vi.spyOn(oauthService, 'connect').mockRejectedValue(new Error('Login was canceled.'));
+    const real = dataManager.callAction.bind(dataManager);
+    vi.spyOn(dataManager, 'callAction').mockImplementation(async (info) =>
+      info.name === 'ask-for-help'
+        ? {
+            conversation_id: crypto.randomUUID(),
+            task_id: null,
+            message_id: crypto.randomUUID(),
+            delivery: {
+              header: 'created',
+              body: null,
+              failure: { kind: 'signed_out', message: "You're signed out — sign in to send this." },
+            },
+          }
+        : real(info),
+    );
 
     render(
       <MemoryRouter>
-        <HelpdeskRequestDialog open onClose={() => {}} />
+        <AskForHelpDialog open onOpenChange={() => {}} projectId={null} origin="footer" desk={{ kind: 'desk' }} />
       </MemoryRouter>,
     );
-    const input = document.querySelector('[data-testid="helpdesk-request-input"]') as HTMLTextAreaElement;
-    fireEvent.change(input, { target: { value: 'my agent will not start' } });
-    fireEvent.keyDown(input, { key: 'Enter', metaKey: true });
+    fireEvent.change(document.querySelector('[data-testid="vibe-assign-title"]')!, {
+      target: { value: 'my agent will not start' },
+    });
+    await waitFor(() => expect(document.querySelector('[data-testid="vibe-assign-submit"]')).toBeEnabled());
+    fireEvent.click(document.querySelector('[data-testid="vibe-assign-submit"]')!);
     await waitFor(() => expect(oauthService.connect).toHaveBeenCalled());
-    await act(() => new Promise((r) => setTimeout(r, 300)));
+    await waitFor(() => expect(warnings).toHaveBeenCalled());
 
-    expect(
-      errors.mock.calls.length + warnings.mock.calls.length + (document.body.textContent?.includes('canceled') ? 1 : 0),
-      'the question was not sent and nothing on screen says so (only a console.warn)',
-    ).toBeGreaterThan(0);
+    expect(String(warnings.mock.calls[0][0].title)).toMatch(/saved/i);
   });
 });

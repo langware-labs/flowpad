@@ -1,6 +1,6 @@
 """Two failures the support-ticket stress run found (2026-10-05), on their real seams.
 
-1. A ticket opened here is materialized twice at once: ``helpdesk-start-ticket`` creates the
+1. A ticket opened here is materialized twice at once: the ticket action creates the
    titled row (``ensure_conversation_entity``) while the hub pushes the same new conversation
    back (``HubWsBridge._handle_conversation_op``). Both read "no row" and save a whole one; the
    hub's (untitled) landed last — 1 in 5 tickets lost their title.

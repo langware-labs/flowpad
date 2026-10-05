@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Optional
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -15,7 +16,6 @@ from flow_sdk.app.actions.flow_message_action import HelpdeskTarget
 from flow_sdk.app.helpdesk_resolver import resolve_adopted_helpdesk
 from flow_sdk.builtin.helpdesk import Helpdesk
 from flow_sdk.builtin.project import Project
-from flow_sdk.cloud_client.shared.errors import HubError
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 from flow_sdk.responses.response import ApiResponseStatus
 from tests.unit._project_names import unique_project_name
@@ -44,6 +44,22 @@ async def _project(root: Path, *, contexts: list[Path] | None = None) -> Project
     return project
 
 
+async def _routed_to(project_id: str, text: str) -> Optional[str]:
+    """The desk queue a ticket filed from ``project_id`` is captured for (``ask-for-help``)."""
+    from flow_sdk.app.actions import ask_for_help_action as afh
+    from flow_sdk.builtin.conversation import Conversation
+
+    request = _request_info({"recipient": {"kind": "desk"}, "text": text, "project_id": project_id})
+    with (
+        patch.object(afh, "get_current_request_info", return_value=request),
+        patch.object(Conversation, "deliver", AsyncMock()),
+        patch.object(Conversation, "kick_delivery", lambda *_a, **_k: None),
+    ):
+        response = await afh.ask_for_help()
+    conv = await Conversation.get_one({"id": response.data["conversation_id"]})
+    return conv.remote_project_id
+
+
 async def _desk(root: Path, name: str, queue_id: str) -> Helpdesk:
     desk_dir = root / "agentic-assets" / "helpdesk" / name
     desk_dir.mkdir(parents=True, exist_ok=True)
@@ -60,31 +76,8 @@ async def _desk(root: Path, name: str, queue_id: str) -> Helpdesk:
 async def test_start_ticket_posts_to_target_projects_adopted_queue(tmp_path: Path) -> None:
     target = await _project(tmp_path / "customer")
     await _desk(tmp_path / "customer", "cloudnsite", ROOT_QUEUE)
-    hub = AsyncMock(side_effect=HubError(400, "stop after route assertion"))
-
-    with (
-        patch.object(
-            fma,
-            "get_current_request_info",
-            return_value=_request_info(
-                {
-                    "text": "Need help",
-                    "project_id": target.id,
-                }
-            ),
-        ),
-        patch.object(fma, "_hub_default_helpdesk", AsyncMock()) as fallback,
-        patch.object(fma, "hub_request", hub),
-    ):
-        response = await fma.helpdesk_start_ticket()
-
-    assert response.status == ApiResponseStatus.FAIL.value
-    # Route only. The body grows as tickets carry more context (project /
-    # session ids, a transcript excerpt); pinning it whole here would make a
-    # ROUTING test fail for a payload change it does not care about.
-    assert hub.await_args.args == ("POST", BuiltinEntityType.PROJECT, ROOT_QUEUE, "start_guest_conversation")
-    body = hub.await_args.kwargs["payload"]
-    assert body["text"].startswith("Need help")
+    with patch.object(fma, "_hub_default_helpdesk", AsyncMock()) as fallback:
+        assert await _routed_to(target.id, "Need help") == ROOT_QUEUE
     fallback.assert_not_awaited()
 
 
@@ -114,19 +107,8 @@ async def test_desk_attached_by_path_still_routes_without_a_project_of_its_own(
     # it must not take the queue down with it.
     assert adopted.portal_project_id is None
 
-    hub = AsyncMock(side_effect=HubError(400, "stop after route assertion"))
-    with (
-        patch.object(
-            fma,
-            "get_current_request_info",
-            return_value=_request_info({"text": "Need help", "project_id": target.id}),
-        ),
-        patch.object(fma, "_hub_default_helpdesk", AsyncMock()) as fallback,
-        patch.object(fma, "hub_request", hub),
-    ):
-        await fma.helpdesk_start_ticket()
-
-    assert hub.await_args.args == ("POST", BuiltinEntityType.PROJECT, FIRST_CONTEXT_QUEUE, "start_guest_conversation")
+    with patch.object(fma, "_hub_default_helpdesk", AsyncMock()) as fallback:
+        assert await _routed_to(target.id, "Need help") == FIRST_CONTEXT_QUEUE
     fallback.assert_not_awaited(), "must not fall through to somebody else's desk"
 
 
@@ -217,28 +199,15 @@ async def test_same_root_uses_canonical_path_then_id_as_stable_tiebreaker(tmp_pa
 
 
 @pytest.mark.asyncio
-async def test_valid_project_without_desk_posts_to_hub_default_queue(tmp_path: Path) -> None:
+async def test_valid_project_without_desk_goes_to_the_hubs_default_queue(tmp_path: Path) -> None:
+    """No desk of its own: the hub's default one — the last one it advertised, so even a ticket
+    typed offline is addressed; with none known yet it is resolved when delivered."""
     target = await _project(tmp_path / "customer")
     default = HelpdeskTarget(DEFAULT_QUEUE, None)
-    hub = AsyncMock(side_effect=HubError(400, "stop after route assertion"))
 
-    with (
-        patch.object(
-            fma,
-            "get_current_request_info",
-            return_value=_request_info(
-                {
-                    "text": "Fallback request",
-                    "project_id": target.id,
-                }
-            ),
-        ),
-        patch.object(fma, "_hub_default_helpdesk", AsyncMock(return_value=default)) as fallback,
-        patch.object(fma, "hub_request", hub),
-    ):
-        await fma.helpdesk_start_ticket()
-
-    fallback.assert_awaited_once_with()
-    assert hub.await_args.args == ("POST", BuiltinEntityType.PROJECT, DEFAULT_QUEUE, "start_guest_conversation")
-    body = hub.await_args.kwargs["payload"]
-    assert body["text"].startswith("Fallback request")
+    with patch.object(fma, "_last_known_desk", return_value=default):
+        assert await _routed_to(target.id, "Fallback request") == DEFAULT_QUEUE
+    with patch.object(fma, "_last_known_desk", return_value=None):
+        assert await _routed_to(target.id, "Fallback request") is None  # resolved at delivery
+    with patch.object(fma, "_hub_default_helpdesk", AsyncMock(return_value=default)):
+        assert (await fma.resolve_helpdesk(target.id)) == default

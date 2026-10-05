@@ -535,11 +535,9 @@ msgstr "{0} הודעות"
 msgid "{0} not tested"
 msgstr "{0} לא נבדק"
 
-#. placeholder {0}: person.name || person.email
 #. placeholder {0}: person.name || person.email || ''
 #. placeholder {1}: task.title
 #: src/components/assets/editor/task/OwnerButton.tsx
-#: src/pages/flow-page/VibeAssignTaskDialog.tsx
 msgid "{0} now has \"{1}\"."
 msgstr "המשימה \"{1}\" הוקצתה כעת ל־{0}."
 
@@ -1136,8 +1134,8 @@ msgid "~2s. Use to check what's on disk without changing anything."
 msgstr "~2 שניות. בשביל לבדוק מה יש בדיסק ללא שינוי של שום דבר."
 
 #: src/components/helpdesk/HelpdeskRequestDialog.tsx
-msgid "⌘/Ctrl + Enter to send"
-msgstr "⌘/Ctrl + Enter לשליחה"
+#~ msgid "⌘/Ctrl + Enter to send"
+#~ msgstr "⌘/Ctrl + Enter לשליחה"
 
 #: src/components/search-calibration/SearchCalibrationPanel.tsx
 msgid "⚡ {latencyMs} ms"
@@ -1942,6 +1940,7 @@ msgstr "סוכן"
 
 #: src/components/asset-counters/agent-counters.tsx
 #: src/components/assets/editor/agent-profile/deployment/ThreadPane.tsx
+#: src/components/automations/automation-words.ts
 #: src/components/automations/blocks/ThenBlock.tsx
 #: src/components/quick-create/registry.ts
 #: src/components/top-nav-bar/RuntimeChip.tsx
@@ -2534,8 +2533,8 @@ msgid "Anthropic API key for direct API access"
 msgstr "מפתח API של Anthropic לגישה ישירה ל-API"
 
 #: src/pages/flow-page/VibeAssignTaskDialog.tsx
-msgid "Any detail that helps (optional)"
-msgstr "כל פרט שיכול לעזור (אופציונלי)"
+#~ msgid "Any detail that helps (optional)"
+#~ msgstr "כל פרט שיכול לעזור (אופציונלי)"
 
 #: src/components/automations/RunsView.tsx
 msgid "Any result"
@@ -2770,6 +2769,7 @@ msgstr "ערכים"
 msgid "Artifacts created during flow execution will appear here"
 msgstr "קבצים שנוצרו במהלך הפעלת התהליך יופיעו כאן"
 
+#: src/components/help/AskForHelpDialog.tsx
 #: src/components/settings-view/settings-utils.ts
 #: src/types/ViewType.ts
 msgid "Ask"
@@ -2791,6 +2791,7 @@ msgstr "אפשר לשאול כל דבר — אחפש בהדריכים ואדרי
 msgid "Ask every time"
 msgstr ""
 
+#: src/components/help/AskForHelpDialog.tsx
 #: src/components/helpdesk/HelpdeskAsk.tsx
 msgid "Ask for help"
 msgstr "בקשו עזרה"
@@ -2799,7 +2800,6 @@ msgstr "בקשו עזרה"
 #~ msgstr ""
 
 #: src/pages/flow-page/VibeAssignTaskButton.tsx
-#: src/pages/flow-page/VibeAssignTaskDialog.tsx
 msgid "Ask someone for help"
 msgstr "לבקש עזרה ממישהו"
 
@@ -2915,12 +2915,12 @@ msgid "Assets unavailable. Retry"
 msgstr ""
 
 #: src/pages/flow-page/VibeAssignTaskDialog.tsx
-msgid "Assign"
-msgstr "הקצו"
+#~ msgid "Assign"
+#~ msgstr "הקצו"
 
 #: src/pages/flow-page/VibeAssignTaskDialog.tsx
-msgid "Assigning…"
-msgstr "הקצאה מתבצעת…"
+#~ msgid "Assigning…"
+#~ msgstr "הקצאה מתבצעת…"
 
 #: src/types/ViewType.ts
 msgid "Assistance"
@@ -2978,7 +2978,7 @@ msgstr "צרף asset (skill, agent, doc, spec)"
 msgid "Attach files"
 msgstr "צרף קבצים"
 
-#: src/pages/flow-page/VibeAssignTaskDialog.tsx
+#: src/components/help/AskForHelpDialog.tsx
 msgid "Attach files or a screenshot (or paste one into the details)"
 msgstr ""
 
@@ -2987,8 +2987,8 @@ msgid "Attach session transcript"
 msgstr "צרף תמליל סשן"
 
 #: src/pages/flow-page/VibeAssignTaskDialog.tsx
-msgid "Attach this session's transcript"
-msgstr "צרפו את תמליל הסשן הזה"
+#~ msgid "Attach this session's transcript"
+#~ msgstr "צרפו את תמליל הסשן הזה"
 
 #: src/components/conversation/FlowMessageBubble.tsx
 msgid "Attached asset types"
@@ -3149,13 +3149,19 @@ msgid "Automation created"
 msgstr ""
 
 #: src/components/automations/AutomationPage.tsx
+#: src/components/automations/BusView.tsx
 #: src/components/collapsed-sidebar/collapsed-sidebar.tsx
 #: src/types/ViewType.ts
 msgid "Automations"
 msgstr ""
 
 #: src/components/automations/BusView.tsx
-msgid "Automations listening"
+#~ msgid "Automations listening"
+#~ msgstr ""
+
+#: src/components/automations/BusView.tsx
+#: src/components/automations/BusView.tsx
+msgid "Automations that run when this event happens"
 msgstr ""
 
 #: src/components/llm-sources/LlmSourcesView.tsx
@@ -3711,8 +3717,8 @@ msgstr ""
 #: src/components/graph-view/ui/AccessTab.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
+#: src/components/help/AskForHelpDialog.tsx
 #: src/components/helpdesk/AddHelpdeskDialog.tsx
-#: src/components/helpdesk/HelpdeskRequestDialog.tsx
 #: src/components/hooks-manager/HookForm.tsx
 #: src/components/hooks-manager/TriggerForm.tsx
 #: src/components/hooks-view/HookEditor.tsx
@@ -3758,7 +3764,6 @@ msgstr ""
 #: src/components/wizard/WizardHost.tsx
 #: src/pages/entry/InstallLanding.tsx
 #: src/pages/entry/LaunchLanding.tsx
-#: src/pages/flow-page/VibeAssignTaskDialog.tsx
 #: src/pages/flow-page/VibeWorkerSwitchDialog.tsx
 #: src/pages/home-landing/feed/HomeFeedColumn.tsx
 #: src/pages/hub-home/LaunchSandboxDialog.tsx
@@ -5535,13 +5540,17 @@ msgstr "לא ניתן היה להקצות תיבת דואר"
 msgid "Could not annotate view"
 msgstr "לא ניתן להוסיף הערות לתצוגה"
 
+#: src/components/help/AskForHelpDialog.tsx
+msgid "Could not ask for help"
+msgstr ""
+
 #: src/components/assets/editor/task/OwnerButton.tsx
 msgid "Could not assign"
 msgstr "לא ניתן להקצות"
 
 #: src/pages/flow-page/VibeAssignTaskDialog.tsx
-msgid "Could not assign the task."
-msgstr ""
+#~ msgid "Could not assign the task."
+#~ msgstr ""
 
 #: src/components/assets/editor/task/TaskAttachments.tsx
 #~ msgid "Could not attach {0}"
@@ -5551,10 +5560,9 @@ msgstr ""
 msgid "Could not attach {name}"
 msgstr "לא ניתן היה לצרף את {name}"
 
-#. placeholder {0}: failed.join(', ')
 #: src/pages/flow-page/VibeAssignTaskDialog.tsx
-msgid "Could not attach: {0}"
-msgstr ""
+#~ msgid "Could not attach: {0}"
+#~ msgstr ""
 
 #. placeholder {0}: a.name
 #: src/components/automations/AutomationsList.tsx
@@ -5854,8 +5862,8 @@ msgid "Could not pull {0}"
 msgstr "לא ניתן לשלוף את {0}"
 
 #: src/components/helpdesk/HelpdeskRequestDialog.tsx
-msgid "Could not reach support"
-msgstr "לא ניתן להתחבר לתמיכה"
+#~ msgid "Could not reach support"
+#~ msgstr "לא ניתן להתחבר לתמיכה"
 
 #: src/routes/loaders/process-load-error-resolution.ts
 msgid "Could not reach the backend. Try again in a moment."
@@ -6583,7 +6591,7 @@ msgstr "נוצר: {0}"
 msgid "Creates a link anyone can use to join as a member."
 msgstr "יוצר קישור שמאפשר לכל אחד להצטרף כחבר"
 
-#: src/pages/flow-page/VibeAssignTaskDialog.tsx
+#: src/components/help/AskForHelpDialog.tsx
 msgid "Creates a task, assigns it to them, and sends them a message with the details."
 msgstr "משימה נוצרת, מוקצית להם, ונשלחת להם הודעה עם הפרטים."
 
@@ -7386,8 +7394,8 @@ msgid "Describe the logical application, service, resource, or content and its o
 msgstr "יש לתאר את היישום, השירות, המשאב או התוכן הלוגי ואת המקור האופציונלי"
 
 #: src/components/helpdesk/HelpdeskRequestDialog.tsx
-msgid "Describe what you need — what happened, what you expected, and anything you have already tried."
-msgstr "יש לתאר מה צריך — מה קרה, מה ציפית, וכל דבר שכבר ניסית."
+#~ msgid "Describe what you need — what happened, what you expected, and anything you have already tried."
+#~ msgstr "יש לתאר מה צריך — מה קרה, מה ציפית, וכל דבר שכבר ניסית."
 
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 msgid "Describe who this agent is, what it does, and what it must never do…"
@@ -8600,6 +8608,8 @@ msgstr "הערך \"{0}\""
 msgid "event"
 msgstr ""
 
+#: src/components/automations/automation-words.ts
+#: src/components/automations/BusView.tsx
 #: src/components/automations/BusView.tsx
 #: src/components/automations/BusView.tsx
 #: src/components/automations/RunDetail.tsx
@@ -9437,6 +9447,7 @@ msgstr "טעינה…"
 msgid "Field"
 msgstr "שדה"
 
+#: src/components/automations/automation-words.ts
 #: src/components/automations/RunDetail.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/i18n/type-labels.ts
@@ -10567,6 +10578,7 @@ msgstr ""
 
 #: src/components/footer.tsx
 #: src/components/footer.tsx
+#: src/components/help/AskForHelpDialog.tsx
 #: src/components/helpdesk/HelpdeskBrandHeader.tsx
 #: src/components/quick-create/QuickCreatePanel.tsx
 #: src/types/ViewType.ts
@@ -11179,6 +11191,10 @@ msgstr "כלול פרויקטי מערכת מובנים בבורר הפרויק�
 msgid "Include Co-Authored-By"
 msgstr "הכללת Co-Authored-By"
 
+#: src/components/automations/RunsView.tsx
+msgid "Include Flowpad's own"
+msgstr ""
+
 #: src/components/automations/blocks/WhenBlock.tsx
 msgid "Include subfolders"
 msgstr ""
@@ -11186,6 +11202,10 @@ msgstr ""
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 msgid "Include this file in the next commit (git add)"
 msgstr "הכללת הקובץ הזה ב-commit הבא (git add)"
+
+#: src/components/help/AskForHelpDialog.tsx
+msgid "Include this session's transcript"
+msgstr ""
 
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
 msgid "Index (seq)"
@@ -13570,6 +13590,7 @@ msgid "net"
 msgstr ""
 
 #: src/components/assets/editor/agent-profile/AgentPlacesColumn.tsx
+#: src/components/automations/BusView.tsx
 #: src/components/data-sources/DataSourceDialog.tsx
 #: src/pages/discover-page/DiscoverRow.tsx
 msgid "never"
@@ -14189,6 +14210,10 @@ msgstr "אין ישויות."
 msgid "No errors found"
 msgstr "לא נמצאו שגיאות"
 
+#: src/components/automations/BusView.tsx
+msgid "No event like this has happened yet"
+msgstr ""
+
 #: src/components/triggers-view/TriggersList.tsx
 #~ msgid "No event triggers visible. A wizard declares one as a child asset; most are system-scoped, so toggle <0>Include system</0> above to see them."
 #~ msgstr ""
@@ -14791,8 +14816,8 @@ msgid "No spec specified."
 msgstr "לא צוין spec."
 
 #: src/components/automations/RunDetail.tsx
-msgid "No steps; it started the workflows that listen for it."
-msgstr ""
+#~ msgid "No steps; it started the workflows that listen for it."
+#~ msgstr ""
 
 #~ msgid "No streams yet — this source has not polled."
 #~ msgstr "אין זרימות עדיין — מקור זה טרם ביצע סריקה."
@@ -15115,6 +15140,15 @@ msgstr "לא ניתן להפעיל כאן"
 
 #: src/components/assets/editor/agent-profile/deployment/DeploymentProcessPanel.tsx
 msgid "Not saved"
+msgstr ""
+
+#: src/components/conversation/MessageBubble.tsx
+msgid "Not sent"
+msgstr ""
+
+#: src/components/conversation/MessageBubble.tsx
+#: src/notifications/ingest.ts
+msgid "Not sent yet"
 msgstr ""
 
 #~ msgid "Not set"
@@ -15569,12 +15603,14 @@ msgstr ""
 #: src/components/conversation/task-it.tsx
 #: src/components/entity-context/EntityContextPanel.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
+#: src/components/help/AskForHelpDialog.tsx
 #: src/components/lens-viewer/shared/transcript-features/OperationRow.tsx
 #: src/components/milkdown-editor/MilkdownEditor.tsx
 #: src/components/project-activity-strip/BookmarkColumn.tsx
 #: src/components/runs/RunPreviewRoot.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 #: src/components/workers/WorkerToolbar.tsx
+#: src/notifications/ingest.ts
 #: src/notifications/renderDesktopNotification.ts
 #: src/pages/home-landing/feed/FeedEntryCard.tsx
 #: src/pages/hub-home/HubHome.tsx
@@ -15900,6 +15936,10 @@ msgstr "פתח ב-Worktree"
 msgid "Open in your browser"
 msgstr "פתיחה בדפדפן"
 
+#: src/components/automations/ThenSteps.tsx
+msgid "Open it"
+msgstr ""
+
 #: src/pages/entry/OpenSandboxLanding.tsx
 msgid "Open it now"
 msgstr "פתחו אותו עכשיו"
@@ -16032,7 +16072,7 @@ msgstr "פתח טרמינל ({modLabel}+T)"
 msgid "Open terminal in {workdir}"
 msgstr "פתח טרמינל ב-{workdir}"
 
-#: src/pages/flow-page/VibeAssignTaskDialog.tsx
+#: src/components/help/AskForHelpDialog.tsx
 msgid "Open that conversation"
 msgstr ""
 
@@ -16116,6 +16156,10 @@ msgstr ""
 #: src/pages/entry/LaunchLanding.tsx
 msgid "Open the sandbox"
 msgstr "פתיחת ארגז החול"
+
+#: src/components/automations/ThenSteps.tsx
+msgid "Open the script"
+msgstr ""
 
 #: src/components/workers/WorkerToolbar.tsx
 msgid "Open the session"
@@ -16263,6 +16307,10 @@ msgstr "הודעה לבעלים (אופציונלי)…"
 
 #: src/components/conversation/MembersAvatarStack.tsx
 msgid "Or copy an invite link"
+msgstr ""
+
+#: src/components/help/AskForHelpDialog.tsx
+msgid "Or pick a person, or type an email"
 msgstr ""
 
 #: src/pages/hub-home/ShareSandboxDialog.tsx
@@ -16751,7 +16799,7 @@ msgstr "יש לבחור קבוצת אנשי קשר או אנשים"
 msgid "Pick a group in any conversation to add all its members at once."
 msgstr "ניתן לבחור קבוצה בכל שיחה כדי להוסיף את כל החברים שלה בבת אחת."
 
-#: src/pages/flow-page/VibeAssignTaskDialog.tsx
+#: src/components/help/AskForHelpDialog.tsx
 msgid "Pick a person or type an email"
 msgstr "בחרו אדם או הקלידו כתובת דוא״ל"
 
@@ -18851,6 +18899,7 @@ msgstr "חודש — הבדיקה הבאה תתבצע במחזור הקרוב."
 #: src/components/assets/editor/EntityResolutionGate.tsx
 #: src/components/assets/editor/markdown/MarkdownEditor.tsx
 #: src/components/assets/editor/MissingAssetCard.tsx
+#: src/components/conversation/MessageBubble.tsx
 #: src/components/graph-view/webglSupport.tsx
 #: src/components/helpdesk/HelpdeskLoadDialog.tsx
 #: src/components/machine-overview/machine-overview.tsx
@@ -18869,6 +18918,10 @@ msgstr "הורדה מחדש"
 #: src/components/task-receive/IncomingTaskDialog.tsx
 msgid "Retry pull"
 msgstr "נסה משיכה שוב"
+
+#: src/components/conversation/MessageBubble.tsx
+msgid "Retrying…"
+msgstr ""
 
 #: src/components/assets/editor/wizard/WizardStepInspector.tsx
 msgid "Returned"
@@ -19484,6 +19537,11 @@ msgstr "שמירת גרסה"
 msgid "Saved"
 msgstr "נשמר"
 
+#: src/components/help/AskForHelpDialog.tsx
+#: src/notifications/ingest.ts
+msgid "Saved — it will send after you sign in"
+msgstr ""
+
 #: src/components/assets/editor/agent-profile/deployment/DeploymentProcessPanel.tsx
 msgid "Saved — Restart runs it"
 msgstr ""
@@ -19521,6 +19579,7 @@ msgstr "הקשרים שנשמרו"
 #: src/components/conversation/ConversationView.tsx
 #: src/components/credentials/CredentialDialog.tsx
 #: src/components/cron-view/CronForm.tsx
+#: src/components/help/AskForHelpDialog.tsx
 #: src/components/organization/budgets/OrgSharePanel.tsx
 #: src/components/spec-editor/SpecEditor.tsx
 msgid "Saving…"
@@ -19622,8 +19681,9 @@ msgstr "סורק את כל משאבי הווקים מפרופיל המערכת �
 msgid "schedule"
 msgstr "תיזמון"
 
-#~ msgid "Schedule"
-#~ msgstr ""
+#: src/components/automations/automation-words.ts
+msgid "Schedule"
+msgstr ""
 
 #: src/components/assets/editor/agent-profile/AgentScheduleSection.tsx
 msgid "Schedule enabled"
@@ -19956,6 +20016,15 @@ msgstr ""
 msgid "Seems like you are trying to clone a private git repo. You should connect to GitHub to complete the operation."
 msgstr "נראה שאתם מנסים לשכפל מאגר git פרטי. עליכם להתחבר ל-GitHub כדי להשלים את הפעולה."
 
+#: src/components/automations/BusView.tsx
+msgid "Seen"
+msgstr ""
+
+#. placeholder {0}: e.count
+#: src/components/automations/BusView.tsx
+msgid "Seen {0} times since Flowpad started"
+msgstr ""
+
 #: src/components/terminal/interactive-terminal/TimeGutter.tsx
 #: src/components/terminal/interactive-terminal/TimeGutter.tsx
 msgid "Segment dur"
@@ -20119,7 +20188,6 @@ msgstr "סיכום עצמי"
 #: src/components/automations/BusView.tsx
 #: src/components/conversation/MessageComposer.tsx
 #: src/components/entity-execution-panel/CompactExecutionInput.tsx
-#: src/components/helpdesk/HelpdeskRequestDialog.tsx
 #: src/components/organization/invite-row.tsx
 #: src/pages/home-landing/feed/FeedEntryCard.tsx
 msgid "Send"
@@ -20150,8 +20218,8 @@ msgid "Send a PROMPT to the recipient asking for a status summary"
 msgstr "שלח פרומפט לנמען לסיכום מצב המשימה"
 
 #: src/components/helpdesk/HelpdeskRequestDialog.tsx
-msgid "Send a question to the help desk. A new conversation will open with your message as the starting point."
-msgstr "ניתן לשלוח שאלה לשירות התמיכה. שיחה חדשה תיפתח עם ההודעה שלך כנקודת התחלה."
+#~ msgid "Send a question to the help desk. A new conversation will open with your message as the starting point."
+#~ msgstr "ניתן לשלוח שאלה לשירות התמיכה. שיחה חדשה תיפתח עם ההודעה שלך כנקודת התחלה."
 
 #: src/components/automations/BusView.tsx
 msgid "Send a test event"
@@ -20195,7 +20263,6 @@ msgid "Sending in {0}: “{sendingText}”"
 msgstr "שולח ב{0}: \"{sendingText}\""
 
 #: src/components/conversation/SendProgressNotice.tsx
-#: src/components/helpdesk/HelpdeskRequestDialog.tsx
 #: src/components/task-bar/SharedTaskView.tsx
 msgid "Sending…"
 msgstr "משלח…"
@@ -20204,12 +20271,20 @@ msgstr "משלח…"
 msgid "Sends replies"
 msgstr ""
 
+#: src/components/help/AskForHelpDialog.tsx
+msgid "Sends your question to a help desk — a person picks it up."
+msgstr ""
+
 #: src/components/conversation/MessageBubble.tsx
 msgid "Sent"
 msgstr "נשלח"
 
 #: src/components/voice/CallControls.tsx
 msgid "Sent — the spoken answer lands in the conversation."
+msgstr ""
+
+#: src/components/help/AskForHelpDialog.tsx
+msgid "Sent to {to}"
 msgstr ""
 
 #: src/components/install/InstallButton.tsx
@@ -21001,8 +21076,10 @@ msgstr "תצוגת גרף Sigma"
 #: src/components/account/user-info.tsx
 #: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
+#: src/components/help/AskForHelpDialog.tsx
 #: src/components/llm-sources/LlmSourcesView.tsx
 #: src/components/project-home/ProjectGitChecksDialog.tsx
+#: src/notifications/ingest.ts
 #: src/notifications/ingest.ts
 #: src/notifications/ingest.ts
 #: src/pages/flow-page/content-panel/user-dropdown/user-dropdown.tsx
@@ -21860,6 +21937,10 @@ msgstr "ההתחברות עדיין פעילה"
 #~ msgid "Still signed out — please re-authenticate"
 #~ msgstr "עדיין מנותק — יש להתחבר מחדש"
 
+#: src/components/helpdesk/HelpdeskAsk.tsx
+msgid "Still stuck? A person can take it from here."
+msgstr ""
+
 #: src/components/conversation/SendProgressNotice.tsx
 msgid "Still working — packing and uploading the attachments. A session transcript or large files can take a minute."
 msgstr "עדיין עובד — אורז ומעלה את הקבצים המצורפים. תמליל סשן או קבצים גדולים עשויים לקחת דקה."
@@ -22306,7 +22387,6 @@ msgid "Task"
 msgstr "משימה"
 
 #: src/components/assets/editor/task/OwnerButton.tsx
-#: src/pages/flow-page/VibeAssignTaskDialog.tsx
 msgid "Task assigned"
 msgstr "המשימה הוקצתה"
 
@@ -22694,8 +22774,20 @@ msgstr "החיבור ל-GitHub לא הושלם."
 msgid "the guest"
 msgstr ""
 
+#: src/components/footer.tsx
+msgid "The guides couldn't load ({guidesFailed}) — a person can still help."
+msgstr ""
+
 #: src/components/assets/editor/agent-profile/deployment/DeploymentHealth.tsx
 msgid "The health check did not answer"
+msgstr ""
+
+#: src/components/help/AskForHelpDialog.tsx
+msgid "the help desk"
+msgstr ""
+
+#: src/components/helpdesk/HelpdeskLoadDialog.tsx
+msgid "the help desk could not load"
 msgstr ""
 
 #: src/routes/loaders/load-dock-pointer.ts
@@ -22707,8 +22799,8 @@ msgid "The help desk is not set up on this machine yet."
 msgstr "מרכז העזרה עדיין לא הוגדר במחשב זה."
 
 #: src/components/helpdesk/HelpdeskRequestDialog.tsx
-msgid "The help desk is unavailable right now. Please try again."
-msgstr "שירות התמיכה אינו זמין כרגע. יש לנסות שוב."
+#~ msgid "The help desk is unavailable right now. Please try again."
+#~ msgstr "שירות התמיכה אינו זמין כרגע. יש לנסות שוב."
 
 #: src/components/conversation/SessionCard.tsx
 msgid "the host"
@@ -22879,7 +22971,7 @@ msgstr "לסשן יש פעילות חדשה מאז הניתוח האחרון —
 msgid "The session is still connecting — try again in a moment."
 msgstr "הסשן עדיין מתחבר — יש לנסות שוב בעוד רגע."
 
-#: src/pages/flow-page/VibeAssignTaskDialog.tsx
+#: src/components/help/AskForHelpDialog.tsx
 msgid "The session transcript could not be read."
 msgstr "לא ניתן לקרוא את תמליל הסשן."
 
@@ -22955,6 +23047,7 @@ msgstr "קוסם הניקיון דיווח על שגיאה."
 msgid "The worker exited immediately after launch, so auto-relaunch is paused. Retry to launch it again."
 msgstr "העובד יצא מיד לאחר ההפעלה, ולכן ההפעלה מחדש האוטומטית מושהית. נסו שוב כדי להפעיל אותו מחדש."
 
+#: src/components/automations/AutomationPage.tsx
 #: src/components/automations/blocks/ThenBlock.tsx
 #: src/components/automations/IfThenGraphic.tsx
 msgid "Then"
@@ -23198,6 +23291,10 @@ msgstr "עדיין לא ניתן לשתף את התיקייה"
 #: src/components/asset-manager/AssetManagerButton.tsx
 msgid "This folder-backed asset has no main file metadata."
 msgstr "לנכס תיקייה זה אין מטא-נתונים של קובץ ראשי"
+
+#: src/components/help/AskForHelpDialog.tsx
+msgid "This hub has no help desk — pick a person to ask."
+msgstr ""
 
 #: src/pages/hub-home/HubHome.tsx
 msgid "This hub isn't configured to run sandboxes"
@@ -23740,7 +23837,11 @@ msgid "Timeout for Anthropic API calls in ms"
 msgstr "פסק זמן לקריאות ה-API של Anthropic במילישניות"
 
 #: src/components/automations/BusView.tsx
-msgid "Times seen since the app started"
+#~ msgid "Times seen since the app started"
+#~ msgstr ""
+
+#: src/components/automations/BusView.tsx
+msgid "Times this event happened since Flowpad started"
 msgstr ""
 
 #: src/components/project-selector/NewProjectFromGitDialog.tsx
@@ -24034,7 +24135,7 @@ msgstr "מעקב שגיאה ({0} שורות)"
 msgid "Transcript"
 msgstr "תמלול"
 
-#: src/pages/flow-page/VibeAssignTaskDialog.tsx
+#: src/components/help/AskForHelpDialog.tsx
 msgid "Transcript not attached"
 msgstr "תמליל לא צורף"
 
@@ -25043,6 +25144,10 @@ msgstr "מחכה להרשאה... (פג תוקף ב-{mm}:{ss})"
 msgid "Waiting for keychain approval…"
 msgstr "ממתין לאישור מפתחות…"
 
+#: src/components/conversation/MessageBubble.tsx
+msgid "Waiting for sign-in"
+msgstr ""
+
 #: src/components/assets/editor/wizard/wizard-texts.ts
 msgid "waiting for you"
 msgstr "ממתין לך"
@@ -25153,10 +25258,9 @@ msgstr "מה יכול Flowpad לעשות בשבילך?"
 msgid "What changed? Sent to the recipients below…"
 msgstr "מה השתנה? ההודעה תישלח לנמענים שלהלן…"
 
+#: src/components/help/AskForHelpDialog.tsx
 #: src/components/helpdesk/HelpdeskAsk.tsx
-#: src/components/helpdesk/HelpdeskRequestDialog.tsx
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
-#: src/pages/flow-page/VibeAssignTaskDialog.tsx
 msgid "What do you need help with?"
 msgstr "עם מה אתה צריך עזרה?"
 
@@ -25176,6 +25280,10 @@ msgstr ""
 #: src/components/project-home/ProjectGitChecksDialog.tsx
 msgid "What Flowpad found when it checked this project's Git setup."
 msgstr "מה ש־Flowpad מצא כשבדק את הגדרות Git בפרויקט הזה."
+
+#: src/components/help/AskForHelpDialog.tsx
+msgid "What happened, what you expected, what you already tried (optional)"
+msgstr ""
 
 #. placeholder {0}: tile.label
 #: src/components/quick-create/QuickCreatePanel.tsx
@@ -25650,7 +25758,7 @@ msgstr ""
 
 #. placeholder {0}: person?.name || person?.email
 #. placeholder {1}: alreadyAsked.task.title
-#: src/pages/flow-page/VibeAssignTaskDialog.tsx
+#: src/components/help/AskForHelpDialog.tsx
 msgid "You already asked {0}: \"{1}\"."
 msgstr ""
 
@@ -25844,6 +25952,10 @@ msgstr "הפרויקטים שלך"
 #: src/components/helpdesk/HelpdeskMyItems.tsx
 msgid "Your questions"
 msgstr "השאלות שלך"
+
+#: src/components/help/AskForHelpDialog.tsx
+msgid "Your request could not be saved."
+msgstr ""
 
 #~ msgid "Your sandbox is ready"
 #~ msgstr "ארגז החול שלך מוכן"

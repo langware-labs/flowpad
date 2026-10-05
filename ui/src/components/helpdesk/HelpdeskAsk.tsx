@@ -5,7 +5,7 @@ import { Button } from '@src/components/ui/button';
 import { Skeleton } from '@src/components/ui/skeleton';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { MessageSquare } from 'lucide-react';
-import { HelpdeskRequestDialog } from './HelpdeskRequestDialog';
+import { AskForHelpDialog } from '@src/components/help/AskForHelpDialog';
 import { useHelpdeskAgent } from './useHelpdeskAgent';
 
 /**
@@ -23,12 +23,15 @@ export function HelpdeskAsk({ project }: { project: Project }) {
   const { t } = useLingui();
   const { agent, ready } = useHelpdeskAgent(project.id);
   const [askOpen, setAskOpen] = useState(false);
+  // The support chat the person is in — offered as the ask's context (they may untick it).
+  const [chatProcess, setChatProcess] = useState<TypeId | null>(null);
 
   // Runs once, after the process is created and before its first prompt. This
   // is the only moment the persona can be attached — the spec is persisted into
   // `cli_config`, so a session created without it never gets one.
   const bindAgent = useCallback(
     async (proc: AgenticProcess) => {
+      setChatProcess(proc.typeId);
       if (!agent?.asset_ref) return;
       try {
         // `true` -- the desk's support agent IS the persona of this chat;
@@ -50,25 +53,57 @@ export function HelpdeskAsk({ project }: { project: Project }) {
     return <Skeleton className="h-[320px] w-full rounded-lg" />;
   }
 
+  const askAPerson = (
+    <>
+      <Button
+        onClick={() => setAskOpen(true)}
+        className="gap-1.5 bg-[hsl(var(--brand))] text-[hsl(var(--brand-foreground))] hover:bg-[hsl(var(--brand))]/90"
+        data-testid="helpdesk-ask-button"
+      >
+        <MessageSquare className="h-4 w-4" />
+        <Trans>Ask for help</Trans>
+      </Button>
+      {askOpen && (
+        <AskForHelpDialog
+          open={askOpen}
+          onOpenChange={setAskOpen}
+          projectId={project.id}
+          sessionTypeId={agent ? chatProcess : null}
+          origin={agent ? 'portal_agent_chat' : 'portal'}
+        />
+      )}
+    </>
+  );
+
   if (agent) {
     return (
-      <div className="h-[320px] overflow-hidden rounded-lg border border-border bg-card/40">
-        <EntityExecutionPanel
-          // Target the SUBAGENT, not the project: `project-<id>` is what vibe
-          // chat uses (`chatTargetForProject`), and sharing it would braid
-          // the help desk's history into the user's vibe sessions.
-          target={new TypeId(SubAgent.type, agent.id).toString()}
-          processType={ProcessKind.Chat}
-          dense
-          defaultProjectId={project.id}
-          defaultWorkdir={project.fs_storage_mount_path ?? null}
-          onProcessCreated={bindAgent}
-          className="h-full"
-          emptyStateText={t`Ask anything — I can search the guides and walk you through them.`}
-          placeholder={t`What do you need help with?`}
-          newSessionLabel={t`Start over`}
-          historyLabel={t`Past questions`}
-        />
+      <div className="flex flex-col gap-2">
+        <div className="h-[320px] overflow-hidden rounded-lg border border-border bg-card/40">
+          <EntityExecutionPanel
+            // Target the SUBAGENT, not the project: `project-<id>` is what vibe
+            // chat uses (`chatTargetForProject`), and sharing it would braid
+            // the help desk's history into the user's vibe sessions.
+            target={new TypeId(SubAgent.type, agent.id).toString()}
+            processType={ProcessKind.Chat}
+            dense
+            defaultProjectId={project.id}
+            defaultWorkdir={project.fs_storage_mount_path ?? null}
+            onProcessCreated={bindAgent}
+            className="h-full"
+            emptyStateText={t`Ask anything — I can search the guides and walk you through them.`}
+            placeholder={t`What do you need help with?`}
+            newSessionLabel={t`Start over`}
+            historyLabel={t`Past questions`}
+          />
+        </div>
+        {/* The assistant answers from the guides; a person is always one click away beside it
+          (its own prompt tells people to "use Ask for help to reach a person"). */}
+        <div className="flex items-center justify-between gap-3 px-1">
+          <p className="text-xs text-muted-foreground">
+            <Trans>Still stuck? A person can take it from here.</Trans>
+          </p>
+          {askAPerson}
+        </div>
       </div>
     );
   }
@@ -79,15 +114,7 @@ export function HelpdeskAsk({ project }: { project: Project }) {
       <p className="text-sm text-muted-foreground">
         <Trans>Can’t find what you need? Send us a question and a person will get back to you.</Trans>
       </p>
-      <Button
-        onClick={() => setAskOpen(true)}
-        className="gap-1.5 bg-[hsl(var(--brand))] text-[hsl(var(--brand-foreground))] hover:bg-[hsl(var(--brand))]/90"
-        data-testid="helpdesk-ask-button"
-      >
-        <MessageSquare className="h-4 w-4" />
-        <Trans>Ask for help</Trans>
-      </Button>
-      <HelpdeskRequestDialog open={askOpen} onClose={() => setAskOpen(false)} />
+      {askAPerson}
     </div>
   );
 }
