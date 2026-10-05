@@ -595,6 +595,10 @@ def auth_logout():
     repaint for free. With no backend up there is no such conflict, so the same
     work runs locally.
 
+    "The running backend" is the one FLOW_INSTANCE's ``server.json`` names, never
+    ``get_instance_settings().port``: that is the port an instance BINDS to, which
+    defaults to prod's — so ``FLOW_INSTANCE=sn-1 flow auth logout`` signed out prod.
+
     Example: flow auth logout
     """
     from flow_sdk.cli.auth.hub_login import is_logged_in  # noqa: PLC0415
@@ -603,11 +607,11 @@ def auth_logout():
         typer.echo("⚠ Not currently logged in")
         return
 
-    from flow_sdk.cli.commands._common import local_post
+    from flow_sdk.cli.commands._common import discover_port, local_post
     from flow_sdk.server.launch import check_server_health
 
-    port = get_instance_settings().port
-    if check_server_health(port):
+    port = discover_port(required=False)
+    if port is not None and check_server_health(port):
         # ``local_post``, not a bare requests call: it carries the cookie-gate
         # secret, without which a gated instance refuses this like any other
         # keyless caller.
