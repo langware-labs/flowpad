@@ -26,7 +26,7 @@ from flow_sdk.actions.action_registry import action
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
 from flow_sdk.request_context.methods import get_current_request_info
-from flow_sdk.responses.response import ApiFailResponse, ApiResponse
+from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccessResponse
 
 logger = logging.getLogger(__name__)
 
@@ -58,3 +58,16 @@ async def open_entity_link() -> HTMLResponse | ApiResponse:
         logger.error("[open] %s: %s", typeid, e, exc_info=True)
         return ApiFailResponse(message=f"Open failed: {e}")
     return deep_link_redirect(link)
+
+
+@action.post(action_name="new-cloud-projects", types=None)
+async def new_cloud_projects() -> ApiResponse:
+    """The hub projects this desktop has never seen, each as the set-up link
+    ``IncomingDeepLink`` would read (``Project.new_from_hub``). The UI calls it
+    once a session is signed in and offers each one's set-up."""
+    from flow_sdk.builtin.project import Project  # noqa: PLC0415
+
+    request_info = get_current_request_info()
+    someone_typeid = request_info.someone_typeid if request_info else None
+    links = await Project.new_from_hub(someone_typeid)
+    return ApiSuccessResponse(data={"projects": [link.model_dump(exclude_none=True) for link in links]})

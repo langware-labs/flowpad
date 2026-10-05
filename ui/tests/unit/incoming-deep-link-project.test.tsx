@@ -27,6 +27,8 @@ vi.mock('@src/notifications/notify', () => ({
   notify: { error: h.notifyError, warning: h.notifyWarning, info: vi.fn(), success: vi.fn() },
 }));
 
+vi.mock('@sdk/react/hooks', () => ({ useAuth: () => ({ cloudUser: null }) }));
+
 vi.mock('@src/store/use-incoming-project-store', () => ({
   useIncomingProjectStore: () => ({ pendingProject: null, setPendingProject: h.setPendingProject }),
 }));

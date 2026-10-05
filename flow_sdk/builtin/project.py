@@ -654,6 +654,7 @@ class Project(Entity):
             spec = set_home_page(Path(self.fs_storage_mount_path), typeid)
         except ManifestError as exc:
             return ApiFailResponse(message=str(exc), status_code=400)
+        await self._reindex_manifest()
         return ApiSuccessResponse(data={"home_page": spec.home_page})
 
     @action.post(action_name="set-env-files")
@@ -674,7 +675,16 @@ class Project(Entity):
             spec = set_env_files(Path(self.fs_storage_mount_path), [str(p) for p in paths or []])
         except ManifestError as exc:
             return ApiFailResponse(message=str(exc), status_code=400)
+        await self._reindex_manifest()
         return ApiSuccessResponse(data={"env_files": spec.env_files})
+
+    async def _reindex_manifest(self) -> None:
+        """Re-index ``project_manifest.json`` after a field write. The row is the
+        projection every reader queries (the home-page picker, Credentials), and
+        nothing else re-indexes it — without this a saved value stays invisible."""
+        from flow_sdk.builtin.project_manifest import ensure_manifest_indexed  # noqa: PLC0415
+
+        await ensure_manifest_indexed(self)
 
     async def _own_asset(self, typeid: str) -> Entity | None:
         """The entity ``typeid`` names, if it lives in this Project or a direct
@@ -2333,8 +2343,6 @@ class Project(Entity):
         """A shared project's link: hydrate it from the hub, then hand the UI
         the "X shared a project with you" set-up (``setup_git`` + origin), the
         project itself when it is installed here, or why it can't open."""
-        import json  # noqa: PLC0415
-
         from flow_sdk.cloud_client.shared.errors import HubError  # noqa: PLC0415
         from flow_sdk.schema.data_spec.open_link_spec import ProjectOpenLinkSpec  # noqa: PLC0415
 
@@ -2347,15 +2355,49 @@ class Project(Entity):
             return ProjectOpenLinkSpec(project_id=entity_id, project_error="unavailable")
         if project.fs_storage_mount_path:
             return ProjectOpenLinkSpec(project_id=entity_id)
-        origin = as_project_origin(project.origin)
+        return project._setup_link() or ProjectOpenLinkSpec(project_id=entity_id, project_error="unavailable")
+
+    def _setup_link(self) -> "ProjectOpenLinkSpec | None":
+        """The "X shared a project with you" set-up for this file-less row, or
+        ``None`` when it has no origin to clone from."""
+        import json  # noqa: PLC0415
+
+        from flow_sdk.schema.data_spec.open_link_spec import ProjectOpenLinkSpec  # noqa: PLC0415
+
+        origin = as_project_origin(self.origin)
         if origin is None:
-            return ProjectOpenLinkSpec(project_id=entity_id, project_error="unavailable")
+            return None
         return ProjectOpenLinkSpec(
-            project_id=entity_id,
+            project_id=str(self.id),
             setup_git="1",
             git_origin=json.dumps(origin.model_dump(mode="json")),
-            title=project.name or None,
+            title=self.name or None,
         )
+
+    @classmethod
+    async def new_from_hub(cls, someone_typeid: str | None = None) -> "list[ProjectOpenLinkSpec]":
+        """The hub projects this desktop has never seen, mirrored locally as
+        file-less rows, each with its set-up link. A project shared while the
+        recipient had no FlowPad (or was signed out) reaches no push and no deep
+        link; this is the sweep that finds it after sign-in. A project already
+        held here — set up, skipped, or created on this machine — is not new.
+        Empty when the hub can't be asked."""
+        from flow_sdk.app.actions.membership_sync import materialize_remote_membership_entity  # noqa: PLC0415
+        from flow_sdk.cli.auth.hub_login import hub_auth_available  # noqa: PLC0415
+        from flow_sdk.cloud_client.transport import hub_http  # noqa: PLC0415
+
+        if not hub_auth_available():
+            return []
+        links = []
+        for row in hub_http.rows_of(await hub_http.hub_get(BuiltinEntityType.PROJECT)):
+            project_id = str(row.get("id") or "")
+            if not project_id or await cls.get_one({"id": project_id}) is not None:
+                continue
+            project = await materialize_remote_membership_entity(cls, row, someone_typeid)
+            link = project._setup_link() if project is not None else None
+            if link is not None:
+                links.append(link)
+        return links
 
     async def _refuse_nested_mount(self) -> None:
         """Projects do not nest: a new one may not sit inside a project's folder, nor
