@@ -7,7 +7,7 @@ import { AgentProfileEditor } from '@src/components/assets/editor/agent-profile/
 import { TooltipProvider } from '@src/components/ui/tooltip';
 
 vi.mock('@src/components/assets/editor/agent-profile/AgentScheduleSection', () => ({ AgentScheduleSection: () => null }));
-vi.mock('@src/components/assets/editor/agent-profile/AgentPlacesColumn', () => ({ AgentPlacesColumn: () => null }));
+vi.mock('@src/components/assets/editor/agent-profile/AgentPlacesColumn', () => ({ AgentPlacesColumn: () => <div data-testid="agent-places" /> }));
 vi.mock('@src/components/assets/editor/agent-profile/use-agent-mcp-sync', () => ({ useAgentMcpSync: () => undefined }));
 vi.mock('@sdk/react/hooks', async (original) => ({ ...(await original<object>()), useProject: () => ({ project: null }) }));
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
@@ -81,5 +81,20 @@ describe('Auto prompt', () => {
     await waitFor(() => expect(f.update).toHaveBeenCalledWith({ expected_revision: 'first', set_fields: { auto_launch: false } }));
     expect(screen.getAllByRole('textbox', { name: 'Auto prompt' })).toHaveLength(1);
     expect(screen.getByRole('textbox', { name: 'Auto prompt' })).toHaveValue('Say hello');
+  });
+});
+
+describe('Unreadable definition', () => {
+  it('shows the error in the definition column and still renders the deployments and More', async () => {
+    const agent = new Agent({ id: '11111111-1111-4111-8111-111111111111', name: 'profile', title: 'Original', enabled: true });
+    const mainRef = new FSRef('/selected-copy/agent.json', new TypeId('compute_node', '@local'));
+    vi.spyOn(mainRef, 'readDocument').mockRejectedValue(new Error('document is not implemented on the hub'));
+    vi.spyOn(mainRef, 'exists').mockResolvedValue(true);
+    render(<MemoryRouter><TooltipProvider><AgentProfileEditor agent={agent} mainRef={mainRef} /></TooltipProvider></MemoryRouter>);
+    const alert = await screen.findByTestId('agent-definition-error');
+    expect(alert).toHaveTextContent('document is not implemented on the hub');
+    expect(screen.getByTestId('agent-places')).toBeInTheDocument();
+    expect(screen.getByTestId('agent-more')).toBeInTheDocument();
+    expect(screen.getByRole('textbox', { name: 'System prompt' })).toBeDisabled();
   });
 });

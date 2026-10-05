@@ -175,12 +175,9 @@ export function AgentProfileEditor({ agent, mainRef }: AgentProfileEditorProps) 
   const commitShort = version?.published_commit ? version.published_commit.slice(0, 7) : '';
 
   if (content.isLoading) return <Loader2 className="m-4 h-5 w-5 animate-spin" />;
-  if (content.loadError)
-    return (
-      <div role="alert" className="p-4">
-        {content.loadError.message}
-      </div>
-    );
+  // An unreadable definition (a hub that serves no agent document) fails only the definition column:
+  // the deployments beside it come from the agent row, not from this file.
+  const definitionError = content.loadError;
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -273,7 +270,7 @@ export function AgentProfileEditor({ agent, mainRef }: AgentProfileEditorProps) 
           aria-labelledby="agent-definition"
         >
           {/* On the hub this is the PUBLISHED definition: read it here, edit it on the author's computer. */}
-          <fieldset disabled={hub} className="contents" data-testid="agent-definition-fields">
+          <fieldset disabled={hub || !!definitionError} className="contents" data-testid="agent-definition-fields">
             <div className="flex flex-wrap items-baseline justify-between gap-2">
               <h2 id="agent-definition" className="text-sm font-semibold">
                 <Trans>Definition</Trans>
@@ -282,6 +279,15 @@ export function AgentProfileEditor({ agent, mainRef }: AgentProfileEditorProps) 
                 <Trans>Shared by every place</Trans>
               </span>
             </div>
+            {definitionError && (
+              <div
+                role="alert"
+                className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive"
+                data-testid="agent-definition-error"
+              >
+                <Trans>Could not load the agent's definition: {definitionError.message}</Trans>
+              </div>
+            )}
 
             {/* shrink-0: opening "More" must scroll the column, not squeeze the prompt to nothing. */}
             <div className="flex shrink-0 flex-col">
