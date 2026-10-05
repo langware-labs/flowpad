@@ -12,7 +12,7 @@ const SMART_NAVIGATION_LOG = 'SmartNavigationLog';
 import { SystemLog } from './system-log';
 import { SystemDiagnoses } from './system-diagnoses';
 
-export function LogsSection() {
+export function LogsSection({ onNavigate }: { onNavigate?: () => void } = {}) {
   const { navigation } = useDockNavigation();
   // The system project that carries Flowpad's own skills, agents, docs and datasets.
   const { project: assistant } = useFlowpadAssistantProject();
@@ -22,6 +22,7 @@ export function LogsSection() {
   // The log opens in the app that edits it, like any dataset (record-type-nav's dataset action).
   // None yet means the log was never on: send the user to the switch (Preferences → Advanced).
   const openSmartNavigationLog = async () => {
+    onNavigate?.();
     const [log] = await Dataset.query(
       new QueryRequest({
         type: Dataset.type,
@@ -46,7 +47,11 @@ export function LogsSection() {
         className="w-full"
         disabled={!assistant}
         data-testid="open-assistant-project"
-        onClick={() => assistant && navigation.openProject(assistant.id)}
+        onClick={() => {
+          if (!assistant) return;
+          onNavigate?.();
+          navigation.openProject(assistant.id);
+        }}
       >
         <ProjectIcon className="me-2 h-4 w-4" />
         <Trans>Open assistant project</Trans>
@@ -62,7 +67,14 @@ export function LogsSection() {
         <Trans>Smart Navigation Log</Trans>
       </Button>
 
-      <Button variant="outline" className="w-full" onClick={() => navigation.openLens('cli', 'log', 'all')}>
+      <Button
+        variant="outline"
+        className="w-full"
+        onClick={() => {
+          onNavigate?.();
+          navigation.openLens('cli', 'log', 'all');
+        }}
+      >
         <Terminal className="me-2 h-4 w-4" />
         CLI Invocation Log
       </Button>
