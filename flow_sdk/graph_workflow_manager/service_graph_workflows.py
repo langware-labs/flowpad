@@ -129,6 +129,15 @@ async def _get_or_create_flow(name: str) -> tuple[GraphWorkflow | None, bool]:
 
 
 async def _seed_mini_analyzer() -> None:
+    # The trigger's words are kept current on every boot, even when the flow is
+    # left alone below — an install seeded before it had a description gets one.
+    from flow_sdk.builtin.trigger import Trigger
+
+    existing = await Trigger.get_one({"name": "Mini analyzer (manual)"})
+    if existing is not None and existing.description != MINI_TRIGGER_DESCRIPTION:
+        existing.description = MINI_TRIGGER_DESCRIPTION
+        await existing.update()
+
     flow, created = await _get_or_create_flow("mini-analyzer")
     folder = flow.folder if flow else None
     if flow is None or folder is None:
@@ -151,6 +160,13 @@ async def _seed_mini_analyzer() -> None:
     logger.info("set_service_graph_workflows: %s mini-analyzer (%s)", "seeded" if created else "migrated", flow.id)
 
 
+#: What the Automations screen tells a person about the mini-analyzer's trigger.
+MINI_TRIGGER_DESCRIPTION = (
+    "A small daily self-check that Flowpad's workflows run: it counts the agent sessions that ran "
+    "today and writes a one-line summary to Flowpad's own log. Nothing leaves this computer."
+)
+
+
 async def _mini_trigger():
     from flow_sdk.builtin.trigger import Trigger
 
@@ -158,6 +174,7 @@ async def _mini_trigger():
     if trigger is None:
         trigger = Trigger(
             name="Mini analyzer (manual)",
+            description=MINI_TRIGGER_DESCRIPTION,
             trigger_type="schedule",
             sched_trigger_type="interval",
             expr="24h",
