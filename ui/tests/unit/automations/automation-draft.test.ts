@@ -141,3 +141,11 @@ describe('recipes', () => {
     expect(recipeById('nope')).toBeUndefined();
   });
 });
+
+describe('paths in sentences', () => {
+  it('shows the last two parts', async () => {
+    const { shortPath } = await import('@src/components/automations/automation-words');
+    expect(shortPath('/Users/dana/Documents/notes/daily')).toBe('…/notes/daily');
+    expect(shortPath('/w/docs')).toBe('/w/docs');
+  });
+});

@@ -23,6 +23,12 @@ export interface AutomationWords {
   duration: (ms: number | null | undefined) => string;
 }
 
+/** A path as its last two parts ("…/docs/notes") — the full one is long and says less. */
+export function shortPath(path: string): string {
+  const parts = path.split('/').filter(Boolean);
+  return parts.length > 2 ? `…/${parts.slice(-2).join('/')}` : path;
+}
+
 const sameDay = (a: Date, b: Date) =>
   a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
 
@@ -94,7 +100,8 @@ export function useAutomationWords(): AutomationWords {
         return t`When ${what} happens`;
       }
       if (w.kind === 'file' && w.file) {
-        const what = w.file.glob ? t`${w.file.glob} in ${w.file.path}` : w.file.path;
+        const folder = shortPath(w.file.path);
+        const what = w.file.glob ? t`${w.file.glob} in ${folder}` : folder;
         return t`When ${what} changes`;
       }
       if (w.kind === 'agent_hook') {

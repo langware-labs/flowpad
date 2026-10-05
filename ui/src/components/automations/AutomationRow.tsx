@@ -121,11 +121,7 @@ export function AutomationRow({ automation: a, onOpen, onToggle, onRunOnce, busy
         ) : null}
       </div>
 
-      <div
-        onClick={(e) => e.stopPropagation()}
-        onKeyDown={(e) => e.stopPropagation()}
-        className="col-start-3 row-start-1 md:col-start-auto"
-      >
+      <div onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
         <Button
           variant="ghost"
           size="sm"
