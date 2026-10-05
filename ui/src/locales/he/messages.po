@@ -2287,6 +2287,10 @@ msgstr "אירעה שגיאה"
 msgid "An index covers the folders you add and everything beneath them. Covered folders wear a brain in the file tree, and a folder removed here loses it."
 msgstr ""
 
+#: src/components/setup-incomplete/use-setup-incomplete-warning.ts
+msgid "An install failed or was cancelled, so Flowpad may be missing tools it needs."
+msgstr "התקנה נכשלה או בוטלה, ולכן ייתכן שחסרים ל-Flowpad כלים שהוא צריך."
+
 #: src/components/assets/editor/wizard/WizardStepForm.tsx
 msgid "an op name"
 msgstr "שם של פעולה"
@@ -5628,6 +5632,7 @@ msgid "Could not open link"
 msgstr ""
 
 #: src/components/account/settings-section.tsx
+#: src/components/setup-incomplete/use-setup-incomplete-warning.ts
 msgid "Could not open setup"
 msgstr "לא ניתן לפתוח את ההגדרה"
 
@@ -9973,7 +9978,6 @@ msgstr "עבור לקונסול"
 msgid "Go to Home"
 msgstr "מעבר לדף הבית"
 
-#: src/components/assets/editor/wizard/WizardViewer.tsx
 #: src/components/assets/editor/wizard/WizardViewer.tsx
 msgid "Go to homepage"
 msgstr "מעבר לדף הבית"
@@ -18452,6 +18456,7 @@ msgid "Run script"
 msgstr "הרץ סקריפט"
 
 #: src/components/account/settings-section.tsx
+#: src/components/setup-incomplete/use-setup-incomplete-warning.ts
 msgid "Run setup again"
 msgstr "הרצת ההגדרה מחדש"
 
@@ -19718,6 +19723,10 @@ msgstr "הגדרה"
 #~ msgid "Setup did not finish"
 #~ msgstr ""
 
+#: src/components/setup-incomplete/use-setup-incomplete-warning.ts
+msgid "Setup did not finish successfully"
+msgstr "ההתקנה לא הסתיימה בהצלחה"
+
 #: src/components/assets/editor/wizard/wizard-texts.ts
 msgid "Setup didn't finish successfully."
 msgstr "ההגדרה לא הסתיימה בהצלחה."
@@ -20463,6 +20472,7 @@ msgid "Skills, agents, servers and documents published by projects you can read.
 msgstr ""
 
 #: src/components/assets/editor/wizard/wizard-texts.ts
+#: src/components/assets/editor/wizard/WizardViewer.tsx
 #: src/journey/JourneyTray.tsx
 msgid "Skip"
 msgstr "דילוג"
@@ -21942,6 +21952,7 @@ msgid "The session transcript could not be read."
 msgstr "לא ניתן לקרוא את תמליל הסשן."
 
 #: src/components/account/settings-section.tsx
+#: src/components/setup-incomplete/use-setup-incomplete-warning.ts
 msgid "The setup wizard is not installed."
 msgstr "אשף ההגדרה אינו מותקן."
 
