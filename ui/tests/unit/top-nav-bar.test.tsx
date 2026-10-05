@@ -492,7 +492,7 @@ describe('the navigation bar', () => {
 
       await user.type(input, 'tidy the docs{Enter}');
       await waitFor(() => expect(assistant.current!.ask).toHaveBeenCalledWith('tidy the docs', expect.anything()));
-      expect(navigatorRoute).toHaveBeenCalledWith('tidy the docs', expect.anything());
+      expect(navigatorRoute).toHaveBeenCalledWith('tidy the docs');
       expect(openDock).not.toHaveBeenCalled();
       expect(screen.getByTestId('top-nav-address')).toBeTruthy();
     });
