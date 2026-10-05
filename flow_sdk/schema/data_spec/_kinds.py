@@ -96,7 +96,7 @@ def register_builtin_kinds() -> None:
     import flow_sdk.schema.data_spec.webhook_spec  # noqa: F401
     import flow_sdk.schema.data_spec.wizard_spec  # noqa: F401  — registers ``wizard`` / ``wizard.step`` / ``wizard.issue`` / ``wizard.validation`` / ``wizard.run_detail``
     import flow_sdk.secrets  # noqa: F401  — registers ``secrets.store_ref`` / ``secrets.vault``
-    import flow_sdk.sources.setup_steps  # noqa: F401  — registers ``source.setup_update``
+    import flow_sdk.sources.setup_steps  # noqa: F401  — registers ``source.setup_update`` / ``source.setup_shown``
     import flow_sdk.sources.values  # noqa: F401  — registers ``source.*`` and ``ingest.file`` / ``ingest.profile`` / ``ingest.message``
 
     # An asset defines its own payload kinds (``ingest.message.whatsapp``) in code the registry

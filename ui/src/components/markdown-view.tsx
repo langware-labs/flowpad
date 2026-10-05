@@ -2,10 +2,10 @@ import { CodeBlockRunButton } from '@src/components/code-block-run-button';
 import { CopyButton } from '@src/components/ui/copy-button';
 import React, { useRef } from 'react';
 import { useLingui } from '@lingui/react/macro';
-import ReactMarkdown, { type Components } from 'react-markdown';
+import ReactMarkdown, { defaultUrlTransform, type Components, type UrlTransform } from 'react-markdown';
 import rehypeHighlight from 'rehype-highlight';
 import rehypeRaw from 'rehype-raw';
-import rehypeSanitize from 'rehype-sanitize';
+import rehypeSanitize, { defaultSchema } from 'rehype-sanitize';
 import remarkGfm from 'remark-gfm';
 
 import { useLocaleInfo } from '@src/contexts/locale-context';
@@ -156,12 +156,7 @@ export function markdownComponents({
     // list. <li> inherits the direction its <ul>/<ol> resolved for the whole.
     li: ({ children }) => <li className="mt-2">{children}</li>,
     a: ({ href, children }) => (
-      <a
-        href={href}
-        target="_blank"
-        rel="noopener noreferrer"
-        className={MARKDOWN_LINK_CLASS}
-      >
+      <a href={href} target="_blank" rel="noopener noreferrer" className={MARKDOWN_LINK_CLASS}>
         {children}
       </a>
     ),
@@ -192,11 +187,21 @@ export function markdownComponents({
   };
 }
 
+/** Inline images (`data:image/…`, a QR code a backend drew) pass; every other url is the default's. Only on
+ *  an `<img>`, where a data URI cannot run anything — never on a link. */
+const withDataImages: UrlTransform = (url, key, node) =>
+  node.tagName === 'img' && key === 'src' && url.startsWith('data:image/') ? url : defaultUrlTransform(url);
+const dataImageSchema = {
+  ...defaultSchema,
+  protocols: { ...defaultSchema.protocols, src: [...(defaultSchema.protocols?.src ?? []), 'data'] },
+};
+
 export const MarkdownView = ({
   value,
   compact = false,
   codeChrome = true,
   components,
+  dataImages = false,
 }: {
   value: string;
   compact?: boolean;
@@ -206,6 +211,8 @@ export const MarkdownView = ({
    *  for `img`/`a`, which are document-relative and need a project to resolve
    *  against (see `useMarkdownAssetComponents`). */
   components?: Partial<Components>;
+  /** Draw inline `data:image/` images (a QR code in a setup question). Off by default. */
+  dataImages?: boolean;
 }) => {
   // Reactive on purpose. The supported-locale list lands one tick AFTER this
   // tree first renders, so a stored `he` reads as unsupported on the first
@@ -216,7 +223,8 @@ export const MarkdownView = ({
   return (
     <ReactMarkdown
       remarkPlugins={[remarkGfm]}
-      rehypePlugins={[rehypeRaw, rehypeSanitize, rehypeHighlight]}
+      rehypePlugins={[rehypeRaw, dataImages ? [rehypeSanitize, dataImageSchema] : rehypeSanitize, rehypeHighlight]}
+      urlTransform={dataImages ? withDataImages : undefined}
       components={{ ...markdownComponents({ compact, codeChrome, localeDir }), ...components }}
     >
       {value}

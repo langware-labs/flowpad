@@ -71,8 +71,37 @@ class SourceUpdateSpec(DataSpec):
     allowed_senders: Optional[list[str]] = None
     #: ``{auth.vars key: value}`` — stored into the driver's credential, never echoed.
     secrets: dict[str, str] = Field(default_factory=dict)
+    #: The owner the source moves to (an agent's typeid) — a channel that is answered by one agent
+    #: whichever page it was added from.
+    owner: Optional[str] = None
+    #: What the person should SEE — returned, never stored. ``flow source step … --value`` prints exactly
+    #: this, so a wizard step can bind it for the next question (``{{connect.link}}``).
+    shown: Optional["SetupShown"] = None
+
+
+class SetupShown(DataSpec):
+    """What a setup step shows a person to act on: who they reach, and how — a link to tap, a code to send,
+    the same link as a QR to scan. Display only; a step that needs something kept says so in config."""
+
+    spec_kind: ClassVar[str] = "source.setup_shown"
+    model_config = ConfigDict(frozen=True)
+
+    #: Who answers there ("Flow") and where (a display number, an address).
+    name: str = ""
+    number: str = ""
+    avatar: str = ""
+    #: The link that does it in one tap, and the code it carries.
+    link: str = ""
+    code: str = ""
+    #: ``link`` as a QR image (a data URI), for a phone's camera.
+    qr: str = ""
+    #: The step's goal already holds — nothing left to send.
+    connected: bool = False
+
+
+SourceUpdateSpec.model_rebuild()
 
 
 __all__ = [
-    "ANSWERED", "FIRST_TURN", "GENERIC_STEPS", "PUBLIC_WEBHOOK", "VERIFY", "ReturnedValue", "SourceUpdateSpec", "setup_step", "setup_steps",
+    "ANSWERED", "FIRST_TURN", "GENERIC_STEPS", "PUBLIC_WEBHOOK", "VERIFY", "ReturnedValue", "SetupShown", "SourceUpdateSpec", "setup_step", "setup_steps",
 ]

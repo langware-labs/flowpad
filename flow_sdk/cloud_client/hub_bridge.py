@@ -272,7 +272,17 @@ class HubWsBridge:
 
         # A desktop webhook's delivery (the hub's public URL for this laptop): replayed here, then acked.
         self.manager.register_handler("webhook_delivery", webhook_relay.on_delivery)
+        self.manager.register_handler("source_nudge", self._on_source_nudge)
         self._installed = True
+
+    async def _on_source_nudge(self, message: dict) -> None:
+        """The hub holds something new for a driver's sources here (a message waiting in its inbox): poll
+        them now instead of on the next cadence tick. Names the DRIVER as data, so no driver is known here."""
+        from flow_sdk.builtin.data_source import DataSource  # noqa: PLC0415
+
+        driver = str(message.get("driver") or "")
+        if driver:
+            await DataSource.nudge(driver)
 
     async def _on_oauth_msg(self, message: dict) -> None:
         """The hub says a grant it runs ended: finish the matching flow here too.
