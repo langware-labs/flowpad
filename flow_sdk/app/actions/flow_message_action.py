@@ -1737,6 +1737,13 @@ async def _adopt_opening_line(conv_id: str, conv_data: dict, text: str) -> None:
     await _process_single_hub_message({**raw, "conversation_id": raw.get("conversation_id") or conv_id})
 
 
+def _ticket_title(text: str) -> str:
+    """A ticket's title for a hub that does not title it: the first line, cut to 60 and "…"
+    — the hub's own rule (``Project.start_guest_conversation``)."""
+    line = next((part.strip() for part in text.splitlines() if part.strip()), text)
+    return line if len(line) <= 60 else f"{line[:60].rstrip()}…"
+
+
 @action.post(action_name="helpdesk-start-ticket", types=None)
 async def helpdesk_start_ticket() -> ApiResponse:
     """Open a support ticket — a guest-authored ``helpdesk`` conversation under
@@ -1818,10 +1825,8 @@ async def helpdesk_start_ticket() -> ApiResponse:
         from flow_sdk.app.actions.materialize_flow_message import ensure_conversation_entity  # noqa: PLC0415
         from flow_sdk.builtin.conversation import ConversationKind  # noqa: PLC0415
 
-        # The first line, cut to 60 — the hub titles the desk's copy by the same rule
-        # (``_ticket_title``), and a different one here would flip on the next hub push.
-        first_line = next((part.strip() for part in text.splitlines() if part.strip()), text)
-        title = first_line if len(first_line) <= 60 else f"{first_line[:60].rstrip()}…"
+        # The hub titles the ticket; adopt its title so the next hub push can't flip ours.
+        title = conv_data.get("title") or _ticket_title(text)
         # Hub-owned conversation: no local project_id (mirrors how received
         # remote conversations materialize); carry the helpdesk project as the
         # remote project identity for traceability.

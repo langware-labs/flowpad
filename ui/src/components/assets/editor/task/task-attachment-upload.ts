@@ -26,10 +26,10 @@ export async function uploadFilesToTask(
   const attached = new Set(existing.map(attachmentKey));
   const taken = new Set(attached);
   const added: Attachment[] = [];
-  const seen = new Set<File>();
-  for (const picked of files) {
-    if (!picked.name || seen.has(picked) || attached.has(`${TASK_ATTACHMENTS_DIR}/${picked.name}`)) continue;
-    seen.add(picked);
+  // A Set: the same File picked twice is one file. A name already attached is skipped; a
+  // name taken earlier in THIS call is a different file and gets the next free name.
+  for (const picked of new Set(files)) {
+    if (!picked.name || attached.has(`${TASK_ATTACHMENTS_DIR}/${picked.name}`)) continue;
     const name = freeName(picked.name, (n) => taken.has(`${TASK_ATTACHMENTS_DIR}/${n}`));
     const file = name === picked.name ? picked : new File([picked], name, { type: picked.type });
     const vfs = `${TASK_ATTACHMENTS_DIR}/${name}`;

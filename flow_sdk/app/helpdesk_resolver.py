@@ -44,8 +44,9 @@ async def resolve_adopted_helpdesk(project_id: str) -> AdoptedHelpdesk | None:
     are ordered by canonical asset path and then entity id, so database row
     order can never change which Hub queue receives a ticket.
 
-    Resolution is read-only — a context root whose Project projection has not
-    been indexed yet is never minted here, on an open/ticket path.
+    Resolution writes only the desks' own rows: a declared desk not yet indexed
+    is indexed here (the project's first index runs detached on open). A context
+    root whose Project projection has not been indexed yet is never minted here.
 
     It is not SKIPPED either, which it used to be. A desk attached by path
     rather than through the git flow has no Project of its own, and requiring
@@ -63,9 +64,8 @@ async def resolve_adopted_helpdesk(project_id: str) -> AdoptedHelpdesk | None:
     if not roots:
         return None
 
-    # A desk declared in the project is a row only once the project is indexed, and that
-    # first index runs detached on open: a ticket filed right after opening read no desk
-    # and went, silently, to the hub's default one. Index the declared desks now if missing.
+    # Before the detached first index lands, a declared desk has no row and the ticket
+    # would go, silently, to the hub's default desk.
     await project.index_missing_assets("helpdesk", {EntityType.HELPDESK.value}, lambda _candidate: True)
 
     # Independent reads: neither feeds the other, so pay one round trip, not two.

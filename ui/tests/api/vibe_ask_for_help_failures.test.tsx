@@ -11,43 +11,39 @@
  * 2. Two picked files with the same name: the second is silently dropped (`uploadFilesToTask`
  *    skips a name already uploaded). Asserted on the sender's task plus the hub's file-name
  *    rule — a proxy for the recipient, who only gets what the hub accepted.
- * 3. A taken title is assigned as "<title> (2)", but the message still says "<title>".
+ * 3. A title already taken in the project (the user's original report: Assign → a bare
+ *    "Request failed with status code 409", and every retry the same) assigns as "<title> (2)",
+ *    screenshot and all, and the message names that title.
  */
 import '@testing-library/jest-dom/vitest';
-import { cleanup, fireEvent, render, waitFor } from '@testing-library/react';
-import { apiClient, createAndSendConversation, dataContext, Project, Task, TaskKind } from '@sdk';
-import { cloudManager } from '@sdk/services/cloud_login';
+import { cleanup } from '@testing-library/react';
+import { apiClient, createAndSendConversation, Project, Task, TaskKind, TypeId } from '@sdk';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { uploadFilesToTask } from '@src/components/assets/editor/task/task-attachment-upload';
-import { VibeAssignTaskDialog } from '@src/pages/flow-page/VibeAssignTaskDialog';
-import { apiTestSetup, getTestSignupInfo, trackCreatedRows } from '../utils/test-utils';
+import { askForHelp, hubLoggedInSetup, png } from '../utils/ask-for-help';
+import { getTestSignupInfo, trackCreatedRows } from '../utils/test-utils';
 
 const HELPER = 'helper@local.test';
 
 describe('Ask someone for help — stress-run failures', () => {
   const signupInfo = getTestSignupInfo();
   const projectDir = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'askfail'));
-  const { created: cleanupProjects } = trackCreatedRows(Project.type);
   const { created: cleanupTasks } = trackCreatedRows(Task.type);
   let projectId = '';
 
   beforeEach(async (ctx: { task: { name: string } }) => {
-    await apiTestSetup(signupInfo, ctx.task.name);
-    // The app's boot reads the hub login (main.ts → cloudManager); the tier's setup does not.
-    await cloudManager.refreshStatus();
-    expect(dataContext.cloudLoginAvailable, 'needs a hub-logged-in backend (FLOW_INSTANCE=…)').toBe(true);
-    if (!projectId) {
-      projectId = (await new Project({ name: projectDir }).save([])).id;
-      cleanupProjects.push(projectId);
-    }
+    await hubLoggedInSetup(signupInfo, ctx.task.name);
+    // One project for the file: `trackCreatedRows` deletes after EACH test, too early for it.
+    if (!projectId) projectId = (await new Project({ name: projectDir }).save([])).id;
   });
   afterEach(() => cleanup());
-  afterAll(() => fs.rmSync(projectDir, { recursive: true, force: true }));
-
-  const png = (name: string, size: number) => new File([new Uint8Array(size)], name, { type: 'image/png' });
+  afterAll(async () => {
+    if (projectId) await apiClient.delete(`/graph/project/${projectId}`).catch(() => {});
+    fs.rmSync(projectDir, { recursive: true, force: true });
+  });
 
   it('1. the first message of a new conversation reaches the hub without the hub WS echo', async () => {
     const task = await Task.createWithFreeTitle({ title: `msg reaches hub ${Date.now()}` }, []);
@@ -56,7 +52,11 @@ describe('Ask someone for help — stress-run failures', () => {
     try {
       const { conversation_id } = await createAndSendConversation(
         { project_id: null, participants: [{ email: HELPER }], title: task.title },
-        { text: task.title, assetReferences: [task.typeId.toString()], sharedContextEntities: [task.typeId.toString()] },
+        {
+          text: task.title,
+          assetReferences: [task.typeId.toString()],
+          sharedContextEntities: [task.typeId.toString()],
+        },
       );
       const conv = await apiClient.get<{ remote?: boolean }>(`/graph/conversation/${conversation_id}`);
       expect(conv.remote, 'the shared conversation must be hub-bound before its first message').toBe(true);
@@ -79,26 +79,20 @@ describe('Ask someone for help — stress-run failures', () => {
     for (const { label } of entries) expect(label).not.toMatch(/[;|&$`<>()\n\r]/);
   });
 
-  it('3. a taken title is told in the message as the title the task got', async () => {
+  it('3. a taken title assigns as the next free one, screenshot and all, and the message says so', async () => {
     const title = `taken title ${Date.now()}`;
-    cleanupTasks.push((await Task.createWithFreeTitle({ title, kind: TaskKind.VIBE }, [])).id);
+    const scope = [new TypeId('project', projectId)];
+    cleanupTasks.push((await Task.createWithFreeTitle({ title, kind: TaskKind.VIBE }, scope)).id);
 
-    const onAssigned = vi.fn();
-    const { container } = render(
-      <VibeAssignTaskDialog open onOpenChange={() => {}} projectId={null} sessionTypeId={null} onAssigned={onAssigned} />,
+    const { taskId, error } = await askForHelp({ projectId, to: HELPER, title, files: [png('shot.png', 4096)] });
+    expect(error).toBeUndefined();
+    cleanupTasks.push(taskId!);
+
+    const task = await apiClient.get<{ title: string; parent_type_id?: string; artifacts?: { label: string }[] }>(
+      `/graph/task/${taskId}`,
     );
-    const dialog = container.ownerDocument.querySelector('[role="dialog"]') as HTMLElement;
-    const by = (id: string) => dialog.querySelector(`[data-testid="${id}"]`) as HTMLElement;
-    fireEvent.change(by('vibe-assign-person'), { target: { value: HELPER } });
-    fireEvent.blur(by('vibe-assign-person'));
-    fireEvent.change(by('vibe-assign-title'), { target: { value: title } });
-    fireEvent.click(by('vibe-assign-submit'));
-    await waitFor(() => expect(onAssigned).toHaveBeenCalled(), { timeout: 15000 });
-    const taskId = onAssigned.mock.calls[0][0] as string;
-    cleanupTasks.push(taskId);
-
-    const task = await apiClient.get<{ title: string; parent_type_id?: string }>(`/graph/task/${taskId}`);
     expect(task.title).toBe(`${title} (2)`);
+    expect(task.artifacts?.map((a) => a.label)).toEqual(['shot.png']);
     // The conversation the task was asked in is its hub parent.
     const convId = task.parent_type_id!.replace(/^conversation-/, '');
     const messages = await apiClient.get<{ text?: string }[]>(`/graph/conversation/${convId}/flow_message`);
