@@ -5872,6 +5872,11 @@ msgstr ""
 #~ msgid "Could not load source: {error}"
 #~ msgstr "تعذر تحميل المصدر: {error}"
 
+#. placeholder {0}: definitionError.message
+#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
+msgid "Could not load the agent's definition: {0}"
+msgstr ""
+
 #: src/components/automations/BusView.tsx
 msgid "Could not load the bus"
 msgstr ""
@@ -12551,6 +12556,10 @@ msgstr "جارٍ تحميل المحادثات…"
 #: src/components/code-editor/DiffViewer.tsx
 msgid "Loading checkpoint diff..."
 msgstr "جاري تحميل مقارنة نقطة الحفظ..."
+
+#: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
+msgid "Loading cloud machines…"
+msgstr ""
 
 #: src/components/assets/editor/task/TaskComments.tsx
 msgid "Loading comments…"
@@ -21371,6 +21380,10 @@ msgstr ""
 msgid "Sign in to see who's a member"
 msgstr "تسجيل الدخول لرؤية الأعضاء"
 
+#: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
+msgid "Sign in to the hub to deploy to a cloud machine."
+msgstr ""
+
 #: src/components/graph-view/ui/AccessTab.tsx
 msgid "Sign in to view access."
 msgstr ""
@@ -22054,6 +22067,10 @@ msgstr ""
 
 #: src/components/automations/TestPanel.tsx
 msgid "Started. Follow it under Runs."
+msgstr ""
+
+#: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
+msgid "Starting a machine — this takes a couple of minutes."
 msgstr ""
 
 #: src/components/assets/editor/agent-profile/AgentDeploymentsSection.tsx
