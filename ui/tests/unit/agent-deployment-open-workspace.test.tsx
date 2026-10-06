@@ -103,6 +103,12 @@ describe('AgentDeploymentPage — open workspace', () => {
     expect(screen.queryByTestId('deployment-open-workspace')).not.toBeInTheDocument();
   });
 
+  it('is absent for a local deployment — this computer has no hub workspace to open', () => {
+    show(deployment('local', `compute_node-${NODE_ID}`));
+
+    expect(screen.queryByTestId('deployment-open-workspace')).not.toBeInTheDocument();
+  });
+
   it('is absent, and the page still renders, when the machine id is not a compute_node typeid', () => {
     show(deployment('e2b', 'sbx_not-a-typeid'));
 
