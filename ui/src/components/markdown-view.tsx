@@ -1,6 +1,6 @@
 import { CodeBlockRunButton } from '@src/components/code-block-run-button';
 import { CopyButton } from '@src/components/ui/copy-button';
-import React, { useRef } from 'react';
+import React, { useMemo, useRef } from 'react';
 import { useLingui } from '@lingui/react/macro';
 import ReactMarkdown, { defaultUrlTransform, type Components, type UrlTransform } from 'react-markdown';
 import rehypeHighlight from 'rehype-highlight';
@@ -8,7 +8,10 @@ import rehypeRaw from 'rehype-raw';
 import rehypeSanitize, { defaultSchema } from 'rehype-sanitize';
 import remarkGfm from 'remark-gfm';
 
+import { linkEventProps, type LinkHandlers } from '@src/components/links/link-events';
 import { useLocaleInfo } from '@src/contexts/locale-context';
+import { isWebUrl } from '@src/lib/link-kind';
+import remarkLinkRefs from '@src/lib/remark-link-refs';
 import { resolveTextDirection, type TextDirection } from '@src/lib/text-direction';
 
 /** Parse the `language-xxx` class rehype-highlight puts on the inner <code>. */
@@ -210,12 +213,50 @@ const dataImageSchema = {
   protocols: { ...defaultSchema.protocols, src: [...(defaultSchema.protocols?.src ?? []), 'data'] },
 };
 
+/** Keeps the raw reference `remarkLinkRefs` put on a link; it is data, never followed by the browser. */
+const linkRefSchema = {
+  ...defaultSchema,
+  attributes: { ...defaultSchema.attributes, a: [...(defaultSchema.attributes?.a ?? []), 'dataLinkRef'] },
+};
+
+/**
+ * Every link — authored, gfm-autolinked, or a file reference `remarkLinkRefs` found — takes
+ * the link layer's click and menu. Only a web page keeps an href: a path href would send a
+ * middle-click to a dead app route.
+ */
+function linkedAnchors(links: LinkHandlers): Partial<Components> {
+  return {
+    a: ({ node, href, children }) => {
+      const ref = node?.properties?.dataLinkRef;
+      if (typeof ref !== 'string') {
+        return (
+          <a href={href} target="_blank" rel="noopener noreferrer" className={MARKDOWN_LINK_CLASS}>
+            {children}
+          </a>
+        );
+      }
+      return (
+        <a
+          href={isWebUrl(ref) ? ref : undefined}
+          role="link"
+          // A linked `code.py:3` keeps its code chip but reads as a link.
+          className={`cursor-pointer ${MARKDOWN_LINK_CLASS} [&>code]:text-primary [&>code]:underline`}
+          {...linkEventProps(links, ref)}
+        >
+          {children}
+        </a>
+      );
+    },
+  };
+}
+
 export const MarkdownView = ({
   value,
   compact = false,
   codeChrome = true,
   components,
   dataImages = false,
+  links = null,
 }: {
   value: string;
   compact?: boolean;
@@ -227,6 +268,12 @@ export const MarkdownView = ({
   components?: Partial<Components>;
   /** Draw inline `data:image/` images (a QR code in a setup question). Off by default. */
   dataImages?: boolean;
+  /**
+   * The surface's link handlers (`useLinks`). Given, file references in prose and
+   * inline code become links too, and every link opens through the link layer
+   * instead of a browser tab.
+   */
+  links?: LinkHandlers | null;
 }) => {
   // Reactive on purpose. The supported-locale list lands one tick AFTER this
   // tree first renders, so a stored `he` reads as unsupported on the first
@@ -234,14 +281,21 @@ export const MarkdownView = ({
   // for the whole session (see `locale-context.tsx`). Only the tiebreaker for
   // blocks with no strong characters of their own — content still wins.
   const localeDir = useLocaleInfo().dir;
+  const anchors = useMemo(() => (links ? linkedAnchors(links) : undefined), [links]);
   return (
     <ReactMarkdown
-      remarkPlugins={[remarkGfm]}
-      rehypePlugins={[rehypeRaw, dataImages ? [rehypeSanitize, dataImageSchema] : rehypeSanitize, rehypeHighlight]}
+      remarkPlugins={links ? [remarkGfm, remarkLinkRefs] : [remarkGfm]}
+      // `dataImages` and `links` never meet: a setup question has no link source.
+      rehypePlugins={[
+        rehypeRaw,
+        links ? [rehypeSanitize, linkRefSchema] : dataImages ? [rehypeSanitize, dataImageSchema] : rehypeSanitize,
+        rehypeHighlight,
+      ]}
       urlTransform={dataImages ? withDataImages : undefined}
       components={{
         ...markdownComponents({ compact, codeChrome, localeDir }),
         ...(dataImages ? { img: DataImage } : {}),
+        ...anchors,
         ...components,
       }}
     >

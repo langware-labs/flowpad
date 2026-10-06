@@ -9,6 +9,11 @@
  *   reference; the code styling stays as the link's child. A span that merely
  *   contains a path (`` `cat a/b.txt` ``) is a command, not a link.
  *
+ * Every link the layer follows — found here or authored — carries its raw reference as
+ * `data-link-ref`. The href cannot: `code.py:12` reads as a `code.py:` URL scheme, which
+ * the URL transform and the sanitizer both drop. A link with any other scheme
+ * (`mailto:`) is left a plain browser link.
+ *
  * Pure: it only reshapes the tree. What a click does is not decided here.
  */
 import type { InlineCode, Link, Parent, PhrasingContent, Root, Text } from 'mdast';
@@ -16,8 +21,17 @@ import { fileLinkMatches, linkMatches } from './link-matches';
 
 const NOT_INTO = new Set(['link', 'linkReference', 'definition']);
 
+/** A scheme the browser owns (`mailto:`, `tel:`), not a reference the link layer resolves. */
+const FOREIGN_SCHEME = /^(?!https?:|file:|[a-z]:[\\/])[a-z][a-z0-9+.-]*:(?!\d)/i;
+
+function mark(node: Link): Link {
+  if (FOREIGN_SCHEME.test(node.url)) return node;
+  node.data = { ...node.data, hProperties: { ...node.data?.hProperties, dataLinkRef: node.url } };
+  return node;
+}
+
 function link(url: string, child: PhrasingContent): Link {
-  return { type: 'link', url, children: [child] };
+  return mark({ type: 'link', url, children: [child] });
 }
 
 function splitText(node: Text): PhrasingContent[] | null {
@@ -55,6 +69,8 @@ function walk(parent: Parent): void {
         children.push(wrapped);
         continue;
       }
+    } else if (child.type === 'link') {
+      mark(child);
     } else if ('children' in child && !NOT_INTO.has(child.type)) {
       walk(child);
     }

@@ -104,6 +104,16 @@ async def test_process_without_a_shell_uses_its_workdir(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_project_reference_opens_the_project_page(tmp_path):
+    from flow_sdk.builtin.project import Project
+
+    project = Project(name="linked project", fs_storage_mount_path=str(tmp_path))
+    await project.save()
+    target = await resolve_display_target(link=f"project-{project.id}")
+    assert (target["kind"], target["view_type"], target["pointer"]) == ("dock", "project", project.id)
+
+
+@pytest.mark.asyncio
 async def test_url_dock_and_entity_references():
     url = "https://example.org/page?x=1#section"
     assert await resolve_display_target(link=url) == {"kind": "url", "url": url}

@@ -1,7 +1,17 @@
 import type { AgenticProcess } from '@sdk';
 import { t } from '@lingui/core/macro';
 import { AppWindow, Copy, ExternalLink, Monitor, PanelTop, Sparkles } from 'lucide-react';
-import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react';
+import {
+  forwardRef,
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+  type RefObject,
+} from 'react';
 import {
   DropdownMenu,
   DropdownMenuContent,
