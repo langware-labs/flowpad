@@ -56,6 +56,11 @@ _LOCKS: dict[str, "asyncio.Lock"] = {}
 #: The detached resolve a project's activation started, by project.
 _TASKS: dict[str, "asyncio.Task"] = {}
 
+#: The last fetch failure per ``(project_id, name, via)``: a status read (no network) has
+#: nothing new to say about a dependency it did not try to fetch, so it repeats what the
+#: last fetch found ("repository not found") instead of a vaguer "not here yet".
+_LAST_FAILURE: dict[tuple[str, str, Optional[str]], tuple[str, str]] = {}
+
 #: ``(project_id, dependency name)`` whose missing-dependency warning was dismissed.
 #: Process memory on purpose: "don't show again until Flowpad restarts".
 _DISMISSED: set[tuple[str, str]] = set()
@@ -333,6 +338,12 @@ async def resolve(
         return await _resolve(project, Path(root_str), fetch=fetch, install=install, update=update, index=index)
 
 
+def is_resolving(project_id: str) -> bool:
+    """A background resolve (the one opening a project starts) is still running."""
+    running = _TASKS.get(str(project_id))
+    return running is not None and not running.done()
+
+
 def schedule_resolve(project: "Project") -> None:
     """Resolve in the background (fetching), at most one run per project. Opening a
     project calls this; the links it writes reach the UI through the project's own update."""
@@ -383,7 +394,9 @@ async def _resolve(
             states.append(state("invalid", reason=f"ignored: a file: source is honoured only in a project's own {flow_json.FLOW_JSON}"))
             continue
         if not dep.required and dep.name not in wanted_optionals:
-            states.append(state("not_installed"))
+            failed = _LAST_FAILURE.get((str(project.id), dep.name, via))
+            # An install that was tried and failed says why; one never tried is just waiting.
+            states.append(state(failed[0], reason=failed[1]) if failed else state("not_installed"))
             continue
         identity = _identity(dep, base)
         if identity in seen:
@@ -406,12 +419,22 @@ async def _resolve(
             if found is None:
                 found = await _materialize(dep, base, fetch=fetch, update=update, cloned=_was_cloned(project, dep.name, via))
         except _NotReady as exc:
+            key = (str(project.id), dep.name, via)
+            if fetch:
+                _LAST_FAILURE[key] = (exc.state, exc.reason)
+            elif key in _LAST_FAILURE and exc.state == "missing":
+                # Not fetched now; the last fetch said why it could not be.
+                states.append(state(*_LAST_FAILURE[key][:1], reason=_LAST_FAILURE[key][1]))
+                continue
             states.append(state(exc.state, reason=exc.reason))
             continue
         except Exception as exc:  # noqa: BLE001 — one dependency never breaks the rest
             logger.warning("[deps] %s failed", dep.name, exc_info=True)
+            if fetch:
+                _LAST_FAILURE[(str(project.id), dep.name, via)] = ("unreachable", str(exc))
             states.append(state("unreachable", reason=str(exc)))
             continue
+        _LAST_FAILURE.pop((str(project.id), dep.name, via), None)
         if is_path_under(found.path, canonical_posix_path(str(root))):
             states.append(state("invalid", reason="a dependency cannot be inside the project itself"))
             continue
