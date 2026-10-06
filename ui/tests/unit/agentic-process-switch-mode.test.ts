@@ -105,6 +105,25 @@ describe('AgenticProcess.switchMode', () => {
     cacheSpy.mockRestore();
   });
 
+  it("Interactive → emits 'restarted' before its own attach, so the terminal's attach is the one it joins", async () => {
+    const order: string[] = [];
+    fakeShell.attachPty.mockImplementationOnce(() => {
+      order.push('attach');
+      return Promise.resolve();
+    });
+    const p = new AgenticProcess({
+      id: '00000000-0000-4000-8000-000000000001',
+      status: 'idle',
+      visible: false,
+      pty_mode: false,
+    } as any);
+    p.on('restarted', () => order.push('restarted'));
+
+    await p.switchMode(WorkerMode.Interactive);
+
+    expect(order).toEqual(['restarted', 'attach']);
+  });
+
   it('CLI rejection restores the prior PTY intent and desired-value latches', async () => {
     const error = new Error('switch rejected');
     callActionSpy.mockRejectedValueOnce(error);

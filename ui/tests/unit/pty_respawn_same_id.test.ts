@@ -43,6 +43,14 @@ describe('PtyConnection respawn under the same pty id', () => {
     expect(attaches()).toBe(1);
   });
 
+  it("a plain attach joins the terminal's forced attach in flight — one connect, not two", async () => {
+    const pc = new PtyConnection('shell-1', 'node-1');
+    const forced = pc.attach('shell-1', { force: true });
+    const joined = pc.attach('shell-1');
+    await Promise.all([forced, joined]);
+    expect(attaches()).toBe(1);
+  });
+
   it('after markPtyGone the re-attach reaches the backend', async () => {
     const pc = new PtyConnection('shell-1', 'node-1');
     await pc.attach('shell-1');
