@@ -5,9 +5,11 @@ id: d6e8f077-4190-4650-8378-a5d491cc4b97
 
 A dataset is a folder of examples: `input` + `context` → the right `ground_truth`, and what a run
 produced as `output`. When its `spec` NAMES a kind, every slot is a typed value — and the kinds
-can be defined as `data_spec` folders nested in the dataset itself, so the dataset carries its
-own definitions. The shipped example is the SmartNavigator eval set
-(`flowpad_assistant/agentic-assets/dataset/smart-navigator/`).
+can be defined as `data_spec` folders — nested in the dataset itself, or shipped. The example is
+the SmartNavigator eval set: its kinds ship (`flowpad_assistant/agentic-assets/data_spec/navigat*`),
+its rows do not — they live beside the checkout at `dev/dataset/smart-navigator/`
+(`navigator_eval.DATASET`, overridable with `FLOW_NAVIGATOR_DATASET`), and the fences that read
+them skip where it is absent.
 
 Pinned by `tests/unit/test_datasets_snippets.py` (runs every Python fence). The mechanics are
 pinned by `tests/unit/test_data_spec/test_declared_kinds.py`,
@@ -16,16 +18,15 @@ pinned by `tests/unit/test_data_spec/test_declared_kinds.py`,
 ## 1. Define the row kinds as folders
 
 ```
-dataset/smart-navigator/
+flowpad_assistant/agentic-assets/data_spec/    # shipped, flat: the folder name is the kind
+  navigation.map/ .place/ .subplace/           # the map (screens)
+  navigation.here/ .ref/ .shown/ .outcome/     # you are here
+  navigator.dataset/                           # {"examples": {"input": "navigator.request", ...}}
+  navigator.request/ .context/ .candidate/ .decision/
+
+dev/dataset/smart-navigator/                   # the rows -- not shipped
   dataset.json                          # metadata.spec: "navigator.dataset"
   map.json                              # reference: the navigation map, for browsing
-  agentic-assets/
-    data_spec/navigation.map/ .place/ .subplace/   # the map (screens)
-    data_spec/navigation.here/ .ref/ .shown/       # you are here
-    data_spec/navigator.dataset/        # {"examples": {"input": "navigator.request", ...}}
-      agentic-assets/data_spec/
-        navigator.request/  navigator.context/  navigator.decision/
-    webapp/editor/                      # optional: the dataset's own editor
   examples/0001/
     input/request.json  context/candidates/  ground_truth/decision.json  example.json
 ```
@@ -44,9 +45,9 @@ shipped); `?` may be absent, `enum:` is a closed set, a field naming another kin
 
 ```python
 from flow_sdk.builtin.dataset import Dataset
-from flow_sdk.core.navigator_eval import SHIPPED
+from flow_sdk.core.navigator_eval import DATASET
 
-nav = Dataset.at(SHIPPED)                 # the entity from disk alone -- no index needed
+nav = Dataset.at(DATASET)                 # the entity from disk alone -- no index needed
 summary = (nav.spec, nav.num_examples, nav.kind_counts)   # ('navigator.dataset', 52, {'eval': 50, 'test': 2})
 rows = nav.read_rows()
 first = rows[0].input.utterance           # 'open data sources'
@@ -99,7 +100,7 @@ With **Preferences → Advanced → Smart navigation log** on (off by default), 
 magic line makes is appended to the user's own **SmartNavigationLog** dataset
 (`<FLOWPAD_TEMP_DIR>/<instance>/agentic-assets/dataset/smart-navigation-log/` — Flowpad's temp
 folder, which the OS clears now and then, so copy rows worth keeping into a kept dataset; spec `navigator.dataset` —
-the same row kind as the shipped eval set). A row is `train`, carries what was typed and where,
+the same row kind as the SmartNavigator eval set). A row is `train`, carries what was typed and where,
 what was offered and decided, and what was done (`data.address` or `data.prompt`) — and no gold
 until someone reviews it.
 

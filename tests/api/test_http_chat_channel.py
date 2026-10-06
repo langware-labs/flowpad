@@ -165,6 +165,38 @@ async def test_with_no_loop_running_the_request_says_no_reply_yet(worker, user, 
         await agent.delete()
 
 
+async def test_asking_about_a_message_whose_turn_failed_says_so_at_once(worker, user, bootstrapped_client, monkeypatch):
+    """The loop never re-runs a failed turn, so a caller waiting on its reply would wait out a 504 on
+    every ask. It hears ``turn_failed`` instead -- the cue to tell the person, who decides to resend."""
+    import flow_sdk.server.routes.service_channel as route
+    from flow_sdk.builtin.agent_serve import FAILED, TURNS, turn_key
+    from flow_sdk.builtin.agentic_process import AgenticProcess
+
+    monkeypatch.setattr(route, "REPLY_DEADLINE_SECONDS", 0.3)
+    agent = Agent(name=f"failed-turn-{time.monotonic_ns()}", worker_type="claude")
+    await agent.save()
+    try:
+        deployment = await agent.run_locally()
+        chat = await ServiceEndpoint.find_existing(str(deployment.typeid), "chat")
+        ask = {"text": "do the thing", "message_id": "wamid.BROKEN"}
+        first = await bootstrapped_client.post(f"/api/v1/graph/agent/{agent.id}/ask", json=ask)
+        assert first.status_code == 504, first.text
+        conversation_id = first.json()["data"]["conversation_id"]
+        (item,) = await SourceItem.get_all({"data_source_id": chat.backend.data_source_id})
+        session = AgenticProcess(name="session", deployment_id=deployment.id,
+                                 context_data={TURNS: {turn_key(item): {"status": FAILED, "text": ""}}})
+        await session.save()
+
+        again = await bootstrapped_client.post(
+            f"/api/v1/graph/agent/{agent.id}/ask", json={**ask, "conversation_id": conversation_id}
+        )
+
+        assert again.status_code == 422, again.text
+        assert again.json()["data"]["type"] == "turn_failed"
+    finally:
+        await agent.delete()
+
+
 async def test_the_supervisor_makes_the_chat_of_a_running_deployment(worker, user):
     """In the test tier the supervisor starts no process, but a running deployment still gets its chat."""
     agent = Agent(name=f"served-agent-{time.monotonic_ns()}", worker_type="claude")
@@ -194,3 +226,50 @@ async def test_a_box_reports_an_agent_placements_chat(deployed, bootstrapped_cli
 
     assert resp.status_code == 200, resp.text
     assert [e["id"] for e in resp.json()["data"]["endpoints"]] == [chat.id]
+
+
+async def test_ask_is_one_message_and_its_answer_continuing_one_conversation(deployed, bootstrapped_client, worker):
+    """``POST agent/<id>/ask`` — what a hub calls on the box it placed the agent on: the message lands on
+    the agent's own chat channel and the loop's answer comes back in the ordinary envelope."""
+    agent, _deployment, _chat = deployed
+    first = await bootstrapped_client.post(f"/api/v1/graph/agent/{agent.id}/ask", json={"text": "hello there"})
+    assert first.status_code == 200, first.text
+    data = first.json()["data"]
+    assert data["answer"].startswith("Mock reply") and data["conversation_id"]
+
+    again = await bootstrapped_client.post(
+        f"/api/v1/graph/agent/{agent.id}/ask", json={"text": "and again", "conversation_id": data["conversation_id"]}
+    )
+    assert again.status_code == 200, again.text
+    assert again.json()["data"]["conversation_id"] == data["conversation_id"]
+    assert worker.received_prompts == ["hello there", "and again"]
+
+
+async def test_asking_again_with_the_message_id_is_the_same_message_answered_once(deployed, bootstrapped_client, worker):
+    """A hub re-asks after a 504 with its own message id: the channel holds ONE message, the agent runs one
+    turn, and the re-ask gets that turn's answer -- not a second copy answered (or refused) again."""
+    agent, _deployment, chat = deployed
+    ask = {"text": "only once", "message_id": "wamid.ONE"}
+    first = await bootstrapped_client.post(f"/api/v1/graph/agent/{agent.id}/ask", json=ask)
+    assert first.status_code == 200, first.text
+    conversation_id = first.json()["data"]["conversation_id"]
+
+    again = await bootstrapped_client.post(
+        f"/api/v1/graph/agent/{agent.id}/ask", json={**ask, "conversation_id": conversation_id}
+    )
+
+    assert again.status_code == 200, again.text
+    assert again.json()["data"]["answer"] == first.json()["data"]["answer"]
+    assert worker.received_prompts == ["only once"]
+    asked = [i for i in await SourceItem.get_all({"data_source_id": chat.backend.data_source_id}) if i.body == "only once"]
+    assert len(asked) == 1
+
+
+async def test_ask_refuses_no_text_and_a_disabled_agent(deployed, bootstrapped_client):
+    agent, _deployment, _chat = deployed
+    empty = await bootstrapped_client.post(f"/api/v1/graph/agent/{agent.id}/ask", json={"text": "  "})
+    assert empty.status_code == 400
+    agent.enabled = False
+    await agent.save()
+    off = await bootstrapped_client.post(f"/api/v1/graph/agent/{agent.id}/ask", json={"text": "hi"})
+    assert off.status_code == 409 and "disabled" in off.text

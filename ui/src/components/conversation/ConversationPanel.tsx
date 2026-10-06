@@ -346,7 +346,7 @@ export function ConversationPanel({
             <div className={headerWrapper}>
               <EditableConversationTitle conv={convEntity ?? null} fallback={headerLabel} />
               <ProjectChip projectId={convEntity?.project_id ?? null} className="me-auto" />
-              <MembersAvatarStack typeId={new TypeId(Conversation.type, conversationId)} />
+              <MembersAvatarStack typeId={new TypeId(Conversation.type, conversationId)} showInviteButton />
             </div>
           )}
           <LatestScroll className={`${bodyWrapper} relative`}>

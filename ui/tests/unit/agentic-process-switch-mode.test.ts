@@ -130,6 +130,21 @@ describe('AgenticProcess.switchMode', () => {
     expect(emitSpy).toHaveBeenCalledWith('restarted', expect.anything());
   });
 
+  it('start() seeds a NEW pty with the estimate but never asserts it on the attach', async () => {
+    const p = new AgenticProcess({ id: '00000000-0000-4000-8000-000000000001', status: 'idle' } as any);
+
+    await p.start({ visible: true, cols: 142, rows: 42 });
+
+    const action = callActionSpy.mock.calls[0][0] as any;
+    expect(action.name).toBe('open');
+    expect(action.bodyParameters).toMatchObject({ cols: 142, rows: 42 }); // spawn seed
+    // On a LIVE pty the estimate resized it away from the view's real width on
+    // every entry; the attach carries the size the view claimed instead.
+    const attachOpts = fakeShell.attachPty.mock.calls[0][0];
+    expect(attachOpts.cols).toBeUndefined();
+    expect(attachOpts.rows).toBeUndefined();
+  });
+
   it('Interactive rejection restores the prior headless intent and desired-value latches', async () => {
     const error = new Error('Failed to create PTY session: embedded null byte');
     callActionSpy.mockRejectedValueOnce(error);

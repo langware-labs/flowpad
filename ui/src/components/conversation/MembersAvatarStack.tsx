@@ -3,6 +3,7 @@ import { Trans, useLingui } from '@lingui/react/macro';
 import { Check, Link as LinkIcon, Loader2, Plus, UserPlus, UsersRound, X } from 'lucide-react';
 import {
   Conversation,
+  isHelpdeskKind,
   mintInviteLink,
   normalizeEmail,
   Project,
@@ -49,6 +50,7 @@ import {
   participantInitials,
   participantIsUser,
   participantLabel,
+  participantName,
   participantRank,
   participantRoleLabel,
   participantSubtitle,
@@ -59,8 +61,6 @@ const MAX_INLINE_AVATARS = 4;
 const MAX_CONTACT_SUGGESTIONS = 6;
 const MAX_GROUP_SUGGESTIONS = 3;
 const MAX_TEAM_SUGGESTIONS = 3;
-/** Roles below admin that may still invite (``canInviteMembers`` covers admin+). */
-const INVITER_ROLES: readonly string[] = ['editor'];
 
 /** What the add row's text resolved to when a suggestion was picked. */
 type DraftPick = { kind: 'contact'; participant: ConversationParticipant } | { kind: 'group'; group: ContactsGroup };
@@ -82,8 +82,10 @@ interface MembersAvatarStackProps {
   showInviteButton?: boolean;
   /** Optional entity-specific prerequisite, asked when the invite pane is about
    *  to open. Returning false keeps it closed — the caller shows its own UI
-   *  instead (a Project that isn't published yet shows its publish popup). */
-  beforeInvite?: () => boolean;
+   *  instead (a Project that isn't published yet shows its publish popup) and
+   *  calls ``proceed`` once the prerequisite is met, so the invite the person
+   *  set out to make carries on instead of ending at the prerequisite. */
+  beforeInvite?: (proceed: () => void) => boolean;
   /** Roles the invite form may grant, e.g. ``['member', 'admin']`` for a
    *  project. Omitted = no picker, and the entity's own default role applies. */
   inviteRoles?: readonly string[];
@@ -164,16 +166,15 @@ export function MembersAvatarStack({
   // Invite gate applies only when my roster row resolved. A local-only /
   // not-yet-shared conversation has an empty roster (no ``me``) — keep the
   // form there, since this popover is also the first-share entry point and
-  // the sharer becomes the owner. Editors invite too (a project's hub policy
-  // grants them ``members``); ``offeredRoles`` below still caps what they may
-  // grant at roles under editor.
-  const mayInvite =
-    me === null ||
-    canInviteMembers(me) ||
-    (me.role ?? '')
-      .toLowerCase()
-      .split(',')
-      .some((r) => INVITER_ROLES.includes(r.trim()));
+  // the sharer becomes the owner. Who may invite mirrors the hub: editor+ on a
+  // project, any member on a DIRECT conversation, admin+ on a HELPDESK ticket.
+  const isConversation = typeId.type === Conversation.type;
+  const isHelpdesk = isConversation && isHelpdeskKind((entity as Conversation | null | undefined)?.kind);
+  const lowestInviter = isHelpdesk ? 'admin' : isConversation ? 'member' : 'editor';
+  const mayInvite = me === null || canInviteMembers(me, lowestInviter);
+  // Who to ask when I can't invite: the owner, when the roster shows one.
+  const owner = members.find((m) => participantRank(m) === 0 && m.user_id !== me?.user_id);
+  const ownerName = owner ? participantName(owner) : null;
   // Remove mirrors the hub's ``delete_membership``: on a conversation only its
   // owner may remove anyone; elsewhere anyone who may manage members may
   // remove a member ranked strictly below them (the ``can_assign`` ceiling —
@@ -187,7 +188,7 @@ export function MembersAvatarStack({
       return mayInvite && myRank !== null && theirRank !== null && theirRank > myRank;
     }
     if (!p.user_id || p.user_id === me?.user_id) return false;
-    if (typeId.type === Conversation.type) return iAmOwner && (p.role ?? '').toLowerCase() !== 'owner';
+    if (isConversation) return iAmOwner && (p.role ?? '').toLowerCase() !== 'owner';
     const theirRank = participantRank(p);
     return mayInvite && myRank !== null && theirRank !== null && theirRank > myRank;
   };
@@ -583,14 +584,14 @@ export function MembersAvatarStack({
       });
       return;
     }
-    if (next && beforeInvite && !beforeInvite()) return;
+    if (next && beforeInvite && !beforeInvite(() => setOpen(true))) return;
     setOpen(next);
     if (!next) {
       // Reset transient state so reopening the popover doesn't show a stale
-      // selection or error from a previous attempt.
+      // selection or error from a previous attempt. The people and teams on
+      // the list are NOT transient: they are an invite not sent yet, and only
+      // Apply sends it — dropping them here silently loses the invite.
       clearDraft();
-      setPending([]);
-      setPendingTeams([]);
       setShareOutcome(null);
       setMemberError(null);
       setInviteRole('member');
@@ -614,6 +615,14 @@ export function MembersAvatarStack({
           >
             <UserPlus className="h-3.5 w-3.5" />
             <Trans>Invite</Trans>
+            {!open && listed > 0 && (
+              <span
+                className="rounded bg-brand-foreground/20 px-1 text-[10px] font-medium"
+                data-testid="members-invite-unsent"
+              >
+                <Trans>{listed} not sent</Trans>
+              </span>
+            )}
           </button>
         )}
         <Popover open={open} onOpenChange={handleOpenChange}>
@@ -704,8 +713,22 @@ export function MembersAvatarStack({
                     {memberError}
                   </div>
                 )}
-                {/* Invite — admin+/owner only (the hub policy method-scopes the
-            mutating ``members`` action; a plain member's POST would 403).
+                {/* Can't invite here: say so and name who can, instead of a roster
+            that silently has no add row. */}
+                {!mayInvite && available && !stale && (
+                  <div
+                    className="mt-3 border-t border-border px-1 pt-2 text-[11px] text-muted-foreground"
+                    data-testid="members-invite-not-allowed"
+                  >
+                    {ownerName ? (
+                      <Trans>You can't invite people here — ask {ownerName}.</Trans>
+                    ) : (
+                      <Trans>You can't invite people here.</Trans>
+                    )}
+                  </div>
+                )}
+                {/* Invite — gated by ``mayInvite`` (the hub policy method-scopes the
+            mutating ``members`` action; a POST below that line would 403).
             Also requires an available hub; hidden when stale/offline so an
             invite can't be attempted only to 409. */}
                 {formOpen && (

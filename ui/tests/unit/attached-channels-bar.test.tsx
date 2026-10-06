@@ -11,10 +11,19 @@ const LOCAL = 'user-11111111-1111-4111-8111-111111111111';
 /** A real entity, so the status getters are the SDK's own. */
 const uuidOf = (name: string) => `${name.charCodeAt(0).toString(16).padStart(8, '0')}-0000-4000-8000-000000000000`;
 const fake = (name: string, status = 'active', provider = 'slack') =>
-  new DataSource({ id: uuidOf(name), name, provider, channel: provider, owner: LOCAL, status: status as DataSource['status'] });
+  new DataSource({
+    id: uuidOf(name),
+    name,
+    provider,
+    channel: provider,
+    owner: LOCAL,
+    status: status as DataSource['status'],
+  });
 const specFor = () => ({ sends: true, icon_name: 'Slack' }) as never;
 
-vi.mock('@src/navigation/useDockNavigation', () => ({ useDockNavigation: () => ({ navigation: { openTab: vi.fn() } }) }));
+vi.mock('@src/navigation/useDockNavigation', () => ({
+  useDockNavigation: () => ({ navigation: { openTab: vi.fn() } }),
+}));
 vi.mock('@src/components/data-sources/DataSourceDialog', () => ({ DataSourceDialog: () => null }));
 vi.mock('@src/notifications', () => ({ notify: { error: vi.fn(), success: vi.fn() } }));
 
@@ -23,7 +32,13 @@ import { AttachedChannelsBar, groupChannels } from '@src/components/stream-inbox
 function mount(rows: DataSource[], selected = new Set<string>()) {
   const onSelectedChange = vi.fn();
   render(
-    <AttachedChannelsBar owner={new TypeId(LOCAL)} rows={rows} specFor={specFor} selected={selected} onSelectedChange={onSelectedChange} />,
+    <AttachedChannelsBar
+      owner={new TypeId(LOCAL)}
+      rows={rows}
+      specFor={specFor}
+      selected={selected}
+      onSelectedChange={onSelectedChange}
+    />,
   );
   return onSelectedChange;
 }
@@ -74,5 +89,12 @@ describe('AttachedChannelsBar', () => {
     expect(marks.map((e) => e.getAttribute('aria-pressed'))).toEqual(['true', 'false']);
     fireEvent.click(screen.getByTestId('attached-channels-clear'));
     expect(onSelectedChange).toHaveBeenCalledWith(new Set());
+  });
+
+  it('a channel row names its account — the connected phone, the mailbox — when it has one', () => {
+    const phone = new DataSource({ ...fake('w', 'active', 'flow_whatsapp'), account_key: '972557709288' } as never);
+    mount([phone, fake('s')]);
+    fireEvent.click(screen.getByTestId('attached-channels-details'));
+    expect(screen.getAllByTestId('attached-channel-account').map((e) => e.textContent)).toEqual(['972557709288']);
   });
 });

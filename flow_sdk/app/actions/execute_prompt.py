@@ -148,13 +148,20 @@ async def build_merged_prompt(fm: "FlowMessage") -> str:
 
 async def _reuse_or_spawn_headless(target_typeid_str: str, workdir: str) -> "AgenticProcess":
     """Reuse the most-recent non-failed headless AP for this conversation target
-    (so the receive hook + manual click share one process per conversation — no
-    proliferation), else construct a fresh one. Mirrors useApproveAndExecute."""
+    in this ``workdir`` (so the receive hook + manual click share one process per
+    conversation — no proliferation), else construct a fresh one."""
     from flow_sdk.builtin.agentic_process import AgenticProcess
     from flow_sdk.builtin.process_lifecycle import ProcessStatus
 
     existing = await AgenticProcess.local_rows({"target_typeid_str": target_typeid_str})
-    candidates = [p for p in existing if str(getattr(p, "status", "")) != ProcessStatus.FAILED.value]
+    # Only a process in THIS folder: an AP's workdir is frozen once it has a
+    # session, so a session that now runs elsewhere (a temp folder instead of a
+    # project, or another project) gets a process of its own.
+    candidates = [
+        p
+        for p in existing
+        if str(getattr(p, "status", "")) != ProcessStatus.FAILED.value and getattr(p, "workdir", None) == workdir
+    ]
     candidates.sort(key=lambda p: str(getattr(p, "created_date", "") or ""), reverse=True)
     if candidates:
         ap = candidates[0]
@@ -250,16 +257,18 @@ async def emit_session_event(
     someone_typeid: str,
     *,
     text: Optional[str] = None,
-) -> None:
-    """Send a live-session lifecycle line into the bound conversation.
+    marker_extra: Optional[dict] = None,
+) -> Optional[str]:
+    """Send a live-session lifecycle line into the bound conversation; answer its id.
 
     The message is a visible, messenger-style system line
     (``kind=SESSION_EVENT``) that doubles as the snapshot carrier: its
     ``remote_worker_session-<id>`` TYPE_ID attachment gets the session row
     serialized into the body bundle at upload time, so the other side's mirror
     refreshes with this event (hub-optional — the marker in ``prompt_preview``
-    survives the hub's unknown-field drop). No-op when the session has no
-    bound conversation yet (guest DRAFT)."""
+    survives the hub's unknown-field drop). ``marker_extra`` rides the same
+    marker (the guest's ``requested`` line carries ``session_start``). No-op
+    (None) when the session has no bound conversation yet (guest DRAFT)."""
     import json as _json  # noqa: PLC0415
 
     from flow_sdk.app.actions.notification_action import handle_add_message  # noqa: PLC0415
@@ -270,10 +279,10 @@ async def emit_session_event(
     )
 
     if not session.conversation_id:
-        return
+        return None
     actor = session.host_name or "The host"
     message = text or _SESSION_EVENT_TEXTS.get(event, "Live session: {actor} · " + event).format(actor=actor)
-    await handle_add_message(
+    resp = await handle_add_message(
         {
             "conversation_id": session.conversation_id,
             "message": message,
@@ -283,12 +292,14 @@ async def emit_session_event(
                 {
                     "attachment_type": AttachmentType.TYPE_ID.value,
                     "data": f"remote_worker_session-{session.id}",
-                    "prompt_preview": _json.dumps({LIVE_SESSION_EVENT_MARKER_KEY: event}),
+                    "prompt_preview": _json.dumps({**(marker_extra or {}), LIVE_SESSION_EVENT_MARKER_KEY: event}),
                 }
             ],
         },
         someone_typeid,
     )
+    data = getattr(resp, "data", None)
+    return data.get("flow_message_id") if isinstance(data, dict) else None
 
 
 # ── PromptCompletion emission + the reply body contract ─────────────────────
@@ -560,7 +571,8 @@ async def resolve_or_mint_session(
       guest minted it with uuid4). An invalid/foreign id is ignored.
     - Without a usable id, the prompt is looked up as a STARTING message
       (``starting_message_id == fm.id``) so a re-delivered op finds the row it
-      already created; only then is a fresh uuid4 minted. Never a deterministic
+      already created, then joins the conversation's OPEN session (one per
+      conversation); only then is a fresh uuid4 minted. Never a deterministic
       id — idempotency is the natural-key lookup.
     - A missing row materializes at PENDING with the guest's opening proposal
       (``session_start`` marker → ``reply_policy``); a DRAFT row that landed
@@ -576,7 +588,10 @@ async def resolve_or_mint_session(
         sid = None
     session = await RemoteWorkerSession.resolve_state(sid) if sid else None
     if session is None and not sid:
+        # A re-delivered opening prompt finds its own row; any other unstamped
+        # prompt joins the conversation's open session — one per conversation.
         session = await RemoteWorkerSession.get_one({"starting_message_id": fm.id})
+        session = session or await RemoteWorkerSession.open_for_conversation(conv.id)
         sid = session.id if session else mint_uuid()
     start = session_start_settings(fm)
     changed = session is None
@@ -684,13 +699,18 @@ async def run_session_turn(
         try:
             from flow_sdk.builtin.project import Project
 
-            project_id = getattr(conversation, "project_id", None)
-            if not project_id:
-                raise _TurnFailed("this conversation is not linked to a project on the host")
-            project = await Project.get_one({"id": project_id})
-            workdir = getattr(project, "fs_storage_mount_path", None) if project else None
+            # The session's own project first: in a person-to-person chat (no
+            # project by design) the host picks it at approval.
+            project_id = session.project_id or getattr(conversation, "project_id", None)
+            # The host's "No project" at approval: the instance's temp folder.
+            workdir = session.workdir
             if not workdir:
-                raise _TurnFailed("the host's project has no folder to run in")
+                if not project_id:
+                    raise _TurnFailed("this conversation is not linked to a project on the host")
+                project = await Project.get_one({"id": project_id})
+                workdir = getattr(project, "fs_storage_mount_path", None) if project else None
+                if not workdir:
+                    raise _TurnFailed("the host's project has no folder to run in")
 
             # RUNNING has to be durable BEFORE the consume, not after it. The
             # marker below means "this prompt is spoken for"; if the host dies
@@ -725,7 +745,7 @@ async def run_session_turn(
             session.host_process_id = ap.id
             session.collaboration_room_id = session.collaboration_room_id or (room.id if room else None)
             session.project_id = session.project_id or project_id
-            session.mark_activity(RemoteWorkerSessionStatus.RUNNING)
+            await _set_turn_status(session, RemoteWorkerSessionStatus.RUNNING)
             await session.save()
 
             taken = await ap.send_turn(prompt_text)
@@ -761,7 +781,9 @@ async def run_session_turn(
             if fresh is not None and getattr(fresh, "reply_policy", None):
                 session.reply_policy = fresh.reply_policy
 
-            session.mark_activity(RemoteWorkerSessionStatus.IDLE)
+            # The reply still goes out (it answers a prompt the guest sent), but a
+            # session either side ended while this turn ran stays ended.
+            await _set_turn_status(session, RemoteWorkerSessionStatus.IDLE, fresh=fresh)
             await session.save()
 
             from flow_sdk.app.actions.notification_action import handle_add_message
@@ -802,7 +824,36 @@ async def run_session_turn(
                 }
             )
         except Exception as e:  # noqa: BLE001
+            # A failed prompt is answered by its failure line, even one that failed
+            # before the consume (no project folder): left queued, the next drain
+            # would run it again on top of the guest's Retry — one prompt, two runs.
+            if not getattr(fm, "prompt_auto_handled", False):
+                try:
+                    await consume_prompt(fm, someone_typeid)
+                except Exception:  # noqa: BLE001 — reporting the failure comes first
+                    logger.warning("[session] could not consume the failed prompt fm=%s", fm.id, exc_info=True)
             return await _fail_turn(session, e, someone_typeid)
+
+
+async def _set_turn_status(
+    session: "RemoteWorkerSession", status: str, *, fresh: "Optional[RemoteWorkerSession]" = None
+) -> None:
+    """Stamp a turn's status on ``session`` — unless the session ended meanwhile.
+
+    A turn runs for minutes on an in-memory copy of the row, and either side may
+    end the session in that time (Disconnect). Stamping RUNNING/IDLE/ERROR from
+    the stale copy would revive it: the next prompt — even the next session's
+    start — would land in a session both sides were told had ended. ENDED and
+    DECLINED absorb; the turn keeps the row's terminal status instead.
+    """
+    from flow_sdk.builtin.remote_worker_session import RemoteWorkerSession, is_terminal  # noqa: PLC0415
+
+    fresh = fresh or await RemoteWorkerSession.get_one({"id": session.id})
+    if fresh is not None and is_terminal(fresh.status):
+        session.status = fresh.status
+        session.last_activity_at = fresh.last_activity_at
+        return
+    session.mark_activity(status)
 
 
 class _TurnFailed(Exception):
@@ -815,7 +866,7 @@ async def _fail_turn(session: "RemoteWorkerSession", err: Exception, someone_typ
     The guest has no clock: a turn that fails only on the host leaves the guest's
     mirror on ``running`` with a reply that is never coming. The event carries the
     session snapshot, so the guest's mirror flips to ``error`` with it. ERROR is
-    runnable — the guest's next prompt is the retry.
+    runnable — the guest's Retry re-sends the failed prompt as a new turn.
     """
     from flow_sdk.builtin.remote_worker_session import RemoteWorkerSessionStatus  # noqa: PLC0415
 
@@ -824,7 +875,7 @@ async def _fail_turn(session: "RemoteWorkerSession", err: Exception, someone_typ
         "[session] turn failed session=%s: %s", session.id, reason, exc_info=not isinstance(err, _TurnFailed)
     )
     try:
-        session.mark_activity(RemoteWorkerSessionStatus.ERROR)
+        await _set_turn_status(session, RemoteWorkerSessionStatus.ERROR)
         await session.save()
     except Exception:  # noqa: BLE001 — reporting a failure must not raise out of the receive pipeline
         logger.warning("[session] could not save the failed turn session=%s", session.id, exc_info=True)
@@ -1063,12 +1114,10 @@ async def process_inbound_prompt(fm_id: str, conversation_id: str) -> None:
     """
     try:
         from flow_sdk.app.actions.notification_action import _is_prompt_attachment
-        from flow_sdk.builtin.contact_permission import ContactPermission, PermissionAction, _grants
         from flow_sdk.builtin.conversation import Conversation
         from flow_sdk.builtin.flow_message import FlowMessage
         from flow_sdk.builtin.remote_worker_session import (
             UNAPPROVED_STATUSES,
-            ApprovedVia,
             InboundDecision,
             decide_inbound_prompt,
         )
@@ -1086,33 +1135,18 @@ async def process_inbound_prompt(fm_id: str, conversation_id: str) -> None:
         if not any(_is_prompt_attachment(a) for a in (fm.attachment or [])):
             return  # nothing to run
         conv = await Conversation.get_one({"id": conversation_id})
-        if not conv or not getattr(conv, "project_id", None):
-            return  # no project mapped → nothing can run here
+        if not conv:
+            return
+        # A project-less chat (person-to-person, by design) still hosts live
+        # sessions — the host picks the project at approval, onto the session.
+        # A loose prompt with no session has nowhere to run: ignored, as before.
+        if not getattr(conv, "project_id", None) and not getattr(fm, "remote_worker_session_id", None):
+            return
 
-        someone_typeid = str(TypeId(type="user", id=local_id)) if local_id else ""
-        # The host's identity on the session is the CLOUD user id — the id the
-        # guest's roster carries and the UI compares against (`isHost`); the
-        # local user is the fallback. One resolver for that chain.
-        from flow_sdk.builtin.user import User  # noqa: PLC0415
-
-        who = await User.current_sender_participant()
-        host_id = who.get("user_id") or local_id
-        host_name = who.get("name") or None
-        session = await resolve_or_mint_session(fm, conv, host_user_id=host_id, host_name=host_name)
+        session, host_id, someone_typeid = await _host_session_for(fm, conv, local_id)
 
         needs_consent = session.status in UNAPPROVED_STATUSES or not session.status
-        standing = False
-        if needs_consent:
-            # Roster ids are CLOUD ids — exclude the host's cloud id, not the local one.
-            _peer_id, _peer_name, contact_email = _peer_of(conv, host_id)
-            rows = await ContactPermission.get_all()
-            standing = _grants(
-                rows,
-                action=PermissionAction.AUTO_APPROVE_SESSION.value,
-                contact_user_id=fm.sender_id,
-                contact_email=contact_email if _peer_id == fm.sender_id else None,
-                project_id=conv.project_id,
-            )
+        standing = needs_consent and await _standing_grant(conv, host_id, fm.sender_id)
         decision = decide_inbound_prompt(status=session.status, standing_grant=standing)
         logger.info("[session] inbound fm=%s session=%s status=%s → %s", fm.id, session.id, session.status, decision)
 
@@ -1131,9 +1165,90 @@ async def process_inbound_prompt(fm_id: str, conversation_id: str) -> None:
         # deliveries keep arrival order and a prompt can never run twice (the
         # opening prompt must not run after a follow-up that landed while its
         # approval was still being written).
-        if needs_consent:
-            if not await session.approve(via=ApprovedVia.STANDING_GRANT, someone_typeid=someone_typeid):
-                return
+        if needs_consent and not await _approve_by_standing_grant(session, someone_typeid):
+            return
         await redrive_session_prompts(session, conv=conv, local_user=local_user)
     except Exception as e:  # noqa: BLE001
         logger.warning("[session] process_inbound_prompt failed: %s", e, exc_info=True)
+
+
+async def _standing_grant(conv: "Conversation", host_id: Optional[str], sender_id: Optional[str]) -> bool:
+    """Does the host hold a standing grant pre-approving this guest's sessions?"""
+    from flow_sdk.builtin.contact_permission import ContactPermission, PermissionAction  # noqa: PLC0415
+
+    # Roster ids are CLOUD ids — exclude the host's cloud id, not the local one.
+    peer_id, _peer_name, contact_email = _peer_of(conv, host_id)
+    return await ContactPermission.grants(
+        action=PermissionAction.AUTO_APPROVE_SESSION.value,
+        contact_user_id=sender_id,
+        contact_email=contact_email if peer_id == sender_id else None,
+        project_id=conv.project_id,
+    )
+
+
+async def _approve_by_standing_grant(session: "RemoteWorkerSession", someone_typeid: str) -> bool:
+    """Approve on the standing grant — the host said "always" for this guest.
+
+    It runs where the conversation's project is; with no project anywhere it runs
+    in the instance's temp folder — the host's own "Run (Skip project)" — so a
+    remembered guest really starts without asking, even in a person-to-person chat.
+    """
+    from flow_sdk.builtin.remote_worker_session import ApprovedVia, scratch_workdir  # noqa: PLC0415
+
+    if not session.workdir:
+        project_id = await session.run_project_id()
+        if project_id is None:
+            session.workdir = str(scratch_workdir())
+        else:
+            session.project_id = project_id
+    return await session.approve(via=ApprovedVia.STANDING_GRANT, someone_typeid=someone_typeid)
+
+
+async def _host_session_for(
+    fm: "FlowMessage", conv: "Conversation", local_id: Optional[str]
+) -> tuple["RemoteWorkerSession", Optional[str], str]:
+    """The host side of an inbound session message: (session, host id, someone).
+
+    The host's identity on the session is the CLOUD user id — the id the guest's
+    roster carries and the UI compares against (``isHost``); the local user is
+    the fallback. One resolver for that chain, shared by prompts and requests.
+    """
+    from flow_sdk.builtin.user import User  # noqa: PLC0415
+
+    who = await User.current_sender_participant()
+    host_id = who.get("user_id") or local_id
+    session = await resolve_or_mint_session(fm, conv, host_user_id=host_id, host_name=who.get("name") or None)
+    someone_typeid = str(TypeId(type="user", id=local_id)) if local_id else ""
+    return session, host_id, someone_typeid
+
+
+async def process_session_request(fm_id: str, conversation_id: str) -> None:
+    """The host side of a guest's ``requested`` line (a session opened before any prompt).
+
+    The line's snapshot already materialized the PENDING row; this fills the
+    host's own identity on it (the UI's ``isHost`` compares the cloud id) and
+    approves it at once when a standing grant covers the guest — the same consent
+    an opening prompt gets. Failure-isolated — logs and dies.
+    """
+    try:
+        from flow_sdk.builtin.conversation import Conversation  # noqa: PLC0415
+        from flow_sdk.builtin.flow_message import FlowMessage  # noqa: PLC0415
+        from flow_sdk.builtin.remote_worker_session import UNAPPROVED_STATUSES  # noqa: PLC0415
+        from flow_sdk.server.routes.bootstrap import get_or_create_local_user  # noqa: PLC0415
+
+        fm = await FlowMessage.get_one({"id": fm_id})
+        conv = await Conversation.get_one({"id": conversation_id})
+        if not fm or not conv:
+            return
+        local_user = await get_or_create_local_user()
+        local_id = local_user.id if local_user else None
+        if fm.sender_id and local_id and fm.sender_id == local_id:
+            return  # our own request
+        session, host_id, someone_typeid = await _host_session_for(fm, conv, local_id)
+        logger.info("[session] request fm=%s session=%s status=%s", fm.id, session.id, session.status)
+        if session.status not in UNAPPROVED_STATUSES:
+            return
+        if await _standing_grant(conv, host_id, fm.sender_id):
+            await _approve_by_standing_grant(session, someone_typeid)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("[session] process_session_request failed: %s", e, exc_info=True)

@@ -8,6 +8,7 @@ Offline by construction: the source is handed a fake hub. What is pinned:
 """
 from __future__ import annotations
 
+import base64
 import time
 
 import pytest
@@ -70,6 +71,8 @@ async def test_connect_shows_flow_the_code_and_the_link_that_sends_it():
     shown = update.shown
     assert (shown.name, shown.number, shown.code) == ("Flow", "+1 555 0100", "AB2CD3")
     assert shown.link == "https://wa.me/15550100?text=link%20AB2CD3" and shown.qr.startswith("data:image/svg+xml;base64,")
+    svg = base64.b64decode(shown.qr.split(",", 1)[1]).decode()
+    assert 'xmlns="http://www.w3.org/2000/svg"' in svg, "an <img> renders an SVG only with its namespace"
 
     # Read back later (a resumed wizard), the link carries only its code — the link is rebuilt from Flow's number.
     again = await _source(hub, link_id="L1")._connect(check=True, values={})
@@ -127,3 +130,16 @@ async def test_an_answer_goes_to_the_persons_phone_quoting_what_it_answers(tmp_p
         path.write_bytes(b"x")
         with pytest.raises(Unsupported):
             await source.send(MessageData(text="x", conversation=source.conversation_origin(PHONE), attachments=(local_file(path),)))
+
+
+def test_the_connect_wizard_ends_at_connected_and_ships_no_local_agent():
+    """Flow answers from the hub, on a machine of the person's own: the desktop's setup is Connect and the
+    validated phone, nothing that makes this desktop answer (two answerers would answer twice)."""
+    import json
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1] / "agentic-assets"
+    wizard = json.loads((root / "wizard" / "flow-whatsapp-connect" / "wizard.json").read_text())
+    assert [s["id"] for s in wizard["steps"]] == ["connect", "ask-connected"]
+    assert not (root / "agent").exists()
+    assert sorted(p.name for p in (root / "compute_op").iterdir()) == ["flow-whatsapp-ask-connected", "flow-whatsapp-connect"]
