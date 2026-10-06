@@ -94,7 +94,12 @@ async def decide_run(request: Any, *, engine: Optional[Engine] = None) -> tuple[
     answer = await (engine or route)(req.utterance, here=here)
     outcome: dict[str, Any] = {"decision": decision_of(answer), "candidates": answer.offered}
     target = answer.target if answer.route == "quick" else None
-    address = address_of(target) if target is not None else None
+    if target is not None and target.kind == "log":
+        from flow_sdk.core.navigation_log import address as log_address  # noqa: PLC0415
+
+        address = await log_address()
+    else:
+        address = address_of(target) if target is not None else None
     if address:
         outcome["address"] = address
         outcome["dock"] = _dock(address)

@@ -197,12 +197,18 @@ def _screen_named(core: str) -> Optional[str]:
     return keys.pop() if len(keys) == 1 else None
 
 
+#: The navigator's own log (SmartNavigationLog): asking for it never needs a model.
+SELF_LOG_NAMES = frozenset({"smart navigation log", "navigation log", "smartnavigationlog", "smart navigation data"})
+
+
 def rule_hit(utterance: str) -> Optional[NavigationTarget]:
     """A literal, or a screen name / alias once the leading verb is stripped -- exact, or a typo of
     exactly one name (live: "open connecitons" went to the model at 0.63 and on to the assistant)."""
     if literal := _literal(utterance):
         return literal
     core = _LEAD.sub("", utterance.strip().rstrip("!?.").lower()).strip()
+    if core in SELF_LOG_NAMES:
+        return NavigationTarget(kind="log", value="smart-navigation")
     key = _screen_named(core) if core else None
     return NavigationTarget(kind="view", value=key[len("view:") :]) if key else None
 
