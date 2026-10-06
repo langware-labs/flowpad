@@ -1,8 +1,10 @@
-"""The shipped SmartNavigator dataset: its definitions, its rows, and the evaluation over them.
+"""The SmartNavigator dataset: its definitions, its rows, and the evaluation over them.
 
-``flow_sdk/system_projects/flowpad_assistant/agentic-assets/dataset/smart-navigator/`` carries
-its own row kinds as nested ``data_spec`` folders. These read it from disk alone -- the same entity
-indexing builds -- and drive the evaluator with the decision API doubled at its one seam.
+The row kinds ship as ``data_spec`` folders (``flowpad_assistant/agentic-assets/data_spec/
+navigat*``); the rows do not -- they live at ``navigator_eval.DATASET`` (``dev/dataset/
+smart-navigator`` beside the checkout), and the tests that read them skip where it is absent.
+These read it from disk alone -- the same entity indexing builds -- and drive the evaluator with
+the decision API doubled at its one seam.
 """
 
 from __future__ import annotations
@@ -24,7 +26,9 @@ pytestmark = pytest.mark.timeout(10)  # do not increase timeout without approval
 
 @pytest.fixture(scope="module")
 def shipped() -> Dataset:
-    return Dataset.at(navigator_eval.SHIPPED)
+    if not navigator_eval.DATASET.is_dir():
+        pytest.skip(f"SmartNavigator dataset not at {navigator_eval.DATASET}")
+    return Dataset.at(navigator_eval.DATASET)
 
 
 def test_the_shipped_dataset_declares_its_rows_and_every_row_fits(shipped):

@@ -21,9 +21,9 @@ sys.path.insert(0, str(REPO))
 
 def main() -> None:
     from flow_sdk.core.navigation import navigation_map
-    from flow_sdk.core.navigator_eval import SHIPPED
+    from flow_sdk.core.navigator_eval import DATASET
 
-    out = SHIPPED / "map.json"
+    out = DATASET / "map.json"
     out.write_text(json.dumps(navigation_map().model_dump(mode="json"), indent=2) + "\n")
     print(f"wrote {out}")  # noqa: T201 -- a script reports
 

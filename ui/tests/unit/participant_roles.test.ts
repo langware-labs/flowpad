@@ -77,6 +77,17 @@ describe('canInviteMembers', () => {
     expect(canInviteMembers(member)).toBe(false);
     expect(canInviteMembers(null)).toBe(false);
   });
+
+  it('lowestInviter opens invites further down the ladder, never below it', () => {
+    const reader = { user_id: 'u-reader', role: 'reader' };
+    // A project: editors invite too.
+    expect(canInviteMembers(editor, 'editor')).toBe(true);
+    expect(canInviteMembers(member, 'editor')).toBe(false);
+    // A DIRECT conversation: any member may bring in a member.
+    expect(canInviteMembers(member, 'member')).toBe(true);
+    expect(canInviteMembers(reader, 'member')).toBe(false);
+    expect(canInviteMembers(null, 'member')).toBe(false);
+  });
 });
 
 /**

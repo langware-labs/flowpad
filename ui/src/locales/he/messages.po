@@ -85,9 +85,17 @@ msgstr ""
 #~ msgid ".env.local is not ignored by git in this project, so a value written there would be committable. Add it to .gitignore first."
 #~ msgstr ""
 
+#: src/components/collaboration/LiveSessionView.tsx
+msgid "· local"
+msgstr ""
+
 #: src/components/git/BranchPicker.tsx
 msgid "· pick a branch"
 msgstr "· בחר ענף"
+
+#: src/components/collaboration/LiveSessionView.tsx
+msgid "· remote"
+msgstr ""
 
 #. placeholder {0}: wizard.label || wizard.name
 #: src/components/assets/editor/wizard/WizardViewer.tsx
@@ -218,6 +226,11 @@ msgstr "{0, plural, one {# פריט נחתך} other {# פריטים נחתכו}}
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 msgid "{0, plural, one {# item} other {# items}}"
 msgstr "{0, plural, one {# פריט} other {# פריטים}}"
+
+#. placeholder {0}: promptCount + replyCount
+#: src/components/conversation/SessionCard.tsx
+msgid "{0, plural, one {# message} other {# messages}}"
+msgstr ""
 
 #~ msgid "{0, plural, one {# person on this team has no email address, so they can't be invited.} other {# people on this team have no email address, so they can't be invited.}}"
 #~ msgstr ""
@@ -775,8 +788,8 @@ msgid "{folderName} has changes that haven't been pushed yet. The receiver can o
 msgstr "ל-{folderName} יש שינויים שעדיין לא נדחפו לשרת המרוחק. המקבל יוכל למשוך רק את מה שכבר נמצא שם."
 
 #: src/components/conversation/SessionCard.tsx
-msgid "{guest} wants to run prompts here"
-msgstr ""
+#~ msgid "{guest} wants to run prompts here"
+#~ msgstr ""
 
 #: src/components/collaboration/LiveSessionView.tsx
 msgid "{guestName} wants to run prompts on your machine."
@@ -787,8 +800,8 @@ msgid "{host} can't be shown inside Flowpad."
 msgstr ""
 
 #: src/components/conversation/SessionCard.tsx
-msgid "{host} paused the session"
-msgstr ""
+#~ msgid "{host} paused the session"
+#~ msgstr ""
 
 #: src/components/collaboration/LiveSessionView.tsx
 msgid "{hostName} declined the live session."
@@ -803,7 +816,11 @@ msgid "{hostName} reviews"
 msgstr ""
 
 #: src/components/conversation/MessageComposer.tsx
-msgid "{hostName} reviews before sending"
+#~ msgid "{hostName} reviews before sending"
+#~ msgstr ""
+
+#: src/components/collaboration/LiveSessionView.tsx
+msgid "{hostName}'s Claude Code"
 msgstr ""
 
 #. placeholder {0}: ignored !== 1 ? 's' : ''
@@ -837,6 +854,10 @@ msgstr "{latchedReason} ההפעלה מחדש האוטומטית מושהית �
 
 #: src/components/token-plan/token-plan-math.ts
 msgid "{left} of {limit} requests left {windowText}"
+msgstr ""
+
+#: src/components/conversation/MembersAvatarStack.tsx
+msgid "{listed} not sent"
 msgstr ""
 
 #: src/components/conversation/MembersAvatarStack.tsx
@@ -930,8 +951,8 @@ msgid "{projectName} shared"
 msgstr ""
 
 #: src/components/conversation/SessionCard.tsx
-msgid "{promptCount, plural, one {# prompt} other {# prompts}}"
-msgstr ""
+#~ msgid "{promptCount, plural, one {# prompt} other {# prompts}}"
+#~ msgstr ""
 
 #. placeholder {0}: names.length
 #: src/components/connections-manager.tsx
@@ -952,8 +973,8 @@ msgid "{repeats} of these already have a budget in {teamName}; their caps will b
 msgstr ""
 
 #: src/components/conversation/SessionCard.tsx
-msgid "{replyCount, plural, one {# reply} other {# replies}}"
-msgstr ""
+#~ msgid "{replyCount, plural, one {# reply} other {# replies}}"
+#~ msgstr ""
 
 #: src/components/automations/automation-words.ts
 msgid "{s}s"
@@ -2714,6 +2735,15 @@ msgstr ""
 msgid "Approve"
 msgstr "אישור"
 
+#: src/components/collaboration/LiveSessionView.tsx
+#: src/components/conversation/SessionCard.tsx
+msgid "Approve once"
+msgstr ""
+
+#: src/components/collaboration/LiveSessionView.tsx
+msgid "Approve, and let {guestName} start sessions without asking"
+msgstr ""
+
 #: src/components/hub/AddMachineDialog.tsx
 msgid "Approving lets this machine act as you on FlowPad. Only approve a code you generated yourself."
 msgstr ""
@@ -2827,7 +2857,7 @@ msgstr "בקשו עזרה"
 #~ msgid "Ask it to"
 #~ msgstr ""
 
-#: src/pages/flow-page/VibeAssignTaskButton.tsx
+#: src/components/help/AskForHelpButton.tsx
 msgid "Ask someone for help"
 msgstr "לבקש עזרה ממישהו"
 
@@ -3156,8 +3186,6 @@ msgid "auto-login off"
 msgstr "כניסה אוטומטית כבויה"
 
 #: src/components/collaboration/LiveSessionView.tsx
-#: src/components/conversation/MessageComposer.tsx
-#: src/components/conversation/MessageComposer.tsx
 msgid "Auto-send"
 msgstr ""
 
@@ -3218,7 +3246,11 @@ msgid "available to pull"
 msgstr ""
 
 #: src/components/conversation/SessionCard.tsx
-msgid "Awaiting {host}"
+#~ msgid "Awaiting {host}"
+#~ msgstr ""
+
+#: src/components/conversation/SessionCard.tsx
+msgid "awaiting approval"
 msgstr ""
 
 #: src/components/settings-view/settings-utils.ts
@@ -5103,6 +5135,10 @@ msgstr "התחברות ל-GitHub"
 msgid "Connect your GitHub account to open it. Whoever shared the sandbox can't do this for you."
 msgstr "יש לחבר את חשבון ה-GitHub שלך כדי לפתוח אותו. מי ששיתף את הארגז החול לא יכול לעשות זאת עבורך."
 
+#: src/components/conversation/SessionCard.tsx
+msgid "connected"
+msgstr ""
+
 #: src/components/account/hub-status-visuals.ts
 #: src/components/account/user-info.tsx
 #: src/components/connections-manager/connection-state-visual.ts
@@ -5118,6 +5154,10 @@ msgstr "מחובר · {0}"
 #. placeholder {0}: formatTimeAgo(connection.connectedAt.toISOString())
 #: src/components/connections-manager.tsx
 msgid "Connected in this browser {0}"
+msgstr ""
+
+#: src/components/collaboration/LiveSessionView.tsx
+msgid "Connected to {hostName}'s machine — the last prompt failed."
 msgstr ""
 
 #: src/components/collaboration/LiveSessionView.tsx
@@ -6217,6 +6257,10 @@ msgstr "לא יכול להתחיל חדר"
 msgid "Could not start sign-in"
 msgstr "לא ניתן להתחיל כניסה"
 
+#: src/components/conversation/ConversationView.tsx
+msgid "Could not start the live session"
+msgstr ""
+
 #: src/components/entity-execution-panel/EntityExecutionPanel.tsx
 #: src/components/terminal/interactive-terminal/ChatComposerBar.tsx
 msgid "Could not stop"
@@ -6937,8 +6981,12 @@ msgid "Decline failed"
 msgstr "הדחייה נכשלה"
 
 #: src/components/conversation/SessionCard.tsx
-msgid "Declined"
+msgid "declined"
 msgstr ""
+
+#: src/components/conversation/SessionCard.tsx
+#~ msgid "Declined"
+#~ msgstr ""
 
 #: src/i18n/pref-labels.ts
 msgid "Deduplicate errors"
@@ -7760,6 +7808,7 @@ msgstr "בטל שינויים שלא נשמרו וחזור לתיבת הזרם �
 #: src/components/account/user-info.tsx
 #: src/components/collaboration/LiveSessionView.tsx
 #: src/components/collaboration/SharedSessionView.tsx
+#: src/components/conversation/SessionCard.tsx
 msgid "Disconnect"
 msgstr "התנתק"
 
@@ -8131,8 +8180,8 @@ msgstr ""
 #~ msgstr ""
 
 #: src/components/conversation/MessageComposer.tsx
-msgid "Each reply lands in the session as soon as it is ready."
-msgstr ""
+#~ msgid "Each reply lands in the session as soon as it is ready."
+#~ msgstr ""
 
 #: src/hooks/use-add-context-folder.tsx
 msgid "Each selected project's folder is added as a context folder."
@@ -8461,8 +8510,11 @@ msgstr "סיים את החדר"
 msgid "End time"
 msgstr "זמן סיום"
 
-#: src/components/assets/editor/agent-profile/deployment/ThreadStatus.tsx
 #: src/components/conversation/SessionCard.tsx
+msgid "ended"
+msgstr ""
+
+#: src/components/assets/editor/agent-profile/deployment/ThreadStatus.tsx
 msgid "Ended"
 msgstr ""
 
@@ -11992,6 +12044,10 @@ msgstr "הודעה אחרונה"
 msgid "Last opened"
 msgstr ""
 
+#: src/components/conversation/SessionCard.tsx
+msgid "Last prompt failed"
+msgstr ""
+
 #: src/components/conversation/AttachmentDownloadWarning.tsx
 msgid "Last success"
 msgstr ""
@@ -12017,8 +12073,8 @@ msgstr ""
 #~ msgstr "הפעלה אחרונה"
 
 #: src/components/conversation/SessionCard.tsx
-msgid "Last turn failed"
-msgstr ""
+#~ msgid "Last turn failed"
+#~ msgstr ""
 
 #: src/components/triggers-view/FsopTriggerDetail.tsx
 #~ msgid "last_seen_mtime"
@@ -12106,8 +12162,8 @@ msgid "Leave empty to keep"
 msgstr ""
 
 #: src/components/conversation/MessageComposer.tsx
-msgid "Leave live session mode"
-msgstr ""
+#~ msgid "Leave live session mode"
+#~ msgstr ""
 
 #: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Leave this conversation?"
@@ -12321,8 +12377,8 @@ msgid "Live — speak now"
 msgstr ""
 
 #: src/components/conversation/SessionCard.tsx
-msgid "Live · {guest}'s session"
-msgstr ""
+#~ msgid "Live · {guest}'s session"
+#~ msgstr ""
 
 #: src/components/milkdown-editor/plugins/fence-render/renderers/breadcrumb.ts
 msgid "live · stale"
@@ -12333,8 +12389,8 @@ msgid "Live call"
 msgstr ""
 
 #: src/components/conversation/SessionCard.tsx
-msgid "Live on {host}'s machine"
-msgstr ""
+#~ msgid "Live on {host}'s machine"
+#~ msgstr ""
 
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
@@ -12346,21 +12402,29 @@ msgstr "שורה חיה"
 msgid "Live Session"
 msgstr "סשן חי"
 
+#: src/components/conversation/SessionCard.tsx
+msgid "Live session · {other}"
+msgstr ""
+
 #: src/routes/loaders/load-dock-pointer.ts
 msgid "Live session not found"
 msgstr "הסשן החי לא נמצא"
 
 #: src/components/conversation/MessageComposer.tsx
-msgid "Live session on {hostName}'s machine"
-msgstr ""
+#~ msgid "Live session on {hostName}'s machine"
+#~ msgstr ""
 
 #: src/components/collaboration/LiveSessionView.tsx
 msgid "Live session with {guestName} on your machine · {status}"
 msgstr "סשן חי עם {guestName} במחשב שלך · {status}"
 
-#: src/components/conversation/MessageComposer.tsx
-msgid "Live session: run a prompt on {hostName}'s machine"
+#: src/components/collaboration/LiveSessionView.tsx
+msgid "Live session with {otherName}"
 msgstr ""
+
+#: src/components/conversation/MessageComposer.tsx
+#~ msgid "Live session: run a prompt on {hostName}'s machine"
+#~ msgstr ""
 
 #: src/components/harness-login/HarnessLoginModal.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
@@ -13741,12 +13805,10 @@ msgid "New bookmark folder"
 msgstr "תיקיית סימניות חדשה"
 
 #: src/pages/flow-page/vibe-chat-pane.tsx
-#: src/pages/flow-page/vibe-chat-pane.tsx
 msgid "New build"
 msgstr "בנייה חדשה"
 
 #: src/components/assets/editor/agent-profile/DeployedAgentChatPanel.tsx
-#: src/components/floating-chat/AssistantChat.tsx
 #: src/components/floating-chat/AssistantChat.tsx
 msgid "New chat"
 msgstr "צ'אט חדש"
@@ -13867,7 +13929,7 @@ msgstr "תשובה חדשה"
 msgid "New repo"
 msgstr "מאגר חדש"
 
-#: src/pages/flow-page/VibeAssignTaskButton.tsx
+#: src/components/help/AskForHelpButton.tsx
 msgid "New request"
 msgstr ""
 
@@ -14677,9 +14739,17 @@ msgstr "אין פרומפטים בתור. הוסף אחד למטה."
 msgid "No prompts yet"
 msgstr "אין פרומפטים עדיין"
 
+#: src/components/collaboration/LiveSessionView.tsx
+msgid "No prompts yet — {guestName}'s prompts will run here, in your Claude Code."
+msgstr ""
+
 #: src/components/prompt-library/PromptLibraryMenu.tsx
 msgid "No prompts yet — create one below."
 msgstr "אין פרומפטים עדיין — צור אחד למטה."
+
+#: src/components/collaboration/LiveSessionView.tsx
+msgid "No prompts yet — type one below; it runs in Claude Code on {hostName}'s machine."
+msgstr ""
 
 #: src/components/terminal/interactive-terminal/pty-events-viewer/PTYEventsViewer.tsx
 msgid "No PTY events have fired yet."
@@ -14979,8 +15049,8 @@ msgid "No triggers configured for this hook"
 msgstr "לא הוגדרו טריגרים לוו-וצק זה"
 
 #: src/components/collaboration/LiveSessionView.tsx
-msgid "No turns yet — send a prompt below to start working on {hostName}'s machine."
-msgstr "אין עדיין תורים — יש לשלוח פרומפט למטה כדי להתחיל לעבוד במחשב של {hostName}."
+#~ msgid "No turns yet — send a prompt below to start working on {hostName}'s machine."
+#~ msgstr "אין עדיין תורים — יש לשלוח פרומפט למטה כדי להתחיל לעבוד במחשב של {hostName}."
 
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "No types match filter"
@@ -15666,7 +15736,6 @@ msgstr ""
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/conversation/ConversationTasksPanel.tsx
-#: src/components/conversation/SessionCard.tsx
 #: src/components/conversation/task-it.tsx
 #: src/components/entity-context/EntityContextPanel.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
@@ -16199,6 +16268,10 @@ msgstr "פתיחת הסשן החי"
 #: src/components/conversation/ConversationContextPanel.tsx
 msgid "Open the live session in a terminal"
 msgstr "פתח את החילוק החי בטרמינל"
+
+#: src/components/conversation/MessageComposer.tsx
+msgid "Open the live session on {hostName}'s machine"
+msgstr ""
 
 #: src/components/conversation/ConversationView.tsx
 msgid "Open the message this replies to"
@@ -16780,13 +16853,13 @@ msgstr ""
 msgid "Pause this machine"
 msgstr "השהו את המכונה הזו"
 
+#: src/components/conversation/SessionCard.tsx
 #: src/components/stream-inbox-view/AttachedChannelsBar.tsx
 msgid "paused"
 msgstr ""
 
 #: src/components/assets/editor/agent-profile/AgentPlaceCard.tsx
 #: src/components/assets/editor/agent-profile/AgentPlacesColumn.tsx
-#: src/components/conversation/SessionCard.tsx
 #: src/pages/hub-home/HubHome.tsx
 msgid "Paused"
 msgstr "מושהה"
@@ -17545,6 +17618,14 @@ msgstr "הפרומפט נוצר"
 msgid "Prompt file"
 msgstr "קובץ פרומפט"
 
+#: src/components/collaboration/LiveSessionView.tsx
+msgid "Prompt for Claude Code on {hostName}'s machine…"
+msgstr ""
+
+#: src/components/collaboration/LiveSessionView.tsx
+msgid "Prompt for your Claude Code…"
+msgstr ""
+
 #: src/components/prompt-library/PromptLibraryMenu.tsx
 #: src/components/terminal/interactive-terminal/TerminalBottomRibbon.tsx
 msgid "Prompt Library"
@@ -17584,8 +17665,8 @@ msgid "Prompt to run"
 msgstr "פרומפט להרצה"
 
 #: src/components/conversation/MessageComposer.tsx
-msgid "Prompt to run on {hostName}'s machine…"
-msgstr ""
+#~ msgid "Prompt to run on {hostName}'s machine…"
+#~ msgstr ""
 
 #: src/components/conversation/attachment-actions/PromptAttachmentPreview.tsx
 msgid "Prompt to run:"
@@ -18635,12 +18716,12 @@ msgid "Replay…"
 msgstr "הפעלה חוזרת…"
 
 #: src/components/conversation/MessageComposer.tsx
-msgid "Replies"
-msgstr ""
+#~ msgid "Replies"
+#~ msgstr ""
 
 #: src/components/conversation/MessageComposer.tsx
-msgid "Replies wait as drafts until {hostName} sends them."
-msgstr ""
+#~ msgid "Replies wait as drafts until {hostName} sends them."
+#~ msgstr ""
 
 #: src/components/collaboration/LiveSessionView.tsx
 msgid "Replies:"
@@ -18746,16 +18827,24 @@ msgstr ""
 msgid "Request status"
 msgstr "בקש עדכון"
 
+#: src/components/conversation/SessionCard.tsx
+msgid "requested"
+msgstr ""
+
 #: src/components/hub/AddMachineDialog.tsx
 msgid "Requested"
 msgstr ""
 
 #: src/components/conversation/SessionCard.tsx
-msgid "Requesting access to {host}'s machine"
-msgstr ""
+#~ msgid "Requesting access to {host}'s machine"
+#~ msgstr ""
 
 #: src/components/collaboration/LiveSessionView.tsx
 msgid "Requesting access to {hostName}'s machine…"
+msgstr ""
+
+#: src/components/conversation/SessionCard.tsx
+msgid "requesting…"
 msgstr ""
 
 #: src/components/account/secrets-section.tsx
@@ -18997,6 +19086,8 @@ msgstr "חודש — הבדיקה הבאה תתבצע במחזור הקרוב."
 #: src/components/assets/editor/markdown/MarkdownEditor.tsx
 #: src/components/assets/editor/MissingAssetCard.tsx
 #: src/components/conversation/MessageBubble.tsx
+#: src/components/conversation/SessionCard.tsx
+#: src/components/conversation/SessionEventLine.tsx
 #: src/components/graph-view/webglSupport.tsx
 #: src/components/helpdesk/HelpdeskLoadDialog.tsx
 #: src/components/machine-overview/machine-overview.tsx
@@ -19105,8 +19196,8 @@ msgid "Review prompts"
 msgstr "סקירת פרומפטים"
 
 #: src/components/conversation/MessageComposer.tsx
-msgid "Review replies"
-msgstr ""
+#~ msgid "Review replies"
+#~ msgstr ""
 
 #: src/components/conversation/asset-review/AssetReviewDialog.tsx
 msgid "Review the shared project and install it."
@@ -19228,6 +19319,10 @@ msgstr "חוקים"
 msgid "Run"
 msgstr "הרץ"
 
+#: src/components/collaboration/useApproveLiveSession.tsx
+msgid "Run (Skip project)"
+msgstr ""
+
 #. placeholder {0}: selectedRunId?.slice(0, 8) ?? ''
 #: src/components/graph-workflows/panels/RunsPanel.tsx
 msgid "Run {0}"
@@ -19259,6 +19354,10 @@ msgstr ""
 
 #: src/components/automations/blocks/ThenBlock.tsx
 msgid "Run a script"
+msgstr ""
+
+#: src/components/setup-wizard/SetupWizardDialog.tsx
+msgid "Run again"
 msgstr ""
 
 #: src/components/automations/RunDetail.tsx
@@ -19323,6 +19422,10 @@ msgstr "הרצה"
 
 #: src/components/automations/AutomationRow.tsx
 msgid "Run it once now, even if it is off. It shows up in Runs as a test."
+msgstr ""
+
+#: src/components/collaboration/useApproveLiveSession.tsx
+msgid "Run it without a project, in this machine's live-session temp folder — always the same folder"
 msgstr ""
 
 #: src/components/assets/editor/agent-profile/AgentScheduleSection.tsx
@@ -19396,6 +19499,10 @@ msgstr ""
 #: src/components/conversation/MessageComposer.tsx
 #~ msgid "Run this as a prompt on {hostName}'s machine"
 #~ msgstr ""
+
+#: src/components/collaboration/useApproveLiveSession.tsx
+msgid "Run this live session in which project?"
+msgstr ""
 
 #: src/components/display-toolbar/WebappDisplayToolbar.tsx
 #: src/components/terminal/interactive-terminal/command-status-viewer/CommandStatusViewer.tsx
@@ -19489,9 +19596,17 @@ msgstr "הרצות של הזרימה הזו"
 #~ msgid "Runs on"
 #~ msgstr ""
 
+#: src/components/collaboration/LiveSessionView.tsx
+msgid "Runs on {hostName}'s machine, in their Claude Code · Enter to send"
+msgstr ""
+
 #: src/components/assets/editor/markdown/PlainMarkdownAssetEditor.tsx
 msgid "Runs on this file"
 msgstr "הרצות על הקובץ הזה"
+
+#: src/components/collaboration/LiveSessionView.tsx
+msgid "Runs on your machine, in your Claude Code · Enter to send"
+msgstr ""
 
 #: src/components/assets/editor/agent-profile/AgentPlaceCard.tsx
 msgid "Runs only while this computer is awake"
@@ -20526,12 +20641,12 @@ msgid "Session not found"
 msgstr "הסשן לא נמצא"
 
 #: src/components/conversation/SessionCard.tsx
-msgid "Session requested"
-msgstr ""
+#~ msgid "Session requested"
+#~ msgstr ""
 
 #: src/components/conversation/MessageComposer.tsx
-msgid "Session settings"
-msgstr ""
+#~ msgid "Session settings"
+#~ msgstr ""
 
 #: src/components/hooks-manager/HookForm.tsx
 #: src/components/hooks-view/HookEditor.tsx
@@ -21830,6 +21945,10 @@ msgstr "התחל שיתוף פעולה"
 #: src/components/terminal/interactive-terminal/SimpleChatPane.tsx
 msgid "Start a conversation"
 msgstr "התחל שיחה"
+
+#: src/components/conversation/MessageComposer.tsx
+msgid "Start a live session on {hostName}'s machine"
+msgstr ""
 
 #: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Start a new conversation"
@@ -24604,7 +24723,7 @@ msgstr "לא ברור"
 msgid "Untitled project"
 msgstr ""
 
-#: src/pages/flow-page/VibeAssignTaskButton.tsx
+#: src/components/help/AskForHelpButton.tsx
 msgid "Untitled request"
 msgstr ""
 
@@ -25309,6 +25428,10 @@ msgstr "סורק את מערכת הקבצים ומאנדקס מחדש רק רש�
 msgid "Walks the filesystem and reports per-type counts and sizes (and, soon, the diff against the index). Read-only — no DB writes, no <0>last_indexed_at</0> bump."
 msgstr "סורק את מערכת הקבצים ומדווח ספירות וגדלים לפי סוג (ובקרוב, ההפרש מול האינדקס). קריאה בלבד — ללא כתיבה ל-DB, ללא עדכון <0>last_indexed_at</0>."
 
+#: src/components/conversation/SessionCard.tsx
+msgid "wants to run prompts on your machine"
+msgstr ""
+
 #: src/components/triggers-view/FsopTriggerDetail.tsx
 #~ msgid "Watch"
 #~ msgstr "צפייה"
@@ -25778,6 +25901,10 @@ msgstr "עובדים על המחשב של {hostName}…"
 msgid "Working Tree"
 msgstr "עץ עבודה"
 
+#: src/components/conversation/SessionCard.tsx
+msgid "working…"
+msgstr ""
+
 #: src/components/chats-navigator/ChatHistoryRow.tsx
 #: src/components/project-setup/ProjectSetupDialog.tsx
 #: src/components/setup-wizard/SetupWizardDialog.tsx
@@ -25874,6 +26001,10 @@ msgstr "אתמול"
 msgid "yesterday {hhmm}"
 msgstr ""
 
+#: src/components/collaboration/LiveSessionView.tsx
+msgid "you"
+msgstr ""
+
 #: src/components/assets/editor/task/DelegationBlock.tsx
 #: src/components/conversation/ChannelMessageExtras.tsx
 #: src/components/conversation/FlowMessageBubble.tsx
@@ -25910,12 +26041,20 @@ msgid "You become the host — you decide what gets shared into the room."
 msgstr "אתה הופך למנחה - אתה מחליט מה משותף לחדר."
 
 #: src/components/conversation/MessageComposer.tsx
-msgid "You can change this later inside the session."
-msgstr ""
+#~ msgid "You can change this later inside the session."
+#~ msgstr ""
 
 #: src/components/version-popover/diagnose-modal.tsx
 msgid "You can close this window."
 msgstr "אפשר לסגור את החלון הזה."
+
+#: src/components/conversation/MembersAvatarStack.tsx
+msgid "You can't invite people here — ask {ownerName}."
+msgstr ""
+
+#: src/components/conversation/MembersAvatarStack.tsx
+msgid "You can't invite people here."
+msgstr ""
 
 #: src/components/account/organization-panel.tsx
 msgid "You don’t belong to an organization yet. Organizations are set up in Flowpad Cloud; once you’re added, your organization and its members appear here."
@@ -26041,6 +26180,10 @@ msgstr ""
 msgid "your budget: {short}"
 msgstr ""
 
+#: src/components/collaboration/LiveSessionView.tsx
+msgid "your Claude Code"
+msgstr ""
+
 #: src/pages/entry/InstallLanding.tsx
 msgid "Your CloudNSite workspace is ready"
 msgstr "סביבת העבודה CloudNSite שלך מוכנה"
@@ -26053,8 +26196,8 @@ msgstr "שם התצוגה שלך"
 #~ msgid "Your FlowPad account"
 #~ msgstr ""
 
-#: src/pages/flow-page/VibeAssignTaskButton.tsx
-#: src/pages/flow-page/VibeAssignTaskButton.tsx
+#: src/components/help/AskForHelpButton.tsx
+#: src/components/help/AskForHelpButton.tsx
 msgid "Your help requests"
 msgstr ""
 

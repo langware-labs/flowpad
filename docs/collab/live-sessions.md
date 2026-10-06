@@ -12,12 +12,29 @@ id: 63f697dd-b987-4ff5-94e2-cd42496559b5
 **The decision (2026-09-06):** there is ONE way to run a prompt on a
 collaborator's machine, and it is a session.
 
-1. **Every prompt request is a session.** A prompt sent from the conversation
-   composer starts a new `RemoteWorkerSession` whose `starting_message_id` is
-   that message. Several sessions may coexist in a conversation; the host's
-   worker stays one headless `AgenticProcess` per (conversation, host).
-2. **The starting message carries a compact horizontal session card** (status,
-   host, `N prompts · M replies`, Approve/Decline for the host, Open).
+1. **Every prompt request is a session turn, and a conversation holds ONE open
+   session** (amended 2026-10-05). A prompt sent from the conversation composer
+   joins the conversation's open session (`RemoteWorkerSession.open_for_conversation`:
+   newest not ENDED/DECLINED) — queued while it is PENDING, run in order once
+   approved, run again after an ERROR. Only when there is none does it start a
+   new session whose `starting_message_id` is that message. So one conversation
+   shows one card until either side ends the session. The host's worker stays one
+   headless `AgenticProcess` per (conversation, host).
+2. **A session is ONE line in the conversation** (amended 2026-10-05):
+   `Live session · <other side>` and its status — awaiting / Approve·Decline
+   for the host (once) / connected with `N messages`, the time since approval
+   and a red Disconnect (either side) / ended. The whole line opens the session
+   view; the opening prompt (or request) is not drawn as a bubble.
+   **The composer's live-session icon opens the session** — it is not a typing
+   mode: `POST conversation/<id>/live-session` answers the open session, or
+   starts one (guest row PENDING + a `requested` SESSION_EVENT whose carrier
+   holds `session_start` and the snapshot — the host's mirror materializes
+   PENDING from it and is notified like an opening prompt; that line is the
+   session's `starting_message_id`). The guest lands in the session view with
+   the cursor in a terminal-style `❯` input; prompts are typed there.
+   **"No project"** at Approve (`scratch: true`) runs the session in the
+   instance's one temp folder, `<instance_dir>/live-session-scratch` (host-only
+   `workdir`; protected, so no Project is minted; never machine-wide).
 3. **Follow-up prompts never render in the main thread** — only in the session
    view (`/dock/live_session/<id>`).
 4. **Replies never render in the main thread** either, including review drafts.
@@ -49,7 +66,13 @@ terminal → ignore; PAUSED → bounce (marker + system line); IDLE/RUNNING/ERRO
 run; PENDING/DRAFT/none → run with a standing grant (approve, `approved_via=standing_grant`,
 redrive queued turns), else park at PENDING. The session is resolved-or-minted
 BEFORE the gate; an unstamped prompt finds its session by
-`starting_message_id == fm.id` (natural-key lookup, never a deterministic id).
+`starting_message_id == fm.id`, else joins the conversation's open session
+(natural-key lookups, never a deterministic id).
+
+**A failed turn is not a session state for the user.** `ERROR` keeps the session
+live (the card reads "Live" with a "Last prompt failed" mark). The guest's
+**Retry** re-sends the failed prompt into the same session — the follow-up path,
+so it is hub-optional like any turn (`failedPromptOf`, `useRetryFailedPrompt`).
 Per-turn idempotency stays on `FlowMessage.prompt_auto_handled` (local-only).
 
 **Deleted, not deprecated:** `execute-prompt`, `approve-prompt`,

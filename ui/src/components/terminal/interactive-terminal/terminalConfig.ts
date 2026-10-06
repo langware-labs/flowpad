@@ -2,12 +2,12 @@
  * Single source of truth for xterm visual config + viewport-size estimates.
  *
  * The xterm constructor in InteractiveTerminal/ShellTerminal reads
- * FONT_FAMILY and FONT_SIZE_PX. The route loader uses estimateCols/Rows to
- * seed the PTY's initial winsize close to the actual rendered grid, so the
- * worker's first paint isn't wrapped at 80 cols on a wide viewport. The
- * InteractiveTerminal still issues an authoritative shell.resize(term.cols,
- * term.rows) once fit.fit() has run — this seed only needs to be in the right
- * ballpark.
+ * FONT_FAMILY and FONT_SIZE_PX. The terminal panel uses estimateCols/Rows to
+ * seed a NEW PTY's initial winsize close to the actual rendered grid, so the
+ * worker's first paint isn't wrapped at 80 cols on a wide viewport. It is a
+ * spawn seed only: it ignores sidebars and side panels, so it must never be
+ * asserted on a live PTY — the view's shell.resize(term.cols, term.rows) after
+ * fit.fit() is the authoritative size, and every attach asserts that.
  */
 
 import type { WorkerCliVendor } from './process-cli-presentation';

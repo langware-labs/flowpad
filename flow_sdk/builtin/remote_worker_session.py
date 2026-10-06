@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, ClassVar, Optional
 
 from flow_sdk._compat import StrEnum
@@ -47,6 +48,21 @@ class ReplyPolicy(StrEnum):
     prompt, host-authoritative afterwards, editable in the session view."""
     AUTO = "auto"      # send as soon as captured
     REVIEW = "review"  # save as a host draft inside the session
+
+
+def scratch_workdir() -> "Path":
+    """The folder a "No project" live session runs in — one per instance, always
+    the same. Under the instance's own data folder (never machine-wide), which is
+    a protected path, so running there never mints a Project for it."""
+    from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
+
+    folder = get_instance_settings().instance_dir / "live-session-scratch"
+    folder.mkdir(parents=True, exist_ok=True)
+    return folder
+
+
+# The approve refusal for a session with nowhere to run — the UI answers it with a project picker.
+NEEDS_PROJECT_MESSAGE = "pick the project this live session runs in"
 
 
 class ApprovedVia(StrEnum):
@@ -173,6 +189,12 @@ class RemoteWorkerSession(Entity):
         sharing=Sharing.PRIVATE,
         default=None, description="Host project/workdir the worker runs in (host only)."
     )
+    # "No project" at approval: the session runs in this folder instead — the
+    # instance's one live-session temp folder (``scratch_workdir``). Host only.
+    workdir: Optional[str] = APIField(
+        sharing=Sharing.PRIVATE,
+        default=None, description="Folder the worker runs in when the host chose no project (host only)."
+    )
 
     # The main-thread prompt that OPENED this session. The thread renders the
     # session card under it and hides every other message stamped with this
@@ -248,7 +270,8 @@ class RemoteWorkerSession(Entity):
         - No local row → materialize one from the snapshot fields verbatim.
         - Local is the HOST → the host is authoritative; only fill-merge
           identity fields the host row is missing (guest_name/guest_user_id
-          from a guest-minted DRAFT). Never adopt status/clock from a snapshot.
+          from a guest-minted DRAFT). Never adopt status/clock from a snapshot —
+          except ENDED: either side may end the session, and ENDED absorbs.
         - Local is the GUEST → adopt the host-authoritative fields only when
           the snapshot's ``last_activity_at`` is strictly newer (ISO-UTC
           strings compare lexicographically); an older/equal snapshot never
@@ -261,6 +284,10 @@ class RemoteWorkerSession(Entity):
             return cls.model_validate({**data, "type": cls.get_type()})
 
         if local_is_host:
+            # Either side may end a session, and ENDED absorbs: the guest leaving
+            # is the one state the host takes from a guest's snapshot.
+            if data.get("status") == RemoteWorkerSessionStatus.ENDED and local.status != RemoteWorkerSessionStatus.ENDED:
+                local.mark_activity(RemoteWorkerSessionStatus.ENDED)
             # host_user_id/host_name included: a first carrier packed before the
             # guest's roster resolved the peer stamps host_user_id=None, and the
             # host row materialized from it could otherwise never acquire its own
@@ -333,6 +360,23 @@ class RemoteWorkerSession(Entity):
             return None
         return await cls.get_one({"id": session_id})
 
+    @classmethod
+    async def open_for_conversation(cls, conversation_id: str | None) -> Optional["RemoteWorkerSession"]:
+        """The conversation's open live session — its newest one not ENDED/DECLINED.
+
+        A conversation holds ONE open session: every prompt sent in it joins
+        that session (queued while PENDING, re-run after an ERROR) until either
+        side ends it; only then does the next prompt open another. A lookup on
+        the natural key, never a derived id.
+        """
+        if not conversation_id:
+            return None
+        rows = await cls.get_all({"conversation_id": conversation_id})
+        open_rows = [r for r in rows if not is_terminal(r.status)]
+        if not open_rows:
+            return None
+        return max(open_rows, key=lambda r: r.started_at or r.last_activity_at or "")
+
     def mark_activity(self, status: str | None = None) -> None:
         """Stamp host-authoritative activity; caller saves."""
         self.last_activity_at = _now_iso()
@@ -390,6 +434,27 @@ class RemoteWorkerSession(Entity):
         await self._emit_event("approved", someone_typeid=someone_typeid)
         return True
 
+    async def run_project_id(self, requested: str | None = None) -> str | None:
+        """Where this session's turns run on the host: the project the host
+        picks at approval (``requested`` — checked: it must exist and have a
+        folder), else the one already chosen for the session, else the
+        conversation's. None = the host still has to pick.
+
+        A person-to-person chat is project-less by design (``Conversation.
+        resolve_project_id``), so for a live session started in one, approval is
+        where the project gets chosen — never later, in a turn that can only fail.
+        """
+        from flow_sdk.builtin.conversation import Conversation  # noqa: PLC0415
+        from flow_sdk.builtin.project import Project  # noqa: PLC0415
+
+        if requested:
+            project = await Project.get_one({"id": requested})
+            return requested if project is not None and getattr(project, "fs_storage_mount_path", None) else None
+        if self.project_id:
+            return self.project_id
+        conv = await Conversation.get_one({"id": self.conversation_id}) if self.conversation_id else None
+        return getattr(conv, "project_id", None) or None
+
     async def remember_guest(self, scope: str) -> None:
         """Standing grant: future sessions from this guest start approved.
         ``scope``: ``project`` (this session's project) or ``everywhere``."""
@@ -413,8 +478,13 @@ class RemoteWorkerSession(Entity):
         immediately; ``prompt_auto_handled``-before-run keeps the re-drive
         idempotent against concurrently arriving prompts.
 
-        Body: ``{remember?: "project" | "everywhere"}`` also writes the
-        standing grant for this guest."""
+        Body: ``{remember?: "project" | "everywhere", project_id?, scratch?}``.
+        ``remember`` also writes the standing grant for this guest;
+        ``project_id`` is where the session runs, required when neither the
+        session nor its conversation has a project — refused (409, session left
+        PENDING) rather than approved into a turn that can only fail.
+        ``scratch: true`` is the host's "No project": the session runs in the
+        instance's one temp folder (``scratch_workdir``)."""
         from flow_sdk.request_context.methods import get_current_request_info  # noqa: PLC0415
 
         ri = get_current_request_info()
@@ -422,10 +492,26 @@ class RemoteWorkerSession(Entity):
         remember = str(body.get("remember") or "").strip()
         if remember and remember not in ("project", "everywhere"):
             return ApiFailResponse(message="remember must be 'project' or 'everywhere'", status_code=400)
-        if not await self.approve(via=ApprovedVia.MANUAL):
+        if body.get("scratch") in (True, "true", "1"):
+            if remember == "project":
+                # A grant scoped to no project would read as "everywhere".
+                return ApiFailResponse(message="a temp-folder session has no project to remember", status_code=400)
+            self.workdir = str(scratch_workdir())
+        else:
+            requested = str(body.get("project_id") or "").strip() or None
+            project_id = await self.run_project_id(requested)
+            if project_id is None:
+                if requested:
+                    return ApiFailResponse(message="that project has no folder to run in", status_code=400)
+                return ApiFailResponse(message=NEEDS_PROJECT_MESSAGE, status_code=409)
+            self.project_id = project_id
+        if self.status not in ACTIVE_STATUSES and not can_transition(self.status, RemoteWorkerSessionStatus.IDLE):
             return ApiFailResponse(message=f"illegal live-session transition: {self.status} → idle")
+        # The grant lands BEFORE the session goes live: the guest acts on "approved"
+        # at once, and its next session must already find itself remembered.
         if remember:
             await self.remember_guest(remember)
+        await self.approve(via=ApprovedVia.MANUAL)
         import asyncio  # noqa: PLC0415
 
         from flow_sdk.app.actions.execute_prompt import redrive_session_prompts  # noqa: PLC0415
@@ -474,9 +560,10 @@ class RemoteWorkerSession(Entity):
 
     @action.post(action_name="disconnect")
     async def _http_disconnect(self) -> ApiResponse:
-        """End this shared session — the host cutting off remote access to their
-        machine. Marks the session ENDED and best-effort stops the host worker so
-        no further guest prompts run. Idempotent."""
+        """End this shared session — either side may: the host cutting off remote
+        access to their machine, or the guest leaving. Marks the session ENDED
+        (the other side adopts it from the line's snapshot) and best-effort stops
+        the host worker so no further guest prompts run. Idempotent."""
         already_ended = self.status == RemoteWorkerSessionStatus.ENDED
         self.mark_activity(RemoteWorkerSessionStatus.ENDED)
         await self.save()
@@ -491,5 +578,9 @@ class RemoteWorkerSession(Entity):
             except Exception as e:  # noqa: BLE001
                 logger.warning("[remote_worker_session] disconnect: host worker stop failed: %s", e)
         if not already_ended:
-            await self._emit_event("ended")
+            # Either side may end it: the line names whoever did (this machine's user).
+            from flow_sdk.builtin.user import User  # noqa: PLC0415
+
+            who = (await User.current_sender_participant()).get("name") or None
+            await self._emit_event("ended", text=f"{who} ended the live session" if who else None)
         return ApiSuccessResponse(data=self.model_dump(mode="json"))

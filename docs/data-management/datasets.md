@@ -412,5 +412,7 @@ specific first), else one that edits the `dataset` type — the shipped generic 
 behind them is `mountDatasetEditor`: it builds every form from the declared kinds
 (`GET /api/v1/kinds/<kind>`), so one editor serves every typed dataset.
 
-The shipped example is `flowpad_assistant/agentic-assets/dataset/smart-navigator/` — the navigator's
-eval set, its row kinds nested beside it, its editor nested in it.
+The example is the SmartNavigator eval set. Its row kinds ship as flat `data_spec` folders
+(`flowpad_assistant/agentic-assets/data_spec/navigat*`); its rows do not — they live beside the
+checkout at `dev/dataset/smart-navigator/` (`navigator_eval.DATASET`). Shipped assets stay flat:
+a nested tree inside the install crossed Windows' 260-char MAX_PATH.

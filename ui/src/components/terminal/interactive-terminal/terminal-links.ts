@@ -45,7 +45,7 @@ function logicalLine(terminal: Terminal, y: number): LogicalLine | undefined {
   for (let row = start; row <= end; row++) {
     const bufferLine = buffer.getLine(row);
     if (!bufferLine) continue;
-    // A hard break's indentation and right margin are layout, not part of the text.
+    // A hard break's indentation (or a box's left border) and right margin are layout, not part of the text.
     let indent = row > start && continuesBelow(buffer, row - 1) === 'hard';
     const width =
       row < end && continuesBelow(buffer, row) === 'hard' && !filled(bufferLine, bufferLine.length - 1)
@@ -54,7 +54,7 @@ function logicalLine(terminal: Terminal, y: number): LogicalLine | undefined {
     for (let col = 0; col < width; col++) {
       const cell = bufferLine.getCell(col);
       if (!cell || cell.getWidth() === 0) continue;
-      if (indent && !cell.getChars().trim()) continue;
+      if (indent && /^[\s│┃║]?$/.test(cell.getChars())) continue;
       indent = false;
       // A wide character can wrap one cell early, leaving a non-text spacer.
       if (

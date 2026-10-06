@@ -31,7 +31,8 @@ function pointerItems(messages: FlowMessage[]) {
 
 const promptAtt = { attachment_type: 'prompt', data: 'run it' };
 const resultAtt = { attachment_type: 'type_id', data: 'prompt_completion-r1' };
-const sess = (sid: string, over: Partial<FlowMessage> = {}) => fm({ remote_worker_session_id: sid, ...over } as Partial<FlowMessage>);
+const sess = (sid: string, over: Partial<FlowMessage> = {}) =>
+  fm({ remote_worker_session_id: sid, ...over } as Partial<FlowMessage>);
 
 describe('anchorSessionItems', () => {
   it('anchors a session on its starting message and hides follow-ups, replies and session events', () => {
@@ -41,7 +42,10 @@ describe('anchorSessionItems', () => {
       start,
       sess(SID_A, { attachment: [resultAtt] } as Partial<FlowMessage>),
       sess(SID_A, { attachment: [promptAtt] } as Partial<FlowMessage>),
-      sess(SID_A, { kind: FlowMessageKind.SESSION_EVENT, attachment: [{ attachment_type: 'type_id', data: `remote_worker_session-${SID_A}` }] } as Partial<FlowMessage>),
+      sess(SID_A, {
+        kind: FlowMessageKind.SESSION_EVENT,
+        attachment: [{ attachment_type: 'type_id', data: `remote_worker_session-${SID_A}` }],
+      } as Partial<FlowMessage>),
       fm(),
     ];
     const { items, getFm } = pointerItems(messages);
@@ -59,7 +63,7 @@ describe('anchorSessionItems', () => {
     expect(card.sortAt).toBe(items[1].sortAt);
   });
 
-  it('falls back to the earliest prompt-bearing message when the session row is unknown', () => {
+  it("falls back to the session's earliest message when the session row is unknown", () => {
     const messages = [
       sess(SID_A, { attachment: [resultAtt] } as Partial<FlowMessage>), // a stray reply first
       sess(SID_A, { attachment: [promptAtt] } as Partial<FlowMessage>),
@@ -69,7 +73,8 @@ describe('anchorSessionItems', () => {
     const out = anchorSessionItems(items, getFm); // no index at all
     expect(out).toHaveLength(1);
     const card = out[0] as SessionAnchorItem;
-    expect(card.anchor.kind === ConversationItemKind.POINTER && card.anchor.messageId).toBe(messages[1].id);
+    // The line draws no bubble of its anchor — the anchor only places it in time.
+    expect(card.anchor.kind === ConversationItemKind.POINTER && card.anchor.messageId).toBe(messages[0].id);
     expect(card.promptCount).toBe(2);
     expect(card.replyCount).toBe(1);
     // a row that exists but has not synced its starting id behaves the same
@@ -93,9 +98,21 @@ describe('anchorSessionItems', () => {
   it('emits two anchors for two sessions in timeline order', () => {
     const a = sess(SID_A, { attachment: [promptAtt] } as Partial<FlowMessage>);
     const b = sess(SID_B, { attachment: [promptAtt] } as Partial<FlowMessage>);
-    const messages = [a, sess(SID_A, { attachment: [resultAtt] } as Partial<FlowMessage>), b, sess(SID_B, { attachment: [resultAtt] } as Partial<FlowMessage>)];
+    const messages = [
+      a,
+      sess(SID_A, { attachment: [resultAtt] } as Partial<FlowMessage>),
+      b,
+      sess(SID_B, { attachment: [resultAtt] } as Partial<FlowMessage>),
+    ];
     const { items, getFm } = pointerItems(messages);
-    const out = anchorSessionItems(items, getFm, new Map([[SID_A, a.id], [SID_B, b.id]]));
+    const out = anchorSessionItems(
+      items,
+      getFm,
+      new Map([
+        [SID_A, a.id],
+        [SID_B, b.id],
+      ]),
+    );
     expect(out.map((g) => (g as SessionAnchorItem).sessionId)).toEqual([SID_A, SID_B]);
     expect(out.map((g) => (g as SessionAnchorItem).replyCount)).toEqual([1, 1]);
   });
@@ -117,9 +134,25 @@ describe('anchorSessionItems', () => {
     expect((out[0] as SessionAnchorItem).replyCount).toBe(1);
   });
 
-  it('a session with no prompt in the window contributes no row', () => {
+  it('a session with only a reply in the window still shows its line', () => {
     const messages = [sess(SID_A, { attachment: [resultAtt] } as Partial<FlowMessage>)];
     const { items, getFm } = pointerItems(messages);
-    expect(anchorSessionItems(items, getFm)).toEqual([]);
+    const out = anchorSessionItems(items, getFm);
+    expect(out).toHaveLength(1);
+    expect((out[0] as SessionAnchorItem).replyCount).toBe(1);
+  });
+
+  it('a session opened before any prompt is anchored on its requested line', () => {
+    const requested = sess(SID_A, {
+      kind: FlowMessageKind.SESSION_EVENT,
+      attachment: [{ attachment_type: 'type_id', data: `remote_worker_session-${SID_A}` }],
+    } as Partial<FlowMessage>);
+    const messages = [fm(), requested, sess(SID_A, { attachment: [promptAtt] } as Partial<FlowMessage>)];
+    const { items, getFm } = pointerItems(messages);
+    const out = anchorSessionItems(items, getFm, new Map([[SID_A, requested.id]]));
+    expect(out).toHaveLength(2);
+    const card = out[1] as SessionAnchorItem;
+    expect(card.anchor.kind === ConversationItemKind.POINTER && card.anchor.messageId).toBe(requested.id);
+    expect(card.promptCount).toBe(1);
   });
 });
