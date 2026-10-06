@@ -29,6 +29,7 @@ import { SetupStagesButton } from '@src/components/setup-wizard/SetupStagesButto
 import { healthStyle } from './health-style';
 import { statusStyle } from './status-style';
 import { sourceIcon } from './source-icon';
+import { ChannelRouteControl } from './ChannelRouteControl';
 import { SourceMenu } from './SourceMenu';
 import { OpenFolderButton } from './OpenFolderButton';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
@@ -214,6 +215,8 @@ export function DataSourceRow({ source, spec, onEdit, onReplay, onDelete }: Prop
               {wiki && <WikiButton wikiword={wiki} label={t`How to finish setup`} />}
             </div>
           )}
+
+          <ChannelRouteControl source={source} />
 
           {parked && (
             <p className="rounded bg-red-500/10 px-2 py-1.5 text-[11px] leading-snug text-red-700 dark:text-red-300">

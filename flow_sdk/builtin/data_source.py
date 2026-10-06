@@ -1333,6 +1333,84 @@ class DataSource(Entity):
         driver = await driver_of(self.provider)  # an authored driver loads on first use
         return await stage_states(getattr(driver, "setup_wizards", None) or [], str(self.typeid))
 
+    # ── routing: which place a hub webhook claim hands this channel's messages to ──────────────────────
+
+    async def _hub_route(self) -> Optional[dict]:
+        """The hub claim that delivers to THIS channel (as target or watcher), or None. The hub is the only
+        place claims live, so this is always the current answer."""
+        from flow_sdk.cloud_client.transport.hub_http import hub_get  # noqa: PLC0415
+
+        mine = await hub_get("webhook", None, "mine") or {}
+        rows = mine.get("webhooks") if isinstance(mine, dict) else None
+        here = str(self.id)
+        for row in rows or []:
+            target, watch = row.get("target") or {}, row.get("watch") or {}
+            if here in (str(target.get("data_source_id") or ""), str(watch.get("data_source_id") or "")):
+                return row
+        return None
+
+    async def route_places(self) -> list[dict]:
+        """Where this channel's messages can go: this computer, and each cloud placement of the agent that
+        owns it (a box that holds the same channel, by id)."""
+        from flow_sdk.builtin.agent import Agent  # noqa: PLC0415
+
+        places = [{"key": "this", "label": "This computer"}]
+        owner = str(self.owner or "")
+        if owner.startswith("agent-"):
+            agent = await Agent.get_by_id(owner.split("-", 1)[1])
+            for deployment in (await agent.deployments() if agent is not None else []):
+                node = deployment.compute_node_id()
+                if deployment.is_local or not node:
+                    continue
+                label = f"{deployment.environment or 'production'} · {deployment.target.provider}"
+                places.append({"key": str(deployment.id), "label": label, "node_typeid": f"compute_node-{node}"})
+        return places
+
+    @core_action.get(action_name="route")
+    async def route_action(self) -> ApiResponse:
+        """GET /api/v1/graph/data_source/{id}/route — the hub webhook that delivers to this channel (its URL,
+        whom it claims, where it delivers, how deliveries went) and the places it can be pointed at."""
+        from flow_sdk.instance_settings.runtime import instance_uid  # noqa: PLC0415
+
+        claim = await self._hub_route()
+        places = await self.route_places()
+        current = ""
+        if claim is not None:
+            target = claim.get("target") or {}
+            if target.get("kind") == "desktop" and target.get("instance_id") == instance_uid():
+                current = "this"
+            elif target.get("kind") == "node":
+                current = next((p["key"] for p in places if p.get("node_typeid") == target.get("node_typeid")), "")
+            elif target.get("kind") == "placement":
+                current = "flow"
+        return ApiSuccessResponse(data={"claim": claim, "places": places, "current": current})
+
+    @core_action.post(action_name="set_route")
+    async def set_route_action(self) -> ApiResponse:
+        """POST /api/v1/graph/data_source/{id}/set_route ``{"place": "this" | <deployment id>}`` — point the hub
+        claim that delivers to this channel at another place. Its URL never changes, and the vendor is not
+        touched: the next message goes to the new place."""
+        from flow_sdk.cloud_client.transport.hub_http import hub_post  # noqa: PLC0415
+        from flow_sdk.instance_settings.runtime import instance_uid  # noqa: PLC0415
+
+        place = str((await self._body()).get("place") or "")
+        claim = await self._hub_route()
+        if claim is None:
+            return ApiFailResponse(message="no hub webhook delivers to this channel yet — connect it first", status_code=404)
+        if (claim.get("target") or {}).get("kind") == "placement":
+            return ApiFailResponse(message="Flow answers this channel from its own box", status_code=409)
+        if place == "this":
+            target = {"kind": "desktop", "instance_id": instance_uid(), "data_source_id": str(self.id)}
+        else:
+            chosen = next((p for p in await self.route_places() if p["key"] == place and p.get("node_typeid")), None)
+            if chosen is None:
+                return ApiFailResponse(message="no such place for this channel", status_code=404)
+            target = {"kind": "node", "node_typeid": chosen["node_typeid"], "data_source_id": str(self.id)}
+        moved = await hub_post("webhook", {"target": target}, str(claim.get("id")), "set_target")
+        if not moved:
+            return ApiFailResponse(message="the hub did not take the new place", status_code=502)
+        return ApiSuccessResponse(data={"claim": moved, "current": place})
+
     @core_action.post(action_name="step")
     async def step_action(self) -> ApiResponse:
         """POST /api/v1/graph/data_source/{id}/step ``{"step", "check"?, "values"?}`` — :meth:`step`. The
