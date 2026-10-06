@@ -293,6 +293,12 @@ async def reflect_to_hub(
         # the hub's gated ``update_membership``. Raises HubError on non-200 (e.g.
         # 403 from the hub's ``can_assign`` ceiling), propagated to the caller.
         hub_resp = await hub_put(et, hub_id, body or {}, action=a.action_name)
+    elif verb in ("put", "patch") and a.action_name != "update":
+        # Any other NAMED action (``access/public/visitor``, …) PUTs to its own
+        # hub endpoint, sub-path included. ``update`` is the name the framework
+        # gives a PUT with no action segment — the bare field update below —
+        # and the only PUT that may land on ``/<type>/<id>`` itself.
+        hub_resp = await hub_put(et, hub_id, body or {}, action=a.action_name, sub_path=sub_path)
     elif verb in ("put", "patch"):
         # A bare entity field update (the generic ``update`` CRUD action, e.g. a
         # conversation rename) reflects as a hub PUT to ``/<type>/<id>``. Merge the
