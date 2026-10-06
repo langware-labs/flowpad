@@ -3098,7 +3098,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
       status?: string;
       shell: Record<string, unknown>;
     } | null,
-    options?: { cols?: number; rows?: number; ptyTimeout?: number },
+    options?: { ptyTimeout?: number },
   ): Promise<boolean> {
     if (!result) throw new Error('Process could not be opened (process may be terminated)');
     if (result.status) {
@@ -3117,9 +3117,9 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
     }
     const tAttach = performance.now();
     await shell.attachPty({
-      // Real xterm size only — undefined means "keep current size, just repaint".
-      cols: options?.cols,
-      rows: options?.rows,
+      // No cols/rows: `options` carries the window-sized estimate that seeded a NEW
+      // pty in `open`. Asserted on a LIVE pty it resized it away from the view's
+      // real size on every entry; the attach asserts the size the view claimed.
       timeout: options?.ptyTimeout,
       ptyId: result.pty_id,
     });
@@ -3213,12 +3213,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
    * Only pre/post work differs: Interactive attaches via {@link adoptOpenPayload}
    * and emits `restarted`; CLI must NOT (it would re-attach a dead PTY).
    */
-  async switchMode(
-    mode: WorkerMode,
-    /** Client-only xterm grid, NOT wire data: it seeds `attachPty` so the
-     *  worker's first paint isn't wrapped at 80 cols on a wide viewport. */
-    opts?: { cols?: number; rows?: number },
-  ): Promise<void> {
+  async switchMode(mode: WorkerMode): Promise<void> {
     const wantPty = mode === WorkerMode.Interactive;
     if (!wantPty) {
       const shell = this.shell_id ? Shell.getByIdFromCache(this.shell_id) : null;
@@ -3250,7 +3245,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
         } | null
       >(actionInfo);
       if (wantPty) {
-        await this.adoptOpenPayload(result, { cols: opts?.cols, rows: opts?.rows });
+        await this.adoptOpenPayload(result);
         this.emit('restarted', { process: this });
       }
     } catch (error) {

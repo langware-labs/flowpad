@@ -215,6 +215,9 @@ def main():
         "port": port,
         "log_level": "info",
     }
+    if sys.platform == "win32":
+        # A client hanging up mid-accept must not close the listener (win_loop.py).
+        uvicorn_kwargs["loop"] = "flow_sdk.server.win_loop:ResilientProactorEventLoop"
 
     if reload_enabled:
         # Resolve watch directories relative to the repo root

@@ -107,3 +107,20 @@ class _Delivered:
 
     async def reply(self, _spec):
         raise AssertionError("a refused turn replied")
+
+
+async def test_a_reused_session_runs_on_the_definitions_current_model(mail_db, tmp_path):
+    """An update moved the agent to another model: the ongoing conversation moves with it (on a hub
+    endpoint the old name may not even be priced any more)."""
+    agent = await _agent(f"model-moves-{mint_uuid()[:8]}")
+    engine = TurnEngine(agent, await agent.local_deployment(), workdir=str(tmp_path))
+    session = f"conversation-{mint_uuid()}"
+    first = await engine.process_for(session)
+    assert first.cli_config["model"] == "haiku"
+
+    agent.model = "md"
+    await agent.save()
+    again = await engine.process_for(session)
+
+    assert again.id == first.id and again.cli_config["model"] == "md"
+    assert (await AgenticProcess.get_by_id(first.id)).cli_config["model"] == "md"

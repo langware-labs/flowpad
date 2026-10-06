@@ -151,7 +151,7 @@ def test_host_row_is_authoritative():
         project_id="proj-1", last_activity_at="2026-07-14T09:00:00+00:00",
     )
     out = RemoteWorkerSession.apply_snapshot(
-        local, _snap(status=S.ENDED.value, last_activity_at="2026-07-14T12:00:00+00:00",
+        local, _snap(status=S.PAUSED.value, last_activity_at="2026-07-14T12:00:00+00:00",
                      guest_name="Bob"),
         local_is_host=True,
     )
@@ -161,6 +161,15 @@ def test_host_row_is_authoritative():
     assert out.project_id == "proj-1"
     # ...but missing identity fields fill-merge (guest-minted DRAFT info).
     assert out.guest_name == "Bob"
+
+
+def test_the_guest_ending_the_session_ends_it_on_the_host_too():
+    """Either side may end a session; ENDED is the one status the host takes
+    from a guest's snapshot (it absorbs — nothing can follow it)."""
+    local = RemoteWorkerSession(id=SESSION_ID, status=S.IDLE.value, host_process_id="ap-123")
+    out = RemoteWorkerSession.apply_snapshot(local, _snap(status=S.ENDED.value), local_is_host=True)
+    assert out.status == S.ENDED.value
+    assert out.host_process_id == "ap-123"
 
 
 def test_host_row_heals_missing_own_identity():

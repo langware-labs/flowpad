@@ -7,7 +7,7 @@ import { useShell } from '@src/hooks/useShell';
 import { FitAddon } from '@xterm/addon-fit';
 import { Terminal as XTerm } from '@xterm/xterm';
 import { useTheme } from 'next-themes';
-import React, { forwardRef, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState } from 'react';
+import React, { forwardRef, useCallback, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState } from 'react';
 import { useXtermShellAttach } from '../useXtermShellAttach';
 import { XTERM_BASE_OPTIONS, applyRtlGridContract, registerOsc52ClipboardWrite } from './terminalConfig';
 import { DARK_THEME, LIGHT_THEME } from './terminalThemes';
@@ -111,7 +111,11 @@ export const ShellTerminal = forwardRef<ShellTerminalHandle, ShellTerminalProps>
       .catch((error) => console.error('[ShellTerminal] Failed to start shell:', error));
   }, [shell, term, terminalReady]);
 
-  useXtermShellAttach(shell, term, { ready: terminalReady, trimRecordedBlankRows: true });
+  const activeRef = useRef(active);
+  activeRef.current = active;
+  // Only the view on screen sizes the PTY (one winsize, shared by every client).
+  const onScreen = useCallback(() => activeRef.current && document.visibilityState !== 'hidden', []);
+  useXtermShellAttach(shell, term, { ready: terminalReady, trimRecordedBlankRows: true, ownsSize: onScreen });
 
   // Input
   useEffect(() => {
@@ -134,12 +138,12 @@ export const ShellTerminal = forwardRef<ShellTerminalHandle, ShellTerminalProps>
       } catch {
         return;
       }
-      const live = shellRef.current;
-      if (live?.connected) void live.resize(term.cols, term.rows);
+      // Not gated on `connected`: the shell keeps the size and its attach asserts it.
+      if (onScreen()) void shellRef.current?.resize(term.cols, term.rows);
     });
     observer.observe(container);
     return () => observer.disconnect();
-  }, [active, term, terminalReady]);
+  }, [active, term, terminalReady, onScreen]);
 
   // Focus and fit when becoming active
   useEffect(() => {
@@ -150,13 +154,42 @@ export const ShellTerminal = forwardRef<ShellTerminalHandle, ShellTerminalProps>
         term.scrollToBottom();
         term.refresh(0, Math.max(0, term.rows - 1));
         term.focus();
-        const live = shellRef.current;
-        if (live?.connected) void live.resize(term.cols, term.rows);
+        if (onScreen()) void shellRef.current?.resize(term.cols, term.rows);
       } catch {
         /* ignore */
       }
     });
-  }, [active, term, terminalReady]);
+  }, [active, term, terminalReady, onScreen]);
+
+  // Back on screen (window focus, browser tab visible) re-asserts the size another client may
+  // have taken; off screen the view lets go of it.
+  useEffect(() => {
+    if (!term || !terminalReady) return;
+    if (!active) {
+      shellRef.current?.releaseSize();
+      return;
+    }
+    const reassert = () => {
+      if (!onScreen()) return;
+      try {
+        fitAddonRef.current?.fit();
+      } catch {
+        return;
+      }
+      void shellRef.current?.resize(term.cols, term.rows);
+    };
+    const onVisibility = () => {
+      if (document.visibilityState === 'hidden') shellRef.current?.releaseSize();
+      else reassert();
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+    window.addEventListener('focus', reassert);
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibility);
+      window.removeEventListener('focus', reassert);
+    };
+  }, [active, term, terminalReady, onScreen]);
+  useEffect(() => () => shellRef.current?.releaseSize(), []);
 
   return (
     <>

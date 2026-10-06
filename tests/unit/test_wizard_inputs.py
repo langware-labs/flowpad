@@ -174,3 +174,18 @@ def test_a_wizard_that_never_ran_does_not_re_stat_on_every_serialization(tmp_pat
     assert wizard_state.read_state("never-run") == {}
     assert wizard_state.read_result("never-run") is None
     assert reads["n"] == 1
+
+
+def test_a_typed_value_reaches_the_next_step_as_json():
+    """A step that returns a DataSpec (the Connect step's ``SetupShown``) is bound for the next question:
+    its env value is the JSON form, so ``{{connect.link}}`` fills — it was Python's repr, and the question
+    showed its placeholders raw."""
+    import json
+
+    from flow_sdk.core.compute_op.runner import fill
+    from flow_sdk.core.wizard.state import input_env
+    from flow_sdk.sources.setup_steps import SetupShown
+
+    env = input_env({"connect": SetupShown(name="Flow", code="AB2CD3", link="https://wa.me/1?text=link%20AB2CD3")})
+    assert json.loads(env["FLOWPAD_WIZARD_INPUT_CONNECT"])["code"] == "AB2CD3"
+    assert fill("send link {{connect.code}} to {{connect.name}}", env) == "send link AB2CD3 to Flow"
