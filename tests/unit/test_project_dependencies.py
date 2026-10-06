@@ -250,6 +250,8 @@ async def test_a_clone_that_fails_is_unreachable_and_warned(tmp_path):
     _declare(Path(site.fs_storage_mount_path), {"dependencies": {"gone": f"git+file://{tmp_path}/no-such-repo#main"}})
     gone = _state(await site.resolve_dependencies(), "gone")
     assert gone.state == "unreachable" and "could not clone" in gone.reason
+    again = _state(await site.dependencies(), "gone")
+    assert (again.state, again.reason) == (gone.state, gone.reason), "a status read repeats the last fetch's reason"
     assert site.include_dirs == []
     assert [w.name for w in await site.dependency_warnings()] == ["gone"]
 
@@ -327,6 +329,13 @@ async def test_an_optional_dependency_waits_for_install(tmp_path):
     assert _state(await site.resolve_dependencies(), "notes").state == "not_installed"
     assert site.include_dirs == []
     assert await site.dependency_warnings() == [], "an optional one is never a warning"
+
+    lost = tmp_path / "lost"
+    _declare(Path(site.fs_storage_mount_path), {"optionalDependencies": {"notes": f"file:{notes}", "lost": f"file:{lost}"}})
+    failed = await site.install_dependency("lost")
+    assert failed.state == "missing"
+    assert _state(await site.dependencies(), "lost").state == "missing", "a failed install keeps saying why"
+    assert await site.dependency_warnings() == [], "and an optional one still never warns"
 
     assert (await site.install_dependency("notes")).state == "ready"
     assert _state(await site.dependencies(), "notes").state == "ready", "an installed optional stays installed"
@@ -470,6 +479,21 @@ async def test_dismissing_a_warning_lasts_until_restart(tmp_path):
     assert [w.name for w in await site.dependency_warnings()] == ["lost"]
 
 
+async def test_opening_a_project_resolves_in_the_background_and_says_so(tmp_path):
+    import asyncio
+
+    url = _repo(tmp_path / "remote")
+    site = await _project(tmp_path, "site")
+    _declare(Path(site.fs_storage_mount_path), {"dependencies": {"remote": f"git+{url}#main"}})
+    project_dependencies.schedule_resolve(site)
+    assert project_dependencies.is_resolving(str(site.id))
+    project_dependencies.schedule_resolve(site)   # a second open joins, never doubles
+    await project_dependencies._TASKS[str(site.id)]
+    assert not project_dependencies.is_resolving(str(site.id))
+    fresh = await Project.get_by_id(site.id)
+    assert _state(await fresh.dependencies(), "remote").state == "ready"
+
+
 async def test_setup_readiness_counts_a_missing_required_dependency(tmp_path):
     from flow_sdk.builtin.project_setup import compile_setup, readiness_of
 
@@ -516,6 +540,21 @@ async def test_an_agent_from_a_dependency_runs_in_the_host_and_knows_its_home(tm
     assert canonical_posix_path(session.workdir) == canonical_posix_path(site.fs_storage_mount_path)
     assert os_root in session.additional_dirs
     assert f"Your own files are in {os_root}" in session.context_data["instructions"]
+
+
+async def test_an_agent_in_a_plain_dependency_folder_still_gets_its_home(tmp_path):
+    """No git, not a project of its own: the host's dependency root holding it is its home."""
+    provider = tmp_path / "provider"
+    agent_dir = provider / "agentic-assets" / "agent" / "plain-helper"
+    agent_dir.mkdir(parents=True)
+    (agent_dir / "agent.json").write_text(json.dumps({**AGENT_JSON, "name": f"plain-helper-{tmp_path.name}"}))
+    (agent_dir / "system_prompt.md").write_text("x\n")
+    site = await _project(tmp_path, "site")
+    await site.add_dependency(str(provider))
+    helper = next(a for a in await Agent.get_all({}) if a.asset_ref and a.asset_ref.startswith(canonical_posix_path(str(provider))))
+    session = await helper.use(project_id=str(site.id))
+    assert canonical_posix_path(str(provider)) in session.additional_dirs
+    assert f"Your own files are in {canonical_posix_path(str(provider))}" in session.context_data["instructions"]
 
 
 async def test_rows_in_a_dependency_that_is_a_project_stay_that_projects(tmp_path):

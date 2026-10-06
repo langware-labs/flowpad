@@ -2608,7 +2608,13 @@ class Project(Entity):
 
         states = await self.dependencies()
         warnings = project_dependencies.warnings_for(str(self.id), states)
-        return ApiSuccessResponse(data={"dependencies": self._states(states), "warnings": self._states(warnings)})
+        return ApiSuccessResponse(data={
+            "dependencies": self._states(states),
+            "warnings": self._states(warnings),
+            # True while the resolve opening the project started is still fetching: a
+            # ``missing`` dependency may be on its way — the caller should not warn yet.
+            "resolving": project_dependencies.is_resolving(str(self.id)),
+        })
 
     @action.post(action_name="add-dependency")
     async def add_dependency_action(

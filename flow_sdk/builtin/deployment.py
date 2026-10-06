@@ -1249,15 +1249,27 @@ def home_line(home: str) -> str:
 
 
 async def _foreign_home(agent, acting_project_id: str | None) -> str | None:
-    """``agent.home()`` when it lies outside the acting project's folder, else ``None``."""
-    home = await agent.home()
-    if not home:
-        return None
+    """The agent's own folder when it lies outside the acting project's folder, else ``None``.
+
+    ``agent.home()`` knows a project's folder or a repository. An agent in a plain
+    dependency folder (no git, not a project of its own) has neither — but the acting
+    project depends on that folder, so the deepest of its dependency roots holding the
+    agent IS its home."""
     from flow_sdk.builtin.project import Project  # noqa: PLC0415
     from flow_sdk.fs_store.path_utils import canonical_posix_path, is_path_under  # noqa: PLC0415
 
     acting = await Project.get_by_id(acting_project_id) if acting_project_id else None
     mount = getattr(acting, "fs_storage_mount_path", None)
+    home = await agent.home()
+    if not home and acting is not None and agent.asset_ref:
+        try:
+            ref = canonical_posix_path(agent.asset_ref)
+        except OSError:
+            ref = ""
+        holding = [r for r in acting.direct_context_roots()[1:] if ref and is_path_under(ref, r)]
+        home = max(holding, key=len) if holding else None
+    if not home:
+        return None
     if mount and is_path_under(home, canonical_posix_path(mount)):
         return None
     return home
