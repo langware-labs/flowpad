@@ -11,7 +11,7 @@ from pydantic import PrivateAttr
 
 from flow_sdk.schema.data_spec.spec import DataSpec
 
-Kind = Literal["view", "entity", "file", "url", "webapp", "app"]
+Kind = Literal["view", "entity", "file", "url", "webapp", "app", "log"]
 
 
 class NavigationTarget(DataSpec):
