@@ -146,9 +146,7 @@ class RagIndex(Entity):
 
         origin = await Folder.detect_origin(canonical)
         folder = await Folder.mint_for_origin(origin, local_path=canonical)
-        self.add_private_context_entities(
-            folder.typeid, data={"path": canonical, "origin_kind": origin.kind}
-        )
+        self.add_private_context_entities(folder.typeid, data={"path": canonical, "origin_kind": origin.kind})
         # A new root means work to do; the pass decides how much.
         self.pending = True
         await self.save(notify=False)
@@ -259,17 +257,39 @@ class RagIndex(Entity):
         """The ``LLMEndpoint`` that funds this index's embeddings, or ``None``.
 
         Resolved fresh on every use rather than held, because funding changes between runs — a
-        key is stored, an endpoint is bound — and a cached client would keep spending the old
-        one. The bound endpoint wins; failing that, any local key that resolves.
-        """
-        from flow_sdk.builtin.llm_endpoint import LLMEndpoint  # noqa: PLC0415
+        key is stored, an endpoint is bound, a hub login lapses — and a cached client would keep
+        spending the old one. In order:
 
+        1. the bound endpoint, when it is a local row;
+        2. the bound endpoint, when it is a hub one — the hub's row, never a local projection,
+           whose id would not be the one the hub authorizes;
+        3. any local key that resolves, so a box with its own key never spends a hub budget it
+           was not pointed at;
+        4. any hub endpoint this box can spend that speaks an embeddings API.
+
+        Signed out, the hub list is empty and 2 and 4 answer nothing — the index stays in SETUP.
+        """
+        # The worker picker's own answer to "can this box spend a hub budget", not a re-derivation:
+        # an index that disagreed with it would fund itself from a budget it cannot use.
+        from flow_sdk.builtin.agentic_process.cli_drivers.llm_source import _hub_spendable  # noqa: PLC0415
+        from flow_sdk.builtin.llm_endpoint import LLMEndpoint  # noqa: PLC0415
+        from flow_sdk.instance_settings.llm_endpoint import fetch_hub_llm_endpoints  # noqa: PLC0415
+
+        hub = None
         if self.endpoint_typeid:
             bound = await LLMEndpoint.get_by_id(self.endpoint_typeid.split("-", 1)[-1])
             if bound is not None:
                 return bound
+            hub = await fetch_hub_llm_endpoints()
+            bound = next((e for e in hub if str(e.typeid) == self.endpoint_typeid), None)
+            if bound is not None:
+                return bound
         rows = await LLMEndpoint.key_endpoints()
-        return next((e for e in rows.values() if e.resolve_api_key()), None)
+        local = next((e for e in rows.values() if e.resolve_api_key()), None)
+        if local is not None or not _hub_spendable():
+            return local
+        hub = hub if hub is not None else await fetch_hub_llm_endpoints()
+        return next((e for e in hub if _hub_can_embed(e)), None)
 
     async def settle_status(self) -> str:
         """Promote out of SETUP once something funds it, and back when nothing does.
@@ -481,6 +501,17 @@ class RagIndex(Entity):
             return index, False
         await index.add_root(canonical)
         return index, True
+
+
+def _hub_can_embed(endpoint: Any) -> bool:
+    """Whether a hub endpoint can fund an index unasked: enabled, its root embeds, and keyed.
+
+    The root's dialect decides, because the hub relays verbatim -- an Anthropic root has no
+    embeddings API however the budget is set up, and picking one would fail every pass. Checked
+    before the key, which is a credential-store read.
+    """
+    dialect = endpoint.dialect
+    return bool(endpoint.enabled and dialect and dialect.supports_embeddings and endpoint.resolve_api_key())
 
 
 __all__ = ["DEFAULT_INDEX_NAME", "RagIndex", "RagStatus"]

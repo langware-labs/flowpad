@@ -19,7 +19,9 @@ import asyncio
 import logging
 from typing import TYPE_CHECKING
 
+from flow_sdk.external_apis.llm.dialects import same_model
 from flow_sdk.rag import runtime
+from flow_sdk.rag.store import ModelMismatch
 from flow_sdk.server.system_heartbeat import register_heartbeat_task
 
 if TYPE_CHECKING:
@@ -47,6 +49,17 @@ class EmbeddingUnavailable(LookupError):
         )
 
 
+def default_embedding_model(endpoint) -> str:
+    """The model an endpoint embeds with when nobody chose one.
+
+    A hub endpoint carries no model names of its own (the hub serializes none), so the answer
+    comes from the ROOT provider's dialect -- the same fallback its client makes. Read here
+    rather than left to the client, so the index can record the model it is about to be pinned to.
+    """
+    dialect = endpoint.dialect
+    return (endpoint.models or {}).get("embedding") or (dialect.default_models.get("embedding", "") if dialect else "")
+
+
 async def embedder_for(index: "RagIndex"):
     """``(embed, model)``: the embed call this index is funded by, and the model it embeds with.
 
@@ -59,10 +72,15 @@ async def embedder_for(index: "RagIndex"):
     if endpoint is None:
         raise EmbeddingUnavailable()
 
-    model = index.model or endpoint.models.get("embedding", "")
+    # Always a concrete name, so the store records what it was built with — a hub endpoint
+    # used to leave this "" and the store pinned a width with no model beside it.
+    model = index.model or default_embedding_model(endpoint)
 
     async def embed(texts):
-        return await endpoint.create_embeddings(list(texts), model=model or None)
+        vectors, answered = await endpoint.create_embeddings_with_model(list(texts), model=model or None)
+        if answered and model and not same_model(answered, model):
+            raise ModelMismatch(model, answered)
+        return vectors
 
     return embed, model
 
@@ -204,4 +222,12 @@ async def _heartbeat_dispatch() -> None:
         logger.info("rag: dispatched %d index pass(es)", len(dispatched))
 
 
-__all__ = ["NO_EMBEDDING", "EmbeddingUnavailable", "dispatch_due_indexes", "embedder_for", "force_pass", "run_index"]
+__all__ = [
+    "NO_EMBEDDING",
+    "EmbeddingUnavailable",
+    "default_embedding_model",
+    "dispatch_due_indexes",
+    "embedder_for",
+    "force_pass",
+    "run_index",
+]

@@ -12,8 +12,9 @@ from pathlib import Path
 
 import pytest
 
+from flow_sdk.external_apis.llm.dialects import same_model
 from flow_sdk.rag.chunking import chunk_markdown
-from flow_sdk.rag.store import INDEX_FILE, DimensionMismatch, RagStore
+from flow_sdk.rag.store import INDEX_FILE, DimensionMismatch, ModelMismatch, RagStore
 from flow_sdk.schema.data_spec.rag_spec import RagChunk
 from tests.unit.rag_embedder import DIMENSIONS, embed, embed_all
 
@@ -214,6 +215,29 @@ def test_a_ragged_batch_is_refused(tmp_path):
         chunks = [_chunk("a.md", SUMMER), _chunk("b.md", WINTER)]
         with pytest.raises(DimensionMismatch, match="mixes"):
             store.add(chunks, [[0.1] * DIMENSIONS, [0.1] * 4])
+
+
+def test_a_different_model_of_the_same_width_is_refused(tmp_path):
+    """Same width, different space: the width check cannot see it, so the model check must."""
+    with _store(tmp_path) as store:
+        chunks = [_chunk("a.md", SUMMER)]
+        store.add(chunks, embed_all([SUMMER]), model="openai/text-embedding-3-small")
+        with pytest.raises(ModelMismatch, match="rebuild"):
+            store.add([_chunk("b.md", WINTER)], embed_all([WINTER]), model="text-embedding-3-large")
+        assert store.chunk_count() == 1
+
+
+def test_the_same_model_under_a_relay_spelling_is_accepted(tmp_path):
+    """``openai/x`` through a relay and ``x`` from the vendor are one model, not a rebuild."""
+    with _store(tmp_path) as store:
+        store.add([_chunk("a.md", SUMMER)], embed_all([SUMMER]), model="openai/text-embedding-3-small")
+        assert store.add([_chunk("b.md", WINTER)], embed_all([WINTER]), model="Text-Embedding-3-Small") == 1
+        assert store.model == "openai/text-embedding-3-small"
+
+
+def test_model_names_compare_without_vendor_prefix_or_case():
+    assert same_model("openai/text-embedding-3-small", "text-embedding-3-small")
+    assert not same_model("openai/text-embedding-3-small", "openai/text-embedding-3-large")
 
 
 def test_a_mismatched_count_is_refused(tmp_path):
