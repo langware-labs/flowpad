@@ -1,15 +1,13 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Download, Forward, MoreVertical, Pencil, Reply, SmilePlus, Star, Trash2 } from 'lucide-react';
 import { Trans, useLingui } from '@lingui/react/macro';
-import { AgenticProcess, Conversation, FlowMessage, TypeId, type ICloudOrigin } from '@sdk';
+import { AgenticProcess, Conversation, TypeId, type ICloudOrigin } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
 import { workerIcon } from '@src/components/lens-viewer/shared/transcript-features/transcript-utils';
 import { useFavorites } from '@src/hooks/use-favorites';
 import { useIsAdvanced } from '@src/components/view-mode';
 import { InputDialog } from '@src/components/ui/input-dialog';
-import { OpenProjectComponent } from '@src/components/open-project-component/open-project-component';
 import { WorkerToolbar } from '@src/components/workers/WorkerToolbar';
-import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -24,9 +22,6 @@ import { ChannelBadge } from './ChannelBadge';
 import { EmojiPickerContent } from './EmojiPicker';
 import { TaskItIcon, taskItHint } from './task-it';
 import type { WorkerType } from './conversation-session-constants';
-import { buildMessageStartPrompt } from './prompt-building';
-import { useConversationSession } from './useConversationSession';
-import { useProjectMappingGate } from './useProjectMappingGate';
 
 interface MessageActionsMenuProps {
   flowMessageId?: string;
@@ -46,6 +41,8 @@ interface MessageActionsMenuProps {
   onTaskIt?: () => void;
   onEditName?: () => void;
   onDelete?: () => void;
+  /** Start a worker on this message — the header's launch bar, message-pinned prompt. */
+  onLaunchWorker?: (worker: WorkerType) => void;
 }
 
 /** First `n` whitespace-delimited words of `text`, trimmed. Empty when no text. */
@@ -55,18 +52,13 @@ function firstWords(text: string | undefined, n: number): string {
   return t.split(/\s+/).slice(0, n).join(' ');
 }
 
-/** The conversation entity by id, through the entity cache. */
-function useConversation(conversationId: string | undefined): Conversation | null {
+/** The conversation's current worker: the most-recently-linked AgenticProcess in its shared context. */
+function useCurrentWorker(conversationId: string | undefined): AgenticProcess | null {
   const convTypeId = useMemo(
     () => (conversationId ? new TypeId(Conversation.type, conversationId) : null),
     [conversationId],
   );
-  return useEntity<Conversation>(convTypeId).data ?? null;
-}
-
-/** The conversation's current worker: the most-recently-linked AgenticProcess in its shared context. */
-function useCurrentWorker(conversationId: string | undefined): AgenticProcess | null {
-  const conversation = useConversation(conversationId);
+  const { data: conversation } = useEntity<Conversation>(convTypeId);
   const processTypeId = useMemo(() => {
     const procs = (conversation?.sharedContextEntities ?? []).filter((tid) => tid.type === AgenticProcess.type);
     return procs.length ? procs[procs.length - 1] : null;
@@ -83,18 +75,17 @@ const ITEM_ICON = 'h-3.5 w-3.5 text-muted-foreground';
  * of these per message. The note dialog and the emoji picker live OUTSIDE the
  * menu: selecting an item closes the menu, and they must outlive it.
  *
- * "Start a worker on this message" is the header's launch menu with a prompt
- * pinned to this message id, so the session opens with exact context. The
- * launch itself runs in `MessageWorkerLaunch`, mounted outside the menu.
+ * The worker icons are the conversation header's launch bar; the host's
+ * `onLaunchWorker` starts the session with a prompt pinned to this message.
  */
 export function MessageActionsMenu(props: MessageActionsMenuProps) {
   const { t } = useLingui();
   const [noteOpen, setNoteOpen] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
+  // Controlled: the worker icons are plain buttons, so a launch closes the menu itself.
   const [menuOpen, setMenuOpen] = useState(false);
-  // One launch at a time; a new pick remounts (key) and replaces a stale one.
-  const [launch, setLaunch] = useState<{ worker: WorkerType; nonce: number } | null>(null);
-  const { flowMessageId, conversationId, onReply, onReact, onForward, onTaskIt, onEditName, onDelete } = props;
+  const { flowMessageId, conversationId, onReply, onReact, onForward, onTaskIt, onEditName, onDelete, onLaunchWorker } =
+    props;
   // A draft bubble (no stored message) with no handlers has nothing to offer.
   if (!flowMessageId && !(onReply || onReact || onForward || onTaskIt || onEditName || onDelete)) return null;
 
@@ -120,10 +111,13 @@ export function MessageActionsMenu(props: MessageActionsMenuProps) {
               {...props}
               onOpenPicker={() => setPickerOpen(true)}
               onOpenNote={() => setNoteOpen(true)}
-              onLaunchWorker={(worker) => {
-                setMenuOpen(false);
-                setLaunch((prev) => ({ worker, nonce: (prev?.nonce ?? 0) + 1 }));
-              }}
+              onLaunchWorker={
+                onLaunchWorker &&
+                ((worker) => {
+                  setMenuOpen(false);
+                  onLaunchWorker(worker);
+                })
+              }
             />
           </DropdownMenuContent>
         </DropdownMenu>
@@ -137,15 +131,6 @@ export function MessageActionsMenu(props: MessageActionsMenuProps) {
           />
         )}
       </Popover>
-      {launch && flowMessageId && conversationId && (
-        <MessageWorkerLaunch
-          key={launch.nonce}
-          worker={launch.worker}
-          flowMessageId={flowMessageId}
-          conversationId={conversationId}
-          onDone={() => setLaunch(null)}
-        />
-      )}
       {noteOpen && flowMessageId && (
         <NoteDialog flowMessageId={flowMessageId} conversationId={conversationId} onClose={() => setNoteOpen(false)} />
       )}
@@ -169,11 +154,7 @@ function MessageMenuItems({
   onOpenPicker,
   onOpenNote,
   onLaunchWorker,
-}: MessageActionsMenuProps & {
-  onOpenPicker: () => void;
-  onOpenNote: () => void;
-  onLaunchWorker: (worker: WorkerType) => void;
-}) {
+}: MessageActionsMenuProps & { onOpenPicker: () => void; onOpenNote: () => void }) {
   const isAdvanced = useIsAdvanced();
   const { isFavorited, toggleFavorite } = useFavorites();
   const worker = useCurrentWorker(conversationId);
@@ -183,7 +164,6 @@ function MessageMenuItems({
   const conversing = !!(onReply || onReact);
   const sharing = !!(onForward || onTaskIt || flowMessageId);
   const managing = !!(onEditName || onDelete);
-  const canLaunch = !!flowMessageId && !!conversationId;
 
   return (
     <>
@@ -255,16 +235,12 @@ function MessageMenuItems({
           {favorited ? <Trans>Remove from favorites</Trans> : <Trans>Add to favorites</Trans>}
         </DropdownMenuItem>
       )}
-      {canLaunch && (
-        <>
-          <DropdownMenuSeparator />
-          <DropdownMenuLabel className="py-1 text-[11px] font-normal text-muted-foreground">
-            <Trans>Start a worker on this message</Trans>
-          </DropdownMenuLabel>
-          <WorkerToolbar variant="menu-list" onLaunch={onLaunchWorker} testIdPrefix="message" />
-        </>
+      {onLaunchWorker && (
+        <div className="px-2 py-1">
+          <WorkerToolbar onLaunch={onLaunchWorker} testIdPrefix="message" />
+        </div>
       )}
-      {managing && (conversing || sharing || canLaunch) && <DropdownMenuSeparator />}
+      {managing && (conversing || sharing) && <DropdownMenuSeparator />}
       {onEditName && (
         <DropdownMenuItem onSelect={onEditName} data-testid="message-edit-name">
           <Pencil className={ITEM_ICON} />
@@ -310,67 +286,3 @@ function NoteDialog({
   );
 }
 
-/**
- * Runs one per-message worker launch: the same lifecycle as the conversation
- * header (`useConversationSession` behind the project gate) with the prompt
- * pinned to this message, then opens the new session. Mounted only while a
- * launch is pending; `onDone` unmounts it on success, failure or a cancelled
- * project pick.
- */
-function MessageWorkerLaunch({
-  worker,
-  flowMessageId,
-  conversationId,
-  onDone,
-}: {
-  worker: WorkerType;
-  flowMessageId: string;
-  conversationId: string;
-  onDone: () => void;
-}) {
-  const { navigation } = useDockNavigation();
-  const conversation = useConversation(conversationId);
-  const { ensureMapped, dialogProps } = useProjectMappingGate(undefined, conversation ?? undefined);
-  // Only called by a launch, which needs a conversation — so it has one here.
-  const buildPrompt = useCallback(
-    () => buildMessageStartPrompt(conversation!.typeId, new TypeId(FlowMessage.type, flowMessageId)),
-    [conversation, flowMessageId],
-  );
-  const onLaunched = useCallback(
-    (proc: AgenticProcess) => {
-      if (proc.id) void navigation.openShellProcess(proc.id);
-    },
-    [navigation],
-  );
-  const { launch, starting } = useConversationSession({ conversation, ensureMapped, buildPrompt, onLaunched });
-
-  const fired = useRef(false);
-  useEffect(() => {
-    if (!conversation || fired.current) return;
-    fired.current = true;
-    launch(worker);
-  }, [conversation, launch, worker]);
-
-  // starting true → false: the launch settled (opened or notified a failure).
-  const wasStarting = useRef(false);
-  useEffect(() => {
-    if (starting) wasStarting.current = true;
-    else if (wasStarting.current) onDone();
-  }, [starting, onDone]);
-
-  // Picker closed without a pick → the launch was cancelled. The check waits a
-  // tick so a pick that closes the dialog is seen whichever handler runs first.
-  const picked = useRef(false);
-  const gateProps = {
-    ...dialogProps,
-    onPicked: (project: Parameters<NonNullable<typeof dialogProps.onPicked>>[0]) => {
-      picked.current = true;
-      return dialogProps.onPicked?.(project);
-    },
-    onOpenChange: (next: boolean) => {
-      dialogProps.onOpenChange(next);
-      if (!next) setTimeout(() => !picked.current && onDone(), 0);
-    },
-  };
-  return <OpenProjectComponent {...gateProps} />;
-}
