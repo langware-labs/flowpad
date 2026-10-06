@@ -20,6 +20,7 @@ import { ConfirmDialog } from '@src/components/ui/confirm-dialog';
 import { useLingui } from '@lingui/react/macro';
 import { QuotedMessage, ReactionChips } from './ChannelMessageExtras';
 import type { IMessageReaction } from '@sdk/entities/flow-message';
+import type { WorkerType } from './conversation-session-constants';
 
 interface MessageBubbleProps {
   message: ConversationMessage;
@@ -41,6 +42,8 @@ interface MessageBubbleProps {
    *  share dialog to pick the target conversation; the backend then clones the
    *  message (cloned_from_id provenance) into it. */
   onForwardMessage?: () => void;
+  /** Start a worker pinned to this message (⋮ menu, the header's launch bar). */
+  onLaunchWorker?: (worker: WorkerType) => void;
   /** "Task it": make this message a task (a ⋮ menu item) — or, once it is one (`task`), open it
    *  from the chips under the body, which also show its status and owner. */
   taskIt?: { onClick: () => void; task?: Task | null };
@@ -250,6 +253,7 @@ export function MessageBubble({
   onEditName,
   onDeleteMessage,
   onForwardMessage,
+  onLaunchWorker,
   taskIt,
   onImplementPlan,
   onOpenPlanSession,
@@ -387,6 +391,7 @@ export function MessageBubble({
                 replyInThread={replyInThread}
                 onReact={onReact ? (emoji) => onReact(emoji, false) : undefined}
                 onForward={onForwardMessage}
+                onLaunchWorker={onLaunchWorker}
                 onTaskIt={taskIt && !taskIt.task ? taskIt.onClick : undefined}
                 onEditName={!isBot && onEditName ? startEdit : undefined}
                 onDelete={onDeleteMessage ? () => setConfirmingDelete(true) : undefined}

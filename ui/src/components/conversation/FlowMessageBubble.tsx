@@ -64,6 +64,7 @@ import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { openExternalFromComputeNode } from '@sdk/entities/compute-node';
 import { cn } from '@src/lib/utils';
 import { openArtifact } from '@src/components/artifacts/open-artifact';
+import type { WorkerType } from './conversation-session-constants';
 
 /** Single Download affordance for a message whose body bundle hasn't been
  *  pulled yet. One click materializes every attachment (files + entities) —
@@ -218,6 +219,8 @@ interface FlowMessageBubbleProps {
   messageTask?: Task | null;
   /** "Task it": make this message a task. Omitted → no control (drafts, system rows). */
   onTaskIt?: (fm: FlowMessage) => void;
+  /** Start a worker pinned to a message (its ⋮ menu). Omitted → no worker bar (drafts). */
+  onLaunchWorker?: (messageId: string, worker: WorkerType) => void;
 }
 
 export function FlowMessageBubble({
@@ -245,6 +248,7 @@ export function FlowMessageBubble({
   messageAttachments,
   messageTask = null,
   onTaskIt,
+  onLaunchWorker,
   showEmailHeaders = false,
   channelTraits = null,
   quoted = null,
@@ -764,6 +768,7 @@ export function FlowMessageBubble({
           onDeleteMessage && (isCurrentUser || isConversationOwner) ? () => onDeleteMessage(messageId) : undefined
         }
         onForwardMessage={canForward ? () => setForwardOpen(true) : undefined}
+        onLaunchWorker={onLaunchWorker && !fm.is_draft ? (worker) => onLaunchWorker(messageId, worker) : undefined}
         taskIt={
           messageTask
             ? { onClick: () => navigation.openDock(messageTask.dockPointer), task: messageTask }
