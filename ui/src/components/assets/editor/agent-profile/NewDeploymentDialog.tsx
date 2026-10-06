@@ -258,9 +258,14 @@ export function NewDeploymentDialog({
         </div>
 
         <DialogFooter className="items-center gap-2">
-          {launching && cloud && (
-            <span className="me-auto text-xs text-muted-foreground">
-              <Trans>Starting a machine — this takes a minute.</Trans>
+          {launching && machine && (
+            <span className="me-auto text-xs text-muted-foreground" data-testid="new-deployment-starting">
+              {/* A monthly machine is a full VM: creating and enrolling it takes longer than a sandbox. */}
+              {machine.provider === ComputeProviderType.GCP_VM ? (
+                <Trans>Starting a machine — this takes a couple of minutes.</Trans>
+              ) : (
+                <Trans>Starting a machine — this takes a minute.</Trans>
+              )}
             </span>
           )}
           <Button
