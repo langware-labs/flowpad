@@ -126,10 +126,16 @@ async def test_the_guest_is_remembered_before_the_session_goes_live(bootstrapped
         return await real_emit(self, kind, **kw)
 
     monkeypatch.setattr(RemoteWorkerSession, "_emit_event", spy)
-    resp = await bootstrapped_client.post(
-        f"/api/v1/graph/remote_worker_session/{rws.id}/approve", json={"scratch": True, "remember": "everywhere"}
-    )
-    await _redrives()
+    try:
+        resp = await bootstrapped_client.post(
+            f"/api/v1/graph/remote_worker_session/{rws.id}/approve", json={"scratch": True, "remember": "everywhere"}
+        )
+        await _redrives()
 
-    assert resp.status_code == 200, resp.text
-    assert granted_when_live == [True]
+        assert resp.status_code == 200, resp.text
+        assert granted_when_live == [True]
+    finally:
+        # "Remember everywhere" is a standing grant for this guest; left behind, every later
+        # session test that expects an unknown guest to park pending finds it granted.
+        for grant in await ContactPermission.get_all({"contact_user_id": rws.guest_user_id}):
+            await grant.delete()
