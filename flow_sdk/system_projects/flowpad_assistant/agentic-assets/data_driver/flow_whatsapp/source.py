@@ -195,7 +195,7 @@ class FlowWhatsAppSource(MessageSource):
         since = _float(cursor) if cursor else (query.since.timestamp() if query.since else 0.0)
         # This source mirrors ITS phone only. The hub answers every message of the signed-in person, and a person
         # may hold two of these sources (one abandoned before its phone connected): reading all rows in each put
-        # every message in the inbox twice. Not connected yet: nothing is this source's.
+        # every message in the stream inbox twice. Not connected yet: nothing is this source's.
         mine = str(self.config.get("wa_id") or "")
         if not mine:
             return ChangePage(items=(), next_cursor=None, resume_cursor=cursor)

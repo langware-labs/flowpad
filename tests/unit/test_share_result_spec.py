@@ -65,4 +65,5 @@ def test_empty_result_has_every_list() -> None:
         "granted_teams": [],
         "skipped_teams": [],
         "failed_teams": [],
+        "warnings": [],
     }
