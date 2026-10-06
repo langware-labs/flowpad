@@ -815,7 +815,9 @@ class DriverRuntime:
             return False
         return True
 
-    async def ingest_pushed(self, row: Any, payload: Any, *, headers: Any = None, raw: bytes = b"") -> dict:
+    async def ingest_pushed(
+        self, row: Any, payload: Any, *, headers: Any = None, raw: bytes = b"", verified_by_hub: bool = False
+    ) -> dict:
         """A provider's push delivery (a webhook body), as the records it carries, through the one
         ingestion chokepoint. Total: a payload carrying nothing we render ingests nothing.
 
@@ -825,7 +827,9 @@ class DriverRuntime:
         # dict — a class that checks a signature reads them lowercased either way.
         headers = {str(k).lower(): v for k, v in dict(headers or {}).items()}
         credentials = await self.credentials_for(row)
-        authentic = getattr(self.cls, "webhook_authentic", None)
+        # ``verified_by_hub``: the hub checked the vendor's signature at its edge and split the batch, so the
+        # vendor's signature no longer covers these bytes (``/<source id>/webhook``, reached only from the hub).
+        authentic = None if verified_by_hub else getattr(self.cls, "webhook_authentic", None)
         if authentic is not None and not authentic(headers or {}, raw, credentials):
             raise Rejected("the delivery's signature did not verify")
         source = await self.open(row, credentials=credentials)
