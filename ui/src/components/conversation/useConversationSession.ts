@@ -29,13 +29,15 @@ export function useConversationSession(opts: {
   /** Builds the first instruction placed on the worker's queue. The drawer
    *  supplies the full context-aware prompt; the header a lighter one. */
   buildPrompt: () => string;
+  /** Called with the new process once a launch lands (not on cancel/failure). */
+  onLaunched?: (proc: AgenticProcess) => void;
 }): {
   conversationProcess: AgenticProcess | null;
   starting: boolean;
   launch: (worker: WorkerType) => void;
   open: () => void;
 } {
-  const { conversation, ensureMapped, buildPrompt } = opts;
+  const { conversation, ensureMapped, buildPrompt, onLaunched } = opts;
   const { navigation } = useDockNavigation();
   const [starting, setStarting] = useState(false);
 
@@ -114,6 +116,7 @@ export function useConversationSession(opts: {
             console.error('[useConversationSession] failed to link process to conversation', linkErr);
           }
         }
+        onLaunched?.(proc);
       } catch (err) {
         console.error('[useConversationSession] start session failed', err);
         notify.error({ title: t`Failed to start session` });
@@ -121,7 +124,7 @@ export function useConversationSession(opts: {
         setStarting(false);
       }
     },
-    [conversation, starting, buildPrompt],
+    [conversation, starting, buildPrompt, onLaunched],
   );
 
   const launch = useCallback(
