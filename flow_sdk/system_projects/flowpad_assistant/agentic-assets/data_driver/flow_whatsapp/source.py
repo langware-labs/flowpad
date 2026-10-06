@@ -10,9 +10,10 @@ never reaches this machine:
   (``connected`` step: the gate the setup cannot pass without).
 * **Answered on the hub**: Flow answers from a machine of the person's own that the hub places and
   replies through the number itself — nothing on this desktop answers.
-* **Read**: this source is the person's view of that conversation in their stream inbox
-  (``whatsapp_link/messages``, everything after the cursor). ``send``/``reply`` reach only the
-  person's own linked phone (``whatsapp_link/send``).
+* **Read**: this source is the person's view of that conversation in their stream inbox. The hub keeps
+  no message: its ``@whatsapp`` webhook hands each one, and each answer Flow sent, to THIS channel on THIS
+  instance as it happens (``/api/v1/data_source/<id>/webhook`` → ``events_from_webhook``). ``send``/
+  ``reply`` reach only the person's own linked phone (``whatsapp_link/send``).
 
 Addressing is the WhatsApp source's: the person IS the conversation (their wa_id), and a message lives in
 their scope; a reply quotes the message it answers.
@@ -21,33 +22,29 @@ from __future__ import annotations
 
 import base64
 from datetime import datetime, timezone
-from typing import Any, AsyncGenerator, Mapping, Optional, Protocol
+from typing import Any, Mapping, Optional, Protocol
 
 from flow_sdk.sources.binding import SourceBinding
 from flow_sdk.sources.config import SourceConfig
 from flow_sdk.sources.errors import NotFound, OutcomeUnknown, Rejected, SourceUnavailable, Unsupported
 from flow_sdk.sources.families import MessageSource
 from flow_sdk.sources.setup_steps import ReturnedValue, SetupShown, SourceUpdateSpec, setup_step
+from flow_sdk.sources.values.event import DataSourceEvent, EventKind
 from flow_sdk.sources.values.items import MessageData, MessageItem, UserProfile
 from flow_sdk.sources.values.origin import CloudOrigin
-from flow_sdk.sources.values.page import ChangePage
 from flow_sdk.sources.values.query import MessageQuery
 
 #: The medium (the stream inbox shows it as WhatsApp), not the transport.
 CHANNEL = "whatsapp"
 MESSAGES_STREAM = "messages"
-#: The hub's own page size for one read of a person's messages.
-HUB_PAGE = 200
 
 
 class HubTransport(Protocol):
     async def profile(self) -> dict: ...
 
-    async def connect(self) -> dict: ...
+    async def connect(self, channel: dict) -> dict: ...
 
     async def link(self, link_id: str) -> Optional[dict]: ...
-
-    async def messages(self, since: float) -> list[dict]: ...
 
     async def send(self, wa_id: str, text: str, reply_to: str) -> dict: ...
 
@@ -60,22 +57,16 @@ class AppHub:
 
         return dict(await hub_get("whatsapp_link", None, "flow_profile") or {})
 
-    async def connect(self) -> dict:
+    async def connect(self, channel: dict) -> dict:
         from flow_sdk.cloud_client.transport.hub_http import hub_post  # noqa: PLC0415
 
-        return dict(await hub_post("whatsapp_link", {}, None, "connect") or {})
+        return dict(await hub_post("whatsapp_link", channel, None, "connect") or {})
 
     async def link(self, link_id: str) -> Optional[dict]:
         from flow_sdk.cloud_client.transport.hub_http import hub_get  # noqa: PLC0415
 
         found = await hub_get("whatsapp_link", link_id)
         return dict(found) if isinstance(found, dict) else None
-
-    async def messages(self, since: float) -> list[dict]:
-        from flow_sdk.cloud_client.transport.hub_http import hub_get  # noqa: PLC0415
-
-        body = await hub_get("whatsapp_link", None, "messages", params={"since": repr(since)}) or {}
-        return list((body or {}).get("messages") or [])
 
     async def send(self, wa_id: str, text: str, reply_to: str) -> dict:
         from flow_sdk.cloud_client.transport.hub_http import hub_post  # noqa: PLC0415
@@ -97,10 +88,7 @@ class FlowWhatsAppSource(MessageSource):
     Config = FlowWhatsAppConfig
     provider = "flow_whatsapp"
     origin_kind = CHANNEL
-    durable_cursor = True
     identity_config_key = "wa_id"
-    #: A conversation people are watching while it happens.
-    attention_poll_seconds = 5
 
     def __init__(self, binding: SourceBinding, hub: Optional[HubTransport] = None) -> None:
         super().__init__(binding)
@@ -158,7 +146,7 @@ class FlowWhatsAppSource(MessageSource):
             return ReturnedValue.satisfied("a Connect code is live", value=SourceUpdateSpec(shown=_shown(profile, current)), ran=False)
         if not profile.get("available"):
             return ReturnedValue.not_yet(str(profile.get("detail") or "Flow on WhatsApp is not available on your hub yet."))
-        minted = await self.hub.connect()
+        minted = await self.hub.connect(self._channel())
         if not minted.get("id"):
             return ReturnedValue.not_yet("The hub did not give a Connect code — try again.")
         return ReturnedValue.satisfied("a Connect code is ready", value=SourceUpdateSpec(
@@ -185,52 +173,55 @@ class FlowWhatsAppSource(MessageSource):
     def query(self) -> MessageQuery:
         return MessageQuery()
 
-    async def fetch(
-        self, cursor: Optional[str] = None, *, page_size: Optional[int] = None, narrow: Optional[Mapping[str, Any]] = None
-    ) -> ChangePage:
-        self._require_open()
-        query = self.effective_query(narrow)
-        if query.conversation is not None:
-            raise Unsupported("Flow's messages are read whole")
-        since = _float(cursor) if cursor else (query.since.timestamp() if query.since else 0.0)
-        # This source mirrors ITS phone only. The hub answers every message of the signed-in person, and a person
-        # may hold two of these sources (one abandoned before its phone connected): reading all rows in each put
-        # every message in the stream inbox twice. Not connected yet: nothing is this source's.
+    def _channel(self) -> dict:
+        """Where the hub hands this conversation: THIS instance, THIS channel."""
+        try:
+            from flow_sdk.instance_settings.runtime import instance_uid  # noqa: PLC0415
+
+            instance = instance_uid()
+        except Exception:  # noqa: BLE001 — no instance id: the hub still links the phone, the inbox stays empty
+            instance = ""
+        return {"instance_id": instance, "data_source_id": str(self.binding.source_id or "")}
+
+    # ── inbound: what the hub hands this channel ─────────────────────────────
+    def events_from_webhook(self, payload: Any) -> list[DataSourceEvent]:
+        """One message of this person's conversation, in Meta's own envelope — written by them, or (marked
+        ``flowpad_direction: out``) Flow's answer the hub sent. Total: anything else yields nothing. Only THIS
+        source's phone: a person may hold an older source that never connected."""
         mine = str(self.config.get("wa_id") or "")
-        if not mine:
-            return ChangePage(items=(), next_cursor=None, resume_cursor=cursor)
-        rows = await self.hub.messages(since)
-        items = [item for item in (self._item(r) for r in rows if str(r.get("wa_id") or "") == mine) if item is not None]
-        last = max([_float(r.get("at")) for r in rows] or [since])
-        token = repr(last) if rows else cursor
-        return ChangePage(items=tuple(items), next_cursor=token if len(rows) >= HUB_PAGE else None, resume_cursor=token)
+        outbound = isinstance(payload, dict) and payload.get("flowpad_direction") == "out"
+        events: list[DataSourceEvent] = []
+        for entry in _list(payload.get("entry") if isinstance(payload, dict) else None):
+            for change in _list(entry.get("changes") if isinstance(entry, dict) else None):
+                value = change.get("value") if isinstance(change, dict) and isinstance(change.get("value"), dict) else {}
+                names = {
+                    _digits(c.get("wa_id")): str((c.get("profile") or {}).get("name") or "")
+                    for c in _list(value.get("contacts"))
+                    if isinstance(c, dict)
+                }
+                for message in _list(value.get("messages")):
+                    item = self._item(message, names, outbound=outbound) if isinstance(message, dict) else None
+                    if item is not None and (not mine or item.data.conversation.key == mine):
+                        events.append(DataSourceEvent(id=item.origin.key, kind=EventKind.UPSERT, origin=item.origin, item=item))
+        return events
 
-    async def iterate(
-        self, *, page_size: Optional[int] = None, narrow: Optional[Mapping[str, Any]] = None
-    ) -> AsyncGenerator[MessageItem, None]:
-        cursor: Optional[str] = None
-        while True:
-            page = await self.fetch(cursor, page_size=page_size, narrow=narrow)
-            for item in page.items:
-                yield item
-            if (cursor := page.next_cursor) is None:
-                return
-
-    def _item(self, row: dict) -> Optional[MessageItem]:
-        wamid, wa_id = str(row.get("wamid") or ""), str(row.get("wa_id") or "")
-        if not (wamid and wa_id):
+    def _item(self, message: dict, names: dict, *, outbound: bool) -> Optional[MessageItem]:
+        wamid = str(message.get("id") or "").strip()
+        wa_id = _digits(message.get("to") if outbound else message.get("from"))
+        text = _text_of(message)
+        if not (wamid and wa_id and text):
             return None
-        inbound = row.get("direction") == "in"
         sender = (
-            UserProfile(origin=self.conversation_origin(wa_id), name=str(row.get("profile_name") or "") or None)
-            if inbound else UserProfile(origin=CloudOrigin(kind=CHANNEL, namespace="flow", key="flow"), name="Flow")
+            UserProfile(origin=CloudOrigin(kind=CHANNEL, namespace="flow", key="flow"), name="Flow")
+            if outbound
+            else UserProfile(origin=self.conversation_origin(wa_id), name=names.get(wa_id) or None)
         )
-        quoted = str(row.get("reply_to") or "")
+        quoted = str((message.get("context") or {}).get("id") or "")
         data = MessageData(
-            text=str(row.get("text") or "") or None,
+            text=text,
             conversation=self.conversation_origin(wa_id),
             sender=sender,
-            sent_at=datetime.fromtimestamp(_float(row.get("at")), tz=timezone.utc),
+            sent_at=_when(message.get("timestamp")),
             in_reply_to=self.message_origin(quoted, wa_id) if quoted else None,
         )
         return MessageItem(origin=self.message_origin(wamid, wa_id), data=data)
@@ -299,6 +290,30 @@ def _float(value: Any) -> float:
         return float(value)
     except (TypeError, ValueError):
         return 0.0
+
+
+def _list(value: Any) -> list:
+    return value if isinstance(value, list) else []
+
+
+def _text_of(message: dict) -> str:
+    kind = message.get("type")
+    if kind == "text":
+        return str((message.get("text") or {}).get("body") or "")
+    if kind == "button":
+        return str((message.get("button") or {}).get("text") or "")
+    if kind == "interactive":
+        reply = message.get("interactive") or {}
+        return str((reply.get("button_reply") or reply.get("list_reply") or {}).get("title") or "")
+    return ""
+
+
+def _when(timestamp: Any) -> datetime:
+    """Meta sends unix seconds as a string."""
+    try:
+        return datetime.fromtimestamp(int(str(timestamp)), tz=timezone.utc)
+    except (TypeError, ValueError):
+        return datetime.now(timezone.utc)
 
 
 def _digits(value: Any) -> str:

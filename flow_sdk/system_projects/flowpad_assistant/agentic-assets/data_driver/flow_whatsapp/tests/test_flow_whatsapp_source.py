@@ -4,7 +4,8 @@ Offline by construction: the source is handed a fake hub. What is pinned:
 
 * Connect shows Flow's card, the code and the link that sends it — and refuses when the hub has no Flow;
 * the gate (``connected``) passes ONLY once the hub validated the code, and says why not until then;
-* what the phone sent is read after the cursor, and an answer goes to the person's own phone, quoting what it answers.
+* what the hub hands this channel (the phone's message, Flow's answer) becomes its items — its own phone only —
+  and an answer goes to the person's own phone, quoting what it answers.
 """
 from __future__ import annotations
 
@@ -39,7 +40,8 @@ class _Hub:
     async def profile(self):
         return dict(self.profile_)
 
-    async def connect(self):
+    async def connect(self, channel):
+        self.channel = channel
         link = {"id": f"L{len(self.links) + 1}", "status": "pending", "code": "AB2CD3", "code_expires_at": time.time() + 900}
         self.links[link["id"]] = link
         return {**link, "link": "https://wa.me/15550100?text=link%20AB2CD3"}
@@ -47,16 +49,20 @@ class _Hub:
     async def link(self, link_id):
         return dict(self.links[link_id]) if link_id in self.links else None
 
-    async def messages(self, since):
-        return [m for m in self.stored if m["at"] > since]
-
     async def send(self, wa_id, text, reply_to):
         self.sent.append((wa_id, text, reply_to))
         return {"wamid": f"wamid.OUT{len(self.sent)}", "direction": "out"}
 
 
 def _source(hub, **config) -> FlowWhatsAppSource:
-    return FlowWhatsAppSource(SourceBinding(config=config), hub=hub)
+    return FlowWhatsAppSource(SourceBinding(source_id="ds-1", config=config), hub=hub)
+
+
+def _meta(message: dict, *, out: bool = False) -> dict:
+    """One message in Meta's own envelope, as the hub's ``@whatsapp`` webhook hands it to this channel."""
+    value = {"metadata": {"phone_number_id": "PNID"}, "contacts": [{"wa_id": PHONE, "profile": {"name": "Dana"}}], "messages": [message]}
+    envelope = {"object": "whatsapp_business_account", "entry": [{"changes": [{"value": value}]}]}
+    return {**envelope, "flowpad_direction": "out"} if out else envelope
 
 
 async def test_connect_shows_flow_the_code_and_the_link_that_sends_it():
@@ -87,7 +93,7 @@ async def test_connect_refuses_when_the_hub_has_no_flow():
 
 async def test_the_gate_passes_only_once_the_hub_validated_the_phone():
     hub = _Hub()
-    await hub.connect()
+    await hub.connect({})
     source = _source(hub, link_id="L1")
 
     assert "Connect WhatsApp first" in (await _source(hub)._connected(check=False, values={})).detail
@@ -103,33 +109,42 @@ async def test_the_gate_passes_only_once_the_hub_validated_the_phone():
     assert (await _source(hub, link_id="L1", wa_id=PHONE)._connected(check=True, values={})).ok
 
 
-async def test_what_the_phone_sent_is_read_after_the_cursor():
+async def test_connect_tells_the_hub_which_instance_and_channel_take_the_conversation(monkeypatch):
+    from flow_sdk.instance_settings import runtime
+
+    monkeypatch.setattr(runtime, "instance_uid", lambda: "11111111-2222-4333-8444-555555555555")
     hub = _Hub()
-    hub.stored = [
-        {"wamid": "wamid.IN1", "wa_id": PHONE, "direction": "in", "text": "hi", "profile_name": "Dana", "at": 100.0},
-        {"wamid": "wamid.OUT1", "wa_id": PHONE, "direction": "out", "text": "hello", "reply_to": "wamid.IN1", "at": 101.0},
-    ]
-    async with _source(hub, wa_id=PHONE) as source:
-        first = await source.fetch()
-        assert [i.data.text for i in first.items] == ["hi", "hello"]
-        assert first.items[0].data.sender.name == "Dana" and first.items[1].data.in_reply_to.key == "wamid.IN1"
-
-        hub.stored.append({"wamid": "wamid.IN2", "wa_id": PHONE, "direction": "in", "text": "more", "at": 102.0})
-        later = await source.fetch(first.resume_cursor)
-        assert [i.data.text for i in later.items] == ["more"]
+    await _source(hub)._connect(check=False, values={})
+    assert hub.channel == {"instance_id": "11111111-2222-4333-8444-555555555555", "data_source_id": "ds-1"}
 
 
-async def test_a_source_mirrors_its_own_phone_only_and_nothing_before_it_connects():
+async def test_what_the_hub_hands_this_channel_becomes_its_items_both_directions():
+    async with _source(_Hub(), wa_id=PHONE) as source:
+        asked = source.events_from_webhook(
+            _meta({"from": PHONE, "id": "wamid.IN1", "timestamp": "100", "type": "text", "text": {"body": "hi"}})
+        )
+        answered = source.events_from_webhook(
+            _meta(
+                {"to": PHONE, "id": "wamid.OUT1", "timestamp": "101", "type": "text", "text": {"body": "hello"}, "context": {"id": "wamid.IN1"}},
+                out=True,
+            )
+        )
+    (inbound,) = [e.item for e in asked]
+    (outbound,) = [e.item for e in answered]
+    assert inbound.data.text == "hi" and inbound.data.sender.name == "Dana" and inbound.origin.key == "wamid.IN1"
+    assert outbound.data.text == "hello" and outbound.data.sender.name == "Flow"
+    assert outbound.data.in_reply_to.key == "wamid.IN1" and outbound.data.conversation.key == PHONE
+
+
+async def test_a_source_takes_its_own_phone_only_and_nothing_it_cannot_render():
     """Two sources of one person (one abandoned before its phone connected) put each message in the stream inbox twice."""
-    hub = _Hub()
-    hub.stored = [
-        {"wamid": "wamid.A", "wa_id": PHONE, "direction": "in", "text": "mine", "at": 100.0},
-        {"wamid": "wamid.B", "wa_id": "972500000099", "direction": "in", "text": "another phone", "at": 101.0},
-    ]
-    async with _source(hub) as unconnected:
-        assert (await unconnected.fetch()).items == ()
-    async with _source(hub, wa_id=PHONE) as source:
-        assert [i.data.text for i in (await source.fetch()).items] == ["mine"]
+    async with _source(_Hub(), wa_id=PHONE) as source:
+        other = source.events_from_webhook(
+            _meta({"from": "972500000099", "id": "w.B", "timestamp": "1", "type": "text", "text": {"body": "x"}})
+        )
+        image = source.events_from_webhook(_meta({"from": PHONE, "id": "w.C", "timestamp": "1", "type": "image", "image": {"id": "m"}}))
+        junk = source.events_from_webhook({"entry": "nope"})
+    assert other == [] and image == [] and junk == []
 
 
 async def test_an_answer_goes_to_the_persons_phone_quoting_what_it_answers(tmp_path):
