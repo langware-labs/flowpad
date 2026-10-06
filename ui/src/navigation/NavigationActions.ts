@@ -36,6 +36,7 @@ import { isProjectHomePage, withHomePage } from '@src/project-home-page/home-pag
 import { placeDockInProject, presentDockTab } from './present-dock-tab';
 import { openExternal } from '@src/lib/open-external';
 import { openInBrowserProfile } from '@src/lib/browser-profiles';
+import { appLinkPath, isWebUrl } from '@src/lib/link-kind';
 import { errorMessage } from '@src/lib/error-message';
 import type { LinkSource } from '@src/components/links/link-events';
 import { notify } from '@src/notifications/notify';
@@ -169,8 +170,6 @@ function hostOfWorkspaceAnchor(dock: DockPointer): string | null {
   if (!isWorkspaceAnchorDock(dock) || dock.viewType !== ViewType.SHELL) return null;
   return (dock.viewMode ?? getViewMode()) === ViewMode.Vibe ? (dock.pointer ?? null) : null;
 }
-
-const isWebUrl = (link: string) => /^https?:\/\//i.test(link);
 
 /** A link that cannot be opened says why — the backend's sentence, not the HTTP status — once,
  *  as a toast that times out. It is about this click, so it never becomes a standing warning. */
@@ -784,12 +783,7 @@ export class NavigationActions {
   private async resolveLinkDock(link: string, source: LinkSource | null): Promise<DockPointer> {
     if (!source) throw new Error(t`This link has no source yet`);
     // An app URL copied from this browser is an internal address, not an iframe.
-    if (isWebUrl(link)) {
-      const url = new URL(link);
-      if (url.origin === window.location.origin && /^\/(dock|win|dev)\//.test(url.pathname)) {
-        link = url.pathname + url.search;
-      }
-    }
+    link = appLinkPath(link, window.location.origin) ?? link;
     const dock = dockForDisplayTarget(await source.resolveDisplayTarget(link));
     if (!dock) throw new Error(t`This link has no available viewer`);
     return dock;
@@ -807,6 +801,15 @@ export class NavigationActions {
         parentTabId: anchor?.parent_tab_id ?? null,
       });
       this.openDock(placed);
+    } catch (error) {
+      notifyLinkError(error);
+    }
+  }
+
+  /** The link in `process`'s Display — the `flow show` channel, so it lands in the Display history too. */
+  async showLinkInDisplay(link: string, process: AgenticProcess): Promise<void> {
+    try {
+      await process.show({ link: appLinkPath(link, window.location.origin) ?? link });
     } catch (error) {
       notifyLinkError(error);
     }
