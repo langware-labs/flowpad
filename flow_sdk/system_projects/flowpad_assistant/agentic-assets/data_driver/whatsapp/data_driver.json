@@ -7,6 +7,8 @@
   "kind": "datasource.api.whatsapp",
   "group": "WhatsApp",
   "group_order": 1,
+  "group_icon_name": "WhatsApp",
+  "default_name": "WhatsApp bot",
   "auth": {
     "credential": "whatsapp",
     "vars": {

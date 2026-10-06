@@ -191,6 +191,20 @@ export function markdownComponents({
  *  an `<img>`, where a data URI cannot run anything — never on a link. */
 const withDataImages: UrlTransform = (url, key, node) =>
   node.tagName === 'img' && key === 'src' && url.startsWith('data:image/') ? url : defaultUrlTransform(url);
+/** A drawn image (a QR code) on its own white card: a camera reads dark-on-light, and a backend's black-on-
+ *  transparent drawing vanishes on a dark theme. Other images keep the default rendering. */
+const DataImage: Components['img'] = ({ node: _node, src, alt, ...rest }) =>
+  typeof src === 'string' && src.startsWith('data:image/') ? (
+    <img
+      src={src}
+      alt={alt ?? ''}
+      {...rest}
+      className="my-2 inline-block rounded-md bg-white p-2 shadow-sm"
+      data-testid="md-data-image"
+    />
+  ) : (
+    <img src={src} alt={alt ?? ''} {...rest} />
+  );
 const dataImageSchema = {
   ...defaultSchema,
   protocols: { ...defaultSchema.protocols, src: [...(defaultSchema.protocols?.src ?? []), 'data'] },
@@ -225,7 +239,11 @@ export const MarkdownView = ({
       remarkPlugins={[remarkGfm]}
       rehypePlugins={[rehypeRaw, dataImages ? [rehypeSanitize, dataImageSchema] : rehypeSanitize, rehypeHighlight]}
       urlTransform={dataImages ? withDataImages : undefined}
-      components={{ ...markdownComponents({ compact, codeChrome, localeDir }), ...components }}
+      components={{
+        ...markdownComponents({ compact, codeChrome, localeDir }),
+        ...(dataImages ? { img: DataImage } : {}),
+        ...components,
+      }}
     >
       {value}
     </ReactMarkdown>
