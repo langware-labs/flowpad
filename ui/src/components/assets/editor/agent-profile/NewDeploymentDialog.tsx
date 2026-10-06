@@ -9,7 +9,7 @@ import {
   type IDeployment,
 } from '@sdk';
 import { Trans, useLingui } from '@lingui/react/macro';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Cloud, Laptop, Loader2, Rocket } from 'lucide-react';
 
 import { describeApiError, errorMessage } from '@src/lib/error-message';
@@ -44,12 +44,16 @@ type CloudMachine = `${CloudDeployProvider}-${ComputeNodeSize}`;
 type DeploymentType = 'local' | CloudMachine;
 
 function cloudMachine(type: CloudMachine): { provider: CloudDeployProvider; size: ComputeNodeSize } {
-  const [provider, size] = type.split('-') as [CloudDeployProvider, ComputeNodeSize];
-  return { provider, size };
+  // The size is the last segment: a provider is the hub's name and may itself hold a '-'.
+  const cut = type.lastIndexOf('-');
+  return { provider: type.slice(0, cut), size: type.slice(cut + 1) as ComputeNodeSize };
 }
 
-/** How each provider's machines read: billed hourly, or monthly with the machine's strength. */
-const PROVIDER_HINTS: Record<CloudDeployProvider, Record<ComputeNodeSize, string>> = {
+/**
+ * How each provider's machines read: billed hourly, or monthly with the machine's strength. A provider
+ * the hub offers that is missing here still gets its rows, hinted by its bare name.
+ */
+const PROVIDER_HINTS: Partial<Record<CloudDeployProvider, Record<ComputeNodeSize, string>>> = {
   [ComputeProviderType.E2B]: AGENT_MACHINE_SIZE_LABELS,
   [ComputeProviderType.GCP_VM]: AGENT_MONTHLY_MACHINE_SIZE_LABELS,
 };
@@ -92,6 +96,11 @@ export function NewDeploymentDialog({
   const cloud = machine !== null;
   // The hub publishes which providers a deployment may use; only those get rows.
   const { providers, isLoading: providersLoading } = useDeployProviders();
+  useEffect(() => {
+    for (const provider of providers) {
+      if (!PROVIDER_HINTS[provider]) console.log(`[NewDeploymentDialog] no display for hub provider '${provider}'`);
+    }
+  }, [providers]);
 
   // Every cloud row reads "Cloud machine"; which provider runs it is not the user's concern — only how it
   // bills: hourly, or monthly with the machine's strength.
@@ -99,7 +108,7 @@ export function NewDeploymentDialog({
     AGENT_MACHINE_SIZES.map((size) => ({
       value: `${provider}-${size}` satisfies CloudMachine,
       label: t`Cloud machine`,
-      hint: PROVIDER_HINTS[provider][size],
+      hint: PROVIDER_HINTS[provider]?.[size] ?? provider,
       Icon: Cloud,
     }));
   const choices: { value: DeploymentType; label: string; hint: string; Icon: typeof Cloud }[] = [

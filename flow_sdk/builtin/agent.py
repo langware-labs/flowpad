@@ -854,14 +854,11 @@ class Agent(Entity):
     async def plan_deployment_action(self):
         """`POST /agent/<id>/plan_deployment  {"environment", "provider"}` — the cloud placement before its
         machine, and whether it is ready: what a deploy dialog lists, with "use mine" per missing value."""
-        from flow_sdk.builtin.cloud_deploy import CLOUD_PROVIDERS  # noqa: PLC0415
         from flow_sdk.builtin.readiness import readiness  # noqa: PLC0415
         from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse  # noqa: PLC0415
 
         body = await self._body()
         provider = str(body.get("provider") or "").strip() or None
-        if provider is not None and provider not in CLOUD_PROVIDERS:
-            return ApiFailResponse(message=f"unknown provider {provider!r}: one of {', '.join(CLOUD_PROVIDERS)}", status_code=400)
         try:
             allocation = _token_allocation_of(body)
         except ValueError as exc:
@@ -1047,7 +1044,7 @@ class Agent(Entity):
         Identity, and logs the sandbox in AS the agent. Deliberately no node or
         principal parameter: were either passable from here they would be
         passable from anywhere, which is the exact hole the hub's pentest guards
-        exist to keep shut. This call says only *which agent*, on which ``provider`` (none: the hub chooses), which
+        exist to keep shut. This call says only *which agent*, on which ``provider`` (none: ``e2b``), which
         credential ``environment`` the placement reads (``production`` by default), and its
         ``token_allocation`` (see :meth:`plan_deployment`).
 
@@ -1092,14 +1089,14 @@ class Agent(Entity):
         provider: str | None = None,
         token_allocation: "TokenAllocationSpec | None | object" = _UNSET,
     ) -> "Deployment":
-        """The cloud placement this agent will have on ``provider`` (none: the one the hub chooses) in ``environment``
+        """The cloud placement this agent will have on ``provider`` (none: ``e2b``) in ``environment``
         — the hub's row, adopted here —
         before it has a machine: where "use mine" stores values ahead of a deploy. Idempotent. Its
         :meth:`webhook_specs` are kept on the hub, following its machine, each URL stored as its variable —
         so readiness finds them and "use mine" never copies this computer's. ``token_allocation`` gives the
         placement its own hub LLM endpoint drawn from ``source`` (``None`` releases it back to the owner's
         default; omitted leaves it as it is)."""
-        from flow_sdk.builtin.cloud_deploy import DEFAULT_CLOUD_ENVIRONMENT  # noqa: PLC0415
+        from flow_sdk.builtin.cloud_deploy import DEFAULT_CLOUD_ENVIRONMENT, DEFAULT_CLOUD_PROVIDER  # noqa: PLC0415
         from flow_sdk.builtin.deployment import Deployment  # noqa: PLC0415
         from flow_sdk.cloud_client.transport.hub_http import hub_post  # noqa: PLC0415
         from flow_sdk.schema.data_spec.credential_contract import normalize_environment  # noqa: PLC0415
@@ -1107,7 +1104,7 @@ class Agent(Entity):
         environment = normalize_environment(environment or DEFAULT_CLOUD_ENVIRONMENT)
         body = {
             "environment": environment,
-            **({"provider": provider} if provider else {}),
+            "provider": provider or DEFAULT_CLOUD_PROVIDER,
             "webhooks": [w.model_dump(mode="json") for w in await self.webhook_specs()],
         }
         if token_allocation is not _UNSET:
@@ -1124,8 +1121,7 @@ class Agent(Entity):
 
         ``{"provider": "local"}`` deploys it on THIS computer instead: the idempotent local placement,
         no hub and no publish — the one way "This computer" becomes a deployment. Any other
-        ``provider`` must be one of the hub's (``CLOUD_PROVIDERS``) and is passed to it; none leaves the
-        choice to the hub.
+        ``provider`` is passed to the hub, which refuses one it does not offer; none is ``e2b``.
 
         One round trip for the UI's one button. Long by nature (E2B create +
         boot + health is tens of seconds); if that becomes a timeout in
@@ -1142,11 +1138,6 @@ class Agent(Entity):
         if provider == "local":
             deployment = await self.run_locally()
             return ApiSuccessResponse(data={"agent_id": self.id, "deployment": deployment.model_dump(mode="json")})
-        from flow_sdk.builtin.cloud_deploy import CLOUD_PROVIDERS  # noqa: PLC0415
-
-        if provider and provider not in CLOUD_PROVIDERS:
-            choices = ", ".join(("local", *CLOUD_PROVIDERS))
-            return ApiFailResponse(message=f"unknown provider {provider!r}: one of {choices}", status_code=400)
         request_info = get_current_request_info()
         actor = request_info.someone_typeid if request_info else None
         if not actor:

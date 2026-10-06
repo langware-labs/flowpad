@@ -27,9 +27,3 @@ async def test_launching_here_again_is_the_same_running_deployment(bootstrapped_
         chat = await ServiceEndpoint.find_existing(str(row.typeid), "chat")
         assert chat is not None and chat.backend.type == "channel"
 
-
-async def test_an_unknown_provider_is_refused_not_sent_to_the_cloud(bootstrapped_client):
-    agent = await Agent(name=f"deploy-bad-{uuid.uuid4().hex[:6]}", worker_type="claude", enabled=True).save()
-    answer = await bootstrapped_client.post(f"/api/v1/graph/agent/{agent.id}/deploy", json={"provider": "moon"})
-    assert answer.status_code == 400 and "unknown provider" in answer.json()["message"]
-    assert await agent.deployments() == []
