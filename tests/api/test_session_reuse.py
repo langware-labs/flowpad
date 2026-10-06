@@ -118,3 +118,28 @@ async def test_a_prompt_that_fails_before_running_is_not_left_queued(bootstrappe
     assert (await FlowMessage.get_one({"id": fm.id})).prompt_auto_handled is True
     assert await ep._queued_turns(rws, None) == []
     assert fake_worker["prompts"] == []
+
+
+async def test_a_session_ended_while_its_turn_runs_stays_ended(bootstrapped_client, user, fake_worker, monkeypatch):  # noqa: F811
+    """Disconnect mid-turn (cross-OS stress, 2026-10-06): the turn finished after
+    the session ended and stamped it IDLE again — both sides showed it live, and
+    the guest's next start reopened it instead of opening a new session."""
+    conv_id = await make_conversation(bootstrapped_client)
+    rws = await make_session(conv_id, S.IDLE.value)
+    fm = inbound_prompt_fm(conv_id, rws.id, fm_id=str(uuid.uuid4()))
+    await fm.save(notify=False)
+
+    async def ended_mid_turn(ap):
+        row = await RemoteWorkerSession.get_one({"id": rws.id})
+        row.mark_activity(S.ENDED.value)  # the other side pressed Disconnect
+        await row.save()
+        return "the answer"
+
+    monkeypatch.setattr(ep, "_capture_assistant_reply", ended_mid_turn)
+    conv = await Conversation.get_one({"id": conv_id})
+    result = await ep.run_session_turn(rws, fm, conv, someone_typeid=str(user.typeid))
+
+    assert result.status == "SUCCESS", getattr(result, "message", None)
+    assert (await RemoteWorkerSession.get_one({"id": rws.id})).status == S.ENDED.value
+    texts = [m.text for m in await FlowMessage.get_all({"conversation_id": conv_id}) if m.text]
+    assert any("the answer" in t for t in texts)  # the reply still reaches the guest
