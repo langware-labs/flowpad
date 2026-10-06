@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Import the SmartNavigator benchmark cases into the shipped dataset, through ``Dataset.append``.
+"""Import the SmartNavigator benchmark cases into the SmartNavigator dataset, through ``Dataset.append``.
 
     .venv/bin/python scripts/import_navigator_eval.py <cases.jsonl> [--dataset <folder>]
 
@@ -103,8 +103,8 @@ async def main(cases_path: Path, folder: Path) -> None:
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("cases", type=Path)
-    from flow_sdk.core.navigator_eval import SHIPPED
+    from flow_sdk.core.navigator_eval import DATASET
 
-    ap.add_argument("--dataset", type=Path, default=SHIPPED)
+    ap.add_argument("--dataset", type=Path, default=DATASET)
     a = ap.parse_args()
     asyncio.run(main(a.cases, a.dataset))

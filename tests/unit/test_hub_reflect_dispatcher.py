@@ -665,3 +665,33 @@ async def test_mirror_caches_roster_on_any_entity_type(monkeypatch):
     u = User(id="u-1")
     await mirror_hub_response_into_local(u, "members", [{"user_id": "x", "role": "member"}])
     assert u.members == [{"user_id": "x", "role": "member"}]
+
+
+@pytest.mark.asyncio
+@pytest.mark.timeout(30)
+async def test_mirror_learns_a_changed_roster_into_the_address_book(monkeypatch):
+    """A member's email that arrives via the roster mirror reaches their contact:
+    the conversation sync skips a roster it finds already stored, so the mirror
+    is the only place that sees it. An unchanged roster learns nothing."""
+    import flow_sdk.app.actions.flow_message_action as fma
+    from flow_sdk.server.routes._hub_reflect import mirror_hub_response_into_local
+
+    learned: list[list[dict]] = []
+
+    async def fake_learn(participants):
+        learned.append(list(participants))
+        return len(participants)
+
+    async def fake_save(self_=None, **kwargs):
+        return None
+
+    monkeypatch.setattr(fma, "_learn_address_book", fake_learn)
+    monkeypatch.setattr(Conversation, "save", fake_save)
+    roster = [{"user_id": "u-nir", "name": "Nir", "email": "nir@example.com", "role": "member"}]
+    e = _make_entity(remote=True, members=[{"user_id": "u-nir", "name": "Nir"}])
+
+    await mirror_hub_response_into_local(e, "members", roster)
+    assert learned == [roster]
+
+    await mirror_hub_response_into_local(e, "members", roster)
+    assert learned == [roster]

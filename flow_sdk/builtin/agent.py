@@ -1198,6 +1198,51 @@ class Agent(Entity):
             return ApiFailResponse(message=answer.detail, status_code=409, data=payload)
         return ApiSuccessResponse(data=payload)
 
+    @action.post(action_name="ask")
+    async def ask_action(self):
+        """`POST /agent/<id>/ask {"text", "conversation_id"?, "message_id"?}` → `{answer, conversation_id}` — one message to
+        this agent and its reply.
+
+        What a hub uses to talk to the agent it placed on this machine (a person's WhatsApp message, routed
+        to their own box): the message goes onto the agent's own ``chat`` channel and is answered by the
+        same loop that answers every channel here — started when it is not serving. ``conversation_id``
+        continues a conversation (one per person). No reply in time is a 504 naming the conversation."""
+        import json  # noqa: PLC0415
+
+        from flow_sdk.builtin.agent_serve import CHAT  # noqa: PLC0415
+        from flow_sdk.builtin.service_endpoint import ServiceEndpoint  # noqa: PLC0415
+        from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse  # noqa: PLC0415
+        from flow_sdk.server.routes import service_channel  # noqa: PLC0415
+
+        body = await self._body()
+        text = str(body.get("text") or "").strip()
+        if not text:
+            return ApiFailResponse(message="text is required", status_code=400)
+        agent = await self.fresh()
+        if not agent.enabled:
+            return ApiFailResponse(message=f"agent {agent.name!r} is disabled", status_code=409)
+        from flow_sdk.builtin import deployment_process  # noqa: PLC0415
+
+        deployment = await agent.local_deployment()
+        if not (deployment.serving and deployment_process.alive(deployment)):
+            deployment = await agent.run_locally()
+        endpoint = await ServiceEndpoint.find_existing(str(deployment.typeid), CHAT)
+        if endpoint is None:
+            return ApiFailResponse(message="this agent's chat channel could not be made", status_code=500)
+        # ``message_id`` names the caller's message, so asking again (after a 504) waits on the SAME
+        # message and its reply -- a fresh copy would be a second turn, answered twice or refused.
+        metadata = {"conversation_id": str(body.get("conversation_id") or "")}
+        if str(body.get("message_id") or "").strip():
+            metadata["message_id"] = str(body["message_id"]).strip()
+        request = {"messages": [{"role": "user", "content": text}], "metadata": metadata}
+        outcome = await service_channel.ask(endpoint, "hub", request)
+        if not isinstance(outcome, tuple):
+            detail = json.loads(bytes(outcome.body) or b"{}").get("error") or {}
+            return ApiFailResponse(message=detail.get("message") or "no answer", status_code=outcome.status_code, data=detail)
+        completion, conversation_id = outcome
+        answer = ((completion.get("choices") or [{}])[0].get("message") or {}).get("content") or ""
+        return ApiSuccessResponse(data={"answer": answer, "conversation_id": conversation_id})
+
     # ── places (HTTP) — see ``agent_places`` ──────────────────────────────
 
     @staticmethod

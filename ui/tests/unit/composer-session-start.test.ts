@@ -4,23 +4,20 @@ import { buildSessionStartExtras } from '@src/components/conversation/session-st
 const file = new File(['x'], 'shot.png', { type: 'image/png' });
 
 describe('buildSessionStartExtras', () => {
-  it('a NEW session: prompt text + reply policy, no session id (the backend mints it)', () => {
-    expect(buildSessionStartExtras({ text: 'run it', files: [], sessionId: null, replyPolicy: 'review' })).toEqual({
-      promptText: 'run it',
-      replyPolicy: 'review',
-    });
-  });
-
-  it('a follow-up: prompt text + session id, and the reply policy is NOT sent', () => {
-    expect(buildSessionStartExtras({ text: 'again', files: [file], sessionId: 'sid', replyPolicy: 'review' })).toEqual({
+  it('a turn of a live session: prompt text + the session id', () => {
+    expect(buildSessionStartExtras({ text: 'again', files: [file], sessionId: 'sid' })).toEqual({
       promptText: 'again',
       promptFiles: [file],
       remoteWorkerSessionId: 'sid',
     });
   });
 
+  it("with no session id the backend joins the conversation's open session", () => {
+    expect(buildSessionStartExtras({ text: 'run it', files: [], sessionId: null })).toEqual({ promptText: 'run it' });
+  });
+
   it('files ride as prompt files, never as plain message files', () => {
-    const extras = buildSessionStartExtras({ text: 't', files: [file], sessionId: null, replyPolicy: 'auto' });
+    const extras = buildSessionStartExtras({ text: 't', files: [file], sessionId: null });
     expect(extras.promptFiles).toEqual([file]);
     expect('files' in extras).toBe(false);
   });

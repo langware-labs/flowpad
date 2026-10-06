@@ -35,6 +35,12 @@ export interface XtermShellAttachOptions {
    * out and leave blank rows showing.
    */
   trimRecordedBlankRows?: boolean;
+  /**
+   * Whether this view is on screen now, and so sizes the PTY (default: always). A PTY has one
+   * winsize for every client; a hidden view that re-attaches on a reconnect must not resize it to
+   * its stale grid under the view someone is looking at.
+   */
+  ownsSize?: () => boolean;
 }
 
 /**
@@ -116,7 +122,7 @@ export function useXtermShellAttach(
           wrote = true;
         }
         // Assert this view's size on the PTY: the SIGWINCH repaints a running TUI at it.
-        if (shell.connected) void shell.resize(term.cols, term.rows);
+        if (cb.current.ownsSize?.() ?? true) void shell.resize(term.cols, term.rows);
 
         unsubOutput?.();
         unsubOutput = shell.onOutput((data, seq) => {

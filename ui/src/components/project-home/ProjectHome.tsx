@@ -23,7 +23,7 @@ import { useShareRoles } from '@src/hooks/use-share-roles';
 import { useTerminalStripController } from '@src/tabs/useTerminalStripController';
 import { Project, TypeId } from '@sdk';
 import { tagAttrs } from '@src/tags/tag-attrs';
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 
 /** Journey anchor for the session launcher (`?highlight=NewSession`). */
@@ -137,18 +137,32 @@ export const ProjectHome: React.FC<ProjectHomeProps> = ({ spawnProjectId, create
   const [gitChecks, setGitChecks] = useState<GitCheck[] | null>(null);
   const [gitSetupOpen, setGitSetupOpen] = useState(false);
   const [publishOpen, setPublishOpen] = useState(false);
+  // The invite pane's opener, held while the publish popup stands in front of it.
+  const resumeInvite = useRef<(() => void) | null>(null);
   // Invite branches on whether the Project has a hub row. Published: the invite
   // pane opens and invites are membership grants — no publish checks. Not
   // published: there is nothing to grant on yet, so the publish popup opens
-  // INSTEAD of the pane.
-  const beforeProjectInvite = useMemo<(() => boolean) | undefined>(() => {
+  // INSTEAD of the pane — and once it publishes, the pane opens, because
+  // publishing was a step of the invite, not the end of it.
+  const beforeProjectInvite = useMemo<((proceed: () => void) => boolean) | undefined>(() => {
     if (!project || cloudMode) return undefined;
-    return () => {
+    return (proceed) => {
       if (project.remote === true) return true;
+      resumeInvite.current = proceed;
       setPublishOpen(true);
       return false;
     };
   }, [cloudMode, project]);
+  const onPublishOpenChange = useCallback((next: boolean) => {
+    setPublishOpen(next);
+    if (!next) resumeInvite.current = null;
+  }, []);
+  const onProjectPublished = useCallback(() => {
+    const proceed = resumeInvite.current;
+    resumeInvite.current = null;
+    setPublishOpen(false);
+    proceed?.();
+  }, []);
   // Setting up Git needs an answer the old flow never asked for — WHICH remote
   // and WHICH branch — so `runSetup` opens the chooser and the wizard launches
   // from its submit, rather than the wizard inventing a public repo on `main`.
@@ -301,7 +315,12 @@ export const ProjectHome: React.FC<ProjectHomeProps> = ({ spawnProjectId, create
       </div>
 
       {!cloudMode && project && (
-        <PublishProjectDialog project={project} open={publishOpen} onOpenChange={setPublishOpen} />
+        <PublishProjectDialog
+          project={project}
+          open={publishOpen}
+          onOpenChange={onPublishOpenChange}
+          onPublished={onProjectPublished}
+        />
       )}
       {!cloudMode && dialogs}
     </div>

@@ -40,21 +40,45 @@ describe('MessageComposer session toggle', () => {
     expect(vi.mocked(sendReply).mock.calls[0][3]).toBeUndefined();
   });
 
-  it('toggle on → placeholder changes and the send opens a session (prompt text, reply policy, no session id)', async () => {
-    render(<MessageComposer conversationId={CONV} sessionHost={host} />);
+  it('the live-session icon opens the session — it is not a typing mode', () => {
+    const onStartLiveSession = vi.fn();
+    render(<MessageComposer conversationId={CONV} sessionHost={host} onStartLiveSession={onStartLiveSession} />);
     const toggle = screen.getByTestId('composer-session-toggle');
-    expect(toggle.getAttribute('aria-pressed')).toBe('false');
+    expect(toggle.getAttribute('title')).toBe("Start a live session on Sam's machine");
     fireEvent.click(toggle);
-    expect(toggle.getAttribute('aria-pressed')).toBe('true');
-    const box = screen.getByPlaceholderText("Prompt to run on Sam's machine…");
-    fireEvent.change(box, { target: { value: 'echo hi' } });
-    fireEvent.keyDown(box, { key: 'Enter' });
-    await waitFor(() => expect(sendReply).toHaveBeenCalledTimes(1));
-    const [target, body, files, extras] = vi.mocked(sendReply).mock.calls[0];
-    expect(target).toEqual({ conversationId: CONV });
-    expect(body).toBe('');
-    expect(files).toBeUndefined();
-    expect(extras).toEqual({ promptText: 'echo hi', replyPolicy: 'auto' });
+    expect(onStartLiveSession).toHaveBeenCalledTimes(1);
+    // No mode strip, no prompt placeholder: the box stays a chat box.
+    expect(screen.queryByTestId('composer-session-mode')).toBeNull();
+    expect(screen.getByPlaceholderText('Reply to sender…')).toBeTruthy();
+  });
+
+  it('with an open session the icon says it opens that one', () => {
+    render(
+      <MessageComposer
+        conversationId={CONV}
+        sessionHost={{ ...host, hasOpenSession: true }}
+        onStartLiveSession={vi.fn()}
+      />,
+    );
+    expect(screen.getByTestId('composer-session-toggle').getAttribute('title')).toBe(
+      "Open the live session on Sam's machine",
+    );
+  });
+
+  it('the terminal variant is a ❯ prompt line with the cursor waiting in it', () => {
+    render(
+      <MessageComposer
+        conversationId={CONV}
+        liveSessionId="sid-1"
+        variant="terminal"
+        autoFocus
+        placeholder="Prompt for Claude Code on Sam's machine…"
+      />,
+    );
+    const box = screen.getByTestId('live-session-input');
+    expect(box.getAttribute('placeholder')).toBe("Prompt for Claude Code on Sam's machine…");
+    expect(document.activeElement).toBe(box);
+    expect(screen.getByText('❯')).toBeTruthy();
   });
 
   it('inside a session view every send is a follow-up turn stamped with the session id', async () => {

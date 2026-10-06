@@ -14,6 +14,7 @@ options the row was labelled against, not on whatever this machine's search find
 
 from __future__ import annotations
 
+import os
 import statistics
 import time
 from pathlib import Path
@@ -23,8 +24,11 @@ from flow_sdk.core.navigation_decision import decision_of
 from flow_sdk.core.navigator import MIN_CONFIDENCE, route
 from flow_sdk.datasets.score import golds, is_correct, matches, score
 
-SHIPPED = Path(__file__).resolve().parents[1] / (
-    "system_projects/flowpad_assistant/agentic-assets/dataset/smart-navigator"
+#: The SmartNavigator dataset. It does not ship (its rows are a benchmark, not product): it lives
+#: beside the checkout at ``dev/dataset/smart-navigator``, or wherever ``FLOW_NAVIGATOR_DATASET``
+#: points. Its kinds DO ship -- ``flowpad_assistant/agentic-assets/data_spec/navigat*``.
+DATASET = Path(
+    os.environ.get("FLOW_NAVIGATOR_DATASET") or Path(__file__).resolve().parents[3] / "dataset" / "smart-navigator"
 )
 
 
@@ -67,7 +71,7 @@ async def evaluate(dataset: Any, *, kinds: tuple[str, ...] = ("eval",)) -> dict:
     """Run every row of ``kinds`` (``eval`` by default; SmartNavigationLog rows are
     ``train``), score it, and return the metrics plus each row's output.
 
-    Nothing is written: a shipped dataset is read-only, and a run's outputs are a report, not a
+    Nothing is written: the dataset is read-only, and a run's outputs are a report, not a
     label. ``latency_ms`` is end to end per row (a rule hit costs ~0, a decision a round trip).
     """
     rows = [r for r in dataset.read_rows() if r.kind.value in kinds]
@@ -92,4 +96,4 @@ async def evaluate(dataset: Any, *, kinds: tuple[str, ...] = ("eval",)) -> dict:
     return report
 
 
-__all__ = ["SHIPPED", "decision_of", "evaluate", "metrics"]
+__all__ = ["DATASET", "decision_of", "evaluate", "metrics"]

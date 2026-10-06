@@ -1,6 +1,6 @@
 """``docs/snippets/datasets.md``: every Python fence, run as written.
 
-The shipped SmartNavigator dataset is read from disk; §3 writes into a fresh dataset folder
+The SmartNavigator dataset is read from disk (skipped where it is absent); §3 writes into a fresh dataset folder
 whose spec names the shipped kind; §4 doubles the decision API at its one seam.
 """
 
@@ -11,6 +11,7 @@ import json
 import pytest
 
 import flow_sdk.decision as decision
+from flow_sdk.core.navigator_eval import DATASET
 from flow_sdk.schema.data_spec.api_endpoint_spec import APIEndpointOffer
 from flow_sdk.schema.data_spec.decision_spec import ChoiceAnswer, DecisionResult
 from tests.utils.snippets import SHELF, fence_under, run_fence
@@ -18,6 +19,7 @@ from tests.utils.snippets import SHELF, fence_under, run_fence
 pytestmark = pytest.mark.timeout(10)  # do not increase timeout without approval
 
 DOC = (SHELF / "datasets.md").read_text(encoding="utf-8")
+needs_dataset = pytest.mark.skipif(not DATASET.is_dir(), reason=f"SmartNavigator dataset not at {DATASET}")
 
 
 @pytest.fixture
@@ -34,6 +36,7 @@ def folder(tmp_path):
     return ds
 
 
+@needs_dataset
 async def test_read_a_dataset():
     ns = await run_fence(fence_under(DOC, "2."))
     assert ns["summary"] == ("navigator.dataset", 52, {"eval": 50, "test": 2})
@@ -46,6 +49,7 @@ async def test_write_rows_and_labels(folder):
     assert (folder / "examples/0001/ground_truth-2/decision.json").is_file()
 
 
+@needs_dataset
 async def test_evaluate_the_navigator(monkeypatch):
     async def endpoints(**kwargs):
         return [

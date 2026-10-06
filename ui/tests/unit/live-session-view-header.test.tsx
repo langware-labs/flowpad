@@ -48,9 +48,19 @@ function session(over: Partial<RemoteWorkerSession> = {}) {
 }
 
 const promptMsg = (id: string, text: string, over: Partial<FlowMessage> = {}) =>
-  new FlowMessage({ id, remote_worker_session_id: SID, attachment: [{ attachment_type: 'prompt', data: text }], ...over } as Partial<FlowMessage>);
+  new FlowMessage({
+    id,
+    remote_worker_session_id: SID,
+    attachment: [{ attachment_type: 'prompt', data: text }],
+    ...over,
+  } as Partial<FlowMessage>);
 const replyMsg = (id: string, text: string, over: Partial<FlowMessage> = {}) =>
-  new FlowMessage({ id, remote_worker_session_id: SID, attachment: [{ attachment_type: 'type_id', data: 'prompt_completion-r1', prompt_preview: text }], ...over } as Partial<FlowMessage>);
+  new FlowMessage({
+    id,
+    remote_worker_session_id: SID,
+    attachment: [{ attachment_type: 'type_id', data: 'prompt_completion-r1', prompt_preview: text }],
+    ...over,
+  } as Partial<FlowMessage>);
 
 function arrange(s: RemoteWorkerSession, messages: FlowMessage[], viewer: string) {
   vi.mocked(useEntity).mockReturnValue({ data: s, refetch: vi.fn() } as never);
@@ -63,7 +73,14 @@ describe('LiveSessionView header', () => {
   afterEach(() => cleanup());
 
   it('titles the session after the prompt that opened it', () => {
-    arrange(session(), [promptMsg(START, 'Run flow index status\nand summarize'), promptMsg('f2f2f2f2-0000-4000-8000-000000000007', 'why?')], GUEST);
+    arrange(
+      session(),
+      [
+        promptMsg(START, 'Run flow index status\nand summarize'),
+        promptMsg('f2f2f2f2-0000-4000-8000-000000000007', 'why?'),
+      ],
+      GUEST,
+    );
     render(
       <MemoryRouter>
         <LiveSessionView sessionId={SID} />
@@ -95,7 +112,11 @@ describe('LiveSessionView header', () => {
   });
 
   it('a review draft reply renders the draft composer for the host, a sent reply renders as a line', () => {
-    arrange(session({ reply_policy: 'review' }), [promptMsg(START, 'go'), replyMsg('e0e0e0e0-0000-4000-8000-000000000008', 'draft answer', { is_draft: true })], HOST);
+    arrange(
+      session({ reply_policy: 'review' }),
+      [promptMsg(START, 'go'), replyMsg('e0e0e0e0-0000-4000-8000-000000000008', 'draft answer', { is_draft: true })],
+      HOST,
+    );
     render(
       <MemoryRouter>
         <LiveSessionView sessionId={SID} />
@@ -104,13 +125,21 @@ describe('LiveSessionView header', () => {
     expect(screen.getByTestId('live-session-review-draft')).toBeTruthy();
     expect(screen.getByTestId('mock-draft-composer')).toBeTruthy();
     cleanup();
-    arrange(session(), [promptMsg(START, 'go'), replyMsg('e1e1e1e1-0000-4000-8000-000000000009', 'sent answer')], GUEST);
+    arrange(
+      session(),
+      [promptMsg(START, 'go'), replyMsg('e1e1e1e1-0000-4000-8000-000000000009', 'sent answer')],
+      GUEST,
+    );
     render(
       <MemoryRouter>
         <LiveSessionView sessionId={SID} />
       </MemoryRouter>,
     );
-    expect(screen.getByTestId('live-session-reply').textContent).toBe('sent answer');
+    const reply = screen.getByTestId('live-session-reply');
+    expect(reply.querySelector('pre')?.textContent).toBe('sent answer');
+    // Which side it came from is said on the reply itself.
+    expect(reply.getAttribute('data-side')).toMatch(/^(local|remote)$/);
+    expect(reply.textContent).toContain('Claude Code');
     expect(screen.getByTestId('mock-composer').getAttribute('data-session')).toBe(SID);
   });
 

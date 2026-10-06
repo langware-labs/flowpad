@@ -1,9 +1,0 @@
-{
-  "route": "quick",
-  "target": {
-    "kind": "view",
-    "value": "credentials/connections"
-  },
-  "verb": "show",
-  "confidence": null
-}
