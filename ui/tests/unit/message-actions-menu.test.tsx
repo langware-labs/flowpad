@@ -7,10 +7,27 @@ import { MemoryRouter } from 'react-router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 const toggleFavorite = vi.fn();
+const conversation = { id: 'c-1', typeId: { toUrlString: () => 'conversation-c-1' }, contextOfType: () => [] };
 vi.mock('@sdk/react/hooks', async (importOriginal) => ({
   ...(await importOriginal<object>()),
-  useEntity: () => ({ data: null }),
+  // Only the per-message launcher asks for a conversation; the worker lookup gets null.
+  useEntity: (tid: { type?: string } | null) => ({ data: tid?.type === 'conversation' ? conversation : null }),
 }));
+const launch = vi.fn();
+let builtPrompt = '';
+vi.mock('@src/components/conversation/useConversationSession', () => ({
+  useConversationSession: ({ buildPrompt }: { buildPrompt: () => string }) => ({
+    starting: false,
+    launch: (w: string) => {
+      builtPrompt = buildPrompt();
+      launch(w);
+    },
+  }),
+}));
+vi.mock('@src/components/conversation/useProjectMappingGate', () => ({
+  useProjectMappingGate: () => ({ ensureMapped: (c: () => void) => c(), dialogProps: { open: false, onOpenChange: vi.fn() } }),
+}));
+vi.mock('@src/components/open-project-component/open-project-component', () => ({ OpenProjectComponent: () => null }));
 vi.mock('@src/components/view-mode', async (importOriginal) => ({
   ...(await importOriginal<object>()),
   useIsAdvanced: () => true,
@@ -106,6 +123,28 @@ describe('message ⋮ menu', () => {
     fireEvent.click(screen.getByTestId('message-react'));
     fireEvent.click(screen.getByTestId('pick-thumbs'));
     expect(onReact).toHaveBeenCalledWith('👍');
+  });
+
+  it('launches a worker pinned to THIS message from the menu, and closes on pick', () => {
+    render(
+      <MemoryRouter>
+        <MessageActionsMenu flowMessageId="m-1" conversationId="c-1" />
+      </MemoryRouter>,
+    );
+    openMenu();
+    const launchers = within(screen.getByTestId('message-launch-menu')).getAllByRole('button');
+    expect(launchers[0].getAttribute('data-testid')).toMatch(/^message-launch-/);
+    const worker = launchers[0].getAttribute('data-testid')!.replace('message-launch-', '');
+    fireEvent.click(launchers[0]);
+    expect(screen.queryByTestId('message-launch-menu')).toBeNull();
+    expect(launch).toHaveBeenCalledWith(worker);
+    expect(builtPrompt).toContain('flow conversation message flow_message/m-1');
+  });
+
+  it('no worker launch without a conversation to read it from', () => {
+    render(<MessageActionsMenu flowMessageId="m-1" />);
+    openMenu();
+    expect(screen.queryByTestId('message-launch-menu')).toBeNull();
   });
 
   it('a channel or forwarded message says so at the top of the menu', () => {
