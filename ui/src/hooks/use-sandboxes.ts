@@ -181,7 +181,7 @@ export function isUserMachine(node: ComputeNode): boolean {
 function defaultSandboxProvider(): ComputeProviderType {
   // Validated against the SANDBOX providers, not against every provider: a hub
   // configured for `local_machine` would otherwise be taken at its word and mint
-  // a node that `isSandbox` — reading the same set — can never list back.
+  // a node that `isSandbox` — reading the same set — never recognizes as a sandbox.
   const configured: ComputeProviderType | undefined = dataContext.bootstrapInfo?.default_compute_provider;
   return configured && SANDBOX_PROVIDERS.has(configured) ? configured : ComputeProviderType.E2B;
 }
@@ -215,8 +215,8 @@ export function workspaceServiceUrl(nodeId: string): string {
  * The rule itself lives on the entity (`ComputeNode.isSandbox`) rather than here:
  * it used to read the provider AND a magic string out of the untyped
  * `node_config` blob inline, which meant every surface wanting the question had
- * to know that blob's shape. This wrapper stays because callers and tests import
- * it by name.
+ * to know that blob's shape. This wrapper stays because the wire-contract test
+ * imports it by name; the list below no longer filters on it.
  */
 export function isSandbox(node: ComputeNode): boolean {
   return node.isSandbox;
@@ -438,8 +438,8 @@ export function useSandboxes() {
     }
   }, []);
 
-  // Probe only sandboxes we haven't seen yet, and forget ones that vanished —
-  // re-probing the whole list on every add/delete would be one call per sandbox.
+  // Probe only machines we haven't seen yet, and forget ones that vanished —
+  // re-probing the whole list on every add/delete would be one call per machine.
   useEffect(() => {
     const liveIds = new Set(sandboxes.map((d) => d.id));
     setDetails((prev) => {
