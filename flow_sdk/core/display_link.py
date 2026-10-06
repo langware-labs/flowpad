@@ -102,7 +102,12 @@ async def resolve_display_link(link: str, *, source: Entity | None, discover: bo
         raise DisplayTargetNotFound(f"File not found: {raw}")
     target = await resolve_display_target(path=str(path.resolve()), discover=discover)
     if path.is_dir() and target["kind"] == DisplayTargetKind.VFS:
-        raise InvalidDisplayTarget("This directory is not a registered asset")
+        # A plain folder opens in the Files view, browsed at that folder.
+        from flow_sdk.core.dock_address import ViewType, dock_url
+
+        return await resolve_display_target(
+            dock=dock_url(ViewType.EXPLORER, pointer=path.resolve().as_posix()).removeprefix("/dock/")
+        )
     return {**target, **options}
 
 

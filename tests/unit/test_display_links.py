@@ -44,6 +44,29 @@ async def test_skill_uses_existing_entity_resolution(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_plain_folder_opens_in_files_view(tmp_path):
+    folder = tmp_path / "plain folder"
+    folder.mkdir()
+    source = Shell(workdir=str(tmp_path))
+    for link in (str(folder), folder.as_uri(), "plain folder", f"{folder}/"):
+        target = await resolve_display_target(link=link, source=source)
+        assert target["kind"] == "dock"
+        assert target["view_type"] == "explorer"
+        assert "/" + target["pointer"].lstrip("/") == folder.resolve().as_posix()
+
+
+@pytest.mark.asyncio
+async def test_asset_folder_keeps_its_editor(tmp_path):
+    skill = tmp_path / ".claude" / "skills" / "folder-probe" / "SKILL.md"
+    skill.parent.mkdir(parents=True)
+    skill.write_text("---\nname: folder-probe\ndescription: Folder test\n---\n# Folder probe\n")
+    await resolve_display_target(path=str(skill), discover=True)
+    target = await resolve_display_target(link=str(skill.parent))
+    assert target["kind"] == "entity"
+    assert target["type"] == "skill"
+
+
+@pytest.mark.asyncio
 async def test_url_dock_and_entity_references():
     url = "https://example.org/page?x=1#section"
     assert await resolve_display_target(link=url) == {"kind": "url", "url": url}
