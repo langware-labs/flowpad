@@ -37,7 +37,8 @@ vi.mock('@src/navigation', () => ({
   }),
 }));
 
-const { useLinks, lightboxMediaName } = await import('@src/components/links/LinkMenu');
+const { useLinks } = await import('@src/components/links/LinkMenu');
+const { lightboxMediaName } = await import('@src/lib/link-kind');
 const { fetchBrowserProfiles } = await import('@src/lib/browser-profiles');
 
 const BROWSERS = [
