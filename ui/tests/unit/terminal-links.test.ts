@@ -36,13 +36,17 @@ describe('terminal links', () => {
     }
   });
 
-  it('joins a URL a TUI broke across rows itself (full row, cursor move, indented rest)', async () => {
-    // What Claude Code writes at 40 cols: it fills each row from col 3 to the edge and
-    // positions the cursor on the next row; no row is soft-wrapped.
+  // What Claude Code writes at 40 cols: it fills each row from col 3 to the edge and
+  // positions the cursor on the next row; no row is soft-wrapped. Its question dialog
+  // prefixes every row with the box's left border instead of indentation.
+  it.each([
+    ['indented rest', '⏺ ', '  '],
+    ['bordered box', '│ ', '│ '],
+  ])('joins a URL a TUI broke across rows itself (full row, cursor move, %s)', async (_, first, rest) => {
     const url = 'http://localhost:9007/dock/shell/agentic_process-aeb31b55?scope-mode=project&viewMode=advanced';
     const terminal = new HeadlessTerminal({ cols: 40, rows: 6, allowProposedApi: true });
     try {
-      const rows = ['⏺ ' + url.slice(0, 38), '  ' + url.slice(38, 76), '  ' + url.slice(76)];
+      const rows = [first + url.slice(0, 38), rest + url.slice(38, 76), rest + url.slice(76)];
       await new Promise<void>((resolve) => terminal.write(rows.map((row, i) => `\x1b[${i + 1};1H${row}`).join('') + '\x1b[5;1Hnext', resolve));
       expect(terminal.buffer.active.getLine(1)?.isWrapped).toBe(false);
       const term = terminal as unknown as Terminal;

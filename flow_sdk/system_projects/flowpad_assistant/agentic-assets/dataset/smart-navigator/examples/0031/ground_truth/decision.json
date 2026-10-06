@@ -1,9 +1,0 @@
-{
-  "route": "quick",
-  "target": {
-    "kind": "file",
-    "value": "/Users/dana/Flowpad workspace/flowpad-oss/docs/plan.md"
-  },
-  "verb": "show",
-  "confidence": null
-}

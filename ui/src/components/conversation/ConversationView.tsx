@@ -16,6 +16,8 @@ import {
   TypeId,
   latestPointer,
   ChannelTransport,
+  isSessionTerminal,
+  RemoteWorkerSession,
   toplog,
 } from '@sdk';
 import { claimTabSwitchReady, sinceTabSwitch } from '@src/navigation/tab-switch-state';
@@ -56,6 +58,11 @@ import { sessionRole, useConversationSessions } from '@src/hooks/useConversation
 import { useMyEmail } from '@src/hooks/use-my-email';
 import { taskIt, useMessageTasks } from './task-it';
 import { conversationMessagesRequest } from './conversation-messages-query';
+import { useApproveLiveSession } from '@src/components/collaboration/useApproveLiveSession';
+import { failedPromptOf } from './session-turns';
+import { useRetryFailedPrompt } from './useRetryFailedPrompt';
+import { useCloudLoginGate } from '@src/hooks/use-cloud-login-gate';
+import { notify } from '@src/notifications';
 
 interface ConversationViewProps {
   conversationId: string;
@@ -123,6 +130,8 @@ export function ConversationView({
   // Every live session of this conversation, resolved ONCE and handed down:
   // the feed pins each to its opening message; each card reads its own row.
   const { byId: sessionsById, anchors: sessionAnchors } = useConversationSessions(conversationId);
+  const { approve: approveSession, picker: approveSessionPicker } = useApproveLiveSession();
+  const retryFailedPrompt = useRetryFailedPrompt();
 
   // Member roster used to resolve a message's hub-authoritative sender_id to
   // a display name. `useMembers` is the single precedence point: the live
@@ -153,7 +162,10 @@ export function ConversationView({
     [agentId, agentScope?.flow_message_ids],
   );
   const pointers = useMemo(
-    () => (conversation?.conversationMessageIds ?? []).filter((pointer) => !allowedMessageIds || allowedMessageIds.has(pointer.id)),
+    () =>
+      (conversation?.conversationMessageIds ?? []).filter(
+        (pointer) => !allowedMessageIds || allowedMessageIds.has(pointer.id),
+      ),
     // conversationMessageIds is a parsed view over the message_ids JSON field.
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [conversation?.message_ids, allowedMessageIds],
@@ -228,7 +240,10 @@ export function ConversationView({
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps -- logs a count, not a dependency
   }, [conversationId, messagesLoaded, messagesError]);
-  const conversationMessagesKey = conversationMessages.map((message) => message.id).sort().join(',');
+  const conversationMessagesKey = conversationMessages
+    .map((message) => message.id)
+    .sort()
+    .join(',');
   useEffect(() => {
     if (!agentId || !conversationMessagesKey) return;
     // Source projection writes the FlowMessage and the conversation pointer in
@@ -325,7 +340,9 @@ export function ConversationView({
       };
     }
     const jump = () =>
-      document.querySelector(`[data-testid="message-bubble-${parent.id}"]`)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      document
+        .querySelector(`[data-testid="message-bubble-${parent.id}"]`)
+        ?.scrollIntoView({ block: 'center', behavior: 'smooth' });
     return { ...messageSummary(parent, t`Someone`), onJump: jump };
   };
 
@@ -333,8 +350,8 @@ export function ConversationView({
   // SELECTED dock, keep its DataSource due (request_poll on an interval) so
   // new messages land fast; deselect and the requests stop on their own.
   const attentionSourceId = agentId
-    ? agentScope?.source_id ?? undefined
-    : conversation?.channel_source_id ?? undefined;
+    ? (agentScope?.source_id ?? undefined)
+    : (conversation?.channel_source_id ?? undefined);
   useAttentionPolling(attentionSourceId, conversationId);
 
   // The ingest sync boundary is too early: stream inbox projection runs as a detached
@@ -345,11 +362,7 @@ export function ConversationView({
     'stream_inbox.*.message.projected',
     () => {
       if (!agentId || !attentionSourceId) return;
-      void Promise.all([
-        refetch(),
-        refetchConversationMessages(),
-        refreshAgentScope(),
-      ]).catch(() => {
+      void Promise.all([refetch(), refetchConversationMessages(), refreshAgentScope()]).catch(() => {
         // Keep the already-rendered thread during a transient refresh failure.
       });
     },
@@ -374,13 +387,14 @@ export function ConversationView({
   // the loaded messages would undercount a long thread; MessageThread carries
   // the real number and this is the only reason the entity is fetched here.
   const threadsRequest = useMemo(
-    () => new QueryRequest({
-      type: MessageThread.type,
-      name: `threads:${conversationId}`,
-      query: new QueryFilter({
-        match: { op: '$EQ', operands: ['conversation_id', conversationId] },
+    () =>
+      new QueryRequest({
+        type: MessageThread.type,
+        name: `threads:${conversationId}`,
+        query: new QueryFilter({
+          match: { op: '$EQ', operands: ['conversation_id', conversationId] },
+        }),
       }),
-    }),
     [conversationId],
   );
   // The packed view reads the counts; a thread-filtered view reads its own row for the header.
@@ -389,7 +403,12 @@ export function ConversationView({
   });
   const currentThread = threadId ? (threads.find((th) => th.id === threadId) ?? null) : null;
   const threadCounts = useMemo(
-    () => new Map(threads.filter((th) => !agentId || agentScope?.thread_ids.includes(th.id ?? '')).map((th) => [th.id ?? '', th.message_count ?? 0])),
+    () =>
+      new Map(
+        threads
+          .filter((th) => !agentId || agentScope?.thread_ids.includes(th.id ?? ''))
+          .map((th) => [th.id ?? '', th.message_count ?? 0]),
+      ),
     [agentId, agentScope?.thread_ids, threads],
   );
 
@@ -418,6 +437,20 @@ export function ConversationView({
       ...anchorSessionItems(plain, getFm, sessionAnchors),
     ].sort((a, b) => a.sortAt - b.sortAt);
   }, [orderedItems, messagesById, threadId, threadCounts, sessionAnchors]);
+
+  // Each live session's failed prompt (nothing answered it since), so its card can offer Retry.
+  const failedPromptBySession = useMemo(() => {
+    const bySession = new Map<string, FlowMessage[]>();
+    for (const item of orderedItems) {
+      const fm = item.kind === ConversationItemKind.POINTER ? messagesById.get(item.messageId) : item.draft;
+      const sid = fm?.remote_worker_session_id;
+      if (!fm || !sid) continue;
+      const fms = bySession.get(sid);
+      if (fms) fms.push(fm);
+      else bySession.set(sid, [fm]);
+    }
+    return new Map([...bySession].map(([sid, fms]) => [sid, failedPromptOf(fms)]));
+  }, [orderedItems, messagesById]);
 
   // Where the composer of an open thread writes: a native thread joins its root; a channel whose
   // replies only thread (email, Slack) answers the thread's newest message; a quoting channel's
@@ -656,7 +689,11 @@ export function ConversationView({
   const handleRefresh = useCallback(async () => {
     setHubSyncing(true);
     try {
-      await Promise.allSettled([fetchConversations(agentId ?? undefined), syncConversationMessages(conversationId, agentId ?? undefined), refreshMembers()]);
+      await Promise.allSettled([
+        fetchConversations(agentId ?? undefined),
+        syncConversationMessages(conversationId, agentId ?? undefined),
+        refreshMembers(),
+      ]);
       await refetch();
     } finally {
       setHubSyncing(false);
@@ -690,10 +727,17 @@ export function ConversationView({
   );
   const sessionHost = useMemo(
     () =>
-      conversation?.remote === true && rosterReady && (participants ?? []).length === 2 && !!cloudUserId && !!otherParticipant?.user_id
-        ? { userId: otherParticipant.user_id, name: otherParticipant.name ?? otherParticipant.email ?? null }
+      conversation?.remote === true &&
+      rosterReady &&
+      (participants ?? []).length === 2 &&
+      !!cloudUserId &&
+      !!otherParticipant?.user_id
+        ? {
+            name: otherParticipant.name ?? otherParticipant.email ?? null,
+            hasOpenSession: [...sessionsById.values()].some((s) => !isSessionTerminal(s.status)),
+          }
         : null,
-    [conversation?.remote, rosterReady, participants, cloudUserId, otherParticipant],
+    [conversation?.remote, rosterReady, participants, cloudUserId, otherParticipant, sessionsById],
   );
   const openLiveSession = useCallback(
     (sessionId: string) => {
@@ -701,6 +745,23 @@ export function ConversationView({
     },
     [dockNavigation],
   );
+  // The composer's live-session icon: open the conversation's session — the backend
+  // starts one (and asks the host) when none is open — and land in its view.
+  const ensureCloudLogin = useCloudLoginGate();
+  const startLiveSession = useCallback(async () => {
+    if (!conversationId) return;
+    const gate = await ensureCloudLogin();
+    if (!gate.ok) {
+      notify.error({ title: gate.error, forceToast: true });
+      return;
+    }
+    try {
+      const session = await RemoteWorkerSession.start(conversationId);
+      openLiveSession(session.id);
+    } catch (e) {
+      notify.error({ title: t`Could not start the live session`, message: String(e), forceToast: true });
+    }
+  }, [conversationId, ensureCloudLogin, openLiveSession, t]);
 
   // Affordance only — the hub's `_set_settlement` is the authority on who may
   // settle. Mirrors `canPickup` below. Note this is NARROWER than the server
@@ -736,6 +797,7 @@ export function ConversationView({
 
   return (
     <div className="space-y-3">
+      {approveSessionPicker}
       <div className="flex items-center justify-end gap-1">
         {canPickup && (
           <button
@@ -802,8 +864,9 @@ export function ConversationView({
               const session = sessionsById.get(item.sessionId) ?? null;
               const role = sessionRole(session, cloudUserId);
               return (
-                <div key={item.key} className="flex flex-col gap-1" data-testid="session-anchor">
-                  {renderConversationItem(item.anchor)}
+                // The session's ONE line — its opening prompt (or request) is not
+                // drawn as a bubble; the turns live in the session view.
+                <div key={item.key} data-testid="session-anchor">
                   <SessionCard
                     sessionId={item.sessionId}
                     session={session}
@@ -811,8 +874,23 @@ export function ConversationView({
                     promptCount={item.promptCount}
                     replyCount={item.replyCount}
                     onOpen={() => openLiveSession(item.sessionId)}
-                    onApprove={role === 'host' && session ? () => session.approve() : undefined}
+                    onApprove={
+                      role === 'host' && session ? () => approveSession(session, { remember: 'everywhere' }) : undefined
+                    }
+                    onApproveOnce={role === 'host' && session ? () => approveSession(session) : undefined}
                     onDecline={role === 'host' && session ? () => session.decline() : undefined}
+                    onDisconnect={role !== 'observer' && session ? () => session.disconnect() : undefined}
+                    lastPromptFailed={!!failedPromptBySession.get(item.sessionId)}
+                    onRetry={
+                      role === 'guest' && failedPromptBySession.get(item.sessionId) && conversationId
+                        ? () =>
+                            retryFailedPrompt(
+                              conversationId,
+                              item.sessionId,
+                              failedPromptBySession.get(item.sessionId)!.text,
+                            )
+                        : undefined
+                    }
                   />
                 </div>
               );
@@ -824,7 +902,9 @@ export function ConversationView({
 
       {/* A channel's conversation is answered by the owning agent's run, not by this pane —
           so show that run working, and a caller mid-sentence, while it happens. */}
-      {channel && <ConversationLiveActivity conversationId={conversationId} run={convRun} messageCount={pointers.length} />}
+      {channel && (
+        <ConversationLiveActivity conversationId={conversationId} run={convRun} messageCount={pointers.length} />
+      )}
 
       {showSoloNotice && (
         <p data-testid="solo-participant-notice" className="text-[11px] italic text-muted-foreground/70">
@@ -843,11 +923,7 @@ export function ConversationView({
           only when the send resolves. Copy that promised "drafted" was simply
           wrong half the time. The reply itself arrives in the feed by the
           ordinary ingest route once it exists. */}
-      {sendingText && (
-        <SessionEventLine
-          text={t`Sending in ${channelSpec?.title}: “${sendingText}”`}
-        />
-      )}
+      {sendingText && <SessionEventLine text={t`Sending in ${channelSpec?.title}: “${sendingText}”`} />}
       <MessageComposer
         conversationId={conversationId}
         onSent={() => void refetch()}
@@ -857,8 +933,13 @@ export function ConversationView({
         placeholder={channelSpec && !channelSpec.home ? t`Reply in ${channelSpec.title}` : undefined}
         agentId={agentId ?? undefined}
         sessionHost={channelSpec && !channelSpec.hosts_sessions ? null : sessionHost}
+        onStartLiveSession={() => void startLiveSession()}
         channelAcceptsFiles={!!channelSpec?.accepts_attachments}
-        replyTo={replyTo ? { id: replyTo.id ?? '', ...messageSummary(replyTo, t`Someone`), inThread: !channelSpec?.quotes } : null}
+        replyTo={
+          replyTo
+            ? { id: replyTo.id ?? '', ...messageSummary(replyTo, t`Someone`), inThread: !channelSpec?.quotes }
+            : null
+        }
         onClearReply={() => setReplyTo(null)}
         threadTarget={threadTarget}
         onTaskIt={handleTaskIt}

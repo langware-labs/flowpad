@@ -8,9 +8,11 @@ never reaches this machine:
   ``link <code>``; the person sends it from their phone. The hub VALIDATES it (the code is theirs,
   unexpired, unused; the phone is not someone else's) — only then is the link connected
   (``connected`` step: the gate the setup cannot pass without).
-* **Read**: the hub keeps what the phone sends until this desktop takes it (``whatsapp_link/messages``,
-  nudged over the hub socket on each new message); a page is everything after the cursor.
-* **Answer**: ``whatsapp_link/send`` — to the person's own linked phone only.
+* **Answered on the hub**: Flow answers from a machine of the person's own that the hub places and
+  replies through the number itself — nothing on this desktop answers.
+* **Read**: this source is the person's view of that conversation in their stream inbox
+  (``whatsapp_link/messages``, everything after the cursor). ``send``/``reply`` reach only the
+  person's own linked phone (``whatsapp_link/send``).
 
 Addressing is the WhatsApp source's: the person IS the conversation (their wa_id), and a message lives in
 their scope; a reply quotes the message it answers.
@@ -34,8 +36,6 @@ from flow_sdk.sources.values.query import MessageQuery
 #: The medium (the stream inbox shows it as WhatsApp), not the transport.
 CHANNEL = "whatsapp"
 MESSAGES_STREAM = "messages"
-#: The agent this driver ships (``agentic-assets/agent/flow``): who answers.
-FLOW_AGENT = "flow"
 #: The hub's own page size for one read of a person's messages.
 HUB_PAGE = 200
 
@@ -181,24 +181,6 @@ class FlowWhatsAppSource(MessageSource):
             return ReturnedValue.satisfied(f"connected +{wa_id}", ran=False) if done else ReturnedValue.not_yet("not kept yet")
         return ReturnedValue.satisfied(f"Connected +{wa_id}", value=SourceUpdateSpec(config={"wa_id": wa_id}, allowed_senders=[wa_id]))
 
-    @setup_step("flow-agent")
-    async def _flow_agent(self, *, check: bool, values: Mapping[str, str]) -> ReturnedValue:
-        """Flow answers this conversation: the ``flow`` agent this driver ships (Flowpad's assistant,
-        acting on this Flowpad) owns the source, whichever page the channel was added from."""
-        from flow_sdk.builtin.agent import Agent  # noqa: PLC0415
-        from flow_sdk.builtin.data_source import DataSource  # noqa: PLC0415
-
-        try:
-            agent = await Agent.by_name(FLOW_AGENT)
-        except LookupError:
-            return ReturnedValue.not_yet("Flow is not installed on this Flowpad — update Flowpad and try again.")
-        typeid = str(agent.typeid)
-        if check:
-            row = await DataSource.get_by_id(self.binding.source_id) if self.binding.source_id else None
-            mine = row is not None and str(row.owner or "") == typeid
-            return ReturnedValue.satisfied("Flow answers here", ran=False) if mine else ReturnedValue.not_yet("Flow does not answer here yet")
-        return ReturnedValue.satisfied("Flow answers this conversation", value=SourceUpdateSpec(owner=typeid))
-
     # ── read ────────────────────────────────────────────────────────────────
     def query(self) -> MessageQuery:
         return MessageQuery()
@@ -321,5 +303,9 @@ def _qr(url: str) -> str:
     """The link as a QR image (an SVG data URI) — scanned with the phone's camera to open WhatsApp."""
     import segno  # noqa: PLC0415
 
-    svg = segno.make(url, error="m").svg_inline(scale=4, border=2)
-    return "data:image/svg+xml;base64," + base64.b64encode(svg.encode()).decode()
+    import io  # noqa: PLC0415
+
+    # A standalone SVG, namespace and all: an <img> renders nothing from the bare inline form.
+    out = io.BytesIO()
+    segno.make(url, error="m").save(out, kind="svg", xmldecl=False, svgns=True, scale=4, border=2)
+    return "data:image/svg+xml;base64," + base64.b64encode(out.getvalue()).decode()

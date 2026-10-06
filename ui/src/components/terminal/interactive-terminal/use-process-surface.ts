@@ -8,10 +8,6 @@ import { notify } from '@src/notifications/notify';
 
 interface UseProcessSurfaceOptions {
   process?: AgenticProcess | null;
-  /** Live xterm dimensions for the →terminal direction, when a terminal is
-   *  mounted. Ref-free so this hook stays testable and has no opinion about who
-   *  owns the terminal; omitted in vibe, where the backend picks defaults. */
-  getDims?: () => { cols: number; rows: number } | undefined;
   /** Whether a lifecycle mutation may start now. The always-mounted panel
    *  keeps this false while its own `/open` is in flight: mode changes remain
    *  pending in `lastReconciledMode`, then reconcile when startup is ready. */
@@ -126,7 +122,6 @@ export function surfaceTransportGate(
  */
 export function useProcessSurface({
   process,
-  getDims,
   canSwitch = true,
   subscribeToProcess = true,
 }: UseProcessSurfaceOptions): AgenticProcess | null {
@@ -217,11 +212,8 @@ export function useProcessSurface({
       try {
         // One route, so one mid-turn guard: →PTY attaches off the same open
         // payload `start()` returns, →CLI kills the PTY and clears `pty_mode`.
-        // Dimensions are a terminal concern — headless has no grid to size.
-        await live.switchMode(
-          wantPty ? WorkerMode.Interactive : WorkerMode.CLI,
-          wantPty ? getDims?.() : undefined,
-        );
+        // No size: the mounted terminal view asserts its own grid on the attach.
+        await live.switchMode(wantPty ? WorkerMode.Interactive : WorkerMode.CLI);
         lastReconciledMode.set(key, viewMode);
         reconciled = true;
         // The transcript reconcile pulls in turns the other mode produced. It is
@@ -243,7 +235,7 @@ export function useProcessSurface({
         if (reconciled) setReconcileRevision((revision) => revision + 1);
       }
     })();
-  }, [viewMode, live, ptyMode, turnInFlight, modeResolved, getDims, canSwitch, reconcileRevision]);
+  }, [viewMode, live, ptyMode, turnInFlight, modeResolved, canSwitch, reconcileRevision]);
 
   return live;
 }

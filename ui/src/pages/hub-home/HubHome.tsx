@@ -15,7 +15,13 @@ import { useContext } from '@src/hooks/useContext';
 import { useProjects } from '@src/hooks/use-projects';
 import { ProjectActionsRow } from '@src/components/open-project-component/project-actions-row';
 import { DesktopTile } from '@src/components/quick-create/QuickCreatePanel';
-import { useSandboxes, isLaunched, isUserMachine, nextSandboxName, type SandboxDetails } from '@src/hooks/use-sandboxes';
+import {
+  useSandboxes,
+  isLaunched,
+  isUserMachine,
+  nextSandboxName,
+  type SandboxDetails,
+} from '@src/hooks/use-sandboxes';
 import { StepList } from '@src/components/ui/step-list';
 import { NewSandboxDialog } from './NewSandboxDialog';
 import { LaunchSandboxDialog } from './LaunchSandboxDialog';
@@ -23,6 +29,7 @@ import { ShareSandboxDialog } from './ShareSandboxDialog';
 import { AddMachineDialog } from '@src/components/hub/AddMachineDialog';
 import { TokenPlanCard } from '@src/components/token-plan/TokenPlanCard';
 import { HUB_HOME_CARD } from './card-style';
+import { SharedProjectsBanner, sharedProjectsToOpen } from './SharedProjectsBanner';
 import { ConfirmDialog } from '@src/components/ui/confirm-dialog';
 import { MembershipInvitations } from '@src/components/stream-inbox-view/MembershipInvitations';
 import {
@@ -40,7 +47,7 @@ import {
 import { Button } from '@src/components/ui/button';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { consumeInboundParams } from '@src/navigation/inbound-link';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { isSignedInAsMe } from './signed-in-as-me';
 
 // Live sandbox status styling, keyed off the backend `ExecutionEnvironmentStatus`
@@ -232,6 +239,7 @@ export function HubHome() {
   // (dataContext.project), so the highlighted card and the footer always agree.
   const { project: currentProject } = useContext();
   const { projects } = useProjects({ priority: 'demand' });
+  const sharedProjects = useMemo(() => sharedProjectsToOpen(projects, currentUser?.id), [projects, currentUser?.id]);
   const {
     sandboxes,
     createSandbox,
@@ -339,6 +347,9 @@ export function HubHome() {
             <Trans>Explore your organization and everything you can reach.</Trans>
           </p>
         </div>
+
+        {/* Projects other people gave you — the way from here to FlowPad. */}
+        <SharedProjectsBanner projects={sharedProjects} />
 
         {/* Primary cards — WorldView projections + the token plan glance */}
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -517,21 +528,21 @@ export function HubHome() {
                       already says "Unreachable"; a button that reliably errors
                       would just be a second way to learn that. The slot comes
                       back on its own when the next poll finds the box. */}
-                  {isLaunched(d) ? (
-                    !isUnreachable(details[d.id]) && (
-                      <Button
-                        size="sm"
-                        variant="secondary"
-                        onClick={() => openSandbox(d)}
-                        disabled={!cardEnabled(d)}
-                        aria-label={t`Open sandbox`}
-                        data-testid="sandbox-open"
-                        className="h-7 shrink-0 px-2.5 text-xs"
-                      >
-                        <Trans>Open</Trans>
-                      </Button>
-                    )
-                  ) : null}
+                  {isLaunched(d)
+                    ? !isUnreachable(details[d.id]) && (
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          onClick={() => openSandbox(d)}
+                          disabled={!cardEnabled(d)}
+                          aria-label={t`Open sandbox`}
+                          data-testid="sandbox-open"
+                          className="h-7 shrink-0 px-2.5 text-xs"
+                        >
+                          <Trans>Open</Trans>
+                        </Button>
+                      )
+                    : null}
                   {/* A connected machine's own shells: each click spins out one more
                       terminal session on it (the same path as the terminal strip). */}
                   {isUserMachine(d) && (

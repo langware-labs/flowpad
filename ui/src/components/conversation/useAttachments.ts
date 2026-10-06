@@ -34,7 +34,15 @@ import { REPLY_MARKER_TYPE } from './attachment-plumbing';
  *  ``prompt_completion`` is the reply marker (see ``REPLY_MARKER_TYPE``): plumbing
  *  as well, and the one that used to be hidden only BY the missing-attachment
  *  filter. It is listed here so it stays hidden once nothing reports it missing. */
-const STRUCTURAL_ATTACHMENT_TYPES = new Set(['conversation', 'flow_message', REPLY_MARKER_TYPE]);
+const STRUCTURAL_ATTACHMENT_TYPES = new Set([
+  'conversation',
+  'flow_message',
+  REPLY_MARKER_TYPE,
+  // The live-session carrier: every session message bears one (the snapshot's
+  // envelope), so as a chip it read "Live session · <you>" under each prompt.
+  // The session card is the session's one entry in the thread.
+  'remote_worker_session',
+]);
 
 /** One downloadable attachment, resolved into everything a chip needs to render
  *  — and nothing it could use to fetch a body that isn't there. */

@@ -686,6 +686,15 @@ export class DataManager<T extends Manageable> extends EventEmitter {
           // re-render and the value stays stale-in-React (e.g. the `activate`
           // recency stamp never reordering a live list). Local, no network —
           // the symmetric completion of the splice branch above.
+          //
+          // That merge reaches this row only when the row IS the cached instance.
+          // A list can hold its own copy of the row (seeded before the cache
+          // ref was minted, or the ref replaced since), and then the merge
+          // updates the cache while the list re-renders its stale copy forever —
+          // a live session's line stuck on "awaiting approval" after the host
+          // approved. Merge into the row the list holds too.
+          const row = watchedQuery.results[index];
+          if (row !== this.entities.get(typeId)?.entity) this.deepAssign(row, data);
           watchedQuery.notifyCallbacks();
         }
       }

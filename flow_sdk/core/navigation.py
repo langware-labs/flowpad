@@ -8,8 +8,8 @@ Three questions, one join key (a screen's ``view`` slug):
   (``navigation.here``), built from that tab's ``browser_context``;
 * **where to go** -- ``navigator.target`` / ``navigator.route`` (``flow_sdk.core.navigator``).
 
-The shapes are the dataset's ``data_spec`` folders (``flowpad_assistant/agentic-assets/dataset/
-smart-navigator/agentic-assets/data_spec/navigation.*``), so a row, the navigator and
+The shapes are the shipped ``data_spec`` folders (``flowpad_assistant/agentic-assets/data_spec/
+navigation.*``), so a row of the SmartNavigator dataset, the navigator and
 ``flow context list`` all speak the one definition.
 
 **The no-stale rule.** The UI's context slots outlive the screen that set them: open an asset,

@@ -1,7 +1,7 @@
 import { EntityExecutionPanel } from '@src/components/entity-execution-panel';
 import { NewSessionPill } from '@src/components/entity-execution-panel/NewSessionPill';
 import { useAgentContext } from '@src/contexts/agent-context';
-import { VibeAssignTaskButton } from '@src/pages/flow-page/VibeAssignTaskButton';
+import { AskForHelpButton } from '@src/components/help/AskForHelpButton';
 import { useProcessesForTarget } from '@src/components/entity-execution-panel/hooks/useProcessesForTarget';
 import { useEntityBreadcrumbs } from '@src/components/top-nav-bar/use-entity-breadcrumbs';
 import { DockPointer } from '@src/navigation/DockPointer';
@@ -210,13 +210,13 @@ export function AssistantChat({
           historyTriggerLabel={t`Recent`}
           historyOnLeft
           afterHistorySlot={({ activeProcess }) => (
-            <VibeAssignTaskButton
-              projectId={userProject?.id ?? null}
+            <AskForHelpButton
+              // Hidden → no project → its live task query is off.
+              projectId={visible ? (userProject?.id ?? null) : null}
               sessionTypeId={activeProcess?.typeId ?? null}
               origin="assistant"
             />
           )}
-          newSessionLabel={t`New chat`}
           historyLabel={t`Chat history`}
           pastSessionsLabel={t`Past chats`}
           noPastSessionsLabel={t`No past chats`}

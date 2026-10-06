@@ -41,7 +41,7 @@ vi.mock('@src/navigation/useDockNavigation', () => ({
 
 import { dataManager, Task, TaskKind } from '@sdk';
 import { ContactPicker } from '@src/components/contact-picker/ContactPicker';
-import { VibeAssignTaskButton } from '@src/pages/flow-page/VibeAssignTaskButton';
+import { AskForHelpButton } from '@src/components/help/AskForHelpButton';
 import { AskForHelpDialog } from '@src/components/help/AskForHelpDialog';
 
 afterEach(() => {
@@ -98,9 +98,9 @@ describe('AskForHelpDialog', () => {
   });
 });
 
-describe('VibeAssignTaskButton — the current task button', () => {
+describe('AskForHelpButton — the current task button', () => {
   it('with no open help task, a click asks anew', () => {
-    render(<VibeAssignTaskButton projectId={P1} sessionTypeId={null} />);
+    render(<AskForHelpButton projectId={P1} sessionTypeId={null} origin="vibe" />);
 
     fireEvent.click(screen.getByTestId('vibe-assign-task'));
 
@@ -119,7 +119,7 @@ describe('VibeAssignTaskButton — the current task button', () => {
       helpTask({ title: 'other project', project_id: P2 }),
     ];
     h.conversations = [{ id: 'conv-1', unread_count: 3 }];
-    render(<VibeAssignTaskButton projectId={P1} sessionTypeId={null} />);
+    render(<AskForHelpButton projectId={P1} sessionTypeId={null} origin="vibe" />);
 
     const icon = screen.getByTestId('vibe-assign-task');
     expect(icon).toHaveAttribute('data-open-tasks', '1');
@@ -149,14 +149,14 @@ describe('VibeAssignTaskButton — the current task button', () => {
       { id: 'conv-2', unread_count: 5 },
       { id: 'conv-3', unread_count: 0 },
     ];
-    render(<VibeAssignTaskButton projectId={P1} sessionTypeId={null} />);
+    render(<AskForHelpButton projectId={P1} sessionTypeId={null} origin="vibe" />);
 
     expect(screen.getByTestId('vibe-assign-task')).toHaveTextContent('7');
   });
 
   it('keeps asking anew from the list', async () => {
     h.tasks = [helpTask()];
-    render(<VibeAssignTaskButton projectId={P1} sessionTypeId={null} />);
+    render(<AskForHelpButton projectId={P1} sessionTypeId={null} origin="vibe" />);
 
     act(() => {
       fireEvent.click(screen.getByTestId('vibe-assign-task'));

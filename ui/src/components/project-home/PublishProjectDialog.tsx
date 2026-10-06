@@ -16,6 +16,10 @@ interface PublishProjectDialogProps {
   project: Project;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** The Project is published while the popup is open — the caller carries on
+   *  with what the popup stood in front of (the invite). Without it the popup
+   *  just closes. */
+  onPublished?: () => void;
 }
 
 /**
@@ -25,9 +29,10 @@ interface PublishProjectDialogProps {
  * `members` action), so until the Project is published there is nothing to
  * grant on. Publishing is its own step with its own checks, owned by
  * `ProjectCloudLinkButton`; this only puts it in front of the invite. Closes
- * itself once the Project is published, so the next Invite goes straight through.
+ * itself once the Project is published and hands back to the caller (`onPublished`),
+which opens the invite the person was making.
  */
-export function PublishProjectDialog({ project, open, onOpenChange }: PublishProjectDialogProps) {
+export function PublishProjectDialog({ project, open, onOpenChange, onPublished }: PublishProjectDialogProps) {
   // Live row, not the prop: publishing flips `remote` through the store.
   const { data } = useEntity<Project>(project.typeId);
   const live = data ?? project;
@@ -35,8 +40,10 @@ export function PublishProjectDialog({ project, open, onOpenChange }: PublishPro
   const name = live.displayName || live.name || 'this project';
 
   useEffect(() => {
-    if (open && published) onOpenChange(false);
-  }, [open, published, onOpenChange]);
+    if (!open || !published) return;
+    if (onPublished) onPublished();
+    else onOpenChange(false);
+  }, [open, published, onOpenChange, onPublished]);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
