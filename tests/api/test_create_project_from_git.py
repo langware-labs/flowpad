@@ -67,6 +67,55 @@ async def test_create_project_from_git_happy_path(bootstrapped_client):
     # it exactly as cloned, with no frontmatter ``id:`` stamped on it.
     readme = (target / "README.md").read_text()
     assert readme == "cloned from https://github.com/octocat/Hello-World.git"
+    # A repo with no flow.json declares nothing — and says so, rather than staying silent.
+    assert payload["data"]["dependencies"] == {"status": "none", "dependencies": []}
+    assert "bootstrap" not in payload["data"]
+
+
+# do not increase timeout without approval
+@pytest.mark.asyncio
+@pytest.mark.timeout(30)
+async def test_create_project_from_git_reports_its_flow_json_dependencies(bootstrapped_client, tmp_path):
+    """The clone's ``flow.json`` is resolved after the scan, and the response
+    reports each dependency's state — a required one that did not land makes the
+    whole report ``failed`` (silence is what let a half-built project look finished)."""
+    import json
+    import shutil
+
+    bootstrap = await bootstrapped_client.get("/api/v1/graph/bootstrap")
+    cn_id = _cn_id(bootstrap.json())
+
+    leaf = "Declaring-World"
+    target = agent_workspace_root() / leaf
+    if target.exists():
+        shutil.rmtree(target)
+    notes = tmp_path / "notes"
+    notes.mkdir()
+
+    async def _clone_with_flow_json(clone_url: str, target_dir: str, branch=None, token=None):
+        result = await _fake_git_clone(clone_url, target_dir, branch=branch, token=token)
+        (Path(target_dir) / "flow.json").write_text(
+            json.dumps({
+                "dependencies": {"notes": f"file:{notes}", "lost": f"file:{tmp_path / 'lost'}"},
+                "optionalDependencies": {"maybe": f"file:{notes}"},
+            }),
+            encoding="utf-8",
+        )
+        return result
+
+    with patch("flow_sdk.utils.git.git_clone", side_effect=_clone_with_flow_json):
+        r = await bootstrapped_client.post(
+            f"/api/v1/graph/compute_node/{cn_id}/create-project-from-git",
+            json={"git_origin": _origin(f"https://github.com/octocat/{leaf}.git")},
+        )
+
+    assert r.status_code == 200, r.text
+    report = r.json()["data"]["dependencies"]
+    assert report["status"] == "failed", "a required dependency that is missing fails the report"
+    states = {d["name"]: d["state"] for d in report["dependencies"]}
+    assert states == {"notes": "ready", "lost": "missing", "maybe": "not_installed"}
+    project = r.json()["data"]["project"]
+    assert any(p.endswith("/notes") for p in project["include_dirs"])
 
 
 # do not increase timeout without approval

@@ -64,6 +64,7 @@ from flow_sdk.schema.data_spec.share_result_spec import (
 )
 
 if TYPE_CHECKING:
+    from flow_sdk.schema.data_spec.flow_json_spec import DependencyState
     from flow_sdk.assets.scanning import AssetCandidate
     from flow_sdk.fs_store.operations.project_cleanup import HarnessIndex
     from flow_sdk.schema.data_spec.git_share_spec import GitShare
@@ -422,18 +423,6 @@ class Project(Entity):
     # Portable repository identity for a project shared through the hub. This
     # is never the sender's local worktree path; the recipient uses it to
     # clone/materialize its own checkout.
-    # Legacy stash for the removed stored ``include_dirs`` field. Context
-    # folders are now Folder entities linked via the base-Entity context
-    # buckets (see the computed ``include_dirs`` property); any raw
-    # ``include_dirs`` key still arriving from old DB rows / metadata.json is
-    # captured here by ``_stash_legacy_include_dirs`` and converted into
-    # folder links at the next write (``_migrate_legacy_context_dirs``).
-    # persist=FALSE: the stash itself must never be re-persisted.
-    legacy_include_dirs_: list[str] = APIField(
-        default_factory=list,
-        persist=Persist.FALSE,
-        description="Legacy include_dirs values pending migration into Folder context links.",
-    )
     # ── Collaboration overlay (merged from the former CollaborationSpace entity) ──
     session_code: str | None = APIField(
         default=None,
@@ -463,11 +452,6 @@ class Project(Entity):
             "``remote`` cannot answer 'may I write to the hub row?' and this can."
         ),
     )
-    shared_context_origins: dict[str, dict[str, Any]] = APIField(
-        default_factory=dict,
-        persist=Persist.FALSE,
-        description="Hub-side transportable context-folder origins keyed by Folder typeid.",
-    )
     # ── Indexer-denormalized fields (project consolidation, Path A 2026-05-09) ──
     # Written by the indexer at adopt time via ``Project.from_record`` so the
     # frontend can render activity hints (session count, last activity) without
@@ -495,27 +479,6 @@ class Project(Entity):
     def _migrate_legacy_presence(cls, data):
         return migrate_presence_shaped_members(data)
 
-    @model_validator(mode="before")
-    @classmethod
-    def _stash_legacy_include_dirs(cls, data):
-        """Capture a raw ``include_dirs`` key into the legacy stash.
-
-        ``include_dirs`` is a computed field now; pydantic would silently drop
-        the raw key on hydration (old DB rows, old metadata.json, or a
-        ``Project(**model_dump())`` round-trip feeding the computed output
-        back in). Stashing keeps the values visible through the computed
-        merge until ``_migrate_legacy_context_dirs`` converts them into
-        Folder context links. Idempotent: post-migration round-trips re-stash
-        already-covered paths, which the migration then no-ops on.
-        """
-        if isinstance(data, dict) and "include_dirs" in data:
-            raw = data.pop("include_dirs")
-            if isinstance(raw, list):
-                merged = list(data.get("legacy_include_dirs_") or [])
-                merged.extend(d for d in raw if isinstance(d, str) and d)
-                data["legacy_include_dirs_"] = list(dict.fromkeys(merged))
-        return data
-
     @computed_field
     @property
     def include_dirs(self) -> list[str]:
@@ -535,10 +498,6 @@ class Project(Entity):
             entry = self.get_context_entry_data(tid) or {}
             p = entry.get("path")
             if isinstance(p, str) and p and p not in seen:
-                seen.add(p)
-                out.append(p)
-        for p in self.legacy_include_dirs_ or []:
-            if p and p not in seen:
                 seen.add(p)
                 out.append(p)
         return out
@@ -927,12 +886,11 @@ class Project(Entity):
                         "path": p,
                         "origin_kind": str(entry.get("origin_kind") or "local"),
                         "typeid": str(tid),
+                        "dependency": str(entry.get("dependency") or ""),
+                        "required": bool(entry.get("required", True)),
+                        "via": str(entry.get("via") or ""),
                     }
                 )
-        for p in self.legacy_include_dirs_ or []:
-            if p and p not in seen:
-                seen.add(p)
-                out.append({"path": p, "origin_kind": "local", "typeid": ""})
         return out
 
     @model_validator(mode="after")
@@ -1237,13 +1195,9 @@ class Project(Entity):
             for k, v in data.items():
                 if k in ("id", "type"):
                     continue
-                # Legacy stored include_dirs (now a computed field): route into
-                # the migration stash instead of a doomed setattr.
+                # ``include_dirs`` is computed from flow.json's resolved links;
+                # a stored copy from an old row means nothing.
                 if k == "include_dirs":
-                    if isinstance(v, list):
-                        stash = list(existing.legacy_include_dirs_ or [])
-                        stash.extend(d for d in v if isinstance(d, str) and d)
-                        existing.legacy_include_dirs_ = list(dict.fromkeys(stash))
                     continue
                 field = cls.model_fields.get(k)
                 if field is not None:
@@ -1309,25 +1263,11 @@ class Project(Entity):
             "include_dirs",
             "context_roots",
             "context_dir_infos",
-            "shared_context_origins",
             "session_count",
             "last_session_at",
         ):
             body.pop(local_only, None)
         return body
-
-    async def _shared_context_origin_payload(self) -> dict[str, dict[str, Any]]:
-        """Build the wire-safe origin map for shared context Folder refs."""
-        payload: dict[str, dict[str, Any]] = {}
-        from flow_sdk.builtin.folder import Folder  # noqa: PLC0415
-
-        for tid in self.context_of_type("folder", bucket="shared"):
-            folder = await Folder.get_by_id(tid.id)
-            origin = folder.origin if folder is not None else None
-            if origin is None or not origin.transportable:
-                continue
-            payload[str(tid)] = origin.model_dump(mode="json")
-        return payload
 
     async def ensure_on_hub(self) -> bool:
         """Publish this Project once and persist the local publication marker.
@@ -1421,19 +1361,6 @@ class Project(Entity):
             if origin is not None:
                 self.origin = origin  # SHARED: the body carries it under its hub name
         body = self._hub_body()
-        shared_context_origins = await self._shared_context_origin_payload()
-        invalid_shared_folders = [
-            str(tid)
-            for tid in self.context_of_type("folder", bucket="shared")
-            if str(tid) not in shared_context_origins
-        ]
-        if invalid_shared_folders:
-            raise RuntimeError(
-                "Shared context folders must have transportable origins before sharing: "
-                + ", ".join(invalid_shared_folders)
-            )
-        if shared_context_origins:
-            body["shared_context_origins"] = shared_context_origins
 
         self._last_share_result = None
         async with FlowpadClient(ApiConfig.from_env(), api_key=creds.api_key) as client:
@@ -1456,7 +1383,24 @@ class Project(Entity):
                 await self._publish_to_hosted_repo()
             if invitees or teams:
                 await self._send_invites(client, creds, invitees, teams, note)
+        warnings = self.share_warnings()
+        if warnings:
+            self._last_share_result = (self._last_share_result or ShareResultSpec()).model_copy(
+                update={"warnings": warnings}
+            )
         return self
+
+    def share_warnings(self) -> list[str]:
+        """What a member will be missing: every REQUIRED ``file:`` dependency is a folder on
+        this machine only. Git and hub sources resolve on every member's machine."""
+        from flow_sdk.assets import flow_json  # noqa: PLC0415
+
+        root = Path(self.fs_storage_mount_path) if self.fs_storage_mount_path else None
+        return [
+            f"{dep.name}: {dep.source} is a folder on this machine; members will not have it"
+            for dep in flow_json.read(root).entries()
+            if dep.required and dep.parsed.kind == "file"
+        ]
 
     async def _publish_to_hosted_repo(self) -> HubRepoOrigin:
         """Push HEAD to this project's hub-hosted repository and make that the hub
@@ -1813,10 +1757,10 @@ class Project(Entity):
           returns, and the auto-launch check that runs there can only find an
           ``agentic-assets/agent/**`` agent that is already a row.
 
-        The bootstrap reconcile mirrors ``create-project-from-git``: a manifest
-        is third-party content, so a failure is logged and the install stands —
-        the project is usable without whatever the manifest additionally asked
-        for, and ``reconcile_bootstrap`` is idempotent, so re-opening retries.
+        Dependencies resolve like ``create-project-from-git``: ``flow.json`` is
+        third-party content, so a failure is logged and the install stands — the
+        project is usable without what it additionally asked for, and resolving
+        is idempotent, so re-opening retries.
         """
         origin = as_project_origin(self.origin)
         if origin is None:
@@ -1854,9 +1798,9 @@ class Project(Entity):
         await _index_additional_dir(target_dir, read_only=True)
 
         try:
-            await self.reconcile_bootstrap()
+            await self.resolve_dependencies()
         except Exception as exc:  # noqa: BLE001 -- see the docstring: reported, not raised
-            logging.error("setup-from-git: bootstrap reconcile FAILED: %s", exc, exc_info=True)
+            logging.error("setup-from-git: resolving dependencies FAILED: %s", exc, exc_info=True)
         return self
 
     @action.post(action_name="setup-from-git")
@@ -1879,12 +1823,11 @@ class Project(Entity):
         The template is a starting point, not an upstream.
 
         Which leaves the obvious question — how does a template improve after it
-        is cloned? It doesn't. That is what ``.flowpad/bootstrap.json``'s
-        ``helpdesks`` are for: they are attached as ordinary context folders,
-        stay linked to the vendor's repo, and so keep updating in every
-        engagement long after the template that named them went stale. Anything
-        meant to keep improving belongs in a declared help desk, not in the
-        template body.
+        is cloned? It doesn't. That is what the template's ``flow.json``
+        dependencies are for: they stay linked to the vendor's repos, and so keep
+        updating in every engagement long after the template that named them went
+        stale. Anything meant to keep improving belongs in a dependency, not in
+        the template body.
 
         Not re-committed after init: an initial commit needs a git identity this
         machine may not have configured, and failing setup on that would be
@@ -1904,7 +1847,7 @@ class Project(Entity):
         from flow_sdk.builtin.agentic_process.agentic_process import (  # noqa: PLC0415
             _index_additional_dir,
         )
-        from flow_sdk.builtin.bootstrap_manifest import read_bootstrap_manifest  # noqa: PLC0415
+        from flow_sdk.assets import flow_json  # noqa: PLC0415
 
         # A fresh slot every time, named after the ENGAGEMENT rather than the
         # template: two engagements from one template are two independent
@@ -1922,9 +1865,9 @@ class Project(Entity):
         target_dir = str(root)
 
         target = Path(target_dir)
-        # Read the manifest BEFORE severing history — the file itself stays, it
+        # Read the declaration BEFORE severing history — the file itself stays, it
         # is only the vendor's `.git` that goes.
-        manifest = read_bootstrap_manifest(target)
+        declared = flow_json.read(target)
         await asyncio.to_thread(_detach_git_history, target)
 
         self.fs_storage_mount_path = canonical_posix_path(target_dir)
@@ -1934,30 +1877,14 @@ class Project(Entity):
         await self.setup_for_desktop()
         await _index_additional_dir(target_dir)
 
-        # One semantic owner for manifest convergence. A template that already
-        # finished copying remains usable when a dependency is unreachable, so
-        # this setup action maps reconciliation failure into its historical
-        # per-dependency report instead of undoing the new Project.
-        reconciled = await self.reconcile_bootstrap()
-        reconcile_data = dict(getattr(reconciled, "data", None) or {})
-        installed = list(reconcile_data.get("content_projects") or [])
-        install_failed = list(reconcile_data.get("failed") or [])
-        legacy_urls = set(manifest.helpdesks)
-        attached = [record for record in installed if record.get("url") in legacy_urls]
-        failed = [record for record in install_failed if record.get("url") in legacy_urls]
-        content_projects = [record for record in installed if record.get("url") not in legacy_urls]
-        content_projects_failed = [record for record in install_failed if record.get("url") not in legacy_urls]
-
+        states = await self.resolve_dependencies()
         return ApiSuccessResponse(
             data={
                 "project_id": self.id,
                 "path": self.fs_storage_mount_path,
                 "template_url": origin.clone_url(),
-                "helpdesks": attached,
-                "helpdesks_failed": failed,
-                "content_projects": content_projects,
-                "content_projects_failed": content_projects_failed,
-                "autolaunch_journey": manifest.autolaunch_journey,
+                "dependencies": self._states(states),
+                "autolaunch_journey": declared.autolaunch_journey,
             }
         )
 
@@ -2214,64 +2141,13 @@ class Project(Entity):
 
     # ── Context folders (Folder entities linked via context buckets) ────────
 
-    async def _migrate_legacy_context_dirs(self) -> bool:
-        """Convert stashed legacy ``include_dirs`` into Folder context links.
-
-        Each stashed path is minted as a Folder entity (idempotent v5) and
-        linked as PRIVATE context (legacy dirs were always hub-excluded).
-        Clears the stash and neutralizes the stale ``include_dirs`` key in the
-        record's metadata.json — ``save_metadata`` is a merge-writer, so
-        without the explicit empty-list write the old key would resurrect
-        removed dirs after a DB rebuild. Returns True when anything changed;
-        the CALLER persists (this never calls ``self.save()``).
-        """
-        stash = [d for d in (self.legacy_include_dirs_ or []) if d]
-        if not stash:
-            return False
-        from flow_sdk.builtin.folder import Folder
-
-        covered: set[str] = set()
-        for tid in self.context_of_type("folder", bucket="both"):
-            entry = self.get_context_entry_data(tid) or {}
-            if entry.get("path"):
-                covered.add(entry["path"])
-        for path in stash:
-            canonical = canonical_posix_path(path)
-            if canonical in covered:
-                continue
-            folder = await Folder.mint_for_path(canonical)
-            kind = folder.origin.kind if folder.origin else "local"
-            self.add_private_context_entities(folder.typeid, data={"path": canonical, "origin_kind": kind})
-            covered.add(canonical)
-        self.legacy_include_dirs_ = []
-        # Drop the stale on-disk key (best-effort): save_metadata is a
-        # merge-writer, so without removal the key would re-hydrate — and
-        # resurrect removed dirs — on every adopt after a DB rebuild.
-        try:
-            import asyncio
-
-            from flow_sdk.fs_store.fs_record import FSRecord
-
-            record = await asyncio.to_thread(FSRecord.load_or_none, self.get_type(), self.id)
-            if record is not None:
-                await asyncio.to_thread(record.remove_metadata_keys, "include_dirs")
-        except Exception:
-            log.debug("[project] legacy include_dirs disk-key removal failed", exc_info=True)
-        return True
-
     async def save(self, owner=None, notify: bool = True) -> "Project":
-        """Project save — lazy-migration chokepoint for legacy context dirs.
-
-        Any project write converges stashed legacy ``include_dirs`` into
-        Folder context links first (no-op once clean), so old rows migrate on
-        their first save without a dedicated migration run.
+        """Project save.
 
         On creation the (empty, instant) index is stamped so a brand-new project
         never reads as ``never_indexed`` — otherwise the UI shows a spurious
         "no index / Build Index" warning on a project with nothing to index yet.
         """
-        if self.legacy_include_dirs_:
-            await self._migrate_legacy_context_dirs()
         was_create = not self.exist_in_db
         await self._refuse_duplicate_name()
         if was_create:
@@ -2345,7 +2221,8 @@ class Project(Entity):
         """A project rides as a git reference in EITHER transfer mode: its work
         lives in its repository, so no bytes ride. The row rides exactly as a
         share sends it to the hub (``_hub_body`` plus the shared-context
-        origins) — what the recipient's membership mirror reads back. A project
+        what the recipient's membership mirror reads back; its dependencies travel in
+        its own ``flow.json``. A project
         with no git origin has nothing to clone and packs nothing."""
         from flow_sdk.builtin.flow_message_bundle import ReferencePack  # noqa: PLC0415
 
@@ -2356,11 +2233,8 @@ class Project(Entity):
         metadata = project._hub_body()
         # The hub ignores these; they can hold local directory paths and the
         # local folder name.
-        for not_mirrored in ("legacy_include_dirs_", "expand", "folder_name_mismatch"):
+        for not_mirrored in ("expand", "folder_name_mismatch"):
             metadata.pop(not_mirrored, None)
-        shared_context_origins = await project._shared_context_origin_payload()
-        if shared_context_origins:
-            metadata["shared_context_origins"] = shared_context_origins
         return ReferencePack(metadata=metadata, origin=origin)
 
     @classmethod
@@ -2611,132 +2485,187 @@ class Project(Entity):
         from flow_sdk.core.entity.entity_model import _http_activate
         from flow_sdk.fs_store.indexer.auto_index import schedule_auto_index
 
+        from flow_sdk.builtin.project_dependencies import schedule_resolve  # noqa: PLC0415
+
         resp = await _http_activate(self)
         if isinstance(resp, ApiSuccessResponse):
             schedule_auto_index(str(self.id), created=False)
+            # Required dependencies arrive on their own when the project is opened —
+            # detached for the same reason as the index: a clone never delays activation.
+            schedule_resolve(self)
         return resp
 
-    @action.post(action_name="add-context-dir-from-git")
-    async def add_context_dir_from_git(
+    # ── Dependencies (``flow.json``) ─────────────────────────────────────────
+    #
+    # The folders this project expects in its context, declared in ``flow.json`` at
+    # its root and resolved to folders on this machine by
+    # ``flow_sdk.builtin.project_dependencies`` — the one owner. The verbs below are
+    # thin: they write the file, then resolve.
+
+    async def dependencies(self, *, fetch: bool = False) -> "list[DependencyState]":
+        """Every declared dependency as it stands here. ``fetch=False`` (the default)
+        never touches the network: a dependency not on this machine yet reads ``missing``."""
+        from flow_sdk.builtin import project_dependencies  # noqa: PLC0415
+
+        return await project_dependencies.resolve(self, fetch=fetch, index=fetch)
+
+    async def resolve_dependencies(self, *, update: bool = False) -> "list[DependencyState]":
+        """Fetch what is missing (clone, hub), link and index it. ``update`` fast-forwards
+        the clones Flowpad made; a checkout you made is never pulled."""
+        from flow_sdk.builtin import project_dependencies  # noqa: PLC0415
+
+        return await project_dependencies.resolve(self, fetch=True, update=update)
+
+    async def add_dependency(
         self,
-        url: str,
-        branch: str = "",
-        scope: str = "private",
+        source: str,
         *,
-        preferred_root=None,
-    ) -> "ApiResponse":
-        """Clone a git repo and attach it to this project as a context folder.
+        name: str | None = None,
+        path: str | None = None,
+        optional: bool = False,
+    ) -> "DependencyState":
+        """Declare a dependency in ``flow.json`` and resolve it.
 
-        The deterministic form of what the ``git-context-folder`` wizard does in
-        prose for its ``existing`` mode. It composes pieces that already exist
-        rather than reimplementing them:
-
-        * ``Folder.mint_for_origin`` keys the folder by ``origin.key()``, so the
-          SAME repo attached to a second project reuses one Folder and one
-          checkout — the second attach costs no download.
-        * ``Folder.resolve_location`` owns clone/reuse/pull and the post-clone
-          index, including the read-only guard that keeps the checkout pullable.
-        * ``add_context_dir`` owns the link, so ``already_linked`` / ``is_new``
-          and the legacy migration stay in exactly one place.
-
-        ``rel_path="."`` is deliberate: the whole repo is the context folder, and
-        a subfolder-scoped origin would never see a manifest at the repo root.
-
-        **The branch is always pinned**, to the caller's when given and to the
-        remote's default (``git ls-remote --symref … HEAD``) otherwise. An
-        unpinned origin is not merely "freezes at whatever it first cloned" —
-        it silently adopts a checkout it never made. ``matches_repo`` skips its
-        branch check when the origin names no branch
-        (``if require_branch and self.branch``), so ANY checkout of this URL
-        anywhere on disk matches, on any branch, at any commit; and
-        ``GitOriginDriver.materialize`` gates its pull on ``if origin.branch`` too, so
-        nothing brings it up to date afterwards. The result is a vendor folder
-        whose contents depend on what some unrelated flow happened to leave in
-        the workspace. Resolving the default branch costs one ``ls-remote`` (no
-        objects fetched) and makes both the match and the pull real.
+        ``source`` is a source string (``git+<url>#<branch>``, ``hub:<project id>``,
+        ``file:<path>``), a bare git URL, or a folder on disk. A folder inside a git
+        repository is written as its repository — never as its path — so the line means
+        the same thing on a teammate's machine.
         """
-        if not url or not url.strip():
-            return ApiFailResponse(message="url is required")
-        if scope not in ("private", "shared"):
-            return ApiFailResponse(message="scope must be 'private' or 'shared'")
+        from flow_sdk.assets import flow_json  # noqa: PLC0415
+        from flow_sdk.builtin import project_dependencies  # noqa: PLC0415
+        from flow_sdk.schema.data_spec.flow_json_spec import FlowDependency, parse_source  # noqa: PLC0415
+        from flow_sdk.utils.git_identity import parse_git_origin_url  # noqa: PLC0415
 
-        origin = GitOrigin.from_url(url.strip(), branch=branch.strip(), rel_path=".")
-        if origin is None:
-            return ApiFailResponse(message=f"Not a recognizable git URL: {url}")
-
-        if not origin.branch:
-            from flow_sdk.app.actions.oauth_action import (  # noqa: PLC0415
-                _get_github_token_for_current_user,
-            )
-            from flow_sdk.utils.git import git_remote_access  # noqa: PLC0415
-
-            token = await _get_github_token_for_current_user()
-            reachable, default_branch = await git_remote_access(origin.clone_url(), token)
-            if not reachable:
-                return ApiFailResponse(
-                    message=f"Cannot read {origin.clone_url()} — check the URL and your access",
-                    status_code=502,
-                )
-            if default_branch:
-                origin = origin.model_copy(update={"branch": default_branch})
-
-        from flow_sdk.builtin.folder import Folder  # noqa: PLC0415
-
-        folder = await Folder.mint_for_origin(origin)
-        existing_branch = str(getattr(folder.origin, "branch", "") or "")
-        requested_branch = str(origin.branch or "")
-        if existing_branch != requested_branch:
-            return ApiFailResponse(
-                message=(
-                    f"Repository is already materialized for branch {existing_branch or '(unpinned)'}; "
-                    f"requested {requested_branch or '(unpinned)'}"
-                ),
-                status_code=409,
-            )
-        resolved = await folder.resolve_location(
-            preferred_root=preferred_root,
-            strict_index=True,
+        if not self.fs_storage_mount_path:
+            raise ValueError("this project has no folder to hold a flow.json")
+        raw = str(source or "").strip()
+        default_name, rel = None, "."
+        if raw.startswith(("git+", "hub:", "file:")):
+            parse_source(raw)
+        elif Path(raw).expanduser().is_dir():
+            folder = canonical_posix_path(str(Path(raw).expanduser()))
+            if is_path_under(folder, canonical_posix_path(self.fs_storage_mount_path)):
+                raise ValueError(f"{folder} is inside this project — a project cannot depend on its own folder")
+            default_name, raw, rel = await project_dependencies.declaration_for_path(folder)
+        elif parse_git_origin_url(raw):
+            raw = f"git+{raw}"
+        else:
+            raise ValueError(f"{source!r} is not a folder, a git URL, or a git+/hub:/file: source")
+        if not default_name:
+            parsed = parse_source(raw)
+            leaf = parsed.target.rstrip("/").rsplit("/", 1)[-1].removesuffix(".git")
+            default_name = leaf if parsed.kind != "hub" else f"hub-{parsed.target[:8]}"
+        dep = FlowDependency(
+            name=name or project_dependencies.safe_name(default_name),
+            source=raw,
+            path=path or rel,
+            required=not optional,
         )
-        data = getattr(resolved, "data", None) or {}
-        if data.get("kind") != "ready" or not folder.path:
-            # Surface the driver's own message — it names the actual failure
-            # (auth, unreachable host, unsafe rel_path) far better than we could.
-            return ApiFailResponse(
-                message=data.get("message") or "Could not materialize the repository",
-                status_code=502,
-            )
+        flow_json.write_dependency(Path(self.fs_storage_mount_path), dep)
+        states = await project_dependencies.resolve(self, fetch=True, install=[dep.name] if optional else ())
+        return next(s for s in states if s.name == dep.name and s.via is None)
 
-        requested_bucket = "shared" if scope == "shared" else "private"
-        opposite_bucket = "private" if scope == "shared" else "shared"
-        requested_ids = {str(tid) for tid in self.context_of_type("folder", bucket=requested_bucket)}
-        opposite_ids = {str(tid) for tid in self.context_of_type("folder", bucket=opposite_bucket)}
-        already_linked = str(folder.typeid) in requested_ids and str(folder.typeid) not in opposite_ids
-        scope_changed = str(folder.typeid) in opposite_ids
-        linked = await self.add_context_dir(folder.path, scope=scope)
-        if not isinstance(linked, ApiSuccessResponse):
-            return linked
-        return ApiSuccessResponse(
-            data={
-                "folder_id": folder.id,
-                "path": folder.path,
-                "scope": scope,
-                "cloned_url": origin.clone_url(),
-                "already_linked": already_linked,
-                "scope_changed": scope_changed,
-            }
-        )
+    async def remove_dependency(self, name: str) -> "list[DependencyState]":
+        """Drop ``name`` from ``flow.json``; its folder leaves the context. The folder on
+        disk is never touched."""
+        from flow_sdk.assets import flow_json  # noqa: PLC0415
+
+        if not self.fs_storage_mount_path:
+            return []
+        flow_json.drop_dependency(Path(self.fs_storage_mount_path), name)
+        return await self.dependencies()
+
+    async def install_dependency(self, name: str) -> "DependencyState":
+        """Bring in an OPTIONAL dependency — optional ones are never fetched on their own."""
+        from flow_sdk.builtin import project_dependencies  # noqa: PLC0415
+
+        states = await project_dependencies.resolve(self, fetch=True, install=[name])
+        found = next((s for s in states if s.name == name and s.via is None), None)
+        if found is None:
+            raise ValueError(f"{name!r} is not declared in flow.json")
+        return found
+
+    def dismiss_dependency_warning(self, name: str) -> None:
+        """Stop warning about a missing required dependency until Flowpad restarts."""
+        from flow_sdk.builtin import project_dependencies  # noqa: PLC0415
+
+        project_dependencies.dismiss(str(self.id), name)
+
+    async def dependency_warnings(self) -> "list[DependencyState]":
+        """Required dependencies that are not here and were not dismissed."""
+        from flow_sdk.builtin import project_dependencies  # noqa: PLC0415
+
+        return project_dependencies.warnings_for(str(self.id), await self.dependencies())
+
+    @staticmethod
+    def _states(states: "list[DependencyState]") -> list[dict]:
+        return [s.model_dump(mode="json") for s in states]
+
+    @action.get(action_name="dependencies")
+    async def dependencies_action(self) -> "ApiResponse":
+        """`GET /project/<id>/dependencies` — every declared dependency, and the warnings."""
+        from flow_sdk.builtin import project_dependencies  # noqa: PLC0415
+
+        states = await self.dependencies()
+        warnings = project_dependencies.warnings_for(str(self.id), states)
+        return ApiSuccessResponse(data={"dependencies": self._states(states), "warnings": self._states(warnings)})
+
+    @action.post(action_name="add-dependency")
+    async def add_dependency_action(
+        self, source: str = "", name: str = "", path: str = "", optional: bool = False
+    ) -> "ApiResponse":
+        try:
+            state = await self.add_dependency(source, name=name or None, path=path or None, optional=optional)
+        except ValueError as exc:
+            return ApiFailResponse(message=str(exc), status_code=400)
+        return ApiSuccessResponse(data={"dependency": state.model_dump(mode="json"), **self._context_payload()})
+
+    @action.post(action_name="remove-dependency")
+    async def remove_dependency_action(self, name: str = "") -> "ApiResponse":
+        if not name:
+            return ApiFailResponse(message="name is required", status_code=400)
+        states = await self.remove_dependency(name)
+        return ApiSuccessResponse(data={"dependencies": self._states(states), **self._context_payload()})
+
+    @action.post(action_name="resolve-dependencies")
+    async def resolve_dependencies_action(self, update: bool = False) -> "ApiResponse":
+        states = await self.resolve_dependencies(update=update)
+        return ApiSuccessResponse(data={"dependencies": self._states(states), **self._context_payload()})
+
+    @action.post(action_name="install-dependency")
+    async def install_dependency_action(self, name: str = "") -> "ApiResponse":
+        try:
+            state = await self.install_dependency(name)
+        except ValueError as exc:
+            return ApiFailResponse(message=str(exc), status_code=404)
+        return ApiSuccessResponse(data={"dependency": state.model_dump(mode="json"), **self._context_payload()})
+
+    @action.post(action_name="dismiss-dependency-warning")
+    async def dismiss_dependency_warning_action(self, name: str = "") -> "ApiResponse":
+        if not name:
+            return ApiFailResponse(message="name is required", status_code=400)
+        self.dismiss_dependency_warning(name)
+        return ApiSuccessResponse(data={"dismissed": name})
+
+    def _context_payload(self) -> dict:
+        """The context fields a caller refreshes after a dependency change."""
+        return {
+            "include_dirs": self.include_dirs,
+            "context_roots": self.context_roots,
+            "context_dir_infos": self.context_dir_infos,
+        }
 
     @action.post(action_name="adopt-helpdesk-from-git")
     async def adopt_helpdesk_from_git(
         self,
         url: str,
         branch: str = "",
-        scope: str = "private",
+        optional: bool = False,
     ) -> "ApiResponse":
-        """Attach a repo as a context folder and report the help desk it carries.
+        """Add a repo as a dependency and report the help desk it carries.
 
-        This does NOT attach differently from ``add_context_dir_from_git`` — it
-        delegates to it verbatim and adds only a REPORT. That distinction is the
+        This does NOT attach differently from ``add_dependency`` — it delegates to
+        it verbatim and adds only a REPORT. That distinction is the
         whole design: a repo becomes a desk by shipping a manifest and being
         indexed, so forking the attach would create a second way for a folder to
         arrive and a second thing to keep correct. What the UI actually lacked
@@ -2751,16 +2680,16 @@ class Project(Entity):
         * ``already_adopted`` — same, but the folder was already linked.
         * ``shadowed`` — a desk was found, but ANOTHER desk resolves first and
           keeps the tickets. See below; this is the dangerous one.
-        * ``no_manifest`` — the repo carries no desk. The folder stays attached
-          (it is still a perfectly good context folder) and the caller is told.
+        * ``no_manifest`` — the repo carries no desk. The dependency stays (it is
+          still a perfectly good dependency) and the caller is told.
         * ``invalid_desk_project_id`` — a desk IS here but names no usable queue,
           so tickets would fall through to somebody else's desk.
         * ``no_portal_project`` — a desk IS here but its checkout has no Project
           row, so the portal cannot be opened.
 
         **Why the shadowing check exists.** ``resolve_adopted_helpdesk`` walks
-        ``direct_context_roots()`` — this project's own mount first, then context
-        roots in declaration order — and stops at the first root holding a desk.
+        ``direct_context_roots()`` — this project's own mount first, then its
+        dependencies in declaration order — and stops at the first root holding a desk.
         "The desk under the root I just attached" is a DIFFERENT question. Report
         the second one and a project that already had a desk gets a success
         dialog naming the new vendor while every ticket keeps going to the old
@@ -2771,21 +2700,21 @@ class Project(Entity):
         from flow_sdk.app.helpdesk_resolver import resolve_adopted_helpdesk  # noqa: PLC0415
         from flow_sdk.builtin.helpdesk import Helpdesk  # noqa: PLC0415
 
-        attached = await self.add_context_dir_from_git(url, branch=branch, scope=scope)
-        if not isinstance(attached, ApiSuccessResponse):
-            # The attach failures are already well-worded and carry their own
-            # status codes — the 409 branch conflict in particular names both
-            # branches. Re-wrapping them here would only blur them.
-            return attached
+        before = {s.name for s in await self.dependencies() if s.state == "ready" and s.via is None}
+        source = f"git+{url.strip()}" + (f"#{branch.strip()}" if branch and branch.strip() else "")
+        try:
+            dep = await self.add_dependency(source, optional=optional)
+        except ValueError as exc:
+            return ApiFailResponse(message=str(exc), status_code=400)
+        if dep.state != "ready" or not dep.local_path:
+            # The resolver's reason names the actual failure (auth, unreachable host).
+            return ApiFailResponse(message=dep.reason or "Could not fetch the repository", status_code=502)
 
-        data = dict(attached.data or {})
-        root = mount_key(data.get("path"))
+        root = mount_key(dep.local_path)
         base = {
-            "folder_id": data.get("folder_id"),
+            "dependency": dep.name,
             "path": root,
-            "scope": data.get("scope", scope),
-            "already_linked": bool(data.get("already_linked")),
-            "scope_changed": bool(data.get("scope_changed")),
+            "already_linked": dep.name in before,
             "helpdesk_id": None,
             "display_name": None,
             "welcome_message": None,
@@ -2847,270 +2776,6 @@ class Project(Entity):
             data={**found, "outcome": "already_adopted" if found["already_linked"] else "adopted"}
         )
 
-    @action.post(action_name="reconcile-bootstrap")
-    async def reconcile_bootstrap(self) -> "ApiResponse":
-        """Converge this Project to the live dependencies in its manifest.
-
-        The manifest is declarative; this action is deliberately a thin
-        composition over ``add_context_dir_from_git``. Folder materialization,
-        Git authentication, shared-context validation, indexing, and link
-        idempotency therefore keep their single existing owners.
-        """
-        if not self.fs_storage_mount_path:
-            return ApiFailResponse(message="Project has no local working directory")
-
-        from flow_sdk.builtin.bootstrap_manifest import (  # noqa: PLC0415
-            BootstrapContentProject,
-            read_bootstrap_manifest,
-        )
-        from flow_sdk.builtin.helpdesk import Helpdesk  # noqa: PLC0415
-        from flow_sdk.builtin.journey import Journey  # noqa: PLC0415
-        from flow_sdk.builtin.skill import Skill  # noqa: PLC0415
-
-        manifest = read_bootstrap_manifest(Path(self.fs_storage_mount_path))
-        dependencies = list(manifest.content_projects)
-        # Legacy manifests remain useful and converge through the exact same
-        # context-folder primitive. They are private because that was their
-        # original contract.
-
-        # Canonical Git identity ignores URL spelling and branch. Use it for a
-        # mutation-free preflight so aliases cannot bypass conflict detection.
-        declared: dict[str, tuple[str, str]] = {}
-        content_keys: set[str] = set()
-        canonical_dependencies: list[BootstrapContentProject] = []
-        for dependency in dependencies:
-            origin = GitOrigin.from_url(
-                dependency.url,
-                branch=dependency.branch,
-                rel_path=".",
-            )
-            if origin is None:
-                return ApiFailResponse(
-                    message=f"Not a recognizable git URL: {dependency.url}",
-                    status_code=400,
-                )
-            key = origin.key()
-            previous = declared.get(key)
-            requested = (str(origin.branch or ""), dependency.scope)
-            if previous is not None and previous != requested:
-                return ApiFailResponse(
-                    message=(f"Content project {origin.clone_url()} has conflicting branches or scopes"),
-                    status_code=409,
-                )
-            if previous is not None:
-                # Different URL spellings of the same repository declaration
-                # are one dependency, not two install result rows.
-                continue
-            declared[key] = requested
-            content_keys.add(key)
-            canonical_dependencies.append(dependency)
-
-        dependencies = canonical_dependencies
-
-        for url in manifest.helpdesks:
-            origin = GitOrigin.from_url(url, branch="", rel_path=".")
-            if origin is None:
-                return ApiFailResponse(message=f"Not a recognizable git URL: {url}", status_code=400)
-            # The richer content_projects declaration wins over its legacy
-            # URL-only alias; never attach the same repository twice.
-            if origin.key() in content_keys:
-                continue
-            dependencies.append(BootstrapContentProject(url=url, scope="private"))
-
-        attached: list[tuple[BootstrapContentProject, dict, str]] = []
-        failed: list[dict] = []
-        for dependency in dependencies:
-            response = await self.add_context_dir_from_git(
-                dependency.url,
-                branch=dependency.branch,
-                scope=dependency.scope,
-            )
-            if not isinstance(response, ApiSuccessResponse):
-                failed.append(
-                    {
-                        "url": dependency.url,
-                        "branch": dependency.branch,
-                        "scope": dependency.scope,
-                        "error": getattr(response, "message", "attach failed"),
-                    }
-                )
-                continue
-            data = dict(response.data or {})
-            root = mount_key(data.get("path"))
-            attached.append((dependency, data, root))
-
-        # One Project table read for every attached root. The old per-root
-        # find/recover sequence scanned the same table repeatedly.
-        projects_by_mount = await Project.index_by_mount()
-        installed: list[dict] = []
-        for dependency, data, root in attached:
-            content_project = projects_by_mount.get(root) if root else None
-            if content_project is None and root:
-                content_project = await Project.recover_by_path(root)
-                if content_project is not None:
-                    projects_by_mount[root] = content_project
-            installed.append(
-                {
-                    "url": dependency.url,
-                    "branch": dependency.branch,
-                    "content_project_id": content_project.id if content_project else None,
-                    "folder_id": data.get("folder_id"),
-                    "path": root,
-                    "scope": dependency.scope,
-                    "status": "already_installed" if data.get("already_linked") else "installed",
-                }
-            )
-
-        install_status = (
-            "installed" if any(record["status"] == "installed" for record in installed) else "already_installed"
-        )
-        roots = list(dict.fromkeys(record["path"] for record in installed if record["path"]))
-
-        def result_data(failures: list[dict]) -> dict:
-            return {
-                "target_project_id": self.id,
-                "content_projects": installed,
-                "status": install_status,
-                "failed": failures,
-            }
-
-        if failed:
-            return ApiFailResponse(
-                message="Could not install every declared content project",
-                data=result_data(failed),
-                status_code=502,
-            )
-
-        all_journeys, all_skills, all_desks = await asyncio.gather(
-            Journey.get_all({}),
-            Skill.get_all({}),
-            Helpdesk.get_all({}),
-        )
-        journeys = assets_under_roots(all_journeys, roots)
-        skills = assets_under_roots(all_skills, roots)
-        desks = assets_under_roots(all_desks, roots)
-
-        declared_journeys = [
-            (root, preferred) for root in roots if (preferred := read_bootstrap_manifest(Path(root)).autolaunch_journey)
-        ]
-        journey_matches = {
-            selector: next(
-                (journey for journey in journeys if journey.matches_selector(selector)),
-                None,
-            )
-            for _root, selector in declared_journeys
-        }
-        preferred_journey = next(
-            (
-                journey_matches[selector]
-                for _root, selector in declared_journeys
-                if journey_matches[selector] is not None
-            ),
-            None,
-        )
-        preferred_journey_id = preferred_journey.id if preferred_journey else None
-        if preferred_journey_id is None:
-            preferred_journey_id = next(
-                (journey.id for journey in journeys if journey.enabled and journey.auto_launch_enabled()),
-                None,
-            )
-
-        missing_journeys = [
-            {
-                "path": root,
-                "error": f"Declared auto-launch Journey was not indexed: {selector}",
-            }
-            for root, selector in declared_journeys
-            if journey_matches[selector] is None
-        ]
-        if missing_journeys:
-            return ApiFailResponse(
-                message="Installed content is missing its declared auto-launch Journey",
-                data=result_data(missing_journeys),
-                status_code=502,
-            )
-
-        return ApiSuccessResponse(
-            data={
-                **result_data([]),
-                "helpdesk_id": desks[0].id if desks else None,
-                "journey_ids": [journey.id for journey in journeys],
-                "skill_ids": [skill.id for skill in skills],
-                "auto_launch_journey_id": preferred_journey_id,
-            }
-        )
-
-    @action.post(action_name="add-context-dir")
-    async def add_context_dir(self, path: str, scope: str = "private") -> "ApiResponse":
-        """Attach a directory to this project as a context folder.
-
-        Mints (or reuses) the ``Folder`` entity — detecting whether the dir is
-        inside a git repo (→ transportable ``GitOrigin``) or plain (→
-        ``LocalOrigin``) — and links it into the project's context bucket:
-        ``private`` (default; never leaves this machine) or ``shared`` (travels
-        when the project is shared). The canonical LOCAL path is stamped into
-        the per-entry sidecar so the computed ``include_dirs`` derives
-        synchronously. On a new add we kick a one-shot indexer scan.
-
-        A ``LocalOrigin`` (non-git) folder cannot be reconstructed on a peer, so
-        it is rejected from ``scope="shared"``.
-        """
-        if not path:
-            return ApiFailResponse(message="path is required")
-        if scope not in ("private", "shared"):
-            return ApiFailResponse(message="scope must be 'private' or 'shared'")
-        # No explicit legacy migration here: the computed include_dirs already
-        # merges the stash (so is_new sees legacy dirs), and save() below is
-        # the migration chokepoint.
-        canonical = canonical_posix_path(path)
-        from flow_sdk.builtin.folder import Folder
-
-        # Detect the origin BEFORE minting so a rejected shared add leaves no
-        # orphan Folder row. A non-transportable origin (local) can't be
-        # reconstructed on a peer, so it can't be shared.
-        origin = await Folder.detect_origin(canonical)
-        if scope == "shared" and not origin.transportable:
-            return ApiFailResponse(
-                message="Only git-backed folders can be shared. Add this folder as private, "
-                "or use a folder inside a git repository."
-            )
-        bucket = "shared" if scope == "shared" else "private"
-        opposite = "private" if scope == "shared" else "shared"
-        folder = await Folder.mint_for_origin(origin, local_path=canonical)
-        requested_ids = {str(tid) for tid in self.context_of_type("folder", bucket=bucket)}
-        opposite_ids = {str(tid) for tid in self.context_of_type("folder", bucket=opposite)}
-        already_linked = str(folder.typeid) in requested_ids
-        linked_opposite = str(folder.typeid) in opposite_ids
-        is_new = canonical not in self.include_dirs
-        if not already_linked or linked_opposite:
-            entry_data = {"path": canonical, "origin_kind": origin.kind}
-            if linked_opposite:
-                if opposite == "shared":
-                    self.remove_shared_context_entities(folder.typeid)
-                else:
-                    self.remove_private_context_entities(folder.typeid)
-            if scope == "shared":
-                self.add_shared_context_entities(folder.typeid, data=entry_data)
-            else:
-                self.add_private_context_entities(folder.typeid, data=entry_data)
-            await self.save()
-        if is_new:
-            from flow_sdk.builtin.agentic_process.agentic_process import (
-                _index_additional_dir,
-            )
-
-            # A transportable origin means these bytes came from a repo we clone
-            # but do not author. Indexing normally COMMITS the id it mints back
-            # into the source (markdown gets a ``flowpad:capsule`` block
-            # appended), which dirties every tracked file and makes the next
-            # ``git pull`` abort on "local changes would be overwritten" —
-            # silently, until someone tries to update the folder.
-            # ``Folder.resolve_location`` makes the same call for the same
-            # reason; both are needed, because a folder can be attached here
-            # without ever going through resolve (an already-local checkout).
-            await _index_additional_dir(canonical, read_only=origin.transportable)
-        return ApiSuccessResponse(data=self.model_dump(mode="json"))
-
     @action.post(action_name="folder-for-path")
     async def folder_for_path(self, path: str) -> "ApiResponse":
         """Get-or-create the ``Folder`` entity for a directory, without linking it.
@@ -3140,74 +2805,6 @@ class Project(Entity):
                 "origin_kind": folder.origin.kind if folder.origin else None,
             }
         )
-
-    @action.post(action_name="resolve-context-folders")
-    async def resolve_context_folders(self) -> "ApiResponse":
-        """Resolve shared context folders whose receiver-local sidecar is empty."""
-        from flow_sdk.builtin.folder import Folder
-
-        results: list[dict[str, Any]] = []
-        changed = False
-        for tid in self.context_of_type("folder", bucket="shared"):
-            entry = self.get_context_entry_data(tid) or {}
-            if entry.get("path"):
-                results.append({"typeid": str(tid), "kind": "already_ready", "path": entry.get("path")})
-                continue
-            folder = await Folder.get_by_id(tid.id)
-            if folder is None:
-                results.append({"typeid": str(tid), "kind": "error", "message": "Folder entity not found"})
-                continue
-            if folder.origin is None:
-                results.append({"typeid": str(tid), "kind": "error", "message": "Folder has no origin"})
-                continue
-            if not folder.origin.transportable:
-                results.append({"typeid": str(tid), "kind": "error", "message": "Folder origin is not transportable"})
-                continue
-            resp = await folder.resolve_location()
-            data = getattr(resp, "data", None) or {}
-            if not isinstance(data, dict):
-                data = {"kind": "error", "message": "Unexpected resolve response"}
-            result = {"typeid": str(tid), **data}
-            resolved = data.get("path") if data.get("kind") == "ready" else None
-            if isinstance(resolved, str) and resolved:
-                canonical = canonical_posix_path(resolved)
-                self.add_shared_context_entities(
-                    folder.typeid,
-                    data={"path": canonical, "origin_kind": folder.origin.kind},
-                )
-                result["path"] = canonical
-                changed = True
-            results.append(result)
-        if changed:
-            await self.save()
-        payload = self.model_dump(mode="json")
-        payload["context_folder_results"] = results
-        return ApiSuccessResponse(data=payload)
-
-    @action.post(action_name="remove-context-dir")
-    async def remove_context_dir(self, path: str) -> "ApiResponse":
-        """Detach a context folder from this project. No-op if not attached.
-
-        Matches on the canonical path against the folder links' sidecar
-        entries and unlinks from BOTH buckets. The Folder entity itself is
-        never deleted (it may be linked by other projects) and the directory
-        on disk is never touched.
-        """
-        if not path:
-            return ApiFailResponse(message="path is required")
-        migrated = await self._migrate_legacy_context_dirs()
-        canonical = canonical_posix_path(path)
-        to_remove = [
-            tid
-            for tid in self.context_of_type("folder", bucket="both")
-            if (self.get_context_entry_data(tid) or {}).get("path") == canonical
-        ]
-        if to_remove:
-            self.remove_shared_context_entities(*to_remove)
-            self.remove_private_context_entities(*to_remove)
-        if to_remove or migrated:
-            await self.save()
-        return ApiSuccessResponse(data=self.model_dump(mode="json"))
 
     @action.post(action_name="setup-for-desktop")
     async def setup_for_desktop(self):

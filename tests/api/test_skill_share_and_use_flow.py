@@ -5,18 +5,17 @@ The whole journey, with a REAL git repo rather than a stubbed origin:
   1. ``skill-temp-project`` is created and a skill is authored inside it.
   2. The project is published — ``git-ops/init`` then ``git-ops/push``, both
      through the product's own action surface.
-  3. ``user-temp-project`` attaches the published repo as a SHARED context
-     folder, which is only legal because step 2 gave it a transportable
-     ``GitOrigin``.
+  3. ``user-temp-project`` adds the published checkout as a ``flow.json``
+     dependency (``add-dependency``). Because step 2 gave it a transportable
+     ``GitOrigin``, it is declared as its repository (``git+<url>#<branch>``) —
+     a line that means the same thing on a teammate's machine — not as a path.
   4. The skill is indexed, attributed, and reaches a worker in the consuming
      project through ``resolved_add_dirs`` → ``--add-dir``.
 
-Why this exists next to ``tests/unit/test_project_context_folders.py``: that
-suite stubs ``Folder.detect_origin`` so shared-scope adds are exercisable
-without a repo. That is the right call for unit-testing the buckets, but it
-means the thing this flow actually depends on — that publishing to git is what
-makes a folder shareable — is never exercised. Here the origin is detected off
-a real remote, so ``git init`` alone is provably not enough.
+Why this exists next to ``tests/unit/test_dependency_links.py``: that suite
+works on plain folders and stubs where git is not the subject. Here the origin
+is detected off a real remote, so it is proven that publishing to git is what
+makes a dependency travel — and that ``git init`` alone is provably not enough.
 
 The remote in ``_publish`` is made by this test, not by the product — see
 ``test_publishing_needs_a_remote_no_action_can_create`` for why.
@@ -143,57 +142,52 @@ async def test_skill_shared_by_git_is_usable_from_another_project(
     ), "the skill was not committed"
 
     # Publishing is what makes the folder transportable. Without the remote it
-    # would still be a LocalOrigin and step 3 would be refused.
+    # would still be a LocalOrigin and step 3 would declare a machine-local path.
     origin = await Folder.detect_origin(canonical_posix_path(str(producer_root)))
     assert origin.kind == "git", f"expected a git origin after publish, got {origin.kind}"
     assert origin.transportable is True
 
-    # 3 — the consuming project attaches it as a SHARED context folder.
+    # 3 — the consuming project adds it as a dependency.
     consumer_root = tmp_path / "user-temp-project"
     consumer_root.mkdir()
     consumer = Project(name="user-temp-project", fs_storage_mount_path=str(consumer_root))
     await consumer.save()
 
     resp = await bootstrapped_client.post(
-        f"/api/v1/graph/project/{consumer.id}/add-context-dir",
-        json={"path": str(producer_root), "scope": "shared"},
+        f"/api/v1/graph/project/{consumer.id}/add-dependency",
+        json={"source": str(producer_root)},
     )
     assert resp.status_code == 200, resp.text
+    dep = ApiResponse(**resp.json()).data["dependency"]
+    assert dep["state"] == "ready", dep
+    # Declared as the repository the push went to — what lets it travel.
+    assert dep["source"].startswith("git+file://"), dep
 
     consumer = await Project.get_by_id(consumer.id)
     canonical_producer = canonical_posix_path(str(producer_root))
-    assert canonical_producer in consumer.include_dirs
+    assert canonical_producer in consumer.include_dirs, "the producer's checkout is reused, not re-cloned"
+    assert consumer.share_warnings() == [], "a git dependency resolves on every member's machine"
 
-    # The link is git-backed, which is what lets it travel with the project.
     infos = {i["path"]: i for i in consumer.context_dir_infos}
     assert infos[canonical_producer]["origin_kind"] == "git"
 
-    # 4 — the skill is indexed, and attributed to the project that LINKED it.
+    # 4 — the skill is indexed, and attributed to the project whose mount holds it.
     #
-    # `add-context-dir` kicks a one-shot scan, so the skill becomes a real entity.
+    # Resolving a dependency kicks a one-shot scan, so the skill becomes a real entity.
     indexed = await Entity.get_by_asset_ref(canonical_posix_path(str(skill_dir)))
     assert indexed is not None, "the context folder's skill was never indexed"
     assert indexed.type == "skill"
     assert (indexed.name or "").lower() == SKILL_NAME
 
-    # Attribution goes to the CONSUMER — the project that linked the folder —
-    # even though the skill lives inside the producer's tree.
-    #
-    # The mechanism is the REQUEST scope, not the path: `_resolve_scope_project`
-    # (entity_model) stamps an empty `project_id` from the project the save is
-    # scoped under, which here is the `POST /graph/project/<consumer>/
-    # add-context-dir` endpoint that triggered the scan. Its stated purpose is
-    # to make the entity "visible in project-scoped surfaces immediately, not
-    # only after the next indexer walk" — so the consumer seeing the skill it
-    # just added is the intent, not a side effect.
-    #
-    # Note for anyone chasing this: the path-based rule
-    # (`deepest_project_id_for_path`, "the DEEPEST project whose mount contains
-    # path owns it") never runs for this record — `project_mounts` is empty
-    # unless the roots are nested, and these two are siblings. The two rules
-    # only compete when a later walk re-derives a project_id that is already set.
-    assert indexed.project_id == consumer.id, (
-        f"expected the linking project ({consumer.id}) to own the indexed skill, "
+    # Attribution goes to the PRODUCER — the project whose mount holds the skill —
+    # not to the consumer that depends on it. The resolver indexes a dependency
+    # root as owned by the deepest project mount containing it
+    # (`deepest_project_id_for_path`), falling back to the depending project only
+    # for a folder that is nobody's project. So a skill that lives in a project
+    # stays that project's however many projects depend on it; the consumer sees
+    # it through its context roots, not through ownership.
+    assert indexed.project_id == producer.id, (
+        f"expected the project that holds the skill ({producer.id}) to own it, "
         f"got {indexed.project_id}"
     )
 
@@ -216,19 +210,15 @@ async def test_skill_shared_by_git_is_usable_from_another_project(
 async def test_publishing_needs_a_remote_no_action_can_create(
     bootstrapped_client, user, bootstrap_payload, tmp_path
 ):
-    """`git init` alone leaves the folder unshareable, and no ACTION fixes it.
+    """`git init` alone leaves the folder machine-local, and no ACTION fixes it.
 
     The gap the flow runs into: ``git-ops`` inits and pushes, but creating the
     ``origin`` remote exists only as an agent wizard (``git-context-folder``),
-    never as a deterministic action. So a freshly-initialised project stays a
-    ``LocalOrigin`` and ``add-context-dir`` refuses to share it — anything
-    non-interactive (a test, a script, the backend itself) is stuck here.
-
-    Worth knowing if that wizard is ever replaced by an action: the folder must
-    be RE-MINTED afterwards, not mutated. A Folder's identity is its origin key,
-    so a directory that becomes git-backed keeps its stale ``LocalOrigin``
-    forever unless it is removed and re-added (``use-git-share-gate.runSetup``
-    does exactly that today).
+    never as a deterministic action. So a freshly-initialised folder stays a
+    ``LocalOrigin``: ``add-dependency`` declares it as ``file:<path>`` — usable
+    here, but a member who opens the project will not have it, and sharing says
+    so. Anything non-interactive (a test, a script, the backend itself) is stuck
+    with that.
     """
     node_id = default_compute_node_id(bootstrap_payload)
     root = tmp_path / "unpublished"
@@ -243,18 +233,21 @@ async def test_publishing_needs_a_remote_no_action_can_create(
     origin = await Folder.detect_origin(canonical_posix_path(str(root)))
     assert origin.kind == "local", "a repo with no remote should not look transportable"
 
-    consumer = Project(name=f"needs-remote-{uuid.uuid4().hex[:6]}", fs_storage_mount_path=str(tmp_path))
+    consumer_root = tmp_path / "consumer"
+    consumer_root.mkdir()
+    consumer = Project(name=f"needs-remote-{uuid.uuid4().hex[:6]}", fs_storage_mount_path=str(consumer_root))
     await consumer.save()
     resp = await bootstrapped_client.post(
-        f"/api/v1/graph/project/{consumer.id}/add-context-dir",
-        json={"path": str(root), "scope": "shared"},
+        f"/api/v1/graph/project/{consumer.id}/add-dependency",
+        json={"source": str(root)},
     )
-    assert ApiResponse(**resp.json()).status == "FAIL"
-    assert "git-backed" in (ApiResponse(**resp.json()).message or "")
+    assert resp.status_code == 200, resp.text
+    dep = ApiResponse(**resp.json()).data["dependency"]
+    # Still works here — the degenerate path that skips what sharing is for.
+    assert dep["state"] == "ready", dep
+    assert dep["source"] == f"file:{canonical_posix_path(str(root))}"
 
-    # Private still works — the degenerate path that skips what sharing is for.
-    private = await bootstrapped_client.post(
-        f"/api/v1/graph/project/{consumer.id}/add-context-dir",
-        json={"path": str(root), "scope": "private"},
-    )
-    assert private.status_code == 200, private.text
+    consumer = await Project.get_by_id(consumer.id)
+    assert consumer.share_warnings() == [
+        f"{dep['name']}: {dep['source']} is a folder on this machine; members will not have it"
+    ]

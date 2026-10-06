@@ -21,6 +21,8 @@ from flow_sdk.schema.data_spec.spec import DataSpec
 REQUIREMENT_OAUTH = "oauth"
 REQUIREMENT_PACK = "pack"
 REQUIREMENT_GAP = "gap"
+#: A required ``flow.json`` dependency that is not on this machine.
+REQUIREMENT_DEPENDENCY = "dependency"
 
 
 def input_name(credential: str, env_var: str) -> str:

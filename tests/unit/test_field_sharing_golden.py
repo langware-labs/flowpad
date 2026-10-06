@@ -490,7 +490,8 @@ def test_project_hub_body_override_strips_local_project_state():
 
     inst, could_not_fill = _case(Project, name="p")
     popped, added = _override_delta(inst)
-    # 12 of the override's 13 pops. `fs_storage_provider` is an enum the filler
+    # Every one of the override's pops (`shared_context_origins` left the model
+    # with context folders moving to flow.json). `fs_storage_provider` is an enum the filler
     # leaves None, so `exclude_none` removes it before the pop can — the same
     # blind spot that hid Folder's `path`, here made explicit instead of assumed.
     assert "fs_storage_provider" in could_not_fill
@@ -512,7 +513,6 @@ def test_project_hub_body_override_strips_local_project_state():
         "presence",
         "session_code",
         "session_count",
-        "shared_context_origins",
     ]
     assert added == []
     assert "name" in inst._hub_body(), "the hub hosts a project's name verbatim"
