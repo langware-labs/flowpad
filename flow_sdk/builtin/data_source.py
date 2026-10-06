@@ -1509,6 +1509,16 @@ class DataSource(Entity):
         token = str((self.config or {}).get("verify_token") or "")
         if not token and "verify_token" in (driver.config or {}):
             token = config["verify_token"] = secrets.token_urlsafe(24)
+        claim = await self._hub_claim(driver, {**(self.config or {}), **config})
+        if claim is not None:
+            # The account on the hub's chain for this vendor (``webhook/@<provider>``): the hub checks the
+            # vendor's signature with the claim's own secret and hands each event to THIS channel on THIS
+            # instance -- never to every desktop of the person.
+            data = await hub_post("webhook", claim, None, "chain")
+            if not data or not data.get("url"):
+                return ReturnedValue.not_yet("the hub did not take this account — sign in to Flowpad cloud first")
+            update = SourceUpdateSpec(config=config, secrets={hook.url_var: str(data["url"])})
+            return ReturnedValue.satisfied(f"public URL {data['url']}", value=update)
         body = {
             "name": f"{self.provider}-{self.id}",
             "default_path": WEBHOOK_ROUTE.format(name=self.provider),
@@ -1520,6 +1530,28 @@ class DataSource(Entity):
             return ReturnedValue.not_yet("sign in to Flowpad cloud first — the public URL is held by the hub")
         update = SourceUpdateSpec(config=config, secrets={hook.url_var: str(data["url"])})
         return ReturnedValue.satisfied(f"public URL {data['url']}", value=update)
+
+    async def _hub_claim(self, driver, config: dict) -> Optional[dict]:
+        """The chain request for a driver that declares its account as a hub claim (``hub_claim``), or None."""
+        declare = getattr(driver.cls, "hub_claim", None)
+        if declare is None:
+            return None
+        try:
+            values = (await driver.credentials_for(self)).values
+        except Exception:  # noqa: BLE001 — no credential yet: nothing to claim with
+            return None
+        secrets = {k: v.get_secret_value() for k, v in values.items() if v is not None and v.get_secret_value()}
+        claim = declare(config, secrets)
+        if not claim:
+            return None
+        from flow_sdk.instance_settings.runtime import instance_uid  # noqa: PLC0415
+
+        return {
+            "parent": f"@{claim['provider']}",
+            "claim": {"kind": "account", "key": claim["key"]},
+            "proof": claim.get("proof") or {},
+            "target": {"kind": "desktop", "instance_id": instance_uid(), "data_source_id": str(self.id)},
+        }
 
     @core_action.post(action_name="verify")
     async def verify_action(self) -> ApiResponse:
