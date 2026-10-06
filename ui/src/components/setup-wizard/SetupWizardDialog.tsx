@@ -122,6 +122,19 @@ export function SetupWizardDialog({
                     {stage.detail ? t`Resume` : t`Start`}
                   </Button>
                 )}
+                {/* Done is what the last run found, not a promise about now: the far side can undo it (a
+                    phone that sent "stop", a revoked token). Running it again re-checks every step and
+                    redoes only those that no longer hold. */}
+                {stage.state === 'done' && !running && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    data-testid={`setup-stage-rerun-${stage.stage}`}
+                    onClick={() => void run(stage)}
+                  >
+                    <Trans>Run again</Trans>
+                  </Button>
+                )}
               </li>
             );
           })}
