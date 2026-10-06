@@ -3044,7 +3044,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
      * server-side `start_failure` latch before launching. Without it the
      * backend refuses to respawn a latched process. */
     retry?: boolean;
-  }): Promise<boolean> {
+  }, hooks?: { beforeAttach?: () => void }): Promise<boolean> {
     // No client-side STOPPING guard. The server's ``open`` action runs
     // ``reap_if_orphaned()`` at entry: if the row is stuck in STOPPING with
     // a dead worker, it's reset to STOPPED and the start proceeds normally.
@@ -3080,7 +3080,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
       ['process_load', 'agentic_process.load'],
       `AgenticProcess.start POST /open took ${msSince(tOpen)}ms proc=${this.id.slice(0, 8)} ok=${!!result}`,
     );
-    return this.adoptOpenPayload(result, options);
+    return this.adoptOpenPayload(result, { ptyTimeout: options?.ptyTimeout, beforeAttach: hooks?.beforeAttach });
   }
 
   /**
@@ -3098,7 +3098,13 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
       status?: string;
       shell: Record<string, unknown>;
     } | null,
-    options?: { ptyTimeout?: number },
+    options?: {
+      ptyTimeout?: number;
+      /** Runs once the shell is wired, right before this attach. A mounted
+       *  terminal answering here (clear + forced attach) is the attach this
+       *  call then joins in flight, so a switch connects once, not twice. */
+      beforeAttach?: () => void;
+    },
   ): Promise<boolean> {
     if (!result) throw new Error('Process could not be opened (process may be terminated)');
     if (result.status) {
@@ -3115,6 +3121,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
       shell.ptyConnection.shellId = shell.id;
       if (shell.compute_node_id) shell.ptyConnection.computeNodeId = shell.compute_node_id;
     }
+    options?.beforeAttach?.();
     const tAttach = performance.now();
     await shell.attachPty({
       // No cols/rows: `options` carries the window-sized estimate that seeded a NEW
@@ -3202,8 +3209,8 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
    */
   async restart(): Promise<void> {
     if (this.shell_id) await this.stop();
-    await this.start();
-    this.emit('restarted', { process: this });
+    // Same order as `switchMode`: the terminal's forced attach is the one `start` joins.
+    await this.start(undefined, { beforeAttach: () => this.emit('restarted', { process: this }) });
   }
 
   /**
@@ -3245,8 +3252,10 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
         } | null
       >(actionInfo);
       if (wantPty) {
-        await this.adoptOpenPayload(result);
-        this.emit('restarted', { process: this });
+        // 'restarted' BEFORE the attach: the terminal clears and force-attaches,
+        // and this attach joins it. Emitted after, the terminal cleared the first
+        // paint and had to attach a second time to get it back.
+        await this.adoptOpenPayload(result, { beforeAttach: () => this.emit('restarted', { process: this }) });
       } else {
         // The PTY is dead; the respawn on the way back reuses its id.
         shell?.ptyConnection?.markPtyGone();
