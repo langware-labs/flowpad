@@ -2,8 +2,9 @@
 
 Chain under test, end to end:
 
-  ``add-context-dir`` (mints a Folder entity, links it into the project's
-  private context bucket) → computed ``Project.include_dirs`` →
+  ``Project.add_dependency`` (declares the folder in ``flow.json``, mints a
+  Folder entity, links it into the project's context) → computed
+  ``Project.include_dirs`` →
   ``get_project()`` stamps ``_project_context_dirs`` → ``resolved_add_dirs``
   → the driver's ``--add-dir`` mount → the live worker can actually READ a
   sentinel file planted inside the context folder (outside its workdir).
@@ -97,8 +98,8 @@ async def test_worker_mounts_context_folder(
     workdir = tmp_path / f"wd-{uuid.uuid4().hex[:8]}"
     workdir.mkdir()
     project = await Project(name=str(workdir)).save()
-    resp = await project.add_context_dir(str(tmp_path / "ctx-folder"))
-    assert resp.status == "SUCCESS"
+    state = await project.add_dependency(str(tmp_path / "ctx-folder"))
+    assert state.state == "ready", state
     assert ctx_root in project.include_dirs
 
     ap = await make_process(

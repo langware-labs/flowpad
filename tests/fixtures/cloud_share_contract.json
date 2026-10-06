@@ -5,7 +5,6 @@
       "artifacts",
       "expand",
       "id",
-      "legacy_include_dirs_",
       "name",
       "semantic_lock",
       "shared_context_entities",
@@ -18,8 +17,7 @@
       "last_session_at",
       "presence",
       "session_code",
-      "session_count",
-      "shared_context_origins"
+      "session_count"
     ],
     "withheld_by_declaration": [
       "asset_occurrences",
@@ -69,9 +67,7 @@
     "include_dirs",
     "context_dir_infos"
   ],
-  "readded_by_share": [
-    "shared_context_origins"
-  ],
+  "readded_by_share": [],
   "portable_asset_projection_fields": [
     "contract_version",
     "fields",

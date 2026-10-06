@@ -1,0 +1,8 @@
+{
+  "name": "git-dependency",
+  "description": "Sets up a git repository — an existing clone or a brand-new one — as a project in the Flowpad workspace, and adds it to the current project's flow.json as a dependency.",
+  "version": 1,
+  "enabled": true,
+  "icon": "GitBranch",
+  "agent": "git-dependency"
+}

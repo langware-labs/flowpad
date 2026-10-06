@@ -59,7 +59,6 @@ _MIRRORED_FIELDS = (
     "locale",
     "members",
     "shared_context_entities",
-    "shared_context_origins",
 )
 
 
@@ -125,7 +124,6 @@ async def materialize_remote_membership_entity(
         # never stamp the local sync user.
         with remote_reflection():
             ent = await ent.save(someone_typeid, notify=notify)
-        await materialize_project_context_folders(ent, data, someone_typeid, notify=notify)
         return ent
 
     changed = False
@@ -141,7 +139,6 @@ async def materialize_remote_membership_entity(
         existing.fetched_at = datetime.now(UTC)
         with remote_reflection():
             await existing.save(someone_typeid, notify=notify)
-    await materialize_project_context_folders(existing, data, someone_typeid, notify=notify)
     return existing
 
 
@@ -149,69 +146,3 @@ async def materialize_remote_organization(
     data: dict[str, Any], someone_typeid: str | None = None, *, notify: bool = True
 ) -> Optional[Organization]:
     return await materialize_remote_membership_entity(Organization, data, someone_typeid, notify=notify)
-
-
-async def materialize_project_context_folders(
-    project: Entity,
-    data: dict[str, Any],
-    someone_typeid: str | None = None,
-    *,
-    notify: bool = True,
-) -> int:
-    """Materialize received project shared context Folder refs.
-
-    Accept never clones. It creates remote Folder rows from the transportable
-    origin map and links them with empty sidecars; project-open lazy resolve
-    later stamps receiver-local paths.
-    """
-    if getattr(project, "type", None) != "project" or not isinstance(data, dict):
-        return 0
-    raw_refs = data.get("shared_context_entities") or []
-    raw_origins = data.get("shared_context_origins") or getattr(project, "shared_context_origins", None) or {}
-    if not isinstance(raw_refs, list) or not isinstance(raw_origins, dict):
-        return 0
-
-    from flow_sdk.builtin.folder import Folder  # noqa: PLC0415
-    from flow_sdk.fs_store.origin.field import ORIGIN_ADAPTER  # noqa: PLC0415
-
-    changed = False
-    count = 0
-    for raw_ref in raw_refs:
-        try:
-            tid = TypeId.to_typeid(raw_ref)
-        except Exception:
-            continue
-        if tid.type != "folder":
-            continue
-        raw_origin = raw_origins.get(str(tid)) or (raw_origins.get(tid.id) if tid.id else None)
-        if raw_origin is None:
-            continue
-        try:
-            origin = ORIGIN_ADAPTER.validate_python(raw_origin)
-        except Exception as exc:  # noqa: BLE001
-            logger.debug("[membership-sync] invalid shared context origin for %s: %s", tid, exc)
-            continue
-        if not origin.transportable:
-            continue
-        folder = await Folder.mint_for_origin(origin)
-        folder_changed = False
-        if folder.origin is None:
-            folder.origin = origin
-            folder_changed = True
-        if not folder.remote:
-            folder.remote = True
-            folder_changed = True
-        if folder_changed:
-            with remote_reflection():
-                await folder.save(someone_typeid, notify=notify)
-        changed = project.add_shared_context_entities(folder.typeid) or changed
-        count += 1
-
-    if getattr(project, "shared_context_origins", None) != raw_origins and hasattr(project, "shared_context_origins"):
-        setattr(project, "shared_context_origins", dict(raw_origins))
-        changed = True
-    if changed:
-        project.fetched_at = datetime.now(UTC)
-        with remote_reflection():
-            await project.save(someone_typeid, notify=notify)
-    return count

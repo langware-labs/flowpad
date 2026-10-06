@@ -94,6 +94,9 @@ proc = await AgenticProcess.get_by_typeid(answer.executor)
   verdict (an errored worker is `NOT_YET`); a remotely placed agent answers
   `NOT_APPLICABLE` rather than being silently run here.
 * `agent.use()` opens a visible session as the agent with no first turn.
+* An agent's own folder (`await agent.home()`) is always in its process's context — even when
+  `use(project_id=…)` runs it in another project — and the agent is told where it is, so the
+  relative paths in its prompt still resolve ([project dependencies](project-dependencies.md) §5).
 
 `prompt()` returning is not the turn finishing. `launch(..., wait=True)` and
 `AgenticProcess.run` wait for the turn; beyond the reply, read the outcome the

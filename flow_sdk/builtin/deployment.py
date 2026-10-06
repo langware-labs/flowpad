@@ -1047,6 +1047,18 @@ class Deployment(Entity):
         # agent writes nothing.
         await agent.attach_declared_mcp_servers()
 
+        # An agent acting in ANOTHER project's checkout still needs its own files: mount
+        # its home and say where it is, so a path in its prompt resolves there.
+        acting_project_id = options.pop("project_id", None) or agent.project_id
+        additional_dirs = list(agent.additional_dirs or [])
+        home = await _foreign_home(agent, acting_project_id)
+        if home:
+            if home not in additional_dirs:
+                additional_dirs.append(home)
+            context_data["instructions"] = "\n\n".join(
+                p for p in (str(context_data.get("instructions") or "").strip(), home_line(home)) if p
+            )
+
         process = AgenticProcess(
             name=options.pop("name", None) or f"{agent.name}: {prompt[:40]}",
             workdir=options.pop("workdir", None),
@@ -1057,9 +1069,9 @@ class Deployment(Entity):
             pty_mode=options.pop("pty_mode", False),
             process_type=options.pop("process_type", ProcessKind.EXECUTION.value),
             worker_type=worker_type_value(worker_override or agent.worker_type or await selected_worker_type()),
-            project_id=options.pop("project_id", None) or agent.project_id,
+            project_id=acting_project_id,
             load_flowpad_assistant=cos_options.get("load_flowpad_assistant", agent.load_flowpad_assistant),
-            additional_dirs=list(agent.additional_dirs or []),
+            additional_dirs=additional_dirs,
             # The agent's MCP assets, resolved from its folder. Set on the
             # constructor rather than via ``process.add_mcp`` because this verb
             # is documented "not saved" and ``add_mcp`` saves. A process may
@@ -1229,3 +1241,24 @@ def _local_node_typeid() -> str:
 
 
 __all__ = ["NODE_PROVIDERS", "Deployment", "DeploymentIdentity"]
+
+
+def home_line(home: str) -> str:
+    """The one sentence that tells an agent where its own files are."""
+    return f"Your own files are in {home}; paths in your instructions are relative to it."
+
+
+async def _foreign_home(agent, acting_project_id: str | None) -> str | None:
+    """``agent.home()`` when it lies outside the acting project's folder, else ``None``."""
+    home = await agent.home()
+    if not home:
+        return None
+    from flow_sdk.builtin.project import Project  # noqa: PLC0415
+    from flow_sdk.fs_store.path_utils import canonical_posix_path, is_path_under  # noqa: PLC0415
+
+    acting = await Project.get_by_id(acting_project_id) if acting_project_id else None
+    mount = getattr(acting, "fs_storage_mount_path", None)
+    if mount and is_path_under(home, canonical_posix_path(mount)):
+        return None
+    return home
+

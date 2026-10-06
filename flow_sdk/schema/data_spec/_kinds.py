@@ -65,6 +65,7 @@ def register_builtin_kinds() -> None:
     import flow_sdk.schema.data_spec.confirm_spec  # noqa: F401  — registers ``confirm``
     import flow_sdk.schema.data_spec.connection_spec  # noqa: F401  — registers ``connection``
     import flow_sdk.schema.data_spec.dataset_spec  # noqa: F401  — self-registering leaves
+    import flow_sdk.schema.data_spec.flow_json_spec  # noqa: F401  — registers ``flow.json`` / ``flow.dependency*``
     import flow_sdk.schema.data_spec.decision_spec  # noqa: F401  — registers ``decision.spec`` / ``decision.result`` and their questions / answers
     import flow_sdk.schema.data_spec.deployment_secrets_spec  # noqa: F401  — registers ``deployment.secrets``
     import flow_sdk.schema.data_spec.deployment_timeline_spec  # noqa: F401  — registers ``deployment.timeline`` / ``deployment.timeline_event`` / ``deployment.thread(s)`` / ``deployment.process`` / ``deployment.code``

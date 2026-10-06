@@ -477,6 +477,7 @@ async def _index_additional_dir(
     *,
     read_only: bool = False,
     strict: bool = False,
+    project_id: str | None = None,
 ) -> None:
     """Run a one-shot indexer scan over ``path`` so its skills/agents become
     discoverable via ``Entity.assets_by_path``.
@@ -510,7 +511,9 @@ async def _index_additional_dir(
             if strict:
                 raise FileNotFoundError(f"Context directory is not available: {path}")
             return
-        new_root = FSRef(p, record_type=RecordType.CWD_ROOT, scope="user", read_only=read_only)
+        # ``project_id`` names who owns what the walk finds; ``None`` keeps the request-scoped
+        # rule (``index_function._walk_requested_by_project``).
+        new_root = FSRef(p, record_type=RecordType.CWD_ROOT, scope="user", read_only=read_only, project_id=project_id)
         # include_temp=True so /tmp / /var/folders paths aren't filtered out —
         # the user explicitly added this dir, so honor it regardless of location.
         result = await get_shared_indexer().index(IndexerOptions(roots=(new_root,), verbose=False, include_temp=True))
@@ -6890,9 +6893,9 @@ class AgenticProcess(Entity):
         try:
             from pathlib import Path as _Path  # noqa: PLC0415
 
-            from flow_sdk.builtin.bootstrap_manifest import read_bootstrap_manifest  # noqa: PLC0415
+            from flow_sdk.assets.flow_json import read_always_use_skills  # noqa: PLC0415
 
-            skills = read_bootstrap_manifest(_Path(workdir)).always_use_skills
+            skills = read_always_use_skills(_Path(workdir))
         except Exception:  # noqa: BLE001 -- a manifest must never fail a launch
             return ""
         if not skills:

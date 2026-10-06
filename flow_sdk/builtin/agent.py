@@ -736,6 +736,33 @@ class Agent(Entity):
             },
         )
 
+    async def home(self) -> str | None:
+        """The folder this agent's own files are relative to — the project whose folder
+        holds its definition (``langware-os`` for its legal agent), else the repository
+        it sits in. ``None`` for an agent with no files (a row-only agent).
+
+        Paths in a system prompt (``docs/legal/guide.md``) mean this folder. When the
+        agent runs in ANOTHER project's checkout (``use(project_id=…)``) its working
+        directory is that project, so the launch mounts this folder and names it.
+        """
+        if not self.asset_ref:
+            return None
+        from flow_sdk.builtin.project import Project  # noqa: PLC0415
+        from flow_sdk.fs_store.indexer.roots import deepest_project_id_for_path, load_project_mounts  # noqa: PLC0415
+        from flow_sdk.fs_store.path_utils import canonical_posix_path  # noqa: PLC0415
+        from flow_sdk.utils.git import find_project_root  # noqa: PLC0415
+
+        try:
+            ref = canonical_posix_path(self.asset_ref)
+        except OSError:
+            return None
+        owner = deepest_project_id_for_path(ref, await load_project_mounts())
+        project = await Project.get_by_id(owner) if owner else None
+        if project is not None and project.fs_storage_mount_path:
+            return canonical_posix_path(project.fs_storage_mount_path)
+        repo = find_project_root(ref)
+        return canonical_posix_path(repo) if repo else None
+
     async def local_deployment(self) -> Deployment:
         """Get-or-create the placement that runs this agent on THIS machine."""
         return await self.deploy("local")
