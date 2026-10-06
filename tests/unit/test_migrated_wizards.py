@@ -31,7 +31,6 @@ WIZARD_ROOT = system_projects_root() / "flowpad_assistant" / "agentic-assets" / 
 #: The two differ for asset-cleanup — the folder is the asset, the `name` in the
 #: document is the contract — which is why this is a mapping and not a glob.
 LAUNCHED = {
-    "git-context-folder": "git-context-folder",
     "task-analyze": "task-analyze",
     "asset-cleanup-wizard": "asset-cleanup",
     "webapp-fixer": "webapp-fixer",

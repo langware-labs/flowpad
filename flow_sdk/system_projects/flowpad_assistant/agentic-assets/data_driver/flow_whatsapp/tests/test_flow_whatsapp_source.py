@@ -120,7 +120,7 @@ async def test_what_the_phone_sent_is_read_after_the_cursor():
 
 
 async def test_a_source_mirrors_its_own_phone_only_and_nothing_before_it_connects():
-    """Two sources of one person (one abandoned before its phone connected) put each message in the inbox twice."""
+    """Two sources of one person (one abandoned before its phone connected) put each message in the stream inbox twice."""
     hub = _Hub()
     hub.stored = [
         {"wamid": "wamid.A", "wa_id": PHONE, "direction": "in", "text": "mine", "at": 100.0},
