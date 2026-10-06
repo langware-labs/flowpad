@@ -181,13 +181,15 @@ describe('click: media previews in place, the rest opens as a tab', () => {
     expect(screen.queryByTestId('media-lightbox')).toBeNull();
   });
 
-  it('a message (no compute node) previews a web image, and opens a file image as a tab', async () => {
-    const message = { resolveDisplayTarget: vi.fn() };
+  it('a source on no compute node (a message, a headless chat) previews a file image from this machine', async () => {
+    // The backend resolved the path here (`Entity.link_node` is None), so this machine serves it.
+    const message = { resolveDisplayTarget: vi.fn().mockResolvedValue({ kind: 'vfs', path: '/work/out/chart.png' }) };
     const { unmount } = render(<ClickHarness link="https://x.test/pic.png" shell={message} />);
     expect((await screen.findByRole('img', { name: 'pic.png' })).getAttribute('src')).toBe('https://x.test/pic.png');
     unmount();
     render(<ClickHarness link="out/chart.png" shell={message} />);
-    await waitFor(() => expect(mocks.openLink).toHaveBeenCalledWith('out/chart.png', message));
-    expect(message.resolveDisplayTarget).not.toHaveBeenCalled();
+    const img = await screen.findByRole('img', { name: 'chart.png' });
+    expect(img.getAttribute('src')).toContain('/compute_node/@local/fs/download/work/out/chart.png');
+    expect(mocks.openLink).not.toHaveBeenCalled();
   });
 });

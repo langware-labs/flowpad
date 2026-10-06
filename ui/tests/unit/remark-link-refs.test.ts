@@ -6,14 +6,15 @@ import remarkParse from 'remark-parse';
 import { unified } from 'unified';
 import remarkLinkRefs from '@src/lib/remark-link-refs';
 
-function links(markdown: string): Array<{ url: string; code: boolean }> {
+function links(markdown: string): Array<{ url: string; code: boolean; ref?: string }> {
   const processor = unified().use(remarkParse).use(remarkGfm).use(remarkLinkRefs);
   const tree = processor.runSync(processor.parse(markdown)) as Root;
-  const out: Array<{ url: string; code: boolean }> = [];
+  const out: Array<{ url: string; code: boolean; ref?: string }> = [];
   const walk = (node: { type: string; children?: unknown[] }) => {
     if (node.type === 'link') {
       const link = node as Link;
-      out.push({ url: link.url, code: link.children[0]?.type === 'inlineCode' });
+      const ref = (link.data?.hProperties as { dataLinkRef?: string } | undefined)?.dataLinkRef;
+      out.push({ url: link.url, code: link.children[0]?.type === 'inlineCode', ...(ref !== link.url ? { ref } : {}) });
     }
     for (const child of (node.children ?? []) as Array<{ type: string; children?: unknown[] }>) walk(child);
   };
@@ -50,5 +51,17 @@ describe('remarkLinkRefs', () => {
 
   it('leaves fenced code alone', () => {
     expect(links('```\nsrc/a.ts:3\n```')).toEqual([]);
+  });
+
+  it('a position is a reference, not a URL scheme: it survives as the link ref', () => {
+    expect(links('At code.py:12:3 and `code.py:3` and C:\\x\\y.txt')).toEqual([
+      { url: 'code.py:12:3', code: false },
+      { url: 'code.py:3', code: true },
+      { url: 'C:\\x\\y.txt', code: false },
+    ]);
+  });
+
+  it('leaves a browser-owned scheme a plain link', () => {
+    expect(links('Mail [me](mailto:me@x.test)')).toEqual([{ url: 'mailto:me@x.test', code: false, ref: undefined }]);
   });
 });

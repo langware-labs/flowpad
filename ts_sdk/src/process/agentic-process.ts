@@ -1788,7 +1788,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
     return this.shellEntity?.compute_node_id ?? null;
   }
 
-  /** The machine this process's files live on — what a clicked link's bytes are fetched from. */
+  /** The machine this process's files live on (its shell's); null when it has no shell. */
   get computeNodeTypeId(): TypeId | null {
     return this.shellEntity?.computeNodeTypeId ?? null;
   }

@@ -1,6 +1,7 @@
 import { FlowData } from '@sdk';
 import { basename } from '@src/components/asset-manager/asset-row-helpers';
 import { MarkdownView } from '@src/components/markdown-view';
+import { useLinkHandlers } from '@src/components/links/LinkHandlersContext';
 import { Button } from '@src/components/ui/button';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
 import { useLingui } from '@lingui/react/macro';
@@ -34,6 +35,7 @@ export function MetaMessageChip({
   const skillName = structuredName ?? (skillDir ? basename(skillDir) : null);
   const label = skillName ? t`Using skill: ${skillName}` : t`System note`;
   const [open, setOpen] = useState(false);
+  const links = useLinkHandlers();
   const { openSkill, opening } = useOpenSkill();
 
   const openEditor = async () => {
@@ -70,7 +72,7 @@ export function MetaMessageChip({
               </DialogTitle>
             </DialogHeader>
             <div className="min-h-0 flex-1 overflow-y-auto pe-1 text-[14px] leading-7">
-              <MarkdownView value={skillBody(content)} compact />
+              <MarkdownView value={skillBody(content)} compact links={links} />
             </div>
             <DialogFooter>
               <Button

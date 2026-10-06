@@ -32,7 +32,13 @@ describe('linkKind', () => {
 });
 
 describe('linkActions', () => {
-  const ctx = (over: Partial<LinkContext>): LinkContext => ({ kind: 'file', media: false, surface: 'tab', host: false, ...over });
+  const ctx = (over: Partial<LinkContext>): LinkContext => ({
+    kind: 'file',
+    media: false,
+    surface: 'tab',
+    host: false,
+    ...over,
+  });
 
   it('opens as a tab, and offers Vibe only for a process outside vibe', () => {
     expect(linkActions(ctx({}))).toEqual({ primary: 'open', menu: ['copy', 'open', 'browser', 'browser-profile'] });

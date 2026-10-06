@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState, type MouseEvent, type ReactNode } from 'react';
+import { useRef, useState, type MouseEvent, type ReactNode } from 'react';
 import { Check, CheckCheck, Clock } from 'lucide-react';
 import { resendConversation, type AgenticProcess, type FlowMessage } from '@sdk';
 import type { ConversationMessage } from '@sdk/entities/conversation';
@@ -7,11 +7,10 @@ import { Task, type ITask } from '@sdk/entities/task';
 import { TaskItIcon, TaskOwnerChip, TaskStatusChip } from './task-it';
 import { CHIP_LAYOUT, chipStyleFor } from './EntityChip';
 import { MessageActionsMenu } from './MessageActionsMenu';
-import { MARKDOWN_LINK_CLASS, MarkdownView } from '@src/components/markdown-view';
+import { MarkdownView } from '@src/components/markdown-view';
 import { useLinks } from '@src/components/links/LinkMenu';
 import { LinkifiedText } from '@src/components/links/LinkifiedText';
-import { linkEventProps, type LinkHandlers } from '@src/components/links/link-events';
-import type { Components } from 'react-markdown';
+import type { LinkHandlers } from '@src/components/links/link-events';
 import { AttachmentActionsRow, PromptAttachmentPreview, useAttachmentActions } from './attachment-actions';
 import { useLocalUser } from './useLocalUser';
 import { avatarColorForMessage } from './avatar-color';
@@ -207,23 +206,6 @@ function parseClaudeQuote(content: string): { prefix: string; quoted: string } |
  */
 function MessageBody({ content, isBot, links }: { content: string; isBot: boolean; links: LinkHandlers | null }) {
   const bodyClass = `whitespace-pre-wrap break-words text-sm ${isBot ? 'italic text-foreground/70' : 'text-foreground/90'}`;
-  // Markdown links take the same click and menu as the plain-text ones.
-  const components = useMemo<Partial<Components> | undefined>(
-    () =>
-      links
-        ? {
-            a: ({ href, children }) =>
-              href ? (
-                <a href={href} className={MARKDOWN_LINK_CLASS} {...linkEventProps(links, href)}>
-                  {children}
-                </a>
-              ) : (
-                <>{children}</>
-              ),
-          }
-        : undefined,
-    [links],
-  );
   const claudeQuote = parseClaudeQuote(content);
   if (claudeQuote) {
     // The executed reply renders as real Markdown (bold, lists, code fences,
@@ -234,7 +216,7 @@ function MessageBody({ content, isBot, links }: { content: string; isBot: boolea
       <div className={`text-sm ${isBot ? 'text-foreground/70' : 'text-foreground/90'}`}>
         <span className="font-medium text-muted-foreground">{claudeQuote.prefix}</span>
         <div className="mt-1 break-words text-foreground/85">
-          <MarkdownView value={claudeQuote.quoted} compact components={components} />
+          <MarkdownView value={claudeQuote.quoted} compact links={links} />
         </div>
       </div>
     );

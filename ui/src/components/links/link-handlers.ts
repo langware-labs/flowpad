@@ -7,6 +7,7 @@ import { fsStore, type AgenticProcess } from '@sdk';
 import { t } from '@lingui/core/macro';
 import { errorMessage } from '@src/lib/error-message';
 import { isWebUrl, lightboxMediaName } from '@src/lib/link-kind';
+import { LOCAL_COMPUTE_NODE } from '@src/navigation/asset-doc-types';
 import type { NavigationActions } from '@src/navigation/NavigationActions';
 import { notify } from '@src/notifications/notify';
 import type { LinkActionId } from './link-actions';
@@ -31,13 +32,15 @@ export interface LinkHandlerDeps {
 /**
  * The bytes behind an image/video link: a web URL as itself, a file reference as the
  * source's own machine serves it (the path the backend resolved, on its compute node).
+ * A source on no node — a headless chat, a message — resolved its path on this machine,
+ * which is where the backend looked (`Entity.link_node`).
  */
 async function mediaFor(link: string, source: LinkSource | null): Promise<LinkMedia | null> {
   const name = lightboxMediaName(link);
   if (!name) return null;
   if (isWebUrl(link)) return { url: link, name };
-  const node = source?.computeNodeTypeId;
-  if (!source || !node) return null;
+  if (!source) return null;
+  const node = source.computeNodeTypeId ?? LOCAL_COMPUTE_NODE;
   const path = (await source.resolveDisplayTarget(link))?.path;
   return path ? { url: fsStore.getState().getDownloadUrl(node, path), name } : null;
 }
@@ -46,7 +49,11 @@ function copyLink(link: string): void {
   navigator.clipboard.writeText(link).then(
     () => notify.success({ title: t`Link copied` }),
     (error: unknown) =>
-      notify.error({ title: t`Could not copy link`, message: errorMessage(error, t`Clipboard unavailable`), forceToast: true }),
+      notify.error({
+        title: t`Could not copy link`,
+        message: errorMessage(error, t`Clipboard unavailable`),
+        forceToast: true,
+      }),
   );
 }
 
