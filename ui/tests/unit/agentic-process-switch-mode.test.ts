@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { AgenticProcess, ProcessStatus, WorkerMode, dataManager, type IAgenticProcess } from '@sdk';
+import { AgenticProcess, ProcessStatus, Shell, WorkerMode, dataManager, type IAgenticProcess } from '@sdk';
 
 interface SwitchModeInternals {
   _pendingTransport?: { pty_mode?: boolean; visible?: boolean };
@@ -85,6 +85,24 @@ describe('AgenticProcess.switchMode', () => {
     // Frontend holds the durable transport intent through the backend action.
     expect(p.visible).toBe(false);
     expect(p.pty_mode).toBe(false);
+  });
+
+  it('CLI → forgets the killed PTY so the respawn under the same id re-attaches', async () => {
+    const markPtyGone = vi.fn();
+    const cachedShell = { status: 'running', ptyConnection: { markPtyGone } };
+    const cacheSpy = vi.spyOn(Shell, 'getByIdFromCache').mockReturnValue(cachedShell as any);
+    const p = new AgenticProcess({
+      id: '00000000-0000-4000-8000-000000000001',
+      status: 'idle',
+      visible: true,
+      pty_mode: true,
+      shell_id: fakeShell.id,
+    } as any);
+
+    await p.switchMode(WorkerMode.CLI);
+
+    expect(markPtyGone).toHaveBeenCalledTimes(1);
+    cacheSpy.mockRestore();
   });
 
   it('CLI rejection restores the prior PTY intent and desired-value latches', async () => {
