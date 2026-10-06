@@ -25,9 +25,9 @@ if TYPE_CHECKING:  # pragma: no cover
 #: A cloud placement's credential environment when the caller names none.
 DEFAULT_CLOUD_ENVIRONMENT = "production"
 
-#: The hub compute providers a cloud placement can land on, by the hub's own names. A caller that
-#: names none leaves the choice to the hub (its configured default, else it refuses).
-CLOUD_PROVIDERS = ("e2b", "gcp_vm")
+#: The hub compute provider a cloud placement lands on when the caller names none. Which providers
+#: exist is the hub's to say: it refuses one it does not offer.
+DEFAULT_CLOUD_PROVIDER = "e2b"
 
 
 async def deploy_entity_to_cloud(
@@ -38,7 +38,7 @@ async def deploy_entity_to_cloud(
     Deliberately takes no node and no principal. Were either passable from here
     they would be passable from anywhere, which is the exact hole the hub's
     pentest guards exist to keep shut. This call says only *which entity*, on which
-    ``provider`` (one of :data:`CLOUD_PROVIDERS`; none: the hub chooses), and
+    ``provider`` (the hub's name; none: :data:`DEFAULT_CLOUD_PROVIDER`), and
     which credential ``environment`` the placement reads (``production`` by
     default) — a name, never a value. ``require`` names the variables the hub must already hold for
     the placement; it refuses (``not_ready``) before paying for a machine otherwise.
@@ -60,7 +60,7 @@ async def deploy_entity_to_cloud(
         # so a hub-side refusal surfaces here rather than returning {}.
         body = {
             "environment": environment,
-            **({"provider": provider} if provider else {}),
+            "provider": provider or DEFAULT_CLOUD_PROVIDER,
             **({"require": require} if require else {}),
         }
         data = await client.post(path, body)
@@ -74,4 +74,4 @@ async def deploy_entity_to_cloud(
     return data
 
 
-__all__ = ["CLOUD_PROVIDERS", "deploy_entity_to_cloud"]
+__all__ = ["DEFAULT_CLOUD_PROVIDER", "deploy_entity_to_cloud"]

@@ -9,13 +9,9 @@ import { mainFileForType } from '../models/asset-editor';
 import { dataContext } from '../FlowSync/context';
 import { AGENT_AVATAR_FILE, AGENT_AVATAR_REF } from './agent-avatar';
 import type { IDeployment } from './deployment';
-import { ComputeProviderType } from './compute-node/compute-node-types';
 
-/** The hub compute providers a cloud deployment lands on — sent to the hub as-is. */
-export type CloudDeployProvider = ComputeProviderType.E2B | ComputeProviderType.GCP_VM;
-
-/** Every {@link CloudDeployProvider} this client knows how to present, in display order. */
-export const CLOUD_DEPLOY_PROVIDERS: readonly CloudDeployProvider[] = [ComputeProviderType.E2B, ComputeProviderType.GCP_VM];
+/** A hub compute provider a cloud deployment lands on, by the hub's own name — sent to the hub as-is. */
+export type CloudDeployProvider = string;
 import { DataSource, type IDataSource } from './data-source';
 import { AgentMailbox, type IAgentMailbox } from './agent-mailbox';
 import { Trigger } from './trigger';
