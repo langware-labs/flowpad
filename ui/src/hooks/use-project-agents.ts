@@ -48,7 +48,7 @@ function underDir(dir: string): ExpressionNode[] {
 
 /**
  * The `Agent` assets this project can launch — its own, plus every agent
- * supplied by a project attached to it as a context folder (a vendor help desk
+ * supplied by a project added to it as a dependency (a vendor help desk
  * shipping a support agent is the motivating case).
  *
  * NOT `SubAgent` (`.claude/agents/*.md`): that is the provider-owned prompt

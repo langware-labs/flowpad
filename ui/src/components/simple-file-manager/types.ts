@@ -46,7 +46,7 @@ export interface SimpleFileManagerProps {
    *  (e.g. the Explorer navigator's `refreshNode`). */
   onFsMutated?: (parentRelPath: string) => void;
   /** Row-highlight predicate (absolute node path + is-dir). Rows matching it
-   *  render in the highlight color — used by the git-backed context-folder
+   *  render in the highlight color — used by the git-backed dependency
    *  browser to mark files not yet pushed to the remote. */
   isPathHighlighted?: (path: string, isDir: boolean) => boolean;
 }

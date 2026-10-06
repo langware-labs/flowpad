@@ -3,20 +3,20 @@ import { dataContext, isHubOnly } from '@sdk';
 import { useProject } from '@sdk/react/hooks';
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import {
-  CONTEXT_FOLDERS_WIKI,
-  ContextFolderScopeChips,
-  useContextFolderSources,
-  type ContextFolderSource,
-} from '@src/components/assets/context-folder-sources';
+  DEPENDENCIES_WIKI,
+  DependencyKindChips,
+  useDependencySources,
+  type DependencySource,
+} from '@src/components/assets/dependency-sources';
 import { NewConversationDialog } from '@src/components/new-conversation-dialog/NewConversationDialog';
 import { NewProjectDialog, NewProjectFromGitDialog, useGitCloneDialogSubmit } from '@src/components/project-selector';
 import { normalizePath, useProjectOpener } from '@src/components/open-project-component/use-open-project';
 import LoginDialog, { ActionType } from '@src/components/login-required-dialog';
 import { useLoginRequired, useResumeAfterLogin } from '@src/hooks/use-login-required';
 import { useAssetTypes } from '@src/hooks/use-asset-types';
-import { useAddContextFolder } from '@src/hooks/use-add-context-folder';
+import { useAddDependency } from '@src/hooks/use-add-dependency';
 import { useAddHelpdesk } from '@src/hooks/use-add-helpdesk';
-import type { ContextFolderScope } from '@src/hooks/use-project-context-folders';
+import type { DependencyKind } from '@src/hooks/use-project-dependencies';
 import { notify } from '@src/notifications';
 import { cn } from '@src/lib/utils';
 import { tagAttrs } from '@src/tags/tag-attrs';
@@ -163,7 +163,7 @@ export function TileSection({
 /**
  * A DesktopTile with its wiki page one hover away. Every tile on this surface
  * is tipped: the grid is often a new user's first sight of these concepts, and
- * a 10px label can't explain what a skill or a context folder is.
+ * a 10px label can't explain what a skill or a dependency is.
  */
 function TippedTile({ wikiword, tip, ...tile }: { wikiword: string; tip?: string } & DesktopTileProps) {
   const { t } = useLingui();
@@ -197,7 +197,7 @@ export function useQuickCreatePick() {
   const [newMessageOpen, setNewMessageOpen] = useState(false);
   const [newProjectOpen, setNewProjectOpen] = useState(false);
   const [newGitProjectOpen, setNewGitProjectOpen] = useState(false);
-  const ctxFolder = useAddContextFolder({ project });
+  const ctxFolder = useAddDependency({ project });
   const helpdesk = useAddHelpdesk({ project });
   const { checkLoginAndProceed, showLoginDialog, closeLoginDialog } = useLoginRequired();
 
@@ -300,8 +300,8 @@ export const ADOPTION_SECTIONS: ReadonlySet<QuickCreateSection> = new Set(['fold
 export interface QuickCreatePanelProps {
   /** Open the per-type create dialog (name / folder / scope) for an asset type. */
   onPick: (type: string) => void;
-  /** Run a context-folder source at the given scope. */
-  onAddFolder: (source: ContextFolderSource, scope: ContextFolderScope) => void;
+  /** Run a dependency source as the given kind (required / optional). */
+  onAddFolder: (source: DependencySource, kind: DependencyKind) => void;
   /** Open the adopt-a-help-desk dialog. */
   onAddHelpdesk: () => void;
   /** Open the new-conversation dialog (behind the cloud-login gate). */
@@ -364,7 +364,7 @@ export function QuickCreatePanel({
   const { types: serverTypes } = useAssetTypes({ withVaults: false });
   const { project: currentProject } = useProject();
   const { navigation } = useDockNavigation();
-  const [folderScope, setFolderScope] = useState<ContextFolderScope>('private');
+  const [dependencyKind, setDependencyKind] = useState<DependencyKind>('required');
 
   // Coding-agent sessions launch a live AgenticProcess immediately, then we
   // navigate to its terminal dock pointer (URL-first; the loader owns the view).
@@ -435,10 +435,10 @@ export function QuickCreatePanel({
     }),
   ];
 
-  // Folder tiles are the context-folder sources, flattened out of the "+"
-  // dialog they otherwise hide behind. Scope is read synchronously on click and
-  // passed by value, so the host still has it after this panel unmounts.
-  const folderSources = useContextFolderSources();
+  // Dependency tiles are the dependency sources, flattened out of the "+"
+  // dialog they otherwise hide behind. The kind is read synchronously on click
+  // and passed by value, so the host still has it after this panel unmounts.
+  const folderSources = useDependencySources();
 
   // One registry group's tiles; a group the server leaves empty renders nothing.
   const assetGroup = (group: QuickCreateGroup, title: ReactNode) => {
@@ -534,34 +534,34 @@ export function QuickCreatePanel({
         title={
           <span className="flex items-center gap-1">
             {/* Sentence case, matching the sibling headings and the
-                AddContextFolderDialog title — same string,
+                AddDependencyDialog title — same string,
                 one catalog entry. */}
-            <Trans>Add context folder</Trans>
+            <Trans>Add dependency</Trans>
             <Tooltip delayDuration={150}>
               <TooltipTrigger asChild>
                 <button
                   type="button"
-                  aria-label={t`What is a context folder?`}
+                  aria-label={t`What is a dependency?`}
                   className="text-muted-foreground/70 transition-colors hover:text-foreground"
                 >
                   <Info className="h-3.5 w-3.5" />
                 </button>
               </TooltipTrigger>
               {/* pointer-events-auto: portals to <body>, which the modal Dialog
-                  marks pointer-events:none (see ContextFolderScopeChips). */}
+                  marks pointer-events:none (see DependencyKindChips). */}
               <TooltipContent side="top" className="pointer-events-auto flex max-w-[280px] items-start gap-2">
                 <span className="text-xs leading-snug text-muted-foreground">
                   <Trans>
-                    Point this project at another folder so agents can read it as background — code, docs or assets that
-                    live outside the project, without copying anything.
+                    Point this project at another folder, repository or hub project it expects in its context. Required
+                    ones are fetched automatically; optional ones on demand.
                   </Trans>
                 </span>
-                <WikiButton wikiword={CONTEXT_FOLDERS_WIKI} label={t`What is a context folder?`} />
+                <WikiButton wikiword={DEPENDENCIES_WIKI} label={t`What is a dependency?`} />
               </TooltipContent>
             </Tooltip>
           </span>
         }
-        headerExtra={<ContextFolderScopeChips scope={folderScope} onChange={setFolderScope} />}
+        headerExtra={<DependencyKindChips kind={dependencyKind} onChange={setDependencyKind} />}
       >
         {folderSources.map((source) => (
           <TippedTile
@@ -574,7 +574,7 @@ export function QuickCreatePanel({
             disabled={!currentProject}
             onClick={() => {
               onDone?.();
-              onAddFolder(source.key, folderScope);
+              onAddFolder(source.key, dependencyKind);
             }}
           />
         ))}

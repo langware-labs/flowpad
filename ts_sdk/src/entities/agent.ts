@@ -323,8 +323,8 @@ export class Agent extends APIEntity<Agent> {
    * `POST /agent/<id>/use`. The counterpart of `run` (one prompt, headless).
    *
    * `projectId` is the project the session should ACT IN, which is not always
-   * the project the agent lives in: an agent supplied by a help desk attached
-   * as a context folder belongs to the desk's checkout, but the session has to
+   * the project the agent lives in: an agent supplied by a help desk added
+   * as a dependency belongs to the desk's checkout, but the session has to
    * open on the customer's project. Omit it and the backend falls back to the
    * agent's own project.
    *

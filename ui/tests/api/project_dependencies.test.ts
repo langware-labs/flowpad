@@ -1,11 +1,11 @@
 /**
- * API-tier validation for project **context folders** (`include_dirs`).
+ * API-tier validation for project **dependencies** (`flow.json` → `include_dirs`).
  *
  * The scenario (matching the feature's acceptance check):
  *   1. Create a temp folder containing a dummy skill (`.claude/skills/<n>/SKILL.md`).
- *   2. Create a project and call `project.addContextDir(<temp folder>)` — the real
- *      HTTP action, which persists `include_dirs` AND indexes the folder so its
- *      skill becomes a discoverable asset.
+ *   2. Create a project and call `project.addDependency(<temp folder>)` — the real
+ *      HTTP action, which declares it in `flow.json`, resolves it into
+ *      `include_dirs` AND indexes the folder so its skill becomes a discoverable asset.
  *   3. Bind an AgenticProcess to the project and call `getAssets()` — assert the
  *      dummy skill shows up attributed to `context_dir` (i.e. the worker launched
  *      under this project would mount it via --add-dir).
@@ -49,7 +49,7 @@ async function waitHealthy(port: number, budgetMs: number): Promise<boolean> {
 
 beforeAll(async () => {
   tmpRoot = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'flowpad-ctx-')));
-  const logPath = `/tmp/project_context_dir.${INSTANCE}.log`;
+  const logPath = `/tmp/project_dependencies.${INSTANCE}.log`;
   const logHandle = await fs.open(logPath, 'w');
   try {
     proc = spawn('uv', ['run', '-m', 'flow_sdk.server.run'], {
@@ -82,7 +82,7 @@ beforeAll(async () => {
   await fs.mkdir(skillDir, { recursive: true });
   await fs.writeFile(
     path.join(skillDir, 'SKILL.md'),
-    '---\nname: ctx_skill\ndescription: dummy context-folder skill\n---\n\nHello from a context folder.\n',
+    '---\nname: ctx_skill\ndescription: dummy dependency skill\n---\n\nHello from a dependency.\n',
   );
 
   const realm = await createSdkRealm(`http://localhost:${PORT}`);
@@ -98,16 +98,22 @@ afterAll(async () => {
   if (tmpRoot) await fs.rm(tmpRoot, { recursive: true, force: true }).catch(() => {});
 });
 
-describe('project context folders (include_dirs)', () => {
-  it('addContextDir persists include_dirs and surfaces the skill as context_dir', async () => {
+describe('project dependencies (include_dirs)', () => {
+  it('addDependency persists include_dirs and surfaces the skill as context_dir', async () => {
     // 1. Create a project.
     const project = await new sdk.Project({ name: `ctxproj-${Date.now()}` }).save();
     const mount = (project).fs_storage_mount_path as string;
     expect(mount).toBeTruthy();
 
-    // 2. Add the context folder via the real HTTP action (persists + indexes).
-    await project.addContextDir(contextDir);
+    // 2. Add the dependency via the real HTTP action (declares + resolves + indexes).
+    const dep = await project.addDependency(contextDir);
+    expect(dep.state).toBe('ready');
     expect(project.include_dirs).toContain(contextDir);
+
+    // It is listed among the declared dependencies, with nothing to warn about.
+    const listed = await project.dependencies();
+    expect(listed.dependencies.map((d: any) => d.name)).toContain(dep.name);
+    expect(listed.warnings).toEqual([]);
 
     // Round-trip: a fresh fetch reflects the persisted field.
     const reloaded = await sdk.Project.getById(project.id);
@@ -143,7 +149,7 @@ describe('project context folders (include_dirs)', () => {
     for (const a of ctx) expect(a.source_dir).toBe(contextDir);
   }, 60_000);
 
-  it('shared scope + remove: link round-trips and removal survives reload', async () => {
+  it('git-backed folder + remove: dependency round-trips and removal survives reload', async () => {
     const project = await new sdk.Project({ name: `ctxproj2-${Date.now()}` }).save();
     const sharedDir = path.join(tmpRoot, 'shared-ctx');
     await fs.mkdir(sharedDir, { recursive: true });
@@ -154,16 +160,18 @@ describe('project context folders (include_dirs)', () => {
       { cwd: sharedDir },
     );
 
-    // Shared scope requires a transportable origin. The local repository and
-    // synthetic remote exercise real git-origin detection without network I/O.
-    await project.addContextDir(sharedDir, 'shared');
+    // A folder inside git is declared as its repository. The local repository
+    // and synthetic remote exercise real git-origin detection; this checkout is
+    // the one the dependency resolves to, so no network I/O.
+    const dep = await project.addDependency(sharedDir);
+    expect(dep.source.startsWith('git+')).toBe(true);
     expect(project.include_dirs).toContain(sharedDir);
     const reloaded = await sdk.Project.getById(project.id);
     expect(reloaded?.include_dirs ?? []).toContain(sharedDir);
 
-    // Remove unlinks (both buckets) — the SDK adopts the server response and a
-    // fresh fetch agrees (the folder link is gone server-side, not just locally).
-    await project.removeContextDir(sharedDir);
+    // Remove drops it from flow.json — the SDK adopts the server response and a
+    // fresh fetch agrees (the link is gone server-side, not just locally).
+    await project.removeDependency(dep.name);
     expect(project.include_dirs).not.toContain(sharedDir);
     const reloaded2 = await sdk.Project.getById(project.id);
     expect(reloaded2?.include_dirs ?? []).not.toContain(sharedDir);

@@ -75,13 +75,13 @@ describe('attachmentKey', () => {
 // ---------- makeAttachmentEntry ----------
 
 describe('makeAttachmentEntry', () => {
-  it('builds a git entry with a rel offset within its context folder, no path', () => {
+  it('builds a git entry with a rel offset within its git dependency, no path', () => {
     const entry = makeAttachmentEntry('/local/checkout/repo/sub/dir', ORIGIN, '/local/checkout/repo');
     expect(entry).toEqual({ label: 'dir', git_origin: ORIGIN, rel: 'sub/dir' });
     expect(entry.path).toBeUndefined();
   });
 
-  it('omits rel when the attached path IS the context folder root', () => {
+  it('omits rel when the attached path IS the dependency root', () => {
     const entry = makeAttachmentEntry('/local/checkout/repo', ORIGIN, '/local/checkout/repo');
     expect(entry).toEqual({ label: 'repo', git_origin: ORIGIN });
     expect(entry.rel).toBeUndefined();

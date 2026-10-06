@@ -1012,11 +1012,11 @@ export function MessageEntityChip({
   }
   const state = chipStateFor(!!data, attachment, forceShow);
   if (state === 'hidden') return null;
-  // Git-link chip: a git context folder shared through push-notify. The chip
+  // Git-link chip: a git dependency folder shared through push-notify. The chip
   // carries only the repo origin (no bytes); clicking launches the
-  // git-context-folder wizard, which reuses+pulls an existing local checkout
+  // git-dependency wizard, which reuses+pulls an existing local checkout
   // (or clones once when none exists), registers it as a project, and
-  // attaches it as a context folder. After a completed run the staged
+  // adds it as a dependency. After a completed run the staged
   // attachment is marked installed (metadata-only, no clone).
   const folderOrigin: GitOrigin | null =
     typeId.type === 'folder'
@@ -1029,10 +1029,10 @@ export function MessageEntityChip({
         const url = gitOriginCloneUrl(folderOrigin);
         if (!url) return;
         const targetProjectId = projectId ?? dataContext.project?.id ?? null;
-        const result = await launchWizard('git-context-folder', {
+        const result = await launchWizard('git-dependency', {
           title: t`Pull ${attachment?.name ?? 'git folder'}`,
           targetTypeId: typeId.toString(),
-          payload: { projectId: targetProjectId, scope: 'private', mode: 'existing', url },
+          payload: { projectId: targetProjectId, optional: false, mode: 'existing', url },
         });
         if (result.status === 'done' && attachment && !attachment.installed) {
           try {

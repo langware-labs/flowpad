@@ -88,13 +88,13 @@ const STEP_LABELS: Record<StepId, string> = {
   clone: 'Cloning the repository',
   init: 'Setting up the project',
   index: 'Indexing the project',
-  context: 'Attaching context projects',
+  context: 'Adding dependencies',
   default: 'Choosing the project to open',
   open: 'Finishing up',
 };
 
 /**
- * Could this setup have context projects to attach?
+ * Could this setup have dependencies to add?
  *
  * A git-backed project can declare them in its manifest, which only the clone
  * can reveal — so the answer is "maybe" for anything with a repo, and the step
@@ -305,7 +305,7 @@ export interface SandboxSetup {
   name: string;
   /** Adopted by the box, so one project id spans hub and sandbox. */
   projectId?: string;
-  /** Help desks / skills repos to clone and attach as context of this project.
+  /** Help desks / skills repos to clone and add as dependencies of this project.
    *  Defaults to whatever the cloned repo's own manifest declares. */
   contextProjects?: ContextProject[];
   /** Review-branch content installation, applied to the hub's checkout before
@@ -313,12 +313,13 @@ export interface SandboxSetup {
   install?: ContentInstallSpec;
 }
 
-/** A repo that becomes its own project on the box AND a context folder of the
+/** A repo that becomes its own project on the box AND a dependency of the
  *  main one — how a help desk's skills and assets come into scope. */
 export interface ContextProject {
   gitOrigin: GitOrigin;
   name: string;
-  scope: 'private' | 'shared';
+  /** False: a required dependency, fetched wherever the project opens. */
+  optional: boolean;
 }
 
 /** Rows the hub reports for one provisioning run, keyed by step. */
@@ -342,7 +343,7 @@ function provisionSetupOf(setup: SandboxSetup): ProvisionSetup {
           context_projects: setup.contextProjects.map((ctx) => ({
             git_origin: ctx.gitOrigin as unknown as Record<string, unknown>,
             name: ctx.name,
-            scope: ctx.scope,
+            optional: ctx.optional,
           })),
         }
       : {}),

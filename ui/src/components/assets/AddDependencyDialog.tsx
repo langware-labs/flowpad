@@ -1,16 +1,16 @@
 import React, { useState } from 'react';
 import { Trans } from '@lingui/react/macro';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
-import type { ContextFolderScope } from '@src/hooks/use-project-context-folders';
-import { ContextFolderScopeChips, useContextFolderSources, type ContextFolderSource } from './context-folder-sources';
+import type { DependencyKind } from '@src/hooks/use-project-dependencies';
+import { DependencyKindChips, useDependencySources, type DependencySource } from './dependency-sources';
 
-interface AddContextFolderDialogProps {
+interface AddDependencyDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  /** Run a source at the chosen scope. Owned by the host — each source needs
+  /** Run a source as the chosen kind. Owned by the host — each source needs
    *  something that outlives this dialog (a picker, the compute node, the git
    *  wizard), and this dialog closes the moment a tile is clicked. */
-  onPick: (source: ContextFolderSource, scope: ContextFolderScope) => void;
+  onPick: (source: DependencySource, kind: DependencyKind) => void;
 }
 
 /** A desktop-icon-style source tile (icon above a small label), mirroring the
@@ -44,30 +44,26 @@ function SourceTile({
 }
 
 /**
- * AddContextFolderDialog — the "+" flow for project context folders, offering
- * the same sources as the create-new surface's folder tiles (they share
- * `useContextFolderSources`), scoped private or shared.
+ * AddDependencyDialog — the "+" flow for project dependencies, offering the
+ * same sources as the create-new surface's tiles (they share
+ * `useDependencySources`), required or optional.
  */
-export function AddContextFolderDialog({
-  open,
-  onOpenChange,
-  onPick,
-}: AddContextFolderDialogProps): React.ReactElement {
-  const [scope, setScope] = useState<ContextFolderScope>('private');
-  const sources = useContextFolderSources();
+export function AddDependencyDialog({ open, onOpenChange, onPick }: AddDependencyDialogProps): React.ReactElement {
+  const [kind, setKind] = useState<DependencyKind>('required');
+  const sources = useDependencySources();
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-sm" data-testid="add-context-folder-dialog">
+      <DialogContent className="sm:max-w-md" data-testid="add-dependency-dialog">
         <DialogHeader>
           <DialogTitle>
-            <Trans>Add context folder</Trans>
+            <Trans>Add dependency</Trans>
           </DialogTitle>
           <DialogDescription>
-            <Trans>Include another folder in this project's context.</Trans>
+            <Trans>Point this project at another folder, repository or hub project it expects in its context.</Trans>
           </DialogDescription>
         </DialogHeader>
-        <div className="flex items-center justify-center gap-3 py-2">
+        <div className="flex flex-wrap items-center justify-center gap-3 py-2">
           {sources.map((source) => (
             <SourceTile
               key={source.key}
@@ -76,13 +72,13 @@ export function AddContextFolderDialog({
               testId={source.testId}
               onClick={() => {
                 onOpenChange(false);
-                onPick(source.key, scope);
+                onPick(source.key, kind);
               }}
             />
           ))}
         </div>
         <div className="flex items-center justify-center">
-          <ContextFolderScopeChips scope={scope} onChange={setScope} />
+          <DependencyKindChips kind={kind} onChange={setKind} />
         </div>
       </DialogContent>
     </Dialog>

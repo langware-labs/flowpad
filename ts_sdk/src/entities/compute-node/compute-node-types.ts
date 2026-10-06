@@ -145,11 +145,12 @@ export interface AppUpgrade {
   output?: string;
 }
 
-/** A context project to clone onto the box and attach to the main one. */
+/** A project to clone onto the box and add as a dependency of the main one. */
 export interface ProvisionContextProject {
   git_origin: Record<string, unknown>;
   name: string;
-  scope: 'private' | 'shared';
+  /** True files it under `optionalDependencies`; false (the default) is required. */
+  optional?: boolean;
 }
 
 /**
