@@ -207,22 +207,6 @@ export function workspaceServiceUrl(nodeId: string): string {
 }
 
 /**
- * A ComputeNode is a "sandbox" iff its provider is one of `SANDBOX_PROVIDERS`
- * and it was created from the workspace flavor. Named `isSandbox`, not
- * `isDesktop`: `dataContext.isDesktop` already means "running in Electron", and
- * the two answered different questions under one name.
- *
- * The rule itself lives on the entity (`ComputeNode.isSandbox`) rather than here:
- * it used to read the provider AND a magic string out of the untyped
- * `node_config` blob inline, which meant every surface wanting the question had
- * to know that blob's shape. This wrapper stays because the wire-contract test
- * imports it by name; the list below no longer filters on it.
- */
-export function isSandbox(node: ComputeNode): boolean {
-  return node.isSandbox;
-}
-
-/**
  * Has this box ever been launched?
  *
  * `node_provider_id` is set by `ops/setup` and by nothing else, so its absence
@@ -405,6 +389,8 @@ async function provisionSandboxProject(
   }
 }
 
+const NO_NODES: ComputeNode[] = [];
+
 export function useSandboxes() {
   const { user } = useAuth();
 
@@ -416,8 +402,9 @@ export function useSandboxes() {
   const { data: nodes, isLoading, refetch } = useEntitiesQuery<ComputeNode>(sandboxesRequest, { enabled: !!user });
 
   // Every machine the user can reach — agent deployment machines carry no workspace
-  // flavor, and filtering on it hid all of them.
-  const sandboxes = useMemo(() => nodes ?? [], [nodes]);
+  // flavor, and filtering on it hid all of them. One shared empty list, so the
+  // effects keyed on it do not re-run while the query is still loading.
+  const sandboxes = nodes ?? NO_NODES;
   // `createSandbox` only needs the list to pick the next auto-name. Reading it
   // through a ref keeps the callback stable across every refetch — including the
   // one it triggers itself — so consumers holding it as a prop don't re-render.

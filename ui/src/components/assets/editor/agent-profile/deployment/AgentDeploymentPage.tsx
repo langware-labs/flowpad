@@ -1,11 +1,12 @@
 import { useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { ArrowUpRight, Settings2 } from 'lucide-react';
-import { cloudManager, ComputeNode, Deployment, TypeId, type Agent, type DeploymentThread } from '@sdk';
+import { cloudManager, Deployment, TypeId, type Agent, type DeploymentThread } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
 import { Button } from '@src/components/ui/button';
 import { TRANSCRIPT_TIME_PARAM } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { sandboxShareLandingPath } from '@src/pages/hub-home/share-sandbox';
 import { AgentPlaceCard } from '../AgentPlaceCard';
 import { usePlaceDisplay } from '../use-place-display';
 import { useAgentPlaces } from '../use-agent-places';
@@ -62,13 +63,11 @@ export function AgentDeploymentPage({ agent, deploymentId }: { agent: Agent; dep
   const label = place ? display(place).label : (deployment?.name ?? '');
   const active = (threads ?? []).filter((th) => th.status === 'live' || th.status === 'working').length;
   // The hub's `/compute_node/<id>` page: it resumes or launches the machine, then lands in its workspace.
-  // `TypeId` throws on a malformed id, and a link is not worth the page — so the prefix is cut by hand.
-  const nodePrefix = `${ComputeNode.type}${TypeId.DELIMITER}`;
-  const nodeTypeId = deployment?.computeNodeTypeId;
+  const nodeId = deployment?.computeNodeId;
   const hubUrl = cloudManager.cloudAppUrl;
   const workspaceUrl =
-    nodeTypeId?.startsWith(nodePrefix) && hubUrl && deployment?.target.provider !== 'local'
-      ? `${hubUrl.replace(/\/+$/, '')}/compute_node/${encodeURIComponent(nodeTypeId.slice(nodePrefix.length))}`
+    nodeId && hubUrl && deployment?.target.provider !== 'local'
+      ? `${hubUrl.replace(/\/+$/, '')}${sandboxShareLandingPath(nodeId)}`
       : null;
   return (
     <div className="flex h-full min-h-0 flex-col" data-testid="agent-deployment-page">
