@@ -1052,6 +1052,10 @@ msgstr "+{hiddenCount} more — search to find them"
 msgid "+{hiddenCount} more…"
 msgstr "+{hiddenCount} more…"
 
+#: src/pages/hub-home/SharedProjectsBanner.tsx
+msgid "+{more} more — find them under Select Project"
+msgstr "+{more} more — find them under Select Project"
+
 #: src/components/collaboration/ProjectViewHeader.tsx
 msgid "<0/>Hard refresh"
 msgstr "<0/>Hard refresh"
@@ -9484,6 +9488,10 @@ msgstr "FlowPad didn't open? Install it, then come back to this page."
 msgid "Flowpad initializes the repository, then proposes the install on a separate review branch."
 msgstr "Flowpad initializes the repository, then proposes the install on a separate review branch."
 
+#: src/pages/hub-home/SharedProjectsBanner.tsx
+msgid "FlowPad is a free, open-source desktop app for working on projects with your coding agents. Open a project there and FlowPad sets it up on your machine."
+msgstr "FlowPad is a free, open-source desktop app for working on projects with your coding agents. Open a project there and FlowPad sets it up on your machine."
+
 #: src/pages/entry/ProjectShareLanding.tsx
 msgid "FlowPad is a free, open-source desktop app for working on projects with your coding agents. Open this one and FlowPad sets it up on your machine."
 msgstr "FlowPad is a free, open-source desktop app for working on projects with your coding agents. Open this one and FlowPad sets it up on your machine."
@@ -15575,6 +15583,10 @@ msgstr "Open with your favorite coding agent"
 #: src/components/spec-editor/SpecEditor.tsx
 msgid "Open with:"
 msgstr "Open with:"
+
+#: src/pages/hub-home/SharedProjectsBanner.tsx
+msgid "Open your shared projects in FlowPad"
+msgstr "Open your shared projects in FlowPad"
 
 #: src/components/llm-endpoints/endpoint-catalog.ts
 msgid "OpenAI"
@@ -23414,6 +23426,10 @@ msgstr "unsure"
 #: src/components/assets/editor/asset-cleanup/AssetCleanupReportAssetEditor.tsx
 msgid "Unsure"
 msgstr "Unsure"
+
+#: src/pages/hub-home/SharedProjectsBanner.tsx
+msgid "Untitled project"
+msgstr "Untitled project"
 
 #: src/pages/flow-page/VibeAssignTaskButton.tsx
 msgid "Untitled request"
