@@ -108,3 +108,28 @@ async def test_a_project_without_a_folder_is_refused(bootstrapped_client, user):
     )
     assert resp.status_code == 400, resp.text
     assert (await RemoteWorkerSession.get_one({"id": rws.id})).status == S.PENDING.value
+
+
+async def test_the_guest_is_remembered_before_the_session_goes_live(bootstrapped_client, user, monkeypatch):
+    """Cross-OS stress 2026-10-06 (Windows host): Approve flipped the session live —
+    and shipped "approved" to the guest — before writing the standing grant, so a
+    guest that started its next session at once was asked again."""
+    from flow_sdk.builtin.contact_permission import ContactPermission  # noqa: PLC0415
+
+    conv_id, rws = await _projectless_chat_with_a_pending_session()
+    granted_when_live: list[bool] = []
+    real_emit = RemoteWorkerSession._emit_event
+
+    async def spy(self, kind, **kw):
+        if kind == "approved":
+            granted_when_live.append(bool(await ContactPermission.get_all({"contact_user_id": self.guest_user_id})))
+        return await real_emit(self, kind, **kw)
+
+    monkeypatch.setattr(RemoteWorkerSession, "_emit_event", spy)
+    resp = await bootstrapped_client.post(
+        f"/api/v1/graph/remote_worker_session/{rws.id}/approve", json={"scratch": True, "remember": "everywhere"}
+    )
+    await _redrives()
+
+    assert resp.status_code == 200, resp.text
+    assert granted_when_live == [True]

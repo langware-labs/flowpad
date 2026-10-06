@@ -505,10 +505,13 @@ class RemoteWorkerSession(Entity):
                     return ApiFailResponse(message="that project has no folder to run in", status_code=400)
                 return ApiFailResponse(message=NEEDS_PROJECT_MESSAGE, status_code=409)
             self.project_id = project_id
-        if not await self.approve(via=ApprovedVia.MANUAL):
+        if self.status not in ACTIVE_STATUSES and not can_transition(self.status, RemoteWorkerSessionStatus.IDLE):
             return ApiFailResponse(message=f"illegal live-session transition: {self.status} → idle")
+        # The grant lands BEFORE the session goes live: the guest acts on "approved"
+        # at once, and its next session must already find itself remembered.
         if remember:
             await self.remember_guest(remember)
+        await self.approve(via=ApprovedVia.MANUAL)
         import asyncio  # noqa: PLC0415
 
         from flow_sdk.app.actions.execute_prompt import redrive_session_prompts  # noqa: PLC0415
