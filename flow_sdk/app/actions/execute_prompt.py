@@ -745,7 +745,7 @@ async def run_session_turn(
             session.host_process_id = ap.id
             session.collaboration_room_id = session.collaboration_room_id or (room.id if room else None)
             session.project_id = session.project_id or project_id
-            session.mark_activity(RemoteWorkerSessionStatus.RUNNING)
+            await _set_turn_status(session, RemoteWorkerSessionStatus.RUNNING)
             await session.save()
 
             taken = await ap.send_turn(prompt_text)
@@ -781,7 +781,9 @@ async def run_session_turn(
             if fresh is not None and getattr(fresh, "reply_policy", None):
                 session.reply_policy = fresh.reply_policy
 
-            session.mark_activity(RemoteWorkerSessionStatus.IDLE)
+            # The reply still goes out (it answers a prompt the guest sent), but a
+            # session either side ended while this turn ran stays ended.
+            await _set_turn_status(session, RemoteWorkerSessionStatus.IDLE, fresh=fresh)
             await session.save()
 
             from flow_sdk.app.actions.notification_action import handle_add_message
@@ -833,6 +835,27 @@ async def run_session_turn(
             return await _fail_turn(session, e, someone_typeid)
 
 
+async def _set_turn_status(
+    session: "RemoteWorkerSession", status: str, *, fresh: "Optional[RemoteWorkerSession]" = None
+) -> None:
+    """Stamp a turn's status on ``session`` — unless the session ended meanwhile.
+
+    A turn runs for minutes on an in-memory copy of the row, and either side may
+    end the session in that time (Disconnect). Stamping RUNNING/IDLE/ERROR from
+    the stale copy would revive it: the next prompt — even the next session's
+    start — would land in a session both sides were told had ended. ENDED and
+    DECLINED absorb; the turn keeps the row's terminal status instead.
+    """
+    from flow_sdk.builtin.remote_worker_session import RemoteWorkerSession, is_terminal  # noqa: PLC0415
+
+    fresh = fresh or await RemoteWorkerSession.get_one({"id": session.id})
+    if fresh is not None and is_terminal(fresh.status):
+        session.status = fresh.status
+        session.last_activity_at = fresh.last_activity_at
+        return
+    session.mark_activity(status)
+
+
 class _TurnFailed(Exception):
     """A turn that cannot produce a reply; its message is what the guest is told."""
 
@@ -852,7 +875,7 @@ async def _fail_turn(session: "RemoteWorkerSession", err: Exception, someone_typ
         "[session] turn failed session=%s: %s", session.id, reason, exc_info=not isinstance(err, _TurnFailed)
     )
     try:
-        session.mark_activity(RemoteWorkerSessionStatus.ERROR)
+        await _set_turn_status(session, RemoteWorkerSessionStatus.ERROR)
         await session.save()
     except Exception:  # noqa: BLE001 — reporting a failure must not raise out of the receive pipeline
         logger.warning("[session] could not save the failed turn session=%s", session.id, exc_info=True)
