@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { DataSource, ExitCode, Wizard, apiClient, dataManager, type SetupStageState, type WizardResult } from '@sdk';
 import { CheckCircle2, Circle, Lock, Loader2 } from 'lucide-react';
 import { Button } from '@src/components/ui/button';
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
+import { Dialog } from '@src/components/ui/dialog';
+import { SteppedDialogContent } from '@src/components/ui/stepped-dialog';
 import { AskForm } from '@src/components/ask/AskForm';
 import { claimAskRun } from '@src/components/ask/ask-claims';
 import { notify } from '@src/notifications';
@@ -34,18 +35,36 @@ async function wizardNamed(name: string): Promise<Wizard | null> {
 
 const STATE_ICON = { done: CheckCircle2, pending: Circle, locked: Lock } as const;
 
+/** A source's setup as its own dialog (the source row's Connect button): the same steps the add flow ends in,
+ *  under the trail "<source> › Connect". */
 export function SetupWizardDialog({
   source,
-  title,
   open,
   onOpenChange,
 }: {
   source: DataSource;
-  /** What is being set up, for the heading (the driver's title). */
-  title: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
+  const { t } = useLingui();
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <SteppedDialogContent
+        data-testid="setup-wizard-dialog"
+        crumbs={[{ label: source.name || source.provider }, { label: t`Connect` }]}
+      >
+        {open && <SetupWizardPanel source={source} />}
+      </SteppedDialogContent>
+    </Dialog>
+  );
+}
+
+/**
+ * The setup itself, drawn inside whatever dialog step holds it: the stages, the running stage's question in
+ * place, and what the last run did. ``autoStart`` begins the first pending stage at once — a person who just
+ * pressed "Connect" should not have to press "Start" too.
+ */
+export function SetupWizardPanel({ source, autoStart = false }: { source: DataSource; autoStart?: boolean }) {
   const { t } = useLingui();
   const [stages, setStages] = useState<SetupStageState[] | null>(null);
   const [running, setRunning] = useState<string | null>(null);
@@ -57,8 +76,8 @@ export function SetupWizardDialog({
   }, [source]);
 
   useEffect(() => {
-    if (open) void load();
-  }, [open, load]);
+    void load();
+  }, [load]);
 
   const run = async (stage: SetupStageState) => {
     const wizard = await wizardNamed(stage.wizard);
@@ -91,83 +110,80 @@ export function SetupWizardDialog({
   };
 
   const current = stages?.find((s) => s.state === 'pending');
+  const started = useRef(false);
+  useEffect(() => {
+    if (!autoStart || started.current || !current || running) return;
+    started.current = true;
+    void run(current);
+    // `run` is a closure over this render's state; starting once is the whole point.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoStart, current, running]);
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg" data-testid="setup-wizard-dialog">
-        <DialogHeader>
-          <DialogTitle>
-            <Trans>Set up {title}</Trans>
-          </DialogTitle>
-          <DialogDescription>
-            <Trans>Each stage is a guided run. Close it any time — running it again picks up where it stopped.</Trans>
-          </DialogDescription>
-        </DialogHeader>
-
-        <ul className="flex flex-col gap-1" data-testid="setup-stages">
-          {(stages ?? []).map((stage) => {
-            const Icon = running === stage.stage ? Loader2 : STATE_ICON[stage.state];
-            return (
-              <li
-                key={stage.stage}
-                className="flex items-center gap-2 rounded border px-3 py-2 text-sm"
-                data-testid={`setup-stage-${stage.stage}`}
-                data-state={stage.state}
-              >
-                <Icon className={`size-4 shrink-0 ${running === stage.stage ? 'animate-spin' : ''}`} />
-                <span className="font-medium">{stage.label}</span>
-                <span className="flex-1 truncate text-xs text-muted-foreground">{stage.detail}</span>
-                {stage === current && !running && (
-                  <Button size="sm" data-testid={`setup-stage-run-${stage.stage}`} onClick={() => void run(stage)}>
-                    {stage.detail ? t`Resume` : t`Start`}
-                  </Button>
-                )}
-                {/* Done is what the last run found, not a promise about now: the far side can undo it (a
+    <div className="flex flex-col gap-3" data-testid="setup-wizard-panel">
+      <ul className="flex flex-col gap-1" data-testid="setup-stages">
+        {(stages ?? []).map((stage) => {
+          const Icon = running === stage.stage ? Loader2 : STATE_ICON[stage.state];
+          return (
+            <li
+              key={stage.stage}
+              className="flex items-center gap-2 rounded border px-3 py-2 text-sm"
+              data-testid={`setup-stage-${stage.stage}`}
+              data-state={stage.state}
+            >
+              <Icon className={`size-4 shrink-0 ${running === stage.stage ? 'animate-spin' : ''}`} />
+              <span className="font-medium">{stage.label}</span>
+              <span className="flex-1 truncate text-xs text-muted-foreground">{stage.detail}</span>
+              {stage === current && !running && (
+                <Button size="sm" data-testid={`setup-stage-run-${stage.stage}`} onClick={() => void run(stage)}>
+                  {stage.detail ? t`Resume` : t`Start`}
+                </Button>
+              )}
+              {/* Done is what the last run found, not a promise about now: the far side can undo it (a
                     phone that sent "stop", a revoked token). Running it again re-checks every step and
                     redoes only those that no longer hold. */}
-                {stage.state === 'done' && !running && (
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    data-testid={`setup-stage-rerun-${stage.stage}`}
-                    onClick={() => void run(stage)}
-                  >
-                    <Trans>Run again</Trans>
-                  </Button>
-                )}
-              </li>
-            );
-          })}
-          {stages && stages.length === 0 && (
-            <li className="text-sm text-muted-foreground">
-              <Trans>Nothing to set up.</Trans>
+              {stage.state === 'done' && !running && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  data-testid={`setup-stage-rerun-${stage.stage}`}
+                  onClick={() => void run(stage)}
+                >
+                  <Trans>Run again</Trans>
+                </Button>
+              )}
             </li>
+          );
+        })}
+        {stages && stages.length === 0 && (
+          <li className="text-sm text-muted-foreground">
+            <Trans>Nothing to set up.</Trans>
+          </li>
+        )}
+      </ul>
+
+      {running && (
+        <div className="border-t pt-3" data-testid="setup-running">
+          {questionId ? (
+            <AskForm questionId={questionId} showOp={false} onSettled={() => setQuestionId(null)} />
+          ) : (
+            <p className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Loader2 className="size-4 animate-spin" />
+              <Trans>Working…</Trans>
+            </p>
           )}
+        </div>
+      )}
+
+      {!running && last && (
+        <ul className="flex flex-col gap-1 border-t pt-3 text-xs" data-testid="setup-last-run">
+          {Object.entries(last.steps ?? {}).map(([id, step]) => (
+            <li key={id} className={step.exit_code === ExitCode.OK ? 'text-muted-foreground' : 'text-destructive'}>
+              {step.exit_code === ExitCode.OK ? '✓' : '•'} {step.detail || id}
+            </li>
+          ))}
         </ul>
-
-        {running && (
-          <div className="border-t pt-3" data-testid="setup-running">
-            {questionId ? (
-              <AskForm questionId={questionId} showOp={false} onSettled={() => setQuestionId(null)} />
-            ) : (
-              <p className="flex items-center gap-2 text-sm text-muted-foreground">
-                <Loader2 className="size-4 animate-spin" />
-                <Trans>Working…</Trans>
-              </p>
-            )}
-          </div>
-        )}
-
-        {!running && last && (
-          <ul className="flex flex-col gap-1 border-t pt-3 text-xs" data-testid="setup-last-run">
-            {Object.entries(last.steps ?? {}).map(([id, step]) => (
-              <li key={id} className={step.exit_code === ExitCode.OK ? 'text-muted-foreground' : 'text-destructive'}>
-                {step.exit_code === ExitCode.OK ? '✓' : '•'} {step.detail || id}
-              </li>
-            ))}
-          </ul>
-        )}
-      </DialogContent>
-    </Dialog>
+      )}
+    </div>
   );
 }
