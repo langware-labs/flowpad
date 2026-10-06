@@ -67,6 +67,43 @@ async def test_asset_folder_keeps_its_editor(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_process_source_resolves_where_its_shell_is_then_its_own_folders(tmp_path):
+    from flow_sdk.builtin.agentic_process import AgenticProcess
+    from flow_sdk.builtin.project import Project
+
+    shell_dir, work_dir, project_dir = (tmp_path / name for name in ("shell", "work", "project"))
+    for folder in (shell_dir, work_dir, project_dir):
+        folder.mkdir()
+    (shell_dir / "both.txt").write_text("shell")
+    (work_dir / "both.txt").write_text("work")
+    (work_dir / "work.txt").write_text("work")
+    (project_dir / "notes.md").write_text("project")
+    project = Project(name="process link project", fs_storage_mount_path=str(project_dir))
+    await project.save()
+    shell = Shell(workdir=str(shell_dir))
+    await shell.save()
+    process = AgenticProcess(workdir=str(work_dir), project_id=project.id, shell_id=shell.id)
+
+    async def path_of(link):
+        return (await resolve_display_target(link=link, source=process))["path"]
+
+    assert await path_of("both.txt") == str((shell_dir / "both.txt").resolve())
+    assert await path_of("work.txt") == str((work_dir / "work.txt").resolve())
+    assert await path_of("notes.md") == str((project_dir / "notes.md").resolve())
+    with pytest.raises(DisplayTargetNotFound):
+        await path_of("missing.txt")
+
+
+@pytest.mark.asyncio
+async def test_process_without_a_shell_uses_its_workdir(tmp_path):
+    from flow_sdk.builtin.agentic_process import AgenticProcess
+
+    (tmp_path / "a.py").write_text("print(1)\n")
+    target = await resolve_display_target(link="a.py:1", source=AgenticProcess(workdir=str(tmp_path)))
+    assert (target["path"], target["line"]) == (str((tmp_path / "a.py").resolve()), 1)
+
+
+@pytest.mark.asyncio
 async def test_url_dock_and_entity_references():
     url = "https://example.org/page?x=1#section"
     assert await resolve_display_target(link=url) == {"kind": "url", "url": url}
