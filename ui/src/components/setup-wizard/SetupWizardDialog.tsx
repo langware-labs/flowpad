@@ -106,13 +106,45 @@ export function SetupWizardPanel({ source, autoStart = false }: { source: DataSo
       if (mine) setQuestionId(mine.id);
       setLast(await pending);
     } catch (e) {
-      notify.error({ title: e instanceof Error ? e.message : String(e) });
+      // The server's own sentence rides the response ("… is already running on this machine"); the error's
+      // message is only "Request failed with status code 409".
+      const said = (e as { response?: { data?: { message?: string; detail?: string } } })?.response?.data;
+      const message = said?.message || said?.detail || (e instanceof Error ? e.message : String(e));
+      // Reopened while the run still waits on its person (a phone sending a code): there is nothing to start —
+      // the run is THERE. Show its question here until it closes, instead of an error and a dead Resume.
+      if (/already running/i.test(message)) await attach(path);
+      else notify.error({ title: message });
     } finally {
       release();
       setRunPath('');
       setQuestionId(null);
       setRunning(null);
       await load();
+    }
+  };
+
+  const mounted = useRef(true);
+  useEffect(() => {
+    // Set on every mount, not only at creation: React's development double-mount runs the cleanup once
+    // before the real mount, and a ref left false there stopped every attach at its first look.
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+  /** Follow a run this screen did not start: its open question is drawn here; it is over when that closes. */
+  const attach = async (path: string) => {
+    let seen = false;
+    while (mounted.current) {
+      const open = await apiClient.get<{ questions: QuestionRow[] }>('/api/v1/ask').catch(() => null);
+      const mine = open?.questions?.find((q) => q.run === path);
+      if (mine) {
+        seen = true;
+        setQuestionId((id) => (id === mine.id ? id : mine.id));
+      } else if (seen) {
+        return;
+      }
+      await new Promise((resolve) => setTimeout(resolve, QUESTION_LOOK_MS));
     }
   };
 

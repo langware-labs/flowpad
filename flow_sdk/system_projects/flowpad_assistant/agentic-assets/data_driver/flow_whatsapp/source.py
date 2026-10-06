@@ -193,8 +193,14 @@ class FlowWhatsAppSource(MessageSource):
         if query.conversation is not None:
             raise Unsupported("Flow's messages are read whole")
         since = _float(cursor) if cursor else (query.since.timestamp() if query.since else 0.0)
+        # This source mirrors ITS phone only. The hub answers every message of the signed-in person, and a person
+        # may hold two of these sources (one abandoned before its phone connected): reading all rows in each put
+        # every message in the inbox twice. Not connected yet: nothing is this source's.
+        mine = str(self.config.get("wa_id") or "")
+        if not mine:
+            return ChangePage(items=(), next_cursor=None, resume_cursor=cursor)
         rows = await self.hub.messages(since)
-        items = [item for item in (self._item(r) for r in rows) if item is not None]
+        items = [item for item in (self._item(r) for r in rows if str(r.get("wa_id") or "") == mine) if item is not None]
         last = max([_float(r.get("at")) for r in rows] or [since])
         token = repr(last) if rows else cursor
         return ChangePage(items=tuple(items), next_cursor=token if len(rows) >= HUB_PAGE else None, resume_cursor=token)

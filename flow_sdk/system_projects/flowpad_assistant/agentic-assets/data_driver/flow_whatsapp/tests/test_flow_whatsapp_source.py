@@ -119,6 +119,19 @@ async def test_what_the_phone_sent_is_read_after_the_cursor():
         assert [i.data.text for i in later.items] == ["more"]
 
 
+async def test_a_source_mirrors_its_own_phone_only_and_nothing_before_it_connects():
+    """Two sources of one person (one abandoned before its phone connected) put each message in the inbox twice."""
+    hub = _Hub()
+    hub.stored = [
+        {"wamid": "wamid.A", "wa_id": PHONE, "direction": "in", "text": "mine", "at": 100.0},
+        {"wamid": "wamid.B", "wa_id": "972500000099", "direction": "in", "text": "another phone", "at": 101.0},
+    ]
+    async with _source(hub) as unconnected:
+        assert (await unconnected.fetch()).items == ()
+    async with _source(hub, wa_id=PHONE) as source:
+        assert [i.data.text for i in (await source.fetch()).items] == ["mine"]
+
+
 async def test_an_answer_goes_to_the_persons_phone_quoting_what_it_answers(tmp_path):
     hub = _Hub()
     async with _source(hub, wa_id=PHONE) as source:
