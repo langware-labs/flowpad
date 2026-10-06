@@ -33,6 +33,9 @@ async function wizardNamed(name: string): Promise<Wizard | null> {
   return wizards.find((w) => w.name === name) ?? null;
 }
 
+/** How often a running stage looks for its open question (see the effect in ``SetupWizardPanel``). */
+const QUESTION_LOOK_MS = 1500;
+
 const STATE_ICON = { done: CheckCircle2, pending: Circle, locked: Lock } as const;
 
 /** A source's setup as its own dialog (the source row's Connect button): the same steps the add flow ends in,
@@ -70,6 +73,8 @@ export function SetupWizardPanel({ source, autoStart = false }: { source: DataSo
   const [running, setRunning] = useState<string | null>(null);
   const [questionId, setQuestionId] = useState<string | null>(null);
   const [last, setLast] = useState<WizardResult | null>(null);
+  // The running stage's address, while it runs: what its questions name.
+  const [runPath, setRunPath] = useState('');
 
   const load = useCallback(async () => {
     setStages(await source.setupStages());
@@ -90,6 +95,7 @@ export function SetupWizardPanel({ source, autoStart = false }: { source: DataSo
     // starts, so its first question is drawn here rather than sending the tab away.
     const { activity_path: path = '' } = await wizard.runDetail(target);
     const release = path ? claimAskRun(path, setQuestionId) : () => {};
+    setRunPath(path);
     setRunning(stage.stage);
     setLast(null);
     try {
@@ -103,11 +109,26 @@ export function SetupWizardPanel({ source, autoStart = false }: { source: DataSo
       notify.error({ title: e instanceof Error ? e.message : String(e) });
     } finally {
       release();
+      setRunPath('');
       setQuestionId(null);
       setRunning(null);
       await load();
     }
   };
+
+  // The push that hands this screen its question goes to the ACTIVE tab and can miss it (another tab was in
+  // front, the socket was reconnecting): the screen then sat on "Working…" while the question waited. So while
+  // a stage runs it also looks for its run's open question itself — a missed push costs a moment, not the run.
+  useEffect(() => {
+    if (!runPath) return;
+    const look = async () => {
+      const open = await apiClient.get<{ questions: QuestionRow[] }>('/api/v1/ask').catch(() => null);
+      const mine = open?.questions?.find((q) => q.run === runPath);
+      if (mine) setQuestionId((id) => (id === mine.id ? id : mine.id));
+    };
+    const timer = setInterval(() => void look(), QUESTION_LOOK_MS);
+    return () => clearInterval(timer);
+  }, [runPath]);
 
   const current = stages?.find((s) => s.state === 'pending');
   const started = useRef(false);

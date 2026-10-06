@@ -328,7 +328,9 @@ export function DataSourceDialog({
   ];
   if (group && step !== 'provider')
     crumbs.push({ label: group, onClick: beforeSetup && step === 'form' ? toChoice : undefined });
-  if (step === 'form' || settingUp) crumbs.push({ label: editing ? editing.name : spec?.title || draft.provider });
+  // Never an empty crumb: the driver may not be known (yet) — the source's own name stands in.
+  const formCrumb = editing ? editing.name : spec?.title || draft.provider || settingUp?.name || '';
+  if ((step === 'form' || settingUp) && formCrumb) crumbs.push({ label: formCrumb });
   if (settingUp) crumbs.push({ label: t`Connect` });
 
   return (
