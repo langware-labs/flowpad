@@ -193,6 +193,21 @@ os.environ["FLOWPAD_DISABLE_VENDORED_FLOW_RS"] = "1"
 for _inherited in ("FLOWPAD_DESKTOP", "SOD_ENC_KEY", "DEPLOY_ENV"):
     os.environ.pop(_inherited, None)
 
+# Neutralize an inherited instance selector so the session resolves to the "test"
+# instance (via PYTEST_CURRENT_TEST), the way every test and fixture here assumes.
+#
+# An agentic-process worker is spawned with FLOW_INSTANCE pinned to the backend's
+# own instance (``prod`` in the long-lived desktop app) — the backend does this so
+# a worker's ``flow`` calls hit the right server. When the suite is launched from
+# inside such a worker, that pin leaks in and WINS over PYTEST_CURRENT_TEST (see
+# instance_settings._resolve_instance_name_from_env: explicit FLOW_INSTANCE has top
+# precedence), so get_instance_settings() resolves ``prod`` and the whole suite
+# silently targets the live instance's tree. These are exactly the "which instance"
+# selectors already excluded from the .env.local merge above; drop any inherited
+# value here too. Per-test fixtures (e.g. ``sod_env``) set their own.
+for _instance_selector in ("FLOW_INSTANCE", "FLOW_HOME"):
+    os.environ.pop(_instance_selector, None)
+
 from flow_sdk.config import FLOWPAD_TEMP_DIR
 
 # Keep the pre-import bootstrap rule in lockstep with ``flow_sdk.config``.
