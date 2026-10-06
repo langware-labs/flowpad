@@ -76,15 +76,33 @@ async def _channel(endpoint):
 
 
 async def _completions(request: Request, endpoint, caller: str) -> Response:
-    from flow_sdk.api.api_types.identifier import is_valid_entity_id, mint_uuid  # noqa: PLC0415
-    from flow_sdk.builtin.source_item import SourceItem  # noqa: PLC0415
-
     try:
         body = await request.json()
     except ValueError:
         return _fail(400, "the body must be JSON")
     if not isinstance(body, dict):
         return _fail(400, "the body must be a JSON object")
+    outcome = await ask(endpoint, caller, body)
+    if isinstance(outcome, Response):
+        return outcome
+    completion, conversation_id = outcome
+    headers = {"X-Flowpad-Conversation": conversation_id}
+    if body.get("stream"):
+        return StreamingResponse(_sse(completion), media_type="text/event-stream",
+                                 headers={**headers, "Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+    return JSONResponse(completion, headers=headers)
+
+
+async def ask(endpoint, caller: str, body: dict):
+    """One request on the endpoint's channel, and the reply its answering loop records:
+    ``(completion, conversation_id)``, or the failure as a ``Response`` (a 504 names the conversation —
+    the message stays in the channel and is answered when its loop gets to it).
+
+    The route's whole contract, callable without HTTP: an agent's ``ask`` action uses it for the hub
+    that placed the agent here (``Agent.ask_action``)."""
+    from flow_sdk.api.api_types.identifier import is_valid_entity_id, mint_uuid  # noqa: PLC0415
+    from flow_sdk.builtin.source_item import SourceItem  # noqa: PLC0415
+
     channel = await _channel(endpoint)
     if channel is None:
         return _fail(404, "this endpoint's channel no longer exists", "not_found_error")
@@ -106,21 +124,36 @@ async def _completions(request: Request, endpoint, caller: str) -> Response:
     if not ids:
         return _fail(400, "messages must end with a user message that has text")
     item = await SourceItem.get_by_id(ids[-1])
-    headers = {"X-Flowpad-Conversation": conversation_id}
 
     deadline = time.monotonic() + REPLY_DEADLINE_SECONDS
     looks = 0
     while (reply := await SourceItem.find_reply_from_self(source, item, since=asked_at)) is None:
+        if await _turn_failed(endpoint, item):
+            # The loop never runs a failed turn again (it may have half-acted); waiting would only end
+            # in a 504, and asking again in another. Said now, so the caller can tell the person.
+            return _fail(422, "the agent could not answer this message", "turn_failed",
+                         conversation_id=conversation_id)
         if time.monotonic() >= deadline:
             return _fail(504, "no reply yet — the message waits in the channel", "no_reply_yet",
                          conversation_id=conversation_id)
         await asyncio.sleep(_REPLY_CHECKS[min(looks, len(_REPLY_CHECKS) - 1)])
         looks += 1
-    completion = driver.cls.reply_payload(item, reply, model=_model(endpoint))
-    if body.get("stream"):
-        return StreamingResponse(_sse(completion), media_type="text/event-stream",
-                                 headers={**headers, "Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
-    return JSONResponse(completion, headers=headers)
+    return driver.cls.reply_payload(item, reply, model=_model(endpoint)), conversation_id
+
+
+async def _turn_failed(endpoint, item) -> bool:
+    """Whether the loop answering *endpoint* ended *item*'s turn in error — its record on the placement's
+    session processes, the one place the loop writes it."""
+    from flow_sdk.builtin.agent_serve import FAILED, turn_key, turns_of  # noqa: PLC0415
+    from flow_sdk.builtin.agentic_process import AgenticProcess  # noqa: PLC0415
+    from flow_sdk.fs_store.type_id import TypeId  # noqa: PLC0415
+
+    parent = str(getattr(endpoint, "parent_type_id", "") or "")
+    if not parent.startswith("deployment-"):
+        return False
+    key = turn_key(item)
+    processes = await AgenticProcess.get_all({"deployment_id": TypeId(parent).id}) or []
+    return any((turns_of(p).get(key) or {}).get("status") == FAILED for p in processes)
 
 
 async def _sse(completion: dict):
@@ -154,4 +187,4 @@ async def _history(endpoint, caller: str, conversation_id: str) -> Response:
     return JSONResponse({"conversation_id": conversation_id, "messages": messages})
 
 
-__all__ = ["REPLY_DEADLINE_SECONDS", "channel_http"]
+__all__ = ["REPLY_DEADLINE_SECONDS", "ask", "channel_http"]

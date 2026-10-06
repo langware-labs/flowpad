@@ -102,7 +102,7 @@ describe('process surface reconciliation during panel startup', () => {
     view.rerender(<Surface canSwitch marker="advanced-ready" />);
     await act(async () => {});
     expect(switchMode).toHaveBeenCalledTimes(1);
-    expect(switchMode).toHaveBeenCalledWith('interactive', undefined);
+    expect(switchMode).toHaveBeenCalledWith('interactive');
   });
 
   it('keeps first sight non-mutating when no mode transition occurred', async () => {
@@ -126,7 +126,7 @@ describe('process surface reconciliation during panel startup', () => {
     await act(async () => {});
 
     expect(switchMode).toHaveBeenCalledTimes(1);
-    expect(switchMode).toHaveBeenCalledWith('interactive', undefined);
+    expect(switchMode).toHaveBeenCalledWith('interactive');
   });
 
   it('drains the latest mode selected while a prior switch is in flight', async () => {
@@ -159,7 +159,7 @@ describe('process surface reconciliation during panel startup', () => {
     view.rerender(<Surface canSwitch marker="advanced-switching" />);
     await act(async () => {});
     expect(switchMode).toHaveBeenCalledTimes(1);
-    expect(switchMode).toHaveBeenCalledWith('interactive', undefined);
+    expect(switchMode).toHaveBeenCalledWith('interactive');
 
     // Chosen while the switch is in flight — the re-entry guard skips it now.
     state.mode = 'standard';
@@ -176,7 +176,7 @@ describe('process surface reconciliation during panel startup', () => {
       await Promise.resolve();
     });
     expect(switchMode).toHaveBeenCalledTimes(2);
-    expect(switchMode).toHaveBeenLastCalledWith('cli', undefined);
+    expect(switchMode).toHaveBeenLastCalledWith('cli');
     expect(state.pty).toBe(false);
 
     // …and the drain having recorded 'standard' is what makes the next terminal
@@ -185,7 +185,7 @@ describe('process surface reconciliation during panel startup', () => {
     view.rerender(<Surface canSwitch marker="advanced-again" />);
     await act(async () => {});
     expect(switchMode).toHaveBeenCalledTimes(3);
-    expect(switchMode).toHaveBeenLastCalledWith('interactive', undefined);
+    expect(switchMode).toHaveBeenLastCalledWith('interactive');
   });
 
   it('takes a terminal-backed session back to headless when the user leaves it', async () => {
@@ -203,7 +203,7 @@ describe('process surface reconciliation during panel startup', () => {
     await act(async () => {});
     expect(switchMode).toHaveBeenCalledTimes(1);
     // No dims: the headless direction has no grid to size.
-    expect(switchMode).toHaveBeenCalledWith('cli', undefined);
+    expect(switchMode).toHaveBeenCalledWith('cli');
     expect(state.pty).toBe(false);
 
     // Vibe is the same surface obligation as chat — and, the transport already
@@ -234,7 +234,7 @@ describe('process surface reconciliation during panel startup', () => {
     view.rerender(<Surface canSwitch marker="standard-idle" />);
     await act(async () => {});
     expect(switchMode).toHaveBeenCalledTimes(1);
-    expect(switchMode).toHaveBeenCalledWith('cli', undefined);
+    expect(switchMode).toHaveBeenCalledWith('cli');
   });
 
   it('switches a session whose PTY the user ended from the xterm', async () => {
@@ -251,6 +251,6 @@ describe('process surface reconciliation during panel startup', () => {
     view.rerender(<Surface canSwitch marker="standard-stopped" />);
     await act(async () => {});
     expect(switchMode).toHaveBeenCalledTimes(1);
-    expect(switchMode).toHaveBeenCalledWith('cli', undefined);
+    expect(switchMode).toHaveBeenCalledWith('cli');
   });
 });

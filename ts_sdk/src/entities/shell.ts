@@ -356,8 +356,14 @@ export class Shell extends APIEntity<Shell> implements IShell {
     return this.ptyConnection.sendInput(data);
   }
 
+  /** Size the PTY to the view on screen — kept, and asserted on every attach. */
   async resize(cols: number, rows: number): Promise<void> {
     return this.ptyConnection.resize(cols, rows);
+  }
+
+  /** The view showing this shell went off screen: it no longer sizes the PTY. */
+  releaseSize(): void {
+    this.ptyConnection.releaseViewSize();
   }
 
   // ── Entity lifecycle ──────────────────────────────────────────────────────

@@ -285,9 +285,13 @@ def input_env(inputs: dict[str, Any]) -> dict[str, str]:
 
 
 def _json(value: Any) -> str:
+    """A value as JSON — a typed value (a ``DataSpec`` a step returned, like ``SetupShown``) as its JSON
+    form, so a later step reads it as data (``{{connect.link}}``) and not as Python's repr of it."""
     import json  # noqa: PLC0415
 
+    from pydantic_core import to_jsonable_python  # noqa: PLC0415
+
     try:
-        return json.dumps(value)
+        return json.dumps(to_jsonable_python(value))
     except (TypeError, ValueError):
         return str(value)

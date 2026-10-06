@@ -14,7 +14,15 @@
 import { chromium, expect, test, type Browser } from '@playwright/test';
 
 import { BOB, assertPreconditions } from './helpers';
-import { HOST_PROJECT_ID, revokeAliceGrantsOnBob, sendFollowUp, sendOpeningPrompt, sessionCards, setupLiveConversation, shot } from './_live_session_setup';
+import {
+  HOST_PROJECT_ID,
+  revokeAliceGrantsOnBob,
+  sendFollowUp,
+  sendOpeningPrompt,
+  sessionCards,
+  setupLiveConversation,
+  shot,
+} from './_live_session_setup';
 
 const SPEC_BUDGET_MS = 240_000;
 const TURN_BUDGET_MS = 60_000;
@@ -38,7 +46,7 @@ test('live session settings: follow-up, review policy, standing grant', async ()
 
     // ── follow-up lives in the session view only ───────────────────────────
     const threadBubblesBefore = await alice.page.locator('[data-testid^="message-bubble-"]').count();
-    await sessionCards(alice.page).first().getByTestId('session-card-open').click();
+    await sessionCards(alice.page).first().click();
     await alice.page.waitForURL(/\/dock\/live_session\//, { timeout: 5_000 });
     await expect(alice.page.getByTestId('live-session-reply')).toHaveCount(1, { timeout: 3_000 });
     const m2 = `S1B-${Date.now()}`;
@@ -50,15 +58,17 @@ test('live session settings: follow-up, review policy, standing grant', async ()
     await alice.page.locator('textarea[placeholder^="Reply to sender"]').waitFor({ state: 'visible' });
     await expect(sessionCards(alice.page).first()).toContainText(/2 prompts · 2 repl/, { timeout: 3_000 });
     expect(await alice.page.locator('[data-testid^="message-bubble-"]').count()).toBe(threadBubblesBefore);
-    await expect(bob.page.locator('[data-testid^="message-bubble-"]')).toHaveCount(threadBubblesBefore, { timeout: 3_000 });
+    await expect(bob.page.locator('[data-testid^="message-bubble-"]')).toHaveCount(threadBubblesBefore, {
+      timeout: 3_000,
+    });
 
     // ── review policy: the host drafts, then sends from the session ────────
-    await sessionCards(bob.page).first().getByTestId('session-card-open').click();
+    await sessionCards(bob.page).first().click();
     await bob.page.waitForURL(/\/dock\/live_session\//, { timeout: 5_000 });
     await bob.page.getByTestId('live-session-reply-policy').click();
     await bob.page.getByRole('option', { name: /reviews/ }).click();
     await shot(bob.page, 'settings-03-bob-session-view-review-policy');
-    await sessionCards(alice.page).first().getByTestId('session-card-open').click();
+    await sessionCards(alice.page).first().click();
     await alice.page.waitForURL(/\/dock\/live_session\//, { timeout: 5_000 });
     await expect(alice.page.getByTestId('live-session-reply-policy')).toContainText(/reviews/, { timeout: 5_000 });
     const m3 = `S1C-${Date.now()}`;
@@ -76,7 +86,9 @@ test('live session settings: follow-up, review policy, standing grant', async ()
 
     // ── standing grant: alice's next session starts approved ───────────────
     await bob.page.getByTestId('live-session-standing-grant').click();
-    await expect(bob.page.getByTestId('live-session-standing-grant')).toHaveAttribute('data-state', 'checked', { timeout: 3_000 });
+    await expect(bob.page.getByTestId('live-session-standing-grant')).toHaveAttribute('data-state', 'checked', {
+      timeout: 3_000,
+    });
     await alice.page.goBack();
     await alice.page.locator('textarea[placeholder^="Reply to sender"]').waitFor({ state: 'visible' });
     const m4 = `S2-${Date.now()}`;

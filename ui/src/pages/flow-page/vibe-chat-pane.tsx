@@ -1,6 +1,6 @@
 import { EntityExecutionPanel } from '@src/components/entity-execution-panel';
 import { NewSessionPill } from '@src/components/entity-execution-panel/NewSessionPill';
-import { VibeAssignTaskButton } from './VibeAssignTaskButton';
+import { AskForHelpButton } from '@src/components/help/AskForHelpButton';
 import {
   continueVibeSessionForProject,
   createVibeProcessForProject,
@@ -253,7 +253,6 @@ export function VibeChatPane({
           />
         )}
         emptyStateText={t`What do you want to work on`}
-        newSessionLabel={t`New build`}
         historyLabel={t`Build history`}
         historyTriggerLabel={t`Recent`}
         historyOnLeft
@@ -263,7 +262,7 @@ export function VibeChatPane({
         historyProjectId={chatProjectId}
         showProcessNameBar
         afterHistorySlot={
-          <VibeAssignTaskButton projectId={project?.id ?? null} sessionTypeId={process?.typeId ?? null} />
+          <AskForHelpButton projectId={project?.id ?? null} sessionTypeId={process?.typeId ?? null} origin="vibe" />
         }
         pastSessionsLabel={t`Past builds`}
         noPastSessionsLabel={t`No past builds`}

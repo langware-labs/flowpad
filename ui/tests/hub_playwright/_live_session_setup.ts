@@ -21,13 +21,17 @@ export async function mapHostConversation(convId: string) {
     const r = await fetch(url);
     if (r.ok) {
       const body = (await r.json()) as { data?: Record<string, unknown> };
-      if (body.data?.id) { conv = body.data; break; }
+      if (body.data?.id) {
+        conv = body.data;
+        break;
+      }
     }
     await new Promise((res) => setTimeout(res, 200));
   }
   if (!conv) throw new Error(`bob never materialized conversation ${convId}`);
   const r = await fetch(url, {
-    method: 'PUT', headers: { 'Content-Type': 'application/json' },
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ ...conv, project_id: HOST_PROJECT_ID }),
   });
   if (!r.ok) throw new Error(`mapping bob's conversation failed: ${r.status} ${await r.text()}`);
@@ -43,29 +47,43 @@ export async function setupLiveConversation(browser: Browser) {
   return { alice, bob, convId };
 }
 
-/** Open a session from the conversation composer (alice's side). */
+/** Open the session from the conversation composer's live-session icon (alice's side):
+ *  it lands in the session view with the cursor waiting, the prompt is typed there,
+ *  and the caller is taken back to the conversation it started from. */
 export async function sendOpeningPrompt(page: Page, text: string) {
-  const toggle = page.getByTestId('composer-session-toggle');
-  if ((await toggle.getAttribute('aria-pressed')) !== 'true') await toggle.click();
-  const ta = page.locator('textarea[placeholder^="Prompt to run on"]');
-  await ta.fill(text);
-  const sendBtn = page.locator('button[title="Send"]:not([data-testid])');
-  await expect(sendBtn).toBeEnabled({ timeout: 1_000 });
-  await ta.press('Enter'); // Enter submits; a toast over the Send button cannot intercept it
+  await page.getByTestId('composer-session-toggle').click();
+  await page.waitForURL(/\/dock\/live_session\//, { timeout: 10_000 });
+  const box = page.getByTestId('live-session-input');
+  await expect(box).toBeFocused({ timeout: 5_000 });
+  await box.fill(text);
+  await box.press('Enter'); // Enter submits; a toast over the Send button cannot intercept it
+  await expect(box).toHaveValue('', { timeout: 5_000 });
+  await page.goBack();
 }
 
 /** Log and dismiss any toast: it overlays the composer and would swallow the click. */
 export async function dismissToasts(page: Page, who: string) {
-  const toasts = page.locator('section[aria-label^="Notifications"] [data-sonner-toast], section[aria-label^="Notifications"] li');
+  const toasts = page.locator(
+    'section[aria-label^="Notifications"] [data-sonner-toast], section[aria-label^="Notifications"] li',
+  );
   const n = await toasts.count();
   if (!n) return;
-  console.log(`[toast:${who}]`, JSON.stringify((await toasts.allInnerTexts()).map((t) => t.replace(/\s+/g, ' ').slice(0, 160))));
+  console.log(
+    `[toast:${who}]`,
+    JSON.stringify((await toasts.allInnerTexts()).map((t) => t.replace(/\s+/g, ' ').slice(0, 160))),
+  );
   for (let i = 0; i < n; i++) {
     const close = toasts.nth(0).locator('button[aria-label="Close toast"], button[data-close-button]');
-    if (await close.count()) await close.first().click().catch(() => undefined);
+    if (await close.count())
+      await close
+        .first()
+        .click()
+        .catch(() => undefined);
     else await page.keyboard.press('Escape');
   }
-  await expect(toasts).toHaveCount(0, { timeout: 3_000 }).catch(() => undefined);
+  await expect(toasts)
+    .toHaveCount(0, { timeout: 3_000 })
+    .catch(() => undefined);
 }
 
 /** Type a follow-up inside the session view. */
@@ -98,9 +116,13 @@ export async function aliceCloudId(): Promise<string> {
  * skips PENDING and its Approve step never appears. */
 export async function revokeAliceGrantsOnBob(): Promise<number> {
   const id = await aliceCloudId().catch(() => null);
-  const rows = await fetch(`${BOB.backendUrl}/api/v1/graph/contact_permission`).then((r) => r.json()).catch(() => null);
+  const rows = await fetch(`${BOB.backendUrl}/api/v1/graph/contact_permission`)
+    .then((r) => r.json())
+    .catch(() => null);
   const mine = ((rows?.data ?? []) as Array<Record<string, unknown>>).filter((r) => !id || r.contact_user_id === id);
-  for (const r of mine) await fetch(`${BOB.backendUrl}/api/v1/graph/contact_permission/${String(r.id)}`, { method: 'DELETE' }).catch(() => undefined);
+  for (const r of mine)
+    await fetch(`${BOB.backendUrl}/api/v1/graph/contact_permission/${String(r.id)}`, { method: 'DELETE' }).catch(
+      () => undefined,
+    );
   return mine.length;
 }
-
