@@ -174,7 +174,7 @@ class FlowWhatsAppSource(MessageSource):
         if link.get("status") != "connected":
             if not _unexpired(link):
                 return ReturnedValue.not_yet("That code has expired — go back and press Connect WhatsApp again.")
-            return ReturnedValue.not_yet("Not connected yet — send the message from your phone, then press Continue.")
+            return ReturnedValue.not_yet("Not connected yet — send the message from your phone.")
         wa_id = str(link.get("wa_id") or "")
         if check:
             done = str(self.config.get("wa_id") or "") == wa_id
@@ -305,7 +305,8 @@ def _qr(url: str) -> str:
 
     import io  # noqa: PLC0415
 
-    # A standalone SVG, namespace and all: an <img> renders nothing from the bare inline form.
+    # A standalone SVG, namespace and all: an <img> renders nothing from the bare inline form. White baked in:
+    # a camera reads dark-on-light, and segno's default (no background) left black squares on a dark dialog.
     out = io.BytesIO()
-    segno.make(url, error="m").save(out, kind="svg", xmldecl=False, svgns=True, scale=4, border=2)
+    segno.make(url, error="m").save(out, kind="svg", xmldecl=False, svgns=True, scale=4, border=2, dark="#000000", light="#ffffff")
     return "data:image/svg+xml;base64," + base64.b64encode(out.getvalue()).decode()

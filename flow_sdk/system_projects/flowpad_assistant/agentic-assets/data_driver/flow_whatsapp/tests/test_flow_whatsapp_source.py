@@ -73,6 +73,7 @@ async def test_connect_shows_flow_the_code_and_the_link_that_sends_it():
     assert shown.link == "https://wa.me/15550100?text=link%20AB2CD3" and shown.qr.startswith("data:image/svg+xml;base64,")
     svg = base64.b64decode(shown.qr.split(",", 1)[1]).decode()
     assert 'xmlns="http://www.w3.org/2000/svg"' in svg, "an <img> renders an SVG only with its namespace"
+    assert '<path fill="#fff"' in svg, "a white background: black squares vanish on a dark dialog, and cameras read dark-on-light"
 
     # Read back later (a resumed wizard), the link carries only its code — the link is rebuilt from Flow's number.
     again = await _source(hub, link_id="L1")._connect(check=True, values={})

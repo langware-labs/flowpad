@@ -175,7 +175,7 @@ async def _check(
     usually also knows the answer (`flow secret get` exits 0 and prints the secret).
     """
     if spec.status_check:
-        return await _status_check(spec)
+        return await _status_check(spec, env)
     if spec.completion_check is None:
         return None
     command = spec.completion_check.command_for(platform)
@@ -191,15 +191,19 @@ async def _check(
     return said.model_copy(update={"exit_code": spec.verdict_of(said)})
 
 
-async def _status_check(spec: ComputeOpSpec) -> CliResult:
+async def _status_check(spec: ComputeOpSpec, env: Optional[dict] = None) -> CliResult:
     """A ``status_check``, answered by the status layer in this process (``core.status.check_fact``).
 
+    The fact may name a value of the run (``source_step:{{source}}:connected``), filled like a question's words.
     Never raises: a fact the layer cannot answer is a broken document, reported as such.
     """
     from flow_sdk.core.status.check import UnknownStatusFact, check_fact  # noqa: PLC0415
 
+    fact = fill(str(spec.status_check), env)
+    if "{{" in fact:
+        return CliResult.not_found(f"{spec.display_label}: the run has no value for {fact!r}")
     try:
-        held, detail = await check_fact(str(spec.status_check))
+        held, detail = await check_fact(fact)
     except UnknownStatusFact as exc:
         return CliResult.not_found(f"{spec.display_label}: {exc}")
     return CliResult.satisfied(detail, ran=True) if held else CliResult.not_yet(detail)
@@ -976,9 +980,13 @@ async def _ask(
     ask = ask_person if served_here() else ask_through_backend
     detail = fill(spec.exe_data.detail, env)
     while True:
-        answered = await _ask_once(ask, spec, env, timeout=timeout, detail=detail, wizard_id=wizard_id,
-                                   workdir=workdir, say=say)
-        if not (spec.exe_data.recheck and spec.completion_check is not None) or not answered.ok:
+        asking = _ask_once(ask, spec, env, timeout=timeout, detail=detail, wizard_id=wizard_id,
+                           workdir=workdir, say=say)
+        if spec.exe_data.auto_continue and _has_check(spec):
+            answered = await _ask_until_held(asking, spec, workdir=workdir, platform=platform, env=env, shell=shell)
+        else:
+            answered = await asking
+        if not (spec.exe_data.recheck and _has_check(spec)) or not answered.ok:
             return answered
         # The gate: the answer is not the proof. Check the goal; while it does not hold, ask again with
         # the check's own reason under the question.
@@ -987,6 +995,36 @@ async def _ask(
             return answered
         reason = _last_line(said.stderr if said is not None else "") or "Not done yet."
         detail = f"{fill(spec.exe_data.detail, env)}\n\n**{reason}**".strip()
+
+
+#: How long an ``auto_continue`` question waits between looks at its goal (the next look starts only after
+#: the last one ended, so a slow check never overlaps itself).
+AUTO_CONTINUE_EVERY_SECONDS = 3.0
+
+
+def _has_check(spec: ComputeOpSpec) -> bool:
+    return spec.completion_check is not None or bool(spec.status_check)
+
+
+async def _ask_until_held(asking: Awaitable[AskResult], spec: ComputeOpSpec, *, workdir: Path, platform: str,
+                          env: Optional[dict], shell: Shell) -> AskResult:
+    """The question, closed by itself the moment the op's goal holds (``auto_continue``) -- or the person's answer,
+    whichever comes first. Cancelling the ask withdraws the question from the person's screen."""
+    task = asyncio.ensure_future(asking)
+    try:
+        while not task.done():
+            said = await _check(spec, workdir=workdir, platform=platform, env=env, shell=shell)
+            if said is not None and said.exit_code is ExitCode.OK:
+                task.cancel()
+                await asyncio.gather(task, return_exceptions=True)
+                # A confirm's answer is ``{}`` (``confirm_spec.py``) -- what Send would have answered.
+                return AskResult.satisfied(f"{spec.display_label}: done.", value={})
+            await asyncio.wait({task}, timeout=AUTO_CONTINUE_EVERY_SECONDS)
+        return task.result()
+    finally:
+        if not task.done():
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
 
 
 def _last_line(text: str) -> str:
@@ -1007,6 +1045,7 @@ async def _ask_once(ask, spec: ComputeOpSpec, env: Optional[dict], *, timeout, d
         cancel_label=spec.exe_data.cancel_label,
         secret=spec.exe_data.secret,
         file=spec.exe_data.file,
+        auto=spec.exe_data.auto_continue,
         wizard_id=wizard_id,
         guide=fill(spec.setup or "", env),
         # AI Assist: the agent follows the same guide, for the setup's own span once started.
