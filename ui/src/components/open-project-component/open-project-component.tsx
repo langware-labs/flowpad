@@ -1,8 +1,10 @@
 import { getProjectDisplayName } from '@src/hooks/use-claude-projects';
 import { useAllProjects } from '@src/hooks/use-all-projects';
-import { dataContext, type ProjectListItem, Project, PrefKey } from '@sdk';
+import { useProjects } from '@src/hooks/use-projects';
+import { dataContext, type ProjectListItem, Project, PrefKey, PageId } from '@sdk';
 import { usePreference } from '@src/hooks/use-preference';
 import { canonicalPath } from '@src/components/project-selector';
+import { hubProjectListItems } from './hub-project-list';
 import { normalizePath, useProjectOpener } from './use-open-project';
 import { SectionHairlineTitle } from '@src/components/terminal/project-list-menu';
 import { useTabProjectBuckets } from '@src/tabs/use-tab-manager';
@@ -19,6 +21,7 @@ import { projectRecencyMs } from '@src/lib/project-recency';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { isHubOnly } from '@src/navigation/hub-runtime';
 import { AdvancedOnly } from '@src/components/view-mode';
+import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { Trans, useLingui } from '@lingui/react/macro';
 
@@ -70,10 +73,7 @@ function ProjectDetailsPopover({
     [t`Record id`, project.record_project_id, true],
     [t`Claude dir`, project.encoded_name, true],
     [t`Open tabs`, tabCount],
-    [
-      t`Sessions`,
-      `${project.session_count}${sessionParts.length ? ` (${sessionParts.join(' · ')})` : ''}`,
-    ],
+    [t`Sessions`, `${project.session_count}${sessionParts.length ? ` (${sessionParts.join(' · ')})` : ''}`],
     [t`Workers`, workers || null],
     [t`Last opened`, formatWhen(project.last_active_at)],
     [t`Modified`, project.modified_at ? formatWhen(Date.parse(project.modified_at)) : null],
@@ -556,10 +556,18 @@ export function OpenProjectComponent({
 
   const resolvedTrigger = trigger ?? (remoteProjectId ? 'map' : taskId ? 'gate' : 'switch');
 
-  const { projects: mergedProjects, isLoading: isLoadingScanProjects } = useAllProjects({
-    enabled: open,
+  // A hub-only server lists the projects the HUB says you can reach — a member
+  // with no compute node of their own has no machine scan to read them from.
+  const hub = isHubOnly();
+  const { navigation } = useDockNavigation();
+  const { projects: scannedProjects, isLoading: isLoadingScan } = useAllProjects({
+    enabled: open && !hub,
     includeSystem: showSystem,
   });
+  const { projects: hubProjects, isLoading: isLoadingHub } = useProjects({ enabled: open && hub });
+  const hubItems = useMemo(() => hubProjectListItems(hubProjects, showSystem), [hubProjects, showSystem]);
+  const mergedProjects = hub ? hubItems : scannedProjects;
+  const isLoadingScanProjects = hub ? isLoadingHub : isLoadingScan;
 
   const defaultWorkspacePath = useMemo(() => dataContext.bootstrapInfo?.desktop_info?.paths?.workspace || '', []);
 
@@ -580,6 +588,14 @@ export function OpenProjectComponent({
 
   const handleProjectClick = useCallback(
     async (project: ProjectListItem) => {
+      // A hub project has no folder: its address is its id, so the click is a
+      // plain navigation to its page on the hub and the loader does the rest.
+      if (hub) {
+        onProjectChanged?.();
+        navigation.openDock(DockPointer.forProject(project.id).withPage(PageId.HUB));
+        onOpenChange(false);
+        return;
+      }
       // `cwd` is the only openable location; see `isOpenableProjectPath` for
       // what falling back to `name` here used to mint.
       const path = normalizePath(project.cwd || '');
@@ -599,7 +615,7 @@ export function OpenProjectComponent({
         setOpeningProjectId(null);
       }
     },
-    [ensureProjectAndSetContext, onOpenChange, t],
+    [hub, navigation, onProjectChanged, ensureProjectAndSetContext, onOpenChange, t],
   );
 
   const handleOpenFolder = useCallback(async () => {

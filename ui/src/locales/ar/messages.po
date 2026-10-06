@@ -1092,6 +1092,10 @@ msgstr "+{hiddenCount} أخرى — استخدم البحث للعثور علي�
 msgid "+{hiddenCount} more…"
 msgstr "+{hiddenCount} أخرى…"
 
+#: src/pages/hub-home/SharedProjectsBanner.tsx
+msgid "+{more} more — find them under Select Project"
+msgstr ""
+
 #: src/components/collaboration/ProjectViewHeader.tsx
 msgid "<0/>Hard refresh"
 msgstr "<0/>إعادة تحميل كاملة"
@@ -9890,6 +9894,10 @@ msgstr "لم يُفتح FlowPad؟ ثبّته ثم عُد إلى هذه الصف�
 msgid "Flowpad initializes the repository, then proposes the install on a separate review branch."
 msgstr "يقوم Flowpad بتهيئة المستودع، ثم يقترح التثبيت على فرع مراجعة منفصل."
 
+#: src/pages/hub-home/SharedProjectsBanner.tsx
+msgid "FlowPad is a free, open-source desktop app for working on projects with your coding agents. Open a project there and FlowPad sets it up on your machine."
+msgstr ""
+
 #: src/pages/entry/ProjectShareLanding.tsx
 msgid "FlowPad is a free, open-source desktop app for working on projects with your coding agents. Open this one and FlowPad sets it up on your machine."
 msgstr "FlowPad تطبيق سطح مكتب مجاني ومفتوح المصدر للعمل على المشاريع مع وكلاء البرمجة لديك. افتح هذا المشروع وسيجهّزه FlowPad على جهازك."
@@ -16302,6 +16310,10 @@ msgstr "افتح باستخدام وكيل البرمجة المفضل لديك"
 
 #: src/components/spec-editor/SpecEditor.tsx
 msgid "Open with:"
+msgstr ""
+
+#: src/pages/hub-home/SharedProjectsBanner.tsx
+msgid "Open your shared projects in FlowPad"
 msgstr ""
 
 #: src/components/llm-endpoints/endpoint-catalog.ts
@@ -24587,6 +24599,10 @@ msgstr "غير مؤكد"
 #: src/components/assets/editor/asset-cleanup/AssetCleanupReportAssetEditor.tsx
 msgid "Unsure"
 msgstr "غير مؤكد"
+
+#: src/pages/hub-home/SharedProjectsBanner.tsx
+msgid "Untitled project"
+msgstr ""
 
 #: src/pages/flow-page/VibeAssignTaskButton.tsx
 msgid "Untitled request"
