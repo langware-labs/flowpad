@@ -3215,8 +3215,8 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
    */
   async switchMode(mode: WorkerMode): Promise<void> {
     const wantPty = mode === WorkerMode.Interactive;
+    const shell = !wantPty && this.shell_id ? Shell.getByIdFromCache(this.shell_id) : null;
     if (!wantPty) {
-      const shell = this.shell_id ? Shell.getByIdFromCache(this.shell_id) : null;
       if (shell) {
         shell.status = ShellStatus.CLOSING;
         dataManager.notifyEntityChanged(shell);
@@ -3247,6 +3247,9 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
       if (wantPty) {
         await this.adoptOpenPayload(result);
         this.emit('restarted', { process: this });
+      } else {
+        // The PTY is dead; the respawn on the way back reuses its id.
+        shell?.ptyConnection?.markPtyGone();
       }
     } catch (error) {
       // Rejected (409 mid-turn, or a launch failure) — the intent never became
