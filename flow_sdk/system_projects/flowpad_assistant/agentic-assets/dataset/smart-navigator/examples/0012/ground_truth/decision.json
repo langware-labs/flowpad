@@ -1,9 +1,0 @@
-{
-  "route": "quick",
-  "target": {
-    "kind": "view",
-    "value": "process-runs"
-  },
-  "verb": "show",
-  "confidence": null
-}
