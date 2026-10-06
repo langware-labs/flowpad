@@ -283,6 +283,14 @@ export class Deployment extends APIEntity<Deployment> implements IDeployment {
     return typeId.type === 'agent' ? typeId : null;
   }
 
+  /** The id of the machine this runs on, or null when there is none or the stored id is not a typeid. */
+  get computeNodeId(): string | null {
+    const typeId = this.computeNodeTypeId;
+    if (!typeId || !isTypeId(typeId)) return null;
+    const parsed = new TypeId(typeId);
+    return parsed.type === 'compute_node' ? parsed.id : null;
+  }
+
   /** The machine this runs on, or null when the placement is not node-backed. */
   get computeNodeTypeId(): string | null {
     if (!NODE_PROVIDERS.has(this.target.provider)) return null;

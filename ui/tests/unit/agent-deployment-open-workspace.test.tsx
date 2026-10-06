@@ -39,9 +39,8 @@ vi.mock('@src/components/assets/editor/agent-profile/deployment/DeploymentThread
 vi.mock('@src/components/assets/editor/agent-profile/AgentPlaceCard', () => ({ AgentPlaceCard: () => null }));
 
 const { Agent, cloudManager, Deployment } = await import('@sdk');
-const { AgentDeploymentPage } = await import(
-  '@src/components/assets/editor/agent-profile/deployment/AgentDeploymentPage'
-);
+const { AgentDeploymentPage } =
+  await import('@src/components/assets/editor/agent-profile/deployment/AgentDeploymentPage');
 
 const deployment = (provider: string, externalId: string) =>
   new Deployment({
@@ -85,26 +84,20 @@ describe('AgentDeploymentPage — open workspace', () => {
     expect(screen.getByTestId('deployment-open-workspace')).toHaveAttribute('href', `${HUB}/compute_node/${NODE_ID}`);
   });
 
-  it('is absent until the hub url is known', () => {
-    show(deployment('e2b', `compute_node-${NODE_ID}`), '');
-
-    expect(screen.queryByTestId('deployment-open-workspace')).not.toBeInTheDocument();
-  });
-
-  it('is absent before a machine is allocated — the placement has no node yet', () => {
-    show(deployment('e2b', ''));
-
-    expect(screen.queryByTestId('deployment-open-workspace')).not.toBeInTheDocument();
-  });
-
-  it("is absent for an inventoried resource — its external id is the provider's own name, not a machine", () => {
-    show(deployment('gcp', `compute_node-${NODE_ID}`));
-
-    expect(screen.queryByTestId('deployment-open-workspace')).not.toBeInTheDocument();
-  });
-
-  it('is absent for a local deployment — this computer has no hub workspace to open', () => {
-    show(deployment('local', `compute_node-${NODE_ID}`));
+  it.each([
+    ['until the hub url is known', () => show(deployment('e2b', `compute_node-${NODE_ID}`), '')],
+    ['before a machine is allocated — the placement has no node yet', () => show(deployment('e2b', ''))],
+    [
+      "for an inventoried resource — its external id is the provider's own name, not a machine",
+      () => show(deployment('gcp', `compute_node-${NODE_ID}`)),
+    ],
+    [
+      'for a local deployment — this computer has no hub workspace to open',
+      () => show(deployment('local', `compute_node-${NODE_ID}`)),
+    ],
+    ['while the deployment has not loaded', () => show(null)],
+  ])('is absent %s', (_label, arrange) => {
+    arrange();
 
     expect(screen.queryByTestId('deployment-open-workspace')).not.toBeInTheDocument();
   });
@@ -113,12 +106,6 @@ describe('AgentDeploymentPage — open workspace', () => {
     show(deployment('e2b', 'sbx_not-a-typeid'));
 
     expect(screen.getByTestId('agent-deployment-page')).toBeInTheDocument();
-    expect(screen.queryByTestId('deployment-open-workspace')).not.toBeInTheDocument();
-  });
-
-  it('is absent while the deployment has not loaded', () => {
-    show(null);
-
     expect(screen.queryByTestId('deployment-open-workspace')).not.toBeInTheDocument();
   });
 });

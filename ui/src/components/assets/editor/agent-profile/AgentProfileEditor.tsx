@@ -67,6 +67,8 @@ export function AgentProfileEditor({ agent, mainRef }: AgentProfileEditorProps) 
   const autoPrompt = content.fields.auto_launch_prompt ?? '';
   const [avatarRevision, setAvatarRevision] = useState(0);
   const [version, setVersion] = useState<AgentVersionState | null>(null);
+  // Sharing reads its public grant from the hub on mount; hold it back until "More" is first opened.
+  const [moreOpened, setMoreOpened] = useState(false);
 
   const loadVersion = useCallback(async () => {
     if (hub) return;
@@ -305,16 +307,24 @@ export function AgentProfileEditor({ agent, mainRef }: AgentProfileEditorProps) 
                 className="min-h-48 resize-y font-mono text-sm leading-relaxed"
               />
             </div>
+          </fieldset>
 
-            <details className="group rounded-md border border-border" data-testid="agent-more">
-              <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-2 text-sm font-medium">
-                <ChevronRight className="h-3.5 w-3.5 transition group-open:rotate-90" />
-                <Trans>More</Trans>
-                <span className="text-xs font-normal text-muted-foreground">
-                  <Trans>name · description · intro · auto prompt · auto-launch · Flowpad assistant · declared fields</Trans>
-                </span>
-              </summary>
-              <div className="flex flex-col gap-4 border-t border-border px-3 py-3">
+          <details
+            className="group rounded-md border border-border"
+            data-testid="agent-more"
+            onToggle={(e) => e.currentTarget.open && setMoreOpened(true)}
+          >
+            <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-2 text-sm font-medium">
+              <ChevronRight className="h-3.5 w-3.5 transition group-open:rotate-90" />
+              <Trans>More</Trans>
+              <span className="text-xs font-normal text-muted-foreground">
+                <Trans>
+                  name · description · intro · auto prompt · auto-launch · Flowpad assistant · declared fields
+                </Trans>
+              </span>
+            </summary>
+            <div className="flex flex-col gap-4 border-t border-border px-3 py-3">
+              <fieldset disabled={hub || !!definitionError} className="contents" data-testid="agent-more-fields">
                 <div>
                   <div className="mb-1 text-xs text-muted-foreground">
                     <Trans>Name — the agent's folder name, used to address it</Trans>
@@ -476,11 +486,13 @@ export function AgentProfileEditor({ agent, mainRef }: AgentProfileEditorProps) 
                     onCommit={(v) => void save({ additional_dirs: v ?? [] })}
                   />
                 </div>
-                {/* Sharing and the public grant land on the published hub row — nothing to toggle on the hub's own read-only view. */}
-                {!hub && <AgentVisibilitySection agent={agent} version={version} />}
-              </div>
-            </details>
-          </fieldset>
+              </fieldset>
+              {/* Sharing and the public grant land on the published hub row — nothing to toggle on the hub's own
+                  read-only view. Outside the definition's fieldsets: an unreadable agent document must not
+                  disable controls that never touch it. */}
+              {!hub && moreOpened && <AgentVisibilitySection agent={agent} version={version} />}
+            </div>
+          </details>
         </section>
 
         <aside className="min-h-0 border-t border-border bg-muted/20 px-5 py-5 lg:overflow-y-auto lg:border-s lg:border-t-0">
