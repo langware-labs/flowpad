@@ -12,8 +12,8 @@ interface UseAddHelpdeskOptions {
 /**
  * useAddHelpdesk — the "Add help desk" tile's flow.
  *
- * Its own hook rather than a branch inside {@link useAddContextFolder}: that
- * hook is "the one way to add a context folder, wherever it's offered" and the
+ * Its own hook rather than a branch inside {@link useAddDependency}: that
+ * hook is "the one way to add a dependency, wherever it's offered" and the
  * Assets navigator consumes it independently. A helpdesk branch there would
  * pull the repo/branch pickers and a GitHub status poll into the module graph
  * of a surface that does not offer the source.

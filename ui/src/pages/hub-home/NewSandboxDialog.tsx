@@ -87,7 +87,7 @@ interface NewSandboxDialogProps {
 /**
  * Start a sandbox: name it, say which project it loads, and add any asset
  * packages — help desks or skills repos that get cloned in, indexed, and
- * attached as context folders of that project.
+ * added as dependencies of that project.
  *
  * Five states, and the dialog stays open across all of them:
  *
@@ -268,9 +268,9 @@ export function NewSandboxDialog({
     // second click reading as "nothing happened".
     if (phase !== 'idle') return;
     const sandboxName = name.trim() || defaultName;
-    // Scope is `shared` for asset packages: they travel with the project.
+    // Asset packages are required dependencies: they travel with the project.
     const contextProjects: ContextProject[] = assets.flatMap((asset) =>
-      asset.gitOrigin ? [{ gitOrigin: asset.gitOrigin, name: asset.name, scope: 'shared' as const }] : [],
+      asset.gitOrigin ? [{ gitOrigin: asset.gitOrigin, name: asset.name, optional: false }] : [],
     );
     const opts = loadedProject
       ? {

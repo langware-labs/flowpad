@@ -23,6 +23,7 @@ import { OAuthCodeFlowModal } from '@src/components/oauth/OAuthCodeFlowModal';
 import { GitHubDeviceFlowModal } from '@src/components/oauth/GitHubDeviceFlowModal';
 import { HarnessLoginModalRoot } from '@src/components/harness-login/HarnessLoginModal';
 import { ProjectSetupDialogRoot } from '@src/components/project-setup/ProjectSetupDialog';
+import { MissingDependenciesDialogRoot } from '@src/components/project-home/MissingDependenciesDialog';
 import MigrateLegacyKeychain from '@src/components/migrate-legacy-keychain';
 import { SessionTakenOverOverlay } from '@src/components/session-taken-over-overlay';
 import { SnifferActiveNotice } from '@src/components/hooks/SnifferActiveNotice';
@@ -170,6 +171,8 @@ const AppContent = ({ children }: { children: React.ReactNode }) => {
             it has no place in hub mode. */}
         {!isHubOnly() && <HarnessLoginModalRoot />}
         {!isHubOnly() && <ProjectSetupDialogRoot />}
+        {/* A required dependency of the open project is not on this machine. */}
+        {!isHubOnly() && <MissingDependenciesDialogRoot />}
         <MigrateLegacyKeychain />
         <SessionTakenOverOverlay />
         <SnifferActiveNotice />

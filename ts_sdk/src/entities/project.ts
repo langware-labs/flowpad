@@ -37,7 +37,13 @@ import { GitWorkdir } from './git-workdir';
 import { Workspace } from './workspace';
 import { Wiki } from './wiki';
 import type { ShareResult } from './members';
-import type { IProject, ProjectContextDirInfo, ProjectCustomization, ProjectMember } from './project-types';
+import type {
+  DependencyState,
+  IProject,
+  ProjectContextDirInfo,
+  ProjectCustomization,
+  ProjectMember,
+} from './project-types';
 export type * from './project-types';
 
 /** Who a Project share invites beyond the bare people list. */
@@ -77,31 +83,22 @@ export interface ResolveProjectResult {
   members_count: number;
 }
 
-export interface InstalledContentProject {
-  url: string;
-  branch: string;
-  content_project_id: string | null;
-  folder_id: string | null;
-  path: string;
-  scope: 'private' | 'shared';
-  status: 'installed' | 'already_installed';
+/** The context fields a dependency action answers with — the resolved
+ *  dependencies' folders, as the entity carries them. */
+export interface ProjectContextPayload {
+  include_dirs: string[];
+  context_roots: string[];
+  context_dir_infos: ProjectContextDirInfo[];
 }
 
-export interface ReconcileBootstrapResult {
-  target_project_id: string;
-  content_projects: InstalledContentProject[];
-  status: 'installed' | 'already_installed';
-  helpdesk_id: string | null;
-  journey_ids: string[];
-  skill_ids: string[];
-  auto_launch_journey_id: string | null;
-  failed: Array<{
-    error: string;
-    url?: string;
-    branch?: string;
-    scope?: 'private' | 'shared';
-    path?: string;
-  }>;
+/** `GET project/<id>/dependencies`. */
+export interface ProjectDependencies {
+  dependencies: DependencyState[];
+  /** Required dependencies that are not here and whose warning was not dismissed. */
+  warnings: DependencyState[];
+  /** True while the background resolve that opening the project started is still
+   *  running — `missing` may only mean "not fetched yet". */
+  resolving: boolean;
 }
 
 /** What `adoptHelpdeskFromGit` found after attaching the repo.
@@ -115,8 +112,8 @@ export interface ReconcileBootstrapResult {
  *   ticket. Never render this as success: the customer would believe their
  *   requests now reach the new vendor when they do not.
  * - `no_manifest` — the repo carries no desk. The folder stays attached (it is
- *   still a fine context folder); offer `removeContextDir` rather than
- *   detaching for them.
+ *   still a fine dependency); offer `removeDependency` rather than
+ *   removing it for them.
  * - `invalid_desk_project_id` — a desk is here but names no usable queue, so
  *   tickets would fall through to the hub's default desk, i.e. someone else.
  * - `no_portal_project` — a desk is here but its checkout has no Project row,
@@ -132,12 +129,11 @@ export type AdoptHelpdeskOutcome =
 
 export interface AdoptHelpdeskResult {
   outcome: AdoptHelpdeskOutcome;
+  /** The `flow.json` dependency the repo was added as. */
+  dependency: string;
   /** Local checkout of the repo that was attached. Always present. */
   path: string;
-  folder_id: string | null;
-  scope: 'private' | 'shared';
   already_linked: boolean;
-  scope_changed: boolean;
   /** Null for `no_manifest`; set for every other outcome. */
   helpdesk_id: string | null;
   /** Repo-controlled — never proof of who the desk is. */
@@ -157,23 +153,6 @@ export interface AdoptHelpdeskResult {
   } | null;
 }
 
-export interface AddContextDirFromGitResult {
-  folder_id: string;
-  path: string;
-  scope: 'private' | 'shared';
-  cloned_url: string;
-  already_linked: boolean;
-  scope_changed: boolean;
-}
-
-export interface ProjectContextFolderResolveResult {
-  typeid: string;
-  kind: string;
-  path?: string;
-  message?: string;
-  [key: string]: unknown;
-}
-
 /** One value a setup requirement needs (`SetupVarSpec`). Names only, never a value. */
 export interface ProjectSetupVar {
   env_var: string;
@@ -189,7 +168,9 @@ export interface ProjectSetupVar {
 
 /** One thing to set up (`SetupRequirementSpec`): a connection, a credential pack, or a gap. */
 export interface ProjectSetupRequirement {
-  kind: 'oauth' | 'pack' | 'gap';
+  /** `dependency`: a required dependency that is not here — name = the dependency,
+   *  title = its source, note = why. */
+  kind: 'oauth' | 'pack' | 'gap' | 'dependency';
   name: string;
   title: string;
   vars: ProjectSetupVar[];
@@ -255,9 +236,9 @@ export interface ProjectMenuGroup {
   count: number;
 }
 
-/** One directory in the menu: the project's own mount, or a context folder.
- *  Recursive by construction — a context folder that is itself a Project
- *  carries that Project's own context folders, 3+ levels deep. */
+/** One directory in the menu: the project's own mount, or a dependency's folder.
+ *  Recursive by construction — a dependency that is itself a Project
+ *  carries that Project's own dependencies, 3+ levels deep. */
 export interface ProjectMenuNode {
   /** Canonical POSIX path — the node's identity. */
   path: string;
@@ -267,7 +248,7 @@ export interface ProjectMenuNode {
   /** Distance from the root project (root = 0). */
   depth: number;
   /** Null when this folder is not a Project (then `children` is always empty —
-   *  only a Project has context folders of its own). */
+   *  only a Project has dependencies of its own). */
   project_id: string | null;
   is_project: boolean;
   /** The linked Folder entity, from `context_dir_infos`. */
@@ -289,7 +270,7 @@ export interface ProjectAssetMenu {
 export interface ProjectAssetMenuOptions {
   /** Narrow to these record types. Default: every browseable scannable type. */
   types?: string[];
-  /** Recurse into context folders that are themselves Projects. Default true. */
+  /** Recurse into dependencies that are themselves Projects. Default true. */
   recursive?: boolean;
   /** Hard cap on DFS depth (root = 0). Backend clamps to 1..16. */
   maxDepth?: number;
@@ -299,10 +280,28 @@ interface ProjectAssetMenuResponse {
   menu?: ProjectAssetMenu;
 }
 
-interface ProjectContextFolderResolveResponse {
-  include_dirs?: unknown;
-  context_roots?: unknown;
-  context_folder_results?: unknown;
+/** Listeners for "this project's dependencies changed", keyed by project id. */
+const dependencyListeners = new Map<string, Set<() => void>>();
+
+/**
+ * Call `listener` whenever a dependency verb on `projectId` settles — from ANY
+ * Project instance or surface — so every view showing its dependencies reads
+ * them again. Fires after failures too: a refused add may still have written
+ * `flow.json`, and the states are the backend's to report. Returns the
+ * unsubscribe.
+ */
+export function onProjectDependenciesChanged(projectId: string, listener: () => void): () => void {
+  let set = dependencyListeners.get(projectId);
+  if (!set) dependencyListeners.set(projectId, (set = new Set()));
+  set.add(listener);
+  return () => {
+    set.delete(listener);
+    if (!set.size) dependencyListeners.delete(projectId);
+  };
+}
+
+function notifyDependenciesChanged(projectId: string): void {
+  for (const listener of [...(dependencyListeners.get(projectId) ?? [])]) listener();
 }
 
 const LOCAL_MEMBER_ID_KEY = 'flowpad.collaboration.member_id';
@@ -357,17 +356,19 @@ export class Project extends APIEntity<Project> {
   /** Local collaboration presence (session-code join, no roles). Renamed from
    *  `members` so that name is free for the hub role roster. */
   presence: ProjectMember[] = [];
-  /** Context folders: extra directories auto-added to every agentic worker's
-   *  --add-dir set and browseable in the Explorer as their own root. Mirrors
-   *  the backend Project.include_dirs. */
+  /** The resolved dependencies' folders: extra directories auto-added to every
+   *  agentic worker's --add-dir set and browseable in the Explorer as their own
+   *  root. Mirrors the backend Project.include_dirs. */
   include_dirs: string[] = [];
   /** The project's own root followed by its context roots, canonicalized —
    *  mirror of the backend computed `Project.context_roots`. The one answer to
    *  "which directories count as this project's"; do NOT re-derive it from
    *  `fs_storage_mount_path` + `include_dirs`, which canonicalizes differently. */
   context_roots: string[] = [];
-  /** Per-context-folder info (path + origin_kind). Mirrors the backend
-   *  computed Project.context_dir_infos — same paths/order as include_dirs. */
+  /** Per-resolved-dependency info (path, origin_kind, dependency name). Mirrors
+   *  the backend computed Project.context_dir_infos — same paths/order as
+   *  include_dirs. A dependency with no local folder (missing, not installed)
+   *  is absent here; `dependencies()` lists every declared one. */
   context_dir_infos: ProjectContextDirInfo[] = [];
   /** Optional per-project home branding from `.flow/customization/`. Mirrors the
    *  backend computed `Project.customization`. Read-only. */
@@ -653,8 +654,8 @@ export class Project extends APIEntity<Project> {
 
   /**
    * The Assets menu for this project: per-type groups with counts, and the same
-   * nested under each context folder — recursively, because a context folder
-   * that is itself a Project has its own context folders. Counts accumulate, so
+   * nested under each dependency — recursively, because a dependency
+   * that is itself a Project has its own dependencies. Counts accumulate, so
    * a collapsed row already reports its whole subtree.
    *
    * Same action as {@link getAssets} (`project/{id}/get-assets`), menu mode —
@@ -724,71 +725,131 @@ export class Project extends APIEntity<Project> {
     return dataManager.updateEntityFromJson<Project>(response as unknown as Record<string, unknown>);
   }
 
-  /** Adopt the server-computed `include_dirs` off a context-dir action
-   *  response. The backend derives the list from Folder context links (it
+  /** Adopt the server-computed context fields off a dependency action
+   *  response. The backend derives them from the resolved dependencies (it
    *  canonicalizes paths), so the response — not an optimistic local guess —
    *  is the truth. */
-  private adoptContextDirs(response: unknown): void {
-    const dirs = (response as { include_dirs?: unknown } | null)?.include_dirs;
-    if (Array.isArray(dirs)) {
-      this.include_dirs = dirs.filter((d): d is string => typeof d === 'string');
-    }
-    const infos = (response as { context_dir_infos?: unknown } | null)?.context_dir_infos;
-    if (Array.isArray(infos)) {
-      this.context_dir_infos = infos.filter(
+  private adoptContext(response: unknown): void {
+    const r = response as Partial<Record<keyof ProjectContextPayload, unknown>> | null;
+    const strings = (v: unknown) => (v as unknown[]).filter((d): d is string => typeof d === 'string');
+    if (Array.isArray(r?.include_dirs)) this.include_dirs = strings(r.include_dirs);
+    if (Array.isArray(r?.context_roots)) this.context_roots = strings(r.context_roots);
+    if (Array.isArray(r?.context_dir_infos)) {
+      this.context_dir_infos = r.context_dir_infos.filter(
         (item): item is ProjectContextDirInfo =>
           !!item && typeof item === 'object' && typeof (item as ProjectContextDirInfo).path === 'string',
       );
     }
   }
 
-  /** Attach a context folder (auto-added to every agentic worker's --add-dir
-   *  set). Idempotent; the backend mints the Folder entity, links it into the
-   *  requested context bucket — `private` (default, never leaves this machine)
-   *  or `shared` (travels with the project) — and kicks a one-shot index so
-   *  the folder's assets become discoverable. */
-  async addContextDir(path: string, scope: 'private' | 'shared' = 'private'): Promise<void> {
-    this.adoptContextDirs(await this.post('add-context-dir', { path, scope }));
+  /** Every dependency declared in this project's `flow.json`, as it stands on
+   *  this machine, plus the warnings (required, not here, not dismissed). Never
+   *  fetches: a dependency not on this machine yet reads `missing`. */
+  async dependencies(): Promise<ProjectDependencies> {
+    const response = await this.get<Partial<ProjectDependencies> | null>('dependencies');
+    return {
+      dependencies: response?.dependencies ?? [],
+      warnings: response?.warnings ?? [],
+      resolving: response?.resolving === true,
+    };
   }
 
-  /** Clone a git repo and attach it as a context folder, in one call.
-   *
-   * The branch is always PINNED — to `branch` when given, else to the remote's
-   * default. An unpinned origin silently adopts whatever checkout of that URL
-   * happens to be on the machine, on any branch.
-   *
-   * Unlike `addContextDir` this returns a small summary rather than the whole
-   * project, so `include_dirs` on this entity is NOT refreshed — refetch the
-   * project if a surface renders its context folders. */
-  async addContextDirFromGit(
-    url: string,
-    branch: string = '',
-    scope: 'private' | 'shared' = 'private',
-  ): Promise<AddContextDirFromGitResult> {
-    return this.post<AddContextDirFromGitResult>('add-context-dir-from-git', { url, branch, scope });
+  /** Declare a dependency in `flow.json` and resolve it. `source` is a
+   *  `git+<url>#<branch>`, `hub:<project-id>` or `file:<path>` string — or a
+   *  plain local folder (a folder inside a git checkout is written as its repo)
+   *  or a bare git URL. `path` points at a sub-folder of the source; `optional`
+   *  files it under `optionalDependencies` (and installs it now). Rejects with
+   *  the backend's message on a bad source. */
+  async addDependency(
+    source: string,
+    options: { name?: string; path?: string; optional?: boolean } = {},
+  ): Promise<DependencyState> {
+    return this.changingDependencies(async () => {
+      const response = await this.post<({ dependency: DependencyState } & ProjectContextPayload) | null>(
+        'add-dependency',
+        { source, ...options },
+      );
+      this.adoptContext(response);
+      if (!response?.dependency) throw new Error('add-dependency returned no dependency');
+      return response.dependency;
+    });
   }
 
-  /** Attach a help desk's repo and report the desk it carries.
+  /** Run a dependency verb, then tell every listener for this project
+   *  (see {@link onProjectDependenciesChanged}) — whether it worked or not. */
+  private async changingDependencies<T>(run: () => Promise<T>): Promise<T> {
+    try {
+      return await run();
+    } finally {
+      notifyDependenciesChanged(this.id);
+    }
+  }
+
+  /** Drop a dependency from `flow.json`. The folder on disk is left alone. */
+  async removeDependency(name: string): Promise<DependencyState[]> {
+    return this.changingDependencies(async () => {
+      const response = await this.post<({ dependencies: DependencyState[] } & ProjectContextPayload) | null>(
+        'remove-dependency',
+        { name },
+      );
+      this.adoptContext(response);
+      return response?.dependencies ?? [];
+    });
+  }
+
+  /** Fetch / clone every required dependency that is missing (`update` also
+   *  pulls the ones already here). */
+  async resolveDependencies(options: { update?: boolean } = {}): Promise<DependencyState[]> {
+    return this.changingDependencies(async () => {
+      const response = await this.post<({ dependencies: DependencyState[] } & ProjectContextPayload) | null>(
+        'resolve-dependencies',
+        options.update ? { update: true } : undefined,
+      );
+      this.adoptContext(response);
+      return response?.dependencies ?? [];
+    });
+  }
+
+  /** Bring in an OPTIONAL dependency — optional ones are never fetched on their own. */
+  async installDependency(name: string): Promise<DependencyState> {
+    return this.changingDependencies(async () => {
+      const response = await this.post<({ dependency: DependencyState } & ProjectContextPayload) | null>(
+        'install-dependency',
+        { name },
+      );
+      this.adoptContext(response);
+      if (!response?.dependency) throw new Error('install-dependency returned no dependency');
+      return response.dependency;
+    });
+  }
+
+  /** Stop warning about a missing required dependency until Flowpad restarts
+   *  (the dismissal is backend memory, not a setting). */
+  async dismissDependencyWarning(name: string): Promise<void> {
+    await this.changingDependencies(() => this.post('dismiss-dependency-warning', { name }));
+  }
+
+  /** Add a help desk's repo as a dependency and report the desk it carries.
    *
-   * Attaches through `addContextDirFromGit` unchanged — a desk is adopted by
-   * being a context folder, not by a separate mechanism — and adds the answer
+   * Adds through the same path as `addDependency` — a desk is adopted by
+   * being a dependency, not by a separate mechanism — and adds the answer
    * the UI cannot work out for itself: which desk arrived, whether it is the
    * one that will actually serve, and where its portal is.
    *
    * Read `outcome` before saying anything to the user; see
-   * {@link AdoptHelpdeskOutcome}. Same `include_dirs` caveat as above. */
-  async adoptHelpdeskFromGit(
-    url: string,
-    branch: string = '',
-    scope: 'private' | 'shared' = 'private',
-  ): Promise<AdoptHelpdeskResult> {
-    return this.post<AdoptHelpdeskResult>('adopt-helpdesk-from-git', { url, branch, scope });
+   * {@link AdoptHelpdeskOutcome}. Returns a summary rather than the whole
+   * project, so `include_dirs` on this entity is NOT refreshed — refetch the
+   * project if a surface renders its dependencies. */
+  async adoptHelpdeskFromGit(url: string, branch: string = '', optional: boolean = false): Promise<AdoptHelpdeskResult> {
+    return this.changingDependencies(() =>
+      this.post<AdoptHelpdeskResult>('adopt-helpdesk-from-git', { url, branch, optional }),
+    );
   }
 
   /** Name (or, with null, clear) the asset the Home button opens. Written into
    *  the project manifest (`project_manifest.json`), so it travels with the
    *  repo. The backend refuses an asset outside this project and its direct
-   *  context folders. Returns the home page as now declared. */
+   *  dependencies. Returns the home page as now declared. */
   async setHomePage(typeid: string | null): Promise<{ home_page: string | null }> {
     return this.post<{ home_page: string | null }>('set-home-page', { typeid: typeid ?? '' });
   }
@@ -837,38 +898,15 @@ export class Project extends APIEntity<Project> {
     return (await dataManager.callAction<void, ProjectHomePage>(actionInfo)) ?? { asset: null, type: null };
   }
 
-  /** Converge the live content dependencies declared by this Project's
-   * `.flowpad/bootstrap.json`. The backend owns clone/link/index idempotency. */
-  async reconcileBootstrap(): Promise<ReconcileBootstrapResult> {
-    return this.post<ReconcileBootstrapResult>('reconcile-bootstrap');
-  }
-
-  /** Get-or-create the `Folder` entity for a directory, WITHOUT attaching it as
-   *  a context folder. Folder ids are deterministic (a Folder's id is its origin
+  /** Get-or-create the `Folder` entity for a directory, WITHOUT declaring it as
+   *  a dependency. Folder ids are deterministic (a Folder's id is its origin
    *  key), so this is a safe get-or-create: it never links, never indexes, and
    *  returns the same typeid for the same directory forever. Use it when a
    *  surface needs an entity for a directory the user is merely browsing (e.g.
-   *  the Assets header's Share); use `addContextDir` when the folder should
+   *  the Assets header's Share); use `addDependency` when the folder should
    *  actually join the project's context. */
   async folderForPath(path: string): Promise<{ typeid: string; path: string; origin_kind: string | null }> {
     return this.post('folder-for-path', { path });
-  }
-
-  /** Detach a context folder. No-op if not attached. */
-  async removeContextDir(path: string): Promise<void> {
-    this.adoptContextDirs(await this.post('remove-context-dir', { path }));
-  }
-
-  /** Resolve received shared context folders into receiver-local paths. */
-  async resolveContextFolders(): Promise<ProjectContextFolderResolveResult[]> {
-    const response = await this.post<ProjectContextFolderResolveResponse>('resolve-context-folders');
-    this.adoptContextDirs(response);
-    const results = response?.context_folder_results;
-    if (!Array.isArray(results)) return [];
-    return results.filter(
-      (item): item is ProjectContextFolderResolveResult =>
-        !!item && typeof item === 'object' && typeof (item as ProjectContextFolderResolveResult).kind === 'string',
-    );
   }
 
   async setupComputeNode(options?: { gitOrigin?: GitOrigin | null }): Promise<ComputeNode | null> {

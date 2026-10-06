@@ -4,9 +4,9 @@ import { TypeId, launchWizard, type Project } from '@sdk';
 import { notify } from '@src/notifications';
 import { invalidateGitPreflight, useGitSharePreflight } from '@src/hooks/use-git-share-preflight';
 import { useGitPush } from '@src/hooks/use-git-push';
-import { useProjectContextFolders } from '@src/hooks/use-project-context-folders';
+import { useProjectDependencies } from '@src/hooks/use-project-dependencies';
 import { gitShareGateState, type GitShareGateState } from '@src/components/share-to-conversation/git-share-gate-state';
-import type { ContextFolderTarget } from '@src/hooks/use-context-folder-for-rel';
+import type { DependencyFolderTarget } from '@src/hooks/use-dependency-for-rel';
 
 export interface GitShareGate {
   /** Which face the gate renders — `checking` until the backend answers. */
@@ -22,19 +22,19 @@ export interface GitShareGate {
 }
 
 /**
- * The pre-share gate for a context folder: preflight → remediate → re-check.
+ * The pre-share gate for a folder (a dependency, or a folder of the project's own): preflight → remediate → re-check.
  *
  * Re-checking is EVENT-driven, never polled: each remediation calls the
  * preflight's `refetch` once it settles — one re-check, on an explicit
  * completion. No interval, no backoff, no retry budget.
  */
 export function useGitShareGate(
-  folder: ContextFolderTarget | null,
+  folder: DependencyFolderTarget | null,
   project: Project | null | undefined,
   enabled: boolean,
 ): GitShareGate {
   const [setupBusy, setSetupBusy] = useState(false);
-  const { addPaths, remove } = useProjectContextFolders(project);
+  const { add } = useProjectDependencies(project, { fetchStates: false });
 
   const ref = useMemo(() => (folder?.typeid ? new TypeId(folder.typeid) : undefined), [folder?.typeid]);
   const preflight = useGitSharePreflight(ref, enabled);
@@ -55,18 +55,18 @@ export function useGitShareGate(
     if (!folder || !project) return;
     setSetupBusy(true);
     try {
-      const result = await launchWizard<{ path?: string }>('git-context-folder', {
+      const result = await launchWizard<{ path?: string }>('git-dependency', {
         title: t`Set up Git for sharing`,
         targetTypeId: project.typeId.toString(),
         payload: {
           projectId: project.id,
-          scope: 'private',
+          optional: !folder.required,
           mode: 'adopt',
           path: folder.workdir,
           name: folder.name,
         },
         prompt:
-          `The user wants to share the context folder "${folder.name}" (${folder.workdir}), but it ` +
+          `The user wants to share the folder "${folder.name}" (${folder.workdir}), but it ` +
           `isn't backed by a git repository with an "origin" remote yet, so it can't be shared. ` +
           `Adopt THAT EXACT FOLDER in place — do not clone it, copy it, or create a repository ` +
           `anywhere else. Initialize git in ${folder.workdir} if needed, commit its current ` +
@@ -81,9 +81,15 @@ export function useGitShareGate(
       // Re-register so the backend re-runs `detect_origin`: a Folder's identity
       // IS its origin key, so a now-git directory must be re-minted, not mutated
       // in place — otherwise it keeps its stale LocalOrigin forever and every
-      // later preflight re-probes a folder the graph still calls local.
-      await remove(folder.workdir);
-      await addPaths([folder.workdir], 'private');
+      // later preflight re-probes a folder the graph still calls local. A
+      // dependency is re-added from its folder (a folder inside git is written
+      // as its repo, under the same name); a folder of the project's own is
+      // only re-minted — sharing it must not make it a dependency.
+      if (folder.dependency) {
+        await add(folder.workdir, folder.required ? 'required' : 'optional');
+      } else {
+        await project.folderForPath(folder.workdir);
+      }
     } catch (e) {
       notify.error({ title: t`Could not set up Git`, message: String(e) });
     } finally {
@@ -93,7 +99,7 @@ export function useGitShareGate(
       preflight.refetch();
       invalidateGitPreflight(ref);
     }
-  }, [folder, project, addPaths, remove, preflight, ref]);
+  }, [folder, project, add, preflight, ref]);
 
   const busy = pushBusy || setupBusy;
   return {

@@ -13,7 +13,8 @@ export interface ProjectMember {
   last_seen_at: string | null;
 }
 
-/** Mirror of the backend computed `Project.context_dir_infos` entries. */
+/** Mirror of the backend computed `Project.context_dir_infos` entries — one per
+ *  RESOLVED dependency (a dependency with a local folder). */
 export interface ProjectContextDirInfo {
   path: string;
   /** Origin kind stamped at link time — "git" for cloned repos, else "local". */
@@ -21,6 +22,36 @@ export interface ProjectContextDirInfo {
   /** The linked Folder entity's typeid (e.g. "folder-<uuid>") — referenced by
    *  UI surfaces like the push-notify message chip. Empty for legacy dirs. */
   typeid?: string;
+  /** The `flow.json` dependency name this folder resolves; empty for a legacy link. */
+  dependency?: string;
+  /** False for an `optionalDependencies` entry. */
+  required?: boolean;
+  /** The dependency that declared this one, for a transitive dependency; else empty. */
+  via?: string;
+}
+
+/** Where a declared dependency stands on THIS machine. */
+export type DependencyStateName = 'ready' | 'missing' | 'unreachable' | 'not_installed' | 'invalid';
+
+/** Mirror of the backend `DependencyState` — one `flow.json` dependency as it
+ *  stands here. What every dependency action answers. */
+export interface DependencyState {
+  name: string;
+  /** As declared: `git+<url>#<branch>`, `hub:<project-id>`, `file:<path>`. */
+  source: string;
+  /** False for an `optionalDependencies` entry — fetched only on install. */
+  required: boolean;
+  /** The sub-folder of the source the dependency points at; "." for its root. */
+  path: string;
+  state: DependencyStateName;
+  /** The resolved local folder (`ready` only). */
+  local_path?: string | null;
+  /** Why it is not ready, or a note on a ready one (a branch mismatch). */
+  reason?: string | null;
+  /** The dependency that declared it, for one reached transitively; null = this project. */
+  via?: string | null;
+  /** A required, not-ready dependency whose warning was dismissed until the next restart. */
+  dismissed: boolean;
 }
 
 /** A project's visual identity, from the `brand` block of
