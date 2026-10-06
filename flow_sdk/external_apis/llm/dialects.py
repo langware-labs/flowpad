@@ -189,11 +189,27 @@ def get_dialect(provider: LMApiProvider | str) -> ProviderDialect:
         raise ValueError(f"unknown LLM provider {key!r}; known providers are {sorted(p.value for p in DIALECTS)}")
 
 
+def same_model(a: str, b: str) -> bool:
+    """Whether two model names mean the same model.
+
+    Relays prefix the vendor (``openai/text-embedding-3-small``) where the vendor itself does not
+    (``text-embedding-3-small``), and either spelling can come back in a response. Only the
+    leading ``vendor/`` and case are forgiven; anything else is a different model.
+    """
+
+    def bare(name: str) -> str:
+        cleaned = (name or "").strip().lower()
+        return cleaned.split("/", 1)[1] if "/" in cleaned else cleaned
+
+    return bare(a) == bare(b)
+
+
 def default_base_url_for(provider: LMApiProvider | str) -> str:
     return get_dialect(provider).default_base_url
 
 
 __all__ = [
+    "same_model",
     "ANTHROPIC_VERSION_DEFAULT",
     "DIALECTS",
     "OPENROUTER_REFERER",

@@ -30,6 +30,7 @@ from pathlib import Path
 from typing import Iterable, Sequence
 
 from flow_sdk.db.drivers.sqlite.connection import open_sqlite
+from flow_sdk.external_apis.llm.dialects import same_model
 from flow_sdk.schema.data_spec.rag_spec import RagChunk, RagHit
 
 #: Filenames inside the store directory. Fixed rather than configurable: a store is opened by
@@ -60,6 +61,19 @@ CREATE TABLE IF NOT EXISTS meta (k TEXT PRIMARY KEY, v TEXT NOT NULL);
 
 class DimensionMismatch(ValueError):
     """A vector of a width this store was not built for. Rebuild, do not mix."""
+
+
+class ModelMismatch(ValueError):
+    """Vectors from a model other than the one this store (or index) is pinned to. Same width is
+    no excuse: two models embed into two unrelated spaces, and mixed, every query is wrong."""
+
+    def __init__(self, pinned: str, answered: str) -> None:
+        self.pinned = pinned
+        self.answered = answered
+        super().__init__(
+            f"this index embeds with {pinned} but was handed vectors from {answered}; "
+            f"changing the embedding model is a rebuild, not a top-up"
+        )
 
 
 class RagStore:
@@ -240,6 +254,11 @@ class RagStore:
                 f"this store holds {pinned}-dimension vectors and was handed {width}; "
                 f"changing the embedding model is a rebuild, not a top-up"
             )
+        pinned_model = self.model
+        if pinned_model and model and not same_model(pinned_model, model):
+            # Two models of one width embed into two unrelated spaces; mixed, every query is
+            # silently wrong for half the corpus. The width check above cannot see this.
+            raise ModelMismatch(pinned_model, model)
         if not pinned:
             self._set_meta("dimensions", str(width))
             if model:
@@ -374,4 +393,4 @@ class RagStore:
 # ``INDEX_FILE``, ``DB_FILE`` and ``METRIC`` are usearch facts and stay private to this
 # module: a second backend has no ``index.usearch`` and need not measure in cosine. What is
 # public is the store's shape — chunks in, hits out.
-__all__ = ["DimensionMismatch", "RagStore"]
+__all__ = ["DimensionMismatch", "ModelMismatch", "RagStore"]
