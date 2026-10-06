@@ -98,7 +98,7 @@ def directory_candidates(mount: Path, shape: File | Folder, *, recursive: bool) 
     """The entries a scan considers under *mount*.
 
     Listed through the extended-length form (a no-op off Windows): a shipped asset nested deep inside the
-    install (the smart-navigator dataset's data_specs) passes Windows' 260-char MAX_PATH, and ``listdir``
+    install (the smart-navigator dataset's nested data_specs did) passes Windows' 260-char MAX_PATH, and ``listdir``
     fails there although ``is_dir`` succeeds. A folder that still cannot be read is skipped, not raised:
     one unreadable folder used to abort the whole system-assets index, so no data driver loaded at all.
     """

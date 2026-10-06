@@ -1,9 +1,0 @@
-{
-  "metadata": {
-    "title": "SmartNavigator",
-    "description": "What the magic line should do with a typed request: open something now, or hand it to the assistant.",
-    "data_layout": "io_folder",
-    "spec": "navigator.dataset"
-  },
-  "data": {}
-}
