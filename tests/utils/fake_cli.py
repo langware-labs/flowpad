@@ -57,6 +57,33 @@ def seed_harness_capability(monkeypatch, worker_type: str, bin_dir) -> None:
     )
 
 
+def suppress_on_path_binary(monkeypatch, *names: str) -> None:
+    """Make these executables invisible to ``shutil.which`` — and nothing else.
+
+    A "discovery recorded a folder but the binary is gone" test seeds an EMPTY
+    bin folder and expects the spawn to fail: there is no ``<name>`` to resolve.
+    But ``build_worker_spawn_env`` keeps the rest of PATH so a ``#!/usr/bin/env
+    node`` shebang still resolves, and ``resolve_worker_argv0`` then resolves
+    argv[0] against that full PATH. On a host that happens to ship the real CLI
+    (a dev image, or this sandbox's ``/usr/bin/{codex,copilot}``) that leak
+    rescues the spawn and the test stops asserting what it means to — exactly the
+    CI-vs-host split these tests hit. Suppressing the executable BY NAME keeps the
+    empty-folder scenario intact (the capability value is untouched) and the
+    suppression narrow: every other ``which`` lookup still hits the real one.
+    """
+    import shutil
+
+    targets = set(names)
+    inner = shutil.which
+
+    def _which(cmd, mode=os.F_OK | os.X_OK, path=None):
+        if cmd in targets:
+            return None
+        return inner(cmd, mode, path)
+
+    monkeypatch.setattr(shutil, "which", _which)
+
+
 def clear_harness_capability(monkeypatch, worker_type: str) -> None:
     """Make this CLI *not installed* — no discovered value AND not on PATH.
 
