@@ -67,9 +67,35 @@ and, on a child's URL, lights the host's chip.
 - **Vibe is the first host:** `ViewType.VIBE`, `/dock/vibe/agentic_process-<id>`. Its
   `tabHash` folds onto `shell|agentic_process-<id>`, so a process is one row whether
   it is shown as a chat, a terminal or a Vibe workspace; the stored pointer is
-  re-pointed between them. Several Vibe tabs can be open at once; one workspace
-  component renders whichever is active and resets its per-workspace show state
-  when the session changes.
+  re-pointed between them. Several Vibe tabs can be open at once, each a chip in
+  the global strip (`flow-page` draws the strip above the Vibe workspace; the
+  home stays tabless); one workspace component renders whichever is active and
+  resets its per-workspace show state when the session changes. While a child
+  fills a Vibe tab, its chip keeps the Vibe tab's own name (the nested strip
+  shows the child).
+- **One strip owner:** `flow-page` draws the global strip above every layout
+  (`TabStripOwnedAbove` tells an embedded `ContentPanel` not to draw a second), so
+  switching between a Vibe tab and a terminal tab never remounts it; it pins the
+  desk `--radius` so the Vibe skin cannot reshape it.
+- **Reopen beside, with its children:** a host closed with its tab marks the
+  children it closed `closed_with_parent`; reopening the host (`ensure_tab`) with
+  an opener places it right after that opener and brings those children back —
+  never a child the user closed on its own. A Vibe chat's New / Recent use this
+  (`NavigationActions.openVibeTabBeside`).
+- **Leaving Vibe carries children out:** re-pointing a host to a non-host
+  presentation (Vibe → chat/terminal) makes its nested tabs top-level tabs right
+  after it; the workspace's active-display row stays attached.
+- **Surface switch:** every session shows a Terminal | Chat | Vibe control
+  (`SessionSurfaceSwitch`, in the terminal/chat headers and the Vibe settings
+  menu) — the footer's switch scoped to one session
+  (`NavigationActions.switchSessionSurface`). The strip's agent openers and
+  history always open a terminal (PTY) session; "New Vibe" opens the Vibe home.
+- **Closing a project's last tab** lands where Home does (`goHome({ homePage:
+  true })`): the project's home agent, else the tabless home. A session launched
+  as an agent shows the agent's avatar on its chip.
+- **Top-level opens:** the global strip's chips and "+" open with
+  `NavigationCommitOptions.topLevel` — no host is carried, so a terminal opened
+  beside a Vibe tab is never adopted as its child.
 
 ## The `tab` actions (the only wire contract)
 

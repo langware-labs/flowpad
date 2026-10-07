@@ -1,5 +1,5 @@
 import { AgenticProcess, dataContext, ProcessKind, toplog, type ComputeNode } from '@sdk';
-import { getEffectiveViewMode, surfaceForViewMode, viewModePtyMode } from '@src/contexts/view-mode-context';
+import { getEffectiveViewMode, surfaceForViewMode, type ViewMode, viewModePtyMode } from '@src/contexts/view-mode-context';
 import { chatTargetForProject } from '@src/lib/chat-target';
 import { embedStandardAgent } from './embed-standard-agent';
 import type { NavigationActions } from './NavigationActions';
@@ -9,6 +9,8 @@ export interface OpenNewChatOptions {
   projectId?: string;
   /** Working directory; defaults to the active project's mount path. */
   cwd?: string;
+  /** The surface to open in; defaults to the mode on screen. */
+  mode?: ViewMode;
 }
 
 /**
@@ -53,7 +55,7 @@ export async function openNewChat(
     console.error('[openNewChat] No compute node');
     return null;
   }
-  const mode = getEffectiveViewMode();
+  const mode = options.mode ?? getEffectiveViewMode();
   const ptyMode = viewModePtyMode(mode);
   const project = dataContext.project;
   const projectId = options.projectId ?? project?.id;

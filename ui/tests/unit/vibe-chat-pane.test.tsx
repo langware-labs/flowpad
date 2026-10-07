@@ -5,6 +5,7 @@ import { AgenticProcess } from '@sdk';
 
 const mocks = vi.hoisted(() => ({
   openShellProcess: vi.fn(),
+  openVibeTabBeside: vi.fn(),
   panelProps: null as Record<string, unknown> | null,
   createProcess: vi.fn().mockResolvedValue({}),
   continueProcess: vi.fn().mockResolvedValue('continued-process'),
@@ -27,7 +28,7 @@ vi.mock('@src/contexts/agent-context', () => ({
 }));
 vi.mock('@src/navigation/useDockNavigation', () => ({
   useDockNavigation: () => ({
-    navigation: { openShellProcess: mocks.openShellProcess },
+    navigation: { openShellProcess: mocks.openShellProcess, openVibeTabBeside: mocks.openVibeTabBeside },
   }),
 }));
 vi.mock('@src/components/entity-execution-panel', () => ({
@@ -88,6 +89,7 @@ import { VibeChatPane } from '@src/pages/flow-page/vibe-chat-pane';
 afterEach(() => {
   cleanup();
   mocks.openShellProcess.mockReset();
+  mocks.openVibeTabBeside.mockReset();
   mocks.createProcess.mockClear();
   mocks.continueProcess.mockClear();
   mocks.startNewSession.mockClear();
@@ -111,11 +113,8 @@ describe('VibeChatPane', () => {
     expect(mocks.panelProps?.target).toBe('project-aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa');
     expect(mocks.panelProps?.initialProcessId).toBe(process.id);
     fireEvent.click(screen.getByTestId('pick-history'));
-    // NO mode is passed: a past build reopens in the mode it was last seen in
-    // (per-session `last_mode`, seeded onto the URL by `openDock`). Naming Vibe
-    // here used to drag a session the user had put in Terminal back into the
-    // vibe skin every time they picked it out of Recent.
-    expect(mocks.openShellProcess).toHaveBeenCalledWith('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb');
+    // Recent opens the picked session as a Vibe tab BESIDE this one.
+    expect(mocks.openVibeTabBeside).toHaveBeenCalledWith('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb');
   });
 
   it('FLOWPAD-2027: "New" eagerly creates a fresh session and rebinds navigation', async () => {

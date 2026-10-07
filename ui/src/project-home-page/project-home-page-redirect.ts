@@ -34,7 +34,7 @@ async function agentHomePageDock(agentTypeId: string, projectId: string): Promis
       console.warn('[project-home-page] pre-turn setup failed; opening the session anyway', e),
     );
   }
-  return DockPointer.forShell(`${AgenticProcess.type}-${processId}`).withViewMode(ViewMode.Vibe);
+  return DockPointer.forSession(processId).withViewMode(ViewMode.Vibe);
 }
 
 /**
@@ -56,10 +56,11 @@ export async function homePageDock(data: ProjectHomePage, projectId: string): Pr
  * the first. Two kinds of navigation ask:
  *  - LAUNCHING a project: opening a folder or clone, picking a project,
  *    setting up a shared one, switching to one.
- *  - The Home button (`goHome({ homePage: true })`).
+ *  - The Home button (`goHome({ homePage: true })`), and closing a project's
+ *    LAST tab (the strip lands where Home would).
  * Everything else that lands on the project page — its own "Open project home"
- * button, its tab, the fallback after closing a tab — does not ask, so the
- * project page (where the home page is configured) stays reachable. Safe to
+ * button, its tab — does not ask, so the project page (where the home page is
+ * configured) stays reachable. Safe to
  * repeat because an agent home page RESUMES its last chat rather than minting
  * one per visit.
  *

@@ -26,6 +26,8 @@ const SIBLING_TAB_ID = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
 const h = vi.hoisted(() => ({
   openDock: vi.fn(),
   openDockInWindow: vi.fn(),
+  goHome: vi.fn(),
+  tabsProjectId: null as string | null,
   closeDock: vi.fn(),
   currentDock: null as DockPointer | null,
 }));
@@ -33,7 +35,7 @@ const h = vi.hoisted(() => ({
 vi.mock('@src/navigation/useDockNavigation', () => ({
   useCurrentDock: () => h.currentDock,
   useDockNavigation: () => ({
-    navigation: { openDock: h.openDock, openDockInWindow: h.openDockInWindow, closeDock: h.closeDock },
+    navigation: { openDock: h.openDock, openDockInWindow: h.openDockInWindow, closeDock: h.closeDock, goHome: h.goHome },
     currentDock: h.currentDock,
   }),
 }));
@@ -46,7 +48,7 @@ vi.mock('react-router', async (importOriginal) => {
 vi.mock('@src/tabs/useTerminalStripController', () => ({
   useTerminalStripController: () => ({
     // Only the fields UnifiedTabStrip actually reads.
-    tabsProjectId: null,
+    tabsProjectId: h.tabsProjectId,
     newTabMenuItems: [],
     closeShortcutLabel: 'Alt+W',
     trailing: null,
@@ -114,6 +116,7 @@ afterEach(() => {
   resetTabContentLifecycleForTests();
   tabManager.adoptGlobal([]);
   h.currentDock = null;
+  h.tabsProjectId = null;
 });
 
 describe('ancestor-active highlight in the global strip', () => {
@@ -143,6 +146,19 @@ describe('ancestor-active highlight in the global strip', () => {
     expect(activeChips()).toHaveLength(1);
   });
 
+  it('a Vibe tab keeps its own name while its child shows INSIDE its workspace', () => {
+    // The URL names the host: the workspace (with its nested strip showing the
+    // child) is on screen, so the global chip is the Vibe tab itself.
+    const { processRow, childRow } = setupStrip();
+    h.currentDock = DockPointer.fromTabHash(childRow.pointer)!.withHost(`agentic_process-${AP}`);
+    render(<UnifiedTabStrip />);
+
+    expect(chipFor(processRow)?.getAttribute('data-active')).toBe('true');
+    expect(chipFor(processRow)?.textContent).toContain('my agent');
+    expect(chipFor(processRow)?.textContent).not.toContain('design-doc.md');
+    expect(activeChips()).toHaveLength(1);
+  });
+
   it('lands on a SURVIVING chip when the lit ancestor is closed', () => {
     const { processRow, siblingRow } = setupStrip();
     vi.spyOn(Tab, 'closeById').mockResolvedValue([]);
@@ -159,6 +175,22 @@ describe('ancestor-active highlight in the global strip', () => {
     // strip with nothing lit — the exact state this feature exists to avoid.
     expect(h.openDock).toHaveBeenCalledTimes(1);
     expect((h.openDock.mock.calls[0][0] as DockPointer).tabHash).toBe(siblingRow.pointer);
+  });
+
+  it("closing a project's LAST tab lands on the project's home (home agent or tabless home)", () => {
+    h.tabsProjectId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+    const only = row({ id: SIBLING_TAB_ID, pointer: `shell|shell-${SIBLING_TAB_ID}`, target_id: SIBLING_TAB_ID, name: 'Only' });
+    tabManager.adoptGlobal([only]);
+    h.currentDock = DockPointer.fromTabHash(only.pointer);
+    vi.spyOn(Tab, 'closeById').mockResolvedValue([]);
+    vi.spyOn(Tab, 'listAll').mockResolvedValue([]);
+    render(<UnifiedTabStrip />);
+
+    fireEvent.click(chipFor(only)!.querySelector('[aria-label="Close tab"]')!);
+
+    // Never a project-page chip: Home's own path, which resolves the home agent.
+    expect(h.goHome).toHaveBeenCalledWith({ homePage: true });
+    expect(h.openDock).not.toHaveBeenCalled();
   });
 
   it('cycles from the chip the user sees lit', () => {

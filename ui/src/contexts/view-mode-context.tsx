@@ -217,13 +217,13 @@ function applyAttribute(val: ViewMode, animate = true): void {
   }
 }
 
-function setDockViewModeOverride(val: ViewMode | null): void {
+function setDockViewModeOverride(val: ViewMode | null, animate = true): void {
   if (dockViewModeOverride === val) {
     applyAttribute(getEffectiveViewMode(), false);
     return;
   }
   dockViewModeOverride = val;
-  applyAttribute(getEffectiveViewMode());
+  applyAttribute(getEffectiveViewMode(), animate);
   viewModeOverrideListeners.forEach((listener) => listener());
 }
 
@@ -431,13 +431,22 @@ export function useDockViewModeOverrideSync(): void {
   useEffect(() => {
     const prev = previous.current;
     previous.current = currentDock;
-    setDockViewModeOverride(override);
+    // The glow marks a MODE SWITCH — the same place in another mode. Moving to
+    // another tab (a Vibe tab ⇄ a terminal tab) repaints the skin without it.
+    // A session's own CHILD (its Vibe workspace showing a document) is the same
+    // place too: "Open terminal" switches the session from wherever in it you are.
+    const samePlace =
+      !!prev &&
+      !!currentDock &&
+      (prev.withViewMode(null).equals(currentDock.withViewMode(null)) ||
+        (!!prev.hostProcessId && prev.hostProcessId === currentDock.pointer));
+    setDockViewModeOverride(override, samePlace);
     // A switch is the same dock committing with a different mode. From a bare
     // URL only the toggle's marker makes it one: a redirect that adds the mode
     // carries no marker, so it only displays.
     if (!currentDock || !prev || !override || prev.viewMode === override) return;
     if (!prev.viewMode && !marked) return;
-    if (prev.withViewMode(null).equals(currentDock.withViewMode(null))) setViewMode(override, currentDock);
+    if (samePlace) setViewMode(override, currentDock);
   }, [currentDock, override, marked]);
 
   useEffect(() => () => setDockViewModeOverride(null), []);

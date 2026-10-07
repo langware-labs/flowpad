@@ -1527,6 +1527,12 @@ export class DockPointer implements IDockPointer {
       : { agentId: null, view: null };
   }
 
+  /** A SESSION's own dock — the shell dock of `agentic_process-<id>`. Pair with
+   *  `withViewMode` for a surface (Vibe maps it to the Vibe host dock). */
+  static forSession(processId: string): DockPointer {
+    return new DockPointer(ViewType.SHELL, `${AgenticProcess.type}${TypeId.DELIMITER}${processId}`);
+  }
+
   /**
    * Create dock pointer for shell/terminal viewer
    * @param sessionId - Optional shell session ID (e.g., 'run', 'flowShell', or custom UUID)
