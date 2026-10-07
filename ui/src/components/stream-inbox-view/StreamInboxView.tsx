@@ -191,6 +191,9 @@ interface ConversationListRowProps {
   ) => ChannelAttribution | null;
   refSetter: (el: HTMLDivElement | null) => void;
   agentId?: string;
+  /** A host that shows the conversation itself (a source's page): where a row opens. Still URL-first — the host
+   *  navigates. Omitted: the conversation view, scoped to `agentId`. */
+  onOpenConversation?: (conversationId: string) => void;
 }
 
 export function ConversationListRow({
@@ -212,6 +215,7 @@ export function ConversationListRow({
   attributionFor,
   refSetter,
   agentId,
+  onOpenConversation,
 }: ConversationListRowProps) {
   const { navigation } = useDockNavigation();
 
@@ -387,7 +391,8 @@ export function ConversationListRow({
     // moved to the mounted ConversationView (open-to-read effect), so direct
     // links, banner clicks, and Stream Inbox clicks all behave identically and the
     // backend reconciles StreamInboxManager.unread after the mutation.
-    navigation.openDock(DockPointer.forConversation(conv.id, { agentId }));
+    if (onOpenConversation) onOpenConversation(conv.id);
+    else navigation.openDock(DockPointer.forConversation(conv.id, { agentId }));
   };
 
   const handleAccept = async () => {
@@ -507,8 +512,10 @@ export function StreamInboxView({
   agentId,
   sourceId,
   embedded = false,
+  onOpenConversation,
 }: {
   agentId?: string;
+  onOpenConversation?: (conversationId: string) => void;
   /** One data source's conversations only (a source's page) — the same live list, backend-filtered. */
   sourceId?: string;
   /** Inside another page: no stream-inbox-wide verbs (New, New group, Mark all read, Archive all), no channel bar, no
@@ -1365,6 +1372,7 @@ export function StreamInboxView({
                 if (conv.id) rowRefs.current.set(conv.id, el);
               }}
               agentId={agentId}
+              onOpenConversation={onOpenConversation}
             />
           ))}
       </div>

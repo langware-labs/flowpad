@@ -99,6 +99,8 @@ export function DataSourcesView() {
         source={pageSource}
         id={route.id}
         tab={route.tab}
+        conversation={route.conversation}
+        thread={route.thread}
         spec={pageSource ? specFor(pageSource.provider) : null}
         onEdit={openEdit}
         onReplay={setReplaying}
@@ -111,8 +113,8 @@ export function DataSourcesView() {
         <>
           <p className="mb-5 max-w-2xl text-sm text-muted-foreground">
             <Trans>
-              The drivers installed here — the templates a source is made from. Each is a folder: its manifest, its
-              code and its tests. Pick one to see its config and the sources made from it.
+              The drivers installed here — the templates a source is made from. Each is a folder: its manifest, its code
+              and its tests. Pick one to see its config and the sources made from it.
             </Trans>
           </p>
           <DataDriversList sources={sources} />

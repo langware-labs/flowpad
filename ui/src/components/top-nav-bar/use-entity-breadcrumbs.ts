@@ -5,6 +5,7 @@ import { LayoutGrid, type LucideIcon } from 'lucide-react';
 import {
   AgenticProcess,
   Agent,
+  Conversation,
   DataDriver,
   DataSource,
   dataManager,
@@ -250,6 +251,15 @@ export function useEntityBreadcrumbs(dock: DockPointer | null): EntityBreadcrumb
     [dataSourcesRoute],
   );
   const { data: pageSource } = useEntity<DataSource>(sourceTypeId);
+  // A conversation read on its source's page: `Data sources › <source> › <conversation>`.
+  const sourceConvTypeId = useMemo(
+    () =>
+      dataSourcesRoute?.section === 'source' && dataSourcesRoute.conversation
+        ? new TypeId(Conversation.type, dataSourcesRoute.conversation)
+        : null,
+    [dataSourcesRoute],
+  );
+  const { data: sourceConv } = useEntity<Conversation>(sourceConvTypeId);
   const { specFor: driverFor } = useSourceSpecs({ enabled: !!driverName });
   const driver = driverName ? driverFor(driverName) : undefined;
   const agentRoute = useMemo(
@@ -592,12 +602,23 @@ export function useEntityBreadcrumbs(dock: DockPointer | null): EntityBreadcrumb
         key: `data-source-${dataSourcesRoute.id}`,
         label: pageSource?.name || pageSource?.provider || labelForType(DataSource.type),
         Icon: iconForType(DataSource.type),
-        pointer: null,
-        kind: 'current',
+        pointer: sourceConvTypeId
+          ? DockPointer.forDataSources({ section: 'source', id: dataSourcesRoute.id, tab: 'messages' })
+          : null,
+        kind: sourceConvTypeId ? 'ancestor' : 'current',
         path: folder,
         filename: basename(folder),
         directory: true,
       });
+      if (sourceConvTypeId) {
+        out.push({
+          key: sourceConvTypeId.toString(),
+          label: sourceConv ? entityLabel(sourceConv, sourceConvTypeId) : labelForType(Conversation.type),
+          Icon: iconForType(Conversation.type),
+          pointer: null,
+          kind: 'current',
+        });
+      }
       return out;
     }
 
@@ -709,6 +730,8 @@ export function useEntityBreadcrumbs(dock: DockPointer | null): EntityBreadcrumb
   }, [
     dataSourcesRoute,
     pageSource,
+    sourceConvTypeId,
+    sourceConv,
     localUser,
     driverName,
     driver,
