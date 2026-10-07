@@ -30,6 +30,7 @@ from flow_sdk.core.flow_command import flow_command
 from flow_sdk.schema.data_spec.compute_op_spec import ComputeOpSpec
 from flow_sdk.schema.data_spec.credential_contract import CredentialVarKind
 from flow_sdk.schema.data_spec.project_setup_spec import (
+    REQUIREMENT_DEPENDENCY,
     REQUIREMENT_GAP,
     REQUIREMENT_OAUTH,
     REQUIREMENT_PACK,
@@ -178,7 +179,14 @@ async def collect_requirements(project: "Project", deployment_id: str = "") -> l
                 kind=REQUIREMENT_GAP, name=name, used_by=used_by,
                 note=f"names the credential {name!r}, which is neither declared nor shipped as a template",
             ))
-    return out + gaps
+    # Required dependencies not on this machine come first: nothing in them runs until they are.
+    dependencies = [
+        SetupRequirementSpec(kind=REQUIREMENT_DEPENDENCY, name=dep.name, title=dep.source,
+                             satisfied=False, used_by=[PROJECT], note=dep.reason or dep.state)
+        for dep in await project.dependencies()
+        if dep.required and dep.state in ("missing", "unreachable")
+    ]
+    return dependencies + out + gaps
 
 
 # ── 2. compile ────────────────────────────────────────────────────────────────
@@ -216,7 +224,14 @@ def compile_setup(
         steps.append({"id": spec.name, "ref": spec.name, "label": spec.label, "on_fail": "continue", **step})
 
     for req in requirements:
-        if req.kind == REQUIREMENT_OAUTH:
+        if req.kind == REQUIREMENT_DEPENDENCY:
+            add({
+                "name": f"dependency-{req.name}", "label": f"Fetch {req.name}",
+                "description": f"{req.name} ({req.title}) is on this machine and in the project's context.",
+                "subkind": "cli", "exe_data": _cli("dep", "sync", "--project", project_id),
+                "completion_check": _cli("dep", "check", req.name, "--project", project_id),
+            })
+        elif req.kind == REQUIREMENT_OAUTH:
             scopes = [arg for s in req.scopes for arg in ("--scope", s)]
             add({
                 "name": f"connect-{req.name}", "label": f"Connect {req.title or req.name}",
@@ -270,7 +285,7 @@ def to_do(req: SetupRequirementSpec) -> bool:
     the wizard's own check; a gap is nobody's to run."""
     if req.kind == REQUIREMENT_PACK:
         return bool(req.missing)
-    if req.kind == REQUIREMENT_OAUTH:
+    if req.kind in (REQUIREMENT_OAUTH, REQUIREMENT_DEPENDENCY):
         return req.satisfied is False
     return False
 

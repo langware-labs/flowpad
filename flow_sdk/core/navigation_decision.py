@@ -24,7 +24,7 @@ for the assistant.
 from __future__ import annotations
 
 import logging
-from typing import Any, Awaitable, Callable, Optional
+from typing import Any, Optional
 
 from flow_sdk.core.dock_address import VIEW_META, parse_dock_url, parse_view_type
 from flow_sdk.core.navigation import kind
@@ -33,7 +33,6 @@ from flow_sdk.schema.data_spec.navigator_spec import NavigationTarget, Navigator
 
 logger = logging.getLogger(__name__)
 
-Engine = Callable[..., Awaitable[NavigatorRoute]]
 #: Targets the UI turns into a dock itself (``dockForTarget``): navigated, never a prompt.
 UI_BUILT = ("file", "url", "webapp")
 
@@ -76,25 +75,35 @@ def _dock(address: str) -> Optional[DockPointerSpec]:
         return None
 
 
-async def decide(request: Any, *, engine: Optional[Engine] = None) -> Any:
+async def decide(request: Any, *, candidates: Optional[list[dict]] = None) -> Any:
     """``navigator.request`` (or its dict) -> a validated ``navigation.outcome``.
 
-    ``request.candidates`` is not a field: the engine searches, and what it offered rides back on
-    the outcome. An eval passes ``engine`` bound to a row's recorded candidates.
+    ``request.candidates`` is not a field: the navigator searches, and what it offered rides back on
+    the outcome. An eval passes ``candidates`` -- a row's recorded matches -- so it replays exactly.
     """
-    return (await decide_run(request, engine=engine))[0]
+    return (await decide_run(request, candidates=candidates))[0]
 
 
-async def decide_run(request: Any, *, engine: Optional[Engine] = None) -> tuple[Any, NavigatorRoute]:
-    """``decide``, plus the engine's own answer (its ``reason`` and ``latency_ms``) for the log."""
+async def decide_run(
+    request: Any, *, candidates: Optional[list[dict]] = None
+) -> tuple[Any, NavigatorRoute]:
+    """``decide``, plus the engine's own answer (its ``reason`` and ``latency_ms``) for the log.
+
+    ``candidates``: the search matches to offer; searched for when None. An eval passes the ones a
+    row recorded, so the row replays on exactly the options it was labelled against."""
     from flow_sdk.core.navigator import route  # noqa: PLC0415
 
     req = kind("navigator.request").model_validate(request)
     here = req.here.model_dump(mode="json", exclude_none=True) if req.here else None
-    answer = await (engine or route)(req.utterance, here=here)
+    answer = await route(req.utterance, here=here, candidates=candidates)
     outcome: dict[str, Any] = {"decision": decision_of(answer), "candidates": answer.offered}
     target = answer.target if answer.route == "quick" else None
-    address = address_of(target) if target is not None else None
+    if target is not None and target.kind == "log":
+        from flow_sdk.core.navigation_log import address as log_address  # noqa: PLC0415
+
+        address = await log_address()
+    else:
+        address = address_of(target) if target is not None else None
     if address:
         outcome["address"] = address
         outcome["dock"] = _dock(address)

@@ -68,7 +68,7 @@ async function writeSkill(dir: string, name: string): Promise<string> {
 }
 
 /**
- * Index one project's own mount. `addContextDir` indexes the folder it links,
+ * Index one project's own mount. `addDependency` indexes the folder it resolves,
  * which covers every level BELOW the root — but the root project is nobody's
  * context folder, so its own assets need this explicit scoped walk.
  * `user=false&projects=<id>` resolves to exactly one REAL_PROJECT_CWD root.
@@ -118,7 +118,7 @@ beforeAll(async () => {
   const info = await sdk.dataManager.bootstrap('localhost', true);
   await sdk.dataManager.loadTypes(info.types || []);
 
-  // Every SKILL.md exists before any linking, so each addContextDir indexes a
+  // Every SKILL.md exists before any linking, so each addDependency indexes a
   // folder whose content is already on disk.
   await writeSkill(dirs.A, 'a_skill');
   await writeSkill(dirs.B, 'b_skill');
@@ -131,9 +131,9 @@ beforeAll(async () => {
   const projectC = await new sdk.Project({ name: `menuC-${stamp}`, fs_storage_mount_path: dirs.C }).save();
 
   // Bottom-up, so each level's context folder already has its own links.
-  await projectC.addContextDir(dirs.leaf);
-  await projectB.addContextDir(dirs.C);
-  await projectA.addContextDir(dirs.B);
+  await projectC.addDependency(dirs.leaf);
+  await projectB.addDependency(dirs.C);
+  await projectA.addDependency(dirs.B);
 
   await indexProject(projectA.id);
 }, 120_000);

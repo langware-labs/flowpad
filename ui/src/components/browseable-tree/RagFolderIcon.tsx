@@ -8,7 +8,7 @@
  */
 import { Brain } from 'lucide-react';
 import { IconWithBadge, type IconComp } from '@src/components/graph-view/icons/IconWithBadge';
-import { isRagRoot, useRagRoots } from '@src/hooks/use-rag-roots';
+import { isRagRoot, useRagIndexingRoots, useRagRoots } from '@src/hooks/use-rag-roots';
 
 interface RagFolderIconProps {
   /** The row's own glyph — a plain folder, or something else the row already earned. */
@@ -21,6 +21,7 @@ interface RagFolderIconProps {
 
 export function RagFolderIcon({ Base, path, size = 'h-3.5 w-3.5' }: RagFolderIconProps) {
   const roots = useRagRoots();
+  const indexing = isRagRoot(useRagIndexingRoots(), path);
   if (!isRagRoot(roots, path)) {
     return <Base className={`${size} flex-shrink-0 text-muted-foreground`} />;
   }
@@ -34,7 +35,7 @@ export function RagFolderIcon({ Base, path, size = 'h-3.5 w-3.5' }: RagFolderIco
       // default 55% badge is under 8px, where a brain is an unreadable smudge. Sitting a little
       // outside the base and dropping the inner padding buys back the pixels that make it
       // legible as a brain rather than a dot.
-      badgeClassName="h-[72%] w-[72%] -bottom-1 -right-1 p-0 text-primary [stroke-width:2.25]"
+      badgeClassName={`h-[72%] w-[72%] -bottom-1 -right-1 p-0 text-primary [stroke-width:2.25]${indexing ? ' animate-pulse' : ''}`}
       data-testid="rag-root-badge"
       aria-label="Indexed for search"
     />

@@ -27,7 +27,7 @@
  *  happened to open this page. Keep these in step with `MEMBER_DEFAULT_MODELS` / `ORG_DEFAULT_MODELS`
  *  in `flowpad/hub/builtin/llm_endpoint.py`; they are a hint, so drift shows as a stale placeholder
  *  rather than as a wrong value on a row. */
-export const DEFAULT_MODELS = ['anthropic/claude-haiku-4.5', 'openai/gpt-5-mini'];
+export const DEFAULT_MODELS = ['anthropic/claude-haiku-4.5', 'openai/gpt-5-mini', 'openai/text-embedding-3-small'];
 export const ORG_DEFAULT_MODELS = ['anthropic/claude-*', 'openai/*'];
 
 /** What each level of the hierarchy starts with when its list is empty. */

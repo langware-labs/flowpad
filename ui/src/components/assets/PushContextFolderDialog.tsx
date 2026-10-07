@@ -31,14 +31,14 @@ const rowClasses = (isSelected: boolean, dashed = false) =>
 interface PushContextFolderDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  /** Basename of the git context folder (for titles/labels). */
+  /** Basename of the git dependency folder (for titles/labels). */
   folderName: string;
   /** Current branch, shown in the header line. */
   branch?: string | null;
   /** Scoped project id — anchors the recent-conversation search and new
    *  project-local conversations. */
   projectId?: string | null;
-  /** The context folder's Folder entity typeid — attached to the message as
+  /** The dependency folder's Folder entity typeid — attached to the message as
    *  the git-link chip (recipients click it to pull a local copy). */
   folderTypeId?: string | null;
   /** The actual git push (from useGitFolderStatus). */
@@ -47,7 +47,7 @@ interface PushContextFolderDialogProps {
 }
 
 /**
- * PushContextFolderDialog — the Push flow for a git context folder. Always
+ * PushContextFolderDialog — the Push flow for a git dependency folder. Always
  * pushes; optionally notifies. The user writes a message and picks recipients
  * (a contacts group expands to its members in one click), then chooses the
  * target conversation — an existing one with those recipients or a new one
@@ -132,7 +132,7 @@ export function PushContextFolderDialog({
             },
           }
         : { kind: 'existing', conversationId: selected };
-    // The git-link chip: the context folder's Folder entity rides as a
+    // The git-link chip: the dependency folder's Folder entity rides as a
     // TYPE_ID attachment in git transfer mode — metadata + origin only, zero
     // repo bytes. Recipients click it to set up their own local copy.
     const chipRefs = folderTypeId ? [folderTypeId] : undefined;

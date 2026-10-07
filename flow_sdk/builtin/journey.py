@@ -205,7 +205,7 @@ class Journey(Entity):
 
         candidates = await Journey.get_all({})
         if project_id:
-            from flow_sdk.builtin.bootstrap_manifest import read_bootstrap_manifest  # noqa: PLC0415
+            from flow_sdk.assets.flow_json import read_autolaunch_journey  # noqa: PLC0415
             from flow_sdk.builtin.project import Project  # noqa: PLC0415
             from flow_sdk.fs_store.path_utils import (  # noqa: PLC0415
                 canonical_posix_path,
@@ -219,7 +219,7 @@ class Journey(Entity):
 
             preferred: dict[str, str] = {}
             for root in roots:
-                declared = read_bootstrap_manifest(Path(root)).autolaunch_journey
+                declared = read_autolaunch_journey(Path(root))
                 if declared:
                     preferred[root] = declared
 

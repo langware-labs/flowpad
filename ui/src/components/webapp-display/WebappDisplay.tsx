@@ -79,6 +79,7 @@ export const WebappDisplay = forwardRef<PersistentIframeHandle, WebappDisplayPro
     () => ({
       refresh: refreshAll,
       postToGuest: (message: unknown) => frameRef.current?.postToGuest(message),
+      isGuest: (source: MessageEventSource | null) => frameRef.current?.isGuest(source) ?? false,
     }),
     [refreshAll],
   );

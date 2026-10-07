@@ -33,6 +33,7 @@ registration in ``flow_sdk/schema/type_info/dataset_type_info.py``.
 """
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -163,6 +164,11 @@ class Dataset(Entity):
     def output_shape(self) -> Any:
         return self._example_type().example_type().output_type()
 
+    @property
+    def declared_kind(self) -> str:
+        """The kind this dataset says it is (``navigator.dataset``) -- ``""`` for an inline shape."""
+        return self.spec if isinstance(self.spec, str) else ""
+
     def _folder(self) -> Path:
         if not self.asset_ref:
             raise ValueError("dataset has no folder on disk yet")
@@ -258,6 +264,12 @@ class Dataset(Entity):
             self._folder(), example_id, payload, dataset_id=self.id, by=by,
             main=_main_document(shape) if named else ANNOTATION_FILE,
         )
+
+    def set_data(self, example_id: str, data: dict) -> None:
+        """Replace one example's free ``data`` (a suite tag, a note) -- its inputs and golds untouched."""
+        from flow_sdk.schema.data_spec.layout import dataset_layout_for  # noqa: PLC0415
+
+        dataset_layout_for(self.data_layout).set_data(self._folder(), example_id, dict(data), dataset_id=self.id)
 
     @property
     def row_type(self) -> Any:
@@ -402,6 +414,80 @@ class Dataset(Entity):
         if found is None:
             return ApiFailResponse(message=f"no example {example_id}", status_code=404)
         return ApiSuccessResponse(data=found)
+
+    @action.get(action_name="evals")
+    async def evals_action(self):
+        """``{runs, count_metrics, explain}``: every eval run on this dataset, newest first (``EvalRun``
+        without slices), which metrics are counts rather than ratios, and each eval's metrics in plain
+        words (``{eval: {metric: text}}``)."""
+        from flow_sdk.evals import store  # noqa: PLC0415
+
+        # File reads, off the event loop -- and independent, so side by side.
+        runs, explain = await asyncio.gather(
+            asyncio.to_thread(store.runs, self._folder()),
+            asyncio.to_thread(store.explanations, self._folder(), self.declared_kind),
+        )
+        return ApiSuccessResponse(data={
+            "runs": [r.model_dump(mode="json", exclude={"slices"}) for r in runs],
+            "count_metrics": sorted({k for r in runs for k in r.count_metrics()}),
+            "explain": explain,
+        })
+
+    @action.get(action_name="eval")
+    async def eval_action(self):
+        """``GET eval/<run_id>`` → ``{run, examples, count_metrics, explain}``: the ``EvalRun`` and every ``ExampleEval``, each
+        joined to its example's ``input`` / ``context`` / ``data`` / ``kind`` -- so a browser drills
+        down to what was typed, where, and what was offered, without a second request."""
+        from flow_sdk.evals import store  # noqa: PLC0415
+
+        request_info = get_current_request_info()
+        run_id = ((request_info.sub_path or "") if request_info else "").strip("/")
+        if not run_id:
+            return ApiFailResponse(message="run id required: eval/<run_id>", status_code=400)
+        try:
+            run, examples = await asyncio.to_thread(store.load, self._folder(), run_id)
+        except LookupError as exc:
+            return ApiFailResponse(message=str(exc), status_code=404)
+
+        def read_rows() -> dict:
+            try:
+                return {r.id: r for r in self.read_rows()}
+            except (ValueError, ValidationError):
+                return {}
+
+        rows, explain = await asyncio.gather(
+            asyncio.to_thread(read_rows), asyncio.to_thread(store.explanations, self._folder(), self.declared_kind)
+        )
+        joined = []
+        for ex in examples:
+            row = rows.get(ex.example_id)
+            dumped = row.model_dump(mode="json", include={"input", "context", "data", "kind"}) if row else {}
+            joined.append({**ex.model_dump(mode="json"), **{f"row_{k}": v for k, v in dumped.items()}})
+        return ApiSuccessResponse(
+            data={
+                "run": run.model_dump(mode="json"),
+                "examples": joined,
+                "count_metrics": run.count_metrics(),
+                "explain": explain.get(run.eval_name, {}),
+            }
+        )
+
+    @action.post(action_name="run-eval")
+    async def run_eval_action(self):
+        """``{"eval"?, "kinds"?}`` → the new ``EvalRun`` (this dataset's eval, run now)."""
+        from flow_sdk.evals import EvalError, run  # noqa: PLC0415
+
+        body = await read_json_body(get_current_request_info())
+        if isinstance(body, ApiFailResponse):
+            return body
+        kinds = body.get("kinds")
+        try:
+            record, _ = await run(
+                self, eval_name=body.get("eval") or None, kinds=kinds if isinstance(kinds, list) else None
+            )
+        except EvalError as exc:
+            return ApiFailResponse(message=str(exc), status_code=400)
+        return ApiSuccessResponse(data=record.model_dump(mode="json", exclude={"slices"}))
 
     @action.post(action_name="validate")
     async def validate_action(self):

@@ -375,6 +375,12 @@ msgstr "{0} נמחק"
 msgid "{0} disconnect failed"
 msgstr "ניתוק {0} נכשל"
 
+#. placeholder {0}: index.document_count
+#. placeholder {1}: index.chunk_count
+#: src/hooks/use-rag-roots.tsx
+msgid "{0} documents, {1} chunks"
+msgstr ""
+
 #. placeholder {0}: totals.estimated_requests
 #. placeholder {1}: totals.unpriced_requests
 #: src/components/llm-endpoints/UsagePanel.tsx
@@ -899,6 +905,10 @@ msgstr ""
 msgid "{name} is not set up on this machine"
 msgstr ""
 
+#: src/hooks/use-rag-roots.tsx
+msgid "{name} is ready to search"
+msgstr ""
+
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "{name} isn't installed on this computer yet."
 msgstr ""
@@ -923,6 +933,14 @@ msgstr ""
 
 #: src/components/helpdesk/AddHelpdeskDialog.tsx
 msgid "{name} was added, but its guides cannot be opened"
+msgstr ""
+
+#: src/hooks/use-rag-roots.tsx
+msgid "{name}: indexing stopped"
+msgstr ""
+
+#: src/components/project-home/ProjectDependenciesCard.tsx
+msgid "{notInstalled, plural, one {# optional dependency not installed} other {# optional dependencies not installed}}"
 msgstr ""
 
 #: src/components/token-plan/token-plan-math.ts
@@ -987,6 +1005,14 @@ msgstr "{selectedCount} נבחרו"
 #: src/components/cost-dashboard/CostDashboard.tsx
 msgid "{sessionCount} sessions"
 msgstr "{sessionCount} סשנים"
+
+#: src/components/browseable-tree/adapters/assetContextFoldersRoot.tsx
+msgid "{state} · optional"
+msgstr ""
+
+#: src/components/browseable-tree/adapters/assetContextFoldersRoot.tsx
+msgid "{state} · required"
+msgstr ""
 
 #: src/journey/JourneyTray.tsx
 msgid "{stepsLeft} steps left"
@@ -1313,6 +1339,10 @@ msgstr "יש להקצות מעטפת חדשה. (פעולת שרת בדרך — �
 msgid "A full path under your home folder."
 msgstr ""
 
+#: src/components/assets/dependency-sources.tsx
+msgid "A git repo — cloned (or a local clone reused) wherever this project opens"
+msgstr ""
+
 #: src/components/data-sources/DataSourceDialog.tsx
 msgid "A guided setup asks for everything else this channel needs, step by step."
 msgstr ""
@@ -1334,6 +1364,14 @@ msgstr "שם בטווח, או ערך מילולי"
 
 #: src/components/quick-create/QuickCreatePanel.tsx
 msgid "A new project folder — everything you create is scoped to it"
+msgstr ""
+
+#: src/components/assets/dependency-sources.tsx
+msgid "A project on the hub — fetched by its id wherever this project opens"
+msgstr ""
+
+#: src/components/assets/HubProjectDependencyDialog.tsx
+msgid "A project on the hub, fetched by its id wherever this project opens."
 msgstr ""
 
 #: src/components/task-receive/IncomingProjectDialog.tsx
@@ -1526,6 +1564,7 @@ msgid "active"
 msgstr "פעיל"
 
 #: src/components/api-keys-view/api-keys-view.tsx
+#: src/components/data-sources/status-style.ts
 #: src/components/locale/LocalePicker.tsx
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Active"
@@ -1564,6 +1603,7 @@ msgid "Activity"
 msgstr "פעילות"
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
+#: src/components/assets/HubProjectDependencyDialog.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/conversation/MembersAvatarStack.tsx
 #: src/components/credentials-view/EnvFilesChip.tsx
@@ -1574,7 +1614,7 @@ msgstr "פעילות"
 #: src/components/organization/budgets/AddPeopleDialog.tsx
 #: src/components/project-activity-strip/BookmarkColumn.tsx
 #: src/components/project-home/VibeAgentsCard.tsx
-#: src/hooks/use-add-context-folder.tsx
+#: src/hooks/use-add-dependency.tsx
 #: src/pages/home-landing/feed/HomeFeedColumn.tsx
 msgid "Add"
 msgstr "הוסף"
@@ -1597,12 +1637,16 @@ msgid "Add a comment…"
 msgstr "הוסף תגובה…"
 
 #: src/components/data-sources/DataSourceDialog.tsx
-msgid "Add a data source"
-msgstr "הוספת מקור נתונים"
+#~ msgid "Add a data source"
+#~ msgstr "הוספת מקור נתונים"
 
 #: src/components/assets/editor/task/TaskDescription.tsx
 msgid "Add a description…"
 msgstr "הוספת תיאור…"
+
+#: src/hooks/use-add-dependency.tsx
+msgid "Add a git repository this project depends on."
+msgstr ""
 
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Add a key in \"LLM API keys\" above to use it here"
@@ -1720,8 +1764,8 @@ msgstr ""
 #: src/components/assets/AddContextFolderDialog.tsx
 #: src/components/browseable-tree/adapters/assetContextFoldersRoot.tsx
 #: src/components/quick-create/QuickCreatePanel.tsx
-msgid "Add context folder"
-msgstr "הוסיפו תיקיית הקשר"
+#~ msgid "Add context folder"
+#~ msgstr "הוסיפו תיקיית הקשר"
 
 #: src/components/agent-resources/AgentCredentialsSection.tsx
 msgid "Add credential"
@@ -1730,6 +1774,12 @@ msgstr ""
 #: src/components/agent-resources/AgentResourcesBody.tsx
 msgid "Add data source"
 msgstr "הוספת מקור נתונים"
+
+#: src/components/assets/AddDependencyDialog.tsx
+#: src/components/browseable-tree/adapters/assetContextFoldersRoot.tsx
+#: src/components/quick-create/QuickCreatePanel.tsx
+msgid "Add dependency"
+msgstr ""
 
 #: src/components/wiki-toolbar/WikiLinkInsertDialog.tsx
 #: src/components/wiki-toolbar/WikiToolbar.tsx
@@ -1753,10 +1803,15 @@ msgstr "הוסיפו Git"
 msgid "Add Git (optional — linking to the cloud doesn't need it)"
 msgstr ""
 
+#: src/hooks/use-add-dependency.tsx
+#: src/hooks/use-add-dependency.tsx
+msgid "Add Git dependency"
+msgstr ""
+
 #: src/hooks/use-add-context-folder.tsx
 #: src/hooks/use-add-context-folder.tsx
-msgid "Add Git folder"
-msgstr "הוספת תיקיית Git"
+#~ msgid "Add Git folder"
+#~ msgstr "הוספת תיקיית Git"
 
 #: src/components/helpdesk/AddHelpdeskDialog.tsx
 #: src/components/helpdesk/AddHelpdeskDialog.tsx
@@ -1769,6 +1824,10 @@ msgstr ""
 #: src/components/hooks-view/HooksTable.tsx
 msgid "Add Hook"
 msgstr "הוסף חוק"
+
+#: src/components/assets/HubProjectDependencyDialog.tsx
+msgid "Add hub project"
+msgstr ""
 
 #~ msgid "Add input"
 #~ msgstr ""
@@ -2542,8 +2601,12 @@ msgid "Announcements shown at startup"
 msgstr "הודעות מוצגות בהפעלה"
 
 #: src/components/assets/context-folder-sources.tsx
-msgid "Another Flowpad project — its folder becomes context for this one"
-msgstr "פרויקט Flowpad אחר — התיקייה שלו משמשת כקונטקסט לפרויקט זה"
+#~ msgid "Another Flowpad project — its folder becomes context for this one"
+#~ msgstr "פרויקט Flowpad אחר — התיקייה שלו משמשת כקונטקסט לפרויקט זה"
+
+#: src/components/assets/dependency-sources.tsx
+msgid "Another Flowpad project — this one depends on its folder"
+msgstr ""
 
 #: src/components/llm-endpoints/FundingProvenance.tsx
 msgid "another hub budget — {label}"
@@ -2961,7 +3024,11 @@ msgid "Assets"
 msgstr "נכסים"
 
 #: src/components/asset-manager/AssetScopeToggles.tsx
-msgid "Assets in folders added to this run"
+#~ msgid "Assets in folders added to this run"
+#~ msgstr ""
+
+#: src/components/asset-manager/AssetScopeToggles.tsx
+msgid "Assets in the project's dependencies and folders added to this run"
 msgstr ""
 
 #: src/components/asset-manager/AssetScopeToggles.tsx
@@ -3289,6 +3356,10 @@ msgstr "אזור AWS עבור Bedrock"
 msgid "Back"
 msgstr "חזור"
 
+#: src/components/data-sources/DataSourcePage.tsx
+msgid "Back to Data sources"
+msgstr ""
+
 #: src/components/conversation/ThreadHeader.tsx
 msgid "Back to every message in this conversation"
 msgstr ""
@@ -3486,6 +3557,10 @@ msgstr "עיין"
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "Browse and run LLM-generated folder indexes (MarkdownIndex entities). Each indexer (re)builds a Merkle tree of <0>index.md</0> files over a docs root."
 msgstr "עיין והפעל אינדקסי תיקיות שנוצרו על ידי LLM (ישויות MarkdownIndex). כל מאנדקס בונה (מחדש) עץ Merkle של קבצי <0>index.md</0> מעל שורש תיעוד."
+
+#: src/components/rag/RagView.tsx
+msgid "Browse chunks"
+msgstr ""
 
 #: src/components/automations/AutomationRow.tsx
 msgid "Browse folder"
@@ -3771,6 +3846,7 @@ msgstr ""
 #: src/components/assets/editor/markdown/ReviewSurface.tsx
 #: src/components/assets/editor/whiteboard/WhiteboardAssetEditor.tsx
 #: src/components/assets/editor/wizard/WizardViewer.tsx
+#: src/components/assets/HubProjectDependencyDialog.tsx
 #: src/components/assets/ProjectPickerModal.tsx
 #: src/components/assets/PushContextFolderDialog.tsx
 #: src/components/contact-picker/CreateContactsGroupDialog.tsx
@@ -4523,7 +4599,7 @@ msgstr "לחץ כדי לצפות בפרומפט המלא"
 msgid "Clipboard not updated"
 msgstr "הלוח לא עודכן"
 
-#: src/components/links/LinkMenu.tsx
+#: src/components/links/link-handlers.ts
 msgid "Clipboard unavailable"
 msgstr ""
 
@@ -4545,8 +4621,8 @@ msgid "Clone a git repo (or reuse a local clone) as a new project"
 msgstr ""
 
 #: src/components/assets/context-folder-sources.tsx
-msgid "Clone a git repo (or reuse a local clone) as context"
-msgstr "ניתן לשכפל repo של Git (או להשתמש בעותק מקומי קיים) כקונטקסט"
+#~ msgid "Clone a git repo (or reuse a local clone) as context"
+#~ msgstr "ניתן לשכפל repo של Git (או להשתמש בעותק מקומי קיים) כקונטקסט"
 
 #: src/components/task-receive/IncomingTaskDialog.tsx
 #: src/components/task-receive/IncomingTaskDialog.tsx
@@ -4570,6 +4646,7 @@ msgstr "מתבצע שכפול של המאגר ואינדוקס שלו."
 msgid "Cloning…"
 msgstr "משבוט…"
 
+#: src/components/data-sources/DataSourceDialog.tsx
 #: src/components/floating-chat/FloatingChatWindow.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
 #: src/components/helpdesk/HelpdeskLoadDialog.tsx
@@ -5059,11 +5136,13 @@ msgstr ""
 
 #: src/components/connections-manager.tsx
 #: src/components/connections-manager/flowpad-connection-row.tsx
+#: src/components/data-sources/DataSourceDialog.tsx
 #: src/components/git/GitRemoteField.tsx
 #: src/components/helpdesk/AddHelpdeskDialog.tsx
 #: src/components/oauth/OAuthCodeFlowModal.tsx
 #: src/components/project-selector/NewProjectFromGitDialog.tsx
 #: src/components/quick-create/QuickCreatePanel.tsx
+#: src/components/setup-wizard/SetupWizardDialog.tsx
 #: src/pages/hub-home/NewSandboxDialog.tsx
 msgid "Connect"
 msgstr "התחבר"
@@ -5262,8 +5341,8 @@ msgid "Context entities attached to this process — plans, skills, project, …
 msgstr "ישויות הקשר המצורפות לתהליך זה — תוכניות, סקילים, פרויקט, …"
 
 #: src/components/browseable-tree/adapters/assetContextFoldersRoot.tsx
-msgid "Context folders"
-msgstr "תיקיות הקשר"
+#~ msgid "Context folders"
+#~ msgstr "תיקיות הקשר"
 
 #: src/components/graph-view/GraphView.tsx
 msgid "Context Graph"
@@ -5699,7 +5778,7 @@ msgstr "לא ניתן היה לבדוק את מצב ההתחברות"
 msgid "Could not connect to {displayName}."
 msgstr ""
 
-#: src/components/links/LinkMenu.tsx
+#: src/components/links/link-handlers.ts
 msgid "Could not copy link"
 msgstr ""
 
@@ -5809,6 +5888,10 @@ msgstr "לא הצלחנו להסתיים את החדר"
 msgid "could not fetch — showing local copy"
 msgstr "לא ניתן להוריד — מוצג עותק מקומי"
 
+#: src/components/project-home/ProjectDependenciesCard.tsx
+msgid "Could not fetch the dependencies"
+msgstr ""
+
 #: src/components/assets/editor/agent-profile/DeploymentSecretsGate.tsx
 msgid "Could not fix {key}"
 msgstr ""
@@ -5833,6 +5916,10 @@ msgstr "לא ניתן להעניק גישה"
 #: src/components/connections-manager.tsx
 msgid "Could not give this project access to {0}."
 msgstr "לא ניתן להעניק לפרויקט זה גישה ל-{0}."
+
+#: src/components/project-home/ProjectDependenciesCard.tsx
+msgid "Could not install the dependency"
+msgstr ""
 
 #: src/components/organization/budgets/BudgetSection.tsx
 msgid "Could not invite everyone"
@@ -5952,7 +6039,7 @@ msgid "Could not publish"
 msgstr ""
 
 #. placeholder {0}: source.name || source.provider
-#: src/components/data-sources/DataSourceRow.tsx
+#: src/components/data-sources/source-parts.tsx
 msgid "Could not pull {0}"
 msgstr "לא ניתן לשלוף את {0}"
 
@@ -5966,6 +6053,10 @@ msgstr "לא ניתן להתחבר לשרת. יש לנסות שוב בעוד ר�
 
 #: src/components/assets/editor/agent-profile/AgentPlaceActivity.tsx
 msgid "Could not reach this cloud machine. It may be paused."
+msgstr ""
+
+#: src/components/rag/RagChunkBrowser.tsx
+msgid "Could not read the index"
 msgstr ""
 
 #: src/components/code-editor/SnippetView.tsx
@@ -6020,8 +6111,13 @@ msgid "Could not remove the budget"
 msgstr ""
 
 #: src/components/helpdesk/AddHelpdeskDialog.tsx
-msgid "Could not remove the folder"
+#: src/components/project-home/ProjectDependenciesCard.tsx
+msgid "Could not remove the dependency"
 msgstr ""
+
+#: src/components/helpdesk/AddHelpdeskDialog.tsx
+#~ msgid "Could not remove the folder"
+#~ msgstr ""
 
 #: src/components/helpdesk/HelpdeskResetButton.tsx
 msgid "Could not remove the help desk files"
@@ -6860,8 +6956,13 @@ msgstr "מצב פרטיות הנתונים"
 #~ msgid "Data Source Cursor"
 #~ msgstr "סמן מקור נתונים"
 
+#: src/components/data-sources/DataSourceDialog.tsx
+msgid "Data source name"
+msgstr ""
+
 #: src/components/agent-resources/AgentResourcesBody.tsx
 #: src/components/collapsed-sidebar/collapsed-sidebar.tsx
+#: src/components/data-sources/DataSourceDialog.tsx
 #: src/components/data-sources/DataSourcesView.tsx
 #: src/components/top-nav-bar/use-entity-breadcrumbs.ts
 #: src/i18n/type-labels.ts
@@ -7413,10 +7514,35 @@ msgstr "מחיקה…"
 msgid "Delivered"
 msgstr "סופק"
 
+#: src/components/data-sources/ChannelRouteControl.tsx
+msgid "Delivered to"
+msgstr ""
+
+#: src/components/data-sources/ChannelRouteControl.tsx
+msgid "Delivered to a place that does not hold this channel"
+msgstr ""
+
+#: src/components/data-sources/ChannelRouteControl.tsx
+msgid "Deliveries"
+msgstr ""
+
 #: src/components/hub/AddMachineDialog.tsx
 #: src/components/settings-view/settings-utils.ts
 msgid "Deny"
 msgstr "דחייה"
+
+#: src/components/browseable-tree/adapters/assetContextFoldersRoot.tsx
+#: src/components/project-home/ProjectDependenciesCard.tsx
+msgid "Dependencies"
+msgstr ""
+
+#: src/components/helpdesk/AddHelpdeskDialog.tsx
+msgid "Dependency"
+msgstr ""
+
+#: src/components/helpdesk/AddHelpdeskDialog.tsx
+msgid "Dependency removed"
+msgstr ""
 
 #: src/components/assets/editor/agent-profile/AgentDeploymentsSection.tsx
 msgid "Deploy"
@@ -7972,6 +8098,10 @@ msgstr ""
 msgid "Don't have FlowPad yet?"
 msgstr "עדיין אין לך FlowPad?"
 
+#: src/components/project-home/MissingDependenciesDialog.tsx
+msgid "Don't show again until Flowpad restarts"
+msgstr ""
+
 #: src/components/search-index/ActivityProgressModal.tsx
 msgid "done"
 msgstr "הושלם"
@@ -8097,6 +8227,7 @@ msgid "Drill by"
 msgstr "התמקד לפי"
 
 #: src/components/data-sources/DataDriversView.tsx
+#: src/components/data-sources/DataSourcePage.tsx
 msgid "Driver"
 msgstr ""
 
@@ -8193,12 +8324,16 @@ msgstr ""
 #~ msgstr ""
 
 #: src/hooks/use-add-context-folder.tsx
-msgid "Each selected project's folder is added as a context folder."
-msgstr "תיקיות הפרויקטים הנבחרים מתווספות כתיקיות הקשר"
+#~ msgid "Each selected project's folder is added as a context folder."
+#~ msgstr "תיקיות הפרויקטים הנבחרים מתווספות כתיקיות הקשר"
+
+#: src/hooks/use-add-dependency.tsx
+msgid "Each selected project's folder is added as a dependency."
+msgstr ""
 
 #: src/components/setup-wizard/SetupWizardDialog.tsx
-msgid "Each stage is a guided run. Close it any time — running it again picks up where it stopped."
-msgstr ""
+#~ msgid "Each stage is a guided run. Close it any time — running it again picks up where it stopped."
+#~ msgstr ""
 
 #: src/components/conversation/ConversationView.tsx
 msgid "Earlier message"
@@ -8750,6 +8885,7 @@ msgstr "אירוע: "
 
 #: src/components/assets/editor/agent-profile/deployment/ThreadPane.tsx
 #: src/components/automations/blocks/WhenBlock.tsx
+#: src/components/data-sources/DataSourcePage.tsx
 #: src/components/lens-viewer/HeartbeatEventsViewer.tsx
 msgid "Events"
 msgstr "אירועים"
@@ -9145,14 +9281,27 @@ msgstr "נכשל"
 msgid "Failed to add comment"
 msgstr "הוספת תגובה נכשלה"
 
+#: src/hooks/use-add-dependency.tsx
+msgid "Failed to add dependency"
+msgstr ""
+
 #: src/components/assets/useAssetsModel.tsx
-msgid "Failed to add files to context folder"
-msgstr "הוספת קבצים לתיקיית ההקשר נכשלה"
+#~ msgid "Failed to add files to context folder"
+#~ msgstr "הוספת קבצים לתיקיית ההקשר נכשלה"
+
+#: src/components/assets/useAssetsModel.tsx
+msgid "Failed to add files to dependency folder"
+msgstr ""
+
+#: src/hooks/use-add-dependency.tsx
+#: src/hooks/use-add-dependency.tsx
+msgid "Failed to add Git dependency"
+msgstr ""
 
 #: src/hooks/use-add-context-folder.tsx
 #: src/hooks/use-add-context-folder.tsx
-msgid "Failed to add Git folder"
-msgstr "הוספת תיקיית Git נכשלה"
+#~ msgid "Failed to add Git folder"
+#~ msgstr "הוספת תיקיית Git נכשלה"
 
 #: src/components/project-home/VibeAgentsCard.tsx
 msgid "Failed to add vibe agent"
@@ -9270,6 +9419,10 @@ msgstr "אחזור המדדים נכשל"
 msgid "Failed to generate API key"
 msgstr "הייתה שגיאה ביצירת מפתח API"
 
+#: src/components/assets/useAssetsModel.tsx
+msgid "Failed to install dependency"
+msgstr ""
+
 #: src/components/assets/editor/dynamic-workflow/DynamicWorkflowAssetEditor.tsx
 msgid "Failed to launch"
 msgstr "ההפעלה נכשלה"
@@ -9365,6 +9518,10 @@ msgstr "נכשל בפתיחת תיקיית הרישומים"
 #: src/components/open-project-component/use-open-project.ts
 msgid "Failed to open project"
 msgstr "נכשל בפתיחת הפרויקט"
+
+#: src/components/assets/useAssetsModel.tsx
+msgid "Failed to remove dependency"
+msgstr ""
 
 #: src/components/project-home/HomeCustomizationCard.tsx
 msgid "Failed to remove image"
@@ -9536,9 +9693,17 @@ msgstr "רשומה בפיד"
 msgid "Fetch"
 msgstr "אחזור"
 
+#: src/components/project-home/ProjectDependenciesCard.tsx
+msgid "Fetch missing"
+msgstr ""
+
 #: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Fetch new messages from hub"
 msgstr "קבל הודעות חדשות מהמרכז"
+
+#: src/components/assets/dependency-sources.tsx
+msgid "Fetched automatically wherever this project opens — Flowpad warns when it can't be."
+msgstr ""
 
 #: src/components/entity-execution-panel/current-activity.ts
 msgid "Fetching"
@@ -9563,6 +9728,7 @@ msgstr "שדה"
 #: src/components/automations/automation-words.ts
 #: src/components/automations/RunDetail.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
+#: src/components/data-sources/DataSourcePage.tsx
 #: src/i18n/type-labels.ts
 #: src/pages/flow-page/display-annotation.ts
 msgid "File"
@@ -9716,8 +9882,8 @@ msgstr "סנן..."
 msgid "Filter…"
 msgstr "סנן…"
 
-#. placeholder {0}: route.tag ?? route.target
-#: src/components/automations/BusView.tsx
+#. placeholder {0}: tag ?? target
+#: src/components/automations/BusStream.tsx
 msgid "filtered to {0}"
 msgstr ""
 
@@ -9755,7 +9921,7 @@ msgstr ""
 msgid "Finish setting up Flowpad"
 msgstr "סיום ההגדרה של Flowpad"
 
-#: src/components/data-sources/DataSourceRow.tsx
+#: src/components/data-sources/source-parts.tsx
 msgid "Finish setup, then press Verify."
 msgstr "יש להשלים את ההגדרה, ולאחר מכן ללחוץ על אימות."
 
@@ -9865,6 +10031,10 @@ msgstr "תקן זאת"
 msgid "Fix the web app"
 msgstr "תקנו את אפליקציית הווב"
 
+#: src/components/project-home/MissingDependenciesDialog.tsx
+msgid "Fix…"
+msgstr ""
+
 #: src/components/llm-endpoints/SourcePicker.tsx
 msgid "Fixed once created, and you must be able to administer it — this endpoint spends its budget."
 msgstr ""
@@ -9876,6 +10046,10 @@ msgstr "תיקון אלה משפר את הכישוריות לכל הרצה עת�
 #: src/components/webapp-display/WebDebugComponent.tsx
 msgid "Fixing…"
 msgstr "מתקן…"
+
+#: src/components/data-sources/ChannelRouteControl.tsx
+msgid "Flow answers from its own box · shown here"
+msgstr ""
 
 #: src/i18n/type-labels.ts
 msgid "Flow Message"
@@ -10025,13 +10199,13 @@ msgstr "תיקייה נוצרה"
 msgid "Folder name"
 msgstr "שם התיקייה"
 
-#: src/components/assets/context-folder-sources.tsx
+#: src/components/assets/dependency-sources.tsx
 msgid "Folder on this computer"
 msgstr "תיקייה במחשב זה"
 
 #: src/components/helpdesk/AddHelpdeskDialog.tsx
-msgid "Folder removed"
-msgstr ""
+#~ msgid "Folder removed"
+#~ msgstr ""
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
 msgid "Folder…"
@@ -10342,7 +10516,7 @@ msgid "Git readiness"
 msgstr "מוכנות Git"
 
 #: src/components/artifacts/artifact-form.tsx
-#: src/components/assets/context-folder-sources.tsx
+#: src/components/assets/dependency-sources.tsx
 msgid "Git repository"
 msgstr "מאגר Git"
 
@@ -10993,7 +11167,7 @@ msgstr "כמה שורות פלט טרמינל לשמור במאגר הגלילה
 msgid "How privacy modes work"
 msgstr "כיצד מצבי הפרטיות פועלים"
 
-#: src/components/data-sources/DataSourceRow.tsx
+#: src/components/data-sources/source-parts.tsx
 msgid "How to finish setup"
 msgstr "כיצד להשלים את ההגדרה"
 
@@ -11066,6 +11240,14 @@ msgstr "נקודות קצה ב-Hub"
 #: src/notifications/ingest.ts
 msgid "Hub errors suppressed"
 msgstr "שגיאות Hub דוכאו"
+
+#: src/components/assets/dependency-sources.tsx
+msgid "Hub project"
+msgstr ""
+
+#: src/components/assets/HubProjectDependencyDialog.tsx
+msgid "Hub project id or link"
+msgstr ""
 
 #: src/components/version-popover/hub-release-label.tsx
 msgid "Hub release, and the UI build serving it"
@@ -11297,8 +11479,8 @@ msgid "inactive copy"
 msgstr ""
 
 #: src/components/assets/AddContextFolderDialog.tsx
-msgid "Include another folder in this project's context."
-msgstr "הוספת תיקייה נוספת להקשר של הפרויקט."
+#~ msgid "Include another folder in this project's context."
+#~ msgstr "הוספת תיקייה נוספת להקשר של הפרויקט."
 
 #: src/i18n/pref-labels.ts
 msgid "Include built-in system projects in the project picker."
@@ -11464,6 +11646,7 @@ msgstr "הוסף טבלה"
 #: src/components/assets/editor/wizard/wizard-texts.ts
 #: src/components/install/AddAssetDialog.tsx
 #: src/components/install/InstallButton.tsx
+#: src/components/project-home/ProjectDependenciesCard.tsx
 msgid "Install"
 msgstr "התקנה"
 
@@ -11475,6 +11658,10 @@ msgstr "להתקין את {0}?"
 #: src/components/version-popover/version-popover.tsx
 msgid "Install & restart"
 msgstr "התקן והפעל מחדש"
+
+#: src/components/browseable-tree/adapters/assetContextFoldersRoot.tsx
+msgid "Install dependency"
+msgstr ""
 
 #: src/components/conversation/asset-review/AssetInstallActions.tsx
 #: src/components/conversation/asset-review/AssetInstallActions.tsx
@@ -11578,6 +11765,10 @@ msgstr ""
 
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 msgid "Intro — shown as the agent's first message, not sent to the model"
+msgstr ""
+
+#: src/components/assets/DependencyChips.tsx
+msgid "invalid"
 msgstr ""
 
 #: src/components/harness-login/HarnessLoginModal.tsx
@@ -11773,7 +11964,11 @@ msgid "It shows up in Runs as a test."
 msgstr ""
 
 #: src/components/helpdesk/AddHelpdeskDialog.tsx
-msgid "It was added as an ordinary context folder instead, so agents can still read it. Remove it if that is not what you wanted."
+#~ msgid "It was added as an ordinary context folder instead, so agents can still read it. Remove it if that is not what you wanted."
+#~ msgstr ""
+
+#: src/components/helpdesk/AddHelpdeskDialog.tsx
+msgid "It was added as an ordinary dependency instead, so agents can still read it. Remove it if that is not what you wanted."
 msgstr ""
 
 #: src/components/task-receive/use-shared-project-warnings.ts
@@ -11883,8 +12078,12 @@ msgid "Kept (cannot or should not be removed): {0}"
 msgstr "נשמרו (אי אפשר או אסור להסיר): {0}"
 
 #: src/components/helpdesk/HelpdeskLoadDialog.tsx
-msgid "kept current as a context folder"
-msgstr "נשמר מעודכן כתיקיית הקשר"
+#~ msgid "kept current as a context folder"
+#~ msgstr "נשמר מעודכן כתיקיית הקשר"
+
+#: src/components/helpdesk/HelpdeskLoadDialog.tsx
+msgid "kept current as a dependency"
+msgstr ""
 
 #: src/components/assets/editor/task/DelegationBlock.tsx
 msgid "Kept in the project"
@@ -12004,6 +12203,10 @@ msgstr "שפה"
 msgid "Large"
 msgstr "גדול"
 
+#: src/components/data-sources/ChannelRouteControl.tsx
+msgid "last"
+msgstr ""
+
 #. placeholder {0}: new Date(row.last_run).toLocaleString()
 #. placeholder {0}: new Date(trigger.last_run).toLocaleString()
 #: src/components/assets/editor/agent-profile/AgentScheduleSection.tsx
@@ -12061,6 +12264,7 @@ msgstr ""
 msgid "Last success"
 msgstr ""
 
+#: src/components/data-sources/DataSourcePage.tsx
 #: src/components/data-sources/DataSourceRow.tsx
 msgid "Last successful sync"
 msgstr "הסנכרון האחרון שהצליח"
@@ -12305,7 +12509,7 @@ msgid "Lines"
 msgstr ""
 
 #: src/components/conversation/MembersAvatarStack.tsx
-#: src/components/links/LinkMenu.tsx
+#: src/components/links/link-handlers.ts
 msgid "Link copied"
 msgstr "הקישור הועתק"
 
@@ -12363,6 +12567,10 @@ msgstr ""
 msgid "Listed twice"
 msgstr ""
 
+#: src/components/assets/dependency-sources.tsx
+msgid "Listed with the project, but fetched only when someone clicks Install."
+msgstr ""
+
 #. placeholder {0}: source.name || source.provider
 #: src/components/stream-inbox-view/AttachedChannelsBar.tsx
 msgid "Listen on {0}"
@@ -12377,7 +12585,7 @@ msgstr ""
 msgid "live"
 msgstr "חי"
 
-#: src/components/automations/BusView.tsx
+#: src/components/automations/BusStream.tsx
 msgid "Live"
 msgstr ""
 
@@ -13331,6 +13539,7 @@ msgid "Message Thread"
 msgstr "שרשור הודעות"
 
 #: src/components/data-sources/DataDriversView.tsx
+#: src/components/data-sources/DataSourcePage.tsx
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Messages"
 msgstr "הודעות"
@@ -13384,6 +13593,11 @@ msgstr ""
 msgid "Mis-Sc"
 msgstr "Mis-Sc"
 
+#: src/components/data-sources/ChannelRouteControl.tsx
+msgid "misrouted"
+msgstr ""
+
+#: src/components/assets/DependencyChips.tsx
 #: src/components/credentials-view/CredentialView.tsx
 msgid "missing"
 msgstr ""
@@ -13407,6 +13621,10 @@ msgstr ""
 #: src/components/conversation/AttachmentDownloadWarning.tsx
 msgid "Missing attachments"
 msgstr "קבצים מצורפים חסרים"
+
+#: src/components/project-home/MissingDependenciesDialog.tsx
+msgid "Missing dependencies"
+msgstr ""
 
 #. placeholder {0}: row.missing.join(', ')
 #: src/components/connections-manager/credential-rows-view.tsx
@@ -13624,7 +13842,6 @@ msgstr "לא זמין"
 #: src/components/assets/editor/wizard/WizardForm.tsx
 #: src/components/conversation/asset-review/ProjectPreview.tsx
 #: src/components/data-sources/DataDriversView.tsx
-#: src/components/data-sources/DataSourceDialog.tsx
 #: src/components/hooks-view/HooksBrowser.tsx
 #: src/components/hub/AddMachineDialog.tsx
 #: src/components/lens-viewer/LlmIndexersViewer.tsx
@@ -13711,7 +13928,12 @@ msgid "needs attention"
 msgstr ""
 
 #: src/components/automations/AutomationRow.tsx
+#: src/components/data-sources/health-style.ts
 msgid "Needs attention"
+msgstr ""
+
+#: src/components/data-sources/status-style.ts
+msgid "Needs setup"
 msgstr ""
 
 #: src/components/connections-manager/credential-rows-view.tsx
@@ -13754,6 +13976,10 @@ msgstr ""
 msgid "never run"
 msgstr "לא הופעל עדיין"
 
+#: src/components/data-sources/health-style.ts
+msgid "Never synced"
+msgstr ""
+
 #: src/components/stream-inbox-view/StreamInboxView.tsx
 #: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Never synced to cloud"
@@ -13765,6 +13991,7 @@ msgstr ""
 
 #: src/components/assets/AssetListView.tsx
 #: src/components/chats-navigator/ChatsFilterBar.tsx
+#: src/components/data-sources/status-style.ts
 #: src/components/entity-execution-panel/NewSessionPill.tsx
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 #: src/components/project-activity-strip/RecentConversationsStrip.tsx
@@ -14020,6 +14247,11 @@ msgstr "התאמה הבאה (Enter)"
 msgid "Next poll"
 msgstr ""
 
+#. placeholder {0}: timeUntil(source.next_poll_at)
+#: src/components/data-sources/DataSourcePage.tsx
+msgid "Next poll {0}"
+msgstr ""
+
 #: src/components/terminal/interactive-terminal/side-windows/QueuePanel.tsx
 msgid "Next prompt — injected when the agent next goes idle. Press Enter to add."
 msgstr "הפרומפט הבא — יוזרק כשהסוכן יהיה פנוי. לחץ Enter כדי להוסיף."
@@ -14028,6 +14260,7 @@ msgstr "הפרומפט הבא — יוזרק כשהסוכן יהיה פנוי. �
 msgid "Next runs"
 msgstr ""
 
+#: src/components/data-sources/DataSourcePage.tsx
 #: src/components/data-sources/DataSourceRow.tsx
 msgid "Next scheduled poll"
 msgstr "הבדיקה המתוזמנת הבאה"
@@ -15194,8 +15427,12 @@ msgid "Not connected"
 msgstr "לא מחובר"
 
 #: src/components/assets/useAssetsModel.tsx
-msgid "Not copied into context folder"
-msgstr "לא הועתקו לתיקיית ההקשר"
+#~ msgid "Not copied into context folder"
+#~ msgstr "לא הועתקו לתיקיית ההקשר"
+
+#: src/components/assets/useAssetsModel.tsx
+msgid "Not copied into dependency folder"
+msgstr ""
 
 #: src/components/assets/editor/agent-profile/AgentPlacesColumn.tsx
 msgid "Not deployed yet — it runs nowhere until you launch it."
@@ -15224,6 +15461,10 @@ msgstr "ללא מימון"
 #~ msgid "Not indexed here yet — install it from its origin"
 #~ msgstr ""
 
+#: src/components/assets/DependencyChips.tsx
+msgid "not installed"
+msgstr ""
+
 #: src/components/connections-manager/connection-state-visual.ts
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Not installed"
@@ -15243,6 +15484,7 @@ msgstr "לא מחוברים · הריצו /login"
 
 #: src/components/assets/editor/wizard/wizard-texts.ts
 #: src/components/install/AddAssetDialog.tsx
+#: src/components/project-home/MissingDependenciesDialog.tsx
 msgid "Not now"
 msgstr "לא עכשיו"
 
@@ -15410,6 +15652,10 @@ msgstr "אין כאן כלום עדיין"
 msgid "Nothing in private context yet."
 msgstr "אין דבר בהקשר הפרטי עדיין."
 
+#: src/components/rag/RagChunkBrowser.tsx
+msgid "Nothing indexed yet."
+msgstr ""
+
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "Nothing indexed yet. <0>Refresh Index</0> to populate."
 msgstr "עדיין לא אינדקס. <0>Refresh Index</0> כדי לאכלס."
@@ -15528,7 +15774,7 @@ msgstr "לא הופעל דבר. ניתן לסגור את הלשונית הזו."
 msgid "Nothing would arrive for this, so it was not sent:"
 msgstr ""
 
-#: src/components/automations/BusView.tsx
+#: src/components/automations/BusStream.tsx
 msgid "Nothing yet. Only some event families reach the app; the counts above cover every event."
 msgstr ""
 
@@ -15768,6 +16014,8 @@ msgstr "פתח"
 
 #. placeholder {0}: app.name
 #. placeholder {0}: file.path
+#. placeholder {0}: source.name || source.provider
+#: src/components/data-sources/DataSourceRow.tsx
 #: src/components/data-sources/SourceMenu.tsx
 #: src/components/entity-execution-panel/TurnFilesChips.tsx
 msgid "Open {0}"
@@ -15902,7 +16150,7 @@ msgid "Open data_driver.json"
 msgstr ""
 
 #: src/components/data-sources/DataDriversView.tsx
-#: src/components/data-sources/DataSourceRow.tsx
+#: src/components/data-sources/SourceMenu.tsx
 msgid "Open data_source.json"
 msgstr ""
 
@@ -15917,6 +16165,10 @@ msgstr "פתח אבחון כטאב"
 #: src/components/artifacts/artifact-form.tsx
 msgid "Open dot-path ontology; custom descendants are welcome."
 msgstr "אונטולוגיה פתוחה מבוססת נתיבי-נקודה; מוזמנים ליצור צאצאים מותאמים אישית."
+
+#: src/components/data-sources/SourceMenu.tsx
+msgid "Open driver folder"
+msgstr ""
 
 #: src/components/assets/editor/AssetEditorHeader.tsx
 #: src/components/display-toolbar/GenericDisplayToolbar.tsx
@@ -16197,6 +16449,10 @@ msgstr "פתח חילוק"
 msgid "Open Session"
 msgstr "פתח סשן"
 
+#: src/components/data-sources/SourceMenu.tsx
+msgid "Open source folder"
+msgstr ""
+
 #: src/components/conversation/attachment-actions/registry.ts
 msgid "Open Spec"
 msgstr "פתיחת המפרט"
@@ -16260,6 +16516,10 @@ msgstr ""
 
 #: src/components/automations/RunDetail.tsx
 msgid "Open the automation to fix it"
+msgstr ""
+
+#: src/components/data-sources/DataSourcePage.tsx
+msgid "Open the event bus"
 msgstr ""
 
 #: src/components/footer.tsx
@@ -16464,8 +16724,13 @@ msgstr ""
 msgid "Operation failed"
 msgstr "הפעולה נכשלה"
 
-#~ msgid "optional"
-#~ msgstr ""
+#: src/components/assets/DependencyChips.tsx
+msgid "optional"
+msgstr ""
+
+#: src/components/assets/dependency-sources.tsx
+msgid "Optional"
+msgstr ""
 
 #: src/components/triggers-view/ScheduleTriggerEditor.tsx
 msgid "Optional — leave blank for home"
@@ -16664,6 +16929,7 @@ msgid "Overwrite"
 msgstr "דרוס"
 
 #: src/components/assets/editor/task/DelegationBlock.tsx
+#: src/components/data-sources/DataSourcePage.tsx
 #: src/components/git/RepoPicker.tsx
 msgid "Owner"
 msgstr "בעלים"
@@ -16725,8 +16991,16 @@ msgstr "תיקייה הורית"
 msgid "Parent folder to clone into…"
 msgstr "תיקייה הורה לשחזור לתוכה…"
 
-#: src/components/data-sources/DataSourceRow.tsx
+#: src/components/data-sources/source-parts.tsx
+msgid "Parked"
+msgstr ""
+
+#: src/components/data-sources/source-parts.tsx
 msgid "Parked — the scheduler skips a <0>config_error</0> source, so it will not poll again on its own. <1>Pull</1> clears the latch."
+msgstr ""
+
+#: src/components/data-sources/source-parts.tsx
+msgid "Parked: the scheduler skips it until you pull"
 msgstr ""
 
 #: src/components/ask/AskView.tsx
@@ -16852,7 +17126,7 @@ msgstr ""
 msgid "Pattern sandbox"
 msgstr ""
 
-#: src/components/automations/BusView.tsx
+#: src/components/automations/BusStream.tsx
 #: src/components/collaboration/LiveSessionView.tsx
 #: src/components/data-sources/SourceMenu.tsx
 #: src/components/machine-overview/machine-overview.tsx
@@ -16878,6 +17152,7 @@ msgstr ""
 
 #: src/components/assets/editor/agent-profile/AgentPlaceCard.tsx
 #: src/components/assets/editor/agent-profile/AgentPlacesColumn.tsx
+#: src/components/data-sources/status-style.ts
 #: src/pages/hub-home/HubHome.tsx
 msgid "Paused"
 msgstr "מושהה"
@@ -17013,7 +17288,7 @@ msgstr ""
 msgid "Pick an event to see who listens and what they do."
 msgstr ""
 
-#: src/components/assets/context-folder-sources.tsx
+#: src/components/assets/dependency-sources.tsx
 msgid "Pick any folder already on this machine"
 msgstr "ניתן לבחור בתיקייה כלשהי שכבר קיימת במחשב זה"
 
@@ -17230,8 +17505,16 @@ msgid "Point this project at a support desk published as a git repository."
 msgstr ""
 
 #: src/components/quick-create/QuickCreatePanel.tsx
-msgid "Point this project at another folder so agents can read it as background — code, docs or assets that live outside the project, without copying anything."
-msgstr "יש לכוון את הפרויקט לתיקייה אחרת כדי שהסוכנים יוכלו לקרוא אותה כרקע — קוד, תיעוד או נכסים שנמצאים מחוץ לפרויקט, מבלי להעתיק דבר."
+#~ msgid "Point this project at another folder so agents can read it as background — code, docs or assets that live outside the project, without copying anything."
+#~ msgstr "יש לכוון את הפרויקט לתיקייה אחרת כדי שהסוכנים יוכלו לקרוא אותה כרקע — קוד, תיעוד או נכסים שנמצאים מחוץ לפרויקט, מבלי להעתיק דבר."
+
+#: src/components/assets/AddDependencyDialog.tsx
+msgid "Point this project at another folder, repository or hub project it expects in its context."
+msgstr ""
+
+#: src/components/quick-create/QuickCreatePanel.tsx
+msgid "Point this project at another folder, repository or hub project it expects in its context. Required ones are fetched automatically; optional ones on demand."
+msgstr ""
 
 #: src/components/data-sources/DataSourceDialog.tsx
 msgid "Poll interval (seconds)"
@@ -17365,7 +17648,6 @@ msgstr "הרצות קודמות"
 msgid "primary"
 msgstr "ראשי"
 
-#: src/components/assets/context-folder-sources.tsx
 #: src/components/graph-context/ContextGraphCanvas.tsx
 msgid "Private"
 msgstr "פרטי"
@@ -17439,7 +17721,7 @@ msgstr "פרויקט"
 
 #: src/components/asset-counters/agent-counters.tsx
 #: src/components/asset-manager/AssetScopeToggles.tsx
-#: src/components/assets/context-folder-sources.tsx
+#: src/components/assets/dependency-sources.tsx
 #: src/components/conversation/asset-review/AssetReviewDialog.tsx
 #: src/components/conversation/asset-review/ProjectPreview.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
@@ -17865,7 +18147,6 @@ msgstr ""
 msgid "Published when you deploy"
 msgstr ""
 
-#: src/components/data-sources/DataSourceRow.tsx
 #: src/components/status-bar/GitPullButton.tsx
 msgid "Pull"
 msgstr ""
@@ -17885,7 +18166,7 @@ msgstr "משוך ופתח"
 msgid "Pull and open task"
 msgstr "משוך ופתח משימה"
 
-#: src/components/data-sources/DataSourceRow.tsx
+#: src/components/data-sources/SourceMenu.tsx
 msgid "Pull changes now"
 msgstr ""
 
@@ -18075,6 +18356,10 @@ msgstr ""
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "Reading…"
 msgstr "קריאה…"
+
+#: src/components/assets/DependencyChips.tsx
+msgid "ready"
+msgstr ""
 
 #: src/pages/home-landing/InlineSearchResults.tsx
 msgid "Ready"
@@ -18479,8 +18764,15 @@ msgid "Remove budget"
 msgstr ""
 
 #: src/components/browseable-tree/adapters/assetContextFoldersRoot.tsx
-msgid "Remove context folder"
-msgstr "הסרת תיקיית ההקשר"
+#~ msgid "Remove context folder"
+#~ msgstr "הסרת תיקיית ההקשר"
+
+#: src/components/browseable-tree/adapters/assetContextFoldersRoot.tsx
+#: src/components/helpdesk/AddHelpdeskDialog.tsx
+#: src/components/project-home/ProjectDependenciesCard.tsx
+#: src/components/project-home/ProjectDependenciesCard.tsx
+msgid "Remove dependency"
+msgstr ""
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
 msgid "Remove directory"
@@ -18500,8 +18792,8 @@ msgid "Remove file"
 msgstr "הסר קובץ"
 
 #: src/components/helpdesk/AddHelpdeskDialog.tsx
-msgid "Remove folder"
-msgstr ""
+#~ msgid "Remove folder"
+#~ msgstr ""
 
 #. placeholder {0}: team.name
 #: src/components/organization/budgets/BudgetSection.tsx
@@ -18893,6 +19185,11 @@ msgstr ""
 msgid "Requests through this root will fail until a new key is saved."
 msgstr ""
 
+#: src/components/assets/DependencyChips.tsx
+msgid "required"
+msgstr ""
+
+#: src/components/assets/dependency-sources.tsx
 #: src/components/credentials/CredentialDialog.tsx
 msgid "Required"
 msgstr ""
@@ -19060,7 +19357,7 @@ msgstr ""
 msgid "Results"
 msgstr "תוצאות"
 
-#: src/components/automations/BusView.tsx
+#: src/components/automations/BusStream.tsx
 #: src/components/chats-navigator/ChatsNavigator.tsx
 #: src/components/collaboration/LiveSessionView.tsx
 #: src/components/data-sources/SourceMenu.tsx
@@ -19125,6 +19422,10 @@ msgstr "הורדה מחדש"
 msgid "Retry pull"
 msgstr "נסה משיכה שוב"
 
+#: src/components/data-sources/health-style.ts
+msgid "Retrying"
+msgstr ""
+
 #: src/components/conversation/MessageBubble.tsx
 msgid "Retrying…"
 msgstr ""
@@ -19156,7 +19457,6 @@ msgid "Reveal in Finder"
 msgstr "הצג ב-Finder"
 
 #: src/components/connections-manager/credential-rows-view.tsx
-#: src/components/data-sources/SourceMenu.tsx
 #: src/components/terminal/interactive-terminal/side-windows/InputFilesPanel.tsx
 msgid "Reveal in Finder/Explorer"
 msgstr ""
@@ -19531,6 +19831,7 @@ msgstr "פועל"
 #: src/components/assets/editor/agent-profile/AgentPlacesColumn.tsx
 #: src/components/automations/automation-words.ts
 #: src/components/automations/RunsView.tsx
+#: src/components/data-sources/health-style.ts
 #: src/pages/hub-home/HubHome.tsx
 msgid "Running"
 msgstr "פועל"
@@ -19576,6 +19877,7 @@ msgstr "הפעלה..."
 #: src/components/automations/AutomationsNavigator.tsx
 #: src/components/automations/RunsView.tsx
 #: src/components/collapsed-sidebar/collapsed-sidebar.tsx
+#: src/components/data-sources/DataSourcePage.tsx
 #: src/components/data-sources/SourceMenu.tsx
 #: src/components/triggers-view/ScheduleTriggerEditor.tsx
 #: src/types/ViewType.ts
@@ -20078,6 +20380,10 @@ msgstr "חפש סמלים"
 #: src/components/ui/icon-picker.tsx
 msgid "Search icons…"
 msgstr "חפש סמלים…"
+
+#: src/hooks/use-rag-roots.tsx
+msgid "Search index"
+msgstr ""
 
 #: src/pages/search-view/SearchView.tsx
 msgid "Search index is warming up. Results will appear once indexing is complete."
@@ -20754,16 +21060,16 @@ msgid "Set up {projectName}"
 msgstr ""
 
 #: src/components/setup-wizard/SetupWizardDialog.tsx
-msgid "Set up {title}"
-msgstr ""
+#~ msgid "Set up {title}"
+#~ msgstr ""
 
 #: src/components/task-receive/IncomingProjectDialog.tsx
 msgid "Set up <0>{projectName}</0> in this workspace. We'll clone the repo and index it so it's ready to use."
 msgstr "יש להגדיר את <0>{projectName}</0> בסביבת העבודה הזו. המאגר ישוכפל ויאונדקס כדי שיהיה מוכן לשימוש."
 
 #: src/hooks/use-add-context-folder.tsx
-msgid "Set up a git-backed context folder for this project."
-msgstr "יש להגדיר תיקיית קונטקסט מגובה ב-Git לפרויקט זה"
+#~ msgid "Set up a git-backed context folder for this project."
+#~ msgstr "יש להגדיר תיקיית קונטקסט מגובה ב-Git לפרויקט זה"
 
 #~ msgid "Set up an existing git repository as the context folder"
 #~ msgstr "הגדירו מאגר git קיים כתיקיית ההקשר"
@@ -20833,6 +21139,7 @@ msgid "Setting up your project…"
 msgstr "הכנת הפרויקט שלך…"
 
 #: src/components/assets/editor/agent-profile/deployment/AgentDeploymentPage.tsx
+#: src/components/data-sources/DataSourcePage.tsx
 #: src/components/settings-view/SettingsView.tsx
 #: src/pages/flow-page/content-panel/user-dropdown/user-dropdown.tsx
 #: src/pages/flow-page/content-panel/user-dropdown/user-dropdown.tsx
@@ -21001,7 +21308,6 @@ msgstr "שיתוף באמצעות Git origin"
 msgid "Share with team"
 msgstr ""
 
-#: src/components/assets/context-folder-sources.tsx
 #: src/components/graph-context/ContextGraphCanvas.tsx
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "Shared"
@@ -21165,6 +21471,10 @@ msgstr "הצגת קטעי נתיבים מוסתרים"
 msgid "Show imports"
 msgstr ""
 
+#: src/components/links/LinkMenu.tsx
+msgid "Show in Display"
+msgstr ""
+
 #: src/components/spec-editor/SpecEditor.tsx
 msgid "Show in folder (selects file for drag-and-drop)"
 msgstr "הצג בתיקייה (בוחר קובץ לגרירה)"
@@ -21176,6 +21486,11 @@ msgstr ""
 #: src/journey/JourneyViewer.tsx
 msgid "Show journey"
 msgstr "הצגת המסע"
+
+#. placeholder {0}: chunks.length
+#: src/components/rag/RagChunkBrowser.tsx
+msgid "Show more ({0} of {total})"
+msgstr ""
 
 #: src/journey/JourneyTray.tsx
 #: src/journey/JourneyTray.tsx
@@ -21776,6 +22091,10 @@ msgstr "משהו לא הלך כשורה בעת טעינת דף זה."
 msgid "Something went wrong. Please try again."
 msgstr ""
 
+#: src/components/data-sources/ChannelRouteControl.tsx
+msgid "Somewhere else"
+msgstr ""
+
 #: src/components/terminal/HistoryModal.tsx
 msgid "Sort by time"
 msgstr "מיין לפי זמן"
@@ -22169,8 +22488,8 @@ msgid "status: {0}"
 msgstr "סטטוס: {0}"
 
 #: src/components/assets/context-folder-sources.tsx
-msgid "Stays on this machine only — the folder is never sent to anyone, even people this project is shared with."
-msgstr "נשאר במחשב הזה בלבד — התיקייה לעולם לא תישלח לאף אחד, אפילו לא לאנשים שהפרויקט משותף איתם."
+#~ msgid "Stays on this machine only — the folder is never sent to anyone, even people this project is shared with."
+#~ msgstr "נשאר במחשב הזה בלבד — התיקייה לעולם לא תישלח לאף אחד, אפילו לא לאנשים שהפרויקט משותף איתם."
 
 #: src/components/triggers-view/FsopTriggerDetail.tsx
 #~ msgid "step: {0}ms · debounce: {1}ms"
@@ -22521,6 +22840,11 @@ msgstr ""
 msgid "Synced"
 msgstr ""
 
+#. placeholder {0}: timeSince(source.last_synced_at)
+#: src/components/data-sources/DataSourcePage.tsx
+msgid "Synced {0}"
+msgstr ""
+
 #. placeholder {0}: row.type
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "Syncing {0}…"
@@ -22834,6 +23158,10 @@ msgstr "הסוכן הזה כבר אינו בסביבת העבודה שלך"
 
 #~ msgid "That change could not be applied."
 #~ msgstr "לא ניתן היה להחיל את השינוי."
+
+#: src/components/assets/HubProjectDependencyDialog.tsx
+msgid "That doesn't name a hub project — paste its id or a link to it."
+msgstr ""
 
 #: src/components/organization/budgets/AddPeopleDialog.tsx
 msgid "That file has no rows."
@@ -23249,7 +23577,7 @@ msgstr ""
 msgid "The skill matches HEAD."
 msgstr "המיומנות תואמת ל-HEAD."
 
-#: src/components/data-sources/DataSourceRow.tsx
+#: src/components/data-sources/source-parts.tsx
 msgid "The source was not queued."
 msgstr "המקור לא התווסף לתור."
 
@@ -23773,6 +24101,10 @@ msgstr "הפרויקט זמין כעת בענן."
 #~ msgid "This project isn't ready to link to the cloud."
 #~ msgstr ""
 
+#: src/components/project-home/MissingDependenciesDialog.tsx
+msgid "This project needs these dependencies, and they are not on this computer."
+msgstr ""
+
 #~ msgid "This project stops using it and the stored value is deleted."
 #~ msgstr ""
 
@@ -23891,6 +24223,10 @@ msgstr "ליכולת הזו יש שינויים שלא בוצע להם commit �
 #: src/components/llm-sources/use-llm-sources.ts
 msgid "This source did not work"
 msgstr "המקור הזה לא עבד"
+
+#: src/components/data-sources/DataSourcePage.tsx
+msgid "This source is not on this machine (it may have been deleted)."
+msgstr ""
 
 #: src/components/llm-sources/use-llm-sources.ts
 msgid "This source works"
@@ -24431,8 +24767,8 @@ msgid "Transport"
 msgstr ""
 
 #: src/components/assets/context-folder-sources.tsx
-msgid "Travels with the project — everyone it is shared with gets this folder as context too."
-msgstr "עובר עם הפרויקט — כל מי שהפרויקט משותף איתו מקבל גם את התיקייה הזו כקונטקסט."
+#~ msgid "Travels with the project — everyone it is shared with gets this folder as context too."
+#~ msgstr "עובר עם הפרויקט — כל מי שהפרויקט משותף איתו מקבל גם את התיקייה הזו כקונטקסט."
 
 #: src/components/graph-view/TagGraphView.tsx
 msgid "Tree — hierarchy only"
@@ -24628,6 +24964,7 @@ msgstr "מזהה ייחודי עבור Hook זה בתוך קובץ ההגדרו�
 msgid "Unit"
 msgstr ""
 
+#: src/components/assets/DependencyChips.tsx
 #: src/components/conversation/FlowMessageBubble.tsx
 msgid "unknown"
 msgstr ""
@@ -24702,6 +25039,10 @@ msgstr "בטל נעיצת {0}"
 #: src/components/assets/ContextFolderBrowser.tsx
 msgid "Unpushed changes"
 msgstr "שינויים שלא נדחפו"
+
+#: src/components/assets/DependencyChips.tsx
+msgid "unreachable"
+msgstr ""
 
 #: src/pages/hub-home/HubHome.tsx
 msgid "Unreachable"
@@ -25222,11 +25563,11 @@ msgid "Verified"
 msgstr "מאומת"
 
 #: src/components/account/user-info.tsx
-#: src/components/data-sources/DataSourceRow.tsx
+#: src/components/data-sources/source-parts.tsx
 msgid "Verify"
 msgstr "אימות"
 
-#: src/components/data-sources/DataSourceRow.tsx
+#: src/components/data-sources/SourceMenu.tsx
 msgid "Verify the setup first."
 msgstr "יש לאמת את ההגדרה תחילה."
 
@@ -25253,6 +25594,11 @@ msgstr "אזור Vertex"
 
 #: src/components/llm-endpoints/UsageByChildTable.tsx
 msgid "Via"
+msgstr ""
+
+#: src/components/browseable-tree/adapters/assetContextFoldersRoot.tsx
+#: src/components/project-home/ProjectDependenciesCard.tsx
+msgid "via {via}"
 msgstr ""
 
 #: src/components/harness-login/HarnessLoginModal.tsx
@@ -25438,6 +25784,7 @@ msgstr "ממתין שתבחר מקור LLM"
 #~ msgid "Waiting for you…"
 #~ msgstr "ממתין לך…"
 
+#: src/components/ask/AskForm.tsx
 #: src/journey/JourneyTray.tsx
 msgid "Waiting…"
 msgstr "ממתין…"
@@ -25499,6 +25846,10 @@ msgstr "אפליקציית ווב"
 #: src/components/display-toolbar/WebappDisplayToolbar.tsx
 msgid "Web app status"
 msgstr "מצב אפליקציית הרשת"
+
+#: src/components/data-sources/ChannelRouteControl.tsx
+msgid "Webhook"
+msgstr ""
 
 #: src/components/cost-dashboard/constants.ts
 msgid "Week"
@@ -25570,8 +25921,14 @@ msgstr "מה זה {0}?"
 
 #: src/components/quick-create/QuickCreatePanel.tsx
 #: src/components/quick-create/QuickCreatePanel.tsx
-msgid "What is a context folder?"
-msgstr "מהי תיקיית הקשר?"
+#~ msgid "What is a context folder?"
+#~ msgstr "מהי תיקיית הקשר?"
+
+#: src/components/project-home/ProjectDependenciesCard.tsx
+#: src/components/quick-create/QuickCreatePanel.tsx
+#: src/components/quick-create/QuickCreatePanel.tsx
+msgid "What is a dependency?"
+msgstr ""
 
 #: src/components/status-bar.tsx
 #: src/components/terminal/project-list-menu.tsx
@@ -25580,12 +25937,20 @@ msgid "What is a Flowpad project?"
 msgstr "מה זה פרויקט Flowpad?"
 
 #: src/components/assets/context-folder-sources.tsx
-msgid "What is a private context folder?"
-msgstr "מה זו תיקיית קשר פרטית?"
+#~ msgid "What is a private context folder?"
+#~ msgstr "מה זו תיקיית קשר פרטית?"
+
+#: src/components/assets/dependency-sources.tsx
+msgid "What is a required dependency?"
+msgstr ""
 
 #: src/components/assets/context-folder-sources.tsx
-msgid "What is a shared context folder?"
-msgstr "מהי תיקיית ההקשר המשותפת?"
+#~ msgid "What is a shared context folder?"
+#~ msgstr "מהי תיקיית ההקשר המשותפת?"
+
+#: src/components/assets/dependency-sources.tsx
+msgid "What is an optional dependency?"
+msgstr ""
 
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "What is Git sharing?"
@@ -25783,8 +26148,8 @@ msgid "Where the key is created, and how to store it: flow credentials set <name
 msgstr ""
 
 #: src/components/helpdesk/AddHelpdeskDialog.tsx
-msgid "Where this desk lives"
-msgstr ""
+#~ msgid "Where this desk lives"
+#~ msgstr ""
 
 #: src/i18n/pref-labels.ts
 msgid "Which engine runs filesystem indexing: the built-in Python FSIndexer, or the external Rust indexer (requires FLOWPAD_RS_INDEXER_BIN on the server; silently falls back to Python when unavailable). Takes effect on the next index run."
@@ -26029,6 +26394,7 @@ msgid "yesterday {hhmm}"
 msgstr ""
 
 #: src/components/collaboration/LiveSessionView.tsx
+#: src/components/data-sources/DataSourcePage.tsx
 msgid "you"
 msgstr ""
 

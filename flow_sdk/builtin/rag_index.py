@@ -52,6 +52,10 @@ DEFAULT_INDEX_NAME = "Default RAG"
 #: One asyncio lock per index id, guarding its usearch handle. See ``RagIndex.open_store``.
 _STORE_LOCKS: dict[str, asyncio.Lock] = {}
 
+#: Index ids with an embed running in THIS process. ``indexing`` on a row that is not in here was
+#: left by a process that died mid-pass; see ``RagIndex.clear_stale_indexing``.
+_EMBEDDING: set[str] = set()
+
 
 class RagStatus(StrEnum):
     """Where an index is in its life. A separate axis from whether it can run right now."""
@@ -79,6 +83,8 @@ class RagIndex(Entity):
     #: post-index observer, cleared when the pass finishes. Only ever flipped false→true by
     #: that observer, so a thousand-file scan writes this row once rather than a thousand times.
     pending: bool = APIField(default=False)
+    #: A pass is embedding right now — ``pending`` is cleared before a pass, so it cannot say so.
+    indexing: bool = APIField(default=False)
 
     #: Which ``LLMEndpoint`` funds the embeddings. Empty ⇒ whatever funds this box.
     #: PRIVATE: a funding choice is a fact about an account, not about the work.
@@ -146,9 +152,7 @@ class RagIndex(Entity):
 
         origin = await Folder.detect_origin(canonical)
         folder = await Folder.mint_for_origin(origin, local_path=canonical)
-        self.add_private_context_entities(
-            folder.typeid, data={"path": canonical, "origin_kind": origin.kind}
-        )
+        self.add_private_context_entities(folder.typeid, data={"path": canonical, "origin_kind": origin.kind})
         # A new root means work to do; the pass decides how much.
         self.pending = True
         await self.save(notify=False)
@@ -229,6 +233,36 @@ class RagIndex(Entity):
             with RagStore(self.store_dir) as store:
                 yield store
 
+    @asynccontextmanager
+    async def embedding(self):
+        """Say "indexing" on the row for the length of the block, then save the outcome.
+
+        The one owner of ``indexing`` for every path that embeds — the heartbeat pass and a pushed
+        ``apply`` alike — so a screen shows the same spinner and toast whichever ran. The closing
+        save notifies and carries whatever the block set on the row, so callers do not save again.
+        """
+        key = str(self.id)
+        _EMBEDDING.add(key)
+        self.indexing = True
+        await self.save(notify=True)
+        try:
+            yield
+        finally:
+            _EMBEDDING.discard(key)
+            self.indexing = False
+            await self.save(notify=True)
+
+    async def clear_stale_indexing(self) -> bool:
+        """End an ``indexing`` no pass in this process owns — one a crash or restart left behind.
+
+        Without it the card and the tree badge would spin until the next pass happened to run.
+        """
+        if not self.indexing or str(self.id) in _EMBEDDING:
+            return False
+        self.indexing = False
+        await self.save(notify=True)
+        return True
+
     async def unstamped_roots(self) -> list[str]:
         """Roots the store holds no tree hash for — work no marker can announce.
 
@@ -259,17 +293,39 @@ class RagIndex(Entity):
         """The ``LLMEndpoint`` that funds this index's embeddings, or ``None``.
 
         Resolved fresh on every use rather than held, because funding changes between runs — a
-        key is stored, an endpoint is bound — and a cached client would keep spending the old
-        one. The bound endpoint wins; failing that, any local key that resolves.
-        """
-        from flow_sdk.builtin.llm_endpoint import LLMEndpoint  # noqa: PLC0415
+        key is stored, an endpoint is bound, a hub login lapses — and a cached client would keep
+        spending the old one. In order:
 
+        1. the bound endpoint, when it is a local row;
+        2. the bound endpoint, when it is a hub one — the hub's row, never a local projection,
+           whose id would not be the one the hub authorizes;
+        3. any local key that resolves, so a box with its own key never spends a hub budget it
+           was not pointed at;
+        4. any hub endpoint this box can spend that speaks an embeddings API.
+
+        Signed out, the hub list is empty and 2 and 4 answer nothing — the index stays in SETUP.
+        """
+        # The worker picker's own answer to "can this box spend a hub budget", not a re-derivation:
+        # an index that disagreed with it would fund itself from a budget it cannot use.
+        from flow_sdk.builtin.agentic_process.cli_drivers.llm_source import _hub_spendable  # noqa: PLC0415
+        from flow_sdk.builtin.llm_endpoint import LLMEndpoint  # noqa: PLC0415
+        from flow_sdk.instance_settings.llm_endpoint import fetch_hub_llm_endpoints  # noqa: PLC0415
+
+        hub = None
         if self.endpoint_typeid:
             bound = await LLMEndpoint.get_by_id(self.endpoint_typeid.split("-", 1)[-1])
             if bound is not None:
                 return bound
+            hub = await fetch_hub_llm_endpoints()
+            bound = next((e for e in hub if str(e.typeid) == self.endpoint_typeid), None)
+            if bound is not None:
+                return bound
         rows = await LLMEndpoint.key_endpoints()
-        return next((e for e in rows.values() if e.resolve_api_key()), None)
+        local = next((e for e in rows.values() if e.resolve_api_key()), None)
+        if local is not None or not _hub_spendable():
+            return local
+        hub = hub if hub is not None else await fetch_hub_llm_endpoints()
+        return next((e for e in hub if _hub_can_embed(e)), None)
 
     async def settle_status(self) -> str:
         """Promote out of SETUP once something funds it, and back when nothing does.
@@ -384,7 +440,7 @@ class RagIndex(Entity):
             except OSError as exc:
                 report.errors.append(f"{path}: {exc}")
 
-        async with self.open_store() as store:
+        async with self.embedding(), self.open_store() as store:
             # The same whole-file skip `index_root` makes, and for the same reason: a page can
             # name a file whose content did not change (a touch, a re-reflect, a page replayed
             # after a crash), and chunking it again to arrive at the ids the store already
@@ -397,9 +453,8 @@ class RagIndex(Entity):
             store.flush()
             self.chunk_count = store.chunk_count()
             self.document_count = len(store.document_refs())
-        report.documents_changed = len(documents)
-        report.documents_removed = len(gone)
-        await self.save(notify=False)
+            report.documents_changed = len(documents)
+            report.documents_removed = len(gone)
         return report
 
     async def search(self, question: str, *, top_k: int = 5) -> list[Any]:
@@ -411,6 +466,26 @@ class RagIndex(Entity):
         vectors = await embed([question])
         async with self.open_store() as store:
             return store.search(vectors[0], top_k=top_k)
+
+    async def chunks(self, doc_ref: str = "", *, offset: int = 0, limit: int = 50) -> dict[str, Any]:
+        """One page of what this index holds, for a person to browse. No embedding, no vectors.
+
+        ``total`` counts the chunks the page is drawn from (one document's, or all). The document
+        list rides only the unscoped call — a browser asks for it once, not on every page.
+        """
+        from flow_sdk.rag.store import RagStore  # noqa: PLC0415
+
+        # Not ``open_store``: its lock guards the usearch handle, which browsing never opens, and a
+        # pass holds it for the whole embed — the browser would hang exactly while "indexing" shows.
+        # A second SQLite reader is what WAL is for.
+        with RagStore(self.store_dir) as store:
+            page: dict[str, Any] = {
+                "chunks": [h.model_dump(mode="json") for h in store.list_chunks(doc_ref, offset=offset, limit=limit)],
+                "total": store.chunk_count(doc_ref),
+            }
+            if not doc_ref:
+                page["documents"] = [{"doc_ref": ref, "chunk_count": n} for ref, n in store.documents()]
+            return page
 
     # ── lookup ──────────────────────────────────────────────────────────────
 
@@ -481,6 +556,17 @@ class RagIndex(Entity):
             return index, False
         await index.add_root(canonical)
         return index, True
+
+
+def _hub_can_embed(endpoint: Any) -> bool:
+    """Whether a hub endpoint can fund an index unasked: enabled, its root embeds, and keyed.
+
+    The root's dialect decides, because the hub relays verbatim -- an Anthropic root has no
+    embeddings API however the budget is set up, and picking one would fail every pass. Checked
+    before the key, which is a credential-store read.
+    """
+    dialect = endpoint.dialect
+    return bool(endpoint.enabled and dialect and dialect.supports_embeddings and endpoint.resolve_api_key())
 
 
 __all__ = ["DEFAULT_INDEX_NAME", "RagIndex", "RagStatus"]

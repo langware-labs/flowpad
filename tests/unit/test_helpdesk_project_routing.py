@@ -18,6 +18,7 @@ from flow_sdk.builtin.helpdesk import Helpdesk
 from flow_sdk.builtin.project import Project
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 from flow_sdk.responses.response import ApiResponseStatus
+from tests.unit._project_deps import link_context_dirs
 from tests.unit._project_names import unique_project_name
 
 ROOT_QUEUE = "00000000-0000-4000-8000-000000000001"
@@ -35,12 +36,10 @@ def _request_info(body: dict) -> SimpleNamespace:
 
 async def _project(root: Path, *, contexts: list[Path] | None = None) -> Project:
     root.mkdir(parents=True, exist_ok=True)
-    project = Project(
-        name=unique_project_name(root.name),
-        fs_storage_mount_path=str(root),
-        legacy_include_dirs_=[str(path) for path in contexts or []],
-    )
+    project = Project(name=unique_project_name(root.name), fs_storage_mount_path=str(root))
     await project.save()
+    # Context roots are flow.json dependencies, in declaration order.
+    await link_context_dirs(project, contexts or [])
     return project
 
 

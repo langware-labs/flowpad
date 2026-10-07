@@ -83,20 +83,21 @@ function makeGitFolder(token: string) {
   return { root, remote, worktree };
 }
 
-/** Attach `dir` to a fresh project as a context folder; return the Folder typeid
+/** Add `dir` to a fresh project as a dependency; return the Folder typeid
  *  the backend minted for it (context_dir_infos carries it). */
 async function addContextFolder(inst: ResolvedInstance, dir: string): Promise<{ projectId: string; folderId: string }> {
   // The backend canonicalizes the path (realpath), and on macOS a tmpdir is a
   // symlink (/tmp → /private/tmp) — compare against the resolved path or the
   // match never lands.
   const real = realpathSync(dir);
+  // The project gets its own default mount: a project cannot depend on its own
+  // folder (add-dependency refuses the root and anything inside it).
   const project = trackForCleanup(
-    new inst.sdk.Project({ name: `folder-share-${randomUUID().slice(0, 8)}`, fs_storage_mount_path: real } as any),
+    new inst.sdk.Project({ name: `folder-share-${randomUUID().slice(0, 8)}` } as any),
   );
   await project.save();
-  const res = await post(inst.apiUrl, `/graph/project/${project.id}/add-context-dir`, {
-    path: real,
-    scope: 'private',
+  const res = await post(inst.apiUrl, `/graph/project/${project.id}/add-dependency`, {
+    source: real,
   });
   expect(res.status, JSON.stringify(res)).toBe('SUCCESS');
 

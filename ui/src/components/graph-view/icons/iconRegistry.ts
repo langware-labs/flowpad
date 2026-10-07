@@ -35,7 +35,7 @@ export function iconForType(type: string): LucideIcon {
  * "Skills" labels a section, "Task" names one thing), i18n only decides which
  * language it is said in. Being the single choke point is what makes that one
  * change reach every surface: breadcrumbs, the asset manager's group headings,
- * the context-folder tree, the hub's record lists.
+ * the dependencies tree, the hub's record lists.
  */
 export function labelForType(type: string): string {
   return translateTypeLabel(type, dataManager?.displayNameForType?.(type) || humanizeType(type));

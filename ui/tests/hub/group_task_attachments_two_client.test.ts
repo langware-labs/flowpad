@@ -81,14 +81,13 @@ function makeGitFolder(token: string): string {
   return worktree;
 }
 
-/** Register a folder as a project context dir and return its minted GitOrigin —
+/** Add a folder as a project dependency and return its minted GitOrigin —
  *  the same value the attachment UI reads off the Folder entity at attach time. */
 async function gitOriginForFolder(inst: ResolvedInstance, folderPath: string, token: string) {
   const project = trackForCleanup(new inst.sdk.Project({ name: `gt-proj-${token.slice(-8)}` }));
   await project.save();
-  const res = await post(inst.apiUrl, `/graph/project/${project.id}/add-context-dir`, {
-    path: folderPath,
-    scope: 'private',
+  const res = await post(inst.apiUrl, `/graph/project/${project.id}/add-dependency`, {
+    source: folderPath,
   });
   expect(res.status, JSON.stringify(res)).toBe('SUCCESS');
 

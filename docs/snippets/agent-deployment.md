@@ -96,8 +96,13 @@ no first turn — keyed to the agent through `target_typeid_str`:
 
 ```python
 session = await agent.use()                    # acts in the agent's own project
-session = await agent.use(project_id=OTHER_PROJECT)   # acts in another project's checkout
+session = await agent.use(project_id=OTHER_PROJECT)   # acts in another project's checkout;
+                                               # its own folder rides along as context
 ```
+
+An agent shows in `OTHER_PROJECT` when its project is one of `OTHER_PROJECT`'s dependencies
+(`flow.json`); opened there, it runs in `OTHER_PROJECT`'s folder, its own folder is mounted
+and named in its instructions — see [project dependencies](project-dependencies.md) §5.
 
 The primitive under both is the placement's own verb — not saved, not started:
 

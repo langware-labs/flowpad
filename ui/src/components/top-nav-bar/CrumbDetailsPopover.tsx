@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { useLingui } from '@lingui/react/macro';
 import { ExternalLink, FolderOpen } from 'lucide-react';
 import { FSRef, TypeId } from '@sdk';
 import { HoverCard, HoverCardContent, HoverCardTrigger } from '@src/components/ui/hover-card';
+import { useCloseOnIframeFocus } from '@src/hooks/use-close-on-iframe-focus';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { CopyPathButton } from './CopyPathButton';
@@ -65,14 +66,8 @@ export function CrumbDetailsPopover({
     setOpen(next);
   }, []);
 
-  useEffect(() => {
-    if (!open) return;
-    const onWindowBlur = () => {
-      if (document.activeElement instanceof HTMLIFrameElement) setOpen(false);
-    };
-    window.addEventListener('blur', onWindowBlur);
-    return () => window.removeEventListener('blur', onWindowBlur);
-  }, [open]);
+  const close = useCallback(() => setOpen(false), []);
+  useCloseOnIframeFocus(open, close);
 
   const parentDir = path.replace(/[\\/]+$/, '').replace(/[\\/][^\\/]+$/, '') || path;
   const filesTarget = directory ? path : parentDir;

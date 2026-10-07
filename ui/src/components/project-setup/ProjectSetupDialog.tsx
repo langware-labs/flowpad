@@ -8,7 +8,7 @@ import {
   type ProjectReadiness,
   type ProjectSetupRun,
 } from '@sdk';
-import { AlertTriangle, CheckCircle2, KeyRound, Link2, Loader2, XCircle } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, KeyRound, Link2, Loader2, Package, XCircle } from 'lucide-react';
 import { Button } from '@src/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
 import { AskForm } from '@src/components/ask/AskForm';
@@ -125,7 +125,10 @@ export function ProjectSetupDialog({
         ) : (
           <ul className="flex flex-col gap-1" data-testid="project-setup-requirements">
             {(readiness?.to_do ?? []).map((req) => {
-              const Icon = req.kind === 'oauth' ? Link2 : KeyRound;
+              const Icon = req.kind === 'oauth' ? Link2 : req.kind === 'dependency' ? Package : KeyRound;
+              // A missing dependency names itself; its source is the title and
+              // the reason it is not here the note.
+              const isDependency = req.kind === 'dependency';
               return (
                 <li
                   key={`${req.kind}-${req.name}`}
@@ -133,12 +136,17 @@ export function ProjectSetupDialog({
                   data-testid={`project-setup-req-${req.name}`}
                 >
                   <Icon className="size-4 shrink-0 text-muted-foreground" />
-                  <span className="font-medium">{req.title || req.name}</span>
-                  <span className="flex-1 truncate text-xs text-muted-foreground">
-                    {req.vars
-                      .filter((v) => !v.present)
-                      .map((v) => v.label || v.env_var)
-                      .join(', ')}
+                  <span className="font-medium">{isDependency ? req.name : req.title || req.name}</span>
+                  <span
+                    className="flex-1 truncate text-xs text-muted-foreground"
+                    title={isDependency ? [req.title, req.note].filter(Boolean).join(' — ') : undefined}
+                  >
+                    {isDependency
+                      ? req.note || req.title
+                      : req.vars
+                          .filter((v) => !v.present)
+                          .map((v) => v.label || v.env_var)
+                          .join(', ')}
                   </span>
                 </li>
               );

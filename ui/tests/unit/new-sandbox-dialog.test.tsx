@@ -124,7 +124,7 @@ describe('new desktop: project + asset packages', () => {
     await userEvent.click(screen.getByTestId('create-sandbox'));
 
     expect(launched().sandboxProject.contextProjects).toEqual([
-      expect.objectContaining({ name: 'acme-support', scope: 'shared' }),
+      expect.objectContaining({ name: 'acme-support', optional: false }),
     ]);
   });
 

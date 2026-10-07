@@ -820,6 +820,18 @@
   ],
   "url_cases": [
     {
+      "name": "one data source's page",
+      "view_type": "data-sources",
+      "pointer": "5b112f8f-06d9-46ff-9ff0-d09748a4d512",
+      "url": "/dock/data-sources/5b112f8f-06d9-46ff-9ff0-d09748a4d512"
+    },
+    {
+      "name": "one data source's events tab",
+      "view_type": "data-sources",
+      "pointer": "5b112f8f-06d9-46ff-9ff0-d09748a4d512/events",
+      "url": "/dock/data-sources/5b112f8f-06d9-46ff-9ff0-d09748a4d512/events"
+    },
+    {
       "name": "pointerless singleton",
       "view_type": "desktop",
       "url": "/dock/desktop"

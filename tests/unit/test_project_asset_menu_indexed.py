@@ -15,11 +15,12 @@ for:
 
 Every expectation comes from ``ASSET_TREE_LAYOUT``, so the assertions cannot
 drift from the files on disk. No mocks: real Projects, real files, the real
-indexer, and the real ``add_context_dir`` action doing the linking.
+indexer, and the real ``Project.add_dependency`` verb doing the linking.
 """
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -192,10 +193,10 @@ async def test_three_level_nesting_and_depths(tree):
         assert node["is_project"] is tree.spec(key).is_project
 
 
-async def test_git_context_folder_is_shared_and_reports_its_origin(tree):
-    """The shared link only succeeds for a transportable origin, so building the
-    fixture already proved detect_origin read the file:// remote as git. Here we
-    pin what the menu and the project report about it — plus the control."""
+async def test_git_context_folder_is_declared_as_its_repo_and_reports_its_origin(tree):
+    """A folder in git is declared as its repository, so building the fixture
+    already proved detect_origin read the file:// remote as git. Here we pin what
+    flow.json, the menu and the project report about it — plus the control."""
     root = (await _menu(tree))["root"]
     git_node = _node(tree, root, "GIT")
     assert git_node["origin_kind"] == "git"
@@ -209,13 +210,19 @@ async def test_git_context_folder_is_shared_and_reports_its_origin(tree):
     assert origin.kind == "git"
     assert origin.transportable is True
 
-    # Control: a plain directory cannot be shared, so the check above is not
-    # passing for some reason unrelated to the origin.
+    declared = json.loads((tree.path("P") / "flow.json").read_text(encoding="utf-8"))["dependencies"]
+    # Named after the repository (the bare remote ``origin.git``), not the folder.
+    assert declared["origin"].startswith("git+file://"), "a folder in git is written as its repo"
+
+    # Control: a plain directory is not transportable and is declared as a
+    # machine-local ``file:`` folder, so the check above is not passing for some
+    # reason unrelated to the origin.
     plain_origin = await Folder.detect_origin(canonical_posix_path(tree.path("PLAIN")))
     assert plain_origin.transportable is False
-    resp = await tree.projects["P"].add_context_dir(str(tree.path("PLAIN")), scope="shared")
-    assert resp.status_code >= 400
-    assert "git-backed" in resp.message
+    assert declared["plain"] == f"file:{canonical_posix_path(tree.path('PLAIN'))}"
+    warnings = tree.projects["P"].share_warnings()
+    assert f"plain: {declared['plain']} is a folder on this machine; members will not have it" in warnings
+    assert not any(w.startswith("origin:") for w in warnings), "a git dependency resolves on every machine"
 
 
 async def test_plain_folder_is_a_leaf_with_counts(tree):

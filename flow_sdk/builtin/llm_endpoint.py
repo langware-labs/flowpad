@@ -432,6 +432,17 @@ class LLMEndpoint(Entity):
             label=self.name or self.provider,
         )
 
+    @property
+    def dialect(self) -> "Any":
+        """The wire this endpoint speaks -- for a HUB row the ROOT's, ``openrouter`` when the hub
+        named none (as ``client`` assumes) -- or ``None`` for a provider no dialect knows."""
+        from flow_sdk.external_apis.llm.dialects import get_dialect  # noqa: PLC0415
+
+        try:
+            return get_dialect(self.provider or "openrouter")
+        except ValueError:
+            return None
+
     def _hub_invoke_url(self) -> str:
         from flow_sdk.instance_settings.llm_endpoint import hub_origin  # noqa: PLC0415
 
@@ -445,6 +456,10 @@ class LLMEndpoint(Entity):
     async def create_embeddings(self, texts: Any, **kwargs: Any) -> list[list[float]]:
         """Embed texts through this endpoint, preserving order."""
         return await self.client().create_embeddings(texts, **kwargs)
+
+    async def create_embeddings_with_model(self, texts: Any, **kwargs: Any) -> tuple[list[list[float]], str]:
+        """Embed texts and report the model the provider answered with. See ``LLMClient``."""
+        return await self.client().create_embeddings_with_model(texts, **kwargs)
 
     async def list_models(self, *, embeddings_only: bool = False) -> list[str]:
         """Model slugs this endpoint accepts; ``[]`` when the catalog cannot be read."""

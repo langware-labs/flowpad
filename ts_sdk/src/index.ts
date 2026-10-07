@@ -8,6 +8,8 @@ export { PERF_T0_KEY, markPerfT0, perfLog, perfTime } from './utils/perf';
 export * from './ApiResponse';
 export * from './apiStats';
 export * from './apps/index';
+export * from './evals/types';
+export * from './viewers/index';
 export * from './capabilities';
 export * from './client';
 export * from './config';

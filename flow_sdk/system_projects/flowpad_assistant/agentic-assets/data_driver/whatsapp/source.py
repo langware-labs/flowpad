@@ -32,6 +32,7 @@ Files and reactions:
 from __future__ import annotations
 
 import asyncio
+import json
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from typing import Annotated, Any, AsyncGenerator, AsyncIterator, ClassVar, Mapping, Optional, Union
@@ -451,25 +452,34 @@ class WhatsAppSource(MessageSource):
         update = SourceUpdateSpec(config={"test_recipient": number}, allowed_senders=[number])
         return ReturnedValue.satisfied(f"Sent a hello to +{number} — check your phone", value=update)
 
+    @classmethod
+    def hub_claim(cls, config: Mapping[str, Any], secrets: Mapping[str, str]) -> Optional[dict]:
+        """This number as an account claim on the hub's ``webhook/@whatsapp`` chain (the generic
+        ``public-webhook`` step asks): the hub proves the token reads this number, keeps the app secret and
+        verify token write-only, checks Meta's signature at its edge and hands each message to this channel.
+        ``None`` until the number, its token and its app secret are known."""
+        number, token, app_secret = str(config.get("phone_number_id") or ""), secrets.get("access_token"), secrets.get("app_secret")
+        if not (number and token and app_secret):
+            return None
+        proof = {"credential": token, "app_secret": app_secret, "verify_token": str(config.get("verify_token") or "")}
+        return {"provider": "whatsapp", "key": number, "proof": proof}
+
     @setup_step("subscribe")
     async def _subscribe_step(self, *, check: bool, values: Mapping[str, str]) -> ReturnedValue:
-        """Meta sends this number's messages to our public URL: the app's messages webhook points at
-        it (Meta checks it right away — the hub answers with the verify token) and the business account
-        is subscribed to the app."""
+        """Meta sends THIS number's messages to our public URL: the number's own webhook override points at
+        it (Meta checks it right away — the hub answers with the verify token) and the business account is
+        subscribed to the app. The app's own callback is never repointed: on an app shared by several
+        numbers (or instances) that would take every number's messages — the last setup would win."""
         app_id, secret = str(self.config.get("app_id") or ""), self._secret("app_secret")
         waba, verify_token = str(self.config.get("waba_id") or ""), str(self.config.get("verify_token") or "")
-        callback = self._secret("webhook_url")
-        if not (app_id and secret and waba and verify_token and callback):
+        number, callback = str(self.config.get("phone_number_id") or ""), self._secret("webhook_url")
+        if not (app_id and secret and waba and number and verify_token and callback):
             return ReturnedValue.not_yet("The app, the number and the public URL come first.")
         app_token = f"{app_id}|{secret}"
 
         async def subscribed() -> bool:
-            hooks = await self._graph("GET", f"{app_id}/subscriptions", token=app_token)
-            ours = any(
-                h.get("object") == "whatsapp_business_account" and h.get("callback_url") == callback
-                and any(f.get("name") == "messages" for f in _list(h.get("fields")))
-                for h in _list(hooks.get("data"))
-            )
+            mine = await self._graph("GET", number, params={"fields": "webhook_configuration"})
+            ours = str((mine.get("webhook_configuration") or {}).get("phone_number") or "") == callback
             apps = await self._graph("GET", f"{waba}/subscribed_apps")
             return ours and bool(_list(apps.get("data")))
 
@@ -478,11 +488,18 @@ class WhatsAppSource(MessageSource):
                 return ReturnedValue.satisfied("Meta sends this number's messages here", ran=False)
             if check:
                 return ReturnedValue.not_yet("Meta's webhook is not pointed here yet")
-            await self._graph("POST", f"{app_id}/subscriptions", token=app_token, params={
-                "object": "whatsapp_business_account", "callback_url": callback,
-                "verify_token": verify_token, "fields": "messages",
-            })
+            # An override only takes effect on an app that has a messages webhook at all: a first app gets one
+            # (our URL); an app that already has one keeps it — whoever set it.
+            hooks = await self._graph("GET", f"{app_id}/subscriptions", token=app_token)
+            if not any(h.get("object") == "whatsapp_business_account" for h in _list(hooks.get("data"))):
+                await self._graph("POST", f"{app_id}/subscriptions", token=app_token, params={
+                    "object": "whatsapp_business_account", "callback_url": callback,
+                    "verify_token": verify_token, "fields": "messages",
+                })
             await self._graph("POST", f"{waba}/subscribed_apps")
+            await self._graph("POST", number, params={
+                "webhook_configuration": json.dumps({"override_callback_uri": callback, "verify_token": verify_token}),
+            })
             ok = await subscribed()
         except SourceError as exc:
             return ReturnedValue.not_yet(f"Meta refused the webhook: {exc}")

@@ -142,11 +142,16 @@ class CliOp(ExeData):
 
     #: ``sys.platform`` -> shell one-liner.
     commands: dict[str, str] = {}
+    #: A setup step of the run's data source (``{{source}}``), run IN this backend -- what ``flow source step
+    #: <source> <step> [--check] --value`` does, without starting a process, a shell or an HTTP call back into
+    #: this same backend. On a slow Windows box each of those costs 12-50 s; a wizard's check, call and re-check
+    #: were three. ``commands`` stays the fallback for a run with no source.
+    source_step: Optional[str] = None
 
     @model_validator(mode="after")
     def _has_a_command(self) -> "CliOp":
-        if not self.commands:
-            raise ValueError("a cli op needs a command for at least one platform")
+        if not self.commands and not self.source_step:
+            raise ValueError("a cli op needs a command for at least one platform, or a source_step")
         return self
 
     def command_for(self, platform: str = "") -> Optional[str]:
@@ -247,6 +252,11 @@ class AskOp(ExeData):
     #: not hold the question stays open with the check's own reason under it ("not connected yet —
     #: send the message from your phone first"). A gate a person cannot click past.
     recheck: bool = False
+    #: The goal is reached ELSEWHERE (a phone sends a code), so nothing here needs a click: while the question
+    #: is open the op's check runs again every few seconds, and the moment it holds the question closes by itself
+    #: -- the person only watches. No Send button is offered. Needs ``recheck``, a check and a ``confirm`` shape:
+    #: closing by itself answers what Send would have, and only a confirm has nothing for a person to type.
+    auto_continue: bool = False
 
     @model_validator(mode="after")
     def _no_deadline_means_no_deadline(self) -> "AskOp":
@@ -394,6 +404,11 @@ class ComputeOpSpec(AssetDocumentSpec):
     def _attempts_need_a_check(self) -> "ComputeOpSpec":
         if self.completion_check is not None and self.status_check:
             raise ValueError(f"{self.name or 'this op'}: a completion_check or a status_check, not both")
+        if getattr(self.exe_data, "auto_continue", False) and not (
+            self.exe_data.recheck and (self.completion_check is not None or self.status_check)
+            and self.output_spec_kind == "confirm"
+        ):
+            raise ValueError(f"{self.name or 'this op'}: auto_continue needs recheck, a check and output_spec_kind confirm")
         if self.exe_data.SELF_CHECKING and (self.completion_check is not None or self.status_check):
             raise ValueError(f"{self.name or 'this op'}: a {self.subkind} op is its own check — it takes no other")
         if self.attempts and not self.convergent:

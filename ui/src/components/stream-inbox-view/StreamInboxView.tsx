@@ -56,7 +56,7 @@ import {
   useChannelAttribution,
 } from '@src/components/conversation/channel-attribution';
 import { AttachedChannelsBar, channelKeyOf, useAttachedChannels } from './AttachedChannelsBar';
-import { channelsOwnerFor, streamInboxConversationsRequest } from './channel-owner';
+import { channelsOwnerFor, sourceConversationsRequest, streamInboxConversationsRequest } from './channel-owner';
 import { useContext } from '@src/hooks/useContext';
 import {
   conversationFacets,
@@ -503,7 +503,18 @@ const columnInputClass =
 
 // ── StreamInboxView ───────────────────────────────────────────────────────────────
 
-export function StreamInboxView({ agentId }: { agentId?: string } = {}) {
+export function StreamInboxView({
+  agentId,
+  sourceId,
+  embedded = false,
+}: {
+  agentId?: string;
+  /** One data source's conversations only (a source's page) — the same live list, backend-filtered. */
+  sourceId?: string;
+  /** Inside another page: no stream-inbox-wide verbs (New, New group, Mark all read, Archive all), no channel bar, no
+   *  membership invitations — those belong to an owner's stream inbox, not to one source. */
+  embedded?: boolean;
+} = {}) {
   const { t } = useLingui();
   const [fetching, setFetching] = useState(false);
   // 'all' (default) shows active conversations; 'archived' shows only
@@ -576,9 +587,14 @@ export function StreamInboxView({ agentId }: { agentId?: string } = {}) {
   // whenever its inputs change identity, and a fresh request re-subscribes.
   const ownerKey = channelsOwner?.toString() ?? '';
   const request = useMemo(
-    () => (channelsOwner ? streamInboxConversationsRequest(channelsOwner) : null),
+    () =>
+      sourceId
+        ? sourceConversationsRequest(sourceId)
+        : channelsOwner
+          ? streamInboxConversationsRequest(channelsOwner)
+          : null,
     // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on the owner's string form
-    [ownerKey],
+    [ownerKey, sourceId],
   );
   const idleRequest = useMemo(() => new QueryRequest({ type: Conversation.type, name: 'stream-inbox:idle' }), []);
   const {
@@ -1130,7 +1146,7 @@ export function StreamInboxView({ agentId }: { agentId?: string } = {}) {
               </div>
             </div>
             {/* CENTER — new conversation / new contacts group */}
-            {!agentId && (
+            {!agentId && !embedded && (
               <div className="flex shrink-0 items-center">
                 <Button
                   variant="ghost"
@@ -1159,7 +1175,7 @@ export function StreamInboxView({ agentId }: { agentId?: string } = {}) {
             {/* RIGHT — actions for the current view */}
             <div className="flex flex-1 items-center justify-end gap-1" data-testid="stream-inbox-action-bar">
               <>
-                {!inArchivedView && (
+                {!inArchivedView && !embedded && (
                   <Button
                     variant="ghost"
                     size="sm"
@@ -1172,7 +1188,7 @@ export function StreamInboxView({ agentId }: { agentId?: string } = {}) {
                 )}
                 {/* Archive all archives every conversation regardless of read state;
                 hide it in the Archived view where it makes no sense. */}
-                {!inArchivedView && !inUnreadView && (
+                {!inArchivedView && !inUnreadView && !embedded && (
                   <Button
                     variant="ghost"
                     size="sm"
@@ -1279,7 +1295,7 @@ export function StreamInboxView({ agentId }: { agentId?: string } = {}) {
                 <X className="h-3 w-3" />
               </button>
             )}
-            {channelsOwner && (
+            {channelsOwner && !embedded && (
               <AttachedChannelsBar
                 owner={channelsOwner}
                 rows={ownerChannels}
@@ -1318,7 +1334,7 @@ export function StreamInboxView({ agentId }: { agentId?: string } = {}) {
           </div>
         )}
 
-        {!agentId && !inArchivedView && !initialLoading && (
+        {!agentId && !embedded && !inArchivedView && !initialLoading && (
           <MembershipInvitations recipientEmail={cloudUser?.email ?? null} onPendingCount={setMembershipPendingCount} />
         )}
 
