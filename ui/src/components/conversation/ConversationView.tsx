@@ -59,7 +59,8 @@ import { useMyEmail } from '@src/hooks/use-my-email';
 import { taskIt, useMessageTasks } from './task-it';
 import { conversationMessagesRequest } from './conversation-messages-query';
 import { useApproveLiveSession } from '@src/components/collaboration/useApproveLiveSession';
-import { failedPromptOf } from './session-turns';
+import { failedPromptOf, pendingPromptOf } from './session-turns';
+import { LiveSessionActivity } from './LiveSessionActivity';
 import { useRetryFailedPrompt } from './useRetryFailedPrompt';
 import { useCloudLoginGate } from '@src/hooks/use-cloud-login-gate';
 import { notify } from '@src/notifications';
@@ -455,8 +456,9 @@ export function ConversationView({
     ].sort((a, b) => a.sortAt - b.sortAt);
   }, [orderedItems, messagesById, threadId, threadCounts, sessionAnchors]);
 
-  // Each live session's failed prompt (nothing answered it since), so its card can offer Retry.
-  const failedPromptBySession = useMemo(() => {
+  // Each live session's messages, in feed order: its card offers Retry on a failed prompt
+  // (nothing answered it since) and names the prompt the host is working on.
+  const messagesBySession = useMemo(() => {
     const bySession = new Map<string, FlowMessage[]>();
     for (const item of orderedItems) {
       const fm = item.kind === ConversationItemKind.POINTER ? messagesById.get(item.messageId) : item.draft;
@@ -466,8 +468,16 @@ export function ConversationView({
       if (fms) fms.push(fm);
       else bySession.set(sid, [fm]);
     }
-    return new Map([...bySession].map(([sid, fms]) => [sid, failedPromptOf(fms)]));
+    return bySession;
   }, [orderedItems, messagesById]);
+  const failedPromptBySession = useMemo(
+    () => new Map([...messagesBySession].map(([sid, fms]) => [sid, failedPromptOf(fms)])),
+    [messagesBySession],
+  );
+  const pendingPromptBySession = useMemo(
+    () => new Map([...messagesBySession].map(([sid, fms]) => [sid, pendingPromptOf(fms)])),
+    [messagesBySession],
+  );
 
   // Where the composer of an open thread writes: a native thread joins its root; a channel whose
   // replies only thread (email, Slack) answers the thread's newest message; a quoting channel's
@@ -900,6 +910,8 @@ export function ConversationView({
                     onDecline={role === 'host' && session ? () => session.decline() : undefined}
                     onDisconnect={role !== 'observer' && session ? () => session.disconnect() : undefined}
                     lastPromptFailed={!!failedPromptBySession.get(item.sessionId)}
+                    runningPrompt={pendingPromptBySession.get(item.sessionId) ?? null}
+                    chatProcessId={role === 'host' ? (session?.host_process_id ?? null) : null}
                     onRetry={
                       role === 'guest' && failedPromptBySession.get(item.sessionId) && conversationId
                         ? () =>
@@ -911,6 +923,11 @@ export function ConversationView({
                         : undefined
                     }
                   />
+                  {role === 'host' && session && (
+                    <div className="px-2">
+                      <LiveSessionActivity session={session} />
+                    </div>
+                  )}
                 </div>
               );
             }

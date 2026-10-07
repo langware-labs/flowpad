@@ -74,3 +74,17 @@ export function failedPromptOf(
   const text = promptTextOf(last).trim();
   return text ? { message: last, text, line } : null;
 }
+
+/**
+ * The prompt the host is working on: the session's LAST prompt while no reply
+ * and no `failed` line follow it — what the session's one line names while it
+ * runs. `messages` in time order.
+ */
+export function pendingPromptOf(messages: FlowMessage[]): string | null {
+  let last: FlowMessage | null = null;
+  for (const fm of messages) {
+    if (resultTextOf(fm) !== null || sessionEventOf(fm) === 'failed') last = null;
+    else if (isPromptMessage(fm)) last = fm;
+  }
+  return (last && promptTextOf(last).trim()) || null;
+}
