@@ -79,4 +79,7 @@ export enum RecordType {
   // browser feeds it from the `llm-endpoint` box action (see
   // `flow_sdk/builtin/llm_endpoint.py`), and its editor is read-only.
   LLM_ENDPOINT = 'llm_endpoint',
+  // A diagnosis someone else runs (`flow diagnose <id>`). A local row with no file -- the
+  // request and its runs live on the hub; its editor reads them through the type's actions.
+  DIAGNOSIS_REQUEST = 'diagnosis_request',
 }

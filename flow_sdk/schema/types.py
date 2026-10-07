@@ -147,6 +147,9 @@ class EntityType(StrEnum):
     # discovered anywhere in a project, rendered in a grid editor.
     SPREADSHEET = "spreadsheet"
     FLOWPAD_DIAGNOSIS = "flowpad_diagnosis"
+    # A diagnosis someone ELSE runs and writes into on the hub, by id, with no login
+    # (``flow diagnose <id>``). Subclass of FLOWPAD_DIAGNOSIS — see builtin/diagnosis_request.py.
+    DIAGNOSIS_REQUEST = "diagnosis_request"
     COLLABORATION_ROOM = "collaboration_room"
     # A host/guest remote-execution session that lives inside a CollaborationRoom
     # (alongside its files/assets): guest sends Prompts, host's worker returns

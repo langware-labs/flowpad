@@ -29,8 +29,8 @@ except ImportError as e:
     print(f"[WARN] Failed to import Wiki entities: {e}")
 
 # A core type: a failure here must be loud, not a WARN that leaves the type unregistered.
-from flow_sdk.builtin.data_driver import DataDriver  # noqa: F401
 from flow_sdk.builtin.credential import Credential  # noqa: F401
+from flow_sdk.builtin.data_driver import DataDriver  # noqa: F401
 
 try:
     from flow_sdk.builtin.workspace import Workspace  # noqa: F401
@@ -169,6 +169,11 @@ try:
     from flow_sdk.builtin.flowpad_diagnosis import FlowpadDiagnosis  # noqa: F401
 except ImportError as e:
     print(f"[WARN] Failed to import FlowpadDiagnosis: {e}")
+
+try:
+    from flow_sdk.builtin.diagnosis_request import DiagnosisRequest  # noqa: F401
+except ImportError as e:
+    print(f"[WARN] Failed to import DiagnosisRequest: {e}")
 
 try:
     from flow_sdk.builtin.feed_entry import FeedEntry  # noqa: F401
