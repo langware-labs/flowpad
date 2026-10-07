@@ -91,16 +91,25 @@ export const MARKDOWN_LINK_CLASS = 'font-medium text-primary underline underline
 
 export function markdownComponents({
   compact = false,
+  dense = false,
   codeChrome = true,
   localeDir,
 }: {
   compact?: boolean;
+  /** Markdown at the surrounding text's size: headings only bold, lists and
+   *  paragraphs tight. For a reply read inline (a live session's remote turn),
+   *  where a document-sized heading would dwarf the exchange around it. */
+  dense?: boolean;
   codeChrome?: boolean;
   localeDir: TextDirection;
 }): Components {
-  const paragraphClass = compact
-    ? 'mb-2 leading-6 last:mb-0 [&:not(:first-child)]:mt-2'
-    : 'mb-4 leading-7 last:mb-0 [&:not(:first-child)]:mt-6';
+  const paragraphClass = dense
+    ? 'my-1 first:mt-0 last:mb-0'
+    : compact
+      ? 'mb-2 leading-6 last:mb-0 [&:not(:first-child)]:mt-2'
+      : 'mb-4 leading-7 last:mb-0 [&:not(:first-child)]:mt-6';
+  const headingClass = (big: string) => (dense ? 'mb-1 mt-2 font-semibold first:mt-0' : big);
+  const listClass = dense ? 'my-1 ms-5 [&>li]:mt-0.5' : 'my-6 ms-6 [&>li]:mt-2';
 
   // Every text-bearing block carries an explicit dir so its base direction (and
   // with it alignment + punctuation side) follows the block's own content
@@ -130,34 +139,40 @@ export function markdownComponents({
       </p>
     ),
     h1: ({ node, children }) => (
-      <h1 dir={dirOf(node)} className="mb-4 scroll-m-20 text-4xl font-extrabold tracking-tight lg:text-5xl">
+      <h1
+        dir={dirOf(node)}
+        className={headingClass('mb-4 scroll-m-20 text-4xl font-extrabold tracking-tight lg:text-5xl')}
+      >
         {children}
       </h1>
     ),
     h2: ({ node, children }) => (
-      <h2 dir={dirOf(node)} className="mb-3 scroll-m-20 border-b pb-2 text-3xl font-semibold tracking-tight first:mt-0">
+      <h2
+        dir={dirOf(node)}
+        className={headingClass('mb-3 scroll-m-20 border-b pb-2 text-3xl font-semibold tracking-tight first:mt-0')}
+      >
         {children}
       </h2>
     ),
     h3: ({ node, children }) => (
-      <h3 dir={dirOf(node)} className="mb-2 scroll-m-20 text-2xl font-semibold tracking-tight">
+      <h3 dir={dirOf(node)} className={headingClass('mb-2 scroll-m-20 text-2xl font-semibold tracking-tight')}>
         {children}
       </h3>
     ),
     ul: ({ node, children }) => (
-      <ul dir={dirOf(node)} className="my-6 ms-6 list-disc [&>li]:mt-2">
+      <ul dir={dirOf(node)} className={`${listClass} list-disc`}>
         {children}
       </ul>
     ),
     ol: ({ node, children }) => (
-      <ol dir={dirOf(node)} className="my-6 ms-6 list-decimal [&>li]:mt-2">
+      <ol dir={dirOf(node)} className={`${listClass} list-decimal`}>
         {children}
       </ol>
     ),
     // No dir here on purpose: the marker sits on the item's start side, so a
     // per-item direction would scatter the markers across both sides of one
     // list. <li> inherits the direction its <ul>/<ol> resolved for the whole.
-    li: ({ children }) => <li className="mt-2">{children}</li>,
+    li: ({ children }) => <li className={dense ? undefined : 'mt-2'}>{children}</li>,
     a: ({ href, children }) => (
       <a href={href} target="_blank" rel="noopener noreferrer" className={MARKDOWN_LINK_CLASS}>
         {children}
@@ -253,6 +268,7 @@ function linkedAnchors(links: LinkHandlers): Partial<Components> {
 export const MarkdownView = ({
   value,
   compact = false,
+  dense = false,
   codeChrome = true,
   components,
   dataImages = false,
@@ -260,6 +276,8 @@ export const MarkdownView = ({
 }: {
   value: string;
   compact?: boolean;
+  /** See `markdownComponents` — markdown at the surrounding text's size. */
+  dense?: boolean;
   codeChrome?: boolean;
   /** Element overrides merged OVER the defaults — for renderers that can resolve
    *  something this component cannot know about on its own. The portal uses it
@@ -293,7 +311,7 @@ export const MarkdownView = ({
       ]}
       urlTransform={dataImages ? withDataImages : undefined}
       components={{
-        ...markdownComponents({ compact, codeChrome, localeDir }),
+        ...markdownComponents({ compact, dense, codeChrome, localeDir }),
         ...(dataImages ? { img: DataImage } : {}),
         ...anchors,
         ...components,

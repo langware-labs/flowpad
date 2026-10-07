@@ -33,9 +33,9 @@ export function OpenSessionChatButton({ processId }: { processId: string }) {
 
 /**
  * What the host's Claude Code is doing on a live session's running prompt — the
- * chat's own activity line (tool, detail, elapsed), with the icon that opens that
- * chat. Host only: `host_process_id` is host-local, so a guest's mirror has no
- * process to observe and this renders nothing there. Renders nothing between turns.
+ * chat's own activity line (tool, detail, elapsed). Host only: `host_process_id`
+ * is host-local, so a guest's mirror has no process to observe and this renders
+ * nothing there. Renders nothing between turns.
  */
 export function LiveSessionActivity({ session }: { session: RemoteWorkerSession }) {
   const processId = session.host_process_id;
@@ -43,5 +43,5 @@ export function LiveSessionActivity({ session }: { session: RemoteWorkerSession 
   const { data: process } = useEntity<AgenticProcess>(typeId, { watch: true });
   useObservedTurn(process);
   if (!process) return null;
-  return <ChatActivityLine process={process} trailing={<OpenSessionChatButton processId={process.id} />} />;
+  return <ChatActivityLine process={process} />;
 }

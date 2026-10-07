@@ -36,22 +36,6 @@ def _patch_run(monkeypatch):
     return ran
 
 
-async def test_paused_session_bounces(bootstrapped_client, user, monkeypatch):
-    ran = _patch_run(monkeypatch)
-    conv_id = await make_conversation(bootstrapped_client)
-    rws = await make_session(conv_id, S.PAUSED.value)
-    fm = inbound_prompt_fm(conv_id, rws.id, fm_id="b2b2b2b2-0000-4000-8000-0000000000b1")
-    await fm.save(notify=False)
-
-    await ep.process_inbound_prompt(fm.id, conv_id)
-
-    assert ran == []
-    after = await FlowMessage.get_one({"id": fm.id})
-    assert after.prompt_auto_handled is True  # never re-bounces on re-sync
-    events = await session_messages(conv_id, kind=FlowMessageKind.SESSION_EVENT.value)
-    assert any(event_marker(m) == "prompt_bounced" for m in events)
-
-
 async def test_terminal_session_ignores(bootstrapped_client, user, monkeypatch):
     ran = _patch_run(monkeypatch)
     conv_id = await make_conversation(bootstrapped_client)

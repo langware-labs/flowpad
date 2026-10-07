@@ -8,7 +8,7 @@ as a ``prompt_completion`` attachment stamped with the session id; the
 session's ``reply_policy`` decides whether it is sent (auto) or saved as a host
 draft inside the session (review).
 
-Consent lives on the session (approve / decline / pause / resume / disconnect)
+Consent lives on the session (approve / decline / disconnect)
 plus the optional standing grant ``ContactPermission(auto_approve_session)``.
 There is no per-message approval and no per-message auto-reply grant.
 """
@@ -190,11 +190,8 @@ async def _reuse_or_spawn_headless(target_typeid_str: str, workdir: str) -> "Age
 _SESSION_EVENT_TEXTS = {
     "approved": "{actor} approved the live session",
     "declined": "{actor} declined the live session",
-    "paused": "{actor} paused the live session",
-    "resumed": "{actor} resumed the live session",
     "ended": "{actor} ended the live session",
     "expired": "{actor} closed the live session — the 2-hour limit was reached",
-    "prompt_bounced": "Live session is paused — prompt not run",
     "settings_changed": "{actor} changed the session settings",
 }
 
@@ -942,11 +939,8 @@ async def _sessions_in(statuses) -> list:
 
 
 async def consume_prompt(fm: "FlowMessage", someone_typeid: str) -> None:
-    """Mark one inbound prompt as handled, so no drain picks it up again.
-
-    The single writer of ``prompt_auto_handled``: both the pre-run consume and the
-    paused bounce go through here.
-    """
+    """Mark one inbound prompt as handled, so no drain picks it up again —
+    the single writer of ``prompt_auto_handled``."""
     fm.prompt_auto_handled = True
     await fm.save(someone_typeid)
 
@@ -1163,7 +1157,7 @@ async def process_inbound_prompt(fm_id: str, conversation_id: str) -> None:
     """Called (detached) after a remote FlowMessage materializes locally.
 
     Resolve-or-mint the session FIRST, then decide once from its state:
-    terminal → ignore; paused → bounce; active → run; awaiting consent → run
+    terminal → ignore; active → run; awaiting consent → run
     when a standing grant pre-approves the session, else park at PENDING.
     Failure-isolated — logs and dies.
     """
@@ -1211,13 +1205,6 @@ async def process_inbound_prompt(fm_id: str, conversation_id: str) -> None:
             return
         if decision is InboundDecision.EXPIRE:
             await session.expire(local_is_host=True, someone_typeid=someone_typeid)
-            return
-        if decision is InboundDecision.BOUNCE_PAUSED:
-            await consume_prompt(fm, someone_typeid)
-            try:
-                await emit_session_event(session, "prompt_bounced", someone_typeid)
-            except Exception as e:  # noqa: BLE001
-                logger.warning("[session] bounce event emit failed: %s", e)
             return
         if decision is InboundDecision.PARK_PENDING:
             return  # stays queued; approve re-drives it
