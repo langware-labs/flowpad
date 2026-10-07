@@ -215,7 +215,7 @@ function ContentPanelBody({
   // first alive tab. A pointer-less shell URL is loader-owned (the loader
   // resolves the default target), so we only act when a tab matches the URL.
   useEffect(() => {
-    if ((currentDock?.viewType !== ViewType.SHELL && currentDock?.viewType !== ViewType.VIBE) || !currentDock.pointer) return;
+    if (!DockPointer.isSessionView(currentDock?.viewType) || !currentDock?.pointer) return;
     const active = tabForDockKey(terminalTabs, currentDock.tabHash);
     if (active?.is_disabled) {
       const alive = terminalTabs.find((t) => t.id !== active.id && !t.is_disabled);

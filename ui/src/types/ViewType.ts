@@ -571,3 +571,10 @@ export function viewerTitle(viewType: ViewType | string | null | undefined): str
   const descriptor = VIEWER_REGISTRY[viewType as ViewType]?.title;
   return descriptor ? i18n._(descriptor) : undefined;
 }
+
+/** Is this view a HOST tab (it draws its own nested strip of child tabs)? The one
+ *  read of `ViewerMeta.hostsTabs`; which children a host accepts lives in
+ *  `navigation/tab-hosts.ts`. */
+export function viewHostsTabs(viewType: ViewType | string | null | undefined): boolean {
+  return !!viewType && !!VIEWER_REGISTRY[viewType as ViewType]?.hostsTabs;
+}

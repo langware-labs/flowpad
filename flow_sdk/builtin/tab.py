@@ -109,8 +109,8 @@ def _pointer_target(pointer: str | None) -> tuple[str, str]:
     # A process shown as the Vibe host and as a shell is ONE target shown two ways
     # (the Vibe dock folds onto the shell identity): switching between them is not
     # a re-point, so it must not refresh the tab's label or icon.
-    if vt == 'vibe':
-        vt = 'shell'
+    if vt == ViewType.VIBE:
+        vt = ViewType.SHELL.value
     return (vt, sub)
 
 
@@ -249,7 +249,7 @@ def _pointer_is_adoptable_child(pointer: str | None) -> bool:
 # ``tests/fixtures/tab_host_children.json``. Vibe is the first host, and its rule
 # is the workspace-content rule the vibe workspace always used.
 _HOST_CHILD_RULES: dict[str, Callable[[str | None], bool]] = {
-    "vibe": _pointer_is_adoptable_child,
+    ViewType.VIBE.value: _pointer_is_adoptable_child,
 }
 
 
@@ -341,13 +341,11 @@ class Tab(Entity):
         Closing a HOST closes its nested children with it (one level deep, so
         children have none of their own): a workspace does not outlive its tab.
         """
-        children = await _visible_children([self.id])
-        await self._soft_hide()
-        for child in children:
-            await child._soft_hide()
-        for child in children:
-            await child._dispatch_teardown()
-        await self._dispatch_teardown()
+        closing = await _with_children([self])
+        for tab in closing:
+            await tab._soft_hide()
+        for tab in closing:
+            await tab._dispatch_teardown()
 
     async def _soft_hide(self) -> None:
         """The membership-removal half of close — ONE definition of "soft-close"
@@ -1632,33 +1630,40 @@ async def _http_close(self: Tab):
     """
     # A host closes with its nested children (see ``Tab.close``) — in the same
     # broadcast, so no client ever sees the children orphaned for a beat.
-    children = await _visible_children([self.id])
-    await self._soft_hide()
-    for child in children:
-        await child._soft_hide()
+    closing = await _with_children([self])
+    for tab in closing:
+        await tab._soft_hide()
     await broadcast_tabs_changed()
     response = await _list_response(self.project_id)
-    for child in children:
-        _schedule_teardown(child)
-    _schedule_teardown(self)
+    for tab in closing:
+        _schedule_teardown(tab)
     return response
 
 
-async def _visible_children(parent_ids: list[str]) -> list[Tab]:
-    """The visible tabs nested under any of ``parent_ids`` (a host's children)."""
+async def _with_children(tabs: list[Tab]) -> list[Tab]:
+    """``tabs`` plus every visible tab nested under one of them — what closing them
+    closes (a host closes with its children; nesting is one level deep)."""
     from flow_sdk.db.drivers.query import (  # noqa: PLC0415
         ExpressionNode,
         QueryFilter,
         QueryOp,
     )
 
-    ids = [str(pid) for pid in parent_ids if pid]
+    ids = [tab.id for tab in tabs]
     if not ids:
         return []
-    rows = await Tab.get_all(
-        QueryFilter(match=ExpressionNode(op=QueryOp.IN, operands=["parent_tab_id", ids]))
+    children = await Tab.get_all(
+        QueryFilter(
+            match=ExpressionNode(
+                op=QueryOp.AND,
+                operands=[
+                    ExpressionNode(op=QueryOp.IN, operands=["parent_tab_id", ids]),
+                    ExpressionNode(op=QueryOp.EQ, operands=["visible", True]),
+                ],
+            )
+        )
     )
-    return [row for row in rows if row.visible and row.id not in ids]
+    return [*tabs, *(child for child in children if child.id not in ids)]
 
 
 def _schedule_teardown(tab: Tab) -> None:
@@ -1710,10 +1715,8 @@ async def _http_close_many(
         QueryFilter(match=ExpressionNode(op=QueryOp.IN, operands=["id", ids]))
     )
     by_id = {tab.id: tab for tab in rows}
-    closing = [by_id[tab_id] for tab_id in ids if tab_id in by_id and by_id[tab_id].visible]
     # Hosts close with their nested children (see ``Tab.close``).
-    closing_ids = {tab.id for tab in closing}
-    closing += [child for child in await _visible_children(list(closing_ids)) if child.id not in closing_ids]
+    closing = await _with_children([by_id[tab_id] for tab_id in ids if tab_id in by_id and by_id[tab_id].visible])
 
     for tab in closing:
         await tab._soft_hide()

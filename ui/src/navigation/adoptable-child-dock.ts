@@ -1,6 +1,6 @@
 import { DockPointer } from './DockPointer';
 import { isContentAssetDock } from './content-asset-dock';
-import { ViewType, VIEWER_REGISTRY } from '@src/types/ViewType';
+import { ViewType, viewHostsTabs } from '@src/types/ViewType';
 
 /**
  * A PLAIN shell dock — a terminal, not a session anchor.
@@ -62,6 +62,6 @@ export function isAdoptableChildDock(dock: DockPointer, opts: { shown?: boolean 
  *  keeps nesting one level deep (`navigation/tab-hosts.ts`). */
 export function isWorkspaceAnchorDock(dock: DockPointer): boolean {
   if (dock.viewType === ViewType.PROJECT) return true;
-  if (dock.viewType && VIEWER_REGISTRY[dock.viewType]?.hostsTabs) return true;
+  if (viewHostsTabs(dock.viewType)) return true;
   return dock.viewType === ViewType.SHELL && DockPointer.isAgenticProcessPointer(dock.pointer?.trim() ?? '');
 }

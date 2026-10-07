@@ -1,4 +1,3 @@
-import { ViewType } from '@src/types/ViewType';
 import { DockPointer } from './DockPointer';
 
 /**
@@ -38,14 +37,16 @@ export function canonicalProcessDockPath(pathname: string, search: string): stri
  * Same tab either way: the Vibe dock's `tabHash` folds onto the shell identity.
  */
 export function canonicalVibeHostPath(pathname: string, search: string): string | null {
-  if (!/^\/(?:dock|win)\/shell\//.test(pathname) || !search.includes('viewMode=vibe')) return null;
+  // Cheap pre-filter, so the hot path never parses: only a shell URL carrying a
+  // Vibe option can be the old spelling (every hosted child carries one too).
+  if (!pathname.includes('/shell/') || !search.includes('viewMode=vibe')) return null;
   let dock: DockPointer;
   try {
     dock = DockPointer.fromUrl(`${pathname}${search}`);
   } catch {
     return null;
   }
-  if (dock.viewType !== ViewType.SHELL || !DockPointer.isAgenticProcessPointer(dock.pointer)) return null;
-  if (dock.options?.viewMode !== 'vibe') return null;
-  return dock.withViewMode(dock.viewMode).toUrl(pathname);
+  // `withViewMode` is the one rule: it only changes the family for a process.
+  const canonical = dock.withViewMode(dock.viewMode);
+  return canonical.viewType !== dock.viewType ? canonical.toUrl(pathname) : null;
 }

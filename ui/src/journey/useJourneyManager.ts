@@ -1,4 +1,4 @@
-import { dataContext, Shell, targetOf, TypeId, ViewType } from '@sdk';
+import { dataContext, Shell, targetOf, TypeId } from '@sdk';
 import { useOnTag, useProject } from '@sdk/react/hooks';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AssetEditor } from '@src/navigation/asset-doc-types';
@@ -169,7 +169,7 @@ export function useJourneyManager(state: UseJourneyResult): JourneyManagerView {
   // DockPointer owns the shell-pointer grammar (`shell-<id>` / bare / an
   // agentic process); never re-derive it from the raw path.
   const shellTypeId =
-    (currentDock?.viewType === ViewType.SHELL || currentDock?.viewType === ViewType.VIBE) && currentDock.pointer
+    DockPointer.isSessionView(currentDock?.viewType) && currentDock?.pointer
       ? DockPointer.terminalTargetTypeIdForShellPointer(currentDock.pointer)
       : null;
   const shellId = shellTypeId?.type === Shell.type ? shellTypeId.id : undefined;

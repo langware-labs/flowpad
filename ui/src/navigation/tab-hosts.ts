@@ -1,4 +1,4 @@
-import { ViewType, VIEWER_REGISTRY } from '@src/types/ViewType';
+import { ViewType, viewHostsTabs } from '@src/types/ViewType';
 import { DockPointer } from './DockPointer';
 import { isAdoptableChildDock } from './adoptable-child-dock';
 
@@ -28,8 +28,7 @@ const HOSTS: Partial<Record<ViewType, TabHost>> = {
 
 /** The host a view type is, or null for a leaf view. */
 export function tabHostFor(viewType: ViewType | null | undefined): TabHost | null {
-  if (!viewType || !VIEWER_REGISTRY[viewType]?.hostsTabs) return null;
-  return HOSTS[viewType] ?? null;
+  return viewHostsTabs(viewType) ? (HOSTS[viewType!] ?? null) : null;
 }
 
 /** Is this dock itself a host tab (as opposed to a child or a leaf)? */
