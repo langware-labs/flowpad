@@ -1,6 +1,10 @@
 import { useState } from 'react';
 import { useLingui } from '@lingui/react/macro';
-import { ArrowLeft, ArrowRight, FolderOpen, Home, RefreshCw, type LucideIcon } from 'lucide-react';
+import { ArrowLeft, ArrowRight, FolderOpen, Home, PanelsTopLeft, RefreshCw, type LucideIcon } from 'lucide-react';
+import { isHomeSurface } from '@src/navigation/dock-layout';
+import { tabDock } from '@src/tabs/project-entry';
+import { useLastKnownTab } from '@src/tabs/use-tab-manager';
+import { tagAttrs } from '@src/tags/tag-attrs';
 import { chromeEntityActionClassName } from '@src/components/entity-actions/action-button-styles';
 import { Button } from '@src/components/ui/button';
 import { cn } from '@src/lib/utils';
@@ -42,6 +46,11 @@ export function TopNavBar() {
   const { currentDock, navigation } = useDockNavigation();
   const { runtimeKind, project } = useContext();
   const { canGoBack, canGoForward, goBack, goForward, reload } = useHistoryNav();
+  // Home and Tabs are one button that flips: on the (tabless) home it goes BACK to
+  // the last active tab; on any tab it goes home. With no tab open, home is all
+  // there is, so it stays Home (disabled on the home itself).
+  const atHome = isHomeSurface(currentDock ?? null);
+  const lastTabDock = tabDock(useLastKnownTab(atHome));
 
   // Resolved ONCE per navigation and shared: the address and the actions both
   // need the dock's target, and resolving it twice would double the work on
@@ -77,12 +86,23 @@ export function TopNavBar() {
       {/* A full window reload, the same as the browser's own — no modifier
           gesture and no soft variant. Anything less does not reload. */}
       <NavIconButton icon={RefreshCw} label={t`Reload`} onClick={reload} testId="top-nav-reload" />
-      <NavIconButton
-        icon={Home}
-        label={t`Home`}
-        onClick={() => navigation.goHome({ homePage: true })}
-        testId="top-nav-home"
-      />
+      {lastTabDock ? (
+        <NavIconButton
+          icon={PanelsTopLeft}
+          label={t`Back to tabs`}
+          onClick={() => navigation.openDock(lastTabDock, undefined, { topLevel: true })}
+          testId="top-nav-tabs"
+          tag="TopNavTabs"
+        />
+      ) : (
+        <NavIconButton
+          icon={Home}
+          label={t`Home`}
+          onClick={() => navigation.goHome({ homePage: true })}
+          disabled={atHome}
+          testId="top-nav-home"
+        />
+      )}
       {/* Files sat on the rail; same destination, same one-liner, just beside
           the other place-buttons instead of below them. */}
       <NavIconButton
@@ -142,6 +162,7 @@ function NavIconButton({
   disabled = false,
   mirrorInRtl = false,
   testId,
+  tag,
 }: {
   icon: LucideIcon;
   label: string;
@@ -153,6 +174,8 @@ function NavIconButton({
    *  language and must NOT be flipped. */
   mirrorInRtl?: boolean;
   testId: string;
+  /** Observable/highlightable tag word (journeys target it). */
+  tag?: string;
 }) {
   return (
     <Tooltip>
@@ -169,6 +192,7 @@ function NavIconButton({
             onClick={onClick}
             aria-label={label}
             data-testid={testId}
+            {...(tag ? tagAttrs(tag, 'button') : {})}
           >
             <Icon className={cn(mirrorInRtl && 'rtl:-scale-x-100')} />
           </Button>

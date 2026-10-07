@@ -100,7 +100,7 @@ async function launch(): Promise<void> {
 test('a build opens from the rail (warm-up)', async () => {
   await page.goto('/?viewMode=vibe');
   await expect(page.locator('html')).toHaveAttribute('data-view', 'vibe');
-  await page.locator('[data-tag="RailChats"]').click();
+  await page.locator('[data-tag="TopNavTabs"]').click();
   await expect(workspace()).toBeVisible();
 });
 

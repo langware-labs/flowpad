@@ -38,8 +38,7 @@ describe('resolveRail — modes are strictly additive', () => {
   });
 
   it('Standard is Vibe plus nothing — the two rails have the same members', () => {
-    // Standard's only difference from Vibe is what `chats` targets, which is a
-    // click-time fork in the component, not a membership difference.
+    // The Standard tier adds no rail slot of its own.
     expect(idsFor(ViewMode.Standard)).toEqual(idsFor(ViewMode.Vibe));
   });
 
@@ -87,7 +86,7 @@ describe('resolveRail — order is the same in every mode', () => {
     const top = resolveRail(ViewMode.Vibe)
       .filter((item) => item.placement === 'top')
       .map((item) => item.id);
-    expect(top).toEqual(['chats', 'stream_inbox', 'credentials']);
+    expect(top).toEqual(['stream_inbox', 'credentials']);
   });
 });
 

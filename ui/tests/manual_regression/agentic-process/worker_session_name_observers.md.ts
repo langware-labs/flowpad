@@ -90,7 +90,7 @@ test('two browsers receive native title changes and same-text pinning with an id
     // Open the observer before any process tab exists. It never selects a
     // process, even when the other browser later materializes a shared Tab.
     await observer.goto(withViewMode(`/dock/project/${projectId}`, 'standard'));
-    await observer.locator('[data-rail-item="chats"]').click();
+    await observer.goto(withViewMode('/dock/shell', 'standard'));
     await expect(observer.getByRole('button', { name: 'Current project: naming-observer-fixture', exact: true }))
       .toHaveAttribute('aria-pressed', 'true');
     await observerIsIdle(observer);

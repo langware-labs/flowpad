@@ -92,10 +92,10 @@ export const VIBE_EXIT_MODE_SWITCH = new JourneyGraph({
     step(
       'open_build',
       'Open a build',
-      'Click the speech-bubble icon in the left rail to reopen your last build. This is the real thing — an agent session, not a demo.',
+      'Click the tabs button in the top bar to go back to your last build. This is the real thing — an agent session, not a demo.',
       {
-        present: { dock: { kind: 'root', viewMode: 'vibe' }, highlight: 'RailChats' },
-        act: { kind: 'click', target: 'RailChats' },
+        present: { dock: { kind: 'root', viewMode: 'vibe' }, highlight: 'TopNavTabs' },
+        act: { kind: 'click', target: 'TopNavTabs' },
         waitFor: [{ element: { present: 'VibeDisplay' } }],
       },
     ),

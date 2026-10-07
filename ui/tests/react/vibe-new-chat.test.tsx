@@ -70,4 +70,14 @@ describe('VibeNewChat', () => {
       VIBE_MODEL_DEFAULT,
     );
   });
+
+  it('carries no model picker — the tier is set in the chat pane, not on the home', () => {
+    render(
+      <MemoryRouter>
+        <VibeNewChat />
+      </MemoryRouter>,
+    );
+
+    expect(screen.queryByTestId('vibe-model-select')).toBeNull();
+  });
 });

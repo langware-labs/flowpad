@@ -13,8 +13,8 @@ import { HOME_PAGE_OPEN, HOME_PAGE_PARAM, rememberProjectHomePage } from './home
 export const PROJECT_HOME_PAGE_ENABLED = true;
 
 /**
- * Where an AGENT home page lands: its last chat in this project — the rail's
- * Chats-icon query narrowed to the agent (`lastVibeChatQuery`) — else a new
+ * Where an AGENT home page lands: its last chat in this project — the
+ * last-chat query narrowed to the agent (`lastVibeChatQuery`) — else a new
  * session, opened with the same pre-turn stack `useAgentLauncher` gives one
  * (auto prompt queued, vibe embedded, turn 1 started). A resumed chat already
  * had its turn 1, so nothing is re-sent.
