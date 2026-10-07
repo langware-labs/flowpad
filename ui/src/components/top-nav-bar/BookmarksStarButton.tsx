@@ -79,6 +79,8 @@ export function BookmarksStarButton({ favorite }: { favorite: FavoriteRef }) {
         ref={triggerRef}
         {...menu.hoverProps}
         data-anchored-menu-ignore
+        // Where a favorite made elsewhere (a tab's star) points the user to.
+        data-minimize-anchor="bookmarks-star"
         data-testid="top-nav-bookmarks-star"
         className="relative inline-flex shrink-0"
       >

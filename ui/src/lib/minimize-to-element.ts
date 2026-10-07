@@ -18,6 +18,7 @@ import { animateGlow } from './animate-glow';
 // test refactors without anyone noticing the animation silently degrading).
 const PENDING_CHIP_SELECTOR = '[data-minimize-anchor="process-chip"]';
 const FOOTER_SELECTOR = '[data-minimize-anchor="footer"]';
+const BOOKMARKS_STAR_SELECTOR = '[data-minimize-anchor="bookmarks-star"]';
 
 /** The flight's timing, shared with maximize-from (the same flight played backwards). */
 export const GENIE_DURATION_MS = 450;
@@ -50,9 +51,15 @@ export function genieTransform(box: Box, onto: Box): string {
   return `translate(${dx}px, ${dy}px) scale(${scale})`;
 }
 
+interface FlightOptions {
+  /** Leave the source on screen — the flight POINTS at where it went, nothing moved. */
+  keepSource?: boolean;
+}
+
 export function animateMinimizeToElement(
   source: HTMLElement | null,
   target: HTMLElement | null,
+  { keepSource = false }: FlightOptions = {},
 ): void {
   if (!source || !target || typeof source.animate !== 'function') return;
   if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
@@ -79,7 +86,7 @@ export function animateMinimizeToElement(
   document.body.appendChild(ghost);
   // Hide the source so its own exit animation doesn't double-image with the
   // flight; the caller closes it right after, so it's about to unmount anyway.
-  source.style.visibility = 'hidden';
+  if (!keepSource) source.style.visibility = 'hidden';
 
   const flight = ghost.animate(
     [
@@ -105,4 +112,18 @@ export function animateMinimizeToProcessChip(source: HTMLElement | null): void {
     document.querySelector<HTMLElement>(PENDING_CHIP_SELECTOR) ??
     document.querySelector<HTMLElement>(FOOTER_SELECTOR);
   animateMinimizeToElement(source, target);
+}
+
+/**
+ * "That is where it is now": the minimize flight and the landing glow, but
+ * nothing minimizes — the source stays where it is. A copy of it flies into
+ * `target`, so the user learns where the thing they just saved can be found.
+ */
+export function animatePointTo(source: HTMLElement | null, target: HTMLElement | null): void {
+  animateMinimizeToElement(source, target, { keepSource: true });
+}
+
+/** Point `source` at the navigation bar's bookmarks star — where a favorite lives. */
+export function animatePointToBookmarks(source: HTMLElement | null): void {
+  animatePointTo(source, document.querySelector<HTMLElement>(BOOKMARKS_STAR_SELECTOR));
 }

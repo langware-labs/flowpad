@@ -22,6 +22,9 @@ import {
   type TabLifecycleEntry,
 } from '@sdk';
 import { EntityIcon } from '@src/components/graph-view/ui/EntityIcon';
+import { favoriteTargetForDock } from '@src/components/favorites/favorite-target';
+import type { FavoriteRef } from '@src/hooks/use-favorites';
+import { tabDock } from '@src/tabs/project-entry';
 import { type TabStripItem } from '@src/components/tabs/TabStrip';
 import { useEntity } from '@src/hooks/entity-hooks';
 import { useLaunchingAgent } from '@src/hooks/use-launching-agent';
@@ -75,8 +78,22 @@ function ProcessTabIcon({ processId, fallback }: { processId: string; fallback: 
   );
 }
 
-/** Tab → chip. */
+/** Tab → chip, leading with the tab's own bookmark star when it has one to offer. */
 export function tabItem(tab: Tab, lifecycle: TabLifecycleEntry | null = null): TabStripItem {
+  const item = chipFor(tab, lifecycle);
+  return { ...item, favorite: tabFavorite(tab, item.title) };
+}
+
+/** What bookmarking this tab means — the SAME answer the navigation bar's star
+ *  gives when the tab is active (`favoriteTargetForDock` over its dock and that
+ *  dock's target), so the two stars light together. */
+function tabFavorite(tab: Tab, title: string): FavoriteRef | null {
+  const dock = tabDock(tab);
+  const typeId = dock?.targetTypeId ?? null;
+  return favoriteTargetForDock(dock, typeId ? { typeId, entity: null } : null, title);
+}
+
+function chipFor(tab: Tab, lifecycle: TabLifecycleEntry | null): TabStripItem {
   const dock = tab.dockPointer;
   const key = tabKey(tab);
   // No char-level clipping: CSS truncation in the strip owns visible clipping
