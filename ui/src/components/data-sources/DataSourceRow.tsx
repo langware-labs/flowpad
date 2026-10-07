@@ -35,7 +35,8 @@ import { IconWithBadge } from '@src/components/graph-view/icons/IconWithBadge';
 import { ChannelRouteControl } from './ChannelRouteControl';
 import { SourceMenu } from './SourceMenu';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { openDriver, openSourceFile } from './data-sources-pointer';
+import { openDriver } from './data-sources-pointer';
+import { DockPointer } from '@src/navigation/DockPointer';
 import { useSourceToggle } from './use-source-toggle';
 import { useSourceVerify } from './use-source-verify';
 
@@ -130,14 +131,16 @@ export function DataSourceRow({ source, spec, onEdit, onReplay, onDelete }: Prop
             data-testid={`source-icon-${source.id}`}
           />
           <div className="flex min-w-0 items-baseline gap-2">
-            {/* The name opens the source's own file; the provider opens the driver it is an instance of. */}
+            {/* The name opens what the source DOES: this machine's event stream narrowed to it (its file is in the
+                menu); the provider opens the driver it is an instance of. URL-first, like the menu's own link. */}
             <button
               type="button"
-              className="truncate text-start text-sm font-medium leading-tight hover:underline disabled:no-underline"
-              title={source.asset_ref ? t`Open data_source.json` : source.name}
-              disabled={!source.asset_ref}
-              data-testid={`data-source-file-${source.id}`}
-              onClick={() => openSourceFile(navigation, source.asset_ref)}
+              className="truncate text-start text-sm font-medium leading-tight hover:underline"
+              title={t`Show its events`}
+              data-testid={`data-source-events-${source.id}`}
+              onClick={() =>
+                navigation.openDock(DockPointer.forAutomations({ place: 'bus', target: `data_source:${source.id}` }))
+              }
             >
               {source.name || source.provider || source.id.slice(0, 8)}
             </button>
@@ -242,4 +245,9 @@ export const HEADER_ROW =
   'border-b border-border bg-muted/30 py-2 text-[11px] font-medium uppercase tracking-wider text-muted-foreground';
 
 /** The one column template the header and every row share. */
-export const ROW_GRID = 'grid grid-cols-[minmax(0,1fr)_7rem_6rem_6rem_auto] items-center gap-3 px-4 py-1.5';
+/** Every column is a fixed track: each row is a grid of its own, so an `auto` actions column sized itself per row
+ *  and pulled the other columns out of line with the header. */
+export const ROW_GRID = 'grid grid-cols-[minmax(0,1fr)_8rem_6rem_6rem_12rem] items-center gap-3 px-4 py-1.5';
+
+/** The rows carry a 3px status border at the start; the header a clear one, so its columns start where theirs do. */
+export const HEADER_INSET = 'border-s-[3px] border-s-transparent';
