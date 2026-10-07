@@ -250,7 +250,8 @@ function MessageMenuItems({
       {onDelete && (
         <DropdownMenuItem onSelect={onDelete} className="text-destructive focus:text-destructive" data-testid="message-delete">
           <Trash2 className="h-3.5 w-3.5" />
-          <Trans>Delete message</Trans>
+          {/* A channel's message lives on the channel: only Flowpad's copy can go. */}
+          {origin ? <Trans>Remove from Flowpad</Trans> : <Trans>Delete message</Trans>}
         </DropdownMenuItem>
       )}
     </>

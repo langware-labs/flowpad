@@ -426,9 +426,13 @@ export function MessageBubble({
         <ConfirmDialog
           open={confirmingDelete}
           onOpenChange={setConfirmingDelete}
-          title={t`Delete this message?`}
-          description={t`This permanently deletes the message and all of its data for everyone in the conversation. This can't be undone.`}
-          confirmLabel={t`Delete`}
+          title={flowMessage?.origin ? t`Remove this message from Flowpad?` : t`Delete this message?`}
+          description={
+            flowMessage?.origin
+              ? t`Removes Flowpad's copy. The message stays where it was sent.`
+              : t`This permanently deletes the message and all of its data for everyone in the conversation. This can't be undone.`
+          }
+          confirmLabel={flowMessage?.origin ? t`Remove` : t`Delete`}
           variant="destructive"
           onConfirm={onDeleteMessage}
         />

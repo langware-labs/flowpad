@@ -1,13 +1,13 @@
 import { useCallback } from 'react';
 import { MessageSquare } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
-import { DataSource } from '@sdk';
+import { DataSource, type Conversation } from '@sdk';
 import type { IChannelSpec, ICloudOrigin, ICloudOriginLocal } from '@sdk';
 import { Badge } from '@src/components/ui/badge';
-import { sourceIconName } from '@src/components/data-sources/source-icon';
+import { sourceGlyphs, sourceIconName } from '@src/components/data-sources/source-icon';
+import { IconWithBadge } from '@src/components/graph-view/icons/IconWithBadge';
 import { sourcesQuery, useSourceSpecs } from '@src/components/data-sources/use-source-specs';
 import { useEntitiesQuery } from '@src/hooks/entity-hooks';
-import { lucideByName } from '@src/lib/lucide-by-name';
 import { cn } from '@src/lib/utils';
 import { humanizeType } from '@src/utils/humanize';
 
@@ -33,6 +33,8 @@ import { humanizeType } from '@src/utils/humanize';
 
 export interface ChannelAttribution {
   icon: LucideIcon;
+  /** Whose way it is, on the channel's mark (Flow on WhatsApp) — the same pair the source's own row shows. */
+  badge: LucideIcon | null;
   label: string;
 }
 
@@ -89,14 +91,36 @@ export function useChannelAttribution() {
       // rows are labelled by that channel too — a Slack row reads "Slack", not
       // "Agent transport".
       const byChannel = !!sourceSpec?.channel_icon_names?.[kind];
-      const label = (byChannel ? undefined : sourceSpec?.title) || kindSpec?.title || channelLabel(kind);
-      const name = sourceIconName(sourceSpec, kind) || sourceIconName(kindSpec, kind);
-      return { icon: name ? lucideByName(name) : MessageSquare, label };
+      // A driver in a group is one way to that CHANNEL ("Flow — no setup" is a way to WhatsApp): the row names the
+      // channel, the group, never the way's own title.
+      const label =
+        (byChannel ? undefined : sourceSpec?.group || sourceSpec?.title) ||
+        kindSpec?.group ||
+        kindSpec?.title ||
+        channelLabel(kind);
+      // The first spec that names a glyph; none: a chat bubble, not the DataSource type's registry glyph.
+      const spec = [sourceSpec, kindSpec].find((x) => sourceIconName(x, kind));
+      if (!spec) return { icon: MessageSquare, badge: null, label };
+      const { Base, Badge } = sourceGlyphs(spec, kind);
+      return { icon: Base, badge: Badge, label };
     },
     [sources, specFor],
   );
 
-  return { attributionFor };
+  /** A whole conversation's channel — what its header names it by, before any message is read. */
+  const attributionForConversation = useCallback(
+    (conv: Pick<Conversation, 'channel' | 'channel_source_id' | 'channel_spec'>) =>
+      conv.channel
+        ? attributionFor(
+            { kind: conv.channel, namespace: '', key: '', url: null },
+            conv.channel_source_id ? { data_source_id: conv.channel_source_id, source_item_id: '' } : null,
+            conv.channel_spec,
+          )
+        : null,
+    [attributionFor],
+  );
+
+  return { attributionFor, attributionForConversation };
 }
 
 // Same compact treatment as CategoryChips — one visual language, no new pill.
@@ -122,7 +146,7 @@ export function SourceChip({
   iconOnly?: boolean;
 }) {
   if (!attribution) return null;
-  const Icon = attribution.icon;
+  const { icon, badge } = attribution;
   if (iconOnly) {
     // The tooltip lives on a WRAPPER, never as a child of the glyph: an icon
     // resolved from a spec asset can render an <img>, and a void element may
@@ -134,7 +158,7 @@ export function SourceChip({
         title={attribution.label}
         aria-label={attribution.label}
       >
-        <Icon className="size-3.5 shrink-0 text-muted-foreground" />
+        <IconWithBadge Base={icon} Badge={badge} className="size-3.5 shrink-0 text-muted-foreground" />
       </span>
     );
   }
@@ -145,7 +169,7 @@ export function SourceChip({
       data-chip-type="source"
       title={attribution.label}
     >
-      <Icon className="size-4 shrink-0" />
+      <IconWithBadge Base={icon} Badge={badge} className="size-4 shrink-0" />
       {attribution.label}
     </Badge>
   );

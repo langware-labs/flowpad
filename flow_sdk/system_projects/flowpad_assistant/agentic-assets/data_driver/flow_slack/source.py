@@ -22,6 +22,8 @@ class FlowSlackSource(FlowChannel):
     origin_kind = CHANNEL
     channel = CHANNEL
     title = "Slack"
+    #: As on Slack itself: a reply lands in the message's thread.
+    quotes = False
     noun = "Slack account"
 
     def sender_of(self, value: Any) -> str:

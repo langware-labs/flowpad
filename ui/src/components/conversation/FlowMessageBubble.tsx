@@ -757,7 +757,8 @@ export function FlowMessageBubble({
         senderName={displayName}
         onSenderClick={agentSender ? () => navigation.openDock(agentSender.dockPointer) : undefined}
         onEditName={
-          isCurrentUser
+          // A channel's sender is who they are on the channel — not a Flowpad name to edit.
+          isCurrentUser && channelTraits?.native !== false
             ? (newName) => {
                 setOverrideName(newName);
                 void updateName(newName);

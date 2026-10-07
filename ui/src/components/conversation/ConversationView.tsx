@@ -614,7 +614,8 @@ export function ConversationView({
   // cheap no-op. Debounced 250ms to coalesce bursts (e.g. catch-up).
   const ackedRef = useRef<Set<string>>(new Set());
   useEffect(() => {
-    if (pointers.length === 0) return;
+    // A channel's messages were delivered by the channel, not the hub: there is no hub receipt to send.
+    if (channel || pointers.length === 0) return;
     const candidates = pointers.map((p) => p.id).filter((id) => id && !ackedRef.current.has(id));
     if (candidates.length === 0) return;
     const handle = setTimeout(() => {
@@ -627,7 +628,7 @@ export function ConversationView({
     }, 250);
     return () => clearTimeout(handle);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pointers.map((p) => p.id).join(',')]);
+  }, [channel, pointers.map((p) => p.id).join(',')]);
 
   // Help-desk (support) ticket: replies are masked to a single brand
   // identity, and the real responder's sender_id is intentionally absent from
@@ -846,7 +847,7 @@ export function ConversationView({
         <button
           type="button"
           onClick={() => void handleRefresh()}
-          title={t`Refresh (pulls from hub)`}
+          title={channel ? t`Refresh (checks the channel for new messages)` : t`Refresh (pulls from hub)`}
           data-testid="refresh-conversation-button"
           className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
         >
