@@ -5872,6 +5872,11 @@ msgstr "Could not load runs"
 #~ msgid "Could not load source: {error}"
 #~ msgstr "Could not load source: {error}"
 
+#. placeholder {0}: definitionError.message
+#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
+msgid "Could not load the agent's definition: {0}"
+msgstr "Could not load the agent's definition: {0}"
+
 #: src/components/automations/BusView.tsx
 msgid "Could not load the bus"
 msgstr "Could not load the bus"
@@ -12551,6 +12556,10 @@ msgstr "Loading chats…"
 #: src/components/code-editor/DiffViewer.tsx
 msgid "Loading checkpoint diff..."
 msgstr "Loading checkpoint diff..."
+
+#: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
+msgid "Loading cloud machines…"
+msgstr "Loading cloud machines…"
 
 #: src/components/assets/editor/task/TaskComments.tsx
 msgid "Loading comments…"
@@ -21371,6 +21380,10 @@ msgstr "Sign in to see the people and teams you share work with."
 msgid "Sign in to see who's a member"
 msgstr "Sign in to see who's a member"
 
+#: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
+msgid "Sign in to the hub to deploy to a cloud machine."
+msgstr "Sign in to the hub to deploy to a cloud machine."
+
 #: src/components/graph-view/ui/AccessTab.tsx
 msgid "Sign in to view access."
 msgstr "Sign in to view access."
@@ -22055,6 +22068,10 @@ msgstr "Started again as a test run."
 #: src/components/automations/TestPanel.tsx
 msgid "Started. Follow it under Runs."
 msgstr "Started. Follow it under Runs."
+
+#: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
+msgid "Starting a machine — this takes a couple of minutes."
+msgstr "Starting a machine — this takes a couple of minutes."
 
 #: src/components/assets/editor/agent-profile/AgentDeploymentsSection.tsx
 #: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx

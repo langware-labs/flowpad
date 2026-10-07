@@ -40,8 +40,8 @@ async def _stripe_here(project) -> None:
 async def test_a_planned_cloud_deployment_keeps_its_values_in_the_hub_and_keeps_that_across_adoptions(home, project, hub):
     agent = await _agent(project)
 
-    deployment = await agent.plan_deployment("production")
-    again = await agent.plan_deployment("production")
+    deployment = await agent.plan_deployment("production", provider="e2b")
+    again = await agent.plan_deployment("production", provider="e2b")
 
     assert deployment.remote and deployment.secrets.store.type == "hub"
     assert again.id == deployment.id and again.secrets == deployment.secrets
@@ -66,24 +66,24 @@ async def test_the_deploy_is_refused_until_use_mine_fills_the_store(home, projec
     monkeypatch.setattr(Agent, "ensure_on_hub", _published)  # publishing is the git path's; not under test here
 
     with pytest.raises(NotReady) as refused:
-        await agent.deploy_to_cloud("user-1", "production")
+        await agent.deploy_to_cloud("user-1", "production", provider="e2b")
     assert [(i.requirement.name, i.remedy) for i in refused.value.readiness.items if i.status == "missing"] == [
         ("stripe", "use_mine")
     ]
     assert hub.deploys == [], "no machine is paid for"
 
-    deployment = await agent.plan_deployment("production")
+    deployment = await agent.plan_deployment("production", provider="e2b")
     assert await use_mine(str(deployment.id)) == {"copied": ["STRIPE_KEY"], "not_here": [], "hub_funded": []}
     assert hub.values[str(deployment.id)] == {"STRIPE_KEY": VALUE}
 
-    await agent.deploy_to_cloud("user-1", "production")
-    assert hub.deploys == [{"environment": "production", "require": ["STRIPE_KEY"]}]
+    await agent.deploy_to_cloud("user-1", "production", provider="e2b")
+    assert hub.deploys == [{"environment": "production", "provider": "e2b", "require": ["STRIPE_KEY"]}]
 
 
 async def test_a_protected_deployment_refuses_use_mine(home, project, hub):
     agent = await _agent(project)
     await _stripe_here(project)
-    deployment = await agent.plan_deployment("production")
+    deployment = await agent.plan_deployment("production", provider="e2b")
     deployment.secrets = deployment.secrets.model_copy(update={"protected": True})
     await deployment.save()
 
@@ -95,7 +95,7 @@ async def test_a_protected_deployment_refuses_use_mine(home, project, hub):
 async def test_deleting_a_credential_removes_its_value_from_the_hub_too(home, project, hub):
     agent = await _agent(project)
     await _stripe_here(project)
-    deployment = await agent.plan_deployment("production")
+    deployment = await agent.plan_deployment("production", provider="e2b")
     await use_mine(str(deployment.id))
     from flow_sdk.builtin.credential import Credential
 
@@ -119,7 +119,7 @@ async def test_an_oauth_need_on_a_cloud_deployment_needs_the_owners_authorizatio
                   requirements=[RequirementSpec(kind="connection", name="slack")])
     await agent.save()
     fake_connections(monkeypatch, {"slack": ConnectionSpec(provider="slack", display_name="Slack", connected=True)})
-    deployment = await agent.plan_deployment("production")
+    deployment = await agent.plan_deployment("production", provider="e2b")
 
     before = (await readiness(agent, deployment)).items
     assert [(i.status, i.fix) for i in before] == [("missing", "authorize slack for this deployment")]
@@ -132,7 +132,7 @@ async def test_an_oauth_need_on_a_cloud_deployment_needs_the_owners_authorizatio
 async def test_flow_credentials_diff_then_use_mine_closes_the_gap(home, project, hub, run_flow):
     agent = await _agent(project)
     await _stripe_here(project)
-    deployment = str((await agent.plan_deployment("production")).id)
+    deployment = str((await agent.plan_deployment("production", provider="e2b")).id)
     diff = ("credentials", "diff", "here", deployment, "--project", str(project.id))
 
     before = json.loads((await run_flow(*diff)).stdout)
@@ -149,7 +149,7 @@ async def test_flow_credentials_diff_then_use_mine_closes_the_gap(home, project,
 async def test_flow_credentials_check_and_set_take_a_deployment(home, project, hub, run_flow):
     agent = await _agent(project)
     await _stripe_here(project)
-    deployment = str((await agent.plan_deployment("production")).id)
+    deployment = str((await agent.plan_deployment("production", provider="e2b")).id)
     check = ("credentials", "check", "stripe", "--project", str(project.id), "--deployment", deployment)
 
     missing = await run_flow(*check)
@@ -176,7 +176,7 @@ def _request(monkeypatch, body: dict):
 async def test_the_deploy_dialog_plans_then_authorizes_and_revokes_over_rest(home, project, hub, monkeypatch):
     agent = await _agent(project)
 
-    _request(monkeypatch, {"environment": "staging"})
+    _request(monkeypatch, {"environment": "staging", "provider": "e2b"})
     planned = (await agent.plan_deployment_action()).data
     deployment = await Deployment.get_by_id(planned["deployment"]["id"])
     _request(monkeypatch, {"provider": "google"})
@@ -200,7 +200,7 @@ async def test_use_mine_never_copies_an_llm_provider_key(home, project, hub):
     await save_credential(scope="user", manifest={"name": "openrouter", "vars": {"OPENROUTER_API_KEY": {}},
                                                   "setup": "x", "lm_provider": "openrouter"},
                           values={"OPENROUTER_API_KEY": "sk-or-mine"})
-    deployment = await agent.plan_deployment("production")
+    deployment = await agent.plan_deployment("production", provider="e2b")
 
     result = await use_mine(str(deployment.id), ["OPENROUTER_API_KEY"])
 
@@ -211,7 +211,7 @@ async def test_use_mine_never_copies_an_llm_provider_key(home, project, hub):
 async def test_a_cloud_deployment_that_cannot_pay_for_a_turn_is_not_ready_and_says_which_limit(home, project, hub):
     agent = await _agent(project)
     await _stripe_here(project)
-    deployment = await agent.plan_deployment("production")
+    deployment = await agent.plan_deployment("production", provider="e2b")
     await use_mine(str(deployment.id))
 
     unknown = await readiness(agent, deployment)
@@ -226,3 +226,13 @@ async def test_a_cloud_deployment_that_cannot_pay_for_a_turn_is_not_ready_and_sa
     (item,) = [i for i in spent.items if i.requirement.kind == "funding"]
     assert not spent.ready and item.status == "missing" and "cost_usd_per_day" in item.fix
     assert "funding" not in {r.kind for r in agent.requirements or []}, "asked at readiness, never written to the agent"
+
+
+async def test_a_deploy_naming_no_provider_leaves_the_choice_to_the_hub(home, project, hub, monkeypatch):
+    agent = Agent(name="any-cloud", project_id=str(project.id))
+    await agent.save()
+    monkeypatch.setattr(Agent, "ensure_on_hub", _published)
+
+    await agent.deploy_to_cloud("user-1", "production")
+    await agent.deploy_to_cloud("user-1", "production", provider="gcp_vm")
+    assert [d["provider"] for d in hub.deploys] == [None, "gcp_vm"]
