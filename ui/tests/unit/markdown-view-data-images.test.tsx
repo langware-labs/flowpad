@@ -17,6 +17,8 @@ describe('MarkdownView data images', () => {
   it('draws an inline image only when asked, and never a data link', () => {
     const { container } = render(<MarkdownView value={DOC} dataImages />);
     expect(container.querySelector('img')).toHaveAttribute('src', QR);
+    // On its own white card: black-on-transparent vanishes on a dark theme, and cameras read dark-on-light.
+    expect(container.querySelector('img')).toHaveClass('bg-white');
     const hrefs = [...container.querySelectorAll('a')].map((a) => a.getAttribute('href') ?? '');
     expect(hrefs).toContain('https://wa.me/1');
     expect(hrefs.some((h) => h.startsWith('data:'))).toBe(false);

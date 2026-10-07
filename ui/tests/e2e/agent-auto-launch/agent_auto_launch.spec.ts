@@ -112,6 +112,6 @@ test('opening the project auto-launches the oldest agent once, with its intro an
 test('opening the project again does not launch a second session', async ({ page }) => {
   await page.goto(`/dock/project/${projectId}`);
   // The project view renders and the URL stays put: no redirect this time.
-  await expect(page.getByText('Context folders', { exact: true })).toBeVisible();
+  await expect(page.getByText('Dependencies', { exact: true }).first()).toBeVisible();
   await expect(page).toHaveURL(new RegExp(`/dock/project/${projectId}`));
 });

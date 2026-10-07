@@ -219,6 +219,13 @@ class DataDriverSpec(DataSpec):
     #: phase, where each member is a card. ``group_order`` orders the cards (lowest first).
     group: str = ""
     group_order: int = 0
+    #: The group tile's own glyph (a lucide / brand icon name). The tile is the CHOICE ("WhatsApp"), not any one
+    #: way to it, so it does not borrow a member's icon -- Flow's card is Flowpad's logo, the tile is WhatsApp's.
+    #: Any member may declare it; the first declared, in ``group_order``, wins.
+    group_icon_name: str = ""
+    #: The name a new source of this driver starts with ("Flow WhatsApp agent"): what it IS to the person, which
+    #: the group ("WhatsApp") is not. Blank: the driver's title. Always editable.
+    default_name: str = ""
 
     @field_validator("setup_wizards")
     @classmethod

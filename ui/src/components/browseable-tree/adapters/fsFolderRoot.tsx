@@ -43,7 +43,7 @@ export interface FsFolderRootDeps {
   /** Destination override for FILE rows only — see `FsNodeCtx.filePointerFor`. */
   filePointerForVfs?: (path: VFSPath) => DockPointer;
   /** When true, file/folder rows carry an `FsDragItem` drag payload so drop
-   *  targets (e.g. the Assets context-folder rows) can accept them. */
+   *  targets (e.g. the Assets dependency rows) can accept them. */
   draggable?: boolean;
 }
 
@@ -198,7 +198,7 @@ function folderNode(ctx: FsNodeCtx, rel: string, label: string): Browseable {
 
 /** Public factory: a browseable folder node addressing an absolute compute-node
  *  path (leading slash stripped to the entity-relative form the VFS uses). Used
- *  by the Explorer's `context_folders` grouping root, which lists project
+ *  by the Explorer's `dependencies` grouping root, which lists project
  *  `include_dirs` that may live anywhere on the compute node's VFS. */
 export function fsFolderNode(
   typeId: TypeId,
@@ -213,7 +213,7 @@ export function fsFolderNode(
 
 /** Assets-body variant of `fsFolderNode`: rows address the Assets fs/ file
  *  manager (`/dock/assets/fs/<rel>`) instead of the Explorer, and are
- *  draggable. Used by the Assets navigator's context-folder rows so a context
+ *  draggable. Used by the Assets navigator's dependency rows so a dependency
  *  folder expands into its real on-disk tree. `folderDrop` (optional) makes
  *  every folder in the subtree a drop target bound to its own rel path. */
 export function assetsFsFolderNode(

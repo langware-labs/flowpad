@@ -21,7 +21,7 @@ import { hasBrowseableDrag, hasExternalFilesDrag, readBrowseableDrag } from '@sr
 import { isFsDragItem } from '@src/components/browseable-tree/adapters/fsFolderRoot';
 import { openArtifact } from '@src/components/task-bar/task-utils';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
-import { useProjectContextFolders } from '@src/hooks/use-project-context-folders';
+import { useProjectDependencies } from '@src/hooks/use-project-dependencies';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { cn } from '@src/lib/utils';
 import { notify } from '@src/notifications';
@@ -96,9 +96,9 @@ const looksLikeFolder = (label: string) => !/\.[A-Za-z0-9]{1,8}$/.test(label);
  * or OS files (desktop app) — or the + button (native file/folder picker).
  * Stored in the existing `artifacts` field (`{path, label, git_origin?}`), so
  * the TaskCard artifacts row renders the same list. Folders inside a git
- * context folder get a git sub-icon, and their repo origin is captured at
+ * dependency get a git sub-icon, and their repo origin is captured at
  * attach time (`git_origin`) so it rides in task.md to the recipient — clicking
- * a not-present git folder there launches the git-context-folder clone wizard.
+ * a not-present git folder there launches the git-dependency clone wizard.
  */
 export function TaskAttachments({ task, save, readOnly = false, heading }: TaskAttachmentsProps) {
   const { navigation, currentDock } = useDockNavigation();
@@ -116,12 +116,12 @@ export function TaskAttachments({ task, save, readOnly = false, heading }: TaskA
   const attachments = useMemo(() => normalizeAttachments(task.artifacts), [task.artifacts]);
 
   // Git detection: an attachment that IS (or lives inside) one of the
-  // project's git context folders gets the git sub-icon. User-scope tasks
+  // project's git dependencies gets the git sub-icon. User-scope tasks
   // (~/tasks) carry no project_id — fall back to the URL scope's project,
-  // which is where the dragged context folders live.
+  // which is where the dragged dependency folders live.
   const scopeProjectId = task.project_id || currentDockScope?.activeProjectId || null;
   const { data: project } = useEntity<Project>(scopeProjectId ? new TypeId(Project.type, scopeProjectId) : null);
-  const { contextDirInfos } = useProjectContextFolders(project ?? null);
+  const { contextDirInfos } = useProjectDependencies(project ?? null, { fetchStates: false });
   const gitDirs = useMemo(
     () =>
       contextDirInfos
@@ -138,7 +138,7 @@ export function TaskAttachments({ task, save, readOnly = false, heading }: TaskA
   );
   const isGitPath = useCallback((path: string) => !!gitDirFor(path), [gitDirFor]);
 
-  // Capture the repo origin for a path that lives in a git context folder, read
+  // Capture the repo origin for a path that lives in a git dependency, read
   // off the folder's Folder entity (the recipient has neither, so it must ride
   // on the attachment). Null for non-git paths or origins with no clone URL.
   const resolveGitOrigin = useCallback(
@@ -186,7 +186,7 @@ export function TaskAttachments({ task, save, readOnly = false, heading }: TaskA
       for (const p of paths) {
         if (!p) continue;
         // Git folder: identity is the origin; a machine-independent offset
-        // within its context folder replaces the sender's absolute path.
+        // within its dependency folder replaces the sender's absolute path.
         const git_origin = await resolveGitOrigin(p);
         const entry = makeAttachmentEntry(p, git_origin, git_origin ? (gitDirFor(p)?.path ?? null) : null);
         const key = attachmentKey(entry);
@@ -298,11 +298,11 @@ export function TaskAttachments({ task, save, readOnly = false, heading }: TaskA
     (a: Attachment) => {
       const url = a.git_origin ? gitOriginCloneUrl(a.git_origin) : '';
       if (!url) return null;
-      return launchWizard('git-context-folder', {
+      return launchWizard('git-dependency', {
         title: t`Pull ${a.label}`,
         payload: {
           projectId: scopeProjectId ?? dataContext.project?.id ?? null,
-          scope: 'private',
+          optional: false,
           mode: 'existing',
           url,
         },
@@ -311,8 +311,8 @@ export function TaskAttachments({ task, save, readOnly = false, heading }: TaskA
     [scopeProjectId],
   );
 
-  // Click behavior for a git context folder, matching the message chip: the
-  // FIRST click launches the git-context-folder clone/install wizard (URL
+  // Click behavior for a git dependency folder, matching the message chip: the
+  // FIRST click launches the git-dependency clone/install wizard (URL
   // derived from the origin the attachment carries). Once installed, later
   // clicks resolve THIS machine's own checkout from the origin and open the
   // exact subfolder — never the sender's path. Every non-git entry opens in

@@ -13,7 +13,7 @@ import pytest
 
 from flow_sdk.core import navigator
 from flow_sdk.core.navigation import here_from, navigation_map
-from flow_sdk.core.navigator_eval import DATASET
+from flow_sdk.core.navigation import DATASET
 
 pytestmark = pytest.mark.timeout(10)  # do not increase timeout without approval
 

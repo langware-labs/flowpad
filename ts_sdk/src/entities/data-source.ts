@@ -75,6 +75,44 @@ export interface IDataSource extends IEntity {
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
 export interface DataSource extends EntityMerge<IDataSource> {}
 
+/** Where a hub webhook claim hands this channel's messages (the hub's `DeliveryTarget`). */
+export interface ChannelRouteTarget {
+  kind: 'none' | 'desktop' | 'node' | 'placement';
+  instance_id?: string;
+  node_typeid?: string;
+  agent_typeid?: string;
+  data_source_id?: string;
+}
+
+/** The hub claim that delivers to a channel, as the owner sees it (never a secret). */
+export interface ChannelRouteClaim {
+  id: string;
+  url: string;
+  provider: string;
+  status: 'pending' | 'active' | 'lapsed';
+  claim?: { kind: 'root' | 'account' | 'user' | 'group'; key: string } | null;
+  target: ChannelRouteTarget;
+  watch: ChannelRouteTarget;
+  deliveries: number;
+  misroutes: number;
+  recent: { at: number; method: string; sub_path?: string; status: number }[];
+}
+
+/** One place a channel's messages can be pointed at: this computer, or a cloud placement of its agent. */
+export interface ChannelRoutePlace {
+  key: string;
+  label: string;
+  node_typeid?: string;
+}
+
+/** `GET data_source/<id>/route`: the claim (null before the channel is connected), its places, the current one. */
+export interface ChannelRoute {
+  claim: ChannelRouteClaim | null;
+  places: ChannelRoutePlace[];
+  /** `this`, a deployment id, `flow` (Flow's own box), or '' when it points elsewhere. */
+  current: string;
+}
+
 /** One thing a provider says can be picked. Mirrors `Choice` in `choice_spec.py`. */
 export interface DataSourceChoice {
   id: string;
@@ -239,6 +277,16 @@ export class DataSource extends APIEntity<DataSource> implements IDataSource {
   /** The setup wizards this source's driver declares, each as it stands for THIS source. */
   async setupStages(): Promise<SetupStageState[]> {
     return this.get('setup_stages');
+  }
+
+  /** Which place the hub hands this channel's messages to — read from the hub, never cached. */
+  async route(): Promise<ChannelRoute> {
+    return this.get('route');
+  }
+
+  /** Point this channel's messages at `place` (`this` or a deployment id). Its URL stays; the vendor is untouched. */
+  async setRoute(place: string): Promise<{ claim: ChannelRouteClaim; current: string }> {
+    return this.post('set_route', { place });
   }
 
   /**

@@ -17,8 +17,8 @@ export interface IFolder extends IEntity {
 export interface Folder extends EntityMerge<IFolder> {}
 
 /**
- * Folder — a first-class entity referencing a filesystem directory (project
- * context folders; git-backed ones carry a transportable GitOrigin).
+ * Folder — a first-class entity referencing a filesystem directory (a project's
+ * resolved dependencies; git-backed ones carry a transportable GitOrigin).
  *
  * Mirrors `flow_sdk.builtin.folder.Folder`. Registered so `useEntity` /
  * `dataManager` can resolve folder typeids — e.g. the git-link chip on

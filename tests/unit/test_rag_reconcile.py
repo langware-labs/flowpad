@@ -16,6 +16,7 @@ import pytest_asyncio
 from flow_sdk.builtin.rag_index import RagIndex, RagStatus
 from flow_sdk.rag import reconcile
 from flow_sdk.rag.observer import mark_rag_stale
+from flow_sdk.rag.store import ModelMismatch
 from tests.unit.rag_embedder import embed, embed_all
 
 pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
@@ -48,6 +49,7 @@ async def _no_leftover_indexes():
     behind. Alone the file passes; in the full suite a neighbour's row made the
     dispatch list someone else's.
     """
+
     async def _purge() -> None:
         for row in await RagIndex.get_all({}):
             await row.delete()
@@ -199,6 +201,69 @@ async def test_a_provider_failure_is_recorded_rather_than_raised(docs, monkeypat
     assert "503" in index.last_error
 
 
+async def test_the_row_says_indexing_for_exactly_the_length_of_the_pass(docs, monkeypatch):
+    """`pending` is cleared before the pass, so only `indexing` can tell a screen one is running."""
+    seen: list[bool] = []
+
+    async def watching(index):
+        async def _embed(texts):
+            seen.append((await RagIndex.get_by_id(index.id)).indexing)
+            return embed_all(list(texts))
+
+        return _embed, "ngram-test"
+
+    monkeypatch.setattr(reconcile, "embedder_for", watching)
+    index = await _active(docs)
+    await reconcile.run_index(index)
+
+    assert seen and all(seen), "the stored row did not say indexing while embedding"
+    assert (await RagIndex.get_by_id(index.id)).indexing is False
+
+
+async def test_a_failed_pass_stops_saying_indexing(docs, monkeypatch):
+    """Otherwise a crashed pass leaves the card spinning forever."""
+
+    async def broken(index):
+        async def _embed(texts):
+            raise RuntimeError("the provider returned 503")
+
+        return _embed, "ngram-test"
+
+    monkeypatch.setattr(reconcile, "embedder_for", broken)
+    index = await _active(docs)
+    await reconcile.run_index(index)
+    stored = await RagIndex.get_by_id(index.id)
+    assert stored.indexing is False and "503" in stored.last_error
+
+
+async def test_an_indexing_flag_no_pass_owns_is_cleared_on_the_next_tick(docs, monkeypatch):
+    """A process that died mid-pass leaves `indexing` on disk; the heartbeat ends it."""
+    monkeypatch.setattr(reconcile, "_spawn", lambda index: None)
+    index = await _active(docs, pending=False)
+    index.indexing = True
+    await index.save(notify=False)
+    await reconcile.dispatch_due_indexes()
+    assert (await RagIndex.get_by_id(index.id)).indexing is False
+
+
+async def test_the_index_can_be_browsed_after_a_pass(docs, local_embedder):
+    """`chunks` lists every document and pages one document's chunks in reading order."""
+    index = await _active(docs)
+    await reconcile.run_index(index)
+
+    everything = await index.chunks()
+    refs = [d["doc_ref"] for d in everything["documents"]]
+    assert [r.rsplit("/", 1)[-1] for r in refs] == ["intro.md", "weather.md"]
+    assert everything["total"] == index.chunk_count
+
+    weather = refs[1]
+    one = await index.chunks(weather)
+    assert one["total"] == everything["documents"][1]["chunk_count"]
+    assert {c["doc_ref"] for c in one["chunks"]} == {weather}
+    assert "blizzard" in one["chunks"][0]["text"]
+    assert one["chunks"][0]["heading_path"] == ["Weather"]
+
+
 # ── the whole loop ───────────────────────────────────────────────────────────
 
 
@@ -207,9 +272,7 @@ async def test_editing_a_file_marks_dispatches_embeds_and_becomes_findable(docs,
     index = await _active(docs, pending=False)
     await reconcile.run_index(index)
 
-    (docs / "extra.md").write_text(
-        "# Gardening\n\nTomatoes ripen best when the greenhouse stays humid and warm.\n"
-    )
+    (docs / "extra.md").write_text("# Gardening\n\nTomatoes ripen best when the greenhouse stays humid and warm.\n")
 
     class _Record:
         asset_ref = type("_Ref", (), {"path": str(docs / "extra.md")})()
@@ -246,6 +309,7 @@ async def test_an_index_minted_before_any_key_is_promoted_once_one_appears(docs,
 
 async def test_an_index_with_nothing_funding_it_stays_in_setup_and_says_why(docs, monkeypatch):
     monkeypatch.setattr(reconcile, "_spawn", lambda index: None)
+
     # "Nothing funds it" is asserted by CONSTRUCTION, not by hoping the shared
     # session DB holds no endpoint: `tests/conftest.py` opens one SQLite file for
     # the whole run, so an endpoint another test saved would promote this index
@@ -278,3 +342,157 @@ async def test_a_disabled_index_is_never_promoted(docs, monkeypatch):
 async def _some_endpoint():
     """Anything not-None: settling asks whether funding EXISTS, never what it is."""
     return object()
+
+
+# ── who funds the embeddings ─────────────────────────────────────────────────
+
+HUB_OPENROUTER = "aaaaaaaa-1111-4111-8111-111111111111"
+HUB_ANTHROPIC = "bbbbbbbb-2222-4222-8222-222222222222"
+LOCAL_ID = "cccccccc-3333-4333-8333-333333333333"
+
+
+@pytest.fixture
+def funding(monkeypatch):
+    """The funding seams, set per test: local rows, hub rows, and whether this box is signed in.
+
+    The local rows are pinned rather than read from the shared session DB, which other tests
+    write endpoints into; the hub list is what ``fetch_hub_llm_endpoints`` would have answered.
+    """
+    from flow_sdk.builtin.agentic_process.cli_drivers import llm_source
+    from flow_sdk.builtin.llm_endpoint import LLMEndpoint
+
+    state: dict = {"local": {}, "hub": [], "signed_in": True}
+
+    async def _key_endpoints(cls):
+        return {row.secret_name: row for row in state["local"].values()}
+
+    async def _get_by_id(cls, entity_id, *args, **kwargs):
+        return state["local"].get(str(entity_id))
+
+    async def _fetch(*, cached_only=False):
+        return list(state["hub"]) if state["signed_in"] else []
+
+    monkeypatch.setattr(LLMEndpoint, "key_endpoints", classmethod(_key_endpoints))
+    monkeypatch.setattr(LLMEndpoint, "get_by_id", classmethod(_get_by_id))
+    monkeypatch.setattr("flow_sdk.instance_settings.llm_endpoint.fetch_hub_llm_endpoints", _fetch)
+    monkeypatch.setattr(
+        "flow_sdk.cli.auth.hub_login.resolve_hub_api_key",
+        lambda *a, **k: "fp-hub-key" if state["signed_in"] else None,
+    )
+    monkeypatch.setattr(llm_source, "_hub_has_token", lambda: state["signed_in"])
+    return state
+
+
+def _hub(endpoint_id: str, provider: str, *, enabled: bool = True):
+    from flow_sdk.builtin.llm_endpoint import LLMEndpoint
+
+    return LLMEndpoint(id=endpoint_id, name=f"{provider} budget", provider=provider, enabled=enabled)
+
+
+def _local(provider: str = "openai", *, endpoint_id: str = LOCAL_ID):
+    from flow_sdk.builtin.llm_endpoint import LLMEndpoint
+
+    return LLMEndpoint(id=endpoint_id, kind="api_key", provider=provider, api_key="sk-local")
+
+
+async def test_a_bound_local_endpoint_wins(funding):
+    local = _local()
+    funding["local"] = {LOCAL_ID: local}
+    funding["hub"] = [_hub(HUB_OPENROUTER, "openrouter")]
+    index = RagIndex(project_id=PROJECT, endpoint_typeid=f"llm_endpoint-{LOCAL_ID}")
+    assert await index.resolve_endpoint() is local
+
+
+async def test_a_bound_hub_endpoint_is_the_hubs_row(funding):
+    """Not a local projection: that would mint an id the hub does not authorize."""
+    hub = _hub(HUB_OPENROUTER, "openrouter")
+    funding["local"] = {LOCAL_ID: _local()}
+    funding["hub"] = [_hub(HUB_ANTHROPIC, "anthropic"), hub]
+    index = RagIndex(project_id=PROJECT, endpoint_typeid=f"llm_endpoint-{HUB_OPENROUTER}")
+    assert await index.resolve_endpoint() is hub
+
+
+async def test_a_local_key_is_preferred_over_an_unbound_hub_budget(funding):
+    local = _local()
+    funding["local"] = {LOCAL_ID: local}
+    funding["hub"] = [_hub(HUB_OPENROUTER, "openrouter")]
+    assert await RagIndex(project_id=PROJECT).resolve_endpoint() is local
+
+
+async def test_with_no_local_key_a_spendable_hub_budget_funds_the_index(funding):
+    hub = _hub(HUB_OPENROUTER, "openrouter")
+    funding["hub"] = [_hub("dddddddd-4444-4444-8444-444444444444", "openai", enabled=False), hub]
+    assert await RagIndex(project_id=PROJECT).resolve_endpoint() is hub
+
+
+async def test_a_hub_budget_whose_root_cannot_embed_is_skipped(funding):
+    """An Anthropic root has no embeddings API; picking it would fail every pass."""
+    funding["hub"] = [_hub(HUB_ANTHROPIC, "anthropic")]
+    assert await RagIndex(project_id=PROJECT).resolve_endpoint() is None
+    hub = _hub(HUB_OPENROUTER, "openrouter")
+    funding["hub"] = [_hub(HUB_ANTHROPIC, "anthropic"), hub]
+    assert await RagIndex(project_id=PROJECT).resolve_endpoint() is hub
+
+
+async def test_signed_out_nothing_funds_the_index_and_it_stays_in_setup(docs, funding):
+    funding["hub"] = [_hub(HUB_OPENROUTER, "openrouter")]
+    funding["signed_in"] = False
+    index = RagIndex(status=RagStatus.SETUP, project_id=PROJECT)
+    await index.add_root(str(docs))
+    await index.save(notify=False)
+
+    assert await index.resolve_endpoint() is None
+    assert "no embedding endpoint" in await index.settle_status()
+    assert index.status == RagStatus.SETUP
+
+
+# ── which model an index embeds with ─────────────────────────────────────────
+
+
+def _answering(model_answered: str, recorder: dict):
+    """A hub endpoint whose provider answers with *model_answered*, recording what it was asked."""
+
+    async def create_embeddings_with_model(self, texts, *, model=None, timeout=60.0):
+        recorder["model"] = model
+        return embed_all(list(texts)), model_answered
+
+    return create_embeddings_with_model
+
+
+async def test_a_hub_endpoint_pins_the_root_providers_default_model(docs, funding, monkeypatch):
+    """A hub row carries no models; the index must still record a concrete one."""
+    from flow_sdk.builtin.llm_endpoint import LLMEndpoint
+
+    recorder: dict = {}
+    monkeypatch.setattr(LLMEndpoint, "create_embeddings_with_model", _answering("text-embedding-3-small", recorder))
+    funding["hub"] = [_hub(HUB_OPENROUTER, "openrouter")]
+    index = await _active(docs)
+
+    embed_fn, model = await reconcile.embedder_for(index)
+    assert model == "openai/text-embedding-3-small"
+    assert len(await embed_fn(["a sunny beach"])) == 1
+    assert recorder["model"] == "openai/text-embedding-3-small"
+
+    await reconcile.run_index(index)
+    assert index.last_error == ""
+    assert index.model == "openai/text-embedding-3-small"
+    async with index.open_store() as store:
+        assert store.model == "openai/text-embedding-3-small"
+
+
+async def test_a_provider_answering_with_another_model_stores_nothing(docs, funding, monkeypatch):
+    from flow_sdk.builtin.llm_endpoint import LLMEndpoint
+
+    monkeypatch.setattr(LLMEndpoint, "create_embeddings_with_model", _answering("text-embedding-3-large", {}))
+    funding["hub"] = [_hub(HUB_OPENROUTER, "openrouter")]
+    index = await _active(docs)
+
+    embed_fn, _ = await reconcile.embedder_for(index)
+    with pytest.raises(ModelMismatch, match="text-embedding-3-large"):
+        await embed_fn(["a sunny beach"])
+
+    await reconcile.run_index(index)
+    assert "text-embedding-3-large" in index.last_error
+    assert "openai/text-embedding-3-small" in index.last_error
+    async with index.open_store() as store:
+        assert store.chunk_count() == 0

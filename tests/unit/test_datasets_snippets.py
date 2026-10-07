@@ -11,7 +11,7 @@ import json
 import pytest
 
 import flow_sdk.decision as decision
-from flow_sdk.core.navigator_eval import DATASET
+from flow_sdk.core.navigation import DATASET
 from flow_sdk.schema.data_spec.api_endpoint_spec import APIEndpointOffer
 from flow_sdk.schema.data_spec.decision_spec import ChoiceAnswer, DecisionResult
 from tests.utils.snippets import SHELF, fence_under, run_fence
@@ -39,7 +39,7 @@ def folder(tmp_path):
 @needs_dataset
 async def test_read_a_dataset():
     ns = await run_fence(fence_under(DOC, "2."))
-    assert ns["summary"] == ("navigator.dataset", 52, {"eval": 50, "test": 2})
+    assert ns["summary"] == ("navigator.dataset", 252, {"eval": 250, "test": 2})
     assert ns["first"] == "open data sources" and ns["problems"] == []
 
 
@@ -50,7 +50,7 @@ async def test_write_rows_and_labels(folder):
 
 
 @needs_dataset
-async def test_evaluate_the_navigator(monkeypatch):
+async def test_evaluate_the_navigator(monkeypatch, tmp_path):
     async def endpoints(**kwargs):
         return [
             APIEndpointOffer(
@@ -69,7 +69,7 @@ async def test_evaluate_the_navigator(monkeypatch):
     monkeypatch.setattr(decision, "decision_endpoints", endpoints)
     monkeypatch.setattr(decision, "decide", decide)
     ns = await run_fence(fence_under(DOC, "2."))
-    ns = await run_fence(fence_under(DOC, "4."), ns)
+    ns = await run_fence(fence_under(DOC, "4."), {**ns, "runs": tmp_path})
     precision, coverage, recall, confident_wrong = ns["scores"]
     assert recall == 1.0 and confident_wrong == 0 and precision == 1.0
 
@@ -79,6 +79,6 @@ async def test_log_real_decisions_into_a_training_set(tmp_path, monkeypatch):
     from flow_sdk import config
 
     monkeypatch.setattr(config, "FLOWPAD_TEMP_DIR", str(tmp_path))
-    ns = await run_fence(fence_under(DOC, "6."))
+    ns = await run_fence(fence_under(DOC, "6."), {"runs": tmp_path})
     assert ns["logged"] == ("summarize the README", "agentic", "summarize the README")
-    assert ns["report"]["scored"] >= 1 and ns["report"]["agentic_recall"] == 1.0
+    assert ns["run"].examples >= 1 and ns["run"].metrics["agentic_recall"] == 1.0

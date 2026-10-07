@@ -79,7 +79,7 @@ export function AssetsNavigator() {
         confirmLabel={t`Create`}
         onConfirm={(name) => void m.handleNewFolderConfirm(name)}
       />
-      {m.contextFolderDialogs}
+      {m.dependencyDialogs}
     </>
   );
 }

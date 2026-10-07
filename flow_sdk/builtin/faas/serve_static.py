@@ -20,6 +20,12 @@ from starlette.responses import HTMLResponse, Response, StreamingResponse
 
 from flow_sdk.compute.providers.compute_provider import is_e2b_public_host
 
+# An ES module must be served as JavaScript or the browser refuses to import it -- registered on the
+# process-wide table (not an override here), so every static path agrees, `/sdk` included; the OS
+# table alone can say text/plain (a Windows registry).
+mimetypes.add_type("text/javascript", ".js")
+mimetypes.add_type("text/javascript", ".mjs")
+
 # Set before the app bundle loads; ``||`` so a host that already pinned the
 # override (the Electron preload) keeps winning. ``load_config.ts`` honours this
 # ABOVE the compile-time ``__API_URL__`` define.

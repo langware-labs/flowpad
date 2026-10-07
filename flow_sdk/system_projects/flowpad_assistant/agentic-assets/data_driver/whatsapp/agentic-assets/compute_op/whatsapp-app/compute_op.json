@@ -11,7 +11,8 @@
       "linux": "\"$FLOWPAD_FLOW\" source step \"$FLOWPAD_WIZARD_INPUT_SOURCE\" app",
       "win32": "& $env:FLOWPAD_FLOW source step $env:FLOWPAD_WIZARD_INPUT_SOURCE app; exit $LASTEXITCODE"
     },
-    "timeout_seconds": 300
+    "timeout_seconds": 300,
+    "source_step": "app"
   },
   "completion_check": {
     "commands": {
@@ -19,6 +20,7 @@
       "linux": "\"$FLOWPAD_FLOW\" source step \"$FLOWPAD_WIZARD_INPUT_SOURCE\" app --check",
       "win32": "& $env:FLOWPAD_FLOW source step $env:FLOWPAD_WIZARD_INPUT_SOURCE app --check; exit $LASTEXITCODE"
     },
-    "timeout_seconds": 30
+    "timeout_seconds": 30,
+    "source_step": "app"
   }
 }

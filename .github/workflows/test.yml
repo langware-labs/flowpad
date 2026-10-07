@@ -54,7 +54,7 @@ on:
         type: choice
         required: false
         default: ''
-        options: ['', vitest, first-run-setup, context-folders, navigation]
+        options: ['', vitest, first-run-setup, dependencies, navigation]
       e2e-grep:
         description: 'With e2e-only: Playwright --grep (a test title substring)'
         type: string

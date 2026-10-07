@@ -4,7 +4,7 @@ import type { DataSource } from '@sdk';
 import { cn } from '@src/lib/utils';
 import { ConfirmDialog } from '@src/components/ui/confirm-dialog';
 import { DataSourceDialog } from './DataSourceDialog';
-import { DataSourceRow, ROW_GRID } from './DataSourceRow';
+import { DataSourceRow, HEADER_INSET, ROW_GRID } from './DataSourceRow';
 import { ReplayDialog } from './ReplayDialog';
 import { useSourceDelete } from './use-source-delete';
 import { useSourceSpecs } from './use-source-specs';
@@ -27,6 +27,7 @@ export function DataSourceDetail({ source, onDeleted }: { source: DataSource; on
         <div
           className={cn(
             ROW_GRID,
+            HEADER_INSET,
             'border-b border-border bg-muted/30 py-2 text-[11px] font-medium uppercase tracking-wider text-muted-foreground',
           )}
         >

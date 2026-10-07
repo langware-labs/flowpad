@@ -7,6 +7,8 @@
   "kind": "datasource.cloud.whatsapp",
   "group": "WhatsApp",
   "group_order": 0,
+  "group_icon_name": "WhatsApp",
+  "default_name": "Flow WhatsApp agent",
   "config": {
     "link_id": {
       "type": "text",

@@ -103,7 +103,7 @@ async def main(cases_path: Path, folder: Path) -> None:
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("cases", type=Path)
-    from flow_sdk.core.navigator_eval import DATASET
+    from flow_sdk.core.navigation import DATASET
 
     ap.add_argument("--dataset", type=Path, default=DATASET)
     a = ap.parse_args()

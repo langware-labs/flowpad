@@ -13,7 +13,7 @@ import {
 import { ProjectHome } from '@src/components/project-home/ProjectHome';
 import { ProjectNameTitle } from '@src/components/project-home/ProjectNameTitle';
 import { ShareContextFolderButton } from '@src/components/assets/ShareContextFolderButton';
-import { useContextFolderForRel } from '@src/hooks/use-context-folder-for-rel';
+import { useDependencyForRel } from '@src/hooks/use-dependency-for-rel';
 import { useIsAdvanced } from '@src/components/view-mode';
 import { InputDialog } from '@src/components/ui/input-dialog';
 import { Button } from '@src/components/ui/button';
@@ -441,11 +441,11 @@ export function AssetsPage() {
     scopedProjectId: isProjectView ? scopeProjectId : urlScopeProjectId,
   });
 
-  // The folder the header's Share acts on: the context folder CONTAINING the
+  // The folder the header's Share acts on: the dependency folder CONTAINING the
   // browsed path when there is one (only its root is a repo — an `fs/` pointer
   // addresses any depth), else the browsed directory itself. Same resolution the
-  // body's browser uses — see useContextFolderForRel.
-  const containingFolder = useContextFolderForRel(scopeProjectId, fsRelPath ?? '');
+  // body's browser uses — see useDependencyForRel.
+  const containingFolder = useDependencyForRel(scopeProjectId, fsRelPath ?? '');
 
   const creatableTypes = useMemo(
     () => new Set(allTypes.filter((t) => t.creatable).map((t) => t.type_name)),
@@ -566,7 +566,7 @@ export function AssetsPage() {
             <BookOpen className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
             <div className="min-w-0">
               <div className="truncate text-sm font-medium">
-                {/* A context folder gets its own name as the pane title; the
+                {/* A dependency folder gets its own name as the pane title; the
                   project's home carries the project's own (renamable) name;
                   everything else keeps Assets. */}
                 {isFsMode && fsRelPath ? (

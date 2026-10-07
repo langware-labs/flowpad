@@ -273,9 +273,10 @@ export function rememberedDockViewMode(dock: IDockPointer): ViewMode | null {
 
 // The last mode that wasn't Vibe. Entering Vibe ADOPTS it as the persisted
 // preference (useDockViewModeOverrideSync), which overwrites whatever the user
-// had — so without this latch, an Advanced user who visits Vibe and leaves is
-// silently and unrecoverably dropped to Standard (ViewToggle only renders modes
-// at or below the current rank, so the Advanced button isn't even on screen).
+// had — so without this latch, an "exit vibe" affordance has nothing to return
+// to and an Advanced (or revealed Dev) user who visits Vibe and leaves lands on
+// Standard. The footer selector can still reach Terminal by hand; this latch is
+// what makes the automatic way back land where the user came from.
 // Module-scope, session-lived, deliberately not persisted.
 let lastNonVibeViewMode: ViewMode | null = null;
 

@@ -221,7 +221,11 @@ async def test_handle_invitation_accept_learns_conversation_participants(monkeyp
 
 
 @pytest.mark.asyncio
-async def test_handle_invitation_accept_project_fetches_payload_and_materializes_context(monkeypatch):
+async def test_handle_invitation_accept_project_fetches_payload_and_materializes_the_project(monkeypatch):
+    """Accept fetches the hub project and mirrors it locally. It never mints the
+    project's context folders: those are ``flow.json`` dependencies, resolved on
+    this machine when the project is set up — a stale ``shared_context_origins``
+    from an older hub is ignored, not turned into Folder rows."""
     from flow_sdk.app.actions import flow_message_action
     from flow_sdk.builtin.folder import Folder
     from flow_sdk.fs_store.origin.git_origin import GitOrigin
@@ -281,11 +285,9 @@ async def test_handle_invitation_accept_project_fetches_payload_and_materializes
     assert getattr(result, "status", None) != "fail"
     project = await Project.get_by_id(project_id)
     assert project is not None
-    assert [str(t) for t in project.context_of_type("folder", bucket="shared")] == [folder_tid]
-    assert project.get_context_entry_data(folder_tid) is None
-    folder = await Folder.get_by_id(origin.key())
-    assert folder is not None
-    assert folder.remote is True
+    assert project.remote is True
+    assert project.include_dirs == []
+    assert await Folder.get_by_id(origin.key()) is None, "accept must not mint context Folder rows"
     project_client.get.assert_awaited_once_with(f"/graph/project/{project_id}")
 
 

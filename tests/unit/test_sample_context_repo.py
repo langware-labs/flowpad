@@ -1,17 +1,17 @@
-"""The ``sample-context-git`` repo, attached as a shared context folder.
+"""The ``sample-context-git`` repo, added to a project as a ``flow.json`` dependency.
 
 The local half of the sample-repo cycle: generate the repository, publish it to a
-bare `file://` origin, clone it, attach the clone to a project as a **shared**
-context folder, and assert the project's menu reports all 34 assets by type.
+bare `file://` origin, clone it, add the clone to a project as a dependency, and
+assert the project's menu reports all 34 assets by type.
 
 This is the gate before the repo is published to GitHub — if a type declared in
 the manifest is not actually discovered from a context folder, the count is wrong
 here first, and it says which type.
 
-Shared scope is the load-bearing part: it is rejected outright unless the folder
-has a transportable origin (``project.py``'s "Only git-backed folders can be
-shared"). Passing it proves ``Folder.detect_origin`` read the local `file://`
-remote as a real ``GitOrigin`` — the same code path a GitHub remote takes.
+The declaration is the load-bearing part: a folder inside git is written to
+``flow.json`` as its repository (``git+<url>#<branch>``), never as its path — so
+reading that line back proves ``Folder.detect_origin`` read the local `file://`
+remote as a real ``GitOrigin``, the same code path a GitHub remote takes.
 """
 
 from __future__ import annotations
@@ -42,7 +42,7 @@ def _git(cwd: Path, *args: str) -> None:
 
 @pytest.fixture
 async def attached(tmp_path: Path, monkeypatch):
-    """A project with the generated repo attached as a SHARED context folder."""
+    """A project with the generated repo's clone added as a dependency."""
     from flow_sdk.instance_settings import reset_instance_settings
 
     user_home = tmp_path / "user_home"
@@ -79,7 +79,7 @@ async def attached(tmp_path: Path, monkeypatch):
     clone = base / "sample-context-git"
     _git(base, "clone", "-q", origin.resolve().as_uri(), str(clone))
 
-    # 2. A project, and the clone attached to it as a shared context folder.
+    # 2. A project, and the clone added to it as a dependency.
     root = base / "proj"
     root.mkdir(parents=True, exist_ok=True)
     project = Project(
@@ -88,11 +88,12 @@ async def attached(tmp_path: Path, monkeypatch):
         fs_storage_mount_path=str(root),
     )
     await project.save()
-    # A success response carries no status_code; a failure does. Shared scope is
-    # rejected for a non-transportable origin, so reaching here at all is the
-    # assertion that the file:// remote was read as a real GitOrigin.
-    resp = await project.add_context_dir(str(clone), scope="shared")
-    assert getattr(resp, "status_code", 200) < 400, f"shared attach failed: {resp.message}"
+    state = await project.add_dependency(str(clone))
+    assert state.state == "ready", state
+    # Declared as its repository, not its path: the file:// remote was read as a
+    # real GitOrigin. And the user's clone is reused, never cloned a second time.
+    assert state.source.startswith("git+file://") and state.source.endswith("/sample-context-git#main"), state.source
+    assert state.local_path == canonical_posix_path(str(clone))
 
     yield {"project": project, "clone": clone, "origin": origin}
 

@@ -139,7 +139,7 @@ source:
 name: AgenticProcess.helper_types
 description: Supporting contracts defined beside the entity or exported by its package.
 params:
-  AssetSource: "embedded | inline | project_dir | user_dir | workdir | additional_dir | context_dir | system | external"
+  AssetSource: "embedded | inline | project_dir | user_dir | workdir | additional_dir | context_dir (a dependency) | system | external"
   AssetUsageKind: "embedded_asset | inline_persona | transcript_file_read | skill_invoked"
   AssetUsage: "{kind, path?, entry_id?, timestamp?, label?}"
   AssetDescriptor: "{typeid, source, posix_path, source_dir?, project_id?, usage[]}"

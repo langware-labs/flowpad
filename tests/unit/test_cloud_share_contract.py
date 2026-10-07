@@ -87,17 +87,20 @@ def test_the_dead_pops_are_still_dead():
         assert name not in Project.model_fields, f"{name} is now a real field — classify it"
 
 
-def test_share_puts_three_stripped_fields_back(project):
-    """The surprise the doc exists to state.
+def test_share_puts_back_exactly_the_listed_stripped_fields(project):
+    """What `Project.share()` adds to `_hub_body()` after stripping it.
 
-    `_hub_body()` strips these, and then `Project.share()` adds them back to
-    the body. A reader who stops at `_hub_body` gets the wrong answer.
+    It used to re-add `shared_context_origins`; context folders are now declared
+    in `flow.json`, which travels with the repository, so nothing is re-added.
+    Any field listed here must be stripped by `_hub_body()` and re-added by
+    `share()`, and `share()` must re-add nothing else — a reader who stops at
+    `_hub_body` must not get the wrong answer.
     """
     for field in CONTRACT["readded_by_share"]:
         assert field not in project._hub_body()
     share_src = inspect.getsource(Project.share)
-    for field in CONTRACT["readded_by_share"]:
-        assert f'body["{field}"]' in share_src, f"share() no longer re-adds {field}"
+    readded = set(re.findall(r'body\["([a-z_][a-z0-9_]*)"\]\s*=', share_src))
+    assert readded == set(CONTRACT["readded_by_share"])
 
 
 def test_a_published_asset_sends_coordinates_only():
