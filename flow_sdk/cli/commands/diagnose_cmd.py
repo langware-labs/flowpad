@@ -755,10 +755,10 @@ async def _receive_attachments(request_id: str, attachments: list[dict], workdir
                 archive.unlink(missing_ok=True)
             received.append({"kind": kind, "name": name, "installed_as": skill, "dir": str(target)})
         else:
-            inbox = workdir / "from-supporter"
-            inbox.mkdir(exist_ok=True)
-            (inbox / name).write_bytes(content)
-            received.append({"kind": kind, "name": name, "path": str(inbox / name)})
+            from_supporter = workdir / "from-supporter"
+            from_supporter.mkdir(exist_ok=True)
+            (from_supporter / name).write_bytes(content)
+            received.append({"kind": kind, "name": name, "path": str(from_supporter / name)})
     return received
 
 
