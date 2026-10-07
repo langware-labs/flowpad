@@ -52,7 +52,7 @@ async def test_moving_a_channel_to_a_cloud_placement_points_the_claim_at_its_nod
     agent_id = "11111111-2222-4333-8444-555555555555"
     source = DataSource(provider="whatsapp", name="bot", owner=f"agent-{agent_id}")
     hub["claims"] = [_claim(source, kind="desktop", instance_id="inst-1")]
-    box = SimpleNamespace(id="dep-1", is_local=False, environment="production", target=SimpleNamespace(provider="e2b"), compute_node_id=lambda: "n-9")
+    box = SimpleNamespace(id="dep-1", is_local=False, environment="production", target=SimpleNamespace(provider="e2b"), compute_node_id="n-9")
 
     async def get_by_id(cls, ident):
         return SimpleNamespace(deployments=lambda: _done([box])) if ident == agent_id else None
@@ -80,7 +80,7 @@ async def test_also_delivering_to_a_cloud_placement_adds_a_second_claim_for_the_
     source = DataSource(provider="flow_telegram", name="tg", owner=f"agent-{agent_id}")
     proven = {**_claim(source, kind="desktop", instance_id="inst-1"), "provider": "telegram", "claim": {"kind": "user", "key": "665945020"}}
     hub["claims"] = [proven]
-    box = SimpleNamespace(id="dep-1", is_local=False, environment="production", target=SimpleNamespace(provider="e2b"), compute_node_id=lambda: "n-9")
+    box = SimpleNamespace(id="dep-1", is_local=False, environment="production", target=SimpleNamespace(provider="e2b"), compute_node_id="n-9")
 
     async def _done(value):
         return value

@@ -1350,7 +1350,7 @@ class DataSource(Entity):
         if owner.startswith("agent-"):
             agent = await Agent.get_by_id(owner.split("-", 1)[1])
             for deployment in (await agent.deployments() if agent is not None else []):
-                node = deployment.compute_node_id()
+                node = deployment.compute_node_id  # a property: the machine it runs on, or None
                 if deployment.is_local or not node:
                     continue
                 label = f"{deployment.environment or 'production'} · {deployment.target.provider}"
