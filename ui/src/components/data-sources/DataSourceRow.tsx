@@ -15,30 +15,17 @@
  * of the actions (Pull, the folder) to `SourceMenu`, and every dialog to the view
  * (so N rows don't mount 2N of them).
  */
-import { useCallback, useState } from 'react';
+import { useState } from 'react';
 import { DataSource, type DataDriver } from '@sdk';
-import { CheckCircle2, ChevronDown, ChevronRight } from 'lucide-react';
-import { Trans, useLingui } from '@lingui/react/macro';
-import { i18n } from '@lingui/core';
+import { ChevronDown, ChevronRight } from 'lucide-react';
+import { useLingui } from '@lingui/react/macro';
 import { timeSince, timeUntil } from '@src/utils/duration';
-import { Button } from '@src/components/ui/button';
-import { notify } from '@src/notifications';
-import { errorMessage } from '@src/lib/error-message';
 import { cn } from '@src/lib/utils';
-import { WikiButton } from '@src/components/wiki-tip';
-import { SetupStagesButton } from '@src/components/setup-wizard/SetupStagesButton';
-import { healthStyle } from './health-style';
-import { statusStyle } from './status-style';
 import { sourceGlyphs } from './source-icon';
-import { PARKED_DOT } from './source-look';
 import { IconWithBadge } from '@src/components/graph-view/icons/IconWithBadge';
-import { ChannelRouteControl } from './ChannelRouteControl';
-import { SourceMenu } from './SourceMenu';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { openDriver } from './data-sources-pointer';
-import { DockPointer } from '@src/navigation/DockPointer';
-import { useSourceToggle } from './use-source-toggle';
-import { useSourceVerify } from './use-source-verify';
+import { openDriver, openSource } from './data-sources-pointer';
+import { SourceActions, SourceSetupDetails, SourceStatusLine, sourceLook } from './source-parts';
 
 interface Props {
   source: DataSource;
@@ -60,57 +47,18 @@ export function DataSourceRow({ source, spec, onEdit, onReplay, onDelete }: Prop
   // setup" / "needs attention", and a screen of parked sources must still fit
   // on one screen. The detail is one click away.
   const [open, setOpen] = useState(false);
-  const [pulling, setPulling] = useState(false);
   // The CHANNEL's mark — the spec's glyph, a multi-channel transport's per-channel
   // one — badged with whose way it is (Flow on WhatsApp: WhatsApp with Flowpad's
   // badge, the rule the Add-source choice card uses). A screen of sources is
   // scanned by what they reach, not by 'these are all data sources'.
   const { Base: Glyph, Badge } = sourceGlyphs(spec, source.channel);
 
-  /**
-   * Every verb on this screen reports through `notify`, including the two that
-   * live here. An inline note on the card would be a SECOND result channel —
-   * which one you got would depend on which action you picked, and the card's
-   * copy would sit there stale until the next verb ran.
-   */
-  const pull = useCallback(async () => {
-    setPulling(true);
-    try {
-      // Not synchronous: the detail says "on the next tick", which is the whole
-      // expectation this toast exists to set.
-      notify.success({ title: source.name || source.provider, message: (await source.pollNow()).detail });
-    } catch (error) {
-      notify.error({
-        title: t`Could not pull ${source.name || source.provider}`,
-        message: errorMessage(error, t`The source was not queued.`),
-      });
-    } finally {
-      setPulling(false);
-    }
-  }, [source, t]);
-
-  const { verify, busy: verifying } = useSourceVerify(source);
-  const { toggle: toggleEnabled } = useSourceToggle(source);
-
-  // Active, but `is_due` will still refuse it. Without calling this out the
-  // card reads as healthy-but-idle and the user waits forever.
-  const parked = source.isParked;
-  const health = healthStyle(source.health);
-  const status = statusStyle(source.status);
-  // The lifecycle answers first. Health on a source that is not running is
-  // stale by construction — it describes the last time it ran, which for a
-  // source that never has is "never synced", i.e. no information at all.
-  const chip = source.isActive ? health : status;
-  // The setup page comes from the source's own manifest, so a new source
-  // brings its own help rather than needing an entry in a frontend map.
-  const wiki = spec?.setup_wiki || undefined;
-
   return (
     <div
       data-testid="source-card"
       data-provider={source.provider}
       data-status={source.status}
-      className={cn('border-b border-s-[3px] border-border/60', chip.border, open && 'bg-muted/10')}
+      className={cn('border-b border-s-[3px] border-border/60', sourceLook(source).border, open && 'bg-muted/10')}
     >
       <div className={ROW_GRID}>
         {/* Identity: the brand mark, the name, and provider · channel under it. */}
@@ -131,14 +79,14 @@ export function DataSourceRow({ source, spec, onEdit, onReplay, onDelete }: Prop
             data-testid={`source-icon-${source.id}`}
           />
           <div className="flex min-w-0 items-baseline gap-2">
-            {/* The name opens what came through it: the stream inbox, this source's messages only (its events and
-                its file are in the menu); the provider opens the driver it is an instance of. URL-first. */}
+            {/* The name opens the source's own page (what went through it: messages, events, settings); the
+                provider opens the driver it is an instance of. URL-first. */}
             <button
               type="button"
               className="truncate text-start text-sm font-medium leading-tight hover:underline"
-              title={t`Show its messages`}
-              data-testid={`data-source-messages-${source.id}`}
-              onClick={() => navigation.openDock(DockPointer.forStreamInbox({ sourceId: source.id }))}
+              title={t`Open ${source.name || source.provider}`}
+              data-testid={`data-source-open-${source.id}`}
+              onClick={() => openSource(navigation, source.id)}
             >
               {source.name || source.provider || source.id.slice(0, 8)}
             </button>
@@ -159,19 +107,7 @@ export function DataSourceRow({ source, spec, onEdit, onReplay, onDelete }: Prop
           </div>
         </div>
 
-        {/* One coloured status line: the dot is the state at a glance, the words say it. A parked source says so
-            here, not only when expanded — it looks healthy and will never poll again on its own. */}
-        <span
-          className={cn(
-            'flex min-w-0 items-center gap-1.5 text-xs font-medium',
-            parked ? 'text-foreground' : chip.text,
-          )}
-          data-testid={`source-status-${source.id}`}
-          title={parked ? t`Parked: the scheduler skips it until you pull` : undefined}
-        >
-          <span className={cn('size-2 shrink-0 rounded-full', parked ? PARKED_DOT : chip.dot)} />
-          <span className="truncate">{parked ? t`Parked` : i18n._(chip.label)}</span>
-        </span>
+        <SourceStatusLine source={source} />
 
         <span className="text-xs text-muted-foreground" title={t`Last successful sync`}>
           {timeSince(source.last_synced_at)}
@@ -181,57 +117,12 @@ export function DataSourceRow({ source, spec, onEdit, onReplay, onDelete }: Prop
           {source.isActive ? timeUntil(source.next_poll_at) : '—'}
         </span>
 
-        <div className="flex items-center justify-end gap-1">
-          {source.needsSetup && (
-            <Button
-              size="sm"
-              variant="secondary"
-              className="h-7 gap-1.5"
-              disabled={pulling || verifying}
-              data-testid={`source-verify-${source.id}`}
-              onClick={() => void verify()}
-            >
-              <CheckCircle2 className="size-3.5" />
-              {t`Verify`}
-            </Button>
-          )}
-          <SetupStagesButton source={source} spec={spec} />
-          <SourceMenu
-            source={source}
-            spec={spec}
-            onPull={() => void pull()}
-            pulling={pulling}
-            onToggleEnabled={() => void toggleEnabled()}
-            onEdit={onEdit}
-            onReplay={onReplay}
-            onDelete={onDelete}
-          />
-        </div>
+        <SourceActions source={source} spec={spec} onEdit={onEdit} onReplay={onReplay} onDelete={onDelete} />
       </div>
 
       {open && (
         <div className="flex flex-col gap-2 px-4 pb-3 ps-[3.75rem]">
-          {source.needsSetup && (
-            <div className="flex items-start gap-1.5 rounded bg-amber-500/10 px-2 py-1.5 text-[11px] leading-snug text-amber-700 dark:text-amber-400">
-              <p className="flex-1">{source.setup_detail || t`Finish setup, then press Verify.`}</p>
-              {/* The info affordance is a wiki page, not a tooltip: "invite the
-                  bot" is a multi-step task performed in ANOTHER application, and
-                  a hover card cannot be read while doing it. */}
-              {wiki && <WikiButton wikiword={wiki} label={t`How to finish setup`} />}
-            </div>
-          )}
-
-          <ChannelRouteControl source={source} />
-
-          {parked && (
-            <p className="rounded bg-red-500/10 px-2 py-1.5 text-[11px] leading-snug text-red-700 dark:text-red-300">
-              <Trans>
-                Parked — the scheduler skips a <code>config_error</code> source, so it will not poll again on its own.{' '}
-                <strong>Pull</strong> clears the latch.
-              </Trans>
-              {source.error_detail ? ` (${source.error_detail})` : ''}
-            </p>
-          )}
+          <SourceSetupDetails source={source} spec={spec} />
         </div>
       )}
     </div>

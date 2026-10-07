@@ -14,6 +14,7 @@ const ctx = vi.hoisted(() => ({
   project: { displayName: 'Acme', id: 'p1' } as unknown,
   activeEntity: null as unknown,
   activeEntityTypeId: null as unknown,
+  localUser: null as unknown,
 }));
 vi.mock('@src/hooks/useContext', () => ({ useContext: () => ctx }));
 import { dataManager, Tab, tabManager, TypeId } from '@sdk';
@@ -50,6 +51,7 @@ beforeEach(() => {
   ctx.project = { displayName: 'Acme', id: 'p1' };
   ctx.activeEntity = null;
   ctx.activeEntityTypeId = null;
+  ctx.localUser = null;
 });
 afterEach(() => vi.restoreAllMocks());
 
@@ -443,5 +445,53 @@ describe('useEntityBreadcrumbs — project-rebased routes are not the project pa
 
     // The project IS the leading crumb; repeating it would read "Acme › Acme".
     expect(result.current.crumbs.at(-1)?.label).toBe('Home');
+  });
+});
+
+describe('useEntityBreadcrumbs — whose place this is', () => {
+  const nothing = { targetTypeId: null, target: null, projectId: null } as never;
+
+  it("reads the user's Stream Inbox as theirs, never a project's", () => {
+    vi.spyOn(Tab, 'resolveDockTarget').mockResolvedValue(nothing);
+    ctx.localUser = { id: 'u1', name: 'Eran' };
+    const inbox = {
+      pointer: '',
+      tabHash: 'stream_inbox',
+      targetTypeId: null,
+      viewType: 'stream_inbox',
+      options: {},
+    } as never;
+
+    const { result } = renderHook(() => useEntityBreadcrumbs(inbox));
+
+    expect(result.current.crumbs.map((c) => [c.label, c.kind])).toEqual([
+      ['Eran', 'ancestor'],
+      ['Stream Inbox', 'current'],
+    ]);
+  });
+
+  it("reads a source's page as Data sources › <source> — this machine's, no project", async () => {
+    vi.spyOn(Tab, 'resolveDockTarget').mockResolvedValue(nothing);
+    const id = '5b112f8f-06d9-46ff-9ff0-d09748a4d512';
+    vi.spyOn(dataManager, 'getByTypeId').mockImplementation(async (typeId: any) =>
+      String(typeId) === `data_source-${id}`
+        ? ({ id, name: 'Flow Telegram agent', asset_ref: '/x/agentic-assets/data_source/flow-telegram' } as never)
+        : (null as never),
+    );
+    const page = {
+      pointer: id,
+      tabHash: 'data-sources',
+      targetTypeId: null,
+      viewType: 'data-sources',
+      options: {},
+    } as never;
+
+    const { result } = renderHook(() => useEntityBreadcrumbs(page));
+
+    await waitFor(() => expect(result.current.crumbs[1]?.label).toBe('Flow Telegram agent'));
+    const [list, source] = result.current.crumbs;
+    expect(result.current.crumbs).toHaveLength(2);
+    expect(list.pointer?.viewType).toBe('data-sources');
+    expect(source.kind).toBe('current');
   });
 });

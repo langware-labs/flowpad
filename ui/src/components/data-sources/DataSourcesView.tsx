@@ -32,9 +32,11 @@ import { DataSourceDialog } from './DataSourceDialog';
 import { Button } from '@src/components/ui/button';
 import { ReplayDialog } from './ReplayDialog';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { DockPointer } from '@src/navigation/DockPointer';
 import { useIsAdvanced } from '@src/contexts/view-mode-context';
 import { openDriver, parseDataSourcesPointer } from './data-sources-pointer';
 import { DataDriverPage, DataDriversList } from './DataDriversView';
+import { DataSourcePage } from './DataSourcePage';
 
 export function DataSourcesView() {
   const { t } = useLingui();
@@ -67,7 +69,16 @@ export function DataSourcesView() {
 
   // A delete removes a row rather than changing one, and the live query
   // watches for writes — so this is the one mutation needing a re-read.
-  const { deleting, setDeleting, remove, confirm } = useSourceDelete(() => void refetch());
+  // Deleted from its own page: there is nothing left to show there, so back to the list.
+  const pageId = route.section === 'source' ? route.id : null;
+  const onDeleted = useCallback(
+    (gone: DataSource) => {
+      void refetch();
+      if (gone.id === pageId) navigation.openDock(DockPointer.forDataSources());
+    },
+    [refetch, pageId, navigation],
+  );
+  const { deleting, setDeleting, remove, confirm } = useSourceDelete(onDeleted);
 
   // Newest first: the source you just added is the one you came to look at.
   const sorted = useMemo(
@@ -80,9 +91,20 @@ export function DataSourcesView() {
     [sources],
   );
 
-  // What the URL addresses: one driver, the drivers list, or the sources themselves.
+  // What the URL addresses: one source's page, one driver, the drivers list, or the sources themselves.
+  const pageSource = route.section === 'source' ? (sources.find((s) => s.id === route.id) ?? null) : null;
   const body =
-    route.section === 'drivers' ? (
+    route.section === 'source' ? (
+      <DataSourcePage
+        source={pageSource}
+        id={route.id}
+        tab={route.tab}
+        spec={pageSource ? specFor(pageSource.provider) : null}
+        onEdit={openEdit}
+        onReplay={setReplaying}
+        onDelete={setDeleting}
+      />
+    ) : route.section === 'drivers' ? (
       route.driver ? (
         <DataDriverPage name={route.driver} sources={sources} />
       ) : (
