@@ -45,6 +45,7 @@ import { Checkbox } from '@src/components/ui/checkbox';
 import { BulkConfirmDialog } from '@src/components/ui/bulk-confirm-dialog';
 import { ConfirmDialog } from '@src/components/ui/confirm-dialog';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { ViewType } from '@src/types/ViewType';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { LoginRequiredOverlay } from '@src/components/login-required-overlay';
 import { formatTimeAgo } from '@src/components/project-activity-strip/project-activity-utils';
@@ -538,15 +539,31 @@ export function StreamInboxView({ agentId }: { agentId?: string } = {}) {
     [attributionForOrigin],
   );
   const [channelFilter, setChannelFilter] = useState<Set<string>>(() => new Set());
+  // One source's messages, from the address (`?source=<id>`: a data source row's name opens it). Its channel mark is
+  // lit in the bar, and the list narrows to THAT source — not every source sharing its channel. Touching the bar
+  // hands the filter back to it.
+  const { currentDock } = useDockNavigation();
+  const sourceFromUrl = currentDock?.viewType === ViewType.STREAM_INBOX ? (currentDock.options?.source ?? null) : null;
+  const [onlySource, setOnlySource] = useState<string | null>(null);
+  useEffect(() => {
+    const source = sourceFromUrl ? ownerChannels.find((s) => s.id === sourceFromUrl) : undefined;
+    setOnlySource(source ? source.id : null);
+    if (source) setChannelFilter(new Set([channelKeyOf(source)]));
+  }, [sourceFromUrl, ownerChannels]);
+  const onChannelFilterChange = useCallback((next: Set<string>) => {
+    setOnlySource(null);
+    setChannelFilter(next);
+  }, []);
   const channelMatch = useMemo(
     () =>
       channelFilter.size
         ? (m: FlowMessage) => {
             const source = sourceForOrigin(ownerChannels, m.origin, m.origin_local);
-            return !!source && channelFilter.has(channelKeyOf(source));
+            if (!source) return false;
+            return onlySource ? source.id === onlySource : channelFilter.has(channelKeyOf(source));
           }
         : undefined,
-    [channelFilter, ownerChannels],
+    [channelFilter, onlySource, ownerChannels],
   );
   const [columnFilter, setColumnFilter] = useState<ColumnFilter>(NO_COLUMN_FILTER);
   const columnFilterActive = isColumnFilterActive(columnFilter);
@@ -1285,7 +1302,7 @@ export function StreamInboxView({ agentId }: { agentId?: string } = {}) {
                 rows={ownerChannels}
                 specFor={specFor}
                 selected={channelFilter}
-                onSelectedChange={setChannelFilter}
+                onSelectedChange={onChannelFilterChange}
                 className="shrink-0"
               />
             )}

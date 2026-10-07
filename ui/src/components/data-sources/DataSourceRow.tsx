@@ -131,16 +131,14 @@ export function DataSourceRow({ source, spec, onEdit, onReplay, onDelete }: Prop
             data-testid={`source-icon-${source.id}`}
           />
           <div className="flex min-w-0 items-baseline gap-2">
-            {/* The name opens what the source DOES: this machine's event stream narrowed to it (its file is in the
-                menu); the provider opens the driver it is an instance of. URL-first, like the menu's own link. */}
+            {/* The name opens what came through it: the stream inbox, this source's messages only (its events and
+                its file are in the menu); the provider opens the driver it is an instance of. URL-first. */}
             <button
               type="button"
               className="truncate text-start text-sm font-medium leading-tight hover:underline"
-              title={t`Show its events`}
-              data-testid={`data-source-events-${source.id}`}
-              onClick={() =>
-                navigation.openDock(DockPointer.forAutomations({ place: 'bus', target: `data_source:${source.id}` }))
-              }
+              title={t`Show its messages`}
+              data-testid={`data-source-messages-${source.id}`}
+              onClick={() => navigation.openDock(DockPointer.forStreamInbox({ sourceId: source.id }))}
             >
               {source.name || source.provider || source.id.slice(0, 8)}
             </button>

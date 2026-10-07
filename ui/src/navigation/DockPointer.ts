@@ -1470,14 +1470,16 @@ export class DockPointer implements IDockPointer {
    *   /dock/stream_inbox
    *   /dock/stream_inbox?conversation=<id>
    *   /dock/stream_inbox?conversation=<id>&message=<id>
+   *   /dock/stream_inbox?source=<data source id>   — that source's messages only
    */
   static forStreamInbox(
-    options?: { conversationId?: string | null; messageId?: string | null },
+    options?: { conversationId?: string | null; messageId?: string | null; sourceId?: string | null },
     layout: Layout = Layout.DOCK,
   ): DockPointer {
     const queryOptions: Record<string, string> = {};
     if (options?.conversationId) queryOptions.conversation = options.conversationId;
     if (options?.messageId) queryOptions.message = options.messageId;
+    if (options?.sourceId) queryOptions.source = options.sourceId;
     return new DockPointer(
       ViewType.STREAM_INBOX,
       undefined,
