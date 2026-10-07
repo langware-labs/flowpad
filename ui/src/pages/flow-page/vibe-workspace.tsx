@@ -103,6 +103,15 @@ export function VibeWorkspace({ session }: VibeWorkspaceProps) {
   // workspace instead of returning them to it.
   const hasPushedDisplayRef = useRef(false);
 
+  // One workspace component serves every Vibe tab (switching tabs re-renders it
+  // with another session), so per-workspace show state is reset with the session:
+  // otherwise tab A's last show is appended to tab B's history popover, and B's
+  // first show REPLACES the URL the user arrived on instead of pushing.
+  useEffect(() => {
+    hasPushedDisplayRef.current = false;
+    setLatestShown(null);
+  }, [session.processId]);
+
   useEffect(() => {
     if (!activeProcess) return;
     return activeProcess.onShow((payload) => {
