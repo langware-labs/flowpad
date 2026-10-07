@@ -29,6 +29,11 @@ beforeAll(() => {
 });
 afterAll(() => {
   globalThis.Image = realImage;
+  // Assigned onto the real `URL` above, so put it back (jsdom has none): a leaked
+  // `createObjectURL` flips code that branches on its absence in LATER files.
+  // testSetup.ts also restores it tier-wide; this keeps the file honest alone.
+  delete (URL as unknown as { createObjectURL?: unknown }).createObjectURL;
+  delete (URL as unknown as { revokeObjectURL?: unknown }).revokeObjectURL;
 });
 afterEach(cleanup);
 

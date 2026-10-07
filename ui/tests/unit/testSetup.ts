@@ -3,7 +3,7 @@
 // compute-node -> shell) hits the APIEntity circular-init and "Class extends
 // value undefined" at collection.
 import '@sdk';
-import { afterEach, beforeEach, vi } from 'vitest';
+import { afterAll, afterEach, beforeEach, vi } from 'vitest';
 import { cleanup } from '@testing-library/react';
 import { installLeakTripwire } from '../_cleanup';
 import { loadShippedIconPacks } from '../_icon-packs';
@@ -71,4 +71,33 @@ beforeEach(() => {
   if (window.location.search || window.location.hash || window.location.pathname !== '/') {
     window.history.replaceState(null, '', '/');
   }
+});
+
+// Shared globals a file may overwrite DIRECTLY (not via `vi.stubGlobal`, which
+// `unstubAllGlobals` takes back): put them back when the file ends, so no file
+// inherits another's fakes. Same one-thread, one-document reason as above.
+//
+// Found by RCA (2026-10-07): `image-annotator-caption` assigned
+// `URL.createObjectURL = vi.fn()` and never removed it. jsdom has no object-URL
+// API, and `prepareAvatarImage` skips its browser decode when it is absent — with
+// the leaked fake it instead awaited an `Image` load jsdom never fires, and timed
+// out at 15s whenever the sequencer happened to run the annotator first. Proven
+// with a fixed file order: restored -> 12/12 pass, leaked -> timeout. It was the
+// SECOND file caught leaking exactly this (`prompt-attachment-preview` was the
+// first), so it is guarded here for every file, not fixed one file at a time.
+//
+// The snapshot is taken when this setup runs at the start of each file, which is
+// after the previous file's restore — so it is always the pristine state.
+const SHARED_GLOBALS: ReadonlyArray<readonly [object, string]> = [
+  [URL, 'createObjectURL'],
+  [URL, 'revokeObjectURL'],
+  [globalThis, 'Image'],
+];
+const pristineGlobals = SHARED_GLOBALS.map(([owner, key]) => Object.getOwnPropertyDescriptor(owner, key));
+afterAll(() => {
+  SHARED_GLOBALS.forEach(([owner, key], index) => {
+    const descriptor = pristineGlobals[index];
+    if (descriptor) Object.defineProperty(owner, key, descriptor);
+    else delete (owner as Record<string, unknown>)[key];
+  });
 });
