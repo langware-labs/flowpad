@@ -618,13 +618,29 @@ export class PtyConnection {
     })();
 
     this._attachingPtyId = targetPtyId;
-    this._attachPromise = attachWork.finally(() => {
-      if (this._attachPromise === attachWork) {
+    // Compare against the stored promise, not `attachWork`: the field holds the
+    // `.finally()` wrapper, so the old comparison never matched and a settled
+    // attach was handed back to every later non-forced attach of the same id.
+    const attachPromise: Promise<void> = attachWork.finally(() => {
+      if (this._attachPromise === attachPromise) {
         this._attachPromise = null;
         this._attachingPtyId = null;
       }
     });
-    return this._attachPromise;
+    this._attachPromise = attachPromise;
+    return attachPromise;
+  }
+
+  /**
+   * Forget the attach because the backend killed this PTY (→CLI switch).
+   * The next →PTY respawn reuses the same pty id, so a stale `_attached`
+   * turned its attach into a no-op and left the pane blank whenever the
+   * terminal mounted too late to catch `restarted`. Local only: no request,
+   * no repaint, no disconnect event.
+   */
+  markPtyGone(): void {
+    this._attached = false;
+    this._attachedPtyId = null;
   }
 
   // ── Self-healing membership (frozen-terminal RCA, bug A) ──────────────────
