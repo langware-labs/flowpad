@@ -375,6 +375,12 @@ msgstr "{0} deleted"
 msgid "{0} disconnect failed"
 msgstr "{0} disconnect failed"
 
+#. placeholder {0}: index.document_count
+#. placeholder {1}: index.chunk_count
+#: src/hooks/use-rag-roots.tsx
+msgid "{0} documents, {1} chunks"
+msgstr "{0} documents, {1} chunks"
+
 #. placeholder {0}: totals.estimated_requests
 #. placeholder {1}: totals.unpriced_requests
 #: src/components/llm-endpoints/UsagePanel.tsx
@@ -899,6 +905,10 @@ msgstr "{name} has no account to sign into — it runs on an LLM key. Add one to
 msgid "{name} is not set up on this machine"
 msgstr "{name} is not set up on this machine"
 
+#: src/hooks/use-rag-roots.tsx
+msgid "{name} is ready to search"
+msgstr "{name} is ready to search"
+
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "{name} isn't installed on this computer yet."
 msgstr "{name} isn't installed on this computer yet."
@@ -924,6 +934,10 @@ msgstr "{name} was added, but another desk answers first"
 #: src/components/helpdesk/AddHelpdeskDialog.tsx
 msgid "{name} was added, but its guides cannot be opened"
 msgstr "{name} was added, but its guides cannot be opened"
+
+#: src/hooks/use-rag-roots.tsx
+msgid "{name}: indexing stopped"
+msgstr "{name}: indexing stopped"
 
 #: src/components/project-home/ProjectDependenciesCard.tsx
 msgid "{notInstalled, plural, one {# optional dependency not installed} other {# optional dependencies not installed}}"
@@ -1550,6 +1564,7 @@ msgid "active"
 msgstr "active"
 
 #: src/components/api-keys-view/api-keys-view.tsx
+#: src/components/data-sources/status-style.ts
 #: src/components/locale/LocalePicker.tsx
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Active"
@@ -3341,6 +3356,10 @@ msgstr "AWS region for Bedrock"
 msgid "Back"
 msgstr "Back"
 
+#: src/components/data-sources/DataSourcePage.tsx
+msgid "Back to Data sources"
+msgstr "Back to Data sources"
+
 #: src/components/conversation/ThreadHeader.tsx
 msgid "Back to every message in this conversation"
 msgstr "Back to every message in this conversation"
@@ -3538,6 +3557,10 @@ msgstr "Browse"
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "Browse and run LLM-generated folder indexes (MarkdownIndex entities). Each indexer (re)builds a Merkle tree of <0>index.md</0> files over a docs root."
 msgstr "Browse and run LLM-generated folder indexes (MarkdownIndex entities). Each indexer (re)builds a Merkle tree of <0>index.md</0> files over a docs root."
+
+#: src/components/rag/RagView.tsx
+msgid "Browse chunks"
+msgstr "Browse chunks"
 
 #: src/components/automations/AutomationRow.tsx
 msgid "Browse folder"
@@ -6007,7 +6030,7 @@ msgid "Could not publish"
 msgstr "Could not publish"
 
 #. placeholder {0}: source.name || source.provider
-#: src/components/data-sources/DataSourceRow.tsx
+#: src/components/data-sources/source-parts.tsx
 msgid "Could not pull {0}"
 msgstr "Could not pull {0}"
 
@@ -6022,6 +6045,10 @@ msgstr "Could not reach the backend. Try again in a moment."
 #: src/components/assets/editor/agent-profile/AgentPlaceActivity.tsx
 msgid "Could not reach this cloud machine. It may be paused."
 msgstr "Could not reach this cloud machine. It may be paused."
+
+#: src/components/rag/RagChunkBrowser.tsx
+msgid "Could not read the index"
+msgstr "Could not read the index"
 
 #: src/components/code-editor/SnippetView.tsx
 #: src/components/code-editor/SnippetView.tsx
@@ -7478,6 +7505,18 @@ msgstr "Deleting…"
 msgid "Delivered"
 msgstr "Delivered"
 
+#: src/components/data-sources/ChannelRouteControl.tsx
+msgid "Delivered to"
+msgstr "Delivered to"
+
+#: src/components/data-sources/ChannelRouteControl.tsx
+msgid "Delivered to a place that does not hold this channel"
+msgstr "Delivered to a place that does not hold this channel"
+
+#: src/components/data-sources/ChannelRouteControl.tsx
+msgid "Deliveries"
+msgstr "Deliveries"
+
 #: src/components/hub/AddMachineDialog.tsx
 #: src/components/settings-view/settings-utils.ts
 msgid "Deny"
@@ -8179,6 +8218,7 @@ msgid "Drill by"
 msgstr "Drill by"
 
 #: src/components/data-sources/DataDriversView.tsx
+#: src/components/data-sources/DataSourcePage.tsx
 msgid "Driver"
 msgstr "Driver"
 
@@ -8836,6 +8876,7 @@ msgstr "Event: "
 
 #: src/components/assets/editor/agent-profile/deployment/ThreadPane.tsx
 #: src/components/automations/blocks/WhenBlock.tsx
+#: src/components/data-sources/DataSourcePage.tsx
 #: src/components/lens-viewer/HeartbeatEventsViewer.tsx
 msgid "Events"
 msgstr "Events"
@@ -9678,6 +9719,7 @@ msgstr "Field"
 #: src/components/automations/automation-words.ts
 #: src/components/automations/RunDetail.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
+#: src/components/data-sources/DataSourcePage.tsx
 #: src/i18n/type-labels.ts
 #: src/pages/flow-page/display-annotation.ts
 msgid "File"
@@ -9831,8 +9873,8 @@ msgstr "Filter..."
 msgid "Filter…"
 msgstr "Filter…"
 
-#. placeholder {0}: route.tag ?? route.target
-#: src/components/automations/BusView.tsx
+#. placeholder {0}: tag ?? target
+#: src/components/automations/BusStream.tsx
 msgid "filtered to {0}"
 msgstr "filtered to {0}"
 
@@ -9870,7 +9912,7 @@ msgstr "Finish installing the FlowPad GitHub App on {repo}, then"
 msgid "Finish setting up Flowpad"
 msgstr "Finish setting up Flowpad"
 
-#: src/components/data-sources/DataSourceRow.tsx
+#: src/components/data-sources/source-parts.tsx
 msgid "Finish setup, then press Verify."
 msgstr "Finish setup, then press Verify."
 
@@ -9995,6 +10037,10 @@ msgstr "Fixing these tightens the skill for every future run."
 #: src/components/webapp-display/WebDebugComponent.tsx
 msgid "Fixing…"
 msgstr "Fixing…"
+
+#: src/components/data-sources/ChannelRouteControl.tsx
+msgid "Flow answers from its own box · shown here"
+msgstr "Flow answers from its own box · shown here"
 
 #: src/i18n/type-labels.ts
 msgid "Flow Message"
@@ -11112,7 +11158,7 @@ msgstr "How many lines of terminal output to retain in the scrollback buffer."
 msgid "How privacy modes work"
 msgstr "How privacy modes work"
 
-#: src/components/data-sources/DataSourceRow.tsx
+#: src/components/data-sources/source-parts.tsx
 msgid "How to finish setup"
 msgstr "How to finish setup"
 
@@ -12148,6 +12194,10 @@ msgstr "Language"
 msgid "Large"
 msgstr "Large"
 
+#: src/components/data-sources/ChannelRouteControl.tsx
+msgid "last"
+msgstr "last"
+
 #. placeholder {0}: new Date(row.last_run).toLocaleString()
 #. placeholder {0}: new Date(trigger.last_run).toLocaleString()
 #: src/components/assets/editor/agent-profile/AgentScheduleSection.tsx
@@ -12205,6 +12255,7 @@ msgstr "Last prompt failed"
 msgid "Last success"
 msgstr "Last success"
 
+#: src/components/data-sources/DataSourcePage.tsx
 #: src/components/data-sources/DataSourceRow.tsx
 msgid "Last successful sync"
 msgstr "Last successful sync"
@@ -12525,7 +12576,7 @@ msgstr "listening"
 msgid "live"
 msgstr "live"
 
-#: src/components/automations/BusView.tsx
+#: src/components/automations/BusStream.tsx
 msgid "Live"
 msgstr "Live"
 
@@ -13475,6 +13526,7 @@ msgid "Message Thread"
 msgstr "Message Thread"
 
 #: src/components/data-sources/DataDriversView.tsx
+#: src/components/data-sources/DataSourcePage.tsx
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Messages"
 msgstr "Messages"
@@ -13527,6 +13579,10 @@ msgstr "minutes"
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "Mis-Sc"
 msgstr "Mis-Sc"
+
+#: src/components/data-sources/ChannelRouteControl.tsx
+msgid "misrouted"
+msgstr "misrouted"
 
 #: src/components/assets/DependencyChips.tsx
 #: src/components/credentials-view/CredentialView.tsx
@@ -13859,8 +13915,13 @@ msgid "needs attention"
 msgstr "needs attention"
 
 #: src/components/automations/AutomationRow.tsx
+#: src/components/data-sources/health-style.ts
 msgid "Needs attention"
 msgstr "Needs attention"
+
+#: src/components/data-sources/status-style.ts
+msgid "Needs setup"
+msgstr "Needs setup"
 
 #: src/components/connections-manager/credential-rows-view.tsx
 msgid "Needs values"
@@ -13902,6 +13963,10 @@ msgstr "Never ran"
 msgid "never run"
 msgstr "never run"
 
+#: src/components/data-sources/health-style.ts
+msgid "Never synced"
+msgstr "Never synced"
+
 #: src/components/stream-inbox-view/StreamInboxView.tsx
 #: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Never synced to cloud"
@@ -13913,6 +13978,7 @@ msgstr "new"
 
 #: src/components/assets/AssetListView.tsx
 #: src/components/chats-navigator/ChatsFilterBar.tsx
+#: src/components/data-sources/status-style.ts
 #: src/components/entity-execution-panel/NewSessionPill.tsx
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 #: src/components/project-activity-strip/RecentConversationsStrip.tsx
@@ -14168,6 +14234,11 @@ msgstr "Next match (Enter)"
 msgid "Next poll"
 msgstr "Next poll"
 
+#. placeholder {0}: timeUntil(source.next_poll_at)
+#: src/components/data-sources/DataSourcePage.tsx
+msgid "Next poll {0}"
+msgstr "Next poll {0}"
+
 #: src/components/terminal/interactive-terminal/side-windows/QueuePanel.tsx
 msgid "Next prompt — injected when the agent next goes idle. Press Enter to add."
 msgstr "Next prompt — injected when the agent next goes idle. Press Enter to add."
@@ -14176,6 +14247,7 @@ msgstr "Next prompt — injected when the agent next goes idle. Press Enter to a
 msgid "Next runs"
 msgstr "Next runs"
 
+#: src/components/data-sources/DataSourcePage.tsx
 #: src/components/data-sources/DataSourceRow.tsx
 msgid "Next scheduled poll"
 msgstr "Next scheduled poll"
@@ -15567,6 +15639,10 @@ msgstr "Nothing here yet."
 msgid "Nothing in private context yet."
 msgstr "Nothing in private context yet."
 
+#: src/components/rag/RagChunkBrowser.tsx
+msgid "Nothing indexed yet."
+msgstr "Nothing indexed yet."
+
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "Nothing indexed yet. <0>Refresh Index</0> to populate."
 msgstr "Nothing indexed yet. <0>Refresh Index</0> to populate."
@@ -15685,7 +15761,7 @@ msgstr "Nothing was launched. You can close this tab."
 msgid "Nothing would arrive for this, so it was not sent:"
 msgstr "Nothing would arrive for this, so it was not sent:"
 
-#: src/components/automations/BusView.tsx
+#: src/components/automations/BusStream.tsx
 msgid "Nothing yet. Only some event families reach the app; the counts above cover every event."
 msgstr "Nothing yet. Only some event families reach the app; the counts above cover every event."
 
@@ -15925,6 +16001,8 @@ msgstr "Open"
 
 #. placeholder {0}: app.name
 #. placeholder {0}: file.path
+#. placeholder {0}: source.name || source.provider
+#: src/components/data-sources/DataSourceRow.tsx
 #: src/components/data-sources/SourceMenu.tsx
 #: src/components/entity-execution-panel/TurnFilesChips.tsx
 msgid "Open {0}"
@@ -16059,7 +16137,7 @@ msgid "Open data_driver.json"
 msgstr "Open data_driver.json"
 
 #: src/components/data-sources/DataDriversView.tsx
-#: src/components/data-sources/DataSourceRow.tsx
+#: src/components/data-sources/SourceMenu.tsx
 msgid "Open data_source.json"
 msgstr "Open data_source.json"
 
@@ -16074,6 +16152,10 @@ msgstr "Open diagnosis as a tab"
 #: src/components/artifacts/artifact-form.tsx
 msgid "Open dot-path ontology; custom descendants are welcome."
 msgstr "Open dot-path ontology; custom descendants are welcome."
+
+#: src/components/data-sources/SourceMenu.tsx
+msgid "Open driver folder"
+msgstr "Open driver folder"
 
 #: src/components/assets/editor/AssetEditorHeader.tsx
 #: src/components/display-toolbar/GenericDisplayToolbar.tsx
@@ -16354,6 +16436,10 @@ msgstr "Open session"
 msgid "Open Session"
 msgstr "Open Session"
 
+#: src/components/data-sources/SourceMenu.tsx
+msgid "Open source folder"
+msgstr "Open source folder"
+
 #: src/components/conversation/attachment-actions/registry.ts
 msgid "Open Spec"
 msgstr "Open Spec"
@@ -16418,6 +16504,10 @@ msgstr "Open the assistant in its own window, beside Flowpad"
 #: src/components/automations/RunDetail.tsx
 msgid "Open the automation to fix it"
 msgstr "Open the automation to fix it"
+
+#: src/components/data-sources/DataSourcePage.tsx
+msgid "Open the event bus"
+msgstr "Open the event bus"
 
 #: src/components/footer.tsx
 msgid "Open the help desk"
@@ -16821,6 +16911,7 @@ msgid "Overwrite"
 msgstr "Overwrite"
 
 #: src/components/assets/editor/task/DelegationBlock.tsx
+#: src/components/data-sources/DataSourcePage.tsx
 #: src/components/git/RepoPicker.tsx
 msgid "Owner"
 msgstr "Owner"
@@ -16882,9 +16973,17 @@ msgstr "Parent folder"
 msgid "Parent folder to clone into…"
 msgstr "Parent folder to clone into…"
 
-#: src/components/data-sources/DataSourceRow.tsx
+#: src/components/data-sources/source-parts.tsx
+msgid "Parked"
+msgstr "Parked"
+
+#: src/components/data-sources/source-parts.tsx
 msgid "Parked — the scheduler skips a <0>config_error</0> source, so it will not poll again on its own. <1>Pull</1> clears the latch."
 msgstr "Parked — the scheduler skips a <0>config_error</0> source, so it will not poll again on its own. <1>Pull</1> clears the latch."
+
+#: src/components/data-sources/source-parts.tsx
+msgid "Parked: the scheduler skips it until you pull"
+msgstr "Parked: the scheduler skips it until you pull"
 
 #: src/components/ask/AskView.tsx
 msgid "Part of a setup — see its progress"
@@ -17009,7 +17108,7 @@ msgstr "Pattern"
 msgid "Pattern sandbox"
 msgstr "Pattern sandbox"
 
-#: src/components/automations/BusView.tsx
+#: src/components/automations/BusStream.tsx
 #: src/components/collaboration/LiveSessionView.tsx
 #: src/components/data-sources/SourceMenu.tsx
 #: src/components/machine-overview/machine-overview.tsx
@@ -17035,6 +17134,7 @@ msgstr "paused"
 
 #: src/components/assets/editor/agent-profile/AgentPlaceCard.tsx
 #: src/components/assets/editor/agent-profile/AgentPlacesColumn.tsx
+#: src/components/data-sources/status-style.ts
 #: src/pages/hub-home/HubHome.tsx
 msgid "Paused"
 msgstr "Paused"
@@ -18029,7 +18129,6 @@ msgstr "Published version up to date"
 msgid "Published when you deploy"
 msgstr "Published when you deploy"
 
-#: src/components/data-sources/DataSourceRow.tsx
 #: src/components/status-bar/GitPullButton.tsx
 msgid "Pull"
 msgstr "Pull"
@@ -18049,7 +18148,7 @@ msgstr "Pull & Open"
 msgid "Pull and open task"
 msgstr "Pull and open task"
 
-#: src/components/data-sources/DataSourceRow.tsx
+#: src/components/data-sources/SourceMenu.tsx
 msgid "Pull changes now"
 msgstr "Pull changes now"
 
@@ -19240,7 +19339,7 @@ msgstr "Result"
 msgid "Results"
 msgstr "Results"
 
-#: src/components/automations/BusView.tsx
+#: src/components/automations/BusStream.tsx
 #: src/components/chats-navigator/ChatsNavigator.tsx
 #: src/components/collaboration/LiveSessionView.tsx
 #: src/components/data-sources/SourceMenu.tsx
@@ -19305,6 +19404,10 @@ msgstr "Retry download"
 msgid "Retry pull"
 msgstr "Retry pull"
 
+#: src/components/data-sources/health-style.ts
+msgid "Retrying"
+msgstr "Retrying"
+
 #: src/components/conversation/MessageBubble.tsx
 msgid "Retrying…"
 msgstr "Retrying…"
@@ -19336,7 +19439,6 @@ msgid "Reveal in Finder"
 msgstr "Reveal in Finder"
 
 #: src/components/connections-manager/credential-rows-view.tsx
-#: src/components/data-sources/SourceMenu.tsx
 #: src/components/terminal/interactive-terminal/side-windows/InputFilesPanel.tsx
 msgid "Reveal in Finder/Explorer"
 msgstr "Reveal in Finder/Explorer"
@@ -19711,6 +19813,7 @@ msgstr "running"
 #: src/components/assets/editor/agent-profile/AgentPlacesColumn.tsx
 #: src/components/automations/automation-words.ts
 #: src/components/automations/RunsView.tsx
+#: src/components/data-sources/health-style.ts
 #: src/pages/hub-home/HubHome.tsx
 msgid "Running"
 msgstr "Running"
@@ -19756,6 +19859,7 @@ msgstr "Running…"
 #: src/components/automations/AutomationsNavigator.tsx
 #: src/components/automations/RunsView.tsx
 #: src/components/collapsed-sidebar/collapsed-sidebar.tsx
+#: src/components/data-sources/DataSourcePage.tsx
 #: src/components/data-sources/SourceMenu.tsx
 #: src/components/triggers-view/ScheduleTriggerEditor.tsx
 #: src/types/ViewType.ts
@@ -20258,6 +20362,10 @@ msgstr "Search icons"
 #: src/components/ui/icon-picker.tsx
 msgid "Search icons…"
 msgstr "Search icons…"
+
+#: src/hooks/use-rag-roots.tsx
+msgid "Search index"
+msgstr "Search index"
 
 #: src/pages/search-view/SearchView.tsx
 msgid "Search index is warming up. Results will appear once indexing is complete."
@@ -21013,6 +21121,7 @@ msgid "Setting up your project…"
 msgstr "Setting up your project…"
 
 #: src/components/assets/editor/agent-profile/deployment/AgentDeploymentPage.tsx
+#: src/components/data-sources/DataSourcePage.tsx
 #: src/components/settings-view/SettingsView.tsx
 #: src/pages/flow-page/content-panel/user-dropdown/user-dropdown.tsx
 #: src/pages/flow-page/content-panel/user-dropdown/user-dropdown.tsx
@@ -21359,6 +21468,11 @@ msgstr "Show init"
 #: src/journey/JourneyViewer.tsx
 msgid "Show journey"
 msgstr "Show journey"
+
+#. placeholder {0}: chunks.length
+#: src/components/rag/RagChunkBrowser.tsx
+msgid "Show more ({0} of {total})"
+msgstr "Show more ({0} of {total})"
 
 #: src/journey/JourneyTray.tsx
 #: src/journey/JourneyTray.tsx
@@ -21954,6 +22068,10 @@ msgstr "Something went wrong while loading this page."
 #: src/lib/publish-state.ts
 msgid "Something went wrong. Please try again."
 msgstr "Something went wrong. Please try again."
+
+#: src/components/data-sources/ChannelRouteControl.tsx
+msgid "Somewhere else"
+msgstr "Somewhere else"
 
 #: src/components/terminal/HistoryModal.tsx
 msgid "Sort by time"
@@ -22696,6 +22814,11 @@ msgstr "Sync {0} changes and refresh stats"
 msgid "Synced"
 msgstr "Synced"
 
+#. placeholder {0}: timeSince(source.last_synced_at)
+#: src/components/data-sources/DataSourcePage.tsx
+msgid "Synced {0}"
+msgstr "Synced {0}"
+
 #. placeholder {0}: row.type
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "Syncing {0}…"
@@ -23428,7 +23551,7 @@ msgstr "The site doesn't allow being embedded in other apps. Open it in your bro
 msgid "The skill matches HEAD."
 msgstr "The skill matches HEAD."
 
-#: src/components/data-sources/DataSourceRow.tsx
+#: src/components/data-sources/source-parts.tsx
 msgid "The source was not queued."
 msgstr "The source was not queued."
 
@@ -24074,6 +24197,10 @@ msgstr "This skill has uncommitted changes — improve runs only on a clean skil
 #: src/components/llm-sources/use-llm-sources.ts
 msgid "This source did not work"
 msgstr "This source did not work"
+
+#: src/components/data-sources/DataSourcePage.tsx
+msgid "This source is not on this machine (it may have been deleted)."
+msgstr "This source is not on this machine (it may have been deleted)."
 
 #: src/components/llm-sources/use-llm-sources.ts
 msgid "This source works"
@@ -25410,11 +25537,11 @@ msgid "Verified"
 msgstr "Verified"
 
 #: src/components/account/user-info.tsx
-#: src/components/data-sources/DataSourceRow.tsx
+#: src/components/data-sources/source-parts.tsx
 msgid "Verify"
 msgstr "Verify"
 
-#: src/components/data-sources/DataSourceRow.tsx
+#: src/components/data-sources/SourceMenu.tsx
 msgid "Verify the setup first."
 msgstr "Verify the setup first."
 
@@ -25693,6 +25820,10 @@ msgstr "Web App"
 #: src/components/display-toolbar/WebappDisplayToolbar.tsx
 msgid "Web app status"
 msgstr "Web app status"
+
+#: src/components/data-sources/ChannelRouteControl.tsx
+msgid "Webhook"
+msgstr "Webhook"
 
 #: src/components/cost-dashboard/constants.ts
 msgid "Week"
@@ -26236,6 +26367,7 @@ msgid "yesterday {hhmm}"
 msgstr "yesterday {hhmm}"
 
 #: src/components/collaboration/LiveSessionView.tsx
+#: src/components/data-sources/DataSourcePage.tsx
 msgid "you"
 msgstr "you"
 
