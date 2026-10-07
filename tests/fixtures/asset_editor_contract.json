@@ -20,6 +20,7 @@
     "mcp",
     "llm_endpoint",
     "credential",
+    "diagnosis_request",
     "html",
     "mcp_app",
     "image",
@@ -90,6 +91,9 @@
     "credential": [
       "credential"
     ],
+    "diagnosis_request": [
+      "diagnosis_request"
+    ],
     "html": [],
     "mcp_app": [],
     "image": [],
@@ -122,7 +126,8 @@
     "wizard": "wizard",
     "mcp": "mcp",
     "llm_endpoint": "llm_endpoint",
-    "credential": "credential"
+    "credential": "credential",
+    "diagnosis_request": "diagnosis_request"
   },
   "url_cases": [
     {

@@ -873,6 +873,15 @@ class AgenticProcess(Entity):
             "URL, so a stale value earns a 401/403 rather than reaching a budget it may not spend."
         ),
     )
+    llm_endpoint_public: bool = APIField(
+        default=False,
+        description=(
+            "``llm_endpoint_typeid`` names a PUBLIC hub endpoint -- spendable by whoever holds its id, "
+            "with no hub login. Scoped to THIS process: a run told to spend someone else's public "
+            "budget (``flow diagnose <request id>``) must not rebind the box's own default the way "
+            "``flow llm user use`` does. Ignored without ``llm_endpoint_typeid``."
+        ),
+    )
     process_hook_events: list[str] = APIField(
         default_factory=list,
         description="Process-local worker hook events enabled for this process.",
@@ -3026,7 +3035,9 @@ class AgenticProcess(Entity):
         except DisplayTargetNotFound as e:
             from flow_sdk.schema.data_spec.returned_value_spec import NavigateResult  # noqa: PLC0415
 
-            return ApiSuccessResponse(data=NavigateResult.not_found(str(e), verdict="not_found").model_dump(mode="json"))
+            return ApiSuccessResponse(
+                data=NavigateResult.not_found(str(e), verdict="not_found").model_dump(mode="json")
+            )
 
         return await self._show_answer(payload)
 

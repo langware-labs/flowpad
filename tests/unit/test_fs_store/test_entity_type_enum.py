@@ -158,6 +158,7 @@ EXPECTED = {
     "SKILLIT_CONFIG": "skillit_config",
     "COPILOT_SESSION": "copilot_session",
     "FLOWPAD_DIAGNOSIS": "flowpad_diagnosis",
+    "DIAGNOSIS_REQUEST": "diagnosis_request",
     # Tab entity system + AgentTrace — additive members; the commits that added
     # them missed this freeze. New members are allowed; existing values stay frozen.
     "AGENT_TRACE": "agent_trace",

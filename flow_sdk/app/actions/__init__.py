@@ -9,6 +9,7 @@ from . import (  # noqa: F401
     context_resolve_action,
     context_share_action,
     diagnose_action,
+    diagnosis_request_action,
     execute_prompt,
     flow_message_action,
     git_share_preflight_action,
