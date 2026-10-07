@@ -52,6 +52,10 @@ msgid "— current"
 msgstr "— current"
 
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
+msgid "— for this run only, optional"
+msgstr "— for this run only, optional"
+
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
 msgid "— one step per line, optional"
 msgstr "— one step per line, optional"
 
@@ -9693,14 +9697,6 @@ msgstr "Files"
 msgid "Files & Directories"
 msgstr "Files & Directories"
 
-#: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
-msgid "Files and skills their agent gets for this run only."
-msgstr "Files and skills their agent gets for this run only."
-
-#: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
-msgid "Files from your computer"
-msgstr "Files from your computer"
-
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "Files on disk not yet in the DB"
 msgstr "Files on disk not yet in the DB"
@@ -9791,10 +9787,6 @@ msgstr "Filter repos by owner or name…"
 #: src/components/project-resource-list/ProjectResourceList.tsx
 msgid "Filter resources"
 msgstr "Filter resources"
-
-#: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
-msgid "Filter skills…"
-msgstr "Filter skills…"
 
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "Filter types…"
@@ -15062,10 +15054,6 @@ msgstr "No skill-attributed findings to improve."
 #~ msgid "No skills found"
 #~ msgstr "No skills found"
 
-#: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
-msgid "No skills found."
-msgstr "No skills found."
-
 #~ msgid "No skills in this agent"
 #~ msgstr "No skills in this agent"
 
@@ -20313,14 +20301,6 @@ msgstr "Search terminal…"
 msgid "Search the docs…"
 msgstr "Search the docs…"
 
-#: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
-msgid ""
-"Search the Flowpad server log for 'database is locked'\n"
-"Run flow diagnose"
-msgstr ""
-"Search the Flowpad server log for 'database is locked'\n"
-"Run flow diagnose"
-
 #~ msgid "Search this project…"
 #~ msgstr "Search this project…"
 
@@ -21765,7 +21745,6 @@ msgid "skills"
 msgstr "skills"
 
 #: src/components/agent-resources/AgentResourcesBody.tsx
-#: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
 #: src/components/lens-viewer/ClaudeContextViewer.tsx
 #: src/components/terminal/interactive-terminal/side-windows/SideWindowTypes.ts
 #: src/components/terminal/interactive-terminal/side-windows/SkillsAgentsPanel.tsx

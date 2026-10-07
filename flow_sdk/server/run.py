@@ -47,8 +47,6 @@ import uvicorn
 from dotenv import load_dotenv
 from filelock import FileLock
 
-from flow_sdk.core.capabilities.env_probe import adopt_terminal_path, start_terminal_path_capture
-
 # A named logger, never the module-level `logging.info(...)` helpers: those
 # install a root handler in the DEFAULT format on first use, and that first
 # use (raising RLIMIT_NOFILE) happens before app.py's basicConfig — which then
@@ -138,6 +136,12 @@ try:
         load_dotenv(env_file, override=True)
 except (FileNotFoundError, OSError):
     pass
+
+# Only AFTER the .env file is loaded: env_probe imports ``flow_sdk.config``, whose
+# ``default_service_config`` reads the environment ONCE, at import. Imported above the
+# load_dotenv, it froze FLOWPAD_HUB_URL before .env.<instance>.local could set it, so a
+# dev backend pointed at staging silently talked to app.flowpad.ai.
+from flow_sdk.core.capabilities.env_probe import adopt_terminal_path, start_terminal_path_capture  # noqa: E402
 
 # Build the per-instance settings singleton now that .env.local is loaded.
 # Anything imported below that touches FLOW_HOME / .flow paths goes through
