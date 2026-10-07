@@ -1,3 +1,4 @@
+import { lifecyclesOf, useHandledKeys } from './message-lifecycle';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Trans } from '@lingui/react/macro';
 import { useLingui } from '@lingui/react/macro';
@@ -22,6 +23,7 @@ import {
 } from '@sdk';
 import { claimTabSwitchReady, sinceTabSwitch } from '@src/navigation/tab-switch-state';
 import { useAuth, useEntitiesQuery, useEntity, useOnTag, useProject } from '@sdk/react/hooks';
+import type { FlowEvent } from '@sdk/tags/EventBus';
 import type { ITask, TaskableMessage } from '@sdk/entities/task';
 import { isClosedConversation, isHelpdeskKind } from '@sdk/entities/conversation';
 import { ThreadHeader } from './ThreadHeader';
@@ -341,6 +343,16 @@ export function ConversationView({
         native: channelSpec.transport === ChannelTransport.Flowpad,
       }
     : null;
+  // Each message come in on the channel: where it is on its way to an answer (live statuses + the feed's answers).
+  const handledKeys = useHandledKeys(channel ? conversation?.channel_source_id : null);
+  const lifecycles = useMemo(() => {
+    if (!channel) return null;
+    const ordered = orderedItems.flatMap((it): FlowMessage[] => {
+      const fm = it.kind === ConversationItemKind.POINTER ? messagesById.get(it.messageId) : undefined;
+      return fm ? [fm] : [];
+    });
+    return lifecyclesOf(ordered, handledKeys);
+  }, [channel, orderedItems, messagesById, handledKeys]);
   const quotedFor = (fm: FlowMessage | null) => {
     if (!fm?.reply_to_id) return null;
     const parent = messagesById.get(fm.reply_to_id);
@@ -393,6 +405,19 @@ export function ConversationView({
   // the user hits Send — the worker's process does not exist yet. Cleared when
   // the reply lands, which is the only honest signal it is no longer sending.
   const [sendingText, setSendingText] = useState<string | null>(null);
+  // A channel reply that did not go: the send runs after its request returned, so the channel's refusal arrives
+  // as a live signal (`stream_inbox.<provider>.reply.failed`) and replaces the "Sending" line, with its words.
+  const [notSent, setNotSent] = useState<{ text: string; reason: string } | null>(null);
+  useOnTag(
+    'stream_inbox.*.reply.failed',
+    (event: FlowEvent) => {
+      const data = (event.data ?? {}) as { conversation_id?: string; reason?: string };
+      if (data.conversation_id !== conversationId) return;
+      setNotSent({ text: sendingText ?? '', reason: String(data.reason ?? '') });
+      setSendingText(null);
+    },
+    { target: `conversation:${conversationId}` },
+  );
 
   useEffect(() => {
     if (sendingText) setSendingText(null);
@@ -533,6 +558,7 @@ export function ConversationView({
           messageAttachments={attachmentsByMessage.get(id)}
           showEmailHeaders={!!agentId}
           channelTraits={channelTraits}
+          lifecycle={lifecycles?.get(id) ?? null}
           quoted={quotedFor(fm)}
           onReply={channelSpec?.replies ? setReplyTo : undefined}
           messageTask={messageTasks.get(id) ?? null}
@@ -960,12 +986,28 @@ export function ConversationView({
           wrong half the time. The reply itself arrives in the feed by the
           ordinary ingest route once it exists. */}
       {sendingText && <SessionEventLine text={t`Sending in ${channelSpec?.title}: “${sendingText}”`} />}
+      {notSent && (
+        // Tinted with a red border; the words stay the foreground colour (red text on a dark theme does not read).
+        <p
+          className="mx-auto my-1 w-fit max-w-[80%] rounded border border-red-500/60 bg-red-500/10 px-2 py-1 text-xs"
+          role="alert"
+          data-testid="channel-reply-not-sent"
+        >
+          <span className="font-medium">
+            <Trans>Not sent</Trans>
+          </span>
+          {notSent.text ? ` “${notSent.text}”` : ''} — {notSent.reason}
+        </p>
+      )}
       <MessageComposer
         conversationId={conversationId}
         onSent={() => void refetch()}
         // A source-backed conversation replies into its channel, not the hub.
         channel={channel}
-        onChannelSent={setSendingText}
+        onChannelSent={(text) => {
+          setNotSent(null);
+          setSendingText(text);
+        }}
         placeholder={channelSpec && !channelSpec.home ? t`Reply in ${channelSpec.title}` : undefined}
         agentId={agentId ?? undefined}
         sessionHost={channelSpec && !channelSpec.hosts_sessions ? null : sessionHost}

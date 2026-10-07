@@ -17,7 +17,7 @@
  */
 import { useCallback, useMemo, useState } from 'react';
 import { DataSource } from '@sdk';
-import { Eye, Plus } from 'lucide-react';
+import { Eye, Plus, Waypoints } from 'lucide-react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { useEntitiesQuery } from '@src/hooks/entity-hooks';
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
@@ -34,8 +34,9 @@ import { ReplayDialog } from './ReplayDialog';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useIsAdvanced } from '@src/contexts/view-mode-context';
-import { openDriver, parseDataSourcesPointer } from './data-sources-pointer';
+import { openChannels, openDriver, parseDataSourcesPointer } from './data-sources-pointer';
 import { DataDriverPage, DataDriversList } from './DataDriversView';
+import { MessageChannelsList } from './MessageChannelsList';
 import { DataSourcePage } from './DataSourcePage';
 
 export function DataSourcesView() {
@@ -106,6 +107,8 @@ export function DataSourcesView() {
         onReplay={setReplaying}
         onDelete={setDeleting}
       />
+    ) : route.section === 'channels' ? (
+      <MessageChannelsList />
     ) : route.section === 'drivers' ? (
       route.driver ? (
         <DataDriverPage name={route.driver} sources={sources} />
@@ -198,6 +201,19 @@ export function DataSourcesView() {
         </h1>
         {sources.length > 0 && (
           <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">{sources.length}</span>
+        )}
+        {route.section === 'sources' && (
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-7 gap-1.5 px-2 text-muted-foreground"
+            title={t`Every message channel and where its messages arrive`}
+            data-testid="data-sources-view-channels"
+            onClick={() => openChannels(navigation)}
+          >
+            <Waypoints className="size-3.5" />
+            <Trans>Channels</Trans>
+          </Button>
         )}
         {advanced && route.section === 'sources' && (
           <Button

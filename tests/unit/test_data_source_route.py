@@ -33,7 +33,7 @@ def hub(monkeypatch):
 
 
 def _claim(source: DataSource, **target) -> dict:
-    return {"id": "c-1", "url": "https://hub/api/v1/webhook/c-1", "target": {"data_source_id": str(source.id), **target}, "watch": {}}
+    return {"id": "c-1", "url": "https://hub/api/v1/webhook/c-1", "target": {"data_source_id": str(source.id), **target}}
 
 
 async def test_the_route_is_the_claim_that_delivers_here_and_names_this_computer(hub):
@@ -69,18 +69,3 @@ async def test_moving_a_channel_to_a_cloud_placement_points_the_claim_at_its_nod
     ((entity, claim_id, action, body),) = hub["posted"]
     assert (entity, claim_id, action) == ("webhook", "c-1", "set_target")
     assert body == {"target": {"kind": "node", "node_typeid": "compute_node-n-9", "data_source_id": str(source.id)}}
-
-
-async def test_flows_channel_is_not_moved(hub, monkeypatch):
-    source = DataSource(provider="flow_whatsapp", name="flow")
-    hub["claims"] = [{"id": "c-2", "target": {"kind": "placement", "agent_typeid": "agent-f"}, "watch": {"data_source_id": str(source.id)}}]
-
-    async def body():
-        return {"place": "this"}
-
-    monkeypatch.setattr(DataSource, "_body", staticmethod(body))
-
-    refused = await source.set_route_action()
-
-    assert refused.status_code == 409 and hub["posted"] == []
-    assert (await source.route_action()).data["current"] == "flow"

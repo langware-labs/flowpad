@@ -77,10 +77,9 @@ export interface DataSource extends EntityMerge<IDataSource> {}
 
 /** Where a hub webhook claim hands this channel's messages (the hub's `DeliveryTarget`). */
 export interface ChannelRouteTarget {
-  kind: 'none' | 'desktop' | 'node' | 'placement';
+  kind: 'none' | 'desktop' | 'node';
   instance_id?: string;
   node_typeid?: string;
-  agent_typeid?: string;
   data_source_id?: string;
 }
 
@@ -92,7 +91,6 @@ export interface ChannelRouteClaim {
   status: 'pending' | 'active' | 'lapsed';
   claim?: { kind: 'root' | 'account' | 'user' | 'group'; key: string } | null;
   target: ChannelRouteTarget;
-  watch: ChannelRouteTarget;
   deliveries: number;
   misroutes: number;
   recent: { at: number; method: string; sub_path?: string; status: number }[];
@@ -109,8 +107,26 @@ export interface ChannelRoutePlace {
 export interface ChannelRoute {
   claim: ChannelRouteClaim | null;
   places: ChannelRoutePlace[];
-  /** `this`, a deployment id, `flow` (Flow's own box), or '' when it points elsewhere. */
+  /** `this`, a deployment id, or '' when it points elsewhere. */
   current: string;
+}
+
+/** Where a channel's messages arrive, from this instance's point of view: a hub claim delivering to `this`
+ *  computer, another `instance`, a `node`, `nowhere` yet — `unclaimed` when the source receives only through a claim
+ *  and has none (it needs Connect), or `polls` when the source fetches its own. */
+export type ChannelRouted = 'this' | 'instance' | 'node' | 'nowhere' | 'unclaimed' | 'polls';
+
+/** One MessageChannel (`GET data_source/channels`): a message source and the hub claim that delivers to it. A hub
+ *  claim whose channel is not on this instance comes with no `source_id`. */
+export interface MessageChannelRow {
+  source_id: string;
+  name: string;
+  provider: string;
+  channel: string;
+  claim: ChannelRouteClaim | null;
+  routed: ChannelRouted;
+  /** Who answers it: one of its owner's deployments, its owning agent, or nobody yet ('' with no source here). */
+  answered_by: 'deployment' | 'agent' | 'nobody' | '';
 }
 
 /** One thing a provider says can be picked. Mirrors `Choice` in `choice_spec.py`. */
@@ -243,6 +259,13 @@ export class DataSource extends APIEntity<DataSource> implements IDataSource {
     return new Date(this.next_poll_at).getTime() <= Date.now();
   }
 
+  /** Every MessageChannel and where it is routed. */
+  static async channels(): Promise<MessageChannelRow[]> {
+    const info = new ActionInfo('channels', DataSource.type, null, 'GET');
+    const data = await dataManager.callAction<unknown, { channels: MessageChannelRow[] }>(info);
+    return data?.channels ?? [];
+  }
+
   /**
    * What this credential can offer for one choosable config field — buckets, shared
    * drives, channels.
@@ -343,7 +366,13 @@ export class DataSource extends APIEntity<DataSource> implements IDataSource {
 
   /** Send one message into the channel. `to` is what the channel addresses (a chat, a channel
    *  id, an address); the source class decides how it reads it. */
-  async send(message: { to: string; text: string; thread_key?: string; subject?: string; in_reply_to?: string }): Promise<DataSourceSendOutcome> {
+  async send(message: {
+    to: string;
+    text: string;
+    thread_key?: string;
+    subject?: string;
+    in_reply_to?: string;
+  }): Promise<DataSourceSendOutcome> {
     return this.post('send', message);
   }
 
@@ -358,7 +387,13 @@ export class DataSource extends APIEntity<DataSource> implements IDataSource {
   }
 
   /** One sync cycle NOW, reported — unlike `pollNow`, which only marks the source due. */
-  async syncNow(): Promise<{ created: number; updated: number; unchanged: number; health: SourceHealth; status: SourceStatus }> {
+  async syncNow(): Promise<{
+    created: number;
+    updated: number;
+    unchanged: number;
+    health: SourceHealth;
+    status: SourceStatus;
+  }> {
     return this.post('sync');
   }
 

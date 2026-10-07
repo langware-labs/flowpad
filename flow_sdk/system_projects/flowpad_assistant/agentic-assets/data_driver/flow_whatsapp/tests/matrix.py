@@ -11,10 +11,10 @@ from .test_flow_whatsapp_source import PHONE, FlowWhatsAppSource, _Hub
 @contextmanager
 def case(monkeypatch, tmp_path):
     fake = _Hub()
-    fake.links["L1"] = {"id": "L1", "status": "connected", "code": "", "sender": PHONE}
+    fake.claims["C1"] = {"id": "C1", "status": "active", "code": "", "claim": {"kind": "user", "key": PHONE}, "sender": PHONE}
     monkeypatch.setattr(FlowWhatsAppSource, "build", classmethod(lambda cls, binding: cls(binding, hub=fake)))
     yield {
-        "config": {"link_id": "L1", "wa_id": PHONE},
+        "config": {"claim_id": "C1", "wa_id": PHONE},
         "min_items": 0,
         "send": {"to": PHONE, "text": "matrix send"},
     }

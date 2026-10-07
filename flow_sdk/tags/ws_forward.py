@@ -71,11 +71,17 @@ logger = logging.getLogger(__name__)
 # than infer it. Delivery is BEST-EFFORT by construction: the bus has no
 # durability, so a client connecting afterwards gets nothing, and the durable
 # record of what the event caused is the fired trigger's own row.
+# `stream_inbox.*.message.status` is an agent here taking a channel message (handling): one frame per message,
+# never stored — the open conversation draws it.
+# `stream_inbox.*.reply.failed` is a reply the person sent that did not go (the channel refused it): one frame
+# per failed send — the send runs after its request returned, so this is how the person hears.
 FORWARDED_TAG_PATTERNS: list[str] = [
     "app.ready",
     "graph_workflow.*",
     "ingest.*.sync.*",
     "stream_inbox.*.message.projected",
+    "stream_inbox.*.message.status",
+    "stream_inbox.*.reply.failed",
     "agent.status",
     "voice.call.*",
     "task.*",

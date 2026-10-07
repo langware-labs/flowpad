@@ -1,5 +1,9 @@
 /**
- * One configured source — what went through ONE of this machine's pipes. `Data sources › <source>`, three tabs:
+ * One configured source — what went through ONE of this machine's pipes. `Data sources › <source>`.
+ *
+ * Simple (`/dock/data-sources/<id>`, the default): the source's stream and nothing else — a message source's
+ * conversation, messages going back and forth with the composer under them (its list when it has several); any other
+ * source's live events. The header's Advanced (any tab in the URL) opens the rest, three tabs:
  *
  *   Messages  the conversations that came through it, live — the stream inbox's own list, narrowed by the backend to
  *             this source (`channel_source_id`). Only for a source that carries messages. A conversation opens in
@@ -13,7 +17,10 @@
  */
 import { type DataSource, type DataDriver, Agent } from '@sdk';
 import { Trans, useLingui } from '@lingui/react/macro';
-import { ArrowLeft, ExternalLink, History } from 'lucide-react';
+import { useMemo } from 'react';
+import { ArrowLeft, ExternalLink, History, SlidersHorizontal } from 'lucide-react';
+import type { Conversation } from '@sdk';
+import { useEntitiesQuery } from '@src/hooks/entity-hooks';
 import { ConversationPanel } from '@src/components/conversation/ConversationPanel';
 import { timeSince, timeUntil } from '@src/utils/duration';
 import { cn } from '@src/lib/utils';
@@ -22,7 +29,7 @@ import { IconWithBadge } from '@src/components/graph-view/icons/IconWithBadge';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { StreamInboxView } from '@src/components/stream-inbox-view/StreamInboxView';
-import { ownerOf } from '@src/components/stream-inbox-view/channel-owner';
+import { ownerOf, sourceConversationsRequest } from '@src/components/stream-inbox-view/channel-owner';
 import { BusStream } from '@src/components/automations/BusStream';
 import { sourceGlyphs } from './source-icon';
 import { SourceActions, SourceSetupDetails, SourceStatusLine } from './source-parts';
@@ -63,7 +70,9 @@ export function DataSourcePage({ source, id, tab, conversation, thread, spec, on
     { key: 'events', label: t`Events` },
     { key: 'settings', label: t`Settings` },
   ];
-  // The URL decides; an absent (or, for this source, impossible) tab falls to its first one.
+  // The URL decides: no tab is the simple view; a tab (or an open conversation) is Advanced, and a tab impossible for
+  // this source falls to its first one.
+  const advanced = !!tab || !!conversation;
   const active = tabs.some((x) => x.key === tab) ? (tab as SourceTab) : tabs[0].key;
   const { Base, Badge } = sourceGlyphs(spec, source.channel);
   const owner = ownerOf(source);
@@ -77,45 +86,74 @@ export function DataSourcePage({ source, id, tab, conversation, thread, spec, on
         <IconWithBadge Base={Base} Badge={Badge} className="size-7 shrink-0" />
         <div className="min-w-0">
           <h2 className="truncate text-base font-semibold">{source.name || source.provider}</h2>
-          <p className="font-mono text-[11px] text-muted-foreground">
-            {source.provider}
-            {source.channel && source.channel !== source.provider && ` · ${source.channel}`}
-          </p>
+          {advanced && (
+            <p className="font-mono text-[11px] text-muted-foreground">
+              {source.provider}
+              {source.channel && source.channel !== source.provider && ` · ${source.channel}`}
+            </p>
+          )}
         </div>
         <SourceStatusLine source={source} className="ms-2" />
-        <span className="text-xs text-muted-foreground" title={t`Last successful sync`}>
-          <Trans>Synced {timeSince(source.last_synced_at)}</Trans>
-        </span>
-        <span className="text-xs text-muted-foreground" title={t`Next scheduled poll`}>
-          {source.isActive ? <Trans>Next poll {timeUntil(source.next_poll_at)}</Trans> : null}
-        </span>
-        <div className="ms-auto">
+        {advanced && (
+          <>
+            <span className="text-xs text-muted-foreground" title={t`Last successful sync`}>
+              <Trans>Synced {timeSince(source.last_synced_at)}</Trans>
+            </span>
+            <span className="text-xs text-muted-foreground" title={t`Next scheduled poll`}>
+              {source.isActive ? <Trans>Next poll {timeUntil(source.next_poll_at)}</Trans> : null}
+            </span>
+          </>
+        )}
+        <div className="ms-auto flex items-center gap-1">
+          <Button
+            size="sm"
+            variant={advanced ? 'secondary' : 'ghost'}
+            className="h-7 gap-1.5 px-2 text-xs"
+            aria-pressed={advanced}
+            data-testid="data-source-advanced"
+            title={advanced ? t`Back to the simple view` : t`Messages list, events and settings`}
+            onClick={() => (advanced ? openSource(navigation, id) : openSource(navigation, id, tabs[0].key))}
+          >
+            <SlidersHorizontal className="size-3.5" />
+            <Trans>Advanced</Trans>
+          </Button>
           <SourceActions source={source} spec={spec} onEdit={onEdit} onReplay={onReplay} onDelete={onDelete} />
         </div>
       </div>
 
-      <div className="mb-3 flex gap-1 border-b border-border" role="tablist">
-        {tabs.map((x) => (
-          <button
-            key={x.key}
-            type="button"
-            role="tab"
-            aria-selected={active === x.key}
-            data-testid={`data-source-tab-${x.key}`}
-            onClick={() => openSource(navigation, id, x.key)}
-            className={cn(
-              '-mb-px border-b-2 px-3 py-1.5 text-sm',
-              active === x.key
-                ? 'border-primary font-medium text-foreground'
-                : 'border-transparent text-muted-foreground hover:text-foreground',
-            )}
-          >
-            {x.label}
-          </button>
+      {!advanced &&
+        (carriesMessages ? (
+          <div className="min-h-[24rem] flex-1 overflow-hidden rounded-lg border border-border">
+            <SourceStream source={source} agentId={agentId} />
+          </div>
+        ) : (
+          <BusStream target={`data_source:${source.id}`} />
         ))}
-      </div>
 
-      {active === 'messages' && (
+      {advanced && (
+        <div className="mb-3 flex gap-1 border-b border-border" role="tablist">
+          {tabs.map((x) => (
+            <button
+              key={x.key}
+              type="button"
+              role="tab"
+              aria-selected={active === x.key}
+              data-testid={`data-source-tab-${x.key}`}
+              onClick={() => openSource(navigation, id, x.key)}
+              className={cn(
+                '-mb-px border-b-2 px-3 py-1.5 text-sm',
+                active === x.key
+                  ? 'border-primary font-medium text-foreground'
+                  : 'border-transparent text-muted-foreground hover:text-foreground',
+              )}
+            >
+              {x.label}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {advanced && active === 'messages' && (
         <div className="min-h-[24rem] flex-1 overflow-hidden rounded-lg border border-border">
           {conversation ? (
             <SourceConversation
@@ -135,7 +173,7 @@ export function DataSourcePage({ source, id, tab, conversation, thread, spec, on
         </div>
       )}
 
-      {active === 'events' && (
+      {advanced && active === 'events' && (
         <div className="flex flex-col gap-3">
           <BusStream target={`data_source:${source.id}`} />
           <div className="flex gap-2">
@@ -161,7 +199,7 @@ export function DataSourcePage({ source, id, tab, conversation, thread, spec, on
         </div>
       )}
 
-      {active === 'settings' && (
+      {advanced && active === 'settings' && (
         <div className="flex max-w-2xl flex-col gap-3">
           <SourceSetupDetails source={source} spec={spec} />
           <dl className="grid grid-cols-[8rem_minmax(0,1fr)] gap-x-4 gap-y-2 text-sm">
@@ -203,6 +241,38 @@ export function DataSourcePage({ source, id, tab, conversation, thread, spec, on
         </div>
       )}
     </div>
+  );
+}
+
+/**
+ * The simple view of a message source: its messages going back and forth, nothing to click first. A source that is
+ * one conversation (Flow on WhatsApp: the person IS the conversation) is that conversation, composer included;
+ * several fall to their list, each opening in place.
+ */
+function SourceStream({ source, agentId }: { source: DataSource; agentId?: string }) {
+  const { navigation } = useDockNavigation();
+  const request = useMemo(() => sourceConversationsRequest(source.id), [source.id]);
+  const { data: conversations = [], isSuccess } = useEntitiesQuery<Conversation>(request);
+  if (!isSuccess) return null;
+  if (conversations.length === 1) {
+    return (
+      <ConversationPanel conversationId={conversations[0].id} headerLabel={null} agentId={agentId} className="h-full" />
+    );
+  }
+  if (conversations.length === 0) {
+    return (
+      <p className="p-4 text-sm text-muted-foreground" data-testid="data-source-stream-empty">
+        <Trans>No messages yet — they show up here as they arrive.</Trans>
+      </p>
+    );
+  }
+  return (
+    <StreamInboxView
+      sourceId={source.id}
+      agentId={agentId}
+      embedded
+      onOpenConversation={(conv) => openSource(navigation, source.id, 'messages', conv)}
+    />
   );
 }
 
