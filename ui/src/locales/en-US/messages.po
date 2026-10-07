@@ -769,6 +769,10 @@ msgstr "{created} member task(s) created for \"{0}\"."
 msgid "{day} at {time}"
 msgstr "{day} at {time}"
 
+#: src/components/conversation/ConversationPanel.tsx
+msgid "{display} — renames in Flowpad only"
+msgstr "{display} — renames in Flowpad only"
+
 #: src/components/connections-manager.tsx
 msgid "{displayName} connection failed"
 msgstr "{displayName} connection failed"
@@ -857,6 +861,10 @@ msgstr "{label} records"
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
 msgid "{latchedReason} Auto-relaunch is paused — Retry to launch again."
 msgstr "{latchedReason} Auto-relaunch is paused — Retry to launch again."
+
+#: src/components/top-nav-bar/ProjectSetupButton.tsx
+msgid "{left, plural, one {# thing to set up before this project can run} other {# things to set up before this project can run}}"
+msgstr "{left, plural, one {# thing to set up before this project can run} other {# things to set up before this project can run}}"
 
 #: src/components/token-plan/token-plan-math.ts
 msgid "{left} of {limit} requests left {windowText}"
@@ -5235,6 +5243,7 @@ msgstr "connected"
 #: src/components/account/user-info.tsx
 #: src/components/connections-manager/connection-state-visual.ts
 #: src/components/connections-manager/credential-rows-view.tsx
+#: src/components/setup-wizard/SetupStagesButton.tsx
 msgid "Connected"
 msgstr "Connected"
 
@@ -5242,6 +5251,10 @@ msgstr "Connected"
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "Connected · {0}"
 msgstr "Connected · {0}"
+
+#: src/components/setup-wizard/SetupStagesButton.tsx
+msgid "Connected ({summary})"
+msgstr "Connected ({summary})"
 
 #: src/pages/hub-home/HubHome.tsx
 msgid "Connected computer"
@@ -5383,10 +5396,9 @@ msgstr "Continue"
 msgid "Continue journey"
 msgstr "Continue journey"
 
-#. placeholder {0}: pending.label
 #: src/components/setup-wizard/SetupStagesButton.tsx
-msgid "Continue setup: {0}"
-msgstr "Continue setup: {0}"
+#~ msgid "Continue setup: {0}"
+#~ msgstr "Continue setup: {0}"
 
 #: src/pages/flow-page/VibeWorkerSwitchDialog.tsx
 msgid "Continue this conversation"
@@ -15438,8 +15450,14 @@ msgstr "Not checked yet"
 
 #: src/components/account/hub-status-visuals.ts
 #: src/components/connections-manager/connection-state-visual.ts
+#: src/components/setup-wizard/SetupStagesButton.tsx
 msgid "Not connected"
 msgstr "Not connected"
+
+#. placeholder {0}: pending.label
+#: src/components/setup-wizard/SetupStagesButton.tsx
+msgid "Not connected — continue setup: {0}"
+msgstr "Not connected — continue setup: {0}"
 
 #: src/components/assets/useAssetsModel.tsx
 #~ msgid "Not copied into context folder"
@@ -18620,6 +18638,10 @@ msgid "Refresh — re-index this project's sessions"
 msgstr "Refresh — re-index this project's sessions"
 
 #: src/components/conversation/ConversationView.tsx
+msgid "Refresh (checks the channel for new messages)"
+msgstr "Refresh (checks the channel for new messages)"
+
+#: src/components/conversation/ConversationView.tsx
 #: src/components/project-activity-strip/RecentConversationsStrip.tsx
 msgid "Refresh (pulls from hub)"
 msgstr "Refresh (pulls from hub)"
@@ -18729,6 +18751,7 @@ msgid "Remote Worker Session"
 msgstr "Remote Worker Session"
 
 #: src/components/assets/editor/task/TaskAttachments.tsx
+#: src/components/conversation/MessageBubble.tsx
 #: src/components/organization/budgets/BudgetSection.tsx
 #: src/components/project-home/HomeCustomizationCard.tsx
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
@@ -18820,6 +18843,10 @@ msgstr "Remove from {0}?"
 msgid "Remove from favorites"
 msgstr "Remove from favorites"
 
+#: src/components/conversation/MessageActionsMenu.tsx
+msgid "Remove from Flowpad"
+msgstr "Remove from Flowpad"
+
 #: src/components/browseable-tree/adapters/useFavoritesRoots.tsx
 msgid "Remove from folder"
 msgstr "Remove from folder"
@@ -18886,6 +18913,10 @@ msgstr "Remove this file from the next commit (git restore --staged)"
 #~ msgid "Remove this input"
 #~ msgstr "Remove this input"
 
+#: src/components/conversation/MessageBubble.tsx
+msgid "Remove this message from Flowpad?"
+msgstr "Remove this message from Flowpad?"
+
 #: src/pages/discover-page/discover-page.tsx
 msgid "Remove this row from the manifest"
 msgstr "Remove this row from the manifest"
@@ -18941,6 +18972,10 @@ msgstr "Removed: {0}"
 #: src/components/account/settings-section.tsx
 #~ msgid "removed: {0} · not found: {1}"
 #~ msgstr "removed: {0} · not found: {1}"
+
+#: src/components/conversation/MessageBubble.tsx
+msgid "Removes Flowpad's copy. The message stays where it was sent."
+msgstr "Removes Flowpad's copy. The message stays where it was sent."
 
 #: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Removes it everywhere"
@@ -21171,7 +21206,6 @@ msgstr "Settings"
 #: src/components/account/settings-section.tsx
 #: src/components/automations/AutomationPage.tsx
 #: src/components/setup-wizard/SetupStagesButton.tsx
-#: src/components/setup-wizard/SetupStagesButton.tsx
 msgid "Setup"
 msgstr "Setup"
 
@@ -21211,6 +21245,10 @@ msgstr "Setup guide"
 #: src/components/credentials/CredentialDialog.tsx
 msgid "Setup instructions"
 msgstr "Setup instructions"
+
+#: src/components/top-nav-bar/ProjectSetupButton.tsx
+msgid "Setup required"
+msgstr "Setup required"
 
 #: src/components/conversation/MembersAvatarStack.tsx
 msgid "Several contacts match — pick one from the list"
@@ -23833,6 +23871,10 @@ msgstr "This conversation is local-only. It will be removed from this device."
 #: src/components/conversation/ConversationRoute.tsx
 msgid "This conversation is not in this Agent stream inbox."
 msgstr "This conversation is not in this Agent stream inbox."
+
+#: src/components/conversation/ChannelParticipants.tsx
+msgid "This conversation is on {label}: the people in it are on {label}, not Flowpad members."
+msgstr "This conversation is on {label}: the people in it are on {label}, not Flowpad members."
 
 #: src/hooks/use-history-load-alert.ts
 msgid "This conversation is still saved, but part of it could not be read, so the chat is showing empty. Reloading may help. Details: {detail}"
