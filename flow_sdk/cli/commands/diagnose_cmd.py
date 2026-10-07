@@ -917,24 +917,7 @@ async def _run_request(request_id: str, transcript_timeout: float) -> int:
         typer.echo(f"ERROR: the diagnosis ran but could not be sent ({e.reason}).", err=True)
         return 1
     typer.echo(f"  ✓ Sent to the person who asked (run #{sent.get('run')}).")
-    _dump_live_tasks()
     return 0
-
-
-def _dump_live_tasks() -> None:
-    """TEMPORARY (FLOWPAD-2226): under PYTHONASYNCIODEBUG, list the tasks still running when the run
-    ends, each with the stack it is parked on -- to find what leaves DB sessions open at exit (the
-    "_session_ctx ... created in a different Context" burst on Windows). Remove once fixed."""
-    import os  # noqa: PLC0415
-
-    if not os.environ.get("PYTHONASYNCIODEBUG"):
-        return
-    me = asyncio.current_task()
-    live = [t for t in asyncio.all_tasks() if t is not me and not t.done()]
-    typer.echo(f"\n[exit-debug] {len(live)} task(s) still running at exit:", err=True)
-    for t in live:
-        typer.echo(f"\n[exit-debug] task {t.get_name()}: {t.get_coro()!r}", err=True)
-        t.print_stack(limit=12, file=sys.stderr)
 
 
 def diagnose_command(
