@@ -1,6 +1,6 @@
 /**
- * One diagnosis request: the command to send, what it accepts, what was sent along, and the runs
- * that came back. Fileless (`FILELESS_EDITORS`): the row is local, but the attachments and runs
+ * One diagnosis request: the command to send, its settings -- edited in place
+ * (`DiagnosisRequestFields`) -- what was sent along, and the runs that came back. Fileless (`FILELESS_EDITORS`): the row is local, but the attachments and runs
  * live in the request's hub storage and are read through the type's actions -- `runs` also
  * refreshes the row from the hub, so the counts here follow it.
  */
@@ -9,7 +9,7 @@ import { useAction } from '@src/hooks/use-action';
 import { useEntity } from '@sdk/react/hooks';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { useMemo, useState, type ReactNode } from 'react';
-import { Pencil, Sparkles } from 'lucide-react';
+import { Sparkles } from 'lucide-react';
 
 import { AttachMenu } from '@src/components/conversation/AttachMenu';
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
@@ -21,7 +21,7 @@ import { notify } from '@src/notifications';
 import { useStartVibeSession } from '@src/pages/flow-page/use-start-vibe-session';
 
 import { isAttachable } from './DiagnosisRequestCreateDialog';
-import { DiagnosisRequestEditDialog } from './DiagnosisRequestEditDialog';
+import { BudgetField, InstructionsField, LimitsFields } from './DiagnosisRequestFields';
 import {
   callRequestAction,
   commandFor,
@@ -269,7 +269,6 @@ export interface DiagnosisRequestViewProps {
 
 export function DiagnosisRequestView({ value }: DiagnosisRequestViewProps) {
   const { t } = useLingui();
-  const [editing, setEditing] = useState(false);
   const typeId = useMemo(() => new TypeId(value), [value]);
   const { data: request, isLoading } = useEntity<DiagnosisRequest>(typeId);
   // The type's glyph comes from the backend registry, never a literal (CLAUDE.md's icon law).
@@ -297,13 +296,8 @@ export function DiagnosisRequestView({ value }: DiagnosisRequestViewProps) {
       <div className="mx-auto max-w-3xl space-y-6">
         <div className="flex items-center gap-2">
           <Icon className="h-5 w-5 text-muted-foreground" />
-          <h2 className="flex-1 text-base font-semibold">{request.title || request.name || t`Diagnosis request`}</h2>
-          <Button variant="outline" size="sm" onClick={() => setEditing(true)} data-testid="diagnosis-request-edit">
-            <Pencil className="me-1.5 h-3.5 w-3.5" />
-            <Trans>Edit</Trans>
-          </Button>
+          <h2 className="text-base font-semibold">{request.title || request.name || t`Diagnosis request`}</h2>
         </div>
-        <DiagnosisRequestEditDialog open={editing} onOpenChange={setEditing} request={request} />
 
         <Section title={<Trans>Send this to the person you support — they run it in their terminal:</Trans>}>
           <div className="flex items-center gap-2 rounded-md border bg-muted/40 px-3 py-2">
@@ -314,19 +308,17 @@ export function DiagnosisRequestView({ value }: DiagnosisRequestViewProps) {
           </div>
         </Section>
 
-        <dl className="grid grid-cols-1 gap-y-1 text-sm">
-          <Field label={t`Accepts runs until`}>{formatWhen(request.write_expires_at)}</Field>
-          <Field label={t`LLM budget`} mono={!!request.llm_endpoint_typeid}>
-            {request.llm_endpoint_typeid || t`none — they use their own`}
-          </Field>
-          <Field label={t`Runs`}>{String(request.run_count ?? 0)}</Field>
-        </dl>
+        <div className="space-y-2 text-sm">
+          <LimitsFields request={request} />
+          <BudgetField request={request} />
+          <dl>
+            <Field label={t`Runs`}>{String(request.run_count ?? 0)}</Field>
+          </dl>
+        </div>
 
-        {request.instructions && (
-          <Section title={<Trans>Instructions</Trans>}>
-            <pre className="whitespace-pre-wrap rounded-md bg-muted p-3 text-sm">{request.instructions}</pre>
-          </Section>
-        )}
+        <Section title={<Trans>Instructions for their agent</Trans>}>
+          <InstructionsField request={request} />
+        </Section>
 
         <Attachments id={id} />
         {(request.run_count ?? 0) > 0 && <ExplainButton request={request} />}
