@@ -5,7 +5,7 @@
   "vault_root": "/Users/shlom/Documents/dev/flowpad-oss/docs",
   "folder_rel_path": "interface",
   "folder_name": "interface",
-  "inputs_hash": "5589eb14635e5fe210ed7e61df37726e70b56daea02cb8ebd2bbe057f1c1f221",
+  "inputs_hash": "8436cbf2415c0f42548df4a1059a2e709a2fe0ae004869e4594453dd32be3ae3",
   "template_version": 1,
   "prompt_version": 1,
   "self_summary": "Reference pages for the agentic-process stack, layer by layer: AgenticProcess, Shell, the PTY layer and ComputeNode — their fields, HTTP actions and TypeScript surfaces — plus the driver protocol behind Claude, Codex and Copilot, and session naming.",
@@ -22,25 +22,25 @@
       "name": "agentic-process.md",
       "rel_path": "agentic-process.md",
       "title": "AgenticProcess — interface",
-      "summary": "Complete AgenticProcess interface reference: fields, Python methods including typed run(input, output_spec), HTTP actions and the TypeScript class.",
-      "content_hash": "0e4c0702186c3f7dab45169bcb0124623edf0cd9052fa03011c136c748f7bba6",
-      "size_bytes": 61974
+      "summary": "Interface reference for the AgenticProcess entity: Python object, HTTP action endpoints and the frontend TypeScript class",
+      "content_hash": "4442992f392e2895277c4c341fb919a52c7b142f3da69848db01fe8dea369936",
+      "size_bytes": 61282
     },
     {
       "name": "cli-drivers.md",
       "rel_path": "cli-drivers.md",
       "title": "CLI drivers — interface",
-      "summary": "CLI driver layer: the WorkerDriver protocol, per-vendor packages, get_driver resolution and selected-harness defaults, auth probes and serialization helpers.",
-      "content_hash": "41cf627233df163bcc4defb4cb85fe69c96a70ea776d40b9e061a5f00b4dbb3f",
-      "size_bytes": 39204
+      "summary": "CLI driver layer interface: the WorkerDriver protocol and per-vendor packages (Claude, Codex, Copilot, OpenCode) through which AgenticProcess drives coding-agent CLIs.",
+      "content_hash": "003bc55ff363645bb19f488bc3fc8433ca596bc755b4038099a786858d16d57b",
+      "size_bytes": 39301
     },
     {
       "name": "compute-node.md",
       "rel_path": "compute-node.md",
       "title": "ComputeNode — interface",
-      "summary": "ComputeNode reference: the @local singleton, its plain API and every backend action mixin (PTY, ops, scan, desktop) on the execution-environment entity.",
-      "content_hash": "0875702409dbc1e969f215380cde6d4531609bfef522e2bbdd40e1209ef313c6",
-      "size_bytes": 16470
+      "summary": "ComputeNode entity interface: the @local singleton, six action mixins, Python and TypeScript locations, and PTY, file, desktop and scan actions.",
+      "content_hash": "9ac0bb4623a247eb0dba89eeaa16a1117cc79130e17541a4ddb6c42b008f755f",
+      "size_bytes": 17689
     },
     {
       "name": "flows.md",
@@ -70,9 +70,9 @@
       "name": "shell.md",
       "rel_path": "shell.md",
       "title": "Shell — interface",
-      "summary": "Shell entity reference: persisted fields, public API, backend actions and TS class for one PTY session.",
-      "content_hash": "6511a1e0de37d45189172512daf983d7b7496f9039f348d5bf94da6a1cb82ccc",
-      "size_bytes": 14250
+      "summary": "Interface reference for the Shell entity, the database metadata layer of a PTY terminal session, covering its persisted fields, TypeId format and API.",
+      "content_hash": "be403c36f33c1d49a825723f2041017d0d519ba1bc70f2abbd81dd34966fe623",
+      "size_bytes": 19693
     },
     {
       "name": "status-model.md",
@@ -86,12 +86,12 @@
       "name": "test-coverage.md",
       "rel_path": "test-coverage.md",
       "title": "Test coverage — the agentic-process stack, per area × per front",
-      "summary": "Audit of which tests cover each area of the agentic-process stack — AgenticProcess, Shell, PTY, ComputeNode, drivers, status — per front, with gaps.",
-      "content_hash": "276eb818b9e316ebfa7b9af67a7f106e4e9ad5baf2898410781f77e5507e332b",
-      "size_bytes": 20069
+      "summary": "Audit matrix of test coverage for the agentic-process stack by area and front (unit, api, vitest, react, long)",
+      "content_hash": "dd579d15f18c890a26b0fd86fc593499031e37e9a4f717a92bab48e01644b507",
+      "size_bytes": 19936
     }
   ],
   "subfolders": [],
-  "generated_at": "2026-09-25T12:04:30Z",
+  "generated_at": "2026-10-07T14:33:53Z",
   "latest_process_ref": ""
 }

@@ -26,7 +26,7 @@ def test_a_shipped_viewer_names_real_kinds_and_ships_its_module(folder):
     spec = WebappManifestSpec.model_validate_json((folder / "webapp.json").read_text())
     assert spec.views, "a viewer shows something"
     for view in spec.views:
-        # The same registry `GET /api/v1/kinds` answers from -- a code kind or a data_spec folder alike.
+        # The same registry `GET /api/v1/kinds` answers from -- a schema in code or a data_schema folder alike.
         assert view.kind == "*" or kind_form(view.kind) is not None, view.kind
     assert (folder / spec.module).is_file()
     assert WebappManifestSpec.model_validate(spec.model_dump()) == spec

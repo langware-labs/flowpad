@@ -103,10 +103,10 @@ mechanism: [`ontology.md`](ontology.md).
   `LLMEndpoint` and `SubAgent`; renaming it is what frees the word.
 - **`kind`** — the OPEN dot-path ontology, one grammar
   (`flow_sdk/tags/grammar.py`), shared with bus tags and capabilities.
-  **A kind names a SHAPE, never an Entity row class**, which cannot validate a
-  value. In practice that is a `DataSpec`; `fs_ref` → `FSRef` is the one
-  SDK-registered exception. An asset type resolves to its `asset_spec`; a registered type
-  with no asset document names no shape and raises.
+  **A kind is a NAME; what it names is a schema, never an Entity row class**, which cannot
+  validate a value. In practice that schema is a `DataSpec` subclass; `fs_ref` → `FSRef` is the
+  one SDK-registered exception. An asset type resolves to its `asset_spec`; a registered type
+  with no asset document names no schema and raises.
 - **`--ns--` is the ontology namespace**, the grammar's existing first segment
   (`--acme--.ingest.message.whatsapp`). **Ours is the default and it is SILENT:
   `--flow--` is never written.** An externally authored asset declares `ns` in its
@@ -114,6 +114,22 @@ mechanism: [`ontology.md`](ontology.md).
   none is refused at load.
 - Don't reuse `kind` for a registry key. `Capability.kind` and `DataDriver.kind`
   hold a driver's own *name*, which is neither an ontology kind nor a subkind.
+
+## kind · schema · value (2026-10-07)
+
+"DataSpec" was used for all three. Say which:
+
+- **kind** — the NAME (`navigator.decision`): a dot-path tag, the key a schema is registered
+  under. A value on the wire carries it as `spec_kind`.
+- **schema** — the DEFINITION under that name: the fields and their shapes. Either a
+  `DataSpec` subclass in Python (`class DiagnosisSpec(DataSpec)`, `spec_kind = "diagnosis"`) or
+  a **`data_schema`** folder asset (`agentic-assets/data_schema/<kind>/`), which compiles into an
+  anonymous `DataSpec` subclass. One registry, one set of viewers, either way.
+- **value** — an INSTANCE of a schema: the object in memory, or its JSON / folder on disk.
+- So: "the `diagnosis` schema", "a diagnosis value", "the kind `diagnosis`" — never "a DataSpec"
+  on its own. `DataSpec` is the base class, the way pydantic's `BaseModel` is: subclasses are
+  schemas, instances are values. (`data_schema.json` is itself a value — of the kind
+  `data_schema`, whose schema is `DataSchemaDocSpec`.)
 
 ## Naming rules this implies
 
@@ -170,7 +186,7 @@ copies them onto the process, and each harness renders them onto its own launch 
 worker boot, so attaching to a running process flips `restart_required` rather than taking effect.
 
 
-* **`SourceItemSpec`** — ours. The ingestion envelope a data-source driver emits and the `asset_spec` of `SourceItem` (the row): the fields the DB medium persists. Not an entity; a `DataSpec`.
+* **`SourceItemSpec`** — ours. The ingestion envelope a data-source driver emits and the `asset_spec` of `SourceItem` (the row): the fields the DB medium persists. Not an entity; a value of a `DataSpec` schema (kind `ingest.source_item`).
 * **`sent_at` / event time** — ours. A message's EVENT time (when the human sent it on its channel) as opposed to the PROCESSING clocks (`created_date`/`updated_date` — when our row was written). Projection-owned on `FlowMessage`; read everywhere through the one rule `event_time = sent_at or updated_date or created_date`; never render a message's processing clocks directly. See `docs/data-management/stream-inbox-projection.md`.
 * **`MessageSpec`** — ours. The channel-generic OUTBOUND message value (`flow_sdk/builtin/source_item.py`): what a script hands `blocks.StreamInbox.send`. Subclasses add what their channel needs and own their `reply_to` constructor, because channels disagree on who a reply targets — `EmailMessageSpec` adds `subject` and replies to the AUTHOR's address; `TelegramMessageSpec` replies to the CHAT. `files` are `MessageFile`s (a path, `as_`, `caption`; a bare path string is accepted) and `quote=False` answers without quoting. Inbound stays `SourceItemSpec`.
 * **Message files / reactions** — ours, the generic channel verbs (`docs/snippets/message-channels.md`).
@@ -201,7 +217,7 @@ worker boot, so attaching to a running process flips `restart_required` rather t
 * **`MessageSender`** — ours. Who wrote a `FlowMessage`, typed (`flow_sdk/schema/data_spec/message_sender_spec.py`): `user` (a person's local or cloud id), `agent` (an Agent speaking through a channel it holds) or `external` (somebody on a channel — `channel` + `address`). Deliberately not "contact": `Contact` is taken. It is local only (`FlowMessage.sender`, PRIVATE); the hub keeps the `sender_id` wire string, whose grammar (`<uuid>` / `agent:<id>` / `<channel>:<address>`) lives ONLY in `from_wire` / `wire_id`. "Did we write this" is `sender.authored_by(User.self_ids())`.
 * **"inbox" is not a name** — ours, a rule. The bare word names nothing in this tree, because three different things answer to it: a channel's own mail folder (IMAP `INBOX`, AgentMail's `inbox_id`) is the vendor's vocabulary and stays theirs; the Agent's address is its **`AgentMailbox`**; Flowpad's merged view is the **`StreamInbox`**. Say which.
 * **`owner`** — ours. Whose row it is: a user or Agent `TypeId` on `DataSource`, `MessageThread` and `Conversation`, defaulting to the local user. THE key the stream inbox partitions by — an Agent's stream inbox is `owner == agent`, a filter, not a walk from one provider. Read only through `stream_inbox.projection.owner_of`, which also resolves rows written before the field existed (`config.agent_id` → that agent). Not `created_by` (the hub's creator mirror) and not the roster's `owner` role (hub-side authz).
-* **`DataDriverSpec`** — ours. The shape of a data source's `data_driver.json` and the `asset_spec` of the `DataDriver` folder asset; every authoring rule is a validator on it.
+* **`DataDriverSpec`** — ours. The schema of a data source's `data_driver.json` and the `asset_spec` of the `DataDriver` folder asset; every authoring rule is a validator on it.
 * **dependency / `flow.json`** — ours, shaped after npm's `package.json`. A project's `flow.json` (project root; `FlowJsonSpec` in `flow_sdk/schema/data_spec/flow_json_spec.py`, file I/O `flow_sdk/assets/flow_json.py`) names the folders it expects in its context — `dependencies` (required) / `optionalDependencies`, each a source `git+<url>#<branch>` / `hub:<project id>` / `file:<path>` — plus `autolaunchJourney` and `alwaysUseSkills`. `flow_sdk/builtin/project_dependencies.py` is the one owner that resolves them (transitively) to folders on this machine and keeps the project's folder links equal to the resolved set; `include_dirs` / `context_roots` derive from those links. It declares CONTEXT only: not a copy (that is `deps.json`, the **installed** ledger) and not an export (`project_manifest.json`). `DependencySpec` / `project.dependency` name the `deps.json` row, so the `flow.json` entry is `FlowDependency` / `flow.dependency`. The product says **Dependencies** (`flow dep`); the retired words are "context folder" and `.flowpad/bootstrap.json`.
 * **driver / source** — ours. A **driver** is the code and manifest that knows how to talk to a system: `DataDriver` (`flow_sdk/builtin/data_driver.py` — the indexed row and the loaded driver; its run-time verbs are `DriverRuntime` in `flow_sdk/ingest/driver_runtime.py`), the driver registry (`driver_registry.py`), and the asset family `agentic-assets/data_driver/<name>/` (`data_driver.json` + `source.py`). A **data source** is one configured instance of a driver — `DataSource` (type `data_source`), itself an asset: `agentic-assets/data_source/<name>/data_source.json` in the project it was created in (the user scope outside one). The file (`DataSourceSpec`) holds what a person authors — name, `data_driver_name`, `data_driver_config`, owner, cadence — and never a secret; status, health, the cursor and discovered identities live on the row only, so a poll never rewrites the file. A folder that arrives by copy or share indexes parked in `setup` until this machine verifies it. A data source reads **one stream** (one feed, channel, mailbox, drive) — its driver builds the query from its config (`Source.query()`) and the row keeps the position (`cursor`); there is no unit under a source. `driver.create_source(config, name=...)` builds one unsaved; `save()` writes it; `async with await source.open() as live` reads it by hand (`live.pages(page_size=…)` + `page.ack()`, `live.items(**narrow)`); `merge(*sources)` reads several as one session, each page still one source's. The running side keeps the source vocabulary: `Source` (the live session), `SourceBinding`, `SourceItem`, `SourceStatus`, `SourceHealth`. The product says **Data sources** (`/dock/data-sources`, `flow source`, the webhook `/api/v1/data_source/webhook/<name>`).
 * **`LLMSource`** — ours, and the FIFTH thing this tree calls a "source", so read it precisely.
@@ -293,7 +309,7 @@ worker boot, so attaching to a running process flips `restart_required` rather t
 | `data-integrations` | ours | The `kind: vibe` persona that guides connect → sample → define; mechanics in `connect-data-source` |
 | `promote` / `annotate` | ours | `Dataset` actions: a `SourceItem` becomes an example row; a gold label is written against the dataset's output shape |
 | asset editor | ours | Not a mechanism of its own: a **webapp asset nested inside the asset it edits** (`<asset>/agentic-assets/webapp/<name>/`), marked `kind: application.web.editor`. Discovered by the ordinary repo walker, served by the `static` endpoint indexing gives it, addressed at `/dock/app/micro_app-<id>` — so its breadcrumb reads `Project / <parent> / <name>`. Finding one is a containment query (`useAssetApps`), never a registry. An editor that ships on its own declares `edits` (kinds or type names) and is matched by `flow_sdk/builtin/faas/editors.py`: nested first, then kind, then type. |
-| `data_spec` | ours | A DataSpec KIND defined by a folder, not code: `agentic-assets/data_spec/<full.kind>/` (`data_spec.json` + `description.md`). Indexing registers the kind under its project's namespace; nests at any depth; subkind `record` / `dataset` optional (read from the body). Python class `DataSpecAsset`, since `DataSpec` is the shape base. |
+| `data_schema` | ours | A SCHEMA defined by a folder, not code: `agentic-assets/data_schema/<full.kind>/` (`data_schema.json` + `description.md`); the folder name is its kind. Indexing registers it under its project's namespace; nests at any depth; subkind `record` / `dataset` optional (read from the body). Python: `DataSchema` (the row), `DataSchemaDocSpec` (the document). Named `data_spec` until 2026-10-07; a folder still under that name is not read; the asset scan reports it as an issue naming the rename (`TypeInfo.retired_families`). |
 | `micro_app` (family `webapp`) | ours | The DEFINITION of a webapp: a REPO folder asset whose `webapp.json` declares `kind` / `build` / `endpoints`; `asset_ref` is the app folder. It serves nothing: indexing it gives it a `static` `ServiceEndpoint` (`<asset_ref>/<build>`, `webapp_id` = this row) on its project's placement, and that endpoint is what a display loads. On the hub, a builtin app's row is the same: its `hub`-provider placement's endpoints serve it. |
 
 ## Help desk (2026-09-02)
@@ -332,7 +348,7 @@ built to replace in phase 2.
 
 | Ours | One place | Notes |
 |---|---|---|
-| `ActivityProgressSpec` | `flow_sdk/schema/data_spec/activity_spec.py` | The value that travels. A registered `DataSpec` (`activity.progress`), frozen, recursive. `total=None` means UNKNOWN — never 0. `errors_count` is the truth, `errors` a capped sample. |
+| `ActivityProgressSpec` | `flow_sdk/schema/data_spec/activity_spec.py` | The value that travels. Its schema is a registered `DataSpec` (kind `activity.progress`), frozen, recursive. `total=None` means UNKNOWN — never 0. `errors_count` is the truth, `errors` a capped sample. |
 | `Activity` (the handle) | `flow_sdk/activity/activity.py` | The mutable node, addressed by `(scope, path)` and found-or-created at every level. `Activity.get("a/b")` and `Activity.get("a").child("b")` are the same node, so code deep in a walk needs no handle threaded to it. |
 | `inc` vs `set_counter` | `flow_sdk/activity/activity.py` | Two counter verbs for two producer shapes: `inc` adds a DELTA (events seen), `set_counter` takes an ABSOLUTE total (a running count, a re-parsed transcript) and never moves backwards. The monotonicity policy lives on the verb so every producer inherits one answer. |
 | `ActivityProgressMonitor` | `flow_sdk/activity/progress_monitor.py` | The in-memory registry — it IS find-or-create. Holds LIVE work only: a root's terminal untracks its whole tree, so a later `get` yields a FRESH node. "Is it running" is its question; "when did it last finish" is the receipt's (phase 2). |

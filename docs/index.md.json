@@ -5,7 +5,7 @@
   "vault_root": "/Users/shlom/Documents/dev/flowpad-oss/docs",
   "folder_rel_path": "",
   "folder_name": "docs",
-  "inputs_hash": "1516ecd85ab2a877027c68c457e7ba9b5724000192074bd601cbb9bc393a24b5",
+  "inputs_hash": "98e847bedcec486dbd69c99f20f4a76f53b8b53d238a8ce21c6ac7ce9cc3f25d",
   "template_version": 1,
   "prompt_version": 1,
   "self_summary": "Flowpad's documentation root. The agentic-process stack and its interfaces, data management from disk to entity row, the ontology of types and kinds, collaboration and the hub, the runnable snippet shelf, and breadcrumbs recording root causes already proven.",
@@ -22,9 +22,9 @@
       "name": "agentic-process.md",
       "rel_path": "agentic-process.md",
       "title": "AgenticProcess Architecture",
-      "summary": "AgenticProcess architecture: the durable entity behind an agent run, execution routing on pty_mode versus tab visibility on visible, wizard runtime, status, reconnect and replay.",
-      "content_hash": "76c1c4ce6de5cfa4a6664f9ed8943a7fbb92190652c8ee6fa851db3b2cd15f67",
-      "size_bytes": 19857
+      "summary": "Architecture of the AgenticProcess entity representing an agent run, including its transport and visibility axes, worker CLI configuration, session history and terminal runtime.",
+      "content_hash": "a5b0f646dc92c99087779a99d746dc3013f461389c622a262a17a7814b98a86e",
+      "size_bytes": 20261
     },
     {
       "name": "agentic_process_outputs.md",
@@ -38,9 +38,9 @@
       "name": "agents-management.md",
       "rel_path": "agents-management.md",
       "title": "Agent Management",
-      "summary": "Top-level index for agent management: the Agent identity versus each AgenticProcess execution, Deployment, the authoring bundle, and links to focused documents.",
-      "content_hash": "162a35f46e63a1e1b0fa2b599b96c83d1833cb7620f1f3531a08b46ae090cf05",
-      "size_bytes": 9827
+      "summary": "Top-level index of agent management: the Agent, Deployment and AgenticProcess model and the agent authoring bundle, linking focused subject docs",
+      "content_hash": "6835467aea38bd1568342d982825640113bf29ab52d31ddc83462397d2f0263b",
+      "size_bytes": 9871
     },
     {
       "name": "api-routing.md",
@@ -49,6 +49,14 @@
       "summary": "API routing specification: graph URL structure, parsing algorithm, implicit action mapping, action registry, dedicated routes, RequestInfo and frontend ActionInfo/DataManager routing.",
       "content_hash": "45a81e0bd419a7b8ff49bbcaf1fbe56a9a3f34160f02f1dd32d621e61d5f15a7",
       "size_bytes": 19252
+    },
+    {
+      "name": "automations.md",
+      "rel_path": "automations.md",
+      "title": "Automations",
+      "summary": "Automations screen backed by Trigger rows: dock URLs for list, editor, runs and event bus, the When-Then builder, and its UI-to-SDK chain.",
+      "content_hash": "7daee3b6cbce1a7fcdf3e5e8809855ef8b9f21b814b812ebc354ce7fc75bd7a6",
+      "size_bytes": 5277
     },
     {
       "name": "boot.md",
@@ -62,9 +70,9 @@
       "name": "capabilities.md",
       "rel_path": "capabilities.md",
       "title": "Capabilities",
-      "summary": "Capability entities describing local features like CLI harnesses and browser access: the hierarchical kind ontology, prefix matching, and dynamic MCP-server capabilities.",
-      "content_hash": "1dfeade3515dfb094fdfbfa1215323c4deaba3e8a9960ebab980b7c8c0a9871c",
-      "size_bytes": 7632
+      "summary": "Capability system entities: hierarchical kinds such as harness.claude.cli, persisted check/install/test results, dynamic MCP-server capabilities, and frontend hooks.",
+      "content_hash": "4b00edc0aae519edd17ea1f5aa3fa4026db7ad6f78a509fa6ea24fae31ad0b4f",
+      "size_bytes": 8069
     },
     {
       "name": "compute_node_action_audit.md",
@@ -94,9 +102,9 @@
       "name": "data-management.md",
       "rel_path": "data-management.md",
       "title": "Data Management",
-      "summary": "Overview of the two-layer data model — filesystem FSRecords as source of truth, SQLite Entities as queryable cache — linking each subsystem doc.",
-      "content_hash": "44292a92131fcc557d619cc3278a8ca1d4a910550a8de9a0a48d6cf51db9a178",
-      "size_bytes": 38115
+      "summary": "Overview of the two-layer data model, filesystem FSRecords as source of truth plus SQLite database entities as queryable indexes, linking to detailed subsystem documents.",
+      "content_hash": "730ef3960bbf3727abb768b30469c90b5ebb878fd28ea2deb61fc4f4a778e64a",
+      "size_bytes": 38190
     },
     {
       "name": "debugMCP-setup.md",
@@ -110,9 +118,9 @@
       "name": "desktop-install-test-scenarios.md",
       "rel_path": "desktop-install-test-scenarios.md",
       "title": "Desktop install — test scenarios",
-      "summary": "Desktop install test scenarios: Python pin read from pyproject, retryable failed-install panel, clean-room uv tool install release gate, and post-release regression checks.",
-      "content_hash": "481a59e78b8ff9a57ec686885323fe26892a686bae8c55c58fd25702bd92ecf6",
-      "size_bytes": 13727
+      "summary": "Manual and scripted desktop install test scenarios for the Python pin, in-app Retry panel and clean-room release gate",
+      "content_hash": "67fa59fc9b823bd6d34f9552f267b2cf68d0f54cb0bc107be4edfa9447bcb301",
+      "size_bytes": 13776
     },
     {
       "name": "dev_setup.md",
@@ -129,6 +137,22 @@
       "summary": "Survey of every way Flowpad displays content — files, entities, webapps, artifacts, foreign-HTML trust tiers — across two address systems (dock pointers and flow show targets), with the open design questions.",
       "content_hash": "04485dea82a7123ceeb1cd5d9f931475eec36f363883a5bafaabbd94304d97b5",
       "size_bytes": 22967
+    },
+    {
+      "name": "doc.md",
+      "rel_path": "doc.md",
+      "title": "doc.md",
+      "summary": "Empty placeholder document with blank title and only frontmatter, no content.",
+      "content_hash": "e7548a5252ecc8bff442bb8af888503ef3e43e5112ad894f5399d2f4e871fcd9",
+      "size_bytes": 121
+    },
+    {
+      "name": "electron-structure.md",
+      "rel_path": "electron-structure.md",
+      "title": "The `electron/` directory — structure, flows, and next steps",
+      "summary": "Structure of the electron/ desktop shell: UvManager installing the PyPI engine, main process files, startup flows, updater, and next steps.",
+      "content_hash": "e6a6ba8b2456c326f4aab800289812b8caa34ef088888377b6ddc95a0eedf73d",
+      "size_bytes": 15516
     },
     {
       "name": "electron.md",
@@ -158,9 +182,9 @@
       "name": "flow-events.md",
       "rel_path": "flow-events.md",
       "title": "FlowEvents — the unified event bus (delivery worklog)",
-      "summary": "Delivery ledger for FlowEvents, the unified event bus: the normative envelope fields and the phase-by-phase record of what has been built.",
-      "content_hash": "cb957bcb48f978e0cc08d9abcd8261486d30fb8478bcd7ece233582ebb0567ec",
-      "size_bytes": 39252
+      "summary": "Delivery worklog for the unified FlowEvent bus: the normative envelope fields, shared contract fixture, phased build status and dated log entries.",
+      "content_hash": "991244a2603079c5c344703b9202fd3b1c6ae5c11aa9810d91299f7be1b3d018",
+      "size_bytes": 41107
     },
     {
       "name": "frontend-debug-cheatsheet.md",
@@ -190,9 +214,9 @@
       "name": "glossary.md",
       "rel_path": "glossary.md",
       "title": "Glossary — our nouns vs. the ecosystem's",
-      "summary": "Glossary cross-walking Flowpad nouns with Claude Code and OpenClaw, marking provider mirrors versus Flowpad-owned entities.",
-      "content_hash": "f24771a9d8413100f7d42f3e083c8042e256cefcbcbc59143790c6af69bdd67e",
-      "size_bytes": 40145
+      "summary": "Glossary cross-walking Flowpad nouns to Claude Code and OpenClaw terms, with naming rules for provider mirrors versus native entities",
+      "content_hash": "9d07c5c34170bf24a6f72bc636e0c09caf04cd027594a7d7daa23e6df7cd7f8d",
+      "size_bytes": 52984
     },
     {
       "name": "icons.md",
@@ -246,9 +270,9 @@
       "name": "ontology.md",
       "rel_path": "ontology.md",
       "title": "Ontology — type, subkind, kind",
-      "summary": "Ground truth for type, subkind and kind: a kind names a shape never a row, composition rules, namespaces, and how kinds are declared and resolved.",
-      "content_hash": "5dd9bd980272f5df4f5dc025a3aec1518d65058908f4c7de19ebd1270052b605",
-      "size_bytes": 14277
+      "summary": "Ontology of type, subkind and kind: closed entity types, per-type variants, and open dot-path kinds that name schema shapes, never rows.",
+      "content_hash": "14fe0b964b1e340714631b552860dbe4887a3931c4a3c70d0e897c975944d253",
+      "size_bytes": 15299
     },
     {
       "name": "playwright-usage.md",
@@ -310,9 +334,9 @@
       "name": "secret_share.md",
       "rel_path": "secret_share.md",
       "title": "Credentials and secrets",
-      "summary": "Credentials as SecretPack assets: the named environment-variable set, its project/user/system scopes, folder-capsule identity, and where values are stored and injected.",
-      "content_hash": "ef8356e2edf2810fa4b77615ebc15e7c3351b134b39f002d9713de111603c11a",
-      "size_bytes": 6690
+      "summary": "Credential assets as named environment-variable sets: scopes (project, user, system), folder layout, identity capsule, and deployment-bound values injected into workers.",
+      "content_hash": "954aca928c2709099c1ecc7550cc43c5bfdd2e706e7732ee52df0d6cca087b50",
+      "size_bytes": 16361
     },
     {
       "name": "session_share_spec.md",
@@ -427,6 +451,14 @@
       "size_bytes": 9747
     },
     {
+      "name": "windows-test-vm.md",
+      "rel_path": "windows-test-vm.md",
+      "title": "Windows test VM",
+      "summary": "How-to for connecting to the UTM Windows test VM over ssh, copying files, and installing a locally built Flowpad dev wheel on it.",
+      "content_hash": "9e3a9739d4b376737743387455b9baa36e387856071ab6ab78ee615726bbf2cd",
+      "size_bytes": 3125
+    },
+    {
       "name": "zschool_box.md",
       "rel_path": "zschool_box.md",
       "title": "zschool box",
@@ -439,23 +471,23 @@
     {
       "name": "agent",
       "rel_path": "agent",
-      "self_summary": "The AgenticProcess entity up close: the four-axis status model that says what a worker is doing and on what evidence, and a tour of its persisted fields, actions and public TypeScript surface.",
+      "self_summary": "The agent layer up close: the AgenticProcess four-axis status model and its interface card (fields, actions, TypeScript surface), and Chief of Staff agents that answer fast and hand longer work to SubAgent staff through the task ledger.",
       "child_typeid": "markdown_index-ef6a0b49-4a8e-57b4-b375-c061146f5d56",
-      "child_inputs_hash": "45ccaf40b47826822ef9c74720842589f8a83a6a4136be73df59ec273f11abb1"
+      "child_inputs_hash": "8e12a4b9bc677e160f319a693e5a8f90bc3f4d8eb39d3479e93205736a5d4d12"
     },
     {
       "name": "agent-management",
       "rel_path": "agent-management",
       "self_summary": "Running and controlling agent sessions: which state survives a restart, the orthogonal headless/PTY transports and how a process switches between them, Claude session lifecycle, the PTY WebSocket stack, and the terminal's tabs and toolbars.",
       "child_typeid": "markdown_index-19ec5c4d-9a34-5922-9864-878be1f4d806",
-      "child_inputs_hash": "298a429971422f43d1fb16297192adc15c0848d185dbd1a27b1d2b1ff11cc849"
+      "child_inputs_hash": "50ba94cc812628dc84b0f71578f872a78ddc1c2da3e0b882f5453bb9d32441fd"
     },
     {
       "name": "breadcrumbs",
       "rel_path": "breadcrumbs",
       "self_summary": "Proven root causes, one per page: a rule established by debugging, why the obvious reading was wrong, and the lever that shows it. Read the one matching your symptom before re-deriving it — personas, composer readiness, live frames, port picking, login state.",
       "child_typeid": "markdown_index-bd7ef5f5-cf38-55ee-b3c9-b1549c57f267",
-      "child_inputs_hash": "0aa55e335e6e6101e0aa68bee704eede7a7f8cbf621f2c62be518f4b80835014"
+      "child_inputs_hash": "6f732baee9de13f459fd5bc0253542a5efc7ff25d61085eb8eeae8fe6bdd5d7c"
     },
     {
       "name": "collab",
@@ -467,9 +499,9 @@
     {
       "name": "data-management",
       "rel_path": "data-management",
-      "self_summary": "How disk and database stay one thing: assets and their identity capsules, the indexer walk and entity sync, DataSpec as the single shape system with its kind registry, data sources and datasets, records, search and the SQLite layer underneath.",
+      "self_summary": "How disk and database stay one thing: assets and their identity capsules, the indexer walk and entity sync, DataSpec as the one schema system (kind, schema, value) with its kind registry, data sources and datasets, evals, records, search and the SQLite layer underneath.",
       "child_typeid": "markdown_index-66704284-b246-51c2-849b-cf3c916f33de",
-      "child_inputs_hash": "fc1fa459991c4e17e88615586f8183a100b0b29dafe120fc734d8f7e8c688e2e"
+      "child_inputs_hash": "3195fb8984a69e1498b9a6f66e6244b2cacf1c081a5ac66e7630e4915d1e44a4"
     },
     {
       "name": "flows",
@@ -490,7 +522,7 @@
       "rel_path": "interface",
       "self_summary": "Reference pages for the agentic-process stack, layer by layer: AgenticProcess, Shell, the PTY layer and ComputeNode — their fields, HTTP actions and TypeScript surfaces — plus the driver protocol behind Claude, Codex and Copilot, and session naming.",
       "child_typeid": "markdown_index-034a266f-b952-5882-b474-c3d9a15d4816",
-      "child_inputs_hash": "5589eb14635e5fe210ed7e61df37726e70b56daea02cb8ebd2bbe057f1c1f221"
+      "child_inputs_hash": "8436cbf2415c0f42548df4a1059a2e709a2fe0ae004869e4594453dd32be3ae3"
     },
     {
       "name": "mockups",
@@ -504,7 +536,14 @@
       "rel_path": "modes",
       "self_summary": "The workspace modes. Vibe is the creator-first one: a side chat beside a live display, with the rules that keep the display authoritative.",
       "child_typeid": "markdown_index-816a84f6-dd60-5ab1-9afc-dd620668e009",
-      "child_inputs_hash": "11fa9344b218d09df081555754493a6c5c5afbeda087eeb40757e8bf6e2d352c"
+      "child_inputs_hash": "6ae7be5ee7c49ff122ce3b3b7ac22927e5e51262a10f0cd3a870399b1038d411"
+    },
+    {
+      "name": "navigation",
+      "rel_path": "navigation",
+      "self_summary": "How Flowpad navigates: the seven-step dock URL loading algorithm and its invariants, the screen map with you-are-here context and where-to-go routing, and the catalog of example sentences each mapped to its navigation target.",
+      "child_typeid": "markdown_index-b91806c7-b7c9-5289-8493-a79f197f9c51",
+      "child_inputs_hash": "c5babb3aec864169d33cb5de1266a4c50a437046ea80cb337c36ac9ca228f470"
     },
     {
       "name": "primitives",
@@ -521,20 +560,27 @@
       "child_inputs_hash": "b9f50096468010f11a676e565982cfdd7372d6f4f302fb731793678735a9c6a2"
     },
     {
+      "name": "sdk-site",
+      "rel_path": "sdk-site",
+      "self_summary": "The public Flow SDK guide: DataSpec schemas and values, AgenticProcess, and an executable workflow of agents answering channel messages, built into the SDK site.",
+      "child_typeid": "markdown_index-2c1662c6-f6d3-50df-9f63-0ccc6760cd3c",
+      "child_inputs_hash": "46a9cc308231cee3b9616198f219e95839607080b6a06f4e9a9914dc8a8bce09"
+    },
+    {
       "name": "snippets",
       "rel_path": "snippets",
-      "self_summary": "The runnable SDK shelf: one page per capability, every fence pinned by a test. Connections, credentials, data sources, datasets, activity, agents on email and chat channels, LLM endpoints, processes, workflows, compute ops and the one call-return contract — copyable code rather than prose.",
+      "self_summary": "The runnable SDK shelf: one page per capability, every fence pinned by a test. Connections, credentials, data sources, datasets, activity, agents on email, chat and help-desk channels, message threads, LLM endpoints, processes, workflows, compute ops, wizards, decisions, RAG, project dependencies and the one call-return contract.",
       "child_typeid": "markdown_index-a34feae9-8881-5202-b520-9281688839f2",
-      "child_inputs_hash": "f7d6b2f836466f67180f84bc54bfbc386f869578d79932e446e674cd887f40c8"
+      "child_inputs_hash": "c919d045be156fa641ef78e5ef6dce334a9e41dd4dcd07156d40c7fe7851dce8"
     },
     {
       "name": "tabs",
       "rel_path": "tabs",
       "self_summary": "The Display pane as an address: how `flow show` navigates a URL-owned target and why the display stack belongs to the router rather than to component state.",
       "child_typeid": "markdown_index-7c234c43-b48e-5e33-99b2-84e907274387",
-      "child_inputs_hash": "ca533fab86503809f37a9360c1517505abf503b1b0f9dab6950e9d54f2943730"
+      "child_inputs_hash": "38e82f24b0ea8ab544edc398dfdfe5cd029740734bf6c253c4b1c303baf8c51a"
     }
   ],
-  "generated_at": "2026-09-25T12:04:30Z",
+  "generated_at": "2026-10-07T14:46:43Z",
   "latest_process_ref": ""
 }

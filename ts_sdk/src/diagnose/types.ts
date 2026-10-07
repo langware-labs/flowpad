@@ -1,6 +1,6 @@
 /**
  * The diagnosis contract — a mirror of `flow_sdk/schema/data_spec/diagnose_spec.py` (`diagnosis`,
- * `flow.context`), kept in step by `tests/unit/test_diagnose_ts_parity.py`.
+ * `flow.context`), kept in step by `tests/unit/test_diagnose/test_ts_parity.py`.
  *
  * A diagnose (an asset: `diagnose.json` + `diagnose.py`) is called with a `FlowContextSpec` and
  * answers a `DiagnosisSpec`. One that fails or hangs still answers the baseline, `status: 'partial'`.

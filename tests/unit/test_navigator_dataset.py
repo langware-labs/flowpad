@@ -1,6 +1,6 @@
 """The SmartNavigator dataset: its definitions, its rows, and the evaluation over them.
 
-The row kinds ship as ``data_spec`` folders (``flowpad_assistant/agentic-assets/data_spec/
+The row schemas ship as ``data_schema`` folders (``flowpad_assistant/agentic-assets/data_schema/
 navigat*``); the rows do not -- they live at ``DATASET`` (``dev/dataset/
 smart-navigator`` beside the checkout), and the tests that read them skip where it is absent.
 These read it from disk alone -- the same entity indexing builds -- and drive the evaluator with

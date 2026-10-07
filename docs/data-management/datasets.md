@@ -383,11 +383,11 @@ editor webapp nested in every shipped source definition carries the pane that
 drives them; the `connect-data-source` skill's `define` mode drives them for an
 agent.
 
-## Typed rows — a spec that NAMES a kind
+## Typed rows — a `spec` that NAMES a kind
 
-`spec` may be the name of a registered dataset kind (`"navigator.dataset"`), typically one a
-`data_spec` folder defines — nested in the dataset itself, so the dataset carries its own
-definitions (see [data-spec](data-spec.md#kinds-defined-by-a-folder)). Then every slot is a typed
+`spec` may be the name of a registered dataset kind (`"navigator.dataset"`), typically one whose
+schema a `data_schema` folder defines — nested in the dataset itself, so the dataset carries its own
+schemas (see [data-spec](data-spec.md#schemas-defined-by-a-folder)). Then every slot is a typed
 value, written by the generic walker as `«slot»/<last kind segment>.json` (`input/request.json`,
 `ground_truth/decision.json`), several gold answers as `ground_truth-1/`, `ground_truth-2/` — any
 one is right.
@@ -398,7 +398,7 @@ one is right.
 | `GET example/<id>` | one example's slot VALUES (an editor's read) |
 | `POST annotate {example_id, ground_truth}` | REPLACES the gold: a named output kind is written as its own document (`ground_truth/decision.json`; a list → `ground_truth-N/`), an inline shape as `ground_truth/label.json` |
 | `GET rows` | every example with its slot values, in one read (what the editor loads) |
-| `POST validate` | every row read as the declared shape; names each row that does not fit, with its slot (`ground_truth.route`) |
+| `POST validate` | every row read as the declared schema; names each row that does not fit, with its slot (`ground_truth.route`) |
 | `POST score` | each recorded `output` against its gold: a gold field left empty constrains nothing; several golds mean any one is right (`flow_sdk/datasets/score.py`) |
 
 Indexing still reads rows as artifacts (fast, never fatal); `validate` is the check.
@@ -412,7 +412,7 @@ specific first), else one that edits the `dataset` type — the shipped generic 
 behind them is `mountDatasetEditor`: it builds every form from the declared kinds
 (`GET /api/v1/kinds/<kind>`), so one editor serves every typed dataset.
 
-The example is the SmartNavigator eval set. Its row kinds ship as flat `data_spec` folders
-(`flowpad_assistant/agentic-assets/data_spec/navigat*`); its rows do not — they live beside the
+The example is the SmartNavigator eval set. Its row schemas ship as flat `data_schema` folders
+(`flowpad_assistant/agentic-assets/data_schema/navigat*`); its rows do not — they live beside the
 checkout at `dev/dataset/smart-navigator/` (`flow_sdk.core.navigation.DATASET`). Shipped assets stay flat:
 a nested tree inside the install crossed Windows' 260-char MAX_PATH.

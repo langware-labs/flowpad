@@ -67,8 +67,9 @@ asyncio.run(main())
 SNIP
 ```
 
-- `input` is a DataSpec instance — today a plain dict fails before the run.
-  Build it from the declared shape as above, or pass your own DataSpec class.
+- `input` is a value: an instance of the declared schema. Today a plain dict fails
+  before the run. Build the schema class from the declared shape as above, or pass an
+  instance of your own `DataSpec` subclass.
 - Without `output_spec=`, the agent's declared `output` applies; pass
   `output_spec=` to ask for a different shape on one call.
 - The same contract without a saved agent is `AgenticProcess.run(instruction,

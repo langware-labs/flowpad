@@ -2257,7 +2257,7 @@ async with workflow(&quot;acme-support&quot;):                          # names 
         <p class="ps-line">The guide is published as plain files an agent can read: llms.txt and flow-sdk.md.</p></div><figure class="mini-info" role="img" aria-label="llms.txt -&gt; your agent -&gt; Flow code"><div class="mi-tile mi-spec"><svg viewBox="0 0 24 24" class="cn-ic" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M9 13h6M9 17h4"/></svg><span>llms.txt</span></div><svg class="mi-arrow" viewBox="0 0 28 14" aria-hidden="true"><path d="M2 7H22"/><path d="M17 2l6 5-6 5" fill="none"/></svg><div class="mi-tile mi-proc"><svg viewBox="0 0 24 24" class="cn-ic" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="8" width="16" height="12" rx="3"/><path d="M12 8V4M9 14h.01M15 14h.01"/><circle cx="12" cy="3" r="1"/></svg><span>your agent</span></div><svg class="mi-arrow" viewBox="0 0 28 14" aria-hidden="true"><path d="M2 7H22"/><path d="M17 2l6 5-6 5" fill="none"/></svg><div class="mi-tile"><svg viewBox="0 0 24 24" class="cn-ic" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m8 7-5 5 5 5M16 7l5 5-5 5M14 4l-4 16"/></svg><span>Flow code</span></div></figure></header>
         <div class="ps-row"><div class="ps-point"><b>Rules for your agent</b><span>Paste them into its instructions.</span></div><figure class="snip" id="kit-rules"><pre class="code lang-text" tabindex="0"><code>You are building on the Flow SDK (Python package `flowpad`, import `flow_sdk`, CLI `flow`).
 Read the Flow SDK guide in flow-sdk.md before writing code. Follow its rules:
-- Every value you pass or return is a DataSpec subclass (frozen, extra=&quot;forbid&quot;); never a bare dict.
+- Every value you pass or return is an instance of a DataSpec schema (frozen, extra=&quot;forbid&quot;); never a bare dict.
 - Integrations are data driver folders: agentic-assets/data_driver/&lt;name&gt;/ with data_driver.json and one Source subclass in source.py.
 - Never put a secret in config. Declare it in a credential (secret_pack.json with a `setup` text) and read it from a SecretStore; accounts come from connections.
 - In a listen() loop, give every item exactly one ack() or reply().
@@ -3298,7 +3298,7 @@ async with workflow(&quot;acme-support&quot;):                          # names 
 ```text
 You are building on the Flow SDK (Python package `flowpad`, import `flow_sdk`, CLI `flow`).
 Read the Flow SDK guide in flow-sdk.md before writing code. Follow its rules:
-- Every value you pass or return is a DataSpec subclass (frozen, extra=&quot;forbid&quot;); never a bare dict.
+- Every value you pass or return is an instance of a DataSpec schema (frozen, extra=&quot;forbid&quot;); never a bare dict.
 - Integrations are data driver folders: agentic-assets/data_driver/&lt;name&gt;/ with data_driver.json and one Source subclass in source.py.
 - Never put a secret in config. Declare it in a credential (secret_pack.json with a `setup` text) and read it from a SecretStore; accounts come from connections.
 - In a listen() loop, give every item exactly one ack() or reply().

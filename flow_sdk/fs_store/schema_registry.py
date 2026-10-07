@@ -293,6 +293,9 @@ class TypeInfo:
     # Main documents this type USED to carry (``agent.md``). A folder holding one and not the current
     # main is a RETIRED form: reported with the migration that converts it, never indexed or written.
     retired_mains: tuple[str, ...] = field(default=(), compare=False, repr=False, metadata=_MERGE)
+    # Family folder names this type USED to live under (``data_spec``). Not read: a scan reports the
+    # folder as an issue naming the rename, so its assets never vanish without a word.
+    retired_families: tuple[str, ...] = field(default=(), compare=False, repr=False, metadata=_MERGE)
     # What an orphan row of this type takes with it, awaited with the row's id before the row is dropped
     # (``fs_store.orphan_removal``). ``None``: the row alone. A data source's records and cursors hang off
     # its id, so removing the row without them leaves orphans no sweep reaches.
@@ -1115,7 +1118,7 @@ class SchemaRegistry:
 
         What holds WITHOUT exception is the other half: an entity type name
         resolves to that type's ``asset_spec`` — its document shape — and never
-        to the Entity class. A row model is not a shape, and a ``SpecType`` field
+        to the Entity class. A row model is not a shape, and a ``ShapeForm`` field
         holding one could not validate a value against it: it would demand ids
         and DB columns the value has never heard of. A registered type with no
         asset document therefore names nothing here, and ``resolve_kind`` turns
