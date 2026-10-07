@@ -4,9 +4,10 @@ id: d6e8f077-4190-4650-8378-a5d491cc4b97
 # Datasets — snippets
 
 A dataset is a folder of examples: `input` + `context` → the right `ground_truth`, and what a run
-produced as `output`. When its `spec` NAMES a kind, every slot is a typed value — and the kinds
-can be defined as `data_spec` folders — nested in the dataset itself, or shipped. The example is
-the SmartNavigator eval set: its kinds ship (`flowpad_assistant/agentic-assets/data_spec/navigat*`),
+produced as `output`. When its `spec` NAMES a kind, every slot is a typed value — and the schemas
+those kinds name can be defined as `data_schema` folders — nested in the dataset itself, or
+shipped. The example is the SmartNavigator eval set: its schemas ship
+(`flowpad_assistant/agentic-assets/data_schema/navigat*`),
 its rows do not — they live beside the checkout at `dev/dataset/smart-navigator/`
 (`flow_sdk.core.navigation.DATASET`, overridable with `FLOW_NAVIGATOR_DATASET`), and the fences that read
 them skip where it is absent.
@@ -15,10 +16,10 @@ Pinned by `tests/unit/test_datasets_snippets.py` (runs every Python fence). The 
 pinned by `tests/unit/test_data_spec/test_declared_kinds.py`,
 `tests/unit/test_data_spec/test_typed_dataset_rows.py` and `tests/api/test_dataset_editors.py`.
 
-## 1. Define the row kinds as folders
+## 1. Define the row schemas as folders
 
 ```
-flowpad_assistant/agentic-assets/data_spec/    # shipped, flat: the folder name is the kind
+flowpad_assistant/agentic-assets/data_schema/  # shipped, flat: the folder name is the kind
   navigation.map/ .place/ .subplace/           # the map (screens)
   navigation.here/ .ref/ .shown/ .outcome/     # you are here
   navigator.dataset/                           # {"examples": {"input": "navigator.request", ...}}
@@ -32,13 +33,13 @@ dev/dataset/smart-navigator/                   # the rows -- not shipped
 ```
 
 ```json
-{"type": "data_spec", "fields": {
+{"type": "data_schema", "fields": {
   "route":  {"shape": "enum:quick|agentic", "description": "quick: open now; agentic: ask"},
   "target": {"shape": "?navigator.target",  "description": "what to open; absent when agentic"},
   "verb":   {"shape": "?enum:show|navigate"}}}
 ```
 
-The folder name is the kind. Indexing registers it under the project's namespace (ours when
+The folder name is the kind. Indexing registers the schema under it, in the project's namespace (ours when
 shipped); `?` may be absent, `enum:` is a closed set, a field naming another kind nests it.
 
 ## 2. Read a dataset

@@ -70,9 +70,12 @@ put the boundary in the prompt (and `permission_mode`) instead.
 
 ## Shape forms (`input` / `output`)
 
-A shape is written in one of three forms: a primitive name (`"string"`, `"int"`,
-`"float"`, `"bool"` or a registered kind), an object `{field: shape}`, or a list
-`[shape]`. There is no map form.
+`input` and `output` each hold a schema, written as a shape form. A shape form is one of:
+a primitive (`"string"`, `"int"`, `"float"`, `"bool"`, `"binary"`) or the name of a
+registered kind, an object `{field: shape}`, or a list `[shape]`. You can also write
+three extras: `"?shape"` (the value may be missing), `"enum:a|b"` (one of these strings)
+and `{"*": shape}` (a map from any key to that shape). What the caller passes and what
+the agent writes back are values of that schema.
 
 ```json
 {

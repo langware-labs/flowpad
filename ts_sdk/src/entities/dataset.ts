@@ -34,7 +34,7 @@ export interface DatasetAuthoringSpec {
 }
 
 /** What `spec` holds: the inline form, or the NAME of a registered dataset kind
- *  (`navigator.dataset`, `--acme--.orders.dataset`) — typically one a `data_spec` folder defines. */
+ *  (`navigator.dataset`, `--acme--.orders.dataset`) — typically one a `data_schema` folder defines. */
 export type DatasetSpecForm = DatasetAuthoringSpec | string;
 
 /** One row going in: `input` required, the other slots and the row's role optional. */

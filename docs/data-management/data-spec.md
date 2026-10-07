@@ -2,28 +2,35 @@
 id: cdd25916-d86c-4c47-984a-db8a7c25cc85
 ---
 
-# DataSpec — shape as Pydantic, the spec as the layout
+# DataSpec — schemas as Pydantic, the schema as the layout
 
 Two things the schema layer needed and did not have: a way to describe data
-whose shape **arrives as data**, and a way for an asset's on-disk layout to be
+whose schema **arrives as data**, and a way for an asset's on-disk layout to be
 **the class that models it**. Both live in `flow_sdk/schema/data_spec/`.
 
-The ruling behind both: **the shape is Pydantic, period.** A shape declared in
-source is a `DataSpec` subclass. A shape that arrives at runtime is *compiled
-to* a `DataSpec` subclass. One type system, not two — and the carrier is plain
-JSON, never a wrapper.
+Three words, used exactly (see the [glossary](../glossary.md#kind--schema--value-2026-10-07)):
+a **kind** is a name (`navigator.decision`); a **schema** is the definition registered under it —
+a `DataSpec` subclass; a **value** is an instance of a schema. `DataSpec` is the base class the
+way pydantic's `BaseModel` is: subclasses are schemas, instances are values.
 
-## `DataSpec` — the base of every shape
+The ruling behind both: **the schema is Pydantic, period.** A schema declared in
+source is a `DataSpec` subclass. A schema that arrives at runtime is *compiled
+to* a `DataSpec` subclass. One type system, not two — and a value's carrier is
+plain JSON, never a wrapper.
+
+## `DataSpec` — the base of every schema
 
 ```python
 class DataSpec(BaseModel):
-    spec_kind: ClassVar[str] = ""      # the shape's name in the tag ontology; "" ⇒ anonymous
-    model_config = ConfigDict(extra="forbid")
+    spec_kind: ClassVar[str] = ""      # the schema's kind in the tag ontology; "" ⇒ anonymous
+    model_config = ConfigDict(extra="forbid", frozen=True)
 ```
 
-Everything that describes data inherits from it — `ExampleSpec`, `DatasetSpec`,
-the three leaves, a user's `class EmailInput(DataSpec)`, and every shape parsed
-from YAML. A field typed `DataSpec` means "any shape."
+Every schema inherits from it — `ExampleSpec`, `DatasetSpec`, the three leaves, a
+user's `class EmailInput(DataSpec)`, and every schema parsed from YAML. A value is
+immutable (`frozen`); build a changed one with `model_copy(update=...)`. Asset
+document schemas (`AssetDocumentSpec`, `FrontMatter`) relax `extra` to `"ignore"`
+so a hand-edited file still loads. A field typed `DataSpec` means "a value of any schema."
 
 ### Declared in source
 
@@ -34,7 +41,7 @@ class EmailInput(DataSpec):
     body: str
 ```
 
-Subclassing **registers** the class under its kind in the one `SchemaRegistry`
+Subclassing **registers** the schema under its kind in the one `SchemaRegistry`
 (`__pydantic_init_subclass__` — the hook that sees `model_fields`). Two rules,
 both enforced: `spec_kind` must stay a `ClassVar` (annotating it makes it a
 field, and the guard — an `assert` in the hook — trips at class creation); and a
@@ -57,14 +64,22 @@ is bound before any manifest's `spec` is parsed.
 
 ### Arriving as data — `DataSpec.parse`
 
-The authoring form has **no keywords**. It mirrors a Python annotation
-one-to-one, and those are the only three shapes an annotation can take:
+The authoring form mirrors a Python annotation. Three forms are structural,
+three are input-side marks:
 
 | authored (JSON / YAML) | annotation it mirrors | `parse` returns |
 |---|---|---|
 | `"string"` — a bare kind | `str` | `resolve_kind("string")` |
 | `{"category": "string", …}` — an object | `class X: category: str` | an anonymous `DataSpec` subclass (`create_model`) |
 | `["string"]` — a one-element list | `list[str]` | `list[T]` |
+| `"?string"` — may be absent | `Optional[str] = None` | the field becomes optional |
+| `"enum:a\|b"` — a closed set | `Literal["a", "b"]` | a `Literal` |
+| `{"*": "string"}` — a map | `dict[str, str]` | `dict[str, T]` |
+
+The marks (`?`, `enum:`, `{"*": …}`) are **input only**: `to_authoring_form`
+renders a hand-written class back with the three structural forms, so an
+`Optional[X]` renders as `X` and a `dict` field renders only on a class that
+carries a `spec_kind`.
 
 A dict is **always** an object whose keys are field names. That is why the
 registration hook is `spec_kind`, not `kind`: a user must be free to author a
@@ -75,47 +90,46 @@ what was written — that is what keeps `agent.json` and `dataset.json` readable
 ### `spec_kind` is the connector
 
 An ordinary dot-path tag (`flow_sdk/tags/grammar.py`), resolved through the
-**one** `SchemaRegistry`: a reserved primitive (`string` `int` `float` `bool`)
+**one** `SchemaRegistry`: a reserved primitive (`string` `int` `float` `bool` `binary`)
 → its Python type; a registered kind → its class (`register_kind` /
 `kind_type` / `kind_for`); an unregistered name → **anonymous**: `Any`. Legal,
 opaque, never minted. A kind referenced before it is registered resolves to
 `Any` — compilation is eager, so there is no cycle to detect.
 
-**A kind names a SHAPE, never an Entity row.** Entity type names live in the same table,
+**A kind names a SCHEMA, never an Entity row.** Entity type names live in the same table,
 so `"dataset"` is a kind — and it resolves to that type's `asset_spec`, its
-document shape, registered automatically from the type name. It never resolves
-to the Entity class: a row model is not a `DataSpec`, and a `SpecType` field
-holding one could not validate a value against it. A registered type with **no**
+document schema, registered automatically from the type name. It never resolves
+to the Entity class: a row model is not a `DataSpec`, and a field holding one
+could not validate a value against it. A registered type with **no**
 asset document therefore names no shape and raises, rather than answering `Any`:
 the author meant a real thing. See [`ontology.md`](../ontology.md).
 
-A spec that declares its own `spec_kind` keeps it, and it stays the name that is
+A schema that declares its own `spec_kind` keeps it, and it stays the name that is
 WRITTEN — so `SourceItemSpec` dumps as `ingest.source_item` while both that and
 `source_item` resolve.
 
-### A shape held by a field — `SpecType`
+### A schema held by a field — `ShapeForm`
 
-A shape is a *class*, and a class is not a Pydantic value: a field that holds
-one is typed `SpecType` (`Annotated[type, BeforeValidator(parse),
-PlainSerializer(to_authoring_form)]`), declared `Optional[SpecType]` when it may
-be absent — Pydantic short-circuits `None` OUTSIDE the `Annotated`, so neither
-hook ever sees it. The validator reads the authoring form; the serializer emits
-it back. `Agent.input`/`output` and `CapabilitySpec.value_spec` are `SpecType`
-fields; `DatasetManifestSpec.spec` / `Dataset.spec` are the sibling
-`DatasetSpecType` (`flow_sdk/builtin/dataset.py`), whose validator is
-`DatasetSpec.parse` — the keyword form — and whose serializer is the same
-`to_authoring_form`. The record writer (`fs_record._json_default`) encodes a
-class the same way.
+A schema is a *class*, and a class is not a value, so a field never holds one.
+A field that declares a schema holds its **authoring form, as data**:
+`ShapeForm` (`flow_sdk/schema/data_spec/_form.py` —
+`Annotated[str | dict | list, BeforeValidator(normalize_shape_form)]`). The
+form is validated at the write, where the author can still be told which key is
+wrong, and compiled to a class only by the one caller that needs a type
+(`compile_form`; `core/compute/declared_value.to_declared`). `Agent.input` /
+`output`, `AgentSpec.input`, `CapabilitySpec.value_spec`, `Dataset.spec` and
+`DatasetManifestSpec.spec` are `ShapeForm` fields. (`SpecType` held a live class
+here once; it is gone, and the name now belongs to an unrelated enum in
+`spec_doc_spec.py`.)
 
 ### Deliberately not in this cut
 
-Optional fields (every declared field is required; the least-invented later
-extension is a trailing `?` on the field *name*) and self-referential kinds.
+Self-referential kinds.
 
 ## `ExampleSpec` / `DatasetSpec` — typed by generics
 
-`Spec` is the suffix for a **value model** — not an entity, never a row of its
-own. The one entity is `Dataset`.
+`Spec` is the suffix for a **schema** — a class whose instances are values, not an
+entity, never a row of its own. The one entity is `Dataset`.
 
 ```python
 class ExampleSpec(DataSpec, Generic[I, O, C]):
@@ -144,10 +158,11 @@ class FolderSpec(DataSpec): spec_kind = "folder";   path: str; files: dict[str, 
 class TextSpec(DataSpec):   spec_kind = "text";     text: str
 ```
 
-`FolderSpec.files` is the precedent for a `dict` field on a spec: the authoring
-form has no map type, so a `dict[...]` field is expressible ONLY on a class that
-carries a `spec_kind` — `to_authoring_form` short-circuits on the kind before it
-would fail with `no authoring form for ...`. The three leaves are the untyped
+`FolderSpec.files` is the precedent for a `dict` field on a hand-written schema: the
+rendered authoring form has no map (the `{"*": …}` map is input only), so a
+`dict[...]` field renders ONLY on a class that carries a `spec_kind` —
+`to_authoring_form` short-circuits on the kind before it would fail with
+`no authoring form for ...`. The three leaves are the untyped
 default slot (`Artifact = FileRef | FolderSpec | TextSpec`).
 
 The keyword authoring form lives in `dataset.json` (see
@@ -164,10 +179,10 @@ unchanged, and the 74 grammar tests are its spec. `FolderLayout.write_example`
 (`prepare_execution_io`, `_stamp_example`) calls, so an execution directory IS
 an example directory and the two writers cannot drift.
 
-## The spec IS the layout — `TypeInfo.asset_spec`
+## The schema IS the layout — `TypeInfo.asset_spec`
 
-One mechanism: a type's shape is a `DataSpec` registered as **`TypeInfo.asset_spec`**,
-and the spec's field TYPES say what the document holds. There is no asset mixin
+One mechanism: a type's document schema is a `DataSpec` registered as
+**`TypeInfo.asset_spec`**, and the schema's field TYPES say what the document holds. There is no asset mixin
 and no `header` ClassVar — the entity class is the row, its `APIField`s are the
 columns, and the registry check (`check_asset_spec`) guarantees every spec field
 is an entity field with a compatible core (the entity may narrow: `str` → `TypeId`,
@@ -315,7 +330,7 @@ type with no spec.
 | site | what |
 |---|---|
 | `Dataset.spec` / `Dataset.examples` | the dataset's shape (`DatasetSpec[…]`) and its rows (`list[ExampleSpec]`) |
-| `Agent.input` / `Agent.output` | the agent's I/O contract as shape CLASSES — `input + template → output`. Declaration only: never in `to_agent_options` (md5'd into `last_started_hash`) |
+| `Agent.input` / `Agent.output` | the agent's I/O contract as authoring FORMS (`ShapeForm`) — `input + template → output`. Declaration only: never in `to_agent_options` (md5'd into `last_started_hash`) |
 | `CapabilitySpec.value_spec` / `CapabilityValue.spec` | the shape of a capability's discovered value (`fs_ref`); `value_type` is the spec's kind |
 | `prepare_execution_io` / `_stamp_example` | the capture seam, writing through `FolderLayout` |
 | `AgentSpec`, `SubAgentSpec`, `DatasetManifestSpec`, `DataDriverSpec`, `SourceItemSpec` | the `asset_spec` of Agent / SubAgent / Dataset / DataDriver / SourceItem |
@@ -330,15 +345,17 @@ type with no spec.
 - [Dataset Layout](datasets.md) — the on-disk grammar and the `spec` authoring form
 - [Tags](../tags.md) — the taxonomy `spec_kind` draws from
 
-## Kinds defined by a folder
+## Schemas defined by a folder
 
-`agentic-assets/data_spec/<full.kind>/` is a `data_spec` asset: `data_spec.json` (an entity
-document) plus `description.md`. Indexing it registers the kind it defines — the folder name, the
-full dot path, never relative to where it is nested — under its project's namespace (ours when
-shipped). It may nest further data specs in its own `agentic-assets/`, at any depth.
+`agentic-assets/data_schema/<full.kind>/` is a `data_schema` asset: `data_schema.json` (an entity
+document) plus `description.md`. Indexing it compiles the schema and registers it under its kind —
+the folder name, the full dot path, never relative to where it is nested — in its project's
+namespace (ours when shipped). It may nest further data schemas in its own `agentic-assets/`, at
+any depth. (The family was `data_spec` until 2026-10-07; a folder still under that name is not
+read, and the asset scan reports it as an issue naming the rename — `TypeInfo.retired_families`.)
 
 ```json
-{"type": "data_spec", "fields": {
+{"type": "data_schema", "fields": {
   "route":  {"shape": "enum:quick|agentic", "description": "quick: open now; agentic: ask"},
   "target": {"shape": "?navigator.target",  "description": "what to open"}}}
 ```
@@ -347,7 +364,7 @@ shipped). It may nest further data specs in its own `agentic-assets/`, at any de
   `context` → shapes) a `dataset`. Explicit: `"subkind"` declared and checked against the body.
   None: no body — a documentation node that registers nothing.
 * **Form additions** (input side only): `?<shape>` may be absent, `enum:a|b` is one of these
-  strings, `{"*": <shape>}` is a map. A hand-written spec renders exactly as before.
+  strings, `{"*": <shape>}` is a map. A hand-written schema renders exactly as before.
 * **Failures are recorded, never raised**: a duplicate kind, a name nobody defines, a bad `ns` —
   the row's `error` says which.
 

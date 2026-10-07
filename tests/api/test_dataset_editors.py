@@ -25,9 +25,9 @@ def _app(folder: Path, *, edits: list[str] | None = None) -> None:
 
 
 def _spec(parent: Path, kind: str, body: dict, ns: str) -> Path:
-    folder = parent / "agentic-assets" / "data_spec" / kind
+    folder = parent / "agentic-assets" / "data_schema" / kind
     folder.mkdir(parents=True)
-    (folder / "data_spec.json").write_text(json.dumps({"type": "data_spec", "ns": ns, **body}))
+    (folder / "data_schema.json").write_text(json.dumps({"type": "data_schema", "ns": ns, **body}))
     return folder
 
 
@@ -44,7 +44,7 @@ async def _index(root: Path) -> None:
     from flow_sdk.fs_store.indexer.functions.repo_assets import repo_assets_fn
     from flow_sdk.fs_store.record_types import RecordType
 
-    types = {RecordType.DATASET, RecordType.MICRO_APP, RecordType("data_spec")}
+    types = {RecordType.DATASET, RecordType.MICRO_APP, RecordType("data_schema")}
     idx = FSIndexer()
     idx.add_root(FSRef(root, record_type=RecordType.USER_HOME_FOLDER, scope="user"))
     idx.add_function(RecordType.USER_HOME_FOLDER, repo_assets_fn, frozenset(types))

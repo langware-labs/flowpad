@@ -1,7 +1,7 @@
 """What a kind looks like, and which apps edit a thing -- the two reads a shape-driven editor needs.
 
 ``GET /api/v1/kinds/{kind}``: the fields of a registered kind with their shapes and meanings, so an
-editor can build its form from the definition (a ``data_spec`` folder's ``description``s ride
+editor can build its form from the schema (a ``data_schema`` folder's ``description``s ride
 along). ``GET /api/v1/editors/{typeid}``: the apps that edit an entity, best first
 (``flow_sdk.builtin.faas.editors``). ``GET /api/v1/viewers/{kind}``: the viewers that show a value
 (or a list) of a kind, best first. Standard envelope, so the SDK reads them through ``apiClient``.
@@ -35,7 +35,7 @@ def kind_form(kind: str) -> dict | None:
             "subkind": "dataset",
             "slots": {k: to_authoring_form(v) for k, v in slots.items() if v is not None and v.model_fields},
         }
-    # A kind a data spec FOLDER defines keeps the forms its author wrote (``enum:``, ``?``).
+    # A schema a data schema FOLDER defines keeps the forms its author wrote (``enum:``, ``?``).
     authored = getattr(shape, "__authoring__", None) or {}
     fields = {}
     for name, field in shape.model_fields.items():

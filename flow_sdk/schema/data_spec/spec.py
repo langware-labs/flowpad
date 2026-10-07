@@ -301,10 +301,11 @@ def to_authoring_form(t: Any) -> Any:
     """A type → the authoring form that produces it. Inverse of ``parse``.
 
     ``Optional[X]`` renders as ``X``. Whether a value may be ABSENT is
-    behaviour, not shape — the grammar has three forms and no keywords (§2), so
-    there is nowhere to put "optional" and nothing that needs it: a missing
-    value simply is not written. Before this, any spec with an optional field
-    had NO authoring form at all, which quietly excluded 13 of them.
+    behaviour, not shape: the RENDERED form has three forms and no marks (§2),
+    and a missing value simply is not written. (``?X`` exists on the input side
+    only -- see ``OPTIONAL_MARK`` -- so no rendered form changes.) Before this,
+    any schema with an optional field had NO authoring form at all, which
+    quietly excluded 13 of them.
     """
     from flow_sdk.schema.data_spec._kinds import PRIMITIVE_NAMES  # noqa: PLC0415
 
@@ -315,7 +316,8 @@ def to_authoring_form(t: Any) -> Any:
         return _normalize_form(t)
     if isinstance(t, type) and issubclass(t, dict) and t is not dict:
         # A storage flavour of a builtin (``FreeForm`` is a ``dict``). The
-        # grammar has no map form, so this has none either — but it must FAIL
+        # rendered form has no map (``{"*": X}`` is input-only), so this has
+        # none either — but it must FAIL
         # AS A MAP, naming ``dict``, or the reason reads as "some unknown
         # class" and nobody can tell a grammar gap from a missing registration.
         raise NoAuthoringForm(dict, t)

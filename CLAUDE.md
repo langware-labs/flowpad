@@ -222,29 +222,39 @@ If a backend route can't be called through `apiClient` because it doesn't return
 
 **Every per-type icon in the UI comes from the backend type registry (`TypeInfo.icon`) — never hardcode a glyph for an entity type at a call site.** Resolve it at render time via `iconForType(type)` (`ui/src/components/graph-view/icons/iconRegistry.ts`), which reads the bootstrap-loaded SchemaRegistry and falls back to a generic document glyph for unknown/icon-less types. If a type's icon is wrong or missing, fix its `TypeInfo` (`flow_sdk/schema/type_info/<type>_*info.py`) so every surface picks it up — don't patch the one component.
 
-## Data shapes — every value is a `DataSpec` (non-negotiable)
+## Data shapes — every schema is a `DataSpec` subclass, every value its instance (non-negotiable)
 
-**A shape that travels — a launch payload, an ingestion envelope, a file header, an agent's** **`input`/`output`** **— is a** **`DataSpec`** **subclass (`flow_sdk/schema/data_spec/spec.py`). Never a bare** **`BaseModel`, a dataclass, a** **`TypedDict`, or a hand-rolled dict.** One type system, not two: validation, JSON Schema and error reporting are Pydantic's own, and the shape is nameable in the same tag ontology as everything else.
+Three words, never mixed up (`docs/glossary.md`):
 
-Two flavors, one base:
+* **kind** — a NAME, a dot-path tag (`navigator.decision`, `ingest.source_item`): what a schema is registered and looked up by.
+* **schema** — the DEFINITION registered under a kind: a `DataSpec` subclass in Python, or a `agentic-assets/data_schema/<kind>/` folder (`data_schema.json` + `description.md`) that compiles into one. Same registry, same viewers either way.
+* **value** — an INSTANCE of a schema: the object in memory, or its JSON / folder on disk.
 
-* **`FrontMatter(DataSpec)`** — the shape IS a file's header, and the class IS the field list (`SubAgentSpec`, `AgentSpec`). What it declares is what is read and written, and nothing else.
+Say "the `diagnosis` schema" and "a diagnosis value" — never "a DataSpec" on its own.
 
-* **plain** **`DataSpec`** — a value that travels between tiers (`SourceItemSpec`, `FileRef`, `FolderSpec`). Add `frozen=True`; a value is a value.
+**A shape that travels — a launch payload, an ingestion envelope, a file header, an agent's** **`input`/`output`** **— is a value of a** **`DataSpec`** **schema (`flow_sdk/schema/data_spec/spec.py`). Never a bare** **`BaseModel`, a dataclass, a** **`TypedDict`, or a hand-rolled dict.** One type system, not two: validation, JSON Schema and error reporting are Pydantic's own, and the schema is nameable in the same tag ontology as everything else.
 
-* **`extra="forbid"`** **is inherited, and it is the point.** A caller who misspells a key gets an error, not a row with an empty field. So a constructor that reads a FOREIGN dict (a vendor config entry, a provider payload) must **project field by field — never** **`**body`**. That makes the hop deliberately lossy: a vendor key we don't model is dropped, and that is the contract, not a bug.
+Three tiers, one base:
 
-* **Register a** **`spec_kind`** **when the shape should be nameable** (`"ingest.source_item"`, `"folder"`) — a dot-path tag resolved through the ONE `SchemaRegistry`. Reserved primitives are `string` / `int` / `float` / `bool`; anything else is a registered kind or anonymous.
+* **plain** **`DataSpec`** — a value that travels between tiers (`SourceItemSpec`, `FileRef`, `FolderSpec`). The base is already `frozen=True` and `extra="forbid"`; a value is a value.
+
+* **`AssetDocumentSpec(DataSpec)`** — the schema IS an asset's document (`AgentSpec` → `agent.json`, `DataSourceSpec`, `ComputeOpSpec`, `DataSchemaDocSpec`), and the class IS the field list: what it declares is what is read and written. **`extra="ignore"`** here, not forbid — a hand-edited file with a stray key still loads.
+
+* **`FrontMatter(AssetDocumentSpec)`** / **`SectionedHeader`** — the schema is a markdown file's header (`SubAgentSpec`) or a sectioned JSON report (`AgentTraceSpec`, `UsageReportSpec`). Also `extra="ignore"`.
+
+* **`extra="forbid"`** **on a plain** **`DataSpec`** **is the point.** A caller who misspells a key gets an error, not a row with an empty field. So a constructor that reads a FOREIGN dict (a vendor config entry, a provider payload) must **project field by field — never** **`**body`**. That makes the hop deliberately lossy: a vendor key we don't model is dropped, and that is the contract, not a bug.
+
+* **Register a** **`spec_kind`** **when the schema should be nameable** (`"ingest.source_item"`, `"folder"`) — its kind, resolved through the ONE `SchemaRegistry`. Reserved primitives are `string` / `int` / `float` / `bool` / `binary`; anything else is a registered kind or anonymous.
 
 * **Registration is import-time, and forgetting it fails SILENTLY.** `__pydantic_init_subclass__` only fires once the module is imported; an unreachable kind resolves to `Any` — *"legal, opaque, never minted"* — so you get an untyped field and no error anywhere. Make it reachable from `register_builtin_kinds()` (`data_spec/_kinds.py`), the way `dataset_spec` is.
 
-* **The authoring form has no map type.** `"string"` / `{field: shape}` / `[shape]` are the only three forms an annotation can take. A `dict[...]` field is therefore expressible ONLY on a class carrying a `spec_kind`, because `to_authoring_form` short-circuits on it before it would fail. `FolderSpec.files` is the precedent; the same field on an unregistered class raises `no authoring form for ...`.
+* **The authoring form** (how a schema is written as data — `data_schema.json`, an agent's `input`/`output`) is `"string"`, `{field: shape}`, `[shape]`, plus `?shape` (optional), `enum:a|b` (closed set) and `{"*": shape}` (map). Those extras are INPUT only: `to_authoring_form` renders a hand-written class back without them, and a `dict[...]` field renders ONLY on a class carrying a `spec_kind` (it short-circuits to the kind). `FolderSpec.files` is the precedent; the same field on an unregistered class raises `no authoring form for ...`.
 
 ## Data sources are self-contained assets (non-negotiable)
 
 **A data driver is an asset, and EVERYTHING one driver needs lives in its asset folder** — `agentic-assets/data_driver/<name>/`: `data_driver.json` (the `DataDriverSpec`), `source.py` (the one `flow_sdk.sources.Source` subclass, with the source's own `query()` and classmethods for send addressing, cache roots, webhooks, permalinks), any helper modules it splits into (`transport.py`, a mapper), its `tests/`, its editor webapp and its `README.md`. The manifest `name` is the folder name and the registry key. Shipped and authored sources are the same kind of thing and load through the same loader.
 
-* **A configured data source is its own asset** — `agentic-assets/data_source/<name>/data_source.json` (the `DataSourceSpec`: `data_driver_name`, `data_driver_config`, owner, cadence — never a secret). The standard for every asset: the `XSpec(DataSpec)` is the file, the FSRecord holds internal metadata, the `X(Entity)` row is the index to query. `DataDriver` (`flow_sdk/builtin/data_driver.py`) is the row AND the loaded driver: `await DataDriver.get(name)`, then `driver.create_config(**fields)` (the typed, validated `Config`) and `driver.create_source(config, name=...)` build a `DataSource` in memory, and `save()` writes it.
+* **A configured data source is its own asset** — `agentic-assets/data_source/<name>/data_source.json` (the `DataSourceSpec`: `data_driver_name`, `data_driver_config`, owner, cadence — never a secret). The standard for every asset: the `XSpec` schema is the file, the FSRecord holds internal metadata, the `X(Entity)` row is the index to query. `DataDriver` (`flow_sdk/builtin/data_driver.py`) is the row AND the loaded driver: `await DataDriver.get(name)`, then `driver.create_config(**fields)` (the typed, validated `Config`) and `driver.create_source(config, name=...)` build a `DataSource` in memory, and `save()` writes it.
 
 * **Outside an asset folder only GENERIC machinery may exist** — the contract (`flow_sdk/sources/`: values, protocols, errors, base classes, conformance kit, test doubles), the loader/registry, the sync engine, reflection, projection, generic routes and generic UI. **No provider name used as a key, no provider module import, no provider-specific branch or table** anywhere in `flow_sdk/`, `ts_sdk/src`, `ui/src`. If machinery needs a fact about a source, the source declares it (a manifest field or a classmethod) and the machinery asks.
 
