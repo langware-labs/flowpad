@@ -256,10 +256,26 @@ def options_for(here: Any, candidates: list[dict[str, str]]) -> dict[str, str]:
 # ── the route ────────────────────────────────────────────────────────────────
 
 
-def _offered(answer: NavigatorRoute, candidates: list[dict[str, str]]) -> NavigatorRoute:
-    """Keep the search matches the decision was offered on the answer (``answer.offered``), so a
-    caller can record exactly what was on the table. Run detail, not part of the answer's shape."""
+#: What the parts of the decision's state are, so a reader draws each by its own viewer.
+STATE_KINDS = {"context": "navigation.here", "candidates": ["navigator.candidate"]}
+
+
+def _offered(
+    answer: NavigatorRoute, candidates: list[dict[str, str]], spec: Any = None, result: Any = None
+) -> NavigatorRoute:
+    """Keep what was on the table on the answer -- the search matches (``answer.offered``) and the
+    model's full input and output (``answer.run``) -- so a caller can record exactly how it was
+    decided. Run detail, not part of the answer's shape."""
+    from flow_sdk.schema.data_spec.decision_spec import DecisionRun  # noqa: PLC0415
+    from flow_sdk.schema.data_spec.navigator_spec import NavigatorRun  # noqa: PLC0415
+
     answer._offered = list(candidates)
+    decision = (
+        DecisionRun(request=spec, response=result, act_at={"target": MIN_CONFIDENCE}, state_kinds=STATE_KINDS)
+        if spec is not None
+        else None
+    )
+    answer._run = NavigatorRun(reason=answer.reason, decision=decision)
     return answer
 
 
@@ -277,12 +293,14 @@ async def route(
 
     utterance = (utterance or "").strip()
     if not utterance:
-        return NavigatorRoute(route="agentic", reason="empty")
+        return _offered(NavigatorRoute(route="agentic", reason="empty"), [])
     # Off entirely without a decision API -- the rules included -- so the ask is exactly today's.
     if not await decision_endpoints():
-        return NavigatorRoute(route="agentic", reason="no_endpoint")
+        return _offered(NavigatorRoute(route="agentic", reason="no_endpoint"), [])
     if hit := rule_hit(utterance):
-        return NavigatorRoute(route="quick", target=hit, verb=_verb(utterance), confidence=1.0, reason="rule")
+        return _offered(
+            NavigatorRoute(route="quick", target=hit, verb=_verb(utterance), confidence=1.0, reason="rule"), []
+        )
 
     here = kind("navigation.here").model_validate(here or {})
     if candidates is None:
@@ -309,16 +327,16 @@ async def route(
     try:
         result = await decide(spec)
     except DecisionError as exc:
-        return _offered(NavigatorRoute(route="agentic", reason=exc.reason), candidates)
+        return _offered(NavigatorRoute(route="agentic", reason=exc.reason), candidates, spec)
     key = result.pick("target", min=MIN_CONFIDENCE)
     answer = result.answers.get("target")
     confidence = float(getattr(answer, "confidence", 0.0))
     if key is None:
         answer = NavigatorRoute(route="agentic", reason="unsure", confidence=confidence, latency_ms=result.latency_ms)
-        return _offered(answer, candidates)
+        return _offered(answer, candidates, spec, result)
     if key == "agentic":
         answer = NavigatorRoute(route="agentic", reason="agentic", confidence=confidence, latency_ms=result.latency_ms)
-        return _offered(answer, candidates)
+        return _offered(answer, candidates, spec, result)
     verb = result.pick("verb") or "show"
     return _offered(
         NavigatorRoute(
@@ -330,6 +348,8 @@ async def route(
             latency_ms=result.latency_ms,
         ),
         candidates,
+        spec,
+        result,
     )
 
 

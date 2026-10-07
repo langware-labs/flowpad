@@ -1,0 +1,34 @@
+{
+  "name": "flow-viewers",
+  "title": "Flowpad viewers",
+  "description": "How Flowpad's own kinds look: the Flow context (where the person was -- page, screen, project, session, what was open), and a decision -- what a model was asked (the state and every option), what it answered (every option's probability), and the bar its pick had to clear.",
+  "kind": "application.web.viewer",
+  "build": ".",
+  "views": [
+    {
+      "kind": "navigation.here",
+      "shows": [
+        "single"
+      ]
+    },
+    {
+      "kind": "decision.spec",
+      "shows": [
+        "single"
+      ]
+    },
+    {
+      "kind": "decision.result",
+      "shows": [
+        "single"
+      ]
+    },
+    {
+      "kind": "decision.run",
+      "shows": [
+        "single"
+      ]
+    }
+  ],
+  "module": "viewer.js"
+}

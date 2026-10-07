@@ -14,8 +14,7 @@
 import type { EvalExampleRow, EvalRun, Verdict } from '../evals/types';
 import { h } from '../viewers/dom';
 import { byCause, rowOf, splitPair } from '../viewers/eval';
-import { createViewerContext } from '../viewers/registry';
-import { hostDataset, mountLabel } from './dataset-app';
+import { appRoot, datasetViewerContext, hostDataset, mountLabel } from './dataset-app';
 import { editorsFor } from './editors';
 import { applyHostTheme, errorText, navigateHost } from './host';
 
@@ -84,7 +83,7 @@ async function run(root: HTMLElement): Promise<void> {
   const dataset = await hostDataset();
   const subject = `dataset-${dataset.id}`;
   // Viewers nested in the dataset win for its kinds; every other kind resolves by the ontology.
-  const ctx = createViewerContext({ within: subject });
+  const ctx = datasetViewerContext(subject);
   const cache = new Map<string, { run: EvalRun; examples: EvalExampleRow[]; count_metrics: string[]; explain: Record<string, string> }>();
   const loadRun = async (id: string) => {
     if (!cache.has(id)) cache.set(id, await dataset.evalRun(id));
@@ -95,14 +94,17 @@ async function run(root: HTMLElement): Promise<void> {
     history.pushState(null, '', `${location.pathname}${writeState(location.search, state)}`);
     void render();
   };
-  window.addEventListener('popstate', () => void render());
+  // Back re-renders only when the drill-down moved (opening a part on its own keeps the URL).
+  let shownSearch = '';
+  window.addEventListener('popstate', () => location.search !== shownSearch && void render());
 
   const openDatasetEditor = async (exampleId?: string) => {
     const editor = (await editorsFor(subject)).find((e: any) => e.name !== 'eval-browser');
-    if (editor) navigateHost(`/dock/app/${editor.typeid}?subject=${subject}${exampleId ? `&example=${encodeURIComponent(exampleId)}` : ''}`);
+    if (editor) navigateHost({ address: `/dock/app/${editor.typeid}?subject=${subject}${exampleId ? `&example=${encodeURIComponent(exampleId)}` : ''}` });
   };
 
   async function render(): Promise<void> {
+    shownSearch = location.search;
     const state = readState(location.search);
     const crumbs = h('div', { class: 'crumbs' });
     const step = (label: string, to: BrowserState | null) => {
@@ -195,7 +197,9 @@ async function run(root: HTMLElement): Promise<void> {
     if (!e) return void main.append(h('div', { class: 'err' }, `no example ${state.example} in this run`));
     const nav = (d: number) => scopeList[at + d] && go({ ...state, example: scopeList[at + d].example_id });
     const body = h('div');
-    const showExample = () => ctx.render(body, { kind: 'eval.example', value: e, meta });
+    // How the answer was reached is fetched for this example only (the run's listing leaves it out).
+    const trace = await dataset.evalTrace(String(state.run), e.example_id).catch(() => null);
+    const showExample = () => ctx.render(body, { kind: 'eval.example', value: { ...e, trace }, meta });
     // Labelling is the dataset editor's own path (`mountLabel`): the example in edit mode, in place.
     const label = () =>
       mountLabel(body, {
@@ -222,7 +226,8 @@ async function run(root: HTMLElement): Promise<void> {
 }
 
 /** Render the eval browser into `root` and connect it. Rejects with why it could not start. */
-export async function mountEvalBrowser(root: HTMLElement = document.body): Promise<void> {
+export async function mountEvalBrowser(into?: HTMLElement): Promise<void> {
+  const root = appRoot(into);
   applyHostTheme();
   const style = document.createElement('style');
   style.textContent = STYLES;

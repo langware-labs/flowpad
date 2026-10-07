@@ -79,6 +79,18 @@ export interface DecisionResult {
   endpoint: string;
 }
 
+/** One decision as it happened (`decision.run`): what was asked, what came back, and what the caller
+ *  needed to act — read back to debug it. Mirrors `flow_sdk/schema/data_spec/decision_spec.py`. */
+export interface DecisionRun {
+  request: DecisionSpec;
+  /** Absent when the decision API failed. */
+  response?: DecisionResult | null;
+  /** Per question, the confidence its pick had to reach for the caller to act on it. */
+  act_at: Record<string, number>;
+  /** What each part of `request.state` is (`context` -> `navigation.here`): drawn by that kind. */
+  state_kinds: Record<string, unknown>;
+}
+
 /** A hub APIEndpoint this user may call (`api_endpoint.offer`). */
 export interface APIEndpointOffer {
   id: string;

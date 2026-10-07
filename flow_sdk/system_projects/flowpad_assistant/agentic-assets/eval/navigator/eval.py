@@ -5,13 +5,13 @@ candidates -- never this machine's search -- so a run is judged on the options t
 labelled against. The decision API is whatever the hub offers (``versions`` names it).
 """
 
-from flow_sdk.evals import ExampleEval, Verdict, golds, matches, verdict_of
-from flow_sdk.navigation import MIN_CONFIDENCE, decide
+from flow_sdk.evals import EvalTrace, ExampleEval, Verdict, golds, matches, verdict_of
+from flow_sdk.navigation import MIN_CONFIDENCE, decide_run
 
 
 async def evaluate_example(row):
     recorded = row.context.candidates if row.context else []
-    out = await decide(
+    out, answer = await decide_run(
         row.input.model_dump(mode="json", exclude_none=True),
         candidates=[c.model_dump(mode="json", exclude_none=True) for c in recorded],
     )
@@ -29,6 +29,14 @@ async def evaluate_example(row):
         prediction=pred,
         verdict=verdict,
         score=out.decision.confidence,
+        # How it was decided -- every option the model was offered and the probability it gave each.
+        trace=EvalTrace(kind="navigator.run", value=answer.run.model_dump(mode="json", exclude_none=True)),
+        note=(
+            "It picked a target nothing can open, so the app hands the request to the assistant -- "
+            "counted wrong: the person must land there."
+        )
+        if unopenable
+        else "",
         labels={
             # "no": the right answer is an action (start / create / a dialog) the navigator cannot express.
             "feasible": "no" if gold_kinds == {"action"} else "yes",

@@ -63,6 +63,11 @@ async def test_run_list_and_read_an_eval(bootstrapped_client, tmp_path):
     ok = by_title["ok open it"]
     assert ok["verdict"] == "correct" and ok["row_input"]["here"]["view"] == "home", "joined to what was typed, where"
     assert by_title["bad one"]["row_data"] == {"group": "b"}
+    # How an answer was reached rides only with the example a person opens -- not in the listing.
+    assert all("trace" not in e for e in body["examples"])
+    trace = (await bootstrapped_client.get(f"{base}/eval/{run_id}/{ok['example_id']}")).json()["data"]["trace"]
+    assert trace == {"kind": "toy.trace", "value": {"saw": "ok open it"}}
+    assert (await bootstrapped_client.get(f"{base}/eval/{run_id}/nope")).status_code == 404
 
 
 @pytest.mark.parametrize("run_id", ["nope", "..%2F..%2Fetc"])

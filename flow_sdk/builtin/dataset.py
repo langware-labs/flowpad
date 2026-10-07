@@ -435,19 +435,26 @@ class Dataset(Entity):
 
     @action.get(action_name="eval")
     async def eval_action(self):
-        """``GET eval/<run_id>`` → ``{run, examples, count_metrics, explain}``: the ``EvalRun`` and every ``ExampleEval``, each
-        joined to its example's ``input`` / ``context`` / ``data`` / ``kind`` -- so a browser drills
-        down to what was typed, where, and what was offered, without a second request."""
+        """``GET eval/<run_id>`` → ``{run, examples, count_metrics, explain}``: the ``EvalRun`` and every
+        ``ExampleEval``, each joined to its example's ``input`` / ``context`` / ``data`` / ``kind`` -- so
+        a browser drills down to what was typed, where, and what was offered, without a second request.
+        A trace (how an answer was reached, ~7 KB each) is left out of the listing: only the example a
+        person opens needs one -- ``GET eval/<run_id>/<example_id>`` → ``{trace}``."""
         from flow_sdk.evals import store  # noqa: PLC0415
 
         request_info = get_current_request_info()
-        run_id = ((request_info.sub_path or "") if request_info else "").strip("/")
+        run_id, _, example_id = ((request_info.sub_path or "") if request_info else "").strip("/").partition("/")
         if not run_id:
             return ApiFailResponse(message="run id required: eval/<run_id>", status_code=400)
         try:
             run, examples = await asyncio.to_thread(store.load, self._folder(), run_id)
         except LookupError as exc:
             return ApiFailResponse(message=str(exc), status_code=404)
+        if example_id:
+            found = next((ex for ex in examples if ex.example_id == example_id), None)
+            if found is None:
+                return ApiFailResponse(message=f"no example {example_id} in run {run_id}", status_code=404)
+            return ApiSuccessResponse(data={"trace": found.trace.model_dump(mode="json") if found.trace else None})
 
         def read_rows() -> dict:
             try:
@@ -462,7 +469,10 @@ class Dataset(Entity):
         for ex in examples:
             row = rows.get(ex.example_id)
             dumped = row.model_dump(mode="json", include={"input", "context", "data", "kind"}) if row else {}
-            joined.append({**ex.model_dump(mode="json"), **{f"row_{k}": v for k, v in dumped.items()}})
+            # A logged row keeps its own run's trace in its data -- not this eval's; it stays home too.
+            if isinstance(dumped.get("data"), dict):
+                dumped["data"].pop("run", None)
+            joined.append({**ex.model_dump(mode="json", exclude={"trace"}), **{f"row_{k}": v for k, v in dumped.items()}})
         return ApiSuccessResponse(
             data={
                 "run": run.model_dump(mode="json"),

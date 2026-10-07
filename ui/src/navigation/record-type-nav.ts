@@ -5,6 +5,7 @@ import type { MessageDescriptor } from '@lingui/core';
 import type { LucideIcon } from 'lucide-react';
 import type { SearchRow } from '@src/hooks/search-row';
 import { DockPointer } from './DockPointer';
+import { subjectEditorPointer } from './subject-editor';
 import { openNewChat } from './open-new-chat';
 import { ViewType } from '@src/types/ViewType';
 import { CheckSquare, Search, GitBranch, FileText } from 'lucide-react';
@@ -14,7 +15,6 @@ import {
   dataContext,
   dataManager,
   editorForType,
-  editorsFor,
   isTypeId,
   RecordType,
   TypeId,
@@ -174,10 +174,9 @@ export const RECORD_TYPE_NAV: Partial<Record<string, RecordTypeNav>> = {
   // all falls back to the folder, like any asset without an editor.
   dataset: {
     primaryAction: async (r, navigation) => {
-      const subject = `dataset-${r.record_id}`;
-      const [best] = await editorsFor(subject);
-      if (best) {
-        navigation.openDock(DockPointer.forAppEntity(new TypeId(best.typeid), { subject }));
+      const editor = await subjectEditorPointer(`dataset-${r.record_id}`);
+      if (editor) {
+        navigation.openDock(editor);
         return;
       }
       const fallback = registeredAssetPointer(r);

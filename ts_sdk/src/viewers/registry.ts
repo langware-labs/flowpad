@@ -31,6 +31,9 @@ export interface ViewerHost {
   kindForm?: (kind: string) => Promise<KindForm | null>;
   choices?: (kind: string, shape: ViewShape, within?: string) => Promise<ViewerChoice[]>;
   importModule?: (choice: ViewerChoice) => Promise<ViewerModule>;
+  /** What the app does when a viewer opens a part on its own (`ctx.open`) or an entity (`ctx.navigate`). */
+  open?: ViewerContext['open'];
+  navigate?: ViewerContext['navigate'];
 }
 
 const choiceCache = new Map<string, Promise<ViewerChoice[]>>();
@@ -111,6 +114,8 @@ export function createViewerContext(host: ViewerHost = {}): ViewerContext {
     h,
     kindForm: host.kindForm ?? fetchKindForm,
     generic: { single: genericSingle, collection: genericCollection },
+    open: host.open,
+    navigate: host.navigate,
     render: (el: HTMLElement, request: ViewRequest) => mountWith(el, request, 'single', genericSingle),
     renderCollection: (el: HTMLElement, request: CollectionRequest) => mountWith(el, request, 'collection', genericCollection),
   };
