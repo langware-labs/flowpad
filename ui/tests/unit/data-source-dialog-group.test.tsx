@@ -59,6 +59,9 @@ describe('a driver group', () => {
     title: 'Ours — no setup',
     group: 'Chat',
     group_order: 0,
+    group_icon_name: 'WhatsApp',
+    icon_name: 'Flowpad',
+    default_name: 'Our chat agent',
     setup_wizards: WIZARD,
   } as never);
   const own = spec({
@@ -66,6 +69,8 @@ describe('a driver group', () => {
     title: 'Your own bot',
     group: 'Chat',
     group_order: 1,
+    group_icon_name: 'WhatsApp',
+    icon_name: 'WhatsApp',
     setup_wizards: WIZARD,
   } as never);
   hoisted.specs = [own, ours, spec({ name: 'slack', title: 'Slack' })];
@@ -85,9 +90,38 @@ describe('a driver group', () => {
     expect(cards.map((c) => c.dataset.testid)).toEqual(['group-member-ours', 'group-member-own']);
     await waitFor(() => expect(screen.getByTestId('group-member-number-ours')).toHaveTextContent('Flow · +1 555 0100'));
 
+    // The way OURS is the group's glyph badged with its own; your own bot's is the plain group glyph.
+    expect(screen.getByTestId('group-member-icon-ours')).toBeInTheDocument();
+    expect(screen.queryByTestId('group-member-icon-own')).toBeNull();
+
     fireEvent.click(screen.getByTestId('group-member-ours'));
-    expect(screen.getByLabelText(/Name/)).toHaveValue('Chat');
+    expect(screen.getByLabelText(/Data source name/)).toHaveValue('Our chat agent');
     expect(screen.getByRole('button', { name: 'Connect Chat' })).toBeInTheDocument();
+  });
+
+  it('walks in steps: each step replaces the last, and an earlier crumb goes back to it', async () => {
+    vi.spyOn(DataDriver.prototype, 'profile').mockResolvedValue({});
+    open();
+    const crumbs = () => screen.getByTestId('step-crumbs').textContent;
+    expect(crumbs()).toBe('Data sources');
+
+    fireEvent.click(screen.getByTestId('provider-group-Chat'));
+    expect(crumbs()).toBe('Data sources' + 'Chat');
+    expect(screen.queryByTestId('provider-group-Chat')).toBeNull(); // the grid gave way, not scrolled under
+
+    fireEvent.click(screen.getByTestId('group-member-own'));
+    expect(crumbs()).toBe('Data sources' + 'Chat' + 'Your own bot');
+    expect(screen.queryByTestId('group-choice')).toBeNull();
+    expect(screen.getByLabelText(/Data source name/)).toHaveValue('Your own bot'); // no default_name: its title
+
+    fireEvent.click(screen.getByTestId('step-crumb-1')); // back to the ways to connect
+    expect(screen.getByTestId('group-choice')).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('step-crumb-0')); // back to the grid
+    expect(screen.getByTestId('provider-group-Chat')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId('provider-slack')); // an ungrouped provider goes straight to its form
+    expect(crumbs()).toBe('Data sources' + 'Slack');
+    expect(screen.getByLabelText(/Data source name/)).toHaveValue('Slack');
   });
 
   it('cannot pick a way the hub does not offer, and says why', async () => {

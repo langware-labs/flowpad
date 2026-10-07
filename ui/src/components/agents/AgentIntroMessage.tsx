@@ -2,6 +2,7 @@ import { Agent } from '@sdk';
 
 import { AgentSignature } from '@src/components/agents/AgentSignature';
 import { MarkdownView } from '@src/components/markdown-view';
+import { useLinkHandlers } from '@src/components/links/LinkHandlersContext';
 import { surfaceForViewMode, useViewMode } from '@src/contexts/view-mode-context';
 
 /**
@@ -22,6 +23,7 @@ export function useAgentIntro(agent?: Agent | null): string | null {
  */
 export function AgentIntroMessage({ agent }: { agent?: Agent | null }) {
   const intro = useAgentIntro(agent);
+  const links = useLinkHandlers();
   if (!agent || !intro) return null;
   return (
     <div className="py-2.5" data-testid="agent-intro-message" data-role="assistant">
@@ -29,7 +31,7 @@ export function AgentIntroMessage({ agent }: { agent?: Agent | null }) {
         <AgentSignature agent={agent} />
       </div>
       <div className="min-w-0 break-words ps-7 text-[15px] leading-7 text-foreground">
-        <MarkdownView value={intro} compact />
+        <MarkdownView value={intro} compact links={links} />
       </div>
     </div>
   );

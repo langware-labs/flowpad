@@ -100,3 +100,18 @@ export function buildConversationStatusPrompt(conversationTypeId: TypeId): strin
     '`flow conversation message <message-id>`.'
   );
 }
+
+/**
+ * Build the instruction injected when the user launches a worker from one
+ * message's ⋮ menu: the session starts AT that message — it reads the message
+ * (and its attachments) first, and the conversation only as background.
+ */
+export function buildMessageStartPrompt(conversationTypeId: TypeId, messageTypeId: TypeId): string {
+  return (
+    `Use Flowpad Assistant to start from message ${messageTypeId.toUrlString()} in the Flowpad conversation ` +
+    `${conversationTypeId.toUrlString()} — that message is what this session is about.\n\n` +
+    `Read it first, in full with its attachments: \`flow conversation message ${messageTypeId.toUrlString()}\`. ` +
+    `For background only, read what led up to it with \`${conversationReadCommand(conversationTypeId)}\`. ` +
+    'Then say in a few lines what the message asks for and what you need to act on it.'
+  );
+}

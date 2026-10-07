@@ -4,6 +4,7 @@ import { DotPulse } from '@src/components/dot-pulse';
 import { workerIcon, workerLabel } from '@src/components/lens-viewer/shared/transcript-features/transcript-utils';
 import { AgentSignature } from '@src/components/agents/AgentSignature';
 import { MarkdownView } from '@src/components/markdown-view';
+import { useLinkHandlers } from '@src/components/links/LinkHandlersContext';
 import { translateCliMessage } from '@src/i18n/cli-messages';
 import { cn } from '@src/lib/utils';
 import { User } from 'lucide-react';
@@ -35,6 +36,7 @@ const ExecutionMessage: React.FC<ExecutionMessageProps> = ({
   agent,
 }) => {
   const { t } = useLingui();
+  const links = useLinkHandlers();
   // Determine if this message type should stream
   // Must check both elementType AND dataType since useDataStreamText only supports string data
   const messageTypes: string[] = [FlowElementTypes.TEXT, FlowElementTypes.CHAT, FlowElementTypes.USER_MESSAGE];
@@ -110,7 +112,7 @@ const ExecutionMessage: React.FC<ExecutionMessageProps> = ({
           language. Anything not on the whitelist renders exactly as written, and
           a user's own message is never rewritten.
         */}
-        <MarkdownView value={isUser ? currentContent : translateCliMessage(currentContent)} compact />
+        <MarkdownView value={isUser ? currentContent : translateCliMessage(currentContent)} compact links={links} />
         {isStreaming && (
           <span className="mt-1 inline-flex" aria-label={t`Assistant is responding`}>
             <DotPulse />

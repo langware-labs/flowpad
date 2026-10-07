@@ -22,7 +22,7 @@ export function AssetScopeToggles({ counts, shown, onToggle, workerLabel, worker
   const { t } = useLingui();
   const meta: Record<BoardScope, { label: string; title: string; Icon: ComponentType<{ className?: string }> }> = {
     project: { label: t`Project`, title: t`The project's own assets`, Icon: FolderKanban },
-    dirs: { label: t`Dirs`, title: t`Assets in folders added to this run`, Icon: Folder },
+    dirs: { label: t`Dirs`, title: t`Assets in the project's dependencies and folders added to this run`, Icon: Folder },
     user: { label: t`User`, title: t`Your own assets, shared by every project`, Icon: UserRound },
     assistant: { label: t`Assistant`, title: t`The Flowpad Assistant's assets`, Icon: Sparkles },
     worker: {

@@ -263,8 +263,9 @@ The URL is the first tier now, so most of the old ladder is gone:
 2. **`focus`** — the last involuntary per-write focus off the process stream
    (`useVibeFocus`): diff. Stream-derived and changing many times per turn, so it is
    deliberately NOT a URL — it would spam navigation.
-3. **`preview` / starter chips** — the artifact-driven `WebappViewer` fallback, or
-   the starter prompts when there is genuinely nothing yet. The history popover stays
+3. **starter chips** — the starter prompts when there is nothing on the URL and no
+   stream focus. (The artifact-driven `WebappViewer` fallback is gone: every app
+   is an address now, see §3.) The history popover stays
    mounted whenever the stack is non-empty: it is workspace chrome, not viewer chrome,
    so stepping back to the Display home must not lose the way back into the stack.
 

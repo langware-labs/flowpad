@@ -44,6 +44,7 @@ from flow_sdk.builtin.project import Project
 from flow_sdk.builtin.skill import Skill
 from flow_sdk.builtin.subagent import SubAgent
 from flow_sdk.fs_store.path_utils import canonical_posix_path
+from tests.unit._project_deps import link_context_dirs
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.timeout(30)]  # do not increase without approval
 
@@ -52,17 +53,13 @@ pytestmark = [pytest.mark.asyncio, pytest.mark.timeout(30)]  # do not increase w
 
 
 async def _make_project(root: Path, name: str, context_dirs: list[Path] | None = None) -> Project:
-    """A real Project at ``root``. ``context_dirs`` go in as raw ``include_dirs``,
-    which ``save()`` converts into real Folder context links via
-    ``_migrate_legacy_context_dirs`` — the production path, not a shortcut."""
+    """A real Project at ``root``. ``context_dirs`` are declared as ``file:``
+    dependencies in its ``flow.json`` and resolved into real Folder context
+    links — the production path, not a shortcut."""
     root.mkdir(parents=True, exist_ok=True)
-    proj = Project(
-        id=str(uuid.uuid4()),
-        name=name,
-        fs_storage_mount_path=str(root),
-        include_dirs=[str(d) for d in (context_dirs or [])],
-    )
+    proj = Project(id=str(uuid.uuid4()), name=name, fs_storage_mount_path=str(root))
     await proj.save()
+    await link_context_dirs(proj, context_dirs or [])
     return proj
 
 
@@ -266,10 +263,8 @@ async def test_max_depth_caps_the_walk(nested):
 async def test_cycle_terminates(nested):
     """C3 links back to P. The walk must finish and visit each path once."""
     c3 = nested["c3"]
-    # ``include_dirs`` is computed — the writable seam is the legacy stash,
-    # which ``save()`` converts into real Folder context links.
-    c3.legacy_include_dirs_ = [str(nested["dirs"]["P"])]
-    await c3.save()
+    # ``include_dirs`` is computed — the writable seam is C3's flow.json.
+    await link_context_dirs(c3, [nested["dirs"]["P"]])
     assert canonical_posix_path(nested["dirs"]["P"]) in c3.include_dirs
 
     menu = await _menu(nested["p"])

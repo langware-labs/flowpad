@@ -12,8 +12,9 @@ import asyncio
 import pytest
 
 import flow_sdk.decision as decision
+from flow_sdk import evals
 from flow_sdk.builtin.dataset import Dataset
-from flow_sdk.core import navigation_log, navigator, navigator_eval
+from flow_sdk.core import navigation_log, navigator
 from flow_sdk.core.dock_address import parse_dock_url
 from flow_sdk.core.navigation_decision import decide
 from flow_sdk.preferences import PREF_SMART_NAVIGATION_LOG, write_instance_pref
@@ -153,7 +154,8 @@ async def test_with_the_log_on_every_decision_is_a_row_of_one_training_set(hub, 
 
         # the data scientist's path: label one row, evaluate the labelled training rows
         await ds.annotate(opened.id, opened.output.model_dump(mode="json", exclude_none=True))
-        report = await navigator_eval.evaluate(Dataset.at(navigation_log.folder()), kinds=("train",))
-        assert (report["scored"], report["precision"]) == (1, 1.0)
+        log_temp_runs = navigation_log.folder().parent / "runs"
+        run, _ = await evals.run(Dataset.at(navigation_log.folder()), kinds=["train"], out_dir=log_temp_runs)
+        assert (run.examples, run.counts["unlabelled"], run.metrics["precision"]) == (1, 3, 1.0)
     finally:
         write_instance_pref(PREF_SMART_NAVIGATION_LOG, False)

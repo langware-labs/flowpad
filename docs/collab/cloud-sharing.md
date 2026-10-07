@@ -30,7 +30,7 @@ not Flowpad's. If they cannot clone the repo, they see an error, not your code.
 **Always sent.** Identity and the handful of fields that are always populated:
 
 <!-- pinned:always -->
-`artifacts`, `expand`, `id`, `legacy_include_dirs_`, `name`, `semantic_lock`, `shared_context_entities`, `tab_order`, `type`
+`artifacts`, `expand`, `id`, `name`, `semantic_lock`, `shared_context_entities`, `tab_order`, `type`
 <!-- pinned:/always -->
 
 **Sent only when set.** The payload excludes empty values, so these travel only
@@ -45,7 +45,7 @@ declaration-withheld field stays hidden even if `_hub_body()` is rewritten,
 while a popped one is hidden only for as long as that line survives:
 
 <!-- pinned:withheld -->
-`asset_occurrences`, `created_by`, `created_date`, `fetched_at`, `fs_storage_mount_path`, `fs_storage_provider`, `host_member_id`, `last_mode`, `last_session_at`, `llm_endpoint_typeid`, `members`, `origin_id`, `presence`, `private_context_entities_`, `private_context_entity_data`, `project_id`, `published`, `remote`, `scope`, `session_code`, `session_count`, `shared_context_entity_data`, `shared_context_origins`, `system`, `tags`, `updated_by`, `updated_date`, `visitor_role`
+`asset_occurrences`, `created_by`, `created_date`, `fetched_at`, `fs_storage_mount_path`, `fs_storage_provider`, `host_member_id`, `last_mode`, `last_session_at`, `llm_endpoint_typeid`, `members`, `origin_id`, `presence`, `private_context_entities_`, `private_context_entity_data`, `project_id`, `published`, `remote`, `scope`, `session_code`, `session_count`, `shared_context_entity_data`, `system`, `tags`, `updated_by`, `updated_date`, `visitor_role`
 <!-- pinned:/withheld -->
 
 Note what is in that list: `fs_storage_mount_path` and `fs_storage_provider` —
@@ -65,15 +65,16 @@ every spawn in the shared project fails against a budget they cannot reach) or �
 worse — holds a role on a different endpoint that happens to share the id space.
 A recipient's project gets funded by their own ladder.
 
-### The exception worth knowing
+### Nothing is put back
 
-`_hub_body()` strips a field and then `Project.share()` **puts it back**:
+`Project.share()` sends `_hub_body()` as it is — it re-adds no stripped field:
 
 <!-- pinned:readded -->
-`shared_context_origins`
+(none)
 <!-- pinned:/readded -->
 
-Reading `_hub_body()` alone gives the wrong answer. (The project's `origin` is SHARED and
+A project's context folders do not ride the row at all: they are declared in its
+`flow.json`, which travels with the repository. (The project's `origin` is SHARED and
 rides in the body itself, under its hub-wire name `git_origin`.)
 
 (Two names in that strip list — `include_dirs` and `context_dir_infos` — are

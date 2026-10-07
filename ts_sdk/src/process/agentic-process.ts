@@ -1291,10 +1291,11 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
 
   /**
    * Declare a display-focus target for this process's watchers — the backend
-   * `show` action (same channel as the worker-side `flow show` CLI). The
+   * `show` action (same channel as the worker-side `flow show` CLI). `link` is a
+   * clicked reference, resolved against this process like any link. The
    * resolved payload comes back to subscribers via {@link onShow}.
    */
-  async show(target: { typeid?: string; path?: string; port?: number; view?: string }): Promise<void> {
+  async show(target: { typeid?: string; path?: string; port?: number; view?: string; link?: string }): Promise<void> {
     await this.post('show', target);
   }
 
@@ -1785,6 +1786,11 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
 
   get compute_node_id(): string | null {
     return this.shellEntity?.compute_node_id ?? null;
+  }
+
+  /** The machine this process's files live on (its shell's); null when it has no shell. */
+  get computeNodeTypeId(): TypeId | null {
+    return this.shellEntity?.computeNodeTypeId ?? null;
   }
 
   get compute_node_uname(): string | null {

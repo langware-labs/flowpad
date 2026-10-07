@@ -56,6 +56,7 @@ class ExeData(DataSpec):                      # no kind of its own
 
 class CliOp(ExeData):                         # compute_op.cli — also every completion check
     commands: dict[str, str]                  # sys.platform → shell one-liner
+    source_step: str | None                   # a setup step of the run's source, run IN the backend (no shell)
 
 class PromptOp(ExeData):                      # compute_op.prompt — a model, no tools
     prompt: str
@@ -75,6 +76,7 @@ class AskOp(ExeData):                         # compute_op.ask — a person
     assist_agent: str                         # AI Assist: this agent follows setup and answers the SAME question
     until_answered: bool                      # no deadline — refuses alongside timeout_seconds
     recheck: bool                             # Send runs the completion check; until it holds the question stays open
+    auto_continue: bool                       # the check re-runs while open and closes it by itself; needs recheck + confirm
 
 class Rung(DataSpec):                         # compute_op.rung — one further attempt, same shape as the op's own
     subkind: Literal[OpSubkind.CLI, OpSubkind.PROMPT, OpSubkind.AGENT]  # never ask

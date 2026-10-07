@@ -13,7 +13,7 @@
  */
 import { useCallback, useMemo, useState } from 'react';
 import { QueryRequest, RagIndex } from '@sdk';
-import { Brain, FolderPlus, Play, Search, Trash2, X } from 'lucide-react';
+import { Brain, FolderPlus, Layers, Play, Search, Trash2, X } from 'lucide-react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { useEntitiesQuery } from '@src/hooks/entity-hooks';
 import { Button } from '@src/components/ui/button';
@@ -21,11 +21,12 @@ import { Input } from '@src/components/ui/input';
 import { notify } from '@src/notifications';
 import { errorMessage } from '@src/lib/error-message';
 import { addRoot, queryIndex, removeRoot, runIndex, type RagHit } from './rag-service';
-
-const indexesQuery = new QueryRequest({ type: RagIndex.type, scope: [], name: 'rag:view' });
+import { RagChunkBrowser } from './RagChunkBrowser';
+import { RagChunkItem } from './RagChunkItem';
 
 /** What the row itself says about whether it can run. Mirrors `index_refusal` on the backend. */
 function statusLine(index: RagIndex): string {
+  if (index.indexing) return 'indexing…';
   if (index.last_error) return index.last_error;
   if (index.status === 'disabled') return 'paused';
   if (!index.roots?.length) return 'covers no folders yet';
@@ -38,6 +39,7 @@ function RagIndexCard({ index, onChanged }: { index: RagIndex; onChanged: () => 
   const [busy, setBusy] = useState(false);
   const [question, setQuestion] = useState('');
   const [hits, setHits] = useState<RagHit[] | null>(null);
+  const [browsing, setBrowsing] = useState(false);
 
   const guard = useCallback(
     async (label: string, run: () => Promise<void>) => {
@@ -122,6 +124,16 @@ function RagIndexCard({ index, onChanged }: { index: RagIndex; onChanged: () => 
           <Play className="me-1 size-3.5" />
           <Trans>Index now</Trans>
         </Button>
+        <Button
+          variant={browsing ? 'secondary' : 'outline'}
+          size="sm"
+          disabled={!index.chunk_count}
+          onClick={() => setBrowsing((on) => !on)}
+          data-testid="rag-browse-toggle"
+        >
+          <Layers className="me-1 size-3.5" />
+          <Trans>Browse chunks</Trans>
+        </Button>
         <div className="ms-auto flex items-center gap-1">
           <Input
             value={question}
@@ -146,18 +158,13 @@ function RagIndexCard({ index, onChanged }: { index: RagIndex; onChanged: () => 
         </div>
       </div>
 
+      {browsing && <RagChunkBrowser indexId={index.id} chunkCount={index.chunk_count} />}
+
       {hits && (
         <ol className="mt-3 space-y-2" data-testid="rag-hits">
           {hits.map((hit) => (
-            <li key={`${hit.doc_ref}:${hit.heading_path.join('/')}:${hit.score}`} className="text-sm">
-              <div className="flex items-center gap-2">
-                <span className="font-mono text-xs text-muted-foreground">
-                  {hit.doc_ref.split('/').pop()}
-                </span>
-                <span className="text-xs text-muted-foreground">{hit.heading_path.join(' / ')}</span>
-                <span className="ms-auto text-xs tabular-nums">{hit.score.toFixed(3)}</span>
-              </div>
-              <p className="line-clamp-2 text-muted-foreground">{hit.text}</p>
+            <li key={hit.chunk_id}>
+              <RagChunkItem hit={hit} score={hit.score} />
             </li>
           ))}
           {!hits.length && (
@@ -173,7 +180,11 @@ function RagIndexCard({ index, onChanged }: { index: RagIndex; onChanged: () => 
 
 export function RagView() {
   const { t } = useLingui();
-  const { data: indexes = [], refetch } = useEntitiesQuery<RagIndex>(indexesQuery);
+  // Built here, not at module scope: reading `RagIndex.type` while this module initialises
+  // depends on import order, and losing that race mints a typeless query that never fires.
+  const indexesQuery = useMemo(() => new QueryRequest({ type: RagIndex.type, scope: [], name: 'rag:view' }), []);
+  // `demand`: this screen was opened, so it loads now rather than waiting for background prefetch.
+  const { data: indexes = [], refetch } = useEntitiesQuery<RagIndex>(indexesQuery, { priority: 'demand' });
   const [creating, setCreating] = useState(false);
 
   const sorted = useMemo(

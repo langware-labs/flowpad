@@ -979,6 +979,9 @@ def _get_sdk_path() -> Path | None:
         return Path(__file__).parent / "static" / "sdk"
 
 
+import flow_sdk.builtin.faas.serve_static  # noqa: E402, F401 -- registers .js/.mjs as JavaScript for /sdk too
+
+
 class _RevalidatedStaticFiles(StaticFiles):
     """Static files that are always revalidated (ETag/304), never heuristically cached.
 

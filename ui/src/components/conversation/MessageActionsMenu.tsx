@@ -7,6 +7,7 @@ import { workerIcon } from '@src/components/lens-viewer/shared/transcript-featur
 import { useFavorites } from '@src/hooks/use-favorites';
 import { useIsAdvanced } from '@src/components/view-mode';
 import { InputDialog } from '@src/components/ui/input-dialog';
+import { WorkerToolbar } from '@src/components/workers/WorkerToolbar';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -20,6 +21,7 @@ import { localBundleUrl } from './flow-message-drafts';
 import { ChannelBadge } from './ChannelBadge';
 import { EmojiPickerContent } from './EmojiPicker';
 import { TaskItIcon, taskItHint } from './task-it';
+import type { WorkerType } from './conversation-session-constants';
 
 interface MessageActionsMenuProps {
   flowMessageId?: string;
@@ -39,6 +41,8 @@ interface MessageActionsMenuProps {
   onTaskIt?: () => void;
   onEditName?: () => void;
   onDelete?: () => void;
+  /** Start a worker on this message — the header's launch bar, message-pinned prompt. */
+  onLaunchWorker?: (worker: WorkerType) => void;
 }
 
 /** First `n` whitespace-delimited words of `text`, trimmed. Empty when no text. */
@@ -71,21 +75,24 @@ const ITEM_ICON = 'h-3.5 w-3.5 text-muted-foreground';
  * of these per message. The note dialog and the emoji picker live OUTSIDE the
  * menu: selecting an item closes the menu, and they must outlive it.
  *
- * There is intentionally no per-message *launch* item — a worker is launched
- * once per conversation; per-message actions feed that worker via its queue.
+ * The worker icons are the conversation header's launch bar; the host's
+ * `onLaunchWorker` starts the session with a prompt pinned to this message.
  */
 export function MessageActionsMenu(props: MessageActionsMenuProps) {
   const { t } = useLingui();
   const [noteOpen, setNoteOpen] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
-  const { flowMessageId, conversationId, onReply, onReact, onForward, onTaskIt, onEditName, onDelete } = props;
+  // Controlled: the worker icons are plain buttons, so a launch closes the menu itself.
+  const [menuOpen, setMenuOpen] = useState(false);
+  const { flowMessageId, conversationId, onReply, onReact, onForward, onTaskIt, onEditName, onDelete, onLaunchWorker } =
+    props;
   // A draft bubble (no stored message) with no handlers has nothing to offer.
   if (!flowMessageId && !(onReply || onReact || onForward || onTaskIt || onEditName || onDelete)) return null;
 
   return (
     <>
       <Popover open={pickerOpen} onOpenChange={setPickerOpen}>
-        <DropdownMenu modal={false}>
+        <DropdownMenu modal={false} open={menuOpen} onOpenChange={setMenuOpen}>
           <PopoverAnchor asChild>
             <DropdownMenuTrigger asChild>
               <button
@@ -100,7 +107,18 @@ export function MessageActionsMenu(props: MessageActionsMenuProps) {
             </DropdownMenuTrigger>
           </PopoverAnchor>
           <DropdownMenuContent align="end" className="min-w-[13rem] text-xs" onClick={(e) => e.stopPropagation()}>
-            <MessageMenuItems {...props} onOpenPicker={() => setPickerOpen(true)} onOpenNote={() => setNoteOpen(true)} />
+            <MessageMenuItems
+              {...props}
+              onOpenPicker={() => setPickerOpen(true)}
+              onOpenNote={() => setNoteOpen(true)}
+              onLaunchWorker={
+                onLaunchWorker &&
+                ((worker) => {
+                  setMenuOpen(false);
+                  onLaunchWorker(worker);
+                })
+              }
+            />
           </DropdownMenuContent>
         </DropdownMenu>
         {onReact && pickerOpen && (
@@ -135,6 +153,7 @@ function MessageMenuItems({
   onDelete,
   onOpenPicker,
   onOpenNote,
+  onLaunchWorker,
 }: MessageActionsMenuProps & { onOpenPicker: () => void; onOpenNote: () => void }) {
   const isAdvanced = useIsAdvanced();
   const { isFavorited, toggleFavorite } = useFavorites();
@@ -216,6 +235,11 @@ function MessageMenuItems({
           {favorited ? <Trans>Remove from favorites</Trans> : <Trans>Add to favorites</Trans>}
         </DropdownMenuItem>
       )}
+      {onLaunchWorker && (
+        <div className="px-2 py-1">
+          <WorkerToolbar onLaunch={onLaunchWorker} testIdPrefix="message" />
+        </div>
+      )}
       {managing && (conversing || sharing) && <DropdownMenuSeparator />}
       {onEditName && (
         <DropdownMenuItem onSelect={onEditName} data-testid="message-edit-name">
@@ -261,3 +285,4 @@ function NoteDialog({
     />
   );
 }
+

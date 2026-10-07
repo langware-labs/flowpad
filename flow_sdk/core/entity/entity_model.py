@@ -3646,6 +3646,34 @@ class Entity(DBEntity):
 
         return True
 
+    # ── Clicked links ───────────────────────────────────────────────────────
+    # A link clicked in this entity's text (a terminal line, a chat turn, a
+    # message) resolves where the entity lives. The resolver (`display_link`)
+    # only asks these two; an entity that knows better overrides them.
+
+    async def link_node(self):
+        """The compute node this entity's paths live on, or None for this machine."""
+        node_id = getattr(self, "compute_node_id", None)
+        if not node_id:
+            return None
+        from flow_sdk.builtin.faas.compute_node import ComputeNode  # noqa: PLC0415
+
+        return await ComputeNode.get_by_id(node_id)
+
+    async def link_roots(self) -> list[str]:
+        """The folders a relative link resolves against, nearest first."""
+        node = await self.link_node()
+        # Output names paths relative to where the shell IS now, not where it started.
+        live_cwd = node.compute_provider.get_pty_cwd(node.node_provider_id, self.id) if node else None
+        roots = [live_cwd, getattr(self, "workdir", None), getattr(self, "fs_storage_mount_path", None)]
+        project_id = getattr(self, "project_id", None)
+        if project_id:
+            from flow_sdk.builtin.project import Project  # noqa: PLC0415
+
+            project = await Project.get_by_id(project_id)
+            roots.append(project.fs_storage_mount_path if project else None)
+        return [root for root in roots if root]
+
 
 # NOTE: the former ACL ``Group`` (name-unique principal with a "public" group)
 # lived here. It was dormant (zero callers) and its ``"group"`` type value has

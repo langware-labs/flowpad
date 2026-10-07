@@ -983,7 +983,7 @@ export function SimpleFileManager({
                           onDoubleClick={() => handleItemDoubleClick(item)}
                           // Rows carry the same FsDragItem payload the
                           // navigator's Files tree writes, so they can drop
-                          // anywhere it can — e.g. onto a context-folder row
+                          // anywhere it can — e.g. onto a dependency row
                           // (copy into the folder). Without `draggable` the
                           // browser falls back to text selection on drag.
                           // Dragging a row that is part of the current

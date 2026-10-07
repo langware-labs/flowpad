@@ -1,10 +1,10 @@
 import { t } from '@lingui/core/macro';
 import { i18n } from '@lingui/core';
 import { msg } from '@lingui/core/macro';
-import { Folder, FolderPlus, FolderTree, GitBranch, Trash2 } from 'lucide-react';
+import { Download, Folder, FolderPlus, FolderTree, GitBranch, Trash2 } from 'lucide-react';
 import { DockPointer } from '@src/navigation/DockPointer';
 import apiClient from '@sdk/client';
-import { VFSPath, type ProjectContextDirInfo, type ProjectMenuNode, type TypeId } from '@sdk';
+import { VFSPath, type DependencyState, type ProjectContextDirInfo, type ProjectMenuNode, type TypeId } from '@sdk';
 import { CountChip } from '@src/components/browseable-tree/CountChip';
 import { iconForType, labelForType } from '@src/components/graph-view/icons/iconRegistry';
 import type {
@@ -23,46 +23,60 @@ import {
   type FsFolderDrop,
 } from './fsFolderRoot';
 import { ContextFolderGitBadge } from '@src/components/assets/ContextFolderGitBadge';
+import {
+  DependencyStateDot,
+  dependencySourceIcon,
+  dependencyStateLabel,
+} from '@src/components/assets/DependencyChips';
 import { RagFolderIcon } from '@src/components/browseable-tree/RagFolderIcon';
-import { matchContextDir } from '@src/hooks/use-context-folder-for-rel';
+import { matchContextDir } from '@src/hooks/use-dependency-for-rel';
 import { LOCAL_COMPUTE_NODE } from '@src/navigation/asset-doc-types';
 
 /**
- * assetContextFoldersRoot — the Assets navigator's "Context folders" root.
+ * assetContextFoldersRoot — the Assets navigator's "Dependencies" root.
  *
- * Lists the scoped project's `include_dirs` as clickable folder rows. Unlike the
- * Explorer's `contextFoldersRoot` (whose children navigate the Explorer), each
- * row here addresses the Assets body via `DockPointer.forAssetFsFolder(...)` —
- * clicking shows a real file explorer of that folder *inside* the Assets view.
+ * Lists the scoped project's dependencies. A dependency with a local folder
+ * (`context_dir_infos`) is a clickable folder row; unlike the Explorer's
+ * `contextFoldersRoot` (whose children navigate the Explorer), each row here
+ * addresses the Assets body via `DockPointer.forAssetFsFolder(...)` — clicking
+ * shows a real file explorer of that folder *inside* the Assets view. A declared
+ * dependency with NO folder here (missing, unreachable, optional and not
+ * installed) is still listed, as a plain row carrying its state.
  *
  * Mutations stay with the host (URL-first: rows only navigate): the root's
- * toolbar "+" and each row's "×" call back into `useAssetsModel`, which owns the
- * project entity and runs `add-context-dir` / `remove-context-dir`.
+ * toolbar "+" and each row's Remove / Install call back into `useAssetsModel`,
+ * which owns the project entity and runs `remove-dependency` / `install-dependency`.
  */
 export interface AssetContextFoldersRootDeps {
-  /** The project's context folders (absolute canonical posix path + origin
-   *  kind — "git" rows render with a git icon). */
+  /** The project's resolved dependency folders (absolute canonical posix path
+   *  + origin kind — "git" rows render with a git icon). */
   dirs: ProjectContextDirInfo[];
+  /** Every declared dependency with its state (`GET dependencies`), so the
+   *  ones with no local folder are listed too. Empty until it loads — the rows
+   *  then fall back to `dirs` alone. */
+  dependencies?: DependencyState[];
   /** Compute node whose VFS backs the folders. When present, each context
    *  folder row expands into its real on-disk tree (lazy fs browse). */
   fsTypeId?: TypeId | null;
   /** Stable locator for that node (`@local` locally, UUID remotely). */
   fsLocatorTypeId?: TypeId | null;
-  /** "Add context folder" toolbar action (native folder picker → add). */
+  /** "Add dependency" toolbar action (opens the source dialog). */
   onAdd: () => void | Promise<void>;
-  /** Per-row remove action. */
-  onRemove: (dir: string) => void | Promise<void>;
+  /** Per-row remove action, by dependency name; `dir` is its folder, when it has one. */
+  onRemove: (name: string, dir: string | null) => void | Promise<void>;
+  /** Install an optional dependency that is not installed yet. */
+  onInstall?: (name: string) => void | Promise<void>;
   /** Drop handler: a Files-tree row (file or folder) dragged onto a context
    *  folder row is copied into that folder. The host owns the fs mutation. */
   onDropItem?: (item: FsDragItem, dir: string) => void | Promise<void>;
   /** OS drop handler: files/folders dragged in from outside the app are
-   *  uploaded into the context folder (structure preserved via relPath). */
+   *  uploaded into the dependency folder (structure preserved via relPath). */
   onExternalDrop?: (entries: DroppedFileEntry[], dir: string) => void | Promise<void>;
   /** Scoped project id — anchors the git rows' push-dialog conversations. */
   projectId?: string | null;
   /** Server-computed menu nodes keyed by canonical path (see
-   *  `useProjectAssetMenu`). When present, each context-folder row also lists
-   *  the per-type groups found under it and any context folders of its OWN —
+   *  `useProjectAssetMenu`). When present, each dependency row also lists
+   *  the per-type groups found under it and any dependencies of its OWN —
    *  the folder is itself a Project, so the walk recurses. Absent ⇒ rows behave
    *  exactly as before (filesystem browsing only). */
   menuByPath?: Map<string, ProjectMenuNode>;
@@ -71,7 +85,7 @@ export interface AssetContextFoldersRootDeps {
   visibleTypes?: ReadonlySet<string>;
 }
 
-/** Stable id for a per-type row nested under a context folder. Anchored on the
+/** Stable id for a per-type row nested under a dependency folder. Anchored on the
  *  owning folder so the same type under two folders never collides. */
 export function contextTypeNodeId(dir: string, typeName: string): string {
   return `${assetContextFolderNodeId(dir)}/t:${typeName}`;
@@ -206,18 +220,129 @@ function subfolderDrop(
 }
 
 /** A folder row's inputs. `depth` is what decides removability: only the scoped
- *  project's OWN links (depth 1) can be unlinked from here — anything deeper
- *  belongs to another project, so `remove-context-dir` on the scoped project
- *  would be a no-op. Sourced from the server model rather than a caller flag. */
+ *  project's OWN dependencies (depth 1, not reached `via` another) can be
+ *  removed from here — anything deeper belongs to another project's
+ *  `flow.json`. Sourced from the server model rather than a caller flag. */
 interface DirRow {
   path: string;
   origin_kind?: string | null;
   typeid?: string | null;
   depth: number;
+  /** The declared dependency this folder resolves (state, source, kind). */
+  dependency?: DependencyState | null;
+}
+
+/** The trailing mark every dependency row carries: a dot coloured by its
+ *  state. Only a dot — the sidebar is narrow, and chips there squeezed the
+ *  name down to a letter. State, kind and reason are in the row's tooltip. */
+function dependencyChips(dep: DependencyState | null | undefined) {
+  if (!dep) return null;
+  return <DependencyStateDot dependency={dep} />;
+}
+
+/** Remove / Install for a dependency the scoped project declares itself. */
+function dependencyToolbar(
+  dep: DependencyState | null | undefined,
+  dir: string | null,
+  deps: AssetContextFoldersRootDeps,
+) {
+  if (!dep || dep.via) return undefined;
+  const actions = [];
+  // Optional and not here — never installed, or an install that failed (the
+  // backend then reports the failure state): Install is the (re)try.
+  if (!dep.required && dep.state !== 'ready' && deps.onInstall) {
+    const { onInstall } = deps;
+    actions.push({
+      id: 'install',
+      icon: <Download className="h-3 w-3" />,
+      label: t`Install dependency`,
+      run: () => onInstall(dep.name),
+    });
+  }
+  actions.push({
+    id: 'remove',
+    icon: <Trash2 className="h-3 w-3" />,
+    label: t`Remove dependency`,
+    run: () => deps.onRemove(dep.name, dir),
+  });
+  return actions;
+}
+
+/** Tooltip for a dependency row: its state and kind, where it comes from, and
+ *  why it isn't ready. */
+function dependencyTooltip(dep: DependencyState) {
+  const via = dep.via;
+  const state = dependencyStateLabel(dep.state);
+  return (
+    <div className="flex max-w-[320px] flex-col gap-0.5 text-xs">
+      <span className="font-medium" data-testid="dependency-tooltip-state">
+        {dep.required ? t`${state} · required` : t`${state} · optional`}
+      </span>
+      <span className="break-all font-mono">{dep.source}</span>
+      {via && <span className="text-muted-foreground">{t`via ${via}`}</span>}
+      {dep.reason && <span className="text-muted-foreground">{dep.reason}</span>}
+    </div>
+  );
+}
+
+/** Stable id for a dependency row that has no folder here. */
+export function assetDependencyNodeId(name: string, via?: string | null): string {
+  return `asset-dependency:${via ? `${via}/` : ''}${name}`;
+}
+
+/** A declared dependency with no local folder: a leaf that only reports. */
+function absentDependencyNode(dep: DependencyState, deps: AssetContextFoldersRootDeps): Browseable {
+  const Icon = dependencySourceIcon(dep.source);
+  return {
+    id: assetDependencyNodeId(dep.name, dep.via),
+    kind: 'dependency',
+    label: dep.name,
+    icon: <Icon className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />,
+    badge: dependencyChips(dep),
+    rowClassName: 'opacity-70 hover:opacity-100',
+    tooltip: dependencyTooltip(dep),
+    hasChildren: false,
+    pointer: null,
+    toolbar: dependencyToolbar(dep, null, deps),
+  };
+}
+
+/** A folder row's inputs from its `context_dir_infos` entry. */
+function rowOf(info: ProjectContextDirInfo, dep: DependencyState | null = null): DirRow {
+  return { path: info.path, origin_kind: info.origin_kind, typeid: info.typeid, depth: info.via ? 2 : 1, dependency: dep };
+}
+
+/** The folder a dependency resolved to, matched by name (and the dependency
+ *  that declared it, for a transitive one). */
+function infoFor(dep: DependencyState, dirs: ProjectContextDirInfo[]): ProjectContextDirInfo | undefined {
+  return dirs.find((d) => !!d.dependency && d.dependency === dep.name && (d.via || '') === (dep.via || ''));
+}
+
+/** Every row the root lists: each declared dependency (with its folder when it
+ *  has one), then any folder no declared dependency claims (a legacy link, or
+ *  the states not loaded yet). */
+function dependencyRows(deps: AssetContextFoldersRootDeps, locatorTypeId: TypeId): Browseable[] {
+  const { dirs, dependencies = [] } = deps;
+  const claimed = new Set<string>();
+  const rows: Browseable[] = [];
+  for (const dep of dependencies) {
+    const info = infoFor(dep, dirs);
+    if (info) {
+      claimed.add(info.path);
+      rows.push(dirNode(rowOf(info, dep), deps, locatorTypeId));
+    } else {
+      rows.push(absentDependencyNode(dep, deps));
+    }
+  }
+  for (const info of dirs) {
+    if (!claimed.has(info.path)) rows.push(dirNode(rowOf(info), deps, locatorTypeId));
+  }
+  return rows;
 }
 
 function dirNode(row: DirRow, deps: AssetContextFoldersRootDeps, locatorTypeId: TypeId): Browseable {
-  const { fsTypeId, onRemove, onDropItem, onExternalDrop, projectId, menuByPath } = deps;
+  const { fsTypeId, onDropItem, onExternalDrop, projectId, menuByPath } = deps;
+  const dep = row.dependency;
   const dir = row.path;
   const isGit = row.origin_kind === 'git';
   const rel = normalizeRel(dir);
@@ -227,7 +352,7 @@ function dirNode(row: DirRow, deps: AssetContextFoldersRootDeps, locatorTypeId: 
   const fsNode = fsTypeId
     ? assetsFsFolderNode(fsTypeId, rel, undefined, subfolderDrop(onDropItem, onExternalDrop), locatorTypeId)
     : null;
-  // Menu rows for this folder: its per-type groups, then the context folders it
+  // Menu rows for this folder: its per-type groups, then the dependencies it
   // owns in turn (this folder is itself a Project). Both come pre-materialized
   // from one server call, so they resolve synchronously; the filesystem entries
   // below them stay lazy, exactly as before.
@@ -254,17 +379,24 @@ function dirNode(row: DirRow, deps: AssetContextFoldersRootDeps, locatorTypeId: 
       ? async (opts) => [...menuRows, ...(fsChildren ? await fsChildren(opts) : [])]
       : fsChildren,
     // Git rows carry the status-bar pill pair (changes count + Push) as an
-    // always-visible badge; renders nothing while the repo is clean.
+    // always-visible badge; renders nothing while the repo is clean. Every
+    // declared dependency also shows its state and kind.
     badge:
-      isGit && fsTypeId ? (
-        <ContextFolderGitBadge
-          workdir={`/${rel}`}
-          computeNodeId={fsTypeId.id}
-          folderName={basename(rel) || rel}
-          folderTypeId={row.typeid || null}
-          projectId={projectId}
-        />
+      dep || (isGit && fsTypeId) ? (
+        <span className="flex items-center gap-1">
+          {dependencyChips(dep)}
+          {isGit && fsTypeId && (
+            <ContextFolderGitBadge
+              workdir={`/${rel}`}
+              computeNodeId={fsTypeId.id}
+              folderName={basename(rel) || rel}
+              folderTypeId={row.typeid || null}
+              projectId={projectId}
+            />
+          )}
+        </span>
       ) : undefined,
+    tooltip: dep ? dependencyTooltip(dep) : undefined,
     pointer: DockPointer.forAssetFs(VFSPath.fromTypeId(locatorTypeId, rel)),
     canDrop: onDropItem ? (data) => canDropIntoDir(dir, data) : undefined,
     onDrop: onDropItem
@@ -274,37 +406,28 @@ function dirNode(row: DirRow, deps: AssetContextFoldersRootDeps, locatorTypeId: 
         }
       : undefined,
     onExternalFilesDrop: onExternalDrop ? (entries) => onExternalDrop(entries, dir) : undefined,
-    toolbar:
-      row.depth === 1
-        ? [
-            {
-              id: 'remove',
-              icon: <Trash2 className="h-3 w-3" />,
-              label: t`Remove context folder`,
-              run: () => onRemove(dir),
-            },
-          ]
-        : undefined,
+    // Only a dependency the scoped project declares itself can be removed
+    // here; a legacy link with no dependency name has nothing to remove.
+    toolbar: row.depth === 1 ? dependencyToolbar(dep, dir, deps) : undefined,
   };
 }
 
 export function assetContextFoldersRoot(deps: AssetContextFoldersRootDeps): BrowseableRoot {
-  const { dirs, fsTypeId, onAdd } = deps;
+  const { dirs, dependencies = [], fsTypeId, onAdd } = deps;
   const locatorTypeId = deps.fsLocatorTypeId ?? LOCAL_COMPUTE_NODE;
   const root: BrowseableRoot = {
     id: ASSET_CONTEXT_FOLDERS_ROOT_ID,
     kind: 'root',
-    label: i18n._(msg`Context folders`),
+    label: i18n._(msg`Dependencies`),
     icon: <FolderTree className="h-4 w-4 flex-shrink-0 text-muted-foreground" />,
-    hasChildren: dirs.length > 0,
+    hasChildren: dirs.length > 0 || dependencies.length > 0,
     pointer: null,
-    listChildren: (): Promise<Browseable[]> =>
-      Promise.resolve(dirs.map((info) => dirNode({ ...info, depth: 1 }, deps, locatorTypeId))),
+    listChildren: (): Promise<Browseable[]> => Promise.resolve(dependencyRows(deps, locatorTypeId)),
     toolbar: [
       {
         id: 'add',
         icon: <FolderPlus className="h-3.5 w-3.5" />,
-        label: t`Add context folder`,
+        label: t`Add dependency`,
         run: onAdd,
       },
     ],
@@ -317,8 +440,9 @@ export function assetContextFoldersRoot(deps: AssetContextFoldersRootDeps): Brow
       const rel = resource?.typeId?.equals(locatorTypeId) ? normalizeRel(resource.entitySubPath) : '';
       const match = matchContextDir(dirs, rel);
       if (!match) return Promise.resolve([root]);
-      const chain: Browseable[] = [root, dirNode({ ...match, depth: 1 }, deps, locatorTypeId)];
-      // Deep-link below the context dir: chain the intermediate fs folder
+      const dep = dependencies.find((d) => d.name === match.dependency && (d.via || '') === (match.via || ''));
+      const chain: Browseable[] = [root, dirNode(rowOf(match, dep ?? null), deps, locatorTypeId)];
+      // Deep-link below the dependency dir: chain the intermediate fs folder
       // nodes (same ids listChildren produces) so the tree auto-expands.
       if (fsTypeId) {
         const dirRel = normalizeRel(match.path);

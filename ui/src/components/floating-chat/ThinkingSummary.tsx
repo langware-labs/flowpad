@@ -1,6 +1,7 @@
 import { FlowData, FlowDataType } from '@sdk';
 import { useDataStreamText } from '@sdk/react/hooks';
 import { MarkdownView } from '@src/components/markdown-view';
+import { useLinkHandlers } from '@src/components/links/LinkHandlersContext';
 import { cn } from '@src/lib/utils';
 import { t } from '@lingui/core/macro';
 import { ChevronDown, ChevronRight, Sparkles } from 'lucide-react';
@@ -23,6 +24,7 @@ interface ThinkingSummaryProps {
  */
 export function ThinkingSummary({ events }: ThinkingSummaryProps) {
   const [expanded, setExpanded] = useState(false);
+  const links = useLinkHandlers();
 
   const last = events[events.length - 1] as FlowData | undefined;
   const shouldStreamLast = !!last && last.dataType === FlowDataType.String;
@@ -70,7 +72,7 @@ export function ThinkingSummary({ events }: ThinkingSummaryProps) {
 
       {expanded && (
         <div className="ms-3 mt-1 max-w-full border-s border-border/60 ps-3 text-[13px] leading-6 text-muted-foreground">
-          <MarkdownView value={text} compact />
+          <MarkdownView value={text} compact links={links} />
         </div>
       )}
     </div>

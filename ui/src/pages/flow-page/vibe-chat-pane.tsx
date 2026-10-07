@@ -241,6 +241,7 @@ export function VibeChatPane({
       <EntityExecutionPanel
         target={chatTarget}
         processType={ProcessKind.Chat}
+        linkSurface="vibe"
         className="h-full border-e border-border"
         dense
         allowAttachments

@@ -57,9 +57,8 @@ class NodeSpec:
     #: folder that is itself a Project (so the walk recurses into it);
     #: ``git`` = same, but a git worktree; ``plain`` = a bare directory (leaf).
     kind: str
-    #: Whose context folder this is. None for the mount.
+    #: Whose dependency (context folder) this is. None for the mount.
     parent_key: str | None = None
-    link_scope: str = "private"
     assets: dict[str, int] = field(default_factory=dict)
 
     @property
@@ -69,10 +68,10 @@ class NodeSpec:
 
 ASSET_TREE_LAYOUT: tuple[NodeSpec, ...] = (
     NodeSpec("P", "proj", "mount", assets={"skill": 1, "subagent": 1, "markdown": 1, "task": 1}),
-    # A git worktree over a file:// origin. Linked SHARED, which only succeeds
-    # for a transportable origin — so the link itself asserts that
+    # A git worktree over a file:// origin. Added by path, it is declared as its
+    # repository (``git+file://…``) — so the declaration itself asserts that
     # ``Folder.detect_origin`` read the local remote as a GitOrigin.
-    NodeSpec("GIT", "git", "git", parent_key="P", link_scope="shared", assets={"skill": 1, "markdown": 1}),
+    NodeSpec("GIT", "git", "git", parent_key="P", assets={"skill": 1, "markdown": 1}),
     NodeSpec("A", "a", "project", parent_key="P", assets={"skill": 1, "subagent": 1}),
     NodeSpec("B", "b", "project", parent_key="A", assets={"markdown": 1, "task": 1}),
     # B's context project, beside it on disk: projects do not nest, so a project
@@ -215,8 +214,8 @@ async def build_asset_tree(
     run somewhere the caller chose. A non-empty ``base`` is refused unless
     ``force``; pass ``index=False`` to lay down bytes without touching the DB.
 
-    Context folders are linked with the real ``add_context_dir`` action, which
-    indexes each one as it goes — that is what makes this an integration fixture
+    Context folders are linked with the real ``Project.add_dependency`` verb, which
+    declares each in the parent's ``flow.json`` and indexes it as it goes — that is what makes this an integration fixture
     rather than a re-implementation of the walk. Only the project's own mount is
     indexed directly, because nothing links it.
     """
@@ -230,7 +229,7 @@ async def build_asset_tree(
     base.mkdir(parents=True, exist_ok=True)
     suffix = suffix or uuid.uuid4().hex[:6]
 
-    # 1. Every file on disk first, so each add_context_dir indexes a populated
+    # 1. Every file on disk first, so each add_dependency indexes a populated
     #    folder. The git worktree is cloned before its assets are written.
     by_key = {s.key: s for s in ASSET_TREE_LAYOUT}
     for spec in ASSET_TREE_LAYOUT:
@@ -251,7 +250,7 @@ async def build_asset_tree(
         return AssetTree(base=base, projects={})
 
     # 2. Projects bottom-up, linking each child before its parent exists, so
-    #    every add_context_dir walks a folder whose own links are already set.
+    #    every add_dependency walks a folder whose own links are already set.
     projects: dict[str, Project] = {}
 
     async def _make_project(key: str) -> Project:
@@ -273,12 +272,11 @@ async def build_asset_tree(
         if spec.parent_key is None:
             continue
         parent = projects[spec.parent_key]
-        # The real action: mints the Folder, links the bucket, and indexes the
-        # folder as CWD_ROOT. A shared link is rejected unless the origin is
-        # transportable, so the GIT node's link is itself an assertion.
-        resp = await parent.add_context_dir(str(base / spec.rel_path), scope=spec.link_scope)
-        if getattr(resp, "status_code", 200) >= 400:
-            raise RuntimeError(f"add_context_dir({spec.key}, {spec.link_scope}) failed: {resp.message}")
+        # The real verb: declares it in flow.json, mints the Folder, links it,
+        # and indexes the folder as CWD_ROOT.
+        state = await parent.add_dependency(str(base / spec.rel_path))
+        if state.state != "ready":
+            raise RuntimeError(f"add_dependency({spec.key}) is {state.state}: {state.reason}")
 
     # 3. The mount is nobody's context folder, so index it directly — as
     #    REAL_PROJECT_CWD, the root type a project mount really gets.

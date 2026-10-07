@@ -9,7 +9,7 @@
   "permission_mode": "bypassPermissions",
   "subagents": [
     "git-setup",
-    "git-context-folder"
+    "git-dependency"
   ],
   "enabled": true
 }

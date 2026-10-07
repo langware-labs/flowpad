@@ -12,6 +12,7 @@ import pytest
 from flow_sdk.builtin.journey import Journey
 from flow_sdk.builtin.journey_journal import ACTIVE_STATUSES, JourneyJournal, JourneyStatus
 from tests.pytest_plugin import async_context
+from tests.unit._project_deps import link_context_dirs
 
 USER = "user-1"
 OTHER = "user-2"
@@ -397,14 +398,12 @@ async def test_24_project_scoped_auto_launch_excludes_unrelated_projects(
     unrelated = await _make_auto(
         project_b_root / "agentic-assets" / "journey", "other-onboarding", "other"
     )
-    project_a = Project(
-        name="project-a",
-        fs_storage_mount_path=str(project_a_root),
-        legacy_include_dirs_=[str(content_root)],
-    )
+    project_a = Project(name="project-a", fs_storage_mount_path=str(project_a_root))
     project_b = Project(name="project-b", fs_storage_mount_path=str(project_b_root))
     await project_a.save()
     await project_b.save()
+    # A journey under a flow.json dependency is the project's own to auto-launch.
+    await link_context_dirs(project_a, [content_root])
 
     selected = await Journey.auto_launch_for(USER, project_id=project_a.id)
 
@@ -419,14 +418,35 @@ async def test_25_project_manifest_selects_its_named_auto_launch_journey(
     from flow_sdk.builtin.project import Project
 
     root = tmp_path / "project-with-two-journeys"
-    (root / ".flowpad").mkdir(parents=True)
-    (root / ".flowpad" / "bootstrap.json").write_text(
-        json.dumps({"autolaunch_journey": "preferred"}), encoding="utf-8"
-    )
+    root.mkdir(parents=True)
+    (root / "flow.json").write_text(json.dumps({"autolaunchJourney": "preferred"}), encoding="utf-8")
     other = await _make_auto(root / "agentic-assets" / "journey", "other", "other")
     preferred = await _make_auto(root / "agentic-assets" / "journey", "preferred", "preferred")
     project = Project(name="two", fs_storage_mount_path=str(root))
     await project.save()
+
+    selected = await Journey.auto_launch_for(OTHER, project_id=project.id)
+
+    assert selected is not None and selected.journey_id == preferred.id
+    assert await other.progress(OTHER) is None
+
+
+@async_context
+async def test_26_a_dependency_names_its_own_auto_launch_journey(tmp_path, only_my_journeys):
+    """A dependency's own flow.json picks among the journeys it ships — a vendor
+    content repo with several journeys decides which one onboards the customer."""
+    from flow_sdk.builtin.project import Project
+
+    root = tmp_path / "customer"
+    content = tmp_path / "vendor-content"
+    root.mkdir()
+    content.mkdir()
+    (content / "flow.json").write_text(json.dumps({"autolaunchJourney": "preferred"}), encoding="utf-8")
+    other = await _make_auto(content / "agentic-assets" / "journey", "other", "other")
+    preferred = await _make_auto(content / "agentic-assets" / "journey", "preferred", "preferred")
+    project = Project(name="customer-with-vendor", fs_storage_mount_path=str(root))
+    await project.save()
+    await link_context_dirs(project, [content])
 
     selected = await Journey.auto_launch_for(OTHER, project_id=project.id)
 

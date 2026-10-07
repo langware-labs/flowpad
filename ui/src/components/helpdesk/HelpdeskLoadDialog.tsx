@@ -49,7 +49,7 @@ export function HelpdeskLoadDialog({ open, onClose, onNoPortal }: HelpdeskLoadDi
   const { t } = useLingui();
   const { navigation } = useDockNavigation();
   // Which project's desk to open. A project that adopted a vendor's help desk
-  // as a context folder reaches THAT desk; with none, the backend falls
+  // as a dependency reaches THAT desk; with none, the backend falls
   // through to the instance-wide desk the hub advertises.
   const activeProjectId = useContext().project?.id ?? null;
 
@@ -86,7 +86,7 @@ export function HelpdeskLoadDialog({ open, onClose, onNoPortal }: HelpdeskLoadDi
     // open is cheap and reports "already present".
     const ensured = await run('check', async () => {
       // Scoped to the active project: one that has adopted a desk of its own
-      // — a vendor's help desk attached as a context folder — reaches THAT
+      // — a vendor's help desk added as a dependency — reaches THAT
       // desk. Only a project with none falls through to the hub's.
       const res = await helpdeskEnsure(activeProjectId);
       patch('check', {
@@ -116,15 +116,15 @@ export function HelpdeskLoadDialog({ open, onClose, onNoPortal }: HelpdeskLoadDi
     }
     const portalProjectId = ensured.project_id;
 
-    // An adopted desk is a CONTEXT FOLDER, not the app-managed portal slot.
+    // An adopted desk is a DEPENDENCY, not the app-managed portal slot.
     // `helpdesk-refresh` / the portal index both operate on that slot, so
     // running them here would sync the wrong checkout. The folder was pulled
     // and indexed when it was attached, and stays current through the
-    // ordinary context-folder path — so there is nothing left to do but open.
+    // ordinary dependency path — so there is nothing left to do but open.
     if (ensured.adopted) {
       // `status` explicitly: `patch` merges a partial and does not mark a
       // step done — only `run` does, and there is no work here to run.
-      patch('fetch', { status: 'success', detail: t`kept current as a context folder` });
+      patch('fetch', { status: 'success', detail: t`kept current as a dependency` });
       patch('index', { status: 'success', detail: t`indexed with the project` });
       await run('open', () => {
         navigation.openDock(DockPointer.forHelpdesk(portalProjectId));

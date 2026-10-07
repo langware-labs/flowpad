@@ -29,6 +29,8 @@ class _Meta:
         self.subscriptions: list[dict] = []
         self.subscribed_apps: list[dict] = []
         self.sent: list[dict] = []
+        #: The number's own webhook override (``webhook_configuration.override_callback_uri``).
+        self.override: dict = {}
 
     def __call__(self, path, headers):
         url = urlsplit(path)
@@ -42,7 +44,14 @@ class _Meta:
         if route == APP:
             return reply(200, {"id": APP, "name": "My bot"}) if app_token else reply(400, {"error": {"message": "Invalid OAuth access token"}})
         if route == PHONE:
-            return reply(200, {"display_phone_number": "+1 555-000"}) if auth == "Bearer TEMP" or auth == "Bearer LONG" else reply(401, {"error": {"message": "expired"}})
+            if auth not in ("Bearer TEMP", "Bearer LONG"):
+                return reply(401, {"error": {"message": "expired"}})
+            if method == "POST" and "webhook_configuration" in q:
+                self.override = json.loads(q["webhook_configuration"])
+                return reply(200, {"success": True})
+            if q.get("fields") == "webhook_configuration":
+                return reply(200, {"webhook_configuration": {"phone_number": self.override.get("override_callback_uri", "")}})
+            return reply(200, {"display_phone_number": "+1 555-000"})
         if route == "oauth/access_token":
             return reply(200, {"access_token": "LONG"})
         if route == f"{PHONE}/messages":
@@ -117,9 +126,29 @@ async def test_subscribe_points_metas_webhook_at_the_public_url_once(meta):
     assert (await source._subscribe_step(check=True, values={})).exit_code is ExitCode.NOT_YET
 
     answer = await source._subscribe_step(check=False, values={})
-    assert answer.ok and meta.subscriptions[0]["callback_url"] == HOOK and meta.subscribed_apps
+    assert answer.ok and meta.override == {"override_callback_uri": HOOK, "verify_token": "tok"} and meta.subscribed_apps
+    assert meta.subscriptions[0]["callback_url"] == HOOK, "a first app gets a messages webhook at all"
     again = await source._subscribe_step(check=False, values={})
     assert again.ok and again.ran is False, "already subscribed: nothing is posted again"
+
+
+async def test_subscribe_never_repoints_an_apps_existing_callback(meta):
+    """An app shared by several numbers (or instances): its own callback is someone's -- only THIS number's
+    override moves, so the last setup cannot take every number's messages."""
+    meta.subscriptions = [{"object": "whatsapp_business_account", "callback_url": "https://someone.else/hook", "fields": [{"name": "messages"}]}]
+    config = {"app_id": APP, "waba_id": WABA, "verify_token": "tok", "phone_number_id": PHONE}
+    source = _source(meta, config, app_secret=SECRET, access_token="LONG", webhook_url=HOOK)
+
+    answer = await source._subscribe_step(check=False, values={})
+
+    assert answer.ok and meta.override["override_callback_uri"] == HOOK
+    assert meta.subscriptions[0]["callback_url"] == "https://someone.else/hook"
+
+
+def test_the_number_is_claimed_on_the_hub_chain_only_once_its_token_and_secret_are_known():
+    claim = WhatsAppSource.hub_claim({"phone_number_id": PHONE, "verify_token": "tok"}, {"access_token": "LONG", "app_secret": SECRET})
+    assert claim == {"provider": "whatsapp", "key": PHONE, "proof": {"credential": "LONG", "app_secret": SECRET, "verify_token": "tok"}}
+    assert WhatsAppSource.hub_claim({"phone_number_id": PHONE}, {"access_token": "LONG"}) is None
 
 
 async def test_subscribe_waits_for_the_steps_before_it(meta):

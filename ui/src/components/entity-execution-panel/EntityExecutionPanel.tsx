@@ -36,6 +36,8 @@ import { QueueChip } from './QueueChip';
 import { useInputHistory } from '@src/hooks/use-input-history';
 import { splitLiveGroup, useTurnGroups, type TurnGroup } from '@src/components/floating-chat/groupTurnEvents';
 import { TurnGroupsList } from './TurnGroupsList';
+import { LinkScope } from '@src/components/links/LinkHandlersContext';
+import type { LinkSurface } from '@src/components/links/link-actions';
 import { ChatActivityLine } from './ChatActivityLine';
 import { TurnEventChip } from '@src/components/floating-chat/TurnEventChip';
 import { useObservedTurn } from './hooks/useObservedTurn';
@@ -93,6 +95,8 @@ interface EntityExecutionPanelProps {
   createProcess?: () => Promise<AgenticProcess>;
   /** Constrain process discovery to one cloud Deployment. */
   deploymentId?: string;
+  /** `vibe` when this panel's process owns the vibe Display beside it: a link click shows there. */
+  linkSurface?: LinkSurface;
   /**
    * Invoked once, right after the backing `AgenticProcess` is created and before
    * the first `prompt()`. Use to pre-configure the process (e.g. for sub-agent files,
@@ -303,6 +307,7 @@ export function EntityExecutionPanel({
   className,
   createProcess,
   deploymentId,
+  linkSurface,
   onProcessCreated,
   cursorLine,
   settingsLabel = 'Settings',
@@ -950,42 +955,44 @@ export function EntityExecutionPanel({
         }
       />
       {showProcessNameBar && activeProcess && <ProcessNameBar process={activeProcess} />}
-      <AutoScrollContainer ref={scrollRef} className="flex-1 overflow-y-auto">
-        {showEmptyState && <div className="p-3 text-sm text-muted-foreground">{emptyStateText}</div>}
-        {activeProcess && <AgentIntroMessage agent={launchingAgent} />}
-        {dense ? (
-          <>
-            <TurnGroupsList
-              groups={inlineGroups}
-              worker={activeProcess?.worker_type ?? undefined}
-              agent={launchingAgent}
-              onWorkerChange={handleWorkerChange}
-            />
-            {activeProcess && (
-              <ChatActivityLine process={activeProcess} trailing={<TurnEventChip events={liveEvents} />} />
-            )}
-          </>
-        ) : (
-          messages.map((m) => (
-            <ExecutionMessage
-              key={m.timestamp}
-              flowData={m}
-              worker={activeProcess?.worker_type ?? undefined}
-              agent={launchingAgent}
-              isUser={m.elementType === FlowElementTypes.USER_MESSAGE || (m.attributes && m.attributes.role === 'user')}
-            />
-          ))
-        )}
-      </AutoScrollContainer>
-      {/* Pending-interaction notice, `allowPicker={false}`: this surface never
-          offers the structured picker. On a PTY worker it says a question is
-          waiting and opens the terminal (the agent's own picker is blocked
-          there — an answer sent from here is rejected and its text is eaten as
-          keystrokes). On a headless worker it renders nothing: the composer
-          right below already takes the answer as a normal turn. */}
-      <ChatPlanModeProvider process={activeProcess}>
-        <PlanInteractionBar items={items} allowPicker={false} />
-      </ChatPlanModeProvider>
+      <LinkScope process={activeProcess} surface={linkSurface}>
+        <AutoScrollContainer ref={scrollRef} className="flex-1 overflow-y-auto">
+          {showEmptyState && <div className="p-3 text-sm text-muted-foreground">{emptyStateText}</div>}
+          {activeProcess && <AgentIntroMessage agent={launchingAgent} />}
+          {dense ? (
+            <>
+              <TurnGroupsList
+                groups={inlineGroups}
+                worker={activeProcess?.worker_type ?? undefined}
+                agent={launchingAgent}
+                onWorkerChange={handleWorkerChange}
+              />
+              {activeProcess && (
+                <ChatActivityLine process={activeProcess} trailing={<TurnEventChip events={liveEvents} />} />
+              )}
+            </>
+          ) : (
+            messages.map((m) => (
+              <ExecutionMessage
+                key={m.timestamp}
+                flowData={m}
+                worker={activeProcess?.worker_type ?? undefined}
+                agent={launchingAgent}
+                isUser={m.elementType === FlowElementTypes.USER_MESSAGE || (m.attributes && m.attributes.role === 'user')}
+              />
+            ))
+          )}
+        </AutoScrollContainer>
+        {/* Pending-interaction notice, `allowPicker={false}`: this surface never
+            offers the structured picker. On a PTY worker it says a question is
+            waiting and opens the terminal (the agent's own picker is blocked
+            there — an answer sent from here is rejected and its text is eaten as
+            keystrokes). On a headless worker it renders nothing: the composer
+            right below already takes the answer as a normal turn. */}
+        <ChatPlanModeProvider process={activeProcess}>
+          <PlanInteractionBar items={items} allowPicker={false} />
+        </ChatPlanModeProvider>
+      </LinkScope>
       {promptContext && (
         <div className="flex flex-shrink-0 items-center gap-2 px-3 pt-2" data-testid="prompt-context-chip">
           {/* accent/accent-foreground, not primary-on-primary/10: the vibe

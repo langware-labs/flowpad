@@ -32,7 +32,8 @@ export function useConversationSession(opts: {
 }): {
   conversationProcess: AgenticProcess | null;
   starting: boolean;
-  launch: (worker: WorkerType) => void;
+  /** `prompt` overrides `buildPrompt` for this one launch (e.g. a message's ⋮ menu). */
+  launch: (worker: WorkerType, prompt?: () => string) => void;
   open: () => void;
 } {
   const { conversation, ensureMapped, buildPrompt } = opts;
@@ -76,7 +77,7 @@ export function useConversationSession(opts: {
   );
 
   const startSession = useCallback(
-    async (workerType: WorkerType) => {
+    async (workerType: WorkerType, prompt: () => string = buildPrompt) => {
       if (!conversation || starting) return;
       // The conversation owns the project (conversation.project_id). A worker
       // starts on the conversation's project and is linked back via the generic
@@ -88,7 +89,7 @@ export function useConversationSession(opts: {
       if (!workdir) return;
       setStarting(true);
       try {
-        const instruction = buildPrompt();
+        const instruction = prompt();
         const convTypeIdString = conversation.id
           ? new TypeId(Conversation.type, conversation.id).toString()
           : undefined;
@@ -125,8 +126,8 @@ export function useConversationSession(opts: {
   );
 
   const launch = useCallback(
-    (worker: WorkerType) => {
-      const run = () => startSession(worker);
+    (worker: WorkerType, prompt?: () => string) => {
+      const run = () => startSession(worker, prompt);
       if (ensureMapped) ensureMapped(run);
       else void run();
     },

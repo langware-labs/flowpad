@@ -1,0 +1,85 @@
+diff --git a/quickemu b/quickemu
+index 9b65359..2cd68ef 100755
+--- a/quickemu
++++ b/quickemu
+@@ -699,7 +699,12 @@ function configure_cpu() {
+             ;;
+         windows|windows-server)
+             # Base CPU flags that work with all accelerators (KVM, HVF, TCG)
+-            CPU="-cpu ${CPU_MODEL},+hypervisor,+invtsc,l3-cache=on"
++            if [ "${ARCH_VM}" == "aarch64" ]; then
++                # +hypervisor/+invtsc/l3-cache are x86 CPUID bits; an aarch64 CPU takes none of them
++                CPU="-cpu ${CPU_MODEL}"
++            else
++                CPU="-cpu ${CPU_MODEL},+hypervisor,+invtsc,l3-cache=on"
++            fi
+             reset_cpu_flags
+             # KVM-specific flags: migratable and Hyper-V enlightenments
+             if [ "${QEMU_ACCEL}" == "kvm" ]; then
+@@ -723,13 +728,16 @@ function configure_cpu() {
+             fi
+             # Disable S3 support in the VM to ensure Windows can boot with SecureBoot enabled
+             #  - https://wiki.archlinux.org/title/QEMU/Troubleshooting#Virtual_machine_not_booting_when_using_a_Secure_Boot_enabled_OVMF
+-            GUEST_TWEAKS+=" -global ICH9-LPC.disable_s3=1"
++            # ICH9-LPC and HPET are x86-only; the aarch64 "virt" machine has neither
++            if [ "${ARCH_VM}" != "aarch64" ]; then
++              GUEST_TWEAKS+=" -global ICH9-LPC.disable_s3=1"
+ 
+-            # Disable High Precision Timer
+-            if [ "${QEMU_VER_SHORT}" -ge 70 ]; then
+-              MACHINE_TYPE+=",hpet=off"
+-            else
+-              GUEST_TWEAKS+=" -no-hpet"
++              # Disable High Precision Timer
++              if [ "${QEMU_VER_SHORT}" -ge 70 ]; then
++                MACHINE_TYPE+=",hpet=off"
++              else
++                GUEST_TWEAKS+=" -no-hpet"
++              fi
+             fi
+             ;;
+     esac
+@@ -1302,10 +1310,16 @@ function configure_display() {
+             # macOS has native VMware display driver support; aligns with OSX-KVM
+             DISPLAY_DEVICE="vmware-svga";;
+         windows|windows-server)
+-            case ${display} in
+-                none|spice) DISPLAY_DEVICE="qxl-vga";;
+-                cocoa|gtk|sdl|spice-app) DISPLAY_DEVICE="virtio-vga";;
+-            esac;;
++            # ARM64 has no VGA, and Windows on ARM has no virtio-gpu driver: ramfb
++            # is the framebuffer both the UEFI firmware and Windows can draw on
++            if [ "${ARCH_VM}" == "aarch64" ]; then
++                DISPLAY_DEVICE="ramfb"
++            else
++                case ${display} in
++                    none|spice) DISPLAY_DEVICE="qxl-vga";;
++                    cocoa|gtk|sdl|spice-app) DISPLAY_DEVICE="virtio-vga";;
++                esac
++            fi;;
+         *) DISPLAY_DEVICE="qxl-vga";;
+     esac
+ 
+@@ -1375,7 +1389,7 @@ function configure_display() {
+     VIDEO="${VGA:+${VGA} }-device ${DISPLAY_DEVICE}"
+ 
+     # ARM64 needs ramfb for UEFI boot display before virtio-gpu driver loads
+-    if [ "${ARCH_VM}" == "aarch64" ]; then
++    if [ "${ARCH_VM}" == "aarch64" ] && [ "${DISPLAY_DEVICE}" != "ramfb" ]; then
+         VIDEO="-device ramfb ${VIDEO}"
+     fi
+ 
+@@ -1755,7 +1769,12 @@ function vm_boot() {
+ 
+     if [ "${guest_os}" == "windows" ] || [ "${guest_os}" == "windows-server" ] || [ "${guest_os}" == "reactos" ] || [ "${guest_os}" == "freedos" ]; then
+         # shellcheck disable=SC2054
+-        args+=(-rtc base=localtime,clock=host,driftfix=slew)
++        if [ "${ARCH_VM}" == "aarch64" ]; then
++            # driftfix=slew is x86-only (it needs an RTC with a lost-tick policy)
++            args+=(-rtc base=localtime,clock=host)
++        else
++            args+=(-rtc base=localtime,clock=host,driftfix=slew)
++        fi
+     else
+         # shellcheck disable=SC2054
+         args+=(-rtc base=utc,clock=host)
