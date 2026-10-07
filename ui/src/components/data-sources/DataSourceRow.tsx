@@ -8,17 +8,18 @@
  * refuse it permanently — and it can be perfectly healthy and still ingest
  * nothing, because it is in `setup` waiting on the user to invite a bot to a
  * Slack channel. Both of those read as healthy-and-idle if the row shows one
- * field, so it shows the lifecycle chip, the countdown, and — expanded — an
- * explicit "parked" state and a setup panel with the verb that ends it.
+ * field, so it shows a coloured status line (parked said in its own words), the
+ * countdown, and — expanded — the setup panel with the verb that ends it.
  *
- * Status plus ONE verb on the row. Everything else is delegated: the rest of
- * the actions to `SourceMenu`, and every dialog to the view (so N rows don't
- * mount 2N of them).
+ * Status plus the setup verb on the row. Everything else is delegated: the rest
+ * of the actions (Pull, the folder) to `SourceMenu`, and every dialog to the view
+ * (so N rows don't mount 2N of them).
  */
 import { useCallback, useState } from 'react';
 import { DataSource, type DataDriver } from '@sdk';
-import { CheckCircle2, ChevronDown, ChevronRight, RefreshCw } from 'lucide-react';
-import { Plural, Trans, useLingui } from '@lingui/react/macro';
+import { CheckCircle2, ChevronDown, ChevronRight } from 'lucide-react';
+import { Trans, useLingui } from '@lingui/react/macro';
+import { i18n } from '@lingui/core';
 import { timeSince, timeUntil } from '@src/utils/duration';
 import { Button } from '@src/components/ui/button';
 import { notify } from '@src/notifications';
@@ -28,10 +29,11 @@ import { WikiButton } from '@src/components/wiki-tip';
 import { SetupStagesButton } from '@src/components/setup-wizard/SetupStagesButton';
 import { healthStyle } from './health-style';
 import { statusStyle } from './status-style';
-import { sourceIcon } from './source-icon';
+import { sourceGlyphs } from './source-icon';
+import { PARKED_DOT } from './source-look';
+import { IconWithBadge } from '@src/components/graph-view/icons/IconWithBadge';
 import { ChannelRouteControl } from './ChannelRouteControl';
 import { SourceMenu } from './SourceMenu';
-import { OpenFolderButton } from './OpenFolderButton';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { openDriver, openSourceFile } from './data-sources-pointer';
 import { useSourceToggle } from './use-source-toggle';
@@ -57,11 +59,12 @@ export function DataSourceRow({ source, spec, onEdit, onReplay, onDelete }: Prop
   // setup" / "needs attention", and a screen of parked sources must still fit
   // on one screen. The detail is one click away.
   const [open, setOpen] = useState(false);
-  const [busy, setBusy] = useState(false);
-  // The spec's glyph when one is installed, else the type's — and for a
-  // multi-channel transport (agent), the CHANNEL's own glyph. A screen of
-  // sources is scanned by what they reach, not by 'these are all data sources'.
-  const Icon = sourceIcon(spec, source.channel);
+  const [pulling, setPulling] = useState(false);
+  // The CHANNEL's mark — the spec's glyph, a multi-channel transport's per-channel
+  // one — badged with whose way it is (Flow on WhatsApp: WhatsApp with Flowpad's
+  // badge, the rule the Add-source choice card uses). A screen of sources is
+  // scanned by what they reach, not by 'these are all data sources'.
+  const { Base: Glyph, Badge } = sourceGlyphs(spec, source.channel);
 
   /**
    * Every verb on this screen reports through `notify`, including the two that
@@ -70,7 +73,7 @@ export function DataSourceRow({ source, spec, onEdit, onReplay, onDelete }: Prop
    * copy would sit there stale until the next verb ran.
    */
   const pull = useCallback(async () => {
-    setBusy(true);
+    setPulling(true);
     try {
       // Not synchronous: the detail says "on the next tick", which is the whole
       // expectation this toast exists to set.
@@ -81,7 +84,7 @@ export function DataSourceRow({ source, spec, onEdit, onReplay, onDelete }: Prop
         message: errorMessage(error, t`The source was not queued.`),
       });
     } finally {
-      setBusy(false);
+      setPulling(false);
     }
   }, [source, t]);
 
@@ -101,28 +104,12 @@ export function DataSourceRow({ source, spec, onEdit, onReplay, onDelete }: Prop
   // brings its own help rather than needing an entry in a frontend map.
   const wiki = spec?.setup_wiki || undefined;
 
-  const Pull = (
-    <Button
-      size="sm"
-      variant="ghost"
-      className="h-7 gap-1.5 px-2"
-      // Pulling an unverified source would fail in a way that says
-      // nothing useful — the driver refuses before it reaches the network.
-      disabled={busy || source.needsSetup}
-      title={source.needsSetup ? t`Verify the setup first.` : t`Pull changes now`}
-      onClick={() => void pull()}
-    >
-      <RefreshCw className={cn('size-3.5', busy && 'animate-spin')} />
-      <span className="sr-only md:not-sr-only">{t`Pull`}</span>
-    </Button>
-  );
-
   return (
     <div
       data-testid="source-card"
       data-provider={source.provider}
       data-status={source.status}
-      className={cn('border-b border-border/60 border-s-[3px]', chip.border, open && 'bg-muted/10')}
+      className={cn('border-b border-s-[3px] border-border/60', chip.border, open && 'bg-muted/10')}
     >
       <div className={ROW_GRID}>
         {/* Identity: the brand mark, the name, and provider · channel under it. */}
@@ -136,7 +123,12 @@ export function DataSourceRow({ source, spec, onEdit, onReplay, onDelete }: Prop
           >
             {open ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />}
           </button>
-          <Icon className="size-5 shrink-0" />
+          <IconWithBadge
+            Base={Glyph}
+            Badge={Badge}
+            className="size-5 shrink-0"
+            data-testid={`source-icon-${source.id}`}
+          />
           <div className="flex min-w-0 items-baseline gap-2">
             {/* The name opens the source's own file; the provider opens the driver it is an instance of. */}
             <button
@@ -166,7 +158,19 @@ export function DataSourceRow({ source, spec, onEdit, onReplay, onDelete }: Prop
           </div>
         </div>
 
-        <span className={cn('w-fit rounded-full px-2 py-0.5 text-[10px] font-medium', chip.chip)}>{chip.label}</span>
+        {/* One coloured status line: the dot is the state at a glance, the words say it. A parked source says so
+            here, not only when expanded — it looks healthy and will never poll again on its own. */}
+        <span
+          className={cn(
+            'flex min-w-0 items-center gap-1.5 text-xs font-medium',
+            parked ? 'text-foreground' : chip.text,
+          )}
+          data-testid={`source-status-${source.id}`}
+          title={parked ? t`Parked: the scheduler skips it until you pull` : undefined}
+        >
+          <span className={cn('size-2 shrink-0 rounded-full', parked ? PARKED_DOT : chip.dot)} />
+          <span className="truncate">{parked ? t`Parked` : i18n._(chip.label)}</span>
+        </span>
 
         <span className="text-xs text-muted-foreground" title={t`Last successful sync`}>
           {timeSince(source.last_synced_at)}
@@ -182,7 +186,7 @@ export function DataSourceRow({ source, spec, onEdit, onReplay, onDelete }: Prop
               size="sm"
               variant="secondary"
               className="h-7 gap-1.5"
-              disabled={busy || verifying}
+              disabled={pulling || verifying}
               data-testid={`source-verify-${source.id}`}
               onClick={() => void verify()}
             >
@@ -191,11 +195,11 @@ export function DataSourceRow({ source, spec, onEdit, onReplay, onDelete }: Prop
             </Button>
           )}
           <SetupStagesButton source={source} spec={spec} />
-          {Pull}
-          <OpenFolderButton path={source.asset_ref} testId={`data-source-folder-${source.id}`} />
           <SourceMenu
             source={source}
             spec={spec}
+            onPull={() => void pull()}
+            pulling={pulling}
             onToggleEnabled={() => void toggleEnabled()}
             onEdit={onEdit}
             onReplay={onReplay}
@@ -227,7 +231,6 @@ export function DataSourceRow({ source, spec, onEdit, onReplay, onDelete }: Prop
               {source.error_detail ? ` (${source.error_detail})` : ''}
             </p>
           )}
-
         </div>
       )}
     </div>
@@ -239,5 +242,4 @@ export const HEADER_ROW =
   'border-b border-border bg-muted/30 py-2 text-[11px] font-medium uppercase tracking-wider text-muted-foreground';
 
 /** The one column template the header and every row share. */
-export const ROW_GRID =
-  'grid grid-cols-[minmax(0,1fr)_7rem_6rem_6rem_auto] items-center gap-3 px-4 py-1.5';
+export const ROW_GRID = 'grid grid-cols-[minmax(0,1fr)_7rem_6rem_6rem_auto] items-center gap-3 px-4 py-1.5';

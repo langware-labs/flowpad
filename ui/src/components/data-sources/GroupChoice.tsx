@@ -2,8 +2,7 @@ import { useEffect, useState } from 'react';
 import { Trans } from '@lingui/react/macro';
 import type { DataDriver, DriverProfile } from '@sdk';
 import { cn } from '@src/lib/utils';
-import { lucideByName } from '@src/lib/lucide-by-name';
-import { sourceIconName } from './source-icon';
+import { sourceGlyphs } from './source-icon';
 import { IconWithBadge } from '@src/components/graph-view/icons/IconWithBadge';
 
 /**
@@ -52,12 +51,10 @@ function MemberCard({ driver, selected, onPick }: { driver: DataDriver; selected
     };
   }, [driver]);
 
-  const Glyph = lucideByName(sourceIconName(driver, null));
   // The card is the group's glyph marked with whose way this is: Flow's is WhatsApp badged with Flowpad's logo, your
-  // own bot's is plain WhatsApp. Never the profile's avatar -- Flow's is an emoji, and an emoji in <img> is a
-  // broken image.
-  const groupGlyph = driver.group_icon_name ? lucideByName(driver.group_icon_name) : null;
-  const badged = groupGlyph && driver.group_icon_name !== driver.icon_name;
+  // own bot's is plain WhatsApp (`sourceGlyphs`, the rule the source row uses too). Never the profile's avatar --
+  // Flow's is an emoji, and an emoji in <img> is a broken image.
+  const { Base, Badge } = sourceGlyphs(driver, null);
   const unavailable = profile?.available === false;
   return (
     <button
@@ -72,8 +69,8 @@ function MemberCard({ driver, selected, onPick }: { driver: DataDriver; selected
       )}
     >
       <IconWithBadge
-        Base={badged ? groupGlyph : Glyph}
-        Badge={badged ? Glyph : null}
+        Base={Base}
+        Badge={Badge}
         className="mt-0.5 size-7 shrink-0"
         data-testid={`group-member-icon-${driver.name}`}
       />
