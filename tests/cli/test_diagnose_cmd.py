@@ -27,6 +27,30 @@ _RUN = "flow_sdk.cli.commands.diagnose_cmd._run_diagnose"
 
 
 @pytest.fixture(autouse=True)
+def swept(monkeypatch):
+    """Step 1 (the diagnose spec) answers a known diagnosis here, and records what it was asked:
+    its own behaviour -- resolution, failing and hanging diagnoses -- is tests/unit/test_diagnose."""
+    import flow_sdk.diagnose as diagnose_pkg
+    from flow_sdk.diagnose import DiagnosisFinding, DiagnosisSpec
+
+    asked: list = []
+
+    async def run(ctx, **kw):
+        asked.append(ctx)
+        if kw.get("emit"):
+            kw["emit"]("checking the backend")
+        return DiagnosisSpec(
+            status="needs_action",
+            title="Backend down",
+            findings=[DiagnosisFinding(id="A2", severity="error", title="Backend down")],
+            diagnose="flowpad",
+        )
+
+    monkeypatch.setattr(diagnose_pkg, "run_diagnose", run)
+    return asked
+
+
+@pytest.fixture(autouse=True)
 def _isolate_cli_side_effects():
     """Undo global side effects of invoking the CLI so they don't leak into
     other tests:
@@ -778,3 +802,108 @@ async def test_feed_card_always_appears(label, has_issue, expect_conversation):
     else:
         assert not suggest.conversation_id  # no-issue summary card
         assert not suggest.flow_message_id
+
+
+# --------------------------------------------------------------------------- #
+# Step 1 — the diagnose spec runs first, the agent starts from it
+# --------------------------------------------------------------------------- #
+
+
+def _recording_ap(transcript, prompts):
+    """A worker whose transcript is ``transcript`` and whose prompts are collected."""
+
+    class _FakeDriver:
+        def transcript_path(self, _ap):
+            return transcript
+
+    class _FakeAP(_TakesTurns):
+        def __init__(self, **_kw):
+            self.id = "fake-id"
+            self.session_id = "fakesess"
+            self.driver = _FakeDriver()
+
+        def enable_assistant(self):
+            pass
+
+        async def send_turn(self, text):
+            prompts.append(text)
+            return await super().send_turn(text)
+
+        async def stream_transcript(self, timeout=0):
+            if transcript.exists():
+                yield {
+                    "message": {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "tool_result",
+                                "content": '{"diagnosis_id": "' + _DIAG_ID + '", "conversation_id": null, '
+                                '"flow_message_id": null, "has_issue": false, "status": "fixed"}',
+                            }
+                        ],
+                    }
+                }
+
+        @classmethod
+        async def get_by_id(cls, _id):
+            return None
+
+    return _FakeAP
+
+
+@pytest.mark.asyncio
+async def test_the_sweep_runs_first_and_the_agent_starts_from_it(swept, tmp_path):
+    from flow_sdk.cli.commands import diagnose_cmd
+
+    transcript = tmp_path / "t.jsonl"
+    transcript.write_text('{"type":"system"}\n')
+    prompts: list[str] = []
+    events: list[dict] = []
+
+    class _Recorded:
+        @classmethod
+        async def get_by_id(cls, _id):
+            return SimpleNamespace(title="Stale lock cleared", summary="Cleared it.", rca="dead pid", fix="removed lock")
+
+    stamp = AsyncMock()
+    with (
+        patch("flow_sdk.builtin.agentic_process.AgenticProcess", _recording_ap(transcript, prompts)),
+        patch("flow_sdk.fs_store.schema_registry.SchemaRegistry.get_entity_cls", _diagnosis_type_only(_Recorded)),
+        patch("flow_sdk.migrations.runner._bootstrap_local", new=AsyncMock(return_value=None)),
+        patch("flow_sdk.cli.commands.diagnose_cmd._post_home_feed_entry", new=AsyncMock(return_value="feed-1")),
+        patch("flow_sdk.cli.commands.diagnose_cmd._stamp_record", new=stamp),
+    ):
+        rc = await asyncio.wait_for(diagnose_cmd._run_diagnose("app is stuck", 1800.0, emit=events.append), timeout=5)
+
+    assert rc == 0
+    (ctx,) = swept
+    assert (ctx.purpose, ctx.user_report, ctx.origin) == ("repair", "app is stuck", "footer")
+    assert {"type": "narration", "text": "checking the backend"} in events, "the sweep's progress is streamed"
+    assert '"Backend down"' in prompts[0] and "ALREADY RAN" in prompts[0], "the agent is handed the sweep"
+    done = events[-1]
+    assert done["type"] == "done" and done["ok"]
+    # The record's headline and report.py's --status, over the sweep's findings and machine.
+    assert done["diagnosis"]["title"] == "Stale lock cleared" and done["diagnosis"]["status"] == "fixed"
+    assert [f["id"] for f in done["diagnosis"]["findings"]] == ["A2"]
+    stamp.assert_awaited_once()
+    assert stamp.await_args.args[0] == _DIAG_ID
+    fields = stamp.await_args.kwargs
+    assert fields["user_report"] == "app is stuck" and fields["diagnosis"]["status"] == "fixed"
+
+
+@pytest.mark.asyncio
+async def test_an_agent_that_never_starts_still_answers_the_sweep(tmp_path):
+    from flow_sdk.cli.commands import diagnose_cmd
+
+    events: list[dict] = []
+    with (
+        patch("flow_sdk.builtin.agentic_process.AgenticProcess", _recording_ap(tmp_path / "never.jsonl", [])),
+        patch("flow_sdk.fs_store.schema_registry.SchemaRegistry.get_entity_cls", _diagnosis_type_only(None)),
+        patch("flow_sdk.migrations.runner._bootstrap_local", new=AsyncMock(return_value=None)),
+    ):
+        rc = await asyncio.wait_for(diagnose_cmd._run_diagnose("", 1800.0, emit=events.append), timeout=5)
+
+    assert rc == 1
+    done = events[-1]
+    assert done["type"] == "done" and not done["ok"]
+    assert done["diagnosis"]["title"] == "Backend down", "what the sweep found is not lost with the agent"

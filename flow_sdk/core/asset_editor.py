@@ -67,6 +67,7 @@ class AssetEditor(StrEnum):
     AUDIO = "audio"
     PDF = "pdf"
     ARCHIVE = "archive"  # a .zip, browsed as the folder it extracts to (a temp copy)
+    VALUE = "value"  # a .value.json: one DataSpec value, shown by its kind's viewer
 
 
 #: editor → the entity types it edits. Written with ``EntityType`` members
@@ -107,6 +108,7 @@ EDITOR_TYPES: dict[AssetEditor, list[str]] = {
     AssetEditor.AUDIO: [],
     AssetEditor.PDF: [],
     AssetEditor.ARCHIVE: [],
+    AssetEditor.VALUE: [],
 }
 
 #: Derived inverse, exactly as the TS side derives it.
