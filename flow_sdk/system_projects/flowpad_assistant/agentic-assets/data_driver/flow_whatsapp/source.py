@@ -179,7 +179,7 @@ class FlowWhatsAppSource(MessageSource):
             from flow_sdk.instance_settings.runtime import instance_uid  # noqa: PLC0415
 
             instance = instance_uid()
-        except Exception:  # noqa: BLE001 — no instance id: the hub still links the phone, the inbox stays empty
+        except Exception:  # noqa: BLE001 — no instance id: the hub still links the phone, the StreamInbox stays empty
             instance = ""
         return {"instance_id": instance, "data_source_id": str(self.binding.source_id or "")}
 

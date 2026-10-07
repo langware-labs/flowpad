@@ -142,11 +142,16 @@ class CliOp(ExeData):
 
     #: ``sys.platform`` -> shell one-liner.
     commands: dict[str, str] = {}
+    #: A setup step of the run's data source (``{{source}}``), run IN this backend -- what ``flow source step
+    #: <source> <step> [--check] --value`` does, without starting a process, a shell or an HTTP call back into
+    #: this same backend. On a slow Windows box each of those costs 12-50 s; a wizard's check, call and re-check
+    #: were three. ``commands`` stays the fallback for a run with no source.
+    source_step: Optional[str] = None
 
     @model_validator(mode="after")
     def _has_a_command(self) -> "CliOp":
-        if not self.commands:
-            raise ValueError("a cli op needs a command for at least one platform")
+        if not self.commands and not self.source_step:
+            raise ValueError("a cli op needs a command for at least one platform, or a source_step")
         return self
 
     def command_for(self, platform: str = "") -> Optional[str]:

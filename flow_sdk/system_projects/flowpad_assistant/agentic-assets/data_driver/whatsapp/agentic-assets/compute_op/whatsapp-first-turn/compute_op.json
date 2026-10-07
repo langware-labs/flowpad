@@ -11,7 +11,8 @@
       "linux": "\"$FLOWPAD_FLOW\" source step \"$FLOWPAD_WIZARD_INPUT_SOURCE\" first-turn",
       "win32": "& $env:FLOWPAD_FLOW source step $env:FLOWPAD_WIZARD_INPUT_SOURCE first-turn; exit $LASTEXITCODE"
     },
-    "timeout_seconds": 300
+    "timeout_seconds": 300,
+    "source_step": "first-turn"
   },
   "completion_check": {
     "commands": {
@@ -19,6 +20,7 @@
       "linux": "\"$FLOWPAD_FLOW\" source step \"$FLOWPAD_WIZARD_INPUT_SOURCE\" first-turn --check",
       "win32": "& $env:FLOWPAD_FLOW source step $env:FLOWPAD_WIZARD_INPUT_SOURCE first-turn --check; exit $LASTEXITCODE"
     },
-    "timeout_seconds": 30
+    "timeout_seconds": 30,
+    "source_step": "first-turn"
   }
 }
