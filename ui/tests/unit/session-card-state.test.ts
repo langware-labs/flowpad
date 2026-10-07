@@ -10,7 +10,6 @@ describe('sessionCardState', () => {
     [RemoteWorkerSessionStatus.PENDING, 'pending'],
     [RemoteWorkerSessionStatus.IDLE, 'active'],
     [RemoteWorkerSessionStatus.RUNNING, 'active'],
-    [RemoteWorkerSessionStatus.PAUSED, 'paused'],
     [RemoteWorkerSessionStatus.ENDED, 'ended'],
     [RemoteWorkerSessionStatus.DECLINED, 'declined'],
     // A failed turn is not a session state: the session stays live (the card marks the prompt).

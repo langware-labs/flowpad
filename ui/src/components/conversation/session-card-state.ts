@@ -4,7 +4,7 @@ import { RemoteWorkerSessionStatus } from '@sdk';
  *  for a session whose row has not synced yet (the guest just sent). A failed
  *  turn is not a session state: the session stays live (the next prompt runs)
  *  and the card marks the failed prompt with a Retry instead. */
-export type SessionCardState = 'requesting' | 'pending' | 'active' | 'paused' | 'ended' | 'declined';
+export type SessionCardState = 'requesting' | 'pending' | 'active' | 'ended' | 'declined';
 
 export function sessionCardState(status: string | null | undefined): SessionCardState {
   switch (status) {
@@ -14,8 +14,6 @@ export function sessionCardState(status: string | null | undefined): SessionCard
     case RemoteWorkerSessionStatus.RUNNING:
     case RemoteWorkerSessionStatus.ERROR:
       return 'active';
-    case RemoteWorkerSessionStatus.PAUSED:
-      return 'paused';
     case RemoteWorkerSessionStatus.ENDED:
       return 'ended';
     case RemoteWorkerSessionStatus.DECLINED:

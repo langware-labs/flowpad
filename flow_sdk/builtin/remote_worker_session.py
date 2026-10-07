@@ -30,14 +30,13 @@ class RemoteWorkerSessionStatus(StrEnum):
     """Host-authoritative status projection (mirrors ProcessStatus's StrEnum convention).
 
     Live-session lifecycle: DRAFT (guest-local, nothing shared) → PENDING
-    (first prompt sent, awaiting host approval) → IDLE⇄RUNNING (active turns,
-    with PAUSED as a host-side hold) → ENDED / DECLINED (terminal).
+    (first prompt sent, awaiting host approval) → IDLE⇄RUNNING (active turns)
+    → ENDED / DECLINED (terminal).
     """
     DRAFT = "draft"
     PENDING = "pending"
     IDLE = "idle"
     RUNNING = "running"
-    PAUSED = "paused"
     ERROR = "error"
     ENDED = "ended"
     DECLINED = "declined"
@@ -75,7 +74,6 @@ class InboundDecision(StrEnum):
     IGNORE = "ignore"        # terminal session — nothing runs, marker untouched
     EXPIRE = "expire"        # past MAX_SESSION_LENGTH — the host closes it
     PARK_PENDING = "park"    # no consent yet — stays queued until approve
-    BOUNCE_PAUSED = "bounce" # host paused — consumed with a system line
     RUN = "run"              # active (or pre-approved) — run the turn
 
 
@@ -102,15 +100,12 @@ _TRANSITIONS: dict[str, frozenset] = {
         RemoteWorkerSessionStatus.DECLINED, RemoteWorkerSessionStatus.ENDED,
     }),
     RemoteWorkerSessionStatus.IDLE: frozenset({
-        RemoteWorkerSessionStatus.RUNNING, RemoteWorkerSessionStatus.PAUSED,
+        RemoteWorkerSessionStatus.RUNNING,
         RemoteWorkerSessionStatus.ERROR, RemoteWorkerSessionStatus.ENDED,
     }),
     RemoteWorkerSessionStatus.RUNNING: frozenset({
-        RemoteWorkerSessionStatus.IDLE, RemoteWorkerSessionStatus.PAUSED,
+        RemoteWorkerSessionStatus.IDLE,
         RemoteWorkerSessionStatus.ERROR, RemoteWorkerSessionStatus.ENDED,
-    }),
-    RemoteWorkerSessionStatus.PAUSED: frozenset({
-        RemoteWorkerSessionStatus.IDLE, RemoteWorkerSessionStatus.ENDED,
     }),
     RemoteWorkerSessionStatus.ERROR: frozenset({
         RemoteWorkerSessionStatus.IDLE, RemoteWorkerSessionStatus.RUNNING,
@@ -145,7 +140,7 @@ def can_transition(current: str | None, new: str) -> bool:
 def decide_inbound_prompt(*, status: str | None, standing_grant: bool, expired: bool = False) -> InboundDecision:
     """THE inbound gate, as a pure function of session state.
 
-    terminal → IGNORE; past the length cap → EXPIRE; PAUSED → BOUNCE; IDLE/RUNNING/ERROR → RUN;
+    terminal → IGNORE; past the length cap → EXPIRE; IDLE/RUNNING/ERROR → RUN;
     PENDING/DRAFT/unknown → RUN when a standing grant pre-approves the
     session, else PARK. No message-level concern lives here — draft / own-send
     / already-consumed guards belong to the async wrapper that has the DB.
@@ -154,8 +149,6 @@ def decide_inbound_prompt(*, status: str | None, standing_grant: bool, expired: 
         return InboundDecision.IGNORE
     if expired:
         return InboundDecision.EXPIRE
-    if status == RemoteWorkerSessionStatus.PAUSED:
-        return InboundDecision.BOUNCE_PAUSED
     if status in RUNNABLE_STATUSES:
         return InboundDecision.RUN
     return InboundDecision.RUN if standing_grant else InboundDecision.PARK_PENDING
@@ -468,20 +461,6 @@ class RemoteWorkerSession(Entity):
         except Exception as e:  # noqa: BLE001
             logger.warning("[remote_worker_session] %s event emit failed: %s", event, e)
 
-    async def _transition_action(self, new_status: str, event: str) -> ApiResponse:
-        """Shared body of the lifecycle actions: FSM-validate, stamp, save,
-        announce. Self-transition is an idempotent no-op (no duplicate line)."""
-        if self.status == new_status:
-            return ApiSuccessResponse(data=self.model_dump(mode="json"))
-        if not can_transition(self.status, new_status):
-            return ApiFailResponse(
-                message=f"illegal live-session transition: {self.status} → {new_status}"
-            )
-        self.mark_activity(new_status)
-        await self.save()
-        await self._emit_event(event)
-        return ApiSuccessResponse(data=self.model_dump(mode="json"))
-
     async def approve(self, *, via: str = ApprovedVia.MANUAL, someone_typeid: str | None = None) -> bool:
         """Consent: PENDING/DRAFT → IDLE with the approval stamped. Returns
         False when the move is illegal (already terminal). Idempotent on an
@@ -609,19 +588,17 @@ class RemoteWorkerSession(Entity):
 
     @action.post(action_name="decline")
     async def _http_decline(self) -> ApiResponse:
-        """Host declines a PENDING live session (terminal)."""
-        return await self._transition_action(RemoteWorkerSessionStatus.DECLINED, "declined")
-
-    @action.post(action_name="pause")
-    async def _http_pause(self) -> ApiResponse:
-        """Host holds the session: further inbound prompts bounce (with a
-        system line) instead of running, until resume."""
-        return await self._transition_action(RemoteWorkerSessionStatus.PAUSED, "paused")
-
-    @action.post(action_name="resume")
-    async def _http_resume(self) -> ApiResponse:
-        """Host lifts a pause (PAUSED→IDLE)."""
-        return await self._transition_action(RemoteWorkerSessionStatus.IDLE, "resumed")
+        """Host declines a PENDING live session (terminal). Declining twice is
+        an idempotent no-op (no duplicate line)."""
+        declined = RemoteWorkerSessionStatus.DECLINED
+        if self.status == declined:
+            return ApiSuccessResponse(data=self.model_dump(mode="json"))
+        if not can_transition(self.status, declined):
+            return ApiFailResponse(message=f"illegal live-session transition: {self.status} → {declined}")
+        self.mark_activity(declined)
+        await self.save()
+        await self._emit_event("declined")
+        return ApiSuccessResponse(data=self.model_dump(mode="json"))
 
     @action.post(action_name="disconnect")
     async def _http_disconnect(self) -> ApiResponse:

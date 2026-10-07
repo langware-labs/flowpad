@@ -44,15 +44,10 @@ async def test_lifecycle_actions_transition_and_announce(bootstrapped_client, us
     resp = await client.post(f"/api/v1/graph/remote_worker_session/{rws.id}/decline", json={})
     assert resp.json().get("status") != "SUCCESS"
 
-    resp = await client.post(f"/api/v1/graph/remote_worker_session/{rws.id}/pause", json={})
-    assert resp.json()["data"]["status"] == S.PAUSED.value
-    resp = await client.post(f"/api/v1/graph/remote_worker_session/{rws.id}/resume", json={})
-    assert resp.json()["data"]["status"] == S.IDLE.value
-
     resp = await client.post(f"/api/v1/graph/remote_worker_session/{rws.id}/disconnect", json={})
     assert resp.json()["data"]["status"] == S.ENDED.value
     events = await session_messages(conv_id, kind=FlowMessageKind.SESSION_EVENT.value)
-    assert {"approved", "paused", "resumed", "ended"} <= {event_marker(m) for m in events}
+    assert {"approved", "ended"} <= {event_marker(m) for m in events}
     resp = await client.post(f"/api/v1/graph/remote_worker_session/{rws.id}/approve", json={})
     assert resp.json().get("status") != "SUCCESS"
 

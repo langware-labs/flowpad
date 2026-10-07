@@ -7,6 +7,7 @@ import { useClock } from '@src/hooks/useActivity';
 import { cn } from '@src/lib/utils';
 import { OpenSessionChatButton } from './LiveSessionActivity';
 import { sessionCardState, sessionExpiresAt, type SessionCardState } from './session-card-state';
+import { sessionTitle } from './session-turns';
 
 export interface SessionCardProps {
   sessionId: string;
@@ -38,7 +39,6 @@ const TONE: Record<SessionCardState, string> = {
   requesting: 'text-muted-foreground',
   pending: 'text-amber-700 dark:text-amber-300',
   active: 'text-emerald-700 dark:text-emerald-300',
-  paused: 'text-muted-foreground',
   ended: 'text-muted-foreground',
   declined: 'text-red-700 dark:text-red-300',
 };
@@ -47,7 +47,6 @@ const DOT: Record<SessionCardState, string> = {
   requesting: 'bg-muted-foreground',
   pending: 'bg-amber-500',
   active: 'bg-emerald-500',
-  paused: 'bg-muted-foreground',
   ended: 'bg-muted-foreground',
   declined: 'bg-red-500',
 };
@@ -111,11 +110,13 @@ export function SessionCard({
   // Past the length cap the session is over on this side too, whatever the row says.
   const expired = useSessionExpired(session);
   const state = expired ? 'ended' : sessionCardState(session?.status);
+  // While a prompt runs the line names it — its first line — instead of a bare "working…".
   // A prompt with no reply yet is being worked on. Read from the messages, not the
   // status alone: the guest's mirror learns status only from snapshots riding a
   // message, and nothing is sent when a turn starts, so it never reads RUNNING.
-  const pending = state === 'active' ? (runningPrompt?.trim() ?? '') : '';
-  const running = state === 'active' && (session?.status === RemoteWorkerSessionStatus.RUNNING || !!pending);
+  // The line truncates with CSS; the cap only keeps a huge prompt out of the DOM.
+  const promptLine = state === 'active' && runningPrompt ? sessionTitle(runningPrompt, 200) : '';
+  const running = state === 'active' && (session?.status === RemoteWorkerSessionStatus.RUNNING || !!promptLine);
   const host = session?.host_name?.trim() || t`the host`;
   const guest = session?.guest_name?.trim() || t`the guest`;
   const other = role === 'host' ? guest : host;
@@ -123,8 +124,6 @@ export function SessionCard({
   // The host answering a request; a failed prompt on a live session.
   const answering = role === 'host' && state === 'pending';
   const failedLive = !!lastPromptFailed && state === 'active';
-  // While a prompt runs the line names it — its first line — instead of a bare "working…".
-  const promptLine = pending.split('\n')[0]?.trim() ?? '';
 
   const status = (() => {
     switch (state) {
@@ -134,8 +133,6 @@ export function SessionCard({
         return role === 'host' ? t`wants to run prompts on your machine` : t`awaiting approval`;
       case 'active':
         return running ? t`working…` : t`connected`;
-      case 'paused':
-        return t`paused`;
       case 'ended':
         return t`ended`;
       case 'declined':
@@ -223,9 +220,7 @@ export function SessionCard({
         </span>
       )}
       <span className="ms-auto flex shrink-0 items-center gap-1.5">
-        {chatProcessId && (state === 'active' || state === 'paused') && (
-          <OpenSessionChatButton processId={chatProcessId} />
-        )}
+        {chatProcessId && state === 'active' && <OpenSessionChatButton processId={chatProcessId} />}
         {failedLive &&
           button('retry', onRetry, 'border border-border text-foreground hover:bg-muted', <Trans>Retry</Trans>)}
         {answering && (
@@ -245,7 +240,7 @@ export function SessionCard({
             )}
           </>
         )}
-        {(state === 'active' || state === 'paused') &&
+        {state === 'active' &&
           button(
             'disconnect',
             onDisconnect,

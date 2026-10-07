@@ -11,7 +11,7 @@ import {
   isSessionTerminal,
 } from '@sdk';
 import { Trans, useLingui } from '@lingui/react/macro';
-import { ArrowLeft, CircleCheck, CircleX, Pause, Play, PlugZap, Radio } from 'lucide-react';
+import { ArrowLeft, CircleCheck, CircleX, PlugZap, Radio } from 'lucide-react';
 import { useCallback, useMemo, useState, type ReactNode } from 'react';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
@@ -30,10 +30,16 @@ import {
 } from '@src/hooks/use-contact-permissions';
 import { useAuth, useEntitiesQuery } from '@sdk/react/hooks';
 import { useEntity } from '@src/hooks/entity-hooks/useEntity';
-import { truncate } from '@src/components/hooks/event-summaries';
 import { LatestScroll } from '@src/components/conversation/LatestScroll';
+import { MarkdownView } from '@src/components/markdown-view';
 import { useApproveLiveSession } from './useApproveLiveSession';
-import { failedPromptOf, promptTextOf, resultTextOf } from '@src/components/conversation/session-turns';
+import {
+  failedPromptOf,
+  pendingPromptOf,
+  promptTextOf,
+  resultTextOf,
+  sessionTitle,
+} from '@src/components/conversation/session-turns';
 import { isPromptMessage } from '@src/components/conversation/attachment-actions/prompt-attachment';
 import { sessionRole } from '@src/hooks/useConversationSessions';
 import { useRetryFailedPrompt } from '@src/components/conversation/useRetryFailedPrompt';
@@ -67,8 +73,6 @@ function statusLine(status: string | undefined, hostName: string): ReactNode {
       return <Trans>Connected to {hostName}'s machine.</Trans>;
     case RemoteWorkerSessionStatus.ERROR:
       return <Trans>Connected to {hostName}'s machine — the last prompt failed.</Trans>;
-    case RemoteWorkerSessionStatus.PAUSED:
-      return <Trans>{hostName} paused the live session.</Trans>;
     case RemoteWorkerSessionStatus.DECLINED:
       return <Trans>{hostName} declined the live session.</Trans>;
     case RemoteWorkerSessionStatus.ENDED:
@@ -76,11 +80,6 @@ function statusLine(status: string | undefined, hostName: string): ReactNode {
     default:
       return <Trans>status: {status ?? 'unknown'}</Trans>;
   }
-}
-
-/** Truncate the opening prompt to a one-line title. */
-export function sessionTitle(prompt: string, max = 80): string {
-  return truncate(prompt.trim().split('\n')[0] ?? '', max - 1);
 }
 
 /** Host-only standing grant: future sessions from this guest start approved,
@@ -146,7 +145,7 @@ function StandingGrantCheckbox({
  * The live-session surface — the same Prompt/PromptCompletion FlowMessages the
  * conversation groups away, rendered as a terminal-style exchange ("I am
  * working on the other side"). The GUEST types prompts and watches; the HOST
- * gets the pinned amber control header (Approve/Decline, Pause/Resume,
+ * gets the pinned amber control header (Approve/Decline,
  * Disconnect, standing-permission toggles).
  */
 export function LiveSessionView({ sessionId }: { sessionId: string }) {
@@ -189,6 +188,9 @@ export function LiveSessionView({ sessionId }: { sessionId: string }) {
   const retryFailedPrompt = useRetryFailedPrompt();
   // The prompt the host failed to run and nothing answered since — its failed line offers Retry.
   const failed = useMemo(() => failedPromptOf(messages), [messages]);
+  // A prompt nothing answered yet is running — read from the messages, since the
+  // guest's mirror never learns RUNNING (nothing is sent when a turn starts).
+  const pendingPrompt = useMemo(() => pendingPromptOf(messages), [messages]);
 
   const runAction = useCallback(
     async (verb: string, fn: () => Promise<void>) => {
@@ -214,6 +216,23 @@ export function LiveSessionView({ sessionId }: { sessionId: string }) {
   const isHost = sessionRole(session, cloudUser?.id) === 'host';
   const status = session.status;
   const terminal = isSessionTerminal(status);
+  const running =
+    status === RemoteWorkerSessionStatus.RUNNING || (status === RemoteWorkerSessionStatus.IDLE && !!pendingPrompt);
+  // Either side ends the session from here; the guest's header is the smaller row.
+  const disconnectButton = (small: boolean) =>
+    !terminal && (
+      <Button
+        size="sm"
+        variant="destructive"
+        className={small ? 'ms-auto h-6 px-2 text-[11px]' : undefined}
+        onClick={() => void runAction('disconnect', () => session.disconnect())}
+        disabled={!!busy}
+        data-testid="live-session-disconnect"
+      >
+        <PlugZap className={small ? 'me-1 h-3.5 w-3.5' : 'me-1.5 h-4 w-4'} />
+        <Trans>Disconnect</Trans>
+      </Button>
+    );
   const hostName = session.host_name ?? 'the host';
   const guestName = session.guest_name ?? session.guest_user_id ?? 'the guest';
   const guestContact: ContactKey = { userId: session.guest_user_id ?? null, email: null };
@@ -326,41 +345,7 @@ export function LiveSessionView({ sessionId }: { sessionId: string }) {
                 </Button>
               </>
             )}
-            {(status === RemoteWorkerSessionStatus.IDLE || status === RemoteWorkerSessionStatus.RUNNING) && (
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => void runAction('pause', () => session.pause())}
-                disabled={!!busy}
-                data-testid="live-session-pause"
-              >
-                <Pause className="me-1.5 h-4 w-4" />
-                <Trans>Pause</Trans>
-              </Button>
-            )}
-            {status === RemoteWorkerSessionStatus.PAUSED && (
-              <Button
-                size="sm"
-                onClick={() => void runAction('resume', () => session.resume())}
-                disabled={!!busy}
-                data-testid="live-session-resume"
-              >
-                <Play className="me-1.5 h-4 w-4" />
-                <Trans>Resume</Trans>
-              </Button>
-            )}
-            {!terminal && (
-              <Button
-                size="sm"
-                variant="destructive"
-                onClick={() => void runAction('disconnect', () => session.disconnect())}
-                disabled={!!busy}
-                data-testid="live-session-disconnect"
-              >
-                <PlugZap className="me-1.5 h-4 w-4" />
-                <Trans>Disconnect</Trans>
-              </Button>
-            )}
+            {disconnectButton(false)}
           </div>
           {!terminal && (
             <div className="flex w-full items-center gap-4">
@@ -374,24 +359,11 @@ export function LiveSessionView({ sessionId }: { sessionId: string }) {
         </div>
       ) : (
         <div className="sticky top-0 z-10 flex flex-shrink-0 items-center gap-2 border-b bg-background px-4 py-2 text-xs text-muted-foreground">
-          <Radio
-            className={`h-3.5 w-3.5 flex-shrink-0 ${status === RemoteWorkerSessionStatus.RUNNING ? 'animate-pulse text-emerald-500' : ''}`}
-          />
-          <span data-testid="live-session-status-line">{statusLine(status, hostName)}</span>
-          {/* The guest ends it from here too — done working on the host's machine. */}
-          {!terminal && (
-            <Button
-              size="sm"
-              variant="destructive"
-              className="ms-auto h-6 px-2 text-[11px]"
-              onClick={() => void runAction('disconnect', () => session.disconnect())}
-              disabled={!!busy}
-              data-testid="live-session-disconnect"
-            >
-              <PlugZap className="me-1 h-3.5 w-3.5" />
-              <Trans>Disconnect</Trans>
-            </Button>
-          )}
+          <Radio className={`h-3.5 w-3.5 flex-shrink-0 ${running ? 'animate-pulse text-emerald-500' : ''}`} />
+          <span data-testid="live-session-status-line">
+            {statusLine(running ? RemoteWorkerSessionStatus.RUNNING : status, hostName)}
+          </span>
+          {disconnectButton(true)}
         </div>
       )}
 
@@ -484,7 +456,9 @@ export function LiveSessionView({ sessionId }: { sessionId: string }) {
                         {isHost ? <Trans>· local</Trans> : <Trans>· remote</Trans>}
                       </span>
                     </span>
-                    <pre className="whitespace-pre-wrap text-foreground/90">{result}</pre>
+                    <div className="break-words text-foreground/90" data-testid="live-session-reply-body">
+                      <MarkdownView value={result} dense codeChrome={false} />
+                    </div>
                   </div>
                 );
               }

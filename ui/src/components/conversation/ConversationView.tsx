@@ -17,6 +17,7 @@ import {
   TypeId,
   latestPointer,
   ChannelTransport,
+  isSessionActive,
   isSessionTerminal,
   RemoteWorkerSession,
   toplog,
@@ -62,6 +63,7 @@ import { taskIt, useMessageTasks } from './task-it';
 import { conversationMessagesRequest } from './conversation-messages-query';
 import { useApproveLiveSession } from '@src/components/collaboration/useApproveLiveSession';
 import { failedPromptOf, pendingPromptOf } from './session-turns';
+import { isSessionExpired } from './session-card-state';
 import { LiveSessionActivity } from './LiveSessionActivity';
 import { useRetryFailedPrompt } from './useRetryFailedPrompt';
 import { useCloudLoginGate } from '@src/hooks/use-cloud-login-gate';
@@ -495,12 +497,14 @@ export function ConversationView({
     }
     return bySession;
   }, [orderedItems, messagesById]);
-  const failedPromptBySession = useMemo(
-    () => new Map([...messagesBySession].map(([sid, fms]) => [sid, failedPromptOf(fms)])),
-    [messagesBySession],
-  );
-  const pendingPromptBySession = useMemo(
-    () => new Map([...messagesBySession].map(([sid, fms]) => [sid, pendingPromptOf(fms)])),
+  const turnsBySession = useMemo(
+    () =>
+      new Map(
+        [...messagesBySession].map(([sid, fms]) => [
+          sid,
+          { failed: failedPromptOf(fms), pending: pendingPromptOf(fms) },
+        ]),
+      ),
     [messagesBySession],
   );
 
@@ -918,6 +922,7 @@ export function ConversationView({
             if (item.kind === ConversationItemKind.SESSION_ANCHOR) {
               const session = sessionsById.get(item.sessionId) ?? null;
               const role = sessionRole(session, cloudUserId);
+              const turns = turnsBySession.get(item.sessionId);
               return (
                 // The session's ONE line — its opening prompt (or request) is not
                 // drawn as a bubble; the turns live in the session view.
@@ -935,25 +940,24 @@ export function ConversationView({
                     onApproveOnce={role === 'host' && session ? () => approveSession(session) : undefined}
                     onDecline={role === 'host' && session ? () => session.decline() : undefined}
                     onDisconnect={role !== 'observer' && session ? () => session.disconnect() : undefined}
-                    lastPromptFailed={!!failedPromptBySession.get(item.sessionId)}
-                    runningPrompt={pendingPromptBySession.get(item.sessionId) ?? null}
+                    lastPromptFailed={!!turns?.failed}
+                    runningPrompt={turns?.pending ?? null}
                     chatProcessId={role === 'host' ? (session?.host_process_id ?? null) : null}
                     onRetry={
-                      role === 'guest' && failedPromptBySession.get(item.sessionId) && conversationId
-                        ? () =>
-                            retryFailedPrompt(
-                              conversationId,
-                              item.sessionId,
-                              failedPromptBySession.get(item.sessionId)!.text,
-                            )
+                      role === 'guest' && turns?.failed && conversationId
+                        ? () => retryFailedPrompt(conversationId, item.sessionId, turns.failed.text)
                         : undefined
                     }
                   />
-                  {role === 'host' && session && (
-                    <div className="px-2">
-                      <LiveSessionActivity session={session} />
-                    </div>
-                  )}
+                  {/* Only a live session: an old one's process may be busy with something else. */}
+                  {role === 'host' &&
+                    session &&
+                    isSessionActive(session.status) &&
+                    !isSessionExpired(session, Date.now()) && (
+                      <div className="px-2">
+                        <LiveSessionActivity session={session} />
+                      </div>
+                    )}
                 </div>
               );
             }
