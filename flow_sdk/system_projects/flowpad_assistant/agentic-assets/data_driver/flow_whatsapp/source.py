@@ -52,6 +52,8 @@ class FlowWhatsAppSource(FlowChannel):
     identity_config_key = "wa_id"
     channel = CHANNEL
     title = "WhatsApp"
+    #: As on WhatsApp itself: a reply quotes the message it answers on the phone.
+    quotes = True
     noun = "phone"
 
     @classmethod

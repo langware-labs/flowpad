@@ -22,6 +22,8 @@ class FlowTelegramSource(FlowChannel):
     origin_kind = CHANNEL
     channel = CHANNEL
     title = "Telegram"
+    #: As on Telegram itself: a reply quotes the message it answers in the chat.
+    quotes = True
     noun = "Telegram account"
 
     def sender_of(self, value: Any) -> str:

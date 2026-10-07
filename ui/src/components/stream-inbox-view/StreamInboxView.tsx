@@ -325,11 +325,17 @@ export function ConversationListRow({
       seen.add(key);
     };
     pushName(latestMessage?.sender_name);
-    for (const p of conv.members ?? []) {
-      pushName(p?.name || (p?.email ? p.email.split('@')[0] : ''));
+    if (conv.isChannel) {
+      // A channel's people are on the channel, not on the Flowpad roster: whoever opened it (the person,
+      // usually) beside whoever spoke last (often the answering agent).
+      pushName(firstMessage?.sender_name);
+    } else {
+      for (const p of conv.members ?? []) {
+        pushName(p?.name || (p?.email ? p.email.split('@')[0] : ''));
+      }
     }
     return names.length > 0 ? names : [t`Unknown`];
-  }, [isInvitationRow, firstMessage?.sender_name, latestMessage?.sender_name, conv.members, t]);
+  }, [isInvitationRow, firstMessage?.sender_name, latestMessage?.sender_name, conv.isChannel, conv.members, t]);
 
   const senderLabel = participantNames.join(', ');
   // The stream inbox subject is the conversation's own user-set / hub-synced title
