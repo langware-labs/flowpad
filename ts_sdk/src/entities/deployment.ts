@@ -1,4 +1,6 @@
-import { APIEntity, isNonEmptyString, registerEntity } from '../APIEntity';
+import { APIEntity, dataManager, isNonEmptyString, registerEntity } from '../APIEntity';
+import { ActionInfo } from '../models/ActionInfo';
+import type { CloudDeployProvider } from './agent';
 import type { IEntity, EntityMerge } from '../IEntity';
 import { DockPointerData } from '../models/DockPointer';
 import { normalizeKind } from '../models/Kind';
@@ -208,6 +210,18 @@ export interface DeploymentSecretsInventory {
 @registerEntity
 export class Deployment extends APIEntity<Deployment> implements IDeployment {
   static type: string = 'deployment';
+
+  /**
+   * The cloud compute providers a deployment may be placed on — the hub's list (`deployment/providers`,
+   * relayed by the desktop), in the hub's order. Throws when the hub cannot be asked (409: signed out).
+   * Cached through `LazyAsset.DeployProviders`.
+   */
+  static async providers(): Promise<CloudDeployProvider[]> {
+    const rows = await dataManager.callAction<undefined, string[]>(
+      new ActionInfo('providers', Deployment.type, null, 'GET'),
+    );
+    return Array.isArray(rows) ? rows.filter(isNonEmptyString) : [];
+  }
 
   name: string;
   identity: DeploymentIdentity;
