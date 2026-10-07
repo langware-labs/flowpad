@@ -40,9 +40,8 @@ DIAGNOSIS_REQUEST = TypeInfo(
     # in-app ``diagnosis_request`` editor (``ui/src/components/assets/editor/diagnosis-request``).
     browseable_by=ViewMode.ADVANCED,
     creatable=True,
-    # The Assets sidebar counts only default-indexed types and hides a type whose count is 0;
-    # without this the type row never showed, however many requests were open.
-    indexed_by_default=True,
+    # NOT default-indexed: a request has no file for the indexer to read. The Assets sidebar
+    # lists it from the hub (the ``mine`` action), the way it lists ``llm_endpoint``.
     api_visible=True,
     index_fields=["title", "instructions"],
     meta_model=DiagnosisRequestMetadata,

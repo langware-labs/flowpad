@@ -148,13 +148,40 @@ async def test_an_edit_sends_the_new_instructions_to_the_hub_and_keeps_the_title
     assert reloaded.instructions.startswith("read server.log") and reloaded.name == "read server.log"
 
 
-async def test_open_requests_are_counted_so_the_assets_sidebar_lists_the_type():
-    """The sidebar hides a type whose asset-stats count is 0, and counts only default-indexed types."""
-    from flow_sdk.fs_store.indexer.index_log import get_asset_stats
+async def test_the_sidebar_lists_requests_from_the_hub_newest_run_first(monkeypatch):
+    """A request has no file for the indexer, so it is not default-indexed (that broke the
+    indexable-types guard); the Assets sidebar lists it from the hub, like ``llm_endpoint``."""
+    from flow_sdk.builtin import diagnosis_request as module
+    from flow_sdk.cloud_client.transport import hub_http
+    from flow_sdk.fs_store.schema_registry import SchemaRegistry
 
-    await DiagnosisRequest(id="3f405162-7c8d-4e9f-a0b1-2c3d4e5f6071", name="counted").save()
+    async def hub_get_or_raise(entity_type, *_a, **_k):
+        assert entity_type == "diagnosis_request"
+        return [
+            {
+                "id": "a",
+                "title": "older",
+                "run_count": 1,
+                "last_run_at": "2026-10-06T10:00:00+00:00",
+                "instructions": "x",
+            },
+            {
+                "id": "a1b2c3d4-0000-4000-8000-00000000000b",
+                "title": "newer",
+                "run_count": 2,
+                "last_run_at": "2026-10-07T10:00:00+00:00",
+            },
+        ]
 
-    assert (await get_asset_stats()).per_type.get("diagnosis_request", 0) >= 1
+    monkeypatch.setattr(hub_http, "hub_get_or_raise", hub_get_or_raise)
+    await DiagnosisRequest(id="a1b2c3d4-0000-4000-8000-00000000000b", name="newer", project_id="p1").save()
+
+    listed = await module.mine()
+
+    assert [r["id"][-1] for r in listed] == ["b", "a"]
+    assert [r["project_id"] for r in listed] == ["p1", None], "the project comes from this computer's copy"
+    assert "instructions" not in listed[1], "only what a sidebar row shows"
+    assert "diagnosis_request" not in SchemaRegistry.get_default_index_types()
 
 
 async def test_an_edit_asks_the_hub_for_a_new_window_from_now_and_a_new_run_size(monkeypatch):

@@ -1,6 +1,6 @@
 """The REST surface of a ``DiagnosisRequest`` — what the request's asset screen calls.
 
-Open one (``open_request``), change one (``edit``), list what may fund one (``funding_sources``),
+Open one (``open_request``), change one (``edit``), list yours (``mine``), list what may fund one (``funding_sources``),
 send it more (``attachments``), and read back what was written into one (``runs``). Each is a thin door onto ``builtin/diagnosis_request.py``;
 the hub calls happen there, server-side, so the page never sees a hub URL or a key.
 """
@@ -85,6 +85,17 @@ async def funding_sources_action():
         return ApiSuccessResponse(data=await funding_sources())
     except HubError as e:
         return e.fail_response("Could not list funding sources")
+
+
+@action.get(action_name="mine", types=_TYPES)
+async def mine_action():
+    """``GET /graph/diagnosis_request/mine`` -> the requests this user may read, from the hub."""
+    from flow_sdk.builtin.diagnosis_request import mine  # noqa: PLC0415
+
+    try:
+        return ApiSuccessResponse(data=await mine())
+    except HubError as e:
+        return e.fail_response("Could not list the diagnosis requests")
 
 
 @action.get(action_name="runs", types=_TYPES)

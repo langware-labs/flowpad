@@ -221,6 +221,30 @@ def _title_of(instructions: str) -> str:
     return (instructions.strip().splitlines() or ["Diagnosis request"])[0][:80]
 
 
+#: What the Assets sidebar shows of a request -- read from the hub, never from a local index.
+_LISTED_FIELDS = ("id", "title", "name", "run_count", "last_run_at", "write_expires_at")
+
+
+async def mine() -> list[dict[str, Any]]:
+    """The requests this user may read, as the hub lists them -- the Assets sidebar's rows.
+
+    A request has no file on disk for the indexer to read, so it is not a default-indexed type;
+    like ``llm_endpoint`` it is listed from the hub, which owns its runs and their tally anyway.
+    The hub does not keep the project a request was opened under, so each row takes its
+    ``project_id`` from this computer's copy (``None`` for one opened elsewhere).
+    """
+    from flow_sdk.cloud_client.transport.hub_http import hub_get_or_raise  # noqa: PLC0415
+
+    rows = await hub_get_or_raise(EntityType.DIAGNOSIS_REQUEST.value)
+    listed = []
+    for row in rows if isinstance(rows, list) else []:
+        if not isinstance(row, dict) or not row.get("id"):
+            continue
+        local = await DiagnosisRequest.get_one({"id": str(row["id"])})
+        listed.append({**{k: row.get(k) for k in _LISTED_FIELDS}, "project_id": getattr(local, "project_id", None)})
+    return sorted(listed, key=lambda r: str(r.get("last_run_at") or ""), reverse=True)
+
+
 async def funding_sources() -> dict[str, Any]:
     """What the owner may fund a request from: the hub's answer (which budgets they may hand out,
     and whom to ask for the rest) plus the keys stored on this computer that the hub can take."""
