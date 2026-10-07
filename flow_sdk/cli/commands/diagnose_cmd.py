@@ -30,12 +30,12 @@ from flow_sdk.cli.commands._common import safe_echo as _safe_echo
 # the support pair is either both ids (an issue) or both ``None`` (a clean sweep).
 _REPORT_ID_KEYS = ("diagnosis_id", "conversation_id", "flow_message_id")
 
-# One supporter instruction, run as its own turn BEFORE the diagnosis (``flow diagnose <id>``
-# in "approve each" mode), so the person whose machine it is approves it before it runs.
 _STEP_PROMPT = (
     "The person supporting this user asked for the step below, and the user approved it. "
-    "Do it now and say briefly what you found. Do NOT run the flow-diagnose skill or report.py "
-    "yet -- that comes in a later turn.\n\nStep: {step}"
+    "Do it now, and write everything it found (the command output, the file contents, the answer; "
+    "ALL of it when the step asks to print or show something) to {out}. Do NOT run the "
+    "flow-diagnose skill or report.py yet -- that comes in a later turn.\n\nStep {n}: {step}"
+    "\n\n{context}"
 )
 
 
@@ -279,6 +279,8 @@ async def _run_diagnose(
     process_options: dict | None = None,
     steps: tuple[str, ...] = (),
     approve=None,
+    step_output_dir: Path | None = None,
+    step_context: str = "",
     prompt_extra: str = "",
 ) -> int:
     """Run the flow-diagnose skill headless and stream the worker's narration.
@@ -492,11 +494,13 @@ async def _run_diagnose(
 
     try:
         try:
-            for step in steps:
+            for n, step in enumerate(steps, 1):
                 if approve is not None and not approve(step):
                     emit({"type": "status", "text": f"  – Skipped (not approved): {step}"})
                     continue
-                if not await _start_turn(_STEP_PROMPT.format(step=step)):
+                out_dir = step_output_dir or Path.cwd()
+                prompt = _STEP_PROMPT.format(n=n, step=step, out=out_dir / f"step-{n}.txt", context=step_context)
+                if not await _start_turn(prompt):
                     return 1
                 await _stream()
             if not await _start_turn(prompt_text):
@@ -646,30 +650,37 @@ def _ask(question: str) -> str:
         return ""
 
 
-def _request_prompt_extra(
-    steps: tuple[str, ...], attach_dir: Path, *, follow_here: bool, received: list[dict] | None = None
-) -> str:
-    """What the diagnosis turn is told about the request: the supporter's steps (when they were
-    approved together), what the supporter sent along, and where to put what goes back."""
-    parts = ["This diagnosis was requested by someone supporting this user; the result is sent to them."]
-    received = received or []
-    skills = [a["installed_as"] for a in received if a.get("installed_as")]
+def _request_context(attach_dir: Path, received: list[dict]) -> str:
+    """What every turn of a request run is told: who asked, what they sent and where it is, and
+    that only ``to-send/`` reaches them -- so "print X" lands in a file the supporter receives."""
+    parts = ["This run was requested by someone supporting this user; what it finds is sent to them."]
+    skills = [f"{a['installed_as']} (at {a['dir']})" for a in received if a.get("installed_as")]
     files = [a["path"] for a in received if a.get("path")]
     if skills:
         parts.append(
-            f"The supporter sent these skills, installed for this run -- use them where they apply: {', '.join(skills)}."
+            "The supporter sent these skills, installed for this run -- use them where they apply: "
+            + ", ".join(skills)
+            + "."
         )
     if files:
         parts.append("The supporter sent these files:\n" + "\n".join(files))
-    if steps and follow_here:
-        listed = "\n".join(f"{n}. {step}" for n, step in enumerate(steps, 1))
-        parts.append(
-            f"The user approved these instructions from the supporter -- follow them as part of the diagnosis:\n{listed}"
-        )
     parts.append(
-        f"If the supporter asked for log excerpts or other content, write each piece to {attach_dir}/<short-name>.txt "
-        "-- those files are sent to the supporter with the diagnosis. Never include passwords, API keys or tokens."
+        f"The supporter sees ONLY the recorded diagnosis and the files in {attach_dir} -- nothing you "
+        f"print, say or run here reaches them. Anything they should see goes in {attach_dir}/<short-name>.txt. "
+        "Never include passwords, API keys or tokens."
     )
+    return "\n\n".join(parts)
+
+
+def _request_prompt_extra(steps: tuple[str, ...], attach_dir: Path, received: list[dict]) -> str:
+    """The diagnosis turn of a request run. The supporter's steps already ran as turns of their
+    own, BEFORE it (``_run_diagnose``'s ``steps``), so this only asks for their results in the summary."""
+    parts = [_request_context(attach_dir, received)]
+    if steps:
+        parts.append(
+            "In the turns before this one you did the supporter's steps (their results are in "
+            f"{attach_dir}/step-<n>.txt). Mention what each found in the diagnosis summary."
+        )
     return "\n\n".join(parts)
 
 
@@ -728,7 +739,7 @@ async def _receive_attachments(request_id: str, attachments: list[dict], workdir
                 continue
             finally:
                 archive.unlink(missing_ok=True)
-            received.append({"kind": kind, "name": name, "installed_as": skill})
+            received.append({"kind": kind, "name": name, "installed_as": skill, "dir": str(target)})
         else:
             inbox = workdir / "from-supporter"
             inbox.mkdir(exist_ok=True)
@@ -857,9 +868,13 @@ async def _run_request(request_id: str, transcript_timeout: float) -> int:
             transcript_timeout,
             emit=emit,
             process_options={**process_options, "workdir": str(workdir)},
-            steps=steps if approve is not None else (),
+            # The supporter's steps always run first, each a turn of its own: "approve all" only
+            # skips the per-step question (``approve`` stays None), never the order.
+            steps=steps,
             approve=approve,
-            prompt_extra=_request_prompt_extra(steps, attach_dir, follow_here=approve is None, received=received),
+            step_output_dir=attach_dir,
+            step_context=_request_context(attach_dir, received),
+            prompt_extra=_request_prompt_extra(steps, attach_dir, received),
         )
         if rc != 0 or not done.get("diagnosis_id"):
             typer.echo("Nothing was sent: the diagnosis did not complete.", err=True)
