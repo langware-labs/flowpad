@@ -97,6 +97,9 @@ class FlowChannel(MessageSource):
     noun: ClassVar[str] = ""
     #: Its messages arrive only through the hub's claim (``events_from_webhook``); it fetches nothing itself.
     delivered_by_hub: ClassVar[bool] = True
+    #: The claim already admits only its proven sender (and ``events_from_webhook`` keeps only the linked one), so
+    #: an agent answers whatever arrives — on every machine the claim delivers to, with no allowlist to carry there.
+    open_inbound: ClassVar[bool] = True
 
     def __init__(self, binding: SourceBinding, hub: Optional[FlowHub] = None) -> None:
         super().__init__(binding)

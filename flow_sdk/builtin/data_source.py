@@ -1338,7 +1338,7 @@ class DataSource(Entity):
     async def _hub_route(self) -> Optional[dict]:
         """The hub claim that delivers to THIS channel, or None. The hub is the only place claims live, so this
         is always the current answer."""
-        return _claim_for(await _hub_claims(), str(self.id))
+        return next(iter(_claims_for(await _hub_claims(), str(self.id))), None)
 
     async def route_places(self) -> list[dict]:
         """Where this channel's messages can go: this computer, and each cloud placement of the agent that
@@ -1365,7 +1365,10 @@ class DataSource(Entity):
 
         from flow_sdk.instance_settings.runtime import instance_uid  # noqa: PLC0415
 
-        claim, places = await asyncio.gather(self._hub_route(), self.route_places())
+        claims, places = await asyncio.gather(_hub_claims(), self.route_places())
+        mine = _claims_for(claims, str(self.id))
+        # The first claim is the one "Delivered to" switches; any more deliver the same messages elsewhere too.
+        claim = mine[0] if mine else None
         current = ""
         if claim is not None:
             target = claim.get("target") or {}
@@ -1373,7 +1376,8 @@ class DataSource(Entity):
                 current = "this"
             elif target.get("kind") == "node":
                 current = next((p["key"] for p in places if p.get("node_typeid") == target.get("node_typeid")), "")
-        return ApiSuccessResponse(data={"claim": claim, "places": places, "current": current})
+        also = [_place_of(c, places) for c in mine[1:]]
+        return ApiSuccessResponse(data={"claim": claim, "places": places, "current": current, "also": also})
 
     @core_action.get(action_name="channels")
     async def channels_action(cls) -> ApiResponse:
@@ -1394,16 +1398,25 @@ class DataSource(Entity):
 
         claims, sources = await asyncio.gather(_hub_claims(), DataSource.get_all({}))
         instance = instance_uid()
-        by_channel = {str((c.get("target") or {}).get("data_source_id") or ""): c for c in claims}
+        by_channel: dict[str, list[dict]] = {}
+        for c in claims:
+            by_channel.setdefault(str((c.get("target") or {}).get("data_source_id") or ""), []).append(c)
         rows: list[dict] = []
         for source in sources or []:
             if not is_message_source(source):
                 continue
             driver = DataDriver.loaded(source.provider)
             by_hub = bool(getattr(getattr(driver, "cls", None), "delivered_by_hub", False))
-            rows.append(_channel_row(by_channel.pop(str(source.id), None), instance, source, by_hub=by_hub))
+            # One row per place it is delivered to (a channel with no claim: one row).
+            for claim in by_channel.pop(str(source.id), None) or [None]:
+                rows.append(_channel_row(claim, instance, source, by_hub=by_hub))
         # The caller's claims whose channel is not here (the vendor's root is nobody's channel).
-        rows += [_channel_row(c, instance) for c in by_channel.values() if (c.get("claim") or {}).get("kind") != "root"]
+        rows += [
+            _channel_row(c, instance)
+            for group in by_channel.values()
+            for c in group
+            if (c.get("claim") or {}).get("kind") != "root"
+        ]
         return ApiSuccessResponse(data={"channels": rows})
 
     @core_action.post(action_name="set_route")
@@ -1429,6 +1442,28 @@ class DataSource(Entity):
         if not moved:
             return ApiFailResponse(message="the hub did not take the new place", status_code=502)
         return ApiSuccessResponse(data={"claim": moved, "current": place})
+
+    @core_action.post(action_name="add_route")
+    async def add_route_action(self) -> ApiResponse:
+        """POST /api/v1/graph/data_source/{id}/add_route ``{"place": <deployment id>}`` — ALSO deliver this channel's
+        messages to one of its agent's cloud placements: a second hub claim for the same proven sender (the first
+        is its proof), targeted at that machine's copy of this channel. Each place answers on its own."""
+        from flow_sdk.cloud_client.transport.hub_http import hub_post  # noqa: PLC0415
+
+        place = str((await self._body()).get("place") or "")
+        claim = await self._hub_route()
+        key = str(((claim or {}).get("claim") or {}).get("key") or "")
+        if claim is None or not key:
+            return ApiFailResponse(message="connect this channel first — its claim is the proof", status_code=404)
+        chosen = next((p for p in await self.route_places() if p["key"] == place and p.get("node_typeid")), None)
+        if chosen is None:
+            return ApiFailResponse(message="no such place for this channel", status_code=404)
+        target = {"kind": "node", "node_typeid": chosen["node_typeid"], "data_source_id": str(self.id)}
+        body = {"parent": f"@{claim.get('provider')}", "claim": {"kind": "user", "key": key}, "target": target}
+        added = await hub_post("webhook", body, None, "chain")
+        if not added:
+            return ApiFailResponse(message="the hub did not take the new place", status_code=502)
+        return ApiSuccessResponse(data={"claim": added, "place": place})
 
     @core_action.post(action_name="step")
     async def step_action(self) -> ApiResponse:
@@ -1903,9 +1938,17 @@ async def _hub_claims() -> list[dict]:
     return [r for r in rows or [] if isinstance(r, dict)]
 
 
-def _claim_for(claims: list[dict], source_id: str) -> Optional[dict]:
-    """The claim that delivers to the channel ``source_id``, or None."""
-    return next((c for c in claims if str((c.get("target") or {}).get("data_source_id") or "") == source_id), None)
+def _claims_for(claims: list[dict], source_id: str) -> list[dict]:
+    """The claims that deliver to the channel ``source_id`` (one per place it is delivered to), oldest first."""
+    found = [c for c in claims if str((c.get("target") or {}).get("data_source_id") or "") == source_id]
+    return sorted(found, key=lambda c: (float(c.get("proven_at") or 0), str(c.get("id") or "")))
+
+
+def _place_of(claim: dict, places: list[dict]) -> dict:
+    """Where an additional claim delivers, named as the route's places name it."""
+    node = str((claim.get("target") or {}).get("node_typeid") or "")
+    found = next((p for p in places if node and p.get("node_typeid") == node), None)
+    return {"claim_id": str(claim.get("id") or ""), "key": (found or {}).get("key", ""), "label": (found or {}).get("label", "")}
 
 
 def _channel_row(claim: Optional[dict], instance: str, source=None, *, by_hub: bool = False) -> dict:
