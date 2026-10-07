@@ -18,7 +18,7 @@ VIEWERS = [p.parent for p in (ASSETS / "webapp").glob("*/webapp.json") if json.l
 
 
 def test_the_three_viewers_ship():
-    assert {v.name for v in VIEWERS} >= {"data-viewer", "eval-viewers", "navigator-viewers"}
+    assert {v.name for v in VIEWERS} >= {"data-viewer", "eval-viewers", "navigator-viewers", "diagnosis-viewer"}
 
 
 @pytest.mark.parametrize("folder", VIEWERS, ids=lambda p: p.name)

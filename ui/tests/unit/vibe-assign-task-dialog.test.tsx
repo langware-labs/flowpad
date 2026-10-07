@@ -241,6 +241,19 @@ describe('AskForHelpDialog — asking again', () => {
     expect(typeof body.conversation_id).toBe('string'); // the asker's id: a resend is the same request
   });
 
+  it('"Send diagnostic" is on by default and replaces the transcript: nothing is attached for it', async () => {
+    const body = (await submit()) as Record<string, unknown>;
+    expect(body.diagnose).toBe(true);
+    expect(body.context ?? []).toEqual([]);
+  });
+
+  it('unticking "Send diagnostic" asks without one', async () => {
+    const body = (await submit(() => {
+      fireEvent.click(screen.getByTestId('ask-for-help-send-diagnostic'));
+    })) as Record<string, unknown>;
+    expect(body.diagnose).toBe(false);
+  });
+
   it('a file picked with "+" rides with the request', async () => {
     const shot = new File([new Uint8Array([1, 2, 3])], 'shot.png', { type: 'image/png' });
     const form = (await submit(() => {

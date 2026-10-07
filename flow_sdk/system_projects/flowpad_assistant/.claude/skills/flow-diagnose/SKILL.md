@@ -95,6 +95,16 @@ plain-language "To Summarize:" line.
 
 ## Instructions
 
+### Step 0 — Start from the sweep you were handed
+
+`flow diagnose` runs the **diagnose spec** first (the project's own
+`agentic-assets/diagnose/*`, else the shipped `flowpad` one — fixed checks, no LLM) and puts its
+`DiagnosisSpec` JSON in your prompt: its `findings` (catalog ids such as `A2`, `C6`), the machine
+(`environment`) and anything that went wrong while it ran (`errors`). Treat those checks as done —
+do not repeat them; confirm, explain and repair from there, and record (Step 7) what you concluded.
+A `status` of `partial` means the sweep itself failed or timed out: then run the checks below
+yourself.
+
 ### Step 1 — Detect platform, read optional error text
 
 Detect OS first — all subsequent commands branch on this:

@@ -43,6 +43,7 @@ import { HtmlPreview } from '@src/components/html-preview/HtmlPreview';
 import { MediaViewer } from '@src/components/media-viewer/MediaViewer';
 import { PdfViewer } from '@src/components/pdf-viewer/PdfViewer';
 import { ArchivePreview } from '@src/components/archive-preview/ArchivePreview';
+import { ValueViewer } from '@src/components/value-viewer/ValueViewer';
 import { EntityResolutionGate } from './EntityResolutionGate';
 import { MissingAssetCard } from './MissingAssetCard';
 import { PlainMarkdownAssetEditor } from './markdown/PlainMarkdownAssetEditor';
@@ -280,6 +281,10 @@ export function AssetEditorRouter({ pointer, fragment, hubReflect = false, wikiL
   if (ptr.editor === AssetEditor.ARCHIVE) {
     // A .zip is browsed as its extracted folder (a temp copy), never as text.
     return <ArchivePreview path={ptr.value} />;
+  }
+  if (ptr.editor === AssetEditor.VALUE) {
+    // One value of a kind (`*.value.json`), drawn by that kind's data viewer.
+    return <ValueViewer path={ptr.value} />;
   }
   // Entity-backed but file-less: an LLM budget has no FSRef to derive, so it returns here
   // rather than falling through to the record/mainRef machinery below.
