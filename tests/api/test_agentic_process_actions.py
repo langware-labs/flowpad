@@ -250,8 +250,8 @@ async def test_show_last_shown_survives_stale_process_save(bootstrapped_client, 
 @pytest.mark.asyncio
 async def test_show_appends_display_stack_with_dedupe(bootstrapped_client, user):
     """Each `flow show` APPENDS to ``context_data.display_stack`` (newest last,
-    stamped ``shown_at``); ``last_shown`` mirrors the newest TARGET; a consecutive
-    identical target refreshes the timestamp instead of duplicating."""
+    stamped ``shown_at``); ``last_shown`` mirrors the newest TARGET; re-showing a
+    target moves it to the end with a fresh timestamp instead of duplicating."""
     pid = await create_agentic_process(bootstrapped_client, visible=False, pty_mode=False)
     base = f"/api/v1/graph/agentic_process/{pid}"
 
@@ -276,6 +276,12 @@ async def test_show_appends_display_stack_with_dedupe(bootstrapped_client, user)
     stack2 = row["context_data"]["display_stack"]
     assert len(stack2) == 2, "consecutive identical target must not duplicate"
     assert stack2[1]["shown_at"] >= prev
+
+    # Re-show an EARLIER target → it moves to the end; still one entry per target.
+    await bootstrapped_client.post(f"{base}/show", json={"port": 3000})
+    row = await get_agentic_process(bootstrapped_client, pid)
+    stack3 = row["context_data"]["display_stack"]
+    assert [{k: e[k] for k in r1} for e in stack3] == [r2, r1], "a repeat moves to the end, never duplicates"
 
 
 @pytest.mark.asyncio
