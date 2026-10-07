@@ -842,7 +842,10 @@ async def _run_request(request_id: str, transcript_timeout: float) -> int:
 
     endpoint = brief.get("llm_endpoint_typeid") or ""
     process_options = {"llm_endpoint_typeid": endpoint, "llm_endpoint_public": True} if endpoint else {}
-    with tempfile.TemporaryDirectory(prefix="flow-diagnose-") as tmp:
+    # ``ignore_cleanup_errors``: on Windows a folder something still has open cannot be deleted,
+    # and the delete runs BEFORE the send below -- a failed cleanup must not throw away a finished
+    # diagnosis. A folder left behind in the OS temp dir is the lesser loss.
+    with tempfile.TemporaryDirectory(prefix="flow-diagnose-", ignore_cleanup_errors=True) as tmp:
         # The run's own folder: what the supporter sent goes in, what goes back is written to
         # ``to-send/``, and all of it is gone when the run ends.
         workdir = Path(tmp)
