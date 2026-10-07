@@ -48,7 +48,7 @@ def test_the_actions_are_reachable_over_http_not_just_callable():
     from flow_sdk.actions.action_registry import action as registry
 
     registered = set(registry.function_registry)
-    for name in ("poll_now", "reset", "purge_items", "replay", "choices", "channels"):
+    for name in ("poll_now", "reset", "purge_items", "replay", "choices", "channels", "add_route"):
         assert f"data_source.{name}" in registered, f"{name} is not routable"
 
     # There is deliberately NO `create` override: the generic handler already
@@ -57,7 +57,7 @@ def test_the_actions_are_reachable_over_http_not_just_callable():
     assert "data_source.create" not in registered
 
     for name in ("poll_now_action", "reset_action", "purge_items_action",
-                 "replay_action", "choices_action", "channels_action"):
+                 "replay_action", "choices_action", "channels_action", "add_route_action"):
         params = set(inspect.signature(getattr(DataSource, name)).parameters) - {"self", "cls"}
         assert not params, (
             f"DataSource.{name} declares {sorted(params)}; the dispatcher must fill "

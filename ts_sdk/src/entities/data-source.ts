@@ -109,6 +109,8 @@ export interface ChannelRoute {
   places: ChannelRoutePlace[];
   /** `this`, a deployment id, or '' when it points elsewhere. */
   current: string;
+  /** Further places the same messages are ALSO delivered to — one more claim each (`add_route`). */
+  also?: { claim_id: string; key: string; label: string }[];
 }
 
 /** Where a channel's messages arrive, from this instance's point of view: a hub claim delivering to `this`
@@ -310,6 +312,11 @@ export class DataSource extends APIEntity<DataSource> implements IDataSource {
   /** Point this channel's messages at `place` (`this` or a deployment id). Its URL stays; the vendor is untouched. */
   async setRoute(place: string): Promise<{ claim: ChannelRouteClaim; current: string }> {
     return this.post('set_route', { place });
+  }
+
+  /** Also deliver this channel's messages to one of its agent's cloud placements (a deployment id). */
+  async addRoute(place: string): Promise<{ claim: ChannelRouteClaim; place: string }> {
+    return this.post('add_route', { place });
   }
 
   /**

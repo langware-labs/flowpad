@@ -76,3 +76,14 @@ async def test_a_reply_names_the_message_as_the_hub_named_it():
         asked = source.message_origin(f"{ME}:7", ME)
         sent = await source.reply(asked, MessageData(text="Sure."))
     assert hub.replies == [("C1", "Sure.", f"{ME}:7")] and sent.data.in_reply_to == asked
+
+
+def test_an_agent_answers_whatever_the_claim_delivers_on_any_machine():
+    """The hub's claim admits only the proven sender, so the channel is open inbound: a copy of it on the agent's cloud
+    box (which never sees the desktop's allowlist) answers too."""
+    from flow_sdk.builtin.agent_serve import admits
+    from flow_sdk.builtin.data_source import SourceStatus
+    from types import SimpleNamespace
+
+    box_copy = SimpleNamespace(provider="flow_telegram", status=SourceStatus.ACTIVE.value, allowed_senders=[])
+    assert FlowTelegramSource.open_inbound and admits(box_copy, ME)
