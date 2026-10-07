@@ -2407,7 +2407,8 @@ class Project(Entity):
 
     @action.post(action_name="deploy")
     async def deploy_action(self) -> "ApiResponse":
-        """`POST /project/<id>/deploy` — run this project's app in a cloud box.
+        """`POST /project/<id>/deploy  {"provider"}` — run this project's app in a cloud box, on ``provider``
+        (the hub's name, as an agent deploy takes it; none: ``e2b``).
 
         The web half of deployment, and the same verb an Agent gets. A micro app
         is deployed by deploying the project that holds it: the project is what
@@ -2430,8 +2431,9 @@ class Project(Entity):
         if not actor:
             return ApiFailResponse(message="deploy requires an authenticated user", status_code=401)
         try:
+            body = (await request_info.get_post_data()) or {}
             await self.ensure_on_hub()
-            data = await deploy_entity_to_cloud(self)
+            data = await deploy_entity_to_cloud(self, provider=str(body.get("provider") or "").strip() or None)
         except Exception as exc:
             return ApiFailResponse(message=f"deploy failed: {exc}")
         return ApiSuccessResponse(data={"project_id": self.id, **data})

@@ -285,14 +285,15 @@ async def reflect_to_hub(
         # the JSON body and raises HubError on non-200 (e.g. 403 owner-only),
         # which propagates to the caller verbatim.
         hub_resp = await hub_delete(et, hub_id, action=a.action_name, sub_path=sub_path, payload=body or {})
-    elif verb in ("put", "patch") and is_roster:
-        # Role change — PUT ``/<type>/<id>/members`` with ``{user_id|user_email|
-        # invitation_id, role}``. Without this branch the generic PUT below would
-        # reflect the body as a bare entity update onto ``/<type>/<id>``, silently
-        # writing the member selector onto the conversation row instead of hitting
-        # the hub's gated ``update_membership``. Raises HubError on non-200 (e.g.
+    elif verb in ("put", "patch") and a.action_name != "update":
+        # A NAMED action PUTs to its own hub endpoint, sub-path included — a role
+        # change (``members``), a public-access stamp (``access/public/visitor``).
+        # Without this branch the generic PUT below would reflect the body as a
+        # bare entity update onto ``/<type>/<id>``, silently writing it onto the
+        # row. ``update`` is the name the framework gives a PUT with no action
+        # segment — the bare field update below. Raises HubError on non-200 (e.g.
         # 403 from the hub's ``can_assign`` ceiling), propagated to the caller.
-        hub_resp = await hub_put(et, hub_id, body or {}, action=a.action_name)
+        hub_resp = await hub_put(et, hub_id, body or {}, action=a.action_name, sub_path=sub_path)
     elif verb in ("put", "patch"):
         # A bare entity field update (the generic ``update`` CRUD action, e.g. a
         # conversation rename) reflects as a hub PUT to ``/<type>/<id>``. Merge the

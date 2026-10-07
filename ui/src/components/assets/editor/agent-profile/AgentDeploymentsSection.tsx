@@ -1,4 +1,4 @@
-import { Agent, Deployment, QueryRequest } from '@sdk';
+import { Agent, ComputeProviderType, Deployment, QueryRequest } from '@sdk';
 import { useEntitiesQuery } from '@sdk/react/hooks';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { useCallback, useMemo, useState } from 'react';
@@ -67,7 +67,7 @@ export function AgentDeploymentsSection({ agent }: AgentDeploymentsSectionProps)
   const deploy = useCallback(async () => {
     setDeploying(true);
     try {
-      const data = await agent.deploy();
+      const data = await agent.deploy(undefined, ComputeProviderType.E2B);
       if (data.agent_definition_error) {
         // The machine is live but is not yet the agent — a genuinely partial
         // outcome, so say so rather than showing an unqualified success.

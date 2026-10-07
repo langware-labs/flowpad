@@ -9,6 +9,9 @@ import { mainFileForType } from '../models/asset-editor';
 import { dataContext } from '../FlowSync/context';
 import { AGENT_AVATAR_FILE, AGENT_AVATAR_REF } from './agent-avatar';
 import type { IDeployment } from './deployment';
+
+/** A hub compute provider a cloud deployment lands on, by the hub's own name — sent to the hub as-is. */
+export type CloudDeployProvider = string;
 import { DataSource, type IDataSource } from './data-source';
 import { AgentMailbox, type IAgentMailbox } from './agent-mailbox';
 import { Trigger } from './trigger';
@@ -364,14 +367,17 @@ export class Agent extends APIEntity<Agent> {
    * `environment` is the placement's credential environment — `production`
    * when omitted. One cloud machine per environment.
    */
-  /** Deploy to a cloud machine (the default), or `provider: 'local'` — this computer. */
+  /**
+   * Deploy to a cloud machine — on `provider` when given, else on the provider the hub chooses — or
+   * `provider: 'local'` — this computer.
+   */
   /**
    * `tokenAllocation`: the cloud placement's own budget (see {@link AgentTokenAllocation}); `null` releases it
    * back to the owner's capped default; omitted leaves it as it is.
    */
   async deploy(
     environment?: string,
-    provider?: 'local',
+    provider?: 'local' | CloudDeployProvider,
     tokenAllocation?: AgentTokenAllocation | null,
   ): Promise<AgentDeployResult> {
     const body = {
@@ -383,17 +389,20 @@ export class Agent extends APIEntity<Agent> {
   }
 
   /**
-   * The cloud placement this agent will have in `environment` (default `production`), before it
+   * The cloud placement this agent will have on `provider` (omitted: the one the hub chooses) in `environment`
+   * (default `production`), before it
    * has a machine, and whether it is ready: each missing value can be filled ("use mine",
    * `credentialsService.useMine`) or a connection authorized (`Deployment.authorize`) before
    * `deploy`, which is refused (409 `not_ready`) until it is.
    */
   async planDeployment(
     environment?: string,
+    provider?: CloudDeployProvider,
     tokenAllocation?: AgentTokenAllocation | null,
   ): Promise<AgentPlannedDeployment> {
     const body = {
       ...(environment ? { environment } : {}),
+      ...(provider ? { provider } : {}),
       ...(tokenAllocation !== undefined ? { token_allocation: tokenAllocation } : {}),
     };
     return (await this.post('plan_deployment', Object.keys(body).length ? body : undefined)) as AgentPlannedDeployment;
