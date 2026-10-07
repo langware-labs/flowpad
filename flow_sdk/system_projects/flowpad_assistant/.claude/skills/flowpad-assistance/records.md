@@ -223,7 +223,8 @@ classes).
 ## Data schemas: define, change, apply
 
 A schema is a folder `<project>/agentic-assets/data_schema/<kind>/data_schema.json`
-(the folder name IS the kind; an external one sets `"ns"`). Datasets hold values only.
+(the folder name IS the kind; an external one sets `"ns"`). A folder that only groups
+schemas needs its own `data_schema.json` with `type` and `ns` and no shape. Datasets hold values only.
 
 Any change (edit, add, move, rename) is applied the same way, while Flowpad runs:
 
