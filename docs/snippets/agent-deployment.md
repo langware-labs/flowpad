@@ -154,7 +154,7 @@ from flow_sdk.builtin.user import User
 await flow_sdk.auth.login()
 agent = await Agent.by_name("researcher")
 actor = (await User.get_local()).typeid        # the caller
-receipt = await agent.deploy_to_cloud(actor)   # publishes through git first
+receipt = await agent.deploy_to_cloud(actor, provider="e2b")   # publishes through git first
 ```
 
 Deliberately no node and no principal: "were either passable from here they

@@ -93,10 +93,10 @@ async def test_the_hub_stores_the_url_so_use_mine_never_copies_this_computers(ho
     monkeypatch.setattr(Agent, "ensure_on_hub", _published)
 
     with pytest.raises(NotReady):
-        await agent.deploy_to_cloud("user-1", "production")
-    deployment = await agent.plan_deployment("production")
+        await agent.deploy_to_cloud("user-1", "production", provider="e2b")
+    deployment = await agent.plan_deployment("production", provider="e2b")
     copied = await use_mine(str(deployment.id))
-    await agent.deploy_to_cloud("user-1", "production")
+    await agent.deploy_to_cloud("user-1", "production", provider="e2b")
 
     assert copied["copied"] == ["POLLED_KEY", "PUSHED_KEY"], "the store already holds the webhook URL"
     assert hub.values[str(deployment.id)]["PUSHED_WEBHOOK_URL"] == hub.webhook_url("hook-pushed")

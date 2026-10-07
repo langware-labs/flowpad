@@ -70,3 +70,27 @@ const MACHINE_SIZE_HOURLY_PRICE: Record<ComputeNodeSize, string> = {
 export const AGENT_MACHINE_SIZE_LABELS: Record<ComputeNodeSize, string> = Object.fromEntries(
   AGENT_MACHINE_SIZES.map((size) => [size, `${ComputeNodeSizeLabels[size]} · ${MACHINE_SIZE_HOURLY_PRICE[size]}`]),
 ) as Record<ComputeNodeSize, string>;
+
+/**
+ * The monthly-billed machines (the hub's `gcp_vm` provider): the machine's strength and a MONTHLY
+ * price — these run, and bill, all month. Owned here for the same reason as the hourly prices.
+ *
+ * The specs are what the hub creates (`GCP_COMPUTE_SIZE_MACHINE_TYPES` in flowpad-hub config.py —
+ * change both together): sm e2-small, md e2-medium (both shared-core, bursting), lg e2-custom-4-8192.
+ * Prices are the VM alone, us-central1 on-demand at 730 h/month (Cloud Billing catalog, 2026-10-05:
+ * E2 core $0.02181159/h, ram $0.00292353/GiB-h; E2 custom core $0.02290217/h, ram $0.00306971/GiB-h),
+ * x1.7, precomputed and rounded to the dollar:
+ *   sm e2-small         (2 CPU shared, 2 GB): $12.23 -> $21/mo
+ *   md e2-medium        (2 CPU shared, 4 GB): $24.46 -> $42/mo
+ *   lg e2-custom-4-8192 (4 CPU, 8 GB):        $84.80 -> $144/mo
+ * Not included: the 20 GB boot + 30 GB workspace pd-balanced disks ($5.00) and the IPv4 ($3.65).
+ */
+const MACHINE_SIZE_MONTHLY: Record<ComputeNodeSize, string> = {
+  [ComputeNodeSize.SMALL]: '2 CPU · 2 GB · $21/mo',
+  [ComputeNodeSize.MEDIUM]: '2 CPU · 4 GB · $42/mo',
+  [ComputeNodeSize.LARGE]: '4 CPU · 8 GB · $144/mo',
+};
+
+export const AGENT_MONTHLY_MACHINE_SIZE_LABELS: Record<ComputeNodeSize, string> = Object.fromEntries(
+  AGENT_MACHINE_SIZES.map((size) => [size, `${ComputeNodeSizeLabels[size]} · ${MACHINE_SIZE_MONTHLY[size]}`]),
+) as Record<ComputeNodeSize, string>;

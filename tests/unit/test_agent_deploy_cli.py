@@ -9,6 +9,7 @@ from typer.testing import CliRunner
 
 from flow_sdk.cli import flow_cli
 from flow_sdk.cli.commands import agent_cmd
+from flow_sdk.schema.data_spec.returned_value_spec import ExitCode
 
 pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
 
@@ -25,6 +26,10 @@ def app(monkeypatch):
 
     def get(url, *, params=None, on_error, **_):
         calls.append(("GET", url, params or {}))
+        if url.endswith("/deployment/providers"):
+            if state.get("signed_out"):
+                on_error(409, {"status": "FAIL", "message": "Sign in to the hub to deploy to the cloud"})
+            return ["e2b", "gcp_vm"]
         return [{"id": AGENT_ID, "name": "researcher"}] if json.loads(params["filter"]) == {"name": "researcher"} else []
 
     def post(url, payload, *, on_error, **_):
@@ -48,7 +53,36 @@ def test_deploys_an_agent_named_by_its_name(app):
     assert result.exit_code == 0, result.stdout
     assert json.loads(result.stdout) == {"ok": True, "agent_id": AGENT_ID, "deployment_id": "d-1",
                                          "secrets": {"placed": ["STRIPE_KEY"], "failed": []}}
-    assert calls[-1][1].endswith(f"/agent/{AGENT_ID}/deploy") and calls[-1][2] == {"environment": "staging"}
+    assert calls[-1][1].endswith(f"/agent/{AGENT_ID}/deploy") and calls[-1][2] == {"environment": "staging", "provider": "e2b"}
+
+
+def test_deploys_on_the_provider_named_by_provider(app):
+    calls, _ = app
+
+    result = CliRunner().invoke(flow_cli.app, ["agent", "deploy", AGENT_ID, "--provider", "gcp_vm"])
+
+    assert result.exit_code == 0, result.stdout
+    assert calls[-1][2] == {"environment": None, "provider": "gcp_vm"}
+
+
+def test_lists_the_providers_the_hub_offers(app):
+    calls, _ = app
+
+    result = CliRunner().invoke(flow_cli.app, ["agent", "providers"])
+
+    assert result.exit_code == 0, result.stdout
+    assert json.loads(result.stdout) == {"ok": True, "providers": ["e2b", "gcp_vm"]}
+    assert calls[-1][1].endswith("/deployment/providers")
+
+
+def test_providers_while_signed_out_is_refused(app):
+    _, state = app
+    state["signed_out"] = True
+
+    result = CliRunner().invoke(flow_cli.app, ["agent", "providers"])
+
+    assert result.exit_code == int(ExitCode.REFUSED)
+    assert "Sign in to the hub" in result.output
 
 
 def test_a_readiness_refusal_exits_1_with_what_is_missing(app):
