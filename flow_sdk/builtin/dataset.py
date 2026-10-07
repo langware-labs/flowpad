@@ -259,6 +259,12 @@ class Dataset(Entity):
             main=_main_document(shape) if named else ANNOTATION_FILE,
         )
 
+    def set_data(self, example_id: str, data: dict) -> None:
+        """Replace one example's free ``data`` (a suite tag, a note) -- its inputs and golds untouched."""
+        from flow_sdk.schema.data_spec.layout import dataset_layout_for  # noqa: PLC0415
+
+        dataset_layout_for(self.data_layout).set_data(self._folder(), example_id, dict(data), dataset_id=self.id)
+
     @property
     def row_type(self) -> Any:
         """The ``ExampleSpec`` every row of this dataset is -- typed when ``spec`` names its slots."""

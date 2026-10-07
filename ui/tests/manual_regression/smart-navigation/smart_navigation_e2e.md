@@ -17,6 +17,6 @@ Jev).
 5. **Review.** Open its editor (`/dock/app/<editor>?subject=dataset-<id>`). Filter **needs label**,
    click **Correct** on a row → its gold is written (`ground_truth/decision.json`) and it leaves the
    filter.
-6. **Train / evaluate.** `navigator_eval.evaluate(Dataset.at(navigation_log.folder()), kinds=("train",))`
+6. **Train / evaluate.** `python -m flow_sdk.evals <log folder> --kinds train`
    scores the reviewed rows. Run it with the instance's env (`set -a; . ./.env.<instance>.local`) so the
    process reaches the hub's decision API — without it every row re-runs as `agentic`.

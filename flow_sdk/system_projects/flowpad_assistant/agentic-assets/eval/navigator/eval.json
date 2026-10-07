@@ -1,0 +1,9 @@
+{
+  "name": "navigator",
+  "dataset_kind": "navigator.dataset",
+  "kinds": ["eval"],
+  "entry": "eval.py",
+  "metrics": ["precision", "coverage", "agentic_recall", "confident_wrong", "feasible_accuracy"],
+  "slices": ["data.suite", "data.group", "labels.feasible", "input.here.view"],
+  "description": "The smart navigator through the public SDK (flow_sdk.navigation.decide), each example replayed on its own recorded here and search candidates."
+}

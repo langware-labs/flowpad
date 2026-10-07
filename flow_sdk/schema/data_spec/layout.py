@@ -146,6 +146,9 @@ class DatasetLayout:
                  main: str = ANNOTATION_FILE) -> Path:
         raise NotImplementedError("annotate is io_folder only — a CSV dataset is rewritten whole")
 
+    def set_data(self, folder, example_id_: str, data: dict[str, Any], *, dataset_id: str) -> Path:
+        raise NotImplementedError("set_data is io_folder only — a CSV dataset is rewritten whole")
+
     def index(self, folder, *, dataset_id: str) -> list[dict[str, Any]]:
         """Per-example scalars (id, source item, kind, gold present) without
         reading the payloads. Only a per-example layout can answer."""
@@ -662,6 +665,15 @@ class FolderLayout(DatasetLayout):
         annotations = list(metadata.get("annotations") or [])
         annotations.append({"by": by, "at": datetime.now(timezone.utc).isoformat()})
         metadata["annotations"] = annotations
+        self.write_example_meta(ex_dir, metadata, data)
+        return ex_dir
+
+    def set_data(self, folder, example_id_: str, data: dict[str, Any], *, dataset_id: str) -> Path:
+        """Replace one example's free ``data`` (its ``example.json`` data section); metadata is kept."""
+        ex_dir = self.example_dir(folder, example_id_, dataset_id=dataset_id)
+        if ex_dir is None:
+            raise LookupError(f"no example {example_id_} in {folder}")
+        metadata, _ = _load_example_meta(ex_dir)
         self.write_example_meta(ex_dir, metadata, data)
         return ex_dir
 
