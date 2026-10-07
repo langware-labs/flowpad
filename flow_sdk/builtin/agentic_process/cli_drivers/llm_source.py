@@ -394,7 +394,7 @@ def _hub_spendable() -> bool:
     return _hub_has_token() or public_binding() is not None
 
 
-async def resolve_constraint(scope: LLMScope) -> tuple[str, LLMSourceOrigin] | None:
+async def resolve_constraint(scope: LLMScope) -> tuple[str, LLMSourceOrigin, bool] | None:
     """The endpoint this question is REQUIRED to answer with, and who required it.
 
     Process beats project. A scope with no project contributes nothing rather than
@@ -407,7 +407,7 @@ async def resolve_constraint(scope: LLMScope) -> tuple[str, LLMSourceOrigin] | N
     pin was invisible on the one screen whose job is to say what funds a spawn.
     """
     if scope.process_llm_endpoint_typeid:
-        return scope.process_llm_endpoint_typeid, LLMSourceOrigin.PROCESS
+        return scope.process_llm_endpoint_typeid, LLMSourceOrigin.PROCESS, scope.process_llm_endpoint_public
 
     from flow_sdk.builtin.project import Project
 
@@ -422,12 +422,12 @@ async def resolve_constraint(scope: LLMScope) -> tuple[str, LLMSourceOrigin] | N
             project = None
     typeid = str(getattr(project, "llm_endpoint_typeid", "") or "") if project is not None else ""
     if typeid:
-        return typeid, LLMSourceOrigin.PROJECT
+        return typeid, LLMSourceOrigin.PROJECT, False
     return None
 
 
 def _apply_constraint(
-    candidates: list[Candidate], typeid: str, origin: LLMSourceOrigin, hub_logged_in: bool
+    candidates: list[Candidate], typeid: str, origin: LLMSourceOrigin, known_public: bool, hub_logged_in: bool
 ) -> list[Candidate]:
     """Render the constraint ONTO the list: the named endpoint stays, everything else
     comes back ineligible carrying the sentence that says why.
@@ -461,7 +461,9 @@ def _apply_constraint(
         # emphatically it was named.
         from flow_sdk.instance_settings.llm_endpoint import public_binding  # noqa: PLC0415
 
-        public = public_binding(typeid) is not None
+        # Public when the box holds a public binding to it, or the PIN itself says so
+        # (``AgenticProcess.llm_endpoint_public`` -- one process spending a public budget).
+        public = known_public or public_binding(typeid) is not None
         unusable = "" if hub_logged_in or public else "this box is not logged in to the hub"
         unusable_code = "" if not unusable else LLMSourceRefusal.HUB_SIGNED_OUT.value
         stub = _hub_stub(typeid, name=typeid, public=public)
@@ -572,7 +574,7 @@ def _overlay(
     candidates: list[Candidate],
     cap,
     worker_type: str,
-    constraint: tuple[str, LLMSourceOrigin] | None,
+    constraint: tuple[str, LLMSourceOrigin, bool] | None,
 ) -> list[Candidate]:
     """The ranked answer for an inventory that has ALREADY been read.
 
@@ -676,7 +678,7 @@ async def llm_picker_view(worker_type: str, scope: LLMScope = LLMScope()) -> Pic
     return await picker_view_for(worker_type, await resolve_constraint(scope))
 
 
-async def picker_view_for(worker_type: str, constraint: tuple[str, LLMSourceOrigin] | None) -> PickerView:
+async def picker_view_for(worker_type: str, constraint: tuple[str, LLMSourceOrigin, bool] | None) -> PickerView:
     """:func:`llm_picker_view` for a constraint that has already been resolved.
 
     The batch form. ``resolve_constraint`` is a project lookup and does not depend on the harness, so

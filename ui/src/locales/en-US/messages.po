@@ -51,9 +51,21 @@ msgstr "— before"
 msgid "— current"
 msgstr "— current"
 
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
+msgid "— for this run only, optional"
+msgstr "— for this run only, optional"
+
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
+msgid "— one step per line, optional"
+msgstr "— one step per line, optional"
+
 #: src/pages/home-landing/feed/FeedEntryCard.tsx
 msgid "— open, peek, or get highlighted here"
 msgstr "— open, peek, or get highlighted here"
+
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
+msgid "— optional; pins every call to it"
+msgstr "— optional; pins every call to it"
 
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
 msgid "— show annotation gutter"
@@ -254,6 +266,11 @@ msgstr "{0, plural, one {# team} other {# teams}}"
 #: src/components/conversation/FlowMessageBubble.tsx
 msgid "{0}"
 msgstr "{0}"
+
+#. placeholder {0}: s.name
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
+msgid "{0} — ask {manager}"
+msgstr "{0} — ask {manager}"
 
 #. placeholder {0}: labelFor(key)
 #: src/components/browseable-tree/adapters/useFavoritesRoots.tsx
@@ -522,6 +539,11 @@ msgstr "{0} issues"
 msgid "{0} issues · {1} divergences · {2} lanes · {3}"
 msgstr "{0} issues · {1} divergences · {2} lanes · {3}"
 
+#. placeholder {0}: k.provider
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
+msgid "{0} key"
+msgstr "{0} key"
+
 #. placeholder {0}: spec.brand
 #. placeholder {1}: spec.keyPrefix
 #: src/components/llm-endpoints/endpoint-catalog.ts
@@ -538,6 +560,11 @@ msgstr "{0} messages"
 #: src/components/assets/editor/agent-profile/deployment/ThreadPane.tsx
 msgid "{0} messages · {1} turns"
 msgstr "{0} messages · {1} turns"
+
+#. placeholder {0}: claim.misroutes
+#: src/components/data-sources/MessageChannelsList.tsx
+msgid "{0} misrouted"
+msgstr "{0} misrouted"
 
 #. placeholder {0}: row.missing.length
 #: src/components/agent-resources/AgentCredentialsSection.tsx
@@ -818,8 +845,8 @@ msgid "{hostName} declined the live session."
 msgstr "{hostName} declined the live session."
 
 #: src/components/collaboration/LiveSessionView.tsx
-msgid "{hostName} paused the live session."
-msgstr "{hostName} paused the live session."
+#~ msgid "{hostName} paused the live session."
+#~ msgstr "{hostName} paused the live session."
 
 #: src/components/collaboration/LiveSessionView.tsx
 msgid "{hostName} reviews"
@@ -1075,6 +1102,10 @@ msgstr "{trimmed} was added to {parentLabel}."
 msgid "{unopened} new"
 msgstr "{unopened} new"
 
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestFields.tsx
+msgid "{until} (closed)"
+msgstr "{until} (closed)"
+
 #: src/components/token-plan/token-plan-math.ts
 msgid "{used} of {limit} {windowText}"
 msgstr "{used} of {limit} {windowText}"
@@ -1282,6 +1313,7 @@ msgstr "1w"
 msgid "2. Copy & open the sign-in page"
 msgstr "2. Copy & open the sign-in page"
 
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
 #: src/components/lens-viewer/ClaudeErrorsViewer.tsx
 msgid "24 hours"
 msgstr "24 hours"
@@ -1294,6 +1326,10 @@ msgstr "24h"
 msgid "24h+ idle"
 msgstr "24h+ idle"
 
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
+msgid "3 days"
+msgstr "3 days"
+
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "3. Your browser will show a code — paste it here"
 msgstr "3. Your browser will show a code — paste it here"
@@ -1303,9 +1339,17 @@ msgstr "3. Your browser will show a code — paste it here"
 msgid "4 hours"
 msgstr "4 hours"
 
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
+msgid "48 hours"
+msgstr "48 hours"
+
 #: src/components/hooks-view/HookEditor.tsx
 msgid "60"
 msgstr "60"
+
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
+msgid "7 days"
+msgstr "7 days"
 
 #: src/components/machine-overview/metrics-chart.tsx
 msgid "80% Alert Threshold"
@@ -1330,6 +1374,10 @@ msgstr "A chain draws on another endpoint and can only narrow what passes."
 #: src/components/automations/AutomationPage.tsx
 msgid "A cron expression has five parts."
 msgstr "A cron expression has five parts."
+
+#: src/components/data-sources/MessageChannelsList.tsx
+msgid "A deployment"
+msgstr "A deployment"
 
 #: src/components/automations/KindGallery.tsx
 msgid "A document is saved, a folder gets a new file."
@@ -1358,6 +1406,10 @@ msgstr "A guided setup asks for everything else this channel needs, step by step
 #: src/components/llm-endpoints/FundingProvenance.tsx
 msgid "a key the hub holds (the chain could not be read from here)"
 msgstr "a key the hub holds (the chain could not be read from here)"
+
+#: src/components/data-sources/MessageChannelsList.tsx
+msgid "A machine"
+msgstr "A machine"
 
 #: src/components/automations/AutomationPage.tsx
 msgid "a minute"
@@ -1503,6 +1555,14 @@ msgstr "Accepting your invitation…"
 #: src/components/project-activity-strip/RecentConversationsStrip.tsx
 msgid "Accepting…"
 msgstr "Accepting…"
+
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
+msgid "Accepts runs for"
+msgstr "Accepts runs for"
+
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestFields.tsx
+msgid "Accepts runs until"
+msgstr "Accepts runs until"
 
 #: src/components/graph-view/ui/NodePanel.tsx
 msgid "Access"
@@ -2014,6 +2074,7 @@ msgstr "Adopt a support desk published as a git repository"
 #: src/components/automations/KindGallery.tsx
 #: src/components/credentials/CredentialDialog.tsx
 #: src/components/data-sources/DataSourceDialog.tsx
+#: src/components/data-sources/DataSourcePage.tsx
 #: src/components/organization/budgets/AdvancedEndpointDialog.tsx
 #: src/components/organization/budgets/AdvancedEndpointDialog.tsx
 #: src/i18n/pref-labels.ts
@@ -2459,9 +2520,17 @@ msgstr "Already up to date"
 msgid "Also"
 msgstr "Also"
 
+#: src/components/data-sources/ChannelRouteControl.tsx
+msgid "Also deliver to…"
+msgstr "Also deliver to…"
+
 #: src/i18n/pref-labels.ts
 msgid "Also open sidecar OS Terminal"
 msgstr "Also open sidecar OS Terminal"
+
+#: src/components/data-sources/ChannelRouteControl.tsx
+msgid "Also to"
+msgstr "Also to"
 
 #: src/components/collaboration/LiveSessionView.tsx
 msgid "Always allow sessions from {guestName}"
@@ -2613,6 +2682,10 @@ msgstr "Annotations"
 msgid "Announcements shown at startup"
 msgstr "Announcements shown at startup"
 
+#: src/components/data-sources/MessageChannelsList.tsx
+msgid "Another Flowpad instance"
+msgstr "Another Flowpad instance"
+
 #: src/components/assets/context-folder-sources.tsx
 #~ msgid "Another Flowpad project — its folder becomes context for this one"
 #~ msgstr "Another Flowpad project — its folder becomes context for this one"
@@ -2625,6 +2698,10 @@ msgstr "Another Flowpad project — this one depends on its folder"
 msgid "another hub budget — {label}"
 msgstr "another hub budget — {label}"
 
+#: src/components/data-sources/ChannelRouteControl.tsx
+msgid "another machine"
+msgstr "another machine"
+
 #: src/components/install/AddAssetDialog.tsx
 msgid "another project"
 msgstr "another project"
@@ -2635,6 +2712,10 @@ msgstr "Another step already uses this id — their results will overwrite each 
 
 #~ msgid "Answer here instead"
 #~ msgstr "Answer here instead"
+
+#: src/components/data-sources/MessageChannelsList.tsx
+msgid "Answered by"
+msgstr "Answered by"
 
 #~ msgid "Answered by {answeringName}"
 #~ msgstr "Answered by {answeringName}"
@@ -2878,6 +2959,18 @@ msgstr "Args"
 msgid "Arguments"
 msgstr "Arguments"
 
+#: src/components/conversation/message-lifecycle.tsx
+msgid "Arrived"
+msgstr "Arrived"
+
+#: src/components/conversation/message-lifecycle.tsx
+msgid "Arrived — not picked up yet"
+msgstr "Arrived — not picked up yet"
+
+#: src/components/data-sources/MessageChannelsList.tsx
+msgid "Arrives at"
+msgstr "Arrives at"
+
 #: src/components/artifacts/artifacts-view.tsx
 msgid "artifact"
 msgstr "artifact"
@@ -2908,6 +3001,10 @@ msgstr "Artifacts created during flow execution will appear here"
 #: src/types/ViewType.ts
 msgid "Ask"
 msgstr "Ask"
+
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
+msgid "Ask {managers} — who manages the budget you were given — to make you its admin, or to give you a budget of your own."
+msgstr "Ask {managers} — who manages the budget you were given — to make you its admin, or to give you a budget of your own."
 
 #: src/components/lens-viewer/shared/transcript-features/AnalysisControls.tsx
 msgid "Ask about this analysis…"
@@ -3119,6 +3216,10 @@ msgstr "Attach files"
 #: src/components/help/AskForHelpDialog.tsx
 msgid "Attach files or a screenshot (or paste one into the details)"
 msgstr "Attach files or a screenshot (or paste one into the details)"
+
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
+msgid "Attach more files or assets"
+msgstr "Attach more files or assets"
 
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "Attach session transcript"
@@ -3402,6 +3503,10 @@ msgstr "Back to tasks"
 msgid "Back to the conversation message that started this session"
 msgstr "Back to the conversation message that started this session"
 
+#: src/components/data-sources/DataSourcePage.tsx
+msgid "Back to the simple view"
+msgstr "Back to the simple view"
+
 #: src/components/agent-layout/error-screen/error-screen.tsx
 msgid "Backend server is not responding. Please try again later."
 msgstr "Backend server is not responding. Please try again later."
@@ -3639,6 +3744,10 @@ msgstr "Budget settings"
 msgid "Budget shared"
 msgstr "Budget shared"
 
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
+msgid "Budget source"
+msgstr "Budget source"
+
 #: src/components/token-plan/SetBudgetSheet.tsx
 msgid "Budget updated"
 msgstr "Budget updated"
@@ -3650,6 +3759,10 @@ msgstr "Budgets are administered on the hub"
 #: src/components/organization/budgets/AddPeopleDialog.tsx
 msgid "Budgets updated"
 msgstr "Budgets updated"
+
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
+msgid "Budgets you can only spend"
+msgstr "Budgets you can only spend"
 
 #: src/i18n/pref-labels.ts
 msgid "Buffer PTY writes between sync markers to prevent visible scroll jumps during TUI redraws."
@@ -3856,6 +3969,9 @@ msgstr "Can't update right now — showing the last synced list."
 #: src/components/assets/delete-asset-modal.tsx
 #: src/components/assets/editor/agent-profile/AgentPlaceConfig.tsx
 #: src/components/assets/editor/agent-profile/ShareAgentDialog.tsx
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestFields.tsx
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestFields.tsx
 #: src/components/assets/editor/markdown/ReviewSurface.tsx
 #: src/components/assets/editor/whiteboard/WhiteboardAssetEditor.tsx
 #: src/components/assets/editor/wizard/WizardViewer.tsx
@@ -4001,6 +4117,10 @@ msgstr "Cannot show this file: {error}"
 msgid "Cannot translate"
 msgstr "Cannot translate"
 
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
+msgid "Cap (USD)"
+msgstr "Cap (USD)"
+
 #: src/components/capabilities-view/CapabilitiesView.tsx
 #: src/components/collapsed-sidebar/collapsed-sidebar.tsx
 #: src/types/ViewType.ts
@@ -4055,6 +4175,10 @@ msgstr "Change the installed flow SDK version"
 msgid "Change this project's language"
 msgstr "Change this project's language"
 
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestFields.tsx
+msgid "Change to… from now"
+msgstr "Change to… from now"
+
 #: src/components/terminal/interactive-terminal/command-status-viewer/CommandStatusViewer.tsx
 msgid "changed"
 msgstr "changed"
@@ -4078,11 +4202,16 @@ msgstr "Changes"
 #~ msgid "Changes committed and pushed"
 #~ msgstr "Changes committed and pushed"
 
+#: src/components/data-sources/MessageChannelsList.tsx
+msgid "Channel"
+msgstr "Channel"
+
 #: src/components/stream-inbox-view/AttachedChannelsBar.tsx
 msgid "Channel details"
 msgstr "Channel details"
 
 #: src/components/agent-resources/AgentResourcesBody.tsx
+#: src/components/data-sources/DataSourcesView.tsx
 #: src/components/stream-inbox-view/AttachedChannelsBar.tsx
 #: src/components/top-nav-bar/use-entity-breadcrumbs.ts
 msgid "Channels"
@@ -5968,6 +6097,10 @@ msgstr "Could not link asset to cloud"
 msgid "Could not link project to cloud"
 msgstr "Could not link project to cloud"
 
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
+msgid "Could not list budgets: {loadError}"
+msgstr "Could not list budgets: {loadError}"
+
 #: src/components/automations/AutomationsList.tsx
 msgid "Could not load automations"
 msgstr "Could not load automations"
@@ -6081,9 +6214,18 @@ msgstr "Could not reach the backend. Try again in a moment."
 msgid "Could not reach this cloud machine. It may be paused."
 msgstr "Could not reach this cloud machine. It may be paused."
 
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
+msgid "Could not read the diagnosis"
+msgstr "Could not read the diagnosis"
+
 #: src/components/rag/RagChunkBrowser.tsx
 msgid "Could not read the index"
 msgstr "Could not read the index"
+
+#. placeholder {0}: errorText(error)
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
+msgid "Could not read the runs: {0}"
+msgstr "Could not read the runs: {0}"
 
 #: src/components/code-editor/SnippetView.tsx
 #: src/components/code-editor/SnippetView.tsx
@@ -6783,6 +6925,10 @@ msgstr "Create private repo"
 msgid "Create Project"
 msgstr "Create Project"
 
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
+msgid "Create request"
+msgstr "Create request"
+
 #: src/components/hooks-manager/HookForm.tsx
 msgid "Create SubAgent Hook"
 msgstr "Create SubAgent Hook"
@@ -6835,6 +6981,7 @@ msgstr "Creating skill..."
 msgid "Creating..."
 msgstr "Creating..."
 
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
 #: src/components/assets/editor/WikiResolveView.tsx
 #: src/components/collaboration/StartRoomDialog.tsx
 #: src/components/new-conversation-dialog/NewConversationDialog.tsx
@@ -7549,6 +7696,7 @@ msgid "Delivered to a place that does not hold this channel"
 msgstr "Delivered to a place that does not hold this channel"
 
 #: src/components/data-sources/ChannelRouteControl.tsx
+#: src/components/data-sources/MessageChannelsList.tsx
 msgid "Deliveries"
 msgstr "Deliveries"
 
@@ -7817,6 +7965,17 @@ msgstr "Diagnosis recorded."
 #: src/components/account/system-diagnoses.tsx
 msgid "Diagnosis reported to the Flowpad team"
 msgstr "Diagnosis reported to the Flowpad team"
+
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
+#: src/components/quick-create/registry.ts
+msgid "Diagnosis request"
+msgstr "Diagnosis request"
+
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
+#: src/components/quick-create/registry.ts
+msgid "Diagnosis request created"
+msgstr "Diagnosis request created"
 
 #: src/components/version-popover/diagnose-modal.tsx
 msgid "Diagnosis was not recorded — try again."
@@ -8964,6 +9123,10 @@ msgstr "Every agent on this machine"
 msgid "Every allowance given, changed or removed here and in everything funded by it. Read-only."
 msgstr "Every allowance given, changed or removed here and in everything funded by it. Read-only."
 
+#: src/components/data-sources/MessageChannelsList.tsx
+msgid "Every channel that sends and receives messages, and where its messages arrive. A channel on Flowpad's own accounts arrives through the hub, which only hands each message to the place below."
+msgstr "Every channel that sends and receives messages, and where its messages arrive. A channel on Flowpad's own accounts arrives through the hub, which only hands each message to the place below."
+
 #: src/components/assets/editor/wizard/WizardViewer.tsx
 msgid "Every command this wizard ran, and what it printed"
 msgstr "Every command this wizard ran, and what it printed"
@@ -8995,6 +9158,10 @@ msgstr "every machine"
 
 #~ msgid "Every MCP server in this project is attached to this agent. Each one is resolved and attached when a session starts."
 #~ msgstr "Every MCP server in this project is attached to this agent. Each one is resolved and attached when a session starts."
+
+#: src/components/data-sources/DataSourcesView.tsx
+msgid "Every message channel and where its messages arrive"
+msgstr "Every message channel and where its messages arrive"
 
 #: src/components/automations/automation-words.ts
 msgid "Every minute"
@@ -9240,6 +9407,14 @@ msgstr "Expert Assistance"
 #: src/components/token-plan/TokenPlanView.tsx
 msgid "Expert details"
 msgstr "Expert details"
+
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
+msgid "Expires after"
+msgstr "Expires after"
+
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
+msgid "Explain the result"
+msgstr "Explain the result"
 
 #: src/pages/hub-home/HubHome.tsx
 msgid "Explore your organization and everything you can reach."
@@ -9751,6 +9926,7 @@ msgstr "Fetching…"
 msgid "Field"
 msgstr "Field"
 
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
 #: src/components/automations/automation-words.ts
 #: src/components/automations/RunDetail.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
@@ -9811,6 +9987,10 @@ msgstr "Files & Directories"
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "Files on disk not yet in the DB"
 msgstr "Files on disk not yet in the DB"
+
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
+msgid "Files: {files}"
+msgstr "Files: {files}"
 
 #: src/components/git/BranchPicker.tsx
 msgid "Filter branches…"
@@ -10035,6 +10215,7 @@ msgstr "Fit (f)"
 msgid "Fit Atlas"
 msgstr "Fit Atlas"
 
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
 #: src/components/diagnose/diagnosis-details.tsx
 msgid "Fix"
 msgstr "Fix"
@@ -10074,8 +10255,8 @@ msgid "Fixing…"
 msgstr "Fixing…"
 
 #: src/components/data-sources/ChannelRouteControl.tsx
-msgid "Flow answers from its own box · shown here"
-msgstr "Flow answers from its own box · shown here"
+#~ msgid "Flow answers from its own box · shown here"
+#~ msgstr "Flow answers from its own box · shown here"
 
 #: src/i18n/type-labels.ts
 msgid "Flow Message"
@@ -10247,6 +10428,11 @@ msgstr "Follow it on the Runs tab."
 #: src/components/graph-view/ui/TopBar.tsx
 msgid "Footprint"
 msgstr "Footprint"
+
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestFields.tsx
+msgid "For someone with no token source of their own. They spend it by the request id, up to the cap and until it expires."
+msgstr "For someone with no token source of their own. They spend it by the request id, up to the cap and until it expires."
 
 #: src/components/settings-view/settings-utils.ts
 msgid "Force a specific authentication method"
@@ -10533,9 +10719,16 @@ msgstr "Git is required to share files"
 #~ msgstr "Git is set up"
 
 #: src/components/status-bar/GitPushButton.tsx
-#: src/components/status-bar/GitPushButton.tsx
 msgid "git push"
 msgstr "git push"
+
+#: src/components/status-bar/GitPushButton.tsx
+msgid "git push — {ahead} commits to push"
+msgstr "git push — {ahead} commits to push"
+
+#: src/components/status-bar/GitPushButton.tsx
+msgid "git push — 1 commit to push"
+msgstr "git push — 1 commit to push"
 
 #: src/components/project-home/ProjectGitChecksDialog.tsx
 msgid "Git readiness"
@@ -10822,6 +11015,10 @@ msgstr "Hand the agent a recording; it answers with a spoken clip."
 #: src/pages/hub-home/ShareSandboxDialog.tsx
 msgid "Handed over to {0}"
 msgstr "Handed over to {0}"
+
+#: src/components/conversation/message-lifecycle.tsx
+msgid "Handling"
+msgstr "Handling"
 
 #: src/components/terminal/openers/AskInstallOneOfDialog.tsx
 msgid "Harness is required"
@@ -11250,6 +11447,10 @@ msgstr "https://github.com/owner/repo.git"
 #: src/components/version-popover/version-popover.tsx
 msgid "Hub"
 msgstr "Hub"
+
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
+msgid "Hub budgets you can hand out"
+msgstr "Hub budgets you can hand out"
 
 #: src/components/harness-login/HarnessLoginModal.tsx
 #~ msgid "Hub endpoint"
@@ -11781,6 +11982,11 @@ msgstr "Instruction"
 msgid "Instructions"
 msgstr "Instructions"
 
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
+msgid "Instructions for their agent"
+msgstr "Instructions for their agent"
+
 #: src/i18n/pref-labels.ts
 msgid "Interface language and text direction."
 msgstr "Interface language and text direction."
@@ -12005,6 +12211,10 @@ msgstr "It was shared with you, but its files are not here yet."
 msgid "Italic"
 msgstr "Italic"
 
+#: src/components/data-sources/MessageChannelsList.tsx
+msgid "Its agent"
+msgstr "Its agent"
+
 #: src/components/assets/editor/markdown/MarkdownEditor.tsx
 msgid "Its contents look like binary data (for example an image), so it can't be shown in the editor."
 msgstr "Its contents look like binary data (for example an image), so it can't be shown in the editor."
@@ -12012,6 +12222,10 @@ msgstr "Its contents look like binary data (for example an image), so it can't b
 #: src/components/automations/AutomationPage.tsx
 msgid "Its folder is removed too. Past runs stay in the history."
 msgstr "Its folder is removed too. Past runs stay in the history."
+
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
+msgid "its manager"
+msgstr "its manager"
 
 #: src/components/helpdesk/AddHelpdeskDialog.tsx
 msgid "Its manifest has no usable desk id, so requests would go to the default desk rather than to this one. The repository's publisher needs to fix it."
@@ -12164,6 +12378,10 @@ msgstr "Keychain approval was not granted"
 msgid "Keys and tokens this agent's runs can read"
 msgstr "Keys and tokens this agent's runs can read"
 
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
+msgid "Keys on this computer"
+msgstr "Keys on this computer"
+
 #: src/components/assets/editor/asset-cleanup/AssetCleanupReportAssetEditor.tsx
 msgid "kind"
 msgstr "kind"
@@ -12223,11 +12441,20 @@ msgstr "Labels:"
 msgid "Language"
 msgstr "Language"
 
+#: src/components/data-sources/MessageChannelsList.tsx
+msgid "lapsed"
+msgstr "lapsed"
+
 #: src/components/machine-overview/machine-overview.tsx
 #: src/components/machine-overview/machine-overview.tsx
 #: src/components/machine-overview/machine-overview.tsx
 msgid "Large"
 msgstr "Large"
+
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestFields.tsx
+msgid "Largest run"
+msgstr "Largest run"
 
 #: src/components/data-sources/ChannelRouteControl.tsx
 msgid "last"
@@ -12679,6 +12906,10 @@ msgstr "LLM API keys"
 msgid "LLM APIs"
 msgstr "LLM APIs"
 
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestFields.tsx
+msgid "LLM budget"
+msgstr "LLM budget"
+
 #: src/components/llm-endpoints/LlmEndpointsView.tsx
 #: src/i18n/type-labels.ts
 #: src/types/ViewType.ts
@@ -13010,6 +13241,10 @@ msgstr "Loading..."
 #: src/components/ask/AskForm.tsx
 #: src/components/ask/AskModal.tsx
 #: src/components/assets/AssetListView.tsx
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
 #: src/components/assets/editor/llm-endpoint/LlmEndpointAssetView.tsx
 #: src/components/assets/editor/ReportAssetShell.tsx
 #: src/components/assets/LlmEndpointsAssetList.tsx
@@ -13571,6 +13806,10 @@ msgstr "Message Thread"
 msgid "Messages"
 msgstr "Messages"
 
+#: src/components/data-sources/DataSourcePage.tsx
+msgid "Messages list, events and settings"
+msgstr "Messages list, events and settings"
+
 #: src/components/machine-overview/machine-overview.tsx
 msgid "Metrics"
 msgstr "Metrics"
@@ -13666,6 +13905,7 @@ msgstr "model"
 #: src/components/assets/editor/agent-profile/TokenAllocationField.tsx
 #: src/components/assets/editor/agent-profile/TokenAllocationField.tsx
 #: src/components/assets/editor/agent-profile/TokenAllocationField.tsx
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
 #: src/components/entity-execution-panel/ExecutionSettingsPopover.tsx
 #: src/components/llm-endpoints/UsageByChildTable.tsx
 #: src/components/settings-view/settings-utils.ts
@@ -14105,6 +14345,10 @@ msgstr "New credentials"
 msgid "New deployment"
 msgstr "New deployment"
 
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
+msgid "New diagnosis request"
+msgstr "New diagnosis request"
+
 #: src/components/agent-resources/AgentResourcesBody.tsx
 msgid "New doc"
 msgstr "New doc"
@@ -14404,6 +14648,10 @@ msgstr "no budget"
 #: src/components/token-plan/TokenPlanCard.tsx
 msgid "No budget set"
 msgstr "No budget set"
+
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
+msgid "No budget you can hand out"
+msgstr "No budget you can hand out"
 
 #: src/components/assets/LlmEndpointsAssetList.tsx
 msgid "No budgets are allocated to you"
@@ -14855,6 +15103,10 @@ msgstr "No members yet — invite someone below."
 msgid "No members yet."
 msgstr "No members yet."
 
+#: src/components/data-sources/MessageChannelsList.tsx
+msgid "No message channels yet. Add one with New source."
+msgstr "No message channels yet. Add one with New source."
+
 #: src/components/lens-viewer/shared/transcript-features/TranscriptViewer.tsx
 msgid "No messages yet"
 msgstr "No messages yet"
@@ -14862,6 +15114,10 @@ msgstr "No messages yet"
 #: src/components/conversation/ConversationContextPanel.tsx
 msgid "No messages yet — context will appear here as they arrive."
 msgstr "No messages yet — context will appear here as they arrive."
+
+#: src/components/data-sources/DataSourcePage.tsx
+msgid "No messages yet — they show up here as they arrive."
+msgstr "No messages yet — they show up here as they arrive."
 
 #: src/components/conversation/ConversationView.tsx
 msgid "No messages yet."
@@ -15374,6 +15630,10 @@ msgstr "No wizard named {0} is installed."
 msgid "Nobody has a budget in this team yet."
 msgstr "Nobody has a budget in this team yet."
 
+#: src/components/data-sources/MessageChannelsList.tsx
+msgid "Nobody yet"
+msgstr "Nobody yet"
+
 #: src/components/graph-view/ui/TopBar.tsx
 msgid "node"
 msgstr "node"
@@ -15402,6 +15662,10 @@ msgstr "none"
 #: src/pages/live-status/LiveStatus.tsx
 msgid "None"
 msgstr "None"
+
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestFields.tsx
+msgid "none — they use their own"
+msgstr "none — they use their own"
 
 #~ msgid "None (project root)"
 #~ msgstr "None (project root)"
@@ -15458,6 +15722,10 @@ msgstr "Not connected"
 #: src/components/setup-wizard/SetupStagesButton.tsx
 msgid "Not connected — continue setup: {0}"
 msgstr "Not connected — continue setup: {0}"
+
+#: src/components/data-sources/MessageChannelsList.tsx
+msgid "Not connected — press Connect"
+msgstr "Not connected — press Connect"
 
 #: src/components/assets/useAssetsModel.tsx
 #~ msgid "Not copied into context folder"
@@ -15567,6 +15835,7 @@ msgstr "Not runnable here"
 msgid "Not saved"
 msgstr "Not saved"
 
+#: src/components/conversation/ConversationView.tsx
 #: src/components/conversation/MessageBubble.tsx
 msgid "Not sent"
 msgstr "Not sent"
@@ -15639,6 +15908,10 @@ msgstr "Nothing — this wizard is run by hand. Add a trigger asset under its ag
 #~ msgid "Nothing — this wizard runs with no parameters."
 #~ msgstr "Nothing — this wizard runs with no parameters."
 
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
+msgid "Nothing attached."
+msgstr "Nothing attached."
+
 #: src/components/token-plan/BudgetHero.tsx
 msgid "Nothing caps this scope yet. Ask your team admin to set a budget."
 msgstr "Nothing caps this scope yet. Ask your team admin to set a budget."
@@ -15667,6 +15940,10 @@ msgstr "Nothing has been given out or changed here yet."
 #: src/components/machine-overview/node-secrets.tsx
 msgid "Nothing has been narrowed yet, so this machine sees every secret below."
 msgstr "Nothing has been narrowed yet, so this machine sees every secret below."
+
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
+msgid "Nothing has been sent yet."
+msgstr "Nothing has been sent yet."
 
 #: src/components/assets/editor/agent-profile/AgentPlaceActivity.tsx
 msgid "Nothing has run here yet."
@@ -15851,6 +16128,10 @@ msgstr "Notify people about this push"
 #: src/components/llm-sources/LlmSourcesView.tsx
 msgid "Now using {0}"
 msgstr "Now using {0}"
+
+#: src/components/data-sources/MessageChannelsList.tsx
+msgid "Nowhere yet"
+msgstr "Nowhere yet"
 
 #: src/components/connections-manager/sign-in-method.tsx
 msgid "OAuth"
@@ -16552,6 +16833,11 @@ msgstr "Open the assistant in its own window, beside Flowpad"
 msgid "Open the automation to fix it"
 msgstr "Open the automation to fix it"
 
+#: src/components/conversation/LiveSessionActivity.tsx
+#: src/components/conversation/LiveSessionActivity.tsx
+msgid "Open the chat this session runs in"
+msgstr "Open the chat this session runs in"
+
 #: src/components/data-sources/DataSourcePage.tsx
 msgid "Open the event bus"
 msgstr "Open the event bus"
@@ -17161,7 +17447,6 @@ msgid "Pattern sandbox"
 msgstr "Pattern sandbox"
 
 #: src/components/automations/BusStream.tsx
-#: src/components/collaboration/LiveSessionView.tsx
 #: src/components/data-sources/SourceMenu.tsx
 #: src/components/machine-overview/machine-overview.tsx
 msgid "Pause"
@@ -17179,7 +17464,6 @@ msgstr "Pause machine"
 msgid "Pause this machine"
 msgstr "Pause this machine"
 
-#: src/components/conversation/SessionCard.tsx
 #: src/components/stream-inbox-view/AttachedChannelsBar.tsx
 msgid "paused"
 msgstr "paused"
@@ -17194,6 +17478,11 @@ msgstr "Paused"
 #: src/components/data-sources/use-source-toggle.ts
 msgid "Paused."
 msgstr "Paused."
+
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestFields.tsx
+msgid "Pay for their LLM"
+msgstr "Pay for their LLM"
 
 #: src/components/assets/editor/agent-trace/AgentTraceView.tsx
 msgid "peak"
@@ -18376,6 +18665,10 @@ msgstr "Read another env file — a path inside this project. The project's .env
 msgid "read only"
 msgstr "read only"
 
+#: src/pages/entry/DiagnosisRequestLanding.tsx
+msgid "Read the result in FlowPad"
+msgstr "Read the result in FlowPad"
+
 #: src/components/entity-execution-panel/current-activity.ts
 msgid "Reading"
 msgstr "Reading"
@@ -18608,6 +18901,7 @@ msgstr "referenced but not in entities table"
 #: src/components/code-editor/AssetCompareView.tsx
 #: src/components/contact-picker/AddressBookButton.tsx
 #: src/components/cost-dashboard/CostDashboard.tsx
+#: src/components/data-sources/MessageChannelsList.tsx
 #: src/components/display-toolbar/WebappDisplayToolbar.tsx
 #: src/components/display-toolbar/WebappDisplayToolbar.tsx
 #: src/components/display-toolbar/WebappDisplayToolbar.tsx
@@ -19034,10 +19328,15 @@ msgstr "Rename this budget"
 msgid "Reopen"
 msgstr "Reopen"
 
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestFields.tsx
+msgid "Reopen for…"
+msgstr "Reopen for…"
+
 #: src/components/conversation/ConversationView.tsx
 msgid "Reopen this ticket"
 msgstr "Reopen this ticket"
 
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestFields.tsx
 #: src/components/project-home/HomeCustomizationCard.tsx
 msgid "Replace"
 msgstr "Replace"
@@ -19075,6 +19374,11 @@ msgstr "Replay since {since}"
 #: src/components/data-sources/SourceMenu.tsx
 msgid "Replay…"
 msgstr "Replay…"
+
+#: src/components/conversation/message-lifecycle.tsx
+#: src/components/conversation/message-lifecycle.tsx
+msgid "Replied"
+msgstr "Replied"
 
 #: src/components/conversation/MessageComposer.tsx
 #~ msgid "Replies"
@@ -19410,7 +19714,6 @@ msgstr "Results"
 
 #: src/components/automations/BusStream.tsx
 #: src/components/chats-navigator/ChatsNavigator.tsx
-#: src/components/collaboration/LiveSessionView.tsx
 #: src/components/data-sources/SourceMenu.tsx
 #: src/components/machine-overview/machine-overview.tsx
 #: src/components/setup-wizard/SetupWizardDialog.tsx
@@ -19646,6 +19949,7 @@ msgstr "root"
 msgid "Root"
 msgstr "Root"
 
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
 #: src/components/diagnose/diagnosis-details.tsx
 msgid "Root cause"
 msgstr "Root cause"
@@ -19924,6 +20228,8 @@ msgid "Running…"
 msgstr "Running…"
 
 #: src/components/assets/editor/agent-profile/AgentScheduleSection.tsx
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
 #: src/components/automations/AutomationPage.tsx
 #: src/components/automations/AutomationsNavigator.tsx
 #: src/components/automations/RunsView.tsx
@@ -20046,6 +20352,7 @@ msgstr "Sandboxes"
 #: src/components/anchored-markdown/CommentPin.tsx
 #: src/components/asset-manager/AssetManagerButton.tsx
 #: src/components/assets/editor/agent-profile/AgentPlaceConfig.tsx
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestFields.tsx
 #: src/components/automations/AutomationPage.tsx
 #: src/components/credentials/CredentialDialog.tsx
 #: src/components/cron-view/CronForm.tsx
@@ -20076,6 +20383,10 @@ msgstr "Save & insert"
 #: src/components/automations/TestPanel.tsx
 msgid "Save and run once now"
 msgstr "Save and run once now"
+
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestFields.tsx
+msgid "Save budget"
+msgstr "Save budget"
 
 #: src/components/spec-editor/SpecEditor.tsx
 msgid "Save changes"
@@ -20160,6 +20471,8 @@ msgstr "Saved Contexts"
 
 #: src/components/account/secrets-section.tsx
 #: src/components/assets/editor/agent-profile/deployment/DeploymentProcessPanel.tsx
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestFields.tsx
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestFields.tsx
 #: src/components/conversation/ConversationView.tsx
 #: src/components/credentials/CredentialDialog.tsx
 #: src/components/cron-view/CronForm.tsx
@@ -20813,6 +21126,10 @@ msgstr "Send a PROMPT to the recipient asking for a status summary"
 msgid "Send a test event"
 msgstr "Send a test event"
 
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
+msgid "Send along"
+msgstr "Send along"
+
 #: src/components/help/AskForHelpDialog.tsx
 msgid "Send diagnostic"
 msgstr "Send diagnostic"
@@ -20837,6 +21154,10 @@ msgstr "Send message"
 msgid "Send one minimal call through this endpoint"
 msgstr "Send one minimal call through this endpoint"
 
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
+msgid "Send this to the person you support — they run it in their terminal:"
+msgstr "Send this to the person you support — they run it in their terminal:"
+
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "Send without it"
 msgstr "Send without it"
@@ -20854,6 +21175,7 @@ msgstr "Sender refused"
 msgid "Sending in {0}: “{sendingText}”"
 msgstr "Sending in {0}: “{sendingText}”"
 
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
 #: src/components/conversation/SendProgressNotice.tsx
 #: src/components/task-bar/SharedTaskView.tsx
 msgid "Sending…"
@@ -20874,6 +21196,10 @@ msgstr "Sent"
 #: src/components/voice/CallControls.tsx
 msgid "Sent — the spoken answer lands in the conversation."
 msgstr "Sent — the spoken answer lands in the conversation."
+
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
+msgid "Sent along"
+msgstr "Sent along"
 
 #: src/components/help/AskForHelpDialog.tsx
 msgid "Sent to {to}"
@@ -21920,6 +22246,7 @@ msgid "skill"
 msgstr "skill"
 
 #: src/components/asset-manager/EntityTypeBar.tsx
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/entity-context/EntityContextPanel.tsx
 #: src/components/project-resource-list/resource-meta.ts
@@ -22789,6 +23116,7 @@ msgstr "Summarize what changed since yesterday and list what needs me."
 
 #: src/components/account/system-diagnoses.tsx
 #: src/components/assets/editor/agent-trace/AgentTraceAssetEditor.tsx
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
 #: src/components/diagnose/diagnosis-details.tsx
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Summary"
@@ -22879,6 +23207,7 @@ msgstr "Switch to dark mode"
 msgid "Switch to light mode"
 msgstr "Switch to light mode"
 
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
 #: src/components/diagnose/diagnosis-details.tsx
 msgid "Symptoms"
 msgstr "Symptoms"
@@ -23357,6 +23686,10 @@ msgstr "The credentials could not be saved."
 msgid "The default — what you want 99% of the time."
 msgstr "The default — what you want 99% of the time."
 
+#: src/pages/entry/DiagnosisRequestLanding.tsx
+msgid "The diagnosis came back. Open it in FlowPad to read every run, or have an agent explain it."
+msgstr "The diagnosis came back. Open it in FlowPad to read every run, or have an agent explain it."
+
 #: src/components/help/AskForHelpDialog.tsx
 msgid "The diagnostic follows when it is ready."
 msgstr "The diagnostic follows when it is ready."
@@ -23522,6 +23855,10 @@ msgstr "The manifest was not changed."
 #: src/components/assets/editor/task/GroupTaskDialog.tsx
 msgid "The member tasks were created; {messageFailures} notification message(s) did not go through."
 msgstr "The member tasks were created; {messageFailures} notification message(s) did not go through."
+
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestFields.tsx
+msgid "The new budget takes over at once; the current one is closed. What was spent stays spent."
+msgstr "The new budget takes over at once; the current one is closed. What was spent stays spent."
 
 #: src/components/organization/budgets/PayingProviderSetup.tsx
 msgid "The organization's budget and its stored key are deleted, and every team drawing on it stops spending until a new one is set up. Allocations already given to teams and people are not refunded — they will point at a budget that no longer exists."
@@ -23734,6 +24071,10 @@ msgstr "These conversations exist only on this device."
 msgid "These react to what a coding agent is doing — before a tool runs, when a turn ends — and decide in code. Each is a folder with a record.json and a trigger.py."
 msgstr "These react to what a coding agent is doing — before a tool runs, when a turn ends — and decide in code. Each is a folder with a record.json and a trigger.py."
 
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
+msgid "They reported"
+msgstr "They reported"
+
 #: src/components/helpdesk/HelpdeskResetButton.tsx
 msgid "They will be downloaded again the next time you open the help desk."
 msgstr "They will be downloaded again the next time you open the help desk."
@@ -23844,6 +24185,7 @@ msgstr "This collaboration room no longer exists or is unavailable."
 #~ msgstr "this computer"
 
 #: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
+#: src/components/data-sources/MessageChannelsList.tsx
 msgid "This computer"
 msgstr "This computer"
 
@@ -23851,6 +24193,10 @@ msgstr "This computer"
 #: src/components/connections-manager.tsx
 msgid "This computer · {0}"
 msgstr "This computer · {0}"
+
+#: src/components/data-sources/MessageChannelsList.tsx
+msgid "This computer (fetches its own)"
+msgstr "This computer (fetches its own)"
 
 #: src/components/graph-context/GraphContextViewer.tsx
 msgid "This context is empty."
@@ -23899,6 +24245,10 @@ msgstr "This deployment"
 #: src/components/assets/editor/agent-profile/AgentPlaceCard.tsx
 msgid "This destroys the cloud machine. Its runs and chats on that machine are lost."
 msgstr "This destroys the cloud machine. Its runs and chats on that machine are lost."
+
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
+msgid "This diagnosis request no longer exists."
+msgstr "This diagnosis request no longer exists."
 
 #: src/components/assets/editor/translations/DocLanguageSwitcher.tsx
 msgid "This document"
@@ -23995,6 +24345,10 @@ msgstr "This key contains a space or line break. It was probably copied along wi
 #: src/components/llm-endpoints/endpoint-catalog.ts
 msgid "This key looks cut short. Check the whole value was copied."
 msgstr "This key looks cut short. Check the whole value was copied."
+
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
+msgid "This key will be uploaded to the Flowpad hub and used on the other person's computer — up to the cap and until it expires. They never see the key itself."
+msgstr "This key will be uploaded to the Flowpad hub and used on the other person's computer — up to the cap and until it expires. They never see the key itself."
 
 #: src/pages/entry/OpenSandboxLanding.tsx
 msgid "This link does not point at a sandbox."
@@ -25834,6 +26188,10 @@ msgstr "Waiting for keychain approval…"
 msgid "Waiting for sign-in"
 msgstr "Waiting for sign-in"
 
+#: src/components/data-sources/MessageChannelsList.tsx
+msgid "waiting for the code"
+msgstr "waiting for the code"
+
 #: src/components/assets/editor/wizard/wizard-texts.ts
 msgid "waiting for you"
 msgstr "waiting for you"
@@ -26499,6 +26857,10 @@ msgstr "You are not part of an organization. Once you join or create one, its te
 msgid "You become the host — you decide what gets shared into the room."
 msgstr "You become the host — you decide what gets shared into the room."
 
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
+msgid "You can also add an LLM key in LLM Sources."
+msgstr "You can also add an LLM key in LLM Sources."
+
 #: src/components/conversation/MessageComposer.tsx
 #~ msgid "You can change this later inside the session."
 #~ msgstr "You can change this later inside the session."
@@ -26526,6 +26888,10 @@ msgstr "You don't have permission for this action. Contact your admin if this se
 #: src/pages/entry/entry-shell.tsx
 msgid "You have access to this {label}."
 msgstr "You have access to this {label}."
+
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
+msgid "You have no budget you can hand out."
+msgstr "You have no budget you can hand out."
 
 #: src/components/open-project-component/use-open-project.ts
 msgid "You must be logged in"
@@ -26646,6 +27012,10 @@ msgstr "your Claude Code"
 #: src/pages/entry/InstallLanding.tsx
 msgid "Your CloudNSite workspace is ready"
 msgstr "Your CloudNSite workspace is ready"
+
+#: src/pages/home-landing/feed/FeedEntryCard.tsx
+msgid "Your diagnosis request came back"
+msgstr "Your diagnosis request came back"
 
 #: src/components/collaboration/StartRoomDialog.tsx
 #: src/components/collaboration/StartRoomDialog.tsx

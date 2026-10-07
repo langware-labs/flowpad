@@ -26,7 +26,7 @@ from typing import Any, Awaitable, Callable, Optional
 import httpx
 
 from flow_sdk.cloud_client.client import ApiConfig, FlowpadClient
-from flow_sdk.cloud_client.client_hooks import HubAuthExpiredError
+from flow_sdk.cloud_client.client_hooks import ANONYMOUS_EXTENSION, HubAuthExpiredError
 from flow_sdk.cloud_client.shared.errors import HubError, _extract_error_code, _extract_reason, classify_hub_failure
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 from flow_sdk.schema.data_spec.hub_failure_spec import HubFailureKind
@@ -118,21 +118,29 @@ async def _send(
     params: dict[str, str] | None = None,
     timeout: httpx.Timeout | float = httpx.Timeout(10),
     strict: bool = False,
-) -> dict[str, Any]:
+    anonymous: bool = False,
+    raw: bool = False,
+) -> Any:
     """Send ONE hub request and answer its ``data`` — or raise ``HubError`` classified once.
 
     Every typed helper below goes through here, so a failure is read one way everywhere:
     no answer is ``offline``, a dead credential ``signed_out``, a load balancer's HTML page a
     ``server_error`` that never echoes its body. ``strict`` additionally refuses a 200 whose
     envelope says FAIL (the help paths need that; older callers still take ``{}``).
+    ``anonymous`` sends no credential (``ANONYMOUS_EXTENSION``); ``raw`` answers the body's bytes.
     """
+    extensions = {ANONYMOUS_EXTENSION: True} if anonymous else None
     try:
         async with _hub_client() as client:
             logger.info("[hub] %s %s", method, url)
             if files:
-                resp = await client.request(method, url, files=files, params=params or None, timeout=timeout)
+                resp = await client.request(
+                    method, url, files=files, params=params or None, timeout=timeout, extensions=extensions
+                )
             else:
-                resp = await client.request(method, url, json=payload, params=params or None, timeout=timeout)
+                resp = await client.request(
+                    method, url, json=payload, params=params or None, timeout=timeout, extensions=extensions
+                )
     except HubAuthExpiredError as e:
         logger.warning("[hub] %s %s auth expired: %s", method, url, e)
         raise HubError(401, "auth expired", kind=HubFailureKind.SIGNED_OUT) from e
@@ -144,6 +152,8 @@ async def _send(
     if resp.status_code != 200:
         logger.warning("[hub] %s %s returned %s: %s", method, url, resp.status_code, resp.text[:200])
         raise HubError(resp.status_code, _extract_reason(resp), code=_extract_error_code(resp))
+    if raw:
+        return resp.content
     try:
         body = resp.json()
     except ValueError as e:
@@ -152,7 +162,9 @@ async def _send(
         return {}
     if strict and str(body.get("status") or "").upper() == "FAIL":
         code = _extract_error_code(resp)
-        raise HubError(200, str(body.get("message") or "the hub refused"), code=code, kind=classify_hub_failure(400, code))
+        raise HubError(
+            200, str(body.get("message") or "the hub refused"), code=code, kind=classify_hub_failure(400, code)
+        )
     return body.get("data") or {}
 
 
@@ -174,6 +186,7 @@ async def hub_request(
     no credential it raises ``signed_out`` before anything is sent.
     """
     from flow_sdk.cloud_client.client_hooks import resolve_hub_credential  # noqa: PLC0415
+
     url = hub_graph_url(entity_type, entity_id, action, sub_path, scope=scope)
     if not url:
         raise HubError(0, "no hub configured", kind=HubFailureKind.NOT_CONFIGURED)
@@ -226,6 +239,26 @@ def hub_public_url(sub_path: str) -> Optional[str]:
     from flow_sdk.api.api_request import APIRequest
 
     return f"{base}{APIRequest.api_prefix}/{sub_path.lstrip('/')}"
+
+
+async def hub_anonymous_request(
+    method: str,
+    entity_type: BuiltinEntityType | str,
+    entity_id: str,
+    action: str,
+    payload: Any = None,
+    *,
+    raw: bool = False,
+) -> Any:
+    """One graph call whose ENTITY ID is the credential: ``_send`` with this box's login left out.
+
+    For an entity that admits whoever holds its id (``public_role``: a diagnosis request's
+    ``brief``/``submit``). ``raw`` answers the body's bytes (a file) instead of its ``data``.
+    """
+    url = hub_graph_url(entity_type, entity_id, action)
+    if not url:
+        raise HubError(0, "no hub configured", kind=HubFailureKind.NOT_CONFIGURED)
+    return await _send(method, url, payload=payload, timeout=httpx.Timeout(30), anonymous=True, raw=raw)
 
 
 async def get_info() -> Optional[dict[str, Any]]:
