@@ -31,6 +31,7 @@ context.
 - [[Whiteboard assets]] — an Excalidraw drawing.
 - [[Prompt library]] — reusable prompt text you can queue into a session.
 - [[Credentials]] — a named set of environment variables (an API key) that agents and terminals receive.
+- [[Diagnosis requests]] — diagnose Flowpad on someone else's computer: they run one command, you read the result.
 
 **New folder** — extra directories agents can see:
 

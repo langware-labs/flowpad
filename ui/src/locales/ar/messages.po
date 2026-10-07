@@ -51,9 +51,17 @@ msgstr "— قبل"
 msgid "— current"
 msgstr "— الحالي"
 
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
+msgid "— one step per line, optional"
+msgstr "— خطوة واحدة في كل سطر، اختياري"
+
 #: src/pages/home-landing/feed/FeedEntryCard.tsx
 msgid "— open, peek, or get highlighted here"
 msgstr "— يمكن الفتح أو المعاينة أو طلب التمييز هنا"
+
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
+msgid "— optional; pins every call to it"
+msgstr "— اختياري؛ تُثبَّت عليه كل الاستدعاءات"
 
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
 msgid "— show annotation gutter"
@@ -254,6 +262,11 @@ msgstr ""
 #: src/components/conversation/FlowMessageBubble.tsx
 msgid "{0}"
 msgstr "{0}"
+
+#. placeholder {0}: s.name
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
+msgid "{0} — ask {manager}"
+msgstr "{0} — اطلب من {manager}"
 
 #. placeholder {0}: labelFor(key)
 #: src/components/browseable-tree/adapters/useFavoritesRoots.tsx
@@ -515,6 +528,11 @@ msgstr "{0} مشكلة"
 #: src/components/assets/editor/agent-trace/AgentTraceView.tsx
 msgid "{0} issues · {1} divergences · {2} lanes · {3}"
 msgstr "{0} مشكلات · {1} انحرافات · {2} مسارات · {3}"
+
+#. placeholder {0}: k.provider
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
+msgid "{0} key"
+msgstr "مفتاح {0}"
 
 #. placeholder {0}: spec.brand
 #. placeholder {1}: spec.keyPrefix
@@ -1248,6 +1266,7 @@ msgstr "1أ"
 msgid "2. Copy & open the sign-in page"
 msgstr "٢. نسخ الرابط وفتح صفحة الدخول"
 
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
 #: src/components/lens-viewer/ClaudeErrorsViewer.tsx
 msgid "24 hours"
 msgstr "24 ساعة"
@@ -1260,6 +1279,10 @@ msgstr "24س"
 msgid "24h+ idle"
 msgstr "خامل لمدة 24 ساعة أو أكثر"
 
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
+msgid "3 days"
+msgstr "3 أيام"
+
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "3. Your browser will show a code — paste it here"
 msgstr "٣. سيعرض متصفحك رمزاً، يُرجى لصقه هنا"
@@ -1269,9 +1292,17 @@ msgstr "٣. سيعرض متصفحك رمزاً، يُرجى لصقه هنا"
 msgid "4 hours"
 msgstr "4 ساعات"
 
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
+msgid "48 hours"
+msgstr "48 ساعة"
+
 #: src/components/hooks-view/HookEditor.tsx
 msgid "60"
 msgstr "60"
+
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
+msgid "7 days"
+msgstr "7 أيام"
 
 #: src/components/machine-overview/metrics-chart.tsx
 msgid "80% Alert Threshold"
@@ -1457,6 +1488,14 @@ msgstr "جارٍ قبول دعوتك…"
 #: src/components/project-activity-strip/RecentConversationsStrip.tsx
 msgid "Accepting…"
 msgstr "جاري القبول…"
+
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
+msgid "Accepts runs for"
+msgstr "تقبل التشغيلات لمدة"
+
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
+msgid "Accepts runs until"
+msgstr "تقبل التشغيلات حتى"
 
 #: src/components/graph-view/ui/NodePanel.tsx
 msgid "Access"
@@ -2833,6 +2872,10 @@ msgstr "ستظهر هنا الملفات التي يتم إنشاؤها أثنا
 msgid "Ask"
 msgstr "سؤال"
 
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
+msgid "Ask {managers} — who manages the budget you were given — to make you its admin, or to give you a budget of your own."
+msgstr "اطلب من {managers} — الذي يدير الميزانية الممنوحة لك — أن يجعلك مسؤولاً عنها، أو أن يمنحك ميزانية خاصة بك."
+
 #: src/components/lens-viewer/shared/transcript-features/AnalysisControls.tsx
 msgid "Ask about this analysis…"
 msgstr "طرح سؤال حول هذا التحليل…"
@@ -3551,6 +3594,10 @@ msgstr ""
 msgid "Budget shared"
 msgstr ""
 
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
+msgid "Budget source"
+msgstr "مصدر الميزانية"
+
 #: src/components/token-plan/SetBudgetSheet.tsx
 msgid "Budget updated"
 msgstr ""
@@ -3562,6 +3609,10 @@ msgstr ""
 #: src/components/organization/budgets/AddPeopleDialog.tsx
 msgid "Budgets updated"
 msgstr ""
+
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
+msgid "Budgets you can only spend"
+msgstr "ميزانيات يمكنك الإنفاق منها فقط"
 
 #: src/i18n/pref-labels.ts
 msgid "Buffer PTY writes between sync markers to prevent visible scroll jumps during TUI redraws."
@@ -3768,6 +3819,7 @@ msgstr ""
 #: src/components/assets/delete-asset-modal.tsx
 #: src/components/assets/editor/agent-profile/AgentPlaceConfig.tsx
 #: src/components/assets/editor/agent-profile/ShareAgentDialog.tsx
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
 #: src/components/assets/editor/markdown/ReviewSurface.tsx
 #: src/components/assets/editor/whiteboard/WhiteboardAssetEditor.tsx
 #: src/components/assets/editor/wizard/WizardViewer.tsx
@@ -3907,6 +3959,10 @@ msgstr ""
 #: src/components/assets/editor/translations/useTranslations.ts
 msgid "Cannot translate"
 msgstr "تعذّر الترجمة"
+
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
+msgid "Cap (USD)"
+msgstr "الحد الأقصى (USD)"
 
 #: src/components/capabilities-view/CapabilitiesView.tsx
 #: src/components/collapsed-sidebar/collapsed-sidebar.tsx
@@ -5851,6 +5907,10 @@ msgstr "تعذّر ربط الأصل بالسحابة"
 msgid "Could not link project to cloud"
 msgstr "تعذر ربط المشروع بالسحابة"
 
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
+msgid "Could not list budgets: {loadError}"
+msgstr "تعذّر عرض الميزانيات: {loadError}"
+
 #: src/components/automations/AutomationsList.tsx
 msgid "Could not load automations"
 msgstr ""
@@ -5958,6 +6018,11 @@ msgstr "تعذّر الوصول إلى الخادم. يُرجى المحاولة
 #: src/components/assets/editor/agent-profile/AgentPlaceActivity.tsx
 msgid "Could not reach this cloud machine. It may be paused."
 msgstr ""
+
+#. placeholder {0}: errorText(error)
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
+msgid "Could not read the runs: {0}"
+msgstr "تعذّرت قراءة التشغيلات: {0}"
 
 #: src/components/code-editor/SnippetView.tsx
 #: src/components/code-editor/SnippetView.tsx
@@ -6652,6 +6717,10 @@ msgstr "إنشاء مستودع خاص"
 msgid "Create Project"
 msgstr "إنشاء المشروع"
 
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
+msgid "Create request"
+msgstr "إنشاء الطلب"
+
 #: src/components/hooks-manager/HookForm.tsx
 msgid "Create SubAgent Hook"
 msgstr "إنشاء خطاف SubAgent"
@@ -6704,6 +6773,7 @@ msgstr "جارٍ إنشاء المهارة..."
 msgid "Creating..."
 msgstr "جارٍ الإنشاء..."
 
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
 #: src/components/assets/editor/WikiResolveView.tsx
 #: src/components/collaboration/StartRoomDialog.tsx
 #: src/components/new-conversation-dialog/NewConversationDialog.tsx
@@ -7656,6 +7726,17 @@ msgstr "تم تسجيل التشخيص."
 #: src/components/account/system-diagnoses.tsx
 msgid "Diagnosis reported to the Flowpad team"
 msgstr "تم الإبلاغ عن التشخيص إلى فريق Flowpad"
+
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
+#: src/components/quick-create/registry.ts
+msgid "Diagnosis request"
+msgstr "طلب تشخيص"
+
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
+#: src/components/quick-create/registry.ts
+msgid "Diagnosis request created"
+msgstr "تم إنشاء طلب التشخيص"
 
 #: src/components/version-popover/diagnose-modal.tsx
 msgid "Diagnosis was not recorded — try again."
@@ -9070,6 +9151,10 @@ msgstr "مساعدة الخبراء"
 msgid "Expert details"
 msgstr ""
 
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
+msgid "Expires after"
+msgstr "تنتهي صلاحيته بعد"
+
 #: src/pages/hub-home/HubHome.tsx
 msgid "Explore your organization and everything you can reach."
 msgstr "استكشاف مؤسستك وكل ما يمكنك الوصول إليه."
@@ -9551,6 +9636,7 @@ msgstr "جارٍ الجلب…"
 msgid "Field"
 msgstr "الحقل"
 
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
 #: src/components/automations/automation-words.ts
 #: src/components/automations/RunDetail.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
@@ -9607,9 +9693,21 @@ msgstr "الملفات"
 msgid "Files & Directories"
 msgstr "الملفات والمجلدات"
 
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
+msgid "Files and skills their agent gets for this run only."
+msgstr "ملفات ومهارات يحصل عليها وكيلهم لهذا التشغيل فقط."
+
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
+msgid "Files from your computer"
+msgstr "ملفات من حاسوبك"
+
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "Files on disk not yet in the DB"
 msgstr "ملفات موجودة على القرص ولم تُضف بعد إلى قاعدة البيانات"
+
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
+msgid "Files: {files}"
+msgstr "الملفات: {files}"
 
 #: src/components/git/BranchPicker.tsx
 msgid "Filter branches…"
@@ -9693,6 +9791,10 @@ msgstr "تصفية المستودعات حسب المالك أو الاسم…"
 #: src/components/project-resource-list/ProjectResourceList.tsx
 msgid "Filter resources"
 msgstr "تصفية الموارد"
+
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
+msgid "Filter skills…"
+msgstr "تصفية المهارات…"
 
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "Filter types…"
@@ -9834,6 +9936,7 @@ msgstr "احتواء (f)"
 msgid "Fit Atlas"
 msgstr "ملاءمة الأطلس"
 
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
 #: src/components/diagnose/diagnosis-details.tsx
 msgid "Fix"
 msgstr "الحل المقترح"
@@ -10038,6 +10141,10 @@ msgstr ""
 #: src/components/graph-view/ui/TopBar.tsx
 msgid "Footprint"
 msgstr "البصمة"
+
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
+msgid "For someone with no token source of their own. They spend it by the request id, up to the cap and until it expires."
+msgstr "لمن لا يملك مصدر رموز خاصاً به. ينفق منه عبر معرّف الطلب، حتى الحد الأقصى وإلى أن تنتهي صلاحيته."
 
 #: src/components/settings-view/settings-utils.ts
 msgid "Force a specific authentication method"
@@ -11042,6 +11149,10 @@ msgstr "https://github.com/owner/repo.git"
 msgid "Hub"
 msgstr "Hub"
 
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
+msgid "Hub budgets you can hand out"
+msgstr "ميزانيات Hub يمكنك منحها"
+
 #: src/components/harness-login/HarnessLoginModal.tsx
 #~ msgid "Hub endpoint"
 #~ msgstr "نقطة نهاية في Hub"
@@ -11555,9 +11666,14 @@ msgstr "بدلاً من ذلك؟"
 msgid "Instruction"
 msgstr "التعليمات"
 
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
 #: src/pages/flow-page/content-panel/user-dropdown/user-dropdown.tsx
 msgid "Instructions"
 msgstr "التعليمات"
+
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
+msgid "Instructions for their agent"
+msgstr "تعليمات لوكيلهم"
 
 #: src/i18n/pref-labels.ts
 msgid "Interface language and text direction."
@@ -11783,6 +11899,10 @@ msgstr "يبدو أن محتوى الملف عبارة عن بيانات ثنا�
 msgid "Its folder is removed too. Past runs stay in the history."
 msgstr ""
 
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
+msgid "its manager"
+msgstr "مديرها"
+
 #: src/components/helpdesk/AddHelpdeskDialog.tsx
 msgid "Its manifest has no usable desk id, so requests would go to the default desk rather than to this one. The repository's publisher needs to fix it."
 msgstr ""
@@ -11930,6 +12050,10 @@ msgstr "لم يتم منح موافقة Keychain"
 msgid "Keys and tokens this agent's runs can read"
 msgstr ""
 
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
+msgid "Keys on this computer"
+msgstr "مفاتيح على هذا الحاسوب"
+
 #: src/components/assets/editor/asset-cleanup/AssetCleanupReportAssetEditor.tsx
 msgid "kind"
 msgstr "النوع"
@@ -11994,6 +12118,10 @@ msgstr "اللغة"
 #: src/components/machine-overview/machine-overview.tsx
 msgid "Large"
 msgstr "كبير"
+
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
+msgid "Largest run"
+msgstr "أكبر تشغيل"
 
 #. placeholder {0}: new Date(row.last_run).toLocaleString()
 #. placeholder {0}: new Date(trigger.last_run).toLocaleString()
@@ -12436,6 +12564,10 @@ msgstr "مفاتيح API الخاصة بـ LLM"
 msgid "LLM APIs"
 msgstr "واجهات LLM"
 
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
+msgid "LLM budget"
+msgstr "ميزانية LLM"
+
 #: src/components/llm-endpoints/LlmEndpointsView.tsx
 #: src/i18n/type-labels.ts
 #: src/types/ViewType.ts
@@ -12763,6 +12895,10 @@ msgstr "جاري التحميل..."
 #: src/components/ask/AskForm.tsx
 #: src/components/ask/AskModal.tsx
 #: src/components/assets/AssetListView.tsx
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
 #: src/components/assets/editor/llm-endpoint/LlmEndpointAssetView.tsx
 #: src/components/assets/editor/ReportAssetShell.tsx
 #: src/components/assets/LlmEndpointsAssetList.tsx
@@ -13408,6 +13544,7 @@ msgstr "النموذج"
 #: src/components/assets/editor/agent-profile/TokenAllocationField.tsx
 #: src/components/assets/editor/agent-profile/TokenAllocationField.tsx
 #: src/components/assets/editor/agent-profile/TokenAllocationField.tsx
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
 #: src/components/entity-execution-panel/ExecutionSettingsPopover.tsx
 #: src/components/llm-endpoints/UsageByChildTable.tsx
 #: src/components/settings-view/settings-utils.ts
@@ -13838,6 +13975,10 @@ msgstr ""
 msgid "New deployment"
 msgstr ""
 
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
+msgid "New diagnosis request"
+msgstr "طلب تشخيص جديد"
+
 #: src/components/agent-resources/AgentResourcesBody.tsx
 msgid "New doc"
 msgstr ""
@@ -14131,6 +14272,10 @@ msgstr ""
 #: src/components/token-plan/TokenPlanCard.tsx
 msgid "No budget set"
 msgstr ""
+
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
+msgid "No budget you can hand out"
+msgstr "لا توجد ميزانية يمكنك منحها"
 
 #: src/components/assets/LlmEndpointsAssetList.tsx
 msgid "No budgets are allocated to you"
@@ -14917,6 +15062,10 @@ msgstr "لا توجد نتائج مسندة للمهارة يمكن تحسينه
 #~ msgid "No skills found"
 #~ msgstr ""
 
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
+msgid "No skills found."
+msgstr "لم يتم العثور على مهارات."
+
 #~ msgid "No skills in this agent"
 #~ msgstr ""
 
@@ -15129,6 +15278,10 @@ msgstr "بدون"
 #: src/pages/live-status/LiveStatus.tsx
 msgid "None"
 msgstr "لا شيء"
+
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
+msgid "none — they use their own"
+msgstr "لا يوجد — يستخدمون الخاص بهم"
 
 #~ msgid "None (project root)"
 #~ msgstr "بدون (جذر المشروع)"
@@ -15351,6 +15504,10 @@ msgstr "لا شيء — هذا المعالج يُشغَّل يدويًا. أض�
 #~ msgid "Nothing — this wizard runs with no parameters."
 #~ msgstr ""
 
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
+msgid "Nothing attached."
+msgstr "لم يُرفق شيء."
+
 #: src/components/token-plan/BudgetHero.tsx
 msgid "Nothing caps this scope yet. Ask your team admin to set a budget."
 msgstr ""
@@ -15379,6 +15536,10 @@ msgstr ""
 #: src/components/machine-overview/node-secrets.tsx
 msgid "Nothing has been narrowed yet, so this machine sees every secret below."
 msgstr "لم يتم تضييق الوصول بعد، لذا تشاهد هذه الآلة كل الأسرار أدناه."
+
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
+msgid "Nothing has been sent yet."
+msgstr "لم يُرسل شيء بعد."
 
 #: src/components/assets/editor/agent-profile/AgentPlaceActivity.tsx
 msgid "Nothing has run here yet."
@@ -16867,6 +17028,10 @@ msgstr "متوقف مؤقتاً"
 #: src/components/data-sources/use-source-toggle.ts
 msgid "Paused."
 msgstr "متوقف مؤقتاً."
+
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
+msgid "Pay for their LLM"
+msgstr "ادفع تكلفة LLM الخاص بهم"
 
 #: src/components/assets/editor/agent-trace/AgentTraceView.tsx
 msgid "peak"
@@ -19277,6 +19442,7 @@ msgstr "الجذر"
 msgid "Root"
 msgstr ""
 
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
 #: src/components/diagnose/diagnosis-details.tsx
 msgid "Root cause"
 msgstr "السبب الجذري"
@@ -19554,6 +19720,8 @@ msgid "Running…"
 msgstr "جارٍ التنفيذ…"
 
 #: src/components/assets/editor/agent-profile/AgentScheduleSection.tsx
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
 #: src/components/automations/AutomationPage.tsx
 #: src/components/automations/AutomationsNavigator.tsx
 #: src/components/automations/RunsView.tsx
@@ -20145,6 +20313,14 @@ msgstr "البحث في الطرفية…"
 msgid "Search the docs…"
 msgstr "البحث في المستندات…"
 
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
+msgid ""
+"Search the Flowpad server log for 'database is locked'\n"
+"Run flow diagnose"
+msgstr ""
+"ابحث في سجل خادم Flowpad عن 'database is locked'\n"
+"شغّل flow diagnose"
+
 #~ msgid "Search this project…"
 #~ msgstr "البحث في هذا المشروع…"
 
@@ -20438,6 +20614,10 @@ msgstr "إرسال PROMPT إلى المستلم لطلب ملخص عن الحا�
 msgid "Send a test event"
 msgstr ""
 
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
+msgid "Send along"
+msgstr "إرسال مرفق"
+
 #: src/components/account/system-diagnoses.tsx
 msgid "Send failed."
 msgstr "فشل الإرسال."
@@ -20454,9 +20634,17 @@ msgstr ""
 msgid "Send message"
 msgstr "إرسال الرسالة"
 
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
+msgid "Send more files"
+msgstr "إرسال ملفات أخرى"
+
 #: src/components/llm-endpoints/TestEndpointButton.tsx
 msgid "Send one minimal call through this endpoint"
 msgstr ""
+
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
+msgid "Send this to the person you support — they run it in their terminal:"
+msgstr "أرسل هذا إلى الشخص الذي تدعمه — سيشغّله في الطرفية لديه:"
 
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "Send without it"
@@ -20495,6 +20683,10 @@ msgstr "تم الإرسال"
 #: src/components/voice/CallControls.tsx
 msgid "Sent — the spoken answer lands in the conversation."
 msgstr ""
+
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
+msgid "Sent along"
+msgstr "أُرسل مرفقاً"
 
 #: src/components/help/AskForHelpDialog.tsx
 msgid "Sent to {to}"
@@ -21525,6 +21717,7 @@ msgid "skill"
 msgstr "المهارة"
 
 #: src/components/asset-manager/EntityTypeBar.tsx
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/entity-context/EntityContextPanel.tsx
 #: src/components/project-resource-list/resource-meta.ts
@@ -21572,6 +21765,7 @@ msgid "skills"
 msgstr "المهارات"
 
 #: src/components/agent-resources/AgentResourcesBody.tsx
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
 #: src/components/lens-viewer/ClaudeContextViewer.tsx
 #: src/components/terminal/interactive-terminal/side-windows/SideWindowTypes.ts
 #: src/components/terminal/interactive-terminal/side-windows/SkillsAgentsPanel.tsx
@@ -22386,6 +22580,7 @@ msgstr ""
 
 #: src/components/account/system-diagnoses.tsx
 #: src/components/assets/editor/agent-trace/AgentTraceAssetEditor.tsx
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
 #: src/components/diagnose/diagnosis-details.tsx
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Summary"
@@ -22476,6 +22671,7 @@ msgstr "التبديل إلى الوضع الداكن"
 msgid "Switch to light mode"
 msgstr "التبديل إلى الوضع الفاتح"
 
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
 #: src/components/diagnose/diagnosis-details.tsx
 msgid "Symptoms"
 msgstr "الأعراض"
@@ -23318,6 +23514,10 @@ msgstr "هذه المحادثات موجودة على هذا الجهاز فقط
 msgid "These react to what a coding agent is doing — before a tool runs, when a turn ends — and decide in code. Each is a folder with a record.json and a trigger.py."
 msgstr ""
 
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
+msgid "They reported"
+msgstr "أبلغوا"
+
 #: src/components/helpdesk/HelpdeskResetButton.tsx
 msgid "They will be downloaded again the next time you open the help desk."
 msgstr "سيتم تنزيلها مرة أخرى في المرة القادمة التي يُفتح فيها مكتب المساعدة."
@@ -23480,6 +23680,10 @@ msgstr ""
 msgid "This destroys the cloud machine. Its runs and chats on that machine are lost."
 msgstr ""
 
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
+msgid "This diagnosis request no longer exists."
+msgstr "طلب التشخيص هذا لم يعد موجوداً."
+
 #: src/components/assets/editor/translations/DocLanguageSwitcher.tsx
 msgid "This document"
 msgstr "هذا المستند"
@@ -23575,6 +23779,10 @@ msgstr ""
 #: src/components/llm-endpoints/endpoint-catalog.ts
 msgid "This key looks cut short. Check the whole value was copied."
 msgstr ""
+
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
+msgid "This key will be uploaded to the Flowpad hub and used on the other person's computer — up to the cap and until it expires. They never see the key itself."
+msgstr "سيُرفع هذا المفتاح إلى Hub الخاص بـ Flowpad ويُستخدم على حاسوب الشخص الآخر — حتى الحد الأقصى وإلى أن تنتهي صلاحيته. لن يرى المفتاح نفسه أبداً."
 
 #: src/pages/entry/OpenSandboxLanding.tsx
 msgid "This link does not point at a sandbox."
@@ -26040,6 +26248,10 @@ msgstr ""
 msgid "You become the host — you decide what gets shared into the room."
 msgstr "أنت المضيف — القرار لك فيما يُشارك في الغرفة."
 
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
+msgid "You can also add an LLM key in LLM Sources."
+msgstr "يمكنك أيضاً إضافة مفتاح LLM في LLM Sources."
+
 #: src/components/conversation/MessageComposer.tsx
 #~ msgid "You can change this later inside the session."
 #~ msgstr ""
@@ -26067,6 +26279,10 @@ msgstr "لا تتوفر الصلاحية اللازمة لتنفيذ هذا ال
 #: src/pages/entry/entry-shell.tsx
 msgid "You have access to this {label}."
 msgstr "لديك حق الوصول إلى هذا العنصر."
+
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
+msgid "You have no budget you can hand out."
+msgstr "ليست لديك ميزانية يمكنك منحها."
 
 #: src/components/open-project-component/use-open-project.ts
 msgid "You must be logged in"
