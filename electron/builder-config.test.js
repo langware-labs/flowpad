@@ -135,4 +135,15 @@ const eq = (a, b, msg) => { assert.deepStrictEqual(a, b, msg); passed++; };
   ['main.js', 'preload.js', 'loading-renderer.js'].forEach(walk);
 }
 
+// ── uninstall drops the flowpad:// protocol key ──────────────────────────────
+// main.js registers flowpad:// at runtime (HKCU\Software\Classes\flowpad); a
+// leftover key makes browsers keep treating Flowpad as installed after uninstall.
+{
+  const fs = require('fs');
+  const nsh = fs.readFileSync(path.join(__dirname, committed.nsis.include), 'utf8');
+  ok(/!macro customUnInstall[\s\S]*DeleteRegKey HKCU "Software\\Classes\\flowpad"[\s\S]*!macroend/.test(nsh),
+    'nsis.include defines customUnInstall that deletes HKCU\\Software\\Classes\\flowpad');
+  ok(/\$\{ifNot\} \$\{isUpdated\}/.test(nsh), '…and skips the delete during an auto-update (uninstall --updated)');
+}
+
 console.log(`${path.basename(__filename)}: ${passed} assertions passed`);

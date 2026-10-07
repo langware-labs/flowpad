@@ -187,6 +187,49 @@ async def test_public_webhook_asks_the_hub_for_this_desktops_url_with_a_fresh_ve
     assert answer.exit_code is ExitCode.OK
 
 
+async def test_public_webhook_claims_the_account_on_the_hub_chain_when_the_driver_declares_one(stub, monkeypatch):
+    """A driver that names its account as a hub claim (``hub_claim``) gets a URL from the vendor's chain
+    (``webhook/@<provider>``), delivered to THIS channel on THIS instance -- not a desktop-wide webhook."""
+    from pydantic import SecretStr
+
+    from flow_sdk.cloud_client.transport import hub_http
+    from flow_sdk.instance_settings import runtime
+    from flow_sdk.sources.credentials import AuthShape, ResolvedSecrets
+
+    name, kept = stub
+    driver = DataDriver.loaded(name)
+    asked: list = []
+
+    async def hub_post(entity_type, payload, entity_id=None, action=None, *a, **kw):
+        asked.append((entity_type, action, payload))
+        return {"id": "c-1", "url": "https://hub.example/api/v1/webhook/c-1"}
+
+    async def credentials_for(_row):
+        return ResolvedSecrets(shape=AuthShape.SECRETS, values={"secret": SecretStr("app-secret")})
+
+    def hub_claim(cls, config, secrets):
+        return {"provider": "vendor", "key": config["app_id"], "proof": {"credential": secrets["secret"]}}
+
+    monkeypatch.setattr(hub_http, "hub_post", hub_post)
+    monkeypatch.setattr(runtime, "instance_uid", lambda: "inst-1")
+    monkeypatch.setattr(driver, "credentials_for", credentials_for)
+    monkeypatch.setattr(driver.cls, "hub_claim", classmethod(hub_claim), raising=False)
+    source = DataSource(provider=name, name="bot", config={"app_id": "A1"})
+
+    answer = await source.step("public-webhook")
+
+    ((entity, action, body),) = asked
+    assert (entity, action) == ("webhook", "chain")
+    assert body == {
+        "parent": "@vendor",
+        "claim": {"kind": "account", "key": "A1"},
+        "proof": {"credential": "app-secret"},
+        "target": {"kind": "desktop", "instance_id": "inst-1", "data_source_id": str(source.id)},
+    }
+    assert kept["credentials"] == [("stubcred", {"STUB_WEBHOOK_URL": "https://hub.example/api/v1/webhook/c-1"})]
+    assert answer.exit_code is ExitCode.OK
+
+
 async def test_first_turn_holds_once_an_allowed_sender_spoke_and_an_answer_followed(stub, monkeypatch):
     from types import SimpleNamespace
 

@@ -1,5 +1,6 @@
 import { FlowData, FlowElementTypes } from '@sdk';
 import { MarkdownView } from '@src/components/markdown-view';
+import { useLinkHandlers } from '@src/components/links/LinkHandlersContext';
 import { cn } from '@src/lib/utils';
 import { t } from '@lingui/core/macro';
 import { Trans } from '@lingui/react/macro';
@@ -286,6 +287,7 @@ function PlanReadyCard({
   onExecute: () => void | Promise<void>;
 }) {
   const [open, setOpen] = useState(false);
+  const links = useLinkHandlers();
   return (
     <div className="flex flex-col gap-2">
       <div className="flex items-center justify-between gap-2">
@@ -310,7 +312,7 @@ function PlanReadyCard({
       </div>
       {open && plan && (
         <div className="max-h-60 overflow-y-auto rounded-md border border-border/60 bg-muted/30 p-2 text-[12px]">
-          <MarkdownView value={plan} compact codeChrome={false} />
+          <MarkdownView value={plan} compact codeChrome={false} links={links} />
         </div>
       )}
     </div>

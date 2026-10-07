@@ -70,6 +70,8 @@ def register_builtin_kinds() -> None:
     import flow_sdk.schema.data_spec.deployment_timeline_spec  # noqa: F401  — registers ``deployment.timeline`` / ``deployment.timeline_event`` / ``deployment.thread(s)`` / ``deployment.process`` / ``deployment.code``
     import flow_sdk.schema.data_spec.diagnosis_request_spec  # noqa: F401  — registers ``diagnosis.funding`` / ``diagnosis.attachment`` / ``diagnosis.request.open`` / ``diagnosis.request.edit`` / ``diagnosis.run``
     import flow_sdk.schema.data_spec.dock_pointer_spec  # noqa: F401  — registers ``dock.pointer``
+    import flow_sdk.schema.data_spec.eval_spec  # noqa: F401  — registers ``eval.spec`` / ``eval.example`` / ``eval.run``
+    import flow_sdk.schema.data_spec.flow_json_spec  # noqa: F401  — registers ``flow.json`` / ``flow.dependency*``
     import flow_sdk.schema.data_spec.folder_change_spec  # noqa: F401  — registers ``ingest.folder_change``
     import flow_sdk.schema.data_spec.git_share_spec  # noqa: F401  — registers ``project.git_share``
     import flow_sdk.schema.data_spec.health_spec  # noqa: F401  — registers ``health.endpoint`` / ``health.node``

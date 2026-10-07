@@ -49,7 +49,7 @@ const READONLY_REASON: Record<AssetScopeKind, string | null> = {
   project:
     'Defined in the project — edits propagate to every process under this project. Attach to get a private editable copy.',
   context:
-    'Lives in one of the project’s context folders — edits propagate everywhere that folder is referenced. Attach to get a private editable copy.',
+    'Lives in one of the project’s dependencies — edits propagate everywhere that dependency is used. Attach to get a private editable copy.',
   folder:
     'Lives outside the project — edits propagate everywhere this path is referenced. Attach to get a private editable copy.',
   system: 'Ships with Flowpad — a new version replaces it on upgrade. Attach to get a private editable copy.',
@@ -61,8 +61,8 @@ const KIND_BY_SOURCE: Record<AssetSource, AssetScopeKind> = {
   inline: 'agent',
   user_dir: 'user',
   project_dir: 'project',
-  // A context folder is its own scope, not just another directory — it's the one
-  // the project deliberately pulled in, so it gets the context-folder glyph the
+  // A dependency is its own scope, not just another directory — it's the one
+  // the project deliberately pulled in, so it gets the dependency glyph the
   // rest of the app uses rather than a generic folder.
   context_dir: 'context',
   additional_dir: 'folder',

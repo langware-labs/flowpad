@@ -6,8 +6,8 @@ import type { Project, ProjectAssetMenu, ProjectMenuNode } from '@sdk';
  *
  * Backs two things in the Assets navigator: the per-type counts (which decide
  * WHICH type rows exist, not just their badges) and the nested menu under each
- * context-folder row. Because the backend walks context folders recursively, a
- * folder that is itself a Project contributes its own context folders too.
+ * dependency row. Because the backend walks dependencies recursively, a
+ * folder that is itself a Project contributes its own dependencies too.
  *
  * Read-only: `get-assets` in menu mode mints nothing and indexes nothing, so
  * calling this can never change what it reports.
@@ -15,7 +15,7 @@ import type { Project, ProjectAssetMenu, ProjectMenuNode } from '@sdk';
  * Refetch is keyed on the project's `include_dirs` CONTENT, not its identity:
  * entity updates refill the SAME array instance (`store.deepAssign`), so an
  * identity dep would freeze this at the first (usually empty) snapshot — the
- * same race `useProjectContextFolders` documents.
+ * same race `useProjectDependencies` documents.
  */
 export function useProjectAssetMenu(project: Project | null | undefined): {
   menu: ProjectAssetMenu | null;

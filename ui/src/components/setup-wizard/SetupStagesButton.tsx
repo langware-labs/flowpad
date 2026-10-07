@@ -50,7 +50,6 @@ export function SetupStagesButton({ source, spec }: { source: DataSource; spec?:
       {open && (
         <SetupWizardDialog
           source={source}
-          title={spec?.title || source.name}
           open
           onOpenChange={(next) => !next && setOpen(false)}
         />

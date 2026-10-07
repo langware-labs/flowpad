@@ -36,7 +36,8 @@ import { HoverCard, HoverCardContent, HoverCardTrigger } from '@src/components/u
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
 import { Switch } from '@src/components/ui/switch';
 import { DataSourceDialog } from '@src/components/data-sources/DataSourceDialog';
-import { sourceIcon } from '@src/components/data-sources/source-icon';
+import { sourceGlyphs } from '@src/components/data-sources/source-icon';
+import { IconWithBadge } from '@src/components/graph-view/icons/IconWithBadge';
 import { isMessageDriverSpec, sourcesQuery, useSourceSpecs } from '@src/components/data-sources/use-source-specs';
 import { useSourceDelete } from '@src/components/data-sources/use-source-delete';
 import { useSourceToggle } from '@src/components/data-sources/use-source-toggle';
@@ -243,7 +244,8 @@ function ChannelMark({
   onDelete: (source: DataSource) => void;
 }) {
   const { t } = useLingui();
-  const Icon = sourceIcon(spec, group.channel);
+  // The channel's mark, badged with whose way it is (Flow's), as on the data source rows.
+  const { Base, Badge } = sourceGlyphs(spec, group.channel);
   const { state } = group;
   const count = group.sources.length;
   const title = spec?.title || group.provider;
@@ -270,7 +272,8 @@ function ChannelMark({
           data-count={count}
           data-state={state}
         >
-          <Icon className="size-[17px]" />
+          {/* The badge sits top-right here: bottom-right is the listening dot's. */}
+          <IconWithBadge Base={Base} Badge={Badge} className="size-[17px]" badgeClassName="-top-1 bottom-auto" />
           {state === 'on' && (
             <span className="absolute -bottom-0.5 -end-0.5 size-2.5 rounded-full border-2 border-background bg-emerald-500" />
           )}
@@ -355,7 +358,7 @@ function ChannelRow({
   const { t } = useLingui();
   const { toggle, busy } = useSourceToggle(source);
   const { verify, busy: verifying } = useSourceVerify(source);
-  const Icon = sourceIcon(spec, source.channel);
+  const { Base, Badge } = sourceGlyphs(spec, source.channel);
   const state = stateOf(source);
   return (
     <div
@@ -363,7 +366,7 @@ function ChannelRow({
       data-testid="attached-channel-row"
       data-provider={source.provider}
     >
-      <Icon className="size-4 shrink-0" />
+      <IconWithBadge Base={Base} Badge={Badge} className="size-4 shrink-0" />
       <span className="min-w-0 flex-1">
         <span className="block truncate">{source.name || source.provider}</span>
         {/* Which account it is — the connected phone, the mailbox address. */}

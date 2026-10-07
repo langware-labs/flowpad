@@ -63,6 +63,9 @@ import { failedPromptOf } from './session-turns';
 import { useRetryFailedPrompt } from './useRetryFailedPrompt';
 import { useCloudLoginGate } from '@src/hooks/use-cloud-login-gate';
 import { notify } from '@src/notifications';
+import type { WorkerType } from './conversation-session-constants';
+import { buildConversationStatusPrompt, buildMessageStartPrompt } from './prompt-building';
+import { useConversationSession } from './useConversationSession';
 
 interface ConversationViewProps {
   conversationId: string;
@@ -282,6 +285,20 @@ export function ConversationView({
   // into each bubble's chip and a single `openPlanSession` that flips every
   // spec-bearing bubble to the "Open Plan Implementation Session" link the
   // instant any session in the thread exists (live or in-flight).
+  // A message's ⋮ menu starts a worker on THAT message — the header's launch
+  // lifecycle, one instance for the whole feed, with a message-pinned prompt.
+  const buildStatusPrompt = useCallback(() => buildConversationStatusPrompt(conversationTypeId), [conversationTypeId]);
+  const { launch: launchWorker } = useConversationSession({
+    conversation: conversation ?? null,
+    ensureMapped,
+    buildPrompt: buildStatusPrompt,
+  });
+  const launchWorkerOnMessage = useCallback(
+    (messageId: string, worker: WorkerType) =>
+      launchWorker(worker, () => buildMessageStartPrompt(conversationTypeId, new TypeId(FlowMessage.type, messageId))),
+    [launchWorker, conversationTypeId],
+  );
+
   const { runImplementPlan, openPlanSession } = useImplementPlan({
     task,
     conversationId,
@@ -510,6 +527,7 @@ export function ConversationView({
           onReply={channelSpec?.replies ? setReplyTo : undefined}
           messageTask={messageTasks.get(id) ?? null}
           onTaskIt={handleTaskIt}
+          onLaunchWorker={launchWorkerOnMessage}
         />
       );
     }

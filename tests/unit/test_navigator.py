@@ -141,3 +141,10 @@ def test_a_typo_rule_never_turns_one_screen_into_another(utterance):
     hit = navigator.rule_hit(utterance)
     core = utterance.split(" ", 1)[1]
     assert hit is None or hit.value.split("/")[0].replace("-", " ") in (core, core.rstrip("s")), hit
+
+
+@pytest.mark.parametrize("utterance", ["open smart navigation log", "show me the navigation log", "open SmartNavigationLog"])
+def test_asking_for_its_own_log_is_a_rule(utterance):
+    """The classifier opens its own log without asking a model."""
+    hit = navigator.rule_hit(utterance)
+    assert (hit.kind, hit.value) == ("log", "smart-navigation")

@@ -2,8 +2,8 @@
 commands run without asking.
 
 This is the gate that keeps "clone a repo and open the project" from being a
-code-execution primitive. `.flowpad/bootstrap.json` already attaches content
-projects from third-party repos and `repo_assets_fn` indexes everything under
+code-execution primitive. `flow.json` dependencies already bring in third-party
+repos (transitively) and `repo_assets_fn` indexes everything under
 `agentic-assets/`, so an executable asset from an untrusted root is exactly the
 thing the rest of the codebase refuses (``CapabilitySpec.install_commands`` is
 display-only for the same reason).

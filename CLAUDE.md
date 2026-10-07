@@ -178,6 +178,21 @@ Annotate the marker with the measured cost — `@pytest.mark.long  # 6.01s` — 
 
 **The marker classifies; it does not excuse.** It is not a licence to raise a timeout, and it is not where a test goes to hide a slow production path. Before marking, ask why the test is slow: if the answer is "it waits for a fixed budget" or "it spawns a real PTY", classify it. If the answer is "the code under test stalls", that is a bug — fix it. A `RUN_SCRIPT` timeout test sat at 10.2s because the handler killed only the script and not its process group, so a 1s timeout bounded nothing; the fix took it to 0.31s and it never needed the marker.
 
+## Verification rigs are discarded by default
+
+A **rig** — a harness built to prove one change (an A/B screenshot comparison, a
+seeded-instance runner, a one-off scenario suite, a repro script) — **does not get
+committed**. Build it in the session scratchpad, or untracked in the worktree, use
+it, and report what it proved; keep the evidence (reports, screenshots) outside the
+repo. Only the change and its durable tests (unit / matrix / the browser tiers that
+already exist) land on the branch.
+
+Commit a rig only when the user explicitly asks to keep it. If a rig turns out to be
+generally useful, say so and ask — don't decide by committing it.
+
+**Why:** a rig is sized to one change and rots the moment the code moves (the
+host-tabs A/B rig was 1,454 lines against ~157 lines of product code).
+
 ## Entity id policy (non-negotiable)
 
 **UUID v4 is the entity id. The one exception is a READ-ONLY asset, whose id may be v5 derived from its file path.** An id is a name, not a fact about the thing — it does not encode which account a source serves or which record a row mirrors. Anything that needs *that* is a **lookup on the natural key**, not id arithmetic.

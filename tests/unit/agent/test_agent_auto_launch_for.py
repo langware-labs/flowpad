@@ -14,6 +14,7 @@ import pytest
 
 from flow_sdk.builtin.agent import Agent
 from flow_sdk.core import Entity
+from tests.unit._project_deps import link_context_dirs
 from tests.unit.agent._seed import checkout_agent, seed_agent as _agent, seed_project as _project
 
 
@@ -126,7 +127,8 @@ async def test_context_root_agents_are_in_scope(tmp_path, used):
     root = tmp_path / "p6"
     content = tmp_path / "p6-content"
     content.mkdir()
-    project = await _project(root, legacy_include_dirs_=[str(content)])
+    project = await _project(root)
+    await link_context_dirs(project, [content])
     vendor = await _agent(content, "vendor-onboarding", auto_launch=True, auto_launch_prompt="hi")
 
     outcome = await Agent.auto_launch_for(project.id)

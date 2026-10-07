@@ -32,8 +32,8 @@ export interface HelpdeskEnsureResult {
   /** True when this call performed the clone (false = already present, or no portal). */
   cloned: boolean;
   /**
-   * True when this desk came from the project's OWN context folders rather
-   * than from the hub. Such a checkout is a context folder the project already
+   * True when this desk came from the project's OWN dependencies rather
+   * than from the hub. Such a checkout is a dependency the project already
    * resolved and indexed, so the caller must skip fetch/index — those steps
    * operate on the app-managed portal slot, which this is not.
    */

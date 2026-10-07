@@ -1,7 +1,17 @@
-import { fsStore, type AgenticProcess } from '@sdk';
+import type { AgenticProcess } from '@sdk';
 import { t } from '@lingui/core/macro';
-import { AppWindow, Copy, ExternalLink, PanelTop, Sparkles } from 'lucide-react';
-import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react';
+import { AppWindow, Copy, ExternalLink, Monitor, PanelTop, Sparkles } from 'lucide-react';
+import {
+  forwardRef,
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+  type RefObject,
+} from 'react';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -14,13 +24,14 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from '@src/components/ui/dropdown-menu';
-import { MediaLightbox, isLightboxMedia } from '@src/components/ui/media-lightbox';
+import { MediaLightbox } from '@src/components/ui/media-lightbox';
 import { BrowserProfileItems } from './BrowserProfileItems';
 import { fetchBrowserProfiles, type Browser } from '@src/lib/browser-profiles';
-import { errorMessage } from '@src/lib/error-message';
+import { lightboxMediaName, linkKind } from '@src/lib/link-kind';
+import { linkActions, type LinkActionId, type LinkSurface } from './link-actions';
 import type { LinkHandlers, LinkSource } from './link-events';
+import { runLinkAction, type LinkAction, type LinkMedia } from './link-handlers';
 import { useDockNavigation } from '@src/navigation';
-import { notify } from '@src/notifications/notify';
 
 export interface Links {
   /** Stable for the surface's lifetime. */
@@ -29,62 +40,32 @@ export interface Links {
   menu: ReactNode;
 }
 
+export interface LinkOptions {
+  /** `vibe` only for the surface whose process owns the vibe Display it sits beside. */
+  surface?: LinkSurface;
+}
+
 interface LinkMenuHandle {
-  open: (link: string, x: number, y: number, host: AgenticProcess | null) => void;
+  open: (link: string, x: number, y: number, items: LinkActionId[]) => void;
 }
 
 interface LinkPreviewHandle {
   show: (media: LinkMedia) => void;
 }
 
-interface LinkMedia {
-  url: string;
-  name: string;
-}
-
-/** A position suffix a terminal reference may carry: `a.png:3`, `a.png:3:7`, `a.png#L3`. */
-const POSITION_SUFFIX = /(?::\d+(?::\d+)?|#L\d+)$/;
-
 /**
- * The file name to preview a link by, or null when it is not an image or video.
- * A web URL is judged by its path (not its query); a file reference, without its position.
+ * A link surface's click and right-click, composed from the three layers: what the link
+ * is (`link-kind`), what can be done with it (`linkActions`), and the one runner
+ * (`runLinkAction`). Click runs the primary action; right-click lists the menu. Every
+ * link surface (terminal, message, chat) shares this.
  */
-export function lightboxMediaName(link: string): string | null {
-  let name = link;
-  if (/^https?:/i.test(link)) {
-    try {
-      name = new URL(link).pathname;
-    } catch {
-      return null;
-    }
-  } else {
-    name = link.replace(POSITION_SUFFIX, '');
-  }
-  return isLightboxMedia(name) ? name.split(/[/\\]/).pop() || name : null;
-}
-
-/**
- * The bytes behind an image/video link: a web URL as itself, a file reference as the
- * source's own machine serves it (the path the backend resolved, on its compute node).
- */
-async function mediaFor(link: string, source: LinkSource | null): Promise<LinkMedia | null> {
-  const name = lightboxMediaName(link);
-  if (!name) return null;
-  if (/^https?:/i.test(link)) return { url: link, name };
-  const node = source?.computeNodeTypeId;
-  if (!source || !node) return null;
-  const path = (await source.resolveDisplayTarget(link))?.path;
-  return path ? { url: fsStore.getState().getDownloadUrl(node, path), name } : null;
-}
-
-/**
- * Click opens a link in Flowpad — an image or video in the in-app lightbox, anything else as a tab; right-click offers copy / open in Flowpad / open in browser / open in one
- * browser profile of this machine, and — when the surface belongs to a process — Vibe: that process in vibe
- * mode with the link as a tab. Every link surface (terminal, message) shares this.
- */
-export function useLinks(source: RefObject<LinkSource | null>, process?: AgenticProcess | null): Links {
+export function useLinks(
+  source: RefObject<LinkSource | null>,
+  process?: AgenticProcess | null,
+  { surface = 'tab' }: LinkOptions = {},
+): Links {
   const { navigation } = useDockNavigation();
-  // Read the current navigation/source/process without retaining a surface render's closure.
+  // Read the current navigation/process without retaining a surface render's closure.
   const navRef = useRef(navigation);
   navRef.current = navigation;
   const processRef = useRef(process ?? null);
@@ -93,46 +74,33 @@ export function useLinks(source: RefObject<LinkSource | null>, process?: Agentic
   const previewRef = useRef<LinkPreviewHandle>(null);
 
   return useMemo(() => {
-    const open = (link: string) => void navRef.current.openLink(link, source.current);
-    // Media previews in place; anything the preview can't resolve opens as a tab, which
-    // also reports the failure the way every other link does.
-    const activate = async (link: string) => {
-      const media = await mediaFor(link, source.current).catch(() => null);
-      if (media) previewRef.current?.show(media);
-      else open(link);
-    };
-    const openInBrowser = (link: string) => void navRef.current.openLinkInBrowser(link, source.current);
-    const openInVibe = (link: string, host: AgenticProcess) =>
-      void navRef.current.openLinkInVibe(link, source.current, host);
-    const openInProfile = (link: string, browser: string, profile: string) =>
-      void navRef.current.openLinkInBrowserProfile(link, source.current, browser, profile);
+    const plan = (link: string) =>
+      linkActions({
+        kind: linkKind(link, window.location.origin),
+        media: lightboxMediaName(link) !== null,
+        surface,
+        host: processRef.current !== null,
+      });
+    const run = (action: LinkAction, link: string) =>
+      void runLinkAction(action, link, {
+        navigation: navRef.current,
+        source: source.current,
+        host: processRef.current,
+        preview: (media) => previewRef.current?.show(media),
+      });
     return {
       handlers: {
-        activate: (_event, link) => void activate(link),
-        openMenu: (link, x, y) => menuRef.current?.open(link, x, y, processRef.current),
+        activate: (_event, link) => run({ id: plan(link).primary } as LinkAction, link),
+        openMenu: (link, x, y) => menuRef.current?.open(link, x, y, plan(link).menu),
       },
       menu: (
         <>
-          <LinkMenu
-            ref={menuRef}
-            onOpen={open}
-            onOpenInBrowser={openInBrowser}
-            onOpenInVibe={openInVibe}
-            onOpenInProfile={openInProfile}
-          />
+          <LinkMenu ref={menuRef} onRun={run} />
           <LinkPreview ref={previewRef} />
         </>
       ),
     };
-  }, [source]);
-}
-
-function copyLink(link: string): void {
-  navigator.clipboard.writeText(link).then(
-    () => notify.success({ title: t`Link copied` }),
-    (error: unknown) =>
-      notify.error({ title: t`Could not copy link`, message: errorMessage(error, t`Clipboard unavailable`), forceToast: true }),
-  );
+  }, [source, surface]);
 }
 
 /** Owns the preview state, so showing and closing re-renders only this. */
@@ -143,27 +111,33 @@ const LinkPreview = forwardRef<LinkPreviewHandle>(function LinkPreview(_props, r
   return media ? <MediaLightbox url={media.url} name={media.name} onClose={close} /> : null;
 });
 
+type MenuItemId = Exclude<LinkActionId, 'browser-profile' | 'preview'>;
+
+/** How each action reads in the menu. `browser-profile` is the "Open in ▸" submenu. */
+const ITEMS: Record<MenuItemId, { label: () => string; icon: typeof Copy }> = {
+  copy: { label: () => t`Copy`, icon: Copy },
+  'show-in-display': { label: () => t`Show in Display`, icon: Monitor },
+  open: { label: () => t`Open in Flowpad`, icon: PanelTop },
+  vibe: { label: () => t`Vibe`, icon: Sparkles },
+  browser: { label: () => t`Open in browser`, icon: ExternalLink },
+};
+
 /** Owns the menu state, so opening and closing re-renders only this. */
-const LinkMenu = forwardRef<
-  LinkMenuHandle,
-  {
-    onOpen: (link: string) => void;
-    onOpenInBrowser: (link: string) => void;
-    onOpenInVibe: (link: string, host: AgenticProcess) => void;
-    onOpenInProfile: (link: string, browser: string, profile: string) => void;
-  }
->(function LinkMenu({ onOpen, onOpenInBrowser, onOpenInVibe, onOpenInProfile }, ref) {
+const LinkMenu = forwardRef<LinkMenuHandle, { onRun: (action: LinkAction, link: string) => void }>(function LinkMenu(
+  { onRun },
+  ref,
+) {
   // `id` remounts the menu so a right-click on another link re-anchors it.
-  const [state, setState] = useState<{
-    link: string;
-    x: number;
-    y: number;
-    host: AgenticProcess | null;
-    id: number;
-  } | null>(null);
-  useImperativeHandle(ref, () => ({
-    open: (link, x, y, host) => setState((prev) => ({ link, x, y, host, id: (prev?.id ?? 0) + 1 })),
-  }), []);
+  const [state, setState] = useState<{ link: string; x: number; y: number; items: LinkActionId[]; id: number } | null>(
+    null,
+  );
+  useImperativeHandle(
+    ref,
+    () => ({
+      open: (link, x, y, items) => setState((prev) => ({ link, x, y, items, id: (prev?.id ?? 0) + 1 })),
+    }),
+    [],
+  );
   // Refetched on every open; the last list stays shown meanwhile, so only the first right-click waits.
   const [browsers, setBrowsers] = useState<Browser[]>([]);
   const opened = state !== null;
@@ -177,7 +151,7 @@ const LinkMenu = forwardRef<
   }, [opened]);
 
   if (!state) return null;
-  const { link, x, y, host, id } = state;
+  const { link, x, y, items, id } = state;
   return (
     <DropdownMenu key={id} open modal={false} onOpenChange={(open) => !open && setState(null)}>
       <DropdownMenuTrigger asChild>
@@ -188,41 +162,35 @@ const LinkMenu = forwardRef<
           {link}
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
-        <DropdownMenuItem onSelect={() => copyLink(link)}>
-          <Copy className="mr-2 h-4 w-4" />
-          {t`Copy`}
-        </DropdownMenuItem>
-        <DropdownMenuItem onSelect={() => onOpen(link)}>
-          <PanelTop className="mr-2 h-4 w-4" />
-          {t`Open in Flowpad`}
-        </DropdownMenuItem>
-        {host && (
-          <DropdownMenuItem onSelect={() => onOpenInVibe(link, host)} data-testid="link-menu-vibe">
-            <Sparkles className="mr-2 h-4 w-4" />
-            {t`Vibe`}
-          </DropdownMenuItem>
-        )}
-        <DropdownMenuItem onSelect={() => onOpenInBrowser(link)}>
-          <ExternalLink className="mr-2 h-4 w-4" />
-          {t`Open in browser`}
-        </DropdownMenuItem>
-        {browsers.length > 0 && (
-          <DropdownMenuSub>
-            <DropdownMenuSubTrigger data-testid="link-menu-open-in">
-              <AppWindow className="mr-2 h-4 w-4" />
-              {t`Open in`}
-            </DropdownMenuSubTrigger>
-            <DropdownMenuPortal>
-              <DropdownMenuSubContent className="max-w-xs">
-                <BrowserProfileItems
-                  browsers={browsers}
-                  onSelect={(browser, profile) => onOpenInProfile(link, browser, profile)}
-                  testIdPrefix="link-menu-profile"
-                />
-              </DropdownMenuSubContent>
-            </DropdownMenuPortal>
-          </DropdownMenuSub>
-        )}
+        {items.map((item) => {
+          if (item === 'preview') return null;
+          if (item === 'browser-profile') {
+            return browsers.length > 0 ? (
+              <DropdownMenuSub key={item}>
+                <DropdownMenuSubTrigger data-testid="link-menu-open-in">
+                  <AppWindow className="mr-2 h-4 w-4" />
+                  {t`Open in`}
+                </DropdownMenuSubTrigger>
+                <DropdownMenuPortal>
+                  <DropdownMenuSubContent className="max-w-xs">
+                    <BrowserProfileItems
+                      browsers={browsers}
+                      onSelect={(browser, profile) => onRun({ id: 'browser-profile', browser, profile }, link)}
+                      testIdPrefix="link-menu-profile"
+                    />
+                  </DropdownMenuSubContent>
+                </DropdownMenuPortal>
+              </DropdownMenuSub>
+            ) : null;
+          }
+          const { label, icon: Icon } = ITEMS[item];
+          return (
+            <DropdownMenuItem key={item} onSelect={() => onRun({ id: item }, link)} data-testid={`link-menu-${item}`}>
+              <Icon className="mr-2 h-4 w-4" />
+              {label()}
+            </DropdownMenuItem>
+          );
+        })}
       </DropdownMenuContent>
     </DropdownMenu>
   );

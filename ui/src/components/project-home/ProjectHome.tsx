@@ -15,6 +15,7 @@ import { ProjectAgentsStrip } from '@src/components/agents/ProjectAgentsStrip';
 import type { PanelHandlers } from '@src/components/quick-create';
 import { HomeCustomizationCard } from './HomeCustomizationCard';
 import { ProjectLanguageCard } from './ProjectLanguageCard';
+import { ProjectDependenciesCard } from './ProjectDependenciesCard';
 import { VIBE_AGENTS_TAG, VibeAgentsCard } from './VibeAgentsCard';
 import { useHighlight } from '@src/components/wiki-tip/highlight';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@src/components/ui/tabs';
@@ -88,12 +89,16 @@ const CreateTab: React.FC<{
   projectId: string | null;
   spawnProjectId?: string | null;
   panelProps: PanelHandlers;
-}> = ({ projectId, spawnProjectId, panelProps }) => (
+  /** The project's dependencies, above the "Add dependency" tiles — only for
+   *  the active project, whose entity the card reads and writes. */
+  project?: Project | null;
+}> = ({ projectId, spawnProjectId, panelProps, project }) => (
   <div className="flex flex-col gap-6">
     {projectId && <SessionTiles spawnProjectId={spawnProjectId} panelProps={panelProps} />}
     {/* The project's own agents, right under the vendor session tiles: both
         answer "start something", and an agent IS a session starter. */}
     <ProjectAgentsStrip projectId={projectId} />
+    {project && <ProjectDependenciesCard project={project} />}
     <QuickCreatePanel {...panelProps} sections={['build', 'write', 'connect', 'folder', 'helpdesk']} />
   </div>
 );
@@ -170,14 +175,14 @@ export const ProjectHome: React.FC<ProjectHomeProps> = ({ spawnProjectId, create
     async (target: GitTarget) => {
       if (!project?.fs_storage_mount_path) return;
       const path = project.fs_storage_mount_path;
-      await launchWizard('git-context-folder', {
+      await launchWizard('git-dependency', {
         title: t`Set up Git for project sharing`,
         targetTypeId: project.typeId.toString(),
         // The payload is the contract — the prompt does not restate it, so the
         // two cannot disagree about which remote or branch was chosen.
         payload: {
           projectId: project.id,
-          scope: 'private',
+          optional: false,
           mode: 'adopt',
           path,
           // Names a NEW repo only; an existing one is named by its own URL, and
@@ -200,7 +205,14 @@ export const ProjectHome: React.FC<ProjectHomeProps> = ({ spawnProjectId, create
     return Promise.resolve();
   }, [project]);
 
-  const createTab = <CreateTab projectId={projectId} spawnProjectId={spawnProjectId} panelProps={panelProps} />;
+  const createTab = (
+    <CreateTab
+      projectId={projectId}
+      spawnProjectId={spawnProjectId}
+      panelProps={panelProps}
+      project={createOnly ? null : project}
+    />
+  );
 
   // A `?highlight=` target that lives on a tab we aren't showing would never
   // mount, so the generic TagHighlightObserver would find nothing — open the
