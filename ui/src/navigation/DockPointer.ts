@@ -390,6 +390,13 @@ export interface LensPointerParts {
  * Core principle: Parse and validate layout URLs, apply state to viewer store
  */
 export class DockPointer implements IDockPointer {
+  /** The view types a SESSION is shown in: the shell dock (chat / terminal) and the
+   *  Vibe host tab. One predicate, so a site asking "is this a session surface?"
+   *  never has to list them. */
+  static isSessionView(viewType: ViewType | string | null | undefined): boolean {
+    return viewType === ViewType.SHELL || viewType === ViewType.VIBE;
+  }
+
   /** Check if a shell pointer refers to an AgenticProcess (pointer is a TypeId like "agentic_process-<id>") */
   static isAgenticProcessPointer(pointer?: string): boolean {
     return !!pointer?.startsWith(AgenticProcess.type + TypeId.DELIMITER);

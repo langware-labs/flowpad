@@ -13,7 +13,7 @@ import { WorkspaceChildStrip } from './workspace-child-strip';
 import { useProcessSurface } from '@src/components/terminal/interactive-terminal/use-process-surface';
 import { VibeChatPane } from './vibe-chat-pane';
 import { VibeNoProcessPane } from './vibe-no-process-pane';
-import { type VibeWorkspaceSession, useVibeWorkspaceSessionHost } from './use-vibe-workspace-session';
+import { type VibeWorkspaceSession, useSessionShowState, useVibeWorkspaceSessionHost } from './use-vibe-workspace-session';
 import { assetWorkContextForDock } from './asset-work-context';
 
 interface AssetVibeWorkspaceProps {
@@ -109,12 +109,6 @@ export function AssetVibeWorkspace({ isVibe, session }: AssetVibeWorkspaceProps)
   // address: nothing here infers or invents a workspace for it. Host identity
   // arrives with the URL (`DockPointer.hostProcessId`).
 
-  // The FIRST show after a mount pushes; every one after it replaces. With pure
-  // replace the first show would overwrite the URL the user arrived on, so Back
-  // would eject them from the workspace instead of returning them to it. After
-  // that, replacing is what keeps a chatty agent from burying the user's own
-  // history — the show history stays browsable in the display popover.
-  const hasPushedDisplayRef = useRef(false);
   // Bumped on EVERY show, before the navigation decision. Two jobs, both real:
   //
   //  - it is the render trigger. The SDK mutates cached entities IN PLACE, so a
@@ -126,15 +120,8 @@ export function AssetVibeWorkspace({ isVibe, session }: AssetVibeWorkspaceProps)
   //    navigation, yet the file behind it may have been rebuilt, and the iframe
   //    registry keys by `src`.
   const [showNonce, setShowNonce] = useState(0);
-  // The payload of the newest show — see `DisplayChrome.latestShown`.
-  const [latestShown, setLatestShown] = useState<ShowTarget | null>(null);
-  // Per-workspace show state follows the session (see VibeWorkspace): one
-  // component instance serves every Vibe tab.
-  const sessionProcessId = session?.processId ?? null;
-  useEffect(() => {
-    hasPushedDisplayRef.current = false;
-    setLatestShown(null);
-  }, [sessionProcessId]);
+  // The newest show's payload and the first-show push flag, per session.
+  const { latestShown, setLatestShown, hasPushedDisplayRef } = useSessionShowState(session?.processId ?? null);
 
   const openShownTarget = useCallback((target: ShowTarget) => {
     try {
@@ -153,7 +140,7 @@ export function AssetVibeWorkspace({ isVibe, session }: AssetVibeWorkspaceProps)
     } catch (error) {
       console.error('[asset-vibe] failed to open show target', target, error);
     }
-  }, []);
+  }, [hasPushedDisplayRef, setLatestShown]);
 
   // On a child URL, the parent process remains authoritative. A new asset/file
   // `flow show` is focused by URL and the destination loader materializes it.

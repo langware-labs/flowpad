@@ -9,13 +9,13 @@ import {
   TypeId,
   ViewModeEvent,
   viewModeMemory,
-  ViewType,
 } from '@sdk';
 import { usePreference, usePreferenceResolved } from '@src/hooks/use-preference';
 import { defineGlobal } from '@sdk/utils';
 import { useEffect, useRef, useSyncExternalStore } from 'react';
 import { useLocation } from 'react-router';
 import { useCurrentDock } from '@src/navigation/useDockNavigation';
+import { DockPointer } from '@src/navigation/DockPointer';
 
 declare global {
   interface Window {
@@ -249,12 +249,12 @@ export function rememberedViewMode(target: { last_mode?: string | null } | null 
 
 /**
  * The id of the session a dock addresses, or null when it addresses something
- * else. A session lives at exactly one dock family — `/dock/shell/
- * agentic_process-<id>` — in every mode (vibe is a rendering mode of that same
- * dock, see `canonicalProcessDockPath`), so this is the whole grammar.
+ * else. A session is shown at `/dock/shell/agentic_process-<id>` or as the Vibe
+ * host tab `/dock/vibe/agentic_process-<id>` (`DockPointer.isSessionView`), so this
+ * is the whole grammar.
  */
 export function sessionIdForDock(dock: IDockPointer): string | null {
-  if ((dock.viewType !== ViewType.SHELL && dock.viewType !== ViewType.VIBE) || !dock.pointer) return null;
+  if (!DockPointer.isSessionView(dock.viewType) || !dock.pointer) return null;
   const prefix = AgenticProcess.type + TypeId.DELIMITER;
   return dock.pointer.startsWith(prefix) ? dock.pointer.slice(prefix.length) : null;
 }
@@ -329,9 +329,9 @@ export function setViewMode(val: ViewMode, dock: IDockPointer | null = null): vo
  */
 function viewModeFromLocation(): ViewMode | null {
   try {
-    // A Vibe host address implies its mode (`DockPointer.viewMode`): `/dock/vibe/…`.
-    if (/^\/(?:dock|win)\/vibe\//.test(window.location.pathname)) return ViewMode.Vibe;
-    return toViewModeOrNull(new URLSearchParams(window.location.search).get('viewMode'));
+    // The address states the mode — an option, or implied by a Vibe host dock
+    // (`DockPointer.viewMode`). A non-dock path has none.
+    return DockPointer.fromUrl(`${window.location.pathname}${window.location.search}`).viewMode;
   } catch {
     return null;
   }

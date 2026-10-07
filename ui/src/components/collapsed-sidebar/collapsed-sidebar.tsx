@@ -8,6 +8,7 @@ import { resolveRail, type RailItemId, type RailSpec } from './rail-visibility';
 import { Button } from '@src/components/ui/button';
 import { UserDropdown } from '@src/pages/flow-page/content-panel/user-dropdown/user-dropdown';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { DockPointer } from '@src/navigation/DockPointer';
 import { ViewType } from '@src/types/ViewType';
 import { useStreamInboxManager } from '@src/hooks/useStreamInboxManager';
 import {
@@ -121,7 +122,7 @@ export function CollapsedSidebar() {
 
   // A Vibe host is a process shown in Vibe: the rail lights Chats for it, as for
   // the same process shown as a chat or terminal.
-  const currentView = currentDock?.viewType === ViewType.VIBE ? ViewType.SHELL : currentDock?.viewType;
+  const currentView = DockPointer.isSessionView(currentDock?.viewType) ? ViewType.SHELL : currentDock?.viewType;
   const currentPointer = currentDock?.pointer ?? '';
   // The project item owns EVERY assets surface, `list/task` and a task doc in
   // the editor included. It used to subtract those, because a Tasks rail entry

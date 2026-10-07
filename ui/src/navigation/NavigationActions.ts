@@ -19,7 +19,7 @@ import {
 } from '@sdk';
 import { NavigateFunction } from 'react-router';
 import { isValidIdentifier } from '@sdk/models/TypeId';
-import { getViewMode, rememberedDockViewMode, VIEW_MODE_SWITCH_STATE, ViewMode } from '@src/contexts/view-mode-context';
+import { getViewMode, rememberedDockViewMode, sessionIdForDock, VIEW_MODE_SWITCH_STATE, ViewMode } from '@src/contexts/view-mode-context';
 import { CAPABILITY_PARAM, DockPointer, JOURNEY_PARAM, JOURNEY_STEP_PARAM, NODE_PARAM } from './DockPointer';
 import { dockPointerForFile } from './local-file-pointer';
 import { getHistoryPosition } from './history-position-store';
@@ -113,12 +113,10 @@ let pendingDockNavigation: PendingDockNavigation | null = null;
  * reconcile redirect, so the whole loader ran a second time.
  */
 function ownerProjectId(dock: DockPointer): string | null {
-  if (dock.viewType !== ViewType.SHELL && dock.viewType !== ViewType.VIBE) return null;
+  if (!DockPointer.isSessionView(dock.viewType)) return null;
   const tab = tabForDockKey(tabManager.getSnapshot(), dock.tabHash);
   if (tab) return tab.project_id ?? null;
-  const processId = DockPointer.isAgenticProcessPointer(dock.pointer ?? '')
-    ? DockPointer.extractAgenticProcessId(dock.pointer ?? '')
-    : null;
+  const processId = sessionIdForDock(dock);
   // A malformed id (a hand-typed or legacy link) must not throw out of openDock.
   if (!processId || !isValidIdentifier(processId)) return null;
   return AgenticProcess.getByIdFromCache<AgenticProcess>(processId)?.project_id ?? null;

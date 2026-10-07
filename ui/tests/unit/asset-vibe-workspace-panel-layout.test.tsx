@@ -18,7 +18,8 @@ vi.mock('@src/navigation/useDockNavigation', () => ({
   }),
 }));
 
-vi.mock('@src/pages/flow-page/use-vibe-workspace-session', () => ({
+vi.mock('@src/pages/flow-page/use-vibe-workspace-session', async (importOriginal) => ({
+  ...(await importOriginal<object>()),
   useVibeWorkspaceSessionHost: () => null,
 }));
 

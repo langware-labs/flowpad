@@ -181,11 +181,16 @@ async function materializeTab(
     // its chip reopens, so when the presentation changed, re-point it — in the
     // background: the row's identity, label and project are unchanged, so nothing
     // on screen waits for it (I4: a warm visit asks the backend for nothing).
-    if (presentationChanged(existingTab, dock)) {
+    // `new_tab` broadcasts `tabs_changed`, which refreshes the snapshot by itself;
+    // until it lands the row still reads the old presentation, so a re-point in
+    // flight is not sent twice.
+    const key = dock.tabHash!;
+    if (presentationChanged(existingTab, dock) && !repointsInFlight.has(key)) {
+      repointsInFlight.add(key);
       void tabManager
         .ensureDock(dock, { viewMode: dock.viewMode })
-        .then(() => tabManager.refresh())
-        .catch((err: unknown) => console.warn('[tabs] re-pointing a process tab failed', err));
+        .catch((err: unknown) => console.warn('[tabs] re-pointing a process tab failed', err))
+        .finally(() => repointsInFlight.delete(key));
     }
     return { tab: existingTab, tabs: existing };
   }
@@ -207,11 +212,13 @@ async function materializeTab(
   return { tab: tabForDockKey(all, dock.tabHash) ?? scopedTab, tabs: all };
 }
 
-/** Is `dock` a process shown in another presentation (Vibe host ⇄ shell) than the
+/** Background presentation re-points in flight, by tabHash (see `materializeTab`). */
+const repointsInFlight = new Set<string>();
+
+/** Is `dock` a session shown in another presentation (Vibe host ⇄ shell) than the
  *  one `tab` last stored? Only those two fold onto one identity. */
 function presentationChanged(tab: Tab, dock: DockPointer): boolean {
-  if (dock.viewType !== ViewType.VIBE && dock.viewType !== ViewType.SHELL) return false;
-  if (!DockPointer.isAgenticProcessPointer(dock.pointer)) return false;
+  if (!DockPointer.isSessionView(dock.viewType) || !DockPointer.isAgenticProcessPointer(dock.pointer)) return false;
   const stored = tab.dockPointer?.viewType;
   return !!stored && stored !== dock.viewType;
 }
@@ -457,6 +464,7 @@ export async function setupTabAndAdopt(
 
 export function resetTabContentLifecycleForTests(): void {
   setupInFlight.clear();
+  repointsInFlight.clear();
   adapters.clear();
   tabManager.lifecycle.resetForTests();
 }
