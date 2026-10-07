@@ -310,6 +310,17 @@ of which may be absent. Say which one you mean.
 | **serving desk** vs. **a desk that is present** | `resolve_adopted_helpdesk` | Resolution stops at the FIRST desk in `direct_context_roots()` order. A second desk under a later root is present but serves nothing — the `shadowed` outcome. Never conflate the two. |
 | **portal slot** | `helpdesk_project_dir(desk_id)` | `<workspace>/.flow/helpdesk/project-<id>` — the app-managed checkout for the desk the HUB advertises. Distinct from an adopted desk's dependency checkout, which lives in the visible workspace. |
 
+## Diagnosis requests (2026-10-07)
+
+| Ours | One place | Notes |
+|---|---|---|
+| **`FlowpadDiagnosis`** | `flow_sdk/builtin/flowpad_diagnosis.py`; mirrored on the hub (`flowpad/hub/builtin/flowpad_diagnosis.py`) | A recorded diagnosis: symptoms, root cause, fix. Local and metadata-only; the hub mirror exists as the base of the next row. |
+| **`DiagnosisRequest`** | `flow_sdk/builtin/diagnosis_request.py` + the hub twin, same id | A `FlowpadDiagnosis` someone ELSE runs. Its owner opens it (`open_request`), sends `flow diagnose <id>`, and reads the runs back (`runs`). Not a help-desk ticket: the runner needs no account and no session -- the id is the bearer (`public_role = diagnosis_submitter`: `brief` + `submit`, never `read`). |
+| **run** | `runs/<n>.json` in the request's hub storage | One `submit`: the diagnosis it recorded plus its files (`DiagnosisRunSpec`). Every run is kept; the row's diagnosis fields show the latest. |
+| **brief** | the hub action `brief` | What a runner reads before starting: the instructions, the budget's id, the write window, and the list of attachments. No diagnosis content. |
+| **attachment** (of a request) | `attachments/<files\|skills>/<name>` in the request's hub storage; `DiagnosisAttachmentSpec` | What the OWNER sends the runner: a file, or an asset (a skill travels as a zip and is installed into the run's `.claude/skills`). Uploaded through the ordinary `fs` action; fetched by the runner through `brief/attachment/<kind>/<name>` -- the brief's own grant, not a new one. Lives only in the run's temporary folder. |
+| **funding** (of a request) | the hub action `fund`, `token_allocation.allocate_public_for` | A public, lifetime-capped, expiring `LLMEndpoint` allocation the runner spends by id. Drawn from a budget the owner administers, the global root for a verified langware.ai user, or a key on the owner's computer uploaded to the hub as a root. |
+
 ## Identity carriers (2026-08-30)
 
 | Ours | One place | Notes |

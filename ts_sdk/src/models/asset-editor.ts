@@ -36,6 +36,9 @@ export enum AssetEditor {
   // A credential (agentic-assets/credential/<name>/credential.json): what it
   // declares, where its values live and which are set — never the values.
   CREDENTIAL = 'credential',
+  // A diagnosis request: open it, fund it, send files along, read the runs that came back.
+  // A local row with no file, so it is fileless like LLM_ENDPOINT.
+  DIAGNOSIS_REQUEST = 'diagnosis_request',
   // File-only display viewers — no backing record type, routed by extension
   // via `editorForPath` (like CODE, they never appear in TYPE_TO_EDITOR).
   HTML = 'html', // sandboxed live preview of a self-contained .html deliverable
@@ -129,6 +132,7 @@ export const EDITOR_TYPES: Record<AssetEditor, RecordType[]> = {
   [AssetEditor.MCP]: [RecordType.MCP],
   [AssetEditor.LLM_ENDPOINT]: [RecordType.LLM_ENDPOINT],
   [AssetEditor.CREDENTIAL]: [RecordType.CREDENTIAL],
+  [AssetEditor.DIAGNOSIS_REQUEST]: [RecordType.DIAGNOSIS_REQUEST],
   [AssetEditor.HTML]: [],
   [AssetEditor.MCP_APP]: [],
   [AssetEditor.IMAGE]: [],
@@ -145,17 +149,21 @@ export function isFileOnlyEditor(editor: AssetEditor): boolean {
 
 
 /**
- * The other direction: editors whose asset has a record type but NO FILE — and, for the one
- * member so far, no local row either. `llm_endpoint` is a read-only projection of hub state
- * (`flow_sdk/builtin/llm_endpoint.py`), so there is nothing on disk for an agent to open,
- * diff or edit.
+ * The other direction: editors whose asset has a record type but NO FILE. `llm_endpoint` is a
+ * read-only projection of hub state with no local row either (`flow_sdk/builtin/llm_endpoint.py`);
+ * `diagnosis_request` is a local row whose content lives on the hub
+ * (`flow_sdk/builtin/diagnosis_request.py`). Either way there is nothing on disk for an agent to
+ * open, diff or edit.
  *
  * The distinction earns its keep in `isContentAssetDock`: an asset-editor dock normally means
  * "a single file is the subject", which is what puts a work-context chat beside it. For a
  * fileless one that chat would be offering to work on a path that does not exist, so these
  * docks stay ordinary browser surfaces — tab strip, navigator tree, no chat.
  */
-export const FILELESS_EDITORS: ReadonlySet<AssetEditor> = new Set([AssetEditor.LLM_ENDPOINT]);
+export const FILELESS_EDITORS: ReadonlySet<AssetEditor> = new Set([
+  AssetEditor.LLM_ENDPOINT,
+  AssetEditor.DIAGNOSIS_REQUEST,
+]);
 
 export function isFilelessEditor(editor: AssetEditor | null | undefined): boolean {
   return !!editor && FILELESS_EDITORS.has(editor);

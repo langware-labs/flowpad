@@ -1,6 +1,7 @@
 import {
   Agent,
   Credential,
+  DiagnosisRequest,
   credentialsService,
   SubAgent,
   dataManager,
@@ -12,10 +13,13 @@ import {
   Prompt,
   Skill,
   Task,
+  TypeId,
   Whiteboard,
 } from '@sdk';
 import { msg } from '@lingui/core/macro';
 import { McpCreateDialog } from './McpCreateDialog';
+import { DiagnosisRequestCreateDialog } from '@src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog';
+import { openRequest } from '@src/components/assets/editor/diagnosis-request/diagnosis-request-api';
 import { CredentialQuickCreateDialog } from '@src/components/credentials/CredentialQuickCreateDialog';
 import { slugify, toEnvVarName } from '@src/components/credentials/credential-draft';
 import type { MessageDescriptor } from '@lingui/core';
@@ -270,9 +274,34 @@ export const QUICK_CREATE_REGISTRY: QuickCreateDescriptor[] = [
       return { toastTitle: msg`Prompt created` };
     },
   },
+  {
+    type: DiagnosisRequest.type,
+    group: 'connect',
+    label: msg`Diagnosis request`,
+    wikiword: 'Diagnosis requests',
+    allowedScopes: ['user', 'project'],
+    Dialog: DiagnosisRequestCreateDialog,
+    // The assets-list `+` is name-only: the name becomes the instructions, with the default
+    // window and no budget or attachments -- all of which the request's screen can add to.
+    create: async ({ project, name }) => {
+      const { request } = await openRequest({
+        instructions: name.trim(),
+        project_id: project?.id ?? '',
+        write_hours: 48,
+        max_run_mb: 2,
+        attachments: [],
+      });
+      return {
+        pointer: DockPointer.forAssetEditorByTypeId(
+          DiagnosisRequest.type,
+          new TypeId(DiagnosisRequest.type, request.id),
+        ),
+        toastTitle: msg`Diagnosis request created`,
+      };
+    },
+  },
 ];
 
 export function getDescriptor(type: string): QuickCreateDescriptor | undefined {
   return QUICK_CREATE_REGISTRY.find((d) => d.type === type);
 }
-
