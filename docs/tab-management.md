@@ -48,6 +48,29 @@ than inserting a second row. (Before natural-key reconciliation, a row minted
 under the old client-side scheme carried a random uuid4 id that an id-only lookup
 missed → a _second_ canonical row was minted → two visible chips for one pointer.)
 
+## Host tabs (nested tabs, one level deep)
+
+A tab is either a LEAF or a HOST. A host draws its own nested strip of child tabs
+(`Tab.parent_tab_id` = the host's id); the global strip shows only top-level tabs
+and, on a child's URL, lights the host's chip.
+
+- **Declaring a host:** `VIEWER_REGISTRY[viewType].hostsTabs` (`ui/src/types/ViewType.ts`).
+  Which docks it accepts as children: `ui/src/navigation/tab-hosts.ts`, mirrored by
+  `_HOST_CHILD_RULES` in `flow_sdk/builtin/tab.py`. `tests/fixtures/tab_host_children.json`
+  pins both sides (`tests/unit/test_tab_host_children.py`,
+  `ui/tests/unit/tab-host-children.test.ts`).
+- **Depth 1:** a host is a workspace ANCHOR (`isWorkspaceAnchorDock`) and is never
+  accepted as a child (backend: `_pointer_is_adoptable_child` refuses a host view).
+- **Closing a host closes its children** — `Tab.close`, the `close` action and
+  `close_many` hide the children in the same `tabs_changed` broadcast and tear them
+  down. The edge is kept, so a child reopened inside the host regroups under it.
+- **Vibe is the first host:** `ViewType.VIBE`, `/dock/vibe/agentic_process-<id>`. Its
+  `tabHash` folds onto `shell|agentic_process-<id>`, so a process is one row whether
+  it is shown as a chat, a terminal or a Vibe workspace; the stored pointer is
+  re-pointed between them. Several Vibe tabs can be open at once; one workspace
+  component renders whichever is active and resets its per-workspace show state
+  when the session changes.
+
 ## The `tab` actions (the only wire contract)
 
 Collection-level: `list?project=<id>` (the exact project scope;

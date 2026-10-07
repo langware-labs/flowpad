@@ -21,12 +21,13 @@ target-specific Vibe chat while keeping the same content surface mounted.
 
 ## Architecture (non-negotiable)
 
-1. **The URL is the standard agentic-process dock URL + the view mode.** A Vibe
-   session rides the normal `/dock/shell/agentic_process-<id>` URL, with the mode
-   carried by the `?viewMode` search param and reflected as `data-view="vibe"` on
-   `<html>`. Vibe invents no route, no loader, no URL grammar — one process is ONE
-   `Tab` identity in every mode. (A per-mode URL family was tried and collapsed;
-   see [Vibe Display surface](../tabs/display.md) §3.)
+1. **A Vibe session is a HOST tab.** It lives at `/dock/vibe/agentic_process-<id>`,
+   an address that implies the Vibe mode (`data-view="vibe"` on `<html>`), and it
+   hosts its own nested tabs one level deep. Its `tabHash` folds onto the process's
+   shell identity, so one process is ONE `Tab` row in every mode, and it reuses the
+   shell loaders. Old `?viewMode=vibe` process URLs redirect to it once. See
+   [Tab Management → Host tabs](../tab-management.md#host-tabs-nested-tabs-one-level-deep)
+   and [Vibe Display surface](../tabs/display.md) §3.
 2. **Navigation stays URL-first.** Entering Vibe changes only the current dock's
    `viewMode` option. A `flow show` target is an ADDRESS: the workspace navigates
    to the target's own dock carrying `host` + `activeDisplay=1`
