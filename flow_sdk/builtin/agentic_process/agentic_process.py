@@ -598,20 +598,16 @@ def _build_run_result(proc: "AgenticProcess") -> "PromptResult":
 # The agent's `flow show` targets accumulate on ``context_data["display_stack"]``
 # (each entry = a resolve_display_target payload + a server ``shown_at`` ISO
 # stamp), newest last. ``last_shown`` stays = the newest TARGET (no shown_at) for
-# back-compat readers (standard-mode viewer). Capped; consecutive identical
-# targets refresh the timestamp instead of duplicating.
+# back-compat readers (standard-mode viewer). Capped; one entry per target — a
+# re-shown target moves to the end with a fresh timestamp.
 DISPLAY_STACK_CAP = 50
 
 
 def _append_display_entry(stack: list[dict], payload: dict, shown_at: str) -> list[dict]:
-    """Append ``payload`` (stamped ``shown_at``) to ``stack``; a consecutive
-    identical target just refreshes its timestamp. Capped to the newest N."""
-    entry = {**payload, "shown_at": shown_at}
-    if stack and isinstance(stack[-1], dict) and same_display_target(stack[-1], payload):
-        stack = [*stack[:-1], entry]
-    else:
-        stack = [*stack, entry]
-    return stack[-DISPLAY_STACK_CAP:]
+    """Append ``payload`` (stamped ``shown_at``) to ``stack``, dropping any earlier
+    show of the same target — so repeats never eat the cap. Capped to the newest N."""
+    kept = [e for e in stack if not (isinstance(e, dict) and same_display_target(e, payload))]
+    return [*kept, {**payload, "shown_at": shown_at}][-DISPLAY_STACK_CAP:]
 
 
 def _union_display_stacks(a: list, b: list) -> list[dict]:

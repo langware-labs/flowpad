@@ -53,4 +53,24 @@ describe('TerminalBottomRibbon — Shown chip', () => {
     await userEvent.click(rows[1]);
     expect(onOpenShown).toHaveBeenCalledWith(older);
   });
+
+  it('a target shown several times is ONE row, stamped with its latest show', async () => {
+    const onOpenShown = vi.fn();
+    const icpOld = file('gtm-icp.html', '2026-09-27T09:00:00Z');
+    const campaigns = file('gtm-campaigns.html', '2026-09-28T09:00:00Z');
+    const icpNew = { ...file('gtm-icp.html', '2026-09-28T12:00:00Z'), line: 4 } as DisplayEntry;
+    render(
+      <TerminalBottomRibbon {...baseProps} shown={[icpOld, campaigns, icpNew]} onOpenShown={onOpenShown} />,
+    );
+
+    expect(screen.getByTestId('ribbon-shown').textContent).toContain('2');
+    await userEvent.click(screen.getByTestId('ribbon-shown'));
+    const rows = screen.getAllByTestId('display-history-row');
+    expect(rows.map((r) => r.textContent)).toEqual([
+      expect.stringContaining('gtm-icp.html'),
+      expect.stringContaining('gtm-campaigns.html'),
+    ]);
+    await userEvent.click(rows[0]);
+    expect(onOpenShown).toHaveBeenCalledWith(icpNew);
+  });
 });
