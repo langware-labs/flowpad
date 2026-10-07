@@ -51,9 +51,10 @@ export function VibeChatPane({
   const { project } = useAgentContext();
   const { navigation } = useDockNavigation();
   const defaultWorkerType = useDefaultWorkerType();
-  // The same stored tier the hero composers start a build with, so picking Fast
-  // there is not silently undone by the next in-workspace build.
-  const [vibeModelTier] = useVibeModelTier();
+  // The stored tier every build starts with. The home carries no picker, so this
+  // pane's picker is where it is set: a pick switches this session AND becomes
+  // the tier the next build (from the home or here) starts with.
+  const [vibeModelTier, setVibeModelTier] = useVibeModelTier();
   const { promptContext, consume } = useKeyedAssetPromptContext(workContext);
   const [pendingWorkerSwitch, setPendingWorkerSwitch] = useState<{
     workerType: WorkerType;
@@ -281,7 +282,14 @@ export function VibeChatPane({
         defaultModel={vibeModelTier}
         defaultWorkerType={defaultWorkerType}
         modelSelectSlot={({ value, disabled, onChange }) => (
-          <VibeModelSelect value={value} onChange={(next) => onChange(next)} disabled={disabled} />
+          <VibeModelSelect
+            value={value}
+            onChange={(next) => {
+              setVibeModelTier(next);
+              return onChange(next);
+            }}
+            disabled={disabled}
+          />
         )}
         workerSelectSlot={({ value, disabled, onChange }) => (
           <VibeWorkerSelect

@@ -8,7 +8,7 @@ import { useAuth } from '@sdk/react/hooks';
 import { useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { useStartVibeSession } from './use-start-vibe-session';
-import { VibeModelSelect, useVibeModelTier } from './vibe-model-select';
+import { useVibeModelTier } from './vibe-model-select';
 
 /**
  * Vibe fallback shown when no build session is active — i.e. we're in Vibe mode
@@ -23,7 +23,8 @@ export function VibeNewChat() {
   const { currentUser } = useAuth();
   const { start: startVibe, installDialog } = useStartVibeSession();
   const [draft, setDraft] = useState('');
-  const [model, setModel] = useVibeModelTier();
+  // No model picker on the home: the stored tier is set from the Vibe chat pane's picker.
+  const [model] = useVibeModelTier();
   const firstName = currentUser?.name?.split(' ')[0] || 'there';
   const { homeTitle, homeBackgroundUrl } = useHomeCustomization();
 
@@ -61,7 +62,6 @@ export function VibeNewChat() {
             value={draft}
             onChange={setDraft}
             allowAttachments
-            footerSlot={<VibeModelSelect value={model} onChange={setModel} />}
             onSubmit={(msg, files) => startVibe(msg, files, model)}
           />
         </div>

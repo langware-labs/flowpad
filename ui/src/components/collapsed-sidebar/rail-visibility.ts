@@ -33,7 +33,6 @@ import { ViewMode } from '@src/contexts/view-mode-context';
 
 /** Every icon slot on the DESK rail — the ids RAIL_ITEMS may place. */
 export type RailItemId =
-  | 'chats'
   | 'stream_inbox'
   /** OAuth connections, API-key credentials and the FlowPad login — one screen. */
   | 'credentials'
@@ -93,13 +92,11 @@ export const MODE_CHAIN = [ViewMode.Vibe, ViewMode.Standard, ViewMode.Advanced, 
  * star that also toggles the current favorite. `project` is the bar's leading
  * breadcrumb, and `assets` is reached through it. Each would otherwise be a
  * second door onto the same room, lighting two buttons for one destination.
- *
- * Standard adds no icon of its own: it differs from Vibe only in what `chats`
- * targets (the chats list vs. resuming the last UI chat). That is the intended
- * reading of "Standard = Vibe + …", not an omission.
+ * The former `chats` slot is gone too: getting back to your tabs is the bar's
+ * Home button, which flips to "Back to tabs" on the tabless home.
+ * Standard adds no icon of its own — the intended reading of "Standard = Vibe + …".
  */
 export const RAIL_ITEMS: readonly RailSpec[] = [
-  { id: 'chats', from: ViewMode.Vibe, placement: 'top' },
   // Ungated, like every slot: it used to need "a conversation exists", but a
   // logout purges the hub's conversations — so the icon vanished in exactly the
   // state where its screen says "Login required", the only way back in. An

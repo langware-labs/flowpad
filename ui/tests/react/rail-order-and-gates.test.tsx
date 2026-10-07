@@ -33,11 +33,6 @@ vi.mock('@src/navigation/useDockNavigation', () => ({
   }),
 }));
 
-/** The Vibe-only Chats target. Captured, not exercised — its own resolution is
- *  unit-tested against the query it builds. */
-const lastVibeChat = vi.hoisted(() => vi.fn());
-vi.mock('@src/pages/flow-page/vibe-process-resolver', () => ({ useLastVibeChat: () => lastVibeChat }));
-
 // Heavy presentational leaves — irrelevant to placement decisions.
 vi.mock('@src/components/theme-toggle/theme-toggle', () => ({ ThemeToggle: () => null }));
 vi.mock('@src/components/floating-chat', () => ({ FlowpadAssistantButton: () => null }));
@@ -95,7 +90,6 @@ afterEach(() => {
   nav.openDock.mockClear();
   nav.openTab.mockClear();
   nav.openAssets.mockClear();
-  lastVibeChat.mockClear();
   setViewMode(ViewMode.Standard);
 });
 
@@ -106,7 +100,7 @@ describe('rail — order', () => {
     // a signed-out instance has none (logout purges them), and its screen is
     // where "Login required" brings the user back in. The spec-side contract
     // lives in tests/unit/rail-visibility.test.ts.
-    expect(renderRail().ids()).toEqual(['chats', 'stream_inbox', 'credentials']);
+    expect(renderRail().ids()).toEqual(['stream_inbox', 'credentials']);
   });
 
   it('drops the project item when no project is active', async () => {
@@ -147,28 +141,6 @@ describe('rail — order', () => {
     setViewMode(ViewMode.Dev);
     expect(renderRail().ids()).not.toContain('assets');
   });
-});
-
-describe('rail — Chats target forks on view mode', () => {
-  it('Vibe: resumes the last UI chat instead of opening the chats list', () => {
-    setViewMode(ViewMode.Vibe);
-    const rail = renderRail();
-    fireEvent.click(rail.item('chats')!);
-
-    expect(lastVibeChat).toHaveBeenCalledTimes(1);
-    expect(nav.openTab).not.toHaveBeenCalled();
-  });
-
-  for (const mode of [ViewMode.Standard, ViewMode.Advanced, ViewMode.Dev]) {
-    it(`${mode}: opens the chats list`, () => {
-      setViewMode(mode);
-      const rail = renderRail();
-      fireEvent.click(rail.item('chats')!);
-
-      expect(nav.openTab).toHaveBeenCalledWith(ViewType.SHELL);
-      expect(lastVibeChat).not.toHaveBeenCalled();
-    });
-  }
 });
 
 describe('rail — one active resolver above and below the chevron', () => {

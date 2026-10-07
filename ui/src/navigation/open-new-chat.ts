@@ -43,8 +43,8 @@ export interface OpenNewChatOptions {
  * whichever mode it was born in. They were previously omitted, so every session
  * from this path landed with `process_type` and `target_typeid_str` null and was
  * invisible to every consumer that filters on them: Vibe's "Past builds"
- * (`useProcessesForTarget`) and the rail's last-chat resolver
- * (`lastVibeChatQuery`) both do.
+ * (`useProcessesForTarget`) and the agent home page's last-chat
+ * resolver (`lastVibeChatQuery`) both do.
  */
 export async function openNewChat(
   navigation: Pick<NavigationActions, 'openShellProcess'>,
