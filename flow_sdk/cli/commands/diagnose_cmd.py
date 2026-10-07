@@ -245,6 +245,23 @@ async def _load_recorded_diagnosis(diagnosis_cls, diagnosis_id: str | None):
     return last
 
 
+async def _stop_worker(ap) -> None:
+    """End the diagnose process's worker, whichever transport ran it.
+
+    The diagnose process is headless (no Shell), so stopping only a Shell's worker stopped
+    nothing: the turn task, its ``claude`` child and its stderr reader outlived the run. On
+    Windows the child still held the run's temp folder, and ``asyncio.run`` cancelled the turn
+    mid-write at exit, leaving ~20 DB sessions for its final cleanup to close in the wrong
+    context. ``_stop_headless_turn`` closes the child and joins the turn, so its writes finish.
+    """
+    with contextlib.suppress(Exception):
+        await ap._stop_headless_turn(source="flow diagnose")
+    with contextlib.suppress(Exception):
+        shell = await ap.shell()
+        if shell is not None:
+            await shell.terminate_worker()
+
+
 async def _build_diagnose_process(**options):
     """The diagnose worker process, exactly as `flow diagnose` launches it.
 
@@ -438,10 +455,7 @@ async def _run_diagnose(
         # interrupted OR finished run would otherwise leave an orphaned claude
         # process behind — and a pile-up of those starves new runs (they spawn but
         # never produce output → hang). Kill it on EVERY exit.
-        with contextlib.suppress(Exception):
-            shell = await ap.shell()
-            if shell is not None:
-                await shell.terminate_worker()
+        await _stop_worker(ap)
 
     started = False
 
