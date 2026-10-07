@@ -38,7 +38,7 @@ from flow_sdk.assets.layout import (  # noqa: F401 — Layout/LayoutKind re-expo
     shape_from_spec,
 )
 from flow_sdk.fs_store.record_types import RecordType
-from flow_sdk.schema.view_mode import ViewMode, view_mode_rank, visible_in
+from flow_sdk.schema.view_mode import LEGACY_DEV_TIER, ViewMode, view_mode_rank, visible_in
 
 # ---------------------------------------------------------------------------
 # Hardcoded fallback list so get_default_index_types() works before any
@@ -119,6 +119,10 @@ class TypeInfo:
     # Minimum view mode at which this type is browseable (None ⇒ never). See
     # flow_sdk/schema/view_mode.py — visibility is cumulative.
     browseable_by: ViewMode | None = None
+    # Shown only with developer mode on, on top of ``browseable_by`` — Dev is a
+    # switch, not a tier (flow_sdk/schema/view_mode.py). Presentational: NOT in
+    # ``schema_hash``, so the flag never forces a reindex.
+    dev_only: bool = field(default=False, metadata=_MERGE)
     creatable: bool = field(default=False, metadata=_MERGE)
     api_visible: bool = field(default=False, metadata=_MERGE)
     icon: str | None = field(default=None, metadata=_MERGE)
@@ -695,6 +699,7 @@ class TypeInfo:
             "defaults": self.defaults,
             "indexed_by_default": self.indexed_by_default,
             "browseable_by": self.browseable_by_str,
+            "dev_only": self.dev_only,
             "creatable": self.creatable,
             "api_visible": self.api_visible,
             "cloud_file_transport": self.cloud_file_transport,
@@ -738,7 +743,8 @@ class TypeInfo:
             index_fields=data.get("index_fields", []),
             defaults=data.get("defaults", {}),
             indexed_by_default=data.get("indexed_by_default", False),
-            browseable_by=ViewMode(data["browseable_by"]) if data.get("browseable_by") else None,
+            browseable_by=_browseable_tier(data.get("browseable_by")),
+            dev_only=bool(data.get("dev_only")) or data.get("browseable_by") == LEGACY_DEV_TIER,
             creatable=data.get("creatable", False),
             api_visible=data.get("api_visible", False),
             cloud_file_transport=data.get("cloud_file_transport", "embedded"),
@@ -884,6 +890,14 @@ def check_asset_spec(type_name: str, entity_cls: type, spec: type) -> None:
 
 #: The ``merge``-tagged TypeInfo fields: a later registration's non-default value wins.
 _MERGE_SLOTS = tuple(f for f in fields(TypeInfo) if f.metadata.get("merge"))
+
+
+def _browseable_tier(value: str | None) -> ViewMode | None:
+    """A stored ``browseable_by``; the retired ``"dev"`` tier reads as ``ADVANCED``
+    (its developer-only half lands on ``dev_only``)."""
+    if not value:
+        return None
+    return ViewMode.ADVANCED if value == LEGACY_DEV_TIER else ViewMode(value)
 
 
 def _slot_default(slot: Any) -> Any:
@@ -1620,9 +1634,13 @@ class SchemaRegistry:
         return info.browseable_by if info else None
 
     @classmethod
-    def is_browseable_in(cls, type_name: str, mode: ViewMode) -> bool:
-        """True iff ``type_name`` is browseable in the given view ``mode`` (cumulative)."""
-        return visible_in(cls.browseable_by(type_name), mode)
+    def is_browseable_in(cls, type_name: str, mode: ViewMode, *, dev: bool = False) -> bool:
+        """True iff ``type_name`` is browseable in view ``mode`` (cumulative) — and,
+        for a ``dev_only`` type, only with developer mode on."""
+        info = cls.get(type_name)
+        if info is None or (info.dev_only and not dev):
+            return False
+        return visible_in(info.browseable_by, mode)
 
     @classmethod
     def is_creatable(cls, type_name: str) -> bool:

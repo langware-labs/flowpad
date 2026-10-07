@@ -1,6 +1,7 @@
 import { Avatar, AvatarFallback, AvatarImage } from '@src/components/ui/avatar';
 import { User as UserIcon } from 'lucide-react';
-import { Trans } from '@lingui/react/macro';
+import { Trans, useLingui } from '@lingui/react/macro';
+import { cn } from '@src/lib/utils';
 import type { ReactNode } from 'react';
 
 /**
@@ -30,9 +31,23 @@ export interface UserMenuHeaderProps {
   pictureIcon?: ReactNode;
   /** Initials, used when there is neither. */
   initials?: string | null;
+  /** Developer mode is on: the avatar wears the fire ring. */
+  devMode?: boolean;
+  /** Double-clicking the avatar — the door to developer mode. */
+  onAvatarDoubleClick?: () => void;
 }
 
-export function UserMenuHeader({ name, title, email, pictureUrl, pictureIcon, initials }: UserMenuHeaderProps) {
+export function UserMenuHeader({
+  name,
+  title,
+  email,
+  pictureUrl,
+  pictureIcon,
+  initials,
+  devMode = false,
+  onAvatarDoubleClick,
+}: UserMenuHeaderProps) {
+  const { t } = useLingui();
   // Suppressed when the name line IS the email (a user with no name falls back
   // to it), so the address never appears twice.
   const emailLine = name ? email : null;
@@ -56,12 +71,23 @@ export function UserMenuHeader({ name, title, email, pictureUrl, pictureIcon, in
         aria-hidden
       />
       <div className="flex items-center gap-3 px-3 pb-3 pt-2">
-        <Avatar className="h-10 w-10 shrink-0 ring-2 ring-background">
-          {pictureUrl && <AvatarImage src={pictureUrl} alt={name ?? ''} />}
-          <AvatarFallback className="text-base">
-            {pictureIcon ?? initials ?? <UserIcon className="h-5 w-5" />}
-          </AvatarFallback>
-        </Avatar>
+        {/* A double-click toggles developer mode; the fire ring says it is on. A
+            plain span, not a button: it is a hidden gesture, not a menu item, and
+            a focusable control here would steal the menu's first focus. */}
+        <span
+          className={cn('relative shrink-0 rounded-full', devMode && 'dev-fire-ring')}
+          onDoubleClick={onAvatarDoubleClick}
+          title={devMode ? t`Developer mode is on — double-click to turn it off` : undefined}
+          data-testid="user-menu-avatar"
+          data-dev-mode={devMode ? 'true' : undefined}
+        >
+          <Avatar className="h-10 w-10 ring-2 ring-background">
+            {pictureUrl && <AvatarImage src={pictureUrl} alt={name ?? ''} />}
+            <AvatarFallback className="text-base">
+              {pictureIcon ?? initials ?? <UserIcon className="h-5 w-5" />}
+            </AvatarFallback>
+          </Avatar>
+        </span>
         <div className="min-w-0">
           <div className="truncate text-sm font-medium" data-testid="user-menu-name">
             {name ?? email ?? <Trans>Signed in</Trans>}

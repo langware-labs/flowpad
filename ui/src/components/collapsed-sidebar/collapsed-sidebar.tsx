@@ -1,6 +1,6 @@
 import { ThemeToggle } from '@src/components/theme-toggle/theme-toggle';
 import { FlowpadAssistantButton } from '@src/components/floating-chat';
-import { useIsDev, useViewMode } from '@src/components/view-mode';
+import { useIsDev, useTierMode } from '@src/components/view-mode';
 import { buildHubRailItems, type HubItem, type RailIcon } from './hub-rail';
 import { OrgTeamsButton } from './OrgTeamsButton';
 import { resolveRail, type RailItemId, type RailSpec } from './rail-visibility';
@@ -70,7 +70,8 @@ export function CollapsedSidebar() {
   const [secondaryExpanded, setSecondaryExpanded] = useState(false);
   const devMode = useIsDev();
   const { unread: unreadCount } = useStreamInboxManager();
-  const viewMode = useViewMode();
+  // Which items show is a TIER question: Dev on adds the Dev-tier items on any surface.
+  const tierMode = useTierMode();
   const { t } = useLingui();
 
   /** Title/icon/target per id. A LOOKUP, not an order — see RAIL_ITEMS. */
@@ -106,7 +107,7 @@ export function CollapsedSidebar() {
   // unused entries every desk render).
   const hubItems = useMemo(() => (hubMode ? buildHubRailItems(t) : NO_HUB_ITEMS), [hubMode, t]);
 
-  const railItems = hubMode ? [] : resolveRail(viewMode);
+  const railItems = hubMode ? [] : resolveRail(tierMode);
   const topItems = railItems.filter((item) => item.placement === 'top');
   const overflowItems = railItems.filter((item) => item.placement === 'overflow');
 

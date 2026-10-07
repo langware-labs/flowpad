@@ -94,7 +94,10 @@ export const MODE_CHAIN = [ViewMode.Vibe, ViewMode.Standard, ViewMode.Advanced, 
  * second door onto the same room, lighting two buttons for one destination.
  * The former `chats` slot is gone too: getting back to your tabs is the bar's
  * Home button, which flips to "Back to tabs" on the tabless home.
- * Standard adds no icon of its own — the intended reading of "Standard = Vibe + …".
+ *
+ * Two tiers now: the base rail (`from: Vibe`, everyone) and the developer rail
+ * (`from: Dev`, developer mode on). The surface on screen never changes the rail —
+ * a terminal tab and a Vibe tab sit in the same app; Advanced was retired into Dev.
  */
 export const RAIL_ITEMS: readonly RailSpec[] = [
   // Ungated, like every slot: it used to need "a conversation exists", but a
@@ -112,25 +115,22 @@ export const RAIL_ITEMS: readonly RailSpec[] = [
   // Took the Tasks slot. Ungated on purpose: this screen is where the FIRST
   // source is created, so gating it on "a source exists" would make it
   // unreachable from empty — the one state where it matters most.
-  { id: 'data-sources', from: ViewMode.Advanced, placement: 'top' },
+  { id: 'data-sources', from: ViewMode.Vibe, placement: 'top' },
   // Ungated for the same reason as data sources: this screen is where the first index is
   // created, so a gate on "an index exists" would make it unreachable from empty.
-  { id: 'rag', from: ViewMode.Advanced, placement: 'top' },
+  { id: 'rag', from: ViewMode.Vibe, placement: 'top' },
   { id: 'discover', from: ViewMode.Dev, placement: 'top' },
   { id: 'graph-workflows', from: ViewMode.Dev, placement: 'top' },
   // Automations (was Events, which took the old `signals` and `triggers` slots):
-  // Advanced because dropping to Dev would remove rules from a mode that already
-  // had them, top because a screen you operate does not belong behind a chevron.
-  { id: 'automations', from: ViewMode.Advanced, placement: 'top' },
-  // Advanced, not Dev: 'what did my agent produce' is an ordinary question,
-  // and the answer was previously unreachable for any run without a
-  // spawning entity to browse to.
-  { id: 'process-runs', from: ViewMode.Advanced, placement: 'top' },
-  { id: 'hooks', from: ViewMode.Advanced, placement: 'overflow' },
-  // Advanced, beside `hooks`: Standard is Vibe plus nothing (an invariant with a test), and
-  // this is a settings destination. A Vibe or Standard user still reaches it from the
+  // top because a screen you operate does not belong behind a chevron.
+  { id: 'automations', from: ViewMode.Vibe, placement: 'top' },
+  // Not Dev: 'what did my agent produce' is an ordinary question, and the answer
+  // was previously unreachable for any run without a spawning entity to browse to.
+  { id: 'process-runs', from: ViewMode.Vibe, placement: 'top' },
+  { id: 'hooks', from: ViewMode.Vibe, placement: 'overflow' },
+  // Beside `hooks`, behind the chevron: a settings destination. Also reachable from the
   // harness-status button in the version popover, which does not depend on the rail.
-  { id: 'llm-sources', from: ViewMode.Advanced, placement: 'overflow' },
+  { id: 'llm-sources', from: ViewMode.Vibe, placement: 'overflow' },
   { id: 'capabilities', from: ViewMode.Dev, placement: 'overflow' },
 ];
 

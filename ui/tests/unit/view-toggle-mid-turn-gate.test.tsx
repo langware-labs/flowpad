@@ -27,7 +27,7 @@ vi.mock('@src/navigation/useDockNavigation', () => ({
   useDockNavigation: () => ({ currentDock: dock, navigation: { openDock } }),
 }));
 
-import { resetRevealedModes, ViewToggle } from '@src/components/view-toggle/view-toggle';
+import { ViewToggle } from '@src/components/view-toggle/view-toggle';
 import { ViewMode } from '@src/contexts/view-mode-context';
 import { surfaceTransportGate } from '@src/components/terminal/interactive-terminal/use-process-surface';
 
@@ -128,12 +128,10 @@ describe('ViewToggle refuses a gated segment instead of lying about it', () => {
     gated.modes = new Set();
     dock.viewMode = ViewMode.Standard;
     openDock.mockClear();
-    resetRevealedModes();
   });
 
   afterEach(() => {
     cleanup();
-    resetRevealedModes();
   });
 
   it('greys a gated segment and leaves the ungated ones alone', () => {

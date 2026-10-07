@@ -67,7 +67,7 @@ describe('AssetVibeWorkspace panel layout', () => {
     expect(() => {
       view = render(
         <React.StrictMode>
-          <AssetVibeWorkspace isVibe={false} session={null} />
+          <AssetVibeWorkspace chatBeside={false} session={null} />
         </React.StrictMode>,
       );
     }).not.toThrow();
@@ -77,7 +77,7 @@ describe('AssetVibeWorkspace panel layout', () => {
     expect(() => {
       view?.rerender(
         <React.StrictMode>
-          <AssetVibeWorkspace isVibe session={null} />
+          <AssetVibeWorkspace chatBeside session={null} />
         </React.StrictMode>,
       );
     }).not.toThrow();
@@ -87,7 +87,7 @@ describe('AssetVibeWorkspace panel layout', () => {
     expect(() => {
       view?.rerender(
         <React.StrictMode>
-          <AssetVibeWorkspace isVibe={false} session={null} />
+          <AssetVibeWorkspace chatBeside={false} session={null} />
         </React.StrictMode>,
       );
     }).not.toThrow();
@@ -98,7 +98,7 @@ describe('AssetVibeWorkspace panel layout', () => {
   it('mounts directly in Vibe mode at the intended split', () => {
     const { container, unmount } = render(
       <React.StrictMode>
-        <AssetVibeWorkspace isVibe session={null} />
+        <AssetVibeWorkspace chatBeside session={null} />
       </React.StrictMode>,
     );
     expectPanelSizes(container, '36.0', '64.0');

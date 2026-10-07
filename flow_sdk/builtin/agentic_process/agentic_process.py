@@ -2928,11 +2928,13 @@ class AgenticProcess(Entity):
         entity event to whoever watches this process. Nothing watching → a
         silent context change; that is the intended semantics, not a failure.
 
-        The payload says WHAT to present, never HOW — so the same verb adapts to
-        the surface the user is on, and the choice is the frontend's (only it
-        knows the live view mode). Vibe pins the target in its display pane;
-        every other mode mints it as a tab beside this process's own tab,
-        WITHOUT navigating (``ui/src/hooks/use-show-target-listener.ts``).
+        The payload says WHAT to present; HOW is stamped here as ``placement``
+        (``tab.show_placement``): this process's own tab, and whether that tab is
+        a HOST (Vibe) tab. A host pins the target in its Display pane; otherwise
+        the target becomes a tab beside the process's tab, WITHOUT navigating
+        (``ui/src/hooks/use-show-target-listener.ts``). The live event carries
+        target + ``placement``; the durable copy keeps ``last_shown`` the bare
+        target with ``show_placement`` beside it — placement is a fact about NOW.
 
         The payload is appended to ``context_data.display_stack`` (the show
         HISTORY, newest last) and mirrored to ``context_data.last_shown`` (the
@@ -2958,13 +2960,19 @@ class AgenticProcess(Entity):
                 if DISPLAY_CONTEXT_KEY in latest_ctx:
                     context[DISPLAY_CONTEXT_KEY] = latest_ctx[DISPLAY_CONTEXT_KEY]
         stack = _append_display_entry(base, payload, shown_at)
-        # A context speaks only for the page it was written on.
-        self.context_data = without_stale_display_context({**context, "display_stack": stack, "last_shown": payload})
+        from flow_sdk.builtin.tab import show_placement
+
+        placement = await show_placement(self.id)
+        # A context speaks only for the page it was written on. ``last_shown`` stays
+        # the bare target; its placement rides beside it for a client that mounts later.
+        self.context_data = without_stale_display_context(
+            {**context, "display_stack": stack, "last_shown": payload, "show_placement": placement}
+        )
         try:
             await self._save_display_authoritative()
         except Exception:
             logger.warning("on_show: display persist failed", exc_info=True)
-        await self.emit_entity_event("on_show", payload)
+        await self.emit_entity_event("on_show", {**payload, "placement": placement})
 
     @action.post(action_name="show")
     async def _http_show(self) -> ApiSuccessResponse | ApiFailResponse:

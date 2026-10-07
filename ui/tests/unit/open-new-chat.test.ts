@@ -65,13 +65,13 @@ describe('openNewChat + NavigationActions', () => {
     expect(embedMock).not.toHaveBeenCalled();
   });
 
-  it('follows the mode on screen, not the saved preference', async () => {
-    // A `?viewMode=advanced` URL displays Terminal over a saved Standard (a load
-    // only displays; a switch saves). The chat started from that page is the
-    // one the user is looking at: a PTY, opened in Terminal.
+  it('an opener that names no surface opens a TERMINAL, whatever is on screen', async () => {
+    // The top-bar quick launch, Quick create, Chats → New chat and Fork name no
+    // surface; they open a terminal like the strip's openers do. Neither the mode
+    // on screen (here Vibe) nor the saved preference decides it any more.
     const { createProcessSpy } = stubComputeNode();
     vi.spyOn(viewMode, 'getViewMode').mockReturnValue(viewMode.ViewMode.Standard);
-    vi.spyOn(viewMode, 'getEffectiveViewMode').mockReturnValue(viewMode.ViewMode.Advanced);
+    vi.spyOn(viewMode, 'getEffectiveViewMode').mockReturnValue(viewMode.ViewMode.Vibe);
     const navigation = new NavigationActions(vi.fn(), null);
     const openShell = vi.spyOn(navigation, 'openShellProcess').mockResolvedValue(null);
 
@@ -86,11 +86,10 @@ describe('openNewChat + NavigationActions', () => {
 
   it('launches a Chat-mode chat headless', async () => {
     const { createProcessSpy } = stubComputeNode();
-    vi.spyOn(viewMode, 'getEffectiveViewMode').mockReturnValue(viewMode.ViewMode.Standard);
     const navigation = new NavigationActions(vi.fn(), null);
     const openShell = vi.spyOn(navigation, 'openShellProcess').mockResolvedValue(null);
 
-    const process = await openNewChat(navigation);
+    const process = await openNewChat(navigation, { mode: viewMode.ViewMode.Standard });
 
     expect(createProcessSpy).toHaveBeenCalledWith(
       { workdir: '/tmp/project', processType: 'chat', outputFormat: 'stream-json' },
@@ -106,11 +105,10 @@ describe('openNewChat + NavigationActions', () => {
 
   it('launches a vibe chat headless and carries the vibe view mode', async () => {
     const { createProcessSpy } = stubComputeNode();
-    vi.spyOn(viewMode, 'getEffectiveViewMode').mockReturnValue(viewMode.ViewMode.Vibe);
     const navigation = new NavigationActions(vi.fn(), null);
     const openShell = vi.spyOn(navigation, 'openShellProcess').mockResolvedValue(null);
 
-    await openNewChat(navigation);
+    await openNewChat(navigation, { mode: viewMode.ViewMode.Vibe });
 
     expect(createProcessSpy).toHaveBeenCalledWith(
       { workdir: '/tmp/project', processType: 'chat', outputFormat: 'stream-json' },

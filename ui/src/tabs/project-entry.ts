@@ -7,7 +7,6 @@ import {
   resolveNextTabPure,
   tabHasRecency,
   tabInProject,
-  tabIsProcess,
   tabManager,
   topLevelTabsForProject,
   type Tab,
@@ -108,15 +107,6 @@ export async function leaveProjectScope(currentDock?: DockPointer | null): Promi
 /** Enter a project scope. Thin alias of {@link dockForScopeEntry}. */
 export function dockForProjectEntry(projectId: string, currentDock?: DockPointer | null): Promise<DockPointer> {
   return dockForScopeEntry(projectId, currentDock);
-}
-
-/** Pick the active AgenticProcess tab for a project, or null when the project
- *  has no process tab. Vibe project switching uses this instead of
- *  dockForProjectEntry because its fallback must be a Vibe empty state, never
- *  project home. */
-export async function agenticProcessIdForProjectEntry(projectId: string): Promise<string | null> {
-  const tabs = (await tabManager.snapshotOrRefresh()).filter((t) => tabInProject(t, projectId) && tabIsProcess(t));
-  return tabManager.resolveNext(tabs)?.target_id ?? null;
 }
 
 /** Enter the Global (projectless) scope. Thin alias of {@link dockForScopeEntry}. */

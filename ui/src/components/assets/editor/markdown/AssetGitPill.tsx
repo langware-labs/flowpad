@@ -1,5 +1,5 @@
 import React from 'react';
-import { useViewMode } from '@src/components/view-mode';
+import { useTierMode } from '@src/components/view-mode';
 import { PublishPill } from '@src/components/git/PublishPill';
 import { derivePublishState, publishCopy } from '@src/lib/publish-state';
 import { useGitPush } from '@src/hooks/use-git-push';
@@ -36,7 +36,7 @@ export const AssetGitPill: React.FC<AssetGitPillProps> = ({
   onOpenHistory,
   onAfterPublish,
 }) => {
-  const mode = useViewMode();
+  const mode = useTierMode();
   const status = derivePublishState({ hasRepo, unpushed });
   const labels = publishCopy(status.state, mode);
   const { push, busy } = useGitPush(computeNodeId, workdir, onAfterPublish);

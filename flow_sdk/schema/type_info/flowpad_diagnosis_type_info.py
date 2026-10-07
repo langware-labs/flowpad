@@ -102,7 +102,8 @@ class FlowpadDiagnosisMetadata(BaseMeta):
 FLOWPAD_DIAGNOSIS = TypeInfo(
     type_name=EntityType.FLOWPAD_DIAGNOSIS,
     icon="Stethoscope",
-    browseable_by=ViewMode.DEV,
+    browseable_by=ViewMode.ADVANCED,
+    dev_only=True,
     creatable=True,
     api_visible=True,
     index_fields=["title", "symptoms"],

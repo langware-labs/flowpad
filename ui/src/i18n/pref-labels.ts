@@ -83,7 +83,7 @@ const PREF_DESCRIPTIONS: Partial<Record<PrefKey, MessageDescriptor>> = {
   [PrefKey.AUTO_INDEX_TRIGGER]: msg`Project create indexes once, as the project is created. First selection indexes the first time you open a project. Every selection re-indexes on each switch into it — note that even a Fast run still walks the whole project, so this is the expensive option on large trees.`,
   [PrefKey.AUTO_INDEX_FUNCTION]: msg`Subprocess runs the file walk in a separate process, so a large or slow tree can’t stall the server (database writes stay in the server either way). Thread runs it in-process — lower startup cost, better for small projects. No effect when the Rust indexer backend is selected.`,
   [PrefKey.LOCALE]: msg`Interface language and text direction.`,
-  [PrefKey.VIEW_MODE]: msg`Surface complexity: Vibe (simplest, creator), Standard (minimal), Advanced, or Dev.`,
+  [PrefKey.VIEW_MODE]: msg`Surface complexity: Vibe (simplest, creator), Standard (minimal), or Advanced.`,
   [PrefKey.SHOW_SYSTEM_PROJECTS]: msg`Include built-in system projects in the project picker.`,
   [PrefKey.CHAT_SHOW_TOOLS]: msg`Show tool calls, reasoning, and status chips in the chat transcript.`,
   [PrefKey.ERROR_DEDUPLICATE]: msg`Collapse repeated error records into a single row.`,

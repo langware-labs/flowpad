@@ -6,7 +6,7 @@ export type { AssetTypeVault } from '@sdk/lazy/assets';
 const NO_VAULTS: AssetTypeVault[] = [];
 import { dataManager } from '@sdk';
 import { isBrowseableIn, type TypeShape, type ViewMode } from '@sdk/FlowSync/schema';
-import { useViewMode, ViewMode as UiViewMode } from '@src/contexts/view-mode-context';
+import { useTierMode, ViewMode as UiViewMode } from '@src/contexts/view-mode-context';
 import { translateTypeLabel } from '@src/i18n/type-labels';
 
 export interface AssetTypeInfo {
@@ -59,7 +59,7 @@ function humanize(typeName: string): string {
  *  component test that mounts before bootstrap/loadTypes ran). */
 function staticAssetTypes(mode: ViewMode): AssetTypeInfo[] {
   return (dataManager?.getAllTypeInfos?.() ?? [])
-    .filter((t) => isBrowseableIn(t.browseable_by, mode))
+    .filter((t) => isBrowseableIn(t.browseable_by, mode, t.dev_only))
     .map((t) => ({
       type_name: t.type_name,
       // Same two-step as `labelForType`: the registry picks the word, i18n picks
@@ -91,7 +91,8 @@ export function useAssetTypes(options: UseAssetTypesOptions = {}): {
   error: Error | null;
   reload: () => Promise<unknown>;
 } {
-  const currentMode = useViewMode();
+  // A tier question (which types are browseable), so Dev on lifts it to `dev`.
+  const currentMode = useTierMode();
   const mode: ViewMode = options.anyMode
     ? 'dev'
     : options.vibeAsStandard && currentMode === UiViewMode.Vibe

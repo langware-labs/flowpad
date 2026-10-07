@@ -77,7 +77,7 @@ vi.mock('@src/navigation/useDockNavigation', () => ({
 }));
 
 import { ViewMode } from '@src/contexts/view-mode-context';
-import { resetRevealedModes, ViewToggle } from '@src/components/view-toggle/view-toggle';
+import { ViewToggle } from '@src/components/view-toggle/view-toggle';
 import {
   resetSurfaceReconcileState,
   useProcessSurface,
@@ -134,7 +134,6 @@ beforeEach(() => {
   switchMode.mockClear();
   openDock.mockClear();
   resetSurfaceReconcileState();
-  resetRevealedModes();
 });
 afterEach(cleanup);
 
@@ -180,15 +179,15 @@ describe('the reconcile effect issues exactly the call the route accepts', () =>
 describe('the ViewToggle greys exactly what the effect would refuse', () => {
   const seg = (m: string) => screen.getByTestId(`view-toggle-${m}`);
 
-  it.each(CASES.map((c) => [c.label, c] as const))('%s', (_label, c) => {
+  // The toggle has no Dev segment: Dev is a switch now (the avatar double-click),
+  // not a surface. A Dev row's transport is still pinned by the effect suite above.
+  const toggleCases = CASES.filter((c) => c.view_mode !== 'dev');
+  it.each(toggleCases.map((c) => [c.label, c] as const))('%s', (_label, c) => {
     // The control reads the same live entity the effect does.
     live.ptyMode = c.pty_mode;
     live.proc = processFor(c);
-    // Dev renders only once revealed (double-click on Terminal) or when it IS
-    // the mode, so a Dev row has to be viewed FROM Dev for its segment to exist
-    // at all. Every other row starts on the transport it is currently running.
-    live.mode =
-      c.view_mode === 'dev' ? ViewMode.Dev : c.pty_mode ? ViewMode.Advanced : ViewMode.Standard;
+    // Every row starts on the transport it is currently running.
+    live.mode = c.pty_mode ? ViewMode.Advanced : ViewMode.Standard;
     render(<ViewToggle />);
 
     const target = seg(VIEW_MODES[c.view_mode]);

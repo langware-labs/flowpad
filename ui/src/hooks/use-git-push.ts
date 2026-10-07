@@ -1,7 +1,7 @@
 import { useCallback, useState } from 'react';
 import { GitWorkdir } from '@sdk';
 import { notify } from '@src/notifications/notify';
-import { getViewMode } from '@src/components/view-mode';
+import { getTierMode } from '@src/components/view-mode';
 import { pushToastCopy, type PushKind } from '@src/lib/publish-state';
 
 export interface UseGitPushResult {
@@ -35,7 +35,7 @@ export function useGitPush(
       // Typed outcome → plain-language, mode-aware copy. `kind` is a required
       // field of GitPushResult; guard only against a malformed response.
       const kind: PushKind = res?.kind ?? 'generic';
-      const copy = pushToastCopy(kind, getViewMode(), { branch: res?.branch, message: res?.message });
+      const copy = pushToastCopy(kind, getTierMode(), { branch: res?.branch, message: res?.message });
       if (copy.level === 'success') {
         notify.success({ title: copy.title, message: copy.message, durationMs: 4000 });
       } else {
@@ -50,7 +50,7 @@ export function useGitPush(
         });
       }
     } catch (e) {
-      const copy = pushToastCopy('generic', getViewMode(), { message: e instanceof Error ? e.message : String(e) });
+      const copy = pushToastCopy('generic', getTierMode(), { message: e instanceof Error ? e.message : String(e) });
       notify.error({ title: copy.title, message: copy.message, durationMs: null });
     } finally {
       setBusy(false);

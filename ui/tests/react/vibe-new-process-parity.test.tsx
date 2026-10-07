@@ -9,7 +9,9 @@ import type { ReactNode } from 'react';
  * agentic_process-<id>`). The vibe-home creation path
  * (`createVibeProcessForProject`) does three things when it makes a process:
  *   1. embeds the SDK `vibe` persona, a SubAgent (`loadEmbeddedSubagent`),
- *   2. rebinds the URL to the new process (`navigation.openShellProcess`),
+ *   2. rebinds the URL to the new process (`navigation.openShellProcess`; from
+ *      the in-panel New it opens as a Vibe TAB beside the current one —
+ *      `navigation.openVibeTabBeside` — which is still a URL move to P1),
  *   3. enables the Flowpad Assistant.
  *
  * The in-panel `New` control instead runs `EntityExecutionPanel`'s generic
@@ -37,6 +39,7 @@ const panelProps = vi.hoisted(() => ({
 const navMocks = vi.hoisted(() => ({
   openShellProcess: vi.fn(),
   openDock: vi.fn(),
+  openVibeTabBeside: vi.fn(),
 }));
 
 // The shared vibe-persona embed is the seam both creation paths route through
@@ -127,6 +130,7 @@ afterEach(() => {
   panelProps.onProcessCreated = undefined;
   navMocks.openShellProcess.mockReset();
   navMocks.openDock.mockReset();
+  navMocks.openVibeTabBeside.mockReset();
   embedMock.mockClear();
 });
 
@@ -170,10 +174,11 @@ describe('VIBE-006 — New must reach parity with the vibe-home creation path', 
     );
 
     // Facet 1 — URL rebind: the workspace must navigate to the new process id
-    // so the URL-derived Display binds to P1 and a reload preserves it.
+    // so the URL-derived Display binds to P1 and a reload preserves it. New
+    // opens P1 as a Vibe tab beside this one (it never replaces P0's tab).
     expect(
-      navMocks.openShellProcess,
-      'New-path must rebind the workspace URL to the new process id',
-    ).toHaveBeenCalledWith('P1', expect.anything());
+      navMocks.openVibeTabBeside,
+      'New-path must move the URL to the new process id, as a Vibe tab beside this one',
+    ).toHaveBeenCalledWith('P1');
   });
 });

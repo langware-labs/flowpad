@@ -10,6 +10,18 @@
  */
 
 /**
+ * Where a show is presented — decided by the backend (`tab.show_placement`) and
+ * stamped on the live `on_show` event (`placement`) and, for a client that mounts
+ * later, beside `last_shown` (`context_data.show_placement`).
+ */
+export interface ShowPlacement {
+  /** The calling process's own open tab, or null (no tab: a background agent). */
+  tab_id: string | null;
+  /** That tab is a HOST (Vibe) tab: its Display pane pins the target, a screen nests under it. */
+  host: boolean;
+}
+
+/**
  * Resolved `flow show` display target — the payload of the `on_show` entity
  * event, produced by the backend's `resolve_display_target`
  * (flow_sdk/core/display_target.py). Discriminated by `kind`.

@@ -1,7 +1,7 @@
 import { useCallback, useState } from 'react';
 import { GitWorkdir } from '@sdk';
 import { notify } from '@src/notifications/notify';
-import { getViewMode } from '@src/components/view-mode';
+import { getTierMode } from '@src/components/view-mode';
 import { pullToastCopy } from '@src/lib/publish-state';
 
 export interface UseGitPullResult {
@@ -27,7 +27,7 @@ export function useGitPull(
     setBusy(true);
     try {
       const res = await new GitWorkdir(workdir, computeNodeId).pull();
-      const copy = pullToastCopy(res?.kind ?? 'generic', getViewMode(), { branch: res?.branch, message: res?.message });
+      const copy = pullToastCopy(res?.kind ?? 'generic', getTierMode(), { branch: res?.branch, message: res?.message });
       if (copy.level === 'success') {
         notify.success({ title: copy.title, message: copy.message, durationMs: 4000 });
       } else {
@@ -50,7 +50,7 @@ export function useGitPull(
         });
       }
     } catch (e) {
-      const copy = pullToastCopy('generic', getViewMode(), { message: e instanceof Error ? e.message : String(e) });
+      const copy = pullToastCopy('generic', getTierMode(), { message: e instanceof Error ? e.message : String(e) });
       notify.error({ title: copy.title, message: copy.message, durationMs: null, forceToast: true });
     } finally {
       setBusy(false);

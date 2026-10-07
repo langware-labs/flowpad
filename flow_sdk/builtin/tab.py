@@ -258,6 +258,12 @@ def _view_hosts_tabs(view_type: str) -> bool:
     return view_type in _HOST_CHILD_RULES
 
 
+def _pointer_is_host(pointer: str | None) -> bool:
+    """Is this stored pointer shown as a HOST tab? Read UNFOLDED: a Vibe host
+    folds onto its shell identity, so the folded view type would always say shell."""
+    return _view_hosts_tabs(_pointer_target(pointer, fold=False)[0])
+
+
 def tab_id_for(pointer: str) -> str:
     """Deterministic Tab id (uuid5) for a canonical pointer string.
 
@@ -1012,8 +1018,8 @@ async def ensure_tab_created(
         # terminal): its nested tabs move out to the top level (below).
         left_host = (
             existing.pointer != pointer
-            and _view_hosts_tabs(_pointer_target(existing.pointer, fold=False)[0])
-            and not _view_hosts_tabs(_pointer_target(pointer, fold=False)[0])
+            and _pointer_is_host(existing.pointer)
+            and not _pointer_is_host(pointer)
         )
         if existing.pointer != pointer and _pointer_to_hash(existing.pointer) == _pointer_to_hash(pointer):
             existing.pointer = pointer
@@ -1223,6 +1229,30 @@ async def _tabs_for_target(target_type: str, target_id: str) -> list["Tab"]:
         return await Tab.get_all({"target_type": target_type, "target_id": str(target_id)})
     except Exception:
         return []
+
+
+async def process_tab(process_id: str) -> "Tab | None":
+    """The open Tab row of an agentic process — its terminal, chat and Vibe
+    presentations all fold onto one row, found by its target like every other
+    target-driven tab lookup (``_tabs_for_target``)."""
+    rows = await _tabs_for_target("agentic_process", process_id)
+    return next((t for t in rows if t.visible), None)
+
+
+async def show_placement(process_id: str) -> dict[str, Any]:
+    """Where a ``flow show`` from *process_id* is presented — decided ONCE, here,
+    so every client (browser tabs, ``/win`` popouts, the desktop shell) agrees.
+
+    ``host`` is true when the process is open as a HOST tab (Vibe): its own Display
+    pane pins the target, and a screen nests as that tab's child. Otherwise the
+    target becomes a tab beside ``tab_id`` (or at the end, with no open tab — a
+    background agent). The decision used to be the frontend's, read from the one
+    app-wide view mode, which two sessions shown two ways cannot share.
+    """
+    tab = await process_tab(process_id)
+    if tab is None:
+        return {"tab_id": None, "host": False}
+    return {"tab_id": tab.id, "host": _pointer_is_host(tab.pointer)}
 
 
 async def hide_tabs_for_target(target_type: str, target_id: str) -> None:
