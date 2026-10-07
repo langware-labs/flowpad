@@ -52,6 +52,11 @@ dependencies = [
     # <2.24: usearch 2.24+ depends on numkong, which ships no wheels for many
     # platforms and fails to build from source (needs omp.h) — breaks fresh installs.
     "usearch<2.24",
+    # <49 on Intel Mac: cryptography 49.0.0+ ships no macosx x86_64 wheel (arm64 only), and a fresh
+    # `uv tool install flowpad` ignores uv.lock and takes the newest release — so uv builds it from
+    # source with Rust and fails on any Mac without the Xcode command line tools. Reached
+    # transitively via mcp -> pyjwt[crypto]; 48.0.1 is the last release with a universal2 wheel.
+    "cryptography<49; sys_platform == 'darwin' and platform_machine == 'x86_64'",
     "numpy",
     "bs4>=0.0.2",
     "h2",
