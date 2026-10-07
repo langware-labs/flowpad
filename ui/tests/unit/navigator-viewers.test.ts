@@ -6,8 +6,10 @@ import type { KindForm, ViewerChoice, ViewerModule } from '../../../ts_sdk/src/v
 import { createViewerContext } from '../../../ts_sdk/src/viewers/registry';
 // @ts-expect-error -- a plain-JS asset module, typed by the viewer contract
 import * as navigator from '../../../flow_sdk/system_projects/flowpad_assistant/agentic-assets/webapp/navigator-viewers/viewer.js';
+import { flowViewers } from '../../../ts_sdk/src/viewers/flow';
+import { evalViewers } from '../../../ts_sdk/src/viewers/eval';
 
-const mod = navigator as unknown as ViewerModule;
+const mod = { ...(navigator as unknown as ViewerModule), viewers: { ...(navigator as any).viewers, ...flowViewers, ...evalViewers } } as ViewerModule;
 const KINDS: Record<string, KindForm> = {
   'navigator.decision': {
     kind: 'navigator.decision',
@@ -67,7 +69,7 @@ describe('navigator viewers', () => {
     };
     await ctx.render(el, { kind: 'navigator.dataset', value: row, mode: 'compare', other: { output: answered } });
     expect(el.querySelector('.nv-utter')?.textContent).toBe('show my tasks');
-    expect([...el.querySelectorAll('.nv-crumb')].map((x) => x.textContent)).toEqual(['home', 'project flowpad-oss']);
+    expect([...el.querySelectorAll('.fv-crumb')].map((x) => x.textContent)).toEqual(['home', 'project flowpad-oss']);
     expect(el.querySelector('.nv-cand-title')?.textContent).toBe('Fix the bar');
     expect(el.querySelector('.nv-verdict')?.textContent).toBe('✗ Differs in target.value');
     expect(el.textContent).not.toContain('null');
@@ -77,5 +79,49 @@ describe('navigator viewers', () => {
     const el = document.createElement('div');
     await ctx.render(el, { kind: 'navigator.request', value: { utterance: 'go home' }, mode: 'line' });
     expect(el.textContent).toBe('go home');
+  });
+
+  it('an example is four steps, in order: input, context, model output, final selection', async () => {
+    const el = document.createElement('div');
+    const trace = {
+      kind: 'navigator.run',
+      value: {
+        reason: 'unsure',
+        decision: {
+          request: { state: { utterance: 'show my tasks' }, questions: { target: { type: 'choice', instructions: 'pick', options: { 'view:tasks': "Screen 'Tasks'", agentic: 'not a plain open' } } } },
+          response: { answers: { target: { type: 'choice', choice: 'view:tasks', confidence: 0.62, probabilities: { 'view:tasks': 0.62, agentic: 0.38 } } } },
+          act_at: { target: 0.85 },
+          state_kinds: {},
+        },
+      },
+    };
+    await ctx.render(el, { kind: 'navigator.dataset', value: { input: { utterance: 'show my tasks' }, ground_truth: gold }, mode: 'compare', other: { output: answered }, meta: { trace } });
+    expect([...el.querySelectorAll('.nv-step-title')].map((x) => x.textContent)).toEqual([
+      'Input', 'Context', 'Model output', 'Final selection, against the right answer',
+    ]);
+    expect(el.querySelector('.nv-step:nth-child(3) .fv-pick-name')?.textContent).toBe("Screen 'Tasks'");
+  });
+
+  it('a rule-made decision says so; an untraced one says it was not recorded', async () => {
+    const ruled = document.createElement('div');
+    await ctx.render(ruled, { kind: 'navigator.dataset', value: { input: { utterance: 'show my tasks' } }, meta: { trace: { kind: 'navigator.run', value: { reason: 'rule' } } } });
+    expect(ruled.querySelector('.nv-no-model')?.textContent).toContain('Decided by a rule');
+    const bare = document.createElement('div');
+    await ctx.render(bare, { kind: 'navigator.dataset', value: { input: { utterance: 'x' } } });
+    expect(bare.textContent).toContain('Not recorded for this example');
+  });
+
+  it('a logged row keeps how it was decided in its own data', async () => {
+    const el = document.createElement('div');
+    await ctx.render(el, { kind: 'navigator.dataset', value: { input: { utterance: 'go home' }, data: { run: { reason: 'rule' } } } });
+    expect(el.querySelector('.nv-no-model')?.textContent).toContain('Decided by a rule');
+  });
+
+  it('the eval says in its own words why a right-looking pick is wrong', async () => {
+    const el = document.createElement('div');
+    const e = { example_id: '1', prediction: gold, golds: [gold], verdict: 'wrong', score: 0.99, latency_ms: 5, error: null, labels: {}, slice: {}, title: 'open this source',
+      note: 'It picked a target nothing can open, so the app hands the request to the assistant.' };
+    await ctx.render(el, { kind: 'eval.example', value: e, meta: { dataset_spec: 'navigator.dataset' } });
+    expect(el.querySelector('.ev-note')?.textContent).toContain('nothing can open');
   });
 });

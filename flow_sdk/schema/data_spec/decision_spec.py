@@ -173,11 +173,28 @@ class DecisionResult(DataSpec):
         return answer.choice
 
 
+class DecisionRun(DataSpec):
+    """One decision as it happened -- what was asked, what came back, and what the caller needed in
+    order to act -- so it can be read back and debugged as a whole, by anyone who decides."""
+
+    spec_kind: ClassVar[str] = "decision.run"
+
+    request: DecisionSpec
+    #: Absent when the decision API failed.
+    response: Optional[DecisionResult] = None
+    #: Per question, the confidence its pick had to reach for the caller to act on it.
+    act_at: dict[str, float] = {}
+    #: What each part of ``request.state`` is (``context`` -> ``navigation.here``), so a viewer
+    #: draws it by its kind instead of as raw JSON.
+    state_kinds: dict[str, Any] = {}
+
+
 __all__ = [
     "Answer",
     "ChoiceAnswer",
     "ChoiceQuestion",
     "DecisionResult",
+    "DecisionRun",
     "DecisionSpec",
     "DecisionUsage",
     "Question",

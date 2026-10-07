@@ -29,6 +29,7 @@ import { useWikiResolveResult } from '@src/routes/loaders/wiki-resolve-store';
 import { buildDockPointer } from '@src/components/conversation/EntityChip';
 import { iconForType, labelForType } from '@src/components/graph-view/icons/iconRegistry';
 import { DockPointer } from '@src/navigation/DockPointer';
+import { subjectEditorPointer } from '@src/navigation/subject-editor';
 import { resolveAncestorChain, type AncestorNode } from '@src/navigation/entity-ancestors';
 import { useContext } from '@src/hooks/useContext';
 import { useProjectLocation } from '@src/hooks/use-project-location';
@@ -337,6 +338,22 @@ export function useEntityBreadcrumbs(dock: DockPointer | null): EntityBreadcrumb
     }
   }, [dockKey]); // eslint-disable-line react-hooks/exhaustive-deps
   const { data: subjectEntity } = useEntity<AnyEntity>(subjectTypeId);
+  // The subject crumb goes where the subject opens (its best editor) — from the eval browser on a
+  // dataset, clicking the dataset opens the dataset editor. Null while unknown, or when this app IS it.
+  const [subjectEditor, setSubjectEditor] = useState<DockPointer | null>(null);
+  // Keyed on the subject's id, not the TypeId object (re-made on every dock change in the same app).
+  const subjectKey = subjectTypeId?.toString() ?? null;
+  useEffect(() => {
+    setSubjectEditor(null);
+    if (!subjectKey) return;
+    let live = true;
+    subjectEditorPointer(subjectKey)
+      .then((editor) => live && setSubjectEditor(editor))
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [subjectKey]);
 
   // The Wiki the page lives in, as its own crumb. `@local` is an alias for the
   // active project's default wiki rather than an id, so it takes the same
@@ -658,7 +675,7 @@ export function useEntityBreadcrumbs(dock: DockPointer | null): EntityBreadcrumb
         key: `subject-${subjectTypeId.toString()}`,
         label: subjectEntity ? entityLabel(subjectEntity, subjectTypeId) : labelForType(subjectTypeId.type),
         Icon: iconForType(subjectTypeId.type),
-        pointer: null,
+        pointer: subjectEditor && subjectEditor.pointer !== dock?.pointer ? subjectEditor : null,
         kind: 'ancestor',
       });
     }
@@ -740,6 +757,7 @@ export function useEntityBreadcrumbs(dock: DockPointer | null): EntityBreadcrumb
     childEntity,
     subjectTypeId,
     subjectEntity,
+    subjectEditor,
     project,
     projectLabel,
     agentRoute,

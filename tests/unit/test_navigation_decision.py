@@ -151,6 +151,11 @@ async def test_with_the_log_on_every_decision_is_a_row_of_one_training_set(hub, 
             None,
         )
         assert [c.typeid for c in asked.context.candidates] == [SKILL, CONV], "what the decision was offered"
+        # How it was decided is kept with the row -- a rule hit asked no model, so it says only that.
+        assert opened.data["run"] == {"reason": "rule"}
+        decided = asked.data["run"]["decision"]
+        assert decided["request"]["state"]["utterance"] == "summarize the README"
+        assert "target" in decided["response"]["answers"]
 
         # the data scientist's path: label one row, evaluate the labelled training rows
         await ds.annotate(opened.id, opened.output.model_dump(mode="json", exclude_none=True))

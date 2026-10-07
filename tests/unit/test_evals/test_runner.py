@@ -17,14 +17,17 @@ from flow_sdk.builtin.dataset import Dataset
 pytestmark = pytest.mark.timeout(10)  # do not increase timeout without approval
 
 TOY_EVAL = '''
-from flow_sdk.evals import ExampleEval, verdict_of
+from flow_sdk.evals import EvalTrace, ExampleEval, verdict_of
 
 async def evaluate_example(row):
     text = row.input.utterance
     if text.startswith("boom"):
         raise RuntimeError("the eval broke on this row")
     pred = {"route": "quick", "target": {"kind": "view", "value": "data-sources" if text.startswith("ok") else "home"}}
-    return ExampleEval(prediction=pred, verdict=verdict_of(pred, row), score=0.9, labels={"len": str(len(text) > 6)})
+    return ExampleEval(
+        prediction=pred, verdict=verdict_of(pred, row), score=0.9, labels={"len": str(len(text) > 6)},
+        trace=EvalTrace(kind="toy.trace", value={"saw": text}),
+    )
 
 def aggregate(results):
     return {"seen": float(len(results))}
