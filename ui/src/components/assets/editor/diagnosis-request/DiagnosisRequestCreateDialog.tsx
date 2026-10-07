@@ -4,12 +4,13 @@
  * request's id. The Create panel's bespoke dialog for the type (the generic form only asks for a
  * name); on success it opens the request, whose screen shows the command to send.
  */
-import { DiagnosisRequest, QueryRequest, TypeId, type Skill } from '@sdk';
-import { useEntitiesQuery } from '@sdk/react/hooks';
+import { DiagnosisRequest, TypeId, type AssetDescriptor } from '@sdk';
 import { Trans, useLingui } from '@lingui/react/macro';
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 
 import { Button } from '@src/components/ui/button';
+import { AssetRefChips, AttachMenu } from '@src/components/conversation/AttachMenu';
+import { FileAttachmentPicker, mergePickedFiles } from '@src/components/conversation/FileAttachmentPicker';
 import { Checkbox } from '@src/components/ui/checkbox';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
 import { Input } from '@src/components/ui/input';
@@ -39,8 +40,9 @@ import {
 
 const HOURS = ['24', '48', '72', '168'] as const;
 const MAX_RUN_MB = ['2', '5', '10'] as const;
-/** Skills shown at once; the filter narrows the rest. */
-const SKILLS_SHOWN = 50;
+/** The asset types a request may send along -- the backend's ``ATTACHABLE_ASSET_TYPES``. */
+const ATTACHABLE_TYPES = ['skill', 'subagent', 'markdown', 'prompt'];
+const isAttachable = (d: AssetDescriptor) => ATTACHABLE_TYPES.some((type) => d.typeid.startsWith(`${type}-`));
 
 function HoursSelect({ id, value, onChange }: { id: string; value: string; onChange: (v: string) => void }) {
   const { t } = useLingui();
@@ -176,8 +178,7 @@ export const DiagnosisRequestCreateDialog: React.FC<{
   const { navigation } = useDockNavigation();
   const [instructions, setInstructions] = useState('');
   const [files, setFiles] = useState<File[]>([]);
-  const [skillFilter, setSkillFilter] = useState('');
-  const [pickedSkills, setPickedSkills] = useState<Set<string>>(new Set());
+  const [assetRefs, setAssetRefs] = useState<AssetDescriptor[]>([]);
   const [writeHours, setWriteHours] = useState('48');
   const [maxRunMb, setMaxRunMb] = useState('2');
   const [fund, setFund] = useState(false);
@@ -189,19 +190,6 @@ export const DiagnosisRequestCreateDialog: React.FC<{
   const [model, setModel] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  const skillsRequest = useMemo(
-    () => new QueryRequest({ type: 'skill', query: {}, scope: [], name: 'diagnosis-request-skills' }),
-    [],
-  );
-  const { data: skills } = useEntitiesQuery<Skill>(skillsRequest, { enabled: open });
-  const shownSkills = useMemo(() => {
-    const filter = skillFilter.trim().toLowerCase();
-    return (skills ?? [])
-      .filter((s) => !filter || `${s.name} ${s.description ?? ''}`.toLowerCase().includes(filter))
-      .sort((a, b) => String(a.name).localeCompare(String(b.name)))
-      .slice(0, SKILLS_SHOWN);
-  }, [skills, skillFilter]);
 
   // The budgets are the hub's answer, asked only once the owner wants to pay.
   useEffect(() => {
@@ -218,19 +206,10 @@ export const DiagnosisRequestCreateDialog: React.FC<{
   const reset = () => {
     setInstructions('');
     setFiles([]);
-    setSkillFilter('');
-    setPickedSkills(new Set());
+    setAssetRefs([]);
     setFund(false);
     setError(null);
   };
-
-  const toggleSkill = (typeid: string, on: boolean) =>
-    setPickedSkills((prev) => {
-      const next = new Set(prev);
-      if (on) next.add(typeid);
-      else next.delete(typeid);
-      return next;
-    });
 
   const create = async () => {
     setBusy(true);
@@ -243,7 +222,7 @@ export const DiagnosisRequestCreateDialog: React.FC<{
         max_run_mb: Number(maxRunMb),
         attachments: [
           ...(await Promise.all(files.map(readFile))),
-          ...[...pickedSkills].map((asset_typeid) => ({ asset_typeid })),
+          ...assetRefs.map((a) => ({ asset_typeid: a.typeid })),
         ],
       };
       if (fund) {
@@ -291,67 +270,32 @@ export const DiagnosisRequestCreateDialog: React.FC<{
               autoFocus
               rows={5}
               value={instructions}
-              placeholder={t`Search the Flowpad server log for 'database is locked'\nRun flow diagnose`}
               onChange={(e) => setInstructions(e.target.value)}
               data-testid="diagnosis-request-instructions"
             />
           </div>
 
-          <fieldset className="space-y-2 rounded-md border p-3">
-            <legend className="px-1 text-sm font-medium">
-              <Trans>Send along</Trans>
-            </legend>
-            <p className="text-xs text-muted-foreground">
-              <Trans>Files and skills their agent gets for this run only.</Trans>
-            </p>
-            <div className="space-y-1">
-              <Label htmlFor="diagnosis-files">
-                <Trans>Files from your computer</Trans>
+          {/* The same Attach button a message has: files from this computer, or Flowpad assets. */}
+          <div className="flex flex-col gap-1.5">
+            <div className="flex items-center justify-between">
+              <Label>
+                <Trans>Send along</Trans>{' '}
+                <span className="text-xs font-normal text-muted-foreground">
+                  <Trans>— for this run only, optional</Trans>
+                </span>
               </Label>
-              <Input
-                id="diagnosis-files"
-                type="file"
-                multiple
-                onChange={(e) => setFiles([...(e.target.files ?? [])])}
-                data-testid="diagnosis-request-files"
+              <AttachMenu
+                assetRefs={assetRefs}
+                onAssetRefsChange={setAssetRefs}
+                onFilesPicked={(picked) => setFiles((prev) => mergePickedFiles(prev, picked).files)}
+                disabled={busy}
+                hideAssetList
+                assetFilter={isAttachable}
               />
             </div>
-            <div className="space-y-1">
-              <Label htmlFor="diagnosis-skill-filter">
-                <Trans>Skills</Trans>
-              </Label>
-              <Input
-                id="diagnosis-skill-filter"
-                type="search"
-                value={skillFilter}
-                placeholder={t`Filter skills…`}
-                onChange={(e) => setSkillFilter(e.target.value)}
-              />
-              {shownSkills.length === 0 ? (
-                <p className="text-xs text-muted-foreground">
-                  <Trans>No skills found.</Trans>
-                </p>
-              ) : (
-                <ul className="max-h-40 space-y-1 overflow-y-auto">
-                  {shownSkills.map((s) => {
-                    const typeid = `skill-${s.id}`;
-                    return (
-                      // The description is the skill's own text: a tooltip, not a column.
-                      <li key={typeid} title={s.description ?? ''}>
-                        <label className="flex cursor-pointer items-center gap-2 text-sm">
-                          <Checkbox
-                            checked={pickedSkills.has(typeid)}
-                            onCheckedChange={(on) => toggleSkill(typeid, on === true)}
-                          />
-                          <span className="truncate">{s.name}</span>
-                        </label>
-                      </li>
-                    );
-                  })}
-                </ul>
-              )}
-            </div>
-          </fieldset>
+            <AssetRefChips assetRefs={assetRefs} onChange={setAssetRefs} disabled={busy} />
+            <FileAttachmentPicker files={files} onChange={setFiles} disabled={busy} />
+          </div>
 
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
