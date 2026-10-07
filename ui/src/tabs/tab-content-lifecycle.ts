@@ -176,6 +176,17 @@ async function materializeTab(
     !needsReparent &&
     !staleParentEdge
   ) {
+    // A process is ONE row whether it is shown as the Vibe host or as a shell (the
+    // Vibe dock's tabHash folds onto the shell's). The row's stored pointer is what
+    // its chip reopens, so when the presentation changed, re-point it — in the
+    // background: the row's identity, label and project are unchanged, so nothing
+    // on screen waits for it (I4: a warm visit asks the backend for nothing).
+    if (presentationChanged(existingTab, dock)) {
+      void tabManager
+        .ensureDock(dock, { viewMode: dock.viewMode })
+        .then(() => tabManager.refresh())
+        .catch((err: unknown) => console.warn('[tabs] re-pointing a process tab failed', err));
+    }
     return { tab: existingTab, tabs: existing };
   }
 
@@ -194,6 +205,15 @@ async function materializeTab(
   await perfTime('materializeTab.refresh(adopt)', () => tabManager.refresh());
   const all = tabManager.getSnapshot();
   return { tab: tabForDockKey(all, dock.tabHash) ?? scopedTab, tabs: all };
+}
+
+/** Is `dock` a process shown in another presentation (Vibe host ⇄ shell) than the
+ *  one `tab` last stored? Only those two fold onto one identity. */
+function presentationChanged(tab: Tab, dock: DockPointer): boolean {
+  if (dock.viewType !== ViewType.VIBE && dock.viewType !== ViewType.SHELL) return false;
+  if (!DockPointer.isAgenticProcessPointer(dock.pointer)) return false;
+  const stored = tab.dockPointer?.viewType;
+  return !!stored && stored !== dock.viewType;
 }
 
 /**
