@@ -45,7 +45,6 @@ import { Checkbox } from '@src/components/ui/checkbox';
 import { BulkConfirmDialog } from '@src/components/ui/bulk-confirm-dialog';
 import { ConfirmDialog } from '@src/components/ui/confirm-dialog';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { ViewType } from '@src/types/ViewType';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { LoginRequiredOverlay } from '@src/components/login-required-overlay';
 import { formatTimeAgo } from '@src/components/project-activity-strip/project-activity-utils';
@@ -57,7 +56,7 @@ import {
   useChannelAttribution,
 } from '@src/components/conversation/channel-attribution';
 import { AttachedChannelsBar, channelKeyOf, useAttachedChannels } from './AttachedChannelsBar';
-import { channelsOwnerFor, streamInboxConversationsRequest } from './channel-owner';
+import { channelsOwnerFor, sourceConversationsRequest, streamInboxConversationsRequest } from './channel-owner';
 import { useContext } from '@src/hooks/useContext';
 import {
   conversationFacets,
@@ -504,7 +503,18 @@ const columnInputClass =
 
 // ── StreamInboxView ───────────────────────────────────────────────────────────────
 
-export function StreamInboxView({ agentId }: { agentId?: string } = {}) {
+export function StreamInboxView({
+  agentId,
+  sourceId,
+  embedded = false,
+}: {
+  agentId?: string;
+  /** One data source's conversations only (a source's page) — the same live list, backend-filtered. */
+  sourceId?: string;
+  /** Inside another page: no inbox-wide verbs (New, New group, Mark all read, Archive all), no channel bar, no
+   *  membership invitations — those belong to an owner's inbox, not to one source. */
+  embedded?: boolean;
+} = {}) {
   const { t } = useLingui();
   const [fetching, setFetching] = useState(false);
   // 'all' (default) shows active conversations; 'archived' shows only
@@ -539,31 +549,15 @@ export function StreamInboxView({ agentId }: { agentId?: string } = {}) {
     [attributionForOrigin],
   );
   const [channelFilter, setChannelFilter] = useState<Set<string>>(() => new Set());
-  // One source's messages, from the address (`?source=<id>`: a data source row's name opens it). Its channel mark is
-  // lit in the bar, and the list narrows to THAT source — not every source sharing its channel. Touching the bar
-  // hands the filter back to it.
-  const { currentDock } = useDockNavigation();
-  const sourceFromUrl = currentDock?.viewType === ViewType.STREAM_INBOX ? (currentDock.options?.source ?? null) : null;
-  const [onlySource, setOnlySource] = useState<string | null>(null);
-  useEffect(() => {
-    const source = sourceFromUrl ? ownerChannels.find((s) => s.id === sourceFromUrl) : undefined;
-    setOnlySource(source ? source.id : null);
-    if (source) setChannelFilter(new Set([channelKeyOf(source)]));
-  }, [sourceFromUrl, ownerChannels]);
-  const onChannelFilterChange = useCallback((next: Set<string>) => {
-    setOnlySource(null);
-    setChannelFilter(next);
-  }, []);
   const channelMatch = useMemo(
     () =>
       channelFilter.size
         ? (m: FlowMessage) => {
             const source = sourceForOrigin(ownerChannels, m.origin, m.origin_local);
-            if (!source) return false;
-            return onlySource ? source.id === onlySource : channelFilter.has(channelKeyOf(source));
+            return !!source && channelFilter.has(channelKeyOf(source));
           }
         : undefined,
-    [channelFilter, onlySource, ownerChannels],
+    [channelFilter, ownerChannels],
   );
   const [columnFilter, setColumnFilter] = useState<ColumnFilter>(NO_COLUMN_FILTER);
   const columnFilterActive = isColumnFilterActive(columnFilter);
@@ -593,9 +587,14 @@ export function StreamInboxView({ agentId }: { agentId?: string } = {}) {
   // whenever its inputs change identity, and a fresh request re-subscribes.
   const ownerKey = channelsOwner?.toString() ?? '';
   const request = useMemo(
-    () => (channelsOwner ? streamInboxConversationsRequest(channelsOwner) : null),
+    () =>
+      sourceId
+        ? sourceConversationsRequest(sourceId)
+        : channelsOwner
+          ? streamInboxConversationsRequest(channelsOwner)
+          : null,
     // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on the owner's string form
-    [ownerKey],
+    [ownerKey, sourceId],
   );
   const idleRequest = useMemo(() => new QueryRequest({ type: Conversation.type, name: 'stream-inbox:idle' }), []);
   const {
@@ -1147,7 +1146,7 @@ export function StreamInboxView({ agentId }: { agentId?: string } = {}) {
               </div>
             </div>
             {/* CENTER — new conversation / new contacts group */}
-            {!agentId && (
+            {!agentId && !embedded && (
               <div className="flex shrink-0 items-center">
                 <Button
                   variant="ghost"
@@ -1176,7 +1175,7 @@ export function StreamInboxView({ agentId }: { agentId?: string } = {}) {
             {/* RIGHT — actions for the current view */}
             <div className="flex flex-1 items-center justify-end gap-1" data-testid="stream-inbox-action-bar">
               <>
-                {!inArchivedView && (
+                {!inArchivedView && !embedded && (
                   <Button
                     variant="ghost"
                     size="sm"
@@ -1189,7 +1188,7 @@ export function StreamInboxView({ agentId }: { agentId?: string } = {}) {
                 )}
                 {/* Archive all archives every conversation regardless of read state;
                 hide it in the Archived view where it makes no sense. */}
-                {!inArchivedView && !inUnreadView && (
+                {!inArchivedView && !inUnreadView && !embedded && (
                   <Button
                     variant="ghost"
                     size="sm"
@@ -1296,13 +1295,13 @@ export function StreamInboxView({ agentId }: { agentId?: string } = {}) {
                 <X className="h-3 w-3" />
               </button>
             )}
-            {channelsOwner && (
+            {channelsOwner && !embedded && (
               <AttachedChannelsBar
                 owner={channelsOwner}
                 rows={ownerChannels}
                 specFor={specFor}
                 selected={channelFilter}
-                onSelectedChange={onChannelFilterChange}
+                onSelectedChange={setChannelFilter}
                 className="shrink-0"
               />
             )}
@@ -1335,7 +1334,7 @@ export function StreamInboxView({ agentId }: { agentId?: string } = {}) {
           </div>
         )}
 
-        {!agentId && !inArchivedView && !initialLoading && (
+        {!agentId && !embedded && !inArchivedView && !initialLoading && (
           <MembershipInvitations recipientEmail={cloudUser?.email ?? null} onPendingCount={setMembershipPendingCount} />
         )}
 

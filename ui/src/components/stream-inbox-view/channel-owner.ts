@@ -33,3 +33,11 @@ export function streamInboxConversationsRequest(owner: TypeId): QueryRequest {
       : new ExpressionNode({ op: '$OR', operands: [owned, new ExpressionNode({ op: '$IS_NULL', operands: ['owner'] })] });
   return new QueryRequest({ type: Conversation.type, query: new QueryFilter({ match }) });
 }
+
+/** The conversations that came through ONE data source — what a source's page lists. Backend-filtered on
+ *  `channel_source_id` (stamped when a conversation adopts its channel; `flow_sdk/builtin/conversation.py`), so the
+ *  page never loads its owner's whole inbox to narrow it. One source has one owner, so no owner clause is needed. */
+export function sourceConversationsRequest(sourceId: string): QueryRequest {
+  const match = new ExpressionNode({ op: '$EQ', operands: ['channel_source_id', sourceId] });
+  return new QueryRequest({ type: Conversation.type, query: new QueryFilter({ match }) });
+}
