@@ -17,7 +17,7 @@ import { dataContext } from '../../FlowSync/context';
 import { cloudManager, type HubClientErrorInfo } from '../../services/cloud_login';
 import { shouldWarnAboutEmptyProjects } from '../../stores/project-cleanup-store';
 import { useCleanupSummary } from './use-cleanup-summary';
-import { useProjectReadiness } from './use-project-readiness';
+import { useProjectSetupLeft } from './use-project-readiness';
 import { refreshProjectReadiness } from '../../stores/project-readiness-store';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useContext } from './useContext';
@@ -80,8 +80,7 @@ export function useWarnings() {
   useEffect(() => {
     void refreshProjectReadiness(projectId);
   }, [projectId]);
-  const readiness = useProjectReadiness();
-  const setupLeft = readiness && readiness.project_id === projectId && !readiness.ready ? readiness.to_do.length : 0;
+  const setupLeft = useProjectSetupLeft(projectId);
 
   const cleanup = useCleanupSummary();
   const emptyProjects = shouldWarnAboutEmptyProjects(cleanup) ? cleanup!.empty_count : 0;
