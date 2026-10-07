@@ -1357,6 +1357,13 @@ class DataSource(Entity):
                 places.append({"key": str(deployment.id), "label": label, "node_typeid": f"compute_node-{node}"})
         return places
 
+    def _node_target(self, place: str, places: list[dict]) -> Optional[dict]:
+        """The hub delivery target for the cloud place ``place`` (a deployment id) of this channel, or None."""
+        chosen = next((p for p in places if p["key"] == place and p.get("node_typeid")), None)
+        if chosen is None:
+            return None
+        return {"kind": "node", "node_typeid": chosen["node_typeid"], "data_source_id": str(self.id)}
+
     @core_action.get(action_name="route")
     async def route_action(self) -> ApiResponse:
         """GET /api/v1/graph/data_source/{id}/route — the hub webhook that delivers to this channel (its URL,
@@ -1366,17 +1373,13 @@ class DataSource(Entity):
         from flow_sdk.instance_settings.runtime import instance_uid  # noqa: PLC0415
 
         claims, places = await asyncio.gather(_hub_claims(), self.route_places())
-        mine = _claims_for(claims, str(self.id))
         # The first claim is the one "Delivered to" switches; any more deliver the same messages elsewhere too.
-        claim = mine[0] if mine else None
-        current = ""
-        if claim is not None:
-            target = claim.get("target") or {}
-            if _routed(claim, instance_uid()) == "this":
-                current = "this"
-            elif target.get("kind") == "node":
-                current = next((p["key"] for p in places if p.get("node_typeid") == target.get("node_typeid")), "")
-        also = [_place_of(c, places) for c in mine[1:]]
+        claim, *rest = _claims_for(claims, str(self.id)) or [None]
+        instance = instance_uid()
+        current = (_place_of(claim, places, instance) or {}).get("key", "") if claim is not None else ""
+        also = [
+            {**place, "claim_id": str(c.get("id") or "")} for c in rest if (place := _place_of(c, places, instance))
+        ]
         return ApiSuccessResponse(data={"claim": claim, "places": places, "current": current, "also": also})
 
     @core_action.get(action_name="channels")
@@ -1440,10 +1443,9 @@ class DataSource(Entity):
         if place == "this":
             target = {"kind": "desktop", "instance_id": instance_uid(), "data_source_id": str(self.id)}
         else:
-            chosen = next((p for p in await self.route_places() if p["key"] == place and p.get("node_typeid")), None)
-            if chosen is None:
+            target = self._node_target(place, await self.route_places())
+            if target is None:
                 return ApiFailResponse(message="no such place for this channel", status_code=404)
-            target = {"kind": "node", "node_typeid": chosen["node_typeid"], "data_source_id": str(self.id)}
         moved = await hub_post("webhook", {"target": target}, str(claim.get("id")), "set_target")
         if not moved:
             return ApiFailResponse(message="the hub did not take the new place", status_code=502)
@@ -1454,17 +1456,19 @@ class DataSource(Entity):
         """POST /api/v1/graph/data_source/{id}/add_route ``{"place": <deployment id>}`` — ALSO deliver this channel's
         messages to one of its agent's cloud placements: a second hub claim for the same proven sender (the first
         is its proof), targeted at that machine's copy of this channel. Each place answers on its own."""
+        import asyncio  # noqa: PLC0415
+
         from flow_sdk.cloud_client.transport.hub_http import hub_post  # noqa: PLC0415
 
         place = str((await self._body()).get("place") or "")
-        claim = await self._hub_route()
+        claims, places = await asyncio.gather(_hub_claims(), self.route_places())
+        claim = next(iter(_claims_for(claims, str(self.id))), None)
         key = str(((claim or {}).get("claim") or {}).get("key") or "")
         if claim is None or not key:
             return ApiFailResponse(message="connect this channel first — its claim is the proof", status_code=404)
-        chosen = next((p for p in await self.route_places() if p["key"] == place and p.get("node_typeid")), None)
-        if chosen is None:
+        target = self._node_target(place, places)
+        if target is None:
             return ApiFailResponse(message="no such place for this channel", status_code=404)
-        target = {"kind": "node", "node_typeid": chosen["node_typeid"], "data_source_id": str(self.id)}
         body = {"parent": f"@{claim.get('provider')}", "claim": {"kind": "user", "key": key}, "target": target}
         added = await hub_post("webhook", body, None, "chain")
         if not added:
@@ -1950,11 +1954,13 @@ def _claims_for(claims: list[dict], source_id: str) -> list[dict]:
     return sorted(found, key=lambda c: (float(c.get("proven_at") or 0), str(c.get("id") or "")))
 
 
-def _place_of(claim: dict, places: list[dict]) -> dict:
-    """Where an additional claim delivers, named as the route's places name it."""
+def _place_of(claim: dict, places: list[dict], instance: str) -> Optional[dict]:
+    """The route place ``claim`` delivers to (``this`` computer, or the cloud place whose node it targets), or None
+    when it is none of them (another computer, nowhere yet)."""
+    if _routed(claim, instance) == "this":
+        return next((p for p in places if p["key"] == "this"), None)
     node = str((claim.get("target") or {}).get("node_typeid") or "")
-    found = next((p for p in places if node and p.get("node_typeid") == node), None)
-    return {"claim_id": str(claim.get("id") or ""), "key": (found or {}).get("key", ""), "label": (found or {}).get("label", "")}
+    return next((p for p in places if node and p.get("node_typeid") == node), None)
 
 
 def _channel_row(claim: Optional[dict], instance: str, source=None, *, by_hub: bool = False) -> dict:
