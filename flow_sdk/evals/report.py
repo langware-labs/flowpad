@@ -160,7 +160,7 @@ def render(run: EvalRun, examples: list[ExampleEval], spec: EvalSpec) -> str:
 <input id="q" placeholder="search…"><button id="clear">clear filters</button></div>
 <table><thead><tr><th>verdict</th><th>input</th><th>gold</th><th>prediction</th><th>score</th><th>labels</th></tr></thead>
 <tbody id="ex"></tbody></table>
-{blob("counts", sorted(k for k, v in metrics.items() if isinstance(v, int) and not isinstance(v, bool)))}{blob("run", run.model_dump(mode="json"))}{blob("examples", [e.model_dump(mode="json") for e in examples])}
+{blob("counts", run.count_metrics())}{blob("run", run.model_dump(mode="json"))}{blob("examples", [e.model_dump(mode="json") for e in examples])}
 <script>{_SCRIPT}</script></main></body></html>
 """
 

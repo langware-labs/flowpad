@@ -1,0 +1,12 @@
+{
+  "name": "eval-viewers",
+  "title": "Eval viewers",
+  "description": "Shows the eval contract: eval runs (a list, or one run with its metrics and slices) and evaluated examples (the issues grouped by cause, or one example -- drawn by its dataset's own viewer, the right answer set against what was answered).",
+  "kind": "application.web.viewer",
+  "build": ".",
+  "views": [
+    {"kind": "eval.run", "shows": ["single", "collection"]},
+    {"kind": "eval.example", "shows": ["single", "collection"]}
+  ],
+  "module": "viewer.js"
+}

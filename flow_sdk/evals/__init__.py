@@ -17,9 +17,10 @@ editor follows. ``verdict_of`` is the standard judgement: a prediction matching 
 """
 
 from flow_sdk.datasets.score import golds, matches
+from flow_sdk.evals import store
 from flow_sdk.evals.runner import EvalError, find_evals, run, verdict_of
 from flow_sdk.schema.data_spec.eval_spec import EvalRun, EvalSpec, ExampleEval, Verdict
 
 __all__ = [
-    "EvalError", "EvalRun", "EvalSpec", "ExampleEval", "Verdict", "find_evals", "golds", "matches", "run", "verdict_of",
+    "EvalError", "EvalRun", "EvalSpec", "ExampleEval", "Verdict", "find_evals", "golds", "matches", "run", "store", "verdict_of",
 ]
