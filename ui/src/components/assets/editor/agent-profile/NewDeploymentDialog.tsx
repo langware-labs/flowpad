@@ -1,6 +1,15 @@
-import { Agent, Deployment, type AgentReadiness, type AgentTokenAllocation, type IDeployment } from '@sdk';
+import {
+  Agent,
+  ComputeNodeSize,
+  ComputeProviderType,
+  Deployment,
+  type AgentReadiness,
+  type AgentTokenAllocation,
+  type CloudDeployProvider,
+  type IDeployment,
+} from '@sdk';
 import { Trans, useLingui } from '@lingui/react/macro';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Cloud, Laptop, Loader2, Rocket } from 'lucide-react';
 
 import { describeApiError, errorMessage } from '@src/lib/error-message';
@@ -10,11 +19,12 @@ import { Button } from '@src/components/ui/button';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
 import { Input } from '@src/components/ui/input';
 import { Label } from '@src/components/ui/label';
+import { useDeployProviders } from '@src/hooks/use-deploy-providers';
 
 import { AgentDeployChecklist } from './AgentDeployChecklist';
 import { DeploymentSecretsGate } from './DeploymentSecretsGate';
 import { TokenAllocationField, tokenAllocationComplete } from './TokenAllocationField';
-import { AGENT_MACHINE_SIZE_LABELS, AGENT_MACHINE_SIZES } from './agent-vocabularies';
+import { AGENT_MACHINE_SIZE_LABELS, AGENT_MACHINE_SIZES, AGENT_MONTHLY_MACHINE_SIZE_LABELS } from './agent-vocabularies';
 
 /** A cloud machine's credential environment when nobody names one. */
 const DEFAULT_CLOUD_ENVIRONMENT = 'production';
@@ -27,8 +37,26 @@ interface NotReadyData {
   deployment?: IDeployment;
 }
 
-/** `local`, or a cloud machine size (`sm` | `md` | `lg`). */
-type DeploymentType = 'local' | (typeof AGENT_MACHINE_SIZES)[number];
+/** A cloud machine: the hub provider it lands on and its size, e.g. `e2b-sm`. */
+type CloudMachine = `${CloudDeployProvider}-${ComputeNodeSize}`;
+
+/** `local`, or a cloud machine. */
+type DeploymentType = 'local' | CloudMachine;
+
+function cloudMachine(type: CloudMachine): { provider: CloudDeployProvider; size: ComputeNodeSize } {
+  // The size is the last segment: a provider is the hub's name and may itself hold a '-'.
+  const cut = type.lastIndexOf('-');
+  return { provider: type.slice(0, cut), size: type.slice(cut + 1) as ComputeNodeSize };
+}
+
+/**
+ * How each provider's machines read: billed hourly, or monthly with the machine's strength. A provider
+ * the hub offers that is missing here still gets its rows, hinted by its bare name.
+ */
+const PROVIDER_HINTS: Partial<Record<CloudDeployProvider, Record<ComputeNodeSize, string>>> = {
+  [ComputeProviderType.E2B]: AGENT_MACHINE_SIZE_LABELS,
+  [ComputeProviderType.GCP_VM]: AGENT_MONTHLY_MACHINE_SIZE_LABELS,
+};
 
 interface NewDeploymentDialogProps {
   agent: Agent;
@@ -64,30 +92,42 @@ export function NewDeploymentDialog({
   // The deploy's own refusal (409 `not_ready`): what that placement's machine still lacks. Never
   // asked ahead of a Launch — planning mints the hub's row for an environment, so it waits for one.
   const [refused, setRefused] = useState<{ readiness: AgentReadiness; deployment: Deployment } | null>(null);
-  const cloud = type !== 'local';
+  const machine = type === 'local' ? null : cloudMachine(type);
+  const cloud = machine !== null;
+  // The hub publishes which providers a deployment may use; only those get rows.
+  const { providers, isLoading: providersLoading } = useDeployProviders();
+  useEffect(() => {
+    for (const provider of providers) {
+      if (!PROVIDER_HINTS[provider]) console.log(`[NewDeploymentDialog] no display for hub provider '${provider}'`);
+    }
+  }, [providers]);
 
+  // Every cloud row reads "Cloud machine"; which provider runs it is not the user's concern — only how it
+  // bills: hourly, or monthly with the machine's strength.
+  const cloudRows = (provider: CloudDeployProvider) =>
+    AGENT_MACHINE_SIZES.map((size) => ({
+      value: `${provider}-${size}` satisfies CloudMachine,
+      label: t`Cloud machine`,
+      hint: PROVIDER_HINTS[provider]?.[size] ?? provider,
+      Icon: Cloud,
+    }));
   const choices: { value: DeploymentType; label: string; hint: string; Icon: typeof Cloud }[] = [
     // One more each time: every local deployment is its own process on this computer.
     { value: 'local', label: t`This computer`, hint: t`Free · runs while this computer is awake`, Icon: Laptop },
-    ...AGENT_MACHINE_SIZES.map((size) => ({
-      value: size,
-      label: t`Cloud machine`,
-      hint: AGENT_MACHINE_SIZE_LABELS[size],
-      Icon: Cloud,
-    })),
+    ...providers.flatMap(cloudRows),
   ];
 
   const launch = async () => {
     setLaunching(true);
     try {
       let data;
-      if (!cloud) {
+      if (!machine) {
         data = await agent.deploy(undefined, 'local');
         notify.success({ title: t`${agent.name} now runs on this computer` });
       } else {
         // The hub sizes the box from the PUBLISHED definition, so the size is written before the deploy publishes.
-        await onMachineSize?.(type);
-        data = await agent.deploy(environment, undefined, tokenAllocation);
+        await onMachineSize?.(machine.size);
+        data = await agent.deploy(environment, machine.provider, tokenAllocation);
         if (data.agent_definition_error) {
           notify.warning({ title: t`Deployed without its definition`, message: data.agent_definition_error });
         } else if (data.reused) {
@@ -158,10 +198,21 @@ export function NewDeploymentDialog({
               <span className="shrink-0 text-xs text-muted-foreground">{hint}</span>
             </button>
           ))}
+          {providersLoading ? (
+            <p className="px-3 text-xs text-muted-foreground" data-testid="new-deployment-providers-loading">
+              <Trans>Loading cloud machines…</Trans>
+            </p>
+          ) : (
+            providers.length === 0 && (
+              <p className="px-3 text-xs text-muted-foreground" data-testid="new-deployment-no-cloud">
+                <Trans>Sign in to the hub to deploy to a cloud machine.</Trans>
+              </p>
+            )
+          )}
         </div>
 
         <div className="flex flex-col gap-3 border-t pt-3" data-testid="new-deployment-details">
-          {cloud ? (
+          {machine ? (
             <>
               <AgentDeployChecklist agent={agent} onReadinessChange={setReady} />
               <div className="flex flex-wrap items-center gap-2">
@@ -191,6 +242,7 @@ export function NewDeploymentDialog({
               <TokenAllocationField
                 agent={agent}
                 environment={environment}
+                provider={machine.provider}
                 value={tokenAllocation}
                 onChange={setTokenAllocation}
                 disabled={launching}
@@ -215,9 +267,14 @@ export function NewDeploymentDialog({
         </div>
 
         <DialogFooter className="items-center gap-2">
-          {launching && cloud && (
-            <span className="me-auto text-xs text-muted-foreground">
-              <Trans>Starting a machine — this takes a minute.</Trans>
+          {launching && machine && (
+            <span className="me-auto text-xs text-muted-foreground" data-testid="new-deployment-starting">
+              {/* A monthly machine is a full VM: creating and enrolling it takes longer than a sandbox. */}
+              {machine.provider === ComputeProviderType.GCP_VM ? (
+                <Trans>Starting a machine — this takes a couple of minutes.</Trans>
+              ) : (
+                <Trans>Starting a machine — this takes a minute.</Trans>
+              )}
             </span>
           )}
           <Button

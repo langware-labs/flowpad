@@ -16,6 +16,9 @@ vi.mock('@src/notifications', () => ({
 vi.mock('@src/components/assets/editor/agent-profile/AgentDeployChecklist', () => ({
   AgentDeployChecklist: () => <div data-testid="mock-checklist" />,
 }));
+vi.mock('@src/hooks/use-deploy-providers', () => ({
+  useDeployProviders: () => ({ providers: ['e2b', 'gcp_vm'], isLoading: false }),
+}));
 
 import { NewDeploymentDialog } from '@src/components/assets/editor/agent-profile/NewDeploymentDialog';
 import { AgentPlaceSecrets } from '@src/components/assets/editor/agent-profile/AgentPlaceSecrets';
@@ -188,11 +191,11 @@ describe('the new deployment dialog', () => {
     const onLaunched = vi.fn();
 
     renderInQuery(<NewDeploymentDialog agent={a} open onOpenChange={vi.fn()} onLaunched={onLaunched} />);
-    fireEvent.click(screen.getByTestId('new-deployment-type-sm'));
+    fireEvent.click(screen.getByTestId('new-deployment-type-e2b-sm'));
     fireEvent.click(screen.getByTestId('new-deployment-launch'));
 
     expect(await screen.findByTestId('deployment-secret-stripe')).toHaveTextContent('flow credentials set stripe');
-    expect(deploy).toHaveBeenCalledWith('production', undefined, null);
+    expect(deploy).toHaveBeenCalledWith('production', 'e2b', null);
     expect(screen.getByTestId('new-deployment-launch')).toBeDisabled();
     expect(onLaunched).not.toHaveBeenCalled();
 

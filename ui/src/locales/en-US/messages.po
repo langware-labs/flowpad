@@ -5151,6 +5151,10 @@ msgstr "Connected"
 msgid "Connected · {0}"
 msgstr "Connected · {0}"
 
+#: src/pages/hub-home/HubHome.tsx
+msgid "Connected computer"
+msgstr "Connected computer"
+
 #. placeholder {0}: formatTimeAgo(connection.connectedAt.toISOString())
 #: src/components/connections-manager.tsx
 msgid "Connected in this browser {0}"
@@ -5871,6 +5875,11 @@ msgstr "Could not load runs"
 #: src/components/triggers-view/FsopTriggerDetail.tsx
 #~ msgid "Could not load source: {error}"
 #~ msgstr "Could not load source: {error}"
+
+#. placeholder {0}: definitionError.message
+#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
+msgid "Could not load the agent's definition: {0}"
+msgstr "Could not load the agent's definition: {0}"
 
 #: src/components/automations/BusView.tsx
 msgid "Could not load the bus"
@@ -12552,6 +12561,10 @@ msgstr "Loading chats…"
 msgid "Loading checkpoint diff..."
 msgstr "Loading checkpoint diff..."
 
+#: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
+msgid "Loading cloud machines…"
+msgstr "Loading cloud machines…"
+
 #: src/components/assets/editor/task/TaskComments.tsx
 msgid "Loading comments…"
 msgstr "Loading comments…"
@@ -16344,6 +16357,11 @@ msgstr "Open this agent's transcript"
 #: src/components/automations/AutomationRow.tsx
 msgid "Open this automation"
 msgstr "Open this automation"
+
+#: src/components/assets/editor/agent-profile/deployment/AgentDeploymentPage.tsx
+#: src/components/assets/editor/agent-profile/deployment/AgentDeploymentPage.tsx
+msgid "Open this deployment's workspace in a new tab"
+msgstr "Open this deployment's workspace in a new tab"
 
 #: src/components/llm-sources/LlmSourcesView.tsx
 msgid "Open this endpoint on the hub"
@@ -21371,6 +21389,10 @@ msgstr "Sign in to see the people and teams you share work with."
 msgid "Sign in to see who's a member"
 msgstr "Sign in to see who's a member"
 
+#: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
+msgid "Sign in to the hub to deploy to a cloud machine."
+msgstr "Sign in to the hub to deploy to a cloud machine."
+
 #: src/components/graph-view/ui/AccessTab.tsx
 msgid "Sign in to view access."
 msgstr "Sign in to view access."
@@ -22055,6 +22077,10 @@ msgstr "Started again as a test run."
 #: src/components/automations/TestPanel.tsx
 msgid "Started. Follow it under Runs."
 msgstr "Started. Follow it under Runs."
+
+#: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
+msgid "Starting a machine — this takes a couple of minutes."
+msgstr "Starting a machine — this takes a couple of minutes."
 
 #: src/components/assets/editor/agent-profile/AgentDeploymentsSection.tsx
 #: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
@@ -25915,6 +25941,7 @@ msgid "Working…"
 msgstr "Working…"
 
 #: src/i18n/type-labels.ts
+#: src/pages/hub-home/HubHome.tsx
 msgid "Workspace"
 msgstr "Workspace"
 

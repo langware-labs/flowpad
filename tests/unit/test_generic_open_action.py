@@ -20,21 +20,7 @@ import pytest
 
 from flow_sdk.actions.action_registry import action
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
-
-
-async def _call_local(method: str, path: str):
-    from fastapi import FastAPI
-    from httpx import ASGITransport, AsyncClient
-
-    import flow_sdk.app.actions  # noqa: F401 — side-effect registration
-    from flow_sdk.server.middleware.request_transaction_middleware import RequestTransactionMiddleware
-    from flow_sdk.server.routes import graph_router
-
-    app = FastAPI()
-    app.add_middleware(RequestTransactionMiddleware)
-    app.include_router(graph_router, prefix="/api/v1/graph")
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://localhost") as client:
-        return await client.request(method, f"/api/v1/graph/{path}")
+from tests.unit._graph_client import call_local as _call_local
 
 
 def _redirect_params(resp) -> dict[str, list[str]]:

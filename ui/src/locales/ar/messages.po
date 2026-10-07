@@ -5151,6 +5151,10 @@ msgstr "متصل"
 msgid "Connected · {0}"
 msgstr "متصل · {0}"
 
+#: src/pages/hub-home/HubHome.tsx
+msgid "Connected computer"
+msgstr ""
+
 #. placeholder {0}: formatTimeAgo(connection.connectedAt.toISOString())
 #: src/components/connections-manager.tsx
 msgid "Connected in this browser {0}"
@@ -5871,6 +5875,11 @@ msgstr ""
 #: src/components/triggers-view/FsopTriggerDetail.tsx
 #~ msgid "Could not load source: {error}"
 #~ msgstr "تعذر تحميل المصدر: {error}"
+
+#. placeholder {0}: definitionError.message
+#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
+msgid "Could not load the agent's definition: {0}"
+msgstr ""
 
 #: src/components/automations/BusView.tsx
 msgid "Could not load the bus"
@@ -12552,6 +12561,10 @@ msgstr "جارٍ تحميل المحادثات…"
 msgid "Loading checkpoint diff..."
 msgstr "جاري تحميل مقارنة نقطة الحفظ..."
 
+#: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
+msgid "Loading cloud machines…"
+msgstr ""
+
 #: src/components/assets/editor/task/TaskComments.tsx
 msgid "Loading comments…"
 msgstr "جارٍ تحميل التعليقات…"
@@ -16343,6 +16356,11 @@ msgstr "فتح سجل حوار هذا الوكيل"
 
 #: src/components/automations/AutomationRow.tsx
 msgid "Open this automation"
+msgstr ""
+
+#: src/components/assets/editor/agent-profile/deployment/AgentDeploymentPage.tsx
+#: src/components/assets/editor/agent-profile/deployment/AgentDeploymentPage.tsx
+msgid "Open this deployment's workspace in a new tab"
 msgstr ""
 
 #: src/components/llm-sources/LlmSourcesView.tsx
@@ -21371,6 +21389,10 @@ msgstr ""
 msgid "Sign in to see who's a member"
 msgstr "تسجيل الدخول لرؤية الأعضاء"
 
+#: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
+msgid "Sign in to the hub to deploy to a cloud machine."
+msgstr ""
+
 #: src/components/graph-view/ui/AccessTab.tsx
 msgid "Sign in to view access."
 msgstr ""
@@ -22054,6 +22076,10 @@ msgstr ""
 
 #: src/components/automations/TestPanel.tsx
 msgid "Started. Follow it under Runs."
+msgstr ""
+
+#: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
+msgid "Starting a machine — this takes a couple of minutes."
 msgstr ""
 
 #: src/components/assets/editor/agent-profile/AgentDeploymentsSection.tsx
@@ -25915,6 +25941,7 @@ msgid "Working…"
 msgstr "قيد المعالجة…"
 
 #: src/i18n/type-labels.ts
+#: src/pages/hub-home/HubHome.tsx
 msgid "Workspace"
 msgstr "مساحة العمل"
 

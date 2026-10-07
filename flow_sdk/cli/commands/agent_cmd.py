@@ -1,7 +1,9 @@
 """``flow agent deploy <agent>`` — put an agent on a machine of its own, through the running app.
 
-    flow agent deploy researcher                     # production, on the hub's compute provider
+    flow agent deploy researcher                     # production, on an e2b machine
     flow agent deploy researcher --environment staging
+    flow agent deploy researcher --provider gcp_vm   # on a provider the hub offers
+    flow agent providers                             # the providers the hub offers
 
 The readiness gate runs in the app: a deploy whose placement's store (the hub) lacks a value, or whose
 owner has not authorized a connection it needs, is refused with each missing item and its fix — exit 1,
@@ -47,11 +49,20 @@ def _agent_id(port: int, agent: str) -> str:
 def deploy(
     agent: Annotated[str, typer.Argument(help="The agent's name or id.")],
     environment: Annotated[Optional[str], typer.Option("--environment", help="The placement's environment (default: production).")] = None,
+    provider: Annotated[str, typer.Option("--provider", help="The compute provider to deploy on; `flow agent providers` lists them.")] = "e2b",
 ) -> None:
     """Deploy AGENT to a machine of its own; refused (exit 1) until the placement has what it needs."""
     port = discover_port(required=True)
     agent_id = _agent_id(port, agent)
-    data = post_graph_json(graph_url(port, f"agent/{agent_id}/deploy"), {"environment": environment},
+    data = post_graph_json(graph_url(port, f"agent/{agent_id}/deploy"), {"environment": environment, "provider": provider},
                            timeout=DEPLOY_SECONDS, on_error=_refused)
     deployment = (data or {}).get("deployment") or {}
     ok({"agent_id": agent_id, "deployment_id": deployment.get("id"), "secrets": (data or {}).get("secrets")})
+
+
+@agent_app.command("providers")
+def providers() -> None:
+    """List the compute providers the signed-in hub offers for deployments."""
+    port = discover_port(required=True)
+    names = get_graph_json(graph_url(port, "deployment/providers"), on_error=_refused)
+    ok({"providers": names if isinstance(names, list) else []})
