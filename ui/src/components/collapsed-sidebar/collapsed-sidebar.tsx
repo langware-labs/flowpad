@@ -119,7 +119,9 @@ export function CollapsedSidebar() {
   const topItems = railItems.filter((item) => item.placement === 'top');
   const overflowItems = railItems.filter((item) => item.placement === 'overflow');
 
-  const currentView = currentDock?.viewType;
+  // A Vibe host is a process shown in Vibe: the rail lights Chats for it, as for
+  // the same process shown as a chat or terminal.
+  const currentView = currentDock?.viewType === ViewType.VIBE ? ViewType.SHELL : currentDock?.viewType;
   const currentPointer = currentDock?.pointer ?? '';
   // The project item owns EVERY assets surface, `list/task` and a task doc in
   // the editor included. It used to subtract those, because a Tasks rail entry

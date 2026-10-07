@@ -27,7 +27,7 @@ import contextlib
 import json as _json
 import logging
 import uuid
-from typing import Any
+from typing import Any, Callable
 
 from flow_sdk.actions.action_registry import action as _action_registry
 from flow_sdk.api.api_types.api_field import APIField, NoDBAPIField, Persist
@@ -103,8 +103,14 @@ def _pointer_target(pointer: str | None) -> tuple[str, str]:
             data = _json.loads(pointer)
         except (ValueError, TypeError):
             return (pointer, '')
-        return (str(data.get('viewType') or ''), str(data.get('pointer') or ''))
-    vt, _, sub = pointer.partition('|')
+        vt, sub = str(data.get('viewType') or ''), str(data.get('pointer') or '')
+    else:
+        vt, _, sub = pointer.partition('|')
+    # A process shown as the Vibe host and as a shell is ONE target shown two ways
+    # (the Vibe dock folds onto the shell identity): switching between them is not
+    # a re-point, so it must not refresh the tab's label or icon.
+    if vt == 'vibe':
+        vt = 'shell'
     return (vt, sub)
 
 
@@ -228,10 +234,27 @@ def _pointer_is_adoptable_child(pointer: str | None) -> bool:
         # is the launcher landing, never a materialized session.
         s = sub.strip()
         return bool(s) and s != 'new_terminal' and not s.startswith('agentic_process-')
+    if _view_hosts_tabs(vt):
+        # A HOST tab is never a child: nesting is one level deep.
+        return False
     # Any other ADDRESSABLE screen. Unknown/retired view types are refused, so a
     # malformed pointer still fails closed.
     meta = VIEW_META.get(parse_view_type(vt))  # type: ignore[arg-type]
     return bool(meta and meta.addressable)
+
+
+# HOST tabs: views that draw their own nested strip of child tabs, one level
+# deep. Each maps to the rule for which pointers it accepts as children. The
+# frontend twin is ``ui/src/navigation/tab-hosts.ts``; both are pinned by
+# ``tests/fixtures/tab_host_children.json``. Vibe is the first host, and its rule
+# is the workspace-content rule the vibe workspace always used.
+_HOST_CHILD_RULES: dict[str, Callable[[str | None], bool]] = {
+    "vibe": _pointer_is_adoptable_child,
+}
+
+
+def _view_hosts_tabs(view_type: str) -> bool:
+    return view_type in _HOST_CHILD_RULES
 
 
 def tab_id_for(pointer: str) -> str:
@@ -314,8 +337,16 @@ class Tab(Entity):
         entity owns its own ``teardown_for_tab`` (e.g. a shell/agentic_process
         tears down its PTY/worker; a markdown/skill survives untouched). A
         target without that method is a no-op.
+
+        Closing a HOST closes its nested children with it (one level deep, so
+        children have none of their own): a workspace does not outlive its tab.
         """
+        children = await _visible_children([self.id])
         await self._soft_hide()
+        for child in children:
+            await child._soft_hide()
+        for child in children:
+            await child._dispatch_teardown()
         await self._dispatch_teardown()
 
     async def _soft_hide(self) -> None:
@@ -1599,11 +1630,35 @@ async def _http_close(self: Tab):
     logged (``Shell.close`` already swallowed its sub-failures anyway).
     Programmatic callers keep the synchronous semantics via ``Tab.close``.
     """
+    # A host closes with its nested children (see ``Tab.close``) — in the same
+    # broadcast, so no client ever sees the children orphaned for a beat.
+    children = await _visible_children([self.id])
     await self._soft_hide()
+    for child in children:
+        await child._soft_hide()
     await broadcast_tabs_changed()
     response = await _list_response(self.project_id)
+    for child in children:
+        _schedule_teardown(child)
     _schedule_teardown(self)
     return response
+
+
+async def _visible_children(parent_ids: list[str]) -> list[Tab]:
+    """The visible tabs nested under any of ``parent_ids`` (a host's children)."""
+    from flow_sdk.db.drivers.query import (  # noqa: PLC0415
+        ExpressionNode,
+        QueryFilter,
+        QueryOp,
+    )
+
+    ids = [str(pid) for pid in parent_ids if pid]
+    if not ids:
+        return []
+    rows = await Tab.get_all(
+        QueryFilter(match=ExpressionNode(op=QueryOp.IN, operands=["parent_tab_id", ids]))
+    )
+    return [row for row in rows if row.visible and row.id not in ids]
 
 
 def _schedule_teardown(tab: Tab) -> None:
@@ -1656,6 +1711,9 @@ async def _http_close_many(
     )
     by_id = {tab.id: tab for tab in rows}
     closing = [by_id[tab_id] for tab_id in ids if tab_id in by_id and by_id[tab_id].visible]
+    # Hosts close with their nested children (see ``Tab.close``).
+    closing_ids = {tab.id for tab in closing}
+    closing += [child for child in await _visible_children(list(closing_ids)) if child.id not in closing_ids]
 
     for tab in closing:
         await tab._soft_hide()

@@ -142,6 +142,7 @@ const VIBE_CREATOR_SURFACES: ReadonlySet<ViewType> = new Set([
   ViewType.HOME,
   ViewType.CONVERSATION,
   ViewType.SHELL,
+  ViewType.VIBE,
   ViewType.AGENTIC_PROCESS,
   ViewType.WEB_APP,
   ViewType.APP,
@@ -214,7 +215,7 @@ function ContentPanelBody({
   // first alive tab. A pointer-less shell URL is loader-owned (the loader
   // resolves the default target), so we only act when a tab matches the URL.
   useEffect(() => {
-    if (currentDock?.viewType !== ViewType.SHELL || !currentDock.pointer) return;
+    if ((currentDock?.viewType !== ViewType.SHELL && currentDock?.viewType !== ViewType.VIBE) || !currentDock.pointer) return;
     const active = tabForDockKey(terminalTabs, currentDock.tabHash);
     if (active?.is_disabled) {
       const alive = terminalTabs.find((t) => t.id !== active.id && !t.is_disabled);
@@ -340,6 +341,7 @@ function ContentPanelBody({
 
     switch (vt) {
       case ViewType.SHELL:
+      case ViewType.VIBE:
         // A slot of the terminal pool: unmounting it (any view change) moves the
         // terminal back to the pool, it never tears the runtime down.
         return <TabbedTerminal className="h-full" />;

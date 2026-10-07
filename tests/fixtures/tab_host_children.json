@@ -1,0 +1,79 @@
+{
+  "comment": "Which docks a HOST tab accepts as nested children. Asserted by tests/unit/test_tab_host_children.py (backend _HOST_CHILD_RULES on the stored pointer the URL mints) and ui/tests/unit/tab-host-children.test.ts (frontend tab-hosts.ts on the URL, plus DockPointer.toJSON == stored). `user` = a dock the user opened; `shown` = one the agent presented. The backend sees only the stored pointer, so it answers the `shown` question for screens (see _pointer_is_adoptable_child).",
+  "hosts": {
+    "vibe": [
+      {
+        "name": "a markdown asset",
+        "url": "/dock/assets/editor/markdown/typeid/markdown-550e8400-e29b-41d4-a716-446655440000",
+        "user": true,
+        "shown": true,
+        "backend": true,
+        "stored": "{\"viewType\":\"assets\",\"pointer\":\"\",\"tabHash\":\"assets|all\",\"workspaceContent\":true}"
+      },
+      {
+        "name": "a plain terminal",
+        "url": "/dock/shell/6ba7b810-9dad-41d1-80b4-00c04fd430c8",
+        "user": true,
+        "shown": true,
+        "backend": true,
+        "stored": "{\"viewType\":\"shell\",\"pointer\":\"6ba7b810-9dad-41d1-80b4-00c04fd430c8\"}"
+      },
+      {
+        "name": "a running app",
+        "url": "/dock/app/artifact-6ba7b810-9dad-41d1-80b4-00c04fd430c8",
+        "user": true,
+        "shown": true,
+        "backend": true,
+        "stored": "{\"viewType\":\"app\",\"pointer\":\"artifact-6ba7b810-9dad-41d1-80b4-00c04fd430c8\"}"
+      },
+      {
+        "name": "a screen the agent showed",
+        "url": "/dock/capabilities",
+        "user": false,
+        "shown": true,
+        "backend": true,
+        "stored": "{\"viewType\":\"capabilities\",\"pointer\":\"\"}"
+      },
+      {
+        "name": "a non-addressable screen is refused by the backend",
+        "url": "/dock/events",
+        "user": false,
+        "shown": true,
+        "backend": false,
+        "stored": "{\"viewType\":\"events\",\"pointer\":\"\"}"
+      },
+      {
+        "name": "the assets LIST is a navigation away",
+        "url": "/dock/assets/list/skill",
+        "user": false,
+        "shown": true,
+        "backend": false,
+        "stored": "{\"viewType\":\"assets\",\"pointer\":\"\",\"tabHash\":\"assets|all\"}"
+      },
+      {
+        "name": "a process (shell form) is an anchor",
+        "url": "/dock/shell/agentic_process-550e8400-e29b-41d4-a716-446655440000",
+        "user": false,
+        "shown": false,
+        "backend": false,
+        "stored": "{\"viewType\":\"shell\",\"pointer\":\"agentic_process-550e8400-e29b-41d4-a716-446655440000\"}"
+      },
+      {
+        "name": "a Vibe host is never a child (depth 1)",
+        "url": "/dock/vibe/agentic_process-550e8400-e29b-41d4-a716-446655440000",
+        "user": false,
+        "shown": false,
+        "backend": false,
+        "stored": "{\"viewType\":\"vibe\",\"pointer\":\"agentic_process-550e8400-e29b-41d4-a716-446655440000\",\"tabHash\":\"shell|agentic_process-550e8400-e29b-41d4-a716-446655440000\"}"
+      },
+      {
+        "name": "a project is an anchor",
+        "url": "/dock/project/550e8400-e29b-41d4-a716-446655440000",
+        "user": false,
+        "shown": false,
+        "backend": false,
+        "stored": "{\"viewType\":\"project\",\"pointer\":\"550e8400-e29b-41d4-a716-446655440000\"}"
+      }
+    ]
+  }
+}

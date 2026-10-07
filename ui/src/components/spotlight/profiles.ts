@@ -23,7 +23,7 @@ const defaultProfile: SpotlightProfile = {
 };
 
 export function resolveProfile(viewType: ViewType | undefined): SpotlightProfile {
-  if (viewType === ViewType.SHELL) return terminalProfile;
+  if (viewType === ViewType.SHELL || viewType === ViewType.VIBE) return terminalProfile;
   return defaultProfile;
 }
 
