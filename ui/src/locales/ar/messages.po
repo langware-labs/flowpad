@@ -375,6 +375,12 @@ msgstr "تم حذف {0}"
 msgid "{0} disconnect failed"
 msgstr "فشل قطع الاتصال عن {0}"
 
+#. placeholder {0}: index.document_count
+#. placeholder {1}: index.chunk_count
+#: src/hooks/use-rag-roots.tsx
+msgid "{0} documents, {1} chunks"
+msgstr ""
+
 #. placeholder {0}: totals.estimated_requests
 #. placeholder {1}: totals.unpriced_requests
 #: src/components/llm-endpoints/UsagePanel.tsx
@@ -899,6 +905,10 @@ msgstr ""
 msgid "{name} is not set up on this machine"
 msgstr ""
 
+#: src/hooks/use-rag-roots.tsx
+msgid "{name} is ready to search"
+msgstr ""
+
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "{name} isn't installed on this computer yet."
 msgstr ""
@@ -923,6 +933,10 @@ msgstr ""
 
 #: src/components/helpdesk/AddHelpdeskDialog.tsx
 msgid "{name} was added, but its guides cannot be opened"
+msgstr ""
+
+#: src/hooks/use-rag-roots.tsx
+msgid "{name}: indexing stopped"
 msgstr ""
 
 #: src/components/project-home/ProjectDependenciesCard.tsx
@@ -1550,6 +1564,7 @@ msgid "active"
 msgstr "نشط"
 
 #: src/components/api-keys-view/api-keys-view.tsx
+#: src/components/data-sources/status-style.ts
 #: src/components/locale/LocalePicker.tsx
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Active"
@@ -3341,6 +3356,10 @@ msgstr "منطقة AWS لخدمة Bedrock"
 msgid "Back"
 msgstr "رجوع"
 
+#: src/components/data-sources/DataSourcePage.tsx
+msgid "Back to Data sources"
+msgstr ""
+
 #: src/components/conversation/ThreadHeader.tsx
 msgid "Back to every message in this conversation"
 msgstr ""
@@ -3538,6 +3557,10 @@ msgstr "تصفح"
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "Browse and run LLM-generated folder indexes (MarkdownIndex entities). Each indexer (re)builds a Merkle tree of <0>index.md</0> files over a docs root."
 msgstr "استعرض وشغّل فهارس المجلدات المُولّدة بواسطة نماذج اللغة الكبيرة (كيانات MarkdownIndex). يُعيد كل مفهرس بناء شجرة Merkle من ملفات <0>index.md</0> على مستوى جذر المستندات."
+
+#: src/components/rag/RagView.tsx
+msgid "Browse chunks"
+msgstr ""
 
 #: src/components/automations/AutomationRow.tsx
 msgid "Browse folder"
@@ -6007,7 +6030,7 @@ msgid "Could not publish"
 msgstr ""
 
 #. placeholder {0}: source.name || source.provider
-#: src/components/data-sources/DataSourceRow.tsx
+#: src/components/data-sources/source-parts.tsx
 msgid "Could not pull {0}"
 msgstr "تعذر سحب {0}"
 
@@ -6021,6 +6044,10 @@ msgstr "تعذّر الوصول إلى الخادم. يُرجى المحاولة
 
 #: src/components/assets/editor/agent-profile/AgentPlaceActivity.tsx
 msgid "Could not reach this cloud machine. It may be paused."
+msgstr ""
+
+#: src/components/rag/RagChunkBrowser.tsx
+msgid "Could not read the index"
 msgstr ""
 
 #: src/components/code-editor/SnippetView.tsx
@@ -7478,6 +7505,18 @@ msgstr "جاري الحذف…"
 msgid "Delivered"
 msgstr "تم التسليم"
 
+#: src/components/data-sources/ChannelRouteControl.tsx
+msgid "Delivered to"
+msgstr ""
+
+#: src/components/data-sources/ChannelRouteControl.tsx
+msgid "Delivered to a place that does not hold this channel"
+msgstr ""
+
+#: src/components/data-sources/ChannelRouteControl.tsx
+msgid "Deliveries"
+msgstr ""
+
 #: src/components/hub/AddMachineDialog.tsx
 #: src/components/settings-view/settings-utils.ts
 msgid "Deny"
@@ -8179,6 +8218,7 @@ msgid "Drill by"
 msgstr "التفصيل حسب"
 
 #: src/components/data-sources/DataDriversView.tsx
+#: src/components/data-sources/DataSourcePage.tsx
 msgid "Driver"
 msgstr ""
 
@@ -8836,6 +8876,7 @@ msgstr "الحدث: "
 
 #: src/components/assets/editor/agent-profile/deployment/ThreadPane.tsx
 #: src/components/automations/blocks/WhenBlock.tsx
+#: src/components/data-sources/DataSourcePage.tsx
 #: src/components/lens-viewer/HeartbeatEventsViewer.tsx
 msgid "Events"
 msgstr "الأحداث"
@@ -9678,6 +9719,7 @@ msgstr "الحقل"
 #: src/components/automations/automation-words.ts
 #: src/components/automations/RunDetail.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
+#: src/components/data-sources/DataSourcePage.tsx
 #: src/i18n/type-labels.ts
 #: src/pages/flow-page/display-annotation.ts
 msgid "File"
@@ -9831,8 +9873,8 @@ msgstr "تصفية..."
 msgid "Filter…"
 msgstr "تصفية…"
 
-#. placeholder {0}: route.tag ?? route.target
-#: src/components/automations/BusView.tsx
+#. placeholder {0}: tag ?? target
+#: src/components/automations/BusStream.tsx
 msgid "filtered to {0}"
 msgstr ""
 
@@ -9870,7 +9912,7 @@ msgstr ""
 msgid "Finish setting up Flowpad"
 msgstr "إنهاء إعداد Flowpad"
 
-#: src/components/data-sources/DataSourceRow.tsx
+#: src/components/data-sources/source-parts.tsx
 msgid "Finish setup, then press Verify."
 msgstr "يُرجى إكمال الإعداد أولاً، ثم الضغط على زر التحقق."
 
@@ -9995,6 +10037,10 @@ msgstr "معالجة هذه المشاكل تقوي المهارة لكل تشغ
 #: src/components/webapp-display/WebDebugComponent.tsx
 msgid "Fixing…"
 msgstr "جارٍ الإصلاح…"
+
+#: src/components/data-sources/ChannelRouteControl.tsx
+msgid "Flow answers from its own box · shown here"
+msgstr ""
 
 #: src/i18n/type-labels.ts
 msgid "Flow Message"
@@ -11112,7 +11158,7 @@ msgstr "عدد أسطر مخرجات الطرفية التي يُحتفظ بها
 msgid "How privacy modes work"
 msgstr "كيفية عمل أوضاع الخصوصية"
 
-#: src/components/data-sources/DataSourceRow.tsx
+#: src/components/data-sources/source-parts.tsx
 msgid "How to finish setup"
 msgstr "كيفية إكمال الإعداد"
 
@@ -12148,6 +12194,10 @@ msgstr "اللغة"
 msgid "Large"
 msgstr "كبير"
 
+#: src/components/data-sources/ChannelRouteControl.tsx
+msgid "last"
+msgstr ""
+
 #. placeholder {0}: new Date(row.last_run).toLocaleString()
 #. placeholder {0}: new Date(trigger.last_run).toLocaleString()
 #: src/components/assets/editor/agent-profile/AgentScheduleSection.tsx
@@ -12205,6 +12255,7 @@ msgstr ""
 msgid "Last success"
 msgstr ""
 
+#: src/components/data-sources/DataSourcePage.tsx
 #: src/components/data-sources/DataSourceRow.tsx
 msgid "Last successful sync"
 msgstr "آخر مزامنة ناجحة"
@@ -12525,7 +12576,7 @@ msgstr ""
 msgid "live"
 msgstr "مباشر"
 
-#: src/components/automations/BusView.tsx
+#: src/components/automations/BusStream.tsx
 msgid "Live"
 msgstr ""
 
@@ -13475,6 +13526,7 @@ msgid "Message Thread"
 msgstr "سلسلة الرسائل"
 
 #: src/components/data-sources/DataDriversView.tsx
+#: src/components/data-sources/DataSourcePage.tsx
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Messages"
 msgstr "الرسائل"
@@ -13527,6 +13579,10 @@ msgstr ""
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "Mis-Sc"
 msgstr "Mis-Sc"
+
+#: src/components/data-sources/ChannelRouteControl.tsx
+msgid "misrouted"
+msgstr ""
 
 #: src/components/assets/DependencyChips.tsx
 #: src/components/credentials-view/CredentialView.tsx
@@ -13859,7 +13915,12 @@ msgid "needs attention"
 msgstr ""
 
 #: src/components/automations/AutomationRow.tsx
+#: src/components/data-sources/health-style.ts
 msgid "Needs attention"
+msgstr ""
+
+#: src/components/data-sources/status-style.ts
+msgid "Needs setup"
 msgstr ""
 
 #: src/components/connections-manager/credential-rows-view.tsx
@@ -13902,6 +13963,10 @@ msgstr ""
 msgid "never run"
 msgstr "لم يتم التشغيل أبداً"
 
+#: src/components/data-sources/health-style.ts
+msgid "Never synced"
+msgstr ""
+
 #: src/components/stream-inbox-view/StreamInboxView.tsx
 #: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Never synced to cloud"
@@ -13913,6 +13978,7 @@ msgstr ""
 
 #: src/components/assets/AssetListView.tsx
 #: src/components/chats-navigator/ChatsFilterBar.tsx
+#: src/components/data-sources/status-style.ts
 #: src/components/entity-execution-panel/NewSessionPill.tsx
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 #: src/components/project-activity-strip/RecentConversationsStrip.tsx
@@ -14168,6 +14234,11 @@ msgstr "المطابقة التالية (Enter)"
 msgid "Next poll"
 msgstr ""
 
+#. placeholder {0}: timeUntil(source.next_poll_at)
+#: src/components/data-sources/DataSourcePage.tsx
+msgid "Next poll {0}"
+msgstr ""
+
 #: src/components/terminal/interactive-terminal/side-windows/QueuePanel.tsx
 msgid "Next prompt — injected when the agent next goes idle. Press Enter to add."
 msgstr "الموجه التالي — سيُحقن عند خمول الوكيل. يمكن الضغط على Enter للإضافة."
@@ -14176,6 +14247,7 @@ msgstr "الموجه التالي — سيُحقن عند خمول الوكيل.
 msgid "Next runs"
 msgstr ""
 
+#: src/components/data-sources/DataSourcePage.tsx
 #: src/components/data-sources/DataSourceRow.tsx
 msgid "Next scheduled poll"
 msgstr "موعد الفحص التالي"
@@ -15567,6 +15639,10 @@ msgstr "لا شيء هنا بعد."
 msgid "Nothing in private context yet."
 msgstr "لا شيء في السياق الخاص حتى الآن."
 
+#: src/components/rag/RagChunkBrowser.tsx
+msgid "Nothing indexed yet."
+msgstr ""
+
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "Nothing indexed yet. <0>Refresh Index</0> to populate."
 msgstr "لم تتم فهرسة أي شيء بعد. <0>تحديث الفهرس</0> للملء."
@@ -15685,7 +15761,7 @@ msgstr "لم يتم تشغيل أي شيء. يمكن إغلاق هذه التب�
 msgid "Nothing would arrive for this, so it was not sent:"
 msgstr ""
 
-#: src/components/automations/BusView.tsx
+#: src/components/automations/BusStream.tsx
 msgid "Nothing yet. Only some event families reach the app; the counts above cover every event."
 msgstr ""
 
@@ -15925,6 +16001,8 @@ msgstr "فتح"
 
 #. placeholder {0}: app.name
 #. placeholder {0}: file.path
+#. placeholder {0}: source.name || source.provider
+#: src/components/data-sources/DataSourceRow.tsx
 #: src/components/data-sources/SourceMenu.tsx
 #: src/components/entity-execution-panel/TurnFilesChips.tsx
 msgid "Open {0}"
@@ -16059,7 +16137,7 @@ msgid "Open data_driver.json"
 msgstr ""
 
 #: src/components/data-sources/DataDriversView.tsx
-#: src/components/data-sources/DataSourceRow.tsx
+#: src/components/data-sources/SourceMenu.tsx
 msgid "Open data_source.json"
 msgstr ""
 
@@ -16074,6 +16152,10 @@ msgstr "فتح التشخيص في علامة تبويب"
 #: src/components/artifacts/artifact-form.tsx
 msgid "Open dot-path ontology; custom descendants are welcome."
 msgstr "أنطولوجيا مفتوحة للمسارات المنقوطة، والمشتقات المخصصة مرحّب بها."
+
+#: src/components/data-sources/SourceMenu.tsx
+msgid "Open driver folder"
+msgstr ""
 
 #: src/components/assets/editor/AssetEditorHeader.tsx
 #: src/components/display-toolbar/GenericDisplayToolbar.tsx
@@ -16354,6 +16436,10 @@ msgstr "فتح الجلسة"
 msgid "Open Session"
 msgstr "فتح الجلسة"
 
+#: src/components/data-sources/SourceMenu.tsx
+msgid "Open source folder"
+msgstr ""
+
 #: src/components/conversation/attachment-actions/registry.ts
 msgid "Open Spec"
 msgstr "فتح المواصفات"
@@ -16417,6 +16503,10 @@ msgstr ""
 
 #: src/components/automations/RunDetail.tsx
 msgid "Open the automation to fix it"
+msgstr ""
+
+#: src/components/data-sources/DataSourcePage.tsx
+msgid "Open the event bus"
 msgstr ""
 
 #: src/components/footer.tsx
@@ -16821,6 +16911,7 @@ msgid "Overwrite"
 msgstr "استبدال"
 
 #: src/components/assets/editor/task/DelegationBlock.tsx
+#: src/components/data-sources/DataSourcePage.tsx
 #: src/components/git/RepoPicker.tsx
 msgid "Owner"
 msgstr "المالك"
@@ -16882,8 +16973,16 @@ msgstr "المجلد الأب"
 msgid "Parent folder to clone into…"
 msgstr "المجلد الأب للاستنساخ فيه…"
 
-#: src/components/data-sources/DataSourceRow.tsx
+#: src/components/data-sources/source-parts.tsx
+msgid "Parked"
+msgstr ""
+
+#: src/components/data-sources/source-parts.tsx
 msgid "Parked — the scheduler skips a <0>config_error</0> source, so it will not poll again on its own. <1>Pull</1> clears the latch."
+msgstr ""
+
+#: src/components/data-sources/source-parts.tsx
+msgid "Parked: the scheduler skips it until you pull"
 msgstr ""
 
 #: src/components/ask/AskView.tsx
@@ -17009,7 +17108,7 @@ msgstr ""
 msgid "Pattern sandbox"
 msgstr ""
 
-#: src/components/automations/BusView.tsx
+#: src/components/automations/BusStream.tsx
 #: src/components/collaboration/LiveSessionView.tsx
 #: src/components/data-sources/SourceMenu.tsx
 #: src/components/machine-overview/machine-overview.tsx
@@ -17035,6 +17134,7 @@ msgstr ""
 
 #: src/components/assets/editor/agent-profile/AgentPlaceCard.tsx
 #: src/components/assets/editor/agent-profile/AgentPlacesColumn.tsx
+#: src/components/data-sources/status-style.ts
 #: src/pages/hub-home/HubHome.tsx
 msgid "Paused"
 msgstr "متوقف مؤقتاً"
@@ -18029,7 +18129,6 @@ msgstr ""
 msgid "Published when you deploy"
 msgstr ""
 
-#: src/components/data-sources/DataSourceRow.tsx
 #: src/components/status-bar/GitPullButton.tsx
 msgid "Pull"
 msgstr ""
@@ -18049,7 +18148,7 @@ msgstr "سحب وفتح"
 msgid "Pull and open task"
 msgstr "سحب التحديثات وفتح المهمة"
 
-#: src/components/data-sources/DataSourceRow.tsx
+#: src/components/data-sources/SourceMenu.tsx
 msgid "Pull changes now"
 msgstr ""
 
@@ -19240,7 +19339,7 @@ msgstr ""
 msgid "Results"
 msgstr "النتائج"
 
-#: src/components/automations/BusView.tsx
+#: src/components/automations/BusStream.tsx
 #: src/components/chats-navigator/ChatsNavigator.tsx
 #: src/components/collaboration/LiveSessionView.tsx
 #: src/components/data-sources/SourceMenu.tsx
@@ -19305,6 +19404,10 @@ msgstr "إعادة محاولة التحميل"
 msgid "Retry pull"
 msgstr "إعادة السحب"
 
+#: src/components/data-sources/health-style.ts
+msgid "Retrying"
+msgstr ""
+
 #: src/components/conversation/MessageBubble.tsx
 msgid "Retrying…"
 msgstr ""
@@ -19336,7 +19439,6 @@ msgid "Reveal in Finder"
 msgstr "إظهار في Finder"
 
 #: src/components/connections-manager/credential-rows-view.tsx
-#: src/components/data-sources/SourceMenu.tsx
 #: src/components/terminal/interactive-terminal/side-windows/InputFilesPanel.tsx
 msgid "Reveal in Finder/Explorer"
 msgstr ""
@@ -19711,6 +19813,7 @@ msgstr "قيد التشغيل"
 #: src/components/assets/editor/agent-profile/AgentPlacesColumn.tsx
 #: src/components/automations/automation-words.ts
 #: src/components/automations/RunsView.tsx
+#: src/components/data-sources/health-style.ts
 #: src/pages/hub-home/HubHome.tsx
 msgid "Running"
 msgstr "قيد التشغيل"
@@ -19756,6 +19859,7 @@ msgstr "جارٍ التنفيذ…"
 #: src/components/automations/AutomationsNavigator.tsx
 #: src/components/automations/RunsView.tsx
 #: src/components/collapsed-sidebar/collapsed-sidebar.tsx
+#: src/components/data-sources/DataSourcePage.tsx
 #: src/components/data-sources/SourceMenu.tsx
 #: src/components/triggers-view/ScheduleTriggerEditor.tsx
 #: src/types/ViewType.ts
@@ -20258,6 +20362,10 @@ msgstr "البحث عن الأيقونات"
 #: src/components/ui/icon-picker.tsx
 msgid "Search icons…"
 msgstr "البحث عن الأيقونات…"
+
+#: src/hooks/use-rag-roots.tsx
+msgid "Search index"
+msgstr ""
 
 #: src/pages/search-view/SearchView.tsx
 msgid "Search index is warming up. Results will appear once indexing is complete."
@@ -21013,6 +21121,7 @@ msgid "Setting up your project…"
 msgstr "جاري إعداد المشروع…"
 
 #: src/components/assets/editor/agent-profile/deployment/AgentDeploymentPage.tsx
+#: src/components/data-sources/DataSourcePage.tsx
 #: src/components/settings-view/SettingsView.tsx
 #: src/pages/flow-page/content-panel/user-dropdown/user-dropdown.tsx
 #: src/pages/flow-page/content-panel/user-dropdown/user-dropdown.tsx
@@ -21359,6 +21468,11 @@ msgstr ""
 #: src/journey/JourneyViewer.tsx
 msgid "Show journey"
 msgstr "عرض الرحلة"
+
+#. placeholder {0}: chunks.length
+#: src/components/rag/RagChunkBrowser.tsx
+msgid "Show more ({0} of {total})"
+msgstr ""
 
 #: src/journey/JourneyTray.tsx
 #: src/journey/JourneyTray.tsx
@@ -21953,6 +22067,10 @@ msgstr "حدث خطأ أثناء تحميل هذه الصفحة."
 
 #: src/lib/publish-state.ts
 msgid "Something went wrong. Please try again."
+msgstr ""
+
+#: src/components/data-sources/ChannelRouteControl.tsx
+msgid "Somewhere else"
 msgstr ""
 
 #: src/components/terminal/HistoryModal.tsx
@@ -22696,6 +22814,11 @@ msgstr ""
 msgid "Synced"
 msgstr ""
 
+#. placeholder {0}: timeSince(source.last_synced_at)
+#: src/components/data-sources/DataSourcePage.tsx
+msgid "Synced {0}"
+msgstr ""
+
 #. placeholder {0}: row.type
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "Syncing {0}…"
@@ -23428,7 +23551,7 @@ msgstr ""
 msgid "The skill matches HEAD."
 msgstr "المهارة تطابق HEAD."
 
-#: src/components/data-sources/DataSourceRow.tsx
+#: src/components/data-sources/source-parts.tsx
 msgid "The source was not queued."
 msgstr "لم يتم إضافة المصدر إلى قائمة الانتظار."
 
@@ -24074,6 +24197,10 @@ msgstr "تحتوي هذه المهارة على تغييرات غير مثبتة
 #: src/components/llm-sources/use-llm-sources.ts
 msgid "This source did not work"
 msgstr "لم يعمل هذا المصدر"
+
+#: src/components/data-sources/DataSourcePage.tsx
+msgid "This source is not on this machine (it may have been deleted)."
+msgstr ""
 
 #: src/components/llm-sources/use-llm-sources.ts
 msgid "This source works"
@@ -25410,11 +25537,11 @@ msgid "Verified"
 msgstr "تم التحقق"
 
 #: src/components/account/user-info.tsx
-#: src/components/data-sources/DataSourceRow.tsx
+#: src/components/data-sources/source-parts.tsx
 msgid "Verify"
 msgstr "التحقق"
 
-#: src/components/data-sources/DataSourceRow.tsx
+#: src/components/data-sources/SourceMenu.tsx
 msgid "Verify the setup first."
 msgstr "يجب التحقق من الإعداد أولاً."
 
@@ -25693,6 +25820,10 @@ msgstr "تطبيق ويب"
 #: src/components/display-toolbar/WebappDisplayToolbar.tsx
 msgid "Web app status"
 msgstr "حالة تطبيق الويب"
+
+#: src/components/data-sources/ChannelRouteControl.tsx
+msgid "Webhook"
+msgstr ""
 
 #: src/components/cost-dashboard/constants.ts
 msgid "Week"
@@ -26236,6 +26367,7 @@ msgid "yesterday {hhmm}"
 msgstr ""
 
 #: src/components/collaboration/LiveSessionView.tsx
+#: src/components/data-sources/DataSourcePage.tsx
 msgid "you"
 msgstr ""
 
