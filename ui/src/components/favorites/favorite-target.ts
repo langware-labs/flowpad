@@ -1,4 +1,4 @@
-import { tabManager, type APIEntity, type TypeId, type AnyEntity } from '@sdk';
+import { Conversation, tabManager, TypeId, type APIEntity, type AnyEntity } from '@sdk';
 import type { DockPointer } from '@src/navigation/DockPointer';
 import { ViewType } from '@src/types/ViewType';
 import { labelForType } from '@src/components/graph-view/icons/iconRegistry';
@@ -46,5 +46,31 @@ export function favoriteTargetForDock(
     entityId: key,
     title: tab?.name?.trim() || (dock.isRoot ? labelForType(ViewType.HOME) : '') || fallbackTitle,
     nav: { pointer: dock.toFavoriteJSON() },
+  };
+}
+
+/** First `n` whitespace-delimited words of `text`, trimmed. Empty when no text. */
+function firstWords(text: string | undefined, n: number): string {
+  // Only the head is read: a long agent message is not split end to end.
+  return (text ?? '').trim().slice(0, 400).split(/\s+/).slice(0, n).join(' ');
+}
+
+/**
+ * What "favorite THIS message" saves — one answer for the bubble's star and the
+ * ⋮ menu item, so they toggle the same bookmark. The conversation rides along as
+ * the message's containment pointer, which `RECORD_TYPE_NAV.flow_message` opens;
+ * a dock favorite can't carry it (the conversation view folds the message out of
+ * `toFavoriteJSON()`).
+ */
+export function messageFavoriteRef(
+  flowMessageId: string,
+  conversationId: string,
+  messageText: string | undefined,
+): FavoriteRef {
+  return {
+    entityType: 'flow_message',
+    entityId: flowMessageId,
+    title: firstWords(messageText, 10) || `Message ${flowMessageId.slice(0, 8)}`,
+    nav: { parent_type_id: new TypeId(Conversation.type, conversationId).toString() },
   };
 }
