@@ -12,10 +12,12 @@ The browser-mode login callback lives at ``/auth/login_callback`` — see
 
 import functools
 from pathlib import Path
+from typing import Optional
 
 from fastapi import APIRouter, Query
 from fastapi.responses import HTMLResponse, JSONResponse
 
+from flow_sdk.core.browser_profiles import ProfileChoice
 from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse
 
 router = APIRouter(prefix="/api/v1/cloud")
@@ -322,8 +324,10 @@ async def verify_ws():
 
 
 @router.post("/login")
-async def login():
+async def login(profile: Optional[ProfileChoice] = None):
     """Start a cloud login. ``cloud_login()`` decides env-mode vs browser-mode.
+
+    An optional ``{browser, profile}`` body opens the browser sign-in in that browser profile.
 
     Returns immediately with launch status:
       * ``{status: "logged_in", user: ...}`` — env-mode succeeded.
@@ -338,7 +342,7 @@ async def login():
     from flow_sdk.cli.auth.cloud_login import cloud_login
 
     try:
-        result = await cloud_login()
+        result = await cloud_login(profile)
     except Exception as e:
         return JSONResponse(
             content=ApiFailResponse(message=str(e)).model_dump(mode="json"),

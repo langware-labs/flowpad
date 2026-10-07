@@ -1,8 +1,9 @@
 import { Plural, Trans, useLingui } from '@lingui/react/macro';
-import { ExternalLink } from 'lucide-react';
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { RemoteWorkerSession, RemoteWorkerSessionStatus } from '@sdk';
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
+import { formatClock } from '@src/components/lens-viewer/shared/format-utils';
+import { useClock } from '@src/hooks/useActivity';
 import { cn } from '@src/lib/utils';
 import { sessionCardState, type SessionCardState } from './session-card-state';
 
@@ -15,19 +16,26 @@ export interface SessionCardProps {
   replyCount: number;
   /** URL-first: the caller navigates (`openDock(DockPointer.forLiveSession)`). */
   onOpen: () => void;
-  /** Host + pending only. */
+  /** Host + pending only: approve and remember this guest (later sessions start without asking). */
   onApprove?: () => Promise<void>;
+  /** Host + pending only: approve this session only. */
+  onApproveOnce?: () => Promise<void>;
   onDecline?: () => Promise<void>;
+  /** Either side, while live: end the session. */
+  onDisconnect?: () => Promise<void>;
+  /** The session's last prompt failed and nothing answered it since. */
+  lastPromptFailed?: boolean;
+  /** Guest only: send the failed prompt again into this session. */
+  onRetry?: () => Promise<void>;
 }
 
 const TONE: Record<SessionCardState, string> = {
-  requesting: 'border-border text-muted-foreground',
-  pending: 'border-amber-500/60 text-amber-700 dark:text-amber-300',
-  active: 'border-emerald-500/60 text-emerald-700 dark:text-emerald-300',
-  paused: 'border-border text-muted-foreground',
-  ended: 'border-border text-muted-foreground',
-  declined: 'border-red-500/40 text-red-700 dark:text-red-300',
-  error: 'border-red-500/40 text-red-700 dark:text-red-300',
+  requesting: 'text-muted-foreground',
+  pending: 'text-amber-700 dark:text-amber-300',
+  active: 'text-emerald-700 dark:text-emerald-300',
+  paused: 'text-muted-foreground',
+  ended: 'text-muted-foreground',
+  declined: 'text-red-700 dark:text-red-300',
 };
 
 const DOT: Record<SessionCardState, string> = {
@@ -37,44 +45,74 @@ const DOT: Record<SessionCardState, string> = {
   paused: 'bg-muted-foreground',
   ended: 'bg-muted-foreground',
   declined: 'bg-red-500',
-  error: 'bg-red-500',
 };
 
+const ACTION =
+  'rounded px-2 py-0.5 text-[11px] font-medium transition-colors disabled:opacity-50 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring';
+
+/** Time since the host approved — a ticking `m:ss` on the shared clock. */
+function SinceApproved({ approvedAt }: { approvedAt: string }) {
+  const now = useClock();
+  const ms = now - Date.parse(approvedAt);
+  if (!Number.isFinite(ms)) return null;
+  return (
+    <span className="shrink-0 font-mono tabular-nums text-muted-foreground" data-testid="session-card-elapsed">
+      {formatClock(ms)}
+    </span>
+  );
+}
+
 /**
- * The compact horizontal session card attached under the message that opened
- * a live session: status, whose machine, prompt/reply counts, Approve/Decline
- * for the host while pending, and Open for everyone. One row, never a stack —
- * the session view is where the turns live.
+ * A live session's ONE line in the conversation: `Live session · <other side>`
+ * and its status. The whole line opens the session view, where the turns live.
+ * The host answers a request here once (Approve — and remember this guest —,
+ * Approve once, or Decline); once it is live the
+ * line carries the message count, the time since approval, and a red Disconnect.
  */
-export function SessionCard({ sessionId, session, role, promptCount, replyCount, onOpen, onApprove, onDecline }: SessionCardProps) {
+export function SessionCard({
+  sessionId,
+  session,
+  role,
+  promptCount,
+  replyCount,
+  onOpen,
+  onApprove,
+  onApproveOnce,
+  onDecline,
+  onDisconnect,
+  lastPromptFailed,
+  onRetry,
+}: SessionCardProps) {
   const { t } = useLingui();
-  const [busy, setBusy] = useState<'approve' | 'decline' | null>(null);
+  const [busy, setBusy] = useState<'approve' | 'approve-once' | 'decline' | 'disconnect' | 'retry' | null>(null);
   const state = sessionCardState(session?.status);
   const running = session?.status === RemoteWorkerSessionStatus.RUNNING;
   const host = session?.host_name?.trim() || t`the host`;
   const guest = session?.guest_name?.trim() || t`the guest`;
+  const other = role === 'host' ? guest : host;
   const Icon = iconForType(RemoteWorkerSession.type);
+  // The host answering a request; a failed prompt on a live session.
+  const answering = role === 'host' && state === 'pending';
+  const failedLive = !!lastPromptFailed && state === 'active';
 
-  const label = (() => {
+  const status = (() => {
     switch (state) {
       case 'requesting':
-        return role === 'host' ? t`Session requested` : t`Requesting access to ${host}'s machine`;
+        return role === 'host' ? t`requested` : t`requesting…`;
       case 'pending':
-        return role === 'host' ? t`${guest} wants to run prompts here` : t`Awaiting ${host}`;
+        return role === 'host' ? t`wants to run prompts on your machine` : t`awaiting approval`;
       case 'active':
-        return role === 'host' ? t`Live · ${guest}'s session` : t`Live on ${host}'s machine`;
+        return running ? t`working…` : t`connected`;
       case 'paused':
-        return role === 'host' ? t`Paused` : t`${host} paused the session`;
+        return t`paused`;
       case 'ended':
-        return t`Ended`;
+        return t`ended`;
       case 'declined':
-        return t`Declined`;
-      case 'error':
-        return t`Last turn failed`;
+        return t`declined`;
     }
   })();
 
-  const run = async (which: 'approve' | 'decline', fn?: () => Promise<void>) => {
+  const run = async (which: NonNullable<typeof busy>, fn?: () => Promise<void>) => {
     if (!fn || busy) return;
     setBusy(which);
     try {
@@ -83,6 +121,27 @@ export function SessionCard({ sessionId, session, role, promptCount, replyCount,
       setBusy(null);
     }
   };
+
+  const button = (
+    which: NonNullable<typeof busy>,
+    fn: (() => Promise<void>) | undefined,
+    cls: string,
+    label: ReactNode,
+  ) =>
+    fn ? (
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          void run(which, fn);
+        }}
+        disabled={!!busy}
+        data-testid={`session-card-${which}`}
+        className={cn(ACTION, cls)}
+      >
+        {label}
+      </button>
+    ) : null;
 
   return (
     <div
@@ -99,53 +158,56 @@ export function SessionCard({ sessionId, session, role, promptCount, replyCount,
       data-session-id={sessionId}
       data-status={state}
       title={t`Open the live session`}
-      className={cn(
-        'ms-10 inline-flex max-w-full cursor-pointer items-center gap-2 rounded-md border bg-background px-2.5 py-1 text-[11px] transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring',
-        TONE[state],
-      )}
+      className="flex w-full max-w-full cursor-pointer items-center gap-2 rounded-md px-2 py-1 text-xs transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
     >
-      <Icon className="h-3 w-3 shrink-0" aria-hidden />
-      <span className={cn('h-2 w-2 shrink-0 rounded-full', DOT[state], running && 'animate-pulse')} aria-hidden />
-      <span className="truncate font-medium">{label}</span>
-      <span className="text-muted-foreground/70">·</span>
-      <span className="shrink-0 tabular-nums text-muted-foreground" data-testid="session-card-counts">
-        <Plural value={promptCount} one="# prompt" other="# prompts" />
-        {' · '}
-        <Plural value={replyCount} one="# reply" other="# replies" />
+      <Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden />
+      <span className="truncate font-medium text-foreground" data-testid="session-card-name">
+        <Trans>Live session · {other}</Trans>
       </span>
-      {role === 'host' && state === 'pending' && (
+      <span className={cn('h-2 w-2 shrink-0 rounded-full', DOT[state], running && 'animate-pulse')} aria-hidden />
+      <span className={cn('shrink-0', TONE[state])} data-testid="session-card-status">
+        {status}
+      </span>
+      {state === 'active' && (
         <>
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              void run('approve', onApprove);
-            }}
-            disabled={!!busy}
-            data-testid="session-card-approve"
-            className="ms-1 rounded bg-primary px-2 py-0.5 font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
-          >
-            <Trans>Approve</Trans>
-          </button>
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              void run('decline', onDecline);
-            }}
-            disabled={!!busy}
-            data-testid="session-card-decline"
-            className="rounded border border-border px-2 py-0.5 font-medium text-foreground transition-colors hover:bg-muted disabled:opacity-50"
-          >
-            <Trans>Decline</Trans>
-          </button>
+          <span className="shrink-0 tabular-nums text-muted-foreground" data-testid="session-card-counts">
+            <Plural value={promptCount + replyCount} one="# message" other="# messages" />
+          </span>
+          {session?.approved_at && <SinceApproved approvedAt={session.approved_at} />}
         </>
       )}
-      {/* The whole row opens the session (see the outer role="button"); this is
-          just the affordance hint, not a separate control. */}
-      <span data-testid="session-card-open" className="ms-auto inline-flex items-center gap-1 text-muted-foreground">
-        <ExternalLink className="h-3 w-3" aria-hidden />
-        <Trans>Open</Trans>
+      {failedLive && (
+        <span className="shrink-0 font-medium text-red-700 dark:text-red-300" data-testid="session-card-failed">
+          <Trans>Last prompt failed</Trans>
+        </span>
+      )}
+      <span className="ms-auto flex shrink-0 items-center gap-1.5">
+        {failedLive &&
+          button('retry', onRetry, 'border border-border text-foreground hover:bg-muted', <Trans>Retry</Trans>)}
+        {answering && (
+          <>
+            {button('approve', onApprove, 'bg-blue-600 text-white hover:bg-blue-500', <Trans>Approve</Trans>)}
+            {button(
+              'approve-once',
+              onApproveOnce,
+              'border border-border text-foreground hover:bg-muted',
+              <Trans>Approve once</Trans>,
+            )}
+            {button(
+              'decline',
+              onDecline,
+              'border border-border text-foreground hover:bg-muted',
+              <Trans>Decline</Trans>,
+            )}
+          </>
+        )}
+        {(state === 'active' || state === 'paused') &&
+          button(
+            'disconnect',
+            onDisconnect,
+            'bg-destructive text-destructive-foreground hover:bg-destructive/90',
+            <Trans>Disconnect</Trans>,
+          )}
       </span>
     </div>
   );

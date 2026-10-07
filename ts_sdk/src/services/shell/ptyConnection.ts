@@ -124,6 +124,15 @@ export class PtyConnection {
   /** Backend PTY ID currently attached in this browser client. */
   private _attachedPtyId: string | null = null;
 
+  /**
+   * The size of the view showing this PTY on screen, or null while none is.
+   * A PTY has ONE winsize shared by every client attached to it, so whoever
+   * sizes it last wins — kept here, never dropped, it is what this client
+   * asserts on every attach (and re-sends after one), not a window-sized guess.
+   * A hidden view releases it, so it never resizes a PTY nobody is looking at.
+   */
+  private _viewSize: { cols: number; rows: number } | null = null;
+
   /** In-flight attach dedup guard. */
   private _attachPromise: Promise<void> | null = null;
 
@@ -496,10 +505,29 @@ export class PtyConnection {
     }
   }
 
-  /** Notify the backend PTY of a terminal resize. */
+  /**
+   * Size the PTY to the view on screen. Kept even when the PTY is not live yet:
+   * the next attach asserts it. Always sent when live — the backend may hold
+   * another client's size, so a client-side "unchanged" says nothing.
+   */
   async resize(cols: number, rows: number): Promise<void> {
-    if (!this.started) return;
+    this._viewSize = { cols, rows };
+    if (!this.started) return; // kept for the attach
     if (!this.computeNodeId) return;
+    await this._sendResize(cols, rows);
+  }
+
+  /** The view stopped showing this PTY: it no longer claims the size. */
+  releaseViewSize(): void {
+    this._viewSize = null;
+  }
+
+  /** The size the view on screen claims, or null when no view does. */
+  get viewSize(): { cols: number; rows: number } | null {
+    return this._viewSize;
+  }
+
+  private async _sendResize(cols: number, rows: number): Promise<void> {
     const { ActionInfo } = await import('../../models/index.js');
     const { dataManager } = await import('../../APIEntity.js');
     const action = new ActionInfo('terminal-command', 'compute_node', this.computeNodeId, 'POST');
@@ -532,7 +560,7 @@ export class PtyConnection {
     ptyId: string,
     opts: { force?: boolean; timeout?: number; cols?: number; rows?: number } = {},
   ): Promise<void> {
-    const { force = false, timeout, cols, rows } = opts;
+    const { force = false, timeout } = opts;
     const targetPtyId = ptyId;
 
     if (!this.computeNodeId) return;
@@ -555,6 +583,10 @@ export class PtyConnection {
         this._attached = false;
       }
 
+      // The view's size when one claims it; never a guess. None → the backend
+      // repaints at the PTY's current size.
+      const cols = opts.cols ?? this._viewSize?.cols;
+      const rows = opts.rows ?? this._viewSize?.rows;
       const t0 = performance.now();
       const ok = await this._reattach(targetPtyId, timeout, cols, rows);
       toplog.log(
@@ -571,6 +603,9 @@ export class PtyConnection {
 
       this._attachedPtyId = targetPtyId;
       this._attached = true;
+      // A view that claimed (or changed) its size while the attach was in flight.
+      const view = this._viewSize;
+      if (view && (view.cols !== cols || view.rows !== rows)) void this._sendResize(view.cols, view.rows);
       // Remembered independently of attach state: a FAILED re-attach attempt
       // (not_found during the recovery gap) nulls _attachedPtyId, but the
       // self-healing hooks must still know what to re-attach when

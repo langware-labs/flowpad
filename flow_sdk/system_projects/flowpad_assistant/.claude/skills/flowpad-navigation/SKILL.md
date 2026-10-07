@@ -50,7 +50,7 @@ indexing needed:
 flow show file <absolute-path>
 ```
 
-Exit 0 = shown, done.
+Exit 0 = shown, done. Exit 1 with `verdict: not_running` = shown, but its server is down — start it, then show it again.
 
 "Navigate to it" / "take me to it" → the file needs an entity first. Two commands,
 no research:
@@ -145,7 +145,7 @@ Screens are addressed by **view name**, optionally plus `/pointer` and `?opts` �
 same string the URL bar carries after `/dock/`. Not by TypeId:
 
 ```bash
-flow show view events                       # presenting it — the default
+flow show view automations                  # presenting it — the default
 flow show view assets/list/skill
 flow show view "search?q=widget"            # quote anything containing a ?
 flow navigate view preferences/appearance   # only on an explicit "take me there"
@@ -167,6 +167,7 @@ opens a different screen and reports success.
 | Asset list | `asset-list` | counter assets |
 | Assets | `assets` | library, docs tree |
 | Assistance | `assistance` | expert assistance |
+| Automations | `automations` | events, triggers, rules, schedules, scheduled jobs, cron, trigger history |
 | Capabilities | `capabilities` | checks, system checks |
 | Code Editor | `editor` | edit file |
 | Collaboration | `project` | room |
@@ -174,7 +175,6 @@ opens a different screen and reports success.
 | Data sources | `data-sources` | connectors, integrations, ingestion, sources |
 | Desktop | `desktop` | favorites |
 | Docs | `docs` | documentation |
-| Events | `events` | rules, event bus, triggers, signals, cron |
 | Files | `explorer` | file tree, folders |
 | Flowpad Assistant | `assistant` | assistant chat, help chat |
 | Graph Workflows | `graph-workflows` | workflows |
@@ -233,7 +233,7 @@ A screen marked *(hub)* lives on the hub surface — address it as `hub/<view>`.
 
 `flow schema views` is the same table, live, with each view's pointer rule. Reach for it
 only if the ask matches nothing above. Screens are **not** TypeIds: `flow navigate entity
-events` is wrong and will fail.
+automations` is wrong and will fail.
 
 ## You have no path and no id
 
@@ -246,16 +246,18 @@ Do not invent a TypeId and do not ask the user — that is what those actions ar
 
 ## Exit codes
 
-On success the CLI prints one JSON line to stdout and exits 0:
+`flow show` and `flow navigate` print one JSON line to stdout — the answer, with
+`exit_code`, `verdict` and `detail` — and exit with that `exit_code`:
 
 ```json
-{"ok": true, "connection_id": "...", "type": "...", "id": "..."}
+{"ok": false, "exit_code": 1, "verdict": "not_running", "detail": "Nothing is answering at localhost:3000.", "delivered": true}
 ```
 
 | Exit | Meaning |
 | ---- | ------- |
-| `0`  | Done. Stop — no verification, no summary. |
+| `0`  | Shown, and it can be used. Stop — no verification, no summary. |
+| `1`  | Not yet. `verdict` says why: `no_browser` — no Flowpad tab is open (`flow navigate`); tell the user to open Flowpad. `not_running` / `hung` / `server_error` — it IS shown, but the server behind it is down or failing: start or fix it, then show it again. |
 | `2`  | Bad argument (invalid TypeId, unknown view, or a view missing its pointer). Fix the argument. |
-| `3`  | No active browser tab (`flow navigate` only). Tell the user to open Flowpad. |
-| `4`  | Entity or pointer not found — well-formed but does not exist. Tell the user. |
+| `4`  | Not found — the entity, file or pointer does not exist here. Tell the user. |
 | `5`  | Cannot reach the Flowpad server. Tell the user the server is down. |
+| `7`  | Refused — the page does not allow being shown inside Flowpad. Offer to open it in the browser. |

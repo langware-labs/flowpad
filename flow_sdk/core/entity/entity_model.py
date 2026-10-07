@@ -111,6 +111,16 @@ _REMOTE_REFLECTION: "ContextVar[bool]" = ContextVar("_remote_reflection", defaul
 
 
 @contextmanager
+def suppress_store():
+    """The enclosed save(s) write the row only — never the asset's files (nor its record shadow)."""
+    token = _SUPPRESS_STORE.set(True)
+    try:
+        yield
+    finally:
+        _SUPPRESS_STORE.reset(token)
+
+
+@contextmanager
 def remote_reflection():
     """Mark the enclosed save(s) as a verbatim reflection of hub-origin rows.
 
@@ -2481,16 +2491,27 @@ class Entity(DBEntity):
             if pid and "parent_type_id" in cls.model_fields:
                 sanitized["parent_type_id"] = pid
         existing = await cls.get_one({"id": sanitized["id"]}) if sanitized.get("id") else None
-        if existing is not None:
-            # Same LWW refresh the FlowMessage catch-up uses (see
-            # ``flow_message_action`` → ``merge_hub_payload``): hub-owned fields
-            # move, locally-authoritative ones stay.
-            sanitized = cls.merge_hub_payload(existing, sanitized)
-        with lenient_entity_load():
-            ent = cls.model_validate(sanitized)
-        if "remote" in cls.model_fields:
-            ent.remote = True
-        await ent.save(someone_typeid, notify=notify)
+        if existing is not None and await _definition_travels_by_repo(existing):
+            # An asset published into its project's hub repo gets its definition back through that repo
+            # (pull → index), never through this row: the hub's copy carries the hub's defaults, and saving it
+            # printed them into the author's file — a just-published agent read "1 change not published".
+            # The echo only says what is true here: the row has a hub counterpart, under its parent.
+            ent = existing
+            if "remote" in cls.model_fields and not ent.remote:
+                ent.remote = True
+                with suppress_store():
+                    await ent.save(someone_typeid, notify=notify)
+        else:
+            if existing is not None:
+                # Same LWW refresh the FlowMessage catch-up uses (see
+                # ``flow_message_action`` → ``merge_hub_payload``): hub-owned fields
+                # move, locally-authoritative ones stay.
+                sanitized = cls.merge_hub_payload(existing, sanitized)
+            with lenient_entity_load():
+                ent = cls.model_validate(sanitized)
+            if "remote" in cls.model_fields:
+                ent.remote = True
+            await ent.save(someone_typeid, notify=notify)
         # Receiver contract: replication replays the ORIGIN's write, not a weaker
         # one. The sender's create ran `add_child` → a local `is_child` role edge;
         # role-walk scope queries (e.g. the doc-comment gutter) resolve through
@@ -3933,16 +3954,29 @@ _action_registry.register(
 )
 
 
+async def _definition_travels_by_repo(entity) -> bool:
+    """Is ``entity`` an asset published into its project's hub repo? Then the repo carries its definition
+    both ways, and a hub row echo is not an edit of it. Off the loop: without the row's own origin the
+    answer is in this desk's sync ledger, on disk."""
+    if not getattr(entity, "asset_ref", None):
+        return False
+    import asyncio  # noqa: PLC0415
+
+    from flow_sdk.assets.hub_repo_sync import published_origin  # noqa: PLC0415 — circular at module level
+
+    return await asyncio.to_thread(published_origin, entity) is not None
+
+
 async def _asset_ref_is_borrowed(record) -> bool:
     """Does this record's ``asset_ref`` live inside somebody else's checkout?
 
     Asked before the disk mirror because ``FSRef.read_only`` does not survive a
     round trip: ``FSRecord.meta_dict`` persists only ``ar.path``, so a ref the
     indexer deliberately created read-only comes back WRITABLE on the next load.
-    For an ``owns_main_ref`` type that loses the guard completely — ``Agent``
-    re-renders ``agent.json`` on every save, so one Enabled toggle would rewrite a
-    tracked file inside a cloned help desk and break the vendor's next
-    ``git pull``.
+    For an ``owns_main_ref`` type that loses the guard completely — a save that
+    changes a field writes it into the file (``Agent`` patches ``agent.json``), so
+    one Enabled toggle would rewrite a tracked file inside a cloned help desk and
+    break the vendor's next ``git pull``.
 
     (The deeper fix is to carry ``read_only`` through ``FSRecord``'s dict form,
     which ``FSRef.to_dict``/``from_dict`` already support; until then this asks

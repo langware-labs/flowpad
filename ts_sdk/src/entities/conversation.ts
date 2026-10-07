@@ -504,28 +504,6 @@ export async function createProjectConversation(
   return res!;
 }
 
-export interface StartHelpdeskTicketResult {
-  conversation_id: string;
-  project_id: string;
-}
-
-/** Open a support ticket: a guest-authored ``helpdesk`` conversation under the
- *  resolved helpdesk project (resolved server-side from ``/version``). The
- *  backend routes through the hub and materializes the conversation locally,
- *  then returns its id for navigation. Requires cloud login. */
-export async function startHelpdeskTicket(
-  text: string,
-  projectId?: string | null,
-): Promise<StartHelpdeskTicketResult> {
-  const action = new ActionInfo('helpdesk-start-ticket', null, null, 'POST');
-  action.bodyParameters = { text, project_id: projectId ?? '' };
-  const res = await dataManager.callAction<
-    { text: string; project_id: string },
-    StartHelpdeskTicketResult
-  >(action);
-  return res!;
-}
-
 /** Staff-side: pick up (join) a helpdesk ticket so the caller receives its
  *  messages and can reply. Proxies to the hub ``pickup`` action and syncs the
  *  conversation locally. */

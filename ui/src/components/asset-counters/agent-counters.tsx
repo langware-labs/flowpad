@@ -38,8 +38,17 @@ export function deploymentsByAgent(deployments: Deployment[]): Map<string, Deplo
   return byAgent;
 }
 
+/** The user's agent, not one Flowpad ships: the Flowpad Assistant's agents are
+ *  indexed with `scope === 'system'` (their `system` flag reads false, so it
+ *  can't tell them apart). */
+export function isUserAgent(agent: Agent): boolean {
+  return (agent as { scope?: string | null }).scope !== 'system';
+}
+
+/** The user's agents as rows — Flowpad's own agents are neither counted nor listed. */
 export function toAgentRows(agents: Agent[], byAgent: Map<string, Deployment[]>): AgentRow[] {
-  return [...agents]
+  return agents
+    .filter(isUserAgent)
     .sort((a, b) => a.displayName.localeCompare(b.displayName))
     .map((agent) => ({ agent, deployments: byAgent.get(agent.typeId.toString()) ?? [] }));
 }

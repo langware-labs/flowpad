@@ -1,7 +1,7 @@
 /**
  * The rail's rendered contract, as opposed to the pure spec (covered by
  * tests/unit/rail-visibility.test.ts): that CollapsedSidebar actually renders the
- * resolved list IN ORDER, honours the content gates, forks the Chats target on
+ * resolved list IN ORDER, forks the Chats target on
  * view mode, and resolves active-state identically above and below the chevron.
  *
  * The last one is the regression that motivated the rewrite: overflow entries
@@ -37,10 +37,6 @@ vi.mock('@src/navigation/useDockNavigation', () => ({
  *  unit-tested against the query it builds. */
 const lastVibeChat = vi.hoisted(() => vi.fn());
 vi.mock('@src/pages/flow-page/vibe-process-resolver', () => ({ useLastVibeChat: () => lastVibeChat }));
-
-// Content gates, driven per test.
-const gates = vi.hoisted(() => ({ conversations: false }));
-vi.mock('@src/hooks/use-has-conversations', () => ({ useHasConversations: () => gates.conversations }));
 
 // Heavy presentational leaves — irrelevant to placement decisions.
 vi.mock('@src/components/theme-toggle/theme-toggle', () => ({ ThemeToggle: () => null }));
@@ -90,7 +86,6 @@ function renderRail() {
 }
 
 beforeEach(async () => {
-  gates.conversations = false;
   dock.current = null;
   await setProject(PROJECT);
   setViewMode(ViewMode.Vibe);
@@ -104,23 +99,19 @@ afterEach(() => {
   setViewMode(ViewMode.Standard);
 });
 
-describe('rail — order and gates', () => {
-  it('a fresh instance shows exactly Chats and Connections', () => {
+describe('rail — order', () => {
+  it('a fresh instance shows Chats, Stream Inbox and Connections', () => {
     // Home, the project, Bookmarks and Files each moved to the top navigation
-    // bar (7c3e8d74a, 8d4d03dc4). Connections stays visible because it is how a
-    // fresh instance gains its first credential. The spec-side contract lives
-    // in tests/unit/rail-visibility.test.ts.
-    expect(renderRail().ids()).toEqual(['chats', 'credentials']);
+    // bar (7c3e8d74a, 8d4d03dc4). Stream Inbox shows with no conversation at all:
+    // a signed-out instance has none (logout purges them), and its screen is
+    // where "Login required" brings the user back in. The spec-side contract
+    // lives in tests/unit/rail-visibility.test.ts.
+    expect(renderRail().ids()).toEqual(['chats', 'stream_inbox', 'credentials']);
   });
 
   it('drops the project item when no project is active', async () => {
     await setProject(null);
     expect(renderRail().ids()).not.toContain('project');
-  });
-
-  it('reveals Stream Inbox on the first conversation', () => {
-    gates.conversations = true;
-    expect(renderRail().ids()).toEqual(['chats', 'stream_inbox', 'credentials']);
   });
 
   it('Data sources appears at Advanced, not before, and needs no content gate', () => {
@@ -140,7 +131,6 @@ describe('rail — order and gates', () => {
   });
 
   it('keeps one order across every mode — icons are only ever added', () => {
-    gates.conversations = true;
     let previous: (string | null)[] = [];
     for (const mode of [ViewMode.Vibe, ViewMode.Standard, ViewMode.Advanced, ViewMode.Dev]) {
       setViewMode(mode);

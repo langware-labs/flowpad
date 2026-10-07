@@ -9,6 +9,7 @@ import { ViewType } from '@src/types/ViewType';
  * off a WS signal — no callbacks, no JSX. See `notify.ts` for the dispatcher.
  */
 export type NotificationLevel = 'info' | 'success' | 'warning' | 'error';
+export type NotificationLocation = 'corner' | 'center';
 
 /** A single call-to-action. Either navigates (`href`) or runs a registered `command`. */
 export interface NotificationAction {
@@ -34,16 +35,27 @@ export interface NotificationData {
   icon?: string;
   /** 0–2 CTAs. */
   actions?: NotificationAction[];
+  /** A "Don't ask again" checkbox under the actions; its state rides each action's args as
+   *  `remember`. Set by `askNotification` (`ask.ts`). */
+  remember?: { label: string };
   /** Auto-dismiss after N ms. `null` = sticky. Omitted = per-level default. */
   durationMs?: number | null;
   /** Spinner + no auto-dismiss (loading / in-flight). */
   busy?: boolean;
+  /** Where it shows. `corner` (default): the bottom-right toast. `center`: a blocking dialog in the
+   *  middle of the window — no ×, Escape does not close it — for a question the person must answer
+   *  before what they asked for can go on. Ignored for a sidebar badge (`category`). */
+  location?: NotificationLocation;
   /** Present → rendered as a persistent badge under this sidebar view (not a toast). */
   category?: ViewType;
   /** Alerts (`warning`/`error`) only pop as a toast in Dev mode. Set this on the
    *  rare alert that must reach the user in EVERY mode — one that explains why an
    *  action they just took did nothing. It still lands in the warnings log too. */
   forceToast?: boolean;
+  /** Feedback on one click, not a standing condition: toast once in every mode, time out, and
+   *  never enter the warnings log. An unopenable link is the case — logging it left a permanent
+   *  warning for a click the user already saw fail. */
+  transient?: boolean;
   /** Stamped on ingest by the dispatcher. */
   timestamp: number;
 }

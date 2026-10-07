@@ -219,7 +219,7 @@ def emit_trigger_failed(
     """The fire happened; a step after it raised. ``stage`` in action |
     flow_activation.
 
-    Emitted from inside `activate_flows_for_trigger` / `dispatch_trigger_actions`
+    Emitted from inside `activate_flows_for_trigger` / `run_trigger_actions`
     rather than at a call site: those helpers are where the exception is actually
     caught, and this is the one outcome with no natural home above them.
     """

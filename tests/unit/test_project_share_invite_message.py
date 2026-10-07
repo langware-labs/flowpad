@@ -86,6 +86,8 @@ def hub(monkeypatch):
     calls.refuse = {}
 
     async def fake_request(self, method, path, **kwargs):
+        # The shared hub client sends full URLs; the rest of these stubs speak graph paths.
+        path = "/graph/" + path.split("/graph/", 1)[1] if "/graph/" in path else path
         body = kwargs.get("json")
         calls.append((method, path, body))
         for suffix, status in calls.refuse.items():
@@ -111,9 +113,10 @@ def hub(monkeypatch):
 
     monkeypatch.setattr(
         "flow_sdk.cli.auth.credentials.load_credentials",
-        lambda *a, **k: SimpleNamespace(api_key="test-key", user={"id": SHARER, "email": "sharer@example.com"}),
+        lambda *a, **k: SimpleNamespace(
+            api_key="test-key", user={"id": SHARER, "email": "sharer@example.com"}, is_expired=lambda *_: False
+        ),
     )
-    monkeypatch.setattr("flow_sdk.cloud_client.client.ApiConfig.from_env", staticmethod(lambda: None))
     monkeypatch.setattr("flow_sdk.cloud_client.client.FlowpadClient.request", fake_request)
     monkeypatch.setattr("flow_sdk.utils.hub.hub_post", fake_hub_post)
     # The invite message takes the generic send, which reaches the hub only for

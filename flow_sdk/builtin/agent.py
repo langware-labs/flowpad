@@ -31,7 +31,15 @@ from pydantic import PrivateAttr
 
 from flow_sdk.api.api_types.api_field import APIField, Sharing
 from flow_sdk.auth import LoginRequired
-from flow_sdk.builtin.agent_auto_open import AutoOpenTab, open_auto_tabs, project_ids, rebase_auto_open
+from flow_sdk.builtin.agent_auto_open import (
+    AutoOpenPlan,
+    AutoOpenTab,
+    open_auto_tabs,
+    plan_auto_open,
+    project_ids,
+    rebase_auto_open,
+    start_auto_open,
+)
 from flow_sdk.builtin.agent_mailbox import AgentMailbox
 from flow_sdk.builtin.agent_mailbox_driver import AgentMailboxError
 from flow_sdk.builtin.deployment import Deployment
@@ -41,13 +49,14 @@ from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse
 from flow_sdk.schema.data_spec._form import ShapeForm
-from flow_sdk.schema.data_spec.agent_spec import AgentPlaceSpec
-from flow_sdk.schema.data_spec.dock_pointer_spec import DockPointerSpec
+from flow_sdk.schema.data_spec.agent_spec import AgentPlaceSpec, AgentSpec
+from flow_sdk.schema.data_spec.auto_open_spec import AutoOpenEntry
 from flow_sdk.schema.data_spec.phone_spec import PhoneNumberSpec
 from flow_sdk.schema.data_spec.requirement_spec import RequirementSpec
 from flow_sdk.schema.types import EntityType
 
 if TYPE_CHECKING:  # pragma: no cover
+    from flow_sdk.assets.scanning import AssetCandidate
     from flow_sdk.blocks import MessageBlock
     from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess
     from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import AgentOptions
@@ -85,6 +94,19 @@ def worker_type_value(worker: str | None) -> str:
 #: One lock per project so concurrent auto-launch calls (two tabs, a reload
 #: storm) select-and-mark exactly once.
 _AUTO_LAUNCH_LOCKS: dict[str, asyncio.Lock] = collections.defaultdict(asyncio.Lock)
+
+
+def _launches_on_open(candidate: "AssetCandidate") -> bool:
+    """Whether an agent folder on disk sets ``auto_launch`` — read through ``AgentSpec``,
+    as the index reads it, so this picks exactly what ``auto_launch_for`` will match."""
+    from flow_sdk.assets.entity_document import read_entity_document  # noqa: PLC0415
+
+    try:
+        fields = read_entity_document(candidate.layout.body).fields
+        spec = AgentSpec.model_validate({k: v for k, v in fields.items() if k in AgentSpec.model_fields})
+    except (OSError, ValueError):
+        return False
+    return spec.auto_launch is True
 
 #: Key in the project's device state (``flow_sdk.project_device_state``) holding
 #: the agent ids whose auto-launch already fired, or was cancelled, here.
@@ -266,11 +288,13 @@ class Agent(Entity):
         "(Use, home page, auto-launch), delivered through the process prompt queue. Independent "
         "of ``auto_launch``. Empty = open sessions with no first turn.",
     )
-    auto_open: Optional[list[DockPointerSpec]] = APIField(
+    auto_open: Optional[list[AutoOpenEntry]] = APIField(
         default=None,
-        description="Tabs every new session as this agent opens with (Use, home page, auto-launch): "
-        "``Tab.pointer`` JSON, a file named inside the agent's project (``vfs/project-<id>/<path>``). "
-        "The first is the session's active display, the rest open beside it. Declaration only.",
+        description="What every new session as this agent opens with (Use, home page, auto-launch): "
+        "a place (``Tab.pointer`` JSON; a file named inside the agent's project as "
+        "``vfs/project-<id>/<path>``), a ``navigate`` op in the agent's project that repairs it when it "
+        "cannot be used yet (``{\"op\": name}``), or a wizard (``{\"wizard\": name}``). The first place "
+        "is the session's active display, the rest open beside it.",
     )
 
     # ── places ────────────────────────────────────────────────────────────
@@ -522,24 +546,41 @@ class Agent(Entity):
             process.queue.enqueue(prompt, source="auto_prompt")
         if target.is_local:
             try:
-                await open_auto_tabs(process, await self.auto_open_tabs())
+                plan = await self.auto_open_plan()
+                await open_auto_tabs(process, await self.auto_open_tabs(plan.places))
+                # Behind the landing: an op that repairs a dead server takes minutes.
+                start_auto_open(process, plan)
             except Exception:  # noqa: BLE001 -- a tab that cannot open never fails the session
                 logger.warning("auto_open for agent %s failed", self.id, exc_info=True)
         return process
 
-    async def auto_open_tabs(self) -> "list[AutoOpenTab]":
-        """``auto_open`` rebased onto this machine. A declared file counts only in a
-        project this agent lives in (``assets_under_roots``, the auto-launch scoping)."""
+    async def auto_open_plan(self) -> AutoOpenPlan:
+        """``auto_open`` resolved: an op or a wizard is looked up in this agent's own
+        project and its direct context folders — never another project's."""
         if not self.auto_open:
+            return AutoOpenPlan()
+        from flow_sdk.builtin.project import Project  # noqa: PLC0415
+
+        project = await Project.get_by_id(self.project_id) if getattr(self, "project_id", None) else None
+        roots = project.direct_context_roots() if project is not None else []
+        return await plan_auto_open(self.auto_open, roots=roots, project=project)
+
+    async def auto_open_tabs(self, places: "list | None" = None) -> "list[AutoOpenTab]":
+        """The places to show, rebased onto this machine (``auto_open``'s own when not
+        given). A declared file counts only in a project this agent lives in
+        (``assets_under_roots``, the auto-launch scoping)."""
+        if places is None:
+            places = (await self.auto_open_plan()).places
+        if not places:
             return []
         from flow_sdk.builtin.project import Project, assets_under_roots  # noqa: PLC0415
 
         roots: dict[str, str] = {}
-        for project_id in project_ids(self.auto_open):
+        for project_id in project_ids(places):
             project = await Project.get_by_id(project_id)
             if project and project.fs_storage_mount_path and assets_under_roots([self], project.direct_context_roots()):
                 roots[project_id] = project.fs_storage_mount_path
-        return rebase_auto_open(self.auto_open, roots=roots)
+        return rebase_auto_open(places, roots=roots)
 
     @staticmethod
     async def reset_auto_launch(project_id: str, agent_id: str) -> None:
@@ -585,6 +626,7 @@ class Agent(Entity):
         if project is None:
             return None
         roots = project.direct_context_roots()
+        await project.index_missing_assets("auto_launch", {"agent"}, _launches_on_open)
 
         def age_key(agent: "Agent") -> tuple[str, str, str]:
             created = agent.created_date.isoformat() if agent.created_date else ""
@@ -1155,6 +1197,51 @@ class Agent(Entity):
         if answer.busy:
             return ApiFailResponse(message=answer.detail, status_code=409, data=payload)
         return ApiSuccessResponse(data=payload)
+
+    @action.post(action_name="ask")
+    async def ask_action(self):
+        """`POST /agent/<id>/ask {"text", "conversation_id"?, "message_id"?}` → `{answer, conversation_id}` — one message to
+        this agent and its reply.
+
+        What a hub uses to talk to the agent it placed on this machine (a person's WhatsApp message, routed
+        to their own box): the message goes onto the agent's own ``chat`` channel and is answered by the
+        same loop that answers every channel here — started when it is not serving. ``conversation_id``
+        continues a conversation (one per person). No reply in time is a 504 naming the conversation."""
+        import json  # noqa: PLC0415
+
+        from flow_sdk.builtin.agent_serve import CHAT  # noqa: PLC0415
+        from flow_sdk.builtin.service_endpoint import ServiceEndpoint  # noqa: PLC0415
+        from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse  # noqa: PLC0415
+        from flow_sdk.server.routes import service_channel  # noqa: PLC0415
+
+        body = await self._body()
+        text = str(body.get("text") or "").strip()
+        if not text:
+            return ApiFailResponse(message="text is required", status_code=400)
+        agent = await self.fresh()
+        if not agent.enabled:
+            return ApiFailResponse(message=f"agent {agent.name!r} is disabled", status_code=409)
+        from flow_sdk.builtin import deployment_process  # noqa: PLC0415
+
+        deployment = await agent.local_deployment()
+        if not (deployment.serving and deployment_process.alive(deployment)):
+            deployment = await agent.run_locally()
+        endpoint = await ServiceEndpoint.find_existing(str(deployment.typeid), CHAT)
+        if endpoint is None:
+            return ApiFailResponse(message="this agent's chat channel could not be made", status_code=500)
+        # ``message_id`` names the caller's message, so asking again (after a 504) waits on the SAME
+        # message and its reply -- a fresh copy would be a second turn, answered twice or refused.
+        metadata = {"conversation_id": str(body.get("conversation_id") or "")}
+        if str(body.get("message_id") or "").strip():
+            metadata["message_id"] = str(body["message_id"]).strip()
+        request = {"messages": [{"role": "user", "content": text}], "metadata": metadata}
+        outcome = await service_channel.ask(endpoint, "hub", request)
+        if not isinstance(outcome, tuple):
+            detail = json.loads(bytes(outcome.body) or b"{}").get("error") or {}
+            return ApiFailResponse(message=detail.get("message") or "no answer", status_code=outcome.status_code, data=detail)
+        completion, conversation_id = outcome
+        answer = ((completion.get("choices") or [{}])[0].get("message") or {}).get("content") or ""
+        return ApiSuccessResponse(data={"answer": answer, "conversation_id": conversation_id})
 
     # ── places (HTTP) — see ``agent_places`` ──────────────────────────────
 

@@ -243,9 +243,19 @@ async def _catch_up_after_reconnect() -> None:
     check able to fire at all: that check needs a listing NEWER than the binding before it
     will treat an absence as an answer, and on a fresh process there is none.
 
+    The socket coming back is also a moment the hub became reachable, so what this machine still
+    owes it goes out first (``catchup.flush_pending_outbox``).
+
     Best-effort: a catch-up hiccup must never take down the connection that just
-    came back. Each half is guarded separately so one failing does not skip the other.
+    came back. Each part is guarded separately so one failing does not skip the others.
     """
+    try:
+        from flow_sdk.stream_inbox.catchup import flush_pending_outbox
+
+        await flush_pending_outbox("ws reconnect")
+    except Exception as e:  # noqa: BLE001
+        logger.warning("hub WS reconnect outbox flush failed (non-fatal): %s", e)
+
     try:
         from flow_sdk.app.actions.flow_message_action import handle_conversation_list
         from flow_sdk.builtin.user import User
@@ -300,6 +310,22 @@ def _renew_stale_worker_credentials() -> None:
         renew_stale_worker_credentials()
     except Exception as e:  # noqa: BLE001 — a credential errand must never fell the socket
         logger.warning("worker credential renewal check failed (non-fatal): %s", e)
+
+
+def _is_reply(raw_message: str | bytes) -> bool:
+    """A frame answering a request: a ``response_msg`` envelope, or a bare ApiResponse.
+    Anything else on the socket is a push. Unparseable counts as a reply, so the caller's
+    own JSON check reports it."""
+    from flow_sdk.api.messages import WSMessageType  # noqa: PLC0415 — same lazy import as its caller
+
+    try:
+        frame = json.loads(raw_message)
+    except (TypeError, ValueError):
+        return True
+    if not isinstance(frame, dict):
+        return True
+    kind = frame.get("message_type")
+    return kind is None or kind == WSMessageType.RESPONSE_MSG.value
 
 
 class HubWebSocketManager:
@@ -740,8 +766,13 @@ class HubWebSocketManager:
             async with connect_hub_websocket(config or self.config, connection_id=str(uuid.uuid4())) as websocket:
                 await websocket.send(APIMessage(direct_resource_type="user").model_dump_json())
                 # The hub's opening ``ws_ready_msg`` greeting is consumed by
-                # ``connect_hub_websocket`` — the next frame is the reply.
-                raw_message = await asyncio.wait_for(websocket.recv(), timeout=HUB_WS_VERIFY_TIMEOUT_SECONDS)
+                # ``connect_hub_websocket``. The reply is the first frame that IS
+                # one: the hub may fan out pushes (a ``data_op_msg`` for a
+                # conversation just shared, …) to this socket first, and reading
+                # one of those as the reply failed verification.
+                async with asyncio.timeout(HUB_WS_VERIFY_TIMEOUT_SECONDS):
+                    while not _is_reply(raw_message := await websocket.recv()):
+                        pass
         except HubWebSocketAuthError:
             await self._set_state(
                 HubConnectionStatus.AUTH_REJECTED,

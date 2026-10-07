@@ -16,7 +16,7 @@ import { PrivacyModePopover } from '@src/components/privacy-mode/privacy-mode-po
 import { SubAgent, TypeId } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
 import { HelpdeskLoadDialog } from '@src/components/helpdesk/HelpdeskLoadDialog';
-import { HelpdeskRequestDialog } from '@src/components/helpdesk/HelpdeskRequestDialog';
+import { AskForHelpDialog } from '@src/components/help/AskForHelpDialog';
 import { LifeBuoy } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { useParams } from 'react-router';
@@ -48,7 +48,7 @@ const FOOTER_COLLAPSE_STYLE = /* css */ `
 `;
 
 export function Footer({ className = '' }: FooterProps) {
-  const { version } = useContext();
+  const { version, project } = useContext();
   const { t } = useLingui();
   const { agentId } = useParams();
   const isVibe = useIsVibe();
@@ -65,6 +65,8 @@ export function Footer({ className = '' }: FooterProps) {
   const { data: agent } = useEntity<SubAgent>(agentTypeId);
   const [showHelpdesk, setShowHelpdesk] = useState(false);
   const [showAskForHelp, setShowAskForHelp] = useState(false);
+  // Set when the guides could not load: the ask opens anyway, saying why.
+  const [guidesFailed, setGuidesFailed] = useState<string | null>(null);
   useColorPalette(agent?.site_config);
   usePendingCompletionSound();
 
@@ -146,12 +148,21 @@ export function Footer({ className = '' }: FooterProps) {
           <HelpdeskLoadDialog
             open={showHelpdesk}
             onClose={() => setShowHelpdesk(false)}
-            onNoPortal={() => {
+            onNoPortal={(reason) => {
               setShowHelpdesk(false);
+              setGuidesFailed(reason ?? null);
               setShowAskForHelp(true);
             }}
           />
-          <HelpdeskRequestDialog open={showAskForHelp} onClose={() => setShowAskForHelp(false)} />
+          {showAskForHelp && (
+            <AskForHelpDialog
+              open={showAskForHelp}
+              onOpenChange={setShowAskForHelp}
+              projectId={project?.id ?? null}
+              origin={guidesFailed ? 'load_failure' : 'footer'}
+              note={guidesFailed ? t`The guides couldn't load (${guidesFailed}) — a person can still help.` : null}
+            />
+          )}
         </>
       )}
     </footer>

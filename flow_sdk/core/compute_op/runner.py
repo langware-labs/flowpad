@@ -47,7 +47,9 @@ Three properties the tests pin:
 from __future__ import annotations
 
 import asyncio
+import json
 import os
+import re
 import shutil
 import sys
 import tempfile
@@ -73,13 +75,16 @@ from flow_sdk.schema.data_spec.compute_op_spec import (
     AskOp,
     CliOp,
     ComputeOpSpec,
+    NavigateOp,
     PromptOp,
     fields_of_kind,
 )
+from flow_sdk.schema.data_spec.dock_pointer_spec import DockPointerSpec
 from flow_sdk.schema.data_spec.returned_value_spec import (
     AskResult,
     CliResult,
     ExitCode,
+    NavigateResult,
     PromptResult,
     ReturnedValue,
 )
@@ -89,6 +94,26 @@ VALUE_KEY = "value"
 
 Shell = Callable[..., Awaitable[CliResult]]
 Launch = Callable[..., Awaitable[PromptResult]]
+Navigate = Callable[..., Awaitable[NavigateResult]]
+
+#: The wizard input a target-less ``navigate`` op opens (``input_env``'s name for ``pointer``).
+POINTER_INPUT_ENV = "FLOWPAD_WIZARD_INPUT_POINTER"
+#: The session whose display a ``navigate`` op shows its place in, when a wizard says so
+#: (``input_env``'s name for ``display``) — a wizard step's own subject is the wizard's.
+DISPLAY_INPUT_ENV = "FLOWPAD_WIZARD_INPUT_DISPLAY"
+
+
+async def navigate_for_subject(target: DockPointerSpec, *, subject: str = "", show: bool = True) -> NavigateResult:
+    """The default ``navigate`` seam: a session subject (``agentic_process-<id>``) gets
+    the place as its display; anything else, the active browser tab."""
+    from flow_sdk.core.navigate import navigate  # noqa: PLC0415
+
+    process = None
+    if subject.startswith("agentic_process-"):
+        from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess  # noqa: PLC0415
+
+        process = await AgenticProcess.get_by_id(subject.split("-", 1)[1])
+    return await navigate(target, process=process, show=show)
 
 
 @dataclass
@@ -197,6 +222,7 @@ async def run_op(
     ask_timeout: Optional[float] = None,
     shell: Optional[Shell] = None,
     launch: Launch = launch_step_process,
+    navigate: Optional[Navigate] = None,
     on_status: Optional[Callable[[str], None]] = None,
     wizard_id: str = "",
     #: Report the goal's current state and stop — never ask, never run a
@@ -216,6 +242,15 @@ async def run_op(
             return refused_for(spec)
         workdir = Path(workdir) if workdir else Path.cwd()
         say = _say(on_status)
+
+        if isinstance(exe, NavigateOp):
+            seams = _Seams(
+                workdir=workdir, platform=platform, env=env, subject=subject, ask_timeout=ask_timeout,
+                shell=shell, launch=launch, say=say, wizard_id=wizard_id,
+            )
+            return await _run_navigate(
+                spec, seams=seams, navigate=navigate or navigate_for_subject, check_only=check_only
+            )
 
         say(f"checking {spec.display_label}")
         before = await _check(spec, workdir=workdir, platform=platform, env=env, shell=shell)
@@ -277,6 +312,108 @@ async def run_op(
             # one line each rather than nesting a "(after ...)" inside a "(after ...)".
             history.append(f"{tried_as}: {rescued.detail}")
         return answer
+
+
+def _navigate_target(exe: NavigateOp, env: Optional[dict]) -> DockPointerSpec | NavigateResult:
+    """The op's own target, else the ``pointer`` a wizard step bound."""
+    if exe.target is not None:
+        return exe.target
+    raw = (env or {}).get(POINTER_INPUT_ENV)
+    if not raw:
+        return NavigateResult.not_found("This navigate op names no target, and no `pointer` input was given.")
+    try:
+        return DockPointerSpec.model_validate_json(raw)
+    except ValueError as exc:
+        return NavigateResult.not_found(f"The `pointer` input is not a dock pointer: {exc}")
+
+
+def _navigate_bar(target: DockPointerSpec, answer: NavigateResult) -> str:
+    """What a repair rung is told: where Flowpad tries to go, what it found, and the bar."""
+    from flow_sdk.core.navigate import web_url_from_pointer  # noqa: PLC0415
+
+    place = web_url_from_pointer(target.pointer) or f"{target.viewType}/{target.pointer}".rstrip("/")
+    return (
+        f"\n\nFlowpad is trying to open {place} and cannot use it yet: {answer.detail or answer.verdict}. "
+        f"You are done only when {place} can be opened — Flowpad opens it again after you stop, "
+        "and that is the verdict."
+    )
+
+
+def _navigate_still_fails(answer: NavigateResult) -> str:
+    """The retry prompt for a navigate op's agent rung: what opening it again found."""
+    return (
+        f"Flowpad opened it again and it is still not usable: {answer.detail or answer.verdict} "
+        f"(verdict: {answer.verdict}). Find out why and fix it, then check it yourself before you stop."
+    )
+
+
+async def _run_navigate(
+    spec: ComputeOpSpec,
+    *,
+    seams: _Seams,
+    navigate: Navigate,
+    check_only: bool,
+) -> NavigateResult:
+    """A ``navigate`` op: the fast lane is the navigation itself; while it answers
+    ``NOT_YET`` each rung of ``attempts`` gets its turn (an agent repairs what the
+    navigation found — a server that is down), and navigating AGAIN after it is the
+    check. An agent rung's ``retries`` are further turns in its session, told what the
+    last navigation found. Never raises.
+
+    Its own path rather than ``_attempt``'s, because the check here is not a shell
+    command: a ``CliResult``-shaped re-check would have to pretend to be one.
+    """
+    exe = spec.exe_data
+    label = spec.display_label or "navigate"
+    target = _navigate_target(exe, seams.env)
+    if isinstance(target, NavigateResult):
+        return target
+
+    shown_in = (seams.env or {}).get(DISPLAY_INPUT_ENV) or seams.subject
+
+    async def go() -> NavigateResult:
+        return await navigate(target, subject=shown_in, show=not check_only)
+
+    seams.say(f"{label}: navigate")
+    answer = await go()
+    if check_only:
+        return answer
+    history = [f"navigate: {answer.detail or answer.verdict}"]
+    for rung in spec.attempts:
+        # Only a target that is not usable is a repair's business. Nothing delivered
+        # (no browser open: ``ran`` False) is not something an agent can fix.
+        if answer.exit_code is not ExitCode.NOT_YET or not answer.ran:
+            break
+        seams.say(f"{label}: {rung.subkind}")
+        rung_exe = rung.exe_data
+        if isinstance(rung_exe, (AgentOp, PromptOp)):
+            rung_exe = rung_exe.model_copy(
+                update={"prompt": _earlier_attempts(history) + rung_exe.prompt + _navigate_bar(target, answer)}
+            )
+        # Promoted with no check of its own, so the call's word comes back as is: the
+        # verdict is the navigation that follows it.
+        promoted = spec.model_copy(update={"subkind": rung.subkind, "exe_data": rung_exe, "attempts": []})
+        call = await _call_and_check(promoted, None, executor=None, seams=seams)
+        answer = await go()
+        turns_left = rung_exe.retries if isinstance(rung_exe, AgentOp) else 0
+        while turns_left and answer.exit_code is ExitCode.NOT_YET and call.ran and call.executor and not call.timed_out:
+            turns_left -= 1
+            seams.say(f"{label}: agent, again")
+            told = rung_exe.model_copy(update={"prompt": _navigate_still_fails(answer)})
+            call = await _call_and_check(
+                promoted.model_copy(update={"exe_data": told}), None, executor=call.executor, seams=seams
+            )
+            answer = await go()
+        history.append(f"{rung.subkind}: {call.detail}")
+        if answer.exit_code is ExitCode.OK:
+            answer = answer.model_copy(
+                update={"detail": f"{label}: opened after the {rung.subkind} attempt.", "executor": call.executor}
+            )
+        else:
+            answer = answer.model_copy(
+                update={"detail": f"{answer.detail} (after the {rung.subkind} attempt: {call.detail})"}
+            )
+    return answer
 
 
 def _adopt_installed_path() -> None:
@@ -593,6 +730,39 @@ async def _cli(
     return said.model_copy(update={"value": value_from_stdout(said.stdout)})
 
 
+#: ``{{name}}`` / ``{{name.key}}`` in a question's words — a value the run already has.
+_PLACEHOLDER = re.compile(r"\{\{\s*([A-Za-z0-9_]+)((?:\.[A-Za-z0-9_]+)*)\s*\}\}")
+
+
+def fill(text: str, env: Optional[dict]) -> str:
+    """``text`` with each ``{{name}}`` (or ``{{name.key}}`` into a JSON value) replaced by the run's value of
+    that name — what a question SHOWS (a link to tap, a code to send). Display only: it never reaches a
+    command line. A name the run does not have is left as written."""
+    from flow_sdk.core.wizard.state import input_env  # noqa: PLC0415 — the one spelling of a value's env name
+
+    if not text or "{{" not in text:
+        return text
+    env = env or {}
+
+    def one(match: "re.Match[str]") -> str:
+        (key,) = input_env({match.group(1): ""})
+        if key not in env:
+            return match.group(0)
+        value: Any = env[key]
+        for part in [p for p in match.group(2).split(".") if p]:
+            if isinstance(value, str):
+                try:
+                    value = json.loads(value)
+                except ValueError:
+                    return match.group(0)
+            if not isinstance(value, dict) or part not in value:
+                return match.group(0)
+            value = value[part]
+        return value if isinstance(value, str) else json.dumps(value)
+
+    return _PLACEHOLDER.sub(one, text)
+
+
 #: How often a Windows call checks for an open permission prompt or installer window.
 _PERMISSION_PROMPT_POLL_SECONDS = 2.0
 
@@ -777,6 +947,9 @@ async def _ask(
     say: Callable[[str], None],
     workdir: Path,
     wizard_id: str = "",
+    env: Optional[dict] = None,
+    platform: str = "",
+    shell: Shell = run_shell,
     **_: Any,
 ) -> AskResult:
     """Put the op's declared output to a person and wait for the answer.
@@ -801,19 +974,41 @@ async def _ask(
         timeout = spec.exe_data.timeout()
     say(f"{spec.display_label}: waiting for you…")
     ask = ask_person if served_here() else ask_through_backend
+    detail = fill(spec.exe_data.detail, env)
+    while True:
+        answered = await _ask_once(ask, spec, env, timeout=timeout, detail=detail, wizard_id=wizard_id,
+                                   workdir=workdir, say=say)
+        if not (spec.exe_data.recheck and spec.completion_check is not None) or not answered.ok:
+            return answered
+        # The gate: the answer is not the proof. Check the goal; while it does not hold, ask again with
+        # the check's own reason under the question.
+        said = await _check(spec, workdir=workdir, platform=platform, env=env, shell=shell)
+        if said is not None and said.exit_code is ExitCode.OK:
+            return answered
+        reason = _last_line(said.stderr if said is not None else "") or "Not done yet."
+        detail = f"{fill(spec.exe_data.detail, env)}\n\n**{reason}**".strip()
+
+
+def _last_line(text: str) -> str:
+    lines = [line.strip() for line in str(text or "").splitlines() if line.strip()]
+    return lines[-1] if lines else ""
+
+
+async def _ask_once(ask, spec: ComputeOpSpec, env: Optional[dict], *, timeout, detail: str, wizard_id: str,
+                    workdir: Path, say: Callable[[str], None]) -> AskResult:
     return await ask(
         spec.name or "op",
-        spec.exe_data.prompt or spec.display_label,
+        fill(spec.exe_data.prompt or spec.display_label, env),
         spec.output_spec_kind,
         timeout=timeout,
         label=spec.display_label,
-        detail=spec.exe_data.detail,
+        detail=detail,
         submit_label=spec.exe_data.submit_label,
         cancel_label=spec.exe_data.cancel_label,
         secret=spec.exe_data.secret,
         file=spec.exe_data.file,
         wizard_id=wizard_id,
-        guide=spec.setup or "",
+        guide=fill(spec.setup or "", env),
         # AI Assist: the agent follows the same guide, for the setup's own span once started.
         assist_agent=spec.exe_data.assist_agent,
         setup_timeout=spec.setup_timeout(),

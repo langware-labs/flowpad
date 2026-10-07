@@ -100,6 +100,12 @@ def sample(name: str, annotation: Any, default: Any) -> Any:
         from flow_sdk.fs_store.origin.local_origin import LocalOrigin  # noqa: PLC0415
 
         return LocalOrigin(base=f"/{name}-base", rel_path=f"{name}-rel")
+    if "AutoOpenOp" in str(annotation):
+        # An `auto_open` entry (a place | {op} | {wizard}, chosen by key): the op arm,
+        # the shape a place cannot stand in for.
+        from flow_sdk.schema.data_spec.auto_open_spec import AutoOpenOp  # noqa: PLC0415
+
+        return AutoOpenOp(op=f"{name}-op")
     if "ProtocolSpec" in str(annotation):
         # A tagged protocol (``webapp.json`` endpoints): restored by its kind, so
         # the sampler names one shipped shape with a non-default field.

@@ -2,7 +2,22 @@ import { i18n } from '@lingui/core';
 import { msg } from '@lingui/core/macro';
 import { useEffect, useMemo, useState } from 'react';
 import { LayoutGrid, type LucideIcon } from 'lucide-react';
-import { AgenticProcess, Agent, DataDriver, dataManager, Organization, PageId, Project, tabManager, TypeId, ViewType, Wiki, WikiEntry, WorldViewProjection, type AnyEntity } from '@sdk';
+import {
+  AgenticProcess,
+  Agent,
+  DataDriver,
+  dataManager,
+  Organization,
+  PageId,
+  Project,
+  tabManager,
+  TypeId,
+  ViewType,
+  Wiki,
+  WikiEntry,
+  WorldViewProjection,
+  type AnyEntity,
+} from '@sdk';
 import { VIEWER_REGISTRY } from '@src/types/ViewType';
 import { lucideByName } from '@src/lib/lucide-by-name';
 import { DEFAULT_WIKI_SPACE } from '@src/navigation/asset-doc-types';
@@ -170,6 +185,10 @@ function viewLabel(dock: DockPointer | null): string {
   return tab?.name?.trim() || labelForType(dock.viewType ?? '') || i18n._(HOME_CRUMB_LABEL);
 }
 
+// Type names only (the crumb needs no entity class): a live session and the conversation it sits in.
+const LIVE_SESSION_TYPE = 'remote_worker_session';
+const CONVERSATION_TYPE = 'conversation';
+
 export function useEntityBreadcrumbs(dock: DockPointer | null): EntityBreadcrumbs {
   const { project, activeEntity, activeEntityTypeId } = useContext();
   const { projectPath } = useProjectLocation();
@@ -254,6 +273,21 @@ export function useEntityBreadcrumbs(dock: DockPointer | null): EntityBreadcrumb
     };
   }, [scopedAgentTypeId?.toString()]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // A live session lives IN its conversation: the address reads `<conversation> › Live session`.
+  // Not a `parent_type_id` — that link drives sharing; this is only where the session sits.
+  const liveSessionConvId =
+    resolved.typeId?.type === LIVE_SESSION_TYPE
+      ? ((resolved.entity as { conversation_id?: string | null } | null)?.conversation_id ?? null)
+      : null;
+  const liveSessionConvTypeId = useMemo(() => {
+    try {
+      return liveSessionConvId ? new TypeId(CONVERSATION_TYPE, liveSessionConvId) : null;
+    } catch {
+      return null;
+    }
+  }, [liveSessionConvId]);
+  const { data: liveSessionConv } = useEntity<AnyEntity>(liveSessionConvTypeId);
+
   // The session whose display is showing this dock: the middle segment of
   // `project › process › file`. The host is the process's own typeid
   // (`agentic_process-<id>`), exactly what the URL's `process/<typeid>/display` carries.
@@ -274,6 +308,17 @@ export function useEntityBreadcrumbs(dock: DockPointer | null): EntityBreadcrumb
     }
   }, [nestedChild?.typeId]); // eslint-disable-line react-hooks/exhaustive-deps
   const { data: childEntity } = useEntity<AnyEntity>(childTypeId);
+  // An app opened ON something (`/dock/app/<editor>?subject=dataset-<id>`) edits that thing: the
+  // address reads `project › <subject> › <app>`, not `project › <app>` as if the app were the page.
+  const subjectTypeId = useMemo(() => {
+    const subject = dock?.viewType === ViewType.APP ? dock.options?.subject : null;
+    try {
+      return subject ? new TypeId(subject) : null;
+    } catch {
+      return null;
+    }
+  }, [dockKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  const { data: subjectEntity } = useEntity<AnyEntity>(subjectTypeId);
 
   // The Wiki the page lives in, as its own crumb. `@local` is an alias for the
   // active project's default wiki rather than an id, so it takes the same
@@ -392,7 +437,9 @@ export function useEntityBreadcrumbs(dock: DockPointer | null): EntityBreadcrumb
     if (hostProcessTypeId && !isAgentScoped) {
       out.push({
         key: hostProcessTypeId.toString(),
-        label: hostProcess ? entityLabel(hostProcess as AnyEntity, hostProcessTypeId) : labelForType(AgenticProcess.type),
+        label: hostProcess
+          ? entityLabel(hostProcess as AnyEntity, hostProcessTypeId)
+          : labelForType(AgenticProcess.type),
         Icon: iconForType(AgenticProcess.type),
         pointer: DockPointer.forShell(hostProcessId ?? undefined).withViewMode(ViewMode.Vibe),
         kind: 'ancestor',
@@ -425,6 +472,16 @@ export function useEntityBreadcrumbs(dock: DockPointer | null): EntityBreadcrumb
           { ...(node.entity as object), type: node.typeId.type, id: node.typeId.id },
           undefined,
         ),
+        kind: 'ancestor',
+      });
+    }
+
+    if (liveSessionConvTypeId) {
+      out.push({
+        key: liveSessionConvTypeId.toString(),
+        label: liveSessionConv ? entityLabel(liveSessionConv, liveSessionConvTypeId) : labelForType(CONVERSATION_TYPE),
+        Icon: iconForType(CONVERSATION_TYPE),
+        pointer: DockPointer.forConversation(liveSessionConvTypeId.id),
         kind: 'ancestor',
       });
     }
@@ -520,11 +577,23 @@ export function useEntityBreadcrumbs(dock: DockPointer | null): EntityBreadcrumb
       return out;
     }
 
+    if (subjectTypeId) {
+      out.push({
+        key: `subject-${subjectTypeId.toString()}`,
+        label: subjectEntity ? entityLabel(subjectEntity, subjectTypeId) : labelForType(subjectTypeId.type),
+        Icon: iconForType(subjectTypeId.type),
+        pointer: null,
+        kind: 'ancestor',
+      });
+    }
+    // An app names itself by its title ("Dataset editor"), not its folder name ("dataset-editor").
+    const appTitle = subjectTypeId ? (resolved.entity as { title?: string } | null)?.title?.trim() : null;
+
     out.push(
       targetTypeId
         ? {
             key: targetTypeId.toString(),
-            label: isProjectHome ? i18n._(PROJECT_HOME_CRUMB_LABEL) : targetTitle,
+            label: isProjectHome ? i18n._(PROJECT_HOME_CRUMB_LABEL) : appTitle || targetTitle,
             Icon: iconForType(targetTypeId.type),
             pointer: null,
             kind: 'current',
@@ -555,7 +624,13 @@ export function useEntityBreadcrumbs(dock: DockPointer | null): EntityBreadcrumb
     // the current segment and becomes the way back — `project › Dana › MCP servers › linear`.
     if (nestedChild && childTypeId && dock) {
       const parent = out[out.length - 1];
-      out[out.length - 1] = { ...parent, pointer: dock.withoutChild(), kind: 'ancestor', path: undefined, filename: undefined };
+      out[out.length - 1] = {
+        ...parent,
+        pointer: dock.withoutChild(),
+        kind: 'ancestor',
+        path: undefined,
+        filename: undefined,
+      };
       out.push({
         key: `child-section-${nestedChild.section}`,
         label: i18n._(CHILD_SECTION_CRUMB_LABELS[nestedChild.section]),
@@ -583,6 +658,8 @@ export function useEntityBreadcrumbs(dock: DockPointer | null): EntityBreadcrumb
     nestedChild,
     childTypeId,
     childEntity,
+    subjectTypeId,
+    subjectEntity,
     project,
     projectLabel,
     agentRoute,
@@ -591,6 +668,8 @@ export function useEntityBreadcrumbs(dock: DockPointer | null): EntityBreadcrumb
     scopedAgent,
     hostProcessTypeId,
     hostProcess,
+    liveSessionConvTypeId,
+    liveSessionConv,
     dock,
     ancestors,
     wikiCrumb,

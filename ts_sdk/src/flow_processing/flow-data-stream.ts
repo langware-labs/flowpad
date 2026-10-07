@@ -650,6 +650,16 @@ export class FlowDataStream extends EventEmitter {
     return this._itemsCache;
   }
 
+  /** The newest row's time in ms (rows carry the worker host's clock), or `null` when empty. */
+  latestTimestampMs(): number | null {
+    let latest = -Infinity;
+    for (const item of this.items) {
+      const t = Date.parse(item.timestamp);
+      if (t > latest) latest = t;
+    }
+    return Number.isFinite(latest) ? latest : null;
+  }
+
   get isEmpty(): boolean {
     return this._ownItems.length === 0 && this._substreams.length === 0;
   }

@@ -133,6 +133,60 @@ describe('useEntityBreadcrumbs', () => {
     expect(result.current.crumbs[2].label).toBe('index.html');
   });
 
+  it('addresses a live session as conversation › live session', async () => {
+    const SESSION = new TypeId('remote_worker_session', '99999999-9999-4999-8999-999999999999');
+    const CONV_ID = 'aaaaaaaa-0000-4000-8000-00000000000a';
+    ctx.project = null; // a person-to-person chat has no project
+    vi.spyOn(Tab, 'resolveDockTarget').mockResolvedValue({
+      targetTypeId: SESSION,
+      target: { displayName: 'Live session · Nir', conversation_id: CONV_ID },
+      projectId: null,
+    } as never);
+    vi.spyOn(ancestors, 'resolveAncestorChain').mockResolvedValue([]);
+    vi.spyOn(dataManager, 'getByTypeId').mockImplementation(async (typeId: any) =>
+      String(typeId) === `conversation-${CONV_ID}` ? ({ displayName: 'Nir Levy, Eran' } as never) : (null as never),
+    );
+
+    const { result } = renderHook(() =>
+      useEntityBreadcrumbs({ ...dock('live', SESSION), viewType: 'live_session' } as never),
+    );
+
+    await waitFor(() => expect(result.current.crumbs.map((c) => c.label)).toContain('Nir Levy, Eran'));
+    const labels = result.current.crumbs.map((c) => c.label);
+    expect(labels.indexOf('Nir Levy, Eran')).toBeLessThan(labels.length - 1); // before the session
+    const conv = result.current.crumbs.find((c) => c.label === 'Nir Levy, Eran')!;
+    expect(conv.kind).toBe('ancestor');
+    expect(conv.pointer?.toUrl()).toContain(`conversation/${CONV_ID}`);
+  });
+
+  it('addresses an app opened on a subject as project › subject › app', async () => {
+    const APP = new TypeId('micro_app', '77777777-7777-4777-8777-777777777777');
+    const DATASET = 'dataset-88888888-8888-4888-8888-888888888888';
+    vi.spyOn(Tab, 'resolveDockTarget').mockResolvedValue({
+      targetTypeId: APP,
+      target: { displayName: 'dataset-editor', title: 'Dataset editor', parent_type_id: null },
+      projectId: null,
+    } as never);
+    vi.spyOn(ancestors, 'resolveAncestorChain').mockResolvedValue([]);
+    vi.spyOn(dataManager, 'getByTypeId').mockImplementation(async (typeId: any) =>
+      String(typeId) === DATASET ? ({ displayName: 'SmartNavigationLog' } as never) : (null as never),
+    );
+    const onSubject = {
+      pointer: APP.toString(),
+      tabHash: 'tab-1',
+      targetTypeId: APP,
+      viewType: 'app',
+      options: { subject: DATASET },
+    } as never;
+
+    const { result } = renderHook(() => useEntityBreadcrumbs(onSubject));
+
+    await waitFor(() =>
+      expect(result.current.crumbs.map((c) => c.label)).toEqual(['Acme', 'SmartNavigationLog', 'Dataset editor']),
+    );
+    expect(result.current.crumbs.map((c) => c.kind)).toEqual(['project', 'ancestor', 'current']);
+  });
+
   it('uses the context entity for an instant label when it is the same thing', () => {
     ctx.activeEntityTypeId = DOC;
     ctx.activeEntity = { displayName: 'Design notes' };

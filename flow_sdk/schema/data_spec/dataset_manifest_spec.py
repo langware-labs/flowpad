@@ -10,6 +10,7 @@ from flow_sdk.schema.data_spec import FrontMatter
 from flow_sdk.schema.data_spec._form import ShapeForm
 from flow_sdk.schema.data_spec.dataset_spec import DatasetSpec
 from flow_sdk.schema.data_spec.io.native import FreeForm
+from flow_sdk.tags.grammar import normalize_tag
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +37,13 @@ class DatasetManifestSpec(FrontMatter):
         if raw is None or isinstance(raw, type):
             return values
         try:
+            if isinstance(raw, str):
+                # A kind NAME is checked for its grammar only. Whether it resolves is a question for
+                # whoever reads the rows typed (``Dataset._example_type``): the walk reads a dataset
+                # before the data specs nested in it, so a name may not resolve YET -- and a name
+                # that does not resolve yet is not malformed.
+                normalize_tag(raw)
+                return values
             DatasetSpec.parse(raw)
         except (ValueError, ValidationError) as exc:
             logger.warning("[dataset] ignoring malformed `spec`: %s", exc)

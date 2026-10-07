@@ -45,9 +45,11 @@ def transcript_watcher_trigger_specs(settings: Any) -> list[dict[str, Any]]:
     return [
         dict(
             uname="builtin_claude_transcript_watcher",
-            name="Claude transcript watcher",
-            description="Watches ~/.claude/projects/ for JSONL file changes; "
-                        "routes deltas to the per-session TranscriptStreamer.",
+            name="Claude Code chats",
+            # Dev: watches ~/.claude/projects/ for JSONL changes and routes each
+            # delta to the per-session TranscriptStreamer.
+            description="Shows your Claude Code chats in Flowpad as they happen. "
+                        "Everything stays on this computer.",
             trigger_type=TriggerType.FSOP,
             watch_path=str(settings.claude_projects_dir),
             recursive=True,
@@ -59,9 +61,11 @@ def transcript_watcher_trigger_specs(settings: Any) -> list[dict[str, Any]]:
         ),
         dict(
             uname="builtin_codex_transcript_watcher",
-            name="Codex transcript watcher",
-            description="Watches ~/.codex/sessions/ for JSONL file changes; "
-                        "routes deltas to the per-session TranscriptStreamer.",
+            name="Codex chats",
+            # Dev: watches ~/.codex/sessions/ for JSONL changes and routes each
+            # delta to the per-session TranscriptStreamer.
+            description="Shows your Codex chats in Flowpad as they happen. "
+                        "Everything stays on this computer.",
             trigger_type=TriggerType.FSOP,
             watch_path=str(settings.codex_sessions_dir),
             recursive=True,

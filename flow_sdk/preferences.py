@@ -15,6 +15,9 @@ from typing import Any
 
 PREF_SHARE_MESSAGE_STATUS = "preferences.notifications.share_message_status"
 DEFAULT_SHARE_MESSAGE_STATUS = True
+#: SmartNavigationLog: append every smart-navigation decision to a dataset in Flowpad's temp folder.
+PREF_SMART_NAVIGATION_LOG = "preferences.advanced.smart_navigation_log"
+DEFAULT_SMART_NAVIGATION_LOG = False
 
 
 def read_instance_pref(key: str, default: Any) -> Any:
@@ -60,6 +63,11 @@ def read_instance_prefs(defaults: dict[str, Any]) -> dict[str, Any]:
 def message_status_sharing_enabled() -> bool:
     """Whether this instance reports delivered/read status to other users."""
     return bool(read_instance_pref(PREF_SHARE_MESSAGE_STATUS, DEFAULT_SHARE_MESSAGE_STATUS))
+
+
+def smart_navigation_log_enabled() -> bool:
+    """Whether smart-navigation decisions are collected as dataset rows (off unless turned on)."""
+    return bool(read_instance_pref(PREF_SMART_NAVIGATION_LOG, DEFAULT_SMART_NAVIGATION_LOG))
 
 
 def write_instance_pref(key: str, value: Any) -> bool:

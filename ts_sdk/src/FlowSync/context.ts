@@ -694,6 +694,9 @@ class DataContext extends EventEmitter {
       // shells, lenses), so the backend matches against this pathname instead
       // (e.g. to tell whether a conversation is the open page).
       out.CurrentPathname = typeof window !== 'undefined' ? window.location.pathname : null;
+      // The full address: the query carries what the path does not (viewMode, scope, focus),
+      // and the backend's "you are here" (`navigation.here_from`) reads it.
+      out.CurrentUrl = typeof window !== 'undefined' ? `${window.location.pathname}${window.location.search}` : null;
       return out;
     };
 

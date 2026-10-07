@@ -2027,13 +2027,19 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
       if (item.isOptimisticEcho && item.content === trimmed) return;
     }
 
-    const timestamp = new Date().toISOString();
+    // Ordered among host-clocked rows, so stamped with the host's latest time — the newest row,
+    // or the process's creation by the backend — never the browser's, which may run ahead
+    // of the host and sort the prompt below its own reply.
+    const created = this.created_date ? new Date(this.created_date).getTime() : NaN;
+    const latest = Math.max(this.flowDataStream.latestTimestampMs() ?? -Infinity, created || -Infinity);
+    const timestamp = new Date(Number.isFinite(latest) ? latest : Date.now()).toISOString();
     const userFlowData = FlowDataFactory.fromElementType(
       FlowElementTypes.USER_MESSAGE,
       trimmed,
       {
         role: 'user',
         t: timestamp,
+        [FlowDataAttribute.SUBMITTED_AT]: new Date().toISOString(),
         // A placeholder, not an observation — see `FlowData.isOptimisticEcho`.
         [FlowDataAttribute.OPTIMISTIC_ECHO]: 'true',
       },
@@ -3092,7 +3098,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
       status?: string;
       shell: Record<string, unknown>;
     } | null,
-    options?: { cols?: number; rows?: number; ptyTimeout?: number },
+    options?: { ptyTimeout?: number },
   ): Promise<boolean> {
     if (!result) throw new Error('Process could not be opened (process may be terminated)');
     if (result.status) {
@@ -3111,9 +3117,9 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
     }
     const tAttach = performance.now();
     await shell.attachPty({
-      // Real xterm size only — undefined means "keep current size, just repaint".
-      cols: options?.cols,
-      rows: options?.rows,
+      // No cols/rows: `options` carries the window-sized estimate that seeded a NEW
+      // pty in `open`. Asserted on a LIVE pty it resized it away from the view's
+      // real size on every entry; the attach asserts the size the view claimed.
       timeout: options?.ptyTimeout,
       ptyId: result.pty_id,
     });
@@ -3207,12 +3213,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
    * Only pre/post work differs: Interactive attaches via {@link adoptOpenPayload}
    * and emits `restarted`; CLI must NOT (it would re-attach a dead PTY).
    */
-  async switchMode(
-    mode: WorkerMode,
-    /** Client-only xterm grid, NOT wire data: it seeds `attachPty` so the
-     *  worker's first paint isn't wrapped at 80 cols on a wide viewport. */
-    opts?: { cols?: number; rows?: number },
-  ): Promise<void> {
+  async switchMode(mode: WorkerMode): Promise<void> {
     const wantPty = mode === WorkerMode.Interactive;
     if (!wantPty) {
       const shell = this.shell_id ? Shell.getByIdFromCache(this.shell_id) : null;
@@ -3244,7 +3245,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
         } | null
       >(actionInfo);
       if (wantPty) {
-        await this.adoptOpenPayload(result, { cols: opts?.cols, rows: opts?.rows });
+        await this.adoptOpenPayload(result);
         this.emit('restarted', { process: this });
       }
     } catch (error) {

@@ -29,7 +29,7 @@ async def run_triggers_for_hook(hook, webhook_data: AgentHookData) -> WebhookHan
       emitted even when nothing matched, because a webhook that matches NOTHING
       is the common case and is otherwise invisible in the product.
     * ONE ``trigger.fired`` per MATCHED trigger, so a hook rule reads the same as
-      a schedule or fsop rule on the events screen.
+      a schedule or fsop rule in Automations › Runs.
 
     No ``actor`` is stamped: a global hook is harness-wide, so the process that
     happened to fire it is not a meaningful principal.
@@ -49,7 +49,7 @@ async def run_triggers_for_hook(hook, webhook_data: AgentHookData) -> WebhookHan
         executed_actions.append(result)
         if trigger.id:
             matched_trigger_ids.append(trigger.id)
-            emit_trigger_fired(
+            event_id = emit_trigger_fired(
                 trigger.id,
                 str(trigger.trigger_type),
                 trigger.name or trigger.id,
@@ -62,6 +62,7 @@ async def run_triggers_for_hook(hook, webhook_data: AgentHookData) -> WebhookHan
                 project_id=trigger.project_id,
                 scope_extra=[f"agent_hook:{hook.id}"] if hook.id else None,
             )
+            _log_hook_fire(trigger, hook_data, event_id, session_id)
 
     emit_hook_received(
         hook.id or "",
@@ -79,3 +80,31 @@ async def run_triggers_for_hook(hook, webhook_data: AgentHookData) -> WebhookHan
         flow_id=None,
         session_id=session_id,
     )
+
+
+def _log_hook_fire(trigger, hook_data: HookEventData, event_id: str | None, session_id: str | None) -> None:
+    """One history row per MATCHED hook fire — real fires used to write none.
+
+    Only matches: a hook fires on every tool use, and a row per non-match would
+    rewrite this rule's log file on every keystroke of an agent's work."""
+    try:
+        from flow_sdk.automations.fingerprint import spec_hash
+        from flow_sdk.fs_store.operations.trigger_log import append_entry, cap_cause_data
+
+        hook_event = str(hook_data.hook_event_name or "")
+        append_entry(trigger.name or trigger.id, {
+            "hook_event": "hook_fire",
+            "event_kind": hook_event,
+            "trigger": True,
+            "reason": f"Agent hook {hook_event}" if hook_event else "Agent hook",
+            "rule_name": trigger.name,
+            "trigger_id": trigger.id,
+            "trigger_type": str(trigger.trigger_type),
+            "event_id": event_id,
+            "actions": [{"action_type": str(a.action_type)} for a in trigger.actions],
+            "cause_data": cap_cause_data({"hook_event": hook_event, "session_id": session_id,
+                                          "tool_name": getattr(hook_data, "tool_name", None)}),
+            "spec_hash": spec_hash(trigger),
+        })
+    except Exception:
+        logger.debug("hook fire log append failed", exc_info=True)

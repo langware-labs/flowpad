@@ -39,7 +39,7 @@ import json
 import types
 from enum import Enum
 from pathlib import PurePath
-from typing import Annotated, Any, ClassVar, Literal, Union, get_args, get_origin
+from typing import Annotated, Any, ClassVar, Literal, Optional, Union, get_args, get_origin
 
 from pydantic import BaseModel, BeforeValidator, ConfigDict, PlainSerializer, create_model, model_validator
 
@@ -189,15 +189,41 @@ class DataSpec(BaseModel):
         return hash((type(self), _freeze(self.__dict__)))
 
 
+#: ``?<shape>`` — the value may be absent. ``enum:a|b`` — one of these strings. ``{"*": <shape>}`` —
+#: a map from any key to that shape. Input-side only: ``to_authoring_form`` of a HAND-WRITTEN
+#: spec still renders ``Optional[X]`` as ``X`` and a ``Literal`` as ``"string"`` (§ above), so no
+#: existing form changes; a class COMPILED from one of these keeps the form it was given.
+OPTIONAL_MARK = "?"
+ENUM_PREFIX = "enum:"
+MAP_KEY = "*"
+
+
+def _is_map_form(form: Any) -> bool:
+    return isinstance(form, dict) and list(form) == [MAP_KEY]
+
+
+def _field_def(form: Any) -> tuple:
+    """``(annotation, default)`` for one field of an object form: an optional one defaults to None."""
+    if isinstance(form, str) and form.startswith(OPTIONAL_MARK):
+        return (Optional[_compile(form[len(OPTIONAL_MARK):])], None)
+    return (_compile(form), ...)
+
+
 def _compile(form: Any) -> type:
     """A NORMALIZED form → a type. Children are already normalized, so this
     never re-walks them — the top-level ``_normalize_form`` is the one pass."""
     if isinstance(form, str):
+        if form.startswith(OPTIONAL_MARK):
+            return Optional[_compile(form[len(OPTIONAL_MARK):])]  # type: ignore[return-value]
+        if form.startswith(ENUM_PREFIX):
+            return Literal[tuple(form[len(ENUM_PREFIX):].split("|"))]  # type: ignore[return-value]
         from flow_sdk.schema.data_spec._kinds import resolve_kind  # lazy: registry import
 
         return resolve_kind(form)
     if isinstance(form, list):
         return list[_compile(form[0])]  # type: ignore[misc]
+    if _is_map_form(form):
+        return dict[str, _compile(form[MAP_KEY])]  # type: ignore[misc]
     key = _canonical(form)
     hit = _COMPILED.get(key)
     if hit is None:
@@ -206,7 +232,7 @@ def _compile(form: Any) -> type:
             __base__=DataSpec,
             spec_kind=(ClassVar[str], ""),
             __authoring__=(ClassVar[Any], form),
-            **{name: (_compile(child), ...) for name, child in form.items()},
+            **{name: _field_def(child) for name, child in form.items()},
         )
         _COMPILED[key] = hit
     return hit
@@ -216,6 +242,13 @@ def _normalize_form(form: Any) -> Any:
     """Kind strings through the tag grammar, structure untouched. Raises on a
     malformed kind — at the write, where the file is still in hand."""
     if isinstance(form, str):
+        if form.startswith(OPTIONAL_MARK):
+            return OPTIONAL_MARK + _normalize_form(form[len(OPTIONAL_MARK):])
+        if form.startswith(ENUM_PREFIX):
+            values = form[len(ENUM_PREFIX):].split("|")
+            if not all(v.strip() for v in values) or len(set(values)) != len(values):
+                raise ValueError(f"an enum is distinct, non-empty values joined by '|'; got {form!r}")
+            return form
         return normalize_tag(form)
     if isinstance(form, dict):
         return {name: _normalize_form(child) for name, child in form.items()}

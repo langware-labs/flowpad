@@ -397,5 +397,13 @@ def isolated_kinds(monkeypatch):
     the same kind more than once, as a reader re-running a cell would, and a kind names exactly one shape."""
     from flow_sdk.fs_store.schema_registry import SchemaRegistry
 
+    from flow_sdk.schema.data_spec import declared
+
     for attr in ("_kinds", "_kind_of_shape"):
         monkeypatch.setattr(SchemaRegistry, attr, getattr(SchemaRegistry, attr).copy())
+    # Folder-defined kinds remember what they built and that the shipped ones are loaded. Restoring
+    # the registry without restoring that memory leaves a later test with a latch that says
+    # "loaded" over a registry that no longer holds them ("kind 'navigation.map' is not registered").
+    for attr in ("_READ", "_PENDING", "_OWNER", "_BUILT", "_ERRORS"):
+        monkeypatch.setattr(declared, attr, getattr(declared, attr).copy())
+    monkeypatch.setattr(declared, "_shipped_loaded", declared._shipped_loaded)

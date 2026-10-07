@@ -135,20 +135,20 @@ class ViewType(StrEnum):
     PREFERENCES = "preferences"  # User preferences screen (category tabs)
     AGENTIC_PROCESS = "agentic_process"  # Process terminal view
     SEARCH = "search"  # Record semantic search view
-    # The merged rules+events screen. TRIGGERS / SIGNALS / CRON are kept as
-    # ALIASES onto it (same body, same navigator) rather than redirects, so
-    # every bookmarked URL keeps working.
-    EVENTS = "events"  # Rules and the events they fire on
-    TRIGGERS = "triggers"  # Alias of EVENTS
+    # Automations — "when X, do Y": the list, the runs (/runs), the event bus (/bus).
+    AUTOMATIONS = "automations"
+    # RETIRED onto AUTOMATIONS — decodable because saved tabs and links name them.
+    EVENTS = "events"  # Retired → automations
+    TRIGGERS = "triggers"  # Retired → automations
     CAPABILITIES = "capabilities"  # System capability checks/install/test
     GRAPH_WORKFLOWS = "graph-workflows"  # Flow-graph editor/observatory — dev mode
-    SIGNALS = "signals"  # Alias of EVENTS
+    SIGNALS = "signals"  # Retired → automations/bus
     DATA_SOURCES = "data-sources"  # Configured ingestion sources
     RAG = "rag"  # Search indexes and the folders they cover
     ASSET_LIST = "asset-list"  # One home counter's assets as a table — ?group=<g>&counter=<c>
     PROCESS_RUNS = "process-runs"  # AgenticProcess execution history
     PLAN = "plan"  # Plan viewer with Milkdown editor
-    CRON = "cron"  # Alias of EVENTS (scheduled jobs)
+    CRON = "cron"  # Retired → automations
     ASSETS = "assets"  # Unified docs/skills/workflows tree
     PROJECT = "project"  # Collaboration on a project
     AGENT = "agent"  # Agent-owned surfaces — /dock/agent/<agent-id>/stream_inbox
@@ -271,6 +271,12 @@ RETIRED_DOCK_VIEWS: Mapping[ViewType, RetiredTarget] = {
         "list/skill",
         accepts_direct_address=False,
     ),
+    # The Events screen and its aliases became Automations; their selection rides
+    # in options, which the redirect keeps. The old bus monitor lands on the bus.
+    ViewType.EVENTS: RetiredTarget(ViewType.AUTOMATIONS, ""),
+    ViewType.TRIGGERS: RetiredTarget(ViewType.AUTOMATIONS, ""),
+    ViewType.CRON: RetiredTarget(ViewType.AUTOMATIONS, ""),
+    ViewType.SIGNALS: RetiredTarget(ViewType.AUTOMATIONS, "bus"),
 }
 
 
@@ -350,6 +356,17 @@ class ViewMeta:
     #: only agent route read it as a malformed stream-inbox URL.
     pointer_form: str = "<id>"
     pointer_shape: str = ""
+    #: The context this screen really sets, beyond the project every screen has: ``entity``
+    #: (what is open) and/or ``process`` (the session in scope). "You are here" keeps only
+    #: these, so a screen that sets nothing never reports what the previous one opened
+    #: (``flow_sdk.core.navigation.here_from``).
+    provides: tuple[str, ...] = ()
+    #: Entity types whose id can be this screen's pointer, when that differs from opening
+    #: the entity itself (a project's dependency graph, a session's transcript).
+    opens: tuple[str, ...] = ()
+    #: ``(pointer, name)`` for the tabs and filters worth naming as places of their own. The
+    #: name is whole ("Assets filtered to skills"): it is what a person is matched against.
+    subplaces: tuple[tuple[str, str], ...] = ()
 
 
 #: The table below builds rows directly. ``pointer`` leads and ``addressable``
@@ -369,7 +386,7 @@ VIEW_META: Mapping[ViewType, ViewMeta] = {
     ViewType.SYSTEM_PROFILE: _m(_OPT, label="System Profile", aliases=("claude code status", "live status")),
     ViewType.ANALYSIS: _m(_OPT, addressable=False),
     ViewType.CHAT: _m(_OPT, addressable=False),
-    ViewType.SHELL: _m(_OPT, label="Worker", aliases=("chats", "terminal")),
+    ViewType.SHELL: _m(_OPT, label="Worker", aliases=("chats", "terminal"), provides=("process",)),
     ViewType.EDITOR: _m(_OPT, label="Code Editor", aliases=("edit file",)),
     ViewType.WEB_APP: _m(_OPT, label="Web App", aliases=("web apps",)),
     # ANALYSIS / CHAT / REASONING / UNSUPPORTED below are NOT addressable either.
@@ -381,7 +398,7 @@ VIEW_META: Mapping[ViewType, ViewMeta] = {
     ViewType.CONNECTIONS: _m(_NONE, addressable=False),
     ViewType.ARTIFACTS: _m(_OPT, label="Artifacts", aliases=("deliverables",)),
     ViewType.REASONING: _m(_OPT, addressable=False),
-    ViewType.DIFF: _m(_REQ, label="Diff Viewer", aliases=("changes",)),
+    ViewType.DIFF: _m(_REQ, label="Diff Viewer", aliases=("changes",), opens=("agentic_process",)),
     ViewType.UNSUPPORTED: _m(_OPT, addressable=False),
     ViewType.MARKDOWN: _m(_OPT, label="Markdown", aliases=("document",)),
     ViewType.DOCS: _m(_OPT, label="Docs", aliases=("documentation",)),
@@ -389,16 +406,30 @@ VIEW_META: Mapping[ViewType, ViewMeta] = {
     ViewType.SURVEY: _m(_OPT, label="Survey"),
     ViewType.API_KEYS: _m(_NONE, addressable=False),
     ViewType.HOOKS: _m(_OPT, label="Hooks", aliases=("claude hooks",)),
-    ViewType.MACHINE: _m(_OPT, label="Machine", aliases=("system", "this machine")),
+    ViewType.MACHINE: _m(
+        _OPT,
+        label="Machine",
+        aliases=("system", "this machine"),
+        subplaces=(
+            ("processes", "Machine > running processes"),
+            ("network", "Machine > network / ports"),
+            ("secrets", "Machine > machine secrets"),
+        ),
+    ),
     ViewType.EXPLORER: _m(_OPT, scope_keyed=True, label="Files", aliases=("file tree", "folders")),
     ViewType.SKILLS: _m(_OPT, addressable=False),
-    ViewType.AI_CONFIG: _m(_OPT, label="AI Configuration", aliases=("ai config", "llm apis", "models", "clis")),
+    ViewType.AI_CONFIG: _m(
+        _OPT,
+        label="AI Configuration",
+        aliases=("ai config", "llm apis", "models", "clis"),
+        subplaces=(("llm-apis", "AI Configuration > LLM APIs tab"), ("clis", "AI Configuration > CLIs tab")),
+    ),
     ViewType.SHOW: _m(_REQ, label="Show"),
     # Fullbleed: the question IS the window, so there is no workspace around it.
     ViewType.ASK: _m(_REQ, label="Ask", chrome="fullbleed"),
     ViewType.APPS: _m(_REQ, folds_sub_pointer=True, label="Skill apps"),
-    ViewType.GRAPH: _m(_REQ, label="Graph", aliases=("dep graph", "dependency graph")),
-    ViewType.WORLDVIEW: _m(_REQ, label="WorldView", aliases=("world", "org graph"), pages=("desk", "hub")),
+    ViewType.GRAPH: _m(_REQ, label="Graph", aliases=("dep graph", "dependency graph"), provides=("entity",), opens=("project",)),
+    ViewType.WORLDVIEW: _m(_REQ, label="WorldView", aliases=("world", "org graph"), pages=("desk", "hub"), provides=("entity",)),
     # OPTIONAL, not REQUIRED like the graph beside it: the screen opens on the
     # organization you belong to, and only carries a pointer when you deep-link to
     # a particular team.
@@ -406,18 +437,30 @@ VIEW_META: Mapping[ViewType, ViewMeta] = {
     ViewType.TAG: _m(_REQ, folds_pointer=True, label="Tag Graph", aliases=("tags", "taxonomy")),
     ViewType.SUBGRAPH: _m(_REQ, folds_pointer=True, label="Subgraph"),
     ViewType.K_BROWSER: _m(_REQ, label="Knowledge Browser", aliases=("docs browser",)),
-    ViewType.LENS: _m(_REQ, label="Lens", aliases=("transcript",)),
-    ViewType.SESSION: _m(_REQ, addressable=False),
-    ViewType.TASKS: _m(_OPT, label="Tasks", aliases=("todo",)),
+    ViewType.LENS: _m(_REQ, label="Lens", aliases=("transcript",), opens=("agentic_process",)),
+    ViewType.SESSION: _m(_REQ, addressable=False, provides=("entity", "process")),
+    ViewType.TASKS: _m(_OPT, label="Tasks", aliases=("todo",), provides=("entity",)),
     ViewType.SETTINGS: _m(_OPT, label="Settings", aliases=("claude settings",)),
     ViewType.PREFERENCES: _m(_OPT, folds_pointer=True, label="Preferences", aliases=("my preferences", "appearance")),
-    ViewType.AGENTIC_PROCESS: _m(_REQ, label="Process"),
+    ViewType.AGENTIC_PROCESS: _m(_REQ, label="Process", provides=("entity", "process"), opens=("agentic_process",)),
     ViewType.SEARCH: _m(_NONE, label="Search", aliases=("find",)),
-    ViewType.EVENTS: _m(_NONE, label="Events", aliases=("rules", "event bus")),
-    ViewType.TRIGGERS: _m(_NONE, label="Events"),
+    # Pointer `[runs|bus]`: the list, every run, the event bus — one tab chip
+    # (ui/src/components/automations/automations-pointer.ts). Selection rides in options.
+    ViewType.AUTOMATIONS: _m(
+        _OPT,
+        folds_pointer=True,
+        label="Automations",
+        aliases=("events", "triggers", "rules", "schedules", "scheduled jobs", "cron", "trigger history"),
+        subplaces=(
+            ("runs", "Automations > Runs (every time one fired, with errors)"),
+            ("bus", "Automations > Event bus (events, who listens, live stream)"),
+        ),
+    ),
+    ViewType.EVENTS: _m(_NONE, addressable=False),
+    ViewType.TRIGGERS: _m(_NONE, addressable=False),
     ViewType.CAPABILITIES: _m(_NONE, label="Capabilities", aliases=("checks", "system checks")),
     ViewType.GRAPH_WORKFLOWS: _m(_OPT, label="Graph Workflows", aliases=("workflows",)),
-    ViewType.SIGNALS: _m(_NONE, label="Events"),
+    ViewType.SIGNALS: _m(_NONE, addressable=False),
     # Pointer `[drivers[/<driverName>]]`: the drivers live UNDER the sources, and all
     # three levels fold into one tab chip (ui/src/components/data-sources/data-sources-pointer.ts).
     ViewType.DATA_SOURCES: _m(
@@ -436,7 +479,7 @@ VIEW_META: Mapping[ViewType, ViewMeta] = {
     ViewType.ASSET_LIST: _m(_NONE, label="Asset list", aliases=("counter assets",)),
     ViewType.PROCESS_RUNS: _m(_OPT, label="Runs", aliases=("history",)),
     ViewType.PLAN: _m(_REQ, label="Plan"),
-    ViewType.CRON: _m(_NONE, label="Events", aliases=("schedule", "scheduled jobs")),
+    ViewType.CRON: _m(_NONE, addressable=False),
     # OPTIONAL, not REQUIRED: `/dock/assets` already renders — `AssetsPage` takes no
     # pointer prop and tab identity is the SCOPE (scope_keyed), not the pointer. The
     # REQUIRED it carried meant the URL worked in a browser while `flow show view
@@ -447,6 +490,12 @@ VIEW_META: Mapping[ViewType, ViewMeta] = {
         label="Assets",
         aliases=("library", "docs tree"),
         pages=("desk", "hub"),
+        provides=("entity",),
+        subplaces=(
+            ("list/skill", "Assets filtered to skills"),
+            ("list/agent", "Assets filtered to agents"),
+            ("list/prompt", "Assets filtered to prompts"),
+        ),
     ),
     # Same: a bare project dock is the assets workspace (see the PROJECT arm in
     # `content-panel.tsx`, which documents exactly that and was unaddressable).
@@ -454,16 +503,20 @@ VIEW_META: Mapping[ViewType, ViewMeta] = {
     # `<agentId>/stream_inbox` — the id leads, so the pointer is required. The agent
     # ITSELF is an entity: `flow show entity agent-<id>` opens its editor.
     ViewType.AGENT: _m(
-        _REQ, label="Agent stream inbox", pointer_form="<id>/stream_inbox", pointer_shape=r"[^/]+/stream_inbox"
+        _REQ,
+        label="Agent stream inbox",
+        pointer_form="<id>/stream_inbox",
+        pointer_shape=r"[^/]+/stream_inbox",
+        provides=("entity",),
     ),
     ViewType.STREAM_INBOX: _m(_NONE, label="Stream Inbox", aliases=("messages",)),
-    ViewType.CONVERSATION: _m(_REQ, folds_sub_pointer=True, label="Conversation", pages=("desk", "hub")),
+    ViewType.CONVERSATION: _m(_REQ, folds_sub_pointer=True, label="Conversation", pages=("desk", "hub"), provides=("entity",)),
     ViewType.SPEC: _m(_REQ, label="Spec"),
     ViewType.GRAPH_CONTEXT: _m(_REQ, label="Context", aliases=("frozen context",)),
     ViewType.DIAGNOSIS: _m(_REQ, label="Diagnosis"),
     ViewType.DESKTOP: _m(_NONE, scope_keyed=True, label="Desktop", aliases=("favorites",)),
     ViewType.LIVE_SESSION: _m(_REQ, label="Live Session"),
-    ViewType.HELPDESK: _m(_REQ, folds_pointer=True, label="Help desk", aliases=("support",)),
+    ViewType.HELPDESK: _m(_REQ, folds_pointer=True, label="Help desk", aliases=("support",), opens=("project",)),
     ViewType.ATLAS: _m(_OPT, addressable=False),
     ViewType.HUB_RECORDS: _m(_REQ, label="Records", aliases=("hub records",), pages=("hub",)),
     ViewType.HUB_ENTITY: _m(_REQ, label="Entity", aliases=("hub entity",), pages=("hub",)),
@@ -477,6 +530,8 @@ VIEW_META: Mapping[ViewType, ViewMeta] = {
         # `connections` is the word a user actually says for this screen.
         aliases=("connections", "secrets", "api keys", "keys", "env vars"),
         pages=("desk", "hub"),
+        # One tab is left: API keys and environment variables are rows of Connections now.
+        subplaces=(("connections", "Credentials > Connections (OAuth accounts) tab"),),
     ),
     # Pointer REQUIRED: an app with no artifact is not an address. Runtime rides in
     # options, so it is excluded from tab identity and switching dev/served
@@ -484,7 +539,12 @@ VIEW_META: Mapping[ViewType, ViewMeta] = {
     ViewType.APP: _m(_REQ, label="App"),
     ViewType.LLM_ENDPOINTS: _m(_OPT, folds_pointer=True, label="LLM Endpoints", aliases=("endpoints",), pages=("hub",)),
     ViewType.TOKEN_PLAN: _m(
-        _OPT, folds_pointer=True, label="Token plan", aliases=("budget", "token budget"), pages=("hub",)
+        _OPT,
+        folds_pointer=True,
+        label="Token plan",
+        aliases=("budget", "token budget"),
+        pages=("hub",),
+        subplaces=(("me", "Hub token plan > my budget"), ("team", "Hub token plan > team budget")),
     ),
     ViewType.LLM_SOURCES: _m(_OPT, folds_pointer=True, label="LLM sources", aliases=("harness funding",)),
     # Pointer NONE: the screen asks one question and has no selection to address. It is the

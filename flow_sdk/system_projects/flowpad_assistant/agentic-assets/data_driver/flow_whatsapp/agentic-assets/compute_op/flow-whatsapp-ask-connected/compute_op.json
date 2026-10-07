@@ -1,0 +1,24 @@
+{
+  "type": "compute_op",
+  "id": "62b245bc-ccbc-454f-ad1e-dcdc182f240d",
+  "name": "flow-whatsapp-ask-connected",
+  "label": "Send it from your phone",
+  "description": "The phone sends its code; the hub validates it. Only a connected phone continues.",
+  "subkind": "ask",
+  "output_spec_kind": "confirm",
+  "exe_data": {
+    "prompt": "Open WhatsApp and send the message to {{connect.name}}",
+    "detail": "Tap the link on your phone, or scan the code with its camera — WhatsApp opens with **link {{connect.code}}** already typed. Send it, wait for {{connect.name}}'s reply, then press Continue.\n\n[Open WhatsApp]({{connect.link}})\n\n![Scan with your phone]({{connect.qr}})\n\n{{connect.name}} · {{connect.number}}",
+    "submit_label": "Continue",
+    "recheck": true,
+    "timeout_seconds": 1800
+  },
+  "completion_check": {
+    "commands": {
+      "darwin": "\"$FLOWPAD_FLOW\" source step \"$FLOWPAD_WIZARD_INPUT_SOURCE\" connected",
+      "linux": "\"$FLOWPAD_FLOW\" source step \"$FLOWPAD_WIZARD_INPUT_SOURCE\" connected",
+      "win32": "& $env:FLOWPAD_FLOW source step $env:FLOWPAD_WIZARD_INPUT_SOURCE connected; exit $LASTEXITCODE"
+    },
+    "timeout_seconds": 30
+  }
+}

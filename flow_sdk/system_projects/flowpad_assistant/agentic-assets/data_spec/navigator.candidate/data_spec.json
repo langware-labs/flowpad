@@ -1,0 +1,23 @@
+{
+  "type": "data_spec",
+  "id": "75d4073e-d79f-486a-abf1-a759dc4b5f9f",
+  "name": "navigator.candidate",
+  "fields": {
+    "typeid": {
+      "shape": "?string",
+      "description": "The entity, as <type>-<id>; absent for a plain file."
+    },
+    "type": {
+      "shape": "string",
+      "description": "Its type (task, conversation, file, ...)."
+    },
+    "title": {
+      "shape": "?string",
+      "description": "What a person calls it."
+    },
+    "path": {
+      "shape": "?string",
+      "description": "Its file, when it is one."
+    }
+  }
+}

@@ -63,6 +63,14 @@ VALID: dict[str, dict] = {
     # `exe_data` is the class its `subkind` names, and `output_spec_kind` must
     # name a registered kind — a filler string is refused at read, by design
     # A completion_check OR a status_check, never both: filled, the other stays unset.
+    # a data spec defines ONE shape: a record's fields, or a dataset's example slots -- not both;
+    # a field's shape is an authoring form, and a declared subkind must match the body
+    "data_spec": {
+        "subkind": "record",
+        "fields": {"utterance": {"shape": "string", "description": "what was typed"}},
+        "examples": None,
+        "ns": "acme",
+    },
     "compute_op": {
         "subkind": "cli",
         "exe_data": {"commands": {"linux": "true"}},
@@ -159,7 +167,7 @@ def _prepare(name: str, entity: type) -> None:
 
 def test_the_registry_has_the_asset_types_we_think_it_does():
     """A new asset type lands in this list on its own; the count is the notice."""
-    assert len(TYPES) == 20, [n for n, _ in TYPES]
+    assert len(TYPES) == 21, [n for n, _ in TYPES]
 
 
 @pytest.mark.parametrize(("name", "entity"), TYPES, ids=[n for n, _ in TYPES])

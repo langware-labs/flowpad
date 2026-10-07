@@ -17,6 +17,7 @@ from flow_sdk.builtin.source_item import SourceItem
 from flow_sdk.ingest.sync import sync_source
 from flow_sdk.stream_inbox.projection import project_source_item
 from tests.utils.fake_source import scripted_provider
+from tests.utils.send_gate import logged_out
 from tests.utils.snippets import doc, fence_under, run_fence
 
 pytestmark = [pytest.mark.timeout(30), pytest.mark.usefixtures("fresh_user_scope")]  # do not increase timeout without approval
@@ -24,12 +25,6 @@ pytestmark = [pytest.mark.timeout(30), pytest.mark.usefixtures("fresh_user_scope
 DOC = "message-threads.md"
 PROVIDER = "threadsnip"
 CUSTOMER = "dana@chat.test"
-
-
-def _logged_out(monkeypatch) -> None:
-    monkeypatch.setattr("flow_sdk.instance_settings.privacy_mode.is_local_mode", lambda: False)
-    monkeypatch.setattr("flow_sdk.cli.auth.hub_login.is_logged_in", lambda: False)
-    monkeypatch.setattr("flow_sdk.app.actions.notification_action.is_logged_in", lambda: False)
 
 
 async def _native_chat() -> str:
@@ -55,7 +50,7 @@ async def _channel_conversation(script, address: str) -> str:
 
 
 async def test_the_page_runs_as_written(monkeypatch):
-    _logged_out(monkeypatch)
+    logged_out(monkeypatch)
     page = doc(DOC)
     ns = {"CONVERSATION_ID": await _native_chat()}
 

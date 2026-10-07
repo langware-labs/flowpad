@@ -1,0 +1,22 @@
+{
+  "name": "flow-whatsapp-connect",
+  "description": "Link your phone to Flow on WhatsApp — press Connect WhatsApp, send the message it opens. Flow answers from the hub, on a machine of your own.",
+  "version": 1,
+  "enabled": true,
+  "icon": "MessageCircle",
+  "steps": [
+    {
+      "id": "connect",
+      "label": "Connect WhatsApp",
+      "kind": "compute",
+      "ref": "flow-whatsapp-connect",
+      "bind": "connect"
+    },
+    {
+      "id": "ask-connected",
+      "label": "Send it from your phone",
+      "kind": "compute",
+      "ref": "flow-whatsapp-ask-connected"
+    }
+  ]
+}

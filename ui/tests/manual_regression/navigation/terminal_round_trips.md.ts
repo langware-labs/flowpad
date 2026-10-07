@@ -93,7 +93,7 @@ test('a terminal survives every trip away and back', async ({ page }) => {
     },
     { name: 'the project page', address: `project/${world.projectId}`, path: `/project/${world.projectId}` },
     { name: 'the assets browser', address: 'assets/list/skill', path: '/assets/list/skill' },
-    { name: 'the events screen', address: 'events', path: '/events' },
+    { name: 'the automations screen', address: 'automations', path: '/automations' },
     { name: 'a plain shell', address: `shell/shell-${world.shellId}`, path: `/shell/shell-${world.shellId}` },
     { name: 'the same session in Vibe', address: `${processAddress}?viewMode=vibe`, path: processPath, modeSwitch: true },
     { name: 'the desktop', address: 'desktop', path: '/desktop' },

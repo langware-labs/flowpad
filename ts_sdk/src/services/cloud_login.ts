@@ -488,8 +488,15 @@ class CloudManager extends EventEmitter {
    *   no activation to spend, and a caller that has already committed to going
    *   away (`main-loader` halts its load on the promise) would otherwise leave
    *   the page stuck behind a window it did not expect.
+   * @param opts.browserProfile Desktop mode: open the sign-in page in this
+   *   browser profile (ids from `/api/v1/browser-profiles`) instead of the
+   *   system default browser.
    */
-  async login(opts?: { popup?: boolean; refresh?: 'reload' | 'session' }): Promise<CloudLoginResult | void> {
+  async login(opts?: {
+    popup?: boolean;
+    refresh?: 'reload' | 'session';
+    browserProfile?: { browser: string; profile: string };
+  }): Promise<CloudLoginResult | void> {
     // Any locally-initiated login attempt — including a click on
     // `SessionTakenOverOverlay`'s own button — dismisses the sticky
     // takeover block immediately, regardless of which branch below runs or
@@ -531,7 +538,10 @@ class CloudManager extends EventEmitter {
     });
 
     try {
-      const started = await apiClient.post<{ url?: string; present_in_browser?: boolean }>('/cloud/login');
+      const started = await apiClient.post<{ url?: string; present_in_browser?: boolean }>(
+        '/cloud/login',
+        opts?.browserProfile,
+      );
       if (started?.present_in_browser && started.url) {
         const popup = window.open(started.url, LOGIN_POPUP_NAME, LOGIN_POPUP_FEATURES);
         if (!popup) throw new Error('Allow popups to complete sandbox sign-in.');

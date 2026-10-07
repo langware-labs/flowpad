@@ -6,6 +6,7 @@ import apiClient from '@sdk/client';
 import { Button } from '@src/components/ui/button';
 import { AskAssist, type AssistState } from './AskAssist';
 import { AskValueInput } from './AskValueInput';
+import { useBackendText } from '@src/components/assets/editor/wizard/wizard-texts';
 import { MarkdownView } from '@src/components/markdown-view';
 
 /**
@@ -33,6 +34,11 @@ interface Question {
   secret?: boolean;
   /** The answer is a file's content (a key file): drawn as a file picker. */
   file?: boolean;
+  /** The words on the two buttons ("Continue"); empty means Send / Cancel. */
+  submit_label?: string;
+  cancel_label?: string;
+  /** Why it is asked and what to do — markdown; a gate's "not yet" reason is appended to it. */
+  detail?: string;
   /** How a person finds the value — the op's `setup.md`, markdown. */
   guide?: string;
   /** The op names an agent that can answer instead (AI Assist). */
@@ -59,6 +65,7 @@ export function AskForm({
   showOp?: boolean;
 }) {
   const { _ } = useLingui();
+  const bt = useBackendText();
   const [question, setQuestion] = useState<Question | null>(null);
   const [values, setValues] = useState<Record<string, string>>({});
   const [error, setError] = useState('');
@@ -139,6 +146,12 @@ export function AskForm({
         {showOp ? <p className="text-xs text-muted-foreground">{question.op}</p> : null}
       </div>
 
+      {question.detail ? (
+        <div className="text-sm" data-testid="ask-detail">
+          <MarkdownView value={question.detail} compact dataImages />
+        </div>
+      ) : null}
+
       {question.guide ? (
         <div className="rounded border bg-muted/30 p-3 text-sm" data-testid="ask-guide">
           <MarkdownView value={question.guide} compact />
@@ -182,10 +195,10 @@ export function AskForm({
 
       <div className="flex gap-2">
         <Button data-testid="ask-submit" disabled={busy} onClick={() => void submit()}>
-          <Trans>Send</Trans>
+          {question.submit_label ? bt(question.submit_label) : <Trans>Send</Trans>}
         </Button>
         <Button variant="ghost" data-testid="ask-cancel" disabled={busy} onClick={() => void send('/cancel')}>
-          <Trans>Cancel</Trans>
+          {question.cancel_label ? bt(question.cancel_label) : <Trans>Cancel</Trans>}
         </Button>
       </div>
     </div>

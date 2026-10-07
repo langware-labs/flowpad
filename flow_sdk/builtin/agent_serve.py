@@ -183,6 +183,13 @@ class TurnEngine:
         )
         return next((p for p in existing if str(getattr(p, "status", "")) != ProcessStatus.FAILED.value), None)
 
+    async def _current_model(self) -> Optional[str]:
+        """The model this placement runs the agent on now: its place override, else the definition's."""
+        current = await type(self.agent).get_by_id(str(self.agent.id)) or self.agent
+        place = current.place_for(self.deployment.id) if self.deployment is not None else None
+        overridden = place.overrides().get("model") if place is not None else None
+        return overridden or getattr(current, "model", None) or None
+
     async def process_for(self, session: str, *, name: Optional[str] = None, context: Optional[dict] = None):
         """The session's process on this placement — :meth:`find_process`, else a new one."""
         if not self.workdir:
@@ -196,9 +203,17 @@ class TurnEngine:
                 except Exception:  # noqa: BLE001 — a stale shell does not break reuse
                     pass
             wanted = {"workdir": workdir, "visible": False, "pty_mode": False}
-            if any(getattr(process, k) != v for k, v in wanted.items()):
-                for k, v in wanted.items():
-                    setattr(process, k, v)
+            changed = any(getattr(process, k) != v for k, v in wanted.items())
+            for k, v in wanted.items():
+                setattr(process, k, v)
+            # The session was made with the definition of its day; the model is the definition's NOW
+            # (an update that moved the agent to another model must not leave every ongoing
+            # conversation on the old one -- on a hub endpoint, one it may no longer price).
+            model = await self._current_model()
+            if model and (process.cli_config or {}).get("model") != model:
+                process.cli_config = {**(process.cli_config or {}), "model": model}
+                changed = True
+            if changed:
                 await process.save()
             return process
         options: dict[str, Any] = {"visible": False, "pty_mode": False}
@@ -280,7 +295,7 @@ class TurnEngine:
                 # Died mid-turn. Did the agent finish? The transcript knows -- when there is one. A worker that
                 # never came up (it could not spawn) left none, and waiting for it would wait out the budget on
                 # every redelivery, so the message would never be answered: nothing ran, so it runs now.
-                text = await _capture_assistant_reply(ap) if has_transcript(ap) else ""
+                text = await _left_reply(ap, prior) if has_transcript(ap) else ""
                 if text:
                     await stamp_turn(ap, turn.key, done_record(prior, text))
                     yield done(PromptResult.satisfied(
@@ -343,6 +358,36 @@ def _transcript_file(ap):
     except Exception:  # noqa: BLE001 — same answer: nothing to read
         return None, desc
     return (path if path is not None and path.exists() else None), desc
+
+
+async def _left_reply(ap, started: dict) -> str:
+    """What a turn that died mid-way left as its reply — ``""`` when it left none, so it runs again.
+
+    While the OS process that took the turn is alive, its worker may yet finish: wait for it, as
+    ``_capture_assistant_reply`` does. Once that process is gone (the box restarted, the loop was
+    killed) nothing more is ever written, and waiting for a terminal marker a dead worker never
+    writes stalled the redelivery -- and every message queued behind it -- for the whole budget.
+    So the transcript is read as it stands: a reply counts only when its tail COMPLETED and the
+    file was written after the turn began (otherwise the completed tail is the previous turn's).
+    """
+    from flow_sdk.app.actions.execute_prompt import (  # noqa: PLC0415
+        _capture_assistant_reply,
+        _last_turn_assistant_text,
+    )
+    from flow_sdk.builtin.agentic_process.status_predicates import _pid_alive  # noqa: PLC0415
+    from flow_sdk.transcript_analyzer.worker_status import WorkerStatus  # noqa: PLC0415
+
+    owner = started.get(OWNER_PID)
+    if not isinstance(owner, int) or owner == os.getpid() or _pid_alive(owner):
+        return await _capture_assistant_reply(ap)
+    path, _ = _transcript_file(ap)
+    try:
+        began = datetime.fromisoformat(str(started.get("at"))).timestamp()
+    except ValueError:
+        return ""
+    if path is None or path.stat().st_mtime <= began or ap.driver.tail_status(path) is not WorkerStatus.COMPLETE:
+        return ""
+    return _last_turn_assistant_text(transcript_entries(ap))
 
 
 def has_transcript(ap) -> bool:

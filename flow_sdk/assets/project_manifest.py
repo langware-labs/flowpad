@@ -51,7 +51,6 @@ from pydantic import ValidationError
 from flow_sdk.assets.placement import AGENTIC_ASSETS_DIR
 from flow_sdk.capsules.atomic import atomic_write, capsule_lock
 from flow_sdk.instances.model import utc_now_iso
-from flow_sdk.tags.grammar import namespace_from_name
 from flow_sdk.schema.data_spec.project_manifest_spec import (
     DEPS_MAIN,
     PROJECT_MANIFEST_MAIN,
@@ -61,6 +60,7 @@ from flow_sdk.schema.data_spec.project_manifest_spec import (
     PublishedAssetSpec,
     normalize_env_file_path,
 )
+from flow_sdk.tags.grammar import namespace_from_name
 
 MANIFEST_TYPE = "project_manifest"
 MANIFEST_REL_DIR = f"{AGENTIC_ASSETS_DIR}/{MANIFEST_TYPE}"
@@ -101,6 +101,16 @@ def namespace_for(start: Path) -> str:
         spec = _read(manifest_path(candidate), ProjectManifestSpec)
         return spec.ns if spec is not None else ""
     return ""
+
+
+def asset_namespace(folder: Path, declared: "str | None", *, shipped: bool) -> str:
+    """Whose ontology the kinds an asset folder mints belong to -- the ONE rule, for every loader.
+
+    What we ship is ours (``""``); otherwise the asset's own declaration, else its project's. An
+    external asset that names none answers ``""`` too, and the CALLER refuses it: a loader must
+    refuse before minting, or an authored kind lands in ours and collides in silence.
+    """
+    return "" if shipped else (declared or namespace_for(folder))
 
 
 def deps_path(root: Path) -> Path:

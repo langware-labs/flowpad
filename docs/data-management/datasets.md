@@ -370,7 +370,7 @@ Two actions move data along that seam (`flow_sdk/builtin/dataset.py`), both
 | Action | Body | Writes |
 | --- | --- | --- |
 | `POST /graph/dataset/<id>/promote` | `{"source_item_ids": [...]}` | `examples/NNNN/input/item.json` (the envelope) + `example.json` with `metadata.source` provenance; replies `{example_ids, num_examples}`. A dataset whose `input` shape is not `ingest.source_item` refuses (400); an item from another source refuses; an unknown item is 404 |
-| `POST /graph/dataset/<id>/annotate` | `{"example_id", "ground_truth"}` | `examples/NNNN/ground_truth/label.json`, validated against the output shape (a mismatch is a 400 carrying the output JSON schema); `metadata.annotations += {by, at}`; replies `{example_id, num_annotated}` |
+| `POST /graph/dataset/<id>/annotate` | `{"example_id", "ground_truth"}` | `examples/NNNN/ground_truth/label.json` (replacing any earlier gold), validated against the output shape (a mismatch is a 400 carrying the output JSON schema); `metadata.annotations += {by, at}`; replies `{example_id, num_annotated}` |
 | `GET /graph/dataset/<id>/examples` | — | `{"examples": [{example_id, item_id, kind, annotated}]}` read from the folder |
 
 Both are per-example writes (`FolderLayout.append_many` / `annotate`) — the
@@ -382,3 +382,37 @@ follows the highest existing `NNNN`, never the count, so a gap is preserved. The
 editor webapp nested in every shipped source definition carries the pane that
 drives them; the `connect-data-source` skill's `define` mode drives them for an
 agent.
+
+## Typed rows — a spec that NAMES a kind
+
+`spec` may be the name of a registered dataset kind (`"navigator.dataset"`), typically one a
+`data_spec` folder defines — nested in the dataset itself, so the dataset carries its own
+definitions (see [data-spec](data-spec.md#kinds-defined-by-a-folder)). Then every slot is a typed
+value, written by the generic walker as `«slot»/<last kind segment>.json` (`input/request.json`,
+`ground_truth/decision.json`), several gold answers as `ground_truth-1/`, `ground_truth-2/` — any
+one is right.
+
+| verb | what |
+|---|---|
+| `POST append {rows}` | typed rows in; every row is checked first, one bad row writes nothing |
+| `GET example/<id>` | one example's slot VALUES (an editor's read) |
+| `POST annotate {example_id, ground_truth}` | REPLACES the gold: a named output kind is written as its own document (`ground_truth/decision.json`; a list → `ground_truth-N/`), an inline shape as `ground_truth/label.json` |
+| `GET rows` | every example with its slot values, in one read (what the editor loads) |
+| `POST validate` | every row read as the declared shape; names each row that does not fit, with its slot (`ground_truth.route`) |
+| `POST score` | each recorded `output` against its gold: a gold field left empty constrains nothing; several golds mean any one is right (`flow_sdk/datasets/score.py`) |
+
+Indexing still reads rows as artifacts (fast, never fatal); `validate` is the check.
+
+## Editors
+
+A dataset opens in the app that edits it (`flow_sdk/builtin/faas/editors.py`, `GET /api/v1/editors/<typeid>`):
+its own nested editor (`<dataset>/agentic-assets/webapp/<name>/`, kind `application.web.editor`),
+else an editor whose `webapp.json` `edits` names the dataset's kind or an ancestor of it (most
+specific first), else one that edits the `dataset` type — the shipped generic editor. The SDK app
+behind them is `mountDatasetEditor`: it builds every form from the declared kinds
+(`GET /api/v1/kinds/<kind>`), so one editor serves every typed dataset.
+
+The example is the SmartNavigator eval set. Its row kinds ship as flat `data_spec` folders
+(`flowpad_assistant/agentic-assets/data_spec/navigat*`); its rows do not — they live beside the
+checkout at `dev/dataset/smart-navigator/` (`navigator_eval.DATASET`). Shipped assets stay flat:
+a nested tree inside the install crossed Windows' 260-char MAX_PATH.

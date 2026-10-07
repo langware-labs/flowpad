@@ -1,7 +1,6 @@
 import { Agent, QueryRequest, Trigger, type ICronEvent, type TypeId } from '@sdk';
 import type { AgentScheduleFields } from '@sdk/entities/agent';
 import { useEntitiesQuery } from '@sdk/react/hooks';
-import { projectScope, userScope } from '@sdk/utils/scope-filter';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { useCallback, useMemo, useState } from 'react';
 import { CalendarClock, ExternalLink, History, Loader2, Pencil, Play, Plus, Trash2 } from 'lucide-react';
@@ -128,7 +127,7 @@ export function AgentScheduleSection({ agent, autoLaunchPrompt = '', deploymentI
     try {
       // A cloud place's schedule fires on THAT machine, which only the hub can reach.
       if (!isLocal) await agent.placeAction(deploymentId, 'run_now', row.id);
-      else await new Trigger(row).runNow();
+      else await Trigger.runOnce(row.id);
       notify.success({ title: t`Scheduled run started`, message: row.name });
       await refetch();
     } catch (e) {
@@ -154,14 +153,8 @@ export function AgentScheduleSection({ agent, autoLaunchPrompt = '', deploymentI
     });
   };
 
-  // URL-first: a click only navigates. The scope must match the rule's own, or
-  // the events screen filters the rule out and the link lands on nothing.
-  const openTrigger = (row: Trigger) =>
-    navigation.openDock(
-      DockPointer.forEvents(row.id, { system: row.scope === 'system' }).withScopeFilter(
-        row.project_id ? projectScope(row.project_id) : userScope(),
-      ),
-    );
+  // URL-first: a click only navigates — to the automation's own page.
+  const openTrigger = (row: Trigger) => navigation.openDock(DockPointer.forAutomations({ trigger: row.id }));
 
   const openRuns = (row: Trigger) => navigation.openDock(DockPointer.forProcessRuns({ trigger_id: row.id }));
 

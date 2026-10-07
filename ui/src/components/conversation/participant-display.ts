@@ -25,6 +25,17 @@ export function participantLabel(participant: ConversationParticipant | null | u
   return participant?.name?.trim() || participant?.email?.trim() || 'unknown';
 }
 
+/** The second line under a person's name in a list: their email, when a name
+ *  is the label (else the email IS the label) and an email is known. The hub
+ *  never discloses another member's email, so a hub-only contact has none. */
+export function participantSubtitle(
+  participant: { name?: string | null; email?: string | null } | null | undefined,
+): string | null {
+  const name = participant?.name?.trim();
+  const email = participant?.email?.trim();
+  return name && email ? email : null;
+}
+
 /** Name-only display — never the full email. Falls back to the email's local
  *  part (before @) so compact surfaces show a name-ish token, not an address. */
 export function participantName(participant: ConversationParticipant | null | undefined): string {
@@ -179,10 +190,15 @@ export function grantableRoles(me: ConversationParticipant | null | undefined): 
 
 /** True when the caller may invite new members: the hub policy grants the
  *  mutating ``members`` action to admin and above (owner via the default
- *  ``owner: *`` policy). */
-export function canInviteMembers(me: ConversationParticipant | null | undefined): boolean {
+ *  ``owner: *`` policy). ``lowestInviter`` lowers that line for an entity whose
+ *  policy opens invites further down — ``editor`` on a project, ``member`` on a
+ *  DIRECT conversation (the hub lets a member invite a member there). */
+export function canInviteMembers(
+  me: ConversationParticipant | null | undefined,
+  lowestInviter: (typeof ROLE_LADDER)[number] = 'admin',
+): boolean {
   const rank = participantRank(me);
-  return rank !== null && rank <= (roleRank('admin') as number);
+  return rank !== null && rank <= (roleRank(lowestInviter) as number);
 }
 
 /** Initials of any display label — the avatar fallback for participants AND
