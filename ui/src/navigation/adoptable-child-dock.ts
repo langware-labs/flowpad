@@ -1,6 +1,6 @@
 import { DockPointer } from './DockPointer';
 import { isContentAssetDock } from './content-asset-dock';
-import { ViewType } from '@src/types/ViewType';
+import { ViewType, VIEWER_REGISTRY } from '@src/types/ViewType';
 
 /**
  * A PLAIN shell dock — a terminal, not a session anchor.
@@ -57,8 +57,11 @@ export function isAdoptableChildDock(dock: DockPointer, opts: { shown?: boolean 
   return !!opts.shown && !isWorkspaceAnchorDock(dock);
 }
 
-/** The docks a workspace is MOUNTED OVER, which can never be its own children. */
+/** The docks a workspace is MOUNTED OVER, which can never be its own children:
+ *  a project, a process (in any presentation), and any HOST tab — which is what
+ *  keeps nesting one level deep (`navigation/tab-hosts.ts`). */
 export function isWorkspaceAnchorDock(dock: DockPointer): boolean {
   if (dock.viewType === ViewType.PROJECT) return true;
+  if (dock.viewType && VIEWER_REGISTRY[dock.viewType]?.hostsTabs) return true;
   return dock.viewType === ViewType.SHELL && DockPointer.isAgenticProcessPointer(dock.pointer?.trim() ?? '');
 }

@@ -25,6 +25,7 @@ export const NAVIGATOR_REGISTRY: Partial<Record<ViewType, ComponentType>> = {
   [ViewType.PROJECT]: AssetsNavigatorSwitch,
   [ViewType.AUTOMATIONS]: AutomationsNavigator,
   [ViewType.SHELL]: ChatsNavigator,
+  [ViewType.VIBE]: ChatsNavigator,
   [ViewType.EXPLORER]: ExplorerNavigator,
   [ViewType.GRAPH_WORKFLOWS]: GraphWorkflowsNavigator,
 };

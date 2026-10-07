@@ -169,7 +169,7 @@ export function useJourneyManager(state: UseJourneyResult): JourneyManagerView {
   // DockPointer owns the shell-pointer grammar (`shell-<id>` / bare / an
   // agentic process); never re-derive it from the raw path.
   const shellTypeId =
-    currentDock?.viewType === ViewType.SHELL && currentDock.pointer
+    (currentDock?.viewType === ViewType.SHELL || currentDock?.viewType === ViewType.VIBE) && currentDock.pointer
       ? DockPointer.terminalTargetTypeIdForShellPointer(currentDock.pointer)
       : null;
   const shellId = shellTypeId?.type === Shell.type ? shellTypeId.id : undefined;

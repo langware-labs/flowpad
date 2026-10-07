@@ -1,3 +1,4 @@
+import { ViewType } from '@src/types/ViewType';
 import { DockPointer } from './DockPointer';
 
 /**
@@ -27,4 +28,24 @@ export function canonicalProcessDockPath(pathname: string, search: string): stri
   const [, layoutSeg, pointer] = match;
   if (!DockPointer.isAgenticProcessPointer(pointer)) return null;
   return `${layoutSeg}/shell/${pointer}${search}`;
+}
+
+/**
+ * A process URL that asks for Vibe by OPTION — `/dock/shell/agentic_process-<id>?viewMode=vibe`,
+ * the spelling before Vibe became a host tab type — is the Vibe host dock,
+ * `/dock/vibe/agentic_process-<id>`. Every other option is kept verbatim. Pure;
+ * `withViewMode` owns the mapping, so this cannot drift from what openers build.
+ * Same tab either way: the Vibe dock's `tabHash` folds onto the shell identity.
+ */
+export function canonicalVibeHostPath(pathname: string, search: string): string | null {
+  if (!/^\/(?:dock|win)\/shell\//.test(pathname) || !search.includes('viewMode=vibe')) return null;
+  let dock: DockPointer;
+  try {
+    dock = DockPointer.fromUrl(`${pathname}${search}`);
+  } catch {
+    return null;
+  }
+  if (dock.viewType !== ViewType.SHELL || !DockPointer.isAgenticProcessPointer(dock.pointer)) return null;
+  if (dock.options?.viewMode !== 'vibe') return null;
+  return dock.withViewMode(dock.viewMode).toUrl(pathname);
 }

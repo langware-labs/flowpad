@@ -254,7 +254,7 @@ export function rememberedViewMode(target: { last_mode?: string | null } | null 
  * dock, see `canonicalProcessDockPath`), so this is the whole grammar.
  */
 export function sessionIdForDock(dock: IDockPointer): string | null {
-  if (dock.viewType !== ViewType.SHELL || !dock.pointer) return null;
+  if ((dock.viewType !== ViewType.SHELL && dock.viewType !== ViewType.VIBE) || !dock.pointer) return null;
   const prefix = AgenticProcess.type + TypeId.DELIMITER;
   return dock.pointer.startsWith(prefix) ? dock.pointer.slice(prefix.length) : null;
 }
@@ -329,6 +329,8 @@ export function setViewMode(val: ViewMode, dock: IDockPointer | null = null): vo
  */
 function viewModeFromLocation(): ViewMode | null {
   try {
+    // A Vibe host address implies its mode (`DockPointer.viewMode`): `/dock/vibe/…`.
+    if (/^\/(?:dock|win)\/vibe\//.test(window.location.pathname)) return ViewMode.Vibe;
     return toViewModeOrNull(new URLSearchParams(window.location.search).get('viewMode'));
   } catch {
     return null;

@@ -4,6 +4,7 @@ import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { useAllTabs } from '@src/tabs/use-tab-manager';
 import { ViewType } from '@src/types/ViewType';
+import { isHostDock } from '@src/navigation/tab-hosts';
 import { useEntity } from '@src/hooks/entity-hooks';
 import { setupTabAndAdopt } from '@src/tabs/tab-content-lifecycle';
 
@@ -71,7 +72,10 @@ export function useVibeWorkspaceSession(): VibeWorkspaceSession | null {
     // must fall through to the child lookup so a terminal opened inside the
     // workspace keeps rendering in its display pane instead of taking over the
     // whole surface.
-    if (currentDock.viewType === ViewType.SHELL && DockPointer.isAgenticProcessPointer(currentDock.pointer)) {
+    if (
+      (currentDock.viewType === ViewType.SHELL || isHostDock(currentDock)) &&
+      DockPointer.isAgenticProcessPointer(currentDock.pointer)
+    ) {
       return build(tabByHash(currentDock.tabHash), currentDock, true);
     }
 

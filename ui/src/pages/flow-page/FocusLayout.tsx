@@ -37,7 +37,7 @@ export function winReadyKeyForDock(
 ): string | null {
   if (!dock?.viewType) return null;
   const { viewType, pointer } = dock;
-  if (viewType === ViewType.SHELL && pointer) {
+  if ((viewType === ViewType.SHELL || viewType === ViewType.VIBE) && pointer) {
     return DockPointer.terminalTargetTypeIdForShellPointer(pointer).toString();
   }
   return pointer ? `${viewType}/${pointer}` : viewType;

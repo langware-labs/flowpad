@@ -29,6 +29,7 @@ import { preserveWindowLayout, stripDockPortion } from './url-builder';
 import { allScope, projectScope } from '@src/lib/scope-filter';
 import { isContentAssetDock } from './content-asset-dock';
 import { isAdoptableChildDock, isWorkspaceAnchorDock } from './adoptable-child-dock';
+import { isHostDock } from './tab-hosts';
 import { LOCAL_COMPUTE_NODE } from './asset-doc-types';
 import { vfsLocatorForComputeNode } from './vfs-locator';
 import { dockForDisplayTarget } from './display-target-pointer';
@@ -112,7 +113,7 @@ let pendingDockNavigation: PendingDockNavigation | null = null;
  * reconcile redirect, so the whole loader ran a second time.
  */
 function ownerProjectId(dock: DockPointer): string | null {
-  if (dock.viewType !== ViewType.SHELL) return null;
+  if (dock.viewType !== ViewType.SHELL && dock.viewType !== ViewType.VIBE) return null;
   const tab = tabForDockKey(tabManager.getSnapshot(), dock.tabHash);
   if (tab) return tab.project_id ?? null;
   const processId = DockPointer.isAgenticProcessPointer(dock.pointer ?? '')
@@ -127,6 +128,7 @@ export const SCOPE_SEEDED_VIEWS: ReadonlySet<ViewType> = new Set([
   ViewType.ASSETS,
   ViewType.EXPLORER,
   ViewType.SHELL,
+  ViewType.VIBE,
 ]);
 
 // URL options that are STICKY across navigation: openDock carries each from the
@@ -167,7 +169,10 @@ function hostToCarry(here: DockPointer | null, target: DockPointer): string | nu
  * at click time, long after mount, when the effective mode is settled.
  */
 function hostOfWorkspaceAnchor(dock: DockPointer): string | null {
-  if (!isWorkspaceAnchorDock(dock) || dock.viewType !== ViewType.SHELL) return null;
+  if (!isWorkspaceAnchorDock(dock)) return null;
+  // A host tab IS a workspace: what it opens is its child.
+  if (isHostDock(dock)) return dock.pointer ?? null;
+  if (dock.viewType !== ViewType.SHELL) return null;
   return (dock.viewMode ?? getViewMode()) === ViewMode.Vibe ? (dock.pointer ?? null) : null;
 }
 
@@ -238,6 +243,12 @@ export class NavigationActions {
    *  on screen (`liveMode`, read only when there is no memory). An entry must
    *  state its mode, or it re-resolves through the stored preference. */
   private static withTargetViewMode(target: DockPointer, liveMode: () => ViewMode | null): DockPointer {
+    // A process asked for in Vibe by option is the Vibe host dock — map it here,
+    // on the way out, so no opener ever writes the old spelling and pays the
+    // loader's canonical redirect for it.
+    if (target.viewType === ViewType.SHELL && target.viewMode === ViewMode.Vibe) {
+      return target.withViewMode(ViewMode.Vibe);
+    }
     if (target.viewMode !== null) return target;
     const mode = rememberedDockViewMode(target) ?? liveMode();
     return mode ? target.withViewMode(mode) : target;

@@ -17,6 +17,10 @@ describe('resolveDockLayout', () => {
     // [what, url, isVibe, hasVibeSession, layout, chat beside the asset]
     ['a shell in Standard', `/dock/shell/agentic_process-${PROC}`, false, false, DockLayout.CONTENT, false],
     ['a process in Vibe', `/dock/shell/agentic_process-${PROC}?viewMode=vibe`, true, true, DockLayout.VIBE_WORKSPACE, false],
+    ['a Vibe host tab', `/dock/vibe/agentic_process-${PROC}`, true, true, DockLayout.VIBE_WORKSPACE, false],
+    // Hosting belongs to the tab: a Vibe host renders its workspace even if the
+    // ambient mode were not Vibe (its address implies Vibe, so this is a guard).
+    ['a Vibe host tab, whatever the ambient mode', `/dock/vibe/agentic_process-${PROC}`, false, true, DockLayout.VIBE_WORKSPACE, false],
     [
       'the report a terminal link opened (the 2026-09-27 repro)',
       `/dock/project/${P}/editor/markdown/vfs/compute_node-%40local/w/p/report.md`,

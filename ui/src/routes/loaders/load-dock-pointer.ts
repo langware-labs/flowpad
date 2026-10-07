@@ -276,6 +276,7 @@ export async function loadDockPointer(dock: DockPointer, context: DockLoaderCont
   try {
     switch (dock.viewType) {
       case ViewType.SHELL:
+      case ViewType.VIBE:
         // Step 3 ran in the dispatcher, before the tab was minted.
         await loadShellRoute(dock.pointer, context.requestPath, processRouteCarry(dock, { resolved: true }));
         break;

@@ -101,6 +101,13 @@ export function buildShellRedirectUrl(
   pointer?: string,
   options?: Record<string, string>,
 ): string {
+  // A process asked for in Vibe is the Vibe host dock (`DockPointer.withViewMode`
+  // owns that rule): build it directly, so a loader redirect never needs a
+  // second hop through the canonicalizer.
+  if (options?.viewMode === 'vibe' && pointer?.startsWith('agentic_process-')) {
+    const { viewMode: _vibe, ...rest } = options;
+    return buildDockUrl(currentPath, ViewType.VIBE, pointer, rest, detectLayout(currentPath));
+  }
   return buildDockUrl(currentPath, ViewType.SHELL, pointer, options, detectLayout(currentPath));
 }
 

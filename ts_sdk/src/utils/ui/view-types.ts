@@ -143,6 +143,10 @@ export enum ViewType {
   // The Flowpad Assistant chat popped out of the floating window. Only ever drawn
   // in `win/`, where the view IS the window; it follows the main window's context.
   ASSISTANT = 'assistant', // /win/assistant
+  // A HOST tab: an agentic process shown as the Vibe workspace (chat + Display +
+  // nested child tabs). `DockPointer.tabHash` folds it onto the process's shell
+  // identity, so one process is one Tab row whichever of the two it is shown as.
+  VIBE = 'vibe', // /dock/vibe/agentic_process-<id>
 }
 
 /**

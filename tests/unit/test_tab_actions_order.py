@@ -243,6 +243,24 @@ async def _blocking_probe_tab(pointer: str) -> tuple[_BlockingTeardownProbe, Tab
     return probe, tab, gate
 
 
+async def test_close_action_closes_a_hosts_children_in_one_broadcast() -> None:
+    host = await ensure_tab('{"viewType":"vibe","pointer":"agentic_process-%s"}' % uuid.uuid4(), project_id=P1)
+    child = await ensure_tab('{"viewType":"editor","pointer":"h/child.md"}', project_id=P1, parent_tab_id=host.id)
+    other = await ensure_tab("h/other", project_id=P1)
+    await _http_close(host)
+    assert await _order(P1) == [other.id]
+    reloaded = await Tab.get_one({"id": child.id})
+    assert reloaded is not None and reloaded.visible is False
+
+
+async def test_close_many_closes_hosts_children_too() -> None:
+    host = await ensure_tab('{"viewType":"vibe","pointer":"agentic_process-%s"}' % uuid.uuid4(), project_id=P1)
+    await ensure_tab('{"viewType":"editor","pointer":"m/child.md"}', project_id=P1, parent_tab_id=host.id)
+    keep = await ensure_tab("m/keep", project_id=P1)
+    await _http_close_many(Tab, tab_ids=[host.id], project=P1)
+    assert await _order(P1) == [keep.id]
+
+
 async def test_http_close_returns_before_teardown() -> None:
     probe, tab, gate = await _blocking_probe_tab("bg/a")
     try:

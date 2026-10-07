@@ -144,7 +144,7 @@ export function useProjectMappingGate(task: ITask | null | undefined, conversati
       // project change observed while a navigation is in flight is never a
       // user pick — bail until the router settles.
       if (routerNav.state !== 'idle') return;
-      if (currentDock?.viewType === ViewType.SHELL) return;
+      if (currentDock?.viewType === ViewType.SHELL || currentDock?.viewType === ViewType.VIBE) return;
       navigateToProjectHome(activeProjectId);
       return;
     }
