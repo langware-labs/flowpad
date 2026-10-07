@@ -270,6 +270,9 @@ agentic-assets/agent/whatsapp-e2e/
 - **Retired forms:** `TypeInfo.retired_mains` (`("agent.md",)`) names the file a type used to
   keep. A folder with only that file is a scan issue naming
   `migration_2026_09_entity_json_mains`, which converts it keeping the id, then deletes the old file.
+  `TypeInfo.retired_families` (`("data_spec",)` on `data_schema`) names a family folder a type used
+  to live under: the folder is not read, and the scan reports it as one issue naming the rename —
+  no migration converts it.
 
 ### Persistence is the serializer's
 

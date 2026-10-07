@@ -5,7 +5,7 @@
   "vault_root": "/Users/shlom/Documents/dev/flowpad-oss/docs",
   "folder_rel_path": "",
   "folder_name": "docs",
-  "inputs_hash": "98e847bedcec486dbd69c99f20f4a76f53b8b53d238a8ce21c6ac7ce9cc3f25d",
+  "inputs_hash": "97b047bcba540b7c9f8714126db4f7d25aee30703483763e27f2ad4b4e95a0d1",
   "template_version": 1,
   "prompt_version": 1,
   "self_summary": "Flowpad's documentation root. The agentic-process stack and its interfaces, data management from disk to entity row, the ontology of types and kinds, collaboration and the hub, the runnable snippet shelf, and breadcrumbs recording root causes already proven.",
@@ -501,7 +501,7 @@
       "rel_path": "data-management",
       "self_summary": "How disk and database stay one thing: assets and their identity capsules, the indexer walk and entity sync, DataSpec as the one schema system (kind, schema, value) with its kind registry, data sources and datasets, evals, records, search and the SQLite layer underneath.",
       "child_typeid": "markdown_index-66704284-b246-51c2-849b-cf3c916f33de",
-      "child_inputs_hash": "3195fb8984a69e1498b9a6f66e6244b2cacf1c081a5ac66e7630e4915d1e44a4"
+      "child_inputs_hash": "66d174046c25a9d45d4254c2a9409446319aeb0e123d522860b680960dfb5162"
     },
     {
       "name": "flows",
@@ -581,6 +581,6 @@
       "child_inputs_hash": "38e82f24b0ea8ab544edc398dfdfe5cd029740734bf6c253c4b1c303baf8c51a"
     }
   ],
-  "generated_at": "2026-10-07T14:46:43Z",
+  "generated_at": "2026-10-07T14:50:03Z",
   "latest_process_ref": ""
 }

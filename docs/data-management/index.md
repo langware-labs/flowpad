@@ -1,12 +1,12 @@
 ---
 type: markdown_index
 id: markdown_index-66704284-b246-51c2-849b-cf3c916f33de
-inputs_hash: 3195fb8984a69e1498b9a6f66e6244b2cacf1c081a5ac66e7630e4915d1e44a4
+inputs_hash: 66d174046c25a9d45d4254c2a9409446319aeb0e123d522860b680960dfb5162
 template_version: 1
 prompt_version: 1
 parent_ref: markdown_index-6136dbba-27ed-59c3-a192-fe2894f3ec30
 vault_root: /Users/shlom/Documents/dev/flowpad-oss/docs
-generated_at: '2026-10-07T14:46:43Z'
+generated_at: '2026-10-07T14:50:02Z'
 latest_process_ref: ''
 file_count: 28
 subfolder_count: 0
