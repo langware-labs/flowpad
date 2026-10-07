@@ -1,8 +1,9 @@
 """The REST surface of a ``RagIndex``: choose folders, run a pass, ask a question.
 
-Five verbs and no more. Coverage is edited (``add-root`` / ``remove-root``, or
+Six verbs and no more. Coverage is edited (``add-root`` / ``remove-root``, or
 ``toggle-root`` for a caller that knows only a folder and not which index owns it), a pass is
-asked for (``index``), and the index is questioned (``query``). Everything a card needs to render —
+asked for (``index``), the index is questioned (``query``), and what it holds is browsed
+(``chunks``). Everything a card needs to render —
 status, counts, the last error, the roots themselves — is already on the entity, so there is no
 status action: a GET of the row IS the status.
 
@@ -141,17 +142,18 @@ async def query_action():
     vectors = await embed([question])
     async with index.open_store() as store:
         hits = store.search(vectors[0], top_k=top_k)
-    return ApiSuccessResponse(
-        data={
-            "refusal": "",
-            "hits": [
-                {
-                    "doc_ref": h.doc_ref,
-                    "heading_path": h.heading_path,
-                    "text": h.text,
-                    "score": h.score,
-                }
-                for h in hits
-            ],
-        }
-    )
+    return ApiSuccessResponse(data={"refusal": "", "hits": [h.model_dump(mode="json") for h in hits]})
+
+
+@action.post(action_name="chunks", types=["rag_index"])
+async def chunks_action():
+    """Browse what the index holds: every document with its chunk count, and one page of chunks.
+
+    Body ``{doc_ref?, offset?, limit?}``; no ``doc_ref`` pages through every chunk. Reads the
+    sidecar only, so it answers even where search cannot load its vectors.
+    """
+    index = await _index()
+    body = await _body()
+    limit = min(max(int(body.get("limit") or 50), 1), 500)
+    offset = max(int(body.get("offset") or 0), 0)
+    return ApiSuccessResponse(data=await index.chunks(str(body.get("doc_ref") or ""), offset=offset, limit=limit))

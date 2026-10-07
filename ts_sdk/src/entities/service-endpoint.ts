@@ -126,6 +126,12 @@ export interface ServiceEndpoint extends EntityMerge<IServiceEndpoint> {}
  * tiers proxy, and `directUrl()` asks for the service's own address at call time —
  * it is never stored.
  */
+/** `…/service_endpoint/<id>/service/<path>` for an endpoint known only by id (a viewer's module). */
+export function serviceUrlOf(endpointId: string, path: string = ''): string {
+  const base = new ActionInfo('service', 'service_endpoint', endpointId).fullActionUrl.replace(/\/+$/, '');
+  return `${base}/${path.replace(/^\/+/, '')}`;
+}
+
 @registerEntity
 export class ServiceEndpoint extends APIEntity<ServiceEndpoint> implements IServiceEndpoint {
   static type: string = 'service_endpoint';
@@ -177,9 +183,7 @@ export class ServiceEndpoint extends APIEntity<ServiceEndpoint> implements IServ
 
   /** The proxied address, `…/service_endpoint/<id>/service/<path>` — the same on every tier. */
   serviceUrl(path: string = ''): string {
-    const base = new ActionInfo('service', ServiceEndpoint.type, this.id).fullActionUrl.replace(/\/+$/, '');
-    const sub = path.replace(/^\/+/, '');
-    return `${base}/${sub}`;
+    return serviceUrlOf(this.id, path);
   }
 
   /** What is wrong with the service, asked of the machine it runs on. */

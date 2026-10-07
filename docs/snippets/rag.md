@@ -14,7 +14,8 @@ Two things are worth knowing before the code:
   of an untouched tree embeds nothing, and moving a section around a file embeds nothing either.
 * **Marking is free, embedding is not.** The indexer only ever sets `pending` on a covering
   index; a heartbeat pass does the paid work. So a scan of a thousand documents makes no network
-  call, and a provider being down delays an index rather than stalling a walk.
+  call, and a provider being down delays an index rather than stalling a walk. While a pass embeds,
+  the row says `indexing` — that, not `pending`, is what a screen reads to show it running.
 
 Every snippet below is run verbatim by `tests/unit/test_rag_snippets.py`; the behaviour they
 lean on is pinned by `tests/unit/test_rag_indexing.py` and its neighbours.
@@ -92,6 +93,11 @@ endpoint is bound yet", "this index is disabled").
 Normally you do not call it at all: `dispatch_due_indexes` runs on the heartbeat and picks up an
 index that is `pending`, or one with a root the store has no hash for.
 
+Every path that embeds — this pass and a pushed `index.apply(change)` alike — goes through
+`index.embedding()`, which sets `indexing` for the length of the work and clears it in the same save
+that records the outcome. That flip is what the tree badge pulses on and what raises the "ready to
+search" toast. A flag left behind by a process that died mid-pass is cleared on the next heartbeat.
+
 ## 3. Ask it something
 
 ```python
@@ -111,8 +117,14 @@ model is not merely worse in this space, it is meaningless — which is why `mod
 `dimensions` are pinned on the row at the first embed, and why changing either is a rebuild
 rather than a top-up.
 
-`open_store()` is an async context manager and it is the only door: usearch is a native index
-over files, and two live handles on one index do not race politely, they take the process down.
+`open_store()` is an async context manager and it is the only door to the vectors: usearch is a
+native index over files, and two live handles on one index do not race politely, they take the
+process down.
+
+Browsing what an index holds does not need that door. `await index.chunks(doc_ref, offset=, limit=)`
+reads the SQLite sidecar only — never the vector index, so it answers while a pass holds the lock
+and where usearch cannot load. It returns one page of chunks in reading order (`total` counts the
+chunks the page is drawn from); the unscoped call also lists every document with its chunk count.
 
 ## 4. Chunk or store something without an index
 
@@ -137,12 +149,13 @@ once rather than paying for it per document.
 
 ## 5. Over HTTP
 
-The same four verbs the UI uses. Everything but the toggle is addressed by index id.
+The verbs the UI uses. Everything but the toggle is addressed by index id.
 
 ```bash
 curl -X POST $API/api/v1/graph/rag-toggle-root -d '{"path":"/Users/me/notes"}'
 curl -X POST $API/api/v1/graph/rag_index/$ID/index -d '{}'          # schedules; returns a refusal if it cannot
 curl -X POST $API/api/v1/graph/rag_index/$ID/query -d '{"q":"...","top_k":5}'
+curl -X POST $API/api/v1/graph/rag_index/$ID/chunks -d '{"doc_ref":"","offset":0,"limit":50}'   # browse; no embedding
 curl      $API/api/v1/graph/rag_index/$ID                            # status IS a GET of the row
 ```
 

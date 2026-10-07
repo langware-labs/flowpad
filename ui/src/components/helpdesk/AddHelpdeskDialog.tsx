@@ -14,7 +14,7 @@ import { useOAuthFlowComplete } from '@sdk/react/hooks';
 import { BranchPicker, type BranchPickerRepo } from '@src/components/git/BranchPicker';
 import { InvitationsStrip } from '@src/components/git/InvitationsStrip';
 import { RepoPicker } from '@src/components/git/RepoPicker';
-import { ContextFolderScopeChips } from '@src/components/assets/context-folder-sources';
+import { DependencyKindChips } from '@src/components/assets/dependency-sources';
 import { Button } from '@src/components/ui/button';
 import {
   Dialog,
@@ -25,7 +25,7 @@ import {
   DialogTitle,
 } from '@src/components/ui/dialog';
 import { Input } from '@src/components/ui/input';
-import type { ContextFolderScope } from '@src/hooks/use-project-context-folders';
+import type { DependencyKind } from '@src/hooks/use-project-dependencies';
 import { fetchGithubStatus } from '@src/lib/github-oauth-status';
 import { errorMessage } from '@src/lib/error-message';
 import { SETUP_GITHUB_JOURNEY_ID, SetupJourneyButton } from '@src/journey/SetupJourneyButton';
@@ -54,7 +54,7 @@ export interface AddHelpdeskDialogProps {
   project: Project;
   /** Ran after a successful adopt — the host passes its project refetch. The
    *  action returns a summary, not the project, so `include_dirs` does not
-   *  refresh on its own and the Context-folders rows would lag. */
+   *  refresh on its own and the Dependencies rows would lag. */
   onAdded?: () => Promise<unknown> | void;
 }
 
@@ -64,7 +64,7 @@ export function AddHelpdeskDialog({ open, onOpenChange, project, onAdded }: AddH
 
   const [url, setUrl] = useState('');
   const [branch, setBranch] = useState<string | null>(null);
-  const [scope, setScope] = useState<ContextFolderScope>('private');
+  const [kind, setKind] = useState<DependencyKind>('required');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<AdoptHelpdeskResult | null>(null);
@@ -77,7 +77,7 @@ export function AddHelpdeskDialog({ open, onOpenChange, project, onAdded }: AddH
     if (!open) return;
     setUrl('');
     setBranch(null);
-    setScope('private');
+    setKind('required');
     setBusy(false);
     setError(null);
     setResult(null);
@@ -135,9 +135,9 @@ export function AddHelpdeskDialog({ open, onOpenChange, project, onAdded }: AddH
     setBusy(true);
     setError(null);
     try {
-      const res = await project.adoptHelpdeskFromGit(target, branch ?? '', scope);
+      const res = await project.adoptHelpdeskFromGit(target, branch ?? '', kind === 'optional');
       setResult(res);
-      // Every outcome attached the folder — `no_manifest` included — so the
+      // Every outcome added the dependency — `no_manifest` included — so the
       // project's context rows are stale in all of them.
       await onAdded?.();
     } catch (err) {
@@ -147,7 +147,7 @@ export function AddHelpdeskDialog({ open, onOpenChange, project, onAdded }: AddH
     } finally {
       setBusy(false);
     }
-  }, [url, branch, scope, busy, project, onAdded, t]);
+  }, [url, branch, kind, busy, project, onAdded, t]);
 
   const openPortal = useCallback(() => {
     const portalId = result?.portal_project_id;
@@ -159,16 +159,16 @@ export function AddHelpdeskDialog({ open, onOpenChange, project, onAdded }: AddH
   }, [result, navigation, onOpenChange]);
 
   const removeFolder = useCallback(async () => {
-    if (!result?.path || removing) return;
+    if (!result?.dependency || removing) return;
     setRemoving(true);
     try {
-      await project.removeContextDir(result.path);
+      await project.removeDependency(result.dependency);
       await onAdded?.();
       onOpenChange(false);
-      notify.success({ title: t`Folder removed` });
+      notify.success({ title: t`Dependency removed` });
     } catch (err) {
       notify.error({
-        title: t`Could not remove the folder`,
+        title: t`Could not remove the dependency`,
         message: errorMessage(err, t`Unknown error`),
       });
     } finally {
@@ -301,9 +301,9 @@ export function AddHelpdeskDialog({ open, onOpenChange, project, onAdded }: AddH
 
             <div className="flex items-center justify-between gap-2">
               <span className="text-xs text-muted-foreground">
-                <Trans>Where this desk lives</Trans>
+                <Trans>Dependency</Trans>
               </span>
-              <ContextFolderScopeChips scope={scope} onChange={setScope} />
+              <DependencyKindChips kind={kind} onChange={setKind} />
             </div>
 
             {error && (
@@ -427,7 +427,7 @@ function HelpdeskResult({
               </span>
               <span className="text-xs text-muted-foreground">
                 <Trans>
-                  It was added as an ordinary context folder instead, so agents can still read it. Remove it if
+                  It was added as an ordinary dependency instead, so agents can still read it. Remove it if
                   that is not what you wanted.
                 </Trans>
               </span>
@@ -469,7 +469,7 @@ function HelpdeskResult({
         {result.outcome === 'no_manifest' && (
           <Button variant="outline" onClick={onRemove} disabled={removing} data-testid="add-helpdesk-remove">
             {removing && <Loader2 className="me-1.5 h-3.5 w-3.5 animate-spin" />}
-            <Trans>Remove folder</Trans>
+            <Trans>Remove dependency</Trans>
           </Button>
         )}
         {result.portal_project_id && (

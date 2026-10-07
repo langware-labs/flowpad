@@ -48,6 +48,17 @@ export async function resolveAppHost(): Promise<AppHost> {
   return { app, subject };
 }
 
+/** Ask the host to open a dock (`/dock/...`). URL-first: the HOST navigates; an app never moves the
+ *  window itself. The host honours it only from this app's own frame (`app-display-viewer.tsx`). */
+export function navigateHost(address: string): void {
+  window.parent?.postMessage({ type: 'flowpad:navigate', address }, '*');
+}
+
+/** Why a call failed, in words: the server's message, else the error's own. */
+export function errorText(error: any): string {
+  return String(error?.response?.data?.message ?? error?.message ?? error);
+}
+
 /** A query-string option the dock passed through, e.g. `?source=<id>`. */
 export function appOption(name: string): string | null {
   return new URLSearchParams(location.search).get(name);

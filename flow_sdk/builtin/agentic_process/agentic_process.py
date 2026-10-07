@@ -477,6 +477,7 @@ async def _index_additional_dir(
     *,
     read_only: bool = False,
     strict: bool = False,
+    project_id: str | None = None,
 ) -> None:
     """Run a one-shot indexer scan over ``path`` so its skills/agents become
     discoverable via ``Entity.assets_by_path``.
@@ -510,7 +511,9 @@ async def _index_additional_dir(
             if strict:
                 raise FileNotFoundError(f"Context directory is not available: {path}")
             return
-        new_root = FSRef(p, record_type=RecordType.CWD_ROOT, scope="user", read_only=read_only)
+        # ``project_id`` names who owns what the walk finds; ``None`` keeps the request-scoped
+        # rule (``index_function._walk_requested_by_project``).
+        new_root = FSRef(p, record_type=RecordType.CWD_ROOT, scope="user", read_only=read_only, project_id=project_id)
         # include_temp=True so /tmp / /var/folders paths aren't filtered out —
         # the user explicitly added this dir, so honor it regardless of location.
         result = await get_shared_indexer().index(IndexerOptions(roots=(new_root,), verbose=False, include_temp=True))
@@ -2977,7 +2980,7 @@ class AgenticProcess(Entity):
         """Resolve a show target and emit it.
 
         Body takes exactly one of ``{typeid}`` | ``{path}`` | ``{port}`` |
-        ``{artifact_id}`` | ``{view}`` | ``{url}``.
+        ``{artifact_id}`` | ``{view}`` | ``{url}`` | ``{link}``.
 
         Resolution is the shared ``resolve_display_target`` policy (same as
         ``flow navigate file``): indexed asset → its entity; unknown path →
@@ -3004,6 +3007,11 @@ class AgenticProcess(Entity):
             return body
 
         try:
+            link = str(body.get("link") or "").strip()
+            if link:
+                # A link clicked in this process's text: resolved where the process
+                # lives, exactly as the same click opening a tab would be.
+                return await self._show_answer(await resolve_display_target(link=link, source=self, discover=True))
             url = str(body.get("url") or "").strip()
             if url:
                 # A web page, not a link to anything local: the link resolver
@@ -6720,6 +6728,16 @@ class AgenticProcess(Entity):
         shell = await self.shell()
         return shell.compute_node if shell else None
 
+    async def link_node(self):
+        """A link in this process's turns names a path on its shell's machine."""
+        shell = await self.shell()
+        return await shell.link_node() if shell else None
+
+    async def link_roots(self) -> list[str]:
+        """Where the worker IS (its shell) first, then its own workdir and project."""
+        shell = await self.shell()
+        return [*(await shell.link_roots() if shell else []), *await super().link_roots()]
+
     async def set_session_id(self, session_id: str) -> None:
         """Bind this process to an existing Claude session before start_pty()."""
         self.session_id = session_id
@@ -6886,9 +6904,9 @@ class AgenticProcess(Entity):
         try:
             from pathlib import Path as _Path  # noqa: PLC0415
 
-            from flow_sdk.builtin.bootstrap_manifest import read_bootstrap_manifest  # noqa: PLC0415
+            from flow_sdk.assets.flow_json import read_always_use_skills  # noqa: PLC0415
 
-            skills = read_bootstrap_manifest(_Path(workdir)).always_use_skills
+            skills = read_always_use_skills(_Path(workdir))
         except Exception:  # noqa: BLE001 -- a manifest must never fail a launch
             return ""
         if not skills:

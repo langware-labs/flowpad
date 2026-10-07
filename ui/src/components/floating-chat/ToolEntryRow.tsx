@@ -6,6 +6,8 @@ import { useMemo, useState } from 'react';
 import { pairToolEvents, type ToolPair } from './groupTurnEvents';
 import { describeEvent } from './toolEventDescriptor';
 import { useChipTarget } from './useChipTarget';
+import { useLinkHandlers } from '@src/components/links/LinkHandlersContext';
+import { LinkifiedText } from '@src/components/links/LinkifiedText';
 
 interface ToolEntryRowProps {
   events: FlowData[];
@@ -258,6 +260,7 @@ function OrphanResultItem({ event }: { event: FlowData }) {
 }
 
 function PayloadBlock({ label, value }: { label: string; value: unknown }) {
+  const links = useLinkHandlers();
   if (value === null || value === undefined) return null;
   // Status-style events (init, rate-limit, …) carry their payload as a JSON
   // *string* — parse it back so the block shows indented JSON, not one long line.
@@ -283,7 +286,7 @@ function PayloadBlock({ label, value }: { label: string; value: unknown }) {
     <div className="mt-1">
       <div className="text-[9px] uppercase tracking-wider text-muted-foreground">{label}</div>
       <pre className="mt-0.5 max-h-48 overflow-auto rounded bg-muted/40 px-2 py-1 font-mono text-[10px] leading-snug">
-        {text}
+        {links ? <LinkifiedText text={text} handlers={links} /> : text}
       </pre>
     </div>
   );

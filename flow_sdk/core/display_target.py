@@ -110,6 +110,10 @@ async def resolve_display_target(
             return await _asset_app_payload(entity)
         if entity.get_type() == "service_endpoint":
             return endpoint_target(entity)
+        if entity.get_type() == "project":
+            # A project has no document editor: it opens on its own page, the
+            # one its "Open project home" button and its tab land on.
+            return await dock_target(f"project/{entity.id}")
         return _entity_payload(entity)
 
     if path:

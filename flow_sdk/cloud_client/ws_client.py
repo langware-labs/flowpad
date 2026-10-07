@@ -173,6 +173,13 @@ async def connect_hub_websocket(
     # BACKEND, not a browser tab — the hub routes "install on my desktop"
     # requests only to sockets that say so.
     headers = {"Authorization": f"Bearer {creds.api_key}", "X-Flowpad-Client": "desktop"}
+    # Which instance this is: a webhook claim that targets ONE desktop is delivered on this socket only.
+    try:
+        from flow_sdk.instance_settings.runtime import instance_uid  # noqa: PLC0415
+
+        headers["X-Flowpad-Instance"] = instance_uid()
+    except Exception:  # noqa: BLE001 — never let the id stop the socket; such a desktop just gets no claim deliveries
+        pass
     # Workspace sandboxes carry a machine-bound login key; the hub's WS auth
     # requires the same X-Machine-ID header as HTTP (fails closed without it).
     attach_machine_id(headers)
@@ -265,6 +272,15 @@ async def _catch_up_after_reconnect() -> None:
             await handle_conversation_list(user.typeid)
     except Exception as e:  # noqa: BLE001
         logger.warning("hub WS reconnect catch-up failed (non-fatal): %s", e)
+
+    try:
+        from flow_sdk.app.actions.membership_sync import sync_remote_teams
+        from flow_sdk.builtin.user import User
+
+        user = await User.get_local()
+        await sync_remote_teams(user.typeid if user else None)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("hub WS reconnect team catch-up failed (non-fatal): %s", e)
 
     try:
         from flow_sdk.instance_settings.llm_endpoint import (

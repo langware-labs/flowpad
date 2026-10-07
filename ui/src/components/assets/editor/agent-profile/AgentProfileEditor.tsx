@@ -20,6 +20,7 @@ import { Button } from '@src/components/ui/button';
 import { AgentPlacesColumn } from './AgentPlacesColumn';
 import { AgentRequestLine } from './AgentRequestLine';
 import { AgentListField, AgentPhoneField, AgentSelectField } from './AgentProfileFields';
+import { AgentVisibilitySection } from './AgentVisibilitySection';
 import { useAgentMcpSync } from './use-agent-mcp-sync';
 import { invalidateGitPreflight } from '@src/hooks/use-git-share-preflight';
 import type { AgentDocumentPatch } from './agent-fields';
@@ -66,6 +67,8 @@ export function AgentProfileEditor({ agent, mainRef }: AgentProfileEditorProps) 
   const autoPrompt = content.fields.auto_launch_prompt ?? '';
   const [avatarRevision, setAvatarRevision] = useState(0);
   const [version, setVersion] = useState<AgentVersionState | null>(null);
+  // Sharing reads its public grant from the hub on mount; hold it back until "More" is first opened.
+  const [moreOpened, setMoreOpened] = useState(false);
 
   const loadVersion = useCallback(async () => {
     if (hub) return;
@@ -175,12 +178,9 @@ export function AgentProfileEditor({ agent, mainRef }: AgentProfileEditorProps) 
   const commitShort = version?.published_commit ? version.published_commit.slice(0, 7) : '';
 
   if (content.isLoading) return <Loader2 className="m-4 h-5 w-5 animate-spin" />;
-  if (content.loadError)
-    return (
-      <div role="alert" className="p-4">
-        {content.loadError.message}
-      </div>
-    );
+  // An unreadable definition (a hub that serves no agent document) fails only the definition column:
+  // the deployments beside it come from the agent row, not from this file.
+  const definitionError = content.loadError;
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -273,7 +273,7 @@ export function AgentProfileEditor({ agent, mainRef }: AgentProfileEditorProps) 
           aria-labelledby="agent-definition"
         >
           {/* On the hub this is the PUBLISHED definition: read it here, edit it on the author's computer. */}
-          <fieldset disabled={hub} className="contents" data-testid="agent-definition-fields">
+          <fieldset disabled={hub || !!definitionError} className="contents" data-testid="agent-definition-fields">
             <div className="flex flex-wrap items-baseline justify-between gap-2">
               <h2 id="agent-definition" className="text-sm font-semibold">
                 <Trans>Definition</Trans>
@@ -282,6 +282,15 @@ export function AgentProfileEditor({ agent, mainRef }: AgentProfileEditorProps) 
                 <Trans>Shared by every place</Trans>
               </span>
             </div>
+            {definitionError && (
+              <div
+                role="alert"
+                className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive"
+                data-testid="agent-definition-error"
+              >
+                <Trans>Could not load the agent's definition: {definitionError.message}</Trans>
+              </div>
+            )}
 
             {/* shrink-0: opening "More" must scroll the column, not squeeze the prompt to nothing. */}
             <div className="flex shrink-0 flex-col">
@@ -298,16 +307,24 @@ export function AgentProfileEditor({ agent, mainRef }: AgentProfileEditorProps) 
                 className="min-h-48 resize-y font-mono text-sm leading-relaxed"
               />
             </div>
+          </fieldset>
 
-            <details className="group rounded-md border border-border" data-testid="agent-more">
-              <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-2 text-sm font-medium">
-                <ChevronRight className="h-3.5 w-3.5 transition group-open:rotate-90" />
-                <Trans>More</Trans>
-                <span className="text-xs font-normal text-muted-foreground">
-                  <Trans>name · description · intro · auto prompt · auto-launch · Flowpad assistant · declared fields</Trans>
-                </span>
-              </summary>
-              <div className="flex flex-col gap-4 border-t border-border px-3 py-3">
+          <details
+            className="group rounded-md border border-border"
+            data-testid="agent-more"
+            onToggle={(e) => e.currentTarget.open && setMoreOpened(true)}
+          >
+            <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-2 text-sm font-medium">
+              <ChevronRight className="h-3.5 w-3.5 transition group-open:rotate-90" />
+              <Trans>More</Trans>
+              <span className="text-xs font-normal text-muted-foreground">
+                <Trans>
+                  name · description · intro · auto prompt · auto-launch · Flowpad assistant · declared fields
+                </Trans>
+              </span>
+            </summary>
+            <div className="flex flex-col gap-4 border-t border-border px-3 py-3">
+              <fieldset disabled={hub || !!definitionError} className="contents" data-testid="agent-more-fields">
                 <div>
                   <div className="mb-1 text-xs text-muted-foreground">
                     <Trans>Name — the agent's folder name, used to address it</Trans>
@@ -469,9 +486,13 @@ export function AgentProfileEditor({ agent, mainRef }: AgentProfileEditorProps) 
                     onCommit={(v) => void save({ additional_dirs: v ?? [] })}
                   />
                 </div>
-              </div>
-            </details>
-          </fieldset>
+              </fieldset>
+              {/* Sharing and the public grant land on the published hub row — nothing to toggle on the hub's own
+                  read-only view. Outside the definition's fieldsets: an unreadable agent document must not
+                  disable controls that never touch it. */}
+              {!hub && moreOpened && <AgentVisibilitySection agent={agent} version={version} />}
+            </div>
+          </details>
         </section>
 
         <aside className="min-h-0 border-t border-border bg-muted/20 px-5 py-5 lg:overflow-y-auto lg:border-s lg:border-t-0">

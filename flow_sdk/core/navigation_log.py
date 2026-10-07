@@ -9,7 +9,7 @@ slows a navigation -- to this instance's log dataset:
 Temp on purpose: the OS clears it now and then, so the log never grows without bound.
 
 The SAME row kind as the shipped SmartNavigator eval set, so everything that reads that one --
-the dataset editor, ``validate``, ``score``, ``navigator_eval.evaluate`` -- reads this one:
+the dataset editor, ``validate``, ``score``, the navigator eval (``flow_sdk.evals.run``) -- reads this one:
 
 * ``input``   -- the request (``utterance`` + ``here``);
 * ``context`` -- the search matches the decision was offered;
@@ -131,6 +131,21 @@ async def log(request: dict, outcome: Any, answer: Any) -> Optional[str]:
         return None
 
 
+async def address() -> str:
+    """Where asking for the log takes you: the log open in the app that edits it, or -- when it was
+    never on, so there is no log -- Preferences > Advanced, where the switch is."""
+    from flow_sdk.builtin.dataset import Dataset  # noqa: PLC0415
+    from flow_sdk.builtin.faas.editors import editors_for  # noqa: PLC0415
+
+    here = folder().resolve()  # the index stores the resolved path (/private/var/... on macOS)
+    rows = await Dataset.get_all({"name": TITLE})
+    log = next((r for r in rows if getattr(r, "asset_ref", None) and Path(r.asset_ref).resolve() == here), None)
+    editors = await editors_for(log) if log is not None else []
+    if not editors:
+        return "/dock/preferences/advanced"
+    return f"/dock/app/{editors[0]['typeid']}?subject=dataset-{log.id}"
+
+
 def log_soon(request: dict, outcome: Any, answer: Any) -> None:
     """``log`` in the background -- the caller has its answer already."""
     task = asyncio.get_running_loop().create_task(log(request, outcome, answer))
@@ -144,4 +159,4 @@ async def drain() -> None:
         await asyncio.gather(*list(_pending), return_exceptions=True)
 
 
-__all__ = ["NAME", "TITLE", "dataset", "drain", "folder", "log", "log_soon", "row_of"]
+__all__ = ["NAME", "TITLE", "address", "dataset", "drain", "folder", "log", "log_soon", "row_of"]

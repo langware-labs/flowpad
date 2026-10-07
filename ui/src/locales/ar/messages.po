@@ -392,6 +392,12 @@ msgstr "تم حذف {0}"
 msgid "{0} disconnect failed"
 msgstr "فشل قطع الاتصال عن {0}"
 
+#. placeholder {0}: index.document_count
+#. placeholder {1}: index.chunk_count
+#: src/hooks/use-rag-roots.tsx
+msgid "{0} documents, {1} chunks"
+msgstr ""
+
 #. placeholder {0}: totals.estimated_requests
 #. placeholder {1}: totals.unpriced_requests
 #: src/components/llm-endpoints/UsagePanel.tsx
@@ -921,6 +927,10 @@ msgstr ""
 msgid "{name} is not set up on this machine"
 msgstr ""
 
+#: src/hooks/use-rag-roots.tsx
+msgid "{name} is ready to search"
+msgstr ""
+
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "{name} isn't installed on this computer yet."
 msgstr ""
@@ -945,6 +955,14 @@ msgstr ""
 
 #: src/components/helpdesk/AddHelpdeskDialog.tsx
 msgid "{name} was added, but its guides cannot be opened"
+msgstr ""
+
+#: src/hooks/use-rag-roots.tsx
+msgid "{name}: indexing stopped"
+msgstr ""
+
+#: src/components/project-home/ProjectDependenciesCard.tsx
+msgid "{notInstalled, plural, one {# optional dependency not installed} other {# optional dependencies not installed}}"
 msgstr ""
 
 #: src/components/token-plan/token-plan-math.ts
@@ -1009,6 +1027,14 @@ msgstr "{selectedCount} محددة"
 #: src/components/cost-dashboard/CostDashboard.tsx
 msgid "{sessionCount} sessions"
 msgstr "{sessionCount} جلسة"
+
+#: src/components/browseable-tree/adapters/assetContextFoldersRoot.tsx
+msgid "{state} · optional"
+msgstr ""
+
+#: src/components/browseable-tree/adapters/assetContextFoldersRoot.tsx
+msgid "{state} · required"
+msgstr ""
 
 #: src/journey/JourneyTray.tsx
 msgid "{stepsLeft} steps left"
@@ -1352,6 +1378,10 @@ msgstr "يلزم تخصيص صدفة جديدة. (إجراء من الخادم �
 msgid "A full path under your home folder."
 msgstr ""
 
+#: src/components/assets/dependency-sources.tsx
+msgid "A git repo — cloned (or a local clone reused) wherever this project opens"
+msgstr ""
+
 #: src/components/data-sources/DataSourceDialog.tsx
 msgid "A guided setup asks for everything else this channel needs, step by step."
 msgstr ""
@@ -1373,6 +1403,14 @@ msgstr "اسم ضمن النطاق، أو قيمة حرفية"
 
 #: src/components/quick-create/QuickCreatePanel.tsx
 msgid "A new project folder — everything you create is scoped to it"
+msgstr ""
+
+#: src/components/assets/dependency-sources.tsx
+msgid "A project on the hub — fetched by its id wherever this project opens"
+msgstr ""
+
+#: src/components/assets/HubProjectDependencyDialog.tsx
+msgid "A project on the hub, fetched by its id wherever this project opens."
 msgstr ""
 
 #: src/components/task-receive/IncomingProjectDialog.tsx
@@ -1573,6 +1611,7 @@ msgid "active"
 msgstr "نشط"
 
 #: src/components/api-keys-view/api-keys-view.tsx
+#: src/components/data-sources/status-style.ts
 #: src/components/locale/LocalePicker.tsx
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Active"
@@ -1611,6 +1650,7 @@ msgid "Activity"
 msgstr "النشاط"
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
+#: src/components/assets/HubProjectDependencyDialog.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/conversation/MembersAvatarStack.tsx
 #: src/components/credentials-view/EnvFilesChip.tsx
@@ -1621,7 +1661,7 @@ msgstr "النشاط"
 #: src/components/organization/budgets/AddPeopleDialog.tsx
 #: src/components/project-activity-strip/BookmarkColumn.tsx
 #: src/components/project-home/VibeAgentsCard.tsx
-#: src/hooks/use-add-context-folder.tsx
+#: src/hooks/use-add-dependency.tsx
 #: src/pages/home-landing/feed/HomeFeedColumn.tsx
 msgid "Add"
 msgstr "إضافة"
@@ -1644,12 +1684,16 @@ msgid "Add a comment…"
 msgstr "إضافة تعليق…"
 
 #: src/components/data-sources/DataSourceDialog.tsx
-msgid "Add a data source"
-msgstr "إضافة مصدر بيانات"
+#~ msgid "Add a data source"
+#~ msgstr "إضافة مصدر بيانات"
 
 #: src/components/assets/editor/task/TaskDescription.tsx
 msgid "Add a description…"
 msgstr "إضافة وصف…"
+
+#: src/hooks/use-add-dependency.tsx
+msgid "Add a git repository this project depends on."
+msgstr ""
 
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Add a key in \"LLM API keys\" above to use it here"
@@ -1767,8 +1811,8 @@ msgstr ""
 #: src/components/assets/AddContextFolderDialog.tsx
 #: src/components/browseable-tree/adapters/assetContextFoldersRoot.tsx
 #: src/components/quick-create/QuickCreatePanel.tsx
-msgid "Add context folder"
-msgstr "إضافة مجلد السياق"
+#~ msgid "Add context folder"
+#~ msgstr "إضافة مجلد السياق"
 
 #: src/components/agent-resources/AgentCredentialsSection.tsx
 msgid "Add credential"
@@ -1777,6 +1821,12 @@ msgstr ""
 #: src/components/agent-resources/AgentResourcesBody.tsx
 msgid "Add data source"
 msgstr "إضافة مصدر بيانات"
+
+#: src/components/assets/AddDependencyDialog.tsx
+#: src/components/browseable-tree/adapters/assetContextFoldersRoot.tsx
+#: src/components/quick-create/QuickCreatePanel.tsx
+msgid "Add dependency"
+msgstr ""
 
 #: src/components/wiki-toolbar/WikiLinkInsertDialog.tsx
 #: src/components/wiki-toolbar/WikiToolbar.tsx
@@ -1800,10 +1850,15 @@ msgstr "إضافة Git"
 msgid "Add Git (optional — linking to the cloud doesn't need it)"
 msgstr ""
 
+#: src/hooks/use-add-dependency.tsx
+#: src/hooks/use-add-dependency.tsx
+msgid "Add Git dependency"
+msgstr ""
+
 #: src/hooks/use-add-context-folder.tsx
 #: src/hooks/use-add-context-folder.tsx
-msgid "Add Git folder"
-msgstr "إضافة مجلد Git"
+#~ msgid "Add Git folder"
+#~ msgstr "إضافة مجلد Git"
 
 #: src/components/helpdesk/AddHelpdeskDialog.tsx
 #: src/components/helpdesk/AddHelpdeskDialog.tsx
@@ -1816,6 +1871,10 @@ msgstr ""
 #: src/components/hooks-view/HooksTable.tsx
 msgid "Add Hook"
 msgstr "إضافة Hook"
+
+#: src/components/assets/HubProjectDependencyDialog.tsx
+msgid "Add hub project"
+msgstr ""
 
 #~ msgid "Add input"
 #~ msgstr ""
@@ -2589,8 +2648,12 @@ msgid "Announcements shown at startup"
 msgstr "عرض الإعلانات عند بدء التشغيل"
 
 #: src/components/assets/context-folder-sources.tsx
-msgid "Another Flowpad project — its folder becomes context for this one"
-msgstr "مشروع Flowpad آخر — يصبح مجلده سياقاً لهذا المشروع"
+#~ msgid "Another Flowpad project — its folder becomes context for this one"
+#~ msgstr "مشروع Flowpad آخر — يصبح مجلده سياقاً لهذا المشروع"
+
+#: src/components/assets/dependency-sources.tsx
+msgid "Another Flowpad project — this one depends on its folder"
+msgstr ""
 
 #: src/components/llm-endpoints/FundingProvenance.tsx
 msgid "another hub budget — {label}"
@@ -3012,7 +3075,11 @@ msgid "Assets"
 msgstr "الأصول"
 
 #: src/components/asset-manager/AssetScopeToggles.tsx
-msgid "Assets in folders added to this run"
+#~ msgid "Assets in folders added to this run"
+#~ msgstr ""
+
+#: src/components/asset-manager/AssetScopeToggles.tsx
+msgid "Assets in the project's dependencies and folders added to this run"
 msgstr ""
 
 #: src/components/asset-manager/AssetScopeToggles.tsx
@@ -3344,6 +3411,10 @@ msgstr "منطقة AWS لخدمة Bedrock"
 msgid "Back"
 msgstr "رجوع"
 
+#: src/components/data-sources/DataSourcePage.tsx
+msgid "Back to Data sources"
+msgstr ""
+
 #: src/components/conversation/ThreadHeader.tsx
 msgid "Back to every message in this conversation"
 msgstr ""
@@ -3541,6 +3612,10 @@ msgstr "تصفح"
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "Browse and run LLM-generated folder indexes (MarkdownIndex entities). Each indexer (re)builds a Merkle tree of <0>index.md</0> files over a docs root."
 msgstr "استعرض وشغّل فهارس المجلدات المُولّدة بواسطة نماذج اللغة الكبيرة (كيانات MarkdownIndex). يُعيد كل مفهرس بناء شجرة Merkle من ملفات <0>index.md</0> على مستوى جذر المستندات."
+
+#: src/components/rag/RagView.tsx
+msgid "Browse chunks"
+msgstr ""
 
 #: src/components/automations/AutomationRow.tsx
 msgid "Browse folder"
@@ -3837,6 +3912,7 @@ msgstr ""
 #: src/components/assets/editor/markdown/ReviewSurface.tsx
 #: src/components/assets/editor/whiteboard/WhiteboardAssetEditor.tsx
 #: src/components/assets/editor/wizard/WizardViewer.tsx
+#: src/components/assets/HubProjectDependencyDialog.tsx
 #: src/components/assets/ProjectPickerModal.tsx
 #: src/components/assets/PushContextFolderDialog.tsx
 #: src/components/contact-picker/CreateContactsGroupDialog.tsx
@@ -4597,7 +4673,7 @@ msgstr "انقر لعرض الطلب الكامل"
 msgid "Clipboard not updated"
 msgstr "لم يتم تحديث الحافظة"
 
-#: src/components/links/LinkMenu.tsx
+#: src/components/links/link-handlers.ts
 msgid "Clipboard unavailable"
 msgstr ""
 
@@ -4619,8 +4695,8 @@ msgid "Clone a git repo (or reuse a local clone) as a new project"
 msgstr ""
 
 #: src/components/assets/context-folder-sources.tsx
-msgid "Clone a git repo (or reuse a local clone) as context"
-msgstr "استنساخ مستودع git (أو إعادة استخدام نسخة محلية) كسياق"
+#~ msgid "Clone a git repo (or reuse a local clone) as context"
+#~ msgstr "استنساخ مستودع git (أو إعادة استخدام نسخة محلية) كسياق"
 
 #: src/components/task-receive/IncomingTaskDialog.tsx
 #: src/components/task-receive/IncomingTaskDialog.tsx
@@ -4644,6 +4720,7 @@ msgstr "جاري استنساخ المستودع وفهرسته."
 msgid "Cloning…"
 msgstr "جارِ الاستنساخ…"
 
+#: src/components/data-sources/DataSourceDialog.tsx
 #: src/components/floating-chat/FloatingChatWindow.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
 #: src/components/helpdesk/HelpdeskLoadDialog.tsx
@@ -5133,11 +5210,13 @@ msgstr ""
 
 #: src/components/connections-manager.tsx
 #: src/components/connections-manager/flowpad-connection-row.tsx
+#: src/components/data-sources/DataSourceDialog.tsx
 #: src/components/git/GitRemoteField.tsx
 #: src/components/helpdesk/AddHelpdeskDialog.tsx
 #: src/components/oauth/OAuthCodeFlowModal.tsx
 #: src/components/project-selector/NewProjectFromGitDialog.tsx
 #: src/components/quick-create/QuickCreatePanel.tsx
+#: src/components/setup-wizard/SetupWizardDialog.tsx
 #: src/pages/hub-home/NewSandboxDialog.tsx
 msgid "Connect"
 msgstr "اتصال"
@@ -5224,6 +5303,10 @@ msgstr "متصل"
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "Connected · {0}"
 msgstr "متصل · {0}"
+
+#: src/pages/hub-home/HubHome.tsx
+msgid "Connected computer"
+msgstr ""
 
 #. placeholder {0}: formatTimeAgo(connection.connectedAt.toISOString())
 #: src/components/connections-manager.tsx
@@ -5332,8 +5415,8 @@ msgid "Context entities attached to this process — plans, skills, project, …
 msgstr "كيانات السياق المرفقة بهذه العملية — الخطط والمهارات والمشروع وغيرها"
 
 #: src/components/browseable-tree/adapters/assetContextFoldersRoot.tsx
-msgid "Context folders"
-msgstr "مجلدات السياق"
+#~ msgid "Context folders"
+#~ msgstr "مجلدات السياق"
 
 #: src/components/graph-view/GraphView.tsx
 msgid "Context Graph"
@@ -5769,7 +5852,7 @@ msgstr "تعذر التحقق من تسجيل الدخول"
 msgid "Could not connect to {displayName}."
 msgstr ""
 
-#: src/components/links/LinkMenu.tsx
+#: src/components/links/link-handlers.ts
 msgid "Could not copy link"
 msgstr ""
 
@@ -5879,6 +5962,10 @@ msgstr "تعذر إنهاء الغرفة"
 msgid "could not fetch — showing local copy"
 msgstr "تعذر الجلب — يتم عرض نسخة محلية"
 
+#: src/components/project-home/ProjectDependenciesCard.tsx
+msgid "Could not fetch the dependencies"
+msgstr ""
+
 #: src/components/assets/editor/agent-profile/DeploymentSecretsGate.tsx
 msgid "Could not fix {key}"
 msgstr ""
@@ -5903,6 +5990,10 @@ msgstr "تعذر منح الوصول"
 #: src/components/connections-manager.tsx
 msgid "Could not give this project access to {0}."
 msgstr "تعذر منح هذا المشروع صلاحية الوصول إلى {0}."
+
+#: src/components/project-home/ProjectDependenciesCard.tsx
+msgid "Could not install the dependency"
+msgstr ""
 
 #: src/components/organization/budgets/BudgetSection.tsx
 msgid "Could not invite everyone"
@@ -5949,6 +6040,11 @@ msgstr ""
 #: src/components/triggers-view/FsopTriggerDetail.tsx
 #~ msgid "Could not load source: {error}"
 #~ msgstr "تعذر تحميل المصدر: {error}"
+
+#. placeholder {0}: definitionError.message
+#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
+msgid "Could not load the agent's definition: {0}"
+msgstr ""
 
 #: src/components/automations/BusView.tsx
 msgid "Could not load the bus"
@@ -6021,7 +6117,7 @@ msgid "Could not publish"
 msgstr ""
 
 #. placeholder {0}: source.name || source.provider
-#: src/components/data-sources/DataSourceRow.tsx
+#: src/components/data-sources/source-parts.tsx
 msgid "Could not pull {0}"
 msgstr "تعذر سحب {0}"
 
@@ -6040,6 +6136,10 @@ msgstr ""
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
 msgid "Could not read the diagnosis"
 msgstr "تعذّرت قراءة التشخيص"
+
+#: src/components/rag/RagChunkBrowser.tsx
+msgid "Could not read the index"
+msgstr ""
 
 #. placeholder {0}: errorText(error)
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
@@ -6098,8 +6198,13 @@ msgid "Could not remove the budget"
 msgstr ""
 
 #: src/components/helpdesk/AddHelpdeskDialog.tsx
-msgid "Could not remove the folder"
+#: src/components/project-home/ProjectDependenciesCard.tsx
+msgid "Could not remove the dependency"
 msgstr ""
+
+#: src/components/helpdesk/AddHelpdeskDialog.tsx
+#~ msgid "Could not remove the folder"
+#~ msgstr ""
 
 #: src/components/helpdesk/HelpdeskResetButton.tsx
 msgid "Could not remove the help desk files"
@@ -6943,8 +7048,13 @@ msgstr "وضع خصوصية البيانات"
 #~ msgid "Data Source Cursor"
 #~ msgstr "مؤشر مصدر البيانات"
 
+#: src/components/data-sources/DataSourceDialog.tsx
+msgid "Data source name"
+msgstr ""
+
 #: src/components/agent-resources/AgentResourcesBody.tsx
 #: src/components/collapsed-sidebar/collapsed-sidebar.tsx
+#: src/components/data-sources/DataSourceDialog.tsx
 #: src/components/data-sources/DataSourcesView.tsx
 #: src/components/top-nav-bar/use-entity-breadcrumbs.ts
 #: src/i18n/type-labels.ts
@@ -7496,10 +7606,35 @@ msgstr "جاري الحذف…"
 msgid "Delivered"
 msgstr "تم التسليم"
 
+#: src/components/data-sources/ChannelRouteControl.tsx
+msgid "Delivered to"
+msgstr ""
+
+#: src/components/data-sources/ChannelRouteControl.tsx
+msgid "Delivered to a place that does not hold this channel"
+msgstr ""
+
+#: src/components/data-sources/ChannelRouteControl.tsx
+msgid "Deliveries"
+msgstr ""
+
 #: src/components/hub/AddMachineDialog.tsx
 #: src/components/settings-view/settings-utils.ts
 msgid "Deny"
 msgstr "رفض"
+
+#: src/components/browseable-tree/adapters/assetContextFoldersRoot.tsx
+#: src/components/project-home/ProjectDependenciesCard.tsx
+msgid "Dependencies"
+msgstr ""
+
+#: src/components/helpdesk/AddHelpdeskDialog.tsx
+msgid "Dependency"
+msgstr ""
+
+#: src/components/helpdesk/AddHelpdeskDialog.tsx
+msgid "Dependency removed"
+msgstr ""
 
 #: src/components/assets/editor/agent-profile/AgentDeploymentsSection.tsx
 msgid "Deploy"
@@ -8066,6 +8201,10 @@ msgstr ""
 msgid "Don't have FlowPad yet?"
 msgstr "ليس لديك FlowPad بعد؟"
 
+#: src/components/project-home/MissingDependenciesDialog.tsx
+msgid "Don't show again until Flowpad restarts"
+msgstr ""
+
 #: src/components/search-index/ActivityProgressModal.tsx
 msgid "done"
 msgstr "تم"
@@ -8191,6 +8330,7 @@ msgid "Drill by"
 msgstr "التفصيل حسب"
 
 #: src/components/data-sources/DataDriversView.tsx
+#: src/components/data-sources/DataSourcePage.tsx
 msgid "Driver"
 msgstr ""
 
@@ -8287,12 +8427,16 @@ msgstr ""
 #~ msgstr ""
 
 #: src/hooks/use-add-context-folder.tsx
-msgid "Each selected project's folder is added as a context folder."
-msgstr "يُضاف مجلد كل مشروع محدد كمجلد سياق."
+#~ msgid "Each selected project's folder is added as a context folder."
+#~ msgstr "يُضاف مجلد كل مشروع محدد كمجلد سياق."
+
+#: src/hooks/use-add-dependency.tsx
+msgid "Each selected project's folder is added as a dependency."
+msgstr ""
 
 #: src/components/setup-wizard/SetupWizardDialog.tsx
-msgid "Each stage is a guided run. Close it any time — running it again picks up where it stopped."
-msgstr ""
+#~ msgid "Each stage is a guided run. Close it any time — running it again picks up where it stopped."
+#~ msgstr ""
 
 #: src/components/conversation/ConversationView.tsx
 msgid "Earlier message"
@@ -8844,6 +8988,7 @@ msgstr "الحدث: "
 
 #: src/components/assets/editor/agent-profile/deployment/ThreadPane.tsx
 #: src/components/automations/blocks/WhenBlock.tsx
+#: src/components/data-sources/DataSourcePage.tsx
 #: src/components/lens-viewer/HeartbeatEventsViewer.tsx
 msgid "Events"
 msgstr "الأحداث"
@@ -9247,14 +9392,27 @@ msgstr "فشل"
 msgid "Failed to add comment"
 msgstr "تعذر إضافة التعليق"
 
+#: src/hooks/use-add-dependency.tsx
+msgid "Failed to add dependency"
+msgstr ""
+
 #: src/components/assets/useAssetsModel.tsx
-msgid "Failed to add files to context folder"
-msgstr "فشل إضافة الملفات إلى مجلد السياق"
+#~ msgid "Failed to add files to context folder"
+#~ msgstr "فشل إضافة الملفات إلى مجلد السياق"
+
+#: src/components/assets/useAssetsModel.tsx
+msgid "Failed to add files to dependency folder"
+msgstr ""
+
+#: src/hooks/use-add-dependency.tsx
+#: src/hooks/use-add-dependency.tsx
+msgid "Failed to add Git dependency"
+msgstr ""
 
 #: src/hooks/use-add-context-folder.tsx
 #: src/hooks/use-add-context-folder.tsx
-msgid "Failed to add Git folder"
-msgstr "تعذر إضافة مجلد Git"
+#~ msgid "Failed to add Git folder"
+#~ msgstr "تعذر إضافة مجلد Git"
 
 #: src/components/project-home/VibeAgentsCard.tsx
 msgid "Failed to add vibe agent"
@@ -9372,6 +9530,10 @@ msgstr "تعذر جلب المقاييس"
 msgid "Failed to generate API key"
 msgstr "فشل إنشاء مفتاح API"
 
+#: src/components/assets/useAssetsModel.tsx
+msgid "Failed to install dependency"
+msgstr ""
+
 #: src/components/assets/editor/dynamic-workflow/DynamicWorkflowAssetEditor.tsx
 msgid "Failed to launch"
 msgstr "تعذر الإطلاق"
@@ -9467,6 +9629,10 @@ msgstr "تعذر فتح مجلد السجلات"
 #: src/components/open-project-component/use-open-project.ts
 msgid "Failed to open project"
 msgstr "تعذر فتح المشروع"
+
+#: src/components/assets/useAssetsModel.tsx
+msgid "Failed to remove dependency"
+msgstr ""
 
 #: src/components/project-home/HomeCustomizationCard.tsx
 msgid "Failed to remove image"
@@ -9638,9 +9804,17 @@ msgstr "عنصر الخلاصة"
 msgid "Fetch"
 msgstr "جلب"
 
+#: src/components/project-home/ProjectDependenciesCard.tsx
+msgid "Fetch missing"
+msgstr ""
+
 #: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Fetch new messages from hub"
 msgstr "جلب الرسائل الجديدة من Hub"
+
+#: src/components/assets/dependency-sources.tsx
+msgid "Fetched automatically wherever this project opens — Flowpad warns when it can't be."
+msgstr ""
 
 #: src/components/entity-execution-panel/current-activity.ts
 msgid "Fetching"
@@ -9666,6 +9840,7 @@ msgstr "الحقل"
 #: src/components/automations/automation-words.ts
 #: src/components/automations/RunDetail.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
+#: src/components/data-sources/DataSourcePage.tsx
 #: src/i18n/type-labels.ts
 #: src/pages/flow-page/display-annotation.ts
 msgid "File"
@@ -9823,8 +9998,8 @@ msgstr "تصفية..."
 msgid "Filter…"
 msgstr "تصفية…"
 
-#. placeholder {0}: route.tag ?? route.target
-#: src/components/automations/BusView.tsx
+#. placeholder {0}: tag ?? target
+#: src/components/automations/BusStream.tsx
 msgid "filtered to {0}"
 msgstr ""
 
@@ -9862,7 +10037,7 @@ msgstr ""
 msgid "Finish setting up Flowpad"
 msgstr "إنهاء إعداد Flowpad"
 
-#: src/components/data-sources/DataSourceRow.tsx
+#: src/components/data-sources/source-parts.tsx
 msgid "Finish setup, then press Verify."
 msgstr "يُرجى إكمال الإعداد أولاً، ثم الضغط على زر التحقق."
 
@@ -9973,6 +10148,10 @@ msgstr "إصلاح"
 msgid "Fix the web app"
 msgstr "إصلاح تطبيق الويب"
 
+#: src/components/project-home/MissingDependenciesDialog.tsx
+msgid "Fix…"
+msgstr ""
+
 #: src/components/llm-endpoints/SourcePicker.tsx
 msgid "Fixed once created, and you must be able to administer it — this endpoint spends its budget."
 msgstr ""
@@ -9984,6 +10163,10 @@ msgstr "معالجة هذه المشاكل تقوي المهارة لكل تشغ
 #: src/components/webapp-display/WebDebugComponent.tsx
 msgid "Fixing…"
 msgstr "جارٍ الإصلاح…"
+
+#: src/components/data-sources/ChannelRouteControl.tsx
+msgid "Flow answers from its own box · shown here"
+msgstr ""
 
 #: src/i18n/type-labels.ts
 msgid "Flow Message"
@@ -10133,13 +10316,13 @@ msgstr "تم إنشاء المجلد"
 msgid "Folder name"
 msgstr "اسم المجلد"
 
-#: src/components/assets/context-folder-sources.tsx
+#: src/components/assets/dependency-sources.tsx
 msgid "Folder on this computer"
 msgstr "مجلد على هذا الجهاز"
 
 #: src/components/helpdesk/AddHelpdeskDialog.tsx
-msgid "Folder removed"
-msgstr ""
+#~ msgid "Folder removed"
+#~ msgstr ""
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
 msgid "Folder…"
@@ -10455,7 +10638,7 @@ msgid "Git readiness"
 msgstr "جاهزية Git"
 
 #: src/components/artifacts/artifact-form.tsx
-#: src/components/assets/context-folder-sources.tsx
+#: src/components/assets/dependency-sources.tsx
 msgid "Git repository"
 msgstr "مستودع Git"
 
@@ -11106,7 +11289,7 @@ msgstr "عدد أسطر مخرجات الطرفية التي يُحتفظ بها
 msgid "How privacy modes work"
 msgstr "كيفية عمل أوضاع الخصوصية"
 
-#: src/components/data-sources/DataSourceRow.tsx
+#: src/components/data-sources/source-parts.tsx
 msgid "How to finish setup"
 msgstr "كيفية إكمال الإعداد"
 
@@ -11183,6 +11366,14 @@ msgstr "نقاط النهاية في Hub"
 #: src/notifications/ingest.ts
 msgid "Hub errors suppressed"
 msgstr "تم قمع أخطاء Hub"
+
+#: src/components/assets/dependency-sources.tsx
+msgid "Hub project"
+msgstr ""
+
+#: src/components/assets/HubProjectDependencyDialog.tsx
+msgid "Hub project id or link"
+msgstr ""
 
 #: src/components/version-popover/hub-release-label.tsx
 msgid "Hub release, and the UI build serving it"
@@ -11414,8 +11605,8 @@ msgid "inactive copy"
 msgstr ""
 
 #: src/components/assets/AddContextFolderDialog.tsx
-msgid "Include another folder in this project's context."
-msgstr "تضمين مجلد آخر ضمن سياق هذا المشروع."
+#~ msgid "Include another folder in this project's context."
+#~ msgstr "تضمين مجلد آخر ضمن سياق هذا المشروع."
 
 #: src/i18n/pref-labels.ts
 msgid "Include built-in system projects in the project picker."
@@ -11581,6 +11772,7 @@ msgstr "إدراج جدول"
 #: src/components/assets/editor/wizard/wizard-texts.ts
 #: src/components/install/AddAssetDialog.tsx
 #: src/components/install/InstallButton.tsx
+#: src/components/project-home/ProjectDependenciesCard.tsx
 msgid "Install"
 msgstr "تثبيت"
 
@@ -11592,6 +11784,10 @@ msgstr "هل تريد تثبيت {0}؟"
 #: src/components/version-popover/version-popover.tsx
 msgid "Install & restart"
 msgstr "التثبيت وإعادة التشغيل"
+
+#: src/components/browseable-tree/adapters/assetContextFoldersRoot.tsx
+msgid "Install dependency"
+msgstr ""
 
 #: src/components/conversation/asset-review/AssetInstallActions.tsx
 #: src/components/conversation/asset-review/AssetInstallActions.tsx
@@ -11700,6 +11896,10 @@ msgstr ""
 
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 msgid "Intro — shown as the agent's first message, not sent to the model"
+msgstr ""
+
+#: src/components/assets/DependencyChips.tsx
+msgid "invalid"
 msgstr ""
 
 #: src/components/harness-login/HarnessLoginModal.tsx
@@ -11895,7 +12095,11 @@ msgid "It shows up in Runs as a test."
 msgstr ""
 
 #: src/components/helpdesk/AddHelpdeskDialog.tsx
-msgid "It was added as an ordinary context folder instead, so agents can still read it. Remove it if that is not what you wanted."
+#~ msgid "It was added as an ordinary context folder instead, so agents can still read it. Remove it if that is not what you wanted."
+#~ msgstr ""
+
+#: src/components/helpdesk/AddHelpdeskDialog.tsx
+msgid "It was added as an ordinary dependency instead, so agents can still read it. Remove it if that is not what you wanted."
 msgstr ""
 
 #: src/components/task-receive/use-shared-project-warnings.ts
@@ -12009,8 +12213,12 @@ msgid "Kept (cannot or should not be removed): {0}"
 msgstr "أُبقيت (لا يمكن أو لا يجب إزالتها): {0}"
 
 #: src/components/helpdesk/HelpdeskLoadDialog.tsx
-msgid "kept current as a context folder"
-msgstr "تم الاحتفاظ به كمجلد السياق الحالي"
+#~ msgid "kept current as a context folder"
+#~ msgstr "تم الاحتفاظ به كمجلد السياق الحالي"
+
+#: src/components/helpdesk/HelpdeskLoadDialog.tsx
+msgid "kept current as a dependency"
+msgstr ""
 
 #: src/components/assets/editor/task/DelegationBlock.tsx
 msgid "Kept in the project"
@@ -12139,6 +12347,10 @@ msgstr "كبير"
 msgid "Largest run"
 msgstr "أكبر تشغيل"
 
+#: src/components/data-sources/ChannelRouteControl.tsx
+msgid "last"
+msgstr ""
+
 #. placeholder {0}: new Date(row.last_run).toLocaleString()
 #. placeholder {0}: new Date(trigger.last_run).toLocaleString()
 #: src/components/assets/editor/agent-profile/AgentScheduleSection.tsx
@@ -12196,6 +12408,7 @@ msgstr ""
 msgid "Last success"
 msgstr ""
 
+#: src/components/data-sources/DataSourcePage.tsx
 #: src/components/data-sources/DataSourceRow.tsx
 msgid "Last successful sync"
 msgstr "آخر مزامنة ناجحة"
@@ -12440,7 +12653,7 @@ msgid "Lines"
 msgstr ""
 
 #: src/components/conversation/MembersAvatarStack.tsx
-#: src/components/links/LinkMenu.tsx
+#: src/components/links/link-handlers.ts
 msgid "Link copied"
 msgstr "تم نسخ الرابط"
 
@@ -12498,6 +12711,10 @@ msgstr ""
 msgid "Listed twice"
 msgstr ""
 
+#: src/components/assets/dependency-sources.tsx
+msgid "Listed with the project, but fetched only when someone clicks Install."
+msgstr ""
+
 #. placeholder {0}: source.name || source.provider
 #: src/components/stream-inbox-view/AttachedChannelsBar.tsx
 msgid "Listen on {0}"
@@ -12512,7 +12729,7 @@ msgstr ""
 msgid "live"
 msgstr "مباشر"
 
-#: src/components/automations/BusView.tsx
+#: src/components/automations/BusStream.tsx
 msgid "Live"
 msgstr ""
 
@@ -12699,6 +12916,10 @@ msgstr "جارٍ تحميل المحادثات…"
 #: src/components/code-editor/DiffViewer.tsx
 msgid "Loading checkpoint diff..."
 msgstr "جاري تحميل مقارنة نقطة الحفظ..."
+
+#: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
+msgid "Loading cloud machines…"
+msgstr ""
 
 #: src/components/assets/editor/task/TaskComments.tsx
 msgid "Loading comments…"
@@ -13470,6 +13691,7 @@ msgid "Message Thread"
 msgstr "سلسلة الرسائل"
 
 #: src/components/data-sources/DataDriversView.tsx
+#: src/components/data-sources/DataSourcePage.tsx
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Messages"
 msgstr "الرسائل"
@@ -13523,6 +13745,11 @@ msgstr ""
 msgid "Mis-Sc"
 msgstr "Mis-Sc"
 
+#: src/components/data-sources/ChannelRouteControl.tsx
+msgid "misrouted"
+msgstr ""
+
+#: src/components/assets/DependencyChips.tsx
 #: src/components/credentials-view/CredentialView.tsx
 msgid "missing"
 msgstr ""
@@ -13546,6 +13773,10 @@ msgstr ""
 #: src/components/conversation/AttachmentDownloadWarning.tsx
 msgid "Missing attachments"
 msgstr "مرفقات مفقودة"
+
+#: src/components/project-home/MissingDependenciesDialog.tsx
+msgid "Missing dependencies"
+msgstr ""
 
 #. placeholder {0}: row.missing.join(', ')
 #: src/components/connections-manager/credential-rows-view.tsx
@@ -13764,7 +13995,6 @@ msgstr "غير متاح"
 #: src/components/assets/editor/wizard/WizardForm.tsx
 #: src/components/conversation/asset-review/ProjectPreview.tsx
 #: src/components/data-sources/DataDriversView.tsx
-#: src/components/data-sources/DataSourceDialog.tsx
 #: src/components/hooks-view/HooksBrowser.tsx
 #: src/components/hub/AddMachineDialog.tsx
 #: src/components/lens-viewer/LlmIndexersViewer.tsx
@@ -13851,7 +14081,12 @@ msgid "needs attention"
 msgstr ""
 
 #: src/components/automations/AutomationRow.tsx
+#: src/components/data-sources/health-style.ts
 msgid "Needs attention"
+msgstr ""
+
+#: src/components/data-sources/status-style.ts
+msgid "Needs setup"
 msgstr ""
 
 #: src/components/connections-manager/credential-rows-view.tsx
@@ -13894,6 +14129,10 @@ msgstr ""
 msgid "never run"
 msgstr "لم يتم التشغيل أبداً"
 
+#: src/components/data-sources/health-style.ts
+msgid "Never synced"
+msgstr ""
+
 #: src/components/stream-inbox-view/StreamInboxView.tsx
 #: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Never synced to cloud"
@@ -13905,6 +14144,7 @@ msgstr ""
 
 #: src/components/assets/AssetListView.tsx
 #: src/components/chats-navigator/ChatsFilterBar.tsx
+#: src/components/data-sources/status-style.ts
 #: src/components/entity-execution-panel/NewSessionPill.tsx
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 #: src/components/project-activity-strip/RecentConversationsStrip.tsx
@@ -14164,6 +14404,11 @@ msgstr "المطابقة التالية (Enter)"
 msgid "Next poll"
 msgstr ""
 
+#. placeholder {0}: timeUntil(source.next_poll_at)
+#: src/components/data-sources/DataSourcePage.tsx
+msgid "Next poll {0}"
+msgstr ""
+
 #: src/components/terminal/interactive-terminal/side-windows/QueuePanel.tsx
 msgid "Next prompt — injected when the agent next goes idle. Press Enter to add."
 msgstr "الموجه التالي — سيُحقن عند خمول الوكيل. يمكن الضغط على Enter للإضافة."
@@ -14172,6 +14417,7 @@ msgstr "الموجه التالي — سيُحقن عند خمول الوكيل.
 msgid "Next runs"
 msgstr ""
 
+#: src/components/data-sources/DataSourcePage.tsx
 #: src/components/data-sources/DataSourceRow.tsx
 msgid "Next scheduled poll"
 msgstr "موعد الفحص التالي"
@@ -15346,8 +15592,12 @@ msgid "Not connected"
 msgstr "غير متصل"
 
 #: src/components/assets/useAssetsModel.tsx
-msgid "Not copied into context folder"
-msgstr "لم تُنسخ إلى مجلد السياق"
+#~ msgid "Not copied into context folder"
+#~ msgstr "لم تُنسخ إلى مجلد السياق"
+
+#: src/components/assets/useAssetsModel.tsx
+msgid "Not copied into dependency folder"
+msgstr ""
 
 #: src/components/assets/editor/agent-profile/AgentPlacesColumn.tsx
 msgid "Not deployed yet — it runs nowhere until you launch it."
@@ -15376,6 +15626,10 @@ msgstr "بدون تمويل"
 #~ msgid "Not indexed here yet — install it from its origin"
 #~ msgstr ""
 
+#: src/components/assets/DependencyChips.tsx
+msgid "not installed"
+msgstr ""
+
 #: src/components/connections-manager/connection-state-visual.ts
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Not installed"
@@ -15395,6 +15649,7 @@ msgstr "غير مسجّل الدخول · شغّل /login"
 
 #: src/components/assets/editor/wizard/wizard-texts.ts
 #: src/components/install/AddAssetDialog.tsx
+#: src/components/project-home/MissingDependenciesDialog.tsx
 msgid "Not now"
 msgstr "ليس الآن"
 
@@ -15570,6 +15825,10 @@ msgstr "لا شيء هنا بعد."
 msgid "Nothing in private context yet."
 msgstr "لا شيء في السياق الخاص حتى الآن."
 
+#: src/components/rag/RagChunkBrowser.tsx
+msgid "Nothing indexed yet."
+msgstr ""
+
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "Nothing indexed yet. <0>Refresh Index</0> to populate."
 msgstr "لم تتم فهرسة أي شيء بعد. <0>تحديث الفهرس</0> للملء."
@@ -15688,7 +15947,7 @@ msgstr "لم يتم تشغيل أي شيء. يمكن إغلاق هذه التب�
 msgid "Nothing would arrive for this, so it was not sent:"
 msgstr ""
 
-#: src/components/automations/BusView.tsx
+#: src/components/automations/BusStream.tsx
 msgid "Nothing yet. Only some event families reach the app; the counts above cover every event."
 msgstr ""
 
@@ -15928,6 +16187,8 @@ msgstr "فتح"
 
 #. placeholder {0}: app.name
 #. placeholder {0}: file.path
+#. placeholder {0}: source.name || source.provider
+#: src/components/data-sources/DataSourceRow.tsx
 #: src/components/data-sources/SourceMenu.tsx
 #: src/components/entity-execution-panel/TurnFilesChips.tsx
 msgid "Open {0}"
@@ -16062,7 +16323,7 @@ msgid "Open data_driver.json"
 msgstr ""
 
 #: src/components/data-sources/DataDriversView.tsx
-#: src/components/data-sources/DataSourceRow.tsx
+#: src/components/data-sources/SourceMenu.tsx
 msgid "Open data_source.json"
 msgstr ""
 
@@ -16077,6 +16338,10 @@ msgstr "فتح التشخيص في علامة تبويب"
 #: src/components/artifacts/artifact-form.tsx
 msgid "Open dot-path ontology; custom descendants are welcome."
 msgstr "أنطولوجيا مفتوحة للمسارات المنقوطة، والمشتقات المخصصة مرحّب بها."
+
+#: src/components/data-sources/SourceMenu.tsx
+msgid "Open driver folder"
+msgstr ""
 
 #: src/components/assets/editor/AssetEditorHeader.tsx
 #: src/components/display-toolbar/GenericDisplayToolbar.tsx
@@ -16357,6 +16622,10 @@ msgstr "فتح الجلسة"
 msgid "Open Session"
 msgstr "فتح الجلسة"
 
+#: src/components/data-sources/SourceMenu.tsx
+msgid "Open source folder"
+msgstr ""
+
 #: src/components/conversation/attachment-actions/registry.ts
 msgid "Open Spec"
 msgstr "فتح المواصفات"
@@ -16420,6 +16689,10 @@ msgstr ""
 
 #: src/components/automations/RunDetail.tsx
 msgid "Open the automation to fix it"
+msgstr ""
+
+#: src/components/data-sources/DataSourcePage.tsx
+msgid "Open the event bus"
 msgstr ""
 
 #: src/components/footer.tsx
@@ -16516,6 +16789,11 @@ msgstr "فتح سجل حوار هذا الوكيل"
 
 #: src/components/automations/AutomationRow.tsx
 msgid "Open this automation"
+msgstr ""
+
+#: src/components/assets/editor/agent-profile/deployment/AgentDeploymentPage.tsx
+#: src/components/assets/editor/agent-profile/deployment/AgentDeploymentPage.tsx
+msgid "Open this deployment's workspace in a new tab"
 msgstr ""
 
 #: src/components/llm-sources/LlmSourcesView.tsx
@@ -16619,8 +16897,13 @@ msgstr ""
 msgid "Operation failed"
 msgstr "فشلت العملية"
 
-#~ msgid "optional"
-#~ msgstr ""
+#: src/components/assets/DependencyChips.tsx
+msgid "optional"
+msgstr ""
+
+#: src/components/assets/dependency-sources.tsx
+msgid "Optional"
+msgstr ""
 
 #: src/components/triggers-view/ScheduleTriggerEditor.tsx
 msgid "Optional — leave blank for home"
@@ -16819,6 +17102,7 @@ msgid "Overwrite"
 msgstr "استبدال"
 
 #: src/components/assets/editor/task/DelegationBlock.tsx
+#: src/components/data-sources/DataSourcePage.tsx
 #: src/components/git/RepoPicker.tsx
 msgid "Owner"
 msgstr "المالك"
@@ -16880,8 +17164,16 @@ msgstr "المجلد الأب"
 msgid "Parent folder to clone into…"
 msgstr "المجلد الأب للاستنساخ فيه…"
 
-#: src/components/data-sources/DataSourceRow.tsx
+#: src/components/data-sources/source-parts.tsx
+msgid "Parked"
+msgstr ""
+
+#: src/components/data-sources/source-parts.tsx
 msgid "Parked — the scheduler skips a <0>config_error</0> source, so it will not poll again on its own. <1>Pull</1> clears the latch."
+msgstr ""
+
+#: src/components/data-sources/source-parts.tsx
+msgid "Parked: the scheduler skips it until you pull"
 msgstr ""
 
 #: src/components/ask/AskView.tsx
@@ -17007,7 +17299,7 @@ msgstr ""
 msgid "Pattern sandbox"
 msgstr ""
 
-#: src/components/automations/BusView.tsx
+#: src/components/automations/BusStream.tsx
 #: src/components/collaboration/LiveSessionView.tsx
 #: src/components/data-sources/SourceMenu.tsx
 #: src/components/machine-overview/machine-overview.tsx
@@ -17033,6 +17325,7 @@ msgstr ""
 
 #: src/components/assets/editor/agent-profile/AgentPlaceCard.tsx
 #: src/components/assets/editor/agent-profile/AgentPlacesColumn.tsx
+#: src/components/data-sources/status-style.ts
 #: src/pages/hub-home/HubHome.tsx
 msgid "Paused"
 msgstr "متوقف مؤقتاً"
@@ -17173,7 +17466,7 @@ msgstr ""
 msgid "Pick an event to see who listens and what they do."
 msgstr ""
 
-#: src/components/assets/context-folder-sources.tsx
+#: src/components/assets/dependency-sources.tsx
 msgid "Pick any folder already on this machine"
 msgstr "اختيار أي مجلد موجود على هذا الجهاز"
 
@@ -17390,8 +17683,16 @@ msgid "Point this project at a support desk published as a git repository."
 msgstr ""
 
 #: src/components/quick-create/QuickCreatePanel.tsx
-msgid "Point this project at another folder so agents can read it as background — code, docs or assets that live outside the project, without copying anything."
-msgstr "يمكن ربط هذا المشروع بمجلد آخر ليقرأه الوكلاء كخلفية — أكواد أو توثيق أو أصول تقع خارج المشروع، دون نسخ أي شيء."
+#~ msgid "Point this project at another folder so agents can read it as background — code, docs or assets that live outside the project, without copying anything."
+#~ msgstr "يمكن ربط هذا المشروع بمجلد آخر ليقرأه الوكلاء كخلفية — أكواد أو توثيق أو أصول تقع خارج المشروع، دون نسخ أي شيء."
+
+#: src/components/assets/AddDependencyDialog.tsx
+msgid "Point this project at another folder, repository or hub project it expects in its context."
+msgstr ""
+
+#: src/components/quick-create/QuickCreatePanel.tsx
+msgid "Point this project at another folder, repository or hub project it expects in its context. Required ones are fetched automatically; optional ones on demand."
+msgstr ""
 
 #: src/components/data-sources/DataSourceDialog.tsx
 msgid "Poll interval (seconds)"
@@ -17525,7 +17826,6 @@ msgstr "التشغيلات السابقة"
 msgid "primary"
 msgstr "أساسي"
 
-#: src/components/assets/context-folder-sources.tsx
 #: src/components/graph-context/ContextGraphCanvas.tsx
 msgid "Private"
 msgstr "خاص"
@@ -17599,7 +17899,7 @@ msgstr "مشروع"
 
 #: src/components/asset-counters/agent-counters.tsx
 #: src/components/asset-manager/AssetScopeToggles.tsx
-#: src/components/assets/context-folder-sources.tsx
+#: src/components/assets/dependency-sources.tsx
 #: src/components/conversation/asset-review/AssetReviewDialog.tsx
 #: src/components/conversation/asset-review/ProjectPreview.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
@@ -18025,7 +18325,6 @@ msgstr ""
 msgid "Published when you deploy"
 msgstr ""
 
-#: src/components/data-sources/DataSourceRow.tsx
 #: src/components/status-bar/GitPullButton.tsx
 msgid "Pull"
 msgstr ""
@@ -18045,7 +18344,7 @@ msgstr "سحب وفتح"
 msgid "Pull and open task"
 msgstr "سحب التحديثات وفتح المهمة"
 
-#: src/components/data-sources/DataSourceRow.tsx
+#: src/components/data-sources/SourceMenu.tsx
 msgid "Pull changes now"
 msgstr ""
 
@@ -18239,6 +18538,10 @@ msgstr ""
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "Reading…"
 msgstr "جاري القراءة…"
+
+#: src/components/assets/DependencyChips.tsx
+msgid "ready"
+msgstr ""
 
 #: src/pages/home-landing/InlineSearchResults.tsx
 msgid "Ready"
@@ -18643,8 +18946,15 @@ msgid "Remove budget"
 msgstr ""
 
 #: src/components/browseable-tree/adapters/assetContextFoldersRoot.tsx
-msgid "Remove context folder"
-msgstr "إزالة مجلد السياق"
+#~ msgid "Remove context folder"
+#~ msgstr "إزالة مجلد السياق"
+
+#: src/components/browseable-tree/adapters/assetContextFoldersRoot.tsx
+#: src/components/helpdesk/AddHelpdeskDialog.tsx
+#: src/components/project-home/ProjectDependenciesCard.tsx
+#: src/components/project-home/ProjectDependenciesCard.tsx
+msgid "Remove dependency"
+msgstr ""
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
 msgid "Remove directory"
@@ -18664,8 +18974,8 @@ msgid "Remove file"
 msgstr "إزالة الملف"
 
 #: src/components/helpdesk/AddHelpdeskDialog.tsx
-msgid "Remove folder"
-msgstr ""
+#~ msgid "Remove folder"
+#~ msgstr ""
 
 #. placeholder {0}: team.name
 #: src/components/organization/budgets/BudgetSection.tsx
@@ -19062,6 +19372,11 @@ msgstr ""
 msgid "Requests through this root will fail until a new key is saved."
 msgstr ""
 
+#: src/components/assets/DependencyChips.tsx
+msgid "required"
+msgstr ""
+
+#: src/components/assets/dependency-sources.tsx
 #: src/components/credentials/CredentialDialog.tsx
 msgid "Required"
 msgstr ""
@@ -19229,7 +19544,7 @@ msgstr ""
 msgid "Results"
 msgstr "النتائج"
 
-#: src/components/automations/BusView.tsx
+#: src/components/automations/BusStream.tsx
 #: src/components/chats-navigator/ChatsNavigator.tsx
 #: src/components/collaboration/LiveSessionView.tsx
 #: src/components/data-sources/SourceMenu.tsx
@@ -19294,6 +19609,10 @@ msgstr "إعادة محاولة التحميل"
 msgid "Retry pull"
 msgstr "إعادة السحب"
 
+#: src/components/data-sources/health-style.ts
+msgid "Retrying"
+msgstr ""
+
 #: src/components/conversation/MessageBubble.tsx
 msgid "Retrying…"
 msgstr ""
@@ -19325,7 +19644,6 @@ msgid "Reveal in Finder"
 msgstr "إظهار في Finder"
 
 #: src/components/connections-manager/credential-rows-view.tsx
-#: src/components/data-sources/SourceMenu.tsx
 #: src/components/terminal/interactive-terminal/side-windows/InputFilesPanel.tsx
 msgid "Reveal in Finder/Explorer"
 msgstr ""
@@ -19701,6 +20019,7 @@ msgstr "قيد التشغيل"
 #: src/components/assets/editor/agent-profile/AgentPlacesColumn.tsx
 #: src/components/automations/automation-words.ts
 #: src/components/automations/RunsView.tsx
+#: src/components/data-sources/health-style.ts
 #: src/pages/hub-home/HubHome.tsx
 msgid "Running"
 msgstr "قيد التشغيل"
@@ -19748,6 +20067,7 @@ msgstr "جارٍ التنفيذ…"
 #: src/components/automations/AutomationsNavigator.tsx
 #: src/components/automations/RunsView.tsx
 #: src/components/collapsed-sidebar/collapsed-sidebar.tsx
+#: src/components/data-sources/DataSourcePage.tsx
 #: src/components/data-sources/SourceMenu.tsx
 #: src/components/triggers-view/ScheduleTriggerEditor.tsx
 #: src/types/ViewType.ts
@@ -20258,6 +20578,10 @@ msgstr "البحث عن الأيقونات"
 msgid "Search icons…"
 msgstr "البحث عن الأيقونات…"
 
+#: src/hooks/use-rag-roots.tsx
+msgid "Search index"
+msgstr ""
+
 #: src/pages/search-view/SearchView.tsx
 msgid "Search index is warming up. Results will appear once indexing is complete."
 msgstr "فهرس البحث قيد الإعداد. ستظهر النتائج عند اكتمال الفهرسة."
@@ -20655,10 +20979,6 @@ msgstr ""
 msgid "Send message"
 msgstr "إرسال الرسالة"
 
-#: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
-#~ msgid "Send more files"
-#~ msgstr "إرسال ملفات أخرى"
-
 #: src/components/llm-endpoints/TestEndpointButton.tsx
 msgid "Send one minimal call through this endpoint"
 msgstr ""
@@ -20950,16 +21270,16 @@ msgid "Set up {projectName}"
 msgstr ""
 
 #: src/components/setup-wizard/SetupWizardDialog.tsx
-msgid "Set up {title}"
-msgstr ""
+#~ msgid "Set up {title}"
+#~ msgstr ""
 
 #: src/components/task-receive/IncomingProjectDialog.tsx
 msgid "Set up <0>{projectName}</0> in this workspace. We'll clone the repo and index it so it's ready to use."
 msgstr "سيتم إعداد <0>{projectName}</0> في مساحة العمل هذه. سنستنسخ المستودع ونفهرسه ليصبح جاهزاً للاستخدام."
 
 #: src/hooks/use-add-context-folder.tsx
-msgid "Set up a git-backed context folder for this project."
-msgstr "إعداد مجلد سياق مدعوم بـ Git لهذا المشروع."
+#~ msgid "Set up a git-backed context folder for this project."
+#~ msgstr "إعداد مجلد سياق مدعوم بـ Git لهذا المشروع."
 
 #~ msgid "Set up an existing git repository as the context folder"
 #~ msgstr "إعداد مستودع Git موجود كمجلد السياق"
@@ -21029,6 +21349,7 @@ msgid "Setting up your project…"
 msgstr "جاري إعداد المشروع…"
 
 #: src/components/assets/editor/agent-profile/deployment/AgentDeploymentPage.tsx
+#: src/components/data-sources/DataSourcePage.tsx
 #: src/components/settings-view/SettingsView.tsx
 #: src/pages/flow-page/content-panel/user-dropdown/user-dropdown.tsx
 #: src/pages/flow-page/content-panel/user-dropdown/user-dropdown.tsx
@@ -21197,7 +21518,6 @@ msgstr "المشاركة باستخدام Git origin"
 msgid "Share with team"
 msgstr ""
 
-#: src/components/assets/context-folder-sources.tsx
 #: src/components/graph-context/ContextGraphCanvas.tsx
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "Shared"
@@ -21361,6 +21681,10 @@ msgstr "إظهار أجزاء المسار المخفية"
 msgid "Show imports"
 msgstr ""
 
+#: src/components/links/LinkMenu.tsx
+msgid "Show in Display"
+msgstr ""
+
 #: src/components/spec-editor/SpecEditor.tsx
 msgid "Show in folder (selects file for drag-and-drop)"
 msgstr "عرض في المجلد (تحديد الملف للسحب والإفلات)"
@@ -21372,6 +21696,11 @@ msgstr ""
 #: src/journey/JourneyViewer.tsx
 msgid "Show journey"
 msgstr "عرض الرحلة"
+
+#. placeholder {0}: chunks.length
+#: src/components/rag/RagChunkBrowser.tsx
+msgid "Show more ({0} of {total})"
+msgstr ""
 
 #: src/journey/JourneyTray.tsx
 #: src/journey/JourneyTray.tsx
@@ -21584,6 +21913,10 @@ msgstr ""
 #: src/components/conversation/MembersAvatarStack.tsx
 msgid "Sign in to see who's a member"
 msgstr "تسجيل الدخول لرؤية الأعضاء"
+
+#: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
+msgid "Sign in to the hub to deploy to a cloud machine."
+msgstr ""
 
 #: src/components/graph-view/ui/AccessTab.tsx
 msgid "Sign in to view access."
@@ -21969,6 +22302,10 @@ msgstr "حدث خطأ أثناء تحميل هذه الصفحة."
 msgid "Something went wrong. Please try again."
 msgstr ""
 
+#: src/components/data-sources/ChannelRouteControl.tsx
+msgid "Somewhere else"
+msgstr ""
+
 #: src/components/terminal/HistoryModal.tsx
 msgid "Sort by time"
 msgstr "ترتيب حسب الوقت"
@@ -22271,6 +22608,10 @@ msgstr ""
 msgid "Started. Follow it under Runs."
 msgstr ""
 
+#: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
+msgid "Starting a machine — this takes a couple of minutes."
+msgstr ""
+
 #: src/components/assets/editor/agent-profile/AgentDeploymentsSection.tsx
 #: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
 msgid "Starting a machine — this takes a minute."
@@ -22358,8 +22699,8 @@ msgid "status: {0}"
 msgstr "الحالة: {0}"
 
 #: src/components/assets/context-folder-sources.tsx
-msgid "Stays on this machine only — the folder is never sent to anyone, even people this project is shared with."
-msgstr "يبقى على هذا الجهاز فقط — لا يُرسل المجلد إلى أي شخص، حتى الأشخاص الذين يُشارَك معهم هذا المشروع."
+#~ msgid "Stays on this machine only — the folder is never sent to anyone, even people this project is shared with."
+#~ msgstr "يبقى على هذا الجهاز فقط — لا يُرسل المجلد إلى أي شخص، حتى الأشخاص الذين يُشارَك معهم هذا المشروع."
 
 #: src/components/triggers-view/FsopTriggerDetail.tsx
 #~ msgid "step: {0}ms · debounce: {1}ms"
@@ -22712,6 +23053,11 @@ msgstr ""
 msgid "Synced"
 msgstr ""
 
+#. placeholder {0}: timeSince(source.last_synced_at)
+#: src/components/data-sources/DataSourcePage.tsx
+msgid "Synced {0}"
+msgstr ""
+
 #. placeholder {0}: row.type
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "Syncing {0}…"
@@ -23025,6 +23371,10 @@ msgstr "هذا الوكيل لم يعد موجودًا في مساحة عملك.
 
 #~ msgid "That change could not be applied."
 #~ msgstr "تعذّر تطبيق هذا التغيير."
+
+#: src/components/assets/HubProjectDependencyDialog.tsx
+msgid "That doesn't name a hub project — paste its id or a link to it."
+msgstr ""
 
 #: src/components/organization/budgets/AddPeopleDialog.tsx
 msgid "That file has no rows."
@@ -23448,7 +23798,7 @@ msgstr ""
 msgid "The skill matches HEAD."
 msgstr "المهارة تطابق HEAD."
 
-#: src/components/data-sources/DataSourceRow.tsx
+#: src/components/data-sources/source-parts.tsx
 msgid "The source was not queued."
 msgstr "لم يتم إضافة المصدر إلى قائمة الانتظار."
 
@@ -23984,6 +24334,10 @@ msgstr "أصبح هذا المشروع متاحًا الآن في السحابة
 #~ msgid "This project isn't ready to link to the cloud."
 #~ msgstr ""
 
+#: src/components/project-home/MissingDependenciesDialog.tsx
+msgid "This project needs these dependencies, and they are not on this computer."
+msgstr ""
+
 #~ msgid "This project stops using it and the stored value is deleted."
 #~ msgstr ""
 
@@ -24102,6 +24456,10 @@ msgstr "تحتوي هذه المهارة على تغييرات غير مثبتة
 #: src/components/llm-sources/use-llm-sources.ts
 msgid "This source did not work"
 msgstr "لم يعمل هذا المصدر"
+
+#: src/components/data-sources/DataSourcePage.tsx
+msgid "This source is not on this machine (it may have been deleted)."
+msgstr ""
 
 #: src/components/llm-sources/use-llm-sources.ts
 msgid "This source works"
@@ -24642,8 +25000,8 @@ msgid "Transport"
 msgstr ""
 
 #: src/components/assets/context-folder-sources.tsx
-msgid "Travels with the project — everyone it is shared with gets this folder as context too."
-msgstr "ينتقل مع المشروع — يحصل كل مشارك في المشروع على هذا المجلد كسياق أيضاً"
+#~ msgid "Travels with the project — everyone it is shared with gets this folder as context too."
+#~ msgstr "ينتقل مع المشروع — يحصل كل مشارك في المشروع على هذا المجلد كسياق أيضاً"
 
 #: src/components/graph-view/TagGraphView.tsx
 msgid "Tree — hierarchy only"
@@ -24839,6 +25197,7 @@ msgstr "معرّف فريد لهذا الخطاف ضمن ملف الإعدادا
 msgid "Unit"
 msgstr ""
 
+#: src/components/assets/DependencyChips.tsx
 #: src/components/conversation/FlowMessageBubble.tsx
 msgid "unknown"
 msgstr ""
@@ -24913,6 +25272,10 @@ msgstr "إلغاء تثبيت {0}"
 #: src/components/assets/ContextFolderBrowser.tsx
 msgid "Unpushed changes"
 msgstr "تغييرات لم يتم دفعها"
+
+#: src/components/assets/DependencyChips.tsx
+msgid "unreachable"
+msgstr ""
 
 #: src/pages/hub-home/HubHome.tsx
 msgid "Unreachable"
@@ -25433,11 +25796,11 @@ msgid "Verified"
 msgstr "تم التحقق"
 
 #: src/components/account/user-info.tsx
-#: src/components/data-sources/DataSourceRow.tsx
+#: src/components/data-sources/source-parts.tsx
 msgid "Verify"
 msgstr "التحقق"
 
-#: src/components/data-sources/DataSourceRow.tsx
+#: src/components/data-sources/SourceMenu.tsx
 msgid "Verify the setup first."
 msgstr "يجب التحقق من الإعداد أولاً."
 
@@ -25464,6 +25827,11 @@ msgstr "منطقة Vertex"
 
 #: src/components/llm-endpoints/UsageByChildTable.tsx
 msgid "Via"
+msgstr ""
+
+#: src/components/browseable-tree/adapters/assetContextFoldersRoot.tsx
+#: src/components/project-home/ProjectDependenciesCard.tsx
+msgid "via {via}"
 msgstr ""
 
 #: src/components/harness-login/HarnessLoginModal.tsx
@@ -25649,6 +26017,7 @@ msgstr "في انتظار أن تختار مصدر LLM"
 #~ msgid "Waiting for you…"
 #~ msgstr "في انتظارك…"
 
+#: src/components/ask/AskForm.tsx
 #: src/journey/JourneyTray.tsx
 msgid "Waiting…"
 msgstr "في الانتظار…"
@@ -25710,6 +26079,10 @@ msgstr "تطبيق ويب"
 #: src/components/display-toolbar/WebappDisplayToolbar.tsx
 msgid "Web app status"
 msgstr "حالة تطبيق الويب"
+
+#: src/components/data-sources/ChannelRouteControl.tsx
+msgid "Webhook"
+msgstr ""
 
 #: src/components/cost-dashboard/constants.ts
 msgid "Week"
@@ -25781,8 +26154,14 @@ msgstr "ما هو {0}؟"
 
 #: src/components/quick-create/QuickCreatePanel.tsx
 #: src/components/quick-create/QuickCreatePanel.tsx
-msgid "What is a context folder?"
-msgstr "ما هو مجلد السياق؟"
+#~ msgid "What is a context folder?"
+#~ msgstr "ما هو مجلد السياق؟"
+
+#: src/components/project-home/ProjectDependenciesCard.tsx
+#: src/components/quick-create/QuickCreatePanel.tsx
+#: src/components/quick-create/QuickCreatePanel.tsx
+msgid "What is a dependency?"
+msgstr ""
 
 #: src/components/status-bar.tsx
 #: src/components/terminal/project-list-menu.tsx
@@ -25791,12 +26170,20 @@ msgid "What is a Flowpad project?"
 msgstr "ما هو مشروع Flowpad؟"
 
 #: src/components/assets/context-folder-sources.tsx
-msgid "What is a private context folder?"
-msgstr "ما هو مجلد السياق الخاص؟"
+#~ msgid "What is a private context folder?"
+#~ msgstr "ما هو مجلد السياق الخاص؟"
+
+#: src/components/assets/dependency-sources.tsx
+msgid "What is a required dependency?"
+msgstr ""
 
 #: src/components/assets/context-folder-sources.tsx
-msgid "What is a shared context folder?"
-msgstr "ما هو مجلد السياق المشترك؟"
+#~ msgid "What is a shared context folder?"
+#~ msgstr "ما هو مجلد السياق المشترك؟"
+
+#: src/components/assets/dependency-sources.tsx
+msgid "What is an optional dependency?"
+msgstr ""
 
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "What is Git sharing?"
@@ -25994,8 +26381,8 @@ msgid "Where the key is created, and how to store it: flow credentials set <name
 msgstr ""
 
 #: src/components/helpdesk/AddHelpdeskDialog.tsx
-msgid "Where this desk lives"
-msgstr ""
+#~ msgid "Where this desk lives"
+#~ msgstr ""
 
 #: src/i18n/pref-labels.ts
 msgid "Which engine runs filesystem indexing: the built-in Python FSIndexer, or the external Rust indexer (requires FLOWPAD_RS_INDEXER_BIN on the server; silently falls back to Python when unavailable). Takes effect on the next index run."
@@ -26152,6 +26539,7 @@ msgid "Working…"
 msgstr "قيد المعالجة…"
 
 #: src/i18n/type-labels.ts
+#: src/pages/hub-home/HubHome.tsx
 msgid "Workspace"
 msgstr "مساحة العمل"
 
@@ -26239,6 +26627,7 @@ msgid "yesterday {hhmm}"
 msgstr ""
 
 #: src/components/collaboration/LiveSessionView.tsx
+#: src/components/data-sources/DataSourcePage.tsx
 msgid "you"
 msgstr ""
 

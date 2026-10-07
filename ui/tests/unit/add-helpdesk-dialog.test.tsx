@@ -45,11 +45,9 @@ import { AddHelpdeskDialog } from '@src/components/helpdesk/AddHelpdeskDialog';
 const DESK_URL = 'https://github.com/langware-labs/langware-support';
 
 const BASE = {
+  dependency: 'langware-support',
   path: '/w/langware-support',
-  folder_id: 'f1',
-  scope: 'private' as const,
   already_linked: false,
-  scope_changed: false,
   helpdesk_id: 'h1',
   display_name: 'CloudNSite Support',
   welcome_message: 'Ask us anything.',
@@ -63,14 +61,14 @@ function makeProject(result: Record<string, unknown>) {
   return {
     id: 'proj-1',
     adoptHelpdeskFromGit: vi.fn(() => Promise.resolve(result)),
-    removeContextDir: vi.fn(() => Promise.resolve()),
+    removeDependency: vi.fn(() => Promise.resolve([])),
   };
 }
 
 function renderDialog(project: ReturnType<typeof makeProject>, onAdded = vi.fn()) {
   return render(
     <MemoryRouter>
-      {/* The scope chips explain themselves through Radix tooltips, which the
+      {/* The required/optional chips explain themselves through Radix tooltips, which the
           app provides at root (App.tsx). */}
       <TooltipProvider>
         {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
@@ -91,7 +89,7 @@ afterEach(() => {
 });
 
 describe('AddHelpdeskDialog', () => {
-  it('adopts a pasted URL as a private desk and offers to open it', async () => {
+  it('adopts a pasted URL as a required dependency and offers to open it', async () => {
     const user = userEvent.setup();
     const project = makeProject({ ...BASE, outcome: 'adopted' });
     const onAdded = vi.fn();
@@ -100,9 +98,9 @@ describe('AddHelpdeskDialog', () => {
     await pasteAndSubmit(user);
 
     await waitFor(() => expect(project.adoptHelpdeskFromGit).toHaveBeenCalled());
-    // Private by default: a shared adoption pushes a vendor's desk onto every
-    // collaborator, so it must be a deliberate choice, never a default.
-    expect(project.adoptHelpdeskFromGit).toHaveBeenCalledWith(DESK_URL, '', 'private');
+    // Required by default: the desk is what this project's tickets go to, so
+    // it is fetched wherever the project opens. Optional is a deliberate choice.
+    expect(project.adoptHelpdeskFromGit).toHaveBeenCalledWith(DESK_URL, '', false);
 
     expect(await screen.findByTestId('add-helpdesk-result-adopted')).toBeTruthy();
     expect(screen.getByText('CloudNSite Support')).toBeTruthy();
@@ -132,7 +130,7 @@ describe('AddHelpdeskDialog', () => {
     expect(screen.queryByText(/Added to this project/)).toBeNull();
   });
 
-  it('keeps a non-desk repo attached and offers Remove rather than detaching it', async () => {
+  it('keeps a non-desk repo as a dependency and offers Remove rather than removing it', async () => {
     const user = userEvent.setup();
     const project = makeProject({
       ...BASE,
@@ -148,11 +146,12 @@ describe('AddHelpdeskDialog', () => {
     await pasteAndSubmit(user);
 
     expect(await screen.findByTestId('add-helpdesk-result-no_manifest')).toBeTruthy();
-    expect(project.removeContextDir).not.toHaveBeenCalled();
+    expect(project.removeDependency).not.toHaveBeenCalled();
 
     const remove = screen.getByTestId('add-helpdesk-remove');
     await user.click(remove);
-    await waitFor(() => expect(project.removeContextDir).toHaveBeenCalledWith('/w/langware-support'));
+    // Removed by its dependency NAME — the folder on disk is left alone.
+    await waitFor(() => expect(project.removeDependency).toHaveBeenCalledWith('langware-support'));
 
     // Nothing to open — there is no desk.
     expect(screen.queryByTestId('add-helpdesk-open')).toBeNull();
@@ -189,7 +188,7 @@ describe('AddHelpdeskDialog', () => {
           },
         }),
       ),
-      removeContextDir: vi.fn(),
+      removeDependency: vi.fn(),
     };
     renderDialog(project as unknown as ReturnType<typeof makeProject>);
 

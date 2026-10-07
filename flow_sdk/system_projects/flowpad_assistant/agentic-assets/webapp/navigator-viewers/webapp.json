@@ -1,0 +1,14 @@
+{
+  "name": "navigator-viewers",
+  "title": "Smart navigator viewers",
+  "description": "How the smart navigator's data looks: a request (what was typed, and where), a decision (where it goes -- or the assistant), the search candidates, and a navigator example as one story. Every navigator.dataset -- the SmartNavigator eval set and the SmartNavigationLog -- is shown by these.",
+  "kind": "application.web.viewer",
+  "build": ".",
+  "views": [
+    {"kind": "navigator.dataset", "shows": ["single", "collection"]},
+    {"kind": "navigator.request", "shows": ["single"]},
+    {"kind": "navigator.decision", "shows": ["single"]},
+    {"kind": "navigator.candidate", "shows": ["collection"]}
+  ],
+  "module": "viewer.js"
+}

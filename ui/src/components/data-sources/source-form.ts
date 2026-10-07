@@ -71,7 +71,8 @@ export function emptyDraft(spec?: DataDriver): SourceDraft {
     // The driver's own title, so nothing is required of a person who has nothing to say about
     // the name — an empty box under a red "Name is required." is the form asking for a word it
     // could supply itself.
-    name: spec?.title ?? '',
+    // A driver may name what a new source IS ("Flow WhatsApp agent") better than its title does.
+    name: spec?.default_name || spec?.title || '',
     provider: spec?.name ?? '',
     // Empty means "derive from the fields" — `accountKeyFor` owns the default,
     // so exactly one place knows it.

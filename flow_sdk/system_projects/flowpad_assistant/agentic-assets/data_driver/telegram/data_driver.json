@@ -1,8 +1,11 @@
 {
   "schema": 1,
   "name": "telegram",
-  "title": "Telegram",
+  "title": "Your own Telegram bot",
   "icon_name": "Telegram",
+  "group": "Telegram",
+  "group_order": 1,
+  "group_icon_name": "Telegram",
   "description": "A Telegram bot account over the Bot API — the bot's chats become conversations, and it really sends.",
   "kind": "datasource.api.telegram",
   "auth": {

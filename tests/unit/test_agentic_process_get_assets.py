@@ -174,9 +174,11 @@ async def test_inventory_failure_keeps_valid_catalog_assets(home, monkeypatch):
 @pytest.mark.asyncio
 async def test_real_project_process_aggregates_project_and_context_folders(home, tmp_path):
     from flow_sdk.builtin.project import Project
+    from tests.unit._project_deps import link_context_dirs
     project_root, context_root = tmp_path / 'project', tmp_path / 'context'
     project_skill, context_skill = skill(project_root), skill(context_root)
-    project = await Project(id=mint_uuid(), name=f'assets-{mint_uuid()}', fs_storage_mount_path=str(project_root), include_dirs=[str(context_root)]).save()
+    project = await Project(id=mint_uuid(), name=f'assets-{mint_uuid()}', fs_storage_mount_path=str(project_root)).save()
+    await link_context_dirs(project, [context_root])
     try:
         rows = await process(project_root, project_id=project.id).get_asset_descriptors()
         assert {r.posix_path: (r.source, r.project_id) for r in rows} == {

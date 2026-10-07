@@ -2,7 +2,7 @@ import { FolderOpen, GitBranch } from 'lucide-react';
 import { useCallback } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { useGitFolderStatus } from '@src/hooks/use-git-folder-status';
-import { useContextFolderForRel } from '@src/hooks/use-context-folder-for-rel';
+import { useDependencyForRel } from '@src/hooks/use-dependency-for-rel';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { useExplorerComputeNode } from '@src/components/explorer-view/useExplorerComputeNode';
@@ -16,18 +16,18 @@ interface ContextFolderBrowserProps {
   /** Host navigation (AssetsPage's `navigateAsset`) — re-stamps the active
    *  scope so folder navigation stays in the same assets/project tab. */
   onNavigate: (p: DockPointer) => void;
-  /** Scoped project whose context folders this path belongs to — resolves the
-   *  containing git-backed context folder for status/push decoration. */
+  /** Scoped project whose dependencies this path belongs to — resolves the
+   *  containing git-backed dependency folder for status/push decoration. */
   projectId?: string | null;
 }
 
 /**
  * ContextFolderBrowser — the Assets body for an `fs/<relPath>` pointer: a real
  * file explorer (the Explorer's `SimpleFileManager`) anchored at a project
- * context folder. URL-first: navigating into a subfolder rewrites the pointer;
+ * dependency folder. URL-first: navigating into a subfolder rewrites the pointer;
  * double-clicking a file dispatches through `navigation.openFile`.
  *
- * When the browsed path lies inside a GIT-backed context folder, the browser
+ * When the browsed path lies inside a GIT-backed dependency folder, the browser
  * decorates: files the remote doesn't have yet render in amber, and a slim
  * header strip shows the branch + an unpushed badge. The git ACTIONS (changes
  * diff + push/notify) live on the folder's tree row — see
@@ -36,16 +36,16 @@ interface ContextFolderBrowserProps {
 export function ContextFolderBrowser({ vfsPath, onNavigate, projectId }: ContextFolderBrowserProps) {
   const { t } = useLingui();
   const { navigation } = useDockNavigation();
-  // The VFS the file manager browses. `useContextFolderForRel` resolves the same
+  // The VFS the file manager browses. `useDependencyForRel` resolves the same
   // compute node for its git-ops workdir, but the manager needs the TypeId itself.
   const { typeId } = useExplorerComputeNode();
 
   const rel = normalizeRel(vfsPath.entitySubPath);
   const initialPath = rel ? `/${rel}` : '/';
 
-  // The context folder containing the browsed path; this pane only decorates the
+  // The dependency folder containing the browsed path; this pane only decorates the
   // GIT-backed ones, so a local folder reads as "no workdir" exactly as before.
-  const folder = useContextFolderForRel(projectId, rel);
+  const folder = useDependencyForRel(projectId, rel);
   const gitWorkdir = folder?.originKind === 'git' ? folder.workdir : null;
 
   const { status, hasUnpushed, isPathUnpushed, refresh } = useGitFolderStatus(

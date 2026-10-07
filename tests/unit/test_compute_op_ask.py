@@ -465,6 +465,31 @@ def test_a_questions_words_show_values_the_run_already_has():
     assert fill("{{missing}} and {{connect.nope}}", env) == "{{missing}} and {{connect.nope}}", "unknown stays as written"
 
 
+async def test_an_auto_continue_question_closes_by_itself_when_its_goal_holds(tmp_path, monkeypatch):
+    """2FA style: the goal is reached on a phone, not by a click. The question offers no Send, the op's check
+    looks again every few seconds, and the moment it holds the question is withdrawn and the op is done."""
+    import flow_sdk.core.compute_op.runner as runner
+
+    monkeypatch.setattr(runner, "AUTO_CONTINUE_EVERY_SECONDS", 0.05)
+    marker = tmp_path / "connected"
+    check = f"test -f {marker} || (echo 'Not connected yet.' >&2; exit 1)"
+    spec = _spec(tmp_path, exe_data={"prompt": "Connect WhatsApp", "recheck": True, "auto_continue": True},
+                 completion_check={"commands": {sys.platform: check}}, output_spec_kind="confirm")
+    run = asyncio.create_task(_run(spec, tmp_path, timeout=5))
+    for _ in range(300):
+        if open_questions():
+            break
+        await asyncio.sleep(0.01)
+    (question,) = open_questions()
+    assert question.to_payload()["auto"] is True, "the window offers no Send"
+
+    marker.write_text("1")                       # the phone sent its code -- nobody clicks anything
+    said = await run
+
+    assert said.ok, said
+    assert open_questions() == []
+
+
 async def test_a_rechecked_question_stays_open_until_its_goal_holds(tmp_path):
     """The gate: pressing Send is not the proof. Until the check holds, the question comes back with the
     check's own reason under it; once it holds, the op is done."""

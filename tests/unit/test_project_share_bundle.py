@@ -121,10 +121,10 @@ async def test_the_senders_checkout_stays_on_the_senders_machine(tmp_path):
     metadata = json.loads(metadata_text)
     assert "fs_storage_mount_path" not in metadata
     assert "sender-checkout" not in metadata_text and "sender-notes" not in metadata_text
-    # A git context folder can be resolved on the recipient's machine; a local
-    # one is a path on this machine only.
-    assert list(metadata["shared_context_origins"]) == [str(git_folder.typeid)]
-    assert "legacy_include_dirs_" not in metadata
+    # Context folders travel as the repo's flow.json, never as resolved origins
+    # or paths on the project row.
+    assert "shared_context_origins" not in metadata
+    assert "include_dirs" not in metadata and "context_dir_infos" not in metadata
 
 
 async def test_the_project_row_never_rides_as_an_overlay_envelope(tmp_path):

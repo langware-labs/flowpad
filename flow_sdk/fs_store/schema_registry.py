@@ -1039,6 +1039,10 @@ class SchemaRegistry:
         cls._entities_loading = True
         try:
             import flow_sdk.fs_store.indexer.registrations  # noqa: F401, PLC0415 — binds entity_cls
+            # Every builtin entity the server binds at boot. Without it a bare script indexes an
+            # ``agentic-assets/agent/*`` folder as a typeless ``Entity`` row — no ``asset_ref`` —
+            # so a project's home never lists the agent (the indexer covers only its own types).
+            import flow_sdk.models.entities  # noqa: F401, PLC0415
             cls._entities_loaded = True
         finally:
             cls._entities_loading = False

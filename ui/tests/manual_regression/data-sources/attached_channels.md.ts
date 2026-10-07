@@ -245,7 +245,9 @@ test('4. an agent\'s bar is its own', async ({ page }) => {
   await agentBar.getByTestId('attached-channels-add').click();
   const dialog = page.getByRole('dialog').filter({ hasText: 'Add a data source' });
   await expect(dialog).toBeVisible();
-  await dialog.getByTestId('provider-slack').click();
+  // Slack is a group (Flow — no setup / your own Slack app): the tile asks which, then the member opens its form.
+  await dialog.getByTestId('provider-group-Slack').click();
+  await dialog.getByTestId('group-member-slack').click();
   await dialog.locator('#ds-name').fill(AGENT_SOURCE);
   // `channel` is a picker that lists on open; asked of a workspace it cannot read, it hands the
   // field back to typing — where the id is pasted.

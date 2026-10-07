@@ -414,5 +414,5 @@ behind them is `mountDatasetEditor`: it builds every form from the declared kind
 
 The example is the SmartNavigator eval set. Its row kinds ship as flat `data_spec` folders
 (`flowpad_assistant/agentic-assets/data_spec/navigat*`); its rows do not — they live beside the
-checkout at `dev/dataset/smart-navigator/` (`navigator_eval.DATASET`). Shipped assets stay flat:
+checkout at `dev/dataset/smart-navigator/` (`flow_sdk.core.navigation.DATASET`). Shipped assets stay flat:
 a nested tree inside the install crossed Windows' 260-char MAX_PATH.
