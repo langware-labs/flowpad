@@ -1,7 +1,7 @@
 """The REST surface of a ``DiagnosisRequest`` — what the request's asset screen calls.
 
-Three verbs: open one (``open_request``), list what may fund one (``funding_sources``), and read
-back what was written into one (``runs``). Each is a thin door onto ``builtin/diagnosis_request.py``;
+Open one (``open_request``), change one (``edit``), list what may fund one (``funding_sources``),
+send it more (``attachments``), and read back what was written into one (``runs``). Each is a thin door onto ``builtin/diagnosis_request.py``;
 the hub calls happen there, server-side, so the page never sees a hub URL or a key.
 """
 
@@ -14,7 +14,11 @@ from flow_sdk.actions import action
 from flow_sdk.cloud_client.shared.errors import HubError
 from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiSuccessResponse
-from flow_sdk.schema.data_spec.diagnosis_request_spec import DiagnosisAttachmentSpec, DiagnosisRequestOpenSpec
+from flow_sdk.schema.data_spec.diagnosis_request_spec import (
+    DiagnosisAttachmentSpec,
+    DiagnosisRequestEditSpec,
+    DiagnosisRequestOpenSpec,
+)
 from flow_sdk.schema.types import EntityType
 
 _TYPES = [EntityType.DIAGNOSIS_REQUEST.value]
@@ -53,6 +57,23 @@ async def open_request_action():
     except (RuntimeError, ValueError) as e:  # signed out (``share``), or an unusable local key
         raise HTTPException(status_code=400, detail=str(e))
     return ApiSuccessResponse(data={"request": request, "command": request.command})
+
+
+@action.post(action_name="edit", types=_TYPES)
+async def edit_action():
+    """``POST /graph/diagnosis_request/<id>/edit`` ``DiagnosisRequestEditSpec`` -> the request."""
+    request = await _request()
+    info = get_current_request_info()
+    try:
+        spec = DiagnosisRequestEditSpec.model_validate((await info.get_post_data() if info else None) or {})
+    except ValidationError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    try:
+        return ApiSuccessResponse(data=await request.edit(spec))
+    except HubError as e:
+        return e.fail_response("Could not change the diagnosis request")
+    except ValueError as e:  # an unusable local key
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 @action.get(action_name="funding_sources", types=_TYPES)

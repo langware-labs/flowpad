@@ -12,6 +12,7 @@ The hub half is ``flowpad/hub/builtin/flowpad_diagnosis.py``.
 
 from __future__ import annotations
 
+import asyncio
 from datetime import UTC, datetime, timedelta
 from typing import Any, ClassVar, Optional
 
@@ -20,6 +21,7 @@ from flow_sdk.builtin.flowpad_diagnosis import FlowpadDiagnosis
 from flow_sdk.schema.data_spec.diagnosis_request_spec import (
     DiagnosisAttachmentSpec,
     DiagnosisFundingSpec,
+    DiagnosisRequestEditSpec,
     DiagnosisRequestOpenSpec,
 )
 from flow_sdk.schema.types import EntityType
@@ -31,6 +33,8 @@ ATTACHABLE_ASSET_TYPES = frozenset(
 )
 #: Hub LLM providers a stored key can be uploaded as (``LLMProvider`` on the hub).
 HUB_KEY_PROVIDERS = ("openrouter", "anthropic", "openai")
+#: One lock per request, so two frames for the same run post one feed entry.
+_update_locks: dict[str, asyncio.Lock] = {}
 #: What the hub keeps fresh on the row -- read back by ``pull``, never sent.
 _HUB_FIELDS = (
     "title",
@@ -77,7 +81,7 @@ class DiagnosisRequest(FlowpadDiagnosis):
         """Open a request: write it here, push it to the hub, fund it when asked. Raises ``HubError``."""
         from flow_sdk.api.api_types.identifier import mint_uuid  # noqa: PLC0415
 
-        title = (spec.instructions.strip().splitlines() or ["Diagnosis request"])[0][:80]
+        title = _title_of(spec.instructions)
         request = cls(
             id=mint_uuid(),
             name=title,
@@ -95,6 +99,31 @@ class DiagnosisRequest(FlowpadDiagnosis):
         for attachment in spec.attachments:
             await request.attach(attachment)
         return await request.pull()
+
+    async def edit(self, spec: DiagnosisRequestEditSpec) -> "DiagnosisRequest":
+        """Change what the owner set at open: the instructions (on the hub and here), the window and
+        the run size (the hub's ``limits``, which clamps them like open), and the budget (a fresh
+        ``fund`` -- the hub drops the one it replaces). Raises ``HubError``."""
+        from flow_sdk.cloud_client.transport.hub_http import hub_post, hub_put  # noqa: PLC0415
+
+        if spec.instructions is not None:
+            name = _title_of(spec.instructions)
+            body: dict[str, Any] = {"instructions": spec.instructions, "name": name}
+            if not self.run_count:  # once a run came back, the title is the latest run's
+                body["title"] = name
+            await hub_put(EntityType.DIAGNOSIS_REQUEST.value, self.id, body)
+            self.instructions, self.name = spec.instructions, name
+            await self.save()
+        limits: dict[str, Any] = {}
+        if spec.write_hours is not None:
+            limits["write_expires_at"] = (datetime.now(UTC) + timedelta(hours=spec.write_hours)).isoformat()
+        if spec.max_run_mb is not None:
+            limits["max_run_bytes"] = spec.max_run_mb * 1024 * 1024
+        if limits:
+            await hub_post(EntityType.DIAGNOSIS_REQUEST.value, limits, self.id, "limits")
+        if spec.funding is not None:
+            await self.fund(spec.funding)
+        return await self.pull()
 
     async def fund(self, funding: DiagnosisFundingSpec) -> None:
         """Give the runner a budget: the hub allocates it from ``funding``'s source, public and capped.
@@ -152,6 +181,30 @@ class DiagnosisRequest(FlowpadDiagnosis):
             await self.save()
         return self
 
+    @classmethod
+    async def take_hub_update(cls, request_id: str, data: dict) -> bool:
+        """The hub pushed this request's row (``notify_owner``, on every run that comes back): when
+        it counts a run the local row has not seen, refresh the row and post a Home-feed entry that
+        opens the request. Returns whether a new run was taken.
+
+        Keyed on ``run_count``, so a frame repeated -- or one sent for a change that is not a run --
+        posts nothing; serialized per request so two frames for one run post once.
+        """
+        from flow_sdk.builtin.feed_entry import FeedEntry, FeedStatus  # noqa: PLC0415
+        from flow_sdk.server.routes.bootstrap import get_or_create_local_user  # noqa: PLC0415
+
+        async with _update_locks.setdefault(request_id, asyncio.Lock()):
+            request = await cls.get_one({"id": request_id})
+            hub_count = int(data.get("run_count") or 0)
+            if request is None or hub_count <= int(request.run_count or 0):
+                return False
+            await request.pull()
+            user = await get_or_create_local_user()
+            await FeedEntry(
+                feed_status=FeedStatus.NEW.value, data={"type_id": str(request.typeid), "run": hub_count}
+            ).save(user.typeid)
+            return True
+
     async def runs(self, number: int | None = None) -> Any:
         """Every kept run (``number`` None), or one run whole, files included -- read from the hub."""
         from flow_sdk.cloud_client.transport.hub_http import hub_get_or_raise  # noqa: PLC0415
@@ -161,6 +214,11 @@ class DiagnosisRequest(FlowpadDiagnosis):
             return await hub_get_or_raise(EntityType.DIAGNOSIS_REQUEST.value, self.id, "runs", str(number))
         listed = await hub_get_or_raise(EntityType.DIAGNOSIS_REQUEST.value, self.id, "runs")
         return listed if isinstance(listed, list) else []  # an empty list arrives as ``{}``
+
+
+def _title_of(instructions: str) -> str:
+    """The request's label: the first line of its instructions."""
+    return (instructions.strip().splitlines() or ["Diagnosis request"])[0][:80]
 
 
 async def funding_sources() -> dict[str, Any]:

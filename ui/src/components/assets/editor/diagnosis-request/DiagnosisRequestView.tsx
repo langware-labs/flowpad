@@ -4,26 +4,34 @@
  * live in the request's hub storage and are read through the type's actions -- `runs` also
  * refreshes the row from the hub, so the counts here follow it.
  */
-import { DiagnosisRequest, TypeId } from '@sdk';
+import { DiagnosisRequest, TypeId, type AssetDescriptor } from '@sdk';
 import { useAction } from '@src/hooks/use-action';
 import { useEntity } from '@sdk/react/hooks';
 import { Trans, useLingui } from '@lingui/react/macro';
-import { useMemo, useRef, useState, type ReactNode } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
+import { Pencil, Sparkles } from 'lucide-react';
 
+import { AttachMenu } from '@src/components/conversation/AttachMenu';
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import { Badge } from '@src/components/ui/badge';
 import { Button } from '@src/components/ui/button';
 import { CopyButton } from '@src/components/ui/copy-button';
 import { cn } from '@src/lib/utils';
+import { notify } from '@src/notifications';
+import { useStartVibeSession } from '@src/pages/flow-page/use-start-vibe-session';
 
+import { isAttachable } from './DiagnosisRequestCreateDialog';
+import { DiagnosisRequestEditDialog } from './DiagnosisRequestEditDialog';
 import {
   callRequestAction,
   commandFor,
   errorText,
+  explainPrompt,
   formatSize,
   formatWhen,
   readFile,
   requestAction,
+  type AttachmentBody,
   type RequestAttachment,
   type RunDetail,
   type RunSummary,
@@ -53,24 +61,27 @@ function Attachments({ id }: { id: string }) {
   const { data, error, refetch } = useAction<RequestAttachment[]>(action);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const input = useRef<HTMLInputElement>(null);
   const items = data ?? [];
 
-  const sendMore = async (files: File[]) => {
+  // Each pick is sent at once -- the request is already open, there is no draft to collect into.
+  const send = async (bodies: Promise<AttachmentBody>[]) => {
+    if (bodies.length === 0) return;
     setBusy(true);
     setUploadError(null);
     try {
-      for (const file of files) {
-        await callRequestAction('attachments', { id, method: 'POST', body: await readFile(file) });
+      for (const body of bodies) {
+        await callRequestAction('attachments', { id, method: 'POST', body: await body });
       }
       await refetch();
     } catch (e) {
       setUploadError(errorText(e));
     } finally {
       setBusy(false);
-      if (input.current) input.current.value = '';
     }
   };
+  const sendFiles = (files: FileList | null) => void send([...(files ?? [])].map(readFile));
+  const sendAssets = (picked: AssetDescriptor[]) =>
+    void send(picked.map((a) => Promise.resolve({ asset_typeid: a.typeid })));
 
   return (
     <Section title={<Trans>Sent along</Trans>}>
@@ -93,17 +104,20 @@ function Attachments({ id }: { id: string }) {
           ))}
         </ul>
       )}
-      <input
-        ref={input}
-        type="file"
-        multiple
-        className="hidden"
-        onChange={(e) => void sendMore([...(e.target.files ?? [])])}
-        data-testid="diagnosis-request-more-files"
-      />
-      <Button variant="outline" size="sm" disabled={busy} onClick={() => input.current?.click()}>
-        <Trans>Send more files</Trans>
-      </Button>
+      {/* The same Attach button a message has: files from this computer, or Flowpad assets. */}
+      <div className="flex items-center gap-2" data-testid="diagnosis-request-attach">
+        <AttachMenu
+          assetRefs={[]}
+          onAssetRefsChange={sendAssets}
+          onFilesPicked={sendFiles}
+          disabled={busy}
+          hideAssetList
+          assetFilter={isAttachable}
+        />
+        <span className="text-xs text-muted-foreground">
+          {busy ? <Trans>Sending…</Trans> : <Trans>Attach more files or assets</Trans>}
+        </span>
+      </div>
       {(uploadError || error) && <p className="text-xs text-destructive">{uploadError ?? errorText(error)}</p>}
     </Section>
   );
@@ -156,6 +170,43 @@ function RunBody({ id, number }: { id: string; number: number }) {
         </div>
       ))}
     </article>
+  );
+}
+
+/** Opens a new session seeded with the whole request and every run, asked to summarize and explain it. */
+function ExplainButton({ request }: { request: DiagnosisRequest }) {
+  const { t } = useLingui();
+  const { start, installDialog } = useStartVibeSession();
+  const [busy, setBusy] = useState(false);
+
+  const explain = async () => {
+    setBusy(true);
+    try {
+      const id = request.id;
+      const [summaries, attachments] = await Promise.all([
+        callRequestAction<RunSummary[]>('runs', { id }),
+        callRequestAction<RequestAttachment[]>('attachments', { id }),
+      ]);
+      const runs = await Promise.all(
+        summaries.map((r) => callRequestAction<RunDetail>('runs', { id, subpath: String(r.run) })),
+      );
+      const { message, files } = explainPrompt(request, attachments, runs);
+      start(message, files);
+    } catch (e) {
+      notify.error({ title: t`Could not read the diagnosis`, message: errorText(e) });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <>
+      <Button size="sm" disabled={busy} onClick={() => void explain()} data-testid="diagnosis-request-explain">
+        <Sparkles className="me-1.5 h-3.5 w-3.5" />
+        <Trans>Explain the result</Trans>
+      </Button>
+      {installDialog}
+    </>
   );
 }
 
@@ -218,6 +269,7 @@ export interface DiagnosisRequestViewProps {
 
 export function DiagnosisRequestView({ value }: DiagnosisRequestViewProps) {
   const { t } = useLingui();
+  const [editing, setEditing] = useState(false);
   const typeId = useMemo(() => new TypeId(value), [value]);
   const { data: request, isLoading } = useEntity<DiagnosisRequest>(typeId);
   // The type's glyph comes from the backend registry, never a literal (CLAUDE.md's icon law).
@@ -245,8 +297,13 @@ export function DiagnosisRequestView({ value }: DiagnosisRequestViewProps) {
       <div className="mx-auto max-w-3xl space-y-6">
         <div className="flex items-center gap-2">
           <Icon className="h-5 w-5 text-muted-foreground" />
-          <h2 className="text-base font-semibold">{request.title || request.name || t`Diagnosis request`}</h2>
+          <h2 className="flex-1 text-base font-semibold">{request.title || request.name || t`Diagnosis request`}</h2>
+          <Button variant="outline" size="sm" onClick={() => setEditing(true)} data-testid="diagnosis-request-edit">
+            <Pencil className="me-1.5 h-3.5 w-3.5" />
+            <Trans>Edit</Trans>
+          </Button>
         </div>
+        <DiagnosisRequestEditDialog open={editing} onOpenChange={setEditing} request={request} />
 
         <Section title={<Trans>Send this to the person you support — they run it in their terminal:</Trans>}>
           <div className="flex items-center gap-2 rounded-md border bg-muted/40 px-3 py-2">
@@ -272,6 +329,7 @@ export function DiagnosisRequestView({ value }: DiagnosisRequestViewProps) {
         )}
 
         <Attachments id={id} />
+        {(request.run_count ?? 0) > 0 && <ExplainButton request={request} />}
         <Runs id={id} />
       </div>
     </div>
