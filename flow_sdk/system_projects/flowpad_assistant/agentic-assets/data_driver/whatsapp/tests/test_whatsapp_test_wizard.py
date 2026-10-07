@@ -1,7 +1,8 @@
 """The shipped ``whatsapp-test`` wizard, run for real by the wizard runner over its own asset files.
 
-Only the shell is a stand-in: it plays ``flow source step`` — each step's goal holds once its call ran with
-the values it needs. A person answers each question. This proves the wiring the documents promise: every
+Only the source is a stand-in: it plays ``flow source step`` (in the backend, as the ops name ``source_step``;
+over the shell for a command op) — each step's goal holds once its call ran with the values it needs. A person
+answers each question. This proves the wiring the documents promise: every
 answer reaches the step that reads it (as FLOWPAD_WIZARD_INPUT_*, never argv), the steps run in order, and
 running the wizard again resumes at the first goal not met — asking nothing already answered.
 """
@@ -72,6 +73,31 @@ class _Provider:
         self.done.add(step)
         return CliResult.of_process(command, 0)
 
+    def install(self, monkeypatch) -> "_Provider":
+        """The same pretend source, reached as the runner reaches a ``source_step`` op: in the backend."""
+        from flow_sdk.builtin.data_source import DataSource
+        from flow_sdk.sources.setup_steps import ReturnedValue
+
+        provider = self
+
+        async def get_by_id(cls, ident):
+            return DataSource(id=ident, provider="whatsapp", name="bot") if ident == "ds-1" else None
+
+        async def step(source, name, *, check=False, values=None):
+            env = {k.upper(): v for k, v in (values or {}).items()}
+            assert env.get("SOURCE") == "ds-1", "every step names the source it sets up"
+            if check:
+                return ReturnedValue.satisfied("holds") if name in provider.done else ReturnedValue.not_yet("not yet")
+            missing = NEEDS[name] - set(env)
+            assert not missing, f"{name} ran without {missing}"
+            provider.calls.append((name, env))
+            provider.done.add(name)
+            return ReturnedValue.satisfied("done")
+
+        monkeypatch.setattr(DataSource, "get_by_id", classmethod(get_by_id))
+        monkeypatch.setattr(DataSource, "step", step)
+        return self
+
 
 async def _launch(**_kw):
     return PromptResult.satisfied("n/a")
@@ -109,8 +135,8 @@ async def _run(provider, tmp_path, ops):
     )
 
 
-async def test_the_test_wizard_runs_every_step_with_the_answers_it_needs(tmp_path):
-    provider, asked = _Provider(), []
+async def test_the_test_wizard_runs_every_step_with_the_answers_it_needs(tmp_path, monkeypatch):
+    provider, asked = _Provider().install(monkeypatch), []
     person = asyncio.create_task(_person(asked))
     result = await _run(provider, tmp_path, _ops())
     person.cancel()
@@ -123,8 +149,8 @@ async def test_the_test_wizard_runs_every_step_with_the_answers_it_needs(tmp_pat
     assert len(asked) == 7
 
 
-async def test_running_it_again_resumes_and_asks_nothing_already_answered(tmp_path):
-    provider, asked = _Provider(), []
+async def test_running_it_again_resumes_and_asks_nothing_already_answered(tmp_path, monkeypatch):
+    provider, asked = _Provider().install(monkeypatch), []
     provider.done |= {"app", "number"}  # a first run got this far, then the person closed the dialog
 
     person = asyncio.create_task(_person(asked))

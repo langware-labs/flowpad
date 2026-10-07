@@ -56,6 +56,7 @@ class ExeData(DataSpec):                      # no kind of its own
 
 class CliOp(ExeData):                         # compute_op.cli — also every completion check
     commands: dict[str, str]                  # sys.platform → shell one-liner
+    source_step: str | None                   # a setup step of the run's source, run IN the backend (no shell)
 
 class PromptOp(ExeData):                      # compute_op.prompt — a model, no tools
     prompt: str
