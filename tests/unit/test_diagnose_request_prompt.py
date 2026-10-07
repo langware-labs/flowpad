@@ -65,3 +65,20 @@ async def test_the_steps_run_before_the_diagnosis_whichever_way_they_were_approv
 
     assert seen["steps"] == list(STEPS), "the supporter's steps run as turns of their own, first"
     assert "check where git is" not in seen["extra"]
+
+
+async def test_stopping_the_diagnose_worker_ends_its_headless_turn():
+    """A headless turn outliving the run left its CLI child holding the run's temp folder and its
+    DB writes to be torn down by asyncio.run's exit cleanup -- the Windows traceback burst."""
+    import asyncio
+
+    from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess, register_prompt_task
+    from flow_sdk.cli.commands.diagnose_cmd import _stop_worker
+
+    ap = AgenticProcess(name="flow diagnose")
+    turn = asyncio.create_task(asyncio.Event().wait())  # a turn still waiting on its worker
+    register_prompt_task(str(ap.id), turn)
+
+    await _stop_worker(ap)
+
+    assert turn.done(), "the run must not end with its agent's turn still running"

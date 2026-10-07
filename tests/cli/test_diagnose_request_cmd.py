@@ -65,7 +65,18 @@ class _Hub:
 
 
 def _recording_run(calls: list):
-    async def run(text, timeout, *, emit=None, process_options=None, steps=(), approve=None, prompt_extra=""):
+    async def run(
+        text,
+        timeout,
+        *,
+        emit=None,
+        process_options=None,
+        steps=(),
+        approve=None,
+        step_output_dir=None,
+        step_context="",
+        prompt_extra="",
+    ):
         approved = [s for s in steps if approve is None or approve(s)]
         workdir = Path(process_options["workdir"])
         calls.append(
@@ -74,6 +85,8 @@ def _recording_run(calls: list):
                 "process_options": process_options,
                 "approved": approved,
                 "extra": prompt_extra,
+                "step_output_dir": step_output_dir,
+                "step_context": step_context,
                 "skill": (workdir / ".claude/skills/db-doctor/SKILL.md").read_text()
                 if (workdir / ".claude/skills/db-doctor/SKILL.md").exists()
                 else None,
@@ -128,7 +141,8 @@ def test_approve_all_runs_on_the_requests_budget_and_submits_the_diagnosis():
         "llm_endpoint_typeid": BUDGET,
         "llm_endpoint_public": True,
     }
-    assert "search server.log" in calls[0]["extra"], "approved together, the steps go into the diagnosis turn"
+    assert calls[0]["approved"] == ["search server.log for 'locked'"], "approved together, each step still runs first"
+    assert "step-<n>.txt" in calls[0]["extra"], "the diagnosis turn sums up what the steps found"
     sent = hub.submitted[0]
     assert sent["title"] == "DB locked" and sent["user_report"] == "it hangs"
     assert sent["files"]["agent-narration.md"] == "found the lock"
