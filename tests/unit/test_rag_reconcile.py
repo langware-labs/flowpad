@@ -201,6 +201,69 @@ async def test_a_provider_failure_is_recorded_rather_than_raised(docs, monkeypat
     assert "503" in index.last_error
 
 
+async def test_the_row_says_indexing_for_exactly_the_length_of_the_pass(docs, monkeypatch):
+    """`pending` is cleared before the pass, so only `indexing` can tell a screen one is running."""
+    seen: list[bool] = []
+
+    async def watching(index):
+        async def _embed(texts):
+            seen.append((await RagIndex.get_by_id(index.id)).indexing)
+            return embed_all(list(texts))
+
+        return _embed, "ngram-test"
+
+    monkeypatch.setattr(reconcile, "embedder_for", watching)
+    index = await _active(docs)
+    await reconcile.run_index(index)
+
+    assert seen and all(seen), "the stored row did not say indexing while embedding"
+    assert (await RagIndex.get_by_id(index.id)).indexing is False
+
+
+async def test_a_failed_pass_stops_saying_indexing(docs, monkeypatch):
+    """Otherwise a crashed pass leaves the card spinning forever."""
+
+    async def broken(index):
+        async def _embed(texts):
+            raise RuntimeError("the provider returned 503")
+
+        return _embed, "ngram-test"
+
+    monkeypatch.setattr(reconcile, "embedder_for", broken)
+    index = await _active(docs)
+    await reconcile.run_index(index)
+    stored = await RagIndex.get_by_id(index.id)
+    assert stored.indexing is False and "503" in stored.last_error
+
+
+async def test_an_indexing_flag_no_pass_owns_is_cleared_on_the_next_tick(docs, monkeypatch):
+    """A process that died mid-pass leaves `indexing` on disk; the heartbeat ends it."""
+    monkeypatch.setattr(reconcile, "_spawn", lambda index: None)
+    index = await _active(docs, pending=False)
+    index.indexing = True
+    await index.save(notify=False)
+    await reconcile.dispatch_due_indexes()
+    assert (await RagIndex.get_by_id(index.id)).indexing is False
+
+
+async def test_the_index_can_be_browsed_after_a_pass(docs, local_embedder):
+    """`chunks` lists every document and pages one document's chunks in reading order."""
+    index = await _active(docs)
+    await reconcile.run_index(index)
+
+    everything = await index.chunks()
+    refs = [d["doc_ref"] for d in everything["documents"]]
+    assert [r.rsplit("/", 1)[-1] for r in refs] == ["intro.md", "weather.md"]
+    assert everything["total"] == index.chunk_count
+
+    weather = refs[1]
+    one = await index.chunks(weather)
+    assert one["total"] == everything["documents"][1]["chunk_count"]
+    assert {c["doc_ref"] for c in one["chunks"]} == {weather}
+    assert "blizzard" in one["chunks"][0]["text"]
+    assert one["chunks"][0]["heading_path"] == ["Weather"]
+
+
 # ── the whole loop ───────────────────────────────────────────────────────────
 
 

@@ -114,28 +114,25 @@ async def run_index(index: "RagIndex", *, force: bool = False) -> list["IndexRep
             await index.save(notify=True)
         return []
 
-    reports: list["IndexReport"] = []
-    try:
-        async with index.open_store() as store:
-            reports = await index_roots(store, index.roots, embed=embed, model=model, force=force)
-            index.chunk_count = store.chunk_count()
-            index.document_count = len(store.document_refs())
-            index.model = index.model or store.model
-            index.dimensions = index.dimensions or store.dimensions
-        problems = [e for r in reports for e in r.errors]
-        index.last_error = problems[0] if problems else ""
-    except Exception as exc:  # noqa: BLE001 — the reason belongs on the row, not in a traceback
-        logger.warning("rag: pass failed for %s", index.id, exc_info=True)
-        index.last_error = str(exc)
-        # Saved, or the card never shows why — the reason lived only on this in-memory copy.
-        await index.save(notify=True)
-        return reports
-
     from datetime import datetime, timezone  # noqa: PLC0415
 
-    if any(not r.fresh for r in reports):
-        index.last_indexed_at = datetime.now(timezone.utc)
-    await index.save(notify=True)
+    reports: list["IndexReport"] = []
+    async with index.embedding():
+        try:
+            async with index.open_store() as store:
+                reports = await index_roots(store, index.roots, embed=embed, model=model, force=force)
+                index.chunk_count = store.chunk_count()
+                index.document_count = len(store.document_refs())
+                index.model = index.model or store.model
+                index.dimensions = index.dimensions or store.dimensions
+            problems = [e for r in reports for e in r.errors]
+            index.last_error = problems[0] if problems else ""
+            if any(not r.fresh for r in reports):
+                index.last_indexed_at = datetime.now(timezone.utc)
+        except Exception as exc:  # noqa: BLE001 — the reason belongs on the row, not in a traceback
+            logger.warning("rag: pass failed for %s", index.id, exc_info=True)
+            # Saved by ``embedding`` on the way out, or the card never shows why.
+            index.last_error = str(exc)
     return reports
 
 
@@ -199,6 +196,7 @@ async def dispatch_due_indexes() -> list[str]:
         key = str(index.id)
         if key in _inflight:
             continue
+        await index.clear_stale_indexing()
         if not index.pending and not await index.unstamped_roots():
             continue
         if index.status == RagStatus.SETUP and await index.settle_status():
