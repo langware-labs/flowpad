@@ -154,7 +154,9 @@ function startProcessRuntime(process: AgenticProcess, cols: number, rows: number
 
 /** A plain shell: `open` (re)creates or re-finds its PTY, then attaches it. */
 function startShellRuntime(shell: Shell, cols: number, rows: number): Promise<void> {
-  return startRuntime(shell.typeId.toString(), () => shell.ensureStarted({ cols, rows, workdir: shell.workdir ?? undefined }));
+  return startRuntime(shell.typeId.toString(), () =>
+    shell.ensureStarted({ cols, rows, workdir: shell.workdir ?? undefined }),
+  );
 }
 
 /** A plain shell whose `open` failed: say so on the panel, with a way to try again. */
@@ -206,6 +208,19 @@ const TerminalPanelBody: React.FC<{
   const processRef = useRef(activeProcess);
   processRef.current = activeProcess;
   const processReady = activeProcess != null;
+
+  // →PTY switch window: `switchMode` stages `pty_mode=true` before its request, and
+  // the shell id only lands with the response. A panel readied as a headless chat
+  // reads that gap as "no shell, not headless" and flashed the nothing-to-display
+  // error. From headless until the next shell arrives it is starting, not broken;
+  // once a shell has been seen, a later shell-less PTY is a real failure again.
+  const isHeadless = !!activeProcess?.isHeadless;
+  const [cameFromHeadless, setCameFromHeadless] = useState(false);
+  useEffect(() => {
+    if (isHeadless) setCameFromHeadless(true);
+    else if (transportShellId) setCameFromHeadless(false);
+  }, [isHeadless, transportShellId]);
+  const switchingToPty = isProcess && cameFromHeadless && !!activeProcess && !isHeadless && !transportShellId;
 
   // A route loader resolves only URL identity + project context. The mounted,
   // URL-active panel owns the worker/PTY side effect so a slow `open` action
@@ -296,6 +311,7 @@ const TerminalPanelBody: React.FC<{
   // One line each time this panel falls through to "nothing to display": a process
   // that loaded, is past startup, and has neither a shell nor a headless chat.
   const showsNothing =
+    !switchingToPty &&
     isProcess &&
     !!activeProcess &&
     !activeProcess.isHeadless &&
@@ -345,10 +361,11 @@ const TerminalPanelBody: React.FC<{
       {/* A headless chat legitimately has NO shell (see AgenticProcess.isHeadless)
           — InteractiveTerminal renders SimpleChatPane without an xterm. Mount it
           shell-less. */}
-      {isProcess &&
-      activeProcess &&
-      !activeProcess.isHeadless &&
-      (runtimeStatus === 'idle' || runtimeStatus === 'starting') ? (
+      {switchingToPty ||
+      (isProcess &&
+        activeProcess &&
+        !activeProcess.isHeadless &&
+        (runtimeStatus === 'idle' || runtimeStatus === 'starting')) ? (
         <TerminalPanelStartingState />
       ) : !isProcess && shellStartError ? (
         <ShellStartFailedState message={shellStartError} onRetry={() => setShellStartAttempt((n) => n + 1)} />
