@@ -3798,6 +3798,7 @@ class AgenticProcess(Entity):
                 session_id=self.session_id if (self.session_id and not resumable) else None,
                 resume_session_id=self.session_id if resumable else None,
                 language=await resolve_worker_language(self),
+                disallowed_tools=(self.cli_config or {}).get("disallowed_tools") or [],
                 **self._process_asset_context_kwargs(process_assets),
             )
 

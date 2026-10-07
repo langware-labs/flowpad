@@ -34,6 +34,7 @@ from flow_sdk.schema.data_spec.diagnose_spec import (
     DiagnosisStatus,
     FlowContextSpec,
 )
+from flow_sdk.schema.data_spec.spec import validation_summary
 
 logger = logging.getLogger(__name__)
 
@@ -80,16 +81,23 @@ def shipped_root() -> Path:
     return flowpad_assistant_project_root()
 
 
+def resolve_shipped() -> tuple[Path, DiagnoseSpec]:
+    """The Flowpad Assistant's own diagnose -- what diagnoses FLOWPAD (the Diagnose button,
+    ``flow diagnose``), whichever project is open: a project can override what a helper is sent,
+    never how Flowpad checks itself."""
+    for folder, spec in _diagnoses_under(shipped_root()):
+        if folder.name == GENERIC:
+            return folder, spec
+    raise DiagnoseError(f"the shipped {GENERIC!r} diagnose is missing under {shipped_root()}")
+
+
 def resolve_diagnose(project_path: Optional[str | Path]) -> tuple[Path, DiagnoseSpec]:
     """The diagnose for a project: its own (the first by folder name), else the shipped one."""
     if project_path:
         own = _diagnoses_under(Path(project_path))
         if own:
             return own[0]
-    for folder, spec in _diagnoses_under(shipped_root()):
-        if folder.name == GENERIC:
-            return folder, spec
-    raise DiagnoseError(f"the shipped {GENERIC!r} diagnose is missing under {shipped_root()}")
+    return resolve_shipped()
 
 
 def _load(folder: Path, spec: DiagnoseSpec) -> Callable[..., Any]:
@@ -160,6 +168,12 @@ def _as_diagnosis(value: Any) -> DiagnosisSpec:
         raise ValueError(f"diagnose returned {type(value).__name__}, not a diagnosis")
     value = {k: v for k, v in value.items() if k != "spec_kind"}
     return DiagnosisSpec.model_validate(value)
+
+
+def _why_invalid(exc: ValueError) -> str:
+    from pydantic import ValidationError  # noqa: PLC0415
+
+    return validation_summary(exc) if isinstance(exc, ValidationError) else str(exc)
 
 
 def _activity(spec: DiagnoseSpec):
@@ -242,7 +256,7 @@ async def run_diagnose(
         try:
             diagnosis = _as_diagnosis(value)
         except ValueError as exc:
-            return give_up(f"{spec.name} answered something that is not a diagnosis: {exc}")
+            return give_up(f"{spec.name} answered something that is not a diagnosis: {_why_invalid(exc)}")
 
     # What the diagnose left out, the baseline fills: a helper always reads the machine.
     update: dict[str, Any] = {"diagnose": spec.name, "context": ctx, "started_at": started_at}

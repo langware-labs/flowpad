@@ -30,8 +30,14 @@ export function unwrap(shape: Shape): { optional: boolean; base: Shape } {
     : { optional: false, base: shape };
 }
 
-/** The registered kind a shape names (`?navigation.here` → `navigation.here`), else null. */
+/** "Any kind" — what a viewer declares to show everything; never a kind of its own. */
+export const ANY_KIND = '*';
+
+/** The registered kind a shape names (`?navigation.here` → `navigation.here`), else null — never
+ *  {@link ANY_KIND}, which the backend refuses as a name. */
 export function namedKind(shape: Shape): string | null {
   const { base } = unwrap(shape);
-  return typeof base === 'string' && base && !base.startsWith('enum:') && !PRIMITIVES.has(base) ? base : null;
+  return typeof base === 'string' && base && base !== ANY_KIND && !base.startsWith('enum:') && !PRIMITIVES.has(base)
+    ? base
+    : null;
 }

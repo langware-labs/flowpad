@@ -47,6 +47,15 @@ def test_the_projects_own_diagnose_wins(tmp_path):
     assert spec.name == "mine" and folder.parent == tmp_path / "agentic-assets" / "diagnose"
 
 
+def test_the_shipped_diagnose_ignores_a_projects_own(tmp_path):
+    """Flowpad diagnoses itself with its own checks; a project overrides only what a helper is sent."""
+    from flow_sdk.diagnose import resolve_shipped
+
+    project = _project(tmp_path, GOOD)
+    assert resolve_diagnose(project)[1].name == "mine", "asking for help takes the project's own"
+    assert resolve_shipped()[1].name == GENERIC, "the Diagnose button never does"
+
+
 def test_an_invalid_diagnose_json_is_refused_by_name(tmp_path):
     folder = tmp_path / "agentic-assets" / "diagnose" / "bad"
     folder.mkdir(parents=True)
@@ -80,7 +89,7 @@ async def test_an_async_diagnose_and_a_dict_answer_are_accepted(tmp_path):
         ("import not_a_module_anywhere\n", "failed to import"),
         ("x = 1\n", "defines no diagnose(ctx)"),
         ("def diagnose(ctx):\n    return 42\n", "not a diagnosis"),
-        ("def diagnose(ctx):\n    return {'status': 'sideways'}\n", "not a diagnosis"),
+        ("def diagnose(ctx):\n    return {'status': 'sideways'}\n", "not a diagnosis: status: Input should be"),
     ],
     ids=["raises", "import-error", "no-entry", "not-a-value", "invalid-value"],
 )

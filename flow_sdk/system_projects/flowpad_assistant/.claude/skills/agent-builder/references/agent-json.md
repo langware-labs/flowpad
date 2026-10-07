@@ -50,7 +50,7 @@ put the boundary in the prompt (and `permission_mode`) instead.
 | `machine_size` | `sm` / `md` / `lg` — sizes a hub cloud machine; a local launch ignores it | yes | deployed |
 | `max_turns` | Turn cap | declared | — |
 | `tools` | Allowed tools | declared | — |
-| `disallowed_tools` | Forbidden tools | declared | — |
+| `disallowed_tools` | Tool patterns the worker can never run (`Bash(git push:*)`, `Edit`) — enforced by Claude (`--disallowedTools`) even with permissions bypassed; other workers ignore it | yes | claude |
 | `skills` | Skills to load | declared | — |
 
 ## Minimal definition

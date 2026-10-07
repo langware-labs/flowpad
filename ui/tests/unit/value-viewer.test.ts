@@ -2,6 +2,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { readValue } from '@src/components/value-viewer/ValueViewer';
+import { namedKind } from '../../../ts_sdk/src/viewers/kinds';
 
 describe('readValue', () => {
   it('takes the kind from spec_kind and leaves the value without it', () => {
@@ -21,5 +22,13 @@ describe('readValue', () => {
     ['{not json', 'JSON'],
   ])('refuses %s', (raw, why) => {
     expect(() => readValue(raw)).toThrow(why);
+  });
+});
+
+describe('namedKind', () => {
+  it('a wildcard names no kind, so it is never asked for (the backend answered `*` with a 500)', () => {
+    expect(namedKind('*')).toBeNull();
+    expect(namedKind('?*')).toBeNull();
+    expect(namedKind('?diagnosis')).toBe('diagnosis');
   });
 });
