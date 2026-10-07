@@ -243,7 +243,6 @@ export function AssetVibeWorkspace({ isVibe, session }: AssetVibeWorkspaceProps)
               <WorkspaceChildStrip
                 processTab={session.processTab}
                 processDock={session.processDock}
-                projectId={project?.id ?? null}
               />
             )}
           </div>

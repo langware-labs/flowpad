@@ -11,36 +11,12 @@ import { ViewMode, setViewMode, useViewMode } from '@src/contexts/view-mode-cont
 import { tagAttrs } from '@src/tags/tag-attrs';
 import { useDockNavigation } from '@src/navigation';
 import { useViewToggleGate } from './use-view-toggle-gate';
-import { FlaskConical, MessageSquare, SquareTerminal, WandSparkles, type LucideIcon } from 'lucide-react';
+import { MODE_ICONS, MODE_LABELS, MODE_TAGS } from '@src/components/view-mode/mode-vocabulary';
 import { useState } from 'react';
 
-// Labelled by the SURFACE each mode shows, not by its rank — the mode selector
-// is what picks vibe / chat pane / terminal, so "Standard"/"Advanced" would be
-// telling the user about an internal hierarchy instead of what they get. The
-// enum values stay `standard`/`advanced` (persisted preference, URL param).
-const LABELS: Record<ViewMode, string> = {
-  [ViewMode.Vibe]: 'Vibe',
-  [ViewMode.Standard]: 'Chat',
-  [ViewMode.Advanced]: 'Terminal',
-  [ViewMode.Dev]: 'Dev',
-};
-
-const ICONS: Record<ViewMode, LucideIcon> = {
-  [ViewMode.Vibe]: WandSparkles,
-  [ViewMode.Standard]: MessageSquare,
-  [ViewMode.Advanced]: SquareTerminal,
-  [ViewMode.Dev]: FlaskConical,
-};
-
-/** Tag word per mode — the observable/highlightable name of each button.
- *  Spelled out rather than derived from the enum so the vocabulary is greppable
- *  (a journey authoring `ViewModeChat` should find this line). */
-const TAGS: Record<ViewMode, string> = {
-  [ViewMode.Vibe]: 'ViewModeVibe',
-  [ViewMode.Standard]: 'ViewModeChat',
-  [ViewMode.Advanced]: 'ViewModeTerminal',
-  [ViewMode.Dev]: 'ViewModeDev',
-};
+const LABELS = MODE_LABELS;
+const ICONS = MODE_ICONS;
+const TAGS = MODE_TAGS;
 
 // Visual order of the segmented control: fullest → simplest, so newly revealed
 // modes grow to the LEFT. Which of these actually render is decided per render.

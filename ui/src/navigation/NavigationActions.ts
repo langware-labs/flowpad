@@ -19,7 +19,14 @@ import {
 } from '@sdk';
 import { NavigateFunction } from 'react-router';
 import { isValidIdentifier } from '@sdk/models/TypeId';
-import { getViewMode, rememberedDockViewMode, sessionIdForDock, VIEW_MODE_SWITCH_STATE, ViewMode } from '@src/contexts/view-mode-context';
+import {
+  getViewMode,
+  previousNonVibeViewMode,
+  rememberedDockViewMode,
+  sessionIdForDock,
+  VIEW_MODE_SWITCH_STATE,
+  ViewMode,
+} from '@src/contexts/view-mode-context';
 import { CAPABILITY_PARAM, DockPointer, JOURNEY_PARAM, JOURNEY_STEP_PARAM, NODE_PARAM } from './DockPointer';
 import { dockPointerForFile } from './local-file-pointer';
 import { getHistoryPosition } from './history-position-store';
@@ -76,6 +83,12 @@ export interface NavigationCommitOptions {
    * mode to a bare URL — only a switch saves the preference.
    */
   viewModeSwitch?: boolean;
+  /**
+   * Open as a TOP-LEVEL tab — the global strip's chips and "+": never carried into
+   * the Vibe workspace on screen as its child, and painted in Vibe only when it IS a
+   * Vibe tab (a terminal beside a Vibe tab is a terminal tab, not Vibe content).
+   */
+  topLevel?: boolean;
   /** The `tab_switch` start line's `via=` when neither flag above names it. */
   via?: string;
 }
@@ -555,7 +568,7 @@ export class NavigationActions {
     // around a top-level surface. Carrying it from the live URL is what keeps a
     // click inside workspace A in workspace A, rather than following the shown
     // document's last writer into workspace B.
-    const carriedHost = hostToCarry(here, dock);
+    const carriedHost = opts?.topLevel ? null : hostToCarry(here, dock);
     if (carriedHost) dock = dock.withHost(carriedHost);
 
     // URL-first default scope for scope-aware surfaces (assets, triggers, file
@@ -605,6 +618,10 @@ export class NavigationActions {
       dock,
       () => NavigationActions.currentBrowserViewMode() ?? this.currentDock?.viewMode ?? null,
     );
+    // A top-level tab is painted in Vibe only if it IS a Vibe tab.
+    if (opts?.topLevel && dock.viewMode === ViewMode.Vibe && dock.viewType !== ViewType.VIBE) {
+      dock = dock.withViewMode(previousNonVibeViewMode());
+    }
 
     if (this.currentDock?.equals(dock)) {
       toplog.log('navigation', 'openDock no-op (currentDock equals target)', {
@@ -909,9 +926,12 @@ export class NavigationActions {
       skipPermissions?: boolean;
       viewMode?: string;
       host?: string;
+      /** A top-level tab, never a child of the workspace on screen (see `NavigationCommitOptions.topLevel`). */
+      topLevel?: boolean;
     },
   ): Promise<Shell | null> {
-    const extraOptions = toStringRecord(options);
+    const { topLevel, ...urlOptions } = options ?? {};
+    const extraOptions = toStringRecord(urlOptions);
     const shell = Shell.getByIdFromCache(shellId) ?? (await Shell.getById(shellId));
     if (!shell) {
       return null;
@@ -928,6 +948,7 @@ export class NavigationActions {
           )
         : shell.dockPointer,
       extraOptions,
+      topLevel ? { topLevel: true } : undefined,
     );
     return shell;
   }
@@ -954,6 +975,31 @@ export class NavigationActions {
         },
       },
     });
+  }
+
+  /**
+   * Show a session on another SURFACE — Vibe, Chat or Terminal. The same switch as
+   * the footer's mode selector (marked `viewModeSwitch`, so the mode is recorded):
+   * one tab, re-pointed; the transport follows (`useProcessSurface`). Vibe → its
+   * host dock; leaving Vibe carries the nested tabs out (backend re-point).
+   */
+  switchSessionSurface(processId: string, mode: ViewMode): void {
+    this.openDock(DockPointer.forSession(processId).withViewMode(mode), undefined, { viewModeSwitch: true });
+  }
+
+  /**
+   * Open `processId` as a Vibe tab placed RIGHT AFTER the tab on screen (or after
+   * its host, from a child) — the chat header's New / Recent. A session reopened
+   * this way brings back the children that closed with it (backend reopen path).
+   */
+  async openVibeTabBeside(processId: string): Promise<void> {
+    // The snapshot: the tab on screen is already in it (no round trip before the open).
+    const tabs = await tabManager.snapshotOrRefresh();
+    const here = tabForDockKey(tabs, this.here.tabHash ?? '');
+    const anchor = (here?.parent_tab_id && tabs.find((t) => t.id === here.parent_tab_id)) || here;
+    const dock = DockPointer.forSession(processId).withViewMode(ViewMode.Vibe);
+    const placed = await presentDockTab(dock, { afterTabId: anchor?.id ?? null, projectId: anchor?.project_id ?? null });
+    this.openDock(placed, undefined, { topLevel: true });
   }
 
   async openShellProcess(

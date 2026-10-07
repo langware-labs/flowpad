@@ -55,7 +55,12 @@ vi.mock('@sdk/react/hooks', () => ({
   // "the dialog is on screen", not merely "we did not redirect".
   useCapability: () => ({ capability: null, available: false, result: null, isLoading: false, test: vi.fn() }),
 }));
-vi.mock('@src/contexts/view-mode-context', () => ({ useIsAdvanced: () => true, ViewMode: { Advanced: 'advanced' } }));
+vi.mock('@src/contexts/view-mode-context', () => ({
+  useIsAdvanced: () => true,
+  getEffectiveViewMode: () => 'advanced',
+  previousNonVibeViewMode: () => 'advanced',
+  ViewMode: { Advanced: 'advanced', Vibe: 'vibe' },
+}));
 // No status record read yet: install warnings fail open on that, so no opener carries a
 // warning badge and nothing here pre-empts the path under test.
 vi.mock('@src/components/workers/harness-availability', () => ({

@@ -86,7 +86,7 @@ def _is_page_id(segment: str) -> bool:
     return True
 
 
-def _pointer_target(pointer: str | None) -> tuple[str, str]:
+def _pointer_target(pointer: str | None, *, fold: bool = True) -> tuple[str, str]:
     """The (viewType, inner pointer) a stored pointer addresses — what it SHOWS, as
     opposed to ``_pointer_to_hash``, which answers which tab it IS.
 
@@ -108,8 +108,9 @@ def _pointer_target(pointer: str | None) -> tuple[str, str]:
         vt, _, sub = pointer.partition('|')
     # A process shown as the Vibe host and as a shell is ONE target shown two ways
     # (the Vibe dock folds onto the shell identity): switching between them is not
-    # a re-point, so it must not refresh the tab's label or icon.
-    if vt == ViewType.VIBE:
+    # a re-point, so it must not refresh the tab's label or icon. ``fold=False``
+    # reads the presentation as written.
+    if fold and vt == ViewType.VIBE:
         vt = ViewType.SHELL.value
     return (vt, sub)
 
@@ -286,6 +287,10 @@ class Tab(Entity):
     # soft-closed parent leaves it dangling-but-inert, and the deterministic
     # uuid5 id regroups children when the parent's pointer reopens.
     parent_tab_id: str | None = APIField(default=None)
+    # Set on a child hidden BECAUSE its host closed (the close cascade), cleared
+    # when a tab is closed on its own. Reopening the host brings back exactly the
+    # children that went with it — never one the user closed individually.
+    closed_with_parent: bool = APIField(default=False)
 
     # Display primitives the strip draws straight off the Tab, so the chip never
     # has to fetch its backing Shell/AgenticProcess (docs/tab-management.md). Both
@@ -1003,6 +1008,13 @@ async def ensure_tab_created(
         # whether the target actually changed; the label refresh below needs it,
         # and after this assignment the fact is no longer readable.
         repointed_target = _pointer_target(existing.pointer) != _pointer_target(pointer)
+        # A HOST re-pointed to a non-host presentation (a Vibe tab switched to its
+        # terminal): its nested tabs move out to the top level (below).
+        left_host = (
+            existing.pointer != pointer
+            and _view_hosts_tabs(_pointer_target(existing.pointer, fold=False)[0])
+            and not _view_hosts_tabs(_pointer_target(pointer, fold=False)[0])
+        )
         if existing.pointer != pointer and _pointer_to_hash(existing.pointer) == _pointer_to_hash(pointer):
             existing.pointer = pointer
             dirty = True
@@ -1013,8 +1025,10 @@ async def ensure_tab_created(
             sub = parts[1] if len(parts) > 1 else ''
             existing.pointer = _json.dumps({"viewType": vt, "pointer": sub})
             dirty = True
-        if not existing.visible:
+        reopened = not existing.visible
+        if reopened:
             existing.visible = True
+            existing.closed_with_parent = False
             dirty = True
         for attr, val in (
             ("target_type", target_type),
@@ -1078,6 +1092,10 @@ async def ensure_tab_created(
                 dirty = True
         if dirty:
             await existing.save()
+        if reopened:
+            await _place_reopened(existing, after_tab_id)
+        if left_host and existing.pointer == pointer:
+            await _carry_children_out(existing)
         await existing.reconcile_target_name()
         return existing, False
     # Fresh create: place the new tab in the GLOBAL order — immediately after the
@@ -1121,6 +1139,79 @@ async def ensure_tab_created(
     await tab.save()
     await tab.reconcile_target_name()
     return tab, True
+
+
+#: The hash namespace of a Vibe workspace's ACTIVE DISPLAY row
+#: (``workspaceActive|<host>``) — mirrors ``ACTIVE_DISPLAY_HASH_NS`` in
+#: ``ui/src/navigation/DockPointer.ts``.
+ACTIVE_DISPLAY_HASH_NS = "workspaceActive"
+
+
+def _is_active_display(pointer: str | None) -> bool:
+    """Is this the Vibe workspace's active-display row (its hash is host-keyed)?"""
+    return bool(pointer) and _pointer_to_hash(pointer).split('|', 1)[0] == ACTIVE_DISPLAY_HASH_NS
+
+
+async def _carry_children_out(tab: Tab) -> None:
+    """``tab`` stopped being a host (its Vibe tab became a terminal): its visible
+    nested tabs become top-level tabs, right after it, in their order. The
+    workspace's ACTIVE DISPLAY row (``workspaceActive|<host>``) is workspace
+    chrome, not a tab of its own: it stays attached (the global strip never shows
+    a child) and is the Display again when the session returns to Vibe."""
+    children = [
+        child
+        for child in await Tab.get_all({"parent_tab_id": tab.id, "visible": True})
+        if not _is_active_display(child.pointer)
+    ]
+    if not children:
+        return
+    for child in children:
+        child.parent_tab_id = None
+        await child.save()
+    await _move_block(await _visible_in_order(), [c.id for c in _in_tab_order(children)], tab.id)
+
+
+def _in_tab_order(tabs: list[Tab]) -> list[Tab]:
+    return sorted(tabs, key=lambda t: (t.tab_order or 0, t.id))
+
+
+async def _visible_in_order() -> list[Tab]:
+    """The visible tabs in global order — for REORDERING only: unlike
+    ``_visible_tabs_sorted`` it loads no status targets and reaps nothing."""
+    return _in_tab_order(await Tab.get_all({"visible": True}))
+
+
+async def _move_block(visible: list[Tab], moving: list[str], after_id: str | None) -> None:
+    """Persist ``moving`` as one contiguous block right after ``after_id`` in the
+    global order (first when ``after_id`` is None or not visible)."""
+    order = [t.id for t in visible if t.id not in moving]
+    at = order.index(after_id) + 1 if after_id in order else 0
+    await _persist_global_order(order[:at] + moving + order[at:], {t.id: t for t in visible})
+
+
+async def _place_reopened(tab: Tab, after_tab_id: str | None) -> None:
+    """A hidden row was just reopened. With an explicit opener it lands right
+    after it (a session reopened from inside a tab opens beside that tab); the
+    children that closed WITH it (``closed_with_parent``) come back, placed right
+    after it. Without an opener and with no children it keeps its old slot."""
+    revived = _in_tab_order(
+        await Tab.get_all({"parent_tab_id": tab.id, "visible": False, "closed_with_parent": True})
+    )
+    for child in revived:
+        child.visible = True
+        child.closed_with_parent = False
+        await child.save()
+    if not revived and not after_tab_id:
+        return
+    visible = await _visible_in_order()
+    moving = [tab.id, *(child.id for child in revived)]
+    anchor = after_tab_id
+    if not anchor:
+        # No opener: the host keeps its slot — after the row that preceded it.
+        ids = [t.id for t in visible]
+        preceding = [tid for tid in ids[: ids.index(tab.id)] if tid not in moving]
+        anchor = preceding[-1] if preceding else None
+    await _move_block(visible, moving, anchor)
 
 
 async def _tabs_for_target(target_type: str, target_id: str) -> list["Tab"]:
@@ -1652,6 +1743,9 @@ async def _with_children(tabs: list[Tab]) -> list[Tab]:
     ids = [tab.id for tab in tabs]
     if not ids:
         return []
+    # A tab closed directly is not one that "went with" a parent.
+    for tab in tabs:
+        tab.closed_with_parent = False
     children = await Tab.get_all(
         QueryFilter(
             match=ExpressionNode(
@@ -1663,7 +1757,10 @@ async def _with_children(tabs: list[Tab]) -> list[Tab]:
             )
         )
     )
-    return [*tabs, *(child for child in children if child.id not in ids)]
+    swept = [child for child in children if child.id not in ids]
+    for child in swept:
+        child.closed_with_parent = True
+    return [*tabs, *swept]
 
 
 def _schedule_teardown(tab: Tab) -> None:

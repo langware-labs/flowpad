@@ -349,7 +349,6 @@ export function VibeWorkspace({ session }: VibeWorkspaceProps) {
           <WorkspaceChildStrip
             processTab={session.processTab}
             processDock={session.processDock}
-            projectId={projectId}
           />
           <div className="min-h-0 flex-1">
             {/* On the display URL: the agent-driven pin. On a child URL: the
