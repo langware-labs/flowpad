@@ -13,17 +13,10 @@
  * open-external button must not appear in one mode and vanish in the other.
  */
 import { cleanup, render, screen } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { MemoryRouter } from 'react-router';
+import { afterEach, describe, expect, it } from 'vitest';
 import { TabStrip, type TabStripItem } from '@src/components/tabs/TabStrip';
 import { ViewMode, setViewMode } from '@src/contexts/view-mode-context';
-
-// `view-mode-context` reads the current dock, which calls `useLocation()`.
-// These tests render without a Router, so stub only that hook and keep the
-// rest of the module real (a full mock would drop `useDockNavigation`).
-vi.mock('@src/navigation/useDockNavigation', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@src/navigation/useDockNavigation')>()),
-  useCurrentDock: () => null,
-}));
 
 
 const items: TabStripItem[] = [
@@ -34,7 +27,12 @@ const items: TabStripItem[] = [
 
 function renderStrip() {
   return render(
-    <TabStrip items={items} activeKey="c" onSelect={() => {}} onClose={() => {}} onPopout={() => {}} />,
+    // `view-mode-context` reads the current dock, which calls `useLocation()`.
+    // A router at `/` (no dock) is the real answer; stubbing the hook through a
+    // module mock broke as soon as the strip's import graph reached it first.
+    <MemoryRouter>
+      <TabStrip items={items} activeKey="c" onSelect={() => {}} onClose={() => {}} onPopout={() => {}} />
+    </MemoryRouter>,
   );
 }
 
