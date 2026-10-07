@@ -74,7 +74,7 @@ to the instance's **SmartNavigationLog** dataset in Flowpad's temp folder
 of the same `navigator.dataset` kind as the shipped eval set, with the request as `input`, the
 offered candidates as `context`, the decision as `output` and what was done in `data`. A person
 reviews it in the dataset editor (**Correct**, or edit the label; the **needs label** filter),
-and `navigator_eval.evaluate(dataset, kinds=("train",))` scores the navigator on the reviewed
+and the navigator eval (`flow_sdk.evals.run(dataset, kinds=["train"])`, see `docs/data-management/evals.md`) scores the navigator on the reviewed
 rows — from a process that reaches the hub's decision API (an instance's env:
 `set -a; . ./.env.<instance>.local`), or every row re-runs as `agentic`. See
 `docs/snippets/datasets.md` §6; the end-to-end check is

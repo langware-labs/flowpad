@@ -1,7 +1,7 @@
 """The SmartNavigator dataset: its definitions, its rows, and the evaluation over them.
 
 The row kinds ship as ``data_spec`` folders (``flowpad_assistant/agentic-assets/data_spec/
-navigat*``); the rows do not -- they live at ``navigator_eval.DATASET`` (``dev/dataset/
+navigat*``); the rows do not -- they live at ``DATASET`` (``dev/dataset/
 smart-navigator`` beside the checkout), and the tests that read them skip where it is absent.
 These read it from disk alone -- the same entity indexing builds -- and drive the evaluator with
 the decision API doubled at its one seam.
@@ -11,12 +11,14 @@ from __future__ import annotations
 
 import subprocess
 import sys
+from collections import Counter
 
 import pytest
 
 import flow_sdk.decision as decision
+from flow_sdk import evals
 from flow_sdk.builtin.dataset import Dataset
-from flow_sdk.core import navigator_eval
+from flow_sdk.core.navigation import DATASET
 from flow_sdk.schema.data_spec.api_endpoint_spec import APIEndpointOffer
 from flow_sdk.schema.data_spec.decision_spec import ChoiceAnswer, DecisionResult
 from flow_sdk.schema.data_spec.navigator_spec import NavigatorRoute
@@ -26,14 +28,15 @@ pytestmark = pytest.mark.timeout(10)  # do not increase timeout without approval
 
 @pytest.fixture(scope="module")
 def shipped() -> Dataset:
-    if not navigator_eval.DATASET.is_dir():
-        pytest.skip(f"SmartNavigator dataset not at {navigator_eval.DATASET}")
-    return Dataset.at(navigator_eval.DATASET)
+    if not DATASET.is_dir():
+        pytest.skip(f"SmartNavigator dataset not at {DATASET}")
+    return Dataset.at(DATASET)
 
 
 def test_the_shipped_dataset_declares_its_rows_and_every_row_fits(shipped):
     assert shipped.spec == "navigator.dataset"
-    assert (shipped.num_examples, shipped.kind_counts, shipped.num_annotated) == (52, {"eval": 50, "test": 2}, 52)
+    suites = Counter((r.data or {}).get("suite") for r in shipped.read_rows())
+    assert suites == {"benchmark": 52, "ux-surface": 200} and shipped.num_annotated == 252
     assert shipped.validate_rows() == []
     rows = shipped.read_rows()
     assert rows[0].input.utterance == "open data sources"
@@ -60,33 +63,7 @@ def test_the_decision_kind_is_the_navigators_answer_minus_run_detail():
     assert declared == set(NavigatorRoute.model_fields) - {"reason", "latency_ms"}
 
 
-def test_metrics_count_precision_coverage_recall_and_confident_wrong(shipped):
-    rows = {r.data["case"]: r for r in shipped.read_rows()}
-    Dec = shipped.output_shape
-    out = lambda **kw: Dec.model_validate(kw)  # noqa: E731
-    ran = [
-        rows["1"].model_copy(
-            update={
-                "output": out(
-                    route="quick", target={"kind": "view", "value": "data-sources"}, verb="show", confidence=1.0
-                )
-            }
-        ),
-        rows["3"].model_copy(
-            update={
-                "output": out(
-                    route="quick", target={"kind": "view", "value": "preferences"}, verb="show", confidence=0.9
-                )
-            }
-        ),
-        rows["39"].model_copy(update={"output": out(route="agentic", confidence=0.4)}),
-    ]
-    m = navigator_eval.metrics(ran)
-    assert m["precision"] == 0.5 and m["coverage"] == 0.5 and m["agentic_recall"] == 1.0
-    assert m["confident_wrong"] == 1, "a wrong screen at 0.9 is exactly the failure to catch"
-
-
-async def test_evaluate_runs_every_row_on_its_own_context(shipped, monkeypatch):
+async def test_the_navigator_eval_runs_every_row_on_its_own_context(shipped, monkeypatch, tmp_path):
     """With a decision API that always says 'agentic', only rule hits open -- and every row ran."""
 
     async def endpoints(**kwargs):
@@ -109,10 +86,12 @@ async def test_evaluate_runs_every_row_on_its_own_context(shipped, monkeypatch):
 
     monkeypatch.setattr(decision, "decision_endpoints", endpoints)
     monkeypatch.setattr(decision, "decide", decide)
-    report = await navigator_eval.evaluate(shipped)
-    assert report["scored"] == 50 and len(report["outputs"]) == 50
-    assert report["agentic_recall"] == 1.0 and report["confident_wrong"] == 0
-    assert report["precision"] == 1.0, "only exact rule hits opened anything, and they were right"
+    run, folder = await evals.run(shipped, out_dir=tmp_path, concurrency=1)
+    benchmark = run.slices["data.suite"].get("benchmark") or run.slices["data.suite"]["—"]
+    assert benchmark["examples"] == 50 and benchmark["error"] == 0
+    assert benchmark["agentic_recall"] == 1.0 and benchmark["confident_wrong"] == 0
+    assert benchmark["precision"] == 1.0, "only exact rule hits opened anything, and they were right"
+    assert (folder / "report.html").is_file() and (folder / "examples.jsonl").is_file()
     assert any(st["candidates"] for st in seen), "rows offered their recorded candidates, not this machine's search"
     session = next(st for st in seen if st["page"].startswith("/dock/agentic_process/"))
     assert session["context"]["process"]["title"] == "refactor session", "each row runs where it was typed"

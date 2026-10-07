@@ -28,22 +28,15 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO))
-DOC = REPO / "docs/navigation/navigation-sentences.md"
-ROW = re.compile(r"^\| (\d+) \| (.+?) \| (.+?) \|$", re.M)
-GROUP = re.compile(r"^### ([A-Z])\. (.+?) \(\d+\)$", re.M)
 HERE = {"view": "home", "address": "/dock/home"}
 
 
 def rows() -> list[tuple[str, int, str, str]]:
-    """``(group, n, sentence, target)`` for every row of the doc, in order."""
-    text = DOC.read_text()
-    marks = [(m.start(), f"{m.group(1)}. {m.group(2)}") for m in GROUP.finditer(text)]
-    out = []
-    for m in ROW.finditer(text):
-        group = [g for pos, g in marks if pos < m.start()][-1]
-        sentence = re.sub(r"\s*\(typo\)$", "", m.group(2).strip())
-        out.append((group, int(m.group(1)), sentence, m.group(3).strip()))
-    return out
+    """``(group, n, sentence, target)`` for every row of the doc -- the importer's parser, one of it."""
+    sys.path.insert(0, str(REPO / "scripts"))
+    from import_navigation_sentences import rows as sentence_rows
+
+    return [(r["group"], r["n"], r["sentence"], r["target"]) for r in sentence_rows()]
 
 
 def _prefix(target: str) -> str:
