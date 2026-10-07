@@ -206,7 +206,7 @@ export function DataSourcePage({ source, id, tab, conversation, thread, spec, on
   );
 }
 
-/** One of the source's conversations, read on the source's page: back goes to its messages, not to an inbox. */
+/** One of the source's conversations, read on the source's page: back goes to its messages, not to the stream inbox. */
 function SourceConversation({
   sourceId,
   conversationId,
