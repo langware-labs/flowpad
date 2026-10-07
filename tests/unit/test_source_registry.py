@@ -116,7 +116,7 @@ def test_every_shipped_driver_has_the_family_its_items_are():
             families.setdefault(load_driver(folder).cls.family.value, []).append(folder.name)
     assert families["object"] == ["folder", "gcs", "gdrive", "git"]
     assert families["record"] == ["hackernews", "jira", "rss"]
-    assert len(families["message"]) == 16 and {"slack", "flow_whatsapp", "flow_telegram"} <= set(families["message"])
+    assert len(families["message"]) == 17 and {"slack", "flow_whatsapp", "flow_telegram", "flow_slack"} <= set(families["message"])
 
 
 def test_an_import_error_is_a_load_error_naming_the_file(tmp_path):
