@@ -126,7 +126,7 @@ async function run(root: HTMLElement): Promise<void> {
       if (state.slice) step(state.slice, state.cause || state.example ? { run: r.run_id, slice: state.slice } : null);
       if (state.verdict) step(state.verdict, null);
       if (state.cause) step(state.cause, state.example ? { ...state, example: undefined } : null);
-      const meta = { count_metrics: loaded.count_metrics, explain: loaded.explain, dataset_spec: r.dataset_spec, ...state };
+      const meta = { count_metrics: loaded.count_metrics, explain: loaded.explain, dataset_spec: r.dataset_spec, versions: r.versions, ...state };
       if (state.example) {
         const e = loaded.examples.find((x) => x.example_id === state.example);
         step(e ? (e.title || state.example).slice(0, 48) : state.example, null);

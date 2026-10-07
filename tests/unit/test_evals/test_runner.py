@@ -8,6 +8,7 @@ raises on "boom", so one run exercises every verdict the runner records.
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import pytest
 
@@ -91,3 +92,17 @@ async def test_the_report_is_one_page_with_every_example(toy, tmp_path):
 async def test_no_eval_for_a_dataset_is_an_error_not_a_crash(toy, tmp_path):
     with pytest.raises(evals.EvalError, match="no eval"):
         await evals.run(toy, eval_name="nonexistent", out_dir=tmp_path / "runs")
+
+
+async def test_a_version_given_as_a_value_is_kept_once_in_the_dataset(toy, tmp_path):
+    # The navigator's map: a value of a schema, so the run names the exact version it offered.
+    from flow_sdk.core.navigation import navigation_map
+    from flow_sdk.values import resolve_ref, store_of
+
+    (Path(toy.asset_ref) / "agentic-assets" / "eval" / "toy" / "eval.py").write_text(
+        TOY_EVAL.replace('return {"engine": "toy"}', 'from flow_sdk.core.navigation import navigation_map\n    return {"map": navigation_map()}')
+    )
+    first, _ = await evals.run(toy, out_dir=tmp_path / "runs")
+    again, _ = await evals.run(toy, out_dir=tmp_path / "runs-2")
+    assert first.versions["map"].startswith("navigation.map.id.") and again.versions == first.versions
+    assert resolve_ref(first.versions["map"], near=store_of(toy.asset_ref)) == navigation_map()

@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import type { KindForm, ViewerContext } from '../../../ts_sdk/src/viewers/contract';
 import { contextTrail, flowViewers, rankOptions, visibleOptions } from '../../../ts_sdk/src/viewers/flow';
-import { createViewerContext } from '../../../ts_sdk/src/viewers/registry';
+import { createViewerContext, type ViewerHost } from '../../../ts_sdk/src/viewers/registry';
 
 const HERE = {
   page: 'desk',
@@ -13,12 +13,12 @@ const HERE = {
   entity: { typeid: 'data_source-2', title: 'gmail-work' },
 };
 
-function ctxWith(navigate?: (t: string) => void): ViewerContext {
+function ctxWith(host: Partial<ViewerHost> = {}): ViewerContext {
   return createViewerContext({
     kindForm: async () => null as KindForm | null,
     choices: async (kind, shape) => ((flowViewers as any)[kind]?.[shape] ? [{ typeid: 'm', name: 'flow-viewers', title: 'fv', why: 'kind', kind, endpoint: 'e', module: 'v.js' }] : []),
     importModule: async () => ({ viewers: flowViewers }),
-    navigate,
+    ...host,
   });
 }
 
@@ -32,7 +32,7 @@ describe('the Flow context', () => {
   it('an entity in it opens in Flowpad', async () => {
     const navigate = vi.fn();
     const el = document.createElement('div');
-    await ctxWith(navigate).render(el, { kind: 'navigation.here', value: HERE });
+    await ctxWith({ navigate }).render(el, { kind: 'navigation.here', value: HERE });
     const links = [...el.querySelectorAll('button.fv-crumb')];
     expect(links.map((b) => b.textContent)).toEqual(['project flowpad-oss', 'open: gmail-work']);
     (links[1] as HTMLElement).click();
@@ -93,5 +93,27 @@ describe('a decision request', () => {
     await new Promise((r) => setTimeout(r, 0));
     expect(el.querySelector('.fv-crumbs')?.textContent).toContain('project flowpad-oss');
     expect(el.querySelectorAll('.fv-opt-key')).toHaveLength(2);
+  });
+});
+
+describe('what went over the wire', () => {
+  const wire = { endpoint: 'api_endpoint-1', path: 'v1/systemone', request: { criteria: [{ id: 'target' }], noul: 'show my tasks' }, status: 200, response: { answers: [] } };
+  const run = { request: { state: {}, questions: {} }, response: { answers: {} }, act_at: {}, state_kinds: {}, wire };
+
+  it('a decision run opens exactly what was sent, on its own', async () => {
+    const opened: any[] = [];
+    const el = document.createElement('div');
+    await ctxWith({ open: (p: any) => opened.push(p) }).render(el, { kind: 'decision.run', value: run });
+    const link = [...el.querySelectorAll('.fv-open')].find((b) => b.textContent?.startsWith('Exactly what was sent')) as HTMLButtonElement;
+    link.click();
+    expect(opened.at(-1)).toMatchObject({ kind: 'decision.wire', value: wire });
+  });
+
+  it('shows the call and both bodies verbatim', async () => {
+    const el = document.createElement('div');
+    await ctxWith().render(el, { kind: 'decision.wire', value: wire });
+    expect(el.querySelector('[data-testid="decision-wire-call"]')?.textContent).toBe('POST api_endpoint-1 v1/systemone → 200');
+    expect(JSON.parse(el.querySelector('[data-testid="decision-wire-request"]')!.textContent!)).toEqual(wire.request);
+    expect(JSON.parse(el.querySelector('[data-testid="decision-wire-response"]')!.textContent!)).toEqual(wire.response);
   });
 });

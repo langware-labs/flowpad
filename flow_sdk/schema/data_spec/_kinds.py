@@ -30,6 +30,10 @@ def resolve_kind(kind: str) -> Any:
     if prim is not None:
         return prim
     from flow_sdk.fs_store.schema_registry import SchemaRegistry  # lazy: avoid import cycle
+    from flow_sdk.schema.data_spec.value_ref import kind_of  # noqa: PLC0415
+
+    # ``<kind>.id.<uuid>`` names one value of ``<kind>``: its schema is the kind's.
+    kind = kind_of(kind)
 
     shape = SchemaRegistry.kind_type(kind)
     if shape is not None:

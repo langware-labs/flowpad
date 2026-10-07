@@ -8,14 +8,20 @@
  *   option (read by what the option means), the bar the pick had to clear, and what the call cost.
  *   What the model was asked opens on its own.
  * - **`decision.spec`** / **`decision.result`** — the request and the response, each on its own.
+ * - **`navigation.map`** — every screen a request can be sent to; given by reference
+ *   (`navigation.map.id.<uuid>`) it names the version, so a decision says which screens it offered.
+ * - **`decision.wire`** — exactly what went over the wire: the endpoint, the body sent and the body
+ *   that came back, verbatim — what to replay when a decision needs explaining.
  *
  * Generic: nothing here knows the navigator — what a decision means comes from the value itself
  * (`DecisionRun.act_at`, `state_kinds`, the options' own words). Entities are links (`ctx.navigate`),
  * parts open on their own (`ctx.open`) when the app offers it.
  */
-import type { Answer, DecisionResult, DecisionRun, DecisionSpec, Question } from '../decision/types';
+import type { Answer, DecisionResult, DecisionRun, DecisionSpec, DecisionWire, Question } from '../decision/types';
+import { copyToClipboard } from '../utils/utils';
 import type { Shape, SingleViewer, ViewerContext } from './contract';
 import { plain } from './generic';
+import { parseValueRef } from './kinds';
 
 type Ref = { typeid?: string; title?: string | null; path?: string | null } | null | undefined;
 type Here = {
@@ -249,16 +255,80 @@ const decisionRunViewer = viewOnly((el, req, ctx) => {
   if (run.response) mountAnswers(el, run.response, ctx, run.request.questions, run.act_at);
   else el.append(h('div', { class: 'dv-muted' }, 'The decision API did not answer — this is what it was sent.'));
   const options = Object.values(run.request.questions ?? {}).reduce((n, q) => n + (q.type === 'choice' ? Object.keys(q.options).length : 0), 0);
-  const label = `What it was asked — ${options} options`;
+  const links = h('div', { class: 'fv-links' });
+  el.append(links);
+  part(links, ctx, `What it was asked — ${options} options`,
+    { kind: 'decision.spec', value: run.request, title: 'What the model was asked', meta: { state_kinds: run.state_kinds } },
+    (body) => mountSpec(body, run.request, ctx, run.state_kinds));
+  if (run.wire)
+    part(links, ctx, `Exactly what was sent — ${run.wire.status || 'no'} ${run.wire.status === 200 ? 'OK' : 'reply'}`,
+      { kind: 'decision.wire', value: run.wire, title: 'What was sent to the decision API' },
+      (body) => mountWire(body, run.wire!, ctx));
+  return {};
+});
+
+/** A part of a value: opened on its own when the app can open parts, else folded in place (built on
+ *  first open: a request can list every option there is). */
+function part(into: HTMLElement, ctx: ViewerContext, label: string, value: { kind: string; value: unknown; title: string; meta?: Record<string, unknown> }, inline: (body: HTMLElement) => void) {
+  const { h } = ctx;
   if (ctx.open) {
-    const part = { kind: 'decision.spec', value: run.request, title: 'What the model was asked', meta: { state_kinds: run.state_kinds } };
-    el.append(h('div', { class: 'fv-links' }, h('button', { class: 'fv-open', onclick: () => ctx.open!(part) }, label)));
-  } else {
-    const body = h('div');
-    const details = h('details', { class: 'fv-asked' }, h('summary', {}, label), body) as HTMLDetailsElement;
-    details.addEventListener('toggle', () => details.open && !body.childElementCount && mountSpec(body, run.request, ctx, run.state_kinds));
-    el.append(details);
+    into.append(h('button', { class: 'fv-open', onclick: () => ctx.open!(value) }, label));
+    return;
   }
+  const body = h('div');
+  const details = h('details', { class: 'fv-asked' }, h('summary', {}, label), body) as HTMLDetailsElement;
+  details.addEventListener('toggle', () => details.open && !body.childElementCount && inline(body));
+  into.append(details);
+}
+
+/** The call verbatim: where it went, then the two bodies as JSON, each copyable. */
+function mountWire(el: HTMLElement, wire: DecisionWire, ctx: ViewerContext) {
+  const { h } = ctx;
+  const body = (title: string, value: unknown, testid: string) => {
+    const text = JSON.stringify(value ?? null, null, 2);
+    const copy = h('button', { class: 'fv-more', onclick: () => void copyToClipboard(text) }, 'Copy');
+    return h('div', { class: 'fv-wire-part' },
+      h('div', { class: 'fv-h' }, title, ' ', copy),
+      h('pre', { class: 'fv-json dv-mono', 'data-testid': testid }, text));
+  };
+  el.append(
+    h('div', { class: 'fv-headline dv-mono', 'data-testid': 'decision-wire-call' },
+      `POST ${wire.endpoint || '?'} ${wire.path} → ${wire.status || 'no reply'}`),
+    body('Request body (sent)', wire.request, 'decision-wire-request'),
+    body('Response body (received)', wire.response, 'decision-wire-response'));
+}
+
+type Place = { view: string; label: string; aliases?: string[]; pointer?: string; subplaces?: { pointer: string; label: string }[] };
+
+/** `navigation.map.id.7c1e2a3b-…` → `7c1e2a3b`: a version is told apart by its id's first block. */
+export const shortVersion = (ref: unknown) => parseValueRef(ref)?.id.slice(0, 8) ?? '';
+
+const navigationMapViewer = viewOnly((el, req, ctx) => {
+  const { h } = ctx;
+  const places = ((req.value as { places?: Place[] } | null)?.places ?? []) as Place[];
+  const version = shortVersion(req.meta?.ref);
+  const head = `${version ? `map ${version}` : 'map'} · ${places.length} screens`;
+  el.replaceChildren();
+  if (req.mode === 'line') return (el.append(h('span', { class: 'dv-mono', title: String(req.meta?.ref ?? '') }, head)), {});
+  el.append(
+    h('div', { class: 'fv-h', title: String(req.meta?.ref ?? '') }, head),
+    h('table', { class: 'fv-places' },
+      h('thead', {}, h('tr', {}, h('th', {}, 'Screen'), h('th', {}, 'Also called'), h('th', {}, 'Address'), h('th', {}, 'Inside'))),
+      h('tbody', {}, ...places.map((p) =>
+        h('tr', {},
+          h('td', {}, p.label),
+          h('td', { class: 'dv-muted' }, (p.aliases ?? []).join(', ')),
+          h('td', { class: 'dv-mono' }, p.view),
+          h('td', { class: 'dv-muted', title: (p.subplaces ?? []).map((x) => x.label).join(', ') }, p.subplaces?.length ? String(p.subplaces.length) : ''))))));
+  return {};
+});
+
+const decisionWireViewer = viewOnly((el, req, ctx) => {
+  const wire = req.value as DecisionWire | null;
+  el.replaceChildren();
+  if (!wire) return (el.append(ctx.h('span', { class: 'dv-muted' }, 'not recorded')), {});
+  if (req.mode === 'line') return (el.append(ctx.h('span', { class: 'dv-mono' }, `POST ${wire.path} → ${wire.status || 'no reply'}`)), {});
+  mountWire(el, wire, ctx);
   return {};
 });
 
@@ -267,11 +337,17 @@ export const flowViewers = {
   'decision.spec': { single: decisionSpecViewer },
   'decision.result': { single: decisionResultViewer },
   'decision.run': { single: decisionRunViewer },
+  'decision.wire': { single: decisionWireViewer },
+  'navigation.map': { single: navigationMapViewer },
 };
 
 export const FLOW_VIEWER_STYLES = `
+.fv-places { border-collapse: collapse; font-size: 12px; width: 100%; }
+.fv-places th { text-align: left; font-weight: 600; color: hsl(var(--muted-foreground)); border-bottom: 1px solid hsl(var(--border)); padding: .2rem .5rem .2rem 0; }
+.fv-places td { padding: .15rem .5rem .15rem 0; border-bottom: 1px solid hsl(var(--border) / .4); vertical-align: top; }
+.fv-json { margin: .2rem 0 .8rem; padding: .5rem .7rem; border-radius: 8px; background: hsl(var(--muted) / .45); font-size: 11.5px; line-height: 1.45; max-height: 28rem; overflow: auto; white-space: pre; }
 .fv-crumbs { display: inline-flex; gap: .3rem; align-items: center; flex-wrap: wrap; }
-.fv-crumb { padding: .05rem .55rem; border-radius: 999px; background: hsl(var(--background) / .8); border: 1px solid hsl(var(--border)); font: inherit; font-size: 12px; color: inherit; }
+.fv-crumb { padding: .05rem .55rem; border-radius: 999px; background: hsl(var(--muted) / .6); border: 1px solid transparent; font: inherit; font-size: 12px; color: hsl(var(--foreground)); }
 button.fv-link { cursor: pointer; background: none; border: 0; padding: 0; color: hsl(var(--primary)); font: inherit; font-size: 12px; text-decoration: underline dotted; }
 button.fv-crumb.fv-link { border: 1px solid hsl(var(--primary) / .5); text-decoration: none; padding: .05rem .55rem; background: hsl(var(--primary) / .06); }
 button.fv-crumb.fv-link:hover { background: hsl(var(--primary) / .14); }

@@ -24,15 +24,16 @@ const request = {
       el.append(h('span', {}, h('span', { class: 'nv-utter-line' }, v.utterance ?? '—'), v.here?.view ? h('span', { class: 'nv-muted' }, `  on ${v.here.view}`) : null));
       return {};
     }
-    // Where it was typed is the Flow context -- drawn by ITS viewer, the same one everywhere.
-    const where = h('div', { class: 'nv-where-body' });
+    // Where it was typed is the Flow context -- drawn by ITS viewer, the same one everywhere. (In an
+    // example's story it has its own step, Context, so the request comes without it.)
+    const where = v.here ? h('div', { class: 'nv-where-body' }) : null;
     el.append(
       h('div', { class: 'nv-hero' },
         h('div', { class: 'nv-hero-label' }, 'Typed into the magic line'),
         h('div', { class: 'nv-utter' }, v.utterance ?? '—'),
-        h('div', { class: 'nv-where' }, h('span', { class: 'nv-muted' }, 'while on'), where)),
+        where ? h('div', { class: 'nv-where' }, h('span', { class: 'nv-muted' }, 'while on'), where) : null),
     );
-    await ctx.render(where, { kind: 'navigation.here', value: v.here ?? null });
+    if (where) await ctx.render(where, { kind: 'navigation.here', value: v.here });
     return {};
   },
 };
@@ -210,9 +211,28 @@ const example = {
     const did = data.address ? `opened ${data.address}` : data.prompt != null ? 'handed to the assistant' : '';
     const line = (kind, value) => (into) => void ctx.render(into, { kind, value, mode: 'line' });
 
-    const input = step(ctx, 1, 'Input', { kind: 'navigator.request', value: row.input, title: 'Input' }, line('navigator.request', row.input));
-    const context = step(ctx, 2, 'Context', { kind: 'navigator.context', value: row.context ?? { candidates: [] }, title: 'Context' },
-      (into) => (into.textContent = cands.length ? `${cands.length} search match${cands.length === 1 ? '' : 'es'}` : 'no search matches'));
+    const here = row.input?.here ?? null;
+    const typed = { ...(row.input ?? {}), here: undefined };
+    const matches = cands.length ? `${cands.length} search match${cands.length === 1 ? '' : 'es'}` : 'no search matches';
+    const input = step(ctx, 1, 'Input', { kind: 'navigator.request', value: row.input, title: 'Input' }, line('navigator.request', typed));
+    const context = step(ctx, 2, 'Context', { kind: 'navigation.here', value: here, title: 'Context' }, async (into) => {
+      await ctx.render(into, { kind: 'navigation.here', value: here, mode: 'line' });
+      into.append(` · ${matches}`);
+    });
+    // Context is where the person was (the Flow context), what the search offered, and the map the
+    // screens came from -- the run's version of it (`navigation.map.id.<uuid>`), drawn by its own viewer.
+    const whereBody = h('div');
+    const offered = h('div');
+    const mapRef = req.meta?.versions?.map ?? null;
+    const mapLine = h('span');
+    context.body.append(
+      h('div', { class: 'nv-sub' }, 'Where they were'), whereBody,
+      h('div', { class: 'nv-sub' }, `What the search offered — ${cands.length}`), offered,
+      h('div', { class: 'nv-sub' }, 'The map its screen options came from'),
+      mapRef
+        ? h('div', { class: 'nv-map', 'data-testid': 'nv-map' }, mapLine,
+          ctx.open ? h('button', { class: 'nv-open', onclick: () => ctx.open({ kind: 'navigation.map', value: mapRef, title: 'Navigation map' }) }, 'open ↗') : null)
+        : h('div', { class: 'nv-muted nv-small' }, 'Which map version was not recorded — run the eval to name it.'));
     const model = step(ctx, 3, 'Model output', trace?.decision ? { kind: 'navigator.run', value: trace, title: 'Model output' } : null,
       (into) => (into.textContent = runLine(trace)));
     const selection = step(ctx, 4, mode === 'compare' ? 'Final selection, against the right answer' : mode === 'edit' ? 'Final selection — the right answer' : 'Final selection',
@@ -221,13 +241,19 @@ const example = {
     const chips = mode === 'compare' ? [] : [row.kind && `role: ${row.kind}`, data.suite && `suite: ${data.suite}`, data.group, data.from && `from: ${data.from}`].filter(Boolean);
     el.append(h('div', { class: 'nv-example' }, input.el, context.el, model.el, selection.el,
       chips.length ? h('div', { class: 'nv-chips' }, ...chips.map((c) => h('span', { class: 'nv-chip' }, c))) : null));
-    if (!trace) model.body.append(h('div', { class: 'nv-muted nv-small' }, 'Not recorded for this example — run the eval again (or ask again with the log on) to see how it was decided.'));
+    if (!trace) model.body.append(h('div', { class: 'nv-muted nv-small' }, 'Not recorded for this example — run the eval (or ask again with the log on) to see how it was decided.'));
+    // A trace borrowed from an eval run (an eval set's row keeps none of its own) says which run.
+    else if (req.meta?.trace?.from) model.body.append(h('div', { class: 'nv-from' }, `As the eval run ${req.meta.trace.from} decided it`));
+    const runBody = h('div');
+    if (trace) model.body.append(runBody);
 
     const answer = h('div');
     const renders = [
-      ctx.render(input.body, { kind: 'navigator.request', value: row.input, mode: 'view' }),
-      ctx.renderCollection(context.body, { kind: 'navigator.candidate', items: cands }),
-      trace ? ctx.render(model.body, { kind: 'navigator.run', value: trace }) : null,
+      ctx.render(input.body, { kind: 'navigator.request', value: typed, mode: 'view' }),
+      ctx.render(whereBody, { kind: 'navigation.here', value: here }),
+      ctx.renderCollection(offered, { kind: 'navigator.candidate', items: cands }),
+      mapRef ? ctx.render(mapLine, { kind: 'navigation.map', value: mapRef, mode: 'line' }) : null,
+      trace ? ctx.render(runBody, { kind: 'navigator.run', value: trace }) : null,
     ];
     if (mode === 'edit') {
       // Labelling: what the run answered beside the form (what a reviewer labels against).
@@ -340,18 +366,22 @@ export const styles = `
 .nv-step-body .nv-hero { margin-bottom: 0; }
 .nv-open { font: inherit; font-size: 12px; padding: .1rem .55rem; border-radius: 999px; border: 1px solid hsl(var(--primary) / .45); background: hsl(var(--primary) / .06); color: hsl(var(--primary)); cursor: pointer; flex: none; }
 .nv-open:hover { background: hsl(var(--primary) / .14); }
+.nv-sub { font-size: 11px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: hsl(var(--muted-foreground)); margin: .1rem 0 .4rem; }
+.nv-sub ~ .nv-sub { margin-top: .9rem; }
+.nv-map { display: flex; gap: .6rem; align-items: center; font-size: 12px; }
+.nv-from { font-size: 11px; color: hsl(var(--muted-foreground)); margin-bottom: .5rem; }
 .nv-no-model { font-size: 13px; color: hsl(var(--muted-foreground)); }
 .nv-did-line { margin-top: .5rem; font-size: 12px; color: hsl(var(--muted-foreground)); font-family: var(--font-mono); }
 .nv-cand-link { font: inherit; text-align: left; color: inherit; cursor: pointer; } .nv-cand-link:hover { border-color: hsl(var(--primary) / .6); }
 .nv-where { display: flex; gap: .5rem; align-items: center; flex-wrap: wrap; font-size: 13px; }
 .nv-where-body { display: inline-block; }
 .nv-line { font-family: var(--font-mono); font-size: 12px; }
-.nv-list { display: grid; gap: .35rem; }
-.nv-row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: .65rem; align-items: center; padding: .55rem .75rem; border-radius: 10px; border: 1px solid hsl(var(--border)); cursor: pointer; transition: background .12s, border-color .12s; }
+.nv-list { display: grid; gap: .2rem; }
+.nv-row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: .6rem; align-items: center; padding: .3rem .65rem; border-radius: 8px; line-height: 1.3; border: 1px solid hsl(var(--border)); cursor: pointer; transition: background .12s, border-color .12s; }
 .nv-row:hover { background: hsl(var(--muted) / .4); } .nv-row.nv-on { border-color: hsl(var(--primary)); background: hsl(var(--primary) / .08); }
 .nv-dot { width: 8px; height: 8px; border-radius: 50%; background: hsl(var(--muted-foreground) / .5); } .nv-dot.nv-done { background: hsl(142 60% 45%); } .nv-dot.nv-needs { background: hsl(40 80% 50%); }
-.nv-row-ask { font-weight: 550; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.nv-row-sub { display: flex; gap: .4rem; align-items: baseline; font-family: var(--font-mono); font-size: 12px; color: hsl(var(--muted-foreground)); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.nv-row-ask { font-size: 13px; font-weight: 550; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nv-row-sub { display: flex; gap: .4rem; align-items: baseline; font-family: var(--font-mono); font-size: 11px; color: hsl(var(--muted-foreground)); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .nv-did { margin-left: .6rem; opacity: .8; } .nv-arrow-sm { color: hsl(var(--primary)); }
 .nv-role { font-size: 11px; color: hsl(var(--muted-foreground)); }
 `;

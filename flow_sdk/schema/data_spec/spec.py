@@ -203,10 +203,19 @@ def _is_map_form(form: Any) -> bool:
 
 
 def _field_def(form: Any) -> tuple:
-    """``(annotation, default)`` for one field of an object form: an optional one defaults to None."""
-    if isinstance(form, str) and form.startswith(OPTIONAL_MARK):
-        return (Optional[_compile(form[len(OPTIONAL_MARK):])], None)
-    return (_compile(form), ...)
+    """``(annotation, default)`` for one field of an object form: an optional one defaults to None.
+
+    A field whose shape is a registered kind holds a value of it -- or a REFERENCE to one stored
+    value, ``<kind>.id.<uuid>`` (``value_ref``): a row points at a shared value instead of copying
+    it. A slot or a list element is not a field, so it stays the schema itself."""
+    optional = isinstance(form, str) and form.startswith(OPTIONAL_MARK)
+    inner = form[len(OPTIONAL_MARK):] if optional else form
+    annotation = _compile(inner)
+    if isinstance(inner, str) and isinstance(annotation, type) and issubclass(annotation, DataSpec):
+        from flow_sdk.schema.data_spec.value_ref import value_ref  # noqa: PLC0415
+
+        annotation = Union[annotation, value_ref(inner)]  # type: ignore[assignment]
+    return (Optional[annotation], None) if optional else (annotation, ...)
 
 
 def _compile(form: Any) -> type:
