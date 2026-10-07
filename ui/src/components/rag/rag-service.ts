@@ -1,5 +1,5 @@
 /**
- * The four verbs of a `RagIndex`, over `apiClient`.
+ * The verbs of a `RagIndex`, over `apiClient`.
  *
  * They live here rather than on the entity because the entity is a data mirror and these are
  * actions on a row that already exists; `llm-endpoints-service` is the same shape. Every call
@@ -9,7 +9,9 @@ import apiClient from '@sdk/client';
 
 const base = (id: string) => `/api/v1/graph/rag_index/${encodeURIComponent(id)}`;
 
+/** A stored chunk: a search hit, or (with `score` 0) a row of the chunk browser. */
 export interface RagHit {
+  chunk_id: string;
   doc_ref: string;
   heading_path: string[];
   text: string;
@@ -57,4 +59,26 @@ export async function queryIndex(
     top_k: topK,
   });
   return { hits: data?.hits ?? [], refusal: data?.refusal ?? '' };
+}
+
+export interface RagChunkPage {
+  /** One page of chunks in reading order — one document's when `docRef` is given. */
+  chunks: RagHit[];
+  /** How many chunks the page is drawn from, for paging. */
+  total: number;
+  /** Every document the index holds, with its chunk count. Only on the unscoped call. */
+  documents?: { doc_ref: string; chunk_count: number }[];
+}
+
+/** Browse what the index holds. Reads the store's sidecar only — no embedding, no cost. */
+export async function listChunks(
+  id: string,
+  opts: { docRef?: string; offset?: number; limit?: number } = {},
+): Promise<RagChunkPage> {
+  const data = await apiClient.post<RagChunkPage>(`${base(id)}/chunks`, {
+    doc_ref: opts.docRef ?? '',
+    offset: opts.offset ?? 0,
+    limit: opts.limit ?? 50,
+  });
+  return { chunks: data?.chunks ?? [], total: data?.total ?? 0, documents: data?.documents };
 }

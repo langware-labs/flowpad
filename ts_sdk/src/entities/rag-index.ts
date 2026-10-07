@@ -26,6 +26,7 @@ export interface IRagIndex extends IEntity {
   description?: string;
   status?: RagStatus | string;
   pending?: boolean;
+  indexing?: boolean;
   endpoint_typeid?: string;
   model?: string;
   dimensions?: number;
@@ -45,6 +46,8 @@ export class RagIndex extends APIEntity<RagIndex> implements IRagIndex {
   status: RagStatus | string = RagStatus.Setup;
   /** A covered document changed and the background pass has not caught up yet. */
   pending: boolean = false;
+  /** A pass is embedding right now; set when it starts, cleared with its outcome. */
+  indexing: boolean = false;
   /** Which `LLMEndpoint` funds the embeddings; empty ⇒ whatever funds this box. */
   endpoint_typeid: string = '';
   /** Both pinned at the first embed. Changing either is a rebuild, not a top-up. */
@@ -64,6 +67,7 @@ export class RagIndex extends APIEntity<RagIndex> implements IRagIndex {
     this.description = entity.description ?? this.description;
     this.status = entity.status ?? this.status;
     this.pending = entity.pending ?? this.pending;
+    this.indexing = entity.indexing ?? this.indexing;
     this.endpoint_typeid = entity.endpoint_typeid ?? this.endpoint_typeid;
     this.model = entity.model ?? this.model;
     this.dimensions = entity.dimensions ?? this.dimensions;

@@ -55,6 +55,7 @@ CREATE TABLE IF NOT EXISTS chunks (
     text_hash   TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS ix_chunks_doc_hash ON chunks(doc_ref, doc_hash);
+CREATE INDEX IF NOT EXISTS ix_chunks_reading_order ON chunks(doc_ref, ordinal);
 CREATE TABLE IF NOT EXISTS meta (k TEXT PRIMARY KEY, v TEXT NOT NULL);
 """
 
@@ -226,8 +227,28 @@ class RagStore:
         """Every document with chunks here. One fact, one query — see ``document_hashes``."""
         return set(self.document_hashes())
 
-    def chunk_count(self) -> int:
-        return int(self._db.execute("SELECT COUNT(*) AS n FROM chunks").fetchone()["n"])
+    def chunk_count(self, doc_ref: str = "") -> int:
+        """Chunks in the store, or in one document when *doc_ref* is given."""
+        where, params = ("WHERE doc_ref = ?", [doc_ref]) if doc_ref else ("", [])
+        return int(self._db.execute(f"SELECT COUNT(*) AS n FROM chunks {where}", params).fetchone()["n"])
+
+    def documents(self) -> list[tuple[str, int]]:
+        """``(doc_ref, chunk count)`` for every document, by path. What a browser lists first."""
+        rows = self._db.execute("SELECT doc_ref, COUNT(*) AS n FROM chunks GROUP BY doc_ref ORDER BY doc_ref")
+        return [(r["doc_ref"], int(r["n"])) for r in rows]
+
+    def list_chunks(self, doc_ref: str = "", *, offset: int = 0, limit: int = 50) -> list[RagHit]:
+        """Stored chunks in reading order — by document, then position in it. ``score`` is 0.
+
+        SQLite only: browsing what was indexed must not need the vector index to load, so it
+        works where search cannot (a missing native runtime, a store with no vectors yet).
+        """
+        where, params = ("WHERE doc_ref = ?", [doc_ref]) if doc_ref else ("", [])
+        rows = self._db.execute(
+            f"SELECT * FROM chunks {where} ORDER BY doc_ref, ordinal, key LIMIT ? OFFSET ?",
+            [*params, max(0, int(limit)), max(0, int(offset))],
+        )
+        return [_hit(row) for row in rows]
 
     # ── writes ──────────────────────────────────────────────────────────────
 
@@ -376,18 +397,21 @@ class RagStore:
             row = by_key.get(key)
             if row is None:  # removed since the index was written; skip rather than fabricate
                 continue
-            hits.append(
-                RagHit(
-                    chunk_id=row["chunk_id"],
-                    doc_ref=row["doc_ref"],
-                    heading_path=json.loads(row["heading_path"]),
-                    text=row["text"],
-                    # Cosine distance runs 0 (identical) to 2 (opposite); a score that rises
-                    # with relevance is what every caller expects to sort by.
-                    score=1.0 - float(distance),
-                )
-            )
+            # Cosine distance runs 0 (identical) to 2 (opposite); a score that rises with
+            # relevance is what every caller expects to sort by.
+            hits.append(_hit(row, score=1.0 - float(distance)))
         return hits
+
+
+def _hit(row, *, score: float = 0.0) -> RagHit:
+    """A ``chunks`` row as the hit a caller cites — the one place a row becomes a ``RagHit``."""
+    return RagHit(
+        chunk_id=row["chunk_id"],
+        doc_ref=row["doc_ref"],
+        heading_path=json.loads(row["heading_path"]),
+        text=row["text"],
+        score=score,
+    )
 
 
 # ``INDEX_FILE``, ``DB_FILE`` and ``METRIC`` are usearch facts and stay private to this

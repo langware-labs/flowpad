@@ -52,6 +52,10 @@ DEFAULT_INDEX_NAME = "Default RAG"
 #: One asyncio lock per index id, guarding its usearch handle. See ``RagIndex.open_store``.
 _STORE_LOCKS: dict[str, asyncio.Lock] = {}
 
+#: Index ids with an embed running in THIS process. ``indexing`` on a row that is not in here was
+#: left by a process that died mid-pass; see ``RagIndex.clear_stale_indexing``.
+_EMBEDDING: set[str] = set()
+
 
 class RagStatus(StrEnum):
     """Where an index is in its life. A separate axis from whether it can run right now."""
@@ -79,6 +83,8 @@ class RagIndex(Entity):
     #: post-index observer, cleared when the pass finishes. Only ever flipped false→true by
     #: that observer, so a thousand-file scan writes this row once rather than a thousand times.
     pending: bool = APIField(default=False)
+    #: A pass is embedding right now — ``pending`` is cleared before a pass, so it cannot say so.
+    indexing: bool = APIField(default=False)
 
     #: Which ``LLMEndpoint`` funds the embeddings. Empty ⇒ whatever funds this box.
     #: PRIVATE: a funding choice is a fact about an account, not about the work.
@@ -226,6 +232,36 @@ class RagIndex(Entity):
         async with lock:
             with RagStore(self.store_dir) as store:
                 yield store
+
+    @asynccontextmanager
+    async def embedding(self):
+        """Say "indexing" on the row for the length of the block, then save the outcome.
+
+        The one owner of ``indexing`` for every path that embeds — the heartbeat pass and a pushed
+        ``apply`` alike — so a screen shows the same spinner and toast whichever ran. The closing
+        save notifies and carries whatever the block set on the row, so callers do not save again.
+        """
+        key = str(self.id)
+        _EMBEDDING.add(key)
+        self.indexing = True
+        await self.save(notify=True)
+        try:
+            yield
+        finally:
+            _EMBEDDING.discard(key)
+            self.indexing = False
+            await self.save(notify=True)
+
+    async def clear_stale_indexing(self) -> bool:
+        """End an ``indexing`` no pass in this process owns — one a crash or restart left behind.
+
+        Without it the card and the tree badge would spin until the next pass happened to run.
+        """
+        if not self.indexing or str(self.id) in _EMBEDDING:
+            return False
+        self.indexing = False
+        await self.save(notify=True)
+        return True
 
     async def unstamped_roots(self) -> list[str]:
         """Roots the store holds no tree hash for — work no marker can announce.
@@ -404,7 +440,7 @@ class RagIndex(Entity):
             except OSError as exc:
                 report.errors.append(f"{path}: {exc}")
 
-        async with self.open_store() as store:
+        async with self.embedding(), self.open_store() as store:
             # The same whole-file skip `index_root` makes, and for the same reason: a page can
             # name a file whose content did not change (a touch, a re-reflect, a page replayed
             # after a crash), and chunking it again to arrive at the ids the store already
@@ -417,9 +453,8 @@ class RagIndex(Entity):
             store.flush()
             self.chunk_count = store.chunk_count()
             self.document_count = len(store.document_refs())
-        report.documents_changed = len(documents)
-        report.documents_removed = len(gone)
-        await self.save(notify=False)
+            report.documents_changed = len(documents)
+            report.documents_removed = len(gone)
         return report
 
     async def search(self, question: str, *, top_k: int = 5) -> list[Any]:
@@ -431,6 +466,26 @@ class RagIndex(Entity):
         vectors = await embed([question])
         async with self.open_store() as store:
             return store.search(vectors[0], top_k=top_k)
+
+    async def chunks(self, doc_ref: str = "", *, offset: int = 0, limit: int = 50) -> dict[str, Any]:
+        """One page of what this index holds, for a person to browse. No embedding, no vectors.
+
+        ``total`` counts the chunks the page is drawn from (one document's, or all). The document
+        list rides only the unscoped call — a browser asks for it once, not on every page.
+        """
+        from flow_sdk.rag.store import RagStore  # noqa: PLC0415
+
+        # Not ``open_store``: its lock guards the usearch handle, which browsing never opens, and a
+        # pass holds it for the whole embed — the browser would hang exactly while "indexing" shows.
+        # A second SQLite reader is what WAL is for.
+        with RagStore(self.store_dir) as store:
+            page: dict[str, Any] = {
+                "chunks": [h.model_dump(mode="json") for h in store.list_chunks(doc_ref, offset=offset, limit=limit)],
+                "total": store.chunk_count(doc_ref),
+            }
+            if not doc_ref:
+                page["documents"] = [{"doc_ref": ref, "chunk_count": n} for ref, n in store.documents()]
+            return page
 
     # ── lookup ──────────────────────────────────────────────────────────────
 

@@ -321,3 +321,41 @@ def test_a_save_never_leaves_a_half_written_index_in_place(tmp_path, monkeypatch
         store.flush()
 
     assert (store_dir / INDEX_FILE).read_bytes() == good, "the old index must survive"
+
+
+# ── browsing ─────────────────────────────────────────────────────────────────
+
+
+def test_documents_lists_each_document_with_its_chunk_count(tmp_path):
+    with _store(tmp_path) as store:
+        _seed(store, [("b.md", SUMMER), ("a.md", WINTER), ("b.md", MORE_SUMMER)])
+        assert store.documents() == [("a.md", 1), ("b.md", 2)]
+        assert store.chunk_count("b.md") == 2 and store.chunk_count() == 3
+
+
+def test_list_chunks_reads_in_document_order_and_pages(tmp_path):
+    texts = [f"Section {i} talks about topic number {i} at some length." for i in range(5)]
+    with _store(tmp_path) as store:
+        # Stored in one order, positioned in the reverse: reading order is the ordinal, not the insert.
+        chunks = [_chunk("doc.md", text).model_copy(update={"ordinal": 4 - i}) for i, text in enumerate(texts)]
+        store.add(chunks, embed_all(texts), model="ngram-test")
+        _seed(store, [("other.md", WINTER)])
+
+        ordered = store.list_chunks("doc.md", limit=10)
+        assert [h.text for h in ordered] == list(reversed(texts))
+        assert all(h.score == 0.0 for h in ordered)
+
+        page = store.list_chunks("doc.md", offset=1, limit=2)
+        assert [h.text for h in page] == list(reversed(texts))[1:3]
+        assert [h.doc_ref for h in store.list_chunks()] == ["doc.md"] * 5 + ["other.md"]
+
+
+def test_browsing_never_loads_the_vector_index(tmp_path, monkeypatch):
+    """A machine that cannot load usearch can still see what was indexed."""
+    with _store(tmp_path) as store:
+        _seed(store, [("a.md", SUMMER)])
+    reopened = RagStore(tmp_path / "store")
+    monkeypatch.setattr(reopened, "_open_index", lambda: (_ for _ in ()).throw(AssertionError("loaded usearch")))
+    assert [h.doc_ref for h in reopened.list_chunks()] == ["a.md"]
+    assert reopened.documents() == [("a.md", 1)]
+    reopened._db.close()
