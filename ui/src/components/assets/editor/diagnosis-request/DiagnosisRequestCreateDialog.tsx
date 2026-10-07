@@ -39,12 +39,23 @@ import {
 } from './diagnosis-request-api';
 
 const HOURS = ['24', '48', '72', '168'] as const;
-const MAX_RUN_MB = ['2', '5', '10'] as const;
+export const MAX_RUN_MB = ['2', '5', '10'] as const;
 /** The asset types a request may send along -- the backend's ``ATTACHABLE_ASSET_TYPES``. */
 const ATTACHABLE_TYPES = ['skill', 'subagent', 'markdown', 'prompt'];
-const isAttachable = (d: AssetDescriptor) => ATTACHABLE_TYPES.some((type) => d.typeid.startsWith(`${type}-`));
+export const isAttachable = (d: AssetDescriptor) => ATTACHABLE_TYPES.some((type) => d.typeid.startsWith(`${type}-`));
 
-function HoursSelect({ id, value, onChange }: { id: string; value: string; onChange: (v: string) => void }) {
+export function HoursSelect({
+  id,
+  value,
+  onChange,
+  placeholder,
+}: {
+  id: string;
+  value: string;
+  onChange: (v: string) => void;
+  /** Shown while `value` is empty -- the edit dialog's "keep it as it is". */
+  placeholder?: string;
+}) {
   const { t } = useLingui();
   const labels: Record<(typeof HOURS)[number], string> = {
     '24': t`24 hours`,
@@ -55,7 +66,7 @@ function HoursSelect({ id, value, onChange }: { id: string; value: string; onCha
   return (
     <Select value={value} onValueChange={onChange}>
       <SelectTrigger id={id}>
-        <SelectValue />
+        <SelectValue placeholder={placeholder} />
       </SelectTrigger>
       <SelectContent>
         {HOURS.map((h) => (
@@ -169,6 +180,102 @@ function FundingFields({
   );
 }
 
+/** The "pay for their LLM" choices: where from (`hub:<typeid>` / `key:<provider>`), the cap, the life, the model. */
+export interface Budget {
+  source: string;
+  cap: string;
+  hours: string;
+  model: string;
+}
+
+export const DEFAULT_BUDGET: Budget = { source: '', cap: '1', hours: '48', model: '' };
+
+/** `DiagnosisFundingSpec` from the owner's choices. */
+export function fundingBody(budget: Budget): NonNullable<OpenRequestBody['funding']> {
+  const [kind, ref] = budget.source.split(/:(.*)/s);
+  return {
+    cost_usd_total: Number(budget.cap),
+    hours: Number(budget.hours),
+    model: budget.model.trim(),
+    ...(kind === 'key' ? { local_key_provider: ref } : { source_typeid: ref }),
+  };
+}
+
+/** Source, cap, expiry and model of a budget. The sources are the hub's answer, asked on mount --
+ *  render this only once the owner wants to pay. Picks the first usable source when none is set. */
+export function BudgetFields({ budget, onChange }: { budget: Budget; onChange: (next: Budget) => void }) {
+  const [sources, setSources] = useState<FundingSources | null>(null);
+  const [sourcesError, setSourcesError] = useState<string | null>(null);
+  const set = (patch: Partial<Budget>) => onChange({ ...budget, ...patch });
+
+  useEffect(() => {
+    callRequestAction<FundingSources>('funding_sources')
+      .then((loaded) => {
+        setSources(loaded);
+        if (budget.source) return;
+        const first = loaded.hub.find((s) => s.can_allocate);
+        const source = first
+          ? `hub:${first.typeid}`
+          : loaded.local_keys[0]
+            ? `key:${loaded.local_keys[0].provider}`
+            : '';
+        onChange({ ...budget, source });
+      })
+      .catch((e: unknown) => setSourcesError(errorText(e)));
+    // Asked once per mount: the budget the owner edits afterwards must not re-ask the hub.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  return (
+    <div className="space-y-3">
+      <FundingFields
+        sources={sources}
+        loadError={sourcesError}
+        source={budget.source}
+        onSource={(source) => set({ source })}
+      />
+      <div className="grid grid-cols-2 gap-3">
+        <div className="space-y-1.5">
+          <Label htmlFor="diagnosis-cap">
+            <Trans>Cap (USD)</Trans>
+          </Label>
+          <Input
+            id="diagnosis-cap"
+            type="number"
+            min="0.1"
+            step="0.1"
+            dir="ltr"
+            value={budget.cap}
+            onChange={(e) => set({ cap: e.target.value })}
+          />
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="diagnosis-fund-hours">
+            <Trans>Expires after</Trans>
+          </Label>
+          <HoursSelect id="diagnosis-fund-hours" value={budget.hours} onChange={(hours) => set({ hours })} />
+        </div>
+      </div>
+      <div className="space-y-1.5">
+        <Label htmlFor="diagnosis-model">
+          <Trans>Model</Trans>{' '}
+          <span className="text-xs font-normal text-muted-foreground">
+            <Trans>— optional; pins every call to it</Trans>
+          </span>
+        </Label>
+        <Input
+          id="diagnosis-model"
+          className="font-mono"
+          dir="ltr"
+          value={budget.model}
+          placeholder="anthropic/claude-haiku-4.5"
+          onChange={(e) => set({ model: e.target.value })}
+        />
+      </div>
+    </div>
+  );
+}
+
 export const DiagnosisRequestCreateDialog: React.FC<{
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -182,32 +289,16 @@ export const DiagnosisRequestCreateDialog: React.FC<{
   const [writeHours, setWriteHours] = useState('48');
   const [maxRunMb, setMaxRunMb] = useState('2');
   const [fund, setFund] = useState(false);
-  const [sources, setSources] = useState<FundingSources | null>(null);
-  const [sourcesError, setSourcesError] = useState<string | null>(null);
-  const [source, setSource] = useState('');
-  const [cap, setCap] = useState('1');
-  const [fundHours, setFundHours] = useState('48');
-  const [model, setModel] = useState('');
+  const [budget, setBudget] = useState<Budget>(DEFAULT_BUDGET);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  // The budgets are the hub's answer, asked only once the owner wants to pay.
-  useEffect(() => {
-    if (!open || !fund || sources) return;
-    callRequestAction<FundingSources>('funding_sources')
-      .then((loaded) => {
-        setSources(loaded);
-        const first = loaded.hub.find((s) => s.can_allocate);
-        setSource(first ? `hub:${first.typeid}` : loaded.local_keys[0] ? `key:${loaded.local_keys[0].provider}` : '');
-      })
-      .catch((e: unknown) => setSourcesError(errorText(e)));
-  }, [open, fund, sources]);
 
   const reset = () => {
     setInstructions('');
     setFiles([]);
     setAssetRefs([]);
     setFund(false);
+    setBudget(DEFAULT_BUDGET);
     setError(null);
   };
 
@@ -225,15 +316,7 @@ export const DiagnosisRequestCreateDialog: React.FC<{
           ...assetRefs.map((a) => ({ asset_typeid: a.typeid })),
         ],
       };
-      if (fund) {
-        const [kind, ref] = source.split(/:(.*)/s);
-        body.funding = {
-          cost_usd_total: Number(cap),
-          hours: Number(fundHours),
-          model: model.trim(),
-          ...(kind === 'key' ? { local_key_provider: ref } : { source_typeid: ref }),
-        };
-      }
+      if (fund) body.funding = fundingBody(budget);
       const { request } = await openRequest(body);
       onOpenChange(false);
       reset();
@@ -340,49 +423,7 @@ export const DiagnosisRequestCreateDialog: React.FC<{
                 it expires.
               </Trans>
             </p>
-            {fund && (
-              <div className="space-y-3">
-                <FundingFields sources={sources} loadError={sourcesError} source={source} onSource={setSource} />
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-1.5">
-                    <Label htmlFor="diagnosis-cap">
-                      <Trans>Cap (USD)</Trans>
-                    </Label>
-                    <Input
-                      id="diagnosis-cap"
-                      type="number"
-                      min="0.1"
-                      step="0.1"
-                      dir="ltr"
-                      value={cap}
-                      onChange={(e) => setCap(e.target.value)}
-                    />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label htmlFor="diagnosis-fund-hours">
-                      <Trans>Expires after</Trans>
-                    </Label>
-                    <HoursSelect id="diagnosis-fund-hours" value={fundHours} onChange={setFundHours} />
-                  </div>
-                </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="diagnosis-model">
-                    <Trans>Model</Trans>{' '}
-                    <span className="text-xs font-normal text-muted-foreground">
-                      <Trans>— optional; pins every call to it</Trans>
-                    </span>
-                  </Label>
-                  <Input
-                    id="diagnosis-model"
-                    className="font-mono"
-                    dir="ltr"
-                    value={model}
-                    placeholder="anthropic/claude-haiku-4.5"
-                    onChange={(e) => setModel(e.target.value)}
-                  />
-                </div>
-              </div>
-            )}
+            {fund && <BudgetFields budget={budget} onChange={setBudget} />}
           </fieldset>
 
           {error && (
@@ -397,7 +438,7 @@ export const DiagnosisRequestCreateDialog: React.FC<{
             <Trans>Cancel</Trans>
           </Button>
           <Button
-            disabled={busy || (fund && !source)}
+            disabled={busy || (fund && !budget.source)}
             onClick={() => void create()}
             data-testid="diagnosis-request-create"
           >

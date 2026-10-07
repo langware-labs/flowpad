@@ -91,3 +91,96 @@ async def test_an_uploaded_key_is_reused_only_from_an_endpoint_this_user_created
 
     assert first == "llm_endpoint-mine" and (None, None) in posted, "theirs was not reused: a new one was created"
     assert second == "llm_endpoint-mine" and len(posted) == 2, "my own is reused, with no second upload"
+
+
+async def test_a_run_pushed_by_the_hub_posts_one_feed_entry_that_opens_the_request(monkeypatch):
+    from flow_sdk.builtin.feed_entry import FeedEntry
+
+    request = DiagnosisRequest(id="0c9e8d7f-6a5b-4c3d-9e2f-1a0b9c8d7e6f", name="r", run_count=0)
+    await request.save()
+
+    async def pull(self):  # the hub's row: one run in
+        self.run_count = 1
+        await self.save()
+        return self
+
+    monkeypatch.setattr(DiagnosisRequest, "pull", pull)
+
+    taken = await DiagnosisRequest.take_hub_update(request.id, {"run_count": 1})
+    repeated = await DiagnosisRequest.take_hub_update(request.id, {"run_count": 1})
+
+    entries = [e for e in await FeedEntry.get_all() if (e.data or {}).get("type_id") == str(request.typeid)]
+    assert taken and not repeated, "a frame repeated for the same run posts nothing"
+    assert len(entries) == 1 and entries[0].data["run"] == 1
+
+
+async def test_an_edit_sends_the_new_instructions_to_the_hub_and_keeps_the_title_once_a_run_came_back(monkeypatch):
+    """The label follows the instructions; the title only while no run has replaced it."""
+    from flow_sdk.cloud_client.transport import hub_http
+    from flow_sdk.schema.data_spec.diagnosis_request_spec import DiagnosisRequestEditSpec
+
+    put: list[dict] = []
+
+    async def hub_put(entity_type, entity_id, payload, *_a, **_k):
+        put.append(payload)
+        return payload
+
+    async def pull(self):
+        return self
+
+    monkeypatch.setattr(hub_http, "hub_put", hub_put)
+    monkeypatch.setattr(DiagnosisRequest, "pull", pull)
+
+    fresh = DiagnosisRequest(id="1d2e3f40-5a6b-4c7d-8e9f-0a1b2c3d4e5f", name="old", title="old", run_count=0)
+    await fresh.save()
+    await fresh.edit(DiagnosisRequestEditSpec(instructions="read server.log\nthen the ui log"))
+    ran = DiagnosisRequest(id="2e3f4051-6b7c-4d8e-9fa0-1b2c3d4e5f60", name="old", title="their run", run_count=2)
+    await ran.save()
+    await ran.edit(DiagnosisRequestEditSpec(instructions="read server.log"))
+
+    assert put[0] == {
+        "instructions": "read server.log\nthen the ui log",
+        "name": "read server.log",
+        "title": "read server.log",
+    }
+    assert "title" not in put[1]
+    reloaded = await DiagnosisRequest.get_by_id(fresh.id)
+    assert reloaded.instructions.startswith("read server.log") and reloaded.name == "read server.log"
+
+
+async def test_open_requests_are_counted_so_the_assets_sidebar_lists_the_type():
+    """The sidebar hides a type whose asset-stats count is 0, and counts only default-indexed types."""
+    from flow_sdk.fs_store.indexer.index_log import get_asset_stats
+
+    await DiagnosisRequest(id="3f405162-7c8d-4e9f-a0b1-2c3d4e5f6071", name="counted").save()
+
+    assert (await get_asset_stats()).per_type.get("diagnosis_request", 0) >= 1
+
+
+async def test_an_edit_asks_the_hub_for_a_new_window_from_now_and_a_new_run_size(monkeypatch):
+    from datetime import UTC, datetime, timedelta
+
+    from flow_sdk.cloud_client.transport import hub_http
+    from flow_sdk.schema.data_spec.diagnosis_request_spec import DiagnosisRequestEditSpec
+
+    posted: list[tuple] = []
+
+    async def hub_post(entity_type, body, entity_id=None, action=None, *_a, **_k):
+        posted.append((action, body))
+        return {}
+
+    async def pull(self):
+        return self
+
+    monkeypatch.setattr(hub_http, "hub_post", hub_post)
+    monkeypatch.setattr(DiagnosisRequest, "pull", pull)
+    request = DiagnosisRequest(id="40516273-8d9e-4fa0-b1c2-3d4e5f607182", name="r")
+
+    await request.edit(DiagnosisRequestEditSpec(write_hours=168, max_run_mb=5))
+
+    action, body = posted[0]
+    expires = datetime.fromisoformat(body["write_expires_at"])
+    assert action == "limits" and body["max_run_bytes"] == 5 * 1024 * 1024
+    assert abs(expires - (datetime.now(UTC) + timedelta(days=7))) < timedelta(minutes=1)
+    with pytest.raises(ValidationError):
+        DiagnosisRequestEditSpec(write_hours=24 * 8)

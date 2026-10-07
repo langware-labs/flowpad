@@ -76,6 +76,21 @@ class DiagnosisRequestOpenSpec(DataSpec):
     attachments: list[DiagnosisAttachmentSpec] = Field(default_factory=list)
 
 
+class DiagnosisRequestEditSpec(DataSpec):
+    """``POST /graph/diagnosis_request/<id>/edit`` -- what the owner may change once it is open.
+    Absent fields are left alone."""
+
+    spec_kind: ClassVar[str] = "diagnosis.request.edit"
+    model_config = ConfigDict(frozen=True)
+
+    instructions: Optional[str] = None
+    #: Accept runs for this many hours FROM NOW -- extends, shortens or reopens the request.
+    write_hours: Optional[int] = Field(default=None, ge=1, le=MAX_WRITE_HOURS)
+    max_run_mb: Optional[int] = Field(default=None, ge=1, le=MAX_MAX_RUN_MB)
+    #: A new budget -- the hub deletes the one it replaces.
+    funding: Optional[DiagnosisFundingSpec] = None
+
+
 class DiagnosisRunSpec(DataSpec):
     """One run of ``flow diagnose <id>``: the diagnosis it recorded, and the files it attached."""
 

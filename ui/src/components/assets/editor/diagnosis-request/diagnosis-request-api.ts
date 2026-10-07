@@ -70,6 +70,14 @@ export interface OpenRequestBody {
   };
 }
 
+/** `DiagnosisRequestEditSpec`: only what changes is sent. */
+export interface EditRequestBody {
+  instructions?: string;
+  write_hours?: number;
+  max_run_mb?: number;
+  funding?: OpenRequestBody['funding'];
+}
+
 /** An action on the type (`id` null) or on one request. */
 export function requestAction(
   name: string,
@@ -92,6 +100,10 @@ export function callRequestAction<T>(...args: Parameters<typeof requestAction>):
 
 export function openRequest(body: OpenRequestBody): Promise<{ request: DiagnosisRequest; command: string }> {
   return callRequestAction('open_request', { method: 'POST', body });
+}
+
+export function editRequest(id: string, body: EditRequestBody): Promise<DiagnosisRequest> {
+  return callRequestAction('edit', { id, method: 'POST', body });
 }
 
 /** What the owner sends the person they support. */
@@ -124,4 +136,56 @@ export function formatWhen(iso: string | null | undefined): string {
   if (!iso) return '—';
   const d = new Date(iso);
   return Number.isNaN(d.getTime()) ? iso : d.toLocaleString();
+}
+
+/**
+ * The first turn of an "explain the result" session: what the owner asked, the request, and every
+ * run's texts inline; each run's files ride as uploads (`run-<n>-<name>`), referenced by path, so a
+ * long log never bloats the prompt. Agent-facing text, so it is not translated.
+ */
+export function explainPrompt(
+  request: DiagnosisRequest,
+  attachments: RequestAttachment[],
+  runs: RunDetail[],
+): { message: string; files: File[] } {
+  const lines = [
+    'This is the result of a diagnosis I asked someone I support to run on their computer',
+    `(\`flow diagnose ${request.id}\`). Summarize it and explain it to me in plain language:`,
+    'what they ran into, the root cause, and the fix -- and what, if anything, I should do next.',
+    '',
+    '## What I asked them',
+    request.instructions?.trim() || '(no instructions -- a standard diagnosis)',
+  ];
+  if (attachments.length) {
+    lines.push('', 'Sent along:', ...attachments.map((a) => `- ${a.kind === 'skills' ? 'skill' : 'file'}: ${a.name}`));
+  }
+  lines.push(
+    '',
+    '## The request',
+    `- id: ${request.id}`,
+    `- accepted runs until: ${request.write_expires_at ?? 'unknown'}`,
+    `- LLM budget: ${request.llm_endpoint_typeid || 'none -- they used their own'}`,
+    `- runs: ${runs.length}`,
+  );
+  const files: File[] = [];
+  for (const run of runs) {
+    lines.push('', `## Run ${run.run}${run.at ? ` (${run.at})` : ''}`);
+    const fields: [string, string | null | undefined][] = [
+      ['Reported by', run.reported_by],
+      ['OS', run.os],
+      ['App version', run.app_version],
+      ['Title', run.title],
+      ['Their description', run.user_report],
+      ['Symptoms', run.symptoms],
+      ['Root cause', run.rca],
+      ['Fix', run.fix],
+      ['Summary', run.summary],
+    ];
+    for (const [label, value] of fields) if (value?.trim()) lines.push(`### ${label}`, value.trim());
+    for (const [name, text] of Object.entries(run.files ?? {})) {
+      files.push(new File([text], `run-${run.run}-${name.replace(/[\\/]/g, '_')}`, { type: 'text/plain' }));
+    }
+  }
+  if (files.length) lines.push('', "The runs' files are attached below -- read them.");
+  return { message: lines.join('\n'), files };
 }

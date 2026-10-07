@@ -55,7 +55,12 @@ msgstr "— נוכחי"
 msgid "— for this run only, optional"
 msgstr "— להרצה הזו בלבד, לא חובה"
 
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestEditDialog.tsx
+msgid "— from now"
+msgstr "— מעכשיו"
+
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestEditDialog.tsx
 msgid "— one step per line, optional"
 msgstr "— שלב אחד בכל שורה, לא חובה"
 
@@ -1494,6 +1499,7 @@ msgid "Accepting…"
 msgstr "מקבל..."
 
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestEditDialog.tsx
 msgid "Accepts runs for"
 msgstr "מקבלת הרצות במשך"
 
@@ -3087,6 +3093,10 @@ msgstr "צרף קבצים"
 msgid "Attach files or a screenshot (or paste one into the details)"
 msgstr ""
 
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
+msgid "Attach more files or assets"
+msgstr "צירוף קבצים או נכסים נוספים"
+
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "Attach session transcript"
 msgstr "צרף תמליל סשן"
@@ -3824,6 +3834,7 @@ msgstr ""
 #: src/components/assets/editor/agent-profile/AgentPlaceConfig.tsx
 #: src/components/assets/editor/agent-profile/ShareAgentDialog.tsx
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestEditDialog.tsx
 #: src/components/assets/editor/markdown/ReviewSurface.tsx
 #: src/components/assets/editor/whiteboard/WhiteboardAssetEditor.tsx
 #: src/components/assets/editor/wizard/WizardViewer.tsx
@@ -6023,6 +6034,10 @@ msgstr "לא ניתן להתחבר לשרת. יש לנסות שוב בעוד ר�
 msgid "Could not reach this cloud machine. It may be paused."
 msgstr ""
 
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
+msgid "Could not read the diagnosis"
+msgstr "לא ניתן לקרוא את האבחון"
+
 #. placeholder {0}: errorText(error)
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
 msgid "Could not read the runs: {0}"
@@ -7742,6 +7757,10 @@ msgstr "בקשת אבחון"
 msgid "Diagnosis request created"
 msgstr "בקשת האבחון נוצרה"
 
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestEditDialog.tsx
+msgid "Diagnosis request updated"
+msgstr "בקשת האבחון עודכנה"
+
 #: src/components/version-popover/diagnose-modal.tsx
 msgid "Diagnosis was not recorded — try again."
 msgstr "אבחון לא נשמר — נסה שוב."
@@ -8297,6 +8316,7 @@ msgstr "קצוות לפי סוג"
 
 #: src/components/agents/ProjectAgentsStrip.tsx
 #: src/components/anchored-markdown/CommentPin.tsx
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
 #: src/components/connections-manager/credential-rows-view.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/credentials-view/CredentialView.tsx
@@ -8323,6 +8343,10 @@ msgstr ""
 #: src/components/data-sources/DataSourceDialog.tsx
 msgid "Edit data source"
 msgstr "עריכת מקור נתונים"
+
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestEditDialog.tsx
+msgid "Edit diagnosis request"
+msgstr "עריכת בקשת אבחון"
 
 #: src/components/llm-endpoints/LlmEndpointDialog.tsx
 msgid "Edit endpoint"
@@ -9158,6 +9182,10 @@ msgstr ""
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
 msgid "Expires after"
 msgstr "פג תוקף אחרי"
+
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
+msgid "Explain the result"
+msgstr "הסבר את התוצאה"
 
 #: src/pages/hub-home/HubHome.tsx
 msgid "Explore your organization and everything you can reach."
@@ -10135,6 +10163,7 @@ msgid "Footprint"
 msgstr "היקף"
 
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestEditDialog.tsx
 msgid "For someone with no token source of their own. They spend it by the request id, up to the cap and until it expires."
 msgstr "למי שאין לו מקור טוקנים משלו. הוא משתמש בו לפי מזהה הבקשה, עד התקרה ועד שתוקפו פג."
 
@@ -11664,6 +11693,7 @@ msgid "Instructions"
 msgstr "הוראות"
 
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestEditDialog.tsx
 msgid "Instructions for their agent"
 msgstr "הוראות לסוכן שלהם"
 
@@ -11960,6 +11990,11 @@ msgstr "לשמור"
 msgid "Keep"
 msgstr "לשמור"
 
+#. placeholder {0}: formatWhen(request.write_expires_at)
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestEditDialog.tsx
+msgid "Keep — until {0}"
+msgstr "ללא שינוי — עד {0}"
+
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Keep browsing"
 msgstr ""
@@ -12112,6 +12147,7 @@ msgid "Large"
 msgstr "גדול"
 
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestEditDialog.tsx
 msgid "Largest run"
 msgstr "הרצה מקסימלית"
 
@@ -17018,6 +17054,7 @@ msgid "Paused."
 msgstr "מושהה."
 
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestEditDialog.tsx
 msgid "Pay for their LLM"
 msgstr "לממן להם את ה-LLM"
 
@@ -18196,6 +18233,10 @@ msgstr ""
 msgid "read only"
 msgstr ""
 
+#: src/pages/entry/DiagnosisRequestLanding.tsx
+msgid "Read the result in FlowPad"
+msgstr "קריאת התוצאה ב-FlowPad"
+
 #: src/components/entity-execution-panel/current-activity.ts
 msgid "Reading"
 msgstr "קורא"
@@ -18841,6 +18882,10 @@ msgstr ""
 #: src/components/llm-endpoints/CredentialField.tsx
 msgid "Replace the stored key"
 msgstr ""
+
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestEditDialog.tsx
+msgid "Replace their LLM budget"
+msgstr "החלפת תקציב ה-LLM שלהם"
 
 #: src/components/terminal/interactive-terminal/pty-events-viewer/PTYEventsViewer.tsx
 #: src/components/terminal/interactive-terminal/pty-events-viewer/PTYEventsViewer.tsx
@@ -19831,6 +19876,7 @@ msgstr "סנדבוקסים"
 #: src/components/anchored-markdown/CommentPin.tsx
 #: src/components/asset-manager/AssetManagerButton.tsx
 #: src/components/assets/editor/agent-profile/AgentPlaceConfig.tsx
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestEditDialog.tsx
 #: src/components/automations/AutomationPage.tsx
 #: src/components/credentials/CredentialDialog.tsx
 #: src/components/cron-view/CronForm.tsx
@@ -19945,6 +19991,7 @@ msgstr "הקשרים שנשמרו"
 
 #: src/components/account/secrets-section.tsx
 #: src/components/assets/editor/agent-profile/deployment/DeploymentProcessPanel.tsx
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestEditDialog.tsx
 #: src/components/conversation/ConversationView.tsx
 #: src/components/credentials/CredentialDialog.tsx
 #: src/components/cron-view/CronForm.tsx
@@ -20615,8 +20662,8 @@ msgid "Send message"
 msgstr "שלח הודעה"
 
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
-msgid "Send more files"
-msgstr "שליחת קבצים נוספים"
+#~ msgid "Send more files"
+#~ msgstr "שליחת קבצים נוספים"
 
 #: src/components/llm-endpoints/TestEndpointButton.tsx
 msgid "Send one minimal call through this endpoint"
@@ -20643,6 +20690,7 @@ msgstr ""
 msgid "Sending in {0}: “{sendingText}”"
 msgstr "שולח ב{0}: \"{sendingText}\""
 
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
 #: src/components/conversation/SendProgressNotice.tsx
 #: src/components/task-bar/SharedTaskView.tsx
 msgid "Sending…"
@@ -23120,6 +23168,10 @@ msgstr ""
 msgid "The default — what you want 99% of the time."
 msgstr "ברירת המחדל — מה שאתה רוצה 99% של הזמן."
 
+#: src/pages/entry/DiagnosisRequestLanding.tsx
+msgid "The diagnosis came back. Open it in FlowPad to read every run, or have an agent explain it."
+msgstr "האבחון חזר. פתח אותו ב-FlowPad כדי לקרוא כל הרצה, או לבקש מסוכן להסביר אותו."
+
 #: src/pages/discover-page/DiscoverDetailPage.tsx
 msgid "The document could not be put on the hub the last time it was published."
 msgstr ""
@@ -23281,6 +23333,10 @@ msgstr ""
 #: src/components/assets/editor/task/GroupTaskDialog.tsx
 msgid "The member tasks were created; {messageFailures} notification message(s) did not go through."
 msgstr "משימות החברים נוצרו; {messageFailures} הודעות התראה לא נשלחו."
+
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestEditDialog.tsx
+msgid "The new budget takes over at once; the current one is closed. What was spent stays spent."
+msgstr "התקציב החדש נכנס לתוקף מיד, והנוכחי נסגר. מה שכבר נוצל נשאר מנוצל."
 
 #: src/components/organization/budgets/PayingProviderSetup.tsx
 msgid "The organization's budget and its stored key are deleted, and every team drawing on it stops spending until a new one is set up. Allocations already given to teams and people are not refunded — they will point at a budget that no longer exists."
@@ -26382,6 +26438,10 @@ msgstr ""
 #: src/pages/entry/InstallLanding.tsx
 msgid "Your CloudNSite workspace is ready"
 msgstr "סביבת העבודה CloudNSite שלך מוכנה"
+
+#: src/pages/home-landing/feed/FeedEntryCard.tsx
+msgid "Your diagnosis request came back"
+msgstr "בקשת האבחון שלך חזרה"
 
 #: src/components/collaboration/StartRoomDialog.tsx
 #: src/components/collaboration/StartRoomDialog.tsx
