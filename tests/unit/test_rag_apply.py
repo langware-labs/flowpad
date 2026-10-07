@@ -124,3 +124,23 @@ async def test_what_was_applied_can_be_found(docs):
     hit = (await index.search("a hot sunny day at the beach", top_k=1))[0]
     assert hit.doc_ref == str(docs / "intro.md")
     assert embed  # the trigram embedder is real; the ranking means something
+
+
+async def test_a_pushed_page_says_indexing_while_it_embeds(docs, monkeypatch):
+    """The push path owns the same spinner as the heartbeat pass — one `embedding()` for both."""
+    from flow_sdk.rag import reconcile
+
+    seen: list[bool] = []
+
+    async def watching(index):
+        async def _embed(texts):
+            seen.append((await RagIndex.get_by_id(index.id)).indexing)
+            return embed_all(list(texts))
+
+        return _embed, "ngram-test"
+
+    monkeypatch.setattr(reconcile, "embedder_for", watching)
+    index = await _index()
+    await index.apply(_page(docs, added=[str(docs / "intro.md")]))
+    assert seen and all(seen)
+    assert (await RagIndex.get_by_id(index.id)).indexing is False

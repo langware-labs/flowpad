@@ -25,15 +25,20 @@ if TYPE_CHECKING:  # pragma: no cover
 #: A cloud placement's credential environment when the caller names none.
 DEFAULT_CLOUD_ENVIRONMENT = "production"
 
+#: The hub compute provider a cloud placement lands on when the caller names none. Which providers
+#: exist is the hub's to say: it refuses one it does not offer.
+DEFAULT_CLOUD_PROVIDER = "e2b"
+
 
 async def deploy_entity_to_cloud(
-    entity: "Entity", environment: str | None = None, *, require: list[str] | None = None
+    entity: "Entity", environment: str | None = None, *, provider: str | None = None, require: list[str] | None = None
 ) -> dict[str, Any]:
     """POST ``<entity>/deploy`` on the hub and adopt the placement it returns.
 
     Deliberately takes no node and no principal. Were either passable from here
     they would be passable from anywhere, which is the exact hole the hub's
-    pentest guards exist to keep shut. This call says only *which entity*, and
+    pentest guards exist to keep shut. This call says only *which entity*, on which
+    ``provider`` (the hub's name; none: :data:`DEFAULT_CLOUD_PROVIDER`), and
     which credential ``environment`` the placement reads (``production`` by
     default) — a name, never a value. ``require`` names the variables the hub must already hold for
     the placement; it refuses (``not_ready``) before paying for a machine otherwise.
@@ -53,7 +58,12 @@ async def deploy_entity_to_cloud(
     async with FlowpadClient(ApiConfig.from_env(), api_key=creds.api_key) as client:
         # `post` already unwraps the envelope, and raises on a non-success one —
         # so a hub-side refusal surfaces here rather than returning {}.
-        data = await client.post(path, {"environment": environment, **({"require": require} if require else {})})
+        body = {
+            "environment": environment,
+            "provider": provider or DEFAULT_CLOUD_PROVIDER,
+            **({"require": require} if require else {}),
+        }
+        data = await client.post(path, body)
     data = data if isinstance(data, dict) else {}
     await Deployment.adopt_from_hub(data.get("deployment"), element=entity)
     from flow_sdk.builtin.service_endpoint import ServiceEndpoint  # noqa: PLC0415
@@ -64,4 +74,4 @@ async def deploy_entity_to_cloud(
     return data
 
 
-__all__ = ["deploy_entity_to_cloud"]
+__all__ = ["DEFAULT_CLOUD_PROVIDER", "deploy_entity_to_cloud"]

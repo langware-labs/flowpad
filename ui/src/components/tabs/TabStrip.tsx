@@ -29,6 +29,7 @@ import {
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
 import { TabTooltipName } from '@src/components/tabs/TabTooltipName';
 import { useIsAdvanced } from '@src/contexts/view-mode-context';
+import { useCloseOnIframeFocus } from '@src/hooks/use-close-on-iframe-focus';
 import { animateGlow } from '@src/lib/animate-glow';
 import { consumeTabHighlight, TAB_HIGHLIGHT_MS, useTabHighlights } from '@src/tabs/tab-highlight';
 import { ExternalLink, X, type LucideIcon } from 'lucide-react';
@@ -46,6 +47,26 @@ import { useLingui } from '@lingui/react/macro';
  * the app's top edge reads as two mismatched steps.
  */
 export const TAB_LINE_HEIGHT_CLASS = 'h-[35px]';
+
+/**
+ * A chip's hover card. It is hoverable (it carries a copy button), and Radix
+ * dismisses it on a press elsewhere in this document — but a press inside a
+ * web app tab's iframe never reaches the document, so that closes it too.
+ */
+function TabChipTooltip({ trigger, children }: { trigger: React.ReactNode; children: React.ReactNode }) {
+  const [open, setOpen] = useState(false);
+  const close = useCallback(() => setOpen(false), []);
+  useCloseOnIframeFocus(open, close);
+
+  return (
+    <TooltipProvider delayDuration={600}>
+      <Tooltip open={open} onOpenChange={setOpen}>
+        <TooltipTrigger asChild>{trigger}</TooltipTrigger>
+        {children}
+      </Tooltip>
+    </TooltipProvider>
+  );
+}
 
 /** One chip in the strip. Kind-agnostic: terminals, entity tabs, and the
  *  transient preview tab all render through this shape. */
@@ -541,12 +562,8 @@ export const TabStrip: React.FC<TabStripProps> = ({
       <React.Fragment key={key}>
         {separator}
         <ContextMenu>
-          <TooltipProvider delayDuration={600}>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <ContextMenuTrigger asChild>{tabContent}</ContextMenuTrigger>
-              </TooltipTrigger>
-              {isAdvanced && item.tooltip ? (
+          <TabChipTooltip trigger={<ContextMenuTrigger asChild>{tabContent}</ContextMenuTrigger>}>
+            {isAdvanced && item.tooltip ? (
                 <TooltipContent side="bottom" className="border bg-popover p-2.5 text-popover-foreground shadow-md">
                   {item.tooltip}
                 </TooltipContent>
@@ -557,8 +574,7 @@ export const TabStrip: React.FC<TabStripProps> = ({
                   <TabTooltipName name={item.title} className="font-normal" />
                 </TooltipContent>
               ) : null}
-            </Tooltip>
-          </TooltipProvider>
+          </TabChipTooltip>
           <ContextMenuContent>
             {/* Emphasized shortcuts (e.g. "Open Project") sit above the tab
                 operations as an accented header group — they navigate, they

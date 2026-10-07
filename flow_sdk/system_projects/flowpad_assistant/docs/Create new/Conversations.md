@@ -35,8 +35,8 @@ to your cloud account first.
   composer and your prompt opens a live session on the other person's
   computer. They approve the session once; follow-ups and replies live in the
   session view — see [[Prompt execution]].
-- **Share a project's context.** Folders marked shared travel with a shared
-  project; see [[Context folders]].
+- **Share a project's context.** A shared project brings its dependencies with
+  it; see [[Dependencies]].
 
 ## Good to know
 

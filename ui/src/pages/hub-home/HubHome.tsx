@@ -60,6 +60,20 @@ const STATUS_STYLE: Record<ExecutionEnvironmentStatus, { dot: string; card: stri
   [ExecutionEnvironmentStatus.NEW]: { dot: 'bg-muted-foreground/40', card: 'border-border' },
 };
 
+/**
+ * The glyph that says what kind of box a card is: a connected computer or a workspace. Anything
+ * else — agent machines included — gets none: no field on a node marks it as an agent's (the hub
+ * records that on the deployment), so any other glyph would be a guess.
+ */
+function CardGlyph({ node }: { node: ComputeNode }) {
+  const { t } = useLingui();
+  const cls = 'h-4 w-4 shrink-0 text-muted-foreground';
+  if (isUserMachine(node))
+    return <Laptop className={cls} aria-label={t`Connected computer`} data-testid="sandbox-kind-machine" />;
+  if (node.isSandbox) return <Monitor className={cls} aria-label={t`Workspace`} data-testid="sandbox-kind-workspace" />;
+  return null;
+}
+
 /** Border/background tint for a sandbox card, by live status. */
 function statusCardClass(status?: ExecutionEnvironmentStatus): string {
   return (status && STATUS_STYLE[status]?.card) || 'border-border';
@@ -480,7 +494,7 @@ export function HubHome() {
                 )} ${cardEnabled(d) ? '' : 'opacity-60'}`}
               >
                 <div className="flex items-center gap-3">
-                  <Monitor className="h-4 w-4 shrink-0 text-muted-foreground" />
+                  <CardGlyph node={d} />
                   {editingId === d.id ? (
                     <input
                       autoFocus

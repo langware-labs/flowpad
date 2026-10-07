@@ -14,7 +14,7 @@ export type AssetSource =
   | 'user_dir'        // under user_home
   | 'workdir'         // process workdir if distinct from project/user
   | 'additional_dir'  // additional_dirs entries (excl. auto-appended assets dir)
-  | 'context_dir'     // project.include_dirs (context folders)
+  | 'context_dir'     // project.include_dirs (resolved dependencies)
   | 'system'          // bundled flowpad_assistant assets
   | 'external';       // not attributable to any of this process's source dirs
 
@@ -94,7 +94,7 @@ export const ASSET_SOURCE_LABEL: Record<AssetSource, string> = {
   user_dir: 'user',
   workdir: 'workdir',
   additional_dir: 'additional',
-  context_dir: 'context folder',
+  context_dir: 'dependency',
   system: 'system',
   external: 'external',
 };

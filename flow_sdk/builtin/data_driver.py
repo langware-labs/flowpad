@@ -90,6 +90,8 @@ class DataDriver(DriverRuntime, Entity):
     setup_wizards: list[SetupStageSpec] = APIField(default_factory=list)
     group: str = APIField(default="")
     group_order: int = APIField(default=0)
+    group_icon_name: str = APIField(default="")
+    default_name: str = APIField(default="")
     reflect: list[str] = APIField(default_factory=list)
     config: dict[str, FieldHints] = APIField(default_factory=dict)
     listed: bool = APIField(default=True)

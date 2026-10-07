@@ -5,6 +5,8 @@ import { WebappDisplayToolbar } from '@src/components/display-toolbar';
 import { hostBrand, useAppDisplay } from '@src/hooks/flow-hooks';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { APP_RUNTIME_PARAM, type AppRuntime } from '@src/navigation/app-dock';
+import { type DockPointer } from '@src/navigation/DockPointer';
+import { tryParseDock } from '@src/navigation/try-parse-dock';
 
 /**
  * An app, rendered from its ADDRESS, through the endpoints that serve it.
@@ -58,6 +60,18 @@ function reloadOnNewEpoch(src: string, epoch: number | undefined, reload: () => 
   if (seen !== undefined && seen !== epoch) reload();
 }
 
+/**
+ * The dock a guest app asks the host to open (`{type: 'flowpad:navigate', address: '/dock/…'}`),
+ * or null. Only a `/dock/` address that parses is honoured — a guest navigates the app, never the
+ * window to an arbitrary URL.
+ */
+export function guestNavigation(data: unknown): DockPointer | null {
+  const message = data as { type?: unknown; address?: unknown } | null;
+  if (message?.type !== 'flowpad:navigate' || typeof message.address !== 'string') return null;
+  if (!message.address.startsWith('/dock/')) return null;
+  return tryParseDock(message.address);
+}
+
 export function AppDisplayViewer({
   artifactId,
   microAppId = null,
@@ -98,14 +112,19 @@ export function AppDisplayViewer({
 
   // Push when the skin moves, and answer the guest's own request — a guest that
   // finished loading after our push would otherwise never hear one.
+  // One listener for what the guest asks: its skin (answered to any window, as it always was), and
+  // to open another dock (the eval browser → the dataset editor) — URL-first, the host only
+  // navigates, and only for this frame's own guest.
   useEffect(() => {
     pushSkin();
     const onGuest = (event: MessageEvent) => {
-      if ((event.data as { type?: string } | null)?.type === 'flowpad:skin-please') pushSkin();
+      if ((event.data as { type?: string } | null)?.type === 'flowpad:skin-please') return pushSkin();
+      const dock = frameRef.current?.isGuest(event.source) ? guestNavigation(event.data) : null;
+      if (dock) navigation.openDock(dock);
     };
     window.addEventListener('message', onGuest);
     return () => window.removeEventListener('message', onGuest);
-  }, [pushSkin, appDisplay.src]);
+  }, [pushSkin, appDisplay.src, navigation]);
 
   // URL-carried, so the choice survives a reload and the Back button — it used to
   // be component state and vanished on both.

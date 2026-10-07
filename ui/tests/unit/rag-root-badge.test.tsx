@@ -97,7 +97,7 @@ describe('the marker is read when the row renders, not when it is built', () => 
   });
 });
 
-describe('a context-folder row', () => {
+describe('a dependency row', () => {
   async function firstRow() {
     const root = assetContextFoldersRoot({
       dirs: [{ path: DOCS, origin_kind: 'local' }],

@@ -3,22 +3,15 @@
   "id": "62b245bc-ccbc-454f-ad1e-dcdc182f240d",
   "name": "flow-whatsapp-ask-connected",
   "label": "Send it from your phone",
-  "description": "The phone sends its code; the hub validates it. Only a connected phone continues.",
+  "description": "The phone sends its code; the hub validates it. The step finishes by itself once the phone is connected.",
   "subkind": "ask",
   "output_spec_kind": "confirm",
   "exe_data": {
-    "prompt": "Open WhatsApp and send the message to {{connect.name}}",
-    "detail": "Tap the link on your phone, or scan the code with its camera — WhatsApp opens with **link {{connect.code}}** already typed. Send it, wait for {{connect.name}}'s reply, then press Continue.\n\n[Open WhatsApp]({{connect.link}})\n\n![Scan with your phone]({{connect.qr}})\n\n{{connect.name}} · {{connect.number}}",
-    "submit_label": "Continue",
+    "prompt": "Connect WhatsApp to {{connect.name}}",
+    "detail": "**1. Open WhatsApp** — [tap here]({{connect.link}}) on your phone, or scan:\n\n![Scan with your phone]({{connect.qr}})\n\n**2. Send the code** `{{connect.code}}` — it is already typed in the message.\n\n**3. Status:** waiting for your message…",
     "recheck": true,
-    "timeout_seconds": 1800
+    "timeout_seconds": 1800,
+    "auto_continue": true
   },
-  "completion_check": {
-    "commands": {
-      "darwin": "\"$FLOWPAD_FLOW\" source step \"$FLOWPAD_WIZARD_INPUT_SOURCE\" connected",
-      "linux": "\"$FLOWPAD_FLOW\" source step \"$FLOWPAD_WIZARD_INPUT_SOURCE\" connected",
-      "win32": "& $env:FLOWPAD_FLOW source step $env:FLOWPAD_WIZARD_INPUT_SOURCE connected; exit $LASTEXITCODE"
-    },
-    "timeout_seconds": 30
-  }
+  "status_check": "source_step:{{source}}:connected"
 }

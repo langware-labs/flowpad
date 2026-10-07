@@ -178,6 +178,26 @@ def set_assigned_compute_node(typeid: str) -> str:
     return typeid
 
 
+_INSTANCE_UID_KEY = "instance_uid"
+
+
+def instance_uid() -> str:
+    """This instance's own id, minted once and kept in ``<instance_dir>/config.json``.
+
+    What the hub addresses when a webhook claim targets ONE desktop (``X-Flowpad-Instance`` on the hub
+    socket): the machine id is shared by every instance on a laptop (a dev and a prod side by side), and a
+    socket's connection id changes on every reconnect. Not a secret — it names, it does not authorize: the
+    hub only delivers to it on a socket the instance's own signed-in user opened."""
+    import uuid  # noqa: PLC0415
+
+    raw = app_config.get_config(_INSTANCE_UID_KEY)
+    if isinstance(raw, str) and re.fullmatch(r"[0-9a-f-]{36}", raw):
+        return raw
+    minted = str(uuid.uuid4())
+    app_config.set_config(_INSTANCE_UID_KEY, minted)
+    return minted
+
+
 def reset_cache() -> None:
     """Drop the memo. For tests, which move instance dirs under the module's feet."""
     _cache.clear()

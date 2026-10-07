@@ -1,0 +1,34 @@
+{
+  "schema": 1,
+  "name": "flow_slack",
+  "title": "Flow — no setup",
+  "icon_name": "Flowpad",
+  "description": "Talk to Flow, Flowpad's own assistant, in Slack. Nothing to set up at Slack — add the Flow app to your workspace once, link your account, and Flow answers in its DM, acting on your Flowpad.",
+  "kind": "datasource.cloud.slack",
+  "group": "Slack",
+  "group_order": 0,
+  "group_icon_name": "Slack",
+  "default_name": "Flow Slack agent",
+  "config": {
+    "link_id": {
+      "type": "text",
+      "advanced": true,
+      "label": "Link",
+      "hint": "Made when you press Connect Slack."
+    },
+    "sender": {
+      "type": "text",
+      "advanced": true,
+      "label": "Your Slack account",
+      "account_key": true,
+      "hint": "The Slack account that sent the Connect code — the only one Flow answers here."
+    }
+  },
+  "setup_wizards": [
+    {
+      "stage": "connect",
+      "label": "Connect",
+      "wizard": "flow-slack-connect"
+    }
+  ]
+}

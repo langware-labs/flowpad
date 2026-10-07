@@ -28,6 +28,7 @@ pinned by a test so it cannot drift silently.
 | [Threads and replies](message-threads.md) | reply in a thread on Flowpad's own chat, read one thread, the same verbs on a data source channel, and the CLI | `tests/unit/test_message_threads_snippets.py` (runs every Python fence), `tests/api/test_native_threads.py`, `tests/cli/test_conversation_cmd.py` |
 | [An agent on a channel](agents-on-channels.md) | declare a channel's credential, put an agent on WhatsApp so the app answers, or run the answering loop yourself; proven in Docker | `tests/unit/test_agents_on_channels_snippets.py` (runs every fence), `tests/long_tests/test_whatsapp_agent_in_docker.py` |
 | [Pipes](pipes.md) | run a source cycle, mirror and follow a folder, react to a change, set cadence, one agent over several sources, keep a search index level, pages of N with one ack each | `tests/unit/test_pipes_snippets.py` (runs every fence) |
+| [Project dependencies](project-dependencies.md) | declare the folders a project expects in `flow.json` (git, hub project, local folder; required or optional), see what resolved, a process in one project reading a document from another, an agent from a dependency running in your project, share warnings, the same verbs in TypeScript, HTTP and `flow dep` | `tests/unit/test_project_dependencies_snippets.py` (runs every python fence), `ui/tests/unit/project-dependencies-snippet.test.ts` (the TS fence), `tests/unit/test_project_dependencies.py` (every case and corner) |
 
 ## Conventions
 

@@ -1,0 +1,9 @@
+{
+  "name": "data-viewer",
+  "title": "Data viewer",
+  "description": "The generic data viewer: shows a value -- or a list -- of ANY kind from its definition alone, in every mode (line, view, edit, compare). Every kind without a viewer of its own is shown by it.",
+  "kind": "application.web.viewer",
+  "build": ".",
+  "views": [{"kind": "*", "shows": ["single", "collection"]}],
+  "module": "viewer.js"
+}

@@ -88,13 +88,13 @@ const STEP_LABELS: Record<StepId, string> = {
   clone: 'Cloning the repository',
   init: 'Setting up the project',
   index: 'Indexing the project',
-  context: 'Attaching context projects',
+  context: 'Adding dependencies',
   default: 'Choosing the project to open',
   open: 'Finishing up',
 };
 
 /**
- * Could this setup have context projects to attach?
+ * Could this setup have dependencies to add?
  *
  * A git-backed project can declare them in its manifest, which only the clone
  * can reveal — so the answer is "maybe" for anything with a repo, and the step
@@ -181,7 +181,7 @@ export function isUserMachine(node: ComputeNode): boolean {
 function defaultSandboxProvider(): ComputeProviderType {
   // Validated against the SANDBOX providers, not against every provider: a hub
   // configured for `local_machine` would otherwise be taken at its word and mint
-  // a node that `isSandbox` — reading the same set — can never list back.
+  // a node that `isSandbox` — reading the same set — never recognizes as a sandbox.
   const configured: ComputeProviderType | undefined = dataContext.bootstrapInfo?.default_compute_provider;
   return configured && SANDBOX_PROVIDERS.has(configured) ? configured : ComputeProviderType.E2B;
 }
@@ -204,22 +204,6 @@ export function workspaceServiceUrl(nodeId: string): string {
   const info = new ActionInfo('open-service', ComputeNode.type, nodeId, 'GET');
   info.subpath = WORKSPACE_SERVICE;
   return info.fullActionUrl;
-}
-
-/**
- * A ComputeNode is a "sandbox" iff its provider is one of `SANDBOX_PROVIDERS`
- * and it was created from the workspace flavor. Named `isSandbox`, not
- * `isDesktop`: `dataContext.isDesktop` already means "running in Electron", and
- * the two answered different questions under one name.
- *
- * The rule itself lives on the entity (`ComputeNode.isSandbox`) rather than here:
- * it used to read the provider AND a magic string out of the untyped
- * `node_config` blob inline, which meant every surface wanting the question had
- * to know that blob's shape. This wrapper stays because callers and tests import
- * it by name.
- */
-export function isSandbox(node: ComputeNode): boolean {
-  return node.isSandbox;
 }
 
 /**
@@ -305,7 +289,7 @@ export interface SandboxSetup {
   name: string;
   /** Adopted by the box, so one project id spans hub and sandbox. */
   projectId?: string;
-  /** Help desks / skills repos to clone and attach as context of this project.
+  /** Help desks / skills repos to clone and add as dependencies of this project.
    *  Defaults to whatever the cloned repo's own manifest declares. */
   contextProjects?: ContextProject[];
   /** Review-branch content installation, applied to the hub's checkout before
@@ -313,12 +297,13 @@ export interface SandboxSetup {
   install?: ContentInstallSpec;
 }
 
-/** A repo that becomes its own project on the box AND a context folder of the
+/** A repo that becomes its own project on the box AND a dependency of the
  *  main one — how a help desk's skills and assets come into scope. */
 export interface ContextProject {
   gitOrigin: GitOrigin;
   name: string;
-  scope: 'private' | 'shared';
+  /** False: a required dependency, fetched wherever the project opens. */
+  optional: boolean;
 }
 
 /** Rows the hub reports for one provisioning run, keyed by step. */
@@ -342,7 +327,7 @@ function provisionSetupOf(setup: SandboxSetup): ProvisionSetup {
           context_projects: setup.contextProjects.map((ctx) => ({
             git_origin: ctx.gitOrigin as unknown as Record<string, unknown>,
             name: ctx.name,
-            scope: ctx.scope,
+            optional: ctx.optional,
           })),
         }
       : {}),
@@ -405,6 +390,8 @@ async function provisionSandboxProject(
   }
 }
 
+const NO_NODES: ComputeNode[] = [];
+
 export function useSandboxes() {
   const { user } = useAuth();
 
@@ -415,7 +402,10 @@ export function useSandboxes() {
 
   const { data: nodes, isLoading, refetch } = useEntitiesQuery<ComputeNode>(sandboxesRequest, { enabled: !!user });
 
-  const sandboxes = useMemo(() => (nodes ?? []).filter(isSandbox), [nodes]);
+  // Every machine the user can reach — agent deployment machines carry no workspace
+  // flavor, and filtering on it hid all of them. One shared empty list, so the
+  // effects keyed on it do not re-run while the query is still loading.
+  const sandboxes = nodes ?? NO_NODES;
   // `createSandbox` only needs the list to pick the next auto-name. Reading it
   // through a ref keeps the callback stable across every refetch — including the
   // one it triggers itself — so consumers holding it as a prop don't re-render.
@@ -436,8 +426,8 @@ export function useSandboxes() {
     }
   }, []);
 
-  // Probe only sandboxes we haven't seen yet, and forget ones that vanished —
-  // re-probing the whole list on every add/delete would be one call per sandbox.
+  // Probe only machines we haven't seen yet, and forget ones that vanished —
+  // re-probing the whole list on every add/delete would be one call per machine.
   useEffect(() => {
     const liveIds = new Set(sandboxes.map((d) => d.id));
     setDetails((prev) => {

@@ -1,3 +1,4 @@
+import { Loader2 } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { msg } from '@lingui/core/macro';
 import { Trans } from '@lingui/react/macro';
@@ -37,6 +38,8 @@ interface Question {
   /** The words on the two buttons ("Continue"); empty means Send / Cancel. */
   submit_label?: string;
   cancel_label?: string;
+  /** Closes by itself once its goal holds (a phone sends a code): nothing to Send, only to watch. */
+  auto?: boolean;
   /** Why it is asked and what to do — markdown; a gate's "not yet" reason is appended to it. */
   detail?: string;
   /** How a person finds the value — the op's `setup.md`, markdown. */
@@ -193,10 +196,17 @@ export function AskForm({
         </p>
       ) : null}
 
-      <div className="flex gap-2">
-        <Button data-testid="ask-submit" disabled={busy} onClick={() => void submit()}>
-          {question.submit_label ? bt(question.submit_label) : <Trans>Send</Trans>}
-        </Button>
+      <div className="flex items-center gap-2">
+        {question.auto ? (
+          <span className="flex items-center gap-2 text-sm text-muted-foreground" data-testid="ask-auto-waiting">
+            <Loader2 className="size-4 animate-spin" />
+            <Trans>Waiting…</Trans>
+          </span>
+        ) : (
+          <Button data-testid="ask-submit" disabled={busy} onClick={() => void submit()}>
+            {question.submit_label ? bt(question.submit_label) : <Trans>Send</Trans>}
+          </Button>
+        )}
         <Button variant="ghost" data-testid="ask-cancel" disabled={busy} onClick={() => void send('/cancel')}>
           {question.cancel_label ? bt(question.cancel_label) : <Trans>Cancel</Trans>}
         </Button>

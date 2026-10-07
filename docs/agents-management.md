@@ -73,7 +73,7 @@ Auto-launch is **once per project, ever**. The dock loaders run a load-redirect
 resolver (`ui/src/agents/agent-auto-launch-redirect.ts`, registered after the
 journey one) that calls `POST /api/v1/agents/auto-launch {project_id}`.
 `Agent.auto_launch_for` scopes candidates to agents rooted in the project or
-one of its direct context folders, `enabled` with `auto_launch` on, and not yet
+one of its dependencies (`flow.json`), `enabled` with `auto_launch` on, and not yet
 in the project's device state (`<instance_dir>/projects/<project_id>/device_state.json`,
 key `agent_auto_launched`, via `flow_sdk/project_device_state.py` — backend-owned so no
 UI `project.save()` can clobber it; read it back with `GET /api/v1/agents/auto-launch?project_id=`). The **oldest** wins — first

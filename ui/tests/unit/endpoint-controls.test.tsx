@@ -66,7 +66,11 @@ vi.mock('@sdk', async (importOriginal) => {
 // Its own dedicated suite covers the call/verdict cycle; here it only needs to exist so the row
 // renders — asserting on its testid is enough to know it is actually wired in.
 import { EndpointControls } from '@src/components/organization/budgets/EndpointControls';
-import { DEFAULT_MODELS, SEED_BY_SCOPE, aliasesForPinnedModel } from '@src/components/organization/budgets/budget-models';
+import {
+  DEFAULT_MODELS,
+  SEED_BY_SCOPE,
+  aliasesForPinnedModel,
+} from '@src/components/organization/budgets/budget-models';
 
 /**
  * REGRESSION: the seed used to be the single `sm` slug, which refused the model a normal prompt
@@ -95,7 +99,11 @@ describe('SEED_BY_SCOPE', () => {
    *  a wrong value on a row. */
   it('mirrors the hub: a ceiling on the org, the cheap tier below it', () => {
     expect(SEED_BY_SCOPE.org).toEqual(['anthropic/claude-*', 'openai/*']);
-    expect(SEED_BY_SCOPE.person).toEqual(['anthropic/claude-haiku-4.5', 'openai/gpt-5-mini']);
+    expect(SEED_BY_SCOPE.person).toEqual([
+      'anthropic/claude-haiku-4.5',
+      'openai/gpt-5-mini',
+      'openai/text-embedding-3-small',
+    ]);
   });
 
   it('gives the team the same cheap tier as a person', () => {
@@ -189,7 +197,13 @@ describe('aliasesForPinnedModel', () => {
 
 describe('DEFAULT_MODELS', () => {
   it('is the cheap tier of BOTH families, and redirects each onto its own', () => {
-    expect(DEFAULT_MODELS).toEqual(['anthropic/claude-haiku-4.5', 'openai/gpt-5-mini']);
+    // The embedding model is there so a person's wallet can fund a RAG index; it is its own
+    // family (`openai/text-*`), so it never captures a chat request.
+    expect(DEFAULT_MODELS).toEqual([
+      'anthropic/claude-haiku-4.5',
+      'openai/gpt-5-mini',
+      'openai/text-embedding-3-small',
+    ]);
     // The narrowness is only safe BECAUSE the other tiers redirect onto it — and a redirect never
     // crosses vendors, so Claude Code and codex each land on the model of their own family.
     expect(aliasesForPinnedModel(DEFAULT_MODELS)).toEqual({
@@ -197,6 +211,8 @@ describe('DEFAULT_MODELS', () => {
       'claude-*': 'anthropic/claude-haiku-4.5',
       'openai/gpt-*': 'openai/gpt-5-mini',
       'gpt-*': 'openai/gpt-5-mini',
+      'openai/text-*': 'openai/text-embedding-3-small',
+      'text-*': 'openai/text-embedding-3-small',
     });
   });
 });

@@ -33,8 +33,13 @@ interface Spec {
   listed?: boolean;
   /** The cloud creates the account — offered only when adding for an agent. */
   provisioned?: boolean;
+  /** A grouped driver is offered through its group's one tile, then as a choice behind it. */
+  group?: string;
   config?: Record<string, SpecField>;
 }
+
+/** The tile a spec is offered under: its group's, when it has one. */
+const tileOf = (spec: Spec): string => (spec.group ? `provider-group-${spec.group}` : `provider-${spec.name}`);
 
 let specs: Spec[] = [];
 
@@ -76,7 +81,13 @@ async function openDialog(page: Page, provider: string) {
   await page.getByTestId('add-data-source').click();
   const dialog = page.getByRole('dialog').filter({ hasText: 'Add a data source' });
   await expect(dialog).toBeVisible();
-  await dialog.getByTestId(`provider-${provider}`).click();
+  const { group } = specNamed(provider);
+  if (group) {
+    await dialog.getByTestId(`provider-group-${group}`).click();
+    await dialog.getByTestId(`group-member-${provider}`).click();
+  } else {
+    await dialog.getByTestId(`provider-${provider}`).click();
+  }
   return dialog;
 }
 
@@ -135,11 +146,11 @@ test.describe('Data sources are served by the backend', () => {
     expect(offered.length, 'no installed spec is offered to a person').toBeGreaterThan(0);
     for (const spec of offered) {
       await expect(
-        dialog.getByTestId(`provider-${spec.name}`),
+        dialog.getByTestId(tileOf(spec)),
         `${spec.name} is installed but the dialog does not offer it`,
       ).toBeVisible();
     }
-    for (const spec of specs.filter((s) => !offered.includes(s))) {
+    for (const spec of specs.filter((s) => !offered.includes(s) && !s.group)) {
       await expect(
         dialog.getByTestId(`provider-${spec.name}`),
         `${spec.name} is unlisted or provisioned but the dialog offers it`,

@@ -17,6 +17,7 @@
       "linux": "\"$FLOWPAD_FLOW\" source step \"$FLOWPAD_WIZARD_INPUT_SOURCE\" number --check",
       "win32": "& $env:FLOWPAD_FLOW source step $env:FLOWPAD_WIZARD_INPUT_SOURCE number --check; exit $LASTEXITCODE"
     },
-    "timeout_seconds": 30
+    "timeout_seconds": 30,
+    "source_step": "number"
   }
 }

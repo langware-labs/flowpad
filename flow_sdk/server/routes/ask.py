@@ -65,6 +65,8 @@ class AskRequest(BaseModel):
     secret: bool = False
     #: The answer is a file's content: the window offers a file picker and a paste box.
     file: bool = False
+    #: Closes by itself when its goal holds: the window offers no Send.
+    auto: bool = False
     #: The Wizard entity this question is a step of, when it is one.
     wizard_id: str = ""
     #: How a person finds the value (the op's ``setup.md``).
@@ -92,6 +94,7 @@ async def ask_for_another_process(body: AskRequest):
         cancel_label=body.cancel_label,
         secret=body.secret,
         file=body.file,
+        auto=body.auto,
         wizard_id=body.wizard_id,
         guide=body.guide,
         assist_agent=body.assist_agent,

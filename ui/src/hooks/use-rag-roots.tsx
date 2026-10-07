@@ -17,14 +17,56 @@
  * Roots only, never their descendants — the marker says "coverage was chosen here", and
  * branding a whole subtree would make it say something vaguer.
  */
-import { createContext, useContext, useMemo, type ReactNode } from 'react';
+import { createContext, useContext, useEffect, useMemo, useRef, type ReactNode } from 'react';
+import { t } from '@lingui/core/macro';
 import { isHubOnly, QueryRequest, RagIndex } from '@sdk';
 import { useEntitiesQuery } from '@src/hooks/entity-hooks';
+import { notify } from '@src/notifications';
 
 /** Stable empty value — a fresh `Set` per render would churn every consumer's memo. */
 const NO_ROOTS: Set<string> = new Set();
 
 const RagRootsContext = createContext<Set<string>>(NO_ROOTS);
+/** The roots of every index whose pass is running right now — the same shape, a second answer. */
+const RagIndexingContext = createContext<Set<string>>(NO_ROOTS);
+
+/**
+ * The roots of the indexes *which* accepts, as a `Set` that keeps its identity while its contents
+ * do. Every pass broadcasts its row twice; a fresh `Set` each time would re-render every tree row.
+ */
+function useStableRoots(indexes: RagIndex[] | undefined, which: (index: RagIndex) => boolean): Set<string> {
+  const key = (indexes ?? [])
+    .filter(which)
+    .flatMap((index) => index.roots ?? [])
+    .sort()
+    .join('\n');
+  return useMemo(() => (key ? new Set(key.split('\n')) : NO_ROOTS), [key]);
+}
+
+/**
+ * Say so when a pass lands: the toast for "it's done", raised on the row's `indexing` going
+ * true → false. Here and only here, because this provider is mounted once for the whole app —
+ * a watcher per tree row or per card would toast once per copy on screen.
+ */
+function useAnnounceFinishedPasses(indexes: RagIndex[] | undefined) {
+  const wasIndexing = useRef(new Map<string, boolean>());
+  useEffect(() => {
+    for (const index of indexes ?? []) {
+      const before = wasIndexing.current.get(index.id);
+      wasIndexing.current.set(index.id, !!index.indexing);
+      if (!before || index.indexing) continue;
+      const name = index.name || t`Search index`;
+      if (index.last_error) {
+        notify.error({ title: t`${name}: indexing stopped`, message: index.last_error });
+      } else {
+        notify.success({
+          title: t`${name} is ready to search`,
+          message: t`${index.document_count} documents, ${index.chunk_count} chunks`,
+        });
+      }
+    }
+  }, [indexes]);
+}
 
 export function RagRootsProvider({ children }: { children: ReactNode }) {
   // Built inside the component, not at module scope: `RagIndex` comes through the `@sdk`
@@ -35,11 +77,19 @@ export function RagRootsProvider({ children }: { children: ReactNode }) {
   // type registry, so the query is a 422 there and can never return roots. The provider
   // still wraps the tree on the hub — it just has nothing to ask.
   const { data: indexes } = useEntitiesQuery<RagIndex>(request, { enabled: !isHubOnly() });
-  const roots = useMemo(() => {
-    if (!indexes?.length) return NO_ROOTS;
-    return new Set(indexes.flatMap((index) => index.roots ?? []));
-  }, [indexes]);
-  return <RagRootsContext.Provider value={roots}>{children}</RagRootsContext.Provider>;
+  const roots = useStableRoots(indexes, () => true);
+  const indexing = useStableRoots(indexes, (index) => index.indexing);
+  useAnnounceFinishedPasses(indexes);
+  return (
+    <RagRootsContext.Provider value={roots}>
+      <RagIndexingContext.Provider value={indexing}>{children}</RagIndexingContext.Provider>
+    </RagRootsContext.Provider>
+  );
+}
+
+/** Roots whose index is embedding right now, or an empty set outside the provider. */
+export function useRagIndexingRoots(): Set<string> {
+  return useContext(RagIndexingContext);
 }
 
 /** The roots, or an empty set outside the provider — never a crash and never a wrong badge. */

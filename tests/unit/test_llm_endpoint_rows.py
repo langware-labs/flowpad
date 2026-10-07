@@ -205,8 +205,45 @@ async def test_a_hub_endpoint_calls_the_hub_not_the_vendor(env, monkeypatch):
         models={"md": "anthropic/claude-sonnet-4.5"},
     )
     assert await endpoint.create_completion("sys", "user") == "hi"
-    assert calls["base_url"] == "https://hub.test/api/v1/graph/llm_endpoint/11111111-2222-4333-8444-555555555555/invoke/v1"
+    assert (
+        calls["base_url"] == "https://hub.test/api/v1/graph/llm_endpoint/11111111-2222-4333-8444-555555555555/invoke/v1"
+    )
     assert calls["api_key"] == "fp-hub-key"
+
+
+async def test_a_hub_endpoint_embeds_through_the_hub(env, monkeypatch):
+    """A RAG index funded by a hub budget: the embeddings call goes to the hub's invoke path, with
+    the hub key, and names the ROOT provider's default slug since a hub row carries no models."""
+    calls: dict = {}
+
+    class _Fake:
+        def __init__(self, **kwargs):
+            calls.update(kwargs)
+            self.embeddings = SimpleNamespace(create=self._create)
+
+        async def _create(self, *, model, input):
+            calls["model"] = model
+            return SimpleNamespace(data=[SimpleNamespace(embedding=[0.5, 0.5]) for _ in input], model=model)
+
+    import openai
+
+    monkeypatch.setattr(openai, "AsyncOpenAI", _Fake)
+    from flow_sdk.cli.auth.hub_login import set_api_key
+
+    set_api_key("fp-hub-key")
+
+    endpoint = LLMEndpoint(id="11111111-2222-4333-8444-555555555555", name="team budget", provider="openrouter")
+    assert endpoint.kind == LLMEndpointKind.HUB
+    assert endpoint.models == {}
+    vectors, answered = await endpoint.create_embeddings_with_model(["hello", "world"])
+    assert vectors == [[0.5, 0.5], [0.5, 0.5]]
+    assert answered == "openai/text-embedding-3-small"
+    assert await endpoint.create_embeddings(["hello"]) == [[0.5, 0.5]]
+    assert (
+        calls["base_url"] == "https://hub.test/api/v1/graph/llm_endpoint/11111111-2222-4333-8444-555555555555/invoke/v1"
+    )
+    assert calls["api_key"] == "fp-hub-key"
+    assert calls["model"] == "openai/text-embedding-3-small"
 
 
 @pytest.mark.asyncio

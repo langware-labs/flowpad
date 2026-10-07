@@ -1,8 +1,8 @@
 """``adopt-helpdesk-from-git`` — attach a desk repo AND report what arrived.
 
-The attach itself is ``add-context-dir-from-git`` verbatim (see
-``test_add_context_dir_from_git.py``, which pins that a desk needs no special
-flow to arrive). What this action adds is the REPORT, and every property below
+The attach itself is ``Project.add_dependency`` verbatim (see
+``test_dependency_git.py``, which pins that a desk needs no special flow to
+arrive). What this action adds is the REPORT, and every property below
 is about a report that would otherwise be silently wrong:
 
 1. **A desk that does not serve is not reported as success.** Resolution walks
@@ -11,7 +11,7 @@ is about a report that would otherwise be silently wrong:
    about routing — so saying "adopted: CloudNSite" would name a vendor that
    will not receive a single ticket.
 2. **"Not a desk" keeps the folder.** The repo is still a perfectly good
-   context folder; the clone already happened. Detaching would be a second,
+   dependency; the clone already happened. Detaching would be a second,
    destructive surprise on top of the first.
 3. **A desk naming no usable queue is its own outcome.** It resolves to
    nothing, so tickets fall through to the hub's default desk — a different

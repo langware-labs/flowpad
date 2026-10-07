@@ -223,7 +223,7 @@ export const HomeCustomizationCard: React.FC<HomeCustomizationCardProps> = ({ pr
           assets={homePageCandidates}
           selectedTypeIds={homePage ? [homePage] : []}
           // Only what Home can actually open: this project's own assets and its
-          // context folders' — the boundary the backend enforces.
+          // dependencies' — the boundary the backend enforces.
           filter={(d: AssetDescriptor) => isHomePageCandidate(d, project?.context_roots ?? [])}
           onPick={(d: AssetDescriptor) => (d.typeid ? void saveHomePage(d.typeid) : undefined)}
           searchPlaceholder={t`Search assets…`}

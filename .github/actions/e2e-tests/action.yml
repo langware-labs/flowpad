@@ -3,7 +3,7 @@ description: 'Boot flow_sdk server, satisfy the headless instance contract, run 
 inputs:
   only:
     description: >-
-      Run one tier instead of all of them: vitest, first-run-setup, context-folders or
+      Run one tier instead of all of them: vitest, first-run-setup, dependencies or
       navigation. Empty runs everything. For iterating on one failure — the PR run is
       always the full set.
     required: false
@@ -156,13 +156,13 @@ runs:
       shell: bash
       working-directory: ui
 
-    # ---- Playwright scenario: context-folders (self-seeding, single spec) ----
+    # ---- Playwright scenario: dependencies (flow.json; self-seeding, single spec) ----
     # The vitest tiers above leave real entities behind (projects, tabs); that
     # restored last-active state keeps ProjectHome from rendering for the URL
     # the spec navigates to. Mirror the reference CI's between-suite DB
     # cleanup: restart the backend on a fresh database.
     - name: Reset backend state before Playwright
-      if: ${{ inputs.only == '' || inputs.only == 'first-run-setup' || inputs.only == 'context-folders' }}
+      if: ${{ inputs.only == '' || inputs.only == 'first-run-setup' || inputs.only == 'dependencies' }}
       env:
         MINIHUB_RELOAD: 'False'
         FLOWPAD_SKIP_DOTENV: 'true'
@@ -173,7 +173,7 @@ runs:
       shell: bash
 
     - name: Start vite dev server
-      if: ${{ inputs.only == '' || inputs.only == 'first-run-setup' || inputs.only == 'context-folders' }}
+      if: ${{ inputs.only == '' || inputs.only == 'first-run-setup' || inputs.only == 'dependencies' }}
       run: |
         # --mode ci-e2e → vite loadEnv picks .env.ci-e2e.local (VITE_API_URL :6099)
         nohup npm run dev -- --mode ci-e2e --port 5099 &> ../vite.log &
@@ -182,7 +182,7 @@ runs:
       working-directory: ui
 
     - name: Wait for vite dev server
-      if: ${{ inputs.only == '' || inputs.only == 'first-run-setup' || inputs.only == 'context-folders' }}
+      if: ${{ inputs.only == '' || inputs.only == 'first-run-setup' || inputs.only == 'dependencies' }}
       run: |
         timeout=60
         elapsed=0
@@ -199,7 +199,7 @@ runs:
       shell: bash
 
     - name: Install Playwright browsers
-      if: ${{ inputs.only == '' || inputs.only == 'first-run-setup' || inputs.only == 'context-folders' || inputs.only == 'navigation' }}
+      if: ${{ inputs.only == '' || inputs.only == 'first-run-setup' || inputs.only == 'dependencies' || inputs.only == 'navigation' }}
       run: npx playwright install --with-deps chromium
       shell: bash
       working-directory: ui
@@ -214,9 +214,9 @@ runs:
       working-directory: ui
 
     # First-run setup has now fired and left its wizard page as the last-active
-    # view; context folders needs a fresh database again, with setup switched off.
-    - name: Reset backend state before context folders
-      if: ${{ inputs.only == '' || inputs.only == 'context-folders' }}
+    # view; dependencies needs a fresh database again, with setup switched off.
+    - name: Reset backend state before dependencies
+      if: ${{ inputs.only == '' || inputs.only == 'dependencies' }}
       env:
         MINIHUB_RELOAD: 'False'
         FLOWPAD_SKIP_DOTENV: 'true'
@@ -225,12 +225,12 @@ runs:
       run: scripts/ci_e2e_reset_backend.sh
       shell: bash
 
-    - name: Playwright — context folders scenario
-      if: ${{ inputs.only == '' || inputs.only == 'context-folders' }}
+    - name: Playwright — project dependencies (flow.json) scenario
+      if: ${{ inputs.only == '' || inputs.only == 'dependencies' }}
       env:
-        CTX_FE_PORT: '5099'
-        CTX_BE_PORT: '6099'
-      run: npx playwright test --config tests/e2e/context-folders/playwright.config.ts --max-failures=1 ${{ inputs.grep && format('--grep "{0}"', inputs.grep) || '' }}
+        DEP_FE_PORT: '5099'
+        DEP_BE_PORT: '6099'
+      run: npx playwright test --config tests/e2e/dependencies/playwright.config.ts --max-failures=1 ${{ inputs.grep && format('--grep "{0}"', inputs.grep) || '' }}
       shell: bash
       working-directory: ui
 

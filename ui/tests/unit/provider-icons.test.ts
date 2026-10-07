@@ -23,7 +23,7 @@ const MANIFEST_ROOT = join(
   '../../../flow_sdk/system_projects/flowpad_assistant/agentic-assets/data_driver',
 );
 
-type Manifest = { name: string; title?: string; icon_name?: string };
+type Manifest = { name: string; title?: string; icon_name?: string; group_icon_name?: string };
 
 const manifests: Manifest[] = readdirSync(MANIFEST_ROOT, { withFileTypes: true })
   .filter((e) => e.isDirectory())
@@ -50,7 +50,10 @@ describe('provider icons', () => {
   it('gives every provider a glyph no other provider wears', () => {
     const byIcon = new Map<string, string[]>();
     for (const m of manifests) {
-      const key = m.icon_name ?? '';
+      // What the picker draws (sourceGlyphs): a grouped driver is its group's mark badged with its own glyph, so
+      // Flow on WhatsApp (WhatsApp + Flowpad badge) and Flow on Slack (Slack + Flowpad badge) differ.
+      const group = m.group_icon_name && m.group_icon_name !== m.icon_name ? m.group_icon_name : '';
+      const key = group ? `${group} + ${m.icon_name ?? ''}` : (m.icon_name ?? '');
       byIcon.set(key, [...(byIcon.get(key) ?? []), m.name]);
     }
     const shared = [...byIcon.entries()].filter(([, names]) => names.length > 1);

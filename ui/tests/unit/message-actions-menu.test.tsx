@@ -108,6 +108,26 @@ describe('message ⋮ menu', () => {
     expect(onReact).toHaveBeenCalledWith('👍');
   });
 
+  it("shows the header's worker icon bar and hands the picked worker up, closing the menu", () => {
+    const onLaunchWorker = vi.fn();
+    render(
+      <MemoryRouter>
+        <MessageActionsMenu flowMessageId="m-1" conversationId="c-1" onLaunchWorker={onLaunchWorker} />
+      </MemoryRouter>,
+    );
+    openMenu();
+    const [first] = within(screen.getByTestId('message-launch-toolbar')).getAllByRole('button');
+    fireEvent.click(first);
+    expect(onLaunchWorker).toHaveBeenCalledWith(first.getAttribute('data-testid')!.replace('message-launch-', ''));
+    expect(screen.queryByTestId('message-launch-toolbar')).toBeNull();
+  });
+
+  it('no worker bar without a launcher (drafts)', () => {
+    render(<MessageActionsMenu flowMessageId="m-1" conversationId="c-1" />);
+    openMenu();
+    expect(screen.queryByTestId('message-launch-toolbar')).toBeNull();
+  });
+
   it('a channel or forwarded message says so at the top of the menu', () => {
     render(<MessageActionsMenu flowMessageId="m-1" forwarded />);
     openMenu();

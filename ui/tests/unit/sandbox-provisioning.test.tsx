@@ -196,12 +196,12 @@ describe('sandbox provisioning asks the hub for the outcome', () => {
 
   it('forwards chosen context projects and an install spec', async () => {
     await launchWithGit({
-      contextProjects: [{ gitOrigin: ORIGIN, name: 'acme-support', scope: 'shared' }],
+      contextProjects: [{ gitOrigin: ORIGIN, name: 'acme-support', optional: false }],
       install: { kind: 'journey', id: 'onboarding' },
     });
 
     expect(bodyOf('provision-project')).toMatchObject({
-      context_projects: [{ git_origin: ORIGIN, name: 'acme-support', scope: 'shared' }],
+      context_projects: [{ git_origin: ORIGIN, name: 'acme-support', optional: false }],
       install: { kind: 'journey', id: 'onboarding' },
     });
   });
@@ -300,12 +300,12 @@ describe('sandbox provisioning asks the hub for the outcome', () => {
     answers({ 'provision-project': provisioned(['init', 'context', 'default']) });
 
     const result = await launchWithoutRepo({
-      contextProjects: [{ gitOrigin: ORIGIN, name: 'acme-support', scope: 'shared' }],
+      contextProjects: [{ gitOrigin: ORIGIN, name: 'acme-support', optional: false }],
     });
 
     expect(rows(result)).toContain('context');
     expect(bodyOf('provision-project')).toMatchObject({
-      context_projects: [{ git_origin: ORIGIN, name: 'acme-support', scope: 'shared' }],
+      context_projects: [{ git_origin: ORIGIN, name: 'acme-support', optional: false }],
     });
   });
 

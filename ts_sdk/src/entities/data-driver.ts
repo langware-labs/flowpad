@@ -107,6 +107,10 @@ export interface IDataDriver extends IEntity {
   /** One choice to a person, several ways to it ("WhatsApp"): one tile per group, a card per member. */
   group?: string;
   group_order?: number;
+  /** The group tile's own glyph — the choice's, not a member's (first declared, in group order). */
+  group_icon_name?: string;
+  /** The name a new source starts with ("Flow WhatsApp agent"); blank → the title. */
+  default_name?: string;
   /** The record kind a source row carries (`datasource.api.slack`). */
   kind?: string;
   /** Always `source`: the folder's own `source.py`. */
@@ -170,6 +174,8 @@ export class DataDriver extends APIEntity<DataDriver> implements IDataDriver {
   setup_wizards: SetupStage[] = [];
   group: string = '';
   group_order: number = 0;
+  group_icon_name: string = '';
+  default_name: string = '';
   kind: string = '';
   runtime: string = 'source';
   load_error: string = '';

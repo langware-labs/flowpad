@@ -68,6 +68,8 @@ class Question:
     secret: bool = False
     #: The answer is a file's content: whoever draws the field offers a file picker and a paste box.
     file: bool = False
+    #: The question closes by itself when its goal holds (an ``auto_continue`` op): nothing to Send.
+    auto: bool = False
     #: The Wizard entity this question is a step of, when it is one — its
     #: TypeId's uuid half. Empty for an op run outside any wizard. This is the
     #: one thread back from a settled question to the run that is still going:
@@ -111,6 +113,7 @@ class Question:
             "fields": self.fields,
             "secret": self.secret,
             "file": self.file,
+            "auto": self.auto,
             "wizard_id": self.wizard_id,
             "run": self.run,
             "guide": self.guide,
@@ -185,6 +188,7 @@ def open_question(
     cancel_label: str = "",
     secret: bool = False,
     file: bool = False,
+    auto: bool = False,
     wizard_id: str = "",
     guide: str = "",
     assist_agent: str = "",
@@ -207,6 +211,7 @@ def open_question(
         cancel_label=cancel_label,
         secret=secret,
         file=file,
+        auto=auto,
         wizard_id=wizard_id,
         run=ASKING_RUN.get(),
         guide=guide,
@@ -335,6 +340,7 @@ async def ask_person(
     cancel_label: str = "",
     secret: bool = False,
     file: bool = False,
+    auto: bool = False,
     wizard_id: str = "",
     guide: str = "",
     assist_agent: str = "",
@@ -362,6 +368,7 @@ async def ask_person(
         cancel_label=cancel_label,
         secret=secret,
         file=file,
+        auto=auto,
         wizard_id=wizard_id,
         guide=guide,
         assist_agent=assist_agent,
@@ -424,6 +431,7 @@ async def ask_through_backend(
     cancel_label: str = "",
     secret: bool = False,
     file: bool = False,
+    auto: bool = False,
     wizard_id: str = "",
     guide: str = "",
     assist_agent: str = "",
@@ -453,6 +461,7 @@ async def ask_through_backend(
         "cancel_label": cancel_label,
         "secret": secret,
         "file": file,
+        "auto": auto,
         "wizard_id": wizard_id,
         "guide": guide,
         "assist_agent": assist_agent,

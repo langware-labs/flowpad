@@ -19,7 +19,9 @@ import asyncio
 import logging
 from typing import TYPE_CHECKING
 
+from flow_sdk.external_apis.llm.dialects import same_model
 from flow_sdk.rag import runtime
+from flow_sdk.rag.store import ModelMismatch
 from flow_sdk.server.system_heartbeat import register_heartbeat_task
 
 if TYPE_CHECKING:
@@ -47,6 +49,17 @@ class EmbeddingUnavailable(LookupError):
         )
 
 
+def default_embedding_model(endpoint) -> str:
+    """The model an endpoint embeds with when nobody chose one.
+
+    A hub endpoint carries no model names of its own (the hub serializes none), so the answer
+    comes from the ROOT provider's dialect -- the same fallback its client makes. Read here
+    rather than left to the client, so the index can record the model it is about to be pinned to.
+    """
+    dialect = endpoint.dialect
+    return (endpoint.models or {}).get("embedding") or (dialect.default_models.get("embedding", "") if dialect else "")
+
+
 async def embedder_for(index: "RagIndex"):
     """``(embed, model)``: the embed call this index is funded by, and the model it embeds with.
 
@@ -59,10 +72,15 @@ async def embedder_for(index: "RagIndex"):
     if endpoint is None:
         raise EmbeddingUnavailable()
 
-    model = index.model or endpoint.models.get("embedding", "")
+    # Always a concrete name, so the store records what it was built with — a hub endpoint
+    # used to leave this "" and the store pinned a width with no model beside it.
+    model = index.model or default_embedding_model(endpoint)
 
     async def embed(texts):
-        return await endpoint.create_embeddings(list(texts), model=model or None)
+        vectors, answered = await endpoint.create_embeddings_with_model(list(texts), model=model or None)
+        if answered and model and not same_model(answered, model):
+            raise ModelMismatch(model, answered)
+        return vectors
 
     return embed, model
 
@@ -96,28 +114,25 @@ async def run_index(index: "RagIndex", *, force: bool = False) -> list["IndexRep
             await index.save(notify=True)
         return []
 
-    reports: list["IndexReport"] = []
-    try:
-        async with index.open_store() as store:
-            reports = await index_roots(store, index.roots, embed=embed, model=model, force=force)
-            index.chunk_count = store.chunk_count()
-            index.document_count = len(store.document_refs())
-            index.model = index.model or store.model
-            index.dimensions = index.dimensions or store.dimensions
-        problems = [e for r in reports for e in r.errors]
-        index.last_error = problems[0] if problems else ""
-    except Exception as exc:  # noqa: BLE001 — the reason belongs on the row, not in a traceback
-        logger.warning("rag: pass failed for %s", index.id, exc_info=True)
-        index.last_error = str(exc)
-        # Saved, or the card never shows why — the reason lived only on this in-memory copy.
-        await index.save(notify=True)
-        return reports
-
     from datetime import datetime, timezone  # noqa: PLC0415
 
-    if any(not r.fresh for r in reports):
-        index.last_indexed_at = datetime.now(timezone.utc)
-    await index.save(notify=True)
+    reports: list["IndexReport"] = []
+    async with index.embedding():
+        try:
+            async with index.open_store() as store:
+                reports = await index_roots(store, index.roots, embed=embed, model=model, force=force)
+                index.chunk_count = store.chunk_count()
+                index.document_count = len(store.document_refs())
+                index.model = index.model or store.model
+                index.dimensions = index.dimensions or store.dimensions
+            problems = [e for r in reports for e in r.errors]
+            index.last_error = problems[0] if problems else ""
+            if any(not r.fresh for r in reports):
+                index.last_indexed_at = datetime.now(timezone.utc)
+        except Exception as exc:  # noqa: BLE001 — the reason belongs on the row, not in a traceback
+            logger.warning("rag: pass failed for %s", index.id, exc_info=True)
+            # Saved by ``embedding`` on the way out, or the card never shows why.
+            index.last_error = str(exc)
     return reports
 
 
@@ -181,6 +196,7 @@ async def dispatch_due_indexes() -> list[str]:
         key = str(index.id)
         if key in _inflight:
             continue
+        await index.clear_stale_indexing()
         if not index.pending and not await index.unstamped_roots():
             continue
         if index.status == RagStatus.SETUP and await index.settle_status():
@@ -204,4 +220,12 @@ async def _heartbeat_dispatch() -> None:
         logger.info("rag: dispatched %d index pass(es)", len(dispatched))
 
 
-__all__ = ["NO_EMBEDDING", "EmbeddingUnavailable", "dispatch_due_indexes", "embedder_for", "force_pass", "run_index"]
+__all__ = [
+    "NO_EMBEDDING",
+    "EmbeddingUnavailable",
+    "default_embedding_model",
+    "dispatch_due_indexes",
+    "embedder_for",
+    "force_pass",
+    "run_index",
+]

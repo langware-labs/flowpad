@@ -16,7 +16,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import { ComputeNode } from '@sdk';
-import { isSandbox, nextSandboxName, WORKSPACE_SERVICE, workspaceServiceUrl } from '@src/hooks/use-sandboxes';
+import { nextSandboxName, WORKSPACE_SERVICE, workspaceServiceUrl } from '@src/hooks/use-sandboxes';
 
 // A real v4 (version nibble 4, variant 8): TypeId validates the shape.
 const NODE_ID = '11111111-2222-4333-8444-555555555555';
@@ -78,7 +78,7 @@ describe('nextSandboxName', () => {
   });
 });
 
-/** `isSandbox` — which ComputeNodes are ours. */
+/** `ComputeNode.isSandbox` — which ComputeNodes are workspaces. */
 describe('isSandbox', () => {
   // A real entity, not a shaped literal: the rule lives on `ComputeNode` now, so
   // a plain object would answer `undefined` and prove nothing about production.
@@ -86,19 +86,19 @@ describe('isSandbox', () => {
     new ComputeNode({ node_provider_type: 'e2b', node_config: { flavor: 'workspace' }, ...over } as never);
 
   it('accepts an E2B node with the workspace flavor', () => {
-    expect(isSandbox(node())).toBe(true);
+    expect(node().isSandbox).toBe(true);
   });
 
   it('accepts a GCP VM node with the workspace flavor', () => {
-    expect(isSandbox(node({ node_provider_type: 'gcp_vm' }))).toBe(true);
+    expect(node({ node_provider_type: 'gcp_vm' }).isSandbox).toBe(true);
   });
 
   it('rejects anything else', () => {
     // Agent/exec-env nodes are ComputeNodes too and must never show up as the
     // user's sandboxes.
-    expect(isSandbox(node({ node_provider_type: 'local_machine' }))).toBe(false);
-    expect(isSandbox(node({ node_config: undefined }))).toBe(false);
-    expect(isSandbox(node({ node_config: {} }))).toBe(false);
-    expect(isSandbox(node({ node_config: { flavor: 'agent' } }))).toBe(false);
+    expect(node({ node_provider_type: 'local_machine' }).isSandbox).toBe(false);
+    expect(node({ node_config: undefined }).isSandbox).toBe(false);
+    expect(node({ node_config: {} }).isSandbox).toBe(false);
+    expect(node({ node_config: { flavor: 'agent' } }).isSandbox).toBe(false);
   });
 });
