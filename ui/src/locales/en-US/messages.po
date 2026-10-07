@@ -5151,6 +5151,10 @@ msgstr "Connected"
 msgid "Connected · {0}"
 msgstr "Connected · {0}"
 
+#: src/pages/hub-home/HubHome.tsx
+msgid "Connected computer"
+msgstr "Connected computer"
+
 #. placeholder {0}: formatTimeAgo(connection.connectedAt.toISOString())
 #: src/components/connections-manager.tsx
 msgid "Connected in this browser {0}"
@@ -16354,6 +16358,11 @@ msgstr "Open this agent's transcript"
 msgid "Open this automation"
 msgstr "Open this automation"
 
+#: src/components/assets/editor/agent-profile/deployment/AgentDeploymentPage.tsx
+#: src/components/assets/editor/agent-profile/deployment/AgentDeploymentPage.tsx
+msgid "Open this deployment's workspace in a new tab"
+msgstr "Open this deployment's workspace in a new tab"
+
 #: src/components/llm-sources/LlmSourcesView.tsx
 msgid "Open this endpoint on the hub"
 msgstr "Open this endpoint on the hub"
@@ -25932,6 +25941,7 @@ msgid "Working…"
 msgstr "Working…"
 
 #: src/i18n/type-labels.ts
+#: src/pages/hub-home/HubHome.tsx
 msgid "Workspace"
 msgstr "Workspace"
 

@@ -562,6 +562,50 @@ async def test_reflect_to_hub_put_members_denial_propagates(monkeypatch):
 
 
 @pytest.mark.asyncio
+# do not increase timeout without approval
+@pytest.mark.timeout(30)
+async def test_reflect_to_hub_put_keeps_the_parsed_action_and_sub_path(monkeypatch):
+    """``PUT agent/<id>/access/public/visitor`` must reach the hub at that same path.
+
+    Entered through the real path parser and action registry, as the graph route does:
+    the parser only keeps ``action``/``sub_path`` for a REGISTERED action, and an
+    unregistered one used to turn this PUT into an implicit ``update`` — a bare
+    ``PUT /agent/<id>`` writing ``{role}`` onto the agent row.
+    """
+    import flow_sdk.app.actions  # noqa: F401 — side-effect registration
+    import flow_sdk.server.routes._hub_reflect as mod
+    from flow_sdk.actions.action_registry import action, get_action_from_method
+    from flow_sdk.api.api_request import APIRequest
+    from flow_sdk.builtin.agent import Agent
+
+    agent_id = str(uuid.uuid4())
+    parsed = APIRequest.from_api_path(f"/api/v1/graph/agent/{agent_id}/access/public/visitor")
+    assert (parsed.action, parsed.sub_path) == ("access", "public/visitor")
+
+    captured = {}
+
+    async def fake_hub_put(entity_type, entity_id=None, payload=None, action=None, sub_path=None, **kwargs):
+        captured.update(et=entity_type.value, id=entity_id, payload=payload, action=action, sub_path=sub_path)
+        return {"audience": "visitor", "role": "anonymous_viewer"}
+
+    monkeypatch.setattr(mod, "hub_put", fake_hub_put)
+
+    a = action.get_by_name(parsed.action or get_action_from_method("PUT"), "agent")
+    e = Agent(id=agent_id, name="public", title="Public", remote=True)
+    result = await mod.reflect_to_hub(a, e, {"role": "anonymous_viewer"}, "PUT", parsed.sub_path)
+
+    assert captured == {
+        "et": "agent",
+        "id": agent_id,
+        "payload": {"role": "anonymous_viewer"},
+        "action": "access",
+        "sub_path": "public/visitor",
+    }
+    # A sub-pathed reply is the hub's own answer, not the agent row.
+    assert result == {"audience": "visitor", "role": "anonymous_viewer"}
+
+
+@pytest.mark.asyncio
 @pytest.mark.timeout(30)
 async def test_reflect_to_hub_skips_unknown_entity_type(monkeypatch):
     """Entities whose ``type`` isn't a builtin enum value have no hub
