@@ -135,7 +135,8 @@
     "installerHeaderIcon": "resources/icons/icon.ico",
     "createDesktopShortcut": true,
     "createStartMenuShortcut": true,
-    "shortcutName": "Flowpad"
+    "shortcutName": "Flowpad",
+    "include": "resources/installer.nsh"
   },
   "linux": {
     "icon": "resources/icons",
