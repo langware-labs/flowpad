@@ -196,6 +196,9 @@ class LLMScope(DataSpec):
 
     #: ``AgenticProcess.llm_endpoint_typeid`` — rung 1. Beats the project's.
     process_llm_endpoint_typeid: str = ""
+    #: ``AgenticProcess.llm_endpoint_public`` — the rung-1 endpoint is public, so a box with no
+    #: hub login may still spend it. Process-scoped; a project pin never carries it.
+    process_llm_endpoint_public: bool = False
     #: The project whose ``llm_endpoint_typeid`` is rung 2. The id, not the typeid: it is
     #: looked up, and ``_constraint`` is the only thing that reads the field off the row.
     project_id: str = ""
@@ -211,6 +214,7 @@ class LLMScope(DataSpec):
         ``builtin`` and importing it here would be the cycle this module exists to avoid."""
         return cls(
             process_llm_endpoint_typeid=str(getattr(process, "llm_endpoint_typeid", "") or ""),
+            process_llm_endpoint_public=bool(getattr(process, "llm_endpoint_public", False)),
             project_id=str(getattr(process, "project_id", "") or ""),
             owner_typeid=str(getattr(process, "typeid", "") or ""),
         )

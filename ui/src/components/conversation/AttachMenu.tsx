@@ -39,6 +39,8 @@ interface AttachMenuProps {
   /** Suppress the inline asset-chip list (parent renders chips externally
    *  via {@link AssetRefChips} — used by composer rows in flex layouts). */
   hideAssetList?: boolean;
+  /** Which assets the picker offers. Default: everything. */
+  assetFilter?: (descriptor: AssetDescriptor) => boolean;
 }
 
 /**
@@ -50,7 +52,14 @@ interface AttachMenuProps {
  * DropdownMenu + Popover — the portal/focus cascade between two Radix
  * primitives keeps closing the inner popover immediately after open.
  */
-export function AttachMenu({ assetRefs, onAssetRefsChange, onFilesPicked, disabled, hideAssetList }: AttachMenuProps) {
+export function AttachMenu({
+  assetRefs,
+  onAssetRefsChange,
+  onFilesPicked,
+  disabled,
+  hideAssetList,
+  assetFilter,
+}: AttachMenuProps) {
   const inputId = useId();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [open, setOpen] = useState(false);
@@ -113,6 +122,7 @@ export function AttachMenu({ assetRefs, onAssetRefsChange, onFilesPicked, disabl
               setView('menu');
             }
           }}
+          filter={assetFilter}
           {...selection}
           searchPlaceholder="Search assets…"
         />
