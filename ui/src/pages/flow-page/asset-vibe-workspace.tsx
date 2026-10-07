@@ -17,7 +17,7 @@ import { type VibeWorkspaceSession, useSessionShowState, useVibeWorkspaceSession
 import { assetWorkContextForDock } from './asset-work-context';
 
 interface AssetVibeWorkspaceProps {
-  isVibe: boolean;
+  chatBeside: boolean;
   session: VibeWorkspaceSession | null;
 }
 
@@ -25,7 +25,7 @@ interface AssetVibeWorkspaceProps {
  * Stable asset/file host. ContentPanel's ancestry never changes; only the
  * sibling chat panel's size and the panel's presentation props do.
  */
-export function AssetVibeWorkspace({ isVibe, session }: AssetVibeWorkspaceProps) {
+export function AssetVibeWorkspace({ chatBeside, session }: AssetVibeWorkspaceProps) {
   const { computeNode, project } = useAgentContext();
   const { currentDock, navigation } = useDockNavigation();
   const currentDockRef = useRef(currentDock);
@@ -40,11 +40,11 @@ export function AssetVibeWorkspace({ isVibe, session }: AssetVibeWorkspaceProps)
   navigationRef.current = navigation;
   const panelGroupRef = useRef<ImperativePanelGroupHandle>(null);
   const chatPanelRef = useRef<ImperativePanelHandle>(null);
-  const hasExpandedChatRef = useRef(isVibe);
+  const hasExpandedChatRef = useRef(chatBeside);
   const [transitionsReady, setTransitionsReady] = useState(false);
   // The session resolves synchronously from the URL plus the tab store, so there
   // is no unknown-host window to paper over and one process identity throughout.
-  const process = useVibeWorkspaceSessionHost(session, isVibe);
+  const process = useVibeWorkspaceSessionHost(session, chatBeside);
   // Kept in a ref because `openShownTarget` is deliberately stable (see below):
   // re-creating it would open a cleanup/re-subscribe gap against the process
   // save that lands immediately before `on_show`.
@@ -88,7 +88,7 @@ export function AssetVibeWorkspace({ isVibe, session }: AssetVibeWorkspaceProps)
     // layout contains panel sizes. Initial Standard/Vibe sizing comes from the
     // matching defaultSize props below; only later mode changes are imperative.
     if (panelGroupRef.current?.getLayout().length !== 2) return;
-    if (isVibe) {
+    if (chatBeside) {
       const chatPanel = chatPanelRef.current;
       if (!chatPanel) return;
       if (hasExpandedChatRef.current) chatPanel.expand();
@@ -99,7 +99,7 @@ export function AssetVibeWorkspace({ isVibe, session }: AssetVibeWorkspaceProps)
     } else {
       chatPanelRef.current?.collapse();
     }
-  }, [isVibe]);
+  }, [chatBeside]);
 
   useEffect(() => {
     setTransitionsReady(true);
@@ -147,9 +147,9 @@ export function AssetVibeWorkspace({ isVibe, session }: AssetVibeWorkspaceProps)
   // The callback is stable so the process save emitted immediately before
   // `on_show` cannot create a React cleanup/re-subscribe gap.
   useEffect(() => {
-    if (!isVibe || !session || !process) return;
+    if (!chatBeside || !session || !process) return;
     return process.onShow(openShownTarget);
-  }, [session, isVibe, openShownTarget, process]);
+  }, [session, chatBeside, openShownTarget, process]);
 
   // A SECOND live `on_show` channel used to be declared here, subscribing to the
   // DataManager to "close the live WS attach race". It never ran once: it read
@@ -204,7 +204,7 @@ export function AssetVibeWorkspace({ isVibe, session }: AssetVibeWorkspaceProps)
         ref={chatPanelRef}
         id="asset-vibe-chat"
         order={1}
-        defaultSize={isVibe ? 36 : 0}
+        defaultSize={chatBeside ? 36 : 0}
         minSize={24}
         maxSize={55}
         collapsible
@@ -212,33 +212,33 @@ export function AssetVibeWorkspace({ isVibe, session }: AssetVibeWorkspaceProps)
         className={transitionClass}
       >
         <div
-          aria-hidden={!isVibe}
+          aria-hidden={!chatBeside}
           className={[
             'h-full',
             transitionsReady
               ? 'transition-[opacity,transform] ease-out [transition-duration:280ms] motion-reduce:transition-none'
               : '',
-            isVibe ? 'translate-x-0 opacity-100' : 'pointer-events-none -translate-x-1 opacity-0',
+            chatBeside ? 'translate-x-0 opacity-100' : 'pointer-events-none -translate-x-1 opacity-0',
           ].join(' ')}
         >
-          {isVibe ? (
+          {chatBeside ? (
             session ? <VibeChatPane process={process} workContext={workContext} /> : <VibeNoProcessPane />
           ) : null}
         </div>
       </ResizablePanel>
       <ResizableHandle
         withHandle
-        disabled={!isVibe}
-        tabIndex={isVibe ? 0 : -1}
-        aria-hidden={!isVibe}
+        disabled={!chatBeside}
+        tabIndex={chatBeside ? 0 : -1}
+        aria-hidden={!chatBeside}
         className={[
           transitionsReady ? 'transition-opacity [transition-duration:280ms] motion-reduce:transition-none' : '',
-          isVibe ? 'opacity-100' : 'pointer-events-none opacity-0',
+          chatBeside ? 'opacity-100' : 'pointer-events-none opacity-0',
         ].join(' ')}
       />
-      <ResizablePanel id="asset-vibe-content" order={2} defaultSize={isVibe ? 64 : 100} minSize={45}>
+      <ResizablePanel id="asset-vibe-content" order={2} defaultSize={chatBeside ? 64 : 100} minSize={45}>
         <div className="flex h-full flex-col">
-          <div className={isVibe ? 'block' : 'hidden'}>
+          <div className={chatBeside ? 'block' : 'hidden'}>
             {session && (
               <WorkspaceChildStrip
                 processTab={session.processTab}
@@ -253,8 +253,8 @@ export function AssetVibeWorkspace({ isVibe, session }: AssetVibeWorkspaceProps)
             {/* Unconditional: ContentPanel's ancestry must not change across a
                 mode toggle, or the dirty editor beneath it remounts and loses its
                 buffer. The chrome hides itself instead. */}
-            <DisplayChrome process={persistedProcess ?? process} latestShown={latestShown} active={isVibe && !!session}>
-              <ContentPanel minimalChrome={isVibe} contentEpoch={showNonce} />
+            <DisplayChrome process={persistedProcess ?? process} latestShown={latestShown} active={chatBeside && !!session}>
+              <ContentPanel minimalChrome={chatBeside} contentEpoch={showNonce} />
             </DisplayChrome>
           </div>
         </div>

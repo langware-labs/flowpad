@@ -126,12 +126,12 @@ afterEach(() => {
 describe('AssetVibeWorkspace', () => {
   it('preserves the same dirty editor instance across Standard → Vibe', () => {
     const { rerender } = render(
-      <AssetVibeWorkspace isVibe={false} session={session} />,
+      <AssetVibeWorkspace chatBeside={false} session={session} />,
     );
     const editor = screen.getByTestId('sentinel-editor');
     fireEvent.change(editor, { target: { value: 'unsaved text' } });
 
-    rerender(<AssetVibeWorkspace isVibe session={session} />);
+    rerender(<AssetVibeWorkspace chatBeside session={session} />);
 
     expect(screen.getByTestId('sentinel-editor')).toBe(editor);
     expect(screen.getByDisplayValue('unsaved text')).toBe(editor);
@@ -145,7 +145,7 @@ describe('AssetVibeWorkspace', () => {
     // process when none matched — which is why a reload could land on a
     // different process than the one that showed it. The host is now a fact of
     // the URL, so its absence simply means "just a document".
-    render(<AssetVibeWorkspace isVibe session={null} />);
+    render(<AssetVibeWorkspace chatBeside session={null} />);
 
     // The existing start action is offered; opening alone does not create a session.
     expect(screen.getByTestId('vibe-start-new-chat')).toBeTruthy();
@@ -155,7 +155,7 @@ describe('AssetVibeWorkspace', () => {
   });
 
   it('URL-focuses a new asset shown by the same parent process', async () => {
-    render(<AssetVibeWorkspace isVibe session={session} />);
+    render(<AssetVibeWorkspace chatBeside session={session} />);
     expect(showListener).not.toBeNull();
 
     act(() => showListener?.({ kind: 'vfs', path: '/workspace/src/next.ts' }));
@@ -188,7 +188,7 @@ describe('AssetVibeWorkspace', () => {
       ],
     };
 
-    render(<AssetVibeWorkspace isVibe session={session} />);
+    render(<AssetVibeWorkspace chatBeside session={session} />);
 
     expect(openDock).not.toHaveBeenCalled();
   });
@@ -203,7 +203,7 @@ describe('AssetVibeWorkspace', () => {
     // `restoreDisplayRedirect`, guarded by the workspace's own active-display row.
     // If this test ever fails, a replay channel has been reintroduced and closed
     // displays will start coming back on reload.
-    const { rerender } = render(<AssetVibeWorkspace isVibe session={session} />);
+    const { rerender } = render(<AssetVibeWorkspace chatBeside session={session} />);
     const target = { kind: 'vfs', path: '/workspace/src/late-show.ts' };
 
     act(() => {
@@ -211,7 +211,7 @@ describe('AssetVibeWorkspace', () => {
         last_shown: target,
         display_stack: [{ ...target, shown_at: new Date(Date.now() + 1_000).toISOString() }],
       };
-      rerender(<AssetVibeWorkspace isVibe session={session} />);
+      rerender(<AssetVibeWorkspace chatBeside session={session} />);
     });
 
     await new Promise((resolve) => setTimeout(resolve, 0));
@@ -219,7 +219,7 @@ describe('AssetVibeWorkspace', () => {
   });
 
   it('invalidates a live parent-process file write through FSStore', () => {
-    render(<AssetVibeWorkspace isVibe session={session} />);
+    render(<AssetVibeWorkspace chatBeside session={session} />);
     expect(entityEventListener).not.toBeNull();
     const computeNode = new TypeId('compute_node', '@local');
     const path = '/workspace/src/app.ts';

@@ -14,18 +14,26 @@ export type ActionType =
  * View-mode visibility tier — mirrors the backend ``ViewMode`` StrEnum
  * (flow_sdk/schema/view_mode.py) and the UI enum in view-mode-context.tsx.
  * A type's ``browseable_by`` is the *minimum* mode at which it is browseable
- * (cumulative: standard ⊂ advanced ⊂ dev). null ⇒ never browseable.
+ * (cumulative: standard ⊂ advanced). null ⇒ never browseable. Developer-only
+ * types are `dev_only` on top of their tier — Dev is a switch, not a tier.
  */
 export type ViewMode = 'vibe' | 'standard' | 'advanced' | 'dev';
 
 // Vibe is the lowest tier (simpler than Standard): a type required at 'standard'
-// or above never shows in Vibe. The backend only ever emits standard/advanced/dev
-// as a type's `browseable_by` (its minimum tier); 'vibe' only appears here as the
-// client's *current* mode, so it just needs a well-defined rank.
+// or above never shows in Vibe. The backend only emits standard/advanced as a
+// type's `browseable_by` (its minimum tier); 'vibe' and 'dev' only appear here as
+// the client's *current* tier ('dev' = developer mode on), so they just need a rank.
 const VIEW_MODE_ORDER: Record<ViewMode, number> = { vibe: 0, standard: 1, advanced: 2, dev: 3 };
 
-/** True iff a type whose ``browseable_by`` is ``required`` shows in ``current`` (cumulative). */
-export function isBrowseableIn(required: ViewMode | null | undefined, current: ViewMode): boolean {
+/** True iff a type whose ``browseable_by`` is ``required`` shows in ``current`` (cumulative).
+ *  `current` `dev` means developer mode is on: it reaches every tier AND the
+ *  `dev_only` types (pass `devOnly`). */
+export function isBrowseableIn(
+  required: ViewMode | null | undefined,
+  current: ViewMode,
+  devOnly = false,
+): boolean {
+  if (devOnly && current !== 'dev') return false;
   return required != null && VIEW_MODE_ORDER[current] >= VIEW_MODE_ORDER[required];
 }
 
@@ -63,6 +71,9 @@ export interface TypeInfo {
   defaults: Record<string, unknown>;
   indexed_by_default: boolean;
   browseable_by: ViewMode | null;
+  /** Shown only with developer mode on, on top of `browseable_by` — Dev is a
+   *  switch, not a tier (`flow_sdk/schema/view_mode.py`). */
+  dev_only?: boolean;
   creatable: boolean;
   api_visible: boolean;
   /** Storage authority for shared asset bytes. Git-backed types publish their

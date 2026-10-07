@@ -12,24 +12,14 @@ import { tagAttrs } from '@src/tags/tag-attrs';
 import { useDockNavigation } from '@src/navigation';
 import { useViewToggleGate } from './use-view-toggle-gate';
 import { MODE_ICONS, MODE_LABELS, MODE_TAGS } from '@src/components/view-mode/mode-vocabulary';
-import { useState } from 'react';
 
 const LABELS = MODE_LABELS;
 const ICONS = MODE_ICONS;
 const TAGS = MODE_TAGS;
 
-// Visual order of the segmented control: fullest → simplest, so newly revealed
-// modes grow to the LEFT. Which of these actually render is decided per render.
-const DISPLAY_ORDER = [ViewMode.Dev, ViewMode.Advanced, ViewMode.Standard, ViewMode.Vibe] as const;
-
-// Module scope so a reveal survives footer remounts across navigations;
-// intentionally NOT persisted — a reload hides Advanced/Dev again.
-let sessionRevealed: ReadonlySet<ViewMode> = new Set();
-
-/** Test-only: forget double-click reveals between test cases. */
-export function resetRevealedModes() {
-  sessionRevealed = new Set();
-}
+// Visual order of the segmented control: fullest → simplest. Dev is not here:
+// it is a switch (double-click your avatar in the profile menu), not a surface.
+const DISPLAY_ORDER = [ViewMode.Advanced, ViewMode.Standard, ViewMode.Vibe] as const;
 
 /**
  * Footer segmented control for the global view mode — THE mode selector. Each
@@ -37,11 +27,8 @@ export function resetRevealedModes() {
  * change is a real one — a session's transport follows the mode (see
  * `useSessionSurfaceReconcile`), and new chats open in it.
  *
- * All three surfaces always render; Dev stays hidden until double-clicking the
- * selected Terminal button reveals it (revealing never selects). Every mode at
- * or below the current one always renders too, so landing in Dev (persisted pref
- * or URL override) can't hide the selected button. One icon button per mode,
- * tooltip carries the name. Lives at the far left.
+ * The three surfaces always render, one icon button per mode; the tooltip
+ * carries the name. Lives at the far left.
  *
  * A segment whose transport change the session cannot make right now is GREYED
  * AND INERT, with the tooltip saying why (`useViewToggleGate`). Because mode
@@ -62,23 +49,16 @@ export function ViewToggle() {
   // for one frame and drop a valid click. Pointerless routes have no URL mode,
   // so they retain the preference as their source of truth.
   const mode = currentDock?.viewMode ?? persistedMode;
-  const [revealed, setRevealed] = useState(sessionRevealed);
-  const reveal = (m: ViewMode) => {
-    sessionRevealed = new Set([...sessionRevealed, m]);
-    setRevealed(sessionRevealed);
-  };
-  // Vibe / Chat / Terminal are the three surfaces and are always offered — this
-  // is the mode selector, not a power-user ladder. Only Dev is hidden, until the
-  // double-click reveal on Terminal (or until it IS the mode, so landing there
-  // from a stored pref or a URL can never hide the selected button).
-  const modes = DISPLAY_ORDER.filter((m) => m !== ViewMode.Dev || revealed.has(ViewMode.Dev) || mode === ViewMode.Dev);
+  // A stored or URL mode of `dev` (from when Dev was a mode) lights Terminal —
+  // the surface Dev showed — instead of a button that no longer exists.
+  const lit = mode === ViewMode.Dev ? ViewMode.Advanced : mode;
 
   // URL-first: the click only navigates — same pointer, requested mode. All
   // arrangements (applying + persisting the mode) happen on load, driven by the
   // URL (useDockViewModeOverrideSync). Pointerless routes (e.g. home) have no
   // dock URL to carry the mode, so they write the preference directly.
   const select = (next: ViewMode) => {
-    if (next === mode) return;
+    if (next === lit) return;
     // Belt-and-braces for non-pointer callers (keyboard activation, a test
     // firing onClick directly): `disabled` already stops the pointer path.
     if (blocked(next)) return;
@@ -99,9 +79,9 @@ export function ViewToggle() {
         aria-label={t`View mode`}
         className={SEGMENTED_GROUP}
       >
-        {modes.map((m) => {
+        {DISPLAY_ORDER.map((m) => {
           const Icon = ICONS[m];
-          const active = m === mode;
+          const active = m === lit;
           const gated = blocked(m);
           return (
             <Tooltip key={m} delayDuration={0}>
@@ -127,12 +107,6 @@ export function ViewToggle() {
                   // the nearest tagged ancestor, which is always the button.
                   {...tagAttrs(TAGS[m], 'button')}
                   onClick={() => select(m)}
-                  // Reveal-only: adds the next mode's button, never selects it.
-                  // No dblclick/click disambiguation needed — the two preceding
-                  // clicks hit select(m) with m === mode, which early-returns.
-                  onDoubleClick={() => {
-                    if (m === mode && m === ViewMode.Advanced) reveal(ViewMode.Dev);
-                  }}
                   className={`${SEGMENTED_BUTTON} ${
                     gated ? SEGMENTED_DISABLED : active ? SEGMENTED_ACTIVE : SEGMENTED_IDLE
                   }`}

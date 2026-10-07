@@ -1,5 +1,5 @@
 import { AgenticProcess, dataContext, ProcessKind, toplog, type ComputeNode } from '@sdk';
-import { getEffectiveViewMode, surfaceForViewMode, type ViewMode, viewModePtyMode } from '@src/contexts/view-mode-context';
+import { surfaceForViewMode, ViewMode, viewModePtyMode } from '@src/contexts/view-mode-context';
 import { chatTargetForProject } from '@src/lib/chat-target';
 import { embedStandardAgent } from './embed-standard-agent';
 import type { NavigationActions } from './NavigationActions';
@@ -55,7 +55,9 @@ export async function openNewChat(
     console.error('[openNewChat] No compute node');
     return null;
   }
-  const mode = options.mode ?? getEffectiveViewMode();
+  // An opener that names no surface opens a TERMINAL — the same as the strip's
+  // openers. The home prompt and Vibe's New/Recent pass Vibe explicitly.
+  const mode = options.mode ?? ViewMode.Advanced;
   const ptyMode = viewModePtyMode(mode);
   const project = dataContext.project;
   const projectId = options.projectId ?? project?.id;

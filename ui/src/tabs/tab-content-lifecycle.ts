@@ -291,12 +291,19 @@ export async function setupTab(dock: DockPointer, options: SetupTabOptions = {})
   // first. Tested as STALENESS rather than as "is it the active display", so a
   // re-show of the same target still takes the cheap path instead of paying a tab
   // round trip for a navigation that changes nothing.
+  //
+  // Same for a HOST EDGE the row does not carry yet: a URL naming a host
+  // (`?host=` — Discuss puts an open file under its chat) is a re-parent the
+  // backend has to hear, and the cheap path never would. A pure store read.
   const opened = tabManager.lifecycle.get(key);
-  const displayStale =
-    dock.isActiveDisplay && tabForDockKey(tabManager.getSnapshot(), key)?.pointer !== dock.toJSON();
+  const row = tabForDockKey(tabManager.getSnapshot(), key);
+  const displayStale = dock.isActiveDisplay && row?.pointer !== dock.toJSON();
+  const hostTabId = hostTabIdFromDock(dock);
+  const hostEdgeStale = !!hostTabId && !!row && row.id !== hostTabId && row.parent_tab_id !== hostTabId;
   if (
     isContentAssetDock(dock) &&
     !displayStale &&
+    !hostEdgeStale &&
     opened?.state === TabLifecycleState.Opened &&
     opened.tabId &&
     options.parentTabId === undefined

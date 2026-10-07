@@ -21,7 +21,7 @@ import {
 } from '@src/lib/scope-filter';
 import { TabStrip } from '@src/components/tabs/TabStrip';
 import { useTabStripItems } from '@src/tabs/tab-row-item';
-import { setViewMode, ViewMode } from '@src/contexts/view-mode-context';
+import { setDev } from '@src/contexts/view-mode-context';
 
 const PROJECT_ID = '33333333-3333-4333-8333-333333333333';
 let assetSequence = 0;
@@ -92,7 +92,7 @@ function contentTab(
 }
 
 afterEach(() => {
-  setViewMode(ViewMode.Standard);
+  setDev(false);
 });
 
 describe('assets tab chip title follows scope', () => {
@@ -170,7 +170,7 @@ describe('content tab entity location icons', () => {
   );
 
   it('keeps one host tooltip with exact known location copy', async () => {
-    setViewMode(ViewMode.Advanced);
+    setDev(true); // Advanced UI == developer mode
     const user = userEvent.setup();
     const { tab } = contentTab(true);
     render(<Strip tabs={[tab]} />);

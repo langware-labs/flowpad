@@ -58,7 +58,7 @@ export default function FlowPage() {
           <TabStripOwnedAbove.Provider value={framedByStrip}>
             <div className={`flex-1 overflow-hidden ${framedByStrip ? 'border-t border-border' : ''}`}>
               {layout === DockLayout.ASSET_WORKSPACE ? (
-                <AssetVibeWorkspace isVibe={assetChatBeside} session={vibeSession} />
+                <AssetVibeWorkspace chatBeside={assetChatBeside} session={vibeSession} />
               ) : layout === DockLayout.VIBE_WORKSPACE && vibeSession ? (
                 <VibeWorkspace session={vibeSession} />
               ) : layout === DockLayout.VIBE_NO_PROCESS ? (

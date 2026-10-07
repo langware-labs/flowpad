@@ -20,7 +20,7 @@ import {
 import { NavigateFunction } from 'react-router';
 import { isValidIdentifier } from '@sdk/models/TypeId';
 import {
-  getViewMode,
+  UNSTATED_VIEW_MODE,
   previousNonVibeViewMode,
   rememberedDockViewMode,
   sessionIdForDock,
@@ -34,7 +34,7 @@ import { beginTabSwitch, dockLabel, tabSwitch } from './tab-switch-state';
 import { FileOptions, TabOptions } from './types';
 import { preserveWindowLayout, stripDockPortion } from './url-builder';
 import { allScope, projectScope } from '@src/lib/scope-filter';
-import { isContentAssetDock } from './content-asset-dock';
+import { contentAssetTargetForDock, isContentAssetDock } from './content-asset-dock';
 import { isAdoptableChildDock, isWorkspaceAnchorDock } from './adoptable-child-dock';
 import { isHostDock } from './tab-hosts';
 import { LOCAL_COMPUTE_NODE } from './asset-doc-types';
@@ -179,12 +179,19 @@ function hostToCarry(here: DockPointer | null, target: DockPointer): string | nu
  * be wrong for a dock whose own mode differs from the ambient one. This runs
  * at click time, long after mount, when the effective mode is settled.
  */
+/** An asset as a Vibe host's child: rebased onto its project, `?host=` the session. */
+function hostedAssetDock(asset: DockPointer, projectId: string, processId: string): DockPointer {
+  return DockPointer.rebaseAssetsOntoProject(asset, projectId)
+    .withHost(new TypeId(AgenticProcess.type, processId).toString())
+    .withViewMode(ViewMode.Vibe);
+}
+
 function hostOfWorkspaceAnchor(dock: DockPointer): string | null {
   if (!isWorkspaceAnchorDock(dock)) return null;
   // A host tab IS a workspace: what it opens is its child.
   if (isHostDock(dock)) return dock.pointer ?? null;
   if (dock.viewType !== ViewType.SHELL) return null;
-  return (dock.viewMode ?? getViewMode()) === ViewMode.Vibe ? (dock.pointer ?? null) : null;
+  return (dock.viewMode ?? UNSTATED_VIEW_MODE) === ViewMode.Vibe ? (dock.pointer ?? null) : null;
 }
 
 /** A link that cannot be opened says why — the backend's sentence, not the HTTP status — once,
@@ -964,11 +971,7 @@ export class NavigationActions {
       navigation: {
         openShellProcess: (processId) => {
           if (contentDock) {
-            this.openDock(
-              DockPointer.rebaseAssetsOntoProject(contentDock, projectId)
-                .withHost(new TypeId(AgenticProcess.type, processId).toString())
-                .withViewMode(ViewMode.Vibe),
-            );
+            this.openDock(hostedAssetDock(contentDock, projectId, processId));
           } else {
             void this.openShellProcess(processId, { viewMode: ViewMode.Vibe });
           }
@@ -993,13 +996,41 @@ export class NavigationActions {
    * this way brings back the children that closed with it (backend reopen path).
    */
   async openVibeTabBeside(processId: string): Promise<void> {
+    this.openDock(await this.placeVibeTabBeside(processId), undefined, { topLevel: true });
+  }
+
+  /** Mint (or reopen) `processId`'s Vibe tab right after the tab on screen — or
+   *  after its host, from a child — without navigating. */
+  private async placeVibeTabBeside(processId: string): Promise<DockPointer> {
     // The snapshot: the tab on screen is already in it (no round trip before the open).
     const tabs = await tabManager.snapshotOrRefresh();
     const here = tabForDockKey(tabs, this.here.tabHash ?? '');
     const anchor = (here?.parent_tab_id && tabs.find((t) => t.id === here.parent_tab_id)) || here;
     const dock = DockPointer.forSession(processId).withViewMode(ViewMode.Vibe);
-    const placed = await presentDockTab(dock, { afterTabId: anchor?.id ?? null, projectId: anchor?.project_id ?? null });
-    this.openDock(placed, undefined, { topLevel: true });
+    return presentDockTab(dock, { afterTabId: anchor?.id ?? null, projectId: anchor?.project_id ?? null });
+  }
+
+  /**
+   * Discuss an asset: a Vibe HOST tab with the asset as its child — the chat beside
+   * the asset is that host's session. Resumes the latest Vibe chat about this asset
+   * (`target_typeid_str` = the asset) and creates one only when there is none.
+   * The host tab is placed first; opening the asset under `?host=` then makes it
+   * that tab's child (the tab loader re-parents a warm tab whose host edge is new).
+   */
+  async discussAsset(asset: DockPointer, projectId: string): Promise<void> {
+    // The same chat identity the chat beside an asset uses (`asset-work-context`).
+    const target = contentAssetTargetForDock(asset)?.targetVfsPath;
+    const { lastVibeChatQuery, pickLastVibeChat } = await import('@src/pages/flow-page/vibe-process-resolver');
+    const { createVibeProcessForProject } = await import('@src/pages/flow-page/use-start-vibe-session');
+    const last = target
+      ? pickLastVibeChat(
+          await AgenticProcess.query<AgenticProcess>(lastVibeChatQuery(projectId, target, { openedOnly: false })),
+        )
+      : null;
+    const processId =
+      last?.id ?? (await createVibeProcessForProject({ projectId, targetVfsPath: target, open: false })).id;
+    await this.placeVibeTabBeside(processId);
+    this.openDock(hostedAssetDock(asset, projectId, processId));
   }
 
   async openShellProcess(

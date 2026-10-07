@@ -30,10 +30,18 @@ describe('resolveDockLayout', () => {
       false,
     ],
     [
-      'the same report in Vibe: the Vibe chat sits beside it',
+      'the same report in Vibe but with no host: no chat beside it (the mode never decides)',
       `/dock/project/${P}/editor/markdown/vfs/compute_node-%40local/w/p/report.md?viewMode=vibe`,
       true,
       false,
+      DockLayout.ASSET_WORKSPACE,
+      false,
+    ],
+    [
+      "the report as a Vibe host's child (Discuss): its host's chat sits beside it",
+      `/dock/project/${P}/editor/markdown/vfs/compute_node-%40local/w/p/report.md?viewMode=vibe&host=agentic_process-${PROC}`,
+      true,
+      true,
       DockLayout.ASSET_WORKSPACE,
       true,
     ],
@@ -47,7 +55,7 @@ describe('resolveDockLayout', () => {
     ],
     [
       "the agent's own flow-show preview stays in the workspace display",
-      '/dock/assets/editor/html/vfs/compute_node-%40local/w/p/site/index.html?viewMode=vibe&activeDisplay=1',
+      `/dock/assets/editor/html/vfs/compute_node-%40local/w/p/site/index.html?viewMode=vibe&activeDisplay=1&host=agentic_process-${PROC}`,
       true,
       true,
       DockLayout.VIBE_WORKSPACE,

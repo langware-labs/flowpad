@@ -26,6 +26,8 @@ let mode = 'standard';
 vi.mock('@src/contexts/view-mode-context', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@src/contexts/view-mode-context')>()),
   useViewMode: () => mode,
+  // `useAssetTypes` asks the TIER (Dev on lifts it); here the tier is the mode.
+  useTierMode: () => mode,
 }));
 
 import { useAssetTypes } from '@src/hooks/use-asset-types';
