@@ -7,6 +7,7 @@ import { describe, expect, it } from 'vitest';
 import { dataSourcesPointer, parseDataSourcesPointer } from '@src/components/data-sources/data-sources-pointer';
 
 const ID = '5b112f8f-06d9-46ff-9ff0-d09748a4d512';
+const CONV = '5dff9d81-301a-4cfd-9a91-252507893c8c';
 
 describe('data-sources pointer', () => {
   it('round-trips every place', () => {
@@ -17,6 +18,8 @@ describe('data-sources pointer', () => {
       { section: 'source' as const, id: ID, tab: null },
       { section: 'source' as const, id: ID, tab: 'events' as const },
       { section: 'source' as const, id: ID, tab: 'settings' as const },
+      { section: 'source' as const, id: ID, tab: 'messages' as const, conversation: CONV, thread: null },
+      { section: 'source' as const, id: ID, tab: 'messages' as const, conversation: CONV, thread: 'th-1' },
     ]) {
       expect(parseDataSourcesPointer(dataSourcesPointer(route))).toEqual(route);
     }
@@ -27,6 +30,21 @@ describe('data-sources pointer', () => {
     expect(parseDataSourcesPointer('drivers/whatsapp')).toEqual({ section: 'drivers', driver: 'whatsapp' });
     expect(parseDataSourcesPointer('not-a-source')).toEqual({ section: 'sources' });
     expect(parseDataSourcesPointer(undefined)).toEqual({ section: 'sources' });
+  });
+
+  it("keeps a source's conversation on the source's page: <id>/messages/<conversation>[/<thread>]", () => {
+    expect(parseDataSourcesPointer(`${ID}/messages/${CONV}`)).toEqual({
+      section: 'source',
+      id: ID,
+      tab: 'messages',
+      conversation: CONV,
+      thread: null,
+    });
+    expect(parseDataSourcesPointer(`${ID}/messages/not-a-uuid`)).toEqual({
+      section: 'source',
+      id: ID,
+      tab: 'messages',
+    });
   });
 
   it('lands an unknown tab on the source page with its default tab, not a broken one', () => {

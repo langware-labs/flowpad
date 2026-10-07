@@ -2,7 +2,8 @@
  * One configured source — what went through ONE of this machine's pipes. `Data sources › <source>`, three tabs:
  *
  *   Messages  the conversations that came through it, live — the stream inbox's own list, narrowed by the backend to
- *             this source (`channel_source_id`). Only for a source that carries messages.
+ *             this source (`channel_source_id`). Only for a source that carries messages. A conversation opens in
+ *             place (`<id>/messages/<conversation>[/<thread>]`), so reading a message never leaves the source.
  *   Events    what it announced on the bus (`data_source:<id>`), live.
  *   Settings  how it is set up: what is unfinished, where its messages go, its driver, file and folder.
  *
@@ -12,7 +13,8 @@
  */
 import { type DataSource, type DataDriver, Agent } from '@sdk';
 import { Trans, useLingui } from '@lingui/react/macro';
-import { ExternalLink, History } from 'lucide-react';
+import { ArrowLeft, ExternalLink, History } from 'lucide-react';
+import { ConversationPanel } from '@src/components/conversation/ConversationPanel';
 import { timeSince, timeUntil } from '@src/utils/duration';
 import { cn } from '@src/lib/utils';
 import { Button } from '@src/components/ui/button';
@@ -33,13 +35,16 @@ interface Props {
   source: DataSource | null;
   id: string;
   tab: SourceTab | null;
+  /** A conversation of this source open on its Messages tab, and the thread open in it. */
+  conversation?: string | null;
+  thread?: string | null;
   spec?: DataDriver | null;
   onEdit: (source: DataSource) => void;
   onReplay: (source: DataSource) => void;
   onDelete: (source: DataSource) => void;
 }
 
-export function DataSourcePage({ source, id, tab, spec, onEdit, onReplay, onDelete }: Props) {
+export function DataSourcePage({ source, id, tab, conversation, thread, spec, onEdit, onReplay, onDelete }: Props) {
   const { t } = useLingui();
   const { navigation } = useDockNavigation();
   if (!source) {
@@ -112,7 +117,21 @@ export function DataSourcePage({ source, id, tab, spec, onEdit, onReplay, onDele
 
       {active === 'messages' && (
         <div className="min-h-[24rem] flex-1 overflow-hidden rounded-lg border border-border">
-          <StreamInboxView sourceId={source.id} agentId={agentId} embedded />
+          {conversation ? (
+            <SourceConversation
+              sourceId={source.id}
+              conversationId={conversation}
+              thread={thread ?? null}
+              agentId={agentId}
+            />
+          ) : (
+            <StreamInboxView
+              sourceId={source.id}
+              agentId={agentId}
+              embedded
+              onOpenConversation={(conv) => openSource(navigation, source.id, 'messages', conv)}
+            />
+          )}
         </div>
       )}
 
@@ -183,6 +202,48 @@ export function DataSourcePage({ source, id, tab, spec, onEdit, onReplay, onDele
           </dl>
         </div>
       )}
+    </div>
+  );
+}
+
+/** One of the source's conversations, read on the source's page: back goes to its messages, not to an inbox. */
+function SourceConversation({
+  sourceId,
+  conversationId,
+  thread,
+  agentId,
+}: {
+  sourceId: string;
+  conversationId: string;
+  thread: string | null;
+  agentId?: string;
+}) {
+  const { t } = useLingui();
+  const { navigation } = useDockNavigation();
+  return (
+    <div className="flex h-full min-h-0 flex-col" data-testid={`data-source-conversation-${conversationId}`}>
+      <div className="flex shrink-0 items-center gap-2 border-b border-border px-3 py-1.5">
+        <Button
+          size="sm"
+          variant="ghost"
+          className="h-7 gap-1.5 px-2"
+          title={t`All messages of this source`}
+          data-testid="data-source-conversation-back"
+          onClick={() => openSource(navigation, sourceId, 'messages')}
+        >
+          <ArrowLeft className="size-3.5" />
+          <Trans>All messages</Trans>
+        </Button>
+      </div>
+      <ConversationPanel
+        conversationId={conversationId}
+        // The panel's own header: the editable title, project and members, as everywhere a conversation is read.
+        headerLabel={t`Conversation`}
+        threadId={thread}
+        onThreadNavigate={(next) => openSource(navigation, sourceId, 'messages', conversationId, next)}
+        agentId={agentId}
+        className="min-h-0 flex-1"
+      />
     </div>
   );
 }
