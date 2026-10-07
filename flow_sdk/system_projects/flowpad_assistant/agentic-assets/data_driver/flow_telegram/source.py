@@ -1,6 +1,6 @@
 """``FlowTelegramSource`` — Flow on Telegram: Flowpad's own bot, your Telegram account linked to it.
 
-A ``FlowChannel`` (``flow_sdk/sources/flow_channel.py``): Connect, the gate, the inbox mirror and answering are the
+A ``FlowChannel`` (``flow_sdk/sources/flow_channel.py``): Connect, the gate, the stream inbox mirror and answering are the
 same on every Flow channel. What is Telegram's is here: the envelope is a Bot API ``Update`` (``{"message": …}``,
 Flow's own answer in the same shape), a person is their numeric user id (their private chat with the bot has the
 same id), and a message id is only unique inside its chat — so a message is ``<chat id>:<message id>``, exactly as

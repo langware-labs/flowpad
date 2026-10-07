@@ -1,6 +1,6 @@
 """``FlowWhatsAppSource`` — Flow on WhatsApp: Flowpad's own number, your phone linked to it.
 
-A ``FlowChannel`` (``flow_sdk/sources/flow_channel.py``): Connect, the gate, the inbox mirror and answering are the
+A ``FlowChannel`` (``flow_sdk/sources/flow_channel.py``): Connect, the gate, the stream inbox mirror and answering are the
 same on every Flow channel. What is WhatsApp's is here: Meta's envelope (``entry[].changes[].value.messages[]``,
 ``to`` instead of ``from`` on Flow's own answer), a person is their phone number (digits), and the setup shows it
 as ``+<digits>``. The deep link is ``wa.me`` pre-filling ``link <code>``.
