@@ -190,6 +190,22 @@ def _contains_any(annotation: Any) -> bool:
     return annotation is Any or any(_contains_any(arg) for arg in get_args(annotation))
 
 
+def _still_defines(owner: Path, tag: str) -> bool:
+    """Whether ``owner`` still defines ``tag`` on disk -- gone, unreadable or re-tagged is no."""
+    try:
+        return _read(owner).tag == tag
+    except DeclareError:
+        return False
+
+
+def _release(tag: str) -> None:
+    """Forget the folder that owned ``tag``, so another folder may define it without a restart."""
+    owner = _OWNER.pop(tag, None)
+    if owner is not None:
+        for cache in (_BUILT, _READ, _ERRORS):
+            cache.pop(owner, None)
+
+
 def _build(folder: Path) -> Optional[type]:
     """Compile and register ONE folder; dependencies first. Raises ``DeclareError``."""
     read = _read(folder)
@@ -202,7 +218,9 @@ def _build(folder: Path) -> Optional[type]:
         return None  # a documentation node: it names no shape, so it registers nothing
     owner = _OWNER.get(tag)
     if owner is not None and owner.resolve() != folder.resolve():
-        raise DeclareError(f"kind {tag!r} is already defined by {owner}")
+        if _still_defines(owner, tag):
+            raise DeclareError(f"kind {tag!r} is already defined by {owner}")
+        _release(tag)  # the owner moved, was renamed or deleted: the kind is free
 
     record = doc.resolved_subkind == "record"
     raw = {name: f.shape for name, f in (doc.fields or {}).items()} if record else dict(doc.examples or {})

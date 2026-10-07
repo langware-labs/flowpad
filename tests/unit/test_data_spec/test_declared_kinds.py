@@ -90,7 +90,9 @@ def test_a_folder_under_the_retired_data_spec_name_registers_nothing_and_says_so
     ns = _ns()
     old = tmp_path / "agentic-assets" / "data_spec" / "legacy.kind"
     old.mkdir(parents=True)
-    (old / "data_spec.json").write_text(json.dumps({"type": "data_spec", "ns": ns, "fields": {"a": {"shape": "string"}}}))
+    (old / "data_spec.json").write_text(
+        json.dumps({"type": "data_spec", "ns": ns, "fields": {"a": {"shape": "string"}}})
+    )
 
     assert declared.load_root(tmp_path) == {}
     assert _kind(ns, "legacy.kind") is None
@@ -140,6 +142,32 @@ def test_the_same_kind_in_two_folders_is_an_error(tmp_path):
     second = _spec(tmp_path / "two", "dup.kind", {"fields": {"b": {"shape": "int"}}}, ns=ns)
     assert declared.load_root(tmp_path / "one")[first] == ""
     assert "already defined" in declared.load_root(tmp_path / "two")[second]
+
+
+def test_a_moved_definition_takes_its_kind_with_it_without_a_restart(tmp_path):
+    """The marketing case: specs moved out of their datasets into one tree, then re-indexed."""
+    import shutil
+
+    ns = _ns()
+    old = _spec(tmp_path / "dataset", "gtm.icp", {"fields": {"a": {"shape": "string"}}}, ns=ns)
+    assert declared.load_root(tmp_path / "dataset")[old] == ""
+    new = tmp_path / "tree" / "agentic-assets" / "data_schema" / "gtm.icp"
+    new.parent.mkdir(parents=True)
+    shutil.move(str(old), str(new))
+    (new / "data_schema.json").write_text(
+        json.dumps({"type": "data_schema", "ns": ns, "fields": {"b": {"shape": "int"}}})
+    )
+    assert declared.load_root(tmp_path / "tree")[new] == ""
+    assert set(_kind(ns, "gtm.icp").model_fields) == {"b"}
+
+
+def test_a_kind_its_folder_no_longer_names_is_free_for_another(tmp_path):
+    ns = _ns()
+    first = _spec(tmp_path / "one", "free.kind", {"fields": {"a": {"shape": "string"}}}, ns=ns)
+    assert declared.load_root(tmp_path / "one")[first] == ""
+    (first / "data_schema.json").write_text(json.dumps({"type": "data_schema", "ns": ns + "x", "fields": {}}))
+    second = _spec(tmp_path / "two", "free.kind", {"fields": {"b": {"shape": "int"}}}, ns=ns)
+    assert declared.load_root(tmp_path / "two")[second] == ""
 
 
 def test_a_namespace_the_marker_cannot_hold_is_recorded_not_raised(tmp_path):
