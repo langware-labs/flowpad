@@ -22,7 +22,7 @@ interchangeable.
 
 | Address | Example | Owner | Purpose |
 | --- | --- | --- | --- |
-| Dock URL | `/dock/shell/agentic_process-<id>?viewMode=vibe...` | Flowpad router | Opens the process workspace. It does not name the MCP UI file and does not fetch app HTML. |
+| Dock URL | `/dock/vibe/agentic_process-<id>...` (the Vibe host tab) | Flowpad router | Opens the process workspace. It does not name the MCP UI file and does not fetch app HTML. |
 | MCP resource URI | `ui://flowpad-local/%2FUsers%2F...%2Fform.mcp.html` | MCP Apps host | Identifies the displayed file as a resource for `@mcp-ui/client`. It is not a browser URL. |
 | Sandbox URL | `/mcp-sandbox/sandbox_proxy.html` on the backend origin | Flowpad backend | Serves the sandbox proxy iframe that receives and hosts the guest HTML. |
 
