@@ -769,6 +769,10 @@ msgstr "تم إنشاء {created} مهمة للأعضاء من أجل \"{0}\"."
 msgid "{day} at {time}"
 msgstr ""
 
+#: src/components/conversation/ConversationPanel.tsx
+msgid "{display} — renames in Flowpad only"
+msgstr ""
+
 #: src/components/connections-manager.tsx
 msgid "{displayName} connection failed"
 msgstr ""
@@ -857,6 +861,10 @@ msgstr "{label} سجلات"
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
 msgid "{latchedReason} Auto-relaunch is paused — Retry to launch again."
 msgstr "{latchedReason} تم إيقاف إعادة التشغيل التلقائي مؤقتًا — أعد المحاولة للتشغيل مرة أخرى."
+
+#: src/components/top-nav-bar/ProjectSetupButton.tsx
+msgid "{left, plural, one {# thing to set up before this project can run} other {# things to set up before this project can run}}"
+msgstr ""
 
 #: src/components/token-plan/token-plan-math.ts
 msgid "{left} of {limit} requests left {windowText}"
@@ -5235,6 +5243,7 @@ msgstr ""
 #: src/components/account/user-info.tsx
 #: src/components/connections-manager/connection-state-visual.ts
 #: src/components/connections-manager/credential-rows-view.tsx
+#: src/components/setup-wizard/SetupStagesButton.tsx
 msgid "Connected"
 msgstr "متصل"
 
@@ -5242,6 +5251,10 @@ msgstr "متصل"
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "Connected · {0}"
 msgstr "متصل · {0}"
+
+#: src/components/setup-wizard/SetupStagesButton.tsx
+msgid "Connected ({summary})"
+msgstr ""
 
 #: src/pages/hub-home/HubHome.tsx
 msgid "Connected computer"
@@ -5383,10 +5396,9 @@ msgstr "متابعة"
 msgid "Continue journey"
 msgstr "متابعة الرحلة"
 
-#. placeholder {0}: pending.label
 #: src/components/setup-wizard/SetupStagesButton.tsx
-msgid "Continue setup: {0}"
-msgstr ""
+#~ msgid "Continue setup: {0}"
+#~ msgstr ""
 
 #: src/pages/flow-page/VibeWorkerSwitchDialog.tsx
 msgid "Continue this conversation"
@@ -15438,8 +15450,14 @@ msgstr "لم يتم الفحص بعد"
 
 #: src/components/account/hub-status-visuals.ts
 #: src/components/connections-manager/connection-state-visual.ts
+#: src/components/setup-wizard/SetupStagesButton.tsx
 msgid "Not connected"
 msgstr "غير متصل"
+
+#. placeholder {0}: pending.label
+#: src/components/setup-wizard/SetupStagesButton.tsx
+msgid "Not connected — continue setup: {0}"
+msgstr ""
 
 #: src/components/assets/useAssetsModel.tsx
 #~ msgid "Not copied into context folder"
@@ -18620,6 +18638,10 @@ msgid "Refresh — re-index this project's sessions"
 msgstr "تحديث — إعادة فهرسة جلسات هذا المشروع"
 
 #: src/components/conversation/ConversationView.tsx
+msgid "Refresh (checks the channel for new messages)"
+msgstr ""
+
+#: src/components/conversation/ConversationView.tsx
 #: src/components/project-activity-strip/RecentConversationsStrip.tsx
 msgid "Refresh (pulls from hub)"
 msgstr "تحديث (سحب من Hub)"
@@ -18729,6 +18751,7 @@ msgid "Remote Worker Session"
 msgstr "جلسة العامل البعيد"
 
 #: src/components/assets/editor/task/TaskAttachments.tsx
+#: src/components/conversation/MessageBubble.tsx
 #: src/components/organization/budgets/BudgetSection.tsx
 #: src/components/project-home/HomeCustomizationCard.tsx
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
@@ -18820,6 +18843,10 @@ msgstr ""
 msgid "Remove from favorites"
 msgstr ""
 
+#: src/components/conversation/MessageActionsMenu.tsx
+msgid "Remove from Flowpad"
+msgstr ""
+
 #: src/components/browseable-tree/adapters/useFavoritesRoots.tsx
 msgid "Remove from folder"
 msgstr "إزالة من المجلد"
@@ -18886,6 +18913,10 @@ msgstr "إزالة هذا الملف من الـ commit القادم (git restor
 #~ msgid "Remove this input"
 #~ msgstr ""
 
+#: src/components/conversation/MessageBubble.tsx
+msgid "Remove this message from Flowpad?"
+msgstr ""
+
 #: src/pages/discover-page/discover-page.tsx
 msgid "Remove this row from the manifest"
 msgstr ""
@@ -18941,6 +18972,10 @@ msgstr "أُزيلت: {0}"
 #: src/components/account/settings-section.tsx
 #~ msgid "removed: {0} · not found: {1}"
 #~ msgstr "أُزيل: {0} · غير موجود: {1}"
+
+#: src/components/conversation/MessageBubble.tsx
+msgid "Removes Flowpad's copy. The message stays where it was sent."
+msgstr ""
 
 #: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Removes it everywhere"
@@ -21171,7 +21206,6 @@ msgstr "الإعدادات"
 #: src/components/account/settings-section.tsx
 #: src/components/automations/AutomationPage.tsx
 #: src/components/setup-wizard/SetupStagesButton.tsx
-#: src/components/setup-wizard/SetupStagesButton.tsx
 msgid "Setup"
 msgstr "الإعداد"
 
@@ -21210,6 +21244,10 @@ msgstr ""
 
 #: src/components/credentials/CredentialDialog.tsx
 msgid "Setup instructions"
+msgstr ""
+
+#: src/components/top-nav-bar/ProjectSetupButton.tsx
+msgid "Setup required"
 msgstr ""
 
 #: src/components/conversation/MembersAvatarStack.tsx
@@ -23833,6 +23871,10 @@ msgstr "هذه المحادثة محلية فقط. سيتم حذفها من هذ
 #: src/components/conversation/ConversationRoute.tsx
 msgid "This conversation is not in this Agent stream inbox."
 msgstr "هذه المحادثة ليست في صندوق التدفق الوارد لهذا الوكيل."
+
+#: src/components/conversation/ChannelParticipants.tsx
+msgid "This conversation is on {label}: the people in it are on {label}, not Flowpad members."
+msgstr ""
 
 #: src/hooks/use-history-load-alert.ts
 msgid "This conversation is still saved, but part of it could not be read, so the chat is showing empty. Reloading may help. Details: {detail}"
