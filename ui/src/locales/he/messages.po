@@ -2260,7 +2260,12 @@ msgid "All languages"
 msgstr "כל השפות"
 
 #: src/components/conversation/ThreadHeader.tsx
+#: src/components/data-sources/DataSourcePage.tsx
 msgid "All messages"
+msgstr ""
+
+#: src/components/data-sources/DataSourcePage.tsx
+msgid "All messages of this source"
 msgstr ""
 
 #: src/components/credentials/CredentialDialog.tsx
@@ -3980,6 +3985,10 @@ msgstr "לא ניתן להריץ בנייה מחדש"
 msgid "Cannot search yet"
 msgstr ""
 
+#: src/components/value-viewer/ValueViewer.tsx
+msgid "Cannot show this file: {error}"
+msgstr ""
+
 #: src/components/assets/editor/translations/useTranslations.ts
 msgid "Cannot translate"
 msgstr "לא ניתן לתרגם"
@@ -4205,6 +4214,10 @@ msgstr "נקודת בדיקה:"
 
 #: src/components/code-editor/SnippetView.tsx
 msgid "checks pass"
+msgstr ""
+
+#: src/components/help/AskForHelpDialog.tsx
+msgid "Checks this machine's Flowpad (its health, the hub, recent errors in its logs) in the background and sends what it finds after your request."
 msgstr ""
 
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
@@ -5393,6 +5406,7 @@ msgstr "קביעת רמת מאמץ החשיבה"
 
 #: src/components/assets/PushContextFolderDialog.tsx
 #: src/components/conversation/ConversationRoute.tsx
+#: src/components/data-sources/DataSourcePage.tsx
 #: src/components/project-activity-strip/RecentConversationsStrip.tsx
 #: src/i18n/type-labels.ts
 #: src/types/ViewType.ts
@@ -11494,8 +11508,8 @@ msgid "Include this file in the next commit (git add)"
 msgstr "הכללת הקובץ הזה ב-commit הבא (git add)"
 
 #: src/components/help/AskForHelpDialog.tsx
-msgid "Include this session's transcript"
-msgstr ""
+#~ msgid "Include this session's transcript"
+#~ msgstr ""
 
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
 msgid "Index (seq)"
@@ -12996,6 +13010,7 @@ msgstr "טוען..."
 #: src/components/terminal/HistoryModal.tsx
 #: src/components/terminal/interactive-terminal/command-status-viewer/CommandStatusViewer.tsx
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
+#: src/components/value-viewer/ValueViewer.tsx
 #: src/components/wiki-tip/HubWikiMarkdown.tsx
 #: src/pages/discover-page/discover-page.tsx
 #: src/pages/flow-page/vibe-recent-sessions.tsx
@@ -15977,6 +15992,7 @@ msgstr ""
 
 #: src/components/conversation/asset-review/AssetReviewDialog.tsx
 #: src/components/conversation/asset-review/ProjectInstallAction.tsx
+#: src/components/conversation/AttachmentChip.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
@@ -20744,6 +20760,10 @@ msgstr "שלח פרומפט לנמען לסיכום מצב המשימה"
 msgid "Send a test event"
 msgstr ""
 
+#: src/components/help/AskForHelpDialog.tsx
+msgid "Send diagnostic"
+msgstr ""
+
 #: src/components/account/system-diagnoses.tsx
 msgid "Send failed."
 msgstr "השליחה נכשלה."
@@ -23273,6 +23293,10 @@ msgstr ""
 msgid "The default — what you want 99% of the time."
 msgstr "ברירת המחדל — מה שאתה רוצה 99% של הזמן."
 
+#: src/components/help/AskForHelpDialog.tsx
+msgid "The diagnostic follows when it is ready."
+msgstr ""
+
 #: src/pages/discover-page/DiscoverDetailPage.tsx
 msgid "The document could not be put on the hub the last time it was published."
 msgstr ""
@@ -23535,8 +23559,8 @@ msgid "The session is still connecting — try again in a moment."
 msgstr "הסשן עדיין מתחבר — יש לנסות שוב בעוד רגע."
 
 #: src/components/help/AskForHelpDialog.tsx
-msgid "The session transcript could not be read."
-msgstr "לא ניתן לקרוא את תמליל הסשן."
+#~ msgid "The session transcript could not be read."
+#~ msgstr "לא ניתן לקרוא את תמליל הסשן."
 
 #: src/components/account/settings-section.tsx
 #: src/components/setup-incomplete/use-setup-incomplete-warning.ts
@@ -24712,8 +24736,8 @@ msgid "Transcript"
 msgstr "תמלול"
 
 #: src/components/help/AskForHelpDialog.tsx
-msgid "Transcript not attached"
-msgstr "תמליל לא צורף"
+#~ msgid "Transcript not attached"
+#~ msgstr "תמליל לא צורף"
 
 #: src/components/lens-viewer/ClaudeErrorsViewer.tsx
 msgid "Transcript not found"

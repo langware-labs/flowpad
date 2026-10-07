@@ -2260,8 +2260,13 @@ msgid "All languages"
 msgstr "All languages"
 
 #: src/components/conversation/ThreadHeader.tsx
+#: src/components/data-sources/DataSourcePage.tsx
 msgid "All messages"
 msgstr "All messages"
+
+#: src/components/data-sources/DataSourcePage.tsx
+msgid "All messages of this source"
+msgstr "All messages of this source"
 
 #: src/components/credentials/CredentialDialog.tsx
 msgid "All my projects"
@@ -3980,6 +3985,10 @@ msgstr "Cannot run rebuild"
 msgid "Cannot search yet"
 msgstr "Cannot search yet"
 
+#: src/components/value-viewer/ValueViewer.tsx
+msgid "Cannot show this file: {error}"
+msgstr "Cannot show this file: {error}"
+
 #: src/components/assets/editor/translations/useTranslations.ts
 msgid "Cannot translate"
 msgstr "Cannot translate"
@@ -4206,6 +4215,10 @@ msgstr "Checkpoint:"
 #: src/components/code-editor/SnippetView.tsx
 msgid "checks pass"
 msgstr "checks pass"
+
+#: src/components/help/AskForHelpDialog.tsx
+msgid "Checks this machine's Flowpad (its health, the hub, recent errors in its logs) in the background and sends what it finds after your request."
+msgstr "Checks this machine's Flowpad (its health, the hub, recent errors in its logs) in the background and sends what it finds after your request."
 
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
@@ -5393,6 +5406,7 @@ msgstr "Control reasoning effort level"
 
 #: src/components/assets/PushContextFolderDialog.tsx
 #: src/components/conversation/ConversationRoute.tsx
+#: src/components/data-sources/DataSourcePage.tsx
 #: src/components/project-activity-strip/RecentConversationsStrip.tsx
 #: src/i18n/type-labels.ts
 #: src/types/ViewType.ts
@@ -11494,8 +11508,8 @@ msgid "Include this file in the next commit (git add)"
 msgstr "Include this file in the next commit (git add)"
 
 #: src/components/help/AskForHelpDialog.tsx
-msgid "Include this session's transcript"
-msgstr "Include this session's transcript"
+#~ msgid "Include this session's transcript"
+#~ msgstr "Include this session's transcript"
 
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
 msgid "Index (seq)"
@@ -12996,6 +13010,7 @@ msgstr "Loading..."
 #: src/components/terminal/HistoryModal.tsx
 #: src/components/terminal/interactive-terminal/command-status-viewer/CommandStatusViewer.tsx
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
+#: src/components/value-viewer/ValueViewer.tsx
 #: src/components/wiki-tip/HubWikiMarkdown.tsx
 #: src/pages/discover-page/discover-page.tsx
 #: src/pages/flow-page/vibe-recent-sessions.tsx
@@ -15977,6 +15992,7 @@ msgstr "Only the steps below"
 
 #: src/components/conversation/asset-review/AssetReviewDialog.tsx
 #: src/components/conversation/asset-review/ProjectInstallAction.tsx
+#: src/components/conversation/AttachmentChip.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
@@ -20744,6 +20760,10 @@ msgstr "Send a PROMPT to the recipient asking for a status summary"
 msgid "Send a test event"
 msgstr "Send a test event"
 
+#: src/components/help/AskForHelpDialog.tsx
+msgid "Send diagnostic"
+msgstr "Send diagnostic"
+
 #: src/components/account/system-diagnoses.tsx
 msgid "Send failed."
 msgstr "Send failed."
@@ -23273,6 +23293,10 @@ msgstr "The credentials could not be saved."
 msgid "The default — what you want 99% of the time."
 msgstr "The default — what you want 99% of the time."
 
+#: src/components/help/AskForHelpDialog.tsx
+msgid "The diagnostic follows when it is ready."
+msgstr "The diagnostic follows when it is ready."
+
 #: src/pages/discover-page/DiscoverDetailPage.tsx
 msgid "The document could not be put on the hub the last time it was published."
 msgstr "The document could not be put on the hub the last time it was published."
@@ -23535,8 +23559,8 @@ msgid "The session is still connecting — try again in a moment."
 msgstr "The session is still connecting — try again in a moment."
 
 #: src/components/help/AskForHelpDialog.tsx
-msgid "The session transcript could not be read."
-msgstr "The session transcript could not be read."
+#~ msgid "The session transcript could not be read."
+#~ msgstr "The session transcript could not be read."
 
 #: src/components/account/settings-section.tsx
 #: src/components/setup-incomplete/use-setup-incomplete-warning.ts
@@ -24712,8 +24736,8 @@ msgid "Transcript"
 msgstr "Transcript"
 
 #: src/components/help/AskForHelpDialog.tsx
-msgid "Transcript not attached"
-msgstr "Transcript not attached"
+#~ msgid "Transcript not attached"
+#~ msgstr "Transcript not attached"
 
 #: src/components/lens-viewer/ClaudeErrorsViewer.tsx
 msgid "Transcript not found"
