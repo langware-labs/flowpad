@@ -923,6 +923,7 @@ export function ConversationView({
               const session = sessionsById.get(item.sessionId) ?? null;
               const role = sessionRole(session, cloudUserId);
               const turns = turnsBySession.get(item.sessionId);
+              const failedPrompt = turns?.failed;
               return (
                 // The session's ONE line — its opening prompt (or request) is not
                 // drawn as a bubble; the turns live in the session view.
@@ -944,8 +945,8 @@ export function ConversationView({
                     runningPrompt={turns?.pending ?? null}
                     chatProcessId={role === 'host' ? (session?.host_process_id ?? null) : null}
                     onRetry={
-                      role === 'guest' && turns?.failed && conversationId
-                        ? () => retryFailedPrompt(conversationId, item.sessionId, turns.failed.text)
+                      role === 'guest' && failedPrompt && conversationId
+                        ? () => retryFailedPrompt(conversationId, item.sessionId, failedPrompt.text)
                         : undefined
                     }
                   />

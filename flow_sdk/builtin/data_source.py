@@ -1393,10 +1393,16 @@ class DataSource(Entity):
         import asyncio  # noqa: PLC0415
 
         from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415
+        from flow_sdk.ingest.driver_runtime import DRIVERS  # noqa: PLC0415
         from flow_sdk.instance_settings.runtime import instance_uid  # noqa: PLC0415
         from flow_sdk.stream_inbox.agent_scope import is_message_source  # noqa: PLC0415
 
-        claims, sources = await asyncio.gather(_hub_claims(), DataSource.get_all({}))
+        # Only a sending driver's rows can be a channel: ask for those providers, never every source.
+        senders = [name for name, driver in DRIVERS.items() if driver.sends]
+        claims, *per_provider = await asyncio.gather(
+            _hub_claims(), *(DataSource.get_all({"provider": name}) for name in senders)
+        )
+        sources = [row for rows in per_provider for row in rows or []]
         instance = instance_uid()
         by_channel: dict[str, list[dict]] = {}
         for c in claims:
