@@ -261,7 +261,11 @@ STATE_KINDS = {"context": "navigation.here", "candidates": ["navigator.candidate
 
 
 def _offered(
-    answer: NavigatorRoute, candidates: list[dict[str, str]], spec: Any = None, result: Any = None
+    answer: NavigatorRoute,
+    candidates: list[dict[str, str]],
+    spec: Any = None,
+    result: Any = None,
+    wire: Any = None,
 ) -> NavigatorRoute:
     """Keep what was on the table on the answer -- the search matches (``answer.offered``) and the
     model's full input and output (``answer.run``) -- so a caller can record exactly how it was
@@ -271,7 +275,14 @@ def _offered(
 
     answer._offered = list(candidates)
     decision = (
-        DecisionRun(request=spec, response=result, act_at={"target": MIN_CONFIDENCE}, state_kinds=STATE_KINDS)
+        DecisionRun(
+            request=spec,
+            response=result,
+            act_at={"target": MIN_CONFIDENCE},
+            state_kinds=STATE_KINDS,
+            # Exactly what went over the wire -- the request body as sent, the response as received.
+            wire=wire if wire is not None else getattr(result, "wire", None),
+        )
         if spec is not None
         else None
     )
@@ -327,7 +338,7 @@ async def route(
     try:
         result = await decide(spec)
     except DecisionError as exc:
-        return _offered(NavigatorRoute(route="agentic", reason=exc.reason), candidates, spec)
+        return _offered(NavigatorRoute(route="agentic", reason=exc.reason), candidates, spec, wire=exc.wire)
     key = result.pick("target", min=MIN_CONFIDENCE)
     answer = result.answers.get("target")
     confidence = float(getattr(answer, "confidence", 0.0))

@@ -4,7 +4,9 @@
 editor can build its form from the schema (a ``data_schema`` folder's ``description``s ride
 along). ``GET /api/v1/editors/{typeid}``: the apps that edit an entity, best first
 (``flow_sdk.builtin.faas.editors``). ``GET /api/v1/viewers/{kind}``: the viewers that show a value
-(or a list) of a kind, best first. Standard envelope, so the SDK reads them through ``apiClient``.
+(or a list) of a kind, best first. ``GET /api/v1/values/{ref}?within=``: one stored value, named
+by its reference ``<kind>.id.<uuid>``, from the asset that keeps it (``flow_sdk.values``).
+Standard envelope, so the SDK reads them through ``apiClient``.
 """
 
 from __future__ import annotations
@@ -23,7 +25,9 @@ def kind_form(kind: str) -> dict | None:
     from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
     from flow_sdk.schema.data_spec.dataset_spec import DatasetSpec  # noqa: PLC0415
     from flow_sdk.schema.data_spec.spec import NoAuthoringForm, to_authoring_form  # noqa: PLC0415
+    from flow_sdk.schema.data_spec.value_ref import kind_of  # noqa: PLC0415
 
+    kind = kind_of(kind)  # a reference to one value has its kind's form
     shape = SchemaRegistry.kind_type(kind)
     if not isinstance(shape, type) or not hasattr(shape, "model_fields"):
         return None
@@ -55,6 +59,30 @@ async def get_kind(kind: str) -> ApiResponse:
     if form is None:
         return ApiFailResponse(message=f"no kind {kind!r} is registered", status_code=404)
     return ApiSuccessResponse(data=form)
+
+
+@router.get("/api/v1/values/{ref}")
+async def get_value(ref: str, within: str) -> ApiResponse:
+    """``{kind, id, ref, value}`` for a value kept by the asset ``within`` names (its
+    ``agentic-assets/value`` store)."""
+    import asyncio  # noqa: PLC0415
+    from pathlib import Path  # noqa: PLC0415
+
+    from flow_sdk.core.entity.entity_model import Entity  # noqa: PLC0415
+    from flow_sdk.schema.data_spec.value_ref import parse_ref  # noqa: PLC0415
+    from flow_sdk.values import resolve_ref, store_of  # noqa: PLC0415
+
+    parsed = parse_ref(ref)
+    if parsed is None:
+        return ApiFailResponse(message=f"{ref!r} is not a reference ('<kind>.id.<uuid>')", status_code=400)
+    owner = await Entity.get_by_typeid(within)
+    if owner is None or not getattr(owner, "asset_ref", None):
+        return ApiFailResponse(message=f"no {within} to look in", status_code=404)
+    try:
+        value = await asyncio.to_thread(resolve_ref, ref, store_of(Path(str(owner.asset_ref))))
+    except LookupError as exc:
+        return ApiFailResponse(message=str(exc), status_code=404)
+    return ApiSuccessResponse(data={"kind": parsed[0], "id": parsed[1], "ref": ref, "value": value.model_dump(mode="json")})
 
 
 @router.get("/api/v1/editors/{typeid}")

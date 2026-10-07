@@ -89,6 +89,8 @@ export interface LabelOptions {
   /** The example as a row; `output` is what a run answered (offered as a starting point). */
   row: Record<string, any>;
   onSaved?: (groundTruth: unknown) => void;
+  /** What the host knows about the row beyond it (`trace`: how its answer was reached, from a run). */
+  meta?: Record<string, unknown>;
   onCancel?: () => void;
 }
 
@@ -102,7 +104,7 @@ export async function mountLabel(el: HTMLElement, options: LabelOptions, start?:
     row.output != null ? h('button', { onclick: () => void mountLabel(el, options, row.output) }, 'Start from what the run answered') : null,
     options.onCancel ? h('button', { onclick: options.onCancel }, 'Cancel') : null,
     status));
-  const mounted = await ctx.render(body, { kind, value: start === undefined ? row : { ...row, ground_truth: start }, mode: 'edit' });
+  const mounted = await ctx.render(body, { kind, value: start === undefined ? row : { ...row, ground_truth: start }, mode: 'edit', meta: options.meta });
   save.addEventListener('click', async () => {
     try {
       const value = mounted.read?.();

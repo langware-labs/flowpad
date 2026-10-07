@@ -78,15 +78,10 @@ def aggregate(results):
 
 
 async def versions():
-    import hashlib
-    import json
-
+    """The decision endpoint, and the map its screens came from -- a value, so the runner keeps it
+    once in the dataset and the run names that exact version (``navigation.map.id.<uuid>``)."""
     from flow_sdk.core.navigation import navigation_map
     from flow_sdk.decision import decision_endpoints
 
     endpoints = await decision_endpoints()
-    the_map = json.dumps(navigation_map().model_dump(mode="json"), sort_keys=True).encode()
-    return {
-        "decision_api": endpoints[0].name if endpoints else "none",
-        "map": hashlib.sha256(the_map).hexdigest()[:10],
-    }
+    return {"decision_api": endpoints[0].name if endpoints else "none", "map": navigation_map()}

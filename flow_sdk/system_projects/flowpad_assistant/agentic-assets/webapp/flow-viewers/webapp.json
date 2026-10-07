@@ -1,7 +1,7 @@
 {
   "name": "flow-viewers",
   "title": "Flowpad viewers",
-  "description": "How Flowpad's own kinds look: the Flow context (where the person was -- page, screen, project, session, what was open), and a decision -- what a model was asked (the state and every option), what it answered (every option's probability), and the bar its pick had to clear.",
+  "description": "How Flowpad's own kinds look: the Flow context (where the person was -- page, screen, project, session, what was open), and a decision -- what a model was asked (the state and every option), what it answered (every option's probability), the bar its pick had to clear, and exactly what went over the wire.",
   "kind": "application.web.viewer",
   "build": ".",
   "views": [
@@ -25,6 +25,18 @@
     },
     {
       "kind": "decision.run",
+      "shows": [
+        "single"
+      ]
+    },
+    {
+      "kind": "decision.wire",
+      "shows": [
+        "single"
+      ]
+    },
+    {
+      "kind": "navigation.map",
       "shows": [
         "single"
       ]

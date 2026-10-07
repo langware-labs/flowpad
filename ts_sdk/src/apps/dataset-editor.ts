@@ -32,7 +32,7 @@ header h1 { font-size: 15px; margin: 0; }
 button { font: inherit; padding: .2rem .6rem; border-radius: 6px; border: 1px solid hsl(var(--border)); background: hsl(var(--secondary)); color: inherit; cursor: pointer; }
 button.primary { background: hsl(var(--primary)); color: hsl(var(--primary-foreground)); border-color: transparent; }
 select { font: inherit; padding: .2rem .4rem; border-radius: 6px; border: 1px solid hsl(var(--border)); background: hsl(var(--background)); color: inherit; }
-.split { display: grid; grid-template-columns: minmax(0, 1fr) minmax(360px, 44%); gap: 1rem; padding: 1rem; align-items: start; }
+.split { display: grid; grid-template-columns: minmax(240px, 30%) minmax(0, 1fr); gap: 1rem; padding: 1rem; align-items: start; }
 .split.closed { grid-template-columns: minmax(0, 1fr); }
 .detail { position: sticky; top: 4.2rem; border: 1px solid hsl(var(--border)); border-radius: 12px; padding: .9rem 1rem; max-height: calc(100vh - 6rem); overflow: auto; }
 .bar { display: flex; gap: .5rem; align-items: center; flex-wrap: wrap; margin-top: .8rem; }
@@ -149,12 +149,25 @@ async function run(root: HTMLElement, status: HTMLElement): Promise<void> {
       dataset,
       kind,
       row,
+      meta: await latestTrace(row),
       onSaved: (value) => {
         row.ground_truth = value;
         showCounts();
         void renderList();
       },
     });
+  }
+
+  /** How a row's answer was last reached: an eval set's row keeps no run of its own, so the newest
+   *  eval run's trace for it stands in (`from` names the run; `versions` what it ran against). A row
+   *  that keeps its own (a log row's `data.run`) is shown from that instead, by its kind's viewer. */
+  let newestRun: Promise<{ run_id: string; versions?: Record<string, string> } | null> | null = null;
+  async function latestTrace(row: any): Promise<Record<string, unknown>> {
+    if (row.data?.run) return {};
+    newestRun ??= dataset.evalRuns().then((r: any) => r.runs?.[0] ?? null).catch(() => null);
+    const run = await newestRun;
+    const trace = run ? await dataset.evalTrace(run.run_id, row.id).catch(() => null) : null;
+    return trace ? { trace: { ...trace, from: run!.run_id }, versions: run!.versions } : {};
   }
 
   // The eval browser is another app on the same dataset: the HOST opens it (URL-first).
