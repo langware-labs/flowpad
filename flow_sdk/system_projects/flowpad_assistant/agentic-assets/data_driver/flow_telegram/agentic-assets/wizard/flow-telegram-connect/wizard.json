@@ -1,0 +1,22 @@
+{
+  "name": "flow-telegram-connect",
+  "description": "Link your Telegram account to Flow — press Connect Telegram, then Start in the chat it opens. Flow answers from the hub, on a machine of your own.",
+  "version": 1,
+  "enabled": true,
+  "icon": "MessageCircle",
+  "steps": [
+    {
+      "id": "connect",
+      "label": "Connect Telegram",
+      "kind": "compute",
+      "ref": "flow-telegram-connect",
+      "bind": "connect"
+    },
+    {
+      "id": "ask-connected",
+      "label": "Press Start in Telegram",
+      "kind": "compute",
+      "ref": "flow-telegram-ask-connected"
+    }
+  ]
+}
