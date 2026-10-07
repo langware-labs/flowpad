@@ -12,6 +12,7 @@ import { CheckSquare, Search, GitBranch, FileText } from 'lucide-react';
 import {
   AgenticProcess,
   Artifact,
+  Conversation,
   dataContext,
   dataManager,
   editorForType,
@@ -242,6 +243,16 @@ export const RECORD_TYPE_NAV: Partial<Record<string, RecordTypeNav>> = {
     dockPointer: (r) => {
       const tid = resultTypeId(r);
       return tid ? DockPointer.forConversation(tid.id) : null;
+    },
+  },
+  // A message opens inside its conversation (its containment pointer), scrolled to it.
+  flow_message: {
+    dockPointer: (r) => {
+      const tid = resultTypeId(r);
+      const parent = resultTypeId({ record_id: r.parent_type_id });
+      return tid && parent?.type === Conversation.type
+        ? DockPointer.forConversation(parent.id, { messageId: tid.id })
+        : null;
     },
   },
   spec: {

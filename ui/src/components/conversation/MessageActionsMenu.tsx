@@ -5,6 +5,7 @@ import { AgenticProcess, Conversation, TypeId, type ICloudOrigin } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
 import { workerIcon } from '@src/components/lens-viewer/shared/transcript-features/transcript-utils';
 import { useFavorites } from '@src/hooks/use-favorites';
+import { messageFavoriteRef } from '@src/components/favorites/favorite-target';
 import { useIsAdvanced } from '@src/components/view-mode';
 import { InputDialog } from '@src/components/ui/input-dialog';
 import { WorkerToolbar } from '@src/components/workers/WorkerToolbar';
@@ -43,13 +44,6 @@ interface MessageActionsMenuProps {
   onDelete?: () => void;
   /** Start a worker on this message — the header's launch bar, message-pinned prompt. */
   onLaunchWorker?: (worker: WorkerType) => void;
-}
-
-/** First `n` whitespace-delimited words of `text`, trimmed. Empty when no text. */
-function firstWords(text: string | undefined, n: number): string {
-  const t = (text ?? '').trim();
-  if (!t) return '';
-  return t.split(/\s+/).slice(0, n).join(' ');
 }
 
 /** The conversation's current worker: the most-recently-linked AgenticProcess in its shared context. */
@@ -220,14 +214,10 @@ function MessageMenuItems({
           <Trans>Add a note to the running session</Trans>
         </DropdownMenuItem>
       )}
-      {flowMessageId && (
+      {flowMessageId && conversationId && (
         <DropdownMenuItem
           onSelect={() =>
-            void toggleFavorite({
-              entityType: 'flow_message',
-              entityId: flowMessageId,
-              title: firstWords(messageText, 10) || `Message ${flowMessageId.slice(0, 8)}`,
-            })
+            void toggleFavorite(messageFavoriteRef(flowMessageId, conversationId, messageText))
           }
           data-testid="message-favorite"
         >
