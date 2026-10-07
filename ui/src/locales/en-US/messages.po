@@ -55,12 +55,7 @@ msgstr "— current"
 msgid "— for this run only, optional"
 msgstr "— for this run only, optional"
 
-#: src/components/assets/editor/diagnosis-request/DiagnosisRequestEditDialog.tsx
-msgid "— from now"
-msgstr "— from now"
-
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
-#: src/components/assets/editor/diagnosis-request/DiagnosisRequestEditDialog.tsx
 msgid "— one step per line, optional"
 msgstr "— one step per line, optional"
 
@@ -1068,6 +1063,10 @@ msgstr "{trimmed} was added to {parentLabel}."
 msgid "{unopened} new"
 msgstr "{unopened} new"
 
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestFields.tsx
+msgid "{until} (closed)"
+msgstr "{until} (closed)"
+
 #: src/components/token-plan/token-plan-math.ts
 msgid "{used} of {limit} {windowText}"
 msgstr "{used} of {limit} {windowText}"
@@ -1499,11 +1498,10 @@ msgid "Accepting…"
 msgstr "Accepting…"
 
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
-#: src/components/assets/editor/diagnosis-request/DiagnosisRequestEditDialog.tsx
 msgid "Accepts runs for"
 msgstr "Accepts runs for"
 
-#: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestFields.tsx
 msgid "Accepts runs until"
 msgstr "Accepts runs until"
 
@@ -3834,7 +3832,8 @@ msgstr "Can't update right now — showing the last synced list."
 #: src/components/assets/editor/agent-profile/AgentPlaceConfig.tsx
 #: src/components/assets/editor/agent-profile/ShareAgentDialog.tsx
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
-#: src/components/assets/editor/diagnosis-request/DiagnosisRequestEditDialog.tsx
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestFields.tsx
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestFields.tsx
 #: src/components/assets/editor/markdown/ReviewSurface.tsx
 #: src/components/assets/editor/whiteboard/WhiteboardAssetEditor.tsx
 #: src/components/assets/editor/wizard/WizardViewer.tsx
@@ -4032,6 +4031,10 @@ msgstr "Change the installed flow SDK version"
 #: src/components/project-home/ProjectLanguageCard.tsx
 msgid "Change this project's language"
 msgstr "Change this project's language"
+
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestFields.tsx
+msgid "Change to… from now"
+msgstr "Change to… from now"
 
 #: src/components/terminal/interactive-terminal/command-status-viewer/CommandStatusViewer.tsx
 msgid "changed"
@@ -7757,10 +7760,6 @@ msgstr "Diagnosis request"
 msgid "Diagnosis request created"
 msgstr "Diagnosis request created"
 
-#: src/components/assets/editor/diagnosis-request/DiagnosisRequestEditDialog.tsx
-msgid "Diagnosis request updated"
-msgstr "Diagnosis request updated"
-
 #: src/components/version-popover/diagnose-modal.tsx
 msgid "Diagnosis was not recorded — try again."
 msgstr "Diagnosis was not recorded — try again."
@@ -8316,7 +8315,6 @@ msgstr "Edges by kind"
 
 #: src/components/agents/ProjectAgentsStrip.tsx
 #: src/components/anchored-markdown/CommentPin.tsx
-#: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
 #: src/components/connections-manager/credential-rows-view.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/credentials-view/CredentialView.tsx
@@ -8343,10 +8341,6 @@ msgstr "Edit {0}"
 #: src/components/data-sources/DataSourceDialog.tsx
 msgid "Edit data source"
 msgstr "Edit data source"
-
-#: src/components/assets/editor/diagnosis-request/DiagnosisRequestEditDialog.tsx
-msgid "Edit diagnosis request"
-msgstr "Edit diagnosis request"
 
 #: src/components/llm-endpoints/LlmEndpointDialog.tsx
 msgid "Edit endpoint"
@@ -10163,7 +10157,7 @@ msgid "Footprint"
 msgstr "Footprint"
 
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
-#: src/components/assets/editor/diagnosis-request/DiagnosisRequestEditDialog.tsx
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestFields.tsx
 msgid "For someone with no token source of their own. They spend it by the request id, up to the cap and until it expires."
 msgstr "For someone with no token source of their own. They spend it by the request id, up to the cap and until it expires."
 
@@ -11687,13 +11681,12 @@ msgstr "instead?"
 msgid "Instruction"
 msgstr "Instruction"
 
-#: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
 #: src/pages/flow-page/content-panel/user-dropdown/user-dropdown.tsx
 msgid "Instructions"
 msgstr "Instructions"
 
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
-#: src/components/assets/editor/diagnosis-request/DiagnosisRequestEditDialog.tsx
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
 msgid "Instructions for their agent"
 msgstr "Instructions for their agent"
 
@@ -11990,11 +11983,6 @@ msgstr "keep"
 msgid "Keep"
 msgstr "Keep"
 
-#. placeholder {0}: formatWhen(request.write_expires_at)
-#: src/components/assets/editor/diagnosis-request/DiagnosisRequestEditDialog.tsx
-msgid "Keep — until {0}"
-msgstr "Keep — until {0}"
-
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Keep browsing"
 msgstr "Keep browsing"
@@ -12147,7 +12135,7 @@ msgid "Large"
 msgstr "Large"
 
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
-#: src/components/assets/editor/diagnosis-request/DiagnosisRequestEditDialog.tsx
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestFields.tsx
 msgid "Largest run"
 msgstr "Largest run"
 
@@ -12592,7 +12580,7 @@ msgstr "LLM API keys"
 msgid "LLM APIs"
 msgstr "LLM APIs"
 
-#: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestFields.tsx
 msgid "LLM budget"
 msgstr "LLM budget"
 
@@ -15303,7 +15291,7 @@ msgstr "none"
 msgid "None"
 msgstr "None"
 
-#: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestFields.tsx
 msgid "none — they use their own"
 msgstr "none — they use their own"
 
@@ -17054,7 +17042,7 @@ msgid "Paused."
 msgstr "Paused."
 
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
-#: src/components/assets/editor/diagnosis-request/DiagnosisRequestEditDialog.tsx
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestFields.tsx
 msgid "Pay for their LLM"
 msgstr "Pay for their LLM"
 
@@ -18867,10 +18855,15 @@ msgstr "Rename this budget"
 msgid "Reopen"
 msgstr "Reopen"
 
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestFields.tsx
+msgid "Reopen for…"
+msgstr "Reopen for…"
+
 #: src/components/conversation/ConversationView.tsx
 msgid "Reopen this ticket"
 msgstr "Reopen this ticket"
 
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestFields.tsx
 #: src/components/project-home/HomeCustomizationCard.tsx
 msgid "Replace"
 msgstr "Replace"
@@ -18882,10 +18875,6 @@ msgstr "Replace existing"
 #: src/components/llm-endpoints/CredentialField.tsx
 msgid "Replace the stored key"
 msgstr "Replace the stored key"
-
-#: src/components/assets/editor/diagnosis-request/DiagnosisRequestEditDialog.tsx
-msgid "Replace their LLM budget"
-msgstr "Replace their LLM budget"
 
 #: src/components/terminal/interactive-terminal/pty-events-viewer/PTYEventsViewer.tsx
 #: src/components/terminal/interactive-terminal/pty-events-viewer/PTYEventsViewer.tsx
@@ -19876,7 +19865,7 @@ msgstr "Sandboxes"
 #: src/components/anchored-markdown/CommentPin.tsx
 #: src/components/asset-manager/AssetManagerButton.tsx
 #: src/components/assets/editor/agent-profile/AgentPlaceConfig.tsx
-#: src/components/assets/editor/diagnosis-request/DiagnosisRequestEditDialog.tsx
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestFields.tsx
 #: src/components/automations/AutomationPage.tsx
 #: src/components/credentials/CredentialDialog.tsx
 #: src/components/cron-view/CronForm.tsx
@@ -19907,6 +19896,10 @@ msgstr "Save & insert"
 #: src/components/automations/TestPanel.tsx
 msgid "Save and run once now"
 msgstr "Save and run once now"
+
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestFields.tsx
+msgid "Save budget"
+msgstr "Save budget"
 
 #: src/components/spec-editor/SpecEditor.tsx
 msgid "Save changes"
@@ -19991,7 +19984,8 @@ msgstr "Saved Contexts"
 
 #: src/components/account/secrets-section.tsx
 #: src/components/assets/editor/agent-profile/deployment/DeploymentProcessPanel.tsx
-#: src/components/assets/editor/diagnosis-request/DiagnosisRequestEditDialog.tsx
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestFields.tsx
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestFields.tsx
 #: src/components/conversation/ConversationView.tsx
 #: src/components/credentials/CredentialDialog.tsx
 #: src/components/cron-view/CronForm.tsx
@@ -23334,7 +23328,7 @@ msgstr "The manifest was not changed."
 msgid "The member tasks were created; {messageFailures} notification message(s) did not go through."
 msgstr "The member tasks were created; {messageFailures} notification message(s) did not go through."
 
-#: src/components/assets/editor/diagnosis-request/DiagnosisRequestEditDialog.tsx
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestFields.tsx
 msgid "The new budget takes over at once; the current one is closed. What was spent stays spent."
 msgstr "The new budget takes over at once; the current one is closed. What was spent stays spent."
 

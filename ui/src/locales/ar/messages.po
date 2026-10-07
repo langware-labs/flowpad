@@ -55,12 +55,7 @@ msgstr "— الحالي"
 msgid "— for this run only, optional"
 msgstr "— لهذا التشغيل فقط، اختياري"
 
-#: src/components/assets/editor/diagnosis-request/DiagnosisRequestEditDialog.tsx
-msgid "— from now"
-msgstr "— من الآن"
-
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
-#: src/components/assets/editor/diagnosis-request/DiagnosisRequestEditDialog.tsx
 msgid "— one step per line, optional"
 msgstr "— خطوة واحدة في كل سطر، اختياري"
 
@@ -1068,6 +1063,10 @@ msgstr ""
 msgid "{unopened} new"
 msgstr ""
 
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestFields.tsx
+msgid "{until} (closed)"
+msgstr "{until} (مغلق)"
+
 #: src/components/token-plan/token-plan-math.ts
 msgid "{used} of {limit} {windowText}"
 msgstr ""
@@ -1499,11 +1498,10 @@ msgid "Accepting…"
 msgstr "جاري القبول…"
 
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
-#: src/components/assets/editor/diagnosis-request/DiagnosisRequestEditDialog.tsx
 msgid "Accepts runs for"
 msgstr "تقبل التشغيلات لمدة"
 
-#: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestFields.tsx
 msgid "Accepts runs until"
 msgstr "تقبل التشغيلات حتى"
 
@@ -3834,7 +3832,8 @@ msgstr ""
 #: src/components/assets/editor/agent-profile/AgentPlaceConfig.tsx
 #: src/components/assets/editor/agent-profile/ShareAgentDialog.tsx
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
-#: src/components/assets/editor/diagnosis-request/DiagnosisRequestEditDialog.tsx
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestFields.tsx
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestFields.tsx
 #: src/components/assets/editor/markdown/ReviewSurface.tsx
 #: src/components/assets/editor/whiteboard/WhiteboardAssetEditor.tsx
 #: src/components/assets/editor/wizard/WizardViewer.tsx
@@ -4032,6 +4031,10 @@ msgstr "تغيير إصدار flow SDK المثبت"
 #: src/components/project-home/ProjectLanguageCard.tsx
 msgid "Change this project's language"
 msgstr "تغيير لغة هذا المشروع"
+
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestFields.tsx
+msgid "Change to… from now"
+msgstr "تغيير إلى… من الآن"
 
 #: src/components/terminal/interactive-terminal/command-status-viewer/CommandStatusViewer.tsx
 msgid "changed"
@@ -7757,10 +7760,6 @@ msgstr "طلب تشخيص"
 msgid "Diagnosis request created"
 msgstr "تم إنشاء طلب التشخيص"
 
-#: src/components/assets/editor/diagnosis-request/DiagnosisRequestEditDialog.tsx
-msgid "Diagnosis request updated"
-msgstr "تم تحديث طلب التشخيص"
-
 #: src/components/version-popover/diagnose-modal.tsx
 msgid "Diagnosis was not recorded — try again."
 msgstr "لم يتم تسجيل التشخيص — يُرجى المحاولة مرة أخرى."
@@ -8316,7 +8315,6 @@ msgstr "الحواف حسب النوع"
 
 #: src/components/agents/ProjectAgentsStrip.tsx
 #: src/components/anchored-markdown/CommentPin.tsx
-#: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
 #: src/components/connections-manager/credential-rows-view.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/credentials-view/CredentialView.tsx
@@ -8343,10 +8341,6 @@ msgstr ""
 #: src/components/data-sources/DataSourceDialog.tsx
 msgid "Edit data source"
 msgstr "تعديل مصدر البيانات"
-
-#: src/components/assets/editor/diagnosis-request/DiagnosisRequestEditDialog.tsx
-msgid "Edit diagnosis request"
-msgstr "تعديل طلب التشخيص"
 
 #: src/components/llm-endpoints/LlmEndpointDialog.tsx
 msgid "Edit endpoint"
@@ -10163,7 +10157,7 @@ msgid "Footprint"
 msgstr "البصمة"
 
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
-#: src/components/assets/editor/diagnosis-request/DiagnosisRequestEditDialog.tsx
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestFields.tsx
 msgid "For someone with no token source of their own. They spend it by the request id, up to the cap and until it expires."
 msgstr "لمن لا يملك مصدر رموز خاصاً به. ينفق منه عبر معرّف الطلب، حتى الحد الأقصى وإلى أن تنتهي صلاحيته."
 
@@ -11687,13 +11681,12 @@ msgstr "بدلاً من ذلك؟"
 msgid "Instruction"
 msgstr "التعليمات"
 
-#: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
 #: src/pages/flow-page/content-panel/user-dropdown/user-dropdown.tsx
 msgid "Instructions"
 msgstr "التعليمات"
 
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
-#: src/components/assets/editor/diagnosis-request/DiagnosisRequestEditDialog.tsx
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
 msgid "Instructions for their agent"
 msgstr "تعليمات لوكيلهم"
 
@@ -11990,11 +11983,6 @@ msgstr "إبقاء"
 msgid "Keep"
 msgstr "إبقاء"
 
-#. placeholder {0}: formatWhen(request.write_expires_at)
-#: src/components/assets/editor/diagnosis-request/DiagnosisRequestEditDialog.tsx
-msgid "Keep — until {0}"
-msgstr "دون تغيير — حتى {0}"
-
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Keep browsing"
 msgstr ""
@@ -12147,7 +12135,7 @@ msgid "Large"
 msgstr "كبير"
 
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
-#: src/components/assets/editor/diagnosis-request/DiagnosisRequestEditDialog.tsx
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestFields.tsx
 msgid "Largest run"
 msgstr "أكبر تشغيل"
 
@@ -12592,7 +12580,7 @@ msgstr "مفاتيح API الخاصة بـ LLM"
 msgid "LLM APIs"
 msgstr "واجهات LLM"
 
-#: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestFields.tsx
 msgid "LLM budget"
 msgstr "ميزانية LLM"
 
@@ -15303,7 +15291,7 @@ msgstr "بدون"
 msgid "None"
 msgstr "لا شيء"
 
-#: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestFields.tsx
 msgid "none — they use their own"
 msgstr "لا يوجد — يستخدمون الخاص بهم"
 
@@ -17054,7 +17042,7 @@ msgid "Paused."
 msgstr "متوقف مؤقتاً."
 
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
-#: src/components/assets/editor/diagnosis-request/DiagnosisRequestEditDialog.tsx
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestFields.tsx
 msgid "Pay for their LLM"
 msgstr "ادفع تكلفة LLM الخاص بهم"
 
@@ -18867,10 +18855,15 @@ msgstr ""
 msgid "Reopen"
 msgstr "إعادة فتح"
 
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestFields.tsx
+msgid "Reopen for…"
+msgstr "إعادة الفتح لمدة…"
+
 #: src/components/conversation/ConversationView.tsx
 msgid "Reopen this ticket"
 msgstr ""
 
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestFields.tsx
 #: src/components/project-home/HomeCustomizationCard.tsx
 msgid "Replace"
 msgstr "استبدال"
@@ -18882,10 +18875,6 @@ msgstr ""
 #: src/components/llm-endpoints/CredentialField.tsx
 msgid "Replace the stored key"
 msgstr ""
-
-#: src/components/assets/editor/diagnosis-request/DiagnosisRequestEditDialog.tsx
-msgid "Replace their LLM budget"
-msgstr "استبدال ميزانية LLM الخاصة بهم"
 
 #: src/components/terminal/interactive-terminal/pty-events-viewer/PTYEventsViewer.tsx
 #: src/components/terminal/interactive-terminal/pty-events-viewer/PTYEventsViewer.tsx
@@ -19876,7 +19865,7 @@ msgstr "الصناديق"
 #: src/components/anchored-markdown/CommentPin.tsx
 #: src/components/asset-manager/AssetManagerButton.tsx
 #: src/components/assets/editor/agent-profile/AgentPlaceConfig.tsx
-#: src/components/assets/editor/diagnosis-request/DiagnosisRequestEditDialog.tsx
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestFields.tsx
 #: src/components/automations/AutomationPage.tsx
 #: src/components/credentials/CredentialDialog.tsx
 #: src/components/cron-view/CronForm.tsx
@@ -19907,6 +19896,10 @@ msgstr "حفظ وإدراج"
 #: src/components/automations/TestPanel.tsx
 msgid "Save and run once now"
 msgstr ""
+
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestFields.tsx
+msgid "Save budget"
+msgstr "حفظ الميزانية"
 
 #: src/components/spec-editor/SpecEditor.tsx
 msgid "Save changes"
@@ -19991,7 +19984,8 @@ msgstr "السياقات المحفوظة"
 
 #: src/components/account/secrets-section.tsx
 #: src/components/assets/editor/agent-profile/deployment/DeploymentProcessPanel.tsx
-#: src/components/assets/editor/diagnosis-request/DiagnosisRequestEditDialog.tsx
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestFields.tsx
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestFields.tsx
 #: src/components/conversation/ConversationView.tsx
 #: src/components/credentials/CredentialDialog.tsx
 #: src/components/cron-view/CronForm.tsx
@@ -23334,7 +23328,7 @@ msgstr ""
 msgid "The member tasks were created; {messageFailures} notification message(s) did not go through."
 msgstr "تم إنشاء مهام الأعضاء؛ {messageFailures} رسالة إشعار لم تصل."
 
-#: src/components/assets/editor/diagnosis-request/DiagnosisRequestEditDialog.tsx
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestFields.tsx
 msgid "The new budget takes over at once; the current one is closed. What was spent stays spent."
 msgstr "تسري الميزانية الجديدة فورًا وتُغلق الحالية. ما أُنفق يبقى مُنفقًا."
 
