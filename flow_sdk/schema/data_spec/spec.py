@@ -428,3 +428,7 @@ def _with_kind(value: DataSpec, info: Any) -> dict:
     tag = spec_tag(value)
     return {"spec_kind": tag, **dumped} if tag else dumped
 
+
+def validation_summary(exc: Any) -> str:
+    """A ``ValidationError`` as one line a person can read: ``status: Input should be ...; title: ...``."""
+    return "; ".join(f"{'.'.join(str(p) for p in e['loc']) or 'root'}: {e['msg']}" for e in exc.errors())

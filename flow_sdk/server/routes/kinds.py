@@ -72,5 +72,10 @@ async def get_editors(typeid: str) -> ApiResponse:
 async def get_viewers(kind: str, shape: ViewShape = "single", within: str = "") -> ApiResponse:
     """The viewers that show ``kind`` as a ``single`` value or a ``collection``, best first."""
     from flow_sdk.builtin.faas.editors import viewers_for  # noqa: PLC0415
+    from flow_sdk.worldview.ontology import normalize_kind  # noqa: PLC0415
 
+    try:
+        normalize_kind(kind)
+    except ValueError as exc:  # a malformed kind (``*`` is a viewer's wildcard, not a kind) is the caller's
+        return ApiFailResponse(message=f"{kind!r} is not a kind: {exc}", status_code=400)
     return ApiSuccessResponse(data=await viewers_for(kind, shape, within or None))

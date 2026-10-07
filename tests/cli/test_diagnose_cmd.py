@@ -6,6 +6,7 @@ covered by tests/unit/test_diagnostic_report.py.
 """
 
 import asyncio
+import json
 import logging
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
@@ -36,7 +37,7 @@ def swept(monkeypatch):
     asked: list = []
 
     async def run(ctx, **kw):
-        asked.append(ctx)
+        asked.append((ctx, kw.get("resolve")))
         if kw.get("emit"):
             kw["emit"]("checking the backend")
         return DiagnosisSpec(
@@ -860,24 +861,30 @@ async def test_the_sweep_runs_first_and_the_agent_starts_from_it(swept, tmp_path
     prompts: list[str] = []
     events: list[dict] = []
 
+    record = SimpleNamespace(
+        title="Stale lock cleared", summary="Cleared it.", rca="dead pid", fix="removed lock", origin_project_name=None
+    )
+    record.save = AsyncMock()
+
     class _Recorded:
         @classmethod
         async def get_by_id(cls, _id):
-            return SimpleNamespace(title="Stale lock cleared", summary="Cleared it.", rca="dead pid", fix="removed lock")
+            return record
 
-    stamp = AsyncMock()
     with (
         patch("flow_sdk.builtin.agentic_process.AgenticProcess", _recording_ap(transcript, prompts)),
         patch("flow_sdk.fs_store.schema_registry.SchemaRegistry.get_entity_cls", _diagnosis_type_only(_Recorded)),
         patch("flow_sdk.migrations.runner._bootstrap_local", new=AsyncMock(return_value=None)),
         patch("flow_sdk.cli.commands.diagnose_cmd._post_home_feed_entry", new=AsyncMock(return_value="feed-1")),
-        patch("flow_sdk.cli.commands.diagnose_cmd._stamp_record", new=stamp),
     ):
         rc = await asyncio.wait_for(diagnose_cmd._run_diagnose("app is stuck", 1800.0, emit=events.append), timeout=5)
 
     assert rc == 0
-    (ctx,) = swept
+    ((ctx, resolve),) = swept
     assert (ctx.purpose, ctx.user_report, ctx.origin) == ("repair", "app is stuck", "footer")
+    from flow_sdk.diagnose import resolve_shipped
+
+    assert resolve("/a/project/with/its/own") == resolve_shipped(), "the Diagnose button runs the shipped one"
     assert {"type": "narration", "text": "checking the backend"} in events, "the sweep's progress is streamed"
     assert '"Backend down"' in prompts[0] and "ALREADY RAN" in prompts[0], "the agent is handed the sweep"
     done = events[-1]
@@ -885,10 +892,8 @@ async def test_the_sweep_runs_first_and_the_agent_starts_from_it(swept, tmp_path
     # The record's headline and report.py's --status, over the sweep's findings and machine.
     assert done["diagnosis"]["title"] == "Stale lock cleared" and done["diagnosis"]["status"] == "fixed"
     assert [f["id"] for f in done["diagnosis"]["findings"]] == ["A2"]
-    stamp.assert_awaited_once()
-    assert stamp.await_args.args[0] == _DIAG_ID
-    fields = stamp.await_args.kwargs
-    assert fields["user_report"] == "app is stuck" and fields["diagnosis"]["status"] == "fixed"
+    record.save.assert_awaited_once()  # one writer: the copy that carries what the runner adds
+    assert record.user_report == "app is stuck" and record.diagnosis.status == "fixed"
 
 
 @pytest.mark.asyncio
@@ -907,3 +912,59 @@ async def test_an_agent_that_never_starts_still_answers_the_sweep(tmp_path):
     done = events[-1]
     assert done["type"] == "done" and not done["ok"]
     assert done["diagnosis"]["title"] == "Backend down", "what the sweep found is not lost with the agent"
+
+
+@pytest.mark.asyncio
+async def test_what_is_stamped_survives_the_cross_link(tmp_path):
+    """Seen live: the record was loaded, then stamped, then the cross-link SAVED the copy loaded
+    before the stamp -- the DB row lost ``diagnosis`` / ``user_report`` while the disk kept them,
+    so the Diagnose popup had nothing to show. The cross-link must save what was stamped."""
+    import importlib.util
+
+    from flow_sdk.builtin.flowpad_diagnosis import FlowpadDiagnosis
+    from flow_sdk.cli.commands import diagnose_cmd
+    from flow_sdk.config import flowpad_assistant_project_root
+    from flow_sdk.server.routes.bootstrap import get_or_create_local_project, get_or_create_local_user
+
+    user = await get_or_create_local_user()
+    await get_or_create_local_project(desktop_user=user)
+    path = flowpad_assistant_project_root() / ".claude" / "skills" / "flow-diagnose" / "report.py"
+    spec = importlib.util.spec_from_file_location("flow_diagnose_report_stamp", path)
+    report = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(report)
+    did = await report._create_diagnosis_record(title="Stale lock", symptoms="", rca="", fix="", summary="s")
+
+    transcript = tmp_path / "t.jsonl"
+    transcript.write_text('{"type":"system"}\n')
+    fake = _recording_ap(transcript, [])
+
+    async def stream(self, timeout=0):
+        yield {"message": {"role": "user", "content": [{"type": "tool_result", "content": json.dumps(
+            {"diagnosis_id": did, "conversation_id": None, "flow_message_id": None, "status": "fixed"})}]}}
+
+    async def a_process(cls, _id):
+        return SimpleNamespace(id="fake-id")
+
+    async def cross_link(_process, entity, save=True):
+        if save:
+            await entity.save()  # what the real cross-link does to the diagnosis by default
+
+    fake.stream_transcript = stream
+    fake.get_by_id = classmethod(a_process)
+    with (
+        patch("flow_sdk.builtin.agentic_process.AgenticProcess", fake),
+        patch("flow_sdk.migrations.runner._bootstrap_local", new=AsyncMock(return_value=None)),
+        patch("flow_sdk.core.entity.cross_link.cross_link_entities", new=cross_link),
+        patch("flow_sdk.cli.commands.diagnose_cmd._post_home_feed_entry", new=AsyncMock(return_value=None)),
+    ):
+        rc = await asyncio.wait_for(diagnose_cmd._run_diagnose("app is stuck", 1800.0, emit=lambda _e: None), timeout=10)
+
+    assert rc == 0
+    row = await FlowpadDiagnosis.get_by_id(did)
+    assert row.user_report == "app is stuck"
+    assert row.diagnosis is not None and row.diagnosis.status == "fixed"
+    from flow_sdk.fs_store.fs_record import FSRecord
+
+    on_disk = FSRecord.load_or_none("flowpad_diagnosis", did)
+    meta = json.loads((on_disk.shadow_dir / "metadata.json").read_text())
+    assert meta["user_report"] == "app is stuck" and meta["diagnosis"]["status"] == "fixed", "the file too"

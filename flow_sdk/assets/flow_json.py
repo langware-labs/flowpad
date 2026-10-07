@@ -17,6 +17,7 @@ from pydantic import ValidationError
 
 from flow_sdk.capsules.atomic import atomic_write, capsule_lock
 from flow_sdk.schema.data_spec.flow_json_spec import FLOW_JSON, FlowDependency, FlowJsonSpec
+from flow_sdk.schema.data_spec.spec import validation_summary
 
 
 class FlowJsonError(ValueError):
@@ -37,8 +38,7 @@ def parse(text: str) -> FlowJsonSpec:
     try:
         return FlowJsonSpec.model_validate(data)
     except ValidationError as exc:
-        problems = "; ".join(f"{'.'.join(str(p) for p in e['loc']) or 'root'}: {e['msg']}" for e in exc.errors())
-        raise FlowJsonError(f"{FLOW_JSON}: {problems}") from exc
+        raise FlowJsonError(f"{FLOW_JSON}: {validation_summary(exc)}") from exc
 
 
 def read_strict(root: Path) -> Optional[FlowJsonSpec]:

@@ -3,6 +3,8 @@ import { useDiagnosisReport } from '@src/components/diagnose/use-diagnosis-repor
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
 import { Textarea } from '@src/components/ui/textarea';
 import { streamDiagnose, type DiagnoseEvent } from '@src/components/diagnose/diagnose-stream';
+import { KindValue } from '@src/components/value-viewer/KindValue';
+import type { DiagnosisSpec } from '@sdk';
 import { animateMinimizeToProcessChip } from '@src/lib/minimize-to-element';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
@@ -27,6 +29,7 @@ interface DoneState {
   diagnosisId: string | null;
   conversationId: string | null;
   flowMessageId: string | null;
+  diagnosis: DiagnosisSpec | null;
 }
 
 export function DiagnoseModal({ open, onClose, onViewDiagnosis }: DiagnoseModalProps) {
@@ -77,6 +80,7 @@ export function DiagnoseModal({ open, onClose, onViewDiagnosis }: DiagnoseModalP
         diagnosisId: ev.diagnosis_id,
         conversationId: ev.conversation_id,
         flowMessageId: ev.flow_message_id,
+        diagnosis: ev.diagnosis ?? null,
       });
       // The run always posts its own Home-Feed card (issue card with Report/Forward,
       // or a no-issue summary card), so the result reaches the feed regardless of
@@ -205,6 +209,13 @@ export function DiagnoseModal({ open, onClose, onViewDiagnosis }: DiagnoseModalP
                   </span>
                 </div>
               )}
+            </div>
+          )}
+
+          {/* Not recorded: what the sweep found is still shown, in the diagnosis viewer. */}
+          {done && !done.ok && done.diagnosis && (
+            <div className="max-h-80 overflow-y-auto rounded-md border p-2" data-testid="diagnose-sweep-result">
+              <KindValue kind="diagnosis" value={done.diagnosis} />
             </div>
           )}
 

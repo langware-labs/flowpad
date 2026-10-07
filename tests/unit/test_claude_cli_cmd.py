@@ -295,3 +295,33 @@ def test_from_json_defaults():
     assert cmd.permission_mode == "bypassPermissions"
     assert cmd.chrome is False
     assert cmd.worktree is False
+
+
+# ─── Denied tools ─────────────────────────────────────────────────────────────
+
+
+DENY = ["Bash(git checkout:*)", "Bash(rm -rf:*)"]
+
+
+def test_disallowed_tools_reach_the_cli_even_when_permissions_are_bypassed():
+    """An instruction can be ignored; a denied tool cannot be called (the diagnose agent once ran
+    `git checkout` on a checkout's uncommitted file it had been told never to touch)."""
+    cmd = ClaudeAgentOptions(permission_mode="bypassPermissions", disallowed_tools=DENY)
+    args = cmd._build_worker_args()
+    assert args[args.index("--disallowedTools") + 1] == "Bash(git checkout:*),Bash(rm -rf:*)"
+
+
+def test_disallowed_tools_survive_cli_config_and_are_absent_when_unset():
+    """Written only when set: a key on every process would change every restart hash."""
+    assert "disallowed_tools" not in ClaudeAgentOptions().to_json()
+    assert "--disallowedTools" not in ClaudeAgentOptions()._build_worker_args()
+    again = ClaudeAgentOptions.from_json(ClaudeAgentOptions(disallowed_tools=DENY).to_json())
+    assert again.disallowed_tools == DENY
+    assert factory({"disallowed_tools": DENY}, "claude").disallowed_tools == DENY
+
+
+def test_an_agents_disallowed_tools_become_its_workers():
+    from flow_sdk.builtin.agent import Agent
+
+    agent = Agent(name="careful", worker_type="claude", disallowed_tools=DENY)
+    assert agent.to_agent_options().disallowed_tools == DENY

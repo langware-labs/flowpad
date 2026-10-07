@@ -208,8 +208,10 @@ class Agent(Entity):
     # in a UI as if they gated anything until that lands.
     max_turns: Optional[int] = APIField(default=None)
     tools: Optional[list[str]] = APIField(default=None)
-    disallowed_tools: Optional[list[str]] = APIField(default=None)
     skills: list[TypeId] = APIField(default_factory=list)
+    # ENFORCED on Claude: tool patterns the worker can never run (``--disallowedTools``), even
+    # with permissions bypassed. Vendors without a deny list ignore it.
+    disallowed_tools: Optional[list[str]] = APIField(default=None)
     # DECLARATION, not the attachment. An agent's servers are ASSETS in its own
     # folder (``agentic-assets/mcp/<name>/``), reached via ``mcp_assets()`` —
     # that structural 1:1 is still what a launch reads, and it is what makes a
@@ -1561,6 +1563,7 @@ class Agent(Entity):
             ("model", self.model),
             ("permission_mode", self.permission_mode),
             ("effort", self.effort),
+            ("disallowed_tools", self.disallowed_tools),
         ):
             if value is not None:
                 cli_json[key] = value

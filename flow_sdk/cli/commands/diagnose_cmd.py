@@ -243,13 +243,17 @@ async def _load_recorded_diagnosis(diagnosis_cls, diagnosis_id: str | None):
 
 
 async def _sweep(message: str, project_id: str | None, *, origin: str, emit):
-    """Step 1: the project's diagnose, else the shipped one — its progress narrated on ``emit``."""
-    from flow_sdk.diagnose import DiagnosePurpose, FlowContextSpec, run_diagnose  # noqa: PLC0415
+    """Step 1: the Flowpad Assistant's diagnose — ALWAYS, whatever project is open (only Ask for
+    help takes a project's own) — its progress narrated on ``emit``."""
+    from flow_sdk.diagnose import DiagnosePurpose, FlowContextSpec, resolve_shipped, run_diagnose  # noqa: PLC0415
 
     ctx = FlowContextSpec(purpose=DiagnosePurpose.REPAIR, project_id=project_id, user_report=message, origin=origin)
     emit({"type": "status", "text": "  Checking this machine…"})
     sweep = await run_diagnose(
-        ctx, emit=lambda text: emit({"type": "narration", "text": text}), label="Diagnosing Flowpad"
+        ctx,
+        emit=lambda text: emit({"type": "narration", "text": text}),
+        label="Diagnosing Flowpad",
+        resolve=lambda _project_path: resolve_shipped(),
     )
     emit({"type": "status", "text": f"  Checked: {sweep.title or sweep.status}"})
     return sweep
@@ -292,21 +296,14 @@ async def _project_name(project_id: str | None) -> str | None:
     return None
 
 
-async def _stamp_record(diagnosis_id: str | None, **fields) -> None:
-    """Merge ``fields`` (``None`` ones skipped) into the record report.py created, then sync it
-    once. Best-effort: the run is recorded either way."""
-    if not diagnosis_id:
-        return
-    with contextlib.suppress(Exception):
-        from flow_sdk.fs_store.fs_record import FSRecord  # noqa: PLC0415
-        from flow_sdk.schema.types import EntityType  # noqa: PLC0415
-
-        rec = FSRecord.load_or_none(EntityType.FLOWPAD_DIAGNOSIS.value, diagnosis_id)
-        if rec is None:
-            return
-        rec.save_metadata(fields)
-        # Reloaded: the sync reads the record as it is on disk now.
-        await FSRecord.load_or_none(EntityType.FLOWPAD_DIAGNOSIS.value, diagnosis_id).sync_to_db()
+async def _record_runner_fields(diag, merged, message: str, project_id: str | None) -> None:
+    """Set on the recorded diagnosis what only the runner knows (the caller saves it)."""
+    if message:
+        diag.user_report = message
+    if project_id:
+        diag.origin_project_id = project_id
+        diag.origin_project_name = await _project_name(project_id) or diag.origin_project_name
+    diag.diagnosis = merged
 
 
 async def _build_diagnose_process():
@@ -564,24 +561,24 @@ async def _run_diagnose(
             # FLOWPAD_EXECUTION_SCOPE).
             diag = await _load_recorded_diagnosis(_diag_cls, did)
             merged = _merge_agent_into(sweep, diag, recorded.get("status"))
-            # What only this runner knows, onto the record report.py wrote — one write, one sync:
-            # the person's own words (report.py sees only the agent's ``symptoms``, and the "Report
-            # issue" email reads them), the project they were in (named, so a helper on another
-            # machine sees where it happened), and the merged diagnosis.
-            await _stamp_record(
-                did,
-                user_report=message or None,
-                origin_project_id=project_id,
-                origin_project_name=await _project_name(project_id),
-                diagnosis=merged.model_dump(mode="json"),
-            )
-            try:
-                if diag is not None:
+            # What only this runner knows, set on the ONE copy that is saved: the person's own words
+            # (report.py sees only the agent's ``symptoms``, and the "Report issue" email reads them),
+            # the project they were in (named, so a helper on another machine sees where it
+            # happened), and the merged diagnosis. A second writer beside this copy is how the
+            # record once lost all three: the cross-link saved the copy loaded before them.
+            if diag is not None:
+                await _record_runner_fields(diag, merged, message, project_id)
+                try:
                     fresh = await AgenticProcess.get_by_id(ap.id)
                     if fresh is not None:
-                        await cross_link_entities(fresh, diag)
-            except Exception:
-                pass
+                        await cross_link_entities(fresh, diag, save=False)
+                        await fresh.save()
+                except Exception:  # noqa: BLE001 — the link is a convenience; the record stands
+                    pass
+                try:
+                    await diag.save()
+                except Exception:  # noqa: BLE001 — the run is recorded either way; say why the fields are missing
+                    logging.getLogger(__name__).warning("[diagnose] saving record %s failed", did, exc_info=True)
 
             # Post the Home-Feed card — ALWAYS, for every completed run. conv_id +
             # msg_id present ⇔ report.py created a support Conversation/FlowMessage, so

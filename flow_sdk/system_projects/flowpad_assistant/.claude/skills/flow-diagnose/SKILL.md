@@ -29,6 +29,22 @@ plain-language "To Summarize:" line.
 
 * Apply fixes yourself only when safe **and** capable (Step 4); otherwise advise the user (Step 5).
 
+* **This run lives INSIDE the backend you are diagnosing.** `flow stop`, `flow start`, killing the
+  server PID or anything that restarts it ends this run before it records — the person gets
+  nothing, and the diagnosis is lost. If a restart is the fix: record first (Step 7), and make the
+  restart your very last action — or tell the person to restart, and record that advice.
+
+* **A source checkout is not a broken install.** When `flow_sdk/` sits next to a `ui/` folder (a
+  developer checkout), the UI is served by a Vite dev server and the backend port serving no
+  `/assets/*.js` is expected — it is never the blank-page packaging issue. **A checkout's files
+  ARE someone's uncommitted work: never change them.** No edits, no new files, no
+  `git checkout` / `restore` / `reset` / `stash` / `clean` (they silently discard that work), no
+  builds (`build_ui.py`, `npm run build`), no `node_modules` changes. Code there that looks broken
+  is reported — what it is and where — never "restored".
+
+* **Scratch files go in a temp folder of your own** (`mktemp -d`), never in a project or the
+  repository, and you remove them before you record.
+
 * **You diagnose ANY issue the user raises — the catalog is not a closed list.** The known-issue
   catalog (A1–G17) is an internal cheat-sheet that gives you fast, proven fixes for *some* common
   problems. It is **not** the set of problems you handle. If the user's issue isn't in it, that
