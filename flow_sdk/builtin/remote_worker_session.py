@@ -14,7 +14,7 @@ projection and reconstructs the turn stream from the exchange.
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, ClassVar, Optional
 
@@ -73,6 +73,7 @@ class ApprovedVia(StrEnum):
 class InboundDecision(StrEnum):
     """What the host does with an inbound prompt, given the session's state."""
     IGNORE = "ignore"        # terminal session — nothing runs, marker untouched
+    EXPIRE = "expire"        # past MAX_SESSION_LENGTH — the host closes it
     PARK_PENDING = "park"    # no consent yet — stays queued until approve
     BOUNCE_PAUSED = "bounce" # host paused — consumed with a system line
     RUN = "run"              # active (or pre-approved) — run the turn
@@ -86,6 +87,8 @@ RUNNABLE_STATUSES = ACTIVE_STATUSES | {RemoteWorkerSessionStatus.ERROR}
 UNAPPROVED_STATUSES = frozenset({RemoteWorkerSessionStatus.DRAFT, RemoteWorkerSessionStatus.PENDING})
 # Absorbing states — no transition leaves them.
 TERMINAL_STATUSES = frozenset({RemoteWorkerSessionStatus.ENDED, RemoteWorkerSessionStatus.DECLINED})
+# Every state a session can still be in before it ends.
+LIVE_STATUSES = frozenset(RemoteWorkerSessionStatus) - TERMINAL_STATUSES
 
 # Legal lifecycle moves. Anything → ENDED (disconnect wins from every live
 # state); terminals absorb. PENDING→RUNNING is the pre-granted fast path
@@ -118,6 +121,12 @@ _TRANSITIONS: dict[str, frozenset] = {
 }
 
 
+# Hard cap on a live session's length, counted from approval (the card's clock).
+# Past it the host closes the session (and tells the guest); the guest stops
+# sending into it on its own, so the cap holds even with the host offline.
+MAX_SESSION_LENGTH = timedelta(hours=2)
+
+
 def is_terminal(status: str | None) -> bool:
     """True for the absorbing states (ENDED/DECLINED)."""
     return status in TERMINAL_STATUSES
@@ -133,16 +142,18 @@ def can_transition(current: str | None, new: str) -> bool:
     return new in _TRANSITIONS[current]
 
 
-def decide_inbound_prompt(*, status: str | None, standing_grant: bool) -> InboundDecision:
+def decide_inbound_prompt(*, status: str | None, standing_grant: bool, expired: bool = False) -> InboundDecision:
     """THE inbound gate, as a pure function of session state.
 
-    terminal → IGNORE; PAUSED → BOUNCE; IDLE/RUNNING/ERROR → RUN;
+    terminal → IGNORE; past the length cap → EXPIRE; PAUSED → BOUNCE; IDLE/RUNNING/ERROR → RUN;
     PENDING/DRAFT/unknown → RUN when a standing grant pre-approves the
     session, else PARK. No message-level concern lives here — draft / own-send
     / already-consumed guards belong to the async wrapper that has the DB.
     """
     if is_terminal(status):
         return InboundDecision.IGNORE
+    if expired:
+        return InboundDecision.EXPIRE
     if status == RemoteWorkerSessionStatus.PAUSED:
         return InboundDecision.BOUNCE_PAUSED
     if status in RUNNABLE_STATUSES:
@@ -362,7 +373,8 @@ class RemoteWorkerSession(Entity):
 
     @classmethod
     async def open_for_conversation(cls, conversation_id: str | None) -> Optional["RemoteWorkerSession"]:
-        """The conversation's open live session — its newest one not ENDED/DECLINED.
+        """The conversation's open live session — its newest one not ENDED/DECLINED
+        and not past its length cap (a prompt after the cap opens a new session).
 
         A conversation holds ONE open session: every prompt sent in it joins
         that session (queued while PENDING, re-run after an ERROR) until either
@@ -372,10 +384,63 @@ class RemoteWorkerSession(Entity):
         if not conversation_id:
             return None
         rows = await cls.get_all({"conversation_id": conversation_id})
-        open_rows = [r for r in rows if not is_terminal(r.status)]
+        open_rows = [r for r in rows if r.is_open]
         if not open_rows:
             return None
         return max(open_rows, key=lambda r: r.started_at or r.last_activity_at or "")
+
+    def expires_at(self) -> Optional[datetime]:
+        """When the session hits ``MAX_SESSION_LENGTH`` — counted from approval, else from start."""
+        from flow_sdk.builtin.agentic_process.cli_drivers.session_paths import parse_iso_datetime  # noqa: PLC0415
+
+        began = parse_iso_datetime(self.approved_at or self.started_at)
+        return began + MAX_SESSION_LENGTH if began else None
+
+    def is_expired(self, now: Optional[datetime] = None) -> bool:
+        """A live (non-terminal) session past its length cap."""
+        if is_terminal(self.status):
+            return False
+        ends = self.expires_at()
+        return ends is not None and (now or datetime.now(timezone.utc)) >= ends
+
+    @property
+    def is_open(self) -> bool:
+        """Still takes prompts and settings: neither ended nor past its length cap."""
+        return not is_terminal(self.status) and not self.is_expired()
+
+    async def end(
+        self, event: str, *, announce: bool, text: str | None = None, someone_typeid: str | None = None,
+    ) -> None:
+        """THE end path (disconnect, length cap): mark ENDED, save, stop the
+        host worker (a no-op on the guest, which has none), and — when
+        ``announce`` — post the ``event`` line that ends the other side's mirror.
+        Idempotent: an already-ended session only re-stops the worker."""
+        already_ended = self.status == RemoteWorkerSessionStatus.ENDED
+        if not already_ended:
+            self.mark_activity(RemoteWorkerSessionStatus.ENDED)
+            await self.save()
+        await self._stop_host_worker()
+        if announce and not already_ended:
+            await self._emit_event(event, text=text, someone_typeid=someone_typeid)
+
+    async def expire(self, *, local_is_host: bool, someone_typeid: str | None = None) -> None:
+        """The hard stop at the length cap, on either side. Only the HOST posts
+        the ``expired`` line — it is the guest's indication and carries the
+        ENDED snapshot — so a guest-side close stays silent rather than doubling it."""
+        await self.end("expired", announce=local_is_host, someone_typeid=someone_typeid)
+
+    async def _stop_host_worker(self) -> None:
+        """Best-effort: stop the host-side worker so queued/future remote prompts
+        can't keep running on the host's machine once the session is over."""
+        if not self.host_process_id:
+            return
+        try:
+            from flow_sdk.builtin.agentic_process import AgenticProcess
+            ap = await AgenticProcess.get_one({"id": self.host_process_id})
+            if ap is not None and getattr(ap, "shell_id", None):
+                await ap.exit()
+        except Exception as e:  # noqa: BLE001
+            logger.warning("[remote_worker_session] host worker stop failed: %s", e)
 
     def mark_activity(self, status: str | None = None) -> None:
         """Stamp host-authoritative activity; caller saves."""
@@ -532,7 +597,7 @@ class RemoteWorkerSession(Entity):
             policy = ReplyPolicy(str(raw))
         except ValueError:
             return ApiFailResponse(message="reply_policy must be 'auto' or 'review'", status_code=400)
-        if is_terminal(self.status):
+        if not self.is_open:
             return ApiFailResponse(message="session has ended", status_code=409)
         if self.reply_policy != policy.value:
             self.reply_policy = policy.value
@@ -564,23 +629,9 @@ class RemoteWorkerSession(Entity):
         access to their machine, or the guest leaving. Marks the session ENDED
         (the other side adopts it from the line's snapshot) and best-effort stops
         the host worker so no further guest prompts run. Idempotent."""
-        already_ended = self.status == RemoteWorkerSessionStatus.ENDED
-        self.mark_activity(RemoteWorkerSessionStatus.ENDED)
-        await self.save()
-        # Best-effort: stop the host-side worker so queued/future remote prompts
-        # can't keep running on the host's machine after disconnect.
-        if self.host_process_id:
-            try:
-                from flow_sdk.builtin.agentic_process import AgenticProcess
-                ap = await AgenticProcess.get_one({"id": self.host_process_id})
-                if ap is not None and getattr(ap, "shell_id", None):
-                    await ap.exit()
-            except Exception as e:  # noqa: BLE001
-                logger.warning("[remote_worker_session] disconnect: host worker stop failed: %s", e)
-        if not already_ended:
-            # Either side may end it: the line names whoever did (this machine's user).
-            from flow_sdk.builtin.user import User  # noqa: PLC0415
+        # Either side may end it: the line names whoever did (this machine's user).
+        from flow_sdk.builtin.user import User  # noqa: PLC0415
 
-            who = (await User.current_sender_participant()).get("name") or None
-            await self._emit_event("ended", text=f"{who} ended the live session" if who else None)
+        who = (await User.current_sender_participant()).get("name") or None
+        await self.end("ended", announce=True, text=f"{who} ended the live session" if who else None)
         return ApiSuccessResponse(data=self.model_dump(mode="json"))

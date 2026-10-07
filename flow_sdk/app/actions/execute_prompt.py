@@ -193,6 +193,7 @@ _SESSION_EVENT_TEXTS = {
     "paused": "{actor} paused the live session",
     "resumed": "{actor} resumed the live session",
     "ended": "{actor} ended the live session",
+    "expired": "{actor} closed the live session — the 2-hour limit was reached",
     "prompt_bounced": "Live session is paused — prompt not run",
     "settings_changed": "{actor} changed the session settings",
 }
@@ -920,6 +921,26 @@ async def _local_actor(local_user=None) -> tuple[Optional[str], str]:
     return local_id, (str(TypeId(type="user", id=local_id)) if local_id else "")
 
 
+async def _local_me() -> tuple[Optional[str], str]:
+    """``(me, someone_typeid)`` — ``me`` is the id this machine hosts sessions
+    under: the cloud id when signed in, else the local user's."""
+    from flow_sdk.builtin.user import User  # noqa: PLC0415
+
+    who = await User.current_sender_participant()
+    local_id, someone_typeid = await _local_actor()
+    return (who or {}).get("user_id") or local_id, someone_typeid
+
+
+async def _sessions_in(statuses) -> list:
+    """Every session in one of ``statuses`` — ONE query (``status`` lives in the
+    JSON blob, so each extra query is another full scan)."""
+    from flow_sdk.builtin.remote_worker_session import RemoteWorkerSession  # noqa: PLC0415
+    from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp  # noqa: PLC0415
+
+    match = ExpressionNode(op=QueryOp.IN, operands=["status", [str(s) for s in statuses]])
+    return await RemoteWorkerSession.get_all(QueryFilter(match=match)) or []
+
+
 async def consume_prompt(fm: "FlowMessage", someone_typeid: str) -> None:
     """Mark one inbound prompt as handled, so no drain picks it up again.
 
@@ -980,20 +1001,14 @@ async def recover_interrupted_sessions() -> None:
     """
     from flow_sdk.builtin.remote_worker_session import (  # noqa: PLC0415
         ACTIVE_STATUSES,
-        RemoteWorkerSession,
         RemoteWorkerSessionStatus,
     )
-    from flow_sdk.builtin.user import User  # noqa: PLC0415
 
-    who = await User.current_sender_participant()
-    local_id, someone_typeid = await _local_actor()
-    me = (who or {}).get("user_id") or local_id
+    me, someone_typeid = await _local_me()
     if not me:
         return
 
-    sessions = []
-    for status in ACTIVE_STATUSES:
-        sessions.extend(await RemoteWorkerSession.get_all({"status": status.value}) or [])
+    sessions = await _sessions_in(ACTIVE_STATUSES)
     mine = [s for s in sessions if getattr(s, "conversation_id", None) and getattr(s, "host_user_id", None) == me]
     if not mine:
         return
@@ -1006,6 +1021,43 @@ async def recover_interrupted_sessions() -> None:
             await redrive_session_prompts(session)
         except Exception as e:  # noqa: BLE001 — one bad session must not stop the sweep
             logger.warning("[session] startup recovery failed for %s: %s", session.id, e)
+
+
+# How often the length-cap sweep looks for sessions past ``MAX_SESSION_LENGTH``.
+_EXPIRY_SWEEP_SECONDS = 60
+
+
+async def close_expired_sessions() -> None:
+    """Close every live session past its length cap — on both sides.
+
+    A session this machine HOSTS is ended with the ``expired`` line (the guest's
+    indication, and the snapshot that ends its mirror). A session we are the
+    GUEST of is ended locally and silently: the cap must hold even while the
+    host is offline, and the host's own line follows when it comes back.
+    """
+    from flow_sdk.builtin.remote_worker_session import LIVE_STATUSES  # noqa: PLC0415
+
+    expired = [s for s in await _sessions_in(LIVE_STATUSES) if s.is_expired()]
+    if not expired:
+        return
+    me, someone_typeid = await _local_me()
+    for session in expired:
+        try:
+            is_host = bool(session.host_process_id) or session.is_host(me)
+            await session.expire(local_is_host=is_host, someone_typeid=someone_typeid)
+            logger.info("[session] closed %s at the length cap (host=%s)", session.id, is_host)
+        except Exception as e:  # noqa: BLE001 — one bad session must not stop the sweep
+            logger.warning("[session] length-cap close failed for %s: %s", session.id, e)
+
+
+async def run_session_expiry_loop() -> None:
+    """Background loop: the length-cap sweep, once now and every minute after."""
+    while True:
+        try:
+            await close_expired_sessions()
+        except Exception as e:  # noqa: BLE001 — never kill the loop
+            logger.warning("[session] length-cap sweep failed: %s", e)
+        await asyncio.sleep(_EXPIRY_SWEEP_SECONDS)
 
 
 async def _session_messages(session_ids: set) -> dict:
@@ -1093,6 +1145,9 @@ async def redrive_session_prompts(
         # and arrival semantics are unchanged.
         ran: set[str] = set()
         while True:
+            if session.is_expired():  # the cap can pass mid-drain
+                await session.expire(local_is_host=True, someone_typeid=someone_typeid)
+                return
             queued = [fm for fm in await _queued_turns(session, local_id) if fm.id not in ran]
             if not queued:
                 return
@@ -1147,10 +1202,15 @@ async def process_inbound_prompt(fm_id: str, conversation_id: str) -> None:
 
         needs_consent = session.status in UNAPPROVED_STATUSES or not session.status
         standing = needs_consent and await _standing_grant(conv, host_id, fm.sender_id)
-        decision = decide_inbound_prompt(status=session.status, standing_grant=standing)
+        decision = decide_inbound_prompt(
+            status=session.status, standing_grant=standing, expired=session.is_expired()
+        )
         logger.info("[session] inbound fm=%s session=%s status=%s → %s", fm.id, session.id, session.status, decision)
 
         if decision is InboundDecision.IGNORE:
+            return
+        if decision is InboundDecision.EXPIRE:
+            await session.expire(local_is_host=True, someone_typeid=someone_typeid)
             return
         if decision is InboundDecision.BOUNCE_PAUSED:
             await consume_prompt(fm, someone_typeid)

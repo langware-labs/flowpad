@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { RemoteWorkerSession, RemoteWorkerSessionStatus } from '@sdk';
 import { SessionCard } from '@src/components/conversation/SessionCard';
@@ -177,5 +177,29 @@ describe("SessionCard — the session's one line in the conversation", () => {
   it('null session renders "requesting"', () => {
     renderCard({ session: null });
     expect(screen.getByTestId('session-card').getAttribute('data-status')).toBe('requesting');
+  });
+});
+
+describe('SessionCard — the 2-hour length cap', () => {
+  afterEach(() => {
+    cleanup();
+    vi.useRealTimers();
+  });
+
+  it('flips a connected card to ended when the cap passes, with no Disconnect', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-10-07T11:59:00Z'));
+    renderCard({
+      session: session(RemoteWorkerSessionStatus.IDLE, { approved_at: '2026-10-07T10:00:00Z' }),
+      onDisconnect: async () => {},
+    });
+    expect(screen.getByTestId('session-card').dataset.status).toBe('active');
+    expect(screen.queryByTestId('session-card-disconnect')).not.toBeNull();
+
+    act(() => {
+      vi.advanceTimersByTime(60_000);
+    });
+    expect(screen.getByTestId('session-card').dataset.status).toBe('ended');
+    expect(screen.queryByTestId('session-card-disconnect')).toBeNull();
   });
 });

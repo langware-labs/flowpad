@@ -1,11 +1,11 @@
 import { Plural, Trans, useLingui } from '@lingui/react/macro';
-import { useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { RemoteWorkerSession, RemoteWorkerSessionStatus } from '@sdk';
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import { formatClock } from '@src/components/lens-viewer/shared/format-utils';
 import { useClock } from '@src/hooks/useActivity';
 import { cn } from '@src/lib/utils';
-import { sessionCardState, type SessionCardState } from './session-card-state';
+import { sessionCardState, sessionExpiresAt, type SessionCardState } from './session-card-state';
 
 export interface SessionCardProps {
   sessionId: string;
@@ -62,6 +62,20 @@ function SinceApproved({ approvedAt }: { approvedAt: string }) {
   );
 }
 
+/** True once the session passes its length cap — one timer at the deadline, not a per-second tick. */
+function useSessionExpired(session: RemoteWorkerSession | null): boolean {
+  const ends = sessionExpiresAt(session);
+  const [expired, setExpired] = useState(() => ends !== null && Date.now() >= ends);
+  useEffect(() => {
+    const left = ends === null ? null : ends - Date.now();
+    setExpired(left !== null && left <= 0);
+    if (left === null || left <= 0) return;
+    const timer = setTimeout(() => setExpired(true), left);
+    return () => clearTimeout(timer);
+  }, [ends]);
+  return expired;
+}
+
 /**
  * A live session's ONE line in the conversation: `Live session · <other side>`
  * and its status. The whole line opens the session view, where the turns live.
@@ -85,8 +99,10 @@ export function SessionCard({
 }: SessionCardProps) {
   const { t } = useLingui();
   const [busy, setBusy] = useState<'approve' | 'approve-once' | 'decline' | 'disconnect' | 'retry' | null>(null);
-  const state = sessionCardState(session?.status);
-  const running = session?.status === RemoteWorkerSessionStatus.RUNNING;
+  // Past the length cap the session is over on this side too, whatever the row says.
+  const expired = useSessionExpired(session);
+  const state = expired ? 'ended' : sessionCardState(session?.status);
+  const running = state === 'active' && session?.status === RemoteWorkerSessionStatus.RUNNING;
   const host = session?.host_name?.trim() || t`the host`;
   const guest = session?.guest_name?.trim() || t`the guest`;
   const other = role === 'host' ? guest : host;
