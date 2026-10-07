@@ -1,4 +1,5 @@
 import { APIEntity, dataManager, registerEntity } from '../APIEntity';
+import { dataContext } from '../FlowSync/context';
 import { IEntity } from '../IEntity';
 import { ActionInfo } from '../models/ActionInfo';
 import { TypeId } from '../models/TypeId';
@@ -113,9 +114,11 @@ export class RemoteWorkerSession extends APIEntity<RemoteWorkerSession> implemen
 
   /** Tab / chip label. A RemoteWorkerSession has no name/uname/title, so the
    *  default chain would fall back to the synthetic `remote_worker_session-<id>`;
-   *  name it after the counterpart instead (mirrors CollaborationRoom's join). */
+   *  name it after the counterpart — the guest on the host's machine, the host on
+   *  the guest's (host = the cloud user, or the row carries the host-local process). */
   getDisplayName(): string | null {
-    const other = this.guest_name || this.host_name;
+    const onHost = this.isHost(dataContext.cloudUser?.id) || !!this.host_process_id;
+    const other = onHost ? this.guest_name || this.host_name : this.host_name || this.guest_name;
     return other ? `Live session · ${other}` : 'Live session';
   }
 

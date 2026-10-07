@@ -5,6 +5,7 @@ import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import { formatClock } from '@src/components/lens-viewer/shared/format-utils';
 import { useClock } from '@src/hooks/useActivity';
 import { cn } from '@src/lib/utils';
+import { OpenSessionChatButton } from './LiveSessionActivity';
 import { sessionCardState, sessionExpiresAt, type SessionCardState } from './session-card-state';
 
 export interface SessionCardProps {
@@ -27,6 +28,10 @@ export interface SessionCardProps {
   lastPromptFailed?: boolean;
   /** Guest only: send the failed prompt again into this session. */
   onRetry?: () => Promise<void>;
+  /** The session's last prompt while nothing answered it — named on the line while it runs. */
+  runningPrompt?: string | null;
+  /** Host only: the chat the session's prompts run in (its Claude Code process). */
+  chatProcessId?: string | null;
 }
 
 const TONE: Record<SessionCardState, string> = {
@@ -82,6 +87,8 @@ function useSessionExpired(session: RemoteWorkerSession | null): boolean {
  * The host answers a request here once (Approve — and remember this guest —,
  * Approve once, or Decline); once it is live the
  * line carries the message count, the time since approval, and a red Disconnect.
+ * While a prompt runs the line names it; the host also gets an icon that opens
+ * the chat it runs in.
  */
 export function SessionCard({
   sessionId,
@@ -96,13 +103,19 @@ export function SessionCard({
   onDisconnect,
   lastPromptFailed,
   onRetry,
+  runningPrompt,
+  chatProcessId,
 }: SessionCardProps) {
   const { t } = useLingui();
   const [busy, setBusy] = useState<'approve' | 'approve-once' | 'decline' | 'disconnect' | 'retry' | null>(null);
   // Past the length cap the session is over on this side too, whatever the row says.
   const expired = useSessionExpired(session);
   const state = expired ? 'ended' : sessionCardState(session?.status);
-  const running = state === 'active' && session?.status === RemoteWorkerSessionStatus.RUNNING;
+  // A prompt with no reply yet is being worked on. Read from the messages, not the
+  // status alone: the guest's mirror learns status only from snapshots riding a
+  // message, and nothing is sent when a turn starts, so it never reads RUNNING.
+  const pending = state === 'active' ? (runningPrompt?.trim() ?? '') : '';
+  const running = state === 'active' && (session?.status === RemoteWorkerSessionStatus.RUNNING || !!pending);
   const host = session?.host_name?.trim() || t`the host`;
   const guest = session?.guest_name?.trim() || t`the guest`;
   const other = role === 'host' ? guest : host;
@@ -110,6 +123,8 @@ export function SessionCard({
   // The host answering a request; a failed prompt on a live session.
   const answering = role === 'host' && state === 'pending';
   const failedLive = !!lastPromptFailed && state === 'active';
+  // While a prompt runs the line names it — its first line — instead of a bare "working…".
+  const promptLine = pending.split('\n')[0]?.trim() ?? '';
 
   const status = (() => {
     switch (state) {
@@ -177,13 +192,23 @@ export function SessionCard({
       className="flex w-full max-w-full cursor-pointer items-center gap-2 rounded-md px-2 py-1 text-xs transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
     >
       <Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden />
-      <span className="truncate font-medium text-foreground" data-testid="session-card-name">
+      <span className="max-w-[16rem] shrink-0 truncate font-medium text-foreground" data-testid="session-card-name">
         <Trans>Live session · {other}</Trans>
       </span>
       <span className={cn('h-2 w-2 shrink-0 rounded-full', DOT[state], running && 'animate-pulse')} aria-hidden />
-      <span className={cn('shrink-0', TONE[state])} data-testid="session-card-status">
-        {status}
-      </span>
+      {promptLine ? (
+        <span
+          className={cn('min-w-0 truncate font-mono', TONE[state])}
+          data-testid="session-card-prompt"
+          title={runningPrompt ?? undefined}
+        >
+          ❯ {promptLine}
+        </span>
+      ) : (
+        <span className={cn('shrink-0', TONE[state])} data-testid="session-card-status">
+          {status}
+        </span>
+      )}
       {state === 'active' && (
         <>
           <span className="shrink-0 tabular-nums text-muted-foreground" data-testid="session-card-counts">
@@ -198,6 +223,9 @@ export function SessionCard({
         </span>
       )}
       <span className="ms-auto flex shrink-0 items-center gap-1.5">
+        {chatProcessId && (state === 'active' || state === 'paused') && (
+          <OpenSessionChatButton processId={chatProcessId} />
+        )}
         {failedLive &&
           button('retry', onRetry, 'border border-border text-foreground hover:bg-muted', <Trans>Retry</Trans>)}
         {answering && (

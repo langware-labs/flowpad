@@ -20,6 +20,7 @@ import { Checkbox } from '@src/components/ui/checkbox';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@src/components/ui/select';
 import { MessageComposer } from '@src/components/conversation/MessageComposer';
 import { SessionEventLine } from '@src/components/conversation/SessionEventLine';
+import { LiveSessionActivity, OpenSessionChatButton } from '@src/components/conversation/LiveSessionActivity';
 import {
   grantContactPermission,
   revokeContactPermission,
@@ -272,6 +273,7 @@ export function LiveSessionView({ sessionId }: { sessionId: string }) {
         <span className="min-w-0 flex-1 truncate text-sm font-medium" data-testid="live-session-title" title={title}>
           {title}
         </span>
+        {isHost && session.host_process_id && <OpenSessionChatButton processId={session.host_process_id} />}
         {replyPolicyControl}
       </div>
       {/* ── pinned header ─────────────────────────────────────────────── */}
@@ -376,6 +378,20 @@ export function LiveSessionView({ sessionId }: { sessionId: string }) {
             className={`h-3.5 w-3.5 flex-shrink-0 ${status === RemoteWorkerSessionStatus.RUNNING ? 'animate-pulse text-emerald-500' : ''}`}
           />
           <span data-testid="live-session-status-line">{statusLine(status, hostName)}</span>
+          {/* The guest ends it from here too — done working on the host's machine. */}
+          {!terminal && (
+            <Button
+              size="sm"
+              variant="destructive"
+              className="ms-auto h-6 px-2 text-[11px]"
+              onClick={() => void runAction('disconnect', () => session.disconnect())}
+              disabled={!!busy}
+              data-testid="live-session-disconnect"
+            >
+              <PlugZap className="me-1 h-3.5 w-3.5" />
+              <Trans>Disconnect</Trans>
+            </Button>
+          )}
         </div>
       )}
 
@@ -488,6 +504,7 @@ export function LiveSessionView({ sessionId }: { sessionId: string }) {
             })}
           </div>
         )}
+        {isHost && <LiveSessionActivity session={session} />}
       </LatestScroll>
     </div>
   );

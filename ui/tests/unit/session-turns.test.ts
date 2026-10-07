@@ -1,6 +1,6 @@
 import type { FlowMessage } from '@sdk';
 import { describe, expect, it } from 'vitest';
-import { failedPromptOf, sessionEventOf } from '@src/components/conversation/session-turns';
+import { failedPromptOf, pendingPromptOf, sessionEventOf } from '@src/components/conversation/session-turns';
 
 const SID = 'a1a1a1a1-0000-4000-8000-000000000001';
 const carrier = (marker: Record<string, unknown>) => ({
@@ -45,5 +45,18 @@ describe('failedPromptOf', () => {
 
   it('a failure with no prompt before it offers nothing to retry', () => {
     expect(failedPromptOf([failedLine('e1')])).toBeNull();
+  });
+});
+
+describe('pendingPromptOf', () => {
+  it('names the last prompt while nothing answered it — the next prompt replaces it', () => {
+    expect(pendingPromptOf([approvedLine('a'), prompt('p1', 'list the files')])).toBe('list the files');
+    expect(pendingPromptOf([prompt('p1', 'a'), reply('r1'), prompt('p2', 'run the tests')])).toBe('run the tests');
+  });
+
+  it('is null once a reply or a failed line follows it, and before any prompt', () => {
+    expect(pendingPromptOf([prompt('p1', 'a'), reply('r1')])).toBeNull();
+    expect(pendingPromptOf([prompt('p1', 'a'), failedLine('e1')])).toBeNull();
+    expect(pendingPromptOf([approvedLine('a')])).toBeNull();
   });
 });
