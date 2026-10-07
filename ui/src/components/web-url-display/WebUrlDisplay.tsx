@@ -58,6 +58,7 @@ export const WebUrlDisplay = forwardRef<PersistentIframeHandle, WebUrlDisplayPro
     () => ({
       refresh,
       postToGuest: (message: unknown) => frameRef.current?.postToGuest(message),
+      isGuest: (source: MessageEventSource | null) => frameRef.current?.isGuest(source) ?? false,
     }),
     [refresh],
   );

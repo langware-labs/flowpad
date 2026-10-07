@@ -13,6 +13,8 @@ export interface PersistentIframeHandle {
   refresh: () => void;
   /** Post a message to the guest document (parent→iframe channel). */
   postToGuest: (message: unknown) => void;
+  /** Whether a `message` event came from this frame's guest document (iframe→parent channel). */
+  isGuest: (source: MessageEventSource | null) => boolean;
 }
 
 type IframeOwner = symbol;
@@ -310,6 +312,10 @@ class IframeRegistry {
     const iframe = this.iframes.get(src);
     iframe?.contentWindow?.postMessage(message, '*');
   }
+
+  isGuest(src: string, source: MessageEventSource | null): boolean {
+    return source != null && this.iframes.get(src)?.contentWindow === source;
+  }
 }
 
 const registry = IframeRegistry.getInstance();
@@ -344,6 +350,7 @@ const PersistentIframe = forwardRef<PersistentIframeHandle, PersistentIframeProp
       () => ({
         refresh: refreshIframe,
         postToGuest: (message: unknown) => registry.postToGuest(src, message),
+        isGuest: (source: MessageEventSource | null) => registry.isGuest(src, source),
       }),
       [refreshIframe, src],
     );

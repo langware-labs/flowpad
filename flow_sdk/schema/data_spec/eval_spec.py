@@ -42,6 +42,9 @@ class EvalSpec(DataSpec):
     metrics: list[str] = Field(default_factory=list)
     #: Row paths a report groups by (``data.group``, ``input.here.view``).
     slices: list[str] = Field(default_factory=list)
+    #: Each metric in plain words, for someone who is not an engineer: what it counts, over which
+    #: examples, and which way is good. A report or browser shows it as the metric's tooltip.
+    explain: dict[str, str] = Field(default_factory=dict)
     description: str = ""
 
 
@@ -88,6 +91,11 @@ class EvalRun(DataSpec):
     metrics: dict[str, Optional[int | float]] = Field(default_factory=dict)
     #: ``{path: {value: {"examples": n, "correct": n, ...counts, ...metrics}}}``.
     slices: dict[str, Any] = Field(default_factory=dict)
+
+    def count_metrics(self) -> list[str]:
+        """The metrics that are counts -- read from the type here, because JSON loses it (``1.0`` and
+        ``1`` read the same to a browser), so a report or browser is TOLD rather than guessing."""
+        return sorted(k for k, v in self.metrics.items() if isinstance(v, int) and not isinstance(v, bool))
 
 
 __all__ = ["EvalRun", "EvalSpec", "ExampleEval", "Verdict"]

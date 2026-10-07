@@ -14,7 +14,7 @@ from typing import ClassVar, List, Optional
 from flow_sdk.api.api_types.api_field import APIField, EntityField, Sharing
 from flow_sdk.core import Entity
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
-from flow_sdk.schema.data_spec.webapp_spec import WebappEndpointSpec
+from flow_sdk.schema.data_spec.webapp_spec import WebappEndpointSpec, WebappViewSpec
 from flow_sdk.worldview.ontology import KindStr
 
 
@@ -28,6 +28,9 @@ class WebApp(Entity):
     kind: KindStr = APIField(default="application.web", description="Dot-path ontology kind")
     #: What an editor edits beyond its parent: kinds and type names (``flow_sdk.builtin.faas.editors``).
     edits: List[str] = APIField(default_factory=list, description="Kinds and types this editor edits")
+    #: What a viewer shows: kinds, single and/or collection (``flow_sdk.builtin.faas.editors``).
+    views: List[WebappViewSpec] = APIField(default_factory=list, description="Kinds this viewer shows")
+    module: str = APIField(default="viewer.js", description="A viewer's ES module, inside the served folder")
     build: str = APIField(default=".", description="Served subdir inside the app folder")
     #: What the app exposes when placed — the templates a placement turns into
     #: ``ServiceEndpoint`` rows (``webapp_placement.expose_project_endpoints``).

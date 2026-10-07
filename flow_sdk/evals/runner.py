@@ -135,7 +135,7 @@ async def run(
 
     ds = Dataset.at(Path(dataset)) if isinstance(dataset, (str, Path)) else dataset
     folder = Path(ds.asset_ref)
-    spec = ds.spec if isinstance(ds.spec, str) else ""
+    spec = ds.declared_kind
     found = find_evals(folder, spec)
     if eval_name:
         found = [(f, e) for f, e in found if e.name == eval_name]
