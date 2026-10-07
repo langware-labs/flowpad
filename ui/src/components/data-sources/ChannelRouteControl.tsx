@@ -12,7 +12,6 @@ import { notify } from '@src/notifications';
  *
  * "Delivered to" switches the claim between this computer and a cloud placement of the agent that owns the
  * channel. The URL never changes and the vendor is not touched; the next message lands at the new place.
- * Flow's own channel is answered from Flow's box and only shown here, so it has no switch.
  */
 export function ChannelRouteControl({ source }: { source: DataSource }) {
   const { t } = useLingui();
@@ -54,24 +53,18 @@ export function ChannelRouteControl({ source }: { source: DataSource }) {
         <span className="w-24 shrink-0 text-muted-foreground">
           <Trans>Delivered to</Trans>
         </span>
-        {route.current === 'flow' ? (
-          <span data-testid="channel-route-flow">
-            <Trans>Flow answers from its own box · shown here</Trans>
-          </span>
-        ) : (
-          <Select value={route.current || undefined} onValueChange={(place) => void move(place)} disabled={moving}>
-            <SelectTrigger className="h-7 w-64 text-xs" data-testid="channel-route-place">
-              <SelectValue placeholder={t`Somewhere else`} />
-            </SelectTrigger>
-            <SelectContent>
-              {route.places.map((place) => (
-                <SelectItem key={place.key} value={place.key} data-testid={`channel-route-place-${place.key}`}>
-                  {place.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        )}
+        <Select value={route.current || undefined} onValueChange={(place) => void move(place)} disabled={moving}>
+          <SelectTrigger className="h-7 w-64 text-xs" data-testid="channel-route-place">
+            <SelectValue placeholder={t`Somewhere else`} />
+          </SelectTrigger>
+          <SelectContent>
+            {route.places.map((place) => (
+              <SelectItem key={place.key} value={place.key} data-testid={`channel-route-place-${place.key}`}>
+                {place.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
         {moving && <Loader2 className="size-3.5 animate-spin" />}
       </div>
       <div className="flex min-w-0 items-center gap-2">

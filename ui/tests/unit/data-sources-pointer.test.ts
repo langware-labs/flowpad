@@ -15,6 +15,7 @@ describe('data-sources pointer', () => {
       { section: 'sources' as const },
       { section: 'drivers' as const, driver: null },
       { section: 'drivers' as const, driver: 'flow_telegram' },
+      { section: 'channels' as const },
       { section: 'source' as const, id: ID, tab: null },
       { section: 'source' as const, id: ID, tab: 'events' as const },
       { section: 'source' as const, id: ID, tab: 'settings' as const },

@@ -1,8 +1,8 @@
-"""``FakeFlowHub`` — the hub a ``FlowChannel`` talks to, as a test double every Flow channel driver shares.
+"""``FakeFlowHub`` — the hub a ``FlowChannel`` talks to, as a test double every such channel driver shares.
 
-It keeps links in memory the way ``channel_link`` does: Connect mints a pending link with a code and its deep link,
-the test flips it to connected (as the hub does once the code came back from the person's account), and sends
-are recorded with the id the hub would answer.
+It keeps claims in memory the way the hub's webhook chain does: Connect makes a pending user claim with a code and
+its deep link, the test flips it to active (as the hub does once the code came back from the person's account), and
+replies are recorded with the id the hub would answer.
 """
 
 from __future__ import annotations
@@ -12,45 +12,47 @@ from typing import Optional
 
 
 class FakeFlowHub:
-    def __init__(self, *, available: bool = True, display: str = "", deep_link: str = "https://example.test/flow"):
-        self.profile_ = {"available": available, "name": "Flow", "display": display, "avatar": "", "deep_link": deep_link}
+    def __init__(self, *, deep_link: str = "https://example.test/flow", refuse: str = ""):
         self.deep_link_base = deep_link
-        self.links: dict[str, dict] = {}
-        self.sent: list[tuple[str, str, str]] = []
-        self.where: dict = {}
+        #: When set, Connect fails with these words (the hub has no such channel).
+        self.refuse = refuse
+        self.claims: dict[str, dict] = {}
+        self.replies: list[tuple[str, str, str]] = []
+        self.targets: list[dict] = []
         self.channels: list[str] = []
 
-    async def profile(self, channel: str) -> dict:
+    async def connect(self, channel: str, target: dict) -> dict:
+        if self.refuse:
+            raise RuntimeError(self.refuse)
         self.channels.append(channel)
-        return dict(self.profile_)
-
-    async def connect(self, channel: str, where: dict) -> dict:
-        self.channels.append(channel)
-        self.where = where
+        self.targets.append(target)
         code = "AB2CD3"
-        link = {
-            "id": f"L{len(self.links) + 1}",
+        claim = {
+            "id": f"C{len(self.claims) + 1}",
             "provider": channel,
             "status": "pending",
+            "claim": {"kind": "user", "key": ""},
             "code": code,
             "code_expires_at": time.time() + 900,
             "deep_link": f"{self.deep_link_base}?code={code}",
         }
-        self.links[link["id"]] = link
-        return dict(link)
+        self.claims[claim["id"]] = claim
+        return dict(claim)
 
-    async def link(self, link_id: str) -> Optional[dict]:
-        return dict(self.links[link_id]) if link_id in self.links else None
+    async def claim(self, claim_id: str) -> Optional[dict]:
+        return dict(self.claims[claim_id]) if claim_id in self.claims else None
 
-    async def send(self, channel: str, sender: str, text: str, reply_to: str) -> dict:
-        self.channels.append(channel)
-        self.sent.append((sender, text, reply_to))
-        return {"message_id": f"OUT{len(self.sent)}", "direction": "out", "sender": sender}
+    async def reply(self, claim_id: str, text: str, event_id: str) -> dict:
+        self.replies.append((claim_id, text, event_id))
+        return {"message_id": f"OUT{len(self.replies)}", "reply_to": event_id}
 
-    def connected(self, link_id: str, sender: str) -> dict:
-        """The hub validated the code from ``sender``'s account."""
-        self.links[link_id].update(status="connected", sender=sender, sender_key=sender, code="")
-        return self.links[link_id]
+    def connected(self, claim_id: str, key: str) -> dict:
+        """The hub validated the code from the account ``key`` (the claim's key, as the hub proves it)."""
+        sender = key.rsplit(":", 1)[-1]  # as the hub reads a workspace-scoped key back (``account_and_sender``)
+        self.claims[claim_id].update(
+            status="active", claim={"kind": "user", "key": key}, sender=sender, code="", deep_link=""
+        )
+        return self.claims[claim_id]
 
 
 __all__ = ["FakeFlowHub"]
