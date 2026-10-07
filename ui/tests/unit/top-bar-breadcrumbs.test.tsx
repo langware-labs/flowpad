@@ -454,7 +454,7 @@ describe('useEntityBreadcrumbs — whose place this is', () => {
   it("reads the user's Stream Inbox as theirs, never a project's", () => {
     vi.spyOn(Tab, 'resolveDockTarget').mockResolvedValue(nothing);
     ctx.localUser = { id: 'u1', name: 'Eran' };
-    const inbox = {
+    const streamInbox = {
       pointer: '',
       tabHash: 'stream_inbox',
       targetTypeId: null,
@@ -462,7 +462,7 @@ describe('useEntityBreadcrumbs — whose place this is', () => {
       options: {},
     } as never;
 
-    const { result } = renderHook(() => useEntityBreadcrumbs(inbox));
+    const { result } = renderHook(() => useEntityBreadcrumbs(streamInbox));
 
     expect(result.current.crumbs.map((c) => [c.label, c.kind])).toEqual([
       ['Eran', 'ancestor'],

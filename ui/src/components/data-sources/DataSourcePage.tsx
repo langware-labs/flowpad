@@ -6,7 +6,7 @@
  *   Events    what it announced on the bus (`data_source:<id>`), live.
  *   Settings  how it is set up: what is unfinished, where its messages go, its driver, file and folder.
  *
- * The person's Inbox stays theirs — everything addressed to them from every machine — and is never narrowed to a
+ * The person's stream inbox stays theirs — everything addressed to them from every machine — and is never narrowed to a
  * machine's source. The tab rides the URL (`/dock/data-sources/<id>/<tab>`); the view owns the dialogs, as it does
  * for the rows.
  */
@@ -62,7 +62,7 @@ export function DataSourcePage({ source, id, tab, spec, onEdit, onReplay, onDele
   const active = tabs.some((x) => x.key === tab) ? (tab as SourceTab) : tabs[0].key;
   const { Base, Badge } = sourceGlyphs(spec, source.channel);
   const owner = ownerOf(source);
-  // An agent's source answers in the agent's inbox: its conversations open agent-scoped.
+  // An agent's source answers in the agent's stream inbox: its conversations open agent-scoped.
   const agentPrefix = `${Agent.type}-`;
   const agentId = owner?.startsWith(agentPrefix) ? owner.slice(agentPrefix.length) : undefined;
 

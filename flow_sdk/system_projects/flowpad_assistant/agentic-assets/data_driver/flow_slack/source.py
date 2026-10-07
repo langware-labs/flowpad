@@ -1,6 +1,6 @@
 """``FlowSlackSource`` — Flow in Slack: Flowpad's own Slack app, your Slack account linked to it.
 
-A ``FlowChannel`` (``flow_sdk/sources/flow_channel.py``): Connect, the gate, the inbox mirror and answering are the
+A ``FlowChannel`` (``flow_sdk/sources/flow_channel.py``): Connect, the gate, the stream inbox mirror and answering are the
 same on every Flow channel. What is Slack's is here: the envelope is an Events API ``event_callback`` (a DM to the
 app; Flow's own answer in the same shape, naming the person as ``user``), a person is their Slack user id, and a
 message is ``<channel>:<ts>``, exactly as the hub names it. Connect's link adds the Flow app to the person's

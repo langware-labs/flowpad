@@ -511,8 +511,8 @@ export function StreamInboxView({
   agentId?: string;
   /** One data source's conversations only (a source's page) — the same live list, backend-filtered. */
   sourceId?: string;
-  /** Inside another page: no inbox-wide verbs (New, New group, Mark all read, Archive all), no channel bar, no
-   *  membership invitations — those belong to an owner's inbox, not to one source. */
+  /** Inside another page: no stream-inbox-wide verbs (New, New group, Mark all read, Archive all), no channel bar, no
+   *  membership invitations — those belong to an owner's stream inbox, not to one source. */
   embedded?: boolean;
 } = {}) {
   const { t } = useLingui();
