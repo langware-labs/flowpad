@@ -3,7 +3,8 @@
 ``GET /api/v1/kinds/{kind}``: the fields of a registered kind with their shapes and meanings, so an
 editor can build its form from the definition (a ``data_spec`` folder's ``description``s ride
 along). ``GET /api/v1/editors/{typeid}``: the apps that edit an entity, best first
-(``flow_sdk.builtin.faas.editors``). Standard envelope, so the SDK reads them through ``apiClient``.
+(``flow_sdk.builtin.faas.editors``). ``GET /api/v1/viewers/{kind}``: the viewers that show a value
+(or a list) of a kind, best first. Standard envelope, so the SDK reads them through ``apiClient``.
 """
 
 from __future__ import annotations
@@ -11,6 +12,7 @@ from __future__ import annotations
 from fastapi import APIRouter
 
 from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccessResponse
+from flow_sdk.schema.data_spec.webapp_spec import ViewShape
 
 router = APIRouter()
 
@@ -64,3 +66,11 @@ async def get_editors(typeid: str) -> ApiResponse:
     if subject is None:
         return ApiFailResponse(message=f"no {typeid}", status_code=404)
     return ApiSuccessResponse(data=await editors_for(subject))
+
+
+@router.get("/api/v1/viewers/{kind}")
+async def get_viewers(kind: str, shape: ViewShape = "single", within: str = "") -> ApiResponse:
+    """The viewers that show ``kind`` as a ``single`` value or a ``collection``, best first."""
+    from flow_sdk.builtin.faas.editors import viewers_for  # noqa: PLC0415
+
+    return ApiSuccessResponse(data=await viewers_for(kind, shape, within or None))

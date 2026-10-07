@@ -1,4 +1,6 @@
-import { APIEntity, isNonEmptyString, registerEntity } from '../APIEntity';
+import { APIEntity, dataManager, isNonEmptyString, registerEntity } from '../APIEntity';
+import { ActionInfo } from '../models/ActionInfo';
+import type { CloudDeployProvider } from './agent';
 import type { IEntity, EntityMerge } from '../IEntity';
 import { DockPointerData } from '../models/DockPointer';
 import { normalizeKind } from '../models/Kind';
@@ -209,6 +211,18 @@ export interface DeploymentSecretsInventory {
 export class Deployment extends APIEntity<Deployment> implements IDeployment {
   static type: string = 'deployment';
 
+  /**
+   * The cloud compute providers a deployment may be placed on — the hub's list (`deployment/providers`,
+   * relayed by the desktop), in the hub's order. Throws when the hub cannot be asked (409: signed out).
+   * Cached through `LazyAsset.DeployProviders`.
+   */
+  static async providers(): Promise<CloudDeployProvider[]> {
+    const rows = await dataManager.callAction<undefined, string[]>(
+      new ActionInfo('providers', Deployment.type, null, 'GET'),
+    );
+    return Array.isArray(rows) ? rows.filter(isNonEmptyString) : [];
+  }
+
   name: string;
   identity: DeploymentIdentity;
   exposes: EndpointDeclaration[];
@@ -281,6 +295,14 @@ export class Deployment extends APIEntity<Deployment> implements IDeployment {
     if (!parent || !isTypeId(parent)) return null;
     const typeId = new TypeId(parent);
     return typeId.type === 'agent' ? typeId : null;
+  }
+
+  /** The id of the machine this runs on, or null when there is none or the stored id is not a typeid. */
+  get computeNodeId(): string | null {
+    const typeId = this.computeNodeTypeId;
+    if (!typeId || !isTypeId(typeId)) return null;
+    const parsed = new TypeId(typeId);
+    return parsed.type === 'compute_node' ? parsed.id : null;
   }
 
   /** The machine this runs on, or null when the placement is not node-backed. */

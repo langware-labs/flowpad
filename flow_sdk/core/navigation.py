@@ -21,10 +21,20 @@ so "this" never means a thing that is no longer on screen. The project is kept o
 from __future__ import annotations
 
 import logging
+import os
+from pathlib import Path
 from functools import lru_cache
 from typing import Any, Mapping, Optional
 
 from flow_sdk.core.dock_address import VIEW_META, ViewType, normalize_retired, parse_dock_url
+
+#: The SmartNavigator dataset. It does not ship (its rows are a benchmark, not product): it lives
+#: beside the checkout at ``dev/dataset/smart-navigator``, or wherever ``FLOW_NAVIGATOR_DATASET``
+#: points. Its kinds DO ship -- ``flowpad_assistant/agentic-assets/data_spec/navigat*`` -- and so
+#: does its eval (``flowpad_assistant/agentic-assets/eval/navigator``).
+DATASET = Path(
+    os.environ.get("FLOW_NAVIGATOR_DATASET") or Path(__file__).resolve().parents[3] / "dataset" / "smart-navigator"
+)
 
 logger = logging.getLogger(__name__)
 
@@ -133,4 +143,4 @@ async def here_from(browser_context: Mapping[str, Any]) -> Any:
     return kind("navigation.here").model_validate({k: v for k, v in here.items() if v is not None})
 
 
-__all__ = ["here_from", "kind", "navigation_map", "place_of"]
+__all__ = ["DATASET", "here_from", "kind", "navigation_map", "place_of"]

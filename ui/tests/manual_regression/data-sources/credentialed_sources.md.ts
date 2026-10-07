@@ -34,6 +34,8 @@ interface Spec {
   id: string;
   name: string;
   listed?: boolean;
+  /** A grouped driver is one choice behind its group's tile. */
+  group?: string;
   config?: Record<string, SpecField>;
 }
 
@@ -61,7 +63,13 @@ async function openDialog(page: Page) {
 
 async function openProvider(page: Page, provider: string) {
   const dialog = await openDialog(page);
-  await dialog.getByTestId(`provider-${provider}`).click();
+  const { group } = specNamed(provider);
+  if (group) {
+    await dialog.getByTestId(`provider-group-${group}`).click();
+    await dialog.getByTestId(`group-member-${provider}`).click();
+  } else {
+    await dialog.getByTestId(`provider-${provider}`).click();
+  }
   return dialog;
 }
 

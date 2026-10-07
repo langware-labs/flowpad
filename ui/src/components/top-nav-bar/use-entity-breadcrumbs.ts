@@ -6,11 +6,13 @@ import {
   AgenticProcess,
   Agent,
   DataDriver,
+  DataSource,
   dataManager,
   Organization,
   PageId,
   Project,
   tabManager,
+  User,
   TypeId,
   ViewType,
   Wiki,
@@ -190,7 +192,7 @@ const LIVE_SESSION_TYPE = 'remote_worker_session';
 const CONVERSATION_TYPE = 'conversation';
 
 export function useEntityBreadcrumbs(dock: DockPointer | null): EntityBreadcrumbs {
-  const { project, activeEntity, activeEntityTypeId } = useContext();
+  const { project, activeEntity, activeEntityTypeId, localUser } = useContext();
   const { projectPath } = useProjectLocation();
   // The context hands over the cached Project and does not re-publish when a
   // rename mutates it in place — subscribe to the row (as the project chip does)
@@ -242,6 +244,12 @@ export function useEntityBreadcrumbs(dock: DockPointer | null): EntityBreadcrumb
     [dockKey], // eslint-disable-line react-hooks/exhaustive-deps
   );
   const driverName = dataSourcesRoute?.section === 'drivers' ? dataSourcesRoute.driver : null;
+  // One source's page: `Data sources › <source>`. Fetched only there.
+  const sourceTypeId = useMemo(
+    () => (dataSourcesRoute?.section === 'source' ? new TypeId(DataSource.type, dataSourcesRoute.id) : null),
+    [dataSourcesRoute],
+  );
+  const { data: pageSource } = useEntity<DataSource>(sourceTypeId);
   const { specFor: driverFor } = useSourceSpecs({ enabled: !!driverName });
   const driver = driverName ? driverFor(driverName) : undefined;
   const agentRoute = useMemo(
@@ -415,6 +423,13 @@ export function useEntityBreadcrumbs(dock: DockPointer | null): EntityBreadcrumb
     const isAgentStreamInbox = agentRoute?.view === 'stream_inbox' && !!agentRoute.agentId;
     const isAgentConversation = dock?.viewType === ViewType.CONVERSATION && !!dock.agentScopeId;
     const isAgentScoped = isAgentStreamInbox || isAgentConversation;
+    // Owned by a person, like the agent's is by the agent: the user's Stream Inbox (and a conversation opened
+    // without an agent scope) is NOT a project's, so no project leads it — `<user> › Stream Inbox`.
+    const isUserStreamInbox = dock?.viewType === ViewType.STREAM_INBOX;
+    const isUserConversation = dock?.viewType === ViewType.CONVERSATION && !dock.agentScopeId;
+    const isUserScoped = isUserStreamInbox || isUserConversation;
+    // This machine's, not a project's (`DataSourcesView`: `scope: []`).
+    const isMachineScoped = dock?.viewType === ViewType.DATA_SOURCES;
 
     // The project always leads — except on the hub, or in the transient window
     // where no project is selected, where there simply isn't one.
@@ -423,7 +438,7 @@ export function useEntityBreadcrumbs(dock: DockPointer | null): EntityBreadcrumb
     // list, which is what the chip it replaced did. Opening the project itself
     // is the briefcase button up in the nav cluster — a destination, next to
     // the other destinations, rather than a second meaning for this click.
-    if (project && !isAgentScoped) {
+    if (project && !isAgentScoped && !isUserScoped && !isMachineScoped) {
       out.push({
         key: 'project',
         label: projectLabel ?? project.displayName,
@@ -507,6 +522,24 @@ export function useEntityBreadcrumbs(dock: DockPointer | null): EntityBreadcrumb
       if (isAgentStreamInbox) return out;
     }
 
+    if (isUserScoped) {
+      out.push({
+        key: 'user',
+        label: localUser?.name || labelForType(User.type),
+        Icon: iconForType(User.type),
+        pointer: null,
+        kind: 'ancestor',
+      });
+      out.push({
+        key: 'user-stream-inbox',
+        label: i18n._(STREAM_INBOX_CRUMB_LABEL),
+        Icon: viewIcon(new DockPointer(ViewType.STREAM_INBOX)),
+        pointer: isUserStreamInbox ? null : DockPointer.forStreamInbox(),
+        kind: isUserStreamInbox ? 'current' : 'ancestor',
+      });
+      if (isUserStreamInbox) return out;
+    }
+
     // The organization GRAPH is a lens on the People & teams screen, not a
     // separate destination — so it addresses as "Organization › Graph" with the
     // first segment navigating back to the screen. Without this the trail read
@@ -545,6 +578,28 @@ export function useEntityBreadcrumbs(dock: DockPointer | null): EntityBreadcrumb
     const path = dock?.resourceVfsPath?.machinePath || assetRef || (isExplorer ? projectPath : null) || null;
     const filename = dock?.resourceVfsPath?.filename || basename(assetRef) || null;
     const directory = isExplorer;
+
+    if (dataSourcesRoute?.section === 'source' && dock) {
+      out.push({
+        key: 'data-sources',
+        label: viewLabel(dock),
+        Icon: viewIcon(dock),
+        pointer: DockPointer.forDataSources(),
+        kind: 'ancestor',
+      });
+      const folder = pageSource?.asset_ref ?? null;
+      out.push({
+        key: `data-source-${dataSourcesRoute.id}`,
+        label: pageSource?.name || pageSource?.provider || labelForType(DataSource.type),
+        Icon: iconForType(DataSource.type),
+        pointer: null,
+        kind: 'current',
+        path: folder,
+        filename: basename(folder),
+        directory: true,
+      });
+      return out;
+    }
 
     if (dataSourcesRoute?.section === 'drivers' && dock) {
       out.push({
@@ -653,6 +708,8 @@ export function useEntityBreadcrumbs(dock: DockPointer | null): EntityBreadcrumb
     return out;
   }, [
     dataSourcesRoute,
+    pageSource,
+    localUser,
     driverName,
     driver,
     nestedChild,

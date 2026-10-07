@@ -19,6 +19,7 @@ from flow_sdk.sources.binding import SourceBinding
 from flow_sdk.sources.errors import Unsupported
 from flow_sdk.sources.setup_steps import SourceUpdateSpec
 from flow_sdk.sources.files import local_file
+from flow_sdk.sources.testing.flow_hub import FakeFlowHub
 from flow_sdk.sources.values.items import MessageData
 
 module = asset_module("flow_whatsapp")
@@ -27,31 +28,12 @@ FlowWhatsAppSource = module.FlowWhatsAppSource
 pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
 
 PHONE = "972500000001"
-PROFILE = {"available": True, "name": "Flow", "number": "+1 555 0100", "wa_me": "https://wa.me/15550100", "avatar": ""}
+WA_ME = "https://wa.me/15550100"
 
 
-class _Hub:
-    def __init__(self, *, available=True):
-        self.profile_ = {**PROFILE, "available": available}
-        self.links: dict = {}
-        self.stored: list = []
-        self.sent: list = []
-
-    async def profile(self):
-        return dict(self.profile_)
-
-    async def connect(self, channel):
-        self.channel = channel
-        link = {"id": f"L{len(self.links) + 1}", "status": "pending", "code": "AB2CD3", "code_expires_at": time.time() + 900}
-        self.links[link["id"]] = link
-        return {**link, "link": "https://wa.me/15550100?text=link%20AB2CD3"}
-
-    async def link(self, link_id):
-        return dict(self.links[link_id]) if link_id in self.links else None
-
-    async def send(self, wa_id, text, reply_to):
-        self.sent.append((wa_id, text, reply_to))
-        return {"wamid": f"wamid.OUT{len(self.sent)}", "direction": "out"}
+def _Hub(*, available=True) -> FakeFlowHub:
+    """The hub as Flow on WhatsApp sees it: Flow's number, and the wa.me link that pre-fills the code."""
+    return FakeFlowHub(available=available, display="+1 555 0100", deep_link=WA_ME)
 
 
 def _source(hub, **config) -> FlowWhatsAppSource:
@@ -76,12 +58,13 @@ async def test_connect_shows_flow_the_code_and_the_link_that_sends_it():
     assert answer.ok and isinstance(update, SourceUpdateSpec) and update.config == {"link_id": "L1"}
     shown = update.shown
     assert (shown.name, shown.number, shown.code) == ("Flow", "+1 555 0100", "AB2CD3")
-    assert shown.link == "https://wa.me/15550100?text=link%20AB2CD3" and shown.qr.startswith("data:image/svg+xml;base64,")
+    assert shown.link == f"{WA_ME}?code=AB2CD3" and shown.qr.startswith("data:image/svg+xml;base64,")
+    assert set(hub.channels) == {"whatsapp"}, "the hub is asked about the whatsapp channel only"
     svg = base64.b64decode(shown.qr.split(",", 1)[1]).decode()
     assert 'xmlns="http://www.w3.org/2000/svg"' in svg, "an <img> renders an SVG only with its namespace"
     assert '<path fill="#fff"' in svg, "a white background: black squares vanish on a dark dialog, and cameras read dark-on-light"
 
-    # Read back later (a resumed wizard), the link carries only its code — the link is rebuilt from Flow's number.
+    # Read back later (a resumed wizard), the hub's link row carries the same deep link.
     again = await _source(hub, link_id="L1")._connect(check=True, values={})
     assert again.ok and not again.ran and again.value.shown.link == shown.link
 
@@ -91,9 +74,27 @@ async def test_connect_refuses_when_the_hub_has_no_flow():
     assert not answer.ok and "not available" in answer.detail
 
 
+async def test_a_source_connected_before_channels_were_generic_still_reads_its_whatsapp_link(monkeypatch):
+    """An older version connected through ``whatsapp_link``: its link id is not a ``channel_link`` row, and the
+    source still finds it — an upgrade does not disconnect anyone."""
+    from flow_sdk.cloud_client.transport import hub_http
+
+    asked: list = []
+
+    async def hub_get(entity_type, entity_id=None, action=None, **_):
+        asked.append(entity_type)
+        if entity_type == "whatsapp_link":
+            return {"id": entity_id, "status": "connected", "wa_id": PHONE, "sender": PHONE}
+        return None
+
+    monkeypatch.setattr(hub_http, "hub_get", hub_get)
+    found = await module.FlowWhatsAppHub().link("old-1")
+    assert asked == ["channel_link", "whatsapp_link"] and found["sender"] == PHONE
+
+
 async def test_the_gate_passes_only_once_the_hub_validated_the_phone():
     hub = _Hub()
-    await hub.connect({})
+    await hub.connect("whatsapp", {})
     source = _source(hub, link_id="L1")
 
     assert "Connect WhatsApp first" in (await _source(hub)._connected(check=False, values={})).detail
@@ -103,7 +104,7 @@ async def test_the_gate_passes_only_once_the_hub_validated_the_phone():
     hub.links["L1"]["code_expires_at"] = time.time() - 1
     assert "expired" in (await source._connected(check=False, values={})).detail
 
-    hub.links["L1"].update(status="connected", wa_id=PHONE, code="")
+    hub.connected("L1", PHONE)
     done = await source._connected(check=False, values={})
     assert done.ok and done.value.config == {"wa_id": PHONE} and done.value.allowed_senders == [PHONE]
     assert (await _source(hub, link_id="L1", wa_id=PHONE)._connected(check=True, values={})).ok
@@ -115,7 +116,7 @@ async def test_connect_tells_the_hub_which_instance_and_channel_take_the_convers
     monkeypatch.setattr(runtime, "instance_uid", lambda: "11111111-2222-4333-8444-555555555555")
     hub = _Hub()
     await _source(hub)._connect(check=False, values={})
-    assert hub.channel == {"instance_id": "11111111-2222-4333-8444-555555555555", "data_source_id": "ds-1"}
+    assert hub.where == {"instance_id": "11111111-2222-4333-8444-555555555555", "data_source_id": "ds-1"}
 
 
 async def test_what_the_hub_hands_this_channel_becomes_its_items_both_directions():
@@ -153,7 +154,7 @@ async def test_an_answer_goes_to_the_persons_phone_quoting_what_it_answers(tmp_p
         asked = source.message_origin("wamid.IN1", PHONE)
         sent = await source.reply(asked, MessageData(text="Three things today."))
         assert hub.sent == [(PHONE, "Three things today.", "wamid.IN1")]
-        assert sent.origin.key == "wamid.OUT1" and sent.data.in_reply_to == asked
+        assert sent.origin.key == "OUT1" and sent.data.in_reply_to == asked
 
         path = tmp_path / "a.png"
         path.write_bytes(b"x")

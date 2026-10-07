@@ -1,0 +1,17 @@
+{
+  "type": "compute_op",
+  "id": "34e5ac8b-d2a7-48c6-a055-ed92bb130c45",
+  "name": "flow-telegram-ask-connected",
+  "label": "Press Start in Telegram",
+  "description": "Your Telegram account sends its code; the hub validates it. The step finishes by itself once the account is connected.",
+  "subkind": "ask",
+  "output_spec_kind": "confirm",
+  "exe_data": {
+    "prompt": "Connect Telegram to {{connect.name}}",
+    "detail": "**1. Open Telegram** — [tap here]({{connect.link}}) on this computer or your phone, or scan:\n\n![Scan with your phone]({{connect.qr}})\n\n**2. Press Start** — the code `{{connect.code}}` is sent with it. (Or send `link {{connect.code}}` to {{connect.number}}.)\n\n**3. Status:** waiting for your message…",
+    "recheck": true,
+    "timeout_seconds": 1800,
+    "auto_continue": true
+  },
+  "status_check": "source_step:{{source}}:connected"
+}

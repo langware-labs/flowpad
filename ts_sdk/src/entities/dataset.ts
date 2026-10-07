@@ -5,6 +5,7 @@
  */
 import { APIEntity, registerEntity } from '../APIEntity';
 import { IEntity, EntityMerge } from '../IEntity';
+import type { EvalExampleRow, EvalRun } from '../evals/types';
 
 /** The kinds an authored field may take. Mirrors the backend's declaration —
  *  `flow_sdk/schema/data_spec/_kinds.py` PRIMITIVES plus the one-element list
@@ -150,6 +151,21 @@ export class Dataset extends APIEntity<Dataset> implements IDataset {
   /** Every example with its slots' values, in one read. */
   async rows(): Promise<{ rows: DatasetRow[] }> {
     return this.get('rows');
+  }
+
+  /** Every eval run on this dataset, newest first (summaries — no slices). */
+  async evalRuns(): Promise<{ runs: EvalRun[]; count_metrics: string[]; explain: Record<string, Record<string, string>> }> {
+    return this.get('evals');
+  }
+
+  /** One eval run: the run and every evaluated example, joined to its input / context / data. */
+  async evalRun(runId: string): Promise<{ run: EvalRun; examples: EvalExampleRow[]; count_metrics: string[]; explain: Record<string, string> }> {
+    return this.get(`eval/${encodeURIComponent(runId)}`);
+  }
+
+  /** Run this dataset's eval now; answers the new run. */
+  async runEval(options: { eval?: string; kinds?: string[] } = {}): Promise<EvalRun> {
+    return this.post('run-eval', options);
   }
 
   /** One example with its slots' values. */

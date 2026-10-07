@@ -287,6 +287,9 @@ async def route(
     here = kind("navigation.here").model_validate(here or {})
     if candidates is None:
         candidates = await _candidates(utterance)
+    # Only entities are options. A plain-file match (a path, no typeid) is neither offered nor shown
+    # to the model -- live search never yields one, so a replayed row must not either.
+    candidates = [c for c in candidates if c.get("typeid")]
     spec = DecisionSpec(
         state={
             "utterance": utterance,
