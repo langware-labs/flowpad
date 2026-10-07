@@ -612,6 +612,27 @@ class Deployment(Entity):
 
         return worst(e.health.state if e.health else "unknown" for e in await self.endpoints())
 
+    @classmethod
+    @action.get(action_name="providers")
+    async def providers_action(cls):
+        """`GET /deployment/providers` — the compute providers a cloud deployment may be placed on.
+
+        The hub owns the answer (its ``DEPLOYMENT_COMPUTE_PROVIDERS``); this relays it as-is. A
+        type-level call has no entity, so the router cannot reflect it to the hub — hence a relay,
+        like ``machine-enroll``. Nothing is cached here; the client caches.
+        """
+        from flow_sdk.cloud_client.shared.errors import HubError  # noqa: PLC0415
+        from flow_sdk.cloud_client.transport.hub_http import hub_base_url, hub_get_or_raise  # noqa: PLC0415
+        from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse  # noqa: PLC0415
+
+        if not hub_base_url():
+            return ApiFailResponse(message="Sign in to the hub to deploy to the cloud", status_code=409)
+        try:
+            providers = await hub_get_or_raise(EntityType.DEPLOYMENT.value, None, "providers")
+        except HubError as exc:
+            return ApiFailResponse(message=exc.reason, status_code=exc.status_code or 502)
+        return ApiSuccessResponse(data=providers if isinstance(providers, list) else [])
+
     @action.get(action_name="endpoints")
     async def endpoints_action(self):
         """`GET /deployment/<id>/endpoints` — what this placement serves.

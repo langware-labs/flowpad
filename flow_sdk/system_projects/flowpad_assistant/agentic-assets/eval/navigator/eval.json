@@ -1,0 +1,29 @@
+{
+  "name": "navigator",
+  "dataset_kind": "navigator.dataset",
+  "kinds": [
+    "eval"
+  ],
+  "entry": "eval.py",
+  "metrics": [
+    "precision",
+    "coverage",
+    "agentic_recall",
+    "confident_wrong",
+    "feasible_accuracy"
+  ],
+  "slices": [
+    "data.suite",
+    "data.group",
+    "labels.feasible",
+    "input.here.view"
+  ],
+  "explain": {
+    "precision": "When the navigator decided to open something by itself, how often it opened the right thing. Only the times it actually opened something are counted; the times it passed the request to the assistant are left out. High is good: it means that when it acts on its own, you can trust it.",
+    "coverage": "Of the requests that only need a quick jump to a screen or item (\"show my tasks\", \"open settings\"), how many it got fully right on its own. Requests it passed to the assistant count as missed here. High is good. Low coverage is not dangerous: it means the assistant gets more work and you wait longer.",
+    "agentic_recall": "Of the requests that are too big for a quick jump and belong to the assistant (\"write me a summary of yesterday\"), how many it correctly passed to the assistant instead of trying to open something. 100% means it never tried to handle such a request itself.",
+    "confident_wrong": "A count, not a percentage: how many times the navigator was sure of itself (85% confident or more) and still opened the wrong thing. This is the worst kind of mistake, because the user is taken somewhere they did not ask for, with no question asked first. The goal is 0.",
+    "feasible_accuracy": "The share of requests answered right, counting only the requests the app can serve today by opening a screen or item. Requests that need a button press or a dialog (\"create a new task\") are left out, because the navigator cannot do those yet. It shows how good the navigator is at the job it is actually able to do."
+  },
+  "description": "The smart navigator through the public SDK (flow_sdk.navigation.decide), each example replayed on its own recorded here and search candidates."
+}

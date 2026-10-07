@@ -9,7 +9,7 @@ slows a navigation -- to this instance's log dataset:
 Temp on purpose: the OS clears it now and then, so the log never grows without bound.
 
 The SAME row kind as the shipped SmartNavigator eval set, so everything that reads that one --
-the dataset editor, ``validate``, ``score``, ``navigator_eval.evaluate`` -- reads this one:
+the dataset editor, ``validate``, ``score``, the navigator eval (``flow_sdk.evals.run``) -- reads this one:
 
 * ``input``   -- the request (``utterance`` + ``here``);
 * ``context`` -- the search matches the decision was offered;

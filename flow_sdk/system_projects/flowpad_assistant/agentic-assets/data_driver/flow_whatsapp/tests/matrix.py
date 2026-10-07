@@ -11,7 +11,7 @@ from .test_flow_whatsapp_source import PHONE, FlowWhatsAppSource, _Hub
 @contextmanager
 def case(monkeypatch, tmp_path):
     fake = _Hub()
-    fake.links["L1"] = {"id": "L1", "status": "connected", "code": "AB2CD3", "wa_id": PHONE}
+    fake.links["L1"] = {"id": "L1", "status": "connected", "code": "", "sender": PHONE}
     monkeypatch.setattr(FlowWhatsAppSource, "build", classmethod(lambda cls, binding: cls(binding, hub=fake)))
     yield {
         "config": {"link_id": "L1", "wa_id": PHONE},

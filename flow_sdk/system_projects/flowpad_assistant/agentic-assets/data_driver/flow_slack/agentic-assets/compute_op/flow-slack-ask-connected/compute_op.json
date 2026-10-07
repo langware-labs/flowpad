@@ -1,0 +1,17 @@
+{
+  "type": "compute_op",
+  "id": "5c8d5685-6db7-47cf-bfb0-f13997845b26",
+  "name": "flow-slack-ask-connected",
+  "label": "Send it to Flow in Slack",
+  "description": "Your Slack account sends its code to the Flow app; the hub validates it. The step finishes by itself once the account is connected.",
+  "subkind": "ask",
+  "output_spec_kind": "confirm",
+  "exe_data": {
+    "prompt": "Connect Slack to {{connect.name}}",
+    "detail": "**1. Open Slack** — [tap here]({{connect.link}}): it adds Flow to your workspace (or confirms it is there) and opens Flow's DM. Or scan:\n\n![Scan with your phone]({{connect.qr}})\n\n**2. Send** `link {{connect.code}}` to Flow there.\n\n**3. Status:** waiting for your message…",
+    "recheck": true,
+    "timeout_seconds": 1800,
+    "auto_continue": true
+  },
+  "status_check": "source_step:{{source}}:connected"
+}

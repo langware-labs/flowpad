@@ -2,45 +2,50 @@
  * How a source's health looks, in one table.
  *
  * Its own module because it is neither a provider nor a form field, and
- * `provider-catalog` announces itself as those. Shared by the card and the
- * stream rows, which is why it is not inline in either.
+ * `provider-catalog` announces itself as those.
  */
+import { msg } from '@lingui/core/macro';
 import type { SourceHealth } from '@sdk';
+import { type SourceLook } from './source-look';
 
 /**
- * Health → everything the UI says about it. Mirrors `SourceHealth`
+ * Health → everything the status line says about it. Mirrors `SourceHealth`
  * (flow_sdk/ingest/health.py); `config_error` reads as "needs attention"
  * because that is what it means operationally: the scheduler has parked it.
  *
  * One table rather than three parallel ones — keyed by the `SourceHealth` union
- * so adding a state is a type error here instead of a silently unstyled chip.
+ * so adding a state is a type error here instead of a silently unstyled line.
  */
-export const HEALTH_STYLE: Record<SourceHealth, { label: string; chip: string; border: string }> = {
+export const HEALTH_STYLE: Record<SourceHealth, SourceLook> = {
   ok: {
-    label: 'ok',
-    chip: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400',
+    label: msg`Running`,
+    dot: 'bg-emerald-500',
+    text: 'text-emerald-600 dark:text-emerald-400',
     border: 'border-s-emerald-500/60',
   },
   never_synced: {
-    label: 'never synced',
-    chip: 'bg-muted text-muted-foreground',
+    label: msg`Never synced`,
+    dot: 'bg-muted-foreground/50',
+    text: 'text-muted-foreground',
     border: 'border-s-border',
   },
   transient_error: {
-    label: 'retrying',
-    chip: 'bg-amber-500/10 text-amber-600 dark:text-amber-400',
+    label: msg`Retrying`,
+    dot: 'bg-amber-500',
+    text: 'text-amber-600 dark:text-amber-400',
     border: 'border-s-amber-500/70',
   },
   config_error: {
-    label: 'needs attention',
-    // Not `text-destructive`: on the dark theme that is a 10% red tint under a
-    // saturated red, which does not read. Same pairing the amber states use.
-    chip: 'bg-red-500/10 text-red-700 dark:text-red-300',
+    label: msg`Needs attention`,
+    // Red is the dot and the row's border, never the words: red text on a dark
+    // theme does not read (the error rule — tinted row, red border).
+    dot: 'bg-red-500',
+    text: 'text-foreground',
     border: 'border-s-red-500/70',
   },
 };
 
 /** The style row for a health value, tolerating one the backend added first. */
-export function healthStyle(health: string | undefined) {
+export function healthStyle(health: string | undefined): SourceLook {
   return HEALTH_STYLE[(health || 'never_synced') as SourceHealth] ?? HEALTH_STYLE.never_synced;
 }

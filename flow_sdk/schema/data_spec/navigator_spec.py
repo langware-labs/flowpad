@@ -11,7 +11,9 @@ from pydantic import PrivateAttr
 
 from flow_sdk.schema.data_spec.spec import DataSpec
 
-Kind = Literal["view", "entity", "file", "url", "webapp", "app", "log"]
+#: ``action`` names something to START (``new-chat:claude_code``, ``dialog:settings``,
+#: ``history:back``) rather than a place. The navigator does not produce it yet; a gold label can.
+Kind = Literal["view", "entity", "file", "url", "webapp", "app", "log", "action"]
 
 
 class NavigationTarget(DataSpec):

@@ -17,6 +17,7 @@ export enum LazyAsset {
   Activities = 'activities',
   IndexActivity = 'index-activity',
   Connections = 'connections',
+  DeployProviders = 'deploy-providers',
   LlmFunding = 'llm-funding',
   Status = 'status',
   GitRepos = 'git-repos',

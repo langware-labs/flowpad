@@ -274,6 +274,15 @@ async def _catch_up_after_reconnect() -> None:
         logger.warning("hub WS reconnect catch-up failed (non-fatal): %s", e)
 
     try:
+        from flow_sdk.app.actions.membership_sync import sync_remote_teams
+        from flow_sdk.builtin.user import User
+
+        user = await User.get_local()
+        await sync_remote_teams(user.typeid if user else None)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("hub WS reconnect team catch-up failed (non-fatal): %s", e)
+
+    try:
         from flow_sdk.instance_settings.llm_endpoint import (
             fetch_hub_llm_endpoints,
             invalidate_endpoint_listing,
