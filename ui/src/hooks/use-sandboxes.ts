@@ -181,7 +181,7 @@ export function isUserMachine(node: ComputeNode): boolean {
 function defaultSandboxProvider(): ComputeProviderType {
   // Validated against the SANDBOX providers, not against every provider: a hub
   // configured for `local_machine` would otherwise be taken at its word and mint
-  // a node that `isSandbox` — reading the same set — can never list back.
+  // a node that `isSandbox` — reading the same set — never recognizes as a sandbox.
   const configured: ComputeProviderType | undefined = dataContext.bootstrapInfo?.default_compute_provider;
   return configured && SANDBOX_PROVIDERS.has(configured) ? configured : ComputeProviderType.E2B;
 }
@@ -204,22 +204,6 @@ export function workspaceServiceUrl(nodeId: string): string {
   const info = new ActionInfo('open-service', ComputeNode.type, nodeId, 'GET');
   info.subpath = WORKSPACE_SERVICE;
   return info.fullActionUrl;
-}
-
-/**
- * A ComputeNode is a "sandbox" iff its provider is one of `SANDBOX_PROVIDERS`
- * and it was created from the workspace flavor. Named `isSandbox`, not
- * `isDesktop`: `dataContext.isDesktop` already means "running in Electron", and
- * the two answered different questions under one name.
- *
- * The rule itself lives on the entity (`ComputeNode.isSandbox`) rather than here:
- * it used to read the provider AND a magic string out of the untyped
- * `node_config` blob inline, which meant every surface wanting the question had
- * to know that blob's shape. This wrapper stays because callers and tests import
- * it by name.
- */
-export function isSandbox(node: ComputeNode): boolean {
-  return node.isSandbox;
 }
 
 /**
@@ -405,6 +389,8 @@ async function provisionSandboxProject(
   }
 }
 
+const NO_NODES: ComputeNode[] = [];
+
 export function useSandboxes() {
   const { user } = useAuth();
 
@@ -415,7 +401,10 @@ export function useSandboxes() {
 
   const { data: nodes, isLoading, refetch } = useEntitiesQuery<ComputeNode>(sandboxesRequest, { enabled: !!user });
 
-  const sandboxes = useMemo(() => (nodes ?? []).filter(isSandbox), [nodes]);
+  // Every machine the user can reach — agent deployment machines carry no workspace
+  // flavor, and filtering on it hid all of them. One shared empty list, so the
+  // effects keyed on it do not re-run while the query is still loading.
+  const sandboxes = nodes ?? NO_NODES;
   // `createSandbox` only needs the list to pick the next auto-name. Reading it
   // through a ref keeps the callback stable across every refetch — including the
   // one it triggers itself — so consumers holding it as a prop don't re-render.
@@ -436,8 +425,8 @@ export function useSandboxes() {
     }
   }, []);
 
-  // Probe only sandboxes we haven't seen yet, and forget ones that vanished —
-  // re-probing the whole list on every add/delete would be one call per sandbox.
+  // Probe only machines we haven't seen yet, and forget ones that vanished —
+  // re-probing the whole list on every add/delete would be one call per machine.
   useEffect(() => {
     const liveIds = new Set(sandboxes.map((d) => d.id));
     setDetails((prev) => {
