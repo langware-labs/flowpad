@@ -1,8 +1,11 @@
 {
   "schema": 1,
   "name": "slack",
-  "title": "Slack",
+  "title": "Your own Slack app",
   "icon_name": "Slack",
+  "group": "Slack",
+  "group_order": 1,
+  "group_icon_name": "Slack",
   "description": "One channel in a connected Slack workspace. Connect Slack first, then invite the bot to the channel and press Verify.",
   "kind": "datasource.api.slack",
   "setup_wiki": "Slack channels",
