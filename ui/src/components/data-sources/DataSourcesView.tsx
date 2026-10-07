@@ -22,7 +22,7 @@ import { Trans, useLingui } from '@lingui/react/macro';
 import { useEntitiesQuery } from '@src/hooks/entity-hooks';
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import { ConfirmDialog } from '@src/components/ui/confirm-dialog';
-import { DataSourceRow, HEADER_ROW, ROW_GRID } from './DataSourceRow';
+import { DataSourceRow, HEADER_INSET, HEADER_ROW, ROW_GRID } from './DataSourceRow';
 import { useSourceDelete } from './use-source-delete';
 import { sourcesQuery, useSourceSpecs } from './use-source-specs';
 import { useStartVibeSession } from '@src/pages/flow-page/use-start-vibe-session';
@@ -133,7 +133,7 @@ export function DataSourcesView() {
           </div>
         ) : (
           <div className="overflow-hidden rounded-lg border border-border">
-            <div className={cn(ROW_GRID, HEADER_ROW)}>
+            <div className={cn(ROW_GRID, HEADER_ROW, HEADER_INSET)}>
               <span>
                 <Trans>Source</Trans>
               </span>

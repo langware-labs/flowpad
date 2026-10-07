@@ -10,7 +10,9 @@
  */
 import { type DataSource, type DataDriver } from '@sdk';
 import { revealFolder } from './OpenFolderButton';
+import { openSourceFile } from './data-sources-pointer';
 import {
+  FileJson,
   FolderCog,
   FolderOpen,
   History,
@@ -114,6 +116,14 @@ export function SourceMenu({ source, spec, onPull, pulling, onToggleEnabled, onE
         ))}
         {/* Two folders, named for what is in them: this source's own (its data_source.json) and the definition's
             (its manifest, driver and the apps above). */}
+        {source.asset_ref && (
+          <DropdownMenuItem
+            data-testid={`data-source-file-${source.id}`}
+            onSelect={() => openSourceFile(navigation, source.asset_ref)}
+          >
+            <FileJson className="size-3.5" /> {t`Open data_source.json`}
+          </DropdownMenuItem>
+        )}
         {source.asset_ref && (
           <DropdownMenuItem
             data-testid={`data-source-folder-${source.id}`}
