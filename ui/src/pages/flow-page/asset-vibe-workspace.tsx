@@ -128,6 +128,13 @@ export function AssetVibeWorkspace({ isVibe, session }: AssetVibeWorkspaceProps)
   const [showNonce, setShowNonce] = useState(0);
   // The payload of the newest show — see `DisplayChrome.latestShown`.
   const [latestShown, setLatestShown] = useState<ShowTarget | null>(null);
+  // Per-workspace show state follows the session (see VibeWorkspace): one
+  // component instance serves every Vibe tab.
+  const sessionProcessId = session?.processId ?? null;
+  useEffect(() => {
+    hasPushedDisplayRef.current = false;
+    setLatestShown(null);
+  }, [sessionProcessId]);
 
   const openShownTarget = useCallback((target: ShowTarget) => {
     try {
