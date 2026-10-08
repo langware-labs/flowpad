@@ -285,6 +285,8 @@ export const DiagnosisRequestCreateDialog: React.FC<{
   const { t } = useLingui();
   const { navigation } = useDockNavigation();
   const [instructions, setInstructions] = useState('');
+  // Off by default: `flow diagnose <id>` runs every step and always sends, asking nothing.
+  const [askPermission, setAskPermission] = useState(false);
   const [files, setFiles] = useState<File[]>([]);
   const [assetRefs, setAssetRefs] = useState<AssetDescriptor[]>([]);
   const [writeHours, setWriteHours] = useState('48');
@@ -296,6 +298,7 @@ export const DiagnosisRequestCreateDialog: React.FC<{
 
   const reset = () => {
     setInstructions('');
+    setAskPermission(false);
     setFiles([]);
     setAssetRefs([]);
     setFund(false);
@@ -309,6 +312,7 @@ export const DiagnosisRequestCreateDialog: React.FC<{
     try {
       const body: OpenRequestBody = {
         instructions: instructions.trim(),
+        ask_permission: askPermission,
         project_id: projectId ?? '',
         write_hours: Number(writeHours),
         max_run_mb: Number(maxRunMb),
@@ -357,6 +361,27 @@ export const DiagnosisRequestCreateDialog: React.FC<{
               onChange={(e) => setInstructions(e.target.value)}
               data-testid="diagnosis-request-instructions"
             />
+          </div>
+
+          <div className="space-y-1">
+            <label className="flex cursor-pointer items-center gap-2 text-sm font-medium">
+              <Checkbox
+                checked={askPermission}
+                onCheckedChange={(on) => setAskPermission(on === true)}
+                data-testid="diagnosis-request-ask-permission"
+              />
+              <Trans>Ask them for permission</Trans>
+            </label>
+            <p className="text-xs text-muted-foreground">
+              {askPermission ? (
+                <Trans>
+                  They approve the steps and what you sent along, describe the issue, and decide whether the result is
+                  sent to you.
+                </Trans>
+              ) : (
+                <Trans>Nothing is asked: every step runs, and the result is always sent to you.</Trans>
+              )}
+            </p>
           </div>
 
           {/* The same Attach button a message has: files from this computer, or Flowpad assets. */}

@@ -3,6 +3,7 @@
  * `edit` action on its own, so the pane follows the row as the backend rewrites it:
  *
  * - the instructions -- saved when the owner presses Save;
+ * - whether the runner is asked anything -- saved when toggled;
  * - how long it accepts runs (counted from NOW, so it also reopens a closed request) and the
  *   largest run -- saved when picked; the hub clamps them to 7 days and 10MB;
  * - the LLM budget -- a new one replaces the one the runner spends now.
@@ -12,6 +13,7 @@ import { Trans, useLingui } from '@lingui/react/macro';
 import { useEffect, useState, type ReactNode } from 'react';
 
 import { Button } from '@src/components/ui/button';
+import { Checkbox } from '@src/components/ui/checkbox';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@src/components/ui/select';
 import { Textarea } from '@src/components/ui/textarea';
 import { cn } from '@src/lib/utils';
@@ -96,6 +98,28 @@ export function InstructionsField({ request }: { request: DiagnosisRequest }) {
       )}
       <ErrorLine error={error} />
     </div>
+  );
+}
+
+/** Whether `flow diagnose <id>` asks its runner anything (off: nothing is asked, the result is always
+ *  sent). Saves as soon as it is toggled. */
+export function AskPermissionField({ request }: { request: DiagnosisRequest }) {
+  const { t } = useLingui();
+  const { busy, error, save } = useEdit(request.id);
+
+  return (
+    <>
+      <Row label={t`Ask them for permission`} htmlFor="diagnosis-request-ask-permission">
+        <Checkbox
+          id="diagnosis-request-ask-permission"
+          checked={!!request.ask_permission}
+          disabled={busy}
+          onCheckedChange={(on) => void save({ ask_permission: on === true })}
+          data-testid="diagnosis-request-ask-permission-field"
+        />
+      </Row>
+      <ErrorLine error={error} />
+    </>
   );
 }
 

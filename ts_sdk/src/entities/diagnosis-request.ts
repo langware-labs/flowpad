@@ -8,6 +8,7 @@ import { FlowpadDiagnosis, IFlowpadDiagnosis } from './flowpad-diagnosis';
  */
 export interface IDiagnosisRequest extends IFlowpadDiagnosis {
   instructions?: string; // what the runner's agent is asked to do
+  ask_permission?: boolean; // whether `flow diagnose <id>` asks the runner anything (off: it never does)
   write_expires_at?: string; // ISO end of the window in which the id accepts runs
   max_run_bytes?: number; // largest run the hub accepts
   llm_endpoint_typeid?: string; // the public hub budget a runner spends, when funded
@@ -18,6 +19,7 @@ export interface IDiagnosisRequest extends IFlowpadDiagnosis {
 @registerEntity
 export class DiagnosisRequest extends FlowpadDiagnosis implements IDiagnosisRequest {
   instructions?: string;
+  ask_permission?: boolean;
   write_expires_at?: string;
   max_run_bytes?: number;
   llm_endpoint_typeid?: string;
@@ -28,6 +30,7 @@ export class DiagnosisRequest extends FlowpadDiagnosis implements IDiagnosisRequ
   constructor(entity: Partial<IDiagnosisRequest> = {}) {
     super(entity);
     this.instructions = entity.instructions;
+    this.ask_permission = entity.ask_permission;
     this.write_expires_at = entity.write_expires_at;
     this.max_run_bytes = entity.max_run_bytes;
     this.llm_endpoint_typeid = entity.llm_endpoint_typeid;
