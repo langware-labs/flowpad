@@ -1737,7 +1737,7 @@ class DataSource(Entity):
         if driver is None:
             return None
 
-        connection = await self._verify_connection()
+        connection = await self._verify_connection(driver)
         if connection is not None:
             self.status = SourceStatus.SETUP.value
             self.setup_detail = connection
@@ -1788,12 +1788,18 @@ class DataSource(Entity):
 
         return DataDriver.loaded(self.provider)
 
-    async def _verify_connection(self) -> Optional[str]:
+    async def _verify_connection(self, driver) -> Optional[str]:
         """None when the token works; otherwise why it does not.
 
         Uses the same probe the Connections "Test" button runs, so the two can
-        never disagree about whether a provider is reachable.
+        never disagree about whether a provider is reachable. Only a driver that
+        reads through an OAuth connection (``auth.connector``) has a token to
+        probe: a Flow channel on ``slack`` reaches the person through the hub's
+        own app, and their personal Slack connection says nothing about it.
         """
+        manifest = getattr(driver, "manifest", None)
+        if not (manifest is not None and manifest.auth is not None and manifest.auth.connector):
+            return None
         if not self.channel:
             return None  # nothing to probe against yet
         from flow_sdk.core.oauth.provider_probe import get_probe  # noqa: PLC0415
