@@ -89,3 +89,33 @@ async def test_keep_records_by_key(folder):
     assert ns["keys"] == ["sources"]
     assert ns["problems"] and ns["problems"][0].startswith("input.utterance:")
     assert not (folder / "examples/sources").exists()
+
+
+@pytest.fixture
+def project(tmp_path):
+    import uuid
+
+    from flow_sdk.schema.data_spec.declared import load_root
+
+    root = tmp_path / "proj"
+    ns = "demo" + uuid.uuid4().hex[:8]   # kinds are process-wide: one namespace per test
+    group = root / "agentic-assets/data_schema/crm"
+    for kind, fields in (("crm.company", {"name": {"shape": "string"}}),
+                         ("crm.lead", {"name": {"shape": "string"}, "company": {"shape": "?crm.company"}})):
+        (group / "agentic-assets/data_schema" / kind).mkdir(parents=True)
+        (group / "agentic-assets/data_schema" / kind / "data_schema.json").write_text(
+            json.dumps({"type": "data_schema", "fields": fields}))
+    (group / "data_schema.json").write_text(json.dumps({"type": "data_schema", "ns": ns}))
+    assert not any(load_root(root).values())
+    for name, kind in (("companies", "crm.company"), ("leads", "crm.lead")):
+        folder = root / "agentic-assets/dataset" / name
+        folder.mkdir(parents=True)
+        (folder / "dataset.json").write_text(json.dumps(
+            {"metadata": {"data_layout": "io_folder", "spec": {"examples": [{"input": f"--{ns}--.{kind}"}]}}, "data": {}}))
+    return root
+
+
+async def test_links_between_rows(project):
+    ns = await run_fence(fence_under(DOC, "8."), {"project": project})
+    assert ns["reason"].startswith("used by --demo") and ns["reason"].endswith(".crm.lead dana")
+    assert ns["problems"] and "no --demo" in ns["problems"][0]

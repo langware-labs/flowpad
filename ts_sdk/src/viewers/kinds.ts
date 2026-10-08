@@ -5,20 +5,22 @@ import { isValidUUIDv4 } from '../models/TypeId';
 import type { KindForm, Shape } from './contract';
 
 /** The backend's reserved primitives: the ones a person types, plus `binary` (bytes, never typed). */
-export const PRIMITIVES: ReadonlySet<string> = new Set([...DATASET_FIELD_KINDS, 'binary']);
+export const PRIMITIVES: ReadonlySet<string> = new Set([...DATASET_FIELD_KINDS, 'binary', 'date']);
 
 const kindCache = new Map<string, Promise<KindForm | null>>();
 
 /** A registered kind's definition, or null for a primitive / enum / unknown name. "Not registered"
- *  (a 404) is an answer and is remembered; any other failure is not, so it is retried next time. */
+ *  (a 404) is an answer and is remembered; any other failure is THROWN and not remembered: an outage
+ *  must not read as "no schema registered" (the caller would tell the user to re-index). */
 export function kindForm(kind: string): Promise<KindForm | null> {
   if (!kind || kind.startsWith('enum:') || PRIMITIVES.has(kind)) return Promise.resolve(null);
   if (!kindCache.has(kind)) {
     kindCache.set(
       kind,
       apiClient.get<KindForm>(`/api/v1/kinds/${encodeURIComponent(kind)}`).catch((error) => {
-        if (error?.response?.status !== 404) kindCache.delete(kind);
-        return null;
+        if (error?.response?.status === 404) return null;
+        kindCache.delete(kind);
+        throw error;
       }),
     );
   }

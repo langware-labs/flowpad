@@ -21,8 +21,10 @@ in a short table, and let them edit it. Do not add fields they did not ask for.
 - One kind per thing the user names (a lead, a company, a note). A field that is a
   list of things with their own fields is a list of a kind (`["crm.note"]`), not a
   list of strings with a format.
-- A link to another row is a ref kind (`{type: enum:…, key: string}`, see examples).
-- A closed set is `enum:`; a format (a date, a URL) is `string` plus its description.
+- A link to another row is a field typed by the target kind (`"company": "?crm.company"`); the value
+  is the row's reference `<kind>.id.<uuid>` (`references/shape-forms.md`). Several possible targets:
+  `"crm.company|crm.lead"`. Never a `{type, key}` kind.
+- A closed set is `enum:`; a day is `date`; another format (a URL) is `string` plus its description.
 - Name the namespace. The project is your working directory; its `ns` is in
   `agentic-assets/project_manifest/project_manifest.json`. No manifest yet: write
   `{"schema": 1, "requires": {}, "ns": "<project_slug>", "entries": []}` there (the slug in
@@ -33,8 +35,10 @@ in a short table, and let them edit it. Do not add fields they did not ask for.
 ## Gate 2 — write the folders
 
 Where: `<project>/agentic-assets/data_schema/`. Several related kinds go under one
-grouping folder (its own body-less `data_schema.json` with `type` and `ns`). Every
-`data_schema.json` carries `"type": "data_schema"` and `"ns"`; every folder has a
+grouping folder (its own body-less `data_schema.json` with `type` and `ns`); the schemas
+nested in it inherit that `ns`. Every `data_schema.json` carries `"type": "data_schema"`
+(and `ns` unless a grouping folder gives it); `flow schema apply` lists `ignored` keys
+(e.g. `name` — the folder name is the kind); every folder has a
 `description.md` saying what a value is. Inside a schema, sibling kinds are bare.
 
 Changing a schema that already holds data: say which existing values stop fitting

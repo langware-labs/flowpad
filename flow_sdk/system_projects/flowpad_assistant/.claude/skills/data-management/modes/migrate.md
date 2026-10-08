@@ -51,7 +51,9 @@ then update the scripts and docs from Gate 1 (`--types data_spec` →
 flow schema apply "<project>/agentic-assets/data_schema"
 ```
 
-and `DM ds-validate` every dataset over those kinds.
+and `DM ds-validate` every dataset over those kinds. Then `DM ds-store-ids <ds>` for each dataset:
+rows written before ids were stored get theirs stamped, so their id (and every link to them) no
+longer depends on the dataset's id in `.flow/` (not in git — a fresh clone mints a new one).
 
 **Passes when** apply exited 0, every dataset validates, and nothing in the project
 still says `data_spec` except history. Do not commit for the user; show `git status`.

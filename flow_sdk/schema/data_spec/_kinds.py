@@ -19,9 +19,11 @@ cycle detection is needed, and none is done.
 
 from __future__ import annotations
 
+from datetime import date as _date
 from typing import Any
 
-PRIMITIVES: dict[str, type] = {"string": str, "int": int, "float": float, "bool": bool}
+#: ``date`` is a calendar day, ISO ``YYYY-MM-DD`` on disk -- checked, not a string with its format in prose.
+PRIMITIVES: dict[str, type] = {"string": str, "int": int, "float": float, "bool": bool, "date": _date}
 PRIMITIVE_NAMES: dict[type, str] = {py: name for name, py in PRIMITIVES.items()}
 
 
