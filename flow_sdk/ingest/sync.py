@@ -29,6 +29,7 @@ from flow_sdk.ingest.ingest_on_tag import emit_sync_tag
 from flow_sdk.ingest.ingestor import ingest_items
 from flow_sdk.ingest.models import IngestMode, IngestReport
 from flow_sdk.ingest.reflect import get_reflector, reflect_refs
+from flow_sdk.sources.errors import SourceUnavailable
 
 logger = logging.getLogger(__name__)
 
@@ -67,6 +68,16 @@ async def sync_source(source: DataSource, *, now: Optional[datetime] = None) -> 
     try:
         # Who it reads as first: the records this pass lands must tell our own posts from a stranger's.
         await stype.identify(source)
+        if stype.push_only and stype.has_setup:
+            # Nothing to fetch, so the poll proves the delivery path instead: the same verify as the Verify button.
+            # Not set up any more moves the source to setup (the scheduler polls active sources only); a provider
+            # that cannot answer raises, a failed poll like any other.
+            verdict = await source.verify()
+            if verdict.get("transient"):
+                raise SourceUnavailable(str(verdict.get("detail") or ""))
+            if not verdict.get("ready"):
+                emit_sync_tag(source.provider, source.id, "completed", report=report)
+                return report
         found = await stype.traverse(source, position_of(source, now))
         placed = await _place(source, found)
     except Exception as exc:  # noqa: BLE001 — classified, recorded, never re-raised

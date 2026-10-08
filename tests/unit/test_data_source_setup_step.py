@@ -158,6 +158,31 @@ async def test_nudge_wakes_only_the_healthy_sources_of_that_driver(stub, monkeyp
     assert asked == [{"provider": name}] and rang == [1]
 
 
+async def test_a_step_that_may_have_finished_setup_asks_verify_so_the_source_goes_live(stub, monkeypatch):
+    """A source in setup re-verifies after a step that kept something — the person never has to find a Verify button;
+    a check, or a source already live, asks nothing."""
+    from flow_sdk.builtin.data_source import SourceStatus
+
+    name, _kept = stub
+    asked: list = []
+
+    async def verify(self):
+        asked.append(self.status)
+        return {"ready": True}
+
+    monkeypatch.setattr(DataSource, "verify", verify)
+    source = DataSource(provider=name, name="bot", config={})
+    source.status = SourceStatus.SETUP.value
+    await source.step("app", check=True)
+    assert asked == [], "a check changes nothing"
+    await source.step("app", values={"app_id": "A1", "me": "+1", "secret": "s"})
+    assert asked == [SourceStatus.SETUP.value]
+
+    source.status = SourceStatus.ACTIVE.value
+    await source.step("app", values={"app_id": "A2", "me": "+1", "secret": "s"})
+    assert len(asked) == 1, "a live source is not re-verified by every step"
+
+
 async def test_an_undeclared_step_is_not_found(stub):
     name, _ = stub
     assert (await DataSource(provider=name, name="bot").step("nope")).exit_code is ExitCode.NOT_FOUND
