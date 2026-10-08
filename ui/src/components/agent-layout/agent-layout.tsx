@@ -41,6 +41,7 @@ const AgentLayout = () => {
           {
             agent: undefined,
             flow: undefined,
+            flowId: null,
             computeNode: contextValues.computeNode,
             project: contextValues.project,
           } satisfies AgentContext
