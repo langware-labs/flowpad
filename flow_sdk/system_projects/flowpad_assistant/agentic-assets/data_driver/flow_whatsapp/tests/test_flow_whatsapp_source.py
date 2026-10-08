@@ -91,6 +91,40 @@ async def test_the_gate_passes_only_once_the_hub_validated_the_phone():
     assert (await _source(hub, claim_id="C1", wa_id=PHONE)._connected(check=True, values={})).ok
 
 
+async def test_verify_is_the_gate_asked_now_so_a_claim_the_hub_lost_is_not_connected():
+    """What every view reads (kept fresh by the poll): connected while the hub holds the claim for this phone, and
+    not once the hub has no such claim — a remembered Connect is not a connection."""
+    hub = _Hub()
+    await hub.connect("whatsapp", {})
+    hub.connected("C1", PHONE)
+    source = _source(hub, claim_id="C1", wa_id=PHONE)
+    assert (await source.verify()).ready
+
+    hub.claims.clear()  # the hub restarted on a fresh database
+    lost = await source.verify()
+    assert not lost.ready and "Connect WhatsApp first" in lost.detail
+
+
+@pytest.mark.parametrize(("status", "gone"), [(404, True), (403, True), (0, False), (503, False)])
+async def test_the_hub_saying_no_is_no_claim_and_a_hub_that_cannot_answer_is_unavailable(monkeypatch, status, gone):
+    """A 404 / 403 is the hub's answer (no such claim of ours); no answer or a 5xx is not knowing, retried — never
+    read as "not connected"."""
+    from flow_sdk.cloud_client.shared.errors import HubError
+    from flow_sdk.cloud_client.transport import hub_http
+    from flow_sdk.sources.errors import SourceUnavailable
+    from flow_sdk.sources.flow_channel import AppHub
+
+    async def refuse(*a, **kw):
+        raise HubError(status, "nope")
+
+    monkeypatch.setattr(hub_http, "hub_get_or_raise", refuse)
+    if gone:
+        assert await AppHub().claim("C1") is None
+    else:
+        with pytest.raises(SourceUnavailable):
+            await AppHub().claim("C1")
+
+
 async def test_connect_targets_this_instance_and_this_channel(monkeypatch):
     from flow_sdk.instance_settings import runtime
 

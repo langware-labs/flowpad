@@ -1326,12 +1326,19 @@ class DataSource(Entity):
 
     async def setup_stages(self) -> list:
         """The setup wizards this source's driver declares (``setup_wizards``), each as it stands for
-        THIS source: ``done`` / ``pending`` / ``locked``. Read off each wizard's run for the source."""
+        THIS source: ``done`` / ``pending`` / ``locked``. How far setup got is read off each wizard's run
+        for the source; whether it still holds is the row's: a source in setup (its verify — the button,
+        or a push-only source's poll — found it not set up) has its last stage, the one that proves it,
+        pending again, with why."""
         from flow_sdk.builtin.readiness import driver_of  # noqa: PLC0415
         from flow_sdk.core.wizard.stages import stage_states  # noqa: PLC0415
+        from flow_sdk.schema.data_spec.setup_stage_spec import STAGE_DONE, STAGE_PENDING  # noqa: PLC0415
 
         driver = await driver_of(self.provider)  # an authored driver loads on first use
-        return await stage_states(getattr(driver, "setup_wizards", None) or [], str(self.typeid))
+        states = await stage_states(getattr(driver, "setup_wizards", None) or [], str(self.typeid))
+        if states and states[-1].state == STAGE_DONE and self.status == SourceStatus.SETUP.value:
+            states[-1] = states[-1].model_copy(update={"state": STAGE_PENDING, "detail": self.setup_detail or ""})
+        return states
 
     # ── routing: which place a hub webhook claim hands this channel's messages to ──────────────────────
 
@@ -1522,6 +1529,8 @@ class DataSource(Entity):
         if isinstance(update, SourceUpdateSpec):
             if answer.ok and not check:
                 await self._keep(driver, update)
+                if self.status == SourceStatus.SETUP.value:
+                    await self.verify()  # what it kept may finish setup: live without a Verify press
             answer = answer.model_copy(update={"value": update.model_copy(update={"secrets": {}}).model_dump()})
         return answer
 
@@ -1740,13 +1749,17 @@ class DataSource(Entity):
             }
 
         verdict = await self._verify_setup(driver)
+        if isinstance(verdict, Exception):
+            # The provider did not answer: that says nothing about the setup, so the status stands.
+            return {"ready": False, "layer": "setup", "transient": True, "status": self.status,
+                    "detail": f"could not check — {verdict}"}
         self.verified_at = datetime.now(timezone.utc)
         if verdict.ready:
             self.status = SourceStatus.ACTIVE.value
             self.setup_detail = ""
-            # Due on the next tick rather than after a full interval: the user
-            # just finished setting it up and is watching.
-            self.next_poll_at = None
+            # Due on the next tick rather than after a full interval (the user just finished setting it up
+            # and is watching), and no longer parked on what this verdict just disproved.
+            await self._make_due()
         else:
             self.status = SourceStatus.SETUP.value
             self.setup_detail = verdict.detail
@@ -1796,13 +1809,19 @@ class DataSource(Entity):
         return None
 
     async def _verify_setup(self, stype):
-        """The type's setup verdict; a source that raises becomes a verdict, never a 500."""
+        """The type's setup verdict; a source that raises becomes a verdict, never a 500 — or the exception itself
+        when the failure is a known transient one (the provider did not answer): not knowing is not "not set up". An
+        unrecognised exception stays a verdict — a driver's bug must not read as an outage."""
+        from flow_sdk.ingest.health import SourceError as IngestError  # noqa: PLC0415
+        from flow_sdk.sources.errors import is_transient  # noqa: PLC0415
         from flow_sdk.sources.protocols import Verdict  # noqa: PLC0415
 
         try:
             return await stype.verify(self)
         except Exception as exc:  # noqa: BLE001 — a source must not 500 the button
             logger.warning("verify failed for %s: %s", self.id, exc, exc_info=True)
+            if is_transient(exc) or (isinstance(exc, IngestError) and exc.health == SourceHealth.TRANSIENT_ERROR):
+                return exc
             return Verdict(ready=False, detail=f"could not verify: {exc}")
 
     async def teardown(self) -> str:

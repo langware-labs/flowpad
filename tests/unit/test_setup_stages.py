@@ -87,3 +87,23 @@ def test_a_stage_is_declared_once():
     with pytest.raises(ValidationError, match="declared twice"):
         CredentialSpec.model_validate(body)
     assert "setup_wizards" in DataDriverSpec.model_fields
+
+
+async def test_a_source_found_not_set_up_has_its_last_stage_pending_again(wizards, monkeypatch):
+    """How far setup got is the wizard's record; whether it still holds is the row's. A source its verify found not set
+    up (status ``setup``) reopens the stage that proves it, saying why — every other source reads its history."""
+    from flow_sdk.builtin import readiness
+    from flow_sdk.builtin.data_source import DataSource, SourceStatus
+
+    async def driver_of(provider):
+        return type("Driver", (), {"setup_wizards": STAGES})
+
+    monkeypatch.setattr(readiness, "driver_of", driver_of)
+    source = DataSource(provider="whatsapp", name="wa")
+    for wizard in ("wa-test", "wa-prod"):
+        _record(wizards, wizard, str(source.typeid), WizardResult.satisfied("done"))
+    assert [s.state for s in await source.setup_stages()] == ["done", "done"]
+
+    source.status, source.setup_detail = SourceStatus.SETUP.value, "Press Connect WhatsApp first."
+    (test, production) = await source.setup_stages()
+    assert test.state == "done" and (production.state, production.detail) == ("pending", "Press Connect WhatsApp first.")
