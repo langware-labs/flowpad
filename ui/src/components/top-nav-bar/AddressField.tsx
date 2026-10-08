@@ -20,6 +20,7 @@ import { CrumbDetailsPopover } from './CrumbDetailsPopover';
 import { ProjectCrumbHoverCard } from './ProjectCrumbHoverCard';
 import { selectVisibleCrumbs } from './crumb-overflow';
 import type { Crumb } from './use-entity-breadcrumbs';
+import { useUiActionRequest } from '@src/navigation/ui-actions';
 
 /**
  * The address bar: `Project / …ancestors… / current`.
@@ -48,6 +49,8 @@ export function AddressField({
   const { navigation } = useDockNavigation();
   const { t } = useLingui();
   const [projectModalOpen, setProjectModalOpen] = useState(false);
+  // "switch project" (smart navigation): the same picker the project crumb opens.
+  useUiActionRequest(['project-list'], () => setProjectModalOpen(true));
 
   const fieldRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLOListElement>(null);

@@ -20,7 +20,6 @@ const CLAIM = {
   status: 'active' as const,
   claim: { kind: 'account' as const, key: '555000' },
   target: { kind: 'desktop' as const, instance_id: 'inst-1', data_source_id: 'ds-1' },
-  watch: { kind: 'none' as const },
   deliveries: 3,
   misroutes: 1,
   recent: [{ at: 1_791_300_000, method: 'POST', status: 200 }],
@@ -44,14 +43,6 @@ describe('ChannelRouteControl', () => {
     expect((await screen.findByTestId('channel-route-url')).textContent).toBe(CLAIM.url);
     expect(screen.getByTestId('channel-route-stats').textContent).toContain('1 misrouted');
     expect(screen.getByTestId('channel-route-place').textContent).toContain('This computer');
-  });
-
-  it("says Flow's channel is answered from Flow's box, with no switch", async () => {
-    const flow = { ...CLAIM, target: { kind: 'placement' as const, agent_typeid: 'agent-f' } };
-    render(<ChannelRouteControl source={sourceWith({ claim: flow, places: [], current: 'flow' })} />);
-
-    expect(await screen.findByTestId('channel-route-flow')).toBeTruthy();
-    expect(screen.queryByTestId('channel-route-place')).toBeNull();
   });
 
   it('shows nothing for a channel no hub claim delivers to', async () => {

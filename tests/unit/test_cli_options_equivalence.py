@@ -143,7 +143,12 @@ _PLATFORMS = ["linux", "win32"]
 # matrix.  Adding these cases to MATRIX would require rewriting the historical
 # fixture, so the inventory combines both sources instead.
 _SUPPLEMENTAL_CONSTRUCTOR_KWARGS: dict[str, dict] = {
-    "claude": {"verbose": True, "plugin_dirs": ["/runtime-plugin"], "settings_json": {"language": "Hebrew"}},
+    "claude": {
+        "verbose": True,
+        "plugin_dirs": ["/runtime-plugin"],
+        "settings_json": {"language": "Hebrew"},
+        "disallowed_tools": ["Bash(git checkout:*)"],
+    },
     "codex": {"bypass_hook_trust": True},
     "copilot": {
         "custom_instruction_dirs": ["/instructions"],

@@ -36,22 +36,6 @@ def _patch_run(monkeypatch):
     return ran
 
 
-async def test_paused_session_bounces(bootstrapped_client, user, monkeypatch):
-    ran = _patch_run(monkeypatch)
-    conv_id = await make_conversation(bootstrapped_client)
-    rws = await make_session(conv_id, S.PAUSED.value)
-    fm = inbound_prompt_fm(conv_id, rws.id, fm_id="b2b2b2b2-0000-4000-8000-0000000000b1")
-    await fm.save(notify=False)
-
-    await ep.process_inbound_prompt(fm.id, conv_id)
-
-    assert ran == []
-    after = await FlowMessage.get_one({"id": fm.id})
-    assert after.prompt_auto_handled is True  # never re-bounces on re-sync
-    events = await session_messages(conv_id, kind=FlowMessageKind.SESSION_EVENT.value)
-    assert any(event_marker(m) == "prompt_bounced" for m in events)
-
-
 async def test_terminal_session_ignores(bootstrapped_client, user, monkeypatch):
     ran = _patch_run(monkeypatch)
     conv_id = await make_conversation(bootstrapped_client)
@@ -194,3 +178,45 @@ async def test_own_sends_and_consumed_prompts_are_skipped(bootstrapped_client, u
     await ep.process_inbound_prompt(own.id, conv_id)
     await ep.process_inbound_prompt(done.id, conv_id)
     assert ran == []
+
+
+_LONG_AGO = "2026-01-01T00:00:00+00:00"  # far past MAX_SESSION_LENGTH
+
+
+async def test_prompt_into_a_session_past_the_cap_closes_it(bootstrapped_client, user, monkeypatch):
+    """Hard stop: the host never runs a prompt past the length cap — it ends
+    the session and posts the ``expired`` line (the guest's indication)."""
+    ran = _patch_run(monkeypatch)
+    conv_id = await make_conversation(bootstrapped_client)
+    rws = await make_session(conv_id, S.IDLE.value, approved_at=_LONG_AGO)
+    fm = inbound_prompt_fm(conv_id, rws.id, fm_id="b2b2b2b2-0000-4000-8000-0000000000a9")
+    await fm.save(notify=False)
+
+    await ep.process_inbound_prompt(fm.id, conv_id)
+
+    assert ran == []
+    assert (await RemoteWorkerSession.get_one({"id": rws.id})).status == S.ENDED.value
+    events = await session_messages(conv_id, kind=FlowMessageKind.SESSION_EVENT.value)
+    assert [event_marker(m) for m in events] == ["expired"]
+
+
+async def test_sweep_closes_capped_sessions_host_loudly_guest_silently(bootstrapped_client, user):
+    conv_id = await make_conversation(bootstrapped_client)
+    hosted = await make_session(conv_id, S.RUNNING.value, approved_at=_LONG_AGO, host_process_id="ap-gone")
+    guested = await make_session(conv_id, S.IDLE.value, approved_at=_LONG_AGO, host_user_id="someone-else")
+    fresh = await make_session(conv_id, S.IDLE.value)
+
+    await ep.close_expired_sessions()
+
+    assert (await RemoteWorkerSession.get_one({"id": hosted.id})).status == S.ENDED.value
+    assert (await RemoteWorkerSession.get_one({"id": guested.id})).status == S.ENDED.value
+    assert (await RemoteWorkerSession.get_one({"id": fresh.id})).status == S.IDLE.value
+    events = await session_messages(conv_id, kind=FlowMessageKind.SESSION_EVENT.value)
+    assert [(m.remote_worker_session_id, event_marker(m)) for m in events] == [(hosted.id, "expired")]
+
+
+async def test_capped_session_is_not_the_open_one(bootstrapped_client, user):
+    """A prompt sent after the cap opens a NEW session instead of joining the old one."""
+    conv_id = await make_conversation(bootstrapped_client)
+    await make_session(conv_id, S.IDLE.value, approved_at=_LONG_AGO)
+    assert await RemoteWorkerSession.open_for_conversation(conv_id) is None

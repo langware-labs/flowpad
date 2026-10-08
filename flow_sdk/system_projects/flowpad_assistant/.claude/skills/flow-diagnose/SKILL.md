@@ -29,6 +29,22 @@ plain-language "To Summarize:" line.
 
 * Apply fixes yourself only when safe **and** capable (Step 4); otherwise advise the user (Step 5).
 
+* **This run lives INSIDE the backend you are diagnosing.** `flow stop`, `flow start`, killing the
+  server PID or anything that restarts it ends this run before it records — the person gets
+  nothing, and the diagnosis is lost. If a restart is the fix: record first (Step 7), and make the
+  restart your very last action — or tell the person to restart, and record that advice.
+
+* **A source checkout is not a broken install.** When `flow_sdk/` sits next to a `ui/` folder (a
+  developer checkout), the UI is served by a Vite dev server and the backend port serving no
+  `/assets/*.js` is expected — it is never the blank-page packaging issue. **A checkout's files
+  ARE someone's uncommitted work: never change them.** No edits, no new files, no
+  `git checkout` / `restore` / `reset` / `stash` / `clean` (they silently discard that work), no
+  builds (`build_ui.py`, `npm run build`), no `node_modules` changes. Code there that looks broken
+  is reported — what it is and where — never "restored".
+
+* **Scratch files go in a temp folder of your own** (`mktemp -d`), never in a project or the
+  repository, and you remove them before you record.
+
 * **You diagnose ANY issue the user raises — the catalog is not a closed list.** The known-issue
   catalog (A1–G17) is an internal cheat-sheet that gives you fast, proven fixes for *some* common
   problems. It is **not** the set of problems you handle. If the user's issue isn't in it, that
@@ -94,6 +110,16 @@ plain-language "To Summarize:" line.
 * Never raise or add any timeout/retry/backoff/poll budget to mask a symptom.
 
 ## Instructions
+
+### Step 0 — Start from the sweep you were handed
+
+`flow diagnose` runs the **diagnose spec** first (the project's own
+`agentic-assets/diagnose/*`, else the shipped `flowpad` one — fixed checks, no LLM) and puts its
+`DiagnosisSpec` JSON in your prompt: its `findings` (catalog ids such as `A2`, `C6`), the machine
+(`environment`) and anything that went wrong while it ran (`errors`). Treat those checks as done —
+do not repeat them; confirm, explain and repair from there, and record (Step 7) what you concluded.
+A `status` of `partial` means the sweep itself failed or timed out: then run the checks below
+yourself.
 
 ### Step 1 — Detect platform, read optional error text
 
@@ -300,6 +326,14 @@ the output — never jump straight from symptom to guess:
    run the commands — don't just recommend them. If the fix is the user's to make (re-install,
    re-sign, cloud/account actions) or is risky/destructive, do NOT attempt it — describe exactly
    what the user should do (Step 5).
+   **What you may change is Flowpad's own runtime state only** — the instance's `server.lock` /
+   `server.pid` / `server.json`, its processes and ports, its install. **Never delete, rewrite or
+   "correct" a config or data file** (`config.json`, `preferences.json`, the database) **or any file
+   outside that state** — the user's files, a project's files, a file a supporter's step or skill
+   names: report what is wrong with it and what should change (Step 5). A file a step or skill says
+   not to change is never changed, whatever you find. And a log line is evidence that an error
+   happened then, not that a file is broken now: before calling a file the cause, show the CURRENT
+   file and code reproduce the error (e.g. the key really is read and really is missing).
 4. **Validate.** Re-run the exact check that exposed the problem and show it now passes (e.g.
    `curl -fsS …/health/status` → `{"data":true}`, the port is free, the stale file is gone).
 

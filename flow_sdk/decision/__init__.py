@@ -25,6 +25,7 @@ from flow_sdk.schema.data_spec.decision_spec import (
     ChoiceQuestion,
     DecisionResult,
     DecisionSpec,
+    DecisionWire,
     ScoreAnswer,
     ScoreQuestion,
     YesNoAnswer,
@@ -55,24 +56,32 @@ async def decide(spec: DecisionSpec | dict, *, endpoint: Optional[str] = None) -
             raise DecisionError("invalid_spec", str(exc)) from exc
     offer = await _endpoint(endpoint)
     dialect = dialect_for_host(offer.host)
+    sent = dialect.to_wire(spec)
+    # The call itself, recorded as it happens: on the result when it succeeds, on the error when not.
+    wire = DecisionWire(endpoint=offer.typeid, path=dialect.PATH, request=sent)
     started = time.perf_counter()
     try:
-        status, body = await hub_invoke_raw("api_endpoint", offer.id, dialect.PATH, dialect.to_wire(spec))
+        status, body = await hub_invoke_raw("api_endpoint", offer.id, dialect.PATH, sent)
     except HubError as exc:
         raise DecisionError(
-            "auth" if exc.status == 401 else "unavailable", f"The hub could not be reached: {exc}", status=exc.status
+            "auth" if exc.status == 401 else "unavailable",
+            f"The hub could not be reached: {exc}",
+            status=exc.status,
+            wire=wire.model_copy(update={"status": exc.status or 0}),
         ) from exc
+    wire = wire.model_copy(update={"status": status, "response": body})
     if status == 0:
-        raise DecisionError("unavailable", "No hub is configured (offline or Local privacy mode)")
+        raise DecisionError("unavailable", "No hub is configured (offline or Local privacy mode)", wire=wire)
     if status != 200:
         detail = body.get("message") or body.get("error") if isinstance(body, dict) else str(body)
         raise DecisionError(
-            reason_for_status(status), f"The decision endpoint answered {status}: {detail}", status=status
+            reason_for_status(status), f"The decision endpoint answered {status}: {detail}", status=status, wire=wire
         )
-    result = dialect.from_wire(spec, body)
-    return result.model_copy(
+    result = dialect.from_wire(spec, body).model_copy(
         update={"latency_ms": round((time.perf_counter() - started) * 1000, 1), "endpoint": offer.typeid}
     )
+    result._wire = wire
+    return result
 
 
 __all__ = [

@@ -5,16 +5,17 @@ import type { MessageDescriptor } from '@lingui/core';
 import type { LucideIcon } from 'lucide-react';
 import type { SearchRow } from '@src/hooks/search-row';
 import { DockPointer } from './DockPointer';
+import { subjectEditorPointer } from './subject-editor';
 import { openNewChat } from './open-new-chat';
 import { ViewType } from '@src/types/ViewType';
 import { CheckSquare, Search, GitBranch, FileText } from 'lucide-react';
 import {
   AgenticProcess,
   Artifact,
+  Conversation,
   dataContext,
   dataManager,
   editorForType,
-  editorsFor,
   isTypeId,
   RecordType,
   TypeId,
@@ -174,10 +175,9 @@ export const RECORD_TYPE_NAV: Partial<Record<string, RecordTypeNav>> = {
   // all falls back to the folder, like any asset without an editor.
   dataset: {
     primaryAction: async (r, navigation) => {
-      const subject = `dataset-${r.record_id}`;
-      const [best] = await editorsFor(subject);
-      if (best) {
-        navigation.openDock(DockPointer.forAppEntity(new TypeId(best.typeid), { subject }));
+      const editor = await subjectEditorPointer(`dataset-${r.record_id}`);
+      if (editor) {
+        navigation.openDock(editor);
         return;
       }
       const fallback = registeredAssetPointer(r);
@@ -243,6 +243,16 @@ export const RECORD_TYPE_NAV: Partial<Record<string, RecordTypeNav>> = {
     dockPointer: (r) => {
       const tid = resultTypeId(r);
       return tid ? DockPointer.forConversation(tid.id) : null;
+    },
+  },
+  // A message opens inside its conversation (its containment pointer), scrolled to it.
+  flow_message: {
+    dockPointer: (r) => {
+      const tid = resultTypeId(r);
+      const parent = resultTypeId({ record_id: r.parent_type_id });
+      return tid && parent?.type === Conversation.type
+        ? DockPointer.forConversation(parent.id, { messageId: tid.id })
+        : null;
     },
   },
   spec: {

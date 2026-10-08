@@ -393,6 +393,11 @@ class DriverRuntime:
         return issubclass(self.cls, Verifiable)
 
     @property
+    def push_only(self) -> bool:
+        """A webhook is its only delivery: a poll finds nothing to fetch."""
+        return not issubclass(self.cls, Listable)
+
+    @property
     def offers_choices(self) -> bool:
         return callable(getattr(self.cls, "choices_for", None)) or issubclass(self.cls, Choosing)
 
@@ -520,7 +525,7 @@ class DriverRuntime:
     async def traverse(self, row: Any, position: Optional[Position] = None) -> Pass:
         """One pass over the source's stream from ``position`` (the row's own when omitted)."""
         position = position or position_of(row)
-        if not issubclass(self.cls, Listable):
+        if self.push_only:
             # A push-only source (a webhook is its only delivery): a poll finds nothing.
             return Pass(cursor=position.cursor, manifest=dict(position.manifest), unchanged=True)
         source = await self.open(row)

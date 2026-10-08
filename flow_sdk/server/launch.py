@@ -677,6 +677,12 @@ def _stop_all_guarded() -> tuple[bool, bool]:
     return monitor_killed, server_killed
 
 
+def server_alive() -> bool:
+    """Whether this instance's backend is running: its recorded pid, checked by cmdline. No scan, no HTTP."""
+    server_pid = _load_info().get("server_pid")
+    return bool(server_pid and is_process_alive(server_pid, expected_name=_SERVER_CMD_MARKER))
+
+
 def get_status() -> dict:
     """Return dict with monitor/server alive booleans, health, PIDs.
 

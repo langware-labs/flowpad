@@ -24,6 +24,7 @@ import OpenSandboxLanding from '@src/pages/entry/OpenSandboxLanding';
 import InstallLanding from '@src/pages/entry/InstallLanding';
 import EntityLanding from '@src/pages/entry/EntityLanding';
 import ProjectShareLanding from '@src/pages/entry/ProjectShareLanding';
+import DiagnosisRequestLanding from '@src/pages/entry/DiagnosisRequestLanding';
 import { HubOnly } from '@src/pages/entry/entry-shell';
 import NotFound from '@src/pages/NotFound';
 import App from '@src/App';
@@ -201,6 +202,15 @@ export const router = createBrowserRouter(
         element={
           <HubOnly>
             <ProjectShareLanding />
+          </HubOnly>
+        }
+      />
+      {/* Where a diagnosis request's "a run came back" email lands (the hub's `build_entity_url`). */}
+      <Route
+        path="diagnosis_request/:requestId"
+        element={
+          <HubOnly>
+            <DiagnosisRequestLanding />
           </HubOnly>
         }
       />

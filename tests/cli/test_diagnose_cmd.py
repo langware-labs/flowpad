@@ -6,6 +6,7 @@ covered by tests/unit/test_diagnostic_report.py.
 """
 
 import asyncio
+import json
 import logging
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
@@ -24,6 +25,30 @@ from flow_sdk.schema.data_spec.returned_value_spec import PromptResult
 runner = CliRunner()
 
 _RUN = "flow_sdk.cli.commands.diagnose_cmd._run_diagnose"
+
+
+@pytest.fixture(autouse=True)
+def swept(monkeypatch):
+    """Step 1 (the diagnose spec) answers a known diagnosis here, and records what it was asked:
+    its own behaviour -- resolution, failing and hanging diagnoses -- is tests/unit/test_diagnose."""
+    import flow_sdk.diagnose as diagnose_pkg
+    from flow_sdk.diagnose import DiagnosisFinding, DiagnosisSpec
+
+    asked: list = []
+
+    async def run(ctx, **kw):
+        asked.append((ctx, kw.get("resolve")))
+        if kw.get("emit"):
+            kw["emit"]("checking the backend")
+        return DiagnosisSpec(
+            status="needs_action",
+            title="Backend down",
+            findings=[DiagnosisFinding(id="A2", severity="error", title="Backend down")],
+            diagnose="flowpad",
+        )
+
+    monkeypatch.setattr(diagnose_pkg, "run_diagnose", run)
+    return asked
 
 
 @pytest.fixture(autouse=True)
@@ -422,10 +447,11 @@ async def test_run_diagnose_posts_loaded_diagnosis_summary_when_cross_link_fails
 
 
 @pytest.mark.asyncio
-async def test_run_diagnose_fails_fast_when_worker_dies_without_transcript():
+@pytest.mark.parametrize("start_failure", [None, "claude has no usable LLM source"])
+async def test_run_diagnose_fails_fast_when_worker_dies_without_transcript(start_failure):
     """If the worker turn ends (crash / ``claude`` binary unresolved) without
     ever producing a transcript, diagnose must surface the clear 'failed to
-    start' error and exit 1 — detected via the worker leaving _PROMPT_WORKERS,
+    start' error (the driver's latched reason when it has one) — detected via the worker leaving _PROMPT_WORKERS,
     NOT by waiting out the budget. The 5 s ``wait_for`` is a hang detector."""
     from pathlib import Path
 
@@ -438,6 +464,7 @@ async def test_run_diagnose_fails_fast_when_worker_dies_without_transcript():
     class _FakeAP(_TakesTurns):
         def __init__(self, **_kw):
             self.id = "dead-worker-id"
+            self.start_failure = start_failure
             self.session_id = "fakesess"
             self.driver = _FakeDriver()
 
@@ -462,8 +489,13 @@ async def test_run_diagnose_fails_fast_when_worker_dies_without_transcript():
         patch("flow_sdk.migrations.runner._bootstrap_local", new=AsyncMock(return_value=None)),
     ):
         rc = await asyncio.wait_for(diagnose_cmd._run_diagnose("", 1800.0, emit=events.append), timeout=5)
-    assert rc == 1
-    assert any(e.get("type") == "error" and "produced no transcript" in e.get("text", "") for e in events)
+    assert rc == 0, "the checks are recorded even though the agent never started"
+    errors = [e["text"] for e in events if e.get("type") == "error"]
+    if start_failure:
+        assert any(start_failure in text and "PATH" not in text for text in errors), errors
+    else:
+        assert any("produced no transcript" in text for text in errors), errors
+    assert events[-1]["diagnosis_id"]
 
 
 @pytest.mark.asyncio
@@ -778,3 +810,174 @@ async def test_feed_card_always_appears(label, has_issue, expect_conversation):
     else:
         assert not suggest.conversation_id  # no-issue summary card
         assert not suggest.flow_message_id
+
+
+# --------------------------------------------------------------------------- #
+# Step 1 — the diagnose spec runs first, the agent starts from it
+# --------------------------------------------------------------------------- #
+
+
+def _recording_ap(transcript, prompts):
+    """A worker whose transcript is ``transcript`` and whose prompts are collected."""
+
+    class _FakeDriver:
+        def transcript_path(self, _ap):
+            return transcript
+
+    class _FakeAP(_TakesTurns):
+        def __init__(self, **_kw):
+            self.id = "fake-id"
+            self.session_id = "fakesess"
+            self.driver = _FakeDriver()
+
+        def enable_assistant(self):
+            pass
+
+        async def send_turn(self, text):
+            prompts.append(text)
+            return await super().send_turn(text)
+
+        async def stream_transcript(self, timeout=0):
+            if transcript.exists():
+                yield {
+                    "message": {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "tool_result",
+                                "content": '{"diagnosis_id": "' + _DIAG_ID + '", "conversation_id": null, '
+                                '"flow_message_id": null, "has_issue": false, "status": "fixed"}',
+                            }
+                        ],
+                    }
+                }
+
+        @classmethod
+        async def get_by_id(cls, _id):
+            return None
+
+    return _FakeAP
+
+
+@pytest.mark.asyncio
+async def test_the_sweep_runs_first_and_the_agent_starts_from_it(swept, tmp_path):
+    from flow_sdk.cli.commands import diagnose_cmd
+
+    transcript = tmp_path / "t.jsonl"
+    transcript.write_text('{"type":"system"}\n')
+    prompts: list[str] = []
+    events: list[dict] = []
+
+    record = SimpleNamespace(
+        title="Stale lock cleared", summary="Cleared it.", rca="dead pid", fix="removed lock", origin_project_name=None
+    )
+    record.save = AsyncMock()
+
+    class _Recorded:
+        @classmethod
+        async def get_by_id(cls, _id):
+            return record
+
+    with (
+        patch("flow_sdk.builtin.agentic_process.AgenticProcess", _recording_ap(transcript, prompts)),
+        patch("flow_sdk.fs_store.schema_registry.SchemaRegistry.get_entity_cls", _diagnosis_type_only(_Recorded)),
+        patch("flow_sdk.migrations.runner._bootstrap_local", new=AsyncMock(return_value=None)),
+        patch("flow_sdk.cli.commands.diagnose_cmd._post_home_feed_entry", new=AsyncMock(return_value="feed-1")),
+    ):
+        rc = await asyncio.wait_for(diagnose_cmd._run_diagnose("app is stuck", 1800.0, emit=events.append), timeout=5)
+
+    assert rc == 0
+    ((ctx, resolve),) = swept
+    assert (ctx.purpose, ctx.user_report, ctx.origin) == ("repair", "app is stuck", "footer")
+    from flow_sdk.diagnose import resolve_shipped
+
+    assert resolve("/a/project/with/its/own") == resolve_shipped(), "the Diagnose button runs the shipped one"
+    assert {"type": "narration", "text": "checking the backend"} in events, "the sweep's progress is streamed"
+    assert '"Backend down"' in prompts[0] and "ALREADY RAN" in prompts[0], "the agent is handed the sweep"
+    done = events[-1]
+    assert done["type"] == "done" and done["ok"]
+    # The record's headline and report.py's --status, over the sweep's findings and machine.
+    assert done["diagnosis"]["title"] == "Stale lock cleared" and done["diagnosis"]["status"] == "fixed"
+    assert [f["id"] for f in done["diagnosis"]["findings"]] == ["A2"]
+    record.save.assert_awaited_once()  # one writer: the copy that carries what the runner adds
+    assert record.user_report == "app is stuck" and record.diagnosis.status == "fixed"
+
+
+@pytest.mark.asyncio
+async def test_an_agent_that_never_starts_still_answers_the_sweep(tmp_path):
+    from flow_sdk.cli.commands import diagnose_cmd
+
+    events: list[dict] = []
+    with (
+        patch("flow_sdk.builtin.agentic_process.AgenticProcess", _recording_ap(tmp_path / "never.jsonl", [])),
+        patch("flow_sdk.fs_store.schema_registry.SchemaRegistry.get_entity_cls", _diagnosis_type_only(None)),
+        patch("flow_sdk.migrations.runner._bootstrap_local", new=AsyncMock(return_value=None)),
+    ):
+        rc = await asyncio.wait_for(diagnose_cmd._run_diagnose("", 1800.0, emit=events.append), timeout=5)
+
+    # No LLM, a dead worker: the run still leaves a diagnosis -- the checks', recorded.
+    assert rc == 0
+    done = events[-1]
+    assert done["type"] == "done" and not done["ok"]
+    assert done["diagnosis"]["title"] == "Backend down", "what the sweep found is not lost with the agent"
+    from flow_sdk.builtin.flowpad_diagnosis import FlowpadDiagnosis
+
+    recorded = await FlowpadDiagnosis.get_by_id(done["diagnosis_id"])
+    assert recorded.title == "Backend down" and recorded.diagnosis.findings[0].id == "A2"
+    assert done["feed_posted"]
+
+
+@pytest.mark.asyncio
+async def test_what_is_stamped_survives_the_cross_link(tmp_path):
+    """Seen live: the record was loaded, then stamped, then the cross-link SAVED the copy loaded
+    before the stamp -- the DB row lost ``diagnosis`` / ``user_report`` while the disk kept them,
+    so the Diagnose popup had nothing to show. The cross-link must save what was stamped."""
+    import importlib.util
+
+    from flow_sdk.builtin.flowpad_diagnosis import FlowpadDiagnosis
+    from flow_sdk.cli.commands import diagnose_cmd
+    from flow_sdk.config import flowpad_assistant_project_root
+    from flow_sdk.server.routes.bootstrap import get_or_create_local_project, get_or_create_local_user
+
+    user = await get_or_create_local_user()
+    await get_or_create_local_project(desktop_user=user)
+    path = flowpad_assistant_project_root() / ".claude" / "skills" / "flow-diagnose" / "report.py"
+    spec = importlib.util.spec_from_file_location("flow_diagnose_report_stamp", path)
+    report = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(report)
+    did = await report._create_diagnosis_record(title="Stale lock", symptoms="", rca="", fix="", summary="s")
+
+    transcript = tmp_path / "t.jsonl"
+    transcript.write_text('{"type":"system"}\n')
+    fake = _recording_ap(transcript, [])
+
+    async def stream(self, timeout=0):
+        yield {"message": {"role": "user", "content": [{"type": "tool_result", "content": json.dumps(
+            {"diagnosis_id": did, "conversation_id": None, "flow_message_id": None, "status": "fixed"})}]}}
+
+    async def a_process(cls, _id):
+        return SimpleNamespace(id="fake-id")
+
+    async def cross_link(_process, entity, save=True):
+        if save:
+            await entity.save()  # what the real cross-link does to the diagnosis by default
+
+    fake.stream_transcript = stream
+    fake.get_by_id = classmethod(a_process)
+    with (
+        patch("flow_sdk.builtin.agentic_process.AgenticProcess", fake),
+        patch("flow_sdk.migrations.runner._bootstrap_local", new=AsyncMock(return_value=None)),
+        patch("flow_sdk.core.entity.cross_link.cross_link_entities", new=cross_link),
+        patch("flow_sdk.cli.commands.diagnose_cmd._post_home_feed_entry", new=AsyncMock(return_value=None)),
+    ):
+        rc = await asyncio.wait_for(diagnose_cmd._run_diagnose("app is stuck", 1800.0, emit=lambda _e: None), timeout=10)
+
+    assert rc == 0
+    row = await FlowpadDiagnosis.get_by_id(did)
+    assert row.user_report == "app is stuck"
+    assert row.diagnosis is not None and row.diagnosis.status == "fixed"
+    from flow_sdk.fs_store.fs_record import FSRecord
+
+    on_disk = FSRecord.load_or_none("flowpad_diagnosis", did)
+    meta = json.loads((on_disk.shadow_dir / "metadata.json").read_text())
+    assert meta["user_report"] == "app is stuck" and meta["diagnosis"]["status"] == "fixed", "the file too"

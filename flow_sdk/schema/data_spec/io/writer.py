@@ -25,7 +25,8 @@ from flow_sdk.schema.data_spec.io.placement import Placement, body_field, placem
 
 def _json(path: Path, payload: dict) -> None:
     # No mkdir: every caller has already made the directory it writes into.
-    path.write_text(json.dumps(payload, indent=2, default=str) + "\n", encoding="utf-8")
+    # UTF-8 as written: a "–" stays one, so a file under git diffs on what changed, not on escapes.
+    path.write_text(json.dumps(payload, indent=2, default=str, ensure_ascii=False) + "\n", encoding="utf-8")
 
 
 #: Placements that ride inside their parent's json rather than a file of their own.
@@ -43,8 +44,19 @@ def _inline_fields(value: Any) -> dict:
     # ``include``, not filter-after: a field kept in its OWN file may hold bytes
     # that have no json form at all, and dumping the whole model to throw most
     # of it away would raise on them before the filter ever ran.
-    wanted = {name for name, place in placements(type(value)).items() if place in _IN_DOCUMENT}
-    return value.model_dump(mode="json", include=wanted) if wanted else {}
+    spec = type(value)
+    wanted = {name for name, place in placements(spec).items() if place in _IN_DOCUMENT}
+    if not wanted:
+        return {}
+    # A field that is None where None is its default is left out: it reads back as the same None,
+    # and a document under git keeps only what a value says, not a ``null`` per unset optional.
+    return {name: held for name, held in value.model_dump(mode="json", include=wanted).items()
+            if held is not None or not _defaults_to_none(spec, name)}
+
+
+def _defaults_to_none(spec: type, name: str) -> bool:
+    info = spec.model_fields[name]
+    return info.default is None and info.default_factory is None
 
 
 def _document_text(value: Any) -> str:

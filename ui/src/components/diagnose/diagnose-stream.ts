@@ -1,4 +1,4 @@
-import { ActionInfo, dataContext, dataManager } from '@sdk';
+import { ActionInfo, dataContext, dataManager, type DiagnosisSpec } from '@sdk';
 
 /**
  * The SSE events forwarded verbatim by POST /api/v1/graph/diagnose — mirrors the
@@ -17,6 +17,8 @@ export type DiagnoseEvent =
       conversation_id: string | null;
       flow_message_id: string | null;
       feed_posted?: boolean;
+      /** The diagnosis value — the merged one when recorded, the sweep's when the agent failed. */
+      diagnosis?: DiagnosisSpec | null;
     };
 
 /**

@@ -1,7 +1,7 @@
 import { APIEntity, dataManager, registerEntity, type EntityMember } from '../APIEntity';
 import { IEntity, EntityMerge } from '../IEntity';
 import { ActionInfo } from '../models/ActionInfo';
-import type { IChannelSpec } from '../models/ChannelSpec';
+import { ChannelTransport, type IChannelSpec } from '../models/ChannelSpec';
 import { DockPointerData } from '../models/DockPointer';
 import { ConnectionManager, DataOp } from '../websocket';
 import { Callable } from '../types';
@@ -287,6 +287,12 @@ export class Conversation extends APIEntity<Conversation> implements IConversati
   override get dockPointer(): DockPointerData {
     if (!this.id) return new DockPointerData(ViewType.STREAM_INBOX);
     return new DockPointerData(ViewType.CONVERSATION, this.id);
+  }
+
+  /** A conversation on an outside channel (WhatsApp, Slack, email…), mirrored here: its people are on that
+   *  channel, not on the Flowpad roster, and a reply leaves through its data source. Flowpad's own chat is not. */
+  get isChannel(): boolean {
+    return this.channel_spec?.transport === ChannelTransport.Source;
   }
 
   get conversationMessageIds(): ConversationMessagePointer[] {

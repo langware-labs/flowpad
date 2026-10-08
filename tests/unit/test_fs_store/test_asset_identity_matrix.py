@@ -29,7 +29,7 @@ INDEXED_TYPES = {
     "agent_trace", "subagent", "agent", "graph_workflow", "asset_cleanup_report",
     "claude_hook", "claude_md", "claude_memory", "claude_rules",
     "claude_session", "codex_session", "command", "copilot_session",
-    "credential", "compute_op", "data_source", "data_driver", "data_spec",
+    "credential", "compute_op", "data_source", "data_driver", "data_schema",
     "dataset", "deck_template", "deck", "dynamic_workflow",
     "helpdesk", "journey", "markdown_index", "markdown", "mcp", "mcp_server", "micro_app", "plan", "plugin",
     "project", "project_manifest", "prompt", "skill", "spec", "spreadsheet",
@@ -54,7 +54,7 @@ FOLDER_CAPSULE = FOLDER_PORTABLE + FOLDER_NO_LEGACY
 JSON_STABLE = ("agent_trace", "asset_cleanup_report", "usage_report")
 #: Entity documents (``<type>.json``): the id is the document root's ``"id"``
 #: (``JsonRoot``), and an authored asset mints a portable v4 like any capsule.
-JSON_PORTABLE = ("agent", "compute_op", "data_source", "data_spec")
+JSON_PORTABLE = ("agent", "compute_op", "data_source", "data_schema")
 
 
 def _info(type_name: str):

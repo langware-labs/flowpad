@@ -30,7 +30,7 @@ from flow_sdk.external_apis.voice import realtime
 from flow_sdk.sources import http
 from flow_sdk.sources.config import SourceConfig
 from flow_sdk.sources.credentials import ResolvedSecrets
-from flow_sdk.sources.errors import AccessDenied, Rejected, SourceError
+from flow_sdk.sources.errors import AccessDenied, Rejected, SourceError, is_transient
 from flow_sdk.sources.protocols import Verdict
 from flow_sdk.sources.values.call import IncomingCall
 from flow_sdk.sources.values.items import MessageItem
@@ -96,6 +96,8 @@ class VoicePhoneSource(VoiceChannel):
         except AccessDenied:
             return Verdict(ready=False, detail="Twilio refused TWILIO_ACCOUNT_SID / TWILIO_AUTH_TOKEN.")
         except SourceError as exc:
+            if is_transient(exc):
+                raise  # the provider did not answer: that says nothing about the setup
             return Verdict(ready=False, detail=f"Twilio refused the request: {exc}")
         if not (body or {}).get("incoming_phone_numbers"):
             return Verdict(ready=False, detail=f"{self.account} is not a number on this Twilio account.")

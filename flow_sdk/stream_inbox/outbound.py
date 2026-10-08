@@ -299,6 +299,7 @@ async def _run_send(conversation_id: str, target: ReplyTarget, text: str, *, fil
     """The background half. Never raises — a failed reply must not take down
     the request that started it, and the worker's own record is the trail."""
     from flow_sdk.builtin.agentic_process.launch_health import LaunchError  # noqa: PLC0415
+    from flow_sdk.stream_inbox.stream_inbox_on_tag import emit_reply_failed  # noqa: PLC0415
 
     try:
         outcome = await send_to(conversation_id, target, text, files=files, quote=quote)
@@ -312,5 +313,9 @@ async def _run_send(conversation_id: str, target: ReplyTarget, text: str, *, fil
         )
     except LaunchError as exc:
         logger.error("[channel-send] %s → %s failed: %s", target.channel, target.to, exc.as_dict())
-    except Exception:  # noqa: BLE001
+        emit_reply_failed(target.source, conversation_id, str(exc))
+    except Exception as exc:  # noqa: BLE001
         logger.exception("[channel-send] %s → %s failed", target.channel, target.to)
+        # A refusal carries the far end's own words (``HubError.reason``: "WhatsApp refused: …").
+        emit_reply_failed(target.source, conversation_id, str(getattr(exc, "reason", "") or exc))
+

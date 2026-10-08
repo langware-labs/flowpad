@@ -836,6 +836,12 @@
   ],
   "url_cases": [
     {
+      "name": "every message channel and where it is routed",
+      "view_type": "data-sources",
+      "pointer": "channels",
+      "url": "/dock/data-sources/channels"
+    },
+    {
       "name": "one data source's page",
       "view_type": "data-sources",
       "pointer": "5b112f8f-06d9-46ff-9ff0-d09748a4d512",

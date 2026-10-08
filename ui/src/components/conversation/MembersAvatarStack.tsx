@@ -42,6 +42,7 @@ import { useLocalUser } from './useLocalUser';
 import { nestTeamMembers, useTeamRosters } from './team-member-nesting';
 import { avatarColorForParticipant } from './avatar-color';
 import { ContactPermissionsDialog } from './ContactPermissionsDialog';
+import { useUiActionRequest } from '@src/navigation/ui-actions';
 import {
   assignableRoles,
   canInviteMembers,
@@ -86,6 +87,9 @@ interface MembersAvatarStackProps {
    *  calls ``proceed`` once the prerequisite is met, so the invite the person
    *  set out to make carries on instead of ending at the prerequisite. */
   beforeInvite?: (proceed: () => void) => boolean;
+  /** The UI action that opens the invite (``invite-members`` on Project home) -- only the host
+   *  that names it listens, so a conversation's roster does not answer a project's invite. */
+  uiAction?: string;
   /** Roles the invite form may grant, e.g. ``['member', 'admin']`` for a
    *  project. Omitted = no picker, and the entity's own default role applies. */
   inviteRoles?: readonly string[];
@@ -121,6 +125,7 @@ export function MembersAvatarStack({
   showInviteButton = false,
   beforeInvite,
   inviteRoles,
+  uiAction,
 }: MembersAvatarStackProps) {
   const { t } = useLingui();
   const { entity, members, addMembers, removeMember, setRole, refresh, updating, stale, available, reason } =
@@ -601,6 +606,9 @@ export function MembersAvatarStack({
       setLinkCopied(false);
     }
   };
+  // A named UI action ("invite someone to this project") opens the invite the way a click does --
+  // through the same gates (sign-in, publish first).
+  useUiActionRequest(uiAction ? [uiAction] : [], () => handleOpenChange(true));
 
   return (
     <>

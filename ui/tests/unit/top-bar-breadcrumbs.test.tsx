@@ -20,6 +20,8 @@ vi.mock('@src/hooks/useContext', () => ({ useContext: () => ctx }));
 import { dataManager, Tab, tabManager, TypeId } from '@sdk';
 import { canonicalWikiWord } from '@src/navigation/asset-doc-pointer-grammar';
 import * as ancestors from '@src/navigation/entity-ancestors';
+import * as subjectEditor from '@src/navigation/subject-editor';
+import { DockPointer } from '@src/navigation/DockPointer';
 import { useEntityBreadcrumbs } from '@src/components/top-nav-bar/use-entity-breadcrumbs';
 import { resetWikiResolveResultsForTests, setWikiResolveResult } from '@src/routes/loaders/wiki-resolve-store';
 
@@ -83,6 +85,26 @@ describe('useEntityBreadcrumbs', () => {
     await waitFor(() => expect(result.current.crumbs).toHaveLength(3));
     expect(result.current.crumbs.map((c) => c.label)).toEqual(['Acme', 'Research', 'Design notes']);
     expect(result.current.crumbs.map((c) => c.kind)).toEqual(['project', 'ancestor', 'current']);
+  });
+
+  it('the subject crumb opens the subject in its own editor — a dead crumb only inside that editor', async () => {
+    const EDITOR = new TypeId('micro_app', '99999999-9999-4999-8999-999999999999');
+    const BROWSER = new TypeId('micro_app', '77777777-7777-4777-8777-777777777777');
+    const DATASET = 'dataset-88888888-8888-4888-8888-888888888888';
+    vi.spyOn(subjectEditor, 'subjectEditorPointer').mockResolvedValue(DockPointer.forAppEntity(EDITOR, { subject: DATASET }));
+    vi.spyOn(ancestors, 'resolveAncestorChain').mockResolvedValue([]);
+    vi.spyOn(dataManager, 'getByTypeId').mockResolvedValue({ displayName: 'SmartNavigator' } as never);
+    const openOn = (app: TypeId) => {
+      vi.spyOn(Tab, 'resolveDockTarget').mockResolvedValue({ targetTypeId: app, target: { title: 'an app' }, projectId: null } as never);
+      return { pointer: app.toString(), tabHash: 'tab-1', targetTypeId: app, viewType: 'app', options: { subject: DATASET } } as never;
+    };
+
+    const fromBrowser = renderHook(() => useEntityBreadcrumbs(openOn(BROWSER)));
+    await waitFor(() => expect(fromBrowser.result.current.crumbs[1].pointer?.toUrl()).toContain(EDITOR.toString()));
+
+    const fromEditor = renderHook(() => useEntityBreadcrumbs(openOn(EDITOR)));
+    await waitFor(() => expect(fromEditor.result.current.crumbs[1].label).toBe('SmartNavigator'));
+    expect(fromEditor.result.current.crumbs[1].pointer).toBeNull();
   });
 
   it('never lets a stale resolution reach a newer address', async () => {

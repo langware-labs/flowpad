@@ -219,3 +219,9 @@ sides. `import flow_sdk.models.entities` is required — entity classes register
 import, and without it `get_entity_cls(TYPE)` returns `None` in a fresh worker
 process (`register_all()` only loads the FS metadata schema, not the entity
 classes).
+
+## Data schemas and datasets
+
+Defining or changing a schema (`agentic-assets/data_schema/<kind>/`), keeping records as
+dataset rows, checking a value, or moving `data_spec` folders to `data_schema` is the
+**data-management** skill. It proves each change in a throwaway probe project first.

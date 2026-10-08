@@ -74,6 +74,7 @@ class ClaudeAgentOptions(AgentOptions):
         effort: str | None = None,
         plugin_dirs: list[str] | None = None,
         settings_json: dict | None = None,
+        disallowed_tools: list[str] | None = None,
     ) -> None:
         super().__init__(workdir=workdir, env_vars=env_vars)
         self.session_id = session_id
@@ -113,6 +114,10 @@ class ClaudeAgentOptions(AgentOptions):
         # section. Launch-only, like ``plugin_dirs``: excluded from
         # to_json()/from_json() so it cannot churn the restart hash.
         self.settings_json = settings_json
+        # ``--disallowedTools`` — tool patterns this worker may never run (``Bash(git checkout:*)``),
+        # from its agent's ``disallowed_tools``. A deny rule holds even under bypassPermissions,
+        # which is the point: an instruction can be ignored, a denied tool cannot be called.
+        self.disallowed_tools: list[str] = list(disallowed_tools or [])
 
         # Auto-inject CLAUDE_PROJECT_DIR from workdir
         if workdir:
@@ -172,6 +177,8 @@ class ClaudeAgentOptions(AgentOptions):
             flags.extend(["--agents", serialize_json_cli_value(self.agents_json)])
         if self.settings_json:
             flags.extend(["--settings", serialize_json_cli_value(self.settings_json)])
+        if self.disallowed_tools:
+            flags.extend(["--disallowedTools", ",".join(self.disallowed_tools)])
         if self.mcp_config_json:
             # Takes a JSON STRING as well as a file path, so nothing is written
             # to disk for a process's attached servers. ``--strict`` always rides
@@ -256,6 +263,7 @@ class ClaudeAgentOptions(AgentOptions):
         "verbose",
         "effort",
     )
+    SPARSE_FIELDS = ("disallowed_tools",)
     _COERCE = {
         "resume": bool,
         "debug": bool,
@@ -264,6 +272,7 @@ class ClaudeAgentOptions(AgentOptions):
         "print_mode": bool,
         "verbose": bool,
         "add_dirs": lambda v: list(v or []),
+        "disallowed_tools": lambda v: list(v or []),
     }
 
 

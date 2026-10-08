@@ -281,7 +281,8 @@ export function useQuickCreatePick() {
     onNewProjectFromGit: () => setNewGitProjectOpen(true),
   };
 
-  return { panelProps, dialogs };
+  // `openSource`: the add-a-dependency dialog on its own (the `add-dependency` UI action).
+  return { panelProps, dialogs, openSource: ctxFolder.openSource };
 }
 
 /** What the panel needs from its host — everything but the host's own dismiss

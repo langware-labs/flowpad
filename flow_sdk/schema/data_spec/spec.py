@@ -41,7 +41,7 @@ from enum import Enum
 from pathlib import PurePath
 from typing import Annotated, Any, ClassVar, Literal, Optional, Union, get_args, get_origin
 
-from pydantic import BaseModel, BeforeValidator, ConfigDict, PlainSerializer, create_model, model_validator
+from pydantic import BaseModel, BeforeValidator, ConfigDict, Discriminator, PlainSerializer, Tag, create_model, model_validator
 
 from flow_sdk.schema.data_spec._namespace import current as current_ns
 from flow_sdk.schema.data_spec._namespace import qualified
@@ -203,10 +203,30 @@ def _is_map_form(form: Any) -> bool:
 
 
 def _field_def(form: Any) -> tuple:
-    """``(annotation, default)`` for one field of an object form: an optional one defaults to None."""
-    if isinstance(form, str) and form.startswith(OPTIONAL_MARK):
-        return (Optional[_compile(form[len(OPTIONAL_MARK):])], None)
-    return (_compile(form), ...)
+    """``(annotation, default)`` for one field of an object form: an optional one defaults to None.
+
+    A field whose shape is a registered kind holds a value of it -- or a REFERENCE to one stored
+    value, ``<kind>.id.<uuid>`` (``value_ref``): a row points at a shared value instead of copying
+    it. A slot or a list element is not a field, so it stays the schema itself.
+
+    Which of the two is decided by the input (a string is a reference), so a value that does not fit
+    reports the value's errors alone -- ``icp.value.type: Input should be 'gtm.icp'`` -- not those
+    plus "Input should be a valid string" from the branch it was never meant for."""
+    optional = isinstance(form, str) and form.startswith(OPTIONAL_MARK)
+    inner = form[len(OPTIONAL_MARK):] if optional else form
+    annotation = _compile(inner)
+    if isinstance(inner, str) and isinstance(annotation, type) and issubclass(annotation, DataSpec):
+        from flow_sdk.schema.data_spec.value_ref import value_ref  # noqa: PLC0415
+
+        annotation = Annotated[  # type: ignore[assignment]
+            Union[Annotated[annotation, Tag("value")], Annotated[value_ref(inner), Tag("ref")]],
+            Discriminator(_value_or_ref),
+        ]
+    return (Optional[annotation], None) if optional else (annotation, ...)
+
+
+def _value_or_ref(held: Any) -> str:
+    return "ref" if isinstance(held, str) else "value"
 
 
 def _compile(form: Any) -> type:
@@ -301,10 +321,11 @@ def to_authoring_form(t: Any) -> Any:
     """A type → the authoring form that produces it. Inverse of ``parse``.
 
     ``Optional[X]`` renders as ``X``. Whether a value may be ABSENT is
-    behaviour, not shape — the grammar has three forms and no keywords (§2), so
-    there is nowhere to put "optional" and nothing that needs it: a missing
-    value simply is not written. Before this, any spec with an optional field
-    had NO authoring form at all, which quietly excluded 13 of them.
+    behaviour, not shape: the RENDERED form has three forms and no marks (§2),
+    and a missing value simply is not written. (``?X`` exists on the input side
+    only -- see ``OPTIONAL_MARK`` -- so no rendered form changes.) Before this,
+    any schema with an optional field had NO authoring form at all, which
+    quietly excluded 13 of them.
     """
     from flow_sdk.schema.data_spec._kinds import PRIMITIVE_NAMES  # noqa: PLC0415
 
@@ -315,7 +336,8 @@ def to_authoring_form(t: Any) -> Any:
         return _normalize_form(t)
     if isinstance(t, type) and issubclass(t, dict) and t is not dict:
         # A storage flavour of a builtin (``FreeForm`` is a ``dict``). The
-        # grammar has no map form, so this has none either — but it must FAIL
+        # rendered form has no map (``{"*": X}`` is input-only), so this has
+        # none either — but it must FAIL
         # AS A MAP, naming ``dict``, or the reason reads as "some unknown
         # class" and nobody can tell a grammar gap from a missing registration.
         raise NoAuthoringForm(dict, t)
@@ -428,3 +450,7 @@ def _with_kind(value: DataSpec, info: Any) -> dict:
     tag = spec_tag(value)
     return {"spec_kind": tag, **dumped} if tag else dumped
 
+
+def validation_summary(exc: Any) -> str:
+    """A ``ValidationError`` as one line a person can read: ``status: Input should be ...; title: ...``."""
+    return "; ".join(f"{'.'.join(str(p) for p in e['loc']) or 'root'}: {e['msg']}" for e in exc.errors())

@@ -1,0 +1,19 @@
+{
+  "type": "data_schema",
+  "id": "05265604-7403-4760-bb93-375775a5af7b",
+  "name": "navigation.shown",
+  "fields": {
+    "kind": {
+      "shape": "string",
+      "description": "What kind of thing was shown (file, entity, view, ...)."
+    },
+    "path": {
+      "shape": "?string",
+      "description": "Its file, when it was one."
+    },
+    "typeid": {
+      "shape": "?string",
+      "description": "Its entity, when it was one."
+    }
+  }
+}

@@ -9,6 +9,7 @@ import { useHoverIntent } from '@src/hooks/use-hover-intent';
 import { isHubOnly } from '@src/navigation/hub-runtime';
 import { useUnopenedFavoritesCount } from '@src/hooks/use-unopened-favorites-count';
 import type { FavoriteRef } from '@src/hooks/use-favorites';
+import { useUiActionRequest } from '@src/navigation/ui-actions';
 
 /** Gap between the bar and the menu's top edge. */
 const MENU_GAP = 4;
@@ -52,6 +53,8 @@ export function BookmarksStarButton({ favorite }: { favorite: FavoriteRef }) {
   // this and registers it as a listener, so it has to be a dep — and an
   // unmemoised function would re-run the effect (rebinding `resize`) on every
   // single render.
+  // "open my bookmarks" (smart navigation): the same menu, opened in place (it measures itself once open).
+  useUiActionRequest(['bookmarks-menu'], () => bookmarksAvailable && menu.set(true));
   const measure = useCallback(() => {
     const rect = triggerRef.current?.getBoundingClientRect();
     if (!rect) return;

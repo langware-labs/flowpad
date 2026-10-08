@@ -147,7 +147,8 @@ export async function sendDiagnosisEmailReport(diagnosisId: string): Promise<voi
 }
 
 export interface CreateAndSendParams {
-  /** Required for project-local conversations; null for cross-user bundle. */
+  /** Required for project-local conversations; for a cross-user bundle it is
+   *  the sender's local-only project mapping — pass it whenever one is selected. */
   project_id?: string | null;
   participants: ConversationParticipant[];
   title?: string;

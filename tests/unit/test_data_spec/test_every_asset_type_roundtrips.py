@@ -63,9 +63,9 @@ VALID: dict[str, dict] = {
     # `exe_data` is the class its `subkind` names, and `output_spec_kind` must
     # name a registered kind — a filler string is refused at read, by design
     # A completion_check OR a status_check, never both: filled, the other stays unset.
-    # a data spec defines ONE shape: a record's fields, or a dataset's example slots -- not both;
+    # a data schema defines ONE shape: a record's fields, or a dataset's example slots -- not both;
     # a field's shape is an authoring form, and a declared subkind must match the body
-    "data_spec": {
+    "data_schema": {
         "subkind": "record",
         "fields": {"utterance": {"shape": "string", "description": "what was typed"}},
         "examples": None,
