@@ -487,8 +487,9 @@ async def test_run_diagnose_fails_fast_when_worker_dies_without_transcript():
         patch("flow_sdk.migrations.runner._bootstrap_local", new=AsyncMock(return_value=None)),
     ):
         rc = await asyncio.wait_for(diagnose_cmd._run_diagnose("", 1800.0, emit=events.append), timeout=5)
-    assert rc == 1
+    assert rc == 0, "the checks are recorded even though the agent never started"
     assert any(e.get("type") == "error" and "produced no transcript" in e.get("text", "") for e in events)
+    assert events[-1]["diagnosis_id"]
 
 
 @pytest.mark.asyncio
@@ -908,10 +909,16 @@ async def test_an_agent_that_never_starts_still_answers_the_sweep(tmp_path):
     ):
         rc = await asyncio.wait_for(diagnose_cmd._run_diagnose("", 1800.0, emit=events.append), timeout=5)
 
-    assert rc == 1
+    # No LLM, a dead worker: the run still leaves a diagnosis -- the checks', recorded.
+    assert rc == 0
     done = events[-1]
     assert done["type"] == "done" and not done["ok"]
     assert done["diagnosis"]["title"] == "Backend down", "what the sweep found is not lost with the agent"
+    from flow_sdk.builtin.flowpad_diagnosis import FlowpadDiagnosis
+
+    recorded = await FlowpadDiagnosis.get_by_id(done["diagnosis_id"])
+    assert recorded.title == "Backend down" and recorded.diagnosis.findings[0].id == "A2"
+    assert done["feed_posted"]
 
 
 @pytest.mark.asyncio
