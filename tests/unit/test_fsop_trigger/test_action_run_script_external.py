@@ -182,3 +182,20 @@ async def test_external_path_duration_recorded(tmp_path):
     assert result.duration_s >= 0
     assert result.command == str(script)
     assert result.ok is True
+
+
+async def test_external_path_is_told_how_to_reach_this_flowpad(tmp_path):
+    """A script that writes dataset rows through the Python SDK needs the interpreter that has it,
+    and a ``flow`` call must reach the backend that fired the trigger -- the three a worker gets."""
+    import sys
+
+    from flow_sdk.instance_settings import get_instance_settings
+
+    out = tmp_path / "env.txt"
+    script = _make_script(tmp_path, "s.sh",
+                          f"#!/usr/bin/env bash\necho py=$FLOWPAD_PYTHON > {out}\necho inst=$FLOW_INSTANCE >> {out}\n")
+    action = TriggerAction(action_type=ActionType.RUN_SCRIPT, script_path=str(script))
+    await RunScriptActionHandler().execute(_make_fake_trigger(), action=action, changes=_changes())
+
+    lines = out.read_text().splitlines()
+    assert lines == [f"py={sys.executable}", f"inst={get_instance_settings().instance_name}"]
