@@ -326,6 +326,9 @@ the output — never jump straight from symptom to guess:
    run the commands — don't just recommend them. If the fix is the user's to make (re-install,
    re-sign, cloud/account actions) or is risky/destructive, do NOT attempt it — describe exactly
    what the user should do (Step 5).
+   **A supporter's request run only diagnoses** (its prompt says so, and the file-editing tools are
+   off): skip this sub-step entirely — no repair of any kind — describe the fix instead and record
+   `--status needs_action`.
    **What you may change is Flowpad's own runtime state only** — the instance's `server.lock` /
    `server.pid` / `server.json`, its processes and ports, its install. **Never delete, rewrite or
    "correct" a config or data file** (`config.json`, `preferences.json`, the database) **or any file
