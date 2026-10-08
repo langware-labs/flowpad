@@ -35,6 +35,7 @@ def test_the_hub_body_carries_what_the_owner_sets_and_never_what_the_hub_owns():
     body = DiagnosisRequest(
         id=REQUEST_ID,
         instructions="x",
+        ask_permission=True,
         write_expires_at="t",
         max_run_bytes=1,
         run_count=3,
@@ -43,6 +44,7 @@ def test_the_hub_body_carries_what_the_owner_sets_and_never_what_the_hub_owns():
     )._hub_body()
 
     assert {"instructions", "write_expires_at", "max_run_bytes"} <= set(body)
+    assert body["ask_permission"] is True, "the runner learns it from the hub's brief"
     assert not {"run_count", "llm_endpoint_typeid", "last_run_at"} & set(body)
 
 

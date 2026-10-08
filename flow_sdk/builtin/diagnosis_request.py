@@ -58,6 +58,9 @@ _HUB_FIELDS = (
 class DiagnosisRequest(FlowpadDiagnosis):
     type: str = APIField(default=EntityType.DIAGNOSIS_REQUEST.value)
     instructions: Optional[str] = APIField(None, description="What the runner's agent is asked to do.")
+    ask_permission: Optional[bool] = APIField(
+        False, description="Whether `flow diagnose <id>` asks the runner before it runs, and before it sends."
+    )
     write_expires_at: Optional[str] = APIField(
         None, description="ISO end of the window in which the id accepts runs. Sent at open; the hub clamps it."
     )
@@ -87,6 +90,7 @@ class DiagnosisRequest(FlowpadDiagnosis):
             name=title,
             title=title,
             instructions=spec.instructions,
+            ask_permission=spec.ask_permission,
             project_id=spec.project_id or None,
             write_expires_at=(datetime.now(UTC) + timedelta(hours=spec.write_hours)).isoformat(),
             max_run_bytes=spec.max_run_mb * 1024 * 1024,
