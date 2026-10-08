@@ -5,11 +5,12 @@ in this grammar. It is the ONLY copy in the assistant's skills; the others link 
 
 | form | means |
 | --- | --- |
-| `"string"`, `"int"`, `"float"`, `"bool"`, `"binary"` | a reserved primitive |
-| `"crm.lead"` | a value of a registered kind, by name |
+| `"string"`, `"int"`, `"float"`, `"bool"`, `"binary"`, `"date"` | a reserved primitive (`date`: ISO `YYYY-MM-DD`, checked) |
+| `"crm.lead"` | a value of a registered kind — or, in a field or a list, a REFERENCE to one row of it (below) |
+| `"crm.company\|crm.lead"` | a reference to one row of any of these kinds |
 | `{"name": "string", "age": "int"}` | an object — fields and their shapes (inline, no kind) |
 | `["string"]`, `["crm.note"]` | a list — EXACTLY one element: the shape every element has |
-| `"?string"`, `"?crm.ref"` | may be absent |
+| `"?string"`, `"?crm.company"` | may be absent |
 | `"enum:new|won|lost"` | one of a closed set of strings (`"?enum:a|b"` — optional) |
 | `{"*": "int"}` | a map — any key, every value that shape |
 
@@ -39,6 +40,39 @@ Defences, all used by the probe:
 - a dataset whose row kind is not registered refuses its rows with
   `names a kind nobody registered` (older builds: `no authoring form for typing.Any`,
   or a wall of `FolderSpec` / `TextSpec` errors — same cause).
+
+## Links between rows — `<kind>.id.<uuid>`
+
+A kind is a unique name; ONE instance of it is `<full kind>.id.<uuid>`. A dataset row is an instance:
+its id is stored in the row (survives a rename and a re-clone) and every read hands out its `ref`.
+
+```json
+"company": {"shape": "?crm.company"}            // in crm.lead's schema
+"past":    {"shape": ["crm.company"]}
+```
+```json
+"company": "--acme--.crm.company.id.3f6c0d4e-…"   // in a lead row: row.ref of that company
+"past":    ["--acme--.crm.company.id.a91e…"]
+```
+
+- The target is the field's own kind — no ref kind, no target in prose.
+- What the field holds decides it: a STRING `<kind>.id.<uuid>` is a link; an OBJECT is a value
+  copied in. A value of a ROW kind (one a dataset beside holds) is refused — link to the row.
+  A kind no dataset holds (`crm.note`, an item) is fine inline: that is a value, not a row.
+- `check` / `append` / `put` refuse a reference that names nothing: no row of its kind in the
+  datasets beside it (`input.company: no --acme--.crm.company row <uuid>`), or — for a kind no
+  dataset there holds — no value in a value store (`flow_sdk.values`). `delete_row` refuses while a
+  row still references it (`used by --acme--.crm.lead dana`). Re-point or delete that row first.
+- **Never link a dataset kept in git to rows kept OUT of git** (gitignored rows, e.g. real
+  people): such rows get their ids on each machine, so on another clone the link names nothing.
+  Keep the comment or the link on the out-of-git side — and expect it to break: a `git pull`
+  can delete its target (the delete refusal only guards this checkout), so the out-of-git row
+  then reads as a problem (`no <kind> row <uuid>`); readers report it and re-point it.
+- A list of references is written inline in the row's document; a list of values one folder per element.
+- A map's values (`{"*": "crm.company"}`) are VALUES, never references — a reference there is
+  refused. To link several rows, use a list (`["crm.company"]`) or one field per link.
+- `delete_row` counts every row beside it: each slot of the rows that read, and the input as
+  stored of the rows that do not — a row broken today still protects what it points at.
 
 ## Checking one value
 

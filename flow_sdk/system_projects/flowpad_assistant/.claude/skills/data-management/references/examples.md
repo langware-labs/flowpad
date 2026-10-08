@@ -10,31 +10,30 @@ agentic-assets/data_schema/
     data_schema.json                      {"type": "data_schema", "ns": "acme"}  ← no body
     description.md                        what the family is, one row per kind
     agentic-assets/data_schema/
-      crm.lead/   data_schema.json + description.md
-      crm.note/   data_schema.json + description.md
-      crm.ref/    data_schema.json + description.md
+      crm.company/ data_schema.json + description.md
+      crm.lead/    data_schema.json + description.md
+      crm.note/    data_schema.json + description.md
 ```
 
 - The folder name IS the kind, the full dot path — never relative to where it nests.
 - A grouping folder needs its own body-less `data_schema.json`: the indexer only
   descends through folders that have one.
-- **Every** `data_schema.json` declares `"ns"`. A nested schema finds the nearest
-  folder holding `agentic-assets/` — the grouping folder, not the project — so
-  relying on the project manifest's `ns` gets it refused.
+- The grouping folder declares `"ns"` once; the schemas nested in it inherit it. A schema
+  outside any grouping folder declares its own (or the project manifest's `ns` applies).
 
 ## A record kind — `crm.lead/data_schema.json`
 
 ```json
 {
   "type": "data_schema",
-  "ns": "acme",
   "fields": {
     "name":        {"shape": "string", "description": "The person."},
     "status":      {"shape": "enum:new|engaged|won|lost", "description": "Where the lead is."},
-    "referred_by": {"shape": "?crm.ref", "description": "Another lead who referred this one."},
-    "notes":       {"shape": ["crm.note"], "description": "What happened, oldest first."},
+    "company":     {"shape": "?crm.company", "description": "Where they work (a link to a company row)."},
+    "referred_by": {"shape": "?crm.company|crm.lead", "description": "Who referred them: a company or another lead."},
+    "notes":       {"shape": ["crm.note"], "description": "What happened, oldest first (values, not links)."},
     "counts":      {"shape": {"*": "int"}, "description": "Touches per channel."},
-    "updated":     {"shape": "?string", "description": "Last change, YYYY-MM-DD."}
+    "updated":     {"shape": "?date", "description": "Last change."}
   }
 }
 ```
@@ -42,22 +41,17 @@ agentic-assets/data_schema/
 `description.md` beside it says what a value IS, in a sentence or two — editors and
 `dm_ctl kind` show it.
 
-## A link to another row — `crm.ref/data_schema.json`
+## A link to another row
+
+`company` above is typed by the kind it points at. In a lead row it holds that company row's
+reference — the `ref` every read hands out (`<full kind>.id.<uuid>`):
 
 ```json
-{
-  "type": "data_schema",
-  "ns": "acme",
-  "fields": {
-    "type": {"shape": "enum:crm.lead|crm.company", "description": "The kind of the row pointed at."},
-    "key":  {"shape": "string", "description": "The row's key in that kind's dataset."}
-  }
-}
+{"name": "Dana", "status": "engaged", "company": "--acme--.crm.company.id.3f6c0d4e-8a1b-4c2d-9e3f-5a6b7c8d9e0f"}
 ```
 
-The target type is an `enum:` IN THE SHAPE, so it is checked and an app reads it from
-`kindForm` — never parse it out of a description sentence. Whether the key exists is
-not checked by the SDK: the app (or the probe) checks it.
+The SDK checks it on every write (a missing company row is refused) and refuses deleting the
+company while Dana still points at it. Renaming the company row keeps its id, so the link holds.
 
 ## A dataset of records — `agentic-assets/dataset/crm-leads/dataset.json`
 
@@ -84,11 +78,11 @@ not checked by the SDK: the app (or the probe) checks it.
 
 ```
 examples/dana/                  ← the row's KEY
-  example.json                  {"metadata": {"kind": "train"}, "data": {}}
+  example.json                  {"metadata": {"id": "<the row's id>", "kind": "train"}, "data": {}}
   input/lead.json               the scalar fields
   input/notes/0001/note.json    a list of a kind: one folder per element
   input/notes/0002/note.json
 ```
 
 You never write these files. `dm_ctl ds-append` / `ds-put` do, and `ds-rows` reads
-them back with `key`, `id` and every slot's value.
+them back with `key`, `id`, `ref`, `version` and every slot's value.

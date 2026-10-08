@@ -7,12 +7,13 @@ along). ``GET /api/v1/editors/{typeid}``: the apps that edit an entity, best fir
 (or a list) of a kind, best first. ``GET /api/v1/values/{ref}?within=``: one stored value, named
 by its reference ``<kind>.id.<uuid>``, from the asset that keeps it (``flow_sdk.values``).
 ``POST /api/v1/kinds/{kind}/check``: would this value fit the kind? Writes nothing.
+``GET /api/v1/kinds/{kind}/datasets?project=``: the datasets whose rows are that kind.
 Standard envelope, so the SDK reads them through ``apiClient``.
 """
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Optional
 
 from fastapi import APIRouter, Body
 from fastapi.responses import JSONResponse
@@ -102,6 +103,39 @@ async def check_kind(kind: str, body: dict = Body(...)) -> ApiResponse | JSONRes
     if errors is None:
         return _fail(f"no kind {kind!r} is registered", 404)
     return ApiSuccessResponse(data={"kind": kind, "ok": not errors, "errors": errors})
+
+
+@router.get("/api/v1/kinds/{kind}/datasets", response_model=None)
+async def kind_datasets(kind: str, project: str = "") -> ApiResponse:
+    """The datasets whose rows are ``kind`` (``{datasets: [{id, name, title, project_id, asset_ref}]}``),
+    in ``project`` when given -- how an app finds where a kind's rows live, once, by kind.
+
+    The index proposes, the disk decides: a dataset is listed only while its folder still holds
+    rows of ``kind`` (``Dataset.for_kind``'s own reading), once per folder -- so a stale index
+    entry never makes this answer differ from the Python lookup."""
+    from pathlib import Path  # noqa: PLC0415
+
+    from flow_sdk.builtin.dataset import Dataset  # noqa: PLC0415
+    from flow_sdk.datasets.links import datasets_for_kind, owner_of, row_kind  # noqa: PLC0415
+    from flow_sdk.db.drivers.query import QueryFilter  # noqa: PLC0415
+
+    def on_disk(asset_ref: Any) -> Optional[Path]:
+        folder = Path(asset_ref).resolve() if asset_ref else None
+        if folder is None or not folder.is_dir():
+            return None
+        return folder if folder in {f.resolve() for f in datasets_for_kind(kind, owner_of(folder))} else None
+
+    found, seen = [], set()
+    for d in await Dataset.get_all(QueryFilter(type=Dataset.get_type())):
+        if row_kind(d.spec) != kind or (project and d.project_id != project):
+            continue
+        folder = on_disk(d.asset_ref)
+        if folder is not None and folder not in seen:
+            seen.add(folder)
+            found.append(d)
+    return ApiSuccessResponse(data={"datasets": [
+        {"id": d.id, "name": d.name, "title": d.title, "project_id": d.project_id, "asset_ref": d.asset_ref}
+        for d in found]})
 
 
 @router.get("/api/v1/values/{ref}")

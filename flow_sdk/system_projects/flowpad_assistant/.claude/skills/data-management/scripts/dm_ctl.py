@@ -19,8 +19,9 @@ Verbs
   ds-row DATASET KEY                 one row, by key or id
   ds-append DATASET ROWS             rows in (each may carry a "key"); one bad row writes nothing
   ds-put DATASET KEY ROW             create or replace the row KEY
-  ds-delete DATASET KEY              remove one row
-  ds-rename DATASET KEY NEW_KEY      move a row to a new key (its id follows)
+  ds-delete DATASET KEY              remove one row (--expected VERSION: refuse a row changed since)
+  ds-store-ids DATASET               store each row's id where it only has the legacy derived one
+  ds-rename DATASET KEY NEW_KEY      move a row to a new key (its id stays; --expected VERSION)
   ds-check DATASET ROW               would ROW fit? writes nothing
   ds-validate DATASET                every row checked against the dataset's shape
 
@@ -196,18 +197,6 @@ def _datasets() -> list[dict]:
     return list(_call("GET", "/graph/dataset") or [])
 
 
-def _row_kind(spec: Any) -> str:
-    """The kind a dataset's rows are: its named kind, else its inline ``input``."""
-    if isinstance(spec, str):
-        return spec
-    if isinstance(spec, dict):
-        examples = spec.get("examples")
-        first = examples[0] if isinstance(examples, list) and examples else examples
-        if isinstance(first, dict) and isinstance(first.get("input"), str):
-            return first["input"]
-    return ""
-
-
 def _dataset(ref: str) -> dict:
     """By id, folder path, or an unambiguous name/title. Ambiguity is an error, never a guess."""
     rows = _datasets()
@@ -230,13 +219,15 @@ def _ds(args, action: str, method: str = "POST", body: Any = None) -> Any:
 
 
 def cmd_ds_find(args) -> dict:
-    hits = [r for r in _datasets() if _row_kind(r.get("spec")) == args.kind or r.get("spec") == args.kind]
-    return {"kind": args.kind, "datasets": [{k: r.get(k) for k in ("id", "name", "title", "project_id", "asset_ref", "num_examples")} for r in hits]}
+    query = f"?project={quote(args.project, safe='')}" if args.project else ""
+    return {"kind": args.kind, **(_call("GET", f"/kinds/{quote(args.kind, safe='')}/datasets{query}") or {})}
 
 
 def cmd_ds_rows(args) -> dict:
-    rows = (_ds(args, "rows", "GET") or {}).get("rows") or []
-    return {"count": len(rows), "rows": rows}
+    """Every row that fits (each with ``key``, ``id``, ``ref``, ``version``), and the ``problems``."""
+    got = _ds(args, "rows", "GET") or {}
+    rows = got.get("rows") or []
+    return {"count": len(rows), "rows": rows, "problems": got.get("problems") or []}
 
 
 def cmd_ds_row(args) -> dict:
@@ -249,15 +240,22 @@ def cmd_ds_append(args) -> dict:
 
 
 def cmd_ds_put(args) -> dict:
-    return _ds(args, "put-row", body={"key": args.key, "row": _json(args.row)})
+    body = {"key": args.key, "row": _json(args.row)}
+    return _ds(args, "put-row", body={**body, "expected": args.expected} if args.expected else body)
 
 
 def cmd_ds_delete(args) -> dict:
-    return _ds(args, "delete-row", body={"key": args.key})
+    body = {"key": args.key}
+    return _ds(args, "delete-row", body={**body, "expected": args.expected} if args.expected else body)
+
+
+def cmd_ds_store_ids(args) -> dict:
+    return _ds(args, "store-ids", body={})
 
 
 def cmd_ds_rename(args) -> dict:
-    return _ds(args, "rename-row", body={"key": args.key, "new_key": args.new_key})
+    body = {"key": args.key, "new_key": args.new_key}
+    return _ds(args, "rename-row", body={**body, "expected": args.expected} if args.expected else body)
 
 
 def cmd_ds_check(args) -> dict:
@@ -278,13 +276,17 @@ VERBS: dict[str, tuple] = {
     "probe-drop": (cmd_probe_drop, [("project_id", {})]),
     "kind": (cmd_kind, [("kind", {})]),
     "check": (cmd_check, [("kind", {}), ("value", {})]),
-    "ds-find": (cmd_ds_find, [("kind", {})]),
+    "ds-find": (cmd_ds_find, [("kind", {}), ("--project", {"default": "", "help": "only this project's"})]),
     "ds-rows": (cmd_ds_rows, [_DS]),
     "ds-row": (cmd_ds_row, [_DS, ("key", {})]),
     "ds-append": (cmd_ds_append, [_DS, ("rows", {})]),
-    "ds-put": (cmd_ds_put, [_DS, ("key", {}), ("row", {})]),
-    "ds-delete": (cmd_ds_delete, [_DS, ("key", {})]),
-    "ds-rename": (cmd_ds_rename, [_DS, ("key", {}), ("new_key", {})]),
+    "ds-put": (cmd_ds_put, [_DS, ("key", {}), ("row", {}),
+                            ("--expected", {"default": "", "help": "the version you read; a newer row refuses"})]),
+    "ds-delete": (cmd_ds_delete, [_DS, ("key", {}),
+                                  ("--expected", {"default": "", "help": "the version you read; a newer row refuses"})]),
+    "ds-store-ids": (cmd_ds_store_ids, [_DS]),
+    "ds-rename": (cmd_ds_rename, [_DS, ("key", {}), ("new_key", {}),
+                                  ("--expected", {"default": "", "help": "the version you read; a newer row refuses"})]),
     "ds-check": (cmd_ds_check, [_DS, ("row", {})]),
     "ds-validate": (cmd_ds_validate, [_DS]),
 }

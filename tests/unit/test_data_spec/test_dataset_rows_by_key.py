@@ -50,8 +50,8 @@ async def test_append_with_a_key_names_the_folder_and_the_row_says_its_key(tmp_p
     eid, numbered = await d.append([{"key": "acme", "input": {"name": "Acme"}}, {"input": {"name": "Beta"}}])
     assert (tmp_path / "examples/acme/input/lead.json").is_file()
     assert (tmp_path / "examples/0001").is_dir()
-    assert eid == example_id(DATASET_ID, "acme")
     assert {r.key: r.id for r in d.read_rows()} == {"0001": numbered, "acme": eid}
+    assert d.example(eid)["key"] == "acme"             # the stored id finds the row
     assert d.example("acme")["key"] == "acme"          # a key addresses a row like its id does
     assert {r["key"] for r in d._index()} == {"0001", "acme"}
 
@@ -93,13 +93,12 @@ async def test_a_put_that_does_not_fit_writes_nothing(tmp_path):
 
 async def test_delete_and_rename_by_key(tmp_path):
     d = _dataset(tmp_path)
-    await d.append([{"key": "acme", "input": {"name": "Acme"}}, {"key": "beta", "input": {"name": "Beta"}}])
-    new_id = d.rename_row("acme", "acme_corp")
-    assert new_id == example_id(DATASET_ID, "acme_corp")
-    assert d.example(new_id)["input"]["name"] == "Acme"
+    acme, beta = await d.append([{"key": "acme", "input": {"name": "Acme"}}, {"key": "beta", "input": {"name": "Beta"}}])
+    assert d.rename_row("acme", "acme_corp") == acme            # a rename keeps the row's id
+    assert d.example(acme)["input"]["name"] == "Acme"
     with pytest.raises(ValueError, match="already taken"):
         d.rename_row("acme_corp", "beta")
-    assert d.delete_row(example_id(DATASET_ID, "beta")) == "beta"     # an id works as well as a key
+    assert d.delete_row(beta) == "beta"                         # an id works as well as a key
     assert [r.key for r in d.read_rows()] == ["acme_corp"]
     with pytest.raises(LookupError):
         d.delete_row("beta")
@@ -141,7 +140,8 @@ async def test_the_row_actions_over_http(tmp_path):
 
     resp = await call_local("POST", f"{base}/put-row", {"key": "acme", "row": {"input": {"name": "Acme"}}})
     assert resp.status_code == 200, resp.text
-    assert resp.json()["data"]["example_id"] == example_id(DATASET_ID, "acme")
+    acme_id = resp.json()["data"]["example_id"]
+    assert (await call_local("GET", f"{base}/example/{acme_id}")).json()["data"]["key"] == "acme"
 
     bad = await call_local("POST", f"{base}/put-row", {"key": "acme", "row": {"input": {"status": "maybe"}}})
     assert bad.status_code == 400 and bad.json()["data"]["errors"]

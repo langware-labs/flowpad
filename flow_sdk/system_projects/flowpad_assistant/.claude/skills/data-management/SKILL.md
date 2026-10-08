@@ -89,7 +89,7 @@ DM() { "$FLOWPAD_PYTHON" "<this skill>/scripts/dm_ctl.py" "$@"; }
 DM probe-new
 ```
 
-Never a bare `python3` (it may lack `flow_sdk`), and never read Flowpad's database
+Never a bare `python3` for anything that imports `flow_sdk` (it may lack it), and never read Flowpad's database
 (`flowpad.db`) yourself — everything you need is a `dm` verb or a `flow` command. Every call prints one JSON
 object: `{"ok": true, ...}`, or `{"ok": false, "error", "data"}` with the server's
 reasons (a 400 carries the validation `errors`).
@@ -98,7 +98,16 @@ reasons (a 400 carries the validation `errors`).
 
 | Missing | Honest answer today |
 | --- | --- |
-| a reference shape (`ref:crm.company`) with integrity checks | a `{type, key}` kind; the target type is an `enum:` in it; checking that the key exists is the caller's job |
 | change events for dataset rows | re-read on focus or on a timer; say it is polling |
 | one schema including another (shared `status`/`owner` fields) | repeat the fields; keep them identical |
-| a date primitive | `string` with the format in the field's description (`YYYY-MM-DD`) |
+| a map whose keys are a closed set | `{"*": shape}` and check the keys yourself |
+| a rule across fields or rows (a tag chain, "this campaign's messages belong to its persona") | check it in every writer — the app AND any script — with the same rule, and report breaks |
+
+Two writers at once (an app's server and a sync script) are safe: row writes in one project take
+one lock, and `put` / `delete` with `expected` refuse a row changed since it was read — a row that
+no longer fits included (it is reported with its version).
+
+Links between rows ARE supported: a field typed by the target kind holds `<kind>.id.<uuid>`, the
+SDK refuses a reference to a missing row and a delete that would leave one dangling
+(`references/shape-forms.md`). Never model a link as a `{type, key}` kind, and never link a
+dataset in git to rows kept out of git (their ids differ per machine).

@@ -36,7 +36,7 @@ def test_folder_layout_round_trips_every_leaf_and_numbered_occurrences(tmp_path:
     assert json.loads((ex_dir / "input.json").read_text()) == {"metadata": {"pages": 3}, "data": {"free": True}}
 
     (back,) = lay.read(tmp_path, Row, dataset_id="ds")
-    assert back.model_dump(exclude={"id", "key"}) == row.model_dump(exclude={"id", "key"})
+    assert back.model_dump(exclude={"id", "key", "version"}) == row.model_dump(exclude={"id", "key", "version"})
     assert lay.resolve(ex_dir, back.input) == ex_dir / "input.pdf"
 
 
@@ -55,7 +55,7 @@ def test_csv_layout_round_trips_text_and_refuses_files(tmp_path: Path) -> None:
     lay = CsvLayout()
     lay.write(tmp_path, rows, dataset_id="ds")
     back = lay.read(tmp_path, Row, dataset_id="ds")
-    assert [r.model_dump(exclude={"id", "key"}) for r in back] == [r.model_dump(exclude={"id", "key"}) for r in rows]
+    assert [r.model_dump(exclude={"id", "key", "version"}) for r in back] == [r.model_dump(exclude={"id", "key", "version"}) for r in rows]
     with pytest.raises(ValueError, match="text slots only"):
         lay.write(tmp_path, [Row(input=FileRef(path="x.pdf"))], dataset_id="ds")
 
