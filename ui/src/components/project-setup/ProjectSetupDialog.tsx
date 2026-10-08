@@ -5,6 +5,7 @@ import {
   ExitCode,
   Project,
   recheckProjectReadiness,
+  setProjectReadiness,
   type ProjectReadiness,
   type ProjectSetupRun,
 } from '@sdk';
@@ -13,6 +14,7 @@ import { Button } from '@src/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
 import { AskForm } from '@src/components/ask/AskForm';
 import { claimAskRun } from '@src/components/ask/ask-claims';
+import { errorMessage } from '@src/lib/error-message';
 import { notify } from '@src/notifications';
 import { useProjectSetupStore } from './project-setup-store';
 
@@ -55,6 +57,7 @@ export function ProjectSetupDialog({
   const [readiness, setReadiness] = useState<ProjectReadiness | null>(null);
   const [run, setRun] = useState<ProjectSetupRun | null>(null);
   const [questionId, setQuestionId] = useState<string | null>(null);
+  const [skipping, setSkipping] = useState<string | null>(null);
   const release = useRef<() => void>(() => {});
 
   const load = useCallback(async () => {
@@ -95,7 +98,22 @@ export function ProjectSetupDialog({
       const mine = waiting?.questions?.find((q) => q.run === address);
       if (mine) setQuestionId(mine.id);
     } catch (e) {
-      notify.error({ title: e instanceof Error ? e.message : String(e) });
+      notify.error({ title: errorMessage(e, t`Could not start the setup`) });
+    }
+  };
+
+  // A credential the person does not need here leaves the setup: its values become OPTIONAL.
+  const skip = async (name: string) => {
+    setSkipping(name);
+    try {
+      // The skip answers with the readiness that follows: the dialog and the footer take it as is.
+      const next = await Project.skipSetup(projectId, name);
+      setReadiness(next);
+      if (next) setProjectReadiness(next);
+    } catch (e) {
+      notify.error({ title: errorMessage(e, t`Could not skip ${name}`) });
+    } finally {
+      setSkipping(null);
     }
   };
 
@@ -148,6 +166,19 @@ export function ProjectSetupDialog({
                           .map((v) => v.label || v.env_var)
                           .join(', ')}
                   </span>
+                  {req.kind === 'pack' && !running && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-6 px-2 text-xs"
+                      data-testid={`project-setup-skip-${req.name}`}
+                      title={t`Not needed here: mark its values optional`}
+                      disabled={skipping !== null}
+                      onClick={() => void skip(req.name)}
+                    >
+                      {skipping === req.name ? <Loader2 className="size-3 animate-spin" /> : <Trans>Skip</Trans>}
+                    </Button>
+                  )}
                 </li>
               );
             })}

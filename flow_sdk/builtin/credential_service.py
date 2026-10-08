@@ -36,6 +36,7 @@ from flow_sdk.schema.data_spec.credential_contract import (
     DEFAULT_ENVIRONMENT,
     SCOPE_PROJECT,
     SCOPE_USER,
+    CredentialRequirement,
     CredentialVarKind,
 )
 from flow_sdk.schema.data_spec.credential_status_spec import CredentialDeletedSpec
@@ -50,6 +51,11 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 _MANIFEST_FIELDS = ("title", "description", "icon_name", "help_url", "setup_wiki", "setup", "setup_timeout_seconds", "lm_provider", "vars")
+
+
+def _manifest_of(spec: "Credential") -> dict[str, Any]:
+    """``spec`` as the manifest ``save_credential`` takes — what re-saving it would write."""
+    return {"name": spec.name, **{field: getattr(spec, field) for field in _MANIFEST_FIELDS}}
 
 
 class CredentialError(ValueError):
@@ -306,7 +312,7 @@ async def credential_named(name: str, project: Optional["Project"], *, declare: 
         raise CredentialError(f"no credential or template named {name!r}")
     scope = SCOPE_USER if template.lm_provider or project is None else SCOPE_PROJECT
     return await save_credential(
-        manifest={"name": name, **{field: getattr(template, field) for field in _MANIFEST_FIELDS}},
+        manifest=_manifest_of(template),
         scope=scope,
         project_id=str(project.id) if project is not None else None,
     )
@@ -450,9 +456,21 @@ async def declare_vars(
         return await save_credential(manifest=manifest, scope=SCOPE_USER)
     if not new:
         return existing
-    manifest = {"name": credential, **{field: getattr(existing, field) for field in _MANIFEST_FIELDS}}
-    manifest["vars"] = {**(existing.vars or {}), **{v: {} for v in new}}
+    manifest = {**_manifest_of(existing), "vars": {**(existing.vars or {}), **{v: {} for v in new}}}
     return await save_credential(manifest=manifest, typeid=str(existing.typeid))
+
+
+async def make_optional(name: str, project: "Project") -> "Credential":
+    """Take the credential ``name`` out of ``project``'s setup: every one of its variables becomes
+    OPTIONAL in the project's own declaration. The credential the project sees (its own, else the
+    user's, else the shipped template) is copied into the project when it is not already the
+    project's, so the user's declaration and the catalogue entry stay as they were."""
+    source = await credential_named(name, project) or await template_named(name)
+    if source is None:
+        raise CredentialError(f"no credential or template named {name!r}")
+    optional = {env_var: var.model_copy(update={"required": CredentialRequirement.OPTIONAL})
+                for env_var, var in (source.vars or {}).items()}
+    return await declare_credential({**_manifest_of(source), "vars": optional}, project_id=str(project.id))
 
 
 async def _declaring(names: list[str], project: Optional["Project"], deployment: "Deployment") -> dict:

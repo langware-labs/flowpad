@@ -148,6 +148,44 @@ async def test_setting_the_must_value_makes_it_ready(project, templates):
     assert (await project_setup.readiness_of(project)).ready is True
 
 
+async def test_skipping_a_project_credential_marks_its_values_optional_in_the_file(project, templates):
+    spec = await save_credential(manifest=GCP, scope="project", project_id=project.id)
+
+    await credential_service.make_optional("google-cloud", project)
+
+    assert (await project_setup.readiness_of(project)).ready is True
+    written = json.loads((Path(spec.asset_ref) / "credential.json").read_text())
+    assert written["vars"]["GOOGLE_APPLICATION_CREDENTIALS"]["required"] == "OPTIONAL"
+    assert written["vars"]["GOOGLE_APPLICATION_CREDENTIALS"]["kind"] == "file", "the rest of the variable is kept"
+
+
+async def test_skipping_a_template_declares_it_in_the_project_as_optional(project, templates):
+    spec = await credential_service.make_optional("telegram", project)
+
+    assert (spec.scope, str(spec.project_id)) == ("project", str(project.id))
+    assert not any(var.is_must for var in spec.vars.values())
+    assert any(var.is_must for var in (await credential_service.template_named("telegram")).vars.values()), (
+        "the shipped template is never changed"
+    )
+
+
+async def test_skipping_a_user_credential_copies_it_into_the_project(project, templates):
+    user = await save_credential(manifest={**GCP, "name": "gcp-user"}, scope="user")
+
+    spec = await credential_service.make_optional("gcp-user", project)
+
+    assert spec.id != user.id and spec.scope == "project"
+    assert (await credential_service.get_credential(str(user.typeid))).vars["GOOGLE_APPLICATION_CREDENTIALS"].is_must, (
+        "the user's own declaration, which other projects read, is left as it was"
+    )
+    assert (await project_setup.readiness_of(project)).ready is True
+
+
+async def test_skipping_an_unknown_name_is_refused(project, templates):
+    with pytest.raises(CredentialError):
+        await credential_service.make_optional("no-such-credential", project)
+
+
 # ── the setup run the app starts ─────────────────────────────────────────────
 
 

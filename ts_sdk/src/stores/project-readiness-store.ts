@@ -43,6 +43,16 @@ export async function refreshProjectReadiness(projectId: string | null | undefin
   }
 }
 
+/** Take an answer the backend already computed (an action that changed it answers with it), so
+ *  nothing asks again. */
+export function setProjectReadiness(readiness: ProjectReadiness): void {
+  byProject.set(readiness.project_id, readiness);
+  if (currentProjectId === readiness.project_id) {
+    current = readiness;
+    emit();
+  }
+}
+
 /** Re-check the project last checked — after a setup run or a credential save. */
 export function recheckProjectReadiness(): Promise<void> {
   return refreshProjectReadiness(currentProjectId);
