@@ -5,6 +5,7 @@
  * And an `ask` lands on the chat of the page it was made on, as its auto-prompt.
  */
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { MemoryRouter } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { assistantContextKey } from '@src/components/floating-chat/assistant-context';
@@ -15,7 +16,7 @@ let processes: Array<{ id: string; context_key: string | null }> = [];
 vi.mock('@src/components/entity-execution-panel', () => ({
   EntityExecutionPanel: (props: Record<string, unknown>) => {
     panelProps.push(props);
-    if (panelProps.length > 300) throw new Error("render loop: " + String(props.contextKey));
+    if (panelProps.length > 300) throw new Error('render loop: ' + String(props.contextKey));
     return <textarea data-testid="panel-input" data-context={String(props.contextKey)} />;
   },
 }));
@@ -40,7 +41,14 @@ const settle = () => act(() => void vi.advanceTimersByTime(300));
 function Host(props: { dock: DockPointer; visible?: boolean; ask?: { url: string; text: string } | null }) {
   const pendingAsk = props.ask ? { ...props.ask, nonce: 7 } : null;
   return (
-    <AssistantChat followedDock={props.dock} visible={props.visible ?? true} pendingAsk={pendingAsk} onAskConsumed={() => {}} />
+    <MemoryRouter>
+      <AssistantChat
+        followedDock={props.dock}
+        visible={props.visible ?? true}
+        pendingAsk={pendingAsk}
+        onAskConsumed={() => {}}
+      />
+    </MemoryRouter>
   );
 }
 
@@ -119,7 +127,7 @@ describe('AssistantChat follows the page', () => {
       </div>,
     );
     settle();
-    const input = screen.getByTestId<HTMLTextAreaElement>("panel-input");
+    const input = screen.getByTestId<HTMLTextAreaElement>('panel-input');
     input.focus();
     fireEvent.change(input, { target: { value: 'half a sent' } });
     input.value = 'half a sent';
@@ -131,7 +139,7 @@ describe('AssistantChat follows the page', () => {
     );
     settle();
     expect(shown()).toBe(assistantContextKey(A));
-    act(() => void screen.getByTestId("elsewhere").focus());
+    act(() => void screen.getByTestId('elsewhere').focus());
     expect(shown()).toBe(assistantContextKey(B));
   });
 

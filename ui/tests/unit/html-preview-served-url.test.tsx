@@ -24,10 +24,10 @@ const FILE = '/home/user/Flowpad workspace/Course Project/clouds-site/index.html
 const SERVE_BASE = 'http://localhost:8000/api/v1/graph/compute_node/@local/fs/serve';
 
 let revision = 0;
-let shownBeside: { id: string } | null = null;
+let shownBeside: string | null = null;
 
 vi.mock('@src/components/agent-layout/agent-layout', () => ({
-  useAgentContext: () => ({ computeNode: { typeId: { toString: () => 'compute_node-@local' } }, flow: shownBeside }),
+  useAgentContext: () => ({ computeNode: { typeId: { toString: () => 'compute_node-@local' } }, flowId: shownBeside }),
 }));
 vi.mock('@src/hooks/useFS', () => ({
   useFS: () => ({
@@ -50,7 +50,7 @@ describe('HtmlPreview', () => {
   });
 
   it('names the process the page is shown beside, so the served page can reach it', () => {
-    shownBeside = { id: '3f2a1b4c-0000-4000-8000-0000000000aa' };
+    shownBeside = '3f2a1b4c-0000-4000-8000-0000000000aa';
     render(<HtmlPreview path={FILE} />);
 
     const url = new URL(frame().getAttribute('src') ?? '');
