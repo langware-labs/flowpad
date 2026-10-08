@@ -413,9 +413,7 @@ function ContentPanelBody({
       case ViewType.MACHINE:
         return <MachineOverview />;
       case ViewType.EXPLORER:
-        return (
-          <ExplorerView onFileSelect={handleExplorerFileSelect} />
-        );
+        return <ExplorerView onFileSelect={handleExplorerFileSelect} />;
       // The retired events / triggers / signals / cron ids are rewritten to this
       // before render (retired-views.ts).
       case ViewType.AUTOMATIONS:
@@ -613,7 +611,9 @@ function ContentPanelBody({
               not addresses: a re-`flow show` of the same target (same URL — a no-op
               navigation, yet the file behind it may have been rebuilt) and the
               agent's turn-end (the CLI stream carries no per-file write items, so
-              the turn edge is the only "something changed" signal there is).
+              the turn edge is the only "something changed" signal there is — the
+              host gates it, so a turn that only talked or read does not bump it;
+              see `display-refresh-gate`).
               Undefined for every other host, which keeps the default a plain
               uncontrolled body. */}
           <div key={contentEpoch} className="absolute inset-0 mt-0 h-full flex-1 overflow-auto">
