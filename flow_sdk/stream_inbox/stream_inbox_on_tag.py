@@ -17,6 +17,7 @@ from ``ingest.*.item.created``, and the one a consumer needs, because a thread's
 consumer keyed on the ingest tag is racing that write: Law 3 detaches every
 handler, so it reads no thread and drops the message with a warning nobody sees.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -39,6 +40,35 @@ def emit_projected_tag(item) -> None:
         target_of("source_item", item.id),
         {"entity_id": item.id, "source_id": item.data_source_id},
         ctx={"scope": [target_of("data_source", item.data_source_id)]},
+    )
+
+
+def emit_message_status(source, message_id: str) -> None:
+    """An agent on this machine took one of ``source``'s messages (``message_id``, its origin key): it is being
+    handled. Live only — nothing is kept; the conversation shows it until the reply lands."""
+    from flow_sdk.tags import emit_tag, target_of  # noqa: PLC0415
+
+    if not message_id:
+        return
+    emit_tag(
+        f"stream_inbox.{source.provider or 'unknown'}.message.status",
+        target_of("data_source", source.id),
+        {"message_id": message_id, "state": "handling", "source_id": source.id},
+        ctx={"scope": [target_of("data_source", source.id)]},
+    )
+
+
+def emit_reply_failed(source, conversation_id: str, reason: str) -> None:
+    """A reply sent into ``conversation_id`` through ``source`` did not go: the channel's own words. The send ran
+    after its request returned, so this is how the person who pressed Send hears."""
+    from flow_sdk.tags import emit_tag, target_of  # noqa: PLC0415
+
+    source_id = str(getattr(source, "id", "") or "")
+    emit_tag(
+        f"stream_inbox.{getattr(source, 'provider', '') or 'unknown'}.reply.failed",
+        target_of("conversation", conversation_id),
+        {"conversation_id": conversation_id, "reason": reason[:500], "source_id": source_id},
+        ctx={"scope": [target_of("data_source", source_id)]} if source_id else None,
     )
 
 

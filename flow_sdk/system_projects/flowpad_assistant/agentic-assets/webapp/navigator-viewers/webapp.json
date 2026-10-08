@@ -8,7 +8,8 @@
     {"kind": "navigator.dataset", "shows": ["single", "collection"]},
     {"kind": "navigator.request", "shows": ["single"]},
     {"kind": "navigator.decision", "shows": ["single"]},
-    {"kind": "navigator.candidate", "shows": ["collection"]}
+    {"kind": "navigator.candidate", "shows": ["collection"]},
+    {"kind": "navigator.run", "shows": ["single"]}
   ],
   "module": "viewer.js"
 }

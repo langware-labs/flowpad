@@ -6,6 +6,8 @@ import { Trans, useLingui } from '@lingui/react/macro';
 import {
   AgentTrace,
   AssetCleanupReport,
+  DiagnosisRequest,
+  TypeId,
   FlowMessage,
   Markdown,
   MessageSuggest,
@@ -17,6 +19,7 @@ import { formatDuration } from '@src/components/lens-viewer/shared/format-utils'
 import { useEntity } from '@src/hooks/entity-hooks';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { DockPointer } from '@src/navigation';
+import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import { Button } from '@src/components/ui/button';
 import { cn } from '@src/lib/utils';
 import { WikiLabel } from '@src/components/wiki-tip/WikiLabel';
@@ -138,6 +141,18 @@ export function FeedEntryCard({
       <UsageReportFeedEntryCard
         entry={entry}
         report={entity as UsageReport}
+        busy={busy}
+        feedData={feedData}
+        onDismiss={onDismiss}
+      />
+    );
+  }
+
+  if (entity.getType() === DiagnosisRequest.type) {
+    return (
+      <DiagnosisRequestFeedEntryCard
+        entry={entry}
+        request={entity as DiagnosisRequest}
         busy={busy}
         feedData={feedData}
         onDismiss={onDismiss}
@@ -618,6 +633,51 @@ function UsageReportFeedEntryCard({ entry, report, busy, feedData, onDismiss }: 
           ${report.total_cost_usd.toFixed(2)} · {report.session_count} sessions ·{' '}
           {formatDuration(report.total_duration_ms)} active · {report.prompt_count} prompts
         </p>
+      </button>
+    </FeedEntryFrame>
+  );
+}
+
+interface DiagnosisRequestFeedEntryCardProps {
+  entry: FeedEntry;
+  request: DiagnosisRequest;
+  busy: boolean;
+  feedData: FeedData;
+  onDismiss: (entry: FeedEntry) => void;
+}
+
+/** A run of a diagnosis request came back from the person it was sent to; opens the request. */
+function DiagnosisRequestFeedEntryCard({
+  entry,
+  request,
+  busy,
+  feedData,
+  onDismiss,
+}: DiagnosisRequestFeedEntryCardProps) {
+  const { navigation } = useDockNavigation();
+  const Icon = iconForType(DiagnosisRequest.type);
+  const title = request.title || request.name;
+
+  return (
+    <FeedEntryFrame entry={entry} busy={busy} feedData={feedData} onDismiss={onDismiss}>
+      <button
+        type="button"
+        className="block w-full rounded text-start outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+        onClick={() =>
+          navigation.openDock(
+            DockPointer.forAssetEditorByTypeId(DiagnosisRequest.type, new TypeId(DiagnosisRequest.type, request.id)),
+          )
+        }
+        data-testid="feed-diagnosis-request"
+      >
+        <p className="flex min-w-0 items-center gap-1.5 text-xs font-medium leading-snug text-foreground">
+          <Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+          <Trans>Your diagnosis request came back</Trans>
+        </p>
+        {title && <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{title}</p>}
+        {request.summary && (
+          <p className="mt-1 line-clamp-3 text-xs leading-relaxed text-muted-foreground">{request.summary}</p>
+        )}
       </button>
     </FeedEntryFrame>
   );

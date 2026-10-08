@@ -13,7 +13,7 @@ shape layer. This document is the ground truth they are aligned to.
 | ------------- | ------------------------------------------------------------- | -------------------------------------------- | ---------------------- |
 | **`type`**    | closed — the one registry (`EntityType`)                      | a class, system-wide: a row, a URL, a folder | `task`                 |
 | **`subkind`** | closed, per type — an enum                                    | a variant *within* that type                 | `group`                |
-| **`kind`**    | **open** — dot-path, one grammar (`flow_sdk/tags/grammar.py`) | a SHAPE, across types                        | `ingest.message.slack` |
+| **`kind`**    | **open** — dot-path, one grammar (`flow_sdk/tags/grammar.py`) | a SCHEMA (by name), across types            | `ingest.message.slack` |
 
 A *type* is a join key. A *subkind* is a discriminator. A *kind* is an ontology
 entry — the only one of the three that is open, prefix-matchable
@@ -32,10 +32,10 @@ parse("compute_op")  -> ComputeOpSpec   # a document SHAPE — that spec declare
 parse("task")        -> Task            # a database ROW model
 ```
 
-A row model is not a shape. A `SpecType` field holding one cannot validate a
-value against it — it would demand ids and DB columns the value has never heard
-of. So the fallback is gone and an asset type resolves to its **`asset_spec`**,
-its document shape, derived from the type name and never declared twice.
+A row model is not a schema. A field holding one cannot validate a value against
+it — it would demand ids and DB columns the value has never heard of. So the
+fallback is gone and an asset type resolves to its **`asset_spec`**, its document
+schema, derived from the type name and never declared twice.
 
 Almost every kind names a `DataSpec`. The one exception is `fs_ref`, bound
 explicitly by `register_builtin_kinds()` to `FSRef` — a plain value class
@@ -181,7 +181,7 @@ with the shipped one and one of them would lose in silence.
 | 2 | `register_builtin_kinds()` (`_kinds.py`) — explicit SDK kinds (`fs_ref`)                | always ours                                                  |
 | 3 | an asset loaded from a folder — `load_driver`, and the lazy loaders keyed by NAMESPACE (`_kinds.py`) | declared by `_importing`; an external naming none is refused |
 | 4 | an `asset_spec` registered under its type name (rule 4)                                 | the type's own project                                       |
-| 5 | a `data_spec` FOLDER (`agentic-assets/data_spec/<full.kind>/data_spec.json`) — built from its document, not imported (`flow_sdk/schema/data_spec/declared.py`) | declared by the loader's `loading(ns)`: ours if shipped, else the document's `ns`, else its project's; an external naming none is refused |
+| 5 | a `data_schema` FOLDER (`agentic-assets/data_schema/<full.kind>/data_schema.json`) — built from its document, not imported (`flow_sdk/schema/data_spec/declared.py`) | declared by the loader's `loading(ns)`: ours if shipped, else the document's `ns`, else its project's; an external naming none is refused |
 
 Paths 1 and 3 are one mechanism: loading an asset imports its module, and the
 class declaration is what registers. Scoping the declaration to that import
@@ -190,7 +190,7 @@ is what makes it safe — a name cannot be claimed before the loader has had its
 ### Who is asked, on a miss
 
 A kind that misses is loaded by its OWNER, and the kind says who that is: bare is
-ours, `--ns--.` is theirs (`SchemaRegistry.kind_type` → `set_kind_loaders`).
+ours, `--ns--.` is theirs (`SchemaRegistry.kind_type` → `set_kind_loader`).
 
 * **ours** — one loader, covering everything the SDK vouches for including the shipped
   driver folders, built once per process.
@@ -211,18 +211,20 @@ await), and filled by the paths that can: the manifest's post-sync hook, project
 creation, and the boot sweep. It is a cache of a fact on disk — an empty map means
 "nobody has told us yet", never "no such namespace", so a miss is never memoized.
 
-A folder with no MODULE still mints a kind when it is a `data_spec` folder (path 5):
-`declared.py` builds the class from `data_spec.json` inside `loading(ns)`, so it
+A folder with no MODULE still mints a kind when it is a `data_schema` folder (path 5):
+`declared.py` builds the schema class from `data_schema.json` inside `loading(ns)`, so it
 registers through the same class hook as path 1 — one mechanism, handed a class two
 ways. The miss loaders load these first (ours: the shipped tree; an external's: its
 project root, within the namespace's one claim), since a driver's code may name them.
 A rebuilt kind replaces its registered class while classes built earlier keep pointing
 at the old one; that old class still answers its kind, because `io/names.kind_of` reads
 the tag stamped on the class (`__spec_tag__`) before the registry's inverse map. An
-unchanged folder is not rebuilt at all — a cost saving, not a correctness rule.
+unchanged folder is not rebuilt at all — a cost saving, not a correctness rule. A kind is
+owned by the folder that defines it only while that folder still does: once it moves, is
+renamed or names another kind, the next folder to define the kind takes it, in the same process.
 Dependencies build first, and a name still resolving to `Any` is an error, never a
 field that accepts anything. Any other asset folder (a `compute_op`) mints nothing of
-its own: its `output_spec_kind` names a primitive, a code kind, or a data spec folder.
+its own: its `output_spec_kind` names a primitive, a kind whose schema is code, or one a data schema folder defines.
 
 ## Not yet done
 
@@ -239,15 +241,16 @@ its own: its `output_spec_kind` names a primitive, a code kind, or a data spec f
   That is allowed — a namespace is an unvalidated claim and collisions are contained in
   their own subtree — but it is a seed, not an identity.
 
-* `ns` is declared on `DataDriverSpec` only. `AssetDocumentSpec` is
+* `ns` is declared on `DataDriverSpec` and `DataSchemaDocSpec` only. `AssetDocumentSpec` is
   `extra="ignore"`, so an `ns` key in any other asset document is read by the
   resolver but dropped by the model; declaring it there means mirroring the field
   onto 14 entity classes (`check_asset_spec` enforces it).
 
-* ComputeOp is the first type with a `subkind` (`cli | prompt | agent | ask`):
-  each subkind's structure is its own DataSpec under the kind
+* ComputeOp is the first type with a `subkind` (`cli | prompt | agent | navigate | ask`):
+  each subkind's structure is its own schema under the kind
   `compute_op.<subkind>`, nested in `exe_data` rather than flattened onto the op
-  (see [call-returns](snippets/call-returns.md)). An op cannot register a kind of its own
+  (see [call-returns](snippets/call-returns.md)); `compute_op.rung` is a kind of its own
+  (one rung of a ladder), not a subkind. An op cannot register a kind of its own
   (see Coverage above) — no shipped op needs one, and giving a JSON document a
   module to import is a bigger decision than it looks.
 

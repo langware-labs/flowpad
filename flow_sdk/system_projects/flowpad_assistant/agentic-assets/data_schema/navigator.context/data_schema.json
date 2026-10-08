@@ -1,0 +1,13 @@
+{
+  "type": "data_schema",
+  "id": "c91bde31-4343-4c8c-a621-4f95216e5869",
+  "name": "navigator.context",
+  "fields": {
+    "candidates": {
+      "shape": [
+        "navigator.candidate"
+      ],
+      "description": "Full-text search matches for the request's content words."
+    }
+  }
+}

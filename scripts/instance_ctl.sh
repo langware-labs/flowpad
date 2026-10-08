@@ -344,9 +344,9 @@ EOF
   done
   if [ "$up" = 1 ]; then
     log "backend is up — triggering cloud login"
-    curl -s -m 10 -X POST "http://localhost:$be_port/api/v1/cloud/login" \
-      -H 'content-type: application/json' \
-      -d "{\"email\":\"$email\",\"password\":\"$password\"}" >/dev/null 2>&1 || \
+    # No body: the backend logs in with FLOWPAD_CLOUD_USER_EMAIL/PASSWORD from the env file above
+    # (env mode). A body is the browser-mode {browser, profile} choice -- credentials there are a 422.
+    curl -s -m 10 -X POST "http://localhost:$be_port/api/v1/cloud/login" >/dev/null 2>&1 || \
       warn "cloud login call failed (check $be_log)"
     local st
     st="$(curl -s -m 5 "http://localhost:$be_port/api/v1/cloud/status" || true)"

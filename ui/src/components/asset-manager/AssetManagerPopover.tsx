@@ -188,6 +188,11 @@ export interface AssetManagerPopoverProps {
    * makes the surface multi-select, so the two can't fall out of step.
    */
   onUnpick?: (descriptor: AssetDescriptor) => void | Promise<void>;
+  /**
+   * Opening a row (its name chip) shows the asset in a NEW window rather than this one. For a host
+   * that holds unsaved input -- a form's Attach -- where leaving the screen would discard it.
+   */
+  openInWindow?: boolean;
 
   // ── process-derived status (props) ─────────────────────────────────────
   /** Whether the Flowpad Assistant is mounted. Labels the "+" menu's
@@ -252,6 +257,7 @@ export function AssetManagerPopover({
   selectedTypeIds = NONE,
   onPick,
   onUnpick,
+  openInWindow = false,
   assistantEnabled,
   additionalDirs = NONE,
   improveBusyKey = null,
@@ -690,6 +696,7 @@ export function AssetManagerPopover({
                         onPick={onPick ? handlePick : undefined}
                         onUnpick={onUnpick}
                         onImprove={onImprove}
+                        openInWindow={openInWindow}
                       />
                     ))}
                   </Fragment>
@@ -868,6 +875,7 @@ export function AssetRow({
   onPick,
   onUnpick,
   onImprove,
+  openInWindow = false,
 }: {
   descriptor: AssetDescriptor;
   /** Resolved by the list memo — all of these are cache lookups or allocations,
@@ -896,6 +904,8 @@ export function AssetRow({
   onPick?: (descriptor: AssetDescriptor) => void | Promise<void>;
   onUnpick?: (descriptor: AssetDescriptor) => void | Promise<void>;
   onImprove?: (descriptor: AssetDescriptor) => void;
+  /** See ``AssetManagerPopoverProps.openInWindow``. */
+  openInWindow?: boolean;
 }) {
   const { t } = useLingui();
   const { navigation } = useDockNavigation();
@@ -949,18 +959,18 @@ export function AssetRow({
     try {
       const options = { assetType: type, ...(readOnly ? { readOnly: '1' } : {}) };
       const computeNode = dataContext.computeNode?.typeId ?? LOCAL_COMPUTE_NODE;
-      navigation.openDock(
-        descriptor.posix_path
-          ? DockPointer.forAssetEditor(
-              type, VFSPath.fromMachinePath(descriptor.posix_path, computeNode).absVfsPath,
-              undefined, options,
-            )
-          : DockPointer.forAssetEditorByTypeId(type, new TypeId(type, id), undefined, options),
-      );
+      const pointer = descriptor.posix_path
+        ? DockPointer.forAssetEditor(
+            type, VFSPath.fromMachinePath(descriptor.posix_path, computeNode).absVfsPath,
+            undefined, options,
+          )
+        : DockPointer.forAssetEditorByTypeId(type, new TypeId(type, id), undefined, options);
+      if (openInWindow) navigation.openDockInWindow(pointer);
+      else navigation.openDock(pointer);
     } catch (err) {
       console.error('[AssetRow] failed to open asset', descriptor.typeid, err);
     }
-  }, [navigation, type, id, readOnly, openable, openAction, descriptor]);
+  }, [navigation, type, id, readOnly, openable, openAction, descriptor, openInWindow]);
 
   return (
     <AssetGridRow

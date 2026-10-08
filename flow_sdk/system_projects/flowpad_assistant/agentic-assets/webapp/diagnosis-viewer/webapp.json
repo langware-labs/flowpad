@@ -1,0 +1,11 @@
+{
+  "name": "diagnosis-viewer",
+  "title": "Diagnosis viewer",
+  "description": "Shows a diagnosis: its status and summary, what was found, the machine it was taken on, what went wrong while diagnosing, and the tail of its logs. A list of diagnoses reads as one row each.",
+  "kind": "application.web.viewer",
+  "build": ".",
+  "views": [
+    {"kind": "diagnosis", "shows": ["single", "collection"]}
+  ],
+  "module": "viewer.js"
+}

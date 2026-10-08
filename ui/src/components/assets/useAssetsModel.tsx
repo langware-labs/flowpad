@@ -7,7 +7,7 @@ import { AssetDocPointer } from '@src/navigation/AssetDocPointer';
 import { AssetEditor, AssetMode, AssetRoutingMethod } from '@src/navigation/asset-doc-types';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { dataContext, fsManager, fsStore, Project, RecordType, TypeId, VFSPath } from '@sdk';
+import { dataContext, DiagnosisRequest, fsManager, fsStore, Project, RecordType, TypeId, VFSPath } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
 import { ViewType } from '@src/types/ViewType';
 import { notify } from '@src/notifications';
@@ -34,6 +34,7 @@ import { refreshNode } from '@src/components/browseable-tree/refresh-store';
 import { showDeleteAssetModal } from '@src/components/assets/delete-asset-modal';
 import { assetTypeRoot } from '@src/components/browseable-tree/adapters/assetTypeRoot';
 import { useMyEndpoints } from '@src/components/llm-endpoints/my-endpoints';
+import { requestsInScope, useMyDiagnosisRequests } from '@src/components/browseable-tree/adapters/diagnosisRequestRoot';
 import {
   ASSET_CONTEXT_FOLDERS_ROOT_ID,
   assetContextFolderNodeId,
@@ -114,7 +115,12 @@ function isValidFolderName(name: string): boolean {
  */
 export function useAssetsModel() {
   const { currentDock, navigation } = useDockNavigation();
-  const { types: allTypes, isLoading: typesLoading, error: typesError, reload: reloadTypes } = useAssetTypes({ vibeAsStandard: true });
+  const {
+    types: allTypes,
+    isLoading: typesLoading,
+    error: typesError,
+    reload: reloadTypes,
+  } = useAssetTypes({ vibeAsStandard: true });
   const { indexType } = useSystemTools();
   const [newTypeTarget, setNewTypeTarget] = useState<string | null>(null);
   const [newTypeDialogOpen, setNewTypeDialogOpen] = useState(false);
@@ -201,7 +207,12 @@ export function useAssetsModel() {
     return { ...assetFilter, scope };
   }, [assetFilter, urlScope, openAssetBucket, openAssetId, suppressedAssetId]);
 
-  const { stats: assetStats, isLoading: statsLoading, error: statsError, reload: reloadStats } = useAssetStats(effectiveFilter.scope);
+  const {
+    stats: assetStats,
+    isLoading: statsLoading,
+    error: statsError,
+    reload: reloadStats,
+  } = useAssetStats(effectiveFilter.scope);
 
   // The scoped project's server-computed menu: per-type counts for the project
   // AND, nested under it, for every dependency (recursively). Backs both the
@@ -211,6 +222,7 @@ export function useAssetsModel() {
   // The budgets this person may spend — read once here for the count badge; the tree
   // adapter and the body read the same cached answer.
   const { endpoints: myEndpoints } = useMyEndpoints();
+  const myDiagnosisRequests = useMyDiagnosisRequests();
 
   const typeCounts = useMemo(() => {
     const counts = new Map(Object.entries(assetStats.per_type));
@@ -230,8 +242,11 @@ export function useAssetsModel() {
     // see them and the row would be hidden for everyone outside dev mode. Their count is
     // simply how many the box lists.
     counts.set(RecordType.LLM_ENDPOINT, myEndpoints.length);
+    // Diagnosis requests likewise have no file to index or attribute: the hub lists them, and
+    // the scope narrows them to the project each was opened under (or the user, for the rest).
+    counts.set(DiagnosisRequest.type, requestsInScope(myDiagnosisRequests, effectiveFilter.scope).length);
     return counts;
-  }, [assetStats.per_type, assetMenu, myEndpoints.length]);
+  }, [assetStats.per_type, assetMenu, myEndpoints.length, myDiagnosisRequests, effectiveFilter.scope]);
 
   // Dev mode sees every registered type regardless of count; everyone else only
   // sees types that actually have items in the current scope.
@@ -280,7 +295,9 @@ export function useAssetsModel() {
   // cache don't re-flash it). Dev mode never gates on counts.
   const menuLoading = typesLoading || (!isDev && statsLoading);
   const menuError = typesError ?? (!isDev ? statsError : null);
-  const reloadMenu = () => { void Promise.all([reloadTypes(), reloadStats()]).catch(() => {}); };
+  const reloadMenu = () => {
+    void Promise.all([reloadTypes(), reloadStats()]).catch(() => {});
+  };
 
   // Reactivity only: keep each type's tree root live. A created / indexed /
   // scanned entity arrives as a `data_op`; this re-fetches the affected root

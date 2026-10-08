@@ -1,4 +1,5 @@
 import { APIEntity, dataManager, registerEntity } from '../APIEntity';
+import { dataContext } from '../FlowSync/context';
 import { IEntity } from '../IEntity';
 import { ActionInfo } from '../models/ActionInfo';
 import { TypeId } from '../models/TypeId';
@@ -16,13 +17,12 @@ import { Conversation } from './conversation';
 /** Live-session lifecycle. Mirrors flow_sdk.builtin.remote_worker_session.
  *  RemoteWorkerSessionStatus exactly: DRAFT (guest-local, nothing shared) →
  *  PENDING (first prompt sent, awaiting host approval) → IDLE⇄RUNNING (active
- *  turns, PAUSED as a host-side hold) → ENDED/DECLINED (terminal). */
+ *  turns) → ENDED/DECLINED (terminal). */
 export enum RemoteWorkerSessionStatus {
   DRAFT = 'draft',
   PENDING = 'pending',
   IDLE = 'idle',
   RUNNING = 'running',
-  PAUSED = 'paused',
   ERROR = 'error',
   ENDED = 'ended',
   DECLINED = 'declined',
@@ -106,6 +106,14 @@ export class RemoteWorkerSession extends APIEntity<RemoteWorkerSession> implemen
     return !!this.host_user_id && userId === this.host_user_id;
   }
 
+  /** Which side of the session the viewer is on. Host/guest ids are CLOUD ids;
+   *  a row carrying the host-local process is the host's own, whoever is signed in. */
+  roleFor(cloudUserId: string | null | undefined): 'host' | 'guest' | 'observer' {
+    if (this.isHost(cloudUserId) || !!this.host_process_id) return 'host';
+    if (this.guest_user_id && this.guest_user_id === cloudUserId) return 'guest';
+    return 'observer';
+  }
+
   /** Effective reply policy — null/garbage reads as auto. */
   get effectiveReplyPolicy(): SessionReplyPolicy {
     return this.reply_policy === SessionReplyPolicy.REVIEW ? SessionReplyPolicy.REVIEW : SessionReplyPolicy.AUTO;
@@ -113,9 +121,11 @@ export class RemoteWorkerSession extends APIEntity<RemoteWorkerSession> implemen
 
   /** Tab / chip label. A RemoteWorkerSession has no name/uname/title, so the
    *  default chain would fall back to the synthetic `remote_worker_session-<id>`;
-   *  name it after the counterpart instead (mirrors CollaborationRoom's join). */
+   *  name it after the counterpart — the guest on the host's machine, the host on
+   *  the guest's. */
   getDisplayName(): string | null {
-    const other = this.guest_name || this.host_name;
+    const onHost = this.roleFor(dataContext.cloudUser?.id) === 'host';
+    const other = onHost ? this.guest_name || this.host_name : this.host_name || this.guest_name;
     return other ? `Live session · ${other}` : 'Live session';
   }
 
@@ -186,15 +196,5 @@ export class RemoteWorkerSession extends APIEntity<RemoteWorkerSession> implemen
   /** Host declines a PENDING session (terminal). */
   public decline(): Promise<void> {
     return this.lifecycleAction('decline', RemoteWorkerSessionStatus.DECLINED);
-  }
-
-  /** Host holds the session — inbound prompts bounce until resume. */
-  public pause(): Promise<void> {
-    return this.lifecycleAction('pause', RemoteWorkerSessionStatus.PAUSED);
-  }
-
-  /** Host lifts a pause (PAUSED → IDLE). */
-  public resume(): Promise<void> {
-    return this.lifecycleAction('resume', RemoteWorkerSessionStatus.IDLE);
   }
 }

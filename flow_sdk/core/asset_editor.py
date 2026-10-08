@@ -58,6 +58,8 @@ class AssetEditor(StrEnum):
     # A credential (agentic-assets/credential/<name>/credential.json): what it
     # declares, where its values live and which are set — never the values.
     CREDENTIAL = "credential"
+    # A diagnosis request: a local row whose request and runs live on the hub.
+    DIAGNOSIS_REQUEST = "diagnosis_request"
     # File-only display viewers — no backing record type, routed by extension
     # on the TS side (like CODE, they never appear in TYPE_TO_EDITOR).
     HTML = "html"
@@ -67,6 +69,7 @@ class AssetEditor(StrEnum):
     AUDIO = "audio"
     PDF = "pdf"
     ARCHIVE = "archive"  # a .zip, browsed as the folder it extracts to (a temp copy)
+    VALUE = "value"  # a .value.json: one DataSpec value, shown by its kind's viewer
 
 
 #: editor → the entity types it edits. Written with ``EntityType`` members
@@ -100,6 +103,7 @@ EDITOR_TYPES: dict[AssetEditor, list[str]] = {
     AssetEditor.MCP: [EntityType.MCP],
     AssetEditor.LLM_ENDPOINT: [EntityType.LLM_ENDPOINT],
     AssetEditor.CREDENTIAL: [EntityType.CREDENTIAL],
+    AssetEditor.DIAGNOSIS_REQUEST: [EntityType.DIAGNOSIS_REQUEST],
     AssetEditor.HTML: [],
     AssetEditor.MCP_APP: [],
     AssetEditor.IMAGE: [],
@@ -107,6 +111,7 @@ EDITOR_TYPES: dict[AssetEditor, list[str]] = {
     AssetEditor.AUDIO: [],
     AssetEditor.PDF: [],
     AssetEditor.ARCHIVE: [],
+    AssetEditor.VALUE: [],
 }
 
 #: Derived inverse, exactly as the TS side derives it.

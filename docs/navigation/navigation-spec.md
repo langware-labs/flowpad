@@ -11,8 +11,8 @@ Three questions with one join key, a screen's `view` slug:
 | **you are here** — the screen a tab is on, plus the context it really provides | `navigation.here` (+ `navigation.ref`, `navigation.shown`) | `navigation.here_from(browser_context)` |
 | **where to go** — open something now, or ask the assistant | `navigator.target`, `navigator.route` | `flow_sdk.core.navigator.route(utterance, here=...)` |
 
-The kinds are shipped `data_spec` folders
-(`flowpad_assistant/agentic-assets/data_spec/navigation.*`, `navigator.*`), so a
+The schemas are shipped `data_schema` folders
+(`flowpad_assistant/agentic-assets/data_schema/navigation.*`, `navigator.*`), so a
 dataset row, the navigator and `flow context list` speak one definition. Each folder's
 `description.md` says whether the mechanism uses it or it is there for browsing; `map.json` in
 the SmartNavigator dataset folder (`dev/dataset/smart-navigator/`, not shipped) is the map's snapshot (regenerate with `scripts/navigation_map.py`; a fast
@@ -43,6 +43,11 @@ slots outlive the screen that set them (open an asset, go to Events, and
 * the **process** (and the session's `last_shown`) only where the screen `provides` it;
 * the **entity** only where the screen `provides` it *and* the address names something.
 
+For the navigator (`here_from(..., navigator=True)`) it also reads what its openings need: the
+project's most **recent** session (`recent`, what "resume my last chat" opens), a session's harness,
+harness session id and live session, and a project's collaboration room (`navigation.ref`) --
+extra queries `flow context` does not pay for.
+
 `GET /api/v1/agent/context` and `flow context list` return `here` beside the raw slots.
 
 ## Where to go — NavigationDecision
@@ -51,17 +56,37 @@ slots outlive the screen that set them (open an asset, go to Events, and
 utterance and `here`) and answers `navigation.outcome`: **a dock to navigate** (`address`, query
 included, and `dock`, the tab) **OR a `prompt`** for the assistant — never both.
 
-* The engine is `navigator.route`: rules, then one decision over every place on the map that
-  needs no pointer, their subplaces, the screens an entity in `here` or in the search matches
-  `opens`, and `agentic`; acted on at ≥ 0.85. Anything answering `NavigatorRoute` can replace it.
-* The backend builds the dock for a screen, an entity (its asset editor, else the screen named
-  after its type) and an app. A file / URL / web-app target leaves the dock to the UI
-  (`ui/src/navigation/navigation-decision.ts`, whose `dockForTarget` owns those rules).
+* The engine is `navigator.route`: rules -- a literal, an exact screen name or alias (or one typo of
+  one; never a typo when it exactly names a screen), a type's name for its list on Assets ("specs"),
+  and `this project's / this session's <name>` for the screen that opens on that entity in context --
+  then one decision API call with three questions:
+  * `target` — a choice over every place on the map that needs no pointer, every subplace (the
+    per-type asset lists and the drivers are generated from what ships), every screen that opens
+    on an entity in `here` (the project, the session, what is open, the last-shown file, the
+    `recent` session) or in the search matches — by its id (`opens`) or a form of it
+    (`open_forms`: `<harness>/transcript/<session>`, `connections/<id>`; offered only when the
+    context carries every part) — the UI actions (`flow_sdk/core/ui_actions.json`), a few app
+    pages (`/discover`, `/win/assistant`), and `agentic`;
+  * `verb` — show or navigate;
+  * `scope` — whether the request only names a thing or also carries details (what to write, a
+    schedule, an account, a question no screen answers, a second step): details hand it to the
+    assistant whatever the target.
+  The target is acted on at ≥ 0.85, on a clear lead (≥ 0.5 and 0.3 ahead of the runner-up), or —
+  when the scope answer is "only" (probability ≥ 0.9) — on the place that leads the other places
+  (≥ 0.4 and 0.15 ahead).
+  An entity whose own page is a screen is offered once, as the entity. Anything answering
+  `NavigatorRoute` can replace it.
+* The backend builds the dock for a screen, an entity (its asset editor, else its page — the
+  `open_forms` row named `page`, a type's screen — else the editor app that ranks first) and an
+  app. A file / URL / web-app target leaves the dock to the UI (`ui/src/navigation/navigation-decision.ts`,
+  whose `dockForTarget` owns those rules); an app path (`/discover`) is opened in the app; an
+  `action` is run by the UI (`ui/src/navigation/ui-actions.ts`: one handler per catalog id).
 * Everything else — agentic, unsure, no decision API, a target nothing opens — is the prompt:
   the utterance, unchanged.
 
 The magic line posts only the utterance to `compute_node/@local/navigation-decision` (the action
-builds `here` from the active tab), then navigates the dock or asks the assistant the prompt.
+builds `here` from the active tab), then navigates the dock, runs the UI action, opens the app
+page, or asks the assistant the prompt.
 See `docs/snippets/decisions.md` §7 for the cascade and its numbers.
 
 ## The log — SmartNavigationLog

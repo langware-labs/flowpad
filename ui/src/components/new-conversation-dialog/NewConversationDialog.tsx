@@ -77,8 +77,8 @@ export function NewConversationDialog({ open, onClose }: NewConversationDialogPr
   }, [cloudUser?.email, cloudUser?.name, localUser?.name]);
 
   const isRemote = hasRemoteParticipant(participants);
-  const autofillTitle = useAutoTitle(open, participants);
-  const placeholderTitle = autofillTitle;
+  const projectName = projects.find((p) => p.id === projectId)?.displayName ?? null;
+  const autofillTitle = useAutoTitle(open, participants, projectName);
 
   const canCreate = !busy && (isRemote || !!projectId) && participants.length > 0 && !!initialMessage.trim();
 
@@ -88,7 +88,7 @@ export function NewConversationDialog({ open, onClose }: NewConversationDialogPr
     const target: SendTarget = {
       kind: 'new',
       params: {
-        project_id: isRemote ? null : projectId,
+        project_id: projectId || null,
         participants,
         title: effectiveTitle,
       },
@@ -111,7 +111,7 @@ export function NewConversationDialog({ open, onClose }: NewConversationDialogPr
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <MessageSquarePlus className="h-5 w-5 text-primary" />
-            {placeholderTitle}
+            {autofillTitle}
           </DialogTitle>
         </DialogHeader>
 

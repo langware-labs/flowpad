@@ -454,6 +454,11 @@ class HubWsBridge:
                 await self._handle_deployment_op(op, eid, data)
             elif etype == "llm_endpoint":
                 await self._handle_llm_endpoint_op(op, eid, data)
+            elif etype == "diagnosis_request":
+                if op == "update":
+                    from flow_sdk.builtin.diagnosis_request import DiagnosisRequest  # noqa: PLC0415
+
+                    await DiagnosisRequest.take_hub_update(eid, data)
             elif etype in MEMBERSHIP_MIRROR_TYPES:
                 await self._handle_membership_container_op(op, etype, eid, data)
             else:

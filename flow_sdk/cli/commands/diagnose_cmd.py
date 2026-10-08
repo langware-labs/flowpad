@@ -1,11 +1,16 @@
-"""`flow diagnose` — run the flow-diagnose skill on a headless AgenticProcess.
+"""`flow diagnose` — the diagnose spec, then the flow-diagnose repair agent.
 
-`flow diagnose` drives a **headless** AgenticProcess on the flow-diagnose skill:
-it injects the user's free text / pasted error (empty = full sweep), points the
-worker at the skill, and streams the worker's narration. All behavior — diagnose,
-repair-when-safe, and recording the outcome to the app Feed — lives in the skill's
-`SKILL.md` (its final step records the report itself, via the SDK, even when the
-backend is down). This command is just the runner: spin up the worker, stream, exit.
+Two steps, one diagnosis:
+
+1. **The diagnose spec** (``flow_sdk.diagnose.run_diagnose``, ``purpose="repair"``) — the
+   project's own diagnose or the shipped ``flowpad`` one: fixed checks, no LLM. It always answers
+   a ``DiagnosisSpec`` (a failing or hanging diagnose answers its baseline), so there is a
+   diagnosis even when the agent never starts.
+2. **The repair agent** — a headless AgenticProcess on the flow-diagnose skill, handed that
+   diagnosis as its starting point: it repairs what is safe and records the outcome (its
+   ``report.py``). The recorded ``flowpad_diagnosis`` carries the merged ``diagnosis`` value.
+
+This command is the runner: diagnose, spin up the worker, stream, record, exit.
 """
 
 from __future__ import annotations
@@ -29,6 +34,14 @@ from flow_sdk.cli.commands._common import safe_echo as _safe_echo
 # The id keys report.py's result JSON carries. ``diagnosis_id`` is always an id;
 # the support pair is either both ids (an issue) or both ``None`` (a clean sweep).
 _REPORT_ID_KEYS = ("diagnosis_id", "conversation_id", "flow_message_id")
+
+_STEP_PROMPT = (
+    "The person supporting this user asked for the step below, and the user approved it. "
+    "Do it now, and write everything it found (the command output, the file contents, the answer; "
+    "ALL of it when the step asks to print or show something) to {out}. Do NOT run the "
+    "flow-diagnose skill or report.py yet -- that comes in a later turn.\n\nStep {n}: {step}"
+    "\n\n{context}"
+)
 
 
 def _extract_report_result(text: str) -> dict | None:
@@ -237,7 +250,117 @@ async def _load_recorded_diagnosis(diagnosis_cls, diagnosis_id: str | None):
     return last
 
 
-async def _build_diagnose_process():
+async def _sweep(message: str, project_id: str | None, *, origin: str, emit):
+    """Step 1: the Flowpad Assistant's diagnose — ALWAYS, whatever project is open (only Ask for
+    help takes a project's own) — its progress narrated on ``emit``."""
+    from flow_sdk.diagnose import DiagnosePurpose, FlowContextSpec, resolve_shipped, run_diagnose  # noqa: PLC0415
+
+    ctx = FlowContextSpec(purpose=DiagnosePurpose.REPAIR, project_id=project_id, user_report=message, origin=origin)
+    emit({"type": "status", "text": "  Checking this machine…"})
+    sweep = await run_diagnose(
+        ctx,
+        emit=lambda text: emit({"type": "narration", "text": text}),
+        label="Diagnosing Flowpad",
+        resolve=lambda _project_path: resolve_shipped(),
+    )
+    emit({"type": "status", "text": f"  Checked: {sweep.title or sweep.status}"})
+    return sweep
+
+
+#: Findings handed to the agent: the rest are counted, never cut mid-JSON.
+PROMPT_FINDINGS = 40
+
+
+def _sweep_for_prompt(sweep) -> str:
+    """The sweep, as the agent reads it — without the log tails it can read itself."""
+    value = sweep.model_dump(mode="json", exclude={"logs"})
+    if len(value["findings"]) > PROMPT_FINDINGS:
+        value["findings_not_shown"] = len(value["findings"]) - PROMPT_FINDINGS
+        value["findings"] = value["findings"][:PROMPT_FINDINGS]
+    return json.dumps(value, indent=1)
+
+
+def _merge_agent_into(sweep, diag, status: str | None = None):
+    """The recorded diagnosis: the sweep's findings, machine and logs, under the agent's verdict
+    (its record's headline, and the ``--status`` its report.py printed)."""
+    from flow_sdk.diagnose import DiagnosisStatus  # noqa: PLC0415
+
+    update: dict = {}
+    if diag is not None:
+        update = {k: v for k in ("title", "summary", "symptoms", "rca", "fix") if (v := getattr(diag, k, None))}
+    if status in {s.value for s in DiagnosisStatus}:
+        update["status"] = DiagnosisStatus(status)
+    return sweep.model_copy(update=update)
+
+
+async def _project_name(project_id: str | None) -> str | None:
+    if not project_id:
+        return None
+    with contextlib.suppress(Exception):
+        from flow_sdk.builtin.project import Project  # noqa: PLC0415
+
+        project = await Project.get_one({"id": project_id})
+        return getattr(project, "name", None) if project else None
+    return None
+
+
+async def _record_runner_fields(diag, merged, message: str, project_id: str | None) -> None:
+    """Set on the recorded diagnosis what only the runner knows (the caller saves it)."""
+    if message:
+        diag.user_report = message
+    if project_id:
+        diag.origin_project_id = project_id
+        diag.origin_project_name = await _project_name(project_id) or diag.origin_project_name
+    diag.diagnosis = merged
+
+
+async def _record_sweep(sweep, message: str, project_id: str | None) -> str | None:
+    """The agent recorded nothing (no LLM it could use, a worker that died): record what the checks
+    found, so every run leaves a diagnosis -- the Feed card, the diagnoses table, a supporter's run.
+    Returns its id, or ``None`` if even that could not be saved."""
+    try:
+        from flow_sdk.builtin.flowpad_diagnosis import FlowpadDiagnosis  # noqa: PLC0415
+
+        env = sweep.environment
+        title = sweep.title or "Flowpad checks"
+        diag = FlowpadDiagnosis(
+            name=title,
+            title=title,
+            summary=sweep.summary or None,
+            symptoms=sweep.symptoms or None,
+            rca=sweep.rca or None,
+            fix=sweep.fix or None,
+            reported_by=env.reported_by or "unknown",
+            occurred_at=env.occurred_at or None,
+            os=env.os or None,
+            app_version=env.app_version or None,
+        )
+        await _record_runner_fields(diag, sweep, message, project_id)
+        diag = await diag.save()
+        return diag.id
+    except Exception:  # noqa: BLE001 -- the run still reports the checks on screen
+        logging.getLogger(__name__).warning("[diagnose] recording the checks failed", exc_info=True)
+        return None
+
+
+async def _stop_worker(ap) -> None:
+    """End the diagnose process's worker, whichever transport ran it.
+
+    The diagnose process is headless (no Shell), so stopping only a Shell's worker stopped
+    nothing: the turn task, its ``claude`` child and its stderr reader outlived the run. On
+    Windows the child still held the run's temp folder, and ``asyncio.run`` cancelled the turn
+    mid-write at exit, leaving ~20 DB sessions for its final cleanup to close in the wrong
+    context. ``_stop_headless_turn`` closes the child and joins the turn, so its writes finish.
+    """
+    with contextlib.suppress(Exception):
+        await ap._stop_headless_turn(source="flow diagnose")
+    with contextlib.suppress(Exception):
+        shell = await ap.shell()
+        if shell is not None:
+            await shell.terminate_worker()
+
+
+async def _build_diagnose_process(**options):
     """The diagnose worker process, exactly as `flow diagnose` launches it.
 
     Built from the named ``diagnose`` Agent, so the permission mode, model and
@@ -256,8 +379,9 @@ async def _build_diagnose_process():
 
     deployment = await get_agent_local_deployment("diagnose")
     return await deployment.create_process(
-        workdir=str(Path.cwd()),
+        workdir=options.pop("workdir", None) or str(Path.cwd()),
         name="flow diagnose",
+        **options,
     )
 
 
@@ -267,8 +391,19 @@ async def _run_diagnose(
     *,
     emit=None,
     project_id: str | None = None,
+    process_options: dict | None = None,
+    steps: tuple[str, ...] = (),
+    approve=None,
+    step_output_dir: Path | None = None,
+    step_context: str = "",
+    prompt_extra: str = "",
 ) -> int:
     """Run the flow-diagnose skill headless and stream the worker's narration.
+
+    ``steps`` are turns to run BEFORE the diagnosis, one at a time -- a supporter's
+    instructions (``flow diagnose <request id>``) -- each sent only when ``approve(step)``
+    says yes; ``prompt_extra`` is appended to the diagnosis prompt; ``process_options`` reach
+    the worker process (a request's public LLM budget). All empty for a plain run.
 
     ``emit`` is a callable invoked with structured event dicts (``narration`` /
     ``progress`` / ``status`` / ``error`` / ``done``). When omitted it defaults to
@@ -308,6 +443,9 @@ async def _run_diagnose(
     # guarantees @local exists for the skill's reporting step).
     await _bootstrap_local()
 
+    # Step 1 — the diagnose spec. Never raises; a failing or hanging diagnose answers its baseline.
+    sweep = await _sweep(message, project_id, origin="cli" if isinstance(emit, _TerminalSink) else "footer", emit=emit)
+
     prompt_text = (
         f"Read the flow-diagnose skill at {skill_dir}/SKILL.md and follow it to "
         "diagnose Flowpad and record the result.\n\n"
@@ -319,10 +457,13 @@ async def _run_diagnose(
         "EVERY time — even if everything is healthy and no action is needed (use "
         "--status ok). Do NOT end your turn before it has printed its JSON.\n\n"
         "User-reported text — free text or a pasted error; empty means run a full "
-        f'sweep:\n"{message}"'
-    )
+        f'sweep:\n"{message}"\n\n'
+        "A fixed diagnostic sweep ALREADY RAN on this machine. Start from what it found — do not "
+        "repeat those checks — and use its findings in what you record:\n"
+        f"```json\n{_sweep_for_prompt(sweep)}\n```"
+    ) + (f"\n\n{prompt_extra}" if prompt_extra else "")
 
-    ap = await _build_diagnose_process()
+    ap = await _build_diagnose_process(**(process_options or {}))
 
     # stream_transcript re-reads the transcript from the start on each call, so
     # track how many entries we've already printed and skip them on the re-stream
@@ -418,43 +559,87 @@ async def _run_diagnose(
         # interrupted OR finished run would otherwise leave an orphaned claude
         # process behind — and a pile-up of those starves new runs (they spawn but
         # never produce output → hang). Kill it on EVERY exit.
-        with contextlib.suppress(Exception):
-            shell = await ap.shell()
-            if shell is not None:
-                await shell.terminate_worker()
+        await _stop_worker(ap)
+
+    started = False
+
+    async def _start_turn(text: str) -> bool:
+        """Send one turn; the first one also proves the worker came up. False = gave up (emitted)."""
+        nonlocal started
+        taken = await ap.send_turn(text)
+        if not taken.ok:
+            emit({"type": "error", "text": f"  ! The diagnostic agent did not take the prompt: {taken.detail}"})
+            return False
+        if started:
+            return True
+        started = True
+        emit({"type": "status", "text": f"  Diagnosing (session={(ap.session_id or '')[:8]})…"})
+        if not await await_worker_started(ap, transcript_timeout):
+            # The driver latches why the spawn failed (no LLM it can use, a missing CLI); say that.
+            reason = getattr(ap, "start_failure", None)
+            emit(
+                {
+                    "type": "error",
+                    "text": (
+                        f"  ! The diagnostic agent could not start: {reason}"
+                        if reason
+                        else "  ! The diagnostic agent failed to start — it produced no transcript. "
+                        "Check that the `claude` CLI is installed and on your PATH, then re-run "
+                        "`flow diagnose`."
+                    ),
+                }
+            )
+            return False
+        return True
+
+    def done(ok: bool, diagnosis, **ids) -> None:
+        """The run's last event: what was recorded (ids) and the diagnosis — the sweep's, when
+        the agent recorded nothing."""
+        emit(
+            {
+                "type": "done",
+                "ok": ok,
+                "diagnosis_id": ids.get("diagnosis_id"),
+                "conversation_id": ids.get("conversation_id"),
+                "flow_message_id": ids.get("flow_message_id"),
+                "feed_posted": bool(ids.get("feed_entry_id")),
+                "feed_entry_id": ids.get("feed_entry_id"),
+                "diagnosis": diagnosis.model_dump(mode="json"),
+            }
+        )
+
+    async def _answer_with_sweep() -> int:
+        """The agent recorded nothing (it never started, dropped the prompt, or stopped short):
+        record what the checks found, so the run still leaves a diagnosis. 0 when it did -- a
+        supporter's request is then sent the checks (``_run_request``); ``done`` says ``ok: False``."""
+        did = await _record_sweep(sweep, message, project_id)
+        if did is None:
+            emit(
+                {
+                    "type": "error",
+                    "text": "  ! Not even the checks could be recorded — see the report above; re-run `flow diagnose`.",
+                }
+            )
+            done(False, sweep)
+            return 1
+        feed_entry_id = await _post_home_feed_entry(summary=sweep.summary or sweep.title or "", diagnosis_id=did)
+        emit({"type": "status", "text": "  ! The agent could not finish. Recorded what the checks found instead."})
+        done(False, sweep, diagnosis_id=did, feed_entry_id=feed_entry_id)
+        return 0
 
     try:
         try:
-            taken = await ap.send_turn(prompt_text)
-            if not taken.ok:
-                emit({"type": "error", "text": f"  ! The diagnostic agent did not take the prompt: {taken.detail}"})
-                emit({"type": "done", "ok": False, "diagnosis_id": None, "conversation_id": None,
-                      "flow_message_id": None, "feed_posted": False, "feed_entry_id": None})
-                return 1
-            emit({"type": "status", "text": f"  Diagnosing (session={(ap.session_id or '')[:8]})…"})
-            if not await await_worker_started(ap, transcript_timeout):
-                emit(
-                    {
-                        "type": "error",
-                        "text": (
-                            "  ! The diagnostic agent failed to start — it produced no transcript. "
-                            "Check that the `claude` CLI is installed and on your PATH, then re-run "
-                            "`flow diagnose`."
-                        ),
-                    }
-                )
-                emit(
-                    {
-                        "type": "done",
-                        "ok": False,
-                        "diagnosis_id": None,
-                        "conversation_id": None,
-                        "flow_message_id": None,
-                        "feed_posted": False,
-                        "feed_entry_id": None,
-                    }
-                )
-                return 1
+            for n, step in enumerate(steps, 1):
+                if approve is not None and not approve(step):
+                    emit({"type": "status", "text": f"  – Skipped (not approved): {step}"})
+                    continue
+                out_dir = step_output_dir or Path.cwd()
+                prompt = _STEP_PROMPT.format(n=n, step=step, out=out_dir / f"step-{n}.txt", context=step_context)
+                if not await _start_turn(prompt):
+                    return await _answer_with_sweep()
+                await _stream()
+            if not await _start_turn(prompt_text):
+                return await _answer_with_sweep()
             await _stream()
             # The worker can end its turn early — diagnosing but not recording. Nudge
             # the SAME session once to finish, then re-check.
@@ -473,41 +658,6 @@ async def _run_diagnose(
             conv_id = recorded.get("conversation_id")
             msg_id = recorded.get("flow_message_id")
 
-            # Stamp the user's own free-text description onto the record. report.py
-            # (run by the agent) only ever sees the agent-observed ``symptoms`` — the
-            # raw text the user typed lives only here in the CLI runner — so we persist
-            # it now, after the record exists, where the "Report issue" email reads it.
-            if did and message:
-                with contextlib.suppress(Exception):
-                    from flow_sdk.fs_store.fs_record import FSRecord
-
-                    rec = FSRecord.load_or_none(EntityType.FLOWPAD_DIAGNOSIS.value, did)
-                    if rec is not None:
-                        rec.save_metadata_field("user_report", message)
-                        rec = FSRecord.load_or_none(EntityType.FLOWPAD_DIAGNOSIS.value, did)
-                        if rec is not None:
-                            await rec.sync_to_db()
-
-            # Stamp the origin project — the project the user was in when they ran
-            # the diagnosis. Resolved from the id the UI passed (the CLI has no
-            # active project, so this is skipped there). The name travels with the
-            # record so a helper on another machine can see where it happened.
-            if did and project_id:
-                with contextlib.suppress(Exception):
-                    from flow_sdk.builtin.project import Project
-                    from flow_sdk.fs_store.fs_record import FSRecord
-
-                    origin_project = await Project.get_one({"id": project_id})
-                    origin_name = getattr(origin_project, "name", None) if origin_project else None
-                    rec = FSRecord.load_or_none(EntityType.FLOWPAD_DIAGNOSIS.value, did)
-                    if rec is not None:
-                        rec.save_metadata_field("origin_project_id", project_id)
-                        if origin_name:
-                            rec.save_metadata_field("origin_project_name", origin_name)
-                        rec = FSRecord.load_or_none(EntityType.FLOWPAD_DIAGNOSIS.value, did)
-                        if rec is not None:
-                            await rec.sync_to_db()
-
             # Load the recorded diagnosis (retrying briefly for cross-process
             # visibility) so the Feed card carries its summary, then cross-link it into
             # THIS process's context. The CLI owns the process id, so this works on every
@@ -515,13 +665,25 @@ async def _run_diagnose(
             # on Windows, where its uv-run subprocess doesn't inherit
             # FLOWPAD_EXECUTION_SCOPE).
             diag = await _load_recorded_diagnosis(_diag_cls, did)
-            try:
-                if diag is not None:
+            merged = _merge_agent_into(sweep, diag, recorded.get("status"))
+            # What only this runner knows, set on the ONE copy that is saved: the person's own words
+            # (report.py sees only the agent's ``symptoms``, and the "Report issue" email reads them),
+            # the project they were in (named, so a helper on another machine sees where it
+            # happened), and the merged diagnosis. A second writer beside this copy is how the
+            # record once lost all three: the cross-link saved the copy loaded before them.
+            if diag is not None:
+                await _record_runner_fields(diag, merged, message, project_id)
+                try:
                     fresh = await AgenticProcess.get_by_id(ap.id)
                     if fresh is not None:
-                        await cross_link_entities(fresh, diag)
-            except Exception:
-                pass
+                        await cross_link_entities(fresh, diag, save=False)
+                        await fresh.save()
+                except Exception:  # noqa: BLE001 — the link is a convenience; the record stands
+                    pass
+                try:
+                    await diag.save()
+                except Exception:  # noqa: BLE001 — the run is recorded either way; say why the fields are missing
+                    logging.getLogger(__name__).warning("[diagnose] saving record %s failed", did, exc_info=True)
 
             # Post the Home-Feed card — ALWAYS, for every completed run. conv_id +
             # msg_id present ⇔ report.py created a support Conversation/FlowMessage, so
@@ -536,44 +698,319 @@ async def _run_diagnose(
                 diagnosis_id=did,
             )
             emit({"type": "status", "text": "  ✓ Diagnostic complete — diagnosis recorded."})
-            emit(
-                {
-                    "type": "done",
-                    "ok": True,
-                    "diagnosis_id": did,
-                    "conversation_id": conv_id,
-                    "flow_message_id": msg_id,
-                    "feed_posted": bool(feed_entry_id),
-                    "feed_entry_id": feed_entry_id,
-                }
+            done(
+                True,
+                merged,
+                diagnosis_id=did,
+                conversation_id=conv_id,
+                flow_message_id=msg_id,
+                feed_entry_id=feed_entry_id,
             )
             return 0
-        emit(
-            {
-                "type": "error",
-                "text": (
-                    "  ! Diagnostic finished but the result was not recorded — see the report "
-                    "above; re-run `flow diagnose` to retry."
-                ),
-            }
-        )
-        emit(
-            {
-                "type": "done",
-                "ok": False,
-                "diagnosis_id": None,
-                "conversation_id": None,
-                "flow_message_id": None,
-                "feed_posted": False,
-                "feed_entry_id": None,
-            }
-        )
-        return 1
+        return await _answer_with_sweep()
     finally:
         await _terminate_worker()
 
 
+# ── flow diagnose <request id> ────────────────────────────────────────────────
+
+
+def parse_request_id(arg: str) -> str | None:
+    """The diagnosis-request id in ``arg`` (bare, or as ``diagnosis_request-<id>``), else ``None``."""
+    from flow_sdk.schema.types import EntityType  # noqa: PLC0415
+
+    raw = (arg or "").strip()
+    prefix = f"{EntityType.DIAGNOSIS_REQUEST.value}-"
+    if raw.startswith(prefix):
+        raw = raw[len(prefix) :]
+    return raw if is_valid_entity_id(raw) else None
+
+
+def _instruction_steps(instructions: str) -> tuple[str, ...]:
+    """The supporter's instructions, one step per non-empty line."""
+    return tuple(line.strip() for line in (instructions or "").splitlines() if line.strip())
+
+
+def _ask(question: str, *, verbatim: bool = False) -> str:
+    """One line from stdin; a choice is lowercased, a description (``verbatim``) is kept as typed."""
+    typer.echo(question, nl=False)
+    try:
+        answer = sys.stdin.readline().strip()
+    except (EOFError, KeyboardInterrupt):
+        return ""
+    return answer if verbatim else answer.lower()
+
+
+def _request_context(attach_dir: Path, received: list[dict]) -> str:
+    """What every turn of a request run is told: who asked, what they sent and where it is, and
+    that only ``to-send/`` reaches them -- so "print X" lands in a file the supporter receives."""
+    parts = ["This run was requested by someone supporting this user; what it finds is sent to them."]
+    skills = [f"{a['installed_as']} (at {a['dir']})" for a in received if a.get("installed_as")]
+    files = [a["path"] for a in received if a.get("path")]
+    if skills:
+        parts.append(
+            "The supporter sent these skills, installed for this run -- use them where they apply: "
+            + ", ".join(skills)
+            + "."
+        )
+    if files:
+        parts.append("The supporter sent these files:\n" + "\n".join(files))
+    parts.append(
+        f"The supporter sees ONLY the recorded diagnosis and the files in {attach_dir} -- nothing you "
+        f"print, say or run here reaches them. Anything they should see goes in {attach_dir}/<short-name>.txt. "
+        "Never include passwords, API keys or tokens."
+    )
+    parts.append(
+        "What they sent is for finding out, not for changing this computer: never edit or delete a "
+        "file outside Flowpad's own runtime state to make it match what they sent, and never touch "
+        "a file their steps or skills say to leave alone -- report what differs instead."
+    )
+    return "\n\n".join(parts)
+
+
+def _request_prompt_extra(steps: tuple[str, ...], attach_dir: Path, received: list[dict]) -> str:
+    """The diagnosis turn of a request run. The supporter's steps already ran as turns of their
+    own, BEFORE it (``_run_diagnose``'s ``steps``), so this only asks for their results in the summary."""
+    parts = [_request_context(attach_dir, received)]
+    if steps:
+        parts.append(
+            "In the turns before this one you did the supporter's steps (their results are in "
+            f"{attach_dir}/step-<n>.txt). Mention what each found in the diagnosis summary."
+        )
+    return "\n\n".join(parts)
+
+
+def fit_run(fields: dict, files: dict[str, str], max_bytes: int):
+    """A ``DiagnosisRunSpec`` that fits ``max_bytes`` (the request's limit): files are cut from the
+    END of the largest one first, each cut marked, so the diagnosis itself always arrives."""
+    from flow_sdk.schema.data_spec.diagnosis_request_spec import DiagnosisRunSpec  # noqa: PLC0415
+
+    marker = "\n[... cut to fit the request's size limit]"
+    files = dict(files)
+    while True:
+        run = DiagnosisRunSpec(**fields, files=files)
+        over = len(run.model_dump_json().encode("utf-8")) - max_bytes
+        if over <= 0 or not files:
+            return run
+        largest = max(files, key=lambda name: len(files[name]))
+        cut = over + len(marker) + 64  # chars >= bytes, so cutting this many chars frees enough
+        text = files[largest]
+        if len(text) <= cut:
+            files.pop(largest)
+        else:
+            files[largest] = text[: len(text) - cut] + marker
+
+
+async def _receive_attachments(request_id: str, attachments: list[dict], workdir: Path) -> list[dict]:
+    """Fetch what the supporter attached into the run's ``workdir``: a skill (a zip) is unpacked to
+    ``.claude/skills/<name>/`` so the agent finds it as a project skill; a file lands in
+    ``from-supporter/``. Unpacking refuses traversal, symlinks and zip bombs (``safe_extract_zip``).
+    A failed attachment is reported and skipped -- it must not stop the diagnosis."""
+    from flow_sdk.cloud_client.shared.errors import HubError  # noqa: PLC0415
+    from flow_sdk.cloud_client.transport.hub_http import hub_anonymous_request  # noqa: PLC0415
+    from flow_sdk.schema.types import EntityType  # noqa: PLC0415
+    from flow_sdk.utils.archive import UnsafeArchiveError, safe_extract_zip  # noqa: PLC0415
+
+    received = []
+    for item in attachments:
+        kind, name = str(item.get("kind") or ""), Path(str(item.get("name") or "")).name
+        if kind not in ("files", "skills") or not name:
+            continue
+        try:
+            content = await hub_anonymous_request(
+                "GET", EntityType.DIAGNOSIS_REQUEST.value, request_id, f"brief/attachment/{kind}/{name}", raw=True
+            )
+        except HubError as e:
+            typer.echo(f"  ! Could not fetch {name}: {e.reason}", err=True)
+            continue
+        if kind == "skills":
+            skill = name.removesuffix(".zip")
+            target = workdir / ".claude" / "skills" / skill
+            archive = workdir / f".{name}"
+            archive.write_bytes(content)
+            try:
+                safe_extract_zip(archive, target)  # the zip holds the skill folder's CONTENTS
+            except (UnsafeArchiveError, OSError, ValueError) as e:
+                typer.echo(f"  ! Skipped skill {skill}: {e}", err=True)
+                continue
+            finally:
+                archive.unlink(missing_ok=True)
+            received.append({"kind": kind, "name": name, "installed_as": skill, "dir": str(target)})
+        else:
+            from_supporter = workdir / "from-supporter"
+            from_supporter.mkdir(exist_ok=True)
+            (from_supporter / name).write_bytes(content)
+            received.append({"kind": kind, "name": name, "path": str(from_supporter / name)})
+    return received
+
+
+def _attachment_label(item: dict) -> str:
+    return f"{'skill' if item.get('kind') == 'skills' else 'file'}: {item.get('name')}"
+
+
+def _show_outgoing(run) -> None:
+    """Everything that is about to leave this computer, before it does: who you are as recorded,
+    the diagnosis, and every file with its size -- the agent's own narration included."""
+    typer.echo("\nAbout to send to the person who asked:")
+    for label, value in (
+        ("From", run.reported_by),
+        ("Computer", " / ".join(v for v in (run.os, run.app_version and f"Flowpad {run.app_version}") if v)),
+        ("Title", run.title),
+        ("Summary", run.summary),
+        ("Your description", run.user_report),
+    ):
+        if value:
+            typer.echo(f"  {label}: {value}")
+    for name, text in sorted(run.files.items()):
+        typer.echo(f"  File: {name} ({len(text.encode('utf-8')):,} bytes)")
+
+
+def _collect_files(attach_dir: Path, narration: list[str]) -> dict[str, str]:
+    files = {"agent-narration.md": "\n\n".join(t for t in narration if t)} if narration else {}
+    for path in sorted(attach_dir.glob("*")) if attach_dir.is_dir() else []:
+        if path.is_file():
+            with contextlib.suppress(OSError, UnicodeDecodeError):
+                files[path.name] = path.read_text(encoding="utf-8")
+    return files
+
+
+async def _run_request(request_id: str, transcript_timeout: float) -> int:
+    """``flow diagnose <id>``: read the request's brief from the hub, ask this user how to approve
+    the supporter's instructions, run the diagnosis on the request's budget, and submit the result.
+
+    No hub login is needed anywhere here: the id is the credential (``hub_anonymous_request``).
+    """
+    import tempfile  # noqa: PLC0415
+
+    from flow_sdk.cloud_client.shared.errors import HubError  # noqa: PLC0415
+    from flow_sdk.cloud_client.transport.hub_http import hub_anonymous_request  # noqa: PLC0415
+    from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+    from flow_sdk.schema.types import EntityType  # noqa: PLC0415
+
+    kind = EntityType.DIAGNOSIS_REQUEST.value
+    try:
+        brief = await hub_anonymous_request("GET", kind, request_id, "brief")
+    except HubError as e:
+        typer.echo(
+            "ERROR: no diagnosis request with that id -- check the command you were sent."
+            if e.status_code in (401, 403, 404)
+            else f"ERROR: could not reach Flowpad to read the request ({e.reason}).",
+            err=True,
+        )
+        return 1
+    if not brief.get("open"):
+        typer.echo(f"This diagnosis request closed on {brief.get('write_expires_at')}. Ask for a new one.", err=True)
+        return 1
+
+    steps = _instruction_steps(brief.get("instructions") or "")
+    attachments = list(brief.get("attachments") or [])
+    # The supporter decides whether this run asks anything (``ask_permission``, off by default):
+    # unasked, every step and attachment is used, no issue text is asked for, and the result is
+    # always sent. The person still sees what runs and what leaves -- it just isn't a question.
+    ask = bool(brief.get("ask_permission"))
+    approve = None
+    if steps or attachments:
+        typer.echo("This diagnosis was requested by someone supporting you.")
+        if steps:
+            typer.echo("Their instructions:")
+            for n, step in enumerate(steps, 1):
+                typer.echo(f"  {n}. {step}")
+        if attachments:
+            typer.echo("They also sent (used only for this run):")
+            for item in attachments:
+                typer.echo(f"  - {_attachment_label(item)}")
+        typer.echo(
+            "An AI agent will follow them on THIS computer -- it can read files and run commands, "
+            "and a skill they sent can run commands too."
+        )
+        choice = _ask("  [a] approve all now   [e] approve each one   [n] cancel: ") if ask else "a"
+        if choice not in ("a", "e"):
+            typer.echo("Cancelled -- nothing was run or sent.")
+            return 1
+        if choice == "e":
+            # Asked one by one, the default is yes: the person already chose to look at each.
+            approve = lambda step: _ask(f'Run this step? "{step}" [Y/n]: ') not in ("n", "no")  # noqa: E731
+            attachments = [
+                item for item in attachments if _ask(f"Use {_attachment_label(item)}? [Y/n]: ") not in ("n", "no")
+            ]
+    elif ask and _ask(
+        "A standard diagnosis will run on this computer and its result is sent to the person who asked. Continue? [Y/n]: "
+    ) in ("n", "no"):
+        typer.echo("Cancelled -- nothing was run or sent.")
+        return 1
+    elif not ask:
+        typer.echo("This diagnosis was requested by someone supporting you; its result is sent to them.")
+
+    text = _ask("Describe the issue or paste the error, then press Enter (leave empty to skip): ", verbatim=True) if ask else ""
+    typer.echo("Diagnosing — spinning up the agent (this can take a few seconds)…")
+
+    sink, narration, done = _TerminalSink(), [], {}
+
+    def emit(event: dict) -> None:
+        if event.get("type") == "narration":
+            narration.append(str(event.get("text") or ""))
+        if event.get("type") == "done":
+            done.update(event)
+        sink(event)
+
+    endpoint = brief.get("llm_endpoint_typeid") or ""
+    process_options = {"llm_endpoint_typeid": endpoint, "llm_endpoint_public": True} if endpoint else {}
+    # ``ignore_cleanup_errors``: on Windows a folder something still has open cannot be deleted,
+    # and the delete runs BEFORE the send below -- a failed cleanup must not throw away a finished
+    # diagnosis. A folder left behind in the OS temp dir is the lesser loss.
+    with tempfile.TemporaryDirectory(prefix="flow-diagnose-", ignore_cleanup_errors=True) as tmp:
+        # The run's own folder: what the supporter sent goes in, what goes back is written to
+        # ``to-send/``, and all of it is gone when the run ends.
+        workdir = Path(tmp)
+        attach_dir = workdir / "to-send"
+        attach_dir.mkdir()
+        received = await _receive_attachments(request_id, attachments, workdir)
+        rc = await _run_diagnose(
+            text,
+            transcript_timeout,
+            emit=emit,
+            process_options={**process_options, "workdir": str(workdir)},
+            # The supporter's steps always run first, each a turn of its own: "approve all" only
+            # skips the per-step question (``approve`` stays None), never the order.
+            steps=steps,
+            approve=approve,
+            step_output_dir=attach_dir,
+            step_context=_request_context(attach_dir, received),
+            prompt_extra=_request_prompt_extra(steps, attach_dir, received),
+        )
+        if rc != 0 or not done.get("diagnosis_id"):
+            typer.echo("Nothing was sent: the diagnosis did not complete.", err=True)
+            return rc or 1
+        diag = await _load_recorded_diagnosis(
+            SchemaRegistry.get_entity_cls(EntityType.FLOWPAD_DIAGNOSIS), done["diagnosis_id"]
+        )
+        files = _collect_files(attach_dir, narration)
+    fields = {
+        name: getattr(diag, name, None)
+        for name in ("title", "symptoms", "rca", "fix", "summary", "reported_by", "occurred_at", "os", "app_version")
+    }
+    fields["user_report"] = text or None
+    run = fit_run(fields, files, int(brief.get("max_run_bytes") or 2 * 1024 * 1024))
+    _show_outgoing(run)
+    answer = "y"
+    while ask and (answer := _ask("Send this to the person who asked? [Y/n, v = view the files]: ")) in ("v", "view"):
+        for name, content in sorted(run.files.items()):
+            typer.echo(f"\n----- {name} -----\n{content}")
+        typer.echo("")
+    if answer in ("n", "no"):
+        typer.echo("Not sent. The diagnosis stays on this computer only.")
+        return 1
+    try:
+        sent = await hub_anonymous_request("POST", kind, request_id, "submit", run.model_dump(mode="json"))
+    except HubError as e:
+        typer.echo(f"ERROR: the diagnosis ran but could not be sent ({e.reason}).", err=True)
+        return 1
+    typer.echo(f"  ✓ Sent to the person who asked (run #{sent.get('run')}).")
+    return 0
+
+
 def diagnose_command(
+    ctx: typer.Context,
     timeout: float = typer.Option(
         DEFAULT_TRANSCRIPT_TIMEOUT_S, "--timeout", help="Transcript stream budget in seconds."
     ),
@@ -584,8 +1021,14 @@ def diagnose_command(
     diagnostic sweep), then diagnoses, repairs what's safe, and records the result
     to the app's Feed. Text given on the command line is ignored — type it at the
     prompt so apostrophes/quotes work without shell quoting.
+
+    `flow diagnose <request id>` runs a diagnosis someone supporting you asked for: it
+    shows their instructions, asks you to approve them, and sends them the result.
     """
     _quiet_logs()
+    request_id = parse_request_id(ctx.args[0]) if ctx.args else None
+    if request_id is not None:
+        raise typer.Exit(asyncio.run(_run_request(request_id, timeout)))
     # Always read the message from stdin — never from argv. Anything typed after
     # `flow diagnose` on the command line is intentionally ignored, because the
     # shell mangles free text (apostrophes like "can't", quotes) before we ever

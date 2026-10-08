@@ -23,6 +23,10 @@ class HubAuthExpiredError(httpx.RequestError):
 # gets a zero-byte body against a non-zero Content-Length, which the browser
 # reports as a bare "Network Error" instead of the hub's real status and message.
 PASSTHROUGH_EXTENSION = "flowpad_passthrough"
+# A request whose ENTITY ID is the credential (``public_role``: a diagnosis request's
+# ``brief``/``submit``). This box's login is neither attached nor consulted -- a lapsed one must
+# not stop a call that never needed it -- and the hub's answer to it can sign no one out here.
+ANONYMOUS_EXTENSION = "flowpad_anonymous"
 
 
 def _is_passthrough(response: httpx.Response) -> bool:
@@ -30,6 +34,10 @@ def _is_passthrough(response: httpx.Response) -> bool:
         return bool(response.request.extensions.get(PASSTHROUGH_EXTENSION))
     except RuntimeError:  # no request bound to the response
         return False
+
+
+def _is_anonymous(request: httpx.Request) -> bool:
+    return bool(request.extensions.get(ANONYMOUS_EXTENSION))
 
 
 def build_event_hooks() -> dict[str, list[Any]]:
@@ -122,7 +130,7 @@ async def resolve_hub_credential(request: httpx.Request | None = None) -> str | 
 
 async def _on_request(request: httpx.Request) -> None:
     attach_machine_id(request.headers)
-    if "Authorization" in request.headers or _is_public_auth_path(request.url.path):
+    if _is_anonymous(request) or "Authorization" in request.headers or _is_public_auth_path(request.url.path):
         return
     credential = await resolve_hub_credential(request)
     if credential:
@@ -133,8 +141,10 @@ async def _on_response(response: httpx.Response) -> None:
     status_code = response.status_code
     # A proxied response belongs to the caller downstream — inspect status only.
     passthrough = _is_passthrough(response)
+    # No credential went out, so no answer to it says anything about this box's login.
+    anonymous = _is_anonymous(response.request)
     if status_code < 400:
-        if not passthrough and await _is_auth_failure_envelope(response):
+        if not passthrough and not anonymous and await _is_auth_failure_envelope(response):
             # HTTP-layer auth failure (envelope status=fail with auth marker).
             # This is a real credential rejection from the hub's identity
             # check, not a WS-handshake reject — drop login state.
@@ -144,7 +154,7 @@ async def _on_response(response: httpx.Response) -> None:
     if not passthrough:
         await response.aread()
         # The one code that means the credential is dead (the hub sets it on nothing else).
-        if _error_code(response) == "unauthenticated":
+        if not anonymous and _error_code(response) == "unauthenticated":
             await invalidate_hub_login("rejected")
     # Every hub 4xx/5xx — including 401/402/424 — is surfaced through the
     # error reporter so it becomes a HubClientErrorInfo warning in the UI

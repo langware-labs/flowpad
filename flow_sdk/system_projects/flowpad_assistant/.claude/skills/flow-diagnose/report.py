@@ -99,21 +99,16 @@ def _environment_snapshot() -> dict:
     email can be sent by a helper the diagnosis was forwarded to, and the details
     the receiver sees must still describe the reporter's Windows box, not theirs.
     """
-    import platform
+    # The same snapshot every diagnosis carries (``flow_sdk.diagnose.baseline``), so the record and
+    # its ``diagnosis`` value never disagree about who, when or where.
+    from flow_sdk.diagnose.baseline import environment
 
-    from flow_sdk.server.routes.bootstrap import get_email, get_name
-
-    name, email = get_name(), get_email()
-    try:
-        from flow_sdk._version import __version__ as app_version
-    except Exception:  # noqa: BLE001
-        app_version = None
-
+    env = environment()
     return {
-        "reported_by": f"{name} <{email}>" if name and email else (email or name or "unknown"),
-        "occurred_at": datetime.now(UTC).isoformat(),
-        "os": platform.platform(),
-        "app_version": app_version or "",
+        "reported_by": env.reported_by or "unknown",
+        "occurred_at": env.occurred_at,
+        "os": env.os,
+        "app_version": env.app_version,
     }
 
 
@@ -276,6 +271,8 @@ async def record_diagnosis(
         "conversation_id": None,
         "flow_message_id": None,
         "has_issue": False,
+        # The verdict, for the runner's merged ``diagnosis`` (the record keeps no status field).
+        "status": status,
     }
     if status in _ISSUE_STATUSES:
         support = await create_support_conversation(

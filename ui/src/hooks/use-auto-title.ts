@@ -11,6 +11,7 @@ import { formatAutoTitle } from '@src/components/conversation/conversation-title
 export function useAutoTitle(
   open: boolean,
   participants: ConversationParticipant[],
+  projectName?: string | null,
 ): string {
   const { cloudUser, user, localUser } = useAuth();
   const myLabel =
@@ -22,7 +23,7 @@ export function useAutoTitle(
     'You';
   const openedAt = useMemo(() => new Date(), [open]);
   return useMemo(
-    () => (open ? formatAutoTitle(participants, myLabel, openedAt) : ''),
-    [open, participants, myLabel, openedAt],
+    () => (open ? formatAutoTitle(participants, myLabel, openedAt, projectName) : ''),
+    [open, participants, myLabel, openedAt, projectName],
   );
 }

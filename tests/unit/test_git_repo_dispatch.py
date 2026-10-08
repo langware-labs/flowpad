@@ -101,11 +101,9 @@ async def test_dispatch_status_line_counts_opt_in():
     for flag in ("true", "1", True):
         responses = [
             make_cmd(status_out),
-            make_cmd("/repo/.git"),  # rev-parse --absolute-git-dir
-            make_cmd(""),  # read-tree HEAD
-            make_cmd(""),  # add -A -N
-            make_cmd("3\t1\ta.txt"),  # diff --numstat HEAD
-            make_cmd(""),  # rm temp index
+            make_cmd("abc123"),  # rev-parse --verify HEAD
+            make_cmd("3\t1\ta.txt"),  # diff --numstat HEAD (real index)
+            make_cmd(""),  # ls-files --others: nothing untracked, no throwaway index
             make_cmd("", exit_code=1),  # ls-remote --get-url
         ]
         result = await make_repo(responses).dispatch("status", {"lineCounts": flag})

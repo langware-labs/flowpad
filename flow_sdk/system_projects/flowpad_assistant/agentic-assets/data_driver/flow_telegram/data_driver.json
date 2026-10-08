@@ -3,25 +3,25 @@
   "name": "flow_telegram",
   "title": "Flow — no setup",
   "icon_name": "Flowpad",
-  "description": "Talk to Flow, Flowpad's own assistant, on Telegram. Nothing to set up at Telegram — link your account once and Flow answers, acting on your Flowpad.",
+  "description": "Your Telegram messages to Flowpad's own bot, in Flowpad. Nothing to set up at Telegram — link your account once and what you write arrives here; you answer from Flowpad.",
   "kind": "datasource.cloud.telegram",
   "group": "Telegram",
   "group_order": 0,
   "group_icon_name": "Telegram",
   "default_name": "Flow Telegram agent",
   "config": {
-    "link_id": {
+    "claim_id": {
       "type": "text",
       "advanced": true,
-      "label": "Link",
-      "hint": "Made when you press Connect Telegram."
+      "label": "Hub claim",
+      "hint": "Made when you press Connect: the hub delivers this account's messages here."
     },
     "sender": {
       "type": "text",
       "advanced": true,
       "label": "Your Telegram account",
       "account_key": true,
-      "hint": "The Telegram account that sent the Connect code — the only one Flow answers here."
+      "hint": "The Telegram account that sent the Connect code — the only one this source reaches."
     }
   },
   "setup_wizards": [

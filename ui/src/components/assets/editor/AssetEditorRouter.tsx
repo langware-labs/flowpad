@@ -36,6 +36,7 @@ import {
   AssetRoutingMethod,
   editorForType,
   isFileOnlyEditor,
+  isFilelessEditor,
   primaryTypeForEditor,
 } from '@src/navigation/asset-doc-types';
 import { useEntityByPath } from '@src/hooks/use-entity-by-path';
@@ -43,6 +44,7 @@ import { HtmlPreview } from '@src/components/html-preview/HtmlPreview';
 import { MediaViewer } from '@src/components/media-viewer/MediaViewer';
 import { PdfViewer } from '@src/components/pdf-viewer/PdfViewer';
 import { ArchivePreview } from '@src/components/archive-preview/ArchivePreview';
+import { ValueViewer } from '@src/components/value-viewer/ValueViewer';
 import { EntityResolutionGate } from './EntityResolutionGate';
 import { MissingAssetCard } from './MissingAssetCard';
 import { PlainMarkdownAssetEditor } from './markdown/PlainMarkdownAssetEditor';
@@ -63,6 +65,7 @@ import { AssetCleanupReportAssetEditor } from './asset-cleanup/AssetCleanupRepor
 import { JourneyViewer } from '@src/journey/JourneyViewer';
 import { WizardViewer } from './wizard/WizardViewer';
 import { LlmEndpointAssetView } from './llm-endpoint/LlmEndpointAssetView';
+import { DiagnosisRequestView } from './diagnosis-request/DiagnosisRequestView';
 import { McpViewer } from '@src/components/assets/editor/mcp/McpViewer';
 import { WhiteboardAssetEditor } from './whiteboard/WhiteboardAssetEditor';
 import { DeckTemplateViewer } from './deck-template/DeckTemplateViewer';
@@ -140,7 +143,7 @@ export function AssetEditorRouter({ pointer, fragment, hubReflect = false, wikiL
   const hostOccurrence = useHostReadOnlyOccurrence();
   // The view nested in THIS editor — only the page's own editor has one; a router rendering the
   // child itself (AgentChildView) must not see it again.
-  const nestedChild = useIsNested() ? null : currentDock?.child ?? null;
+  const nestedChild = useIsNested() ? null : (currentDock?.child ?? null);
   const ptr = (() => {
     try {
       const p = AssetDocPointer.parse(pointer);
@@ -177,7 +180,8 @@ export function AssetEditorRouter({ pointer, fragment, hubReflect = false, wikiL
   } = useQuery({
     queryKey: ['asset-record-refs', hubReflect ? 'hub' : 'local', typeId?.toString()],
     queryFn: () => typeIdEntity!.record({ hubReflect }),
-    enabled: !!typeIdEntity && ptr?.method === AssetRoutingMethod.TYPEID,
+    // A fileless asset has no record refs to read: its view renders from the row.
+    enabled: !!typeIdEntity && ptr?.method === AssetRoutingMethod.TYPEID && !isFilelessEditor(ptr?.editor),
   });
 
   usePrimaryContentPending(!!typeId && (entityLoading || recordLoading));
@@ -205,7 +209,8 @@ export function AssetEditorRouter({ pointer, fragment, hubReflect = false, wikiL
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pointer, readOnly]);
   const { resolvedType: vfsResolvedType } = useEntityByPath<AnyEntity>(
-    null, hostOccurrence || (readOnly && occurrenceType) ? null : vfsResolveRef,
+    null,
+    hostOccurrence || (readOnly && occurrenceType) ? null : vfsResolveRef,
   );
 
   const derived = useMemo<{ fsRef: FSRef; assetType: string; mainFileRef: FSRef } | null>(() => {
@@ -242,9 +247,13 @@ export function AssetEditorRouter({ pointer, fragment, hubReflect = false, wikiL
   // Custom domain forms may save a row or launch work. Read-only occurrence
   // routes instead project the registry-declared file, without an Entity gate.
   // The viewers in READ_ONLY_OCCURRENCE_EDITORS render the occurrence themselves.
-  if (readOnly && vfsResolveRef && ptr.method === AssetRoutingMethod.VFS &&
-      !READ_ONLY_OCCURRENCE_EDITORS.has(ptr.editor) &&
-      (!isFileOnlyEditor(ptr.editor) || ptr.editor === AssetEditor.CODE)) {
+  if (
+    readOnly &&
+    vfsResolveRef &&
+    ptr.method === AssetRoutingMethod.VFS &&
+    !READ_ONLY_OCCURRENCE_EDITORS.has(ptr.editor) &&
+    (!isFileOnlyEditor(ptr.editor) || ptr.editor === AssetEditor.CODE)
+  ) {
     const type = occurrenceType ?? vfsResolvedType ?? primaryTypeForEditor(ptr.editor);
     const shape = type ? dataManager.getTypeInfo(type)?.shape : undefined;
     return <ReadOnlyAssetPreview fsRef={assetOccurrenceMainRef(vfsResolveRef, shape)} />;
@@ -281,10 +290,17 @@ export function AssetEditorRouter({ pointer, fragment, hubReflect = false, wikiL
     // A .zip is browsed as its extracted folder (a temp copy), never as text.
     return <ArchivePreview path={ptr.value} />;
   }
+  if (ptr.editor === AssetEditor.VALUE) {
+    // One value of a kind (`*.value.json`), drawn by that kind's data viewer.
+    return <ValueViewer path={ptr.value} />;
+  }
   // Entity-backed but file-less: an LLM budget has no FSRef to derive, so it returns here
   // rather than falling through to the record/mainRef machinery below.
   if (ptr.editor === AssetEditor.LLM_ENDPOINT) {
     return <LlmEndpointAssetView value={ptr.value} />;
+  }
+  if (ptr.editor === AssetEditor.DIAGNOSIS_REQUEST) {
+    return <DiagnosisRequestView value={ptr.value} />;
   }
 
   // A typeid pointer whose entity has SETTLED with nothing usable (404 /
@@ -324,10 +340,10 @@ export function AssetEditorRouter({ pointer, fragment, hubReflect = false, wikiL
   if (!derived) return <ConnectingFallback />;
   const { fsRef, assetType, mainFileRef } = derived;
   const documentRef = assetOccurrenceMainRef(fsRef, dataManager.getTypeInfo(assetType)?.shape);
-  const renderDocument = ptr.method === AssetRoutingMethod.VFS && detectLanguage(documentRef.path) === 'markdown'
-    ? (ref: FSRef) => <MarkdownEditor fsRef={ref} chatTarget={null} wikiLinkTarget={wikiLinkTarget} />
-    : undefined;
-
+  const renderDocument =
+    ptr.method === AssetRoutingMethod.VFS && detectLanguage(documentRef.path) === 'markdown'
+      ? (ref: FSRef) => <MarkdownEditor fsRef={ref} chatTarget={null} wikiLinkTarget={wikiLinkTarget} />
+      : undefined;
 
   switch (ptr.editor) {
     case AssetEditor.SKILL:

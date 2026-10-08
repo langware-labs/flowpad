@@ -82,3 +82,10 @@ async def test_log_real_decisions_into_a_training_set(tmp_path, monkeypatch):
     ns = await run_fence(fence_under(DOC, "6."), {"runs": tmp_path})
     assert ns["logged"] == ("summarize the README", "agentic", "summarize the README")
     assert ns["run"].examples >= 1 and ns["run"].metrics["agentic_recall"] == 1.0
+
+
+async def test_keep_records_by_key(folder):
+    ns = await run_fence(fence_under(DOC, "7."), {"folder": folder})
+    assert ns["keys"] == ["sources"]
+    assert ns["problems"] and ns["problems"][0].startswith("input.utterance:")
+    assert not (folder / "examples/sources").exists()

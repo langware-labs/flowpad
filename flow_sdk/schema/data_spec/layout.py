@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import csv
 import json
+import re
 import shutil
 import uuid
 from datetime import datetime, timezone
@@ -49,6 +50,17 @@ EXPECTED_LEGACY = "expected"           # legacy expected.txt → folded onto gro
 TEXT_EXTS = {".txt", ".md"}            # a file naming one of these is text, not binary
 
 _Doc = tuple[dict[str, Any], dict[str, Any]]  # a two-section doc: (metadata, data)
+
+#: A row KEY is its example folder's name. One a caller chooses is lower-case letters, digits,
+#: ``_`` and ``-`` -- never a leading dot (the layout's own scratch dirs are dotted).
+ROW_KEY = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
+
+
+def check_key(key: Any) -> str:
+    """``key`` when it can name an example folder, else ``ValueError``."""
+    if not isinstance(key, str) or len(key) > 120 or not ROW_KEY.match(key):
+        raise ValueError(f"{key!r} cannot be a row key: use a-z, 0-9, _ and -, starting with a letter or digit")
+    return key
 
 
 # ── shared helpers ────────────────────────────────────────────────────────────
@@ -91,7 +103,7 @@ def load_doc(path: Path) -> _Doc:
 
 
 def write_doc(path: Path, metadata: dict[str, Any], data: dict[str, Any]) -> None:
-    _write(path, json.dumps({"metadata": metadata, "data": data}, indent=2, default=str) + "\n")
+    _write(path, json.dumps({"metadata": metadata, "data": data}, indent=2, default=str, ensure_ascii=False) + "\n")
 
 
 def _write(path: Path, text: str) -> None:
@@ -333,7 +345,8 @@ def _example_dirs(folder) -> list[Path]:
     examples_dir = Path(folder) / EXAMPLES_DIR
     if not examples_dir.is_dir():
         return []
-    return sorted((p for p in examples_dir.iterdir() if p.is_dir()), key=lambda p: p.name)
+    return sorted((p for p in examples_dir.iterdir() if p.is_dir() and not p.name.startswith(".")),
+                  key=lambda p: p.name)
 
 
 def _main_document(shape: type) -> str:
@@ -510,6 +523,7 @@ class FolderLayout(DatasetLayout):
                 if isinstance(only, FileRef):
                     row[base] = only
         row["id"] = example_id(dataset_id, ex_dir.name)
+        row["key"] = ex_dir.name
         return spec.model_validate(row)
 
     @staticmethod
@@ -602,19 +616,31 @@ class FolderLayout(DatasetLayout):
         (ids,) = self.append_many(folder, [(ex, contents)], dataset_id=dataset_id)
         return ids
 
-    def append_many(self, folder, rows: Sequence[tuple], *, dataset_id: str) -> list[str]:
+    def append_many(self, folder, rows: Sequence[tuple], *, dataset_id: str,
+                    keys: Optional[Sequence[Optional[str]]] = None) -> list[str]:
         """Append a batch: ONE directory scan for the whole batch, then a dir
-        per row (``rows`` is ``(example, contents)`` pairs). Numbering follows
-        the highest existing ``NNNN``, never the count, so a gap is preserved."""
+        per row (``rows`` is ``(example, contents)`` pairs). A row with a
+        ``keys`` entry lands in ``examples/<key>/`` (refused when taken, before
+        anything is written); the others are numbered after the highest
+        existing ``NNNN``, never the count, so a gap is preserved."""
         examples_dir = Path(folder) / EXAMPLES_DIR
         examples_dir.mkdir(parents=True, exist_ok=True)
-        taken = [int(p.name) for p in examples_dir.iterdir() if p.is_dir() and p.name.isdigit()]
+        keys = list(keys) if keys is not None else [None] * len(rows)
+        if len(keys) != len(rows):
+            raise ValueError("keys: one entry per row")
+        existing = {p.name for p in examples_dir.iterdir() if p.is_dir()}
+        chosen = [check_key(k) for k in keys if k is not None]
+        clash = sorted({k for k in chosen if k in existing or chosen.count(k) > 1})
+        if clash:
+            raise ValueError(f"row keys already taken: {clash}")
+        taken = [int(name) for name in existing if name.isdigit()]
         nxt = (max(taken) + 1) if taken else 1
         ids = []
-        for offset, (ex, contents) in enumerate(rows):
-            name = f"{nxt + offset:04d}"
-            self.write_example(examples_dir / name, ex, contents=contents)
-            ids.append(example_id(dataset_id, name))
+        for (ex, contents), key in zip(rows, keys):
+            if key is None:
+                key, nxt = f"{nxt:04d}", nxt + 1
+            self.write_example(examples_dir / key, ex, contents=contents)
+            ids.append(example_id(dataset_id, key))
         return ids
 
     def index(self, folder, *, dataset_id: str) -> list[dict[str, Any]]:
@@ -628,6 +654,7 @@ class FolderLayout(DatasetLayout):
             meta, _ = _load_example_meta(ex_dir)
             out.append({
                 "example_id": example_id(dataset_id, ex_dir.name),
+                "key": ex_dir.name,
                 "item_id": (meta.get("source") or {}).get("item_id"),
                 "kind": str(coerce_dataset_enum(meta.get("kind"), ExampleKind, ExampleKind.TRAIN).value),
                 "annotated": self.has_ground_truth(ex_dir),
@@ -635,10 +662,55 @@ class FolderLayout(DatasetLayout):
         return out
 
     def example_dir(self, folder, example_id_: str, *, dataset_id: str) -> Optional[Path]:
-        """The directory behind an example id, or None. Ids are a pure (cached)
-        function of ``(dataset_id, dir name)``, so this is a scan, never a
-        lookup table."""
+        """The directory behind an example id OR key, or None. Ids are a pure
+        (cached) function of ``(dataset_id, dir name)``, so an id is a scan,
+        never a lookup table; a key is the directory itself."""
+        if isinstance(example_id_, str) and ROW_KEY.match(example_id_):
+            direct = Path(folder) / EXAMPLES_DIR / example_id_
+            if direct.is_dir():
+                return direct
         return next((p for p in _example_dirs(folder) if example_id(dataset_id, p.name) == example_id_), None)
+
+    def put_example(self, folder, key: str, ex: ExampleSpec, *, dataset_id: str,
+                    contents: Optional[dict[str, Any]] = None) -> str:
+        """Write ``ex`` as the example ``key`` -- a new one, or a REPLACEMENT of the one there.
+        Built in a scratch dir beside it and swapped in, so a reader sees the old example or the
+        new one, never half of each. Returns the id."""
+        examples_dir = Path(folder) / EXAMPLES_DIR
+        examples_dir.mkdir(parents=True, exist_ok=True)
+        target = examples_dir / check_key(key)
+        stamp = uuid.uuid4().hex[:8]
+        scratch, old = examples_dir / f".{key}.new-{stamp}", examples_dir / f".{key}.old-{stamp}"
+        try:
+            self.write_example(scratch, ex, contents=contents)
+            if target.exists():
+                target.rename(old)
+            scratch.rename(target)
+        finally:
+            for leftover in (scratch, old):
+                if leftover.exists():
+                    shutil.rmtree(leftover)
+        return example_id(dataset_id, key)
+
+    def delete_example(self, folder, example_id_: str, *, dataset_id: str) -> str:
+        """Remove one example (its whole directory). Returns its key; ``LookupError`` when absent."""
+        ex_dir = self.example_dir(folder, example_id_, dataset_id=dataset_id)
+        if ex_dir is None:
+            raise LookupError(f"no example {example_id_} in {folder}")
+        shutil.rmtree(ex_dir)
+        return ex_dir.name
+
+    def rename_example(self, folder, example_id_: str, new_key: str, *, dataset_id: str) -> str:
+        """Give one example a new key (its directory is moved). Its id follows the key, so the
+        NEW id is returned; anything that pointed at the old key or id must be updated."""
+        ex_dir = self.example_dir(folder, example_id_, dataset_id=dataset_id)
+        if ex_dir is None:
+            raise LookupError(f"no example {example_id_} in {folder}")
+        target = ex_dir.parent / check_key(new_key)
+        if target.exists():
+            raise ValueError(f"row key already taken: {new_key!r}")
+        ex_dir.rename(target)
+        return example_id(dataset_id, new_key)
 
     def annotate(self, folder, example_id_: str, ground_truth: Any, *, dataset_id: str, by: str = "",
                  main: str = ANNOTATION_FILE) -> Path:
@@ -727,7 +799,7 @@ class FolderLayout(DatasetLayout):
                 elif isinstance(payload, str):
                     _write(target, payload)
                 else:
-                    _write(target, json.dumps(payload, indent=2, default=str) + "\n")
+                    _write(target, json.dumps(payload, indent=2, default=str, ensure_ascii=False) + "\n")
             elif source is not None and (source / node.path).is_file():
                 shutil.copyfile(source / node.path, target)
             elif not target.exists():

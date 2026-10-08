@@ -1,5 +1,6 @@
 import { IEntity } from '../IEntity';
 import { APIEntity, registerEntity } from '../APIEntity';
+import type { DiagnosisSpec } from '../diagnose/types';
 
 /**
  * FlowpadDiagnosis — a recorded issue diagnosis (title / symptoms / root-cause /
@@ -21,6 +22,8 @@ export interface IFlowpadDiagnosis extends IEntity {
   app_version?: string; // Flowpad version running there
   origin_project_id?: string; // project the user was in when the diagnosis was recorded
   origin_project_name?: string; // display name of origin_project_id (travels with the record)
+  /** The full `diagnosis` value: the sweep's findings, the machine and its log tails. */
+  diagnosis?: DiagnosisSpec | null;
 }
 
 @registerEntity
@@ -40,6 +43,7 @@ export class FlowpadDiagnosis
   app_version?: string;
   origin_project_id?: string;
   origin_project_name?: string;
+  diagnosis?: DiagnosisSpec | null;
   static type: string = 'flowpad_diagnosis';
 
   constructor(entity: Partial<IFlowpadDiagnosis> = {}) {
@@ -56,5 +60,6 @@ export class FlowpadDiagnosis
     this.app_version = entity.app_version;
     this.origin_project_id = entity.origin_project_id;
     this.origin_project_name = entity.origin_project_name;
+    this.diagnosis = entity.diagnosis;
   }
 }

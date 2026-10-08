@@ -9,7 +9,7 @@
 import apiClient from '../client';
 
 export interface NavigationTarget {
-  kind: 'view' | 'entity' | 'file' | 'url' | 'webapp' | 'app' | 'log';
+  kind: 'view' | 'entity' | 'file' | 'url' | 'webapp' | 'app' | 'log' | 'action';
   /** A dock address, a TypeId, a path, a URL, a port or an artifact id — what `kind` says. */
   value: string;
 }
