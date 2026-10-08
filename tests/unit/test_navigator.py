@@ -78,6 +78,7 @@ async def test_a_rule_answers_before_the_model(hub, utterance, kind, value, verb
     r = await navigator.route(utterance)
     assert (r.route, r.target.kind, r.target.value, r.verb, r.reason) == ("quick", kind, value, verb, "rule")
     assert hub["specs"] == [], "a rule hit never spends a decision"
+    assert (r.run.reason, r.run.decision) == ("rule", None), "a rule: no model was asked"
 
 
 async def test_a_confident_decision_opens_it(hub):
@@ -88,6 +89,10 @@ async def test_a_confident_decision_opens_it(hub):
     assert spec.state["utterance"] == "open the zoom oauth task" and spec.state["candidates"][0]["typeid"] == TASK
     assert spec.state["page"] == "/dock/home"
     assert "agentic" in spec.questions["target"].options and f"entity:{TASK}" in spec.questions["target"].options
+    # How it was decided travels with the answer: the very spec sent, the answer received, the bar.
+    run = r.run.decision
+    assert run.request is spec and run.response.answers["target"].choice == f"entity:{TASK}"
+    assert run.act_at == {"target": navigator.MIN_CONFIDENCE}, "the bar the pick had to clear, per question"
 
 
 @pytest.mark.parametrize(
@@ -103,6 +108,9 @@ async def test_anything_short_of_a_confident_open_goes_to_the_assistant(hub, ans
     hub["answer"], hub["error"] = answer, error
     r = await navigator.route("summarize the zoom oauth task")
     assert (r.route, r.target, r.reason) == ("agentic", None, reason)
+    # Why it fell back is debuggable: the request always, the response whenever the model answered.
+    assert r.run.reason == reason and r.run.decision.request is hub["specs"][0]
+    assert (r.run.decision.response is None) == (error is not None)
 
 
 def test_every_screen_offered_is_a_real_address_and_none_is_offered_twice():

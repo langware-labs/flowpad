@@ -48,6 +48,9 @@ export enum AssetEditor {
   AUDIO = 'audio',
   PDF = 'pdf', // native browser render of a .pdf via <iframe>/<embed>
   ARCHIVE = 'archive', // a .zip, browsed as the folder it extracts to (a temp copy)
+  // A `.value.json`: one DataSpec value carrying its own `spec_kind`, shown by that kind's
+  // viewer (a diagnosis, an eval run) — the data-viewer registry, outside any host app.
+  VALUE = 'value',
 }
 
 /**
@@ -140,6 +143,7 @@ export const EDITOR_TYPES: Record<AssetEditor, RecordType[]> = {
   [AssetEditor.AUDIO]: [],
   [AssetEditor.PDF]: [],
   [AssetEditor.ARCHIVE]: [],
+  [AssetEditor.VALUE]: [],
 };
 
 /** True for editors that render raw files and have no backing record type. */
@@ -179,6 +183,7 @@ export const PREVIEW_EDITORS: ReadonlySet<AssetEditor> = new Set([
   AssetEditor.AUDIO,
   AssetEditor.PDF,
   AssetEditor.ARCHIVE,
+  AssetEditor.VALUE,
 ]);
 
 export function isPreviewEditor(editor: AssetEditor | null | undefined): boolean {
@@ -302,12 +307,17 @@ export function extToEditor(): Record<string, AssetEditor> {
  * extension is plain `html`. The UI's `isMcpAppPath` delegates here. */
 const MCP_APP_PATH_RE = /\.mcp\.html?$/i;
 
+/** A kind-tagged value file — `diagnosis.value.json`. Its last-dot extension is plain `json`,
+ * which stays the code editor's: only the suffix says the file is one value of a kind. */
+export const VALUE_PATH_RE = /\.value\.json$/i;
+
 /**
  * Editor for a RAW file path (no entity). Unknown extensions fall back to the
  * plain code editor.
  */
 export function editorForPath(path: string): AssetEditor {
   if (MCP_APP_PATH_RE.test(path)) return AssetEditor.MCP_APP;
+  if (VALUE_PATH_RE.test(path)) return AssetEditor.VALUE;
   const ext = path.split('.').pop()?.toLowerCase();
   return (ext && extToEditor()[ext]) || AssetEditor.CODE;
 }

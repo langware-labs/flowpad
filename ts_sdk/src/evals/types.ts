@@ -10,6 +10,12 @@ export type Verdict = 'correct' | 'wrong' | 'abstained' | 'error';
 export const VERDICTS: readonly Verdict[] = ['correct', 'abstained', 'wrong', 'error'];
 
 /** One example, evaluated. */
+/** How an inference reached an answer, as a value of a kind (`navigator.run`). */
+export interface EvalTrace {
+  kind: string;
+  value: unknown;
+}
+
 export interface ExampleEval {
   example_id: string;
   /** What the inference answered, as the dataset's output kind. */
@@ -24,6 +30,11 @@ export interface ExampleEval {
   /** The example's value at each of the eval's slice paths. */
   slice: Record<string, string>;
   title: string;
+  /** How the inference reached its answer (`{kind, value}`: drawn by that kind's viewer); null when not
+   *  recorded. Left out of a run's listing — fetched for the one example opened (`Dataset.evalTrace`). */
+  trace?: EvalTrace | null;
+  /** The eval's own word on this verdict, when the verdict alone would mislead. */
+  note?: string;
 }
 
 /** An `ExampleEval` joined to its example (what `GET dataset/<id>/eval/<run>` answers). */

@@ -1,4 +1,4 @@
-import { useRef, useState, type MouseEvent, type ReactNode } from 'react';
+import { useMemo, useRef, useState, type MouseEvent, type ReactNode } from 'react';
 import { Check, CheckCheck, Clock } from 'lucide-react';
 import { resendConversation, type AgenticProcess, type FlowMessage } from '@sdk';
 import type { ConversationMessage } from '@sdk/entities/conversation';
@@ -7,6 +7,8 @@ import { Task, type ITask } from '@sdk/entities/task';
 import { TaskItIcon, TaskOwnerChip, TaskStatusChip } from './task-it';
 import { CHIP_LAYOUT, chipStyleFor } from './EntityChip';
 import { MessageActionsMenu } from './MessageActionsMenu';
+import { FavoriteStar } from '@src/components/favorites/FavoriteStar';
+import { messageFavoriteRef } from '@src/components/favorites/favorite-target';
 import { MarkdownView } from '@src/components/markdown-view';
 import { useLinks } from '@src/components/links/LinkMenu';
 import { LinkifiedText } from '@src/components/links/LinkifiedText';
@@ -256,6 +258,11 @@ export function MessageBubble({
   const { localUser } = useLocalUser();
   // Links in the body resolve against this message, exactly as a terminal's resolve against its shell.
   const linkSource = useRef(flowMessage ?? null);
+  const conversationId = flowMessage?.conversation_id;
+  const favoriteRef = useMemo(
+    () => (flowMessageId && conversationId ? messageFavoriteRef(flowMessageId, conversationId, message.content) : null),
+    [flowMessageId, conversationId, message.content],
+  );
   linkSource.current = flowMessage ?? null;
   const links = useLinks(linkSource, run);
 
@@ -361,6 +368,11 @@ export function MessageBubble({
             </span>
           )}
           {showReceipt && <DeliveryReceipt status={flowMessage?.delivery_status} message={flowMessage} />}
+          {!editing && favoriteRef && (
+            <span className="self-center" data-testid={`message-favorite-star-${flowMessageId}`}>
+              <FavoriteStar {...favoriteRef} size={12} hoverSurface="none" revealOnHover className="p-0.5" />
+            </span>
+          )}
           {!editing && (
             <span className="self-center">
               <MessageActionsMenu
@@ -426,9 +438,13 @@ export function MessageBubble({
         <ConfirmDialog
           open={confirmingDelete}
           onOpenChange={setConfirmingDelete}
-          title={t`Delete this message?`}
-          description={t`This permanently deletes the message and all of its data for everyone in the conversation. This can't be undone.`}
-          confirmLabel={t`Delete`}
+          title={flowMessage?.origin ? t`Remove this message from Flowpad?` : t`Delete this message?`}
+          description={
+            flowMessage?.origin
+              ? t`Removes Flowpad's copy. The message stays where it was sent.`
+              : t`This permanently deletes the message and all of its data for everyone in the conversation. This can't be undone.`
+          }
+          confirmLabel={flowMessage?.origin ? t`Remove` : t`Delete`}
           variant="destructive"
           onConfirm={onDeleteMessage}
         />

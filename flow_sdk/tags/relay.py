@@ -30,6 +30,8 @@ MESSAGE_PROJECTED_PATTERN = "stream_inbox.*.message.projected"
 RELAYED_TAG_PATTERNS: list[str] = [
     "deployment.timeline",
     MESSAGE_PROJECTED_PATTERN,
+    # Where a message is on its way to an answer (``emit_message_status``): an agent picking it up here.
+    "stream_inbox.*.message.status",
     "task.*",
     "voice.call.*",
 ]

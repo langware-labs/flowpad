@@ -928,10 +928,8 @@ async def handle_add_message(
         remote_worker_session_id = mint_uuid()
         start_settings = SessionStartSettings(reply_policy=reply_policy)
     elif remote_worker_session_id and is_prompt_send:
-        from flow_sdk.builtin.remote_worker_session import is_terminal  # noqa: PLC0415
-
         existing_session = await RemoteWorkerSession.resolve_state(remote_worker_session_id)
-        if existing_session is not None and is_terminal(existing_session.status):
+        if existing_session is not None and not existing_session.is_open:
             return ApiFailResponse(
                 message="this live session has ended — send a new prompt to start another",
                 status_code=409,

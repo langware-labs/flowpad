@@ -28,6 +28,7 @@ export function deriveConversationTitle(conv: Conversation | null | undefined): 
  * Slack-style autofill title for a *new* conversation:
  *   "<me>, <p1>, <p2> - <Mon D HH:MM>"
  * Empty participants degrades to "New conversation - <Mon D HH:MM>".
+ * A ``projectName`` prefixes it: "[<project>] New conversation - …".
  *
  * The ``when`` Date is taken from the caller so the autofill stays stable
  * across re-renders within a session (the open-dialog memoises it).
@@ -36,6 +37,7 @@ export function formatAutoTitle(
   participants: ConversationParticipant[],
   myLabel: string,
   when: Date,
+  projectName?: string | null,
 ): string {
   const day = when.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
   const time = when.toLocaleTimeString('en-US', {
@@ -44,7 +46,9 @@ export function formatAutoTitle(
     hour12: false,
   });
   const dateSuffix = `${day} ${time}`;
-  if (participants.length === 0) return `New conversation - ${dateSuffix}`;
+  const project = projectName?.trim();
+  const prefix = project ? `[${project}] ` : '';
+  if (participants.length === 0) return `${prefix}New conversation - ${dateSuffix}`;
   const others = participants.map(participantLabel).join(', ');
-  return `${myLabel}, ${others} - ${dateSuffix}`;
+  return `${prefix}${myLabel}, ${others} - ${dateSuffix}`;
 }

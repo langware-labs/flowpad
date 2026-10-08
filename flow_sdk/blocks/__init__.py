@@ -528,6 +528,7 @@ class StreamInbox:
         from flow_sdk.ingest.models import IngestMode  # noqa: PLC0415
         from flow_sdk.ingest.poller import poll_source  # noqa: PLC0415
         from flow_sdk.stream_inbox.projection import project_source_item  # noqa: PLC0415
+        from flow_sdk.stream_inbox.stream_inbox_on_tag import emit_message_status  # noqa: PLC0415
 
         source = await self.ensure_source()
         position = await ConsumerPosition.ensure_for(
@@ -591,6 +592,10 @@ class StreamInbox:
                         handed.append(Delivered(
                             spec, position=position, row=item, source_id=str(source.id), redelivered=redelivered, quoted=quoted
                         ))
+                        # Handed to whoever answers it: its conversation says so until the reply lands (once —
+                        # a redelivery after a restart was already said).
+                        if item.origin is not None and not redelivered:
+                            emit_message_status(source, item.origin.key)
                     page = DeliveredPage(handed, position=position, source_id=str(source.id), last=rows[-1])
                     if not handed:
                         await page.ack()          # nothing to hand over; the filtered rows are covered

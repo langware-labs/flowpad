@@ -128,8 +128,6 @@ async def channel_delivery(source_id: str, request: Request):
     if payload is None:
         return ApiFailResponse(message="Expected a JSON object body")
     headers = dict(request.headers)
-    if isinstance(payload, dict) and headers.get("x-flowpad-chain-direction") == "out":
-        payload = {**payload, "flowpad_direction": "out"}
     result = await stype.ingest_pushed(row, payload, headers=headers, raw=raw, verified_by_hub=True)
     result.pop("calls", None)
     return ApiSuccessResponse(data=result)

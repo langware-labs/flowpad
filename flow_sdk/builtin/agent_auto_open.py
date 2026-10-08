@@ -56,6 +56,12 @@ class AutoOpenTab:
     #: The file it shows; ``None`` for a screen (a pointer with no project file).
     path: Optional[Path] = None
 
+    @property
+    def address(self) -> str:
+        """The dock address ``viewType/pointer`` this tab shows."""
+        found = json.loads(self.pointer)
+        return f"{found['viewType']}/{found.get('pointer') or ''}".rstrip("/")
+
 
 def project_ids(entries: list[DockPointerSpec] | None) -> set[str]:
     """The literal project ids the declared files are rooted in."""
@@ -117,10 +123,39 @@ async def open_auto_tabs(process: "AgenticProcess", tabs: list[AutoOpenTab]) -> 
     if first.path is not None:
         target = await resolve_display_target(path=str(first.path))
     else:
-        address = json.loads(first.pointer)
-        target = await dock_target(f"{address['viewType']}/{address['pointer']}")
+        target = await dock_target(first.address)
+    # What a Vibe worker is told is already open (``auto_open_prompt_block``) — saved
+    # by ``on_show`` below.
+    process.context_data = {**(process.context_data or {}), "auto_open": auto_open_commands(tabs)}
     await process.on_show(target)
     await broadcast_tabs_changed()
+
+
+def auto_open_commands(tabs: list[AutoOpenTab]) -> list[str]:
+    """The ``flow show`` that reopens each opened tab — what the worker is told
+    (``auto_open_prompt_block``), kept on the session as ``context_data.auto_open``."""
+    return [f"flow show file {tab.path}" if tab.path is not None else f"flow show view {tab.address}"
+            for tab in tabs]
+
+
+def auto_open_prompt_block(context_data: dict | None) -> str:
+    """The system-prompt lines for a Vibe session that opened with ``auto_open``: what
+    is already open, how to reopen it on need, and an alert per entry that failed.
+    Empty when the session opened nothing — every other session pays no tokens."""
+    data = context_data or {}
+    commands = data.get("auto_open") or []
+    if not commands:
+        return ""
+    lines = [
+        "# Opened for you at session start",
+        "Already open — don't reopen. If one is missing when you need it, run its command:",
+        *(f"- `{c}`" for c in commands),
+    ]
+    for result in data.get("auto_open_results") or []:
+        if not result.get("ok", True):
+            reason = result.get("detail") or result.get("verdict") or "no detail"
+            lines.append(f"⚠ {result.get('entry')} did not open: {reason} — tell the user if it matters.")
+    return "\n".join(lines)
 
 
 # ── ops and wizards: shown at once, repaired in the background ────────────────
@@ -155,6 +190,7 @@ def _record(entry: str, answer: "ReturnedValue") -> dict:
     return {
         "entry": entry,
         "exit_code": int(answer.exit_code),
+        "ok": answer.ok,
         "verdict": getattr(answer, "verdict", None),
         "detail": answer.detail,
     }

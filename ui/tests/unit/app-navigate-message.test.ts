@@ -11,6 +11,12 @@ describe('flowpad:navigate', () => {
     expect(dock?.toUrl()).toContain('subject=dataset-1');
   });
 
+  it('opens an entity where its type lives — a project to its home', () => {
+    const project = 'project-6f1c2a7e-3b4d-4e5f-8a9b-0c1d2e3f4a5b';
+    expect(guestNavigation({ type: 'flowpad:navigate', typeid: project })?.toUrl()).toContain('6f1c2a7e-3b4d-4e5f-8a9b-0c1d2e3f4a5b');
+    expect(guestNavigation({ type: 'flowpad:navigate', typeid: 'not a typeid' })).toBeNull();
+  });
+
   it.each([
     ['another message type', { type: 'flowpad:theme', address: '/dock/home' }],
     ['a non-dock URL', { type: 'flowpad:navigate', address: 'https://evil.example/dock/home' }],

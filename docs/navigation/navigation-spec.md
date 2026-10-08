@@ -11,8 +11,8 @@ Three questions with one join key, a screen's `view` slug:
 | **you are here** — the screen a tab is on, plus the context it really provides | `navigation.here` (+ `navigation.ref`, `navigation.shown`) | `navigation.here_from(browser_context)` |
 | **where to go** — open something now, or ask the assistant | `navigator.target`, `navigator.route` | `flow_sdk.core.navigator.route(utterance, here=...)` |
 
-The kinds are shipped `data_spec` folders
-(`flowpad_assistant/agentic-assets/data_spec/navigation.*`, `navigator.*`), so a
+The schemas are shipped `data_schema` folders
+(`flowpad_assistant/agentic-assets/data_schema/navigation.*`, `navigator.*`), so a
 dataset row, the navigator and `flow context list` speak one definition. Each folder's
 `description.md` says whether the mechanism uses it or it is there for browsing; `map.json` in
 the SmartNavigator dataset folder (`dev/dataset/smart-navigator/`, not shipped) is the map's snapshot (regenerate with `scripts/navigation_map.py`; a fast

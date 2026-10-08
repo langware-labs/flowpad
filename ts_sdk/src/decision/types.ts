@@ -79,6 +79,30 @@ export interface DecisionResult {
   endpoint: string;
 }
 
+/** Exactly what crossed the wire for one decision (`decision.wire`): the vendor-dialect request
+ *  body sent and the raw body that came back. */
+export interface DecisionWire {
+  endpoint: string;
+  path: string;
+  request: unknown;
+  status: number;
+  response: unknown;
+}
+
+/** One decision as it happened (`decision.run`): what was asked, what came back, and what the caller
+ *  needed to act — read back to debug it. Mirrors `flow_sdk/schema/data_spec/decision_spec.py`. */
+export interface DecisionRun {
+  request: DecisionSpec;
+  /** Absent when the decision API failed. */
+  response?: DecisionResult | null;
+  /** Per question, the confidence its pick had to reach for the caller to act on it. */
+  act_at: Record<string, number>;
+  /** What each part of `request.state` is (`context` -> `navigation.here`): drawn by that kind. */
+  state_kinds: Record<string, unknown>;
+  /** Exactly what was sent to the decision API and what came back. */
+  wire?: DecisionWire | null;
+}
+
 /** A hub APIEndpoint this user may call (`api_endpoint.offer`). */
 export interface APIEndpointOffer {
   id: string;
