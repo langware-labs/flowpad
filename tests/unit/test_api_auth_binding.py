@@ -781,7 +781,8 @@ async def test_a_family_model_is_not_swapped_for_a_models_allow_default(env) -> 
     ("tier", "expected"),
     [
         # The caller's model -- a name or a literal slug -- is kept, so the endpoint can refuse it.
-        ("haiku", "haiku"),
+        # A harness's own name for a size is spelled as that size's slug, never swapped.
+        ("haiku", "anthropic/claude-haiku-4.5"),
         ("anthropic/claude-haiku-4.5", "anthropic/claude-haiku-4.5"),
         # A size, or no model at all, is the tier map's code default: still re-picked.
         ("sm", "z-ai/glm-5.3"),
@@ -829,3 +830,17 @@ def test_a_specs_own_tier_slugs_are_spelled_with_its_prefix(worker) -> None:
 
     spec = driver_api_auth_spec(worker)
     assert all(slug.startswith(spec.slug_prefix) for slug in spec.tier_models.values())
+
+
+@pytest.mark.parametrize(("name", "size"), [("haiku", "sm"), ("sonnet", "md"), ("opus", "lg")])
+async def test_claude_on_an_endpoint_reads_its_own_size_names_as_sizes(env, name, size) -> None:
+    """The diagnose agent asks for ``haiku`` -- claude's own name for its small size. Funded, the CLI
+    expanded it to ``claude-haiku-4-5-20251001``, an id a cost-capped endpoint could not price, so every
+    turn was refused (Windows VM). It must get the size's gateway slug, as ``sm`` does."""
+    from flow_sdk.builtin.agentic_process.cli_drivers.api_auth import binding_for_candidate
+
+    candidate = _hub_candidate("budget-ep", "Diagnosis request", [])
+
+    by_name = await binding_for_candidate("claude", candidate, tier=name)
+    by_size = await binding_for_candidate("claude", candidate, tier=size)
+    assert by_name.model_slug == by_size.model_slug and by_name.model_slug.startswith("anthropic/")

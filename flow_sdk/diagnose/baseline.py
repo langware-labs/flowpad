@@ -89,7 +89,16 @@ def _who() -> str:
         from flow_sdk.server.routes.bootstrap import get_email, get_name  # noqa: PLC0415
 
         name, email = get_name(), get_email()
-        return f"{name} <{email}>" if name and email else (email or name or "")
+        if name or email:
+            return f"{name} <{email}>" if name and email else (email or name)
+    except Exception:  # noqa: BLE001
+        pass
+    # Signed out (a supporter's request runs with no account): the login on this computer.
+    try:
+        import getpass  # noqa: PLC0415
+        import platform  # noqa: PLC0415
+
+        return f"{getpass.getuser()} on {platform.node()}"
     except Exception:  # noqa: BLE001
         return ""
 

@@ -37,6 +37,7 @@ import {
   type FundingSources,
   type OpenRequestBody,
 } from './diagnosis-request-api';
+import { ErrorLine } from './ErrorLine';
 
 const HOURS = ['24', '48', '72', '168'] as const;
 export const MAX_RUN_MB = ['2', '5', '10'] as const;
@@ -97,7 +98,7 @@ function FundingFields({
   const keys = sources?.local_keys ?? [];
   const managers = [...new Set(blocked.map((s) => s.manager).filter(Boolean))].join(', ');
 
-  if (loadError) return <p className="text-xs text-destructive">{t`Could not list budgets: ${loadError}`}</p>;
+  if (loadError) return <ErrorLine error={t`Could not list budgets: ${loadError}`} />;
   if (!sources) {
     return (
       <p className="text-xs text-muted-foreground">
@@ -426,11 +427,7 @@ export const DiagnosisRequestCreateDialog: React.FC<{
             {fund && <BudgetFields budget={budget} onChange={setBudget} />}
           </fieldset>
 
-          {error && (
-            <p className="text-xs text-destructive" data-testid="diagnosis-request-error">
-              {error}
-            </p>
-          )}
+          <ErrorLine error={error} testId="diagnosis-request-error" />
         </div>
 
         <DialogFooter>

@@ -124,6 +124,9 @@ export function AttachMenu({
           }}
           filter={assetFilter}
           {...selection}
+          // Attach lives in forms (a message, a diagnosis request): looking at an asset must not
+          // leave the screen and throw away what was typed.
+          openInWindow
           searchPlaceholder="Search assets…"
         />
 

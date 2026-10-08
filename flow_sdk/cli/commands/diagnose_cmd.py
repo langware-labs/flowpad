@@ -575,11 +575,15 @@ async def _run_diagnose(
         started = True
         emit({"type": "status", "text": f"  Diagnosing (session={(ap.session_id or '')[:8]})…"})
         if not await await_worker_started(ap, transcript_timeout):
+            # The driver latches why the spawn failed (no LLM it can use, a missing CLI); say that.
+            reason = getattr(ap, "start_failure", None)
             emit(
                 {
                     "type": "error",
                     "text": (
-                        "  ! The diagnostic agent failed to start — it produced no transcript. "
+                        f"  ! The diagnostic agent could not start: {reason}"
+                        if reason
+                        else "  ! The diagnostic agent failed to start — it produced no transcript. "
                         "Check that the `claude` CLI is installed and on your PATH, then re-run "
                         "`flow diagnose`."
                     ),
@@ -727,12 +731,14 @@ def _instruction_steps(instructions: str) -> tuple[str, ...]:
     return tuple(line.strip() for line in (instructions or "").splitlines() if line.strip())
 
 
-def _ask(question: str) -> str:
+def _ask(question: str, *, verbatim: bool = False) -> str:
+    """One line from stdin; a choice is lowercased, a description (``verbatim``) is kept as typed."""
     typer.echo(question, nl=False)
     try:
-        return sys.stdin.readline().strip().lower()
+        answer = sys.stdin.readline().strip()
     except (EOFError, KeyboardInterrupt):
         return ""
+    return answer if verbatim else answer.lower()
 
 
 def _request_context(attach_dir: Path, received: list[dict]) -> str:
@@ -753,6 +759,11 @@ def _request_context(attach_dir: Path, received: list[dict]) -> str:
         f"The supporter sees ONLY the recorded diagnosis and the files in {attach_dir} -- nothing you "
         f"print, say or run here reaches them. Anything they should see goes in {attach_dir}/<short-name>.txt. "
         "Never include passwords, API keys or tokens."
+    )
+    parts.append(
+        "What they sent is for finding out, not for changing this computer: never edit or delete a "
+        "file outside Flowpad's own runtime state to make it match what they sent, and never touch "
+        "a file their steps or skills say to leave alone -- report what differs instead."
     )
     return "\n\n".join(parts)
 
@@ -924,7 +935,7 @@ async def _run_request(request_id: str, transcript_timeout: float) -> int:
         typer.echo("Cancelled -- nothing was run or sent.")
         return 1
 
-    text = _ask("Describe the issue or paste the error, then press Enter (leave empty to skip): ")
+    text = _ask("Describe the issue or paste the error, then press Enter (leave empty to skip): ", verbatim=True)
     typer.echo("Diagnosing — spinning up the agent (this can take a few seconds)…")
 
     sink, narration, done = _TerminalSink(), [], {}

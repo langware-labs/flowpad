@@ -243,3 +243,13 @@ def test_the_user_sees_what_leaves_and_may_keep_it():
     assert "About to send" in result.output and "agent-narration.md" in result.output
     assert "found the lock" in result.output, "v shows the files themselves"
     assert "Dana <d@x.io>" in result.output, "who they are, as recorded, is shown before it leaves"
+
+
+def test_the_issue_is_sent_as_typed_not_lowercased():
+    hub, calls = _Hub(instructions="check the log"), []
+
+    result = _invoke(hub, calls, "a\nFlowpad won't open on my PC\n\n")
+
+    assert result.exit_code == 0, result.output
+    assert hub.submitted[0]["user_report"] == "Flowpad won't open on my PC"
+    assert calls[0]["text"] == "Flowpad won't open on my PC", "the agent gets it as typed too"
