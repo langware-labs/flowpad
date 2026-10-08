@@ -131,16 +131,26 @@ def test_an_entity_is_offered_once_unless_its_id_opens_a_different_screen():
     proj = "project-6f1c2a7e-3b4d-4e5f-8a9b-0c1d2e3f4a5b"
     here = navigation.kind("navigation.here").model_validate({"project": {"typeid": proj}})
     opts = navigator.options_for(here, [])
-    assert {f"entity:{proj}", f"view:graph/{proj.split('-', 1)[1]}"} <= set(opts)
+    # The graph's pointer is ``<type>/<id>``: a bare id is "Graph root not found".
+    assert {f"entity:{proj}", f"view:graph/project/{proj.split('-', 1)[1]}"} <= set(opts)
 
 
 def test_a_screen_an_entity_opens_is_offered_in_the_words_people_use():
     """Measured live: offered as bare "Lens", "open this session's transcript" fell under the bar
     (0.3); with the screen's aliases it opens."""
     proc = "agentic_process-7a2b3c4d-5e6f-4a1b-9c2d-3e4f5a6b7c8d"
-    here = navigation.kind("navigation.here").model_validate({"process": {"typeid": proc, "title": "refactor"}})
-    lens = navigator.options_for(here, [])[f"view:lens/{proc.split('-', 1)[1]}"]
+    ref = {"typeid": proc, "title": "refactor", "harness": "claude", "session": "s-1"}
+    here = navigation.kind("navigation.here").model_validate({"process": ref})
+    lens = navigator.options_for(here, [])["view:lens/claude/transcript/s-1"]
     assert "transcript" in lens and "'refactor'" in lens
+
+
+def test_a_screen_that_needs_what_the_context_lacks_is_not_offered():
+    """A transcript is filed under the harness's own session id: without it there is no address."""
+    proc = "agentic_process-7a2b3c4d-5e6f-4a1b-9c2d-3e4f5a6b7c8d"
+    here = navigation.kind("navigation.here").model_validate({"process": {"typeid": proc}})
+    assert not [k for k in navigator.options_for(here, []) if k.startswith("view:lens/")
+                and "/transcript/" in k]
 
 
 @pytest.mark.parametrize("utterance", ["open tags", "open tasks", "open agentz stuff", "open the thing"])
@@ -148,7 +158,12 @@ def test_a_typo_rule_never_turns_one_screen_into_another(utterance):
     """Look-alike screens (tasks / tags ~0.67) and loose phrases stay below the typo bar."""
     hit = navigator.rule_hit(utterance)
     core = utterance.split(" ", 1)[1]
-    assert hit is None or hit.value.split("/")[0].replace("-", " ") in (core, core.rstrip("s")), hit
+    # An exact type name opens that type's list ("tags" -> the tag list): a name, not a typo.
+    assert (
+        hit is None
+        or hit.value.split("/")[0].replace("-", " ") in (core, core.rstrip("s"))
+        or hit.value == f"assets/list/{core.rstrip('s')}"
+    ), hit
 
 
 @pytest.mark.parametrize("utterance", ["open smart navigation log", "show me the navigation log", "open SmartNavigationLog"])
@@ -156,3 +171,52 @@ def test_asking_for_its_own_log_is_a_rule(utterance):
     """The classifier opens its own log without asking a model."""
     hit = navigator.rule_hit(utterance)
     assert (hit.kind, hit.value) == ("log", "smart-navigation")
+
+
+def _result(target: dict, scope: dict | None = None):
+    from flow_sdk.schema.data_spec.decision_spec import DecisionResult
+
+    def choice(probs):
+        top = max(probs, key=probs.get)
+        return {"type": "choice", "choice": top, "confidence": probs[top], "probabilities": probs}
+
+    answers = {"target": choice(target)}
+    if scope is not None:
+        answers["scope"] = choice(scope)
+    return DecisionResult.model_validate({"answers": answers})
+
+
+def test_a_request_that_only_names_a_thing_opens_the_place_that_clearly_leads():
+    """Measured: ``agentic`` as runner-up on a plain request ("show specs", "change the view mode")
+    was the scope question's job -- answered "only", the leading place was right every time."""
+    plain = _result({"view:assets/list/spec": 0.45, "agentic": 0.4, "view:x": 0.03}, {"only": 0.97, "more": 0.03})
+    assert navigator._acted_on(plain) == "view:assets/list/spec"
+
+
+def test_without_a_plain_scope_or_a_clear_lead_it_still_hands_over():
+    unsure_scope = _result({"view:assets/list/spec": 0.45, "agentic": 0.4, "view:x": 0.03}, {"only": 0.7, "more": 0.3})
+    assert navigator._acted_on(unsure_scope) is None
+    split = _result({"view:a": 0.4, "view:b": 0.35, "agentic": 0.25}, {"only": 0.99, "more": 0.01})
+    assert navigator._acted_on(split) is None
+
+
+def test_a_clear_lead_acts_below_the_confidence_bar():
+    assert navigator._acted_on(_result({"view:a": 0.6, "view:b": 0.2, "agentic": 0.2})) == "view:a"
+
+
+def test_a_type_name_opens_its_list_and_a_screen_name_still_wins():
+    assert navigator.rule_hit("show specs").value == "assets/list/spec"
+    assert navigator.rule_hit("open the project manifest").value == "assets/list/project_manifest"
+    assert navigator.rule_hit("show my tasks").value == "tasks", "the Tasks screen owns the word"
+    assert navigator.rule_hit("open the help desk") is None, "a screen that needs a pointer owns its name too"
+
+
+def test_this_projects_or_sessions_thing_is_the_screen_that_opens_on_it():
+    proj = "project-6f1c2a7e-3b4d-4e5f-8a9b-0c1d2e3f4a5b"
+    here = navigation.kind("navigation.here").model_validate(
+        {"project": {"typeid": proj}, "process": {"typeid": "agentic_process-7a2b", "harness": "claude", "session": "s1"}}
+    )
+    assert navigator.context_rule("show this project's connections", here).value == f"credentials/connections/{proj[8:]}"
+    assert navigator.context_rule("show this session's transcript", here).value == "lens/claude/transcript/s1"
+    # The room is not in context: no address, so no rule.
+    assert navigator.context_rule("open this project's room", here) is None

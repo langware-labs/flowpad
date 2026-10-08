@@ -1326,12 +1326,19 @@ class DataSource(Entity):
 
     async def setup_stages(self) -> list:
         """The setup wizards this source's driver declares (``setup_wizards``), each as it stands for
-        THIS source: ``done`` / ``pending`` / ``locked``. Read off each wizard's run for the source."""
+        THIS source: ``done`` / ``pending`` / ``locked``. How far setup got is read off each wizard's run
+        for the source; whether it still holds is the row's: a source in setup (its verify — the button,
+        or a push-only source's poll — found it not set up) has its last stage, the one that proves it,
+        pending again, with why."""
         from flow_sdk.builtin.readiness import driver_of  # noqa: PLC0415
         from flow_sdk.core.wizard.stages import stage_states  # noqa: PLC0415
+        from flow_sdk.schema.data_spec.setup_stage_spec import STAGE_DONE, STAGE_PENDING  # noqa: PLC0415
 
         driver = await driver_of(self.provider)  # an authored driver loads on first use
-        return await stage_states(getattr(driver, "setup_wizards", None) or [], str(self.typeid))
+        states = await stage_states(getattr(driver, "setup_wizards", None) or [], str(self.typeid))
+        if states and states[-1].state == STAGE_DONE and self.status == SourceStatus.SETUP.value:
+            states[-1] = states[-1].model_copy(update={"state": STAGE_PENDING, "detail": self.setup_detail or ""})
+        return states
 
     # ── routing: which place a hub webhook claim hands this channel's messages to ──────────────────────
 
@@ -1350,12 +1357,19 @@ class DataSource(Entity):
         if owner.startswith("agent-"):
             agent = await Agent.get_by_id(owner.split("-", 1)[1])
             for deployment in (await agent.deployments() if agent is not None else []):
-                node = deployment.compute_node_id()
+                node = deployment.compute_node_id  # a property: the machine it runs on, or None
                 if deployment.is_local or not node:
                     continue
                 label = f"{deployment.environment or 'production'} · {deployment.target.provider}"
                 places.append({"key": str(deployment.id), "label": label, "node_typeid": f"compute_node-{node}"})
         return places
+
+    def _node_target(self, place: str, places: list[dict]) -> Optional[dict]:
+        """The hub delivery target for the cloud place ``place`` (a deployment id) of this channel, or None."""
+        chosen = next((p for p in places if p["key"] == place and p.get("node_typeid")), None)
+        if chosen is None:
+            return None
+        return {"kind": "node", "node_typeid": chosen["node_typeid"], "data_source_id": str(self.id)}
 
     @core_action.get(action_name="route")
     async def route_action(self) -> ApiResponse:
@@ -1366,17 +1380,13 @@ class DataSource(Entity):
         from flow_sdk.instance_settings.runtime import instance_uid  # noqa: PLC0415
 
         claims, places = await asyncio.gather(_hub_claims(), self.route_places())
-        mine = _claims_for(claims, str(self.id))
         # The first claim is the one "Delivered to" switches; any more deliver the same messages elsewhere too.
-        claim = mine[0] if mine else None
-        current = ""
-        if claim is not None:
-            target = claim.get("target") or {}
-            if _routed(claim, instance_uid()) == "this":
-                current = "this"
-            elif target.get("kind") == "node":
-                current = next((p["key"] for p in places if p.get("node_typeid") == target.get("node_typeid")), "")
-        also = [_place_of(c, places) for c in mine[1:]]
+        claim, *rest = _claims_for(claims, str(self.id)) or [None]
+        instance = instance_uid()
+        current = (_place_of(claim, places, instance) or {}).get("key", "") if claim is not None else ""
+        also = [
+            {**place, "claim_id": str(c.get("id") or "")} for c in rest if (place := _place_of(c, places, instance))
+        ]
         return ApiSuccessResponse(data={"claim": claim, "places": places, "current": current, "also": also})
 
     @core_action.get(action_name="channels")
@@ -1440,10 +1450,9 @@ class DataSource(Entity):
         if place == "this":
             target = {"kind": "desktop", "instance_id": instance_uid(), "data_source_id": str(self.id)}
         else:
-            chosen = next((p for p in await self.route_places() if p["key"] == place and p.get("node_typeid")), None)
-            if chosen is None:
+            target = self._node_target(place, await self.route_places())
+            if target is None:
                 return ApiFailResponse(message="no such place for this channel", status_code=404)
-            target = {"kind": "node", "node_typeid": chosen["node_typeid"], "data_source_id": str(self.id)}
         moved = await hub_post("webhook", {"target": target}, str(claim.get("id")), "set_target")
         if not moved:
             return ApiFailResponse(message="the hub did not take the new place", status_code=502)
@@ -1454,17 +1463,19 @@ class DataSource(Entity):
         """POST /api/v1/graph/data_source/{id}/add_route ``{"place": <deployment id>}`` — ALSO deliver this channel's
         messages to one of its agent's cloud placements: a second hub claim for the same proven sender (the first
         is its proof), targeted at that machine's copy of this channel. Each place answers on its own."""
+        import asyncio  # noqa: PLC0415
+
         from flow_sdk.cloud_client.transport.hub_http import hub_post  # noqa: PLC0415
 
         place = str((await self._body()).get("place") or "")
-        claim = await self._hub_route()
+        claims, places = await asyncio.gather(_hub_claims(), self.route_places())
+        claim = next(iter(_claims_for(claims, str(self.id))), None)
         key = str(((claim or {}).get("claim") or {}).get("key") or "")
         if claim is None or not key:
             return ApiFailResponse(message="connect this channel first — its claim is the proof", status_code=404)
-        chosen = next((p for p in await self.route_places() if p["key"] == place and p.get("node_typeid")), None)
-        if chosen is None:
+        target = self._node_target(place, places)
+        if target is None:
             return ApiFailResponse(message="no such place for this channel", status_code=404)
-        target = {"kind": "node", "node_typeid": chosen["node_typeid"], "data_source_id": str(self.id)}
         body = {"parent": f"@{claim.get('provider')}", "claim": {"kind": "user", "key": key}, "target": target}
         added = await hub_post("webhook", body, None, "chain")
         if not added:
@@ -1518,6 +1529,8 @@ class DataSource(Entity):
         if isinstance(update, SourceUpdateSpec):
             if answer.ok and not check:
                 await self._keep(driver, update)
+                if self.status == SourceStatus.SETUP.value:
+                    await self.verify()  # what it kept may finish setup: live without a Verify press
             answer = answer.model_copy(update={"value": update.model_copy(update={"secrets": {}}).model_dump()})
         return answer
 
@@ -1724,7 +1737,7 @@ class DataSource(Entity):
         if driver is None:
             return None
 
-        connection = await self._verify_connection()
+        connection = await self._verify_connection(driver)
         if connection is not None:
             self.status = SourceStatus.SETUP.value
             self.setup_detail = connection
@@ -1736,13 +1749,17 @@ class DataSource(Entity):
             }
 
         verdict = await self._verify_setup(driver)
+        if isinstance(verdict, Exception):
+            # The provider did not answer: that says nothing about the setup, so the status stands.
+            return {"ready": False, "layer": "setup", "transient": True, "status": self.status,
+                    "detail": f"could not check — {verdict}"}
         self.verified_at = datetime.now(timezone.utc)
         if verdict.ready:
             self.status = SourceStatus.ACTIVE.value
             self.setup_detail = ""
-            # Due on the next tick rather than after a full interval: the user
-            # just finished setting it up and is watching.
-            self.next_poll_at = None
+            # Due on the next tick rather than after a full interval (the user just finished setting it up
+            # and is watching), and no longer parked on what this verdict just disproved.
+            await self._make_due()
         else:
             self.status = SourceStatus.SETUP.value
             self.setup_detail = verdict.detail
@@ -1771,12 +1788,18 @@ class DataSource(Entity):
 
         return DataDriver.loaded(self.provider)
 
-    async def _verify_connection(self) -> Optional[str]:
+    async def _verify_connection(self, driver) -> Optional[str]:
         """None when the token works; otherwise why it does not.
 
         Uses the same probe the Connections "Test" button runs, so the two can
-        never disagree about whether a provider is reachable.
+        never disagree about whether a provider is reachable. Only a driver that
+        reads through an OAuth connection (``auth.connector``) has a token to
+        probe: a Flow channel on ``slack`` reaches the person through the hub's
+        own app, and their personal Slack connection says nothing about it.
         """
+        manifest = getattr(driver, "manifest", None)
+        if not (manifest is not None and manifest.auth is not None and manifest.auth.connector):
+            return None
         if not self.channel:
             return None  # nothing to probe against yet
         from flow_sdk.core.oauth.provider_probe import get_probe  # noqa: PLC0415
@@ -1792,13 +1815,19 @@ class DataSource(Entity):
         return None
 
     async def _verify_setup(self, stype):
-        """The type's setup verdict; a source that raises becomes a verdict, never a 500."""
+        """The type's setup verdict; a source that raises becomes a verdict, never a 500 — or the exception itself
+        when the failure is a known transient one (the provider did not answer): not knowing is not "not set up". An
+        unrecognised exception stays a verdict — a driver's bug must not read as an outage."""
+        from flow_sdk.ingest.health import SourceError as IngestError  # noqa: PLC0415
+        from flow_sdk.sources.errors import is_transient  # noqa: PLC0415
         from flow_sdk.sources.protocols import Verdict  # noqa: PLC0415
 
         try:
             return await stype.verify(self)
         except Exception as exc:  # noqa: BLE001 — a source must not 500 the button
             logger.warning("verify failed for %s: %s", self.id, exc, exc_info=True)
+            if is_transient(exc) or (isinstance(exc, IngestError) and exc.health == SourceHealth.TRANSIENT_ERROR):
+                return exc
             return Verdict(ready=False, detail=f"could not verify: {exc}")
 
     async def teardown(self) -> str:
@@ -1950,11 +1979,13 @@ def _claims_for(claims: list[dict], source_id: str) -> list[dict]:
     return sorted(found, key=lambda c: (float(c.get("proven_at") or 0), str(c.get("id") or "")))
 
 
-def _place_of(claim: dict, places: list[dict]) -> dict:
-    """Where an additional claim delivers, named as the route's places name it."""
+def _place_of(claim: dict, places: list[dict], instance: str) -> Optional[dict]:
+    """The route place ``claim`` delivers to (``this`` computer, or the cloud place whose node it targets), or None
+    when it is none of them (another computer, nowhere yet)."""
+    if _routed(claim, instance) == "this":
+        return next((p for p in places if p["key"] == "this"), None)
     node = str((claim.get("target") or {}).get("node_typeid") or "")
-    found = next((p for p in places if node and p.get("node_typeid") == node), None)
-    return {"claim_id": str(claim.get("id") or ""), "key": (found or {}).get("key", ""), "label": (found or {}).get("label", "")}
+    return next((p for p in places if node and p.get("node_typeid") == node), None)
 
 
 def _channel_row(claim: Optional[dict], instance: str, source=None, *, by_hub: bool = False) -> dict:

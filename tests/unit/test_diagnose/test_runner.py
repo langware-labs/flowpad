@@ -165,3 +165,18 @@ def test_log_tails_carry_no_secret(line):
     assert "[redacted]" in redact(line)
     for secret in ("abcdefghijklmnop1234", "abcd1234efgh", "sk-ant-", "dozjgNryP4J3"):
         assert secret not in redact(line)
+
+
+def test_a_signed_out_machine_still_says_who_ran_it(monkeypatch):
+    """A supporter's request runs on a box with no account: the run names the computer's login rather
+    than arriving as "From: unknown"."""
+    import getpass
+    import platform
+
+    from flow_sdk.diagnose import baseline
+    from flow_sdk.server.routes import bootstrap
+
+    monkeypatch.setattr(bootstrap, "get_name", lambda: "")
+    monkeypatch.setattr(bootstrap, "get_email", lambda: "")
+
+    assert baseline.environment().reported_by == f"{getpass.getuser()} on {platform.node()}"

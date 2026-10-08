@@ -7,6 +7,7 @@ import { useFlowMessageAttachments } from '@src/components/conversation/useMessa
 import { Button } from '@src/components/ui/button';
 import { errorMessage } from '@src/lib/error-message';
 import { notify } from '@src/notifications';
+import { useUiActionRequest } from '@src/navigation/ui-actions';
 
 export interface UploadedMessage {
   messageId: string;
@@ -48,6 +49,8 @@ interface ProjectUploadMessageButtonProps {
 export function ProjectUploadMessageButton({ projectId }: ProjectUploadMessageButtonProps) {
   const { t } = useLingui();
   const inputRef = useRef<HTMLInputElement>(null);
+  // "upload a message" (smart navigation): the same file picker the button opens.
+  useUiActionRequest(['upload-flowmsg'], () => inputRef.current?.click());
   const [busy, setBusy] = useState(false);
   const [review, setReview] = useState<UploadedMessage | null>(null);
 

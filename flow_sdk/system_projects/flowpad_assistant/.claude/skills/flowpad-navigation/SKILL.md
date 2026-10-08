@@ -162,19 +162,19 @@ opens a different screen and reports success.
 
 | Screen | address | also called |
 | --- | --- | --- |
-| AI Configuration | `ai-config` | ai config, llm apis, models, clis |
-| Artifacts | `artifacts` | deliverables |
+| AI Configuration | `ai-config` | ai config, llm apis, models |
+| Artifacts | `artifacts` | deliverables, what we delivered |
 | Asset list | `asset-list` | counter assets |
 | Assets | `assets` | library, docs tree |
 | Assistance | `assistance` | expert assistance |
-| Automations | `automations` | events, triggers, rules, schedules, scheduled jobs, cron, trigger history |
+| Automations | `automations` | events, triggers, rules, schedules, scheduled jobs, cron, cron jobs, trigger history, new automation |
 | Capabilities | `capabilities` | checks, system checks |
 | Code Editor | `editor` | edit file |
 | Collaboration | `project` | room |
 | Credentials | `credentials` | connections, secrets, api keys, keys, env vars |
 | Data sources | `data-sources` | connectors, integrations, ingestion, sources |
 | Desktop | `desktop` | favorites |
-| Docs | `docs` | documentation |
+| Docs | `docs` | documentation, flowpad documentation, help pages |
 | Files | `explorer` | file tree, folders |
 | Flowpad Assistant | `assistant` | assistant chat, help chat |
 | Graph Workflows | `graph-workflows` | workflows |
@@ -185,7 +185,7 @@ opens a different screen and reports success.
 | LLM sources | `llm-sources` | harness funding |
 | Set up LLM | `llm-setup` | llm setup, choose llm, connect llm |
 | Machine | `machine` | system, this machine |
-| Markdown | `markdown` | document |
+| Markdown | `markdown` |  |
 | Organization  *(hub)* | `organization` | people, teams, members |
 | Preferences | `preferences` | my preferences, appearance |
 | Runs | `process-runs` | history |

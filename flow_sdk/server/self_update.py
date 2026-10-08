@@ -16,6 +16,7 @@ site-packages, so the new version boots.
 from __future__ import annotations
 
 import contextlib
+import importlib.util
 import json
 import logging
 import os
@@ -117,6 +118,10 @@ def build_install_command(version: str) -> list[str]:
         # Windows the delete of an interpreter in use fails ("Access is denied") halfway and
         # leaves the tool without flowpad. Proven on the Windows VM, both ways.
         return [shutil.which("uv"), "tool", "install", f"{PACKAGE}=={version}"]
+    uv = shutil.which("uv")
+    if uv and importlib.util.find_spec("pip") is None:
+        # A venv uv made has no pip: "python -m pip" fails there, uv installs into it by interpreter.
+        return [uv, "pip", "install", "--python", sys.executable, f"{PACKAGE}=={version}"]
     return [sys.executable, "-m", "pip", "install", f"{PACKAGE}=={version}"]
 
 

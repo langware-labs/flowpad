@@ -447,10 +447,11 @@ async def test_run_diagnose_posts_loaded_diagnosis_summary_when_cross_link_fails
 
 
 @pytest.mark.asyncio
-async def test_run_diagnose_fails_fast_when_worker_dies_without_transcript():
+@pytest.mark.parametrize("start_failure", [None, "claude has no usable LLM source"])
+async def test_run_diagnose_fails_fast_when_worker_dies_without_transcript(start_failure):
     """If the worker turn ends (crash / ``claude`` binary unresolved) without
     ever producing a transcript, diagnose must surface the clear 'failed to
-    start' error and exit 1 — detected via the worker leaving _PROMPT_WORKERS,
+    start' error (the driver's latched reason when it has one) — detected via the worker leaving _PROMPT_WORKERS,
     NOT by waiting out the budget. The 5 s ``wait_for`` is a hang detector."""
     from pathlib import Path
 
@@ -463,6 +464,7 @@ async def test_run_diagnose_fails_fast_when_worker_dies_without_transcript():
     class _FakeAP(_TakesTurns):
         def __init__(self, **_kw):
             self.id = "dead-worker-id"
+            self.start_failure = start_failure
             self.session_id = "fakesess"
             self.driver = _FakeDriver()
 
@@ -487,8 +489,13 @@ async def test_run_diagnose_fails_fast_when_worker_dies_without_transcript():
         patch("flow_sdk.migrations.runner._bootstrap_local", new=AsyncMock(return_value=None)),
     ):
         rc = await asyncio.wait_for(diagnose_cmd._run_diagnose("", 1800.0, emit=events.append), timeout=5)
-    assert rc == 1
-    assert any(e.get("type") == "error" and "produced no transcript" in e.get("text", "") for e in events)
+    assert rc == 0, "the checks are recorded even though the agent never started"
+    errors = [e["text"] for e in events if e.get("type") == "error"]
+    if start_failure:
+        assert any(start_failure in text and "PATH" not in text for text in errors), errors
+    else:
+        assert any("produced no transcript" in text for text in errors), errors
+    assert events[-1]["diagnosis_id"]
 
 
 @pytest.mark.asyncio
@@ -908,10 +915,16 @@ async def test_an_agent_that_never_starts_still_answers_the_sweep(tmp_path):
     ):
         rc = await asyncio.wait_for(diagnose_cmd._run_diagnose("", 1800.0, emit=events.append), timeout=5)
 
-    assert rc == 1
+    # No LLM, a dead worker: the run still leaves a diagnosis -- the checks', recorded.
+    assert rc == 0
     done = events[-1]
     assert done["type"] == "done" and not done["ok"]
     assert done["diagnosis"]["title"] == "Backend down", "what the sweep found is not lost with the agent"
+    from flow_sdk.builtin.flowpad_diagnosis import FlowpadDiagnosis
+
+    recorded = await FlowpadDiagnosis.get_by_id(done["diagnosis_id"])
+    assert recorded.title == "Backend down" and recorded.diagnosis.findings[0].id == "A2"
+    assert done["feed_posted"]
 
 
 @pytest.mark.asyncio

@@ -116,6 +116,7 @@ class ExampleSpec(DataSpec, Generic[InputSpecT, OutputSpecT, ContextSpecT]):
     model_config = ConfigDict(frozen=True)
 
     id: str = ""                                 # layout-assigned
+    key: str = ""                                # layout-assigned: the example folder's name
     kind: ExampleKind = ExampleKind.TRAIN
     input: InputSpecT
     output: Optional[Union[OutputSpecT, list[OutputSpecT]]] = None
@@ -200,9 +201,9 @@ class DatasetSpec(DataSpec, Generic[ExampleSpecT]):
         out_form = row.get("output", row.get("ground_truth"))
         if "output" in row and "ground_truth" in row and row["output"] != row["ground_truth"]:
             raise ValueError("output and ground_truth share one shape")
-        i = DataSpec.parse(row["input"])
-        o = DataSpec.parse(out_form) if out_form is not None else DataSpec
-        c = DataSpec.parse(row["context"]) if "context" in row else DataSpec
+        i = _slot_type("input", row["input"])
+        o = _slot_type("output", out_form) if out_form is not None else DataSpec
+        c = _slot_type("context", row["context"]) if "context" in row else DataSpec
         hit = DatasetSpec[ExampleSpec[i, o, c]]  # type: ignore[valid-type]   (Pydantic caches parametrizations)
         if hit.__authoring__ is None:
             # Remember the form, so `to_authoring_form` — the ONE serializer — can
@@ -214,6 +215,23 @@ class DatasetSpec(DataSpec, Generic[ExampleSpecT]):
                 form["context"] = to_authoring_form(c)
             hit.__authoring__ = {"examples": [form]}
         return hit
+
+
+class UnregisteredKind(ValueError):
+    """A dataset slot names a kind nobody has registered (yet)."""
+
+
+def _slot_type(slot: str, form: Any) -> Any:
+    """One slot's shape. A kind NAME that resolves to nothing is refused by name: ``DataSpec.parse``
+    reads it as ``Any``, and a row typed ``Any`` failed later as a wall of artifact-shape errors
+    (``FolderSpec`` / ``TextSpec``) that never said which kind was missing."""
+    shape = DataSpec.parse(form)
+    if shape is Any:
+        raise UnregisteredKind(
+            f"{slot}: {form!r} names a kind nobody registered -- apply its data_schema folder "
+            "(`flow schema apply <folder>`), or in a script call "
+            "`flow_sdk.schema.data_spec.declared.load_root(<project root>)` first")
+    return shape
 
 
 #: What an un-spec'd dataset validates with.

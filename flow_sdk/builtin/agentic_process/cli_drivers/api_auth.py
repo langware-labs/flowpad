@@ -26,6 +26,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Callable
 
 from flow_sdk.builtin.agentic_process.model_tiers import (
+    CLAUDE_MODEL_TIERS,
     is_family_model,
     is_model_tier,
     resolve_family_tier,
@@ -96,6 +97,9 @@ class ApiAuthSpec:
     #: another way: codex and opencode through their generated file, copilot through
     #: ``model_env_vars``.
     prompt_model_env_vars: tuple[str, ...] = ()
+    #: The harness's own names for its sizes (claude's ``haiku`` is its ``sm``). Funded, the name
+    #: means the size: left as is, the CLI expands it to a vendor id the gateway may not price.
+    native_tiers: dict[str, str] = field(default_factory=dict)
     #: For a harness configured by FILE: the variable that POINTS at that file, and whether it
     #: names the directory (codex) or the file itself (opencode). Empty for an env-configured
     #: harness. Here rather than in the renderers so ``managed_env_vars`` can derive the full set
@@ -248,6 +252,7 @@ CLAUDE_API_AUTH_SPEC = ApiAuthSpec(
     supported_providers=(LMApiProvider.OPENROUTER, LMApiProvider.FLOWPAD),
     default_provider=LMApiProvider.OPENROUTER,
     prompt_model_env_vars=("ANTHROPIC_MODEL",),
+    native_tiers={name: size for size, name in CLAUDE_MODEL_TIERS.items()},
     user_config_path=".claude/settings.json",
     user_config_fmt="json",
     hub_endpoint_binding=_claude_hub_binding,
@@ -585,6 +590,9 @@ async def binding_for_candidate(worker_type: str, candidate, *, tier: str | None
     # Folding them made every harness inherit the endpoint's defaults and silently
     # re-pointed codex at a Claude slug.
     merged = {**spec.tier_models, **overrides}
+    # The harness's own name for a size (claude's ``haiku``) runs that size's slug -- still a NAMED
+    # model below, never swapped for an allowance default.
+    native_size = spec.native_tiers.get(tier) if tier else None
     try:
         family_slug = resolve_family_tier(tier)
     except ValueError as exc:
@@ -592,7 +600,7 @@ async def binding_for_candidate(worker_type: str, candidate, *, tier: str | None
     if family_slug:
         slug = f"{spec.slug_prefix}{family_slug}"
     else:
-        slug = resolve_model_tier(merged, tier or "sm")  # merged always has "sm"
+        slug = resolve_model_tier(merged, native_size or tier or "sm")  # merged always has "sm"
         # Only a SIZE is ours to re-pick: no model, or sm/md/lg, names the tier map's code default.
         # A named model -- a family, "haiku", "anthropic/claude-haiku-4.5" -- is the caller's, and
         # an endpoint that refuses it refuses it in words rather than quietly running another.

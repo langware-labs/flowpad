@@ -392,16 +392,26 @@ value, written by the generic walker as `«slot»/<last kind segment>.json` (`in
 `ground_truth/decision.json`), several gold answers as `ground_truth-1/`, `ground_truth-2/` — any
 one is right.
 
+A row's **key** is its example folder's name (`examples/<key>/`); its id is derived from the key
+(`layout.example_id`), so every read hands back both and no client re-computes the id. A key a caller
+chooses is `a-z 0-9 _ -`; `append` numbers rows that bring none (`0001`, `0002`, …).
+
 | verb | what |
 |---|---|
-| `POST append {rows}` | typed rows in; every row is checked first, one bad row writes nothing |
-| `GET example/<id>` | one example's slot VALUES (an editor's read) |
+| `POST append {rows}` | typed rows in; every row is checked first, one bad row writes nothing; a row's `key` names its folder (refused when taken) |
+| `POST put-row {key, row}` | create the row `key` or replace it — checked first; slots the row leaves out (gold, output, context) and its metadata are kept |
+| `POST delete-row {key}` | remove one row (a key or an id); 404 when absent |
+| `POST rename-row {key, new_key}` | move a row to a new key; answers its NEW id — whatever pointed at the old key or id must follow |
+| `POST check-row {row}` | `{ok, errors}` for one row; writes nothing |
+| `GET example/<key or id>` | one example's slot VALUES (an editor's read) |
 | `POST annotate {example_id, ground_truth}` | REPLACES the gold: a named output kind is written as its own document (`ground_truth/decision.json`; a list → `ground_truth-N/`), an inline shape as `ground_truth/label.json` |
 | `GET rows` | every example with its slot values, in one read (what the editor loads) |
-| `POST validate` | every row read as the declared schema; names each row that does not fit, with its slot (`ground_truth.route`) |
+| `POST validate` | every row read as the declared schema; names each row that does not fit by its `key` (and `example_id`), with its slot (`ground_truth.route`) |
 | `POST score` | each recorded `output` against its gold: a gold field left empty constrains nothing; several golds mean any one is right (`flow_sdk/datasets/score.py`) |
 
-Indexing still reads rows as artifacts (fast, never fatal); `validate` is the check.
+Indexing still reads rows as artifacts (fast, never fatal); `validate` is the check. One value
+against a kind, outside any dataset: `POST /api/v1/kinds/<kind>/check {value}` → `{ok, errors}` — a
+kind nobody registered is a 404, never "fits" (`DataSpec.parse` alone would read it as `Any`).
 
 ## Editors
 

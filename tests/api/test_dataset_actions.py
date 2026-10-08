@@ -168,7 +168,7 @@ async def test_examples_listing_reports_promoted_items_and_gold(bootstrapped_cli
         await client.post(f"/api/v1/graph/dataset/{ds['id']}/promote", json={"source_item_ids": [items[0]["id"]]})
     ).json()["data"]["example_ids"]
     listed = (await client.get(f"/api/v1/graph/dataset/{ds['id']}/examples")).json()["data"]["examples"]
-    assert listed == [{"example_id": eid, "item_id": items[0]["id"], "kind": "train", "annotated": False}]
+    assert listed == [{"example_id": eid, "key": "0001", "item_id": items[0]["id"], "kind": "train", "annotated": False}]
     await client.post(
         f"/api/v1/graph/dataset/{ds['id']}/annotate", json={"example_id": eid, "ground_truth": {"sentiment": "neutral"}}
     )

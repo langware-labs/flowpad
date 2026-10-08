@@ -247,6 +247,16 @@ def test_the_user_sees_what_leaves_and_may_keep_it():
     assert "Dana <d@x.io>" in result.output, "who they are, as recorded, is shown before it leaves"
 
 
+def test_the_issue_is_sent_as_typed_not_lowercased():
+    hub, calls = _Hub(instructions="check the log"), []
+
+    result = _invoke(hub, calls, "a\nFlowpad won't open on my PC\n\n")
+
+    assert result.exit_code == 0, result.output
+    assert hub.submitted[0]["user_report"] == "Flowpad won't open on my PC"
+    assert calls[0]["text"] == "Flowpad won't open on my PC", "the agent gets it as typed too"
+
+
 def test_unasked_by_default_everything_runs_and_the_result_is_always_sent():
     """The supporter left ``ask_permission`` off: no approval, no issue text, no "send?" -- and
     with no input at all the run still uses every step and attachment and sends its result."""

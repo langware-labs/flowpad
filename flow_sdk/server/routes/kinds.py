@@ -6,17 +6,28 @@ along). ``GET /api/v1/editors/{typeid}``: the apps that edit an entity, best fir
 (``flow_sdk.builtin.faas.editors``). ``GET /api/v1/viewers/{kind}``: the viewers that show a value
 (or a list) of a kind, best first. ``GET /api/v1/values/{ref}?within=``: one stored value, named
 by its reference ``<kind>.id.<uuid>``, from the asset that keeps it (``flow_sdk.values``).
+``POST /api/v1/kinds/{kind}/check``: would this value fit the kind? Writes nothing.
 Standard envelope, so the SDK reads them through ``apiClient``.
 """
 
 from __future__ import annotations
 
-from fastapi import APIRouter
+from typing import Any
+
+from fastapi import APIRouter, Body
+from fastapi.responses import JSONResponse
 
 from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccessResponse
 from flow_sdk.schema.data_spec.webapp_spec import ViewShape
 
 router = APIRouter()
+
+
+def _fail(message: str, status_code: int) -> JSONResponse:
+    """A failure WITH its HTTP status. A plain route returning ``ApiFailResponse`` answers 200 (only
+    the graph dispatcher applies ``status_code``), and the SDK client unwraps a 200 to ``data`` --
+    so a 404 must be a real 404, or the caller reads "no such kind" as a null answer."""
+    return JSONResponse(status_code=status_code, content=ApiFailResponse(message=message).model_dump())
 
 
 def kind_form(kind: str) -> dict | None:
@@ -53,12 +64,44 @@ def kind_form(kind: str) -> dict | None:
     return {"kind": kind, "subkind": "record", "description": shape.__doc__ or "", "fields": fields}
 
 
-@router.get("/api/v1/kinds/{kind}")
-async def get_kind(kind: str) -> ApiResponse:
+@router.get("/api/v1/kinds/{kind}", response_model=None)
+async def get_kind(kind: str) -> ApiResponse | JSONResponse:
     form = kind_form(kind)
     if form is None:
-        return ApiFailResponse(message=f"no kind {kind!r} is registered", status_code=404)
+        return _fail(f"no kind {kind!r} is registered", 404)
     return ApiSuccessResponse(data=form)
+
+
+def check_value(kind: str, value: Any) -> list[str] | None:
+    """What is wrong with ``value`` as a value of ``kind`` -- ``[]`` when it fits, None when no kind of
+    that name exists. An unknown name is NEVER answered as fitting: ``DataSpec.parse`` would resolve
+    it to ``Any`` and accept anything."""
+    from pydantic import TypeAdapter, ValidationError  # noqa: PLC0415
+
+    from flow_sdk.schema.data_spec.spec import DataSpec  # noqa: PLC0415
+
+    try:
+        shape = DataSpec.parse(kind)
+    except ValueError:
+        return None
+    if shape is Any:
+        return None
+    try:
+        TypeAdapter(shape).validate_python(value)
+    except ValidationError as exc:
+        return [f"{'.'.join(str(p) for p in e['loc']) or 'value'}: {e['msg']}" for e in exc.errors(include_url=False)]
+    return []
+
+
+@router.post("/api/v1/kinds/{kind}/check", response_model=None)
+async def check_kind(kind: str, body: dict = Body(...)) -> ApiResponse | JSONResponse:
+    """``{"value": ...}`` → ``{kind, ok, errors}``; 404 when no kind of that name is registered."""
+    if "value" not in body:
+        return _fail("value: required", 400)
+    errors = check_value(kind, body["value"])
+    if errors is None:
+        return _fail(f"no kind {kind!r} is registered", 404)
+    return ApiSuccessResponse(data={"kind": kind, "ok": not errors, "errors": errors})
 
 
 @router.get("/api/v1/values/{ref}")

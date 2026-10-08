@@ -38,8 +38,9 @@ propose **two or three** output shapes drawn from the sample, e.g.
 
 The primitives are `string`, `int`, `float`, `bool` and `binary`. A list is
 `["string"]`, a nested object is another `{...}`, `"?string"` may be missing, and
-`"enum:yes|no"` is one of the listed strings. The person picks or edits one; you write what they
-chose, verbatim. Do not add fields they did not ask for.
+`"enum:yes|no"` is one of the listed strings, `{"*": "int"}` a map. (The full grammar: the
+**data-management** skill's `references/shape-forms.md`.) The person picks or edits one; you
+write what they chose, verbatim. Do not add fields they did not ask for.
 
 **Passes when** the person confirmed one shape.
 

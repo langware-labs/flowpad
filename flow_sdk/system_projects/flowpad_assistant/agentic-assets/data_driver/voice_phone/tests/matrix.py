@@ -104,6 +104,10 @@ def case(monkeypatch, tmp_path):
     dials: list[dict] = []
 
     def carrier(path, headers):
+        # verify looks the line's number up on the account, the way Double._carrier answers it
+        if "/IncomingPhoneNumbers.json" in path:
+            listed = [{"phone_number": NUMBER, "sid": "PN" + "0" * 32}] if NUMBER in unquote(path) else []
+            return 200, json.dumps({"incoming_phone_numbers": listed}).encode(), {"Content-Type": "application/json"}
         dials.append({"path": path})
         return 201, json.dumps({"sid": f"CA{len(dials):032d}", "status": "queued"}).encode(), {"Content-Type": "application/json"}
 

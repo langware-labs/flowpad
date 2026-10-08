@@ -15,6 +15,7 @@
  */
 import { dataManager, type AnyEntity } from '../APIEntity';
 import { TypeId } from '../models/TypeId';
+import { installTooltips } from '../viewers/dom';
 
 /** The endpoint this page is being served by, from `location.pathname`. */
 export function appTypeId(pathname: string = location.pathname): TypeId | null {
@@ -86,6 +87,8 @@ export function applyHostTheme(): 'light' | 'dark' {
   const prefersDark = typeof matchMedia === 'function' && matchMedia('(prefers-color-scheme: dark)').matches;
   const theme = (param ? param === 'dark' : prefersDark) ? 'dark' : 'light';
   applyHostSkin(theme, appOption('view'), appOption('primary'), appOption('primaryInk'));
+  // An app's hover help: its frame shows no native `title` tooltip in the desktop app.
+  installTooltips();
   // The URL carries the skin for the FIRST paint only — it is frozen there,
   // because the host addresses this frame by its src and re-addressing it would
   // reload the whole app to recolour it. Later changes arrive as a message, and

@@ -314,6 +314,35 @@ async def _record_runner_fields(diag, merged, message: str, project_id: str | No
     diag.diagnosis = merged
 
 
+async def _record_sweep(sweep, message: str, project_id: str | None) -> str | None:
+    """The agent recorded nothing (no LLM it could use, a worker that died): record what the checks
+    found, so every run leaves a diagnosis -- the Feed card, the diagnoses table, a supporter's run.
+    Returns its id, or ``None`` if even that could not be saved."""
+    try:
+        from flow_sdk.builtin.flowpad_diagnosis import FlowpadDiagnosis  # noqa: PLC0415
+
+        env = sweep.environment
+        title = sweep.title or "Flowpad checks"
+        diag = FlowpadDiagnosis(
+            name=title,
+            title=title,
+            summary=sweep.summary or None,
+            symptoms=sweep.symptoms or None,
+            rca=sweep.rca or None,
+            fix=sweep.fix or None,
+            reported_by=env.reported_by or "unknown",
+            occurred_at=env.occurred_at or None,
+            os=env.os or None,
+            app_version=env.app_version or None,
+        )
+        await _record_runner_fields(diag, sweep, message, project_id)
+        diag = await diag.save()
+        return diag.id
+    except Exception:  # noqa: BLE001 -- the run still reports the checks on screen
+        logging.getLogger(__name__).warning("[diagnose] recording the checks failed", exc_info=True)
+        return None
+
+
 async def _stop_worker(ap) -> None:
     """End the diagnose process's worker, whichever transport ran it.
 
@@ -540,24 +569,26 @@ async def _run_diagnose(
         taken = await ap.send_turn(text)
         if not taken.ok:
             emit({"type": "error", "text": f"  ! The diagnostic agent did not take the prompt: {taken.detail}"})
-            done(False, sweep)
             return False
         if started:
             return True
         started = True
         emit({"type": "status", "text": f"  Diagnosing (session={(ap.session_id or '')[:8]})…"})
         if not await await_worker_started(ap, transcript_timeout):
+            # The driver latches why the spawn failed (no LLM it can use, a missing CLI); say that.
+            reason = getattr(ap, "start_failure", None)
             emit(
                 {
                     "type": "error",
                     "text": (
-                        "  ! The diagnostic agent failed to start — it produced no transcript. "
+                        f"  ! The diagnostic agent could not start: {reason}"
+                        if reason
+                        else "  ! The diagnostic agent failed to start — it produced no transcript. "
                         "Check that the `claude` CLI is installed and on your PATH, then re-run "
                         "`flow diagnose`."
                     ),
                 }
             )
-            done(False, sweep)
             return False
         return True
 
@@ -577,6 +608,25 @@ async def _run_diagnose(
             }
         )
 
+    async def _answer_with_sweep() -> int:
+        """The agent recorded nothing (it never started, dropped the prompt, or stopped short):
+        record what the checks found, so the run still leaves a diagnosis. 0 when it did -- a
+        supporter's request is then sent the checks (``_run_request``); ``done`` says ``ok: False``."""
+        did = await _record_sweep(sweep, message, project_id)
+        if did is None:
+            emit(
+                {
+                    "type": "error",
+                    "text": "  ! Not even the checks could be recorded — see the report above; re-run `flow diagnose`.",
+                }
+            )
+            done(False, sweep)
+            return 1
+        feed_entry_id = await _post_home_feed_entry(summary=sweep.summary or sweep.title or "", diagnosis_id=did)
+        emit({"type": "status", "text": "  ! The agent could not finish. Recorded what the checks found instead."})
+        done(False, sweep, diagnosis_id=did, feed_entry_id=feed_entry_id)
+        return 0
+
     try:
         try:
             for n, step in enumerate(steps, 1):
@@ -586,10 +636,10 @@ async def _run_diagnose(
                 out_dir = step_output_dir or Path.cwd()
                 prompt = _STEP_PROMPT.format(n=n, step=step, out=out_dir / f"step-{n}.txt", context=step_context)
                 if not await _start_turn(prompt):
-                    return 1
+                    return await _answer_with_sweep()
                 await _stream()
             if not await _start_turn(prompt_text):
-                return 1
+                return await _answer_with_sweep()
             await _stream()
             # The worker can end its turn early — diagnosing but not recording. Nudge
             # the SAME session once to finish, then re-check.
@@ -657,17 +707,7 @@ async def _run_diagnose(
                 feed_entry_id=feed_entry_id,
             )
             return 0
-        emit(
-            {
-                "type": "error",
-                "text": (
-                    "  ! Diagnostic finished but the result was not recorded — see the report "
-                    "above; re-run `flow diagnose` to retry."
-                ),
-            }
-        )
-        done(False, sweep)
-        return 1
+        return await _answer_with_sweep()
     finally:
         await _terminate_worker()
 
@@ -691,12 +731,14 @@ def _instruction_steps(instructions: str) -> tuple[str, ...]:
     return tuple(line.strip() for line in (instructions or "").splitlines() if line.strip())
 
 
-def _ask(question: str) -> str:
+def _ask(question: str, *, verbatim: bool = False) -> str:
+    """One line from stdin; a choice is lowercased, a description (``verbatim``) is kept as typed."""
     typer.echo(question, nl=False)
     try:
-        return sys.stdin.readline().strip().lower()
+        answer = sys.stdin.readline().strip()
     except (EOFError, KeyboardInterrupt):
         return ""
+    return answer if verbatim else answer.lower()
 
 
 def _request_context(attach_dir: Path, received: list[dict]) -> str:
@@ -717,6 +759,11 @@ def _request_context(attach_dir: Path, received: list[dict]) -> str:
         f"The supporter sees ONLY the recorded diagnosis and the files in {attach_dir} -- nothing you "
         f"print, say or run here reaches them. Anything they should see goes in {attach_dir}/<short-name>.txt. "
         "Never include passwords, API keys or tokens."
+    )
+    parts.append(
+        "What they sent is for finding out, not for changing this computer: never edit or delete a "
+        "file outside Flowpad's own runtime state to make it match what they sent, and never touch "
+        "a file their steps or skills say to leave alone -- report what differs instead."
     )
     return "\n\n".join(parts)
 
@@ -894,7 +941,7 @@ async def _run_request(request_id: str, transcript_timeout: float) -> int:
     elif not ask:
         typer.echo("This diagnosis was requested by someone supporting you; its result is sent to them.")
 
-    text = _ask("Describe the issue or paste the error, then press Enter (leave empty to skip): ") if ask else ""
+    text = _ask("Describe the issue or paste the error, then press Enter (leave empty to skip): ", verbatim=True) if ask else ""
     typer.echo("Diagnosing — spinning up the agent (this can take a few seconds)…")
 
     sink, narration, done = _TerminalSink(), [], {}
