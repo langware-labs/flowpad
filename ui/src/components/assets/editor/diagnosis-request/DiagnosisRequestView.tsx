@@ -21,7 +21,7 @@ import { notify } from '@src/notifications';
 import { useStartVibeSession } from '@src/pages/flow-page/use-start-vibe-session';
 
 import { isAttachable } from './DiagnosisRequestCreateDialog';
-import { BudgetField, InstructionsField, LimitsFields } from './DiagnosisRequestFields';
+import { AskPermissionField, BudgetField, InstructionsField, LimitsFields } from './DiagnosisRequestFields';
 import {
   callRequestAction,
   commandFor,
@@ -311,6 +311,7 @@ export function DiagnosisRequestView({ value }: DiagnosisRequestViewProps) {
         <div className="space-y-2 text-sm">
           <LimitsFields request={request} />
           <BudgetField request={request} />
+          <AskPermissionField request={request} />
           <dl>
             <Field label={t`Runs`}>{String(request.run_count ?? 0)}</Field>
           </dl>

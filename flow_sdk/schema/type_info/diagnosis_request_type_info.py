@@ -19,6 +19,9 @@ class DiagnosisRequestMetadata(FlowpadDiagnosisMetadata):
     """FS↔DB metadata for a diagnosis request: the diagnosis fields (the latest run) plus the request."""
 
     instructions: Optional[str] = Field(default=None, description="What the runner's agent is asked to do.")
+    ask_permission: Optional[bool] = Field(
+        default=False, description="Whether `flow diagnose <id>` asks the runner before it runs, and before it sends."
+    )
     write_expires_at: Optional[str] = Field(
         default=None,
         description="ISO end of the window in which the id accepts runs (hub-clamped: 48h default, 7d max).",
