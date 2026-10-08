@@ -390,15 +390,11 @@ def context_rule(utterance: str, here: Any) -> Optional[NavigationTarget]:
         return None
     wanted, fields = m.group(2).strip(), ref.model_dump(mode="json", exclude_none=True)
     openings = [(place, pointer, what) for place, form, what in forms_for(kind_name) if (pointer := open_form(form, fields)) is not None]
-    # The opening named as itself ("todo list") first; the screen's name ("transcript") only when
-    # no opening is, and then only if it names one.
-    for named in (
-        {place_address(p, ptr) for p, ptr, what in openings if wanted == what.lower()},
-        {place_address(p, ptr) for p, ptr, _ in openings if wanted in {p.label.lower(), *(a.lower() for a in p.aliases)}},
-    ):
-        if named:
-            return NavigationTarget(kind="view", value=named.pop()) if len(named) == 1 else None
-    return None
+    # The opening named as itself ("todo list"); else the screen's name ("transcript"), if it names one.
+    named = {place_address(p, ptr) for p, ptr, what in openings if wanted == what.lower()} or {
+        place_address(p, ptr) for p, ptr, _ in openings if wanted in {p.label.lower(), *(a.lower() for a in p.aliases)}
+    }
+    return NavigationTarget(kind="view", value=named.pop()) if len(named) == 1 else None
 
 
 def _target_of(key: str) -> NavigationTarget:

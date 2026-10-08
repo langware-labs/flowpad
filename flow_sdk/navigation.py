@@ -28,15 +28,22 @@ def same_place(a, b) -> bool:
 
 
 def code_version() -> str:
-    """A short hash of the code that decides -- the navigator, its map and its actions: two eval runs
-    with one version differ only by the model's own noise."""
+    """A short hash of the code that decides -- the navigator, its map, its actions and the search it
+    offers matches from: two eval runs with one version differ only by the model's own noise."""
     import hashlib
     from pathlib import Path
 
-    core = Path(__file__).parent / "core"
+    root = Path(__file__).parent
     digest = hashlib.sha256()
-    for name in ("navigator.py", "navigation.py", "navigation_decision.py", "dock_address.py", "ui_actions.json"):
-        digest.update((core / name).read_bytes())
+    for name in (
+        "core/navigator.py",
+        "core/navigation.py",
+        "core/navigation_decision.py",
+        "core/dock_address.py",
+        "core/ui_actions.json",
+        "db/drivers/sqlite/sqlite_driver.py",
+    ):
+        digest.update((root / name).read_bytes())
     return digest.hexdigest()[:12]
 
 

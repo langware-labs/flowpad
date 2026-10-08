@@ -14,18 +14,10 @@
  */
 
 import apiClient from '../client';
-import type { APIEndpointOffer, DecisionFailure, DecisionResult, DecisionSpec } from './types';
+import { DECISION_FAILURES, type APIEndpointOffer, type DecisionFailure, type DecisionResult, type DecisionSpec } from './types';
 
 const BASE = '/api/v1/graph/compute_node/@local/decision';
-const REASONS: ReadonlySet<DecisionFailure> = new Set<DecisionFailure>([
-  'invalid_spec',
-  'no_endpoint',
-  'rate_limited',
-  'billing',
-  'unavailable',
-  'auth',
-  'bad_response',
-]);
+const REASONS: ReadonlySet<DecisionFailure> = new Set<DecisionFailure>(DECISION_FAILURES);
 
 export class DecisionError extends Error {
   constructor(
