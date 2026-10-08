@@ -78,6 +78,7 @@ def _recording_run(calls: list):
         step_output_dir=None,
         step_context="",
         prompt_extra="",
+        report_only=False,
     ):
         approved = [s for s in steps if approve is None or approve(s)]
         workdir = Path(process_options["workdir"])
@@ -89,6 +90,7 @@ def _recording_run(calls: list):
                 "extra": prompt_extra,
                 "step_output_dir": step_output_dir,
                 "step_context": step_context,
+                "report_only": report_only,
                 "skill": (workdir / ".claude/skills/db-doctor/SKILL.md").read_text()
                 if (workdir / ".claude/skills/db-doctor/SKILL.md").exists()
                 else None,
@@ -270,3 +272,23 @@ def test_unasked_by_default_everything_runs_and_the_result_is_always_sent():
     assert len(hub.submitted) == 1, "the result is sent without asking"
     assert "approve all" not in result.output and "Send this" not in result.output
     assert "About to send" in result.output, "what leaves is still shown, just not asked about"
+
+
+def test_a_request_run_only_diagnoses():
+    """It runs on someone else's computer: it reports, it changes nothing (the VM run rewrote the
+    user's file with Write, against the supporter's own skill)."""
+    hub, calls = _Hub(instructions="check the log"), []
+
+    _invoke(hub, calls, "a\nit hangs\n\n")
+
+    assert calls[0]["report_only"] is True
+    assert "repair nothing" in calls[0]["step_context"]
+
+
+def test_report_only_denies_the_file_editing_tools_on_top_of_the_agents_own():
+    from flow_sdk.cli.commands.diagnose_cmd import _report_only
+
+    config = _report_only({"permission_mode": "bypassPermissions", "disallowed_tools": ["Bash(git push:*)", "Write"]})
+
+    assert config["disallowed_tools"] == ["Bash(git push:*)", "Write", "Edit", "MultiEdit", "NotebookEdit"]
+    assert config["permission_mode"] == "bypassPermissions"
