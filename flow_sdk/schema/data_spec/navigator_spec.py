@@ -34,8 +34,8 @@ class NavigatorRun(DataSpec):
     spec_kind: ClassVar[str] = "navigator.run"
 
     #: ``rule`` (a rule matched -- no model asked), ``decision`` (the model was sure enough),
-    #: ``unsure`` / ``agentic`` (the model handed it over), ``no_endpoint`` / ``empty``, or the
-    #: decision API's error reason.
+    #: ``unsure`` / ``agentic`` / ``more`` (the model handed it over -- ``more``: the request asks for
+    #: more than an open), ``no_endpoint`` / ``empty``, or the decision API's error reason.
     reason: str = ""
     #: The model's decision; absent when none was asked.
     decision: Optional[DecisionRun] = None

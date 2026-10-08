@@ -5,8 +5,24 @@ candidates -- never this machine's search -- so a run is judged on the options t
 labelled against. The decision API is whatever the hub offers (``versions`` names it).
 """
 
-from flow_sdk.evals import EvalTrace, ExampleEval, Verdict, golds, matches, verdict_of
-from flow_sdk.navigation import MIN_CONFIDENCE, decide_run
+from flow_sdk.evals import EvalTrace, ExampleEval, Verdict, golds, verdict_of
+from flow_sdk.navigation import MIN_CONFIDENCE, address_of, decide_run
+
+
+def _right(target, golds):
+    """``target`` opens a right answer: one of the quick golds, as named or at the same address."""
+    return any(g.get("route") == "quick" and _lands_on(target, g.get("target")) for g in golds)
+
+
+def _lands_on(target, gold_target):
+    """The same place: the same target, or two that open one address (a session as an entity and
+    as its screen, ``entity:agentic_process-x`` / ``view:agentic_process/x``)."""
+    if not target or not gold_target:
+        return False
+    if target == gold_target:
+        return True
+    there = address_of(target)
+    return there is not None and there == address_of(gold_target)
 
 
 async def evaluate_example(row):
@@ -20,6 +36,17 @@ async def evaluate_example(row):
     gold_kinds = {(g.get("target") or {}).get("kind") for g in answers if g.get("route") == "quick"}
     expects_agentic = any(g.get("route") == "agentic" for g in answers)
     verdict = verdict_of(pred, row, abstained=pred["route"] == "agentic" and not expects_agentic)
+    if verdict == Verdict.WRONG and pred["route"] == "quick" and _right(pred.get("target"), answers):
+        verdict = Verdict.CORRECT
+    # Feasible: one step can answer it -- a right answer was among the options offered (or a rule
+    # names it). The rest need context the request did not carry.
+    decision = answer.run.decision if answer.run else None
+    offered = set(decision.request.questions["target"].options) if decision else set()
+    feasible = (
+        expects_agentic
+        or answer.reason == "rule"
+        or any(_right(dict(zip(("kind", "value"), k.split(":", 1))), answers) for k in offered if ":" in k)
+    )
     # Right is not enough: the person must land there. A right target nothing can open (an entity
     # with no address) is handed to the assistant in the app -- so here it is not correct either.
     unopenable = pred["route"] == "quick" and out.prompt is not None
@@ -38,8 +65,8 @@ async def evaluate_example(row):
         if unopenable
         else "",
         labels={
-            # "no": the right answer is an action (start / create / a dialog) the navigator cannot express.
-            "feasible": "no" if gold_kinds == {"action"} else "yes",
+            # "no": no right answer was among the options -- the context lacked what it takes.
+            "feasible": "yes" if feasible else "no",
             "gold": "agentic" if expects_agentic else "/".join(sorted(k or "?" for k in gold_kinds)),
             "did": "assistant" if out.prompt is not None else (out.address or "ui-built"),
             **({"opens": "no" if unopenable else "yes"} if pred["route"] == "quick" else {}),
@@ -49,8 +76,7 @@ async def evaluate_example(row):
 
 def _target_ok(e):
     """It opened a right target (the verb aside -- coverage is where the verb counts)."""
-    opened = {"route": "quick", "target": (e.prediction or {}).get("target")}
-    return any(matches(opened, {"route": g.get("route"), "target": g.get("target")}) for g in e.golds)
+    return _right((e.prediction or {}).get("target"), e.golds)
 
 
 def _pct(n, d):
