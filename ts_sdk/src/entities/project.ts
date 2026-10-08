@@ -884,6 +884,14 @@ export class Project extends APIEntity<Project> {
     return data?.run ?? '';
   }
 
+  /** Take the credential `name` out of the setup (`POST project/<id>/setup-skip`): its values are
+   *  marked OPTIONAL. Answers with the readiness that follows. */
+  static async skipSetup(projectId: string, name: string): Promise<ProjectReadiness | null> {
+    const actionInfo = new ActionInfo('setup-skip', Project.type, projectId, 'POST');
+    actionInfo.bodyParameters = { name };
+    return (await dataManager.callAction<{ name: string }, ProjectReadiness>(actionInfo)) ?? null;
+  }
+
   /** The setup run's state (`GET project/<id>/setup-run`). */
   static async setupRun(projectId: string): Promise<ProjectSetupRun | null> {
     const actionInfo = new ActionInfo('setup-run', Project.type, projectId, 'GET');

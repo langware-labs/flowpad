@@ -6502,6 +6502,10 @@ msgstr ""
 msgid "Could not sign the sandbox out"
 msgstr "לא ניתן היה להתנתק מארגז החול"
 
+#: src/components/project-setup/ProjectSetupDialog.tsx
+msgid "Could not skip {name}"
+msgstr ""
+
 #: src/components/assets/editor/agent-profile/deployment/DeploymentProcessPanel.tsx
 #: src/components/assets/editor/wizard/WizardViewer.tsx
 #: src/components/assets/editor/wizard/WizardViewer.tsx
@@ -6537,6 +6541,10 @@ msgstr "לא ניתן להתחיל כניסה"
 
 #: src/components/conversation/ConversationView.tsx
 msgid "Could not start the live session"
+msgstr ""
+
+#: src/components/project-setup/ProjectSetupDialog.tsx
+msgid "Could not start the setup"
 msgstr ""
 
 #: src/components/entity-execution-panel/EntityExecutionPanel.tsx
@@ -15788,6 +15796,10 @@ msgstr "לא מחוברים"
 msgid "Not logged in · Please run /login"
 msgstr "לא מחוברים · הריצו /login"
 
+#: src/components/project-setup/ProjectSetupDialog.tsx
+msgid "Not needed here: mark its values optional"
+msgstr ""
+
 #: src/components/assets/editor/wizard/wizard-texts.ts
 #: src/components/install/AddAssetDialog.tsx
 #: src/components/project-home/MissingDependenciesDialog.tsx
@@ -22331,6 +22343,7 @@ msgstr ""
 
 #: src/components/assets/editor/wizard/wizard-texts.ts
 #: src/components/assets/editor/wizard/WizardViewer.tsx
+#: src/components/project-setup/ProjectSetupDialog.tsx
 #: src/journey/JourneyTray.tsx
 msgid "Skip"
 msgstr "דילוג"

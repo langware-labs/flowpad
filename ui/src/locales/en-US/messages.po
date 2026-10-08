@@ -6502,6 +6502,10 @@ msgstr "Could not sign out of FlowPad"
 msgid "Could not sign the sandbox out"
 msgstr "Could not sign the sandbox out"
 
+#: src/components/project-setup/ProjectSetupDialog.tsx
+msgid "Could not skip {name}"
+msgstr "Could not skip {name}"
+
 #: src/components/assets/editor/agent-profile/deployment/DeploymentProcessPanel.tsx
 #: src/components/assets/editor/wizard/WizardViewer.tsx
 #: src/components/assets/editor/wizard/WizardViewer.tsx
@@ -6538,6 +6542,10 @@ msgstr "Could not start sign-in"
 #: src/components/conversation/ConversationView.tsx
 msgid "Could not start the live session"
 msgstr "Could not start the live session"
+
+#: src/components/project-setup/ProjectSetupDialog.tsx
+msgid "Could not start the setup"
+msgstr "Could not start the setup"
 
 #: src/components/entity-execution-panel/EntityExecutionPanel.tsx
 #: src/components/terminal/interactive-terminal/ChatComposerBar.tsx
@@ -15788,6 +15796,10 @@ msgstr "Not logged in"
 msgid "Not logged in · Please run /login"
 msgstr "Not logged in · Please run /login"
 
+#: src/components/project-setup/ProjectSetupDialog.tsx
+msgid "Not needed here: mark its values optional"
+msgstr "Not needed here: mark its values optional"
+
 #: src/components/assets/editor/wizard/wizard-texts.ts
 #: src/components/install/AddAssetDialog.tsx
 #: src/components/project-home/MissingDependenciesDialog.tsx
@@ -22331,6 +22343,7 @@ msgstr "Skills, agents, servers and documents published by projects you can read
 
 #: src/components/assets/editor/wizard/wizard-texts.ts
 #: src/components/assets/editor/wizard/WizardViewer.tsx
+#: src/components/project-setup/ProjectSetupDialog.tsx
 #: src/journey/JourneyTray.tsx
 msgid "Skip"
 msgstr "Skip"

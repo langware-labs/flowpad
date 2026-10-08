@@ -762,6 +762,21 @@ class Project(Entity):
 
         return ApiSuccessResponse(data={"run": await start_setup(self)})
 
+    @action.post(action_name="setup-skip")
+    async def setup_skip_action(self, name: str = "") -> "ApiResponse":
+        """`POST /project/<id>/setup-skip {name}` — the credential ``name`` leaves the setup: its
+        variables are marked OPTIONAL in the project. Answers with the readiness that follows."""
+        from flow_sdk.builtin.credential_service import CredentialError, make_optional  # noqa: PLC0415
+        from flow_sdk.builtin.project_setup import readiness_of  # noqa: PLC0415
+
+        if not name:
+            return ApiFailResponse(message="name is required", status_code=400)
+        try:
+            await make_optional(name, self)
+        except CredentialError as exc:
+            return ApiFailResponse(message=str(exc), status_code=409)
+        return ApiSuccessResponse(data=(await readiness_of(self)).model_dump(mode="json"))
+
     @action.get(action_name="setup-run")
     async def setup_run_action(self) -> "ApiResponse":
         """`GET /project/<id>/setup-run` — whether the setup is running, and its steps so far."""
