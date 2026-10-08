@@ -80,10 +80,13 @@ async def test_a_project_already_present_is_not_fetched_or_overwritten(hub):
     project = Project(name="mine")
     await project.save()
 
-    await materialize_flow_message(_message(project.id), str(uuid.uuid4()), someone_typeid=None, remote=True)
+    try:
+        await materialize_flow_message(_message(project.id), str(uuid.uuid4()), someone_typeid=None, remote=True)
 
-    assert project.id not in hub.calls
-    assert (await Project.get_one({"id": project.id})).name == "mine"
+        assert project.id not in hub.calls
+        assert (await Project.get_one({"id": project.id})).name == "mine"
+    finally:
+        await project.delete()  # project names are unique, and the DB outlives this test
 
 
 # do not increase timeout without approval

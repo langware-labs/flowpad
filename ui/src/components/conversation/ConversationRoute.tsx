@@ -19,6 +19,7 @@ import { Button } from '@src/components/ui/button';
 import { ConversationPanel, EditableConversationTitle } from './ConversationPanel';
 import { ConversationHeaderSession } from './ConversationHeaderSession';
 import { MembersAvatarStack } from './MembersAvatarStack';
+import { ChannelParticipants } from './ChannelParticipants';
 import {
   applyProjectToConversation,
   applyProjectToTask,
@@ -278,7 +279,12 @@ export function ConversationRoute() {
           <ConversationHeaderSession conversation={conversation} task={task} />
         )}
         {/* Roster fetch is pointless under the logged-out overlay — skip it. */}
-        {cloudUser && convTypeId && <MembersAvatarStack typeId={convTypeId} showInviteButton />}
+        {/* A channel's people are on the channel — no roster to fetch, nobody to invite. */}
+        {conversation?.isChannel ? (
+          <ChannelParticipants conversation={conversation} />
+        ) : (
+          cloudUser && convTypeId && <MembersAvatarStack typeId={convTypeId} showInviteButton />
+        )}
       </div>
     </div>
   );

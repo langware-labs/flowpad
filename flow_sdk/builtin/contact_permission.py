@@ -2,7 +2,7 @@
 
 A ``ContactPermission`` records that a remote contact's NEW live sessions in a
 shared conversation are approved without asking (``auto_approve_session``).
-Everything else about a session — pause, reply policy, disconnect — is decided
+Everything else about a session — reply policy, disconnect — is decided
 on the session itself; this row only answers "does a session from this person
 start approved?".
 

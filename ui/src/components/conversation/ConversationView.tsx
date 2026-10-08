@@ -1,3 +1,4 @@
+import { lifecyclesOf, useHandledKeys } from './message-lifecycle';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Trans } from '@lingui/react/macro';
 import { useLingui } from '@lingui/react/macro';
@@ -16,12 +17,14 @@ import {
   TypeId,
   latestPointer,
   ChannelTransport,
+  isSessionActive,
   isSessionTerminal,
   RemoteWorkerSession,
   toplog,
 } from '@sdk';
 import { claimTabSwitchReady, sinceTabSwitch } from '@src/navigation/tab-switch-state';
 import { useAuth, useEntitiesQuery, useEntity, useOnTag, useProject } from '@sdk/react/hooks';
+import type { FlowEvent } from '@sdk/tags/EventBus';
 import type { ITask, TaskableMessage } from '@sdk/entities/task';
 import { isClosedConversation, isHelpdeskKind } from '@sdk/entities/conversation';
 import { ThreadHeader } from './ThreadHeader';
@@ -59,7 +62,9 @@ import { useMyEmail } from '@src/hooks/use-my-email';
 import { taskIt, useMessageTasks } from './task-it';
 import { conversationMessagesRequest } from './conversation-messages-query';
 import { useApproveLiveSession } from '@src/components/collaboration/useApproveLiveSession';
-import { failedPromptOf } from './session-turns';
+import { failedPromptOf, pendingPromptOf } from './session-turns';
+import { isSessionExpired } from './session-card-state';
+import { LiveSessionActivity } from './LiveSessionActivity';
 import { useRetryFailedPrompt } from './useRetryFailedPrompt';
 import { useCloudLoginGate } from '@src/hooks/use-cloud-login-gate';
 import { notify } from '@src/notifications';
@@ -340,6 +345,16 @@ export function ConversationView({
         native: channelSpec.transport === ChannelTransport.Flowpad,
       }
     : null;
+  // Each message come in on the channel: where it is on its way to an answer (live statuses + the feed's answers).
+  const handledKeys = useHandledKeys(channel ? conversation?.channel_source_id : null);
+  const lifecycles = useMemo(() => {
+    if (!channel) return null;
+    const ordered = orderedItems.flatMap((it): FlowMessage[] => {
+      const fm = it.kind === ConversationItemKind.POINTER ? messagesById.get(it.messageId) : undefined;
+      return fm ? [fm] : [];
+    });
+    return lifecyclesOf(ordered, handledKeys);
+  }, [channel, orderedItems, messagesById, handledKeys]);
   const quotedFor = (fm: FlowMessage | null) => {
     if (!fm?.reply_to_id) return null;
     const parent = messagesById.get(fm.reply_to_id);
@@ -392,6 +407,19 @@ export function ConversationView({
   // the user hits Send — the worker's process does not exist yet. Cleared when
   // the reply lands, which is the only honest signal it is no longer sending.
   const [sendingText, setSendingText] = useState<string | null>(null);
+  // A channel reply that did not go: the send runs after its request returned, so the channel's refusal arrives
+  // as a live signal (`stream_inbox.<provider>.reply.failed`) and replaces the "Sending" line, with its words.
+  const [notSent, setNotSent] = useState<{ text: string; reason: string } | null>(null);
+  useOnTag(
+    'stream_inbox.*.reply.failed',
+    (event: FlowEvent) => {
+      const data = (event.data ?? {}) as { conversation_id?: string; reason?: string };
+      if (data.conversation_id !== conversationId) return;
+      setNotSent({ text: sendingText ?? '', reason: String(data.reason ?? '') });
+      setSendingText(null);
+    },
+    { target: `conversation:${conversationId}` },
+  );
 
   useEffect(() => {
     if (sendingText) setSendingText(null);
@@ -455,8 +483,9 @@ export function ConversationView({
     ].sort((a, b) => a.sortAt - b.sortAt);
   }, [orderedItems, messagesById, threadId, threadCounts, sessionAnchors]);
 
-  // Each live session's failed prompt (nothing answered it since), so its card can offer Retry.
-  const failedPromptBySession = useMemo(() => {
+  // Each live session's messages, in feed order: its card offers Retry on a failed prompt
+  // (nothing answered it since) and names the prompt the host is working on.
+  const messagesBySession = useMemo(() => {
     const bySession = new Map<string, FlowMessage[]>();
     for (const item of orderedItems) {
       const fm = item.kind === ConversationItemKind.POINTER ? messagesById.get(item.messageId) : item.draft;
@@ -466,8 +495,18 @@ export function ConversationView({
       if (fms) fms.push(fm);
       else bySession.set(sid, [fm]);
     }
-    return new Map([...bySession].map(([sid, fms]) => [sid, failedPromptOf(fms)]));
+    return bySession;
   }, [orderedItems, messagesById]);
+  const turnsBySession = useMemo(
+    () =>
+      new Map(
+        [...messagesBySession].map(([sid, fms]) => [
+          sid,
+          { failed: failedPromptOf(fms), pending: pendingPromptOf(fms) },
+        ]),
+      ),
+    [messagesBySession],
+  );
 
   // Where the composer of an open thread writes: a native thread joins its root; a channel whose
   // replies only thread (email, Slack) answers the thread's newest message; a quoting channel's
@@ -523,6 +562,7 @@ export function ConversationView({
           messageAttachments={attachmentsByMessage.get(id)}
           showEmailHeaders={!!agentId}
           channelTraits={channelTraits}
+          lifecycle={lifecycles?.get(id) ?? null}
           quoted={quotedFor(fm)}
           onReply={channelSpec?.replies ? setReplyTo : undefined}
           messageTask={messageTasks.get(id) ?? null}
@@ -614,7 +654,8 @@ export function ConversationView({
   // cheap no-op. Debounced 250ms to coalesce bursts (e.g. catch-up).
   const ackedRef = useRef<Set<string>>(new Set());
   useEffect(() => {
-    if (pointers.length === 0) return;
+    // A channel's messages were delivered by the channel, not the hub: there is no hub receipt to send.
+    if (channel || pointers.length === 0) return;
     const candidates = pointers.map((p) => p.id).filter((id) => id && !ackedRef.current.has(id));
     if (candidates.length === 0) return;
     const handle = setTimeout(() => {
@@ -627,7 +668,7 @@ export function ConversationView({
     }, 250);
     return () => clearTimeout(handle);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pointers.map((p) => p.id).join(',')]);
+  }, [channel, pointers.map((p) => p.id).join(',')]);
 
   // Help-desk (support) ticket: replies are masked to a single brand
   // identity, and the real responder's sender_id is intentionally absent from
@@ -846,7 +887,7 @@ export function ConversationView({
         <button
           type="button"
           onClick={() => void handleRefresh()}
-          title={t`Refresh (pulls from hub)`}
+          title={channel ? t`Refresh (checks the channel for new messages)` : t`Refresh (pulls from hub)`}
           data-testid="refresh-conversation-button"
           className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
         >
@@ -881,6 +922,8 @@ export function ConversationView({
             if (item.kind === ConversationItemKind.SESSION_ANCHOR) {
               const session = sessionsById.get(item.sessionId) ?? null;
               const role = sessionRole(session, cloudUserId);
+              const turns = turnsBySession.get(item.sessionId);
+              const failedPrompt = turns?.failed;
               return (
                 // The session's ONE line — its opening prompt (or request) is not
                 // drawn as a bubble; the turns live in the session view.
@@ -898,18 +941,24 @@ export function ConversationView({
                     onApproveOnce={role === 'host' && session ? () => approveSession(session) : undefined}
                     onDecline={role === 'host' && session ? () => session.decline() : undefined}
                     onDisconnect={role !== 'observer' && session ? () => session.disconnect() : undefined}
-                    lastPromptFailed={!!failedPromptBySession.get(item.sessionId)}
+                    lastPromptFailed={!!turns?.failed}
+                    runningPrompt={turns?.pending ?? null}
+                    chatProcessId={role === 'host' ? (session?.host_process_id ?? null) : null}
                     onRetry={
-                      role === 'guest' && failedPromptBySession.get(item.sessionId) && conversationId
-                        ? () =>
-                            retryFailedPrompt(
-                              conversationId,
-                              item.sessionId,
-                              failedPromptBySession.get(item.sessionId)!.text,
-                            )
+                      role === 'guest' && failedPrompt && conversationId
+                        ? () => retryFailedPrompt(conversationId, item.sessionId, failedPrompt.text)
                         : undefined
                     }
                   />
+                  {/* Only a live session: an old one's process may be busy with something else. */}
+                  {role === 'host' &&
+                    session &&
+                    isSessionActive(session.status) &&
+                    !isSessionExpired(session, Date.now()) && (
+                      <div className="px-2">
+                        <LiveSessionActivity session={session} />
+                      </div>
+                    )}
                 </div>
               );
             }
@@ -942,12 +991,28 @@ export function ConversationView({
           wrong half the time. The reply itself arrives in the feed by the
           ordinary ingest route once it exists. */}
       {sendingText && <SessionEventLine text={t`Sending in ${channelSpec?.title}: “${sendingText}”`} />}
+      {notSent && (
+        // Tinted with a red border; the words stay the foreground colour (red text on a dark theme does not read).
+        <p
+          className="mx-auto my-1 w-fit max-w-[80%] rounded border border-red-500/60 bg-red-500/10 px-2 py-1 text-xs"
+          role="alert"
+          data-testid="channel-reply-not-sent"
+        >
+          <span className="font-medium">
+            <Trans>Not sent</Trans>
+          </span>
+          {notSent.text ? ` “${notSent.text}”` : ''} — {notSent.reason}
+        </p>
+      )}
       <MessageComposer
         conversationId={conversationId}
         onSent={() => void refetch()}
         // A source-backed conversation replies into its channel, not the hub.
         channel={channel}
-        onChannelSent={setSendingText}
+        onChannelSent={(text) => {
+          setNotSent(null);
+          setSendingText(text);
+        }}
         placeholder={channelSpec && !channelSpec.home ? t`Reply in ${channelSpec.title}` : undefined}
         agentId={agentId ?? undefined}
         sessionHost={channelSpec && !channelSpec.hosts_sessions ? null : sessionHost}

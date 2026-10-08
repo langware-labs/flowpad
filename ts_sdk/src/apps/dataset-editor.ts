@@ -13,8 +13,7 @@
  */
 import type { Mounted } from '../viewers/contract';
 import { h } from '../viewers/dom';
-import { createViewerContext } from '../viewers/registry';
-import { hostDataset, mountLabel } from './dataset-app';
+import { appRoot, datasetViewerContext, hostDataset, mountLabel } from './dataset-app';
 import { editorsFor } from './editors';
 import { appOption, applyHostTheme, navigateHost } from './host';
 
@@ -33,7 +32,7 @@ header h1 { font-size: 15px; margin: 0; }
 button { font: inherit; padding: .2rem .6rem; border-radius: 6px; border: 1px solid hsl(var(--border)); background: hsl(var(--secondary)); color: inherit; cursor: pointer; }
 button.primary { background: hsl(var(--primary)); color: hsl(var(--primary-foreground)); border-color: transparent; }
 select { font: inherit; padding: .2rem .4rem; border-radius: 6px; border: 1px solid hsl(var(--border)); background: hsl(var(--background)); color: inherit; }
-.split { display: grid; grid-template-columns: minmax(0, 1fr) minmax(360px, 44%); gap: 1rem; padding: 1rem; align-items: start; }
+.split { display: grid; grid-template-columns: minmax(240px, 30%) minmax(0, 1fr); gap: 1rem; padding: 1rem; align-items: start; }
 .split.closed { grid-template-columns: minmax(0, 1fr); }
 .detail { position: sticky; top: 4.2rem; border: 1px solid hsl(var(--border)); border-radius: 12px; padding: .9rem 1rem; max-height: calc(100vh - 6rem); overflow: auto; }
 .bar { display: flex; gap: .5rem; align-items: center; flex-wrap: wrap; margin-top: .8rem; }
@@ -41,7 +40,8 @@ select { font: inherit; padding: .2rem .4rem; border-radius: 6px; border: 1px so
 `;
 
 /** Render the dataset editor into `root` and connect it. Rejects with why it could not start. */
-export async function mountDatasetEditor(root: HTMLElement = document.body): Promise<void> {
+export async function mountDatasetEditor(into?: HTMLElement): Promise<void> {
+  const root = appRoot(into);
   applyHostTheme();
   const style = document.createElement('style');
   style.textContent = STYLES;
@@ -62,7 +62,7 @@ async function run(root: HTMLElement, status: HTMLElement): Promise<void> {
   const dataset = await hostDataset();
   const subject = `dataset-${dataset.id}`;
   const kind = typeof dataset.spec === 'string' ? dataset.spec : '';
-  const ctx = createViewerContext({ within: subject });
+  const ctx = datasetViewerContext(subject);
 
   const { rows }: { rows: any[] } = await dataset.rows(); // every example with its values, in one request
   const counts = h('span', { class: 'muted small', 'data-testid': 'dataset-editor-counts' });
@@ -123,6 +123,7 @@ async function run(root: HTMLElement, status: HTMLElement): Promise<void> {
     if (id) params.set('example', id);
     else params.delete('example');
     history.pushState(null, '', `${location.pathname}?${params}`);
+    shownExample = appOption('example');
     showSelected();
   }
 
@@ -148,6 +149,7 @@ async function run(root: HTMLElement, status: HTMLElement): Promise<void> {
       dataset,
       kind,
       row,
+      meta: await latestTrace(row),
       onSaved: (value) => {
         row.ground_truth = value;
         showCounts();
@@ -156,10 +158,22 @@ async function run(root: HTMLElement, status: HTMLElement): Promise<void> {
     });
   }
 
+  /** How a row's answer was last reached: an eval set's row keeps no run of its own, so the newest
+   *  eval run's trace for it stands in (`from` names the run; `versions` what it ran against). A row
+   *  that keeps its own (a log row's `data.run`) is shown from that instead, by its kind's viewer. */
+  let newestRun: Promise<{ run_id: string; versions?: Record<string, string> } | null> | null = null;
+  async function latestTrace(row: any): Promise<Record<string, unknown>> {
+    if (row.data?.run) return {};
+    newestRun ??= dataset.evalRuns().then((r: any) => r.runs?.[0] ?? null).catch(() => null);
+    const run = await newestRun;
+    const trace = run ? await dataset.evalTrace(run.run_id, row.id).catch(() => null) : null;
+    return trace ? { trace: { ...trace, from: run!.run_id }, versions: run!.versions } : {};
+  }
+
   // The eval browser is another app on the same dataset: the HOST opens it (URL-first).
   async function openEvals() {
     const browser = (await editorsFor(subject)).find((e) => e.name === 'eval-browser');
-    if (browser) navigateHost(`/dock/app/${browser.typeid}?subject=${subject}`);
+    if (browser) navigateHost({ address: `/dock/app/${browser.typeid}?subject=${subject}` });
   }
 
   async function validate() {
@@ -169,7 +183,13 @@ async function run(root: HTMLElement, status: HTMLElement): Promise<void> {
   }
 
   filter.addEventListener('change', () => void renderList());
-  window.addEventListener('popstate', showSelected);
+  // Back moves the chosen example only when it changed (opening a part on its own keeps the URL).
+  let shownExample = appOption('example');
+  window.addEventListener('popstate', () => {
+    if (appOption('example') === shownExample) return;
+    shownExample = appOption('example');
+    showSelected();
+  });
   await Promise.all([renderList(), renderDetail()]);
   status.textContent = 'Live';
   status.className = 'small ok';

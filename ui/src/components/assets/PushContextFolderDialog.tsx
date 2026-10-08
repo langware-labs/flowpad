@@ -126,7 +126,7 @@ export function PushContextFolderDialog({
         ? {
             kind: 'new',
             params: {
-              project_id: isRemote ? null : effectiveProjectId,
+              project_id: effectiveProjectId || null,
               participants,
               title,
             },

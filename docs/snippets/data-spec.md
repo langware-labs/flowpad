@@ -5,11 +5,11 @@ id: ebc462b0-0bc2-4c18-ba79-3a4a29559ce8
 
 Every fence on this page runs in `tests/unit/test_data_spec_snippets.py`.
 
-A **`DataSpec`** is one shape. The **class is the schema**; an **instance is the
-data**. Functions take them as arguments and return them as values — that is the
-whole IO model.
+A **`DataSpec` subclass is a schema**; an **instance is a value**; the schema's
+**kind** is the name it is registered under (`spec_kind`). Functions take values
+as arguments and return them — that is the whole IO model.
 
-## 1. Declare a shape
+## 1. Declare a schema
 
 ```python
 from flow_sdk.schema.data_spec import DataSpec
@@ -38,15 +38,16 @@ except ValidationError:
     pass                             # a spec is frozen
 ```
 
-**`frozen`** — a spec is a value. Nothing edits one in place and hands it on;
+**`frozen`** — a value is a value. Nothing edits one in place and hands it on;
 the next reader would have no way to tell what it was handed.
 
-**`extra="forbid"`** — a misspelled key fails loudly instead of yielding a row
+**`extra="forbid"`** (a plain `DataSpec`; an asset document's schema relaxes it to
+`"ignore"`) — a misspelled key fails loudly instead of yielding a row
 with an empty field. So a constructor reading a foreign dict projects field by
 field rather than splatting it: the hop is deliberately lossy, and that is the
 contract.
 
-## 2. A shape written in a document
+## 2. A schema written in a document
 
 Assets are JSON. A shape a document declares is text, and `parse` compiles it to
 a class.
@@ -59,14 +60,19 @@ Endpoint(host="h", port=8099).model_dump()   # {'host': 'h', 'port': 8099}
 to_authoring_form(Endpoint)                  # {'host': 'string', 'port': 'int'}
 ```
 
-Three authoring forms, and nothing else:
+The authoring forms:
 
 | form | means |
 | --- | --- |
-| `"int"` | a reserved primitive — `string`, `int`, `float`, `bool` |
-| `"demo.endpoint"` | a registered kind, by name |
+| `"int"` | a reserved primitive — `string`, `int`, `float`, `bool`, `binary` |
+| `"demo.endpoint"` | a registered kind, by name (its schema) |
 | `{"host": "string"}` | an object — fields and their shapes |
 | `["int"]` | a list — exactly one element, the shape every element has |
+| `"?string"` | may be absent |
+| `"enum:a\|b"` | one of a closed set of strings |
+| `{"*": "int"}` | a map — any key, every value that shape |
+
+The last three are input only: a hand-written schema renders back without them.
 
 ```python
 DataSpec.parse("int")        # <class 'int'>
@@ -75,8 +81,8 @@ DataSpec.parse({"ports": ["int", "int"]})
 # ValueError: a list shape carries exactly one element … got 2
 ```
 
-No keywords: no `required`, no `default`, no `type:` wrapper. A shape says what
-the value looks like, never how it behaves.
+No keywords beyond those marks: no `required`, no `default`, no `type:` wrapper.
+A shape says what the value looks like, never how it behaves.
 
 Two identical forms compile to **one** class, cached by canonical form:
 
@@ -368,9 +374,9 @@ note.save(folder)                             # note.json + body.md
 Note.load(folder) == note                     # True
 ```
 
-## 8. An agent is a DataSpec
+## 8. An agent's definition is a value too
 
-An agent's definition is a shape like any other: validated in memory, a folder on disk, the same
+An agent's definition is a value of a schema (`AgentSpec`) like any other: validated in memory, a folder on disk, the same
 `save` and `load`. Pinned by `tests/unit/test_data_spec_snippets.py`.
 
 ```python

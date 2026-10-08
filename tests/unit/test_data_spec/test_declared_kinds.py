@@ -1,4 +1,4 @@
-"""Kinds DEFINED BY A FOLDER (``agentic-assets/data_spec/<full.kind>/data_spec.json``).
+"""Kinds DEFINED BY A FOLDER (``agentic-assets/data_schema/<full.kind>/data_schema.json``).
 
 Built into a named DataSpec and registered through the ordinary class hook, under the namespace
 of the project the folder lives in. These pin the mechanics, each driven through the real loader
@@ -28,9 +28,9 @@ def _ns() -> str:
 
 
 def _spec(parent: Path, kind: str, body: dict, *, ns: str | None = None) -> Path:
-    folder = parent / "agentic-assets" / "data_spec" / kind
+    folder = parent / "agentic-assets" / "data_schema" / kind
     folder.mkdir(parents=True)
-    (folder / "data_spec.json").write_text(json.dumps({"type": "data_spec", **body, **({"ns": ns} if ns else {})}))
+    (folder / "data_schema.json").write_text(json.dumps({"type": "data_schema", **body, **({"ns": ns} if ns else {})}))
     return folder
 
 
@@ -82,6 +82,27 @@ def test_an_authored_kind_lands_in_its_namespace_never_in_ours(tmp_path):
     assert SchemaRegistry.kind_type("solo.kind") is None
 
 
+def test_a_folder_under_the_retired_data_spec_name_registers_nothing_and_says_so(tmp_path):
+    """The family was renamed ``data_spec`` -> ``data_schema`` with no migration: an old folder is
+    not read, and the indexer's scan names it with the rename -- never a silent loss of its kinds."""
+    from flow_sdk.assets.scanning import scan_repo_tree
+
+    ns = _ns()
+    old = tmp_path / "agentic-assets" / "data_spec" / "legacy.kind"
+    old.mkdir(parents=True)
+    (old / "data_spec.json").write_text(
+        json.dumps({"type": "data_spec", "ns": ns, "fields": {"a": {"shape": "string"}}})
+    )
+
+    assert declared.load_root(tmp_path) == {}
+    assert _kind(ns, "legacy.kind") is None
+    result = scan_repo_tree(tmp_path, SchemaRegistry.repo_family_to_info())
+    assert result.candidates == []
+    [issue] = result.issues
+    assert (issue.path, issue.type_name) == (old.parent, "data_schema")
+    assert "rename it to data_schema/" in issue.message and "data_schema.json" in issue.message
+
+
 def test_a_documentation_node_registers_nothing(tmp_path):
     ns = _ns()
     folder = _spec(tmp_path, "branch", {}, ns=ns)
@@ -123,6 +144,32 @@ def test_the_same_kind_in_two_folders_is_an_error(tmp_path):
     assert "already defined" in declared.load_root(tmp_path / "two")[second]
 
 
+def test_a_moved_definition_takes_its_kind_with_it_without_a_restart(tmp_path):
+    """The marketing case: specs moved out of their datasets into one tree, then re-indexed."""
+    import shutil
+
+    ns = _ns()
+    old = _spec(tmp_path / "dataset", "gtm.icp", {"fields": {"a": {"shape": "string"}}}, ns=ns)
+    assert declared.load_root(tmp_path / "dataset")[old] == ""
+    new = tmp_path / "tree" / "agentic-assets" / "data_schema" / "gtm.icp"
+    new.parent.mkdir(parents=True)
+    shutil.move(str(old), str(new))
+    (new / "data_schema.json").write_text(
+        json.dumps({"type": "data_schema", "ns": ns, "fields": {"b": {"shape": "int"}}})
+    )
+    assert declared.load_root(tmp_path / "tree")[new] == ""
+    assert set(_kind(ns, "gtm.icp").model_fields) == {"b"}
+
+
+def test_a_kind_its_folder_no_longer_names_is_free_for_another(tmp_path):
+    ns = _ns()
+    first = _spec(tmp_path / "one", "free.kind", {"fields": {"a": {"shape": "string"}}}, ns=ns)
+    assert declared.load_root(tmp_path / "one")[first] == ""
+    (first / "data_schema.json").write_text(json.dumps({"type": "data_schema", "ns": ns + "x", "fields": {}}))
+    second = _spec(tmp_path / "two", "free.kind", {"fields": {"b": {"shape": "int"}}}, ns=ns)
+    assert declared.load_root(tmp_path / "two")[second] == ""
+
+
 def test_a_namespace_the_marker_cannot_hold_is_recorded_not_raised(tmp_path):
     """``ns-v`` is not a namespace (``--ns-v--`` breaks the marker grammar): a bad document, recorded
     on the folder -- it used to raise out of indexing (found by the every-asset round trip)."""
@@ -137,7 +184,7 @@ def test_an_external_that_names_no_namespace_is_refused(tmp_path):
 
 def test_a_dataset_keeps_the_spec_its_own_nested_definitions_define(tmp_path):
     """The walk reads a parent BEFORE its children, so the header read used to meet a kind nobody had
-    registered yet and drop the spec (``_lenient_spec``). An asset's own data specs are now in scope
+    registered yet and drop the spec (``_lenient_spec``). An asset's own data schemas are now in scope
     for its own document -- proven by an on/off lever before the fix."""
     from flow_sdk.assets.serialization import read_asset_data
 
@@ -153,7 +200,7 @@ def test_a_dataset_keeps_the_spec_its_own_nested_definitions_define(tmp_path):
 
 
 def test_indexing_a_definition_again_keeps_the_classes_rows_were_written_with(tmp_path):
-    """Indexing reaches one definition several ways (the dataset's own read, each data spec folder,
+    """Indexing reaches one definition several ways (the dataset's own read, each data schema folder,
     the miss loader). A rebuild REPLACED the registered class while the dataset kind kept the old
     one, which then had no kind -- so typed reads looked for ``declared_nav_request.json`` and every
     row failed. Found in the browser on a live instance; proven by an on/off lever."""
@@ -170,7 +217,7 @@ def test_indexing_a_definition_again_keeps_the_classes_rows_were_written_with(tm
     )
     _nav_tree(ds, ns)
     read_asset_data(ds, SchemaRegistry.get("dataset"), identity="0b7c3a2e-6f1d-4c3b-8a2e-0f1e2d3c4b5a")
-    declared.load_root(ds)  # what indexing the nested data spec folders does
+    declared.load_root(ds)  # what indexing the nested data schema folders does
     d = Dataset(
         id="0b7c3a2e-6f1d-4c3b-8a2e-0f1e2d3c4b5a",
         name="nav",
@@ -194,7 +241,7 @@ def test_indexing_a_definition_again_keeps_the_classes_rows_were_written_with(tm
         ],
         dataset_id=d.id,
     )
-    for folder in declared.data_spec_folders(ds):  # the indexer reaching every definition again
+    for folder in declared.data_schema_folders(ds):  # the indexer reaching every definition again
         declared.register_folder(folder)
     assert d.validate_rows() == []
     assert (ds / "examples/0001/input/request.json").is_file()
@@ -225,9 +272,9 @@ def test_a_changed_definition_rebuilds_and_rows_written_before_still_read(tmp_pa
         [(d.row_type(kind=ExampleKind.EVAL, input={"utterance": "hi"}, context={"candidates": []}), None)],
         dataset_id=d.id,
     )
-    request = next(f for f in declared.data_spec_folders(ds) if f.name == "nav.request")
-    doc = json.loads((request / "data_spec.json").read_text())
+    request = next(f for f in declared.data_schema_folders(ds) if f.name == "nav.request")
+    doc = json.loads((request / "data_schema.json").read_text())
     doc["fields"]["utterance"]["description"] = "exactly what was typed"
-    (request / "data_spec.json").write_text(json.dumps(doc))
+    (request / "data_schema.json").write_text(json.dumps(doc))
     assert declared.register_folder(request) == ""
     assert d.validate_rows() == []

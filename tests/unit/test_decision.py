@@ -222,6 +222,20 @@ async def test_decide_goes_through_the_endpoint_marked_decision(env, monkeypatch
     assert invoked[0][3]["questions"]["quick"]["type"] == "noul", "the body is the dialect's, not ours"
     assert result.pick("target", min=0.85) == "view:data-sources"
     assert result.endpoint == f"api_endpoint-{DECIDER['id']}" and result.latency_ms >= 0
+    # The call itself is kept, byte for byte: the dialect body that was sent, the body that came back.
+    assert result.wire.request == invoked[0][3] and result.wire.response == JEV_BODY
+    assert (result.wire.endpoint, result.wire.path, result.wire.status) == (result.endpoint, "v1/systemone", 200)
+
+
+async def test_a_failed_call_still_says_exactly_what_was_sent(env, monkeypatch) -> None:
+    from flow_sdk.decision import decide
+
+    _login()
+    asked = _hub(monkeypatch, listing={"data": [DECIDER]}, catalog=[], invoke=(429, {"error": "rate_limited"}))
+    with pytest.raises(DecisionError) as e:
+        await decide(SPEC)
+    sent = [a for a in asked if a[0] == "invoke"][0][3]
+    assert (e.value.wire.request, e.value.wire.status, e.value.wire.response) == (sent, 429, {"error": "rate_limited"})
 
 
 @pytest.mark.parametrize(

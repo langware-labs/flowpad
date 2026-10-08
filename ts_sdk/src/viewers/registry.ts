@@ -19,7 +19,7 @@ import type {
 } from './contract';
 import { h, injectStyles } from './dom';
 import { GENERIC_VIEWER_STYLES, genericCollection, genericSingle } from './generic';
-import { kindForm as fetchKindForm, namedKind } from './kinds';
+import { kindForm as fetchKindForm, namedKind, parseValueRef } from './kinds';
 
 /** Whether a viewer shows one value or a list of them (`ViewShape` in `webapp_spec.py`). */
 type ViewShape = 'single' | 'collection';
@@ -31,6 +31,18 @@ export interface ViewerHost {
   kindForm?: (kind: string) => Promise<KindForm | null>;
   choices?: (kind: string, shape: ViewShape, within?: string) => Promise<ViewerChoice[]>;
   importModule?: (choice: ViewerChoice) => Promise<ViewerModule>;
+  /** A stored value by its reference (`<kind>.id.<uuid>`), looked up in `within` first. */
+  value?: (ref: string, within?: string) => Promise<StoredValue>;
+  /** What the app does when a viewer opens a part on its own (`ctx.open`) or an entity (`ctx.navigate`). */
+  open?: ViewerContext['open'];
+  navigate?: ViewerContext['navigate'];
+}
+
+export interface StoredValue {
+  kind: string;
+  id: string;
+  ref: string;
+  value: unknown;
 }
 
 const choiceCache = new Map<string, Promise<ViewerChoice[]>>();
@@ -53,6 +65,17 @@ function fetchChoices(kind: string, shape: ViewShape, within?: string): Promise<
   const query = new URLSearchParams({ shape, ...(within ? { within } : {}) });
   return cached(choiceCache, `${kind}|${query}`, async () =>
     (await apiClient.get<ViewerChoice[]>(`/api/v1/viewers/${encodeURIComponent(kind)}?${query}`)) ?? []).catch(() => []);
+}
+
+const valueCache = new Map<string, Promise<StoredValue>>();
+/** A value is read from the asset that keeps it (`within`) — with none, nothing can be looked in. */
+function fetchValue(ref: string, within?: string): Promise<StoredValue> {
+  if (!within) return Promise.reject(new Error(`no asset to read ${ref} from`));
+  return cached(valueCache, `${ref}|${within}`, async () => {
+    const got = await apiClient.get<StoredValue>(`/api/v1/values/${encodeURIComponent(ref)}?${new URLSearchParams({ within })}`);
+    if (!got) throw new Error(`no value ${ref}`);
+    return got;
+  });
 }
 
 /** The module's address is the SDK's to make (`serviceUrlOf`), never the app's. */
@@ -107,12 +130,43 @@ export function createViewerContext(host: ViewerHost = {}): ViewerContext {
     }
   }
 
+  /** A value given by reference (`<kind>.id.<uuid>`) is drawn as the value it names — read from
+   *  the asset being shown (`within`); a viewer learns which (`meta.ref`). Anything else as is. */
+  async function dereference(value: unknown): Promise<{ value: unknown; ref?: string } | { missing: string; error: unknown }> {
+    if (!parseValueRef(value)) return { value };
+    try {
+      const stored = await (host.value ?? fetchValue)(value as string, host.within);
+      return { value: stored.value, ref: stored.ref };
+    } catch (error) {
+      return { missing: value as string, error };
+    }
+  }
+
+  /** A reference nothing keeps says so — never a blank. */
+  function missing(el: HTMLElement, { missing: ref, error }: { missing: string; error: unknown }): Mounted {
+    console.warn(`[viewer] ${ref} could not be read`, error);
+    el.replaceChildren(h('span', { class: 'dv-warn', title: String((error as Error)?.message ?? error) }, `not found: ${ref}`));
+    return {};
+  }
+
   const ctx: ViewerContext = {
     h,
     kindForm: host.kindForm ?? fetchKindForm,
     generic: { single: genericSingle, collection: genericCollection },
-    render: (el: HTMLElement, request: ViewRequest) => mountWith(el, request, 'single', genericSingle),
-    renderCollection: (el: HTMLElement, request: CollectionRequest) => mountWith(el, request, 'collection', genericCollection),
+    open: host.open,
+    navigate: host.navigate,
+    render: async (el: HTMLElement, request: ViewRequest) => {
+      const got = await dereference(request.value);
+      if ('missing' in got) return missing(el, got);
+      const meta = got.ref ? { ...request.meta, ref: got.ref } : request.meta;
+      return mountWith(el, { ...request, value: got.value, meta }, 'single', genericSingle);
+    },
+    renderCollection: async (el: HTMLElement, request: CollectionRequest) => {
+      const got = await Promise.all(request.items.map(dereference));
+      const lost = got.find((g) => 'missing' in g);
+      if (lost) return missing(el, lost);
+      return mountWith(el, { ...request, items: got.map((g) => ('value' in g ? g.value : null)) }, 'collection', genericCollection);
+    },
   };
   return ctx;
 }

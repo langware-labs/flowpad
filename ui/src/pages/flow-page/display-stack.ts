@@ -5,14 +5,51 @@ import { ViewType } from '@src/types/ViewType';
 import {dockForDisplayTarget} from '@src/navigation/display-target-pointer';
 
 
-/** Do two display targets address the same thing? (Kind plus whichever key that kind uses.) */
+/** Every field that tells one display target from another — mirrors the backend's
+ *  `DISPLAY_TARGET_KEYS` (flow_sdk/builtin/agentic_process/display_context.py), so
+ *  the client never merges two shows the server keeps apart, or the reverse. */
+const DISPLAY_TARGET_KEYS = [
+  'kind',
+  'typeid',
+  'type',
+  'id',
+  'path',
+  'port',
+  'view_type',
+  'pointer',
+  'page',
+  'options',
+  'url',
+  'artifact_id',
+] as const;
+
+/** What a display target addresses — equal for two shows of the same thing,
+ *  whatever their `shown_at` or source location. */
+function targetKey(target: ShowTarget): string {
+  const fields = target as Record<string, unknown>;
+  return JSON.stringify(DISPLAY_TARGET_KEYS.map((k) => fields[k] ?? null));
+}
+
+/** Do two display targets address the same thing? */
 function sameDisplayTarget(a: ShowTarget, b: ShowTarget): boolean {
-  return (
-    a.kind === b.kind &&
-    (a.typeid ?? null) === (b.typeid ?? null) &&
-    (a.path ?? null) === (b.path ?? null) &&
-    (a.artifact_id ?? null) === (b.artifact_id ?? null)
-  );
+  return targetKey(a) === targetKey(b);
+}
+
+/**
+ * One entry per target, newest first — each the LATEST show of it. Takes the
+ * stack as stored (oldest first). The server already keeps one entry per target;
+ * this tidies stacks persisted before it did.
+ */
+export function latestPerTarget(stack: readonly DisplayEntry[]): DisplayEntry[] {
+  const seen = new Set<string>();
+  const rows: DisplayEntry[] = [];
+  for (let i = stack.length - 1; i >= 0; i--) {
+    const key = targetKey(stack[i]);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    rows.push(stack[i]);
+  }
+  return rows;
 }
 
 /**

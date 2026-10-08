@@ -5,8 +5,11 @@ import { WebappDisplayToolbar } from '@src/components/display-toolbar';
 import { hostBrand, useAppDisplay } from '@src/hooks/flow-hooks';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { APP_RUNTIME_PARAM, type AppRuntime } from '@src/navigation/app-dock';
-import { type DockPointer } from '@src/navigation/DockPointer';
+import { DockPointer } from '@src/navigation/DockPointer';
+import { useContext } from '@src/hooks/useContext';
 import { tryParseDock } from '@src/navigation/try-parse-dock';
+import { buildDockPointer } from '@src/components/conversation/EntityChip';
+import { isTypeId, TypeId } from '@sdk';
 
 /**
  * An app, rendered from its ADDRESS, through the endpoints that serve it.
@@ -61,14 +64,20 @@ function reloadOnNewEpoch(src: string, epoch: number | undefined, reload: () => 
 }
 
 /**
- * The dock a guest app asks the host to open (`{type: 'flowpad:navigate', address: '/dock/…'}`),
- * or null. Only a `/dock/` address that parses is honoured — a guest navigates the app, never the
- * window to an arbitrary URL.
+ * The dock a guest app asks the host to open, or null: `{type: 'flowpad:navigate', address: '/dock/…'}`
+ * (only a `/dock/` address that parses is honoured — a guest navigates the app, never the window to
+ * an arbitrary URL), or `{…, typeid}` — an entity, opened where its type lives, inside the current
+ * project: the same rule an entity chip follows (`buildDockPointer`, then rebased onto the project).
  */
-export function guestNavigation(data: unknown): DockPointer | null {
-  const message = data as { type?: unknown; address?: unknown } | null;
-  if (message?.type !== 'flowpad:navigate' || typeof message.address !== 'string') return null;
-  if (!message.address.startsWith('/dock/')) return null;
+export function guestNavigation(data: unknown, projectId?: string | null): DockPointer | null {
+  const message = data as { type?: unknown; address?: unknown; typeid?: unknown } | null;
+  if (message?.type !== 'flowpad:navigate') return null;
+  if (typeof message.typeid === 'string' && isTypeId(message.typeid)) {
+    const typeId = new TypeId(message.typeid);
+    const pointer = buildDockPointer({ type: typeId.type, id: typeId.id }, undefined);
+    return pointer ? DockPointer.rebaseAssetsOntoProject(pointer, projectId) : null;
+  }
+  if (typeof message.address !== 'string' || !message.address.startsWith('/dock/')) return null;
   return tryParseDock(message.address);
 }
 
@@ -81,6 +90,7 @@ export function AppDisplayViewer({
   reloadKey,
 }: AppDisplayViewerProps) {
   const { currentDock, navigation } = useDockNavigation();
+  const { project } = useContext();
   const frameRef = useRef<PersistentIframeHandle>(null);
 
   // No memo: `useAppDisplay` reduces this to strings before anything depends on
@@ -119,12 +129,12 @@ export function AppDisplayViewer({
     pushSkin();
     const onGuest = (event: MessageEvent) => {
       if ((event.data as { type?: string } | null)?.type === 'flowpad:skin-please') return pushSkin();
-      const dock = frameRef.current?.isGuest(event.source) ? guestNavigation(event.data) : null;
+      const dock = frameRef.current?.isGuest(event.source) ? guestNavigation(event.data, project?.id) : null;
       if (dock) navigation.openDock(dock);
     };
     window.addEventListener('message', onGuest);
     return () => window.removeEventListener('message', onGuest);
-  }, [pushSkin, appDisplay.src, navigation]);
+  }, [pushSkin, appDisplay.src, navigation, project?.id]);
 
   // URL-carried, so the choice survives a reload and the Back button — it used to
   // be component state and vanished on both.

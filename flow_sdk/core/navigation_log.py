@@ -79,6 +79,8 @@ def row_of(request: dict, outcome: Any, answer: Any) -> dict:
             **did,
             "reason": answer.reason,
             "latency_ms": round(answer.latency_ms, 1),
+            # How the model decided (``navigator.run``): its full request and response.
+            **({"run": answer.run.model_dump(mode="json", exclude_none=True)} if answer.run else {}),
             "logged_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         },
     }

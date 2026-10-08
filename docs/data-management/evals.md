@@ -20,8 +20,15 @@ names (`eval.py` by default). The eval is the dataset's own code; everything aro
 ```python
 async def evaluate_example(row) -> ExampleEval     # required: run the official inference on row.input, judge it
 def aggregate(results) -> dict[str, float]         # optional: the dataset's own metrics
-def versions() -> dict[str, str]                   # optional: what else decides the result (endpoint, map hash)
+def versions() -> dict[str, str | DataSpec]       # optional: what else decides the result (endpoint, map)
 ```
+
+A version that is a **value of a schema** (the navigator's `navigation.map`) is kept once in the
+dataset — `<dataset>/agentic-assets/value/<name>/value.json` plus its identity capsule
+(`flow_sdk.values.save_value`; a new folder only when the content changed) — and the run records
+its reference `navigation.map.id.<uuid>`, so every run names the exact version it used.
+`GET /api/v1/values/<ref>?within=dataset-<id>` reads it back, and a viewer given the reference
+draws the value it names.
 
 `verdict_of(prediction, row)` is the standard judgement: correct when the prediction matches any of
 the row's golds (`flow_sdk.datasets.score.matches` — a gold field left empty is free).

@@ -12,7 +12,6 @@ import { notify } from '@src/notifications';
  *
  * "Delivered to" switches the claim between this computer and a cloud placement of the agent that owns the
  * channel. The URL never changes and the vendor is not touched; the next message lands at the new place.
- * Flow's own channel is answered from Flow's box and only shown here, so it has no switch.
  */
 export function ChannelRouteControl({ source }: { source: DataSource }) {
   const { t } = useLingui();
@@ -34,10 +33,10 @@ export function ChannelRouteControl({ source }: { source: DataSource }) {
   const claim = route?.claim;
   if (!route || !claim) return null;
 
-  const move = async (place: string) => {
+  const act = async (run: () => Promise<unknown>) => {
     setMoving(true);
     try {
-      await source.setRoute(place);
+      await run();
       await load();
     } catch (e) {
       const said = (e as { response?: { data?: { message?: string } } })?.response?.data?.message;
@@ -48,32 +47,66 @@ export function ChannelRouteControl({ source }: { source: DataSource }) {
   };
 
   const last = claim.recent?.[0];
+  const also = route.also ?? [];
+  // A cloud placement it is not delivered to yet (this computer is switched with "Delivered to").
+  const addable = route.places.filter(
+    (p) => p.node_typeid && p.key !== route.current && !also.some((a) => a.key === p.key),
+  );
   return (
     <div className="flex flex-col gap-1.5 rounded border px-3 py-2 text-xs" data-testid={`channel-route-${source.id}`}>
       <div className="flex items-center gap-2">
         <span className="w-24 shrink-0 text-muted-foreground">
           <Trans>Delivered to</Trans>
         </span>
-        {route.current === 'flow' ? (
-          <span data-testid="channel-route-flow">
-            <Trans>Flow answers from its own box · shown here</Trans>
-          </span>
-        ) : (
-          <Select value={route.current || undefined} onValueChange={(place) => void move(place)} disabled={moving}>
-            <SelectTrigger className="h-7 w-64 text-xs" data-testid="channel-route-place">
-              <SelectValue placeholder={t`Somewhere else`} />
-            </SelectTrigger>
-            <SelectContent>
-              {route.places.map((place) => (
-                <SelectItem key={place.key} value={place.key} data-testid={`channel-route-place-${place.key}`}>
-                  {place.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        )}
+        <Select
+          value={route.current || undefined}
+          onValueChange={(place) => void act(() => source.setRoute(place))}
+          disabled={moving}
+        >
+          <SelectTrigger className="h-7 w-64 text-xs" data-testid="channel-route-place">
+            <SelectValue placeholder={t`Somewhere else`} />
+          </SelectTrigger>
+          <SelectContent>
+            {route.places.map((place) => (
+              <SelectItem key={place.key} value={place.key} data-testid={`channel-route-place-${place.key}`}>
+                {place.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
         {moving && <Loader2 className="size-3.5 animate-spin" />}
       </div>
+      {/* The same messages delivered to more places, each answering on its own (a claim per place). */}
+      {(also.length > 0 || addable.length > 0) && (
+        <div className="flex flex-wrap items-center gap-2" data-testid="channel-route-also">
+          <span className="w-24 shrink-0 text-muted-foreground">
+            <Trans>Also to</Trans>
+          </span>
+          {also.map((a) => (
+            <span
+              key={a.claim_id}
+              className="rounded bg-muted px-1.5 py-0.5"
+              data-testid={`channel-route-also-${a.key}`}
+            >
+              {a.label || t`another machine`}
+            </span>
+          ))}
+          {addable.length > 0 && (
+            <Select value="" onValueChange={(place) => void act(() => source.addRoute(place))} disabled={moving}>
+              <SelectTrigger className="h-7 w-48 text-xs" data-testid="channel-route-add">
+                <SelectValue placeholder={t`Also deliver to…`} />
+              </SelectTrigger>
+              <SelectContent>
+                {addable.map((place) => (
+                  <SelectItem key={place.key} value={place.key} data-testid={`channel-route-add-${place.key}`}>
+                    {place.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+        </div>
+      )}
       <div className="flex min-w-0 items-center gap-2">
         <span className="w-24 shrink-0 text-muted-foreground">
           <Trans>Webhook</Trans>

@@ -11,6 +11,6 @@ from .test_flow_telegram_source import ME, FlowTelegramSource, _Hub
 @contextmanager
 def case(monkeypatch, tmp_path):
     fake = _Hub()
-    fake.links["L1"] = {"id": "L1", "status": "connected", "code": "", "sender": ME}
+    fake.claims["C1"] = {"id": "C1", "status": "active", "code": "", "claim": {"kind": "user", "key": ME}, "sender": ME}
     monkeypatch.setattr(FlowTelegramSource, "build", classmethod(lambda cls, binding: cls(binding, hub=fake)))
-    yield {"config": {"link_id": "L1", "sender": ME}, "min_items": 0, "send": {"to": ME, "text": "matrix send"}}
+    yield {"config": {"claim_id": "C1", "sender": ME}, "min_items": 0, "send": {"to": ME, "text": "matrix send"}}

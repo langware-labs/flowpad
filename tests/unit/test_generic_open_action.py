@@ -240,10 +240,14 @@ async def test_a_hub_project_already_here_or_without_an_origin_is_not_offered(pr
     from flow_sdk.builtin.project import Project
 
     held, no_origin = str(uuid4()), str(uuid4())
-    await Project(id=held, name="mine", fs_storage_mount_path=str(tmp_path)).save(notify=False)
+    project = Project(id=held, name="mine", fs_storage_mount_path=str(tmp_path))
+    await project.save(notify=False)
     project_list_hub.extend([_hub_project(held), {"type": "project", "id": no_origin, "name": "bare"}])
 
-    assert await _new_cloud_projects() == []
+    try:
+        assert await _new_cloud_projects() == []
+    finally:
+        await project.delete()  # project names are unique, and the DB outlives this test
 
 
 @pytest.mark.asyncio
