@@ -301,8 +301,12 @@ class FSRecord(Generic[M]):
     def from_dict(cls, data: dict) -> "FSRecord":
         # Legacy on-disk shape from the deleted Record class wraps the record
         # payload under a top-level ``data`` key (alongside ``meta``).
-        # Unwrap so subsequent code sees a flat dict.
-        if isinstance(data, dict) and "data" in data and isinstance(data["data"], dict):
+        # Unwrap so subsequent code sees a flat dict. A FLAT record always names
+        # its ``type`` at the top; one whose entity has a ``data`` field of its
+        # own (a dataset's free section) is not wrapped -- unwrapping it read
+        # back an empty record, so project delete's destroy() was a silent no-op
+        # and every API-saved dataset outlived its project.
+        if isinstance(data, dict) and "type" not in data and isinstance(data.get("data"), dict):
             payload = dict(data["data"])
         else:
             payload = data

@@ -32,6 +32,11 @@ screens and the test loop with the user.
 with these items", label / annotate / training set → the **connect-data-source** skill
 (connect, then `define`), which owns the connect gates and how to present a source.
 
+**Typed data of the user's own** — a schema ("define a lead / ICP / product"), records
+kept as rows ("store my leads", "add / edit / delete rows"), an app's data layer over
+them, or moving `data_spec` folders to `data_schema` → the **data-management** skill,
+which proves every change in a throwaway probe project before it touches theirs.
+
 **Full web app / SaaS / dashboard / anything with a database or auth** → the
 **web-app-builder** skill (copy its template as-is, run its setup as-is). When the dev
 server is up: `flow show webapp --port <port>` — the port the dev server actually
