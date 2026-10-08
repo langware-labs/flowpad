@@ -31,7 +31,9 @@ A static Flowpad-SDK app imports `/sdk/flowpad-sdk.js`:
 | rename / delete | `ds.rename(key, newKey)` / `ds.deleteRow(key)` | `ds.rename_row` / `ds.delete_row` |
 
 A Python script outside the server calls `load_root(<project root>)` first
-(`references/shape-forms.md`), or every project kind is `Any`.
+(`references/shape-forms.md`), or every project kind is `Any`. It runs on Flowpad's
+interpreter, `$FLOWPAD_PYTHON` — a worker has it, and so does a trigger's `run_script`
+(with `FLOW_INSTANCE`) — never a bare `python3`, which has no `flow_sdk`.
 
 ## What broke a real app — and the call that replaces it
 
@@ -47,6 +49,7 @@ a workaround it shipped; never reproduce one:
 | read a link's target type out of a description ("… a gtm.ref to a gtm.icp row") with a regex | the target type is an `enum:` in the ref kind; read it from `kindForm` |
 | sliced `--gtm_studio--.` off kind names | keep kinds whole; compare full names |
 | scanned every dataset each load to find its own | find once by kind, keep the id |
+| a `python3` CRM-sync script wrote `input/<kind>.json` and `example.json` itself | `load_root` + `Dataset.at(folder)`, `check` then `put` / `delete_row`, on `$FLOWPAD_PYTHON` |
 | deleted a row only after checking every other row by hand | still the app's job (no reference integrity in the SDK) — but do it on `key`s from `rows()` |
 
 ## Still missing — say so in the app and to the user

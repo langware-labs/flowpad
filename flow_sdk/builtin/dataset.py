@@ -380,8 +380,8 @@ class Dataset(Entity):
         return None if row is None else row.model_dump(mode="json")
 
     def validate_rows(self) -> list[dict]:
-        """Every row read as the declared shape: ``[{example_id, error}]`` for the rows that do not
-        fit. Indexing reads rows as artifacts on purpose (fast, never fatal); this is the check."""
+        """Every row read as the declared shape: ``[{example_id, key, error}]`` for the rows that do
+        not fit. Indexing reads rows as artifacts on purpose (fast, never fatal); this is the check."""
         from flow_sdk.schema.data_spec.layout import (  # noqa: PLC0415
             FolderLayout,
             _example_dirs,
@@ -397,7 +397,8 @@ class Dataset(Entity):
             except ValidationError as exc:
                 first = exc.errors(include_url=False)[0]
                 where = ".".join(str(p) for p in first.get("loc", ()))
-                problems.append({"example_id": example_id(self.id, ex_dir.name), "error": f"{where}: {first.get('msg')}"})
+                problems.append({"example_id": example_id(self.id, ex_dir.name), "key": ex_dir.name,
+                                 "error": f"{where}: {first.get('msg')}"})
         return problems
 
     def read_rows(self) -> list:

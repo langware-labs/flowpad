@@ -196,3 +196,49 @@ async def test_a_row_kind_nobody_registered_is_named_not_read_as_any(tmp_path):
     assert d.spec == {"examples": [{"input": "--nobodyns--.crm.lead"}]}
     with pytest.raises(ValueError, match="names a kind nobody registered"):
         await d.put("dana", {"input": {"name": "Dana"}})
+
+
+class Note(DataSpec):
+    spec_kind: ClassVar[str] = "unittest.bykey.note"
+    text: str
+    owner: Optional[str] = None
+
+
+class Notes(DatasetSpec[ExampleSpec[Note, DataSpec, DataSpec]]):
+    spec_kind: ClassVar[str] = "unittest.bykey.notes"
+
+
+async def test_a_row_file_keeps_utf8_and_leaves_unset_optionals_out(tmp_path):
+    """Rows of a project under git: a save escaped "–" as ``\\u2013`` and wrote ``"owner": null`` for
+    every unset optional, so one edited field diffed as a dozen lines. Neither changes the value."""
+    from flow_sdk.builtin.dataset import Dataset
+
+    d = Dataset(id=DATASET_ID, name="notes", asset_ref=str(tmp_path), data_layout="io_folder",
+                spec="unittest.bykey.notes")
+    await d.put("n1", {"input": {"text": "20–500 engineers"}})
+    assert (tmp_path / "examples/n1/input/note.json").read_text(encoding="utf-8") == '{\n  "text": "20–500 engineers"\n}\n'
+    assert d.example("n1")["input"] == {"text": "20–500 engineers", "owner": None}
+
+
+def test_validate_names_the_row_by_its_key(tmp_path):
+    import json
+
+    d = _dataset(tmp_path)
+    (tmp_path / "examples/broken/input").mkdir(parents=True)
+    (tmp_path / "examples/broken/input/lead.json").write_text(json.dumps({"name": "B", "status": "maybe"}))
+    (problem,) = d.validate_rows()
+    assert problem["key"] == "broken" and problem["example_id"] == example_id(DATASET_ID, "broken")
+
+
+def test_a_kind_field_that_does_not_fit_reports_the_value_alone():
+    """A field shaped as a kind holds a value of it or a ``<kind>.id.<uuid>`` reference. A wrong
+    value used to report both branches -- the value's error under the class's internal name, plus
+    "Input should be a valid string" from the reference branch it was never meant for."""
+    Holder = DataSpec.parse({"lead": "unittest.bykey.lead"})
+    with pytest.raises(ValidationError) as exc:
+        Holder.model_validate({"lead": {"name": "Acme", "status": "maybe"}})
+    assert [(e["loc"], e["type"]) for e in exc.value.errors()] == [(("lead", "value", "status"), "literal_error")]
+    with pytest.raises(ValidationError) as exc:
+        Holder.model_validate({"lead": "acme"})
+    assert [e["loc"] for e in exc.value.errors()] == [("lead", "ref")]
+    assert Holder.model_validate({"lead": {"name": "Acme"}}).lead.name == "Acme"

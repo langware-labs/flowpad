@@ -204,8 +204,8 @@ export class Dataset extends APIEntity<Dataset> implements IDataset {
     return this.post('check-row', { row });
   }
 
-  /** Every row checked against the declared shape; `problems` names the rows that do not fit. */
-  async validate(): Promise<{ checked: number; problems: { example_id: string; error: string }[] }> {
+  /** Every row checked against the declared shape; `problems` names the rows that do not fit, by key. */
+  async validate(): Promise<{ checked: number; problems: { example_id: string; key: string; error: string }[] }> {
     return this.post('validate', {});
   }
 

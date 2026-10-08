@@ -103,7 +103,7 @@ def load_doc(path: Path) -> _Doc:
 
 
 def write_doc(path: Path, metadata: dict[str, Any], data: dict[str, Any]) -> None:
-    _write(path, json.dumps({"metadata": metadata, "data": data}, indent=2, default=str) + "\n")
+    _write(path, json.dumps({"metadata": metadata, "data": data}, indent=2, default=str, ensure_ascii=False) + "\n")
 
 
 def _write(path: Path, text: str) -> None:
@@ -799,7 +799,7 @@ class FolderLayout(DatasetLayout):
                 elif isinstance(payload, str):
                     _write(target, payload)
                 else:
-                    _write(target, json.dumps(payload, indent=2, default=str) + "\n")
+                    _write(target, json.dumps(payload, indent=2, default=str, ensure_ascii=False) + "\n")
             elif source is not None and (source / node.path).is_file():
                 shutil.copyfile(source / node.path, target)
             elif not target.exists():

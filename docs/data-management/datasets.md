@@ -406,7 +406,7 @@ chooses is `a-z 0-9 _ -`; `append` numbers rows that bring none (`0001`, `0002`,
 | `GET example/<key or id>` | one example's slot VALUES (an editor's read) |
 | `POST annotate {example_id, ground_truth}` | REPLACES the gold: a named output kind is written as its own document (`ground_truth/decision.json`; a list → `ground_truth-N/`), an inline shape as `ground_truth/label.json` |
 | `GET rows` | every example with its slot values, in one read (what the editor loads) |
-| `POST validate` | every row read as the declared schema; names each row that does not fit, with its slot (`ground_truth.route`) |
+| `POST validate` | every row read as the declared schema; names each row that does not fit by its `key` (and `example_id`), with its slot (`ground_truth.route`) |
 | `POST score` | each recorded `output` against its gold: a gold field left empty constrains nothing; several golds mean any one is right (`flow_sdk/datasets/score.py`) |
 
 Indexing still reads rows as artifacts (fast, never fatal); `validate` is the check. One value
