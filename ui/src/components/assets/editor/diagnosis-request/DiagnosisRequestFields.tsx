@@ -25,6 +25,7 @@ import {
   type Budget,
 } from './DiagnosisRequestCreateDialog';
 import { editRequest, errorText, formatWhen, type EditRequestBody } from './diagnosis-request-api';
+import { ErrorLine } from './ErrorLine';
 
 const MB = 1024 * 1024;
 
@@ -59,9 +60,6 @@ function Row({ label, htmlFor, children }: { label: ReactNode; htmlFor?: string;
   );
 }
 
-function ErrorLine({ error }: { error: string | null }) {
-  return error ? <p className="text-xs text-destructive">{error}</p> : null;
-}
 
 /** What their agent is asked to do. Save appears once the text differs from the request's. */
 export function InstructionsField({ request }: { request: DiagnosisRequest }) {
@@ -113,7 +111,11 @@ export function LimitsFields({ request }: { request: DiagnosisRequest }) {
     <>
       <Row label={t`Accepts runs until`} htmlFor="diagnosis-request-write-hours">
         <div className="flex items-center gap-2">
-          <span className={cn(closed && 'text-destructive')}>{closed ? t`${until} (closed)` : until}</span>
+          {closed ? (
+            <span className="rounded-sm border border-red-500/50 bg-red-500/15 px-1.5 text-foreground">{t`${until} (closed)`}</span>
+          ) : (
+            <span>{until}</span>
+          )}
           <div className="w-56">
             <HoursSelect
               id="diagnosis-request-write-hours"

@@ -326,6 +326,14 @@ the output — never jump straight from symptom to guess:
    run the commands — don't just recommend them. If the fix is the user's to make (re-install,
    re-sign, cloud/account actions) or is risky/destructive, do NOT attempt it — describe exactly
    what the user should do (Step 5).
+   **What you may change is Flowpad's own runtime state only** — the instance's `server.lock` /
+   `server.pid` / `server.json`, its processes and ports, its install. **Never delete, rewrite or
+   "correct" a config or data file** (`config.json`, `preferences.json`, the database) **or any file
+   outside that state** — the user's files, a project's files, a file a supporter's step or skill
+   names: report what is wrong with it and what should change (Step 5). A file a step or skill says
+   not to change is never changed, whatever you find. And a log line is evidence that an error
+   happened then, not that a file is broken now: before calling a file the cause, show the CURRENT
+   file and code reproduce the error (e.g. the key really is read and really is missing).
 4. **Validate.** Re-run the exact check that exposed the problem and show it now passes (e.g.
    `curl -fsS …/health/status` → `{"data":true}`, the port is free, the stale file is gone).
 
