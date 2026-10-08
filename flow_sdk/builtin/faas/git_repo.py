@@ -289,14 +289,62 @@ class GitRepo:
     async def _line_counts(self) -> dict[str, tuple[int | None, int | None]]:
         """Per-path ``(insertions, deletions)`` for the whole worktree against HEAD.
 
-        Untracked files are counted too, which a plain ``git diff --numstat``
-        cannot do — and they are usually the bulk of a change, so leaving them
-        out makes an "added lines" total read near zero for a branch of new
-        files. A THROWAWAY index makes them visible: HEAD is read into it, every
-        path is marked intent-to-add there, and the worktree is diffed against
-        it, so a new file shows up as an addition of its own lines. ``-N``
-        records no blob, so nothing lands in the object store, and the
-        repository's real index is never touched.
+        Two halves, so the cost tracks the CHANGE, not the size of the repo:
+
+        * Tracked paths diff against HEAD through the repository's real index,
+          read-only — its stat cache lets git skip every unchanged file.
+        * Untracked files are counted too, which a plain ``git diff --numstat``
+          cannot do — and they are usually the bulk of a change, so leaving
+          them out makes an "added lines" total read near zero for a branch of
+          new files. A THROWAWAY index holding only them, marked intent-to-add,
+          makes each one an addition of its own lines. ``-N`` records no blob,
+          so nothing lands in the object store.
+
+        The throwaway index is never seeded from HEAD: an index built by
+        ``read-tree`` carries no stat data, so diffing through it re-hashes
+        every tracked file — seconds per call on a large repo, and the Git
+        panel asks every few seconds.
+        """
+        if not (await self._git("rev-parse", "--verify", "-q", "HEAD")).ok:
+            return await self._unborn_line_counts()
+        tracked = await self._git("diff", "--numstat", "HEAD")
+        counts = _parse_numstat(tracked.stdout) if tracked.ok else {}
+        counts.update(await self._untracked_line_counts())
+        return counts
+
+    async def _untracked_line_counts(self) -> dict[str, tuple[int | None, int | None]]:
+        """``(insertions, 0)`` per untracked, non-ignored file."""
+        listed = await self._git("ls-files", "--others", "--exclude-standard", "-z")
+        if not listed.ok or not listed.stdout.strip("\0"):
+            return {}
+        found = await self._git("rev-parse", "--absolute-git-dir")
+        git_dir = found.stdout.strip()
+        if not found.ok or not git_dir:
+            return {}
+        scratch = f"{git_dir.rstrip('/')}/flowpad-status-{uuid4().hex}"
+        index_path, pathspec_path = f"{scratch}.index", f"{scratch}.paths"
+        # The paths travel in a file, not on the command line: a worktree of new
+        # files would overrun cmd.exe's 8191-char limit. Literal, so a file named
+        # ``*.md`` names itself and not every markdown file.
+        env = {"GIT_INDEX_FILE": index_path, "GIT_LITERAL_PATHSPECS": "1"}
+        try:
+            await self._folder.executor.write_bytes(pathspec_path, listed.stdout.encode())
+            await self._git("add", "-N", f"--pathspec-from-file={pathspec_path}", "--pathspec-file-nul", env=env)
+            counted = await self._git("diff", "--numstat", env=env)
+            return _parse_numstat(counted.stdout) if counted.ok else {}
+        finally:
+            for path in (index_path, pathspec_path):
+                try:
+                    await self._folder.executor.remove(path)
+                except Exception:
+                    logger.debug("could not remove temporary git file %s", path, exc_info=True)
+
+    async def _unborn_line_counts(self) -> dict[str, tuple[int | None, int | None]]:
+        """A repo with no commits: every path, staged or not, is an addition.
+
+        Counted through a throwaway index of the whole worktree — there is no
+        HEAD to diff tracked paths against, and nothing yet committed to cost
+        a re-hash of.
         """
         found = await self._git("rev-parse", "--absolute-git-dir")
         git_dir = found.stdout.strip()
@@ -305,17 +353,8 @@ class GitRepo:
         index_path = f"{git_dir.rstrip('/')}/flowpad-status-index-{uuid4().hex}"
         env = {"GIT_INDEX_FILE": index_path}
         try:
-            # read-tree HEAD fails in a repo with no commits — there every
-            # tracked path is new, which is exactly what an empty index says.
-            has_head = (await self._git("read-tree", "HEAD", env=env)).ok
-            if not has_head:
-                await self._git("read-tree", "--empty", env=env)
             await self._git("add", "-A", "-N", env=env)
-            # Against HEAD, not against the throwaway index: ``add -A`` really
-            # does record a deletion there, so a worktree-vs-index diff would
-            # count a deleted file as no change at all.
-            args = ("diff", "--numstat", "HEAD") if has_head else ("diff", "--numstat")
-            counted = await self._git(*args, env=env)
+            counted = await self._git("diff", "--numstat", env=env)
             return _parse_numstat(counted.stdout) if counted.ok else {}
         finally:
             try:
@@ -440,8 +479,8 @@ class GitRepo:
         """Return a rich git-status object.
 
         ``line_counts`` fills each file's ``insertions``/``deletions``. It is
-        opt-in because it costs four more git spawns plus a throwaway index
-        over the whole worktree, and only the Git panel shows the counts —
+        opt-in because it costs three to six more git spawns (see
+        ``_line_counts``), and only the Git panel shows the counts —
         the footer pill and other status readers need just the file list.
 
         Schema::
