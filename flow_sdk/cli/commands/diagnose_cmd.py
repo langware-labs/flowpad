@@ -314,6 +314,35 @@ async def _record_runner_fields(diag, merged, message: str, project_id: str | No
     diag.diagnosis = merged
 
 
+async def _record_sweep(sweep, message: str, project_id: str | None) -> str | None:
+    """The agent recorded nothing (no LLM it could use, a worker that died): record what the checks
+    found, so every run leaves a diagnosis -- the Feed card, the diagnoses table, a supporter's run.
+    Returns its id, or ``None`` if even that could not be saved."""
+    try:
+        from flow_sdk.builtin.flowpad_diagnosis import FlowpadDiagnosis  # noqa: PLC0415
+
+        env = sweep.environment
+        title = sweep.title or "Flowpad checks"
+        diag = FlowpadDiagnosis(
+            name=title,
+            title=title,
+            summary=sweep.summary or None,
+            symptoms=sweep.symptoms or None,
+            rca=sweep.rca or None,
+            fix=sweep.fix or None,
+            reported_by=env.reported_by or "unknown",
+            occurred_at=env.occurred_at or None,
+            os=env.os or None,
+            app_version=env.app_version or None,
+        )
+        await _record_runner_fields(diag, sweep, message, project_id)
+        diag = await diag.save()
+        return diag.id
+    except Exception:  # noqa: BLE001 -- the run still reports the checks on screen
+        logging.getLogger(__name__).warning("[diagnose] recording the checks failed", exc_info=True)
+        return None
+
+
 async def _stop_worker(ap) -> None:
     """End the diagnose process's worker, whichever transport ran it.
 
@@ -540,7 +569,6 @@ async def _run_diagnose(
         taken = await ap.send_turn(text)
         if not taken.ok:
             emit({"type": "error", "text": f"  ! The diagnostic agent did not take the prompt: {taken.detail}"})
-            done(False, sweep)
             return False
         if started:
             return True
@@ -557,7 +585,6 @@ async def _run_diagnose(
                     ),
                 }
             )
-            done(False, sweep)
             return False
         return True
 
@@ -577,6 +604,25 @@ async def _run_diagnose(
             }
         )
 
+    async def _answer_with_sweep() -> int:
+        """The agent recorded nothing (it never started, dropped the prompt, or stopped short):
+        record what the checks found, so the run still leaves a diagnosis. 0 when it did -- a
+        supporter's request is then sent the checks (``_run_request``); ``done`` says ``ok: False``."""
+        did = await _record_sweep(sweep, message, project_id)
+        if did is None:
+            emit(
+                {
+                    "type": "error",
+                    "text": "  ! Not even the checks could be recorded — see the report above; re-run `flow diagnose`.",
+                }
+            )
+            done(False, sweep)
+            return 1
+        feed_entry_id = await _post_home_feed_entry(summary=sweep.summary or sweep.title or "", diagnosis_id=did)
+        emit({"type": "status", "text": "  ! The agent could not finish. Recorded what the checks found instead."})
+        done(False, sweep, diagnosis_id=did, feed_entry_id=feed_entry_id)
+        return 0
+
     try:
         try:
             for n, step in enumerate(steps, 1):
@@ -586,10 +632,10 @@ async def _run_diagnose(
                 out_dir = step_output_dir or Path.cwd()
                 prompt = _STEP_PROMPT.format(n=n, step=step, out=out_dir / f"step-{n}.txt", context=step_context)
                 if not await _start_turn(prompt):
-                    return 1
+                    return await _answer_with_sweep()
                 await _stream()
             if not await _start_turn(prompt_text):
-                return 1
+                return await _answer_with_sweep()
             await _stream()
             # The worker can end its turn early — diagnosing but not recording. Nudge
             # the SAME session once to finish, then re-check.
@@ -657,17 +703,7 @@ async def _run_diagnose(
                 feed_entry_id=feed_entry_id,
             )
             return 0
-        emit(
-            {
-                "type": "error",
-                "text": (
-                    "  ! Diagnostic finished but the result was not recorded — see the report "
-                    "above; re-run `flow diagnose` to retry."
-                ),
-            }
-        )
-        done(False, sweep)
-        return 1
+        return await _answer_with_sweep()
     finally:
         await _terminate_worker()
 
