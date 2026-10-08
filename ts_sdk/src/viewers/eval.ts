@@ -153,15 +153,21 @@ const runCollection: CollectionViewer = {
     const runs = req.items as EvalRun[];
     el.replaceChildren();
     const keys = [...new Set(runs.flatMap((r) => Object.keys(r.metrics)))];
-    const table = h('table', { class: 'dv-table' }, h('tr', {}, ...['run', 'eval', 'started', 'examples', 'verdicts', ...keys].map((k) => th(ctx, k, meta))));
+    const table = h('table', { class: 'dv-table' }, h('tr', {}, ...['run', 'eval', 'set', 'code', 'started', 'examples', 'verdicts', ...keys].map((k) => th(ctx, k, meta))));
     for (const [i, r] of runs.entries())
       table.append(
         h('tr', { class: `dv-pick${req.selected === i ? ' dv-on' : ''}`, onclick: () => req.on?.('select', i) },
-          h('td', { class: 'dv-mono' }, r.run_id), h('td', {}, r.eval_name), h('td', { class: 'ev-small' }, r.started_at.replace('T', ' ').slice(0, 19)),
+          h('td', { class: 'dv-mono' }, r.run_id), h('td', {}, r.eval_name),
+          // Which examples (dev `eval` / held-out `test`) and which code: runs compare only within one.
+          h('td', { class: 'ev-small' }, (r.kinds ?? []).join(', ') || '—'),
+          h('td', { class: 'dv-mono ev-small', title: Object.entries(r.versions ?? {}).map(([k, v]) => `${k} ${v}`).join('\n') },
+            // A word (a code hash, a mode) inline; a value ref or a name with spaces in the tooltip.
+            Object.values(r.versions ?? {}).filter((v) => !/\s|\.id\./.test(v)).join(' · ') || '—'),
+          h('td', { class: 'ev-small' }, r.started_at.replace('T', ' ').slice(0, 19)),
           h('td', { class: 'ev-n' }, String(r.examples)), h('td', {}, verdictBar(ctx, r.counts, r.examples)),
           ...keys.map((k) => h('td', { class: 'ev-n' }, formatMetric(r.metrics[k], counts.has(k))))),
       );
-    if (!runs.length) table.append(h('tr', {}, h('td', { colspan: 5 + keys.length, class: 'dv-muted' }, 'No eval has run on this dataset yet.')));
+    if (!runs.length) table.append(h('tr', {}, h('td', { colspan: 7 + keys.length, class: 'dv-muted' }, 'No eval has run on this dataset yet.')));
     el.append(h('div', { class: 'dv-scroll' }, table));
     return {};
   },

@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, ClassVar, FrozenSet, List, NamedTuple, Optiona
 from pydantic import computed_field, model_validator
 
 from flow_sdk._compat import StrEnum  # 3.10-safe StrEnum (project pins py3.10)
-from flow_sdk.api.api_types.api_field import APIField, Sharing
+from flow_sdk.api.api_types.api_field import APIField, Persist, Sharing
 from flow_sdk.builtin.conversation_channel import HOME_CHANNEL, channel_spec
 from flow_sdk.builtin.user import normalize_email, recipient_user_id
 from flow_sdk.core import Entity
@@ -180,7 +180,9 @@ class Conversation(ProjectedFields, Entity):
     """
 
     type: str = APIField(default="conversation")
-    title: Optional[str] = APIField(default=None)
+    # Persisted to the record: it is what the conversation is found by (the record's own ``name``
+    # is a generated ``conversation-<id>``, and search reads the record's title).
+    title: Optional[str] = APIField(default=None, persist=Persist.TRUE)
     # Conversation interpretation. ``direct`` (default) is a normal 1:1/group
     # conversation; ``helpdesk`` marks a support ticket whose responder
     # identity is masked behind ``Project.helpdesk.display_name``. Stamped by
