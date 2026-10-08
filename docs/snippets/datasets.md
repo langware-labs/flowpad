@@ -136,3 +136,26 @@ write_instance_pref(PREF_SMART_NAVIGATION_LOG, False)
 
 In the dataset editor the same review is one click: **Correct** labels a row with what the run
 did, and the **needs label** filter lists what is left.
+
+## 7. Keep records by key
+
+A row's **key** is its example folder's name. Give one on `append`, then address the row by it —
+never re-compute an example id: it is derived from the key, so `read_rows()` hands both back.
+
+```python
+from flow_sdk.builtin.dataset import Dataset
+
+mine = Dataset.at(folder)
+await mine.append([{"key": "open-sources", "input": {"utterance": "open data sources"}}])
+await mine.put("open-sources", {"input": {"utterance": "open my data sources"}})  # replace; gold kept
+problems = mine.check({"input": {"utterance": 7}})        # what is wrong -- nothing is written
+new_id = mine.rename_row("open-sources", "sources")       # the id follows the key
+keys = [row.key for row in mine.read_rows()]              # ['sources']
+mine.delete_row("sources")
+```
+
+`put` creates or replaces one row and checks it first; slots it leaves out (gold, output, context)
+and the row's metadata are kept. Over HTTP: `POST dataset/<id>/put-row {key, row}`,
+`POST delete-row {key}`, `POST rename-row {key, new_key}`, `POST check-row {row}`; one value
+against a kind, outside any dataset: `POST /api/v1/kinds/<kind>/check {value}` (an unknown kind is a
+404, never "fits"). TypeScript: `dataset.put / deleteRow / rename / check` and `checkKind(kind, value)`.

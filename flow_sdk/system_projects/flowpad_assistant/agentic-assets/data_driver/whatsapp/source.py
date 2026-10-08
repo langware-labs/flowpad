@@ -51,6 +51,7 @@ from flow_sdk.sources.errors import (
     SourceError,
     SourceUnavailable,
     Unsupported,
+    is_transient,
 )
 from flow_sdk.sources.families import MessageSource
 from flow_sdk.sources.files import FileSupport, check_files, read_file
@@ -361,6 +362,8 @@ class WhatsAppSource(MessageSource):
                 "create a System User token for one that does not.",
             )
         except SourceError as exc:
+            if is_transient(exc):
+                raise  # the provider did not answer: that says nothing about the setup
             return Verdict(ready=False, detail=f"Meta refused the request: {exc}")
         return Verdict(ready=True, detail=f"Sending as {number or self.phone_number_id}. Point Meta's webhook at this instance.")
 

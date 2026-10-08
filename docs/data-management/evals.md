@@ -52,11 +52,13 @@ or `await flow_sdk.evals.run(dataset, out_dir=...)`. The runner:
 ## The SmartNavigator eval
 
 `flowpad_assistant/agentic-assets/eval/navigator/` runs each example through the public
-`flow_sdk.navigation.decide` on the example's own recorded `here` and search candidates. It counts
-an answer **correct only if it also opens** — a right target nothing can address is handed to the
-assistant in the app, so it is wrong here too (`labels.opens`). Metrics: precision, coverage,
-agentic recall, confident-wrong, and `feasible_accuracy` (over examples whose right answer the
-current architecture can express — `labels.feasible`; an `action` target cannot).
+`flow_sdk.navigation.decide` on the example's own recorded `here` and search candidates. A target
+is right when it is a gold or opens the same address as one (`flow_sdk.navigation.address_of`: a
+session as an entity and as its screen), and it counts as **correct only if it also opens** — a
+right target nothing can address is handed to the assistant in the app, so it is wrong here too
+(`labels.opens`). Metrics: precision, coverage, agentic recall, confident-wrong, and
+`feasible_accuracy` (over examples one step can answer — a right answer was among the options
+offered, or a rule names it; `labels.feasible`).
 
 Its dataset holds two suites: `benchmark` (the 52 original cases) and `ux-surface` (the 200
 sentences of `docs/navigation/navigation-sentences.md`, imported by

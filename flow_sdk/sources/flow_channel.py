@@ -30,6 +30,7 @@ from flow_sdk.sources.binding import SourceBinding
 from flow_sdk.sources.config import SourceConfig
 from flow_sdk.sources.errors import NotFound, OutcomeUnknown, Rejected, SourceUnavailable, Unsupported
 from flow_sdk.sources.families import MessageSource
+from flow_sdk.sources.protocols import Verdict
 from flow_sdk.sources.setup_steps import ReturnedValue, SetupShown, SourceUpdateSpec, setup_step
 from flow_sdk.sources.values.event import DataSourceEvent, EventKind
 from flow_sdk.sources.values.items import MessageData, MessageItem, UserProfile
@@ -63,9 +64,24 @@ class AppHub:
         return dict(await hub_post(CLAIM_ENTITY, body, None, "chain") or {})
 
     async def claim(self, claim_id: str) -> Optional[dict]:
-        from flow_sdk.cloud_client.transport.hub_http import hub_get  # noqa: PLC0415
+        """The claim as the hub has it; ``None`` when the hub says it is gone (404) or not ours (403). Any other answer
+        goes through the one status table; no answer at all is ``SourceUnavailable`` — not knowing is not "not
+        connected"."""
+        from flow_sdk.cloud_client.shared.errors import HubError  # noqa: PLC0415
+        from flow_sdk.cloud_client.transport.hub_http import hub_get_or_raise  # noqa: PLC0415
+        from flow_sdk.schema.data_spec.hub_failure_spec import HubFailureKind  # noqa: PLC0415
+        from flow_sdk.sources.http import error_for_status  # noqa: PLC0415
 
-        found = await hub_get(CLAIM_ENTITY, claim_id, "view")
+        try:
+            found = await hub_get_or_raise(CLAIM_ENTITY, claim_id, "view")
+        except HubError as exc:
+            if exc.status_code in (403, 404):
+                return None
+            if exc.status_code:
+                raise error_for_status(exc.status_code, exc.reason) from exc
+            if exc.kind is HubFailureKind.NOT_CONFIGURED:
+                raise Rejected("no hub is configured for this machine") from exc
+            raise SourceUnavailable(f"the hub did not answer: {exc.reason}") from exc
         return dict(found) if isinstance(found, dict) else None
 
     async def reply(self, claim_id: str, text: str, event_id: str) -> dict:
@@ -213,6 +229,12 @@ class FlowChannel(MessageSource):
             f"Connected {shown}",
             value=SourceUpdateSpec(config={self.identity_config_key: sender}, allowed_senders=[sender]),
         )
+
+    async def verify(self) -> Verdict:
+        """Connected NOW: the hub holds this source's claim, active, for its linked sender (the ``connected`` gate,
+        asked). What every view reads, kept fresh by the poll."""
+        answer = await self._connected(check=True, values={})
+        return Verdict(ready=answer.ok, detail=answer.detail)
 
     def _shown(self, claim: dict) -> SetupShown:
         url = str(claim.get("deep_link") or "")

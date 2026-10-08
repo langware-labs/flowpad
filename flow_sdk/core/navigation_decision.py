@@ -26,15 +26,16 @@ from __future__ import annotations
 import logging
 from typing import Any, Optional
 
-from flow_sdk.core.dock_address import VIEW_META, parse_dock_url, parse_view_type
+from flow_sdk.core.dock_address import VIEW_META, ViewType, dock_url, parse_dock_url, parse_view_type
 from flow_sdk.core.navigation import kind
 from flow_sdk.schema.data_spec.dock_pointer_spec import DockPointerSpec
 from flow_sdk.schema.data_spec.navigator_spec import NavigationTarget, NavigatorRoute
 
 logger = logging.getLogger(__name__)
 
-#: Targets the UI turns into a dock itself (``dockForTarget``): navigated, never a prompt.
-UI_BUILT = ("file", "url", "webapp")
+#: Targets the UI carries out itself: a file, URL or web-app port it turns into a dock
+#: (``dockForTarget``), an action it runs (``runUiAction``) -- handled, never a prompt.
+UI_BUILT = ("file", "url", "webapp", "action")
 
 
 def decision_of(answer: NavigatorRoute) -> dict[str, Any]:
@@ -61,7 +62,28 @@ def address_of(target: NavigationTarget) -> Optional[str]:
         view = parse_view_type(type_name)
         if view is not None and VIEW_META[view].addressable and VIEW_META[view].pointer.value != "none":
             return f"/dock/{view.value}/{ident}"
+        # The screen that is its own page (a data source's page, a trigger in Automations).
+        from flow_sdk.core.navigation import forms_for, open_form, place_address  # noqa: PLC0415
+
+        for place, form, what in forms_for(type_name):
+            if what == "page" and (pointer := open_form(form, {"typeid": target.value})) is not None:
+                return f"/dock/{place_address(place, pointer)}"
     return None
+
+
+async def entity_app_address(typeid: str) -> Optional[str]:
+    """The editor app an entity opens in when nothing else addresses it (a dataset in the
+    dataset editor): the best one ``editors_for`` ranks, opened on the entity."""
+    from flow_sdk.builtin.faas.editors import editors_for  # noqa: PLC0415
+    from flow_sdk.core.entity.entity_model import Entity  # noqa: PLC0415
+
+    try:
+        subject = await Entity.get_by_typeid(typeid)
+        apps = await editors_for(subject) if subject is not None else []
+    except Exception as exc:  # noqa: BLE001 -- an address is a nicety; without one it is the prompt
+        logger.debug("no editor app for %s: %s", typeid, exc)
+        return None
+    return dock_url(ViewType.APP, str(apps[0]["typeid"]), {"subject": typeid}) if apps else None
 
 
 def _dock(address: str) -> Optional[DockPointerSpec]:
@@ -104,6 +126,8 @@ async def decide_run(
         address = await log_address()
     else:
         address = address_of(target) if target is not None else None
+        if address is None and target is not None and target.kind == "entity":
+            address = await entity_app_address(target.value)
     if address:
         outcome["address"] = address
         outcome["dock"] = _dock(address)
@@ -113,4 +137,4 @@ async def decide_run(
     return out, answer
 
 
-__all__ = ["UI_BUILT", "address_of", "decide", "decide_run", "decision_of"]
+__all__ = ["UI_BUILT", "address_of", "decide", "decide_run", "decision_of", "entity_app_address"]

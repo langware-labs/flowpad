@@ -51,13 +51,13 @@ def check_backend(settings) -> list[DiagnosisFinding]:
 
 def check_lock(settings) -> list[DiagnosisFinding]:
     from flow_sdk.pid_probe import pid_is_alive
-    from flow_sdk.singleton_lock import read_pid
+    from flow_sdk.singleton_lock import is_held, read_pid
 
     progress("checking the server lock")
-    if not settings.server_lock_path.exists():
-        return []
     pid = read_pid(settings.server_pid_path)
-    if pid is None or pid_is_alive(pid):
+    # A stop or a crash leaves server.lock and server.pid behind, harmless by contract
+    # (``singleton_lock.release``): only a lock still HELD for a process that is gone blocks a start.
+    if pid is None or pid_is_alive(pid) or not is_held(settings.server_lock_path):
         return []
     return [
         DiagnosisFinding(

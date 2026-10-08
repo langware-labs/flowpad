@@ -58,7 +58,7 @@ async def test_the_steps_run_before_the_diagnosis_whichever_way_they_were_approv
         return 1  # stop before the result is loaded -- the order is what is under test
 
     monkeypatch.setattr("flow_sdk.cloud_client.transport.hub_http.hub_anonymous_request", hub)
-    monkeypatch.setattr(diagnose_cmd, "_ask", lambda q: next(answers))
+    monkeypatch.setattr(diagnose_cmd, "_ask", lambda q, **_: next(answers))
     monkeypatch.setattr(diagnose_cmd, "_run_diagnose", run_diagnose)
 
     await diagnose_cmd._run_request("e474595b-470a-4682-adaa-8bcfe8907038", 1.0)
@@ -82,3 +82,14 @@ async def test_stopping_the_diagnose_worker_ends_its_headless_turn():
     await _stop_worker(ap)
 
     assert turn.done(), "the run must not end with its agent's turn still running"
+
+
+def test_a_request_run_is_told_what_was_sent_is_not_a_licence_to_change_files(tmp_path):
+    """On the VM the agent copied a supporter's reference file over the user's own config, against
+    the sent skill's own "Do not change the file"."""
+    from flow_sdk.cli.commands.diagnose_cmd import _request_context
+
+    text = _request_context(tmp_path / "to-send", [{"path": str(tmp_path / "ref.txt")}])
+
+    assert "never edit or delete a file outside Flowpad's own runtime state" in text
+    assert "say to leave alone" in text

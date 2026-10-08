@@ -75,7 +75,10 @@ a primitive (`"string"`, `"int"`, `"float"`, `"bool"`, `"binary"`) or the name o
 registered kind, an object `{field: shape}`, or a list `[shape]`. You can also write
 three extras: `"?shape"` (the value may be missing), `"enum:a|b"` (one of these strings)
 and `{"*": shape}` (a map from any key to that shape). What the caller passes and what
-the agent writes back are values of that schema.
+the agent writes back are values of that schema. The full grammar, kind names and
+namespaces, and how to check a value: the **data-management** skill's
+`references/shape-forms.md`. A reusable shape (one several agents share) is a kind of its
+own, defined with that skill's `schema` mode and named here.
 
 ```json
 {

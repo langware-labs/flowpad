@@ -46,7 +46,8 @@ class RecordSource(Source):
 class MessageSource(RecordSource):
     family: ClassVar[Family] = Family.MESSAGE
 
-    #: Strangers are the point of this channel (a help desk): an empty allowlist admits everyone.
+    #: An empty allowlist admits everyone: strangers are the point of this channel (a help desk), or something
+    #: upstream already admits only who may write (a hub claim's proven sender).
     open_inbound: ClassVar[bool] = False
     #: A send comes back as a record of its own (the provider echoes it); ``False`` when what ``send``
     #: returns is the only copy (speech, a local reply).

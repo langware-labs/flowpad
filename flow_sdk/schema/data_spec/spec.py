@@ -41,7 +41,7 @@ from enum import Enum
 from pathlib import PurePath
 from typing import Annotated, Any, ClassVar, Literal, Optional, Union, get_args, get_origin
 
-from pydantic import BaseModel, BeforeValidator, ConfigDict, PlainSerializer, create_model, model_validator
+from pydantic import BaseModel, BeforeValidator, ConfigDict, Discriminator, PlainSerializer, Tag, create_model, model_validator
 
 from flow_sdk.schema.data_spec._namespace import current as current_ns
 from flow_sdk.schema.data_spec._namespace import qualified
@@ -207,15 +207,26 @@ def _field_def(form: Any) -> tuple:
 
     A field whose shape is a registered kind holds a value of it -- or a REFERENCE to one stored
     value, ``<kind>.id.<uuid>`` (``value_ref``): a row points at a shared value instead of copying
-    it. A slot or a list element is not a field, so it stays the schema itself."""
+    it. A slot or a list element is not a field, so it stays the schema itself.
+
+    Which of the two is decided by the input (a string is a reference), so a value that does not fit
+    reports the value's errors alone -- ``icp.value.type: Input should be 'gtm.icp'`` -- not those
+    plus "Input should be a valid string" from the branch it was never meant for."""
     optional = isinstance(form, str) and form.startswith(OPTIONAL_MARK)
     inner = form[len(OPTIONAL_MARK):] if optional else form
     annotation = _compile(inner)
     if isinstance(inner, str) and isinstance(annotation, type) and issubclass(annotation, DataSpec):
         from flow_sdk.schema.data_spec.value_ref import value_ref  # noqa: PLC0415
 
-        annotation = Union[annotation, value_ref(inner)]  # type: ignore[assignment]
+        annotation = Annotated[  # type: ignore[assignment]
+            Union[Annotated[annotation, Tag("value")], Annotated[value_ref(inner), Tag("ref")]],
+            Discriminator(_value_or_ref),
+        ]
     return (Optional[annotation], None) if optional else (annotation, ...)
+
+
+def _value_or_ref(held: Any) -> str:
+    return "ref" if isinstance(held, str) else "value"
 
 
 def _compile(form: Any) -> type:

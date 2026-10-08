@@ -23,6 +23,7 @@ import { ShareEndpointDialog } from './ShareEndpointDialog';
 import { LlmEndpointsList } from './LlmEndpointsList';
 import { openLlmEndpoint, parseLlmEndpointsPointer, type LlmEndpointTab } from './llm-endpoints-pointer';
 import { useLlmEndpoints } from './use-llm-endpoints';
+import { useUiActionRequest } from '@src/navigation/ui-actions';
 
 export function LlmEndpointsView({ pointer }: { pointer?: string }) {
   const { t } = useLingui();
@@ -50,6 +51,8 @@ export function LlmEndpointsView({ pointer }: { pointer?: string }) {
     setEditingKind(null);
     setEditorOpen(true);
   }, []);
+  // "new LLM endpoint" (smart navigation): the same editor the Add button opens.
+  useUiActionRequest(['new-endpoint-dialog-hub'], openAdd);
   const openEdit = useCallback((e: LLMEndpoint, kind?: LLMEndpointKind | null) => {
     setEditing(e);
     setEditingKind(kind ?? null);

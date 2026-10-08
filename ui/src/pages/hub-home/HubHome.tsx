@@ -49,6 +49,7 @@ import { Trans, useLingui } from '@lingui/react/macro';
 import { consumeInboundParams } from '@src/navigation/inbound-link';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { isSignedInAsMe } from './signed-in-as-me';
+import { useUiActionRequest } from '@src/navigation/ui-actions';
 
 // Live sandbox status styling, keyed off the backend `ExecutionEnvironmentStatus`
 // (`ops/status`). `card` tints the whole sandbox block so status reads at a glance.
@@ -325,6 +326,10 @@ export function HubHome() {
   }, [pendingInviteCount, refetch]);
   // `flow connect` device-code approval: null = closed, '' = open blank, 'XXXX-XXXX' = prefilled.
   const [addMachineCode, setAddMachineCode] = useState<string | null>(null);
+  // "create a sandbox" / "add a machine" (smart navigation): the same dialogs the buttons open.
+  useUiActionRequest(['new-sandbox-hub', 'add-machine-hub'], (id) =>
+    id === 'new-sandbox-hub' ? setNewSandbox({}) : setAddMachineCode(''),
+  );
   useEffect(() => {
     // Read-and-scrub in one call, so a refresh cannot re-open the dialog.
     const { setup_git: gitUrl, connect_code: connectCode } = consumeInboundParams(['setup_git', 'connect_code']);

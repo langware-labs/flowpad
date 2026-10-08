@@ -34,6 +34,10 @@
     "last_shown": {
       "shape": "?navigation.shown",
       "description": "What the session showed last -- what 'it' / 'again' refer to."
+    },
+    "recent": {
+      "shape": "?navigation.ref",
+      "description": "The project's most recently used session -- what \"resume my last chat\" opens."
     }
   }
 }

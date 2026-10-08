@@ -13,15 +13,17 @@ interface AccountInfoProps {
   /** Called when a button takes the user somewhere: the dialog closes, or it would stay on top of
    *  the page it opened -- and opening the page already on screen would look like nothing happened. */
   onNavigate?: () => void;
+  /** The tab to open on (``database``, ``secrets``); the organization tab when absent. */
+  tab?: string;
 }
 
-export function AccountInfo({ user, onNavigate }: AccountInfoProps) {
+export function AccountInfo({ user, onNavigate, tab }: AccountInfoProps) {
   // Was `desktop_info != null` — a third spelling of "an app server answered",
   // which is what `isDesktop` means. One predicate, one source (runtime.kind).
   const isDesktop = dataContext.isDesktop;
 
   return (
-    <Tabs defaultValue="organization" className="flex min-h-0 flex-1 flex-col">
+    <Tabs key={tab} defaultValue={tab ?? 'organization'} className="flex min-h-0 flex-1 flex-col">
       <TabsList className="w-full shrink-0">
         <TabsTrigger value="organization" className="flex-1">
           <Trans>Organization</Trans>

@@ -8,7 +8,7 @@ import { DiagnosisRequest, TypeId, type AssetDescriptor } from '@sdk';
 import { useAction } from '@src/hooks/use-action';
 import { useEntity } from '@sdk/react/hooks';
 import { Trans, useLingui } from '@lingui/react/macro';
-import { useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Sparkles } from 'lucide-react';
 
 import { AttachMenu } from '@src/components/conversation/AttachMenu';
@@ -22,6 +22,7 @@ import { useStartVibeSession } from '@src/pages/flow-page/use-start-vibe-session
 
 import { isAttachable } from './DiagnosisRequestCreateDialog';
 import { AskPermissionField, BudgetField, InstructionsField, LimitsFields } from './DiagnosisRequestFields';
+import { ErrorLine } from './ErrorLine';
 import {
   callRequestAction,
   commandFor,
@@ -118,7 +119,7 @@ function Attachments({ id }: { id: string }) {
           {busy ? <Trans>Sending…</Trans> : <Trans>Attach more files or assets</Trans>}
         </span>
       </div>
-      {(uploadError || error) && <p className="text-xs text-destructive">{uploadError ?? errorText(error)}</p>}
+      {(uploadError || error) && <ErrorLine error={uploadError ?? errorText(error)} />}
     </Section>
   );
 }
@@ -135,7 +136,7 @@ function RunBody({ id, number }: { id: string; number: number }) {
       </p>
     );
   }
-  if (error || !run) return <p className="text-sm text-destructive">{errorText(error)}</p>;
+  if (error || !run) return <ErrorLine error={errorText(error)} />;
 
   const parts: [string, string | null | undefined][] = [
     [t`Summary`, run.summary],
@@ -210,17 +211,24 @@ function ExplainButton({ request }: { request: DiagnosisRequest }) {
   );
 }
 
-function Runs({ id }: { id: string }) {
+export function Runs({ id, runCount }: { id: string; runCount: number }) {
   const { t } = useLingui();
   const action = useMemo(() => requestAction('runs', { id }), [id]);
-  const { data, error, isLoading } = useAction<RunSummary[]>(action);
+  const { data, error, isLoading, refetch } = useAction<RunSummary[]>(action);
+  // A run arrives by the hub push, which updates the row (`run_count`) live -- not this list.
+  const seen = useRef(runCount);
+  useEffect(() => {
+    if (runCount === seen.current) return;
+    seen.current = runCount;
+    void refetch();
+  }, [runCount, refetch]);
   const [selected, setSelected] = useState<number | null>(null);
   const runs = [...(data ?? [])].reverse();
 
   return (
     <Section title={<Trans>Runs</Trans>}>
       {error ? (
-        <p className="text-sm text-destructive">{t`Could not read the runs: ${errorText(error)}`}</p>
+        <ErrorLine error={t`Could not read the runs: ${errorText(error)}`} />
       ) : isLoading && !data ? (
         <p className="text-sm text-muted-foreground">
           <Trans>Loading…</Trans>
@@ -323,7 +331,7 @@ export function DiagnosisRequestView({ value }: DiagnosisRequestViewProps) {
 
         <Attachments id={id} />
         {(request.run_count ?? 0) > 0 && <ExplainButton request={request} />}
-        <Runs id={id} />
+        <Runs id={id} runCount={request.run_count ?? 0} />
       </div>
     </div>
   );

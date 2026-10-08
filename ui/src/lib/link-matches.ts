@@ -23,11 +23,15 @@ const LEAD = new RegExp(`^(?:[([{]|[${RTL}]+-)*`);
 const RTL_LEAD = new RegExp(`^(?:[([{]|[${RTL}]+-|[.,;:!?](?![./\\\\]))*`);
 const TRAIL = new RegExp(`(?:[.,;:!?)\\]}]|-[${RTL}]+)+$`);
 
+// A quote mark touching a letter is part of a word — `I've`, `users'`, Hebrew `צ'אט`, `צה"ל` —
+// not a quote: otherwise `I've … isn't` quotes, and hides, every path between them.
+const QUOTED = ['"', "'", '`'].map((q) => String.raw`(?<![\p{L}\p{N}_])${q}([^${q}\r\n]+)${q}(?![\p{L}\p{N}_])`);
+const TOKENS = new RegExp(`${QUOTED.join('|')}|[^\\s"'\`<>]+`, 'gu');
+
 export function fileLinkMatches(text: string): LinkMatch[] {
   const links: LinkMatch[] = [];
   const leadPattern = HAS_RTL.test(text) ? RTL_LEAD : LEAD;
-  const tokens = /"([^"\r\n]+)"|'([^'\r\n]+)'|`([^`\r\n]+)`|[^\s"'`<>]+/g;
-  for (const match of text.matchAll(tokens)) {
+  for (const match of text.matchAll(TOKENS)) {
     const quoted = match[1] ?? match[2] ?? match[3];
     const lead = quoted === undefined ? leadPattern.exec(match[0])![0].length : 0;
     const value = quoted ?? match[0].slice(lead).replace(TRAIL, '');

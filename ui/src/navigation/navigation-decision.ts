@@ -20,6 +20,8 @@ import { editorForType } from '@src/navigation/asset-doc-types';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { dockPointerForFile } from '@src/navigation/local-file-pointer';
 import { tryParseDock } from '@src/navigation/try-parse-dock';
+import { runUiAction, UI_ACTIONS } from '@src/navigation/ui-actions';
+import { navigateTo } from '@src/notifications/commands';
 import { ViewType } from '@src/types/ViewType';
 
 /** The dock a navigator target opens, or null when it addresses nothing openable here. */
@@ -45,19 +47,35 @@ export function dockForTarget(target: NavigationTarget): DockPointer | null {
   }
 }
 
-export type NavigationDecision = { dock: DockPointer; prompt?: undefined } | { dock?: undefined; prompt: string };
+/** What to do with a request -- exactly one is set: a dock to navigate, a UI action to run, a page of
+ *  this app to open, or the prompt for the assistant. */
+export interface NavigationDecision {
+  dock?: DockPointer;
+  action?: string;
+  path?: string;
+  prompt?: string;
+}
 
-/** What to do with `text`: a dock to navigate, or the prompt for the assistant. Never throws. */
+/** Open a page of this app: a `/win/…` page pops out as a window of its own, any other in place. */
+function openAppPath(path: string): void {
+  if (path.startsWith('/win/')) window.open(path, '_blank', 'popup');
+  else navigateTo(path);
+}
+
+/** What to do with `text`: a dock to navigate, a UI action to run, or the prompt for the assistant.
+ *  Never throws. */
 export async function decideNavigation(text: string): Promise<NavigationDecision> {
   // Where the person is comes from this tab's own browser context, on the backend.
   const outcome = await navigationDecision(text);
-  const dock =
-    (outcome.address ? tryParseDock(outcome.address) : null) ??
-    (outcome.decision.route === 'quick' && outcome.decision.target ? dockForTarget(outcome.decision.target) : null);
+  const target = outcome.decision.route === 'quick' ? outcome.decision.target : undefined;
+  if (target?.kind === 'action' && UI_ACTIONS[target.value]) return { action: target.value };
+  // An app path ("/discover", "/win/assistant") is a page of this app, not a web page to frame.
+  if (target?.kind === 'url' && target.value.startsWith('/')) return { path: target.value };
+  const dock = (outcome.address ? tryParseDock(outcome.address) : null) ?? (target ? dockForTarget(target) : null);
   return dock ? { dock } : { prompt: outcome.prompt ?? text };
 }
 
-/** The magic line: navigate to the decided dock, else ask the assistant the prompt. */
+/** The magic line: navigate to the decided dock, run the decided action, else ask the assistant. */
 export async function askOrOpen(
   text: string,
   { open, ask }: { open: (dock: DockPointer) => void; ask: (prompt: string) => void },
@@ -67,6 +85,11 @@ export async function askOrOpen(
     open(decision.dock);
     return 'opened';
   }
-  ask(decision.prompt);
+  if (decision.action && runUiAction(decision.action)) return 'opened';
+  if (decision.path) {
+    openAppPath(decision.path);
+    return 'opened';
+  }
+  ask(decision.prompt ?? text);
   return 'asked';
 }

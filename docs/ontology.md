@@ -219,7 +219,9 @@ project root, within the namespace's one claim), since a driver's code may name 
 A rebuilt kind replaces its registered class while classes built earlier keep pointing
 at the old one; that old class still answers its kind, because `io/names.kind_of` reads
 the tag stamped on the class (`__spec_tag__`) before the registry's inverse map. An
-unchanged folder is not rebuilt at all — a cost saving, not a correctness rule.
+unchanged folder is not rebuilt at all — a cost saving, not a correctness rule. A kind is
+owned by the folder that defines it only while that folder still does: once it moves, is
+renamed or names another kind, the next folder to define the kind takes it, in the same process.
 Dependencies build first, and a name still resolving to `Any` is an error, never a
 field that accepts anything. Any other asset folder (a `compute_op`) mints nothing of
 its own: its `output_spec_kind` names a primitive, a kind whose schema is code, or one a data schema folder defines.

@@ -38,6 +38,7 @@ import { openChannels, openDriver, parseDataSourcesPointer } from './data-source
 import { DataDriverPage, DataDriversList } from './DataDriversView';
 import { MessageChannelsList } from './MessageChannelsList';
 import { DataSourcePage } from './DataSourcePage';
+import { useUiActionRequest } from '@src/navigation/ui-actions';
 
 export function DataSourcesView() {
   const { t } = useLingui();
@@ -62,6 +63,8 @@ export function DataSourcesView() {
     setEditing(null);
     setEditorOpen(true);
   }, []);
+  // "connect a data source" (smart navigation): the same editor the Add button opens.
+  useUiActionRequest(['new-data-source-dialog'], openAdd);
 
   const openEdit = useCallback((source: DataSource) => {
     setEditing(source);
