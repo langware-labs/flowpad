@@ -4,7 +4,8 @@ import { DATASET_FIELD_KINDS } from '../entities/dataset';
 import { isValidUUIDv4 } from '../models/TypeId';
 import type { KindForm, Shape } from './contract';
 
-export const PRIMITIVES: ReadonlySet<string> = new Set(DATASET_FIELD_KINDS);
+/** The backend's reserved primitives: the ones a person types, plus `binary` (bytes, never typed). */
+export const PRIMITIVES: ReadonlySet<string> = new Set([...DATASET_FIELD_KINDS, 'binary']);
 
 const kindCache = new Map<string, Promise<KindForm | null>>();
 
@@ -22,6 +23,13 @@ export function kindForm(kind: string): Promise<KindForm | null> {
     );
   }
   return kindCache.get(kind)!;
+}
+
+/** What is wrong with `value` as a value of `kind` — `ok` with no errors when it fits. Writes
+ *  nothing. A kind nobody registered is a 404 (rejected), never "fits": the backend would otherwise
+ *  read an unknown name as "anything". */
+export async function checkKind(kind: string, value: unknown): Promise<{ kind: string; ok: boolean; errors: string[] }> {
+  return apiClient.post<{ kind: string; ok: boolean; errors: string[] }>(`/api/v1/kinds/${encodeURIComponent(kind)}/check`, { value });
 }
 
 /** `?x` is an optional `x`. */

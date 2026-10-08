@@ -284,25 +284,88 @@ class Dataset(Entity):
             raise ValueError("typed rows are io_folder only")
         return row
 
+    _ROW_KEYS = frozenset({"input", "context", "ground_truth", "output", "kind", "data"})
+
+    def _row_in(self, raw: Any, n: int, *, keyed: bool = False) -> Any:
+        """One incoming row as the declared row type -- ``ValueError`` for a malformed row,
+        ``ValidationError`` for one that does not fit the shape."""
+        if not isinstance(raw, dict) or "input" not in raw:
+            raise ValueError(f"row {n}: an object with an `input` is required")
+        unknown = set(raw) - self._ROW_KEYS - ({"key"} if keyed else set())
+        if unknown:
+            raise ValueError(f"row {n}: unknown keys {sorted(unknown)}")
+        return self._typed_rows_or_raise().model_validate({k: v for k, v in raw.items() if k != "key"})
+
     async def append(self, rows: list[dict]) -> list[str]:
-        """Typed rows in -- ``{input, context?, ground_truth?, output?, kind?, data?}`` each, checked
-        against the declared row shape BEFORE anything is written (one bad row writes nothing).
+        """Typed rows in -- ``{input, context?, ground_truth?, output?, kind?, data?, key?}`` each,
+        checked against the declared row shape BEFORE anything is written (one bad row writes nothing).
 
         The counterpart of ``promote`` for a dataset whose input is not a source item: a request, a
-        prompt, anything the dataset's own spec defines. Returns the new example ids."""
+        prompt, anything the dataset's own spec defines. A row with a ``key`` lands in
+        ``examples/<key>/`` (refused when the key is taken); the others are numbered. Returns the new
+        example ids."""
         from flow_sdk.schema.data_spec.layout import dataset_layout_for  # noqa: PLC0415
 
-        row_type = self._typed_rows_or_raise()
-        allowed = {"input", "context", "ground_truth", "output", "kind", "data"}
-        examples = []
-        for n, raw in enumerate(rows, 1):
-            if not isinstance(raw, dict) or "input" not in raw:
-                raise ValueError(f"row {n}: an object with an `input` is required")
-            unknown = set(raw) - allowed
-            if unknown:
-                raise ValueError(f"row {n}: unknown keys {sorted(unknown)}")
-            examples.append((row_type.model_validate(raw), None))
-        return dataset_layout_for(self.data_layout).append_many(self._folder(), examples, dataset_id=self.id)
+        examples = [(self._row_in(raw, n, keyed=True), None) for n, raw in enumerate(rows, 1)]
+        keys = [raw.get("key") for raw in rows]
+        return dataset_layout_for(self.data_layout).append_many(
+            self._folder(), examples, dataset_id=self.id, keys=keys)
+
+    def check(self, row: dict) -> list[str]:
+        """What is wrong with ``row`` as one row of this dataset -- ``[]`` when it fits. Writes nothing."""
+        try:
+            self._row_in(row, 1, keyed=True)
+        except ValidationError as exc:
+            return [f"{'.'.join(str(p) for p in e.get('loc', ()))}: {e.get('msg')}" for e in exc.errors(include_url=False)]
+        except ValueError as exc:
+            return [str(exc)]
+        return []
+
+    async def put(self, key: str, row: dict) -> str:
+        """Write the row ``key`` -- create it, or replace the one there. Validated BEFORE anything is
+        written. Slots the row leaves out (``ground_truth``, ``output``, ``context``) and the
+        example's metadata (kind, annotations, source) are kept from the row it replaces, so editing
+        an input never drops its gold. Returns the example id."""
+        from flow_sdk.schema.data_spec.layout import FolderLayout, _load_example_meta, check_key  # noqa: PLC0415
+
+        row_type, layout, folder = self._typed_rows_or_raise(), FolderLayout(), self._folder()
+        if not isinstance(row, dict):
+            raise ValueError("row: an object is required")
+        old_dir = layout.example_dir(folder, check_key(key), dataset_id=self.id)
+        merged: dict[str, Any] = {}
+        metadata: dict[str, Any] = {}
+        if old_dir is not None:
+            metadata, merged["data"] = _load_example_meta(old_dir)
+            merged["kind"] = metadata.pop("kind", None) or ExampleKind.TRAIN.value
+            try:
+                old = layout.read_typed(old_dir, row_type, dataset_id=self.id)
+            except ValidationError:
+                old = None   # a row that no longer fits is being repaired: keep only its metadata
+            if old is not None:
+                for slot in ("input", "context", "ground_truth", "output"):
+                    value = getattr(old, slot)
+                    if value is not None:
+                        merged[slot] = value
+        merged.update(row)
+        example = self._row_in(merged, 1)
+        if metadata:
+            example = example.model_copy(update={"metadata": {**metadata, **example.metadata}})
+        return layout.put_example(folder, key, example, dataset_id=self.id)
+
+    def delete_row(self, key_or_id: str) -> str:
+        """Remove one row. Returns its key; ``LookupError`` when there is none."""
+        from flow_sdk.schema.data_spec.layout import FolderLayout  # noqa: PLC0415
+
+        self._typed_rows_or_raise()
+        return FolderLayout().delete_example(self._folder(), key_or_id, dataset_id=self.id)
+
+    def rename_row(self, key_or_id: str, new_key: str) -> str:
+        """Give one row a new key. Its id follows the key: the NEW id is returned, and anything that
+        pointed at the old key or id must be updated by the caller."""
+        from flow_sdk.schema.data_spec.layout import FolderLayout  # noqa: PLC0415
+
+        self._typed_rows_or_raise()
+        return FolderLayout().rename_example(self._folder(), key_or_id, new_key, dataset_id=self.id)
 
     def example(self, example_id: str) -> Optional[dict]:
         """One example with its slots' VALUES (not paths) -- what an editor shows. None if absent."""
@@ -396,6 +459,73 @@ class Dataset(Entity):
             return ApiFailResponse(message=str(exc), status_code=400)
         fresh = await self._counts_from_disk()
         return ApiSuccessResponse(data={"example_ids": ids, "num_examples": fresh.num_examples})
+
+    async def _row_body(self, *required: str) -> "dict | ApiFailResponse":
+        body = await read_json_body(get_current_request_info())
+        if isinstance(body, ApiFailResponse):
+            return body
+        missing = [k for k in required if not body.get(k)]
+        if missing:
+            return ApiFailResponse(message=f"required: {', '.join(missing)}", status_code=400)
+        return body
+
+    @action.post(action_name="put-row")
+    async def put_row_action(self):
+        """``{"key", "row"}`` → ``{"example_id", "key", "num_examples"}``: create or replace the row
+        ``key``. A row that does not fit is a 400 and nothing is written."""
+        body = await self._row_body("key", "row")
+        if isinstance(body, ApiFailResponse):
+            return body
+        try:
+            eid = await self.put(body["key"], body["row"])
+        except ValidationError as exc:
+            return ApiFailResponse(message="the row does not match the dataset's shape", status_code=400,
+                                   data={"errors": exc.errors(include_url=False)})
+        except ValueError as exc:
+            return ApiFailResponse(message=str(exc), status_code=400)
+        fresh = await self._counts_from_disk()
+        return ApiSuccessResponse(data={"example_id": eid, "key": body["key"], "num_examples": fresh.num_examples})
+
+    @action.post(action_name="delete-row")
+    async def delete_row_action(self):
+        """``{"key"}`` (a key or an example id) → ``{"key", "num_examples"}``; 404 when absent."""
+        body = await self._row_body("key")
+        if isinstance(body, ApiFailResponse):
+            return body
+        try:
+            key = self.delete_row(body["key"])
+        except LookupError as exc:
+            return ApiFailResponse(message=str(exc), status_code=404)
+        except ValueError as exc:
+            return ApiFailResponse(message=str(exc), status_code=400)
+        fresh = await self._counts_from_disk()
+        return ApiSuccessResponse(data={"key": key, "num_examples": fresh.num_examples})
+
+    @action.post(action_name="rename-row")
+    async def rename_row_action(self):
+        """``{"key", "new_key"}`` → ``{"example_id", "key"}`` -- the row's NEW id and key."""
+        body = await self._row_body("key", "new_key")
+        if isinstance(body, ApiFailResponse):
+            return body
+        try:
+            eid = self.rename_row(body["key"], body["new_key"])
+        except LookupError as exc:
+            return ApiFailResponse(message=str(exc), status_code=404)
+        except ValueError as exc:
+            return ApiFailResponse(message=str(exc), status_code=400)
+        return ApiSuccessResponse(data={"example_id": eid, "key": body["new_key"]})
+
+    @action.post(action_name="check-row")
+    async def check_row_action(self):
+        """``{"row"}`` → ``{"ok", "errors"}``: would this row fit? Nothing is written."""
+        body = await self._row_body("row")
+        if isinstance(body, ApiFailResponse):
+            return body
+        try:
+            errors = self.check(body["row"])
+        except ValueError as exc:   # the dataset itself cannot take typed rows
+            return ApiFailResponse(message=str(exc), status_code=400)
+        return ApiSuccessResponse(data={"ok": not errors, "errors": errors})
 
     @action.get(action_name="example")
     async def example_action(self):
