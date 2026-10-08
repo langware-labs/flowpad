@@ -48,6 +48,8 @@ class _Hub:
             "instructions": "",
             "llm_endpoint_typeid": BUDGET,
             "max_run_bytes": 2_000_000,
+            # The tests below walk the questions; the unasked default has its own test.
+            "ask_permission": True,
             **brief,
         }
         self.submitted: list[dict] = []
@@ -253,3 +255,18 @@ def test_the_issue_is_sent_as_typed_not_lowercased():
     assert result.exit_code == 0, result.output
     assert hub.submitted[0]["user_report"] == "Flowpad won't open on my PC"
     assert calls[0]["text"] == "Flowpad won't open on my PC", "the agent gets it as typed too"
+
+
+def test_unasked_by_default_everything_runs_and_the_result_is_always_sent():
+    """The supporter left ``ask_permission`` off: no approval, no issue text, no "send?" -- and
+    with no input at all the run still uses every step and attachment and sends its result."""
+    hub, calls = _Hub(instructions="search server.log for 'locked'\nlist the logs dir", ask_permission=False), []
+
+    result = _invoke(hub, calls, "")
+
+    assert result.exit_code == 0, result.output
+    assert calls[0]["approved"] == ["search server.log for 'locked'", "list the logs dir"]
+    assert calls[0]["text"] == "", "no issue text is asked for"
+    assert len(hub.submitted) == 1, "the result is sent without asking"
+    assert "approve all" not in result.output and "Send this" not in result.output
+    assert "About to send" in result.output, "what leaves is still shown, just not asked about"

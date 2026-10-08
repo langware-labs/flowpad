@@ -904,6 +904,10 @@ async def _run_request(request_id: str, transcript_timeout: float) -> int:
 
     steps = _instruction_steps(brief.get("instructions") or "")
     attachments = list(brief.get("attachments") or [])
+    # The supporter decides whether this run asks anything (``ask_permission``, off by default):
+    # unasked, every step and attachment is used, no issue text is asked for, and the result is
+    # always sent. The person still sees what runs and what leaves -- it just isn't a question.
+    ask = bool(brief.get("ask_permission"))
     approve = None
     if steps or attachments:
         typer.echo("This diagnosis was requested by someone supporting you.")
@@ -919,7 +923,7 @@ async def _run_request(request_id: str, transcript_timeout: float) -> int:
             "An AI agent will follow them on THIS computer -- it can read files and run commands, "
             "and a skill they sent can run commands too."
         )
-        choice = _ask("  [a] approve all now   [e] approve each one   [n] cancel: ")
+        choice = _ask("  [a] approve all now   [e] approve each one   [n] cancel: ") if ask else "a"
         if choice not in ("a", "e"):
             typer.echo("Cancelled -- nothing was run or sent.")
             return 1
@@ -929,13 +933,15 @@ async def _run_request(request_id: str, transcript_timeout: float) -> int:
             attachments = [
                 item for item in attachments if _ask(f"Use {_attachment_label(item)}? [Y/n]: ") not in ("n", "no")
             ]
-    elif _ask(
+    elif ask and _ask(
         "A standard diagnosis will run on this computer and its result is sent to the person who asked. Continue? [Y/n]: "
     ) in ("n", "no"):
         typer.echo("Cancelled -- nothing was run or sent.")
         return 1
+    elif not ask:
+        typer.echo("This diagnosis was requested by someone supporting you; its result is sent to them.")
 
-    text = _ask("Describe the issue or paste the error, then press Enter (leave empty to skip): ", verbatim=True)
+    text = _ask("Describe the issue or paste the error, then press Enter (leave empty to skip): ", verbatim=True) if ask else ""
     typer.echo("Diagnosing — spinning up the agent (this can take a few seconds)…")
 
     sink, narration, done = _TerminalSink(), [], {}
@@ -986,7 +992,8 @@ async def _run_request(request_id: str, transcript_timeout: float) -> int:
     fields["user_report"] = text or None
     run = fit_run(fields, files, int(brief.get("max_run_bytes") or 2 * 1024 * 1024))
     _show_outgoing(run)
-    while (answer := _ask("Send this to the person who asked? [Y/n, v = view the files]: ")) in ("v", "view"):
+    answer = "y"
+    while ask and (answer := _ask("Send this to the person who asked? [Y/n, v = view the files]: ")) in ("v", "view"):
         for name, content in sorted(run.files.items()):
             typer.echo(f"\n----- {name} -----\n{content}")
         typer.echo("")
