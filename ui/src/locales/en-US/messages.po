@@ -3049,6 +3049,10 @@ msgstr "Ask the Flowpad Assistant anything about this page."
 #~ msgid "Ask the Flowpad Assistant anything."
 #~ msgstr "Ask the Flowpad Assistant anything."
 
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
+msgid "Ask them for permission"
+msgstr "Ask them for permission"
+
 #: src/components/rag/RagView.tsx
 msgid "Ask this index…"
 msgstr "Ask this index…"
@@ -15970,6 +15974,10 @@ msgstr "Nothing indexed yet."
 msgid "Nothing indexed yet. <0>Refresh Index</0> to populate."
 msgstr "Nothing indexed yet. <0>Refresh Index</0> to populate."
 
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
+msgid "Nothing is asked: every step runs, and the result is always sent to you."
+msgstr "Nothing is asked: every step runs, and the result is always sent to you."
+
 #: src/components/automations/BusView.tsx
 msgid "Nothing listens for this yet."
 msgstr "Nothing listens for this yet."
@@ -24070,6 +24078,10 @@ msgstr "These conversations exist only on this device."
 #: src/components/automations/AutomationPage.tsx
 msgid "These react to what a coding agent is doing — before a tool runs, when a turn ends — and decide in code. Each is a folder with a record.json and a trigger.py."
 msgstr "These react to what a coding agent is doing — before a tool runs, when a turn ends — and decide in code. Each is a folder with a record.json and a trigger.py."
+
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
+msgid "They approve the steps and what you sent along, describe the issue, and decide whether the result is sent to you."
+msgstr "They approve the steps and what you sent along, describe the issue, and decide whether the result is sent to you."
 
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
 msgid "They reported"

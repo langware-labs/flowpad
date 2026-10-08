@@ -57,6 +57,7 @@ export type AttachmentBody = { file_name: string; content_b64: string } | { asse
 /** `DiagnosisRequestOpenSpec`. */
 export interface OpenRequestBody {
   instructions: string;
+  ask_permission: boolean;
   project_id: string;
   write_hours: number;
   max_run_mb: number;

@@ -68,6 +68,9 @@ class DiagnosisRequestOpenSpec(DataSpec):
     model_config = ConfigDict(frozen=True)
 
     instructions: str = ""
+    #: Whether ``flow diagnose <id>`` asks the person running it -- to approve the steps, to
+    #: describe the issue, to send the result. Off: it runs everything and always sends.
+    ask_permission: bool = False
     #: The project the request is listed under; empty for a user-level one.
     project_id: str = ""
     write_hours: int = Field(default=DEFAULT_WRITE_HOURS, ge=1, le=MAX_WRITE_HOURS)

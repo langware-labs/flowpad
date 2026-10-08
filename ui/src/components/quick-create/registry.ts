@@ -286,6 +286,7 @@ export const QUICK_CREATE_REGISTRY: QuickCreateDescriptor[] = [
     create: async ({ project, name }) => {
       const { request } = await openRequest({
         instructions: name.trim(),
+        ask_permission: false,
         project_id: project?.id ?? '',
         write_hours: 48,
         max_run_mb: 2,

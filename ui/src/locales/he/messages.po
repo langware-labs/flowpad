@@ -3049,6 +3049,10 @@ msgstr ""
 #~ msgid "Ask the Flowpad Assistant anything."
 #~ msgstr "שאל את עוזר Flowpad כל דבר."
 
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
+msgid "Ask them for permission"
+msgstr "לבקש מהם אישור"
+
 #: src/components/rag/RagView.tsx
 msgid "Ask this index…"
 msgstr ""
@@ -15970,6 +15974,10 @@ msgstr ""
 msgid "Nothing indexed yet. <0>Refresh Index</0> to populate."
 msgstr "עדיין לא אינדקס. <0>Refresh Index</0> כדי לאכלס."
 
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
+msgid "Nothing is asked: every step runs, and the result is always sent to you."
+msgstr "לא שואלים כלום: כל השלבים רצים, והתוצאה תמיד נשלחת אליך."
+
 #: src/components/automations/BusView.tsx
 msgid "Nothing listens for this yet."
 msgstr ""
@@ -24070,6 +24078,10 @@ msgstr "שיחות אלה קיימות רק בהתקן זה."
 #: src/components/automations/AutomationPage.tsx
 msgid "These react to what a coding agent is doing — before a tool runs, when a turn ends — and decide in code. Each is a folder with a record.json and a trigger.py."
 msgstr ""
+
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
+msgid "They approve the steps and what you sent along, describe the issue, and decide whether the result is sent to you."
+msgstr "הם מאשרים את השלבים ואת מה ששלחת, מתארים את הבעיה, ומחליטים אם התוצאה תישלח אליך."
 
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
 msgid "They reported"
