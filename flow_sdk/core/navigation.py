@@ -223,9 +223,20 @@ async def _ref(typeid: Optional[str], *, path: bool = False, extras: bool = Fals
             out.update(await _session_of(ent))
         if extras and str(typeid).startswith("project-") and (room := await _room_of(ent)):
             out["room"] = room
-        if str(typeid).startswith("data_source-") and (provider := getattr(ent, "provider", None)):
-            out["provider"] = str(provider)
+        # Whatever else this type's openings name (``drivers/<provider>``, ``vfs/<plan_path>``), read
+        # off the row -- the forms declare what a ref needs, so a new form needs no code here.
+        for name in _row_fields(str(typeid).partition("-")[0]):
+            if name not in out and (value := getattr(ent, name, None)):
+                out[name] = str(value)
     return out
+
+
+@lru_cache(maxsize=None)
+def _row_fields(entity_type: str) -> tuple[str, ...]:
+    """The placeholders this type's open forms name that are the row's own fields (not its id,
+    type or folder, and not what ``_session_of`` / ``_room_of`` derive)."""
+    derived = {"id", "type", "path", "harness", "session", "live_session", "room"}
+    return tuple(sorted({n for _, form, _ in forms_for(entity_type) for n, _ in _PLACEHOLDER.findall(form)} - derived))
 
 
 async def _room_of(project: Any) -> Optional[str]:
@@ -254,8 +265,6 @@ async def _session_of(process: Any) -> dict[str, str]:
         out["harness"] = vendor.key
     if session := getattr(process, "session_id", None):
         out["session"] = str(session)
-    if plan := getattr(process, "plan_path", None):
-        out["plan_path"] = str(plan)
     try:
         from flow_sdk.builtin.remote_worker_session import RemoteWorkerSession, is_terminal  # noqa: PLC0415
 
@@ -311,15 +320,25 @@ def _shown_in(view: Optional[str], pointer: Optional[str], options: Mapping[str,
     The address is the truth; the tab's active-entity slot may be left over from an earlier screen."""
     if not view:
         return None
+    for key, (of_kind, template) in _option_forms(view).items():
+        if (value := options.get(key)) and (m := _form_regex(template).fullmatch(value)):
+            return {"type": of_kind, **m.groupdict()}
+    for of_kind, form, _ in VIEW_META[ViewType(view)].open_forms:
+        if not form.startswith("?") and pointer and (m := _form_regex(form).fullmatch(pointer)):
+            return {"type": of_kind, **m.groupdict()}
+    return None
+
+
+@lru_cache(maxsize=None)
+def _option_forms(view: str) -> dict[str, tuple[str, str]]:
+    """``{option: (entity type, value form)}`` for a screen's ``?<option>=<form>`` open forms -- the
+    options that select an entity (``automations?trigger=<id>``)."""
+    out = {}
     for of_kind, form, _ in VIEW_META[ViewType(view)].open_forms:
         if form.startswith("?"):
             key, _, template = form[1:].partition("=")
-            subject, pattern = options.get(key), template
-        else:
-            subject, pattern = pointer, form
-        if subject and (m := _form_regex(pattern).fullmatch(subject)):
-            return {"type": of_kind, **m.groupdict()}
-    return None
+            out.setdefault(key, (of_kind, template))  # the first form an option names is what it selects
+    return out
 
 
 @lru_cache(maxsize=None)
@@ -343,13 +362,12 @@ async def _shown_ref(shown: dict[str, str]) -> Optional[str]:
     if shown["type"] == "agentic_process" and session:
         try:
             from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess  # noqa: PLC0415
-            from flow_sdk.db.drivers.query import QueryFilter  # noqa: PLC0415
 
-            rows = await AgenticProcess.get_all(QueryFilter(match={"session_id": session}, limit=1))
+            process = await AgenticProcess.get_by_session_id(session)
         except Exception as exc:  # noqa: BLE001 -- a nicety; the address still says where they are
             logger.debug("here: session %s: %s", session, exc)
             return None
-        return f"agentic_process-{rows[0].id}" if rows else None
+        return f"agentic_process-{process.id}" if process else None
     return None
 
 
@@ -371,7 +389,7 @@ def filter_keys(view: Optional[str]) -> frozenset[str]:
 
     place = place_for(view)
     keys = {k for s in (place.subplaces if place else ()) for k, _ in parse_qsl(s.pointer.partition("?")[2])}
-    keys |= {form[1:].partition("=")[0] for _, form, _ in (VIEW_META[ViewType(view)].open_forms if view else ()) if form.startswith("?")}
+    keys |= set(_option_forms(view)) if view else set()
     return frozenset(keys)
 
 
@@ -403,11 +421,7 @@ async def here_from(browser_context: Mapping[str, Any], *, navigator: bool = Fal
         here.update(view=ViewType.HOME.value, page="desk")  # the root is Home's canonical address
     # What is open: the pointer, a focus, or the option a screen selects an entity with
     # (``automations?trigger=<id>``, from its ``open_forms``).
-    selects = {"focus"} | {
-        form[1:].split("=", 1)[0]
-        for _, form, _ in (VIEW_META[ViewType(here["view"])].open_forms if here.get("view") else ())
-        if form.startswith("?")
-    }
+    selects = {"focus"} | (set(_option_forms(here["view"])) if here.get("view") else set())
     process = ctx.get("CurrentProcessTypeId") if "process" in provides else None
     # A pointer that is one of the screen's own sub-places (``assets/list/task``) names a place, not
     # an entity: the tab's active entity is then left over from an earlier screen.
@@ -420,24 +434,29 @@ async def here_from(browser_context: Mapping[str, Any], *, navigator: bool = Fal
     async def nothing() -> None:
         return None
 
-    # First the project (the recent session is looked up by its own id, never by an alias the tab
-    # may send: ``project-@local``) and what the address names; then the rest, which need them.
-    here["project"], named = await asyncio.gather(
-        _ref(ctx.get("CurrentProjectTypeId"), path=True, extras=navigator),
-        _shown_ref(shown) if shown else nothing(),
-    )
-    project = (here["project"] or {}).get("typeid")
-    # What the address names wins over the slot: a session's transcript is that session, a
-    # trigger's log is that trigger, whatever the tab last set.
-    if named and named.startswith("agentic_process-"):
-        process = named
-    elif named and named != project:
-        entity = named
-    here["recent"], here["process"], here["last_shown"], here["entity"] = await asyncio.gather(
-        _recent_session(project) if navigator else nothing(),
-        _ref(process, extras=navigator) if process else nothing(),
-        _last_shown(process) if process else nothing(),
-        _ref(entity) if entity else nothing(),
+    async def project_and_recent() -> tuple[Any, Any]:
+        # The recent session by the project's own id, never by an alias the tab may send (``project-@local``).
+        ref = await _ref(ctx.get("CurrentProjectTypeId"), path=True, extras=navigator)
+        return ref, (await _recent_session(ref["typeid"]) if navigator and ref else None)
+
+    async def what_is_open() -> tuple[Any, Any, Any]:
+        # What the address names wins over the slot: a session's transcript is that session, a
+        # trigger's log is that trigger, whatever the tab last set. (A project it names is the project.)
+        nonlocal process, entity
+        named = await _shown_ref(shown) if shown else None
+        if named and named.startswith("agentic_process-"):
+            process = named
+        elif named and not named.startswith("project-"):
+            entity = named
+        return await asyncio.gather(
+            _ref(process, extras=navigator) if process else nothing(),
+            _last_shown(process) if process else nothing(),
+            _ref(entity) if entity else nothing(),
+        )
+
+    # Two independent chains, run together; each waits only on what it needs.
+    (here["project"], here["recent"]), (here["process"], here["last_shown"], here["entity"]) = await asyncio.gather(
+        project_and_recent(), what_is_open()
     )
     return kind("navigation.here").model_validate({k: v for k, v in here.items() if v is not None})
 

@@ -75,8 +75,12 @@ def main() -> None:
     ap.add_argument("--compare-last", action="store_true", help="pair each run with the last one over the same roles")
     ap.add_argument("--quiet-examples", action="store_true", help="counts only, no fixed/broken titles (always so for kinds that include test)")
     results = asyncio.run(_all(ap.parse_args()))
-    print(_header(results[0][0]))  # noqa: T201
-    print("\n".join(row for _, row, _ in results))  # noqa: T201
+    shown = None
+    for columns, row, _ in results:
+        if columns != shown:  # a header per eval: sets judged by different evals have different metrics
+            print(_header(columns))  # noqa: T201
+            shown = columns
+        print(row)  # noqa: T201
     print("\n" + "\n\n".join(detail for _, _, detail in results))  # noqa: T201
 
 

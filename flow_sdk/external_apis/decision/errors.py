@@ -47,5 +47,5 @@ def failure_detail(body: Any) -> str | None:
         return str(said)
     detail = body.get("detail")
     if isinstance(detail, dict):
-        return str(detail.get("message") or detail.get("error") or detail)
+        return failure_detail(detail) or str(detail)
     return str(detail) if detail else None
