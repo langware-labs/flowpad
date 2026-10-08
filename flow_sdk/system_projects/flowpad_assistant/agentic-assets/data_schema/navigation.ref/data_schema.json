@@ -1,0 +1,19 @@
+{
+  "type": "data_schema",
+  "id": "4a3b4f05-8214-430d-80ff-115bf9029842",
+  "name": "navigation.ref",
+  "fields": {
+    "typeid": {
+      "shape": "string",
+      "description": "The entity, as <type>-<id>."
+    },
+    "title": {
+      "shape": "?string",
+      "description": "What a person calls it."
+    },
+    "path": {
+      "shape": "?string",
+      "description": "Its folder or file, when it has one (a project's mount)."
+    }
+  }
+}

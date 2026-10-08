@@ -561,6 +561,11 @@ msgstr "{0} رسالة"
 msgid "{0} messages · {1} turns"
 msgstr ""
 
+#. placeholder {0}: claim.misroutes
+#: src/components/data-sources/MessageChannelsList.tsx
+msgid "{0} misrouted"
+msgstr ""
+
 #. placeholder {0}: row.missing.length
 #: src/components/agent-resources/AgentCredentialsSection.tsx
 msgid "{0} missing"
@@ -791,6 +796,10 @@ msgstr "تم إنشاء {created} مهمة للأعضاء من أجل \"{0}\"."
 msgid "{day} at {time}"
 msgstr ""
 
+#: src/components/conversation/ConversationPanel.tsx
+msgid "{display} — renames in Flowpad only"
+msgstr ""
+
 #: src/components/connections-manager.tsx
 msgid "{displayName} connection failed"
 msgstr ""
@@ -836,8 +845,8 @@ msgid "{hostName} declined the live session."
 msgstr "تم رفض الجلسة المباشرة من قبل {hostName}."
 
 #: src/components/collaboration/LiveSessionView.tsx
-msgid "{hostName} paused the live session."
-msgstr "تم إيقاف الجلسة المباشرة من قبل {hostName}."
+#~ msgid "{hostName} paused the live session."
+#~ msgstr "تم إيقاف الجلسة المباشرة من قبل {hostName}."
 
 #: src/components/collaboration/LiveSessionView.tsx
 msgid "{hostName} reviews"
@@ -879,6 +888,10 @@ msgstr "{label} سجلات"
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
 msgid "{latchedReason} Auto-relaunch is paused — Retry to launch again."
 msgstr "{latchedReason} تم إيقاف إعادة التشغيل التلقائي مؤقتًا — أعد المحاولة للتشغيل مرة أخرى."
+
+#: src/components/top-nav-bar/ProjectSetupButton.tsx
+msgid "{left, plural, one {# thing to set up before this project can run} other {# things to set up before this project can run}}"
+msgstr ""
 
 #: src/components/token-plan/token-plan-math.ts
 msgid "{left} of {limit} requests left {windowText}"
@@ -1362,6 +1375,10 @@ msgstr ""
 msgid "A cron expression has five parts."
 msgstr ""
 
+#: src/components/data-sources/MessageChannelsList.tsx
+msgid "A deployment"
+msgstr ""
+
 #: src/components/automations/KindGallery.tsx
 msgid "A document is saved, a folder gets a new file."
 msgstr ""
@@ -1388,6 +1405,10 @@ msgstr ""
 
 #: src/components/llm-endpoints/FundingProvenance.tsx
 msgid "a key the hub holds (the chain could not be read from here)"
+msgstr ""
+
+#: src/components/data-sources/MessageChannelsList.tsx
+msgid "A machine"
 msgstr ""
 
 #: src/components/automations/AutomationPage.tsx
@@ -2053,6 +2074,7 @@ msgstr ""
 #: src/components/automations/KindGallery.tsx
 #: src/components/credentials/CredentialDialog.tsx
 #: src/components/data-sources/DataSourceDialog.tsx
+#: src/components/data-sources/DataSourcePage.tsx
 #: src/components/organization/budgets/AdvancedEndpointDialog.tsx
 #: src/components/organization/budgets/AdvancedEndpointDialog.tsx
 #: src/i18n/pref-labels.ts
@@ -2307,7 +2329,12 @@ msgid "All languages"
 msgstr "جميع اللغات"
 
 #: src/components/conversation/ThreadHeader.tsx
+#: src/components/data-sources/DataSourcePage.tsx
 msgid "All messages"
+msgstr ""
+
+#: src/components/data-sources/DataSourcePage.tsx
+msgid "All messages of this source"
 msgstr ""
 
 #: src/components/credentials/CredentialDialog.tsx
@@ -2493,9 +2520,17 @@ msgstr ""
 msgid "Also"
 msgstr ""
 
+#: src/components/data-sources/ChannelRouteControl.tsx
+msgid "Also deliver to…"
+msgstr ""
+
 #: src/i18n/pref-labels.ts
 msgid "Also open sidecar OS Terminal"
 msgstr "افتح أيضًا نافذة طرفية مرافقة لنظام التشغيل"
+
+#: src/components/data-sources/ChannelRouteControl.tsx
+msgid "Also to"
+msgstr ""
 
 #: src/components/collaboration/LiveSessionView.tsx
 msgid "Always allow sessions from {guestName}"
@@ -2647,6 +2682,10 @@ msgstr "التعليقات التوضيحية"
 msgid "Announcements shown at startup"
 msgstr "عرض الإعلانات عند بدء التشغيل"
 
+#: src/components/data-sources/MessageChannelsList.tsx
+msgid "Another Flowpad instance"
+msgstr ""
+
 #: src/components/assets/context-folder-sources.tsx
 #~ msgid "Another Flowpad project — its folder becomes context for this one"
 #~ msgstr "مشروع Flowpad آخر — يصبح مجلده سياقاً لهذا المشروع"
@@ -2659,6 +2698,10 @@ msgstr ""
 msgid "another hub budget — {label}"
 msgstr ""
 
+#: src/components/data-sources/ChannelRouteControl.tsx
+msgid "another machine"
+msgstr ""
+
 #: src/components/install/AddAssetDialog.tsx
 msgid "another project"
 msgstr ""
@@ -2669,6 +2712,10 @@ msgstr "خطوة أخرى تستخدم هذا المعرّف بالفعل — س
 
 #~ msgid "Answer here instead"
 #~ msgstr ""
+
+#: src/components/data-sources/MessageChannelsList.tsx
+msgid "Answered by"
+msgstr ""
 
 #~ msgid "Answered by {answeringName}"
 #~ msgstr ""
@@ -2911,6 +2958,18 @@ msgstr ""
 #: src/components/assets/editor/wizard/WizardStepForm.tsx
 msgid "Arguments"
 msgstr "الوسائط"
+
+#: src/components/conversation/message-lifecycle.tsx
+msgid "Arrived"
+msgstr ""
+
+#: src/components/conversation/message-lifecycle.tsx
+msgid "Arrived — not picked up yet"
+msgstr ""
+
+#: src/components/data-sources/MessageChannelsList.tsx
+msgid "Arrives at"
+msgstr ""
 
 #: src/components/artifacts/artifacts-view.tsx
 msgid "artifact"
@@ -3442,6 +3501,10 @@ msgstr "العودة إلى المهام"
 
 #: src/components/collaboration/LiveSessionView.tsx
 msgid "Back to the conversation message that started this session"
+msgstr ""
+
+#: src/components/data-sources/DataSourcePage.tsx
+msgid "Back to the simple view"
 msgstr ""
 
 #: src/components/agent-layout/error-screen/error-screen.tsx
@@ -4046,6 +4109,10 @@ msgstr "تعذر تشغيل إعادة البناء"
 msgid "Cannot search yet"
 msgstr ""
 
+#: src/components/value-viewer/ValueViewer.tsx
+msgid "Cannot show this file: {error}"
+msgstr ""
+
 #: src/components/assets/editor/translations/useTranslations.ts
 msgid "Cannot translate"
 msgstr "تعذّر الترجمة"
@@ -4135,11 +4202,16 @@ msgstr "التغييرات"
 #~ msgid "Changes committed and pushed"
 #~ msgstr "تم تثبيت التغييرات ودفعها"
 
+#: src/components/data-sources/MessageChannelsList.tsx
+msgid "Channel"
+msgstr ""
+
 #: src/components/stream-inbox-view/AttachedChannelsBar.tsx
 msgid "Channel details"
 msgstr ""
 
 #: src/components/agent-resources/AgentResourcesBody.tsx
+#: src/components/data-sources/DataSourcesView.tsx
 #: src/components/stream-inbox-view/AttachedChannelsBar.tsx
 #: src/components/top-nav-bar/use-entity-breadcrumbs.ts
 msgid "Channels"
@@ -4279,6 +4351,10 @@ msgstr "نقطة الحفظ:"
 
 #: src/components/code-editor/SnippetView.tsx
 msgid "checks pass"
+msgstr ""
+
+#: src/components/help/AskForHelpDialog.tsx
+msgid "Checks this machine's Flowpad (its health, the hub, recent errors in its logs) in the background and sends what it finds after your request."
 msgstr ""
 
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
@@ -5296,6 +5372,7 @@ msgstr ""
 #: src/components/account/user-info.tsx
 #: src/components/connections-manager/connection-state-visual.ts
 #: src/components/connections-manager/credential-rows-view.tsx
+#: src/components/setup-wizard/SetupStagesButton.tsx
 msgid "Connected"
 msgstr "متصل"
 
@@ -5303,6 +5380,10 @@ msgstr "متصل"
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "Connected · {0}"
 msgstr "متصل · {0}"
+
+#: src/components/setup-wizard/SetupStagesButton.tsx
+msgid "Connected ({summary})"
+msgstr ""
 
 #: src/pages/hub-home/HubHome.tsx
 msgid "Connected computer"
@@ -5444,10 +5525,9 @@ msgstr "متابعة"
 msgid "Continue journey"
 msgstr "متابعة الرحلة"
 
-#. placeholder {0}: pending.label
 #: src/components/setup-wizard/SetupStagesButton.tsx
-msgid "Continue setup: {0}"
-msgstr ""
+#~ msgid "Continue setup: {0}"
+#~ msgstr ""
 
 #: src/pages/flow-page/VibeWorkerSwitchDialog.tsx
 msgid "Continue this conversation"
@@ -5471,6 +5551,7 @@ msgstr "التحكم في مستوى جهد الاستدلال"
 
 #: src/components/assets/PushContextFolderDialog.tsx
 #: src/components/conversation/ConversationRoute.tsx
+#: src/components/data-sources/DataSourcePage.tsx
 #: src/components/project-activity-strip/RecentConversationsStrip.tsx
 #: src/i18n/type-labels.ts
 #: src/types/ViewType.ts
@@ -7615,6 +7696,7 @@ msgid "Delivered to a place that does not hold this channel"
 msgstr ""
 
 #: src/components/data-sources/ChannelRouteControl.tsx
+#: src/components/data-sources/MessageChannelsList.tsx
 msgid "Deliveries"
 msgstr ""
 
@@ -9041,6 +9123,10 @@ msgstr ""
 msgid "Every allowance given, changed or removed here and in everything funded by it. Read-only."
 msgstr ""
 
+#: src/components/data-sources/MessageChannelsList.tsx
+msgid "Every channel that sends and receives messages, and where its messages arrive. A channel on Flowpad's own accounts arrives through the hub, which only hands each message to the place below."
+msgstr ""
+
 #: src/components/assets/editor/wizard/WizardViewer.tsx
 msgid "Every command this wizard ran, and what it printed"
 msgstr "كل أمر شغّله هذا المعالج، وما طبعه"
@@ -9072,6 +9158,10 @@ msgstr ""
 
 #~ msgid "Every MCP server in this project is attached to this agent. Each one is resolved and attached when a session starts."
 #~ msgstr ""
+
+#: src/components/data-sources/DataSourcesView.tsx
+msgid "Every message channel and where its messages arrive"
+msgstr ""
 
 #: src/components/automations/automation-words.ts
 msgid "Every minute"
@@ -10165,8 +10255,8 @@ msgid "Fixing…"
 msgstr "جارٍ الإصلاح…"
 
 #: src/components/data-sources/ChannelRouteControl.tsx
-msgid "Flow answers from its own box · shown here"
-msgstr ""
+#~ msgid "Flow answers from its own box · shown here"
+#~ msgstr ""
 
 #: src/i18n/type-labels.ts
 msgid "Flow Message"
@@ -10629,9 +10719,16 @@ msgstr "Git مطلوب لمشاركة الملفات"
 #~ msgstr "تم إعداد Git"
 
 #: src/components/status-bar/GitPushButton.tsx
-#: src/components/status-bar/GitPushButton.tsx
 msgid "git push"
 msgstr "git push"
+
+#: src/components/status-bar/GitPushButton.tsx
+msgid "git push — {ahead} commits to push"
+msgstr ""
+
+#: src/components/status-bar/GitPushButton.tsx
+msgid "git push — 1 commit to push"
+msgstr ""
 
 #: src/components/project-home/ProjectGitChecksDialog.tsx
 msgid "Git readiness"
@@ -10918,6 +11015,10 @@ msgstr ""
 #: src/pages/hub-home/ShareSandboxDialog.tsx
 msgid "Handed over to {0}"
 msgstr "تم التسليم إلى {0}"
+
+#: src/components/conversation/message-lifecycle.tsx
+msgid "Handling"
+msgstr ""
 
 #: src/components/terminal/openers/AskInstallOneOfDialog.tsx
 msgid "Harness is required"
@@ -11629,8 +11730,8 @@ msgid "Include this file in the next commit (git add)"
 msgstr "تضمين هذا الملف في الـ commit القادم (git add)"
 
 #: src/components/help/AskForHelpDialog.tsx
-msgid "Include this session's transcript"
-msgstr ""
+#~ msgid "Include this session's transcript"
+#~ msgstr ""
 
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
 msgid "Index (seq)"
@@ -12110,6 +12211,10 @@ msgstr ""
 msgid "Italic"
 msgstr "مائل"
 
+#: src/components/data-sources/MessageChannelsList.tsx
+msgid "Its agent"
+msgstr ""
+
 #: src/components/assets/editor/markdown/MarkdownEditor.tsx
 msgid "Its contents look like binary data (for example an image), so it can't be shown in the editor."
 msgstr "يبدو أن محتوى الملف عبارة عن بيانات ثنائية (مثل صورة)، لذا لا يمكن عرضه في المحرر."
@@ -12335,6 +12440,10 @@ msgstr "التسميات:"
 #: src/i18n/pref-labels.ts
 msgid "Language"
 msgstr "اللغة"
+
+#: src/components/data-sources/MessageChannelsList.tsx
+msgid "lapsed"
+msgstr ""
 
 #: src/components/machine-overview/machine-overview.tsx
 #: src/components/machine-overview/machine-overview.tsx
@@ -13161,6 +13270,7 @@ msgstr "جاري التحميل..."
 #: src/components/terminal/HistoryModal.tsx
 #: src/components/terminal/interactive-terminal/command-status-viewer/CommandStatusViewer.tsx
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
+#: src/components/value-viewer/ValueViewer.tsx
 #: src/components/wiki-tip/HubWikiMarkdown.tsx
 #: src/pages/discover-page/discover-page.tsx
 #: src/pages/flow-page/vibe-recent-sessions.tsx
@@ -13695,6 +13805,10 @@ msgstr "سلسلة الرسائل"
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Messages"
 msgstr "الرسائل"
+
+#: src/components/data-sources/DataSourcePage.tsx
+msgid "Messages list, events and settings"
+msgstr ""
 
 #: src/components/machine-overview/machine-overview.tsx
 msgid "Metrics"
@@ -14989,6 +15103,10 @@ msgstr "لا يوجد أعضاء حتى الآن — يمكن دعوة أحد أ
 msgid "No members yet."
 msgstr "لا يوجد أعضاء بعد."
 
+#: src/components/data-sources/MessageChannelsList.tsx
+msgid "No message channels yet. Add one with New source."
+msgstr ""
+
 #: src/components/lens-viewer/shared/transcript-features/TranscriptViewer.tsx
 msgid "No messages yet"
 msgstr "لا توجد رسائل حتى الآن"
@@ -14996,6 +15114,10 @@ msgstr "لا توجد رسائل حتى الآن"
 #: src/components/conversation/ConversationContextPanel.tsx
 msgid "No messages yet — context will appear here as they arrive."
 msgstr "لا توجد رسائل حتى الآن — سيظهر السياق هنا عند وصول الرسائل."
+
+#: src/components/data-sources/DataSourcePage.tsx
+msgid "No messages yet — they show up here as they arrive."
+msgstr ""
 
 #: src/components/conversation/ConversationView.tsx
 msgid "No messages yet."
@@ -15508,6 +15630,10 @@ msgstr ""
 msgid "Nobody has a budget in this team yet."
 msgstr ""
 
+#: src/components/data-sources/MessageChannelsList.tsx
+msgid "Nobody yet"
+msgstr ""
+
 #: src/components/graph-view/ui/TopBar.tsx
 msgid "node"
 msgstr "عقدة"
@@ -15588,8 +15714,18 @@ msgstr "لم يتم الفحص بعد"
 
 #: src/components/account/hub-status-visuals.ts
 #: src/components/connections-manager/connection-state-visual.ts
+#: src/components/setup-wizard/SetupStagesButton.tsx
 msgid "Not connected"
 msgstr "غير متصل"
+
+#. placeholder {0}: pending.label
+#: src/components/setup-wizard/SetupStagesButton.tsx
+msgid "Not connected — continue setup: {0}"
+msgstr ""
+
+#: src/components/data-sources/MessageChannelsList.tsx
+msgid "Not connected — press Connect"
+msgstr ""
 
 #: src/components/assets/useAssetsModel.tsx
 #~ msgid "Not copied into context folder"
@@ -15699,6 +15835,7 @@ msgstr "لا يمكن تشغيله هنا"
 msgid "Not saved"
 msgstr ""
 
+#: src/components/conversation/ConversationView.tsx
 #: src/components/conversation/MessageBubble.tsx
 msgid "Not sent"
 msgstr ""
@@ -15992,6 +16129,10 @@ msgstr "إخطار الأشخاص بهذا الإرسال"
 msgid "Now using {0}"
 msgstr "يُستخدم الآن {0}"
 
+#: src/components/data-sources/MessageChannelsList.tsx
+msgid "Nowhere yet"
+msgstr ""
+
 #: src/components/connections-manager/sign-in-method.tsx
 msgid "OAuth"
 msgstr "OAuth"
@@ -16163,6 +16304,7 @@ msgstr ""
 
 #: src/components/conversation/asset-review/AssetReviewDialog.tsx
 #: src/components/conversation/asset-review/ProjectInstallAction.tsx
+#: src/components/conversation/AttachmentChip.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
@@ -16689,6 +16831,11 @@ msgstr ""
 
 #: src/components/automations/RunDetail.tsx
 msgid "Open the automation to fix it"
+msgstr ""
+
+#: src/components/conversation/LiveSessionActivity.tsx
+#: src/components/conversation/LiveSessionActivity.tsx
+msgid "Open the chat this session runs in"
 msgstr ""
 
 #: src/components/data-sources/DataSourcePage.tsx
@@ -17300,7 +17447,6 @@ msgid "Pattern sandbox"
 msgstr ""
 
 #: src/components/automations/BusStream.tsx
-#: src/components/collaboration/LiveSessionView.tsx
 #: src/components/data-sources/SourceMenu.tsx
 #: src/components/machine-overview/machine-overview.tsx
 msgid "Pause"
@@ -17318,7 +17464,6 @@ msgstr ""
 msgid "Pause this machine"
 msgstr "إيقاف هذا الجهاز مؤقتاً"
 
-#: src/components/conversation/SessionCard.tsx
 #: src/components/stream-inbox-view/AttachedChannelsBar.tsx
 msgid "paused"
 msgstr ""
@@ -18756,6 +18901,7 @@ msgstr "مشار إليه لكنه غير موجود في جدول الكيان�
 #: src/components/code-editor/AssetCompareView.tsx
 #: src/components/contact-picker/AddressBookButton.tsx
 #: src/components/cost-dashboard/CostDashboard.tsx
+#: src/components/data-sources/MessageChannelsList.tsx
 #: src/components/display-toolbar/WebappDisplayToolbar.tsx
 #: src/components/display-toolbar/WebappDisplayToolbar.tsx
 #: src/components/display-toolbar/WebappDisplayToolbar.tsx
@@ -18784,6 +18930,10 @@ msgstr "تحديث — سحب من Git والبحث عن إشعارات جديد
 #: src/components/terminal/HistoryModal.tsx
 msgid "Refresh — re-index this project's sessions"
 msgstr "تحديث — إعادة فهرسة جلسات هذا المشروع"
+
+#: src/components/conversation/ConversationView.tsx
+msgid "Refresh (checks the channel for new messages)"
+msgstr ""
 
 #: src/components/conversation/ConversationView.tsx
 #: src/components/project-activity-strip/RecentConversationsStrip.tsx
@@ -18895,6 +19045,7 @@ msgid "Remote Worker Session"
 msgstr "جلسة العامل البعيد"
 
 #: src/components/assets/editor/task/TaskAttachments.tsx
+#: src/components/conversation/MessageBubble.tsx
 #: src/components/organization/budgets/BudgetSection.tsx
 #: src/components/project-home/HomeCustomizationCard.tsx
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
@@ -18986,6 +19137,10 @@ msgstr ""
 msgid "Remove from favorites"
 msgstr ""
 
+#: src/components/conversation/MessageActionsMenu.tsx
+msgid "Remove from Flowpad"
+msgstr ""
+
 #: src/components/browseable-tree/adapters/useFavoritesRoots.tsx
 msgid "Remove from folder"
 msgstr "إزالة من المجلد"
@@ -19052,6 +19207,10 @@ msgstr "إزالة هذا الملف من الـ commit القادم (git restor
 #~ msgid "Remove this input"
 #~ msgstr ""
 
+#: src/components/conversation/MessageBubble.tsx
+msgid "Remove this message from Flowpad?"
+msgstr ""
+
 #: src/pages/discover-page/discover-page.tsx
 msgid "Remove this row from the manifest"
 msgstr ""
@@ -19107,6 +19266,10 @@ msgstr "أُزيلت: {0}"
 #: src/components/account/settings-section.tsx
 #~ msgid "removed: {0} · not found: {1}"
 #~ msgstr "أُزيل: {0} · غير موجود: {1}"
+
+#: src/components/conversation/MessageBubble.tsx
+msgid "Removes Flowpad's copy. The message stays where it was sent."
+msgstr ""
 
 #: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Removes it everywhere"
@@ -19211,6 +19374,11 @@ msgstr "إعادة تشغيل منذ {since}"
 #: src/components/data-sources/SourceMenu.tsx
 msgid "Replay…"
 msgstr "إعادة التشغيل…"
+
+#: src/components/conversation/message-lifecycle.tsx
+#: src/components/conversation/message-lifecycle.tsx
+msgid "Replied"
+msgstr ""
 
 #: src/components/conversation/MessageComposer.tsx
 #~ msgid "Replies"
@@ -19546,7 +19714,6 @@ msgstr "النتائج"
 
 #: src/components/automations/BusStream.tsx
 #: src/components/chats-navigator/ChatsNavigator.tsx
-#: src/components/collaboration/LiveSessionView.tsx
 #: src/components/data-sources/SourceMenu.tsx
 #: src/components/machine-overview/machine-overview.tsx
 #: src/components/setup-wizard/SetupWizardDialog.tsx
@@ -20963,6 +21130,10 @@ msgstr ""
 msgid "Send along"
 msgstr "إرسال مرفق"
 
+#: src/components/help/AskForHelpDialog.tsx
+msgid "Send diagnostic"
+msgstr ""
+
 #: src/components/account/system-diagnoses.tsx
 msgid "Send failed."
 msgstr "فشل الإرسال."
@@ -21361,7 +21532,6 @@ msgstr "الإعدادات"
 #: src/components/account/settings-section.tsx
 #: src/components/automations/AutomationPage.tsx
 #: src/components/setup-wizard/SetupStagesButton.tsx
-#: src/components/setup-wizard/SetupStagesButton.tsx
 msgid "Setup"
 msgstr "الإعداد"
 
@@ -21400,6 +21570,10 @@ msgstr ""
 
 #: src/components/credentials/CredentialDialog.tsx
 msgid "Setup instructions"
+msgstr ""
+
+#: src/components/top-nav-bar/ProjectSetupButton.tsx
+msgid "Setup required"
 msgstr ""
 
 #: src/components/conversation/MembersAvatarStack.tsx
@@ -23516,6 +23690,10 @@ msgstr "الخيار الافتراضي — الأنسب في 99% من الحا�
 msgid "The diagnosis came back. Open it in FlowPad to read every run, or have an agent explain it."
 msgstr "عاد التشخيص. افتحه في FlowPad لقراءة كل تشغيل، أو اطلب من وكيل أن يشرحه."
 
+#: src/components/help/AskForHelpDialog.tsx
+msgid "The diagnostic follows when it is ready."
+msgstr ""
+
 #: src/pages/discover-page/DiscoverDetailPage.tsx
 msgid "The document could not be put on the hub the last time it was published."
 msgstr ""
@@ -23782,8 +23960,8 @@ msgid "The session is still connecting — try again in a moment."
 msgstr "الجلسة لا تزال قيد الاتصال — يُرجى المحاولة مجدداً بعد قليل."
 
 #: src/components/help/AskForHelpDialog.tsx
-msgid "The session transcript could not be read."
-msgstr "تعذّر قراءة نسخة الجلسة."
+#~ msgid "The session transcript could not be read."
+#~ msgstr "تعذّر قراءة نسخة الجلسة."
 
 #: src/components/account/settings-section.tsx
 #: src/components/setup-incomplete/use-setup-incomplete-warning.ts
@@ -24007,12 +24185,17 @@ msgstr "لم تعد غرفة التعاون هذه موجودة أو أنها غ
 #~ msgstr ""
 
 #: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
+#: src/components/data-sources/MessageChannelsList.tsx
 msgid "This computer"
 msgstr ""
 
 #. placeholder {0}: row.environment
 #: src/components/connections-manager.tsx
 msgid "This computer · {0}"
+msgstr ""
+
+#: src/components/data-sources/MessageChannelsList.tsx
+msgid "This computer (fetches its own)"
 msgstr ""
 
 #: src/components/graph-context/GraphContextViewer.tsx
@@ -24034,6 +24217,10 @@ msgstr "هذه المحادثة محلية فقط. سيتم حذفها من هذ
 #: src/components/conversation/ConversationRoute.tsx
 msgid "This conversation is not in this Agent stream inbox."
 msgstr "هذه المحادثة ليست في صندوق التدفق الوارد لهذا الوكيل."
+
+#: src/components/conversation/ChannelParticipants.tsx
+msgid "This conversation is on {label}: the people in it are on {label}, not Flowpad members."
+msgstr ""
 
 #: src/hooks/use-history-load-alert.ts
 msgid "This conversation is still saved, but part of it could not be read, so the chat is showing empty. Reloading may help. Details: {detail}"
@@ -24971,8 +25158,8 @@ msgid "Transcript"
 msgstr "النص الكامل"
 
 #: src/components/help/AskForHelpDialog.tsx
-msgid "Transcript not attached"
-msgstr "لم يتم إرفاق نسخة الجلسة"
+#~ msgid "Transcript not attached"
+#~ msgstr "لم يتم إرفاق نسخة الجلسة"
 
 #: src/components/lens-viewer/ClaudeErrorsViewer.tsx
 msgid "Transcript not found"
@@ -25999,6 +26186,10 @@ msgstr "في انتظار موافقة Keychain…"
 
 #: src/components/conversation/MessageBubble.tsx
 msgid "Waiting for sign-in"
+msgstr ""
+
+#: src/components/data-sources/MessageChannelsList.tsx
+msgid "waiting for the code"
 msgstr ""
 
 #: src/components/assets/editor/wizard/wizard-texts.ts

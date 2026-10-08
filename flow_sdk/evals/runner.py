@@ -102,6 +102,17 @@ async def _maybe(value: Any) -> Any:
     return await value if inspect.isawaitable(value) else value
 
 
+def _version(value: Any, folder: Path) -> str:
+    """One entry of ``versions()`` as recorded: a value of a registered schema (the map it offered)
+    is kept once in the dataset and named by its reference; anything else as text."""
+    from flow_sdk.schema.data_spec.spec import DataSpec, spec_tag  # noqa: PLC0415
+    from flow_sdk.values import save_value, store_of  # noqa: PLC0415
+
+    if isinstance(value, DataSpec) and spec_tag(value):
+        return save_value(value, store_of(folder))
+    return str(value)
+
+
 async def _metrics(module: Any, results: list[ExampleEval]) -> dict[str, Optional[float]]:
     judged = [r for r in results if r.verdict != Verdict.ERROR]
     out: dict[str, Optional[float]] = {
@@ -179,6 +190,7 @@ async def run(
         _maybe(module.versions()) if callable(getattr(module, "versions", None)) else _maybe({})
     )
     results = await asyncio.gather(*(one(r) for r in rows))
+    versions = {k: _version(v, folder) for k, v in (await versions_task or {}).items()}
     slices: dict[str, Any] = {}
     for path in eval_spec.slices:
         groups: dict[str, list[ExampleEval]] = defaultdict(list)
@@ -188,7 +200,6 @@ async def run(
             value: {"examples": len(part), **_counts(part), **(await _metrics(module, part))}
             for value, part in sorted(groups.items())
         }
-    versions = await versions_task
     run_id = f"{started.strftime('%Y-%m-%dT%H-%M-%S')}-{eval_spec.name}"
     record = EvalRun(
         run_id=run_id,
@@ -197,7 +208,7 @@ async def run(
         dataset_spec=spec,
         eval_name=eval_spec.name,
         eval_digest=digest,
-        versions={k: str(v) for k, v in (versions or {}).items()},
+        versions=versions,
         started_at=started.isoformat(timespec="seconds"),
         finished_at=datetime.now(timezone.utc).isoformat(timespec="seconds"),
         examples=len(results),

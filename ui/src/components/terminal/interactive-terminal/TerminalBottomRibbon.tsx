@@ -8,6 +8,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/c
 import { cn } from '@src/lib/utils';
 import { BookMarked, ChevronDown, FileText, Layers } from 'lucide-react';
 import { DisplayHistoryList } from '@src/pages/flow-page/display-history-button';
+import { latestPerTarget } from '@src/pages/flow-page/display-stack';
 import { PromptLibraryMenu } from '@src/components/prompt-library/PromptLibraryMenu';
 import { useIsAdvanced } from '@src/components/view-mode';
 import { compareArtifactsNewest } from '@src/hooks/use-process-artifacts';
@@ -275,10 +276,11 @@ const ArtifactsChip: React.FC<{
  * process's tab chip: the tab strip is for tabs, and a run's output belongs on
  * the run's own ribbon.
  *
- * One button with a count; clicking it lists the whole `display_stack`
- * newest-first with an "ago" stamp, and a row opens that target as a tab. The
- * stack rides on the process entity (backend-capped at 50), so this costs no
- * fetch, and the rows mount only while the popover is open.
+ * One button with a count of distinct targets; clicking it lists them
+ * newest-first (a target shown twice is one row, stamped with its latest show),
+ * and a row opens that target as a tab. The stack rides on the process entity
+ * (backend-capped at 50), so this costs no fetch, and the rows mount only while
+ * the popover is open.
  */
 const SHOWN_CHIP_CLASSES = 'h-6 text-sky-400 border-sky-400/40 hover:border-sky-400 hover:text-sky-300';
 
@@ -300,7 +302,7 @@ const ShownChip: React.FC<{
           className={cn(SHOWN_CHIP_CLASSES, 'gap-1.5 px-2 text-[11px]')}
         >
           <Layers className="h-3.5 w-3.5" />
-          <span className="tabular-nums">{shown.length}</span>
+          <span className="tabular-nums">{latestPerTarget(shown).length}</span>
         </Button>
       </PopoverTrigger>
       <PopoverContent align="start" side="top" className="w-72 p-1">

@@ -73,3 +73,9 @@ class AskForHelpRequest(DataSpec):
     #: Exactly what the person chose to attach (TypeIds). Nothing is added on their behalf.
     context: list[str] = []
     origin: HelpOrigin = HelpOrigin.VIBE
+    #: "Send diagnostic": diagnose this machine in the background and send the diagnosis after
+    #: the request, as its own message (``flow_sdk.diagnose``). The request never waits for it.
+    diagnose: bool = False
+    #: The session on screen (a TypeId) -- what the diagnose is told the person was in. Context
+    #: for the diagnose only; it is not attached.
+    process: Optional[str] = None

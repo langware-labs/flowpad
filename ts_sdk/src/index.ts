@@ -9,6 +9,7 @@ export * from './ApiResponse';
 export * from './apiStats';
 export * from './apps/index';
 export * from './evals/types';
+export * from './diagnose/types';
 export * from './viewers/index';
 export * from './capabilities';
 export * from './client';

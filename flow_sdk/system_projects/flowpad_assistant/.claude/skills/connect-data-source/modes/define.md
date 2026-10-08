@@ -36,8 +36,9 @@ propose **two or three** output shapes drawn from the sample, e.g.
 - `{"topic": "string", "summary": "string"}` — a label and a one-liner
 - `{"relevant": "bool", "reason": "string"}` — a gate with a why
 
-Kinds are `string` `int` `float` `bool`, a list is `["string"]`, and a nested
-object is another `{...}`. The person picks or edits one; you write what they
+The primitives are `string`, `int`, `float`, `bool` and `binary`. A list is
+`["string"]`, a nested object is another `{...}`, `"?string"` may be missing, and
+`"enum:yes|no"` is one of the listed strings. The person picks or edits one; you write what they
 chose, verbatim. Do not add fields they did not ask for.
 
 **Passes when** the person confirmed one shape.

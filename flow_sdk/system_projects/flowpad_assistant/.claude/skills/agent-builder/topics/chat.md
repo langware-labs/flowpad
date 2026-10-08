@@ -12,7 +12,9 @@ id: ab9ffc74-0bdf-4bf2-97c8-8e48defe4f90
 > **3. Hard limits live in the prompt.** A field marked *declared* in
 > `references/agent-json.md` is saved but never applied, and `permission_mode` is no
 > limit either: a chat worker runs headless, so any value but the default denies every
-> tool — the agent cannot even `flow show` its own page. Write each limit into the prompt.
+> tool — the agent cannot even `flow show` its own page. Write each limit into the prompt;
+> the one enforced tool limit is `disallowed_tools` on a Claude worker — use it too for a
+> command the agent must never run.
 > **4. Done means a reply the user saw.** An agent is finished after a test round the
 > user ran (`references/validation-loop.md`), not when its files exist.
 > **5. Deploying, credentials, email and phone reach real people.** Do them only on

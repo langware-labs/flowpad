@@ -14,6 +14,7 @@ POST /api/v1/graph/conversation/<id>/resend — the person's Retry: deliver it a
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from pathlib import Path
@@ -75,6 +76,7 @@ async def ask_for_help() -> ApiResponse:
     someone = request_info.someone_typeid
     conv, task, created = await _capture_conversation(ask, someone)
     opening = await _opening_message(conv)
+    diagnosing = False
     if opening is None:
         sent = await _write_opening_message(conv, task, ask, body.get("files"), someone)
         if not isinstance(sent, ApiSuccessResponse):
@@ -82,6 +84,8 @@ async def ask_for_help() -> ApiResponse:
                 await _discard(conv, task)
             return sent
         opening = await FlowMessage.get_one({"id": sent.data["id"]})
+        if ask.diagnose:
+            diagnosing = _diagnose_in_background(conv, ask, someone)
 
     # One attempt now; the outbox owns every later one. Its outcome never changes the verdict.
     try:
@@ -96,8 +100,100 @@ async def ask_for_help() -> ApiResponse:
             "task_id": task.id if task else None,
             "message_id": opening.id,
             "delivery": _delivery(opening),
+            # Started by THIS call — it may already be done: a sweep can beat the first delivery.
+            "diagnosing": diagnosing,
         }
     )
+
+
+# ---------------------------------------------------------------------------
+# "Send diagnostic": the diagnosis follows the request as its own message
+# ---------------------------------------------------------------------------
+
+#: Conversations whose diagnosis is being taken — strong refs, so a run outlives the request.
+_DIAGNOSING: dict[str, asyncio.Task] = {}
+
+#: The diagnosis travels as ``diagnosis.value.json``: a ``.value.json`` opens in its kind's viewer.
+DIAGNOSIS_FILE = "diagnosis.value.json"
+
+
+class _Upload:
+    """An in-memory file for the message send (what an upload looks like to it)."""
+
+    def __init__(self, filename: str, content: bytes) -> None:
+        self.filename = filename
+        self._content = content
+
+    async def read(self) -> bytes:
+        return self._content
+
+
+def _diagnose_in_background(conv: Conversation, ask: AskForHelpRequest, someone) -> bool:
+    """Diagnose this machine off the request's path; the request is already written and sent.
+    True when this call started the run."""
+    if conv.id in _DIAGNOSING:
+        return False
+    task = asyncio.create_task(send_diagnosis(conv.id, ask, someone))
+    _DIAGNOSING[conv.id] = task
+    task.add_done_callback(lambda _t: _DIAGNOSING.pop(conv.id, None))
+    return True
+
+
+def diagnosis_text(diagnosis, *, desk: bool) -> str:
+    """The message the diagnosis rides in. A desk can read a ticket's text before anyone picks
+    it up, but not its attachments, so a desk is also told what was found."""
+    head = f"Diagnostic: {diagnosis.title or diagnosis.status}"
+    if not desk:
+        return head
+    lines = [head, diagnosis.summary]
+    lines += [f"- {f.title}" + (f": {f.detail}" if f.detail else "") for f in diagnosis.findings[:5]]
+    lines += [f"(diagnosing failed: {e})" for e in diagnosis.errors]
+    return "\n".join(line for line in lines if line)
+
+
+async def send_diagnosis(conv_id: str, ask: AskForHelpRequest, someone) -> Optional[str]:
+    """Take a diagnosis (``run_diagnose`` never raises: a failing or hanging diagnose answers its
+    baseline) and send it into the request's conversation. Returns the message id.
+
+    Sent like any message of mine, so the outbox owns it: signed out or offline, it waits and goes
+    with the rest; refused, the person's Retry covers it."""
+    from flow_sdk.app.actions.notification_action import handle_add_message  # noqa: PLC0415
+    from flow_sdk.diagnose import DiagnosePurpose, FlowContextSpec, run_diagnose  # noqa: PLC0415
+    from flow_sdk.schema.data_spec.spec import spec_tag  # noqa: PLC0415
+
+    to = ask.recipient.name or ask.recipient.email or "the help desk"
+    ctx = FlowContextSpec(
+        purpose=DiagnosePurpose.REPORT,
+        project_id=ask.project_id,
+        process=ask.process,
+        user_report=ask.text,
+        origin=ask.origin.value,
+    )
+    diagnosis = await run_diagnose(ctx, label=f"Diagnosing for {to}")
+    try:
+        conv = await Conversation.get_one({"id": conv_id})
+        if conv is None:
+            logger.warning("[ask-for-help] conversation %s is gone; diagnosis not sent", conv_id)
+            return None
+        desk = conv.kind in (ConversationKind.HELPDESK, ConversationKind.HELPDESK.value)
+        # Tagged the way every value is (``spec_tag``): the kind is what opens it in its viewer.
+        content = json.dumps({"spec_kind": spec_tag(diagnosis), **diagnosis.model_dump(mode="json")}, indent=2)
+        sent = await handle_add_message(
+            {
+                "conversation_id": conv.id,
+                "text": diagnosis_text(diagnosis, desk=desk),
+                "files": [_Upload(DIAGNOSIS_FILE, content.encode("utf-8"))],
+            },
+            someone,
+        )
+        if not isinstance(sent, ApiSuccessResponse):
+            logger.warning("[ask-for-help] diagnosis not written: %s", sent.message)
+            return None
+        conv.kick_delivery()
+        return sent.data["id"]
+    except Exception as e:  # noqa: BLE001 — a lost diagnosis never touches the request
+        logger.warning("[ask-for-help] sending the diagnosis failed: %s", e, exc_info=True)
+        return None
 
 
 async def _capture_conversation(ask: AskForHelpRequest, someone) -> tuple[Conversation, Optional[Task], bool]:
@@ -170,9 +266,9 @@ async def _write_task(ask: AskForHelpRequest, conv_id: str, someone) -> Task:
 
 
 async def _opening_message(conv: Conversation) -> Optional[FlowMessage]:
-    """The request's first message, when an earlier send of the same request already wrote it."""
-    rows = await FlowMessage.get_all(QueryFilter(match={"conversation_id": conv.id, "outbound": True}, limit=1))
-    return rows[0] if rows else None
+    """The request's first message, when an earlier send of the same request already wrote it --
+    the first of mine, since a diagnosis may follow it."""
+    return next((fm for fm in await conv.messages() if fm.outbound), None)
 
 
 async def _write_opening_message(conv, task, ask: AskForHelpRequest, files, someone):
@@ -185,14 +281,6 @@ async def _write_opening_message(conv, task, ask: AskForHelpRequest, files, some
     if task and asked_title and task.title != asked_title and text.startswith(asked_title):
         # The task took the next free title ("… (2)"): the message names the task it carries.
         text = task.title + text[len(asked_title) :]
-    if conv.kind == ConversationKind.HELPDESK.value or conv.kind == ConversationKind.HELPDESK:
-        # A guest cannot list a ticket's messages on the desk before staff pick it up, so the
-        # session the asker CHOSE to attach also travels as text the desk can read at once.
-        excerpt = await _session_excerpt(ask.context)
-        if excerpt:
-            from flow_sdk.app.actions.flow_message_action import TICKET_TRANSCRIPT_CHARS  # noqa: PLC0415
-
-            text = f"{text}\n\n--- agent session (last {TICKET_TRANSCRIPT_CHARS} chars) ---\n{excerpt}"
     body = {
         "conversation_id": conv.id,
         "text": text,
@@ -200,22 +288,6 @@ async def _write_opening_message(conv, task, ask: AskForHelpRequest, files, some
         **({"files": files} if files else {}),
     }
     return await handle_add_message(body, someone)
-
-
-async def _session_excerpt(context: list[str]) -> Optional[str]:
-    """A readable tail of the session the asker named — never one they did not."""
-    from flow_sdk.app.actions.flow_message_action import _ticket_transcript_excerpt  # noqa: PLC0415
-    from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess  # noqa: PLC0415
-
-    for ref in context:
-        if ref.startswith("claude_session-"):
-            return await _ticket_transcript_excerpt(ref)
-        if ref.startswith("agentic_process-"):
-            process = await AgenticProcess.get_by_id(ref.split("-", 1)[1])
-            session_id = getattr(process, "session_id", None) if process else None
-            if session_id:
-                return await _ticket_transcript_excerpt(f"claude_session-{session_id}")
-    return None
 
 
 async def _discard(conv: Conversation, task: Optional[Task]) -> None:

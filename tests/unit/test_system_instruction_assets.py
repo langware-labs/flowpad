@@ -396,3 +396,24 @@ def test_driver_projects_its_instruction_files(tmp_path, worker_type, discovery_
     assert prompt_file.read_text() == "Follow the task\n"
     assert "Follow the task" in (tmp_path / discovery_file).read_text()
     assert not (tmp_path / ".agents").exists()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("name, auto_open, expected", [
+    ("vibe", ["flow show file /p/a.html"], True),
+    ("standard", ["flow show file /p/a.html"], False),
+    ("vibe", None, False),
+])
+async def test_auto_open_block_reaches_vibe_sessions_only(records_root, tmp_path, monkeypatch, name, auto_open, expected):
+    async def _save_noop(self):
+        return self
+
+    monkeypatch.setattr(AgenticProcess, "save", _save_noop)
+    persona = tmp_path / f"{name}.md"
+    persona.write_text(f"---\nname: {name}\ndescription: {name}\n---\n\nBe {name}.\n", encoding="utf-8")
+    process = _process(WorkerType.CLAUDE_CODE, tmp_path, context_data={"auto_open": auto_open} if auto_open else {})
+    await process.load_embedded_subagent_action(str(persona), set_ap_persona=True)
+
+    text = (await process.prepare_system_instruction_assets()).claude_file.read_text(encoding="utf-8")
+
+    assert ("# Opened for you at session start" in text) is expected

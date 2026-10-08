@@ -7,12 +7,20 @@ construct new records via ``flow record index``.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import requests
 import typer
 from typing_extensions import Annotated
 
 from flow_sdk.cli.commands._common import (
+    _graph_json,
+)
+from flow_sdk.cli.commands._common import (
     bad_response_message as _bad_response_message,
+)
+from flow_sdk.cli.commands._common import (
+    caller_abs_path as _caller_abs_path,
 )
 from flow_sdk.cli.commands._common import (
     discover_port as _discover_port,
@@ -21,10 +29,19 @@ from flow_sdk.cli.commands._common import (
     fail as _fail,
 )
 from flow_sdk.cli.commands._common import (
+    get_graph_json as _get_graph_json,
+)
+from flow_sdk.cli.commands._common import (
+    graph_url as _graph_url,
+)
+from flow_sdk.cli.commands._common import (
     local_get as _local_get,
 )
 from flow_sdk.cli.commands._common import (
     ok as _ok,
+)
+from flow_sdk.cli.commands._common import (
+    server_error as _server_error,
 )
 
 schema_app = typer.Typer(
@@ -123,3 +140,114 @@ def info_schema(
     error_code = str(body.get("error_code") or "UNKNOWN")
     mapping = {"NOT_FOUND": EXIT_NOT_FOUND}
     _fail(mapping.get(error_code, EXIT_CONNECTION_ERROR), error_code, str(body.get("error") or "unknown"))
+
+
+EXIT_SCHEMA_ERRORS = 6
+
+
+def _why_not_indexed(folder: Path) -> str:
+    """The indexer walks into a schema folder only through folders that are schemas themselves."""
+    from flow_sdk.schema.data_spec.declared import FAMILY, MAIN  # noqa: PLC0415
+
+    for parent in folder.parents:
+        if parent.parent.name == FAMILY and not (parent / MAIN).is_file():
+            return (
+                f"not indexed: {parent} groups schemas but has no {MAIN}; "
+                f'write {{"type": "{FAMILY}", "ns": "<the schemas\' ns>"}} there (a documentation node) and apply again'
+            )
+    return "not indexed"
+
+
+def _walk_root(root: Path) -> Path:
+    """Where a walk must start to see ``root``'s schemas: the folder HOLDING ``agentic-assets``."""
+    from flow_sdk.assets.placement import AGENTIC_ASSETS_DIR  # noqa: PLC0415
+    from flow_sdk.schema.data_spec.declared import FAMILY  # noqa: PLC0415
+
+    if root.name == FAMILY and root.parent.name == AGENTIC_ASSETS_DIR:
+        return root.parent.parent
+    return root.parent if root.name == AGENTIC_ASSETS_DIR else root
+
+
+def schema_folders_under(root: Path) -> "list[Path]":
+    """Every data schema folder at or below ``root``: a schema and the ones it groups, its family
+    folder, an ``agentic-assets`` folder, or any tree."""
+    from flow_sdk.schema.data_spec.declared import MAIN, data_schema_folders  # noqa: PLC0415
+
+    below = [f for f in data_schema_folders(_walk_root(root)) if root in f.parents]
+    return [root, *below] if (root / MAIN).is_file() else below
+
+
+def apply_report(rows: "dict[Path, dict | None]") -> "list[dict]":
+    """One entry per data schema folder, from the row indexed at its path (``None``: none was).
+    The kind is the folder name; the file's ``name`` can be stale after a rename."""
+    first: dict[str, Path] = {}  # kind -> the folder that defines it; a second folder is a duplicate
+    out: list[dict] = []
+    for folder, row in rows.items():
+        kind = folder.name
+        owner = first.setdefault(kind, folder)
+        if owner != folder:
+            error = f"kind {kind!r} is already defined by {owner}"
+        elif row is None:
+            error = _why_not_indexed(folder)
+        else:
+            error = row.get("error") or ""
+        entry = {"folder": str(folder), "kind": kind}
+        if error:
+            out.append({**entry, "status": "error", "error": error})
+        else:
+            fields = sorted((row.get("fields") or {}).keys())
+            out.append({**entry, "status": "ok", "subkind": row.get("subkind"), "fields": fields})
+    return out
+
+
+@schema_app.command(
+    "apply",
+    help=(
+        "Register every data schema folder under PATH now -- after any edit, add, move or rename -- "
+        "and report each one's live kind or why it did not register. Never restart Flowpad for this."
+    ),
+)
+def apply_schemas(
+    path: Annotated[str, typer.Argument(help="A data schema folder, or any tree containing them.")],
+) -> None:
+    from flow_sdk.schema.data_spec.declared import FAMILY, MAIN  # noqa: PLC0415
+
+    root = Path(_caller_abs_path(path))
+    if not root.exists():
+        _fail(EXIT_NOT_FOUND, "NOT_FOUND", f"Path does not exist: {path}")
+    folders = schema_folders_under(root)
+    if not folders:
+        _fail(EXIT_NOT_FOUND, "NOT_FOUND", f"No data schema folder under {root}")
+
+    port = _discover_port()
+    calls = []
+    if (root / MAIN).is_file():  # the folder itself: the direct path always re-reads it
+        calls.append({"path": str(root)})
+    if folders != [root]:  # the ones below: a walk, forced so an unchanged one that failed re-registers
+        calls.append({"path": str(_walk_root(root)), "force": "true"})
+    for params in calls:
+        _graph_json(
+            "POST",
+            _graph_url(port, "compute_node/@local/fs-records/index"),
+            params={"type": FAMILY, **params},
+            timeout=120,
+            on_error=_server_error,
+        )
+    rows: dict[Path, "dict | None"] = {}
+    for f in folders:
+        row = _get_graph_json(
+            f"http://127.0.0.1:{port}/api/v1/assets/entity", params={"path": str(f)}, on_error=_server_error
+        )
+        # The lookup falls back to the CONTAINING asset; only a row at this folder's own path counts.
+        at = {Path(o.get("path") or "") for o in (row or {}).get("asset_occurrences") or []}
+        rows[f] = row if row and (Path(row.get("asset_ref") or "") == f or f in at) else None
+    report = apply_report(rows)
+    errors = [r for r in report if r["status"] == "error"]
+    if errors:
+        _fail(
+            EXIT_SCHEMA_ERRORS,
+            "SCHEMA_ERRORS",
+            f"{len(errors)} of {len(report)} schemas did not register",
+            {"schemas": report},
+        )
+    _ok({"schemas": report})

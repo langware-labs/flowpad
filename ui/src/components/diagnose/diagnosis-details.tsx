@@ -1,5 +1,6 @@
 import { t } from '@lingui/core/macro';
 import { DiagnosisActionButtons } from '@src/components/diagnose/diagnosis-action-buttons';
+import { KindValue } from '@src/components/value-viewer/KindValue';
 import { useDiagnosisReport } from '@src/components/diagnose/use-diagnosis-report';
 import { copyToClipboard, FlowpadDiagnosis, TypeId } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
@@ -218,6 +219,13 @@ export function DiagnosisDetails({
             ))}
         </dl>
       </div>
+
+      {/* The full diagnosis (findings, machine, log tails) — the same viewer a helper sees. */}
+      {diag.diagnosis && (
+        <div className={isPage ? 'border-t pt-7' : 'border-t pt-3'}>
+          <KindValue kind="diagnosis" value={diag.diagnosis} testId="diagnosis-full" />
+        </div>
+      )}
 
       {/* Same actions as a Feed entry: Report issue emails the team (needs only the
           diagnosis), Forward posts the report into a chosen conversation. */}

@@ -1,3 +1,4 @@
+import { MessageLifecycle, type Lifecycle } from './message-lifecycle';
 import { t } from '@lingui/core/macro';
 import { isViewer } from './conversation-category';
 import {
@@ -211,6 +212,8 @@ interface FlowMessageBubbleProps {
    *  `native`: Flowpad's own chat, where any sent message can be answered by its id; a channel
    *  reply instead needs the message's source record (`fm.origin`). */
   channelTraits?: { quotes?: boolean; reacts?: boolean; native?: boolean } | null;
+  /** Where this message, come in on a channel, is on its way to an answer (`message-lifecycle`). */
+  lifecycle?: Lifecycle | null;
   /** The message this one quotes, resolved by the parent from the loaded list. */
   quoted?: { sender: string; text: string; onJump?: () => void } | null;
   /** Answer this message from the composer — set only when the channel replies (`ChannelSpec.replies`). */
@@ -251,6 +254,7 @@ export function FlowMessageBubble({
   onLaunchWorker,
   showEmailHeaders = false,
   channelTraits = null,
+  lifecycle = null,
   quoted = null,
   onReply,
 }: FlowMessageBubbleProps) {
@@ -757,7 +761,8 @@ export function FlowMessageBubble({
         senderName={displayName}
         onSenderClick={agentSender ? () => navigation.openDock(agentSender.dockPointer) : undefined}
         onEditName={
-          isCurrentUser
+          // A channel's sender is who they are on the channel — not a Flowpad name to edit.
+          isCurrentUser && channelTraits?.native !== false
             ? (newName) => {
                 setOverrideName(newName);
                 void updateName(newName);
@@ -788,6 +793,7 @@ export function FlowMessageBubble({
         onReply={onReply && fm && (channelTraits?.native ? !fm.is_draft : fm.origin) ? () => onReply(fm) : undefined}
         replyInThread={!channelTraits?.quotes}
       />
+      {lifecycle && <MessageLifecycle lifecycle={lifecycle} />}
       {reactError && (
         <p className="ms-10 text-xs text-destructive" role="alert" data-testid="reaction-error">
           {reactError}

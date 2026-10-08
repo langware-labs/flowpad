@@ -7,6 +7,7 @@ description: >-
   indexes records (tasks, skills, agents, workflows); searches local assets via FTS;
   restarts the calling agentic-process; reads messages the user received ("X sent me
   a message") and sends messages with attachments into a conversation. Use for "the current X" / "this X", "create a task / skill / agent",
+  "define or change a data schema",
   "find or look up X", "restart this session", "what did X send me", or "send X to my
   conversation with Y".
   NOT for showing or opening something in the UI (flowpad-navigation), building a
@@ -117,7 +118,7 @@ For any action other than `context`, open the matching file in this skill direct
 
 | Action | File |
 | --- | --- |
-| records  | [`records.md`](records.md) |
+| records  | [`records.md`](records.md) — also defining or changing a data schema (`flow schema apply`) |
 | search   | [`search.md`](search.md) |
 | process  | [`process.md`](process.md) |
 | message  | [`message.md`](message.md) — read what someone sent (Flowpad conversations, never Slack/Gmail unprompted; needs cloud login) or send |

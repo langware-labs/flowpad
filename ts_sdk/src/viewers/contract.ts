@@ -82,6 +82,19 @@ export interface ViewerContext {
   kindForm(kind: string): Promise<KindForm | null>;
   /** The generic viewer, for a custom one that only refines a part (`edit` delegated, say). */
   generic: { single: SingleViewer; collection: CollectionViewer };
+  /** Open one part on its own, in its own viewer (a drill-down the app keeps a trail of). Absent
+   *  when the app offers none — a viewer then simply does not make the part clickable. */
+  open?: (part: OpenRequest) => void;
+  /** Open an entity (a TypeId) in Flowpad — the host navigates. Absent when there is no host. */
+  navigate?: (typeid: string) => void;
+}
+
+/** A part to open on its own: a value of a kind, and what to call it in the trail. */
+export interface OpenRequest {
+  kind: Shape;
+  value: unknown;
+  title: string;
+  meta?: Record<string, unknown>;
 }
 
 export interface SingleViewer {

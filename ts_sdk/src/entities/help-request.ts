@@ -31,6 +31,11 @@ export type AskForHelpRequest = {
   /** Exactly what the person chose to attach (TypeIds). */
   context?: string[];
   origin?: HelpOrigin;
+  /** "Send diagnostic": diagnose this machine in the background; the diagnosis follows the
+   *  request as its own message. The request never waits for it. */
+  diagnose?: boolean;
+  /** The session on screen (a TypeId) — context for the diagnose only, never attached. */
+  process?: string | null;
 };
 
 /** Why the hub does not have something — mirrors ``HubFailure``. Match ``kind``, never ``message``. */
@@ -54,6 +59,8 @@ export interface AskForHelpResult {
   task_id: string | null;
   message_id: string;
   delivery: DeliveryState;
+  /** A diagnosis is being taken in the background (an activity in the footer) and will follow. */
+  diagnosing?: boolean;
 }
 
 /** Write a help request here, then let delivery take it to the hub. Files ride along multipart. */

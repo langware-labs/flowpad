@@ -21,7 +21,7 @@ hand-rolled hub clients collapse every failure into "hub unreachable". The hub t
 a re-sent message id a unique-constraint 500, a re-sent ticket a second ticket. The help desk portal hides the human path
 whenever the desk ships an agent.
 
-## 1. Nouns (DataSpecs in `flow_sdk`, frozen)
+## 1. Nouns (schemas in `flow_sdk` — frozen `DataSpec` subclasses)
 
 | Shape | Fields |
 |---|---|
@@ -30,7 +30,7 @@ whenever the desk ships an agent.
 | `HubFailure` | `kind: HubFailureKind{offline, not_configured, signed_out, rejected, server_error}`; `status: int \| None`; `code: str \| None` (hub `error_code` such as `target_not_found`, `unauthenticated`; local codes `local_source_missing`, `hub_too_old`); `message` (one sentence, never HTML) |
 | `DeliveryState` | `header: DeliveryStatus`, `body: BodyStatus \| None`, `failure: HubFailure \| None` |
 | `HelpRequestStatus` | `open \| resolved \| closed` — computed in ONE backend function. Person ask: the task's status decides. Desk ask: the conversation's status decides. |
-| `HelpdeskTarget` | becomes a frozen DataSpec (it is a NamedTuple today) |
+| `HelpdeskTarget` | becomes a frozen `DataSpec` schema (it is a NamedTuple today) |
 
 **Enums and fields**
 

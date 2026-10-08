@@ -49,13 +49,10 @@ export function useConversationSessions(conversationId: string | null | undefine
   }, [sessions, conversationId]);
 }
 
-/** Which side of a session the viewer is on. Host/guest ids are CLOUD ids. */
+/** Which side of a session the viewer is on; a row not synced yet is the guest's request. */
 export function sessionRole(
   session: RemoteWorkerSession | null,
   cloudUserId: string | null | undefined,
 ): 'host' | 'guest' | 'observer' {
-  if (!session) return 'guest';
-  if (session.isHost(cloudUserId ?? null) || !!session.host_process_id) return 'host';
-  if (session.guest_user_id && session.guest_user_id === cloudUserId) return 'guest';
-  return 'observer';
+  return session ? session.roleFor(cloudUserId) : 'guest';
 }

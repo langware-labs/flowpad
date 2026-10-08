@@ -1,6 +1,7 @@
-"""Kinds DEFINED BY A FOLDER: build ``data_spec/<full.kind>/data_spec.json`` into a registered DataSpec.
+"""Schemas DEFINED BY A FOLDER: build ``data_schema/<full.kind>/data_schema.json`` into a ``DataSpec``
+class registered under its kind.
 
-The ontology's other path mints a kind by importing code (``driver_registry``: a data driver's
+The ontology's other path mints a schema by importing code (``driver_registry``: a data driver's
 ``source.py``). This one builds the class from the folder's document, and then registers it
 through the SAME hook every hand-written spec uses -- ``DataSpec.__pydantic_init_subclass__``
 inside ``_namespace.loading(ns)`` -- so the namespace, ``__spec_tag__`` and "a kind names exactly
@@ -16,7 +17,7 @@ sibling order irrelevant: a parent may name its children, a child its sibling.
 nobody defines -- each becomes the folder's error, which indexing writes onto the row.
 
 **An unchanged folder is read and built once** -- a cost saving: indexing reaches one definition
-several ways (each data spec folder, the miss loader).
+several ways (each data schema folder, the miss loader).
 
 Namespace: ``project_manifest.asset_namespace``, the rule data drivers use -- ours if shipped, else
 the document's ``ns``, else its project's; an external that names none is refused.
@@ -34,21 +35,21 @@ from pydantic import Field, ValidationError, create_model
 
 from flow_sdk.assets.placement import AGENTIC_ASSETS_DIR
 from flow_sdk.schema.data_spec._namespace import loading, qualified
-from flow_sdk.schema.data_spec.data_spec_spec import DataSpecDocSpec
+from flow_sdk.schema.data_spec.data_schema_spec import DataSchemaDocSpec
 from flow_sdk.schema.data_spec.dataset_spec import DatasetSpec, ExampleSpec
 from flow_sdk.schema.data_spec.spec import ENUM_PREFIX, OPTIONAL_MARK, DataSpec, _compile, _field_def, _normalize_form
 from flow_sdk.schema.types import EntityType
 
 logger = logging.getLogger(__name__)
 
-MAIN = DataSpecDocSpec.main_file
-FAMILY = EntityType.DATA_SPEC.value
+MAIN = DataSchemaDocSpec.main_file
+FAMILY = EntityType.DATA_SCHEMA.value
 
 _lock = threading.RLock()
 
 
 class DeclareError(ValueError):
-    """Why a data spec folder did not register."""
+    """Why a data schema folder did not register."""
 
 
 class _Read:
@@ -56,7 +57,7 @@ class _Read:
 
     __slots__ = ("source", "doc", "tag", "ns")
 
-    def __init__(self, source: str, doc: DataSpecDocSpec, tag: str, ns: str) -> None:
+    def __init__(self, source: str, doc: DataSchemaDocSpec, tag: str, ns: str) -> None:
         self.source, self.doc, self.tag, self.ns = source, doc, tag, ns
 
 
@@ -77,8 +78,8 @@ _shipped_loaded = False
 # ── finding and reading folders ──────────────────────────────────────────────
 
 
-def data_spec_folders(root: Path) -> list[Path]:
-    """Every data spec folder under ``root``'s ``agentic-assets/``, at any depth of nesting.
+def data_schema_folders(root: Path) -> list[Path]:
+    """Every data schema folder under ``root``'s ``agentic-assets/``, at any depth of nesting.
 
     Walks only ``agentic-assets`` trees -- an asset's own children live there -- so a project
     root costs a few directory listings, never a crawl of its sources.
@@ -117,16 +118,16 @@ def _read(folder: Path) -> _Read:
         return known
     try:
         header, bodies = read_entity_json(SchemaRegistry.get(FAMILY), folder)
-        doc = DataSpecDocSpec.model_validate({**header, **bodies})
+        doc = DataSchemaDocSpec.model_validate({**header, **bodies})
     except ValidationError as exc:
-        raise DeclareError(f"{MAIN} is not a data spec: {exc.errors()[0].get('msg', exc)}") from exc
+        raise DeclareError(f"{MAIN} is not a data schema: {exc.errors()[0].get('msg', exc)}") from exc
     except ValueError as exc:  # unreadable JSON, a document of another type
         raise DeclareError(f"{MAIN}: {exc}") from exc
     shipped = is_running_install_path(folder)
     ns = asset_namespace(folder, doc.ns, shipped=shipped)
     if not shipped and not ns:
         raise DeclareError(
-            "declares no `ns`: an externally authored data spec must name the ontology namespace "
+            "declares no `ns`: an externally authored data schema must name the ontology namespace "
             "its kind belongs to, or it lands in ours"
         )
     try:
@@ -189,6 +190,22 @@ def _contains_any(annotation: Any) -> bool:
     return annotation is Any or any(_contains_any(arg) for arg in get_args(annotation))
 
 
+def _still_defines(owner: Path, tag: str) -> bool:
+    """Whether ``owner`` still defines ``tag`` on disk -- gone, unreadable or re-tagged is no."""
+    try:
+        return _read(owner).tag == tag
+    except DeclareError:
+        return False
+
+
+def _release(tag: str) -> None:
+    """Forget the folder that owned ``tag``, so another folder may define it without a restart."""
+    owner = _OWNER.pop(tag, None)
+    if owner is not None:
+        for cache in (_BUILT, _READ, _ERRORS):
+            cache.pop(owner, None)
+
+
 def _build(folder: Path) -> Optional[type]:
     """Compile and register ONE folder; dependencies first. Raises ``DeclareError``."""
     read = _read(folder)
@@ -201,7 +218,9 @@ def _build(folder: Path) -> Optional[type]:
         return None  # a documentation node: it names no shape, so it registers nothing
     owner = _OWNER.get(tag)
     if owner is not None and owner.resolve() != folder.resolve():
-        raise DeclareError(f"kind {tag!r} is already defined by {owner}")
+        if _still_defines(owner, tag):
+            raise DeclareError(f"kind {tag!r} is already defined by {owner}")
+        _release(tag)  # the owner moved, was renamed or deleted: the kind is free
 
     record = doc.resolved_subkind == "record"
     raw = {name: f.shape for name, f in (doc.fields or {}).items()} if record else dict(doc.examples or {})
@@ -263,7 +282,7 @@ def _build_pending(tag: str) -> None:
         _ERRORS[folder] = ""
     except DeclareError as exc:
         _ERRORS[folder] = str(exc)
-        logger.warning("[data_spec] %s: %s", folder, exc)
+        logger.warning("[data_schema] %s: %s", folder, exc)
 
 
 def _pend(folder: Path) -> Optional[str]:
@@ -283,19 +302,19 @@ def _settle(folder: Path, tag: Optional[str]) -> None:
 
 
 def load_root(root: Path) -> dict[Path, str]:
-    """Register every data spec under ``root`` -- nested at any depth, in dependency order.
+    """Register every data schema under ``root`` -- nested at any depth, in dependency order.
 
     Returns ``{folder: error}``; ``""`` means it registered (or is a documentation node).
     """
     with _lock:
-        tags = {folder: _pend(folder) for folder in data_spec_folders(root)}
+        tags = {folder: _pend(folder) for folder in data_schema_folders(root)}
         for folder, tag in tags.items():
             _settle(folder, tag)
         return {folder: _ERRORS.get(folder, "") for folder in tags}
 
 
 def register_folder(folder: Path) -> str:
-    """Register one data spec folder (indexing calls this); its error, or ``""``.
+    """Register one data schema folder (indexing calls this); its error, or ``""``.
 
     The definitions of its tree not read yet are pended first, so a definition indexed before
     the kinds it names still resolves them.
@@ -306,7 +325,7 @@ def register_folder(folder: Path) -> str:
         for parent in folder.parents:
             if parent.name == AGENTIC_ASSETS_DIR:
                 top = parent.parent
-        for other in data_spec_folders(top):
+        for other in data_schema_folders(top):
             if other != folder and other not in _READ:
                 _pend(other)
         _settle(folder, _pend(folder))
@@ -314,7 +333,7 @@ def register_folder(folder: Path) -> str:
 
 
 def ensure_shipped() -> None:
-    """Register every data spec this build ships -- once per process (the kind loader's bare miss)."""
+    """Register every data schema this build ships -- once per process (the kind loader's bare miss)."""
     global _shipped_loaded
     with _lock:
         if _shipped_loaded:
@@ -325,4 +344,4 @@ def ensure_shipped() -> None:
         load_root(flowpad_assistant_project_root())
 
 
-__all__ = ["DeclareError", "data_spec_folders", "ensure_shipped", "load_root", "register_folder", "subkind_of"]
+__all__ = ["DeclareError", "data_schema_folders", "ensure_shipped", "load_root", "register_folder", "subkind_of"]

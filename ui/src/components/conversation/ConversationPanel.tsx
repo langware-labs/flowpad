@@ -17,6 +17,7 @@ import { useProjectMappingGate } from './useProjectMappingGate';
 import { ConversationBottomRibbon, type ConversationSideTab } from './ConversationBottomRibbon';
 import { ConversationContextPanel } from './ConversationContextPanel';
 import { MembersAvatarStack } from './MembersAvatarStack';
+import { ChannelParticipants } from './ChannelParticipants';
 import { ProjectChip } from '@src/components/project/ProjectChip';
 import { LatestScroll } from '@src/components/conversation/LatestScroll';
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
@@ -155,7 +156,8 @@ export function EditableConversationTitle({
     <span
       data-testid="conversation-title"
       className={cn('cursor-text rounded px-0.5 hover:bg-muted', className)}
-      title={display}
+      // A channel conversation's name is Flowpad's label for it; the channel has no title to rename.
+      title={conv.isChannel ? t`${display} — renames in Flowpad only` : display}
       onClick={() => {
         setDraft(conv.title ?? '');
         setEditing(true);
@@ -346,7 +348,11 @@ export function ConversationPanel({
             <div className={headerWrapper}>
               <EditableConversationTitle conv={convEntity ?? null} fallback={headerLabel} />
               <ProjectChip projectId={convEntity?.project_id ?? null} className="me-auto" />
-              <MembersAvatarStack typeId={new TypeId(Conversation.type, conversationId)} showInviteButton />
+              {convEntity?.isChannel ? (
+                <ChannelParticipants conversation={convEntity} />
+              ) : (
+                <MembersAvatarStack typeId={new TypeId(Conversation.type, conversationId)} showInviteButton />
+              )}
             </div>
           )}
           <LatestScroll className={`${bodyWrapper} relative`}>

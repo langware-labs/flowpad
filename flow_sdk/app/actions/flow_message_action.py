@@ -1575,63 +1575,6 @@ async def resolve_helpdesk(project_id: Optional[str] = None) -> Optional[Helpdes
     return await _hub_default_helpdesk()
 
 
-#: How much transcript rides with a ticket. Enough for an assignee to see what
-#: the agent actually tried; short enough that a desk is not handed a customer's
-#: entire working session. The tail, not the head — the failure is at the end.
-TICKET_TRANSCRIPT_CHARS = 4000
-
-
-async def _ticket_transcript_excerpt(session_typeid: Optional[str]) -> Optional[str]:
-    """A readable tail of a session the asker attached, for the ticket's text.
-
-    A desk can read a ticket's text before anyone picks it up, but not its attachments — so the
-    session the person CHOSE to include also travels as text (``ask-for-help`` builds it only from
-    a session named in the request's context). Best-effort: unreadable or missing yields ``None``.
-    """
-    if not session_typeid or not session_typeid.startswith("claude_session-"):
-        return None
-    try:
-        import json as _json  # noqa: PLC0415
-        from pathlib import Path  # noqa: PLC0415
-
-        from flow_sdk.builtin.claude_session import ClaudeSession  # noqa: PLC0415
-
-        session_id = session_typeid.split("-", 1)[1]
-        session = await ClaudeSession.get_by_id(session_id)
-        # ``asset_ref`` IS the transcript jsonl — a session is a file-backed
-        # entity whose id is the Claude session id.
-        ref = getattr(session, "asset_ref", None) if session else None
-        path = Path(ref) if ref else None
-        if path is None or not path.is_file():
-            return None
-
-        turns: list[str] = []
-        for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
-            try:
-                row = _json.loads(line)
-            except ValueError:
-                continue
-            message = row.get("message") or {}
-            role = message.get("role") or row.get("type") or "?"
-            content = message.get("content")
-            if isinstance(content, list):
-                text = " ".join(part.get("text", "") for part in content if isinstance(part, dict)).strip()
-            else:
-                text = str(content or "").strip()
-            if text:
-                turns.append(f"{role}: {text}")
-        if not turns:
-            return None
-
-        excerpt = "\n".join(turns)
-        if len(excerpt) > TICKET_TRANSCRIPT_CHARS:
-            excerpt = "…\n" + excerpt[-TICKET_TRANSCRIPT_CHARS:]
-        return excerpt
-    except Exception as e:  # noqa: BLE001
-        logger.info("[helpdesk-start-ticket] transcript excerpt skipped: %s", e)
-        return None
-
-
 def _ticket_title(text: str) -> str:
     """A ticket's title for a hub that does not title it: the first line, cut to 60 and "…"
     — the hub's own rule (``Project.start_guest_conversation``)."""

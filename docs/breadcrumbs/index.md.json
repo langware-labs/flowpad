@@ -5,7 +5,7 @@
   "vault_root": "/Users/shlom/Documents/dev/flowpad-oss/docs",
   "folder_rel_path": "breadcrumbs",
   "folder_name": "breadcrumbs",
-  "inputs_hash": "0aa55e335e6e6101e0aa68bee704eede7a7f8cbf621f2c62be518f4b80835014",
+  "inputs_hash": "6f732baee9de13f459fd5bc0253542a5efc7ff25d61085eb8eeae8fe6bdd5d7c",
   "template_version": 1,
   "prompt_version": 1,
   "self_summary": "Proven root causes, one per page: a rule established by debugging, why the obvious reading was wrong, and the lever that shows it. Read the one matching your symptom before re-deriving it — personas, composer readiness, live frames, port picking, login state.",
@@ -65,6 +65,14 @@
       "summary": "What evidence may write a harness login state: why an undetermined probe must not read as signed out, and presence-only must not overturn a refusal.",
       "content_hash": "1facfea1aaadb28c927b150f1e8f8451081eefcd26dced9aec14e8d0317101e9",
       "size_bytes": 11504
+    },
+    {
+      "name": "hub_signin_reconnect.md",
+      "rel_path": "hub_signin_reconnect.md",
+      "title": "Hub sign-in survives a hub socket reconnect",
+      "summary": "Ground-truth rules for keeping a box signed in to the hub across websocket reconnects, with the test and internals that pin them",
+      "content_hash": "170d4321a096944e90db36f94617ce8537d6d7332e58beb10d09ef63e459933e",
+      "size_bytes": 5107
     },
     {
       "name": "live_frame_identity.md",
@@ -142,9 +150,9 @@
       "name": "terminal_bidi.md",
       "rel_path": "terminal_bidi.md",
       "title": "Terminal RTL/bidi rendering contract",
-      "summary": "The terminal RTL/bidi contract: one bidi paragraph per row, buffer order chosen per CLI not per platform, stamped on both mount and vendor resolution.",
-      "content_hash": "aae040bb60087a6c53275a1a6928014b30acc7b4e4d4a21949d9d87e784be5d3",
-      "size_bytes": 14561
+      "summary": "Terminal RTL/bidi rendering contract: one bidi paragraph per row, buffer order chosen per CLI rather than platform, stamped on container mount and vendor resolution.",
+      "content_hash": "6bb5d54bb2d711e5f9e8748d8fa170081c2ed407d3efe5bdeb09256c049f7d96",
+      "size_bytes": 14550
     },
     {
       "name": "worker_interpreter.md",
@@ -172,6 +180,6 @@
     }
   ],
   "subfolders": [],
-  "generated_at": "2026-09-22T10:22:30.916793+00:00",
+  "generated_at": "2026-10-07T14:33:53Z",
   "latest_process_ref": ""
 }

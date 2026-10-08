@@ -5,7 +5,7 @@
   "vault_root": "/Users/shlom/Documents/dev/flowpad-oss/docs",
   "folder_rel_path": "agent-management",
   "folder_name": "agent-management",
-  "inputs_hash": "298a429971422f43d1fb16297192adc15c0848d185dbd1a27b1d2b1ff11cc849",
+  "inputs_hash": "50ba94cc812628dc84b0f71578f872a78ddc1c2da3e0b882f5453bb9d32441fd",
   "template_version": 1,
   "prompt_version": 1,
   "self_summary": "Running and controlling agent sessions: which state survives a restart, the orthogonal headless/PTY transports and how a process switches between them, Claude session lifecycle, the PTY WebSocket stack, and the terminal's tabs and toolbars.",
@@ -62,12 +62,12 @@
       "name": "terminal-toolbars.md",
       "rel_path": "terminal-toolbars.md",
       "title": "Terminal Toolbars",
-      "summary": "The interactive PTY terminal UI: ProcessToolbar controls, CLI options, columns and trace menus, restart-required signal, and how headless mode differs.",
-      "content_hash": "9f211c1d209111647af694b42b3cb06ede4c3c23811586f324232ce3db2edd80",
-      "size_bytes": 25856
+      "summary": "Reference for the interactive terminal UI's ProcessToolbar controls, CLI options, columns and trace dropdowns, restart signal, session state and PTY versus headless mode.",
+      "content_hash": "e169147a416d4ffde1883b0021b6b284c183db0ec5a322fbeacd74d482f98cbf",
+      "size_bytes": 25923
     }
   ],
   "subfolders": [],
-  "generated_at": "2026-09-25T12:04:30Z",
+  "generated_at": "2026-10-07T14:33:53Z",
   "latest_process_ref": ""
 }

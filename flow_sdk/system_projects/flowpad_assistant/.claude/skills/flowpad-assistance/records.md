@@ -219,3 +219,21 @@ sides. `import flow_sdk.models.entities` is required — entity classes register
 import, and without it `get_entity_cls(TYPE)` returns `None` in a fresh worker
 process (`register_all()` only loads the FS metadata schema, not the entity
 classes).
+
+## Data schemas: define, change, apply
+
+A schema is a folder `<project>/agentic-assets/data_schema/<kind>/data_schema.json`
+(the folder name IS the kind; an external one sets `"ns"`). A folder that only groups
+schemas needs its own `data_schema.json` with `type` and `ns` and no shape. Datasets hold values only.
+
+Any change (edit, add, move, rename) is applied the same way, while Flowpad runs:
+
+```bash
+flow schema apply "<abs path to a schema folder or the tree holding them>"
+```
+
+Exit 0 means every schema registered (`schemas[]` lists each kind's live fields).
+Exit 6 lists each failing folder's `error`; fix it and apply again. **Never ask the
+user to restart Flowpad for a schema change.** `already defined by <path>` means two
+folders on disk define one kind: keep one. Then re-check the datasets holding values
+of a changed kind.
