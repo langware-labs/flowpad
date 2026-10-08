@@ -105,7 +105,8 @@ class DiagnosisRequest(FlowpadDiagnosis):
         return await request.pull()
 
     async def edit(self, spec: DiagnosisRequestEditSpec) -> "DiagnosisRequest":
-        """Change what the owner set at open: the instructions (on the hub and here), the window and
+        """Change what the owner set at open: the instructions and whether the runner is asked (both on
+        the hub and here), the window and
         the run size (the hub's ``limits``, which clamps them like open), and the budget (a fresh
         ``fund`` -- the hub drops the one it replaces). Raises ``HubError``."""
         from flow_sdk.cloud_client.transport.hub_http import hub_post, hub_put  # noqa: PLC0415
@@ -117,6 +118,10 @@ class DiagnosisRequest(FlowpadDiagnosis):
                 body["title"] = name
             await hub_put(EntityType.DIAGNOSIS_REQUEST.value, self.id, body)
             self.instructions, self.name = spec.instructions, name
+            await self.save()
+        if spec.ask_permission is not None:
+            await hub_put(EntityType.DIAGNOSIS_REQUEST.value, self.id, {"ask_permission": spec.ask_permission})
+            self.ask_permission = spec.ask_permission
             await self.save()
         limits: dict[str, Any] = {}
         if spec.write_hours is not None:

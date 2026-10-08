@@ -3050,6 +3050,7 @@ msgstr "Ask the Flowpad Assistant anything about this page."
 #~ msgstr "Ask the Flowpad Assistant anything."
 
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
+#: src/components/assets/editor/diagnosis-request/DiagnosisRequestFields.tsx
 msgid "Ask them for permission"
 msgstr "Ask them for permission"
 

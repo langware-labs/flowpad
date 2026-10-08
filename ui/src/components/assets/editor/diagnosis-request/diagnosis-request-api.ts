@@ -74,6 +74,7 @@ export interface OpenRequestBody {
 /** `DiagnosisRequestEditSpec`: only what changes is sent. */
 export interface EditRequestBody {
   instructions?: string;
+  ask_permission?: boolean;
   write_hours?: number;
   max_run_mb?: number;
   funding?: OpenRequestBody['funding'];

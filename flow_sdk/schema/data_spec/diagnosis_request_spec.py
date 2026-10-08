@@ -87,6 +87,8 @@ class DiagnosisRequestEditSpec(DataSpec):
     model_config = ConfigDict(frozen=True)
 
     instructions: Optional[str] = None
+    #: Whether ``flow diagnose <id>`` asks the runner anything (see ``DiagnosisRequestOpenSpec``).
+    ask_permission: Optional[bool] = None
     #: Accept runs for this many hours FROM NOW -- extends, shortens or reopens the request.
     write_hours: Optional[int] = Field(default=None, ge=1, le=MAX_WRITE_HOURS)
     max_run_mb: Optional[int] = Field(default=None, ge=1, le=MAX_MAX_RUN_MB)

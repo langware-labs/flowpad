@@ -150,6 +150,37 @@ async def test_an_edit_sends_the_new_instructions_to_the_hub_and_keeps_the_title
     assert reloaded.instructions.startswith("read server.log") and reloaded.name == "read server.log"
 
 
+async def test_an_edit_can_turn_the_runners_questions_on_and_off(monkeypatch):
+    """A request opened unasked (the default) can be switched to asking later, and back -- on the
+    hub, where the runner reads it, and on this computer's copy."""
+    from flow_sdk.cloud_client.transport import hub_http
+    from flow_sdk.schema.data_spec.diagnosis_request_spec import DiagnosisRequestEditSpec
+
+    put: list[dict] = []
+
+    async def hub_put(entity_type, entity_id, payload, *_a, **_k):
+        put.append(payload)
+        return payload
+
+    async def pull(self):
+        return self
+
+    monkeypatch.setattr(hub_http, "hub_put", hub_put)
+    monkeypatch.setattr(DiagnosisRequest, "pull", pull)
+    request = DiagnosisRequest(id="3f405162-7c8d-4e9f-a0b1-2c3d4e5f6071", name="r")
+    await request.save()
+
+    await request.edit(DiagnosisRequestEditSpec(ask_permission=True))
+    asking = (await DiagnosisRequest.get_by_id(request.id)).ask_permission
+    await request.edit(DiagnosisRequestEditSpec(ask_permission=False))
+    quiet = (await DiagnosisRequest.get_by_id(request.id)).ask_permission
+    await request.edit(DiagnosisRequestEditSpec(instructions="only the text"))
+
+    assert put[0] == {"ask_permission": True} and put[1] == {"ask_permission": False}
+    assert asking is True and quiet is False
+    assert all("ask_permission" not in body for body in put[2:]), "an edit that leaves it alone does not send it"
+
+
 async def test_the_sidebar_lists_requests_from_the_hub_newest_run_first(monkeypatch):
     """A request has no file for the indexer, so it is not default-indexed (that broke the
     indexable-types guard); the Assets sidebar lists it from the hub, like ``llm_endpoint``."""
