@@ -26,6 +26,7 @@ import { Project, TypeId } from '@sdk';
 import { tagAttrs } from '@src/tags/tag-attrs';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
+import { useUiActionRequest } from '@src/navigation/ui-actions';
 
 /** Journey anchor for the session launcher (`?highlight=NewSession`). */
 const NEW_SESSION_TAG = 'NewSession';
@@ -142,6 +143,8 @@ export const ProjectHome: React.FC<ProjectHomeProps> = ({ spawnProjectId, create
   const [gitChecks, setGitChecks] = useState<GitCheck[] | null>(null);
   const [gitSetupOpen, setGitSetupOpen] = useState(false);
   const [publishOpen, setPublishOpen] = useState(false);
+  // "publish this project" (smart navigation): the same popup the publish button opens.
+  useUiActionRequest(['publish-dialog'], () => setPublishOpen(true));
   // The invite pane's opener, held while the publish popup stands in front of it.
   const resumeInvite = useRef<(() => void) | null>(null);
   // Invite branches on whether the Project has a hub row. Published: the invite
@@ -256,6 +259,7 @@ export const ProjectHome: React.FC<ProjectHomeProps> = ({ spawnProjectId, create
             showInviteButton
             beforeInvite={beforeProjectInvite}
             inviteRoles={shareRoles}
+            uiAction="invite-members"
           />
         </div>
       )}

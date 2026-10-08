@@ -5,6 +5,7 @@ import { capabilityManager, CapabilityKinds, gitOriginRepoFullName, gitOriginWeb
 import type { CapabilityAccess, TypeId } from '@sdk';
 import { useGitSharePreflight } from '@src/hooks/use-git-share-preflight';
 import { openExternal } from '@src/lib/open-external';
+import { useUiActionRequest } from '@src/navigation/ui-actions';
 
 /** One readiness question and how it came out. */
 export interface GitCheck {
@@ -36,43 +37,6 @@ export function ProjectGitChip({ projectTypeId, onChecked }: ProjectGitChipProps
   const { t } = useLingui();
   const preflight = useGitSharePreflight(projectTypeId, true);
   const [checking, setChecking] = useState(false);
-
-  const origin = preflight.origin;
-  if (origin) {
-    // Repo root, not a deep link: the chip names the project's repo, not a file.
-    const repo = gitOriginRepoFullName(origin);
-    const href = gitOriginWebUrl({ ...origin, rel_path: '.' });
-    const body = (
-      <>
-        <GitBranch className="h-3.5 w-3.5" aria-hidden />
-        <span className="truncate">{repo}</span>
-      </>
-    );
-    return href ? (
-      <a
-        href={href}
-        onClick={(e) => {
-          // Keep the repo in the user's real browser: a bare target=_blank does
-          // not escape the Electron shell.
-          e.preventDefault();
-          openExternal(href);
-        }}
-        title={href}
-        data-testid="project-git-repo"
-        className="inline-flex max-w-[16rem] items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground hover:underline"
-      >
-        {body}
-      </a>
-    ) : (
-      <span
-        data-testid="project-git-repo"
-        title={repo}
-        className="inline-flex max-w-[16rem] items-center gap-1.5 text-xs text-muted-foreground"
-      >
-        {body}
-      </span>
-    );
-  }
 
   // Nothing to name yet. This button reports where git stands; the dialog it
   // feeds owns the remedy for each answer.
@@ -129,6 +93,49 @@ export function ProjectGitChip({ projectTypeId, onChecked }: ProjectGitChipProps
       setChecking(false);
     }
   };
+  // "set up git for this project" (smart navigation): the same checks this button runs. Only
+  // while there is no origin -- a project with one has nothing to set up.
+  useUiActionRequest(['git-checks-dialog'], () => {
+    if (!preflight.origin) void runChecks();
+  });
+
+  const origin = preflight.origin;
+  if (origin) {
+    // Repo root, not a deep link: the chip names the project's repo, not a file.
+    const repo = gitOriginRepoFullName(origin);
+    const href = gitOriginWebUrl({ ...origin, rel_path: '.' });
+    const body = (
+      <>
+        <GitBranch className="h-3.5 w-3.5" aria-hidden />
+        <span className="truncate">{repo}</span>
+      </>
+    );
+    return href ? (
+      <a
+        href={href}
+        onClick={(e) => {
+          // Keep the repo in the user's real browser: a bare target=_blank does
+          // not escape the Electron shell.
+          e.preventDefault();
+          openExternal(href);
+        }}
+        title={href}
+        data-testid="project-git-repo"
+        className="inline-flex max-w-[16rem] items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground hover:underline"
+      >
+        {body}
+      </a>
+    ) : (
+      <span
+        data-testid="project-git-repo"
+        title={repo}
+        className="inline-flex max-w-[16rem] items-center gap-1.5 text-xs text-muted-foreground"
+      >
+        {body}
+      </span>
+    );
+  }
+
 
   return (
     <button

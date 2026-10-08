@@ -50,6 +50,7 @@ import { SerializedElementNode, SerializedLexicalNode, SerializedTextNode } from
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useParams } from 'react-router';
 import { Trans, useLingui } from '@lingui/react/macro';
+import { useUiActionRequest } from '@src/navigation/ui-actions';
 
 function isDefaultEmptyLexicalContent(content: { root: { children: SerializedLexicalNode[] } }): boolean {
   if (content.root?.children?.length !== 1) return false;
@@ -315,6 +316,12 @@ export function UserDropdown() {
 
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isAccountDialogOpen, setIsAccountDialogOpen] = useState(false);
+  // "open settings" / "open the database settings" (smart navigation): the same dialog, on that tab.
+  const [accountTab, setAccountTab] = useState<string | undefined>();
+  useUiActionRequest(['settings-dialog', 'settings-database', 'settings-secrets'], (id) => {
+    setAccountTab(id === 'settings-dialog' ? undefined : id.slice('settings-'.length));
+    setIsAccountDialogOpen(true);
+  });
 
   useEffect(() => {
     const handler = () => setIsAccountDialogOpen(false);
@@ -403,7 +410,9 @@ export function UserDropdown() {
               <Trans>Configure your account, app preferences, and notifications</Trans>
             </DialogDescription>
           </DialogHeader>
-          {currentUser && <AccountInfo user={currentUser} onNavigate={() => setIsAccountDialogOpen(false)} />}
+          {currentUser && (
+            <AccountInfo user={currentUser} tab={accountTab} onNavigate={() => setIsAccountDialogOpen(false)} />
+          )}
         </DialogContent>
       </Dialog>
 

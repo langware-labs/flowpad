@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { Layout } from '@sdk';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { ViewType } from '@src/types/ViewType';
+import { useUiActionRequest } from '@src/navigation/ui-actions';
 import {
   ASSISTANT_ALIVE_TTL_MS,
   ASSISTANT_CHAT_PARAM,
@@ -128,6 +129,8 @@ export function FloatingChatProvider({ children }: { children: React.ReactNode }
     setOpen(true);
   }, []);
   const closeChat = useCallback(() => setOpen(false), []);
+  // "ask the assistant" (smart navigation): the same chat its button opens.
+  useUiActionRequest(['assistant-chat'], () => openChat());
   const toggle = useCallback(
     (rect?: TriggerRect | null) => {
       if (popoutAliveRef.current) {
