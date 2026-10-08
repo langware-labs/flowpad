@@ -369,6 +369,13 @@ read, and the asset scan reports it as an issue naming the rename — `TypeInfo.
 * **Form additions** (input side only): `?<shape>` may be absent, `enum:a|b` is one of these
   strings, `{"*": <shape>}` is a map. A hand-written schema renders exactly as before.
 * **Failures are recorded, never raised**: a duplicate kind, a name nobody defines, a bad `ns` —
-  the row's `error` says which.
+  the row's `error` says which. A duplicate is two folders that both define the kind on disk; a
+  folder that moved, was renamed or now names another kind releases it to the next folder that
+  claims it, so no change to a schema needs a restart.
+* **A folder that only groups schemas** is itself a data schema with no body (`type` + `ns`): the
+  indexer walks into nested schemas only through folders that are schemas.
+* **`flow schema apply <path>`** registers every data schema folder at or below `path` (a schema,
+  a group, `agentic-assets/data_schema/`, `agentic-assets/`, or a project) and reports each one's
+  live fields or its `error`; exit 6 when any failed.
 
 See [ontology](../ontology.md#coverage--every-path-a-kind-is-minted), path 5.
