@@ -12,6 +12,7 @@ in ``flow_sdk.core.navigation_decision``; callers outside the core (a dataset's 
 
 from flow_sdk.core.navigation_decision import address_of as _address_of
 from flow_sdk.core.navigation_decision import decide, decide_run
+from flow_sdk.core.navigation_decision import same_place as _same_place
 from flow_sdk.core.navigator import MIN_CONFIDENCE  # below this the navigator does not act
 from flow_sdk.schema.data_spec.navigator_spec import NavigationTarget
 
@@ -21,4 +22,22 @@ def address_of(target) -> "str | None":
     return _address_of(NavigationTarget.model_validate(target))
 
 
-__all__ = ["MIN_CONFIDENCE", "address_of", "decide", "decide_run"]
+def same_place(a, b) -> bool:
+    """Two targets (or their dicts) that land the person in one place."""
+    return _same_place(NavigationTarget.model_validate(a), NavigationTarget.model_validate(b))
+
+
+def code_version() -> str:
+    """A short hash of the code that decides -- the navigator, its map and its actions: two eval runs
+    with one version differ only by the model's own noise."""
+    import hashlib
+    from pathlib import Path
+
+    core = Path(__file__).parent / "core"
+    digest = hashlib.sha256()
+    for name in ("navigator.py", "navigation.py", "navigation_decision.py", "dock_address.py", "ui_actions.json"):
+        digest.update((core / name).read_bytes())
+    return digest.hexdigest()[:12]
+
+
+__all__ = ["MIN_CONFIDENCE", "address_of", "code_version", "decide", "decide_run", "same_place"]

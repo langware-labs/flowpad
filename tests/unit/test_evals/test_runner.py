@@ -106,3 +106,72 @@ async def test_a_version_given_as_a_value_is_kept_once_in_the_dataset(toy, tmp_p
     again, _ = await evals.run(toy, out_dir=tmp_path / "runs-2")
     assert first.versions["map"].startswith("navigation.map.id.") and again.versions == first.versions
     assert resolve_ref(first.versions["map"], near=store_of(toy.asset_ref)) == navigation_map()
+
+
+async def test_the_navigator_eval_counts_an_unanswered_decision_as_an_error(tmp_path):
+    # A request no rule answers goes to the decision API; with none to answer (no endpoint here, a
+    # spent quota live) nothing was judged -- an error with the API's reason, never an abstention
+    # that would pass for the navigator handing the request over.
+    from flow_sdk.fs_store.schema_registry import SchemaRegistry
+
+    folder = tmp_path / "agentic-assets" / "dataset" / "nav"
+    folder.mkdir(parents=True)
+    (folder / "dataset.json").write_text(
+        json.dumps({"metadata": {"title": "Nav", "data_layout": "io_folder", "spec": "navigator.dataset"}, "data": {}})
+    )
+    info = SchemaRegistry.get("dataset")
+    info.mint(info.layout_of(folder, verify=True))
+    here = {"view": "home", "page": "desk", "address": "/dock/home"}
+    await Dataset.at(folder).append(
+        [{"kind": "eval", "input": {"utterance": "how is my week looking", "here": here}, "context": {"candidates": []}, "ground_truth": GOLD}]
+    )
+    run, out = await evals.run(Dataset.at(folder), out_dir=tmp_path / "runs")
+    assert run.eval_name == "navigator" and run.counts["error"] == 1 and run.counts["abstained"] == 0
+    [row] = [json.loads(line) for line in (out / "examples.jsonl").read_text().splitlines()]
+    assert row["error"].startswith("decision API: no_endpoint") and row["trace"]["kind"] == "navigator.run"
+
+
+async def test_two_runs_compare_example_by_example(toy, tmp_path):
+    # The second run judges "bad one" right: one fixed, nothing broken.
+    from flow_sdk.evals.compare import compare
+    from flow_sdk.evals.store import load
+
+    first, out1 = await evals.run(toy, out_dir=tmp_path / "evals")
+    eval_py = Path(toy.asset_ref) / "agentic-assets" / "eval" / "toy" / "eval.py"
+    eval_py.write_text(TOY_EVAL.replace('text.startswith("ok")', 'text.startswith(("ok", "bad"))'))
+    second, out2 = await evals.run(toy, out_dir=tmp_path / "evals")
+    assert first.kinds == second.kinds == ["eval"]
+    diff = compare(load(tmp_path, first.run_id), load(tmp_path, second.run_id))
+    # "boom" errors in both runs: not judged, so not "still wrong" either.
+    assert ([e.title for e in diff.fixed], diff.broken, diff.still_wrong, diff.paired, diff.unjudged) == (["bad one"], [], 0, 2, 1)
+    assert diff.deltas["accuracy"] == 0.5
+
+
+async def test_an_error_on_either_side_is_neither_fixed_nor_broken(toy, tmp_path):
+    # A run the API refused judged nothing: comparing it must not report the refused rows as broken.
+    from flow_sdk.evals.compare import compare
+    from flow_sdk.evals.store import load
+
+    first, _ = await evals.run(toy, out_dir=tmp_path / "evals")
+    eval_py = Path(toy.asset_ref) / "agentic-assets" / "eval" / "toy" / "eval.py"
+    eval_py.write_text(TOY_EVAL.replace('if text.startswith("boom"):', 'if True:'))
+    refused, _ = await evals.run(toy, out_dir=tmp_path / "evals")
+    diff = compare(load(tmp_path, first.run_id), load(tmp_path, refused.run_id))
+    assert (diff.broken, diff.fixed, diff.unjudged, diff.paired) == ([], [], 3, 0)
+
+
+def test_agentic_recall_counts_only_requests_that_belong_to_the_assistant_alone():
+    # "restart this session" accepts the assistant OR the restart action: acting is right, so the row
+    # must not pull the assistant's recall down.
+    import importlib.util
+
+    from flow_sdk.schema.data_spec.eval_spec import ExampleEval, Verdict
+
+    path = Path(evals.__file__).resolve().parents[1] / "system_projects/flowpad_assistant/agentic-assets/eval/navigator/eval.py"
+    spec = importlib.util.spec_from_file_location("navigator_eval_under_test", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    acted = {"route": "quick", "target": {"kind": "action", "value": "restart-session"}}
+    both = ExampleEval(verdict=Verdict.CORRECT, prediction=acted, golds=[{"route": "agentic"}, acted], score=0.9)
+    alone = ExampleEval(verdict=Verdict.CORRECT, prediction={"route": "agentic"}, golds=[{"route": "agentic"}])
+    assert module.aggregate([both, alone])["agentic_recall"] == 1.0

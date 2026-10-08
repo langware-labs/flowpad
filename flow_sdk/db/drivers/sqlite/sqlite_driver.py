@@ -735,16 +735,26 @@ class SQLiteDBDriver(DBDriver):
         record_type: str | None = None,
         status: str | None = None,
         calibration: "SearchCalibration | None" = None,
+        match: Literal["all", "any"] = "all",
     ) -> list:
-        """Execute FTS5 MATCH query and return hydrated Entity objects."""
-        if not query or not self.session_factory:
+        """Execute FTS5 MATCH query and return hydrated Entity objects.
+
+        ``match="all"``: every term must appear. ``match="any"``: any term may, bm25 ranking the rows
+        that match more of them (and rarer ones) first -- for a sentence, whose words are not all
+        in the thing it names."""
+        if not query:
             return []
+        # Not open yet is not empty: ``_session_ctx`` opens the database, like every other read.
         # Append * to each term for prefix matching (so "poin" matches "pointer").
         # Terms with FTS5 special chars (. + ^ : etc.) must be double-quoted so the
         # tokenizer sees them as phrase searches rather than syntax errors.
         _FTS5_SPECIAL = frozenset(".+^(){}[]~?\\/:!-")
 
+        _FTS5_OPS = ("AND", "OR", "NOT")
+
         def _fts_term(t: str) -> str:
+            if t in _FTS5_OPS:
+                return t  # an FTS5 operator the caller wrote, not a word to prefix-match
             already_prefix = t.endswith("*")
             bare = t.rstrip("*")
             if any(c in bare for c in _FTS5_SPECIAL):
@@ -754,7 +764,8 @@ class SQLiteDBDriver(DBDriver):
                 return f'"{escaped}"'
             return t if already_prefix else t + "*"
 
-        fts_query = " ".join(_fts_term(t) for t in query.split())
+        words = [t for t in query.split() if match == "all" or t not in _FTS5_OPS]
+        fts_query = (" OR " if match == "any" else " ").join(map(_fts_term, words))
         async with self._session_ctx(write=False) as session:
             # Build the SQL — snippet() on title (col 3) and content (col 5)
             # Columns: 0=entity_id, 1=type, 2=name, 3=title, 4=description, 5=content

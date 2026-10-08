@@ -17,7 +17,7 @@ from __future__ import annotations
 import time
 from typing import Optional
 
-from flow_sdk.external_apis.decision import DecisionError, dialect_for_host, reason_for_status
+from flow_sdk.external_apis.decision import DecisionError, DecisionFailure, dialect_for_host, failure_detail, reason_for_status
 from flow_sdk.instance_settings.api_endpoint import decision_endpoints, fetch_hub_api_endpoints
 from flow_sdk.schema.data_spec.api_endpoint_spec import APIEndpointOffer
 from flow_sdk.schema.data_spec.decision_spec import (
@@ -73,7 +73,7 @@ async def decide(spec: DecisionSpec | dict, *, endpoint: Optional[str] = None) -
     if status == 0:
         raise DecisionError("unavailable", "No hub is configured (offline or Local privacy mode)", wire=wire)
     if status != 200:
-        detail = body.get("message") or body.get("error") if isinstance(body, dict) else str(body)
+        detail = failure_detail(body)
         raise DecisionError(
             reason_for_status(status), f"The decision endpoint answered {status}: {detail}", status=status, wire=wire
         )
@@ -88,7 +88,9 @@ __all__ = [
     "ChoiceAnswer",
     "ChoiceQuestion",
     "DecisionError",
+    "DecisionFailure",
     "DecisionResult",
+    "failure_detail",
     "DecisionSpec",
     "ScoreAnswer",
     "ScoreQuestion",

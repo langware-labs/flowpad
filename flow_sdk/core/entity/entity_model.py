@@ -703,8 +703,10 @@ class Entity(DBEntity):
         record_type: str | None = None,
         status: str | None = None,
         calibration: "Any | None" = None,
+        match: Literal["all", "any"] = "all",
     ) -> list[Entity]:
-        """Full-text search using FTS5 MATCH. Returns Entity objects."""
+        """Full-text search using FTS5 MATCH. Returns Entity objects. ``match="any"`` ranks rows that
+        match any of the words (a sentence) instead of requiring all of them."""
         if not query:
             return []
         from flow_sdk.db import get_db_driver
@@ -713,7 +715,7 @@ class Entity(DBEntity):
         if not hasattr(driver, "fts_search"):
             return []
         return await driver.fts_search(
-            query=query, limit=limit, record_type=record_type, status=status, calibration=calibration
+            query=query, limit=limit, record_type=record_type, status=status, calibration=calibration, match=match
         )
 
     @classmethod

@@ -25,10 +25,10 @@ from __future__ import annotations
 import logging
 import re
 from functools import lru_cache
-from typing import Any, Literal, Mapping, Optional
+from typing import Any, Literal, Mapping, NamedTuple, Optional
 
-from flow_sdk.core.dock_address import ViewType
-from flow_sdk.core.navigation import forms_for, kind, navigation_map, open_form, place_address
+from flow_sdk.core.dock_address import ViewType, parse_dock_url
+from flow_sdk.core.navigation import filter_keys, forms_for, kind, navigation_map, open_form, place_address, place_for
 from flow_sdk.schema.data_spec.navigator_spec import NavigationTarget, NavigatorRoute
 
 logger = logging.getLogger(__name__)
@@ -92,7 +92,10 @@ INSTRUCTIONS = (
     "current and `candidates` are search matches. Pick the ONE option that does what they asked. Pick `agentic` "
     "unless the request is only to open, show or go to one listed thing, or to do one listed action. A request "
     "that also says what to write or fill in (a title, a message, a time, a rule) is `agentic`: an action "
-    "opens an empty form."
+    "opens an empty form. Asking WHERE something is or where to change it ('where do I turn on two-step login', "
+    "'where are my invoices') names a place: pick it. Asking WHAT something says, what changed or why "
+    "needs an answer written: `agentic` -- and so does asking to be TOLD instead of shown ('do not open it, "
+    "just tell me where')."
 )
 VERB = {
     "type": "choice",
@@ -110,7 +113,10 @@ SCOPE = {
         "'schedule a job', 'send a message to Dana' name one thing. Details are what to write or fill in "
         "('a task to call Dana tomorrow', 'every morning at 9'), which account to set up ('connect my gmail'), "
         "a question that needs an answer written for it, or a second step ('... and tell me what is left'). "
-        "A question a listed screen shows the answer to ('who is in my org', 'how is Claude funded') is not a detail."
+        "A question a listed screen shows the answer to ('who is in my org', 'how is Claude funded') is not a detail, "
+        "and neither is asking where something is or where to change it ('where do I turn on two-step login') or "
+        "the reason that comes with it ('it keeps logging me out, where are my sessions'). Asking to be TOLD "
+        "instead of shown ('do not open it, just tell me where') is a detail: an answer written for them."
     ),
     "options": {
         "only": "no details: it only names the thing (default)",
@@ -144,7 +150,7 @@ def _static_options() -> tuple[dict[str, str], dict[str, str]]:
     # Never a word that names a screen -- even one that needs a pointer ("help desk" is the
     # project's help desk, not the list of help desks).
     screens = _screen_words()
-    assets = next(p for p in navigation_map().places if p.view == ViewType.ASSETS.value)
+    assets = place_for(ViewType.ASSETS.value)
     for name, pointer in asset_list_names().items():
         if name not in screens:
             names.setdefault(name, f"view:{place_address(assets, pointer)}")
@@ -242,7 +248,6 @@ _STOP = {
     "go",
     "to",
     "take",
-    "launch",
     "please",
     "this",
     "that",
@@ -266,17 +271,54 @@ def _verb(utterance: str) -> Literal["show", "navigate"]:
     return "navigate" if _NAVIGATE.match(utterance.strip()) else "show"
 
 
-def _literal(utterance: str) -> Optional[NavigationTarget]:
+#: Words that only frame a literal ("open the file ~/x.md", "preview port 3000"): with nothing else
+#: around it, the literal IS the request.
+_FRAME = {"file", "folder", "port", "url", "link", "page", "site", "web", "app", "localhost", "at", "preview", "now"}
+
+
+def _words(text: str) -> list[str]:
+    return re.findall(r"[\w\-]+", text.lower())
+
+
+class _Literal(NamedTuple):
+    target: NavigationTarget
+    whole: bool  # nothing around it but a lead verb and framing words: it acts with no model
+    label: str  # how it is offered to the model when it is not the whole request
+
+
+def _literal(utterance: str) -> Optional[_Literal]:
+    """A URL, port, search or path the request names, and whether it is the WHOLE request -- nothing
+    around it but a lead verb and framing words. Only then does it act with no model; inside a
+    sentence ("whats hogging port 8093? flip to the ports") it is one option among the others."""
     text = utterance.strip()
+
+    def alone(start: int, end: int) -> bool:
+        rest = _LEAD.sub("", (text[:start] + " " + text[end:]).strip())
+        return not [w for w in _words(rest) if w not in _STOP and w not in _FRAME]
+
     if m := _URL.search(text):
-        return NavigationTarget(kind="url", value=m.group(0))
+        return _Literal(NavigationTarget(kind="url", value=m.group(0)), alone(*m.span()), f"Open the page {m.group(0)}")
     if m := _PORT.search(text):
-        return NavigationTarget(kind="webapp", value=m.group(1))
+        port = m.group(1)
+        return _Literal(NavigationTarget(kind="webapp", value=port), alone(*m.span()), f"Open the web app running on port {port} (localhost)")
     if m := _SEARCH.match(text):
-        return NavigationTarget(kind="view", value=f"search?q={m.group(1).strip()}")
+        # A query is a phrase of content words; a clause ("everything that mentions the …") is a
+        # sentence for the model to read.
+        query = m.group(1).strip()
+        whole = not any(w in _STOP for w in _words(query))
+        return _Literal(NavigationTarget(kind="view", value=f"search?q={query}"), whole, f"Search everything for '{query}'")
     if m := _PATH.search(text):
-        return NavigationTarget(kind="file", value=m.group(1).strip())
+        path = m.group(1).strip()
+        return _Literal(NavigationTarget(kind="file", value=path), alone(*m.span()), f"Open the file {path}")
     return None
+
+
+def literal_option(utterance: str) -> dict[str, str]:
+    """A literal inside a longer request, as one option for the model (``_literal``)."""
+    found = _literal(utterance)
+    if not found or found.whole:
+        return {}
+    return {f"{found.target.kind}:{found.target.value}": f"{found.label} -- named in the request"}
 
 
 #: How far a typed screen name may be from a real one and still open it: one keyboard slip -- a
@@ -321,8 +363,8 @@ SELF_LOG_NAMES = frozenset({"smart navigation log", "navigation log", "smartnavi
 def rule_hit(utterance: str) -> Optional[NavigationTarget]:
     """A literal, or a screen name / alias once the leading verb is stripped -- exact, or a typo of
     exactly one name (live: "open connecitons" went to the model at 0.63 and on to the assistant)."""
-    if literal := _literal(utterance):
-        return literal
+    if (literal := _literal(utterance)) and literal.whole:
+        return literal.target
     core = _LEAD.sub("", utterance.strip().rstrip("!?.").lower()).strip()
     if core in SELF_LOG_NAMES:
         return NavigationTarget(kind="log", value="smart-navigation")
@@ -346,14 +388,17 @@ def context_rule(utterance: str, here: Any) -> Optional[NavigationTarget]:
     ref = getattr(here, slot, None)
     if ref is None:
         return None
-    wanted = m.group(2).strip()
-    found = {
-        place_address(place, pointer)
-        for place, form, what in forms_for(kind_name)
-        if wanted in {what.lower(), place.label.lower(), *(a.lower() for a in place.aliases)}
-        and (pointer := open_form(form, ref.model_dump(mode="json", exclude_none=True))) is not None
-    }
-    return NavigationTarget(kind="view", value=found.pop()) if len(found) == 1 else None
+    wanted, fields = m.group(2).strip(), ref.model_dump(mode="json", exclude_none=True)
+    openings = [(place, pointer, what) for place, form, what in forms_for(kind_name) if (pointer := open_form(form, fields)) is not None]
+    # The opening named as itself ("todo list") first; the screen's name ("transcript") only when
+    # no opening is, and then only if it names one.
+    for named in (
+        {place_address(p, ptr) for p, ptr, what in openings if wanted == what.lower()},
+        {place_address(p, ptr) for p, ptr, _ in openings if wanted in {p.label.lower(), *(a.lower() for a in p.aliases)}},
+    ):
+        if named:
+            return NavigationTarget(kind="view", value=named.pop()) if len(named) == 1 else None
+    return None
 
 
 def _target_of(key: str) -> NavigationTarget:
@@ -365,14 +410,20 @@ def _target_of(key: str) -> NavigationTarget:
 
 
 async def _candidates(utterance: str) -> list[dict[str, str]]:
-    """Full-text matches for the request's content words (not its verbs)."""
+    """Full-text matches for the request's content words (not its verbs), best first."""
     from flow_sdk.core.entity.entity_model import Entity  # noqa: PLC0415
+    from flow_sdk.db.drivers.sqlite.sqlite_driver import SearchCalibration  # noqa: PLC0415
 
-    words = [w for w in re.findall(r"[\w\-]+", utterance.lower()) if w not in _STOP and len(w) > 1]
+    words = [w for w in _words(utterance) if w not in _STOP and len(w) > 1]
     if not words:
         return []
     try:
-        found = await Entity.search(query=" ".join(words), limit=CANDIDATE_LIMIT)
+        # Any word: a sentence names its thing with a few of its words, never all of them. Best match
+        # first, recency only between equals -- the default blend halves a ten-day-old row's score,
+        # and buried an exact name under whatever was edited yesterday.
+        found = await Entity.search(
+            query=" ".join(words), limit=CANDIDATE_LIMIT, match="any", calibration=SearchCalibration(recency_factor=0)
+        )
     except Exception as exc:  # noqa: BLE001 -- search is a helper; the decision still runs on screens
         logger.warning("navigator: candidate search failed: %s", exc)
         return []
@@ -406,8 +457,35 @@ def options_for(here: Any, candidates: list[dict[str, str]]) -> dict[str, str]:
             options.update(_entity_options(cand, "search match"))
         elif cand.get("path"):  # a plain file: opened by its path
             options[f"file:{cand['path']}"] = f"Open the file '{cand.get('title') or cand['path']}' (search match)"
+    options.update(_refinements(here))
     options["agentic"] = AGENTIC
     return options
+
+
+def _refinements(here: Any) -> dict[str, str]:
+    """The screen's own filters applied ON TOP of the current one: on ``runs?trigger=X`` the
+    declared ``runs?status=failed`` is offered as ``runs?status=failed&trigger=X`` ("only the
+    failed runs of this one"). Only a sub-place on the same path, and only the filters it declares."""
+    from urllib.parse import parse_qsl, urlencode  # noqa: PLC0415
+
+    parsed = parse_dock_url(getattr(here, "address", None) or "")
+    if parsed is None:
+        return {}
+    view = parsed.view_type.value
+    kept = {k: v for k, v in parsed.options.items() if v and k in filter_keys(view)}
+    place = place_for(view)
+    if not kept or place is None:
+        return {}
+    shown = ", ".join(f"{k} {v}" for k, v in kept.items())
+    out: dict[str, str] = {}
+    for sub in place.subplaces:
+        path, _, query = sub.pointer.partition("?")
+        own = dict(parse_qsl(query))
+        if not own or path != (parsed.pointer or "") or own.keys() & kept.keys():
+            continue
+        merged = urlencode(sorted({**own, **kept}.items()))
+        out[f"view:{place_address(place, f'{path}?{merged}')}"] = f"{sub.label} -- of what is shown now ({shown})"
+    return out
 
 
 # ── the route ────────────────────────────────────────────────────────────────
@@ -486,7 +564,7 @@ async def route(
             "target": {
                 "type": "choice",
                 "instructions": INSTRUCTIONS,
-                "options": options_for(here, candidates),
+                "options": {**options_for(here, candidates), **literal_option(utterance)},
             },
             "verb": VERB,
             "scope": SCOPE,

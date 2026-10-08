@@ -115,4 +115,4 @@ export interface APIEndpointOffer {
 }
 
 /** Why a decision could not be taken — one closed word to branch on. */
-export type DecisionFailure = 'invalid_spec' | 'no_endpoint' | 'rate_limited' | 'unavailable' | 'auth' | 'bad_response';
+export type DecisionFailure = 'invalid_spec' | 'no_endpoint' | 'rate_limited' | 'billing' | 'unavailable' | 'auth' | 'bad_response';

@@ -21,6 +21,7 @@ const REASONS: ReadonlySet<DecisionFailure> = new Set<DecisionFailure>([
   'invalid_spec',
   'no_endpoint',
   'rate_limited',
+  'billing',
   'unavailable',
   'auth',
   'bad_response',

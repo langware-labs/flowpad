@@ -26,7 +26,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Optional
 
-from flow_sdk.core.dock_address import VIEW_META, ViewType, dock_url, parse_dock_url, parse_view_type
+from flow_sdk.core.dock_address import VIEW_META, ViewType, canonical_address, dock_url, parse_dock_url, parse_view_type
 from flow_sdk.core.navigation import kind
 from flow_sdk.schema.data_spec.dock_pointer_spec import DockPointerSpec
 from flow_sdk.schema.data_spec.navigator_spec import NavigationTarget, NavigatorRoute
@@ -69,6 +69,21 @@ def address_of(target: NavigationTarget) -> Optional[str]:
             if what == "page" and (pointer := open_form(form, {"typeid": target.value})) is not None:
                 return f"/dock/{place_address(place, pointer)}"
     return None
+
+
+def same_place(a: NavigationTarget, b: NavigationTarget) -> bool:
+    """``a`` and ``b`` land the person in one place: the same target, the same canonical dock
+    address (a session as an entity and as its screen; a screen and its default tab), or the same
+    page (a web-app port is its localhost URL)."""
+
+    def plain(t: NavigationTarget) -> NavigationTarget:
+        return NavigationTarget(kind="url", value=f"http://localhost:{t.value}") if t.kind == "webapp" else t
+
+    a, b = plain(a), plain(b)
+    if (a.kind, a.value) == (b.kind, b.value):
+        return True
+    there, here = address_of(a), address_of(b)
+    return there is not None and here is not None and canonical_address(there) == canonical_address(here)
 
 
 async def entity_app_address(typeid: str) -> Optional[str]:
