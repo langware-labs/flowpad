@@ -103,7 +103,7 @@ Measure the navigator against it with `scripts/navigation_coverage.py` (see `nav
 | 67 | show commands | /dock/assets/list/command |
 | 68 | show claude rules | /dock/assets/list/claude_rules |
 | 69 | show help desks | /dock/assets/list/helpdesk |
-| 70 | show data specs | /dock/assets/list/data_spec |
+| 70 | show data schemas | /dock/assets/list/data_schema |
 | 71 | show compute ops | /dock/assets/list/compute_op |
 | 72 | open the project manifest | /dock/assets/list/project_manifest |
 | 73 | open the agent-builder skill | entity:skill |

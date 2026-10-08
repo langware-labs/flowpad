@@ -17,7 +17,7 @@ import { cn } from '@src/lib/utils';
 import { Button } from '@src/components/ui/button';
 import { Input } from '@src/components/ui/input';
 import { Textarea } from '@src/components/ui/textarea';
-import { loadSessionTranscript } from '@src/hooks/share-sources';
+import { animateMinimizeToProcessChip } from '@src/lib/minimize-to-element';
 import {
   AttachFilesButton,
   PickedFileList,
@@ -43,7 +43,7 @@ export interface AskForHelpDialogProps {
   onOpenChange: (open: boolean) => void;
   /** Where the person is — lists the request with it, and finds the project's own desk. */
   projectId: string | null;
-  /** The session this ask is about, offered as context (the person may untick it). */
+  /** The session on screen — what the diagnostic is told the person was in (never attached). */
   sessionTypeId?: TypeId | null;
   origin: HelpOrigin;
   /** Asked from a desk's own page: that desk, preselected. */
@@ -87,7 +87,8 @@ export function AskForHelpDialog({
   const [deskId, setDeskId] = useState<string | null>(desk?.desk_project_id ?? null);
   const [title, setTitle] = useState('');
   const [notes, setNotes] = useState('');
-  const [attachSession, setAttachSession] = useState(true);
+  const [sendDiagnostic, setSendDiagnostic] = useState(true);
+  const contentRef = useRef<HTMLDivElement>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // One request per dialog: a resubmit after a lost answer is the SAME request, never a second.
@@ -129,19 +130,6 @@ export function AskForHelpDialog({
   const what = title.trim() || notes.trim();
   const canSubmit = !!recipient && !!what && !busy;
 
-  const sessionContext = async (): Promise<string[]> => {
-    if (!attachSession || !sessionTypeId) return [];
-    const { sessionId, attached, failureReason } = await loadSessionTranscript(sessionTypeId);
-    if (!attached || !sessionId) {
-      notify.warning({
-        title: t`Transcript not attached`,
-        message: failureReason ?? t`The session transcript could not be read.`,
-      });
-      return [];
-    }
-    return [`claude_session-${sessionId}`];
-  };
-
   const submit = async () => {
     if (!canSubmit || !recipient) return;
     if (!guardCloudAction('share')) return;
@@ -155,13 +143,17 @@ export function AskForHelpDialog({
           title: title.trim(),
           text: [title.trim(), notes.trim()].filter(Boolean).join('\n\n'),
           project_id: projectId,
-          context: await sessionContext(),
           origin,
+          diagnose: sendDiagnostic,
+          process: sessionTypeId ? sessionTypeId.toString() : null,
         },
         picker.files,
       );
       const to = recipient.name || recipient.email || t`the help desk`;
       const openIt = { label: t`Open`, href: DockPointer.forConversation(result.conversation_id).toUrl() };
+      // The diagnosis runs on in the background: fly the dialog into the footer's process chip,
+      // where its activity shows — that is where the person finds it.
+      if (result.diagnosing) animateMinimizeToProcessChip(contentRef.current);
       onOpenChange(false);
       onAsked?.(result);
       if (result.delivery.failure?.kind === 'signed_out') {
@@ -177,7 +169,12 @@ export function AskForHelpDialog({
         }
         return;
       }
-      notify.success({ id: `ask:${result.conversation_id}`, title: t`Sent to ${to}`, actions: [openIt] });
+      notify.success({
+        id: `ask:${result.conversation_id}`,
+        title: t`Sent to ${to}`,
+        ...(result.diagnosing ? { message: t`The diagnostic follows when it is ready.` } : {}),
+        actions: [openIt],
+      });
     } catch (e: unknown) {
       const message = errorMessage(e, t`Your request could not be saved.`);
       setError(message);
@@ -195,6 +192,7 @@ export function AskForHelpDialog({
   return (
     <Dialog open={open} onOpenChange={(next) => (!busy || next) && onOpenChange(next)}>
       <DialogContent
+        ref={contentRef}
         className="max-w-lg"
         data-testid="ask-for-help-dialog"
         onEscapeKeyDown={holdWhileBusy}
@@ -300,17 +298,19 @@ export function AskForHelpDialog({
               title={t`Attach files or a screenshot (or paste one into the details)`}
               testId="vibe-assign-attach"
             />
-            {sessionTypeId && (
-              <label className="flex items-center gap-2 text-sm text-muted-foreground">
-                <input
-                  type="checkbox"
-                  checked={attachSession}
-                  onChange={(e) => setAttachSession(e.target.checked)}
-                  data-testid="ask-for-help-attach-session"
-                />
-                {t`Include this session's transcript`}
-              </label>
-            )}
+            <label
+              className="flex items-center gap-2 text-sm text-muted-foreground"
+              title={t`Checks this machine's Flowpad (its health, the hub, recent errors in its logs) in the background and sends what it finds after your request.`}
+            >
+              <input
+                type="checkbox"
+                checked={sendDiagnostic}
+                onChange={(e) => setSendDiagnostic(e.target.checked)}
+                disabled={busy}
+                data-testid="ask-for-help-send-diagnostic"
+              />
+              {t`Send diagnostic`}
+            </label>
           </div>
 
           {error && (

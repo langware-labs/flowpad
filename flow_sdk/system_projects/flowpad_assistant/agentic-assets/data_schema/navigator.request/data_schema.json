@@ -1,0 +1,15 @@
+{
+  "type": "data_schema",
+  "id": "7fb5128c-0329-47be-bd98-ccbb86932218",
+  "name": "navigator.request",
+  "fields": {
+    "utterance": {
+      "shape": "string",
+      "description": "Exactly what the person typed into the magic line."
+    },
+    "here": {
+      "shape": "?navigation.here",
+      "description": "Where they were when they typed it."
+    }
+  }
+}

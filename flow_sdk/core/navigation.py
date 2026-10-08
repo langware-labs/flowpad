@@ -8,7 +8,7 @@ Three questions, one join key (a screen's ``view`` slug):
   (``navigation.here``), built from that tab's ``browser_context``;
 * **where to go** -- ``navigator.target`` / ``navigator.route`` (``flow_sdk.core.navigator``).
 
-The shapes are the shipped ``data_spec`` folders (``flowpad_assistant/agentic-assets/data_spec/
+The schemas are the shipped ``data_schema`` folders (``flowpad_assistant/agentic-assets/data_schema/
 navigation.*``), so a row of the SmartNavigator dataset, the navigator and
 ``flow context list`` all speak the one definition.
 
@@ -30,7 +30,7 @@ from flow_sdk.core.dock_address import VIEW_META, ViewType, normalize_retired, p
 
 #: The SmartNavigator dataset. It does not ship (its rows are a benchmark, not product): it lives
 #: beside the checkout at ``dev/dataset/smart-navigator``, or wherever ``FLOW_NAVIGATOR_DATASET``
-#: points. Its kinds DO ship -- ``flowpad_assistant/agentic-assets/data_spec/navigat*`` -- and so
+#: points. Its schemas DO ship -- ``flowpad_assistant/agentic-assets/data_schema/navigat*`` -- and so
 #: does its eval (``flowpad_assistant/agentic-assets/eval/navigator``).
 DATASET = Path(
     os.environ.get("FLOW_NAVIGATOR_DATASET") or Path(__file__).resolve().parents[3] / "dataset" / "smart-navigator"

@@ -189,9 +189,9 @@ On-disk directory structure for both FlowPad records (`~/.flow/records/`) and Cl
 
 ***
 
-### [DataSpec — shape as Pydantic, the spec as the layout](data-management/data-spec.md)
+### [DataSpec — schemas as Pydantic, the schema as the layout](data-management/data-spec.md)
 
-How data whose shape arrives **as data** is described, and how an asset's on-disk layout becomes the class that models it. `DataSpec` is a keyword-free authoring form (`"string"`, `{k: v}`, `[T]`) that **compiles to** a Pydantic model via `create_model`, so validation and JSON Schema are Pydantic's; `kind` resolves through the one `SchemaRegistry`. A type's shape is its `TypeInfo.asset_spec`: the spec's field TYPES (`Body`, `FreeSection`, `FileRef`, rows, nested asset types) are the on-disk layout the serializer maps, with a per-field round-trip test matrix. The carrier is plain JSON — there is no wrapper model.
+One vocabulary: a **kind** is a name (`spec_kind`, a dot-path tag), a **schema** is a `DataSpec` subclass (or a `data_schema/<kind>/` folder compiled into one), and a **value** is its instance. The authoring form (`"string"`, `{k: v}`, `[T]`, plus input-only `?T`, `enum:a|b`, `{"*": T}`) **compiles to** a Pydantic model, so validation and JSON Schema are Pydantic's; a kind resolves through the one `SchemaRegistry`. A type's document schema is its `TypeInfo.asset_spec`: its field TYPES (`Body`, `FreeSection`, `FileRef`, rows, nested asset types) are the on-disk layout the serializer maps, with a per-field round-trip test matrix. The carrier is plain JSON — there is no wrapper model.
 
 **Key source files:** `flow_sdk/schema/data_spec/spec.py`, `flow_sdk/schema/data_spec/markers.py`, `flow_sdk/schema/data_spec/frontmatter.py`, `flow_sdk/schema/data_spec/_kinds.py`, `flow_sdk/fs_store/serializer/fields.py`
 

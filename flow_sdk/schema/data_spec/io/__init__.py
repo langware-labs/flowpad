@@ -13,8 +13,9 @@ adapter above.
 
 **This is NOT the asset writer, and it is not a more general version of one.**
 ``assets/serialization.py`` writes every registered asset type; this module has
-exactly one production consumer — the typed dataset slots in
-``data_spec/layout.py``. Running both over all 20 registered types, this one
+two production consumers — the typed dataset slots in
+``data_spec/layout.py`` and an agentic process's typed input/output folders
+(``builtin/agentic_process/process_io.py``). Running both over all 20 registered types, this one
 changes bytes for every single one. Fourteen distinct divergences, not one:
 
 1. the main document is renamed (``trace.json``→``agent_trace.json``,

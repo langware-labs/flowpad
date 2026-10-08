@@ -127,6 +127,13 @@ interface AttachmentChipProps {
   onRevealInFolder?: () => void;
 }
 
+/** What "open" does for this file: browse an archive, show a value, or edit text. */
+function openLabel(editor: AssetEditor) {
+  if (editor === AssetEditor.ARCHIVE) return <Trans>Preview contents</Trans>;
+  if (editor === AssetEditor.VALUE) return <Trans>Open</Trans>;
+  return <Trans>Open in editor</Trans>;
+}
+
 export function AttachmentChip({
   url,
   filename,
@@ -241,7 +248,7 @@ export function AttachmentChip({
             {onOpenInEditor && (
               <DropdownMenuItem className="text-xs" onSelect={onOpenInEditor}>
                 <FileText className="text-muted-foreground" />
-                {editorForPath(filename) === AssetEditor.ARCHIVE ? <Trans>Preview contents</Trans> : <Trans>Open in editor</Trans>}
+                {openLabel(editorForPath(filename))}
               </DropdownMenuItem>
             )}
             <DropdownMenuItem className="text-xs" asChild>

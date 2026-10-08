@@ -30,6 +30,10 @@ def resolve_kind(kind: str) -> Any:
     if prim is not None:
         return prim
     from flow_sdk.fs_store.schema_registry import SchemaRegistry  # lazy: avoid import cycle
+    from flow_sdk.schema.data_spec.value_ref import kind_of  # noqa: PLC0415
+
+    # ``<kind>.id.<uuid>`` names one value of ``<kind>``: its schema is the kind's.
+    kind = kind_of(kind)
 
     shape = SchemaRegistry.kind_type(kind)
     if shape is not None:
@@ -68,6 +72,7 @@ def register_builtin_kinds() -> None:
     import flow_sdk.schema.data_spec.decision_spec  # noqa: F401  — registers ``decision.spec`` / ``decision.result`` and their questions / answers
     import flow_sdk.schema.data_spec.deployment_secrets_spec  # noqa: F401  — registers ``deployment.secrets``
     import flow_sdk.schema.data_spec.deployment_timeline_spec  # noqa: F401  — registers ``deployment.timeline`` / ``deployment.timeline_event`` / ``deployment.thread(s)`` / ``deployment.process`` / ``deployment.code``
+    import flow_sdk.schema.data_spec.diagnose_spec  # noqa: F401  — registers ``diagnose`` / ``diagnosis`` / ``flow.context``
     import flow_sdk.schema.data_spec.diagnosis_request_spec  # noqa: F401  — registers ``diagnosis.funding`` / ``diagnosis.attachment`` / ``diagnosis.request.open`` / ``diagnosis.request.edit`` / ``diagnosis.run``
     import flow_sdk.schema.data_spec.dock_pointer_spec  # noqa: F401  — registers ``dock.pointer``
     import flow_sdk.schema.data_spec.eval_spec  # noqa: F401  — registers ``eval.spec`` / ``eval.example`` / ``eval.run``

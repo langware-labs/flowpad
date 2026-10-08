@@ -1,11 +1,16 @@
-"""`flow diagnose` — run the flow-diagnose skill on a headless AgenticProcess.
+"""`flow diagnose` — the diagnose spec, then the flow-diagnose repair agent.
 
-`flow diagnose` drives a **headless** AgenticProcess on the flow-diagnose skill:
-it injects the user's free text / pasted error (empty = full sweep), points the
-worker at the skill, and streams the worker's narration. All behavior — diagnose,
-repair-when-safe, and recording the outcome to the app Feed — lives in the skill's
-`SKILL.md` (its final step records the report itself, via the SDK, even when the
-backend is down). This command is just the runner: spin up the worker, stream, exit.
+Two steps, one diagnosis:
+
+1. **The diagnose spec** (``flow_sdk.diagnose.run_diagnose``, ``purpose="repair"``) — the
+   project's own diagnose or the shipped ``flowpad`` one: fixed checks, no LLM. It always answers
+   a ``DiagnosisSpec`` (a failing or hanging diagnose answers its baseline), so there is a
+   diagnosis even when the agent never starts.
+2. **The repair agent** — a headless AgenticProcess on the flow-diagnose skill, handed that
+   diagnosis as its starting point: it repairs what is safe and records the outcome (its
+   ``report.py``). The recorded ``flowpad_diagnosis`` carries the merged ``diagnosis`` value.
+
+This command is the runner: diagnose, spin up the worker, stream, record, exit.
 """
 
 from __future__ import annotations
@@ -245,6 +250,70 @@ async def _load_recorded_diagnosis(diagnosis_cls, diagnosis_id: str | None):
     return last
 
 
+async def _sweep(message: str, project_id: str | None, *, origin: str, emit):
+    """Step 1: the Flowpad Assistant's diagnose — ALWAYS, whatever project is open (only Ask for
+    help takes a project's own) — its progress narrated on ``emit``."""
+    from flow_sdk.diagnose import DiagnosePurpose, FlowContextSpec, resolve_shipped, run_diagnose  # noqa: PLC0415
+
+    ctx = FlowContextSpec(purpose=DiagnosePurpose.REPAIR, project_id=project_id, user_report=message, origin=origin)
+    emit({"type": "status", "text": "  Checking this machine…"})
+    sweep = await run_diagnose(
+        ctx,
+        emit=lambda text: emit({"type": "narration", "text": text}),
+        label="Diagnosing Flowpad",
+        resolve=lambda _project_path: resolve_shipped(),
+    )
+    emit({"type": "status", "text": f"  Checked: {sweep.title or sweep.status}"})
+    return sweep
+
+
+#: Findings handed to the agent: the rest are counted, never cut mid-JSON.
+PROMPT_FINDINGS = 40
+
+
+def _sweep_for_prompt(sweep) -> str:
+    """The sweep, as the agent reads it — without the log tails it can read itself."""
+    value = sweep.model_dump(mode="json", exclude={"logs"})
+    if len(value["findings"]) > PROMPT_FINDINGS:
+        value["findings_not_shown"] = len(value["findings"]) - PROMPT_FINDINGS
+        value["findings"] = value["findings"][:PROMPT_FINDINGS]
+    return json.dumps(value, indent=1)
+
+
+def _merge_agent_into(sweep, diag, status: str | None = None):
+    """The recorded diagnosis: the sweep's findings, machine and logs, under the agent's verdict
+    (its record's headline, and the ``--status`` its report.py printed)."""
+    from flow_sdk.diagnose import DiagnosisStatus  # noqa: PLC0415
+
+    update: dict = {}
+    if diag is not None:
+        update = {k: v for k in ("title", "summary", "symptoms", "rca", "fix") if (v := getattr(diag, k, None))}
+    if status in {s.value for s in DiagnosisStatus}:
+        update["status"] = DiagnosisStatus(status)
+    return sweep.model_copy(update=update)
+
+
+async def _project_name(project_id: str | None) -> str | None:
+    if not project_id:
+        return None
+    with contextlib.suppress(Exception):
+        from flow_sdk.builtin.project import Project  # noqa: PLC0415
+
+        project = await Project.get_one({"id": project_id})
+        return getattr(project, "name", None) if project else None
+    return None
+
+
+async def _record_runner_fields(diag, merged, message: str, project_id: str | None) -> None:
+    """Set on the recorded diagnosis what only the runner knows (the caller saves it)."""
+    if message:
+        diag.user_report = message
+    if project_id:
+        diag.origin_project_id = project_id
+        diag.origin_project_name = await _project_name(project_id) or diag.origin_project_name
+    diag.diagnosis = merged
+
+
 async def _stop_worker(ap) -> None:
     """End the diagnose process's worker, whichever transport ran it.
 
@@ -345,6 +414,9 @@ async def _run_diagnose(
     # guarantees @local exists for the skill's reporting step).
     await _bootstrap_local()
 
+    # Step 1 — the diagnose spec. Never raises; a failing or hanging diagnose answers its baseline.
+    sweep = await _sweep(message, project_id, origin="cli" if isinstance(emit, _TerminalSink) else "footer", emit=emit)
+
     prompt_text = (
         f"Read the flow-diagnose skill at {skill_dir}/SKILL.md and follow it to "
         "diagnose Flowpad and record the result.\n\n"
@@ -356,7 +428,10 @@ async def _run_diagnose(
         "EVERY time — even if everything is healthy and no action is needed (use "
         "--status ok). Do NOT end your turn before it has printed its JSON.\n\n"
         "User-reported text — free text or a pasted error; empty means run a full "
-        f'sweep:\n"{message}"'
+        f'sweep:\n"{message}"\n\n'
+        "A fixed diagnostic sweep ALREADY RAN on this machine. Start from what it found — do not "
+        "repeat those checks — and use its findings in what you record:\n"
+        f"```json\n{_sweep_for_prompt(sweep)}\n```"
     ) + (f"\n\n{prompt_extra}" if prompt_extra else "")
 
     ap = await _build_diagnose_process(**(process_options or {}))
@@ -465,17 +540,7 @@ async def _run_diagnose(
         taken = await ap.send_turn(text)
         if not taken.ok:
             emit({"type": "error", "text": f"  ! The diagnostic agent did not take the prompt: {taken.detail}"})
-            emit(
-                {
-                    "type": "done",
-                    "ok": False,
-                    "diagnosis_id": None,
-                    "conversation_id": None,
-                    "flow_message_id": None,
-                    "feed_posted": False,
-                    "feed_entry_id": None,
-                }
-            )
+            done(False, sweep)
             return False
         if started:
             return True
@@ -492,19 +557,25 @@ async def _run_diagnose(
                     ),
                 }
             )
-            emit(
-                {
-                    "type": "done",
-                    "ok": False,
-                    "diagnosis_id": None,
-                    "conversation_id": None,
-                    "flow_message_id": None,
-                    "feed_posted": False,
-                    "feed_entry_id": None,
-                }
-            )
+            done(False, sweep)
             return False
         return True
+
+    def done(ok: bool, diagnosis, **ids) -> None:
+        """The run's last event: what was recorded (ids) and the diagnosis — the sweep's, when
+        the agent recorded nothing."""
+        emit(
+            {
+                "type": "done",
+                "ok": ok,
+                "diagnosis_id": ids.get("diagnosis_id"),
+                "conversation_id": ids.get("conversation_id"),
+                "flow_message_id": ids.get("flow_message_id"),
+                "feed_posted": bool(ids.get("feed_entry_id")),
+                "feed_entry_id": ids.get("feed_entry_id"),
+                "diagnosis": diagnosis.model_dump(mode="json"),
+            }
+        )
 
     try:
         try:
@@ -537,41 +608,6 @@ async def _run_diagnose(
             conv_id = recorded.get("conversation_id")
             msg_id = recorded.get("flow_message_id")
 
-            # Stamp the user's own free-text description onto the record. report.py
-            # (run by the agent) only ever sees the agent-observed ``symptoms`` — the
-            # raw text the user typed lives only here in the CLI runner — so we persist
-            # it now, after the record exists, where the "Report issue" email reads it.
-            if did and message:
-                with contextlib.suppress(Exception):
-                    from flow_sdk.fs_store.fs_record import FSRecord
-
-                    rec = FSRecord.load_or_none(EntityType.FLOWPAD_DIAGNOSIS.value, did)
-                    if rec is not None:
-                        rec.save_metadata_field("user_report", message)
-                        rec = FSRecord.load_or_none(EntityType.FLOWPAD_DIAGNOSIS.value, did)
-                        if rec is not None:
-                            await rec.sync_to_db()
-
-            # Stamp the origin project — the project the user was in when they ran
-            # the diagnosis. Resolved from the id the UI passed (the CLI has no
-            # active project, so this is skipped there). The name travels with the
-            # record so a helper on another machine can see where it happened.
-            if did and project_id:
-                with contextlib.suppress(Exception):
-                    from flow_sdk.builtin.project import Project
-                    from flow_sdk.fs_store.fs_record import FSRecord
-
-                    origin_project = await Project.get_one({"id": project_id})
-                    origin_name = getattr(origin_project, "name", None) if origin_project else None
-                    rec = FSRecord.load_or_none(EntityType.FLOWPAD_DIAGNOSIS.value, did)
-                    if rec is not None:
-                        rec.save_metadata_field("origin_project_id", project_id)
-                        if origin_name:
-                            rec.save_metadata_field("origin_project_name", origin_name)
-                        rec = FSRecord.load_or_none(EntityType.FLOWPAD_DIAGNOSIS.value, did)
-                        if rec is not None:
-                            await rec.sync_to_db()
-
             # Load the recorded diagnosis (retrying briefly for cross-process
             # visibility) so the Feed card carries its summary, then cross-link it into
             # THIS process's context. The CLI owns the process id, so this works on every
@@ -579,13 +615,25 @@ async def _run_diagnose(
             # on Windows, where its uv-run subprocess doesn't inherit
             # FLOWPAD_EXECUTION_SCOPE).
             diag = await _load_recorded_diagnosis(_diag_cls, did)
-            try:
-                if diag is not None:
+            merged = _merge_agent_into(sweep, diag, recorded.get("status"))
+            # What only this runner knows, set on the ONE copy that is saved: the person's own words
+            # (report.py sees only the agent's ``symptoms``, and the "Report issue" email reads them),
+            # the project they were in (named, so a helper on another machine sees where it
+            # happened), and the merged diagnosis. A second writer beside this copy is how the
+            # record once lost all three: the cross-link saved the copy loaded before them.
+            if diag is not None:
+                await _record_runner_fields(diag, merged, message, project_id)
+                try:
                     fresh = await AgenticProcess.get_by_id(ap.id)
                     if fresh is not None:
-                        await cross_link_entities(fresh, diag)
-            except Exception:
-                pass
+                        await cross_link_entities(fresh, diag, save=False)
+                        await fresh.save()
+                except Exception:  # noqa: BLE001 — the link is a convenience; the record stands
+                    pass
+                try:
+                    await diag.save()
+                except Exception:  # noqa: BLE001 — the run is recorded either way; say why the fields are missing
+                    logging.getLogger(__name__).warning("[diagnose] saving record %s failed", did, exc_info=True)
 
             # Post the Home-Feed card — ALWAYS, for every completed run. conv_id +
             # msg_id present ⇔ report.py created a support Conversation/FlowMessage, so
@@ -600,16 +648,13 @@ async def _run_diagnose(
                 diagnosis_id=did,
             )
             emit({"type": "status", "text": "  ✓ Diagnostic complete — diagnosis recorded."})
-            emit(
-                {
-                    "type": "done",
-                    "ok": True,
-                    "diagnosis_id": did,
-                    "conversation_id": conv_id,
-                    "flow_message_id": msg_id,
-                    "feed_posted": bool(feed_entry_id),
-                    "feed_entry_id": feed_entry_id,
-                }
+            done(
+                True,
+                merged,
+                diagnosis_id=did,
+                conversation_id=conv_id,
+                flow_message_id=msg_id,
+                feed_entry_id=feed_entry_id,
             )
             return 0
         emit(
@@ -621,17 +666,7 @@ async def _run_diagnose(
                 ),
             }
         )
-        emit(
-            {
-                "type": "done",
-                "ok": False,
-                "diagnosis_id": None,
-                "conversation_id": None,
-                "flow_message_id": None,
-                "feed_posted": False,
-                "feed_entry_id": None,
-            }
-        )
+        done(False, sweep)
         return 1
     finally:
         await _terminate_worker()

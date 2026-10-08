@@ -46,6 +46,10 @@ describe('editorForPath', () => {
     // archive — browsed as its extracted folder, never as text
     ['/tmp/flowpad-logs.zip', AssetEditor.ARCHIVE],
     ['/tmp/LOGS.ZIP', AssetEditor.ARCHIVE],
+    // one value of a kind — its kind's data viewer; a plain .json stays code
+    ['/tmp/diagnosis.value.json', AssetEditor.VALUE],
+    ['/tmp/Run.VALUE.JSON', AssetEditor.VALUE],
+    ['/tmp/value.json', AssetEditor.CODE],
     // code fallback
     ['/tmp/main.ts', AssetEditor.CODE],
     ['/tmp/data.json', AssetEditor.CODE],

@@ -52,6 +52,8 @@ DISPLAY_TARGET_KEYS = (
     "options",
     # A shown web page is its URL; without it every page reads as the same target.
     "url",
+    # An app shown by its Artifact carries no typeid/path — the artifact IS its address.
+    "artifact_id",
 )
 
 

@@ -25,7 +25,8 @@ vi.mock('@src/components/conversation/MessageComposer', () => ({
 
 import { useAuth, useEntitiesQuery } from '@sdk/react/hooks';
 import { useEntity } from '@src/hooks/entity-hooks/useEntity';
-import { LiveSessionView, sessionTitle } from '@src/components/collaboration/LiveSessionView';
+import { LiveSessionView } from '@src/components/collaboration/LiveSessionView';
+import { sessionTitle } from '@src/components/conversation/session-turns';
 
 const SID = 'a1a1a1a1-0000-4000-8000-000000000001';
 const HOST = 'a0a0a0a0-0000-4000-8000-000000000002';
@@ -99,7 +100,7 @@ describe('LiveSessionView header', () => {
     expect(screen.getByTestId('live-session-standing-grant')).toBeTruthy();
     expect(screen.getByTestId('live-session-standing-grant-scope')).toBeTruthy();
     expect(screen.getByTestId('live-session-reply-policy')).toBeTruthy();
-    expect(screen.getByTestId('live-session-pause')).toBeTruthy();
+    expect(screen.queryByTestId('live-session-pause')).toBeNull();
     cleanup();
     arrange(session(), [promptMsg(START, 'go')], GUEST);
     render(
@@ -136,7 +137,9 @@ describe('LiveSessionView header', () => {
       </MemoryRouter>,
     );
     const reply = screen.getByTestId('live-session-reply');
-    expect(reply.querySelector('pre')?.textContent).toBe('sent answer');
+    // Rendered as markdown, not a raw <pre>.
+    expect(reply.querySelector('[data-testid="live-session-reply-body"]')?.textContent?.trim()).toBe('sent answer');
+    expect(reply.querySelector('pre')).toBeNull();
     // Which side it came from is said on the reply itself.
     expect(reply.getAttribute('data-side')).toMatch(/^(local|remote)$/);
     expect(reply.textContent).toContain('Claude Code');

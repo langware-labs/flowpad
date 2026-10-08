@@ -5,7 +5,7 @@
  */
 import { APIEntity, registerEntity } from '../APIEntity';
 import { IEntity, EntityMerge } from '../IEntity';
-import type { EvalExampleRow, EvalRun } from '../evals/types';
+import type { EvalExampleRow, EvalRun, EvalTrace } from '../evals/types';
 
 /** The kinds an authored field may take. Mirrors the backend's declaration —
  *  `flow_sdk/schema/data_spec/_kinds.py` PRIMITIVES plus the one-element list
@@ -34,7 +34,7 @@ export interface DatasetAuthoringSpec {
 }
 
 /** What `spec` holds: the inline form, or the NAME of a registered dataset kind
- *  (`navigator.dataset`, `--acme--.orders.dataset`) — typically one a `data_spec` folder defines. */
+ *  (`navigator.dataset`, `--acme--.orders.dataset`) — typically one a `data_schema` folder defines. */
 export type DatasetSpecForm = DatasetAuthoringSpec | string;
 
 /** One row going in: `input` required, the other slots and the row's role optional. */
@@ -164,6 +164,12 @@ export class Dataset extends APIEntity<Dataset> implements IDataset {
   }
 
   /** Run this dataset's eval now; answers the new run. */
+  /** How one example's answer was reached in a run (its `trace`), fetched only when it is opened. */
+  async evalTrace(runId: string, exampleId: string): Promise<EvalTrace | null> {
+    const found = (await this.get(`eval/${encodeURIComponent(runId)}/${encodeURIComponent(exampleId)}`)) as { trace?: EvalTrace | null };
+    return found?.trace ?? null;
+  }
+
   async runEval(options: { eval?: string; kinds?: string[] } = {}): Promise<EvalRun> {
     return this.post('run-eval', options);
   }

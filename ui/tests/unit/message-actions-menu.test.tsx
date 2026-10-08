@@ -74,6 +74,7 @@ describe('message ⋮ menu', () => {
     render(
       <MessageActionsMenu
         flowMessageId="m-1"
+        conversationId="22222222-2222-4222-8222-222222222222"
         messageText="please add the founding number"
         onReply={onReply}
         replyInThread
@@ -93,7 +94,12 @@ describe('message ⋮ menu', () => {
     expect(onReply).toHaveBeenCalled();
     openMenu();
     fireEvent.click(screen.getByTestId('message-favorite'));
-    expect(toggleFavorite).toHaveBeenCalledWith({ entityType: 'flow_message', entityId: 'm-1', title: 'please add the founding number' });
+    expect(toggleFavorite).toHaveBeenCalledWith({
+      entityType: 'flow_message',
+      entityId: 'm-1',
+      title: 'please add the founding number',
+      nav: { parent_type_id: 'conversation-22222222-2222-4222-8222-222222222222' },
+    });
     openMenu();
     fireEvent.click(screen.getByTestId('message-delete'));
     expect(onDelete).toHaveBeenCalled();

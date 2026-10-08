@@ -48,10 +48,11 @@ export async function resolveAppHost(): Promise<AppHost> {
   return { app, subject };
 }
 
-/** Ask the host to open a dock (`/dock/...`). URL-first: the HOST navigates; an app never moves the
- *  window itself. The host honours it only from this app's own frame (`app-display-viewer.tsx`). */
-export function navigateHost(address: string): void {
-  window.parent?.postMessage({ type: 'flowpad:navigate', address }, '*');
+/** Ask the host to open a dock (`{address: '/dock/...'}`) or an entity where its type lives
+ *  (`{typeid}`). URL-first: the HOST navigates; an app never moves the window itself. The host
+ *  honours it only from this app's own frame (`app-display-viewer.tsx`). */
+export function navigateHost(target: { address: string } | { typeid: string }): void {
+  window.parent?.postMessage({ type: 'flowpad:navigate', ...target }, '*');
 }
 
 /** Why a call failed, in words: the server's message, else the error's own. */

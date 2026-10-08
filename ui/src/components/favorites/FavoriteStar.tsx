@@ -45,6 +45,8 @@ interface FavoriteStarProps extends FavoriteRef {
    * opens a dialog. A host that owns the hover already offers editing there.
    */
   hoverSurface?: 'card' | 'none';
+  /** Hidden until the host row (a `group`) is hovered; a set favorite stays visible. */
+  revealOnHover?: boolean;
 }
 
 /**
@@ -65,6 +67,7 @@ export function FavoriteStar({
   className,
   size = 16,
   hoverSurface = 'card',
+  revealOnHover = false,
 }: FavoriteStarProps) {
   const { t } = useLingui();
   const { isFavorited, toggleFavorite, renameFavorite } = useFavorites();
@@ -195,6 +198,7 @@ export function FavoriteStar({
       className={cn(
         'inline-flex items-center justify-center rounded p-1 text-muted-foreground transition-colors hover:text-amber-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring',
         favorited && 'text-amber-500',
+        revealOnHover && !favorited && 'opacity-0 focus-visible:opacity-100 group-hover:opacity-100',
         className,
       )}
     >

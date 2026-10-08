@@ -180,15 +180,15 @@ async def test_examples_listing_reports_promoted_items_and_gold(bootstrapped_cli
 
 
 def _declare_nav_kinds(root: Path) -> str:
-    """Define the row kinds as data spec FOLDERS (no Python) and register them; returns the tag."""
+    """Define the row kinds as data schema FOLDERS (no Python) and register them; returns the tag."""
     from flow_sdk.schema.data_spec import declared
 
     ns = f"apitest{uuid.uuid4().hex[:8]}"
 
     def spec(parent: Path, kind: str, body: dict) -> Path:
-        folder = parent / "agentic-assets" / "data_spec" / kind
+        folder = parent / "agentic-assets" / "data_schema" / kind
         folder.mkdir(parents=True)
-        (folder / "data_spec.json").write_text(json.dumps({"type": "data_spec", "ns": ns, **body}))
+        (folder / "data_schema.json").write_text(json.dumps({"type": "data_schema", "ns": ns, **body}))
         return folder
 
     top = spec(root, "nav.dataset", {"examples": {"input": "nav.request", "output": "nav.decision"}})

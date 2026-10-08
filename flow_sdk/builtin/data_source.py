@@ -1336,18 +1336,9 @@ class DataSource(Entity):
     # ── routing: which place a hub webhook claim hands this channel's messages to ──────────────────────
 
     async def _hub_route(self) -> Optional[dict]:
-        """The hub claim that delivers to THIS channel (as target or watcher), or None. The hub is the only
-        place claims live, so this is always the current answer."""
-        from flow_sdk.cloud_client.transport.hub_http import hub_get  # noqa: PLC0415
-
-        mine = await hub_get("webhook", None, "mine") or {}
-        rows = mine.get("webhooks") if isinstance(mine, dict) else None
-        here = str(self.id)
-        for row in rows or []:
-            target, watch = row.get("target") or {}, row.get("watch") or {}
-            if here in (str(target.get("data_source_id") or ""), str(watch.get("data_source_id") or "")):
-                return row
-        return None
+        """The hub claim that delivers to THIS channel, or None. The hub is the only place claims live, so this
+        is always the current answer."""
+        return next(iter(_claims_for(await _hub_claims(), str(self.id))), None)
 
     async def route_places(self) -> list[dict]:
         """Where this channel's messages can go: this computer, and each cloud placement of the agent that
@@ -1370,20 +1361,69 @@ class DataSource(Entity):
     async def route_action(self) -> ApiResponse:
         """GET /api/v1/graph/data_source/{id}/route — the hub webhook that delivers to this channel (its URL,
         whom it claims, where it delivers, how deliveries went) and the places it can be pointed at."""
+        import asyncio  # noqa: PLC0415
+
         from flow_sdk.instance_settings.runtime import instance_uid  # noqa: PLC0415
 
-        claim = await self._hub_route()
-        places = await self.route_places()
+        claims, places = await asyncio.gather(_hub_claims(), self.route_places())
+        mine = _claims_for(claims, str(self.id))
+        # The first claim is the one "Delivered to" switches; any more deliver the same messages elsewhere too.
+        claim = mine[0] if mine else None
         current = ""
         if claim is not None:
             target = claim.get("target") or {}
-            if target.get("kind") == "desktop" and target.get("instance_id") == instance_uid():
+            if _routed(claim, instance_uid()) == "this":
                 current = "this"
             elif target.get("kind") == "node":
                 current = next((p["key"] for p in places if p.get("node_typeid") == target.get("node_typeid")), "")
-            elif target.get("kind") == "placement":
-                current = "flow"
-        return ApiSuccessResponse(data={"claim": claim, "places": places, "current": current})
+        also = [_place_of(c, places) for c in mine[1:]]
+        return ApiSuccessResponse(data={"claim": claim, "places": places, "current": current, "also": also})
+
+    @core_action.get(action_name="channels")
+    async def channels_action(cls) -> ApiResponse:
+        """GET /api/v1/graph/data_source/channels — every MessageChannel and where it is routed.
+
+        A MessageChannel is a message source (a DataSource on a channel whose driver sends and receives). Each one
+        here comes with the hub claim that delivers to it, if any — ``routed`` says where that claim hands its
+        messages (``this`` computer, another ``instance``, a ``node``, ``nowhere`` yet), ``unclaimed`` when the
+        source receives only through the hub (its driver says ``delivered_by_hub``) and has no claim — it needs
+        Connect — or ``polls`` when the source fetches its own — and who answers it (``answered_by``: ``agent``,
+        ``deployment`` or ``nobody``). The caller's hub claims whose channel is not on this instance are listed too,
+        with no source."""
+        import asyncio  # noqa: PLC0415
+
+        from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415
+        from flow_sdk.ingest.driver_runtime import DRIVERS  # noqa: PLC0415
+        from flow_sdk.instance_settings.runtime import instance_uid  # noqa: PLC0415
+        from flow_sdk.stream_inbox.agent_scope import is_message_source  # noqa: PLC0415
+
+        # Only a sending driver's rows can be a channel: ask for those providers, never every source.
+        senders = [name for name, driver in DRIVERS.items() if driver.sends]
+        claims, *per_provider = await asyncio.gather(
+            _hub_claims(), *(DataSource.get_all({"provider": name}) for name in senders)
+        )
+        sources = [row for rows in per_provider for row in rows or []]
+        instance = instance_uid()
+        by_channel: dict[str, list[dict]] = {}
+        for c in claims:
+            by_channel.setdefault(str((c.get("target") or {}).get("data_source_id") or ""), []).append(c)
+        rows: list[dict] = []
+        for source in sources or []:
+            if not is_message_source(source):
+                continue
+            driver = DataDriver.loaded(source.provider)
+            by_hub = bool(getattr(getattr(driver, "cls", None), "delivered_by_hub", False))
+            # One row per place it is delivered to (a channel with no claim: one row).
+            for claim in by_channel.pop(str(source.id), None) or [None]:
+                rows.append(_channel_row(claim, instance, source, by_hub=by_hub))
+        # The caller's claims whose channel is not here (the vendor's root is nobody's channel).
+        rows += [
+            _channel_row(c, instance)
+            for group in by_channel.values()
+            for c in group
+            if (c.get("claim") or {}).get("kind") != "root"
+        ]
+        return ApiSuccessResponse(data={"channels": rows})
 
     @core_action.post(action_name="set_route")
     async def set_route_action(self) -> ApiResponse:
@@ -1397,8 +1437,6 @@ class DataSource(Entity):
         claim = await self._hub_route()
         if claim is None:
             return ApiFailResponse(message="no hub webhook delivers to this channel yet — connect it first", status_code=404)
-        if (claim.get("target") or {}).get("kind") == "placement":
-            return ApiFailResponse(message="Flow answers this channel from its own box", status_code=409)
         if place == "this":
             target = {"kind": "desktop", "instance_id": instance_uid(), "data_source_id": str(self.id)}
         else:
@@ -1410,6 +1448,28 @@ class DataSource(Entity):
         if not moved:
             return ApiFailResponse(message="the hub did not take the new place", status_code=502)
         return ApiSuccessResponse(data={"claim": moved, "current": place})
+
+    @core_action.post(action_name="add_route")
+    async def add_route_action(self) -> ApiResponse:
+        """POST /api/v1/graph/data_source/{id}/add_route ``{"place": <deployment id>}`` — ALSO deliver this channel's
+        messages to one of its agent's cloud placements: a second hub claim for the same proven sender (the first
+        is its proof), targeted at that machine's copy of this channel. Each place answers on its own."""
+        from flow_sdk.cloud_client.transport.hub_http import hub_post  # noqa: PLC0415
+
+        place = str((await self._body()).get("place") or "")
+        claim = await self._hub_route()
+        key = str(((claim or {}).get("claim") or {}).get("key") or "")
+        if claim is None or not key:
+            return ApiFailResponse(message="connect this channel first — its claim is the proof", status_code=404)
+        chosen = next((p for p in await self.route_places() if p["key"] == place and p.get("node_typeid")), None)
+        if chosen is None:
+            return ApiFailResponse(message="no such place for this channel", status_code=404)
+        target = {"kind": "node", "node_typeid": chosen["node_typeid"], "data_source_id": str(self.id)}
+        body = {"parent": f"@{claim.get('provider')}", "claim": {"kind": "user", "key": key}, "target": target}
+        added = await hub_post("webhook", body, None, "chain")
+        if not added:
+            return ApiFailResponse(message="the hub did not take the new place", status_code=502)
+        return ApiSuccessResponse(data={"claim": added, "place": place})
 
     @core_action.post(action_name="step")
     async def step_action(self) -> ApiResponse:
@@ -1873,3 +1933,54 @@ async def prune_fileless_data_sources() -> int:
                 await DataSource.delete_children_of(str(record.id))
             removed += bool(await remove_orphan_row(str(record.id), type_name))
     return removed
+
+
+async def _hub_claims() -> list[dict]:
+    """Every hub webhook claim of the signed-in person (``webhook/mine``) — empty when the hub is unreachable."""
+    from flow_sdk.cloud_client.transport.hub_http import hub_get  # noqa: PLC0415
+
+    mine = await hub_get("webhook", None, "mine") or {}
+    rows = mine.get("webhooks") if isinstance(mine, dict) else None
+    return [r for r in rows or [] if isinstance(r, dict)]
+
+
+def _claims_for(claims: list[dict], source_id: str) -> list[dict]:
+    """The claims that deliver to the channel ``source_id`` (one per place it is delivered to), oldest first."""
+    found = [c for c in claims if str((c.get("target") or {}).get("data_source_id") or "") == source_id]
+    return sorted(found, key=lambda c: (float(c.get("proven_at") or 0), str(c.get("id") or "")))
+
+
+def _place_of(claim: dict, places: list[dict]) -> dict:
+    """Where an additional claim delivers, named as the route's places name it."""
+    node = str((claim.get("target") or {}).get("node_typeid") or "")
+    found = next((p for p in places if node and p.get("node_typeid") == node), None)
+    return {"claim_id": str(claim.get("id") or ""), "key": (found or {}).get("key", ""), "label": (found or {}).get("label", "")}
+
+
+def _channel_row(claim: Optional[dict], instance: str, source=None, *, by_hub: bool = False) -> dict:
+    """One MessageChannel row: the source here (if any), the claim that delivers to it, and who answers it."""
+    owner = str(getattr(source, "owner", "") or "")  # a TypeId on the row; the list speaks JSON
+    place = str(getattr(source, "answer_place", "") or "")
+    answered_by = "" if source is None else "deployment" if place else "agent" if owner.startswith("agent-") else "nobody"
+    return {
+        "source_id": str(getattr(source, "id", "") or ""),
+        "name": str((source.name or source.provider) if source is not None else (claim or {}).get("name") or ""),
+        "provider": str(getattr(source, "provider", "") or ""),
+        "channel": str(getattr(source, "channel", "") or (claim or {}).get("provider") or ""),
+        "claim": claim,
+        "routed": _routed(claim, instance, by_hub=by_hub),
+        "answered_by": answered_by,
+    }
+
+
+def _routed(claim: Optional[dict], instance: str, *, by_hub: bool = False) -> str:
+    """Where a claim hands its messages, from this instance's point of view."""
+    if claim is None:
+        return "unclaimed" if by_hub else "polls"
+    target = claim.get("target") or {}
+    kind = target.get("kind")
+    if kind == "desktop":
+        return "this" if target.get("instance_id") == instance else "instance"
+    if kind == "node":
+        return "node"
+    return "nowhere"
