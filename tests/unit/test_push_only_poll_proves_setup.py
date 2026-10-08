@@ -73,3 +73,13 @@ async def test_a_provider_that_did_not_answer_leaves_the_status_and_is_retried(p
     await sync_source(source, now=NOW)
     again = await DataSource.get_one({"id": source.id})
     assert again.status == SourceStatus.ACTIVE.value and again.health == SourceHealth.TRANSIENT_ERROR.value
+
+
+async def test_an_answer_after_an_outage_clears_the_outage_even_when_it_is_no(pushed):
+    source = await _live(pushed.name)
+    pushed.answer = SourceUnavailable("the hub did not answer")
+    await sync_source(source, now=NOW)
+    pushed.answer = Verdict(ready=False, detail="Press Connect WhatsApp first.")
+    await sync_source(source, now=NOW)
+    again = await DataSource.get_one({"id": source.id})
+    assert again.status == SourceStatus.SETUP.value and again.health == SourceHealth.OK.value and not again.error_detail

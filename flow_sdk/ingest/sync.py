@@ -76,6 +76,11 @@ async def sync_source(source: DataSource, *, now: Optional[datetime] = None) -> 
             if verdict.get("transient"):
                 raise SourceUnavailable(str(verdict.get("detail") or ""))
             if not verdict.get("ready"):
+                # The provider answered (no): an earlier "did not answer" is no longer true. The row says setup.
+                if source.health == SourceHealth.TRANSIENT_ERROR.value:
+                    source.health, source.error_code, source.error_detail = SourceHealth.OK.value, None, None
+                    source.consecutive_failures = 0
+                    await source.save_runtime()
                 emit_sync_tag(source.provider, source.id, "completed", report=report)
                 return report
         found = await stype.traverse(source, position_of(source, now))
