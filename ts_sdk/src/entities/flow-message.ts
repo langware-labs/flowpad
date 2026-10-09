@@ -569,6 +569,8 @@ export interface ExportFlowMessageParams {
   text: string;
   /** TypeIds of every entity the file carries (`skill-<uuid>`, …). */
   asset_references: string[];
+  /** Pack files git excludes too — set only after the sender saw them (`checkShareAttachments`). */
+  include_gitignored?: boolean;
 }
 
 /** Pack entities into one `.flowmsg` with no conversation — an offline package

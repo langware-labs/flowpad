@@ -1,11 +1,11 @@
-"""Sources fed by the event bus — an internal event stream as a channel.
+"""Sources nudged by the event bus — "pull now" for a source whose records are our own.
 
-A source whose records are OUR OWN events (a task ledger, a run log) has no provider to poll and no
-webhook to receive: it declares the bus topics it listens to (``bus_topics = ("task.*",)``) and turns
-each matching event into items (``events_from_bus(tag, data) -> list[DataSourceEvent]``). This module
-subscribes those topics once and hands every matching event to every ACTIVE source of such a driver,
-through the same ingestion chokepoint a webhook uses (``DriverRuntime.ingest_events``) — so the items
-land, project into threads and reach a serve loop exactly like any channel's.
+A source over OUR OWN rows (tasks and their comments) is pulled like any other: it lists what it
+carries and the sync engine reads it on its cadence. The bus only makes that immediate: the source
+declares the topics that can change its listing (``bus_topics = ("task.*", "entity.*")``) and which
+events on them matter (``wants(tag, data)``), and this module polls every ACTIVE source of such a
+driver NOW (``poller.poll_source``) — the same pass a heartbeat would run, so the items land, project
+into threads and reach a serve loop exactly like any channel's. A lost event is latency, never loss.
 
 It knows no driver: which drivers are bus-fed, and on which topics, the driver classes say.
 """
@@ -48,7 +48,7 @@ def start() -> None:
 
     for driver in bus_fed_drivers():
         for pattern in driver.cls.bus_topics:
-            _UNSUBSCRIBE.append(on_tag(pattern, _handler_for(driver.provider)))
+            _UNSUBSCRIBE.append(on_tag(pattern, _handler_for(driver.provider, getattr(driver.cls, "wants", None))))
 
 
 def stop() -> None:
@@ -56,40 +56,54 @@ def stop() -> None:
         _UNSUBSCRIBE.pop()()
 
 
-def _handler_for(provider: str):
-    async def _on_event(event) -> None:
-        from flow_sdk.request_context.detached import create_detached_task  # noqa: PLC0415
+def _handler_for(provider: str, wants=None):
+    def _on_event(event) -> None:
+        # Sync on purpose: the bus calls a sync handler inside ``emit``, i.e. inside the writer's own
+        # transaction — so the pull can wait for that commit. Nudged earlier, it reads the row as it was
+        # before the write and lists nothing new until some later write nudges it again.
+        data = dict(event.data or {})
+        # Asked before anything is spawned: a broad topic (``entity.*``) fires on every write.
+        if wants is not None and not wants(event.tag, data):
+            return
 
-        # Detached: a tag fires inside its writer's commit, whose session this must not join.
-        task = create_detached_task(deliver(provider, event.tag, dict(event.data or {})), name=f"bus-source:{provider}")
-        _INFLIGHT.add(task)
-        task.add_done_callback(_INFLIGHT.discard)
+        async def pull() -> None:
+            from flow_sdk.request_context.detached import create_detached_task  # noqa: PLC0415
+
+            # Detached: its own session, never the writer's.
+            task = create_detached_task(deliver(provider, event.tag, data), name=f"bus-source:{provider}")
+            _INFLIGHT.add(task)
+            task.add_done_callback(_INFLIGHT.discard)
+
+        from flow_sdk.db import get_db_driver  # noqa: PLC0415
+
+        # Queued on the writer's transaction right here, inside ``emit``; with none bound the write is durable.
+        if not get_db_driver().defer_to_commit(pull):
+            registering = asyncio.ensure_future(pull())
+            _INFLIGHT.add(registering)
+            registering.add_done_callback(_INFLIGHT.discard)
 
     return _on_event
 
 
 async def deliver(provider: str, tag: str, data: dict[str, Any]) -> int:
-    """One bus event to every active source of ``provider``. Returns how many items were ingested."""
+    """One bus event (already one the driver ``wants``): poll every active source of ``provider`` now.
+    Returns how many sources were polled."""
     from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415
     from flow_sdk.builtin.data_source import DataSource, SourceStatus  # noqa: PLC0415
+    from flow_sdk.ingest.poller import poll_source  # noqa: PLC0415
 
-    driver = DataDriver.loaded(provider)
-    if driver is None:
+    if DataDriver.loaded(provider) is None:
         return 0
-    ingested = 0
+    polled = 0
     for row in await DataSource.get_all({"provider": provider}) or []:
         if str(getattr(row, "status", "") or "") != SourceStatus.ACTIVE.value:
             continue
         try:
-            source = await driver.open(row)
-            async with source:
-                events = source.events_from_bus(tag, data)  # type: ignore[attr-defined]
-            if events:
-                result = await driver.ingest_events(row, events)
-                ingested += int(result.get("ingested") or 0)
+            await poll_source(row, follow_up=True)
+            polled += 1
         except Exception:  # noqa: BLE001 — one source's failure must not starve the others
             logger.exception("[bus-source] %s: %s on %s failed", provider, tag, getattr(row, "id", "?"))
-    return ingested
+    return polled
 
 
 async def settle() -> None:

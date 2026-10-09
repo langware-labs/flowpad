@@ -22,12 +22,17 @@ def _row():
                         metadata={"source": {"item_id": "x"}})
 
 
-def test_append_numbers_after_the_highest_and_returns_the_pinned_id(tmp_path):
+def test_append_numbers_after_the_highest_and_stores_the_rows_id(tmp_path):
+    """A new row's id is a v4 stored in its example.json -- not derived from the dataset id (which is
+    not in git) and the folder name (which a rename changes): references to it must survive both."""
+    from flow_sdk.api.api_types.identifier import is_valid_entity_id
+
     lay = FolderLayout()
     first = lay.append(tmp_path, _row(), dataset_id=DS, contents={"input/item.json": {"name": "a"}})
     (tmp_path / "examples" / "0007").mkdir()          # a gap: numbering follows the max, not the count
     third = lay.append(tmp_path, _row(), dataset_id=DS, contents={"input/item.json": {"name": "b"}})
-    assert first == example_id(DS, "0001") and third == example_id(DS, "0008")
+    assert is_valid_entity_id(first) and first not in (example_id(DS, "0001"), third)
+    assert json.loads((tmp_path / "examples" / "0008" / "example.json").read_text())["metadata"]["id"] == third
     assert json.loads((tmp_path / "examples" / "0008" / "input" / "item.json").read_text()) == {"name": "b"}
     rows = lay.read(tmp_path, ARTIFACT_ROW, dataset_id=DS)
     assert [r.id for r in rows] == [first, third] and rows[0].ground_truth is None

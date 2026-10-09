@@ -376,6 +376,9 @@ class ViewMeta:
     #: offered, so no option names an address the app cannot open. A form named ``page`` is the
     #: entity's own page: where opening the entity itself goes when it has no asset editor.
     open_forms: tuple[tuple[str, str, str], ...] = ()
+    #: The tab the bare address opens (``credentials`` shows ``connections``): the two addresses
+    #: are one place, so ``canonical_address`` folds the tab away.
+    default_tab: str = ""
 
 
 #: The table below builds rows directly. ``pointer`` leads and ``addressable``
@@ -437,6 +440,7 @@ VIEW_META: Mapping[ViewType, ViewMeta] = {
         _OPT,
         label="Machine",
         aliases=("system", "this machine"),
+        default_tab="processes",
         subplaces=(
             ("processes", "Machine > running processes"),
             ("network", "Machine > network / ports"),
@@ -451,6 +455,7 @@ VIEW_META: Mapping[ViewType, ViewMeta] = {
         _OPT,
         label="AI Configuration",
         aliases=("ai config", "llm apis", "models"),
+        default_tab="llm-apis",
         subplaces=(
             ("llm-apis", "AI Configuration > LLM APIs tab"),
             ("clis", "AI Configuration > CLIs tab: the coding CLIs / harnesses (Claude Code, Codex, Copilot, OpenCode)"),
@@ -514,6 +519,8 @@ VIEW_META: Mapping[ViewType, ViewMeta] = {
         ),
         open_forms=(
             ("agentic_process", "<harness>/transcript/<session>", "transcript"),
+            # Claude Code alone keeps a todo list per session.
+            ("agentic_process", "<harness=claude>/tasks/<session>", "todo list"),
             ("trigger", "trigger/log/<id>", "trigger log"),
         ),
     ),
@@ -577,9 +584,18 @@ VIEW_META: Mapping[ViewType, ViewMeta] = {
         folds_pointer=True,
         label="Data sources",
         aliases=("connectors", "integrations", "ingestion", "sources"),
-        subplaces=(("drivers", "Data sources > drivers: every kind of source that can be connected"),),
+        provides=("entity",),
+        subplaces=(
+            ("drivers", "Data sources > drivers: every kind of source that can be connected"),
+            ("channels", "Data sources > channels: where each channel's messages are routed"),
+        ),
         # Each shipped driver's page (``drivers/<name>``) is generated: ``navigation.place_of``.
-        open_forms=(("data_source", "<id>", "page"),),
+        open_forms=(
+            ("data_source", "<id>", "page"),
+            ("data_source", "<id>/messages", "messages"),
+            ("data_source", "<id>/settings", "settings"),
+            ("data_source", "drivers/<provider>", "driver"),
+        ),
     ),
     ViewType.RAG: _m(
         _NONE,
@@ -590,7 +606,7 @@ VIEW_META: Mapping[ViewType, ViewMeta] = {
     # Labelled apart from `assets` (the tree): this is one counter's table.
     ViewType.ASSET_LIST: _m(_NONE, label="Asset list", aliases=("counter assets",)),
     ViewType.PROCESS_RUNS: _m(_OPT, label="Runs", aliases=("history",)),
-    ViewType.PLAN: _m(_REQ, label="Plan"),
+    ViewType.PLAN: _m(_REQ, label="Plan", open_forms=(("agentic_process", "vfs/<plan_path>", "plan"),)),
     ViewType.CRON: _m(_NONE, addressable=False),
     # OPTIONAL, not REQUIRED: `/dock/assets` already renders — `AssetsPage` takes no
     # pointer prop and tab identity is the SCOPE (scope_keyed), not the pointer. The
@@ -650,6 +666,7 @@ VIEW_META: Mapping[ViewType, ViewMeta] = {
         pages=("desk", "hub"),
         # One tab is left: API keys and environment variables are rows of Connections now.
         subplaces=(("connections", "Credentials > Connections (OAuth accounts) tab"),),
+        default_tab="connections",
         open_forms=(("project", "connections/<id>", "connections"),),
     ),
     # Pointer REQUIRED: an app with no artifact is not an address. Runtime rides in
@@ -662,7 +679,12 @@ VIEW_META: Mapping[ViewType, ViewMeta] = {
         label="LLM Endpoints",
         aliases=("endpoints",),
         pages=("hub",),
-        open_forms=(("llm_endpoint", "<id>/usage", "usage"), ("llm_endpoint", "<id>/models", "models")),
+        provides=("entity",),
+        open_forms=(
+            ("llm_endpoint", "<id>", "page"),
+            ("llm_endpoint", "<id>/usage", "usage"),
+            ("llm_endpoint", "<id>/models", "models"),
+        ),
     ),
     ViewType.TOKEN_PLAN: _m(
         _OPT,
@@ -670,6 +692,7 @@ VIEW_META: Mapping[ViewType, ViewMeta] = {
         label="Token plan",
         aliases=("budget", "token budget"),
         pages=("hub",),
+        default_tab="me",
         subplaces=(("me", "Hub token plan > my budget"), ("team", "Hub token plan > team budget")),
     ),
     ViewType.LLM_SOURCES: _m(
@@ -902,4 +925,19 @@ def parse_dock_url(path: str) -> Optional[DockAddress]:
         layout=Layout(segments[layout_index]),
         page=page,
         base=base,
+    )
+
+
+def canonical_address(path: str) -> str:
+    """One spelling per place: a screen's default tab folded into its bare address
+    (``credentials/connections`` is ``credentials``), segments and options encoded one way and
+    the options in one order. Not a dock URL: returned unchanged."""
+    parsed = parse_dock_url(path)
+    if parsed is None:
+        return path
+    pointer = parsed.pointer
+    if pointer and pointer == VIEW_META[parsed.view_type].default_tab:
+        pointer = None
+    return dock_url(
+        parsed.view_type, pointer, dict(sorted(parsed.options.items())), layout=parsed.layout, page=parsed.page, base=parsed.base
     )

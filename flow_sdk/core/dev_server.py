@@ -70,4 +70,13 @@ def start_detached(command: str, *, cwd: Path, port: int, name: str) -> tuple[in
     return proc.pid, str(log_file)
 
 
-__all__ = ["log_dir", "find_free_port", "port_open", "start_detached", "wait_for_port"]
+def install_command(start_cmd: str, folder: Path) -> str:
+    """What installs an app's dependencies when it does not say: its package manager's own install
+    (read off how it starts), ``npm ci`` with a lockfile, else ``npm install``."""
+    for manager in ("pnpm", "yarn", "bun"):
+        if start_cmd.startswith(f"{manager} "):
+            return f"{manager} install"
+    return "npm ci" if (folder / "package-lock.json").exists() else "npm install"
+
+
+__all__ = ["log_dir", "find_free_port", "install_command", "port_open", "start_detached", "wait_for_port"]

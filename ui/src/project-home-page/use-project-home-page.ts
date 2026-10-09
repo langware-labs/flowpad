@@ -1,4 +1,4 @@
-import { QueryFilter, QueryRequest, RecordType, type AnyEntity } from '@sdk';
+import { QueryFilter, QueryRequest, RecordType, type ProjectManifest } from '@sdk';
 import { useEntitiesQuery } from '@sdk/react/hooks';
 import { useMemo } from 'react';
 
@@ -22,7 +22,6 @@ export function useProjectHomePage(projectId: string | null | undefined): string
       }),
     [projectId],
   );
-  const { data } = useEntitiesQuery<AnyEntity>(request, { enabled: !!projectId });
-  const row = data?.[0] as (AnyEntity & { home_page?: string | null }) | undefined;
-  return row?.home_page ?? null;
+  const { data } = useEntitiesQuery<ProjectManifest>(request, { enabled: !!projectId });
+  return data?.[0]?.home_page ?? null;
 }

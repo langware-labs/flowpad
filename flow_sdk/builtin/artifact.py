@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, ClassVar
+from typing import Any, ClassVar, Optional
 
-from pydantic import field_validator, model_validator
+from pydantic import model_validator
 
 from flow_sdk.api.api_types.api_field import APIField, Sharing
-from flow_sdk.fs_store.origin.local_origin import local_origin_for_path
 from flow_sdk.core import Entity
+from flow_sdk.fs_store.origin.local_origin import local_origin_for_path
 from flow_sdk.schema.types import EntityType
 from flow_sdk.worldview.ontology import KindStr, kind_matches
 
@@ -294,13 +294,41 @@ class Artifact(Entity):
         return canonical_posix_path(str(Path(origin.base) / origin.rel_path))
 
     async def setup_on_receive(self, *, project_id=None, workdir=None) -> dict:
-        """Only application.web artifacts invoke the artifact setup skill."""
+        """Only application.web artifacts are set up on receive.
+
+        The fast lane first: an app that declares itself (a ``webapp.json`` in its folder) is a node of its
+        project's setup tree — installed, built, started, each with its check — and the display opens on
+        it while that runs (``WebappDisplay`` shows the setup). Only an app that says nothing about itself
+        goes to the ``artifact-setup`` agent, which works out how it runs."""
 
         if kind_matches("application.web", self.kind):
+            fast = await self._setup_declared_app(project_id)
+            if fast is not None:
+                return fast
             return await super().setup_on_receive(project_id=project_id, workdir=workdir)
         from flow_sdk.core.display_target import _entity_payload  # noqa: PLC0415
 
         return _entity_payload(self)
+
+    async def _setup_declared_app(self, project_id) -> Optional[dict]:
+        """Start the setup of the declared web app this artifact's folder holds, and answer it to display;
+        ``None`` when the folder declares none (or has no project to set it up in)."""
+        from flow_sdk.builtin.faas.micro_app import WebApp  # noqa: PLC0415
+        from flow_sdk.builtin.project import Project  # noqa: PLC0415
+        from flow_sdk.builtin.project_setup import start_setup  # noqa: PLC0415
+        from flow_sdk.core.display_target import _entity_payload  # noqa: PLC0415
+
+        folder = str(getattr(self, "path", "") or "").rstrip("/")
+        if not folder or not project_id:
+            return None
+        apps = await WebApp.get_all({"match": {"project_id": str(project_id)}})
+        app = next((a for a in apps if a.asset_ref and (a.asset_ref.rstrip("/") == folder
+                                                       or a.asset_ref.startswith(folder + "/"))), None)
+        project = await Project.get_by_id(str(project_id)) if app is not None else None
+        if project is None:
+            return None
+        await start_setup(project, root=str(app.typeid))
+        return _entity_payload(app)
 
 
 __all__ = ["Artifact", "LEGACY_ARTIFACT_KIND_MAP"]

@@ -36,6 +36,9 @@ logger = logging.getLogger(__name__)
 #: Source ids with a poll in flight. A source that takes longer than the tick
 #: interval is skipped rather than stacked.
 _inflight: set[str] = set()
+#: Sources asked for a pass WHILE one was running (``poll_source(follow_up=True)``): the running poll
+#: makes one more pass when it ends, so a change that landed after its read is not left for the next tick.
+_again: set[str] = set()
 
 # ── the attention fast lane ──────────────────────────────────────────────────
 # Sub-tick polling for a source someone is WATCHING. `request_poll` renews a
@@ -245,7 +248,7 @@ async def dispatch_due_sources(
     return dispatched
 
 
-async def poll_source(source: DataSource, now: Optional[datetime] = None) -> bool:
+async def poll_source(source: DataSource, now: Optional[datetime] = None, *, follow_up: bool = False) -> bool:
     """Poll one source NOW, under the same in-flight guard as the tick lanes.
 
     Returns whether it ran. The one entry point for an out-of-band poll — a
@@ -256,8 +259,13 @@ async def poll_source(source: DataSource, now: Optional[datetime] = None) -> boo
     loop legitimately drives a source the heartbeat would not. A source already in flight is skipped, not queued; the running
     poll (or the next tick) picks the change up, which is all a change event
     ever promised (`change_event.py`: a lost event is latency, never loss).
+
+    ``follow_up``: a source already in flight makes one more pass when its running poll ends — for a
+    caller whose change may have landed after that poll read (a bus-fed source's "pull now").
     """
     if not _claim(source.id):
+        if follow_up:
+            _again.add(source.id)
         return False
     await _run_poll(source, now or datetime.now(timezone.utc))
     return True
@@ -284,10 +292,14 @@ async def _run_poll(source: DataSource, now: datetime) -> None:
         from flow_sdk.ingest.sync import sync_source  # noqa: PLC0415
 
         await sync_source(source, now=now)
+        while source.id in _again:  # the row object carries the cursor the last pass wrote
+            _again.discard(source.id)
+            await sync_source(source, now=datetime.now(timezone.utc))
     except Exception:  # noqa: BLE001 — sync_source classifies its own failures;
         # anything reaching here is a bug, and it must not kill the poller.
         logger.warning("[ingest] poll failed for %s", source.id, exc_info=True)
     finally:
+        _again.discard(source.id)
         _inflight.discard(source.id)
 
 

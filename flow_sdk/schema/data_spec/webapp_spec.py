@@ -30,6 +30,11 @@ class WebappProxyServing(DataSpec):
     health: str = "/"
     #: A fixed port when the process cannot be told one; otherwise the placement picks.
     port: Optional[int] = Field(default=None, ge=1, le=65535)
+    #: Installs what the app needs before it can start (``npm ci``). Empty: derived from its package manager
+    #: when it has a ``package.json`` (``webapp_setup.install_command``), else nothing to install.
+    install_cmd: str = ""
+    #: Builds the app before it starts, when it must be. Empty: no build step.
+    build_cmd: str = ""
 
 
 WebappServing = Annotated[Union[WebappStaticServing, WebappProxyServing], Field(discriminator="type")]

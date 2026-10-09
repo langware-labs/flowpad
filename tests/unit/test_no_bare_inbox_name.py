@@ -70,6 +70,7 @@ PHRASES = {
     r"^ui/tests/manual_regression/data-sources/credentialed_sources\.md(\.ts)?$": ["`inbox` field", "the inbox is account-bound"],
     # what a person types into the command line — the navigation dataset quotes it as typed
     r"^docs/navigation/navigation-sentences\.md$": ["Messages, inbox, help", "open my inbox", "open the agent's inbox"],
+    r"^docs/navigation/navigation_medium\.md$": ["conversations and the inbox", "show me its inbox", "triages the support inbox"],
     # plain English for a person's own email inbox
     r"^flow_sdk/system_projects/flowpad_assistant/\.claude/agents/email_analyzer\.md$": ["the inbox you were asked for"],
     r"^flow_sdk/system_projects/flowpad_assistant/\.claude/agents/email_sender\.md$": ["someone's inbox", "fetch of the inbox"],

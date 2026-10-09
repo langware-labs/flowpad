@@ -29,6 +29,8 @@ export interface ConversationSendPayload {
     /** When true, the receiver mints a FAVORITE bookmark pointing at the shared
      *  asset when it installs. Default off. */
     createBookmark?: boolean;
+    /** Send files git excludes too — set only after the sender saw them listed. */
+    includeGitignored?: boolean;
   };
 }
 
@@ -62,24 +64,41 @@ export interface UnshippableReference {
   reason: string;
 }
 
+/** An attachment whose copy would carry files git excludes — often private (a data source's local
+ *  copy, an env file). The sender is shown them and decides; nothing is dropped silently. */
+export interface GitignoredReference {
+  /** The serialized TypeId. */
+  type_id: string;
+  /** The excluded files and folders, relative to the asset; `.` when the asset itself is excluded. */
+  paths: string[];
+}
+
+export interface ShareAttachmentCheck {
+  unshippable: UnshippableReference[];
+  gitignored: GitignoredReference[];
+}
+
 /**
- * Ask the backend which of these asset references would arrive empty — BEFORE anything is created.
+ * The read-only preflight of a share, asked BEFORE anything is created: what would arrive empty, and what
+ * would carry files git excludes. A git-mode share sends a reference, so it is never asked about those.
  *
  * Sharing into a NEW conversation creates it and invites the recipient first and sends second, so a
  * refusal at send time leaves them holding an invitation to an empty conversation. Asking here costs
- * one read-only call and lets the caller offer "send without it" instead.
+ * one read-only call and lets the caller offer "send without it" (or "send anyway") instead.
  */
-export async function findUnshippableReferences(
+export async function checkShareAttachments(
   assetReferences: readonly string[],
-): Promise<UnshippableReference[]> {
+  options: { transferMode?: 'copy' | 'git' } = {},
+): Promise<ShareAttachmentCheck> {
   const refs = [...new Set(assetReferences)];
-  if (refs.length === 0) return [];
+  if (refs.length === 0) return { unshippable: [], gitignored: [] };
   const info = new ActionInfo('check-attachments', null, null, 'POST');
-  info.bodyParameters = { asset_references: refs };
-  const result = await dataManager.callAction<{ asset_references: string[] }, { unshippable?: UnshippableReference[] }>(
-    info,
-  );
-  return result?.unshippable ?? [];
+  info.bodyParameters = { asset_references: refs, share_config: { transfer_mode: options.transferMode ?? 'copy' } };
+  const result = await dataManager.callAction<
+    { asset_references: string[]; share_config: { transfer_mode: string } },
+    Partial<ShareAttachmentCheck>
+  >(info);
+  return { unshippable: result?.unshippable ?? [], gitignored: result?.gitignored ?? [] };
 }
 
 /** The same payload minus these references — from the attachments AND from the shared context, so

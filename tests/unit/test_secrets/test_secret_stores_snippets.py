@@ -26,6 +26,8 @@ pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
 
 PAGE = doc("secret-stores.md")
 DRIVE_SCOPE = "https://www.googleapis.com/auth/drive.readonly"
+#: What writing back adds (``permission.google.drive.write``): a Drive source writes back unless read-only.
+DRIVE_WRITE_SCOPE = "https://www.googleapis.com/auth/drive"
 
 
 async def _run(heading: str, namespace: dict | None = None, *, nth: int = 0) -> dict:
@@ -183,17 +185,19 @@ async def test_5_two_instances_keep_their_own_bindings(in_project):
 
 
 @pytest.mark.parametrize(
-    "connected,scopes,reauthorized",
+    "connected,scopes,read_only,reauthorized",
     [
-        (True, (DRIVE_SCOPE,), []),  # held, with the scope: nothing to do
-        (False, (), [False]),  # NotConnected: the row on the error connects
-        (True, (), [True]),  # MissingScopes: consent runs again
+        (True, (DRIVE_SCOPE, DRIVE_WRITE_SCOPE), False, []),  # held, with what writing back needs: nothing to do
+        (True, (DRIVE_SCOPE,), True, []),  # a read-only source needs only the read scope
+        (True, (DRIVE_SCOPE,), False, [True]),  # writing back needs more than the held read grant: consent again
+        (False, (), False, [False]),  # NotConnected: the row on the error connects
+        (True, (), False, [True]),  # MissingScopes: consent runs again
     ],
-    ids=["held", "not-connected", "missing-scopes"],
+    ids=["held", "held-read-only", "read-grant-for-a-writer", "not-connected", "missing-scopes"],
 )
-async def test_6_a_data_source_binds_a_connection(in_project, monkeypatch, connected, scopes, reauthorized):
+async def test_6_a_data_source_binds_a_connection(in_project, monkeypatch, connected, scopes, read_only, reauthorized):
     await _session_free("gdrive", monkeypatch)
-    await _saved("gdrive", "work drive")
+    await _saved("gdrive", "work drive", read_only=read_only)
     asked = _catalogue(monkeypatch, connected=connected, scopes=scopes)
 
     ns = await _run("6. Connections")

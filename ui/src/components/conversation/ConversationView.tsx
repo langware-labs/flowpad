@@ -20,8 +20,10 @@ import {
   isSessionActive,
   isSessionTerminal,
   RemoteWorkerSession,
+  Task,
   toplog,
 } from '@sdk';
+import { useEntityBatch } from '@src/components/entity-batch/EntityBatchHydrator';
 import { claimTabSwitchReady, sinceTabSwitch } from '@src/navigation/tab-switch-state';
 import { useAuth, useEntitiesQuery, useEntity, useOnTag, useProject } from '@sdk/react/hooks';
 import type { FlowEvent } from '@sdk/tags/EventBus';
@@ -346,15 +348,17 @@ export function ConversationView({
       }
     : null;
   // Each message come in on the channel: where it is on its way to an answer (live statuses + the feed's answers).
-  const handledKeys = useHandledKeys(channel ? conversation?.channel_source_id : null);
+  // A channel nobody else answers (the person's own — their Tasks channel) has no such way: no line.
+  const answered = !!channel && conversation?.channel_answered !== false;
+  const handledKeys = useHandledKeys(answered ? conversation?.channel_source_id : null);
   const lifecycles = useMemo(() => {
-    if (!channel) return null;
+    if (!answered) return null;
     const ordered = orderedItems.flatMap((it): FlowMessage[] => {
       const fm = it.kind === ConversationItemKind.POINTER ? messagesById.get(it.messageId) : undefined;
       return fm ? [fm] : [];
     });
     return lifecyclesOf(ordered, handledKeys);
-  }, [channel, orderedItems, messagesById, handledKeys]);
+  }, [answered, orderedItems, messagesById, handledKeys]);
   const quotedFor = (fm: FlowMessage | null) => {
     if (!fm?.reply_to_id) return null;
     const parent = messagesById.get(fm.reply_to_id);
@@ -526,7 +530,9 @@ export function ConversationView({
   // One row of the feed — a normal bubble or a draft bubble. A stray
   // kind=session_event row (a lifecycle line whose session the feed could not
   // anchor) renders as a slim centered system line.
-  const renderConversationItem = (item: ConversationItem) => {
+  /** ``threadTask``: the task a collapsed thread is about — shown on the message the stack shows (its newest),
+   *  so a task's thread offers its chips without expanding it. */
+  const renderConversationItem = (item: ConversationItem, threadTask: Task | null = null) => {
     if (item.kind === ConversationItemKind.POINTER) {
       const id = item.messageId;
       const fm = messagesById.get(id) ?? null;
@@ -565,8 +571,9 @@ export function ConversationView({
           lifecycle={lifecycles?.get(id) ?? null}
           quoted={quotedFor(fm)}
           onReply={channelSpec?.replies ? setReplyTo : undefined}
-          messageTask={messageTasks.get(id) ?? null}
+          messageTask={taskOfMessage(id) ?? threadTask}
           onTaskIt={handleTaskIt}
+          taskPeople={taskPeople}
           onLaunchWorker={launchWorkerOnMessage}
         />
       );
@@ -679,6 +686,25 @@ export function ConversationView({
   const attachmentProjectId = resolveAttachmentProjectId(task, conversation, currentProject?.id);
   // "Task it": the tasks made from this conversation's messages (one query), and the one-click create.
   const messageTasks = useMessageTasks(conversationId);
+  // A task thread's message names its task (the channel puts it in the message's shared context), so the
+  // thread shows — and acts on — the same chips as the message the task was made from. One pass: which
+  // task each message names, and so which task each thread is about.
+  const refs = useMemo(() => {
+    const byMessage = new Map<string, string>();
+    const byThread = new Map<string, string>();
+    for (const [id, fm] of messagesById) {
+      const ref = (fm.sharedContextEntities ?? []).find((tid) => tid.type === Task.type);
+      if (!ref) continue;
+      byMessage.set(id, String(ref.id));
+      if (fm.thread_id && !byThread.has(fm.thread_id)) byThread.set(fm.thread_id, String(ref.id));
+    }
+    return { byMessage, byThread, ids: [...new Set(byMessage.values())] };
+  }, [messagesById]);
+  const refTasks = useEntityBatch<Task>(Task.type, refs.ids);
+  const refTaskById = useMemo(() => new Map(refTasks.map((task) => [task.id, task])), [refTasks]);
+  const threadTaskOf = (threadId: string): Task | null => refTaskById.get(refs.byThread.get(threadId) ?? '') ?? null;
+  const taskOfMessage = (id: string): Task | null =>
+    messageTasks.get(id) ?? refTaskById.get(refs.byMessage.get(id) ?? '') ?? null;
   const myEmail = useMyEmail();
   const handleTaskIt = useCallback(
     (message: TaskableMessage) => void taskIt(message, { me: myEmail, projectId: attachmentProjectId }),
@@ -693,6 +719,7 @@ export function ConversationView({
   // inside FlowMessageBubble — this only supplies the owner half of the gate.
   const { cloudUser } = useAuth();
   const cloudUserId = cloudUser?.id ?? null;
+  const taskPeople = useMemo(() => ({ members: participants ?? [], me: myEmail, cloudUserId }), [participants, myEmail, cloudUserId]);
   // Owner = either created_by matches (recipient side, where the hub stamped the
   // cloud-user id) OR the local user holds role "owner" in the participant
   // roster (creator side, where created_by is the local user id). The roster is
@@ -915,7 +942,7 @@ export function ConversationView({
                   messageCount={item.messageCount}
                   onOpenThread={onThreadNavigate ? () => onThreadNavigate(item.threadId) : undefined}
                 >
-                  {renderConversationItem(item.head)}
+                  {renderConversationItem(item.head, threadTaskOf(item.threadId))}
                 </ThreadStack>
               );
             }

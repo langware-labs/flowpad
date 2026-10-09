@@ -100,3 +100,80 @@ def test_dm_ctl_shields_namespaced_kinds_from_argparse(monkeypatch, capsys):
     assert dm_ctl.main(["check", "--acme--.crm.lead", '{"name": "x"}']) == 0
     assert seen["kind"] == "--acme--.crm.lead" and seen["value"] == '{"name": "x"}'
     assert json.loads(capsys.readouterr().out) == {"ok": True}
+
+
+def _dm_ctl():
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("dm_ctl", SKILL_DIR / "scripts/dm_ctl.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _probe(tmp_path, ns="dmprobeabc"):
+    root = tmp_path / "dm-probe-abc"
+    (root / "agentic-assets/project_manifest").mkdir(parents=True)
+    (root / "agentic-assets/project_manifest/project_manifest.json").write_text(f'{{"ns": "{ns}"}}')
+    return root
+
+
+def test_probe_copy_drops_entity_ids_so_the_probe_never_takes_over_real_rows(tmp_path):
+    """A copied asset that kept its id re-pointed the REAL asset's index row at the probe on apply,
+    and probe-drop then deleted it (found by a fresh review on GTM Studio)."""
+    import json
+    from types import SimpleNamespace
+
+    dm_ctl, root = _dm_ctl(), _probe(tmp_path)
+    src = tmp_path / "real/agentic-assets/data_schema/crm"
+    (src / "agentic-assets/data_schema/crm.lead").mkdir(parents=True)
+    (src / "data_schema.json").write_text('{"type": "data_schema", "id": "3b67874b-140b-4984-90f7-14a04d270143", "ns": "acme"}')
+    (src / "description.md").write_text("---\nid: 3b67874b-140b-4984-90f7-14a04d270143\ntitle: CRM\n---\nThe family.\n")
+    lead = src / "agentic-assets/data_schema/crm.lead"
+    (lead / "data_schema.json").write_text('{"type": "data_schema", "id": "ff4967ef-c3f7-4b10-91ee-cc2643164b0e", "fields": {}}')
+    out = dm_ctl.cmd_probe_copy(SimpleNamespace(root=str(root), src=[str(src)], no_rows=False))
+    dest = root / "agentic-assets/data_schema/crm"
+    assert out["ids_dropped"] == 2 and dm_ctl._asset_ids(dest) == {}       # the grouping folder's id is in both files
+    assert set(json.loads((root / dm_ctl.PROBE_MANIFEST).read_text())["foreign_ids"]) == {
+        "3b67874b-140b-4984-90f7-14a04d270143", "ff4967ef-c3f7-4b10-91ee-cc2643164b0e"}
+    assert "id" not in json.loads((dest / "data_schema.json").read_text())
+    assert (dest / "description.md").read_text() == "---\ntitle: CRM\n---\nThe family.\n"
+    assert json.loads((src / "data_schema.json").read_text())["id"]          # the source is untouched
+
+
+def test_probe_copy_renames_every_project_namespace_whichever_call_copied_it(tmp_path):
+    import json
+    from types import SimpleNamespace
+
+    dm_ctl, root = _dm_ctl(), _probe(tmp_path)
+    schema = tmp_path / "real/agentic-assets/data_schema/crm"
+    schema.mkdir(parents=True)
+    (schema / "data_schema.json").write_text('{"type": "data_schema", "ns": "acme"}')
+    ds = tmp_path / "real/agentic-assets/dataset/leads"
+    (ds / "examples/dana").mkdir(parents=True)
+    (ds / "dataset.json").write_text('{"id": "1", "metadata": {"spec": {"examples": [{"input": "--acme--.crm.lead"}]}}}')
+    dm_ctl.cmd_probe_copy(SimpleNamespace(root=str(root), src=[str(schema)], no_rows=False))
+    out = dm_ctl.cmd_probe_copy(SimpleNamespace(root=str(root), src=[str(ds)], no_rows=True))   # a SECOND call
+    manifest = json.loads((root / "agentic-assets/dataset/leads/dataset.json").read_text())
+    assert manifest["metadata"]["spec"]["examples"][0]["input"] == "--dmprobeabc--.crm.lead"
+    assert out["renamed_namespaces"] == ["acme"] and not (root / "agentic-assets/dataset/leads/examples").exists()
+
+
+def test_probe_drop_refuses_a_probe_whose_assets_carry_ids(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+
+    dm_ctl, root = _dm_ctl(), _probe(tmp_path)
+    src = tmp_path / "real/agentic-assets/data_schema/crm"
+    src.mkdir(parents=True)
+    (src / "data_schema.json").write_text('{"type": "data_schema", "id": "3b67874b-140b-4984-90f7-14a04d270143", "ns": "acme"}')
+    dm_ctl.cmd_probe_copy(SimpleNamespace(root=str(root), src=[str(src)], no_rows=False))
+    # the probe's own apply mints ids of its own -- those never block a drop ...
+    (root / "agentic-assets/data_schema/crm/data_schema.json").write_text('{"id": "9d1c0b52-63f4-4e1b-8f0e-5a7d2c1b3e4f"}')
+    assert "9d1c0b52-63f4-4e1b-8f0e-5a7d2c1b3e4f" in dm_ctl._asset_ids(root)
+    # ... the REAL asset's id, put back by hand, does
+    (root / "agentic-assets/data_schema/crm/data_schema.json").write_text('{"id": "3b67874b-140b-4984-90f7-14a04d270143"}')
+    calls = []
+    monkeypatch.setattr(dm_ctl, "_call", lambda method, path, body=None: calls.append((method, path)) or {"fs_storage_mount_path": str(root)})
+    with pytest.raises(ValueError, match="carry entity ids"):
+        dm_ctl.cmd_probe_drop(SimpleNamespace(project_id="p1"))
+    assert all(m == "GET" for m, _ in calls) and root.exists()           # nothing deleted

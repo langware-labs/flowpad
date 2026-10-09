@@ -13,14 +13,17 @@ Verbs
   probe-copy ROOT SRC [SRC ...]      copy schema / dataset folders into a probe, re-namespaced
   probe-drop PROJECT_ID              delete the probe: its rows, its kinds' rows, its folder
   kind KIND                          a registered kind's fields (``flow schema info`` takes entity types)
-  check KIND VALUE                   would VALUE fit KIND? (an unknown kind is an error, never "fits")
-  ds-find KIND                       the datasets whose rows are KIND
+  check KIND VALUE                   would VALUE fit KIND? SHAPE only -- --project ID adds its links and rules
+                                     (an unknown kind is an error, never "fits")
+  ref REF --project ID               the row a reference (<kind>.id.<uuid>) names: its dataset, key and value
+  ds-find KIND                       the datasets whose rows are KIND (--project ID: a bare kind, e.g. crm.lead, works)
   ds-rows DATASET                    every row with its key
   ds-row DATASET KEY                 one row, by key or id
   ds-append DATASET ROWS             rows in (each may carry a "key"); one bad row writes nothing
   ds-put DATASET KEY ROW             create or replace the row KEY
-  ds-delete DATASET KEY              remove one row
-  ds-rename DATASET KEY NEW_KEY      move a row to a new key (its id follows)
+  ds-delete DATASET KEY              remove one row (--expected VERSION: refuse a row changed since)
+  ds-store-ids DATASET               store each row's id where it only has the legacy derived one
+  ds-rename DATASET KEY NEW_KEY      move a row to a new key (its id stays; --expected VERSION)
   ds-check DATASET ROW               would ROW fit? writes nothing
   ds-validate DATASET                every row checked against the dataset's shape
 
@@ -104,20 +107,56 @@ def _probe_ns(root: Path) -> str:
     return json.loads(manifest.read_text())["ns"]
 
 
-def _namespaces(tree: Path) -> set[str]:
-    found = set()
-    for doc in tree.rglob(SCHEMA_DOC):
-        ns = (json.loads(doc.read_text()) or {}).get("ns")
-        if ns:
-            found.add(ns)
-    return found
+#: Any ``--<ns>--.`` prefix: a project's namespace (kinds Flowpad ships carry none).
+NS_PREFIX = re.compile(r"--([A-Za-z0-9_]+)--\.")
+PROBE_MANIFEST = "agentic-assets/project_manifest/project_manifest.json"
+
+
+def _front_id(md: Path) -> str:
+    """The ``id`` in a markdown file's front matter (``description.md``), or ""."""
+    from flow_sdk.assets.frontmatter import _extract_frontmatter, _yaml_load  # noqa: PLC0415
+
+    header = _extract_frontmatter(md.read_text())
+    return str((_yaml_load(header) or {}).get("id") or "") if header else ""
+
+
+def _asset_ids(tree: Path) -> dict[str, str]:
+    """``{entity id: file}`` for every asset document under ``tree`` that carries one."""
+    out = {}
+    for name in (SCHEMA_DOC, DATASET_DOC):
+        for doc in tree.rglob(name):
+            try:
+                data = json.loads(doc.read_text())
+            except ValueError:
+                continue
+            if isinstance(data, dict) and data.get("id"):
+                out[str(data["id"])] = str(doc)
+    out.update({_front_id(md): str(md) for md in tree.rglob("description.md") if _front_id(md)})
+    return out
+
+
+def _remember_foreign(root: Path, ids: set[str]) -> None:
+    """Keep the ids probe-copy dropped (the REAL assets') in the probe's manifest: probe-drop refuses
+    a probe where one of them is back."""
+    manifest = root / PROBE_MANIFEST
+    data = json.loads(manifest.read_text())
+    data["foreign_ids"] = sorted(set(data.get("foreign_ids") or []) | ids)
+    manifest.write_text(json.dumps(data, indent=2) + "\n")
 
 
 def cmd_probe_copy(args) -> dict:
     """Copy schema folders (holding ``data_schema.json``) and dataset folders (holding
-    ``dataset.json``) into the probe, then re-namespace them: every ``"ns"`` becomes the probe's and
-    every ``--<old ns>--.`` prefix in the copied JSON follows. What the probe proves is the SAME
-    files, not a hand-made look-alike."""
+    ``dataset.json``) into the probe as NEW assets of the probe:
+
+    * every entity id is dropped (``"id"`` in the asset documents, ``id:`` in a ``description.md``
+      front matter) -- applying the probe mints its own, so it can never take over the real
+      project's index rows (and ``probe-drop`` can never delete them). Row ids in
+      ``examples/*/example.json`` stay: links between the copied rows name them;
+    * every project namespace becomes the probe's: each ``"ns"`` and each ``--<ns>--.`` prefix in the
+      copied JSON, whichever call copied the folder that declared it -- a kind not copied then
+      fails loudly in the probe instead of resolving to the real project's.
+
+    What the probe proves is the SAME files, not a hand-made look-alike."""
     root = Path(args.root).resolve()
     ns = _probe_ns(root)
     copied, old = [], set()
@@ -133,23 +172,35 @@ def cmd_probe_copy(args) -> dict:
             shutil.rmtree(dest)
         ignore = shutil.ignore_patterns(".flow", *(["examples"] if args.no_rows and family == "dataset" else []))
         shutil.copytree(src, dest, ignore=ignore)
-        old |= _namespaces(dest)
         copied.append(str(dest))
-    rewritten = 0
+    rewritten, foreign = 0, set()
     for dest in map(Path, copied):
         for doc in dest.rglob("*.json"):
             text = original = doc.read_text()
-            for name in old:
-                text = text.replace(f"--{name}--.", f"--{ns}--.")
-            if doc.name == SCHEMA_DOC:
+            old |= {name for name in NS_PREFIX.findall(text) if name != ns}
+            text = NS_PREFIX.sub(f"--{ns}--.", text)
+            if doc.name in (SCHEMA_DOC, DATASET_DOC):
                 data = json.loads(text)
-                if "ns" in data:
-                    data["ns"] = ns
-                text = json.dumps(data, indent=2, ensure_ascii=False) + "\n"
+                if isinstance(data, dict):
+                    if doc.name == SCHEMA_DOC and data.get("ns"):
+                        old.add(data["ns"])
+                        data["ns"] = ns
+                    if data.get("id") is not None:
+                        foreign.add(str(data.pop("id")))
+                    text = json.dumps(data, indent=2, ensure_ascii=False) + "\n"
             if text != original:
                 doc.write_text(text)
                 rewritten += 1
-    return {"root": str(root), "ns": ns, "copied": copied, "renamed_namespaces": sorted(old), "files_rewritten": rewritten}
+        for md in dest.rglob("description.md"):
+            front_id = _front_id(md)
+            if front_id:
+                from flow_sdk.assets.frontmatter import merge_frontmatter  # noqa: PLC0415
+
+                foreign.add(front_id)
+                md.write_text(merge_frontmatter(md.read_text(), {}, drop_keys=("id",)))
+    _remember_foreign(root, foreign)
+    return {"root": str(root), "ns": ns, "copied": copied, "renamed_namespaces": sorted(old - {ns}),
+            "files_rewritten": rewritten, "ids_dropped": len(foreign)}
 
 
 def cmd_probe_drop(args) -> dict:
@@ -159,6 +210,18 @@ def cmd_probe_drop(args) -> dict:
     mount = Path((project or {}).get("fs_storage_mount_path") or "")
     if not mount.name.startswith(PROBE_PREFIX):
         raise ValueError(f"project {args.project_id} ({mount}) is not a probe -- refusing to delete it")
+    # A probe asset carrying the id of the asset it was copied from (put back by hand): applying it
+    # re-pointed the REAL asset's index row at the probe, and deleting the probe would delete that row.
+    # Refuse; the fix is to re-apply / re-index the real folder, then drop the id here. (The ids the
+    # probe's own apply minted are its own: fine to delete.)
+    try:
+        foreign = set(json.loads((mount / PROBE_MANIFEST).read_text()).get("foreign_ids") or [])
+    except (OSError, ValueError):
+        foreign = set()
+    stolen = [path for eid, path in _asset_ids(mount).items() if eid in foreign]
+    if stolen:
+        raise ValueError(f"probe assets carry entity ids that may be a real project's: {stolen} -- re-apply the "
+                         "real folders (flow schema apply / flow record index), remove the ids here, then drop")
     result = _call("POST", f"/graph/project/{args.project_id}/delete-with-children", {"delete_chats": True}) or {}
     try:
         _call("GET", f"/graph/project/{args.project_id}")
@@ -187,25 +250,18 @@ def cmd_kind(args) -> dict:
 
 
 def cmd_check(args) -> dict:
-    return _call("POST", f"/kinds/{quote(args.kind, safe='')}/check", {"value": _json(args.value)})
+    query = f"?project={quote(args.project, safe='')}" if args.project else ""
+    return _call("POST", f"/kinds/{quote(args.kind, safe='')}/check{query}", {"value": _json(args.value)})
+
+
+def cmd_ref(args) -> dict:
+    return _call("GET", f"/refs/{quote(args.ref, safe='')}?project={quote(args.project, safe='')}")
 
 
 # ── datasets ─────────────────────────────────────────────────────────────────
 
 def _datasets() -> list[dict]:
     return list(_call("GET", "/graph/dataset") or [])
-
-
-def _row_kind(spec: Any) -> str:
-    """The kind a dataset's rows are: its named kind, else its inline ``input``."""
-    if isinstance(spec, str):
-        return spec
-    if isinstance(spec, dict):
-        examples = spec.get("examples")
-        first = examples[0] if isinstance(examples, list) and examples else examples
-        if isinstance(first, dict) and isinstance(first.get("input"), str):
-            return first["input"]
-    return ""
 
 
 def _dataset(ref: str) -> dict:
@@ -230,13 +286,15 @@ def _ds(args, action: str, method: str = "POST", body: Any = None) -> Any:
 
 
 def cmd_ds_find(args) -> dict:
-    hits = [r for r in _datasets() if _row_kind(r.get("spec")) == args.kind or r.get("spec") == args.kind]
-    return {"kind": args.kind, "datasets": [{k: r.get(k) for k in ("id", "name", "title", "project_id", "asset_ref", "num_examples")} for r in hits]}
+    query = f"?project={quote(args.project, safe='')}" if args.project else ""
+    return {"kind": args.kind, **(_call("GET", f"/kinds/{quote(args.kind, safe='')}/datasets{query}") or {})}
 
 
 def cmd_ds_rows(args) -> dict:
-    rows = (_ds(args, "rows", "GET") or {}).get("rows") or []
-    return {"count": len(rows), "rows": rows}
+    """Every row that fits (each with ``key``, ``id``, ``ref``, ``version``), and the ``problems``."""
+    got = _ds(args, "rows", "GET") or {}
+    rows = got.get("rows") or []
+    return {"count": len(rows), "rows": rows, "problems": got.get("problems") or []}
 
 
 def cmd_ds_row(args) -> dict:
@@ -249,15 +307,22 @@ def cmd_ds_append(args) -> dict:
 
 
 def cmd_ds_put(args) -> dict:
-    return _ds(args, "put-row", body={"key": args.key, "row": _json(args.row)})
+    body = {"key": args.key, "row": _json(args.row)}
+    return _ds(args, "put-row", body={**body, "expected": args.expected} if args.expected else body)
 
 
 def cmd_ds_delete(args) -> dict:
-    return _ds(args, "delete-row", body={"key": args.key})
+    body = {"key": args.key}
+    return _ds(args, "delete-row", body={**body, "expected": args.expected} if args.expected else body)
+
+
+def cmd_ds_store_ids(args) -> dict:
+    return _ds(args, "store-ids", body={})
 
 
 def cmd_ds_rename(args) -> dict:
-    return _ds(args, "rename-row", body={"key": args.key, "new_key": args.new_key})
+    body = {"key": args.key, "new_key": args.new_key}
+    return _ds(args, "rename-row", body={**body, "expected": args.expected} if args.expected else body)
 
 
 def cmd_ds_check(args) -> dict:
@@ -277,14 +342,20 @@ VERBS: dict[str, tuple] = {
                                     ("--no-rows", {"action": "store_true", "help": "leave dataset rows behind"})]),
     "probe-drop": (cmd_probe_drop, [("project_id", {})]),
     "kind": (cmd_kind, [("kind", {})]),
-    "check": (cmd_check, [("kind", {}), ("value", {})]),
-    "ds-find": (cmd_ds_find, [("kind", {})]),
+    "check": (cmd_check, [("kind", {}), ("value", {}),
+                          ("--project", {"default": "", "help": "also its links and rules, among this project's rows"})]),
+    "ref": (cmd_ref, [("ref", {}), ("--project", {"required": True, "help": "the project whose rows to look in"})]),
+    "ds-find": (cmd_ds_find, [("kind", {}), ("--project", {"default": "", "help": "only this project's (and a bare kind resolves in it)"})]),
     "ds-rows": (cmd_ds_rows, [_DS]),
     "ds-row": (cmd_ds_row, [_DS, ("key", {})]),
     "ds-append": (cmd_ds_append, [_DS, ("rows", {})]),
-    "ds-put": (cmd_ds_put, [_DS, ("key", {}), ("row", {})]),
-    "ds-delete": (cmd_ds_delete, [_DS, ("key", {})]),
-    "ds-rename": (cmd_ds_rename, [_DS, ("key", {}), ("new_key", {})]),
+    "ds-put": (cmd_ds_put, [_DS, ("key", {}), ("row", {}),
+                            ("--expected", {"default": "", "help": "the version you read; a newer row refuses"})]),
+    "ds-delete": (cmd_ds_delete, [_DS, ("key", {}),
+                                  ("--expected", {"default": "", "help": "the version you read; a newer row refuses"})]),
+    "ds-store-ids": (cmd_ds_store_ids, [_DS]),
+    "ds-rename": (cmd_ds_rename, [_DS, ("key", {}), ("new_key", {}),
+                                  ("--expected", {"default": "", "help": "the version you read; a newer row refuses"})]),
     "ds-check": (cmd_ds_check, [_DS, ("row", {})]),
     "ds-validate": (cmd_ds_validate, [_DS]),
 }

@@ -409,7 +409,12 @@ async def _handle_auth(provider: str, request_info) -> ApiResponse:
         # reauthorize (the row's Reconnect) always runs the provider's consent.
         params = getattr(request_info, "request_parameters", None) or {}
         reauthorize = str(params.get("reauthorize", "")).lower() in {"1", "true", "yes"}
-        verification = None if reauthorize else await hub_test_provider(provider)
+        from flow_sdk.core.oauth.wanted_scopes import wanted_extra_scopes  # noqa: PLC0415
+
+        # What a source here needs beyond the provider's base scopes (a Drive source that writes back). The held
+        # grant's own scopes are not known here, so wanting more always runs the consent that adds them.
+        extra = await wanted_extra_scopes(provider)
+        verification = None if reauthorize or extra else await hub_test_provider(provider)
         if verification and verification.get("ok") is True:
             hub_name = await hub_credentials_ref(provider)
             local_name = await resolve_user_credentials_name(provider) or hub_name
@@ -424,7 +429,7 @@ async def _handle_auth(provider: str, request_info) -> ApiResponse:
         from flow_sdk.cli.auth.cloud_urls import desktop_oauth_complete_url  # noqa: PLC0415
 
         try:
-            hub_payload = await hub_start_auth(provider, return_to=desktop_oauth_complete_url(provider))
+            hub_payload = await hub_start_auth(provider, return_to=desktop_oauth_complete_url(provider), scopes=extra)
         except Exception as exc:  # noqa: BLE001
             from flow_sdk.cloud_client.shared.errors import HubError  # noqa: PLC0415
 

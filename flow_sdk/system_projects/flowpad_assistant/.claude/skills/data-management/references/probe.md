@@ -4,7 +4,7 @@ A probe is a throwaway project in `$TMPDIR/dm-probe-<id>/` with its own namespac
 `dmprobe<id>`, so nothing it registers can collide with the user's kinds. It is not
 in the project picker, and `probe-drop` removes every trace.
 
-`DM` below is the shell function `DM() { "$FLOWPAD_PYTHON" "<this skill>/scripts/dm_ctl.py" "$@"; }`.
+`DM` below is the shell function `DM() { "${FLOWPAD_PYTHON:-$(flow instance python)}" "<this skill>/scripts/dm_ctl.py" "$@"; }`.
 
 ## 1. Make it
 
@@ -24,9 +24,13 @@ then copy them in:
 DM probe-copy "<root>" "<path>/agentic-assets/data_schema/crm" "<path>/agentic-assets/dataset/crm-leads"
 ```
 
-Every `"ns"` becomes the probe's and every `--<old ns>--.` prefix follows
-(`renamed_namespaces`, `files_rewritten`). `--no-rows` copies a dataset without its
-rows (e.g. rows with real people's details you do not need for the check).
+The copies are NEW assets of the probe: every entity id is dropped (`ids_dropped`; the probe
+mints its own, so applying it never takes over the real project's index rows), and every
+project namespace becomes the probe's — each `"ns"` and each `--<ns>--.` prefix, whichever call
+copied the schema that declared it (`renamed_namespaces`, `files_rewritten`). Row ids stay:
+links between the copied rows name them. `--no-rows` copies a dataset without its rows (e.g.
+rows with real people's details you do not need for the check). `probe-drop` refuses a probe
+whose assets still carry ids (copied by hand) — re-apply the real folders first.
 
 ## 3. Apply and read back
 

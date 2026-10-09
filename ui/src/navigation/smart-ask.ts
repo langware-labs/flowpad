@@ -14,9 +14,10 @@
  */
 
 import { t } from '@lingui/core/macro';
-import { cloudManager, instancePreferences, isHubOnly, PrefKey, privacyManager } from '@sdk';
+import { cloudManager, instancePreferences, isHubOnly, isQuietLoginError, PrefKey, privacyManager } from '@sdk';
 
-import { askNotification } from '@src/notifications';
+import { errorMessage } from '@src/lib/error-message';
+import { askNotification, notify } from '@src/notifications';
 import { askOrOpen } from '@src/navigation/navigation-decision';
 import type { DockPointer } from '@src/navigation/DockPointer';
 
@@ -57,8 +58,16 @@ export async function smartAskOrOpen(text: string, handlers: Handlers): Promise<
   if (value === 'login') {
     try {
       await cloudManager.login();
-    } catch {
-      // Cancelled, superseded or failed: the request still runs, as a plain ask.
+      // A box with stored credentials signs in with no page to show: without this, "Log in"
+      // looked like it did nothing.
+      const who = cloudManager.currentUser?.email;
+      notify.success({ id: SIGNIN_ASK_ID, title: who ? t`Signed in as ${who}` : t`Signed in` });
+    } catch (error) {
+      // Cancelled, superseded or failed: the request still runs, as a plain ask. A failure says so.
+      if (!isQuietLoginError(error)) {
+        const message = errorMessage(error, t`The login did not complete.`);
+        notify.warning({ id: SIGNIN_ASK_ID, title: t`Sign-in did not finish`, message, transient: true });
+      }
     }
   }
   return askOrOpen(text, handlers);

@@ -30,6 +30,14 @@
     "room": {
       "shape": "?string",
       "description": "A project's active collaboration room, when it has one."
+    },
+    "plan_path": {
+      "shape": "?string",
+      "description": "The plan a session wrote (its file path): the Plan screen opens it as vfs/<path>."
+    },
+    "provider": {
+      "shape": "?string",
+      "description": "A data source's driver (rss, telegram, gmail ...): its driver page is drivers/<provider>."
     }
   }
 }

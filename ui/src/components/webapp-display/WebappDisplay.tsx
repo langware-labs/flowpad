@@ -7,6 +7,8 @@ import { WebDebugComponent } from './WebDebugComponent';
 import { WebappErrorBanner } from './WebappErrorBanner';
 import { useWebappDiagnostics } from './useWebappDiagnostics';
 import { useWebappFix } from './useWebappFix';
+import { WebappSetupOverlay } from './WebappSetupOverlay';
+import { useSetupRun } from '@src/components/project-setup/use-setup-run';
 
 export interface WebappDisplayProps {
   /** The endpoint serving what the frame shows — the probe asks it what is wrong,
@@ -37,6 +39,11 @@ export interface WebappDisplayProps {
  *   fatal    → replace the frame with the debug panel; there is nothing to look at
  *   degraded → keep the app, add a banner; it works, but something is wrong
  *   ok       → get out of the way
+ *
+ * An app that is simply not running yet is not broken: a project's web app is a node of the project's
+ * setup tree, so a display that finds it down runs THAT setup first (what it needs, then install →
+ * build → start) and shows "Setting things up" with the live tree. Only an app its setup could not bring
+ * up goes to the debug panel and the repair agent.
  */
 export const WebappDisplay = forwardRef<PersistentIframeHandle, WebappDisplayProps>(function WebappDisplay(
   { endpoint, src, testId, cacheKey = 0, workdir, targetTypeId },
@@ -74,6 +81,13 @@ export const WebappDisplay = forwardRef<PersistentIframeHandle, WebappDisplayPro
     frameRef.current?.refresh();
   }, [diagnostics.refresh]);
 
+  // The app's own node of its project's setup tree — run once when the display finds the app down.
+  const setupRoot = endpoint?.webapp_id ? `micro_app-${endpoint.webapp_id}` : '';
+  const setupProject = setupRoot ? (endpoint?.project_id ?? '') : '';
+  const needsSetup = !!setupProject && verdict.severity === 'fatal' && verdict.code === 'not_running';
+  const setup = useSetupRun(setupProject, setupRoot, refreshAll, { autoStart: needsSetup });
+  const settingUp = setup.running || setup.starting;
+
   useImperativeHandle(
     ref,
     () => ({
@@ -89,11 +103,17 @@ export const WebappDisplay = forwardRef<PersistentIframeHandle, WebappDisplayPro
   // (and noisy on apps that log a benign console error every load).
   useEffect(() => {
     if (verdict.severity !== 'fatal') return;
-    if (fix.running || fix.autoAttempted) return;
+    if (settingUp || fix.running || fix.autoAttempted) return;
     fix.start();
-  }, [verdict.severity, fix.running, fix.autoAttempted, fix.start]);
+  }, [verdict.severity, settingUp, fix.running, fix.autoAttempted, fix.start]);
 
   const showBanner = verdict.severity === 'degraded' && dismissedBanner !== verdict.code;
+
+  if (settingUp) {
+    return (
+      <WebappSetupOverlay tree={setup.tree} questionId={setup.questionId} onQuestionSettled={setup.settleQuestion} />
+    );
+  }
 
   if (verdict.severity === 'fatal') {
     return (

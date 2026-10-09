@@ -35,6 +35,7 @@ import pytest
 import tests.unit.test_data_spec.test_asset_roundtrip  # noqa: F401
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
 from flow_sdk.schema.data_spec.compute_op_spec import Rung
+from flow_sdk.schema.data_spec.data_schema_spec import DataSchemaRule
 from tests.unit.test_data_spec._roundtrip import (
     NOT_COMPARED,
     NOT_ON_DISK,
@@ -129,6 +130,8 @@ DERIVED: dict[str, dict[str, str]] = {
 # is tagged exactly like the op's own `subkind`/`exe_data` pair, and the sampler
 # cannot invent that pairing any more than it can for `compute_op` itself.
 OVERRIDES[Rung] = {"subkind": "agent", "exe_data": {"agent": "provisioner", "prompt": "install"}}
+# A data schema's rule names exactly TWO paths -- a pairing the sampler's one-element list cannot make.
+OVERRIDES[DataSchemaRule] = {"same": ["persona.icp", "icp"]}
 
 
 def _asset_types() -> list[tuple[str, type]]:
@@ -167,7 +170,7 @@ def _prepare(name: str, entity: type) -> None:
 
 def test_the_registry_has_the_asset_types_we_think_it_does():
     """A new asset type lands in this list on its own; the count is the notice."""
-    assert len(TYPES) == 21, [n for n, _ in TYPES]
+    assert len(TYPES) == 22, [n for n, _ in TYPES]
 
 
 @pytest.mark.parametrize(("name", "entity"), TYPES, ids=[n for n, _ in TYPES])

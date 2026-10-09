@@ -19,9 +19,11 @@ cycle detection is needed, and none is done.
 
 from __future__ import annotations
 
+from datetime import date as _date
 from typing import Any
 
-PRIMITIVES: dict[str, type] = {"string": str, "int": int, "float": float, "bool": bool}
+#: ``date`` is a calendar day, ISO ``YYYY-MM-DD`` on disk -- checked, not a string with its format in prose.
+PRIMITIVES: dict[str, type] = {"string": str, "int": int, "float": float, "bool": bool, "date": _date}
 PRIMITIVE_NAMES: dict[type, str] = {py: name for name, py in PRIMITIVES.items()}
 
 
@@ -62,6 +64,7 @@ def register_builtin_kinds() -> None:
     import flow_sdk.schema.data_spec.activity_spec  # noqa: F401  — registers ``activity.progress`` / ``activity.error``
     import flow_sdk.schema.data_spec.agent_spec  # noqa: F401  — registers ``agent.place``
     import flow_sdk.schema.data_spec.api_endpoint_spec  # noqa: F401  — registers ``api_endpoint.offer``
+    import flow_sdk.schema.data_spec.asset_setup_spec  # noqa: F401  — registers ``asset.setup`` / ``setup.node`` / ``setup.tree``
     import flow_sdk.schema.data_spec.automation_spec  # noqa: F401  — registers ``automation.*``
     import flow_sdk.schema.data_spec.channel_spec  # noqa: F401  — registers ``conversation.channel``
     import flow_sdk.schema.data_spec.choice_spec  # noqa: F401  — registers ``ingest.choice`` / ``ingest.choice_set``

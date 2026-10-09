@@ -564,15 +564,18 @@ def test_reserved_keys_lifted_but_preserved(tmp_path: Path) -> None:
     assert ex.data == {"foo": 1}                               # free keys live in data
 
 
-def test_example_id_not_adopted_from_json(tmp_path: Path) -> None:
-    foreign = str(uuid.uuid4())
+def test_example_id_is_the_one_the_row_stores_when_valid(tmp_path: Path) -> None:
+    """A row stores its own id in example.json (``layout.ROW_ID``, minted by the SDK on first write)
+    so a rename or a re-clone keeps it; reading it back is an ADOPTION, so only a valid entity id
+    (v4/v5) is taken -- anything else falls back to the legacy id derived from the folder name."""
+    stored = str(uuid.uuid4())
     ds = _seed_io_dataset(
         tmp_path, "eid",
-        examples={"0001": {"input": "i", "files": {"example.json": _doc(metadata={"id": foreign})}}},
+        examples={"0001": {"input": "i", "files": {"example.json": _doc(metadata={"id": stored})}},
+                  "0002": {"input": "i", "files": {"example.json": _doc(metadata={"id": "not-an-entity-id"})}}},
     )
-    ex = _one(ds)
-    assert ex.id == str(uuid.uuid5(uuid.NAMESPACE_DNS, "ds-x:0001"))
-    assert ex.id != foreign
+    rows = iter_examples(ds, DataLayoutEnum.IO_FOLDER, {}, ",", dataset_id="ds-x")
+    assert [r.id for r in rows] == [stored, str(uuid.uuid5(uuid.NAMESPACE_DNS, "ds-x:0002"))]
 
 
 def test_dataset_json_extra_keys_preserved_in_record(tmp_path: Path) -> None:

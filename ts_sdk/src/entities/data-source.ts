@@ -57,6 +57,14 @@ export interface IDataSource extends IEntity {
   poll_interval_seconds?: number;
   window_days?: number;
   thread_timeout_seconds?: number | null;
+  /** Where a file source's payload lands locally: `record` | `none` | `copy` | `symlink`. */
+  reflect?: string;
+  /** The folder a `copy`/`symlink` source places into. */
+  reflect_into?: string;
+  /** The local copy is kept out of git (default true). */
+  gitignored?: boolean;
+  /** Pull only: never write back to the remote (default false). */
+  read_only?: boolean;
   cursor?: string | null;
   manifest?: Record<string, unknown>;
   high_water?: string | null;
@@ -244,6 +252,12 @@ export class DataSource extends APIEntity<DataSource> implements IDataSource {
    *  fixes the config. A PAUSED source carrying a stale error is not this. */
   get isParked(): boolean {
     return this.isActive && this.health === 'config_error';
+  }
+
+  /** Running, but a file changed both locally and remotely, so write-back wrote neither and waits for a person
+   *  to make them agree (`error_detail` names the files). Not broken: the source keeps polling. */
+  get isHeld(): boolean {
+    return this.health === 'ok' && this.error_code === 'write_back_held';
   }
 
   /** The scheduler will not poll it until a person acts: a setup step is owed, or

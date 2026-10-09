@@ -314,6 +314,7 @@ def binding_of(row: Any, *, credentials: Optional[ResolvedSecrets] = None, perso
         config=config,
         credentials=credentials,
         persona=persona or Persona(),
+        read_only=bool(getattr(row, "read_only", False)),
     )
 
 

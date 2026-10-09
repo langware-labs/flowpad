@@ -159,3 +159,27 @@ and the row's metadata are kept. Over HTTP: `POST dataset/<id>/put-row {key, row
 `POST delete-row {key}`, `POST rename-row {key, new_key}`, `POST check-row {row}`; one value
 against a kind, outside any dataset: `POST /api/v1/kinds/<kind>/check {value}` (an unknown kind is a
 404, never "fits"). TypeScript: `dataset.put / deleteRow / rename / check` and `checkKind(kind, value)`.
+
+## 8. Links between rows
+
+A field typed by a kind holds a value of it — or a **reference** to one row, `<kind>.id.<uuid>`.
+Every row hands out its own (`row.ref`); its id is stored in the row, so a rename keeps it.
+
+```python
+from flow_sdk.builtin.dataset import Dataset, LinkError
+
+companies, leads = Dataset.at(project / "agentic-assets/dataset/companies"), Dataset.at(project / "agentic-assets/dataset/leads")
+(acme,) = await companies.append([{"key": "acme", "input": {"name": "Acme"}}])
+await leads.append([{"key": "dana", "input": {"name": "Dana", "company": companies.ref_of(acme)}}])
+companies.rename_row("acme", "acme_inc")                  # the reference still resolves
+try:
+    companies.delete_row("acme_inc")                      # Dana still works there
+except LinkError as refused:
+    reason = str(refused)                                 # "used by --demo--.crm.lead dana"
+problems = leads.check({"input": {"name": "Eli", "company": companies.ref_of("0b7c8a2e-1f0d-4e5a-9c3b-2d4e6f8a1b3c")}})
+```
+
+`check`, `append` and `put` refuse a reference to a row no dataset beside it holds; `delete_row`
+refuses while one points at the row. Rows carry `ref` and `version` over HTTP too — pass the version
+back as `put-row {key, row, expected}` and a row changed since answers 409. The datasets holding a
+kind: `GET /api/v1/kinds/<kind>/datasets?project=<id>` (TypeScript `Dataset.forKind(kind, projectId)`).

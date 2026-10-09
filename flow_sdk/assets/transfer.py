@@ -6,7 +6,7 @@ import shutil
 from pathlib import Path, PurePosixPath
 
 from flow_sdk.assets.layout import LayoutKind
-from flow_sdk.assets.materialize import materialize_asset_sync
+from flow_sdk.assets.materialize import materialize_asset_sync, prune_empty_dirs
 from flow_sdk.assets.placement import AGENTIC_ASSETS_DIR
 
 logger = logging.getLogger(__name__)
@@ -35,8 +35,16 @@ _ASSET_PACK_PATTERNS: tuple[str, ...] = (
     ".mypy_cache",
     ".pytest_cache",
     ".ruff_cache",
+    ".DS_Store",
 )
 _ASSET_PACK_IGNORE = shutil.ignore_patterns(*_ASSET_PACK_PATTERNS)
+
+
+def is_pack_cruft(rel_path: str) -> bool:
+    """Whether a pack drops ``rel_path`` anyway: any of its components is build/environment cruft."""
+    import fnmatch  # noqa: PLC0415
+
+    return any(fnmatch.fnmatch(part, pat) for part in PurePosixPath(rel_path).parts for pat in _ASSET_PACK_PATTERNS)
 
 
 def _pack_ignore(type_name: str | None, root: Path | str):
@@ -149,12 +157,7 @@ def remove_transferred_tree(entry_dir: Path, root: Path) -> None:
             destination.unlink()
             parents.add(destination.parent)
     for parent in sorted(parents, key=lambda p: len(p.parts), reverse=True):
-        while parent != root and parent.resolve().is_relative_to(root):
-            try:
-                parent.rmdir()
-            except OSError:
-                break
-            parent = parent.parent
+        prune_empty_dirs(parent, root)
 
 
 def portable_rel_path(src_root: Path, info) -> PurePosixPath:

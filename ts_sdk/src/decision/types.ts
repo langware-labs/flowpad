@@ -115,4 +115,6 @@ export interface APIEndpointOffer {
 }
 
 /** Why a decision could not be taken — one closed word to branch on. */
-export type DecisionFailure = 'invalid_spec' | 'no_endpoint' | 'rate_limited' | 'unavailable' | 'auth' | 'bad_response';
+/** Why a decision could not be taken -- one list; ``DecisionFailure`` and the reason check read it. */
+export const DECISION_FAILURES = ['invalid_spec', 'no_endpoint', 'rate_limited', 'billing', 'unavailable', 'auth', 'bad_response'] as const;
+export type DecisionFailure = (typeof DECISION_FAILURES)[number];

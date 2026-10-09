@@ -132,12 +132,24 @@ def is_shape(shape: Any) -> bool:
 
 
 def element_of(annotation: Any) -> Any:
-    """The element type of a ``list[...]``, or ``None`` when it is not one."""
+    """The element type of a ``list[...]``, or ``None`` when it is not one. An element that is a
+    kind's value OR a reference to one (``spec._linkable``) is that kind: a list of values sits one
+    folder per element, and a list of references is written inline instead (``writer``/``reader``)."""
     core = unwrap(annotation)
     if get_origin(core) is list:
         args = get_args(core)
-        return unwrap(args[0]) if args else None
+        return value_branch(unwrap(args[0])) if args else None
     return None
+
+
+def value_branch(annotation: Any) -> Any:
+    """The ``DataSpec`` of a value-or-reference union, else ``annotation`` unchanged."""
+    if get_origin(annotation) in (Union, types.UnionType):
+        shapes = [unwrap(a) for a in get_args(annotation)]
+        values = [a for a in shapes if is_shape(a)]
+        if len(values) == 1 and all(a is values[0] or a is str for a in shapes):
+            return values[0]
+    return annotation
 
 
 def value_of(annotation: Any) -> Any:

@@ -17,6 +17,9 @@ export interface SendReplyExtras {
     transferMode?: 'copy' | 'git';
     /** Mint a FAVORITE bookmark on the receiver at install. Default off. */
     createBookmark?: boolean;
+    /** The sender saw which files git excludes and chose to send them. Without it a copy-mode send
+     *  that would carry such files is refused once (`share_has_gitignored`). */
+    includeGitignored?: boolean;
   };
   /** Live-session grouping key. The backend stamps it on the FlowMessage and
    *  auto-appends the authoritative `remote_worker_session-<id>` TYPE_ID
@@ -39,6 +42,7 @@ function serializeShareConfig(cfg: SendReplyExtras['shareConfig']): Record<strin
   return {
     transfer_mode: cfg?.transferMode ?? 'copy',
     ...(cfg?.createBookmark ? { create_bookmark: true } : {}),
+    ...(cfg?.includeGitignored ? { include_gitignored: true } : {}),
   };
 }
 

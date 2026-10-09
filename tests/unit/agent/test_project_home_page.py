@@ -182,3 +182,62 @@ async def test_a_never_indexed_home_page_agent_resolves_on_the_first_open(tmp_pa
     _declare(root, typeid)
 
     assert await project.open_home_page() == {"asset": typeid, "type": "agent"}
+
+
+# ── a web app home: the project opens app-first ────────────────────────────
+
+
+async def _web_app(root: Path, name: str):
+    """A webapp asset folder in the project (``webapp.json`` + a page), indexed; its row."""
+    import flow_sdk.fs_store.indexer.registrations  # noqa: F401 — enrolls MICRO_APP
+    from flow_sdk.core import Entity
+    from flow_sdk.fs_store.reindex import reindex_paths
+
+    folder = root / "agentic-assets" / "webapp" / name
+    folder.mkdir(parents=True)
+    (folder / "webapp.json").write_text(json.dumps({"name": name}), encoding="utf-8")
+    (folder / "index.html").write_text("<h1>app first</h1>", encoding="utf-8")
+    await reindex_paths([str(folder)])
+    app = await Entity.get_by_asset_ref(str(folder), resolve_containing=True, strict=True)
+    assert app is not None and app.get_type() == "micro_app"
+    return app
+
+
+async def test_a_web_app_is_a_home_page_and_resolves_to_itself(tmp_path):
+    root = tmp_path / "app-first"
+    project = await _project(root)
+    app = await _web_app(root, "console")
+
+    answer = await project.set_home_page_action(typeid=str(app.typeid))
+
+    assert isinstance(answer, ApiSuccessResponse) and answer.data == {"home_page": str(app.typeid)}
+    assert await project.open_home_page() == {"asset": str(app.typeid), "type": "micro_app"}
+
+
+async def test_a_web_app_home_with_no_endpoint_here_is_placed_when_it_opens(tmp_path):
+    """The app view the redirect lands on shows only this machine's endpoints: one missing (an app indexed before
+    its project existed, a wiped row) is placed by the open, as ``flow show`` places it."""
+    from flow_sdk.builtin.webapp_placement import webapp_endpoints
+
+    root = tmp_path / "unplaced"
+    project = await _project(root)
+    app = await _web_app(root, "console")
+    for endpoint in await webapp_endpoints(app.id):
+        await endpoint.delete()
+    _declare(root, str(app.typeid))
+
+    assert await project.open_home_page() == {"asset": str(app.typeid), "type": "micro_app"}
+    assert [e.backend.type for e in await webapp_endpoints(app.id)] == ["static"]
+
+
+async def test_another_projects_web_app_is_never_a_home_page(tmp_path):
+    mine = await _project(tmp_path / "mine")
+    theirs = tmp_path / "theirs"
+    await _project(theirs)
+    app = await _web_app(theirs, "their-console")
+
+    refused = await mine.set_home_page_action(typeid=str(app.typeid))
+    _declare(Path(mine.fs_storage_mount_path), str(app.typeid))
+
+    assert not isinstance(refused, ApiSuccessResponse)
+    assert await mine.open_home_page() == {"asset": None, "type": None}

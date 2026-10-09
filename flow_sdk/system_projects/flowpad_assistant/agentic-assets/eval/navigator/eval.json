@@ -13,6 +13,7 @@
     "feasible_accuracy"
   ],
   "slices": [
+    "kind",
     "data.suite",
     "data.group",
     "labels.feasible",

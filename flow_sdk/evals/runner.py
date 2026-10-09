@@ -10,6 +10,7 @@ import logging
 import time
 from collections import defaultdict
 from datetime import datetime, timezone
+from itertools import count
 from pathlib import Path
 from typing import Any, Optional
 
@@ -200,7 +201,12 @@ async def run(
             value: {"examples": len(part), **_counts(part), **(await _metrics(module, part))}
             for value, part in sorted(groups.items())
         }
-    run_id = f"{started.strftime('%Y-%m-%dT%H-%M-%S')}-{eval_spec.name}"
+    root = Path(out_dir) if out_dir else folder / RUNS_DIR
+    # Two runs in one second are two runs: the second never overwrites the first.
+    stamp = started.strftime("%Y-%m-%dT%H-%M-%S")
+    run_id = next(
+        rid for n in count(1) if not (root / (rid := f"{stamp}{'' if n == 1 else f'-{n}'}-{eval_spec.name}")).exists()
+    )
     record = EvalRun(
         run_id=run_id,
         dataset_id=str(ds.id or ""),
@@ -209,6 +215,7 @@ async def run(
         eval_name=eval_spec.name,
         eval_digest=digest,
         versions=versions,
+        kinds=sorted(roles),
         started_at=started.isoformat(timespec="seconds"),
         finished_at=datetime.now(timezone.utc).isoformat(timespec="seconds"),
         examples=len(results),
@@ -216,7 +223,7 @@ async def run(
         metrics=await _metrics(module, results),
         slices=slices,
     )
-    out = (Path(out_dir) if out_dir else folder / RUNS_DIR) / run_id
+    out = root / run_id
     out.mkdir(parents=True, exist_ok=True)
     (out / "run.json").write_text(record.model_dump_json(indent=2) + "\n")
     (out / "examples.jsonl").write_text("".join(r.model_dump_json() + "\n" for r in results))

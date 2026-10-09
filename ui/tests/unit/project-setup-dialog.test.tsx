@@ -49,7 +49,10 @@ describe('ProjectSetupDialog', () => {
   it('lists what is left, starts the run, and draws its question in place as a file block', async () => {
     vi.spyOn(Project, 'setupRequirements').mockResolvedValue(NOT_READY);
     const start = vi.spyOn(Project, 'startSetup').mockResolvedValue(RUN);
-    vi.spyOn(Project, 'setupRun').mockResolvedValue({ run: RUN, running: true, result: null });
+    // Nothing going when the dialog opens; the run is going once Start is pressed.
+    vi.spyOn(Project, 'setupRun')
+      .mockResolvedValueOnce({ run: RUN, running: false, tree: null })
+      .mockResolvedValue({ run: RUN, running: true, tree: null });
     h.get.mockImplementation(async (path: string) =>
       path === '/api/v1/ask' ? { questions: [{ id: 'q1', run: RUN }] } : path === '/api/v1/ask/q1' ? QUESTION : null,
     );
@@ -59,7 +62,7 @@ describe('ProjectSetupDialog', () => {
     expect(await screen.findByTestId('project-setup-req-google-cloud')).toHaveTextContent('Service account key');
     await act(async () => fireEvent.click(screen.getByTestId('project-setup-start')));
 
-    expect(start).toHaveBeenCalledWith('p1');
+    expect(start).toHaveBeenCalledWith('p1', '');
     await waitFor(() => expect(screen.getByTestId('ask-input-value-file')).toBeInTheDocument());
   });
 

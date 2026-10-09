@@ -608,6 +608,12 @@ msgstr ""
 msgid "{0} of {1}"
 msgstr ""
 
+#. placeholder {0}: tree.done
+#. placeholder {1}: tree.total
+#: src/components/project-setup/SetupTreeView.tsx
+msgid "{0} of {1} set up"
+msgstr ""
+
 #. placeholder {0}: a.recent_failures
 #. placeholder {1}: a.recent_runs
 #: src/components/automations/AutomationRow.tsx
@@ -3154,13 +3160,22 @@ msgstr ""
 msgid "Assets unavailable. Retry"
 msgstr ""
 
-#: src/pages/flow-page/VibeAssignTaskDialog.tsx
-#~ msgid "Assign"
-#~ msgstr "إسناد"
+#: src/components/conversation/task-it.tsx
+#: src/components/conversation/task-it.tsx
+msgid "Assign"
+msgstr "إسناد"
 
-#: src/pages/flow-page/VibeAssignTaskDialog.tsx
-#~ msgid "Assigning…"
-#~ msgstr "جاري الإسناد…"
+#: src/components/conversation/task-it.tsx
+msgid "Assign to"
+msgstr ""
+
+#: src/components/conversation/task-it.tsx
+msgid "Assigning someone else shares it through the cloud"
+msgstr ""
+
+#: src/components/conversation/task-it.tsx
+msgid "Assigning…"
+msgstr "جاري الإسناد…"
 
 #: src/types/ViewType.ts
 msgid "Assistance"
@@ -4021,6 +4036,7 @@ msgstr ""
 #: src/components/prompt-library/PromptEditDialog.tsx
 #: src/components/quick-create/McpCreateDialog.tsx
 #: src/components/quick-create/QuickCreateDialog.tsx
+#: src/components/share-to-conversation/GitignoredNotice.tsx
 #: src/components/share-to-conversation/GitShareGateDialog.tsx
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
@@ -4171,6 +4187,10 @@ msgstr "تغيير الصورة الرمزية"
 #: src/components/footer/LanguageSelector.tsx
 msgid "Change language"
 msgstr "تغيير اللغة"
+
+#: src/components/conversation/task-it.tsx
+msgid "Change status"
+msgstr ""
 
 #: src/components/version-popover/version-popover.tsx
 msgid "Change the installed flow SDK version"
@@ -5873,6 +5893,7 @@ msgid "Could not ask for help"
 msgstr ""
 
 #: src/components/assets/editor/task/OwnerButton.tsx
+#: src/components/conversation/task-it.tsx
 msgid "Could not assign"
 msgstr "تعذر الإسناد"
 
@@ -6416,6 +6437,7 @@ msgid "Could not save schedule"
 msgstr ""
 
 #: src/components/assets/editor/task/TaskAssetEditor.tsx
+#: src/components/conversation/task-it.tsx
 msgid "Could not save task"
 msgstr ""
 
@@ -6502,6 +6524,10 @@ msgstr ""
 msgid "Could not sign the sandbox out"
 msgstr "تعذّر تسجيل الخروج من Sandbox"
 
+#: src/components/project-setup/ProjectSetupDialog.tsx
+msgid "Could not skip {name}"
+msgstr ""
+
 #: src/components/assets/editor/agent-profile/deployment/DeploymentProcessPanel.tsx
 #: src/components/assets/editor/wizard/WizardViewer.tsx
 #: src/components/assets/editor/wizard/WizardViewer.tsx
@@ -6537,6 +6563,10 @@ msgstr "تعذر بدء تسجيل الدخول"
 
 #: src/components/conversation/ConversationView.tsx
 msgid "Could not start the live session"
+msgstr ""
+
+#: src/components/project-setup/ProjectSetupDialog.tsx
+msgid "Could not start the setup"
 msgstr ""
 
 #: src/components/entity-execution-panel/EntityExecutionPanel.tsx
@@ -8348,6 +8378,10 @@ msgstr "تنزيل مجددًا"
 #: src/components/conversation/FlowMessageBubble.tsx
 msgid "Download all attachments"
 msgstr "تنزيل جميع المرفقات"
+
+#: src/components/share-to-conversation/DownloadMessageForm.tsx
+msgid "Download anyway"
+msgstr ""
 
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "Download as a file instead of sending"
@@ -11674,6 +11708,10 @@ msgstr "قيد التنفيذ"
 msgid "In progress..."
 msgstr "قيد التنفيذ..."
 
+#: src/components/conversation/task-it.tsx
+msgid "In this conversation"
+msgstr ""
+
 #: src/components/collaboration/LiveSessionView.tsx
 msgid "in this project"
 msgstr ""
@@ -12316,6 +12354,10 @@ msgstr ""
 #: src/components/project-home/HomeCustomizationCard.tsx
 msgid "Keep the default greeting…"
 msgstr "الاحتفاظ بالتحية الافتراضية…"
+
+#: src/components/data-sources/DataSourceDialog.tsx
+msgid "Keep the local copy out of git"
+msgstr ""
 
 #: src/components/assets/AssetsPage.tsx
 msgid "Keeping chat history can make this project reappear when projects are scanned."
@@ -13440,6 +13482,10 @@ msgstr "تم حفظ إعدادات صندوق البريد"
 msgid "Make a todo app"
 msgstr "إنشاء تطبيق قائمة مهام"
 
+#: src/components/data-sources/source-parts.tsx
+msgid "Make the two the same — edit either one — and the next sync carries on."
+msgstr ""
+
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Make this the default assistant"
 msgstr ""
@@ -13675,6 +13721,8 @@ msgstr "خوادم MCP مفعلة بشكل صريح"
 msgid "MCP tools"
 msgstr "أدوات MCP"
 
+#: src/components/conversation/task-it.tsx
+#: src/components/conversation/task-it.tsx
 #: src/components/token-plan/token-plan-math.ts
 msgid "Me"
 msgstr ""
@@ -15792,6 +15840,10 @@ msgstr "غير مسجّل الدخول"
 msgid "Not logged in · Please run /login"
 msgstr "غير مسجّل الدخول · شغّل /login"
 
+#: src/components/project-setup/ProjectSetupDialog.tsx
+msgid "Not needed here: mark its values optional"
+msgstr ""
+
 #: src/components/assets/editor/wizard/wizard-texts.ts
 #: src/components/install/AddAssetDialog.tsx
 #: src/components/project-home/MissingDependenciesDialog.tsx
@@ -16794,8 +16846,8 @@ msgid "Open tabs"
 msgstr ""
 
 #: src/components/conversation/ConversationTasksPanel.tsx
-#: src/components/conversation/MessageBubble.tsx
-#: src/components/conversation/MessageBubble.tsx
+#: src/components/conversation/task-it.tsx
+#: src/components/conversation/task-it.tsx
 msgid "Open task"
 msgstr ""
 
@@ -17273,8 +17325,8 @@ msgstr "المالك"
 
 #: src/components/conversation/task-it.tsx
 #: src/components/conversation/task-it.tsx
-msgid "Owner: {owner}"
-msgstr ""
+#~ msgid "Owner: {owner}"
+#~ msgstr ""
 
 #: src/components/triggers-view/FsopTriggerDetail.tsx
 #~ msgid "pacing"
@@ -18514,6 +18566,10 @@ msgstr "فشل السحب."
 msgid "Pull hit a conflict"
 msgstr ""
 
+#: src/components/data-sources/DataSourceDialog.tsx
+msgid "Pull only: edits to the local copy are never written back."
+msgstr ""
+
 #: src/components/conversation/AttachmentDownloadWarning.tsx
 msgid "pulled, but arrived short"
 msgstr ""
@@ -18678,6 +18734,10 @@ msgstr ""
 msgid "read only"
 msgstr ""
 
+#: src/components/data-sources/DataSourceDialog.tsx
+msgid "Read only"
+msgstr ""
+
 #: src/pages/entry/DiagnosisRequestLanding.tsx
 msgid "Read the result in FlowPad"
 msgstr "اقرأ النتيجة في FlowPad"
@@ -18737,6 +18797,10 @@ msgstr "السبب"
 #: src/components/settings-view/settings-utils.ts
 msgid "Reasoning Effort"
 msgstr "جهد الاستدلال"
+
+#: src/components/conversation/task-it.tsx
+msgid "Reassign it to yourself instead."
+msgstr ""
 
 #: src/components/graph-view/GraphView.tsx
 msgid "Rebuild"
@@ -20204,6 +20268,10 @@ msgstr "قيد التشغيل"
 msgid "Running"
 msgstr "قيد التشغيل"
 
+#: src/components/data-sources/source-parts.tsx
+msgid "Running · needs you"
+msgstr ""
+
 #. placeholder {0}: process?.pid
 #: src/components/assets/editor/agent-profile/deployment/DeploymentProcessPanel.tsx
 msgid "Running · pid {0}"
@@ -20678,6 +20746,7 @@ msgid "Search"
 msgstr "بحث"
 
 #: src/components/assets/editor/task/OwnerButton.tsx
+#: src/components/conversation/task-it.tsx
 msgid "Search a contact or type an email"
 msgstr "ابحث عن جهة اتصال أو اكتب بريداً إلكترونياً"
 
@@ -21143,6 +21212,10 @@ msgstr ""
 msgid "Send along"
 msgstr "إرسال مرفق"
 
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+msgid "Send anyway"
+msgstr ""
+
 #: src/components/help/AskForHelpDialog.tsx
 msgid "Send diagnostic"
 msgstr ""
@@ -21465,6 +21538,10 @@ msgstr "سيتم إعداد <0>{projectName}</0> في مساحة العمل هذ
 #~ msgid "Set up a git-backed context folder for this project."
 #~ msgstr "إعداد مجلد سياق مدعوم بـ Git لهذا المشروع."
 
+#: src/components/webapp-display/WebappSetupGate.tsx
+msgid "Set up again"
+msgstr ""
+
 #~ msgid "Set up an existing git repository as the context folder"
 #~ msgstr "إعداد مستودع Git موجود كمجلد السياق"
 
@@ -21523,6 +21600,10 @@ msgstr ""
 
 #~ msgid "Set{0}"
 #~ msgstr ""
+
+#: src/components/webapp-display/WebappSetupOverlay.tsx
+msgid "Setting things up"
+msgstr ""
 
 #: src/pages/entry/AgentLaunchLanding.tsx
 msgid "Setting up your {agentName} on a new sandbox…"
@@ -21722,6 +21803,15 @@ msgstr "السياق المشترك"
 #: src/components/collaboration/SharedSessionsList.tsx
 msgid "Shared sessions"
 msgstr "الجلسات المشتركة"
+
+#: src/components/conversation/task-it.tsx
+msgid "Shared via cloud"
+msgstr ""
+
+#. placeholder {0}: owner ?? ''
+#: src/components/conversation/task-it.tsx
+msgid "Shared via cloud with {0}"
+msgstr ""
 
 #. placeholder {0}: granted.join(', ')
 #. placeholder {0}: outcome.granted.join(', ')
@@ -22152,6 +22242,10 @@ msgstr "تسجيل الخروج من هذا الصندوق"
 msgid "Sign-in"
 msgstr "طريقة الدخول"
 
+#: src/navigation/smart-ask.ts
+msgid "Sign-in did not finish"
+msgstr ""
+
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Sign-in failed"
 msgstr "فشل تسجيل الدخول"
@@ -22167,6 +22261,7 @@ msgstr ""
 #: src/components/account/user-info.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
+#: src/navigation/smart-ask.ts
 #: src/pages/entry/AgentLaunchLanding.tsx
 #: src/pages/flow-page/content-panel/user-dropdown/user-menu-header.tsx
 msgid "Signed in"
@@ -22180,6 +22275,10 @@ msgstr "تم تسجيل الدخول باسم {0}."
 #: src/pages/hub-home/HubHome.tsx
 msgid "signed in as {loggedInUser}"
 msgstr "مسجّل الدخول باسم {loggedInUser}"
+
+#: src/navigation/smart-ask.ts
+msgid "Signed in as {who}"
+msgstr ""
 
 #: src/components/connections-manager/machine-wide-cell.tsx
 msgid "Signed in on this computer, so every project here can use it"
@@ -22335,6 +22434,7 @@ msgstr ""
 
 #: src/components/assets/editor/wizard/wizard-texts.ts
 #: src/components/assets/editor/wizard/WizardViewer.tsx
+#: src/components/project-setup/ProjectSetupDialog.tsx
 #: src/journey/JourneyTray.tsx
 msgid "Skip"
 msgstr "تخطي"
@@ -23364,8 +23464,8 @@ msgstr "الهدف"
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/conversation/ConversationTasksPanel.tsx
-#: src/components/conversation/MessageBubble.tsx
 #: src/components/conversation/MessageComposer.tsx
+#: src/components/conversation/task-it.tsx
 #: src/components/quick-create/registry.ts
 #: src/i18n/type-labels.ts
 msgid "Task"
@@ -23849,6 +23949,7 @@ msgstr "تم إنهاء الجلسة المباشرة."
 
 #: src/components/connections-manager/flowpad-connection-row.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
+#: src/navigation/smart-ask.ts
 msgid "The login did not complete."
 msgstr ""
 
@@ -24075,6 +24176,10 @@ msgstr ""
 msgid "These agents are added on top of the standard vibe agent, in the order shown, every vibe session."
 msgstr "تُضاف هذه الوكلاء بالإضافة إلى وكيل vibe القياسي، بالترتيب الظاهر، في كل جلسة vibe."
 
+#: src/components/share-to-conversation/GitignoredNotice.tsx
+msgid "These are kept out of git and may be private. They would be sent too:"
+msgstr ""
+
 #: src/components/stream-inbox-view/StreamInboxView.tsx
 #: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "These conversations exist only on this device."
@@ -24164,6 +24269,10 @@ msgstr ""
 #: src/routes/loaders/load-agent-stream-inbox.ts
 msgid "This Agent stream inbox URL is malformed."
 msgstr "عنوان URL لصندوق التدفق الوارد الخاص بالوكيل غير صالح."
+
+#: src/components/webapp-display/WebappSetupGate.tsx
+msgid "This app could not be set up"
+msgstr ""
 
 #: src/navigation/record-type-nav.ts
 msgid "This app is no longer available."
@@ -24687,6 +24796,14 @@ msgstr "لم تُشغَّل هذه الخطوة بعد."
 
 #~ msgid "This step ran no commands."
 #~ msgstr ""
+
+#: src/components/conversation/task-it.tsx
+msgid "This task is already shared"
+msgstr ""
+
+#: src/components/conversation/task-it.tsx
+msgid "This task is local on this machine"
+msgstr ""
 
 #: src/routes/loaders/load-tasks.ts
 msgid "This task no longer exists or is unavailable."
@@ -26472,6 +26589,10 @@ msgstr ""
 msgid "What this project needs before it can run here. Close it any time — starting again picks up where it stopped."
 msgstr ""
 
+#: src/components/data-sources/DataSourceDialog.tsx
+msgid "What this source places in the project is added to .gitignore — it may be private."
+msgstr ""
+
 #: src/components/assets/editor/agent-trace/simple/SimpleSessionReport.tsx
 msgid "What to look at"
 msgstr "ما ينبغي الانتباه إليه"
@@ -26981,6 +27102,10 @@ msgstr "التطبيق يعمل، لكن بعض أجزائه قد لا تعمل.
 #: src/components/webapp-display/messages.tsx
 msgid "Your app is running, but this page wasn't found."
 msgstr "التطبيق يعمل، لكن لم يتم العثور على هذه الصفحة."
+
+#: src/components/webapp-display/WebappSetupOverlay.tsx
+msgid "Your app is starting. Everything it needs comes up first — this page opens on the app when it is ready."
+msgstr ""
 
 #: src/components/webapp-display/messages.tsx
 msgid "Your app isn't running right now."
