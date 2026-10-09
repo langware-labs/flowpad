@@ -34,7 +34,6 @@ class DeepAgentsAgentOptions(AgentOptions):
     EXECUTABLE = Path(sys.executable).name
     # The runner reads the prompt from stdin to EOF, so a multi-line prompt is safe.
     PROMPT_CHANNEL = "stdin"
-    SYSTEM_PROMPT_FLAG = "--system-prompt"
     SYSTEM_PROMPT_FILE_FLAG = "--system-prompt-file"
 
     def __init__(

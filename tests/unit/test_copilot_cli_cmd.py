@@ -149,7 +149,6 @@ def test_to_json_roundtrip():
         custom_instruction_dirs=["/runtime/instructions"],
     )
     cmd.fork_session_id = "launch-only-fork"
-    cmd.system_prompt_append = "launch derived"
     cmd.system_prompt_file = "/tmp/system-prompt"
     data = cmd.to_json()
     loaded = CopilotAgentOptions.from_json(data)

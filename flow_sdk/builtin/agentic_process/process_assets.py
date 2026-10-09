@@ -9,7 +9,6 @@ from pydantic import Field
 
 from flow_sdk.assets.directory import AssetDir
 from flow_sdk.assets.materialize import MaterializationMode
-from flow_sdk.builtin.agent_auto_open import auto_open_prompt_block
 from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import ProcessHookRuntime, ProcessMcpRuntime
 from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse
@@ -52,6 +51,9 @@ class SystemInstructionAssets(DataSpec):
     # a directory flag and needs nothing else; opencode reaches them ONLY through
     # a generated per-process config, which is keyed on this id.
     process_id: str = ""
+    # The ``system_prompt.LayerKey`` values present, in order — diagnostics and
+    # the system-prompt matrix read this rather than re-parsing the text.
+    layers: list[str] = Field(default_factory=list)
 
 
 class PreparedProcessAssets(DataSpec):
@@ -360,8 +362,14 @@ class ProcessAssets:
 
 
     async def _prepare_system_instruction_assets(self) -> SystemInstructionAssets | None:
-        """Materialize process instructions into the process asset directory."""
-        explicit = await self.process.resolve_system_instructions()
+        """Compose the system-prompt layers and project them for this worker.
+
+        The layers and their order are :mod:`system_prompt`'s alone. ``None`` only
+        when there is nothing at all — no embedded assets and no layer with text —
+        so such a process stays write-free (no assets dir, no mount).
+        """
+        from flow_sdk.builtin.agentic_process.system_prompt import compose_layers, render  # noqa: PLC0415
+
         legacy_agents = self.get_agents_json() or {}
         # Embedded assets must be detected from PERSISTED state, not just the
         # in-memory AssetDir handle: load-embedded-subagent runs on one entity
@@ -369,19 +377,15 @@ class ProcessAssets:
         # request gets a fresh instance whose _embedded_assets is None. Without
         # this, a materialized persona (e.g. vibe) silently never reaches the
         # worker's system instructions.
-        has_existing_assets = self.embedded_assets is not None or bool(self.process.embedded_asset_refs)
-        if not explicit and not legacy_agents and not has_existing_assets:
-            return None
-
-        asset_dir = self.ensure_process_assets()
-        agents = {**legacy_agents, **self._load_materialized_agents_json(asset_dir.os_path)}
-        # A Chief of Staff's native roster is its staff, described in CoS.md and spawned with the Agent
-        # tool — never the "execute it yourself" catalogue embedded agents get.
-        chief = bool((self.process.context_data or {}).get("chief_of_staff"))
-        agent_block = "" if chief else self._render_agents_instruction_block(agents, self.process.process_persona_path)
-        # Vibe only (persona or layer): what the agent's ``auto_open`` already showed.
-        auto_open = auto_open_prompt_block(self.process.context_data) if VIBE_PERSONA_NAME in agents else ""
-        instructions = "\n\n".join(p for p in (explicit, agent_block, auto_open) if p).strip()
+        has_assets = bool(legacy_agents) or self.embedded_assets is not None or bool(self.process.embedded_asset_refs)
+        asset_dir = self.ensure_process_assets() if has_assets else None
+        agents = {**legacy_agents, **self._load_materialized_agents_json(asset_dir.os_path)} if asset_dir else {}
+        layers = await compose_layers(self.process, agents)
+        if asset_dir is None:
+            if not layers:
+                return None
+            asset_dir = self.ensure_process_assets()
+        instructions = render(layers)
 
         self._normalize_process_asset_mount()
 
@@ -391,6 +395,7 @@ class ProcessAssets:
             instructions=instructions,
             claude_file=claude_file,
             process_id=self.process.id,
+            layers=[layer.key.value for layer in layers],
         )
 
 

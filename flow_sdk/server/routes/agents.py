@@ -44,7 +44,7 @@ async def auto_launch(request: Request):
     if not project_id:
         return ApiFailResponse(message="project_id is required", status_code=400)
     try:
-        outcome = await Agent.auto_launch_for(project_id)
+        outcome = await Agent.auto_launch_for(project_id, launch_surface=(body or {}).get("launch_surface"))
     except Exception as exc:  # noqa: BLE001 — the loader must get a stable failure, never a 500 page
         logger.warning("agent auto-launch failed for project %s: %s", project_id, exc)
         # Deliberately a SUCCESS envelope carrying `error`, not ApiFailResponse:

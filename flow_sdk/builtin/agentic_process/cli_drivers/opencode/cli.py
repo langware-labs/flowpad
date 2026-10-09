@@ -39,8 +39,7 @@ class OpenCodeAgentOptions(AgentOptions):
     # ``opencode run [message..]`` takes the prompt as a positional; there is no
     # stdin prompt channel.
     PROMPT_CHANNEL = "argv"
-    # No inline system-prompt flag — instructions ride the generated config.
-    SYSTEM_PROMPT_FLAG = None
+    # No system-prompt flag: the composed system prompt rides the generated config (``apply_instruction_assets``).
 
     def __init__(
         self,
@@ -196,10 +195,10 @@ class OpenCodeAgentOptions(AgentOptions):
             self.env_vars["OPENCODE_CONFIG"] = self.config_path
 
     def to_spawn(
-        self, instruction: str | None = None, system_prompt_append: str | None = None
+        self, instruction: str | None = None
     ) -> tuple[list[str], dict[str, str], str | None]:
         self._sync_config_env()
-        return super().to_spawn(instruction=instruction, system_prompt_append=system_prompt_append)
+        return super().to_spawn(instruction=instruction)
 
     def to_spawn_args(self, instruction: str | None = None) -> tuple[list[str], dict[str, str]]:
         self._sync_config_env()

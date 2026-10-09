@@ -299,7 +299,6 @@ def test_to_json_roundtrip():
         ephemeral=False,
     )
     cmd.fork_session_id = "launch-only-fork"
-    cmd.system_prompt_append = "launch derived"
     cmd.system_prompt_file = "/tmp/system-prompt"
     cmd.developer_instructions = "launch derived"
     cmd.extra_config_overrides = [("provider.name", "runtime")]

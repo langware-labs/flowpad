@@ -6,6 +6,7 @@
  * field managed internally by the backend process runtime.
  */
 
+import { launchSurfaceField } from './launch-surface';
 import type { ProcessKind } from './process-types';
 
 /**
@@ -177,5 +178,7 @@ export function serializeAgenticContext(ctx: AgenticContext): Record<string, unk
     output_format: ctx.outputFormat,
     worker_type: ctx.workerType,
     process_type: ctx.processType,
+    // Last, so a caller's contextData can never mislabel the launch.
+    ...launchSurfaceField(),
   };
 }

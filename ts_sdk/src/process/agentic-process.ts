@@ -8,6 +8,7 @@
  * - stackFrame: Access to execution variables
  */
 
+import { launchSurfaceField } from './launch-surface';
 import { isNetworkErrorMessage } from '../client';
 import type { ComputeNode } from '../entities/compute-node/compute-node';
 import { perfTime } from '../utils/perf';
@@ -845,6 +846,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
     // palette like the other two. Query hint, since there is no body on a GET.
     const theme = hostTerminalTheme();
     if (theme) action.queryParameters = { ...(action.queryParameters ?? {}), theme };
+    action.queryParameters = { ...(action.queryParameters ?? {}), ...launchSurfaceField() };
     try {
       const data = await dataManager.callAction<void, IAgenticProcess | null>(action);
       if (!data) return null;

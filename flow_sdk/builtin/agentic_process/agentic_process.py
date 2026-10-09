@@ -52,7 +52,6 @@ from flow_sdk.builtin.agentic_process.cli_drivers import (
     apply_worker_secret_env,
     get_driver,
     latch_spawn_failure,
-    resolve_worker_language,
 )
 from flow_sdk.builtin.agentic_process.display_context import (
     DISPLAY_CONTEXT_KEY,
@@ -3701,6 +3700,52 @@ class AgenticProcess(Entity):
     # map to FlowData and land on the shared
     # StreamingResponseHandler queue for streaming back to the caller.
 
+    async def _inline_turn_context(self, *, permission_mode: str | None = None, resumable: bool = False):
+        """The ``AgenticContext`` an inline print-mode turn (the ``prompt`` action) spawns with.
+
+        Its own method so the system-prompt matrix proves what this path hands the
+        stream worker, not a copy of it.
+        """
+        from flow_sdk.builtin.agentic_process.cli_drivers.api_auth import (  # noqa: PLC0415
+            apply_api_model_to_options,
+        )
+
+        # Resolve the owning project and stamp its context folders onto the
+        # transient cache so ``resolved_add_dirs`` mounts them this turn.
+        try:
+            await self.get_project()
+        except Exception:
+            logger.debug("prompt: get_project failed", exc_info=True)
+
+        process_assets = await self.prepare_process_assets()
+
+        try:
+            env_vars = dict(self.driver.cli_options(self).env_vars)
+        except Exception:
+            env_vars = dict((self.cli_config or {}).get("env_vars") or {})
+        apply_worker_env(env_vars, self)
+        await apply_worker_secret_env(env_vars, self)
+
+        context = _AgenticContext(
+            workdir=self.workdir,
+            env_vars=env_vars,
+            model=(self.cli_config or {}).get("model"),
+            permission_mode=permission_mode or (self.cli_config or {}).get("permission_mode", "bypassPermissions"),
+            effort=(self.cli_config or {}).get("effort"),
+            add_dirs=list(self.resolved_add_dirs or []),
+            session_id=self.session_id if (self.session_id and not resumable) else None,
+            resume_session_id=self.session_id if resumable else None,
+            disallowed_tools=(self.cli_config or {}).get("disallowed_tools") or [],
+            **self._process_asset_context_kwargs(process_assets),
+        )
+
+        # API-key auth (harness in "api" mode): override the model with the
+        # provider slug and carry codex's -c overrides onto the context. The
+        # env/token already landed via apply_worker_secret_env above. Same
+        # helper as the visible-PTY path; no-op in device mode.
+        await apply_api_model_to_options(context, self)
+        return context
+
     @action.post(action_name="prompt")
     async def _http_prompt(self) -> Any:
         from starlette.responses import StreamingResponse  # local import — starlette is an app-layer dep
@@ -3778,46 +3823,7 @@ class AgenticProcess(Entity):
                 except Exception:
                     logger.warning("prompt: preassigned session_id save failed", exc_info=True)
 
-            # Resolve the owning project and stamp its context folders onto the
-            # transient cache so ``resolved_add_dirs`` mounts them this turn.
-            try:
-                await self.get_project()
-            except Exception:
-                logger.debug("prompt: get_project failed", exc_info=True)
-
-            process_assets = await self.prepare_process_assets()
-
-            try:
-                env_vars = dict(self.driver.cli_options(self).env_vars)
-            except Exception:
-                env_vars = dict((self.cli_config or {}).get("env_vars") or {})
-            apply_worker_env(env_vars, self)
-            await apply_worker_secret_env(env_vars, self)
-
-            context = _AgenticContext(
-                workdir=self.workdir,
-                env_vars=env_vars,
-                model=(self.cli_config or {}).get("model"),
-                permission_mode=_turn_permission_mode
-                or (self.cli_config or {}).get("permission_mode", "bypassPermissions"),
-                effort=(self.cli_config or {}).get("effort"),
-                add_dirs=list(self.resolved_add_dirs or []),
-                session_id=self.session_id if (self.session_id and not resumable) else None,
-                resume_session_id=self.session_id if resumable else None,
-                language=await resolve_worker_language(self),
-                disallowed_tools=(self.cli_config or {}).get("disallowed_tools") or [],
-                **self._process_asset_context_kwargs(process_assets),
-            )
-
-            # API-key auth (harness in "api" mode): override the model with the
-            # provider slug and carry codex's -c overrides onto the context. The
-            # env/token already landed via apply_worker_secret_env above. Same
-            # helper as the visible-PTY path; no-op in device mode.
-            from flow_sdk.builtin.agentic_process.cli_drivers.api_auth import (
-                apply_api_model_to_options,
-            )
-
-            await apply_api_model_to_options(context, self)
+            context = await self._inline_turn_context(permission_mode=_turn_permission_mode, resumable=resumable)
 
             # Vendor hook retained for compatibility; embedded-agent/persona
             # instructions are materialized into process instruction assets.
@@ -6836,26 +6842,6 @@ class AgenticProcess(Entity):
         self.load_flowpad_assistant = True
         return self
 
-    async def resolve_system_instructions(self) -> str | None:
-        """The worker's full system-prompt append.
-
-        Merges the caller's standing directions (``context_data.instructions``,
-        set at create time by the SDK) with the io, always-use-skills and
-        open-task blocks. Any part may be empty; ``None`` when all are. This is
-        the single source both turn paths (headless driver + inline print-mode)
-        must use.
-        """
-        explicit = str((self.context_data or {}).get("instructions") or "").strip()
-        io = str((self.context_data or {}).get("io_instructions") or "").strip()  # ``process_io.prepare_io``
-        always = self._resolve_always_use_skills_block()
-        # A Chief of Staff reads its open tasks every turn — resolved now, not at launch.
-        tasks = ""
-        if (self.context_data or {}).get("chief_of_staff"):
-            from flow_sdk.tasks.cos import open_tasks_block  # noqa: PLC0415
-
-            tasks = await open_tasks_block(self)
-        return "\n\n".join(p for p in (explicit, io, always, tasks) if p) or None
-
     def _resolve_always_use_skills_block(self) -> str:
         """The project's ``always_use_skills`` as a system-prompt directive.
 
@@ -7384,13 +7370,18 @@ class AgenticProcess(Entity):
         # without an async fetch. Refreshed every call, so later edits to
         # ``project.include_dirs`` take effect on the next launch.
         context_dirs: list[str] = []
+        locale = None
         if self.project_id:
             project = await Project.get_by_id(self.project_id)
             if project:
                 if not self.workdir and project.fs_storage_mount_path:
                     self.workdir = str(project.fs_storage_mount_path)
                 context_dirs = list(getattr(project, "include_dirs", []) or [])
+                locale = getattr(project, "locale", None)
         object.__setattr__(self, "_project_context_dirs", context_dirs)
+        # Same fetch, same lifetime: the LANGUAGE system-prompt layer reads it
+        # (``resolve_worker_language``) instead of fetching the project again.
+        object.__setattr__(self, "_project_locale", locale)
 
     @action.get(action_name="input-dir")
     async def get_input_dir(self):

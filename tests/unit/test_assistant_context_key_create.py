@@ -60,5 +60,7 @@ async def test_create_stamps_context_key_and_the_page_instructions(monkeypatch) 
     assert proc.context_key == "assets|project:p|agent/a"
     assert "context_key" not in (proc.context_data or {})
     assert resp.data["context_key"] == "assets|project:p|agent/a"
-    # The page rides the worker's system-prompt append for the chat's whole life.
-    assert "p › a" in (await proc.resolve_system_instructions() or "")
+    # The page rides the worker's system prompt (the INSTRUCTIONS layer) for the chat's whole life.
+    from flow_sdk.builtin.agentic_process.system_prompt import compose_layers, render
+
+    assert "p › a" in render(await compose_layers(proc))
