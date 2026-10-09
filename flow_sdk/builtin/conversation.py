@@ -225,6 +225,11 @@ class Conversation(ProjectedFields, Entity):
     # external WhatsApp connector are both ``whatsapp``), and what the channel can do (files, quotes, reactions) is the
     # driver's. Stamped with ``channel_source_id``.
     channel_provider: Optional[str] = APIField(default=None, sharing=Sharing.PRIVATE)
+    # Whether someone other than the person answers this channel's messages — an Agent or a deployment
+    # (``data_source.answered_by``). ``False`` for a person's own channel (their Tasks channel): an inbound
+    # message there waits for no one, so the surface shows no "picked up / handling / replied" line.
+    # ``None`` = not yet known (stamped by the projection with ``channel_source_id``).
+    channel_answered: Optional[bool] = APIField(default=None, sharing=Sharing.PRIVATE)
     # ── the conversation on its channel: an email topic, a chat, a phone call, a Slack thread ──
     # Who it is with, as the channel addresses them (an email address, a phone number, a Slack channel):
     # stamped from its first message and extended as others join, so a reply — or the first message of

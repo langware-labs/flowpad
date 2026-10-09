@@ -55,7 +55,11 @@ async def test_assign_shares_the_task_and_grants_the_assignee_editor(bootstrappe
     assert await Task.get_all({"parent_id": task["id"]}) == []
     assert row.kind == TaskKind.STANDARD.value
     assert row.group_name is None
-    assert hub_faked["children"] == [], "no member task is created for a single assignee"
+    # The only hub child is the hand-over's history comment (``task_changes``) — never a member task.
+    from flow_sdk.builtin.comment import Comment  # noqa: PLC0415
+
+    children = [cid for _parent, cid in hub_faked["children"]]
+    assert all([await Comment.get_one({"id": cid}) for cid in children]), "no member task is created for a single assignee"
 
     # One invitation, one target: editor on the task itself.
     member_posts = [p for p in hub_faked["posts"] if p[0].endswith("/members")]

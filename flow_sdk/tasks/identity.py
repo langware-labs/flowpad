@@ -32,6 +32,20 @@ class Caller:
     conversation_id: str = ""
 
 
+def local_email() -> str:
+    """The email this instance is logged in to the cloud as (normalized), or ``""`` when it is not."""
+    from flow_sdk.builtin.user import normalize_email  # noqa: PLC0415
+    from flow_sdk.cli.app_config import get_user  # noqa: PLC0415
+
+    return normalize_email((get_user() or {}).get("email")) or ""
+
+
+def local_author() -> str:
+    """Who this instance's person is, as an author: their cloud email, else ``user:local`` — the same
+    principal their Tasks channel is keyed by, so their own words read as theirs either way."""
+    return local_email() or LOCAL_USER
+
+
 def agent_ref(agent_id: str) -> str:
     return f"agent:{agent_id}"
 
@@ -87,4 +101,4 @@ async def _agent_of(process) -> str:
     return parent.split("agent-", 1)[1] if parent.startswith("agent-") else ""
 
 
-__all__ = ["LOCAL_USER", "Caller", "agent_ref", "caller_of", "ref_kind", "subagent_ref"]
+__all__ = ["LOCAL_USER", "Caller", "agent_ref", "caller_of", "local_author", "local_email", "ref_kind", "subagent_ref"]

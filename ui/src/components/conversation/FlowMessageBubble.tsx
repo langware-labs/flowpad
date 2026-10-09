@@ -1,4 +1,5 @@
 import { MessageLifecycle, type Lifecycle } from './message-lifecycle';
+import type { TaskPeople } from './task-it';
 import { t } from '@lingui/core/macro';
 import { isViewer } from './conversation-category';
 import {
@@ -222,6 +223,8 @@ interface FlowMessageBubbleProps {
   messageTask?: Task | null;
   /** "Task it": make this message a task. Omitted → no control (drafts, system rows). */
   onTaskIt?: (fm: FlowMessage) => void;
+  /** Who the message's task can be handed to from here (the conversation's members) and who I am. */
+  taskPeople?: TaskPeople;
   /** Start a worker pinned to a message (its ⋮ menu). Omitted → no worker bar (drafts). */
   onLaunchWorker?: (messageId: string, worker: WorkerType) => void;
 }
@@ -251,6 +254,7 @@ export function FlowMessageBubble({
   messageAttachments,
   messageTask = null,
   onTaskIt,
+  taskPeople,
   onLaunchWorker,
   showEmailHeaders = false,
   channelTraits = null,
@@ -776,7 +780,7 @@ export function FlowMessageBubble({
         onLaunchWorker={onLaunchWorker && !fm.is_draft ? (worker) => onLaunchWorker(messageId, worker) : undefined}
         taskIt={
           messageTask
-            ? { onClick: () => navigation.openDock(messageTask.dockPointer), task: messageTask }
+            ? { onClick: () => navigation.openDock(messageTask.dockPointer), task: messageTask, people: taskPeople }
             : onTaskIt && !fm.is_draft
               ? { onClick: () => onTaskIt(fm) }
               : undefined
