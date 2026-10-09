@@ -21,3 +21,5 @@ export * from './GitShare';
 export * from './FSOrigin';
 export * from './Kind';
 export * from './ReturnedValue';
+// The `flow show` contract (target, placement, history entry) — models, not a process's own.
+export * from './ShowTarget';
