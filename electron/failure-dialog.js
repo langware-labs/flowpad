@@ -16,6 +16,23 @@ const show = (dialog, parent, opts) => (parent ? dialog.showMessageBox(parent, o
 const OK = 0;
 const SHARE = 1;
 
+// A native alert cannot scroll: on macOS a long message grows the alert until its buttons are off the screen,
+// and the person cannot answer — or close — the one dialog that explains the failure. So the dialog shows a
+// bounded excerpt; the whole text still goes to "Share with us" and the logs.
+const MAX_DETAIL_CHARS = 1200;
+const MAX_DETAIL_LINES = 16;
+const HEAD_CHARS = 700; // an error opens with its cause (uv prints `error:` first) and ends with its context
+
+/** `detail` cut to what a native dialog can hold: the start and the end, with a note about what was left out. */
+function clampDetail(detail) {
+  const text = String(detail || '');
+  const lines = text.split('\n');
+  if (text.length <= MAX_DETAIL_CHARS && lines.length <= MAX_DETAIL_LINES) return text;
+  const head = text.slice(0, HEAD_CHARS).split('\n').slice(0, MAX_DETAIL_LINES - 5).join('\n');
+  const tail = text.slice(-(MAX_DETAIL_CHARS - HEAD_CHARS)).split('\n').slice(1).slice(-4).join('\n'); // slice(1): drop a cut-off first line
+  return `${head}\n…\n${tail}\n\n(The full text is in the logs, and “Share with us” sends all of it.)`;
+}
+
 /**
  * @param {object} o
  * @param {{ showMessageBox(parent: any, opts: object): Promise<{response: number}> }} o.dialog
@@ -34,7 +51,7 @@ async function showFailureDialog({ dialog, parent, type = 'error', title, messag
   let response = OK;
   try {
     ({ response } = await show(dialog, parent, {
-      type, title, message, detail, buttons, defaultId: OK, cancelId: OK,
+      type, title, message, detail: clampDetail(detail), buttons, defaultId: OK, cancelId: OK,
     }));
   } catch (err) {
     if (log) log.warn(`[failure-dialog] could not show "${title}": ${err && err.message}`);
@@ -66,4 +83,4 @@ async function showFailureDialog({ dialog, parent, type = 'error', title, messag
   return 'share-failed';
 }
 
-module.exports = { showFailureDialog, OK, SHARE };
+module.exports = { showFailureDialog, clampDetail, OK, SHARE };

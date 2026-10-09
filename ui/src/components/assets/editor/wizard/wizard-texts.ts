@@ -22,6 +22,7 @@ const EXACT: Record<string, MessageDescriptor> = {
   'Restart setup': msg`Restart setup`,
   // an install question
   "It doesn't appear to be installed on your computer. Would you like to install it now?": msg`It doesn't appear to be installed on your computer. Would you like to install it now?`,
+  "It doesn't appear to be installed on your computer. Would you like to install it now? On a Mac, Apple's installer opens in its own window — if you don't see it, look behind this one.": msg`It doesn't appear to be installed on your computer. Would you like to install it now? On a Mac, Apple's installer opens in its own window — if you don't see it, look behind this one.`,
   Install: msg`Install`,
   Skip: msg`Skip`,
   'Not now': msg`Not now`,
