@@ -357,8 +357,8 @@ export class Shell extends APIEntity<Shell> implements IShell {
   }
 
   /** Size the PTY to the view on screen — kept, and asserted on every attach. */
-  async resize(cols: number, rows: number): Promise<void> {
-    return this.ptyConnection.resize(cols, rows);
+  async resize(cols: number, rows: number, opts: { repaint?: boolean } = {}): Promise<boolean> {
+    return this.ptyConnection.resize(cols, rows, opts);
   }
 
   /** The view showing this shell went off screen: it no longer sizes the PTY. */

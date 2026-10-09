@@ -729,24 +729,74 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
     bufferFlushCount,
   ]);
 
-  // Refit terminal when annotation gutter or file panel appears/disappears
+  // The size this view last delivered to the PTY. Output drawn while the xterm is at another size
+  // is garbage that re-sending the PTY's own size can't fix (no winsize change → no SIGWINCH), so
+  // that view asks for a redraw on its next send (`drift`).
+  const syncedSizeRef = useRef<{ cols: number; rows: number } | null>(null);
+  const driftRef = useRef(false);
+
+  const handlePtyResize = useCallback(
+    (cols: number, rows: number) => {
+      if (isTransitioningRef.current) return;
+      if (!onScreen()) return;
+      const shell = shellRef.current;
+      if (!shell) return;
+      const repaint = driftRef.current;
+      driftRef.current = false;
+      syncedSizeRef.current = { cols, rows };
+      // Not gated on `connected`: the shell keeps the size and its attach asserts it.
+      void shell.resize(cols, rows, { repaint }).then(
+        (ok) => {
+          if (ok) return;
+          syncedSizeRef.current = null;
+          driftRef.current = true;
+        },
+        (e) => console.error('[InteractiveTerminal] Failed to resize PTY:', e),
+      );
+    },
+    [sessionId],
+  );
+
+  /** Fit the xterm to its box and record the cell height. */
+  const fitXterm = useCallback(() => {
+    const term = terminalRef.current;
+    const fit = fitAddonRef.current;
+    if (!term || !fit) return;
+    fit.fit();
+    const container = xtermContainerRef.current;
+    if (container?.offsetHeight && term.rows > 0) commitCellHeight(container.offsetHeight / term.rows);
+  }, [commitCellHeight]);
+
+  /** Fit the xterm and size the PTY to it — never one without the other. Off screen the view does
+   *  not size the PTY, so it does not fit either; the return to screen fits + sends. */
+  const fitAndSync = useCallback(() => {
+    const term = terminalRef.current;
+    if (!term || !onScreen()) return;
+    try {
+      fitXterm();
+    } catch {
+      return;
+    }
+    handlePtyResize(term.cols, term.rows);
+  }, [fitXterm, handlePtyResize]);
+
+  /** Live output reaching an off-screen xterm that is not at the size it last gave the PTY. */
+  const noteDrift = useCallback(() => {
+    if (driftRef.current || onScreen()) return;
+    const term = terminalRef.current;
+    const synced = syncedSizeRef.current;
+    // Never synced: its attach sizes the PTY (and repaints) when it comes on screen.
+    if (!term || !synced || (synced.cols === term.cols && synced.rows === term.rows)) return;
+    driftRef.current = true;
+    toplog.log('pty', `fit_unsent shell=${sessionId} xterm=${term.cols}x${term.rows} synced=${synced.cols}x${synced.rows}`);
+  }, [sessionId]);
+
+  // Refit terminal when annotation gutter or file panel appears/disappears — and size the PTY
+  // to it: a refit the PTY never hears of leaves the xterm drawing output meant for another grid.
   useEffect(() => {
     if (!terminalReady) return;
-    const fit = fitAddonRef.current;
-    const term = terminalRef.current;
-    if (!fit || !term) return;
-    requestAnimationFrame(() => {
-      try {
-        fit.fit();
-        const container = xtermContainerRef.current;
-        if (container?.offsetHeight && term.rows > 0) {
-          commitCellHeight(container.offsetHeight / term.rows);
-        }
-      } catch {
-        // ignore
-      }
-    });
-  }, [showAnnotationGutter, showTimeGutter, timeGutterWidth, terminalReady, sideWindowTabs.length]);
+    requestAnimationFrame(fitAndSync);
+  }, [showAnnotationGutter, showTimeGutter, timeGutterWidth, terminalReady, sideWindowTabs.length, fitAndSync]);
 
   // Update refs on session change
   useEffect(() => {
@@ -769,25 +819,11 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
 
       // After the transition guard lifts, re-fit the terminal so it picks up
       // any container resize events that were suppressed during the window.
-      const fit = fitAddonRef.current;
-      const term = terminalRef.current;
-      if (fit && term) {
-        requestAnimationFrame(() => {
-          try {
-            fit.fit();
-            if (term.rows > 0 && xtermContainerRef.current?.offsetHeight) {
-              commitCellHeight(xtermContainerRef.current.offsetHeight / term.rows);
-            }
-            if (onScreen()) void shellRef.current?.resize(term.cols, term.rows);
-          } catch {
-            /* ignore */
-          }
-        });
-      }
+      requestAnimationFrame(fitAndSync);
     }, 150);
 
     return () => clearTimeout(t);
-  }, [sessionId]);
+  }, [sessionId, fitAndSync]);
 
   // Shell entity is resolved reactively by useShell(sessionId) above.
 
@@ -928,10 +964,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
             );
           }
           try {
-            fit.fit();
-            const h = container.offsetHeight;
-            const r = term.rows;
-            if (h && r > 0) commitCellHeight(h / r);
+            fitXterm();
 
             // Initialize pty-sync session (adapter + VirtualTerminal)
             ptySyncRef.current.initialize(term);
@@ -1050,21 +1083,6 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
     term.options.theme = resolvedTheme === 'dark' ? DARK_THEME : LIGHT_THEME;
   }, [resolvedTheme]);
 
-  const handlePtyResize = useCallback(
-    (cols: number, rows: number) => {
-      if (isTransitioningRef.current) return;
-      if (!onScreen()) return;
-      const shell = shellRef.current;
-      if (!shell) return;
-      // Not gated on `connected`: the shell keeps the size and its attach asserts it.
-      try {
-        void shell.resize(cols, rows);
-      } catch (e) {
-        console.error('[InteractiveTerminal] Failed to resize PTY:', e);
-      }
-    },
-    [sessionId],
-  );
 
   // The owning TerminalPanel starts/attaches an AgenticProcess after the route
   // commits. Shell WS reconnects remain owned by Shell's ConnectionManager
@@ -1106,6 +1124,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
 
   const writeLive = useCallback(
     (data: string) => {
+      noteDrift();
       const BSU = '\x1b[?2026h';
       const ESU = '\x1b[?2026l';
       const sync = syncRef.current;
@@ -1139,7 +1158,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
         if (remainder) writeLive(remainder);
       }
     },
-    [writeToTerm, flushSyncFrame],
+    [writeToTerm, flushSyncFrame, noteDrift],
   );
 
   // The PTY in this view: its recorded past, then live — the ONE attach every terminal view uses
@@ -1153,6 +1172,12 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
     recoveredFor: (msg) => Boolean(process && msg?.process_id === process.id),
     ownsSize: onScreen,
     onAttached: ({ source, wrote, ms, historyKb }) => {
+      // On screen the attach asserted this xterm's size and the program repainted at it.
+      const t = terminalRef.current;
+      if (t && onScreen()) {
+        syncedSizeRef.current = { cols: t.cols, rows: t.rows };
+        driftRef.current = false;
+      }
       // Signal buffer ready once xterm has processed the history and backlog writes.
       if (wrote) {
         terminalRef.current?.write('', () => {
@@ -1296,7 +1321,6 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
 
     const handleRestarted = () => {
       const term = terminalRef.current;
-      const fit = fitAddonRef.current;
       ptySyncRef.current.resetSession();
 
       // attachPty({ force: true }) resets attach state, then re-attaches
@@ -1312,29 +1336,15 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
         ?.attachPty({ cols: term?.cols ?? 80, rows: term?.rows ?? 24, force: true })
         .catch((err) => console.debug('[InteractiveTerminal] restart re-attach deferred:', err));
 
-      // Re-fit after a frame so xterm recalculates row/col geometry
-      requestAnimationFrame(() => {
-        if (fit && term) {
-          try {
-            fit.fit();
-            const container = xtermContainerRef.current;
-            if (container?.offsetHeight && term.rows > 0) {
-              commitCellHeight(container.offsetHeight / term.rows);
-            }
-            // Send updated dimensions to the new PTY
-            if (onScreen()) void shellRef.current?.resize(term.cols, term.rows);
-          } catch {
-            /* ignore */
-          }
-        }
-      });
+      // Re-fit after a frame so xterm recalculates row/col geometry, and size the new PTY to it
+      requestAnimationFrame(fitAndSync);
     };
 
     process.on('restarted', handleRestarted);
     return () => {
       process.off('restarted', handleRestarted);
     };
-  }, [process]);
+  }, [process, fitAndSync]);
 
   // ResizeObserver (only when active)
   useEffect(() => {
@@ -1353,12 +1363,10 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
     let lastH = -1;
 
     const observer = new ResizeObserver(() => {
-      if (!active) return;
+      // Off screen (inactive, or the window hidden) the view does not size the PTY, so it does
+      // not fit: the box is left unrecorded and the return to screen fits + sends.
+      if (!active || !onScreen()) return;
       if (isTransitioningRef.current) return;
-
-      const term = terminalRef.current;
-      const fit = fitAddonRef.current;
-      if (!term || !fit) return;
 
       const w = container.clientWidth;
       const h = container.clientHeight;
@@ -1366,43 +1374,29 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
       lastW = w;
       lastH = h;
 
-      try {
-        fit.fit();
-      } catch {
-        return;
-      }
-
-      if (container.offsetHeight && term.rows > 0) {
-        commitCellHeight(container.offsetHeight / term.rows);
-      }
-
-      // Rebuild VirtualTerminal with new dimensions and replay stored chunks
-      const snapshot = ptySyncRef.current.getSnapshot();
-      if (snapshot.adapter && snapshot.vt) {
-        const shell = shellRef.current;
-        if (shell) {
-          const chunks = shell.getPtyChunks();
-          const tRebuild = performance.now();
-          ptySyncRef.current.rebuild(chunks);
-          const rebuildMs = performance.now() - tRebuild;
-          // Replays EVERY stored chunk on each resize — only slow ones are logged.
-          if (rebuildMs > 50) {
-            toplog.log(
-              'pty',
-              `vt_rebuild_slow shell=${sessionId} chunks=${chunks.length} ms=${rebuildMs.toFixed(0)} size=${term.cols}x${term.rows}`,
-            );
-          }
-        }
-      }
-
+      // Fit and send TOGETHER, once the box settles: a fit whose send is dropped (the tab left
+      // within the debounce) left the xterm on a grid the PTY never got.
       if (resizeTimeoutRef.current) clearTimeout(resizeTimeoutRef.current);
       resizeTimeoutRef.current = setTimeout(() => {
-        const t = terminalRef.current;
-        if (!t) return;
-        if (!active) return;
-        if (isTransitioningRef.current) return;
-        handlePtyResize(t.cols, t.rows);
         resizeTimeoutRef.current = null;
+        if (isTransitioningRef.current) return;
+        fitAndSync();
+        // Rebuild VirtualTerminal with new dimensions and replay stored chunks
+        const term = terminalRef.current;
+        const shell = shellRef.current;
+        const snapshot = ptySyncRef.current.getSnapshot();
+        if (!term || !shell || !snapshot.adapter || !snapshot.vt) return;
+        const chunks = shell.getPtyChunks();
+        const tRebuild = performance.now();
+        ptySyncRef.current.rebuild(chunks);
+        const rebuildMs = performance.now() - tRebuild;
+        // Replays EVERY stored chunk on each resize — only slow ones are logged.
+        if (rebuildMs > 50) {
+          toplog.log(
+            'pty',
+            `vt_rebuild_slow shell=${sessionId} chunks=${chunks.length} ms=${rebuildMs.toFixed(0)} size=${term.cols}x${term.rows}`,
+          );
+        }
       }, 250);
     });
 
@@ -1414,7 +1408,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
         resizeTimeoutRef.current = null;
       }
     };
-  }, [active, handlePtyResize, sessionId, canUseDOM, terminalReady]);
+  }, [active, fitAndSync, sessionId, canUseDOM, terminalReady]);
 
   // `tab_switch` warm chat: a return to a panel whose chat pane is already
   // mounted is a visibility flip — nothing reloads, so no other point fires.
@@ -1449,16 +1443,15 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
     if (!terminalReady) return;
 
     const term = terminalRef.current;
-    const fit = fitAddonRef.current;
-    if (!term || !fit) return;
+    if (!term) return;
 
     requestAnimationFrame(() => {
       try {
-        fit.fit();
+        // Fit + size the PTY; a view that drifted while off screen asks for a redraw here.
+        fitAndSync();
         if (!targetTimestamp) term.scrollToBottom();
         term.refresh(0, Math.max(0, term.rows - 1));
         focusTerminalUnlessEditingElsewhere(term, xtermContainerRef.current);
-        handlePtyResize(term.cols, term.rows);
         // Warm = this panel already replayed its history; the refresh above is
         // the whole switch. A panel still attaching logs its cold `ready` later.
         if (shellReadyRef.current && !showSimpleChatRef.current && toplog.isOn('tab_switch') && claimTabSwitchReady()) {
@@ -1468,7 +1461,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
         console.warn('[InteractiveTerminal] activate refresh failed:', e);
       }
     });
-  }, [active, terminalReady, sessionId, handlePtyResize, targetTimestamp]);
+  }, [active, terminalReady, sessionId, fitAndSync, targetTimestamp]);
 
   // Re-assert this view's geometry to the backend PTY. Needed because the same
   // PTY can be attached in another tab with a different container size; whoever
@@ -1477,17 +1470,8 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
   // even when it's unchanged locally, it differs from the backend's current
   // (other tab's) shape, so it triggers a SIGWINCH and repaints to our width.
   const reassertGeometry = useCallback(() => {
-    const term = terminalRef.current;
-    const fit = fitAddonRef.current;
-    if (!term || !fit) return;
-    if (isTransitioningRef.current) return;
-    try {
-      fit.fit();
-      handlePtyResize(term.cols, term.rows);
-    } catch (e) {
-      console.warn('[InteractiveTerminal] reassertGeometry failed:', e);
-    }
-  }, [handlePtyResize]);
+    if (!isTransitioningRef.current) fitAndSync();
+  }, [fitAndSync]);
 
   // The tab coming back on screen re-asserts its size: the window regaining focus
   // or the browser tab turning visible changes neither `active` nor the layout,

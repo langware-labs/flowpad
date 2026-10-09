@@ -102,7 +102,8 @@ The registry is every `### <tag>` heading below. Add entries in this format:
   - **Frontend:**
     - `attach` (ok, force, ms), `reset` (chunks, last_seq)
     - `dedup_drop` (first of a run), `input_dropped` (not_live / session_not_found / shell_not_connected, first of a run)
-    - `resize` / `resize_failed`, `xterm_mount` / `xterm_dispose`
+    - `resize` / `resize_failed` (`repaint=drift` when the view asks the program to redraw), `xterm_mount` / `xterm_dispose`
+    - `fit_unsent xterm=<c>x<r> synced=<c>x<r>|none` — live output reached an off-screen xterm whose grid is not the one it last gave the PTY; the next on-screen resize goes out with `repaint` (backend `resize … repaint=True` → winsize jiggle at an unchanged size)
     - `on_connected start|superseded|replay_failed|done` with `source=mount|status|recovered|reconnected`
     - `vt_rebuild_slow` (> 50ms)
     - Plus the `process_load` lines also tagged `pty`: pty-stream fetch, replay, backlog loop, TabbedTerminal warm/cold flip, WS request TIMEOUT, attachPty.
@@ -116,6 +117,7 @@ The registry is every `### <tag>` heading below. Add entries in this format:
   - **Terminal "dead after restart":** `session_start persisted_max_seq` vs `start_seq`, then frontend `dedup_drop` with `seq` far below `last_seq` (lost epoch).
   - **Slow tab switch / reload:** `on_connected` (count `start` lines per `source`; repeated starts = duplicate stream fetches), replay `took Nms serializedKB`, `xterm_mount`/`xterm_dispose` pairs (a "warm" terminal remounted).
   - **Garbled after resize:** `resize` sizes/sources, `vt_rebuild_slow`.
+  - **Garbled and tab switches don't heal it** (drawn narrower/wider than the pane): `fit_unsent` then `resize … repaint=drift` on return. Ground truth is the shell's `.pty` `r` frames — replay them with `@xterm/headless`: honoring the frames renders clean when the PTY is right, and a fixed-width replay matching the screen names the width the xterm drew at (prod 2026-10-09: 84 in a 122 pane, no `r` 84 anywhere).
   - **Split-brain (two backends on one port):** `spawn backend_pid` ≠ `attach backend_pid`.
   - **Not covered:** GPU compositing / render bleed (not observable from logs).
 - **Verified 2026-09-16** on a temp instance: 3 API sessions, a browser terminal, `seq 1 200000`, resize and reload → 51 lines total; tag off → 0 new lines.

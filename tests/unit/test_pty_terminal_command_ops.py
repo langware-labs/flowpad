@@ -283,3 +283,32 @@ async def test_pty_cap_no_eviction_below_cap(eviction_registry):
     with pytest.raises(_StopBeforeSpawn):
         await node.start_machine_pty_session(shell_id="shell-new", connection_id="conn-1")
     assert eviction_registry.evicted == []
+
+
+# ``resize`` with ``repaint`` — a view whose xterm drew output at another size asks for a redraw
+# even at an unchanged size (a same-size resize changes no winsize → no SIGWINCH → no redraw).
+
+def _resize_node(cols: int, rows: int):
+    from flow_sdk.compute.providers.desktop.local_pty_session import LocalPtySession
+
+    provider = MagicMock()
+    provider.resize_pty = AsyncMock()
+    state = PtyState(pty_key=("cn-1", "pn-1", "shell-1"), cols=cols, rows=rows)
+    mgr = MagicMock()
+    mgr.states = {state.pty_key: state}
+    provider.get_pty_session = MagicMock(return_value=LocalPtySession("cn-1", "pn-1", "shell-1", provider, mgr))
+    return _Node(provider), provider
+
+
+async def test_resize_to_the_same_size_does_nothing_without_repaint():
+    node, provider = _resize_node(122, 40)
+    result = await node._resize_pty({"shell_id": "shell-1", "cols": 122, "rows": 40})
+    assert result.status == "SUCCESS"
+    provider.resize_pty.assert_not_awaited()
+
+
+async def test_resize_with_repaint_jiggles_at_the_same_size():
+    node, provider = _resize_node(122, 40)
+    result = await node._resize_pty({"shell_id": "shell-1", "cols": 122, "rows": 40, "repaint": True})
+    assert result.status == "SUCCESS"
+    assert provider.resize_pty.await_args_list == [(("pn-1", "shell-1", 122, 39),), (("pn-1", "shell-1", 122, 40),)]

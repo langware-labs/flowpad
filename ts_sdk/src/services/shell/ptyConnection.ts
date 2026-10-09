@@ -509,12 +509,15 @@ export class PtyConnection {
    * Size the PTY to the view on screen. Kept even when the PTY is not live yet:
    * the next attach asserts it. Always sent when live — the backend may hold
    * another client's size, so a client-side "unchanged" says nothing.
+   *
+   * `repaint`: the view drew output at another size — redraw even at an unchanged size.
+   * Resolves false only when a live send failed.
    */
-  async resize(cols: number, rows: number): Promise<void> {
+  async resize(cols: number, rows: number, opts: { repaint?: boolean } = {}): Promise<boolean> {
     this._viewSize = { cols, rows };
-    if (!this.started) return; // kept for the attach
-    if (!this.computeNodeId) return;
-    await this._sendResize(cols, rows);
+    if (!this.started) return true; // kept for the attach, which repaints
+    if (!this.computeNodeId) return true;
+    return this._sendResize(cols, rows, opts.repaint === true);
   }
 
   /** The view stopped showing this PTY: it no longer claims the size. */
@@ -527,21 +530,23 @@ export class PtyConnection {
     return this._viewSize;
   }
 
-  private async _sendResize(cols: number, rows: number): Promise<void> {
+  private async _sendResize(cols: number, rows: number, repaint = false): Promise<boolean> {
     const { ActionInfo } = await import('../../models/index.js');
     const { dataManager } = await import('../../APIEntity.js');
     const action = new ActionInfo('terminal-command', 'compute_node', this.computeNodeId, 'POST');
     action.subpath = 'resize';
-    action.bodyParameters = { shell_id: this.shellId, cols, rows };
-    toplog.log('pty', `resize shell=${this.shellId} size=${cols}x${rows}`);
+    action.bodyParameters = { shell_id: this.shellId, cols, rows, repaint };
+    toplog.log('pty', `resize shell=${this.shellId} size=${cols}x${rows}${repaint ? ' repaint=drift' : ''}`);
     try {
       await dataManager.callActionOverWS<any, any>(action);
+      return true;
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       toplog.log('pty', `resize_failed shell=${this.shellId} error=${msg}`);
       if (msg.includes('PTY session not found') || msg.includes('Failed to resize PTY')) {
         this.started = false;
       }
+      return false;
     }
   }
 
