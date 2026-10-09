@@ -37,13 +37,10 @@ export { AgenticProcess, AgenticProcessEventName } from './agentic-process';
 export type {
   AgenticProcessReportEventResult,
   DisplayContextState,
-  DisplayEntry,
   IAgenticProcess,
   MarkdownDoc,
   ProcessState,
   SessionNameState,
-  ShowPlacement,
-  ShowTarget,
   SpawnResult,
 } from './agentic-process';
 export type { AgentHookData, ProcessHookCallback } from './process-hooks';
