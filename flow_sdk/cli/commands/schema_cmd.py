@@ -196,8 +196,26 @@ def apply_report(rows: "dict[Path, dict | None]") -> "list[dict]":
             out.append({**entry, "status": "error", "error": error})
         else:
             fields = sorted((row.get("fields") or {}).keys())
-            out.append({**entry, "status": "ok", "subkind": row.get("subkind"), "fields": fields})
+            ok = {**entry, "status": "ok", "subkind": row.get("subkind"), "fields": fields}
+            ignored = _ignored_keys(folder)
+            out.append({**ok, "ignored": ignored} if ignored else ok)
     return out
+
+
+def _ignored_keys(folder: Path) -> "list[str]":
+    """Keys a ``data_schema.json`` carries that the schema does not read -- dropped silently
+    otherwise (``name``: the folder name IS the kind)."""
+    import json  # noqa: PLC0415
+
+    from flow_sdk.schema.data_spec.data_schema_spec import DataSchemaDocSpec  # noqa: PLC0415
+    from flow_sdk.schema.data_spec.declared import MAIN  # noqa: PLC0415
+
+    try:
+        doc = json.loads((folder / MAIN).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
+    known = set(DataSchemaDocSpec.model_fields) | {"type", "id"}
+    return sorted(k for k in (doc if isinstance(doc, dict) else {}) if k not in known)
 
 
 @schema_app.command(

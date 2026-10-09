@@ -35,7 +35,7 @@ from flow_sdk.app.actions.share_action import (
 from flow_sdk.builtin.task import Task
 from flow_sdk.builtin.user import normalize_email
 from flow_sdk.cloud_client.shared.errors import HubError
-from flow_sdk.cloud_client.transport.hub_http import hub_put, hub_request
+from flow_sdk.cloud_client.transport.hub_http import hub_delete, hub_put, hub_request
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 from flow_sdk.flowpad_types.enums.auth_enums import HubRole
 from flow_sdk.request_context.methods import get_current_request_info
@@ -169,18 +169,36 @@ async def assign_task() -> ApiResponse:
         raise HTTPException(status_code=400, detail="assign-task: 'email' required")
     message = str(body.get("message") or "").strip() or None
 
+    previous = normalize_email(task.assignee)
     task.assignee = email
     task.reporter = task.reporter or owner_email
 
     if email == owner_email:
         await task.save(request_info.someone_typeid)
+        if previous and previous != email and task.remote:
+            # Taken back from someone: the hand-over reached them (the save above), then their role goes.
+            await push_hub_fields(task, ("assignee",))
+            await revoke_on_hub(task, previous)
         return ApiSuccessResponse(data={"self": True, "assignee": email})
 
     try:
         await assign_on_hub(task, email=email, message=message, someone_typeid=request_info.someone_typeid)
     except HubError as e:
         return e.fail_response("Could not assign the task")
+    if previous and previous not in (email, owner_email):
+        await revoke_on_hub(task, previous)
     return ApiSuccessResponse(data={"self": False, "assignee": email})
+
+
+async def revoke_on_hub(task: Task, email: str) -> None:
+    """Take the task back from the person it was handed to before: their hub role on it goes, so it
+    stops reaching them. They already received the hand-over itself (the save before this wrote it as a
+    comment on the task, while they could still read it), so their thread ends with it. Non-fatal: the
+    new assignee has the task either way."""
+    try:
+        await hub_delete(BuiltinEntityType.TASK, str(task.id), "members", payload={"user_email": email})
+    except Exception as e:  # noqa: BLE001
+        logger.warning("[task-assign] could not revoke %s on task %s (non-fatal): %s", email, task.id, e)
 
 
 async def assign_on_hub(

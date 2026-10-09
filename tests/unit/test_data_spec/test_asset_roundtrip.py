@@ -119,7 +119,7 @@ OVERRIDES[Dataset] = {
     )],
 }
 # the written dir is named 0001, which re-mints the row id and sets its key — compare rows without them
-COMPARE[Dataset] = {"examples": lambda rows: [r.model_dump(mode="json", exclude={"id", "key"}) for r in rows]}
+COMPARE[Dataset] = {"examples": lambda rows: [r.model_dump(mode="json", exclude={"id", "key", "version"}) for r in rows]}
 
 
 def _register_probe_types() -> None:

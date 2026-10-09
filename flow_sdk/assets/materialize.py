@@ -39,6 +39,23 @@ def remove_path(path: Path) -> None:
         shutil.rmtree(path)
 
 
+def prune_empty_dirs(start: Path, stop: Path | None) -> None:
+    """Remove ``start`` and its parents while they are empty, never ``stop`` or anything above it.
+
+    A file removed from a tree must not leave its folder behind (an empty example folder reads as a
+    broken dataset row; an emptied asset folder is a husk)."""
+    if stop is None:
+        return
+    stop = Path(stop).resolve()
+    here = Path(start).resolve()
+    while here != stop and here.is_relative_to(stop):
+        try:
+            here.rmdir()  # only an EMPTY directory goes
+        except OSError:
+            return
+        here = here.parent
+
+
 def materialize_asset_sync(source: Path, destination: Path, *, mode: MaterializationMode = MaterializationMode.COPY, overwrite: bool = False, exclude: tuple[str, ...] = (), prepare: Callable[[Path], None] | None = None) -> Path:
     """Materialize an exact destination, refusing overlapping source trees."""
     source = Path(source).expanduser().resolve(strict=True)

@@ -9,7 +9,7 @@
 > **5. Schemas apply live** with `flow schema apply`; never ask for a restart.
 > **6. Never widen a wait, a timeout or a retry to make something pass.**
 
-`DM` is the shell function `DM() { "$FLOWPAD_PYTHON" "<this skill>/scripts/dm_ctl.py" "$@"; }`. The grammar is
+`DM` is the shell function `DM() { "${FLOWPAD_PYTHON:-$(flow instance python)}" "<this skill>/scripts/dm_ctl.py" "$@"; }`. The grammar is
 `references/shape-forms.md`; complete files are in `references/examples.md`.
 
 ## Gate 1 — the shape is the user's
@@ -21,8 +21,10 @@ in a short table, and let them edit it. Do not add fields they did not ask for.
 - One kind per thing the user names (a lead, a company, a note). A field that is a
   list of things with their own fields is a list of a kind (`["crm.note"]`), not a
   list of strings with a format.
-- A link to another row is a ref kind (`{type: enum:…, key: string}`, see examples).
-- A closed set is `enum:`; a format (a date, a URL) is `string` plus its description.
+- A link to another row is a field typed by the target kind (`"company": "?crm.company"`); the value
+  is the row's reference `<kind>.id.<uuid>` (`references/shape-forms.md`). Several possible targets:
+  `"crm.company|crm.lead"`. Never a `{type, key}` kind.
+- A closed set is `enum:`; a day is `date`; another format (a URL) is `string` plus its description.
 - Name the namespace. The project is your working directory; its `ns` is in
   `agentic-assets/project_manifest/project_manifest.json`. No manifest yet: write
   `{"schema": 1, "requires": {}, "ns": "<project_slug>", "entries": []}` there (the slug in
@@ -33,9 +35,14 @@ in a short table, and let them edit it. Do not add fields they did not ask for.
 ## Gate 2 — write the folders
 
 Where: `<project>/agentic-assets/data_schema/`. Several related kinds go under one
-grouping folder (its own body-less `data_schema.json` with `type` and `ns`). Every
-`data_schema.json` carries `"type": "data_schema"` and `"ns"`; every folder has a
+grouping folder (its own body-less `data_schema.json` with `type` and `ns`); the schemas
+nested in it inherit that `ns`. Every `data_schema.json` carries `"type": "data_schema"`
+(and `ns` unless a grouping folder gives it); `flow schema apply` lists `ignored` keys
+(e.g. `name` — the folder name is the kind); every folder has a
 `description.md` saying what a value is. Inside a schema, sibling kinds are bare.
+
+A rule across rows that says "these two links name the same row" (a tag chain) goes in the
+schema's `rules` (`references/shape-forms.md`) — once, for every writer; never only in an app.
 
 Changing a schema that already holds data: say which existing values stop fitting
 (a new required field, a narrowed enum) BEFORE writing. Adding an optional field is
@@ -48,7 +55,7 @@ safe; a new required one needs every row to get it.
 `references/probe.md` steps 1–3 and 5: `probe-new`, `probe-copy` the schema folders
 (and, for a change, the datasets that hold this kind), `flow schema apply` exit 0,
 `DM kind` shows each field as meant, `DM check` accepts a real value and refuses a
-broken one. For a change, `DM ds-validate` each copied dataset: `problems: []`, or
+broken one (with `--project <probe id>` when the value has links or the kind has rules). For a change, `DM ds-validate` each copied dataset: `problems: []`, or
 the user agreed what to fix. `probe-drop`.
 
 **Passes when** all of that held and the probe is dropped.

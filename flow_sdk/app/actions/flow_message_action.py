@@ -291,6 +291,11 @@ async def handle_export_flow_message(body: dict) -> ApiResponse:
     if missing:
         return ApiFailResponse(message=f"not found: {', '.join(missing)}", status_code=404, data={"missing": missing})
 
+    if not spec.include_gitignored:
+        from flow_sdk.builtin.flow_message_bundle import refuse_gitignored  # noqa: PLC0415
+
+        if refused := await refuse_gitignored([TypeId(r) for r in refs]):
+            return refused
     sender = await User.current_sender_participant(None)
     fm = FlowMessage(
         id=FlowMessage.allocate_id({}),

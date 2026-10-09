@@ -40,7 +40,7 @@ export async function dockForScopeEntry(
 ): Promise<DockPointer> {
   const tabs = (await tabManager.snapshotOrRefresh()).filter((t) => tabInProject(t, projectId));
   const dock = tabDock(tabManager.resolveNext(tabs.filter(tabHasRecency)));
-  if (dock) return dock;
+  if (dock) return scopedToEntry(dock, projectId);
 
   if (isScopeKeyedView(currentDock?.viewType)) {
     return new DockPointer(currentDock.viewType, '').withScopeFilter(
@@ -68,6 +68,18 @@ export function tabDock(tab: Tab | null | undefined): DockPointer | null {
  */
 export function lastKnownTab(tabs: readonly Tab[], projectId: string | null): Tab | null {
   return resolveNextTabPure({ tabs: topLevelTabsForProject(tabs, projectId).filter(tabHasRecency) }).tab;
+}
+
+/**
+ * A resumed tab's dock, carrying the project being entered in its URL. A stored
+ * pointer holds identity only, so a context-neutral tab resumed bare names no
+ * project and the switch never happens; an entity-owned dock still corrects it
+ * from its own entity, and a dock that already has a scope keeps it.
+ * (Not `placeDockInProject`: that one skips entity docks, which need it too.)
+ */
+function scopedToEntry(dock: DockPointer, projectId: string | null): DockPointer {
+  if (projectId == null || dock.scopeFilter) return dock;
+  return dock.withScopeFilter(projectScope(projectId));
 }
 
 /**

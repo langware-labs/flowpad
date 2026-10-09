@@ -8,6 +8,7 @@ side-effects should import this module instead.
 # Entity modules — trigger Entity.__init_subclass__ → SchemaRegistry merge of entity_cls.
 import flow_sdk.assets.types.skill  # noqa: F401
 import flow_sdk.assets.types.subagent  # noqa: F401
+import flow_sdk.builtin.asset_setup  # noqa: F401
 import flow_sdk.builtin.claude_memory_entities  # noqa: F401
 import flow_sdk.builtin.claude_session  # noqa: F401
 import flow_sdk.builtin.codex_session  # noqa: F401

@@ -361,6 +361,14 @@ async def project_source_item(
     # A born-`flowpad` conversation (a help desk ticket) takes the source's channel here;
     # a source channel is never overwritten (`Conversation.adopt_channel`).
     changed = conversation.adopt_channel(channel, str(source.id), str(getattr(source, "provider", "") or ""))
+    if await _follow_subject(source, thread, conversation, subject):
+        changed = True
+    from flow_sdk.builtin.data_source import answered_by  # noqa: PLC0415
+
+    answered = answered_by(source) != "nobody"
+    if str(conversation.channel_source_id or "") == str(source.id) and conversation.channel_answered is not answered:
+        conversation.channel_answered = answered
+        changed = True
     ours = item.is_ours(source)
     if stamp_conversation(conversation, item, ours=ours):
         changed = True
@@ -393,6 +401,26 @@ async def project_source_item(
         conversation_id, sender, sender_name, existing_fm,
         notify=notify, recount=recount, announce=announce,
     )
+
+
+async def _follow_subject(source, thread, conversation, subject: str) -> bool:
+    """A channel whose threads are named by what they are about (``subject_tracks_item``: a task's
+    thread is named by the task) retitles the thread — and its conversation, unless a person renamed it —
+    when the subject moves. Answers whether the conversation changed (the caller saves it)."""
+    if not subject or subject == (thread.title or ""):
+        return False
+    from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415
+
+    driver = DataDriver.loaded(str(getattr(source, "provider", "") or ""))
+    if driver is None or not getattr(driver.cls, "subject_tracks_item", False):
+        return False
+    previous = thread.title or ""
+    thread.title = thread.name = subject
+    await thread.save(notify=False)
+    if (conversation.title or "") not in ("", previous):
+        return False  # a person's own name for the conversation wins
+    conversation.title = subject
+    return True
 
 
 def stamp_conversation(conversation, item, *, ours: bool) -> bool:
@@ -452,6 +480,19 @@ def _payload_of(item, source):
     from flow_sdk.ingest.legacy_lift import data_of  # noqa: PLC0415
 
     return getattr(item, "data", None) or data_of(source, item, _origin_of(item, source))
+
+
+def _refs_of(item, source) -> list:
+    """The entities a message says it is about (``MessageData.refs``), as TypeIds — its shared context."""
+    from flow_sdk.fs_store.type_id import TypeId  # noqa: PLC0415
+
+    out = []
+    for ref in getattr(_payload_of(item, source), "refs", None) or ():
+        try:
+            out.append(TypeId(str(ref)))
+        except ValueError:
+            logger.debug("[stream-inbox] %s names a ref that is not a TypeId: %r", item.id, ref)
+    return out
 
 
 def _envelope_of(item, source):
@@ -585,6 +626,11 @@ async def _place_message(
         if list(existing_fm.reactions or []) != list(getattr(item, "reactions", None) or []):
             existing_fm.reactions = list(getattr(item, "reactions", None) or [])
             dirty = True
+        # What the message is about is projection-owned too: a row placed before its item named it heals.
+        refs = _refs_of(item, source)
+        if refs and [str(r) for r in (existing_fm.shared_context_entities or [])] != [str(r) for r in refs]:
+            existing_fm.shared_context_entities = refs
+            dirty = True
         if dirty:
             try:
                 await existing_fm.save(notify=False)
@@ -620,6 +666,8 @@ async def _place_message(
         "attachment": [a.model_dump(mode="json") for a in _message_files(item, fm_id)],
         "reactions": [r.model_dump(mode="json") for r in (getattr(item, "reactions", None) or [])],
     }
+    if refs := _refs_of(item, source):
+        payload["shared_context_entities"] = [str(r) for r in refs]
     if item.reply_to_external_id:
         # Two lookups, no derivation: the parent item by its natural key, then
         # its message row by the reference column. A parent that has not

@@ -72,6 +72,7 @@ def test_every_field_is_declared_on_both_sides(spec, path: Path, interface: str)
 def test_every_failure_reason_is_declared_on_both_sides():
     from typing import get_args
 
-    block = re.search(r"export type DecisionFailure\s*=(.*?);", _TYPES_TS.read_text(encoding="utf-8"), re.DOTALL)
+    # One list on the TS side (``DECISION_FAILURES``); ``DecisionFailure`` is derived from it.
+    block = re.search(r"export const DECISION_FAILURES\s*=\s*\[(.*?)\]", _TYPES_TS.read_text(encoding="utf-8"), re.DOTALL)
     ts = set(re.findall(r"'([a-z_]+)'", block.group(1))) if block else set()
     assert set(get_args(DecisionFailure)) == ts

@@ -119,6 +119,9 @@ class MessageData(Payload):
     attachments: tuple[FileItem, ...] = ()
     in_reply_to: Optional[CloudOrigin] = None
     recipients: tuple[UserProfile, ...] = ()
+    #: Entities this message is about, as TypeId strings (``"task-<id>"``) — the projection puts them
+    #: on the message as its shared context, so the conversation can show (and act on) them.
+    refs: tuple[str, ...] = ()
 
 
 class EmailMessageData(MessageData):

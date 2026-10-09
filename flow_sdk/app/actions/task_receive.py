@@ -175,6 +175,7 @@ async def materialize_accepted_task_invitation(target_id: str, someone_typeid) -
     parent = await materialize_remote_task(hub_task, someone_typeid)
     if parent is None:
         return None
+    await _pull_history(parent, someone_typeid)
     children = await hub_get(BuiltinEntityType.TASK, target_id, action=Task.get_type(), params={"expand": "blobs"})
     child_list = children if isinstance(children, list) else []
     child: Optional[Task] = None
@@ -185,6 +186,19 @@ async def materialize_accepted_task_invitation(target_id: str, someone_typeid) -
         child = child or materialized
     await _notify_quietly(parent)
     return child or parent
+
+
+async def _pull_history(task: Task, someone_typeid) -> None:
+    """A task arriving here brings what was said on it before: its comments — the history of who moved and
+    handed it, and the conversation on it. The hub only pushes a child to who is a member WHEN it is
+    written, so whatever came before this person's invite (the hand-over that made them the assignee)
+    would never reach them. Best-effort."""
+    from flow_sdk.app.actions.flow_message_action import _sync_remote_children  # noqa: PLC0415
+
+    try:
+        await _sync_remote_children(task.typeid, BuiltinEntityType.COMMENT.value, someone_typeid)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("[task-receive] history pull for %s failed (non-fatal): %s", task.id, e)
 
 
 async def _notify_quietly(entity: Task) -> None:

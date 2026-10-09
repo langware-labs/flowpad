@@ -232,6 +232,12 @@ class DataSource(Entity):
     #: this row has none (the same trap this module's docstring flags for
     #: project scoping).
     reflect_into: str = APIField(default="")
+    #: Keep the local copy out of git: before the first placement into ``reflect_into`` the engine
+    #: adds it to the ``.gitignore`` beside it, and refuses a target git already tracks. Default on:
+    #: what a source reflects is someone's data, not the project's code.
+    gitignored: bool = APIField(default=True, description="Keep the local copy out of git")
+    #: Pull only. The source never writes to its remote, and asks for no permission that writes.
+    read_only: bool = APIField(default=False, description="Never write back to the remote")
 
     # ── lifecycle ──
     status: str = APIField(default=SourceStatus.NEW.value, persist=Persist.FALSE)
@@ -400,8 +406,15 @@ class DataSource(Entity):
         """The provider this source acts as, and the scopes it needs — its manifest's ``auth.connector``."""
         from flow_sdk.connections import ConnectionRequirements  # noqa: PLC0415
 
+        from flow_sdk.permissions import write_scopes_of_driver  # noqa: PLC0415
+
         auth = self._auth()
-        return ConnectionRequirements({auth.connector: auth.scopes} if auth is not None and auth.connector else {})
+        wanted = {auth.connector: list(auth.scopes)} if auth is not None and auth.connector else {}
+        if not self.read_only:
+            # Writing back takes more than reading: the driver's ``writes`` permissions, on the same connection.
+            for connector, scopes in write_scopes_of_driver(self.provider or "").items():
+                wanted[connector] = list(dict.fromkeys([*wanted.get(connector, []), *scopes]))
+        return ConnectionRequirements(wanted)
 
     async def set_secret_store(self, store) -> None:
         """Bind the store this source loads its names from, and save it; ``None`` unbinds."""
@@ -1476,7 +1489,9 @@ class DataSource(Entity):
         target = self._node_target(place, places)
         if target is None:
             return ApiFailResponse(message="no such place for this channel", status_code=404)
-        body = {"parent": f"@{claim.get('provider')}", "claim": {"kind": "user", "key": key}, "target": target}
+        # The same kind as the proven claim: a linked person (user) or a number of one's own (account).
+        kind = str((claim.get("claim") or {}).get("kind") or "user")
+        body = {"parent": f"@{claim.get('provider')}", "claim": {"kind": kind, "key": key}, "target": target}
         added = await hub_post("webhook", body, None, "chain")
         if not added:
             return ApiFailResponse(message="the hub did not take the new place", status_code=502)
@@ -1988,11 +2003,15 @@ def _place_of(claim: dict, places: list[dict], instance: str) -> Optional[dict]:
     return next((p for p in places if node and p.get("node_typeid") == node), None)
 
 
+def answered_by(source) -> str:
+    """Who answers a message source's messages: a ``deployment`` (it has an answer place), an ``agent``
+    (an Agent owns it), or ``nobody`` (a person's own channel — they read and answer it themselves)."""
+    owner = str(getattr(source, "owner", "") or "")  # a TypeId on the row
+    return "deployment" if getattr(source, "answer_place", None) else "agent" if owner.startswith("agent-") else "nobody"
+
+
 def _channel_row(claim: Optional[dict], instance: str, source=None, *, by_hub: bool = False) -> dict:
     """One MessageChannel row: the source here (if any), the claim that delivers to it, and who answers it."""
-    owner = str(getattr(source, "owner", "") or "")  # a TypeId on the row; the list speaks JSON
-    place = str(getattr(source, "answer_place", "") or "")
-    answered_by = "" if source is None else "deployment" if place else "agent" if owner.startswith("agent-") else "nobody"
     return {
         "source_id": str(getattr(source, "id", "") or ""),
         "name": str((source.name or source.provider) if source is not None else (claim or {}).get("name") or ""),
@@ -2000,7 +2019,7 @@ def _channel_row(claim: Optional[dict], instance: str, source=None, *, by_hub: b
         "channel": str(getattr(source, "channel", "") or (claim or {}).get("provider") or ""),
         "claim": claim,
         "routed": _routed(claim, instance, by_hub=by_hub),
-        "answered_by": answered_by,
+        "answered_by": "" if source is None else answered_by(source),
     }
 
 

@@ -189,6 +189,13 @@ class Source:
             raise RuntimeError(f"{type(self).__name__} session is not active")
         return self._session
 
+    def _require_writable(self) -> None:
+        """Refuse a write to the remote before any I/O when the row is pull-only (``binding.read_only``)."""
+        if self.binding.read_only:
+            from flow_sdk.sources.errors import AccessDenied  # noqa: PLC0415
+
+            raise AccessDenied(f"{self.binding.name or type(self).__name__} source is read-only: it never writes back")
+
     # ── notifications ───────────────────────────────────────────────────────
     async def teardown(self) -> str:
         """Undo what this source set up at its provider -- a webhook it registered, a subscription it made --

@@ -164,3 +164,25 @@ async def test_with_the_log_on_every_decision_is_a_row_of_one_training_set(hub, 
         assert (run.examples, run.counts["unlabelled"], run.metrics["precision"]) == (1, 3, 1.0)
     finally:
         write_instance_pref(PREF_SMART_NAVIGATION_LOG, False)
+
+
+def test_same_place_is_one_place_under_its_different_names():
+    from flow_sdk.navigation import same_place
+
+    session = "agentic_process-7a2b3c4d-5e6f-4a1b-9c2d-3e4f5a6b7c8d"
+    same = [
+        ({"kind": "webapp", "value": "5173"}, {"kind": "url", "value": "http://localhost:5173"}),
+        ({"kind": "view", "value": "credentials"}, {"kind": "view", "value": "credentials/connections"}),
+        ({"kind": "view", "value": "hub/token-plan"}, {"kind": "view", "value": "hub/token-plan/me"}),
+        ({"kind": "view", "value": "search?q=whatsapp%20webhook"}, {"kind": "view", "value": "search?q=whatsapp webhook"}),
+        ({"kind": "entity", "value": session}, {"kind": "view", "value": f"agentic_process/{session.partition('-')[2]}"}),
+    ]
+    for a, b in same:
+        assert same_place(a, b) and same_place(b, a), (a, b)
+    different = [
+        ({"kind": "view", "value": "credentials"}, {"kind": "view", "value": "credentials/connections/6f1c2a7e-3b4d-4e5f-8a9b-0c1d2e3f4a5b"}),
+        ({"kind": "webapp", "value": "5173"}, {"kind": "url", "value": "http://localhost:3000"}),
+        ({"kind": "view", "value": "machine"}, {"kind": "view", "value": "machine/network"}),
+    ]
+    for a, b in different:
+        assert not same_place(a, b), (a, b)

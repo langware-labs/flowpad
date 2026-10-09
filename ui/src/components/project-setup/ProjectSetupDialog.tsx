@@ -1,38 +1,33 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
-import apiClient from '@sdk/client';
-import {
-  ExitCode,
-  Project,
-  recheckProjectReadiness,
-  type ProjectReadiness,
-  type ProjectSetupRun,
-} from '@sdk';
-import { AlertTriangle, CheckCircle2, KeyRound, Link2, Loader2, Package, XCircle } from 'lucide-react';
+import { Project, recheckProjectReadiness, setProjectReadiness, type ProjectReadiness } from '@sdk';
+import { AlertTriangle, AppWindow, CheckCircle2, KeyRound, Link2, Loader2, Package, Radio } from 'lucide-react';
 import { Button } from '@src/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
 import { AskForm } from '@src/components/ask/AskForm';
-import { claimAskRun } from '@src/components/ask/ask-claims';
+import { errorMessage } from '@src/lib/error-message';
 import { notify } from '@src/notifications';
 import { useProjectSetupStore } from './project-setup-store';
+import { SetupTreeView } from './SetupTreeView';
+import { useSetupRun } from './use-setup-run';
 
 /**
- * The project's setup wizard, run in the app: what the footer's "Project setup required" opens.
+ * The project's setup, run in the app: what the footer's "Project setup required" opens.
  *
- * The run is the backend's (`POST project/<id>/setup` — the same wizard `flow project setup` runs),
- * so closing this loses nothing: starting again picks up where it stopped, every step whose check
- * already holds skipped. While it runs, this screen claims the run's questions (`ask-claims.ts`) and
- * draws each one in place — a secret masked, a key file as a file picker — instead of the tab being
- * sent to `win/ask`.
+ * The run is the backend's (`POST project/<id>/setup` — the project's setup TREE, the same one `flow
+ * project setup` runs): every credential, connection, source and web app, each after what it needs.
+ * Closing this loses nothing: starting again picks up where it stopped, every step whose check already
+ * holds skipped. While it runs, its questions are drawn in place (`useSetupRun`) — a secret masked, a
+ * key file as a file picker — instead of the tab being sent to `win/ask`.
  */
 
-/** How often the run's steps are re-read while it is going. A display refresh, not a wait. */
-const POLL_MS = 1000;
-
-interface QuestionRow {
-  id: string;
-  run?: string;
-}
+/** The glyph of what is left, by its kind; a credential (`pack`) is the key. */
+const REQUIREMENT_ICONS: Partial<Record<string, typeof KeyRound>> = {
+  oauth: Link2,
+  dependency: Package,
+  source: Radio,
+  webapp: AppWindow,
+};
 
 export function ProjectSetupDialogRoot() {
   const { open, payload, setOpen } = useProjectSetupStore();
@@ -53,9 +48,7 @@ export function ProjectSetupDialog({
 }) {
   const { t } = useLingui();
   const [readiness, setReadiness] = useState<ProjectReadiness | null>(null);
-  const [run, setRun] = useState<ProjectSetupRun | null>(null);
-  const [questionId, setQuestionId] = useState<string | null>(null);
-  const release = useRef<() => void>(() => {});
+  const [skipping, setSkipping] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setReadiness(await Project.setupRequirements(projectId));
@@ -65,42 +58,36 @@ export function ProjectSetupDialog({
     if (open) void load();
   }, [open, load]);
 
-  // While the run is going: re-read its steps, and when it ends re-check the project everywhere.
-  useEffect(() => {
-    if (!run?.running) return;
-    const timer = setInterval(async () => {
-      const next = await Project.setupRun(projectId).catch(() => null);
-      if (!next) return;
-      setRun(next);
-      if (!next.running) {
-        release.current();
-        setQuestionId(null);
-        await Promise.all([load(), recheckProjectReadiness()]);
-      }
-    }, POLL_MS);
-    return () => clearInterval(timer);
-  }, [run?.running, projectId, load]);
-
-  useEffect(() => () => release.current(), []);
+  // When the run ends, re-check the project here and everywhere it is shown.
+  const setup = useSetupRun(projectId, '', async () => {
+    await Promise.all([load(), recheckProjectReadiness()]);
+  });
 
   const start = async () => {
     try {
-      const address = await Project.startSetup(projectId);
-      // Claimed at once, so the first question is drawn here rather than sending the tab away.
-      release.current();
-      release.current = address ? claimAskRun(address, setQuestionId) : () => {};
-      setRun({ run: address, running: true, result: null });
-      // A question raised before the claim landed is still waiting: pick it up.
-      const waiting = await apiClient.get<{ questions: QuestionRow[] }>('/api/v1/ask').catch(() => null);
-      const mine = waiting?.questions?.find((q) => q.run === address);
-      if (mine) setQuestionId(mine.id);
+      await setup.start();
     } catch (e) {
-      notify.error({ title: e instanceof Error ? e.message : String(e) });
+      notify.error({ title: errorMessage(e, t`Could not start the setup`) });
     }
   };
 
-  const running = !!run?.running;
-  const steps = Object.entries(run?.result?.steps ?? {});
+  // A credential the person does not need here leaves the setup: its values become OPTIONAL.
+  const skip = async (name: string) => {
+    setSkipping(name);
+    try {
+      // The skip answers with the readiness that follows: the dialog and the footer take it as is.
+      const next = await Project.skipSetup(projectId, name);
+      setReadiness(next);
+      if (next) setProjectReadiness(next);
+    } catch (e) {
+      notify.error({ title: errorMessage(e, t`Could not skip ${name}`) });
+    } finally {
+      setSkipping(null);
+    }
+  };
+
+  const running = setup.running;
+  const questionId = setup.questionId;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -125,10 +112,10 @@ export function ProjectSetupDialog({
         ) : (
           <ul className="flex flex-col gap-1" data-testid="project-setup-requirements">
             {(readiness?.to_do ?? []).map((req) => {
-              const Icon = req.kind === 'oauth' ? Link2 : req.kind === 'dependency' ? Package : KeyRound;
-              // A missing dependency names itself; its source is the title and
-              // the reason it is not here the note.
-              const isDependency = req.kind === 'dependency';
+              const Icon = REQUIREMENT_ICONS[req.kind] ?? KeyRound;
+              // A missing dependency, a source in setup or a site that is down names itself, and the
+              // reason it is not ready is its note; a credential lists the values it still needs.
+              const isDependency = req.kind === 'dependency' || req.kind === 'source' || req.kind === 'webapp';
               return (
                 <li
                   key={`${req.kind}-${req.name}`}
@@ -148,6 +135,19 @@ export function ProjectSetupDialog({
                           .map((v) => v.label || v.env_var)
                           .join(', ')}
                   </span>
+                  {req.kind === 'pack' && !running && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-6 px-2 text-xs"
+                      data-testid={`project-setup-skip-${req.name}`}
+                      title={t`Not needed here: mark its values optional`}
+                      disabled={skipping !== null}
+                      onClick={() => void skip(req.name)}
+                    >
+                      {skipping === req.name ? <Loader2 className="size-3 animate-spin" /> : <Trans>Skip</Trans>}
+                    </Button>
+                  )}
                 </li>
               );
             })}
@@ -167,7 +167,7 @@ export function ProjectSetupDialog({
         {!readiness?.ready && !running && (
           <div>
             <Button data-testid="project-setup-start" disabled={!readiness} onClick={() => void start()}>
-              {steps.length ? t`Continue` : t`Start`}
+              {setup.tree ? t`Continue` : t`Start`}
             </Button>
           </div>
         )}
@@ -175,7 +175,7 @@ export function ProjectSetupDialog({
         {running && (
           <div className="border-t pt-3" data-testid="project-setup-running">
             {questionId ? (
-              <AskForm questionId={questionId} showOp={false} onSettled={() => setQuestionId(null)} />
+              <AskForm questionId={questionId} showOp={false} onSettled={setup.settleQuestion} />
             ) : (
               <p className="flex items-center gap-2 text-sm text-muted-foreground">
                 <Loader2 className="size-4 animate-spin" />
@@ -185,25 +185,10 @@ export function ProjectSetupDialog({
           </div>
         )}
 
-        {steps.length > 0 && (
-          <ul className="flex flex-col gap-1 border-t pt-3 text-xs" data-testid="project-setup-steps">
-            {steps.map(([id, step]) => {
-              const ok = step.exit_code === ExitCode.OK;
-              const Icon = ok ? CheckCircle2 : XCircle;
-              // A failed step is marked by its row, not its text: red text on a dark dialog is unreadable.
-              return (
-                <li
-                  key={id}
-                  className={`flex items-start gap-1.5 ${
-                    ok ? 'text-muted-foreground' : 'rounded border-l-2 border-red-500 bg-red-500/15 px-2 py-1 text-foreground'
-                  }`}
-                >
-                  <Icon className="mt-px size-3.5 shrink-0" />
-                  {step.detail || id}
-                </li>
-              );
-            })}
-          </ul>
+        {setup.tree && (
+          <div className="border-t pt-3" data-testid="project-setup-steps">
+            <SetupTreeView tree={setup.tree} hideRoot />
+          </div>
         )}
       </DialogContent>
     </Dialog>

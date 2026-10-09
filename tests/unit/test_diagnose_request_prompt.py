@@ -84,12 +84,12 @@ async def test_stopping_the_diagnose_worker_ends_its_headless_turn():
     assert turn.done(), "the run must not end with its agent's turn still running"
 
 
-def test_a_request_run_is_told_what_was_sent_is_not_a_licence_to_change_files(tmp_path):
+def test_a_request_run_is_told_it_only_diagnoses(tmp_path):
     """On the VM the agent copied a supporter's reference file over the user's own config, against
     the sent skill's own "Do not change the file"."""
     from flow_sdk.cli.commands.diagnose_cmd import _request_context
 
     text = _request_context(tmp_path / "to-send", [{"path": str(tmp_path / "ref.txt")}])
 
-    assert "never edit or delete a file outside Flowpad's own runtime state" in text
-    assert "say to leave alone" in text
+    assert "repair nothing, edit or delete no file" in text
+    assert "with a shell command" in text, "to-send is written with the shell: the editing tools are off"

@@ -725,13 +725,21 @@ class Project(Entity):
 
     async def open_home_page(self) -> dict[str, Any]:
         """The declared home page's ``{asset, type}``, only if it is this project's own
-        (a cloned manifest must not point Home at another project's asset); else nulls."""
+        (a cloned manifest must not point Home at another project's asset); else nulls.
+
+        A web app home (the project opens app-first) is made displayable here first: its
+        endpoint on this machine is placed when missing — idempotent, the same placement
+        ``flow show`` does — so the app view the redirect lands on finds something to show."""
+        from flow_sdk.builtin.webapp_placement import place_webapp_locally  # noqa: PLC0415
+
         typeid = self.home_page_typeid()
         if typeid:
             await self._index_home_page(typeid)
         asset = await self._own_asset(typeid) if typeid else None
         if asset is None:
             return {"asset": None, "type": None}
+        if asset.get_type() == "micro_app":
+            await place_webapp_locally(asset)
         return {"asset": typeid, "type": asset.get_type()}
 
     @action.get(action_name="home-page")
@@ -757,19 +765,35 @@ class Project(Entity):
         return ApiSuccessResponse(data=(await readiness_of(self)).model_dump(mode="json"))
 
     @action.post(action_name="setup")
-    async def setup_action(self) -> "ApiResponse":
-        """`POST /project/<id>/setup` — start the setup wizard here; its questions come to the app.
-        Answers at once with the run's address, which a screen claims to draw them in place."""
+    async def setup_action(self, root: str = "") -> "ApiResponse":
+        """`POST /project/<id>/setup {root?}` — set the project up here (its setup tree, leaf first); its
+        questions come to the app. ``root`` sets up one node of the tree and what it needs (a source, a web
+        app). Answers at once with the run's address, which a screen claims to draw them in place."""
         from flow_sdk.builtin.project_setup import start_setup  # noqa: PLC0415
 
-        return ApiSuccessResponse(data={"run": await start_setup(self)})
+        return ApiSuccessResponse(data={"run": await start_setup(self, root=root)})
+
+    @action.post(action_name="setup-skip")
+    async def setup_skip_action(self, name: str = "") -> "ApiResponse":
+        """`POST /project/<id>/setup-skip {name}` — the credential ``name`` leaves the setup: its
+        variables are marked OPTIONAL in the project. Answers with the readiness that follows."""
+        from flow_sdk.builtin.credential_service import CredentialError, make_optional  # noqa: PLC0415
+        from flow_sdk.builtin.project_setup import readiness_of  # noqa: PLC0415
+
+        if not name:
+            return ApiFailResponse(message="name is required", status_code=400)
+        try:
+            await make_optional(name, self)
+        except CredentialError as exc:
+            return ApiFailResponse(message=str(exc), status_code=409)
+        return ApiSuccessResponse(data=(await readiness_of(self)).model_dump(mode="json"))
 
     @action.get(action_name="setup-run")
-    async def setup_run_action(self) -> "ApiResponse":
-        """`GET /project/<id>/setup-run` — whether the setup is running, and its steps so far."""
+    async def setup_run_action(self, root: str = "") -> "ApiResponse":
+        """`GET /project/<id>/setup-run?root=` — whether the setup is running, and its tree so far."""
         from flow_sdk.builtin.project_setup import setup_run  # noqa: PLC0415
 
-        return ApiSuccessResponse(data=setup_run(str(self.id)))
+        return ApiSuccessResponse(data=setup_run(str(self.id), root))
 
     @staticmethod
     def _read_brand(raw: Any, root: "Path") -> dict[str, Any] | None:

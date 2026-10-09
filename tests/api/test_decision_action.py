@@ -192,3 +192,29 @@ async def test_the_classifier_opens_its_own_log_in_its_editor(bootstrapped_clien
         assert after["dock"]["viewType"] == "app"
     finally:
         write_instance_pref(PREF_SMART_NAVIGATION_LOG, False)
+
+
+@pytest.mark.asyncio
+async def test_navigation_decision_reads_the_tab_that_typed_not_the_active_one(bootstrapped_client, monkeypatch):
+    """Two windows open: the one in front shows the eval browser, the sentence was typed in the other
+    (a transcript). The request names its tab, so the decision -- and the log -- read that tab."""
+    import flow_sdk.decision as decision
+    from flow_sdk.server.routes import websocket
+
+    specs: list = []
+
+    async def _decide(spec, *, endpoint=None):
+        specs.append(spec)
+        return DecisionResult(answers={"target": ChoiceAnswer(choice="agentic", confidence=0.99)})
+
+    async def _endpoints(**kwargs):
+        return [OFFER]
+
+    monkeypatch.setattr(decision, "decide", _decide)
+    monkeypatch.setattr(decision, "decision_endpoints", _endpoints)
+    front = websocket.ConnectionInfo(ws=object(), is_tab=True, visible=True, focused=True, browser_context={"CurrentUrl": "/dock/desktop"})
+    typed = websocket.ConnectionInfo(ws=object(), is_tab=True, visible=True, focused=False, browser_context={"CurrentUrl": "/dock/automations"})
+    monkeypatch.setattr(websocket, "_active_connections", {"front": front, "typed": typed})
+    await bootstrapped_client.post(DECIDE, json={"utterance": "show me its log"}, headers={"X-Flow-Connection-Id": "typed"})
+    await bootstrapped_client.post(DECIDE, json={"utterance": "show me its log"})
+    assert [s.state["page"] for s in specs] == ["/dock/automations", "/dock/desktop"], "named tab first; the guess only without one"

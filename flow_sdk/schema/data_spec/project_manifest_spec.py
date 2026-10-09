@@ -147,8 +147,9 @@ class ProjectManifestSpec(DataSpec):
     ns: str = ""
     entries: list[PublishedAssetSpec] = Field(default_factory=list)
     #: The asset the Home button opens for this project — a TypeId
-    #: (``<type>-<uuid>``) of one of the project's own assets, typically an
-    #: agent whose last chat Home resumes. ``None`` = the default home. Lives
+    #: (``<type>-<uuid>``) of one of the project's own assets: an agent (Home
+    #: resumes its last chat) or a web app (the project opens app-first, on the
+    #: app running). ``None`` = the default home. Lives
     #: here, beside ``ns``, because it is a declaration about the whole project
     #: that must travel with a clone — which is exactly what this file is for.
     home_page: Optional[str] = None
