@@ -465,7 +465,7 @@ class Dataset(Entity):
                     todo.append(row_ref)
         return out
 
-    def _row_in(self, raw: Any, n: int, *, keyed: bool = False) -> Any:
+    def _row_in(self, raw: Any, n: int, *, keyed: bool = False, cache: Optional[dict] = None) -> Any:
         """One incoming row as the declared row type -- ``ValueError`` for a malformed row,
         ``ValidationError`` for one that does not fit the shape."""
         if not isinstance(raw, dict) or "input" not in raw:
@@ -474,7 +474,7 @@ class Dataset(Entity):
         if unknown:
             raise ValueError(f"row {n}: unknown keys {sorted(unknown)}")
         example = self._typed_rows_or_raise().model_validate({k: v for k, v in raw.items() if k != "key"})
-        broken = self._link_details(example) if self.asset_ref else []
+        broken = self._link_details(example, cache) if self.asset_ref else []
         if broken:
             raise LinkError(broken)
         return example
@@ -501,16 +501,18 @@ class Dataset(Entity):
 
         return detail_lines(self.check_details(row))
 
-    def check_details(self, row: dict) -> list[dict]:
+    def check_details(self, row: dict, *, cache: Optional[dict] = None) -> list[dict]:
         """``check`` as ``[{path, code, message}]``: ``code`` is ``shape:<pydantic type>``,
         ``dangling_ref``, ``inline_row`` or ``rule``. A row whose shape fails still has its links
-        checked in the same answer (rules need a row that fits, so they come once it does)."""
+        checked in the same answer (rules need a row that fits, so they come once it does). ``cache``
+        keeps the linked rows read across calls -- a caller checking many rows in one pass (a sync)
+        passes one dict, so each linked row is read once."""
         try:
-            self._row_in(row, 1, keyed=True)
+            self._row_in(row, 1, keyed=True, cache=cache)
         except ValidationError as exc:
             from flow_sdk.datasets.links import shape_details  # noqa: PLC0415
 
-            return shape_details(exc) + (self._raw_link_details(row) if self.asset_ref else [])
+            return shape_details(exc) + (self._raw_link_details(row, cache) if self.asset_ref else [])
         except LinkError as exc:
             return list(exc.details)
         except ValueError as exc:
