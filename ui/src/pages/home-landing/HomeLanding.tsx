@@ -136,9 +136,7 @@ export function HomeLanding() {
              goes to handleVibeSubmit (seeds a headless build session). */
             <div className="relative flex min-h-0 flex-1 flex-col items-center justify-center overflow-hidden px-4">
               <div aria-hidden className="vibe-hero-gradient pointer-events-none absolute inset-x-0 bottom-0 h-2/3" />
-              {/* Every child keeps its height (*:shrink-0) except the prompt, which
-                  yields and scrolls — so a long prompt never hides what's below. */}
-              <div className="relative z-10 flex min-h-0 w-full max-w-2xl flex-col items-center gap-6 text-center *:shrink-0">
+              <div className="relative z-10 flex w-full max-w-2xl flex-col items-center gap-6 text-center *:shrink-0">
                 <h1 className="text-4xl font-bold tracking-tight sm:text-5xl">
                   <HomeGreeting
                     override={homeTitle}
@@ -153,7 +151,7 @@ export function HomeLanding() {
                 <p className="text-lg text-muted-foreground">
                   <Trans>Create apps and tools by chatting with AI</Trans>
                 </p>
-                <div className="flex min-h-0 w-full !shrink flex-col">
+                <div className="w-full">
                   <SessionInput
                     placeholder={t`What would you like to work on, ${firstName}?`}
                     value={draftPrompt}
@@ -216,10 +214,10 @@ export function HomeLanding() {
                 {/* Middle column: Main content + Quick Access. The column itself never
             scrolls; side panels own their own scrolling. */}
                 <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-5 overflow-hidden *:shrink-0 sm:gap-6">
-                  {/* Hero — fixed at the top, never scrolls. Everything in the column
-                      keeps its height (*:shrink-0); only the hero's prompt yields and
-                      scrolls, so a long prompt never pushes what's below out of view. */}
-                  <div className="flex min-h-0 !shrink flex-col items-center gap-6 text-center *:shrink-0">
+                  {/* Hero — fixed at the top, never scrolls. Nothing in the column
+                      shrinks (*:shrink-0); the prompt's textarea caps its own height
+                      and scrolls, so a long prompt can't squash or overlap the rows. */}
+                  <div className="flex flex-col items-center gap-6 text-center">
                     <h1 className="text-3xl font-bold tracking-tight sm:text-4xl">
                       <HomeGreeting
                         override={homeTitle}
@@ -235,7 +233,7 @@ export function HomeLanding() {
                       />
                     </h1>
 
-                    <div className="flex min-h-0 w-full max-w-3xl !shrink flex-col items-end gap-2 *:shrink-0">
+                    <div className="flex w-full max-w-3xl flex-col items-end gap-2">
                       <SessionInput
                         placeholder={t`What would you like to work on?`}
                         value={draftPrompt}
