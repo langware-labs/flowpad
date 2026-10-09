@@ -11,7 +11,7 @@ from typing import Iterable, Optional, Tuple
 from flow_sdk.schema.data_spec.returned_value_spec import CliResult
 
 from .file_system import ROOT_FOLDER
-from .git_usable import git_usable
+from .git_usable import EXIT_NOT_FOUND, NOT_USABLE_MESSAGE, git_usable
 
 logger = logging.getLogger(__name__)
 
@@ -81,9 +81,7 @@ def _run_git(args: list[str], cwd: str, timeout: int = 10) -> subprocess.Complet
     """
     if args and args[0] == "git" and not git_usable():
         # Same shape as a missing binary, without waking macOS's "install the developer tools" dialog.
-        return subprocess.CompletedProcess(
-            args, 127, "", "git is not usable: the macOS Command Line Tools are not installed"
-        )
+        return subprocess.CompletedProcess(args, EXIT_NOT_FOUND, "", NOT_USABLE_MESSAGE)
     return subprocess.run(args, cwd=cwd, capture_output=True, text=True, timeout=timeout)
 
 

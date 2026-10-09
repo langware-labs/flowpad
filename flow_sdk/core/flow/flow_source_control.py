@@ -11,12 +11,13 @@ from pydantic import BaseModel, ConfigDict
 from pydantic.alias_generators import to_camel
 
 from flow_sdk.builtin.faas.compute_node import ComputeNode
-from flow_sdk.fs_store.origin.git_origin import GitOrigin
 from flow_sdk.config import PLATFORM_WIN32, ComputeProviderType
 from flow_sdk.core.entity.entity_env.env_utils import build_shared_var_name
 from flow_sdk.core.flow.models.execution.env_context import FlowEnv
 from flow_sdk.core.oauth.provider_registry import GITHUB, user_credentials_name
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
+from flow_sdk.fs_store.origin.git_origin import GitOrigin
+from flow_sdk.utils.git_usable import git_usable
 
 
 class ComputeSourceControlInitializeOptions(BaseModel):
@@ -74,9 +75,17 @@ class ComputeSourceControl:
             if write_cmd.exit_code != 0:
                 logging.error(f"Failed to write to {file} (exit code: {write_cmd.exit_code}): {write_cmd.all_stderr}")
 
+    def _git_unavailable_here(self) -> bool:
+        """This node is the local machine and it is a Mac without the Command Line Tools: running git would open
+        Apple's installer dialog. A remote node (Docker, E2B) has its own git and is never held back by this."""
+        return self.compute_node.node_provider_type == ComputeProviderType.LOCAL_MACHINE.value and not git_usable()
+
     async def _init_git_repository(self) -> bool:
         # Check if git already initialized
-        if self.compute_node.node_provider_type == ComputeProviderType.LOCAL_MACHINE.value and sys.platform == PLATFORM_WIN32:
+        if (
+            self.compute_node.node_provider_type == ComputeProviderType.LOCAL_MACHINE.value
+            and sys.platform == PLATFORM_WIN32
+        ):
             # Windows: Don't redirect stderr (Windows doesn't handle 2>/dev/null)
             git_status_cmd = await self.compute_node.run_command("git rev-parse --is-inside-work-tree")
         else:
@@ -113,7 +122,10 @@ class ComputeSourceControl:
     async def _backup_mcp_servers(self) -> str | None:
         temp_backup_path = "../temp_mcp_servers_backup"
 
-        if self.compute_node.node_provider_type == ComputeProviderType.LOCAL_MACHINE.value and sys.platform == PLATFORM_WIN32:
+        if (
+            self.compute_node.node_provider_type == ComputeProviderType.LOCAL_MACHINE.value
+            and sys.platform == PLATFORM_WIN32
+        ):
             # Windows: Use PowerShell Copy-Item, create parent directory if needed
             copy_cmd = await self.compute_node.run_command(
                 'powershell -Command "if (Test-Path .mcp_servers) { New-Item -ItemType Directory -Force -Path ../temp_mcp_servers_backup | Out-Null; Copy-Item -Recurse -Force .mcp_servers ../temp_mcp_servers_backup } else { exit 1 }"'
@@ -137,7 +149,10 @@ class ComputeSourceControl:
         if not temp_path:
             return
 
-        if self.compute_node.node_provider_type == ComputeProviderType.LOCAL_MACHINE.value and sys.platform == PLATFORM_WIN32:
+        if (
+            self.compute_node.node_provider_type == ComputeProviderType.LOCAL_MACHINE.value
+            and sys.platform == PLATFORM_WIN32
+        ):
             # Windows: Use PowerShell Copy-Item
             copy_cmd = await self.compute_node.run_command(
                 f'powershell -Command "if (Test-Path {temp_path}) {{ Copy-Item -Recurse -Force {temp_path} .mcp_servers }} else {{ exit 1 }}"'
@@ -172,7 +187,10 @@ class ComputeSourceControl:
             logging.warning(f"Failed to restore .mcp_servers from {temp_path}, MCPConnector will create fresh")
 
     async def _clean_working_directory(self) -> None:
-        if self.compute_node.node_provider_type == ComputeProviderType.LOCAL_MACHINE.value and sys.platform == PLATFORM_WIN32:
+        if (
+            self.compute_node.node_provider_type == ComputeProviderType.LOCAL_MACHINE.value
+            and sys.platform == PLATFORM_WIN32
+        ):
             # Windows: Use PowerShell to remove all files including hidden ones
             clean_cmd = await self.compute_node.run_command(
                 'powershell -Command "Get-ChildItem -Path . -Force | Remove-Item -Recurse -Force"'
@@ -201,7 +219,10 @@ class ComputeSourceControl:
         # GitHub accepts any non-empty username when using a personal access token
         github_user = "oauth2"
 
-        if self.compute_node.node_provider_type == ComputeProviderType.LOCAL_MACHINE.value and sys.platform == PLATFORM_WIN32:
+        if (
+            self.compute_node.node_provider_type == ComputeProviderType.LOCAL_MACHINE.value
+            and sys.platform == PLATFORM_WIN32
+        ):
             ps_script_content = (
                 f'Write-Output "username={github_user}"; Write-Output "password=$env:{project_env_variable_name}"'
             )
@@ -319,7 +340,12 @@ class ComputeSourceControl:
             self._env = env
 
         async with self.compute_node.ready_session():
-            if initialize_options.git_init:
+            # Initialising a project does not need Git unless the person asked for a repository (git_origin). Without
+            # the Command Line Tools the local `git init` + first checkpoint are skipped, quietly.
+            wants_git = initialize_options.git_init and (
+                initialize_options.git_origin is not None or not self._git_unavailable_here()
+            )
+            if wants_git:
                 # Setup remote repository if provided (Scenarios 2 & 3)
                 if initialize_options.git_origin:
                     git_origin = initialize_options.git_origin
@@ -553,7 +579,10 @@ class ComputeSourceControl:
         return "\n".join(result_parts)
 
     async def revert_to_checkpoint(self, checkpoint_index: int):
-        if self.compute_node.node_provider_type == ComputeProviderType.LOCAL_MACHINE.value and sys.platform == PLATFORM_WIN32:
+        if (
+            self.compute_node.node_provider_type == ComputeProviderType.LOCAL_MACHINE.value
+            and sys.platform == PLATFORM_WIN32
+        ):
             git_reset_cmd = await self.compute_node.run_command(
                 f'powershell -Command "$c = '
                 f"(git log --oneline "
@@ -586,7 +615,10 @@ class ComputeSourceControl:
 
     @property
     def fs_state_command(self):
-        if self.compute_node.node_provider_type == ComputeProviderType.LOCAL_MACHINE.value and sys.platform == PLATFORM_WIN32:
+        if (
+            self.compute_node.node_provider_type == ComputeProviderType.LOCAL_MACHINE.value
+            and sys.platform == PLATFORM_WIN32
+        ):
             # Windows: Use PowerShell Select-Object instead of head
             return 'git ls-files | tree --fromfile -L 2 -a | powershell -Command "$input | Select-Object -First 1000"'
         else:
