@@ -35,6 +35,7 @@ class FakeSource:
     provider: str
     owner: str = ""
     asset_ref: str = ""
+    setup_skipped: object = None
 
     @property
     def typeid(self) -> str:
@@ -68,7 +69,7 @@ def project(tmp_path, monkeypatch):
     reqs = [
         SetupRequirementSpec(kind="pack", name="stripe", vars=[SetupVarSpec(env_var="STRIPE_KEY", present=True)],
                              used_by=["project"], satisfied=True),
-        SetupRequirementSpec(kind="oauth", name="google", scopes=["drive"], used_by=["drive"]),
+        SetupRequirementSpec(kind="pack", credential_kind="oauth", name="google", provider="google", scopes=["drive"], used_by=["drive"]),
         SetupRequirementSpec(kind="gap", name="MYSTERY", used_by=["drive"], note="nobody declares it"),
     ]
     sources = [FakeSource("d1", "drive", "gdrive"), FakeSource("w1", "waha", "waha", owner="agent-a")]
@@ -104,7 +105,7 @@ def project(tmp_path, monkeypatch):
         return [declared]
 
     async def webapps(_self):
-        return [SimpleNamespace(id="a1", name="site", typeid="micro_app-a1", asset_ref=str(root / "site"))]
+        return [SimpleNamespace(id="a1", name="site", typeid="micro_app-a1", asset_ref=str(root / "site"), setup_skipped=None)]
 
     async def source_step(op, env, *, check, platform):
         """A fake source's own steps hold (its verify passes): the in-process step is the source's business."""

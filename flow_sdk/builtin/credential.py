@@ -23,7 +23,9 @@ from pydantic import field_validator
 from flow_sdk.api.api_types.api_field import APIField, Sharing
 from flow_sdk.core import Entity
 from flow_sdk.core.named_lookup import NameAmbiguous, NameNotFound
-from flow_sdk.schema.data_spec.credential_contract import SCOPE_PROJECT, SCOPE_SYSTEM, SCOPE_USER
+from flow_sdk.core.setup.skip_mark import SetupSkippable
+from flow_sdk.schema.data_spec.asset_setup_spec import SetupSkipSpec
+from flow_sdk.schema.data_spec.credential_contract import SCOPE_PROJECT, SCOPE_SYSTEM, SCOPE_USER, CredentialKind
 from flow_sdk.schema.data_spec.credential_spec import CURRENT_SCHEMA, CredentialVarSpec
 from flow_sdk.schema.data_spec.setup_stage_spec import SetupStageSpec
 from flow_sdk.schema.types import EntityType
@@ -47,7 +49,7 @@ class CredentialAmbiguous(NameAmbiguous):
     plural = "credentials"
 
 
-class Credential(Entity):
+class Credential(SetupSkippable, Entity):
     """The ROW; its shape on disk is ``CredentialSpec`` (``TypeInfo.asset_spec``)."""
 
     type: str = APIField(default=EntityType.CREDENTIAL.value)
@@ -68,9 +70,22 @@ class Credential(Entity):
     #: How long an agent following ``setup`` gets (``CredentialSpec.setup_timeout_seconds``).
     setup_timeout_seconds: Optional[float] = APIField(default=None)
     lm_provider: str = APIField(default="")
+    #: ``env`` (variables) or ``oauth`` (a provider's grant) — ``CredentialSpec.kind``.
+    kind: CredentialKind = APIField(default=CredentialKind.ENV)
+    #: oauth: the connection provider, and the scopes its grant must cover.
+    provider: str = APIField(default="")
+    scopes: list[str] = APIField(default_factory=list)
+    optional_scopes: list[str] = APIField(default_factory=list)
     vars: dict[str, CredentialVarSpec] = APIField(default_factory=dict)
+    #: Skipped in this project's setup on THIS machine (``SetupSkipSpec``). PRIVATE: a skip is a person's choice
+    #: here, never part of the declaration — the file and a share never carry it.
+    setup_skipped: Optional[SetupSkipSpec] = APIField(None, sharing=Sharing.PRIVATE)
 
     _api_visible: ClassVar[bool] = True
+
+    @property
+    def is_oauth(self) -> bool:
+        return self.kind is CredentialKind.OAUTH or str(self.kind) == CredentialKind.OAUTH.value
 
     @field_validator("vars", mode="before")
     @classmethod

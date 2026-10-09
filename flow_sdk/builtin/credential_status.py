@@ -37,6 +37,7 @@ from flow_sdk.schema.data_spec.credential_status_spec import (
 from flow_sdk.schema.data_spec.deployment_secrets_spec import LOCAL_STORE_TYPES, store_word
 
 if TYPE_CHECKING:
+    from flow_sdk.builtin.credential import Credential
     from flow_sdk.builtin.project import Project
     from flow_sdk.secrets import SecretStoreRef
 
@@ -113,6 +114,39 @@ async def _remote_names(refs: list["SecretStoreRef"]) -> dict[tuple[str, str], O
     return dict(zip((ref.key for ref in unique), await asyncio.gather(*(names(ref) for ref in unique))))
 
 
+async def oauth_states(specs: list["Credential"]) -> dict[str, tuple[str, list[str]]]:
+    """``{provider: (state, missing scopes)}`` for the oauth credentials in ``specs`` — read from the ONE truth
+    about grants (the connection list, ``core/connections/specs``), and the SDK's own scope check for what a
+    held grant covers, checked on the grant already in hand. Never a store read: an oauth credential has no
+    variables."""
+    from flow_sdk.connections import MissingScopes, _from_spec  # noqa: PLC0415
+    from flow_sdk.core.connections.specs import _list_connection_specs_local, match_provider  # noqa: PLC0415
+    from flow_sdk.schema.data_spec.connection_spec import ConnectionState  # noqa: PLC0415
+
+    wanted = [spec for spec in specs if spec.is_oauth]
+    if not wanted:
+        return {}
+    try:
+        grants = await _list_connection_specs_local()
+    except Exception:  # noqa: BLE001 — no answer about grants reads as not connected, never an error page
+        grants = []
+    out: dict[str, tuple[str, list[str]]] = {}
+    for spec in wanted:
+        provider = str(spec.provider or "").lower()
+        grant = match_provider(grants, provider)
+        if grant is None or grant.state is ConnectionState.DISCONNECTED:
+            out[provider] = ("missing", [])
+        elif grant.state is ConnectionState.NEEDS_REAUTH:
+            out[provider] = ("needs_reauth", [])
+        else:
+            try:
+                await _from_spec(grant).validate_scopes(spec.scopes or [])
+                out[provider] = ("connected", [])
+            except MissingScopes as e:
+                out[provider] = ("partial", list(e.missing))
+    return out
+
+
 async def credentials_status(project: Optional["Project"], deployment_id: str = "") -> CredentialsStatusSpec:
     placement = await placement_for_deployment(deployment_id)
     environment = placement.environment
@@ -129,8 +163,22 @@ async def credentials_status(project: Optional["Project"], deployment_id: str = 
     refs = {(str(spec.id), name): secret_store_ref(spec, scope, name, placement) for spec, scope in pairs for name in spec.var_names()}
     remote = await _remote_names([ref for ref in refs.values() if ref.type not in LOCAL_STORE_TYPES])
 
+    grants = await oauth_states([spec for spec, _ in pairs])
     rows: list[CredentialStatusRowSpec] = []
     for spec, scope in pairs:
+        common = dict(
+            typeid=str(spec.typeid), name=str(spec.name or ""), title=spec.title or str(spec.name or ""),
+            description=spec.description or "", icon_name=spec.icon_name or "", help_url=spec.help_url or "",
+            scope=scope.scope, project_id=scope.project_id, environment=environment,
+            setup_skipped=spec.setup_skipped, asset_ref=str(spec.asset_ref or ""),
+        )
+        if spec.is_oauth:
+            state, missing_scopes = grants.get(str(spec.provider or "").lower(), ("missing", []))
+            rows.append(CredentialStatusRowSpec(
+                **common, value_store="connection", kind="oauth", provider=str(spec.provider or ""),
+                scopes=list(spec.scopes or []), missing_scopes=missing_scopes, state=state,
+            ))
+            continue
         keys = env_keys.get(scope.key, set())
         var_rows: list[CredentialVarStatusSpec] = []
         required = set(placement.required(spec))
@@ -183,18 +231,10 @@ async def credentials_status(project: Optional["Project"], deployment_id: str = 
             state = "missing"
         rows.append(
             CredentialStatusRowSpec(
-                typeid=str(spec.typeid),
-                name=str(spec.name or ""),
-                title=spec.title or str(spec.name or ""),
-                description=spec.description or "",
-                icon_name=spec.icon_name or "",
-                help_url=spec.help_url or "",
+                **common,
                 setup_wiki=getattr(spec, "setup_wiki", "") or "",
                 setup=getattr(spec, "setup", "") or "",
                 setup_timeout_seconds=getattr(spec, "setup_timeout_seconds", None),
-                scope=scope.scope,
-                project_id=scope.project_id,
-                environment=environment,
                 value_store=next(iter(stores)) if len(stores) == 1 else "mixed",
                 lm_provider=spec.lm_provider or "",
                 state=state,

@@ -2155,13 +2155,15 @@ export class DockPointer implements IDockPointer {
    * `credentialsPointer` owns it, so a change there reaches every caller.
    * @param tab - Which tab is active; omitted lands on the caller's leading tab
    * @param projectId - Project whose environment is shown (Environment tab)
+   * @param entry - The credential (typeid) shown selected — needs a project
    */
   static forCredentials(
     tab: CredentialsSubview = CredentialsSubview.CONNECTIONS,
     projectId?: string,
     layout: Layout = Layout.DOCK,
+    entry?: string,
   ): DockPointer {
-    return new DockPointer(ViewType.CREDENTIALS, credentialsPointer(tab, projectId), {}, layout);
+    return new DockPointer(ViewType.CREDENTIALS, credentialsPointer(tab, projectId, entry), {}, layout);
   }
 
   /**

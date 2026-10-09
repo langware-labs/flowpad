@@ -33,8 +33,13 @@ export function CredentialConnectionRows({
   onDelete,
   onOpenEnvFile,
   onRevealEnvFile,
+  selectedTypeid,
+  selectedRef,
 }: {
   rows: CredentialRow[];
+  /** The credential the URL names: highlighted, and given ``selectedRef`` so the host scrolls to it. */
+  selectedTypeid?: string;
+  selectedRef?: React.Ref<HTMLTableRowElement>;
   onSetValues: (row: CredentialRow) => void;
   onEdit: (row: CredentialRow) => void;
   onDelete: (row: CredentialRow) => void;
@@ -53,7 +58,14 @@ export function CredentialConnectionRows({
         const extra = row.vars.length - shown.length;
         const connected = row.state === 'connected';
         return (
-          <TableRow key={row.typeid} data-testid={`connection-row-${testKey}`}>
+          <TableRow
+            key={row.typeid}
+            ref={row.typeid === selectedTypeid ? selectedRef : undefined}
+            aria-current={row.typeid === selectedTypeid ? 'true' : undefined}
+            className={cn(row.typeid === selectedTypeid && 'bg-primary/10 ring-1 ring-inset ring-primary/40')}
+            data-testid={`connection-row-${testKey}`}
+            data-typeid={row.typeid}
+          >
             <TableCell className="font-medium">
               <div className="flex items-center gap-2">
                 <CredentialGlyph iconName={row.iconName} />

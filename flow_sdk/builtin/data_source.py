@@ -33,6 +33,7 @@ from flow_sdk.core import Entity
 from flow_sdk.core import action as core_action
 from flow_sdk.core.entity.entity_model import _SUPPRESS_STORE
 from flow_sdk.core.named_lookup import NameAmbiguous, NameNotFound
+from flow_sdk.core.setup.skip_mark import SetupSkippable
 from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp
 from flow_sdk.fs_store.origin.field import OriginField
 from flow_sdk.fs_store.type_id import TypeId
@@ -40,6 +41,7 @@ from flow_sdk.ingest.driver_runtime import SendOutcome
 from flow_sdk.ingest.health import SourceHealth
 from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccessResponse
+from flow_sdk.schema.data_spec.asset_setup_spec import SetupSkipSpec
 from flow_sdk.schema.data_spec.data_driver_spec import ReflectMode
 from flow_sdk.schema.data_spec.source_item_spec import SourceItemSpec
 from flow_sdk.schema.types import EntityType
@@ -139,7 +141,7 @@ _RUNTIME_WRITE: "ContextVar[bool]" = ContextVar("_data_source_runtime_write", de
 RECEIVED_SETUP_DETAIL = "Received — connect your own account, then press Verify."
 
 
-class DataSource(Entity):
+class DataSource(SetupSkippable, Entity):
     type: str = APIField(default=EntityType.DATA_SOURCE.value)
 
     # A file asset, so it OWNS its path: ``<scope>/agentic-assets/data_source/<name>/``. Declaring it is
@@ -280,6 +282,8 @@ class DataSource(Entity):
     secret_store: Optional[SecretStoreRef] = APIField(default=None, sharing=Sharing.PRIVATE)
     #: The provider of the account this source acts as; unbound is the manifest's ``auth.connector``.
     connection: str = APIField(default="", sharing=Sharing.PRIVATE)
+    #: Skipped in its project's setup on THIS machine (``SetupSkipSpec``, ``core/setup/skip_mark``). PRIVATE.
+    setup_skipped: Optional[SetupSkipSpec] = APIField(default=None, sharing=Sharing.PRIVATE, persist=Persist.FALSE)
 
     _api_visible: ClassVar[bool] = True
 
@@ -405,7 +409,6 @@ class DataSource(Entity):
     def connections(self) -> "ConnectionRequirements":
         """The provider this source acts as, and the scopes it needs — its manifest's ``auth.connector``."""
         from flow_sdk.connections import ConnectionRequirements  # noqa: PLC0415
-
         from flow_sdk.permissions import write_scopes_of_driver  # noqa: PLC0415
 
         auth = self._auth()
@@ -1080,7 +1083,33 @@ class DataSource(Entity):
                 if stamped:
                     self.channel = stamped
         self._stamp_origin()
-        return await super().save(*args, **kwargs)
+        created = not self.exist_in_db
+        saved = await super().save(*args, **kwargs)
+        if created:
+            await self._declare_connections()
+        return saved
+
+    async def _declare_connections(self) -> None:
+        """A connection this source acts through IS a credential of its project (``kind: oauth``): declared at
+        create, covering the scopes this source needs — so the project's setup lists it like any credential.
+        Never fails a save: setup's own collect declares whatever this missed."""
+        if not self.project_id:
+            return
+        try:
+            from flow_sdk.builtin import credential_service  # noqa: PLC0415
+            from flow_sdk.builtin.project import Project  # noqa: PLC0415
+
+            needs = self.connections
+            wanted = {provider: needs.scopes(provider) for provider in needs.names()}
+            if not wanted:
+                return
+            project = await Project.get_by_id(str(self.project_id))
+            if project is None:
+                return
+            for provider, scopes in wanted.items():
+                await credential_service.declare_oauth(project, provider, list(scopes))
+        except Exception:  # noqa: BLE001 — a declaration is setup's to retry, never a reason to lose a source
+            logger.warning("data source %s: its connections were not declared", self.name, exc_info=True)
 
     def _needs_spec(self) -> bool:
         """True when any save-time rule below still has a question for the spec.
@@ -1906,6 +1935,7 @@ RUNTIME_FIELDS: tuple[str, ...] = tuple(
     name for name, field in DataSource.model_fields.items()
     if name in DataSource.__annotations__  # this type's own, not the Entity base's
     and persist_policy(field) == Persist.FALSE
+    and name not in DataSource.projected_fields  # the setup skip mark: its own writer, kept through every save
 )
 
 

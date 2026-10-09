@@ -166,30 +166,58 @@ export interface ProjectSetupVar {
   present: boolean;
 }
 
-/** One thing to set up (`SetupRequirementSpec`): a connection, a credential pack, or a gap. */
-export interface ProjectSetupRequirement {
-  /** `dependency`: a required dependency that is not here — name = the dependency,
-   *  title = its source, note = why. */
-  kind: 'oauth' | 'pack' | 'gap' | 'dependency' | 'source' | 'webapp';
-  name: string;
-  title: string;
-  vars: ProjectSetupVar[];
-  used_by: string[];
+/** A requirement skipped in a project's setup on THIS machine (`SetupSkipSpec`, on its record). */
+export interface ProjectSetupSkip {
+  at: number;
+  by: string;
   note: string;
 }
 
-/** `GET project/<id>/setup-requirements` — is this project ready here? MUST values only. */
+/** How a skip is made: `local` marks the record here; `always` removes the asset from the project (staged in git). */
+export type ProjectSetupSkipScope = 'local' | 'always';
+
+/** One thing to set up (`SetupRequirementSpec`): a credential (env or oauth), a dependency, a source, a web app,
+ *  or a gap. */
+export interface ProjectSetupRequirement {
+  /** `dependency`: a dependency that is not here — name = the dependency, title = its source, note = why.
+   *  `oauth` is retired: a connection is a `pack` whose `credential_kind` is `oauth`. */
+  kind: 'pack' | 'gap' | 'dependency' | 'source' | 'webapp';
+  name: string;
+  title: string;
+  /** The record it IS (a credential, data source, web app; the project for a dependency). */
+  typeid: string;
+  /** pack: `env` (values to provide) or `oauth` (a provider's grant to connect). */
+  credential_kind?: 'env' | 'oauth';
+  provider?: string;
+  scopes?: string[];
+  vars: ProjectSetupVar[];
+  used_by: string[];
+  note: string;
+  satisfied?: boolean | null;
+  /** The project does not work without it; `false` turns a feature on and never counts. */
+  required: boolean;
+  skipped: ProjectSetupSkip | null;
+  /** Whether "Skip → Always" can remove it from the project, and if not, why. */
+  can_skip_always: boolean;
+  why_not_always: string;
+}
+
+/** `GET project/<id>/setup-requirements` — is this project ready here? */
 export interface ProjectReadiness {
   project_id: string;
   ready: boolean;
-  /** What still needs someone — what the setup wizard walks through. */
+  /** What still needs someone — required, not skipped. What the setup wizard walks through. */
   to_do: ProjectSetupRequirement[];
+  /** What turns a feature on and is not set up yet: listed, never counted. */
+  optional?: ProjectSetupRequirement[];
+  /** What was skipped on this machine: listed with an Undo. */
+  skipped?: ProjectSetupRequirement[];
   /** What no credential declares: shown, never runnable. */
   gaps: ProjectSetupRequirement[];
 }
 
 /** Where one node of the setup tree stands (`setup.node`). */
-export type SetupNodeState = 'pending' | 'running' | 'done' | 'failed' | 'blocked' | 'refused' | 'held';
+export type SetupNodeState = 'pending' | 'running' | 'done' | 'failed' | 'blocked' | 'refused' | 'held' | 'skipped';
 
 /** One step of a node's wizard, as its run answered it. */
 export interface SetupStepAnswer {
@@ -926,12 +954,25 @@ export class Project extends APIEntity<Project> {
     return data?.run ?? '';
   }
 
-  /** Take the credential `name` out of the setup (`POST project/<id>/setup-skip`): its values are
-   *  marked OPTIONAL. Answers with the readiness that follows. */
-  static async skipSetup(projectId: string, name: string): Promise<ProjectReadiness | null> {
+  /** Skip a requirement of the setup (`POST project/<id>/setup-skip`): `local` marks its record on this machine;
+   *  `always` removes its asset from the project and stages that in git. A dependency is the project's typeid and
+   *  its `name`. Answers with the readiness that follows. */
+  static async skipSetup(
+    projectId: string,
+    typeid: string,
+    scope: ProjectSetupSkipScope = 'local',
+    options: { name?: string; note?: string } = {},
+  ): Promise<ProjectReadiness | null> {
     const actionInfo = new ActionInfo('setup-skip', Project.type, projectId, 'POST');
-    actionInfo.bodyParameters = { name };
-    return (await dataManager.callAction<{ name: string }, ProjectReadiness>(actionInfo)) ?? null;
+    actionInfo.bodyParameters = { typeid, scope, name: options.name ?? '', note: options.note ?? '' };
+    return (await dataManager.callAction<Record<string, string>, ProjectReadiness>(actionInfo)) ?? null;
+  }
+
+  /** Undo a local skip (`POST project/<id>/setup-unskip`). Answers with the readiness that follows. */
+  static async unskipSetup(projectId: string, typeid: string, name = ''): Promise<ProjectReadiness | null> {
+    const actionInfo = new ActionInfo('setup-unskip', Project.type, projectId, 'POST');
+    actionInfo.bodyParameters = { typeid, name };
+    return (await dataManager.callAction<Record<string, string>, ProjectReadiness>(actionInfo)) ?? null;
   }
 
   /** The setup run's state (`GET project/<id>/setup-run`). */
