@@ -25,10 +25,21 @@ export interface GitStatus {
   ahead: number;
   behind: number;
   files: GitStatusFile[];
+  /** Set while the tree is stuck mid-conflict — the UI offers Resolve off it. */
+  conflict: GitConflict | null;
   /** Fetch URL of the branch's remote (origin without an upstream); credentials stripped. */
   remoteUrl: string | null;
   /** https browser form of `remoteUrl`, null when the remote isn't a web host. */
   remoteWebUrl: string | null;
+}
+
+/** What a conflicted tree is stopped in; null with paths = only a pull's autostash clashed. */
+export type ConflictOperation = 'rebase' | 'merge';
+
+/** A working tree left mid-conflict — mirror of `GitConflict` in git_repo.py. */
+export interface GitConflict {
+  paths: string[];
+  operation: ConflictOperation | null;
 }
 
 export interface GitFileDiff {
@@ -78,11 +89,15 @@ export type PushKind =
 
 export interface GitPushResult {
   ok: boolean;
-  conflict: boolean;
-  nothing: boolean;
   kind: PushKind;
   branch: string | null;
   message: string;
+  /** Set only when `kind === 'conflict'`: the paths git left unmerged. */
+  conflicted: string[];
+  /** A commit was made by this push. */
+  committed: boolean;
+  sha: string | null;
+  warning: string | null;
 }
 
 /** Typed pull outcome — mirror of `PullKind` in git_repo.py. */
@@ -101,6 +116,8 @@ export interface GitPullResult {
   kind: PullKind;
   branch: string | null;
   message: string;
+  /** Set only when `kind === 'conflict'`: the paths git left unmerged. */
+  conflicted: string[];
 }
 
 /**
@@ -233,7 +250,10 @@ export class GitWorkdir {
     return this._post<GitRestoreResult>('init');
   }
 
-  /** Greedy "non-tech" publish: stage-all → commit → pull --rebase → push. */
+  /**
+   * Greedy "non-tech" publish: stage-all → commit → pull --rebase → push. A
+   * conflict — or a tree still stuck in one — answers `kind: 'conflict'`.
+   */
   async push(): Promise<GitPushResult> {
     return this._post<GitPushResult>('push');
   }

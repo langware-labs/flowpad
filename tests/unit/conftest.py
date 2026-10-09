@@ -44,6 +44,16 @@ CLAUDE_SID = "11111111-1111-4111-8111-111111111111"
 #     or a machine defaulting to ``master`` silently breaks the fixture.
 
 
+class LocalNode:
+    """The smallest compute node ``GitRepo`` accepts: it runs the shell string here."""
+
+    compute_provider = None
+
+    async def run_command(self, command: str, background: bool = False):
+        p = subprocess.run(["/bin/sh", "-c", command], capture_output=True, text=True)
+        return SimpleNamespace(all_stdout=p.stdout, all_stderr=p.stderr, exit_code=p.returncode)
+
+
 def git_cmd(path: Path, *args: str) -> str:
     """Run git in ``path`` and return trimmed stdout; raises on failure."""
     result = subprocess.run(["git", *args], cwd=path, capture_output=True, text=True, check=True)

@@ -1,5 +1,4 @@
-/** Which one-click action left the rebase conflict in place. */
-export type GitResolveOrigin = 'push' | 'pull';
+import type { GitSyncOp } from '@src/lib/publish-state';
 
 /**
  * Prompt seeded into the agentic process launched by the "Resolve" action on a
@@ -8,7 +7,7 @@ export type GitResolveOrigin = 'push' | 'pull';
  * low-stakes/clear conflicts, flag (don't guess) anything critical, never
  * force-push.
  */
-export function gitResolvePrompt(branch: string, origin: GitResolveOrigin = 'push'): string {
+export function gitResolvePrompt(branch: string, origin: GitSyncOp = 'push'): string {
   const b = branch || 'the current branch';
   const context =
     origin === 'pull'
