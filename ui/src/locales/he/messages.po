@@ -12153,6 +12153,10 @@ msgstr "אבחנות בעיות שנרשמו על ידי העוזר. לחץ על
 msgid "It doesn't appear to be installed on your computer. Would you like to install it now?"
 msgstr "נראה שהוא לא מותקן במחשב שלך. להתקין אותו עכשיו?"
 
+#: src/components/assets/editor/wizard/wizard-texts.ts
+msgid "It doesn't appear to be installed on your computer. Would you like to install it now? On a Mac, Apple's installer opens in its own window — if you don't see it, look behind this one."
+msgstr "נראה שהוא לא מותקן במחשב שלך. להתקין אותו עכשיו? ב-Mac, המתקין של Apple נפתח בחלון נפרד. אם אינך רואה אותו, חפש מאחורי החלון הזה."
+
 #: src/components/automations/RunDetail.tsx
 msgid "It failed without saying why."
 msgstr ""

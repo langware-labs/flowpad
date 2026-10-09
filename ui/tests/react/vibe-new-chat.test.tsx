@@ -38,6 +38,9 @@ vi.mock('@sdk/react/hooks', () => ({
   // via `useProject()`; no project keeps the strip empty, which is fine — the
   // assertions below are about the submitted model tier.
   useProject: () => ({ project: null }),
+  // useAgentContext loads the URL's agentic process via `useEntity`; this URL
+  // names no process, so nothing loads.
+  useEntity: () => ({ data: null }),
 }));
 
 vi.mock('@src/components/open-project-component/open-project-component', () => ({

@@ -50,7 +50,12 @@ report (base, commits, files changed). If the diff is empty, say so and stop.
 Never the whole unit tier. Run only:
 
 * **Policy tests** — every `tests/unit/test_*{policy,guard,self_contained}*.py`
-  plus `tests/unit/test_no_*.py`. These already enforce entity-id policy, data
+  plus `tests/unit/test_no_*.py`. Collect them with `find` and pass them through
+  `$(... | tr '\n' ' ')`, never as a stored `$VAR`. zsh does not word-split an
+  unquoted variable, so pytest gets one bogus path and reports "no tests ran",
+  which looks like a pass:
+  `uv run pytest -q $(find tests/unit -maxdepth 1 \( -name 'test_*policy*.py' -o -name 'test_*guard*.py' -o -name 'test_*self_contained*.py' -o -name 'test_no_*.py' \) | tr '\n' ' ')`.
+  "no tests ran" is a failed gate, not a pass. These already enforce entity-id policy, data
   source self-containment, no machine-wide state, etc. — a rule a test owns is
   NOT re-checked by hand in step 3.
 * **Tests next to the change** — the test files whose module or name matches a

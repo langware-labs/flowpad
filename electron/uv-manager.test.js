@@ -1156,11 +1156,13 @@ ok(!mgr.isToolDirLockedError(null), 'null error → not a lock (no throw)');
     m._drainVenvProcesses = async () => {};
     m._runStreaming = async (_cmd, args) => { seenArgs = args; return { stdout: '', stderr: '' }; };
     await m._uvToolInstallForce(['tool', 'install', 'flowpad', '--force']);
-    eq(seenArgs, ['tool', 'install', 'flowpad', '--force', '--compile-bytecode'],
-      '_uvToolInstallForce: every install/upgrade/reinstall passes --compile-bytecode');
-    await m._uvToolInstallForce(['tool', 'install', 'flowpad', '--compile-bytecode']);
+    eq(seenArgs, ['tool', 'install', 'flowpad', '--force', '--compile-bytecode', '--no-build-package', 'cryptography'],
+      '_uvToolInstallForce: every install/upgrade/reinstall passes --compile-bytecode and never builds cryptography');
+    await m._uvToolInstallForce(['tool', 'install', 'flowpad', '--compile-bytecode', '--no-build-package', 'cryptography']);
     eq(seenArgs.filter((a) => a === '--compile-bytecode').length, 1,
-      '_uvToolInstallForce: never doubled when the caller already passed it');
+      '_uvToolInstallForce: --compile-bytecode never doubled when the caller already passed it');
+    eq(seenArgs.filter((a) => a === '--no-build-package').length, 1,
+      '_uvToolInstallForce: --no-build-package never doubled when the caller already passed it');
   }
 
   // ── isInstallProgressLine (what the loading-screen ticker shows) ────────────

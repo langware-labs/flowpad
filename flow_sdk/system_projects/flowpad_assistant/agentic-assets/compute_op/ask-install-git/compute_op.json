@@ -7,14 +7,14 @@
   "subkind": "ask",
   "exe_data": {
     "prompt": "Git is required to continue",
-    "detail": "It doesn't appear to be installed on your computer. Would you like to install it now?",
+    "detail": "It doesn't appear to be installed on your computer. Would you like to install it now? On a Mac, Apple's installer opens in its own window — if you don't see it, look behind this one.",
     "submit_label": "Install",
     "cancel_label": "Skip",
     "until_answered": true
   },
   "completion_check": {
     "commands": {
-      "darwin": "git --version >/dev/null 2>&1 && echo '{}'",
+      "darwin": "{ d=\"$(xcode-select -p 2>/dev/null)\"; { [ -n \"$d\" ] && [ -x \"$d/usr/bin/git\" ]; } || { g=\"$(command -v git 2>/dev/null)\"; [ -n \"$g\" ] && [ \"$g\" != /usr/bin/git ]; }; } && echo '{}'",
       "linux": "git --version >/dev/null 2>&1 && echo '{}'",
       "win32": "$env:Path += ';' + [Environment]::GetEnvironmentVariable('Path','Machine') + ';' + [Environment]::GetEnvironmentVariable('Path','User'); git --version *> $null; if ($LASTEXITCODE -eq 0) { '{}'; exit 0 } else { exit 1 }"
     },

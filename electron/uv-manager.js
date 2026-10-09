@@ -1242,9 +1242,15 @@ class UvManager {
     // Windows far worse. The install is guarded against stalls (see
     // _runToolInstallGuarded) and reports this step ("Bytecode compiled N
     // files in Xs"); the boot has both.
-    const args = installArgs.includes('--compile-bytecode')
-      ? installArgs
-      : [...installArgs, '--compile-bytecode'];
+    //
+    // Never build `cryptography` from source. A fresh `uv tool install` ignores uv.lock and takes
+    // the newest release, and from 49.0.0 PyPI ships no Intel-Mac wheel — uv then compiles it with
+    // Rust and fails on every Mac without the Xcode tools. With this flag uv skips a release that
+    // has no wheel for this machine and settles on the newest one that has. (pyproject.toml also
+    // bounds it on Intel Mac; this covers the next platform to lose its wheel.)
+    const args = [...installArgs];
+    if (!args.includes('--compile-bytecode')) args.push('--compile-bytecode');
+    if (!args.includes('--no-build-package')) args.push('--no-build-package', 'cryptography');
     for (let attempt = 1; ; attempt++) {
       await this._drainVenvProcesses();
       if (this._installAborted || this._closed) throw new Error('install aborted before uv started');
