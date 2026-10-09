@@ -42,6 +42,7 @@ export type {
   MarkdownDoc,
   ProcessState,
   SessionNameState,
+  ShowPlacement,
   ShowTarget,
   SpawnResult,
 } from './agentic-process';

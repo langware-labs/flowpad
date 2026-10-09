@@ -7,8 +7,9 @@ import { describe, expect, it } from 'vitest';
 import { lastVibeChatQuery } from '@src/pages/flow-page/vibe-process-resolver';
 
 const PROJECT = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+type Leaf = { op: string; operands: unknown[] };
 const fields = (q: ReturnType<typeof lastVibeChatQuery>) =>
-  (q.query?.match?.operands ?? []).map((o) => `${(o as { op: string }).op}:${String((o as { operands: unknown[] }).operands[0])}`);
+  ((q.query?.match?.operands ?? []) as Leaf[]).map((o) => `${o.op}:${String(o.operands[0])}`);
 
 describe('lastVibeChatQuery', () => {
   it('by default keeps only chats that were opened', () => {
