@@ -193,10 +193,13 @@ async def save_credential(
     values: Optional[dict[str, Any]] = None,
     deployment_id: Optional[str] = None,
     store: Optional[str] = None,
+    require_setup: bool = True,
 ) -> "Credential":
     """Create a credential in a scope, or update one; then write any values where ``deployment_id``
     (default: this computer) keeps them. ``store`` (``env`` / ``vault``) first makes that deployment
-    keep this credential's variables there — the choice a form offers, never part of the credential."""
+    keep this credential's variables there — the choice a form offers, never part of the credential.
+    ``require_setup=False`` is for a save that only re-files what already exists: ``setup`` is required
+    of an author, not of a credential found on disk without it."""
     from flow_sdk.assets.creation import destination_in  # noqa: PLC0415
     from flow_sdk.builtin.asset_placement import resolve_default_harness, resolve_destination  # noqa: PLC0415
     from flow_sdk.builtin.credential import Credential  # noqa: PLC0415
@@ -220,7 +223,7 @@ async def save_credential(
         parsed = CredentialSpec.model_validate({**manifest_in, "schema": CURRENT_SCHEMA})
     except ValidationError as e:
         raise CredentialError("; ".join(str(err["msg"]).removeprefix("Value error, ") for err in e.errors())) from e
-    if not parsed.setup.strip():
+    if require_setup and not parsed.setup.strip():
         raise CredentialError(
             "a credential needs setup instructions: how to obtain its values and store them "
             f"(piped as `VAR=VALUE` lines into `flow credentials set {parsed.name} --stdin`)"
@@ -331,7 +334,7 @@ async def set_credential_by_name(
     return await set_credential_values(str(spec.typeid), values, deployment_id)
 
 
-async def declare_credential(manifest: dict[str, Any], *, project_id: str) -> "Credential":
+async def declare_credential(manifest: dict[str, Any], *, project_id: str, require_setup: bool = True) -> "Credential":
     """``flow credentials declare``: save ``manifest`` in the project — updating the project's own
     credential of that name in place, so declaring twice is declaring once. (``save_credential``
     stays create-or-refuse: a dialog creating a second ``telegram`` must not overwrite the first.)"""
@@ -340,8 +343,8 @@ async def declare_credential(manifest: dict[str, Any], *, project_id: str) -> "C
         raise CredentialError("project not found")
     own = await credential_named(str(manifest.get("name") or ""), project)
     if own is not None and own.scope == SCOPE_PROJECT:
-        return await save_credential(manifest=manifest, typeid=str(own.typeid))
-    return await save_credential(manifest=manifest, scope=SCOPE_PROJECT, project_id=project_id)
+        return await save_credential(manifest=manifest, typeid=str(own.typeid), require_setup=require_setup)
+    return await save_credential(manifest=manifest, scope=SCOPE_PROJECT, project_id=project_id, require_setup=require_setup)
 
 
 async def _release_orphaned_bindings(env_vars: list[str]) -> None:
@@ -470,7 +473,9 @@ async def make_optional(name: str, project: "Project") -> "Credential":
         raise CredentialError(f"no credential or template named {name!r}")
     optional = {env_var: var.model_copy(update={"required": CredentialRequirement.OPTIONAL})
                 for env_var, var in (source.vars or {}).items()}
-    return await declare_credential({**_manifest_of(source), "vars": optional}, project_id=str(project.id))
+    # Only how required its values are changes: a credential without setup instructions (legal on
+    # disk) is skipped as it is, never refused for instructions nobody is authoring here.
+    return await declare_credential({**_manifest_of(source), "vars": optional}, project_id=str(project.id), require_setup=False)
 
 
 async def _declaring(names: list[str], project: Optional["Project"], deployment: "Deployment") -> dict:
