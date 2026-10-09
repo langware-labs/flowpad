@@ -4,11 +4,17 @@ import type { AppRuntime } from '@src/hooks/flow-hooks';
 // (`useAppDisplay`), and consumers of the dock grammar get it from here.
 export type { AppRuntime };
 import type { DockPointer } from './DockPointer';
+import { withoutScopeFilterOptions } from '@src/lib/scope-filter';
 
 export const APP_RUNTIME_PARAM = 'runtime';
 
 /** The entity types an app dock may address. */
 const APP_TYPES = new Set(['artifact', 'micro_app', 'service_endpoint']);
+
+/** Whether an entity of `type` opens as a running app (`/dock/app/<typeid>`). */
+export function isAppType(type: string | null | undefined): boolean {
+  return !!type && APP_TYPES.has(type);
+}
 
 export interface AppDockAddress {
   /** Bare artifact uuid, for an app addressed by its source plane. */
@@ -24,8 +30,9 @@ export interface AppDockAddress {
    * Everything else on the dock, handed to the APP as its query string.
    *
    * An app is told what to act on through its URL and nothing else — the source
-   * editor is opened with `?source=<id>` and reads it there. `runtime` is
-   * excluded because it addresses the VIEWER, not the app.
+   * editor is opened with `?source=<id>` and reads it there. `runtime` and the
+   * project scope are excluded: they address the VIEWER (and which project is
+   * current), not the app.
    */
   options: Record<string, string>;
 }
@@ -53,7 +60,7 @@ export function appDockAddress(dock: DockPointer | null): AppDockAddress | null 
   // and already returns null instead of throwing on a malformed pointer.
   const target = dock?.targetTypeId ?? null;
   if (!target?.id || !APP_TYPES.has(target.type)) return null;
-  const { [APP_RUNTIME_PARAM]: pinned, ...passthrough } = dock!.options ?? {};
+  const { [APP_RUNTIME_PARAM]: pinned, ...passthrough } = withoutScopeFilterOptions(dock!.options ?? {});
   return {
     artifactId: target.type === 'artifact' ? target.id : null,
     microAppId: target.type === 'micro_app' ? target.id : null,
