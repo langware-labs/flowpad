@@ -9,7 +9,8 @@ description: >-
   data_spec folders to data_schema". Writes data_schema folders and datasets, applies
   them with `flow schema apply`, works rows by key through the SDK, and PROVES every
   change in a throwaway probe project before it touches the user's project.
-  Subcommands: `schema`, `dataset`, `app`, `migrate`. NOT for pulling an external
+  Also "review my project's data layer" — a fixed checklist that ends with PASS or FAIL.
+  Subcommands: `schema`, `dataset`, `app`, `migrate`, `review`. NOT for pulling an external
   system in (connect-data-source), an agent's own input/output (agent-builder), or
   Flowpad entities such as tasks, skills and agents (flowpad-assistance).
 version: 1
@@ -42,7 +43,7 @@ Typed data in Flowpad is three words, never mixed up:
 
 ## Modes (from the skill arg)
 
-The FIRST token, if it is exactly `schema`, `dataset`, `app` or `migrate`, selects
+The FIRST token, if it is exactly `schema`, `dataset`, `app`, `migrate` or `review`, selects
 the mode. Anything else is a natural request: pick the mode it needs (a request
 that needs a schema AND rows runs `schema`, then `dataset`).
 
@@ -52,6 +53,7 @@ that needs a schema AND rows runs `schema`, then `dataset`).
 | `dataset` — "store records", "add rows" | `modes/dataset.md` | Create a dataset, append / put / delete / rename rows by key, check, validate |
 | `app` — "build an app or script over my data" | `modes/app.md` | The SDK calls an app or script makes, and the anti-patterns that broke a real one |
 | `migrate` — "data_spec → data_schema" | `modes/migrate.md` | Move a project off the retired `data_spec` family, prove it, apply it |
+| `review` — "review / audit / fix my project's data layer" | `modes/review.md` | A fixed checklist (C1–C13), High / Medium findings only, a PASS or FAIL verdict; fixes them when asked |
 
 ## The probe gate (every mode)
 
@@ -83,7 +85,9 @@ Then do it in the user's project and read it back the same way.
 
 Run `dm_ctl` with Flowpad's interpreter — `$FLOWPAD_PYTHON` in a worker or a trigger, else the
 one `flow instance python` prints — through a shell FUNCTION (a command kept in a quoted variable
-does not split into words):
+does not split into words). Working on ANOTHER instance than the one you run in (a dev instance,
+`FLOW_INSTANCE=<name>`)? Use THAT instance's interpreter — the `flow` of its checkout — not
+`$FLOWPAD_PYTHON`, or you run another SDK version against it.
 
 ```bash
 DM() { "${FLOWPAD_PYTHON:-$(flow instance python)}" "<this skill>/scripts/dm_ctl.py" "$@"; }

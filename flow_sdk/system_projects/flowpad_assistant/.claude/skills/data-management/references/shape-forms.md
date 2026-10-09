@@ -91,7 +91,8 @@ A record may declare that two link paths name the same row wherever both ends ar
   skipped levels included (`use_case.persona.icp` checks a deal whose persona is empty).
 - `flow schema apply` refuses a path that walks no link, and two ends that can never be the
   same kind. `DM kind` / `kindForm` list a kind's `rules`.
-- Flowpad checks the rules on `check` / `append` / `put` (`code: "rule"`), reports rows that
+- Flowpad checks the rules on `check` / `append` / `put` (`code: "rule"`, with the broken `rule`
+  — both ends — in the detail), reports rows that
   break them in `problems`, and refuses a write to a row that would break a rule of a row that
   reaches it (`would break <kind> <key>`) — so every writer keeps them, Claude included.
 

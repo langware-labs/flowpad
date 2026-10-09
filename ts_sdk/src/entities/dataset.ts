@@ -71,6 +71,8 @@ export interface CheckDetail {
   path: string;
   code: string;
   message: string;
+  /** `code: "rule"`: the rule broken — both ends (`same`) and why. */
+  rule?: { same: [string, string]; description: string };
 }
 
 /** A row that does not fit: by key, with everything wrong, its version (to repair it with `put`
