@@ -32,20 +32,21 @@ export function sourceLook(source: DataSource): SourceLook {
  *  looking, and never polled again on its own — says so in its own words. */
 export function SourceStatusLine({ source, className }: { source: DataSource; className?: string }) {
   const { t } = useLingui();
-  const parked = source.isParked;
   const look = sourceLook(source);
+  // One view of the line: parked, held (running, but a file waits on a person), or the source's own look.
+  const view = source.isParked
+    ? { text: 'text-foreground', dot: PARKED_DOT, label: t`Parked`, title: t`Parked: the scheduler skips it until you pull` }
+    : source.isHeld
+      ? { text: 'text-amber-600 dark:text-amber-400', dot: 'bg-amber-500', label: t`Running · needs you`, title: source.error_detail || undefined }
+      : { text: look.text, dot: look.dot, label: i18n._(look.label), title: undefined };
   return (
     <span
-      className={cn(
-        'flex min-w-0 items-center gap-1.5 text-xs font-medium',
-        parked ? 'text-foreground' : look.text,
-        className,
-      )}
+      className={cn('flex min-w-0 items-center gap-1.5 text-xs font-medium', view.text, className)}
       data-testid={`source-status-${source.id}`}
-      title={parked ? t`Parked: the scheduler skips it until you pull` : undefined}
+      title={view.title}
     >
-      <span className={cn('size-2 shrink-0 rounded-full', parked ? PARKED_DOT : look.dot)} />
-      <span className="truncate">{parked ? t`Parked` : i18n._(look.label)}</span>
+      <span className={cn('size-2 shrink-0 rounded-full', view.dot)} />
+      <span className="truncate">{view.label}</span>
     </span>
   );
 }
@@ -135,6 +136,16 @@ export function SourceSetupDetails({ source, spec }: { source: DataSource; spec?
       )}
 
       <ChannelRouteControl source={source} />
+
+      {source.isHeld && (
+        <p
+          className="rounded border border-amber-500/60 bg-amber-500/10 px-2 py-1.5 text-[11px] leading-snug"
+          data-testid={`source-held-${source.id}`}
+        >
+          {source.error_detail}.{' '}
+          <Trans>Make the two the same — edit either one — and the next sync carries on.</Trans>
+        </p>
+      )}
 
       {source.isParked && (
         // Tinted with a red border; the words stay the foreground colour (red text on a dark theme does not read).

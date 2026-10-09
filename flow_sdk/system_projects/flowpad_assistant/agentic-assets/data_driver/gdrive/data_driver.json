@@ -3,7 +3,7 @@
   "name": "gdrive",
   "title": "Google Drive",
   "icon_name": "GoogleDrive",
-  "description": "Files from Drive, downloaded and indexed. Needs a Google connection.",
+  "description": "Files from Drive \u2014 a whole drive or one folder of it \u2014 downloaded, indexed, and written back unless the source is read-only. Needs a Google connection.",
   "kind": "datasource.fs.gdrive",
   "auth": {
     "connector": "google",
@@ -18,6 +18,14 @@
         "https://www.googleapis.com/auth/drive.readonly"
       ],
       "why": "List and read the files of the configured folder."
+    },
+    "permission.google.drive.write": {
+      "mechanism": "oauth",
+      "oauth_scopes": [
+        "https://www.googleapis.com/auth/drive"
+      ],
+      "why": "Write back into the configured folder: create and update files, move removed ones to the trash.",
+      "writes": true
     }
   },
   "reflect": [
@@ -31,6 +39,12 @@
       "label": "Shared drive",
       "placeholder": "0AB1cdEfGhIjKlMnOpQ",
       "hint": "Pick from the drives this Google account can see, or type its ID. Leave empty to sync My Drive. Syncing several drives? Add one source per drive."
+    },
+    "path": {
+      "type": "text",
+      "label": "Folder",
+      "placeholder": "GTM/Research",
+      "hint": "A folder of that drive, by its path. Only what is under it is synced, and written back. Leave empty for the whole drive."
     },
     "cache_root": {
       "type": "path",

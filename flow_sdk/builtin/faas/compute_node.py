@@ -98,10 +98,14 @@ def build_dir_zip(local_path: str) -> BytesIO:
     if not root.is_dir():
         raise ValueError(f"copy_folder: not a directory: {local_path}")
 
+    from flow_sdk.utils.git_ignore import ignored_under, is_under  # noqa: PLC0415
+
+    # What git excludes never leaves for another machine through here: nobody chose those files.
+    ignored = ignored_under(root)
     buf = BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
         for p in sorted(root.rglob("*"), key=str):
-            if p.is_file() and not p.is_symlink():
+            if p.is_file() and not p.is_symlink() and not is_under(p, ignored):
                 zf.write(p, p.relative_to(root).as_posix())
     buf.seek(0)
     return buf

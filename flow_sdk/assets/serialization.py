@@ -424,8 +424,21 @@ def _patch_entity_main(obj: Any, info: Any, main: Path) -> None:
         key: value for key, value in wanted.items()
         if (current[key] != value if key in current else not _reads_back_as(obj, info, field_of.get(key, key), value))
     }
-    # A key the entity now leaves unset (``None`` = inherit) is removed; a key the spec does not know is kept.
-    drop = tuple(key for key in current if key not in wanted and key in field_of and getattr(obj, field_of[key], _NOT_ON_OBJ) is None)
+    # A key the entity now leaves unset (``None`` = inherit) is removed, and so is one whose field went BACK to
+    # what an absent key reads as (a switch turned off): left in place, the file's old value would load again on
+    # the next read. A key the spec does not know is kept.
+    from pydantic_core import to_jsonable_python  # noqa: PLC0415
+
+    def _back_to_default(key: str) -> bool:
+        held = getattr(obj, field_of[key], _NOT_ON_OBJ)
+        if held is None:
+            return True
+        if held is _NOT_ON_OBJ:
+            return False
+        value = to_jsonable_python(held)
+        return current[key] != value and _reads_back_as(obj, info, field_of[key], value)
+
+    drop = tuple(key for key in current if key not in wanted and key in field_of and _back_to_default(key))
     body = getattr(obj, info.body_file, None) if info.body_file else None
     patch_entity_document(main, DocumentPatch(set_fields=set_fields, drop_fields=drop, body=body), info=info)
 

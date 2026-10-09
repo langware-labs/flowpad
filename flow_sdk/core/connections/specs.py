@@ -52,7 +52,11 @@ async def _list_connection_specs_local() -> list[ConnectionSpec]:
     """Return exactly the providers visible in the canonical Connections table."""
     from flow_sdk.core.oauth import get_oauth_providers_as_env_table  # noqa: PLC0415
 
+    from flow_sdk.core.oauth.wanted_scopes import wanted_extra_scopes  # noqa: PLC0415
+
     table = await get_oauth_providers_as_env_table(await _connection_user())
+    # What a connect consents to: the provider's base scopes, plus what a source here needs now.
+    extra = {row.name: await wanted_extra_scopes(row.name) for row in table.values if row.name and row.ref_name}
     return [
         ConnectionSpec(
             provider=row.name,
@@ -62,7 +66,7 @@ async def _list_connection_specs_local() -> list[ConnectionSpec]:
             credential_ref=row.ref_name or "",
             connected=_oauth_state(row) is ConnectionState.CONNECTED,
             identity="",
-            scopes=tuple(row.oauth_scopes or ()),
+            scopes=tuple(dict.fromkeys([*(row.oauth_scopes or ()), *extra.get(row.name, ())])),
             icon=row.icon or "",
         )
         for row in table.values

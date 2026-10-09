@@ -42,21 +42,30 @@ from flow_sdk.schema.data_spec.credential_contract import (
     ENV_VAR_RE,
     env_file_name,
 )
+from flow_sdk.utils.git_ignore import (
+    GIT_FAILURE,
+    GITIGNORE_FILENAME,
+    IGNORED,
+    NO_DIR,
+    NOT_A_REPO,
+    NOT_IGNORED,
+    TRACKED,
+    append_line,
+    ignore_status,
+)
 
 logger = logging.getLogger(__name__)
-
-_GITIGNORE_FILENAME = ".gitignore"
 
 # ``FOO=``/``export FOO=`` — anchored on the key so a value is never captured.
 _ASSIGNMENT_RE = re.compile(rf"^\s*(?:export\s+)?({ENV_VAR_RE.pattern.strip('^$')})\s*=")
 
-# gitignore_status result codes.
-GITIGNORE_NO_DIR = "no-project-dir"
-GITIGNORE_NOT_A_REPO = "not-a-repo"
-GITIGNORE_IGNORED = "ignored"
-GITIGNORE_NOT_IGNORED = "not-ignored"
-GITIGNORE_TRACKED = "tracked"
-GITIGNORE_GIT_FAILURE = "git-failure"
+# gitignore_status result codes: git_ignore's own.
+GITIGNORE_NO_DIR = NO_DIR
+GITIGNORE_NOT_A_REPO = NOT_A_REPO
+GITIGNORE_IGNORED = IGNORED
+GITIGNORE_NOT_IGNORED = NOT_IGNORED
+GITIGNORE_TRACKED = TRACKED
+GITIGNORE_GIT_FAILURE = GIT_FAILURE
 
 _REASONS = {
     GITIGNORE_NO_DIR: "There is no readable folder for this scope on this machine.",
@@ -141,45 +150,15 @@ def list_env_file(path: Path | str | None) -> list[dict[str, Any]]:
     return [{"key": key, "line": line} for key, line in sorted(effective.items(), key=lambda kv: kv[1])]
 
 
-def _inside_work_tree(cwd: str) -> bool:
-    from flow_sdk.utils.git import _run_git  # noqa: PLC0415
-
-    inside = _run_git(["git", "rev-parse", "--is-inside-work-tree"], cwd, timeout=10)
-    return inside.returncode == 0 and inside.stdout.strip() == "true"
-
-
 def env_file_status(path: Path | str | None) -> dict[str, Any]:
     """Is the env file at ``path`` excluded by git? **Read-only** — never mutates.
 
-    Asks git rather than reading ``.gitignore`` by hand: only git resolves
-    wildcards, a global excludes file, nested ignore files and negations.
+    Asks git (``flow_sdk.utils.git_ignore``) rather than reading ``.gitignore`` by hand.
     """
-    from flow_sdk.utils.git import _run_git  # noqa: PLC0415
-
     _, d, name = _file(path)
     if d is None:
         return _status(GITIGNORE_NO_DIR, name)
-
-    cwd = str(d)
-    try:
-        if not _inside_work_tree(cwd):
-            return _status(GITIGNORE_NOT_A_REPO, name)
-        # check-ignore: 0 = ignored, 1 = not ignored, anything else = failure.
-        probe = _run_git(["git", "check-ignore", "-q", "--", name], cwd, timeout=10)
-        # Ignore rules do NOT apply to files git already tracks.
-        tracked = _run_git(["git", "ls-files", "--error-unmatch", "--", name], cwd, timeout=10).returncode == 0
-    except Exception as e:  # noqa: BLE001
-        logger.warning("[env-local] gitignore probe failed for %s: %s", cwd, e)
-        return _status(GITIGNORE_GIT_FAILURE, name)
-
-    if tracked:
-        return _status(GITIGNORE_TRACKED, name)
-    if probe.returncode == 0:
-        return _status(GITIGNORE_IGNORED, name)
-    if probe.returncode == 1:
-        return _status(GITIGNORE_NOT_IGNORED, name)
-    logger.warning("[env-local] check-ignore exited %s for %s", probe.returncode, cwd)
-    return _status(GITIGNORE_GIT_FAILURE, name)
+    return _status(ignore_status(d / name), name)
 
 
 def ensure_env_file_ignored(path: Path | str | None) -> dict[str, Any]:
@@ -197,13 +176,8 @@ def ensure_env_file_ignored(path: Path | str | None) -> dict[str, Any]:
         return status
 
     _, d, name = _file(path)
-    gitignore = d / _GITIGNORE_FILENAME
     try:
-        existing = gitignore.read_text(encoding="utf-8") if gitignore.exists() else ""
-        lines = {ln.strip() for ln in existing.splitlines()}
-        if name not in lines:
-            sep = "" if (existing == "" or existing.endswith("\n")) else "\n"
-            gitignore.write_text(f"{existing}{sep}{name}\n", encoding="utf-8")
+        append_line(d / GITIGNORE_FILENAME, name)
     except OSError as e:  # noqa: BLE001
         logger.warning("[env-local] could not write .gitignore for %s: %s", d, e)
         return _status(GITIGNORE_GIT_FAILURE, name)
