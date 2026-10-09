@@ -14,7 +14,7 @@
   },
   "completion_check": {
     "commands": {
-      "darwin": "npm --version >/dev/null 2>&1 && echo '{}'",
+      "darwin": "export PATH=\"$HOME/.local/bin:$PATH\"; npm --version >/dev/null 2>&1 && echo '{}'",
       "linux": "npm --version >/dev/null 2>&1 && echo '{}'",
       "win32": "$env:Path += ';' + [Environment]::GetEnvironmentVariable('Path','Machine') + ';' + [Environment]::GetEnvironmentVariable('Path','User'); npm.cmd --version *> $null; if ($LASTEXITCODE -eq 0) { '{}'; exit 0 } else { exit 1 }"
     },
