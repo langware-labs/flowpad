@@ -1,7 +1,6 @@
-import { markPerfT0, perfLog } from '@src/routes/loaders/_perf';
 import { ThemeToggle } from '@src/components/theme-toggle/theme-toggle';
 import { FlowpadAssistantButton } from '@src/components/floating-chat';
-import { useIsDev, useViewMode, ViewMode } from '@src/components/view-mode';
+import { useIsDev, useTierMode } from '@src/components/view-mode';
 import { buildHubRailItems, type HubItem, type RailIcon } from './hub-rail';
 import { OrgTeamsButton } from './OrgTeamsButton';
 import { resolveRail, type RailItemId, type RailSpec } from './rail-visibility';
@@ -18,10 +17,9 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
 } from '@src/components/ui/sidebar';
-import { AgenticProcess, DataSource, PageId, RagIndex, dataContext } from '@sdk';
+import { DataSource, PageId, RagIndex, dataContext } from '@sdk';
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import { TAB_LINE_HEIGHT_CLASS } from '@src/components/tabs/TabStrip';
-import { useLastVibeChat } from '@src/pages/flow-page/vibe-process-resolver';
 import { JourneyBadge } from '@src/journey/JourneyBadge';
 import { AMBIENT_JOURNEYS_ENABLED } from '@src/journey/journeys-enabled';
 import { NavBadge } from '@src/components/ui/nav-badge';
@@ -35,7 +33,7 @@ import { tagAttrs } from '@src/tags/tag-attrs';
 export const RAIL_WIDTH_CLASS = 'w-[50px]';
 import { BadgeCheck, Bug, ChevronDown, Compass, History, Mail, Plug, Sparkles, Webhook, Workflow, Zap } from 'lucide-react';
 import React, { useCallback, useMemo, useState } from 'react';
-import { useLocation, useNavigate } from 'react-router';
+import { useLocation } from 'react-router';
 
 // Membership AND order both come from RAIL_ITEMS (rail-visibility.ts). This file
 // supplies each id's title/icon/target and renders the resolved list in the order
@@ -43,7 +41,7 @@ import { useLocation, useNavigate } from 'react-router';
 // through the one generic path; `discover` differs only in where its click goes.
 // RailIcon / HubItem live with the hub-rail builder so it can type its own return.
 
-/** The tag word for a rail slot: `chats` -> `RailChats`. Derived rather than
+/** The tag word for a rail slot: `data-sources` -> `RailDataSources`. Derived rather than
  *  listed, so a new RAIL_ITEMS entry is observable and highlightable the moment
  *  it exists — one less thing to remember. */
 export function railTag(id: string): string {
@@ -67,23 +65,17 @@ type NavItem = {
 
 export function CollapsedSidebar() {
   const { navigation, currentDock } = useDockNavigation();
-  const navigate = useNavigate();
   const location = useLocation();
   const onDiscover = location.pathname === '/discover';
   const [secondaryExpanded, setSecondaryExpanded] = useState(false);
   const devMode = useIsDev();
   const { unread: unreadCount } = useStreamInboxManager();
-  const viewMode = useViewMode();
-  // Derived, not a second useIsVibe() subscription — that hook IS this comparison.
-  const isVibe = viewMode === ViewMode.Vibe;
-  const openLastVibeChat = useLastVibeChat();
+  // Which items show is a TIER question: Dev on adds the Dev-tier items on any surface.
+  const tierMode = useTierMode();
   const { t } = useLingui();
 
   /** Title/icon/target per id. A LOOKUP, not an order — see RAIL_ITEMS. */
   const navMeta: Partial<Record<RailItemId, NavItem>> = {
-    // Glyph from the type registry (same rule as `data-sources` below): the rail
-    // slot and an AgenticProcess entity are one thing to a user, so one TypeInfo.
-    chats: { title: t`Chats`, icon: iconForType(AgenticProcess.type), viewType: ViewType.SHELL },
     stream_inbox: { title: t`Stream Inbox`, icon: Mail, viewType: ViewType.STREAM_INBOX },
     // `Plug`, not the screen's own `KeyRound` (VIEWER_REGISTRY): a connection is
     // more than a key, and the rail reads better with a glyph per job. A literal is right here —
@@ -115,7 +107,7 @@ export function CollapsedSidebar() {
   // unused entries every desk render).
   const hubItems = useMemo(() => (hubMode ? buildHubRailItems(t) : NO_HUB_ITEMS), [hubMode, t]);
 
-  const railItems = hubMode ? [] : resolveRail(viewMode);
+  const railItems = hubMode ? [] : resolveRail(tierMode);
   const topItems = railItems.filter((item) => item.placement === 'top');
   const overflowItems = railItems.filter((item) => item.placement === 'overflow');
 
@@ -147,10 +139,6 @@ export function CollapsedSidebar() {
         // The rail's Home is a Home button: it asks for the project home page.
         navigation.goHome({ homePage: true });
       } else {
-        if (viewType === ViewType.SHELL) {
-          markPerfT0();
-          perfLog('shell icon clicked');
-        }
         // Assets is scope-aware: open the scope-keyed assets tab — the current
         // project's scope when a project is active (tab "<project>'s Assets"),
         // else global (the single "Assets" tab). Scope rides the navigation
@@ -195,20 +183,6 @@ export function CollapsedSidebar() {
         // Full-page marketplace: a top-level route, not a dock tab — but still
         // through `navigation`, so every entry point builds the same URL.
         navigation.openDiscover(dataContext.project?.id ?? null);
-        return;
-      case 'chats':
-        // Vibe has no chats list — resume the last real UI chat in the project.
-        // TODO(nav): this is the ONE mode-dependent target the component still
-        // resolves itself; `project` delegates to navigation.openAssets.
-        // If a second one appears, move this into a
-        // `navigation.openChats()` so every entry point (spotlight, shortcuts,
-        // journeys) agrees. Not moved yet because useLastVibeChat is async and
-        // hook-shaped while NavigationActions methods are sync.
-        if (isVibe) {
-          openLastVibeChat();
-          return;
-        }
-        handleClick(ViewType.SHELL);
         return;
       case 'credentials':
         // Not `openTab`: `openCredentials` puts the active project in the URL.

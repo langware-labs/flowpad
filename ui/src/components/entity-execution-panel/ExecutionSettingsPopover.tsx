@@ -20,6 +20,8 @@ interface ExecutionSettingsPopoverProps {
   modelControl?: ReactNode;
   workerControl?: ReactNode;
   showProject?: boolean;
+  /** Host-supplied actions under the settings (e.g. Vibe's "Open terminal"). */
+  actions?: ReactNode;
   trigger: ReactNode;
 }
 
@@ -30,6 +32,7 @@ export function ExecutionSettingsPopover({
   modelControl,
   workerControl,
   showProject = true,
+  actions,
   trigger,
 }: ExecutionSettingsPopoverProps) {
   const { t } = useLingui();
@@ -110,6 +113,7 @@ export function ExecutionSettingsPopover({
               <Trans>Show tool calls</Trans>
             </span>
           </label>
+          {actions}
         </div>
       </PopoverContent>
     </Popover>

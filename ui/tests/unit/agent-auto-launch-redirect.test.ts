@@ -63,6 +63,7 @@ describe('project agent auto-launch redirect', () => {
     ['a Hub-only build', `http://flowpad.local/dock/project/${PROJECT_ID}`, () => mocks.hubOnly.mockReturnValue(true)],
     ['a deep link (?action=open)', `http://flowpad.local/dock/project/${PROJECT_ID}?action=open`, () => {}],
     ['a route already inside a session', `http://flowpad.local/dock/shell/agentic_process-${PROCESS_ID}`, () => {}],
+    ['a route already inside a Vibe session', `http://flowpad.local/dock/vibe/agentic_process-${PROCESS_ID}`, () => {}],
     // A terminal link to a report lands here — the user asked for the report.
     [
       'an asset opened inside the project',
@@ -90,8 +91,9 @@ describe('project agent auto-launch redirect', () => {
     expect(mocks.drainQueue).toHaveBeenCalledTimes(1);
     expect(response?.status).toBe(302);
     const location = response?.headers.get('Location') ?? '';
-    expect(location).toContain(`/dock/shell/agentic_process-${PROCESS_ID}`);
-    expect(location).toContain('viewMode=vibe');
+    // Vibe is the host tab's own address now, not a mode option on the shell dock.
+    expect(location).toContain(`/dock/vibe/agentic_process-${PROCESS_ID}`);
+    expect(location).not.toContain('viewMode=');
     expect(takeAgentAutoLaunchWarning()).toBeNull();
   });
 

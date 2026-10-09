@@ -13,6 +13,7 @@ import apiClient from '@sdk/client';
 let mode = 'vibe';
 vi.mock('@src/contexts/view-mode-context', () => ({
   useViewMode: () => mode,
+  useTierMode: () => mode,
   ViewMode: { Vibe: 'vibe', Standard: 'standard', Advanced: 'advanced', Dev: 'dev' },
 }));
 

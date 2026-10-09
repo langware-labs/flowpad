@@ -22,17 +22,17 @@ import {
   type TabLifecycleEntry,
 } from '@sdk';
 import { EntityIcon } from '@src/components/graph-view/ui/EntityIcon';
+import { favoriteTargetForDock } from '@src/components/favorites/favorite-target';
+import type { FavoriteRef } from '@src/hooks/use-favorites';
+import { tabDock } from '@src/tabs/project-entry';
 import { type TabStripItem } from '@src/components/tabs/TabStrip';
 import { useEntity } from '@src/hooks/entity-hooks';
+import { useLaunchingAgent } from '@src/hooks/use-launching-agent';
+import { AgentAvatar } from '@src/components/agents/AgentAvatar';
 import { lucideByName } from '@src/lib/lucide-by-name';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { useTabLifecycles } from '@src/tabs/use-tab-manager';
-import {
-  ContentTabTooltip,
-  humanizeType,
-  LazyProcessTooltip,
-  PROVIDER_META,
-} from '@src/tabs/provider-meta';
+import { ContentTabTooltip, humanizeType, LazyProcessTooltip, PROVIDER_META } from '@src/tabs/provider-meta';
 import { ViewType, VIEWER_REGISTRY, viewerTitle } from '@src/types/ViewType';
 import { FileText, FolderGit2 } from 'lucide-react';
 import React, { useMemo } from 'react';
@@ -57,8 +57,43 @@ function lifecycleStatus(lifecycle: TabLifecycleEntry | null): {
   return { hasError: false, isClosing: false, statusReason: '' };
 }
 
-/** Tab → chip. */
+/**
+ * A session's chip icon: the AGENT's avatar when the session was launched as an
+ * agent (its deployment names one — the same resolution the chat panel's intro
+ * uses), else the provider glyph. The strip batch-loads chip processes, so the
+ * process read is a cache hit; a session without a deployment fetches nothing.
+ */
+function ProcessTabIcon({ processId, fallback }: { processId: string; fallback: React.ReactNode }) {
+  const typeId = useMemo(() => new TypeId(AgenticProcess.type, processId), [processId]);
+  const process = useEntity<AgenticProcess>(typeId).data;
+  const agent = useLaunchingAgent(process?.deployment_id);
+  if (!agent) return <>{fallback}</>;
+  return (
+    <AgentAvatar
+      agent={agent}
+      className="h-4 w-4 shrink-0"
+      glyphClassName="text-[11px] leading-none"
+      data-testid="tab-agent-avatar"
+    />
+  );
+}
+
+/** Tab → chip, leading with the tab's own bookmark star when it has one to offer. */
 export function tabItem(tab: Tab, lifecycle: TabLifecycleEntry | null = null): TabStripItem {
+  const item = chipFor(tab, lifecycle);
+  return { ...item, favorite: tabFavorite(tab, item.title) };
+}
+
+/** What bookmarking this tab means — the SAME answer the navigation bar's star
+ *  gives when the tab is active (`favoriteTargetForDock` over its dock and that
+ *  dock's target), so the two stars light together. */
+function tabFavorite(tab: Tab, title: string): FavoriteRef | null {
+  const dock = tabDock(tab);
+  const typeId = dock?.targetTypeId ?? null;
+  return favoriteTargetForDock(dock, typeId ? { typeId, entity: null } : null, title);
+}
+
+function chipFor(tab: Tab, lifecycle: TabLifecycleEntry | null): TabStripItem {
   const dock = tab.dockPointer;
   const key = tabKey(tab);
   // No char-level clipping: CSS truncation in the strip owns visible clipping
@@ -78,17 +113,18 @@ export function tabItem(tab: Tab, lifecycle: TabLifecycleEntry | null = null): T
     const meta = PROVIDER_META[kind];
     const Icon = meta.Icon;
     const processId = tab.target_type === AgenticProcess.type ? tab.target_id : null;
+    const providerIcon = (
+      <Icon
+        className={`h-3.5 w-3.5 shrink-0 ${meta.iconClassName}`}
+        data-provider={kind}
+        aria-label={i18n._(meta.label)}
+      />
+    );
     return {
       key,
       title: label || i18n._(meta.label),
       titleClassName,
-      icon: (
-        <Icon
-          className={`h-3.5 w-3.5 shrink-0 ${meta.iconClassName}`}
-          data-provider={kind}
-          aria-label={i18n._(meta.label)}
-        />
-      ),
+      icon: processId ? <ProcessTabIcon processId={processId} fallback={providerIcon} /> : providerIcon,
       // Worktree glyph. What the agent has shown lives on the process's bottom
       // ribbon (the Shown chip beside Open Plan), not on its tab chip.
       badge: tab.worktree ? <FolderGit2 className="h-3 w-3 shrink-0 text-amber-500" /> : undefined,

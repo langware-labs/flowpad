@@ -1,9 +1,9 @@
-import { AgenticProcess, parentOfTab, tabForDockKey, Tab, TypeId } from '@sdk';
-import { useEffect, useMemo, useRef } from 'react';
+import { AgenticProcess, parentOfTab, tabForDockKey, Tab, TypeId, type ShowTarget } from '@sdk';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { useAllTabs } from '@src/tabs/use-tab-manager';
-import { ViewType } from '@src/types/ViewType';
+import { sessionIdForDock } from '@src/contexts/view-mode-context';
 import { useEntity } from '@src/hooks/entity-hooks';
 import { setupTabAndAdopt } from '@src/tabs/tab-content-lifecycle';
 
@@ -71,7 +71,7 @@ export function useVibeWorkspaceSession(): VibeWorkspaceSession | null {
     // must fall through to the child lookup so a terminal opened inside the
     // workspace keeps rendering in its display pane instead of taking over the
     // whole surface.
-    if (currentDock.viewType === ViewType.SHELL && DockPointer.isAgenticProcessPointer(currentDock.pointer)) {
+    if (sessionIdForDock(currentDock)) {
       return build(tabByHash(currentDock.tabHash), currentDock, true);
     }
 
@@ -138,4 +138,25 @@ export function useVibeWorkspaceSessionHost(
   }, [active, session, session?.processTab, session?.processDock]);
 
   return process ?? null;
+}
+
+/**
+ * A workspace's `flow show` state, scoped to its SESSION. One workspace component
+ * serves every Vibe tab — switching tabs re-renders it with another session — so
+ * this state resets when the session changes:
+ *  - `latestShown`: the newest show's payload (see `DisplayChrome.latestShown`);
+ *    left over, tab A's last show is appended to tab B's history popover.
+ *  - `hasPushedDisplayRef`: the FIRST show after arriving pushes, every later one
+ *    replaces (so Back returns to the workspace and a chatty agent does not bury
+ *    the user's history); left over, B's first show replaces the URL the user
+ *    arrived on.
+ */
+export function useSessionShowState(processId: string | null) {
+  const [latestShown, setLatestShown] = useState<ShowTarget | null>(null);
+  const hasPushedDisplayRef = useRef(false);
+  useEffect(() => {
+    hasPushedDisplayRef.current = false;
+    setLatestShown(null);
+  }, [processId]);
+  return { latestShown, setLatestShown, hasPushedDisplayRef };
 }

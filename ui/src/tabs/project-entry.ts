@@ -1,7 +1,16 @@
 import { DockPointer } from '@src/navigation/DockPointer';
 import { allScope, projectScope } from '@src/lib/scope-filter';
 import { VIEWER_REGISTRY, ViewType } from '@src/types/ViewType';
-import { ContextEntitiesEnum, dataContext, tabHasRecency, tabInProject, tabIsProcess, tabManager } from '@sdk';
+import {
+  ContextEntitiesEnum,
+  dataContext,
+  resolveNextTabPure,
+  tabHasRecency,
+  tabInProject,
+  tabManager,
+  topLevelTabsForProject,
+  type Tab,
+} from '@sdk';
 
 /** Whether a view keeps one tab per scope (Assets, Explorer, Desktop) — the
  *  browse surfaces that translate across projects by swapping the scope. */
@@ -30,11 +39,8 @@ export async function dockForScopeEntry(
   currentDock?: DockPointer | null,
 ): Promise<DockPointer> {
   const tabs = (await tabManager.snapshotOrRefresh()).filter((t) => tabInProject(t, projectId));
-  const known = tabs.filter(tabHasRecency);
-  // `Tab.dockPointer` is the parsed stored JSON, not the UI class — hydrate it,
-  // or callers chaining `withOption` (`withHomePage`) throw on a plain object.
-  const dock = tabManager.resolveNext(known)?.dockPointer ?? null;
-  if (dock) return scopedToEntry(new DockPointer(dock), projectId);
+  const dock = tabDock(tabManager.resolveNext(tabs.filter(tabHasRecency)));
+  if (dock) return scopedToEntry(dock, projectId);
 
   if (isScopeKeyedView(currentDock?.viewType)) {
     return new DockPointer(currentDock.viewType, '').withScopeFilter(
@@ -46,6 +52,22 @@ export async function dockForScopeEntry(
   // shape `adoptScopeProject` reads as "restore the remembered project", so a
   // bare Home would pull the caller back into the project they asked to leave.
   return projectId == null ? globalHomeDock() : DockPointer.forProject(projectId);
+}
+
+/** A tab's dock as the UI class. `Tab.dockPointer` is the parsed stored JSON —
+ *  hydrate it, or callers chaining `withOption` (`withHomePage`) throw on a plain object. */
+export function tabDock(tab: Tab | null | undefined): DockPointer | null {
+  return tab?.dockPointer ? new DockPointer(tab.dockPointer) : null;
+}
+
+/**
+ * The scope's KNOWN last-active top-level tab — what the bar's "Back to tabs"
+ * returns to. Same rule as {@link dockForScopeEntry}: only `last_active_at`-stamped
+ * tabs count, never a strip-order guess. Pure (it never consumes the manager's
+ * pending intent), so it is safe as a store selector.
+ */
+export function lastKnownTab(tabs: readonly Tab[], projectId: string | null): Tab | null {
+  return resolveNextTabPure({ tabs: topLevelTabsForProject(tabs, projectId).filter(tabHasRecency) }).tab;
 }
 
 /**
@@ -97,15 +119,6 @@ export async function leaveProjectScope(currentDock?: DockPointer | null): Promi
 /** Enter a project scope. Thin alias of {@link dockForScopeEntry}. */
 export function dockForProjectEntry(projectId: string, currentDock?: DockPointer | null): Promise<DockPointer> {
   return dockForScopeEntry(projectId, currentDock);
-}
-
-/** Pick the active AgenticProcess tab for a project, or null when the project
- *  has no process tab. Vibe project switching uses this instead of
- *  dockForProjectEntry because its fallback must be a Vibe empty state, never
- *  project home. */
-export async function agenticProcessIdForProjectEntry(projectId: string): Promise<string | null> {
-  const tabs = (await tabManager.snapshotOrRefresh()).filter((t) => tabInProject(t, projectId) && tabIsProcess(t));
-  return tabManager.resolveNext(tabs)?.target_id ?? null;
 }
 
 /** Enter the Global (projectless) scope. Thin alias of {@link dockForScopeEntry}. */

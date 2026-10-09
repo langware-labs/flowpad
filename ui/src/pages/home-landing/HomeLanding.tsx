@@ -25,7 +25,7 @@ import { X, CheckCircle2 } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { LastScanResult } from '@sdk';
 import { Trans, useLingui } from '@lingui/react/macro';
-import { VibeModelSelect, useVibeModelTier } from '@src/pages/flow-page/vibe-model-select';
+import { useVibeModelTier } from '@src/pages/flow-page/vibe-model-select';
 
 /**
  * HomeLanding - Welcome view with greeting and quick action buttons
@@ -76,7 +76,8 @@ export function HomeLanding() {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchFilters, setSearchFilters] = useState<SearchFilters>({});
   const [selectedResultIndex, setSelectedResultIndex] = useState(-1);
-  const [vibeModel, setVibeModel] = useVibeModelTier();
+  // No model picker on the home: the stored tier is set from the Vibe chat pane's picker.
+  const [vibeModel] = useVibeModelTier();
   // The project list is a disk scan; Home only needs it once results render.
   const { scope: searchScope, isLoading: searchScopeLoading } = useGlobalSearchScope({
     enabled: searchQuery.trim().length >= 2,
@@ -157,7 +158,6 @@ export function HomeLanding() {
                     value={draftPrompt}
                     onChange={setDraftPrompt}
                     allowAttachments
-                    footerSlot={<VibeModelSelect value={vibeModel} onChange={setVibeModel} />}
                     onSubmit={(msg, files) => void handleVibeSubmit(msg, files, vibeModel)}
                   />
                 </div>

@@ -1,5 +1,5 @@
 import { AgenticProcess, dataContext, ProcessKind, toplog, type ComputeNode } from '@sdk';
-import { getEffectiveViewMode, surfaceForViewMode, viewModePtyMode } from '@src/contexts/view-mode-context';
+import { surfaceForViewMode, ViewMode, viewModePtyMode } from '@src/contexts/view-mode-context';
 import { chatTargetForProject } from '@src/lib/chat-target';
 import { embedStandardAgent } from './embed-standard-agent';
 import type { NavigationActions } from './NavigationActions';
@@ -9,6 +9,8 @@ export interface OpenNewChatOptions {
   projectId?: string;
   /** Working directory; defaults to the active project's mount path. */
   cwd?: string;
+  /** The surface to open in; defaults to the mode on screen. */
+  mode?: ViewMode;
 }
 
 /**
@@ -41,8 +43,8 @@ export interface OpenNewChatOptions {
  * whichever mode it was born in. They were previously omitted, so every session
  * from this path landed with `process_type` and `target_typeid_str` null and was
  * invisible to every consumer that filters on them: Vibe's "Past builds"
- * (`useProcessesForTarget`) and the rail's last-chat resolver
- * (`lastVibeChatQuery`) both do.
+ * (`useProcessesForTarget`) and the agent home page's last-chat
+ * resolver (`lastVibeChatQuery`) both do.
  */
 export async function openNewChat(
   navigation: Pick<NavigationActions, 'openShellProcess'>,
@@ -53,7 +55,9 @@ export async function openNewChat(
     console.error('[openNewChat] No compute node');
     return null;
   }
-  const mode = getEffectiveViewMode();
+  // An opener that names no surface opens a TERMINAL — the same as the strip's
+  // openers. The home prompt and Vibe's New/Recent pass Vibe explicitly.
+  const mode = options.mode ?? ViewMode.Advanced;
   const ptyMode = viewModePtyMode(mode);
   const project = dataContext.project;
   const projectId = options.projectId ?? project?.id;

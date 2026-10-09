@@ -43,9 +43,14 @@ test.afterAll(async () => {
   if (world) await destroyWorld(world);
 });
 
-function places(w: World): { name: string; address: string; path: string }[] {
+function places(w: World, mode: QaViewMode): { name: string; address: string; path: string }[] {
   return [
-    { name: 'the mock session terminal', address: `shell/agentic_process-${w.processId}`, path: `/shell/agentic_process-${w.processId}` },
+    {
+      name: 'the mock session terminal',
+      address: `shell/agentic_process-${w.processId}`,
+      // Shown in Vibe, a session lands on its Vibe HOST address (`/dock/vibe/…`).
+      path: `/${mode === 'vibe' ? 'vibe' : 'shell'}/agentic_process-${w.processId}`,
+    },
     { name: 'a plain shell', address: `shell/shell-${w.shellId}`, path: `/shell/shell-${w.shellId}` },
     {
       name: 'the report inside the project',
@@ -70,7 +75,7 @@ for (const mode of MODES) {
     await expect(page.locator('html')).toHaveAttribute('data-view', mode);
     await awaitSteerable(page);
 
-    for (const place of places(world)) {
+    for (const place of places(world, mode)) {
       await test.step(place.name, async () => {
         const before = toplog.length;
         await navigateTo(page, `${place.address}${place.address.includes('?') ? '&' : '?'}viewMode=${mode}`, place.path);

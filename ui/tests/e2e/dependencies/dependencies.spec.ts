@@ -161,7 +161,8 @@ test("a dependency's agent runs in the host project, with its own folder mounted
   await expect(tile).toBeVisible();
   await tile.click();
 
-  await expect(page).toHaveURL(/\/dock\/shell\/agentic_process-([0-9a-f-]+)/);
+  // The agent's session — at its Vibe host address when it opens in Vibe (`/dock/vibe/`).
+  await expect(page).toHaveURL(/\/dock\/(shell|vibe)\/agentic_process-([0-9a-f-]+)/);
   const processId = /agentic_process-([0-9a-f-]{36})/.exec(page.url())![1];
   const proc = (await call('GET', `${GRAPH}/agentic_process/${processId}`))?.data;
   expect(proc.project_id).toBe(projectId);

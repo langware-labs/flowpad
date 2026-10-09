@@ -1,4 +1,4 @@
-import { DOCK_KEYWORD, DEV_KEYWORD, WIN_KEYWORD, Layout, ViewType, PageId, isValidPage } from '@sdk';
+import { AgenticProcess, DOCK_KEYWORD, DEV_KEYWORD, WIN_KEYWORD, Layout, ViewType, PageId, TypeId, isValidPage } from '@sdk';
 
 /**
  * The single keyword→Layout table the parse/strip/build helpers below share.
@@ -101,6 +101,15 @@ export function buildShellRedirectUrl(
   pointer?: string,
   options?: Record<string, string>,
 ): string {
+  // A process asked for in Vibe is the Vibe host dock — the rule
+  // `DockPointer.withViewMode` owns, restated here only because this module sits
+  // below DockPointer (which imports it). Building it directly means a loader
+  // redirect never needs a second hop through the canonicalizer.
+  if (options?.viewMode === 'vibe' && pointer?.startsWith(AgenticProcess.type + TypeId.DELIMITER)) {
+    const rest = { ...options };
+    delete rest.viewMode;
+    return buildDockUrl(currentPath, ViewType.VIBE, pointer, rest, detectLayout(currentPath));
+  }
   return buildDockUrl(currentPath, ViewType.SHELL, pointer, options, detectLayout(currentPath));
 }
 

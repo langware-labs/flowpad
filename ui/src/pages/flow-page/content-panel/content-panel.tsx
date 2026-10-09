@@ -63,7 +63,7 @@ import { ViewType, VIEWER_REGISTRY } from '@src/types/ViewType';
 import { OrganizationPage } from '@src/components/organization/organization-page';
 import { useIsVibe } from '@src/components/view-mode';
 import { AlertTriangle } from 'lucide-react';
-import { lazy, Suspense, useCallback, useEffect, useMemo } from 'react';
+import { createContext, lazy, Suspense, useCallback, useContext, useEffect, useMemo } from 'react';
 import { lazyWebglView } from '@src/components/graph-view/webglSupport';
 
 // Lazy-loaded: GraphView pulls in sigma.js + @sigma/node-image, which run
@@ -142,6 +142,7 @@ const VIBE_CREATOR_SURFACES: ReadonlySet<ViewType> = new Set([
   ViewType.HOME,
   ViewType.CONVERSATION,
   ViewType.SHELL,
+  ViewType.VIBE,
   ViewType.AGENTIC_PROCESS,
   ViewType.WEB_APP,
   ViewType.APP,
@@ -158,6 +159,14 @@ const VIBE_CREATOR_SURFACES: ReadonlySet<ViewType> = new Set([
  *  inside a host layout that owns its own chrome (the vibe workspace mounts it as
  *  the display for a child tab). Generalizes the vibe-creator-surface suppression
  *  to any embedded host (future: the win/ layout). */
+/**
+ * True under a host that draws the global tab strip ITSELF (`flow-page`), above
+ * every layout: one owner, one mounted strip, so switching between a Vibe tab and
+ * another tab never remounts it. A ContentPanel under it frames its body as if the
+ * strip were its own, but does not draw a second one.
+ */
+export const TabStripOwnedAbove = createContext(false);
+
 export function ContentPanel(props: { minimalChrome?: boolean; contentEpoch?: number } = {}) {
   return (
     <PrimaryContentRegion>
@@ -214,7 +223,7 @@ function ContentPanelBody({
   // first alive tab. A pointer-less shell URL is loader-owned (the loader
   // resolves the default target), so we only act when a tab matches the URL.
   useEffect(() => {
-    if (currentDock?.viewType !== ViewType.SHELL || !currentDock.pointer) return;
+    if (!DockPointer.isSessionView(currentDock?.viewType) || !currentDock?.pointer) return;
     const active = tabForDockKey(terminalTabs, currentDock.tabHash);
     if (active?.is_disabled) {
       const alive = terminalTabs.find((t) => t.id !== active.id && !t.is_disabled);
@@ -253,7 +262,12 @@ function ContentPanelBody({
   // surfaces hide it. `hideChrome` (strip conditions + fullbleed) governs the
   // navigator/border framing — derived from `showTabStrip` so the shared
   // conditions exist exactly once.
-  const showTabStrip = !windowMode && !suppressChrome;
+  // Every real tab shows the strip — a Vibe tab is a tab like any other. Only the
+  // win/ focus layout and an embedded host (`minimalChrome`: the Vibe display pane,
+  // the asset workspace, which draw under flow-page's strip) go without. The Vibe
+  // creator surfaces still drop the NAVIGATOR and framing (`suppressChrome`).
+  const showTabStrip = !windowMode && !minimalChrome;
+  const stripOwnedAbove = useContext(TabStripOwnedAbove);
   const hideChrome = !showTabStrip || VIEWER_REGISTRY[bodyViewType]?.chrome === 'fullbleed';
 
   // The single body switch (one place, was duplicated between the overview slot
@@ -340,6 +354,7 @@ function ContentPanelBody({
 
     switch (vt) {
       case ViewType.SHELL:
+      case ViewType.VIBE:
         // A slot of the terminal pool: unmounting it (any view change) moves the
         // terminal back to the pool, it never tears the runtime down.
         return <TabbedTerminal className="h-full" />;
@@ -580,9 +595,9 @@ function ContentPanelBody({
 
       {/* Unified tab strip — persistent fixture chrome: visible on every
           surface (including Home/fullbleed, where no chip is active but the
-          open tabs + openers stay reachable). Only the win/ focus layout and
-          Vibe creator surfaces are deliberately chrome-less. */}
-      {showTabStrip && <UnifiedTabStrip />}
+          open tabs + openers stay reachable). Only the win/ focus layout and an
+          embedded ContentPanel (`minimalChrome`) are deliberately strip-less. */}
+      {showTabStrip && !stripOwnedAbove && <UnifiedTabStrip />}
 
       {/* Zone B — shared left-menu slot, now nested UNDER the tab strip so the
           active view's navigator (assets tree / workflows / docs / triggers /
@@ -591,7 +606,9 @@ function ContentPanelBody({
           body's top edge; the active chip's `-mb-px border-b-transparent`
           opens its bottom over this line, so the menu + body read as one panel
           hanging from the current tab (the folder-tab continuum). */}
-      <div className={`flex min-h-0 flex-1 overflow-hidden ${showTabStrip ? 'border-t border-border' : ''}`}>
+      <div
+        className={`flex min-h-0 flex-1 overflow-hidden ${showTabStrip && !stripOwnedAbove ? 'border-t border-border' : ''}`}
+      >
         {/* A win/ popout starts its navigator collapsed and keeps toggles local. */}
         {!suppressChrome && (
           <NavigatorCollapsePolicyContext.Provider

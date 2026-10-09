@@ -15,6 +15,8 @@ const canon = (url: string) => {
 describe('canonicalizeDockUrl', () => {
   it.each([
     '/dock/display/agentic_process-dddddddd-dddd-4ddd-8ddd-dddddddddddd?viewMode=vibe',
+    '/dock/shell/agentic_process-dddddddd-dddd-4ddd-8ddd-dddddddddddd?viewMode=vibe',
+    '/win/shell/agentic_process-dddddddd-dddd-4ddd-8ddd-dddddddddddd?viewMode=vibe&scope-mode=all',
     '/dock/environment',
     '/dock/environment/whatever',
     '/dock/connections',
@@ -29,8 +31,9 @@ describe('canonicalizeDockUrl', () => {
   });
 
   it('leaves every current URL family of the grammar fixture alone', () => {
-    const rewritten = (contract.url_cases as { url: string }[])
-      .filter((c) => !c.url.startsWith('/agent/'))
+    const rewritten = (contract.url_cases as { url: string; legacy?: boolean }[])
+      // A `legacy` case still DECODES (old bookmarks) but is rewritten by design.
+      .filter((c) => !c.url.startsWith('/agent/') && !c.legacy)
       .map((c) => [c.url, canon(c.url)])
       .filter(([, to]) => to !== null);
     expect(rewritten).toEqual([]);

@@ -8,6 +8,8 @@
       "@sdk/*": ["../ts_sdk/src/*"]
     }
   },
+  // A references-only root: `tsc -p .` here checks NOTHING. Type-check with
+  // `npm run type-check` (app + node configs; CI adds type-check:ceiling).
   "files": [],
   "references": [
     { "path": "./tsconfig.app.json" },

@@ -30,7 +30,7 @@ export default mergeConfig(
       hookTimeout: 15000,
       testTimeout: 15000,
       environment: 'jsdom',
-      setupFiles: ['./tests/_lingui-mock.ts', './tests/unit/testSetup.ts'],
+      setupFiles: ['./tests/_lingui-mock.ts', './tests/_restore-globals.ts', './tests/unit/testSetup.ts'],
       pool: 'threads',
       poolOptions: {
         threads: {

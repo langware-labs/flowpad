@@ -33,8 +33,9 @@ const { useAlertStore } = await import('@src/notifications/alerts-store');
 const { WarningsPopover } = await import('@src/components/warnings-popover/warnings-popover');
 const viewModeContext = await import('@src/contexts/view-mode-context');
 
+/** Developer mode is a switch now, not a view mode — the alert gate reads it. */
 function setMode(mode: ViewMode) {
-  vi.spyOn(viewModeContext, 'getEffectiveViewMode').mockReturnValue(mode);
+  vi.spyOn(viewModeContext, 'getDev').mockReturnValue(mode === ViewMode.Dev);
 }
 
 describe('alert toasts are dev-only, and always logged to the footer', () => {

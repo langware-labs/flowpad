@@ -1,4 +1,3 @@
-import type { ShowTarget } from '@sdk';
 import CodeEditor from '@src/components/code-editor/CodeEditor';
 import DiffViewer from '@src/components/code-editor/DiffViewer';
 import { DisplayToolbar } from '@src/components/display-toolbar';
@@ -23,7 +22,7 @@ import { ContentPanel } from './content-panel/content-panel';
 import { DisplayChrome } from './display-chrome';
 import { launchVibeSessionForProject } from './use-start-vibe-session';
 import { VIBE_STARTER_PROMPTS } from './vibe-starter-prompts';
-import { type VibeWorkspaceSession, useVibeWorkspaceSessionHost } from './use-vibe-workspace-session';
+import { type VibeWorkspaceSession, useSessionShowState, useVibeWorkspaceSessionHost } from './use-vibe-workspace-session';
 import { VibeChatPane } from './vibe-chat-pane';
 import {
   displayAnnotationContextForDock,
@@ -100,13 +99,8 @@ export function VibeWorkspace({ session }: VibeWorkspaceProps) {
   // no-op navigation (same URL) yet may sit behind a rebuild. It is the display
   // body's content epoch, which is what reloads it.
   const [showNonce, setShowNonce] = useState(0);
-  // The payload of the newest show — see `DisplayChrome.latestShown`.
-  const [latestShown, setLatestShown] = useState<ShowTarget | null>(null);
-
-  // The FIRST show after a mount pushes; every one after it replaces — otherwise the
-  // first show overwrites the URL the user arrived on and Back ejects them from the
-  // workspace instead of returning them to it.
-  const hasPushedDisplayRef = useRef(false);
+  // The newest show's payload and the first-show push flag, per session.
+  const { latestShown, setLatestShown, hasPushedDisplayRef } = useSessionShowState(session.processId);
 
   useEffect(() => {
     if (!activeProcess) return;
@@ -129,7 +123,7 @@ export function VibeWorkspace({ session }: VibeWorkspaceProps) {
       // target still lands in the display history, and the pane stays as it is.
       if (committed) hasPushedDisplayRef.current = true;
     });
-  }, [activeProcess, navigation, session.processDock.pointer, projectId, currentDock]);
+  }, [activeProcess, navigation, session.processDock.pointer, projectId, currentDock, setLatestShown, hasPushedDisplayRef]);
 
   // Open a past display as its OWN standard tab (the reusable behavior): convert
   // the stored target to its dock pointer and navigate.
@@ -369,7 +363,6 @@ export function VibeWorkspace({ session }: VibeWorkspaceProps) {
           <WorkspaceChildStrip
             processTab={session.processTab}
             processDock={session.processDock}
-            projectId={projectId}
           />
           <div className="min-h-0 flex-1">
             {/* On the display URL: the agent-driven pin. On a child URL: the
