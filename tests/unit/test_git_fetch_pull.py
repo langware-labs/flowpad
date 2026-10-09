@@ -117,3 +117,37 @@ async def test_unsaved_edits_that_clash_with_the_pull_are_a_conflict_not_a_succe
     result = await GitRepo(str(mine), LocalNode()).pull()
     assert not result.ok and result.kind == "conflict"
     assert "README.md" in result.message
+
+
+async def test_status_names_the_remote_branch_only_when_there_is_one(clones):
+    mine, _ = clones
+    repo = GitRepo(str(mine), LocalNode())
+    tracked = await repo.get_status()
+    assert (tracked.upstream, tracked.ahead, tracked.behind) == ("origin/main", 0, 0)
+
+    # A branch never pushed has no remote branch — not "up to date".
+    _git(mine, "checkout", "-qb", "feature")
+    _commit(mine, "f.md", "local only\n")
+    assert (await repo.get_status()).upstream is None
+
+    # A remote branch deleted on the server ("[gone]") is no remote branch either.
+    _git(mine, "push", "-qu", "origin", "feature")
+    assert (await repo.get_status()).upstream == "origin/feature"
+    _git(mine, "push", "-q", "origin", "--delete", "feature")
+    assert (await repo.get_status()).upstream is None
+
+
+@pytest.mark.parametrize(
+    ("line", "parsed"),
+    [
+        ("## main", ("main", None, 0, 0)),
+        ("## main...origin/main", ("main", "origin/main", 0, 0)),
+        ("## main...origin/main [ahead 1, behind 2]", ("main", "origin/main", 1, 2)),
+        ("## main...origin/main [gone]", ("main", None, 0, 0)),
+        ("## HEAD (no branch)", (None, None, 0, 0)),
+        ("## No commits yet on main", ("main", None, 0, 0)),
+        ("## No commits yet on main...origin/main", ("main", "origin/main", 0, 0)),
+    ],
+)
+async def test_branch_header_parse(line, parsed):
+    assert GitRepo._parse_branch_header(line) == parsed
