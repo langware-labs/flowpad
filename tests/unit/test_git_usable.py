@@ -94,3 +94,43 @@ def test_run_git_runs_when_usable(monkeypatch):
     monkeypatch.setattr(git_utils.subprocess, "run", fake_run)
     assert git_utils._run_git(["git", "status"], ".").stdout == "ok"
     assert seen["args"] == ["git", "status"]
+
+
+# --- the other places that run git on their own (found in review of #585) -------------------------------------------
+
+
+def _forbid_git(monkeypatch):
+    def must_not_run(*_a, **_k):
+        raise AssertionError("git must not be spawned on a Mac without the Command Line Tools")
+
+    monkeypatch.setattr(subprocess, "run", must_not_run)
+
+
+def test_hub_repo_sync_local_tree_does_not_spawn_git(monkeypatch, tmp_path):
+    from flow_sdk.assets import hub_repo_sync
+
+    monkeypatch.setattr("flow_sdk.utils.git_usable.git_usable", lambda: False)
+    _forbid_git(monkeypatch)
+    assert hub_repo_sync.local_tree(tmp_path / "mirror", tmp_path / "work", "a.md") is None
+
+
+def test_detaching_a_template_does_not_run_git_init_when_unusable(monkeypatch, tmp_path):
+    from flow_sdk.builtin import project
+
+    (tmp_path / ".git").mkdir()
+    monkeypatch.setattr("flow_sdk.utils.git_usable.git_usable", lambda: False)
+    _forbid_git(monkeypatch)
+    project._detach_git_history(tmp_path)
+    assert not (tmp_path / ".git").exists(), "the old history is still removed; only the git init is skipped"
+
+
+@pytest.mark.asyncio
+async def test_docs_diff_does_not_run_git_show_when_unusable(monkeypatch, tmp_path):
+    from flow_sdk.server.routes import docs_graph
+
+    (tmp_path / "doc.md").write_text("hello\n")
+    monkeypatch.setattr(docs_graph, "git_usable", lambda: False)
+    _forbid_git(monkeypatch)
+    result = await docs_graph.docs_graph_diff(root=str(tmp_path), rel="doc.md")
+    assert result["status"] == "SUCCESS"
+    assert "hello" in result["data"]["diff"], "with no baseline it still renders the file as added"

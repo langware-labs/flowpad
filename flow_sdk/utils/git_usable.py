@@ -3,10 +3,10 @@
 On a Mac without Apple's Command Line Tools, ``/usr/bin/git`` is a stub: it does not run git, it opens a system
 dialog ("The "git" command requires the command line developer tools") and exits non-zero. A background probe that
 only wants to know "is this folder a repo?" or "what is user.email?" must not do that to someone who never asked
-for Git. The desktop app asks about the tools once, on first launch (electron/dev-tools.js); these probes just stay
-quiet until they are there.
+for Git. The question is asked in one place only: the Git wizard (``ask-install-git`` / ``git-on-path``), when
+the person agrees to install. Everything that runs git on its own stays quiet until the tools are there.
 
-Only file stats on the common path — no subprocess, so it is safe to call per probe.
+Only file stats on the common path, no subprocess, so it is safe to call per probe.
 """
 
 from __future__ import annotations
