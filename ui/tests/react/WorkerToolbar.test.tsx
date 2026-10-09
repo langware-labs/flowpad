@@ -22,7 +22,7 @@ vi.mock('@src/navigation/useDockNavigation', () => ({
 }));
 
 import { instancePreferences, PrefKey } from '@sdk';
-import { setViewMode, ViewMode } from '@src/contexts/view-mode-context';
+import { setDev, setViewMode, ViewMode } from '@src/contexts/view-mode-context';
 import { WorkerToolbar } from '@src/components/workers/WorkerToolbar';
 import { openerToWorker, useLastWorkerType, workerToOpener } from '@src/components/terminal/openers/useLastWorkerType';
 import { renderHook } from '@testing-library/react';
@@ -36,6 +36,7 @@ beforeEach(() => {
   localStorage.clear();
   resetOpenerPrefs();
   setViewMode(ViewMode.Standard);
+  setDev(false); // the "Dev view" test below turns it on
 });
 
 describe('WorkerToolbar — display modes', () => {
@@ -65,7 +66,7 @@ describe('WorkerToolbar — display modes', () => {
   });
 
   it('Dev view defaults to all (no chevron)', () => {
-    setViewMode(ViewMode.Dev);
+    setDev(true); // Dev is a switch now, not a view mode
     render(<WorkerToolbar onLaunch={() => {}} testIdPrefix="t" />);
     expect(screen.getByTestId('t-launch-codex')).toBeTruthy();
     expect(screen.getByTestId('t-launch-copilot')).toBeTruthy();
