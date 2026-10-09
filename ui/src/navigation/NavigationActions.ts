@@ -36,7 +36,7 @@ import { isProjectHomePage, withHomePage } from '@src/project-home-page/home-pag
 import { placeDockInProject, presentDockTab } from './present-dock-tab';
 import { openExternal } from '@src/lib/open-external';
 import { openInBrowserProfile } from '@src/lib/browser-profiles';
-import { appLinkPath, isWebUrl } from '@src/lib/link-kind';
+import { appLinkPath, bareWebUrl, isWebUrl } from '@src/lib/link-kind';
 import { errorMessage } from '@src/lib/error-message';
 import type { LinkSource } from '@src/components/links/link-events';
 import { notify } from '@src/notifications/notify';
@@ -848,7 +848,15 @@ export class NavigationActions {
 
   private async browserUrlFor(link: string, source: LinkSource | null): Promise<string> {
     if (isWebUrl(link)) return link;
-    return this.getDockUrl(placeDockInProject(await this.resolveLinkDock(link, source), source?.project_id));
+    // `clau.de/reset` is a web page written without its scheme, not a file to look up.
+    const web = bareWebUrl(link);
+    if (web?.sure) return web.url;
+    try {
+      return this.getDockUrl(placeDockInProject(await this.resolveLinkDock(link, source), source?.project_id));
+    } catch (error) {
+      if (web) return web.url;
+      throw error;
+    }
   }
 
   /**

@@ -20,6 +20,20 @@ const POSITION_SUFFIX = /(?::\d+(?::\d+)?|#L\d+)$/;
 
 export const isWebUrl = (link: string): boolean => /^https?:\/\//i.test(link);
 
+/** A web address written without its scheme: `clau.de/reset`, `example.org`, `x.io:8080/a?b`. */
+const BARE_HOST = /^(?:[a-z0-9-]+\.)+[a-z]{2,}(?::\d+)?(?<rest>[/?#]\S*)?$/i;
+
+/**
+ * The https URL a scheme-less web address names, or null when the link is not shaped like
+ * one. `sure` means it carries a path after the host (`clau.de/reset`) — no relative file
+ * path starts with a dotted host — while a bare `README.md` reads as a host too, so a
+ * caller tries it as a file first.
+ */
+export function bareWebUrl(link: string): { url: string; sure: boolean } | null {
+  const match = BARE_HOST.exec(link);
+  return match ? { url: `https://${link}`, sure: Boolean(match.groups?.rest) } : null;
+}
+
 /** The in-app address an app URL copied from this browser names, or null when it is not one. */
 export function appLinkPath(link: string, origin: string): string | null {
   if (APP_PATH.test(link)) return link;
