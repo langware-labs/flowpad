@@ -134,3 +134,102 @@ async def test_docs_diff_does_not_run_git_show_when_unusable(monkeypatch, tmp_pa
     result = await docs_graph.docs_graph_diff(root=str(tmp_path), rel="doc.md")
     assert result["status"] == "SUCCESS"
     assert "hello" in result["data"]["diff"], "with no baseline it still renders the file as added"
+
+
+# --- the funnels everything else goes through ------------------------------------------------------------------------
+
+
+class _RecordingNode:
+    """Just enough of a ComputeNode for the executor and for ComputeSourceControl.initialize."""
+
+    def __init__(self, provider):
+        from contextlib import asynccontextmanager
+
+        self.node_provider_type = provider
+        self.commands: list[str] = []
+
+        @asynccontextmanager
+        async def ready_session():
+            yield
+
+        self.ready_session = ready_session
+
+    async def run_command(self, command, **_kwargs):
+        self.commands.append(command)
+
+        class _Done:
+            exit_code = 0
+            all_stdout = "true"
+            all_stderr = ""
+
+            async def wait(self):
+                return None
+
+        return _Done()
+
+
+def test_the_local_executor_answers_a_git_call_as_a_missing_binary(monkeypatch):
+    from flow_sdk.utils.command_executor import _LocalCommandExecutor
+
+    monkeypatch.setattr("flow_sdk.utils.command_executor.git_usable", lambda: False)
+    _forbid_git(monkeypatch)
+    result = _LocalCommandExecutor().run_sync(["git", "status"])
+    assert result.returncode == 127 and "Command Line Tools" in result.stderr
+
+
+def test_the_local_executor_still_runs_everything_that_is_not_git(monkeypatch):
+    from flow_sdk.utils.command_executor import _LocalCommandExecutor
+
+    monkeypatch.setattr("flow_sdk.utils.command_executor.git_usable", lambda: False)
+    assert _LocalCommandExecutor().run_sync(["echo", "hi"]).stdout.strip() == "hi"
+
+
+@pytest.mark.asyncio
+async def test_the_node_executor_refuses_git_on_this_machine_but_not_on_a_remote_box(monkeypatch):
+    from flow_sdk.builtin.faas.command_executor import ComputeNodeCommandExecutor
+    from flow_sdk.config import ComputeProviderType
+
+    monkeypatch.setattr("flow_sdk.builtin.faas.command_executor.git_usable", lambda: False)
+
+    here = _RecordingNode(ComputeProviderType.LOCAL_MACHINE)
+    refused = await ComputeNodeCommandExecutor(here).run(["git", "status"], cwd="/tmp/x")
+    assert refused.returncode == 127 and here.commands == [], "nothing was sent to the node"
+
+    remote = _RecordingNode(ComputeProviderType.E2B)
+    await ComputeNodeCommandExecutor(remote).run(["git", "status"], cwd="/tmp/x")
+    assert len(remote.commands) == 1, "a remote box has its own git; this Mac's tools say nothing about it"
+
+
+@pytest.mark.asyncio
+async def test_project_initialize_runs_no_git_on_a_mac_without_the_tools(monkeypatch):
+    from flow_sdk.config import ComputeProviderType
+    from flow_sdk.core.flow import flow_source_control as fsc
+
+    monkeypatch.setattr(fsc, "git_usable", lambda: False)
+    node = _RecordingNode(ComputeProviderType.LOCAL_MACHINE.value)
+    async with fsc.ComputeSourceControl(compute_node=node).initialize(fsc.ComputeSourceControlInitializeOptions()):
+        pass
+    assert node.commands == [], f"git was run: {node.commands}"
+
+
+@pytest.mark.asyncio
+async def test_project_initialize_still_does_git_when_it_is_usable(monkeypatch):
+    from flow_sdk.config import ComputeProviderType
+    from flow_sdk.core.flow import flow_source_control as fsc
+
+    monkeypatch.setattr(fsc, "git_usable", lambda: True)
+    node = _RecordingNode(ComputeProviderType.LOCAL_MACHINE.value)
+    async with fsc.ComputeSourceControl(compute_node=node).initialize(fsc.ComputeSourceControlInitializeOptions()):
+        pass
+    assert any("git" in c for c in node.commands)
+
+
+@pytest.mark.asyncio
+async def test_the_hub_mirror_says_git_is_missing_instead_of_opening_the_dialog(monkeypatch, tmp_path):
+    from flow_sdk.assets import hub_repo_sync
+    from flow_sdk.assets.git_publish import AssetPublishError
+
+    monkeypatch.setattr(hub_repo_sync, "git_usable", lambda: False)
+    mirror = hub_repo_sync.HubRepoMirror(root=tmp_path, clone_url="http://x", branch="main", token="t")
+    with pytest.raises(AssetPublishError, match="Git is not installed"):
+        await mirror.git("status")

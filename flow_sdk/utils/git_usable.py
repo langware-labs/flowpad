@@ -17,6 +17,10 @@ import shutil
 import subprocess
 import sys
 
+#: What a refused git call says. A process result with this on stderr reads like a missing binary (exit 127).
+NOT_USABLE_MESSAGE = "git is not usable: the macOS Command Line Tools are not installed"
+EXIT_NOT_FOUND = 127
+
 _CLT_GIT = "/Library/Developer/CommandLineTools/usr/bin/git"
 _XCODE_GIT = "/Applications/Xcode.app/Contents/Developer/usr/bin/git"
 _STUB_GIT = "/usr/bin/git"
@@ -43,3 +47,8 @@ def git_usable() -> bool:
         return True
     selected = _selected_developer_git()
     return bool(selected and os.path.exists(selected))
+
+
+def is_git_argv(argv) -> bool:
+    """True when ``argv`` runs ``git`` itself (not a command that merely mentions it)."""
+    return bool(argv) and os.path.basename(str(argv[0])) in ("git", "git.exe")
