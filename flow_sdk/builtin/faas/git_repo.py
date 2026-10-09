@@ -69,6 +69,10 @@ class GitStatusFile(_CamelModel):
 class GitStatus(_CamelModel):
     error: str | None = None
     branch: str | None = None
+    # The branch's remote branch (``origin/main``), or None when the branch has
+    # none — never pushed, or its remote branch was deleted. ``ahead``/``behind``
+    # are 0 then, so only this tells "not published" apart from "up to date".
+    upstream: str | None = None
     ahead: int = 0
     behind: int = 0
     files: list[GitStatusFile] = []
@@ -422,19 +426,21 @@ class GitRepo:
         return (branch.stdout.strip() or None) if branch.ok else None
 
     @staticmethod
-    def _parse_branch_header(line: str) -> tuple[str | None, int, int]:
-        """Parse a porcelain v1 ``## `` branch header into (branch, ahead, behind).
+    def _parse_branch_header(line: str) -> tuple[str | None, str | None, int, int]:
+        """Parse a porcelain v1 ``## `` branch header into (branch, upstream, ahead, behind).
 
         Examples::
 
-            ## main                              → ("main", 0, 0)
-            ## main...origin/main                → ("main", 0, 0)
-            ## main...origin/main [ahead 1, behind 2] → ("main", 1, 2)
-            ## HEAD (no branch)                  → (None, 0, 0)   # detached
-            ## No commits yet on main            → ("main", 0, 0) # empty repo
+            ## main                              → ("main", None, 0, 0)
+            ## main...origin/main                → ("main", "origin/main", 0, 0)
+            ## main...origin/main [ahead 1, behind 2] → ("main", "origin/main", 1, 2)
+            ## main...origin/main [gone]         → ("main", None, 0, 0)  # remote branch deleted
+            ## HEAD (no branch)                  → (None, None, 0, 0)    # detached
+            ## No commits yet on main            → ("main", None, 0, 0)  # empty repo
         """
         body = line[3:].strip()
         ahead = behind = 0
+        gone = False
         m = re.search(r"\[([^\]]*)\]\s*$", body)
         if m:
             for part in m.group(1).split(","):
@@ -443,12 +449,17 @@ class GitRepo:
                     ahead = int(part[len("ahead ") :] or 0)
                 elif part.startswith("behind "):
                     behind = int(part[len("behind ") :] or 0)
+                elif part == "gone":
+                    gone = True
             body = body[: m.start()].strip()
-        if body.startswith("No commits yet on "):
-            return (body[len("No commits yet on ") :].strip() or None, ahead, behind)
         if body.startswith("HEAD "):  # "HEAD (no branch)" — detached
-            return (None, ahead, behind)
-        return (body.split("...", 1)[0].strip() or None, ahead, behind)
+            return (None, None, ahead, behind)
+        if body.startswith("No commits yet on "):
+            body = body[len("No commits yet on ") :].strip()
+        branch, _, upstream = body.partition("...")
+        if gone:
+            upstream = ""
+        return (branch.strip() or None, upstream.strip() or None, ahead, behind)
 
     @staticmethod
     def _remote_web_url(remote_url: str) -> str | None:
@@ -488,6 +499,7 @@ class GitRepo:
             GitStatus(
                 error    = str | None,
                 branch   = str | None,
+                upstream = str | None,
                 ahead    = int,
                 behind   = int,
                 files    = [GitStatusFile(status, path, insertions, deletions), ...],
@@ -503,7 +515,7 @@ class GitRepo:
             return GitStatus(error="not a git repository")
         status_out = status.stdout
 
-        branch, ahead, behind = None, 0, 0
+        branch, upstream, ahead, behind = None, None, 0, 0
 
         # One count per path, staged and unstaged and untracked together, so a
         # file's ``+/-`` is its whole change against HEAD.
@@ -516,7 +528,7 @@ class GitRepo:
         files: list[GitStatusFile] = []
         for line in status_out.splitlines():
             if line.startswith("## "):
-                branch, ahead, behind = self._parse_branch_header(line)
+                branch, upstream, ahead, behind = self._parse_branch_header(line)
                 continue
             if len(line) < 4:
                 continue
@@ -564,6 +576,7 @@ class GitRepo:
         return GitStatus(
             error=None,
             branch=branch,
+            upstream=upstream,
             ahead=ahead,
             behind=behind,
             files=files,

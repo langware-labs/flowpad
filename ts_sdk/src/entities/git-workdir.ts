@@ -20,6 +20,8 @@ export interface GitStatusFile {
 export interface GitStatus {
   error: string | null;
   branch: string | null;
+  /** The branch's remote branch (`origin/main`); null when it has none, so `ahead`/`behind` are 0. */
+  upstream: string | null;
   ahead: number;
   behind: number;
   files: GitStatusFile[];
