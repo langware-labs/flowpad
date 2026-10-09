@@ -39,7 +39,7 @@ describe('api: scope-align redirect preserves query options', () => {
     await apiTestSetup(info, context.task.name);
   });
 
-  it('project-owned process + no scope on URL → redirect keeps viewMode=vibe', async () => {
+  it('project-owned process + no scope on URL → redirect keeps Vibe (its /dock/vibe/ address)', async () => {
     const id = uuidv4();
     const projectId = uuidv4();
     await new AgenticProcess({
@@ -64,7 +64,8 @@ describe('api: scope-align redirect preserves query options', () => {
     const location = redirect!.headers.get('Location') ?? '';
     expect(location).toContain(`agentic_process-${id}`);
     expect(location).toContain(`scope-activeProjectId=${projectId}`);
-    expect(location).toContain('viewMode=vibe');
+    // Vibe is kept as the Vibe HOST address (`/dock/vibe/…` — the path states it).
+    expect(location).toContain(`/dock/vibe/agentic_process-${id}`);
     expect(location).toContain('sideWindows=dir');
     expect(location).toContain('matrix=legacy');
   }, 15000);
@@ -114,8 +115,7 @@ describe('api: scope-align redirect preserves query options', () => {
 
     expect(redirect).not.toBeNull();
     const location = redirect!.headers.get('Location') ?? '';
-    expect(location).toContain(`agentic_process-${id}`);
-    expect(location).toContain('viewMode=vibe');
+    expect(location).toContain(`/dock/vibe/agentic_process-${id}`);
     expect(location).toContain('matrix=global');
     expect(location).not.toContain('scope-');
   });
