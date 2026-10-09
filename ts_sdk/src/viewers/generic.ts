@@ -235,6 +235,13 @@ async function mountExample(el: HTMLElement, req: ViewRequest, form: KindForm, c
       await ctx.render(cell, { kind: s.shape, value: row[s.key], mode: 'compare', other: (req.other as Record<string, unknown> | undefined)?.output, meta: req.meta });
     else await ctx.render(cell, { kind: s.shape, value: row[s.key], mode: 'view', meta: req.meta, on: req.on });
   }
+  // A trace the host passes (an eval's `{kind, value}`): how the answer was reached, by its kind.
+  const trace = req.meta?.trace as { kind?: string; value?: unknown } | null | undefined;
+  if (trace?.kind) {
+    const cell = h('div', { class: 'dv-value' });
+    el.append(h('section', { class: 'dv-slot' }, h('h4', {}, 'How it was decided'), cell));
+    await ctx.render(cell, { kind: trace.kind, value: trace.value, mode: 'view' });
+  }
   if (out && row.output != null && mode === 'view') {
     const cell = h('div', { class: 'dv-value' });
     el.append(h('section', { class: 'dv-slot' }, h('h4', {}, 'What the run answered'), cell));

@@ -14,6 +14,7 @@
  */
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { MemoryRouter } from 'react-router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 const UUID = (n: number) => `550e8400-e29b-41d4-a716-4466554400${String(n).padStart(2, '0')}`;
@@ -97,9 +98,11 @@ function draw(org = sharedOrg(), teams = [team()]) {
   h.team.mockReturnValue({ data: undefined, isLoading: false, error: null });
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
-    <QueryClientProvider client={client}>
-      <OrgUnit orgId={UUID(1)} onDeleted={vi.fn()} />
-    </QueryClientProvider>,
+    <MemoryRouter>
+      <QueryClientProvider client={client}>
+        <OrgUnit orgId={UUID(1)} onDeleted={vi.fn()} />
+      </QueryClientProvider>
+    </MemoryRouter>,
   );
 }
 

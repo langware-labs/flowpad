@@ -26,8 +26,23 @@ class LocalNode:
     async def exists(self, path: str) -> bool:
         return Path(path).exists()
 
+    async def write_files(self, path: str, data: bytes) -> list[str]:
+        Path(path).write_bytes(data)
+        return [path]
+
     async def delete_files(self, path: str) -> None:
         Path(path).unlink(missing_ok=True)
+
+
+class RecordingNode(LocalNode):
+    """Runs real git like ``LocalNode`` and keeps every command it was sent."""
+
+    def __init__(self) -> None:
+        self.commands: list[str] = []
+
+    async def run_command(self, command: str, background: bool = False):
+        self.commands.append(command)
+        return await super().run_command(command, background)
 
 
 def _git(repo: Path, *args: str) -> None:
@@ -75,7 +90,7 @@ async def test_status_leaves_the_real_index_and_worktree_alone(repo: Path):
 
     after = subprocess.run(["git", "status", "--porcelain"], cwd=repo, capture_output=True, text=True).stdout
     assert after == before
-    assert not list((repo / ".git").glob("flowpad-status-index-*"))
+    assert not list((repo / ".git").glob("flowpad-status-*"))
 
 
 @pytest.mark.asyncio
@@ -93,7 +108,7 @@ async def test_status_skips_line_counts_unless_asked(repo: Path):
         "tracked.txt": ("M", None, None),
         "brand_new.txt": ("?", None, None),
     }
-    assert not list(git_dir.glob("flowpad-status-index-*"))
+    assert not list(git_dir.glob("flowpad-status-*"))
     assert set(git_dir.iterdir()) == before
 
 
@@ -123,3 +138,43 @@ async def test_status_reports_remote_and_its_browser_url(repo: Path):
     assert status.remote_url == "git@github.com:org/repo.git"
     assert status.remote_web_url == "https://github.com/org/repo"
 
+
+
+@pytest.mark.asyncio
+async def test_status_counts_staged_and_oddly_named_files(repo: Path):
+    """Staged and unstaged edits of one file add up against HEAD; a staged new
+    file is tracked, an untracked one named like a glob names only itself."""
+    (repo / "tracked.txt").write_text("a\nb\nc\nd\n")
+    _git(repo, "add", "tracked.txt")
+    (repo / "tracked.txt").write_text("a\nb\nc\nd\ne\n")
+    (repo / "staged_new.txt").write_text("s\n")
+    _git(repo, "add", "staged_new.txt")
+    (repo / "*.txt").write_text("1\n2\n")
+
+    status = await GitRepo(str(repo), LocalNode()).get_status(line_counts=True)
+    counts = {f.path: (f.insertions, f.deletions) for f in status.files}
+
+    assert counts["tracked.txt"] == (2, 0)
+    assert counts["staged_new.txt"] == (1, 0)
+    assert counts["*.txt"] == (2, 0)
+    assert not list((repo / ".git").glob("flowpad-status-*"))
+
+
+@pytest.mark.asyncio
+async def test_tracked_files_count_through_the_real_index(repo: Path):
+    """An index rebuilt from HEAD has no stat cache, so diffing through it
+    re-hashes every tracked file — seconds per call on a large repo, every few
+    seconds while the Git panel is open. Tracked paths must diff through the
+    real index, and the throwaway index exists only when there are untracked
+    files to count."""
+    (repo / "tracked.txt").write_text("a\nb\nc\nd\n")
+
+    node = RecordingNode()
+    await GitRepo(str(repo), node).get_status(line_counts=True)
+    assert not [c for c in node.commands if "read-tree" in c or "GIT_INDEX_FILE" in c]
+
+    (repo / "brand_new.txt").write_text("1\n")
+    node = RecordingNode()
+    status = await GitRepo(str(repo), node).get_status(line_counts=True)
+    assert not [c for c in node.commands if "read-tree" in c]
+    assert {f.path: (f.insertions, f.deletions) for f in status.files}["brand_new.txt"] == (1, 0)

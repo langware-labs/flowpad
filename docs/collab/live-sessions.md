@@ -50,7 +50,7 @@ action `auto_approve_session`, project-scoped or global).
 |---|---|---|
 | `starting_message_id` | guest at send; host fill-only | the main-thread prompt that opened the session |
 | `reply_policy` | guest proposes via the start marker; host authoritative | `auto` sends replies; `review` saves a host draft inside the session |
-| `status` | host authoritative | `DRAFT → PENDING → IDLE ⇄ RUNNING → PAUSED → ENDED / DECLINED`; `ERROR` returns to IDLE on the next turn |
+| `status` | host authoritative | `DRAFT → PENDING → IDLE ⇄ RUNNING → ENDED / DECLINED`; `ERROR` returns to IDLE on the next turn |
 | `approved_at`, `approved_via` | host | `manual` or `standing_grant` |
 | `host_process_id`, `project_id` | host, never shipped | host-local, excluded from `SNAPSHOT_FIELDS` |
 
@@ -62,7 +62,7 @@ carry `{"live_session_event": …}`. The hub stores and fans out; it never
 inspects or approves. The host backend is the trust boundary.
 
 **The one inbound gate** (`decide_inbound_prompt(status, standing_grant)`):
-terminal → ignore; PAUSED → bounce (marker + system line); IDLE/RUNNING/ERROR →
+terminal → ignore; IDLE/RUNNING/ERROR →
 run; PENDING/DRAFT/none → run with a standing grant (approve, `approved_via=standing_grant`,
 redrive queued turns), else park at PENDING. The session is resolved-or-minted
 BEFORE the gate; an unstamped prompt finds its session by

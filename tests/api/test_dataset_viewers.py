@@ -81,3 +81,9 @@ async def test_an_app_whose_folder_is_gone_is_never_offered(bootstrapped_client,
     shutil.rmtree(tmp_path / "agentic-assets" / "webapp" / f"viewer-{ns}")
     assert f"editor-{ns}" not in [e["name"] for e in (await editors()).json()["data"]]
     assert await _ranked(bootstrapped_client, f"{ns}.kind", {f"viewer-{ns}"}) == []
+
+
+async def test_a_wildcard_is_not_a_kind_and_is_refused_not_crashed_on(bootstrapped_client, user):
+    """`*` once reached this route as a kind and answered 500; a malformed kind is the caller's 400."""
+    body = (await bootstrapped_client.get("/api/v1/viewers/*")).json()
+    assert body["status"] == "FAIL" and "is not a kind" in body["message"], body

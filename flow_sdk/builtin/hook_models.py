@@ -9,6 +9,7 @@ import inspect
 import logging
 import os
 import stat
+import sys
 import time
 from abc import ABC, abstractmethod
 from pathlib import Path
@@ -204,6 +205,10 @@ async def _exec_script(
     FIRST_CHANGE_TYPE for quick access; the full batch is serialized to a
     tempfile (cross-platform via tempfile.NamedTemporaryFile) and its path
     passed via CHANGES_JSON_PATH so scripts that need the batch can read it.
+    FLOWPAD_PYTHON (the interpreter that can ``import flow_sdk``), FLOWPAD_FLOW and
+    FLOW_INSTANCE (``flow_env``) say how to reach THIS Flowpad, the same three a
+    worker gets: a script that writes dataset rows through the Python SDK must not
+    guess an interpreter, and a ``flow`` call must reach the backend that fired it.
 
     Captures stdout/stderr whole. Kills the
     process at `timeout_seconds`. Cleans up the tempfile after the subprocess.
@@ -231,6 +236,8 @@ async def _exec_script(
         finally:
             tmp.close()
 
+        from flow_sdk.core.compute.exec import flow_env  # noqa: PLC0415
+
         env = {
             **os.environ,
             "TRIGGER_ID": str(getattr(trigger, "id", "")),
@@ -239,6 +246,8 @@ async def _exec_script(
             "FIRST_CHANGED_PATH": str(first.path) if first else "",
             "FIRST_CHANGE_TYPE": first.change_type if first else "",
             "CHANGES_JSON_PATH": changes_json_path,
+            "FLOWPAD_PYTHON": sys.executable,
+            **flow_env(),
         }
         from flow_sdk.schema.data_spec.returned_value_spec import CliResult  # noqa: PLC0415
 

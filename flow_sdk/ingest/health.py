@@ -124,7 +124,7 @@ def _contract_health(exc: BaseException) -> "SourceHealth | None":
     an unavailable service, an unknown outcome and a stale cursor retry on the next tick."""
     from flow_sdk.sources import errors  # noqa: PLC0415
 
-    if isinstance(exc, (errors.AccessDenied, errors.NotFound, errors.Unsupported, errors.Rejected)):
+    if isinstance(exc, errors.NEEDS_A_PERSON):
         return SourceHealth.CONFIG_ERROR
     if isinstance(exc, errors.SourceError):
         return SourceHealth.TRANSIENT_ERROR

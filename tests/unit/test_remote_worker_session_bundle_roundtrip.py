@@ -132,7 +132,7 @@ async def test_unpack_never_regresses_host_row(tmp_path):
     snapshot untouched — even a fresher one. Guest identity fields may
     fill-merge, host state may not. (ENDED is the one exception — either side
     may end a session; ``test_live_session_fsm`` pins it.)"""
-    sender = _make_session(status=S.PAUSED.value,
+    sender = _make_session(status=S.ERROR.value,
                            last_activity_at="2026-07-14T12:00:00+00:00")
     await sender.save(notify=False)
     zip_path = await pack_bundle(
@@ -151,7 +151,7 @@ async def test_unpack_never_regresses_host_row(tmp_path):
 
     after = await RemoteWorkerSession.get_one({"id": sender.id})
     assert after is not None
-    assert after.status == S.RUNNING.value          # not regressed to PAUSED
+    assert after.status == S.RUNNING.value          # not regressed to ERROR
     assert after.host_process_id == "ap-local-123"  # host-local state intact
     assert after.guest_name == "Bob"                # identity fill-merge OK
 

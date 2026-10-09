@@ -28,7 +28,7 @@ from __future__ import annotations
 import re
 from typing import Annotated, Any, ClassVar, Literal, Optional, Union
 
-from pydantic import Field, field_validator
+from pydantic import Field, PrivateAttr, field_validator
 
 from flow_sdk.schema.data_spec.spec import DataSpec
 
@@ -151,6 +151,25 @@ class DecisionUsage(DataSpec):
     output_tokens: int = 0
 
 
+class DecisionWire(DataSpec):
+    """Exactly what crossed the wire for one decision -- the vendor-dialect request body sent and the
+    raw body that came back, unparsed. Ours (``DecisionSpec`` / ``DecisionResult``) are translations;
+    this is the call itself, so a decision can be debugged and replayed byte for byte."""
+
+    spec_kind: ClassVar[str] = "decision.wire"
+
+    #: The APIEndpoint called, as ``api_endpoint-<id>``.
+    endpoint: str = ""
+    #: The dialect's path on it (``v1/systemone``).
+    path: str = ""
+    #: The request body as sent, in the vendor's dialect.
+    request: Any = None
+    #: The HTTP status; 0 when the call never completed.
+    status: int = 0
+    #: The response body as received.
+    response: Any = None
+
+
 class DecisionResult(DataSpec):
     """One answer per question, plus what it cost and how long it took end to end."""
 
@@ -162,6 +181,12 @@ class DecisionResult(DataSpec):
     latency_ms: float = 0.0
     #: The APIEndpoint that answered, as ``api_endpoint-<id>``.
     endpoint: str = ""
+    #: The call itself (run detail, never serialized with the result): see ``DecisionWire``.
+    _wire: Optional[DecisionWire] = PrivateAttr(default=None)
+
+    @property
+    def wire(self) -> Optional[DecisionWire]:
+        return self._wire
 
     def pick(self, name: str, *, min: float = 0.0) -> Optional[str]:  # noqa: A002 -- the snippet's word
         """The chosen option of choice question ``name`` when its confidence is at least
@@ -173,13 +198,33 @@ class DecisionResult(DataSpec):
         return answer.choice
 
 
+class DecisionRun(DataSpec):
+    """One decision as it happened -- what was asked, what came back, and what the caller needed in
+    order to act -- so it can be read back and debugged as a whole, by anyone who decides."""
+
+    spec_kind: ClassVar[str] = "decision.run"
+
+    request: DecisionSpec
+    #: Absent when the decision API failed.
+    response: Optional[DecisionResult] = None
+    #: Per question, the confidence its pick had to reach for the caller to act on it.
+    act_at: dict[str, float] = {}
+    #: What each part of ``request.state`` is (``context`` -> ``navigation.here``), so a viewer
+    #: draws it by its kind instead of as raw JSON.
+    state_kinds: dict[str, Any] = {}
+    #: Exactly what was sent to the decision API and what came back (the vendor's own bodies).
+    wire: Optional[DecisionWire] = None
+
+
 __all__ = [
     "Answer",
     "ChoiceAnswer",
     "ChoiceQuestion",
     "DecisionResult",
+    "DecisionRun",
     "DecisionSpec",
     "DecisionUsage",
+    "DecisionWire",
     "Question",
     "ScoreAnswer",
     "ScoreQuestion",

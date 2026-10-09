@@ -6,11 +6,15 @@ and all status fields — this is the payload Electron sends to the server.
 """
 
 import json
+import subprocess
+import sys
+from types import SimpleNamespace
 
 from typer.testing import CliRunner
 
 from flow_sdk._version import __version__
 from flow_sdk.cli.flow_cli import app
+from flow_sdk.server import launch, self_update
 from flow_sdk.utils.machine_id import get_machine_id
 
 runner = CliRunner()
@@ -92,3 +96,25 @@ def test_upgrade_without_info_flag_does_not_return_json():
         assert False, "upgrade without --info should not return JSON"
     except json.JSONDecodeError:
         pass  # Expected
+
+
+def _upgrade_with_server(alive: bool, monkeypatch):
+    """`flow upgrade` to a newer release (PyPI and the installer are the external edges)."""
+    monkeypatch.setattr(self_update, "latest_release", lambda: "999.0.0")
+    monkeypatch.setattr(self_update, "is_editable_install", lambda: False)
+    monkeypatch.setattr(self_update, "detect_install_method", lambda: "uv")
+    monkeypatch.setattr(subprocess, "run", lambda *_a, **_k: SimpleNamespace(returncode=0))
+    monkeypatch.setattr(sys, "platform", "linux")
+    monkeypatch.setattr(launch, "server_alive", lambda: alive)
+    return runner.invoke(app, ["upgrade"])
+
+
+def test_upgrade_says_a_running_server_needs_a_restart(monkeypatch):
+    result = _upgrade_with_server(True, monkeypatch)
+    assert result.exit_code == 0
+    assert "still running the old version" in result.output and "999.0.0" in result.output
+
+
+def test_upgrade_with_no_server_running_asks_for_no_restart(monkeypatch):
+    result = _upgrade_with_server(False, monkeypatch)
+    assert result.exit_code == 0 and "still running" not in result.output

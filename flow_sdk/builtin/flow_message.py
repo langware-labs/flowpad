@@ -650,7 +650,7 @@ class FlowMessage(Entity):
     # uploaded. Receivers gate on this before issuing a download.
     body_status: BodyStatus = APIField(default=BodyStatus.NA, sharing=Sharing.HUB_WRITE)
     # Local-only: set once the host has CONSUMED this message as a session
-    # turn (run, or bounced while paused) — see ``process_inbound_prompt``.
+    # turn — see ``process_inbound_prompt``.
     # Set before the run so a re-delivered op can't double-run; survives every
     # hub refresh. A parked prompt (session PENDING) stays False until approve
     # re-drives it.

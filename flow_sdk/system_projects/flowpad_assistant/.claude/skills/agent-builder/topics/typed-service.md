@@ -12,7 +12,9 @@ id: c6dd1677-6502-4d36-95e8-5036b01e58bc
 > **3. Hard limits live in the prompt.** A field marked *declared* in
 > `references/agent-json.md` is saved but never applied, and `permission_mode` is no
 > limit either: a chat worker runs headless, so any value but the default denies every
-> tool — the agent cannot even `flow show` its own page. Write each limit into the prompt.
+> tool — the agent cannot even `flow show` its own page. Write each limit into the prompt;
+> the one enforced tool limit is `disallowed_tools` on a Claude worker — use it too for a
+> command the agent must never run.
 > **4. Done means a reply the user saw.** An agent is finished after a test round the
 > user ran (`references/validation-loop.md`), not when its files exist.
 > **5. Deploying, credentials, email and phone reach real people.** Do them only on
@@ -65,8 +67,9 @@ asyncio.run(main())
 SNIP
 ```
 
-- `input` is a DataSpec instance — today a plain dict fails before the run.
-  Build it from the declared shape as above, or pass your own DataSpec class.
+- `input` is a value: an instance of the declared schema. Today a plain dict fails
+  before the run. Build the schema class from the declared shape as above, or pass an
+  instance of your own `DataSpec` subclass.
 - Without `output_spec=`, the agent's declared `output` applies; pass
   `output_spec=` to ask for a different shape on one call.
 - The same contract without a saved agent is `AgenticProcess.run(instruction,

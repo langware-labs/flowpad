@@ -79,6 +79,8 @@ def row_of(request: dict, outcome: Any, answer: Any) -> dict:
             **did,
             "reason": answer.reason,
             "latency_ms": round(answer.latency_ms, 1),
+            # How the model decided (``navigator.run``): its full request and response.
+            **({"run": answer.run.model_dump(mode="json", exclude_none=True)} if answer.run else {}),
             "logged_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         },
     }
@@ -135,15 +137,13 @@ async def address() -> str:
     """Where asking for the log takes you: the log open in the app that edits it, or -- when it was
     never on, so there is no log -- Preferences > Advanced, where the switch is."""
     from flow_sdk.builtin.dataset import Dataset  # noqa: PLC0415
-    from flow_sdk.builtin.faas.editors import editors_for  # noqa: PLC0415
 
     here = folder().resolve()  # the index stores the resolved path (/private/var/... on macOS)
     rows = await Dataset.get_all({"name": TITLE})
     log = next((r for r in rows if getattr(r, "asset_ref", None) and Path(r.asset_ref).resolve() == here), None)
-    editors = await editors_for(log) if log is not None else []
-    if not editors:
-        return "/dock/preferences/advanced"
-    return f"/dock/app/{editors[0]['typeid']}?subject=dataset-{log.id}"
+    from flow_sdk.core.navigation_decision import entity_app_address  # noqa: PLC0415
+
+    return (await entity_app_address(f"dataset-{log.id}") if log is not None else None) or "/dock/preferences/advanced"
 
 
 def log_soon(request: dict, outcome: Any, answer: Any) -> None:

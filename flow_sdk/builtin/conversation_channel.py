@@ -45,7 +45,9 @@ def channel_spec(name: str | None, provider: str | None = None) -> ChannelSpec:
     files = getattr(cls, "files", None)
     return ChannelSpec(
         name=key,
-        title=str(getattr(driver, "title", "") or "") or humanize_type(key),
+        # A driver in a group is one way to that channel ("Flow — no setup" is a way to WhatsApp): the channel is
+        # titled by its group, never by the way's own title.
+        title=str(getattr(driver, "group", "") or getattr(driver, "title", "") or "") or humanize_type(key),
         icon_name=str(getattr(driver, "icon_name", "") or ""),
         accepts_attachments=bool(getattr(files, "kinds", None)),
         replies=bool(getattr(cls, "replies", False)),

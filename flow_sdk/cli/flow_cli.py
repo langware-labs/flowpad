@@ -264,6 +264,7 @@ def upgrade(
         )
         typer.echo(f"Upgrading flowpad {__version__} -> {latest} as soon as this command exits (about a minute).")
         typer.echo(f"Progress: {log}   Check with: flow")
+        _echo_restart_hint(latest)
         return
     typer.echo(f"Upgrading flowpad {__version__} -> {latest}...")
     result = subprocess.run(self_update.build_install_command(latest))
@@ -271,6 +272,22 @@ def upgrade(
         typer.echo("Upgrade failed.", err=True)
         raise typer.Exit(result.returncode)
     typer.echo(f"flowpad upgraded: {__version__} -> {latest}.")
+    _echo_restart_hint(latest)
+
+
+def _echo_restart_hint(latest: str) -> None:
+    """A running server keeps the code it started with: say so, or it serves the old version on."""
+    from flow_sdk.server.launch import server_alive
+
+    try:
+        running = server_alive()
+    except Exception:  # noqa: BLE001 -- a hint, never a reason to fail the upgrade
+        return
+    if running:
+        typer.echo(
+            f"Flowpad is still running the old version. Restart it to use {latest}: "
+            "`flow stop`, then `flow start` (or quit and reopen the desktop app)."
+        )
 
 
 def _start_service(port: int) -> None:

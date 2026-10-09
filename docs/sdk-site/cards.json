@@ -88,7 +88,7 @@
   },
   "ag-0": {
     "doc": "data-spec.md",
-    "heading": "8. An agent is a DataSpec",
+    "heading": "8. An agent's definition is a value too",
     "nth": 0,
     "md": [
       10
@@ -112,7 +112,7 @@
   },
   "c2-shapes-0": {
     "doc": "data-spec.md",
-    "heading": "2. A shape written in a document",
+    "heading": "2. A schema written in a document",
     "nth": 0,
     "md": [
       13
@@ -120,7 +120,7 @@
   },
   "c2-shapes-1": {
     "doc": "data-spec.md",
-    "heading": "2. A shape written in a document",
+    "heading": "2. A schema written in a document",
     "nth": 3,
     "md": [
       14
