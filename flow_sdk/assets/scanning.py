@@ -164,6 +164,7 @@ def scan_declared(info: TypeInfo, root: Path, root_type: str) -> AssetScanResult
 
 def scan_repo_tree(root: Path, infos: dict[str, TypeInfo], *, types: set[str] | None = None) -> AssetScanResult:
     result = AssetScanResult()
+    renamed = {old: info for info in infos.values() for old in info.retired_families}
 
     def scan(container: Path, parent: Path, ancestors: frozenset[Path]) -> None:
         resolved = container.resolve()
@@ -180,6 +181,14 @@ def scan_repo_tree(root: Path, infos: dict[str, TypeInfo], *, types: set[str] | 
             return
         for family in families:
             info = infos.get(family.name)
+            if info is None and family.name in renamed and family.is_dir():
+                now = renamed[family.name]
+                result.issues.append(AssetScanIssue(
+                    path=family, type_name=now.type_name,
+                    message=f"{family.name}/ is a retired family name and is not read: rename it to "
+                            f"{now.family}/ and each {family.name}.json in it to {now.family}.json "
+                            f'(with "type": "{now.type_name}")'))
+                continue
             if info is None or not family.is_dir():
                 continue
             try:

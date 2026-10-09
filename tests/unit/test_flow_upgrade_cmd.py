@@ -65,3 +65,17 @@ def test_without_pypi_it_fails_instead_of_claiming_success(monkeypatch, ran):
     out = CliRunner().invoke(app, ["upgrade"])
 
     assert out.exit_code == 1 and ran == []
+
+
+def test_a_venv_without_pip_is_upgraded_through_uv(monkeypatch):
+    """A venv uv created has no pip, so ``python -m pip install`` answered "No module named pip" and
+    the upgrade failed (Windows VM). This test's own interpreter is such a venv."""
+    import importlib.util
+    import sys
+
+    assert importlib.util.find_spec("pip") is None, "precondition: this venv has no pip"
+    monkeypatch.setattr(self_update, "detect_install_method", lambda: "pip")
+
+    cmd = self_update.build_install_command("1.2.3")
+
+    assert cmd[1:] == ["pip", "install", "--python", sys.executable, "flowpad==1.2.3"]

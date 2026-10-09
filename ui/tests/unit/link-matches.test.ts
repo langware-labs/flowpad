@@ -2,21 +2,36 @@
 import { describe, expect, it } from 'vitest';
 import { fileLinkMatches, linkMatches, linkSegments, webLinkMatches } from '@src/lib/link-matches';
 
+/** The file links in `line`, each at an offset that slices back to its own text. */
+function expectFileLinks(line: string, expected: string[]): void {
+  const matches = fileLinkMatches(line);
+  expect(matches.map((match) => match.text)).toEqual(expected);
+  for (const match of matches) expect(line.slice(match.index, match.index + match.text.length)).toBe(match.text);
+}
+
 describe('link matches', () => {
   it('recognizes paths, positions, quoted spaces, and entity references without stealing web URLs', () => {
     const line = 'src/main.py:12:3 "/tmp/my file.txt" file:///tmp/a.txt skill-@link-probe https://example.org/src/main.py ordinary';
-    expect(fileLinkMatches(line).map((match) => match.text)).toEqual([
+    expectFileLinks(line, [
       'src/main.py:12:3', '/tmp/my file.txt', 'file:///tmp/a.txt', 'skill-@link-probe',
     ]);
-    for (const match of fileLinkMatches(line)) expect(line.slice(match.index, match.index + match.text.length)).toBe(match.text);
   });
 
   it('unwraps references that prose puts in brackets, keeping cell offsets exact', () => {
     const line = 'see (ui/src/a-b.ts:49) and [a.ts:3], {src/b.py:1:2}: ((main.c:7))';
-    expect(fileLinkMatches(line).map((match) => match.text)).toEqual([
+    expectFileLinks(line, [
       'ui/src/a-b.ts:49', 'a.ts:3', 'src/b.py:1:2', 'main.c:7',
     ]);
-    for (const match of fileLinkMatches(line)) expect(line.slice(match.index, match.index + match.text.length)).toBe(match.text);
+  });
+
+  it('reads quote marks inside a word as part of it, not as quotes that swallow the paths between them', () => {
+    const line = "I've written docs/navigation/navigation_medium.md, it isn't committed; the users' 'notes/my a.md' and don't 'x.ts:3'";
+    expectFileLinks(line, [
+      'docs/navigation/navigation_medium.md', 'notes/my a.md', 'x.ts:3',
+    ]);
+    // Hebrew geresh and gershayim: צ'אט, צה"ל.
+    expectFileLinks(`כתבתי צ'אט ב-docs/a.md וגם ג'ירה`, ['docs/a.md']);
+    expectFileLinks(`צה"ל כתב docs/a.md לרמטכ"ל`, ['docs/a.md']);
   });
 
   it('does not link placeholders, bare schemes, or abbreviations', () => {

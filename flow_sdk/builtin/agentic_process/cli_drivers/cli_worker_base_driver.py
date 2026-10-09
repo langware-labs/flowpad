@@ -781,6 +781,9 @@ class AgenticContext(BaseModel):
     # Codex to a ``# Language`` block on its developer message, Copilot to nothing.
     # Re-derived on every spawn, so — like plugin_dirs — never persisted.
     language: str | None = None
+    # Tool patterns the worker may never run — its agent's ``disallowed_tools``, from ``cli_config``.
+    # Honoured by Claude (``--disallowedTools``); ignored by vendors without a deny list.
+    disallowed_tools: list[str] = Field(default_factory=list)
 
     # Extra `-c key=val` config overrides for API-key auth (currently codex's
     # OpenRouter provider block). Derived per-spawn from the harness Capability,
@@ -1087,6 +1090,10 @@ class AgentOptions:
 
     #: Attribute names serialized on top of ``workdir``/``env_vars``.
     SERIALIZED_FIELDS: tuple[str, ...] = ()
+    #: Fields written only when set (non-empty). A field added to SERIALIZED_FIELDS lands on every
+    #: process's ``cli_config`` and changes every stored restart hash; a sparse one changes only
+    #: the processes that use it.
+    SPARSE_FIELDS: tuple[str, ...] = ()
     #: Value of the ``worker_type`` discriminator; "" ⇒ omitted (base only).
     WORKER_TYPE: str = ""
     #: field name → callable applied to a PRESENT value when reading.
@@ -1101,12 +1108,15 @@ class AgentOptions:
             data["worker_type"] = self.WORKER_TYPE
         for name in self.SERIALIZED_FIELDS:
             data[name] = getattr(self, name)
+        for name in self.SPARSE_FIELDS:
+            if value := getattr(self, name):
+                data[name] = value
         return data
 
     @classmethod
     def from_json(cls, data: dict[str, Any]) -> "AgentOptions":
         kwargs: dict[str, Any] = {}
-        for name in ("workdir", "env_vars", *cls.SERIALIZED_FIELDS):
+        for name in ("workdir", "env_vars", *cls.SERIALIZED_FIELDS, *cls.SPARSE_FIELDS):
             if name not in data:
                 continue
             coerce = cls._COERCE.get(name)

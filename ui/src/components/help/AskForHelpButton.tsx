@@ -10,6 +10,7 @@ import { cn } from '@src/lib/utils';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { AskForHelpDialog } from './AskForHelpDialog';
+import { useUiActionRequest } from '@src/navigation/ui-actions';
 
 /** The chat-header icon-button look, shared with its neighbours there. */
 const toolbarButton =
@@ -44,6 +45,8 @@ export function AskForHelpButton({
   const { rows, unread } = useMyVibeTasks(projectId);
   const [listOpen, setListOpen] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
+  // "ask someone for help" (smart navigation): the same dialog the button opens.
+  useUiActionRequest(['ask-for-help-dialog'], () => setDialogOpen(true));
 
   const button = (
     <button

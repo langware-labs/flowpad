@@ -263,11 +263,24 @@ const exampleSingle: SingleViewer = {
         h('span', { class: 'ev-small dv-muted' }, `${Math.round(e.latency_ms)} ms`)),
       h('div', { class: 'ev-chips' }, ...chips),
       ...(e.error ? [h('div', { class: 'ev-failed' }, e.error)] : []),
+      // The eval's own word on this verdict, when the verdict alone would mislead.
+      ...(e.note ? [h('div', { class: 'ev-note' }, e.note)] : []),
       body,
     );
     // The NESTING: the example itself is the dataset kind's — its own viewer draws it, the right
     // answer set against what this run answered.
-    if (meta.dataset_spec) await ctx.render(body, { kind: meta.dataset_spec, value: rowOf(e), mode: 'compare', other: { output: e.prediction }, meta: req.meta, on: req.on });
+    // How the inference reached its answer rides along (`trace`, as the run's `trace_kind`), so the
+    // dataset's viewer can show the model's full output inside the story.
+    if (meta.dataset_spec)
+      await ctx.render(body, {
+        kind: meta.dataset_spec,
+        value: rowOf(e),
+        mode: 'compare',
+        other: { output: e.prediction },
+        // How the answer was reached ({kind, value}) rides along, for the dataset's viewer to draw.
+        meta: { ...req.meta, trace: e.trace ?? null },
+        on: req.on,
+      });
     return {};
   },
 };
@@ -294,5 +307,6 @@ export const EVAL_VIEWER_STYLES = `
 .ev-chip.ev-quiet { background: transparent; border: 1px solid hsl(var(--border)); color: hsl(var(--muted-foreground)); }
 .ev-chips { margin: .45rem 0 .9rem; }
 .ev-verdict-line { display: flex; gap: .7rem; align-items: center; }
+.ev-note { margin-bottom: .8rem; padding: .45rem .7rem; border-radius: 8px; border: 1px solid hsl(40 80% 50% / .6); background: hsl(40 80% 50% / .08); font-size: 13px; }
 .ev-failed { color: hsl(var(--foreground)); background: hsl(8 72% 52% / .08); border: 1px solid hsl(8 72% 52%); border-radius: 8px; padding: .5rem .75rem; margin-bottom: .8rem; }
 `;

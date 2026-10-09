@@ -1638,7 +1638,7 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
         here = body.get("here") if isinstance(body.get("here"), dict) else None
         if here is None:
             active = get_active_connection_info()
-            here = (await here_from(active[1].browser_context if active else {})).model_dump(
+            here = (await here_from(active[1].browser_context if active else {}, navigator=True)).model_dump(
                 mode="json", exclude_none=True
             )
         request = {"utterance": str(body.get("utterance") or ""), "here": here}

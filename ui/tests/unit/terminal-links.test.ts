@@ -21,6 +21,17 @@ describe('terminal links', () => {
     }
   });
 
+  it('links a path in a Claude Code reply whose prose has contractions on both sides of it', async () => {
+    const terminal = new HeadlessTerminal({ cols: 120, rows: 5, allowProposedApi: true });
+    try {
+      const row = "⏺ I've written docs/navigation/navigation_medium.md with all 200 sentences. It isn't committed";
+      await new Promise<void>((resolve) => terminal.write(row, resolve));
+      expect(linkAtCell(terminal as unknown as Terminal, 20, 1)).toBe('docs/navigation/navigation_medium.md');
+    } finally {
+      terminal.dispose();
+    }
+  });
+
   it('maps wrapped paths after wide characters to actual terminal cells', async () => {
     const terminal = new HeadlessTerminal({ cols: 20, rows: 5, allowProposedApi: true });
     try {

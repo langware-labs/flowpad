@@ -257,6 +257,7 @@ async def _on_server_startup():
     await _start_notification_scanner()
     await _start_cloud_ws_listener()
     await _start_keep_alive_loop()
+    await _start_session_expiry_loop()
     await _start_stream_inbox_catchup()
     await _seed_service_triggers()
     await _prune_orphan_scheduler_jobs()
@@ -286,6 +287,15 @@ async def _start_keep_alive_loop() -> None:
     from flow_sdk.compute.keep_alive import run_keep_alive_loop
 
     _asyncio.create_task(run_keep_alive_loop(), name="keep-alive")
+
+
+async def _start_session_expiry_loop() -> None:
+    """Spawn the live-session length-cap sweep (``run_session_expiry_loop``)."""
+    import asyncio as _asyncio
+
+    from flow_sdk.app.actions.execute_prompt import run_session_expiry_loop
+
+    _asyncio.create_task(run_session_expiry_loop(), name="live-session-expiry")
 
 
 async def _start_app_ready_signal() -> None:

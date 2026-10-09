@@ -48,6 +48,16 @@ class EvalSpec(DataSpec):
     description: str = ""
 
 
+class EvalTrace(DataSpec):
+    """How the inference reached an answer, as a value of a kind (``navigator.run``) -- it says what it
+    is, so a browser draws it by that kind's viewer."""
+
+    spec_kind: ClassVar[str] = "eval.trace"
+
+    kind: str
+    value: Any = None
+
+
 class ExampleEval(DataSpec):
     """One example, evaluated -- the standard row every eval answers."""
 
@@ -67,6 +77,12 @@ class ExampleEval(DataSpec):
     slice: dict[str, str] = Field(default_factory=dict)
     #: A one-line view of the input, for the report (filled by the runner when the eval leaves it).
     title: str = ""
+    #: How the inference reached its answer (the model's full input and output) -- what makes a
+    #: wrong example debuggable. None when not recorded.
+    trace: Optional[EvalTrace] = None
+    #: The eval's own word on this verdict, in plain words, when the verdict alone would mislead
+    #: (a right pick nothing can open counts as wrong).
+    note: str = ""
 
 
 class EvalRun(DataSpec):
@@ -98,4 +114,4 @@ class EvalRun(DataSpec):
         return sorted(k for k, v in self.metrics.items() if isinstance(v, int) and not isinstance(v, bool))
 
 
-__all__ = ["EvalRun", "EvalSpec", "ExampleEval", "Verdict"]
+__all__ = ["EvalRun", "EvalSpec", "EvalTrace", "ExampleEval", "Verdict"]

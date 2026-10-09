@@ -8,7 +8,7 @@ stays an enum member, because pydantic skips coercion on defaults.
 
 ``_send_conversation_message_header`` used to read ``reply_fm.kind.value``,
 which meant the ONE kind a caller sets explicitly (SESSION_EVENT, emitted for
-every live-session approve/decline/pause/resume/end) raised AttributeError.
+every live-session approve/decline/end) raised AttributeError.
 The failure was swallowed as non-fatal, so the FlowMessage was never created
 hub-side, the body upload that followed hit a nonexistent entity, and the hub
 answered that entity-miss with a 401 — surfacing to the user as a spurious

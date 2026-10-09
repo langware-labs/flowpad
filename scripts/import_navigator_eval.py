@@ -90,7 +90,7 @@ async def main(cases_path: Path, folder: Path) -> None:
         raise SystemExit(f"{folder} already holds examples; refusing to duplicate them")
     errors = {str(f): e for f, e in declared.load_root(folder).items() if e}
     if errors:
-        raise SystemExit(f"the dataset's data specs did not register: {errors}")
+        raise SystemExit(f"the dataset's data schemas did not register: {errors}")
     ds = Dataset.at(folder)
     cases = [json.loads(line) for line in cases_path.read_text().splitlines() if line.strip()]
     ids = await ds.append([row(c) for c in cases])

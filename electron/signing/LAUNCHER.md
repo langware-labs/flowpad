@@ -4,10 +4,23 @@ id: 70fcb7e9-915c-4f53-a2cb-d498ea33dc22
 
 # The launcher: a `Flowpad-Setup.exe` whose bytes never change
 
-Status (2026-09-14): **built, signed and exercised on the Windows VM; NOT committed, NOT
-activated.** Activation is one pair of repository variables and is reversible.
+Status (2026-10-07): **ACTIVATED.** `launcher-v1` is published and pinned; the next
+production release is the first to ship it. Deactivation is deleting the two variables.
 
-Measured on Windows 11 (x64 build, ARM64 VM):
+| | |
+| --- | --- |
+| pre-release | [`launcher-v1`](https://github.com/langware-labs/flowpad/releases/tag/launcher-v1) in langware-labs/flowpad (prerelease, never "latest") |
+| file | `Flowpad-Setup.exe`, 953,784 bytes, built from `release/v0.2` by [build-launcher.yml run 37661840336](https://github.com/langware-labs/flowpad-desktop/actions/runs/37661840336) |
+| signature | Valid, `CN=Langware INC.`, issuer Microsoft ID Verified CS EOC CA 04, RFC 3161 timestamped |
+| pin | SHA-256 `0da5b68426076dfd1fc2bd9e3feea4aa79967a2436a0676b17ceeb1d6a8fb4f9` (CI `SHA256SUMS` = independent local download) |
+| variables (flowpad-desktop) | `LAUNCHER_VERSION=1`, `LAUNCHER_SHA256=<pin>`, set 2026-10-07 17:52 UTC; copy in 1Password (Employee, "flowpad-desktop launcher pin") |
+| still to verify | the first production release after activation (asset names, pinned hash attached, `latest.yml` pointing at the versioned installer), a browser download of the launcher on the Windows VM and a real run, the in-app updater |
+
+A dry run of the same workflow earlier that day (run 37617846192, no publish) produced a
+different hash (`367e61fe…`): every signing yields new bytes, so only the published run's
+hash is the pin.
+
+Earlier, measured on Windows 11 (x64 build, ARM64 VM), 2026-09-14, before the CI run existed:
 
 | Check | Result |
 | --- | --- |
@@ -16,7 +29,7 @@ Measured on Windows 11 (x64 build, ARM64 VM):
 | signed with Azure Artifact Signing | Valid, `CN=Langware INC.`, issuer CS AOC CA 04, timestamped 2026-09-14 20:37:10; `signtool verify /pa /v` OK; **SHA-256 `83a4deff27f8b04e4c6e92bb1111a40beee01b3fbf816452370eebf7cc5ad7e2`** (854,456 bytes) — a VM build, not the CI pin |
 | run, wrong expected publisher | fetched prod `latest.yml` (v0.2.43), downloaded 96,634,808 bytes, checksum OK, read the signer as `Langware INC.`, **refused** ("expected Nobody Inc."), deleted the file, exit ≠ 0 |
 | run, dry run | same download + checksum; **Authenticode OK: signed by Langware INC.**; stopped before launch; the file on disk is the real prod installer (sha256 `63d2992d…` matches the release) and carries **no Mark-of-the-Web** |
-| not yet done | the actual launch of the installer (dry run only), a browser download of the launcher itself, the `build-launcher.yml` CI run |
+| not done then | the actual launch of the installer (dry run only), a browser download of the launcher itself; the `build-launcher.yml` CI run has since succeeded (see the status table above) |
 
 ## Why
 
@@ -95,14 +108,16 @@ launcher. electron-updater keeps working: it reads the installer name from `late
 
 ## Activation checklist
 
-1. Merge the app branch (launcher source + electron config) and the flowpad-desktop branch (workflows).
-2. Run **Build Launcher (Windows)** with `publish=true`, `launcher_version=1`.
+1. ~~Merge the app branch (launcher source + electron config) and the flowpad-desktop branch (workflows).~~ done
+2. ~~Run **Build Launcher (Windows)** with `publish=true`, `launcher_version=1`.~~ done 2026-10-07 (run 37661840336)
 3. On the Windows VM: download the published launcher through Edge, run it, confirm the
    versioned installer is downloaded to `%LOCALAPPDATA%\Flowpad\bootstrap`, verified and
    started; check the log file. Also run it with `FLOWPAD_EXPECTED_PUBLISHER=Nobody` to see
-   it refuse.
-4. Set `LAUNCHER_VERSION=1` and `LAUNCHER_SHA256=<hash from the run summary>` in flowpad-desktop.
+   it refuse. (Only the 2026-09-14 VM build was exercised this way; the published file was not yet.)
+4. ~~Set `LAUNCHER_VERSION=1` and `LAUNCHER_SHA256=<hash from the run summary>` in flowpad-desktop.~~ done 2026-10-07
 5. Cut a `test_release=true` build: assets must show both `Flowpad-Setup.exe` (launcher)
    and `Flowpad-<version>-Setup.exe`; download `latest/download/Flowpad-Setup.exe` from
    the test repo and compare its hash with the pin.
 6. Next production release: same check; add the measurement row (`SMARTSCREEN-PLAN.md`).
+   winget needs no change: `winget-submit` reads the installer name from `latest.yml`, so
+   the manifest follows the versioned installer automatically.

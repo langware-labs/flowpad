@@ -32,8 +32,28 @@ def hub(monkeypatch):
     return state
 
 
+async def _done(value):
+    return value
+
+
+@pytest.fixture
+def cloud_agent(monkeypatch) -> str:
+    """An agent with one cloud placement (``dep-1``, on node ``n-9``), asked for ``dep-1``; its id."""
+    from flow_sdk.builtin.agent import Agent
+
+    agent_id = "11111111-2222-4333-8444-555555555555"
+    box = SimpleNamespace(id="dep-1", is_local=False, environment="production", target=SimpleNamespace(provider="e2b"), compute_node_id="n-9")
+
+    async def get_by_id(cls, ident):
+        return SimpleNamespace(deployments=lambda: _done([box])) if ident == agent_id else None
+
+    monkeypatch.setattr(Agent, "get_by_id", classmethod(get_by_id))
+    monkeypatch.setattr(DataSource, "_body", staticmethod(lambda: _done({"place": "dep-1"})))
+    return agent_id
+
+
 def _claim(source: DataSource, **target) -> dict:
-    return {"id": "c-1", "url": "https://hub/api/v1/webhook/c-1", "target": {"data_source_id": str(source.id), **target}, "watch": {}}
+    return {"id": "c-1", "url": "https://hub/api/v1/webhook/c-1", "target": {"data_source_id": str(source.id), **target}}
 
 
 async def test_the_route_is_the_claim_that_delivers_here_and_names_this_computer(hub):
@@ -46,22 +66,9 @@ async def test_the_route_is_the_claim_that_delivers_here_and_names_this_computer
     assert route["places"][0] == {"key": "this", "label": "This computer"}
 
 
-async def test_moving_a_channel_to_a_cloud_placement_points_the_claim_at_its_node(hub, monkeypatch):
-    from flow_sdk.builtin.agent import Agent
-
-    agent_id = "11111111-2222-4333-8444-555555555555"
-    source = DataSource(provider="whatsapp", name="bot", owner=f"agent-{agent_id}")
+async def test_moving_a_channel_to_a_cloud_placement_points_the_claim_at_its_node(hub, cloud_agent):
+    source = DataSource(provider="whatsapp", name="bot", owner=f"agent-{cloud_agent}")
     hub["claims"] = [_claim(source, kind="desktop", instance_id="inst-1")]
-    box = SimpleNamespace(id="dep-1", is_local=False, environment="production", target=SimpleNamespace(provider="e2b"), compute_node_id=lambda: "n-9")
-
-    async def get_by_id(cls, ident):
-        return SimpleNamespace(deployments=lambda: _done([box])) if ident == agent_id else None
-
-    async def _done(value):
-        return value
-
-    monkeypatch.setattr(Agent, "get_by_id", classmethod(get_by_id))
-    monkeypatch.setattr(DataSource, "_body", staticmethod(lambda: _done({"place": "dep-1"})))
 
     moved = await source.set_route_action()
 
@@ -71,16 +78,25 @@ async def test_moving_a_channel_to_a_cloud_placement_points_the_claim_at_its_nod
     assert body == {"target": {"kind": "node", "node_typeid": "compute_node-n-9", "data_source_id": str(source.id)}}
 
 
-async def test_flows_channel_is_not_moved(hub, monkeypatch):
-    source = DataSource(provider="flow_whatsapp", name="flow")
-    hub["claims"] = [{"id": "c-2", "target": {"kind": "placement", "agent_typeid": "agent-f"}, "watch": {"data_source_id": str(source.id)}}]
+async def test_also_delivering_to_a_cloud_placement_adds_a_second_claim_for_the_proven_sender(hub, cloud_agent):
+    """The first claim stays where it is (this computer); a second one, for the same proven sender, delivers the
+    same messages to the agent's box — each place answers on its own."""
+    source = DataSource(provider="flow_telegram", name="tg", owner=f"agent-{cloud_agent}")
+    proven = {**_claim(source, kind="desktop", instance_id="inst-1"), "provider": "telegram", "claim": {"kind": "user", "key": "665945020"}}
+    hub["claims"] = [proven]
 
-    async def body():
-        return {"place": "this"}
+    added = await source.add_route_action()
 
-    monkeypatch.setattr(DataSource, "_body", staticmethod(body))
+    assert added.data["place"] == "dep-1"
+    ((entity, claim_id, action, body),) = hub["posted"]
+    assert (entity, claim_id, action) == ("webhook", None, "chain")
+    assert body == {
+        "parent": "@telegram",
+        "claim": {"kind": "user", "key": "665945020"},
+        "target": {"kind": "node", "node_typeid": "compute_node-n-9", "data_source_id": str(source.id)},
+    }
 
-    refused = await source.set_route_action()
-
-    assert refused.status_code == 409 and hub["posted"] == []
-    assert (await source.route_action()).data["current"] == "flow"
+    hub["claims"] = [proven, {**proven, "id": "c-2", "proven_at": 9e9, "target": body["target"]}]
+    route = (await source.route_action()).data
+    assert route["claim"]["id"] == "c-1" and route["current"] == "this", "the first claim is still the one switched"
+    assert route["also"] == [{"claim_id": "c-2", "key": "dep-1", "label": "production · e2b", "node_typeid": "compute_node-n-9"}]

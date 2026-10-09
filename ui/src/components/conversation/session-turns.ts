@@ -1,5 +1,6 @@
 import { AttachmentType, type FlowMessage } from '@sdk';
 import { attachmentDataString } from '@sdk/entities/flow-message';
+import { truncate } from '@src/components/hooks/event-summaries';
 import { REPLY_MARKER_TYPE } from './attachment-plumbing';
 import {
   PROMPT_FILE_PREFIX,
@@ -45,32 +46,55 @@ export function sessionEventOf(fm: FlowMessage): string | null {
   return null;
 }
 
+/** The session's last prompt, the `failed` line that follows it (if any), and
+ *  whether anything — a reply or a failure — answered it. `messages` in time order. */
+function lastTurnOf(messages: FlowMessage[]): {
+  prompt: FlowMessage | null;
+  failedLine: FlowMessage | null;
+  answered: boolean;
+} {
+  let prompt: FlowMessage | null = null;
+  let failedLine: FlowMessage | null = null;
+  let answered = false;
+  for (const fm of messages) {
+    if (resultTextOf(fm) !== null) {
+      failedLine = null;
+      answered = true;
+    } else if (sessionEventOf(fm) === 'failed') {
+      if (prompt) failedLine = fm;
+      answered = true;
+    } else if (isPromptMessage(fm)) {
+      prompt = fm;
+      failedLine = null;
+      answered = false;
+    }
+  }
+  return { prompt, failedLine, answered };
+}
+
 /**
  * The prompt the host failed to run and nobody has answered since: the session's
  * LAST prompt, when a `failed` line follows it and no reply does — with that line,
  * which is where the session view offers Retry. A retry is a newer prompt, so
- * once one is sent this answers null. `messages` in time order.
+ * once one is sent this answers null.
  */
 export function failedPromptOf(
   messages: FlowMessage[],
 ): { message: FlowMessage; text: string; line: FlowMessage } | null {
-  let last: FlowMessage | null = null;
-  let line: FlowMessage | null = null; // the `failed` line that follows `last`, if any
-  for (const fm of messages) {
-    if (resultTextOf(fm) !== null) {
-      line = null;
-      continue;
-    }
-    if (sessionEventOf(fm) === 'failed') {
-      if (last) line = fm;
-      continue;
-    }
-    if (isPromptMessage(fm)) {
-      last = fm;
-      line = null;
-    }
-  }
-  if (!line || !last) return null;
-  const text = promptTextOf(last).trim();
-  return text ? { message: last, text, line } : null;
+  const { prompt, failedLine } = lastTurnOf(messages);
+  if (!prompt || !failedLine) return null;
+  const text = promptTextOf(prompt).trim();
+  return text ? { message: prompt, text, line: failedLine } : null;
+}
+
+/** The prompt the host is working on: the session's LAST prompt while nothing
+ *  answered it — what the session names while it runs. */
+export function pendingPromptOf(messages: FlowMessage[]): string | null {
+  const { prompt, answered } = lastTurnOf(messages);
+  return (prompt && !answered && promptTextOf(prompt).trim()) || null;
+}
+
+/** A prompt as one line: its first line, truncated. */
+export function sessionTitle(prompt: string, max = 80): string {
+  return truncate(prompt.trim().split('\n')[0] ?? '', max - 1);
 }

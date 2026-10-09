@@ -1,6 +1,6 @@
 {
   "name": "flow-whatsapp-connect",
-  "description": "Link your phone to Flow on WhatsApp — press Connect WhatsApp, send the message it opens. Flow answers from the hub, on a machine of your own.",
+  "description": "Link your phone to Flowpad on WhatsApp — press Connect WhatsApp, send the message it opens. Your messages then arrive in Flowpad.",
   "version": 1,
   "enabled": true,
   "icon": "MessageCircle",

@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "typeid": "markdown_index-b91806c7-b7c9-5289-8493-a79f197f9c51",
+  "parent_ref": "markdown_index-6136dbba-27ed-59c3-a192-fe2894f3ec30",
+  "vault_root": "/Users/shlom/Documents/dev/flowpad-oss/docs",
+  "folder_rel_path": "navigation",
+  "folder_name": "navigation",
+  "inputs_hash": "c5babb3aec864169d33cb5de1266a4c50a437046ea80cb337c36ac9ca228f470",
+  "template_version": 1,
+  "prompt_version": 1,
+  "self_summary": "How Flowpad navigates: the seven-step dock URL loading algorithm and its invariants, the screen map with you-are-here context and where-to-go routing, and the catalog of example sentences each mapped to its navigation target.",
+  "files": [
+    {
+      "name": "dock-loading.md",
+      "rel_path": "dock-loading.md",
+      "title": "Dock loading — one algorithm, seven steps",
+      "summary": "Seven-step dock URL loading algorithm (parse, canonicalize, resolve, commit, layout, render, attach), its invariants and the tests enforcing each.",
+      "content_hash": "7d916ca5b054e4b822e4bbe65aeebad63ebdc45e39d77fed21fa22787cc6155c",
+      "size_bytes": 12848
+    },
+    {
+      "name": "navigation-sentences.md",
+      "rel_path": "navigation-sentences.md",
+      "title": "Navigation sentences — the whole Flowpad UX surface",
+      "summary": "Catalog of 200 example magic-line sentences covering every Flowpad screen, tab and action, each mapped to its navigation target, used as the classifier's coverage map.",
+      "content_hash": "095b280439884f429d98a6cd54431c5be5bc90b0fc4cf0f3ad1ee45b99e20c56",
+      "size_bytes": 13001
+    },
+    {
+      "name": "navigation-spec.md",
+      "rel_path": "navigation-spec.md",
+      "title": "Navigation spec — the map, you are here, where to go",
+      "summary": "Navigation spec covering the screen map, the you-are-here context, and where-to-go routing, with their schemas and builders",
+      "content_hash": "42774e7e743fd1dc9cec96cdac9b6226795823fcf92fc2848cf03351019718a8",
+      "size_bytes": 5008
+    }
+  ],
+  "subfolders": [],
+  "generated_at": "2026-10-07T14:33:53Z",
+  "latest_process_ref": ""
+}

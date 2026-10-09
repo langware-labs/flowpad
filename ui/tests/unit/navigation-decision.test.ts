@@ -40,4 +40,20 @@ describe('decideNavigation', () => {
     });
     expect(await decideNavigation('summarize the README')).toEqual({ prompt: 'summarize the README' });
   });
+
+  it('an action is run, not asked: the decision names it', async () => {
+    navigationDecision.mockResolvedValueOnce({
+      decision: { route: 'quick', target: { kind: 'action', value: 'new-terminal' } },
+      candidates: [],
+    });
+    expect(await decideNavigation('open a terminal')).toEqual({ action: 'new-terminal' });
+  });
+
+  it('an app path is a page of this app, not a web page to frame', async () => {
+    navigationDecision.mockResolvedValueOnce({
+      decision: { route: 'quick', target: { kind: 'url', value: '/discover' } },
+      candidates: [],
+    });
+    expect(await decideNavigation('discover agents')).toEqual({ path: '/discover' });
+  });
 });

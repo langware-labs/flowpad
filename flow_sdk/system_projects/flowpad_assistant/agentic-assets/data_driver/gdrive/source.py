@@ -25,7 +25,7 @@ from flow_sdk.sources import http
 from flow_sdk.sources.base import positive_int
 from flow_sdk.sources.binding import SourceBinding
 from flow_sdk.sources.config import SourceConfig
-from flow_sdk.sources.errors import AccessDenied, InvalidCursor, SourceError, SourceUnavailable
+from flow_sdk.sources.errors import AccessDenied, InvalidCursor, SourceError, SourceUnavailable, is_transient
 from flow_sdk.sources.families import ObjectSource
 from flow_sdk.sources.protocols import Verdict
 from flow_sdk.sources.values.items import FileData, FileItem
@@ -266,6 +266,8 @@ class DriveSource(ObjectSource):
             async with self:
                 await self._request("/about", {"fields": "user(emailAddress)"})
         except SourceError as exc:
+            if is_transient(exc):
+                raise  # the provider did not answer: that says nothing about the setup
             return Verdict(ready=False, detail=f"Google refused the stored credential ({exc}). Reconnect Google, granting {DRIVE_SCOPE}.")
         return Verdict(ready=True)
 

@@ -48,7 +48,7 @@ async def _shape(heading: str, name: str) -> type:
     return ns[name]
 
 
-# ── §1. Declare a shape ───────────────────────────────────────────────────────
+# ── §1. Declare a schema ──────────────────────────────────────────────────────
 
 @pytest.mark.asyncio
 async def test_snippet_1_the_instance_is_the_data():
@@ -75,7 +75,7 @@ async def test_snippet_1_a_changed_value_leaves_the_original_alone():
     assert spec.port == 1
 
 
-# ── §2. A shape written in a document ─────────────────────────────────────────
+# ── §2. A schema written in a document ────────────────────────────────────────
 
 @pytest.mark.asyncio
 async def test_snippet_2_a_document_shape_compiles_and_round_trips():
@@ -373,10 +373,10 @@ async def test_snippet_7_one_value_fields_and_documents(tmp_path, monkeypatch):
     assert DataSpec.parse("notes.note") is ns["Note"], "flow.kind resolves to the class"
 
 
-# ── §8. An agent is a DataSpec ───────────────────────────────────────────────
+# ── §8. An agent's definition is a value too ──────────────────────────────────
 
 @pytest.mark.asyncio
-async def test_snippet_8_an_agent_is_a_dataspec(tmp_path, monkeypatch):
+async def test_snippet_8_an_agents_definition_is_a_value(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     ns = await run_fence(fence_under(doc(PAGE), "8."), _namespace(), filename=f"{PAGE}#8")
     folder = tmp_path / ns["folder"]

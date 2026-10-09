@@ -1,7 +1,10 @@
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { RemoteWorkerSession, RemoteWorkerSessionStatus } from '@sdk';
 import { SessionCard } from '@src/components/conversation/SessionCard';
+
+const openDock = vi.fn();
+vi.mock('@src/navigation/useDockNavigation', () => ({ useDockNavigation: () => ({ navigation: { openDock } }) }));
 
 const SID = 'a1a1a1a1-0000-4000-8000-000000000001';
 
@@ -31,6 +34,8 @@ function renderCard(props: Partial<Parameters<typeof SessionCard>[0]> = {}) {
       onDisconnect={props.onDisconnect}
       lastPromptFailed={props.lastPromptFailed}
       onRetry={props.onRetry}
+      runningPrompt={props.runningPrompt}
+      chatProcessId={props.chatProcessId}
     />,
   );
   return { onOpen };
@@ -134,6 +139,27 @@ describe("SessionCard — the session's one line in the conversation", () => {
     expect(screen.getByTestId('session-card').querySelector('.animate-pulse')).toBeTruthy();
   });
 
+  it('names the running prompt by its first line, on either side, whatever the mirror status says', () => {
+    // The guest's mirror stays IDLE through a turn (nothing is sent when one starts).
+    renderCard({ session: session(RemoteWorkerSessionStatus.IDLE), runningPrompt: 'list the files\nthen count them' });
+    expect(screen.getByTestId('session-card-prompt').textContent).toBe('❯ list the files');
+    expect(screen.queryByTestId('session-card-status')).toBeNull();
+    expect(screen.getByTestId('session-card').querySelector('.animate-pulse')).toBeTruthy();
+  });
+
+  it('host: an icon opens the chat the session runs in, without opening the session', () => {
+    openDock.mockClear();
+    const { onOpen } = renderCard({
+      session: session(RemoteWorkerSessionStatus.RUNNING),
+      role: 'host',
+      chatProcessId: '911219a8-bff1-4a69-9cdb-438e33a43a5c',
+    });
+    fireEvent.click(screen.getByTestId('live-session-open-chat'));
+    expect(onOpen).not.toHaveBeenCalled();
+    expect(openDock).toHaveBeenCalledTimes(1);
+    expect(String(openDock.mock.calls[0][0].pointer)).toContain('911219a8-bff1-4a69-9cdb-438e33a43a5c');
+  });
+
   it('a failed last prompt keeps the session live and offers the guest Retry, once', async () => {
     const onRetry = vi.fn().mockResolvedValue(undefined);
     const { onOpen } = renderCard({
@@ -177,5 +203,29 @@ describe("SessionCard — the session's one line in the conversation", () => {
   it('null session renders "requesting"', () => {
     renderCard({ session: null });
     expect(screen.getByTestId('session-card').getAttribute('data-status')).toBe('requesting');
+  });
+});
+
+describe('SessionCard — the 2-hour length cap', () => {
+  afterEach(() => {
+    cleanup();
+    vi.useRealTimers();
+  });
+
+  it('flips a connected card to ended when the cap passes, with no Disconnect', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-10-07T11:59:00Z'));
+    renderCard({
+      session: session(RemoteWorkerSessionStatus.IDLE, { approved_at: '2026-10-07T10:00:00Z' }),
+      onDisconnect: async () => {},
+    });
+    expect(screen.getByTestId('session-card').dataset.status).toBe('active');
+    expect(screen.queryByTestId('session-card-disconnect')).not.toBeNull();
+
+    act(() => {
+      vi.advanceTimersByTime(60_000);
+    });
+    expect(screen.getByTestId('session-card').dataset.status).toBe('ended');
+    expect(screen.queryByTestId('session-card-disconnect')).toBeNull();
   });
 });

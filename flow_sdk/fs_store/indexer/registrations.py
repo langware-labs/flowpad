@@ -16,7 +16,7 @@ import flow_sdk.builtin.compute_op  # noqa: F401
 import flow_sdk.builtin.consumer_position  # noqa: F401
 import flow_sdk.builtin.copilot_session  # noqa: F401
 import flow_sdk.builtin.data_source  # noqa: F401
-import flow_sdk.builtin.data_spec  # noqa: F401
+import flow_sdk.builtin.data_schema  # noqa: F401
 import flow_sdk.builtin.dataset  # noqa: F401
 import flow_sdk.builtin.deck  # noqa: F401
 import flow_sdk.builtin.deck_template  # noqa: F401

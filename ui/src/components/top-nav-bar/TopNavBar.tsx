@@ -16,6 +16,7 @@ import { AddressAskField } from './AddressAskField';
 import { AddressField } from './AddressField';
 import { AddressSearchField } from './AddressSearchField';
 import { NewChatButton } from './NewChatButton';
+import { ProjectSetupButton } from './ProjectSetupButton';
 import { RuntimeChip } from './RuntimeChip';
 import { TopBarActions } from './TopBarActions';
 import { useEntityBreadcrumbs } from './use-entity-breadcrumbs';
@@ -92,6 +93,7 @@ export function TopNavBar() {
         testId="top-nav-files"
       />
       <RuntimeChip kind={runtimeKind} project={project} />
+      <ProjectSetupButton project={project} />
       {/* One slot, three modes — the address is where you are, search is
           where you'd rather be, and ask (a click on the pill's dead space) is
           what you want done, handed to the Flowpad Assistant. Same pill, same

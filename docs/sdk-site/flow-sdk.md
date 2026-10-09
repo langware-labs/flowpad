@@ -1025,7 +1025,7 @@ async with workflow("acme-support"):                          # names the durabl
 ```text
 You are building on the Flow SDK (Python package `flowpad`, import `flow_sdk`, CLI `flow`).
 Read the Flow SDK guide in flow-sdk.md before writing code. Follow its rules:
-- Every value you pass or return is a DataSpec subclass (frozen, extra="forbid"); never a bare dict.
+- Every value you pass or return is an instance of a DataSpec schema (frozen, extra="forbid"); never a bare dict.
 - Integrations are data driver folders: agentic-assets/data_driver/<name>/ with data_driver.json and one Source subclass in source.py.
 - Never put a secret in config. Declare it in a credential (secret_pack.json with a `setup` text) and read it from a SecretStore; accounts come from connections.
 - In a listen() loop, give every item exactly one ack() or reply().

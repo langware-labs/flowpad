@@ -20,6 +20,7 @@ import { CountChip } from '@src/components/browseable-tree/CountChip';
 import { refreshNode } from '@src/components/browseable-tree/refresh-store';
 import { EntityIcon } from '@src/components/graph-view/ui/EntityIcon';
 import { skillCreateActions, skillFolderListChildren } from './skillFolder';
+import { diagnosisRequestListChildren } from './diagnosisRequestRoot';
 import { llmEndpointListChildren } from './llmEndpointRoot';
 import { tagListChildren } from './tagRoot';
 import { config, dataManager } from '@sdk';
@@ -103,6 +104,8 @@ async function fetchAssetsOfType(typeName: string, filter: AssetFilter, limit: n
   if (filter.query.length >= 2) urlParams.set('q', filter.query);
   applyFilterToParams(urlParams, filter);
   try {
+    // The gate's tsconfig.app.json needs this cast (`apiClient.get` is untyped there); ESLint's project disagrees.
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-type-assertion
     const data = (await apiClient.get(`/search?${urlParams.toString()}`)) as { results?: SearchResult[] } | null;
     // Member tasks (group-task children) are kept here — the tree nests them
     // under their parent (see buildTaskTree) rather than dropping them.
@@ -434,6 +437,10 @@ export function assetTypeRoot(type: AssetTypeInfo, deps: AssetTypeRootDeps): Bro
     // with exactly the budgets this person may spend.
     if (type.type_name === 'llm_endpoint') {
       return llmEndpointListChildren();
+    }
+    // Diagnosis requests have no file for the indexer either: the hub lists them.
+    if (type.type_name === 'diagnosis_request') {
+      return diagnosisRequestListChildren(filter.scope);
     }
     const results = await fetchAssetsOfType(type.type_name, filter, limit);
     // Tasks nest: a group/parent task's member (child) tasks render indented

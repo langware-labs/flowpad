@@ -4,6 +4,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popo
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import { formatTimeAgo } from '@src/utils/format-time-ago';
+import { latestPerTarget } from './display-stack';
 import { FileText, Globe, History } from 'lucide-react';
 import { useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
@@ -29,14 +30,13 @@ function EntryIcon({ entry }: { entry: DisplayEntry }) {
 }
 
 /**
- * The rows of a process's `flow show` history — newest first, each with an
- * "ago" stamp; clicking one calls `onOpen`. Shared by the display toolbar's
- * history popover and the terminal ribbon's Shown stack, which differ only in
- * their trigger.
+ * The rows of a process's `flow show` history — one per target, newest first,
+ * each with the "ago" stamp of its latest show; clicking one calls `onOpen`.
+ * Shared by the display toolbar's history popover and the terminal ribbon's
+ * Shown stack, which differ only in their trigger.
  */
 export function DisplayHistoryList({ stack, onOpen }: DisplayHistoryButtonProps) {
-  // Stored oldest-first; show newest-first.
-  const rows = [...stack].reverse();
+  const rows = latestPerTarget(stack);
   return (
     <ul className="flex max-h-80 flex-col overflow-y-auto">
       {rows.map((entry, i) => {

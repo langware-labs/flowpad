@@ -5,10 +5,10 @@
   "vault_root": "/Users/shlom/Documents/dev/flowpad-oss/docs",
   "folder_rel_path": "agent",
   "folder_name": "agent",
-  "inputs_hash": "45ccaf40b47826822ef9c74720842589f8a83a6a4136be73df59ec273f11abb1",
+  "inputs_hash": "8e12a4b9bc677e160f319a693e5a8f90bc3f4d8eb39d3479e93205736a5d4d12",
   "template_version": 1,
   "prompt_version": 1,
-  "self_summary": "The AgenticProcess entity up close: the four-axis status model that says what a worker is doing and on what evidence, and a tour of its persisted fields, actions and public TypeScript surface.",
+  "self_summary": "The agent layer up close: the AgenticProcess four-axis status model and its interface card (fields, actions, TypeScript surface), and Chief of Staff agents that answer fast and hand longer work to SubAgent staff through the task ledger.",
   "files": [
     {
       "name": "agentic_process_statuses.md",
@@ -30,12 +30,12 @@
       "name": "interface.md",
       "rel_path": "interface.md",
       "title": "AgenticProcess interface — rendered demo",
-      "summary": "Rendered interface-fence tour of AgenticProcess: Python entity methods including run(input, output_spec), its 42 HTTP actions, and the TypeScript SDK surface.",
-      "content_hash": "2e26044b4af9420d23a7493e40c0da1b87d539e86392ec3e0f0033e8e797194d",
-      "size_bytes": 29237
+      "summary": "Rendered interface-card tour of the AgenticProcess entity: persisted fields, all 42 backend actions, and the public TypeScript SDK surface.",
+      "content_hash": "5580baddf83846712ace157c87e0e5135eca3d064d30dbe62aaf610806f506ea",
+      "size_bytes": 29252
     }
   ],
   "subfolders": [],
-  "generated_at": "2026-09-25T12:04:30Z",
+  "generated_at": "2026-10-07T14:33:53Z",
   "latest_process_ref": ""
 }

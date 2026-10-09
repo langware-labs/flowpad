@@ -27,6 +27,18 @@ def read_pid(pid_path: Path) -> int | None:
         return None
 
 
+def is_held(lock_path: Path) -> bool:
+    """Whether some process holds the lock right now. A lock file alone means nothing: a stopped or
+    crashed holder leaves it behind, and the kernel has already released it."""
+    if not lock_path.exists():
+        return False
+    try:
+        with FileLock(str(lock_path), timeout=0):
+            return False
+    except Timeout:
+        return True
+
+
 def acquire(
     lock_path: Path,
     pid_path: Path,

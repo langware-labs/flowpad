@@ -5,7 +5,7 @@
  */
 import { APIEntity, registerEntity } from '../APIEntity';
 import { IEntity, EntityMerge } from '../IEntity';
-import type { EvalExampleRow, EvalRun } from '../evals/types';
+import type { EvalExampleRow, EvalRun, EvalTrace } from '../evals/types';
 
 /** The kinds an authored field may take. Mirrors the backend's declaration —
  *  `flow_sdk/schema/data_spec/_kinds.py` PRIMITIVES plus the one-element list
@@ -34,11 +34,13 @@ export interface DatasetAuthoringSpec {
 }
 
 /** What `spec` holds: the inline form, or the NAME of a registered dataset kind
- *  (`navigator.dataset`, `--acme--.orders.dataset`) — typically one a `data_spec` folder defines. */
+ *  (`navigator.dataset`, `--acme--.orders.dataset`) — typically one a `data_schema` folder defines. */
 export type DatasetSpecForm = DatasetAuthoringSpec | string;
 
 /** One row going in: `input` required, the other slots and the row's role optional. */
 export interface DatasetRowInput {
+  /** The row's key — its example folder's name (`a-z 0-9 _ -`). Append numbers a row without one. */
+  key?: string;
   input: unknown;
   context?: unknown;
   ground_truth?: unknown;
@@ -50,6 +52,8 @@ export interface DatasetRowInput {
 /** One row read back with its slots' VALUES (`GET example/<id>`). */
 export interface DatasetRow extends DatasetRowInput {
   id: string;
+  /** The example folder's name — address the row by it (`put`, `deleteRow`, `rename`, `example`). */
+  key: string;
   kind: 'train' | 'eval' | 'test';
   metadata: Record<string, unknown>;
 }
@@ -133,7 +137,7 @@ export class Dataset extends APIEntity<Dataset> implements IDataset {
    *  NOT named `examples`: a dataset read by id carries an `examples` FIELD on the wire, and
    *  assigning it onto the instance hid a method of that name ("examples is not a function"). */
   async listExamples(): Promise<{
-    examples: { example_id: string; item_id: string | null; kind: string; annotated: boolean }[];
+    examples: { example_id: string; key: string; item_id: string | null; kind: string; annotated: boolean }[];
   }> {
     return this.get('examples');
   }
@@ -164,17 +168,44 @@ export class Dataset extends APIEntity<Dataset> implements IDataset {
   }
 
   /** Run this dataset's eval now; answers the new run. */
+  /** How one example's answer was reached in a run (its `trace`), fetched only when it is opened. */
+  async evalTrace(runId: string, exampleId: string): Promise<EvalTrace | null> {
+    const found = (await this.get(`eval/${encodeURIComponent(runId)}/${encodeURIComponent(exampleId)}`)) as { trace?: EvalTrace | null };
+    return found?.trace ?? null;
+  }
+
   async runEval(options: { eval?: string; kinds?: string[] } = {}): Promise<EvalRun> {
     return this.post('run-eval', options);
   }
 
-  /** One example with its slots' values. */
-  async example(exampleId: string): Promise<DatasetRow> {
-    return this.get(`example/${encodeURIComponent(exampleId)}`);
+  /** One example with its slots' values — by its key or its id. */
+  async example(keyOrId: string): Promise<DatasetRow> {
+    return this.get(`example/${encodeURIComponent(keyOrId)}`);
   }
 
-  /** Every row checked against the declared shape; `problems` names the rows that do not fit. */
-  async validate(): Promise<{ checked: number; problems: { example_id: string; error: string }[] }> {
+  /** Create the row `key`, or replace the one there. Checked first — a row that does not fit writes
+   *  nothing. Slots it leaves out (gold, output, context) and the row's metadata are kept. */
+  async put(key: string, row: Omit<DatasetRowInput, 'key'>): Promise<{ example_id: string; key: string; num_examples: number }> {
+    return this.post('put-row', { key, row });
+  }
+
+  /** Remove one row, by key or id. */
+  async deleteRow(keyOrId: string): Promise<{ key: string; num_examples: number }> {
+    return this.post('delete-row', { key: keyOrId });
+  }
+
+  /** Give a row a new key. Its id follows the key: anything pointing at the old one must be updated. */
+  async rename(keyOrId: string, newKey: string): Promise<{ example_id: string; key: string }> {
+    return this.post('rename-row', { key: keyOrId, new_key: newKey });
+  }
+
+  /** Would this row fit? Nothing is written. */
+  async check(row: Omit<DatasetRowInput, 'key'>): Promise<{ ok: boolean; errors: string[] }> {
+    return this.post('check-row', { row });
+  }
+
+  /** Every row checked against the declared shape; `problems` names the rows that do not fit, by key. */
+  async validate(): Promise<{ checked: number; problems: { example_id: string; key: string; error: string }[] }> {
     return this.post('validate', {});
   }
 

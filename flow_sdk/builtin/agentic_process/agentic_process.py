@@ -598,20 +598,16 @@ def _build_run_result(proc: "AgenticProcess") -> "PromptResult":
 # The agent's `flow show` targets accumulate on ``context_data["display_stack"]``
 # (each entry = a resolve_display_target payload + a server ``shown_at`` ISO
 # stamp), newest last. ``last_shown`` stays = the newest TARGET (no shown_at) for
-# back-compat readers (standard-mode viewer). Capped; consecutive identical
-# targets refresh the timestamp instead of duplicating.
+# back-compat readers (standard-mode viewer). Capped; one entry per target — a
+# re-shown target moves to the end with a fresh timestamp.
 DISPLAY_STACK_CAP = 50
 
 
 def _append_display_entry(stack: list[dict], payload: dict, shown_at: str) -> list[dict]:
-    """Append ``payload`` (stamped ``shown_at``) to ``stack``; a consecutive
-    identical target just refreshes its timestamp. Capped to the newest N."""
-    entry = {**payload, "shown_at": shown_at}
-    if stack and isinstance(stack[-1], dict) and same_display_target(stack[-1], payload):
-        stack = [*stack[:-1], entry]
-    else:
-        stack = [*stack, entry]
-    return stack[-DISPLAY_STACK_CAP:]
+    """Append ``payload`` (stamped ``shown_at``) to ``stack``, dropping any earlier
+    show of the same target — so repeats never eat the cap. Capped to the newest N."""
+    kept = [e for e in stack if not (isinstance(e, dict) and same_display_target(e, payload))]
+    return [*kept, {**payload, "shown_at": shown_at}][-DISPLAY_STACK_CAP:]
 
 
 def _union_display_stacks(a: list, b: list) -> list[dict]:
@@ -871,6 +867,15 @@ class AgenticProcess(Entity):
             "turn re-spawns and re-resolves auth, so the next turn simply uses the new endpoint. "
             "Not validated locally -- the hub authorizes every invoke against the endpoint in the "
             "URL, so a stale value earns a 401/403 rather than reaching a budget it may not spend."
+        ),
+    )
+    llm_endpoint_public: bool = APIField(
+        default=False,
+        description=(
+            "``llm_endpoint_typeid`` names a PUBLIC hub endpoint -- spendable by whoever holds its id, "
+            "with no hub login. Scoped to THIS process: a run told to spend someone else's public "
+            "budget (``flow diagnose <request id>``) must not rebind the box's own default the way "
+            "``flow llm user use`` does. Ignored without ``llm_endpoint_typeid``."
         ),
     )
     process_hook_events: list[str] = APIField(
@@ -3026,7 +3031,9 @@ class AgenticProcess(Entity):
         except DisplayTargetNotFound as e:
             from flow_sdk.schema.data_spec.returned_value_spec import NavigateResult  # noqa: PLC0415
 
-            return ApiSuccessResponse(data=NavigateResult.not_found(str(e), verdict="not_found").model_dump(mode="json"))
+            return ApiSuccessResponse(
+                data=NavigateResult.not_found(str(e), verdict="not_found").model_dump(mode="json")
+            )
 
         return await self._show_answer(payload)
 
@@ -3798,6 +3805,7 @@ class AgenticProcess(Entity):
                 session_id=self.session_id if (self.session_id and not resumable) else None,
                 resume_session_id=self.session_id if resumable else None,
                 language=await resolve_worker_language(self),
+                disallowed_tools=(self.cli_config or {}).get("disallowed_tools") or [],
                 **self._process_asset_context_kwargs(process_assets),
             )
 

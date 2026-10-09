@@ -53,6 +53,17 @@ class OutcomeUnknown(SourceError):
     """A write or send may have been applied; its result is unknown."""
 
 
+#: The family members a person must act on: refused access, a missing resource, an unsupported operation, a rejected
+#: input. Every other member (unavailable, outcome unknown, a stale cursor) is retried on the next tick.
+NEEDS_A_PERSON: tuple[type[SourceError], ...] = (AccessDenied, NotFound, Unsupported, Rejected)
+
+
+def is_transient(exc: BaseException) -> bool:
+    """A failure that says nothing about the setup — the provider did not answer, or not yet. A ``verify`` re-raises
+    one rather than reporting "not set up"."""
+    return isinstance(exc, SourceError) and not isinstance(exc, NEEDS_A_PERSON)
+
+
 #: Every class a boundary (RPC, REST) may re-raise by name.
 FAMILY: tuple[type[BaseException], ...] = (
     AccessDenied,
@@ -68,10 +79,12 @@ __all__ = [
     "FAMILY",
     "AccessDenied",
     "InvalidCursor",
+    "NEEDS_A_PERSON",
     "NotFound",
     "OutcomeUnknown",
     "Rejected",
     "SourceError",
     "SourceUnavailable",
     "Unsupported",
+    "is_transient",
 ]

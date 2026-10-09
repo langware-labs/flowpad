@@ -8,7 +8,7 @@ from pydantic import ValidationError, model_validator
 
 from flow_sdk.schema.data_spec import FrontMatter
 from flow_sdk.schema.data_spec._form import ShapeForm
-from flow_sdk.schema.data_spec.dataset_spec import DatasetSpec
+from flow_sdk.schema.data_spec.dataset_spec import DatasetSpec, UnregisteredKind
 from flow_sdk.schema.data_spec.io.native import FreeForm
 from flow_sdk.tags.grammar import normalize_tag
 
@@ -40,11 +40,15 @@ class DatasetManifestSpec(FrontMatter):
             if isinstance(raw, str):
                 # A kind NAME is checked for its grammar only. Whether it resolves is a question for
                 # whoever reads the rows typed (``Dataset._example_type``): the walk reads a dataset
-                # before the data specs nested in it, so a name may not resolve YET -- and a name
+                # before the data schemas nested in it, so a name may not resolve YET -- and a name
                 # that does not resolve yet is not malformed.
                 normalize_tag(raw)
                 return values
             DatasetSpec.parse(raw)
+        except UnregisteredKind:
+            # The same rule as a kind NAME above: a kind that does not resolve YET is not malformed.
+            # Dropping the spec here made every later read fall back to untyped artifact rows.
+            return values
         except (ValueError, ValidationError) as exc:
             logger.warning("[dataset] ignoring malformed `spec`: %s", exc)
             return {k: v for k, v in values.items() if k != "spec"}

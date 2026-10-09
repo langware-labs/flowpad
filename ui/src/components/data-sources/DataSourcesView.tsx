@@ -17,7 +17,7 @@
  */
 import { useCallback, useMemo, useState } from 'react';
 import { DataSource } from '@sdk';
-import { Eye, Plus } from 'lucide-react';
+import { Eye, Plus, Waypoints } from 'lucide-react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { useEntitiesQuery } from '@src/hooks/entity-hooks';
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
@@ -34,9 +34,11 @@ import { ReplayDialog } from './ReplayDialog';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useIsAdvanced } from '@src/contexts/view-mode-context';
-import { openDriver, parseDataSourcesPointer } from './data-sources-pointer';
+import { openChannels, openDriver, parseDataSourcesPointer } from './data-sources-pointer';
 import { DataDriverPage, DataDriversList } from './DataDriversView';
+import { MessageChannelsList } from './MessageChannelsList';
 import { DataSourcePage } from './DataSourcePage';
+import { useUiActionRequest } from '@src/navigation/ui-actions';
 
 export function DataSourcesView() {
   const { t } = useLingui();
@@ -61,6 +63,8 @@ export function DataSourcesView() {
     setEditing(null);
     setEditorOpen(true);
   }, []);
+  // "connect a data source" (smart navigation): the same editor the Add button opens.
+  useUiActionRequest(['new-data-source-dialog'], openAdd);
 
   const openEdit = useCallback((source: DataSource) => {
     setEditing(source);
@@ -99,11 +103,15 @@ export function DataSourcesView() {
         source={pageSource}
         id={route.id}
         tab={route.tab}
+        conversation={route.conversation}
+        thread={route.thread}
         spec={pageSource ? specFor(pageSource.provider) : null}
         onEdit={openEdit}
         onReplay={setReplaying}
         onDelete={setDeleting}
       />
+    ) : route.section === 'channels' ? (
+      <MessageChannelsList />
     ) : route.section === 'drivers' ? (
       route.driver ? (
         <DataDriverPage name={route.driver} sources={sources} />
@@ -111,8 +119,8 @@ export function DataSourcesView() {
         <>
           <p className="mb-5 max-w-2xl text-sm text-muted-foreground">
             <Trans>
-              The drivers installed here — the templates a source is made from. Each is a folder: its manifest, its
-              code and its tests. Pick one to see its config and the sources made from it.
+              The drivers installed here — the templates a source is made from. Each is a folder: its manifest, its code
+              and its tests. Pick one to see its config and the sources made from it.
             </Trans>
           </p>
           <DataDriversList sources={sources} />
@@ -196,6 +204,19 @@ export function DataSourcesView() {
         </h1>
         {sources.length > 0 && (
           <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">{sources.length}</span>
+        )}
+        {route.section === 'sources' && (
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-7 gap-1.5 px-2 text-muted-foreground"
+            title={t`Every message channel and where its messages arrive`}
+            data-testid="data-sources-view-channels"
+            onClick={() => openChannels(navigation)}
+          >
+            <Waypoints className="size-3.5" />
+            <Trans>Channels</Trans>
+          </Button>
         )}
         {advanced && route.section === 'sources' && (
           <Button

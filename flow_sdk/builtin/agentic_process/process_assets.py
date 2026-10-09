@@ -9,6 +9,7 @@ from pydantic import Field
 
 from flow_sdk.assets.directory import AssetDir
 from flow_sdk.assets.materialize import MaterializationMode
+from flow_sdk.builtin.agent_auto_open import auto_open_prompt_block
 from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import ProcessHookRuntime, ProcessMcpRuntime
 from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse
@@ -378,7 +379,9 @@ class ProcessAssets:
         # tool — never the "execute it yourself" catalogue embedded agents get.
         chief = bool((self.process.context_data or {}).get("chief_of_staff"))
         agent_block = "" if chief else self._render_agents_instruction_block(agents, self.process.process_persona_path)
-        instructions = "\n\n".join(p for p in (explicit, agent_block) if p).strip()
+        # Vibe only (persona or layer): what the agent's ``auto_open`` already showed.
+        auto_open = auto_open_prompt_block(self.process.context_data) if VIBE_PERSONA_NAME in agents else ""
+        instructions = "\n\n".join(p for p in (explicit, agent_block, auto_open) if p).strip()
 
         self._normalize_process_asset_mount()
 

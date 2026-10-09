@@ -9,7 +9,13 @@ import json
 import pytest
 
 from flow_sdk.builtin.agent import Agent
-from flow_sdk.builtin.agent_auto_open import open_auto_tabs, rebase_auto_open
+from flow_sdk.builtin.agent_auto_open import (
+    AutoOpenTab,
+    auto_open_commands,
+    auto_open_prompt_block,
+    open_auto_tabs,
+    rebase_auto_open,
+)
 from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess
 from flow_sdk.builtin.tab import Tab
 from flow_sdk.schema.data_spec.dock_pointer_spec import DockPointerSpec
@@ -68,3 +74,29 @@ async def test_use_opens_the_first_as_display_and_the_rest_under_the_session_tab
     assert sorted(t.name for t in children) == ["b.html", "c.html"]
     shown = (await AgenticProcess.get_by_id(process.id)).context_data["last_shown"]
     assert shown["path"].endswith("/a.html")
+
+
+def test_auto_open_commands_reopen_a_file_and_a_screen(tmp_path):
+    report = tmp_path / "report.html"
+    tabs = [AutoOpenTab(pointer=json.dumps({"viewType": "project", "pointer": "P/editor/html/x"}), path=report),
+            AutoOpenTab(pointer=json.dumps({"viewType": "automations", "pointer": ""}))]
+
+    assert auto_open_commands(tabs) == [f"flow show file {report}", "flow show view automations"]
+
+
+def test_prompt_block_lists_what_opened_and_alerts_only_on_failures():
+    assert auto_open_prompt_block({}) == ""
+    assert auto_open_prompt_block({"auto_open_results": [{"entry": "op:x", "ok": False}]}) == ""
+
+    block = auto_open_prompt_block({
+        "auto_open": ["flow show file /p/a.html"],
+        "auto_open_results": [
+            {"entry": "op:serve", "ok": True, "detail": "usable"},
+            {"entry": "op:dev", "ok": False, "verdict": "not_running", "detail": "connection refused"},
+        ],
+    })
+
+    assert "- `flow show file /p/a.html`" in block
+    assert "op:serve" not in block
+    assert [line for line in block.splitlines() if line.startswith("⚠")] == [
+        "⚠ op:dev did not open: connection refused — tell the user if it matters."]
