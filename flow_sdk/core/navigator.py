@@ -174,7 +174,7 @@ def _fixed_targets() -> dict[str, str]:
 
     return {
         "log:smart-navigation": (
-            "The smart navigation log: the typed requests with what the navigator decided -- where the records "
+            "Your own log -- the smart navigation log: the typed requests with what the navigator decided -- where the records "
             "that need a label are reviewed and labelled"
         ),
         "url:/win/assistant": "Pop the Flowpad Assistant out into a window of its own",
@@ -358,6 +358,8 @@ def _screen_named(core: str) -> Optional[str]:
 
 #: The navigator's own log (SmartNavigationLog): asking for it never needs a model.
 SELF_LOG_NAMES = frozenset({"smart navigation log", "navigation log", "smartnavigationlog", "smart navigation data"})
+#: ...and, said TO it, its plain log: "your" is the navigator being spoken to ("open your log").
+_YOUR_LOG = re.compile(r"your (?:own )?(?:(?:smart )?navigation )?logs?")
 
 
 def rule_hit(utterance: str) -> Optional[NavigationTarget]:
@@ -366,7 +368,7 @@ def rule_hit(utterance: str) -> Optional[NavigationTarget]:
     if (literal := _literal(utterance)) and literal.whole:
         return literal.target
     core = _LEAD.sub("", utterance.strip().rstrip("!?.").lower()).strip()
-    if core in SELF_LOG_NAMES:
+    if core in SELF_LOG_NAMES or _YOUR_LOG.fullmatch(core):
         return NavigationTarget(kind="log", value="smart-navigation")
     key = _screen_named(core) if core else None
     return NavigationTarget(kind="view", value=key[len("view:") :]) if key else None
@@ -477,7 +479,9 @@ def _refinements(here: Any) -> dict[str, str]:
     for sub in place.subplaces:
         path, _, query = sub.pointer.partition("?")
         own = dict(parse_qsl(query))
-        if not own or path != (parsed.pointer or "") or own.keys() & kept.keys():
+        # A filter of a list on the screen (``runs?status=failed``), never a mode of the screen itself
+        # (``?creating=schedule`` is a new automation, not one of this trigger's).
+        if not own or not path or path != parsed.pointer or own.keys() & kept.keys():
             continue
         merged = urlencode(sorted({**own, **kept}.items()))
         out[f"view:{place_address(place, f'{path}?{merged}')}"] = f"{sub.label} -- of what is shown now ({shown})"
