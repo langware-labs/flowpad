@@ -608,6 +608,12 @@ msgstr "{0} now runs on this computer"
 msgid "{0} of {1}"
 msgstr "{0} of {1}"
 
+#. placeholder {0}: tree.done
+#. placeholder {1}: tree.total
+#: src/components/project-setup/SetupTreeView.tsx
+msgid "{0} of {1} set up"
+msgstr "{0} of {1} set up"
+
 #. placeholder {0}: a.recent_failures
 #. placeholder {1}: a.recent_runs
 #: src/components/automations/AutomationRow.tsx
@@ -3154,13 +3160,22 @@ msgstr "Assets the worker brings with it (plugins, bundled extras)"
 msgid "Assets unavailable. Retry"
 msgstr "Assets unavailable. Retry"
 
-#: src/pages/flow-page/VibeAssignTaskDialog.tsx
-#~ msgid "Assign"
-#~ msgstr "Assign"
+#: src/components/conversation/task-it.tsx
+#: src/components/conversation/task-it.tsx
+msgid "Assign"
+msgstr "Assign"
 
-#: src/pages/flow-page/VibeAssignTaskDialog.tsx
-#~ msgid "Assigning…"
-#~ msgstr "Assigning…"
+#: src/components/conversation/task-it.tsx
+msgid "Assign to"
+msgstr "Assign to"
+
+#: src/components/conversation/task-it.tsx
+msgid "Assigning someone else shares it through the cloud"
+msgstr "Assigning someone else shares it through the cloud"
+
+#: src/components/conversation/task-it.tsx
+msgid "Assigning…"
+msgstr "Assigning…"
 
 #: src/types/ViewType.ts
 msgid "Assistance"
@@ -4021,6 +4036,7 @@ msgstr "Can't update right now — showing the last synced list."
 #: src/components/prompt-library/PromptEditDialog.tsx
 #: src/components/quick-create/McpCreateDialog.tsx
 #: src/components/quick-create/QuickCreateDialog.tsx
+#: src/components/share-to-conversation/GitignoredNotice.tsx
 #: src/components/share-to-conversation/GitShareGateDialog.tsx
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
@@ -4171,6 +4187,10 @@ msgstr "Change avatar"
 #: src/components/footer/LanguageSelector.tsx
 msgid "Change language"
 msgstr "Change language"
+
+#: src/components/conversation/task-it.tsx
+msgid "Change status"
+msgstr "Change status"
 
 #: src/components/version-popover/version-popover.tsx
 msgid "Change the installed flow SDK version"
@@ -5873,6 +5893,7 @@ msgid "Could not ask for help"
 msgstr "Could not ask for help"
 
 #: src/components/assets/editor/task/OwnerButton.tsx
+#: src/components/conversation/task-it.tsx
 msgid "Could not assign"
 msgstr "Could not assign"
 
@@ -6416,6 +6437,7 @@ msgid "Could not save schedule"
 msgstr "Could not save schedule"
 
 #: src/components/assets/editor/task/TaskAssetEditor.tsx
+#: src/components/conversation/task-it.tsx
 msgid "Could not save task"
 msgstr "Could not save task"
 
@@ -8356,6 +8378,10 @@ msgstr "Download again"
 #: src/components/conversation/FlowMessageBubble.tsx
 msgid "Download all attachments"
 msgstr "Download all attachments"
+
+#: src/components/share-to-conversation/DownloadMessageForm.tsx
+msgid "Download anyway"
+msgstr "Download anyway"
 
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "Download as a file instead of sending"
@@ -11682,6 +11708,10 @@ msgstr "In Progress"
 msgid "In progress..."
 msgstr "In progress..."
 
+#: src/components/conversation/task-it.tsx
+msgid "In this conversation"
+msgstr "In this conversation"
+
 #: src/components/collaboration/LiveSessionView.tsx
 msgid "in this project"
 msgstr "in this project"
@@ -12320,6 +12350,10 @@ msgstr "Keep in project"
 #: src/components/project-home/HomeCustomizationCard.tsx
 msgid "Keep the default greeting…"
 msgstr "Keep the default greeting…"
+
+#: src/components/data-sources/DataSourceDialog.tsx
+msgid "Keep the local copy out of git"
+msgstr "Keep the local copy out of git"
 
 #: src/components/assets/AssetsPage.tsx
 msgid "Keeping chat history can make this project reappear when projects are scanned."
@@ -13444,6 +13478,10 @@ msgstr "Mailbox settings saved"
 msgid "Make a todo app"
 msgstr "Make a todo app"
 
+#: src/components/data-sources/source-parts.tsx
+msgid "Make the two the same — edit either one — and the next sync carries on."
+msgstr "Make the two the same — edit either one — and the next sync carries on."
+
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Make this the default assistant"
 msgstr "Make this the default assistant"
@@ -13679,6 +13717,8 @@ msgstr "MCP servers explicitly enabled"
 msgid "MCP tools"
 msgstr "MCP tools"
 
+#: src/components/conversation/task-it.tsx
+#: src/components/conversation/task-it.tsx
 #: src/components/token-plan/token-plan-math.ts
 msgid "Me"
 msgstr "Me"
@@ -16802,8 +16842,8 @@ msgid "Open tabs"
 msgstr "Open tabs"
 
 #: src/components/conversation/ConversationTasksPanel.tsx
-#: src/components/conversation/MessageBubble.tsx
-#: src/components/conversation/MessageBubble.tsx
+#: src/components/conversation/task-it.tsx
+#: src/components/conversation/task-it.tsx
 msgid "Open task"
 msgstr "Open task"
 
@@ -17281,8 +17321,8 @@ msgstr "Owner"
 
 #: src/components/conversation/task-it.tsx
 #: src/components/conversation/task-it.tsx
-msgid "Owner: {owner}"
-msgstr "Owner: {owner}"
+#~ msgid "Owner: {owner}"
+#~ msgstr "Owner: {owner}"
 
 #: src/components/triggers-view/FsopTriggerDetail.tsx
 #~ msgid "pacing"
@@ -18522,6 +18562,10 @@ msgstr "Pull failed."
 msgid "Pull hit a conflict"
 msgstr "Pull hit a conflict"
 
+#: src/components/data-sources/DataSourceDialog.tsx
+msgid "Pull only: edits to the local copy are never written back."
+msgstr "Pull only: edits to the local copy are never written back."
+
 #: src/components/conversation/AttachmentDownloadWarning.tsx
 msgid "pulled, but arrived short"
 msgstr "pulled, but arrived short"
@@ -18686,6 +18730,10 @@ msgstr "Read another env file — a path inside this project. The project's .env
 msgid "read only"
 msgstr "read only"
 
+#: src/components/data-sources/DataSourceDialog.tsx
+msgid "Read only"
+msgstr "Read only"
+
 #: src/pages/entry/DiagnosisRequestLanding.tsx
 msgid "Read the result in FlowPad"
 msgstr "Read the result in FlowPad"
@@ -18745,6 +18793,10 @@ msgstr "reason"
 #: src/components/settings-view/settings-utils.ts
 msgid "Reasoning Effort"
 msgstr "Reasoning Effort"
+
+#: src/components/conversation/task-it.tsx
+msgid "Reassign it to yourself instead."
+msgstr "Reassign it to yourself instead."
 
 #: src/components/graph-view/GraphView.tsx
 msgid "Rebuild"
@@ -20212,6 +20264,10 @@ msgstr "running"
 msgid "Running"
 msgstr "Running"
 
+#: src/components/data-sources/source-parts.tsx
+msgid "Running · needs you"
+msgstr "Running · needs you"
+
 #. placeholder {0}: process?.pid
 #: src/components/assets/editor/agent-profile/deployment/DeploymentProcessPanel.tsx
 msgid "Running · pid {0}"
@@ -20686,6 +20742,7 @@ msgid "Search"
 msgstr "Search"
 
 #: src/components/assets/editor/task/OwnerButton.tsx
+#: src/components/conversation/task-it.tsx
 msgid "Search a contact or type an email"
 msgstr "Search a contact or type an email"
 
@@ -21151,6 +21208,10 @@ msgstr "Send a test event"
 msgid "Send along"
 msgstr "Send along"
 
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+msgid "Send anyway"
+msgstr "Send anyway"
+
 #: src/components/help/AskForHelpDialog.tsx
 msgid "Send diagnostic"
 msgstr "Send diagnostic"
@@ -21473,6 +21534,10 @@ msgstr "Set up <0>{projectName}</0> in this workspace. We'll clone the repo and 
 #~ msgid "Set up a git-backed context folder for this project."
 #~ msgstr "Set up a git-backed context folder for this project."
 
+#: src/components/webapp-display/WebappSetupGate.tsx
+msgid "Set up again"
+msgstr "Set up again"
+
 #~ msgid "Set up an existing git repository as the context folder"
 #~ msgstr "Set up an existing git repository as the context folder"
 
@@ -21531,6 +21596,10 @@ msgstr "Set values"
 
 #~ msgid "Set{0}"
 #~ msgstr "Set{0}"
+
+#: src/components/webapp-display/WebappSetupOverlay.tsx
+msgid "Setting things up"
+msgstr "Setting things up"
 
 #: src/pages/entry/AgentLaunchLanding.tsx
 msgid "Setting up your {agentName} on a new sandbox…"
@@ -21730,6 +21799,15 @@ msgstr "Shared Context"
 #: src/components/collaboration/SharedSessionsList.tsx
 msgid "Shared sessions"
 msgstr "Shared sessions"
+
+#: src/components/conversation/task-it.tsx
+msgid "Shared via cloud"
+msgstr "Shared via cloud"
+
+#. placeholder {0}: owner ?? ''
+#: src/components/conversation/task-it.tsx
+msgid "Shared via cloud with {0}"
+msgstr "Shared via cloud with {0}"
 
 #. placeholder {0}: granted.join(', ')
 #. placeholder {0}: outcome.granted.join(', ')
@@ -22160,6 +22238,10 @@ msgstr "Sign this sandbox out"
 msgid "Sign-in"
 msgstr "Sign-in"
 
+#: src/navigation/smart-ask.ts
+msgid "Sign-in did not finish"
+msgstr "Sign-in did not finish"
+
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Sign-in failed"
 msgstr "Sign-in failed"
@@ -22175,6 +22257,7 @@ msgstr "Sign-in prompt for smart navigation"
 #: src/components/account/user-info.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
+#: src/navigation/smart-ask.ts
 #: src/pages/entry/AgentLaunchLanding.tsx
 #: src/pages/flow-page/content-panel/user-dropdown/user-menu-header.tsx
 msgid "Signed in"
@@ -22188,6 +22271,10 @@ msgstr "Signed in as {0}."
 #: src/pages/hub-home/HubHome.tsx
 msgid "signed in as {loggedInUser}"
 msgstr "signed in as {loggedInUser}"
+
+#: src/navigation/smart-ask.ts
+msgid "Signed in as {who}"
+msgstr "Signed in as {who}"
 
 #: src/components/connections-manager/machine-wide-cell.tsx
 msgid "Signed in on this computer, so every project here can use it"
@@ -23373,8 +23460,8 @@ msgstr "target"
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/conversation/ConversationTasksPanel.tsx
-#: src/components/conversation/MessageBubble.tsx
 #: src/components/conversation/MessageComposer.tsx
+#: src/components/conversation/task-it.tsx
 #: src/components/quick-create/registry.ts
 #: src/i18n/type-labels.ts
 msgid "Task"
@@ -23858,6 +23945,7 @@ msgstr "The live session has ended."
 
 #: src/components/connections-manager/flowpad-connection-row.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
+#: src/navigation/smart-ask.ts
 msgid "The login did not complete."
 msgstr "The login did not complete."
 
@@ -24084,6 +24172,10 @@ msgstr "There is nothing new in the cloud."
 msgid "These agents are added on top of the standard vibe agent, in the order shown, every vibe session."
 msgstr "These agents are added on top of the standard vibe agent, in the order shown, every vibe session."
 
+#: src/components/share-to-conversation/GitignoredNotice.tsx
+msgid "These are kept out of git and may be private. They would be sent too:"
+msgstr "These are kept out of git and may be private. They would be sent too:"
+
 #: src/components/stream-inbox-view/StreamInboxView.tsx
 #: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "These conversations exist only on this device."
@@ -24173,6 +24265,10 @@ msgstr "This agent rule decides in code what to do. It runs for every matching a
 #: src/routes/loaders/load-agent-stream-inbox.ts
 msgid "This Agent stream inbox URL is malformed."
 msgstr "This Agent stream inbox URL is malformed."
+
+#: src/components/webapp-display/WebappSetupGate.tsx
+msgid "This app could not be set up"
+msgstr "This app could not be set up"
 
 #: src/navigation/record-type-nav.ts
 msgid "This app is no longer available."
@@ -24696,6 +24792,14 @@ msgstr "This step has not run."
 
 #~ msgid "This step ran no commands."
 #~ msgstr "This step ran no commands."
+
+#: src/components/conversation/task-it.tsx
+msgid "This task is already shared"
+msgstr "This task is already shared"
+
+#: src/components/conversation/task-it.tsx
+msgid "This task is local on this machine"
+msgstr "This task is local on this machine"
 
 #: src/routes/loaders/load-tasks.ts
 msgid "This task no longer exists or is unavailable."
@@ -26481,6 +26585,10 @@ msgstr "What this project has published, and what it could."
 msgid "What this project needs before it can run here. Close it any time — starting again picks up where it stopped."
 msgstr "What this project needs before it can run here. Close it any time — starting again picks up where it stopped."
 
+#: src/components/data-sources/DataSourceDialog.tsx
+msgid "What this source places in the project is added to .gitignore — it may be private."
+msgstr "What this source places in the project is added to .gitignore — it may be private."
+
 #: src/components/assets/editor/agent-trace/simple/SimpleSessionReport.tsx
 msgid "What to look at"
 msgstr "What to look at"
@@ -26990,6 +27098,10 @@ msgstr "Your app is running, but parts of it may not work."
 #: src/components/webapp-display/messages.tsx
 msgid "Your app is running, but this page wasn't found."
 msgstr "Your app is running, but this page wasn't found."
+
+#: src/components/webapp-display/WebappSetupOverlay.tsx
+msgid "Your app is starting. Everything it needs comes up first — this page opens on the app when it is ready."
+msgstr "Your app is starting. Everything it needs comes up first — this page opens on the app when it is ready."
 
 #: src/components/webapp-display/messages.tsx
 msgid "Your app isn't running right now."
