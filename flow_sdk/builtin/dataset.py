@@ -232,9 +232,9 @@ class Dataset(Entity):
             return []
         return dataset_layout_for(self.data_layout).index(self._folder(), dataset_id=self.id)
 
-    async def _counts_from_disk(self) -> "Dataset":
-        """Re-derive the denormalized counts after a per-example write, and
-        broadcast the row. A write changes only the counts, and those follow
+    async def refresh_counts(self) -> "Dataset":
+        """Re-derive the denormalized counts after a per-example write (the
+        actions here, or a caller that appended rows itself), and broadcast the row. A write changes only the counts, and those follow
         from the cheap index — re-parsing every example's payload (what a full
         reindex does) would make labelling N rows O(N²)."""
         rows = self._index()
@@ -733,7 +733,7 @@ class Dataset(Entity):
             return _refused(exc, 400)
         except ValueError as exc:
             return ApiFailResponse(message=str(exc), status_code=400)
-        fresh = await self._counts_from_disk()
+        fresh = await self.refresh_counts()
         return ApiSuccessResponse(data={"example_ids": ids, "num_examples": fresh.num_examples})
 
     async def _row_body(self, *required: str) -> "dict | ApiFailResponse":
@@ -763,7 +763,7 @@ class Dataset(Entity):
             return _refused(exc, 400)
         except ValueError as exc:
             return ApiFailResponse(message=str(exc), status_code=400)
-        fresh = await self._counts_from_disk()
+        fresh = await self.refresh_counts()
         return ApiSuccessResponse(data={"example_id": eid, "key": body["key"], "num_examples": fresh.num_examples})
 
     @action.post(action_name="delete-row")
@@ -782,7 +782,7 @@ class Dataset(Entity):
             return _refused(exc, 409)
         except ValueError as exc:
             return ApiFailResponse(message=str(exc), status_code=400)
-        fresh = await self._counts_from_disk()
+        fresh = await self.refresh_counts()
         return ApiSuccessResponse(data={"key": key, "num_examples": fresh.num_examples})
 
     @action.post(action_name="rename-row")
@@ -933,7 +933,7 @@ class Dataset(Entity):
             problems = self.validate_rows()
         except ValueError as exc:
             return ApiFailResponse(message=str(exc), status_code=400)
-        fresh = await self._counts_from_disk()
+        fresh = await self.refresh_counts()
         return ApiSuccessResponse(data={"checked": fresh.num_examples, "problems": problems})
 
     @action.post(action_name="promote")
@@ -951,7 +951,7 @@ class Dataset(Entity):
             return ApiFailResponse(message=str(exc), status_code=404)
         except (ValueError, NotImplementedError) as exc:
             return ApiFailResponse(message=str(exc), status_code=400)
-        fresh = await self._counts_from_disk()
+        fresh = await self.refresh_counts()
         return ApiSuccessResponse(data={"example_ids": example_ids, "num_examples": fresh.num_examples})
 
     @action.post(action_name="annotate")
@@ -977,5 +977,5 @@ class Dataset(Entity):
             return ApiFailResponse(message=str(exc), status_code=404)
         except NotImplementedError as exc:
             return ApiFailResponse(message=str(exc), status_code=400)
-        fresh = await self._counts_from_disk()
+        fresh = await self.refresh_counts()
         return ApiSuccessResponse(data={"example_id": example_id, "num_annotated": fresh.num_annotated})
