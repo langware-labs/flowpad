@@ -184,3 +184,20 @@ async def test_a_switch_turned_back_off_leaves_the_file_too(tmp_path):
     await src.save()
     assert '"read_only"' not in main.read_text()
     assert (await DataSource.get_one({"id": src.id})).read_only is False
+
+
+def test_a_file_source_shows_the_folder_it_places_into_else_its_own_tree(tmp_path):
+    """What the source page browses: a copy source's local copy, a folder source read in place, nothing
+    for a record source."""
+    from flow_sdk.ingest.testing import make_data_source
+
+    own = tmp_path / "proj" / "agentic-assets" / "data_source" / "r"
+    own.mkdir(parents=True)
+    copy = make_data_source("gdrive", reflect="copy", reflect_into="agentic-assets/dataset/x/examples", asset_ref=str(own))
+    in_place = make_data_source("folder", reflect="none", config={"root": str(tmp_path / "tree")})
+    record = make_data_source("rss")
+
+    assert copy.files_root == str(tmp_path / "proj" / "agentic-assets" / "dataset" / "x" / "examples")
+    assert in_place.files_root == str((tmp_path / "tree").resolve())
+    assert record.files_root is None
+    assert "files_root" not in copy._hub_body(), "this machine's path never leaves it"

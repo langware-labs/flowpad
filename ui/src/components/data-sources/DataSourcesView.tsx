@@ -105,6 +105,7 @@ export function DataSourcesView() {
         tab={route.tab}
         conversation={route.conversation}
         thread={route.thread}
+        files={route.files}
         spec={pageSource ? specFor(pageSource.provider) : null}
         onEdit={openEdit}
         onReplay={setReplaying}

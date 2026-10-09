@@ -24,7 +24,7 @@ from math import ceil
 from pathlib import Path
 from typing import TYPE_CHECKING, ClassVar, Optional
 
-from pydantic import field_validator, model_validator
+from pydantic import computed_field, field_validator, model_validator
 
 from flow_sdk._compat import StrEnum
 from flow_sdk.api.api_types.api_field import APIField, Persist, Sharing, persist_policy
@@ -1287,6 +1287,20 @@ class DataSource(Entity):
         if not (text or "").strip():
             raise ValueError("text is required")
         return _outcome_dict(await self.send(self.reply_spec(item, body=text)))
+
+    @computed_field(json_schema_extra={"sharing": str(Sharing.PRIVATE)})
+    @property
+    def files_root(self) -> Optional[str]:
+        """Where this file source's files are on this machine — what its page browses: the folder it places
+        them in (``copy``/``symlink``: ``reflect_into``), else its own tree (a local folder, or the cache it
+        downloads into). None for a record source, or one that names no folder yet. PRIVATE: this machine's path."""
+        from flow_sdk.ingest.reflect import target_root  # noqa: PLC0415
+
+        driver = self._driver()
+        if driver is None or not driver.is_object:
+            return None
+        root = target_root(self) if self.reflect in (ReflectMode.COPY.value, ReflectMode.SYMLINK.value) else driver.tree_root(self)
+        return str(root) if root is not None else None
 
     @core_action.post(action_name="items")
     async def items_action(self) -> ApiResponse:
