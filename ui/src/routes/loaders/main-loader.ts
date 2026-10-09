@@ -29,7 +29,7 @@ import { ProjectLoadError, loadProject } from './load-project';
 import { describeProcessStartError } from './load-process';
 import { markPerfT0, perfLog, perfTime } from './_perf';
 import { canonicalizeDockUrl } from './canonicalize';
-import { loadDockPointer } from './load-dock-pointer';
+import { adoptScopeProject, loadDockPointer } from './load-dock-pointer';
 import { processRouteCarry, resolveShellRoute } from './load-shell';
 import { runLoadRedirects } from './load-redirects';
 import { getDockLoadError } from './dock-load-error-store';
@@ -295,6 +295,11 @@ async function loadAgentAppBody(args: LoaderArgs) {
       if (dockForSetup.viewType === ViewType.SHELL) {
         await resolveShellRoute(dockForSetup.pointer, requestUrl.pathname, processRouteCarry(dockForSetup));
       }
+      // Step 4: commit the URL's project for every view, ahead of tab
+      // materialization and the per-view loader, so a switch lands even when
+      // either fails (the error renders in the project being entered). An
+      // entity-owned dock's loader still runs after and its project wins.
+      if (dockForSetup.scopeProjectId) await adoptScopeProject(dockForSetup);
     }
     let setupHandled = false;
 
