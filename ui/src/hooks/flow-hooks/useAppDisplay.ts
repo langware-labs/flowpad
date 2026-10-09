@@ -33,6 +33,9 @@ function withQuery(base: string, query: string): string {
 }
 
 export interface AppDisplay {
+  /** The endpoints serving the app have not answered yet — nothing is known about it, least of all
+   *  that it is down. */
+  loading: boolean;
   /** Which runtime the iframe is currently showing. */
   runtime: AppRuntime | null;
   /** The app's dev server when it has one that does not answer (stopped, never started) — what its setup
@@ -134,11 +137,16 @@ export function useAppDisplay(
     () => (endpointId ? new TypeId(ServiceEndpoint.type, endpointId) : null),
     [endpointId],
   );
-  const { data: addressed } = useEntity<ServiceEndpoint>(endpointTypeId);
+  const { data: addressed, isLoading: addressedLoading } = useEntity<ServiceEndpoint>(endpointTypeId);
   const byArtifact = useMemo(() => endpointsBy('artifact_id', artifactId), [artifactId]);
   const byWebapp = useMemo(() => endpointsBy('webapp_id', microAppId), [microAppId]);
-  const { data: artifactRows = [] } = useEntitiesQuery<ServiceEndpoint>(byArtifact, { enabled: !!artifactId });
-  const { data: webappRows = [] } = useEntitiesQuery<ServiceEndpoint>(byWebapp, { enabled: !!microAppId });
+  const { data: artifactRows = [], isLoading: artifactLoading } = useEntitiesQuery<ServiceEndpoint>(byArtifact, {
+    enabled: !!artifactId,
+  });
+  const { data: webappRows = [], isLoading: webappLoading } = useEntitiesQuery<ServiceEndpoint>(byWebapp, {
+    enabled: !!microAppId,
+  });
+  const loading = endpointId ? addressedLoading : artifactId ? artifactLoading : webappLoading;
 
   const rows: ServiceEndpoint[] = endpointId
     ? addressed
@@ -165,6 +173,7 @@ export function useAppDisplay(
     const runtime = requested && available.includes(requested) ? requested : (available[0] ?? null);
 
     return {
+      loading,
       runtime,
       available,
       src: withQuery(runtime === 'served' ? servedUrl : runtime === 'dev' ? devUrl : '', appQuery),
@@ -174,5 +183,5 @@ export function useAppDisplay(
       view,
       setRuntime: setOverride,
     };
-  }, [appQuery, devUrl, devEndpoint, override, preferred, servedEndpoint, servedUrl, theme, view]);
+  }, [appQuery, devUrl, devEndpoint, loading, override, preferred, servedEndpoint, servedUrl, theme, view]);
 }

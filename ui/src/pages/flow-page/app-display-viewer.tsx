@@ -145,6 +145,9 @@ export function AppDisplayViewer({
 
   // A web app ASSET whose dev server does not answer is set up, not reported missing: its node of the
   // project's setup tree runs with the live tree on screen, and the app takes over once it answers.
+  // Only once its endpoints answered: an app not looked up yet is not down, and setting it up would run
+  // a setup for an app (a built-in editor, say) that is no node of this project's tree.
+  if (appDisplay.loading) return null;
   const setupWebapp = appDisplay.idleDev?.webapp_id ?? (!appDisplay.src ? microAppId : null);
   const setupProject = appDisplay.idleDev?.project_id ?? project?.id ?? '';
   if (!appDisplay.src && setupWebapp && setupProject) {
