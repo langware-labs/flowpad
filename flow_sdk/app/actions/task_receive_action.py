@@ -107,6 +107,19 @@ async def find_project_for_task() -> ApiResponse:
         return ApiFailResponse(message=f"Failed to find project: {str(e)}")
 
 
+def _pulled(pulled, local_path: str) -> dict:
+    """The wire answer for a task-repo pull — the GitRepo outcome, unchanged,
+    so the UI handles its conflict exactly like the footer's Pull."""
+    return {
+        "success": pulled.ok,
+        "kind": pulled.kind,
+        "branch": pulled.branch,
+        "message": pulled.message,
+        "local_path": local_path,
+        "error": None if pulled.ok else pulled.message,
+    }
+
+
 @action.post(action_name="pull-for-task", types=["task"])
 async def pull_for_task() -> ApiResponse:
     """Git pull the task's source repo and re-scan for incoming notifications.
@@ -116,7 +129,10 @@ async def pull_for_task() -> ApiResponse:
 
     Returns:
       success (bool)
-      conflicts (bool)
+      kind (str)          — the GitRepo pull outcome; "conflict" is left for the resolver
+      branch (str|null)
+      message (str)       — what git said, as the footer's Pull shows it
+      local_path (str)
       error (str|null)
     """
     try:
@@ -143,11 +159,8 @@ async def pull_for_task() -> ApiResponse:
         if not local_path:
             return ApiFailResponse(message="No local repo path found for this task")
 
-        from flow_sdk.utils.git import git_pull
-        pulled = await git_pull(local_path, branch=branch or None)
-        pull_ok, pull_msg = pulled.ok, pulled.detail
-
-        conflicts = "CONFLICT" in (pull_msg or "")
+        from flow_sdk.builtin.faas.git_repo import GitRepo
+        pulled = await (await GitRepo.local(local_path)).pull(branch=branch or None)
 
         # Await scan of this specific task so the entity exists before the UI navigates.
         # Then fire the full scan in the background for any other tasks in the repo.
@@ -160,11 +173,7 @@ async def pull_for_task() -> ApiResponse:
         except Exception as scan_err:
             logger.warning(f"[task_receive] pull-for-task: scan error (non-fatal): {scan_err}")
 
-        return ApiSuccessResponse(data={
-            "success": pull_ok and not conflicts,
-            "conflicts": conflicts,
-            "error": None if pull_ok else pull_msg,
-        })
+        return ApiSuccessResponse(data=_pulled(pulled, local_path))
     except Exception as e:
         logger.error(f"[task_receive] pull-for-task error: {e}", exc_info=True)
         return ApiFailResponse(message=f"Failed to pull: {str(e)}")
@@ -210,26 +219,19 @@ async def clone_for_task() -> ApiResponse:
         repo_name = repo_name_match.group(1) if repo_name_match else "repo"
         clone_path = str(_Path(target_dir) / repo_name)
 
-        from flow_sdk.utils.git import git_clone, git_pull
+        from flow_sdk.builtin.faas.git_repo import GitRepo
+        from flow_sdk.utils.git import git_clone
         cloned = await git_clone(clone_url, clone_path, branch=branch or None)
         clone_ok, clone_msg = cloned.ok, cloned.detail
 
         # If clone failed because the directory already exists, pull instead.
         if not clone_ok and "already exists and is not an empty directory" in clone_msg:
             logger.info("[task_receive] clone target exists — attempting pull instead: %s", clone_path)
-            pulled = await git_pull(clone_path, branch=branch or None)
-            pull_ok, pull_msg = pulled.ok, pulled.detail
-            conflicts = "CONFLICT" in (pull_msg or "")
-            op_ok = pull_ok and not conflicts
-            if op_ok or conflicts:
-                clone_ok, clone_msg = op_ok, pull_msg
-                if conflicts:
-                    return ApiSuccessResponse(data={
-                        "success": False,
-                        "conflicts": True,
-                        "error": None,
-                        "cloned_path": clone_path,
-                    })
+            pulled = await (await GitRepo.local(clone_path)).pull(branch=branch or None)
+            if pulled.kind == "conflict":
+                return ApiSuccessResponse(data={**_pulled(pulled, clone_path), "cloned_path": clone_path})
+            if pulled.ok:
+                clone_ok, clone_msg = True, pulled.message
 
         # Await scan of this specific task so the entity exists before the UI navigates.
         # Then fire the full scan in the background for any other tasks in the repo.

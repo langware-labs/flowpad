@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { ViewMode } from '@src/components/view-mode';
-import { derivePublishState, publishCopy, pullToastCopy, pushToastCopy, type PushKind } from '@src/lib/publish-state';
+import { derivePublishState, gitOutcomeCopy, publishCopy, type PushKind } from '@src/lib/publish-state';
 
 describe('derivePublishState', () => {
   it('no repo → hidden', () => {
@@ -43,7 +43,7 @@ describe('publishCopy — count is Advanced-only', () => {
   });
 });
 
-describe('pushToastCopy — Standard never leaks git jargon', () => {
+describe('gitOutcomeCopy push — Standard never leaks git jargon', () => {
   const GIT_TERMS = /\b(push|pushed|branch|commit|rebase|remote|upstream|git)\b/i;
   const KINDS: PushKind[] = [
     'pushed',
@@ -58,47 +58,58 @@ describe('pushToastCopy — Standard never leaks git jargon', () => {
 
   for (const kind of KINDS) {
     it(`Standard '${kind}' has no git terms`, () => {
-      const c = pushToastCopy(kind, ViewMode.Standard, { branch: 'main', message: 'fatal: non-fast-forward' });
+      const c = gitOutcomeCopy('push', kind, ViewMode.Standard, { branch: 'main', message: 'fatal: non-fast-forward' });
       expect(`${c.title} ${c.message}`).not.toMatch(GIT_TERMS);
     });
   }
 
-  it('conflict: Standard not resolvable, Advanced resolvable', () => {
-    expect(pushToastCopy('conflict', ViewMode.Standard).resolvable).toBe(false);
-    expect(pushToastCopy('conflict', ViewMode.Advanced).resolvable).toBe(true);
-  });
-
   it('permission/no_remote are distinct error states', () => {
-    expect(pushToastCopy('permission', ViewMode.Standard).title).toBe("Can't publish here");
-    expect(pushToastCopy('no_remote', ViewMode.Standard).title).toBe('Nowhere to publish yet');
+    expect(gitOutcomeCopy('push', 'permission', ViewMode.Standard).title).toBe("Can't publish here");
+    expect(gitOutcomeCopy('push', 'no_remote', ViewMode.Standard).title).toBe('Nowhere to publish yet');
   });
 
   it('pushed/nothing are successes', () => {
-    expect(pushToastCopy('pushed', ViewMode.Standard).level).toBe('success');
-    expect(pushToastCopy('nothing', ViewMode.Standard).level).toBe('success');
+    expect(gitOutcomeCopy('push', 'pushed', ViewMode.Standard).level).toBe('success');
+    expect(gitOutcomeCopy('push', 'nothing', ViewMode.Standard).level).toBe('success');
   });
 });
 
-describe('pullToastCopy — Standard never leaks git jargon', () => {
+describe('gitOutcomeCopy pull — Standard never leaks git jargon', () => {
   const GIT_TERMS = /\b(pull|pulled|branch|commit|rebase|remote|upstream|git)\b/i;
   const KINDS = ['pulled', 'nothing', 'conflict', 'permission', 'no_remote', 'network', 'no_repo', 'generic'] as const;
 
   for (const kind of KINDS) {
     it(`Standard '${kind}' has no git terms`, () => {
-      const c = pullToastCopy(kind, ViewMode.Standard, { branch: 'main', message: 'fatal: could not read' });
+      const c = gitOutcomeCopy('pull', kind, ViewMode.Standard, { branch: 'main', message: 'fatal: could not read' });
       expect(`${c.title} ${c.message}`).not.toMatch(GIT_TERMS);
     });
   }
 
-  it('conflict offers the resolver in every view', () => {
-    for (const mode of [ViewMode.Standard, ViewMode.Advanced]) {
-      expect(pullToastCopy('conflict', mode).resolvable).toBe(true);
-    }
-  });
-
   it('pulled/nothing are successes, the rest errors', () => {
-    expect(pullToastCopy('pulled', ViewMode.Standard).level).toBe('success');
-    expect(pullToastCopy('nothing', ViewMode.Standard).level).toBe('success');
-    expect(pullToastCopy('network', ViewMode.Standard).level).toBe('error');
+    expect(gitOutcomeCopy('pull', 'pulled', ViewMode.Standard).level).toBe('success');
+    expect(gitOutcomeCopy('pull', 'nothing', ViewMode.Standard).level).toBe('success');
+    expect(gitOutcomeCopy('pull', 'network', ViewMode.Standard).level).toBe('error');
+  });
+});
+
+describe('gitOutcomeCopy conflict — one answer for both directions', () => {
+  const MODES = [ViewMode.Vibe, ViewMode.Standard, ViewMode.Advanced, ViewMode.Dev];
+
+  for (const mode of MODES) {
+    it(`${mode}: push and pull say the same thing and both offer Resolve`, () => {
+      const push = gitOutcomeCopy('push', 'conflict', mode, { message: 'Conflicted: a.md' });
+      const pull = gitOutcomeCopy('pull', 'conflict', mode, { message: 'Conflicted: a.md' });
+      expect(push).toEqual(pull);
+      expect(push.resolvable).toBe(true);
+      expect(push.level).toBe('error');
+    });
+  }
+
+  it('nothing but a conflict offers Resolve', () => {
+    for (const op of ['push', 'pull'] as const) {
+      for (const kind of ['generic', 'network', 'permission', 'no_remote', 'no_repo'] as const) {
+        expect(gitOutcomeCopy(op, kind, ViewMode.Standard).resolvable).toBe(false);
+      }
+    }
   });
 });

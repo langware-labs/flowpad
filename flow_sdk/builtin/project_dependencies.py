@@ -123,9 +123,10 @@ def _checkout_for(origin: Any, cached: Optional[str]) -> Optional[Path]:
 async def _git(dep: FlowDependency, url: str, branch: str, *, fetch: bool, update: bool, cloned: bool) -> _Found:
     import asyncio  # noqa: PLC0415
 
+    from flow_sdk.builtin.faas.git_repo import GitRepo  # noqa: PLC0415
     from flow_sdk.builtin.folder import Folder  # noqa: PLC0415
     from flow_sdk.fs_store.origin.git_origin import GitOrigin  # noqa: PLC0415
-    from flow_sdk.utils.git import git_clone, git_current_branch, git_pull  # noqa: PLC0415
+    from flow_sdk.utils.git import git_clone, git_current_branch  # noqa: PLC0415
 
     origin = GitOrigin.from_url(url, branch=branch, rel_path=dep.path)
     if origin is None:
@@ -146,9 +147,9 @@ async def _git(dep: FlowDependency, url: str, branch: str, *, fetch: bool, updat
             raise _NotReady("unreachable", f"could not clone {origin.clone_url()}: {result.detail}")
         repo, made = target, True
     elif update and cloned:
-        pulled = await git_pull(str(repo), branch=branch or None)
+        pulled = await (await GitRepo.local(str(repo))).pull(branch=branch or None)
         if not pulled.ok:
-            logger.info("[deps] pull failed for %s: %s", repo, pulled.detail)
+            logger.info("[deps] pull %s for %s: %s", pulled.kind, repo, pulled.message)
     root = safe_join(repo, dep.path) if dep.path != "." else repo
     if root is None or not root.is_dir():
         raise _NotReady("invalid", f"{dep.path!r} is not a folder in {origin.clone_url()}")

@@ -75,12 +75,12 @@ async def test_an_asset_with_no_owning_project_is_refused(client, tmp_path):
 
 async def test_dry_run_reports_without_touching_anything(client, tmp_path, monkeypatch):
     """`--dry-run` must answer "would this work?" with zero side effects."""
-    import flow_sdk.utils.git as git_utils
+    from flow_sdk.builtin.faas.git_repo import GitRepo
 
     async def _boom(*args, **kwargs):
         raise AssertionError("dry-run must not commit")
 
-    monkeypatch.setattr(git_utils, "git_add_commit_push", _boom)
+    monkeypatch.setattr(GitRepo, "push", _boom)
 
     doc = tmp_path / "docs" / "x.md"
     doc.parent.mkdir(parents=True)

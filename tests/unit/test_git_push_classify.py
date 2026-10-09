@@ -1,15 +1,16 @@
-"""Unit tests for GitRepo._classify_push_error — typed publish failure kinds.
+"""Unit tests for GitRepo._classify_sync_error — typed publish failure kinds.
 
 Pure string classification; lets the publish UI give state-specific, plain-language
-guidance (permission / no-remote / network / conflict) instead of one generic
-"Push failed". No git, no IO.
+guidance (permission / no-remote / network) instead of one generic "Push failed".
+No git, no IO. ``conflict`` is never a classification: only an unmerged tree
+says conflict, so a rejected push the remote merely moved past is ``generic``.
 """
 
 import pytest
 
 from flow_sdk.builtin.faas.git_repo import GitRepo
 
-classify = GitRepo._classify_push_error
+classify = GitRepo._classify_sync_error
 
 
 @pytest.mark.parametrize(
@@ -25,11 +26,11 @@ classify = GitRepo._classify_push_error
         ("fatal: The current branch main has no upstream branch.", "no_remote"),
         ("ssh: Could not resolve hostname github.com: nodename nor servname provided", "network"),
         ("fatal: unable to access ...: Failed to connect to github.com port 443: Connection refused", "network"),
-        ("! [rejected]        main -> main (non-fast-forward)", "conflict"),
-        ("Updates were rejected because the remote contains work that you do not have. fetch first", "conflict"),
+        ("! [rejected]        main -> main (non-fast-forward)", "generic"),
+        ("Updates were rejected because the remote contains work that you do not have. fetch first", "generic"),
         ("error: failed to push some refs", "generic"),
         ("", "generic"),
     ],
 )
-def test_classify_push_error(stderr, expected):
+def test_classify_sync_error(stderr, expected):
     assert classify(stderr) == expected

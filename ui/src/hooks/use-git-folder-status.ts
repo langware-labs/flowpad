@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { GitWorkdir, type GitPushResult, type GitStatus } from '@sdk';
+import { getGitStatus } from '@src/lib/git-status-cache';
 
 /**
  * useGitFolderStatus — the "not yet on the remote" view of a git workdir.
@@ -26,7 +27,10 @@ export function useGitFolderStatus(workdir: string | null, computeNodeId: string
       return;
     }
     try {
-      const [s, u] = await Promise.all([git.getStatus(), git.unpushedFiles()]);
+      const [s, u] = await Promise.all([
+        getGitStatus(git.computeNodeId, git.workDir, { force: true }),
+        git.unpushedFiles(),
+      ]);
       setStatus(s);
       setUnpushedCommitted(u);
     } catch {

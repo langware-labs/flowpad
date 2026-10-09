@@ -42,10 +42,7 @@ from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccessResponse
 from flow_sdk.schema.data_spec.hub_failure_spec import HubFailure, HubFailureKind
 from flow_sdk.schema.types import MEMBERSHIP_CONTAINER_TYPES
-from flow_sdk.utils.git import (
-    find_project_root,
-    git_pull,
-)
+from flow_sdk.utils.git import find_project_root
 from flow_sdk.utils.hub import hub_get
 
 logger = logging.getLogger(__name__)
@@ -1418,7 +1415,11 @@ async def handle_refresh_notifications(project_path: str) -> ApiResponse:
 
     project_root = find_project_root(project_path) if project_path else None
     if project_root:
-        await git_pull(project_root)
+        from flow_sdk.builtin.faas.git_repo import GitRepo  # noqa: PLC0415
+
+        pulled = await (await GitRepo.local(project_root)).pull()
+        if not pulled.ok:
+            logger.info("[notification_action] pull %s for %s: %s", pulled.kind, project_root, pulled.message)
     try:
         from flow_sdk.app.actions.notification_scanner import scan_incoming_notifications
 

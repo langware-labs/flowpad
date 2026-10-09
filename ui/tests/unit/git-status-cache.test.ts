@@ -5,6 +5,9 @@ const gitMocks = vi.hoisted(() => ({
   getStatus: vi.fn(),
 }));
 
+// A clean status closes the repo's conflict toast — not this suite's concern.
+vi.mock('@src/lib/git-outcome', () => ({ closeGitConflict: vi.fn() }));
+
 vi.mock('@sdk', () => ({
   GitWorkdir: class {
     getStatus() {

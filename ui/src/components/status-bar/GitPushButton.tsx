@@ -6,7 +6,8 @@ import { useGitStatus } from './GitStatusContext';
 
 /**
  * One-click "non-tech" push for the current project, shown next to the pending
- * pill. Hidden unless there is something to push: uncommitted changes, or local
+ * pill. Hidden while the tree is stuck in a conflict (``GitResolveButton``
+ * stands in), and unless there is something to push: uncommitted changes, or local
  * commits not yet pushed (an asset save the backend auto-committed). Reads the shared
  * GitStatusContext and refreshes it after a push so the pill updates too.
  */
@@ -19,7 +20,7 @@ export const GitPushButton: React.FC = () => {
 
   const ahead = status?.ahead ?? 0;
   const pending = (status?.count ?? 0) > 0 || ahead > 0;
-  if (!status || !status.hasRepo || !pending || !computeNodeId || !workdir) {
+  if (!status || !status.hasRepo || status.conflict || !pending || !computeNodeId || !workdir) {
     return null;
   }
 

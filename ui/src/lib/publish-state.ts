@@ -70,23 +70,50 @@ export function publishCopy(state: PublishState, mode: ViewMode): PublishLabels 
   };
 }
 
-export interface PushToast {
+/** Which way a one-click sync went: Publish (push) or Pull. */
+export type GitSyncOp = 'push' | 'pull';
+
+export interface GitOutcomeToast {
   level: 'success' | 'error';
   title: string;
   message: string;
-  /** Advanced-only: offer the git conflict-resolver agent. */
+  /** Offer the conflict-resolver agent (`git.resolve-conflict`). */
   resolvable: boolean;
 }
 
+type CopyOpts = { branch?: string | null; message?: string };
+
 /**
- * Plain-language toast for a push outcome. Standard mode contains no git terms;
- * Advanced may include branch/remote detail and the Resolve-conflict action.
+ * Plain-language toast for a push or pull outcome. Standard mode contains no
+ * git terms; Advanced may include branch/remote detail.
+ *
+ * A conflict is ONE case for both directions: a push and a pull leave the same
+ * stuck tree, so they say the same thing and both offer Resolve — in every
+ * view, since switching views is no way out of a half-finished rebase.
  */
-export function pushToastCopy(
-  kind: PushKind,
+export function gitOutcomeCopy(
+  op: GitSyncOp,
+  kind: PushKind | PullKind,
   mode: ViewMode,
-  opts: { branch?: string | null; message?: string } = {},
-): PushToast {
+  opts: CopyOpts = {},
+): GitOutcomeToast {
+  if (kind === 'conflict') return conflictCopy(mode, opts);
+  return op === 'push' ? pushCopy(kind as PushKind, mode, opts) : pullCopy(kind as PullKind, mode, opts);
+}
+
+function conflictCopy(mode: ViewMode, opts: CopyOpts): GitOutcomeToast {
+  const raw = opts.message?.trim() || '';
+  return isAdvanced(mode)
+    ? { level: 'error', title: t`Merge conflict`, message: raw || 'A rebase conflict is in progress.', resolvable: true }
+    : {
+        level: 'error',
+        title: t`Changes need merging`,
+        message: t`Someone else changed the same thing. Let the assistant merge the two versions.`,
+        resolvable: true,
+      };
+}
+
+function pushCopy(kind: PushKind, mode: ViewMode, opts: CopyOpts): GitOutcomeToast {
   const advanced = isAdvanced(mode);
   const raw = opts.message?.trim() || '';
   switch (kind) {
@@ -104,20 +131,6 @@ export function pushToastCopy(
         message: t`Everything is already up to date.`,
         resolvable: false,
       };
-    case 'conflict':
-      return advanced
-        ? {
-            level: 'error',
-            title: t`Publish hit a conflict`,
-            message: raw || 'A rebase conflict is in progress.',
-            resolvable: true,
-          }
-        : {
-            level: 'error',
-            title: t`Couldn't publish`,
-            message: t`Someone else changed this too. Switch to Advanced view to merge.`,
-            resolvable: false,
-          };
     case 'permission':
       return {
         level: 'error',
@@ -160,15 +173,8 @@ export function pushToastCopy(
   }
 }
 
-/**
- * Plain-language toast for a pull outcome — the inbound twin of
- * ``pushToastCopy``: Standard says "updates from the cloud", Advanced says pull.
- */
-export function pullToastCopy(
-  kind: PullKind,
-  mode: ViewMode,
-  opts: { branch?: string | null; message?: string } = {},
-): PushToast {
+/** The inbound twin of ``pushCopy``: Standard says "updates from the cloud", Advanced says pull. */
+function pullCopy(kind: PullKind, mode: ViewMode, opts: CopyOpts): GitOutcomeToast {
   const advanced = isAdvanced(mode);
   const raw = opts.message?.trim() || '';
   switch (kind) {
@@ -187,22 +193,6 @@ export function pullToastCopy(
         message: t`There is nothing new in the cloud.`,
         resolvable: false,
       };
-    // Unlike push, the resolver is offered in every view: a pull conflict leaves
-    // the project mid-rebase, and "switch views" is no way out of that.
-    case 'conflict':
-      return advanced
-        ? {
-            level: 'error',
-            title: t`Pull hit a conflict`,
-            message: raw || 'A rebase conflict is in progress.',
-            resolvable: true,
-          }
-        : {
-            level: 'error',
-            title: t`Couldn't update`,
-            message: t`Someone else changed the same thing. Let the assistant merge the two versions.`,
-            resolvable: true,
-          };
     case 'network':
       return {
         level: 'error',

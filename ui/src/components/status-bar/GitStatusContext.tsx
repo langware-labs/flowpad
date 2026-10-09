@@ -1,3 +1,4 @@
+import type { GitConflict } from '@sdk';
 import { useGitChangeCount } from '@src/hooks/use-git-change-count';
 import React, { createContext, useContext, useMemo } from 'react';
 
@@ -9,6 +10,8 @@ interface GitStatusContextValue {
   behind: number;
   hasRepo: boolean;
   branch: string | null;
+  /** Set while the tree is stuck mid-conflict. */
+  conflict: GitConflict | null;
   refresh: () => void;
 }
 
@@ -25,10 +28,10 @@ export const GitStatusProvider: React.FC<{
   workdir: string | null;
   children: React.ReactNode;
 }> = ({ computeNodeId, workdir, children }) => {
-  const { count, ahead, behind, hasRepo, branch, refresh } = useGitChangeCount(computeNodeId, workdir);
+  const { count, ahead, behind, hasRepo, branch, conflict, refresh } = useGitChangeCount(computeNodeId, workdir);
   const value = useMemo<GitStatusContextValue>(
-    () => ({ computeNodeId, workdir, count, ahead, behind, hasRepo, branch, refresh }),
-    [computeNodeId, workdir, count, ahead, behind, hasRepo, branch, refresh],
+    () => ({ computeNodeId, workdir, count, ahead, behind, hasRepo, branch, conflict, refresh }),
+    [computeNodeId, workdir, count, ahead, behind, hasRepo, branch, conflict, refresh],
   );
   return <GitStatusContext.Provider value={value}>{children}</GitStatusContext.Provider>;
 };
