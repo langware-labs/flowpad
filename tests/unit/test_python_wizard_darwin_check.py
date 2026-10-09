@@ -55,7 +55,9 @@ def _run(tmp_path, op, *, tools_installed, elsewhere_python=False):
         other_dir / "xcode-select",
         f'[ "$1" = "-p" ] && {{ {"echo " + str(dev) + "; exit 0" if tools_installed else "exit 2"}; }}\nexit 1\n',
     )
-    path = f"{other_dir}:{stub_dir}:/usr/bin:/bin" if not elsewhere_python else f"{other_dir}:{stub_dir}:/bin"
+    # Hermetic on purpose: only the stand-ins are on PATH. The command is shell builtins plus the Python it finds, and
+    # a CI runner (Linux) has a real /usr/bin/python3 that would otherwise count as "a Python elsewhere".
+    path = f"{other_dir}:{stub_dir}"
     result = subprocess.run(
         ["/bin/sh", "-c", _command(op, stub_dir)], capture_output=True, text=True, timeout=20, env={"PATH": path}
     )
