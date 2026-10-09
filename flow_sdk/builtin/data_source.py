@@ -1476,7 +1476,9 @@ class DataSource(Entity):
         target = self._node_target(place, places)
         if target is None:
             return ApiFailResponse(message="no such place for this channel", status_code=404)
-        body = {"parent": f"@{claim.get('provider')}", "claim": {"kind": "user", "key": key}, "target": target}
+        # The same kind as the proven claim: a linked person (user) or a number of one's own (account).
+        kind = str((claim.get("claim") or {}).get("kind") or "user")
+        body = {"parent": f"@{claim.get('provider')}", "claim": {"kind": kind, "key": key}, "target": target}
         added = await hub_post("webhook", body, None, "chain")
         if not added:
             return ApiFailResponse(message="the hub did not take the new place", status_code=502)
