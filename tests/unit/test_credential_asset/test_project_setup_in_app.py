@@ -181,6 +181,29 @@ async def test_skipping_a_user_credential_copies_it_into_the_project(project, te
     assert (await project_setup.readiness_of(project)).ready is True
 
 
+async def test_skipping_a_credential_found_on_disk_without_setup_instructions(home, templates):
+    # setup.md is optional on disk: a credential without it loads and counts toward the setup, so
+    # skipping it must not ask for the instructions only authoring a new one requires.
+    from flow_sdk.builtin.agentic_process.agentic_process import _index_additional_dir
+    from flow_sdk.builtin.project import Project
+    from flow_sdk.instance_settings import get_instance_settings
+
+    root = Path(get_instance_settings().user_home) / "Flowpad workspace" / "stripe-shop"
+    folder = root / "agentic-assets" / "credential" / "stripe-live-secret-key"
+    folder.mkdir(parents=True)
+    (folder / "credential.json").write_text(json.dumps({"name": "stripe-live-secret-key", "schema": 2, "vars": {"STRIPE_LIVE_SECRET_KEY": {}}}))
+    project = Project(name=root.name, fs_storage_mount_path=str(root))
+    await project.save()
+    await _index_additional_dir(str(root))  # how a folder already on disk is picked up
+    assert (await project_setup.readiness_of(project)).ready is False
+
+    await credential_service.make_optional("stripe-live-secret-key", project)
+
+    assert (await project_setup.readiness_of(project)).ready is True
+    guide = folder / "setup.md"
+    assert not guide.exists() or not guide.read_text().strip(), "no instructions are made up for it"
+
+
 async def test_skipping_an_unknown_name_is_refused(project, templates):
     with pytest.raises(CredentialError):
         await credential_service.make_optional("no-such-credential", project)
