@@ -227,6 +227,7 @@ These take a pointer; without one they are an error, not a landing. Get the id f
 | Spec | `spec/<id>` | — |
 | Subgraph | `subgraph/<id>` | — |
 | Tag Graph | `tag/<id>` | tags, taxonomy |
+| Vibe | `vibe/<id>` | vibe session, vibe workspace |
 | WorldView | `worldview/<id>` | world, org graph |
 
 A screen marked *(hub)* lives on the hub surface — address it as `hub/<view>`.

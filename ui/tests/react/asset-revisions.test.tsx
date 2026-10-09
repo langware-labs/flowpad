@@ -15,7 +15,7 @@ import { dataManager, ComputeNode } from '@sdk';
 import { useAssetRevisionStatus } from '@src/hooks/use-asset-revision-status';
 import { RevisionsPanel } from '@src/components/assets/editor/revisions/RevisionsPanel';
 import { AssetGitPill } from '@src/components/assets/editor/markdown/AssetGitPill';
-import { setViewMode, ViewMode } from '@src/components/view-mode';
+import { setDev } from '@src/components/view-mode';
 import type { AssetRevision } from '@src/hooks/use-asset-revision-status';
 
 const NODE = '@local';
@@ -154,7 +154,7 @@ describe('RevisionsPanel no-repo state', () => {
 describe('AssetGitPill publish', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
-    setViewMode(ViewMode.Standard);
+    setDev(false);
   });
 
   it('unpublished → Publish posts git-ops/push for the file repo', async () => {
@@ -188,7 +188,7 @@ describe('AssetGitPill publish', () => {
       <AssetGitPill version={3} unpushed={2} hasRepo computeNodeId={NODE} workdir={WORKDIR} onOpenHistory={vi.fn()} />,
     );
     expect(screen.getByTestId('publish-pill-action')).not.toHaveTextContent('2');
-    setViewMode(ViewMode.Advanced);
+    setDev(true); // Advanced UI == developer mode
     rerender(
       <AssetGitPill version={3} unpushed={2} hasRepo computeNodeId={NODE} workdir={WORKDIR} onOpenHistory={vi.fn()} />,
     );

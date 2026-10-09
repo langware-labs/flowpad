@@ -237,7 +237,10 @@ def test_tab_pointer_view_type_round_trips(case):
     """
     from flow_sdk.builtin.tab import _pointer_view_type
 
-    assert _pointer_view_type(case["tab_hash"]) == ViewType(case["view_type"])
+    # A view that FOLDS onto another's identity (the Vibe host onto its process's
+    # shell tab) names that other view in its hash; the case says so explicitly.
+    expected = case.get("identity_view_type", case["view_type"])
+    assert _pointer_view_type(case["tab_hash"]) == ViewType(expected)
 
 
 def test_parse_view_type_is_non_throwing():

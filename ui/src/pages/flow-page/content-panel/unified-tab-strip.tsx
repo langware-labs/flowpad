@@ -27,10 +27,7 @@ import { useTabCloser } from '@src/tabs/tab-close-request';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { useTabStripItems } from '@src/tabs/tab-row-item';
 import { EntityBatchHydrator } from '@src/components/entity-batch/EntityBatchHydrator';
-import {
-  closeTabsWithLifecycle,
-  closeTabWithLifecycle,
-} from '@src/tabs/tab-content-lifecycle';
+import { closeTabsWithLifecycle, closeTabWithLifecycle } from '@src/tabs/tab-content-lifecycle';
 import {
   useAllTabs,
   useAncestorActiveTab,
@@ -118,8 +115,11 @@ export const UnifiedTabStrip: React.FC<UnifiedTabStripProps> = ({ scope = 'proje
       // The ancestor chip DISPLAYS the child filling the panel. `standsFor` is
       // display-only, so this chip's key and title — hence select, close and
       // rename — stay pointed at the process row it actually is.
+      // Not when the child renders INSIDE its host workspace (the URL names the
+      // host): the host tab is on screen with its own nested strip showing the
+      // child, so its chip keeps its own name — it is the Vibe tab.
       const item =
-        ancestorChildItem && base.key === activeKey
+        ancestorChildItem && base.key === activeKey && !currentDock?.hostProcessId
           ? { ...base, standsFor: { icon: ancestorChildItem.icon, title: ancestorChildItem.title } }
           : base;
       const projectId = tabByKey.get(item.key)?.project_id;
@@ -137,7 +137,7 @@ export const UnifiedTabStrip: React.FC<UnifiedTabStripProps> = ({ scope = 'proje
         ],
       };
     });
-  }, [baseItems, tabByKey, navigation, t, ancestorChildItem, activeKey]);
+  }, [baseItems, tabByKey, navigation, t, ancestorChildItem, activeKey, currentDock]);
 
   // A tab click navigates URL-first (click → navigate → loader → context). Under
   // load the target route's loader can still be resolving when the user closes
@@ -175,7 +175,9 @@ export const UnifiedTabStrip: React.FC<UnifiedTabStripProps> = ({ scope = 'proje
     (key: string) => {
       const tab = tabByKey.get(key);
       if (!tab?.dockPointer) return;
-      navigation.openDock(tab.dockPointer);
+      // A chip in the GLOBAL strip is a top-level tab: clicking it from inside a
+      // Vibe tab must not adopt it into that Vibe tab's workspace.
+      navigation.openDock(tab.dockPointer, undefined, { topLevel: true });
     },
     [tabByKey, navigation],
   );
@@ -189,12 +191,11 @@ export const UnifiedTabStrip: React.FC<UnifiedTabStripProps> = ({ scope = 'proje
     [tabByKey, navigation],
   );
 
-  // Where to go when the active tab(s) close: another of THIS STRIP'S OWN chips,
-  // or the project home (`DockPointer.forProject`, which renders `ProjectHome`)
-  // when none is left, falling back to Home with no project scope at all. So
-  // closing a project's last tab lands on its project home rather than jumping to
-  // another project's tab — the same destination a fresh project entry resolves to
-  // (`dockForProjectEntry`).
+  // Where to go when the active tab(s) close: another of THIS STRIP'S OWN chips;
+  // when the project's last tab closed, the project's HOME — its home agent when
+  // one is configured, else the tabless home (`goHome({ homePage: true })`, the
+  // Home button's own path; closing the home agent's own chat lands on the plain
+  // home rather than reopening it). Never a project-page chip.
   //
   // Candidates come from `tabs`, not `allTabs`: it already carries the scope rule,
   // so the landing spot tracks it for free, and it cannot offer a tab that has no
@@ -207,11 +208,11 @@ export const UnifiedTabStrip: React.FC<UnifiedTabStripProps> = ({ scope = 'proje
       const closingIds = new Set(closing.map((t) => t.id));
       const remaining = tabs.filter((t) => !closingIds.has(t.id));
       const next = tabManager.resolveNext(remaining, new Set());
-      if (next?.dockPointer) navigation.openDock(next.dockPointer);
-      else if (projectId) navigation.openDock(DockPointer.forProject(projectId));
+      if (next?.dockPointer) navigation.openDock(next.dockPointer, undefined, { topLevel: true });
+      else if (projectId) navigation.goHome({ homePage: true });
       else navigation.openDock(globalHomeDock());
     },
-    [allTabs, projectId, navigation],
+    [tabs, projectId, navigation],
   );
 
   const handleClose = useCallback(
@@ -243,14 +244,9 @@ export const UnifiedTabStrip: React.FC<UnifiedTabStripProps> = ({ scope = 'proje
         if (isTypeIdLikeName(newName)) return;
         if (newName === tab.name?.trim()) return;
       }
-      const target =
-        tab.target_type && tab.target_id
-          ? new TypeId(tab.target_type, tab.target_id)
-          : null;
+      const target = tab.target_type && tab.target_id ? new TypeId(tab.target_type, tab.target_id) : null;
       void tabManager.rename(tab.id, newName).then(async () => {
-        const entity = target
-          ? await dataManager.getByTypeId(target).catch(() => null)
-          : null;
+        const entity = target ? await dataManager.getByTypeId(target).catch(() => null) : null;
         entity?.markEdit();
         void tabManager.refresh();
       });
@@ -327,24 +323,30 @@ export const UnifiedTabStrip: React.FC<UnifiedTabStripProps> = ({ scope = 'proje
   return (
     <>
       <EntityBatchHydrator type={AgenticProcess.type} ids={processIds} />
-      <TabStrip
-        items={items}
-        activeKey={activeKey}
-        onSelect={handleSelect}
-        onClose={handleClose}
-        onCloseMany={handleCloseMany}
-        onRename={handleRename}
-        onPopout={handlePopout}
-        onReorderPreview={handleReorderPreview}
-        onReorderCommit={handleReorderCommit}
-        onReorderCancel={() => void tabManager.refresh()}
-        newTabMenuItems={controller.newTabMenuItems}
-        closeShortcutLabel={controller.closeShortcutLabel}
-        trailing={controller.trailing}
-      />
+      {/* One shape on every tab: pin the desk radius (the Vibe skin's is larger). */}
+      <div className="contents" style={STRIP_RADIUS}>
+        <TabStrip
+          items={items}
+          activeKey={activeKey}
+          onSelect={handleSelect}
+          onClose={handleClose}
+          onCloseMany={handleCloseMany}
+          onRename={handleRename}
+          onPopout={handlePopout}
+          onReorderPreview={handleReorderPreview}
+          onReorderCommit={handleReorderCommit}
+          onReorderCancel={() => void tabManager.refresh()}
+          newTabMenuItems={controller.newTabMenuItems}
+          closeShortcutLabel={controller.closeShortcutLabel}
+          trailing={controller.trailing}
+        />
+      </div>
       {controller.modals}
     </>
   );
 };
+
+/** The desk's own radius (index.css `:root`), pinned on the shared strip. */
+const STRIP_RADIUS = { '--radius': '0.5rem' } as React.CSSProperties;
 
 export default UnifiedTabStrip;

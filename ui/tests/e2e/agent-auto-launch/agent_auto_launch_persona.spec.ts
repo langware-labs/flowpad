@@ -112,7 +112,7 @@ test('an auto-launched agent answers as itself, not as vibe', async ({ page }) =
   await page.goto(`/dock/project/${projectId}`);
 
   // 1. Load-time redirect into the agent's session.
-  await expect(page).toHaveURL(/\/dock\/shell\/agentic_process-[0-9a-f-]+/);
+  await expect(page).toHaveURL(/\/dock\/(shell|vibe)\/agentic_process-[0-9a-f-]+/);
   const processId = /agentic_process-([0-9a-f-]{36})/.exec(page.url())![1];
   await expect(page.getByTestId('agent-intro-message')).toContainText('mail assistant');
 

@@ -879,6 +879,10 @@ msgstr "{indexedCount} מאונדקסים"
 msgid "{label}"
 msgstr ""
 
+#: src/components/terminal/interactive-terminal/SessionSurfaceSwitch.tsx
+msgid "{label} — not while the agent is working"
+msgstr ""
+
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
 msgid "{label} docs"
 msgstr "מסמכים {label}"
@@ -3515,6 +3519,10 @@ msgstr "חזרה למאגרים"
 msgid "Back to stream inbox"
 msgstr "חזרה לתיבת הזרם הנכנס"
 
+#: src/components/top-nav-bar/TopNavBar.tsx
+msgid "Back to tabs"
+msgstr ""
+
 #: src/components/task-bar/SharedTaskView.tsx
 msgid "Back to tasks"
 msgstr "חזור למשימות"
@@ -4278,7 +4286,6 @@ msgid "Chat with this deployed agent"
 msgstr ""
 
 #: src/components/chats-navigator/ChatsNavigator.tsx
-#: src/components/collapsed-sidebar/collapsed-sidebar.tsx
 msgid "Chats"
 msgstr "שיחות"
 
@@ -4923,8 +4930,8 @@ msgstr "סגור לימין"
 
 #: src/pages/flow-page/workspace-child-strip.tsx
 #: src/pages/flow-page/workspace-child-strip.tsx
-msgid "Close workspace"
-msgstr "סגירת סביבת העבודה"
+#~ msgid "Close workspace"
+#~ msgstr "סגירת סביבת העבודה"
 
 #: src/components/project-activity-strip/BookmarkColumn.tsx
 msgid "Closed"
@@ -7922,6 +7929,10 @@ msgstr "מצב מפתח"
 #: src/components/collapsed-sidebar/collapsed-sidebar.tsx
 msgid "Dev mode ON — click to disable"
 msgstr "מצב פיתוח פעיל — לחץ כדי להשבית"
+
+#: src/pages/flow-page/content-panel/user-dropdown/user-menu-header.tsx
+msgid "Developer mode is on — double-click to turn it off"
+msgstr ""
 
 #: src/components/developer-layout/dev-menu.tsx
 msgid "Developer Tools"
@@ -14551,6 +14562,11 @@ msgstr ""
 #: src/tabs/useTerminalStripController.tsx
 msgid "New Terminal"
 msgstr "טרמינל חדש"
+
+#: src/tabs/useTerminalStripController.tsx
+#: src/tabs/useTerminalStripController.tsx
+msgid "New Vibe"
+msgstr ""
 
 #: src/pages/discover-page/DiscoverToolbar.tsx
 msgid "Newest first"
@@ -21932,6 +21948,10 @@ msgstr "הצג הכל"
 msgid "Show Annotations"
 msgstr "הצגת הערות"
 
+#: src/pages/flow-page/vibe-chat-pane.tsx
+msgid "Show as"
+msgstr ""
+
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
 msgid "Show coordinates"
 msgstr "הצג קואורדינטות"
@@ -22042,6 +22062,10 @@ msgstr ""
 
 #: src/components/automations/RunDetail.tsx
 msgid "Show the raw record"
+msgstr ""
+
+#: src/components/terminal/interactive-terminal/SessionSurfaceSwitch.tsx
+msgid "Show this session as"
 msgstr ""
 
 #: src/components/settings-view/settings-utils.ts
@@ -23265,8 +23289,12 @@ msgid "Surface built-in system skills in the Assets browser."
 msgstr "הצג מיומנויות מערכת מובנות בדפדפן הנכסים."
 
 #: src/i18n/pref-labels.ts
-msgid "Surface complexity: Vibe (simplest, creator), Standard (minimal), Advanced, or Dev."
-msgstr "רמת המורכבות של הממשק: Vibe (הפשוט ביותר, ליצירה), Standard (מינימלי), Advanced או Dev."
+#~ msgid "Surface complexity: Vibe (simplest, creator), Standard (minimal), Advanced, or Dev."
+#~ msgstr "רמת המורכבות של הממשק: Vibe (הפשוט ביותר, ליצירה), Standard (מינימלי), Advanced או Dev."
+
+#: src/i18n/pref-labels.ts
+msgid "Surface complexity: Vibe (simplest, creator), Standard (minimal), or Advanced."
+msgstr ""
 
 #: src/components/account/settings-section.tsx
 msgid "Surface developer-only views and controls across the app."
@@ -26160,6 +26188,7 @@ msgid "via hub login"
 msgstr "דרך התחברות ל-Hub"
 
 #: src/components/links/LinkMenu.tsx
+#: src/types/ViewType.ts
 msgid "Vibe"
 msgstr ""
 

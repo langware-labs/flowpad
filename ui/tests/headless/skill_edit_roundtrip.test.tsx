@@ -55,11 +55,11 @@ describe('skill edit round-trip via the UI (no mocks)', () => {
 
     // The eval toggle lives in the markdown editor's Advanced-only header slot
     // (MarkdownEditor renders `{advanced && nameExtras}`; the toggle is in
-    // nameExtras). Skill-management controls only surface in Advanced view
-    // mode, so drive the app there — set on the SAME realm bootApp will mount,
-    // before any render, via the context's own API (no hardcoded storage key).
-    const { setViewMode, ViewMode } = await import('@src/contexts/view-mode-context');
-    setViewMode(ViewMode.Advanced);
+    // nameExtras). Advanced UI is developer mode (`useIsAdvanced` = `useIsDev`),
+    // so turn Dev on — on the SAME realm bootApp will mount, before any render,
+    // via the context's own API (no hardcoded storage key).
+    const { setDev } = await import('@src/contexts/view-mode-context');
+    setDev(true);
 
     // 2. Open the full app (router fresh from the same realm) and navigate to
     //    this skill's editor.

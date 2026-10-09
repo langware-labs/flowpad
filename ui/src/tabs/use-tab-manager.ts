@@ -16,6 +16,7 @@ import {
   type TabScope,
 } from '@sdk';
 import { useContext } from '@sdk/react/hooks';
+import { lastKnownTab } from '@src/tabs/project-entry';
 import { closeTabsWithLifecycle } from '@src/tabs/tab-content-lifecycle';
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 
@@ -26,6 +27,26 @@ export function useAllTabs(): readonly Tab[] {
     tabManager.start();
   }, []);
   return tabs;
+}
+
+/**
+ * The current project's known last-active tab ({@link lastKnownTab}), or null.
+ * Narrow on purpose: the bar is always mounted, so it re-renders only when THIS
+ * answer changes, not on every title/status/stamp in the tab store — and with
+ * `enabled` false (not on the home) it never re-renders for tabs at all.
+ */
+export function useLastKnownTab(enabled: boolean): Tab | null {
+  const { project } = useContext();
+  const projectId = project?.id ?? null;
+  const select = useCallback(
+    () => (enabled ? lastKnownTab(tabManager.getSnapshot(), projectId) : null),
+    [enabled, projectId],
+  );
+  const tab = useSyncExternalStore(tabManager.subscribe, select, select);
+  useEffect(() => {
+    tabManager.start();
+  }, []);
+  return tab;
 }
 
 /** Top-level tabs in the requested project scope. An explicit null means Global. */

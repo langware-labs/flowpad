@@ -151,12 +151,12 @@ export function TerminalOpenerToolbar({ openers, isTabCreationPending }: Props) 
           <Button
             variant="ghost"
             size="icon"
-            className="h-7 w-7 rounded"
+            className="h-7 w-7 rounded-md border border-foreground/30"
             aria-label={t`Open new tab menu`}
             title={t`New tab`}
             data-testid="opener-plus-button"
           >
-            <Plus className="h-4 w-4" />
+            <Plus className="h-5 w-5" strokeWidth={2.75} />
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="min-w-[14rem]">

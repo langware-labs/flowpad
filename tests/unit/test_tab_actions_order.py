@@ -243,6 +243,83 @@ async def _blocking_probe_tab(pointer: str) -> tuple[_BlockingTeardownProbe, Tab
     return probe, tab, gate
 
 
+async def test_close_action_closes_a_hosts_children_in_one_broadcast() -> None:
+    host = await ensure_tab('{"viewType":"vibe","pointer":"agentic_process-%s"}' % uuid.uuid4(), project_id=P1)
+    child = await ensure_tab('{"viewType":"editor","pointer":"h/child.md"}', project_id=P1, parent_tab_id=host.id)
+    other = await ensure_tab("h/other", project_id=P1)
+    await _http_close(host)
+    assert await _order(P1) == [other.id]
+    reloaded = await Tab.get_one({"id": child.id})
+    assert reloaded is not None and reloaded.visible is False
+
+
+async def test_close_many_closes_hosts_children_too() -> None:
+    host = await ensure_tab('{"viewType":"vibe","pointer":"agentic_process-%s"}' % uuid.uuid4(), project_id=P1)
+    await ensure_tab('{"viewType":"editor","pointer":"m/child.md"}', project_id=P1, parent_tab_id=host.id)
+    keep = await ensure_tab("m/keep", project_id=P1)
+    await _http_close_many(Tab, tab_ids=[host.id], project=P1)
+    assert await _order(P1) == [keep.id]
+
+
+async def test_reopening_a_host_beside_an_opener_brings_back_children_closed_with_it() -> None:
+    # A Vibe tab with two children; the user closes child A on its own, then the
+    # whole tab (child B goes with it). Reopening it from another tab lands it
+    # right after that tab, with B back and A still closed.
+    host_ptr = '{"viewType":"vibe","pointer":"agentic_process-%s"}' % uuid.uuid4()
+    first = await ensure_tab("r/first", project_id=P1)
+    host = await ensure_tab(host_ptr, project_id=P1)
+    child_a = await ensure_tab('{"viewType":"editor","pointer":"r/a.md"}', project_id=P1, parent_tab_id=host.id)
+    child_b = await ensure_tab('{"viewType":"editor","pointer":"r/b.md"}', project_id=P1, parent_tab_id=host.id)
+    opener = await ensure_tab("r/opener", project_id=P1)
+
+    await _http_close(await Tab.get_one({"id": child_a.id}))
+    await _http_close(await Tab.get_one({"id": host.id}))
+    assert await _order(P1) == [first.id, opener.id]
+
+    await _http_new_tab(Tab, pointer=host_ptr, project_id=P1, after_tab_id=opener.id)
+
+    assert await _order(P1) == [first.id, opener.id, host.id, child_b.id]
+    a = await Tab.get_one({"id": child_a.id})
+    assert a is not None and a.visible is False, "a child closed on its own stays closed"
+
+
+async def test_reopening_a_host_with_no_opener_keeps_its_slot() -> None:
+    host_ptr = '{"viewType":"vibe","pointer":"agentic_process-%s"}' % uuid.uuid4()
+    host = await ensure_tab(host_ptr, project_id=P1)
+    child = await ensure_tab('{"viewType":"editor","pointer":"s/c.md"}', project_id=P1, parent_tab_id=host.id)
+    other = await ensure_tab("s/other", project_id=P1)
+    await _http_close(await Tab.get_one({"id": host.id}))
+
+    await ensure_tab(host_ptr, project_id=P1)
+
+    assert await _order(P1) == [host.id, child.id, other.id]
+
+
+async def test_switching_a_vibe_tab_to_its_terminal_carries_its_children_out() -> None:
+    # "Open terminal" re-points the session's one row from the Vibe host to the
+    # shell form; a terminal is not a host, so its nested tabs become top-level
+    # tabs right after it.
+    proc = "agentic_process-%s" % uuid.uuid4()
+    host = await ensure_tab('{"viewType":"vibe","pointer":"%s","tabHash":"shell|%s"}' % (proc, proc), project_id=P1)
+    child = await ensure_tab('{"viewType":"editor","pointer":"t/c.md"}', project_id=P1, parent_tab_id=host.id)
+    display = await ensure_tab(
+        '{"viewType":"editor","pointer":"t/shown.md","options":{"activeDisplay":"1"},"tabHash":"workspaceActive|%s","workspaceContent":true}'
+        % proc,
+        project_id=P1,
+        parent_tab_id=host.id,
+    )
+    other = await ensure_tab("t/other", project_id=P1)
+
+    await ensure_tab('{"viewType":"shell","pointer":"%s"}' % proc, project_id=P1)
+
+    moved = await Tab.get_one({"id": child.id})
+    assert moved is not None and moved.parent_tab_id is None and moved.visible is True
+    ids = await _order(P1)
+    assert ids.index(child.id) == ids.index(host.id) + 1, "carried out right after the terminal tab"
+    shown = await Tab.get_one({"id": display.id})
+    assert shown is not None and shown.parent_tab_id == host.id, "the active display stays workspace chrome"
+
+
 async def test_http_close_returns_before_teardown() -> None:
     probe, tab, gate = await _blocking_probe_tab("bg/a")
     try:

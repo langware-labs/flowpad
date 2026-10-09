@@ -32,7 +32,7 @@ vi.mock('@src/navigation/useDockNavigation', () => ({
 vi.mock('@src/store/activity-store', () => ({ useActivities: () => [] }));
 
 import { AgenticProcess, ProcessStatus, WorkerStatus } from '@sdk';
-import { setViewMode, ViewMode } from '@src/contexts/view-mode-context';
+import { setDev } from '@src/contexts/view-mode-context';
 import { PendingActionsChip } from '@src/components/footer/PendingActionsChip';
 
 const createdIds = new Set<string>();
@@ -50,11 +50,11 @@ afterEach(() => {
     act(() => captured?.({ toString: () => `${AgenticProcess.type}-${id}` }, 'delete', {}));
   }
   createdIds.clear();
-  setViewMode(ViewMode.Standard);
+  setDev(false);
 });
 
 beforeEach(() => {
-  setViewMode(ViewMode.Standard);
+  setDev(false);
   openShellProcess.mockClear();
   openLens.mockClear();
 });
@@ -87,7 +87,8 @@ describe('PendingActionsChip — worker status list', () => {
   it('Advanced view: surfaces error + external toggles and counts the error worker', async () => {
     emit(uid(), { status: ProcessStatus.RUNNING, worker_status: WorkerStatus.THINKING, visible: true });
     emit(uid(), { status: ProcessStatus.RUNNING, worker_status: WorkerStatus.ERROR, visible: false });
-    act(() => setViewMode(ViewMode.Advanced));
+    // Advanced UI == developer mode.
+    act(() => setDev(true));
 
     render(<PendingActionsChip />);
     const chip = await screen.findByTestId('pending-actions-chip');
@@ -128,7 +129,8 @@ describe('PendingActionsChip — worker status list', () => {
 
   it('External filter shows an empty state in v1', async () => {
     emit(uid(), { status: ProcessStatus.RUNNING, worker_status: WorkerStatus.THINKING, visible: true });
-    act(() => setViewMode(ViewMode.Advanced));
+    // Advanced UI == developer mode.
+    act(() => setDev(true));
 
     render(<PendingActionsChip />);
     await userEvent.click(await screen.findByTestId('pending-actions-chip'));
