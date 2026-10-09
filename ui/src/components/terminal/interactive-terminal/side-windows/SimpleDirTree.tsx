@@ -3,6 +3,7 @@ import apiClient from '@sdk/client';
 import { openExternalFromComputeNode } from '@sdk/entities/compute-node';
 import { EntityIcon, useEntityLocationLabel } from '@src/components/graph-view/ui/EntityIcon';
 import { DockPointer } from '@src/navigation/DockPointer';
+import { assetTargetLookup } from '@src/navigation/record-type-nav';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import {
   Archive,
@@ -282,6 +283,11 @@ export const SimpleDirTree: React.FC<SimpleDirTreeProps> = ({
   const handleOpenAsset = useCallback(
     (asset: PathAsset) => {
       if (!asset.asset_ref) return;
+      const lookup = assetTargetLookup({ record_id: asset.id, record_type: asset.type, asset_ref: asset.asset_ref });
+      if (lookup) {
+        void lookup().then((target) => target && navigation.openDock(target));
+        return;
+      }
       navigation.openDock(DockPointer.forAssetEditor(asset.type, asset.asset_ref));
     },
     [navigation],

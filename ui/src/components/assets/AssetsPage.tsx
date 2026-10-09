@@ -20,6 +20,7 @@ import { Button } from '@src/components/ui/button';
 import { getDescriptor } from '@src/components/quick-create';
 import { notify } from '@src/notifications';
 import { DockPointer } from '@src/navigation/DockPointer';
+import { assetTargetLookup, opensThroughLookup } from '@src/navigation/record-type-nav';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { dataContext, RecordType, TypeId, VFSPath } from '@sdk';
 import type { Project } from '@sdk';
@@ -524,6 +525,12 @@ export function AssetsPage() {
         });
         return;
       }
+      // A type whose target needs a lookup (a dataset opens in its editor app).
+      const lookup = assetTargetLookup(result);
+      if (lookup) {
+        void lookup().then((target) => target && navigateAsset(target));
+        return;
+      }
       navigateAsset(DockPointer.forAssetEditor(result.record_type, path));
     },
     [navigateAsset, navigation],
@@ -652,7 +659,7 @@ export function AssetsPage() {
               recordType={selectedType}
               onNew={creatableTypes.has(selectedType) ? () => handleNew(selectedType) : undefined}
               refreshKey={refreshKey}
-              onRowClick={hasEditor(selectedType) ? handleRowClick : undefined}
+              onRowClick={hasEditor(selectedType) || opensThroughLookup(selectedType) ? handleRowClick : undefined}
               filter={effectiveFilter}
               onFilterChange={setAssetFilter}
               onProjectFilter={(label) => void handleProjectFilter(label)}
