@@ -32,7 +32,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Optional, Protocol
 
-from flow_sdk.assets.materialize import MaterializationMode, materialize_asset_sync, remove_path
+from flow_sdk.assets.materialize import MaterializationMode, materialize_asset_sync, prune_empty_dirs, remove_path
 from flow_sdk.builtin.drivers.local_driver import _resolve_local_path
 from flow_sdk.fs_store.origin.fs_origin import safe_join
 from flow_sdk.schema.data_spec.data_driver_spec import ReflectMode
@@ -99,7 +99,7 @@ async def _materialize(source: "DataSource") -> Optional[Path]:
 
     try:
         local_root, _project_id = await get_origin_driver(origin.kind).materialize(
-            origin, preferred_root=_target_root(source)
+            origin, preferred_root=target_root(source)
         )
     except Exception:  # noqa: BLE001
         logger.warning("[reflect] could not materialize %s for %s", origin.kind, source.id, exc_info=True)
@@ -107,18 +107,76 @@ async def _materialize(source: "DataSource") -> Optional[Path]:
     return safe_join(local_root, origin.rel_path or ".")   # the guarded join; None when the rel escapes
 
 
-def _target_root(source: "DataSource") -> Optional[Path]:
-    """The project directory reflected assets land under.
+def target_root(source: "DataSource") -> Optional[Path]:
+    """The directory reflected assets land under.
 
-    Explicit on the source rather than inferred from request context: a
-    ``DataSource`` is instance-global and the heartbeat tick that polls it has
-    no request to resolve a project from — the trap ``data_source.py`` documents
-    for scope resolution, arriving here for the same reason.
+    Explicit on the source rather than inferred from request context: a ``DataSource`` is
+    instance-global and the heartbeat tick that polls it has no request to resolve a project from —
+    the trap ``data_source.py`` documents for scope resolution, arriving here for the same reason.
+
+    An absolute path is taken as is. A RELATIVE one is relative to the scope that holds the source —
+    the folder whose ``agentic-assets/data_source/<name>/`` is the source's own (``asset_ref``) — so a
+    ``data_source.json`` kept in git means the same place in every checkout. A relative path with no
+    such folder is refused (None), never resolved against the working directory.
     """
     base = (source.reflect_into or "").strip()
     if not base:
         return None
-    return Path(base).expanduser()
+    path = Path(base).expanduser()
+    if path.is_absolute():
+        return path
+    scope = scope_root_of(source)
+    return safe_join(scope, base) if scope is not None else None
+
+
+def scope_root_of(source: "DataSource") -> Optional[Path]:
+    """The project (or user scope) folder holding ``source``'s own asset folder; None when it has none."""
+    own = getattr(source, "asset_ref", None)
+    if not own:
+        return None
+    for parent in Path(own).parents:
+        if parent.name == "agentic-assets":
+            return parent.parent
+    return None
+
+
+def keep_out_of_git(source: "DataSource") -> Optional[tuple[str, str]]:
+    """``(code, why)`` when ``source`` may not place into its target, else None — for a source that keeps its local copy
+    out of git (``gitignored``, the default).
+
+    Only the modes that put bytes INTO a folder (``copy``, ``symlink``) have a target to guard; ``none``
+    reads the source's own tree, and a cache under the instance directory is not in any repository.
+    The target is excluded by a line in the ``.gitignore`` beside it, then git is asked again. A target
+    git already tracks is refused: a line cannot untrack it, so the next commit would carry the data.
+    Blocking (git subprocesses): callers on the loop run it in a thread."""
+    from flow_sdk.utils import git_ignore  # noqa: PLC0415
+
+    if not getattr(source, "gitignored", True) or not isinstance(get_reflector(source.reflect), _ProjectionReflector):
+        return None
+    target = target_root(source)
+    if target is None:
+        return None
+    # A configuration fact, proven once per source and target: the .gitignore line stays where it was put.
+    # Proven again only when the target changes, it is missing, or the proof failed.
+    proven = (str(source.id), str(target))
+    if proven in _KEPT_OUT and target.is_dir():
+        return None
+    try:
+        target.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        return "reflect_target_unwritable", f"cannot create {target}: {exc}"
+    status = git_ignore.ensure_ignored(target)
+    if status == git_ignore.TRACKED:
+        return "reflect_target_tracked", (f"{target} is tracked by git, so what this source places there would be committed. "
+                f"Run `git rm -r --cached {target}` or turn off \"Keep the local copy out of git\".")
+    if status in (git_ignore.NOT_IGNORED, git_ignore.GIT_FAILURE, git_ignore.NO_DIR):
+        return "reflect_target_not_ignored", f"could not keep {target} out of git ({status}); nothing is placed until it is"
+    _KEPT_OUT.add(proven)
+    return None
+
+
+#: ``(source id, target)`` pairs ``keep_out_of_git`` proved this process.
+_KEPT_OUT: set[tuple[str, str]] = set()
 
 
 class InPlaceReflector:
@@ -140,7 +198,7 @@ class _ProjectionReflector:
     """
 
     def _dest(self, source: "DataSource", ref: str, base: Optional[Path]) -> Optional[Path]:
-        root = _target_root(source)
+        root = target_root(source)
         if root is None:
             return None
         src = Path(ref)
@@ -183,14 +241,35 @@ class _ProjectionReflector:
         if dest is None:
             return None
         remove_path(dest)
+        prune_empty_dirs(dest.parent, target_root(source))
         return str(dest)
 
 
 class CopyReflector(_ProjectionReflector):
-    """``copy`` — duplicate the asset root into the project."""
+    """``copy`` — duplicate the asset root into the project.
+
+    For a source that writes back, a local copy edited since the last agreement is neither overwritten
+    nor removed by the pull: ``write_back`` then decides it (push, or hold when both sides changed)."""
 
     def _emplace(self, src: Path, dest: Path) -> None:
         materialize_asset_sync(src, dest, overwrite=True)
+
+    def place(self, source: "DataSource", ref: str, root: Optional[Path]) -> Optional[str]:
+        from flow_sdk.ingest.write_back import locally_edited  # noqa: PLC0415
+
+        dest = self._dest(source, ref, root)
+        if dest is not None and locally_edited(source, dest):
+            logger.info("[reflect] %s: kept the local edit of %s; write-back decides it", source.name or source.id, dest)
+            return None
+        return super().place(source, ref, root)
+
+    def unplace(self, source: "DataSource", ref: str, root: Optional[Path]) -> Optional[str]:
+        from flow_sdk.ingest.write_back import locally_edited  # noqa: PLC0415
+
+        dest = self._dest(source, ref, root)
+        if dest is not None and locally_edited(source, dest):
+            return None
+        return super().unplace(source, ref, root)
 
 
 class SymlinkReflector(_ProjectionReflector):
@@ -294,7 +373,7 @@ def _retire_stale_placement(source: "DataSource", known, placed: str) -> None:
     whose asset lives anywhere else — the user's own tree under `none`, a path
     from some earlier configuration — is left completely alone.
     """
-    root = _target_root(source)
+    root = target_root(source)
     previous = str(getattr(known, "asset_ref", "") or "")
     if root is None or not previous or previous == placed:
         return

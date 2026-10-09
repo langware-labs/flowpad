@@ -3,6 +3,8 @@ import { replace } from 'react-router';
 
 import { DockPointer } from '@src/navigation/DockPointer';
 import { dockForDisplayTarget } from '@src/navigation/display-target-pointer';
+import { isAppType } from '@src/navigation/app-dock';
+import { projectScope } from '@src/lib/scope-filter';
 import { ViewMode } from '@src/contexts/view-mode-context';
 import { ambientLoadProjectId, registerLoadRedirect } from '@src/routes/loaders/load-redirects';
 import { prepareAgentSession } from '@src/components/agents/use-agent-launcher';
@@ -38,13 +40,18 @@ async function agentHomePageDock(agentTypeId: string, projectId: string): Promis
 }
 
 /**
- * Where a resolved home page lives: an agent's chat in Vibe, else the asset's
- * own view — the same routing `flow show entity` uses. Null when the asset
- * addresses nothing openable.
+ * Where a resolved home page lives: an agent's chat in Vibe; a web app RUNNING
+ * (the project opens app-first — `/dock/app/<typeid>`, the same view `flow show`
+ * opens an app in), pinned to the project so it stays the current one there and
+ * on reload; else the asset's own view — the routing `flow show entity` uses.
+ * Null when the asset addresses nothing openable.
  */
 export async function homePageDock(data: ProjectHomePage, projectId: string): Promise<DockPointer | null> {
   if (!data.asset || !data.type) return null;
   if (data.type === Agent.type) return agentHomePageDock(data.asset, projectId);
+  if (isAppType(data.type)) {
+    return DockPointer.forAppEntity(new TypeId(data.asset)).withScopeFilter(projectScope(projectId));
+  }
   return dockForDisplayTarget({ kind: 'entity', typeid: data.asset, type: data.type });
 }
 

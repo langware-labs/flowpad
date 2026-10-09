@@ -23,8 +23,9 @@ from flow_sdk.schema.data_spec.io.placement import (
 )
 
 
-def _document(spec: type, path: Path) -> Any:
-    """A document file back into its shape: frontmatter as fields, text as body."""
+def _document(spec: type, path: Path, *, checked: bool = True) -> Any:
+    """A document file back into its shape: frontmatter as fields, text as body (its raw fields
+    when not ``checked``)."""
     from flow_sdk.assets.frontmatter import (  # noqa: PLC0415 — pure leaf
         _extract_body,
         _extract_frontmatter,
@@ -37,6 +38,8 @@ def _document(spec: type, path: Path) -> Any:
     body_name = body_field(spec)
     if body_name:
         fields[body_name] = _extract_body(text) if front else text
+    if not checked:
+        return fields
     return _located(spec.model_validate(fields), {body_name: path} if body_name and path.is_file() else {})
 
 
@@ -51,7 +54,20 @@ def _located(value: Any, files: dict[str, Path]) -> Any:
 
 def read(spec: type, root: Path) -> Any:
     """Rebuild *spec* from *root*. The inverse of ``writer.write``."""
-    root = Path(root)
+    fields, files = _gather(spec, Path(root), checked=True)
+    return _located(spec.model_validate(fields), files)
+
+
+def read_fields(spec: type, root: Path) -> dict[str, Any]:
+    """What *root* holds for *spec*, as plain fields, NOT validated -- a value that no longer fits
+    its shape, read so it can be shown or repaired. Bytes fields are left out."""
+    return _gather(spec, Path(root), checked=False)[0]
+
+
+def _gather(spec: type, root: Path, *, checked: bool) -> tuple[dict[str, Any], dict[str, Path]]:
+    """The fields (and the files they came from) *root* holds for *spec*; nested values are read
+    with ``read`` when ``checked``, else as plain fields too."""
+    nested = read if checked else read_fields
     from flow_sdk.schema.data_spec.layout import load_json_dict  # noqa: PLC0415 — cycle-safe: lazy
 
     document = load_json_dict(root / names.main_document(spec))
@@ -77,19 +93,21 @@ def read(spec: type, root: Path) -> Any:
         elif place is Placement.DOCUMENT:
             path = root / names.field_file(name, names.ext_for(annotation))
             if path.is_file():
-                fields[name] = _document(annotation, path)
+                fields[name] = _document(annotation, path, checked=checked)
         elif place is Placement.FILE_BYTES:
             path = root / names.field_file(name, getattr(annotation, "ext", ".bin"))
-            if path.is_file():
+            if path.is_file() and checked:
                 fields[name] = annotation(path.read_bytes())
                 files[name] = path
         elif place is Placement.DIR_LIST:
             element = element_of(annotation)
             folder = root / name
-            if element is not None and folder.is_dir():
+            if isinstance(document.get(name), list):
+                fields[name] = document[name]  # a list of references, written inline
+            elif element is not None and folder.is_dir():
                 # Sorted: the ordinal names were chosen so lexicographic order
                 # IS insertion order, and a named element sorts stably too.
-                fields[name] = [read(element, child) for child in sorted(folder.iterdir()) if child.is_dir()]
+                fields[name] = [nested(element, child) for child in sorted(folder.iterdir()) if child.is_dir()]
             elif element is not None and field.is_required():
                 # An EMPTY list is an empty folder, and git (a wheel, a zip) does not keep an empty
                 # folder: on any clean checkout it is simply absent. Absent therefore reads as
@@ -100,12 +118,12 @@ def read(spec: type, root: Path) -> Any:
             folder = root / name
             if valued is not None and folder.is_dir():
                 fields[name] = {
-                    child.name: read(valued, child) for child in sorted(folder.iterdir()) if child.is_dir()
+                    child.name: nested(valued, child) for child in sorted(folder.iterdir()) if child.is_dir()
                 }
             elif valued is not None and field.is_required():
                 fields[name] = {}  # same: an empty map is a folder nothing keeps
 
-    return _located(spec.model_validate(fields), files)
+    return fields, files
 
 
-__all__ = ["read"]
+__all__ = ["read", "read_fields"]

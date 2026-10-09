@@ -196,6 +196,9 @@ class DataSpec(BaseModel):
 OPTIONAL_MARK = "?"
 ENUM_PREFIX = "enum:"
 MAP_KEY = "*"
+#: ``a.kind|b.kind`` (no ``enum:``) -- a REFERENCE to one stored value of any of these kinds
+#: (``<kind>.id.<uuid>``): a link that may point at rows of several kinds.
+KIND_UNION = "|"
 
 
 def _is_map_form(form: Any) -> bool:
@@ -214,15 +217,22 @@ def _field_def(form: Any) -> tuple:
     plus "Input should be a valid string" from the branch it was never meant for."""
     optional = isinstance(form, str) and form.startswith(OPTIONAL_MARK)
     inner = form[len(OPTIONAL_MARK):] if optional else form
-    annotation = _compile(inner)
-    if isinstance(inner, str) and isinstance(annotation, type) and issubclass(annotation, DataSpec):
+    annotation = _linkable(inner)
+    return (Optional[annotation], None) if optional else (annotation, ...)
+
+
+def _linkable(form: Any) -> Any:
+    """The type of a field or a list element written as ``form``: a kind's value OR a reference to one
+    stored value of it (``<kind>.id.<uuid>``) -- one row points at another instead of copying it."""
+    annotation = _compile(form)
+    if isinstance(form, str) and isinstance(annotation, type) and issubclass(annotation, DataSpec):
         from flow_sdk.schema.data_spec.value_ref import value_ref  # noqa: PLC0415
 
         annotation = Annotated[  # type: ignore[assignment]
-            Union[Annotated[annotation, Tag("value")], Annotated[value_ref(inner), Tag("ref")]],
+            Union[Annotated[annotation, Tag("value")], Annotated[value_ref(form), Tag("ref")]],
             Discriminator(_value_or_ref),
         ]
-    return (Optional[annotation], None) if optional else (annotation, ...)
+    return annotation
 
 
 def _value_or_ref(held: Any) -> str:
@@ -237,11 +247,15 @@ def _compile(form: Any) -> type:
             return Optional[_compile(form[len(OPTIONAL_MARK):])]  # type: ignore[return-value]
         if form.startswith(ENUM_PREFIX):
             return Literal[tuple(form[len(ENUM_PREFIX):].split("|"))]  # type: ignore[return-value]
+        if KIND_UNION in form:
+            from flow_sdk.schema.data_spec.value_ref import value_ref  # noqa: PLC0415
+
+            return value_ref(form)  # type: ignore[return-value]
         from flow_sdk.schema.data_spec._kinds import resolve_kind  # lazy: registry import
 
         return resolve_kind(form)
     if isinstance(form, list):
-        return list[_compile(form[0])]  # type: ignore[misc]
+        return list[_linkable(form[0])]  # type: ignore[misc]
     if _is_map_form(form):
         return dict[str, _compile(form[MAP_KEY])]  # type: ignore[misc]
     key = _canonical(form)
@@ -269,6 +283,11 @@ def _normalize_form(form: Any) -> Any:
             if not all(v.strip() for v in values) or len(set(values)) != len(values):
                 raise ValueError(f"an enum is distinct, non-empty values joined by '|'; got {form!r}")
             return form
+        if KIND_UNION in form:
+            kinds = [normalize_tag(k) for k in form.split(KIND_UNION)]
+            if len(kinds) < 2 or len(set(kinds)) != len(kinds):
+                raise ValueError(f"a link to several kinds is distinct kinds joined by '|'; got {form!r}")
+            return KIND_UNION.join(kinds)
         return normalize_tag(form)
     if isinstance(form, dict):
         return {name: _normalize_form(child) for name, child in form.items()}

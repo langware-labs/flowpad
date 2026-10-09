@@ -360,6 +360,21 @@ async def _stop_worker(ap) -> None:
             await shell.terminate_worker()
 
 
+#: Off in a supporter's request run: it diagnoses and reports, it changes nothing on this computer.
+#: A deny rule holds even under bypassPermissions (``claude/cli.py``); what the run must hand back
+#: (``to-send/``) it writes with the shell. On the Windows VM a request run "fixed" the user's file
+#: with Write, though the supporter's own skill said to leave it alone.
+REPORT_ONLY_DENIED_TOOLS = ("Write", "Edit", "MultiEdit", "NotebookEdit")
+
+
+def _report_only(cli_config: dict | None) -> dict:
+    """``cli_config`` with the file-editing tools denied, on top of whatever the agent denies."""
+    config = dict(cli_config or {})
+    denied = list(config.get("disallowed_tools") or [])
+    config["disallowed_tools"] = denied + [t for t in REPORT_ONLY_DENIED_TOOLS if t not in denied]
+    return config
+
+
 async def _build_diagnose_process(**options):
     """The diagnose worker process, exactly as `flow diagnose` launches it.
 
@@ -397,6 +412,7 @@ async def _run_diagnose(
     step_output_dir: Path | None = None,
     step_context: str = "",
     prompt_extra: str = "",
+    report_only: bool = False,
 ) -> int:
     """Run the flow-diagnose skill headless and stream the worker's narration.
 
@@ -464,6 +480,8 @@ async def _run_diagnose(
     ) + (f"\n\n{prompt_extra}" if prompt_extra else "")
 
     ap = await _build_diagnose_process(**(process_options or {}))
+    if report_only:
+        ap.cli_config = _report_only(ap.cli_config)
 
     # stream_transcript re-reads the transcript from the start on each call, so
     # track how many entries we've already printed and skip them on the re-stream
@@ -761,9 +779,10 @@ def _request_context(attach_dir: Path, received: list[dict]) -> str:
         "Never include passwords, API keys or tokens."
     )
     parts.append(
-        "What they sent is for finding out, not for changing this computer: never edit or delete a "
-        "file outside Flowpad's own runtime state to make it match what they sent, and never touch "
-        "a file their steps or skills say to leave alone -- report what differs instead."
+        "This run only DIAGNOSES: change nothing on this computer -- repair nothing, edit or delete no "
+        "file (the file-editing tools are off for this run). Describe the fix for the person who asked "
+        "instead. Write what they should see with a shell command, e.g. "
+        f"`cat > {attach_dir}/<short-name>.txt`."
     )
     return "\n\n".join(parts)
 
@@ -977,6 +996,7 @@ async def _run_request(request_id: str, transcript_timeout: float) -> int:
             step_output_dir=attach_dir,
             step_context=_request_context(attach_dir, received),
             prompt_extra=_request_prompt_extra(steps, attach_dir, received),
+            report_only=True,
         )
         if rc != 0 or not done.get("diagnosis_id"):
             typer.echo("Nothing was sent: the diagnosis did not complete.", err=True)

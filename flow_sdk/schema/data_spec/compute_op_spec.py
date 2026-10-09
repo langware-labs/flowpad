@@ -147,11 +147,14 @@ class CliOp(ExeData):
     #: this same backend. On a slow Windows box each of those costs 12-50 s; a wizard's check, call and re-check
     #: were three. ``commands`` stays the fallback for a run with no source.
     source_step: Optional[str] = None
+    #: A setup step of the run's web app (``{{webapp}}``: ``install`` / ``build`` / ``start``), run IN this
+    #: backend the same way (``builtin/webapp_setup.step``).
+    webapp_step: Optional[str] = None
 
     @model_validator(mode="after")
     def _has_a_command(self) -> "CliOp":
-        if not self.commands and not self.source_step:
-            raise ValueError("a cli op needs a command for at least one platform, or a source_step")
+        if not self.commands and not self.source_step and not self.webapp_step:
+            raise ValueError("a cli op needs a command for at least one platform, a source_step or a webapp_step")
         return self
 
     def command_for(self, platform: str = "") -> Optional[str]:

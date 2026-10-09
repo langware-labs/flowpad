@@ -22,7 +22,7 @@ class Verdict(StrEnum):
     CORRECT = "correct"  # matched a gold answer
     WRONG = "wrong"  # answered, and no gold matches
     ABSTAINED = "abstained"  # declined to answer (the navigator handing over to the assistant)
-    ERROR = "error"  # the eval raised; the run carried on
+    ERROR = "error"  # the eval raised, or what it judges could not answer; the run carried on
 
 
 class EvalSpec(DataSpec):
@@ -99,6 +99,9 @@ class EvalRun(DataSpec):
     eval_digest: str
     #: Whatever else decides the result (the endpoint used, a map hash) -- from ``versions()``.
     versions: dict[str, str] = Field(default_factory=dict)
+    #: The example roles judged (``["eval"]``, ``["test"]``): a dev run and a test run of one
+    #: dataset are two scoreboards, compared each with its own past.
+    kinds: list[str] = Field(default_factory=list)
     started_at: str
     finished_at: str = ""
     examples: int = 0

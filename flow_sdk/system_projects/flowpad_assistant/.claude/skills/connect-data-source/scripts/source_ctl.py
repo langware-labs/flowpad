@@ -218,7 +218,7 @@ def cmd_snapshot(args) -> dict:
     source = _one(args.source)
     sid = source["id"]
     return {
-        "source": {k: source.get(k) for k in ("id", "name", "provider", "status", "health", "error_code", "error_detail", "setup_detail", "cursor", "high_water", "consecutive_failures", "last_attempted_at", "poll_interval_seconds", "window_days", "origin", "reflect", "reflect_into", "required_capabilities", "last_synced_at", "verified_at", "next_poll_at")},
+        "source": {k: source.get(k) for k in ("id", "name", "provider", "status", "health", "error_code", "error_detail", "setup_detail", "cursor", "high_water", "consecutive_failures", "last_attempted_at", "poll_interval_seconds", "window_days", "origin", "reflect", "reflect_into", "gitignored", "read_only", "required_capabilities", "last_synced_at", "verified_at", "next_poll_at")},
         "item_count": _item_count(sid),
     }
 

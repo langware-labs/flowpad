@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-DecisionFailure = Literal["invalid_spec", "no_endpoint", "rate_limited", "unavailable", "auth", "bad_response"]
+DecisionFailure = Literal["invalid_spec", "no_endpoint", "rate_limited", "billing", "unavailable", "auth", "bad_response"]
 
 
 class DecisionError(Exception):
@@ -29,8 +29,23 @@ def reason_for_status(status: int) -> DecisionFailure:
         return "auth"
     if status == 429:
         return "rate_limited"
+    if status == 402:
+        return "billing"  # the vendor account is out of credit: nothing answers until someone pays
     if status == 503:
         return "no_endpoint"  # disabled, no target or no credential: there is nothing to answer
     if status == 400 or status == 422:
         return "invalid_spec"
     return "unavailable"
+
+
+def failure_detail(body: Any) -> str | None:
+    """The sentence an error body carries: ``message`` / ``error``, or a vendor's ``detail`` (a string, or
+    an object with its own ``message``) that the hub passes through."""
+    if not isinstance(body, dict):
+        return str(body) if body else None
+    if said := body.get("message") or body.get("error"):
+        return str(said)
+    detail = body.get("detail")
+    if isinstance(detail, dict):
+        return failure_detail(detail) or str(detail)
+    return str(detail) if detail else None

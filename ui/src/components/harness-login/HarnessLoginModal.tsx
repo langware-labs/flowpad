@@ -12,11 +12,10 @@ import {
   HARNESS_CAPABILITY_KINDS,
   LLMFundingKind,
   LMApiProvider,
-  LOGIN_CANCELLED,
+  isQuietLoginError,
   HubLogin,
   InstallState,
   LoginState,
-  LOGIN_SUPERSEDED,
   llmSourcesService,
   lmKeysService,
   statusService,
@@ -525,8 +524,7 @@ function FlowpadListRow({ onConnected }: { onConnected: () => void }) {
       await cloudManager.login();
     } catch (error) {
       // Cancel, or "Open the page again" starting a newer attempt: choices, not failures to report.
-      const quiet = error instanceof Error && (error.message === LOGIN_CANCELLED || error.message === LOGIN_SUPERSEDED);
-      if (!quiet) {
+      if (!isQuietLoginError(error)) {
         notify.error({
           title: t`Could not sign in to FlowPad`,
           message: errorMessage(error, t`The login did not complete.`),

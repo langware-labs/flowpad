@@ -460,11 +460,15 @@ class WhatsAppSource(MessageSource):
         """This number as an account claim on the hub's ``webhook/@whatsapp`` chain (the generic
         ``public-webhook`` step asks): the hub proves the token reads this number, keeps the app secret and
         verify token write-only, checks Meta's signature at its edge and hands each message to this channel.
+        A number on a server of one's own (``base_url``: a WAHA service speaking Meta's API) is proven THERE.
         ``None`` until the number, its token and its app secret are known."""
         number, token, app_secret = str(config.get("phone_number_id") or ""), secrets.get("access_token"), secrets.get("app_secret")
         if not (number and token and app_secret):
             return None
         proof = {"credential": token, "app_secret": app_secret, "verify_token": str(config.get("verify_token") or "")}
+        base_url = str(config.get("base_url") or "").strip().rstrip("/")
+        if base_url:
+            proof["graph_url"] = f"{base_url}/{GRAPH_VERSION}"
         return {"provider": "whatsapp", "key": number, "proof": proof}
 
     @setup_step("subscribe")

@@ -506,6 +506,13 @@ async def _start_agent_server() -> None:
         task_runtime.start()
     except Exception:
         logging.getLogger(__name__).exception("Task runtime: start failed")
+    try:
+        # The local person's Tasks channel: their tasks as threads in their stream inbox.
+        from flow_sdk.tasks.cos import ensure_user_tasks_channel
+
+        await ensure_user_tasks_channel()
+    except Exception:
+        logging.getLogger(__name__).exception("Tasks channel: ensure failed")
 
 
 async def _prune_web_delivery_rows() -> None:

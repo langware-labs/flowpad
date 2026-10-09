@@ -297,6 +297,12 @@ async def push_entity_files_to_hub(entity) -> int:
         logger.debug(f"share: no files to push for {entity.typeid}: {e}")
         return pushed
 
+    import asyncio  # noqa: PLC0415
+
+    from flow_sdk.utils.git_ignore import ignored_under, is_under  # noqa: PLC0415
+
+    # One git question for the whole folder, not three subprocesses per file.
+    ignored = await asyncio.to_thread(ignored_under, Path(storage.get_storage_path(""))) if items else set()
     for item in items or []:
         name = getattr(item, "display_name", None)
         if getattr(item, "is_dir", False) or not name:
@@ -308,7 +314,10 @@ async def push_entity_files_to_hub(entity) -> int:
             rel = item.vfs_abs_path.strip("/")
             if root and rel.startswith(root + "/"):
                 rel = rel[len(root) + 1 :]
-            content = Path(storage.get_storage_path(rel)).read_bytes()
+            local = Path(storage.get_storage_path(rel))
+            if is_under(local, ignored):
+                continue  # kept out of git, so it stays on this machine (see _push_folder_to_hub)
+            content = local.read_bytes()
             await hub_upload_entity_file(et, entity.id, name, content)
         except Exception as e:  # noqa: BLE001
             logger.warning(f"share: file push failed for {entity.typeid}/{name}: {e}")
@@ -320,12 +329,20 @@ async def push_entity_files_to_hub(entity) -> int:
 async def _push_folder_to_hub(et, entity, root: Path, *, skip_top: set[str] = frozenset()) -> int:
     """Upload every file under ``root`` to the entity's hub twin, keeping relative
     paths. ``skip_top`` names files at the folder root to leave out."""
+    import asyncio  # noqa: PLC0415
+
+    from flow_sdk.utils.git_ignore import ignored_under, is_under  # noqa: PLC0415
     from flow_sdk.utils.hub import hub_upload_entity_file  # noqa: PLC0415
 
+    # Nobody picked these files one by one, so what git excludes (often private: a data source's local
+    # copy, an env file) stays on this machine. A person's own share asks first (``share_has_gitignored``).
+    ignored = await asyncio.to_thread(ignored_under, root)
     pushed = 0
     for source in sorted(root.rglob("*")):
         # Never follow a sender-local symlink outside the declared asset.
         if source.is_symlink() or not source.is_file():
+            continue
+        if is_under(source, ignored):
             continue
         rel = source.relative_to(root)
         parent = rel.parent.as_posix()

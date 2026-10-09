@@ -27,6 +27,7 @@ from pathlib import Path
 from functools import lru_cache
 from typing import Any, Mapping, Optional
 
+from flow_sdk.api.api_types.identifier import is_valid_uuid
 from flow_sdk.core.dock_address import VIEW_META, ViewType, normalize_retired, parse_dock_url
 
 #: The SmartNavigator dataset. It does not ship (its rows are a benchmark, not product): it lives
@@ -131,7 +132,9 @@ def place_address(place: Any, pointer: str = "") -> str:
     return f"{prefix}{place.view}{sep}{pointer}"
 
 
-_PLACEHOLDER = re.compile(r"<(\w+)>")
+#: ``<name>`` is filled from the entity; ``<name=value>`` only matches an entity whose ``name`` IS
+#: ``value`` (``<harness=claude>/tasks/<session>``: Claude Code alone keeps a todo list).
+_PLACEHOLDER = re.compile(r"<(\w+)(?:=([\w\-]+))?>")
 
 
 def open_form(form: str, ref: Mapping[str, Any]) -> Optional[str]:
@@ -139,10 +142,11 @@ def open_form(form: str, ref: Mapping[str, Any]) -> Optional[str]:
     does not carry -- an option is never offered for an address the app cannot open."""
     kind_, _, ident = str(ref.get("typeid") or "").partition("-")
     known = {**{k: str(v) for k, v in ref.items() if v}, "id": ident, "type": kind_}
-    if path := known.get("path"):
-        known["path"] = path.lstrip("/")
-    if any(name not in known for name in _PLACEHOLDER.findall(form)):
-        return None
+    # A path is a pointer segment: written without its leading slash (``vfs/<path>``).
+    known = {k: v.lstrip("/") if k.endswith("path") else v for k, v in known.items()}
+    for name, value in _PLACEHOLDER.findall(form):
+        if name not in known or (value and known[name] != value):
+            return None
     return _PLACEHOLDER.sub(lambda m: known[m.group(1)], form)
 
 
@@ -206,6 +210,9 @@ async def _ref(typeid: Optional[str], *, path: bool = False, extras: bool = Fals
         logger.debug("here: %s did not resolve: %s", typeid, exc)
         ent = None
     if ent is not None:
+        # An alias (``project-@local``) names the row; the ref carries the row's own id, so every
+        # address built from it is one the app can open.
+        out["typeid"] = f"{str(typeid).partition('-')[0]}-{ent.id}"
         title = getattr(ent, "name", None) or getattr(ent, "title", None)
         if title:
             out["title"] = str(title)
@@ -216,7 +223,20 @@ async def _ref(typeid: Optional[str], *, path: bool = False, extras: bool = Fals
             out.update(await _session_of(ent))
         if extras and str(typeid).startswith("project-") and (room := await _room_of(ent)):
             out["room"] = room
+        # Whatever else this type's openings name (``drivers/<provider>``, ``vfs/<plan_path>``), read
+        # off the row -- the forms declare what a ref needs, so a new form needs no code here.
+        for name in _row_fields(str(typeid).partition("-")[0]):
+            if name not in out and (value := getattr(ent, name, None)):
+                out[name] = str(value)
     return out
+
+
+@lru_cache(maxsize=None)
+def _row_fields(entity_type: str) -> tuple[str, ...]:
+    """The placeholders this type's open forms name that are the row's own fields (not its id,
+    type or folder, and not what ``_session_of`` / ``_room_of`` derive)."""
+    derived = {"id", "type", "path", "harness", "session", "live_session", "room"}
+    return tuple(sorted({n for _, form, _ in forms_for(entity_type) for n, _ in _PLACEHOLDER.findall(form)} - derived))
 
 
 async def _room_of(project: Any) -> Optional[str]:
@@ -294,6 +314,91 @@ async def _last_shown(process: Optional[str]) -> Optional[dict[str, Any]]:
     return {k: shown.get(k) for k in ("kind", "path", "typeid") if shown.get(k)}
 
 
+def _shown_in(view: Optional[str], pointer: Optional[str], options: Mapping[str, str]) -> Optional[dict[str, str]]:
+    """What the address itself names, read by the screen's own ``open_forms`` -- ``trigger/log/<id>``,
+    ``?trigger=<id>``, ``<harness>/transcript/<session>`` -- as ``{"type": ..., <placeholder>: value}``.
+    The address is the truth; the tab's active-entity slot may be left over from an earlier screen."""
+    if not view:
+        return None
+    for key, (of_kind, template) in _option_forms(view).items():
+        if (value := options.get(key)) and (m := _form_regex(template).fullmatch(value)):
+            return {"type": of_kind, **m.groupdict()}
+    for of_kind, form, _ in VIEW_META[ViewType(view)].open_forms:
+        if not form.startswith("?") and pointer and (m := _form_regex(form).fullmatch(pointer)):
+            return {"type": of_kind, **m.groupdict()}
+    return None
+
+
+@lru_cache(maxsize=None)
+def _option_forms(view: str) -> dict[str, tuple[str, str]]:
+    """``{option: (entity type, value form)}`` for a screen's ``?<option>=<form>`` open forms -- the
+    options that select an entity (``automations?trigger=<id>``)."""
+    out = {}
+    for of_kind, form, _ in VIEW_META[ViewType(view)].open_forms:
+        if form.startswith("?"):
+            key, _, template = form[1:].partition("=")
+            out.setdefault(key, (of_kind, template))  # the first form an option names is what it selects
+    return out
+
+
+@lru_cache(maxsize=None)
+def _form_regex(form: str) -> "re.Pattern[str]":
+    """An open form as the pattern that reads it back: ``<name>`` a segment (a ``…path`` any rest),
+    ``<name=value>`` that value only."""
+
+    def group(m: "re.Match[str]") -> str:
+        name, value = m.group(1), m.group(2)
+        body = re.escape(value) if value else (".+" if name.endswith("path") else "[^/]+")
+        return f"(?P<{name}>{body})"
+
+    return re.compile(_PLACEHOLDER.sub(group, re.escape(form)))
+
+
+async def _shown_ref(shown: dict[str, str]) -> Optional[str]:
+    """The typeid an address names: by its ``<id>``, or a session by its harness session id."""
+    if ident := shown.get("id"):
+        return f"{shown['type']}-{ident}" if is_valid_uuid(ident) else None
+    session = shown.get("session")
+    if shown["type"] == "agentic_process" and session:
+        try:
+            from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess  # noqa: PLC0415
+
+            process = await AgenticProcess.get_by_session_id(session)
+        except Exception as exc:  # noqa: BLE001 -- a nicety; the address still says where they are
+            logger.debug("here: session %s: %s", session, exc)
+            return None
+        return f"agentic_process-{process.id}" if process else None
+    return None
+
+
+def place_for(view: Optional[str]) -> Any:
+    """The map's place for a view, or None (a view that is no place)."""
+    return _places_by_view().get(view)
+
+
+@lru_cache(maxsize=1)
+def _places_by_view() -> dict[str, Any]:
+    return {p.view: p for p in navigation_map().places}
+
+
+@lru_cache(maxsize=None)
+def filter_keys(view: Optional[str]) -> frozenset[str]:
+    """The query options a screen declares as filters: its sub-places' (``runs?status=failed``) and
+    its open forms' (``?trigger=<id>``) -- what it shows, unlike how the tab is shown (``viewMode``)."""
+    from urllib.parse import parse_qsl  # noqa: PLC0415
+
+    place = place_for(view)
+    keys = {k for s in (place.subplaces if place else ()) for k, _ in parse_qsl(s.pointer.partition("?")[2])}
+    keys |= set(_option_forms(view)) if view else set()
+    return frozenset(keys)
+
+
+@lru_cache(maxsize=None)
+def _subplace_pointers(view: Optional[str]) -> frozenset[str]:
+    place = place_for(view)
+    return frozenset(s.pointer for s in place.subplaces) if place else frozenset()
+
+
 async def here_from(browser_context: Mapping[str, Any], *, navigator: bool = False) -> Any:
     """Where a tab is: its ``browser_context`` as a validated ``navigation.here``.
 
@@ -316,26 +421,44 @@ async def here_from(browser_context: Mapping[str, Any], *, navigator: bool = Fal
         here.update(view=ViewType.HOME.value, page="desk")  # the root is Home's canonical address
     # What is open: the pointer, a focus, or the option a screen selects an entity with
     # (``automations?trigger=<id>``, from its ``open_forms``).
-    selects = {"focus"} | {
-        form[1:].split("=", 1)[0]
-        for _, form, _ in (VIEW_META[ViewType(here["view"])].open_forms if here.get("view") else ())
-        if form.startswith("?")
-    }
+    selects = {"focus"} | (set(_option_forms(here["view"])) if here.get("view") else set())
     process = ctx.get("CurrentProcessTypeId") if "process" in provides else None
-    opened = "entity" in provides and (here.get("pointer") or (parsed and any(parsed.options.get(o) for o in selects)))
+    # A pointer that is one of the screen's own sub-places (``assets/list/task``) names a place, not
+    # an entity: the tab's active entity is then left over from an earlier screen.
+    pointer = here.get("pointer")
+    names_one = bool(pointer) and pointer not in _subplace_pointers(here.get("view"))
+    opened = "entity" in provides and (names_one or (parsed and any(parsed.options.get(o) for o in selects)))
+    entity = ctx.get("CurrentActiveEntityTypeId") if opened else None
+    shown = _shown_in(here.get("view"), pointer, parsed.options) if parsed is not None else None
 
     async def nothing() -> None:
         return None
 
-    # Independent lookups: run together.
-    here["project"], here["recent"], here["process"], here["last_shown"], here["entity"] = await asyncio.gather(
-        _ref(ctx.get("CurrentProjectTypeId"), path=True, extras=navigator),
-        _recent_session(ctx.get("CurrentProjectTypeId")) if navigator else nothing(),
-        _ref(process, extras=navigator) if process else nothing(),
-        _last_shown(process) if process else nothing(),
-        _ref(ctx.get("CurrentActiveEntityTypeId")) if opened else nothing(),
+    async def project_and_recent() -> tuple[Any, Any]:
+        # The recent session by the project's own id, never by an alias the tab may send (``project-@local``).
+        ref = await _ref(ctx.get("CurrentProjectTypeId"), path=True, extras=navigator)
+        return ref, (await _recent_session(ref["typeid"]) if navigator and ref else None)
+
+    async def what_is_open() -> tuple[Any, Any, Any]:
+        # What the address names wins over the slot: a session's transcript is that session, a
+        # trigger's log is that trigger, whatever the tab last set. (A project it names is the project.)
+        nonlocal process, entity
+        named = await _shown_ref(shown) if shown else None
+        if named and named.startswith("agentic_process-"):
+            process = named
+        elif named and not named.startswith("project-"):
+            entity = named
+        return await asyncio.gather(
+            _ref(process, extras=navigator) if process else nothing(),
+            _last_shown(process) if process else nothing(),
+            _ref(entity) if entity else nothing(),
+        )
+
+    # Two independent chains, run together; each waits only on what it needs.
+    (here["project"], here["recent"]), (here["process"], here["last_shown"], here["entity"]) = await asyncio.gather(
+        project_and_recent(), what_is_open()
     )
     return kind("navigation.here").model_validate({k: v for k, v in here.items() if v is not None})
 
 
-__all__ = ["DATASET", "forms_for", "here_from", "kind", "navigation_map", "open_form", "place_address", "place_of"]
+__all__ = ["DATASET", "forms_for", "here_from", "kind", "navigation_map", "filter_keys", "open_form", "place_address", "place_for", "place_of"]

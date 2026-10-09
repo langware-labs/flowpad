@@ -435,10 +435,16 @@ async def place_webapp_locally(app) -> Optional[Any]:
 
     if not app.asset_ref:
         return None
-    name, spec = next(
-        ((name, spec) for name, spec in _app_specs(app) if spec.serving.type == "static"),
-        (app.name, WebappEndpointSpec(name=app.name)),
-    )
+    declared = next(((name, spec) for name, spec in _app_specs(app) if spec.serving.type == "static"), None)
+    # The folder is served as the app only when that IS the app: it declares no endpoints, or it has a build
+    # of its own. An app that declares only a dev server keeps SOURCE in its folder — serving that raw would
+    # show a page that is not the app, and hide that the app is not running (the setup tree starts it).
+    if declared is None and app.endpoints and str(app.build or ".") in ("", "."):
+        for endpoint in await webapp_endpoints(app.id):
+            if endpoint.backend.type == "static":
+                await endpoint.delete()
+        return None
+    name, spec = declared or (app.name, WebappEndpointSpec(name=app.name))
     fields = dict(
         name=name,
         backend=_static_backend(app, spec),

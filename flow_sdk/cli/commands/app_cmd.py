@@ -467,12 +467,6 @@ def _install_dependencies_if_needed(app_dir: Path, start_cmd: str) -> None:
 
 
 def _install_command(start_cmd: str, app_dir: Path) -> str:
-    if start_cmd.startswith("pnpm "):
-        return "pnpm install"
-    if start_cmd.startswith("yarn "):
-        return "yarn install"
-    if start_cmd.startswith("bun "):
-        return "bun install"
-    if (app_dir / "package-lock.json").exists():
-        return "npm ci"
-    return "npm install"
+    from flow_sdk.core.dev_server import install_command  # noqa: PLC0415 — one package-manager rule
+
+    return install_command(start_cmd, app_dir)

@@ -160,6 +160,12 @@ export const LOGIN_CANCELLED = 'Sign-in cancelled';
 /** What a pending `login()` rejects with when a newer `login()` replaced it ("Open the page again"). */
 export const LOGIN_SUPERSEDED = 'superseded by new login attempt';
 
+/** A `login()` rejection that was the person's choice -- cancelled, or replaced by a newer attempt --
+ *  not a failure to report. */
+export function isQuietLoginError(error: unknown): boolean {
+  return error instanceof Error && (error.message === LOGIN_CANCELLED || error.message === LOGIN_SUPERSEDED);
+}
+
 class CloudManager extends EventEmitter {
   private _login: LoginSlot<HubLoginStatus> = makeLoginSlot<HubLoginStatus>('logged_out');
   private _currentUser: User | null = null;

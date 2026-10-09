@@ -34,6 +34,8 @@ from flow_sdk.schema.data_spec.project_setup_spec import (
     REQUIREMENT_GAP,
     REQUIREMENT_OAUTH,
     REQUIREMENT_PACK,
+    REQUIREMENT_SOURCE,
+    REQUIREMENT_WEBAPP,
     ProjectReadinessSpec,
     SetupRequirementSpec,
     SetupVarSpec,
@@ -271,10 +273,8 @@ def compile_setup(
 
 # ── 3. readiness, and the setup run the app starts ────────────────────────────
 
-#: The kind of run, standing in for a wizard id: ``execute_wizard`` keys the slot on it and the project.
-SETUP_WIZARD_ID = "project-setup"
 #: The runs this backend started, by project — one at a time per project (the slot says so too).
-_RUNS: dict[str, "asyncio.Task"] = {}
+_RUNS: dict[tuple[str, str], "asyncio.Task"] = {}
 
 
 def to_do(req: SetupRequirementSpec) -> bool:
@@ -285,7 +285,7 @@ def to_do(req: SetupRequirementSpec) -> bool:
     the wizard's own check; a gap is nobody's to run."""
     if req.kind == REQUIREMENT_PACK:
         return bool(req.missing)
-    if req.kind in (REQUIREMENT_OAUTH, REQUIREMENT_DEPENDENCY):
+    if req.kind in (REQUIREMENT_OAUTH, REQUIREMENT_DEPENDENCY, REQUIREMENT_SOURCE, REQUIREMENT_WEBAPP):
         return req.satisfied is False
     return False
 
@@ -293,6 +293,8 @@ def to_do(req: SetupRequirementSpec) -> bool:
 async def readiness_of(project: "Project", deployment_id: str = "") -> ProjectReadinessSpec:
     """What the footer warning reads: ready, or what is left and what nobody can set up here."""
     requirements = await collect_requirements(project, deployment_id)
+    if not deployment_id:  # what runs HERE: a source in setup, a web app that does not answer
+        requirements += await _running_here(project)
     left = [r for r in requirements if to_do(r)]
     return ProjectReadinessSpec(
         project_id=str(project.id), ready=not left, to_do=left,
@@ -300,46 +302,75 @@ async def readiness_of(project: "Project", deployment_id: str = "") -> ProjectRe
     )
 
 
-def setup_run_address(project_id: str) -> str:
+async def _running_here(project: "Project") -> list[SetupRequirementSpec]:
+    """What values cannot show: each source still in setup, each web app whose server does not answer.
+
+    Both are read, never probed hard — the row's status, one loopback request per app — so the
+    "Setup required" button stays as cheap as the credential check it sits beside."""
+    from flow_sdk.builtin.data_source import SourceStatus  # noqa: PLC0415
+    from flow_sdk.builtin.faas.micro_app import WebApp  # noqa: PLC0415
+    from flow_sdk.builtin.webapp_setup import step  # noqa: PLC0415
+
+    out = [
+        SetupRequirementSpec(kind=REQUIREMENT_SOURCE, name=str(source.name or source.provider), satisfied=False,
+                             used_by=[PROJECT], note=str(source.setup_detail or "not set up yet"))
+        for source in await project_sources(project)
+        if source.status == SourceStatus.SETUP.value
+    ]
+    apps = [app for app in await WebApp.get_all({"match": {"project_id": str(project.id)}}) if app.asset_ref]
+    answers = await asyncio.gather(*(step(str(app.id), "start", check=True) for app in apps))
+    out += [
+        SetupRequirementSpec(kind=REQUIREMENT_WEBAPP, name=str(app.name), satisfied=False, used_by=[PROJECT],
+                             note=answer.detail)
+        for app, answer in zip(apps, answers) if not answer.ok
+    ]
+    return out
+
+
+def setup_run_address(project_id: str, root: str = "") -> str:
     """The run's activity address — what its questions carry (``Question.run``) and a screen claims."""
-    from flow_sdk.core.wizard.execute import activity_path_for  # noqa: PLC0415
+    from flow_sdk.core.setup import setup_activity_path  # noqa: PLC0415
 
-    return activity_path_for(SETUP_WIZARD_ID, "", project_id)
+    return setup_activity_path(root or f"project-{project_id}")
 
 
-async def start_setup(project: "Project", *, ai: bool = True) -> str:
+async def start_setup(project: "Project", *, ai: bool = True, root: str = "") -> str:
     """Start the project's setup in the background and return its address at once.
 
-    Its questions reach the app (``ask_person`` → the open tab), not a terminal. A run already going
-    for this project is joined, never doubled."""
-    from flow_sdk.core.wizard.execute import execute_wizard  # noqa: PLC0415
-    from flow_sdk.core.wizard.runner import Resolved  # noqa: PLC0415
+    The setup is the project's TREE (``core/setup/derive.ProjectTree``): every dependency, connection,
+    credential, data source (and its stages), web app and declared ``asset_setup``, each set up after
+    what it needs. ``root`` sets up one node of it and what that node needs (a source's own Set up,
+    a web app the display found down); empty = the whole project. Its questions reach the app
+    (``ask_person`` → the open tab), not a terminal. A run already going for the same root is joined,
+    never doubled.
+    """
+    from flow_sdk.core.setup import execute_setup  # noqa: PLC0415
+    from flow_sdk.core.setup.derive import ProjectTree  # noqa: PLC0415
 
     pid = str(project.id)
-    running = _RUNS.get(pid)
+    key = (pid, root)
+    running = _RUNS.get(key)
     if running is None or running.done():
-        requirements = [r for r in await collect_requirements(project) if to_do(r)]
-        wizard, ops = compile_setup(pid, requirements, ai=ai)
-
-        async def resolve(name: str) -> Optional[Resolved]:
-            return Resolved(ops[name], True) if name in ops else None
-
+        tree = await ProjectTree(project, ai=ai).load()
         mount = str(getattr(project, "fs_storage_mount_path", "") or "")
+
         async def run_setup():
             # The run's shell: what the setup does not answer itself runs here, one start per run.
             from flow_sdk.core.compute.shared_shell import SharedShell  # noqa: PLC0415
 
             async with SharedShell() as base:
-                return await execute_wizard(
-                    SETUP_WIZARD_ID, wizard, "", trusted=True, subject_entity=f"project-{pid}", target=pid,
-                    resolve_op=resolve, cwd=Path(mount) if mount else None,
+                return await execute_setup(
+                    root or tree.root, resolve_node=tree.resolve_node, resolve_op=tree.resolve_op,
+                    subject_entity=f"project-{pid}", cwd=Path(mount) if mount else None,
                     shell=functools.partial(_setup_shell, inner=base),
+                    # A person pressed Set up on THIS project: every node in it is theirs to run.
+                    approved=True,
                 )
 
         task = asyncio.create_task(run_setup())
         task.add_done_callback(_log_failure)
-        _RUNS[pid] = task
-    return setup_run_address(pid)
+        _RUNS[key] = task
+    return setup_run_address(pid, root)
 
 
 def _own_check(command: str) -> Optional[tuple[str, str, str]]:
@@ -405,14 +436,14 @@ def _log_failure(task: "asyncio.Task") -> None:
         logging.getLogger(__name__).error("project setup run failed", exc_info=task.exception())
 
 
-def setup_run(project_id: str) -> dict[str, Any]:
-    """The run's live state: whether it is going, and its steps so far (``run.json``, no step output)."""
-    from flow_sdk.core.wizard.state import read_state, run_key, strip_heavy  # noqa: PLC0415
+def setup_run(project_id: str, root: str = "") -> dict[str, Any]:
+    """The run's live state: whether it is going, and its tree so far (recorded after every step)."""
+    from flow_sdk.core.setup import read_setup  # noqa: PLC0415
 
-    task = _RUNS.get(project_id)
-    result = read_state(run_key(SETUP_WIZARD_ID, project_id)).get("result")
+    task = _RUNS.get((project_id, root))
+    tree = read_setup(root or f"project-{project_id}")
     return {
-        "run": setup_run_address(project_id),
+        "run": setup_run_address(project_id, root),
         "running": task is not None and not task.done(),
-        "result": strip_heavy(result) if isinstance(result, dict) else None,
+        "tree": tree.model_dump(mode="json") if tree is not None else None,
     }

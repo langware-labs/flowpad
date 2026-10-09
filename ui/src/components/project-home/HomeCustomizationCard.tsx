@@ -5,6 +5,7 @@ import { useProcessAssets } from '@src/components/asset-manager/useProcessAssets
 import { Button } from '@src/components/ui/button';
 import { Input } from '@src/components/ui/input';
 import { useAssetTypes } from '@src/hooks/use-asset-types';
+import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import { useFS } from '@src/hooks/useFS';
 import {
   HOME_BACKGROUND_FILE,
@@ -37,6 +38,9 @@ interface HomeCustomizationCardProps {
  * (`useProjectHomePage`). After a customization write we re-fetch the project
  * so the recomputed `customization` field (and every home) updates.
  */
+/** A webapp asset (`micro_app`): as the home page, the project opens app-first. */
+const WEB_APP_TYPE = 'micro_app';
+
 export const HomeCustomizationCard: React.FC<HomeCustomizationCardProps> = ({ project }) => {
   const { t } = useLingui();
   // Stable across renders (keyed on id) so useFS doesn't re-subscribe each keystroke.
@@ -68,8 +72,15 @@ export const HomeCustomizationCard: React.FC<HomeCustomizationCardProps> = ({ pr
   // card asks for the whole asset catalog, for this project, only while open —
   // in every view mode: Vibe browses no types, and an empty list fell back to
   // that same agent-less default.
+  // A web app is offered too, though no browse mode lists it: picked, the project opens
+  // app-first, on the app running.
   const { types: assetTypes } = useAssetTypes({ withVaults: false, anyMode: true });
-  const homePageTypes = useMemo(() => assetTypes.map((type) => type.type_name), [assetTypes]);
+  const homePageTypes = useMemo(
+    () => [...new Set([...assetTypes.map((type) => type.type_name), WEB_APP_TYPE])],
+    [assetTypes],
+  );
+  // The declared home's own type icon (the registry's), the generic picker glyph when none is set.
+  const HomePageIcon = homePageTypeId && !homePageMissing ? iconForType(homePageTypeId.type) : PackageSearch;
   const homePageCandidates = useProcessAssets(null, {
     enabled: pickerOpen && !!project?.id,
     projectId: project?.id,
@@ -188,7 +199,7 @@ export const HomeCustomizationCard: React.FC<HomeCustomizationCardProps> = ({ pr
           {busyHomePage ? (
             <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
           ) : (
-            <PackageSearch className="h-4 w-4 shrink-0" />
+            <HomePageIcon className="h-4 w-4 shrink-0" />
           )}
           <span className="ms-1.5 truncate">
             {!homePage ? (

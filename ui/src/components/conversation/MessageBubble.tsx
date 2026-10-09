@@ -4,8 +4,7 @@ import { resendConversation, type AgenticProcess, type FlowMessage } from '@sdk'
 import type { ConversationMessage } from '@sdk/entities/conversation';
 import type { DeliveryStatus } from '@sdk/entities/flow-message';
 import { Task, type ITask } from '@sdk/entities/task';
-import { TaskItIcon, TaskOwnerChip, TaskStatusChip } from './task-it';
-import { CHIP_LAYOUT, chipStyleFor } from './EntityChip';
+import { TaskChips, type TaskPeople } from './task-it';
 import { MessageActionsMenu } from './MessageActionsMenu';
 import { FavoriteStar } from '@src/components/favorites/FavoriteStar';
 import { messageFavoriteRef } from '@src/components/favorites/favorite-target';
@@ -47,7 +46,7 @@ interface MessageBubbleProps {
   onLaunchWorker?: (worker: WorkerType) => void;
   /** "Task it": make this message a task (a ⋮ menu item) — or, once it is one (`task`), open it
    *  from the chips under the body, which also show its status and owner. */
-  taskIt?: { onClick: () => void; task?: Task | null };
+  taskIt?: { onClick: () => void; task?: Task | null; people?: TaskPeople };
   /** Spawn a Claude Code session pre-loaded with the receiver-context prompt
    *  (spec + transcript + conversation + attachments). Renders an emerald CTA
    *  chip styled like the primary attachment action when the bubble's message
@@ -413,25 +412,8 @@ export function MessageBubble({
           />
         )}
         {footer}
-        {/* An opened task stays in view: its chip, then its state at a glance — each opens the task.
-            Making one (Task it) lives in the ⋮ menu with the other actions. */}
-        {taskIt?.task && !editing && (
-          <div className="mt-1.5 flex flex-wrap items-center gap-1.5" data-testid="message-task-chips">
-            <button
-              type="button"
-              onClick={taskIt.onClick}
-              className={`${CHIP_LAYOUT} ${chipStyleFor(Task.type)}`}
-              title={t`Open task`}
-              aria-label={t`Open task`}
-              data-testid="message-task-it"
-            >
-              <TaskItIcon className="h-3 w-3 shrink-0" />
-              <span className="max-w-[24rem] truncate">{taskIt.task.title || t`Task`}</span>
-            </button>
-            <TaskStatusChip status={taskIt.task.status} onClick={taskIt.onClick} />
-            <TaskOwnerChip task={taskIt.task} onClick={taskIt.onClick} />
-          </div>
-        )}
+        {/* An opened task stays in view: its chip (opens it), its status and its owner — both act here. */}
+        {taskIt?.task && !editing && <TaskChips task={taskIt.task} onOpen={taskIt.onClick} people={taskIt.people} />}
         {reactions && reactions.length > 0 && <ReactionChips reactions={reactions} onToggle={onReact} />}
       </div>
       {onDeleteMessage && (

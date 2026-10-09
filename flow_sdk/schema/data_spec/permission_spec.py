@@ -60,6 +60,9 @@ class PermissionMappingSpec(DataSpec):
     #: The variable whose value grants it (``OPENAI_API_KEY``) — present means declared, never verified.
     api_key: str = ""
     why: str = ""
+    #: Needed only to WRITE to the provider: a source that is read-only (``DataSource.read_only``) does
+    #: not ask for it, so its consent stays as narrow as reading.
+    writes: bool = False
 
     @field_validator("mechanism")
     @classmethod

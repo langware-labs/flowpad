@@ -30,3 +30,13 @@ export function deliverClaimedQuestion(run: string | undefined, questionId: stri
   handler(questionId);
   return true;
 }
+
+/**
+ * The open question naming `run`, if one is waiting — one raised before a screen's claim landed, or whose
+ * push missed the tab. Null when none (or the backend cannot be asked).
+ */
+export async function openQuestionOf(run: string): Promise<string | null> {
+  const { default: apiClient } = await import('@sdk/client');
+  const waiting = await apiClient.get<{ questions: { id: string; run?: string }[] }>('/api/v1/ask').catch(() => null);
+  return waiting?.questions?.find((q) => q.run === run)?.id ?? null;
+}

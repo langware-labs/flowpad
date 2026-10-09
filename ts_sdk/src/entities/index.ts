@@ -94,6 +94,7 @@ export * from './claude-rules';
 export * from './worker-session';
 export * from './command';
 export * from './workspace';
+export * from './project-manifest';
 export * from './organization';
 export * from './team';
 export * from './access';

@@ -140,3 +140,33 @@ describe('project home page redirect — only navigations that ask for it', () =
     expect(await projectHomePageRedirect(new Request(HOME_BUTTON_URL))).toBeNull();
   });
 });
+
+describe('project home page redirect — a web app home (the project opens app-first)', () => {
+  const APP = 'micro_app-00000000-0000-4000-8000-000000000009';
+
+  it('lands on the app running, pinned to the project, and remembers it', async () => {
+    mocks.openHomePage.mockResolvedValue({ asset: APP, type: 'micro_app' });
+
+    const response = await projectHomePageRedirect(new Request(LAUNCH_URL));
+
+    expect(response?.status).toBe(302);
+    expect(response?.headers.get('X-Remix-Replace')).toBe('true');
+    const landed = new URL(locationOf(response), 'http://flowpad.local');
+    expect(landed.pathname).toBe(`/dock/app/${APP}`);
+    const dock = DockPointer.fromUrl(landed.pathname + landed.search);
+    expect(dock?.scopeProjectId).toBe(PROJECT_ID);
+    expect(isProjectHomePage(PROJECT_ID, dock!)).toBe(true);
+    expect(mocks.agentGetById).not.toHaveBeenCalled();
+  });
+
+  it('hands the app none of the scope keys — the project is the viewer\'s, not the app\'s query', async () => {
+    const { appDockAddress } = await import('@src/navigation/app-dock');
+    mocks.openHomePage.mockResolvedValue({ asset: APP, type: 'micro_app' });
+
+    const landed = new URL(locationOf(await projectHomePageRedirect(new Request(HOME_BUTTON_URL))), 'http://flowpad.local');
+    const address = appDockAddress(DockPointer.fromUrl(landed.pathname + landed.search));
+
+    expect(address?.microAppId).toBe(APP.slice('micro_app-'.length));
+    expect(address?.options).toEqual({});
+  });
+});

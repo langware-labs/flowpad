@@ -144,6 +144,11 @@ def write(value: Any, root: Path, *, carrier: Optional[Carrier] = None, _nested:
             path = root / names.field_file(name, ext)
             path.write_bytes(bytes(held))
             held.path = path  # ``Binary.path``
+        elif place is Placement.DIR_LIST and any(isinstance(element, str) for element in held or []):
+            # References (``<kind>.id.<uuid>``) are names, not values: inline in the document.
+            document[name] = list(held)
+            if (root / name).is_dir():
+                _drop_stale_elements(root / name, {})
         elif place is Placement.DIR_LIST:
             folder = root / name
             folder.mkdir(parents=True, exist_ok=True)

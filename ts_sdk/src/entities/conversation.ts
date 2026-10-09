@@ -139,6 +139,8 @@ export interface IConversation extends IEntity {
   channel_spec?: IChannelSpec | null;
   /** The local DataSource feeding this conversation; never leaves the machine. */
   channel_source_id?: string | null;
+  /** Someone other than the person answers this channel (an Agent / a deployment); `false` = their own channel. */
+  channel_answered?: boolean | null;
   /** Who a channel conversation is with (a phone number, an email address, a chat id) — set when it
    *  starts; private to this machine. */
   address?: string[];
@@ -200,6 +202,8 @@ export class Conversation extends APIEntity<Conversation> implements IConversati
   channel?: string | null;
   channel_spec?: IChannelSpec | null;
   channel_source_id?: string | null;
+  /** Someone other than the person answers this channel (an Agent / a deployment); `false` = their own channel. */
+  channel_answered?: boolean | null;
   address?: string[];
   started_at?: string | Date | null;
   ended_at?: string | Date | null;
@@ -225,6 +229,7 @@ export class Conversation extends APIEntity<Conversation> implements IConversati
     this.channel = entity.channel ?? null;
     this.channel_spec = entity.channel_spec ?? null;
     this.channel_source_id = entity.channel_source_id ?? null;
+    this.channel_answered = entity.channel_answered ?? null;
     this.address = entity.address ?? [];
     this.started_at = entity.started_at ?? null;
     this.ended_at = entity.ended_at ?? null;

@@ -44,15 +44,18 @@ def ref_of(kind: str, entity_id: str) -> str:
 
 
 def value_ref(kind: str) -> Any:
-    """A field type: a reference to one stored value of ``kind`` (or of a kind within it)."""
+    """A field type: a reference to one stored value of ``kind`` (or of a kind within it).
+    ``a.kind|b.kind`` accepts a reference to a value of any of them."""
     from flow_sdk.worldview.ontology import kind_matches  # noqa: PLC0415 -- keep the grammar import-light
+
+    kinds = kind.split("|")
 
     def check(ref: str) -> str:
         parsed = parse_ref(ref)
         if parsed is None:
-            raise ValueError(f"{ref!r} is not a reference: expected '{kind}.{ID_SEGMENT}.<uuid>'")
-        if not kind_matches(kind, parsed[0]):
-            raise ValueError(f"{ref!r} refers to a {parsed[0]} value, not a {kind}")
+            raise ValueError(f"{ref!r} is not a reference: expected '{kinds[0]}.{ID_SEGMENT}.<uuid>'")
+        if not any(kind_matches(k, parsed[0]) for k in kinds):
+            raise ValueError(f"{ref!r} refers to a {parsed[0]} value, not a {' or '.join(kinds)}")
         return ref
 
     return Annotated[str, AfterValidator(check)]
