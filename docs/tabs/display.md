@@ -192,6 +192,10 @@ webapp asset by its definition, `/dock/app/micro_app-<uuid>`:
   REGISTRATION, so an agent could not re-show an app it had built earlier except by
   its port.
 
+A project whose home page is a web app opens here too, pinned to the project
+(`docs/navigation/project-home-page.md`). The project scope, like `runtime`, addresses the
+viewer, not the app: the app dock never passes it through (`ui/src/navigation/app-dock.ts`).
+
 ### One URL family, in both modes
 
 A process has exactly ONE canonical URL family — `/dock/shell/agentic_process-<id>`
