@@ -1624,21 +1624,22 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
     async def _navigation_decision_action(self) -> ApiResponse:
         """``POST {utterance, here?}`` -> ``navigation.outcome``: a dock to navigate, OR a prompt
         for the assistant (``flow_sdk.core.navigation_decision``). ``here`` defaults to where the
-        active tab is -- its own ``browser_context`` -- so the UI sends only what was typed.
+        tab that asked is (``get_request_connection_info``) -- its own ``browser_context`` -- so the
+        UI sends only what was typed.
         Never fails: anything missing or unsure is the prompt, and with no decision API on the
         hub that is every answer. With SmartNavigationLog on, the decision is appended to the
         SmartNavigationLog dataset AFTER this answers (``flow_sdk.core.navigation_log``)."""
         from flow_sdk.core.navigation import here_from  # noqa: PLC0415
         from flow_sdk.core.navigation_decision import decide_run  # noqa: PLC0415
         from flow_sdk.core.navigation_log import log_soon  # noqa: PLC0415
-        from flow_sdk.server.routes.websocket import get_active_connection_info  # noqa: PLC0415
+        from flow_sdk.server.routes.websocket import get_request_connection_info  # noqa: PLC0415
 
         request_info = get_current_request_info()
         body = (await request_info.get_post_data() if request_info else {}) or {}
         here = body.get("here") if isinstance(body.get("here"), dict) else None
         if here is None:
-            active = get_active_connection_info()
-            here = (await here_from(active[1].browser_context if active else {}, navigator=True)).model_dump(
+            info = get_request_connection_info()
+            here = (await here_from(info.browser_context if info else {}, navigator=True)).model_dump(
                 mode="json", exclude_none=True
             )
         request = {"utterance": str(body.get("utterance") or ""), "here": here}

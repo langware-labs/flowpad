@@ -11,6 +11,7 @@ const login = vi.hoisted(() => vi.fn(async () => undefined));
 const prefSet = vi.hoisted(() => vi.fn((k: string, v: unknown) => void (state.prefs[k] = v)));
 const askOrOpen = vi.hoisted(() => vi.fn(async () => 'asked' as const));
 const askNotification = vi.hoisted(() => vi.fn());
+const notify = vi.hoisted(() => ({ success: vi.fn(), warning: vi.fn() }));
 
 vi.mock('@sdk', () => ({
   cloudManager: {
@@ -18,7 +19,9 @@ vi.mock('@sdk', () => ({
       return state.loggedIn;
     },
     login,
+    currentUser: { email: 'nav-7@local.test' },
   },
+  isQuietLoginError: (e: unknown) => e instanceof Error && e.message === 'Sign-in cancelled',
   privacyManager: {
     get isLocal() {
       return state.local;
@@ -34,7 +37,7 @@ vi.mock('@sdk', () => ({
   },
 }));
 vi.mock('@src/navigation/navigation-decision', () => ({ askOrOpen }));
-vi.mock('@src/notifications', () => ({ askNotification }));
+vi.mock('@src/notifications', () => ({ askNotification, notify }));
 
 const { smartAskOrOpen, __resetSmartAskForTests } = await import('@src/navigation/smart-ask');
 
@@ -101,6 +104,27 @@ describe('smartAskOrOpen', () => {
     expect(login).toHaveBeenCalledTimes(1);
     expect(login.mock.invocationCallOrder[0]).toBeLessThan(askOrOpen.mock.invocationCallOrder[0]);
     expect(prefSet).not.toHaveBeenCalled();
+  });
+
+  it('Log in says it signed in -- a box with stored credentials shows no page of its own', async () => {
+    answer('login');
+    await smartAskOrOpen('open data sources', handlers);
+    expect(notify.success).toHaveBeenCalledWith(expect.objectContaining({ title: 'Signed in as nav-7@local.test' }));
+  });
+
+  it('a failed sign-in says so; a cancelled one stays quiet', async () => {
+    answer('login');
+    login.mockRejectedValueOnce(new Error('Login request failed'));
+    await smartAskOrOpen('one', handlers);
+    expect(notify.warning).toHaveBeenCalledWith(expect.objectContaining({ message: 'Login request failed' }));
+
+    __resetSmartAskForTests();
+    notify.warning.mockClear();
+    answer('login');
+    login.mockRejectedValueOnce(new Error('Sign-in cancelled'));
+    await smartAskOrOpen('two', handlers);
+    expect(notify.warning).not.toHaveBeenCalled();
+    expect(notify.success).not.toHaveBeenCalled();
   });
 
   it('Log in with the box ticked: signs in AND never asks again', async () => {
