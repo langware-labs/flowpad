@@ -879,6 +879,10 @@ msgstr "{indexedCount} indexed"
 msgid "{label}"
 msgstr "{label}"
 
+#: src/components/terminal/interactive-terminal/SessionSurfaceSwitch.tsx
+msgid "{label} — not while the agent is working"
+msgstr "{label} — not while the agent is working"
+
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
 msgid "{label} docs"
 msgstr "{label} docs"
@@ -3515,6 +3519,10 @@ msgstr "Back to repositories"
 msgid "Back to stream inbox"
 msgstr "Back to stream inbox"
 
+#: src/components/top-nav-bar/TopNavBar.tsx
+msgid "Back to tabs"
+msgstr "Back to tabs"
+
 #: src/components/task-bar/SharedTaskView.tsx
 msgid "Back to tasks"
 msgstr "Back to tasks"
@@ -4278,7 +4286,6 @@ msgid "Chat with this deployed agent"
 msgstr "Chat with this deployed agent"
 
 #: src/components/chats-navigator/ChatsNavigator.tsx
-#: src/components/collapsed-sidebar/collapsed-sidebar.tsx
 msgid "Chats"
 msgstr "Chats"
 
@@ -4923,8 +4930,8 @@ msgstr "Close to the Right"
 
 #: src/pages/flow-page/workspace-child-strip.tsx
 #: src/pages/flow-page/workspace-child-strip.tsx
-msgid "Close workspace"
-msgstr "Close workspace"
+#~ msgid "Close workspace"
+#~ msgstr "Close workspace"
 
 #: src/components/project-activity-strip/BookmarkColumn.tsx
 msgid "Closed"
@@ -7922,6 +7929,10 @@ msgstr "Dev mode"
 #: src/components/collapsed-sidebar/collapsed-sidebar.tsx
 msgid "Dev mode ON — click to disable"
 msgstr "Dev mode ON — click to disable"
+
+#: src/pages/flow-page/content-panel/user-dropdown/user-menu-header.tsx
+msgid "Developer mode is on — double-click to turn it off"
+msgstr "Developer mode is on — double-click to turn it off"
 
 #: src/components/developer-layout/dev-menu.tsx
 msgid "Developer Tools"
@@ -14551,6 +14562,11 @@ msgstr "New team"
 #: src/tabs/useTerminalStripController.tsx
 msgid "New Terminal"
 msgstr "New Terminal"
+
+#: src/tabs/useTerminalStripController.tsx
+#: src/tabs/useTerminalStripController.tsx
+msgid "New Vibe"
+msgstr "New Vibe"
 
 #: src/pages/discover-page/DiscoverToolbar.tsx
 msgid "Newest first"
@@ -21932,6 +21948,10 @@ msgstr "Show all types"
 msgid "Show Annotations"
 msgstr "Show Annotations"
 
+#: src/pages/flow-page/vibe-chat-pane.tsx
+msgid "Show as"
+msgstr "Show as"
+
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
 msgid "Show coordinates"
 msgstr "Show coordinates"
@@ -22043,6 +22063,10 @@ msgstr "Show the process"
 #: src/components/automations/RunDetail.tsx
 msgid "Show the raw record"
 msgstr "Show the raw record"
+
+#: src/components/terminal/interactive-terminal/SessionSurfaceSwitch.tsx
+msgid "Show this session as"
+msgstr "Show this session as"
 
 #: src/components/settings-view/settings-utils.ts
 msgid "Show timing info for each turn"
@@ -23265,8 +23289,12 @@ msgid "Surface built-in system skills in the Assets browser."
 msgstr "Surface built-in system skills in the Assets browser."
 
 #: src/i18n/pref-labels.ts
-msgid "Surface complexity: Vibe (simplest, creator), Standard (minimal), Advanced, or Dev."
-msgstr "Surface complexity: Vibe (simplest, creator), Standard (minimal), Advanced, or Dev."
+#~ msgid "Surface complexity: Vibe (simplest, creator), Standard (minimal), Advanced, or Dev."
+#~ msgstr "Surface complexity: Vibe (simplest, creator), Standard (minimal), Advanced, or Dev."
+
+#: src/i18n/pref-labels.ts
+msgid "Surface complexity: Vibe (simplest, creator), Standard (minimal), or Advanced."
+msgstr "Surface complexity: Vibe (simplest, creator), Standard (minimal), or Advanced."
 
 #: src/components/account/settings-section.tsx
 msgid "Surface developer-only views and controls across the app."
@@ -26160,6 +26188,7 @@ msgid "via hub login"
 msgstr "via hub login"
 
 #: src/components/links/LinkMenu.tsx
+#: src/types/ViewType.ts
 msgid "Vibe"
 msgstr "Vibe"
 
