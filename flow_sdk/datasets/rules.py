@@ -88,7 +88,8 @@ def _ends(value: Any, steps: list[str], rows: _Rows) -> Optional[list]:
 
 def rule_breaks(value: Any, owner: Path | str, *, override: Optional[dict] = None,
                 cache: Optional[dict] = None, path: str = "") -> list[dict]:
-    """``[{path, code: "rule", message}]`` for each rule of ``value``'s schema it breaks."""
+    """``[{path, code: "rule", rule: {same, description}, message}]`` for each rule of ``value``'s
+    schema it breaks -- ``rule`` names both ends, so a caller never has to work them out."""
     rows, out = _Rows(owner, override, cache), []
     for rule in rules_of(value):
         left, right = rule.same
@@ -97,7 +98,7 @@ def rule_breaks(value: Any, owner: Path | str, *, override: Optional[dict] = Non
             continue
         if any(x != y for x in a for y in b):
             why = f" ({rule.description})" if rule.description else ""
-            out.append({"path": f"{path}{left}", "code": "rule",
+            out.append({"path": f"{path}{left}", "code": "rule", "rule": rule.model_dump(mode="json"),
                         "message": f"rule: {left} must be the same row as {right}{why}"})
     return out
 

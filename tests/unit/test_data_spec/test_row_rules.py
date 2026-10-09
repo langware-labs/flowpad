@@ -71,6 +71,7 @@ async def test_a_deal_that_breaks_the_chain_is_refused_with_the_rule_named(gtm):
     bad = {"input": {"name": "D", "icp": ref("icp", "b"), "persona": ref("persona", "pa")}}
     (detail,) = ds["deal"].check_details(bad)
     assert detail["code"] == "rule" and detail["path"] == "input.persona.icp" and "one of the ICP's" in detail["message"]
+    assert detail["rule"] == {"same": ["persona.icp", "icp"], "description": "the persona is one of the ICP's"}
     with pytest.raises(LinkError):
         await ds["deal"].put("d", bad)
 
