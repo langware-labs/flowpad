@@ -17,3 +17,5 @@ $dir = Join-Path $env:LOCALAPPDATA "Programs\$name"
 ```
 
 The `ForEach-Object { $_ }` is not decoration: Windows PowerShell 5.1 passes a downloaded JSON array down the pipeline as ONE object, and without it the filter picks every version at once.
+
+On macOS the install uses Homebrew when it is there. A clean Mac has none (and Homebrew itself needs Apple's Command Line Tools first), so otherwise the op downloads the official Node.js tarball for the Mac's architecture from nodejs.org (the current release of the Active LTS line, `latest-v24.x`), checks it against the `SHASUMS256.txt` published beside it, and unpacks it under `~/.local/share/flowpad/node`. `node`, `npm` and `npx` are linked into `~/.local/bin`, which Flowpad puts on the PATH. No administrator password, nothing machine-wide. The checks put `~/.local/bin` on the PATH themselves, so they find these links whatever PATH the backend was started with.

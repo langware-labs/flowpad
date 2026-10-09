@@ -29,6 +29,7 @@ from pathlib import Path, PurePosixPath
 from flow_sdk.assets.git_publish import AssetPublishCode, AssetPublishError, GitAuthor
 from flow_sdk.instances.atomic import locked, read_json, write_json_atomic
 from flow_sdk.utils.git_folder import KEEP_FILE
+from flow_sdk.utils.git_usable import git_usable
 
 logger = logging.getLogger(__name__)
 
@@ -118,6 +119,10 @@ def local_tree(mirror: Path, worktree: Path, rel_path: str) -> str | None:
     import subprocess  # noqa: PLC0415
     import tempfile  # noqa: PLC0415
 
+    from flow_sdk.utils.git_usable import git_usable  # noqa: PLC0415
+
+    if not git_usable():  # a Mac without the Command Line Tools: git would open Apple's installer dialog
+        return None
     with tempfile.TemporaryDirectory() as scratch:
         env = {**os.environ, "GIT_INDEX_FILE": str(Path(scratch) / "index"), "GIT_TERMINAL_PROMPT": "0"}
         base = ["git", "--git-dir", str(mirror / ".git"), "--work-tree", str(worktree)]
@@ -161,6 +166,13 @@ class HubRepoMirror:
     token: str
 
     async def git(self, *args: str, check: bool = True, cwd: Path | None = None) -> tuple[int, str]:
+        if not git_usable():
+            # A Mac without the Command Line Tools has a git STUB, not a missing binary: it would open Apple's
+            # installer dialog instead of raising FileNotFoundError. Say the same thing the missing case says.
+            raise AssetPublishError(
+                AssetPublishCode.HUB_PUBLISH_FAILED,
+                "Git is not installed on this machine — install it from Flowpad's setup, then try again",
+            )
         try:
             proc = await asyncio.create_subprocess_exec(
                 "git",

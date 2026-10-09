@@ -64,9 +64,9 @@ from flow_sdk.schema.data_spec.share_result_spec import (
 )
 
 if TYPE_CHECKING:
-    from flow_sdk.schema.data_spec.flow_json_spec import DependencyState
     from flow_sdk.assets.scanning import AssetCandidate
     from flow_sdk.fs_store.operations.project_cleanup import HarnessIndex
+    from flow_sdk.schema.data_spec.flow_json_spec import DependencyState
     from flow_sdk.schema.data_spec.git_share_spec import GitShare
     from flow_sdk.schema.data_spec.open_link_spec import ProjectOpenLinkSpec
     from flow_sdk.schema.data_spec.share_request_spec import ShareInvitee
@@ -171,6 +171,10 @@ def _detach_git_history(repo_root: Path) -> None:
     # ``user.email`` would be absurd.
     import subprocess  # noqa: PLC0415
 
+    from flow_sdk.utils.git_usable import git_usable  # noqa: PLC0415
+
+    if not git_usable():  # a Mac without the Command Line Tools: git would open Apple's installer dialog
+        return
     subprocess.run(["git", "init", "-q"], cwd=root, capture_output=True, timeout=30, check=False)
 
 
@@ -661,9 +665,7 @@ class Project(Entity):
             return None
         return asset
 
-    async def index_missing_assets(
-        self, key: str, types: set[str], wanted: "Callable[[AssetCandidate], bool]"
-    ) -> None:
+    async def index_missing_assets(self, key: str, types: set[str], wanted: "Callable[[AssetCandidate], bool]") -> None:
         """Index the repo assets an open loads by itself — those of ``types`` that
         ``wanted`` picks under this project's roots — when their rows are missing.
 
@@ -1844,10 +1846,10 @@ class Project(Entity):
         from flow_sdk.app.actions.oauth_action import (  # noqa: PLC0415
             _get_github_token_for_current_user,
         )
+        from flow_sdk.assets import flow_json  # noqa: PLC0415
         from flow_sdk.builtin.agentic_process.agentic_process import (  # noqa: PLC0415
             _index_additional_dir,
         )
-        from flow_sdk.assets import flow_json  # noqa: PLC0415
 
         # A fresh slot every time, named after the ENGAGEMENT rather than the
         # template: two engagements from one template are two independent
@@ -2484,10 +2486,9 @@ class Project(Entity):
         project switch. Detaching is what guarantees an index conflict (409) or a
         slow walk can never reach the activation response.
         """
+        from flow_sdk.builtin.project_dependencies import schedule_resolve  # noqa: PLC0415
         from flow_sdk.core.entity.entity_model import _http_activate
         from flow_sdk.fs_store.indexer.auto_index import schedule_auto_index
-
-        from flow_sdk.builtin.project_dependencies import schedule_resolve  # noqa: PLC0415
 
         resp = await _http_activate(self)
         if isinstance(resp, ApiSuccessResponse):
@@ -2610,13 +2611,15 @@ class Project(Entity):
 
         states = await self.dependencies()
         warnings = project_dependencies.warnings_for(str(self.id), states)
-        return ApiSuccessResponse(data={
-            "dependencies": self._states(states),
-            "warnings": self._states(warnings),
-            # True while the resolve opening the project started is still fetching: a
-            # ``missing`` dependency may be on its way — the caller should not warn yet.
-            "resolving": project_dependencies.is_resolving(str(self.id)),
-        })
+        return ApiSuccessResponse(
+            data={
+                "dependencies": self._states(states),
+                "warnings": self._states(warnings),
+                # True while the resolve opening the project started is still fetching: a
+                # ``missing`` dependency may be on its way — the caller should not warn yet.
+                "resolving": project_dependencies.is_resolving(str(self.id)),
+            }
+        )
 
     @action.post(action_name="add-dependency")
     async def add_dependency_action(

@@ -80,7 +80,7 @@ Electron (main.js)
 ### 3.1 Startup and first install
 1. `startApp` (macOS, non-dev) first calls `offerMoveToApplications`.
 2. If `uv` is missing, `ensureUv` downloads it (section 3.4).
-3. `installAndStartBackend` installs the engine: `uv tool install flowpad@latest|==X --python <pin> --force --compile-bytecode`.
+3. `installAndStartBackend` installs the engine: `uv tool install flowpad@latest|==X --python <pin> --force --compile-bytecode --no-build-package cryptography` (cryptography is never built from source: Intel Mac has no wheel from 49.0.0).
 4. The desktop waits for the server to be healthy, then loads the window.
 5. A failure is shown in a detailed error panel with Retry / Share with us.
 
