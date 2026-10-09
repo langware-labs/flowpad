@@ -41,7 +41,17 @@ def _sources(monkeypatch, *providers: str) -> None:
     async def of_project(_project):
         return rows
 
+    async def source_step(op, env, *, check, platform):
+        # Unsaved rows have no steps of their own to answer; a source's verify is the setup tree's last word on
+        # it, and these tests are about the credentials before it.
+        from flow_sdk.schema.data_spec.returned_value_spec import CliResult  # noqa: PLC0415
+
+        return CliResult.of_process(f"source step {op.source_step}", 0)
+
+    from flow_sdk.core.compute_op import runner as op_runner  # noqa: PLC0415
+
     monkeypatch.setattr(project_setup, "project_sources", of_project)
+    monkeypatch.setattr(op_runner, "_source_step", source_step)
 
 
 # ── the spec: every credential says how it is set up ─────────────────────────

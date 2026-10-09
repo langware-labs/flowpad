@@ -16,6 +16,7 @@ not yet (the output says what); 2 when there is no project here.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import os
 import sys
@@ -161,7 +162,6 @@ def _requirement_done(req: "SetupRequirementSpec", steps: dict[str, Any]) -> boo
 async def _run(project_id: Optional[str], *, dry_run: bool, ai: bool, as_json: bool, deployment_id: str = "") -> int:
     from flow_sdk.builtin.project import Project  # noqa: PLC0415
     from flow_sdk.builtin.project_setup import collect_requirements, compile_setup  # noqa: PLC0415
-    from flow_sdk.core.compute_op import ask  # noqa: PLC0415
     from flow_sdk.core.wizard.runner import Resolved, run_wizard  # noqa: PLC0415
 
     project = await (Project.get_by_id(project_id) if project_id else Project.find_by_cwd(os.getcwd()))
@@ -178,6 +178,9 @@ async def _run(project_id: Optional[str], *, dry_run: bool, ai: bool, as_json: b
                                                  "requirements": [_describe(r) for r in requirements]}))
         return int(ExitCode.OK)
 
+    if not deployment_id:
+        return await _run_tree(project, requirements, ai=ai, as_json=as_json)
+
     wizard, ops = compile_setup(str(project.id), requirements, ai=ai, deployment_id=deployment_id)
     steps: dict[str, Any] = {}
     if wizard.steps:
@@ -185,24 +188,11 @@ async def _run(project_id: Optional[str], *, dry_run: bool, ai: bool, as_json: b
         async def resolve(name: str) -> Optional[Resolved]:
             return Resolved(ops[name], True) if name in ops else None
 
-        # The questions are asked on this terminal, never in a browser window.
-        no_browser = os.environ.get("FLOWPAD_NO_BROWSER")
-        os.environ["FLOWPAD_NO_BROWSER"] = "1"
-        stop = asyncio.Event()
-        answerer = asyncio.create_task(_answer_questions(stop))
-        seams = {k: v for k, v in (("shell", _shell), ("launch", _launch)) if v is not None}
-        try:
-            # This terminal is where the answers arrive — hold the questions here, never at a backend.
-            with ask.answered_here():
-                result = await run_wizard(
-                    wizard, activity_path=f"project-setup/{project.id}", trusted=True,
-                    workdir=Path(project.fs_storage_mount_path or os.getcwd()), resolve_op=resolve, **seams,
-                )
-        finally:
-            stop.set()
-            answerer.cancel()
-            if no_browser is None:
-                os.environ.pop("FLOWPAD_NO_BROWSER", None)
+        async with _terminal_answers() as seams:
+            result = await run_wizard(
+                wizard, activity_path=f"project-setup/{project.id}", trusted=True,
+                workdir=Path(project.fs_storage_mount_path or os.getcwd()), resolve_op=resolve, **seams,
+            )
         steps = dict(result.steps or {})
         asks = {name for name, op in ops.items() if op.subkind == "ask"}
         if not as_json:
@@ -216,6 +206,81 @@ async def _run(project_id: Optional[str], *, dry_run: bool, ai: bool, as_json: b
         typer.echo(json.dumps({"ok": ready, "project_id": str(project.id), "requirements": outcome}))
     else:
         left = [o["name"] for o in outcome if not o["done"]]
+        typer.echo("")
+        typer.echo("Everything is set up." if ready else f"Not set up yet: {', '.join(left)}. Run it again to continue.")
+    return int(ExitCode.OK if ready else ExitCode.NOT_YET)
+
+
+@contextlib.asynccontextmanager
+async def _terminal_answers():
+    """The questions a setup asks are asked on THIS terminal — held here, never at a backend or in a browser
+    window — and answered by ``_answer_questions`` while it runs. Yields the test seams (``_shell``/``_launch``)."""
+    from flow_sdk.core.compute_op import ask  # noqa: PLC0415
+
+    no_browser = os.environ.get("FLOWPAD_NO_BROWSER")
+    os.environ["FLOWPAD_NO_BROWSER"] = "1"
+    stop = asyncio.Event()
+    answerer = asyncio.create_task(_answer_questions(stop))
+    try:
+        with ask.answered_here():
+            yield {k: v for k, v in (("shell", _shell), ("launch", _launch)) if v is not None}
+    finally:
+        stop.set()
+        answerer.cancel()
+        if no_browser is None:
+            os.environ.pop("FLOWPAD_NO_BROWSER", None)
+
+
+async def _run_tree(project, requirements: list, *, ai: bool, as_json: bool) -> int:
+    """This computer's setup: the project's whole tree (``core/setup``) — its credentials and connections,
+    its sources and their stages, its web apps — each after what it needs, questions on this terminal."""
+    from flow_sdk.core.setup import execute_setup  # noqa: PLC0415
+    from flow_sdk.core.setup.derive import ProjectTree, requirement_node_id  # noqa: PLC0415
+
+    tree = await ProjectTree(project, ai=ai).load()
+    async with _terminal_answers() as seams:
+        # The same slot as the app's Set up (``execute_setup`` locks per root, across processes): a CLI run
+        # while the app's is going answers "held" instead of setting the same things up twice.
+        result = await execute_setup(
+            tree.root, resolve_node=tree.resolve_node, resolve_op=tree.resolve_op, approved=True,
+            cwd=Path(project.fs_storage_mount_path or os.getcwd()), **seams,
+        )
+
+    states: dict[str, Any] = {}
+    asks = {name for name, op in tree.ops.items() if op.subkind == "ask"}
+
+    def walk(node) -> None:
+        """Each node's own steps, the way the one-wizard setup printed them; then its children's."""
+        if node.shared or node.id in states:
+            return
+        states[node.id] = node
+        spec = tree.nodes.get(node.id)
+        for slot, answers in (("prepare", node.prepare), ("run", node.run)):
+            wizard = getattr(spec, slot, None) if spec is not None else None
+            if not as_json and wizard is not None:
+                steps = dict(answers.steps or {}) if answers is not None else {}
+                for step in wizard.steps:
+                    typer.echo(_step_line(step.display_label, steps.get(step.id), asked=step.ref in asks))
+            if slot == "prepare":
+                for child in node.children:
+                    walk(child)
+
+    if result.state.value == "held":
+        typer.echo(result.detail if not as_json else json.dumps({"ok": False, "project_id": str(project.id),
+                                                                 "setup": {"state": "held", "detail": result.detail}}))
+        return int(ExitCode.NOT_YET)
+    if not as_json:
+        typer.echo("")
+    if result.root is not None:
+        walk(result.root)
+    outcome = [{**_describe(r), "done": r.kind != REQUIREMENT_GAP and bool(
+        (n := states.get(requirement_node_id(r))) is not None and n.ok)} for r in requirements]
+    ready = result.ok
+    if as_json:
+        typer.echo(json.dumps({"ok": ready, "project_id": str(project.id), "requirements": outcome,
+                               "setup": {"state": result.state.value, "detail": result.detail}}))
+    else:
+        left = [o["name"] for o in outcome if not o["done"]] or [result.detail]
         typer.echo("")
         typer.echo("Everything is set up." if ready else f"Not set up yet: {', '.join(left)}. Run it again to continue.")
     return int(ExitCode.OK if ready else ExitCode.NOT_YET)

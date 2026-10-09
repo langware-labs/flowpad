@@ -170,7 +170,7 @@ def _prepare(name: str, entity: type) -> None:
 
 def test_the_registry_has_the_asset_types_we_think_it_does():
     """A new asset type lands in this list on its own; the count is the notice."""
-    assert len(TYPES) == 21, [n for n, _ in TYPES]
+    assert len(TYPES) == 22, [n for n, _ in TYPES]
 
 
 @pytest.mark.parametrize(("name", "entity"), TYPES, ids=[n for n, _ in TYPES])

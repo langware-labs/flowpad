@@ -228,7 +228,7 @@ async def test_with_ai_the_question_offers_ai_assist(project, templates, served_
         assert question.to_payload()["assist_available"] is True
         assert question.setup_timeout == SETUP_TIMEOUT
     finally:
-        project_setup._RUNS.pop(str(project.id)).cancel()
+        project_setup._RUNS.pop((str(project.id), "")).cancel()
 
 
 async def test_the_setup_asks_in_the_app_with_a_file_block_for_a_file_value(project, templates, served_here):
@@ -247,4 +247,4 @@ async def test_the_setup_asks_in_the_app_with_a_file_block_for_a_file_value(proj
         assert project_setup.setup_run(str(project.id))["running"] is True
         assert await project_setup.start_setup(project, ai=False) == address, "a second start joins the run"
     finally:
-        project_setup._RUNS.pop(str(project.id)).cancel()
+        project_setup._RUNS.pop((str(project.id), "")).cancel()
