@@ -81,11 +81,12 @@ Then do it in the user's project and read it back the same way.
 | the dataset layout and row verbs (repo checkout only) | `docs/data-management/datasets.md`, `docs/snippets/datasets.md` |
 | show the user a dataset, a schema or a snippet | the `flowpad-navigation` skill |
 
-Run `dm_ctl` with the worker's interpreter, through a shell FUNCTION (a command kept in a
-quoted variable does not split into words):
+Run `dm_ctl` with Flowpad's interpreter — `$FLOWPAD_PYTHON` in a worker or a trigger, else the
+one `flow instance python` prints — through a shell FUNCTION (a command kept in a quoted variable
+does not split into words):
 
 ```bash
-DM() { "$FLOWPAD_PYTHON" "<this skill>/scripts/dm_ctl.py" "$@"; }
+DM() { "${FLOWPAD_PYTHON:-$(flow instance python)}" "<this skill>/scripts/dm_ctl.py" "$@"; }
 DM probe-new
 ```
 
@@ -100,8 +101,8 @@ reasons (a 400 carries the validation `errors`).
 | --- | --- |
 | change events for dataset rows | re-read on focus or on a timer; say it is polling |
 | one schema including another (shared `status`/`owner` fields) | repeat the fields; keep them identical |
-| a map whose keys are a closed set | `{"*": shape}` and check the keys yourself |
-| a rule across fields or rows (a tag chain, "this campaign's messages belong to its persona") | check it in every writer — the app AND any script — with the same rule, and report breaks |
+| a rule across rows that is not "these two links name the same row" (a count, an order, a sum) | check it in every writer — the app AND any script — with the same code, and report breaks |
+| a field owned by an outside system (a CRM's stage) | say so in its `description`, keep it read-only in the app; only the sync writes it |
 
 Two writers at once (an app's server and a sync script) are safe: row writes in one project take
 one lock, and `put` / `delete` with `expected` refuse a row changed since it was read — a row that
@@ -109,5 +110,11 @@ no longer fits included (it is reported with its version).
 
 Links between rows ARE supported: a field typed by the target kind holds `<kind>.id.<uuid>`, the
 SDK refuses a reference to a missing row and a delete that would leave one dangling
-(`references/shape-forms.md`). Never model a link as a `{type, key}` kind, and never link a
+(`references/shape-forms.md`). Never STORE a link as a `{type, key}` kind, and never link a
 dataset in git to rows kept out of git (their ids differ per machine).
+
+Rules across rows ARE supported when they say "these two link paths name the same row" (a tag
+chain: "the persona is one of the row's ICP's") — declare them in the schema's `rules`; Flowpad
+then checks them on every write and read, for every writer (`references/shape-forms.md`).
+A map whose keys are a closed set is an object with one optional field per key
+(`{"won": "?date", "lost": "?date"}`) — the SDK refuses any other key.

@@ -1,6 +1,7 @@
 /** Kind definitions (`GET /api/v1/kinds/<kind>`) and the shape grammar every viewer reads. */
 import apiClient from '../client';
 import { DATASET_FIELD_KINDS } from '../entities/dataset';
+import type { CheckDetail } from '../entities/dataset';
 import { isValidUUIDv4 } from '../models/TypeId';
 import type { KindForm, Shape } from './contract';
 
@@ -29,9 +30,26 @@ export function kindForm(kind: string): Promise<KindForm | null> {
 
 /** What is wrong with `value` as a value of `kind` — `ok` with no errors when it fits. Writes
  *  nothing. A kind nobody registered is a 404 (rejected), never "fits": the backend would otherwise
- *  read an unknown name as "anything". */
-export async function checkKind(kind: string, value: unknown): Promise<{ kind: string; ok: boolean; errors: string[] }> {
-  return apiClient.post<{ kind: string; ok: boolean; errors: string[] }>(`/api/v1/kinds/${encodeURIComponent(kind)}/check`, { value });
+ *  read an unknown name as "anything". Without `projectId` it checks the SHAPE only
+ *  (`links_checked: false`); with it, the value's references and its kind's rules across rows too —
+ *  what a row write checks. */
+export async function checkKind(
+  kind: string,
+  value: unknown,
+  options: { projectId?: string } = {},
+): Promise<{ kind: string; ok: boolean; errors: string[]; details: CheckDetail[]; links_checked: boolean }> {
+  return apiClient.post(`/api/v1/kinds/${encodeURIComponent(kind)}/check`, { value }, {
+    params: options.projectId ? { project: options.projectId } : {},
+  });
+}
+
+/** The full name of the kind a schema of the project defines as `name` (`gtm.icp` →
+ *  `--gtm_studio--.gtm.icp`) — 404 (thrown) when it defines none. */
+export async function resolveKind(name: string, projectId: string): Promise<string> {
+  const { kind } = await apiClient.get<{ kind: string }>(`/api/v1/kinds/${encodeURIComponent(name)}/resolve`, {
+    params: { project: projectId },
+  });
+  return kind;
 }
 
 /** `?x` is an optional `x`. */
@@ -51,6 +69,23 @@ export function namedKind(shape: Shape): string | null {
   return typeof base === 'string' && base && base !== ANY_KIND && !base.startsWith('enum:') && !PRIMITIVES.has(base)
     ? (parseValueRef(base)?.kind ?? base)
     : null;
+}
+
+/** The closed set an `enum:a|b` shape (`?enum:…` too) allows, or null for any other shape — read
+ *  the grammar here, never re-split it in a view. */
+export function enumValues(shape: Shape): string[] | null {
+  const { base } = unwrap(shape);
+  return typeof base === 'string' && base.startsWith('enum:') ? base.slice('enum:'.length).split('|') : null;
+}
+
+/** The row kinds a link field may point at: `crm.company` → `['crm.company']`, `a|b` → both, a list
+ *  `[crm.company]` → its element's — or null when the shape names no kind (a primitive, an enum, an
+ *  object). Whether a kind is a ROW kind (one a dataset holds) is `Dataset.forKind`'s answer. */
+export function linkTargets(shape: Shape): string[] | null {
+  const { base } = unwrap(shape);
+  const one = Array.isArray(base) ? (base.length === 1 ? unwrap(base[0]).base : null) : base;
+  if (typeof one !== 'string' || !namedKind(one)) return null;
+  return one.split('|');
 }
 
 /** The kind and id a value reference `<kind>.id.<uuid>` names (one stored value of a kind,

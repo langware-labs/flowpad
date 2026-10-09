@@ -9,7 +9,7 @@
 > **5. Schemas apply live** with `flow schema apply`; never ask for a restart.
 > **6. Never widen a wait, a timeout or a retry to make something pass.**
 
-`DM` is the shell function `DM() { "$FLOWPAD_PYTHON" "<this skill>/scripts/dm_ctl.py" "$@"; }`. The grammar is
+`DM` is the shell function `DM() { "${FLOWPAD_PYTHON:-$(flow instance python)}" "<this skill>/scripts/dm_ctl.py" "$@"; }`. The grammar is
 `references/shape-forms.md`; complete files are in `references/examples.md`.
 
 ## Gate 1 — the shape is the user's
@@ -41,6 +41,9 @@ nested in it inherit that `ns`. Every `data_schema.json` carries `"type": "data_
 (e.g. `name` — the folder name is the kind); every folder has a
 `description.md` saying what a value is. Inside a schema, sibling kinds are bare.
 
+A rule across rows that says "these two links name the same row" (a tag chain) goes in the
+schema's `rules` (`references/shape-forms.md`) — once, for every writer; never only in an app.
+
 Changing a schema that already holds data: say which existing values stop fitting
 (a new required field, a narrowed enum) BEFORE writing. Adding an optional field is
 safe; a new required one needs every row to get it.
@@ -52,7 +55,7 @@ safe; a new required one needs every row to get it.
 `references/probe.md` steps 1–3 and 5: `probe-new`, `probe-copy` the schema folders
 (and, for a change, the datasets that hold this kind), `flow schema apply` exit 0,
 `DM kind` shows each field as meant, `DM check` accepts a real value and refuses a
-broken one. For a change, `DM ds-validate` each copied dataset: `problems: []`, or
+broken one (with `--project <probe id>` when the value has links or the kind has rules). For a change, `DM ds-validate` each copied dataset: `problems: []`, or
 the user agreed what to fix. `probe-drop`.
 
 **Passes when** all of that held and the probe is dropped.

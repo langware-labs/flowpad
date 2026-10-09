@@ -64,17 +64,28 @@ export interface DatasetRow extends DatasetRowInput {
   metadata: Record<string, unknown>;
 }
 
+/** One thing wrong with a row or a value: where, what kind of problem (`shape:<pydantic type>`,
+ *  `dangling_ref`, `inline_row`, `rule`; on a 409 `conflict`, `gone`, `referenced`), and the message
+ *  `errors` carries as a line. */
+export interface CheckDetail {
+  path: string;
+  code: string;
+  message: string;
+}
+
 /** A row that does not fit: by key, with everything wrong, its version (to repair it with `put`
  *  and `expected`) and its input as stored, unchecked (null when unreadable). */
 export interface DatasetRowProblem {
   /** The row's id and reference — a broken row is still a row: links to it hold. */
   id: string;
   ref: string;
+  /** @deprecated the old name of `id` — use `id` / `ref`. */
   example_id: string;
   key: string;
   version: string;
   error: string;
   errors: string[];
+  details: CheckDetail[];
   input: unknown;
 }
 
@@ -167,7 +178,14 @@ export class Dataset extends APIEntity<Dataset> implements IDataset {
     return `${kind}.id.${id}`;
   }
 
-  /** The datasets whose rows are `kind`, in `projectId` when given — find them once, by kind. */
+  /** The row a reference (`<kind>.id.<uuid>`) names among the project's datasets — 404 (thrown) when
+   *  none holds it. */
+  static async findRow(ref: string, projectId: string): Promise<{ dataset_id: string; key: string; row: DatasetRow }> {
+    return apiClient.get(`/api/v1/refs/${encodeURIComponent(ref)}`, { params: { project: projectId } });
+  }
+
+  /** The datasets whose rows are `kind`, in `projectId` when given — find them once, by kind. With a
+   *  project, `kind` may be the bare name one of its schemas defines (`gtm.icp`). */
   static async forKind(kind: string, projectId?: string): Promise<Dataset[]> {
     const { datasets } = await apiClient.get<{ datasets: Partial<IDataset>[] }>(
       `/api/v1/kinds/${encodeURIComponent(kind)}/datasets`,
@@ -250,8 +268,9 @@ export class Dataset extends APIEntity<Dataset> implements IDataset {
     return this.post('rename-row', { key: keyOrId, new_key: newKey, ...(options.expected ? { expected: options.expected } : {}) });
   }
 
-  /** Would this row fit? Nothing is written. */
-  async check(row: Omit<DatasetRowInput, 'key'>): Promise<{ ok: boolean; errors: string[] }> {
+  /** Would this row fit — its shape, its links and its schema's rules across rows? Nothing is
+   *  written. `details` says where and what kind of problem (`code`), all at once. */
+  async check(row: Omit<DatasetRowInput, 'key'>): Promise<{ ok: boolean; errors: string[]; details: CheckDetail[] }> {
     return this.post('check-row', { row });
   }
 

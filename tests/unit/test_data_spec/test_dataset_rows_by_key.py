@@ -121,10 +121,10 @@ def test_scratch_dirs_are_never_rows(tmp_path):
 
 
 def test_an_unknown_kind_never_checks_as_fitting():
-    from flow_sdk.server.routes.kinds import check_value
+    from flow_sdk.server.routes.kinds import check_value_details as check_value
 
     assert check_value("unittest.bykey.lead", {"name": "Acme"}) == []
-    assert check_value("unittest.bykey.lead", {"name": "Acme", "status": "maybe"})[0].startswith("status:")
+    assert check_value("unittest.bykey.lead", {"name": "Acme", "status": "maybe"})[0]["path"] == "status"
     assert check_value("int", "seven") != []
     assert check_value("unittest.bykey.nobody.defines.this", {"anything": 1}) is None
 
@@ -171,7 +171,7 @@ async def test_the_kind_check_route_answers_a_real_404_for_an_unknown_kind():
     app.include_router(router)
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://localhost") as client:
         ok = await client.post("/api/v1/kinds/unittest.bykey.lead/check", json={"value": {"name": "Acme"}})
-        assert ok.status_code == 200 and ok.json()["data"] == {"kind": "unittest.bykey.lead", "ok": True, "errors": []}
+        assert ok.status_code == 200 and ok.json()["data"] == {"kind": "unittest.bykey.lead", "ok": True, "errors": [], "details": [], "links_checked": False}
         bad = await client.post("/api/v1/kinds/unittest.bykey.lead/check", json={"value": {"status": "won"}})
         assert bad.json()["data"]["ok"] is False
         unknown = await client.post("/api/v1/kinds/unittest.bykey.nobody/check", json={"value": {}})

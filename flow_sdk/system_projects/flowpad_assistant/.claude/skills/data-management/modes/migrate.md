@@ -9,7 +9,7 @@
 > **5. Schemas apply live** with `flow schema apply`; never ask for a restart.
 > **6. Never widen a wait, a timeout or a retry to make something pass.**
 
-`DM` is the shell function `DM() { "$FLOWPAD_PYTHON" "<this skill>/scripts/dm_ctl.py" "$@"; }`.
+`DM` is the shell function `DM() { "${FLOWPAD_PYTHON:-$(flow instance python)}" "<this skill>/scripts/dm_ctl.py" "$@"; }`.
 
 Schemas were `agentic-assets/data_spec/<kind>/data_spec.json` until 2026-10-07. A
 build after that reads only `data_schema`; a `data_spec` folder is reported by the
