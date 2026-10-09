@@ -105,8 +105,8 @@ def test_model_tier_persists_raw_and_emits_resolved_model():
     assert cmd.to_json()["model"] == "sm"
 
     argv, _env = cmd.to_spawn_args()
-    assert argv[argv.index("--model") + 1] == "haiku"
-    assert "--model haiku" in cmd.to_shell_string()
+    assert argv[argv.index("--model") + 1] == "claude-haiku-5-5"
+    assert "--model claude-haiku-5-5" in cmd.to_shell_string()
 
 
 def test_no_model():

@@ -5,7 +5,7 @@ import { AskForHelpButton } from '@src/components/help/AskForHelpButton';
 import { useProcessesForTarget } from '@src/components/entity-execution-panel/hooks/useProcessesForTarget';
 import { useEntityBreadcrumbs } from '@src/components/top-nav-bar/use-entity-breadcrumbs';
 import { DockPointer } from '@src/navigation/DockPointer';
-import { ProcessKind } from '@sdk';
+import { ProcessKind, WorkerModelTier } from '@sdk';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AssistantContextChips } from './AssistantContextChips';
@@ -231,6 +231,8 @@ export function AssistantChat({
           defaultProjectId={assistantProject?.id ?? null}
           defaultWorkdir={assistantProject?.fs_storage_mount_path ?? null}
           transport={ptyExperiment ? 'pty-poll' : 'print'}
+          // The assistant answers quick questions about the page: the small tier, not Vibe's Balanced.
+          defaultModel={WorkerModelTier.SM}
           // Vibe's model and worker pickers, in the settings popover.
           modelSelectSlot={({ value, disabled, onChange }) => (
             <VibeModelSelect value={value} onChange={onChange} disabled={disabled} />
