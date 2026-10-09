@@ -12,6 +12,8 @@ import { AssistantContextChips } from './AssistantContextChips';
 import { assistantContextInstructions, assistantContextKey } from './assistant-context';
 import type { PendingAsk } from './FloatingChatContext';
 import { useFlowpadAssistantProject } from './useFlowpadAssistantProject';
+import { VibeModelSelect } from '@src/pages/flow-page/vibe-model-select';
+import { WorkerTypeSelect } from '@src/components/workers/WorkerTypeSelect';
 
 /** Rapid tab flips settle to the last one before the assistant looks it up. */
 const FOLLOW_SETTLE_MS = 250;
@@ -229,6 +231,13 @@ export function AssistantChat({
           defaultProjectId={assistantProject?.id ?? null}
           defaultWorkdir={assistantProject?.fs_storage_mount_path ?? null}
           transport={ptyExperiment ? 'pty-poll' : 'print'}
+          // Vibe's model and worker pickers, in the settings popover.
+          modelSelectSlot={({ value, disabled, onChange }) => (
+            <VibeModelSelect value={value} onChange={onChange} disabled={disabled} />
+          )}
+          workerSelectSlot={({ value, disabled, onChange }) => (
+            <WorkerTypeSelect value={value} onChange={onChange} disabled={disabled} />
+          )}
         />
       )}
     </div>
