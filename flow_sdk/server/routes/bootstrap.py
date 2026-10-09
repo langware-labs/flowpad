@@ -80,6 +80,7 @@ from flow_sdk.preferences import (
     PREF_SMART_NAVIGATION_LOG,
 )
 from flow_sdk.schema.data_spec.runtime_info_spec import DeferredDesktopInfo, DeferredInfo
+from flow_sdk.utils.git_usable import git_usable
 
 router = APIRouter()
 
@@ -134,6 +135,8 @@ def get_default_desktop_email() -> str:
 
 def get_name() -> Optional[str]:
     """Get user full name from git config user.name."""
+    if not git_usable():
+        return None
     try:
         result = subprocess.run(["git", "config", "user.name"], capture_output=True, text=True, timeout=2)
         name = result.stdout.strip()
@@ -157,8 +160,10 @@ def get_email() -> Optional[str]:
 
     Migrated from FlowPad: flowpad/hub/core/desktop_loader.py
     """
-    # Try git config first
+    # Try git config first (not on a Mac without the Command Line Tools: that would open Apple's installer dialog)
     try:
+        if not git_usable():
+            raise OSError("git is not usable")
         result = subprocess.run(["git", "config", "user.email"], capture_output=True, text=True, timeout=2)
         email = normalize_email(result.stdout)
         if email:
