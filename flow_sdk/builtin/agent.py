@@ -187,9 +187,9 @@ class Agent(Entity):
     )
     system_prompt: str = APIField(
         default="",
-        description="Who this agent is. Delivered through context_data.instructions — the channel "
-        "resolve_system_instructions reads — so it reaches all three vendors and never enters "
-        "cli_config, leaving the restart hash untouched.",
+        description="Who this agent is. Delivered through context_data.instructions — the INSTRUCTIONS "
+        "system-prompt layer (system_prompt.compose_layers) — so it reaches every vendor and never "
+        "enters cli_config, leaving the restart hash untouched.",
     )
 
     # ── launch bundle (projected into AgentOptions at launch) ─────────────
@@ -529,6 +529,7 @@ class Agent(Entity):
         deployment: "Deployment | None" = None,
         owner=None,
         auto_prompt: bool = False,
+        launch_surface: str | None = None,
     ) -> "AgenticProcess":
         """Open a session AS this agent — saved, visible, no turn started.
 
@@ -538,9 +539,12 @@ class Agent(Entity):
         ``auto_prompt=True`` queues (never sends) the agent's auto prompt as the
         first turn, on a local deployment only; the caller starts it once the
         session is set up (the UI's ``prepareAgentSession``, or ``process.submit()``).
+
+        ``launch_surface`` is the opener's surface (``"app"`` from the Flowpad app),
+        recorded in ``context_data`` for the ``COMMON_UI`` system-prompt layer.
         """
         target = deployment or await self.local_deployment()
-        process = await target.use(project_id=project_id, owner=owner)
+        process = await target.use(project_id=project_id, owner=owner, launch_surface=launch_surface)
         prompt = self.auto_prompt_text
         if auto_prompt and prompt and target.is_local:
             # Straight into the queue: the ``enqueue`` action would also start a
@@ -602,7 +606,7 @@ class Agent(Entity):
         return sorted(str(item) for item in read_project_device_state(project_id).get(_AUTO_LAUNCHED_KEY) or [])
 
     @staticmethod
-    async def auto_launch_for(project_id: str) -> "AutoLaunchOutcome | None":
+    async def auto_launch_for(project_id: str, *, launch_surface: str | None = None) -> "AutoLaunchOutcome | None":
         """The one agent to auto-launch when ``project_id`` is opened, launched — or None.
 
         Candidates: agents rooted in the project or one of its direct context
@@ -644,7 +648,7 @@ class Agent(Entity):
             winner, cancelled = candidates[0], candidates[1:]
 
             launched = await winner.fresh()
-            process = await launched.use(project_id=project_id, auto_prompt=True)
+            process = await launched.use(project_id=project_id, auto_prompt=True, launch_surface=launch_surface)
             update_project_device_state(
                 project_id, **{_AUTO_LAUNCHED_KEY: sorted(done | {agent.id for agent in candidates})}
             )
@@ -1510,6 +1514,7 @@ class Agent(Entity):
         project_id = str((body or {}).get("project_id") or "").strip() or None
         deployment_id = str((body or {}).get("deployment_id") or "").strip()
         auto_prompt = (body or {}).get("auto_prompt") is True
+        launch_surface = (body or {}).get("launch_surface")
 
         agent = await self.fresh()
         if deployment_id:
@@ -1523,7 +1528,13 @@ class Agent(Entity):
             deployment = await agent.local_deployment()
         owner = request_info.someone_typeid if request_info else None
         try:
-            process = await agent.use(project_id=project_id, deployment=deployment, owner=owner, auto_prompt=auto_prompt)
+            process = await agent.use(
+                project_id=project_id,
+                deployment=deployment,
+                owner=owner,
+                auto_prompt=auto_prompt,
+                launch_surface=launch_surface,
+            )
         except NotImplementedError as exc:
             return ApiFailResponse(message=str(exc))
         except Exception as exc:  # noqa: BLE001 — incl. the disabled-agent refusal from create_process()

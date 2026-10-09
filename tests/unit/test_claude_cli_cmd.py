@@ -250,7 +250,6 @@ def test_to_json_roundtrip():
         verbose=True,
         effort="high",
     )
-    cmd.system_prompt_append = "launch derived"
     cmd.system_prompt_file = "/tmp/system-prompt"
     d = cmd.to_json()
     loaded = ClaudeAgentOptions.from_json(d)

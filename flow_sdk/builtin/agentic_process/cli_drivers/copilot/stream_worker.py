@@ -93,8 +93,8 @@ class CopilotCLIStreamWorker(JsonlTeeStreamWorker):
         # carry the same per-process MCP the PTY path does.
         opts.mcp_config_json = context.mcp_config_json
         # Asset-backed system instructions ride COPILOT_CUSTOM_INSTRUCTIONS_DIRS;
-        # the legacy system_prompt_append path remains unused for new launches.
-        argv, env_from_opts, stdin = opts.to_spawn(instruction=prompt, system_prompt_append=context.instructions)
+        # standing text never rides the prompt body (see ``system_prompt``).
+        argv, env_from_opts, stdin = opts.to_spawn(instruction=prompt)
         # Context env_vars win (except the discovered capability bin folder
         # stays first on PATH); argv[0] is pinned to the discovered absolute
         # executable so a stripped backend service PATH can't break the spawn.

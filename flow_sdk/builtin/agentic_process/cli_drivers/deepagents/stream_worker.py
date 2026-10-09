@@ -112,7 +112,7 @@ class DeepAgentsCLIStreamWorker(JsonlTeeStreamWorker):
         for directory in context.custom_instruction_dirs or []:
             if directory not in opts.add_dirs:
                 opts.add_dirs.append(directory)
-        argv, env_from_opts, stdin = opts.to_spawn(instruction=prompt, system_prompt_append=context.instructions)
+        argv, env_from_opts, stdin = opts.to_spawn(instruction=prompt)
         # The install gate: raises WorkerSpawnError when the harness package is not importable.
         env = build_worker_spawn_env(self.vendor, env_from_opts)
         return argv, env, stdin

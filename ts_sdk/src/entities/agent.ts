@@ -1,3 +1,4 @@
+import { launchSurfaceField } from '../process/launch-surface';
 import { APIEntity, registerEntity } from '../APIEntity';
 import { TypeId } from '../models/TypeId';
 import type { GitOrigin } from '../models/GitOrigin';
@@ -337,7 +338,11 @@ export class Agent extends APIEntity<Agent> {
    * prompt, or the auto prompt runs second.
    */
   async use(projectId?: string | null, autoPrompt = false): Promise<AgentUseResult> {
-    return (await this.post('use', { project_id: projectId ?? null, ...autoPromptBody(autoPrompt) })) as AgentUseResult;
+    return (await this.post('use', {
+      project_id: projectId ?? null,
+      ...autoPromptBody(autoPrompt),
+      ...launchSurfaceField(),
+    })) as AgentUseResult;
   }
 
   /**
@@ -350,7 +355,11 @@ export class Agent extends APIEntity<Agent> {
    * placement on this machine.
    */
   async useDeployment(deploymentId: string, autoPrompt = false): Promise<AgentUseResult> {
-    return (await this.post('use', { deployment_id: deploymentId, ...autoPromptBody(autoPrompt) })) as AgentUseResult;
+    return (await this.post('use', {
+      deployment_id: deploymentId,
+      ...autoPromptBody(autoPrompt),
+      ...launchSurfaceField(),
+    })) as AgentUseResult;
   }
 
   /**

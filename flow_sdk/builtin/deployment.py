@@ -40,6 +40,7 @@ from typing import TYPE_CHECKING, Any, ClassVar, Literal, Optional
 
 from pydantic import BaseModel, PrivateAttr, field_validator
 
+from flow_sdk.builtin.agentic_process.system_prompt import launch_surface_fields
 from flow_sdk._compat import UTC
 from flow_sdk.api.api_types.api_field import APIField, Sharing
 from flow_sdk.api.api_types.identifier import is_valid_entity_id
@@ -1038,13 +1039,9 @@ class Deployment(Entity):
         opts = agent.to_agent_options(worker_type=worker_override, output_format=options.pop("output_format", None))
 
         # The agent's system prompt goes in via ``context_data.instructions`` —
-        # the ONE channel ``resolve_system_instructions`` reads, which
-        # ``prepare_system_instruction_assets`` then materializes as CLAUDE.md /
-        # AGENTS.md / .agents / copilot instructions and hands to the driver as
-        # ``system_prompt_file`` + ``--add-dir``. Setting ``system_prompt_append``
-        # directly would reach Claude only: codex takes ``developer_instructions``
-        # and copilot ``custom_instruction_dirs``, and
-        # ``_apply_system_instruction_assets`` nulls the append field anyway.
+        # the ``INSTRUCTIONS`` layer of ``system_prompt.compose_layers``, which
+        # ``prepare_system_instruction_assets`` projects per vendor (CLAUDE.md /
+        # AGENTS.md / copilot instructions / developer_instructions).
         context_data = {**(options.pop("context_data", None) or {})}
         if agent.system_prompt:
             existing = str(context_data.get("instructions") or "").strip()
@@ -1144,7 +1141,7 @@ class Deployment(Entity):
         await proc.save()
         return await take_turn(proc, prompt, spec, wait=wait)
 
-    async def use(self, *, owner=None, **options) -> "AgenticProcess":
+    async def use(self, *, owner=None, launch_surface: str | None = None, **options) -> "AgenticProcess":
         """Open a session AS this agent: a visible, headless Chat process, saved,
         with no first turn — the human types it.
 
@@ -1164,7 +1161,7 @@ class Deployment(Entity):
         # route row (see ``_use_on_hub``); ``run`` still refuses it (see
         # ``agent_run.dispatch_agent_run``).
         if not self.is_local:
-            return await self._use_on_hub(owner=owner)
+            return await self._use_on_hub(owner=owner, launch_surface=launch_surface)
         agent = await self._require_agent()  # ``create_process`` re-reads it from the memoized ``_element``
         # Peeked, not popped — ``create_process`` stays the one owner of the
         # caller-else-agent fallback. It is read here because the acting project
@@ -1187,10 +1184,13 @@ class Deployment(Entity):
             target_typeid_str=str(agent.typeid),
             **options,
         )
+        # The opener's surface (``"app"`` from the Flowpad app) — the COMMON_UI system-prompt layer.
+        if surface := launch_surface_fields(launch_surface):
+            proc.context_data = {**(proc.context_data or {}), **surface}
         await proc.save(owner)
         return proc
 
-    async def _use_on_hub(self, *, owner=None) -> "AgenticProcess":
+    async def _use_on_hub(self, *, owner=None, launch_surface: str | None = None) -> "AgenticProcess":
         """Open a session on this REMOTE placement through the hub, and adopt the
         process it minted as a route row. The hub refuses a placement it never
         made — a cloud row minted locally has no counterpart there."""
@@ -1198,7 +1198,10 @@ class Deployment(Entity):
         from flow_sdk.cloud_client.transport import hub_http  # noqa: PLC0415
 
         agent = await self._require_agent()
-        opened = await hub_http.hub_post(agent.get_type(), {"deployment_id": self.id}, agent.id, "use")
+        # ``launch_surface`` rides along so the placement machine's ``use_action`` can
+        # stamp it (``COMMON_UI`` layer); a hub that does not forward it drops it.
+        body = {"deployment_id": self.id, **launch_surface_fields(launch_surface)}
+        opened = await hub_http.hub_post(agent.get_type(), body, agent.id, "use")
         process_id = str((opened or {}).get("process_id") or "")
         if not is_valid_entity_id(process_id):
             raise RuntimeError("the hub returned an invalid process for this deployment")
