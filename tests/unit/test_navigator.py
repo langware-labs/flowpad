@@ -68,6 +68,7 @@ async def test_without_a_decision_api_every_ask_is_todays_even_an_exact_screen_n
         ("take me to preferences", "view", "preferences", "navigate"),
         ("open https://linear.app", "url", "https://linear.app", "show"),
         ("open the app on port 5173", "webapp", "5173", "show"),
+        ("open localhost:5173", "webapp", "5173", "show"),  # a port named as an address (stress run)
         ("search for widget", "view", "search?q=widget", "show"),
         ("open ~/notes/plan.md", "file", "~/notes/plan.md", "show"),
         ("open connecitons", "view", "credentials", "show"),  # a typo of one name (logged live)

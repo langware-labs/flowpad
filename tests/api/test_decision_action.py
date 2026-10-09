@@ -218,3 +218,58 @@ async def test_navigation_decision_reads_the_tab_that_typed_not_the_active_one(b
     await bootstrapped_client.post(DECIDE, json={"utterance": "show me its log"}, headers={"X-Flow-Connection-Id": "typed"})
     await bootstrapped_client.post(DECIDE, json={"utterance": "show me its log"})
     assert [s.state["page"] for s in specs] == ["/dock/automations", "/dock/desktop"], "named tab first; the guess only without one"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("here", [{"view": 7}, {"garbage": 1}])
+async def test_a_malformed_here_is_ignored_not_a_server_error(bootstrapped_client, monkeypatch, here):
+    """The endpoint never fails: a ``here`` that is not a ``navigation.here`` is no ``here`` at all --
+    the decision reads the tab instead (a stress run got HTTP 500)."""
+    import flow_sdk.decision as decision
+
+    async def _endpoints(**kwargs):
+        return [OFFER]
+
+    monkeypatch.setattr(decision, "decision_endpoints", _endpoints)
+    r = await bootstrapped_client.post(DECIDE, json={"utterance": "open data sources", "here": here})
+    assert r.status_code == 200, r.text
+    assert r.json()["data"]["address"] == "/dock/data-sources"
+
+
+@pytest.mark.asyncio
+async def test_logging_a_decision_never_rereads_the_log(bootstrapped_client, monkeypatch, tmp_path):
+    """Each logged decision used to re-read EVERY row twice (``Dataset.at`` + a full re-index): a
+    stress run's log fell ~10 minutes behind at 1,100 rows. A row now costs the row, and the indexed
+    count still follows."""
+    from pathlib import Path
+
+    import flow_sdk.decision as decision
+    from flow_sdk import config
+    from flow_sdk.builtin.dataset import Dataset
+    from flow_sdk.core import navigation_log
+    from flow_sdk.core.navigation_decision import decide_run
+    from flow_sdk.preferences import PREF_SMART_NAVIGATION_LOG, write_instance_pref
+    from flow_sdk.schema.data_spec.layout import FolderLayout
+
+    monkeypatch.setattr(config, "FLOWPAD_TEMP_DIR", str(tmp_path / "temp"))
+
+    async def _endpoints(**kwargs):
+        return [OFFER]
+
+    monkeypatch.setattr(decision, "decision_endpoints", _endpoints)
+    write_instance_pref(PREF_SMART_NAVIGATION_LOG, True)
+    try:
+        request = {"utterance": "open data sources", "here": {"view": "home"}}
+        outcome, answer = await decide_run(request)
+        for _ in range(3):
+            assert await navigation_log.log(request, outcome, answer)
+        reads = []
+        real = FolderLayout.read
+        monkeypatch.setattr(FolderLayout, "read", lambda self, *a, **k: reads.append(1) or real(self, *a, **k))
+        assert await navigation_log.log(request, outcome, answer)
+        assert reads == [], "appending one row read the whole log"
+        here = navigation_log.folder().resolve()
+        [row] = [r for r in await Dataset.get_all({"name": navigation_log.TITLE}) if Path(r.asset_ref).resolve() == here]
+        assert row.num_examples == 4
+    finally:
+        write_instance_pref(PREF_SMART_NAVIGATION_LOG, False)

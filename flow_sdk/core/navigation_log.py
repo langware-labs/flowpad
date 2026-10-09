@@ -86,10 +86,8 @@ def row_of(request: dict, outcome: Any, answer: Any) -> dict:
     }
 
 
-async def dataset() -> Any:
-    """The SmartNavigationLog dataset, created on first use."""
-    from flow_sdk.builtin.dataset import Dataset  # noqa: PLC0415
-
+def _create() -> None:
+    """The log's folder and manifest, before its first row."""
     where = folder()
     manifest = where / "dataset.json"
     if not manifest.exists():
@@ -111,11 +109,11 @@ async def dataset() -> Any:
             )
             + "\n"
         )
-    return Dataset.at(where)
 
 
 async def log(request: dict, outcome: Any, answer: Any) -> Optional[str]:
     """Append one decision (when the log is on); the new example id, else None. Never raises."""
+    from flow_sdk.builtin.dataset import Dataset  # noqa: PLC0415
     from flow_sdk.fs_store.reindex import reindex_paths  # noqa: PLC0415
     from flow_sdk.preferences import smart_navigation_log_enabled  # noqa: PLC0415
 
@@ -123,26 +121,40 @@ async def log(request: dict, outcome: Any, answer: Any) -> Optional[str]:
         return None
     try:
         async with _lock():
-            ds = await dataset()
+            indexed = await _indexed()
+            if indexed is None:
+                # The first row: create the folder and index it once, so the UI lists the log.
+                _create()
+                await reindex_paths([str(folder())])
+                indexed = await _indexed()
+            # Nothing indexes it here (no DB): the folder alone takes the row.
+            ds = indexed or Dataset.at(folder())
             [example_id] = await ds.append([row_of(request, outcome, answer)])
-            # The folder IS the record: re-index it (row + counts, a broadcast so the UI lists it).
-            await reindex_paths([str(folder())])
+            if indexed is not None:
+                # Only the counts change, and they follow from the cheap per-example index: a full
+                # re-index (and ``Dataset.at``) re-parses every row, which made each append O(rows).
+                await indexed.refresh_counts()
         return example_id
     except Exception as exc:  # noqa: BLE001 -- a log must never break a navigation
         logger.warning("smart navigation log: could not append: %s", exc)
         return None
 
 
-async def address() -> str:
-    """Where asking for the log takes you: the log open in the app that edits it, or -- when it was
-    never on, so there is no log -- Preferences > Advanced, where the switch is."""
+async def _indexed() -> Any:
+    """This instance's log as the index holds it (no rows read) -- None before its first row."""
     from flow_sdk.builtin.dataset import Dataset  # noqa: PLC0415
 
     here = folder().resolve()  # the index stores the resolved path (/private/var/... on macOS)
     rows = await Dataset.get_all({"name": TITLE})
-    log = next((r for r in rows if getattr(r, "asset_ref", None) and Path(r.asset_ref).resolve() == here), None)
+    return next((r for r in rows if getattr(r, "asset_ref", None) and Path(r.asset_ref).resolve() == here), None)
+
+
+async def address() -> str:
+    """Where asking for the log takes you: the log open in the app that edits it, or -- when it was
+    never on, so there is no log -- Preferences > Advanced, where the switch is."""
     from flow_sdk.core.navigation_decision import entity_app_address  # noqa: PLC0415
 
+    log = await _indexed()
     return (await entity_app_address(f"dataset-{log.id}") if log is not None else None) or "/dock/preferences/advanced"
 
 
@@ -159,4 +171,4 @@ async def drain() -> None:
         await asyncio.gather(*list(_pending), return_exceptions=True)
 
 
-__all__ = ["NAME", "TITLE", "address", "dataset", "drain", "folder", "log", "log_soon", "row_of"]
+__all__ = ["NAME", "TITLE", "address", "drain", "folder", "log", "log_soon", "row_of"]

@@ -1633,14 +1633,20 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
         Never fails: anything missing or unsure is the prompt, and with no decision API on the
         hub that is every answer. With SmartNavigationLog on, the decision is appended to the
         SmartNavigationLog dataset AFTER this answers (``flow_sdk.core.navigation_log``)."""
-        from flow_sdk.core.navigation import here_from  # noqa: PLC0415
+        from pydantic import ValidationError  # noqa: PLC0415
+
+        from flow_sdk.core.navigation import here_from, kind  # noqa: PLC0415
         from flow_sdk.core.navigation_decision import decide_run  # noqa: PLC0415
         from flow_sdk.core.navigation_log import log_soon  # noqa: PLC0415
         from flow_sdk.server.routes.websocket import get_request_connection_info  # noqa: PLC0415
 
         request_info = get_current_request_info()
         body = (await request_info.get_post_data() if request_info else {}) or {}
-        here = body.get("here") if isinstance(body.get("here"), dict) else None
+        here = body.get("here")
+        try:
+            kind("navigation.here").model_validate(here)
+        except ValidationError:
+            here = None  # absent, or not a navigation.here: the tab is read instead
         if here is None:
             info = get_request_connection_info()
             here = (await here_from(info.browser_context if info else {}, navigator=True)).model_dump(

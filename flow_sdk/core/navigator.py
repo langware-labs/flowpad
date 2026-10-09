@@ -231,7 +231,7 @@ def _entity_options(ref: dict[str, Any], why: str) -> dict[str, str]:
 
 _URL = re.compile(r"https?://\S+")
 _PATH = re.compile(r"(~?/[\w.\-/ ]*\w\.\w+|~/[\w.\-/]+)")
-_PORT = re.compile(r"\bport\s+(\d{2,5})\b", re.I)
+_PORT = re.compile(r"\b(?:port\s+|localhost:|127\.0\.0\.1:)(\d{2,5})\b", re.I)
 _SEARCH = re.compile(r"^(?:search|find)\s+(?:for\s+)?(.+)$", re.I)
 _LEAD = re.compile(
     r"^(please\s+)?(open|show( me)?|go to|go|take me to|navigate to|launch|bring up|where are)\s+(the\s+|my\s+)?", re.I
