@@ -11916,6 +11916,10 @@ msgstr "تشخيصات المشاكل التي سجلها المساعد. انق
 msgid "It doesn't appear to be installed on your computer. Would you like to install it now?"
 msgstr "يبدو أنه غير مثبّت على جهازك. هل تريد تثبيته الآن؟"
 
+#: src/components/assets/editor/wizard/wizard-texts.ts
+msgid "It doesn't appear to be installed on your computer. Would you like to install it now? On a Mac, Apple's installer opens in its own window — if you don't see it, look behind this one."
+msgstr "يبدو أنه غير مثبّت على جهازك. هل تريد تثبيته الآن؟ على جهاز Mac يُفتح مثبّت Apple في نافذة مستقلة. إذا لم تظهر لك، فابحث خلف هذه النافذة."
+
 #: src/components/automations/RunDetail.tsx
 msgid "It failed without saying why."
 msgstr ""

@@ -11916,6 +11916,10 @@ msgstr "Issue diagnoses recorded by the assistant. Click a row to view the full 
 msgid "It doesn't appear to be installed on your computer. Would you like to install it now?"
 msgstr "It doesn't appear to be installed on your computer. Would you like to install it now?"
 
+#: src/components/assets/editor/wizard/wizard-texts.ts
+msgid "It doesn't appear to be installed on your computer. Would you like to install it now? On a Mac, Apple's installer opens in its own window — if you don't see it, look behind this one."
+msgstr "It doesn't appear to be installed on your computer. Would you like to install it now? On a Mac, Apple's installer opens in its own window — if you don't see it, look behind this one."
+
 #: src/components/automations/RunDetail.tsx
 msgid "It failed without saying why."
 msgstr "It failed without saying why."
