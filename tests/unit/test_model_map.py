@@ -112,7 +112,7 @@ async def test_override_scoped_per_provider(env) -> None:
     await _set_harness("claude", provider="openrouter", model_map={"anthropic": {"sm": "x/y"}})
 
     auth = await resolve_worker_api_auth(_proc("claude", "sm"))
-    assert auth.model_slug == "anthropic/claude-haiku-4.5"  # spec default, not the anthropic override
+    assert auth.model_slug == "anthropic/claude-haiku-5.5"  # spec default, not the anthropic override
 
 
 def test_models_endpoint_resolver_covers_all_providers(env) -> None:

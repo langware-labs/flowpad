@@ -158,7 +158,7 @@ async def test_claude_api_binding(env) -> None:
     assert auth.env["ANTHROPIC_API_KEY"] == ""  # present-but-blank
     assert auth.env["MAX_THINKING_TOKENS"] == "0"
     assert auth.env["DISABLE_INTERLEAVED_THINKING"] == "1"
-    assert auth.model_slug == "anthropic/claude-haiku-4.5"
+    assert auth.model_slug == "anthropic/claude-haiku-5.5"
     assert auth.config_overrides == []  # claude uses no -c overrides
 
 
@@ -293,7 +293,7 @@ async def test_claude_hub_endpoint_binding(env, monkeypatch) -> None:
     assert auth.env["MAX_THINKING_TOKENS"] == "0"
     assert auth.env["DISABLE_INTERLEAVED_THINKING"] == "1"
     assert auth.env["CLAUDE_CODE_MAX_OUTPUT_TOKENS"] == str(FUNDED_MAX_OUTPUT_TOKENS)
-    assert auth.model_slug == "anthropic/claude-haiku-4.5"  # OpenRouter slugs: the endpoint is a passthrough
+    assert auth.model_slug == "anthropic/claude-haiku-5.5"  # OpenRouter slugs: the endpoint is a passthrough
     assert auth.config_overrides == []
 
 
@@ -712,7 +712,7 @@ FAMILY_TABLE = {
     "kimi": ("moonshotai/kimi-k2-thinking", "moonshotai/kimi-k2.5", "moonshotai/kimi-k2.6"),
     "glm": ("z-ai/glm-4.7", "z-ai/glm-5", "z-ai/glm-5.3"),
     "openai": ("openai/gpt-oss-20b", "openai/gpt-oss-120b", "openai/gpt-5"),
-    "claude": ("anthropic/claude-haiku-4.5", "anthropic/claude-sonnet-4.6", "anthropic/claude-opus-4.8"),
+    "claude": ("anthropic/claude-haiku-5.5", "anthropic/claude-sonnet-4.6", "anthropic/claude-opus-4.8"),
 }
 
 
@@ -782,7 +782,7 @@ async def test_a_family_model_is_not_swapped_for_a_models_allow_default(env) -> 
     [
         # The caller's model -- a name or a literal slug -- is kept, so the endpoint can refuse it.
         # A harness's own name for a size is spelled as that size's slug, never swapped.
-        ("haiku", "anthropic/claude-haiku-4.5"),
+        ("haiku", "anthropic/claude-haiku-5.5"),
         ("anthropic/claude-haiku-4.5", "anthropic/claude-haiku-4.5"),
         # A size, or no model at all, is the tier map's code default: still re-picked.
         ("sm", "z-ai/glm-5.3"),

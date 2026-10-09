@@ -33,9 +33,18 @@ class ModelTier(StrEnum):
 # CLI-options class owns its own map and resolves only when emitting the worker
 # command; persisted AgenticProcess.cli_config keeps the portable tier.
 CLAUDE_MODEL_TIERS: dict[str, str] = {
-    ModelTier.SM.value: "haiku",
+    # The id, not the ``haiku`` alias: the alias is whatever haiku the installed CLI knows.
+    ModelTier.SM.value: "claude-haiku-5-5",
     ModelTier.MD.value: "sonnet",
     ModelTier.LG.value: "opus",
+}
+
+# The claude CLI's own names for its sizes. A funded spawn reads them as sizes (``ApiAuthSpec.native_tiers``)
+# so the gateway gets the tier's slug, never the vendor id the CLI would expand them to.
+CLAUDE_CLI_ALIASES: dict[str, str] = {
+    "haiku": ModelTier.SM.value,
+    "sonnet": ModelTier.MD.value,
+    "opus": ModelTier.LG.value,
 }
 
 # Only models a ChatGPT-login codex offers (``~/.codex/models_cache.json``): that
@@ -96,7 +105,7 @@ FAMILY_TIERS: dict[str, dict[str, str]] = {
         ModelTier.LG.value: "openai/gpt-5",
     },
     "claude": {
-        ModelTier.SM.value: "anthropic/claude-haiku-4.5",
+        ModelTier.SM.value: "anthropic/claude-haiku-5.5",
         ModelTier.MD.value: "anthropic/claude-sonnet-4.6",
         ModelTier.LG.value: "anthropic/claude-opus-4.8",
     },

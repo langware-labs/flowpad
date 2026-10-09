@@ -947,12 +947,13 @@ class GraphWorkflowManager:
     @staticmethod
     def _agent_model(agent_def: dict[str, Any], nd: dict[str, Any]) -> str:
         """CLI model: node ``model_size`` override wins, else the SubAgent md's
-        ``model`` (already a CLI name), else the sm default."""
-        from flow_sdk.builtin.graph_workflow_node import MODEL_SIZE_TO_CLI
+        ``model``, else the sm default. A size stays a size: the worker's own tier map resolves it."""
+        from flow_sdk.builtin.agentic_process.model_tiers import ModelTier, is_model_tier
 
-        if nd.get("model_size"):
-            return MODEL_SIZE_TO_CLI.get(str(nd["model_size"]), "haiku")
-        return str(agent_def.get("model") or "") or "haiku"
+        size = str(nd.get("model_size") or "")
+        if size:
+            return size if is_model_tier(size) else ModelTier.SM.value
+        return str(agent_def.get("model") or "") or ModelTier.SM.value
 
     async def _spawn_agent(
         self, run: _Run, node: GraphWorkflowNodeDef, fe: RunEvent, rt: _NodeRuntime, seq: int
