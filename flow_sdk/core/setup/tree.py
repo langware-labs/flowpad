@@ -36,6 +36,9 @@ class SetupNode:
     #: Why this node cannot be set up at all (it names a wizard that does not exist): it fails with this, and
     #: nothing of it runs. An author's mistake reported where it is, never a node that quietly counts as done.
     problem: str = ""
+    #: Why a person skipped it (its record's ``setup_skipped``): it settles SKIPPED, nothing of it runs, and its
+    #: parent is not held up by it.
+    skipped: str = ""
 
 
 #: Find a node by id; ``None`` when nothing by that id exists any more.

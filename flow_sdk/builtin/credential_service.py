@@ -36,7 +36,7 @@ from flow_sdk.schema.data_spec.credential_contract import (
     DEFAULT_ENVIRONMENT,
     SCOPE_PROJECT,
     SCOPE_USER,
-    CredentialRequirement,
+    CredentialKind,
     CredentialVarKind,
 )
 from flow_sdk.schema.data_spec.credential_status_spec import CredentialDeletedSpec
@@ -50,7 +50,10 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-_MANIFEST_FIELDS = ("title", "description", "icon_name", "help_url", "setup_wiki", "setup", "setup_timeout_seconds", "lm_provider", "vars")
+_MANIFEST_FIELDS = (
+    "title", "description", "icon_name", "help_url", "setup_wiki", "setup", "setup_timeout_seconds", "lm_provider",
+    "kind", "provider", "scopes", "optional_scopes", "vars",
+)
 
 
 def _manifest_of(spec: "Credential") -> dict[str, Any]:
@@ -223,7 +226,8 @@ async def save_credential(
         parsed = CredentialSpec.model_validate({**manifest_in, "schema": CURRENT_SCHEMA})
     except ValidationError as e:
         raise CredentialError("; ".join(str(err["msg"]).removeprefix("Value error, ") for err in e.errors())) from e
-    if require_setup and not parsed.setup.strip():
+    # An oauth credential's "setup" is a person's consent click — there are no values to obtain by hand.
+    if require_setup and parsed.kind is not CredentialKind.OAUTH and not parsed.setup.strip():
         raise CredentialError(
             "a credential needs setup instructions: how to obtain its values and store them "
             f"(piped as `VAR=VALUE` lines into `flow credentials set {parsed.name} --stdin`)"
@@ -332,6 +336,51 @@ async def set_credential_by_name(
         raise CredentialError("no value given")
     spec = await credential_named(name, project, declare=True)
     return await set_credential_values(str(spec.typeid), values, deployment_id)
+
+
+async def _provider_title(provider: str) -> str:
+    """A provider's display name, as the Connections screen shows it; else its name."""
+    try:
+        from flow_sdk.core.connections.specs import resolve_connection_spec  # noqa: PLC0415
+
+        spec = await resolve_connection_spec(provider)
+        if spec is not None and spec.display_name:
+            return spec.display_name
+    except Exception:  # noqa: BLE001 — a title is cosmetic; the name serves
+        pass
+    return provider.title()
+
+
+async def declare_oauth(project: "Project", provider: str, scopes: list[str]) -> tuple["Credential", bool]:
+    """The project's oauth credential for ``provider``, covering at least ``scopes`` — declared from the shipped
+    template (or, for a provider only the hub defines, from its catalogue row) when the project has none, and
+    widened in place when a source needs more. Declaring what is already declared writes nothing.
+    Returns ``(credential, changed)``."""
+    from flow_sdk.builtin.credential_resolver import credentials_in_scope  # noqa: PLC0415
+
+    provider = str(provider or "").strip().lower()
+    wanted = [str(scope) for scope in scopes or []]
+    # Found by what it IS — the project's oauth credential for this provider — whatever it is named.
+    pairs = await credentials_in_scope(project)
+    own = next((spec for spec, _ in pairs
+                if spec.is_oauth and spec.scope == SCOPE_PROJECT and str(spec.provider or "").lower() == provider), None)
+    if own is not None:
+        merged = list(dict.fromkeys([*(own.scopes or []), *wanted]))
+        if merged == list(own.scopes or []):
+            return own, False
+        return await declare_credential({**_manifest_of(own), "scopes": merged}, project_id=str(project.id),
+                                        require_setup=False), True
+    # A new one is named for its provider — unless an env credential (an API key named "google") has that name.
+    taken = {str(spec.name) for spec, _ in pairs}
+    name = provider if provider not in taken else f"{provider}-oauth"
+    template = await template_named(provider)
+    if template is not None and template.is_oauth:
+        manifest = {**_manifest_of(template), "name": name,
+                    "scopes": list(dict.fromkeys([*(template.scopes or []), *wanted]))}
+    else:
+        manifest = {"name": name, "title": await _provider_title(provider), "kind": CredentialKind.OAUTH.value,
+                    "provider": provider, "scopes": wanted}
+    return await declare_credential(manifest, project_id=str(project.id), require_setup=False), True
 
 
 async def declare_credential(manifest: dict[str, Any], *, project_id: str, require_setup: bool = True) -> "Credential":
@@ -461,21 +510,6 @@ async def declare_vars(
         return existing
     manifest = {**_manifest_of(existing), "vars": {**(existing.vars or {}), **{v: {} for v in new}}}
     return await save_credential(manifest=manifest, typeid=str(existing.typeid))
-
-
-async def make_optional(name: str, project: "Project") -> "Credential":
-    """Take the credential ``name`` out of ``project``'s setup: every one of its variables becomes
-    OPTIONAL in the project's own declaration. The credential the project sees (its own, else the
-    user's, else the shipped template) is copied into the project when it is not already the
-    project's, so the user's declaration and the catalogue entry stay as they were."""
-    source = await credential_named(name, project) or await template_named(name)
-    if source is None:
-        raise CredentialError(f"no credential or template named {name!r}")
-    optional = {env_var: var.model_copy(update={"required": CredentialRequirement.OPTIONAL})
-                for env_var, var in (source.vars or {}).items()}
-    # Only how required its values are changes: a credential without setup instructions (legal on
-    # disk) is skipped as it is, never refused for instructions nobody is authoring here.
-    return await declare_credential({**_manifest_of(source), "vars": optional}, project_id=str(project.id), require_setup=False)
 
 
 async def _declaring(names: list[str], project: Optional["Project"], deployment: "Deployment") -> dict:

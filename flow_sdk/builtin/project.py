@@ -35,6 +35,7 @@ from flow_sdk.core import Entity, action
 from flow_sdk.core.entity.entity_model import migrate_presence_shaped_members
 from flow_sdk.core.flow.flow_source_control import ComputeSourceControlInitializeOptions
 from flow_sdk.core.flow.models.execution.env_context import get_env_vars_context
+from flow_sdk.core.setup.skip_mark import SetupSkippable
 from flow_sdk.core.urls.service_urls import build_hub_url
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 from flow_sdk.fs_store.operations.all_projects import invalidate_projects_cache
@@ -52,6 +53,7 @@ from flow_sdk.request_context.methods import (
     get_current_request_info,
 )
 from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccessResponse
+from flow_sdk.schema.data_spec.asset_setup_spec import SetupSkipSpec
 from flow_sdk.schema.data_spec.share_request_spec import ShareVia
 from flow_sdk.schema.data_spec.share_result_spec import (
     ShareFailedSpec,
@@ -64,9 +66,9 @@ from flow_sdk.schema.data_spec.share_result_spec import (
 )
 
 if TYPE_CHECKING:
-    from flow_sdk.schema.data_spec.flow_json_spec import DependencyState
     from flow_sdk.assets.scanning import AssetCandidate
     from flow_sdk.fs_store.operations.project_cleanup import HarnessIndex
+    from flow_sdk.schema.data_spec.flow_json_spec import DependencyState
     from flow_sdk.schema.data_spec.git_share_spec import GitShare
     from flow_sdk.schema.data_spec.open_link_spec import ProjectOpenLinkSpec
     from flow_sdk.schema.data_spec.share_request_spec import ShareInvitee
@@ -354,7 +356,7 @@ def _invite_message_text(project_name: str, note: Optional[str]) -> str:
     return f"{text}\n\n{note}" if note else text
 
 
-class Project(Entity):
+class Project(SetupSkippable, Entity):
     @classmethod
     async def get_last_active(cls) -> Optional["Project"]:
         """The most recently opened visible project; hydrate only the winner."""
@@ -373,6 +375,10 @@ class Project(Entity):
 
     type: str = APIField(default=BuiltinEntityType.PROJECT.value)
     name: str | None = APIField(default=None, description="Display name of the project")
+    #: The ``flow.json`` dependencies skipped in this project's setup on THIS machine, by dependency name
+    #: (``SetupSkipSpec``, ``core/setup/skip_mark``). PRIVATE: a dependency has no row of its own here — the
+    #: project's flow.json declares it — so the project carries its mark.
+    setup_skipped: dict[str, SetupSkipSpec] = APIField(default_factory=dict, sharing=Sharing.PRIVATE)
     artifacts: List[str] = APIField(
         default_factory=list,
         description="List of artifact IDs belonging to this project",
@@ -772,17 +778,32 @@ class Project(Entity):
         return ApiSuccessResponse(data={"run": await start_setup(self, root=root)})
 
     @action.post(action_name="setup-skip")
-    async def setup_skip_action(self, name: str = "") -> "ApiResponse":
-        """`POST /project/<id>/setup-skip {name}` — the credential ``name`` leaves the setup: its
-        variables are marked OPTIONAL in the project. Answers with the readiness that follows."""
-        from flow_sdk.builtin.credential_service import CredentialError, make_optional  # noqa: PLC0415
-        from flow_sdk.builtin.project_setup import readiness_of  # noqa: PLC0415
+    async def setup_skip_action(self, typeid: str = "", scope: str = "local", name: str = "", note: str = "") -> "ApiResponse":
+        """`POST /project/<id>/setup-skip {typeid, scope, name?, note?}` — skip a requirement of this project's setup:
+        ``local`` marks its record on this machine; ``always`` removes its asset from the project and stages
+        that in git (a dependency: ``typeid`` is the project's and ``name`` the dependency's). Answers with the
+        readiness that follows."""
+        from flow_sdk.builtin.project_setup import SkipRefused, readiness_of, skip_requirement  # noqa: PLC0415
+        from flow_sdk.request_context.json_body import current_user_id  # noqa: PLC0415
 
-        if not name:
-            return ApiFailResponse(message="name is required", status_code=400)
+        if not typeid:
+            return ApiFailResponse(message="typeid is required", status_code=400)
         try:
-            await make_optional(name, self)
-        except CredentialError as exc:
+            await skip_requirement(self, typeid, scope=scope, name=name, note=note, by=current_user_id())
+        except SkipRefused as exc:
+            return ApiFailResponse(message=str(exc), status_code=409)
+        return ApiSuccessResponse(data=(await readiness_of(self)).model_dump(mode="json"))
+
+    @action.post(action_name="setup-unskip")
+    async def setup_unskip_action(self, typeid: str = "", name: str = "") -> "ApiResponse":
+        """`POST /project/<id>/setup-unskip {typeid, name?}` — undo a local skip. Answers with the readiness."""
+        from flow_sdk.builtin.project_setup import SkipRefused, readiness_of, unskip_requirement  # noqa: PLC0415
+
+        if not typeid:
+            return ApiFailResponse(message="typeid is required", status_code=400)
+        try:
+            await unskip_requirement(self, typeid, name=name)
+        except SkipRefused as exc:
             return ApiFailResponse(message=str(exc), status_code=409)
         return ApiSuccessResponse(data=(await readiness_of(self)).model_dump(mode="json"))
 
@@ -1868,10 +1889,10 @@ class Project(Entity):
         from flow_sdk.app.actions.oauth_action import (  # noqa: PLC0415
             _get_github_token_for_current_user,
         )
+        from flow_sdk.assets import flow_json  # noqa: PLC0415
         from flow_sdk.builtin.agentic_process.agentic_process import (  # noqa: PLC0415
             _index_additional_dir,
         )
-        from flow_sdk.assets import flow_json  # noqa: PLC0415
 
         # A fresh slot every time, named after the ENGAGEMENT rather than the
         # template: two engagements from one template are two independent
@@ -2508,10 +2529,9 @@ class Project(Entity):
         project switch. Detaching is what guarantees an index conflict (409) or a
         slow walk can never reach the activation response.
         """
+        from flow_sdk.builtin.project_dependencies import schedule_resolve  # noqa: PLC0415
         from flow_sdk.core.entity.entity_model import _http_activate
         from flow_sdk.fs_store.indexer.auto_index import schedule_auto_index
-
-        from flow_sdk.builtin.project_dependencies import schedule_resolve  # noqa: PLC0415
 
         resp = await _http_activate(self)
         if isinstance(resp, ApiSuccessResponse):

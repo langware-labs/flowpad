@@ -27,7 +27,7 @@ import typer
 from typing_extensions import Annotated
 
 from flow_sdk.cli.commands._common import EXIT_INVALID_ARG, fail
-from flow_sdk.schema.data_spec.project_setup_spec import REQUIREMENT_GAP, REQUIREMENT_OAUTH
+from flow_sdk.schema.data_spec.project_setup_spec import REQUIREMENT_GAP
 from flow_sdk.schema.data_spec.returned_value_spec import ExitCode
 
 if TYPE_CHECKING:
@@ -118,20 +118,23 @@ def _state(req: "SetupRequirementSpec") -> str:
         return "checked when run"
     if req.satisfied:
         return "ready"
+    if req.is_oauth:
+        return f"not connected ({req.note})" if req.note else "not connected"
     names = ", ".join(v.env_var for v in req.missing)
     return f"missing {names}" if names else "missing"
 
 
 def _describe(req: "SetupRequirementSpec") -> dict[str, Any]:
     return {
-        "kind": req.kind, "name": req.name, "state": _state(req), "used_by": req.used_by,
+        "kind": req.kind, "credential_kind": req.credential_kind, "name": req.name, "state": _state(req),
+        "used_by": req.used_by,
         "missing": [v.env_var for v in req.missing], "ai_setup": bool(req.setup.strip()), "note": req.note,
     }
 
 
 def _print_plan(requirements: list["SetupRequirementSpec"]) -> None:
     for req in requirements:
-        label = "connection" if req.kind == REQUIREMENT_OAUTH else ("credential" if req.kind != REQUIREMENT_GAP else "gap")
+        label = "connection" if req.is_oauth else ("credential" if req.kind != REQUIREMENT_GAP else "gap")
         users = f"  (for {', '.join(req.used_by)})" if req.used_by else ""
         typer.echo(f"  {label:<10} {req.name:<24} {_state(req)}{users}")
         if req.note:
@@ -155,7 +158,7 @@ def _requirement_done(req: "SetupRequirementSpec", steps: dict[str, Any]) -> boo
     """Whether a requirement ended holding: its connect / store / AI step reached the goal."""
     if req.kind == REQUIREMENT_GAP:
         return False
-    names = [f"connect-{req.name}"] if req.kind == REQUIREMENT_OAUTH else [f"store-{req.name}"]
+    names = [f"connect-{req.provider or req.name}"] if req.is_oauth else [f"store-{req.name}"]
     return any(steps.get(n) is not None and steps[n].ok for n in names)
 
 

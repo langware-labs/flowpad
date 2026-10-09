@@ -59,6 +59,20 @@ class AssetSetupSpec(AssetDocumentSpec):
     inputs: dict[str, str] = {}
 
 
+class SetupSkipSpec(DataSpec):
+    """A person skipped this requirement of a project's setup ON THIS MACHINE (``setup_skipped`` on its record,
+    never shared): it is listed under "Skipped", stops counting toward "Setup required", and its setup-tree
+    node settles SKIPPED. Undone by un-skipping. Skipping "always" is not a mark: it removes the asset."""
+
+    spec_kind: ClassVar[str] = "setup.skip"
+    model_config = ConfigDict(frozen=True)
+
+    #: When (epoch seconds) and by whom (a user id; empty when unknown).
+    at: float
+    by: str = ""
+    note: str = ""
+
+
 class SetupState(StrEnum):
     #: Not reached yet.
     PENDING = "pending"
@@ -73,6 +87,8 @@ class SetupState(StrEnum):
     REFUSED = "refused"
     #: Another setup of the same root holds the slot. Nothing ran.
     HELD = "held"
+    #: A person skipped it (``setup_skipped`` on its record): settled without running, so its parent goes on.
+    SKIPPED = "skipped"
 
 
 class SetupNodeResult(DataSpec):

@@ -116,6 +116,8 @@ class ProjectTree:
         for req in requirements:
             if req.kind == REQUIREMENT_GAP:
                 continue  # nobody's to run: reported beside the tree, never a node that blocks it
+            if not req.required and req.skipped is None:
+                continue  # optional: set up from its own page when wanted, never a node a project waits on
             node_id = self._requirement_node(req)
             users = [who for who in req.used_by if who in source_names]
             for who in users:
@@ -135,14 +137,25 @@ class ProjectTree:
         )
         return self
 
+    def _skipped(self, node_id: str, label: str, mark) -> bool:
+        """A node skipped here (``mark`` set) settles SKIPPED: nothing of it compiles or runs."""
+        if mark is None:
+            return False
+        note = str(getattr(mark, "note", "") or "").strip()
+        detail = f"skipped on this machine — {note}" if note else "skipped on this machine"
+        self.nodes[node_id] = SetupNode(id=node_id, label=label, skipped=detail)
+        return True
+
     def _requirement_node(self, req) -> str:
         from flow_sdk.builtin.project_setup import compile_setup  # noqa: PLC0415
 
         node_id = requirement_node_id(req)
         if node_id not in self.nodes:
+            label = req.title or req.name
+            if self._skipped(node_id, label, req.skipped):
+                return node_id
             wizard, ops = compile_setup(self.pid, [req], ai=self.ai)
             self.ops.update(ops)
-            label = req.title or req.name
             self.nodes[node_id] = SetupNode(
                 id=node_id, label=label,
                 run=wizard.model_copy(update={"name": node_id, "label": label}) if wizard.steps else None,
@@ -151,6 +164,8 @@ class ProjectTree:
 
     async def _source_node(self, source, needs: list[str]) -> str:
         node_id = str(source.typeid)
+        if self._skipped(node_id, str(source.name or source.provider), source.setup_skipped):
+            return node_id
         inputs = (("source", str(source.id)), ("owner", str(source.owner or "")))
         driver = await self._driver(source.provider or "")
         needs = list(dict.fromkeys(needs))
@@ -196,6 +211,8 @@ class ProjectTree:
     def _webapp_node(self, app) -> str:
         node_id = str(app.typeid)
         label = str(app.title or app.name) if hasattr(app, "title") else str(app.name)
+        if self._skipped(node_id, label, app.setup_skipped):
+            return node_id
         steps = []
         for step, what in (("install", "Install"), ("build", "Build"), ("start", "Start")):
             op = _op(f"{node_id}:{step}", f"{what} {label}", step)
@@ -270,9 +287,11 @@ class ProjectTree:
 
 def requirement_node_id(req) -> str:
     """The tree node a collected requirement is (``dependency:`` / ``connection:`` / ``credential:<name>``)."""
-    from flow_sdk.schema.data_spec.project_setup_spec import REQUIREMENT_DEPENDENCY, REQUIREMENT_OAUTH  # noqa: PLC0415
+    from flow_sdk.schema.data_spec.project_setup_spec import REQUIREMENT_DEPENDENCY  # noqa: PLC0415
 
-    prefix = {REQUIREMENT_DEPENDENCY: "dependency", REQUIREMENT_OAUTH: "connection"}.get(req.kind, "credential")
+    if req.is_oauth:
+        return f"connection:{req.provider or req.name}"
+    prefix = {REQUIREMENT_DEPENDENCY: "dependency"}.get(req.kind, "credential")
     return f"{prefix}:{req.name}"
 
 

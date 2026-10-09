@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import asyncio
 import functools
+import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Optional
 
@@ -32,7 +33,6 @@ from flow_sdk.schema.data_spec.credential_contract import CredentialVarKind
 from flow_sdk.schema.data_spec.project_setup_spec import (
     REQUIREMENT_DEPENDENCY,
     REQUIREMENT_GAP,
-    REQUIREMENT_OAUTH,
     REQUIREMENT_PACK,
     REQUIREMENT_SOURCE,
     REQUIREMENT_WEBAPP,
@@ -49,9 +49,34 @@ if TYPE_CHECKING:
     from flow_sdk.builtin.project import Project
     from flow_sdk.schema.data_spec.credential_status_spec import CredentialStatusRowSpec
 
+logger = logging.getLogger(__name__)
+
 #: The agent every AI rung runs — "reaches one ComputeOp goal after the cheap attempt failed".
 AI_AGENT = "provisioner"
 PROJECT = "project"
+
+
+def _inside(path: str, root: str) -> bool:
+    """``path`` is ``root`` or under it — the containment the index uses."""
+    from flow_sdk.fs_store.path_utils import canonical_posix_path, is_path_under  # noqa: PLC0415
+
+    return bool(path and root) and is_path_under(canonical_posix_path(path), canonical_posix_path(root))
+
+
+def _always(why_not: str = "") -> dict:
+    """A requirement's "Skip → Always" fields: allowed unless there is a reason not to."""
+    return {"can_skip_always": not why_not, "why_not_always": why_not}
+
+
+def always_for(project: "Project", asset_ref: str, *, what: str) -> dict:
+    """Whether "Skip → Always" can remove an asset from ``project`` — only an asset in the project's own folder,
+    so the removal is a change to the project (staged in git) and not to someone else's."""
+    root = str(getattr(project, "fs_storage_mount_path", "") or "")
+    if not asset_ref:
+        return _always(f"{what} has no folder in this project")
+    if not _inside(asset_ref, root):
+        return _always(f"{what} is not this project's own (it lives outside the project folder) — skip it locally")
+    return _always()
 
 
 # ── 1. collect ────────────────────────────────────────────────────────────────
@@ -75,18 +100,43 @@ async def project_sources(project: "Project") -> list["DataSource"]:
     return [r for r in rows if str(r.project_id or "") == str(project.id) or str(r.id) in under]
 
 
-def _from_row(row: "CredentialStatusRowSpec", used_by: list[str]) -> SetupRequirementSpec:
+def _pack_always(project: "Project", row: "CredentialStatusRowSpec", used_by: list[str]) -> dict:
+    """"Skip → Always" removes a credential's declaration from the project — never a user one (every project
+    reads it) and never an oauth one a source still acts through (the need would come straight back)."""
+    if row.scope != "project":
+        return _always("declared for all your projects (user scope): change it from Credentials")
+    sources = [who for who in used_by if who != PROJECT]
+    if row.kind == "oauth" and sources:
+        return _always(f"needed by {', '.join(sources)} — remove {'it' if len(sources) == 1 else 'them'} first")
+    return always_for(project, row.asset_ref, what=f"the credential {row.name!r}")
+
+
+def _from_row(row: "CredentialStatusRowSpec", used_by: list[str], project: "Project") -> SetupRequirementSpec:
+    always = _pack_always(project, row, used_by)
+    if row.kind == "oauth":
+        note = {"needs_reauth": "the grant went stale: connect again",
+                "partial": f"connected without {', '.join(row.missing_scopes)}: connect again to grant them"}
+        return SetupRequirementSpec(
+            kind=REQUIREMENT_PACK, credential_kind="oauth", name=row.name, title=row.title, typeid=row.typeid,
+            provider=row.provider, scopes=list(row.scopes), help_url=row.help_url,
+            satisfied=row.state == "connected", used_by=used_by, note=note.get(row.state, ""),
+            skipped=row.setup_skipped, **always,
+        )
+    # Required when any value is MUST, and then only the MUST values are asked; a credential of OPTIONAL values
+    # alone is listed as optional, with those.
+    must = [v for v in row.vars if v.is_must]
     return SetupRequirementSpec(
-        kind=REQUIREMENT_PACK, name=row.name, title=row.title, setup=row.setup, help_url=row.help_url,
-        setup_timeout_seconds=row.setup_timeout_seconds,
+        typeid=row.typeid, kind=REQUIREMENT_PACK, name=row.name, title=row.title, setup=row.setup,
+        help_url=row.help_url, setup_timeout_seconds=row.setup_timeout_seconds,
         vars=[
             SetupVarSpec(env_var=v.env_var, label=v.label, hint=v.hint, help_url=v.help_url,
                          pattern=v.pattern, secret=v.secret, file=v.kind is CredentialVarKind.FILE,
                          present=v.present)
-            for v in row.vars if v.is_must
+            for v in (must or row.vars)
         ],
-        satisfied=row.state == "connected", used_by=used_by,
+        satisfied=row.state == "connected", used_by=used_by, required=bool(must),
         note="" if row.setup.strip() else "no setup instructions: AI Assist unavailable",
+        skipped=row.setup_skipped, **always,
     )
 
 
@@ -94,6 +144,8 @@ def _from_template(template: "Credential", used_by: list[str]) -> SetupRequireme
     required = set(template.required_var_names())
     setup = str(getattr(template, "setup", "") or "")
     return SetupRequirementSpec(
+        typeid=str(template.typeid), required=bool(required),
+        why_not_always="a shipped template, not in this project yet: skip it locally",
         kind=REQUIREMENT_PACK, name=str(template.name), title=template.title or str(template.name),
         setup=setup, setup_timeout_seconds=getattr(template, "setup_timeout_seconds", None),
         help_url=template.help_url or "", declared=False, satisfied=False, used_by=used_by,
@@ -165,15 +217,31 @@ async def collect_requirements(project: "Project", deployment_id: str = "") -> l
                 gaps.append(SetupRequirementSpec(kind=REQUIREMENT_GAP, name=name, used_by=[who],
                                                  note=f"{who} needs {name}, and no credential declares it"))
 
-    out = [
-        SetupRequirementSpec(kind=REQUIREMENT_OAUTH, name=provider, title=provider,
-                             scopes=entry["scopes"], used_by=entry["used_by"])
-        for provider, entry in sorted(oauth.items())
-    ]
+    # A connection a source acts through IS a credential (``kind: oauth``): the project declares it — with the
+    # union of the scopes its requesters need — so it is an indexed asset with a row, like any other.
+    # Declared once (a source's create declares it too): only a provider no project row covers yet is written.
+    changed = False
+    for provider, entry in sorted(oauth.items()):
+        held = next((r for r in rows.values() if r.kind == "oauth" and r.scope == "project"
+                     and r.provider == provider.lower() and set(entry["scopes"]) <= set(r.scopes)), None)
+        if held is not None:
+            name = held.name
+        else:
+            spec, declared = await credential_service.declare_oauth(project, provider, entry["scopes"])
+            name, changed = str(spec.name), changed or declared
+        for who in entry["used_by"]:
+            if who not in packs.setdefault(name, []):
+                packs[name].append(who)
+    if changed:  # read again: the declarations are rows now
+        status = await credentials_status(project, deployment_id)
+        for row in status.credentials:
+            rows[row.name] = row
+
+    out: list[SetupRequirementSpec] = []
     by_template = {str(t.name): t for t in templates}
     for name, used_by in packs.items():
         if name in rows:
-            out.append(_from_row(rows[name], used_by))
+            out.append(_from_row(rows[name], used_by, project))
         elif name in by_template:
             out.append(_from_template(by_template[name], used_by))
         else:
@@ -181,12 +249,17 @@ async def collect_requirements(project: "Project", deployment_id: str = "") -> l
                 kind=REQUIREMENT_GAP, name=name, used_by=used_by,
                 note=f"names the credential {name!r}, which is neither declared nor shipped as a template",
             ))
+    # Connections before typed values, as before: a grant is one click, and a source needs it to verify at all.
+    out.sort(key=lambda req: not req.is_oauth)
     # Required dependencies not on this machine come first: nothing in them runs until they are.
+    # A dependency has no row of its own here (flow.json declares it), so the project carries its skip mark.
+    skips = getattr(project, "setup_skipped", None) or {}
     dependencies = [
-        SetupRequirementSpec(kind=REQUIREMENT_DEPENDENCY, name=dep.name, title=dep.source,
-                             satisfied=False, used_by=[PROJECT], note=dep.reason or dep.state)
+        SetupRequirementSpec(kind=REQUIREMENT_DEPENDENCY, name=dep.name, title=dep.source, typeid=str(project.typeid),
+                             satisfied=False, used_by=[PROJECT], note=dep.reason or dep.state, required=dep.required,
+                             skipped=skips.get(dep.name), can_skip_always=True)
         for dep in await project.dependencies()
-        if dep.required and dep.state in ("missing", "unreachable")
+        if dep.state in ("missing", "unreachable")
     ]
     return dependencies + out + gaps
 
@@ -233,13 +306,14 @@ def compile_setup(
                 "subkind": "cli", "exe_data": _cli("dep", "sync", "--project", project_id),
                 "completion_check": _cli("dep", "check", req.name, "--project", project_id),
             })
-        elif req.kind == REQUIREMENT_OAUTH:
+        elif req.is_oauth:
+            provider = req.provider or req.name
             scopes = [arg for s in req.scopes for arg in ("--scope", s)]
             add({
-                "name": f"connect-{req.name}", "label": f"Connect {req.title or req.name}",
-                "description": f"{req.name} is connected and its grant covers what {', '.join(req.used_by)} need.",
-                "subkind": "cli", "exe_data": _cli("connections", "connect", req.name),
-                "completion_check": _cli("connections", "test", req.name, *scopes),
+                "name": f"connect-{provider}", "label": f"Connect {req.title or provider}",
+                "description": f"{provider} is connected and its grant covers what {', '.join(req.used_by)} need.",
+                "subkind": "cli", "exe_data": _cli("connections", "connect", provider),
+                "completion_check": _cli("connections", "test", provider, *scopes),
             })
         elif req.kind == REQUIREMENT_PACK:
             # AI Assist on each question: the provisioner follows the credential's own setup.md and
@@ -277,17 +351,26 @@ def compile_setup(
 _RUNS: dict[tuple[str, str], "asyncio.Task"] = {}
 
 
+def unsatisfied(req: SetupRequirementSpec) -> bool:
+    """Not set up yet, whether or not anyone must: what ``to_do`` asks, without the required/skipped filter."""
+    if req.is_oauth:
+        return req.satisfied is False
+    if req.kind == REQUIREMENT_PACK:
+        return bool(req.missing)
+    if req.kind in (REQUIREMENT_DEPENDENCY, REQUIREMENT_SOURCE, REQUIREMENT_WEBAPP):
+        return req.satisfied is False
+    return False
+
+
 def to_do(req: SetupRequirementSpec) -> bool:
-    """Still needs someone: a pack with a MUST value unset, or a connection known not to hold.
+    """Still needs someone: a REQUIRED requirement nobody skipped, not set up yet.
+
+    Skipped and optional requirements never count; they are listed beside (``ProjectReadinessSpec``).
 
     A pack is judged by its MUST values alone — ``satisfied`` (the credential's state) also waits on
     OPTIONAL ones when it has no MUST. A connection only its check can confirm (``None``) is left to
     the wizard's own check; a gap is nobody's to run."""
-    if req.kind == REQUIREMENT_PACK:
-        return bool(req.missing)
-    if req.kind in (REQUIREMENT_OAUTH, REQUIREMENT_DEPENDENCY, REQUIREMENT_SOURCE, REQUIREMENT_WEBAPP):
-        return req.satisfied is False
-    return False
+    return req.required and req.skipped is None and unsatisfied(req)
 
 
 async def readiness_of(project: "Project", deployment_id: str = "") -> ProjectReadinessSpec:
@@ -298,6 +381,8 @@ async def readiness_of(project: "Project", deployment_id: str = "") -> ProjectRe
     left = [r for r in requirements if to_do(r)]
     return ProjectReadinessSpec(
         project_id=str(project.id), ready=not left, to_do=left,
+        optional=[r for r in requirements if not r.required and r.skipped is None and unsatisfied(r)],
+        skipped=[r for r in requirements if r.skipped is not None and r.kind != REQUIREMENT_GAP],
         gaps=[r for r in requirements if r.kind == REQUIREMENT_GAP],
     )
 
@@ -313,7 +398,9 @@ async def _running_here(project: "Project") -> list[SetupRequirementSpec]:
 
     out = [
         SetupRequirementSpec(kind=REQUIREMENT_SOURCE, name=str(source.name or source.provider), satisfied=False,
-                             used_by=[PROJECT], note=str(source.setup_detail or "not set up yet"))
+                             typeid=str(source.typeid), used_by=[PROJECT],
+                             note=str(source.setup_detail or "not set up yet"), skipped=source.setup_skipped,
+                             **always_for(project, str(source.asset_ref or ""), what=f"the data source {source.name!r}"))
         for source in await project_sources(project)
         if source.status == SourceStatus.SETUP.value
     ]
@@ -321,7 +408,8 @@ async def _running_here(project: "Project") -> list[SetupRequirementSpec]:
     answers = await asyncio.gather(*(step(str(app.id), "start", check=True) for app in apps))
     out += [
         SetupRequirementSpec(kind=REQUIREMENT_WEBAPP, name=str(app.name), satisfied=False, used_by=[PROJECT],
-                             note=answer.detail)
+                             note=answer.detail, typeid=str(app.typeid), skipped=app.setup_skipped,
+                             **always_for(project, str(app.asset_ref or ""), what=f"the web app {app.name!r}"))
         for app, answer in zip(apps, answers) if not answer.ok
     ]
     return out
@@ -431,9 +519,7 @@ async def _setup_shell(command: str, *, timeout_seconds: float, workdir: Path, e
 def _log_failure(task: "asyncio.Task") -> None:
     """A run that raised is recorded nowhere else — say it, rather than let it vanish."""
     if not task.cancelled() and task.exception() is not None:
-        import logging  # noqa: PLC0415
-
-        logging.getLogger(__name__).error("project setup run failed", exc_info=task.exception())
+        logger.error("project setup run failed", exc_info=task.exception())
 
 
 def setup_run(project_id: str, root: str = "") -> dict[str, Any]:
@@ -447,3 +533,116 @@ def setup_run(project_id: str, root: str = "") -> dict[str, Any]:
         "running": task is not None and not task.done(),
         "tree": tree.model_dump(mode="json") if tree is not None else None,
     }
+
+
+# ── 4. skipping ───────────────────────────────────────────────────────────────
+
+SKIP_LOCAL = "local"
+SKIP_ALWAYS = "always"
+
+
+class SkipRefused(ValueError):
+    """A skip that cannot be done — the message says why, in the person's words."""
+
+
+async def requirement_of(project: "Project", typeid: str, name: str = "") -> SetupRequirementSpec:
+    """The requirement ``typeid`` (a dependency: the project's typeid and its ``name``) as the project's setup
+    lists it — what a skip may act on, and nothing else."""
+    def match(reqs: list[SetupRequirementSpec]) -> Optional[SetupRequirementSpec]:
+        return next((r for r in reqs if r.typeid == typeid and (r.kind != REQUIREMENT_DEPENDENCY or r.name == name)),
+                    None)
+
+    # The running ones (a live probe per web app) only when the declared ones do not name it.
+    if (req := match(await collect_requirements(project)) or match(await _running_here(project))) is not None:
+        return req
+    raise SkipRefused(f"{name or typeid} is not something this project's setup lists")
+
+
+async def _record_of(req: SetupRequirementSpec):
+    from flow_sdk.core import Entity  # noqa: PLC0415
+
+    if req.kind not in (REQUIREMENT_PACK, REQUIREMENT_SOURCE, REQUIREMENT_WEBAPP):
+        raise SkipRefused(f"a {req.kind} cannot be skipped")
+    record = await Entity.get_by_typeid(req.typeid)
+    if record is None:  # every listed requirement IS an indexed row: a missing one is the index's to fix
+        raise SkipRefused(f"{req.name} has no record here — index the project and try again")
+    return record
+
+
+async def skip_requirement(project: "Project", typeid: str, *, scope: str = SKIP_LOCAL, name: str = "",
+                           note: str = "", by: str = "") -> None:
+    """Skip a requirement of ``project``'s setup.
+
+    * ``local`` — a mark on its own record, on this machine (``core/setup/skip_mark``): it stops counting and its
+      tree node settles SKIPPED. Undone by :func:`unskip_requirement`.
+    * ``always`` — the requirement stops existing: its asset leaves the project (a dependency leaves flow.json)
+      and the removal is STAGED in git for the person to commit. Only a project's own asset
+      (``can_skip_always``)."""
+    import time  # noqa: PLC0415
+
+    from flow_sdk.core.setup.skip_mark import write_setup_skip  # noqa: PLC0415
+    from flow_sdk.schema.data_spec.asset_setup_spec import SetupSkipSpec  # noqa: PLC0415
+
+    req = await requirement_of(project, typeid, name)
+    if scope == SKIP_ALWAYS:
+        if not req.can_skip_always:
+            raise SkipRefused(req.why_not_always or f"{req.name} cannot be removed from this project")
+        await _remove_from_project(project, req)
+        return
+    if scope != SKIP_LOCAL:
+        raise SkipRefused(f"skip {scope!r}? it is {SKIP_LOCAL!r} or {SKIP_ALWAYS!r}")
+    mark = SetupSkipSpec(at=time.time(), by=by, note=note.strip())
+    if req.kind == REQUIREMENT_DEPENDENCY:
+        await write_setup_skip(project, {**(project.setup_skipped or {}), req.name: mark})
+    else:
+        await write_setup_skip(await _record_of(req), mark)
+
+
+async def unskip_requirement(project: "Project", typeid: str, *, name: str = "") -> None:
+    """Undo a local skip: the requirement is listed and counted again."""
+    from flow_sdk.core.setup.skip_mark import write_setup_skip  # noqa: PLC0415
+
+    req = await requirement_of(project, typeid, name)
+    if req.kind == REQUIREMENT_DEPENDENCY:
+        await write_setup_skip(project, {k: v for k, v in (project.setup_skipped or {}).items() if k != req.name})
+    else:
+        await write_setup_skip(await _record_of(req), None)
+
+
+async def _remove_from_project(project: "Project", req: SetupRequirementSpec) -> None:
+    """"Skip → Always": the asset leaves the project folder and the index, each through its own delete, and git
+    stages the removal."""
+    from flow_sdk.assets.asset import Asset  # noqa: PLC0415
+    from flow_sdk.builtin.credential_service import delete_credential  # noqa: PLC0415
+
+    root = Path(str(project.fs_storage_mount_path or ""))
+    if req.kind == REQUIREMENT_DEPENDENCY:
+        await project.remove_dependency(req.name)
+        await _stage(root, root / "flow.json")
+        return
+    record = await _record_of(req)
+    folder = Path(str(record.asset_ref or ""))
+    if req.kind == REQUIREMENT_PACK:
+        # Its values and this machine's store pins go with it, the way a credential is always deleted.
+        if not (await delete_credential(req.typeid)).removed:
+            raise SkipRefused(f"{req.name}'s values could not all be removed — delete it from Credentials")
+    elif req.kind == REQUIREMENT_SOURCE:
+        await type(record).delete_by_id(str(record.id))  # its own path: children, row, folder
+    else:
+        if folder.exists():
+            Asset.from_path(str(folder)).remove()
+        await record.delete()
+    await _stage(root, folder)
+
+
+async def _stage(root: Path, path: Path) -> None:
+    """Stage ``path``'s removal (or change) in the git repository holding it — never a commit; nothing when
+    the project is not in git."""
+    from flow_sdk.utils.git import _git, find_project_root  # noqa: PLC0415
+
+    top = find_project_root(str(root))
+    if top is None:
+        return  # not a git checkout: the removal on disk is the whole change
+    result = await _git(["git", "add", "-A", "--", str(path)], top)
+    if result.returncode != 0:
+        logger.warning("setup: could not stage %s: %s", path, (result.stderr or result.stdout or "").strip())

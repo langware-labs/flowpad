@@ -36,6 +36,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { UsageCell } from './connections-manager/usage-cell';
 import { USAGE_EAGER_LIMIT, useCredentialUsage } from './connections-manager/use-credential-usage';
 import { CredentialConnectionRows } from './connections-manager/credential-rows-view';
+import { RequirementChip } from '@src/components/credentials-view/RequirementChip';
 import { FlowpadConnectionRow } from './connections-manager/flowpad-connection-row';
 import { HarnessConnectionRows } from './connections-manager/harness-connection-rows';
 import { methodForOAuthFlow, SignInMethodIcon } from './connections-manager/sign-in-method';
@@ -83,6 +84,11 @@ export interface ConnectionsManagerProps {
   header?: boolean;
   onConnectionConnect?: (connectionId: string) => void;
   onConnectionDisconnect?: (connectionId: string, detachResult?: OAuthDetachResult) => void;
+  /**
+   * The credential the URL names (its typeid) — highlighted and scrolled into view. Derived from the dock
+   * by the host, never set by a click here (URL-first).
+   */
+  selectedTypeid?: string;
 }
 
 // Extended OAuth connection type that includes providerName for internal use
@@ -101,6 +107,8 @@ interface ExtendedOAuthConnection extends OAuthConnection {
   kind?: OAuthFlowKind;
   scopes?: string[];
   icon?: string;
+  /** The project's oauth credential for this provider, when it declares one — the row IS that credential. */
+  credential?: CredentialRow;
 }
 
 /** The Status column answers ONE question: is my account connected to this
@@ -241,6 +249,7 @@ export const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
   header = true,
   onConnectionConnect,
   onConnectionDisconnect,
+  selectedTypeid,
 }) => {
   const { t } = useLingui();
   const { timestamps: connectionTimestamps, record, forget } = useConnectionTimestamps();
@@ -289,26 +298,7 @@ export const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
     onAttachSuccess: handleOAuthAttachSuccess, // Attach completed (status: CONNECTED)
   });
 
-  // Create connections from available providers with their statuses.
-  //
-  // HELD ONLY. The table lists what exists; the dialog lists what you could add
-  // (`addableProviders` below is the exact complement). Without this filter a
-  // provider you have never connected is in both at once — a "Not connected"
-  // row you cannot act on, and a tile offering to add the same thing.
-  const allConnections: ExtendedOAuthConnection[] = React.useMemo(() => {
-    return availableProviders
-      .filter((provider) => (grantStatuses[provider.name] ?? GrantStatus.NONE) !== GrantStatus.NONE)
-      .map((provider) => ({
-        id: provider.name.toLowerCase(),
-        provider: provider.display_name,
-        providerName: provider.name, // Keep the actual provider name for API calls
-        status: providerStatuses[provider.name] || ConnectionStatus.DISCONNECTED,
-        connectedAt: connectionTimestamps[provider.name.toLowerCase()],
-        kind: provider.kind,
-        scopes: provider.scopes,
-        icon: provider.icon,
-      }));
-  }, [availableProviders, providerStatuses, connectionTimestamps, grantStatuses]);
+
 
   // "Where is this used?" — one env-table fetch per project, answering for every
   // row at once. Gated above a threshold so a large workspace doesn't fan out on
@@ -354,7 +344,47 @@ export const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
     const row = (credentialStatus.deployments ?? []).find((candidate) => candidate.id === next);
     navigation.openDock(currentDock.withOption(CREDENTIAL_DEPLOYMENT_OPTION, row?.this_computer ? null : next));
   };
-  const credentialRows = React.useMemo(() => buildCredentialRows(credentialStatus), [credentialStatus]);
+  const allCredentialRows = React.useMemo(() => buildCredentialRows(credentialStatus), [credentialStatus]);
+  // An oauth credential is drawn with its connection's row (grant, approval, attach, disconnect); the API-key
+  // rows below are the rest.
+  const credentialRows = React.useMemo(() => allCredentialRows.filter((r) => r.kind !== 'oauth'), [allCredentialRows]);
+  const oauthCredentials = React.useMemo(
+    () => new Map(allCredentialRows.filter((r) => r.kind === 'oauth' && r.provider).map((r) => [r.provider!, r])),
+    [allCredentialRows],
+  );
+
+  // The OAuth rows: every grant held, and every provider a credential here declares (an oauth credential the
+  // project needs is listed before it is connected — with Connect). A grant nobody holds and nothing declares
+  // is the add dialog's (`addableProviders`), never a row.
+  const allConnections: ExtendedOAuthConnection[] = React.useMemo(() => {
+    return availableProviders
+      .filter(
+        (provider) =>
+          (grantStatuses[provider.name] ?? GrantStatus.NONE) !== GrantStatus.NONE ||
+          oauthCredentials.has(provider.name.toLowerCase()),
+      )
+      .map((provider) => ({
+        id: provider.name.toLowerCase(),
+        provider: provider.display_name,
+        providerName: provider.name, // Keep the actual provider name for API calls
+        status: providerStatuses[provider.name] || ConnectionStatus.DISCONNECTED,
+        connectedAt: connectionTimestamps[provider.name.toLowerCase()],
+        kind: provider.kind,
+        scopes: provider.scopes,
+        icon: provider.icon,
+        credential: oauthCredentials.get(provider.name.toLowerCase()),
+      }));
+  }, [availableProviders, providerStatuses, connectionTimestamps, grantStatuses, oauthCredentials]);
+
+  // URL-first selection: the row the dock names is scrolled into view once, when it is first on screen — not
+  // again on every refetch that changes the lists.
+  const selectedRef = React.useRef<HTMLTableRowElement | null>(null);
+  const scrolledTo = React.useRef<string | undefined>(undefined);
+  React.useEffect(() => {
+    if (!selectedRef.current || scrolledTo.current === selectedTypeid) return;
+    scrolledTo.current = selectedTypeid;
+    selectedRef.current.scrollIntoView?.({ block: 'center', behavior: 'smooth' });
+  }, [selectedTypeid, allConnections.length, credentialRows.length]);
   const detectedGroups = React.useMemo(() => buildDetectedGroups(credentialStatus), [credentialStatus]);
   const defaultScope = selectedProject ? 'project' : 'user';
 
@@ -564,14 +594,20 @@ export const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
   // array each time defeats the dialog's own memoization.
   const addableSpecs = React.useMemo(() => {
     const added = new Set(credentialRows.map((r) => r.name));
-    return credentialTemplates.filter((spec) => !added.has(String(spec.name ?? '')));
+    // An oauth template is a provider: it is added through the provider list below, never as values to type.
+    return credentialTemplates.filter(
+      (spec) => !added.has(String(spec.name ?? '')) && (spec as { kind?: string }).kind !== 'oauth',
+    );
   }, [credentialRows, credentialTemplates]);
+  // The exact complement of the OAuth rows: neither held nor declared here.
   const addableProviders = React.useMemo(
     () =>
       availableProviders.filter(
-        (p) => (grantStatuses[p.name] ?? GrantStatus.NONE) === GrantStatus.NONE,
+        (p) =>
+          (grantStatuses[p.name] ?? GrantStatus.NONE) === GrantStatus.NONE &&
+          !oauthCredentials.has(p.name.toLowerCase()),
       ),
-    [availableProviders, grantStatuses],
+    [availableProviders, grantStatuses, oauthCredentials],
   );
 
   const pickProvider = (providerName: string) => {
@@ -709,8 +745,17 @@ export const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
               const grant = grantStatuses[connection.providerName] ?? GrantStatus.NONE;
               const held = grant !== GrantStatus.NONE;
               const attachedProjects = usage[connection.providerName] ?? NO_PROJECTS;
+              const credential = connection.credential;
+              const selected = !!credential && credential.typeid === selectedTypeid;
               return (
-                <TableRow key={connection.id}>
+                <TableRow
+                  key={credential?.typeid ?? connection.id}
+                  ref={selected ? selectedRef : undefined}
+                  aria-current={selected ? 'true' : undefined}
+                  className={cn(selected && 'bg-primary/10 ring-1 ring-inset ring-primary/40')}
+                  data-testid={credential ? `connection-row-oauth-${credential.name}` : `connection-row-${connection.id}`}
+                  data-typeid={credential?.typeid}
+                >
                   <TableCell className="font-medium">
                     <div className="flex items-center gap-2">
                       <ProviderGlyph
@@ -719,7 +764,15 @@ export const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
                         providerName={connection.providerName}
                       />
                       <span className="truncate">{connection.provider}</span>
+                      {credential && (
+                        <RequirementChip required={credential.required} testId={`connection-required-${connection.id}`} />
+                      )}
                     </div>
+                    {!!credential?.missingScopes.length && (
+                      <div className="mt-0.5 text-xs text-amber-600" data-testid={`connection-missing-scopes-${connection.id}`}>
+                        <Trans>Connected without {credential.missingScopes.join(', ')}: reconnect to grant them</Trans>
+                      </div>
+                    )}
                   </TableCell>
 
                   <TableCell data-testid={`connection-kind-${connection.id}`}>
@@ -786,6 +839,11 @@ export const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
                         busyProjectId={togglingProjectId}
                         onToggle={(project, next) => void handleToggleProject(connection, project, next)}
                       />
+                    ) : credential ? (
+                      // Not held yet: who declares it, the way a credential row says it.
+                      <span className="text-sm">
+                        {credential.scope === 'user' ? <Trans>All projects</Trans> : <Trans>This project</Trans>}
+                      </span>
                     ) : (
                       <span className="text-xs text-muted-foreground/60">—</span>
                     )}
@@ -917,6 +975,8 @@ export const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
             })}
             <CredentialConnectionRows
               rows={credentialRows}
+              selectedTypeid={selectedTypeid}
+              selectedRef={selectedRef}
               onSetValues={(row) => openDraft(valuesDraft(row.source))}
               onEdit={(row) => openDraft(editDraft(row.source))}
               onDelete={(row) => setPendingDeleteCredential(row)}
