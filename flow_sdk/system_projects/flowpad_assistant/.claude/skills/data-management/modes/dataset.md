@@ -9,7 +9,7 @@
 > **5. Schemas apply live** with `flow schema apply`; never ask for a restart.
 > **6. Never widen a wait, a timeout or a retry to make something pass.**
 
-`DM` is the shell function `DM() { "$FLOWPAD_PYTHON" "<this skill>/scripts/dm_ctl.py" "$@"; }`. A dataset of a source's
+`DM` is the shell function `DM() { "${FLOWPAD_PYTHON:-$(flow instance python)}" "<this skill>/scripts/dm_ctl.py" "$@"; }`. A dataset of a source's
 items with gold labels is `connect-data-source define`, not this mode.
 
 ## Gate 1 — the row kind exists
@@ -34,14 +34,19 @@ Choose the keys: short, stable slugs of what the row is (`dana_levi`, `icp_ai_or
 — `a-z 0-9 _ -`, starting with a letter or digit. The key is the row's readable name; links
 to the row use its stored id, so a `ds-rename` breaks nothing inside Flowpad. A key copied
 OUTSIDE (a CRM field, a URL, a doc) does not follow — store the row's `ref` there instead
-of its key, or, when the key must stay readable, overwrite the outside copy ONLY while it
-still holds the value you last agreed on. Every clone may run the same sync: a key that names
+of its key, or, when the key must stay readable, keep it in step with a THREE-WAY rule per
+field: remember the value both sides last agreed on; if only this side changed since, write
+it out; if only the outside changed, take it in; if BOTH changed and differ, write neither —
+hold the field and report it. Never last-writer-wins. `flow_sdk.datasets.merge.three_way(here,
+there, agreed)` decides it (`"same"` / `"here"` / `"there"` / `"hold"`) — use it, do not re-derive it.
+Every clone may run the same sync, each with its own memory of the agreement: a key that names
 no row in YOUR checkout may be a row another machine added that you have not pulled — report
-it, never overwrite it, or one machine undoes another's edit.
+it, never overwrite it.
 
 | To… | Run | Notes |
 | --- | --- | --- |
 | add rows | `DM ds-append <ds> '[{"key": "dana", "input": {…}}, …]'` | all checked first; one bad row writes nothing; a taken key is refused |
+| find the row a reference names | `DM ref '<kind>.id.<uuid>' --project <id>` | its dataset, key and value |
 | create or replace one | `DM ds-put <ds> dana '{"input": {…}}'` | gold / output / context and metadata are kept unless given |
 | check without writing | `DM ds-check <ds> '{"input": {…}}'` | `ok`, `errors` |
 | read | `DM ds-rows <ds>` / `DM ds-row <ds> dana` | every row has `key` and `id` |

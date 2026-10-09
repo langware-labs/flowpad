@@ -30,12 +30,20 @@ export interface FieldDef {
   required?: boolean;
 }
 
-/** `GET /api/v1/kinds/<kind>` — a record's fields, or a dataset's example slots. */
+/** A rule across rows a record declares: the two link paths must name the same row wherever both
+ *  ends are set (`["persona.icp", "icp"]`). Flowpad enforces it; an app may show it. */
+export interface KindRule {
+  same: [string, string];
+  description: string;
+}
+
+/** `GET /api/v1/kinds/<kind>` — a record's fields and rules, or a dataset's example slots. */
 export interface KindForm {
   kind: string;
   subkind: 'record' | 'dataset';
   description?: string;
   fields?: Record<string, FieldDef>;
+  rules?: KindRule[];
   slots?: Partial<Record<'input' | 'context' | 'output', Shape>>;
 }
 

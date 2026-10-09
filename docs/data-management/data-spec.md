@@ -86,6 +86,13 @@ A dataset row is an instance: its reference is `<row kind>.id.<row id>`, the id 
 (`flow_sdk/datasets/links.py`). A list of references is written inline in the document; a list of
 values one folder per element.
 
+A record schema may also declare **rules across rows** — two link paths that must name the same
+row wherever both ends are set (`"rules": [{"same": ["persona.icp", "icp"]}]`; `*` follows every
+element of a list, an empty step means the rule does not apply). `flow schema apply` checks each
+path walks links; `Dataset.check / append / put` refuse a break (`code: "rule"`), `rows()` reports
+rows that break one, and a `put` that would break a rule of a row reaching it is refused
+(`flow_sdk/datasets/rules.py`).
+
 The marks (`?`, `enum:`, `{"*": …}`) are **input only**: `to_authoring_form`
 renders a hand-written class back with the three structural forms, so an
 `Optional[X]` renders as `X` and a `dict` field renders only on a class that

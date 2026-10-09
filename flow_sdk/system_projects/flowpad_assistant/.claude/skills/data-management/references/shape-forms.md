@@ -74,11 +74,35 @@ its id is stored in the row (survives a rename and a re-clone) and every read ha
 - `delete_row` counts every row beside it: each slot of the rows that read, and the input as
   stored of the rows that do not — a row broken today still protects what it points at.
 
+## Rules across rows — `rules`
+
+A record may declare that two link paths name the same row wherever both ends are set:
+
+```json
+"rules": [
+  {"same": ["persona.icp", "icp"], "description": "the persona is one of the deal's ICP"},
+  {"same": ["use_case.persona.icp", "icp"]},
+  {"same": ["messages.*.use_case.persona", "persona"]}
+]
+```
+
+- A path walks link fields from the row; `*` follows every element of a list. A step that is
+  empty (an unset `?` link) means the rule does not apply — declare every pair you mean,
+  skipped levels included (`use_case.persona.icp` checks a deal whose persona is empty).
+- `flow schema apply` refuses a path that walks no link, and two ends that can never be the
+  same kind. `DM kind` / `kindForm` list a kind's `rules`.
+- Flowpad checks the rules on `check` / `append` / `put` (`code: "rule"`), reports rows that
+  break them in `problems`, and refuses a write to a row that would break a rule of a row that
+  reaches it (`would break <kind> <key>`) — so every writer keeps them, Claude included.
+
 ## Checking one value
 
-- Over HTTP (any caller): `dm_ctl check --acme--.crm.lead '{"name": "Dana", ...}'`
-  → `{"ok": false, "errors": ["status: Input should be 'new', 'won' or 'lost'"]}`.
-- From TypeScript: `checkKind(kind, value)` → `{ok, errors}` (a 404 throws).
+A kind check is the SHAPE only, unless you give it the project: then it checks the value's
+references and its kind's rules too — what a row write checks. A row is checked with `ds-check`.
+
+- Over HTTP (any caller): `dm_ctl check --acme--.crm.lead '{"name": "Dana", ...}' [--project <id>]`
+  → `{"ok": false, "errors": ["status: Input should be 'new', 'won' or 'lost'"], "details": [{"path", "code", "message"}], "links_checked": false}`.
+- From TypeScript: `checkKind(kind, value, {projectId})` → `{ok, errors, details, links_checked}` (a 404 throws).
 - From Python, in a process that registered the kind:
 
 ```python
@@ -86,8 +110,11 @@ from pydantic import TypeAdapter
 from flow_sdk.schema.data_spec import DataSpec
 
 Lead = DataSpec.parse("--acme--.crm.lead")
-TypeAdapter(Lead).validate_python(value)      # raises ValidationError when it does not fit
+TypeAdapter(Lead).validate_python(value)      # raises ValidationError when it does not fit (shape only)
 ```
+
+With the project folder, `flow_sdk.server.routes.kinds.check_value_details(kind, value, root)` adds
+the links and rules.
 
 A standalone script sees only the kinds Flowpad ships. Register the project's first:
 `from flow_sdk.schema.data_spec.declared import load_root; load_root(<project root>)`.

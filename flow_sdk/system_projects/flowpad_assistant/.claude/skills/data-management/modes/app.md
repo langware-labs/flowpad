@@ -9,7 +9,7 @@
 > **5. Schemas apply live** with `flow schema apply`; never ask for a restart.
 > **6. Never widen a wait, a timeout or a retry to make something pass.**
 
-`DM` is the shell function `DM() { "$FLOWPAD_PYTHON" "<this skill>/scripts/dm_ctl.py" "$@"; }`.
+`DM` is the shell function `DM() { "${FLOWPAD_PYTHON:-$(flow instance python)}" "<this skill>/scripts/dm_ctl.py" "$@"; }`.
 
 Building the app itself (scaffold, page, styles) is `web-app-builder` / `html-builder`;
 this mode is its data layer. The schemas and datasets come from `modes/schema.md` and
@@ -57,6 +57,19 @@ workaround it shipped; the SDK now does the right side — never reproduce the l
 | a `python3` CRM-sync script wrote `input/<kind>.json` and `example.json` itself | `load_root` + `Dataset.for_kind(kind, root)`, `check` then `put` / `delete_row`, on `$FLOWPAD_PYTHON` |
 | read linked datasets with `read_rows()` (one bad row stopped the whole sync) and looked rows up only among the rows that read (a broken row's record was then created a second time) | `rows_and_problems()` everywhere; find a record by its natural key in rows AND in `problems[].input`, and repair a broken one with `put(key, …, expected=problem["version"])` |
 
+A page may keep its own link model (`{type, key}`, easy to show and pick) as long as it converts
+to and from references at ONE boundary — the function that reads rows and the one that writes
+them — and stores only references. Helpers: `parseValueRef(ref)` → `{kind, id}`,
+`Dataset.findRow(ref, projectId)` → `{dataset_id, key, row}` (Python `Dataset.find_row`),
+`resolveKind("crm.lead", projectId)` → the full kind (Python `declared.kind_in`), and
+`Dataset.forKind` takes a bare kind with a project. `checkKind(kind, value, {projectId})` checks
+links and rules too; without `projectId` it is the SHAPE only. Refusals carry `details`
+(`{path, code, message}`; `code` `shape:…`, `dangling_ref`, `inline_row`, `rule`, and on a 409
+`conflict`, `gone` or `referenced`) — read those, never parse the `errors` lines or the message.
+A problem's row is `id` / `ref` (`example_id` is the old name — do not use it). The shape grammar
+is read with `enumValues(shape)`, `linkTargets(shape)`, `namedKind(shape)` and `unwrap(shape)` —
+never split `enum:` or `|` yourself. `kindForm(kind).rules` lists the kind's rules across rows.
+
 ## Still missing — say so in the app and to the user
 
 - **Nothing stops two runs of one script at once** (a trigger's run and a "Sync now"). A script
@@ -65,8 +78,12 @@ workaround it shipped; the SDK now does the right side — never reproduce the l
   other's state.
 - **No change events for rows.** Re-read on focus and on a modest timer while the page
   is visible, and say it is polling. Never shorten the timer to hide staleness.
-- **A cross-row rule is not in the schema.** Write it into the kinds' `description.md` (so
-  `DM kind` shows it to every writer, Claude included) and check it in every writer.
+- **A rule across rows beyond "two links name the same row"** (a count, an order) is not in the
+  schema: write it into the kinds' `description.md` and check it in every writer. "The same row"
+  rules (a tag chain) go in the schema's `rules` — never in app code.
+- **A field owned by an outside system** (a CRM's stage, an owner) has no mark in the schema:
+  every Flowpad writer can change it, and the next sync puts the outside value back. Say in its
+  `description` who owns it, keep it read-only in the app, and let only the sync write it.
 - **The delete protection is per checkout.** A row kept out of git that links to a row in git
   can lose its target to a `git pull` (a teammate deleted it): that row then shows in
   `problems` (`no <kind> row <uuid>`) — every reader must keep going and report it.

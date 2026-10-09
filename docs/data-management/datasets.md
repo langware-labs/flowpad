@@ -403,17 +403,26 @@ chooses is `a-z 0-9 _ -`; `append` numbers rows that bring none (`0001`, `0002`,
 | `POST append {rows}` | typed rows in; every row is checked first, one bad row writes nothing; a row's `key` names its folder (refused when taken) |
 | `POST put-row {key, row, expected?}` | create the row `key` or replace it — checked first, references included; slots the row leaves out (gold, output, context) and its metadata are kept; `expected` (the `version` read) answers 409 when the row changed since |
 | `POST delete-row {key, expected?}` | remove one row (a key or an id); 404 when absent, 409 while another row references it or (with `expected`) when it changed since |
-| `POST rename-row {key, new_key}` | move a row to a new key; its id (and every reference to it) stays |
-| `POST check-row {row}` | `{ok, errors}` for one row; writes nothing |
+| `POST rename-row {key, new_key, expected?}` | move a row to a new key; its id (and every reference to it) stays |
+| `POST check-row {row}` | `{ok, errors, details}` for one row — shape, references and the schema's rules, links checked even when the shape fails; writes nothing |
 | `GET example/<key or id>` | one example's slot VALUES (an editor's read) |
 | `POST annotate {example_id, ground_truth}` | REPLACES the gold: a named output kind is written as its own document (`ground_truth/decision.json`; a list → `ground_truth-N/`), an inline shape as `ground_truth/label.json` |
 | `GET rows` | `{rows, problems}`: every row that fits with its slot values, and the ones that do not, by key with all their errors — one bad row hides nothing |
 | `POST validate` | every row read as the declared schema; names each row that does not fit by its `key` (and `example_id`), with its slot (`ground_truth.route`) |
 | `POST score` | each recorded `output` against its gold: a gold field left empty constrains nothing; several golds mean any one is right (`flow_sdk/datasets/score.py`) |
 
+Every refusal and problem carries `details` beside `errors`: `[{path, code, message}]`, `code` one of
+`shape:<pydantic type>`, `dangling_ref`, `inline_row`, `rule`, and on a 409 `conflict` (changed since),
+`gone` (gone since) or `referenced` (a delete another row still points at) — read those, not the lines.
+A field kept in step with a copy outside Flowpad follows the three-way rule:
+`flow_sdk.datasets.merge.three_way(here, there, agreed)` → `"same"` / `"here"` / `"there"` / `"hold"`.
+
 Indexing still reads rows as artifacts (fast, never fatal); `validate` is the check. One value
-against a kind, outside any dataset: `POST /api/v1/kinds/<kind>/check {value}` → `{ok, errors}` — a
-kind nobody registered is a 404, never "fits" (`DataSpec.parse` alone would read it as `Any`).
+against a kind, outside any dataset: `POST /api/v1/kinds/<kind>/check {value}` → `{ok, errors, details,
+links_checked}` — the SHAPE only, unless `?project=<id>` adds its references and rules; a kind nobody
+registered is a 404, never "fits" (`DataSpec.parse` alone would read it as `Any`). A kind's datasets:
+`GET /api/v1/kinds/<kind>/datasets?project=<id>` (a bare kind the project defines works); its full name:
+`GET /api/v1/kinds/<bare>/resolve?project=<id>`; the row a reference names: `GET /api/v1/refs/<ref>?project=<id>`.
 
 ## Editors
 

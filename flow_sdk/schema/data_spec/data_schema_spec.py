@@ -43,6 +43,25 @@ class DataSchemaField(DataSpec):
     description: str = ""
 
 
+class DataSchemaRule(DataSpec):
+    """A rule across rows a ``record`` declares: the two paths, walked from a row along its link
+    fields (``*`` = every element of a list), must name the same row wherever both ends are set
+    (``{"same": ["persona.icp", "icp"]}``: the persona is one of the row's ICP's). Checked on every
+    write and every read of the rows -- by Flowpad, so every writer keeps it."""
+
+    spec_kind: ClassVar[str] = "data_schema.rule"
+
+    same: list[str]
+    description: str = ""
+
+    @field_validator("same")
+    @classmethod
+    def _two_paths(cls, same: list[str]) -> list[str]:
+        if len(same) != 2 or not all(isinstance(p, str) and p and all(p.split(".")) for p in same):
+            raise ValueError('a rule names exactly two paths: {"same": ["persona.icp", "icp"]}')
+        return same
+
+
 class DataSchemaDocSpec(AssetDocumentSpec):
     """``data_schema.json`` -- the entity document of a ``data_schema`` asset."""
 
@@ -54,6 +73,8 @@ class DataSchemaDocSpec(AssetDocumentSpec):
     fields: Optional[dict[str, DataSchemaField]] = None
     #: ``dataset``: the example slots (``input`` required; ``output`` / ``context``) -> shapes.
     examples: Optional[dict[str, ShapeForm]] = None
+    #: ``record`` only: rules across rows (``DataSchemaRule``).
+    rules: Optional[list[DataSchemaRule]] = None
     #: Whose ontology this kind belongs to, when it must differ from its project's.
     ns: Optional[str] = None
     description: Text = Text("")
@@ -77,6 +98,8 @@ class DataSchemaDocSpec(AssetDocumentSpec):
         if self.subkind and bodies != [self.subkind]:
             found = bodies[0] if bodies else "no body"
             raise ValueError(f"subkind {self.subkind!r} declared, but the body is {found}")
+        if self.rules and not self.fields:
+            raise ValueError("rules belong to a record (a schema with fields)")
         if self.examples is not None:
             if "input" not in self.examples:
                 raise ValueError('a dataset data schema names its "input" slot')
@@ -97,4 +120,4 @@ class DataSchemaDocSpec(AssetDocumentSpec):
         return None
 
 
-__all__ = ["DATASET_SLOTS", "DataSchemaDocSpec", "DataSchemaField", "Subkind"]
+__all__ = ["DATASET_SLOTS", "DataSchemaDocSpec", "DataSchemaField", "DataSchemaRule", "Subkind"]
