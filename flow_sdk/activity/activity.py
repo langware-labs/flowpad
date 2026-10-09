@@ -384,8 +384,9 @@ class Activity:
     def plan(self, items: "list[dict]") -> "Activity":
         """Announce the children this node will work through, before any of them starts.
 
-        Each item is ``{"name": ..., "label": ..., "total": ...}`` (label and total
-        optional). The children are created PENDING with their label and total set
+        Each item is ``{"name": ..., "label": ..., "total": ..., "counters": {...}}``
+        (all but the name optional; ``counters`` seeds facts a screen needs before the
+        step starts — the setup tree's ``level``, say). The children are created PENDING with their label and total set
         directly — a labelled child would otherwise be started by the very verb that
         names it, and a plan whose steps all read "running" says nothing about what is
         left. This node itself wakes: announcing a plan is the start of the work.
@@ -405,6 +406,8 @@ class Activity:
                 node.label_text = str(item["label"])
             if item.get("total") is not None:
                 node.total_count = int(item["total"])
+            for counter, value in (item.get("counters") or {}).items():
+                node.counters[str(counter)] = int(value)
         self._wake(_now())
         self._monitor._notify(self, transition=True)
         return self

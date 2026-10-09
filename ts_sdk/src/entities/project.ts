@@ -170,7 +170,7 @@ export interface ProjectSetupVar {
 export interface ProjectSetupRequirement {
   /** `dependency`: a required dependency that is not here — name = the dependency,
    *  title = its source, note = why. */
-  kind: 'oauth' | 'pack' | 'gap' | 'dependency';
+  kind: 'oauth' | 'pack' | 'gap' | 'dependency' | 'source' | 'webapp';
   name: string;
   title: string;
   vars: ProjectSetupVar[];
@@ -188,12 +188,52 @@ export interface ProjectReadiness {
   gaps: ProjectSetupRequirement[];
 }
 
-/** `GET project/<id>/setup-run` — the app-run setup: going or not, and its steps so far. */
+/** Where one node of the setup tree stands (`setup.node`). */
+export type SetupNodeState = 'pending' | 'running' | 'done' | 'failed' | 'blocked' | 'refused' | 'held';
+
+/** One step of a node's wizard, as its run answered it. */
+export interface SetupStepAnswer {
+  exit_code?: number;
+  detail?: string;
+  ran?: boolean;
+}
+
+/** A node's `prepare` / `run` wizard result: its own verdict and each step's answer. */
+export interface SetupWizardAnswer extends SetupStepAnswer {
+  steps?: Record<string, SetupStepAnswer>;
+}
+
+/** One asset of the setup tree (`SetupNodeResult`): set up after its children. */
+export interface SetupNodeResult {
+  id: string;
+  label: string;
+  /** Depth under the root (root = 0). */
+  level: number;
+  state: SetupNodeState;
+  detail: string;
+  prepare: SetupWizardAnswer | null;
+  run: SetupWizardAnswer | null;
+  children: SetupNodeResult[];
+  /** Set up already under another parent this run; its subtree shows there. */
+  shared: boolean;
+}
+
+/** The whole setup (`SetupTreeResult`): the root node, and the run's own verdict. */
+export interface SetupTreeResult {
+  state: SetupNodeState;
+  detail: string;
+  root: SetupNodeResult | null;
+  total: number;
+  done: number;
+  ran: boolean;
+}
+
+/** `GET project/<id>/setup-run` — the app-run setup: going or not, and its tree so far. */
 export interface ProjectSetupRun {
   /** The run's address — what its questions name (`Question.run`). */
   run: string;
   running: boolean;
-  result: { exit_code?: number; steps?: Record<string, { exit_code?: number; detail?: string }> } | null;
+  tree: SetupTreeResult | null;
 }
 
 /** One of `POST new-cloud-projects` — a `ProjectOpenLinkSpec` set-up link. */
@@ -878,9 +918,11 @@ export class Project extends APIEntity<Project> {
 
   /** Start the setup wizard on the backend (`POST project/<id>/setup`); its questions come to this
    *  app. Answers at once with the run's address, which a screen claims (`claimAskRun`). */
-  static async startSetup(projectId: string): Promise<string> {
+  static async startSetup(projectId: string, root = ''): Promise<string> {
     const actionInfo = new ActionInfo('setup', Project.type, projectId, 'POST');
-    const data = await dataManager.callAction<void, { run: string }>(actionInfo);
+    // `root`: set up one node of the project's setup tree (a web app, a source) and what it needs.
+    if (root) actionInfo.bodyParameters = { root };
+    const data = await dataManager.callAction<{ root: string } | void, { run: string }>(actionInfo);
     return data?.run ?? '';
   }
 
@@ -893,8 +935,9 @@ export class Project extends APIEntity<Project> {
   }
 
   /** The setup run's state (`GET project/<id>/setup-run`). */
-  static async setupRun(projectId: string): Promise<ProjectSetupRun | null> {
+  static async setupRun(projectId: string, root = ''): Promise<ProjectSetupRun | null> {
     const actionInfo = new ActionInfo('setup-run', Project.type, projectId, 'GET');
+    if (root) actionInfo.queryParameters = { root };
     return (await dataManager.callAction<void, ProjectSetupRun>(actionInfo)) ?? null;
   }
 

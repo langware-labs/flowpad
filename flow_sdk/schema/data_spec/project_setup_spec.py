@@ -23,6 +23,11 @@ REQUIREMENT_PACK = "pack"
 REQUIREMENT_GAP = "gap"
 #: A required ``flow.json`` dependency that is not on this machine.
 REQUIREMENT_DEPENDENCY = "dependency"
+#: A data source of the project that is still in setup (its verify found it not set up). Readiness only:
+#: the setup tree sets it up as its own node (``core/setup/derive``).
+REQUIREMENT_SOURCE = "source"
+#: A web app of the project whose dev server does not answer. Readiness only, like ``source``.
+REQUIREMENT_WEBAPP = "webapp"
 
 
 def input_name(credential: str, env_var: str) -> str:

@@ -763,12 +763,13 @@ class Project(Entity):
         return ApiSuccessResponse(data=(await readiness_of(self)).model_dump(mode="json"))
 
     @action.post(action_name="setup")
-    async def setup_action(self) -> "ApiResponse":
-        """`POST /project/<id>/setup` — start the setup wizard here; its questions come to the app.
-        Answers at once with the run's address, which a screen claims to draw them in place."""
+    async def setup_action(self, root: str = "") -> "ApiResponse":
+        """`POST /project/<id>/setup {root?}` — set the project up here (its setup tree, leaf first); its
+        questions come to the app. ``root`` sets up one node of the tree and what it needs (a source, a web
+        app). Answers at once with the run's address, which a screen claims to draw them in place."""
         from flow_sdk.builtin.project_setup import start_setup  # noqa: PLC0415
 
-        return ApiSuccessResponse(data={"run": await start_setup(self)})
+        return ApiSuccessResponse(data={"run": await start_setup(self, root=root)})
 
     @action.post(action_name="setup-skip")
     async def setup_skip_action(self, name: str = "") -> "ApiResponse":
@@ -786,11 +787,11 @@ class Project(Entity):
         return ApiSuccessResponse(data=(await readiness_of(self)).model_dump(mode="json"))
 
     @action.get(action_name="setup-run")
-    async def setup_run_action(self) -> "ApiResponse":
-        """`GET /project/<id>/setup-run` — whether the setup is running, and its steps so far."""
+    async def setup_run_action(self, root: str = "") -> "ApiResponse":
+        """`GET /project/<id>/setup-run?root=` — whether the setup is running, and its tree so far."""
         from flow_sdk.builtin.project_setup import setup_run  # noqa: PLC0415
 
-        return ApiSuccessResponse(data=setup_run(str(self.id)))
+        return ApiSuccessResponse(data=setup_run(str(self.id), root))
 
     @staticmethod
     def _read_brand(raw: Any, root: "Path") -> dict[str, Any] | None:

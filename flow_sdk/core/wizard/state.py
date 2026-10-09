@@ -22,6 +22,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Optional
 
 if TYPE_CHECKING:  # pragma: no cover
+    from flow_sdk.schema.data_spec.asset_setup_spec import SetupTreeResult
     from flow_sdk.schema.data_spec.returned_value_spec import WizardResult
 
 from flow_sdk.instances.atomic import locked, read_json, write_json_atomic
@@ -227,6 +228,26 @@ def record_result(wizard_id: str, result: "WizardResult", *, already_locked: boo
     """
     dumped = result.trimmed().model_dump(mode="json")
     _mutate(wizard_id, lambda _state: {"result": dumped}, already_locked=already_locked)
+
+
+def record_tree(run: str, tree: "SetupTreeResult", *, already_locked: bool = False) -> None:
+    """Stamp a SETUP run's tree (``core/setup``) — its own field beside a wizard's ``result``, so a
+    reader of one never mistakes it for the other. Its wizards' output trimmed the same way."""
+    dumped = tree.trimmed().model_dump(mode="json")
+    _mutate(run, lambda _state: {"tree": dumped}, already_locked=already_locked)
+
+
+def read_tree(run: str) -> "Optional[SetupTreeResult]":
+    """The last setup run's tree, or ``None`` — never run, or unreadable. Never raises."""
+    from flow_sdk.schema.data_spec.asset_setup_spec import SetupTreeResult  # noqa: PLC0415
+
+    raw = read_state(run).get("tree")
+    if not isinstance(raw, dict):
+        return None
+    try:
+        return SetupTreeResult.model_validate(raw)
+    except Exception:  # noqa: BLE001 — an unreadable record is "no run", not a crash
+        return None
 
 
 #: Step fields that carry OUTPUT rather than a verdict — what `strip_heavy` drops.

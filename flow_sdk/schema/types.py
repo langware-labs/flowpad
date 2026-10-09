@@ -230,6 +230,9 @@ class EntityType(StrEnum):
     # one-liner, then an agent). A Wizard SEQUENCES steps; a ComputeOp is one
     # step's worth of "make this true and prove it", reusable on its own.
     COMPUTE_OP = "compute_op"
+    # A folder-backed SETUP NODE: asset_setup.json naming what an asset needs set up before it works
+    # (``prepare`` / ``run`` wizards) and what must be set up first (``children``) — core/setup walks them.
+    ASSET_SETUP = "asset_setup"
     # A folder-backed support desk PORTAL: guides plus a helpdesk.json naming the
     # hub project that owns the ticket queue. A repo declares itself a help desk
     # by shipping one, so cloning it as a context folder is what gives a project
