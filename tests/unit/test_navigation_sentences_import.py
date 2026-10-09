@@ -56,4 +56,5 @@ def test_a_this_sentence_is_typed_where_this_is(built):
     assert task["context"]["candidates"][0]["title"] == "Zoom OAuth on dev"
     assert first(task)["target"] == {"kind": "entity", "value": task["context"]["candidates"][0]["typeid"]}
     connections = by_n[101]  # "open connections": the bare screen opens its only tab -- both right
-    assert [g["target"]["value"] for g in connections["ground_truth"]] == ["credentials/connections", "credentials"]
+    gold = connections["ground_truth"]
+    assert gold["target"]["value"] == "credentials/connections", "one gold: the eval judges a screen and its default tab one place"

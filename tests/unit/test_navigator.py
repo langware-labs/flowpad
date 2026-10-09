@@ -166,11 +166,21 @@ def test_a_typo_rule_never_turns_one_screen_into_another(utterance):
     ), hit
 
 
-@pytest.mark.parametrize("utterance", ["open smart navigation log", "show me the navigation log", "open SmartNavigationLog"])
+@pytest.mark.parametrize(
+    "utterance",
+    ["open smart navigation log", "show me the navigation log", "open SmartNavigationLog", "Open your log", "show me your logs"],
+)
 def test_asking_for_its_own_log_is_a_rule(utterance):
-    """The classifier opens its own log without asking a model."""
+    """The classifier opens its own log without asking a model -- by name, or as "your" log."""
     hit = navigator.rule_hit(utterance)
     assert (hit.kind, hit.value) == ("log", "smart-navigation")
+
+
+@pytest.mark.parametrize("utterance", ["open the log", "open my log", "open your log of this session"])
+def test_a_log_not_said_to_it_is_not_its_own(utterance):
+    """Only "your" names the navigator: "the log" / "my log" could be any log, so the model decides."""
+    hit = navigator.rule_hit(utterance)
+    assert hit is None or hit.kind != "log", hit
 
 
 def _result(target: dict, scope: dict | None = None):
@@ -220,3 +230,75 @@ def test_this_projects_or_sessions_thing_is_the_screen_that_opens_on_it():
     assert navigator.context_rule("show this session's transcript", here).value == "lens/claude/transcript/s1"
     # The room is not in context: no address, so no rule.
     assert navigator.context_rule("open this project's room", here) is None
+
+
+async def test_a_conversation_is_found_by_its_title_from_a_whole_sentence():
+    # The real search, no stand-in: a saved conversation, the sentence a person types for it.
+    from flow_sdk.builtin.conversation import Conversation
+
+    saved = await Conversation(title="Plumber (WhatsApp)").save()
+    found = await navigator._candidates("the whatsapp chat with the plumber, open that one")
+    assert {"typeid": f"conversation-{saved.id}", "type": "conversation", "title": "Plumber (WhatsApp)"} in found
+
+
+async def test_an_exact_name_is_found_over_whatever_was_edited_lately():
+    # Recency breaks ties only: a thing named exactly is offered first however long ago it changed.
+    from datetime import datetime, timedelta, timezone
+
+    from sqlalchemy import text
+
+    from flow_sdk.builtin.conversation import Conversation
+    from flow_sdk.db import get_db_driver
+    from flow_sdk.db.drivers.sqlite.sqlite_driver import FtsEntry
+
+    old = await Conversation(title="connect-data-source").save()
+    for i in range(6):
+        recent = await Conversation(title=f"notes {i}").save()
+        # A body that keeps saying the request's common words -- what a skill's SKILL.md does.
+        await get_db_driver().fts_upsert(
+            FtsEntry(entity_id=str(recent.id), entity_type="conversation", name=f"notes {i}", title=f"notes {i}",
+                     content="this skill helps an agent; the agent uses the skill " * 5)
+        )
+    # The rest of an index: unrelated rows, so "skill" and "agent" are as uncommon as they really are.
+    for i in range(80):
+        await get_db_driver().fts_upsert(FtsEntry(entity_id=f"filler-{i}", entity_type="markdown", name=f"doc {i}", content="quarterly numbers"))
+    stale = (datetime.now(timezone.utc) - timedelta(days=21)).isoformat()
+    async with get_db_driver().session_factory() as session:
+        await session.execute(
+            text("UPDATE entities SET updated_date = :d, data = json_set(data, '$.updated_date', :d) WHERE id = :id"),
+            {"d": stale, "id": str(old.id)},
+        )
+        await session.commit()
+    found = await navigator._candidates("open the connect-data-source skill this agent leans on")
+    assert found[0]["typeid"] == f"conversation-{old.id}"
+
+
+async def test_search_in_a_fresh_process_opens_the_database_instead_of_finding_nothing():
+    # A CLI (the eval) searches before anything else opened the database; it must find, not return [].
+    from flow_sdk.builtin.conversation import Conversation
+    from flow_sdk.db import get_db_driver
+
+    saved = await Conversation(title="Acme pilot").save()
+    await get_db_driver().close()
+    found = await navigator._candidates("my convo with the acme folks about the pilot")
+    assert f"conversation-{saved.id}" in {c["typeid"] for c in found}
+
+
+def test_a_literal_acts_alone_only_when_it_is_the_whole_request():
+    alone = {
+        "open ~/notes/plan.md": ("file", "~/notes/plan.md"),
+        "go to https://example.com/x": ("url", "https://example.com/x"),
+        "search for oauth": ("view", "search?q=oauth"),
+        "preview port 5173": ("webapp", "5173"),
+    }
+    for text, (kind_, value) in alone.items():
+        hit = navigator.rule_hit(text)
+        assert hit is not None and (hit.kind, hit.value) == (kind_, value), text
+    inside = {
+        "whats hogging port 8093 on here? flip to the ports": "webapp:8093",
+        "add ~/Documents/notes to this index and kick off a rebuild": "file:~/Documents/notes",
+        "find everything that mentions the whatsapp webhook": "view:search?q=everything that mentions the whatsapp webhook",
+    }
+    for text, key in inside.items():
+        assert navigator.rule_hit(text) is None, text
+        assert key in navigator.literal_option(text), "inside a sentence it is one option for the model"

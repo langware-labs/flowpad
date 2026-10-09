@@ -64,8 +64,9 @@ The authoring forms:
 
 | form | means |
 | --- | --- |
-| `"int"` | a reserved primitive — `string`, `int`, `float`, `bool`, `binary` |
-| `"demo.endpoint"` | a registered kind, by name (its schema) |
+| `"int"` | a reserved primitive — `string`, `int`, `float`, `bool`, `binary`, `date` (ISO `YYYY-MM-DD`) |
+| `"demo.endpoint"` | a registered kind, by name: a value of it — or, in a field or a list, a reference to one stored instance, `demo.endpoint.id.<uuid>` |
+| `"demo.a\|demo.b"` | a reference to one instance of any of these kinds |
 | `{"host": "string"}` | an object — fields and their shapes |
 | `["int"]` | a list — exactly one element, the shape every element has |
 | `"?string"` | may be absent |

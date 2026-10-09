@@ -5,32 +5,33 @@ candidates -- never this machine's search -- so a run is judged on the options t
 labelled against. The decision API is whatever the hub offers (``versions`` names it).
 """
 
+import os
+from typing import get_args
+
+from flow_sdk.decision import DecisionFailure, failure_detail
 from flow_sdk.evals import EvalTrace, ExampleEval, Verdict, golds, verdict_of
-from flow_sdk.navigation import MIN_CONFIDENCE, address_of, decide_run
+from flow_sdk.navigation import MIN_CONFIDENCE, code_version, decide_run, same_place
 
 
 def _right(target, golds):
-    """``target`` opens a right answer: one of the quick golds, as named or at the same address."""
-    return any(g.get("route") == "quick" and _lands_on(target, g.get("target")) for g in golds)
-
-
-def _lands_on(target, gold_target):
-    """The same place: the same target, or two that open one address (a session as an entity and
-    as its screen, ``entity:agentic_process-x`` / ``view:agentic_process/x``)."""
-    if not target or not gold_target:
-        return False
-    if target == gold_target:
-        return True
-    there = address_of(target)
-    return there is not None and there == address_of(gold_target)
+    """``target`` opens a right answer: one of the quick golds, as named or at the same place."""
+    return bool(target) and any(g.get("route") == "quick" and g.get("target") and same_place(target, g["target"]) for g in golds)
 
 
 async def evaluate_example(row):
     recorded = row.context.candidates if row.context else []
     out, answer = await decide_run(
         row.input.model_dump(mode="json", exclude_none=True),
-        candidates=[c.model_dump(mode="json", exclude_none=True) for c in recorded],
+        # Live: this machine's search answers again (what a search change is measured with).
+        candidates=None if _live() else [c.model_dump(mode="json", exclude_none=True) for c in recorded],
     )
+    trace = EvalTrace(kind="navigator.run", value=answer.run.model_dump(mode="json", exclude_none=True))
+    # The decision API did not answer (quota, no endpoint, outage): nothing was judged, so the
+    # example is an error -- never an abstention that would pass for the navigator's own choice.
+    if answer.reason in get_args(DecisionFailure):
+        wire = answer.run.decision.wire if answer.run and answer.run.decision else None
+        said = failure_detail(wire.response) if wire else None
+        return ExampleEval(verdict=Verdict.ERROR, error=f"decision API: {answer.reason}" + (f" -- {said}" if said else ""), trace=trace)
     pred = out.decision.model_dump(mode="json", exclude_none=True)
     answers = [g.model_dump(mode="json", exclude_none=True) for g in golds(row)]
     gold_kinds = {(g.get("target") or {}).get("kind") for g in answers if g.get("route") == "quick"}
@@ -57,7 +58,7 @@ async def evaluate_example(row):
         verdict=verdict,
         score=out.decision.confidence,
         # How it was decided -- every option the model was offered and the probability it gave each.
-        trace=EvalTrace(kind="navigator.run", value=answer.run.model_dump(mode="json", exclude_none=True)),
+        trace=trace,
         note=(
             "It picked a target nothing can open, so the app hands the request to the assistant -- "
             "counted wrong: the person must land there."
@@ -87,7 +88,9 @@ def aggregate(results):
     judged = [e for e in results if e.verdict != Verdict.ERROR]
     quick_out = [e for e in judged if (e.prediction or {}).get("route") == "quick"]
     quick_gold = [e for e in judged if e.golds and e.golds[0].get("route") == "quick"]
-    agentic_gold = [e for e in judged if e.golds and e.golds[0].get("route") == "agentic"]
+    # Only the requests that belong to the assistant alone: a row that also accepts an action
+    # ("restart this session" -> the restart button) is right either way, so it measures nothing here.
+    agentic_gold = [e for e in judged if e.golds and all(g.get("route") == "agentic" for g in e.golds)]
     feasible = [e for e in judged if e.labels.get("feasible") == "yes"]
     return {
         # of the times it opened something, how often it was right
@@ -110,4 +113,15 @@ async def versions():
     from flow_sdk.decision import decision_endpoints
 
     endpoints = await decision_endpoints()
-    return {"decision_api": endpoints[0].name if endpoints else "none", "map": navigation_map()}
+    return {
+        "decision_api": endpoints[0].name if endpoints else "none",
+        "map": navigation_map(),
+        # The code that decided: two runs with one hash differ only by the model's own noise.
+        "navigator": code_version(),
+        "candidates": "live" if _live() else "recorded",
+    }
+
+
+def _live():
+    """``FLOW_EVAL_CANDIDATES=live``: search again instead of replaying each row's recorded matches."""
+    return os.environ.get("FLOW_EVAL_CANDIDATES") == "live"

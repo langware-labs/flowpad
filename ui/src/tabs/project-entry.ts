@@ -34,7 +34,7 @@ export async function dockForScopeEntry(
   // `Tab.dockPointer` is the parsed stored JSON, not the UI class — hydrate it,
   // or callers chaining `withOption` (`withHomePage`) throw on a plain object.
   const dock = tabManager.resolveNext(known)?.dockPointer ?? null;
-  if (dock) return new DockPointer(dock);
+  if (dock) return scopedToEntry(new DockPointer(dock), projectId);
 
   if (isScopeKeyedView(currentDock?.viewType)) {
     return new DockPointer(currentDock.viewType, '').withScopeFilter(
@@ -46,6 +46,18 @@ export async function dockForScopeEntry(
   // shape `adoptScopeProject` reads as "restore the remembered project", so a
   // bare Home would pull the caller back into the project they asked to leave.
   return projectId == null ? globalHomeDock() : DockPointer.forProject(projectId);
+}
+
+/**
+ * A resumed tab's dock, carrying the project being entered in its URL. A stored
+ * pointer holds identity only, so a context-neutral tab resumed bare names no
+ * project and the switch never happens; an entity-owned dock still corrects it
+ * from its own entity, and a dock that already has a scope keeps it.
+ * (Not `placeDockInProject`: that one skips entity docks, which need it too.)
+ */
+function scopedToEntry(dock: DockPointer, projectId: string | null): DockPointer {
+  if (projectId == null || dock.scopeFilter) return dock;
+  return dock.withScopeFilter(projectScope(projectId));
 }
 
 /**

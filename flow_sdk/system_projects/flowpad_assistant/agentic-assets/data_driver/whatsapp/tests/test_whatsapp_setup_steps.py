@@ -151,6 +151,13 @@ def test_the_number_is_claimed_on_the_hub_chain_only_once_its_token_and_secret_a
     assert WhatsAppSource.hub_claim({"phone_number_id": PHONE}, {"access_token": "LONG"}) is None
 
 
+def test_a_number_on_a_server_of_ones_own_is_proven_there():
+    """``base_url`` (a WAHA service speaking Meta's API): the hub checks the token at that server, not at Meta."""
+    config = {"phone_number_id": PHONE, "verify_token": "tok", "base_url": "https://waha.example/"}
+    claim = WhatsAppSource.hub_claim(config, {"access_token": "LONG", "app_secret": SECRET})
+    assert claim["proof"]["graph_url"] == "https://waha.example/v23.0"
+
+
 async def test_subscribe_waits_for_the_steps_before_it(meta):
     answer = await _source(meta, {"app_id": APP}, app_secret=SECRET)._subscribe_step(check=False, values={})
     assert answer.exit_code is ExitCode.NOT_YET and "public URL" in answer.detail

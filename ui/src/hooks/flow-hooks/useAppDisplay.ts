@@ -35,6 +35,9 @@ function withQuery(base: string, query: string): string {
 export interface AppDisplay {
   /** Which runtime the iframe is currently showing. */
   runtime: AppRuntime | null;
+  /** The app's dev server when it has one that does not answer (stopped, never started) — what its setup
+   *  brings up. */
+  idleDev: ServiceEndpoint | null;
   /** Runtimes this app actually has right now. */
   available: AppRuntime[];
   /** iframe src for the active runtime; '' when the app has neither. */
@@ -166,6 +169,7 @@ export function useAppDisplay(
       available,
       src: withQuery(runtime === 'served' ? servedUrl : runtime === 'dev' ? devUrl : '', appQuery),
       endpoint: runtime === 'served' ? servedEndpoint : runtime === 'dev' ? devEndpoint : null,
+      idleDev: devEndpoint && !devUrl ? devEndpoint : null,
       theme,
       view,
       setRuntime: setOverride,

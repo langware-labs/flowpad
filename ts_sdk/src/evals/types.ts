@@ -57,6 +57,8 @@ export interface EvalRun {
   eval_name: string;
   eval_digest: string;
   versions: Record<string, string>;
+  /** The example roles judged (`["eval"]`, `["test"]`). */
+  kinds?: string[];
   started_at: string;
   finished_at: string;
   examples: number;

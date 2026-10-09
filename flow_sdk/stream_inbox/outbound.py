@@ -156,7 +156,7 @@ async def _started_target(conversation_id: str, newest) -> ReplyTarget:
     conversation = await Conversation.get_one({"id": conversation_id})
     address = list(getattr(conversation, "address", None) or [])
     local = newest.origin_local
-    if not address or local is None:
+    if local is None:
         raise ChannelSendUnavailable("no one else has written in this thread yet")
     source, item = await asyncio.gather(
         DataSource.get_one({"id": local.data_source_id}),
@@ -165,6 +165,13 @@ async def _started_target(conversation_id: str, newest) -> ReplyTarget:
     if source is None:
         raise ChannelSendUnavailable("the data source this arrived through is gone")
     driver = _sending_driver(source, newest.origin.kind)
+    if not address:
+        # A channel whose threads are addressed by themselves (a task's thread is the task) answers its
+        # own message on the thread — never safe for a channel that writes to people: an email reply to
+        # our own message would mail ourselves.
+        if getattr(getattr(driver, "cls", None), "addressed_by_thread", False) and item is not None:
+            return _reply_target(source, item, newest.origin.kind)
+        raise ChannelSendUnavailable("no one else has written in this thread yet")
     return ReplyTarget(
         driver=driver, source=source, channel=newest.origin.kind, to=address[0],
         thread_key=str(getattr(item, "thread_key", "") or ""), subject=str(getattr(item, "name", "") or ""), in_reply_to="",

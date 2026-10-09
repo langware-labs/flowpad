@@ -17,6 +17,7 @@ multiplier and no widened timeout anywhere in this path.
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import datetime, timezone
 from typing import Optional
@@ -28,14 +29,27 @@ from flow_sdk.ingest.health import ERROR_DETAIL_MAX, SourceHealth, classify
 from flow_sdk.ingest.ingest_on_tag import emit_sync_tag
 from flow_sdk.ingest.ingestor import ingest_items
 from flow_sdk.ingest.models import IngestMode, IngestReport
-from flow_sdk.ingest.reflect import get_reflector, reflect_refs
+from flow_sdk.ingest.reflect import get_reflector, keep_out_of_git, reflect_refs
+from flow_sdk.ingest.write_back import write_back
 from flow_sdk.sources.errors import SourceUnavailable
 
 logger = logging.getLogger(__name__)
 
 
+#: One cycle per source at a time, whoever asks: the poller's tick claims a slot (and skips a busy source),
+#: but "Sync now" and a reply's expect call this directly — two cycles of one source race each other's
+#: cursor, cache index and write-back (found live: every file of a new row written to Drive twice).
+_CYCLES: dict[str, asyncio.Lock] = {}
+
+
 async def sync_source(source: DataSource, *, now: Optional[datetime] = None) -> IngestReport:
-    """Run one cycle. Never raises: a failure is recorded as health, not thrown."""
+    """Run one cycle. Never raises: a failure is recorded as health, not thrown. A second call for the same
+    source waits for the running one, then runs against what it left."""
+    async with _CYCLES.setdefault(str(source.id), asyncio.Lock()):
+        return await _sync_source(source, now=now)
+
+
+async def _sync_source(source: DataSource, *, now: Optional[datetime] = None) -> IngestReport:
     now = now or datetime.now(timezone.utc)
     report = IngestReport()
 
@@ -53,6 +67,11 @@ async def sync_source(source: DataSource, *, now: Optional[datetime] = None) -> 
     # the cursor advanced past them.
     if stype.is_object and get_reflector(source.reflect) is None:
         await _fail_source(source, "reflect_mode", f"reflect={source.reflect!r} cannot place files; pick a filesystem mode", now)
+        return report
+    # The local copy is kept out of git BEFORE anything lands in it: a target git tracks refuses the
+    # run here, so the cursor never moves past files that were not placed.
+    if stype.is_object and (refused := await asyncio.to_thread(keep_out_of_git, source)):
+        await _fail_source(source, *refused, now)
         return report
 
     # The type owns the ontology kind and the channel; the row caches both so the badge and the
@@ -85,6 +104,9 @@ async def sync_source(source: DataSource, *, now: Optional[datetime] = None) -> 
                 return report
         found = await stype.traverse(source, position_of(source, now))
         placed = await _place(source, found)
+        # The other direction, same pass: local edits of a `copy` source go back (generic; None when the
+        # source does not write back). A held or refused file is a person's to resolve, said on the card.
+        written = await write_back(source)
     except Exception as exc:  # noqa: BLE001 — classified, recorded, never re-raised
         health, code, detail = classify(exc)
         source.consecutive_failures = (source.consecutive_failures or 0) + 1
@@ -98,7 +120,9 @@ async def sync_source(source: DataSource, *, now: Optional[datetime] = None) -> 
     # so the steady state is one request and zero writes per tick (the poller stamped the next poll).
     idle = found.unchanged and found.cursor == source.cursor and (found.manifest or {}) == (source.manifest or {})
     clean = source.health == SourceHealth.OK.value and not source.error_code and not source.consecutive_failures
-    if idle and clean:
+    # Waiting on a person, not broken: the source keeps polling and its card says what to resolve.
+    waiting = ("write_back_held", written.sentence()) if written is not None and written.needs_a_person else (None, None)
+    if idle and clean and waiting[0] is None:
         source.schedule_next(now)
         emit_sync_tag(source.provider, source.id, "completed", report=report)
         return report
@@ -109,7 +133,7 @@ async def sync_source(source: DataSource, *, now: Optional[datetime] = None) -> 
         source.high_water = found.high_water
     source.consecutive_failures = 0
     source.last_synced_at = now
-    _stamp_source(source, SourceHealth.OK, None, None, now)
+    _stamp_source(source, SourceHealth.OK, *waiting, now)
     await source.save_runtime()
     emit_sync_tag(source.provider, source.id, "completed", report=report)
     logger.info("[ingest] %s/%s %s", source.provider, source.name or source.account_key, report.as_counts())

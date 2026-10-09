@@ -313,6 +313,18 @@ def _record_backend_pid(name: str, backend_pid: int) -> None:
 
 
 # ── command ───────────────────────────────────────────────────────────────────
+@instance_app.command("python")
+def python_path() -> None:
+    """Print the Python interpreter this ``flow`` runs on -- Flowpad's, the one with its SDK.
+
+    What a script that imports ``flow_sdk`` runs on outside a worker or a trigger (which get it as
+    ``$FLOWPAD_PYTHON``): ``"$(flow instance python)" my_script.py``.
+    """
+    import sys
+
+    typer.echo(sys.executable)
+
+
 @instance_app.command("restart-backend")
 def restart_backend(
     name: Annotated[str, typer.Argument(help="Instance name (e.g. qa-cycle, dev-1).")],

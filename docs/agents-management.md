@@ -83,7 +83,8 @@ agent never fires on a later open and a failed launch is not retried. The UI
 warns which launches were cancelled. The session is opened with `use()`, the
 prompt is enqueued server-side, and the UI embeds the vibe persona before it
 kicks the queue with `drain-queue`. Never set `auto_launch` on a system agent:
-the system project is a context root of every project.
+the system project is a context root of every project. An agent can also be what a
+project's **Home** opens, resuming its last chat (`docs/navigation/project-home-page.md`).
 
 The same entity supports two execution modes:
 

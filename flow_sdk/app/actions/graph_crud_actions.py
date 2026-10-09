@@ -8,7 +8,7 @@ from flow_sdk.actions import action
 from flow_sdk.assets.creation import AssetPathCollisionError
 from flow_sdk.builtin.user import User
 from flow_sdk.builtin.visitor import Visitor
-from flow_sdk.cloud_client.shared.errors import HubError
+from flow_sdk.cloud_client.shared.errors import HubError, is_permission_refusal
 from flow_sdk.core.entity.entity_model import Entity
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 from flow_sdk.db.drivers.query import QueryFilter
@@ -20,24 +20,6 @@ from flow_sdk.server.routes.graph import get_by_id, get_entity_model_from_regist
 
 
 # noinspection PyUnusedLocal
-def _is_permission_refusal(exc: Exception) -> bool:
-    """Did the hub refuse this for AUTHORIZATION rather than availability?
-
-    The auto-share / auto-unshare mirrors below are deliberately non-fatal: a local
-    write must not block on the hub being reachable. But "unreachable" and "you are
-    not allowed" are not the same failure. A 401/403 is PERMANENT — retrying, waiting
-    or reconnecting will never make it succeed — so the local row and the hub have
-    permanently diverged and the operation will never reach the peer. Logging that at
-    the same level as a transient blip is what let a real gap sit unnoticed: a shared
-    conversation's `member` may create a comment but not update or delete one, so a
-    recipient's edit/delete returned 200 locally and silently never propagated.
-    """
-    status = getattr(getattr(exc, "response", None), "status_code", None) or getattr(exc, "status_code", None)
-    if status in (401, 403):
-        return True
-    return "401" in str(exc) or "403" in str(exc) or "no valid access" in str(exc).lower()
-
-
 async def handle_query_resource(request: Request):
     request_info = get_current_request_info()
     if not request_info:
@@ -186,7 +168,7 @@ async def handle_delete_by_id():
         try:
             await entity.unshare(recursive=False)
         except Exception as e:  # noqa: BLE001
-            if _is_permission_refusal(e):
+            if is_permission_refusal(e):
                 service_log.error(
                     f"[delete] auto-unshare {target_typeid} REFUSED by the hub ({e}) — the local row is "
                     f"deleted but the hub row is not, so this deletion will never reach the peer. "
@@ -506,31 +488,5 @@ async def _dispatch_create_save(
             service_log.highlighted_error(err_msg)
             raise HTTPException(status_code=400, detail=err_msg)
 
-        # Canonical parent pointer (supersedes the legacy per-type
-        # ``data.parent_id``). Set before ``add_child`` so it persists with the
-        # entity row + metadata — ``add_child`` saves the child first.
-        if "parent_type_id" in type(entity).model_fields:
-            entity.parent_type_id = str(target_entity.typeid)
-        await target_entity.add_child(entity)
-
-        # Auto-share: when the parent is reachable on the hub, the child must
-        # become a hub ``is_child`` too so it syncs to watchers via ``child_*``.
-        # The hub may not host the immediate parent's type (e.g. ``markdown``),
-        # so we create the child under the nearest ancestor that has its OWN hub
-        # row (the conversation). The child keeps ``parent_type_id`` = the real
-        # local parent (the doc) in its payload for gutter filtering. Non-fatal.
-        try:
-            # One walk: the nearest ancestor with a hub row (or None) — being
-            # non-None is exactly "effective_remote".
-            hub_parent = await target_entity.nearest_remote_ancestor()
-            if hub_parent is not None:
-                await hub_parent.create_child(entity)
-                if getattr(entity, "remote", False):
-                    await entity.save(someone_typeid)
-        except Exception as e:  # noqa: BLE001
-            service_log.warn(
-                f"[create] auto-share child {entity.typeid} under {target_entity.typeid} "
-                + ("REFUSED by the hub (permissions, not transient — it will never propagate): " if _is_permission_refusal(e) else "failed (non-fatal): ")
-                + str(e)
-            )
+        await target_entity.add_child_shared(entity, someone_typeid)
     return entity

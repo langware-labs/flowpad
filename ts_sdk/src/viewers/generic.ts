@@ -19,7 +19,7 @@ import type {
   ViewerMode,
   ViewRequest,
 } from './contract';
-import { PRIMITIVES, namedKind, unwrap } from './kinds';
+import { PRIMITIVES, enumValues, namedKind, unwrap } from './kinds';
 
 // ── pure helpers (unit-tested) ────────────────────────────────────────────────
 
@@ -169,8 +169,8 @@ function fieldRow(h: ViewerContext['h'], name: string, def: FieldDef, cell: HTML
 }
 
 function mountInput(el: HTMLElement, base: string, value: unknown, optional: boolean, h: ViewerContext['h']): Mounted {
-  if (base.startsWith('enum:')) {
-    const values = base.slice(5).split('|');
+  const values = enumValues(base);
+  if (values) {
     const sel = h('select', { class: 'dv-input' }, ...(optional ? [''] : []).concat(values).map((v) => h('option', { value: v }, v || '—'))) as HTMLSelectElement;
     sel.value = value == null ? (optional ? '' : values[0]) : String(value);
     el.append(sel);

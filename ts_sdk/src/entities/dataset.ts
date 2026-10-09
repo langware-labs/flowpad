@@ -4,6 +4,7 @@
  * items into examples, `annotate` writes an example's gold label.
  */
 import { APIEntity, registerEntity } from '../APIEntity';
+import apiClient from '../client';
 import { IEntity, EntityMerge } from '../IEntity';
 import type { EvalExampleRow, EvalRun, EvalTrace } from '../evals/types';
 
@@ -51,11 +52,43 @@ export interface DatasetRowInput {
 
 /** One row read back with its slots' VALUES (`GET example/<id>`). */
 export interface DatasetRow extends DatasetRowInput {
+  /** The row's own id, stored in the row: it survives a rename and a re-clone. */
   id: string;
+  /** How another row points at this one: `<row kind>.id.<id>` — put it in a field typed by that kind. */
+  ref: string;
+  /** The row's content version: pass it to `put(…, { expected })` so a write never lands over a change it did not see. */
+  version: string;
   /** The example folder's name — address the row by it (`put`, `deleteRow`, `rename`, `example`). */
   key: string;
   kind: 'train' | 'eval' | 'test';
   metadata: Record<string, unknown>;
+}
+
+/** One thing wrong with a row or a value: where, what kind of problem (`shape:<pydantic type>`,
+ *  `dangling_ref`, `inline_row`, `rule`; on a 409 `conflict`, `gone`, `referenced`), and the message
+ *  `errors` carries as a line. */
+export interface CheckDetail {
+  path: string;
+  code: string;
+  message: string;
+  /** `code: "rule"`: the rule broken — both ends (`same`) and why. */
+  rule?: { same: [string, string]; description: string };
+}
+
+/** A row that does not fit: by key, with everything wrong, its version (to repair it with `put`
+ *  and `expected`) and its input as stored, unchecked (null when unreadable). */
+export interface DatasetRowProblem {
+  /** The row's id and reference — a broken row is still a row: links to it hold. */
+  id: string;
+  ref: string;
+  /** @deprecated the old name of `id` — use `id` / `ref`. */
+  example_id: string;
+  key: string;
+  version: string;
+  error: string;
+  errors: string[];
+  details: CheckDetail[];
+  input: unknown;
 }
 
 export interface IDataset extends IEntity {
@@ -133,6 +166,36 @@ export class Dataset extends APIEntity<Dataset> implements IDataset {
     return typeof this.spec === 'string' ? this.spec : null;
   }
 
+  /** The kind each row is — its `input` — for a named spec too (`kindForm(specKind).slots.input`);
+   *  an inline spec answers here directly. A row is one instance: `<rowKind>.id.<row id>`. */
+  get rowKind(): string | null {
+    const input = typeof this.spec === 'object' ? this.spec?.examples?.[0]?.input : null;
+    return typeof input === 'string' ? input.replace(/^\?/, '') : null;
+  }
+
+  /** The reference (`<row kind>.id.<id>`) of this dataset's row with that id — what a link holds. */
+  refOf(id: string): string {
+    const kind = this.rowKind;
+    if (!kind) throw new Error(`dataset ${this.id} names no row kind: its rows cannot be linked to`);
+    return `${kind}.id.${id}`;
+  }
+
+  /** The row a reference (`<kind>.id.<uuid>`) names among the project's datasets — 404 (thrown) when
+   *  none holds it. */
+  static async findRow(ref: string, projectId: string): Promise<{ dataset_id: string; key: string; row: DatasetRow }> {
+    return apiClient.get(`/api/v1/refs/${encodeURIComponent(ref)}`, { params: { project: projectId } });
+  }
+
+  /** The datasets whose rows are `kind`, in `projectId` when given — find them once, by kind. With a
+   *  project, `kind` may be the bare name one of its schemas defines (`gtm.icp`). */
+  static async forKind(kind: string, projectId?: string): Promise<Dataset[]> {
+    const { datasets } = await apiClient.get<{ datasets: Partial<IDataset>[] }>(
+      `/api/v1/kinds/${encodeURIComponent(kind)}/datasets`,
+      { params: projectId ? { project: projectId } : {} },
+    );
+    return datasets.map((d) => new Dataset(d));
+  }
+
   /** The rows as the disk holds them: which item each came from, and whether it carries gold.
    *  NOT named `examples`: a dataset read by id carries an `examples` FIELD on the wire, and
    *  assigning it onto the instance hid a method of that name ("examples is not a function"). */
@@ -152,8 +215,9 @@ export class Dataset extends APIEntity<Dataset> implements IDataset {
     return this.post('append', { rows });
   }
 
-  /** Every example with its slots' values, in one read. */
-  async rows(): Promise<{ rows: DatasetRow[] }> {
+  /** Every row that fits, with its slots' values, and `problems`: the rows that do not, by key with
+   *  all their errors — one bad row never hides the others. */
+  async rows(): Promise<{ rows: DatasetRow[]; problems: DatasetRowProblem[] }> {
     return this.get('rows');
   }
 
@@ -185,27 +249,35 @@ export class Dataset extends APIEntity<Dataset> implements IDataset {
 
   /** Create the row `key`, or replace the one there. Checked first — a row that does not fit writes
    *  nothing. Slots it leaves out (gold, output, context) and the row's metadata are kept. */
-  async put(key: string, row: Omit<DatasetRowInput, 'key'>): Promise<{ example_id: string; key: string; num_examples: number }> {
-    return this.post('put-row', { key, row });
+  async put(
+    key: string,
+    row: Omit<DatasetRowInput, 'key'>,
+    options: { expected?: string } = {},
+  ): Promise<{ example_id: string; key: string; num_examples: number }> {
+    return this.post('put-row', { key, row, ...(options.expected ? { expected: options.expected } : {}) });
   }
 
-  /** Remove one row, by key or id. */
-  async deleteRow(keyOrId: string): Promise<{ key: string; num_examples: number }> {
-    return this.post('delete-row', { key: keyOrId });
+  /** Remove one row, by key or id. Refused (409) while another row links to it, and — with
+   *  `expected` (the version read) — when the row changed since. */
+  async deleteRow(keyOrId: string, options: { expected?: string } = {}): Promise<{ key: string; num_examples: number }> {
+    return this.post('delete-row', { key: keyOrId, ...(options.expected ? { expected: options.expected } : {}) });
   }
 
-  /** Give a row a new key. Its id follows the key: anything pointing at the old one must be updated. */
-  async rename(keyOrId: string, newKey: string): Promise<{ example_id: string; key: string }> {
-    return this.post('rename-row', { key: keyOrId, new_key: newKey });
+  /** Give a row a new key. Its id stays (stored in the row), so every link to it still holds; a key
+   *  copied OUTSIDE Flowpad (a CRM field, a URL) is the one thing that does not follow. With
+   *  `expected` (the version read), refused (409) when the row changed since. */
+  async rename(keyOrId: string, newKey: string, options: { expected?: string } = {}): Promise<{ example_id: string; key: string }> {
+    return this.post('rename-row', { key: keyOrId, new_key: newKey, ...(options.expected ? { expected: options.expected } : {}) });
   }
 
-  /** Would this row fit? Nothing is written. */
-  async check(row: Omit<DatasetRowInput, 'key'>): Promise<{ ok: boolean; errors: string[] }> {
+  /** Would this row fit — its shape, its links and its schema's rules across rows? Nothing is
+   *  written. `details` says where and what kind of problem (`code`), all at once. */
+  async check(row: Omit<DatasetRowInput, 'key'>): Promise<{ ok: boolean; errors: string[]; details: CheckDetail[] }> {
     return this.post('check-row', { row });
   }
 
   /** Every row checked against the declared shape; `problems` names the rows that do not fit, by key. */
-  async validate(): Promise<{ checked: number; problems: { example_id: string; key: string; error: string }[] }> {
+  async validate(): Promise<{ checked: number; problems: DatasetRowProblem[] }> {
     return this.post('validate', {});
   }
 

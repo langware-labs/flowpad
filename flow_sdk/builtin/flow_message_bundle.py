@@ -539,6 +539,74 @@ async def attachments_that_would_ship_nothing(typeids) -> list[tuple["TypeId", s
     return gaps
 
 
+async def attachments_holding_gitignored(typeids) -> list[tuple["TypeId", list[str]]]:
+    """The TYPE_ID refs whose bytes, packed as a COPY, would carry files git excludes — with those files.
+
+    A file kept out of git (a data source's local copy, an ``.env.local``, a gitignored dataset's rows)
+    is often private; a copy-mode bundle packs the asset folder whole, so sharing it would carry them.
+    This answers BEFORE the message exists, so the sender is warned and chooses — the send itself still
+    packs everything once they do. Paths are relative to the asset, ``.`` for an asset that is itself
+    excluded. A git-mode share sends a reference, never the working tree, so it is not asked."""
+    from flow_sdk.assets.transfer import is_pack_cruft  # noqa: PLC0415
+    from flow_sdk.utils.git_ignore import IGNORED, ignore_status, ignored_under  # noqa: PLC0415
+
+    found: list[tuple[TypeId, list[str]]] = []
+    for tid in typeids:
+        if tid.type in _NON_MATERIALIZING_TYPE_IDS:
+            continue
+        root = await _local_copy_root(tid)
+        if root is None:
+            continue
+        if root.is_dir():
+            hits = await asyncio.to_thread(ignored_under, root)
+            rel = sorted("." if h == root.resolve() else h.relative_to(root.resolve()).as_posix() for h in hits)
+            # What the packer drops anyway (``.venv``, ``node_modules``…) is not shared, so not asked about.
+            rel = [r for r in rel if r == "." or not is_pack_cruft(r)]
+        else:
+            rel = ["."] if await asyncio.to_thread(ignore_status, root) == IGNORED else []
+        if rel:
+            found.append((tid, rel))
+    return found
+
+
+def gitignored_payload(found) -> list[dict]:
+    """The wire shape of ``attachments_holding_gitignored`` — the share preflight's and the refusal's."""
+    return [{"type_id": str(tid), "paths": paths} for tid, paths in found]
+
+
+async def refuse_gitignored(typeids):
+    """The ONE refusal of a copy that would carry git-excluded files (``share_has_gitignored``, 409, with the
+    list), or None when nothing would. The sender sends again with ``include_gitignored`` to share them."""
+    from flow_sdk.responses.response import ApiFailResponse  # noqa: PLC0415
+
+    held = await attachments_holding_gitignored(typeids)
+    if not held:
+        return None
+    names = "; ".join(f"{tid} ({', '.join(paths)})" for tid, paths in held)
+    return ApiFailResponse(
+        message=f"Not sent yet: {names} holds files git excludes, which may be private. "
+        "Send again with include_gitignored to share them anyway.",
+        status_code=409,
+        data={"code": "share_has_gitignored", "gitignored": gitignored_payload(held)},
+    )
+
+
+async def _local_copy_root(tid: "TypeId") -> "Path | None":
+    """What a copy-mode share of ``tid`` packs from this machine: a file-backed asset's tree, or a
+    local folder artifact's folder. None when nothing on disk would be copied."""
+    if tid.type == EntityType.ARTIFACT.value:
+        from flow_sdk.builtin.artifact import Artifact  # noqa: PLC0415
+
+        ent = await Artifact.get_one({"id": tid.id})
+        origin = getattr(ent, "origin", None) if ent is not None else None
+        if getattr(origin, "kind", None) != "local":
+            return None
+        src = Path(str(origin.base)) / str(origin.rel_path or ".")
+        return src if src.is_dir() else None
+    resolved = await _resolve_file_backed_source(tid.type, tid.id)
+    return resolved[2] if resolved is not None else None
+
+
 def _entry_key(entry_type: str, entry_id: str) -> str:
     # Canonical self-describing bundle-arc token: <type>-<id> (no uname @).
     return record_stem(entry_type, entry_id)

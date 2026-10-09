@@ -9,7 +9,8 @@ description: >-
   data_spec folders to data_schema". Writes data_schema folders and datasets, applies
   them with `flow schema apply`, works rows by key through the SDK, and PROVES every
   change in a throwaway probe project before it touches the user's project.
-  Subcommands: `schema`, `dataset`, `app`, `migrate`. NOT for pulling an external
+  Also "review my project's data layer" — a fixed checklist that ends with PASS or FAIL.
+  Subcommands: `schema`, `dataset`, `app`, `migrate`, `review`. NOT for pulling an external
   system in (connect-data-source), an agent's own input/output (agent-builder), or
   Flowpad entities such as tasks, skills and agents (flowpad-assistance).
 version: 1
@@ -42,7 +43,7 @@ Typed data in Flowpad is three words, never mixed up:
 
 ## Modes (from the skill arg)
 
-The FIRST token, if it is exactly `schema`, `dataset`, `app` or `migrate`, selects
+The FIRST token, if it is exactly `schema`, `dataset`, `app`, `migrate` or `review`, selects
 the mode. Anything else is a natural request: pick the mode it needs (a request
 that needs a schema AND rows runs `schema`, then `dataset`).
 
@@ -52,6 +53,7 @@ that needs a schema AND rows runs `schema`, then `dataset`).
 | `dataset` — "store records", "add rows" | `modes/dataset.md` | Create a dataset, append / put / delete / rename rows by key, check, validate |
 | `app` — "build an app or script over my data" | `modes/app.md` | The SDK calls an app or script makes, and the anti-patterns that broke a real one |
 | `migrate` — "data_spec → data_schema" | `modes/migrate.md` | Move a project off the retired `data_spec` family, prove it, apply it |
+| `review` — "review / audit / fix my project's data layer" | `modes/review.md` | A fixed checklist (C1–C13), High / Medium findings only, a PASS or FAIL verdict; fixes them when asked |
 
 ## The probe gate (every mode)
 
@@ -81,15 +83,18 @@ Then do it in the user's project and read it back the same way.
 | the dataset layout and row verbs (repo checkout only) | `docs/data-management/datasets.md`, `docs/snippets/datasets.md` |
 | show the user a dataset, a schema or a snippet | the `flowpad-navigation` skill |
 
-Run `dm_ctl` with the worker's interpreter, through a shell FUNCTION (a command kept in a
-quoted variable does not split into words):
+Run `dm_ctl` with Flowpad's interpreter — `$FLOWPAD_PYTHON` in a worker or a trigger, else the
+one `flow instance python` prints — through a shell FUNCTION (a command kept in a quoted variable
+does not split into words). Working on ANOTHER instance than the one you run in (a dev instance,
+`FLOW_INSTANCE=<name>`)? Use THAT instance's interpreter — the `flow` of its checkout — not
+`$FLOWPAD_PYTHON`, or you run another SDK version against it.
 
 ```bash
-DM() { "$FLOWPAD_PYTHON" "<this skill>/scripts/dm_ctl.py" "$@"; }
+DM() { "${FLOWPAD_PYTHON:-$(flow instance python)}" "<this skill>/scripts/dm_ctl.py" "$@"; }
 DM probe-new
 ```
 
-Never a bare `python3` (it may lack `flow_sdk`), and never read Flowpad's database
+Never a bare `python3` for anything that imports `flow_sdk` (it may lack it), and never read Flowpad's database
 (`flowpad.db`) yourself — everything you need is a `dm` verb or a `flow` command. Every call prints one JSON
 object: `{"ok": true, ...}`, or `{"ok": false, "error", "data"}` with the server's
 reasons (a 400 carries the validation `errors`).
@@ -98,7 +103,22 @@ reasons (a 400 carries the validation `errors`).
 
 | Missing | Honest answer today |
 | --- | --- |
-| a reference shape (`ref:crm.company`) with integrity checks | a `{type, key}` kind; the target type is an `enum:` in it; checking that the key exists is the caller's job |
 | change events for dataset rows | re-read on focus or on a timer; say it is polling |
 | one schema including another (shared `status`/`owner` fields) | repeat the fields; keep them identical |
-| a date primitive | `string` with the format in the field's description (`YYYY-MM-DD`) |
+| a rule across rows that is not "these two links name the same row" (a count, an order, a sum) | check it in every writer — the app AND any script — with the same code, and report breaks |
+| a field owned by an outside system (a CRM's stage) | say so in its `description`, keep it read-only in the app; only the sync writes it |
+
+Two writers at once (an app's server and a sync script) are safe: row writes in one project take
+one lock, and `put` / `delete` with `expected` refuse a row changed since it was read — a row that
+no longer fits included (it is reported with its version).
+
+Links between rows ARE supported: a field typed by the target kind holds `<kind>.id.<uuid>`, the
+SDK refuses a reference to a missing row and a delete that would leave one dangling
+(`references/shape-forms.md`). Never STORE a link as a `{type, key}` kind, and never link a
+dataset in git to rows kept out of git (their ids differ per machine).
+
+Rules across rows ARE supported when they say "these two link paths name the same row" (a tag
+chain: "the persona is one of the row's ICP's") — declare them in the schema's `rules`; Flowpad
+then checks them on every write and read, for every writer (`references/shape-forms.md`).
+A map whose keys are a closed set is an object with one optional field per key
+(`{"won": "?date", "lost": "?date"}`) — the SDK refuses any other key.

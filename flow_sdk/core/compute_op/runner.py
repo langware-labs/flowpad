@@ -178,8 +178,8 @@ async def _check(
         return await _status_check(spec, env)
     if spec.completion_check is None:
         return None
-    if spec.completion_check.source_step and _run_source(env):
-        said = await _source_step(spec.completion_check, env, check=True, platform=platform)
+    said = await _in_process(spec.completion_check, env, check=True, platform=platform)
+    if said is not None:
         return said.model_copy(update={"exit_code": spec.verdict_of(said)})
     command = spec.completion_check.command_for(platform)
     if not command:
@@ -214,11 +214,48 @@ async def _status_check(spec: ComputeOpSpec, env: Optional[dict] = None) -> CliR
 
 def _run_source(env: Optional[dict]) -> str:
     """The data source a run is FOR (the wizard's ``source`` value), bare id; '' when it has none."""
-    from flow_sdk.core.wizard.state import input_env  # noqa: PLC0415 — the one spelling of a value's env name
-
-    (key,) = input_env({"source": ""})
-    raw = str((env or {}).get(key) or "")
+    raw = _run_value(env, "source")
     return raw.split("-", 1)[1] if raw.startswith("data_source-") else raw
+
+
+def _check_in_process(spec: ComputeOpSpec) -> bool:
+    """The op's check is a step this backend answers itself (a source's, a web app's) — its detail is a reason."""
+    check = spec.completion_check
+    return check is not None and bool(check.source_step or check.webapp_step)
+
+
+async def _in_process(op: CliOp, env: Optional[dict], *, check: bool, platform: str) -> Optional[CliResult]:
+    """A step of the run's data source or web app, answered in this backend — or ``None`` when ``op`` names
+    none (or the run has no such subject: its ``commands`` are the fallback). The one place both kinds are
+    dispatched, so a check and a call read alike."""
+    if op.source_step and _run_source(env):
+        said = await _source_step(op, env, check=check, platform=platform)
+        return said if check else said.model_copy(update={"value": value_from_stdout(said.stdout)})
+    if op.webapp_step and _run_value(env, "webapp"):
+        return await _webapp_step(op, env, check=check)
+    return None
+
+
+def _run_value(env: Optional[dict], name: str) -> str:
+    """The run's value ``name`` ('' when it has none) — read as the environment every step gets it as."""
+    from flow_sdk.core.wizard.state import input_env  # noqa: PLC0415
+
+    (key,) = input_env({name: ""})
+    return str((env or {}).get(key) or "")
+
+
+async def _webapp_step(op: CliOp, env: Optional[dict], *, check: bool) -> CliResult:
+    """A web app's setup step (``webapp_setup.step``), in this process — its verdict as a cli answer."""
+    from flow_sdk.builtin.webapp_setup import step  # noqa: PLC0415
+
+    webapp = _run_value(env, "webapp")
+    which = str(op.webapp_step)
+    answer = await step(webapp, which, check=check)
+    return CliResult(
+        exit_code=answer.exit_code, detail=answer.detail, ran=answer.ran, value=answer.value,
+        command=f"app step {webapp} {which}" + (" --check" if check else ""),
+        returncode=int(answer.exit_code), stdout="", stderr="" if answer.ok else str(answer.detail or ""),
+    )
 
 
 async def _source_step(op: CliOp, env: Optional[dict], *, check: bool, platform: str) -> CliResult:
@@ -617,6 +654,10 @@ async def _call_and_check(
         )
     elif reason:
         detail = f"{spec.display_label}: {reason}"
+    elif after.detail and _check_in_process(spec):
+        # A check answered in this backend says WHY in its own words ("WAHA refused the API key"); a
+        # process's exit code cannot, which is all the sentence below has to go on.
+        detail = f"{spec.display_label}: {after.detail}"
     else:
         detail = f"{spec.display_label}: the {spec.subkind} call ran, but the check still fails.{_why(call)}"
     return call.model_copy(update={"exit_code": ExitCode.NOT_YET, "value": None, "check": after, "detail": detail})
@@ -754,9 +795,9 @@ async def _cli(
     say: Callable[[str], None],
     **_: Any,
 ) -> CliResult:
-    if spec.exe_data.source_step and _run_source(env):
-        said = await _source_step(spec.exe_data, env, check=False, platform=platform)
-        return said.model_copy(update={"value": value_from_stdout(said.stdout)})
+    said = await _in_process(spec.exe_data, env, check=False, platform=platform)
+    if said is not None:
+        return said
     command = spec.exe_data.command_for(platform)
     if not command:
         return CliResult.not_applicable(f"{spec.display_label}: no command for this platform.")

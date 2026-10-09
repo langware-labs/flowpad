@@ -37,7 +37,7 @@ from flow_sdk.assets.placement import AGENTIC_ASSETS_DIR
 from flow_sdk.schema.data_spec._namespace import loading, qualified
 from flow_sdk.schema.data_spec.data_schema_spec import DataSchemaDocSpec
 from flow_sdk.schema.data_spec.dataset_spec import DatasetSpec, ExampleSpec
-from flow_sdk.schema.data_spec.spec import ENUM_PREFIX, OPTIONAL_MARK, DataSpec, _compile, _field_def, _normalize_form
+from flow_sdk.schema.data_spec.spec import ENUM_PREFIX, KIND_UNION, OPTIONAL_MARK, DataSpec, _compile, _field_def, _normalize_form
 from flow_sdk.schema.types import EntityType
 
 logger = logging.getLogger(__name__)
@@ -124,7 +124,7 @@ def _read(folder: Path) -> _Read:
     except ValueError as exc:  # unreadable JSON, a document of another type
         raise DeclareError(f"{MAIN}: {exc}") from exc
     shipped = is_running_install_path(folder)
-    ns = asset_namespace(folder, doc.ns, shipped=shipped)
+    ns = asset_namespace(folder, doc.ns or _enclosing_ns(folder), shipped=shipped)
     if not shipped and not ns:
         raise DeclareError(
             "declares no `ns`: an externally authored data schema must name the ontology namespace "
@@ -136,6 +136,26 @@ def _read(folder: Path) -> _Read:
         raise DeclareError(str(exc)) from exc
     read = _READ[folder] = _Read(source, doc, tag, ns)
     return read
+
+
+def _enclosing_ns(folder: Path) -> Optional[str]:
+    """The ``ns`` a nested schema inherits: the nearest enclosing data schema folder that declares
+    one (a grouping folder), so only the grouping folder has to say it."""
+    import json  # noqa: PLC0415
+
+    here = Path(folder)
+    while here.parent.name == FAMILY and here.parent.parent.name == "agentic-assets":
+        owner = here.parent.parent.parent
+        if not (owner / MAIN).is_file():
+            return None
+        try:
+            ns = json.loads((owner / MAIN).read_text(encoding="utf-8")).get("ns")
+        except (OSError, ValueError, AttributeError):
+            ns = None
+        if ns:
+            return ns
+        here = owner
+    return None
 
 
 def subkind_of(folder: Path) -> Optional[str]:
@@ -157,7 +177,9 @@ def _refs(form: Any) -> list[str]:
 
     if isinstance(form, str):
         name = _bare(form)
-        return [] if name.startswith(ENUM_PREFIX) or name in PRIMITIVES else [name]
+        if name.startswith(ENUM_PREFIX) or name in PRIMITIVES:
+            return []
+        return name.split(KIND_UNION)  # a link to several kinds depends on each
     if isinstance(form, list):
         return [r for item in form for r in _refs(item)]
     if isinstance(form, dict):
@@ -175,15 +197,48 @@ def _qualify(form: Any, ns: str) -> Any:
     if not ns:
         return form
     if isinstance(form, str):
-        q = qualified(_bare(form), ns)
-        if q in _PENDING or q in _OWNER:
-            return (OPTIONAL_MARK if form.startswith(OPTIONAL_MARK) else "") + q
-        return form
+        mark = OPTIONAL_MARK if form.startswith(OPTIONAL_MARK) else ""
+        if _bare(form).startswith(ENUM_PREFIX):
+            return form
+        names = []
+        for name in _bare(form).split(KIND_UNION):
+            q = qualified(name, ns)
+            names.append(q if q in _PENDING or q in _OWNER else name)
+        return mark + KIND_UNION.join(names)
     if isinstance(form, list):
         return [_qualify(item, ns) for item in form]
     if isinstance(form, dict):
         return {k: _qualify(v, ns) for k, v in form.items()}
     return form
+
+
+def _path_kinds(forms: dict, path: str) -> set[str]:
+    """The kinds a rule path ends on, walking link fields from a record with these (qualified)
+    forms: every step but the last is a link to ONE kind (a list one is followed by ``*``), the last
+    names a kind (``a|b``: any of them). ``DeclareError`` for anything else."""
+    steps, at, kinds = path.split("."), forms, set()
+    i = 0
+    while i < len(steps):
+        name = steps[i]
+        if name not in at:
+            raise DeclareError(f"rule path {path!r}: no field {name!r} there")
+        form = at[name]
+        if isinstance(form, list):
+            if i + 1 >= len(steps) or steps[i + 1] != "*":
+                raise DeclareError(f"rule path {path!r}: {name!r} is a list -- follow it with '*'")
+            form, i = form[0], i + 1
+        kinds = set(_refs(form)) if isinstance(form, str) else set()
+        if not kinds:
+            raise DeclareError(f"rule path {path!r}: {name!r} is not a link to a row (its shape is {form!r})")
+        i += 1
+        if i < len(steps):
+            if len(kinds) != 1:
+                raise DeclareError(f"rule path {path!r}: {name!r} may name several kinds -- a path goes through one")
+            target = next(iter(kinds))
+            if target in _BUILDING:
+                raise DeclareError(f"rule path {path!r}: goes through {target!r}, which is being defined")
+            at = getattr(DataSpec.parse(target), "__authoring__", None) or {}
+    return kinds
 
 
 def _contains_any(annotation: Any) -> bool:
@@ -262,8 +317,15 @@ def _build(folder: Path) -> Optional[type]:
                 # The forms the author WROTE (``enum:quick|agentic``, ``?string``) -- what a form
                 # builder reads; ``to_authoring_form`` still renders the class as its tag.
                 __authoring__=(ClassVar[Any], forms),
+                # Rules across rows (``flow_sdk.datasets.rules``), their paths checked below.
+                __rules__=(ClassVar[Any], tuple(doc.rules or ())),
                 **members,
             )
+        for rule in doc.rules or ():
+            ends = [_path_kinds(forms, path) for path in rule.same]
+            if not ends[0] & ends[1]:
+                raise DeclareError(f"rule {rule.same}: {rule.same[0]!r} names a {sorted(ends[0])} row, "
+                                   f"{rule.same[1]!r} a {sorted(ends[1])} row -- they can never be the same")
     except DeclareError:
         raise
     except (ValueError, TypeError) as exc:  # the registry refusing (a type name, a code-defined kind)
@@ -299,6 +361,22 @@ def _pend(folder: Path) -> Optional[str]:
 def _settle(folder: Path, tag: Optional[str]) -> None:
     if tag is not None and _PENDING.get(tag) == folder:
         _build_pending(tag)
+
+
+def kind_in(root: Path, name: str) -> Optional[str]:
+    """The full name (``--ns--.gtm.icp``) of the kind a schema folder under ``root`` defines as
+    ``name`` (its folder name), read with the namespace it declares or inherits -- how a caller
+    that knows only the bare name gets the one to call with. None when ``root`` defines none; a
+    name already in full comes back as it is."""
+    if name.startswith("--"):
+        return name
+    for folder in data_schema_folders(Path(root)):
+        if folder.name == name:
+            try:
+                return _read(folder).tag
+            except DeclareError:
+                return None
+    return None
 
 
 def load_root(root: Path) -> dict[Path, str]:

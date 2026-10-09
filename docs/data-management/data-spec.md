@@ -75,6 +75,23 @@ three are input-side marks:
 | `"?string"` — may be absent | `Optional[str] = None` | the field becomes optional |
 | `"enum:a\|b"` — a closed set | `Literal["a", "b"]` | a `Literal` |
 | `{"*": "string"}` — a map | `dict[str, str]` | `dict[str, T]` |
+| `"date"` — a calendar day | `datetime.date` | ISO `YYYY-MM-DD` on disk |
+| `"crm.company"` as a field or list element | `Company \| ref` | a value, OR a reference `<kind>.id.<uuid>` to one stored instance (`value_ref`) — how one dataset row links to another |
+| `"crm.company\|crm.lead"` — a link to several kinds | a `value_ref` of any | a reference only |
+
+A dataset row is an instance: its reference is `<row kind>.id.<row id>`, the id stored in the row's
+`example.json` (`metadata.id`, a v4 minted on first write) so it survives a rename and a re-clone.
+`Dataset.check / append / put` refuse a reference to a row no dataset beside it holds, and
+`delete_row` refuses while another row still references the one being deleted
+(`flow_sdk/datasets/links.py`). A list of references is written inline in the document; a list of
+values one folder per element.
+
+A record schema may also declare **rules across rows** — two link paths that must name the same
+row wherever both ends are set (`"rules": [{"same": ["persona.icp", "icp"]}]`; `*` follows every
+element of a list, an empty step means the rule does not apply). `flow schema apply` checks each
+path walks links; `Dataset.check / append / put` refuse a break (`code: "rule"`), `rows()` reports
+rows that break one, and a `put` that would break a rule of a row reaching it is refused
+(`flow_sdk/datasets/rules.py`).
 
 The marks (`?`, `enum:`, `{"*": …}`) are **input only**: `to_authoring_form`
 renders a hand-written class back with the three structural forms, so an

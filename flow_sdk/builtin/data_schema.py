@@ -12,7 +12,7 @@ from typing import ClassVar, Optional
 from flow_sdk.api.api_types.api_field import APIField, Sharing
 from flow_sdk.core import Entity
 from flow_sdk.schema.data_spec._form import ShapeForm
-from flow_sdk.schema.data_spec.data_schema_spec import DataSchemaField, Subkind
+from flow_sdk.schema.data_spec.data_schema_spec import DataSchemaField, DataSchemaRule, Subkind
 from flow_sdk.schema.types import EntityType
 
 
@@ -28,6 +28,9 @@ class DataSchema(Entity):
     )
     examples: Optional[dict[str, ShapeForm]] = APIField(
         default=None, description="A dataset's example slots -> shapes."
+    )
+    rules: Optional[list[DataSchemaRule]] = APIField(
+        default=None, description="A record's rules across rows: two link paths that must name the same row."
     )
     ns: Optional[str] = APIField(
         default=None, description="The ontology namespace, when it differs from the project's."

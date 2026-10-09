@@ -60,13 +60,26 @@ def oauth_grant(kind: str) -> Optional[tuple[str, list[str]]]:
     return granted.connector or provider_of(kind), list(granted.oauth_scopes)
 
 
-def needs_of_driver(name: str) -> list[PermissionNeedSpec]:
-    """What a data source of driver ``name`` needs to be allowed to do."""
+def _driver_permissions(name: str) -> dict:
     from flow_sdk.ingest.driver_runtime import DRIVERS  # noqa: PLC0415
 
     driver = DRIVERS.get_or_none(name)
-    permissions = driver.manifest.permissions if driver is not None and driver.manifest is not None else {}
-    return [PermissionNeedSpec(permission=kind, why=m.why) for kind, m in permissions.items()]
+    return dict(driver.manifest.permissions) if driver is not None and driver.manifest is not None else {}
 
 
-__all__ = ["declared", "kinds_under", "mapping", "needs_of_driver", "oauth_grant"]
+def needs_of_driver(name: str, *, writes: bool = True) -> list[PermissionNeedSpec]:
+    """What a data source of driver ``name`` needs to be allowed to do. ``writes=False`` (a read-only
+    source) leaves out what only writing back needs."""
+    return [PermissionNeedSpec(permission=kind, why=m.why) for kind, m in _driver_permissions(name).items() if writes or not m.writes]
+
+
+def write_scopes_of_driver(name: str) -> dict[str, list[str]]:
+    """``{connection provider: scopes}`` a source of driver ``name`` needs only to write back."""
+    out: dict[str, list[str]] = {}
+    for kind, m in _driver_permissions(name).items():
+        if m.writes and m.mechanism == "oauth":
+            out.setdefault(m.connector or kind.split(".")[1], []).extend(m.oauth_scopes)
+    return out
+
+
+__all__ = ["declared", "kinds_under", "mapping", "needs_of_driver", "oauth_grant", "write_scopes_of_driver"]

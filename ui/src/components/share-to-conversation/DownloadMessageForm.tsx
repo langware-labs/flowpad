@@ -10,7 +10,8 @@
 import { useEffect, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { Download, Loader2, PackagePlus, X } from 'lucide-react';
-import { type AssetDescriptor, exportFlowMessage } from '@sdk';
+import { type AssetDescriptor, checkShareAttachments, exportFlowMessage, type GitignoredReference } from '@sdk';
+import { GitignoredNotice } from '@src/components/share-to-conversation/GitignoredNotice';
 import { AssetManagerPopover } from '@src/components/asset-manager/AssetManagerPopover';
 import { useProcessAssets } from '@src/components/asset-manager/useProcessAssets';
 import { displayLabelForDescriptor } from '@src/components/asset-manager/asset-row-helpers';
@@ -56,6 +57,8 @@ export function DownloadMessageForm({ initial, active, onDone }: DownloadMessage
   const packable = useProcessAssets(null, { enabled: pickerOpen, types: PACKABLE_TYPES });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Files git excludes the download would carry — shown first; "Download anyway" packs them.
+  const [gitignored, setGitignored] = useState<GitignoredReference[] | null>(null);
 
   const initialKey = initial.map((c) => c.typeid).join(',');
   useEffect(() => {
@@ -63,6 +66,7 @@ export function DownloadMessageForm({ initial, active, onDone }: DownloadMessage
     setText('');
     setCarried(initial);
     setError(null);
+    setGitignored(null);
     setBusy(false);
     // `initial` is re-created by callers on every render; its ids are the identity.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -73,12 +77,26 @@ export function DownloadMessageForm({ initial, active, onDone }: DownloadMessage
     setCarried((prev) => [...prev, { typeid: d.typeid, label: displayLabelForDescriptor(d) }]);
   };
 
-  const download = async () => {
+  const download = async (includeGitignored = false) => {
     if (busy || carried.length === 0) return;
     setBusy(true);
     setError(null);
+    setGitignored(null);
     try {
-      const blob = await exportFlowMessage({ text: text.trim(), asset_references: carried.map((c) => c.typeid) });
+      const refs = carried.map((c) => c.typeid);
+      if (!includeGitignored) {
+        // A file handed to someone carries the folders whole: files git excludes are shown first.
+        const { gitignored: excluded } = await checkShareAttachments(refs);
+        if (excluded.length > 0) {
+          setGitignored(excluded);
+          return;
+        }
+      }
+      const blob = await exportFlowMessage({
+        text: text.trim(),
+        asset_references: refs,
+        ...(includeGitignored ? { include_gitignored: true } : {}),
+      });
       const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
       saveBlob(blob, `message-${stamp}.flowmsg`);
       notify.success({ title: t`Message downloaded` });
@@ -166,6 +184,15 @@ export function DownloadMessageForm({ initial, active, onDone }: DownloadMessage
         {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
         <Trans>Download .flowmsg</Trans>
       </Button>
+      {gitignored && (
+        <GitignoredNotice
+          items={gitignored}
+          busy={busy}
+          confirmLabel={<Trans>Download anyway</Trans>}
+          onConfirm={() => void download(true)}
+          onCancel={() => setGitignored(null)}
+        />
+      )}
       {error && <p className="text-xs text-destructive">{error}</p>}
     </div>
   );

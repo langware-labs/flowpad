@@ -134,24 +134,14 @@ def gold(target: str, from_: str) -> dict:
     return {"route": "quick", "target": {"kind": "view", "value": value}}
 
 
-#: A screen whose bare address opens this tab: both are the same place, so both are right.
-DEFAULT_TAB = {
-    "credentials/connections": "credentials",
-    "ai-config/llm-apis": "ai-config",
-    "machine/processes": "machine",
-    "hub/token-plan/me": "hub/token-plan",
-}
 
 
 def golds_for(target: str, from_: str) -> list[dict]:
-    """Every right answer: the target, plus an equivalent place when there is one -- a screen's
-    default tab and its bare address, or a project's entity and its screen."""
+    """Every right answer: the target, plus a project's entity for its screen. (A screen and its
+    default tab need no second gold: the eval judges them one place -- ``navigation.same_place``.)"""
     first = gold(target, from_)
     t = first["target"]
     alt = []
-    for tab, bare in DEFAULT_TAB.items():
-        if t["kind"] == "view" and t["value"] in (tab, bare):
-            alt.append({"route": "quick", "target": {"kind": "view", "value": bare if t["value"] == tab else tab}})
     if t["kind"] == "view" and t["value"].startswith("project/") and t["value"].count("/") == 1:
         alt.append({"route": "quick", "target": {"kind": "entity", "value": f"project-{t['value'].split('/', 1)[1]}"}})
     return [first, *alt]

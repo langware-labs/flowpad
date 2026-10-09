@@ -19,6 +19,7 @@ pytestmark = pytest.mark.timeout(10)  # do not increase timeout without approval
 def test_the_ontology_walks_by_provider():
     assert permissions.kinds_under("permission.google") == [
         "permission.google.drive.read",
+        "permission.google.drive.write",
         "permission.google.secret_manager.access",
         "permission.google.storage.read",
     ]
@@ -51,6 +52,15 @@ def test_every_oauth_permission_names_only_scopes_its_driver_requests():
                 continue
             assert manifest.auth is not None and manifest.auth.connector, f"{name}: {kind} is OAuth without a connector"
             assert (mapping.connector or provider_of(kind)) == manifest.auth.connector, f"{name}: {kind}"
+            if mapping.writes:
+                # Asked for only while a source writes back: it must be one the provider lets a connect add.
+                from flow_sdk.core.oauth.provider_registry import get_local_provider
+
+                provider = get_local_provider(manifest.auth.connector)
+                assert provider is not None and set(mapping.oauth_scopes) <= set(provider.optional_scopes), (
+                    f"{name}: {kind} writes with a scope {manifest.auth.connector} does not offer as optional"
+                )
+                continue
             assert set(mapping.oauth_scopes) <= set(manifest.auth.scopes), f"{name}: {kind} names a scope auth never asks for"
 
 

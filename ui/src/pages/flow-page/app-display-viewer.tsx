@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef } from 'react';
 import { type PersistentIframeHandle } from '@src/components/persistent-iframe';
 import { WebappDisplay } from '@src/components/webapp-display/WebappDisplay';
+import { WebappSetupGate } from '@src/components/webapp-display/WebappSetupGate';
 import { WebappDisplayToolbar } from '@src/components/display-toolbar';
 import { hostBrand, useAppDisplay } from '@src/hooks/flow-hooks';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
@@ -141,6 +142,14 @@ export function AppDisplayViewer({
   const setRuntime = (next: string) => {
     if (currentDock) navigation.openDock(currentDock.withOption(APP_RUNTIME_PARAM, next));
   };
+
+  // A web app ASSET whose dev server does not answer is set up, not reported missing: its node of the
+  // project's setup tree runs with the live tree on screen, and the app takes over once it answers.
+  const setupWebapp = appDisplay.idleDev?.webapp_id ?? (!appDisplay.src ? microAppId : null);
+  const setupProject = appDisplay.idleDev?.project_id ?? project?.id ?? '';
+  if (!appDisplay.src && setupWebapp && setupProject) {
+    return <WebappSetupGate projectId={setupProject} webappId={setupWebapp} />;
+  }
 
   if (!appDisplay.src) {
     return (

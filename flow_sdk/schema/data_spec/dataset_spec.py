@@ -117,6 +117,7 @@ class ExampleSpec(DataSpec, Generic[InputSpecT, OutputSpecT, ContextSpecT]):
 
     id: str = ""                                 # layout-assigned
     key: str = ""                                # layout-assigned: the example folder's name
+    version: str = ""                            # layout-assigned: digest of the row's files (put/delete ``expected``)
     kind: ExampleKind = ExampleKind.TRAIN
     input: InputSpecT
     output: Optional[Union[OutputSpecT, list[OutputSpecT]]] = None
