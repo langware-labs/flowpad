@@ -9,6 +9,8 @@ carries it instead of forking it.
 from __future__ import annotations
 
 import json
+import re
+from contextlib import contextmanager
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
@@ -58,20 +60,59 @@ def _file(file_id: str, name: str, mime: str = "text/plain") -> dict:
 
 
 class _Drive:
-    """A minimal Drive that records the order it was called in."""
+    """A small stateful Drive: files and folders with parents, ``q`` filtering, uploads, trash — and
+    the order it was called in. Files built with ``_file`` have no parents: the top of the drive."""
+
+    FOLDER = "application/vnd.google-apps.folder"
 
     def __init__(self, files=(), changes=(), start="T1", drives=()):
         self.files, self.changes, self.start, self.drives = list(files), list(changes), start, list(drives)
         self.calls: list[str] = []
+        self.content: dict[str, bytes] = {}
+        self.base = ""
+        self._next = 0
+        self._sessions: dict[str, dict] = {}
+        #: What the token was granted: write access unless a test narrows it.
+        self.granted = ["https://www.googleapis.com/auth/drive"]
 
     def _known(self, file_id: str):
         every = self.files + [c["file"] for c in self.changes if c.get("file")]
         return next((f for f in every if f["id"] == file_id), None)
 
+    def _mint(self, meta: dict, data: bytes = b"") -> dict:
+        self._next += 1
+        meta = {"modifiedTime": "2026-01-01T00:00:00Z", **meta, "id": f"n{self._next}"}
+        if meta.get("mimeType") != self.FOLDER:
+            meta.setdefault("mimeType", "application/octet-stream")
+            meta["size"] = str(len(data))
+            self.content[meta["id"]] = data
+        self.files.append(meta)
+        return meta
+
+    def _matches(self, meta: dict, q: str) -> bool:
+        for term in q.split(" and "):
+            if term == "trashed = false":
+                ok = not meta.get("trashed")
+            elif m := re.fullmatch(r"'(.+)' in parents", term):
+                parent = m.group(1)
+                ok = parent in (meta.get("parents") or ()) or (parent in ("root",) and not meta.get("parents"))
+            elif m := re.fullmatch(r"name = '(.*)'", term):
+                ok = meta.get("name") == m.group(1).replace("\\'", "'")
+            elif m := re.fullmatch(r"mimeType (!?=) '(.+)'", term):
+                ok = (meta.get("mimeType") == m.group(2)) == (m.group(1) == "=")
+            else:
+                raise AssertionError(f"the fake does not understand {term!r}")
+            if not ok:
+                return False
+        return True
+
     def __call__(self, path, headers):
         url = urlparse(path)
         query = {k: v[0] for k, v in parse_qs(url.query).items()}
-        self.calls.append(url.path)
+        method = headers.get("_method", "GET") if isinstance(headers, dict) else "GET"
+        self.calls.append(url.path if method == "GET" else f"{method} {url.path}")
+        if url.path.startswith("/upload/"):
+            return self._upload(url.path.removeprefix("/upload"), method, query, headers)
         if url.path == "/changes/startPageToken":
             return 200, json.dumps({"startPageToken": self.start}).encode(), {}
         if url.path == "/changes":
@@ -80,20 +121,68 @@ class _Drive:
             file_id, _, verb = url.path.removeprefix("/files/").partition("/")
             if (found := self._known(file_id)) is None:
                 return 404, b"{}", {}
+            if method == "PATCH":
+                found.update(json.loads(headers["_body"] or "{}"))
+                return 200, json.dumps(found).encode(), {}
             if verb == "export":
                 return 200, b"# exported", {}
-            return (200, b"payload", {}) if query.get("alt") == "media" else (200, json.dumps(found).encode(), {})
+            if query.get("alt") == "media":
+                return 200, self.content.get(file_id, b"payload"), {}
+            return 200, json.dumps(found).encode(), {}
+        if url.path == "/files" and method == "POST":
+            return 200, json.dumps(self._mint(json.loads(headers["_body"]))).encode(), {}
         if url.path == "/files":
+            listed = [f for f in self.files if self._matches(f, query["q"])] if "q" in query else self.files
             start, size = int(query.get("pageToken") or 0), int(query.get("pageSize") or 100)
-            body: dict = {"files": self.files[start : start + size]}
-            if start + size < len(self.files):
+            body: dict = {"files": listed[start : start + size]}
+            if start + size < len(listed):
                 body["nextPageToken"] = str(start + size)
             return 200, json.dumps(body).encode(), {}
         if url.path == "/drives":
             return 200, json.dumps({"drives": self.drives}).encode(), {}
         if url.path == "/about":
             return 200, json.dumps({"user": {"emailAddress": "a@b.test"}}).encode(), {}
+        if url.path == "/tokeninfo":
+            return 200, json.dumps({"scope": " ".join(self.granted)}).encode(), {}
         return 404, b"{}", {}
+
+    def _upload(self, path, method, query, headers):
+        raw: bytes = headers["_raw"]
+        if path == "/files" and query.get("uploadType") == "multipart":
+            boundary = headers["Content-Type"].split("boundary=")[1].encode()
+            parts = [p for p in raw.split(b"--" + boundary) if p.strip(b"\r\n-")]
+            metadata = json.loads(parts[0].split(b"\r\n\r\n", 1)[1].strip())
+            data = parts[1].split(b"\r\n\r\n", 1)[1][: -len(b"\r\n")]
+            return 200, json.dumps(self._mint(metadata, data)).encode(), {}
+        if path == "/files" and query.get("uploadType") == "resumable":
+            session = f"s{len(self._sessions) + 1}"
+            self._sessions[session] = json.loads(headers["_body"])
+            return 200, b"", {"Location": f"{self.base}/upload/session/{session}"}
+        if path.startswith("/session/") and method == "PUT":
+            return 200, json.dumps(self._mint(self._sessions.pop(path.removeprefix("/session/")), raw)).encode(), {}
+        if path.startswith("/files/") and method == "PATCH":
+            file_id = path.removeprefix("/files/")
+            if (found := self._known(file_id)) is None:
+                return 404, b"{}", {}
+            self.content[file_id] = raw
+            found["size"] = str(len(raw))
+            return 200, json.dumps(found).encode(), {}
+        return 404, b"{}", {}
+
+
+def _folder(file_id: str, name: str, parent: str = "") -> dict:
+    return {"id": file_id, "name": name, "mimeType": _Drive.FOLDER, **({"parents": [parent]} if parent else {})}
+
+
+def _in(file: dict, parent: str) -> dict:
+    return {**file, "parents": [parent]}
+
+
+@contextmanager
+def _serving(drive: _Drive):
+    with local_http_server(drive) as base:
+        drive.base = base
+        yield base
 
 
 # ── the contract ─────────────────────────────────────────────────────────────
@@ -311,3 +400,186 @@ async def test_the_picker_answers_nothing_for_a_field_it_does_not_furnish(driver
 
 async def test_the_cache_is_never_stamped():
     assert DataDriver.loaded("gdrive").stamps_identity is False
+
+
+# ── a folder of the drive, and its real paths ────────────────────────────────
+
+
+def _tree() -> list[dict]:
+    """``GTM/Research`` holding ``acme/input.json`` and ``notes.txt``; ``Other/x.txt`` beside it."""
+    return [
+        _folder("gtm", "GTM"), _folder("res", "Research", "gtm"), _folder("acme", "acme", "res"), _folder("oth", "Other"),
+        _in(_file("f1", "input.json", "application/json"), "acme"), _in(_file("f2", "notes.txt"), "res"),
+        _in(_file("f3", "x.txt"), "oth"),
+    ]
+
+
+SCOPED = {"path": "GTM/Research"}
+
+
+@pytest.mark.parametrize("check", checks_for(DriveSource), ids=str)
+async def test_conformance_under_a_folder(check):
+    drive = _Drive(_tree())
+    with _serving(drive) as base:
+        binding = SourceBinding(source_id="ds-gdrive", config={"base_url": base, **SCOPED}, credentials=TOKEN)
+        origins = tuple(DriveSource(binding).origin(i) for i in ("f1", "f2"))
+        await check.run(Subject(source=lambda: DriveSource(binding), seeded=origins))
+
+
+async def test_a_folder_source_lists_only_its_folder_at_paths_under_it(driver, tmp_path):
+    with _serving(_Drive(_tree())) as base:
+        source = _source(tmp_path, base, **SCOPED)
+        result = await driver.traverse(source, _view())
+    cache = (tmp_path / "cache").resolve()
+    assert sorted(Path(r).relative_to(cache).as_posix() for r in result.refs) == ["acme/input.json", "notes.txt"]
+
+
+async def test_a_missing_or_ambiguous_folder_is_a_setup_problem_said_in_words(driver, tmp_path):
+    with _serving(_Drive(_tree())) as base:
+        missing = await driver.verify(_source(tmp_path, base, path="GTM/Nope"))
+    assert missing.ready is False and "GTM/Nope" in missing.detail
+    with _serving(_Drive([*_tree(), _folder("gtm2", "GTM")])) as base:
+        twice = await driver.verify(_source(tmp_path, base, **SCOPED))
+    assert twice.ready is False and "gtm" in twice.detail and "gtm2" in twice.detail
+
+
+async def test_a_file_dragged_out_of_the_folder_leaves_and_one_dragged_in_arrives(driver, tmp_path):
+    drive = _Drive(_tree())
+    with _serving(drive) as base:
+        source = _source(tmp_path, base, **SCOPED)
+        first = await driver.traverse(source, _view())
+        drive.changes = [
+            {"fileId": "f2", "file": _in(_file("f2", "notes.txt"), "oth")},
+            {"fileId": "f3", "file": _in(_file("f3", "x.txt"), "acme")},
+        ]
+        second = await driver.traverse(source, _view(first))
+    cache = (tmp_path / "cache").resolve()
+    assert [Path(t).name for t in second.tombstones] == ["notes.txt"]
+    assert [Path(r).relative_to(cache).as_posix() for r in second.refs] == ["acme/x.txt"]
+
+
+async def test_a_renamed_folder_moves_what_is_under_it(driver, tmp_path):
+    drive = _Drive(_tree())
+    with _serving(drive) as base:
+        source = _source(tmp_path, base, **SCOPED)
+        first = await driver.traverse(source, _view())
+        renamed = {**_folder("acme", "acme-inc", "res")}
+        drive.files = [renamed if f["id"] == "acme" else f for f in drive.files]
+        drive.changes = [{"fileId": "acme", "file": renamed}]
+        second = await driver.traverse(source, _view(first))
+    (new, old), = second.renames.items()
+    cache = (tmp_path / "cache").resolve()
+    assert (Path(new).relative_to(cache).as_posix(), Path(old).relative_to(cache).as_posix()) == ("acme-inc/input.json", "acme/input.json")
+
+
+async def test_a_trashed_folder_removes_what_was_under_it(driver, tmp_path):
+    drive = _Drive(_tree())
+    with _serving(drive) as base:
+        source = _source(tmp_path, base, **SCOPED)
+        first = await driver.traverse(source, _view())
+        for f in drive.files:
+            if f["id"] in ("acme", "f1"):
+                f["trashed"] = True
+        drive.changes = [{"fileId": "acme", "file": {**_folder("acme", "acme", "res"), "trashed": True}}]
+        second = await driver.traverse(source, _view(first))
+    assert [Path(t).name for t in second.tombstones] == ["input.json"]
+
+
+# ── writing back ─────────────────────────────────────────────────────────────
+
+
+async def _chunks(*parts: bytes):
+    for part in parts:
+        yield part
+
+
+def _writer(base: str, *, read_only: bool = False, **config) -> DriveSource:
+    return DriveSource(SourceBinding(source_id="ds-w", config={"base_url": base, **SCOPED, **config}, credentials=TOKEN, read_only=read_only))
+
+
+async def test_a_write_creates_the_missing_folders_under_the_scope(tmp_path):
+    drive = _Drive(_tree())
+    with _serving(drive) as base:
+        async with _writer(base) as source:
+            item = await source.write("globex/input.json", _chunks(b'{"a":1}'))
+    (folder,) = [f for f in drive.files if f.get("name") == "globex"]
+    assert folder["parents"] == ["res"] and folder["mimeType"] == _Drive.FOLDER
+    (made,) = [f for f in drive.files if f["id"] == item.origin.key]
+    assert made["parents"] == [folder["id"]] and drive.content[made["id"]] == b'{"a":1}'
+    assert item.data.path == "globex/input.json"
+
+
+async def test_a_write_over_an_existing_file_updates_it_in_place(tmp_path):
+    drive = _Drive(_tree())
+    with _serving(drive) as base:
+        async with _writer(base) as source:
+            item = await source.write("acme/input.json", _chunks(b"new"))
+    assert item.origin.key == "f1" and drive.content["f1"] == b"new"
+    assert "PATCH /upload/files/f1" in drive.calls
+
+
+async def test_a_large_write_goes_through_a_resumable_session(tmp_path, monkeypatch):
+    monkeypatch.setattr(asset_module("gdrive"), "MULTIPART_LIMIT", 4)
+    drive = _Drive(_tree())
+    with _serving(drive) as base:
+        async with _writer(base) as source:
+            item = await source.write("big.bin", _chunks(b"0123456789"))
+    assert drive.content[item.origin.key] == b"0123456789" and "PUT /upload/session/s1" in drive.calls
+
+
+async def test_an_export_of_a_google_document_is_not_written_back(tmp_path):
+    drive = _Drive([*_tree(), _in(_file("d1", "brief", "application/vnd.google-apps.document"), "res")])
+    with _serving(drive) as base:
+        async with _writer(base) as source:
+            with pytest.raises(SourceError, match="Google document"):
+                await source.write("brief.md", _chunks(b"# mine"))
+    assert not [f for f in drive.files if f.get("name") == "brief.md"]
+
+
+async def test_delete_moves_to_the_trash(tmp_path):
+    drive = _Drive(_tree())
+    with _serving(drive) as base:
+        async with _writer(base) as source:
+            await source.delete(source.origin("f2"))
+            await source.delete(source.origin("never-there"))
+    assert drive._known("f2")["trashed"] is True, "trashed, never deleted: one click from undone"
+    assert "PATCH /files/f2" in drive.calls and not any(c.startswith("DELETE") for c in drive.calls)
+
+
+async def test_a_read_only_source_refuses_writes_before_any_call(tmp_path):
+    drive = _Drive(_tree())
+    with _serving(drive) as base:
+        async with _writer(base, read_only=True) as source:
+            with pytest.raises(SourceError, match="read-only"):
+                await source.write("acme/input.json", _chunks(b"x"))
+            with pytest.raises(SourceError, match="read-only"):
+                await source.delete(source.origin("f1"))
+    assert drive.calls == []
+
+
+async def test_a_source_that_writes_back_needs_a_grant_that_can_write(driver, tmp_path):
+    drive = _Drive(_tree())
+    drive.granted = ["https://www.googleapis.com/auth/drive.readonly"]
+    with _serving(drive) as base:
+        writing = await driver.verify(_source(tmp_path, base, **SCOPED))
+        reading = await driver.verify(make_data_source("gdrive", name="ro", read_only=True, config={"base_url": base, **SCOPED}))
+    assert writing.ready is False and "Reconnect Google" in writing.detail
+    assert reading.ready is True, "a read-only source asks for nothing more"
+
+
+async def test_a_read_only_source_needs_no_write_permission():
+    from flow_sdk import permissions
+
+    assert "permission.google.drive.write" in [n.permission for n in permissions.needs_of_driver("gdrive")]
+    assert "permission.google.drive.write" not in [n.permission for n in permissions.needs_of_driver("gdrive", writes=False)]
+    assert permissions.write_scopes_of_driver("gdrive") == {"google": ["https://www.googleapis.com/auth/drive"]}
+
+
+async def test_deleting_the_last_file_of_a_folder_trashes_the_folder_but_never_the_scope(tmp_path):
+    drive = _Drive(_tree())
+    with _serving(drive) as base:
+        async with _writer(base) as source:
+            await source.delete(source.origin("f1"))   # acme/input.json, alone in acme/
+            await source.delete(source.origin("f2"))   # notes.txt, at the scope's top
+    assert drive._known("acme")["trashed"] is True, "the row's emptied folder goes too"
+    assert not drive._known("res").get("trashed"), "the scope folder itself is never trashed"

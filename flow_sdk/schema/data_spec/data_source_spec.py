@@ -43,6 +43,9 @@ class DataSourceSpec(AssetDocumentSpec):
     answer_place: Optional[str] = None
     reflect: Optional[str] = None
     reflect_into: Optional[str] = None
+    #: The file says only what differs from the default: ``gitignored`` is on, ``read_only`` off.
+    gitignored: bool = True
+    read_only: bool = False
     poll_interval_seconds: Optional[int] = None
     window_days: Optional[int] = None
     #: Seconds of quiet after which a thread ends and the next message starts a new one.

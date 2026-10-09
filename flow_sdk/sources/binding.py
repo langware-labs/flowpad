@@ -42,6 +42,9 @@ class SourceBinding(DataSpec):
     page_size: Optional[int] = Field(default=None, ge=1)
     #: The ``FLOW_INSTANCE`` a source belongs to; a host resolves its own backend from it.
     instance: str = ""
+    #: Pull only: a write to the remote (``ByteStore.write``/``delete``, ``Mutable``) is refused before
+    #: any I/O. The row's ``read_only``; a source honours it, the machinery never writes through it.
+    read_only: bool = False
 
 
 __all__ = ["Persona", "SourceBinding"]

@@ -318,11 +318,16 @@ await home.set_secret_store(await SecretStore.get("vault", {"prefix": "gmail.hom
 ## 6. Connections — the same pattern, for accounts
 
 A data source that acts as an account declares it in its manifest instead of
-variable names:
+variable names — what reading takes in `auth`, and what only writing back takes as a
+`writes` permission:
 
 ```json
-{ "name": "gdrive", "auth": { "connector": "google", "scopes": ["https://www.googleapis.com/auth/drive.readonly"] } }
+{ "name": "gdrive", "auth": { "connector": "google", "scopes": ["https://www.googleapis.com/auth/drive.readonly"] },
+  "permissions": { "permission.google.drive.write": { "mechanism": "oauth", "oauth_scopes": ["https://www.googleapis.com/auth/drive"], "writes": true } } }
 ```
+
+`source.connections` is what THIS source needs: a source that writes back (the default) asks for both, a
+`read_only` one only for reading.
 
 ```python
 from flow_sdk.builtin.data_source import DataSource
@@ -348,7 +353,8 @@ async with await source.open() as live:  # open() asks the bound connection for 
 `Connection.get` resolves a provider name the way `SecretStore.get()` takes a
 default: there is one grant per provider per user, so the name is enough.
 `validate_scopes` compares with the scopes the provider's grant is configured to
-request — what a connect consents to. `require(provider)` is the older name for
+request — what a connect consents to: the provider's own, plus what a source on this machine
+needs now (`core/oauth/wanted_scopes.py`), so a connect made after a writing source exists asks for write access. `require(provider)` is the older name for
 `Connection.get` and stays.
 
 An external store is a consumer of both kinds — it acts as an account and holds

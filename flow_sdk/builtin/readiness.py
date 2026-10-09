@@ -99,7 +99,7 @@ async def requirements_of_source(source: "DataSource", project: Any = None) -> l
     used_by = [str(source.name or source.id)]
     out = [
         RequirementSpec(kind=REQUIREMENT_PERMISSION, name=need.permission, why=need.why, derived=True, used_by=used_by)
-        for need in permissions.needs_of_driver(source.provider or "")
+        for need in permissions.needs_of_driver(source.provider or "", writes=not getattr(source, "read_only", False))
     ]
     if auth.connector and not any(r.kind == REQUIREMENT_PERMISSION for r in out):
         out.append(RequirementSpec(kind=REQUIREMENT_CONNECTION, name=auth.connector, scopes=list(auth.scopes),

@@ -135,6 +135,8 @@ async def test_the_collector_reads_the_project_and_its_sources_drivers(project, 
     assert set(google.scopes) == {
         "https://www.googleapis.com/auth/drive.readonly",
         "https://www.googleapis.com/auth/devstorage.read_only",
+        # A Drive source writes back unless it is read-only: its `writes` permission is asked for too.
+        "https://www.googleapis.com/auth/drive",
     }
     assert google.satisfied is None, "only its check can tell"
 

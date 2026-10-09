@@ -85,6 +85,8 @@ function draftFrom(source: DataSource, spec?: DataDriver): SourceDraft {
     poll_interval_seconds: source.poll_interval_seconds,
     window_days: source.window_days,
     thread_timeout_seconds: source.thread_timeout_seconds,
+    read_only: source.read_only ?? false,
+    gitignored: source.gitignored ?? true,
     fields,
     picked,
   };
@@ -208,6 +210,8 @@ export function DataSourceDialog({
           editing.poll_interval_seconds !== draft.poll_interval_seconds ||
           editing.window_days !== draft.window_days ||
           editing.thread_timeout_seconds !== draft.thread_timeout_seconds ||
+          (editing.read_only ?? false) !== draft.read_only ||
+          (editing.gitignored ?? true) !== draft.gitignored ||
           JSON.stringify(editing.allowed_senders ?? []) !== JSON.stringify(allowedSenders);
         editing.name = nextName;
         editing.status = nextStatus;
@@ -216,6 +220,8 @@ export function DataSourceDialog({
         editing.poll_interval_seconds = draft.poll_interval_seconds;
         editing.window_days = draft.window_days;
         editing.thread_timeout_seconds = draft.thread_timeout_seconds;
+        editing.read_only = draft.read_only;
+        editing.gitignored = draft.gitignored;
         editing.allowed_senders = allowedSenders;
         await editing.save();
         if (changed) editing.markEdit();
@@ -233,6 +239,8 @@ export function DataSourceDialog({
           poll_interval_seconds: draft.poll_interval_seconds,
           window_days: draft.window_days,
           thread_timeout_seconds: draft.thread_timeout_seconds,
+          read_only: draft.read_only,
+          gitignored: draft.gitignored,
           owner: owner ? owner.toString() : null,
           allowed_senders: allowedSenders,
         });
@@ -507,6 +515,24 @@ export function DataSourceDialog({
 
                 {showAdvanced && (
                   <div className="space-y-3 rounded border p-3">
+                    {spec?.family === 'object' && (
+                      <>
+                        <SwitchRow
+                          id="ds-read-only"
+                          label={t`Read only`}
+                          hint={t`Pull only: edits to the local copy are never written back.`}
+                          checked={draft.read_only}
+                          onChange={(v) => setDraft((d) => ({ ...d, read_only: v }))}
+                        />
+                        <SwitchRow
+                          id="ds-gitignored"
+                          label={t`Keep the local copy out of git`}
+                          hint={t`What this source places in the project is added to .gitignore — it may be private.`}
+                          checked={draft.gitignored}
+                          onChange={(v) => setDraft((d) => ({ ...d, gitignored: v }))}
+                        />
+                      </>
+                    )}
                     <div className="space-y-1">
                       <Label htmlFor="ds-interval">
                         <Trans>Poll interval (seconds)</Trans>
@@ -598,4 +624,29 @@ function groupMembers(specs: DataDriver[], group: string): DataDriver[] {
   return specs
     .filter((s) => s.group === group)
     .sort((a, b) => (a.group_order ?? 0) - (b.group_order ?? 0) || (a.title || '').localeCompare(b.title || ''));
+}
+
+/** One labelled switch with its hint, as the source form's advanced settings show them. */
+function SwitchRow({
+  id,
+  label,
+  hint,
+  checked,
+  onChange,
+}: {
+  id: string;
+  label: string;
+  hint: string;
+  checked: boolean;
+  onChange: (value: boolean) => void;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-3">
+      <div className="space-y-0.5">
+        <Label htmlFor={id}>{label}</Label>
+        <p className="text-xs text-muted-foreground">{hint}</p>
+      </div>
+      <Switch id={id} checked={checked} onCheckedChange={onChange} />
+    </div>
+  );
 }

@@ -241,7 +241,20 @@ def _replace(source: Path, target: Path, *, is_file: bool) -> None:
         return
     if target.exists():
         shutil.rmtree(target)
-    shutil.copytree(source, target, ignore=shutil.ignore_patterns(".git", KEEP_FILE))
+    # The project's own ignore rules hold here too, not only the mirror's: a file the source checkout
+    # keeps out of git is not published by copying it into another one.
+    from flow_sdk.utils.git_ignore import ignored_under, is_under  # noqa: PLC0415
+
+    # The asset itself being ignored is the person's explicit publish; what is ignored INSIDE it stays home.
+    ignored = ignored_under(source) - {Path(source).resolve()}
+    base = shutil.ignore_patterns(".git", KEEP_FILE)
+
+    def _ignore(directory: str, names: list[str]) -> set[str]:
+        skipped = set(base(directory, names))
+        skipped |= {n for n in names if is_under(Path(directory) / n, ignored)}
+        return skipped
+
+    shutil.copytree(source, target, ignore=_ignore)
 
 
 @dataclass(frozen=True)

@@ -267,6 +267,12 @@ async def _start_loopback_flow(
     client_id = client_id_for(provider.name)
     if not client_id:
         return ApiFailResponse(message=f"No client id configured for {provider.display_name}")
+    from dataclasses import replace  # noqa: PLC0415
+
+    from flow_sdk.core.oauth.wanted_scopes import wanted_extra_scopes  # noqa: PLC0415
+
+    if extra := await wanted_extra_scopes(provider.name):
+        provider = replace(provider, scopes=(*provider.scopes, *extra))
 
     code_verifier = ""
     code_challenge = ""

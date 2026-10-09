@@ -232,6 +232,12 @@ class DataSource(Entity):
     #: this row has none (the same trap this module's docstring flags for
     #: project scoping).
     reflect_into: str = APIField(default="")
+    #: Keep the local copy out of git: before the first placement into ``reflect_into`` the engine
+    #: adds it to the ``.gitignore`` beside it, and refuses a target git already tracks. Default on:
+    #: what a source reflects is someone's data, not the project's code.
+    gitignored: bool = APIField(default=True, description="Keep the local copy out of git")
+    #: Pull only. The source never writes to its remote, and asks for no permission that writes.
+    read_only: bool = APIField(default=False, description="Never write back to the remote")
 
     # ── lifecycle ──
     status: str = APIField(default=SourceStatus.NEW.value, persist=Persist.FALSE)
@@ -400,8 +406,15 @@ class DataSource(Entity):
         """The provider this source acts as, and the scopes it needs — its manifest's ``auth.connector``."""
         from flow_sdk.connections import ConnectionRequirements  # noqa: PLC0415
 
+        from flow_sdk.permissions import write_scopes_of_driver  # noqa: PLC0415
+
         auth = self._auth()
-        return ConnectionRequirements({auth.connector: auth.scopes} if auth is not None and auth.connector else {})
+        wanted = {auth.connector: list(auth.scopes)} if auth is not None and auth.connector else {}
+        if not self.read_only:
+            # Writing back takes more than reading: the driver's ``writes`` permissions, on the same connection.
+            for connector, scopes in write_scopes_of_driver(self.provider or "").items():
+                wanted[connector] = list(dict.fromkeys([*wanted.get(connector, []), *scopes]))
+        return ConnectionRequirements(wanted)
 
     async def set_secret_store(self, store) -> None:
         """Bind the store this source loads its names from, and save it; ``None`` unbinds."""
