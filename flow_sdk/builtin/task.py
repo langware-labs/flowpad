@@ -94,6 +94,16 @@ class Task(Entity):
     def is_file_backed(self) -> bool:
         return bool(self.asset_ref) or self.placement != "instance"
 
+    async def save(self, owner=None, notify: bool = True) -> "Task":
+        """Save, and record a local change of status, assignee or title as history (``task_changes``)."""
+        from flow_sdk.builtin import task_changes  # noqa: PLC0415
+
+        before = await task_changes.before(self)
+        saved = await super().save(owner, notify)
+        if before is not None:
+            await task_changes.record(saved, before)
+        return saved
+
     async def find_existing_for_create(self) -> "Task | None":
         """One message, at most one task: a create for a message already made a task ("Task it")
         answers with that task — a double click, a second tab, or Send racing the bubble."""

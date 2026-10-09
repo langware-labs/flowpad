@@ -105,33 +105,52 @@ def apply_to_launch(agent, *, context_data: dict, cli_config: dict, worker_type:
 
 async def sync_tasks_channel(agent):
     """The agent's Tasks channel follows the checkbox: bound and listening when Chief of Staff is on,
-    paused when off (its threads stay). Writes only what changed. Returns the source, or ``None``.
+    paused when off (its threads stay). Writes only what changed. Returns the source, or ``None``."""
+    from flow_sdk.tasks.identity import agent_ref  # noqa: PLC0415
+
+    return await _ensure_principal_channel(
+        agent_ref(agent.id), name=f"{agent.name or agent.id} · tasks", owner=agent.typeid,
+        active=bool(getattr(agent, "chief_of_staff", False)),
+    )
+
+
+async def ensure_user_tasks_channel():
+    """The local person's Tasks channel: the same driver as a Chief of Staff's, keyed ``user:local`` —
+    every task they asked, own, are assigned or reported, as threads in their stream inbox. Created
+    once, kept active; who they are logged in as is read when it opens, so a login rewrites nothing.
+    Returns the source, or ``None`` when no driver carries task events."""
+    from flow_sdk.tasks.identity import LOCAL_USER  # noqa: PLC0415
+
+    return await _ensure_principal_channel(LOCAL_USER, name="My tasks")
+
+
+async def _ensure_principal_channel(principal: str, *, name: str, owner=None, active: bool = True):
+    """One principal's Tasks channel row, found by its account (or made), ACTIVE — or, ``active=False``,
+    paused if it exists (its threads stay). Writes only what changed.
 
     "The Tasks channel" is whichever bus-fed driver carries ``task.*`` as one channel per principal —
     found by what it declares (:func:`flow_sdk.ingest.bus_sources.principal_channel_for`), not by name."""
     from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415
     from flow_sdk.builtin.data_source import DataSource, SourceStatus  # noqa: PLC0415
     from flow_sdk.ingest.bus_sources import principal_channel_for  # noqa: PLC0415
-    from flow_sdk.tasks.identity import agent_ref  # noqa: PLC0415
 
     runtime = principal_channel_for("task.created")
     if runtime is None:
-        logger.warning("chief of staff: no channel carries task events — is the Tasks driver loaded?")
+        logger.warning("tasks channel: no channel carries task events — is the Tasks driver loaded?")
         return None
-    provider = runtime.provider
-    key = runtime.cls.identity_config_key
-    principal = agent_ref(agent.id)
+    provider, key = runtime.provider, runtime.cls.identity_config_key
     existing = await DataSource.find_for_account(provider, key, principal)
-    if not getattr(agent, "chief_of_staff", False):
+    if not active:
         if existing is not None and existing.status != SourceStatus.DISABLED.value:
             existing.status = SourceStatus.DISABLED.value
             await existing.save()
         return existing
     if existing is None:
         driver = DataDriver.loaded(provider)
-        existing = driver.create_source(driver.create_config(**{key: principal}), name=f"{agent.name or agent.id} · tasks")
-        existing.owner = agent.typeid
-    # The agent's own address on this channel: its own task moves (created, replied) are never news to it.
+        existing = driver.create_source(driver.create_config(**{key: principal}), name=name)
+        if owner is not None:
+            existing.owner = owner
+    # The principal's own address on this channel: its own task moves are never news to it.
     wanted = {"status": SourceStatus.ACTIVE.value, "allowed_senders": [], "account_key": principal,
               "account_identities": [principal]}
     changed = [f for f, v in wanted.items() if getattr(existing, f, None) != v]
@@ -158,4 +177,4 @@ async def open_tasks_block(process) -> str:
     return "\n".join(lines)
 
 
-__all__ = ["COS_MARKER", "DEFAULT_STAFF", "apply_to_launch", "sync_tasks_channel", "instructions_for", "native_roster", "open_tasks_block", "staff_dir", "staff_of"]
+__all__ = ["COS_MARKER", "DEFAULT_STAFF", "apply_to_launch", "ensure_user_tasks_channel", "sync_tasks_channel", "instructions_for", "native_roster", "open_tasks_block", "staff_dir", "staff_of"]

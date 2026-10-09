@@ -176,6 +176,7 @@ export function TaskAssetEditor({ fsRef, task: providedTask }: TaskAssetEditorPr
         <button
           key={opt.value}
           onClick={() => applyStatus(opt.value)}
+          data-testid={`task-editor-status-${opt.value}`}
           className={cn(
             'px-3 py-1 text-xs font-medium transition-colors',
             family === opt.value ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted',
@@ -308,6 +309,7 @@ export function TaskAssetEditor({ fsRef, task: providedTask }: TaskAssetEditorPr
               if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
             }}
             placeholder={t`Untitled task`}
+            data-testid="task-editor-title"
             size={Math.max((title || 'Untitled task').length, 1)}
             className="h-auto w-auto min-w-0 max-w-full border-0 bg-transparent px-0 text-2xl font-semibold shadow-none focus-visible:ring-0"
           />

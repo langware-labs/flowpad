@@ -1988,11 +1988,15 @@ def _place_of(claim: dict, places: list[dict], instance: str) -> Optional[dict]:
     return next((p for p in places if node and p.get("node_typeid") == node), None)
 
 
+def answered_by(source) -> str:
+    """Who answers a message source's messages: a ``deployment`` (it has an answer place), an ``agent``
+    (an Agent owns it), or ``nobody`` (a person's own channel — they read and answer it themselves)."""
+    owner = str(getattr(source, "owner", "") or "")  # a TypeId on the row
+    return "deployment" if getattr(source, "answer_place", None) else "agent" if owner.startswith("agent-") else "nobody"
+
+
 def _channel_row(claim: Optional[dict], instance: str, source=None, *, by_hub: bool = False) -> dict:
     """One MessageChannel row: the source here (if any), the claim that delivers to it, and who answers it."""
-    owner = str(getattr(source, "owner", "") or "")  # a TypeId on the row; the list speaks JSON
-    place = str(getattr(source, "answer_place", "") or "")
-    answered_by = "" if source is None else "deployment" if place else "agent" if owner.startswith("agent-") else "nobody"
     return {
         "source_id": str(getattr(source, "id", "") or ""),
         "name": str((source.name or source.provider) if source is not None else (claim or {}).get("name") or ""),
@@ -2000,7 +2004,7 @@ def _channel_row(claim: Optional[dict], instance: str, source=None, *, by_hub: b
         "channel": str(getattr(source, "channel", "") or (claim or {}).get("provider") or ""),
         "claim": claim,
         "routed": _routed(claim, instance, by_hub=by_hub),
-        "answered_by": answered_by,
+        "answered_by": "" if source is None else answered_by(source),
     }
 
 

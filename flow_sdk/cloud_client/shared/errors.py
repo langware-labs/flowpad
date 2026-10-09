@@ -151,3 +151,18 @@ def _extract_error_code(resp: httpx.Response) -> str | None:
     except Exception:
         pass
     return None
+
+
+def is_permission_refusal(exc: Exception) -> bool:
+    """Did the hub refuse this for AUTHORIZATION rather than availability?
+
+    A local write mirrored to the hub is deliberately non-fatal: it must not block on the hub being
+    reachable. But "unreachable" and "you are not allowed" are not the same failure. A 401/403 is
+    PERMANENT — retrying, waiting or reconnecting will never make it succeed — so the local row and the hub
+    have permanently diverged. Logging that at the same level as a transient blip is what let a real gap
+    sit unnoticed: a shared conversation's `member` may create a comment but not update or delete one.
+    """
+    status = getattr(getattr(exc, "response", None), "status_code", None) or getattr(exc, "status_code", None)
+    if status in (401, 403):
+        return True
+    return "401" in str(exc) or "403" in str(exc) or "no valid access" in str(exc).lower()

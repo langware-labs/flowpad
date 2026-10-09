@@ -1550,7 +1550,7 @@ class SQLiteDBDriver(DBDriver):
         async with self._session_ctx():
             yield
 
-    async def after_commit(self, callback: Callable[[], Awaitable[None]]) -> None:
+    def defer_to_commit(self, callback: Callable[[], Awaitable[None]]) -> bool:
         from flow_sdk.request_context.methods import get_current_transaction
 
         # Resolved like ``_session_ctx`` does, including its tolerance: a
@@ -1562,9 +1562,13 @@ class SQLiteDBDriver(DBDriver):
         if not isinstance(bound, AsyncSession):
             bound = _standalone_session_var.get()
         if bound is None:
+            return False
+        bound.info.setdefault(_AFTER_COMMIT_KEY, []).append(callback)
+        return True
+
+    async def after_commit(self, callback: Callable[[], Awaitable[None]]) -> None:
+        if not self.defer_to_commit(callback):
             await callback()
-        else:
-            bound.info.setdefault(_AFTER_COMMIT_KEY, []).append(callback)
 
     async def update_existing_data_fields(
         self, entity_id: str, entity_type: str, values: dict[str, object]
