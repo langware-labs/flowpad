@@ -391,8 +391,10 @@ def test_the_two_egress_seams_now_agree():
             # `channel_provider`: the driver behind the channel (two drivers speak `whatsapp`) — local.
             # `awaits_hub`/`origin_project_id`: an ask for help captured here for the hub, and the
             # project it was asked from — this machine's bookkeeping until delivery.
+            # `channel_answered`: whether anything here answers the channel — stamped by the local projection.
             ["hub_updated_date", "message_ids", "owner", "channel_source_id", "is_unread", "unread_count", "channel_spec",
-             "address", "started_at", "ended_at", "channel_provider", "awaits_hub", "origin_project_id"],
+             "address", "started_at", "ended_at", "channel_provider", "awaits_hub", "origin_project_id",
+             "channel_answered"],
             BASE_LOCAL_ONLY,
             # `message_count`/`message_ids` are projections; Conversation's setattr
             # guard refuses them, which is itself the policy under test elsewhere.
@@ -414,6 +416,8 @@ def test_the_two_egress_seams_now_agree():
                 # A projection like `message_count`: only `recompute_unread` may write it.
                 "is_unread",
                 "unread_count",
+                # Stamped by the local projection with `channel_source_id`, never by a caller.
+                "channel_answered",
                 "private_context_entities_",
                 "shared_context_entities",
             ],
