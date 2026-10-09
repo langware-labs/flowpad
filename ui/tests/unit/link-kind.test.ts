@@ -1,6 +1,6 @@
 /** What a detected link is, and which actions it offers — the pure layers under every link surface. */
 import { describe, expect, it } from 'vitest';
-import { appLinkPath, lightboxMediaName, linkKind } from '@src/lib/link-kind';
+import { appLinkPath, bareWebUrl, lightboxMediaName, linkKind } from '@src/lib/link-kind';
 import { linkActions, type LinkContext } from '@src/components/links/link-actions';
 
 const ORIGIN = 'http://localhost:5032';
@@ -22,6 +22,16 @@ describe('linkKind', () => {
     expect(appLinkPath(`${ORIGIN}/dock/explorer/tmp?x=1`, ORIGIN)).toBe('/dock/explorer/tmp?x=1');
     expect(appLinkPath(`${ORIGIN}/assets/logo.png`, ORIGIN)).toBeNull();
     expect(appLinkPath('https://other.test/dock/x', ORIGIN)).toBeNull();
+  });
+
+  it('reads a scheme-less web address as https, sure only when a path follows the host', () => {
+    expect(bareWebUrl('clau.de/reset')).toEqual({ url: 'https://clau.de/reset', sure: true });
+    expect(bareWebUrl('x.io:8080?a=1')).toEqual({ url: 'https://x.io:8080?a=1', sure: true });
+    expect(bareWebUrl('example.org')).toEqual({ url: 'https://example.org', sure: false });
+    expect(bareWebUrl('README.md')).toEqual({ url: 'https://README.md', sure: false });
+    for (const file of ['src/a.ts:3', '/tmp/x', './a.md', 'C:\\x\\y.txt', 'notes', 'a.b/c d']) {
+      expect(bareWebUrl(file)).toBeNull();
+    }
   });
 
   it('names media by its path, without position or query', () => {
