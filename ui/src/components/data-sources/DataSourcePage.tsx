@@ -2,8 +2,9 @@
  * One configured source — what went through ONE of this machine's pipes. `Data sources › <source>`.
  *
  * Simple (`/dock/data-sources/<id>`, the default): the source's stream and nothing else — a message source's
- * conversation, messages going back and forth with the composer under them (its list when it has several); any other
- * source's live events. The header's Advanced (any tab in the URL) opens the rest, three tabs:
+ * conversation, messages going back and forth with the composer under them (its list when it has several); a file
+ * source's files (`SourceFiles`, browsed at `<id>/files/<rel…>`); any other source's live events. The header's Advanced
+ * (any tab in the URL) opens the rest, three tabs:
  *
  *   Messages  the conversations that came through it, live — the stream inbox's own list, narrowed by the backend to
  *             this source (`channel_source_id`). Only for a source that carries messages. A conversation opens in
@@ -33,9 +34,10 @@ import { ownerOf, sourceConversationsRequest } from '@src/components/stream-inbo
 import { BusStream } from '@src/components/automations/BusStream';
 import { sourceGlyphs } from './source-icon';
 import { SourceActions, SourceSetupDetails, SourceStatusLine } from './source-parts';
+import { SourceFiles } from './SourceFiles';
 import { openDriver, openSource, openSourceFile, type SourceTab } from './data-sources-pointer';
 import { OpenFolderButton } from './OpenFolderButton';
-import { isMessageDriverSpec } from './use-source-specs';
+import { isMessageDriverSpec, isObjectDriverSpec } from './use-source-specs';
 
 interface Props {
   /** The source, from the view's live list (null while it loads, or once it is deleted). */
@@ -45,13 +47,15 @@ interface Props {
   /** A conversation of this source open on its Messages tab, and the thread open in it. */
   conversation?: string | null;
   thread?: string | null;
+  /** A file source's folder browsed into, relative to its files. */
+  files?: string | null;
   spec?: DataDriver | null;
   onEdit: (source: DataSource) => void;
   onReplay: (source: DataSource) => void;
   onDelete: (source: DataSource) => void;
 }
 
-export function DataSourcePage({ source, id, tab, conversation, thread, spec, onEdit, onReplay, onDelete }: Props) {
+export function DataSourcePage({ source, id, tab, conversation, thread, files, spec, onEdit, onReplay, onDelete }: Props) {
   const { t } = useLingui();
   const { navigation } = useDockNavigation();
   if (!source) {
@@ -79,6 +83,20 @@ export function DataSourcePage({ source, id, tab, conversation, thread, spec, on
   // An agent's source answers in the agent's stream inbox: its conversations open agent-scoped.
   const agentPrefix = `${Agent.type}-`;
   const agentId = owner?.startsWith(agentPrefix) ? owner.slice(agentPrefix.length) : undefined;
+
+  // The simple view is what the source IS: a channel's messages, a file source's files, else its events (the
+  // events of a message or file source are under Advanced). Nothing until its driver is known, so a file source
+  // never opens a live event stream first.
+  const simpleView =
+    spec === undefined ? null : carriesMessages ? (
+      <div className="min-h-[24rem] flex-1 overflow-hidden rounded-lg border border-border">
+        <SourceStream source={source} agentId={agentId} />
+      </div>
+    ) : isObjectDriverSpec(spec) ? (
+      <SourceFiles source={source} rel={files ?? null} />
+    ) : (
+      <BusStream target={`data_source:${source.id}`} />
+    );
 
   return (
     <div className="flex min-h-0 flex-1 flex-col" data-testid={`data-source-page-${source.id}`}>
@@ -111,7 +129,7 @@ export function DataSourcePage({ source, id, tab, conversation, thread, spec, on
             className="h-7 gap-1.5 px-2 text-xs"
             aria-pressed={advanced}
             data-testid="data-source-advanced"
-            title={advanced ? t`Back to the simple view` : t`Messages list, events and settings`}
+            title={advanced ? t`Back to the simple view` : carriesMessages ? t`Messages list, events and settings` : t`Events and settings`}
             onClick={() => (advanced ? openSource(navigation, id) : openSource(navigation, id, tabs[0].key))}
           >
             <SlidersHorizontal className="size-3.5" />
@@ -121,14 +139,7 @@ export function DataSourcePage({ source, id, tab, conversation, thread, spec, on
         </div>
       </div>
 
-      {!advanced &&
-        (carriesMessages ? (
-          <div className="min-h-[24rem] flex-1 overflow-hidden rounded-lg border border-border">
-            <SourceStream source={source} agentId={agentId} />
-          </div>
-        ) : (
-          <BusStream target={`data_source:${source.id}`} />
-        ))}
+      {!advanced && simpleView}
 
       {advanced && (
         <div className="mb-3 flex gap-1 border-b border-border" role="tablist">

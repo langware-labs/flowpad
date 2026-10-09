@@ -52,3 +52,18 @@ describe('data-sources pointer', () => {
     expect(parseDataSourcesPointer(`${ID}/nope`)).toEqual({ section: 'source', id: ID, tab: null });
   });
 });
+
+describe('a file source browsed into a folder', () => {
+  const id = '11111111-1111-4111-8111-111111111111';
+
+  it('round-trips the folder under the source, segment by segment', () => {
+    const pointer = dataSourcesPointer({ section: 'source', id, tab: null, files: 'co_acme/input' });
+    expect(pointer).toBe(`${id}/files/co_acme/input`);
+    expect(parseDataSourcesPointer(pointer)).toEqual({ section: 'source', id, tab: null, files: 'co_acme/input' });
+  });
+
+  it('is the source top when empty, and never climbs above it', () => {
+    expect(dataSourcesPointer({ section: 'source', id, tab: null, files: '' })).toBe(id);
+    expect(parseDataSourcesPointer(`${id}/files/../../etc`)).toEqual({ section: 'source', id, tab: null, files: null });
+  });
+});
