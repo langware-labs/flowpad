@@ -40,13 +40,14 @@ fix, record there every finding you deliberately leave, and why.
 | C12 | Tests and scripts that write leave the real project and any shared outside system as they found them, even when interrupted (a probe, or `try/finally` cleanup) | the test code |
 | C13 | Docs and agent prompts say what the code does | read them against the code |
 
-## 3. Findings — only what makes a check FAIL, ranked
+## 3. Findings, ranked — a check FAILS only on a High or Medium finding
 
 - **High** — data is lost, corrupted, or a rule the project relies on is broken for some writer.
 - **Medium** — a check fails in a way that produces wrong data, a wrong screen or a lost edit
   under realistic use (not a contrived sequence).
 - **Low** — everything else: duplication, style, naming, a nicer helper, a hypothetical. List at
-  most five, under "Backlog". **Low never fails a review.**
+  most five, under "Backlog". **Low never fails a check or the review** — a check with only Low
+  findings is a PASS.
 
 **Not findings** (report them in their own short sections, never in the ranking):
 - a gap in the SDK or this skill — "SDK / skill gaps", for the SDK's owners;
