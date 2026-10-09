@@ -118,6 +118,10 @@ def local_tree(mirror: Path, worktree: Path, rel_path: str) -> str | None:
     import subprocess  # noqa: PLC0415
     import tempfile  # noqa: PLC0415
 
+    from flow_sdk.utils.git_usable import git_usable  # noqa: PLC0415
+
+    if not git_usable():  # a Mac without the Command Line Tools: git would open Apple's installer dialog
+        return None
     with tempfile.TemporaryDirectory() as scratch:
         env = {**os.environ, "GIT_INDEX_FILE": str(Path(scratch) / "index"), "GIT_TERMINAL_PROMPT": "0"}
         base = ["git", "--git-dir", str(mirror / ".git"), "--work-tree", str(worktree)]

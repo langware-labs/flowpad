@@ -31,6 +31,7 @@ from flow_sdk.fs_store.operations.markdown_index import (
 from flow_sdk.llm_index import LLMIndexer, typeid_for
 from flow_sdk.llm_index.diff import MAX_DIFF_BYTES, git_unified_diff, is_binary_bytes
 from flow_sdk.llm_index.indexer import ScanTick
+from flow_sdk.utils.git_usable import git_usable
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -104,9 +105,7 @@ async def docs_graph_doc(root: str = Query(...), rel: str = Query(...)) -> dict:
         raise HTTPException(status_code=403, detail="path escapes root")
     if not target.is_file():
         raise HTTPException(status_code=404, detail=f"Not a file: {rel}")
-    text = await asyncio.to_thread(
-        lambda: target.read_text(encoding="utf-8", errors="replace")
-    )
+    text = await asyncio.to_thread(lambda: target.read_text(encoding="utf-8", errors="replace"))
     from flow_sdk.llm_index import MarkdownDocument  # noqa: PLC0415
 
     doc = MarkdownDocument.from_text(text, path=target)
@@ -127,9 +126,7 @@ async def docs_graph_stamp(root: str = Query(...)) -> dict:
     root_path = _resolve_root(root)
     lock = _stamp_locks.setdefault(str(root_path), asyncio.Lock())
     async with lock:
-        stats = await asyncio.to_thread(
-            lambda: _indexer(root_path).scan(root_path).stamp()
-        )
+        stats = await asyncio.to_thread(lambda: _indexer(root_path).scan(root_path).stamp())
     return {"status": "SUCCESS", "message": "success", "data": asdict(stats)}
 
 
@@ -137,9 +134,7 @@ async def docs_graph_stamp(root: str = Query(...)) -> dict:
 async def docs_graph_changes(root: str = Query(...)) -> dict:
     """Manifest diff since the last stamp: added/removed/modified/renamed."""
     root_path = _resolve_root(root)
-    changes = await asyncio.to_thread(
-        lambda: _indexer(root_path).scan(root_path).diff_since_baseline()
-    )
+    changes = await asyncio.to_thread(lambda: _indexer(root_path).scan(root_path).diff_since_baseline())
     return {"status": "SUCCESS", "message": "success", "data": changes}
 
 
@@ -166,7 +161,7 @@ async def docs_graph_diff(root: str = Query(...), rel: str = Query(...)) -> dict
                 if len(old_bytes) > MAX_DIFF_BYTES or is_binary_bytes(old_bytes):
                     return {"diff": "", "skipped": "binary_or_large", "rel_path": rel}
                 old_text = old_bytes.decode("utf-8", "replace")
-            else:
+            elif git_usable():  # not on a Mac without the Command Line Tools: that opens Apple's installer dialog
                 proc = subprocess.run(
                     ["git", "-C", str(root_path), "show", f"HEAD:./{rel}"],
                     capture_output=True,
@@ -237,9 +232,7 @@ async def docs_graph(root: str = Query(...)) -> dict:
     pump_task = asyncio.create_task(pump())
     started = time.perf_counter()
     try:
-        graph = await asyncio.to_thread(
-            lambda: _indexer(root_path).scan(root_path, on_tick=on_tick).to_graph()
-        )
+        graph = await asyncio.to_thread(lambda: _indexer(root_path).scan(root_path, on_tick=on_tick).to_graph())
     except BaseException:
         # Without this the activity never reaches a terminal state, so the monitor keeps a
         # permanently "running" root per scanned folder and the chip reports work that
