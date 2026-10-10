@@ -26963,10 +26963,6 @@ msgstr "Verify the setup first."
 #~ msgid "Verify: {0}"
 #~ msgstr "Verify: {0}"
 
-#: src/components/stream-inbox-view/AttachedChannelsBar.tsx
-msgid "Verify: {reason}"
-msgstr "Verify: {reason}"
-
 #: src/components/assets/editor/skill/UsagePanel.tsx
 msgid "Version-bump + commit the asset"
 msgstr "Version-bump + commit the asset"

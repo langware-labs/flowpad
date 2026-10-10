@@ -58,9 +58,15 @@ import {
   sourceForOrigin,
   useChannelAttribution,
 } from '@src/components/conversation/channel-attribution';
-import { AttachedChannelsBar, channelKeyOf, useAttachedChannels } from './AttachedChannelsBar';
-import { ChannelAttentionBar, attentionAmong } from './ChannelAttentionBar';
-import { channelsOwnerFor, sourceConversationsRequest, streamInboxConversationsRequest } from './channel-owner';
+import { AttachedChannelsBar, useAttachedChannels } from './AttachedChannelsBar';
+import { ChannelAttentionBar } from './ChannelAttentionBar';
+import {
+  attentionAmong,
+  channelKeyOf,
+  channelsOwnerFor,
+  sourceConversationsRequest,
+  streamInboxConversationsRequest,
+} from './channel-owner';
 import { useContext } from '@src/hooks/useContext';
 import {
   conversationFacets,
@@ -1369,13 +1375,13 @@ export function StreamInboxView({
             <span className="text-sm">
               {searchActive || columnFilterActive
                 ? t`No matching conversations`
-                : attention.length > 0
-                  ? t`No messages from this channel yet`
-                  : inArchivedView
+                : inArchivedView
                   ? t`No archived conversations`
                   : inUnreadView
                     ? t`No unread conversations`
-                    : t`No conversations`}
+                    : channelFilter.size > 0
+                      ? t`No messages from this channel yet`
+                      : t`No conversations`}
             </span>
             {!inArchivedView && !searchActive && !columnFilterActive && attention.length === 0 && (
               <Button variant="outline" size="sm" onClick={() => void handleRefresh()} disabled={fetching}>

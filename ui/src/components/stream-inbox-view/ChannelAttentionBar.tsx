@@ -4,23 +4,25 @@
  * Clicking a mark on the channels line filters the list to that channel. When that
  * channel is not delivering — a setup step is owed, it is parked on a configuration
  * error, it is paused, a file is held, or it is retrying after a failure — the
- * filtered list is empty or stale, and a tooltip is not where a person learns why. This strip sits between the filter row and the list and
- * says, per source: the reason, the next step, and the verb that takes it — Verify,
- * Resume or Pull, the source's settings, its setup wizard, its help page.
+ * filtered list is empty or stale, and a tooltip is not where a person learns why.
+ * This strip sits between the filter row and the list and says, per source: the
+ * reason, the next step, and the verb that takes it — Verify, Resume or Pull — beside
+ * the source's settings, its setup wizard and its help page.
  *
  * Verify's answer is shown IN the strip, not toasted: the person is looking here.
  * The strip unmounts by itself once the entity updates to a listening state, because
  * the mount filters on `attentionReason`, the one classifier every channel surface reads.
  *
  * Nothing here knows a provider. The reason is the source's own words, the next step
- * is by kind, and any provider-specific help comes from the driver's manifest
- * (`setup_wiki`, `setup_wizards`).
+ * and the verb are by kind (`ATTENTION`), and any provider-specific help comes from the
+ * driver's manifest (`setup_wiki`, `setup_wizards`).
  */
 import type { ReactNode } from 'react';
-import { type DataDriver, type DataSource } from '@sdk';
+import type { DataDriver, DataSource } from '@sdk';
 import { CheckCircle2, Play, RefreshCw, Settings2 } from 'lucide-react';
 import { i18n } from '@lingui/core';
-import { Trans, useLingui } from '@lingui/react/macro';
+import { msg } from '@lingui/core/macro';
+import { useLingui } from '@lingui/react/macro';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { cn } from '@src/lib/utils';
 import { Button } from '@src/components/ui/button';
@@ -28,43 +30,53 @@ import { WikiButton } from '@src/components/wiki-tip';
 import { SetupStagesButton } from '@src/components/setup-wizard/SetupStagesButton';
 import { openSource } from '@src/components/data-sources/data-sources-pointer';
 import {
-  ATTENTION_FALLBACK,
-  ATTENTION_NEXT_STEP,
+  ATTENTION,
   type AttentionKind,
   type AttentionReason,
-  attentionReason,
+  attentionText,
 } from '@src/components/data-sources/source-attention';
 import { sourceGlyphs } from '@src/components/data-sources/source-icon';
 import { useSourcePull } from '@src/components/data-sources/source-parts';
 import { useSourceToggle } from '@src/components/data-sources/use-source-toggle';
-import { useSourceVerify } from '@src/components/data-sources/use-source-verify';
+import { type VerifyOutcome, useSourceVerify } from '@src/components/data-sources/use-source-verify';
 import { IconWithBadge } from '@src/components/graph-view/icons/IconWithBadge';
-import { channelKeyOf } from './channel-owner';
+import type { AttentionItem } from './channel-owner';
 
-export interface AttentionItem {
-  source: DataSource;
-  reason: AttentionReason;
-}
-
-/** The sources among `rows` whose channel the list is narrowed to and that are not listening. */
-export function attentionAmong(rows: DataSource[], selected: ReadonlySet<string>): AttentionItem[] {
-  if (selected.size === 0) return [];
-  const items: AttentionItem[] = [];
-  for (const source of rows) {
-    const reason = selected.has(channelKeyOf(source)) ? attentionReason(source) : null;
-    if (reason) items.push({ source, reason });
-  }
-  return items;
-}
-
+// Tinted row, coloured border, foreground words: red (or amber) text on a dark theme does not read.
+const AMBER = 'border-amber-500/40 bg-amber-500/10';
 const TINT: Record<AttentionKind, string> = {
-  // Tinted row, coloured border, foreground words: red (or amber) text on a dark theme does not read.
-  setup: 'border-amber-500/40 bg-amber-500/10',
+  setup: AMBER,
   parked: 'border-red-500/60 bg-red-500/10',
   paused: 'border-border bg-muted/40',
-  held: 'border-amber-500/40 bg-amber-500/10',
-  retrying: 'border-amber-500/40 bg-amber-500/10',
+  held: AMBER,
+  retrying: AMBER,
 };
+
+/** What a Verify press answered, as the strip's two lines — or null before any press. */
+function verifyAnswer(last: VerifyOutcome | null): { wrong: string; next: ReactNode } | null {
+  if (!last) return null;
+  const { result, error } = last;
+  const failed = error ?? (result?.transient ? result.detail : undefined);
+  if (failed !== undefined) {
+    return { wrong: i18n._(msg`Could not check — ${failed}`), next: i18n._(msg`Try again in a moment.`) };
+  }
+  if (!result) return null;
+  if (result.ready) {
+    return { wrong: i18n._(msg`Now listening.`), next: i18n._(msg`New messages will appear here on the next poll.`) };
+  }
+  return {
+    wrong: result.detail,
+    next: result.pending?.length ? (
+      <ul className="list-disc ps-4">
+        {result.pending.map((step) => (
+          <li key={step}>{step}</li>
+        ))}
+      </ul>
+    ) : (
+      i18n._(msg`Finish that, then press Verify again.`)
+    ),
+  };
+}
 
 export function ChannelAttentionBar({
   items,
@@ -85,7 +97,15 @@ export function ChannelAttentionBar({
   );
 }
 
-function AttentionRow({ source, reason, spec }: { source: DataSource; reason: AttentionReason; spec: DataDriver | undefined }) {
+function AttentionRow({
+  source,
+  reason,
+  spec,
+}: {
+  source: DataSource;
+  reason: AttentionReason;
+  spec: DataDriver | undefined;
+}) {
   const { t } = useLingui();
   const { navigation } = useDockNavigation();
   const { verify, busy: verifying, last } = useSourceVerify(source, { quiet: true });
@@ -93,39 +113,17 @@ function AttentionRow({ source, reason, spec }: { source: DataSource; reason: At
   const { pull, pulling } = useSourcePull(source);
   const { Base, Badge } = sourceGlyphs(spec, source.channel);
   const name = source.name || source.provider;
+  const { verb, next: nextStep } = ATTENTION[reason.kind];
 
   // What is wrong, and what to do. After a Verify press, its answer replaces both until the
   // entity itself moves on (a ready answer unmounts the row as soon as the row updates).
-  let wrong = reason.text || i18n._(ATTENTION_FALLBACK[reason.kind]);
-  let next: ReactNode = i18n._(ATTENTION_NEXT_STEP[reason.kind]);
-  const failed = last?.error ?? (last?.result?.transient ? last.result.detail : undefined);
-  if (failed !== undefined) {
-    wrong = t`Could not check — ${failed}`;
-    next = <Trans>Try again in a moment.</Trans>;
-  } else if (last?.result?.ready) {
-    wrong = t`Now listening.`;
-    next = <Trans>New messages will appear here on the next poll.</Trans>;
-  } else if (last?.result) {
-    wrong = last.result.detail;
-    next = last.result.pending?.length ? (
-      <ul className="list-disc ps-4">
-        {last.result.pending.map((step) => (
-          <li key={step}>{step}</li>
-        ))}
-      </ul>
-    ) : (
-      <Trans>Finish that, then press Verify again.</Trans>
-    );
-  }
+  const { wrong, next } = verifyAnswer(last) ?? { wrong: attentionText(reason), next: i18n._(nextStep) };
 
-  // The one verb for this kind: Resume un-pauses; Pull polls now (and carries a held file on once the two
-  // agree); Verify re-runs the check and un-parks.
-  const action =
-    reason.kind === 'paused'
-      ? { Icon: Play, label: t`Resume`, run: toggle, busy: toggling, testId: 'channel-attention-resume' }
-      : reason.kind === 'held' || reason.kind === 'retrying'
-        ? { Icon: RefreshCw, label: t`Pull`, run: pull, busy: pulling, testId: 'channel-attention-pull' }
-        : { Icon: CheckCircle2, label: t`Verify`, run: verify, busy: verifying, testId: 'channel-attention-verify' };
+  const action = {
+    verify: { Icon: CheckCircle2, label: t`Verify`, run: verify, busy: verifying },
+    resume: { Icon: Play, label: t`Resume`, run: toggle, busy: toggling },
+    pull: { Icon: RefreshCw, label: t`Pull`, run: pull, busy: pulling },
+  }[verb];
 
   return (
     <div
@@ -156,7 +154,7 @@ function AttentionRow({ source, reason, spec }: { source: DataSource; reason: At
           className="h-7 gap-1.5"
           disabled={action.busy}
           onClick={() => void action.run()}
-          data-testid={action.testId}
+          data-testid={`channel-attention-${verb}`}
         >
           <action.Icon className="size-3.5" />
           {action.label}
