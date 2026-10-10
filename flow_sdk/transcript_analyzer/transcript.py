@@ -121,26 +121,52 @@ class AgentTranscriptFile:
         if file_size < self._byte_offset:
             self._reset_state()
 
+        # One physical line at a time. The first read is the WHOLE file, and
+        # slurping it meant holding the bytes, one decoded str (4 bytes per
+        # char once any emoji is present) and a list of lines at once — a
+        # transient peak of ~7x the file size. Iterating the buffered binary
+        # file keeps nothing bigger than the longest line alive besides the
+        # parsed entries. Binary iteration splits on b"\n" only, which is
+        # exactly the boundary the partial-line rule needs.
+        consumed = False
         try:
             with self.path.open("rb") as f:
                 f.seek(self._byte_offset)
-                new_bytes = f.read()
+                for raw_bytes in f:
+                    if not raw_bytes.endswith(b"\n"):
+                        # Partial-line buffering: a trailing line with no
+                        # final newline is deferred until the next call.
+                        break
+                    self._byte_offset += len(raw_bytes)
+                    consumed = True
+                    self._feed_line(raw_bytes)
         except OSError as exc:
+            # Lines fed before the failure are already counted in
+            # ``_byte_offset``; fall through so ``entries`` reflects them.
             logger.debug("AgentTranscriptFile: read failed %s: %s", self.path, exc)
+
+        if not consumed:
             return self.entries
 
-        if not new_bytes:
-            return self.entries
+        # Refold the FULL retained list — folds may span delta boundaries.
+        # Both fold passes mutate the survivor entry in place (assistant_messages
+        # joins `.text`/`.thinking`; tool_results writes ``stdout_preview`` /
+        # ``content_preview`` / ``exit_code`` / etc. on the call entry). With
+        # repeated folds (one per delta), an in-place mutation from an earlier
+        # fold would feed back into the next fold's input — producing duplicated
+        # joined text and other re-mutation artifacts. We fold over shallow
+        # copies so ``self._unfolded`` stays pristine across delta boundaries.
+        return self._refold()
 
-        # Partial-line buffering: consume only up to the last complete line.
-        last_newline = new_bytes.rfind(b"\n")
-        if last_newline == -1:
-            # No complete line yet — defer until next call.
-            return self.entries
-        complete_part = new_bytes[: last_newline + 1]
-        self._byte_offset += len(complete_part)
-
-        for raw_line in complete_part.decode("utf-8", errors="replace").splitlines():
+    def _feed_line(self, raw_bytes: bytes) -> None:
+        """Decode one complete physical line and feed its JSONL row(s) to the
+        parser. ``splitlines()`` is kept on purpose: it is the line-boundary
+        rule the whole-file decode used (it also splits on ``\\r``, U+2028,
+        ...), so a row's ``_line_idx`` is unchanged by the line-at-a-time read.
+        A multi-byte UTF-8 sequence never contains ``0x0A``, so decoding per
+        physical line yields the same text as decoding the whole delta.
+        """
+        for raw_line in raw_bytes.decode("utf-8", errors="replace").splitlines():
             line = raw_line.strip()
             if not line:
                 continue
@@ -155,16 +181,6 @@ class AgentTranscriptFile:
                 continue
             self._unfolded.extend(self._parser.feed(raw, self._line_idx))
             self._line_idx += 1
-
-        # Refold the FULL retained list — folds may span delta boundaries.
-        # Both fold passes mutate the survivor entry in place (assistant_messages
-        # joins `.text`/`.thinking`; tool_results writes ``stdout_preview`` /
-        # ``content_preview`` / ``exit_code`` / etc. on the call entry). With
-        # repeated folds (one per delta), an in-place mutation from an earlier
-        # fold would feed back into the next fold's input — producing duplicated
-        # joined text and other re-mutation artifacts. We fold over shallow
-        # copies so ``self._unfolded`` stays pristine across delta boundaries.
-        return self._refold()
 
     def _refold(self) -> list[TranscriptEntry]:
         """Refold ``self._unfolded`` (over shallow copies, so the retained list
