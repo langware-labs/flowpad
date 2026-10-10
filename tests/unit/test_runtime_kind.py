@@ -86,6 +86,30 @@ def test_assignable_kinds_round_trip(kind):
         assert runtime.get_assigned_runtime() == kind
 
 
+def test_an_assignment_written_by_another_process_is_seen_by_a_running_server(tmp_path, monkeypatch):
+    """The hub labels a box with ``flow auth set-runtime`` — its own process — while the server
+    is already up and has already answered a bootstrap. The server must follow the file, not
+    its first read: a sandbox that kept its first answer called itself a local browser."""
+    import json  # noqa: PLC0415
+    import os  # noqa: PLC0415
+    from types import SimpleNamespace  # noqa: PLC0415
+
+    config = tmp_path / "config.json"
+    config.write_text("{}")
+    monkeypatch.setattr(runtime, "get_instance_settings", lambda: SimpleNamespace(instance_name="box", instance_dir=tmp_path))
+    monkeypatch.setattr(runtime.app_config, "get_config", lambda k, default=None: json.loads(config.read_text()).get(k, default))
+
+    assert runtime.get_assigned_runtime() is None  # the server answered before it was labelled
+
+    # The other process writes the file; nothing in this one is told.
+    config.write_text(json.dumps({"runtime_kind": "sandbox"}))
+    stamp = config.stat().st_mtime_ns + 1_000_000
+    os.utime(config, ns=(stamp, stamp))
+
+    assert runtime.get_assigned_runtime() == RuntimeKind.SANDBOX
+    assert runtime.resolve_runtime(electron=False).kind == RuntimeKind.SANDBOX
+
+
 @pytest.mark.parametrize("kind", [RuntimeKind.DESKTOP, RuntimeKind.BROWSER, RuntimeKind.HUB])
 def test_hub_cannot_assign_a_local_or_hub_kind(kind):
     """`desktop`/`browser` are decided per request from the electron flag, and
