@@ -6,6 +6,7 @@ import { useAllTabs } from '@src/tabs/use-tab-manager';
 import { sessionIdForDock } from '@src/contexts/view-mode-context';
 import { useEntity } from '@src/hooks/entity-hooks';
 import { setupTabAndAdopt } from '@src/tabs/tab-content-lifecycle';
+import { releaseLaunchWatch } from '@src/components/agents/launch-watch';
 
 /**
  * Resolved vibe-workspace session for the current URL.
@@ -126,6 +127,9 @@ export function useVibeWorkspaceSessionHost(
   useEffect(() => {
     hadTab.current = false;
   }, [sessionId]);
+  // The workspace is the session view: leaving it gives the launch-time watch lease back
+  // (the `useEntity({ watch: true })` above is the view's own watch and balances itself).
+  useEffect(() => () => releaseLaunchWatch(sessionId), [sessionId]);
 
   useEffect(() => {
     if (!active || !session) return;

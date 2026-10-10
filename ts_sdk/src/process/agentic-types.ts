@@ -96,6 +96,14 @@ export function isProcessStartable(status: ProcessStatus): boolean {
 }
 
 /**
+ * True once the process RAN and ended (STOPPED/FAILED): its worker and PTY are gone until
+ * it is started again. NEW is startable but has not ended — nothing of it is held yet.
+ */
+export function isProcessEnded(status: ProcessStatus): boolean {
+  return status === ProcessStatus.STOPPED || status === ProcessStatus.FAILED;
+}
+
+/**
  * Expert-level state of the worker running inside the process.
  *
  * Mirrors the Python ``WorkerStatus`` enum in ``flow_sdk/fs_records/agent_status.py``.
