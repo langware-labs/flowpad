@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import collections
+import contextvars
 import json
 import logging
 import time
@@ -440,18 +441,53 @@ def _release_process_transcript_state(process: "AgenticProcess") -> None:
     process", not "release these four things". ``_REINDEX_WATERMARKS`` arrived
     from a separate branch and joined here for exactly that reason — a
     re-opened process must also rescan from 0, since its transcript is a new
-    file.
+    file. The ``recovered`` flag (``pty_recovery``) rides along for the same
+    reason: it describes the respawned worker, and goes with it.
+
+    Three exits reach here: ``close()``, ``delete()``, and a worker that ends
+    on its own (``_on_pty_exit`` / the headless arm of ``exit()``), the last
+    through :func:`_release_after_armed_flush`, which lets an armed flush
+    finish first. The flush itself releases when it finds the row terminal.
     """
+    from flow_sdk.server.pty_recovery import forget_recovered
+
     key = str(process.id)
     process._last_broadcast_key = None  # setter drops the row
     _PENDING_ENTRIES.pop(key, None)
     _REINDEX_WATERMARKS.pop(key, None)
     _TRANSCRIPT_SIZE_AT_PROMPT.pop(key, None)
+    forget_recovered(key)
     task = _DEBOUNCE_TASKS.pop(key, None)
-    if task is not None and not task.done():
+    # A flush that releases its own process must not cancel itself.
+    if task is not None and not task.done() and task is not asyncio.current_task():
         # The flush re-reads the row and bails when it is gone, but an armed
         # timer on a dead process is pure latency on shutdown.
         task.cancel()
+
+
+def _release_after_armed_flush(process: "AgenticProcess") -> None:
+    """Release on a self-exit without losing the flush that is already armed.
+
+    The worker's last lines can carry its session name, and only the flush
+    applies it. ``close()`` / ``delete()`` cancel that flush; a worker that quit
+    on its own must not, so the release waits for it. A flush that had already
+    read the row as RUNNING finishes down its normal path and writes its key
+    after the exit handler has passed — hence the done-callback rather than
+    leaving the release to the flush's own terminal branch.
+    """
+    key = str(process.id)
+    task = _DEBOUNCE_TASKS.get(key)
+    if task is None or task.done():
+        _release_process_transcript_state(process)
+        return
+
+    def _done(finished: asyncio.Task) -> None:
+        if _DEBOUNCE_TASKS.get(key) is finished:  # a newer flush releases itself
+            _release_process_transcript_state(process)
+
+    # The callback touches module dicts only; an empty context keeps it from
+    # pinning the request this may run inside (the headless ``exit()`` arm).
+    task.add_done_callback(_done, context=contextvars.Context())
 
 
 #: Where a process remembers the terminal it opened for the user, so
@@ -1871,6 +1907,9 @@ class AgenticProcess(Entity):
             # Headless: a finished turn leaves nothing to kill, but the process still ends STOPPED.
             self.status = ProcessStatus.STOPPED.value
             await self.save()
+            # No PTY exit callback follows for a headless worker, so this arm
+            # is its self-exit: release its per-process state here.
+            _release_after_armed_flush(self)
             return ApiSuccessResponse(data={"status": "stopped"})
 
         try:
@@ -7864,6 +7903,12 @@ class AgenticProcess(Entity):
                 # Deliberately WITHOUT draining: entries buffered before the
                 # process reached RUNNING stay queued for the next flush. They
                 # used to die here with the instance that held them.
+                # A process that is gone or terminal has no next flush: release
+                # it, or a late change to its file (the watcher delivering the
+                # worker's last lines after the exit, the startup catch-up walk)
+                # buffers entries nothing will ever drain.
+                if durable is None or durable.status in (ProcessStatus.STOPPED.value, ProcessStatus.FAILED.value):
+                    _release_process_transcript_state(self)
                 return
 
             # Consume exactly what was read. Anything that arrived during the
@@ -8336,6 +8381,7 @@ class AgenticProcess(Entity):
                         if proc.status == ProcessStatus.STOPPING.value:
                             proc.status = ProcessStatus.STOPPED.value
                         await proc.save()
+                        _release_after_armed_flush(proc)
                         return
                     if backend_restart_requested():
                         # `flow instance restart-backend` marks its intent
@@ -8402,6 +8448,10 @@ class AgenticProcess(Entity):
                     # exited non-zero indistinguishable from a clean one.
                     proc.exit_code = exit_code
                     await proc.save()
+                    # The row is terminal (STOPPED / FAILED) on every arm that
+                    # reaches here; the restart and recoverable-signal arms
+                    # returned above and keep their state for the respawn.
+                    _release_after_armed_flush(proc)
 
                     if session_id:
                         asyncio.create_task(_index_session_on_close(session_id, display_name=proc.name))

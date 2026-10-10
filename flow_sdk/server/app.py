@@ -604,7 +604,10 @@ async def _start_transcript_streamer() -> None:
     for files that haven't changed since startup, and folder-mode FSOp catch-up
     is intentionally skipped. The walk lazily constructs a streamer per file
     (full initial parse via ``AgentTranscriptFile.__init__``), then
-    ``parse_delta()`` flushes everything as one chunk to subscribers.
+    ``parse_delta()`` flushes everything as one chunk to subscribers, and
+    releases the streamer again unless a subscriber claimed the session —
+    on a fresh instance "pending" is every transcript on the machine, and a
+    parsed copy of each would otherwise sit in memory for the idle TTL.
 
     The walk runs as a background task (not awaited in the lifespan) so the
     server reaches the listen phase immediately — users may have thousands
@@ -674,7 +677,7 @@ async def _transcript_catch_up_walk() -> None:
         scanned = 0
         for jsonl in pending:
             try:
-                await transcript_streamer_registry.notify_change(jsonl)
+                await transcript_streamer_registry.catch_up(jsonl)
                 scanned += 1
             except Exception:
                 logging.getLogger(__name__).exception("Transcript streamer catch-up failed for %s", jsonl)
