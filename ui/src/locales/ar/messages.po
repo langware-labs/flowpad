@@ -9480,6 +9480,10 @@ msgstr "تتبع التنفيذ"
 msgid "Executions of this item, shown without leaving the current view."
 msgstr "عمليات تنفيذ هذا العنصر، تُعرض دون مغادرة العرض الحالي."
 
+#: src/components/open-project-component/project-actions-row.tsx
+msgid "existing"
+msgstr ""
+
 #: src/components/git/GitTargetDialog.tsx
 msgid "Existing repo"
 msgstr "مستودع موجود"
@@ -21247,8 +21251,8 @@ msgid "Segment dur"
 msgstr "مدة المقطع"
 
 #: src/components/open-project-component/project-actions-row.tsx
-msgid "select"
-msgstr ""
+#~ msgid "select"
+#~ msgstr ""
 
 #. placeholder {0}: c.displayName
 #: src/components/graph-context/GraphContextViewer.tsx
