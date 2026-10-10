@@ -6,13 +6,17 @@
  *
  * Restart awareness is backend-driven: any worker-relevant change flips
  * `process.restart_required`, and the menu button glows so the signal is not
- * hidden inside the closed menu.
+ * hidden inside the closed menu — unless the surface shows its own
+ * `RestartButton` (the terminal does), which then carries the glow.
  */
 
 import { AgenticProcess } from '@sdk';
 import { isProcessRunning } from '@sdk/process/agentic-types.js';
 import { AssetManagerButton } from '@src/components/asset-manager';
-import { compactEntityActionClassName } from '@src/components/entity-actions/action-button-styles';
+import {
+  attentionEntityActionClassName,
+  compactEntityActionClassName,
+} from '@src/components/entity-actions/action-button-styles';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -53,6 +57,9 @@ interface SessionActionsMenuProps {
   embedded?: boolean;
   /** Sends a prompt to the session (Commit & merge). */
   onInjectPrompt: (text: string) => void;
+  /** Glow the menu button on restart_required. Off when the surface has its
+   *  own RestartButton carrying the signal. */
+  glowOnRestart?: boolean;
 }
 
 export function SessionActionsMenu({
@@ -62,6 +69,7 @@ export function SessionActionsMenu({
   lastMessageTime,
   embedded,
   onInjectPrompt,
+  glowOnRestart = true,
 }: SessionActionsMenuProps) {
   const { t } = useLingui();
   const { navigation } = useDockNavigation();
@@ -116,14 +124,10 @@ export function SessionActionsMenu({
               <button
                 type="button"
                 data-testid="process-toolbar-menu"
-                data-restart-required={restartHint ? 'true' : 'false'}
-                className={
-                  restartHint
-                    ? 'inline-flex h-7 w-7 animate-pulse items-center justify-center rounded bg-amber-500/20 text-amber-500 shadow-[0_0_12px_rgba(245,158,11,0.55)] ring-2 ring-amber-500/60 transition-colors hover:bg-amber-500/30 dark:text-amber-400'
-                    : compactEntityActionClassName
-                }
+                data-restart-required={glowOnRestart && restartHint ? 'true' : 'false'}
+                className={glowOnRestart && restartHint ? attentionEntityActionClassName : compactEntityActionClassName}
                 aria-label={t`Session actions`}
-                title={restartHint ?? t`Session actions`}
+                title={(glowOnRestart && restartHint) || t`Session actions`}
               >
                 <Menu className="h-3.5 w-3.5" />
               </button>

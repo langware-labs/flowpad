@@ -1,14 +1,16 @@
 /**
  * ProcessToolbar — the top bar of a running AgenticProcess, the same on every
- * surface: [debug] — title — [surface switch] | [Fork] [session actions].
+ * surface: [debug] [restart] — title — [surface switch] | [Fork] [session actions].
  *
  * Every session action other than Fork lives in the session actions menu
- * (`SessionActionsMenu`). The debug menu (`DebugMenu` — CLI flags, gutters,
+ * (`SessionActionsMenu`); the terminal surface also shows Restart as a button. The debug menu (`DebugMenu` — CLI flags, gutters,
  * raw-stream viewers) is a terminal thing and shows on the terminal surface
- * only.
+ * only, and so is the Restart button beside it.
  *
  * Restart awareness is backend-driven: any worker-relevant change flips
- * `process.restart_required` and the session actions button glows.
+ * `process.restart_required`. On the terminal surface the Restart button
+ * glows; elsewhere the session actions button does, since restart lives in
+ * its menu there.
  */
 
 import { AgenticProcess, dataManager, Shell } from '@sdk';
@@ -22,6 +24,7 @@ import { useLingui } from '@lingui/react/macro';
 import { useSessionSurface } from '@src/contexts/view-mode-context';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { DebugMenu } from './DebugMenu';
+import { RestartButton } from './RestartButton';
 import { SessionActionsMenu } from './SessionActionsMenu';
 import { SessionSurfaceSwitch } from './SessionSurfaceSwitch';
 import type { ColVisibility, TraceFilters } from './InteractiveTerminal';
@@ -104,14 +107,17 @@ export function ProcessToolbar({
   const processDisplayName = useMemo(() => resolveProcessDisplayName(process), [process.name]);
 
   const debugSlot = onTerminalSurface && (
-    <DebugMenu
-      process={process}
-      traceFilters={traceFilters}
-      onTraceFiltersChange={onTraceFiltersChange}
-      colVis={colVis}
-      onColVisChange={onColVisChange}
-      shell={shell}
-    />
+    <>
+      <DebugMenu
+        process={process}
+        traceFilters={traceFilters}
+        onTraceFiltersChange={onTraceFiltersChange}
+        colVis={colVis}
+        onColVisChange={onColVisChange}
+        shell={shell}
+      />
+      <RestartButton process={process} />
+    </>
   );
 
   // Entity name — absolutely centered in the header (truncated for header fit;
@@ -159,6 +165,7 @@ export function ProcessToolbar({
         lastMessageTime={lastMessageTime}
         embedded={embedded}
         onInjectPrompt={handleInjectPrompt}
+        glowOnRestart={!onTerminalSurface}
       />
 
       {/* Close — only in embedded mode */}
