@@ -9480,6 +9480,10 @@ msgstr "עקבת הרצה"
 msgid "Executions of this item, shown without leaving the current view."
 msgstr "הרצות של פריט זה, מוצגות ללא עזיבת התצוגה הנוכחית."
 
+#: src/components/open-project-component/project-actions-row.tsx
+msgid "existing"
+msgstr ""
+
 #: src/components/git/GitTargetDialog.tsx
 msgid "Existing repo"
 msgstr "מאגר קיים"
@@ -21247,8 +21251,8 @@ msgid "Segment dur"
 msgstr "משך המקטע"
 
 #: src/components/open-project-component/project-actions-row.tsx
-msgid "select"
-msgstr ""
+#~ msgid "select"
+#~ msgstr ""
 
 #. placeholder {0}: c.displayName
 #: src/components/graph-context/GraphContextViewer.tsx
