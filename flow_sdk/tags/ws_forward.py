@@ -72,7 +72,7 @@ logger = logging.getLogger(__name__)
 # durability, so a client connecting afterwards gets nothing, and the durable
 # record of what the event caused is the fired trigger's own row.
 # `dataset.rows.changed` says rows of a dataset were written (put, deleted, renamed, synced): one
-# frame per write CALL — a sync of two thousand rows is one frame — naming at most 200 keys and
+# frame per write CALL — a sync of two thousand rows is one frame — naming at most 100 keys and
 # never a value. An app showing those rows re-reads them instead of polling.
 # `stream_inbox.*.message.status` is an agent here taking a channel message (handling): one frame per message,
 # never stored — the open conversation draws it.

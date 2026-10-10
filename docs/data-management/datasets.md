@@ -434,7 +434,7 @@ the row's kind (`links.linkers_of`) — none when nothing links to it — where 
 row of the project per row deleted.
 
 **Rows changing is an event.** Every row write emits `dataset.rows.changed` once per call — target
-`dataset:<id>`, data `{op: put|delete|rename|sync, keys (at most 200), count}`, never a value — and
+`dataset:<id>`, data `{op: put|delete|rename|sync, keys (at most 100), count}`, never a value — and
 the tag is forwarded to the app (`tags/ws_forward.py`): `dataset.onRowsChanged(handler)` in
 TypeScript. A writer outside the server process tells the running instance (`Dataset.announce`, the
 `rows-changed` action) — best effort: an event is a hint to re-read, and a write never fails for it.

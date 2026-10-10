@@ -10,6 +10,7 @@ import type { EvalExampleRow, EvalRun, EvalTrace } from '../evals/types';
 import { ExpressionNode, type MatchMap, type OrderByType } from '../FlowSync/query';
 import { EventBus, targetOf } from '../tags/EventBus';
 import { startTagBridge } from '../tags/ws-bridge';
+import { ConnectionManager } from '../websocket';
 
 /** The kinds an authored field may take. Mirrors the backend's declaration —
  *  `flow_sdk/schema/data_spec/_kinds.py` PRIMITIVES plus the one-element list
@@ -286,13 +287,19 @@ export class Dataset extends APIEntity<Dataset> implements IDataset {
   }
 
   /** Hear that rows of THIS dataset were written — by this app, another one, or a script — instead
-   *  of polling: `handler` gets what happened (`op`), up to 200 of the `keys` that moved and how
+   *  of polling: `handler` gets what happened (`op`), up to 100 of the `keys` that moved and how
    *  many moved in all (`count`) — never the values: re-read the rows you show (`rows(query)`).
    *  One call per write, however many rows it wrote. Best effort (a hint to re-read, not a log):
    *  an event sent while the page was disconnected is not replayed, so still re-read on focus.
    *  Returns the function that stops listening. */
   onRowsChanged(handler: (change: DatasetRowsChange) => void): () => void {
-    startTagBridge(); // the server's tags reach this page's bus (idempotent)
+    // The server's tags reach this page's bus over the socket. A served app's `initSdk()` does not
+    // open one (only the full UI does, after paint), so listening opens it — both are idempotent,
+    // and a socket that cannot open leaves the page re-reading on focus, never an error here.
+    startTagBridge();
+    void ConnectionManager.getInstance()
+      .connect()
+      .catch(() => undefined);
     return EventBus.on(DATASET_ROWS_CHANGED, (event) => handler(event.data as unknown as DatasetRowsChange), {
       target: targetOf('dataset', this.id),
     });
