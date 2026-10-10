@@ -1985,6 +1985,7 @@ export class DataManager<T extends Manageable> extends EventEmitter {
         watchedQuery.results = results;
         watchedQuery.pendingPromise = undefined;
       }
+      this.watchedQueries.releaseIfUnwatched(request);
       return results;
     } catch (error) {
       // Clear pending promise on error
@@ -1992,6 +1993,7 @@ export class DataManager<T extends Manageable> extends EventEmitter {
       if (epoch === this.queryEpoch && watchedQuery?.pendingPromise === queryPromise) {
         watchedQuery.pendingPromise = undefined;
       }
+      this.watchedQueries.releaseIfUnwatched(request);
       throw error;
     }
   }

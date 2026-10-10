@@ -337,7 +337,16 @@ export class WatchedQuery<T = any> {
   public pendingPromise?: Promise<T[]>;
   private callbacks: Map<string, QueryCallback<T>>;
 
-  constructor(request: QueryRequest, results?: T[], pendingPromise?: Promise<T[]>) {
+  /**
+   * `subscribe: false` builds an in-flight record: it carries the request's
+   * promise and results but subscribes nobody, whatever callback the request has.
+   */
+  constructor(
+    request: QueryRequest,
+    results?: T[],
+    pendingPromise?: Promise<T[]>,
+    { subscribe = true }: { subscribe?: boolean } = {},
+  ) {
     WatchedQuery.instanceCounter++;
     this.instance_id = WatchedQuery.instanceCounter;
     this.request = request;
@@ -346,7 +355,7 @@ export class WatchedQuery<T = any> {
     this.callbacks = new Map();
 
     // Add the initial callback from the request if it exists
-    if (request.callback) {
+    if (subscribe && request.callback) {
       const queryCallback = new QueryCallback({
         callback: request.callback as (entities: T[]) => void | Promise<void>,
         name: request.name,
