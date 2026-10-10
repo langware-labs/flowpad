@@ -92,17 +92,21 @@ async function launchFace(plan: LaunchPlan, controller: Project | null, target: 
  * Returns where to land; the caller navigates (URL-first).
  */
 export async function runLaunch(plan: LaunchPlan, run: LaunchRun): Promise<DockPointer> {
-  // The two projects are independent until the session: fetch them side by side.
-  run.onStep?.(plan.controllerId ? 'controller' : 'target');
-  const [controller, target] = await Promise.all([
-    plan.controllerId ? during('controller', Project.launchEnsure(plan.controllerId)) : null,
-    during(
-      'target',
-      'projectId' in plan.target
-        ? Project.launchEnsure(plan.target.projectId)
-        : projectForRepo(plan.target.repo, plan.target.branch, run),
-    ),
-  ]);
+  // One after the other, never side by side: each fetch writes this machine's project rows and
+  // indexes a checkout, and two at once fought each other — and a new install's own startup work —
+  // for the local database ("database is locked" on a first-time desktop).
+  let controller: Project | null = null;
+  if (plan.controllerId) {
+    run.onStep?.('controller');
+    controller = await during('controller', Project.launchEnsure(plan.controllerId));
+  }
+  run.onStep?.('target');
+  const target = await during(
+    'target',
+    'projectId' in plan.target
+      ? Project.launchEnsure(plan.target.projectId)
+      : projectForRepo(plan.target.repo, plan.target.branch, run),
+  );
 
   if (controller) {
     run.onStep?.('setup');

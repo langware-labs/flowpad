@@ -7,6 +7,7 @@ import { useQuery } from '@tanstack/react-query';
 
 import { recordContentRef } from '@src/components/assets/editor/AssetEditorRouter';
 
+import { useLaunchStore } from '@src/components/task-receive/launch-store';
 import { useWizardPopupStore } from './wizard-popup-store';
 import { WizardViewer } from './WizardViewer';
 
@@ -21,8 +22,11 @@ export function WizardPopupRoot() {
   const open = useWizardPopupStore((s) => s.open);
   const typeId = useWizardPopupStore((s) => s.payload);
   const { pathname } = useLocation();
+  // A launch the person asked for is on screen: a popup the app opens by itself (first-run setup
+  // on a new install) would cover it — and whatever it has to say — so it waits for the launch.
+  const launching = useLaunchStore((s) => s.open);
   // The chooser takes the screen while it asks; the popup waits and returns when the tab leaves it.
-  if (!open || !typeId || pathname.startsWith(LLM_SETUP_PATH)) return null;
+  if (!open || !typeId || launching || pathname.startsWith(LLM_SETUP_PATH)) return null;
   return <WizardPopupHost typeIdStr={typeId} />;
 }
 

@@ -109,7 +109,7 @@ describe('runLaunch', () => {
       },
     );
 
-    expect(steps).toEqual(['controller', 'setup', 'session']);
+    expect(steps).toEqual(['controller', 'target', 'setup', 'session']);
     expect(mocks.calls).toEqual([`ensure:${Q}`, `ensure:${SPORA}`, `readiness:${Q}`, `select:${SPORA}`]);
     // A NEW session of the controller's agent, acting in the target — and that is where it lands.
     expect(mocks.started).toEqual([[QA, SPORA]]);

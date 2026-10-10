@@ -28,6 +28,7 @@ vi.mock('@src/components/task-receive/LaunchDialog', () => ({
 
 import { Project } from '@sdk';
 import { IncomingDeepLink } from '@src/components/task-receive/IncomingDeepLink';
+import { closeLaunch } from '@src/components/task-receive/launch-store';
 import { useIncomingProjectStore } from '@src/store/use-incoming-project-store';
 
 const ORIGIN = JSON.stringify({
@@ -50,6 +51,7 @@ describe('IncomingDeepLink — hub projects this desktop never saw', () => {
   });
   afterEach(() => {
     cleanup();
+    closeLaunch();
     vi.restoreAllMocks();
   });
 
