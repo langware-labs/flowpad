@@ -69,7 +69,13 @@ async def test_here_names_the_project_by_its_own_id_when_the_tab_sends_an_alias(
     # under the project's real id.
     from flow_sdk.builtin.project import Project
 
-    project = await Project(name=str(tmp_path / "aliased"), uname="local").save()
+    # ``uname="local"`` is the @local project's own uname: the bootstrap route mints one on demand
+    # (flow_sdk/server/routes/bootstrap.py), and the tests of this process share one DB, so an
+    # earlier test may already have put it there — and a second save of the same uname is a 409.
+    # The alias resolves to WHATEVER project carries the uname; use the existing one when there is one.
+    project = await Project.get_by_uname("local")
+    if project is None:
+        project = await Project(name=str(tmp_path / "aliased"), uname="local").save()
     here = await here_from({"CurrentUrl": "/dock/stream_inbox", "CurrentProjectTypeId": "project-@local"}, navigator=True)
     assert here.project.typeid == f"project-{project.id}"
 
