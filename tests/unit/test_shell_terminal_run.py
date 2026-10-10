@@ -27,17 +27,6 @@ async def _is_running(shell: Shell) -> bool:
     return await shell.running() is not None
 
 
-async def _run_is_in_the_foreground(shell: Shell, marker: str) -> bool:
-    """THIS run's command holds the foreground: its start marker has printed and a job is running.
-
-    "A job in the foreground" alone is not the run — a starting shell's rc steps and a prompt's own
-    commands hold it too, before the typed line is even read (``Shell.interrupt``'s docstring). A
-    Ctrl-C sent then interrupts that job, the command runs afterwards untouched, and its end
-    marker arrives 30 seconds later. On a busy machine that window is wide.
-    """
-    return Shell.start_sentinel(marker) in await shell.read() and await shell.running() is not None
-
-
 async def _finished(shell: Shell, marker: str, timeout: float = 10.0) -> int:
     loop = asyncio.get_running_loop()
     deadline = loop.time() + timeout
@@ -92,7 +81,7 @@ async def test_the_end_marker_arrives_however_the_command_ends(tmp_path, monkeyp
     try:
         marker = await shell.run_command(command)
         if ctrl_c:
-            await _until(lambda: _run_is_in_the_foreground(shell, marker))
+            await _until(lambda: _is_running(shell))
             await shell.write_raw(b"\x03")
         assert await _finished(shell, marker) == exit_code
     finally:
