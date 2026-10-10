@@ -172,9 +172,11 @@ def walk_registry(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
 
 async def test_catch_up_walk_retains_nothing_for_unowned_sessions(walk_registry) -> None:
     """Enter where the product enters: ``_transcript_catch_up_walk`` on a fresh
-    instance (no cursor file) over sessions no process owns. After it returns
-    the registry is as empty as before, the heap holds no parsed transcript,
-    and a second walk on the same cursors parses nothing."""
+    instance (no cursor file) over sessions no process owns. The walk parses
+    them in its child process and writes their cursor rows; nothing is
+    dispatched in-process (nobody owns them), the registry is as empty as
+    before, the heap holds no parsed transcript, and a second walk on the
+    same cursors parses nothing."""
     reg, settings = walk_registry
     delivered = {"files": 0, "entries": 0}
 
@@ -185,13 +187,13 @@ async def test_catch_up_walk_retains_nothing_for_unowned_sessions(walk_registry)
     reg.subscribe("probe", probe)
     first_bootstrap_served.set()
 
-    # Warm-up: one tiny session through the same walk, so the lazy parser
-    # imports and the cursor file's first write are not counted below.
+    # Warm-up: one tiny session through the same walk, so the lazy imports
+    # and the cursor file's first write are not counted below.
     warm = settings.claude_projects_dir / "warm" / "45000000-0000-4000-8000-000000000000.jsonl"
     _write_session(warm, warm.stem, turns=1)
     await app_mod._transcript_catch_up_walk()
-    assert delivered["files"] == 1
-    delivered.update(files=0, entries=0)
+    assert not reg.needs_catch_up(warm)
+    assert delivered["files"] == 0
 
     paths = []
     for i in range(3):
@@ -211,7 +213,8 @@ async def test_catch_up_walk_retains_nothing_for_unowned_sessions(walk_registry)
     finally:
         tracemalloc.stop()
 
-    assert delivered["files"] == 3 and delivered["entries"] >= 3 * 400
+    assert all(not reg.needs_catch_up(p) for p in paths)  # consumed: the cursor rows
+    assert delivered["files"] == 0  # unowned: never dispatched in-process
     assert len(reg) == before
     assert all(reg.get_streamer_by_path(p) is None for p in paths)
     # Stock code kept ~3x the bytes on disk per file (720 KB on disk here ->

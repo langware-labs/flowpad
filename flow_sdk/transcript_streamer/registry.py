@@ -10,6 +10,9 @@ Eviction is two-tier:
     file and drops it again right after dispatch unless a subscriber claimed
     the session (an ``AgenticProcess`` owns it). The cursor store is what
     remembers "consumed"; a parsed copy nobody reads is released at once.
+    The walk itself parses in a child process (``catch_up.py``) and only
+    calls ``catch_up`` for the files a process may own; the rest get their
+    cursor row through ``mark_consumed`` and never build a streamer here.
   - Everything else → background idle sweeper drops streamers whose
     ``last_activity`` is older than ``IDLE_TTL_SECONDS``. ``remove`` /
     ``remove_by_path`` are helpers; no lifecycle hook calls them today — a
@@ -97,6 +100,14 @@ class TranscriptStreamerRegistry:
         return not self._cursors.is_consumed(
             Path(jsonl_path), size=st.st_size, mtime_ns=st.st_mtime_ns
         )
+
+    def mark_consumed(self, jsonl_path: Path, *, size: int, mtime_ns: int) -> None:
+        """Record a file as fully consumed at the given pre-parse stat without
+        building a streamer — the catch-up child parsed it and nobody owns the
+        session, so the cursor row is all there is to keep. Same write
+        ``notify_change`` makes after a parse. No-op without a store."""
+        if self._cursors is not None:
+            self._cursors.update(Path(jsonl_path), size=size, mtime_ns=mtime_ns)
 
     async def flush_cursors(self) -> None:
         """Persist dirty cursor state. No-op without a store."""

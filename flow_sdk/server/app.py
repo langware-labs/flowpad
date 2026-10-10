@@ -486,6 +486,10 @@ async def _prune_retired_type_rows() -> None:
 #: The one supervisor of the agent deployments running on this machine (``builtin/agent_serve``).
 _AGENT_SERVER = None
 
+#: The background transcript catch-up walk (``_transcript_catch_up_walk``), held
+#: so ``_shutdown_extras`` can cancel it and its child process with it.
+_TRANSCRIPT_CATCH_UP_TASK = None
+
 
 async def _start_agent_server() -> None:
     """Every running local agent deployment's process runs (and its ``chat`` channel exists)."""
@@ -647,7 +651,12 @@ async def _start_transcript_streamer() -> None:
             get_instance_settings().transcript_cursors_path,
         )
         await transcript_streamer_registry.start_idle_sweeper()
-        _asyncio.create_task(_transcript_catch_up_walk(), name="transcript-catch-up")
+        # Held so shutdown can cancel it: the walk drives a child process, and
+        # a cancelled walk kills the child with it (``stream_ndjson``).
+        global _TRANSCRIPT_CATCH_UP_TASK
+        _TRANSCRIPT_CATCH_UP_TASK = _asyncio.create_task(
+            _transcript_catch_up_walk(), name="transcript-catch-up",
+        )
         print("  Transcript streamer: started (catch-up scheduled in background)")
     except Exception:
         logging.getLogger(__name__).exception("Transcript streamer: failed to start")
@@ -660,6 +669,13 @@ async def _transcript_catch_up_walk() -> None:
     cursor store filters out every file whose size/mtime is unchanged since
     it was last consumed — so a routine restart parses only what actually
     changed while the server was down, not the full history.
+
+    The parse itself runs in a child process (``transcript_streamer.catch_up``):
+    on a fresh instance "pending" is every transcript on the machine, and
+    parsing them in this process held the GIL for the whole walk. Only files a
+    process owns (or could adopt) come back through ``registry.catch_up``
+    here; the rest get a cursor row. Whatever the child did not finish — or
+    all of it, where a child cannot be spawned — takes the in-process loop.
     """
     try:
         import asyncio as _asyncio
@@ -693,8 +709,11 @@ async def _transcript_catch_up_walk() -> None:
             return pending, total
 
         pending, total = await _asyncio.to_thread(_discover)
-        scanned = 0
-        for jsonl in pending:
+        from flow_sdk.transcript_streamer.catch_up import catch_up_via_child
+
+        remaining = await catch_up_via_child(pending)
+        scanned = len(pending) - len(remaining)
+        for jsonl in remaining:
             try:
                 await transcript_streamer_registry.catch_up(jsonl)
                 scanned += 1
@@ -848,6 +867,18 @@ async def _shutdown_extras():
         await pty_registry.stop_cleanup_task()
     except Exception:
         pass
+
+    # Cancel the catch-up walk if it is still running: its child process is
+    # killed by the cancellation, so it cannot outlive the server and keep
+    # parsing transcripts for nobody.
+    global _TRANSCRIPT_CATCH_UP_TASK
+    task, _TRANSCRIPT_CATCH_UP_TASK = _TRANSCRIPT_CATCH_UP_TASK, None
+    if task is not None and not task.done():
+        task.cancel()
+        try:
+            await task
+        except BaseException:  # CancelledError is the expected outcome
+            pass
 
     # Stop the TranscriptStreamer idle sweeper. Streamer dict drops with the
     # process — no other cleanup needed.
