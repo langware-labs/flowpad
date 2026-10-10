@@ -91,6 +91,22 @@ describe('AttachedChannelsBar', () => {
     expect(onSelectedChange).toHaveBeenCalledWith(new Set());
   });
 
+  it('a channel row that is not listening says why — its setup note, or the error that parked it', () => {
+    const parked = new DataSource({
+      ...fake('p', 'active', 'gmail'),
+      health: 'config_error',
+      error_code: 'access_denied',
+      error_detail: 'Gmail refused the login',
+    } as never);
+    const owed = new DataSource({ ...fake('s', 'setup', 'telegram'), setup_detail: 'Pair the phone.' } as never);
+    mount([parked, owed]);
+    fireEvent.click(screen.getByTestId('attached-channels-details'));
+    expect(screen.getAllByTestId('attached-channel-verify').map((e) => e.textContent)).toEqual([
+      'access denied: Gmail refused the login',
+      'Pair the phone.',
+    ]);
+  });
+
   it('a channel row names its account — the connected phone, the mailbox — when it has one', () => {
     const phone = new DataSource({ ...fake('w', 'active', 'flow_whatsapp'), account_key: '972557709288' } as never);
     mount([phone, fake('s')]);

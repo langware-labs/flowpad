@@ -42,7 +42,11 @@ import { isMessageDriverSpec, sourcesQuery, useSourceSpecs } from '@src/componen
 import { useSourceDelete } from '@src/components/data-sources/use-source-delete';
 import { useSourceToggle } from '@src/components/data-sources/use-source-toggle';
 import { CallControls } from '@src/components/voice/CallControls';
-import { ownerOf } from './channel-owner';
+import { ATTENTION_FALLBACK, attentionReason } from '@src/components/data-sources/source-attention';
+import { i18n } from '@lingui/core';
+import { channelKeyOf, ownerOf } from './channel-owner';
+
+export { channelKeyOf };
 
 const EMPTY: DataSource[] = [];
 
@@ -72,11 +76,11 @@ export function useAttachedChannels(owner: TypeId | null | undefined) {
 
 type SpecFor = (provider: string) => DataDriver | undefined;
 type ChannelState = 'on' | 'off' | 'parked';
-const stateOf = (s: DataSource): ChannelState => (s.needsAttention ? 'parked' : s.status === 'disabled' ? 'off' : 'on');
-
-/** The identity a mark draws: provider AND channel, because one transport
- *  (`agent`) reaches several channels and wears a different glyph for each. */
-export const channelKeyOf = (s: DataSource) => `${s.provider}|${s.channel}`;
+/** The mark's three states, from the one classifier: paused draws dashed, setup and parked draw "!". */
+const stateOf = (s: DataSource): ChannelState => {
+  const kind = attentionReason(s)?.kind;
+  return kind === undefined ? 'on' : kind === 'paused' ? 'off' : 'parked';
+};
 
 /** Sources of one channel kind, sharing a mark. Its state is the best of its
  *  members' — one listening source lights the mark; parked beats paused. */
@@ -360,6 +364,11 @@ function ChannelRow({
   const { verify, busy: verifying } = useSourceVerify(source);
   const { Base, Badge } = sourceGlyphs(spec, source.channel);
   const state = stateOf(source);
+  // The reason it is not listening — its setup note or its last error — IS the verify control. The words
+  // stay the foreground colour (coloured text on a dark theme does not read); the strip above the list
+  // says the same thing at full width.
+  const attention = state === 'parked' ? attentionReason(source) : null;
+  const reason = attention ? attention.text || i18n._(ATTENTION_FALLBACK[attention.kind]) : '';
   return (
     <div
       className="flex items-center gap-2.5 px-3 py-2 text-[13px]"
@@ -375,16 +384,16 @@ function ChannelRow({
             {source.account_key}
           </span>
         )}
-        {state === 'parked' && source.setup_detail && (
+        {reason && (
           <button
             type="button"
             onClick={() => void verify()}
             disabled={verifying}
-            title={t`Verify: ${source.setup_detail}`}
-            className="block w-full truncate text-left text-[11px] text-amber-500 hover:underline disabled:opacity-60"
+            title={t`Verify: ${reason}`}
+            className="block w-full truncate text-left text-[11px] underline decoration-dotted underline-offset-2 hover:decoration-solid disabled:opacity-60"
             data-testid="attached-channel-verify"
           >
-            {source.setup_detail}
+            {reason}
           </button>
         )}
       </span>

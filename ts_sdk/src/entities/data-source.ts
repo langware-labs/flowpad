@@ -263,6 +263,11 @@ export class DataSource extends APIEntity<DataSource> implements IDataSource {
     return this.health === 'ok' && this.error_code === 'write_back_held';
   }
 
+  /** Stopped on purpose: nothing is fetched until a person resumes it. */
+  get isPaused(): boolean {
+    return this.status === 'disabled';
+  }
+
   /** The scheduler will not poll it until a person acts: a setup step is owed, or
    *  it is parked (`DataSource.poll_refusal`). Resuming a paused source is not
    *  attention — it is the fix. */
@@ -433,17 +438,22 @@ export class DataSource extends APIEntity<DataSource> implements IDataSource {
    * Idempotent and safe to press repeatedly — it is the button beside "invite
    * the bot to the channel", and the only way out of `setup`.
    */
-  async verify(): Promise<{
-    status: SourceStatus;
-    ready: boolean;
-    /** Which layer answered: a dead token and an un-invited bot both leave the
-     *  source in `setup`, but they are fixed in different places. */
-    layer: 'connection' | 'setup';
-    detail: string;
-    /** What is still not ready. Absent when the connection layer answered —
-     *  it never got as far as the driver's own check. */
-    pending?: string[];
-  }> {
+  async verify(): Promise<VerifyResult> {
     return this.post('verify');
   }
+}
+
+/** What `DataSource.verify` answers — the same shape the inbox's attention bar shows in place. */
+export interface VerifyResult {
+  status: SourceStatus;
+  ready: boolean;
+  /** Which layer answered: a dead token and an un-invited bot both leave the
+   *  source in `setup`, but they are fixed in different places. */
+  layer: 'connection' | 'setup';
+  detail: string;
+  /** What is still not ready. Absent when the connection layer answered —
+   *  it never got as far as the driver's own check. */
+  pending?: string[];
+  /** The provider did not answer, so nothing is known about the setup; the status stands. */
+  transient?: boolean;
 }

@@ -56,6 +56,7 @@ import {
   useChannelAttribution,
 } from '@src/components/conversation/channel-attribution';
 import { AttachedChannelsBar, channelKeyOf, useAttachedChannels } from './AttachedChannelsBar';
+import { ChannelAttentionBar, attentionAmong } from './ChannelAttentionBar';
 import { channelsOwnerFor, sourceConversationsRequest, streamInboxConversationsRequest } from './channel-owner';
 import { useContext } from '@src/hooks/useContext';
 import {
@@ -562,6 +563,8 @@ export function StreamInboxView({
     [attributionForOrigin],
   );
   const [channelFilter, setChannelFilter] = useState<Set<string>>(() => new Set());
+  // The picked channels that are not listening: the strip above the list explains each one.
+  const attention = useMemo(() => attentionAmong(ownerChannels, channelFilter), [ownerChannels, channelFilter]);
   const channelMatch = useMemo(
     () =>
       channelFilter.size
@@ -1321,6 +1324,8 @@ export function StreamInboxView({
           </div>
         )}
 
+        {!initialLoading && !embedded && <ChannelAttentionBar items={attention} specFor={specFor} />}
+
         {initialLoading && (
           <div className="flex h-32 items-center justify-center text-sm text-muted-foreground">
             <Trans>Loading…</Trans>
@@ -1332,13 +1337,15 @@ export function StreamInboxView({
             <span className="text-sm">
               {searchActive || columnFilterActive
                 ? t`No matching conversations`
-                : inArchivedView
+                : attention.length > 0
+                  ? t`No messages from this channel yet`
+                  : inArchivedView
                   ? t`No archived conversations`
                   : inUnreadView
                     ? t`No unread conversations`
                     : t`No conversations`}
             </span>
-            {!inArchivedView && !searchActive && !columnFilterActive && (
+            {!inArchivedView && !searchActive && !columnFilterActive && attention.length === 0 && (
               <Button variant="outline" size="sm" onClick={() => void handleRefresh()} disabled={fetching}>
                 <RefreshCw className={`me-1.5 h-3.5 w-3.5 ${fetching ? 'animate-spin' : ''}`} />
                 <Trans>Check for new messages</Trans>

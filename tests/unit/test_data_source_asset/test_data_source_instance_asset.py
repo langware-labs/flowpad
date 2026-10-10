@@ -102,6 +102,69 @@ async def test_a_copied_folder_arrives_parked_until_its_owner_verifies(scope):
     assert row.setup_detail == RECEIVED_SETUP_DETAIL
 
 
+async def _indexed(scope, name: str, provider: str, **fields) -> DataSource:
+    """A ``data_source.json`` that exists BEFORE its row — what the indexer meets after an agent or the
+    CLI wrote the file, or after the DB was rebuilt."""
+    folder = scope / "agentic-assets" / "data_source" / name
+    folder.mkdir(parents=True)
+    document = {"type": "data_source", "id": str(uuid.uuid4()), "name": name, "data_driver_name": provider,
+                "data_driver_config": {"address": f"{name}@x.test"}, **fields}
+    (folder / "data_source.json").write_text(json.dumps(document), encoding="utf-8")
+    await index_path("data_source", folder)
+    return await DataSource.get_by_id(document["id"])
+
+
+async def _local_owner() -> str:
+    """This machine's user as an owner typeid — bootstrapped when the test DB has none yet."""
+    from flow_sdk.builtin.user import User
+    from flow_sdk.stream_inbox.projection import default_owner
+
+    if await User.get_local() is None:
+        await User(uname="local", name="local").save(notify=False)
+    return str(await default_owner())
+
+
+async def test_a_file_the_local_user_authored_is_not_parked_on_index(scope):
+    """Only a file that names nobody, or someone this machine does not know, is a received share. One
+    naming this machine's own user runs by the create rules — a driver with no setup step is ACTIVE."""
+    row = await _indexed(scope, "mine", _Mailbox.provider, owner=await _local_owner())
+
+    assert (row.status, row.setup_detail) == (SourceStatus.ACTIVE.value, "")
+
+
+async def test_a_file_a_local_agent_authored_is_not_parked_on_index(scope):
+    from flow_sdk.builtin.agent import Agent
+
+    agent = Agent(name=f"author {uuid.uuid4().hex[:6]}", worker_type="claude", system_prompt="Be brief.")
+    await agent.save()
+
+    row = await _indexed(scope, "agents", _Mailbox.provider, owner=f"agent-{agent.id}")
+
+    assert (row.status, row.setup_detail) == (SourceStatus.ACTIVE.value, "")
+
+
+async def test_a_file_naming_an_owner_this_machine_does_not_know_arrives_parked(scope):
+    row = await _indexed(scope, "theirs", _Mailbox.provider, owner=f"user-{uuid.uuid4()}")
+
+    assert (row.status, row.setup_detail) == (SourceStatus.SETUP.value, RECEIVED_SETUP_DETAIL)
+
+
+async def test_a_file_authored_here_for_a_driver_with_a_setup_step_starts_in_setup(scope):
+    from flow_sdk.sources.protocols import Verdict
+
+    class _Invited(_Mailbox):
+        provider = "asset-mailbox-invited-test"
+
+        async def verify(self) -> Verdict:
+            return Verdict(ready=False, detail="Invite the bot.")
+
+    DataDriver.register(DataDriver.for_class(_Invited, kind="datasource.test.invited"))
+
+    row = await _indexed(scope, "invited", _Invited.provider, owner=await _local_owner())
+
+    assert (row.status, row.setup_detail) == (SourceStatus.SETUP.value, "Finish setup, then press Verify.")
+
+
 async def test_one_owner_watches_an_account_once(scope):
     """A second source for an account the owner already watches is saved ONTO the first — what it
     authored is written there, the row (id, cursor, health) stays: no twin, no error."""
