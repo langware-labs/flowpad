@@ -25,7 +25,7 @@ from starlette.background import BackgroundTask
 from starlette.requests import Request
 from starlette.responses import Response, StreamingResponse
 
-from flow_sdk.cloud_client.client import ApiConfig, FlowpadClient
+from flow_sdk.cloud_client.client import FlowpadClient
 from flow_sdk.cloud_client.client_hooks import PASSTHROUGH_EXTENSION
 
 # RFC 7230 §6.1 hop-by-hop headers — never forwarded end-to-end.
@@ -51,12 +51,21 @@ class CloudProxy:
     """Forward a Starlette request to the hub, preserving the method verbatim."""
 
     def __init__(self, client: FlowpadClient | None = None) -> None:
-        # Reuse the hooked FlowpadClient so token injection + error reporting are
-        # shared with every other outbound hub call (and the WS side's creds).
-        self._fp = client or FlowpadClient(ApiConfig.from_env())
+        # No client given -> the process-shared hub client (hub_http._hub_client):
+        # one pool + one TLS context for every hub call, closed at server shutdown.
+        # A proxy that built its own FlowpadClient per request left the socket
+        # for the cyclic GC (one hub connection + one TLS-context build per call),
+        # so ``CloudProxy()`` built inline per request is now the right shape.
+        self._fp = client
 
     async def _client(self) -> httpx.AsyncClient:
-        return await self._fp._get_client()
+        if self._fp is not None:
+            return await self._fp._get_client()
+        # Lazy, as in _target: hub_http pulls the db layer.
+        from flow_sdk.cloud_client.transport.hub_http import _hub_client
+
+        async with _hub_client() as fp:
+            return await fp._get_client()
 
     def _target(self, request: Request, url: str | httpx.URL | None) -> httpx.URL:
         """Resolve the hub URL. When ``url`` is None, forward the incoming graph

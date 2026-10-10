@@ -10,10 +10,14 @@ never turn a roster GET into a destructive DELETE.
 
 from __future__ import annotations
 
+import asyncio
+
 import httpx
 import pytest
 from starlette.requests import Request
 
+from flow_sdk.cloud_client.client import ApiConfig, FlowpadClient
+from flow_sdk.cloud_client.transport import hub_http
 from flow_sdk.cloud_client.transport.proxy import CloudProxy
 
 
@@ -150,3 +154,67 @@ async def test_cloudproxy_delivers_the_hub_body_verbatim(monkeypatch, status):
 
 async def _resolved(value):
     return value
+
+
+@pytest.mark.asyncio
+@pytest.mark.timeout(30)  # do not increase timeout without approval
+async def test_cloudproxy_without_a_client_uses_the_shared_hub_client():
+    """``CloudProxy()`` built inline per request must not own a client: every
+    client-less proxy resolves the ONE process-shared hub client, and the
+    server's shutdown hook (``close_hub_client``) closes it. No network."""
+    try:
+        a = await CloudProxy()._client()
+        b = await CloudProxy()._client()
+        assert a is b
+        assert hub_http._shared_client is not None
+        assert a is await hub_http._shared_client._get_client()
+        assert not a.is_closed
+    finally:
+        await hub_http.close_hub_client()
+    assert a.is_closed
+    assert hub_http._shared_client is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.timeout(30)  # do not increase timeout without approval
+async def test_cloudproxy_reuses_one_hub_connection_across_requests(tmp_path, monkeypatch):
+    """20 proxied requests through ``CloudProxy()`` (the per-request call shape)
+    open ONE hub connection — not one per call left for the GC to close. The
+    hub is a real keep-alive HTTP/1.1 server on a unix socket in ``tmp_path``;
+    the shared hub client is pointed at it through its transport."""
+    accepted = 0
+
+    async def _serve(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+        nonlocal accepted
+        accepted += 1
+        body = b'{"status":"success","data":{"ok":true}}'
+        try:
+            while True:
+                await reader.readuntil(b"\r\n\r\n")
+                writer.write(
+                    b"HTTP/1.1 200 OK\r\ncontent-type: application/json\r\n"
+                    b"content-length: %d\r\n\r\n" % len(body) + body
+                )
+                await writer.drain()
+        except (asyncio.IncompleteReadError, ConnectionError):
+            pass
+        finally:
+            writer.close()
+
+    monkeypatch.chdir(tmp_path)  # sun_path is 104 bytes on macOS; dial a relative path
+    server = await asyncio.start_unix_server(_serve, path="hub.sock")
+    shared = FlowpadClient(ApiConfig.from_env(), transport=httpx.AsyncHTTPTransport(uds="hub.sock"))
+    monkeypatch.setattr(hub_http, "_shared_client", shared)
+    monkeypatch.setattr(hub_http, "_shared_client_loop", asyncio.get_running_loop())
+    try:
+        for _ in range(20):
+            resp = await CloudProxy()(_make_request("GET", {}), "http://hub.example/api/v1/graph/x")
+            assert resp.status_code == 200
+            async for _ in resp.body_iterator:  # what Starlette does: stream, then run .background
+                pass
+            await resp.background()
+        assert accepted == 1
+    finally:
+        await hub_http.close_hub_client()
+        server.close()
+        await server.wait_closed()
