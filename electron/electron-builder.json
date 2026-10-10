@@ -15,6 +15,7 @@
     "backend-wait.js",
     "startup-error.js",
     "runtime-repair.js",
+    "native-deps.json",
     "zip-writer.js",
     "support-bundle.js",
     "log-redact.js",
