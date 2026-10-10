@@ -157,6 +157,40 @@ async def test_a_file_authored_here_for_a_driver_with_a_setup_step_starts_in_set
     assert (row.status, row.setup_detail) == (SourceStatus.SETUP.value, "Finish setup, then press Verify.")
 
 
+async def test_a_file_whose_driver_is_not_loaded_waits_new_and_the_poller_tick_settles_it(scope):
+    """The indexer may not import a driver, so a file whose driver is not loaded yet cannot be decided
+    there — deciding without the class would skip the setup step of a driver that owes one. It stays
+    NEW (reported as "not evaluated yet"), and the poller's next tick loads the driver and decides."""
+    from flow_sdk.ingest import poller
+    from flow_sdk.sources.protocols import Verdict
+
+    class _Late(_Mailbox):
+        provider = "asset-mailbox-late-test"
+
+        async def verify(self) -> Verdict:
+            return Verdict(ready=False, detail="Invite the bot.")
+
+    row = await _indexed(scope, "late", _Late.provider, owner=await _local_owner())
+    assert row.status == SourceStatus.NEW.value
+
+    DataDriver.register(DataDriver.for_class(_Late, kind="datasource.test.late"))  # the driver loads
+    await poller.dispatch_due_sources(spawn=lambda coro: coro.close())
+
+    row = await DataSource.get_by_id(row.id)
+    assert (row.status, row.setup_detail) == (SourceStatus.SETUP.value, "Finish setup, then press Verify.")
+
+
+async def test_a_file_for_a_provider_nothing_answers_is_settled_active_so_the_poll_can_say_why(scope):
+    from flow_sdk.ingest import poller
+
+    row = await _indexed(scope, "nobody", "asset-no-such-driver-test", owner=await _local_owner())
+    assert row.status == SourceStatus.NEW.value
+
+    await poller.dispatch_due_sources(spawn=lambda coro: coro.close())
+
+    assert (await DataSource.get_by_id(row.id)).status == SourceStatus.ACTIVE.value
+
+
 async def test_one_owner_watches_an_account_once(scope):
     """A second source for an account the owner already watches is saved ONTO the first — what it
     authored is written there, the row (id, cursor, health) stays: no twin, no error."""

@@ -1049,10 +1049,15 @@ class DataSource(SetupSkippable, Entity):
             # carries (the indexer stamps ``active``) is not a decision — the owner it names is.
             if not self.exist_in_db:
                 if await self._authored_here(names_owner):
-                    # The create rules, on whatever driver is ALREADY loaded: importing source code inside
-                    # the indexer's per-record sync deadlocks on the import lock (see ``DataDriver.sends``).
+                    # The create rules, when the driver is ALREADY loaded: importing source code inside the
+                    # indexer's per-record sync deadlocks on the import lock (see ``DataDriver.sends``). One
+                    # not loaded yet stays NEW, and the poller's next tick settles it (``resolve_new``) —
+                    # deciding here without the class would skip the setup step of a driver that owes one.
                     self.setup_detail = ""
-                    self._apply_create_rules()
+                    if self._driver() is not None:
+                        self._apply_create_rules()
+                    else:
+                        self.status = SourceStatus.NEW.value
                 else:
                     # It arrived (cloned, shared, copied): wait for this machine's own connection.
                     self.status = SourceStatus.SETUP.value
@@ -1100,13 +1105,25 @@ class DataSource(SetupSkippable, Entity):
             await self._declare_connections()
         return saved
 
+    async def resolve_new(self) -> None:
+        """Settle a row the indexer left NEW because its driver was not loaded: load it, decide, save
+        the row alone. Called by the poller's tick, where importing a driver is legal. A no-op for a
+        row that is no longer NEW."""
+        if self.status != SourceStatus.NEW.value:
+            return
+        from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415
+
+        await DataDriver.find(self.provider or "")
+        self._apply_create_rules()
+        await self.save_runtime()
+
     def _apply_create_rules(self) -> None:
         """Where a new source starts: the loaded driver decides.
 
-        A driver that owes a setup step starts in SETUP; any other starts ACTIVE — a driver not loaded
-        yet or an UNKNOWN provider included, deliberately: leaving it in NEW would park it silently,
-        while ACTIVE lets the poller reach ``sync_source``, which loads the driver and reports what is
-        wrong (``unknown_provider``, a missing credential) as a config_error the card can explain.
+        A driver that owes a setup step starts in SETUP; any other starts ACTIVE — an UNKNOWN provider
+        included, deliberately: leaving it in NEW would park it silently, while ACTIVE lets the poller
+        reach ``sync_source``, which reports what is wrong (``unknown_provider``, a missing credential)
+        as a config_error the card can explain. Callers load the driver first (``DataDriver.find``).
         """
         stype = self._driver()
         if stype is not None and stype.has_setup:

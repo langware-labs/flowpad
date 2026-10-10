@@ -205,6 +205,28 @@ def _claim(source_id: str) -> bool:
     return True
 
 
+async def _resolve_new_sources(only: Optional[set[str]]) -> None:
+    """Settle every row still NEW before selecting what is due.
+
+    NEW means nobody has decided how the source starts. A save decides it — except for a source file
+    the indexer met before its driver was loaded: importing a driver inside the indexer's sync
+    deadlocks, so the row waits for this tick, where loading is legal. Without this it would sit NEW
+    forever: never polled, and no later save to move it. Usually an empty query.
+    """
+    try:
+        pending = await DataSource.get_all({"status": SourceStatus.NEW.value})
+    except Exception:  # noqa: BLE001 — a housekeeping tick must never raise
+        logger.debug("[ingest] could not list unresolved data sources", exc_info=True)
+        return
+    for source in pending:
+        if only is not None and str(source.id) not in only:
+            continue
+        try:
+            await source.resolve_new()
+        except Exception:  # noqa: BLE001 — one bad row must not stop the tick
+            logger.warning("[ingest] could not resolve new source %s", source.id, exc_info=True)
+
+
 async def dispatch_due_sources(
     *,
     now_fn: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
@@ -222,6 +244,7 @@ async def dispatch_due_sources(
     spawn = spawn or asyncio.ensure_future
     dispatched: list[str] = []
 
+    await _resolve_new_sources(only)
     try:
         # ACTIVE only. NEW and SETUP have not finished being configured — a
         # Slack source whose bot was never invited would otherwise be polled
