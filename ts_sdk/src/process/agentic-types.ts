@@ -87,12 +87,25 @@ export function isProcessLive(status: ProcessStatus | string | null | undefined)
   return status === ProcessStatus.NEW || isProcessRunning(status as ProcessStatus);
 }
 
+/** True when a session ended without finishing its work. */
+export function isProcessFailed(status: ProcessStatus | string | null | undefined): boolean {
+  return status === ProcessStatus.FAILED;
+}
+
 /** @deprecated Use ``isProcessRunning``. Kept as an alias during the rename sweep. */
 export const isProcessActive = isProcessRunning;
 
 /** True when ``start()`` can be invoked (NEW/STOPPED/FAILED). */
 export function isProcessStartable(status: ProcessStatus): boolean {
   return STARTABLE_PROCESS_STATUSES.has(status);
+}
+
+/**
+ * True once the process RAN and ended (STOPPED/FAILED): its worker and PTY are gone until
+ * it is started again. NEW is startable but has not ended — nothing of it is held yet.
+ */
+export function isProcessEnded(status: ProcessStatus): boolean {
+  return status === ProcessStatus.STOPPED || status === ProcessStatus.FAILED;
 }
 
 /**

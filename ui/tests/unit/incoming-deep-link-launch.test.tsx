@@ -28,6 +28,7 @@ vi.mock('@src/components/task-receive/LaunchDialog', () => ({
 }));
 
 import { IncomingDeepLink } from '@src/components/task-receive/IncomingDeepLink';
+import { closeLaunch } from '@src/components/task-receive/launch-store';
 
 function landOn(query: string) {
   window.history.replaceState(null, '', `/dock/home?${query}`);
@@ -41,6 +42,7 @@ describe('IncomingDeepLink — ?action=launch', () => {
   });
   afterEach(() => {
     cleanup();
+    closeLaunch();
     window.history.replaceState(null, '', '/');
   });
 

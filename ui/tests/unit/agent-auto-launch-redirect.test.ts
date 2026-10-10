@@ -54,7 +54,14 @@ beforeEach(() => {
   mocks.drainQueue.mockReset().mockResolvedValue(undefined);
   mocks.hubOnly.mockReturnValue(false);
   mocks.dataContext.project = null;
-  mocks.getById.mockResolvedValue({ watch: mocks.watch, drainQueue: mocks.drainQueue });
+  // The launch watch is a lease that listens for the process's end, so the stand-in
+  // carries the id and the status subscription a real AgenticProcess has.
+  mocks.getById.mockResolvedValue({
+    id: PROCESS_ID,
+    watch: mocks.watch,
+    drainQueue: mocks.drainQueue,
+    on: vi.fn(() => () => undefined),
+  });
 });
 
 describe('project agent auto-launch redirect', () => {

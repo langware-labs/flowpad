@@ -7,7 +7,7 @@
  * row and on the endpoint's hub page are one number. Open lands on that page, where the chain,
  * limits and usage live.
  */
-import { LLMFundingKind, type LLMFundingStatus } from '@sdk';
+import type { LLMFundingStatus } from '@sdk';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { ArrowUpRight, Waypoints } from 'lucide-react';
 
@@ -19,7 +19,7 @@ import { TONE } from '@src/components/llm-endpoints/tone';
 import type { NavigationActions } from '@src/navigation/NavigationActions';
 
 import { useHubRemaining } from './use-hub-remaining';
-import { endpointOf } from './use-llm-sources';
+import { hubFunded, hubOffers } from './use-llm-sources';
 
 export function LlmEndpointsSection({
   funding,
@@ -30,12 +30,8 @@ export function LlmEndpointsSection({
 }) {
   const { t } = useLingui();
   const remaining = useHubRemaining(funding);
-  const hubs = (funding.available ?? []).filter((e) => e.kind === (LLMFundingKind.Hub as string));
-  const inUse = new Set(
-    Object.values(funding.resolved ?? {})
-      .filter((pick) => !!pick && endpointOf(funding, pick)?.kind === LLMFundingKind.Hub)
-      .map((pick) => pick!.endpoint_typeid),
-  );
+  const hubs = hubOffers(funding);
+  const inUse = new Set(hubFunded(funding).map(({ typeid }) => typeid));
   return (
     <section className="flex flex-col gap-3" data-testid="llm-sources-endpoints">
       <h2 className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">
@@ -70,7 +66,7 @@ export function LlmEndpointsSection({
                   )}
                 </span>
                 {r ? (
-                  <LimitBar limitKey={r.key} remaining={r} resetsText="" testId={`endpoint-left-${e.id}`} />
+                  <LimitBar limitKey={r.key} remaining={r.remaining} resetsText="" testId={`endpoint-left-${e.id}`} />
                 ) : (
                   <span className="text-xs text-muted-foreground" data-testid={`endpoint-left-${e.id}`}>
                     <Trans>no cost cap</Trans>

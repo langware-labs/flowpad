@@ -11,6 +11,13 @@ export interface PillOption<T extends string> {
   label: ReactNode;
 }
 
+/** One pill's look, pressed or not — shared with a row of toggles that is not one choice (the channel chips). */
+export const pillClass = (on: boolean): string =>
+  cn(
+    'inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50',
+    on ? 'border-primary bg-primary/10 text-foreground' : 'border-border text-muted-foreground hover:text-foreground',
+  );
+
 export function Pills<T extends string>({
   value,
   options,
@@ -38,12 +45,7 @@ export function Pills<T extends string>({
           disabled={disabled}
           data-testid={`${testId}-${o.value}`}
           onClick={() => onChange(o.value)}
-          className={cn(
-            'inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50',
-            value === o.value
-              ? 'border-primary bg-primary/10 text-foreground'
-              : 'border-border text-muted-foreground hover:text-foreground',
-          )}
+          className={pillClass(value === o.value)}
         >
           {o.label}
         </button>

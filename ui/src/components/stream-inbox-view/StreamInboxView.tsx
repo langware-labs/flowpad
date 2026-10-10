@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { Zap,
+import {
   Archive,
   Inbox as InboxIcon,
   Mail,
@@ -11,6 +11,7 @@ import { Zap,
   Trash2,
   UsersRound,
   X,
+  Zap,
 } from 'lucide-react';
 import { Trans } from '@lingui/react/macro';
 import { useLingui } from '@lingui/react/macro';
@@ -36,14 +37,16 @@ import {
   unarchiveConversation,
   conversationRowMessageIds,
   latestPointer,
+  isProcessFailed,
   isProcessLive,
+  type AgenticProcess,
 } from '@sdk';
 import { useAuth, useCloudStatus } from '@sdk/react/hooks';
 import { useEntitiesQuery, useEntity } from '@src/hooks/entity-hooks';
 import { EntityBatchHydrator, useEntityBatch } from '@src/components/entity-batch/EntityBatchHydrator';
 import { useConversationAutomationMarks } from '@src/hooks/conversation/useMessageAutomationSessions';
-import type { AgenticProcess } from '@sdk';
 import { Button } from '@src/components/ui/button';
+import { cn } from '@src/lib/utils';
 import { Checkbox } from '@src/components/ui/checkbox';
 import { BulkConfirmDialog } from '@src/components/ui/bulk-confirm-dialog';
 import { ConfirmDialog } from '@src/components/ui/confirm-dialog';
@@ -58,16 +61,22 @@ import {
   sourceForOrigin,
   useChannelAttribution,
 } from '@src/components/conversation/channel-attribution';
-import { AttachedChannelsBar, channelKeyOf, useAttachedChannels } from './AttachedChannelsBar';
-import { ChannelAttentionBar, attentionAmong } from './ChannelAttentionBar';
-import { channelsOwnerFor, sourceConversationsRequest, streamInboxConversationsRequest } from './channel-owner';
+import { AttachedChannelsBar, useAttachedChannels } from './AttachedChannelsBar';
+import { ChannelAttentionBar } from './ChannelAttentionBar';
+import {
+  attentionAmong,
+  channelKeyOf,
+  channelsOwnerFor,
+  sourceConversationsRequest,
+  streamInboxConversationsRequest,
+} from './channel-owner';
 import { useContext } from '@src/hooks/useContext';
 import {
   conversationFacets,
   actionsFor,
   compareConversationsByRecency,
 } from '@src/components/conversation/conversation-category';
-import { CategoryChips } from '@src/components/conversation/CategoryChips';
+import { CategoryChips, COMPACT } from '@src/components/conversation/CategoryChips';
 import { MembershipInvitations } from './MembershipInvitations';
 import { RowActions } from '@src/components/conversation/RowActions';
 import { attachmentSummary } from '@src/components/conversation/useAttachments';
@@ -481,13 +490,15 @@ export function ConversationListRow({
               e.stopPropagation();
               navigation.openDock(DockPointer.forProcessRuns({ run: automationMark.id }));
             }}
-            className={`me-1 inline-flex items-center gap-0.5 rounded border px-1 py-0 align-middle text-[9px] font-medium leading-tight ${
+            className={cn(
+              'me-1 inline-flex items-center',
+              COMPACT,
               isProcessLive(automationMark.status)
                 ? 'border-sky-500/50 bg-sky-500/15 text-sky-700 dark:text-sky-300'
-                : String(automationMark.status ?? '') === 'failed'
+                : isProcessFailed(automationMark.status)
                   ? 'border-dashed border-border text-muted-foreground'
-                  : 'border-emerald-500/50 bg-emerald-500/15 text-emerald-700 dark:text-emerald-300'
-            }`}
+                  : 'border-emerald-500/50 bg-emerald-500/15 text-emerald-700 dark:text-emerald-300',
+            )}
             title={automationMark.name ?? undefined}
             data-testid="stream-inbox-row-automation"
             data-status={String(automationMark.status ?? '')}
@@ -1369,13 +1380,13 @@ export function StreamInboxView({
             <span className="text-sm">
               {searchActive || columnFilterActive
                 ? t`No matching conversations`
-                : attention.length > 0
-                  ? t`No messages from this channel yet`
-                  : inArchivedView
+                : inArchivedView
                   ? t`No archived conversations`
                   : inUnreadView
                     ? t`No unread conversations`
-                    : t`No conversations`}
+                    : channelFilter.size > 0
+                      ? t`No messages from this channel yet`
+                      : t`No conversations`}
             </span>
             {!inArchivedView && !searchActive && !columnFilterActive && attention.length === 0 && (
               <Button variant="outline" size="sm" onClick={() => void handleRefresh()} disabled={fetching}>

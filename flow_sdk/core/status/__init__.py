@@ -12,6 +12,7 @@ from flow_sdk.core.status.build import (
     login_state,
     stored_key_hints,
     stored_key_providers,
+    stored_keys,
 )
 from flow_sdk.core.status.check import UnknownStatusFact, check_fact, harness_kind, install_target
 from flow_sdk.core.status.push import publish_status_changed
@@ -50,4 +51,5 @@ __all__ = [
     "refresh_status",
     "stored_key_hints",
     "stored_key_providers",
+    "stored_keys",
 ]

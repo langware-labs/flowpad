@@ -14,7 +14,7 @@ import { Input } from '@src/components/ui/input';
 import { Progress } from '@src/components/ui/progress';
 import { useProjects } from '@src/hooks/use-projects';
 import { type SandboxSetup, useSandboxes, workspaceServiceUrl } from '@src/hooks/use-sandboxes';
-import { errorMessage } from '@src/lib/error-message';
+import { errorMessage, isMissingGitCredential } from '@src/lib/error-message';
 import { CheckCircle, Cloud, Laptop, Loader2, LogIn } from 'lucide-react';
 import { RuntimeStrip } from '@src/components/top-nav-bar/RuntimeStrip';
 import { StepList } from '@src/components/ui/step-list';
@@ -155,7 +155,13 @@ export default function AgentLaunchLanding({ params }: { params: URLSearchParams
       window.location.assign(workspaceServiceUrl(node.id, path));
     } catch (e) {
       tracker.setupError();
-      setFailure(errorMessage(e, t`Couldn't set up the sandbox.`));
+      // Git's own words for a clone with no credentials are about a terminal prompt; what happened
+      // is a repository this account cannot read.
+      setFailure(
+        isMissingGitCredential(e)
+          ? t`Couldn't clone that repository: it doesn't exist, or it is private and GitHub isn't connected to your account.`
+          : errorMessage(e, t`Couldn't set up the sandbox.`),
+      );
       setCloud('failed');
     } finally {
       cloudRunning.current = false;
@@ -192,8 +198,11 @@ export default function AgentLaunchLanding({ params }: { params: URLSearchParams
   const percent = steps.length ? Math.round((100 * done) / steps.length) : 0;
   // An agent link names the agent ("QA manager"), a project link its project.
   const name = (agent && (agent.getDisplayName() || agent.name)) || info?.project_name || '';
+  // Viewable, but its project's files are not shared with this person: neither machine could
+  // check it out, so it is said here instead of after a refused clone.
+  const notShared = info?.project_shared === false;
   // Nothing to check out: the owner never published the project behind this link.
-  const unpublished = !!info && (isController ? !controllerId : !ownTarget(info));
+  const unpublished = !!info && !notShared && (isController ? !controllerId : !ownTarget(info));
   // Why a controller cannot be launched yet — said under the picker, never left to a grey button.
   const pickerHint =
     !isController || plan || unpublished
@@ -275,7 +284,22 @@ export default function AgentLaunchLanding({ params }: { params: URLSearchParams
             </p>
           )}
 
-          {!signedOut && info && !unpublished && (
+          {!signedOut && info && notShared && (
+            <div className={errorClass} data-testid="launch-not-shared">
+              <p>
+                {name ? (
+                  <Trans>You can see {name}, but its project isn't shared with you, so it can't be launched.</Trans>
+                ) : (
+                  <Trans>This project isn't shared with you, so it can't be launched.</Trans>
+                )}
+              </p>
+              <p className="mt-1 text-muted-foreground">
+                <Trans>Ask its owner to share the project with {account || t`your account`}.</Trans>
+              </p>
+            </div>
+          )}
+
+          {!signedOut && info && !unpublished && !notShared && (
             <div className="mt-4 space-y-3" data-testid="launch-choice">
               <p className="text-sm font-medium" data-testid="launch-title">
                 {isController ? (

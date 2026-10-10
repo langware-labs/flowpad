@@ -94,10 +94,9 @@ editor (`automations/spec_file.py`); a row alone is fine everywhere else.
 
 ```python
 from flow_sdk.core.compute_op.decision import decide_op
-from flow_sdk.schema.data_spec.compute_op_spec import DecisionOp
 from flow_sdk.schema.data_spec.message_state_spec import MessageState
 
-gate = DecisionOp.model_validate(rule.gate)
+gate = rule.gate_op    # the row's `gate` as the DecisionOp it is; None when the rule has no worded if
 gate.sentence          # 'asks for a refund or disputes a charge'
 gate.questions["match"].instructions
 #   'Is this true of the message (`text`, `subject`, from `sender`): asks for a refund or disputes a charge?'
@@ -115,8 +114,7 @@ verdict = await rule.decide_on(text="Attached is the invoice for September.")   
 `decide_op` answers a `DecisionVerdict` (`compute.returned.decision`), like every op answers
 a `ReturnedValue`; it records nothing and runs nothing — this is the fast test under the
 sentence and the try list over recent messages. A `DecisionError` is `met=False` with
-`unavailable` naming the closed reason. `rule.decide_on` takes `text=`, `message_id=` or a
-state.
+`unavailable` naming the closed reason. `rule.decide_on` takes `text=` or `message_id=`.
 
 ## 4. What the decision and the agent see: `stream_inbox.message.state`
 
@@ -141,7 +139,10 @@ One value serves both halves: the `state` the questions refer to by name, and th
 counted in `text_cut`). The event names a `source_item`; the **decision subjects** registry
 (`automations/decision_subjects.py`) maps a target type — and the tag patterns carrying it —
 to its subject, so a rule on another kind of event gets its own state the same way. A subject
-refuses our own and our agents' messages before any question is asked.
+refuses our own and our agents' messages before any question is asked. It also answers the two
+lookups by id the verbs need — `by_id(subject_id)` (the state, for `decide_on(message_id=)`) and
+`test_event(subject_id)` (the envelope a test run fires with) — so nothing outside it names a
+message.
 
 ## 5. The fire path, and what it leaves behind
 
@@ -171,13 +172,15 @@ run = runs[0]                        # AutomationRun, newest first
 run.status                           # 'succeeded' — the agent step's run, asked how it ended
 run.decision                         # {'caught': True, 'confidence': 0.9, 'reason': '…', 'answers': {...}, 'endpoint': 'api_endpoint-…', 'latency_ms': …}
 run.subject_id                       # the message's id — the state is rebuilt from it, never stored
-run.wizard["steps"]["handle"]["executor"]   # 'agentic_process-<id>' — the agent step's session
+run.wizard["steps"]["handle"]["executor"]   # 'agentic_process-<id>' — the agent step's session (the row keeps an outline: verdicts and sessions)
 run.agentic_process_id               # the same id, bare
 process = await AgenticProcess.get_by_id(run.agentic_process_id)
 ```
 
 Three keys are new on the trigger log (`fs_store/operations/trigger_log.py` copies a fixed
-set): `decision`, `subject_id` and `wizard` (the `then` result, each step trimmed).
+set): `decision`, `subject_id` and `wizard` (how the `then` went — `WizardResult.outline()`: the
+verdict and, per step, its exit code, a short detail and the session it started; never a step's
+output, because this file is polled).
 `trigger.decided` carries `{trigger_id, cause_event_id, outcome: caught|no|unavailable,
 confidence, reason}` on target `trigger:<id>`; like the rest of `trigger.*` it is not
 forwarded to the app. The wizard runs with the rule's trust and its project folder as
@@ -241,10 +244,11 @@ gate runs before.
 ```python
 tries = await rule.decide_on_recent(limit=20)   # the try list: recent messages on the rule's sources, each with its verdict;
 tries[0]["decided_at"] is not None              # True — one the rule already decided for real answers from the log, no call made
+tries[0]["verdict"]["met"]                      # one shape either way: a logged decision and a fresh verdict both say `met`
 summary = next(s for s in await Trigger.overview() if s.id == rule.id)   # the list, one pass over every rule's log
 summary.last_runs                               # the row's execution marks — the last five real runs, newest first
 summary.passed_over                             # fires the gate declined
-summary.started_last_hour                       # the top-bar counter sums it over the person's own rules (not Flowpad's built-ins) — the same pass, no second walk
+started = await Trigger.started_last_hour()     # the top-bar counter: real fires in the last hour over the person's own rules, counted on the log tails
 ```
 
 "Run on this one" is `run_once(rule, message_id=…)` (`automations/run_once.py`): the real

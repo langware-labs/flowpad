@@ -10,7 +10,7 @@
  * recent real messages. Every call goes through the hooks layer → `Trigger.*`.
  */
 import { Trans, useLingui } from '@lingui/react/macro';
-import { messageRuleFields, type DataSource, type ITrigger, type TryRow } from '@sdk';
+import { messageRuleFields, parseTarget, type DataSource, type ITrigger, type TryRow } from '@sdk';
 import { AlertTriangle, ArrowLeft, Check, ExternalLink, Loader2, Play, Save, Trash2, Zap } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { Button } from '@src/components/ui/button';
@@ -38,6 +38,7 @@ import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { ViewType } from '@src/types/ViewType';
 import { notify } from '@src/notifications';
 import { messageRecipeById } from './automation-recipes';
+import { pillClass } from './Pills';
 import type { AutomationsRoute } from './automations-pointer';
 
 interface Draft {
@@ -54,25 +55,20 @@ function draftOf(t: ITrigger): Draft {
   return {
     enabled: t.enabled ?? true,
     catch: t.gate?.sentence ?? '',
-    sources: (t.tag_scope ?? []).map((s) => s.replace(/^data_source:/, '')),
+    sources: (t.tag_scope ?? []).map((s) => parseTarget(s)[1] ?? s),
     agent: t.then?.run_agent?.agent ?? '',
     prompt: t.then?.run_agent?.prompt ?? '',
   };
 }
-
-/** One chip of the channel row, pressed or not. */
-const chipClass = (on: boolean) =>
-  cn(
-    'inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs transition-colors',
-    on ? 'border-primary bg-primary/10 text-foreground' : 'border-border text-muted-foreground hover:text-foreground',
-  );
 
 export function MessageRulePage({ route }: { route: AutomationsRoute }) {
   const { t } = useLingui();
   const { navigation } = useDockNavigation();
   const triggerId = route.trigger ?? null;
   const isNew = !triggerId;
-  const { automation } = useAutomation(triggerId);
+  // The row is the rule. The list is read once, for the one thing only it knows (whether Flowpad owns the
+  // rule) — this page holds no poll of every automation.
+  const { automation } = useAutomation(triggerId, { poll: false });
   const triggerQuery = useAutomationTrigger(triggerId);
   const save = useSaveAutomation();
   const remove = useDeleteAutomation();
@@ -116,12 +112,16 @@ export function MessageRulePage({ route }: { route: AutomationsRoute }) {
   const agentName = (agents.data ?? []).find((a) => `agent-${a.id}` === draft?.agent)?.name ?? '';
   // The row shape is the SDK's (`messageRuleFields`): the screen's Save and `Trigger.onMessage` make the same row.
   const fields = draft
-    ? messageRuleFields({ ...draft, name: isNew ? null : (automation?.name ?? triggerQuery.data?.name) }, agentName)
+    ? messageRuleFields({ ...draft, name: isNew ? null : triggerQuery.data?.name }, agentName)
     : null;
   const dirty = !!loaded && JSON.stringify(loaded.draft) !== JSON.stringify(loaded.base);
   const missing = draft ? [!draft.catch.trim() && 'catch', !draft.agent && 'agent', !draft.prompt.trim() && 'prompt'].filter(Boolean) : [];
   const readOnly = !!automation?.read_only;
-  const noDecisionApi = (check.data?.findings ?? []).find((f) => f.area === 'if' && !f.ok)?.message ?? null;
+  // Check's findings on the `if`: no decider at all is the banner (nothing can be asked); anything else wrong
+  // with the sentence is said under it.
+  const failing = (check.data?.findings ?? []).filter((f) => !f.ok);
+  const noDecisionApi = failing.find((f) => f.area === 'decider')?.message ?? null;
+  const ifProblem = failing.find((f) => f.area === 'if')?.message ?? null;
 
   if (!draft || !fields) {
     return (
@@ -184,10 +184,9 @@ export function MessageRulePage({ route }: { route: AutomationsRoute }) {
 
   const verdict = decide.data;
   const caughtWord = (row: TryRow['verdict']) => {
-    const met = row.met ?? row.caught;
     const sure = Math.round((row.confidence ?? 0) * 100);
     if (row.unavailable) return { kind: 'no', text: t`Couldn’t ask`, sure };
-    if (met) return { kind: 'yes', text: t`Would catch`, sure };
+    if (row.met) return { kind: 'yes', text: t`Would catch`, sure };
     return sure >= 50 ? { kind: 'unsure', text: t`Not sure, so no`, sure } : { kind: 'no', text: t`Would not`, sure };
   };
 
@@ -257,7 +256,7 @@ export function MessageRulePage({ route }: { route: AutomationsRoute }) {
                     aria-pressed={draft.sources.length === 0}
                     onClick={() => setDraft({ sources: [] })}
                     disabled={readOnly}
-                    className={chipClass(draft.sources.length === 0)}
+                    className={pillClass(draft.sources.length === 0)}
                     data-testid="message-rule-source-any"
                   >
                     <Trans>Any channel</Trans>
@@ -269,7 +268,7 @@ export function MessageRulePage({ route }: { route: AutomationsRoute }) {
                       aria-pressed={draft.sources.includes(s.id)}
                       onClick={() => toggleSource(s.id)}
                       disabled={readOnly}
-                      className={chipClass(draft.sources.includes(s.id))}
+                      className={pillClass(draft.sources.includes(s.id))}
                       data-testid={`message-rule-source-${s.id}`}
                     >
                       {s.name || s.channel}
@@ -289,6 +288,11 @@ export function MessageRulePage({ route }: { route: AutomationsRoute }) {
                 className="text-sm"
                 data-testid="message-rule-catch-text"
               />
+              {ifProblem && (
+                <p className="rounded-md border border-amber-500/50 bg-amber-500/10 px-2 py-1 text-xs" data-testid="message-rule-if-problem">
+                  {ifProblem}
+                </p>
+              )}
               <p className="text-xs text-muted-foreground">
                 <Trans>
                   Say it the way you’d tell a colleague. Each new message is read and decided on. Your own and your

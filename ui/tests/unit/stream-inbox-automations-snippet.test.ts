@@ -19,7 +19,7 @@ describe('stream-inbox-automations.md §9', () => {
       create: { id: RULE_ID, name: 'Refunds', trigger_type: 'tag' },
       decide_on: { met: true, confidence: 0.93, reason: 'asks for a refund', answers: {} },
       decide_on_recent: [{ state: { text: 'x' }, verdict: { met: false }, decided_at: null }],
-      overview: [{ id: RULE_ID, started_last_hour: 1 }],
+      overview: [{ id: RULE_ID }],
       started_last_hour: 1,
     };
     vi.spyOn(dataManager, 'callAction').mockImplementation((action: ActionInfo) => {
@@ -36,7 +36,7 @@ describe('stream-inbox-automations.md §9', () => {
     expect(ns.rule).toBeInstanceOf(Trigger);
     expect(ns.verdict).toMatchObject({ met: true, confidence: 0.93 });
     expect(ns.tries).toHaveLength(1);
-    expect(ns.rows[0].started_last_hour).toBe(1);
+    expect(ns.rows).toEqual([{ id: RULE_ID }]);
     expect(ns.started).toBe(1);
 
     expect(calls.map((c) => [c.name, c.method, c.actionUrl.split('?')[0]])).toEqual([

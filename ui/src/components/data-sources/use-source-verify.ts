@@ -17,7 +17,10 @@ import { notify } from '@src/notifications';
 import { errorMessage } from '@src/lib/error-message';
 
 /** What one press answered: the backend's verdict, or why the check did not run. */
-export type VerifyOutcome = { result: VerifyResult; error?: undefined } | { result?: undefined; error: string };
+export interface VerifyOutcome {
+  result?: VerifyResult;
+  error?: string;
+}
 
 export function useSourceVerify(source: DataSource, { quiet = false }: { quiet?: boolean } = {}) {
   const { t } = useLingui();

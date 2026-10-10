@@ -110,11 +110,8 @@ class _Names:
         return found
 
 
-async def _describe_then_wizard(then: Any, *, names: _Names, parent_type_id: str = "") -> list[ThenPart]:
+async def _describe_then_wizard(spec: Any, *, names: _Names, parent_type_id: str = "") -> list[ThenPart]:
     """A ``then`` wizard in words: the sugar's one agent or script, else the steps."""
-    from flow_sdk.schema.data_spec.trigger_spec import ThenSpec  # noqa: PLC0415
-
-    spec = then if isinstance(then, ThenSpec) else ThenSpec.model_validate(then)
     if spec.run_agent is not None:
         target = spec.run_agent.agent or parent_type_id or None
         who = await names.name(target)
@@ -130,14 +127,27 @@ async def _describe_then_wizard(then: Any, *, names: _Names, parent_type_id: str
 async def describe_then(trigger: Any, *, names: Optional[_Names] = None,
                         workflows: Optional[list[str]] = None) -> list[ThenPart]:
     """What the rule does, one part per action — plus the workflows it starts."""
-    from flow_sdk.builtin import trigger_callbacks  # noqa: PLC0415
+    from flow_sdk.automations.then import then_of  # noqa: PLC0415
 
     names = names or _Names()
+    then = then_of(trigger)
+    if then is not None:
+        parts = await _describe_then_wizard(then, names=names, parent_type_id=str(trigger.parent_type_id or ""))
+    else:
+        parts = await _describe_actions(trigger, names)
+    for name in workflows or []:
+        parts.append(ThenPart(kind="workflow", text=f"Start workflow {name}", target_name=name))
+    if not parts:
+        parts.append(ThenPart(kind="nothing", text="Do nothing yet"))
+    return parts
+
+
+async def _describe_actions(trigger: Any, names: _Names) -> list[ThenPart]:
+    """One part per action, and the bare ``instruction`` a rule with no action carries."""
+    from flow_sdk.builtin import trigger_callbacks  # noqa: PLC0415
+
     parts: list[ThenPart] = []
-    then = getattr(trigger, "then", None)
-    if then:
-        parts += await _describe_then_wizard(then, names=names, parent_type_id=str(trigger.parent_type_id or ""))
-    for action in list(trigger.actions or []) if not then else []:
+    for action in trigger.actions or []:
         atype = str(action.action_type)
         target = action.target_type_id or None
         if atype == ActionType.RUN_AGENT.value:
@@ -164,10 +174,6 @@ async def describe_then(trigger: Any, *, names: Optional[_Names] = None,
         elif atype == ActionType.NOTIFY_ENTITY.value:
             who = await names.name(target)
             parts.append(ThenPart(kind="notify", text=f"Notify {who or 'the linked item'}", target=target, target_name=who))
-    if trigger.instruction and not then:
+    if trigger.instruction:
         parts.append(ThenPart(kind="run_agent", text="Run an agent", prompt=trigger.instruction))
-    for name in workflows or []:
-        parts.append(ThenPart(kind="workflow", text=f"Start workflow {name}", target_name=name))
-    if not parts:
-        parts.append(ThenPart(kind="nothing", text="Do nothing yet"))
     return parts

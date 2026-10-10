@@ -2,7 +2,7 @@
  * The attached channels of ONE owner — the local user's stream inbox or an agent's —
  * on the stream inbox's header line, as a row of round marks with a status dot
  * (presence-row pattern): green dot = listening, dashed ring = paused, "!" =
- * parked. ONE mark per channel kind (provider + channel, the identity a
+ * a person must act (`ATTENTION[kind].mark`). ONE mark per channel kind (provider + channel, the identity a
  * glyph draws): several sources of one kind share a mark that carries their
  * count, and hovering it lists just those sources with their switches.
  * Clicking a mark FILTERS the list to that kind; while a filter is on, the
@@ -42,11 +42,15 @@ import { isMessageDriverSpec, sourcesQuery, useSourceSpecs } from '@src/componen
 import { useSourceDelete } from '@src/components/data-sources/use-source-delete';
 import { useSourceToggle } from '@src/components/data-sources/use-source-toggle';
 import { CallControls } from '@src/components/voice/CallControls';
-import { ATTENTION_FALLBACK, attentionReason, needsAPerson } from '@src/components/data-sources/source-attention';
-import { i18n } from '@lingui/core';
+import {
+  ATTENTION,
+  type AttentionReason,
+  type ChannelMark,
+  attentionReason,
+  attentionText,
+} from '@src/components/data-sources/source-attention';
+import { useSourcePull } from '@src/components/data-sources/source-parts';
 import { channelKeyOf, ownerOf } from './channel-owner';
-
-export { channelKeyOf };
 
 const EMPTY: DataSource[] = [];
 
@@ -75,13 +79,8 @@ export function useAttachedChannels(owner: TypeId | null | undefined) {
 }
 
 type SpecFor = (provider: string) => DataDriver | undefined;
-type ChannelState = 'on' | 'off' | 'parked';
-/** The mark's three states, from the one classifier: paused draws dashed; anything a person must act on
- *  (setup, parked, a held file) draws "!"; retrying is the scheduler's own business and still draws on. */
-const stateOf = (s: DataSource): ChannelState => {
-  const kind = attentionReason(s)?.kind;
-  return kind === undefined || !needsAPerson(kind) ? 'on' : kind === 'paused' ? 'off' : 'parked';
-};
+/** How the mark draws a source, from the one classifier: lit unless its kind says otherwise. */
+const markOf = (reason: AttentionReason | null): ChannelMark => (reason ? ATTENTION[reason.kind].mark : 'on');
 
 /** Sources of one channel kind, sharing a mark. Its state is the best of its
  *  members' — one listening source lights the mark; parked beats paused — and
@@ -92,7 +91,7 @@ interface ChannelGroup {
   provider: string;
   channel: string;
   sources: DataSource[];
-  state: ChannelState;
+  state: ChannelMark;
   attention: number;
 }
 export function groupChannels(rows: DataSource[]): ChannelGroup[] {
@@ -104,8 +103,8 @@ export function groupChannels(rows: DataSource[]): ChannelGroup[] {
   }
   return [...groups.entries()]
     .map(([key, sources]) => {
-      const states = sources.map(stateOf);
-      const state: ChannelState = states.includes('on') ? 'on' : states.includes('parked') ? 'parked' : 'off';
+      const states = sources.map((s) => markOf(attentionReason(s)));
+      const state: ChannelMark = states.includes('on') ? 'on' : states.includes('parked') ? 'parked' : 'off';
       const attention = states.filter((st) => st === 'parked').length;
       return { key, provider: sources[0].provider, channel: sources[0].channel, sources, state, attention };
     })
@@ -357,9 +356,9 @@ const specFor =
   () =>
     spec;
 
-/** One line of a channel list: glyph, name, its setup note, the on/off switch
- *  and a delete. A parked row's setup note IS its verify control — pressing
- *  the step it names re-runs the check. */
+/** One line of a channel list: glyph, name, why it is not delivering, the on/off
+ *  switch and a delete. For a row a person must act on, the reason IS the control —
+ *  pressing it runs the verb that recovers that kind (`ATTENTION[kind].verb`). */
 function ChannelRow({
   source,
   spec,
@@ -372,13 +371,18 @@ function ChannelRow({
   const { t } = useLingui();
   const { toggle, busy } = useSourceToggle(source);
   const { verify, busy: verifying } = useSourceVerify(source);
+  const { pull, pulling } = useSourcePull(source);
   const { Base, Badge } = sourceGlyphs(spec, source.channel);
-  const state = stateOf(source);
-  // The reason it is not listening — its setup note or its last error — IS the verify control. The words
-  // stay the foreground colour (coloured text on a dark theme does not read); the strip above the list
-  // says the same thing at full width.
-  const attention = state === 'parked' ? attentionReason(source) : null;
-  const reason = attention ? attention.text || i18n._(ATTENTION_FALLBACK[attention.kind]) : '';
+  const attention = attentionReason(source);
+  const state = markOf(attention);
+  // The words stay the foreground colour (coloured text on a dark theme does not read); the strip
+  // above the list says the same thing at full width. A paused row needs no line: its switch says it.
+  const flagged = attention && state === 'parked' ? attention : null;
+  const reason = flagged ? attentionText(flagged) : '';
+  const recover =
+    flagged && ATTENTION[flagged.kind].verb === 'pull'
+      ? { label: t`Pull`, run: pull, busy: pulling }
+      : { label: t`Verify`, run: verify, busy: verifying };
   return (
     <div
       className="flex items-center gap-2.5 px-3 py-2 text-[13px]"
@@ -397,9 +401,9 @@ function ChannelRow({
         {reason && (
           <button
             type="button"
-            onClick={() => void verify()}
-            disabled={verifying}
-            title={t`Verify: ${reason}`}
+            onClick={() => void recover.run()}
+            disabled={recover.busy}
+            title={`${recover.label}: ${reason}`}
             className="block w-full truncate text-left text-[11px] underline decoration-dotted underline-offset-2 hover:decoration-solid disabled:opacity-60"
             data-testid="attached-channel-verify"
           >

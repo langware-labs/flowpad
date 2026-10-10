@@ -14,7 +14,8 @@ import { useEffect, useRef, useState } from 'react';
 import { IncomingProjectDialog } from './IncomingProjectDialog';
 import { IncomingTaskDialog } from './IncomingTaskDialog';
 import { LaunchDialog } from './LaunchDialog';
-import { LAUNCH_ACTION, LAUNCH_PARAMS, type LaunchPlan, launchPlanFromParams } from '@src/pages/entry/launch-plan';
+import { LAUNCH_ACTION, LAUNCH_PARAMS, launchPlanFromParams } from '@src/pages/entry/launch-plan';
+import { closeLaunch, openLaunch, useLaunchStore } from './launch-store';
 
 /**
  * The `?action=open&…` deep-link handler — "someone sent you here to open X".
@@ -145,7 +146,7 @@ export function IncomingDeepLink() {
   const { navigation } = useDockNavigation();
   const { pendingTask, setPendingTask } = useIncomingTaskStore();
   const { pendingProject, setPendingProject } = useIncomingProjectStore();
-  const [launchPlan, setLaunchPlan] = useState<LaunchPlan | null>(null);
+  const launchPlan = useLaunchStore((state) => state.payload);
   // A launch is fetching its own projects: nothing is offered until it is done, so what it
   // set up is already here when the offers are looked at.
   useOfferNewCloudProjects(launchPlan !== null);
@@ -157,7 +158,7 @@ export function IncomingDeepLink() {
     if (params.get('action') === LAUNCH_ACTION) {
       const plan = launchPlanFromParams(params);
       consumeInboundParams(LAUNCH_PARAMS);
-      if (plan) setLaunchPlan(plan);
+      if (plan) openLaunch(plan);
       else notify.error({ title: t`Couldn't launch`, message: t`That launch link is incomplete.`, forceToast: true });
       return;
     }
@@ -258,7 +259,7 @@ export function IncomingDeepLink() {
 
   return (
     <>
-      {launchPlan && <LaunchDialog plan={launchPlan} onClose={() => setLaunchPlan(null)} />}
+      {launchPlan && <LaunchDialog plan={launchPlan} onClose={closeLaunch} />}
 
       {/* Incoming task dialog — pull/clone flow for shared tasks */}
       {pendingTask && (
