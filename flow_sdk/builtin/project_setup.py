@@ -428,7 +428,9 @@ def setup_run_address(project_id: str, root: str = "") -> str:
     return setup_activity_path(root or f"project-{project_id}")
 
 
-async def start_setup(project: "Project", *, ai: bool = True, root: str = "") -> str:
+async def start_setup(
+    project: "Project", *, ai: bool = True, root: str = "", phase: str = "setup", on_done=None,
+) -> str:
     """Start the project's setup in the background and return its address at once.
 
     The setup is the project's TREE (``core/setup/derive.ProjectTree``): every dependency, connection,
@@ -436,7 +438,9 @@ async def start_setup(project: "Project", *, ai: bool = True, root: str = "") ->
     what it needs. ``root`` sets up one node of it and what that node needs (a source's own Set up,
     a web app the display found down); empty = the whole project. Its questions reach the app
     (``ask_person`` → the open tab), not a terminal. A run already going for the same root is joined,
-    never doubled.
+    never doubled — a load (``phase="load"``, the node's ``on_load`` wizard alone) joins a setup of the
+    node and the other way round: same slot, same screen. ``on_done`` hears the result of a run THIS
+    call started (a joined run is someone else's).
     """
     from flow_sdk.core.setup import execute_setup  # noqa: PLC0415
     from flow_sdk.core.setup.derive import ProjectTree  # noqa: PLC0415
@@ -453,13 +457,16 @@ async def start_setup(project: "Project", *, ai: bool = True, root: str = "") ->
             from flow_sdk.core.compute.shared_shell import SharedShell  # noqa: PLC0415
 
             async with SharedShell() as base:
-                return await execute_setup(
+                result = await execute_setup(
                     root or tree.root, resolve_node=tree.resolve_node, resolve_op=tree.resolve_op,
                     subject_entity=f"project-{pid}", cwd=Path(mount) if mount else None,
                     shell=functools.partial(_setup_shell, inner=base),
                     # A person pressed Set up on THIS project: every node in it is theirs to run.
-                    approved=True,
+                    approved=True, phase=phase,
                 )
+            if on_done is not None:
+                await on_done(result)
+            return result
 
         # Detached: the run takes minutes and asks the person questions; a plain task
         # (and a plain done-callback) would hold the Set-up request for all of it.

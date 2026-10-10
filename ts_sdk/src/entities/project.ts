@@ -173,6 +173,15 @@ export interface ProjectSetupSkip {
   note: string;
 }
 
+/** An asset's load came up on THIS machine once (`SetupLoadSpec`, on its record) — a record of the first
+ *  successful load, never proof it is up now; `run` is the setup run that stamped it, empty when a check found
+ *  it up already. */
+export interface ProjectSetupLoad {
+  at: number;
+  run: string;
+  detail: string;
+}
+
 /** How a skip is made: `local` marks the record here; `always` removes the asset from the project (staged in git). */
 export type ProjectSetupSkipScope = 'local' | 'always';
 
@@ -241,6 +250,8 @@ export interface SetupNodeResult {
   detail: string;
   prepare: SetupWizardAnswer | null;
   run: SetupWizardAnswer | null;
+  /** Its load wizard's answer — set by a LOAD of the node (the asset shown), never by a setup walk. */
+  on_load?: SetupWizardAnswer | null;
   children: SetupNodeResult[];
   /** Set up already under another parent this run; its subtree shows there. */
   shared: boolean;
@@ -282,6 +293,10 @@ export interface ProjectHomePage {
   type: string | null;
   /** Set when the backend tried and failed; the rest is null alongside it. */
   error?: string;
+  /** A web app home that was not up: the address of the run bringing it up (the app's own setup node, load
+   *  phase). The app view adopts that run by root and shows "Setting things up" until the server answers.
+   *  Null when the app was up already, or is files Flowpad serves itself. */
+  load_run?: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -1325,6 +1340,31 @@ export class Project extends APIEntity<Project> {
       const message = ax.response?.data?.message ?? ax.message ?? 'Unknown error';
       return { kind: 'error', message };
     }
+  }
+
+  /**
+   * Move a project into another workspace (`POST compute_node/<id>/switch-project-workspace`):
+   * everything open in it is closed, its folder moves under the workspace's root, the SAME
+   * row is re-pointed and the new location fully indexed. `workspaceId` undefined = the
+   * default workspace. Rejects with the backend's error (409 when the destination already
+   * has a folder of that name, 400 already there / not movable, 404 unknown) — the caller
+   * shows it; nothing is auto-suffixed.
+   */
+  static async switchWorkspace(
+    computeNodeId: string,
+    projectId: string,
+    workspaceId: string | undefined,
+  ): Promise<{ project: Project; path: string; previousPath: string; indexed: boolean }> {
+    const action = new ActionInfo('switch-project-workspace', 'compute_node', computeNodeId, 'POST');
+    action.bodyParameters = { project_id: projectId, ...(workspaceId ? { workspace: workspaceId } : {}) };
+    const response = await dataManager.callAction<
+      { project_id: string; workspace?: string },
+      { project: Record<string, unknown>; path: string; previous_path: string; indexed?: boolean }
+    >(action);
+    if (!response?.project) throw new Error('No project returned');
+    const project = dataManager.updateEntityFromJson<Project>(response.project);
+    // `indexed === false`: moved, but the new folder's index did not run — say so.
+    return { project, path: response.path, previousPath: response.previous_path, indexed: response.indexed !== false };
   }
 
   /**

@@ -1,5 +1,6 @@
 import { APIEntity, registerEntity } from '../APIEntity';
 import type { IEntity, EntityMerge } from '../IEntity';
+import type { ProjectSetupLoad } from './project';
 
 export interface IWebApp extends IEntity {
   name: string;
@@ -10,6 +11,8 @@ export interface IWebApp extends IEntity {
   kind?: string | null;
   /** Served subdir inside the app folder. */
   build?: string | null;
+  /** Its load came up on THIS machine once (`SetupLoadSpec`); read-only, the backend's to write. */
+  setup_loaded?: ProjectSetupLoad | null;
 }
 
 // `implements IWebApp` only checks the class; it contributes no members, so every
@@ -34,6 +37,7 @@ export class WebApp extends APIEntity<WebApp> implements IWebApp {
   project_id: string | null;
   kind: string | null;
   build: string | null;
+  setup_loaded: ProjectSetupLoad | null;
 
   constructor(entity: Partial<IWebApp> | IEntity = {}) {
     super(entity);
@@ -43,5 +47,6 @@ export class WebApp extends APIEntity<WebApp> implements IWebApp {
     this.project_id = app.project_id ?? null;
     this.kind = app.kind ?? null;
     this.build = app.build ?? null;
+    this.setup_loaded = app.setup_loaded ?? null;
   }
 }

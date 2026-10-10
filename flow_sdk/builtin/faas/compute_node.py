@@ -1555,6 +1555,42 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
             leaf, body.get("project_id"), lambda target_dir: os.makedirs(target_dir), body
         )
 
+    @action.post(action_name="switch-project-workspace")
+    async def _switch_project_workspace_action(self) -> ApiResponse:
+        """Move a project on this node into another workspace, keeping its row.
+
+        Body: ``{ "project_id": "<uuid>", "workspace": "<workspace id, absent = default>" }``
+        → ``{ project, path, previous_path }``. The work is ``Project.move_to_workspace``
+        (close everything open in it, move the folder, re-point the row, full index);
+        this is its HTTP face, mapping ``ProjectMoveError`` to the status it names —
+        404 (no such project / workspace), 400 (already there, not movable), 409 (the
+        destination already has a folder of that name).
+        """
+        from flow_sdk.builtin.project import Project, ProjectMoveError  # noqa: PLC0415
+
+        request_info = get_current_request_info()
+        body = (await request_info.get_post_data() if request_info else {}) or {}
+        project_id = str(body.get("project_id") or "").strip()
+        project = await Project.get_by_id(project_id) if project_id else None
+        if project is None:
+            return ApiFailResponse(message=f"project {project_id!r} is not on this node", status_code=404)
+        try:
+            move = await project.move_to_workspace(str(body.get("workspace") or "").strip() or None)
+        except ProjectMoveError as exc:
+            return ApiFailResponse(message=str(exc), status_code=exc.status_code)
+        except OSError as exc:
+            return ApiFailResponse(message=f"could not move the project folder: {exc}", status_code=500)
+        return ApiSuccessResponse(
+            data={
+                "project": project.model_dump(mode="json"),
+                "path": project.fs_storage_mount_path,
+                "previous_path": move.previous_path,
+                # False: the folder moved and the row follows it, but the index did not
+                # run — the caller says so and offers a rebuild; it is not a failed move.
+                "indexed": move.indexed,
+            }
+        )
+
     @action.post(action_name="validate-project-name")
     async def _validate_project_name_action(self) -> ApiResponse:
         """Is this project name free on this node, and if not, what is?

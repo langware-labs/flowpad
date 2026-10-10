@@ -32,7 +32,7 @@ vi.mock('@src/notifications', () => ({
   notify: { success: h.success, warning: h.warning, error: vi.fn() },
 }));
 vi.mock('@sdk/react/hooks', () => ({ useContext: () => ({ project: null }) }));
-vi.mock('@src/components/harness-login/harness-login-store', () => ({ openHarnessLoginModal: h.openLogin }));
+vi.mock('@src/components/harness-login/harness-sign-in-store', () => ({ openHarnessSignIn: h.openLogin }));
 // Answers per asset: the page reads the status record (who is signed in to the hub) and the
 // funding picture (which source funds each harness) as two separate assets.
 vi.mock('@sdk/react/hooks/useLazyAsset', () => ({

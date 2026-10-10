@@ -9,7 +9,7 @@ import pytest
 from flow_sdk.builtin.asset_setup import AssetSetup
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
 from flow_sdk.schema.data_spec._kinds import register_builtin_kinds
-from flow_sdk.schema.data_spec.asset_setup_spec import AssetSetupSpec, SetupTreeResult
+from flow_sdk.schema.data_spec.asset_setup_spec import AssetSetupSpec, SetupLoadSpec, SetupTreeResult
 
 pytestmark = pytest.mark.timeout(5)
 
@@ -18,6 +18,7 @@ def test_the_kinds_are_registered():
     register_builtin_kinds()
     assert SchemaRegistry.kind_type("asset.setup") is AssetSetupSpec
     assert SchemaRegistry.kind_type("setup.tree") is SetupTreeResult
+    assert SchemaRegistry.kind_type("setup.load") is SetupLoadSpec
 
 
 def test_a_hand_written_document_reads_back_and_ignores_stray_keys(tmp_path):
@@ -38,3 +39,15 @@ def test_a_broken_document_is_no_node_not_a_crash(tmp_path):
     folder.mkdir(parents=True)
     (folder / "asset_setup.json").write_text("{ not json")
     assert AssetSetup(name="bad", asset_ref=str(folder)).spec() is None
+
+
+def test_a_declared_load_wizard_reads_back(tmp_path):
+    """``on_load`` names the wizard run when the asset is SHOWN — a third slot beside ``prepare`` / ``run``."""
+    folder = tmp_path / "agentic-assets" / "asset_setup" / "shop"
+    folder.mkdir(parents=True)
+    (folder / "asset_setup.json").write_text(json.dumps({"name": "shop", "run": "shop-setup", "on_load": "shop-warm"}))
+
+    spec = AssetSetup(name="shop", asset_ref=str(folder)).spec()
+
+    assert spec == AssetSetupSpec(name="shop", run="shop-setup", on_load="shop-warm")
+    assert AssetSetup(name="shop", on_load="shop-warm").on_load == "shop-warm", "the row mirrors the document"

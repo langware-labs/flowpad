@@ -178,6 +178,24 @@ describe('FundingChip', () => {
     expect(funded.className).not.toContain('animate-unfunded-flash');
   });
 
+  it('shows the default harness AND the one word for what funds it, the modal row s word', async () => {
+    h.status.mockReturnValue(statusWith(KEY) as never);
+    renderChip();
+    await waitFor(() => expect(screen.getByTestId('funding-chip-word').textContent).toBe('API key'));
+    // The harness mark is still there beside the word.
+    expect(screen.getByTestId('funding-chip-trigger').textContent).toBe('API key');
+
+    cleanup();
+    h.status.mockReturnValue(statusWith(DEVICE) as never);
+    renderChip();
+    await waitFor(() => expect(screen.getByTestId('funding-chip-word').textContent).toBe('Plan'));
+
+    cleanup();
+    h.status.mockReturnValue(statusWith(null) as never);
+    renderChip();
+    await waitFor(() => expect(screen.getByTestId('funding-chip-word').textContent).toBe('No source'));
+  });
+
   it('holds its place while the box has not answered yet, without claiming a kind', async () => {
     // The two nulls are different. A slow read must not make the chip pop in late and shove
     // the version chip sideways, but it must also not name a funding kind nobody has stated.

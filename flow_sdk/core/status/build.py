@@ -150,10 +150,29 @@ def stored_key_providers() -> dict[str, str]:
     return out
 
 
+def stored_key_hints() -> dict[str, str]:
+    """``{provider: hint}`` for every stored LLM-provider key -- the masked ``****last4`` the shadow
+    record carries, never the value. A key stored before hints existed maps to ``""``.
+    """
+    from flow_sdk.cli.auth.secrets import get_secrets  # noqa: PLC0415
+    from flow_sdk.schema.data_spec.credential_contract import LM_SECRET_PREFIX  # noqa: PLC0415
+
+    out: dict[str, str] = {}
+    for record in get_secrets():
+        name = str(record.get("name") or "")
+        if name.startswith(LM_SECRET_PREFIX):
+            out[name[len(LM_SECRET_PREFIX) :]] = str(record.get("hint") or "")
+    return out
+
+
 def _keys() -> tuple[KeyStatusSpec, ...]:
     stored = stored_key_providers()
+    hints = stored_key_hints()
     providers = [p.value for p in LMApiProvider if p is not LMApiProvider.FLOWPAD]
-    return tuple(KeyStatusSpec(provider=p, stored=p in stored, created_at=stored.get(p, "")) for p in providers)
+    return tuple(
+        KeyStatusSpec(provider=p, stored=p in stored, created_at=stored.get(p, ""), hint=hints.get(p, ""))
+        for p in providers
+    )
 
 
 # ── hub ─────────────────────────────────────────────────────────────────────────

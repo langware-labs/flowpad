@@ -14,6 +14,7 @@ export {
   WorkerModelTier,
   parseUIUri,
   isProcessRunning,
+  isProcessLive,
   isProcessActive,
   isProcessStartable,
   isWorkerRunning,

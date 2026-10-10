@@ -1,7 +1,7 @@
 """A setup node as the walk sees it, and the seam that finds one.
 
 The walk knows nothing about projects, credentials or web apps: it asks ``resolve_node(id)`` for a node
-and gets back its two wizards and its children's ids. What a node IS — derived from an entity, declared
+and gets back its wizards and its children's ids. What a node IS — derived from an entity, declared
 in an ``asset_setup`` asset, compiled in memory — is the resolver's business (``derive.py``).
 """
 
@@ -24,6 +24,9 @@ class SetupNode:
     prepare: Optional[WizardSpec] = None
     #: Run on the way up, once every child is done.
     run: Optional[WizardSpec] = None
+    #: Run when the asset is LOADED for display here (``core/setup/load``), not by the setup walk. Its check
+    #: is what "ready" means for a load; it never asks.
+    on_load: Optional[WizardSpec] = None
     #: Child node ids, in the order they are set up.
     children: tuple[str, ...] = ()
     #: Whether this node's wizards may run here without a person's approval (shipped, or derived by us).

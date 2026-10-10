@@ -54,6 +54,39 @@ def test_infer_worker_type_unknown(tmp_path: Path) -> None:
         _infer_worker_type(p)
 
 
+@pytest.fixture
+def redirected_claude_home(tmp_path: Path, monkeypatch):
+    """Claude's home redirected to a directory that is NOT named ``.claude``."""
+    from flow_sdk.instance_settings import reset_instance_settings
+
+    home = tmp_path / "claude-home"
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(home))
+    monkeypatch.setenv("FLOWPAD_CLAUDE_HOME", str(home))
+    reset_instance_settings()
+    yield home
+    reset_instance_settings()
+
+
+@pytest.mark.asyncio
+async def test_a_redirected_claude_home_streams_whatever_it_is_named(redirected_claude_home: Path) -> None:
+    """The home is where the settings say it is, not a folder called ``.claude``:
+    a transcript under a redirected home is parsed and dispatched like any other."""
+    session = redirected_claude_home / "projects" / "encoded-cwd" / "sess-1.jsonl"
+    session.parent.mkdir(parents=True)
+    _write_minimal_session(session, "sess-1")
+    reg = TranscriptStreamerRegistry()
+    seen: list[str] = []
+
+    async def cb(session_id: str, _path: Path, _entries: list[Any]) -> None:
+        seen.append(session_id)
+
+    reg.subscribe("probe", cb)
+    await reg.notify_change(session)
+
+    assert seen == ["sess-1"]
+    assert reg.get_streamer_by_path(session) is not None
+
+
 @pytest.mark.asyncio
 async def test_subscribe_and_unsubscribe() -> None:
     """subscribe returns an unsub function that removes the callback."""

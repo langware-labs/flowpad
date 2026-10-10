@@ -10,7 +10,7 @@ import { Trans, useLingui } from '@lingui/react/macro';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AssistantContextChips } from './AssistantContextChips';
 import { assistantContextInstructions, assistantContextKey } from './assistant-context';
-import type { PendingAsk } from './FloatingChatContext';
+import type { PendingAsk } from './floating-chat-context';
 import { useFlowpadAssistantProject } from './useFlowpadAssistantProject';
 import { VibeModelSelect } from '@src/pages/flow-page/vibe-model-select';
 import { WorkerTypeSelect } from '@src/components/workers/WorkerTypeSelect';

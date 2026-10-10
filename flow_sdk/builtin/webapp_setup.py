@@ -42,15 +42,23 @@ def _answer(code: ExitCode, detail: str, *, ran: bool = True, value: Any = None)
 
 
 def health_answers(port: int, path: str = "/") -> bool:
-    """The app's own health path answers below 500 on ``port`` (a redirect or a 404 page is still a server)."""
-    url = f"http://127.0.0.1:{int(port)}{path if path.startswith('/') else '/' + path}"
-    try:
-        with urllib.request.urlopen(url, timeout=PROBE_SECONDS) as response:  # noqa: S310 — loopback only
-            return response.status < 500
-    except urllib.error.HTTPError as error:
-        return error.code < 500
-    except (urllib.error.URLError, OSError, ValueError):
-        return False
+    """The app's own health path answers below 500 on ``port`` (a redirect or a 404 page is still a server).
+
+    Asked on each loopback (``dev_server.LOOPBACKS``): a Vite or Next server on ``localhost`` listens on
+    ``::1`` alone, a uvicorn on ``127.0.0.1`` alone."""
+    from flow_sdk.core.dev_server import LOOPBACKS  # noqa: PLC0415
+
+    rel = path if path.startswith("/") else "/" + path
+    for host in LOOPBACKS:
+        url = f"http://{'[' + host + ']' if ':' in host else host}:{int(port)}{rel}"
+        try:
+            with urllib.request.urlopen(url, timeout=PROBE_SECONDS) as response:  # noqa: S310 — loopback only
+                return response.status < 500
+        except urllib.error.HTTPError as error:
+            return error.code < 500
+        except (urllib.error.URLError, OSError, ValueError):
+            continue
+    return False
 
 
 async def _app(webapp_id: str):

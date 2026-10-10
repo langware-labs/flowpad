@@ -5,7 +5,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { AssistantChat } from './AssistantChat';
 import { ASSISTANT_CHAT_PARAM, ASSISTANT_HEARTBEAT_MS, openAssistantChannel } from './assistant-channel';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import type { PendingAsk } from './FloatingChatContext';
+import type { PendingAsk } from './floating-chat-context';
 
 function useDocumentVisible(): boolean {
   const [visible, setVisible] = useState(() => typeof document === 'undefined' || document.visibilityState === 'visible');
