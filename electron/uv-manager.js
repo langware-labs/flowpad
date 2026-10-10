@@ -9,6 +9,9 @@ const { SEMVER_RE, isNewer } = require('./semver');
 const { createProgressWatchdog } = require('./progress-watchdog');
 const { showFailureDialog } = require('./failure-dialog');
 const runtimeRepair = require('./runtime-repair');
+// The dependencies that ship native wheels (scripts/native_deps_from_lock.py): the only ones Windows
+// application control can refuse, so the only ones that get the reputation margin (see EXCLUDE_NEWER_MARGIN_DAYS).
+const NATIVE_DEPS = Object.freeze(require('./native-deps.json').packages);
 
 const execFileAsync = promisify(execFile);
 
@@ -227,6 +230,70 @@ function quoteWinCmd(cmd) {
 function quoteWinArgs(args, useShell) {
   if (!useShell || !IS_WIN) return args;
   return args.map((a) => (/\s/.test(a) && !/^".*"$/.test(a) ? `"${a}"` : a));
+}
+
+// ── `--exclude-newer`: the engine's dependencies are frozen in time ──────────────────────────
+// A fresh `uv tool install flowpad==X` resolves every dependency to the newest release on PyPI at
+// install time, so a user installing today gets wheels the release was never tested with — and, under
+// Windows Smart App Control, wheels released days ago have no cloud reputation yet and are blocked
+// (FLOWPAD-2231: pydantic-core 2.50.0, two days old, blocked on a developer's PC). Three cut-offs, tried
+// in order, each one less strict than the last:
+//   1. the engine's release time for everything, AND `now - EXCLUDE_NEWER_MARGIN_DAYS` for the packages
+//      that ship native wheels (native-deps.json): those must be old enough to have reputation. Pure-Python
+//      packages carry nothing application control looks at, and a global margin is impossible anyway —
+//      pyproject floors younger than the margin (deepagents>=0.7.15 on 2026-10-10) leave no solution;
+//   2. the engine's release time only: nothing newer than what existed when the release was made;
+//   3. no cut-off (the behaviour before this existed).
+// Pre-releases are disallowed under a cut-off (uv picked pydantic 2.14.0b1 once the final was cut off).
+// The engine itself is always allowed by `--exclude-newer-package flowpad=<its release + 1 min>`. A
+// cut-off that leaves the resolver without a solution falls through to the next, logged; a uv too old for
+// the flags skips them; an unknown release time (offline) skips them entirely. This is a safety net for
+// the days after a dependency release, not a lock: the real fix is installing with constraints from the
+// tested lock (FLOWPAD-2237).
+const EXCLUDE_NEWER_MARGIN_DAYS = 60;
+
+/** The engine version an install asks for: `flowpad==1.2.3` → '1.2.3'; `flowpad` / `flowpad@latest` → null. */
+function engineVersionFromInstallArgs(args) {
+  for (const a of args || []) {
+    const m = /^flowpad==([0-9][0-9A-Za-z.+-]*)$/.exec(String(a));
+    if (m) return m[1];
+  }
+  return null;
+}
+
+/**
+ * The flag sets to try, strictest first, ending with no flags. `releaseUploadedAt` is the engine
+ * release's PyPI upload time (ms since epoch); null → [[]] (no cut-off is known).
+ */
+function excludeNewerFlagSets({ releaseUploadedAt, now = Date.now(), marginDays = EXCLUDE_NEWER_MARGIN_DAYS, nativePackages = NATIVE_DEPS }) {
+  if (!releaseUploadedAt) return [{ label: 'none', flags: [] }];
+  const iso = (ms) => new Date(ms).toISOString().replace(/\.\d{3}Z$/, 'Z');
+  const release = releaseUploadedAt + 60 * 1000;
+  const base = ['--exclude-newer', iso(release), '--exclude-newer-package', `${PYPI_PACKAGE}=${iso(release)}`, '--prerelease', 'disallow'];
+  const margin = Math.min(release, now - marginDays * 24 * 60 * 60 * 1000);
+  const sets = [];
+  if (margin < release && nativePackages.length) {
+    sets.push({
+      label: `${marginDays}-day margin on native packages`,
+      flags: [...base, ...nativePackages.flatMap((pkg) => ['--exclude-newer-package', `${pkg}=${iso(margin)}`])],
+    });
+  }
+  sets.push({ label: 'release date', flags: base });
+  sets.push({ label: 'none', flags: [] });
+  return sets;
+}
+
+/** A uv too old to know the cut-off flags (`--exclude-newer-package`): "unexpected argument". The app installs
+ *  uv only when it is missing, so a user's own older uv stays — then the cut-off is skipped, not the install. */
+function isUnknownFlagError(err) {
+  const text = String((err && (err.stderr || err.stdout || err.message)) || '');
+  return /unexpected argument '--exclude-newer/.test(text);
+}
+
+/** uv found no set of versions under the cut-off (as opposed to a network, disk or policy failure). */
+function isResolutionError(err) {
+  const text = String((err && (err.stderr || err.stdout || err.message)) || '');
+  return /No solution found when resolving|no versions of [^\n]* are available|were excluded because they were published after|exclude-newer/i.test(text);
 }
 
 /**
@@ -1256,8 +1323,6 @@ class UvManager {
   }
 
   async _uvToolInstallForceAttempts(installArgs, { onProgress } = {}) {
-    const MAX_RETRIES = 3;
-    const HANDLE_RELEASE_WAIT_MS = 1500;
     // Compile the venv's bytecode here, in the install, not on the first boot.
     // uv leaves .py files uncompiled by default, so the first boot after an
     // install compiles ~2,000 modules while importing them — the slowest phase
@@ -1271,9 +1336,75 @@ class UvManager {
     // Rust and fails on every Mac without the Xcode tools. With this flag uv skips a release that
     // has no wheel for this machine and settles on the newest one that has. (pyproject.toml also
     // bounds it on Intel Mac; this covers the next platform to lose its wheel.)
-    const args = [...installArgs];
-    if (!args.includes('--compile-bytecode')) args.push('--compile-bytecode');
-    if (!args.includes('--no-build-package')) args.push('--no-build-package', 'cryptography');
+    const baseArgs = [...installArgs];
+    if (!baseArgs.includes('--compile-bytecode')) baseArgs.push('--compile-bytecode');
+    if (!baseArgs.includes('--no-build-package')) baseArgs.push('--no-build-package', 'cryptography');
+    // Dependencies frozen in time (see EXCLUDE_NEWER_MARGIN_DAYS): strictest cut-off first, the next
+    // one when uv finds no solution under it. A caller that already chose a cut-off keeps it.
+    const strategies = baseArgs.includes('--exclude-newer')
+      ? [{ label: 'caller', flags: [] }]
+      : await this._excludeNewerStrategies(baseArgs);
+    for (let s = 0; s < strategies.length; s++) {
+      const args = [...baseArgs, ...strategies[s].flags];
+      if (strategies[s].flags.length) this.log.info(`[uv] dependencies cut off at ${strategies[s].flags[1]} (${strategies[s].label})`);
+      try {
+        return await this._uvToolInstallAttemptLoop(args, { onProgress });
+      } catch (err) {
+        const next = strategies[s + 1];
+        if (next && strategies[s].flags.length && isUnknownFlagError(err)) {
+          this.log.warn('[uv] this uv does not know --exclude-newer-package — installing without a dependency cut-off');
+          s = strategies.length - 2; // the last strategy has no flags
+          continue;
+        }
+        if (next && strategies[s].flags.length && isResolutionError(err)) {
+          this.log.warn(`[uv] no solution under the ${strategies[s].label} cut-off — retrying with ${next.label}: ${String(err.message).split('\n')[0]}`);
+          continue;
+        }
+        throw err;
+      }
+    }
+    throw new Error('unreachable: no install strategy ran');
+  }
+
+  /** The `--exclude-newer` flag sets for `installArgs` (see excludeNewerFlagSets), from the engine release's PyPI upload time. */
+  async _excludeNewerStrategies(installArgs) {
+    const version = engineVersionFromInstallArgs(installArgs) || (await this._latestEngineVersion());
+    const releaseUploadedAt = version ? await this._releaseUploadedAt(version) : null;
+    if (!releaseUploadedAt) this.log.info('[uv] engine release time unknown — installing without a dependency cut-off');
+    return excludeNewerFlagSets({ releaseUploadedAt, now: this._now() });
+  }
+
+  _now() { return Date.now(); }
+
+  async _latestEngineVersion() {
+    const info = await this._getLatestPypiInfo();
+    return (info && info.version) || null;
+  }
+
+  /** PyPI upload time (ms) of the engine release `version`'s first file, memoized; null when unknown. */
+  async _releaseUploadedAt(version) {
+    this._releaseTimes = this._releaseTimes || new Map();
+    if (this._releaseTimes.has(version)) return this._releaseTimes.get(version);
+    let at = null;
+    try {
+      const res = await fetch(`https://pypi.org/pypi/${PYPI_PACKAGE}/${encodeURIComponent(version)}/json`, { headers: { Accept: 'application/json' } });
+      if (res.ok) {
+        const data = await res.json();
+        const times = ((data && data.urls) || []).map((u) => Date.parse(u.upload_time_iso_8601 || u.upload_time)).filter(Number.isFinite);
+        if (times.length) at = Math.min(...times);
+      } else {
+        this.log.warn(`[uv] PyPI lookup of ${PYPI_PACKAGE} ${version} failed: HTTP ${res.status}`);
+      }
+    } catch (err) {
+      this.log.warn(`[uv] PyPI lookup of ${PYPI_PACKAGE} ${version} failed: ${err.message}`);
+    }
+    this._releaseTimes.set(version, at);
+    return at;
+  }
+
+  async _uvToolInstallAttemptLoop(args, { onProgress } = {}) {
+    const MAX_RETRIES = 3;
+    const HANDLE_RELEASE_WAIT_MS = 1500;
     for (let attempt = 1; ; attempt++) {
       await this._drainVenvProcesses();
       if (this._installAborted || this._closed) throw new Error('install aborted before uv started');
@@ -2667,7 +2798,21 @@ class UvManager {
       const stagingPython = path.join(staging, 'Scripts', 'python.exe');
       // `uv pip install` spells "never build this one from source" --only-binary; --no-build-package is
       // the `uv tool install` spelling and is rejected here ("unexpected argument", seen on the VM).
-      await this._runStreaming('uv', ['pip', 'install', '--python', stagingPython, '--only-binary', 'cryptography', spec], {});
+      // The same dependency cut-offs as the real install (EXCLUDE_NEWER_MARGIN_DAYS), same fallback.
+      const strategies = await this._excludeNewerStrategies([spec]);
+      for (let i = 0; i < strategies.length; i++) {
+        try {
+          await this._runStreaming('uv', ['pip', 'install', '--python', stagingPython, '--only-binary', 'cryptography', ...strategies[i].flags, spec], {});
+          break;
+        } catch (err) {
+          if (strategies[i + 1] && strategies[i].flags.length && isUnknownFlagError(err)) { i = strategies.length - 2; continue; }
+          if (strategies[i + 1] && strategies[i].flags.length && isResolutionError(err)) {
+            this.log.warn(`[runtime-repair] staging: no solution under the ${strategies[i].label} cut-off — retrying with ${strategies[i + 1].label}`);
+            continue;
+          }
+          throw err;
+        }
+      }
       await this._run(stagingPython, ['-I', '-c', 'import uvicorn, multiprocessing.connection, flow_sdk; print("engine imports ok")'], { shell: false, timeout: 180000 });
     } catch (err) {
       if (isPolicyBlockError(err) || POLICY_BLOCK_TEXT.test(String(err.stderr || err.stdout || ''))) err.policyBlocked = true;
@@ -2895,6 +3040,12 @@ module.exports.maxPythonVersion = maxPythonVersion;
 module.exports.needsShellOnWin = needsShellOnWin;
 module.exports.quoteWinCmd = quoteWinCmd;
 module.exports.quoteWinArgs = quoteWinArgs;
+module.exports.EXCLUDE_NEWER_MARGIN_DAYS = EXCLUDE_NEWER_MARGIN_DAYS;
+module.exports.NATIVE_DEPS = NATIVE_DEPS;
+module.exports.engineVersionFromInstallArgs = engineVersionFromInstallArgs;
+module.exports.excludeNewerFlagSets = excludeNewerFlagSets;
+module.exports.isResolutionError = isResolutionError;
+module.exports.isUnknownFlagError = isUnknownFlagError;
 module.exports.parseNetstatPids = parseNetstatPids;
 module.exports.isInstallProgressLine = isInstallProgressLine;
 module.exports.splitLines = splitLines;

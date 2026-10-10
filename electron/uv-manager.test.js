@@ -8,6 +8,11 @@
 
 const assert = require('assert');
 const UvManager = require('./uv-manager');
+// The dependency cut-off (`--exclude-newer`, see uv-manager.js) looks the engine release's upload time up on
+// PyPI before every install. Unit tests must not touch the network: no cut-off unless a test opts back in
+// with `realExcludeNewerStrategies`.
+const realExcludeNewerStrategies = UvManager.prototype._excludeNewerStrategies;
+UvManager.prototype._excludeNewerStrategies = async () => [{ label: 'none', flags: [] }];
 const {
   needsShellOnWin, quoteWinCmd, parseNetstatPids, isInstallProgressLine,
   pythonVersionFromPyproject, getPythonVersion, tryPythonVersion, upgradeCommand,
@@ -1565,6 +1570,67 @@ ok(!mgr.isToolDirLockedError(null), 'null error → not a lock (no throw)');
     ok(thrown && thrown.policyBlocked === true, 'stage: a policy block in the staging output is flagged policyBlocked');
     ok(!fs.existsSync(staging), 'stage: scratch venv removed on failure');
     fs.rmSync(runtimeDir, { recursive: true, force: true });
+  }
+  {
+    // Dependencies frozen in time: the `--exclude-newer` cut-offs and their fallback order.
+    const { engineVersionFromInstallArgs, excludeNewerFlagSets, isResolutionError, EXCLUDE_NEWER_MARGIN_DAYS } = UvManager;
+    eq(engineVersionFromInstallArgs(['tool', 'install', 'flowpad==0.2.203', '--force']), '0.2.203', 'pinned spec → version');
+    eq(engineVersionFromInstallArgs(['tool', 'install', 'flowpad', '--force']), null, 'bare name → latest (null)');
+    eq(engineVersionFromInstallArgs(['tool', 'install', 'flowpad@latest']), null, '@latest → null');
+    const release = Date.parse('2026-10-09T17:04:50Z');
+    const day = 24 * 60 * 60 * 1000;
+    const base = ['--exclude-newer', '2026-10-09T17:05:50Z', '--exclude-newer-package', 'flowpad=2026-10-09T17:05:50Z', '--prerelease', 'disallow'];
+    const fresh = excludeNewerFlagSets({ releaseUploadedAt: release, now: release + 2 * day, nativePackages: ['pydantic-core', 'cryptography'] });
+    eq(fresh.map((s) => s.label), [`${EXCLUDE_NEWER_MARGIN_DAYS}-day margin on native packages`, 'release date', 'none'], 'two days after the release: native margin, then release date, then none');
+    eq(fresh[0].flags, [...base, '--exclude-newer-package', 'pydantic-core=2026-08-12T17:04:50Z', '--exclude-newer-package', 'cryptography=2026-08-12T17:04:50Z'],
+      'release date for everything, now − 60 d for the native packages only, the engine allowed, no pre-releases');
+    eq(fresh[1].flags, base, 'release-date cut-off = upload + 1 min');
+    const late = excludeNewerFlagSets({ releaseUploadedAt: release, now: release + 200 * day, nativePackages: ['pydantic-core'] });
+    eq(late.map((s) => s.label), ['release date', 'none'], 'months later the margin would be AFTER the release: only the release-date cut-off');
+    eq(excludeNewerFlagSets({ releaseUploadedAt: null }), [{ label: 'none', flags: [] }], 'unknown release time → no cut-off');
+    ok(UvManager.NATIVE_DEPS.includes('pydantic-core') && UvManager.NATIVE_DEPS.includes('cryptography') && !UvManager.NATIVE_DEPS.includes('typer'), 'native-deps.json: native packages in, pure-Python out');
+    ok(excludeNewerFlagSets({ releaseUploadedAt: release, now: release + 2 * day })[0].flags.includes('pydantic-core=2026-08-12T17:04:50Z'), 'the shipped manifest is the default list');
+    ok(isResolutionError({ stderr: '  × No solution found when resolving dependencies:\n  ╰─▶ Because only langchain-openai<=1.5.0 is available...' }), 'uv "No solution found" is a resolution error');
+    ok(isResolutionError({ message: 'Command failed: uv tool install … were excluded because they were published after 2026-08-12' }), 'uv exclude-newer wording');
+    ok(!isResolutionError({ stderr: 'error: Failed to download distributions: network unreachable' }), 'a network failure is not');
+    ok(!isResolutionError({ stderr: 'An Application Control policy has blocked this file' }), 'a policy block is not');
+  }
+  {
+    // The install tries the margin cut-off, falls back to the release date when uv finds no solution,
+    // and never retries a non-resolution failure that way.
+    const m = new UvManager(silentLog);
+    m._excludeNewerStrategies = realExcludeNewerStrategies; // the real lookup, with its inputs mocked below
+    const release = Date.parse('2026-10-09T17:04:50Z');
+    m._now = () => release + 2 * 24 * 60 * 60 * 1000;
+    m._releaseUploadedAt = async (v) => (v === '0.2.203' ? release : null);
+    m._drainVenvProcesses = async () => {};
+    m._writeInstallMarker = () => {}; m._clearInstallMarker = () => {};
+    const runs = [];
+    m._runToolInstallGuarded = async (args) => {
+      runs.push(args);
+      if (args.some((a) => String(a).endsWith('=2026-08-12T17:04:50Z'))) { const e = new Error('Command failed'); e.stderr = 'No solution found when resolving dependencies'; throw e; }
+      return { stdout: 'ok' };
+    };
+    await m._uvToolInstallForce(['tool', 'install', 'flowpad==0.2.203', '--force']);
+    eq(runs.length, 2, 'margin failed on resolution → one fallback run');
+    ok(runs[0].includes('--exclude-newer') && runs[0].includes('pydantic-core=2026-08-12T17:04:50Z'), 'first: the 60-day margin on native packages');
+    ok(runs[1].includes('2026-10-09T17:05:50Z') && runs[1].includes('flowpad=2026-10-09T17:05:50Z'), 'then: the release-date cut-off with the engine allowed');
+    ok(runs[1].includes('--compile-bytecode') && runs[1].includes('--no-build-package'), 'the other install flags stay');
+    runs.length = 0;
+    m._runToolInstallGuarded = async (args) => { runs.push(args); const e = new Error('Command failed'); e.stderr = 'error: Failed to download distributions'; throw e; };
+    let thrown = null;
+    try { await m._uvToolInstallForce(['tool', 'install', 'flowpad==0.2.203', '--force']); } catch (e) { thrown = e; }
+    ok(thrown && /download/.test(thrown.stderr) && runs.length === 1, 'a non-resolution failure is NOT retried with a looser cut-off');
+    runs.length = 0;
+    m._runToolInstallGuarded = async (args) => { runs.push(args); if (args.includes('--exclude-newer')) { const e = new Error('Command failed'); e.stderr = "error: unexpected argument '--exclude-newer-package' found"; throw e; } return { stdout: 'ok' }; };
+    await m._uvToolInstallForce(['tool', 'install', 'flowpad==0.2.203', '--force']);
+    eq(runs.length, 2, 'an old uv that rejects the flag: one retry, straight to no cut-off');
+    ok(!runs[1].includes('--exclude-newer'), 'the install itself is not lost to an unknown flag');
+    runs.length = 0;
+    m._releaseUploadedAt = async () => null;
+    m._runToolInstallGuarded = async (args) => { runs.push(args); return { stdout: 'ok' }; };
+    await m._uvToolInstallForce(['tool', 'install', 'flowpad==0.2.203', '--force']);
+    ok(runs.length === 1 && !runs[0].includes('--exclude-newer'), 'offline (unknown release time): no cut-off, one run');
   }
   {
     const { quoteWinArgs } = UvManager;
