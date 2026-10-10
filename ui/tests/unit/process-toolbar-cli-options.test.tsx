@@ -166,19 +166,24 @@ describe('ProcessToolbar — one bar for every surface', () => {
     renderToolbar('claude', makeProcess('claude'), false);
   };
 
-  it('terminal: debug menu on the left, Fork and the session actions menu on the right', () => {
+  it('terminal: debug menu and Restart on the left, Fork and the session actions menu on the right', () => {
     standalone('advanced');
     expect(screen.getByRole('button', { name: 'Debug' })).toBeTruthy();
+    expect(screen.getByTestId('process-toolbar-restart-button')).toBeTruthy();
     expect(screen.getByTestId('process-toolbar-fork')).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Session actions' })).toBeTruthy();
   });
 
-  it.each(['standard', 'vibe'])('%s: no debug menu, the same Fork and session actions menu', (mode) => {
-    standalone(mode);
-    expect(screen.queryByRole('button', { name: 'Debug' })).toBeNull();
-    expect(screen.getByTestId('process-toolbar-fork')).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Session actions' })).toBeTruthy();
-  });
+  it.each(['standard', 'vibe'])(
+    '%s: no debug menu or Restart button, the same Fork and session actions menu',
+    (mode) => {
+      standalone(mode);
+      expect(screen.queryByRole('button', { name: 'Debug' })).toBeNull();
+      expect(screen.queryByTestId('process-toolbar-restart-button')).toBeNull();
+      expect(screen.getByTestId('process-toolbar-fork')).toBeTruthy();
+      expect(screen.getByRole('button', { name: 'Session actions' })).toBeTruthy();
+    },
+  );
 
   it('the session actions menu carries every action the old icon row had', async () => {
     standalone('standard');
@@ -212,9 +217,42 @@ describe('ProcessToolbar — one bar for every surface', () => {
     ]);
   });
 
-  it('restart required: the closed menu button carries the signal', () => {
-    renderToolbar('claude', { ...makeProcess('claude'), restart_required: true } as AgenticProcess);
+  it.each(['standard', 'vibe'])('%s, restart required: the closed menu button carries the signal', (mode) => {
+    viewMode.current = mode;
+    renderToolbar('claude', { ...makeProcess('claude'), restart_required: true } as AgenticProcess, false);
     expect(screen.getByTestId('process-toolbar-menu').getAttribute('data-restart-required')).toBe('true');
+  });
+
+  it('embedded (always a terminal), restart required: the Restart button carries the signal', () => {
+    renderToolbar('claude', { ...makeProcess('claude'), restart_required: true } as AgenticProcess);
+    expect(screen.getByTestId('process-toolbar-restart-button').getAttribute('data-attention')).toBe('true');
+    expect(screen.getByTestId('process-toolbar-menu').getAttribute('data-restart-required')).toBe('false');
+  });
+
+  it('terminal, restart required: the Restart button glows and the menu button does not', () => {
+    viewMode.current = 'advanced';
+    renderToolbar('claude', { ...makeProcess('claude'), restart_required: true } as AgenticProcess, false);
+    expect(screen.getByTestId('process-toolbar-restart-button').getAttribute('data-attention')).toBe('true');
+    expect(screen.getByTestId('process-toolbar-menu').getAttribute('data-restart-required')).toBe('false');
+  });
+
+  it('terminal: the Restart button is plain when no restart is required, disabled when not running', () => {
+    viewMode.current = 'advanced';
+    renderToolbar('claude', makeProcess('claude'), false);
+    const button = screen.getByTestId('process-toolbar-restart-button') as HTMLButtonElement;
+    expect(button.getAttribute('data-attention')).toBe('false');
+    expect(button.disabled).toBe(false);
+    cleanup();
+    renderToolbar('claude', { ...makeProcess('claude'), status: ProcessStatus.STOPPED } as AgenticProcess, false);
+    expect((screen.getByTestId('process-toolbar-restart-button') as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it('terminal: the Restart button restarts the process', async () => {
+    viewMode.current = 'advanced';
+    const restart = vi.fn(() => Promise.resolve());
+    renderToolbar('claude', { ...makeProcess('claude'), restart } as unknown as AgenticProcess, false);
+    await userEvent.click(screen.getByTestId('process-toolbar-restart-button'));
+    expect(restart).toHaveBeenCalledTimes(1);
   });
 
   it('Restart session restarts the process', async () => {
