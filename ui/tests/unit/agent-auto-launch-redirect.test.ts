@@ -62,6 +62,8 @@ describe('project agent auto-launch redirect', () => {
     ['a Hub Project route', `http://flowpad.local/dock/hub/project/${PROJECT_ID}`, () => {}],
     ['a Hub-only build', `http://flowpad.local/dock/project/${PROJECT_ID}`, () => mocks.hubOnly.mockReturnValue(true)],
     ['a deep link (?action=open)', `http://flowpad.local/dock/project/${PROJECT_ID}?action=open`, () => {}],
+    // A launch link's handler picks the session; an auto-launch would race it.
+    ['a launch link (?action=launch)', `http://flowpad.local/?action=launch&target=${PROJECT_ID}`, () => {}],
     ['a route already inside a session', `http://flowpad.local/dock/shell/agentic_process-${PROCESS_ID}`, () => {}],
     // A terminal link to a report lands here — the user asked for the report.
     [

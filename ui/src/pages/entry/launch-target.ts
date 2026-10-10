@@ -1,12 +1,12 @@
-import { Agent, type GitOrigin, gitOriginFromUrl, type HubRepoOrigin, isHubRepoOrigin, TypeId } from '@sdk';
+import { Agent, type GitOrigin, gitOriginFromUrl, Project, TypeId } from '@sdk';
 import apiClient from '@sdk/client';
-import { gitOriginOf, isCompleteGitOrigin } from '@sdk/models/GitOrigin';
 import { useEntity } from '@sdk/react/hooks';
 import { errorStatus } from '@src/lib/error-message';
 import { useEffect, useMemo, useState } from 'react';
 
 /**
- * What a `/launch` link points at: a repository (`?repo=`) or a published agent (`?agent=`).
+ * What a `/launch` link points at: a repository (`?repo=`), a published agent (`?agent=`) or a
+ * project (`?project=`).
  *
  * Decided from the raw query alone, before anything is fetched, so a broken link is refused
  * without a network call. A link naming BOTH is refused rather than resolved by precedence: it
@@ -16,11 +16,20 @@ import { useEffect, useMemo, useState } from 'react';
 export type LaunchTarget =
   | { kind: 'repo'; repo: string; branch: string }
   | { kind: 'agent'; agentTypeId: TypeId }
-  | { kind: 'invalid'; reason: 'both' | 'bad-agent-id' | 'none' };
+  | { kind: 'project'; projectId: string }
+  | { kind: 'invalid'; reason: 'both' | 'bad-agent-id' | 'bad-project-id' | 'none' };
 
 export function parseLaunchParams(params: URLSearchParams): LaunchTarget {
   // Presence, not value: `?repo=&agent=<id>` still names two things.
-  if (params.has('repo') && params.has('agent')) return { kind: 'invalid', reason: 'both' };
+  if (['repo', 'agent', 'project'].filter((k) => params.has(k)).length > 1) return { kind: 'invalid', reason: 'both' };
+  if (params.has('project')) {
+    try {
+      // Same id policy gate as an agent: a non-v4/v5 id never reaches the hub.
+      return { kind: 'project', projectId: new TypeId(Project.type, (params.get('project') ?? '').trim()).id };
+    } catch {
+      return { kind: 'invalid', reason: 'bad-project-id' };
+    }
+  }
   if (params.has('agent')) {
     try {
       // TypeId is the id policy gate: a non-v4/v5 id throws here instead of reaching the hub.
@@ -33,47 +42,6 @@ export function parseLaunchParams(params: URLSearchParams): LaunchTarget {
   // An unparseable repo stays a repo link: the page shows the raw value it could not launch.
   if (repo) return { kind: 'repo', repo, branch: params.get('branch') ?? '' };
   return { kind: 'invalid', reason: 'none' };
-}
-
-/**
- * What a published agent launches from.
- *
- * A `hub_repo` origin (the agent lives in its project's hub-hosted repository) is passed
- * through UNCHANGED: the hub clones hub repos itself and needs `repo` + `rel_path` to find the
- * agent, so nothing here may rewrite it.
- *
- * A legacy GitHub (`kind: 'git'`) origin is addressed at the repo ROOT: the hub stored it as the
- * repo, the branch it was published to and — as `rel_path` — the agent's own folder. The sandbox
- * clones the whole repository, so the folder is dropped (kept, it would only relabel the repo
- * card with a path the clone never uses). The branch is kept, because that is where the published
- * agent actually lives. `head_commit` is dropped too: the launch clones the branch tip.
- */
-export function launchOriginFromAgent(
-  agent: Pick<Agent, 'git_origin'> | null | undefined,
-): GitOrigin | HubRepoOrigin | null {
-  const raw = agent?.git_origin ?? null;
-  if (isHubRepoOrigin(raw)) return raw.repo ? raw : null;
-  const origin = gitOriginOf({ git_origin: raw });
-  if (!isCompleteGitOrigin(origin)) return null;
-  return {
-    kind: 'git',
-    provider: origin.provider,
-    owner: origin.owner,
-    name: origin.name,
-    branch: origin.branch,
-    head_commit: null,
-    rel_path: '.',
-  };
-}
-
-/**
- * The default project name for a launch origin: a git repo's name, or — for a hub-hosted repo,
- * whose `git_repo-<uuid>` id means nothing to a reader — the last segment of the asset's folder.
- */
-export function launchOriginName(origin: GitOrigin | HubRepoOrigin | null | undefined): string {
-  if (!origin) return '';
-  if (isHubRepoOrigin(origin)) return (origin.rel_path || '').split('/').filter(Boolean).pop() ?? '';
-  return origin.name || '';
 }
 
 export type AgentLoadProblem = 'unavailable' | 'session-expired' | 'failed';
@@ -94,67 +62,52 @@ export function agentLoadProblem(state: {
   // A read can report failure without carrying the error object; that is still a failure, and a
   // card that says nothing at all is the one outcome this page must never show.
   if (!state.error) return state.isError ? 'failed' : null;
-  const status = errorStatus(state.error);
+  return errorProblem(state.error);
+}
+
+/** The problem a failed hub read names, by its status — `agentLoadProblem` for a bare error. */
+export function errorProblem(error: unknown): AgentLoadProblem {
+  const status = errorStatus(error);
   if (status === 403 || status === 404) return 'unavailable';
   if (status === 401) return 'session-expired';
   return 'failed';
 }
 
-interface AnonymousAgentRead {
-  agent: Agent | null;
-  problem: AgentLoadProblem | null;
-  error: unknown;
-}
-
-const NOTHING_READ: AnonymousAgentRead = { agent: null, problem: null, error: null };
-
 /**
  * The agent as the page may see it before the app counts the user as signed in.
  *
  * A public agent (the hub's visibility action stamps it readable by anyone) answers this read,
- * which lets the sign-in card name it. A 401 is the EXPECTED answer for a private agent and a
- * truly anonymous caller: logged to the console and never shown.
- *
- * A 403/404 is different. The hub only answers `target_not_found` to a caller it has identified —
- * the browser is signed in to the hub even if the app has not caught up — so the agent really is
- * missing or not theirs, and that is reported like the signed-in read reports it.
+ * which lets the sign-in card name it. Any refusal is the EXPECTED answer for a private agent:
+ * logged to the console and never shown — the signed-in page reports what is wrong.
  *
  * Keyed on the id, so a result that belongs to a previous link is never returned for this one.
  */
-function useAnonymousAgent(agentId: string | null): AnonymousAgentRead {
-  const [loaded, setLoaded] = useState<{ id: string; read: AnonymousAgentRead } | null>(null);
+function useAnonymousAgent(agentId: string | null): Agent | null {
+  const [loaded, setLoaded] = useState<{ id: string; agent: Agent } | null>(null);
   useEffect(() => {
     if (!agentId) return;
     let cancelled = false;
     apiClient
       .get<Partial<Agent> | null>(`/api/v1/graph/${Agent.type}/${agentId}`)
       .then((data) => {
-        if (!cancelled && data) setLoaded({ id: agentId, read: { agent: new Agent(data), problem: null, error: null } });
+        if (!cancelled && data) setLoaded({ id: agentId, agent: new Agent(data) });
       })
       .catch((error: unknown) => {
-        const status = errorStatus(error);
-        if (status === 403 || status === 404) {
-          if (!cancelled) setLoaded({ id: agentId, read: { agent: null, problem: 'unavailable', error } });
-          return;
-        }
         console.log('[launch] agent is not readable before sign-in (expected unless it is public):', error);
       });
     return () => {
       cancelled = true;
     };
   }, [agentId]);
-  return agentId && loaded?.id === agentId ? loaded.read : NOTHING_READ;
+  return agentId && loaded?.id === agentId ? loaded.agent : null;
 }
 
 export interface LaunchTargetState {
   target: LaunchTarget;
-  /** What would be cloned. Known up front for a repo link; for an agent link only once it loads.
-   *  A `hub_repo` origin means the agent lives in its project's hub repo (the hub clones it). */
-  gitOrigin: GitOrigin | HubRepoOrigin | null;
+  /** What a `?repo=` link clones; null for any other link. */
+  gitOrigin: GitOrigin | null;
+  /** The agent an `?agent=` link names, once readable — for the page to name it. */
   agent: Agent | null;
-  agentLoading: boolean;
-  agentProblem: AgentLoadProblem | null;
-  agentError: unknown;
 }
 
 export function useLaunchTarget(params: URLSearchParams, signedIn: boolean): LaunchTargetState {
@@ -163,29 +116,14 @@ export function useLaunchTarget(params: URLSearchParams, signedIn: boolean): Lau
   const target = useMemo(() => parseLaunchParams(new URLSearchParams(query)), [query]);
 
   const agentTypeId = target.kind === 'agent' ? target.agentTypeId : null;
-  // Signed in: the ordinary entity read, whose failures ARE the user's business (reported below).
+  // Signed in: the ordinary entity read. Signed out: only the quiet read — a public agent answers it.
   const readAgent = signedIn && agentTypeId !== null;
   const agentQuery = useEntity<Agent>(agentTypeId, { enabled: readAgent });
-  // Signed out: only the quiet read — a public agent answers it, a 401 is silent, a 403 is reported.
   const anonymous = useAnonymousAgent(!signedIn && agentTypeId ? agentTypeId.id : null);
-  const agent = readAgent ? (agentQuery.data ?? null) : anonymous.agent;
 
-  const repoOrigin = useMemo(
+  const gitOrigin = useMemo(
     () => (target.kind === 'repo' ? gitOriginFromUrl(target.repo, target.branch) : null),
     [target],
   );
-  // Not memoized: the store updates an entity IN PLACE (same object reference), so a memo keyed
-  // on `agent` would keep serving the origin it had before a refresh. Rebuilding it is trivial.
-  const agentOrigin = launchOriginFromAgent(agent);
-
-  return {
-    target,
-    gitOrigin: target.kind === 'repo' ? repoOrigin : agentOrigin,
-    agent,
-    agentLoading: readAgent && agentQuery.isLoading,
-    agentProblem: readAgent
-      ? agentLoadProblem({ notFound: agentQuery.notFound, error: agentQuery.error, isError: agentQuery.isError })
-      : anonymous.problem,
-    agentError: readAgent ? agentQuery.error : anonymous.error,
-  };
+  return { target, gitOrigin, agent: readAgent ? (agentQuery.data ?? null) : anonymous };
 }

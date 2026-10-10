@@ -2712,9 +2712,12 @@ class Project(SetupSkippable, Entity):
         self,
         url: str,
         branch: str = "",
-        optional: bool = False,
+        optional: bool = True,
     ) -> "ApiResponse":
         """Add a repo as a dependency and report the help desk it carries.
+
+        Optional by default: a help desk portal is an ``addon`` (``ProjectSubkind``) — the
+        host works without it, so a clone that cannot fetch it must not fail.
 
         This does NOT attach differently from ``add_dependency`` — it delegates to
         it verbatim and adds only a REPORT. That distinction is the

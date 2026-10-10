@@ -8,6 +8,7 @@
  * null to pass. Resolvers must never throw the load away — fail to null.
  */
 import { PageId } from '@sdk';
+import { isDeepLinkAction } from '@src/navigation/inbound-link';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { ViewType } from '@src/types/ViewType';
 
@@ -18,7 +19,7 @@ export type LoadRedirectResolver = (request: Request) => Promise<Response | null
  * when no ambient redirect is allowed here at all. Shared by every resolver so
  * "which desktop project is this load about" is decided once:
  *
- *  - `?action=open` is a deep link the user was SENT here by; it outranks an
+ *  - `?action=open` / `?action=launch` (`DeepLinkAction`) is a deep link the user was SENT here by; it outranks an
  *    ambient redirect, which would rewrite the query before anything read it
  *    (a launched sandbox once came up with no project that way).
  *  - Hub Project routes reuse the pointer grammar, but the Hub runs nothing.
@@ -32,7 +33,7 @@ export type LoadRedirectResolver = (request: Request) => Promise<Response | null
  */
 export function ambientLoadProjectId(request: Request): string | null | undefined {
   const url = new URL(request.url);
-  if (url.searchParams.get('action') === 'open') return undefined;
+  if (isDeepLinkAction(url.searchParams.get('action'))) return undefined;
   try {
     const dock = DockPointer.fromUrl(url.toString());
     if (dock.page === PageId.HUB || dock.viewType === ViewType.SHELL) return undefined;
