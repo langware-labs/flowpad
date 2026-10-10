@@ -17,11 +17,18 @@ Verbs
                                      (an unknown kind is an error, never "fits")
   ref REF --project ID               the row a reference (<kind>.id.<uuid>) names: its dataset, key and value
   ds-find KIND                       the datasets whose rows are KIND (--project ID: a bare kind, e.g. crm.lead, works)
-  ds-rows DATASET                    every row with its key
+  ds-rows DATASET                    every row with its key -- or SOME: --match JSON (an expression, or {path: value}),
+                                     --order JSON ({path: "asc"|"desc"}), --limit N, --offset N; `total` counts the matches
+  ds-count DATASET                   how many rows match (--match JSON), and per value of --group-by PATH[,PATH]
   ds-row DATASET KEY                 one row, by key or id
   ds-append DATASET ROWS             rows in (each may carry a "key"); one bad row writes nothing
   ds-put DATASET KEY ROW             create or replace the row KEY
-  ds-delete DATASET KEY              remove one row (--expected VERSION: refuse a row changed since)
+  ds-put-many DATASET ROWS           create or replace several rows ([{key, input, ...}]) in ONE step, or none
+                                     (--expected JSON: {key: version})
+  ds-sync DATASET ROWS               make the dataset hold exactly ROWS: created / updated / unchanged / deleted
+                                     (--no-prune: remove nothing; --match JSON: prune only the rows it selects)
+  ds-delete DATASET KEY [KEY ...]    remove rows -- several go in ONE step, or none (--expected VERSION, one key:
+                                     refuse a row changed since)
   ds-store-ids DATASET               store each row's id where it only has the legacy derived one
   ds-rename DATASET KEY NEW_KEY      move a row to a new key (its id stays; --expected VERSION)
   ds-check DATASET ROW               would ROW fit? writes nothing
@@ -290,11 +297,41 @@ def cmd_ds_find(args) -> dict:
     return {"kind": args.kind, **(_call("GET", f"/kinds/{quote(args.kind, safe='')}/datasets{query}") or {})}
 
 
+def _row_filter(args) -> dict:
+    """The ``filter`` the read actions take, from ``--match`` / ``--order`` / ``--limit`` / ``--offset``."""
+    asked = {"match": _json(args.match) if getattr(args, "match", "") else None,
+             "order_by": _json(args.order) if getattr(args, "order", "") else None,
+             "limit": getattr(args, "limit", None), "offset": getattr(args, "offset", None)}
+    return {name: value for name, value in asked.items() if value is not None}
+
+
+def _query(params: dict) -> str:
+    """Parameters as a query string -- each a JSON document unless it is already text."""
+    parts = [f"{name}={quote(value if isinstance(value, str) else json.dumps(value), safe='')}"
+             for name, value in params.items() if value not in (None, "", {})]
+    return "?" + "&".join(parts) if parts else ""
+
+
 def cmd_ds_rows(args) -> dict:
-    """Every row that fits (each with ``key``, ``id``, ``ref``, ``version``), and the ``problems``."""
-    got = _ds(args, "rows", "GET") or {}
+    """The rows that fit (each with ``key``, ``id``, ``ref``, ``version``) -- every one, or those the
+    filter selects -- and the ``problems``. ``count`` is how many came back, ``total`` how many matched."""
+    got = _ds(args, "rows" + _query({"filter": _row_filter(args)}), "GET") or {}
     rows = got.get("rows") or []
-    return {"count": len(rows), "rows": rows, "problems": got.get("problems") or []}
+    return {"count": len(rows), "total": got.get("total", len(rows)), "rows": rows, "problems": got.get("problems") or []}
+
+
+def cmd_ds_count(args) -> dict:
+    return _ds(args, "count" + _query({"filter": _row_filter(args), "group_by": args.group_by}), "GET") or {}
+
+
+def cmd_ds_put_many(args) -> dict:
+    body = {"rows": _json(args.rows)}
+    return _ds(args, "put-rows", body={**body, "expected": _json(args.expected)} if args.expected else body)
+
+
+def cmd_ds_sync(args) -> dict:
+    body: dict = {"rows": _json(args.rows), "prune": not args.no_prune}
+    return _ds(args, "sync-rows", body={**body, "match": _json(args.match)} if args.match else body)
 
 
 def cmd_ds_row(args) -> dict:
@@ -312,7 +349,11 @@ def cmd_ds_put(args) -> dict:
 
 
 def cmd_ds_delete(args) -> dict:
-    body = {"key": args.key}
+    if len(args.key) > 1:   # several rows: one step, all or none
+        if args.expected:
+            raise ValueError("--expected takes one key; delete several rows without it")
+        return _ds(args, "delete-rows", body={"keys": args.key})
+    body = {"key": args.key[0]}
     return _ds(args, "delete-row", body={**body, "expected": args.expected} if args.expected else body)
 
 
@@ -336,6 +377,7 @@ def cmd_ds_validate(args) -> dict:
 # ── entry ────────────────────────────────────────────────────────────────────
 
 _DS = ("dataset", {"help": "dataset id, name, title or folder path"})
+_MATCH = ("--match", {"default": "", "help": 'JSON: {"op": "$GE", "operands": ["input.day", "2026-09-01"]} or {"<path>": value}'})
 VERBS: dict[str, tuple] = {
     "probe-new": (cmd_probe_new, []),
     "probe-copy": (cmd_probe_copy, [("root", {}), ("src", {"nargs": "+"}),
@@ -346,12 +388,16 @@ VERBS: dict[str, tuple] = {
                           ("--project", {"default": "", "help": "also its links and rules, among this project's rows"})]),
     "ref": (cmd_ref, [("ref", {}), ("--project", {"required": True, "help": "the project whose rows to look in"})]),
     "ds-find": (cmd_ds_find, [("kind", {}), ("--project", {"default": "", "help": "only this project's (and a bare kind resolves in it)"})]),
-    "ds-rows": (cmd_ds_rows, [_DS]),
+    "ds-rows": (cmd_ds_rows, [_DS, _MATCH, ("--order", {"default": "", "help": 'JSON: {"<path>": "asc"|"desc"}, or a list of them'}),
+                              ("--limit", {"type": int, "default": None}), ("--offset", {"type": int, "default": None})]),
+    "ds-count": (cmd_ds_count, [_DS, _MATCH, ("--group-by", {"default": "", "help": "field paths, comma-separated"})]),
+    "ds-put-many": (cmd_ds_put_many, [_DS, ("rows", {}), ("--expected", {"default": "", "help": "JSON: {key: the version you read}"})]),
+    "ds-sync": (cmd_ds_sync, [_DS, ("rows", {}), _MATCH, ("--no-prune", {"action": "store_true", "help": "remove nothing"})]),
     "ds-row": (cmd_ds_row, [_DS, ("key", {})]),
     "ds-append": (cmd_ds_append, [_DS, ("rows", {})]),
     "ds-put": (cmd_ds_put, [_DS, ("key", {}), ("row", {}),
                             ("--expected", {"default": "", "help": "the version you read; a newer row refuses"})]),
-    "ds-delete": (cmd_ds_delete, [_DS, ("key", {}),
+    "ds-delete": (cmd_ds_delete, [_DS, ("key", {"nargs": "+"}),
                                   ("--expected", {"default": "", "help": "the version you read; a newer row refuses"})]),
     "ds-store-ids": (cmd_ds_store_ids, [_DS]),
     "ds-rename": (cmd_ds_rename, [_DS, ("key", {}), ("new_key", {}),
