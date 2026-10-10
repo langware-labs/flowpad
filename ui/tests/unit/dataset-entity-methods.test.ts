@@ -4,7 +4,7 @@
  * "examples is not a function" -- found in the browser, pinned here.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { Dataset, dataManager } from '@sdk';
+import { DATASET_ROWS_CHANGED, Dataset, EventBus, dataManager } from '@sdk';
 import { ExpressionNode } from '@sdk/FlowSync/query';
 import type { ActionInfo } from '@sdk/models/ActionInfo';
 
@@ -116,5 +116,41 @@ describe('the row actions a dataset client calls', () => {
       prune: false,
       match: { op: '$LIKE', operands: ['key', 'crm_'] },
     });
+  });
+});
+
+/** Rows changing is an event (`dataset.rows.changed`): an app re-reads when told, not on a timer. */
+describe('hearing that rows changed', () => {
+  const ID = '6d1a2b3c-4d5e-4f6a-8b7c-9d0e1f2a3b4c';
+  const frame = (target: string, data: Record<string, unknown>) =>
+    EventBus.deliver({ id: 'e1', timestamp: '2026-10-10T00:00:00Z', tag: DATASET_ROWS_CHANGED, target, data, ctx: { origin: 'local_server' } } as never);
+
+  afterEach(() => EventBus.clear());
+
+  it('calls back for this dataset with the keys that moved', () => {
+    const heard: unknown[] = [];
+    new Dataset({ id: ID, name: 'n' } as never).onRowsChanged((change) => heard.push(change));
+    frame(`dataset:${ID}`, { op: 'sync', keys: ['a', 'b'], count: 2 });
+    expect(heard).toEqual([{ op: 'sync', keys: ['a', 'b'], count: 2 }]);
+  });
+
+  it('does not call back for another dataset, or another tag', () => {
+    const heard: unknown[] = [];
+    new Dataset({ id: ID, name: 'n' } as never).onRowsChanged((change) => heard.push(change));
+    frame('dataset:00000000-0000-4000-8000-000000000000', { op: 'put', keys: ['a'], count: 1 });
+    EventBus.deliver({ id: 'e2', timestamp: 't', tag: 'task.done', target: `dataset:${ID}`, data: {}, ctx: { origin: 'local_server' } } as never);
+    expect(heard).toEqual([]);
+  });
+
+  it('stops when unsubscribed', () => {
+    const heard: unknown[] = [];
+    const off = new Dataset({ id: ID, name: 'n' } as never).onRowsChanged((change) => heard.push(change));
+    off();
+    frame(`dataset:${ID}`, { op: 'delete', keys: ['a'], count: 1 });
+    expect(heard).toEqual([]);
+  });
+
+  it('names the tag the server emits', () => {
+    expect(DATASET_ROWS_CHANGED).toBe('dataset.rows.changed');
   });
 });

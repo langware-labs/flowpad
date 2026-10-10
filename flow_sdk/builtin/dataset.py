@@ -36,7 +36,7 @@ from __future__ import annotations
 import asyncio
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, ClassVar, Dict, List, Optional
 
 from pydantic import ValidationError, model_validator
 
@@ -507,8 +507,10 @@ class Dataset(Entity):
         with self._lock():
             examples = [(self._row_in(raw, n, keyed=True), None) for n, raw in enumerate(rows, 1)]
             keys = [raw.get("key") for raw in rows]
-            return dataset_layout_for(self.data_layout).append_many(
+            ids = dataset_layout_for(self.data_layout).append_many(
                 self._folder(), examples, dataset_id=self.id, keys=keys)
+        self._tell("put", [key or rid for key, rid in zip(keys, ids)])   # a numbered row is named by its id
+        return ids
 
     def check(self, row: dict) -> list[str]:
         """What is wrong with ``row`` as one row of this dataset -- ``[]`` when it fits. Writes nothing."""
@@ -533,6 +535,53 @@ class Dataset(Entity):
         except ValueError as exc:
             return [{"path": "", "code": "row", "message": str(exc)}]
         return []
+
+    #: The tag every row write emits (``docs/flow-events.md``): the target is the dataset, the data
+    #: says which keys moved -- never their values. Forwarded to the app (``tags/ws_forward``).
+    ROWS_CHANGED: ClassVar[str] = "dataset.rows.changed"
+    #: How many keys one event names; a larger write says ``count`` and the listener re-reads.
+    ROWS_CHANGED_KEYS: ClassVar[int] = 200
+
+    def _rows_event(self, op: str, keys: list[str]) -> dict:
+        keys = list(keys)
+        return {"op": op, "keys": keys[: self.ROWS_CHANGED_KEYS], "count": len(keys)}
+
+    def emit_rows_changed(self, op: str, keys: list[str]) -> None:
+        """Say on THIS process's bus that rows changed (``op``: ``put`` / ``delete`` / ``rename`` /
+        ``sync``). What the server does; a writer outside it calls ``announce``."""
+        from flow_sdk.tags.bus import emit_tag  # noqa: PLC0415
+        from flow_sdk.tags.envelope import target_of  # noqa: PLC0415
+
+        if keys and self.id:
+            emit_tag(self.ROWS_CHANGED, target_of("dataset", self.id), self._rows_event(op, keys))
+
+    def announce(self, op: str, keys: list[str]) -> bool:
+        """Tell the running Flowpad that rows changed, from a process that is not the server (a sync
+        script, a worker): the server emits ``dataset.rows.changed`` and every open app hears it.
+        Best effort by design -- an event is a hint to re-read, never the write itself: False (no
+        error) when no instance is running or it does not answer."""
+        if not keys or not self.id:
+            return False
+        try:
+            from flow_sdk.cli.commands._common import discover_port, local_request  # noqa: PLC0415
+
+            port = discover_port(required=False)
+            if port is None:
+                return False
+            resp = local_request("POST", f"http://127.0.0.1:{port}/api/v1/graph/dataset/{self.id}/rows-changed",
+                                 json=self._rows_event(op, keys), timeout=5)
+            return resp.status_code < 400
+        except Exception:  # noqa: BLE001 -- telling is never a reason for a write to fail
+            return False
+
+    def _tell(self, op: str, keys: list[str]) -> None:
+        """After a row write: on the bus when this process is the server, else through it."""
+        from flow_sdk.tags import ws_forward  # noqa: PLC0415
+
+        if ws_forward.forwarding_started():
+            self.emit_rows_changed(op, keys)
+        else:
+            self.announce(op, keys)
 
     _SLOT_NAMES = ("input", "context", "ground_truth", "output")
 
@@ -594,7 +643,9 @@ class Dataset(Entity):
 
         with self._lock():
             example, _ = self._prepare_put(key, row, expected, {})
-            return FolderLayout().put_example(self._folder(), key, example, dataset_id=self.id)
+            rid = FolderLayout().put_example(self._folder(), key, example, dataset_id=self.id)
+        self._tell("put", [key])
+        return rid
 
     def _keyed(self, rows: Any) -> list[tuple[str, dict]]:
         """``[{key, input, ...}]`` as ``[(key, row without its key)]`` -- every row keyed, no key twice."""
@@ -649,7 +700,9 @@ class Dataset(Entity):
         keyed, layout, folder = self._keyed(rows), FolderLayout(), self._folder()
         with self._lock():
             ready = self._prepare_many(keyed, expected or {}, {})
-            return [layout.put_example(folder, key, example, dataset_id=self.id) for key, example, _ in ready]
+            ids = [layout.put_example(folder, key, example, dataset_id=self.id) for key, example, _ in ready]
+        self._tell("put", [key for key, _ in keyed])
+        return ids
 
     async def sync(self, rows: list[dict], *, prune: bool = True, match: Any = None) -> dict:
         """Make the dataset hold exactly ``rows`` (``[{key, input, ...}]``) -- what a mirror of an
@@ -686,7 +739,8 @@ class Dataset(Entity):
             for key, example in write:
                 layout.put_example(folder, key, example, dataset_id=self.id)
             out["deleted"] = [layout.delete_example(folder, key, dataset_id=self.id) for key in gone]
-            return out
+        self._tell("sync", out["created"] + out["updated"] + out["deleted"])   # nothing moved: nothing said
+        return out
 
     def delete_row(self, key_or_id: str, *, expected: Optional[str] = None) -> str:
         """Remove one row. Returns its key; ``LookupError`` when there is none, ``LinkError`` while
@@ -736,8 +790,10 @@ class Dataset(Entity):
         self._typed_rows_or_raise()
         layout, folder = FolderLayout(), self._folder()
         with self._lock():
-            return [layout.delete_example(folder, ex_dir.name, dataset_id=self.id)
+            gone = [layout.delete_example(folder, ex_dir.name, dataset_id=self.id)
                     for ex_dir in self._check_delete(keys, expected or {})]
+        self._tell("delete", gone)
+        return gone
 
     def rename_row(self, key_or_id: str, new_key: str, *, expected: Optional[str] = None) -> str:
         """Give one row a new key. Its id stays (stored in the row), so every reference to it still
@@ -752,7 +808,9 @@ class Dataset(Entity):
                 ex_dir = layout.example_dir(self._folder(), key_or_id, dataset_id=self.id)
                 if ex_dir is not None and row_version(ex_dir) != expected:
                     raise ConflictError(f"row {ex_dir.name!r} changed since version {expected}")
-            return layout.rename_example(self._folder(), key_or_id, new_key, dataset_id=self.id)
+            rid = layout.rename_example(self._folder(), key_or_id, new_key, dataset_id=self.id)
+        self._tell("rename", [key_or_id, new_key])
+        return rid
 
     def example(self, example_id: str) -> Optional[dict]:
         """One example with its slots' VALUES (not paths) -- what an editor shows. None if absent."""
@@ -1062,6 +1120,19 @@ class Dataset(Entity):
             return done
         fresh = await self.refresh_counts()
         return ApiSuccessResponse(data={**done, "num_examples": fresh.num_examples})
+
+    @action.post(action_name="rows-changed")
+    async def rows_changed_action(self):
+        """``{"op", "keys"}`` → ``{"told"}``: a writer outside the server (``Dataset.announce``) says
+        rows changed, and the server emits ``dataset.rows.changed`` for it. Writes nothing."""
+        body = await self._row_body("op", "keys")
+        if isinstance(body, ApiFailResponse):
+            return body
+        if body["op"] not in ("put", "delete", "rename", "sync") or not isinstance(body["keys"], list) \
+                or not all(isinstance(k, str) for k in body["keys"]):
+            return ApiFailResponse(message="op: put|delete|rename|sync and keys: a list of row keys are required", status_code=400)
+        self.emit_rows_changed(body["op"], body["keys"])
+        return ApiSuccessResponse(data={"told": len(body["keys"])})
 
     @action.post(action_name="rename-row")
     async def rename_row_action(self):
