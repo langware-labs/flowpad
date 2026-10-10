@@ -1,10 +1,12 @@
-import { Agent, Project, type ProjectHomePage } from '@sdk';
+import { Agent, Project, type ProjectHomePage, TypeId } from '@sdk';
 import { lazyAssets, LazyAsset } from '@sdk/lazy';
 import {
   canonicalPath,
   cloneGitProject,
   selectProjectContext,
 } from '@src/components/project-selector/use-ensure-project';
+import { startAgentSession } from '@src/components/agents/use-agent-launcher';
+import { ViewMode } from '@src/contexts/view-mode-context';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { homePageDock } from '@src/project-home-page/project-home-page-redirect';
 import type { LaunchPlan } from './launch-plan';
@@ -58,8 +60,9 @@ async function launchFace(plan: LaunchPlan, controller: Project | null, target: 
  *    target's `flow.json`.
  * 2. Set up by subkind: a controller's own requirements are started (its questions come to
  *    this app); the target is the controller's to deal with, so it is not set up here.
- * 3. The face opens IN the target: `Agent.use(project_id=target)` — the session's working
- *    directory is the target, the controller's folder is mounted as the agent's home.
+ * 3. The face opens IN the target, in a NEW session: `Agent.use(project_id=target)` — the
+ *    session's working directory is the target, the controller's folder is mounted as the
+ *    agent's home. Clicking the link again runs again; it does not resume the last chat.
  *
  * Returns where to land; the caller navigates (URL-first).
  */
@@ -82,5 +85,11 @@ export async function runLaunch(plan: LaunchPlan, run: LaunchRun): Promise<DockP
 
   run.onStep?.('session');
   const [face] = await Promise.all([launchFace(plan, controller, target), selectProjectContext(target)]);
+  if (face.asset && face.type === Agent.type) {
+    // A launch was asked to run: a NEW session, where Home would resume the agent's last chat.
+    const agent = await Agent.getById<Agent>(new TypeId(face.asset).id);
+    if (!agent) return DockPointer.forProject(target.id);
+    return DockPointer.forSession(await startAgentSession(agent, target.id)).withViewMode(ViewMode.Vibe);
+  }
   return (await homePageDock(face, target.id)) ?? DockPointer.forProject(target.id);
 }

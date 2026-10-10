@@ -45,11 +45,14 @@ Every script in `scripts/` reads `VM_DIR`, so the same skill drives any VM laid 
 | `vmrun.py` hangs or a lane stops answering, exit code always 1, `0xc0000142` | `control.md` |
 | Mac `curl` to a guest port returns `000`, guest can't log in to the hub | `network.md` |
 | `WinError 3` / `WinError 2` on install or clone, `flow upgrade` no-op, git "Checking access…" hang | `flowpad-in-guest.md` |
+| a `flowpad://` link "does nothing" in Edge, the app never opens from a page | `network.md` (the browser's prompt), `flowpad-in-guest.md` (the app's deep-link log) |
+| a job returns nothing at all, `qmp.py click` changes nothing | `control.md` |
 
 ## Scripts
 
 `start.sh` · `snapshot.sh NAME [--replace] [--boot]` · `reset.sh [SNAPSHOT] [--boot]` ·
 `vmrun.py [-a] [-t SECS] 'ps'` · `qmp.py status|shot|key|type|click|wake` ·
-`expose-port.sh GUEST_PORT [HOST_PORT] [--remove]` · `build-unattend.sh` ·
+`expose-port.sh GUEST_PORT [HOST_PORT] [--remove]` · `ui-invoke.ps1` (press a native dialog button
+by name, via `vmrun.py -`) · `build-unattend.sh` ·
 `quickemu-aarch64-windows.patch` · `windows-11-arm.conf.example` · `guest/` (answer file,
 first-logon setup, agent). Shared settings live in `scripts/vm_env.sh`.
