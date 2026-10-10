@@ -1417,6 +1417,10 @@ msgstr ""
 msgid "A file changed: {path}"
 msgstr ""
 
+#: src/components/workspace/workspace-switcher.tsx
+msgid "A folder of related projects. New projects and clones are created inside it."
+msgstr ""
+
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
 msgid "A fresh shell needs to be allocated. (Backend action coming — for now Restart will retry.)"
 msgstr "يلزم تخصيص صدفة جديدة. (إجراء من الخادم قادم — في الوقت الحالي ستعيد «إعادة التشغيل» المحاولة.)"
@@ -5858,6 +5862,10 @@ msgstr "نسخ معرف المزود"
 msgid "Copy remote URL"
 msgstr "نسخ عنوان URL البعيد"
 
+#: src/components/workspace/workspace-switcher.tsx
+msgid "Copy the folder path of {name}"
+msgstr ""
+
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
 msgid "Copy the full error"
 msgstr "نسخ الخطأ الكامل"
@@ -6026,6 +6034,10 @@ msgstr ""
 #: src/components/oauth/GitHubDeviceFlowModal.tsx
 msgid "Could not copy the code"
 msgstr "تعذر نسخ الرمز"
+
+#: src/components/workspace/workspace-switcher.tsx
+msgid "Could not copy the path"
+msgstr ""
 
 #: src/components/rag/RagView.tsx
 msgid "Could not cover that folder"
@@ -6272,6 +6284,10 @@ msgstr "تعذّر فتح المهارة"
 
 #: src/components/data-sources/OpenFolderButton.tsx
 msgid "Could not open the folder"
+msgstr ""
+
+#: src/components/workspace/workspace-switcher.tsx
+msgid "Could not open the workspace folder"
 msgstr ""
 
 #: src/components/assets/editor/agent-profile/AgentDeploymentsSection.tsx
@@ -15960,6 +15976,10 @@ msgstr ""
 msgid "not fired yet"
 msgstr "لم يعمل بعد"
 
+#: src/components/assets/DependencyChips.tsx
+msgid "not found"
+msgstr ""
+
 #: src/components/credentials-view/EnvFilesChip.tsx
 #: src/pages/entry/entry-shell.tsx
 #: src/pages/hub-home/HubHome.tsx
@@ -17070,6 +17090,10 @@ msgstr ""
 
 #: src/components/data-sources/DataSourcePage.tsx
 msgid "Open the event bus"
+msgstr ""
+
+#: src/components/workspace/workspace-switcher.tsx
+msgid "Open the folder of {name}"
 msgstr ""
 
 #: src/components/footer.tsx
@@ -24035,6 +24059,10 @@ msgstr ""
 msgid "The default — what you want 99% of the time."
 msgstr "الخيار الافتراضي — الأنسب في 99% من الحالات."
 
+#: src/components/workspace/workspace-switcher.tsx
+msgid "The default workspace. Every project outside another workspace's folder belongs here."
+msgstr ""
+
 #: src/pages/entry/DiagnosisRequestLanding.tsx
 msgid "The diagnosis came back. Open it in FlowPad to read every run, or have an agent explain it."
 msgstr "عاد التشخيص. افتحه في FlowPad لقراءة كل تشغيل، أو اطلب من وكيل أن يشرحه."
@@ -27124,6 +27152,10 @@ msgstr "قيد المعالجة…"
 #: src/pages/hub-home/HubHome.tsx
 msgid "Workspace"
 msgstr "مساحة العمل"
+
+#: src/components/workspace/workspace-switcher.tsx
+msgid "Workspace folder path copied"
+msgstr ""
 
 #: src/components/workspace/workspace-switcher.tsx
 msgid "Workspace name"
