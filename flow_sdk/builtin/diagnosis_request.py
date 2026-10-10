@@ -12,7 +12,6 @@ The hub half is ``flowpad/hub/builtin/flowpad_diagnosis.py``.
 
 from __future__ import annotations
 
-import asyncio
 from datetime import UTC, datetime, timedelta
 from typing import Any, ClassVar, Optional
 
@@ -25,6 +24,7 @@ from flow_sdk.schema.data_spec.diagnosis_request_spec import (
     DiagnosisRequestOpenSpec,
 )
 from flow_sdk.schema.types import EntityType
+from flow_sdk.stream_inbox._locks import keyed_loop_lock, new_registry
 
 #: The assets an owner may send along: prompt-shaped ones only. An allowlist, not a blocklist --
 #: a new file-backed type (a credential, a data source config) must not become sendable by default.
@@ -33,8 +33,9 @@ ATTACHABLE_ASSET_TYPES = frozenset(
 )
 #: Hub LLM providers a stored key can be uploaded as (``LLMProvider`` on the hub).
 HUB_KEY_PROVIDERS = ("openrouter", "anthropic", "openai")
-#: One lock per request, so two frames for the same run post one feed entry.
-_update_locks: dict[str, asyncio.Lock] = {}
+#: One lock per request, so two frames for the same run post one feed entry. Weak-valued
+#: (``stream_inbox/_locks``): it lives only while an update holds or awaits it.
+_update_locks = new_registry()
 #: What the hub keeps fresh on the row -- read back by ``pull``, never sent.
 _HUB_FIELDS = (
     "title",
@@ -202,7 +203,7 @@ class DiagnosisRequest(FlowpadDiagnosis):
         from flow_sdk.builtin.feed_entry import FeedEntry, FeedStatus  # noqa: PLC0415
         from flow_sdk.server.routes.bootstrap import get_or_create_local_user  # noqa: PLC0415
 
-        async with _update_locks.setdefault(request_id, asyncio.Lock()):
+        async with keyed_loop_lock(_update_locks, str(request_id)):
             request = await cls.get_one({"id": request_id})
             hub_count = int(data.get("run_count") or 0)
             if request is None or hub_count <= int(request.run_count or 0):

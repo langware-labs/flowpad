@@ -28,12 +28,15 @@ from pathlib import Path, PurePosixPath
 
 from flow_sdk.assets.git_publish import AssetPublishCode, AssetPublishError, GitAuthor
 from flow_sdk.instances.atomic import locked, read_json, write_json_atomic
+from flow_sdk.stream_inbox._locks import keyed_loop_lock, new_registry
 from flow_sdk.utils.git_folder import KEEP_FILE
 from flow_sdk.utils.git_usable import git_usable
 
 logger = logging.getLogger(__name__)
 
-_locks: dict[str, asyncio.Lock] = {}
+#: One lock per mirror root. Weak-valued (``stream_inbox/_locks``): it lives only while a
+#: sync holds or awaits it, so the registry does not keep one lock per root ever synced.
+_locks = new_registry()
 
 
 def mirror_root(repo_id: str) -> Path:
@@ -137,7 +140,7 @@ def local_tree(mirror: Path, worktree: Path, rel_path: str) -> str | None:
 
 
 def _lock(root: Path) -> asyncio.Lock:
-    return _locks.setdefault(str(root), asyncio.Lock())
+    return keyed_loop_lock(_locks, str(root))
 
 
 def _git_env(token: str) -> dict[str, str]:

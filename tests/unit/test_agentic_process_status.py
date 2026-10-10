@@ -1104,9 +1104,10 @@ async def test_is_turn_busy_held_prompt_lock():
     native-xterm turn (which holds no _turn_in_flight flag)."""
     from flow_sdk.builtin.agentic_process import agentic_process as ap_mod
     from flow_sdk.builtin.agentic_process.status_predicates import is_turn_busy
+    from flow_sdk.stream_inbox._locks import keyed_loop_lock
 
     proc = _FakeProcess(ProcessStatus.RUNNING, WorkerStatus.COMPLETE)
-    async with ap_mod._PROMPT_LOCKS[proc.id]:
+    async with keyed_loop_lock(ap_mod._PROMPT_LOCKS, proc.id):
         assert is_turn_busy(proc, WorkerStatus.COMPLETE) is True
     # Released → back to ready.
     assert is_turn_busy(proc, WorkerStatus.COMPLETE) is False

@@ -14,6 +14,7 @@ import pytest
 from flow_sdk.builtin.agentic_process import agentic_process
 from flow_sdk.compute import keep_alive
 from flow_sdk.instance_settings import runtime
+from flow_sdk.stream_inbox._locks import keyed_loop_lock, new_registry
 
 pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
 
@@ -27,7 +28,7 @@ def _fresh(monkeypatch):
     monkeypatch.setattr(keep_alive, "_cpu_at_last_tick", {})
     monkeypatch.setattr(agentic_process, "_PROMPT_ADMISSIONS", {})
     monkeypatch.setattr(agentic_process, "_PROMPT_WORKERS", {})
-    monkeypatch.setattr(agentic_process, "_PROMPT_LOCKS", {})
+    monkeypatch.setattr(agentic_process, "_PROMPT_LOCKS", new_registry())
 
 
 @pytest.fixture
@@ -72,10 +73,7 @@ async def test_an_agent_turn_in_flight_keeps_the_machine_alive(hub, monkeypatch)
 
 
 async def test_a_held_prompt_lock_counts_as_a_turn_in_flight():
-    import asyncio
-
-    lock = asyncio.Lock()
-    agentic_process._PROMPT_LOCKS["proc-1"] = lock
+    lock = keyed_loop_lock(agentic_process._PROMPT_LOCKS, "proc-1")
     assert agentic_process.any_prompt_in_flight() is False
     async with lock:
         assert agentic_process.any_prompt_in_flight() is True

@@ -32,6 +32,7 @@ from flow_sdk.ingest.models import IngestMode, IngestReport
 from flow_sdk.ingest.reflect import get_reflector, keep_out_of_git, reflect_refs
 from flow_sdk.ingest.write_back import write_back
 from flow_sdk.sources.errors import SourceUnavailable
+from flow_sdk.stream_inbox._locks import keyed_loop_lock, new_registry
 
 logger = logging.getLogger(__name__)
 
@@ -39,13 +40,14 @@ logger = logging.getLogger(__name__)
 #: One cycle per source at a time, whoever asks: the poller's tick claims a slot (and skips a busy source),
 #: but "Sync now" and a reply's expect call this directly — two cycles of one source race each other's
 #: cursor, cache index and write-back (found live: every file of a new row written to Drive twice).
-_CYCLES: dict[str, asyncio.Lock] = {}
+#: Weak-valued (``stream_inbox/_locks``): a source's lock lives only while a cycle holds or awaits it.
+_CYCLES = new_registry()
 
 
 async def sync_source(source: DataSource, *, now: Optional[datetime] = None) -> IngestReport:
     """Run one cycle. Never raises: a failure is recorded as health, not thrown. A second call for the same
     source waits for the running one, then runs against what it left."""
-    async with _CYCLES.setdefault(str(source.id), asyncio.Lock()):
+    async with keyed_loop_lock(_CYCLES, str(source.id)):
         return await _sync_source(source, now=now)
 
 
