@@ -3153,6 +3153,11 @@ msgstr "طلب المساعدة"
 #~ msgid "Ask it to"
 #~ msgstr ""
 
+#. placeholder {0}: account || t`your account`
+#: src/pages/entry/AgentLaunchLanding.tsx
+msgid "Ask its owner to share the project with {0}."
+msgstr ""
+
 #: src/components/help/AskForHelpButton.tsx
 msgid "Ask someone for help"
 msgstr "طلب المساعدة من شخص آخر"
@@ -3535,7 +3540,6 @@ msgstr ""
 #: src/components/automations/AutomationPage.tsx
 #: src/components/automations/BusView.tsx
 #: src/components/automations/MessageRulePage.tsx
-#: src/components/collapsed-sidebar/collapsed-sidebar.tsx
 #: src/components/top-nav-bar/TopNavBar.tsx
 #: src/types/ViewType.ts
 msgid "Automations"
@@ -4286,7 +4290,6 @@ msgid "Cap (USD)"
 msgstr "الحد الأقصى (USD)"
 
 #: src/components/capabilities-view/CapabilitiesView.tsx
-#: src/components/collapsed-sidebar/collapsed-sidebar.tsx
 #: src/types/ViewType.ts
 msgid "Capabilities"
 msgstr "القدرات"
@@ -7427,7 +7430,6 @@ msgid "Data source name"
 msgstr ""
 
 #: src/components/agent-resources/AgentResourcesBody.tsx
-#: src/components/collapsed-sidebar/collapsed-sidebar.tsx
 #: src/components/data-sources/DataSourceDialog.tsx
 #: src/components/data-sources/DataSourcesView.tsx
 #: src/components/top-nav-bar/use-entity-breadcrumbs.ts
@@ -8460,7 +8462,6 @@ msgstr "غير متصل"
 #~ msgid "discover"
 #~ msgstr "استكشاف"
 
-#: src/components/collapsed-sidebar/collapsed-sidebar.tsx
 #: src/pages/discover-page/discover-page.tsx
 msgid "Discover"
 msgstr "استكشاف"
@@ -11342,7 +11343,6 @@ msgstr "عقدة سير عمل الرسم البياني"
 msgid "Graph Workflow Run"
 msgstr "تشغيل سير عمل الرسم البياني"
 
-#: src/components/collapsed-sidebar/collapsed-sidebar.tsx
 #: src/components/graph-workflows/GraphWorkflowsNavigator.tsx
 #: src/i18n/type-labels.ts
 #: src/types/ViewType.ts
@@ -11727,7 +11727,6 @@ msgstr "تم تحديث الخطاف"
 msgid "Hook: "
 msgstr "الخطاف: "
 
-#: src/components/collapsed-sidebar/collapsed-sidebar.tsx
 #: src/components/hooks-view/hooks-view.tsx
 #: src/components/settings-view/settings-utils.ts
 #: src/components/settings-view/settings-utils.ts
@@ -13397,7 +13396,6 @@ msgstr "مفاتيح LLM"
 #~ msgstr ""
 
 #: src/components/automations/MessageRulePage.tsx
-#: src/components/collapsed-sidebar/collapsed-sidebar.tsx
 #: src/components/llm-sources/LlmSourcesView.tsx
 #: src/types/ViewType.ts
 msgid "LLM sources"
@@ -14685,6 +14683,14 @@ msgstr ""
 
 #~ msgid "Named, the agent must report its result — and the step fails if it reports a failure, or reports nothing. Later steps read it as an input."
 #~ msgstr ""
+
+#: src/components/credentials/CredentialDialog.tsx
+msgid "Needed for"
+msgstr "مطلوب من أجل"
+
+#: src/components/credentials-view/CredentialView.tsx
+msgid "Needed for:"
+msgstr "مطلوب من أجل:"
 
 #: src/components/assets/editor/agent-trace/simple/report-language.ts
 msgid "Needs a look"
@@ -16862,6 +16868,10 @@ msgstr ""
 #: src/components/automations/MessageRulePage.tsx
 msgid "One decision, nothing runs."
 msgstr ""
+
+#: src/components/credentials/CredentialDialog.tsx
+msgid "One line: what this project uses it for"
+msgstr "سطر واحد: فيمَ يستخدمه هذا المشروع"
 
 #~ msgid "one of this wizard's inputs"
 #~ msgstr ""
@@ -20970,7 +20980,6 @@ msgstr "جارٍ التنفيذ…"
 #: src/components/automations/AutomationPage.tsx
 #: src/components/automations/AutomationsNavigator.tsx
 #: src/components/automations/RunsView.tsx
-#: src/components/collapsed-sidebar/collapsed-sidebar.tsx
 #: src/components/data-sources/DataSourcePage.tsx
 #: src/components/data-sources/SourceMenu.tsx
 #: src/components/triggers-view/ScheduleTriggerEditor.tsx
@@ -21515,7 +21524,6 @@ msgstr "فهرس البحث قيد الإعداد. ستظهر النتائج ع�
 msgid "Search index is warming up. Run Refresh Index to populate it."
 msgstr "فهرس البحث قيد التهيئة. يمكن تشغيل تحديث الفهرس لتعبئته."
 
-#: src/components/collapsed-sidebar/collapsed-sidebar.tsx
 #: src/components/rag/RagView.tsx
 #: src/types/ViewType.ts
 msgid "Search indexes"
@@ -24641,6 +24649,10 @@ msgstr ""
 msgid "The FlowPad backend server is not responding."
 msgstr "خادم FlowPad الخلفي لا يستجيب."
 
+#: src/components/credentials/CredentialDialog.tsx
+msgid "The full reason, shown behind the info icon (optional)"
+msgstr "السبب الكامل، يظهر خلف أيقونة المعلومات (اختياري)"
+
 #: src/components/llm-sources/LlmSourcesView.tsx
 msgid "The funding picture is only available on a desktop instance."
 msgstr "صورة التمويل متاحة فقط على نسخة سطح المكتب."
@@ -25474,6 +25486,10 @@ msgstr "أصبح هذا المشروع متاحًا الآن في السحابة
 
 #~ msgid "This project isn't ready to link to the cloud."
 #~ msgstr ""
+
+#: src/pages/entry/AgentLaunchLanding.tsx
+msgid "This project isn't shared with you, so it can't be launched."
+msgstr ""
 
 #: src/components/project-home/MissingDependenciesDialog.tsx
 msgid "This project needs these dependencies, and they are not on this computer."
@@ -27390,8 +27406,12 @@ msgid "What it did"
 msgstr ""
 
 #: src/components/credentials/CredentialDialog.tsx
-msgid "What it is for"
-msgstr ""
+msgid "What it is"
+msgstr "ما هو"
+
+#: src/components/credentials/CredentialDialog.tsx
+#~ msgid "What it is for"
+#~ msgstr ""
 
 #: src/components/assets/editor/agent-trace/simple/SimpleSessionReport.tsx
 msgid "What it worked on"
@@ -27609,6 +27629,14 @@ msgstr ""
 #: src/components/explorer-view/ExplorerNavigator.tsx
 msgid "Whole computer"
 msgstr "الكمبيوتر بأكمله"
+
+#: src/components/project-setup/ProjectSetupDialog.tsx
+msgid "Why is this needed?"
+msgstr "لماذا هذا مطلوب؟"
+
+#: src/components/credentials/CredentialDialog.tsx
+msgid "Why it is needed"
+msgstr "لماذا هو مطلوب"
 
 #: src/components/automations/RunDetail.tsx
 msgid "Why it ran"
@@ -27897,6 +27925,10 @@ msgstr "يمكنك أيضاً إضافة مفتاح LLM في LLM Sources."
 msgid "You can close this window."
 msgstr "يمكن الآن إغلاق هذه النافذة."
 
+#: src/pages/entry/AgentLaunchLanding.tsx
+msgid "You can see {name}, but its project isn't shared with you, so it can't be launched."
+msgstr ""
+
 #: src/components/conversation/MembersAvatarStack.tsx
 msgid "You can't invite people here — ask {ownerName}."
 msgstr ""
@@ -27980,6 +28012,10 @@ msgstr "أنت المشارك الوحيد في هذه المحادثة — لن
 #: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "You've been invited to a conversation"
 msgstr "تمت دعوتك إلى محادثة"
+
+#: src/pages/entry/AgentLaunchLanding.tsx
+msgid "your account"
+msgstr ""
 
 #: src/components/api-keys-view/FlowPadApiKeyPanel.tsx
 msgid "Your API key for authenticating API requests to FlowPad"

@@ -184,6 +184,9 @@ export interface ProjectSetupRequirement {
   kind: 'pack' | 'gap' | 'dependency' | 'source' | 'webapp';
   name: string;
   title: string;
+  /** pack: what the credential is needed for, in one line, and the full reason (`CredentialSpec`). */
+  needed_for?: string;
+  justification?: string;
   /** The record it IS (a credential, data source, web app; the project for a dependency). */
   typeid: string;
   /** pack: `env` (values to provide) or `oauth` (a provider's grant to connect). */

@@ -158,6 +158,32 @@ describe('ProjectSetupDialog — skipping', () => {
   });
 });
 
+describe('ProjectSetupDialog — a credential says what it is needed for', () => {
+  it('shows needed_for beside the name, in place of the missing values', async () => {
+    await open({ ...NOT_READY, to_do: [req({ needed_for: 'Reads the files in your bucket.' })] });
+    const row = screen.getByTestId('project-setup-req-google-cloud');
+    expect(row).toHaveTextContent('Reads the files in your bucket.');
+    expect(row).not.toHaveTextContent('Service account key');
+  });
+
+  it('offers the info icon only with a justification, and it opens the reason without opening the row', async () => {
+    await open(NOT_READY);
+    expect(screen.queryByTestId('project-setup-why-google-cloud')).toBeNull();
+    cleanup();
+
+    const onOpenChange = await open({
+      ...NOT_READY,
+      to_do: [req({ needed_for: 'Reads the files in your bucket.', justification: 'The sync job lists the bucket every hour.' })],
+    });
+    fireEvent.click(screen.getByTestId('project-setup-why-google-cloud'));
+    expect(await screen.findByTestId('project-setup-why-text-google-cloud')).toHaveTextContent(
+      'The sync job lists the bucket every hour.',
+    );
+    expect(h.openDock).not.toHaveBeenCalled();
+    expect(onOpenChange).not.toHaveBeenCalledWith(false);
+  });
+});
+
 describe('ProjectSetupDialog — a row opens its page with it selected', () => {
   it('a credential row opens the credentials page selecting it, and closes the dialog', async () => {
     const onOpenChange = await open(NOT_READY);
