@@ -79,8 +79,32 @@ const POLICY_BLOCK_LINE =
  * `File "…"` frame before it (the .py that triggered the load), and the traceback block (from
  * the last `Traceback` up to the line) for the panel — the full diagnostics, not a summary.
  */
+// The launcher (`flow start`) prints its traceback through Rich, which wraps long lines at 80
+// columns: the field line arrived as "…importing _pydantic_core: An Application" + newline +
+// "Control policy has blocked this file." (2026-10-10). Re-join the two places that wrap inside
+// the phrases we match on, before scanning line by line.
+function unwrapRichLines(text) {
+  return String(text || '')
+    .replace(/(An Application)\s*\r?\n\s*(Control policy)/g, '$1 $2')
+    .replace(/(while importing)\s*\r?\n\s*([A-Za-z0-9_.]+:)/g, '$1 $2');
+}
+
+// Extension modules that ship WITH the interpreter (CPython's DLLs/ directory). A block on one of
+// these is fixed by a signed interpreter; a block on a third-party wheel's module (pydantic_core's
+// _pydantic_core, cryptography's _rust) is not — the repair reinstalls the same wheel bytes.
+// Mirrors failure_classification.INTERPRETER_MODULES.
+const INTERPRETER_MODULES = new Set([
+  '_multiprocessing', '_ssl', '_socket', '_sqlite3', '_ctypes', '_asyncio', '_overlapped', '_hashlib', '_bz2', '_lzma',
+  '_decimal', '_uuid', 'select', '_queue', 'pyexpat', 'unicodedata', '_elementtree', '_json', '_zoneinfo', '_wmi',
+  'winsound', '_msi', '_tkinter', '_testcapi', '_ctypes_test',
+]);
+function isInterpreterModule(module) {
+  if (!module) return false;
+  return INTERPRETER_MODULES.has(module) || INTERPRETER_MODULES.has(String(module).split('.').pop());
+}
+
 function detectPolicyBlockInLog(text) {
-  const lines = String(text || '').split(/\r?\n/);
+  const lines = unwrapRichLines(text).split(/\r?\n/);
   for (let i = lines.length - 1; i >= 0; i--) {
     const line = lines[i];
     if (!POLICY_BLOCK_LINE.test(line)) continue;
@@ -365,7 +389,13 @@ function describeRuntimeBlock(match, { repairable, priorFailure }) {
     `Windows security blocked a component required by FlowPad: ${where} could not be loaded ` +
       '(Smart App Control or an organization\'s application-control policy decides this per file).',
   ];
-  if (repairable) {
+  if (match.module && !isInterpreterModule(match.module)) {
+    // A third-party package's module: replacing the interpreter does not change that file.
+    lines.push(`"${match.module}" belongs to a Python package, not to the interpreter, so a runtime repair cannot help. ` +
+      'Smart App Control blocks files it does not know yet (this usually happens right after a package release) ' +
+      'and clears on its own once the file gains reputation, typically within a few days. Try again later, or if this ' +
+      'computer is managed by an organization, ask IT to allow the file; use “Share with us” to send the logs.');
+  } else if (repairable) {
     lines.push('FlowPad can attempt to repair its Python runtime without changing Windows security settings: ' +
       'it downloads the official CPython build published by the Python Software Foundation, verifies every file\'s signature, ' +
       'keeps it in FlowPad\'s own folder and reinstalls the engine on it. Click “Repair FlowPad”.');
@@ -383,6 +413,9 @@ module.exports = {
   PYTHON_RUNTIME_MANIFEST,
   REQUIRED_IMPORTS,
   POLICY_BLOCK_LINE,
+  INTERPRETER_MODULES,
+  isInterpreterModule,
+  unwrapRichLines,
   detectPolicyBlockInLog,
   createPolicyBlockProbe,
   runtimeStatePath,

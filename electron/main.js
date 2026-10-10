@@ -16,7 +16,7 @@ const UvManager = require('./uv-manager');
 const { createShutdown, relaunchAfterStop } = require('./shutdown');
 const { createQuitGate, quitDialogOptions, QUIT_RESPONSE } = require('./quit-gate');
 const { waitForBackend: runBackendGate, createLogActivityProbe, createChangeProbe } = require('./backend-wait');
-const { createPolicyBlockProbe, describeRuntimeBlock, readRuntimeState, canAttemptRepair, priorAttempt } = require('./runtime-repair');
+const { createPolicyBlockProbe, detectPolicyBlockInLog, isInterpreterModule, describeRuntimeBlock, readRuntimeState, canAttemptRepair, priorAttempt } = require('./runtime-repair');
 const { SOD_KEY_KEYCHAIN_SERVICE } = UvManager;
 
 // Exact, copy-pasteable terminal commands surfaced to the user when the backend
@@ -1179,6 +1179,17 @@ async function waitForBackend({
   });
 
   if (result.reason === 'policy-blocked') result.policyBlock = policyBlockMatch;
+  if (result.reason === 'launcher-failed' && launch) {
+    // The block can hit the LAUNCHER's imports (`flow start` → flow_sdk.cli → pydantic → _pydantic_core,
+    // seen under Smart App Control on 2026-10-10) before any server log exists: its stderr is the evidence
+    // then. Same panel, same rules.
+    const inLauncher = detectPolicyBlockInLog(`${launch.stderr || ''}\n${launch.stdout || ''}`);
+    if (inLauncher) {
+      result.reason = 'policy-blocked';
+      result.policyBlock = { ...inLauncher, path: 'flow start output (the launcher)' };
+      policyBlockMatch = result.policyBlock;
+    }
+  }
   if (result.ready) {
     log.info(`Backend is ready! (${result.elapsedSec}s, ${result.checks} checks${result.extended ? ', extended on reported progress' : ''})`);
   } else if (result.reason === 'policy-blocked') {
@@ -1280,7 +1291,11 @@ async function handleRuntimeBlocked(firstMatch) {
       engineVersion: (uvManager && uvManager.getInstalledVersionSync()) || 'unknown',
     };
     const state = readRuntimeState((p) => fs.readFileSync(p, 'utf8'), FLOW_HOME);
-    const repairable = process.platform === 'win32' && !!uvManager && canAttemptRepair(state, versions);
+    // Repair = a signed interpreter. It helps when the blocked module ships with the interpreter; a block on
+    // a third-party wheel's module (_pydantic_core, seen under Smart App Control two days after the
+    // pydantic-core release) is not changed by it, so it is not offered (describeRuntimeBlock says why).
+    const moduleRepairable = !match.module || isInterpreterModule(match.module);
+    const repairable = process.platform === 'win32' && !!uvManager && moduleRepairable && canAttemptRepair(state, versions);
     // Windows Code Integrity events 3077/3089 name the exact blocked binary and the policy id —
     // the evidence that tells Smart App Control from an organization's policy. Into the panel
     // text, so "Copy error details" and "Share with us" carry it.

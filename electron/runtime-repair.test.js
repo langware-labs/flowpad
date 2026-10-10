@@ -322,5 +322,32 @@ function harness(overrides = {}) {
     const t2 = describeRuntimeBlock(m, { repairable: false, priorFailure: { at: 't1', result: 'failed', detail: 'install: blocked by group policy' } });
     ok(t2.includes('already attempted') && t2.includes('IT approval') && !t2.includes('Repair FlowPad'), 'after a failed attempt: no button, IT may be needed');
   }
-  console.log(`runtime-repair.test.js: ${passed} assertions passed`);
+  
+// ── 2026-10-10, Smart App Control ON: the launcher's Rich-wrapped output, and a wheel module ──
+{
+  const { detectPolicyBlockInLog, isInterpreterModule, describeRuntimeBlock, unwrapRichLines } = require('./runtime-repair');
+  const wrapped = [
+    '│ core\\__init__.py:8 in <module>                                              │',
+    '└─────────────────────────────────────────────────────────────────────────────┘',
+    'ImportError: DLL load failed while importing _pydantic_core: An Application ',
+    'Control policy has blocked this file.',
+    '',
+  ].join('\n');
+  const m = detectPolicyBlockInLog(wrapped);
+  ok(m && m.module === '_pydantic_core', 'the Rich-wrapped launcher line is recognised, module extracted');
+  ok(/An Application Control policy has blocked this file/.test(m.line), 'the two wrapped halves are re-joined');
+  const wrappedModule = 'ImportError: DLL load failed while importing\n_pydantic_core: An Application Control policy has blocked this file.';
+  eq(detectPolicyBlockInLog(wrappedModule).module, '_pydantic_core', 'a wrap right after "importing" is re-joined too');
+  eq(unwrapRichLines('plain\nlines'), 'plain\nlines', 'unrelated line breaks are untouched');
+  ok(isInterpreterModule('_multiprocessing') && isInterpreterModule('_ssl') && isInterpreterModule('select'), 'interpreter modules');
+  ok(!isInterpreterModule('_pydantic_core') && !isInterpreterModule('cryptography.hazmat.bindings._rust') && !isInterpreterModule(null), 'wheel modules / unknown');
+  const text = describeRuntimeBlock({ line: m.line, module: '_pydantic_core', file: null, traceback: '' }, { repairable: true, priorFailure: null });
+  ok(/belongs to a Python package, not to the interpreter, so a runtime repair cannot help/.test(text), 'a wheel module: the panel says repair cannot help');
+  ok(!/Click “Repair FlowPad”/.test(text), 'and does not invite the repair');
+  ok(/gains reputation/.test(text), 'and explains the reputation window');
+  const text2 = describeRuntimeBlock({ line: 'x', module: '_multiprocessing', file: null, traceback: '' }, { repairable: true, priorFailure: null });
+  ok(/Click “Repair FlowPad”/.test(text2), 'an interpreter module still offers the repair');
+}
+
+console.log(`runtime-repair.test.js: ${passed} assertions passed`);
 })().catch((e) => { console.error(e); process.exit(1); });
