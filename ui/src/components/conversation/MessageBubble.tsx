@@ -1,6 +1,6 @@
 import { useMemo, useRef, useState, type MouseEvent, type ReactNode } from 'react';
 import { Check, CheckCheck, Clock, Zap } from 'lucide-react';
-import { resendConversation, type AgenticProcess, type FlowMessage } from '@sdk';
+import { isProcessFailed, resendConversation, type AgenticProcess, type FlowMessage } from '@sdk';
 import type { ConversationMessage } from '@sdk/entities/conversation';
 import type { DeliveryStatus } from '@sdk/entities/flow-message';
 import { Task, type ITask } from '@sdk/entities/task';
@@ -438,7 +438,7 @@ export function MessageBubble({
               type="button"
               onClick={automation.onOpen}
               className={`${CHIP_LAYOUT} border ${
-                automation.status === 'failed'
+                isProcessFailed(automation.status)
                   ? 'border-dashed border-border text-muted-foreground'
                   : 'border-foreground/25 bg-background text-foreground'
               }`}

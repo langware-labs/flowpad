@@ -41,10 +41,10 @@ class MessageState(DataSpec):
     files: list[str] = []
 
     @classmethod
-    def from_text(cls, text: str, *, subject: str = "", sender: str = "", channel: str = "") -> "MessageState":
+    def from_text(cls, text: str) -> "MessageState":
         """A state with no row behind it — what a fast test types in."""
         head, cut = message_head(text)
-        return cls(channel=channel, sender=sender, subject=subject, text=head, text_cut=cut)
+        return cls(text=head, text_cut=cut)
 
 
 def message_head(text: str) -> tuple[str, int]:

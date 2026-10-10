@@ -15,6 +15,7 @@ export {
   parseUIUri,
   isProcessRunning,
   isProcessLive,
+  isProcessFailed,
   isProcessActive,
   isProcessStartable,
   isProcessEnded,

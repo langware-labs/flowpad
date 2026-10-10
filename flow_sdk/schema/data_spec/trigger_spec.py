@@ -140,25 +140,18 @@ class ThenSpec(DataSpec):
     run_agent: Optional[RunAgentActionSpec] = None
     run_script: Optional[str] = None
 
-    def _present(self) -> list[str]:
-        return [name for name, present in (
+    @model_validator(mode="after")
+    def _exactly_one_form(self) -> "ThenSpec":
+        forms = [name for name, present in (
             ("ref", bool(self.ref)), ("steps", bool(self.steps)),
             ("run_agent", self.run_agent is not None), ("run_script", self.run_script is not None),
         ) if present]
-
-    @model_validator(mode="after")
-    def _exactly_one_form(self) -> "ThenSpec":
-        forms = self._present()
         if len(forms) != 1:
             raise ValueError("then: exactly one of `ref` / `steps` / `run_agent` / `run_script`, got "
                              + (", ".join(forms) if forms else "none"))
         if self.ops and not self.steps:
             raise ValueError("then: `ops` go with `steps`")
         return self
-
-    @property
-    def form(self) -> str:
-        return self._present()[0]
 
 
 class TagTriggerSpec(DataSpec):
