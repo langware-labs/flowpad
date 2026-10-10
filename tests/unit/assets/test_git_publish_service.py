@@ -91,6 +91,27 @@ async def test_an_unlinked_project_refuses_before_the_hub_is_asked(tmp_path, mon
     assert calls == []
 
 
+async def test_an_agent_of_a_git_project_sends_the_projects_files_first(tmp_path, monkeypatch, hub) -> None:
+    """Every way of publishing an agent ends here, so this is where its project's files go
+    with it: an agent the hub cannot stand up inside its project cannot be launched."""
+    _, calls, _ = hub
+    root = tmp_path / "project"
+    project = Project(id=mint_uuid(), name="q", remote=True, fs_storage_mount_path=str(root))
+    agent = _agent_in(project, root)
+    (root / ".git").mkdir()
+    _own(monkeypatch, project)
+    sent: list[int] = []
+
+    async def files(self):
+        sent.append(len(calls))
+
+    monkeypatch.setattr(Project, "publish_files_to_hub", files)
+
+    await publish_git_asset(agent, TypeId(type="user", id=mint_uuid()))
+
+    assert sent == [0], "the project's files went once, before the hub was asked anything about the agent"
+
+
 async def test_publish_pushes_the_asset_into_the_hub_repo_and_registers_it(tmp_path, monkeypatch, hub) -> None:
     bare, calls, saved = hub
     actor = TypeId(type="user", id=mint_uuid())
