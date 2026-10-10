@@ -63,7 +63,7 @@ to power live transcript views, summaries, and naming. The watcher only sees
 changes while the server is up, so startup schedules a one-shot catch-up walk
 (`app.py:_transcript_catch_up_walk`) for the "modified while down" gap.
 
-Three mechanisms keep the walk near-free:
+Four mechanisms keep the walk near-free:
 
 - **Persisted cursors** (`flow_sdk/transcript_streamer/cursors.py`):
   `~/.flow/instances/<name>/transcript_cursors.json` maps each transcript path
@@ -83,6 +83,13 @@ Three mechanisms keep the walk near-free:
   on the next notification. Subscribers are idempotent — over-delivery is
   safe, under-delivery is not. Flushes are dirty-gated, atomic (tmp+rename),
   and ride the 60s idle sweeper plus end-of-walk.
+- **Release after dispatch** (`registry.catch_up`): the walk keeps a parsed
+  streamer only when the subscriber claimed the session (an `AgenticProcess`
+  owns it). The cursor row is what records "consumed"; an unclaimed streamer
+  has no reader and would hold the whole transcript — unfolded and folded —
+  until the one-hour idle TTL. Measured on 120 synthetic sessions (88 MB on
+  disk): 120 streamers / 211 MB retained after the walk before this, 0 / 0.1 MB
+  after, same 198,000 entries dispatched, same 120 cursor rows.
 
 History: before these fixes the walk parsed all 3,054 JSONLs synchronously on
 the event loop every boot — one measured boot froze the entire loop for 68

@@ -13,6 +13,9 @@ The dispatch contract:
       file is from an unmanaged session (e.g. a transcript on disk with no
       paired AP) and we no-op.
     - The AP's :meth:`on_transcript_change` handles per-entry routing.
+    - The return value says whether the session is claimed: True when an AP
+      owns it, False otherwise. The registry's startup catch-up keeps a
+      parsed streamer only for a claimed session.
 """
 from __future__ import annotations
 
@@ -33,10 +36,11 @@ async def _route_to_ap(
     session_id: str,
     jsonl_path: Path,
     new_entries: list["TranscriptEntry"],
-) -> None:
-    """Resolve the AP for this session_id and forward the delta to it."""
+) -> bool:
+    """Resolve the AP for this session_id and forward the delta to it.
+    Returns True when at least one AP owns the session."""
     if not session_id:
-        return
+        return False
     # Lazy import: AgenticProcess module loads this submodule at import time,
     # so a top-level import would cycle.
     from flow_sdk.builtin.agentic_process import AgenticProcess
@@ -47,12 +51,12 @@ async def _route_to_ap(
         )
     except Exception:
         _log.exception("transcript_subscriber: AP lookup failed for session %s", session_id)
-        return
+        return False
     if not aps:
         aps = await _adopt_unstamped_session(session_id, jsonl_path, new_entries)
     if not aps:
         # Unmanaged session — transcript exists but no AP paired with it.
-        return
+        return False
     # Dispatch to every matching AP (forked / shared sessions are rare but
     # real — same JSONL can back multiple AgenticProcess entities).
     for ap in aps:
@@ -62,6 +66,7 @@ async def _route_to_ap(
             _log.exception(
                 "transcript_subscriber: on_transcript_change raised on AP %s", ap.id
             )
+    return True
 
 
 async def _adopt_unstamped_session(

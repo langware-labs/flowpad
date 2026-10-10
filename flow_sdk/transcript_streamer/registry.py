@@ -6,10 +6,16 @@ or creates the per-session streamer, parses the delta, and fans out to all
 registered subscribers. Subscriber failures are isolated.
 
 Eviction is two-tier:
-  - PTY-tied sessions → ``remove(session_id)`` called from
-    ``AgenticProcess.stop_pty`` / ``_on_terminal_close``.
-  - All other sessions → background idle sweeper drops streamers whose
-    ``last_activity`` is older than ``IDLE_TTL_SECONDS``.
+  - Startup catch-up (``catch_up(jsonl_path)``) builds a streamer per pending
+    file and drops it again right after dispatch unless a subscriber claimed
+    the session (an ``AgenticProcess`` owns it). The cursor store is what
+    remembers "consumed"; a parsed copy nobody reads is released at once.
+  - Everything else → background idle sweeper drops streamers whose
+    ``last_activity`` is older than ``IDLE_TTL_SECONDS``. ``remove`` /
+    ``remove_by_path`` are helpers; no lifecycle hook calls them today — a
+    process exit deliberately leaves its streamer in place, because a late
+    file event would otherwise rebuild it from byte 0 and re-deliver the
+    whole history.
 """
 from __future__ import annotations
 
@@ -33,7 +39,9 @@ IDLE_TTL_SECONDS: float = 3600.0
 SWEEPER_INTERVAL_SECONDS: float = 60.0
 
 
-SubscriberCb = Callable[[str, Path, list[TranscriptEntry]], Awaitable[None]]
+# A subscriber returns True when it has a live consumer for the session (an
+# AgenticProcess owns it). None/False means "nobody here needs the parsed copy".
+SubscriberCb = Callable[[str, Path, list[TranscriptEntry]], Awaitable[bool | None]]
 
 
 def _infer_worker_type(path: Path) -> str:
@@ -117,8 +125,7 @@ class TranscriptStreamerRegistry:
         return self._by_path.get(Path(jsonl_path))
 
     def remove(self, session_id: str) -> None:
-        """Drop streamer(s) whose parser-resolved session_id matches. Called
-        from PTY-close hooks on ``AgenticProcess``."""
+        """Drop streamer(s) whose parser-resolved session_id matches."""
         for path in [p for p, s in self._by_path.items() if s.session_id == session_id]:
             self._by_path.pop(path, None)
 
@@ -127,17 +134,18 @@ class TranscriptStreamerRegistry:
 
     # ── FSOp entry point ─────────────────────────────────────────────────────
 
-    async def notify_change(self, jsonl_path: Path) -> None:
+    async def notify_change(self, jsonl_path: Path) -> bool:
         """Called by the FSOp route callback whenever a watched transcript
         JSONL file changes. Resolves or creates the streamer, parses the
-        delta, dispatches to subscribers.
+        delta, dispatches to subscribers. Returns True when a subscriber
+        claimed the session (see ``SubscriberCb``).
         """
         path = Path(jsonl_path)
         try:
             worker_type = _infer_worker_type(path)
         except ValueError:
             _log.warning("transcript_streamer: unknown worker for path %s", path)
-            return
+            return False
 
         # Stat BEFORE parsing: if the file grows mid-parse, the cursor records
         # the older state and the next notification re-parses the tail —
@@ -155,7 +163,7 @@ class TranscriptStreamerRegistry:
                 streamer = await asyncio.to_thread(TranscriptStreamer, path, worker_type)
             except Exception:
                 _log.exception("transcript_streamer: failed to construct streamer for %s", path)
-                return
+                return False
             # Another notification may have raced the construction; keep the
             # registered instance so delta state stays single-homed.
             streamer = self._by_path.setdefault(path, streamer)
@@ -164,35 +172,56 @@ class TranscriptStreamerRegistry:
             new_entries = await streamer.notify_change()
         except Exception:
             _log.exception("transcript_streamer: notify_change failed for %s", path)
-            return
+            return False
 
         if self._cursors is not None and pre_stat is not None:
             self._cursors.update(path, size=pre_stat.st_size, mtime_ns=pre_stat.st_mtime_ns)
 
         if not new_entries:
-            return
+            return False
 
         # Use the parser-resolved session_id (may differ from path.stem for
         # Codex). Fall back to the path stem if the parser hasn't resolved
         # one yet — better a routable id than empty.
         session_id = streamer.session_id or path.stem
-        await self._dispatch(session_id, path, new_entries)
+        return await self._dispatch(session_id, path, new_entries)
+
+    async def catch_up(self, jsonl_path: Path) -> None:
+        """Startup catch-up for one file: deliver what was missed, then keep the
+        parsed copy only if a subscriber claimed the session.
+
+        The cursor row is what records "consumed". An unclaimed streamer has
+        no reader (the only readers are ``AgenticProcess`` methods), so
+        keeping it would park the whole parsed transcript — twice, unfolded
+        and folded — until the idle sweeper's TTL. A streamer that already
+        existed before this call belongs to a live event and is left alone;
+        a live event landing after the drop rebuilds it, the same
+        over-delivery the FSOp path already treats as safe.
+        """
+        path = Path(jsonl_path)
+        existed = path in self._by_path
+        claimed = await self.notify_change(path)
+        if not existed and not claimed:
+            self.remove_by_path(path)
 
     async def _dispatch(
         self,
         session_id: str,
         jsonl_path: Path,
         entries: list[TranscriptEntry],
-    ) -> None:
-        """Fan out to subscribers. One subscriber raising does not skip others."""
+    ) -> bool:
+        """Fan out to subscribers. One subscriber raising does not skip others.
+        Returns True when any subscriber claimed the session."""
+        claimed = False
         for name, cb in list(self._subscribers.items()):
             try:
-                await cb(session_id, jsonl_path, entries)
+                claimed = bool(await cb(session_id, jsonl_path, entries)) or claimed
             except Exception:
                 _log.exception(
                     "transcript_streamer: subscriber %r raised on session %s",
                     name, session_id,
                 )
+        return claimed
 
     async def force_reparse(self, session_id: str) -> None:
         """Reset the session's streamer offset and re-emit history. Debug knob."""
