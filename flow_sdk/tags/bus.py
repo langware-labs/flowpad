@@ -25,11 +25,8 @@ from datetime import datetime, timezone
 from typing import Any, Callable, Optional
 
 from flow_sdk.tags.envelope import FlowEvent, FlowEventCtx
-from flow_sdk.tags.grammar import (
-    segments_match as _segments_match,
-    tag_matches,
-    tag_pattern_problem,
-)
+from flow_sdk.tags.grammar import segments_match as _segments_match
+from flow_sdk.tags.grammar import tag_pattern_problem
 
 logger = logging.getLogger(__name__)
 
@@ -316,6 +313,22 @@ def make_tag_event(tag: str, target: str, data: dict | None = None,
 
 def publish_tag(event: FlowEvent) -> FlowEvent:
     return event_bus.publish(event)
+
+
+async def drain() -> None:
+    """Await every handler the bus has in flight, including the ones those schedule.
+
+    For a script, a snippet or a test that emitted and wants to read what the handlers wrote:
+    Law 3 (emit never awaits consumers) still holds — this is the caller choosing to wait.
+    Bounded by rounds, not time: a handler that keeps scheduling more is a runaway and is
+    reported as one."""
+    current = asyncio.current_task()
+    for _ in range(50):
+        pending = [t for t in _INFLIGHT if t is not current and not t.done()]
+        if not pending:
+            return
+        await asyncio.gather(*pending, return_exceptions=True)
+    raise RuntimeError("the bus never went quiet: a handler keeps scheduling more work")
 
 
 def on_tag(pattern: str, handler: FlowEventHandler, *,

@@ -773,6 +773,12 @@ class Agent(Entity):
         """Get-or-create the placement that runs this agent on THIS machine."""
         return await self.deploy("local")
 
+    @classmethod
+    async def runnable_here(cls) -> list["Agent"]:
+        """The agents a rule on this machine may run: enabled, by name. What a picker offers."""
+        rows = await cls.get_all({"match": {"enabled": True}})
+        return sorted(rows, key=lambda a: (str(a.name or "").casefold(), str(a.id)))
+
     async def run_locally(self, *, snippet: Optional[str] = None) -> Deployment:
         """Run this agent on this computer: its one local deployment, as a process running its loop.
 

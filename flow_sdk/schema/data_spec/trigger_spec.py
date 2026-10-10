@@ -32,12 +32,14 @@ people's machines.
 
 from __future__ import annotations
 
-from typing import Any, ClassVar, Optional
+from typing import Any, ClassVar, Optional, Union
 
-from pydantic import ConfigDict, model_validator
+from pydantic import ConfigDict, Field, model_validator
 
 from flow_sdk.schema.data_spec._types import NonBlank
+from flow_sdk.schema.data_spec.compute_op_spec import ComputeOpSpec, DecisionOp
 from flow_sdk.schema.data_spec.spec import DataSpec
+from flow_sdk.schema.data_spec.wizard_spec import WizardStepSpec
 
 
 class RunAgentActionSpec(DataSpec):
@@ -117,6 +119,48 @@ class TriggerActionSpec(DataSpec):
         return next(name for name in self.VERBS if getattr(self, name) is not None)
 
 
+class ThenSpec(DataSpec):
+    """What a rule does: a WIZARD. Written one of four ways — EXACTLY ONE is present.
+
+    * ``ref`` — a wizard by name.
+    * ``steps`` (+ ``ops``) — the sequence inline, its own ops beside it, keyed by the name a
+      step's ``ref`` uses.
+    * ``run_agent`` — sugar: one agent step, handed the fire's state as its input.
+    * ``run_script`` — sugar: one shell step.
+
+    The sugars are what a person's screen writes; the other two are what an author who wants
+    a sequence writes. All four run through the one wizard runner (``automations/then.py``).
+    """
+
+    spec_kind: ClassVar[str] = "trigger.then"
+
+    ref: str = ""
+    steps: list[WizardStepSpec] = []
+    ops: dict[str, ComputeOpSpec] = {}
+    run_agent: Optional[RunAgentActionSpec] = None
+    run_script: Optional[str] = None
+
+    def _present(self) -> list[str]:
+        return [name for name, present in (
+            ("ref", bool(self.ref)), ("steps", bool(self.steps)),
+            ("run_agent", self.run_agent is not None), ("run_script", self.run_script is not None),
+        ) if present]
+
+    @model_validator(mode="after")
+    def _exactly_one_form(self) -> "ThenSpec":
+        forms = self._present()
+        if len(forms) != 1:
+            raise ValueError("then: exactly one of `ref` / `steps` / `run_agent` / `run_script`, got "
+                             + (", ".join(forms) if forms else "none"))
+        if self.ops and not self.steps:
+            raise ValueError("then: `ops` go with `steps`")
+        return self
+
+    @property
+    def form(self) -> str:
+        return self._present()[0]
+
+
 class TagTriggerSpec(DataSpec):
     """A subscription to the event bus. The kind a wizard declares."""
 
@@ -194,6 +238,7 @@ class TriggerSpec(DataSpec):
     """What makes something run — the whole declaration, and nothing else."""
 
     spec_kind: ClassVar[str] = "trigger"
+    model_config = ConfigDict(populate_by_name=True)
 
     name: str = ""
     description: str = ""
@@ -217,8 +262,18 @@ class TriggerSpec(DataSpec):
     watch: Optional[WatchTriggerSpec] = None
     hook: Optional[HookTriggerSpec] = None
 
+    #: The GATE, asked before the counter moves: a sentence (``"asks for a refund"`` — one
+    #: yes/no question worded by the event's subject, 85% sure) or a decision op's own
+    #: ``exe_data`` (several questions, what each must be). A fire the gate declines costs
+    #: one decision and spends nothing else. ``if`` in the file, ``gate`` in code.
+    gate: Optional[Union[str, DecisionOp]] = Field(default=None, alias="if")
+
+    #: What it does: a wizard (see ``ThenSpec``). Preferred over ``actions``.
+    then: Optional[ThenSpec] = None
+
     #: Dispatched in order when it fires. Empty is legal and means "nothing
     #: yet" — a trigger a person is still authoring should not fail to load.
+    #: A rule with a ``then`` runs that instead; ``actions`` stay for files written before it.
     actions: list[TriggerActionSpec] = []
 
     KINDS: ClassVar[tuple[str, ...]] = ("tag", "schedule", "watch", "hook")
@@ -233,6 +288,12 @@ class TriggerSpec(DataSpec):
                 + " is required, got "
                 + (", ".join(chosen) if chosen else "neither")
             )
+        return self
+
+    @model_validator(mode="after")
+    def _one_way_to_act(self) -> "TriggerSpec":
+        if self.then is not None and self.actions:
+            raise ValueError(f"trigger {self.name or '<unnamed>'}: `then` or `actions`, not both")
         return self
 
     @property

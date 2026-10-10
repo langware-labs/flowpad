@@ -73,9 +73,8 @@ def validate_tag_trigger(pattern: Optional[str]) -> Optional[str]:
 
 def register_tag_trigger(trigger: "Trigger") -> None:
     """Arm (or re-arm, replacing) the bus subscription for one TAG trigger."""
-    from flow_sdk.tags import event_bus
-
     from flow_sdk.builtin.trigger_arming import trigger_runs_here
+    from flow_sdk.tags import event_bus
 
     unregister_tag_trigger(trigger.id)
     if not trigger.enabled or not trigger_runs_here(trigger):
@@ -280,6 +279,13 @@ async def _fire_tag_trigger_locked(trigger_id: str, event: "FlowEvent") -> None:
                     event)
         return
 
+    # THE GATE — after every cheap check, before the counter: a "no" costs one decision and
+    # spends nothing else (no counter, no `fire_once`, no `trigger.fired`). Recorded either way.
+    gate = await ask_gate(trigger, event)
+    if gate is not None and not gate.caught:
+        _declined(trigger, event, gate)
+        return
+
     trigger.counter += 1
     trigger.last_run = datetime.now(timezone.utc)
     await trigger.update()
@@ -304,11 +310,118 @@ async def _fire_tag_trigger_locked(trigger_id: str, event: "FlowEvent") -> None:
     # run — a wizard action runs an agent for MINUTES — and lost entirely if they
     # hang or the process dies. The counter said 1 while the log said nothing had
     # ever fired, which is the one question this row exists to answer.
-    await _run_tag_fire(trigger, event, event_id, is_test=False)
+    await _run_tag_fire(trigger, event, event_id, is_test=False, gate=gate)
+
+
+class GateOutcome:
+    """What asking a rule's gate about one event came to: the verdict, the state it was asked
+    about, and the subject that built it. ``caught`` is the fire's go/no-go."""
+
+    __slots__ = ("verdict", "state", "subject", "declined")
+
+    def __init__(self, verdict: Any, state: Any, subject: Any, declined: str = "") -> None:
+        self.verdict = verdict
+        self.state = state
+        self.subject = subject
+        #: The subject refused before any question (an own message): the reason, else "".
+        self.declined = declined
+
+    @property
+    def caught(self) -> bool:
+        return not self.declined and bool(getattr(self.verdict, "met", False))
+
+    @property
+    def reason_code(self) -> str:
+        return "decision_unavailable" if getattr(self.verdict, "unavailable", None) else "decision_no"
+
+    @property
+    def caught_state(self) -> Optional[tuple[Any, Any]]:
+        """The subject and the state it built, when the gate was asked about one; else None."""
+        return (self.subject, self.state) if self.subject is not None and self.state is not None else None
+
+    def row(self) -> dict[str, Any]:
+        """The log keys a fire's rows carry: the decision (never the state) and the subject's id."""
+        verdict = self.verdict
+        decision = None
+        if verdict is not None:
+            decision = {
+                "caught": bool(getattr(verdict, "met", False)),
+                "confidence": getattr(verdict, "confidence", 0.0),
+                "reason": self.declined or getattr(verdict, "reason", "") or getattr(verdict, "detail", ""),
+                "answers": getattr(verdict, "answers", None) or {},
+                "unavailable": getattr(verdict, "unavailable", None),
+                "endpoint": getattr(verdict, "endpoint", "") or None,
+                "latency_ms": getattr(verdict, "latency_ms", 0.0),
+            }
+        elif self.declined:
+            decision = {"caught": False, "confidence": 0.0, "reason": self.declined, "answers": {}}
+        subject_id = self.subject.subject_id(self.state) if (self.subject is not None and self.state is not None) else None
+        return {"decision": decision, "subject_id": subject_id}
+
+
+async def ask_gate(trigger: "Trigger", event: "FlowEvent") -> Optional[GateOutcome]:
+    """Ask the rule's ``if`` about the event's subject. ``None`` when the rule has no gate.
+    Never raises: a subject that cannot build its state, or a Decision API that cannot be
+    reached, is a declined fire with its reason, not a crash."""
+    from flow_sdk.automations.decision_subjects import NotCaught, for_target  # noqa: PLC0415
+    from flow_sdk.builtin.trigger_on_tag import emit_trigger_decided, emit_trigger_failed  # noqa: PLC0415
+    from flow_sdk.core.compute_op.decision import decide_op  # noqa: PLC0415
+    from flow_sdk.schema.data_spec.compute_op_spec import DecisionOp  # noqa: PLC0415
+
+    gate = getattr(trigger, "gate", None)
+    if not gate:
+        return None
+    subject = for_target(str(event.target or ""))
+    trigger_id = trigger.id or ""
+    name = trigger.name or trigger_id
+
+    def declined(reason: str) -> GateOutcome:
+        """Refused before any question was asked."""
+        emit_trigger_decided(trigger_id, str(trigger.trigger_type), name, outcome="no", reason=reason,
+                             project_id=trigger.project_id, cause=event)
+        return GateOutcome(None, None, subject, declined=reason)
+
+    if subject is None or not gate.get("questions"):
+        return declined("nothing knows what this rule decides about")
+    try:
+        state = await subject.of(str(event.target or ""))
+    except NotCaught as exc:
+        return declined(exc.reason)
+    verdict = await decide_op(DecisionOp.model_validate(gate), state)
+    outcome = GateOutcome(verdict, state, subject)
+    word = "caught" if verdict.met else ("unavailable" if verdict.unavailable else "no")
+    emit_trigger_decided(trigger_id, str(trigger.trigger_type), name, outcome=word,
+                         confidence=verdict.confidence, reason=verdict.reason or verdict.detail,
+                         project_id=trigger.project_id, cause=event)
+    if verdict.unavailable:
+        emit_trigger_failed(trigger_id, str(trigger.trigger_type), name, stage="decision",
+                            error=verdict.detail, project_id=trigger.project_id)
+    return outcome
+
+
+def _declined(trigger: "Trigger", event: "FlowEvent", gate: GateOutcome) -> None:
+    """A fire the gate said no to: one row, its reason code, the decision — never the state."""
+    from flow_sdk.automations.fingerprint import spec_hash  # noqa: PLC0415
+
+    trigger_id = trigger.id or ""
+    name = trigger.name or trigger_id
+    row = gate.row()
+    _append_log(name, {
+        "hook_event": "tag_declined",
+        "trigger": False,
+        "reason": row["decision"]["reason"] if row["decision"] else "not caught",
+        "reason_code": gate.reason_code,
+        "rule_name": name,
+        "trigger_id": trigger_id,
+        "trigger_type": str(trigger.trigger_type),
+        "spec_hash": spec_hash(trigger),
+        **_cause_keys(event),
+        **row,
+    })
 
 
 async def _run_tag_fire(trigger: "Trigger", event: "FlowEvent", event_id: Optional[str],
-                        *, is_test: bool) -> dict[str, Any]:
+                        *, is_test: bool, gate: Optional[GateOutcome] = None) -> dict[str, Any]:
     """Log, activate, dispatch, log the outcome — shared by a real fire and *Run once now*.
 
     TWO rows per fire, joined on ``event_id``. The ``tag_fire`` row is written
@@ -321,11 +434,16 @@ async def _run_tag_fire(trigger: "Trigger", event: "FlowEvent", event_id: Option
     (or died with the process), which is itself the answer.
     """
     from flow_sdk.automations.fingerprint import spec_hash
+    from flow_sdk.automations.then import EVENT_KEY, LAUNCH_KEY
     from flow_sdk.builtin.trigger import activate_flows_for_trigger, run_trigger_actions
     from flow_sdk.fs_store.operations.trigger_log import cap_cause_data
 
     trigger_id = trigger.id or ""
     name = trigger.name or trigger_id
+    if gate is None and getattr(trigger, "gate", None):
+        # A test run skips every guard but still asks the gate: what it decides IS what is tested.
+        gate = await ask_gate(trigger, event)
+    gate_row = gate.row() if gate is not None else {}
     common = {
         "rule_name": trigger.name,
         "trigger_id": trigger_id,
@@ -334,18 +452,44 @@ async def _run_tag_fire(trigger: "Trigger", event: "FlowEvent", event_id: Option
         "is_test": is_test,
         "spec_hash": spec_hash(trigger),
         **_cause_keys(event),
+        **gate_row,
     }
-    _append_log(name, {
+    # The fire's scope for a `then` wizard: the subject's state under its key, the launch context the
+    # agent step stamps (with what the rule decided), the causing envelope.
+    inputs: dict[str, Any] = {EVENT_KEY: event.model_dump(mode="json")}
+    scope_key = "STATE"
+    caught = gate.caught_state if gate is not None else None
+    if caught is not None:
+        subject, state = caught
+        scope_key = subject.scope_key
+        inputs[scope_key] = state
+        launch = subject.launch_context(state)
+        decision = gate_row.get("decision") or {}
+        inputs[LAUNCH_KEY] = launch.model_copy(update={"context_data": {
+            **launch.context_data,
+            "automation": {
+                "trigger_id": trigger_id, "run_id": None, "name": trigger.name,
+                "reason": decision.get("reason", ""),
+                "confidence": decision.get("confidence", 0.0),
+                "subject_id": gate_row.get("subject_id"),
+            },
+        }})
+    row_id = _append_log(name, {
         "hook_event": "tag_fire",
         "trigger": True,
         "reason": f"Tag {event.tag} on {event.target}",
         "cause_data": cap_cause_data(event.data or None),
-        "actions": [{"action_type": str(a.action_type)} for a in trigger.actions],
+        "actions": [{"action_type": "then"}] if getattr(trigger, "then", None)
+        else [{"action_type": str(a.action_type)} for a in trigger.actions],
         **common,
     })
+    if LAUNCH_KEY in inputs and row_id:
+        inputs[LAUNCH_KEY].context_data["automation"]["run_id"] = row_id
+    if caught is not None:
+        caught[0].on_fired(caught[1], event)
 
     flow_error = await activate_flows_for_trigger(trigger_id, name, envelope=event, trigger=trigger)
-    outcome = await run_trigger_actions(trigger, changes=[])
+    outcome = await run_trigger_actions(trigger, changes=[], inputs=inputs, scope_key=scope_key)
     error = "; ".join(e for e in (flow_error, outcome.error) if e) or None
     _append_log(name, {
         "hook_event": "tag_fire_done",
@@ -354,6 +498,7 @@ async def _run_tag_fire(trigger: "Trigger", event: "FlowEvent", event_id: Option
         "agentic_process_id": outcome.process_id,
         "error": error,
         "duration_ms": outcome.duration_ms,
+        "wizard": outcome.wizard,
         **common,
     })
     return {"event_id": event_id, "agentic_process_id": outcome.process_id,
@@ -374,10 +519,16 @@ async def run_tag_test(trigger: "Trigger", event: "FlowEvent", event_id: Optiona
         await _run_tag_fire(trigger, event, event_id, is_test=True)
 
 
-def _append_log(trigger_name: str, entry: dict[str, Any]) -> None:
+def _append_log(trigger_name: str, entry: dict[str, Any]) -> Optional[str]:
+    """Append one row; answer its id (minted here so a launch can carry it) or None."""
+    from flow_sdk.api.api_types.identifier import mint_uuid
+
+    entry.setdefault("id", str(mint_uuid()))
     try:
         from flow_sdk.fs_store.operations.trigger_log import append_entry
 
         append_entry(trigger_name, entry)
+        return str(entry["id"])
     except Exception:
         logger.debug("TAG trigger log append failed", exc_info=True)
+        return None

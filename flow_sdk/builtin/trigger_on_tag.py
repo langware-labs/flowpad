@@ -182,6 +182,31 @@ def emit_trigger_fired(
 
 
 @_never_raises
+def emit_trigger_decided(
+    trigger_id: str,
+    trigger_type: str,
+    trigger_name: str,
+    *,
+    outcome: str,
+    confidence: float = 0.0,
+    reason: str = "",
+    project_id: Optional[str] = None,
+    cause: Optional["FlowEvent"] = None,
+    scope_extra: Optional[list[str]] = None,
+) -> Optional[str]:
+    """The rule's ``if`` was asked. ``outcome`` in caught | no | unavailable."""
+    from flow_sdk.tags.envelope import target_of
+
+    return _publish(
+        "trigger.decided",
+        target_of("trigger", trigger_id),
+        _trigger_data(trigger_id, trigger_type, trigger_name, cause,
+                      outcome=outcome, confidence=round(float(confidence), 4), reason=reason or None),
+        _trigger_ctx(trigger_id, project_id=project_id, cause=cause, scope_extra=scope_extra),
+    )
+
+
+@_never_raises
 def emit_trigger_suppressed(
     trigger_id: str,
     trigger_type: str,
