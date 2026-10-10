@@ -14,7 +14,7 @@ import { Input } from '@src/components/ui/input';
 import { Progress } from '@src/components/ui/progress';
 import { useProjects } from '@src/hooks/use-projects';
 import { type SandboxSetup, useSandboxes, workspaceServiceUrl } from '@src/hooks/use-sandboxes';
-import { errorMessage } from '@src/lib/error-message';
+import { errorMessage, isMissingGitCredential } from '@src/lib/error-message';
 import { CheckCircle, Cloud, Laptop, Loader2, LogIn } from 'lucide-react';
 import { RuntimeStrip } from '@src/components/top-nav-bar/RuntimeStrip';
 import { StepList } from '@src/components/ui/step-list';
@@ -155,7 +155,13 @@ export default function AgentLaunchLanding({ params }: { params: URLSearchParams
       window.location.assign(workspaceServiceUrl(node.id, path));
     } catch (e) {
       tracker.setupError();
-      setFailure(errorMessage(e, t`Couldn't set up the sandbox.`));
+      // Git's own words for a clone with no credentials are about a terminal prompt; what happened
+      // is a repository this account cannot read.
+      setFailure(
+        isMissingGitCredential(e)
+          ? t`Couldn't clone that repository: it doesn't exist, or it is private and GitHub isn't connected to your account.`
+          : errorMessage(e, t`Couldn't set up the sandbox.`),
+      );
       setCloud('failed');
     } finally {
       cloudRunning.current = false;

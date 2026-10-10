@@ -497,6 +497,26 @@ describe('/launch?agent= and ?project=', () => {
     expect(mocks.launchSandbox).toHaveBeenCalledTimes(1);
   });
 
+  it('a clone git could not authenticate is said in plain words, not as a terminal prompt', async () => {
+    mocks.launchInfo = { [`agent/${AGENT_ID}`]: standardInfo };
+    mocks.launchSandbox = vi
+      .fn()
+      .mockRejectedValue(
+        new Error(
+          "Git clone failed: fatal: could not read Username for 'https://github.com': terminal prompts disabled",
+        ),
+      );
+
+    renderLanding(`?agent=${AGENT_ID}`);
+    await waitFor(() => expect(screen.getByTestId('launch-cloud')).toBeTruthy());
+    fireEvent.click(screen.getByTestId('launch-cloud'));
+
+    await waitFor(() =>
+      expect(screen.getByTestId('launch-failed').textContent).toContain("Couldn't clone that repository"),
+    );
+    expect(screen.getByTestId('launch-failed').textContent).not.toContain('terminal prompts');
+  });
+
   it('a sandbox that never came up is started again on retry, not replaced', async () => {
     mocks.launchInfo = { [`agent/${AGENT_ID}`]: standardInfo };
     mocks.launchSandbox = vi
@@ -536,7 +556,7 @@ describe('/launch?agent= and ?project=', () => {
     // Still a choice: the link can be fired again, and the cloud is one click away.
     fireEvent.click(screen.getByTestId('launch-desktop-again'));
     await waitFor(() => expect(mocks.openInFlowpad).toHaveBeenCalledTimes(2));
-    expect((screen.getByTestId('launch-cloud')).disabled).toBe(false);
+    expect(screen.getByTestId('launch-cloud').disabled).toBe(false);
   });
 
   it('a link whose project was never published says so instead of offering dead buttons', async () => {
@@ -560,7 +580,7 @@ describe('/launch?agent= and ?project=', () => {
     expect(screen.getByTestId('launch-hint').textContent).toBe("That isn't a repository URL.");
     fireEvent.change(screen.getByTestId('launch-target-repo'), { target: { value: REPO } });
     expect(screen.queryByTestId('launch-hint')).toBeNull();
-    expect((screen.getByTestId('launch-desktop')).disabled).toBe(false);
+    expect(screen.getByTestId('launch-desktop').disabled).toBe(false);
   });
 
   it('a controller with projects to pick from asks for one', async () => {
