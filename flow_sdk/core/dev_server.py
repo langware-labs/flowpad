@@ -28,12 +28,20 @@ def find_free_port() -> int:
         return int(sock.getsockname()[1])
 
 
+#: Both loopbacks. A Node server told ``localhost`` binds ``::1`` alone on a modern Node (it resolves the
+#: name verbatim), a Python one ``127.0.0.1`` alone: a probe that asks one address calls the other "never
+#: opened" while the server's own log says ready.
+LOOPBACKS = ("127.0.0.1", "::1")
+
+
 def port_open(port: int) -> bool:
-    try:
-        with socket.create_connection(("127.0.0.1", int(port)), timeout=0.5):
-            return True
-    except OSError:
-        return False
+    for host in LOOPBACKS:
+        try:
+            with socket.create_connection((host, int(port)), timeout=0.5):
+                return True
+        except OSError:
+            continue
+    return False
 
 
 def wait_for_port(port: int, timeout: float) -> bool:
@@ -79,4 +87,4 @@ def install_command(start_cmd: str, folder: Path) -> str:
     return "npm ci" if (folder / "package-lock.json").exists() else "npm install"
 
 
-__all__ = ["log_dir", "find_free_port", "install_command", "port_open", "start_detached", "wait_for_port"]
+__all__ = ["LOOPBACKS", "log_dir", "find_free_port", "install_command", "port_open", "start_detached", "wait_for_port"]

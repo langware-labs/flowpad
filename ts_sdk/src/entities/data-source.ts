@@ -443,7 +443,7 @@ export class DataSource extends APIEntity<DataSource> implements IDataSource {
   }
 }
 
-/** What `DataSource.verify` answers — the same shape the inbox's attention bar shows in place. */
+/** What `DataSource.verify` answers — the same shape the stream inbox's attention bar shows in place. */
 export interface VerifyResult {
   status: SourceStatus;
   ready: boolean;

@@ -533,6 +533,17 @@ export class NavigationActions {
     this.commitPointer(DockPointer.root().withOption(WORKSPACE_PARAM, workspaceId || null));
   }
 
+  /**
+   * Open a project's home INSIDE a workspace — after the project was moved there
+   * (`Project.switchWorkspace`). The loader drops a project outside the URL's
+   * workspace, so the pointer must name the new one; and like `openWorkspace` this
+   * is `commitPointer`, not `openDock`, because the sticky param's carry-forward
+   * would put the OLD workspace straight back (`null` = the default workspace).
+   */
+  openProjectInWorkspace(projectId: string, workspaceId: string | null): void {
+    this.commitPointer(DockPointer.forProject(projectId).withOption(WORKSPACE_PARAM, workspaceId || null));
+  }
+
   // ========== Core Navigation ==========
 
   /**

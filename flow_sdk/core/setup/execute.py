@@ -49,12 +49,17 @@ async def execute_setup(
     check_only: bool = False,
     approved: bool = False,
     on_change: Optional[OnChange] = None,
+    phase: str = "setup",
     **seams,
 ) -> SetupTreeResult:
     """Set up ``root_id`` (or, ``check_only``, say whether it is). Never raises for an outcome.
 
     ``resolve_op`` / ``resolve_wizard`` default to the indexes (``ComputeOp`` / ``Wizard`` by name, each
     with its own trust). ``seams`` reach ``setup_tree`` untouched (``launch``, ``platform``) — tests.
+
+    ``phase="load"`` runs the root's ``on_load`` wizard alone, in the SAME slot and record as its setup: a
+    load and a setup of one node touch the same thing, so one holds while the other goes, and the screen
+    that follows the node's setup follows its load too.
     """
     from flow_sdk.core.wizard.execute import _resolve_op, _resolve_wizard  # noqa: PLC0415 — entity layer
 
@@ -62,7 +67,7 @@ async def execute_setup(
     if check_only:
         return await setup_tree(
             root_id, resolve_node=resolve_node, subject_entity=subject_entity, workdir=cwd, shell=shell,
-            inputs=inputs, check_only=True, approved=approved, **resolvers, **seams,
+            inputs=inputs, check_only=True, approved=approved, phase=phase, **resolvers, **seams,
         )
 
     key = run_key(SETUP_RUN, root_id)
@@ -92,7 +97,7 @@ async def execute_setup(
         result = await setup_tree(
             root_id, resolve_node=resolve_node, activity_path=activity_path, subject_entity=subject_entity,
             workdir=cwd or workdir, shell=shell, inputs=inputs, approved=approved, wizard_id=SETUP_RUN,
-            on_change=changed, **resolvers, **seams,
+            on_change=changed, phase=phase, **resolvers, **seams,
         )
         record_tree(key, result, already_locked=True)
     finally:

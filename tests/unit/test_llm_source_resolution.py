@@ -282,6 +282,21 @@ async def test_a_stored_key_funds_a_harness_whose_login_nobody_checked(env) -> N
     assert str((await resolve_llm_endpoint(_process())).endpoint.kind) == "api_key"
 
 
+async def test_a_stored_keys_offer_shows_its_masked_hint_and_nothing_else(env) -> None:
+    """``detail`` is display only: the ``****last4`` the shadow carries, so the picker can say
+    WHICH key funds the slot -- never the value, and nothing on a slot with no key."""
+    from flow_sdk.lm_api import LMApiProvider, set_lm_api
+
+    async def _openrouter_offer():
+        return next(s for s in await _list_sources("claude") if s.name == "openrouter key")
+
+    assert (await _openrouter_offer()).detail == "", "no key stored, nothing to hint"
+    set_lm_api("sk-or-test", LMApiProvider.OPENROUTER)
+    offer = await _openrouter_offer()
+    assert offer.detail == "****test"
+    assert "sk-or-test" not in repr(offer)
+
+
 async def test_a_bound_box_funds_an_unprobed_harness_from_its_endpoint(env, monkeypatch) -> None:
     """The sandbox case: claude installed, never signed in, an endpoint pushed after login."""
     from flow_sdk.builtin.agentic_process.cli_drivers.llm_source import resolve_llm_endpoint

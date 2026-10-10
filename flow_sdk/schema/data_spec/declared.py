@@ -37,7 +37,15 @@ from flow_sdk.assets.placement import AGENTIC_ASSETS_DIR
 from flow_sdk.schema.data_spec._namespace import loading, qualified
 from flow_sdk.schema.data_spec.data_schema_spec import DataSchemaDocSpec
 from flow_sdk.schema.data_spec.dataset_spec import DatasetSpec, ExampleSpec
-from flow_sdk.schema.data_spec.spec import ENUM_PREFIX, KIND_UNION, OPTIONAL_MARK, DataSpec, _compile, _field_def, _normalize_form
+from flow_sdk.schema.data_spec.spec import (
+    ENUM_PREFIX,
+    KIND_UNION,
+    OPTIONAL_MARK,
+    DataSpec,
+    _compile,
+    _field_def,
+    _normalize_form,
+)
 from flow_sdk.schema.types import EntityType
 
 logger = logging.getLogger(__name__)

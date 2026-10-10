@@ -11,8 +11,8 @@ places that answered these questions one at a time cannot disagree:
 | ``credential:<name>`` | — | ask each missing value → ``credentials set`` ✓ ``credentials check`` (same) |
 | ``data_source-<id>`` | the connections and credentials it needs, then its last setup stage | — |
 | ``stage:<source>:<wizard>`` | the stage before it (a stage is never set up before the one it follows) | the driver's stage wizard, FOR the source — recorded where the stage list reads it |
-| ``micro_app-<id>`` | — | install → build → start (``webapp_setup``), each with its own check |
-| ``asset_setup:<name>`` | its declared children | its declared ``prepare`` / ``run`` wizards |
+| ``micro_app-<id>`` | — | install → build → start (``webapp_setup``), each with its own check; its ``on_load`` is the same chain |
+| ``asset_setup:<name>`` | its declared children | its declared ``prepare`` / ``run`` wizards (and ``on_load``, run on display — ``core/setup/load``) |
 
 A declared ``asset_setup`` attaches to the node it is for: its ``subject`` (a node id, or
 ``data_driver:<name>`` for every source of that driver), else the asset whose folder holds it — so a
@@ -218,9 +218,13 @@ class ProjectTree:
             op = _op(f"{node_id}:{step}", f"{what} {label}", step)
             self.ops[op.name] = op
             steps.append({"id": step, "label": what, "kind": "compute", "ref": op.name})
+        chain = WizardSpec.model_validate({"name": node_id, "label": f"Run {label}", "steps": steps})
         self.nodes[node_id] = SetupNode(
             id=node_id, label=label, inputs=(("webapp", str(app.id)),),
-            run=WizardSpec.model_validate({"name": node_id, "label": f"Run {label}", "steps": steps}),
+            run=chain,
+            # Loading the app is making sure it is up: the same chain, whose checks are what "up" means
+            # (installed, built, a server answering its health path). Done already, it costs three checks.
+            on_load=chain.model_copy(update={"label": f"Load {label}"}),
         )
         return node_id
 
@@ -256,12 +260,12 @@ class ProjectTree:
                 self.nodes[node_id] = SetupNode(id=node_id, label=str(row.name), problem=(
                     f"{row.asset_ref}/asset_setup.json cannot be read"))
                 continue
-            prepare, run = await wizard(spec.prepare), await wizard(spec.run)
-            missing = [n for n, w in ((spec.prepare, prepare), (spec.run, run)) if n and w is None]
+            prepare, run, load = await wizard(spec.prepare), await wizard(spec.run), await wizard(spec.on_load)
+            missing = [n for n, w in ((spec.prepare, prepare), (spec.run, run), (spec.on_load, load)) if n and w is None]
             children = tuple(f"asset_setup:{c}" if c in by_name else c for c in spec.children)
             self.nodes[node_id] = SetupNode(
                 id=node_id, label=spec.label or spec.name or row.name, prepare=prepare,
-                run=run, children=children, trusted=row.is_system(),
+                run=run, on_load=load, children=children, trusted=row.is_system(),
                 inputs=tuple((str(k), str(v)) for k, v in (spec.inputs or {}).items()),
                 problem=f"{spec.name} names the wizard {', '.join(map(repr, missing))}, which is not here" if missing else "",
             )

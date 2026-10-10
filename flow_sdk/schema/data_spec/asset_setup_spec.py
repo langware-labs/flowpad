@@ -11,13 +11,19 @@ the project is the root. Per node, in this order::
 A node whose child failed does not run: it is ``blocked``, and says which child. Its siblings still run,
 so one broken leaf never hides the state of the others.
 
+A node may also carry a load wizard (``on_load``), which is NOT part of that walk. It runs the first time the asset
+is LOADED for display on this instance (a project's home app, ``flow show``) and whenever a later load
+finds its goal unmet — a dev server that died with the machine — so what the person lands on is up by the
+time its view mounts (``core/setup/load.load_asset``). A load never asks: anything a person must answer
+belongs in ``prepare``. A web app's is derived — the same install → build → start as its ``run``.
+
 Two shapes live here:
 
 * ``AssetSetupSpec`` — the DECLARED node, an asset document (``agentic-assets/asset_setup/<name>/``).
   Most nodes are derived (a project's credentials, its sources); a declaration adds children or wizards a
   derivation cannot know — a WAHA source's container, say.
 * ``SetupNodeResult`` / ``SetupTreeResult`` — the run's answer, the same tree, each node with its state
-  and its two wizards' own ``WizardResult``. Recorded as the run goes, so a screen that missed a push
+  and its wizards' own ``WizardResult``. Recorded as the run goes, so a screen that missed a push
   reads the whole picture.
 """
 
@@ -54,6 +60,9 @@ class AssetSetupSpec(AssetDocumentSpec):
     prepare: str = ""
     #: The wizard run on the way up, once every child is set up. Empty: the node is its children.
     run: str = ""
+    #: The wizard run when the asset is loaded for display here — first time, and again whenever its check
+    #: no longer holds. Never asks. Empty: none (a web app's is derived from its endpoints).
+    on_load: str = ""
     #: Values this node puts in scope for its own wizards and every node below it (a container's name,
     #: the image it runs, its port) — ``FLOWPAD_WIZARD_INPUT_<NAME>`` to a command.
     inputs: dict[str, str] = {}
@@ -71,6 +80,21 @@ class SetupSkipSpec(DataSpec):
     at: float
     by: str = ""
     note: str = ""
+
+
+class SetupLoadSpec(DataSpec):
+    """This asset's ``load`` reached its goal ON THIS MACHINE once (``setup_loaded`` on its record, never
+    shared). A record of the first successful load, not proof it is up now: a later load re-checks and
+    re-runs. ``run`` is the run that stamped it (the setup's address), or empty for a check that found
+    everything in place already."""
+
+    spec_kind: ClassVar[str] = "setup.load"
+    model_config = ConfigDict(frozen=True)
+
+    #: When (epoch seconds).
+    at: float
+    run: str = ""
+    detail: str = ""
 
 
 class SetupState(StrEnum):
@@ -104,6 +128,8 @@ class SetupNodeResult(DataSpec):
     detail: str = ""
     prepare: Optional[WizardResult] = None
     run: Optional[WizardResult] = None
+    #: Its load wizard's answer — set by a LOAD of this node, never by a setup walk.
+    on_load: Optional[WizardResult] = None
     children: list["SetupNodeResult"] = []
     #: Reached already under another parent this run: its verdict is reused, its subtree is shown there.
     shared: bool = False
@@ -117,6 +143,7 @@ class SetupNodeResult(DataSpec):
         return self.model_copy(update={
             "prepare": self.prepare.trimmed() if self.prepare is not None else None,
             "run": self.run.trimmed() if self.run is not None else None,
+            "on_load": self.on_load.trimmed() if self.on_load is not None else None,
             "children": [child.trimmed() for child in self.children],
         })
 

@@ -25,7 +25,7 @@ import { Trans, useLingui } from '@lingui/react/macro';
 import { AlertCircle, ArrowUpRight, Check, KeyRound, Loader2, Route, Waypoints } from 'lucide-react';
 import { useCallback, useMemo } from 'react';
 
-import { openHarnessLoginModal } from '@src/components/harness-login/harness-login-store';
+import { openHarnessSignIn } from '@src/components/harness-login/harness-sign-in-store';
 import { useRefreshStatusOnArrival, useStatusRecord } from '@src/components/status/use-status-record';
 import { dotFor } from './llm-source-visuals';
 import { openLlmEndpoint } from '@src/components/llm-endpoints/llm-endpoints-pointer';
@@ -37,7 +37,9 @@ import type { NavigationActions } from '@src/navigation/NavigationActions';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { notify } from '@src/notifications';
 
-import { openLlmSources, parseLlmSourcesPointer } from './llm-sources-pointer';
+import { LlmEndpointsSection } from './LlmEndpointsSection';
+import { LlmKeysSection } from './LlmKeysSection';
+import { isLlmSourcesSection, openLlmSources, parseLlmSourcesPointer, type LlmSourcesSection } from './llm-sources-pointer';
 import {
   harnessKinds,
   labelForWorker,
@@ -227,7 +229,7 @@ function SourceRow({
         <Button
           size="sm"
           variant="outline"
-          onClick={() => openHarnessLoginModal()}
+          onClick={() => openHarnessSignIn(harness)}
           data-testid={`llm-source-signin-${worker}`}
         >
           <Trans>Sign in</Trans>
@@ -279,13 +281,16 @@ export function LlmSourcesView({ pointer }: { pointer?: string }) {
   // Which source a harness actually landed on. The rows are offers and carry no such answer —
   // `auto` on an offer means "would win if nothing were chosen", which is true of several at once.
   const resolvedFor = useCallback((kind: string) => status?.resolved?.[kind] ?? undefined, [status]);
-  const worker = parseLlmSourcesPointer(pointer);
+  const target = parseLlmSourcesPointer(pointer);
+  // A box-wide section (`keys` / `endpoints`) instead of a harness. Derived from the URL, like
+  // the harness focus: the chips are navigations, never component state.
+  const section: LlmSourcesSection | null = isLlmSourcesSection(target) ? target : null;
   // Matched against the kinds the box actually reported rather than rebuilt as
   // `harness.<worker>.cli`: a stale or hand-typed worker then falls back to the first harness
   // instead of yielding a kind that matches no chip and no source list. (The repo has an
   // incident on file from exactly that second copy of the vendor mapping — see
   // `navigation/open-capabilities.ts`.)
-  const focused = kinds.find((kind) => workerOf(kind) === worker) ?? kinds[0];
+  const focused = section ? null : (kinds.find((kind) => workerOf(kind) === target) ?? kinds[0]);
 
   const onSelect = useCallback(
     async (harness: string, source: LLMSource) => {
@@ -314,7 +319,7 @@ export function LlmSourcesView({ pointer }: { pointer?: string }) {
               message: proof.message || t`Sign in first, then this source can fund a run.`,
               durationMs: 5000,
             });
-            openHarnessLoginModal();
+            openHarnessSignIn(harness);
             return;
           }
         }
@@ -394,9 +399,31 @@ export function LlmSourcesView({ pointer }: { pointer?: string }) {
             </button>
           );
         })}
+        {/* The two box-wide sections, as chips of the same strip: what pays is one question. */}
+        {(['keys', 'endpoints'] as const).map((sec) => (
+          <button
+            key={sec}
+            type="button"
+            onClick={() => openLlmSources(navigation, sec)}
+            className={`rounded-lg border px-3 py-2 text-left text-xs ${
+              section === sec ? 'border-primary/60 bg-primary/5' : 'border-border/60'
+            }`}
+            data-testid={`llm-sources-chip-${sec}`}
+          >
+            <div className="font-medium">{sec === 'keys' ? t`API keys` : t`Hub endpoints`}</div>
+            <div className="text-muted-foreground">
+              {sec === 'keys'
+                ? t`${(record?.keys ?? []).filter((k) => k.stored).length} of ${(record?.keys ?? []).length} set`
+                : t`${(status.available ?? []).filter((e) => e.kind === (LLMFundingKind.Hub as string)).length} available`}
+            </div>
+          </button>
+        ))}
       </section>
 
-      {status.decision && <DecisionApiRow decision={status.decision} />}
+      {section === 'keys' && <LlmKeysSection />}
+      {section === 'endpoints' && <LlmEndpointsSection funding={status} navigation={navigation} />}
+
+      {!section && status.decision && <DecisionApiRow decision={status.decision} />}
 
       {/* A stated preference that is NOT in force — the box is signed out of Flowpad while
           Claude is set to use it. Sits above the list because it explains the whole page:

@@ -199,6 +199,25 @@ class DuplicateProjectNameError(ValueError):
     """A project was about to take a name another visible project already has."""
 
 
+@dataclasses.dataclass(frozen=True)
+class ProjectMove:
+    """What ``Project.move_to_workspace`` answers: where the project was, and whether
+    its new folder got its full index (``False`` = moved, index to be rebuilt)."""
+
+    previous_path: str
+    indexed: bool
+
+
+class ProjectMoveError(ValueError):
+    """A project could not be moved to another workspace. ``status_code`` is the HTTP
+    status the move action answers with: 404 (no such local project / workspace), 400
+    (already there, or not a movable project) or 409 (the destination has that name)."""
+
+    def __init__(self, message: str, status_code: int = 400):
+        super().__init__(message)
+        self.status_code = status_code
+
+
 def project_name_key(name: str | None) -> str:
     """The name two projects may not share: case-insensitive, and spaces, ``-`` and
     ``_`` fold together — "GTM Studio", "gtm-studio" and "gtm_studio" are one name."""
@@ -735,8 +754,12 @@ class Project(SetupSkippable, Entity):
 
         A web app home (the project opens app-first) is made displayable here first: its
         endpoint on this machine is placed when missing — idempotent, the same placement
-        ``flow show`` does — so the app view the redirect lands on finds something to show."""
+        ``flow show`` does — so the app view the redirect lands on finds something to show.
+        Then it is LOADED (``core/setup/load``): up already, nothing runs; else its load runs in
+        the background and ``load_run`` is that run's address — the view adopts it as the app's
+        setup and shows "Setting things up" until the server answers. Never waited on here."""
         from flow_sdk.builtin.webapp_placement import place_webapp_locally  # noqa: PLC0415
+        from flow_sdk.core.setup.load import load_asset  # noqa: PLC0415
 
         typeid = self.home_page_typeid()
         if typeid:
@@ -744,9 +767,11 @@ class Project(SetupSkippable, Entity):
         asset = await self._own_asset(typeid) if typeid else None
         if asset is None:
             return {"asset": None, "type": None}
+        answer: dict[str, Any] = {"asset": typeid, "type": asset.get_type()}
         if asset.get_type() == "micro_app":
             await place_webapp_locally(asset)
-        return {"asset": typeid, "type": asset.get_type()}
+            answer["load_run"] = await load_asset(self, asset)
+        return answer
 
     @action.get(action_name="home-page")
     async def home_page_action(self) -> "ApiResponse":
@@ -3026,6 +3051,202 @@ class Project(SetupSkippable, Entity):
             return ApiFailResponse(message="member_id is required")
         updated = await self._touch_member(member_id)
         return ApiSuccessResponse(data={"ok": updated, "presence": self.presence})
+
+    # -- Move to another workspace -------------------------------------------
+
+    async def move_to_workspace(self, workspace_id: str | None) -> "ProjectMove":
+        """Move this project's folder into a workspace and keep the SAME row.
+
+        A workspace is a folder, and membership is where a project's folder is
+        (``config.workspace_id_for_path``) — so a move IS a folder move, with the
+        bookkeeping that keeps this row the project: everything open in it is closed
+        first (``close_all_open``), the folder is moved to ``<workspace root>/<leaf>``,
+        the rows indexed from the old folder are dropped (``unindex_folder``), the row is
+        re-pointed and saved (the record mirrors the new path), and the new location gets
+        a full index. The id does not change, so tasks, conversations, processes and the
+        wiki stay this project's.
+
+        Returns a ``ProjectMove`` (the previous folder, and whether the index ran — the
+        move is done either way; a failed index is reported, never a failed move).
+        Raises ``ProjectMoveError`` (``status_code`` says why): the workspace is not on this node (404), the project is not a local, movable
+        project (404/400), it already lives there (400), or the destination already holds
+        a folder of that name (409) — never auto-suffixed: a move must land where the
+        user was told it would.
+        """
+        import shutil  # noqa: PLC0415
+
+        from flow_sdk.builtin.faas.project_list import invalidate_project_list_cache  # noqa: PLC0415
+        from flow_sdk.config import workspace_root_for_id  # noqa: PLC0415
+
+        root = workspace_root_for_id(str(workspace_id or "").strip() or None)
+        if root is None:
+            raise ProjectMoveError(f"workspace {workspace_id} is not on this node", 404)
+        src = self.fs_storage_mount_path or ""
+        if not src or not os.path.isdir(src):
+            raise ProjectMoveError("the project has no folder on this node", 404)
+        if self.remote or self.system or self.protected_path or not self._visible():
+            raise ProjectMoveError(f"project {self.name!r} cannot be moved", 400)
+        src = canonical_posix_path(src)
+        workspace_root = canonical_posix_path(root)
+        if is_path_under(src, workspace_root):
+            raise ProjectMoveError("the project is already in that workspace", 400)
+        leaf = os.path.basename(src.rstrip("/"))
+        target_dir = os.path.join(workspace_root, leaf)
+        if os.path.exists(target_dir):
+            raise ProjectMoveError(f"'{leaf}' already exists in that workspace", 409)
+
+        await self.close_all_open()
+        os.makedirs(workspace_root, exist_ok=True)
+        await asyncio.to_thread(shutil.move, src, target_dir)
+        await self.unindex_folder(src)
+        self.fs_storage_mount_path = target_dir
+        await self.save()
+        invalidate_projects_cache()
+        invalidate_project_list_cache()
+        indexed = await self._index_after_move()
+        return ProjectMove(previous_path=src, indexed=indexed)
+
+    async def _index_after_move(self) -> bool:
+        """Full (force) index of the project at its new folder, queued behind any run.
+
+        Never raises: the folder is already moved and the row re-pointed, so an index
+        that cannot run (no node, no walkable root, a broken indexer) is reported as
+        ``False`` for the caller to say "moved, rebuild the index" — not as a failed move.
+        """
+        from flow_sdk.fs_store.indexer import OrphanAction  # noqa: PLC0415
+        from flow_sdk.server.search_filters import ScopeFilter, resolve_project_scope  # noqa: PLC0415
+
+        try:
+            node = await ComputeNode.get_local(create=False)
+            if node is None:
+                return False
+            scope = await resolve_project_scope(ScopeFilter(user=False, projects=(str(self.id),)), create_missing=False)
+            roots = await node._resolve_scoped_roots(scope, foreground=False)
+            if isinstance(roots, ApiFailResponse) or not roots:
+                log.warning("[project-move] %s: no walkable roots at %s", self.id, self.fs_storage_mount_path)
+                return False
+            await self._run_move_index(node, scope, roots, OrphanAction.INDEX)
+            return True
+        except Exception:  # noqa: BLE001 — the move is done; the index is the caller's to retry
+            log.exception("[project-move] %s: index at %s failed", self.id, self.fs_storage_mount_path)
+            return False
+
+    async def _run_move_index(self, node, scope, roots, orphan_action) -> None:
+        await node._run_index_activity(
+            roots=roots,
+            types=None,
+            scope_filter=scope,
+            project_id=str(self.id),
+            force=True,
+            trigger="switch-workspace",
+            orphan_action=orphan_action,
+            queue=True,
+        )
+
+    async def close_all_open(self) -> dict[str, int]:
+        """Close everything open in this project: its running agentic processes, the
+        shells whose working directory is inside its folder (background terminals
+        included — a shell carries no reliable project id), and every remaining visible
+        tab of the project. Each goes through its own close path; the tab strip is told
+        once at the end. Returns the counts closed per kind."""
+        from flow_sdk.builtin.agentic_process import AgenticProcess  # noqa: PLC0415
+        from flow_sdk.builtin.process_lifecycle import ProcessStatus, is_running  # noqa: PLC0415
+        from flow_sdk.builtin.shell import Shell, ShellStatus  # noqa: PLC0415
+        from flow_sdk.builtin.tab import Tab, _resolve_tab_projects, broadcast_tabs_changed  # noqa: PLC0415
+        from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp  # noqa: PLC0415
+
+        pid = str(self.id)
+        folder = canonical_posix_path(self.fs_storage_mount_path or "")
+        counts = {"processes": 0, "shells": 0, "tabs": 0}
+
+        def _in_folder(path: str | None) -> bool:
+            return bool(folder and path and is_path_under(canonical_posix_path(path), folder))
+
+        def _under(field: str) -> QueryFilter:
+            return QueryFilter(match=ExpressionNode(op=QueryOp.LIKE, operands=[field, f"{folder}%"]))
+
+        processes = {p.id: p for p in await AgenticProcess.get_all({"project_id": pid})}
+        if folder:
+            processes.update({p.id: p for p in await AgenticProcess.get_all(_under("workdir"))})
+        for proc in processes.values():
+            try:
+                status = ProcessStatus(str(proc.status))
+            except ValueError:
+                continue
+            if not is_running(status):
+                continue
+            try:
+                await proc.close()
+                counts["processes"] += 1
+            except Exception:  # noqa: BLE001 — one stuck worker must not keep the rest open
+                log.exception("[project-move] close process %s failed", proc.id)
+
+        if folder:
+            for shell in await Shell.get_all(_under("workdir")):
+                if shell.status in (ShellStatus.CLOSING, ShellStatus.CLOSED, ShellStatus.ERROR):
+                    continue
+                if not _in_folder(shell.workdir):
+                    continue  # LIKE is a prefix match; the path check is segment-safe
+                try:
+                    await shell.close()
+                    counts["shells"] += 1
+                except Exception:  # noqa: BLE001
+                    log.exception("[project-move] close shell %s failed", shell.id)
+
+        tabs = await Tab.get_all({"visible": True})
+        await _resolve_tab_projects(tabs)
+        for tab in tabs:
+            if str(getattr(tab, "project_id", None) or "") != pid:
+                continue
+            try:
+                await tab.close()
+                counts["tabs"] += 1
+            except Exception:  # noqa: BLE001
+                log.exception("[project-move] close tab %s failed", tab.id)
+        await broadcast_tabs_changed()
+        return counts
+
+    async def unindex_folder(self, root: str) -> int:
+        """Drop every record of this project that was indexed from a file under ``root``
+        (DB row, FTS entry, wiki edges and the on-disk shadow) — the old folder after a
+        move. The project's own record and records with no file (processes, chats) stay.
+        Returns how many were dropped."""
+        import json  # noqa: PLC0415
+
+        from flow_sdk.fs_store import FSRecord, get_default_records_root  # noqa: PLC0415
+
+        pid = str(self.id)
+        root = canonical_posix_path(root)
+        records_root = get_default_records_root()
+        targets: list[dict] = []
+        if records_root.exists():
+            for type_dir in sorted(records_root.iterdir()):
+                if not type_dir.is_dir():
+                    continue
+                for rec_dir in type_dir.iterdir():
+                    meta_path = rec_dir / "metadata.json"
+                    if not meta_path.exists():
+                        continue
+                    try:
+                        data = json.loads(meta_path.read_text(encoding="utf-8"))
+                    except (OSError, ValueError):
+                        continue
+                    if data.get("project_id") != pid or data.get("id") == pid:
+                        continue
+                    if not data.get("type") or not data.get("id"):
+                        continue
+                    asset = data.get("asset_ref")
+                    if not isinstance(asset, str) or not is_path_under(canonical_posix_path(asset), root):
+                        continue
+                    targets.append(data)
+        dropped = 0
+        for meta in targets:
+            try:
+                await FSRecord.from_dict(meta).destroy()
+                dropped += 1
+            except Exception as exc:  # noqa: BLE001
+                log.warning("[project-move] unindex %s:%s failed: %s", meta.get("type"), meta.get("id"), exc)
+        return dropped
 
     async def _delete_with_children(
         self,

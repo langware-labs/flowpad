@@ -37,6 +37,7 @@ class AssetSetup(Entity):
     children: list[str] = APIField(default_factory=list, description="Nodes set up before this one's run.")
     prepare: str = APIField(default="", description="The wizard run before the children.")
     run: str = APIField(default="", description="The wizard run once every child is set up.")
+    on_load: str = APIField(default="", description="The wizard run when the asset is shown here; never asks.")
     inputs: dict[str, str] = APIField(default_factory=dict, description="Values put in scope for its wizards.")
     asset_ref: str = APIField(default="", sharing=Sharing.PRIVATE)
 

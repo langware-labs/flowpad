@@ -195,12 +195,13 @@ def _device_source(worker_type: str, install: "InstallState", login: "LoginState
     return verdict(reason=reason, code=code)
 
 
-def _key_sources(spec, rows: dict, stored: set[str]) -> list[Candidate]:
+def _key_sources(spec, rows: dict, stored: set[str], hints: dict[str, str] | None = None) -> list[Candidate]:
     """One candidate per provider this harness supports, over that provider's endpoint row.
 
-    *rows* is the local ``api_key`` endpoints keyed by secret name and *stored* is the set of
-    PROVIDERS with a stored key (``core.status.stored_key_providers``) — both read ONCE by the
-    caller, because this runs per harness and the answers do not vary between them.
+    *rows* is the local ``api_key`` endpoints keyed by secret name, *stored* is the set of
+    PROVIDERS with a stored key (``core.status.stored_key_providers``) and *hints* their masked
+    ``****last4`` (``core.status.stored_key_hints``) — all read ONCE by the caller, because this
+    runs per harness and the answers do not vary between them.
 
     Presence is tested against those NAMES, never by decrypting a value. Reading a secret
     opens, decrypts and re-parses the whole sod blob; asking four harnesses whether a key
@@ -230,6 +231,9 @@ def _key_sources(spec, rows: dict, stored: set[str]) -> list[Candidate]:
                 LLMSource(
                     endpoint_typeid=str(endpoint.typeid),
                     name=endpoint.name or f"{provider.value} key",
+                    # Display only: the masked hint of the stored key, so the picker can say
+                    # WHICH key funds this; nothing for a slot with no key.
+                    detail=(hints or {}).get(provider.value, "") if has_key else "",
                     rank=_RANK_KEY,
                     eligible=has_key,
                     auto=has_key,
@@ -317,7 +321,13 @@ async def _inventory(worker_type: str) -> tuple[list[Candidate], Any]:
     from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import worker_capability_kind
     from flow_sdk.builtin.capability import Capability
     from flow_sdk.builtin.llm_endpoint import LLMEndpoint
-    from flow_sdk.core.status import InstallState, harness_install, login_state, stored_key_providers
+    from flow_sdk.core.status import (
+        InstallState,
+        harness_install,
+        login_state,
+        stored_key_hints,
+        stored_key_providers,
+    )
     from flow_sdk.instance_settings.llm_endpoint import (
         fetch_hub_llm_endpoints,
         get_hub_llm_endpoint,
@@ -335,6 +345,7 @@ async def _inventory(worker_type: str) -> tuple[list[Candidate], Any]:
     # Every status fact comes from the status layer, never re-derived here.
     install = harness_install(worker_type)
     stored = set(stored_key_providers())
+    hints = stored_key_hints()
 
     # A harness with no account of its own has no device rung to rank (``has_device_login``).
     candidates = (
@@ -342,7 +353,7 @@ async def _inventory(worker_type: str) -> tuple[list[Candidate], Any]:
         if spec.has_device_login
         else []
     )
-    candidates += _key_sources(spec, rows, stored)
+    candidates += _key_sources(spec, rows, stored, hints)
     candidates += _endpoint_sources(spec, endpoints, bound, _hub_has_token(), listing_supersedes_binding())
     if install not in (InstallState.INSTALLED, InstallState.BUILT_IN):
         # Nothing funds a harness that cannot run: a stored key or a hub budget would only be

@@ -1,0 +1,17 @@
+{
+  "name": "app",
+  "title": "App",
+  "description": "Next.js frontend + FastAPI backend + Supabase. The frontend dev server is the app; `setup.py` installs both halves.",
+  "build": ".",
+  "endpoints": [
+    {
+      "name": "web",
+      "serving": {
+        "type": "proxy",
+        "start_cmd": "cd frontend && npx next dev --port {port}",
+        "health": "/",
+        "install_cmd": "python3 setup.py"
+      }
+    }
+  ]
+}

@@ -832,6 +832,12 @@
       "view_type": "llm-sources",
       "pointer": "claude",
       "tab_hash": "llm-sources|"
+    },
+    {
+      "name": "an llm-sources section folds into the same tab",
+      "view_type": "llm-sources",
+      "pointer": "keys",
+      "tab_hash": "llm-sources|"
     }
   ],
   "url_cases": [
@@ -1218,6 +1224,20 @@
       "page": "desk",
       "view_type": "llm-sources",
       "pointer": "claude"
+    },
+    {
+      "name": "llm sources keys section is a DESK page",
+      "url": "/dock/llm-sources/keys",
+      "page": "desk",
+      "view_type": "llm-sources",
+      "pointer": "keys"
+    },
+    {
+      "name": "llm sources endpoints section is a DESK page",
+      "url": "/dock/llm-sources/endpoints",
+      "page": "desk",
+      "view_type": "llm-sources",
+      "pointer": "endpoints"
     }
   ]
 }

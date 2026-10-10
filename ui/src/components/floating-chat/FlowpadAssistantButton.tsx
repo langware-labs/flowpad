@@ -2,7 +2,7 @@ import { Button } from '@src/components/ui/button';
 import { cn } from '@src/lib/utils';
 import { useRef } from 'react';
 import flowpadIcon from '@src/assets/flowpad-icon.png';
-import { useFloatingChat } from './FloatingChatContext';
+import { useFloatingChat } from './floating-chat-context';
 import { useLingui } from '@lingui/react/macro';
 
 /**

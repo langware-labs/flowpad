@@ -143,6 +143,10 @@ async def test_the_tree_puts_each_need_under_the_asset_that_needs_it(project):
     assert [g.name for g in tree.gaps] == ["MYSTERY"] and "gap:MYSTERY" not in node
     assert node["asset_setup:waha-container"].trusted is False, "a connector's own wizard is not ours"
     assert [s.ref for s in node["micro_app-a1"].run.steps] == ["micro_app-a1:install", "micro_app-a1:build", "micro_app-a1:start"]
+    assert [s.ref for s in node["micro_app-a1"].on_load.steps] == [s.ref for s in node["micro_app-a1"].run.steps], (
+        "loading a web app is making sure it is up: the same chain, judged by its checks"
+    )
+    assert node["asset_setup:waha-container"].on_load is None, "a declared node loads only what it declares"
 
 
 @pytest.mark.asyncio
@@ -218,3 +222,17 @@ def test_a_declared_setup_belongs_to_the_asset_folder_that_holds_it():
     assert _holder("/p/agentic-assets/data_driver/waha/agentic-assets/asset_setup/c") == "data_driver:waha"
     assert _holder("/p/agentic-assets/data_source/feed/asset_setup/c") == "data_source:feed"
     assert _holder(str(Path("/p/agentic-assets/asset_setup/c"))) == "project"
+
+
+@pytest.mark.asyncio
+async def test_a_declared_load_wizard_resolves_like_the_other_two(project, monkeypatch):
+    monkeypatch.setattr(AssetSetup, "spec", lambda self: AssetSetupSpec(name="waha-container", run="waha-container", on_load="waha-container"))
+    tree = await ProjectTree(project).load()
+    assert tree.nodes["asset_setup:waha-container"].on_load.name == "waha-container"
+
+
+@pytest.mark.asyncio
+async def test_a_declared_load_wizard_that_is_missing_is_a_problem_too(project, monkeypatch):
+    monkeypatch.setattr(AssetSetup, "spec", lambda self: AssetSetupSpec(name="waha-container", on_load="no-such-warmer"))
+    tree = await ProjectTree(project).load()
+    assert tree.nodes["asset_setup:waha-container"].problem == "waha-container names the wizard 'no-such-warmer', which is not here"
