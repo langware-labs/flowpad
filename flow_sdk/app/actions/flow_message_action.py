@@ -46,6 +46,7 @@ from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.instance_settings import get_instance_settings
 from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccessResponse
+from flow_sdk.stream_inbox._locks import keyed_loop_lock, new_registry
 from flow_sdk.stream_inbox.agent_scope import (
     AgentStreamInboxScope,
     AgentStreamInboxScopeError,
@@ -2968,8 +2969,9 @@ async def _materialize_invitation(
 
 # Process-local single-flight registry for per-conversation message fetches.
 # Keyed by conversation id. Prevents rapid Refresh clicks from piling up
-# duplicate bundle downloads for the same conversation.
-_conv_fetch_locks: dict[str, asyncio.Lock] = {}
+# duplicate bundle downloads for the same conversation. Weak-valued
+# (``stream_inbox/_locks``): an entry lives only while a fetch holds or awaits it.
+_conv_fetch_locks = new_registry()
 # Conversations already claimed by a detached batch. Unlike ``Lock.locked()``,
 # membership can be checked and claimed without an intervening await, so two
 # drains dispatched in the same event-loop turn cannot both queue the same id
@@ -3312,7 +3314,7 @@ async def _fetch_conversation_messages(conv_id: str, someone_typeid: str) -> boo
     ``_drain_conversation_message_fetches``). A swallowed failure must NOT be
     allowed to certify convergence.
     """
-    lock = _conv_fetch_locks.setdefault(conv_id, asyncio.Lock())
+    lock = keyed_loop_lock(_conv_fetch_locks, conv_id)
     async with lock:
         try:
             # Children-list route, primary source: returns the conversation's
