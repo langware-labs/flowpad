@@ -43,6 +43,11 @@ from flow_sdk.external_apis.llm.llm_drivers.flow_data import FlowData
 
 logger = logging.getLogger(__name__)
 
+#: How much of the CLI's stderr a failed turn reports. Only the end explains an
+#: exit, and keeping all of it grew the worker, the transcript line and the chat
+#: error frame with stderr volume (5 MB per 50k lines, no limit).
+STDERR_TAIL_BYTES = 64 * 1024
+
 
 class JsonlTeeStreamWorker(AgenticWorker):
     #: The vendor key — log prefix, ``WorkerSpawnError`` tag, synthetic-event text.
@@ -66,7 +71,10 @@ class JsonlTeeStreamWorker(AgenticWorker):
         self._transcript_path = Path(transcript_path) if transcript_path else None
         self._process_id = process_id
         self._interrupted = False
-        self._stderr_lines: list[str] = []
+        # The last STDERR_TAIL_BYTES of the child's stderr, plus how much was
+        # seen in all (so a cut tail can drop its leading partial line).
+        self._stderr_tail = bytearray()
+        self._stderr_seen = 0
         self._saw_terminal = False
         self._converter = self.converter_cls()
 
@@ -103,7 +111,7 @@ class JsonlTeeStreamWorker(AgenticWorker):
                 "message": f"{self.vendor} turn interrupted",
             }
         if self._proc and self._proc.returncode not in (0, None):
-            stderr = "\n".join(self._stderr_lines).strip()
+            stderr = self._stderr_text()
             return {
                 "type": "flowpad.error",
                 self.session_key: self._session_id,
@@ -286,15 +294,26 @@ class JsonlTeeStreamWorker(AgenticWorker):
                     return sid
         return None
 
+    def _stderr_text(self) -> str:
+        """The kept tail of stderr as text, whole non-empty lines only."""
+        lines = bytes(self._stderr_tail).decode("utf-8", errors="replace").splitlines()
+        if self._stderr_seen > len(self._stderr_tail) and lines:
+            # The tail was cut, so its first line is a fragment of a longer one.
+            lines = lines[1:]
+        return "\n".join(line.rstrip() for line in lines if line.strip())
+
     async def _drain_stderr(self, proc: asyncio.subprocess.Process) -> None:
         if proc.stderr is None:
             return
         try:
-            async for raw_line in proc.stderr:
-                decoded = raw_line.decode("utf-8", errors="replace").rstrip()
-                if decoded:
-                    self._stderr_lines.append(decoded)
-                    logger.debug("%s stderr: %s", self.vendor, decoded)
+            # Read in chunks, not lines: a line over the reader's limit (4 MiB)
+            # would stop a line iterator for good, leaving the real error unread
+            # and, for a longer one, the child blocked on a full pipe.
+            while chunk := await proc.stderr.read(STDERR_TAIL_BYTES):
+                self._stderr_seen += len(chunk)
+                self._stderr_tail += chunk
+                del self._stderr_tail[:-STDERR_TAIL_BYTES]
+                logger.debug("%s stderr: %s", self.vendor, chunk.decode("utf-8", errors="replace").rstrip())
         except asyncio.CancelledError:
             raise
         except Exception:
