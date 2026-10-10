@@ -49,6 +49,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   quitApp: () => ipcRenderer.send('quit-app'),
   // Re-run the install/start in-app after a failed first install (no relaunch).
   retryStartup: () => ipcRenderer.send('retry-startup'),
+  // Windows: application control blocked the engine's Python — repair the runtime (runtime-repair.js).
+  // The user confirmed on the panel; main downloads the official python.org interpreter, reinstalls
+  // the engine on it and starts it, streaming progress over `startup-status`.
+  repairRuntime: () => ipcRenderer.send('repair-runtime'),
 
   // Provision the per-instance Fernet sod-key in the OS keychain via the
   // bundled signed flow-rs binary, and return the value so the renderer

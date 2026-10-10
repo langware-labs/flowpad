@@ -138,6 +138,7 @@ if (window.electronAPI && window.electronAPI.onStartupStatus) {
   const diagnoseEl = document.getElementById('diagnose-cmd');
   const quitBtn = document.getElementById('quit-btn');
   const retryBtn = document.getElementById('retry-btn');
+  const repairBtn = document.getElementById('repair-btn');
   const spinner = document.querySelector('.spinner');
   const statusEl = document.getElementById('status-text');
 
@@ -233,6 +234,17 @@ if (window.electronAPI && window.electronAPI.onStartupStatus) {
     });
   }
 
+  // Repair: the user's explicit go-ahead for the runtime repair. Back to the loading view; main
+  // streams each step ("downloading Python 3.11.9 from python.org — 40%") into the status line.
+  if (repairBtn && api.repairRuntime) {
+    repairBtn.addEventListener('click', () => {
+      if (overlay) overlay.classList.remove('visible');
+      if (spinner) spinner.style.display = '';
+      if (statusEl) statusEl.textContent = 'Repairing the FlowPad runtime';
+      api.repairRuntime();
+    });
+  }
+
   api.onStartupError((data) => {
     if (!data) return;
     if (detailEl) detailEl.textContent = data.detail || '';
@@ -244,6 +256,7 @@ if (window.electronAPI && window.electronAPI.onStartupStatus) {
     if (upgradeEl) upgradeEl.textContent = data.upgradeCommand || '';
     if (diagnoseEl) diagnoseEl.textContent = data.diagnoseCommand || '';
     if (retryBtn) retryBtn.hidden = !data.retryable;
+    if (repairBtn) repairBtn.hidden = !data.repairable;
     document.querySelectorAll('.error-step').forEach((el) => { el.hidden = !!data.policyBlocked; });
     if (overlay) overlay.classList.add('visible');
     // Stop the spinner/status from animating behind the overlay.

@@ -16,6 +16,7 @@ const UvManager = require('./uv-manager');
 const { createShutdown, relaunchAfterStop } = require('./shutdown');
 const { createQuitGate, quitDialogOptions, QUIT_RESPONSE } = require('./quit-gate');
 const { waitForBackend: runBackendGate, createLogActivityProbe, createChangeProbe } = require('./backend-wait');
+const { createPolicyBlockProbe, describeRuntimeBlock, readRuntimeState, canAttemptRepair, priorAttempt } = require('./runtime-repair');
 const { SOD_KEY_KEYCHAIN_SERVICE } = UvManager;
 
 // Exact, copy-pasteable terminal commands surfaced to the user when the backend
@@ -24,7 +25,8 @@ const { SOD_KEY_KEYCHAIN_SERVICE } = UvManager;
 // --force`, the pin being the `requires-python` floor read from the bundled
 // pyproject.toml). Resolved when a panel is shown, not at load: a build missing
 // that file must still launch a healthy install (see getPythonVersion).
-const upgradeCommand = () => UvManager.upgradeCommand();
+// With a repaired runtime (runtime-repair.js) the command pins that interpreter, as the app does.
+const upgradeCommand = () => UvManager.upgradeCommand(uvManager && uvManager.repairedRuntimePython ? uvManager.repairedRuntimePython() : undefined);
 const DIAGNOSE_COMMAND = 'flow diagnose';
 const { isNewer } = require('./semver');
 
@@ -631,6 +633,20 @@ function bootPhaseLabel(line) {
   return m ? BOOT_PHASE_LABELS[m[1]] || null : null;
 }
 
+/** The last `bytes` of `file` as text (the whole file when smaller). Throws on I/O errors. */
+function readFileTail(file, bytes) {
+  const size = fs.statSync(file).size;
+  const fd = fs.openSync(file, 'r');
+  try {
+    const start = Math.max(0, size - bytes);
+    const buf = Buffer.alloc(size - start);
+    fs.readSync(fd, buf, 0, buf.length, start);
+    return buf.toString('utf8');
+  } finally {
+    fs.closeSync(fd);
+  }
+}
+
 /** The last `[boot]` line in the newest server log, read from its tail. */
 function lastBootLine(serverLogDir) {
   try {
@@ -1111,6 +1127,16 @@ async function waitForBackend({
     fileSize: (file) => fs.statSync(file).size,
   });
   const launchActivity = createChangeProbe(() => (launch ? launch.lines : 0));
+  // A fatal error the server log already names ends the wait at once: no point in 120 s of
+  // polling when the backend died on an import that Windows application control refused
+  // (runtime-repair.js). Reads the log tail only when the file changed.
+  const policyBlock = createPolicyBlockProbe({
+    newestLogFile: () => getNewestLogFile(serverLogDir),
+    fileSize: (file) => fs.statSync(file).size,
+    fileMtimeMs: (file) => fs.statSync(file).mtimeMs,
+    readTail: (file) => readFileTail(file, 64 * 1024),
+  });
+  let policyBlockMatch = null;
 
   let statusLabel = 'Waiting for server';
   const showPhase = (line) => {
@@ -1140,7 +1166,9 @@ async function waitForBackend({
     },
     aborted: () => {
       if (isQuitting) return 'quitting'; // the backend is being stopped — nothing left to wait for
-      return launch && launch.exit && launch.exit.code !== 0 ? 'launcher-failed' : null;
+      if (launch && launch.exit && launch.exit.code !== 0) return 'launcher-failed';
+      policyBlockMatch = policyBlock();
+      return policyBlockMatch ? 'policy-blocked' : null;
     },
     maxChecks,
     stallChecks: LOG_STALL_CHECKS,
@@ -1150,8 +1178,11 @@ async function waitForBackend({
     log,
   });
 
+  if (result.reason === 'policy-blocked') result.policyBlock = policyBlockMatch;
   if (result.ready) {
     log.info(`Backend is ready! (${result.elapsedSec}s, ${result.checks} checks${result.extended ? ', extended on reported progress' : ''})`);
+  } else if (result.reason === 'policy-blocked') {
+    log.error(`Backend blocked by Windows application control after ${result.elapsedSec}s: ${policyBlockMatch.line} (${policyBlockMatch.path})`);
   } else if (result.reason === 'quitting') {
     log.info(`[startup] stopped waiting for the backend: the app is quitting (${result.elapsedSec}s)`);
   } else {
@@ -1181,11 +1212,12 @@ function installProgress(label) {
 // `retryable` adds a Retry button that re-runs the install/start in-app (see
 // installAndStartBackend). Falls back to the native dialog only if the loading
 // window is already gone; returns whether the panel was rendered.
-async function showStartupErrorPanel(detail, { retryable = false, policyBlocked = false } = {}) {
+async function showStartupErrorPanel(detail, { retryable = false, policyBlocked = false, repairable = false } = {}) {
   const payload = {
     detail,
     retryable,
     policyBlocked, // hides the "upgrade / diagnose" steps: neither helps when policy blocks the launchers
+    repairable,    // shows "Repair FlowPad" (runtime-repair.js): Windows blocked the engine's Python, once per version
     upgradeCommand: upgradeCommand(),
     diagnoseCommand: DIAGNOSE_COMMAND,
     logPath: MAIN_DESKTOP_LOG_DIR,
@@ -1216,6 +1248,109 @@ async function showStartupErrorPanel(detail, { retryable = false, policyBlocked 
 
 function waitForRetryRequest() {
   return new Promise((resolve) => ipcMain.once('retry-startup', () => resolve()));
+}
+
+/** 'retry' or 'repair', whichever panel button the user presses first; the other listener is dropped. */
+function waitForPanelAction() {
+  return new Promise((resolve) => {
+    const onRetry = () => { ipcMain.removeListener('repair-runtime', onRepair); resolve('retry'); };
+    const onRepair = () => { ipcMain.removeListener('retry-startup', onRetry); resolve('repair'); };
+    ipcMain.once('retry-startup', onRetry);
+    ipcMain.once('repair-runtime', onRepair);
+  });
+}
+
+// Windows application control refused a native module of the Python the engine runs on — the
+// server log names it (runtime-repair.js: detectPolicyBlockInLog). The panel shows the cause
+// with the traceback and, once per app+engine version, a "Repair FlowPad" button: the official
+// python.org interpreter, verified, into FlowPad's own folder, the engine reinstalled on it,
+// then a real health check. Nothing is downloaded before the click. Resolves true when the
+// backend is healthy again; false when the app is quitting. A failed repair (or a block that
+// comes back) re-renders the panel with what happened and leaves Retry / Share with us.
+async function handleRuntimeBlocked(firstMatch) {
+  let match = firstMatch;
+  let extraDetail = '';
+  const stopBackend = () => {
+    if (uvManager) pendingBackendStop = uvManager.stop().catch((e) => log.warn(`[runtime-repair] backend stop failed: ${e.message}`));
+  };
+  stopBackend(); // the monitor would keep restarting the blocked backend under the panel
+  for (;;) {
+    const versions = {
+      appVersion: app.getVersion(),
+      engineVersion: (uvManager && uvManager.getInstalledVersionSync()) || 'unknown',
+    };
+    const state = readRuntimeState((p) => fs.readFileSync(p, 'utf8'), FLOW_HOME);
+    const repairable = process.platform === 'win32' && !!uvManager && canAttemptRepair(state, versions);
+    // Windows Code Integrity events 3077/3089 name the exact blocked binary and the policy id —
+    // the evidence that tells Smart App Control from an organization's policy. Into the panel
+    // text, so "Copy error details" and "Share with us" carry it.
+    const ciEvents = uvManager ? await uvManager.codeIntegrityEvents(30) : '';
+    const detail =
+      describeRuntimeBlock(match, { repairable, priorFailure: priorAttempt(state, versions) }) +
+      (extraDetail ? `\n\n${extraDetail}` : '') +
+      `\n\nServer log (${match.path}):\n${match.traceback}` +
+      `\n\nWindows Code Integrity events (3077/3089, last 30 min):\n${ciEvents || '(none readable — the policy may not log to the Operational channel, or the log is empty)'}`;
+    log.error(`[runtime-repair] ${detail}`);
+    if (!(await showStartupErrorPanel(detail, { retryable: true, policyBlocked: true, repairable }))) {
+      app.quit();
+      return false;
+    }
+    const action = await waitForPanelAction();
+    if (isQuitting) return false;
+    startupFailed = false;
+    await pendingBackendStop;
+
+    if (action === 'repair' && repairable) {
+      log.info(`[runtime-repair] user asked for the repair (${match.module || match.line})`);
+      sendStatus('Repairing the FlowPad runtime');
+      try {
+        const result = await uvManager.repairRuntime({
+          versions,
+          onProgress: (m) => sendStatus(`Repairing the FlowPad runtime — ${m}`),
+          startBackend: async () => { sendStatus('Starting flowpad'); await uvManager.start(); },
+          healthCheck: async () => {
+            const w = await waitForBackend({ maxChecks: POST_UPGRADE_HEALTH_CHECKS });
+            if (backendWaitAborted(w)) throw new Error('the app is quitting');
+            if (w.reason === 'policy-blocked') match = w.policyBlock;
+            return w.ready;
+          },
+        });
+        log.info(`[runtime-repair] done: ${result.reused ? 'reused' : 'installed'} ${result.python}`);
+        return true;
+      } catch (err) {
+        if (isQuitting) return false;
+        log.error(`[runtime-repair] failed at ${err.step || 'repair'}: ${err.message}`);
+        stopBackend();
+        extraDetail =
+          `Repair failed at step "${err.step || 'repair'}": ${String(err.message).split('\n')[0]}` +
+          (err.rolledBack ? '\nThe previous engine was restored.' : '') +
+          (err.policyBlocked
+            ? '\nThe policy also blocked the repair itself. If this computer is managed by an organization, IT approval may be required before FlowPad can run.'
+            : '') +
+          '\nUse “Share with us” to send the logs.';
+        continue;
+      }
+    }
+
+    // Retry: start the engine again and wait for it; a repeat block shows the panel again.
+    sendStatus('Retrying');
+    try {
+      await uvManager.start();
+    } catch (err) {
+      extraDetail = describeStartupFailure(err);
+      continue;
+    }
+    const w = await waitForBackend();
+    if (backendWaitAborted(w)) return false;
+    if (w.ready) return true;
+    stopBackend();
+    if (w.reason === 'policy-blocked') {
+      match = w.policyBlock;
+      extraDetail = '';
+    } else {
+      extraDetail = `Flowpad’s backend didn’t respond within ${w.elapsedSec} seconds (${w.reason}).`;
+    }
+  }
 }
 
 // Install (first launch) or upgrade the flowpad package and start the backend.
@@ -1477,7 +1612,13 @@ async function startApp() {
   if (backendWaitAborted(backendWait)) return;
   backendReady = backendWait.ready;
 
-  if (!backendWait.ready) {
+  if (!backendWait.ready && backendWait.reason === 'policy-blocked') {
+    // Windows application control blocked the engine's Python: the cause is known, so no generic
+    // timeout text — the panel names it and offers the runtime repair (handleRuntimeBlocked).
+    const repaired = await handleRuntimeBlocked(backendWait.policyBlock);
+    if (!repaired) return;
+    backendReady = true;
+  } else if (!backendWait.ready) {
     // Try to gather diagnostics for the error dialog
     const timeoutSec = backendWait.elapsedSec;
     let detail = `Backend server failed to respond within ${timeoutSec} seconds (${backendWait.reason}).`;
@@ -1745,6 +1886,7 @@ async function shareDiagnostics(detail, headline = 'did not start') {
       info: {
         app: app.getVersion(),
         engine: (uvManager && uvManager.getInstalledVersionSync()) || 'unknown',
+        runtime: (uvManager && uvManager.repairedRuntimePython && uvManager.repairedRuntimePython()) || 'uv-managed',
         instance: FLOW_INSTANCE,
         platform: `${process.platform} ${process.arch} ${os.release()}`,
         electron: process.versions.electron,
