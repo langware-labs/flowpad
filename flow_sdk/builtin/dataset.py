@@ -540,7 +540,7 @@ class Dataset(Entity):
     #: says which keys moved -- never their values. Forwarded to the app (``tags/ws_forward``).
     ROWS_CHANGED: ClassVar[str] = "dataset.rows.changed"
     #: How many keys one event names; a larger write says ``count`` and the listener re-reads.
-    ROWS_CHANGED_KEYS: ClassVar[int] = 200
+    ROWS_CHANGED_KEYS: ClassVar[int] = 100
 
     def _rows_event(self, op: str, keys: list[str]) -> dict:
         keys = list(keys)

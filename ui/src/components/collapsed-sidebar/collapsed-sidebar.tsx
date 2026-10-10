@@ -1,9 +1,9 @@
 import { ThemeToggle } from '@src/components/theme-toggle/theme-toggle';
 import { FlowpadAssistantButton } from '@src/components/floating-chat';
-import { useIsDev, useTierMode } from '@src/components/view-mode';
+import { useIsDev } from '@src/components/view-mode';
 import { buildHubRailItems, type HubItem, type RailIcon } from './hub-rail';
 import { OrgTeamsButton } from './OrgTeamsButton';
-import { resolveRail, type RailItemId, type RailSpec } from './rail-visibility';
+import { RAIL_ITEMS, type RailItemId } from './rail-visibility';
 import { Button } from '@src/components/ui/button';
 import { UserDropdown } from '@src/pages/flow-page/content-panel/user-dropdown/user-dropdown';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
@@ -17,8 +17,7 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
 } from '@src/components/ui/sidebar';
-import { DataSource, PageId, RagIndex, dataContext } from '@sdk';
-import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
+import { PageId } from '@sdk';
 import { TAB_LINE_HEIGHT_CLASS } from '@src/components/tabs/TabStrip';
 import { JourneyBadge } from '@src/journey/JourneyBadge';
 import { AMBIENT_JOURNEYS_ENABLED } from '@src/journey/journeys-enabled';
@@ -31,17 +30,15 @@ import { tagAttrs } from '@src/tags/tag-attrs';
  * the Vibe-mode spacer that reserves this footprint (flow-page.tsx) can't drift.
  */
 export const RAIL_WIDTH_CLASS = 'w-[50px]';
-import { BadgeCheck, Bug, ChevronDown, Compass, History, Mail, Plug, Sparkles, Webhook, Workflow, Zap } from 'lucide-react';
-import React, { useCallback, useMemo, useState } from 'react';
-import { useLocation } from 'react-router';
+import { Bug, Mail, Plug } from 'lucide-react';
+import React, { useMemo } from 'react';
 
 // Membership AND order both come from RAIL_ITEMS (rail-visibility.ts). This file
-// supplies each id's title/icon/target and renders the resolved list in the order
-// it arrives — it must never re-sort or filter it. Every entry now renders
-// through the one generic path; `discover` differs only in where its click goes.
+// supplies each id's title/icon/target and renders the list in the order
+// it arrives — it must never re-sort or filter it.
 // RailIcon / HubItem live with the hub-rail builder so it can type its own return.
 
-/** The tag word for a rail slot: `data-sources` -> `RailDataSources`. Derived rather than
+/** The tag word for a rail slot: `stream_inbox` -> `RailStream_inbox`. Derived rather than
  *  listed, so a new RAIL_ITEMS entry is observable and highlightable the moment
  *  it exists — one less thing to remember. */
 export function railTag(id: string): string {
@@ -55,163 +52,75 @@ export function railTag(id: string): string {
  *  fresh array every time. */
 const NO_HUB_ITEMS: readonly HubItem[] = [];
 
-/** Title/icon/target for a DESK rail id. `viewType: null` = not a dock tab
- *  (the Discover route, which is a top-level page). */
+/** Title/icon/target for a DESK rail id. */
 type NavItem = {
   title: string;
   icon: RailIcon;
-  viewType: ViewType | null;
+  viewType: ViewType;
+  open: () => void;
+  badge?: number;
 };
 
 export function CollapsedSidebar() {
   const { navigation, currentDock } = useDockNavigation();
-  const location = useLocation();
-  const onDiscover = location.pathname === '/discover';
-  const [secondaryExpanded, setSecondaryExpanded] = useState(false);
   const devMode = useIsDev();
   const { unread: unreadCount } = useStreamInboxManager();
-  // Which items show is a TIER question: Dev on adds the Dev-tier items on any surface.
-  const tierMode = useTierMode();
   const { t } = useLingui();
 
   /** Title/icon/target per id. A LOOKUP, not an order — see RAIL_ITEMS. */
-  const navMeta: Partial<Record<RailItemId, NavItem>> = {
-    stream_inbox: { title: t`Stream Inbox`, icon: Mail, viewType: ViewType.STREAM_INBOX },
+  const navMeta: Record<RailItemId, NavItem> = {
+    stream_inbox: {
+      title: t`Stream Inbox`,
+      icon: Mail,
+      viewType: ViewType.STREAM_INBOX,
+      open: () => navigation.openTab(ViewType.STREAM_INBOX),
+      badge: unreadCount,
+    },
     // `Plug`, not the screen's own `KeyRound` (VIEWER_REGISTRY): a connection is
     // more than a key, and the rail reads better with a glyph per job. A literal is right here —
     // the CLAUDE.md registry rule governs per-ENTITY-TYPE icons, and this slot is
-    // a screen, like `stream_inbox` and `automations` beside it.
-    credentials: { title: t`Connections`, icon: Plug, viewType: ViewType.CREDENTIALS },
-    discover: { title: t`Discover`, icon: Compass, viewType: null },
-    automations: { title: t`Automations`, icon: Zap, viewType: ViewType.AUTOMATIONS },
-    hooks: { title: t`Hooks`, icon: Webhook, viewType: ViewType.HOOKS },
-    capabilities: { title: t`Capabilities`, icon: BadgeCheck, viewType: ViewType.CAPABILITIES },
-    'llm-sources': { title: t`LLM sources`, icon: Sparkles, viewType: ViewType.LLM_SOURCES },
-    'graph-workflows': { title: t`Graph Workflows`, icon: Workflow, viewType: ViewType.GRAPH_WORKFLOWS },
-    // Glyph from the type registry, never a literal — same rule the project
-    // item follows, so a TypeInfo icon change reaches the rail too.
-    'data-sources': {
-      title: t`Data sources`,
-      icon: iconForType(DataSource.type),
-      viewType: ViewType.DATA_SOURCES,
+    // a screen, like `stream_inbox` beside it.
+    // Not `openTab`: `openCredentials` puts the active project in the URL.
+    credentials: {
+      title: t`Connections`,
+      icon: Plug,
+      viewType: ViewType.CREDENTIALS,
+      open: () => navigation.openCredentials(),
     },
-    // Glyph from the type registry, never a literal — same rule the data-sources item follows.
-    rag: { title: t`Search indexes`, icon: iconForType(RagIndex.type), viewType: ViewType.RAG },
-    'process-runs': { title: t`Runs`, icon: History, viewType: ViewType.PROCESS_RUNS },
   };
 
   // Hub page has its own minimal rail — Home + the browse entries. It bypasses
-  // the desk RAIL_ITEMS/mode matrix entirely (those views don't exist on hub).
+  // the desk RAIL_ITEMS entirely (those views don't exist on hub).
   const hubMode = currentDock?.page === PageId.HUB;
   // Built only in hub mode (desk is the common case — don't allocate/translate 7
   // unused entries every desk render).
   const hubItems = useMemo(() => (hubMode ? buildHubRailItems(t) : NO_HUB_ITEMS), [hubMode, t]);
 
-  const railItems = hubMode ? [] : resolveRail(tierMode);
-  const topItems = railItems.filter((item) => item.placement === 'top');
-  const overflowItems = railItems.filter((item) => item.placement === 'overflow');
-
   const currentView = currentDock?.viewType;
   const currentPointer = currentDock?.pointer ?? '';
-  // The project item owns EVERY assets surface, `list/task` and a task doc in
-  // the editor included. It used to subtract those, because a Tasks rail entry
-  // claimed them and one click must not light two buttons — that entry is gone,
-  // so the subtraction would now just leave the rail dark on task URLs.
-
   // Hub-rail active state: pointer-carrying items (WorldView world/organization,
   // records/<type>) match on viewType + pointer; the rest on viewType alone.
   const hubActive = (item: HubItem): boolean =>
     currentView === item.viewType && (!item.pointer || currentPointer === item.pointer);
 
-  const handleClick = useCallback(
-    (viewType: ViewType | null, pointer?: string) => {
-      // Hub page: keep every rail click under page=hub (desk factories would
-      // revert the page). Home → /dock/hub/home; WorldView → /dock/hub/worldview/<projection>.
-      if (hubMode) {
-        navigation.openPage(PageId.HUB, viewType ?? ViewType.HOME, pointer);
-        return;
-      }
-      if (viewType === null) {
-        // The home is an ordinary destination now, so this goes through the one
-        // navigation path like every other rail click. It used to read the live
-        // browser URL directly and call `navigate('/')`, guarding against a
-        // lagging `currentView` — `openDock` dedupes on the pointer itself.
-        // The rail's Home is a Home button: it asks for the project home page.
-        navigation.goHome({ homePage: true });
-      } else {
-        // Assets is scope-aware: open the scope-keyed assets tab — the current
-        // project's scope when a project is active (tab "<project>'s Assets"),
-        // else global (the single "Assets" tab). Scope rides the navigation
-        // scope filter (URL options), so the tab identity is the scope. Reached
-        // only through the project item now; there is no separate Assets icon.
-        if (viewType === ViewType.ASSETS) {
-          navigation.openAssets();
-          return;
-        }
-        navigation.openTab(viewType);
-      }
-    },
-    [navigation, hubMode],
-  );
-
-  /** THE active-state resolver — used by top AND overflow entries alike, so an
-   *  item can't mean one thing above the chevron and another below it. */
-  const isActiveId = (id: RailItemId): boolean => {
-    switch (id) {
-      case 'discover':
-        return onDiscover;
-      default:
-        return currentView === navMeta[id]?.viewType;
-    }
-  };
-
-  /** THE count chip resolver — likewise shared, so overflow entries keep their
-   *  badges instead of silently dropping them. */
-  const badgeForId = (id: RailItemId): number => {
-    switch (id) {
-      case 'stream_inbox':
-        return unreadCount;
-      default:
-        return 0;
-    }
-  };
-
-  /** THE click router for desk rail entries. */
-  const handleRailClick = (id: RailItemId) => {
-    switch (id) {
-      case 'discover':
-        // Full-page marketplace: a top-level route, not a dock tab — but still
-        // through `navigation`, so every entry point builds the same URL.
-        navigation.openDiscover(dataContext.project?.id ?? null);
-        return;
-      case 'credentials':
-        // Not `openTab`: `openCredentials` puts the active project in the URL.
-        navigation.openCredentials();
-        return;
-      default:
-        handleClick(navMeta[id]?.viewType ?? null);
-    }
-  };
-
   /** One desk rail entry, wrapped in its menu item. The entry at index 0 sits
    *  on the tab strip's line, so it carries the strip's own height — rail and
    *  tabs start AND end together under the nav bar. */
-  const renderRailItem = (spec: RailSpec, index = 1) => {
-    const meta = navMeta[spec.id];
-    if (!meta) return null;
+  const renderRailItem = (id: RailItemId, index: number) => {
+    const meta = navMeta[id];
     const Icon = meta.icon;
     return (
-      <SidebarMenuItem key={spec.id}>
+      <SidebarMenuItem key={id}>
         <SidebarMenuButton
           tooltip={meta.title}
-          data-rail-item={spec.id}
-          {...tagAttrs(railTag(spec.id), 'button')}
-          isActive={isActiveId(spec.id)}
-          onClick={() => handleRailClick(spec.id)}
+          data-rail-item={id}
+          {...tagAttrs(railTag(id), 'button')}
+          isActive={currentView === meta.viewType}
+          onClick={meta.open}
           className={`relative w-full justify-center px-2 ${index === 0 ? TAB_LINE_HEIGHT_CLASS : ''}`}
         >
           <Icon className="h-5 w-5" />
-          <NavBadge count={badgeForId(spec.id)} />
+          <NavBadge count={meta.badge ?? 0} />
         </SidebarMenuButton>
       </SidebarMenuItem>
     );
@@ -225,7 +134,8 @@ export function CollapsedSidebar() {
         <SidebarMenuButton
           tooltip={item.title}
           isActive={hubActive(item)}
-          onClick={() => handleClick(item.viewType, item.pointer)}
+          // Under page=hub: desk factories would revert the page.
+          onClick={() => navigation.openPage(PageId.HUB, item.viewType, item.pointer)}
           data-rail-item={item.id}
           className={`relative w-full justify-center px-2 ${index === 0 ? TAB_LINE_HEIGHT_CLASS : ''}`}
         >
@@ -244,38 +154,7 @@ export function CollapsedSidebar() {
       <Sidebar collapsible="none" className={`relative z-50 flex ${RAIL_WIDTH_CLASS} flex-col border-e`}>
         <SidebarContent className="flex-1">
           <SidebarGroup className="px-0 pb-2 pt-0">
-            <SidebarMenu>
-              {hubMode ? hubItems.map(renderHubItem) : topItems.map(renderRailItem)}
-
-              {overflowItems.length > 0 && (
-                <div onMouseEnter={() => setSecondaryExpanded(true)} onMouseLeave={() => setSecondaryExpanded(false)}>
-                  <div className="flex justify-center py-1">
-                    <div
-                      className={`flex h-5 w-8 items-center justify-center rounded-sm text-muted-foreground/50 transition-all duration-200 hover:bg-sidebar-accent hover:text-muted-foreground ${
-                        secondaryExpanded ? 'rotate-180' : ''
-                      }`}
-                    >
-                      <ChevronDown className="h-3.5 w-3.5" />
-                    </div>
-                  </div>
-
-                  {overflowItems.map((spec) => {
-                    const shouldShow = secondaryExpanded || isActiveId(spec.id);
-
-                    return (
-                      <div
-                        key={spec.id}
-                        className={`overflow-hidden transition-all duration-200 ease-in-out ${
-                          shouldShow ? 'max-h-10 opacity-100' : 'max-h-0 opacity-0'
-                        }`}
-                      >
-                        {renderRailItem(spec)}
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </SidebarMenu>
+            <SidebarMenu>{hubMode ? hubItems.map(renderHubItem) : RAIL_ITEMS.map(renderRailItem)}</SidebarMenu>
           </SidebarGroup>
         </SidebarContent>
 

@@ -27,7 +27,7 @@ export type HubItem = {
  * order are testable without rendering the sidebar — which drags in a dozen
  * providers. Mirrors what `rail-visibility.ts` already does for the desk rail;
  * note the two id unions stay separate on purpose, so a hub id can't be written
- * into `RAIL_ITEMS` where it would render a silent `null`.
+ * into `RAIL_ITEMS`.
  *
  * `t` is passed in so the caller's `useLingui` owns re-translation on locale change.
  *

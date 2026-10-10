@@ -1,57 +1,26 @@
-import { ViewMode } from '@src/contexts/view-mode-context';
-
 /**
- * THE left rail spec — one ordered list that owns BOTH what appears and in what
- * order, for every mode and every entry IN THE MODE-MATRIX RAIL.
+ * THE left rail spec — what appears on the desk rail and in what order.
  *
  * Scope, so this is not read as total: the account cluster at the foot of the
  * sidebar (dev-mode toggle, JourneyBadge, Org & teams, assistant, theme,
  * user menu) is a deliberately separate region rendered directly by
- * collapsed-sidebar.tsx. Those buttons are not modal, not ordered by mode, and
- * carry `data-testid` rather than `data-rail-item` — do not "fix" one into
- * RAIL_ITEMS, which would put it in the mode matrix and in the rail-order
- * contract that `tests/react/rail-order-and-gates.test.tsx` pins.
+ * collapsed-sidebar.tsx. Those buttons carry `data-testid` rather than
+ * `data-rail-item` — do not "fix" one into RAIL_ITEMS.
  *
- * Two rules, and they are the whole model:
- *
- *  1. **Modes are strictly additive.** An item declares the earliest mode it
- *     appears in (`from`) and is inherited by every fuller mode along
- *     {@link MODE_CHAIN} (vibe ⊂ standard ⊂ advanced ⊂ dev). There is no removal
- *     escape hatch — the previous delta model had one (`noShow`), and its only
- *     use made Bookmarks *vanish* when the user stepped up from Vibe to
- *     Standard. Adding one back re-opens that class of bug.
- *
- *  2. **Array order is render order, in every mode.** A mode's rail is a
- *     subsequence of {@link RAIL_ITEMS} — so icons can never reshuffle when the
- *     mode changes. This is why `discover` is listed here too: it used to be a
- *     JSX slot pinned after the render loop, which made its position
- *     unexpressible and mode-dependent. Its custom click target still lives in
- *     collapsed-sidebar.tsx; only its PLACEMENT lives here.
- *
- * To change the rail: edit {@link RAIL_ITEMS}. Nothing else orders or filters it.
+ * The rail is the same in every mode. To change it: edit {@link RAIL_ITEMS}.
+ * Nothing else orders or filters it.
  */
 
 /** Every icon slot on the DESK rail — the ids RAIL_ITEMS may place. */
 export type RailItemId =
   | 'stream_inbox'
   /** OAuth connections, API-key credentials and the FlowPad login — one screen. */
-  | 'credentials'
-  | 'discover'
-  /** Automations — "when X, do Y": the list, their runs, the event bus. Was `events`. */
-  | 'automations'
-  | 'hooks'
-  | 'llm-sources'
-  | 'capabilities'
-  | 'graph-workflows'
-  | 'data-sources'
-  | 'rag'
-  | 'process-runs';
+  | 'credentials';
 
 /**
  * Hub-page rail ids (page=hub). A SEPARATE union, not more members of
- * {@link RailItemId}: the hub rail is a fixed list that bypasses the mode matrix
- * entirely, so keeping the two apart is what stops a hub id being written into
- * RAIL_ITEMS (where it would resolve to a silent `null` at render). `stream_inbox`
+ * {@link RailItemId}: the hub rail is its own fixed list, and keeping the two
+ * apart is what stops a hub id being written into RAIL_ITEMS. `stream_inbox`
  * exists on both surfaces and means a different thing on each — another reason
  * not to share one union. `tasks` is likewise hub-only: the desk rail dropped it
  * (task assets are reached through the project), and the hub's `tasks` is a
@@ -68,77 +37,17 @@ export type HubRailItemId =
   | 'llm-endpoints'
   | 'credentials';
 
-export type RailPlacement =
-  /** Rides the top rail. */
-  | 'top'
-  /** Behind the chevron expander (revealed on hover, or when active). */
-  | 'overflow';
-
-export type RailSpec = {
-  id: RailItemId;
-  /** Earliest mode this item appears in; inherited by every fuller mode. */
-  from: ViewMode;
-  placement: RailPlacement;
-};
-
-/** The mode hierarchy, simplest → fullest. Membership accumulates along it. */
-export const MODE_CHAIN = [ViewMode.Vibe, ViewMode.Standard, ViewMode.Advanced, ViewMode.Dev] as const;
-
 /**
  * The rail, top to bottom.
  *
- * NOTE on what is deliberately ABSENT. `home`, `files` and `bookmarks` moved to
- * the top navigation bar — Home and Files as nav buttons, bookmarks onto the
- * star that also toggles the current favorite. `project` is the bar's leading
- * breadcrumb, and `assets` is reached through it. Each would otherwise be a
- * second door onto the same room, lighting two buttons for one destination.
- * The former `chats` slot is gone too: getting back to your tabs is the bar's
- * Home button, which flips to "Back to tabs" on the tabless home.
+ * Only the two screens used constantly ride the rail. Every other screen —
+ * data sources, search indexes, automations, runs, hooks, LLM sources and the
+ * developer ones — is opened by asking for it in the top bar (the smart
+ * navigator), which reaches each of them by name. `home`, `files`, `bookmarks`
+ * and the project live on the top navigation bar.
  *
- * Two tiers now: the base rail (`from: Vibe`, everyone) and the developer rail
- * (`from: Dev`, developer mode on). The surface on screen never changes the rail —
- * a terminal tab and a Vibe tab sit in the same app; Advanced was retired into Dev.
+ * Both are ungated: a signed-out stream inbox is where "Login required" brings
+ * the user back in, and Connections is where the FIRST connection is made — a
+ * gate on "one exists" would hide each in the one state where it matters most.
  */
-export const RAIL_ITEMS: readonly RailSpec[] = [
-  // Ungated, like every slot: it used to need "a conversation exists", but a
-  // logout purges the hub's conversations — so the icon vanished in exactly the
-  // state where its screen says "Login required", the only way back in. An
-  // empty or signed-out stream inbox is a state the screen renders, not a missing room.
-  { id: 'stream_inbox', from: ViewMode.Vibe, placement: 'top' },
-  // Vibe, beside the stream inbox rather than down with `hooks` and `llm-sources`:
-  // connecting Gmail or Slack is what makes a source or an agent work at all, so
-  // it is not a settings destination you visit once. Ungated for the same reason
-  // `data-sources` and `rag` are — this screen is where the FIRST connection is
-  // made, so a gate on "a connection exists" would hide it in the one state where
-  // it matters most.
-  { id: 'credentials', from: ViewMode.Vibe, placement: 'top' },
-  // Took the Tasks slot. Ungated on purpose: this screen is where the FIRST
-  // source is created, so gating it on "a source exists" would make it
-  // unreachable from empty — the one state where it matters most.
-  { id: 'data-sources', from: ViewMode.Vibe, placement: 'top' },
-  // Ungated for the same reason as data sources: this screen is where the first index is
-  // created, so a gate on "an index exists" would make it unreachable from empty.
-  { id: 'rag', from: ViewMode.Vibe, placement: 'top' },
-  { id: 'discover', from: ViewMode.Dev, placement: 'top' },
-  { id: 'graph-workflows', from: ViewMode.Dev, placement: 'top' },
-  // Automations (was Events, which took the old `signals` and `triggers` slots):
-  // top because a screen you operate does not belong behind a chevron.
-  { id: 'automations', from: ViewMode.Vibe, placement: 'top' },
-  // Not Dev: 'what did my agent produce' is an ordinary question, and the answer
-  // was previously unreachable for any run without a spawning entity to browse to.
-  { id: 'process-runs', from: ViewMode.Vibe, placement: 'top' },
-  { id: 'hooks', from: ViewMode.Vibe, placement: 'overflow' },
-  // Beside `hooks`, behind the chevron: a settings destination. Also reachable from the
-  // harness-status button in the version popover, which does not depend on the rail.
-  { id: 'llm-sources', from: ViewMode.Vibe, placement: 'overflow' },
-  { id: 'capabilities', from: ViewMode.Dev, placement: 'overflow' },
-];
-
-/**
- * The rail for `mode`, in {@link RAIL_ITEMS} order. Callers partition the result
- * by `placement`; they must NOT re-sort it.
- */
-export function resolveRail(mode: ViewMode): readonly RailSpec[] {
-  const reach = MODE_CHAIN.indexOf(mode);
-  return RAIL_ITEMS.filter((item) => MODE_CHAIN.indexOf(item.from) <= reach);
-}
+export const RAIL_ITEMS: readonly RailItemId[] = ['stream_inbox', 'credentials'];
