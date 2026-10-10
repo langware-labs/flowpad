@@ -50,14 +50,18 @@ Helpers: `next_seq()`, `mark_attached(cid)`, `is_attached`, `connection_id`
 | `close_session(pty_key)` | Destroy: transition Shell record → CLOSED, delete `.pty` file, provider `close_pty_session`, drop state. |
 | `is_expired(state, ttl)` | `True` if detached longer than `ttl` (never while attached). |
 | `cleanup_expired_sessions(ttl=900, detach_grace=900)` | Two bounded reapers: close orphan states (no attached > ttl); drop stale parked ids (> grace). |
-| `start_cleanup_task(interval=120, ttl=900)` / `stop_cleanup_task()` | Background reaper loop lifecycle. |
+| `reap_parked_connections(detach_grace=900)` | The parked-id half alone: drop ids parked longer than the grace. Never closes a PTY. |
+| `start_cleanup_task(interval=120, ttl=None, detach_grace=900)` / `stop_cleanup_task()` | Background reaper loop lifecycle. With `ttl=None` (the default) the loop runs `reap_parked_connections` only. |
 
-> **Caution — the reapers do not run in production.** `start_cleanup_task` has
-> **no production caller** (arch-review CONFIRMED). `cleanup_expired_sessions`,
-> `is_expired`, and the detach-grace logic are therefore dormant; the only live
-> backstop against PTY leaks is the **`_PTY_CAP` FIFO eviction** in
-> `start_machine_pty_session` (see below). Orphaned-but-attached-once states are
-> never TTL-reaped.
+> **What runs in production.** Server startup
+> (`server/app.py::_start_pty_parked_reaper`) calls `start_cleanup_task()` with
+> its defaults, so the **parked-id reaper runs** every 120 s and drops ids
+> parked for more than 900 s — a page reload parks a fresh per-page-load id on
+> every shell it watched, and nothing else removes it. The **orphan TTL close
+> stays off**: `cleanup_expired_sessions` and `is_expired` have no production
+> caller, so a viewer-less PTY is never TTL-killed; the live backstop against
+> PTY leaks is still the **`_PTY_CAP` FIFO eviction** in
+> `start_machine_pty_session` (see below).
 
 ### `PtyStreamFile` — framed rolling buffer (`desktop/pty_stream_file.py`)
 

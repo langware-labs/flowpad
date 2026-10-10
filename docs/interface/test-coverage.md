@@ -97,8 +97,9 @@ fast api coverage via `test_agentic_process_actions.py` /
 | Surface item | U | A | V | R |
 |---|---|---|---|---|
 | PtyRegistry attach/detach/park/resume | ✅ test_pty_session_manager | ✅ test_pty_reconnect_regression, test_pty_close_context | ❌ | ❌ |
-| Reaper (`cleanup_expired_sessions`) | ✅ unit-only (dead code in prod) | ❌ | ❌ | ❌ |
-| Reaper loop (`start/stop_cleanup_task`) | ❌ (deferred — wiring intentionally unbuilt) | ❌ | ❌ | ❌ |
+| Reaper (`cleanup_expired_sessions`) | ✅ unit-only (orphan close has no prod caller) | ❌ | ❌ | ❌ |
+| Parked-id reaper (`reap_parked_connections`) | ✅ test_pty_session_manager | ❌ | ❌ | ❌ |
+| Reaper loop (`start/stop_cleanup_task`) + startup wiring | ✅ test_pty_session_manager, test_pty_parked_reaper_wiring | ❌ | ❌ | ❌ |
 | Restart/singleton reset | ✅ test_pty_session_survives_restart | ✅ test_pty_recovery_on_demand | ✅ pty_survives_restart | ❌ |
 | PtyStreamFile core + truncation + v0/salvage | ✅ test_pty_stream_file | ✅ test_pty_stream_truncation (real PTY past cap → replays tail) | ◐ trunc fixtures | ❌ |
 | seq epochs across respawn | ✅ test_pty_stream_seq_epochs | ◐ | ✅ pty-replay-production | ❌ |
@@ -183,9 +184,9 @@ Most of the formerly high-risk holes are closed as of 2026-07-02. Remaining/upda
 
 ### Still uncovered / deferred
 
-1. **Reaper loop wiring** (`start/stop_cleanup_task`) — **deliberately deferred**;
-   the reaper is dead code in prod (the `_PTY_CAP=70` FIFO eviction, now tested, is
-   the live PTY-leak backstop). Not a regression risk until the loop is wired.
+1. **Orphan-TTL close** (`cleanup_expired_sessions` with a TTL) — unit-tested but
+   has no prod caller; the loop started at boot is parked-id only (the
+   `_PTY_CAP=70` FIFO eviction, now tested, is the live PTY-leak backstop).
 2. **codex `turn.failed` / parser error path** — the codex parser emits an
    `UnknownEntry` for the error/`turn.failed` event shape (reported by B-series,
    **not fixed**). Only the naming-event-is-meta case is pinned.
@@ -236,7 +237,7 @@ New files this cycle — pytest: `test_agentic_process_actions.py`,
 `agentic-status`/`worker-mode` vitest suites.
 
 **Remaining known gaps** (intentionally not closed this cycle):
-- Reaper loop wiring deferred (dead code; `_PTY_CAP` is the live backstop).
+- Orphan-TTL close has no prod caller (the boot loop is parked-id only; `_PTY_CAP` is the live backstop).
 - Codex parser error / `turn.failed` gap (`UnknownEntry`) — reported, not fixed.
 - A handful of vitest **live-worker** items were deferred to the pytest/long tier
   (documented in the `agentic_process_fe_contract.test.ts` file header).
