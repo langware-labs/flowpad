@@ -466,6 +466,20 @@ async def place_webapp_locally(app) -> Optional[Any]:
     return row
 
 
+async def show_webapp_locally(app, project=None) -> tuple[Optional[Any], Optional[str]]:
+    """Showing a webapp asset here: its static endpoint placed, then the app LOADED (``core/setup/load``).
+
+    ``(endpoint, load_run)`` — the run bringing the app up, or ``None`` when it is up already or is files
+    Flowpad serves itself. One call for every display path (the home page, ``flow show``), so none can
+    place without loading. ``project``: the app's, when the caller holds it."""
+    from flow_sdk.builtin.asset_publishing import owning_project  # noqa: PLC0415
+    from flow_sdk.core.setup.load import load_asset  # noqa: PLC0415
+
+    endpoint = await place_webapp_locally(app)
+    project = project or await owning_project(app)
+    return endpoint, (await load_asset(project, app) if project is not None else None)
+
+
 async def unplace_webapp(webapp_id: str) -> None:
     """A removed webapp asset takes the endpoints that served it along."""
     for endpoint in await webapp_endpoints(webapp_id):
@@ -634,6 +648,7 @@ __all__ = [
     "prune_delivery_rows",
     "register_dev_endpoint",
     "served_dir",
+    "show_webapp_locally",
     "tell_hub",
     "upsert_artifact",
     "upsert_artifact_endpoints",

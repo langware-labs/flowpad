@@ -143,7 +143,7 @@ async def test_the_tree_puts_each_need_under_the_asset_that_needs_it(project):
     assert [g.name for g in tree.gaps] == ["MYSTERY"] and "gap:MYSTERY" not in node
     assert node["asset_setup:waha-container"].trusted is False, "a connector's own wizard is not ours"
     assert [s.ref for s in node["micro_app-a1"].run.steps] == ["micro_app-a1:install", "micro_app-a1:build", "micro_app-a1:start"]
-    assert [s.ref for s in node["micro_app-a1"].on_load.steps] == [s.ref for s in node["micro_app-a1"].run.steps], (
+    assert node["micro_app-a1"].on_load is node["micro_app-a1"].run, (
         "loading a web app is making sure it is up: the same chain, judged by its checks"
     )
     assert node["asset_setup:waha-container"].on_load is None, "a declared node loads only what it declares"
@@ -236,3 +236,16 @@ async def test_a_declared_load_wizard_that_is_missing_is_a_problem_too(project, 
     monkeypatch.setattr(AssetSetup, "spec", lambda self: AssetSetupSpec(name="waha-container", on_load="no-such-warmer"))
     tree = await ProjectTree(project).load()
     assert tree.nodes["asset_setup:waha-container"].problem == "waha-container names the wizard 'no-such-warmer', which is not here"
+
+
+@pytest.mark.asyncio
+async def test_a_web_apps_node_alone_derives_from_its_row_without_the_project(project, monkeypatch):
+    """A load reads one node: for a web app nothing of the project is collected."""
+    async def never(*_a, **_k):
+        raise AssertionError("the project tree was built for a one-node load")
+
+    monkeypatch.setattr(project_setup, "collect_requirements", never)
+    app = SimpleNamespace(id="a1", name="site", typeid="micro_app-a1", asset_ref="/p/site", setup_skipped=None,
+                          get_type=lambda: "micro_app")
+    tree = await ProjectTree(project).load_one(app)
+    assert list(tree.nodes) == ["micro_app-a1"] and tree.nodes["micro_app-a1"].on_load is not None

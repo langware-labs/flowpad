@@ -34,6 +34,12 @@ def find_free_port() -> int:
 LOOPBACKS = ("127.0.0.1", "::1")
 
 
+def loopback_urls(port: int, path: str = "/") -> list[str]:
+    """``path`` on ``port`` at each loopback, IPv6 bracketed — what a health probe asks, in order."""
+    rel = path if path.startswith("/") else "/" + path
+    return [f"http://{'[' + host + ']' if ':' in host else host}:{int(port)}{rel}" for host in LOOPBACKS]
+
+
 def port_open(port: int) -> bool:
     for host in LOOPBACKS:
         try:
@@ -87,4 +93,4 @@ def install_command(start_cmd: str, folder: Path) -> str:
     return "npm ci" if (folder / "package-lock.json").exists() else "npm install"
 
 
-__all__ = ["LOOPBACKS", "log_dir", "find_free_port", "install_command", "port_open", "start_detached", "wait_for_port"]
+__all__ = ["LOOPBACKS", "log_dir", "find_free_port", "install_command", "loopback_urls", "port_open", "start_detached", "wait_for_port"]

@@ -21,6 +21,7 @@ connector ships the setup of what it needs (WAHA's container) inside its own fol
 
 from __future__ import annotations
 
+import asyncio
 import dataclasses
 import logging
 from pathlib import Path
@@ -219,14 +220,18 @@ class ProjectTree:
             self.ops[op.name] = op
             steps.append({"id": step, "label": what, "kind": "compute", "ref": op.name})
         chain = WizardSpec.model_validate({"name": node_id, "label": f"Run {label}", "steps": steps})
-        self.nodes[node_id] = SetupNode(
-            id=node_id, label=label, inputs=(("webapp", str(app.id)),),
-            run=chain,
-            # Loading the app is making sure it is up: the same chain, whose checks are what "up" means
-            # (installed, built, a server answering its health path). Done already, it costs three checks.
-            on_load=chain.model_copy(update={"label": f"Load {label}"}),
-        )
+        # Loading the app is making sure it is up: the same chain, whose checks are what "up" means
+        # (installed, built, a server answering its health path). Done already, it costs three checks.
+        self.nodes[node_id] = SetupNode(id=node_id, label=label, inputs=(("webapp", str(app.id)),), run=chain, on_load=chain)
         return node_id
+
+    async def load_one(self, asset: Any) -> "ProjectTree":
+        """Only ``asset``'s own node — what a LOAD needs (``core/setup/load``). A web app's node derives from
+        its row alone, so no requirement, source or declared setup is read; any other asset needs the tree."""
+        if getattr(asset, "get_type", lambda: "")() == "micro_app" and getattr(asset, "asset_ref", ""):
+            self._webapp_node(asset)
+            return self
+        return await self.load()
 
     async def _declared(self, sources: list, under: dict[str, list[str]]) -> None:
         """Every ``asset_setup`` the project's folder or its sources' drivers hold, attached where it is for."""
@@ -260,7 +265,7 @@ class ProjectTree:
                 self.nodes[node_id] = SetupNode(id=node_id, label=str(row.name), problem=(
                     f"{row.asset_ref}/asset_setup.json cannot be read"))
                 continue
-            prepare, run, load = await wizard(spec.prepare), await wizard(spec.run), await wizard(spec.on_load)
+            prepare, run, load = await asyncio.gather(wizard(spec.prepare), wizard(spec.run), wizard(spec.on_load))
             missing = [n for n, w in ((spec.prepare, prepare), (spec.run, run), (spec.on_load, load)) if n and w is None]
             children = tuple(f"asset_setup:{c}" if c in by_name else c for c in spec.children)
             self.nodes[node_id] = SetupNode(

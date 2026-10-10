@@ -246,32 +246,32 @@ async def test_another_projects_web_app_is_never_a_home_page(tmp_path):
 # ── a web app home is LOADED: up by the time its view mounts ────────────────
 
 
-async def test_opening_a_static_home_app_stamps_it_loaded(tmp_path):
-    """Files Flowpad serves itself are up as soon as they are placed: the first open stamps the row and starts
-    nothing; the next open is one probe."""
-    from flow_sdk.builtin.faas.micro_app import WebApp
+async def test_opening_a_static_home_app_starts_nothing(tmp_path, monkeypatch):
+    """Files Flowpad serves itself are up as soon as they are placed: the open's load finds nothing to do."""
+    from flow_sdk.builtin import project_setup
 
+    async def never(*_a, **_k):
+        raise AssertionError("a static app has nothing to start")
+
+    monkeypatch.setattr(project_setup, "start_setup", never)
     root = tmp_path / "static-home"
     project = await _project(root)
     app = await _web_app(root, "console")
     _declare(root, str(app.typeid))
 
     assert (await project.open_home_page())["load_run"] is None
-    row = await WebApp.get_by_id(app.id)
-    assert row.setup_loaded is not None and row.setup_loaded.run == "" and row.setup_loaded.detail == "already up"
 
 
 async def test_opening_a_home_app_whose_dev_server_is_down_starts_its_load_and_answers_at_once(tmp_path, monkeypatch):
     """An app that declares a dev server and has no build is not up until that server answers: the open starts
-    the app's own node of the setup tree in its load phase and answers its address — the view adopts that run
-    as the app's setup. The open never waits on it."""
+    the app's own node of the setup tree — its load wizard alone — and answers its address; the view adopts that
+    run as the app's setup. The open never waits on it."""
     from flow_sdk.builtin import project_setup
-    from flow_sdk.builtin.faas.micro_app import WebApp
 
     started = []
 
-    async def start(project, *, root, phase, on_done=None, **_kw):
-        started.append((root, phase))
+    async def start(project, *, root, tree=None, **_kw):
+        started.append((root, (await tree.resolve_node(root)).run.name))
         return f"setup-{root}"
 
     monkeypatch.setattr(project_setup, "start_setup", start)
@@ -285,5 +285,4 @@ async def test_opening_a_home_app_whose_dev_server_is_down_starts_its_load_and_a
     answer = await project.open_home_page()
 
     assert answer == {"asset": str(app.typeid), "type": "micro_app", "load_run": f"setup-{app.typeid}"}
-    assert started == [(str(app.typeid), "load")]
-    assert (await WebApp.get_by_id(app.id)).setup_loaded is None, "stamped only once the run reaches its goal"
+    assert started == [(str(app.typeid), str(app.typeid))], "the node's own chain, as the walk will run it"
