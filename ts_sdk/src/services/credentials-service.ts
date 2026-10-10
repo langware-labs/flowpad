@@ -59,6 +59,9 @@ export interface CredentialStatusRow {
   name: string;
   title: string;
   description: string;
+  /** What it is needed for, in one line, and the full reason. */
+  needed_for?: string;
+  justification?: string;
   icon_name: string;
   help_url: string;
   setup_wiki: string;
@@ -185,6 +188,8 @@ export interface CredentialManifestInput {
   name: string;
   title?: string;
   description?: string;
+  needed_for?: string;
+  justification?: string;
   icon_name?: string;
   help_url?: string;
   setup_wiki?: string;

@@ -355,9 +355,32 @@ export function CredentialDialog({
                         id="credential-description"
                         rows={2}
                         value={d.description}
-                        placeholder={t`What it is for`}
+                        placeholder={t`What it is`}
                         onChange={(e) => update({ description: e.target.value })}
                         data-testid="credential-description"
+                      />
+                    </div>
+                  )}
+
+                  {editsDefinition && (
+                    <div className="space-y-1">
+                      <Label htmlFor="credential-needed-for" className="text-xs">
+                        <Trans>Needed for</Trans>
+                      </Label>
+                      <Input
+                        id="credential-needed-for"
+                        value={d.neededFor}
+                        placeholder={t`One line: what this project uses it for`}
+                        onChange={(e) => update({ neededFor: e.target.value })}
+                        data-testid="credential-needed-for"
+                      />
+                      <Textarea
+                        rows={2}
+                        value={d.justification}
+                        placeholder={t`The full reason, shown behind the info icon (optional)`}
+                        onChange={(e) => update({ justification: e.target.value })}
+                        aria-label={t`Why it is needed`}
+                        data-testid="credential-justification"
                       />
                     </div>
                   )}

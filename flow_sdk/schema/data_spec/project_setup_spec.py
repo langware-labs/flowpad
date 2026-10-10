@@ -63,6 +63,9 @@ class SetupRequirementSpec(DataSpec):
     #: The credential's name (pack), the dependency's, the source's or the web app's.
     name: str
     title: str = ""
+    #: pack: what the credential is needed for, in one line, and the full reason (``CredentialSpec``).
+    needed_for: str = ""
+    justification: str = ""
     #: The record this requirement IS (a Credential, DataSource, WebApp; the Project for a dependency).
     typeid: str = ""
     #: pack: ``env`` (values to provide) or ``oauth`` (a provider's grant to connect).

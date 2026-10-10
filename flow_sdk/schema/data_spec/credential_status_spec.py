@@ -56,6 +56,9 @@ class CredentialStatusRowSpec(DataSpec):
     name: str
     title: str = ""
     description: str = ""
+    #: What it is needed for, in one line, and the full reason (``CredentialSpec``).
+    needed_for: str = ""
+    justification: str = ""
     icon_name: str = ""
     help_url: str = ""
     setup_wiki: str = ""

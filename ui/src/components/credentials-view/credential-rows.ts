@@ -34,6 +34,8 @@ export interface CredentialRow {
   title: string;
   iconName?: string;
   description?: string;
+  neededFor?: string;
+  justification?: string;
   scope: CredentialScopeName;
   store: CredentialValueStore;
   state: CredentialRowState;
@@ -110,6 +112,8 @@ export function buildCredentialRows(status: CredentialsStatus): CredentialRow[] 
         title: row.title || row.name,
         iconName: row.icon_name || undefined,
         description: row.description || undefined,
+        neededFor: row.needed_for || undefined,
+        justification: row.justification || undefined,
         scope: row.scope,
         store: row.value_store,
         state: row.state === 'connected' ? 'connected' : 'needs-values',

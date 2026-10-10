@@ -66,6 +66,9 @@ export function isSecret(v: CredentialVar | undefined): boolean {
 export interface ICredential extends IEntity {
   title?: string;
   description?: string;
+  /** What it is needed for, in one line, and the full reason behind the info icon. */
+  needed_for?: string;
+  justification?: string;
   icon_name?: string;
   help_url?: string;
   setup_wiki?: string;
@@ -91,6 +94,8 @@ export class Credential extends APIEntity<Credential> implements ICredential {
 
   title: string = '';
   description: string = '';
+  needed_for: string = '';
+  justification: string = '';
   /** A lucide glyph for THIS provider. Not `icon`: `APIEntity.icon` is a getter. */
   icon_name: string = '';
   help_url: string = '';

@@ -118,6 +118,8 @@ async def test_the_collector_reads_the_project_and_its_sources_drivers(project, 
     await save_credential(
         manifest={
             "name": "stripe",
+            "needed_for": "Charges cards at checkout.",
+            "justification": "app/pay.py creates a charge on every checkout.",
             "vars": {"STRIPE_KEY": {"label": "Secret key"}},
             "setup": "From the Stripe dashboard.",
         },
@@ -149,6 +151,13 @@ async def test_the_collector_reads_the_project_and_its_sources_drivers(project, 
     assert stripe.used_by == ["project"] and stripe.declared and [v.env_var for v in stripe.missing] == ["STRIPE_KEY"]
     telegram = by[(REQUIREMENT_PACK, "telegram")]
     assert not telegram.declared and telegram.setup and telegram.used_by == ["telegram source"], "a driver's credential"
+    # What it is needed for rides the requirement — from the declared row, and from a shipped template.
+    assert (stripe.needed_for, stripe.justification) == (
+        "Charges cards at checkout.", "app/pay.py creates a charge on every checkout.")
+    declared_stripe = await Credential.get("stripe", project)
+    on_disk = json.loads((Path(declared_stripe.asset_ref) / "credential.json").read_text())
+    assert on_disk["needed_for"] == "Charges cards at checkout.", "declare writes it to credential.json"
+    assert telegram.needed_for, "a template's own line"
     assert by[(REQUIREMENT_PACK, "gmail")].used_by == ["gmail source"], "env names → the template declaring them"
     assert by[(REQUIREMENT_PACK, "twilio")].used_by == ["voice_phone source"]
     assert by[(REQUIREMENT_PACK, "openai")].used_by == ["voice_phone source"], "one source may span several credentials"

@@ -84,6 +84,11 @@ class CredentialSpec(DataSpec):
     name: str
     title: str = ""
     description: str = ""
+    #: One line: what the project uses this credential FOR — shown beside its name when a person is asked
+    #: for it. ``description`` says what the credential is; this says why it is wanted here.
+    needed_for: str = ""
+    #: The full reason, when one line is not enough — shown behind the info icon next to ``needed_for``.
+    justification: str = ""
     #: A lucide glyph name. Not ``icon``: ``APIEntity.icon`` is a getter.
     icon_name: str = ""
     #: The file says ``schema``; the row says ``manifest_schema`` because the

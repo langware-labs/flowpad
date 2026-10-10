@@ -65,13 +65,16 @@ Show exactly this shape, MUST first, then USEFUL, then EXTRA collapsed to names:
 | SENTRY_DSN | USEFUL | secret | sentry | requirements.txt:9 sdk · settings.py:40 read |
 | DATABASE_URL | MUST | secret | myapp-db | prisma/schema.prisma:7 schema |
 
+Needed for: stripe — charges cards at checkout · sentry — reports crashes · myapp-db — stores every order
 EXTRA (not declared): LOG_LEVEL, REQUEST_TIMEOUT, WORKERS
 Already declared (skipped): OPENAI_API_KEY → openai (user)
 Alerts: scripts/seed.py:4 openai-key — move it into the credential, rotate the key
 ```
 
 The **Bundle** column is phase 3's proposal (see `phases/3-bundle.md` §1), shown
-now so the user approves the grouping and the tiers in one look.
+now so the user approves the grouping and the tiers in one look. The **Needed
+for** line is each bundle's `needed_for` as phase 3 will write it — what the
+project does with it, from the evidence — so the user corrects the wording here.
 
 Ask one question: *declare these bundles?* — and wait. Edits to a tier or a
 bundle are applied to the table and shown again. `cred-scan report` ends here.

@@ -21,7 +21,9 @@ order:
 
 1. **A shipped template** — if the vars match one, the bundle IS that template:
    same `name`, and copy its fields (`title`, `icon_name`, `help_url`,
-   `lm_provider`, per-var `label`/`hint`/`pattern`). Templates live beside this
+   `lm_provider`, per-var `label`/`hint`/`pattern`). Do NOT copy its
+   `needed_for` / `justification` — the template's are generic; write this
+   project's own (see the field rules). Templates live beside this
    skill's project in `agentic-assets/credential/` (`openai`, `anthropic-key`,
    `openrouter`, `gmail`, `twilio`) and in each data driver's own
    `agentic-assets/credential/` (`jira`, `telegram`, `whatsapp`).
@@ -50,6 +52,8 @@ that already exists):
   "name": "stripe",
   "title": "Stripe",
   "description": "Stripe API keys for payments and webhooks.",
+  "needed_for": "Charges cards at checkout and confirms payments.",
+  "justification": "app/pay.py creates a charge with the secret key on every checkout, so nothing can be sold without it. The webhook secret is only for app/hooks.py, which marks an order paid when Stripe calls back.",
   "icon_name": "CreditCard",
   "help_url": "https://dashboard.stripe.com/apikeys",
   "vars": {
@@ -64,6 +68,16 @@ that already exists):
 Field rules (`flow_sdk/schema/data_spec/credential_spec.py`):
 
 - `name` — kebab-case, `^[A-Za-z0-9][A-Za-z0-9_.-]*$`; the folder name.
+- `needed_for` is required from this skill: ONE line, in the person's words,
+  saying what THIS project does with the credential — the feature, not the
+  vendor ("Charges cards at checkout", never "Stripe API keys"; that is
+  `description`). The setup dialog shows it beside the credential's name when it
+  asks for the values. Write it from the evidence: what the code that reads the
+  variables does.
+- `justification` — the full reason, shown behind the info icon next to
+  `needed_for`: which code uses it and for what, what stops working without it,
+  what each variable is for when they differ. A few sentences, with `file`
+  references. Leave it out when the one line says it all. No values.
 - per var: `required` is the tier as saved — `"MUST"` for MUST, `"OPTIONAL"` for
   USEFUL (it defaults to `"MUST"`, so write `"OPTIONAL"` explicitly). The
   Connections table and the credential editor chip it, so the tier survives the

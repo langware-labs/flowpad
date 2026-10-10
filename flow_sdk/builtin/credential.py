@@ -60,6 +60,9 @@ class Credential(SetupSkippable, Entity):
 
     title: str = APIField(default="")
     description: str = APIField(default="")
+    #: What it is needed for, in one line, and the full reason (``CredentialSpec``).
+    needed_for: str = APIField(default="")
+    justification: str = APIField(default="")
     icon_name: str = APIField(default="")
     manifest_schema: int = APIField(default=CURRENT_SCHEMA)
     help_url: str = APIField(default="")

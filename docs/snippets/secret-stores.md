@@ -393,7 +393,9 @@ flow connections test google --scope https://www.googleapis.com/auth/drive.reado
 ```
 
 A credential the project needs is declared with `flow credentials declare` (the manifest is a
-`credential.json`: `name`, `vars`, `setup`, never a value; declaring it again updates it in place),
+`credential.json`: `name`, `vars`, `setup`, never a value; declaring it again updates it in place;
+`needed_for` is the one line the setup dialog shows beside its name — what the project uses it for —
+and `justification` the full reason behind the info icon),
 or `credentialsService.save({scope: 'project', project_id, manifest})` from the TS SDK. After setup,
 its status — `credentials_status(project)` in Python, `credentialsService.status(projectId)` in TS,
 `GET compute_node/@local/credentials/status?project_id=` over REST — says `state: "connected"` and

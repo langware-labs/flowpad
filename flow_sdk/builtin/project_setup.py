@@ -112,6 +112,11 @@ def _pack_always(project: "Project", row: "CredentialStatusRowSpec", used_by: li
     return always_for(project, row.asset_ref, what=f"the credential {row.name!r}")
 
 
+def _why(credential: "CredentialStatusRowSpec | Credential") -> dict[str, str]:
+    """What the credential is needed for, as a requirement carries it — the same from a row and a template."""
+    return {"needed_for": credential.needed_for, "justification": credential.justification}
+
+
 def _from_row(row: "CredentialStatusRowSpec", used_by: list[str], project: "Project") -> SetupRequirementSpec:
     always = _pack_always(project, row, used_by)
     if row.kind == "oauth":
@@ -119,7 +124,7 @@ def _from_row(row: "CredentialStatusRowSpec", used_by: list[str], project: "Proj
                 "partial": f"connected without {', '.join(row.missing_scopes)}: connect again to grant them"}
         return SetupRequirementSpec(
             kind=REQUIREMENT_PACK, credential_kind="oauth", name=row.name, title=row.title, typeid=row.typeid,
-            provider=row.provider, scopes=list(row.scopes), help_url=row.help_url,
+            provider=row.provider, scopes=list(row.scopes), help_url=row.help_url, **_why(row),
             satisfied=row.state == "connected", used_by=used_by, note=note.get(row.state, ""),
             skipped=row.setup_skipped, **always,
         )
@@ -128,7 +133,7 @@ def _from_row(row: "CredentialStatusRowSpec", used_by: list[str], project: "Proj
     must = [v for v in row.vars if v.is_must]
     return SetupRequirementSpec(
         typeid=row.typeid, kind=REQUIREMENT_PACK, name=row.name, title=row.title, setup=row.setup,
-        help_url=row.help_url, setup_timeout_seconds=row.setup_timeout_seconds,
+        help_url=row.help_url, setup_timeout_seconds=row.setup_timeout_seconds, **_why(row),
         vars=[
             SetupVarSpec(env_var=v.env_var, label=v.label, hint=v.hint, help_url=v.help_url,
                          pattern=v.pattern, secret=v.secret, file=v.kind is CredentialVarKind.FILE,
@@ -149,7 +154,7 @@ def _from_template(template: "Credential", used_by: list[str]) -> SetupRequireme
         why_not_always="a shipped template, not in this project yet: skip it locally",
         kind=REQUIREMENT_PACK, name=str(template.name), title=template.title or str(template.name),
         setup=setup, setup_timeout_seconds=getattr(template, "setup_timeout_seconds", None),
-        help_url=template.help_url or "", declared=False, satisfied=False, used_by=used_by,
+        help_url=template.help_url or "", declared=False, **_why(template), satisfied=False, used_by=used_by,
         vars=[
             SetupVarSpec(env_var=name, label=var.label, hint=var.hint, help_url=var.help_url,
                          pattern=var.pattern, secret=var.secret, file=var.kind is CredentialVarKind.FILE)
