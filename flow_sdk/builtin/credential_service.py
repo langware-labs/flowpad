@@ -339,7 +339,17 @@ async def set_credential_by_name(
 
 
 async def _provider_title(provider: str) -> str:
-    """A provider's display name, as the Connections screen shows it; else its name."""
+    """A provider's display name, as the Connections screen shows it; else its name.
+
+    A provider this build ships answers from the registry, in-process. Only one the hub alone
+    defines asks the connection service — which borrows a running backend or STARTS one, far
+    too much for a title when the registry already knows it.
+    """
+    from flow_sdk.core.oauth.provider_registry import get_local_provider  # noqa: PLC0415
+
+    known = get_local_provider(provider)
+    if known is not None and known.display_name:
+        return known.display_name
     try:
         from flow_sdk.core.connections.specs import resolve_connection_spec  # noqa: PLC0415
 
