@@ -15,6 +15,7 @@ import {
   toplog,
   TypeId,
   VFSPath,
+  viewModeMemory,
   ViewType,
 } from '@sdk';
 import { NavigateFunction } from 'react-router';
@@ -275,8 +276,17 @@ export class NavigationActions {
       return target.withViewMode(ViewMode.Vibe);
     }
     if (target.viewMode !== null) return target;
-    const mode = rememberedDockViewMode(target) ?? liveMode();
-    return mode ? target.withViewMode(mode) : target;
+    const remembered = rememberedDockViewMode(target);
+    if (remembered) return target.withViewMode(remembered);
+    // A session never takes the mode on screen — that belongs to the tab being
+    // LEFT. In cache with no memory it is the plain chat (the shell loader's own
+    // default, stated here to spare its redirect); not in cache it opens bare
+    // and the loader states it from the entity.
+    if (sessionIdForDock(target)) {
+      return viewModeMemory.targetFor(target.targetTypeId) ? target.withViewMode(ViewMode.Standard) : target;
+    }
+    const live = liveMode();
+    return live ? target.withViewMode(live) : target;
   }
 
   private static clearCommittedPendingNavigation(): void {
@@ -617,29 +627,14 @@ export class NavigationActions {
       dock = dock.withScopeFilter(projectId ? projectScope(projectId) : allScope());
     }
 
-    // Inherit the live URL's ?viewMode unless the target names its own (mirrors
-    // the scope-seed above); explicit target / ViewToggle mode still wins. Since
-    // useDockViewModeOverrideSync now adopts the URL's mode into the persisted
-    // preference on load, this inheritance matters only for navigations issued
-    // BEFORE that adopt effect commits (e.g. a redirect right after a hard load
-    // on a ?viewMode URL) — not for general mode stickiness.
-    //
-    // The ROOT is stamped too (2026-09-03). It used to be excluded, to keep the
-    // canonical home URL bare and let the persisted preference decide the mode
-    // there — but a bare entry does not STATE its mode, it re-resolves through a
-    // preference that the ViewToggle itself mutates. So Back onto a home entry
-    // rendered it in the mode you had just switched TO: a history step that
-    // visibly did nothing, with Forward lit. Every entry must state its own mode
-    // for a Back step to be visible, home included. The cold-load entry is
-    // canonicalized in `loadHomePage`, which this cannot reach.
-    //
-    // A SESSION or PROJECT dock is the exception, and takes its own remembered
-    // mode instead: it opens in the mode it was last switched to, so switching to
-    // Terminal in one chat no longer repaints every other chat you click into.
-    // Inheritance is still the fallback for a dock with no memory yet; it only
-    // DISPLAYS that mode — memory is minted by `VIEW_MODE_STORE`, not by opening.
-    // Cache-only: a cold deep link has no entity to read here, and the shell
-    // loader redirects a session onto its remembered mode instead.
+    // Every entry STATES its mode (an address that states none paints the app's
+    // unstated mode, and a Back step onto it would visibly do nothing). A dock
+    // whose target owns memory — a session, a project — takes that memory; a
+    // session with none still never takes the screen's mode (see
+    // `withTargetViewMode`). Everything else is workspace content and follows
+    // the mode on screen. Opening only DISPLAYS a mode; memory is minted by
+    // `VIEW_MODE_STORE`. Cache-only: a cold deep link has no entity to read
+    // here, and the shell loader states a session's mode instead.
     dock = NavigationActions.withTargetViewMode(
       dock,
       () => NavigationActions.currentBrowserViewMode() ?? this.currentDock?.viewMode ?? null,

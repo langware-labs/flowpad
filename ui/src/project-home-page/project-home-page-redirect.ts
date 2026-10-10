@@ -5,7 +5,7 @@ import { DockPointer } from '@src/navigation/DockPointer';
 import { dockForDisplayTarget } from '@src/navigation/display-target-pointer';
 import { isAppType } from '@src/navigation/app-dock';
 import { projectScope } from '@src/lib/scope-filter';
-import { ViewMode } from '@src/contexts/view-mode-context';
+import { rememberedViewMode, ViewMode } from '@src/contexts/view-mode-context';
 import { ambientLoadProjectId, registerLoadRedirect } from '@src/routes/loaders/load-redirects';
 import { prepareAgentSession } from '@src/components/agents/use-agent-launcher';
 import { lastVibeChatQuery, pickLastVibeChat } from '@src/pages/flow-page/vibe-process-resolver';
@@ -27,16 +27,22 @@ async function agentHomePageDock(agentTypeId: string, projectId: string): Promis
   const last = pickLastVibeChat(
     await AgenticProcess.query<AgenticProcess>(lastVibeChatQuery(projectId, agentTypeId)),
   );
-  let processId = last?.id ?? null;
-  if (!processId) {
-    const agent = await Agent.getById<Agent>(new TypeId(agentTypeId).id);
-    if (!agent) return null;
-    processId = (await agent.use(projectId, true)).process_id;
-    await prepareAgentSession(processId).catch((e) =>
-      console.warn('[project-home-page] pre-turn setup failed; opening the session anyway', e),
-    );
-  }
-  return DockPointer.forSession(processId).withViewMode(ViewMode.Vibe);
+  const processId = last?.id ?? (await mintHomeChat(agentTypeId, projectId));
+  if (!processId) return null;
+  // A resumed chat keeps the mode it was last shown in — landing never switches
+  // a session. A minted one, and one with no memory, is Vibe.
+  return DockPointer.forSession(processId).withViewMode(rememberedViewMode(last) ?? ViewMode.Vibe);
+}
+
+/** A new session for the agent in this project, with its pre-turn stack; null when the agent is gone. */
+async function mintHomeChat(agentTypeId: string, projectId: string): Promise<string | null> {
+  const agent = await Agent.getById<Agent>(new TypeId(agentTypeId).id);
+  if (!agent) return null;
+  const processId = (await agent.use(projectId, true)).process_id;
+  await prepareAgentSession(processId).catch((e) =>
+    console.warn('[project-home-page] pre-turn setup failed; opening the session anyway', e),
+  );
+  return processId;
 }
 
 /**

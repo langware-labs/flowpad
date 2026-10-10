@@ -99,7 +99,9 @@ export function useProjectOpener({ onProjectChanged, onPicked, onError }: UsePro
         // no load redirect, and the option would only linger in its URL.
         const entry = await dockForProjectEntry(project.id, currentDock);
         const landing = entry.viewType === ViewType.PROJECT || entry.viewType === ViewType.HOME;
-        navigation.openDock(landing ? withHomePage(entry) : entry);
+        // A resumed tab is a TOP-LEVEL tab, the same as its chip in the strip:
+        // never a child of the workspace being left, never painted in its mode.
+        navigation.openDock(landing ? withHomePage(entry) : entry, undefined, { topLevel: true });
       }
     },
     [isHome, onProjectChanged, onPicked, navigation, currentDock],

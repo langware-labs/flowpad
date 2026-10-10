@@ -95,7 +95,9 @@ describe('useProjectOpener — home stays home on the new project', () => {
     await openViaHook();
 
     expect(dockForProjectEntryMock).toHaveBeenCalledWith(PROJECT_ID, null);
-    expect(openDock).toHaveBeenCalledWith(resumedDock);
+    // A resumed tab is a TOP-LEVEL tab, the same as its chip: never a child of
+    // the workspace being left, never painted in its mode.
+    expect(openDock).toHaveBeenCalledWith(resumedDock, undefined, { topLevel: true });
     expect(openShellProcess).not.toHaveBeenCalled();
     expect(selectProjectContextMock).not.toHaveBeenCalled();
   });
