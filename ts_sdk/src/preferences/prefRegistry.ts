@@ -74,6 +74,7 @@ export enum PrefKey {
   HISTORY_SORT_DIR = 'preferences.terminal.history_sort_dir',
   HISTORY_ALL_PROJECTS = 'preferences.terminal.history_all_projects',
   LAST_OPENER = 'preferences.terminal.last_opener',
+  LAST_OPENER_MODE = 'preferences.terminal.last_opener_mode',
   PINNED_OPENERS = 'preferences.terminal.pinned_openers',
   // files
   FILES_SHOW_HIDDEN = 'preferences.files.show_hidden',
@@ -580,6 +581,13 @@ export const PREF_REGISTRY: Record<PrefKey, PrefInfo> = {
     legacyLocalStorageKey: 'flowpad.terminal.lastOpener',
     category: 'terminal',
     label: 'Last terminal opener',
+    dataType: PrefDataType.JSON,
+    defaultValue: null,
+  },
+  [PrefKey.LAST_OPENER_MODE]: {
+    key: PrefKey.LAST_OPENER_MODE,
+    category: 'terminal',
+    label: 'View mode of the last launched session',
     dataType: PrefDataType.JSON,
     defaultValue: null,
   },

@@ -1,4 +1,6 @@
 import { useProject } from '@sdk/react/hooks';
+import { rememberLaunch } from '@src/components/terminal/openers/last-launch';
+import { ViewMode } from '@src/contexts/view-mode-context';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { notify } from '@src/notifications';
 import { launchVibeSessionForProject } from './use-start-vibe-session';
@@ -21,6 +23,8 @@ export function VibeNoProcessWorkspace() {
     if (!project?.id || startingPrompt) return;
     setStartingPrompt(prompt);
     try {
+      // The user started a Vibe: the strip's quick-launch slot becomes "New Vibe".
+      rememberLaunch('vibe', ViewMode.Vibe);
       await launchVibeSessionForProject({
         projectId: project.id,
         workdir,

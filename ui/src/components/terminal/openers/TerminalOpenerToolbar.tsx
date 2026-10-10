@@ -10,6 +10,9 @@ import { Loader2, Pin, PinOff, Plus } from 'lucide-react';
 import { useCallback } from 'react';
 import { useLingui } from '@lingui/react/macro';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import type { ViewMode } from '@src/contexts/view-mode-context';
+import { MODE_LABELS } from '@src/components/view-mode/mode-vocabulary';
+import { rememberLaunch } from './last-launch';
 import type { OpenerDescriptor, OpenerId } from './tab_opener_types';
 import { OpenerWarningBadge } from './OpenerWarningBadge';
 import { usePinnedOpeners } from './usePinnedOpeners';
@@ -32,14 +35,14 @@ export function getInlineOpeners(
 
 export function TerminalOpenerToolbar({ openers, isTabCreationPending }: Props) {
   const { t } = useLingui();
-  const { pinned, lastOpened, isPinned, togglePin, rememberOpened } = usePinnedOpeners();
+  const { pinned, lastOpened, lastMode, isPinned, togglePin } = usePinnedOpeners();
   const { navigation } = useDockNavigation();
 
   const availableOpeners = openers.filter((o) => o.available);
   const inlineOpeners = getInlineOpeners(openers, pinned, lastOpened);
 
   const activate = useCallback(
-    (opener: OpenerDescriptor) => {
+    (opener: OpenerDescriptor, mode?: ViewMode) => {
       // A warned opener (capability check failed) can't launch — route to the
       // Capabilities screen (check/install) instead of creating a doomed tab.
       // Single enforcement point for inline buttons and menu rows alike.
@@ -52,10 +55,12 @@ export function TerminalOpenerToolbar({ openers, isTabCreationPending }: Props) 
         });
         return;
       }
-      rememberOpened(opener.id);
-      opener.onActivate();
+      // The worker launch chain re-records with the shape it actually opened in.
+      rememberLaunch(opener.id, mode ?? null);
+      if (mode && opener.launchIn) opener.launchIn(mode);
+      else opener.onActivate();
     },
-    [navigation, rememberOpened],
+    [navigation],
   );
 
   const renderInline = (opener: OpenerDescriptor) => {
@@ -71,7 +76,11 @@ export function TerminalOpenerToolbar({ openers, isTabCreationPending }: Props) 
       </>
     );
 
-    const onClick = () => activate(opener);
+    // The slot that is the last launch is "another like the last one" and
+    // carries that launch's shape; a pinned slot that is also the last launch
+    // is the same one button, so it follows too.
+    const quickMode = opener.id === lastOpened && lastMode ? lastMode : undefined;
+    const onClick = () => activate(opener, quickMode);
 
     const testId =
       opener.id === 'sandbox'
@@ -80,7 +89,8 @@ export function TerminalOpenerToolbar({ openers, isTabCreationPending }: Props) 
           ? 'open-terminal-tab-button'
           : `opener-inline-${opener.id}`;
 
-    const title = opener.warning ? `${opener.label} — ${opener.warning}` : opener.label;
+    const baseLabel = quickMode ? `${opener.label} (${MODE_LABELS[quickMode]})` : opener.label;
+    const title = opener.warning ? `${baseLabel} — ${opener.warning}` : baseLabel;
 
     return (
       <Button

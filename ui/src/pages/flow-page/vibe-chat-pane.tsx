@@ -1,4 +1,6 @@
 import { EntityExecutionPanel } from '@src/components/entity-execution-panel';
+import { rememberLaunch } from '@src/components/terminal/openers/last-launch';
+import { ViewMode } from '@src/contexts/view-mode-context';
 import { NewSessionPill } from '@src/components/entity-execution-panel/NewSessionPill';
 import { AskForHelpButton } from '@src/components/help/AskForHelpButton';
 import {
@@ -126,6 +128,7 @@ export function VibeChatPane({
       // prompt into the previous chat, and the new one stayed empty forever.
       markNewSessionPending(true);
       try {
+        rememberLaunch('vibe', ViewMode.Vibe);
         await createVibeProcessForProject({
           projectId,
           workdir: project?.fs_storage_mount_path ?? undefined,

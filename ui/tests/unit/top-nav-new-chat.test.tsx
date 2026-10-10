@@ -13,7 +13,6 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 const openNewChat = vi.hoisted(() => vi.fn(() => Promise.resolve({ id: 'p1' })));
 const openCapabilitiesForWorker = vi.hoisted(() => vi.fn());
-const rememberWorker = vi.hoisted(() => vi.fn());
 const lastWorker = vi.hoisted(() => ({ current: null as string | null }));
 
 vi.mock('@src/navigation/open-new-chat', () => ({ openNewChat }));
@@ -23,7 +22,7 @@ vi.mock('@src/navigation/useDockNavigation', () => ({
 }));
 vi.mock('@src/components/terminal/openers/useLastWorkerType', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@src/components/terminal/openers/useLastWorkerType')>()),
-  useLastWorkerType: () => ({ lastWorker: lastWorker.current, rememberWorker }),
+  useLastWorkerType: () => ({ lastWorker: lastWorker.current, rememberWorker: vi.fn() }),
 }));
 
 import { NewChatButton } from '@src/components/top-nav-bar/NewChatButton';
@@ -44,7 +43,6 @@ describe('NewChatButton', () => {
     lastWorker.current = null;
     openNewChat.mockClear();
     openCapabilitiesForWorker.mockClear();
-    rememberWorker.mockClear();
     openNewChat.mockResolvedValue({ id: 'p1' });
   });
   afterEach(cleanup);
@@ -53,10 +51,9 @@ describe('NewChatButton', () => {
     lastWorker.current = 'codex';
     renderButton();
     await userEvent.click(screen.getByTestId('top-nav-new-chat'));
+    // openNewChat records the launch itself (vendor + shape), so the button
+    // writes nothing of its own.
     expect(openNewChat).toHaveBeenCalledWith(expect.anything(), { workerType: 'codex' });
-    // Re-stamped even though it was already the last pick: the button is a
-    // launch surface like any other, and the key is shared with the strip.
-    expect(rememberWorker).toHaveBeenCalledWith('codex');
   });
 
   it('falls back to the capability default before any launch has been made', async () => {
