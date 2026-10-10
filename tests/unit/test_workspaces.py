@@ -42,8 +42,11 @@ def home(tmp_path, monkeypatch):
     default_root.mkdir(parents=True)
     records_root = tmp_path / "records"
     records_root.mkdir(exist_ok=True)
+    # The default root ``~/Flowpad workspace`` is prod's layout (any other instance keeps its workspaces
+    # under ``~/Flowpad workspaces``), so the sandbox pins the instance: the shell's FLOW_INSTANCE never decides.
     patched = dataclasses.replace(
         isettings.get_instance_settings(),
+        instance_name="prod",
         user_home=home,
         claude_projects_dir=home / ".claude" / "projects",
         codex_config_path=home / ".codex" / "config.toml",
