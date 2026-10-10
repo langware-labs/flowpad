@@ -433,6 +433,11 @@ once and read what their checks need once. A delete reads only the datasets whos
 the row's kind (`links.linkers_of`) — none when nothing links to it — where it used to re-read every
 row of the project per row deleted.
 
+**One run at a time.** A script that mirrors an outside system wraps its whole run in
+`flow_sdk.datasets.run.single_run(project_root, "<name>")`: two runs at once (a trigger's and a
+person's "Sync now") would decide on the same reading and overwrite each other's state. The lock is a
+file under `<project>/.flow/runs/`; a second run waits, or `wait=False` raises `RunBusy`.
+
 **Rows changing is an event.** Every row write emits `dataset.rows.changed` once per call — target
 `dataset:<id>`, data `{op: put|delete|rename|sync, keys (at most 100), count}`, never a value — and
 the tag is forwarded to the app (`tags/ws_forward.py`): `dataset.onRowsChanged(handler)` in
