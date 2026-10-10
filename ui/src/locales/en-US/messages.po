@@ -1417,6 +1417,10 @@ msgstr "A document is saved, a folder gets a new file."
 msgid "A file changed: {path}"
 msgstr "A file changed: {path}"
 
+#: src/components/workspace/workspace-switcher.tsx
+msgid "A folder of related projects. New projects and clones are created inside it."
+msgstr "A folder of related projects. New projects and clones are created inside it."
+
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
 msgid "A fresh shell needs to be allocated. (Backend action coming — for now Restart will retry.)"
 msgstr "A fresh shell needs to be allocated. (Backend action coming — for now Restart will retry.)"
@@ -5858,6 +5862,10 @@ msgstr "Copy Provider ID"
 msgid "Copy remote URL"
 msgstr "Copy remote URL"
 
+#: src/components/workspace/workspace-switcher.tsx
+msgid "Copy the folder path of {name}"
+msgstr "Copy the folder path of {name}"
+
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
 msgid "Copy the full error"
 msgstr "Copy the full error"
@@ -6026,6 +6034,10 @@ msgstr "Could not copy link"
 #: src/components/oauth/GitHubDeviceFlowModal.tsx
 msgid "Could not copy the code"
 msgstr "Could not copy the code"
+
+#: src/components/workspace/workspace-switcher.tsx
+msgid "Could not copy the path"
+msgstr "Could not copy the path"
 
 #: src/components/rag/RagView.tsx
 msgid "Could not cover that folder"
@@ -6273,6 +6285,10 @@ msgstr "Could not open skill"
 #: src/components/data-sources/OpenFolderButton.tsx
 msgid "Could not open the folder"
 msgstr "Could not open the folder"
+
+#: src/components/workspace/workspace-switcher.tsx
+msgid "Could not open the workspace folder"
+msgstr "Could not open the workspace folder"
 
 #: src/components/assets/editor/agent-profile/AgentDeploymentsSection.tsx
 msgid "Could not pause"
@@ -15960,6 +15976,10 @@ msgstr "Not deployed yet — it runs nowhere until you launch it."
 msgid "not fired yet"
 msgstr "not fired yet"
 
+#: src/components/assets/DependencyChips.tsx
+msgid "not found"
+msgstr "not found"
+
 #: src/components/credentials-view/EnvFilesChip.tsx
 #: src/pages/entry/entry-shell.tsx
 #: src/pages/hub-home/HubHome.tsx
@@ -17071,6 +17091,10 @@ msgstr "Open the chat this session runs in"
 #: src/components/data-sources/DataSourcePage.tsx
 msgid "Open the event bus"
 msgstr "Open the event bus"
+
+#: src/components/workspace/workspace-switcher.tsx
+msgid "Open the folder of {name}"
+msgstr "Open the folder of {name}"
 
 #: src/components/footer.tsx
 msgid "Open the help desk"
@@ -24035,6 +24059,10 @@ msgstr "The credentials could not be saved."
 msgid "The default — what you want 99% of the time."
 msgstr "The default — what you want 99% of the time."
 
+#: src/components/workspace/workspace-switcher.tsx
+msgid "The default workspace. Every project outside another workspace's folder belongs here."
+msgstr "The default workspace. Every project outside another workspace's folder belongs here."
+
 #: src/pages/entry/DiagnosisRequestLanding.tsx
 msgid "The diagnosis came back. Open it in FlowPad to read every run, or have an agent explain it."
 msgstr "The diagnosis came back. Open it in FlowPad to read every run, or have an agent explain it."
@@ -27124,6 +27152,10 @@ msgstr "Working…"
 #: src/pages/hub-home/HubHome.tsx
 msgid "Workspace"
 msgstr "Workspace"
+
+#: src/components/workspace/workspace-switcher.tsx
+msgid "Workspace folder path copied"
+msgstr "Workspace folder path copied"
 
 #: src/components/workspace/workspace-switcher.tsx
 msgid "Workspace name"
