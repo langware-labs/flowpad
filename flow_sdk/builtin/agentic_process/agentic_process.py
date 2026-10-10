@@ -10,7 +10,6 @@ implementing the ``WorkerDriver`` Protocol and registering with ``get_driver``.
 from __future__ import annotations
 
 import asyncio
-import collections
 import json
 import logging
 import time
@@ -97,6 +96,7 @@ from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse
 from flow_sdk.schema.data_spec.mcp_spec import McpSpec
+from flow_sdk.stream_inbox._locks import any_keyed_lock_held, keyed_lock_held, keyed_loop_lock, new_registry
 from flow_sdk.transcript_analyzer.worker_status import StatusDetail, WorkerStatus
 from flow_sdk.transcript_analyzer.worker_status import is_terminal as is_worker_terminal
 
@@ -205,7 +205,11 @@ class TranscriptSubpath(StrEnum):
 # to its worker.  Keeping setup in the same process-global registry projection is
 # important: transcript watchers hydrate a different AgenticProcess object than
 # the request object, so an object-local flag cannot serialize those callers.
-_PROMPT_LOCKS: dict[str, asyncio.Lock] = collections.defaultdict(asyncio.Lock)
+# Weak-valued (``stream_inbox/_locks``): a process's lock exists only while a
+# turn holds or awaits it. A strong ``defaultdict(asyncio.Lock)`` here kept one
+# lock per process id ever SERIALIZED — the ``busy`` read minted on lookup — for
+# the backend's life, and ``any_prompt_in_flight`` scanned all of them.
+_PROMPT_LOCKS = new_registry()
 _PROMPT_ADMISSIONS: dict[str, object] = {}
 _PROMPT_WORKERS: dict[str, Any] = {}
 _PROMPT_TASKS: dict[str, asyncio.Task] = {}
@@ -270,7 +274,7 @@ def prompt_lock_locked(process_id: str) -> bool:
     can consult it without importing this module at load time (which would
     cycle — ``agentic_process`` imports ``status_predicates``).
     """
-    return _PROMPT_LOCKS[process_id].locked()
+    return keyed_lock_held(_PROMPT_LOCKS, str(process_id))
 
 
 def prompt_worker_active(process_id: str) -> bool:
@@ -294,7 +298,7 @@ def any_prompt_in_flight() -> bool:
     unattended. A native-xterm turn is not seen here -- it holds no lock -- but a
     person is typing into it, and that is reported as user activity instead.
     """
-    return bool(_PROMPT_ADMISSIONS or _PROMPT_WORKERS) or any(lock.locked() for lock in _PROMPT_LOCKS.values())
+    return bool(_PROMPT_ADMISSIONS or _PROMPT_WORKERS) or any_keyed_lock_held(_PROMPT_LOCKS)
 
 
 def try_admit_prompt(process_id: str) -> object | None:
@@ -305,7 +309,7 @@ def try_admit_prompt(process_id: str) -> object | None:
     opaque token makes release owner-safe when an older setup unwinds after a
     newer admission has already been installed.
     """
-    if process_id in _PROMPT_ADMISSIONS or process_id in _PROMPT_WORKERS or _PROMPT_LOCKS[process_id].locked():
+    if process_id in _PROMPT_ADMISSIONS or process_id in _PROMPT_WORKERS or prompt_lock_locked(process_id):
         return None
     token = object()
     _PROMPT_ADMISSIONS[process_id] = token
@@ -361,7 +365,8 @@ _VALID_PERMISSION_MODES = frozenset({"plan", "default", "acceptEdits", "bypassPe
 
 # Per-process serialization for the ``open``/``start`` lifecycle so two
 # concurrent refresh-driven calls can't both run recovery on the same process.
-_OPEN_LOCKS: dict[str, asyncio.Lock] = collections.defaultdict(asyncio.Lock)
+# Weak-valued, like ``_PROMPT_LOCKS``.
+_OPEN_LOCKS = new_registry()
 
 #: Every field ``_perform_open`` mints during a launch. ``start_pty`` runs the
 #: launch on a DB-fresh copy (so two concurrent opens can't double-spawn), then
@@ -397,8 +402,8 @@ _LAUNCH_OUTPUT_FIELDS: tuple[str, ...] = (
 )
 
 # Per-process serialization for prompt-queue drains so two ready edges can't
-# pop+inject the same head twice.
-_QUEUE_LOCKS: dict[str, asyncio.Lock] = collections.defaultdict(asyncio.Lock)
+# pop+inject the same head twice. Weak-valued, like ``_PROMPT_LOCKS``.
+_QUEUE_LOCKS = new_registry()
 
 #: Broadcast dedup key — private, reached only via ``AgenticProcess._last_broadcast_key``, so its shape can change freely.
 _BroadcastKey = NamedTuple(
@@ -1349,7 +1354,7 @@ class AgenticProcess(Entity):
         snapshots and double-spawn Claude.
         """
         t_lock = time.monotonic()
-        async with _OPEN_LOCKS[self.id]:
+        async with keyed_loop_lock(_OPEN_LOCKS, str(self.id)):
             toplog.log(
                 "agentic_process.load",
                 "open lock acquired process=%s wait_ms=%.0f",
@@ -1645,7 +1650,7 @@ class AgenticProcess(Entity):
             # the enqueue drain from cold-starting visible processes, so nothing
             # competes for the head.
             if instruction is None:
-                async with _QUEUE_LOCKS[self.id]:
+                async with keyed_loop_lock(_QUEUE_LOCKS, str(self.id)):
                     q = self.queue
                     state = q.read()
                     if state.get("enabled", True) and state.get("entries"):
@@ -2461,7 +2466,7 @@ class AgenticProcess(Entity):
         if self.hub_route:
             return  # never inject or cold-start a route row: its worker is elsewhere
         q = self.queue
-        async with _QUEUE_LOCKS[self.id]:
+        async with keyed_loop_lock(_QUEUE_LOCKS, str(self.id)):
             state = q.read()
             if not state.get("enabled", True) or not state.get("entries"):
                 q.log("drain_check", source, reason="empty_or_disabled")
@@ -3785,7 +3790,7 @@ class AgenticProcess(Entity):
                 status_code=409,
             )
 
-        lock = _PROMPT_LOCKS[self.id]
+        lock = keyed_loop_lock(_PROMPT_LOCKS, str(self.id))
         if lock.locked():
             return ApiFailResponse(
                 message="another prompt turn is already in flight for this process",
@@ -4179,7 +4184,7 @@ class AgenticProcess(Entity):
         from flow_sdk.transcript_analyzer.resolver import transcript_change_signature
 
         poll_interval = 0.3
-        lock = _PROMPT_LOCKS[self.id]
+        lock = keyed_loop_lock(_PROMPT_LOCKS, str(self.id))
         worker_type = self.driver.name
 
         # ── Transcript resolution + parsing strategy ────────────────────────
