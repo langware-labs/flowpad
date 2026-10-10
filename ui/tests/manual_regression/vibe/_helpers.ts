@@ -123,12 +123,10 @@ export function displayUrlRe(projectId: string, processId: string, tail = ''): R
 }
 
 /**
- * Seed a chat the Vibe rail can RESUME, and scope its project. `lastVibeChatQuery`
- * matches project_id (the SCOPED project) + process_type=chat + a non-null
- * last_active_at; none of those come from create alone, and with no resumable
- * chat the rail's Chats icon lands on the home hero — no `VibeDisplay` ever
- * mounts. `openVibe` is load-bearing: visiting the process is what puts its
- * project in scope for the later rail click.
+ * Seed a chat to come BACK to, and scope its project: a process_type=chat
+ * session with a non-null last_active_at, visited once. `openVibe` is
+ * load-bearing — the visit is what opens (and stamps) its tab and puts its
+ * project in scope, so the top bar's "Back to tabs" has a tab to return to.
  */
 export async function seedLastVibeChat(
   request: APIRequestContext,

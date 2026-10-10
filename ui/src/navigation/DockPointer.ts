@@ -377,6 +377,9 @@ export function decodeAssetComparePointer(pointer: string | null | undefined): A
   return decodePointerJson<AssetComparePointerPayload>(pointer.slice(ASSET_COMPARE_POINTER_PREFIX.length));
 }
 
+/** `ViewMode.Vibe` — spelled here because this module imports the enum as a type only. */
+const VIBE_MODE = 'vibe' as ViewMode;
+
 function isViewMode(value: string | undefined): value is ViewMode {
   return value === 'vibe' || value === 'standard' || value === 'advanced' || value === 'dev';
 }
@@ -398,6 +401,13 @@ export interface LensPointerParts {
  * Core principle: Parse and validate layout URLs, apply state to viewer store
  */
 export class DockPointer implements IDockPointer {
+  /** The view types a SESSION is shown in: the shell dock (chat / terminal) and the
+   *  Vibe host tab. One predicate, so a site asking "is this a session surface?"
+   *  never has to list them. */
+  static isSessionView(viewType: ViewType | string | null | undefined): boolean {
+    return viewType === ViewType.SHELL || viewType === ViewType.VIBE;
+  }
+
   /** Check if a shell pointer refers to an AgenticProcess (pointer is a TypeId like "agentic_process-<id>") */
   static isAgenticProcessPointer(pointer?: string): boolean {
     return !!pointer?.startsWith(AgenticProcess.type + TypeId.DELIMITER);
@@ -591,6 +601,9 @@ export class DockPointer implements IDockPointer {
    * view-mode context.
    */
   get viewMode(): ViewMode | null {
+    // A Vibe host dock IS the vibe presentation — the mode is implied by the
+    // address, not carried as an option.
+    if (this.viewType === ViewType.VIBE) return VIBE_MODE;
     const value = this.options?.[VIEW_MODE_PARAM];
     return isViewMode(value) ? value : null;
   }
@@ -625,8 +638,21 @@ export class DockPointer implements IDockPointer {
   /** Clone this dock with a page-local view-mode override, or remove it with null. */
   withViewMode(mode: ViewMode | null): DockPointer {
     const nextOptions = { ...(this.options ?? {}) };
+    delete nextOptions[VIEW_MODE_PARAM];
+    // A process shown in Vibe is the Vibe HOST tab (`/dock/vibe/<process>`); shown
+    // any other way it is the shell dock. This is the ONE place that maps between
+    // the two families, so every opener that asks for a mode lands on the right
+    // one. `null` on a Vibe dock is the bare shell dock: "the same place, mode
+    // unstated" — what the view-mode sync compares by.
+    const isProcess = DockPointer.isAgenticProcessPointer(this.pointer);
+    if (this.viewType === ViewType.VIBE && mode !== VIBE_MODE) {
+      if (mode) nextOptions[VIEW_MODE_PARAM] = mode;
+      return new DockPointer(ViewType.SHELL, this.pointer, nextOptions, this.layout, this.page);
+    }
+    if (mode === VIBE_MODE && isProcess && (this.viewType === ViewType.SHELL || this.viewType === ViewType.VIBE)) {
+      return new DockPointer(ViewType.VIBE, this.pointer, nextOptions, this.layout, this.page);
+    }
     if (mode) nextOptions[VIEW_MODE_PARAM] = mode;
-    else delete nextOptions[VIEW_MODE_PARAM];
     return new DockPointer(this.viewType, this.pointer, nextOptions, this.layout, this.page);
   }
 
@@ -1512,6 +1538,12 @@ export class DockPointer implements IDockPointer {
       : { agentId: null, view: null };
   }
 
+  /** A SESSION's own dock — the shell dock of `agentic_process-<id>`. Pair with
+   *  `withViewMode` for a surface (Vibe maps it to the Vibe host dock). */
+  static forSession(processId: string): DockPointer {
+    return new DockPointer(ViewType.SHELL, `${AgenticProcess.type}${TypeId.DELIMITER}${processId}`);
+  }
+
   /**
    * Create dock pointer for shell/terminal viewer
    * @param sessionId - Optional shell session ID (e.g., 'run', 'flowShell', or custom UUID)
@@ -2230,6 +2262,13 @@ export class DockPointer implements IDockPointer {
     // non-desk page prefixes its id, giving each page its own tab namespace so a
     // `desk` tab and a `hub` tab with the same viewType/pointer never collide.
     const pagePrefix = this.page === PageId.DESK ? '' : `${this.page}|`;
+    // A Vibe HOST dock folds onto its process's shell identity: one process is ONE
+    // Tab row whichever way it is shown. The backend reconciles by this hash and
+    // re-points the stored pointer in place (`ensure_tab`), so switching Vibe ⇄
+    // Chat never mints a second chip.
+    if (this.viewType === ViewType.VIBE) {
+      return this.pointer ? `${pagePrefix}${ViewType.SHELL}|${this.pointer}` : null;
+    }
     // The workspace's ACTIVE DISPLAY is ONE tab per workspace whose TARGET varies:
     // identity is the host, and the pointer — the thing that changes on every
     // `flow show` — is deliberately excluded. That is what makes the row
@@ -2324,6 +2363,12 @@ export class DockPointer implements IDockPointer {
     // `viewType` is restated rather than left to `tabHash` (which already returns
     // null without one) so the registry lookups below narrow.
     if (!this.viewType || !this.tabHash) return null;
+    // The Vibe host persists its REAL viewType with the folded (shell) hash: the
+    // backend keys the row by the hash, and the stored viewType is what a chip
+    // click reopens.
+    if (this.viewType === ViewType.VIBE) {
+      return JSON.stringify({ viewType: this.viewType, pointer: this.pointer ?? '', tabHash: this.tabHash });
+    }
     // The active display persists its REAL target (viewType + pointer) alongside the
     // host-keyed hash. That asymmetry is the whole mechanism: the hash is what the
     // backend reconciles by (constant → the same row every show), the pointer is what

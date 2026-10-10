@@ -1,4 +1,3 @@
-import type { ShowTarget } from '@sdk';
 import CodeEditor from '@src/components/code-editor/CodeEditor';
 import DiffViewer from '@src/components/code-editor/DiffViewer';
 import { DisplayToolbar } from '@src/components/display-toolbar';
@@ -8,8 +7,9 @@ import { useAgenticProcessStream } from '@src/hooks/use-agentic-process-stream';
 import { AssetDocPointer } from '@src/navigation/AssetDocPointer';
 import { editorForPath } from '@src/navigation/asset-doc-types';
 import { DisplayHistoryButton } from './display-history-button';
+import { advanceDisplayRefreshGate, type DisplayRefreshGate, EMPTY_DISPLAY_REFRESH_GATE } from './display-refresh-gate';
 import { AgenticProcess, type DisplayEntry, FlowData, ViewType } from '@sdk';
-import {dockForDisplayTarget} from '@src/navigation/display-target-pointer';
+import { dockForDisplayTarget } from '@src/navigation/display-target-pointer';
 
 import { openActiveDisplay } from '@src/navigation/open-active-display';
 import { DockPointer } from '@src/navigation/DockPointer';
@@ -22,9 +22,13 @@ import { ContentPanel } from './content-panel/content-panel';
 import { DisplayChrome } from './display-chrome';
 import { launchVibeSessionForProject } from './use-start-vibe-session';
 import { VIBE_STARTER_PROMPTS } from './vibe-starter-prompts';
-import { type VibeWorkspaceSession, useVibeWorkspaceSessionHost } from './use-vibe-workspace-session';
+import { type VibeWorkspaceSession, useSessionShowState, useVibeWorkspaceSessionHost } from './use-vibe-workspace-session';
 import { VibeChatPane } from './vibe-chat-pane';
-import {displayAnnotationContextForDock, displayAnnotationContextForPath, type DisplayAnnotationContext} from './display-annotation';
+import {
+  displayAnnotationContextForDock,
+  displayAnnotationContextForPath,
+  type DisplayAnnotationContext,
+} from './display-annotation';
 
 import { submitDisplayAnnotation } from './display-annotation-submit';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -95,13 +99,8 @@ export function VibeWorkspace({ session }: VibeWorkspaceProps) {
   // no-op navigation (same URL) yet may sit behind a rebuild. It is the display
   // body's content epoch, which is what reloads it.
   const [showNonce, setShowNonce] = useState(0);
-  // The payload of the newest show — see `DisplayChrome.latestShown`.
-  const [latestShown, setLatestShown] = useState<ShowTarget | null>(null);
-
-  // The FIRST show after a mount pushes; every one after it replaces — otherwise the
-  // first show overwrites the URL the user arrived on and Back ejects them from the
-  // workspace instead of returning them to it.
-  const hasPushedDisplayRef = useRef(false);
+  // The newest show's payload and the first-show push flag, per session.
+  const { latestShown, setLatestShown, hasPushedDisplayRef } = useSessionShowState(session.processId);
 
   useEffect(() => {
     if (!activeProcess) return;
@@ -124,7 +123,7 @@ export function VibeWorkspace({ session }: VibeWorkspaceProps) {
       // target still lands in the display history, and the pane stays as it is.
       if (committed) hasPushedDisplayRef.current = true;
     });
-  }, [activeProcess, navigation, session.processDock.pointer, projectId, currentDock]);
+  }, [activeProcess, navigation, session.processDock.pointer, projectId, currentDock, setLatestShown, hasPushedDisplayRef]);
 
   // Open a past display as its OWN standard tab (the reusable behavior): convert
   // the stored target to its dock pointer and navigate.
@@ -148,7 +147,6 @@ export function VibeWorkspace({ session }: VibeWorkspaceProps) {
     () => <DisplayHistoryButton stack={displayStack} onOpen={onOpenHistoryEntry} />,
     [displayStack, onOpenHistoryEntry],
   );
-
 
   // The pane's own viewers (the focus fallback) keep an annotate
   // action; the pipeline itself lives in `display-annotation.ts` — capturing,
@@ -187,9 +185,7 @@ export function VibeWorkspace({ session }: VibeWorkspaceProps) {
           return;
         }
         if (!project?.id) {
-          throw new Error(
-            `no vibe session resolved for ${session.processId} and no active project to start one in`,
-          );
+          throw new Error(`no vibe session resolved for ${session.processId} and no active project to start one in`);
         }
         await launchVibeSessionForProject({
           projectId: project.id,
@@ -212,8 +208,12 @@ export function VibeWorkspace({ session }: VibeWorkspaceProps) {
   // per-file write items, so the turn edge is the refresh signal. Chat turns
   // end at `pending_user` (not COMPLETE — that's the one-shot execute path),
   // so listen on the workerStatus EDGE into any idle state rather than the
-  // 'complete' event. Tradeoff (accepted): a remount drops unsaved in-editor
-  // user edits; the editors autosave within ~2s, so the window is small.
+  // 'complete' event. The edge is GATED (`display-refresh-gate`): a turn whose
+  // new frames hold only text or read-only tool calls, with no backgrounded
+  // work still running, changed nothing and does not remount — otherwise every
+  // chat reply reloaded a running page. Anything the gate cannot read refreshes.
+  // Tradeoff (accepted): a remount drops unsaved in-editor user edits; the
+  // editors autosave within ~2s, so the window is small.
   // Owned HERE, not in the chat pane that sets it: `New` rebinds the URL as soon
   // as the process lands, and this workspace stops rendering the pane while the
   // new entity resolves — pane-local state would die mid-flight and leave the
@@ -221,13 +221,21 @@ export function VibeWorkspace({ session }: VibeWorkspaceProps) {
   const [newSessionPending, setNewSessionPending] = useState(false);
 
   const [refreshStamp, setRefreshStamp] = useState(0);
+  // The listener is bound once per process, so it reads the stream and the
+  // gate through refs — the frames as they are at the edge, not at bind time.
+  const streamItemsRef = useRef(streamItems);
+  streamItemsRef.current = streamItems;
+  const refreshGateRef = useRef<DisplayRefreshGate>(EMPTY_DISPLAY_REFRESH_GATE);
   useEffect(() => {
     setRefreshStamp(0);
+    refreshGateRef.current = EMPTY_DISPLAY_REFRESH_GATE;
     if (!activeProcess) return;
     return activeProcess.on('state_change', (change: { field?: string; newValue?: string }) => {
       if (change?.field !== 'workerStatus') return;
       if (change.newValue === 'pending_user' || change.newValue === 'complete') {
-        setRefreshStamp((s) => s + 1);
+        const { refresh, gate } = advanceDisplayRefreshGate(refreshGateRef.current, streamItemsRef.current);
+        refreshGateRef.current = gate;
+        if (refresh) setRefreshStamp((s) => s + 1);
       }
     });
   }, [activeProcess]);
@@ -263,7 +271,7 @@ export function VibeWorkspace({ session }: VibeWorkspaceProps) {
                 // (FLOWPAD-2045).
                 disabled={newSessionPending}
                 data-testid="display-starter-chip"
-                className="rounded-full border border-border px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60 disabled:pointer-events-none"
+                className="rounded-full border border-border px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {p}
               </button>
@@ -355,7 +363,6 @@ export function VibeWorkspace({ session }: VibeWorkspaceProps) {
           <WorkspaceChildStrip
             processTab={session.processTab}
             processDock={session.processDock}
-            projectId={projectId}
           />
           <div className="min-h-0 flex-1">
             {/* On the display URL: the agent-driven pin. On a child URL: the
@@ -364,8 +371,9 @@ export function VibeWorkspace({ session }: VibeWorkspaceProps) {
               displayEl
             ) : (
               <DisplayChrome process={persistedProcess ?? activeProcess} latestShown={latestShown}>
-                {/* A re-show AND the agent's turn end both mean "what is shown may
-                    have changed behind the same address" — see `contentEpoch`. */}
+                {/* A re-show AND a turn end that may have written (the gated
+                    `refreshStamp`) both mean "what is shown may have changed
+                    behind the same address" — see `contentEpoch`. */}
                 <ContentPanel minimalChrome contentEpoch={showNonce + refreshStamp} />
               </DisplayChrome>
             )}

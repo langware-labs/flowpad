@@ -88,7 +88,6 @@ export interface SessionNameState {
 /**
  * Result returned by AgenticProcess.spawn().
  */
-export type { DisplayEntry, ShowTarget } from '../models/ShowTarget';
 import type { DisplayEntry, ShowTarget } from '../models/ShowTarget';
 
 export interface SpawnResult {

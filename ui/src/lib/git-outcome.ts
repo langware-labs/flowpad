@@ -1,5 +1,5 @@
 import type { GitPullResult, GitPushResult } from '@sdk';
-import { getViewMode } from '@src/components/view-mode';
+import { getTierMode } from '@src/components/view-mode';
 import { notify } from '@src/notifications/notify';
 import type { NotificationAction } from '@src/notifications/types';
 import { gitOutcomeCopy, type GitSyncOp } from '@src/lib/publish-state';
@@ -38,7 +38,7 @@ export function closeGitConflict(workdir: string): void {
  * error is sticky and pops in every view (it is the only answer to the click).
  */
 export function notifyGitOutcome(op: GitSyncOp, result: SyncResult, workdir: string) {
-  const copy = gitOutcomeCopy(op, result.kind, getViewMode(), { branch: result.branch, message: result.message });
+  const copy = gitOutcomeCopy(op, result.kind, getTierMode(), { branch: result.branch, message: result.message });
   if (copy.level === 'success') {
     notify.success({ title: copy.title, message: copy.message, durationMs: 4000 });
     return;

@@ -305,7 +305,7 @@ export const RECORD_TYPE_NAV: Partial<Record<string, RecordTypeNav>> = {
       const sessionId = (r as any).session_id ?? undefined;
       return sessionId
         ? DockPointer.forLensTranscript('claude', sessionId)
-        : new DockPointer(ViewType.SHELL, `${AgenticProcess.type}${TypeId.DELIMITER}${tid.id}`);
+        : DockPointer.forSession(tid.id);
     },
   },
   project: {

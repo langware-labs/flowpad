@@ -44,6 +44,7 @@ import {
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { SessionSurfaceSwitch } from './SessionSurfaceSwitch';
 import { PTYViewer } from './pty-viewer';
 import { PTYEventsViewer } from './pty-events-viewer';
 import { CommandStatusViewer } from './command-status-viewer';
@@ -449,6 +450,9 @@ export function ProcessToolbar({
     />
   );
 
+  // Switch this session to the two OTHER surfaces (Terminal ⇄ Chat ⇄ Vibe).
+  const surfaceSwitchSlot = embedded ? null : <SessionSurfaceSwitch process={process} />;
+
   const rightSlot = (
     <>
       {/* Reusable asset manager — same component the chat side panel uses. */}
@@ -525,6 +529,7 @@ export function ProcessToolbar({
       title={titleSlot}
       download={downloadSlot}
       right={rightSlot}
+      modes={surfaceSwitchSlot}
     />
   );
 
@@ -537,7 +542,9 @@ export function ProcessToolbar({
       ) : (
         <ViewSwap
           advanced={advancedHeader}
-          standard={<StandardInteractiveTabHeader title={titleSlot} right={forkSlot} />}
+          standard={
+            <StandardInteractiveTabHeader title={titleSlot} right={forkSlot} modes={surfaceSwitchSlot} />
+          }
         />
       )}
 
@@ -553,6 +560,7 @@ export function ProcessToolbar({
 }
 
 // ── Sub-components ────────────────────────────────────────────────────────────
+
 
 function RichCheckboxItem({
   checked,

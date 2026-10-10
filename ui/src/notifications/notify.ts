@@ -1,5 +1,5 @@
 import { toast as sonnerToast } from 'sonner';
-import { getEffectiveViewMode, ViewMode } from '@src/contexts/view-mode-context';
+import { getDev } from '@src/contexts/view-mode-context';
 import type { NotificationData, NotificationInput, NotificationLevel } from './types';
 import { useAlertStore } from './alerts-store';
 import { useBadgeStore } from './store';
@@ -73,13 +73,13 @@ function dispatch(input: NotificationInput): string {
   }
 
   // Alerts are logged for the footer warnings popover in every mode, and are
-  // toasted only in Dev. The explicit dismiss on suppression matters: an alert
+  // toasted only with Dev on. The explicit dismiss on suppression matters: an alert
   // commonly REPLACES a sticky `notify.busy` toast under the same id (see
   // AssetManagerPopover), so silently skipping the emit would leave that
   // spinner running forever.
   if (isAlertLevel(data.level) && !data.transient) {
     useAlertStore.getState().push(data);
-    if (!data.forceToast && getEffectiveViewMode() !== ViewMode.Dev) {
+    if (!data.forceToast && !getDev()) {
       sonnerToast.dismiss(id);
       return id;
     }

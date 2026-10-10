@@ -338,13 +338,12 @@ export async function goHome(page: Page) {
 }
 
 /**
- * Navigate to the Shell view via the sidebar Shell button (client-side React
- * Router nav). Selects by lucide icon class — Shell is in mainNavItems
- * (always visible), so no chevron hover is needed.
+ * Navigate to the Shell view (the terminal host). The rail's former Chats entry
+ * is now "Tabs" — back to the last active tab, shown only while tabs are open —
+ * so the shell host is reached by its own address.
  */
 export async function gotoShellView(page: Page) {
-  const shellSidebarBtn = page.locator('[data-rail-item="chats"]');
-  await shellSidebarBtn.click();
+  await page.goto('/dock/shell?viewMode=advanced');
   await page.waitForURL(/\/dock\/shell/, { timeout: 10_000 });
   await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 10_000 });
 }

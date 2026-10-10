@@ -85,7 +85,8 @@ test('opening the project auto-launches the oldest agent once, with its intro an
   await page.goto(`/dock/project/${projectId}`);
 
   // 1. Load-time redirect into the session, in Vibe.
-  await expect(page).toHaveURL(/\/dock\/shell\/agentic_process-[0-9a-f-]+.*viewMode=vibe/);
+  // Shown in Vibe, the session is its Vibe host tab (`/dock/vibe/…`).
+  await expect(page).toHaveURL(/\/dock\/vibe\/agentic_process-[0-9a-f-]+/);
 
   // 2. The intro row is the first thing in the pane, signed by the OLDEST agent.
   const intro = page.getByTestId('agent-intro-message');

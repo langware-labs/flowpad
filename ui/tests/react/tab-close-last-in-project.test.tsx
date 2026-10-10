@@ -1,6 +1,7 @@
 /**
  * Closing the LAST tab in the active project lands on that project's HOME
- * (`navigation.openDock(DockPointer.forProject(projectId))` → ProjectHome) — it
+ * (`navigation.goHome({ homePage: true })` — the Home button's own path: the
+ * project's home agent when one is configured, else the tabless home) — it
  * does NOT skip to a tab in ANOTHER project, even if that other tab is more
  * recently active.
  *
@@ -31,13 +32,19 @@ const h = vi.hoisted(() => ({
   openDock: vi.fn(),
   openDockInWindow: vi.fn(),
   closeDock: vi.fn(),
+  goHome: vi.fn(),
   currentDock: null as DockPointer | null,
 }));
 
 vi.mock('@src/navigation/useDockNavigation', () => ({
   useCurrentDock: () => h.currentDock,
   useDockNavigation: () => ({
-    navigation: { openDock: h.openDock, openDockInWindow: h.openDockInWindow, closeDock: h.closeDock },
+    navigation: {
+      openDock: h.openDock,
+      openDockInWindow: h.openDockInWindow,
+      closeDock: h.closeDock,
+      goHome: h.goHome,
+    },
     currentDock: h.currentDock,
   }),
 }));
@@ -121,15 +128,12 @@ describe('closing the last tab in a project', () => {
     // platform-derived modKey matches in jsdom).
     fireEvent.keyDown(window, { key: 'w', ctrlKey: true, altKey: true, metaKey: true });
 
-    // Expected (navigateAfterClose): the project has no tabs left, so land on the
-    // PROJECT HOME (openDock(DockPointer.forProject(PROJ_A)) → ProjectHome) — the
-    // same destination a fresh project entry resolves to. It must NOT jump to
-    // project B's more-recent tab, and it does NOT fall back to the global home
-    // (closeDock) because a project scope is active.
-    await waitFor(() => expect(h.openDock).toHaveBeenCalled());
-    const dest = h.openDock.mock.calls[0][0] as DockPointer;
-    expect(dest.tabHash).toBe(DockPointer.forProject(PROJ_A).tabHash);
-    expect(dest.tabHash).not.toBe(DockPointer.fromTabHash(tabB.pointer).tabHash); // never project B's tab
+    // Expected (navigateAfterClose): the project has no tabs left, so go to the
+    // project's HOME — the Home button's path. It must NOT jump to project B's
+    // more-recent tab, and it does NOT fall back to the global home (closeDock)
+    // because a project scope is active.
+    await waitFor(() => expect(h.goHome).toHaveBeenCalledWith({ homePage: true }));
+    expect(h.openDock).not.toHaveBeenCalled(); // never project B's tab (nor any tab)
     expect(h.closeDock).not.toHaveBeenCalled();
   });
 });

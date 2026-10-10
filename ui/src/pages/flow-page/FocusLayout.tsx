@@ -21,7 +21,6 @@ import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { WindowTitle } from '@src/navigation/window-title';
 import { announceWinReady } from '@src/tabs/popout-handoff';
-import { ViewType } from '@src/types/ViewType';
 import { useEffect, useMemo } from 'react';
 import { ContentPanel } from './content-panel/content-panel';
 
@@ -37,7 +36,7 @@ export function winReadyKeyForDock(
 ): string | null {
   if (!dock?.viewType) return null;
   const { viewType, pointer } = dock;
-  if (viewType === ViewType.SHELL && pointer) {
+  if (DockPointer.isSessionView(viewType) && pointer) {
     return DockPointer.terminalTargetTypeIdForShellPointer(pointer).toString();
   }
   return pointer ? `${viewType}/${pointer}` : viewType;

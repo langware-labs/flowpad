@@ -292,7 +292,7 @@ async function loadAgentAppBody(args: LoaderArgs) {
       // project's scope; a shell URL its scope, a dead process's sibling, or the
       // owning process's scoped URL.
       await scopeAssetFileToItsProject(dockForSetup, requestUrl.pathname);
-      if (dockForSetup.viewType === ViewType.SHELL) {
+      if (DockPointer.isSessionView(dockForSetup.viewType)) {
         await resolveShellRoute(dockForSetup.pointer, requestUrl.pathname, processRouteCarry(dockForSetup));
       }
       // Step 4: commit the URL's project for every view, ahead of tab

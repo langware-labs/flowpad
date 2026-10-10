@@ -167,6 +167,8 @@ interface EntityExecutionPanelProps {
    * not two.
    */
   leadingSlot?: React.ReactNode | ((actions: { startNewSession: () => void }) => React.ReactNode);
+  /** Host actions rendered at the bottom of the settings popover (Vibe's "Open terminal"). */
+  settingsActions?: React.ReactNode;
   /** Placeholder for the composer textbox. Defaults to "Ask about this doc…". */
   placeholder?: string;
   /**
@@ -323,6 +325,7 @@ export function EntityExecutionPanel({
   emptyStateText = 'Ask about this document. The conversation will persist.',
   headerLabel,
   leadingSlot,
+  settingsActions,
   placeholder,
   allowAttachments = false,
   allowImagePaste = true,
@@ -944,6 +947,7 @@ export function EntityExecutionPanel({
               showProject={showProjectSetting}
               modelControl={modelSettingsNode}
               workerControl={workerSettingsNode}
+              actions={settingsActions}
               trigger={
                 <button
                   type="button"

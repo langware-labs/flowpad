@@ -1,15 +1,13 @@
 import { tabKey, tabManager, Tab } from '@sdk';
-import { Monitor, X } from 'lucide-react';
+import { Monitor } from 'lucide-react';
 import { useCallback, useMemo } from 'react';
-import { Button } from '@src/components/ui/button';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tooltip';
 import { TabStrip, type TabStripItem } from '@src/components/tabs/TabStrip';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { useTabCloser } from '@src/tabs/tab-close-request';
 import { closeTabWithLifecycle } from '@src/tabs/tab-content-lifecycle';
 import { useTabStripItems } from '@src/tabs/tab-row-item';
-import { useAllTabs, useTabLifecycles, useWorkspaceChildren } from '@src/tabs/use-tab-manager';
+import { useTabLifecycles, useWorkspaceChildren } from '@src/tabs/use-tab-manager';
 import { useLingui } from '@lingui/react/macro';
 
 interface WorkspaceChildStripProps {
@@ -18,9 +16,6 @@ interface WorkspaceChildStripProps {
   processTab: Tab | null;
   /** The display's dock pointer — the fixed "Display" chip target. */
   processDock: DockPointer;
-  /** The workspace's project scope — used to resolve where to land after the
-   *  whole workspace is closed (next tab → project home → base URL). */
-  projectId: string | null;
 }
 
 /**
@@ -29,15 +24,16 @@ interface WorkspaceChildStripProps {
  * micro-app's fixed "Active" tab. URL-first throughout — a chip click only
  * navigates; active state comes back from the URL (`currentDock.tabHash`).
  *
- * The children are ORDINARY global tabs (they also appear in the standard global
- * strip); this strip is just a filtered, workspace-local view of them. Grouping
- * (`parent_tab_id`) is minted by the opener context at the tab chokepoint, and
- * vibe-mode continuity by the navigation layer — so this component stays dumb.
+ * The children are ordinary `Tab` rows nested under the Vibe tab (the global
+ * strip shows only top-level tabs); this strip is the workspace-local view of
+ * them. Grouping (`parent_tab_id`) is minted by the opener context at the tab
+ * chokepoint, and vibe-mode continuity by the navigation layer — so this
+ * component stays dumb. The workspace itself closes from its chip in the global
+ * strip, and the backend closes its children with it (`Tab.close`).
  */
-export function WorkspaceChildStrip({ processTab, processDock, projectId }: WorkspaceChildStripProps) {
+export function WorkspaceChildStrip({ processTab, processDock }: WorkspaceChildStripProps) {
   const { t } = useLingui();
   const { currentDock, navigation } = useDockNavigation();
-  const allTabs = useAllTabs();
 
   // Children = the global list filtered to this display's tab (backend global
   // order preserved by filtering — no separate ordering).
@@ -45,8 +41,7 @@ export function WorkspaceChildStrip({ processTab, processDock, projectId }: Work
   const workspaceChildren = useWorkspaceChildren(processTab?.id);
   const children = tabManager.lifecycle.excludeClosing(workspaceChildren);
   // The workspace's OWN active display is already the fixed "Display" square, so
-  // its adopted child row must not ALSO be a chip. Dropped from the STRIP only —
-  // `children` keeps it, or closing the workspace would leak the row.
+  // its adopted child row must not ALSO be a chip. Dropped from the STRIP only.
   const visibleChildren = useMemo(
     () => children.filter((tab) => !(tab.dockPointer && new DockPointer(tab.dockPointer).isActiveDisplay)),
     [children],
@@ -93,31 +88,6 @@ export function WorkspaceChildStrip({ processTab, processDock, projectId }: Work
   // Content asking to close the tab it is shown in closes it the same way the X does.
   useTabCloser(childByKey, handleClose);
 
-  // Close the WHOLE workspace: the process/display anchor tab plus every child
-  // it opened. Backend close doesn't cascade to children, so we close each one
-  // explicitly. Then land on the next view via the same resolver the global
-  // strip uses (`resolveNextTab` → project home → base URL). URL-first: the
-  // handler only navigates; the loader is the single writer.
-  const handleCloseWorkspace = useCallback(() => {
-    if (!processTab) return;
-    const closing = [...children, processTab]; // children first, then the anchor
-    const closingIds = new Set(closing.map((t) => t.id));
-    // Skip tabs that are mid-close. A close is async: `closeTabWithLifecycle`
-    // marks `Closing` synchronously but the row stays in the snapshot until a
-    // post-close `list_all` lands (and `adoptGlobal` can even re-adopt a
-    // pre-close response). Ranked by `last_active_at`, the tab the user just
-    // closed is by definition the MOST recent candidate — so without this
-    // filter it wins, and navigating to it re-mints the tab (`ensure_tab`) and
-    // respawns its worker: "I close the tab and it keeps reopening".
-    // Same filter the children above and the global strip already apply.
-    const remaining = tabManager.lifecycle.excludeClosing(allTabs).filter((t) => !closingIds.has(t.id));
-    const next = tabManager.resolveNext(remaining, undefined, projectId);
-    if (next?.dockPointer) navigation.openDock(next.dockPointer);
-    else if (projectId) navigation.openDock(DockPointer.forProject(projectId));
-    else navigation.closeDock();
-    void Promise.allSettled(closing.map((t) => closeTabWithLifecycle(t))).finally(() => void tabManager.refresh());
-  }, [processTab, children, allTabs, projectId, navigation]);
-
   return (
     <div className="flex shrink-0 items-stretch border-b border-border bg-muted/20">
       {/* Fixed, SQUARE Display header — deliberately NOT tab-shaped (no rounded
@@ -153,28 +123,6 @@ export function WorkspaceChildStrip({ processTab, processDock, projectId }: Work
           testId="workspace-child-strip"
         />
       </div>
-      {/* Far-right Close control — tears down the whole workspace (process +
-          display + every child tab). Sized/styled to match the display
-          toolbar's icon buttons. */}
-      {processTab && (
-        <div className="flex shrink-0 items-center border-s border-border px-1">
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-7 w-7"
-                data-testid="close-vibe-workspace"
-                aria-label={t`Close workspace`}
-                onClick={handleCloseWorkspace}
-              >
-                <X className="h-4 w-4" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>{t`Close workspace`}</TooltipContent>
-          </Tooltip>
-        </div>
-      )}
     </div>
   );
 }

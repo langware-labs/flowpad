@@ -173,6 +173,10 @@ def _detach_git_history(repo_root: Path) -> None:
     # ``user.email`` would be absurd.
     import subprocess  # noqa: PLC0415
 
+    from flow_sdk.utils.git_usable import git_usable  # noqa: PLC0415
+
+    if not git_usable():  # a Mac without the Command Line Tools: git would open Apple's installer dialog
+        return
     subprocess.run(["git", "init", "-q"], cwd=root, capture_output=True, timeout=30, check=False)
 
 
@@ -667,9 +671,7 @@ class Project(SetupSkippable, Entity):
             return None
         return asset
 
-    async def index_missing_assets(
-        self, key: str, types: set[str], wanted: "Callable[[AssetCandidate], bool]"
-    ) -> None:
+    async def index_missing_assets(self, key: str, types: set[str], wanted: "Callable[[AssetCandidate], bool]") -> None:
         """Index the repo assets an open loads by itself — those of ``types`` that
         ``wanted`` picks under this project's roots — when their rows are missing.
 
@@ -2654,13 +2656,15 @@ class Project(SetupSkippable, Entity):
 
         states = await self.dependencies()
         warnings = project_dependencies.warnings_for(str(self.id), states)
-        return ApiSuccessResponse(data={
-            "dependencies": self._states(states),
-            "warnings": self._states(warnings),
-            # True while the resolve opening the project started is still fetching: a
-            # ``missing`` dependency may be on its way — the caller should not warn yet.
-            "resolving": project_dependencies.is_resolving(str(self.id)),
-        })
+        return ApiSuccessResponse(
+            data={
+                "dependencies": self._states(states),
+                "warnings": self._states(warnings),
+                # True while the resolve opening the project started is still fetching: a
+                # ``missing`` dependency may be on its way — the caller should not warn yet.
+                "resolving": project_dependencies.is_resolving(str(self.id)),
+            }
+        )
 
     @action.post(action_name="add-dependency")
     async def add_dependency_action(

@@ -362,11 +362,6 @@ async function expectStripTabs(page: Page, ids: string[]) {
 }
 
 /**
- * Click Home or the Chats/shell view. Home is a TOP-BAR control, not a rail
- * slot (`RailItemId` has no 'home' member — see rail-visibility.ts), so it is
- * addressed by its own testid; only `chats` is a rail item.
- */
-/**
  * Wait until the settled URL is the app root.
  *
  * The home loader canonicalises the bare root to `/?viewMode=<mode>`
@@ -378,9 +373,9 @@ function waitForRootUrl(page: Page) {
   return page.waitForURL((u) => u.pathname === '/', { timeout: 15_000 });
 }
 
-async function clickRail(page: Page, target: 'home' | 'chats') {
-  const sel = target === 'home' ? '[data-testid="top-nav-home"]' : '[data-rail-item="chats"]';
-  await page.locator(sel).click();
+/** Go Home through the TOP-BAR control (the rail no longer carries Home). */
+async function clickHome(page: Page) {
+  await page.locator('[data-testid="top-nav-home"]').click();
 }
 
 /**
@@ -532,9 +527,9 @@ test.describe('Interactive tabs / project filtering matrix', () => {
     const selected = (await tabIds(page))[1].replace('tab-shell|', '');
     await page.locator(tabSel).nth(1).click();
     await expect(page).toHaveURL(new RegExp(selected));
-    await clickRail(page, 'home');
+    await clickHome(page);
     await waitForRootUrl(page);
-    await clickRail(page, 'chats');
+    await page.goto('/dock/shell');
     await page.waitForURL(/\/dock\/shell/, { timeout: 15_000 });
     // All three tabs survive the round-trip ("keeps tabs alive"). Re-entry via the
     // Chats rail lands on bare /dock/shell (scope-seeded to the active project):
@@ -584,7 +579,7 @@ test.describe('Interactive tabs / project filtering matrix', () => {
     await gotoDockShell(page);
     await expect.poll(async () => (await tabIds(page)).length, { timeout: 20_000 }).toBe(2);
     const targetUrl = `/dock/shell/shell-${ids[1]}`;
-    await clickRail(page, 'home');
+    await clickHome(page);
     await waitForRootUrl(page);
     await page.goto(targetUrl);
     await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 30_000 });
@@ -1430,9 +1425,9 @@ test.describe('Interactive tabs / project filtering matrix', () => {
     // exact prior selection — the rail carries no remembered pointer — so the tab
     // is re-activated by clicking it, as a user would. Idempotent across rounds.)
     for (let r = 0; r < 2; r++) {
-      await clickRail(page, 'home');
+      await clickHome(page);
       await waitForRootUrl(page);
-      await clickRail(page, 'chats');
+      await page.goto('/dock/shell');
       await page.waitForURL(/\/dock\/shell/, { timeout: 15_000 });
       await expect.poll(async () => (await tabIds(page)).length, { timeout: 15_000 }).toBe(3);
       expect(await tabIds(page)).toEqual(before);
@@ -1480,7 +1475,7 @@ test.describe('Interactive tabs / project filtering matrix', () => {
     const target = (await tabIds(page))[1].replace('tab-shell|', '');
     await page.locator(tabSel).nth(1).click();
     await expect(page).toHaveURL(new RegExp(target));
-    await clickRail(page, 'home');
+    await clickHome(page);
     await waitForRootUrl(page);
     await page.goBack();
     await expect.poll(async () => page.url(), { timeout: 15_000 }).toContain(target);
@@ -1513,9 +1508,9 @@ test.describe('Interactive tabs / project filtering matrix', () => {
     await dismissCleanedSessionsOrSkip(page);
     await expect(page.locator(`[data-testid="tab-shell|agentic_process-${id}"]`)).toBeVisible({ timeout: 15_000 });
     expect(page.url()).toContain(`agentic_process-${id}`);
-    await clickRail(page, 'home');
+    await clickHome(page);
     await waitForRootUrl(page);
-    await clickRail(page, 'chats');
+    await page.goto('/dock/shell');
     await page.waitForURL(/\/dock\/shell/, { timeout: 15_000 });
     await page.locator(`[data-testid="tab-shell|agentic_process-${id}"]`).click();
     await expect.poll(async () => page.url(), { timeout: 15_000 }).toContain(`agentic_process-${id}`);

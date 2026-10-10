@@ -47,6 +47,7 @@ from pathlib import Path
 from typing import Mapping, Protocol, Sequence, runtime_checkable
 
 from flow_sdk.schema.data_spec.returned_value_spec import CliResult
+from flow_sdk.utils.git_usable import EXIT_NOT_FOUND, NOT_USABLE_MESSAGE, git_usable, is_git_argv
 
 
 @runtime_checkable
@@ -112,6 +113,10 @@ class _LocalCommandExecutor:
         """
         child_env = {**os.environ, **env} if env else None
         command = shlex.join(argv)
+        if is_git_argv(argv) and not git_usable():
+            # A Mac without the Command Line Tools: /usr/bin/git would open Apple's installer dialog. Answer as a
+            # missing binary instead; the Git wizard is where the person is asked to install it.
+            return CliResult.of_process(command, EXIT_NOT_FOUND, "", NOT_USABLE_MESSAGE)
         started = time.monotonic()
         try:
             completed = subprocess.run(
@@ -125,13 +130,20 @@ class _LocalCommandExecutor:
             )
         except subprocess.TimeoutExpired as exc:
             return CliResult.of_process(
-                command, None, _as_text(exc.stdout), _as_text(exc.stderr),
-                timed_out=True, duration_s=time.monotonic() - started,
+                command,
+                None,
+                _as_text(exc.stdout),
+                _as_text(exc.stderr),
+                timed_out=True,
+                duration_s=time.monotonic() - started,
             )
         except (OSError, ValueError) as exc:
             return CliResult.of_process(command, None, "", f"{type(exc).__name__}: {exc}")
         return CliResult.of_process(
-            command, completed.returncode, completed.stdout or "", completed.stderr or "",
+            command,
+            completed.returncode,
+            completed.stdout or "",
+            completed.stderr or "",
             duration_s=time.monotonic() - started,
         )
 

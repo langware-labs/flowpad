@@ -1,21 +1,17 @@
 /**
- * First-paint race: `useSessionSurface()` must report "not known yet" rather than
- * the registry default while the stored preference has not been read in.
+ * A session's surface never waits on — or reads — the stored `view_mode`.
  *
- * The bug it guards: on the first load in a browser profile there is no
- * localStorage boot seed for `preferences.ui.view_mode`, so `get()` served the
- * registry default and the session painted that surface for ~1s until
- * `preferences.json` landed — then repainted into the user's real one. Callers
- * hold the arrangement while this is null, so nothing wrong is painted.
- *
- * (Ported from the chat-mode preference, which this one absorbed — the surface
- * is now derived from the single view mode.)
+ * It used to: the surface came from the preference, so on the first load in a
+ * browser profile (no localStorage boot seed) it was "not known yet" until
+ * `preferences.json` landed, and the session held its pane. The preference no
+ * longer decides anything in the UI; a session follows its tab's stated mode or
+ * the app's one mode (Vibe), so the answer is known at once, loaded or not.
  */
-import { instancePreferences, InstancePreferencesEvent, PREF_REGISTRY, PrefKey } from '@sdk';
+import { instancePreferences, InstancePreferencesEvent, PrefKey } from '@sdk';
 import { renderHook } from '@testing-library/react';
 import { act } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { surfaceForViewMode, useSessionSurface, ViewMode } from '@src/contexts/view-mode-context';
+import { surfaceForViewMode, UNSTATED_VIEW_MODE, useSessionSurface } from '@src/contexts/view-mode-context';
 
 // `view-mode-context` reads the current dock, which calls `useLocation()`.
 // These tests render without a Router, so stub only that hook and keep the
@@ -45,36 +41,22 @@ function reset({ loaded, stored }: { loaded: boolean; stored?: string }) {
 
 afterEach(() => reset({ loaded: true }));
 
-describe('useSessionSurface first-paint resolution', () => {
-  it('is null while nothing has been read in — no default is painted', () => {
+describe('useSessionSurface — never the stored preference', () => {
+  it('is known before the preferences load: the app mode, no wait', () => {
     reset({ loaded: false });
     const { result } = renderHook(() => useSessionSurface());
-    expect(result.current).toBeNull();
+    expect(result.current).toBe(surfaceForViewMode(UNSTATED_VIEW_MODE));
   });
 
-  it('resolves to the stored mode once the preferences load', () => {
-    reset({ loaded: false });
+  it('a stored mode changes nothing — loaded or seeded', () => {
+    reset({ loaded: false, stored: 'standard' });
     const { result } = renderHook(() => useSessionSurface());
-    expect(result.current).toBeNull();
+    expect(result.current).toBe(surfaceForViewMode(UNSTATED_VIEW_MODE));
 
     act(() => {
       reset({ loaded: true, stored: 'advanced' });
       instancePreferences.emit(InstancePreferencesEvent.PREFERENCES_LOADED, {});
     });
-    expect(result.current).toBe('terminal');
-  });
-
-  it('resolves to the default surface once loaded with nothing stored', () => {
-    reset({ loaded: true });
-    const { result } = renderHook(() => useSessionSurface());
-    expect(result.current).toBe(surfaceForViewMode(PREF_REGISTRY[PrefKey.VIEW_MODE].defaultValue as ViewMode));
-  });
-
-  it('does not wait when a boot seed is already present', () => {
-    // The steady state: every load after the first has the localStorage seed, so
-    // the value is known synchronously and there is nothing to hold for.
-    reset({ loaded: false, stored: 'standard' });
-    const { result } = renderHook(() => useSessionSurface());
-    expect(result.current).toBe('chat');
+    expect(result.current).toBe(surfaceForViewMode(UNSTATED_VIEW_MODE));
   });
 });

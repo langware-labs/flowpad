@@ -37,7 +37,7 @@ vi.mock('@src/hooks/use-all-projects', () => ({
     return { projects: h.scanned, isLoading: false };
   },
 }));
-vi.mock('@src/hooks/use-preference', () => ({ usePreference: () => [false] }));
+vi.mock('@src/hooks/use-preference', () => ({ usePreference: () => [false], usePreferenceValue: () => false }));
 vi.mock('@src/tabs/use-tab-manager', () => ({ useTabProjectBuckets: () => ({ buckets: [] }) }));
 vi.mock('@sdk/react/hooks', () => ({ useProject: () => ({ data: null }) }));
 vi.mock('@src/navigation/useDockNavigation', async (orig) => ({

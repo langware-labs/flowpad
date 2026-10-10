@@ -28,6 +28,8 @@ import {
 } from '@src/components/ui/context-menu';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
 import { TabTooltipName } from '@src/components/tabs/TabTooltipName';
+import { TabFavoriteStar } from '@src/components/tabs/TabFavoriteStar';
+import type { FavoriteRef } from '@src/hooks/use-favorites';
 import { useIsAdvanced } from '@src/contexts/view-mode-context';
 import { useCloseOnIframeFocus } from '@src/hooks/use-close-on-iframe-focus';
 import { animateGlow } from '@src/lib/animate-glow';
@@ -91,6 +93,9 @@ export interface TabStripItem {
    *  keep meaning "the row I am", so select/close/rename stay pointed at this
    *  tab; only the rendered icon and label defer. */
   standsFor?: { icon?: React.ReactNode; title: string };
+  /** What bookmarking THIS tab means (`favoriteTargetForDock`) — present iff the
+   *  tab is bookmarkable; the chip then leads with its own star. */
+  favorite?: FavoriteRef | null;
   /** Whether the chip can be closed (default true). A `closable: false` chip
    *  hides its X, is excluded from close-all/close-others/close-right, and shows
    *  no "Close" context item — for pinned fixtures like the vibe "Display" chip. */
@@ -505,6 +510,9 @@ export const TabStrip: React.FC<TabStripProps> = ({
         data-active={isActive ? 'true' : undefined}
         {...(item.dataAttributes ?? {})}
       >
+        {item.favorite && density === 'normal' && !isEditing && (
+          <TabFavoriteStar favorite={item.favorite} chip={() => tabRefs.current[key] ?? null} />
+        )}
         {item.standsFor?.icon ?? item.icon}
         {!iconOnly && item.badge}
         {isEditing ? (
@@ -549,12 +557,14 @@ export const TabStrip: React.FC<TabStripProps> = ({
     // the raised tab reads as a single surface. Kept as a transparent element
     // (not removed) so chip geometry is stable; shown everywhere during a drag
     // to avoid flicker while the active index moves under the preview.
+    // A FOREGROUND tint, not `bg-border`: in dark the border token IS the band's
+    // colour (both hsl 0 0% 14.9%), so the separator was drawn and invisible.
     const hideSeparator = !dragKey && (index - 1 === activeIndex || index === activeIndex);
     const separator =
       index > 0 ? (
         <div
           aria-hidden
-          className={`h-4 w-px shrink-0 self-center ${hideSeparator ? 'bg-transparent' : 'bg-border/60'}`}
+          className={`h-4 w-px shrink-0 self-center ${hideSeparator ? 'bg-transparent' : 'bg-foreground/20'}`}
         />
       ) : null;
 
@@ -635,12 +645,9 @@ export const TabStrip: React.FC<TabStripProps> = ({
         {items.map((item, index) => renderChip(item, index, items))}
       </div>
 
-      {/* Trailing toolbar — a fixed sibling AFTER the row (never overlaps or
-          shrinks); the chips absorb all width pressure. */}
-      {trailing && <div className="flex shrink-0 items-center self-stretch">{trailing}</div>}
-
-      {/* Close All button — shown when 2+ tabs are open. Tab count badge
-          hints at the destructive scope before clicking. */}
+      {/* Close All button — shown when 2+ tabs are open, BEFORE the openers so
+          appearing never moves them. Tab count badge hints at the destructive
+          scope before clicking. */}
       {!hideCloseAllButton && allVisibleItems.length >= 2 && (
         <TooltipProvider delayDuration={600}>
           <Tooltip>
@@ -665,6 +672,14 @@ export const TabStrip: React.FC<TabStripProps> = ({
           </Tooltip>
         </TooltipProvider>
       )}
+
+      {/* Trailing toolbar (the openers) — LAST, so it is pinned to the strip's
+          end whatever else shows. It used to sit before Close All, which appears
+          at 2+ tabs: opening a second tab slid the openers left and parked Close
+          All exactly where "Start Claude" had been, so a second click on the
+          same spot closed every tab. A fixed sibling (never overlaps or shrinks);
+          the chips absorb all width pressure. */}
+      {trailing && <div className="flex shrink-0 items-center self-stretch">{trailing}</div>}
     </div>
   );
 };

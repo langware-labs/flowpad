@@ -7,7 +7,6 @@ import {
   embedVibeSubagent,
 } from './use-start-vibe-session';
 import { chatTargetForProject } from '@src/lib/chat-target';
-import { ViewMode } from '@src/contexts/view-mode-context';
 import { useAgentContext } from '@src/contexts/agent-context';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { notify } from '@src/notifications/notify';
@@ -16,6 +15,7 @@ import { VibeWorkerSelect } from './vibe-worker-select';
 import { normalizeWorkerType, type WorkerType } from '@src/components/workers/worker-types';
 import { useDefaultWorkerType } from '@src/contexts/HarnessCapabilitiesContext';
 import { AgenticProcess, ProcessKind, toplog } from '@sdk';
+import { SessionSurfaceSwitch } from '@src/components/terminal/interactive-terminal/SessionSurfaceSwitch';
 import { claimTabSwitchReady, sinceTabSwitch } from '@src/navigation/tab-switch-state';
 import { useCallback, useEffect, useState } from 'react';
 import { useLingui } from '@lingui/react/macro';
@@ -51,9 +51,10 @@ export function VibeChatPane({
   const { project } = useAgentContext();
   const { navigation } = useDockNavigation();
   const defaultWorkerType = useDefaultWorkerType();
-  // The same stored tier the hero composers start a build with, so picking Fast
-  // there is not silently undone by the next in-workspace build.
-  const [vibeModelTier] = useVibeModelTier();
+  // The stored tier every build starts with. The home carries no picker, so this
+  // pane's picker is where it is set: a pick switches this session AND becomes
+  // the tier the next build (from the home or here) starts with.
+  const [vibeModelTier, setVibeModelTier] = useVibeModelTier();
   const { promptContext, consume } = useKeyedAssetPromptContext(workContext);
   const [pendingWorkerSwitch, setPendingWorkerSwitch] = useState<{
     workerType: WorkerType;
@@ -246,6 +247,15 @@ export function VibeChatPane({
         dense
         allowAttachments
         composerDisabled={startingNewSession}
+        // The session's surface selector — the same control as the terminal/chat headers.
+        settingsActions={
+          process ? (
+            <div className="flex items-center justify-between gap-2" data-testid="execution-settings-surface">
+              <div className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">{t`Show as`}</div>
+              <SessionSurfaceSwitch process={process} />
+            </div>
+          ) : null
+        }
         leadingSlot={({ startNewSession }) => (
           <NewSessionPill
             onClick={() => void handleNewSession(startNewSession)}
@@ -274,7 +284,10 @@ export function VibeChatPane({
         modelSelectSlot={({ value, disabled, onChange }) => (
           <VibeModelSelect
             value={value}
-            onChange={(next) => onChange(next)}
+            onChange={(next) => {
+              setVibeModelTier(next);
+              return onChange(next);
+            }}
             disabled={disabled}
           />
         )}
@@ -289,22 +302,14 @@ export function VibeChatPane({
         initialProcessId={process?.id ?? null}
         promptContext={promptContext ? { label: t`Working on ${promptContext.label}`, text: promptContext.text } : null}
         onPromptContextConsumed={promptContext ? () => consume(promptContext.key) : undefined}
-        // Picking a PAST build names no mode on purpose: an existing session
-        // opens in the mode it was last seen in (`AgenticProcess.last_mode`,
-        // seeded onto the URL by `openDock`). Pinning Vibe here dragged a
-        // session the user had put in Terminal back into the vibe skin every
-        // time they reached it from Recent. A session with no memory yet still
-        // lands in Vibe — that is the mode we are in, and the seed falls back
-        // to inheriting it.
+        // New and Recent open a Vibe tab beside this one (`openVibeTabBeside`).
         onProcessSelected={(processId) => {
-          void navigation.openShellProcess(processId);
+          void navigation.openVibeTabBeside(processId);
         }}
-        // A NEW build is a vibe build: it has no memory to honour, and this is
-        // the one place that decides what mode it is born in.
         onProcessCreated={async (newProcess) => {
           await newProcess.enableAssistant();
           await embedVibeSubagent(newProcess);
-          void navigation.openShellProcess(newProcess.id, { viewMode: ViewMode.Vibe });
+          void navigation.openVibeTabBeside(newProcess.id);
         }}
       />
       <VibeWorkerSwitchDialog

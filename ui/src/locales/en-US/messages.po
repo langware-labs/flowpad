@@ -87,6 +87,10 @@ msgstr "— show trace event gutter"
 msgid "…"
 msgstr "…"
 
+#: src/pages/entry/AgentLaunchLanding.tsx
+msgid "…or a repository URL"
+msgstr "…or a repository URL"
+
 #~ msgid ".env.local file"
 #~ msgstr ".env.local file"
 
@@ -826,6 +830,10 @@ msgstr "{envFileName} file"
 msgid "{failed} of {0} failed to delete."
 msgstr "{failed} of {0} failed to delete."
 
+#: src/components/status-bar/GitResolveButton.tsx
+msgid "{files} files need merging — let the assistant merge them"
+msgstr "{files} files need merging — let the assistant merge them"
+
 #: src/components/share-to-conversation/GitShareGateDialog.tsx
 msgid "{folderName} has changes that haven't been pushed yet. The receiver can only pull what's on the remote."
 msgstr "{folderName} has changes that haven't been pushed yet. The receiver can only pull what's on the remote."
@@ -878,6 +886,10 @@ msgstr "{indexedCount} indexed"
 #: src/components/llm-endpoints/FundingProvenance.tsx
 msgid "{label}"
 msgstr "{label}"
+
+#: src/components/terminal/interactive-terminal/SessionSurfaceSwitch.tsx
+msgid "{label} — not while the agent is working"
+msgstr "{label} — not while the agent is working"
 
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
 msgid "{label} docs"
@@ -975,6 +987,10 @@ msgstr "{name} was added, but another desk answers first"
 #: src/components/helpdesk/AddHelpdeskDialog.tsx
 msgid "{name} was added, but its guides cannot be opened"
 msgstr "{name} was added, but its guides cannot be opened"
+
+#: src/pages/entry/AgentLaunchLanding.tsx
+msgid "{name} works on another project. Which one?"
+msgstr "{name} works on another project. Which one?"
 
 #: src/hooks/use-rag-roots.tsx
 msgid "{name}: indexing stopped"
@@ -1225,6 +1241,10 @@ msgstr "<0>Ignore</0> — remove the DB row, keep the shadow record dir at <1>~/
 msgid "<0>New / Stale / Mis-Sc</0> sum to <1>Pending</1>: a Fast index drives them all to 0. <2>Orphan</2> rows persist until you Scan Orphans → sweep."
 msgstr "<0>New / Stale / Mis-Sc</0> sum to <1>Pending</1>: a Fast index drives them all to 0. <2>Orphan</2> rows persist until you Scan Orphans → sweep."
 
+#: src/components/workspace/workspace-switcher.tsx
+msgid "<name>"
+msgstr "<name>"
+
 #: src/components/assets/editor/task/AnalyzeStatusButton.tsx
 msgid "<one short line>"
 msgstr "<one short line>"
@@ -1273,6 +1293,10 @@ msgstr "$/day"
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 msgid "1 change not published"
 msgstr "1 change not published"
+
+#: src/components/status-bar/GitResolveButton.tsx
+msgid "1 file needs merging — let the assistant merge it"
+msgstr "1 file needs merging — let the assistant merge it"
 
 #: src/components/lens-viewer/ClaudeErrorsViewer.tsx
 #: src/components/project-activity-strip/BookmarkColumn.tsx
@@ -1498,6 +1522,10 @@ msgstr "A thread quiet this long ends; the next message starts a new one. Empty 
 #: src/components/assets/editor/wizard/WizardStepForm.tsx
 msgid "a wizard name"
 msgstr "a wizard name"
+
+#: src/components/workspace/workspace-switcher.tsx
+msgid "A workspace is a folder of related projects. It starts empty."
+msgstr "A workspace is a folder of related projects. It starts empty."
 
 #: src/components/assets/editor/wizard/WizardForm.tsx
 msgid "about"
@@ -2357,6 +2385,7 @@ msgstr "All observed deployments are current"
 msgid "All owners"
 msgstr "All owners"
 
+#: src/components/connections-manager.tsx
 #: src/components/connections-manager/credential-rows-view.tsx
 #: src/components/connections-manager/machine-wide-cell.tsx
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
@@ -2537,6 +2566,10 @@ msgstr "Also open sidecar OS Terminal"
 #: src/components/data-sources/ChannelRouteControl.tsx
 msgid "Also to"
 msgstr "Also to"
+
+#: src/components/project-setup/ProjectSetupDialog.tsx
+msgid "Always"
+msgstr "Always"
 
 #: src/components/collaboration/LiveSessionView.tsx
 msgid "Always allow sessions from {guestName}"
@@ -3515,6 +3548,10 @@ msgstr "Back to repositories"
 msgid "Back to stream inbox"
 msgstr "Back to stream inbox"
 
+#: src/components/top-nav-bar/TopNavBar.tsx
+msgid "Back to tabs"
+msgstr "Back to tabs"
+
 #: src/components/task-bar/SharedTaskView.tsx
 msgid "Back to tasks"
 msgstr "Back to tasks"
@@ -3965,6 +4002,10 @@ msgstr "Can’t find what you need? Send us a question and a person will get bac
 msgid "Can't launch this agent: it doesn't exist, or you don't have access to it."
 msgstr "Can't launch this agent: it doesn't exist, or you don't have access to it."
 
+#: src/pages/entry/AgentLaunchLanding.tsx
+msgid "Can't launch this project: it doesn't exist, or you don't have access to it."
+msgstr "Can't launch this project: it doesn't exist, or you don't have access to it."
+
 #: src/components/diagnose/open-in-terminal-button.tsx
 msgid "Can't open terminal"
 msgstr "Can't open terminal"
@@ -4033,6 +4074,7 @@ msgstr "Can't update right now — showing the last synced list."
 #: src/components/project-activity-strip/RecentConversationsStrip.tsx
 #: src/components/project-selector/NewProjectDialog.tsx
 #: src/components/project-selector/NewProjectFromGitDialog.tsx
+#: src/components/project-setup/ProjectSetupDialog.tsx
 #: src/components/prompt-library/PromptEditDialog.tsx
 #: src/components/quick-create/McpCreateDialog.tsx
 #: src/components/quick-create/QuickCreateDialog.tsx
@@ -4056,6 +4098,7 @@ msgstr "Can't update right now — showing the last synced list."
 #: src/components/token-plan/SetBudgetSheet.tsx
 #: src/components/version-popover/version-popover.tsx
 #: src/components/wizard/WizardHost.tsx
+#: src/components/workspace/workspace-switcher.tsx
 #: src/pages/entry/InstallLanding.tsx
 #: src/pages/entry/LaunchLanding.tsx
 #: src/pages/flow-page/VibeWorkerSwitchDialog.tsx
@@ -4227,6 +4270,14 @@ msgstr "Changes"
 #~ msgid "Changes committed and pushed"
 #~ msgstr "Changes committed and pushed"
 
+#: src/lib/publish-state.ts
+msgid "Changes need merging"
+msgstr "Changes need merging"
+
+#: src/components/status-bar/GitResolveButton.tsx
+msgid "Changes need merging — let the assistant finish it"
+msgstr "Changes need merging — let the assistant finish it"
+
 #: src/components/data-sources/MessageChannelsList.tsx
 msgid "Channel"
 msgstr "Channel"
@@ -4278,7 +4329,6 @@ msgid "Chat with this deployed agent"
 msgstr "Chat with this deployed agent"
 
 #: src/components/chats-navigator/ChatsNavigator.tsx
-#: src/components/collapsed-sidebar/collapsed-sidebar.tsx
 msgid "Chats"
 msgstr "Chats"
 
@@ -4345,6 +4395,10 @@ msgstr "Checking Git…"
 #: src/components/task-receive/IncomingTaskDialog.tsx
 msgid "Checking if you have a local clone of the repository."
 msgstr "Checking if you have a local clone of the repository."
+
+#: src/components/task-receive/LaunchDialog.tsx
+msgid "Checking out the projects and opening the session."
+msgstr "Checking out the projects and opening the session."
 
 #: src/components/helpdesk/HelpdeskLoadDialog.tsx
 msgid "Checking the help desk files"
@@ -4444,6 +4498,7 @@ msgid "Choose file"
 msgstr "Choose file"
 
 #: src/components/quick-create/ScopeSelection.tsx
+#: src/components/workspace/workspace-switcher.tsx
 msgid "Choose folder…"
 msgstr "Choose folder…"
 
@@ -4835,7 +4890,7 @@ msgstr "Cloning…"
 #: src/components/tabs/TabStrip.tsx
 #: src/components/task-receive/IncomingProjectDialog.tsx
 #: src/components/task-receive/IncomingTaskDialog.tsx
-#: src/components/task-receive/IncomingTaskDialog.tsx
+#: src/components/task-receive/LaunchDialog.tsx
 #: src/components/terminal/interactive-terminal/command-status-viewer/CommandStatusViewer.tsx
 #: src/components/terminal/interactive-terminal/EntityShareDialog.tsx
 #: src/components/terminal/interactive-terminal/PaneBar.tsx
@@ -4923,8 +4978,8 @@ msgstr "Close to the Right"
 
 #: src/pages/flow-page/workspace-child-strip.tsx
 #: src/pages/flow-page/workspace-child-strip.tsx
-msgid "Close workspace"
-msgstr "Close workspace"
+#~ msgid "Close workspace"
+#~ msgstr "Close workspace"
 
 #: src/components/project-activity-strip/BookmarkColumn.tsx
 msgid "Closed"
@@ -5430,6 +5485,11 @@ msgstr "Connected to {hostName}'s machine."
 #: src/components/GitHubConnectionDialog.tsx
 msgid "Connected to GitHub"
 msgstr "Connected to GitHub"
+
+#. placeholder {0}: credential.missingScopes.join(', ')
+#: src/components/connections-manager.tsx
+msgid "Connected without {0}: reconnect to grant them"
+msgstr "Connected without {0}: reconnect to grant them"
 
 #: src/components/account/hub-status-visuals.ts
 #: src/components/connections-manager.tsx
@@ -6003,6 +6063,10 @@ msgstr "Could not create the MCP server"
 msgid "Could not create the task"
 msgstr "Could not create the task"
 
+#: src/components/workspace/workspace-switcher.tsx
+msgid "Could not create the workspace"
+msgstr "Could not create the workspace"
+
 #: src/components/automations/AutomationPage.tsx
 #: src/components/chats-navigator/ChatsNavigator.tsx
 msgid "Could not delete"
@@ -6524,9 +6588,14 @@ msgstr "Could not sign out of FlowPad"
 msgid "Could not sign the sandbox out"
 msgstr "Could not sign the sandbox out"
 
+#. placeholder {0}: req.name
 #: src/components/project-setup/ProjectSetupDialog.tsx
-msgid "Could not skip {name}"
-msgstr "Could not skip {name}"
+msgid "Could not skip {0}"
+msgstr "Could not skip {0}"
+
+#: src/components/project-setup/ProjectSetupDialog.tsx
+#~ msgid "Could not skip {name}"
+#~ msgstr "Could not skip {name}"
 
 #: src/components/assets/editor/agent-profile/deployment/DeploymentProcessPanel.tsx
 #: src/components/assets/editor/wizard/WizardViewer.tsx
@@ -6597,6 +6666,11 @@ msgstr "Could not switch to terminal"
 #: src/components/automations/BusView.tsx
 msgid "Could not test it"
 msgstr "Could not test it"
+
+#. placeholder {0}: req.name
+#: src/components/project-setup/ProjectSetupDialog.tsx
+msgid "Could not undo the skip of {0}"
+msgstr "Could not undo the skip of {0}"
 
 #: src/components/assets/editor/PublishedToggle.tsx
 msgid "Could not unpublish"
@@ -6685,6 +6759,14 @@ msgstr "Couldn't finish preparing your workspace"
 msgid "Couldn't invite {0}: {1}"
 msgstr "Couldn't invite {0}: {1}"
 
+#: src/components/task-receive/IncomingDeepLink.tsx
+msgid "Couldn't launch"
+msgstr "Couldn't launch"
+
+#: src/components/task-receive/LaunchDialog.tsx
+msgid "Couldn't launch."
+msgstr "Couldn't launch."
+
 #. placeholder {0}: shellId.slice(0, 8)
 #. placeholder {1}: directCleanup.title
 #: src/routes/loaders/load-shell.ts
@@ -6692,12 +6774,16 @@ msgid "Couldn't load {0}… ({1}) — opened {fallbackPointer} instead."
 msgstr "Couldn't load {0}… ({1}) — opened {fallbackPointer} instead."
 
 #: src/pages/entry/AgentLaunchLanding.tsx
-msgid "Couldn't load this agent."
-msgstr "Couldn't load this agent."
+#~ msgid "Couldn't load this agent."
+#~ msgstr "Couldn't load this agent."
 
 #: src/components/terminal/interactive-terminal/side-windows/SkillsAgentsPanel.tsx
 msgid "Couldn’t load transcript"
 msgstr "Couldn’t load transcript"
+
+#: src/pages/entry/AgentLaunchLanding.tsx
+msgid "Couldn't load what this link points at."
+msgstr "Couldn't load what this link points at."
 
 #: src/components/git/RepoPicker.tsx
 msgid "Couldn’t load your repos."
@@ -6717,8 +6803,8 @@ msgid "Couldn't open the project"
 msgstr "Couldn't open the project"
 
 #: src/lib/publish-state.ts
-msgid "Couldn't publish"
-msgstr "Couldn't publish"
+#~ msgid "Couldn't publish"
+#~ msgstr "Couldn't publish"
 
 #: src/components/web-url-display/WebUrlDisplay.tsx
 msgid "Couldn't reach {host}."
@@ -6797,7 +6883,6 @@ msgid "Couldn't start the GitHub connection."
 msgstr "Couldn't start the GitHub connection."
 
 #: src/lib/publish-state.ts
-#: src/lib/publish-state.ts
 msgid "Couldn't update"
 msgstr "Couldn't update"
 
@@ -6853,6 +6938,7 @@ msgstr "CPU:"
 #: src/components/quick-create/QuickCreateDialog.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
+#: src/components/workspace/workspace-switcher.tsx
 #: src/pages/hub-home/NewSandboxDialog.tsx
 msgid "Create"
 msgstr "Create"
@@ -7922,6 +8008,10 @@ msgstr "Dev mode"
 #: src/components/collapsed-sidebar/collapsed-sidebar.tsx
 msgid "Dev mode ON — click to disable"
 msgstr "Dev mode ON — click to disable"
+
+#: src/pages/flow-page/content-panel/user-dropdown/user-menu-header.tsx
+msgid "Developer mode is on — double-click to turn it off"
+msgstr "Developer mode is on — double-click to turn it off"
 
 #: src/components/developer-layout/dev-menu.tsx
 msgid "Developer Tools"
@@ -9114,6 +9204,10 @@ msgstr "Event: "
 msgid "Events"
 msgstr "Events"
 
+#: src/components/data-sources/DataSourcePage.tsx
+msgid "Events and settings"
+msgstr "Events and settings"
+
 #: src/components/data-sources/SourceMenu.tsx
 msgid "Events on the bus"
 msgstr "Events on the bus"
@@ -9293,8 +9387,12 @@ msgstr "Everything is already up to date."
 #~ msgstr "Everything is in place."
 
 #: src/components/project-setup/ProjectSetupDialog.tsx
-msgid "Everything is set up."
-msgstr "Everything is set up."
+#~ msgid "Everything is set up."
+#~ msgstr "Everything is set up."
+
+#: src/components/project-setup/ProjectSetupDialog.tsx
+msgid "Everything required is set up."
+msgstr "Everything required is set up."
 
 #: src/components/assets/editor/llm-endpoint/LlmEndpointAssetView.tsx
 msgid "Everything the budget above allows"
@@ -9738,6 +9836,7 @@ msgstr "Failed to open {folderType} folder"
 
 #: src/components/open-project-component/use-open-project.ts
 #: src/components/quick-create/QuickCreateDialog.tsx
+#: src/components/workspace/workspace-switcher.tsx
 msgid "Failed to open folder picker"
 msgstr "Failed to open folder picker"
 
@@ -10371,6 +10470,10 @@ msgstr "Flowpad diagnostics"
 msgid "FlowPad didn't open? Install it, then come back to this page."
 msgstr "FlowPad didn't open? Install it, then come back to this page."
 
+#: src/pages/entry/AgentLaunchLanding.tsx
+msgid "FlowPad didn't open. Install it from flowpad.ai, then try again."
+msgstr "FlowPad didn't open. Install it from flowpad.ai, then try again."
+
 #: src/components/git/CreatePrivateRepoForm.tsx
 msgid "Flowpad initializes the repository, then proposes the install on a separate review branch."
 msgstr "Flowpad initializes the repository, then proposes the install on a separate review branch."
@@ -10731,6 +10834,14 @@ msgstr "Get it at flowpad.ai"
 #: src/journey/JourneyBadge.tsx
 msgid "Getting started — {stepsLeft} steps left"
 msgstr "Getting started — {stepsLeft} steps left"
+
+#: src/components/task-receive/LaunchDialog.tsx
+msgid "Getting the controller project"
+msgstr "Getting the controller project"
+
+#: src/components/task-receive/LaunchDialog.tsx
+msgid "Getting the project to work on"
+msgstr "Getting the project to work on"
 
 #: src/components/graph-view/ui/NodePanel.tsx
 msgid "ghost"
@@ -12191,6 +12302,10 @@ msgstr "Issue diagnoses recorded by the assistant. Click a row to view the full 
 msgid "It doesn't appear to be installed on your computer. Would you like to install it now?"
 msgstr "It doesn't appear to be installed on your computer. Would you like to install it now?"
 
+#: src/components/assets/editor/wizard/wizard-texts.ts
+msgid "It doesn't appear to be installed on your computer. Would you like to install it now? On a Mac, Apple's installer opens in its own window — if you don't see it, look behind this one."
+msgstr "It doesn't appear to be installed on your computer. Would you like to install it now? On a Mac, Apple's installer opens in its own window — if you don't see it, look behind this one."
+
 #: src/components/automations/RunDetail.tsx
 msgid "It failed without saying why."
 msgstr "It failed without saying why."
@@ -12621,6 +12736,10 @@ msgstr "Launch"
 msgid "Launch {0}?"
 msgstr "Launch {0}?"
 
+#: src/pages/entry/AgentLaunchLanding.tsx
+msgid "Launch {name}"
+msgstr "Launch {name}"
+
 #: src/components/assets/editor/agent-profile/AgentVisibilitySection.tsx
 msgid "Launch a new sandbox running this agent"
 msgstr "Launch a new sandbox running this agent"
@@ -12633,6 +12752,14 @@ msgstr "Launch a session first"
 msgid "Launch failed."
 msgstr "Launch failed."
 
+#: src/pages/entry/AgentLaunchLanding.tsx
+msgid "Launch in cloud"
+msgstr "Launch in cloud"
+
+#: src/pages/entry/AgentLaunchLanding.tsx
+msgid "Launch in my desktop"
+msgstr "Launch in my desktop"
+
 #: src/pages/hub-home/HubHome.tsx
 msgid "Launch sandbox"
 msgstr "Launch sandbox"
@@ -12644,6 +12771,10 @@ msgstr "Launch workspace"
 #: src/pages/entry/LaunchLanding.tsx
 msgid "Launching runs the steps below against your account."
 msgstr "Launching runs the steps below against your account."
+
+#: src/components/task-receive/LaunchDialog.tsx
+msgid "Launching…"
+msgstr "Launching…"
 
 #: src/components/lens-viewer/HeartbeatEventsViewer.tsx
 msgid "Layers"
@@ -13253,8 +13384,8 @@ msgid "Loading tasks..."
 msgstr "Loading tasks..."
 
 #: src/pages/entry/AgentLaunchLanding.tsx
-msgid "Loading the agent…"
-msgstr "Loading the agent…"
+#~ msgid "Loading the agent…"
+#~ msgstr "Loading the agent…"
 
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Loading transcript data..."
@@ -13320,6 +13451,7 @@ msgstr "Loading..."
 #: src/components/value-viewer/ValueViewer.tsx
 #: src/components/wiki-tip/HubWikiMarkdown.tsx
 #: src/pages/discover-page/discover-page.tsx
+#: src/pages/entry/AgentLaunchLanding.tsx
 #: src/pages/flow-page/vibe-recent-sessions.tsx
 #: src/pages/hub-browse/HubEntityView.tsx
 #: src/pages/hub-browse/HubRecordsView.tsx
@@ -13355,6 +13487,10 @@ msgstr "Local only — permanent"
 #: src/components/artifacts/artifact-form.tsx
 msgid "Local path"
 msgstr "Local path"
+
+#: src/components/project-setup/ProjectSetupDialog.tsx
+msgid "Locally"
+msgstr "Locally"
 
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Location"
@@ -13789,9 +13925,13 @@ msgstr "Memory Usage (%)"
 msgid "Memory:"
 msgstr "Memory:"
 
+#: src/lib/publish-state.ts
+msgid "Merge conflict"
+msgstr "Merge conflict"
+
 #: src/components/task-receive/IncomingTaskDialog.tsx
-msgid "Merge conflicts"
-msgstr "Merge conflicts"
+#~ msgid "Merge conflicts"
+#~ msgstr "Merge conflicts"
 
 #: src/components/assets/PushContextFolderDialog.tsx
 #: src/components/conversation/AttachmentDownloadWarning.tsx
@@ -14547,6 +14687,19 @@ msgstr "New team"
 #: src/tabs/useTerminalStripController.tsx
 msgid "New Terminal"
 msgstr "New Terminal"
+
+#: src/tabs/useTerminalStripController.tsx
+#: src/tabs/useTerminalStripController.tsx
+msgid "New Vibe"
+msgstr "New Vibe"
+
+#: src/components/workspace/workspace-switcher.tsx
+msgid "New workspace"
+msgstr "New workspace"
+
+#: src/components/workspace/workspace-switcher.tsx
+msgid "New workspace…"
+msgstr "New workspace…"
 
 #: src/pages/discover-page/DiscoverToolbar.tsx
 msgid "Newest first"
@@ -15393,6 +15546,14 @@ msgstr "No records found on disk."
 msgid "No records of this type"
 msgstr "No records of this type"
 
+#: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
+msgid "No remote branch"
+msgstr "No remote branch"
+
+#: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
+msgid "No remote configured"
+msgstr "No remote configured"
+
 #: src/pages/hub-home/NewSandboxDialog.tsx
 msgid "no repo"
 msgstr "no repo"
@@ -15837,14 +15998,18 @@ msgid "Not logged in · Please run /login"
 msgstr "Not logged in · Please run /login"
 
 #: src/components/project-setup/ProjectSetupDialog.tsx
-msgid "Not needed here: mark its values optional"
-msgstr "Not needed here: mark its values optional"
+#~ msgid "Not needed here: mark its values optional"
+#~ msgstr "Not needed here: mark its values optional"
 
 #: src/components/assets/editor/wizard/wizard-texts.ts
 #: src/components/install/AddAssetDialog.tsx
 #: src/components/project-home/MissingDependenciesDialog.tsx
 msgid "Not now"
 msgstr "Not now"
+
+#: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
+msgid "Not on the remote yet — Push publishes this branch"
+msgstr "Not on the remote yet — Push publishes this branch"
 
 #. placeholder {0}: item.fix
 #: src/components/assets/editor/agent-profile/DeploymentSecretsGate.tsx
@@ -16285,6 +16450,10 @@ msgstr "On the machine run <0>flow connect</0>. If it is not signed in it shows 
 #: src/components/automations/automation-words.ts
 msgid "On the schedule {expr}"
 msgstr "On the schedule {expr}"
+
+#: src/components/project-setup/ProjectSetupDialog.tsx
+msgid "On this machine only — undo any time"
+msgstr "On this machine only — undo any time"
 
 #: src/components/account/settings-section.tsx
 #: src/i18n/pref-labels.ts
@@ -17110,12 +17279,17 @@ msgid "optional"
 msgstr "optional"
 
 #: src/components/assets/dependency-sources.tsx
+#: src/components/project-setup/ProjectSetupDialog.tsx
 msgid "Optional"
 msgstr "Optional"
 
 #: src/components/triggers-view/ScheduleTriggerEditor.tsx
 msgid "Optional — leave blank for home"
 msgstr "Optional — leave blank for home"
+
+#: src/components/project-setup/ProjectSetupDialog.tsx
+msgid "optional — skipped here"
+msgstr "optional — skipped here"
 
 #: src/components/credentials-view/CredentialView.tsx
 msgid "optional · not set"
@@ -17692,6 +17866,10 @@ msgstr "Pick FlowPad, an assistant you already pay for, or paste an API key."
 msgid "pick one"
 msgstr "pick one"
 
+#: src/pages/entry/AgentLaunchLanding.tsx
+msgid "Pick one of your projects…"
+msgstr "Pick one of your projects…"
+
 #: src/components/asset-manager/AssetManagerPopover.tsx
 msgid "Pick project folder"
 msgstr "Pick project folder"
@@ -17851,12 +18029,20 @@ msgid "Please sign in again to keep using cloud features."
 msgstr "Please sign in again to keep using cloud features."
 
 #: src/pages/entry/AgentLaunchLanding.tsx
-msgid "Please sign in to flowpad to continue with the agent creation process."
-msgstr "Please sign in to flowpad to continue with the agent creation process."
+#~ msgid "Please sign in to flowpad to continue with the agent creation process."
+#~ msgstr "Please sign in to flowpad to continue with the agent creation process."
 
 #: src/pages/entry/AgentLaunchLanding.tsx
-msgid "Please sign in to start the agent {agentName}…"
-msgstr "Please sign in to start the agent {agentName}…"
+msgid "Please sign in to flowpad to continue."
+msgstr "Please sign in to flowpad to continue."
+
+#: src/pages/entry/AgentLaunchLanding.tsx
+msgid "Please sign in to start {name}…"
+msgstr "Please sign in to start {name}…"
+
+#: src/pages/entry/AgentLaunchLanding.tsx
+#~ msgid "Please sign in to start the agent {agentName}…"
+#~ msgstr "Please sign in to start the agent {agentName}…"
 
 #: src/components/helpdesk/HelpdeskResetButton.tsx
 msgid "Please try again."
@@ -18475,8 +18661,8 @@ msgid "Publish failed."
 msgstr "Publish failed."
 
 #: src/lib/publish-state.ts
-msgid "Publish hit a conflict"
-msgstr "Publish hit a conflict"
+#~ msgid "Publish hit a conflict"
+#~ msgstr "Publish hit a conflict"
 
 #: src/components/assets/editor/agent-profile/AgentVisibilitySection.tsx
 msgid "Publish this agent to share it"
@@ -18559,8 +18745,8 @@ msgid "Pull failed."
 msgstr "Pull failed."
 
 #: src/lib/publish-state.ts
-msgid "Pull hit a conflict"
-msgstr "Pull hit a conflict"
+#~ msgid "Pull hit a conflict"
+#~ msgstr "Pull hit a conflict"
 
 #: src/components/data-sources/DataSourceDialog.tsx
 msgid "Pull only: edits to the local copy are never written back."
@@ -18591,8 +18777,8 @@ msgid "Push & notify"
 msgstr "Push & notify"
 
 #: src/components/assets/PushContextFolderDialog.tsx
-msgid "Push failed"
-msgstr "Push failed"
+#~ msgid "Push failed"
+#~ msgstr "Push failed"
 
 #~ msgid "Push this project to a repository that already exists"
 #~ msgstr "Push this project to a repository that already exists"
@@ -19236,6 +19422,10 @@ msgstr "Remove from team"
 msgid "Remove from vibe agents"
 msgstr "Remove from vibe agents"
 
+#: src/components/project-setup/ProjectSetupDialog.tsx
+msgid "Remove it from the project — the deletion is staged in git"
+msgstr "Remove it from the project — the deletion is staged in git"
+
 #: src/components/milkdown-editor/MilkdownEditor.tsx
 msgid "Remove link"
 msgstr "Remove link"
@@ -19619,8 +19809,13 @@ msgstr "required"
 
 #: src/components/assets/dependency-sources.tsx
 #: src/components/credentials/CredentialDialog.tsx
+#: src/components/project-setup/ProjectSetupDialog.tsx
 msgid "Required"
 msgstr "Required"
+
+#: src/components/project-setup/ProjectSetupDialog.tsx
+msgid "required — it will not work here until it is set up"
+msgstr "required — it will not work here until it is set up"
 
 #: src/components/terminal/interactive-terminal/WorktreeButtons.tsx
 msgid "Requires a git repository with at least one commit"
@@ -19690,6 +19885,10 @@ msgstr "Resetting…"
 #: src/components/navigator-panel/NavigatorPanel.tsx
 msgid "Resize navigator"
 msgstr "Resize navigator"
+
+#: src/components/status-bar/GitResolveButton.tsx
+msgid "Resolve"
+msgstr "Resolve"
 
 #: src/components/assets/editor/WikiResolveView.tsx
 msgid "Resolving [[{name}]]…"
@@ -19846,8 +20045,8 @@ msgid "Retry download"
 msgstr "Retry download"
 
 #: src/components/task-receive/IncomingTaskDialog.tsx
-msgid "Retry pull"
-msgstr "Retry pull"
+#~ msgid "Retry pull"
+#~ msgstr "Retry pull"
 
 #: src/components/data-sources/health-style.ts
 msgid "Retrying"
@@ -20373,6 +20572,11 @@ msgstr "Runs while Flowpad is open on this computer. A run missed while it was c
 #: src/components/data-sources/DataDriversView.tsx
 msgid "Runtime"
 msgstr "Runtime"
+
+#. placeholder {0}: data.upstream
+#: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
+msgid "Same commits as {0}"
+msgstr "Same commits as {0}"
 
 #: src/components/assets/editor/usage-report/UsageReportAssetEditor.tsx
 msgid "Sample prompts"
@@ -21602,8 +21806,16 @@ msgid "Setting things up"
 msgstr "Setting things up"
 
 #: src/pages/entry/AgentLaunchLanding.tsx
-msgid "Setting up your {agentName} on a new sandbox…"
-msgstr "Setting up your {agentName} on a new sandbox…"
+msgid "Setting up {name} on a new sandbox…"
+msgstr "Setting up {name} on a new sandbox…"
+
+#: src/components/task-receive/LaunchDialog.tsx
+msgid "Setting up the controller"
+msgstr "Setting up the controller"
+
+#: src/pages/entry/AgentLaunchLanding.tsx
+#~ msgid "Setting up your {agentName} on a new sandbox…"
+#~ msgstr "Setting up your {agentName} on a new sandbox…"
 
 #: src/components/task-receive/IncomingProjectDialog.tsx
 msgid "Setting up your project…"
@@ -21928,6 +22140,10 @@ msgstr "Show all types"
 msgid "Show Annotations"
 msgstr "Show Annotations"
 
+#: src/pages/flow-page/vibe-chat-pane.tsx
+msgid "Show as"
+msgstr "Show as"
+
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
 msgid "Show coordinates"
 msgstr "Show coordinates"
@@ -22039,6 +22255,10 @@ msgstr "Show the process"
 #: src/components/automations/RunDetail.tsx
 msgid "Show the raw record"
 msgstr "Show the raw record"
+
+#: src/components/terminal/interactive-terminal/SessionSurfaceSwitch.tsx
+msgid "Show this session as"
+msgstr "Show this session as"
 
 #: src/components/settings-view/settings-utils.ts
 msgid "Show timing info for each turn"
@@ -22454,6 +22674,10 @@ msgstr "Skip for now"
 msgid "Skip initial permission check on startup"
 msgstr "Skip initial permission check on startup"
 
+#: src/components/project-setup/ProjectSetupDialog.tsx
+msgid "Skip it…"
+msgstr "Skip it…"
+
 #: src/components/settings-view/settings-utils.ts
 msgid "Skip Permissions Warmup"
 msgstr "Skip Permissions Warmup"
@@ -22466,6 +22690,10 @@ msgstr "Skip runs beyond"
 #: src/components/automations/RunsView.tsx
 msgid "Skipped"
 msgstr "Skipped"
+
+#: src/components/project-setup/ProjectSetupDialog.tsx
+msgid "Skipped on this machine"
+msgstr "Skipped on this machine"
 
 #: src/components/automations/automation-words.ts
 msgid "Skipped: it fired too often in one minute"
@@ -22562,8 +22790,8 @@ msgid "Someone else changed the same thing. Let the assistant merge the two vers
 msgstr "Someone else changed the same thing. Let the assistant merge the two versions."
 
 #: src/lib/publish-state.ts
-msgid "Someone else changed this too. Switch to Advanced view to merge."
-msgstr "Someone else changed this too. Switch to Advanced view to merge."
+#~ msgid "Someone else changed this too. Switch to Advanced view to merge."
+#~ msgstr "Someone else changed this too. Switch to Advanced view to merge."
 
 #: src/components/webapp-display/messages.tsx
 msgid "Something is using this port, but it isn't your app."
@@ -22911,6 +23139,10 @@ msgstr "Starting scan…"
 #: src/components/assets/editor/wizard/wizard-texts.ts
 msgid "starting the agent"
 msgstr "starting the agent"
+
+#: src/components/task-receive/LaunchDialog.tsx
+msgid "Starting the session"
+msgstr "Starting the session"
 
 #: src/components/agents/use-agent-launcher.ts
 msgid "Starting the session failed."
@@ -23261,8 +23493,12 @@ msgid "Surface built-in system skills in the Assets browser."
 msgstr "Surface built-in system skills in the Assets browser."
 
 #: src/i18n/pref-labels.ts
-msgid "Surface complexity: Vibe (simplest, creator), Standard (minimal), Advanced, or Dev."
-msgstr "Surface complexity: Vibe (simplest, creator), Standard (minimal), Advanced, or Dev."
+#~ msgid "Surface complexity: Vibe (simplest, creator), Standard (minimal), Advanced, or Dev."
+#~ msgstr "Surface complexity: Vibe (simplest, creator), Standard (minimal), Advanced, or Dev."
+
+#: src/i18n/pref-labels.ts
+msgid "Surface complexity: Vibe (simplest, creator), Standard (minimal), or Advanced."
+msgstr "Surface complexity: Vibe (simplest, creator), Standard (minimal), or Advanced."
 
 #: src/components/account/settings-section.tsx
 msgid "Surface developer-only views and controls across the app."
@@ -23671,6 +23907,10 @@ msgstr "That is not valid JSON."
 #: src/components/organization/budgets/PayingProviderSetup.tsx
 msgid "That key does not look right"
 msgstr "That key does not look right"
+
+#: src/components/task-receive/IncomingDeepLink.tsx
+msgid "That launch link is incomplete."
+msgstr "That launch link is incomplete."
 
 #. placeholder {0}: foreign.brand
 #. placeholder {1}: spec.brand
@@ -24157,8 +24397,8 @@ msgid "Then: run its rule code"
 msgstr "Then: run its rule code"
 
 #: src/components/task-receive/IncomingTaskDialog.tsx
-msgid "There are merge conflicts in <0>{localPath}</0>. Please resolve them and try again."
-msgstr "There are merge conflicts in <0>{localPath}</0>. Please resolve them and try again."
+#~ msgid "There are merge conflicts in <0>{localPath}</0>. Please resolve them and try again."
+#~ msgstr "There are merge conflicts in <0>{localPath}</0>. Please resolve them and try again."
 
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "There is nothing left to send — add a message first."
@@ -24250,8 +24490,8 @@ msgstr "This action cannot be undone."
 #~ msgstr "This agent isn't published from a git repository, so there's nothing to launch."
 
 #: src/pages/entry/AgentLaunchLanding.tsx
-msgid "This agent isn't published to the cloud, so there's nothing to launch."
-msgstr "This agent isn't published to the cloud, so there's nothing to launch."
+#~ msgid "This agent isn't published to the cloud, so there's nothing to launch."
+#~ msgstr "This agent isn't published to the cloud, so there's nothing to launch."
 
 #: src/routes/loaders/load-agent-stream-inbox.ts
 msgid "This Agent no longer exists."
@@ -24481,6 +24721,10 @@ msgid "This link doesn't name a repository we can launch."
 msgstr "This link doesn't name a repository we can launch."
 
 #: src/pages/entry/LaunchLanding.tsx
+msgid "This link doesn't point at a project."
+msgstr "This link doesn't point at a project."
+
+#: src/pages/entry/LaunchLanding.tsx
 msgid "This link doesn't point at an agent."
 msgstr "This link doesn't point at an agent."
 
@@ -24497,8 +24741,12 @@ msgid "This link is missing the sandbox it should open."
 msgstr "This link is missing the sandbox it should open."
 
 #: src/pages/entry/LaunchLanding.tsx
-msgid "This link names both a repository and an agent. Ask for a link that names just one."
-msgstr "This link names both a repository and an agent. Ask for a link that names just one."
+#~ msgid "This link names both a repository and an agent. Ask for a link that names just one."
+#~ msgstr "This link names both a repository and an agent. Ask for a link that names just one."
+
+#: src/pages/entry/LaunchLanding.tsx
+msgid "This link names more than one thing to launch. Ask for a link that names just one."
+msgstr "This link names more than one thing to launch. Ask for a link that names just one."
 
 #: src/components/collaboration/LiveSessionView.tsx
 msgid "This live session has ended."
@@ -24598,6 +24846,7 @@ msgid "this project"
 msgstr "this project"
 
 #: src/components/automations/AutomationsList.tsx
+#: src/components/connections-manager.tsx
 #: src/components/connections-manager/credential-rows-view.tsx
 #: src/components/credentials/CredentialDialog.tsx
 msgid "This project"
@@ -24765,6 +25014,10 @@ msgstr "This skill has uncommitted changes — improve runs only on a clean skil
 #: src/components/llm-sources/use-llm-sources.ts
 msgid "This source did not work"
 msgstr "This source did not work"
+
+#: src/components/data-sources/SourceFiles.tsx
+msgid "This source has no folder on this machine yet."
+msgstr "This source has no folder on this machine yet."
 
 #: src/components/data-sources/DataSourcePage.tsx
 msgid "This source is not on this machine (it may have been deleted)."
@@ -25478,6 +25731,7 @@ msgstr "Under eval"
 
 #: src/components/conversation/task-it.tsx
 #: src/components/image-annotator/AnnotatorToolbar.tsx
+#: src/components/project-setup/ProjectSetupDialog.tsx
 #: src/hooks/favorites-pending-delete.ts
 msgid "Undo"
 msgstr "Undo"
@@ -25659,6 +25913,7 @@ msgstr "up to date"
 
 #: src/components/assets/editor/agent-profile/AgentPlaceCard.tsx
 #: src/components/assets/editor/agent-profile/AgentPlaceCard.tsx
+#: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 msgid "Up to date"
 msgstr "Up to date"
 
@@ -26156,6 +26411,7 @@ msgid "via hub login"
 msgstr "via hub login"
 
 #: src/components/links/LinkMenu.tsx
+#: src/types/ViewType.ts
 msgid "Vibe"
 msgstr "Vibe"
 
@@ -26863,10 +27119,15 @@ msgstr "working…"
 msgid "Working…"
 msgstr "Working…"
 
+#: src/components/workspace/workspace-switcher.tsx
 #: src/i18n/type-labels.ts
 #: src/pages/hub-home/HubHome.tsx
 msgid "Workspace"
 msgstr "Workspace"
+
+#: src/components/workspace/workspace-switcher.tsx
+msgid "Workspace name"
+msgstr "Workspace name"
 
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
 msgid "Worktree"
@@ -27208,8 +27469,12 @@ msgid "Your sandbox is ready."
 msgstr "Your sandbox is ready."
 
 #: src/pages/entry/AgentLaunchLanding.tsx
-msgid "Your session has expired. Sign in again to open this agent."
-msgstr "Your session has expired. Sign in again to open this agent."
+msgid "Your session has expired. Sign in again to launch."
+msgstr "Your session has expired. Sign in again to launch."
+
+#: src/pages/entry/AgentLaunchLanding.tsx
+#~ msgid "Your session has expired. Sign in again to open this agent."
+#~ msgstr "Your session has expired. Sign in again to open this agent."
 
 #~ msgid "Your teams"
 #~ msgstr "Your teams"

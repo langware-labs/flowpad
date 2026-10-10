@@ -7,7 +7,7 @@
   "subkind": "cli",
   "exe_data": {
     "commands": {
-      "darwin": "brew install python3",
+      "darwin": "export PATH=\"$HOME/.local/bin:$PATH\"\nif command -v brew >/dev/null 2>&1; then\n  brew install python3\nelse\n  # No Homebrew: uv (which Flowpad installs for itself) can install a Python under the user's home. No password,\n  # no Command Line Tools. python3 is a link to it in ~/.local/bin, which is on the PATH.\n  set -e\n  uv_bin=\"$(command -v uv 2>/dev/null || echo \"$HOME/.local/bin/uv\")\"\n  [ -x \"$uv_bin\" ] || { echo \"uv was not found; Flowpad installs it on first start\" >&2; exit 1; }\n  \"$uv_bin\" python install 3.12\n  py=\"$(\"$uv_bin\" python find --managed-python 3.12)\"\n  mkdir -p \"$HOME/.local/bin\"\n  ln -sf \"$py\" \"$HOME/.local/bin/python3\"\nfi",
       "linux": "apt-get update && apt-get install -y python3",
       "win32": "$env:Path += ';' + [Environment]::GetEnvironmentVariable('Path','Machine') + ';' + [Environment]::GetEnvironmentVariable('Path','User') + ';' + $env:LOCALAPPDATA + '\\Microsoft\\WindowsApps'; $base = @('install','--id','Python.Python.3.12','-e','--silent','--accept-package-agreements','--accept-source-agreements','--disable-interactivity'); $src = @('--source','winget'); $scp = @('--scope','user'); $srcErr = @(-1978335138,-1978335210,-1978335163,-1978335157); winget @base @src @scp; $c = $LASTEXITCODE; if ($srcErr -contains $c) { $src = @(); winget @base @src @scp; $c = $LASTEXITCODE }; if ($c -eq -1978335216) { $scp = @(); winget @base @src @scp; $c = $LASTEXITCODE }; if ($c -eq -1978335189) { winget @base @src @scp --force; $c = $LASTEXITCODE }; if ($null -eq $c) { exit 1 }; exit $c"
     },
@@ -25,7 +25,7 @@
   ],
   "completion_check": {
     "commands": {
-      "darwin": "for c in python3 python; do v=$($c --version 2>&1) && case \"$v\" in \"Python 3\"*) exit 0;; esac; done; exit 1",
+      "darwin": "export PATH=\"$HOME/.local/bin:$PATH\"; for c in python3 python; do p=\"$(command -v $c 2>/dev/null)\" || continue; if [ \"$p\" = /usr/bin/python3 ] || [ \"$p\" = /usr/bin/python ]; then d=\"$(xcode-select -p 2>/dev/null)\"; [ -n \"$d\" ] && [ -x \"$d/usr/bin/$c\" ] || continue; fi; v=$($c --version 2>&1) && case \"$v\" in \"Python 3\"*) exit 0;; esac; done; exit 1",
       "linux": "for c in python3 python; do v=$($c --version 2>&1) && case \"$v\" in \"Python 3\"*) exit 0;; esac; done; exit 1",
       "win32": "$env:Path += ';' + [Environment]::GetEnvironmentVariable('Path','Machine') + ';' + [Environment]::GetEnvironmentVariable('Path','User'); foreach ($c in @('py','python')) { if (Get-Command $c -ErrorAction SilentlyContinue) { $a = @(); if ($c -eq 'py') { $a = @('-3') }; $v = & $c @a --version 2>&1; if ($LASTEXITCODE -eq 0 -and [string]$v -match '^Python 3') { exit 0 } } }; exit 1"
     },

@@ -10,6 +10,7 @@ from typing import Iterable, Optional, Tuple
 from flow_sdk.schema.data_spec.returned_value_spec import CliResult
 
 from .file_system import ROOT_FOLDER
+from .git_usable import EXIT_NOT_FOUND, NOT_USABLE_MESSAGE, git_usable
 
 logger = logging.getLogger(__name__)
 
@@ -64,6 +65,9 @@ def _run_git(args: list[str], cwd: str, timeout: int = 10) -> subprocess.Complet
     and deliberately do not go through ``GitFolder``/``CommandExecutor``, which
     is async and reached only via a ComputeNode.
     """
+    if args and args[0] == "git" and not git_usable():
+        # Same shape as a missing binary, without waking macOS's "install the developer tools" dialog.
+        return subprocess.CompletedProcess(args, EXIT_NOT_FOUND, "", NOT_USABLE_MESSAGE)
     return subprocess.run(args, cwd=cwd, capture_output=True, text=True, timeout=timeout)
 
 
@@ -97,7 +101,11 @@ def _answer(result: subprocess.CompletedProcess, verb: str, done: str, **fields)
     detail = ((result.stdout or result.stderr or "").strip() or done) if ok else _git_err(result, verb)
     return CliResult.of_process(
         " ".join(result.args),
-        result.returncode, result.stdout or "", result.stderr or "", detail=detail, **fields,
+        result.returncode,
+        result.stdout or "",
+        result.stderr or "",
+        detail=detail,
+        **fields,
     )
 
 
@@ -258,7 +266,10 @@ async def git_sync_mirror(repo_path: str, branch: Optional[str] = None) -> CliRe
         changed = moved or was_dirty
         logger.info("[git] mirror synced to origin/%s (moved=%s dirty=%s)", branch, moved, was_dirty)
         return CliResult.of_process(
-            " ".join(reset.args), reset.returncode, reset.stdout or "", reset.stderr or "",
+            " ".join(reset.args),
+            reset.returncode,
+            reset.stdout or "",
+            reset.stderr or "",
             detail="Updated." if moved else ("Restored." if was_dirty else "Already up to date."),
             value=changed,
         )
@@ -408,8 +419,16 @@ def git_assets_introduction(paths: Iterable[str]) -> dict[str, datetime | None]:
         # --full-diff + -M: a commit that touches these paths reports EVERY change in it, so a
         # rename pairs its old and new names ("R100\told\tnew") instead of reading as an add.
         log = _sync(
-            root, "log", "--format=@%aI", "--full-diff", "-M", "--name-status", "--diff-filter=AR",
-            "--", *(rel for _p, rel, _d in live), timeout=60,
+            root,
+            "log",
+            "--format=@%aI",
+            "--full-diff",
+            "-M",
+            "--name-status",
+            "--diff-filter=AR",
+            "--",
+            *(rel for _p, rel, _d in live),
+            timeout=60,
         )
         earliest: dict[str, datetime] = {}
         renamed: set[str] = set()
