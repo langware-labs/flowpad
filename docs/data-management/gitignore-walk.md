@@ -88,6 +88,17 @@ Note how `project_folder_walker_fn` wires it: it passes `gitignore=opts.gitignor
 
 ---
 
+## Which implementation walks
+
+`gitignore_walk` has two implementations behind one switch, `FLOWPAD_DISKIO_BACKEND`
+(`python` by default; see [diskio.md](diskio.md)). With `rust`, a walk that honours
+`.gitignore` is answered by the `flowpad-diskio-scan` binary through
+`flow_sdk/diskio/stage1.py::stage1_items` — the same policy, the same order, the same
+entries, verified complete before a single tuple is yielded. A walk with `gitignore=False`
+always runs in-process: with nothing to match it is bounded by directory reads, and it measured
+slower through the binary. Whenever Python would answer anyway — the default, no binary on this
+platform, a failed stream — the descent described above runs unchanged.
+
 ## Consumers
 
 Everything that recurses a real project tree routes through the shared walk:

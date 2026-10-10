@@ -4,6 +4,7 @@ import functools
 import inspect
 import logging
 import os
+import time
 import uuid
 from contextlib import contextmanager
 from contextvars import ContextVar
@@ -176,12 +177,12 @@ class PathQueryOptions:
     offset: int = 0
 
 
-# Sane upper bound for an asset epoch (year ~2200). ``asset_hash_fn`` is
-# contractually a freshness stat that today returns the deepest inner-file
-# mtime, but a future impl could return a byte-hash — reject any value outside a
-# plausible epoch range so it can never poison ``updated_date`` with a garbage
-# far-future timestamp; the caller falls back to the folder mtime.
-_MAX_ASSET_EPOCH = 7_258_118_400.0
+# How far past "now" an asset's own clock may read and still be believed. A per-type
+# ``asset_hash_fn`` is a freshness fingerprint in INTEGER NANOSECONDS: for most folder
+# types the newest inner-file mtime, for manifest / entity-document types a SUM of
+# several mtimes and sizes. Only the first is a time. A sum of two files lands decades in
+# the future, so bounding by the present rejects it and the caller keeps the folder mtime.
+_ASSET_EPOCH_SLACK_S = 86_400.0
 
 
 # The private/shared context buckets and their per-entry sidecars. These hold a
@@ -248,8 +249,8 @@ def _asset_updated_epoch(record_type: str, src_path: str) -> float | None:
         if hash_fn is not None:
             from flow_sdk.fs_store.fs_ref import FSRef  # noqa: PLC0415
 
-            val = float(hash_fn(FSRef(src_path)))
-            if 0 < val <= _MAX_ASSET_EPOCH:
+            val = hash_fn(FSRef(src_path)) / 1_000_000_000
+            if 0 < val <= time.time() + _ASSET_EPOCH_SLACK_S:
                 epoch = val if epoch is None else max(epoch, val)
     except (OSError, ValueError, TypeError):
         pass  # non-mtime asset_hash_fn or bad path → keep getmtime
