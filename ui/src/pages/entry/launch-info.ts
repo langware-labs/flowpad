@@ -16,6 +16,9 @@ export interface LaunchInfo {
   subkind: ProjectSubkind;
   home_page: string | null;
   agent_id: string | null;
+  /** False when the agent is readable to this person but its project is not: nothing can be
+   *  checked out for them. Absent from a hub that does not say — read as shared. */
+  project_shared?: boolean;
 }
 
 export type LaunchInfoKind = 'agent' | 'project';

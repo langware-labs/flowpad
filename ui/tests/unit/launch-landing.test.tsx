@@ -568,6 +568,17 @@ describe('/launch?agent= and ?project=', () => {
     expect(screen.queryByTestId('launch-choice')).toBeNull();
   });
 
+  it('an agent whose project is not shared with this person says what to ask for, and offers no launch', async () => {
+    mocks.launchInfo = { [`agent/${AGENT_ID}`]: { ...controllerInfo, project_name: '', project_shared: false } };
+
+    renderLanding(`?agent=${AGENT_ID}`);
+
+    await waitFor(() => expect(screen.getByTestId('launch-not-shared').textContent).toContain("isn't shared with you"));
+    expect(screen.getByTestId('launch-not-shared').textContent).toContain('me@acme.test');
+    expect(screen.queryByTestId('launch-choice')).toBeNull();
+    expect(screen.queryByTestId('launch-unpublished')).toBeNull();
+  });
+
   it('a controller says what is missing under its picker', async () => {
     mocks.launchInfo = { [`agent/${AGENT_ID}`]: controllerInfo };
 
