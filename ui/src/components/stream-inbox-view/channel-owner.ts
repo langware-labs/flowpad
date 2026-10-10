@@ -41,3 +41,7 @@ export function sourceConversationsRequest(sourceId: string): QueryRequest {
   const match = new ExpressionNode({ op: '$EQ', operands: ['channel_source_id', sourceId] });
   return new QueryRequest({ type: Conversation.type, query: new QueryFilter({ match }) });
 }
+
+/** The identity a channel mark draws: provider AND channel, because one transport
+ *  (`agent`) reaches several channels and wears a different glyph for each. */
+export const channelKeyOf = (s: DataSource) => `${s.provider}|${s.channel}`;

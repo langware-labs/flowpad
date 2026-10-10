@@ -1036,18 +1036,31 @@ class DataSource(SetupSkippable, Entity):
         than one per constructor, so the UI create path and every block get it
         without knowing it exists.
         """
+        # The owner the FILE names, before the local user is stamped in for a file that names none:
+        # that is what tells a file authored here from one that arrived.
+        declared_owner = self.owner
         if self.owner is None:
             from flow_sdk.stream_inbox.projection import owner_of  # noqa: PLC0415
 
             self.owner = await owner_of(self)
         if _SUPPRESS_STORE.get():
             # A row written WITHOUT writing its file: the indexer reading a data_source.json, a share
-            # being received, or ``save_runtime``. A file that arrived (cloned, shared, copied) names
-            # someone's account — it waits for this machine's own connection before it polls. A file
-            # holds no status, so whatever a first read carries (the indexer stamps ``active``) is not a decision.
+            # being received, or ``save_runtime``. A file holds no status, so whatever a first read
+            # carries (the indexer stamps ``active``) is not a decision — the owner it names is.
             if not self.exist_in_db:
-                self.status = SourceStatus.SETUP.value
-                self.setup_detail = RECEIVED_SETUP_DETAIL
+                if await self._authored_here(declared_owner):
+                    # This machine's own author wrote it (an agent, the CLI) or the row was lost and the
+                    # file re-read: the ordinary create rules, which park only a driver that owes a step.
+                    # Without loading: importing source code inside the indexer's per-record sync deadlocks
+                    # on the import lock (see ``DataDriver.sends``).
+                    self.status = SourceStatus.NEW.value
+                    self.setup_detail = ""
+                    self._resolve_new()
+                else:
+                    # A file that arrived (cloned, shared, copied) names someone else's account — it waits
+                    # for this machine's own connection before it polls.
+                    self.status = SourceStatus.SETUP.value
+                    self.setup_detail = RECEIVED_SETUP_DETAIL
             elif not _RUNTIME_WRITE.get():
                 # A re-read file carries no runtime facts, only the indexer's defaults: keep the row's.
                 stored = await type(self).get_by_id(str(self.id))
@@ -1059,23 +1072,12 @@ class DataSource(SetupSkippable, Entity):
             if existing is not None:
                 return await self._adopt(existing, *args, **kwargs)
         if not self.exist_in_db or self.status == SourceStatus.NEW.value:
-            # An authored source's folder loads on first use, so the create rules below can ask its
-            # class. The poller's per-tick re-save of an existing row never pays for the lookup.
+            # An authored source's folder loads on first use, so the create rules can ask its class. The
+            # poller's per-tick re-save of an existing row never pays for the lookup.
             from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415
 
             await DataDriver.find(self.provider or "")
-        if self.status == SourceStatus.NEW.value:
-            stype = self._driver()
-            if stype is not None and stype.has_setup:
-                self.status = SourceStatus.SETUP.value
-                if not self.setup_detail:
-                    self.setup_detail = "Finish setup, then press Verify."
-            else:
-                # Includes an UNKNOWN provider, deliberately: leaving it in NEW
-                # would park it silently, while ACTIVE lets the poller reach
-                # `sync_source`, which reports `unknown_provider` as a
-                # config_error the card can actually explain.
-                self.status = SourceStatus.ACTIVE.value
+            self._resolve_new()
         driver = self._driver()
         if driver is not None and driver.config_cls is not None:
             self._type_config(driver.config_cls)
@@ -1100,6 +1102,51 @@ class DataSource(SetupSkippable, Entity):
         if created:
             await self._declare_connections()
         return saved
+
+    def _resolve_new(self) -> None:
+        """The create rules: the loaded driver decides NEW.
+
+        A driver that owes a setup step starts in SETUP; any other starts ACTIVE — a driver not loaded
+        yet or an UNKNOWN provider included, deliberately: leaving it in NEW would park it silently,
+        while ACTIVE lets the poller reach ``sync_source``, which loads the driver and reports what is
+        wrong (``unknown_provider``, a missing credential) as a config_error the card can explain.
+        """
+        if self.status != SourceStatus.NEW.value:
+            return
+        stype = self._driver()
+        if stype is not None and stype.has_setup:
+            self.status = SourceStatus.SETUP.value
+            if not self.setup_detail:
+                self.setup_detail = "Finish setup, then press Verify."
+        else:
+            self.status = SourceStatus.ACTIVE.value
+
+    async def _authored_here(self, declared_owner) -> bool:
+        """Whether the owner a source FILE names is one of this machine's own authors.
+
+        The local user, or an Agent that has a row here. A file naming nobody, or an owner this
+        machine does not know, arrived from elsewhere. The lookup is on the owner's id — never on
+        where the file sits — so a cloned project that also carries its agent reads as authored here
+        and starts by the create rules: its first poll then fails LOUDLY on this machine's
+        credentials (a ``config_error`` with the provider's own words), which beats a silent park.
+        """
+        from flow_sdk.builtin.agent import Agent  # noqa: PLC0415
+        from flow_sdk.fs_store.type_id import TypeId  # noqa: PLC0415
+        from flow_sdk.schema.types import EntityType  # noqa: PLC0415
+        from flow_sdk.stream_inbox.projection import agent_id_of, default_owner, is_agent_owner  # noqa: PLC0415
+
+        # The same precedence as ``owner_of``: an explicit owner, else the legacy ``config.agent_id``.
+        legacy_agent = agent_id_of(self)
+        if declared_owner:
+            owner = TypeId(str(declared_owner))
+        elif legacy_agent:
+            owner = TypeId(type=EntityType.AGENT.value, id=legacy_agent)
+        else:
+            return False
+        if is_agent_owner(owner):
+            return await Agent.get_by_id(str(owner.id)) is not None
+        local = await default_owner()
+        return local is not None and str(local) == str(owner)
 
     async def _declare_connections(self) -> None:
         """A connection this source acts through IS a credential of its project (``kind: oauth``): declared at
