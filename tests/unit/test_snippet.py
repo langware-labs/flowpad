@@ -9,16 +9,17 @@ from __future__ import annotations
 
 import asyncio
 import os
-import sys
 import random
 import shlex
 import shutil
+import sys
 import tempfile
 import time
 from pathlib import Path
 
 import pytest
 
+from flow_sdk.core.capabilities.env_probe import capture_terminal_path
 from flow_sdk.core.snippet import (
     RUNNERS,
     SnippetDoc,
@@ -28,7 +29,6 @@ from flow_sdk.core.snippet import (
     terminal_command,
     write_temp_snippet,
 )
-from flow_sdk.core.capabilities.env_probe import capture_terminal_path
 
 M = {"hidden": "# %% flowpad:hidden", "init": "# %% flowpad:init", "snippet": "# %% flowpad:snippet"}
 
@@ -565,6 +565,44 @@ def test_check_is_answered_from_cache_until_the_file_changes(tmp_path, monkeypat
     path.write_text(path.read_text() + "print(2)\n")
     asyncio.run(check_snippet(path, timeout_seconds=10, env_path=os.environ["PATH"]))
     assert len(calls) == 2
+
+
+def test_check_keeps_one_answer_per_file_across_saves(tmp_path, monkeypatch):
+    """The editor checks after every save, and every save is new content. The cache once keyed by
+    (path, content) and only ever ADDED, so each save left a permanent entry nobody could ask for
+    again. One entry per file: a save replaces it."""
+    monkeypatch.setattr(snippet_mod, "_CHECKED", type(snippet_mod._CHECKED)())
+    path = _snip(tmp_path, "py", "print(1)")
+    for i in range(3):
+        path.write_text(path.read_text() + f"print({i})\n")
+        asyncio.run(check_snippet(path, timeout_seconds=10, env_path=os.environ["PATH"]))
+    assert len(snippet_mod._CHECKED) == 1
+
+
+def test_check_keeps_only_the_most_recently_checked_files(tmp_path, monkeypatch):
+    """Distinct files (one-off temp snippets, deleted files) are the other axis; the ring keeps the
+    last ``_CHECKED_CAP`` and an evicted file simply pays its check again."""
+    monkeypatch.setattr(snippet_mod, "_CHECKED", type(snippet_mod._CHECKED)())
+    monkeypatch.setattr(snippet_mod, "_CHECKED_CAP", 2)
+    calls = []
+    real = snippet_mod.run_shell
+
+    async def counting(*a, **kw):
+        calls.append(1)
+        return await real(*a, **kw)
+
+    monkeypatch.setattr(snippet_mod, "run_shell", counting)
+    paths = []
+    for i in range(3):
+        d = tmp_path / f"f{i}"
+        d.mkdir()
+        paths.append(_snip(d, "py", f"print({i})"))
+        asyncio.run(check_snippet(paths[-1], timeout_seconds=10, env_path=os.environ["PATH"]))
+    assert len(snippet_mod._CHECKED) == 2
+    asyncio.run(check_snippet(paths[-1], timeout_seconds=10, env_path=os.environ["PATH"]))
+    assert len(calls) == 3  # the newest is still answered from the ring
+    asyncio.run(check_snippet(paths[0], timeout_seconds=10, env_path=os.environ["PATH"]))
+    assert len(calls) == 4  # the evicted one runs its check again
 
 
 def test_check_columns_are_the_editors_one_based_end_exclusive():
