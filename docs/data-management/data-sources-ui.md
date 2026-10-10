@@ -3,8 +3,8 @@ id: e2caa81a-a812-456e-b1a6-56f7b7fc16e9
 ---
 # Data Sources UI (Frontend)
 
-The Data Sources screen (`ViewType.DATA_SOURCES`, rail entry in
-`collapsed-sidebar.tsx`, mounted lazily by `content-panel.tsx`) lists the
+The Data Sources screen (`ViewType.DATA_SOURCES`, opened by asking for it in the top bar —
+it has no rail entry — and mounted lazily by `content-panel.tsx`) lists the
 configured `DataSource` entities, lets the user add/edit/pause/replay/delete
 one, and shows whether each is actually alive. Everything lives under
 `ui/src/components/data-sources/`. The backend model it renders is described in

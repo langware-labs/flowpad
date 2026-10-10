@@ -177,6 +177,13 @@ def test_asking_for_its_own_log_is_a_rule(utterance):
     assert (hit.kind, hit.value) == ("log", "smart-navigation")
 
 
+@pytest.mark.parametrize("utterance", ["discover", "open discover", "show me the marketplace"])
+def test_asking_for_discover_is_a_rule(utterance):
+    """Discover is an app page with no place on the map, so its name is a rule of its own."""
+    hit = navigator.rule_hit(utterance)
+    assert (hit.kind, hit.value) == ("url", "/discover")
+
+
 @pytest.mark.parametrize("utterance", ["open the log", "open my log", "open your log of this session"])
 def test_a_log_not_said_to_it_is_not_its_own(utterance):
     """Only "your" names the navigator: "the log" / "my log" could be any log, so the model decides."""
