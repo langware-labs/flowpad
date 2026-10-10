@@ -173,15 +173,6 @@ export interface ProjectSetupSkip {
   note: string;
 }
 
-/** An asset's load came up on THIS machine once (`SetupLoadSpec`, on its record) — a record of the first
- *  successful load, never proof it is up now; `run` is the setup run that stamped it, empty when a check found
- *  it up already. */
-export interface ProjectSetupLoad {
-  at: number;
-  run: string;
-  detail: string;
-}
-
 /** How a skip is made: `local` marks the record here; `always` removes the asset from the project (staged in git). */
 export type ProjectSetupSkipScope = 'local' | 'always';
 
@@ -250,8 +241,6 @@ export interface SetupNodeResult {
   detail: string;
   prepare: SetupWizardAnswer | null;
   run: SetupWizardAnswer | null;
-  /** Its load wizard's answer — set by a LOAD of the node (the asset shown), never by a setup walk. */
-  on_load?: SetupWizardAnswer | null;
   children: SetupNodeResult[];
   /** Set up already under another parent this run; its subtree shows there. */
   shared: boolean;

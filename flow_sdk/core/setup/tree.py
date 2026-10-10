@@ -24,8 +24,7 @@ class SetupNode:
     prepare: Optional[WizardSpec] = None
     #: Run on the way up, once every child is done.
     run: Optional[WizardSpec] = None
-    #: Run when the asset is LOADED for display here (``core/setup/load``), not by the setup walk. Its check
-    #: is what "ready" means for a load; it never asks.
+    #: Run by a LOAD when the asset is shown (``core/setup/load``), never by the setup walk. Never asks.
     on_load: Optional[WizardSpec] = None
     #: Child node ids, in the order they are set up.
     children: tuple[str, ...] = ()

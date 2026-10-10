@@ -428,9 +428,7 @@ def setup_run_address(project_id: str, root: str = "") -> str:
     return setup_activity_path(root or f"project-{project_id}")
 
 
-async def start_setup(
-    project: "Project", *, ai: bool = True, root: str = "", phase: str = "setup", on_done=None,
-) -> str:
+async def start_setup(project: "Project", *, ai: bool = True, root: str = "", tree: Any = None) -> str:
     """Start the project's setup in the background and return its address at once.
 
     The setup is the project's TREE (``core/setup/derive.ProjectTree``): every dependency, connection,
@@ -438,9 +436,8 @@ async def start_setup(
     what it needs. ``root`` sets up one node of it and what that node needs (a source's own Set up,
     a web app the display found down); empty = the whole project. Its questions reach the app
     (``ask_person`` → the open tab), not a terminal. A run already going for the same root is joined,
-    never doubled — a load (``phase="load"``, the node's ``on_load`` wizard alone) joins a setup of the
-    node and the other way round: same slot, same screen. ``on_done`` hears the result of a run THIS
-    call started (a joined run is someone else's).
+    never doubled. ``tree``: a resolver pair (``resolve_node`` / ``resolve_op``) built already — a load
+    (``core/setup/load``) hands in the one-node tree it checked, so the project is not derived twice.
     """
     from flow_sdk.core.setup import execute_setup  # noqa: PLC0415
     from flow_sdk.core.setup.derive import ProjectTree  # noqa: PLC0415
@@ -449,7 +446,7 @@ async def start_setup(
     key = (pid, root)
     running = _RUNS.get(key)
     if running is None or running.done():
-        tree = await ProjectTree(project, ai=ai).load()
+        tree = tree or await ProjectTree(project, ai=ai).load()
         mount = str(getattr(project, "fs_storage_mount_path", "") or "")
 
         async def run_setup():
@@ -457,16 +454,13 @@ async def start_setup(
             from flow_sdk.core.compute.shared_shell import SharedShell  # noqa: PLC0415
 
             async with SharedShell() as base:
-                result = await execute_setup(
+                return await execute_setup(
                     root or tree.root, resolve_node=tree.resolve_node, resolve_op=tree.resolve_op,
                     subject_entity=f"project-{pid}", cwd=Path(mount) if mount else None,
                     shell=functools.partial(_setup_shell, inner=base),
                     # A person pressed Set up on THIS project: every node in it is theirs to run.
-                    approved=True, phase=phase,
+                    approved=True,
                 )
-            if on_done is not None:
-                await on_done(result)
-            return result
 
         # Detached: the run takes minutes and asks the person questions; a plain task
         # (and a plain done-callback) would hold the Set-up request for all of it.

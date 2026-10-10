@@ -16,9 +16,8 @@ command, question and agent still lives in a ComputeOp, and every node's wizard 
   trust gate exists to prevent.
 * **Check only** runs every node's wizards in check mode — nothing asks, installs or spawns — so "is this
   project ready" and "set this project up" are the same walk.
-* **A load is the root alone.** ``phase="load"`` runs the root's load wizard (``on_load``) and nothing else — no
-  prepare, no children, no run: what a load asks is "is what the person is about to see up", and the
-  answer is that one wizard's check. Same walker, same report, same record.
+* **A load is a one-node tree.** ``core/setup/load`` wraps the resolver so the asset's node arrives with
+  no prepare, no children and its ``on_load`` as ``run``; the walk, the slot and the record are the same.
 
 **One report.** The Activity tree is ``<root>`` → one node per asset (its depth under the root in the
 ``level`` counter, so a screen indents it) → ``prepare`` / ``run`` → the wizard's steps. The asset
@@ -68,7 +67,6 @@ class _Node:
     detail: str = ""
     prepare: Optional[WizardResult] = None
     run: Optional[WizardResult] = None
-    on_load: Optional[WizardResult] = None
     children: list["_Node"] = field(default_factory=list)
     #: Not the first place this id appears: it stands for the node set up where it first appeared.
     shared: bool = False
@@ -82,7 +80,6 @@ class _Node:
             detail=self.detail,
             prepare=self.prepare,
             run=self.run,
-            on_load=self.on_load,
             children=[child.render() for child in self.children],
             shared=self.shared,
         )
@@ -114,8 +111,6 @@ class _Walk:
     approved: bool
     wizard_id: str
     on_change: Optional[OnChange]
-    #: ``setup`` (prepare ↓, children, run ↑) or ``load`` (the root's ``load`` wizard alone).
-    phase: str = "setup"
     specs: dict[str, Optional[SetupNode]] = field(default_factory=dict)
     first: dict[str, _Node] = field(default_factory=dict)
     visited: dict[str, SetupState] = field(default_factory=dict)
@@ -222,14 +217,6 @@ class _Walk:
         await self.emit()
         scope = {**scope, **dict(spec.inputs)}
 
-        if self.phase == "load":
-            if spec.on_load is None:
-                return self.settle(node, act, SetupState.DONE, "nothing to load")
-            node.on_load = await self.wizard(spec, spec.on_load, act, node, "on_load", scope)
-            if not node.on_load.ok:
-                return self.settle(node, act, self._unmet(), node.on_load.detail or "did not come up")
-            return self.settle(node, act, SetupState.DONE, "loaded" if node.on_load.ran else "already up")
-
         if spec.prepare is not None:
             node.prepare = await self.wizard(spec, spec.prepare, act, node, "prepare", scope)
             if not node.prepare.ok:
@@ -327,7 +314,7 @@ class _Walk:
 
 
 def _done_detail(node: _Node) -> str:
-    ran = any(r is not None and r.ran for r in (node.prepare, node.run, node.on_load))
+    ran = any(r is not None and r.ran for r in (node.prepare, node.run))
     return "set up" if ran else "already set up"
 
 
@@ -348,19 +335,13 @@ async def setup_tree(
     approved: bool = False,
     wizard_id: str = "",
     on_change: Optional[OnChange] = None,
-    phase: str = "setup",
 ) -> SetupTreeResult:
     """Set up ``root_id`` and everything below it. Never raises for an outcome.
 
     ``check_only``: report, run nothing, take no Activity address (a readiness question must not hold the
     slot a real setup needs, and nobody should watch it). Otherwise the run claims ``activity_path`` —
     a second run of the same root answers ``held``.
-
-    ``phase="load"``: the root's ``on_load`` wizard alone (see the module doc) — the outline is still the
-    whole subtree, so the report a screen draws is the same shape either way.
     """
-    if phase not in ("setup", "load"):
-        raise ValueError(f"a setup walk has no phase {phase!r} (setup or load)")
     from flow_sdk.activity import Activity  # noqa: PLC0415 — keeps this module entity-free at import
 
     work = Path(workdir) if workdir else Path.cwd()
@@ -379,7 +360,6 @@ async def setup_tree(
             approved=approved,
             wizard_id=wizard_id,
             on_change=on_change,
-            phase=phase,
         )
         try:
             await walk.build(root_id)

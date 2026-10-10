@@ -755,11 +755,9 @@ class Project(SetupSkippable, Entity):
         A web app home (the project opens app-first) is made displayable here first: its
         endpoint on this machine is placed when missing — idempotent, the same placement
         ``flow show`` does — so the app view the redirect lands on finds something to show.
-        Then it is LOADED (``core/setup/load``): up already, nothing runs; else its load runs in
-        the background and ``load_run`` is that run's address — the view adopts it as the app's
-        setup and shows "Setting things up" until the server answers. Never waited on here."""
-        from flow_sdk.builtin.webapp_placement import place_webapp_locally  # noqa: PLC0415
-        from flow_sdk.core.setup.load import load_asset  # noqa: PLC0415
+        Then it is LOADED (``core/setup/load``): ``load_run`` is the run bringing it up, or null —
+        the view adopts it as the app's setup. Never waited on here."""
+        from flow_sdk.builtin.webapp_placement import show_webapp_locally  # noqa: PLC0415
 
         typeid = self.home_page_typeid()
         if typeid:
@@ -769,8 +767,7 @@ class Project(SetupSkippable, Entity):
             return {"asset": None, "type": None}
         answer: dict[str, Any] = {"asset": typeid, "type": asset.get_type()}
         if asset.get_type() == "micro_app":
-            await place_webapp_locally(asset)
-            answer["load_run"] = await load_asset(self, asset)
+            _endpoint, answer["load_run"] = await show_webapp_locally(asset, self)
         return answer
 
     @action.get(action_name="home-page")

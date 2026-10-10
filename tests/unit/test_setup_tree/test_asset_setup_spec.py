@@ -9,7 +9,7 @@ import pytest
 from flow_sdk.builtin.asset_setup import AssetSetup
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
 from flow_sdk.schema.data_spec._kinds import register_builtin_kinds
-from flow_sdk.schema.data_spec.asset_setup_spec import AssetSetupSpec, SetupLoadSpec, SetupTreeResult
+from flow_sdk.schema.data_spec.asset_setup_spec import AssetSetupSpec, SetupTreeResult
 
 pytestmark = pytest.mark.timeout(5)
 
@@ -18,7 +18,6 @@ def test_the_kinds_are_registered():
     register_builtin_kinds()
     assert SchemaRegistry.kind_type("asset.setup") is AssetSetupSpec
     assert SchemaRegistry.kind_type("setup.tree") is SetupTreeResult
-    assert SchemaRegistry.kind_type("setup.load") is SetupLoadSpec
 
 
 def test_a_hand_written_document_reads_back_and_ignores_stray_keys(tmp_path):

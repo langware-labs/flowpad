@@ -7,7 +7,6 @@ runner, stub resolvers, stub shell; no DB.
 
 from __future__ import annotations
 
-import dataclasses
 import json
 from pathlib import Path
 
@@ -458,51 +457,3 @@ async def test_a_skipped_node_settles_skipped_runs_nothing_and_holds_up_no_paren
     assert "key-op" not in machine.installs, "a skipped node's wizard never runs"
     assert result.state is SetupState.DONE and result.done == result.total, "skipped counts as settled"
 
-
-# ── the load phase ────────────────────────────────────────────────────────────
-
-
-@pytest.mark.asyncio
-async def test_a_load_runs_the_roots_load_wizard_and_nothing_else(tmp_path):
-    """``phase="load"``: not prepare, not the children, not run — the one wizard that says the asset is up."""
-    tree = Tree().node("dep", run="lib").node("app", prepare="env", run="build", children=("dep",))
-    tree.ops["serve"] = _op("serve")
-    tree.nodes["app"] = dataclasses.replace(tree.nodes["app"], on_load=_wizard("serve"))
-    machine = Machine()
-
-    result = await _setup(tree, "app", machine, tmp_path, phase="load")
-
-    assert result.ok and result.ran, result.detail
-    assert machine.installs == ["serve"]
-    assert result.root.on_load is not None and result.root.on_load.ok
-    assert result.root.prepare is None and result.root.run is None
-    assert _states(result) == {"app": "done", "dep": "pending"}, "the child is in the outline, untouched"
-
-
-@pytest.mark.asyncio
-async def test_a_load_of_a_node_with_no_load_wizard_is_done_at_once(tmp_path):
-    tree = Tree().node("app", run="build")
-    machine = Machine()
-    result = await _setup(tree, "app", machine, tmp_path, phase="load")
-    assert result.ok and not result.ran and machine.installs == []
-    assert result.root.detail == "nothing to load"
-
-
-@pytest.mark.asyncio
-async def test_a_load_check_says_whether_the_asset_is_up_without_running(tmp_path):
-    tree = Tree().node("app")
-    tree.ops["serve"] = _op("serve")
-    tree.nodes["app"] = dataclasses.replace(tree.nodes["app"], on_load=_wizard("serve"))
-
-    down = await _setup(tree, "app", Machine(), tmp_path, phase="load", check_only=True)
-    up = await _setup(tree, "app", Machine(installed=("serve",)), tmp_path, phase="load", check_only=True)
-
-    assert not down.ok and down.root.state is SetupState.PENDING
-    assert up.ok and not up.ran
-
-
-def test_a_walk_has_two_phases_only():
-    with pytest.raises(ValueError, match="no phase 'warm'"):
-        import asyncio
-
-        asyncio.run(setup_tree("x", resolve_node=lambda _id: None, phase="warm"))

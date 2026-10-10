@@ -13,14 +13,14 @@ from typing import ClassVar, List, Optional
 
 from flow_sdk.api.api_types.api_field import APIField, EntityField, Sharing
 from flow_sdk.core import Entity
-from flow_sdk.core.setup.skip_mark import SetupLoadable
+from flow_sdk.core.setup.skip_mark import SetupSkippable
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
-from flow_sdk.schema.data_spec.asset_setup_spec import SetupLoadSpec, SetupSkipSpec
+from flow_sdk.schema.data_spec.asset_setup_spec import SetupSkipSpec
 from flow_sdk.schema.data_spec.webapp_spec import WebappEndpointSpec, WebappViewSpec
 from flow_sdk.worldview.ontology import KindStr
 
 
-class WebApp(SetupLoadable, Entity):
+class WebApp(SetupSkippable, Entity):
     type: str = APIField(default=BuiltinEntityType.MICRO_APP.value)
     project_id: Optional[str] = APIField(default=None, description="Owning project", sharing=Sharing.PRIVATE)
     #: The app FOLDER on disk, stamped by the indexer. A plain string, not an
@@ -28,8 +28,6 @@ class WebApp(SetupLoadable, Entity):
     asset_ref: str = APIField(default="", sharing=Sharing.PRIVATE)
     #: Skipped in its project's setup on THIS machine (``SetupSkipSpec``, ``core/setup/skip_mark``). PRIVATE.
     setup_skipped: Optional[SetupSkipSpec] = APIField(default=None, sharing=Sharing.PRIVATE)
-    #: Its load came up on THIS machine once (``SetupLoadSpec``, ``core/setup/load``). PRIVATE.
-    setup_loaded: Optional[SetupLoadSpec] = APIField(default=None, sharing=Sharing.PRIVATE)
     description: Optional[str] = APIField(default=None, description="What the app is, for the asset browser")
     kind: KindStr = APIField(default="application.web", description="Dot-path ontology kind")
     #: What an editor edits beyond its parent: kinds and type names (``flow_sdk.builtin.faas.editors``).

@@ -46,11 +46,9 @@ def health_answers(port: int, path: str = "/") -> bool:
 
     Asked on each loopback (``dev_server.LOOPBACKS``): a Vite or Next server on ``localhost`` listens on
     ``::1`` alone, a uvicorn on ``127.0.0.1`` alone."""
-    from flow_sdk.core.dev_server import LOOPBACKS  # noqa: PLC0415
+    from flow_sdk.core.dev_server import loopback_urls  # noqa: PLC0415
 
-    rel = path if path.startswith("/") else "/" + path
-    for host in LOOPBACKS:
-        url = f"http://{'[' + host + ']' if ':' in host else host}:{int(port)}{rel}"
+    for url in loopback_urls(port, path):
         try:
             with urllib.request.urlopen(url, timeout=PROBE_SECONDS) as response:  # noqa: S310 — loopback only
                 return response.status < 500
