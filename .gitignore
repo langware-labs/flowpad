@@ -69,6 +69,8 @@ MANIFEST
 #  Usually these files are written by a python script from a template
 #  before PyInstaller builds the exe, so as to inject date/other infos into it.
 *.manifest
+# the launcher's application manifest IS source (asInvoker; see flow_sdk/rust/resources)
+!flow_sdk/rust/resources/flowpad-install.manifest
 *.spec
 !pyinstaller/minihub.spec
 

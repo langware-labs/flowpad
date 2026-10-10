@@ -176,6 +176,22 @@ async function materializeTab(
     !needsReparent &&
     !staleParentEdge
   ) {
+    // A process is ONE row whether it is shown as the Vibe host or as a shell (the
+    // Vibe dock's tabHash folds onto the shell's). The row's stored pointer is what
+    // its chip reopens, so when the presentation changed, re-point it — in the
+    // background: the row's identity, label and project are unchanged, so nothing
+    // on screen waits for it (I4: a warm visit asks the backend for nothing).
+    // `new_tab` broadcasts `tabs_changed`, which refreshes the snapshot by itself;
+    // until it lands the row still reads the old presentation, so a re-point in
+    // flight is not sent twice.
+    const key = dock.tabHash!;
+    if (presentationChanged(existingTab, dock) && !repointsInFlight.has(key)) {
+      repointsInFlight.add(key);
+      void tabManager
+        .ensureDock(dock, { viewMode: dock.viewMode })
+        .catch((err: unknown) => console.warn('[tabs] re-pointing a process tab failed', err))
+        .finally(() => repointsInFlight.delete(key));
+    }
     return { tab: existingTab, tabs: existing };
   }
 
@@ -194,6 +210,17 @@ async function materializeTab(
   await perfTime('materializeTab.refresh(adopt)', () => tabManager.refresh());
   const all = tabManager.getSnapshot();
   return { tab: tabForDockKey(all, dock.tabHash) ?? scopedTab, tabs: all };
+}
+
+/** Background presentation re-points in flight, by tabHash (see `materializeTab`). */
+const repointsInFlight = new Set<string>();
+
+/** Is `dock` a session shown in another presentation (Vibe host ⇄ shell) than the
+ *  one `tab` last stored? Only those two fold onto one identity. */
+function presentationChanged(tab: Tab, dock: DockPointer): boolean {
+  if (!DockPointer.isSessionView(dock.viewType) || !DockPointer.isAgenticProcessPointer(dock.pointer)) return false;
+  const stored = tab.dockPointer?.viewType;
+  return !!stored && stored !== dock.viewType;
 }
 
 /**
@@ -264,12 +291,19 @@ export async function setupTab(dock: DockPointer, options: SetupTabOptions = {})
   // first. Tested as STALENESS rather than as "is it the active display", so a
   // re-show of the same target still takes the cheap path instead of paying a tab
   // round trip for a navigation that changes nothing.
+  //
+  // Same for a HOST EDGE the row does not carry yet: a URL naming a host
+  // (`?host=` — Discuss puts an open file under its chat) is a re-parent the
+  // backend has to hear, and the cheap path never would. A pure store read.
   const opened = tabManager.lifecycle.get(key);
-  const displayStale =
-    dock.isActiveDisplay && tabForDockKey(tabManager.getSnapshot(), key)?.pointer !== dock.toJSON();
+  const row = tabForDockKey(tabManager.getSnapshot(), key);
+  const displayStale = dock.isActiveDisplay && row?.pointer !== dock.toJSON();
+  const hostTabId = hostTabIdFromDock(dock);
+  const hostEdgeStale = !!hostTabId && !!row && row.id !== hostTabId && row.parent_tab_id !== hostTabId;
   if (
     isContentAssetDock(dock) &&
     !displayStale &&
+    !hostEdgeStale &&
     opened?.state === TabLifecycleState.Opened &&
     opened.tabId &&
     options.parentTabId === undefined
@@ -437,6 +471,7 @@ export async function setupTabAndAdopt(
 
 export function resetTabContentLifecycleForTests(): void {
   setupInFlight.clear();
+  repointsInFlight.clear();
   adapters.clear();
   tabManager.lifecycle.resetForTests();
 }

@@ -489,20 +489,27 @@ async def test_parent_tab_id_never_self() -> None:
 
 
 @pytest.mark.asyncio
-async def test_parent_soft_close_leaves_children_intact() -> None:
-    # Parent close is soft and never touches children — they stay ordinary
-    # global tabs; the deterministic id regroups them when the parent reopens.
-    parent = await ensure_tab(_jptr("shell", f"agentic_process-{uuid.uuid4()}"))
+async def test_closing_a_host_closes_its_children() -> None:
+    # A workspace does not outlive its tab: closing the HOST soft-closes every
+    # nested child with it. The edge is kept, so reopening a child from inside the
+    # workspace regroups it under the same deterministic parent id.
+    parent = await ensure_tab(_jptr("vibe", f"agentic_process-{uuid.uuid4()}"))
     child = await ensure_tab(
         _jptr("assets", "editor/markdown/typeid/markdown-x"), target_type="markdown", target_id="md-keep", parent_tab_id=parent.id
+    )
+    other_host = await ensure_tab(_jptr("vibe", f"agentic_process-{uuid.uuid4()}"))
+    stranger = await ensure_tab(
+        _jptr("assets", "editor/markdown/typeid/markdown-y"), target_type="markdown", target_id="md-other", parent_tab_id=other_host.id
     )
 
     await parent.close()
 
     reloaded = await Tab.get_one({"id": child.id})
     assert reloaded is not None
-    assert reloaded.visible is True, "child stays visible when parent soft-closes"
-    assert reloaded.parent_tab_id == parent.id, "soft-close preserves the group edge"
+    assert reloaded.visible is False, "a host's child closes with it"
+    assert reloaded.parent_tab_id == parent.id, "the group edge survives for a reopen"
+    other = await Tab.get_one({"id": stranger.id})
+    assert other is not None and other.visible is True, "another host's children are untouched"
 
 
 @pytest.mark.asyncio

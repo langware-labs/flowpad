@@ -36,7 +36,7 @@ export function ambientLoadProjectId(request: Request): string | null | undefine
   if (isDeepLinkAction(url.searchParams.get('action'))) return undefined;
   try {
     const dock = DockPointer.fromUrl(url.toString());
-    if (dock.page === PageId.HUB || dock.viewType === ViewType.SHELL) return undefined;
+    if (dock.page === PageId.HUB || DockPointer.isSessionView(dock.viewType)) return undefined;
     if (dock.viewType === ViewType.PROJECT) {
       // Only the project LANDING is ambient. A URL naming something inside the
       // project (an asset, a room, a conversation) is where the user asked to

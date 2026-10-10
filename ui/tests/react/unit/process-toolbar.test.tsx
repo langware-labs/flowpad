@@ -2,7 +2,7 @@ import { AgenticProcess, TypeId } from '@sdk';
 import { render, fireEvent } from '@testing-library/react';
 import React from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { setViewMode, ViewMode } from '@src/contexts/view-mode-context';
+import { setDev } from '@src/contexts/view-mode-context';
 import { nextTerminalName } from '@src/components/terminal/rename-rules';
 import type { TraceFilters, ColVisibility } from '@src/components/terminal/interactive-terminal/InteractiveTerminal';
 import { ProcessToolbar } from '@src/components/terminal/interactive-terminal/ProcessToolbar';
@@ -31,10 +31,14 @@ function makeProcess(overrides: Partial<AgenticProcess> = {}): AgenticProcess {
   } as unknown as AgenticProcess;
 }
 
-/** Find the "Open terminal" button by looking for the SquareTerminal icon inside the toolbar */
+/** Find the "Open terminal" button by its SquareTerminal icon inside the toolbar —
+ *  skipping the Terminal segment of the session's surface switch, which wears the
+ *  same glyph and comes first. */
 function getOpenTerminalButton(container: HTMLElement): HTMLButtonElement {
   const toolbar = container.querySelector('[data-testid="process-toolbar"]')!;
-  const terminalIcon = toolbar.querySelector('.lucide-square-terminal')!;
+  const terminalIcon = [...toolbar.querySelectorAll('.lucide-square-terminal')].find(
+    (icon) => !icon.closest('[data-testid="session-surface-switch"]'),
+  )!;
   return terminalIcon.closest('button')!;
 }
 
@@ -56,11 +60,11 @@ describe('ProcessToolbar "Open terminal" button', () => {
     // The nav-out buttons (Open Terminal, Fork, …) live in the Advanced
     // toolbar; the default Standard skin shows only Share + Bookmark. Opt the
     // toolbar into Advanced so the Open Terminal button is present to click.
-    setViewMode(ViewMode.Advanced);
+    setDev(true); // Advanced UI == developer mode
   });
 
   afterEach(() => {
-    setViewMode(ViewMode.Standard);
+    setDev(false);
   });
 
   it('opens a new terminal with cwd when workdir is set', () => {

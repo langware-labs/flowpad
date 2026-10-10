@@ -20,9 +20,10 @@ its target in React state. The ordered **display stack** on the process entity
 remains, but as HISTORY (the popover) and as the seed for restore, not as the live
 pin.
 
-The process still has exactly ONE tab, its shell dock
-(`/dock/shell/agentic_process-<id>`), and vibe is still a *view mode* of that tab
-carried by `?viewMode`. The display address is a CHILD of it — see §3.
+The process still has exactly ONE tab. Shown in Vibe it is the **Vibe host tab**
+(`/dock/vibe/agentic_process-<id>`), which folds onto the process's shell identity
+(`/dock/shell/agentic_process-<id>`), so it is the same row either way. The display
+address is a CHILD of it — see §3.
 
 `flow show` is mode-agnostic: it names one address, and the presentation adapts.
 Vibe pins the target in this pane; every other mode has no display pane, so the
@@ -148,21 +149,17 @@ identity, its own durable row, and the replaceable one is left alone.
 
 ### Restore is a reload behavior
 
-`restoreDisplayRedirect` (`ui/src/routes/loaders/load-shell.ts`) redirects a cold
-landing on a vibe process URL to the display it left off on, `replace()`, guarded by
-explicit `?viewMode=vibe` (the effective mode is not settled at loader time) and
-**once per process per browser session** — the set is empty on a hard reload, which
-is exactly when restore is wanted, and populated for the rest of the session, which
-is exactly when the user is steering. That is what keeps the square Display header
-(and closing a child) from being bounced straight back out, with no second
-display-state param in the URL and no referrer sniffing.
+`restoreDisplayRedirect` (`ui/src/routes/loaders/load-shell.ts`) redirects a
+landing on a Vibe process URL (`/dock/vibe/<process>`, whose address states the mode
+— the effective mode is not settled at loader time) to the display it left off on,
+`replace()`, **unconditionally, every time** — there is no once-per-session memory
+any more. `NavigationActions.openDock`'s same-URL no-op is what stops it looping.
 
-An earlier version also required the workspace's active-display Tab row to be
-visible, as a record that the user still HAS a display. It does not work: the row is
-minted when a live client navigates, so on the cold landing this exists for — a
-reload, a bookmark, a `flow show` that arrived while nothing was watching — there is
-no row yet and the redirect never fired. Once-per-session carries the guard, and is
-no weaker than what it replaced (the pane restored `last_shown` on EVERY mount).
+An earlier version required the workspace's active-display Tab row to be visible,
+as a record that the user still HAS a display. It does not work: the row is minted
+when a live client navigates, so on the cold landing this exists for — a reload, a
+bookmark, a `flow show` that arrived while nothing was watching — there is no row yet
+and the redirect never fired.
 
 **A show is a navigation, so it is asynchronous.** Reloading in the same breath as a
 `flow show` reloads the PREVIOUS address — the display no longer re-derives itself
@@ -196,25 +193,32 @@ A project whose home page is a web app opens here too, pinned to the project
 (`docs/navigation/project-home-page.md`). The project scope, like `runtime`, addresses the
 viewer, not the app: the app dock never passes it through (`ui/src/navigation/app-dock.ts`).
 
-### One URL family, in both modes
+### One process, one tab — the Vibe HOST dock
 
-A process has exactly ONE canonical URL family — `/dock/shell/agentic_process-<id>`
-— in vibe and standard alike. The view mode rides the `?viewMode` search param
-(`VIEW_MODE_PARAM`, `DockPointer.viewMode`), never a URL family, so one process is
-one `Tab` identity no matter which mode is showing it.
+A process is shown at one of two addresses: `/dock/shell/agentic_process-<id>`
+(chat / terminal, mode in `?viewMode`) or the **Vibe host tab**
+`/dock/vibe/agentic_process-<id>`, whose address implies Vibe. They are ONE `Tab`
+identity: the Vibe dock's `tabHash` folds onto `shell|agentic_process-<id>`, and
+`ensure_tab` re-points the stored pointer between the two (that flip is not a
+target change, so the label is not refreshed). `DockPointer.withViewMode` is the one
+place that maps between them — the view toggle, every opener and the loader
+redirects all go through it — and an old `?viewMode=vibe` process URL canonicalizes
+to the Vibe dock in one redirect (`canonicalVibeHostPath`). Vibe is a HOST tab type:
+see [Tab Management → Host tabs](../tab-management.md#host-tabs-nested-tabs-one-level-deep).
 
 An earlier model gave vibe its own `/dock/display/...` family backed by a second
 `Tab` row; it was collapsed. Those rows are reaped server-side, and
 `canonicalProcessDockPath` (`ui/src/navigation/process-dock-canonicalization.ts`)
 redirects any surviving display URL — a pre-collapse bookmark, a history entry, a
 popped-out `/win` window — to the shell form with its search string (including
-`viewMode` and scope keys) preserved verbatim. The function is pure; the main
+`viewMode` and scope keys) preserved verbatim, which the composed
+`canonicalVibeHostPath` then lands on the Vibe dock. The function is pure; the main
 loader (`ui/src/routes/loaders/main-loader.ts`) throws `redirect()` on a non-null
 result.
 
-Do not reintroduce `ViewType.DISPLAY`, `DockPointer.forDisplay`, or a
-`processSurfaceViewType(vibe)` pairing — a per-mode URL family is what minted the
-second tab identity.
+Do not reintroduce `ViewType.DISPLAY`, `DockPointer.forDisplay`, or any process
+address whose `tabHash` is NOT the shell identity — a second identity is what
+minted the second tab. `ViewType.VIBE` is safe precisely because it folds.
 
 ---
 
@@ -253,10 +257,12 @@ A horizontal `ResizablePanelGroup`:
 `WorkspaceChildStrip` (`workspace-child-strip.tsx`) renders the Display as a **fixed,
 non-closable `Monitor` chip** — mirroring the hub micro-app's fixed "Active" tab —
 with the child `TabStrip` (tabs filtered by `parent_tab_id`) starting to its right.
-Clicking it `openDock(processDock)`. The children are ORDINARY global tabs that also
-appear in the standard global strip; this strip is a filtered, workspace-local view
-of them, so the component stays dumb — `parent_tab_id` is minted by the opener
-context at the tab chokepoint.
+Clicking it `openDock(processDock)`. The children are ordinary `Tab` rows, but the
+standard global strip shows only TOP-LEVEL tabs (`topLevelTabsForProject`) and, on a
+child's URL, lights its parent's chip (`displayAncestorForDockKey`); this strip is
+the workspace-local view of the children, so the component stays dumb —
+`parent_tab_id` is minted by the opener context at the tab chokepoint. Closing the
+Vibe tab closes its children (backend `Tab.close` cascade).
 
 ### Display precedence
 

@@ -8,18 +8,20 @@ Claude Code supports three scopes for hooks configuration:
 3. Local scope: <repo_root>/.claude/settings.local.json (personal, not committed)
 """
 
-import os
 import subprocess
+from enum import Enum
 from pathlib import Path
 from typing import Optional
-from enum import Enum
+
+from flow_sdk.utils.git_usable import git_usable
 
 
 class ClaudeScope(Enum):
     """Enumeration of Claude Code configuration scopes."""
-    USER = "user"           # ~/.claude/settings.json
-    PROJECT = "project"     # .claude/settings.json (committed)
-    LOCAL = "local"         # .claude/settings.local.json (not committed)
+
+    USER = "user"  # ~/.claude/settings.json
+    PROJECT = "project"  # .claude/settings.json (committed)
+    LOCAL = "local"  # .claude/settings.local.json (not committed)
 
 
 class CLIContext:
@@ -64,13 +66,15 @@ class CLIContext:
         Returns:
             Path to repo root, or None if not in a git repository
         """
+        if not git_usable():
+            return None
         try:
             result = subprocess.run(
                 ["git", "rev-parse", "--show-toplevel"],
                 cwd=self.working_dir,
                 capture_output=True,
                 text=True,
-                check=True
+                check=True,
             )
             return Path(result.stdout.strip())
         except (subprocess.CalledProcessError, FileNotFoundError):
@@ -166,6 +170,6 @@ class CLIContext:
         descriptions = {
             ClaudeScope.USER: "User-wide settings (applies to all projects)",
             ClaudeScope.PROJECT: "Project settings (shared with team, committed to git)",
-            ClaudeScope.LOCAL: "Local project settings (personal, not committed)"
+            ClaudeScope.LOCAL: "Local project settings (personal, not committed)",
         }
         return descriptions[scope]

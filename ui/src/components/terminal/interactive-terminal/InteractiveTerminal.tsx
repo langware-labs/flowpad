@@ -220,11 +220,6 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
     return () => cancelAnimationFrame(frame);
   }, [wantsChatMount]);
   const mountChatPane = chatMounted && !!process;
-  // `null` = the mode is not known yet (first load in this browser profile, no
-  // boot seed). Neither surface is the right guess, so cover the pane until it
-  // resolves — a headless process needs no wait (its transport decides), and the
-  // xterm keeps mounting and attaching underneath, so this costs no open latency.
-  const surfacePending = surface === null && !isHeadless && !embedded && !!process;
   const targetTimestamp = currentDock?.transcriptTimestamp ?? undefined;
 
   const canUseDOM = typeof window !== 'undefined' && typeof document !== 'undefined';
@@ -1828,9 +1823,6 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
                     </FrozenWhenHidden>
                   </div>
                 )}
-                {/* Mode not resolved yet — hold the pane blank rather than paint
-                  a surface the stored preference is about to contradict. */}
-                {surfacePending && <div className="absolute inset-0 z-[70] bg-background" />}
               </div>
 
               {/* Side window (non-Shell tabs) */}
@@ -1862,7 +1854,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
           </div>
         </PtySyncProvider>
 
-        {process && !surfacePending && (
+        {process && (
           <FrozenWhenHidden active={active}>
             <TerminalBottomRibbon
               fileCount={fileCount}

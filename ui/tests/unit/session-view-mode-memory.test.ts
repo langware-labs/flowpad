@@ -62,7 +62,8 @@ describe('per-session view-mode memory (AgenticProcess.last_mode)', () => {
 
       new NavigationActions(navigate, null).openDock(sessionDock());
 
-      expect(lastUrl(navigate)).toContain(`viewMode=${ViewMode.Vibe}`);
+      // Remembered Vibe opens the session as its Vibe host tab.
+      expect(lastUrl(navigate)).toContain('/dock/vibe/agentic_process-');
     });
 
     it('a session with no memory displays the mode we are in', () => {

@@ -26,6 +26,7 @@ const FIXED = [
   "Setup didn't finish successfully.",
   'Restart setup',
   "It doesn't appear to be installed on your computer. Would you like to install it now?",
+  "It doesn't appear to be installed on your computer. Would you like to install it now? On a Mac, Apple's installer opens in its own window — if you don't see it, look behind this one.",
   'Install',
   'Skip',
   'working',

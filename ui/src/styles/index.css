@@ -295,6 +295,48 @@
   }
 }
 
+/* Developer mode: the avatar's border is on fire — a ring of flame colours
+   behind it that turns and flickers. Compositor-only on purpose (the rail avatar
+   is always mounted): the gradient and its blur are STATIC, the ring spins with
+   `transform` and flickers with `opacity` — no per-frame repaint. `isolation`
+   keeps the ring (z-index -1) above the host's background and below the avatar.
+   Reduced motion: a still ring. */
+@keyframes dev-fire-spin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes dev-fire-flicker {
+  0% { opacity: 0.7; }
+  40% { opacity: 1; }
+  70% { opacity: 0.8; }
+  100% { opacity: 1; }
+}
+
+.dev-fire-ring {
+  isolation: isolate;
+}
+
+.dev-fire-ring::before {
+  content: '';
+  position: absolute;
+  inset: -3px;
+  z-index: -1;
+  border-radius: 9999px;
+  background: conic-gradient(#f97316, #ef4444, #facc15, #f97316, #dc2626, #fb923c, #f97316);
+  filter: blur(1.5px);
+  animation:
+    dev-fire-spin 1.6s linear infinite,
+    dev-fire-flicker 0.45s ease-in-out infinite alternate;
+  will-change: transform, opacity;
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dev-fire-ring::before {
+    animation: none;
+  }
+}
+
 @layer components {
   .container-fluid {
     @apply mx-auto px-8;

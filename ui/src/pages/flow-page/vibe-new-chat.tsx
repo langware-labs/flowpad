@@ -8,7 +8,7 @@ import { useAuth } from '@sdk/react/hooks';
 import { useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { useStartVibeSession } from './use-start-vibe-session';
-import { VibeModelSelect, useVibeModelTier } from './vibe-model-select';
+import { useVibeModelTier } from './vibe-model-select';
 
 /**
  * Vibe fallback shown when no build session is active — i.e. we're in Vibe mode
@@ -23,7 +23,8 @@ export function VibeNewChat() {
   const { currentUser } = useAuth();
   const { start: startVibe, installDialog } = useStartVibeSession();
   const [draft, setDraft] = useState('');
-  const [model, setModel] = useVibeModelTier();
+  // No model picker on the home: the stored tier is set from the Vibe chat pane's picker.
+  const [model] = useVibeModelTier();
   const firstName = currentUser?.name?.split(' ')[0] || 'there';
   const { homeTitle, homeBackgroundUrl } = useHomeCustomization();
 
@@ -35,10 +36,8 @@ export function VibeNewChat() {
           above the rail — which is why this surface no longer needs a special
           case for it (e2b workspaces boot into vibe mode and land here). */}
       <div aria-hidden className="vibe-hero-gradient pointer-events-none absolute inset-x-0 bottom-0 h-2/3" />
-      {/* Every child keeps its height (*:shrink-0) except the prompt, which
-          yields and scrolls — so a long prompt never hides what's below. */}
       <div
-        className="relative z-10 flex min-h-0 w-full max-w-2xl flex-col items-center gap-4 text-center *:shrink-0"
+        className="relative z-10 flex w-full max-w-2xl flex-col items-center gap-4 text-center *:shrink-0"
         data-testid="vibe-new-chat"
       >
         <h1 className="text-3xl font-bold tracking-tight">
@@ -55,13 +54,12 @@ export function VibeNewChat() {
             }
           />
         </h1>
-        <div className="flex min-h-0 w-full !shrink flex-col">
+        <div className="w-full">
           <SessionInput
             placeholder={t`What would you like to work on?`}
             value={draft}
             onChange={setDraft}
             allowAttachments
-            footerSlot={<VibeModelSelect value={model} onChange={setModel} />}
             onSubmit={(msg, files) => startVibe(msg, files, model)}
           />
         </div>

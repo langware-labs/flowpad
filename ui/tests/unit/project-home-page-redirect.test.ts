@@ -67,6 +67,7 @@ describe('project home page redirect — only navigations that ask for it', () =
     ['a cold start on the bare root', 'http://flowpad.local/', () => {}],
     ['a Hub-only build', HOME_BUTTON_URL, () => mocks.hubOnly.mockReturnValue(true)],
     ['a route already inside a session', `http://flowpad.local/dock/shell/agentic_process-${LAST_CHAT}?${HOME_PAGE_PARAM}=${HOME_PAGE_OPEN}`, () => {}],
+    ['a route already inside a Vibe session', `http://flowpad.local/dock/vibe/agentic_process-${LAST_CHAT}?${HOME_PAGE_PARAM}=${HOME_PAGE_OPEN}`, () => {}],
     ['no project at all', HOME_BUTTON_URL, () => {
       mocks.dataContext.project = null;
     }],
@@ -90,8 +91,8 @@ describe('project home page redirect — only navigations that ask for it', () =
     expect(response?.status).toBe(302);
     // `replace`: the `?homePage=open` location must not stay behind the session.
     expect(response?.headers.get('X-Remix-Replace')).toBe('true');
-    expect(locationOf(response)).toContain(`/dock/shell/agentic_process-${LAST_CHAT}`);
-    expect(locationOf(response)).toContain('viewMode=vibe');
+    expect(locationOf(response)).toContain(`/dock/vibe/agentic_process-${LAST_CHAT}`);
+    expect(locationOf(response)).not.toContain('viewMode=');
     expect(mocks.use).not.toHaveBeenCalled();
     expect(mocks.embed).not.toHaveBeenCalled();
     // A resumed chat already had its turn 1: nothing is re-sent.
@@ -107,7 +108,7 @@ describe('project home page redirect — only navigations that ask for it', () =
     expect(mocks.embed).toHaveBeenCalledTimes(1);
     // The agent's auto prompt starts as turn 1, after the vibe embed.
     expect(mocks.drainQueue).toHaveBeenCalledTimes(1);
-    expect(locationOf(response)).toContain(`/dock/shell/agentic_process-${NEW_CHAT}`);
+    expect(locationOf(response)).toContain(`/dock/vibe/agentic_process-${NEW_CHAT}`);
   });
 
   it('remembers where the home page landed, so Home can step off it', async () => {

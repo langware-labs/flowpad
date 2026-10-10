@@ -17,7 +17,7 @@ import React from 'react';
 import { MemoryRouter } from 'react-router';
 import { ContextEntitiesEnum, dataContext, dataManager, TypeId } from '@sdk';
 import { SidebarProvider } from '@src/components/ui/sidebar';
-import { setViewMode, ViewMode } from '@src/contexts/view-mode-context';
+import { setDev, setViewMode, ViewMode } from '@src/contexts/view-mode-context';
 import { ViewType } from '@src/types/ViewType';
 
 const nav = vi.hoisted(() => ({ openDock: vi.fn(), openTab: vi.fn(), openAssets: vi.fn() }));
@@ -32,11 +32,6 @@ vi.mock('@src/navigation/useDockNavigation', () => ({
     windowMode: false,
   }),
 }));
-
-/** The Vibe-only Chats target. Captured, not exercised — its own resolution is
- *  unit-tested against the query it builds. */
-const lastVibeChat = vi.hoisted(() => vi.fn());
-vi.mock('@src/pages/flow-page/vibe-process-resolver', () => ({ useLastVibeChat: () => lastVibeChat }));
 
 // Heavy presentational leaves — irrelevant to placement decisions.
 vi.mock('@src/components/theme-toggle/theme-toggle', () => ({ ThemeToggle: () => null }));
@@ -95,18 +90,27 @@ afterEach(() => {
   nav.openDock.mockClear();
   nav.openTab.mockClear();
   nav.openAssets.mockClear();
-  lastVibeChat.mockClear();
   setViewMode(ViewMode.Standard);
 });
 
 describe('rail — order', () => {
-  it('a fresh instance shows Chats, Stream Inbox and Connections', () => {
+  it('a fresh instance shows the base rail', () => {
     // Home, the project, Bookmarks and Files each moved to the top navigation
     // bar (7c3e8d74a, 8d4d03dc4). Stream Inbox shows with no conversation at all:
     // a signed-out instance has none (logout purges them), and its screen is
     // where "Login required" brings the user back in. The spec-side contract
     // lives in tests/unit/rail-visibility.test.ts.
-    expect(renderRail().ids()).toEqual(['chats', 'stream_inbox', 'credentials']);
+    // What Advanced added is base now (Advanced was retired into Dev, 2026-10-07).
+    expect(renderRail().ids()).toEqual([
+      'stream_inbox',
+      'credentials',
+      'data-sources',
+      'rag',
+      'automations',
+      'process-runs',
+      'hooks',
+      'llm-sources',
+    ]);
   });
 
   it('drops the project item when no project is active', async () => {
@@ -114,14 +118,21 @@ describe('rail — order', () => {
     expect(renderRail().ids()).not.toContain('project');
   });
 
-  it('Data sources appears at Advanced, not before, and needs no content gate', () => {
-    expect(renderRail().ids()).not.toContain('data-sources');
-    setViewMode(ViewMode.Standard);
-    expect(renderRail().ids()).not.toContain('data-sources');
+  it('Data sources is on the base rail on every surface, with no content gate', () => {
+    // No gate is set on the way in — see RAIL_ITEMS for why. The surface (the
+    // stored or shown view mode) never changes the rail.
+    for (const mode of [ViewMode.Vibe, ViewMode.Standard, ViewMode.Advanced]) {
+      setViewMode(mode);
+      expect(renderRail().ids()).toContain('data-sources');
+    }
+  });
 
+  it('the developer rail follows the Dev switch, not the view mode', () => {
     setViewMode(ViewMode.Advanced);
-    // No gate is set on the way in — see RAIL_ITEMS for why.
-    expect(renderRail().ids()).toContain('data-sources');
+    expect(renderRail().ids()).not.toContain('discover');
+    setDev(true);
+    expect(renderRail().ids()).toEqual(expect.arrayContaining(['discover', 'graph-workflows']));
+    setDev(false);
   });
 
   it('clicking Data sources opens its dedicated view', () => {
@@ -147,28 +158,6 @@ describe('rail — order', () => {
     setViewMode(ViewMode.Dev);
     expect(renderRail().ids()).not.toContain('assets');
   });
-});
-
-describe('rail — Chats target forks on view mode', () => {
-  it('Vibe: resumes the last UI chat instead of opening the chats list', () => {
-    setViewMode(ViewMode.Vibe);
-    const rail = renderRail();
-    fireEvent.click(rail.item('chats')!);
-
-    expect(lastVibeChat).toHaveBeenCalledTimes(1);
-    expect(nav.openTab).not.toHaveBeenCalled();
-  });
-
-  for (const mode of [ViewMode.Standard, ViewMode.Advanced, ViewMode.Dev]) {
-    it(`${mode}: opens the chats list`, () => {
-      setViewMode(mode);
-      const rail = renderRail();
-      fireEvent.click(rail.item('chats')!);
-
-      expect(nav.openTab).toHaveBeenCalledWith(ViewType.SHELL);
-      expect(lastVibeChat).not.toHaveBeenCalled();
-    });
-  }
 });
 
 describe('rail — one active resolver above and below the chevron', () => {

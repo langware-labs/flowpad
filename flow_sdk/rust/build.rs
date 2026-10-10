@@ -6,6 +6,7 @@
 fn main() {
     println!("cargo:rerun-if-changed=build.rs");
     println!("cargo:rerun-if-changed=resources/flowpad-install.rc");
+    println!("cargo:rerun-if-changed=resources/flowpad-install.manifest");
     println!("cargo:rerun-if-changed=../../electron/resources/icons/icon.ico");
     if std::env::var("CARGO_CFG_WINDOWS").is_err() {
         return;

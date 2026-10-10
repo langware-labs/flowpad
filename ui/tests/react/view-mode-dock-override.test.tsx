@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createMemoryRouter, RouterProvider, useLocation } from 'react-router';
 
 import { PrefKey, instancePreferences } from '@sdk';
-import { resetRevealedModes, ViewToggle } from '@src/components/view-toggle/view-toggle';
+import { ViewToggle } from '@src/components/view-toggle/view-toggle';
 import {
   setViewMode,
   useDockViewModeOverrideSync,
@@ -55,7 +55,6 @@ describe('DockPointer viewMode override', () => {
     localStorage.clear();
     document.documentElement.classList.remove('view-mode-glow-flicker');
     setViewMode(ViewMode.Standard);
-    resetRevealedModes();
   });
 
   afterEach(() => {
@@ -73,22 +72,23 @@ describe('DockPointer viewMode override', () => {
     expect(instancePreferences.get(PrefKey.VIEW_MODE)).toBe('standard');
   });
 
-  it('a dock URL without a mode falls back to the saved preference', async () => {
+  it('a dock URL without a mode shows the app mode (Vibe) — never the saved preference', async () => {
     const router = renderAt('/dock/settings?viewMode=advanced');
 
     await waitFor(() => expect(screen.getByTestId('effective-mode').textContent).toBe('advanced'));
     // A raw router navigation has no openDock seed, so nothing carries the mode.
     await router.navigate('/dock/settings');
 
-    await waitFor(() => expect(screen.getByTestId('effective-mode').textContent).toBe('standard'));
-    expect(document.documentElement.getAttribute('data-view')).toBe('standard');
+    await waitFor(() => expect(screen.getByTestId('effective-mode').textContent).toBe('vibe'));
+    expect(document.documentElement.getAttribute('data-view')).toBe('vibe');
+    // The stored value is kept as state — it just decides nothing.
     expect(instancePreferences.get(PrefKey.VIEW_MODE)).toBe('standard');
   });
 
   it('a mode added to a bare dock URL without the switch marker is displayed, not saved', async () => {
     const router = renderAt('/dock/settings');
 
-    await waitFor(() => expect(screen.getByTestId('effective-mode').textContent).toBe('standard'));
+    await waitFor(() => expect(screen.getByTestId('effective-mode').textContent).toBe('vibe'));
     // What a redirect does: same dock, a mode appears, but the user switched nothing.
     await router.navigate('/dock/settings?viewMode=advanced');
 
@@ -99,11 +99,8 @@ describe('DockPointer viewMode override', () => {
   it('footer click on a dock URL without an override navigates instead of writing the pref', async () => {
     renderAt('/dock/settings', true);
 
-    await waitFor(() => expect(screen.getByTestId('effective-mode').textContent).toBe('standard'));
+    await waitFor(() => expect(screen.getByTestId('effective-mode').textContent).toBe('vibe'));
 
-    // Advanced is hidden by default — double-click the selected Standard
-    // button to reveal it first.
-    fireEvent.doubleClick(screen.getByTestId('view-toggle-standard'));
     fireEvent.click(screen.getByTestId('view-toggle-advanced'));
 
     // The click itself only navigates; the mode then lands via the load-time sync.

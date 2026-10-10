@@ -11,13 +11,13 @@ import { Trans } from '@lingui/react/macro';
  * points at, scoped to the active AgenticProcess's VFS.
  */
 export function MarkdownViewer() {
-  const { flow } = useAgentContext();
+  const { flowId } = useAgentContext();
   const { currentContext } = useViewerStore();
   const filePath = currentContext?.codeRef?.path;
 
   const fsRef = useMemo(
-    () => (flow?.id && filePath ? new FSRef(filePath, new TypeId(AgenticProcess.type, flow.id), 'text', true) : null),
-    [flow?.id, filePath],
+    () => (flowId && filePath ? new FSRef(filePath, new TypeId(AgenticProcess.type, flowId), 'text', true) : null),
+    [flowId, filePath],
   );
 
   return (

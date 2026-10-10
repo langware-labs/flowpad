@@ -38,27 +38,23 @@ describe('resolveRail — modes are strictly additive', () => {
   });
 
   it('Standard is Vibe plus nothing — the two rails have the same members', () => {
-    // Standard's only difference from Vibe is what `chats` targets, which is a
-    // click-time fork in the component, not a membership difference.
+    // The Standard tier adds no rail slot of its own.
     expect(idsFor(ViewMode.Standard)).toEqual(idsFor(ViewMode.Vibe));
   });
 
-  it('each mode adds the items declared at it', () => {
-    // `automations` (was `events`, which merged the old `triggers` and `signals` items).
-    // It stays at Advanced, not Dev: dropping to Dev would have removed rules
-    // from a mode that already had them, which is a subtraction the additive
-    // chain above forbids.
-    expect(idsFor(ViewMode.Advanced)).toContain('automations');
-    expect(idsFor(ViewMode.Advanced)).toContain('hooks');
-    expect(idsFor(ViewMode.Standard)).not.toContain('automations');
+  it('two tiers: the base rail for everyone, the developer rail with Dev on', () => {
+    // Advanced was retired into Dev (2026-10-07): what Advanced added is now base,
+    // so every user has data sources, RAG, automations, runs, hooks and LLM sources.
+    const base = ['data-sources', 'rag', 'automations', 'process-runs', 'hooks', 'llm-sources'];
+    expect(idsFor(ViewMode.Vibe)).toEqual(expect.arrayContaining(base));
+    const devOnly = ['discover', 'graph-workflows', 'capabilities'];
+    expect(idsFor(ViewMode.Dev)).toEqual(expect.arrayContaining(devOnly));
+    for (const id of devOnly) expect(idsFor(ViewMode.Vibe)).not.toContain(id);
+    // No item is declared at the retired middle tiers.
+    expect(RAIL_ITEMS.map((i) => i.from).every((f) => f === ViewMode.Vibe || f === ViewMode.Dev)).toBe(true);
     // The merged ids are gone, not merely relocated.
     expect(idsFor(ViewMode.Dev)).not.toContain('triggers');
     expect(idsFor(ViewMode.Dev)).not.toContain('signals');
-    expect(idsFor(ViewMode.Dev)).toEqual(expect.arrayContaining(['discover', 'graph-workflows', 'capabilities']));
-    expect(idsFor(ViewMode.Advanced)).not.toContain('discover');
-    // Data sources took the Tasks slot, but at Advanced rather than Vibe.
-    expect(idsFor(ViewMode.Advanced)).toContain('data-sources');
-    expect(idsFor(ViewMode.Standard)).not.toContain('data-sources');
   });
 
   it('connections sits directly under the stream inbox, in every mode', () => {
@@ -87,7 +83,7 @@ describe('resolveRail — order is the same in every mode', () => {
     const top = resolveRail(ViewMode.Vibe)
       .filter((item) => item.placement === 'top')
       .map((item) => item.id);
-    expect(top).toEqual(['chats', 'stream_inbox', 'credentials']);
+    expect(top).toEqual(['stream_inbox', 'credentials', 'data-sources', 'rag', 'automations', 'process-runs']);
   });
 });
 

@@ -1,5 +1,5 @@
 // React Testing Library Setup for Vitest + jsdom
-import { afterEach } from 'vitest';
+import { afterEach, beforeAll } from 'vitest';
 import { cleanup } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import React from 'react';
@@ -156,3 +156,19 @@ console.error = (...args: any[]) => {
   // Log other errors normally
   originalError.apply(console, args);
 };
+
+// Developer mode is a PREFERENCE, and this tier persists preferences to one live
+// backend shared by every file — so a file that turned Dev on (or left the legacy
+// stored `view_mode = "dev"`, which reads as on) handed it to the next file, whose
+// Advanced/Dev-gated assertions then flipped with the file order (CI: WorkerToolbar
+// rendered every worker). Every FILE starts with Dev off; within a file, tests own
+// their sequence (project-view-mode-memory carries a stored `dev` across tests on
+// purpose). Written only when on, so the common case costs no preference save.
+// Read through the SDK store by its own module paths — files mock both
+// view-mode-context and the `@sdk` barrel, and a mock replaces exactly that id.
+beforeAll(async () => {
+  const { instancePreferences } = await import('@sdk/services/InstancePreferences');
+  const { PrefKey } = await import('@sdk/preferences/prefRegistry');
+  if (instancePreferences.get(PrefKey.DEV_MODE) === true) instancePreferences.set(PrefKey.DEV_MODE, false);
+  if (instancePreferences.get(PrefKey.VIEW_MODE) === 'dev') instancePreferences.set(PrefKey.VIEW_MODE, 'advanced');
+});

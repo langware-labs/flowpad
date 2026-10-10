@@ -26,7 +26,8 @@ import { expect, test, type Page } from '@playwright/test';
 
 const BE = `http://localhost:${process.env.HP_BE_PORT || '6001'}`;
 const GRAPH = `${BE}/api/v1/graph`;
-const SESSION_URL = /\/dock\/shell\/agentic_process-([0-9a-f-]+).*viewMode=vibe/;
+// A session shown in Vibe is its Vibe HOST tab: `/dock/vibe/agentic_process-<id>`.
+const SESSION_URL = /\/dock\/vibe\/agentic_process-([0-9a-f-]+)/;
 
 interface Seeded {
   id: string;
@@ -127,9 +128,10 @@ async function clickHome(page: Page) {
 
 /** On a default home: the root, not a session — and the app is still rendered. */
 async function expectDefaultHome(page: Page) {
-  await expect(page).not.toHaveURL(/\/dock\/shell\//);
+  await expect(page).not.toHaveURL(/\/dock\/(shell|vibe)\//);
   await expect(page).toHaveURL(/\/(\?|$)/);
-  await expect(page.getByTestId('top-nav-home')).toBeVisible();
+  // On the home the bar's Home slot reads "Back to tabs" while tabs are open.
+  await expect(page.getByTestId('top-nav-home').or(page.getByTestId('top-nav-tabs'))).toBeVisible();
 }
 
 test.beforeAll(async () => {

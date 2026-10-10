@@ -268,6 +268,9 @@ async def test_show_appends_display_stack_with_dedupe(bootstrapped_client, user)
     # last_shown is the newest TARGET (no shown_at leak).
     assert row["context_data"]["last_shown"] == r2
     assert "shown_at" not in row["context_data"]["last_shown"]
+    # The backend decided where it is presented (``tab.show_placement``): this
+    # process has no open tab, so there is nothing to pin into or sit beside.
+    assert row["context_data"]["show_placement"] == {"tab_id": None, "host": False}
 
     # Re-show the SAME target → dedup: still 2 entries, timestamp refreshed.
     prev = stack[1]["shown_at"]

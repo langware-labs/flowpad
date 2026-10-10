@@ -25,6 +25,15 @@ export interface HeaderSlots {
   /** Right toolbar (asset manager, commit/merge, terminal, fork, worktree,
    * session info, transcript, close). */
   right: ReactNode;
+  /** The session's surface selector (Terminal | Chat | Vibe) — its own group,
+   *  set apart from the actions by a divider. */
+  modes?: ReactNode;
+}
+
+/** The surface selector, divided from the action icons to its right. */
+function ModesGroup({ modes }: Pick<HeaderSlots, 'modes'>) {
+  if (!modes) return null;
+  return <div className="me-1.5 flex items-center border-e border-border pe-1.5">{modes}</div>;
 }
 
 /** Centered title overlay — same placement in both layouts so switching view
@@ -35,13 +44,14 @@ function CenteredTitle({ title }: Pick<HeaderSlots, 'title'>) {
 }
 
 /** Full toolbar: [debug][restart] — (centered title) — [download][right]. */
-export function AdvancedInteractiveTabHeader({ debug, restart, title, download, right }: HeaderSlots) {
+export function AdvancedInteractiveTabHeader({ debug, restart, title, download, right, modes }: HeaderSlots) {
   return (
     <div data-testid="process-toolbar" className={`${ROW} relative`}>
       {debug}
       {restart}
       <CenteredTitle title={title} />
       <div className="flex-1" />
+      <ModesGroup modes={modes} />
       {download}
       {right}
     </div>
@@ -52,11 +62,12 @@ export function AdvancedInteractiveTabHeader({ debug, restart, title, download, 
  *  needs (Fork). Share + Bookmark are deliberately absent — the top navigation
  *  bar already carries them for whatever it is addressing, and a second copy on
  *  the same screen is pure duplication. */
-export function StandardInteractiveTabHeader({ title, right }: Pick<HeaderSlots, 'title' | 'right'>) {
+export function StandardInteractiveTabHeader({ title, right, modes }: Pick<HeaderSlots, 'title' | 'right' | 'modes'>) {
   return (
     <div data-testid="process-toolbar" className={`${ROW} relative`}>
       <CenteredTitle title={title} />
       <div className="flex-1" />
+      <ModesGroup modes={modes} />
       {right}
     </div>
   );

@@ -87,6 +87,10 @@ msgstr "— הצג שוליים של אירועי עקיבה"
 msgid "…"
 msgstr ""
 
+#: src/pages/entry/AgentLaunchLanding.tsx
+msgid "…or a repository URL"
+msgstr ""
+
 #~ msgid ".env.local file"
 #~ msgstr ""
 
@@ -826,6 +830,10 @@ msgstr ""
 msgid "{failed} of {0} failed to delete."
 msgstr "{failed} מתוך {0} נכשלו במחיקה."
 
+#: src/components/status-bar/GitResolveButton.tsx
+msgid "{files} files need merging — let the assistant merge them"
+msgstr ""
+
 #: src/components/share-to-conversation/GitShareGateDialog.tsx
 msgid "{folderName} has changes that haven't been pushed yet. The receiver can only pull what's on the remote."
 msgstr "ל-{folderName} יש שינויים שעדיין לא נדחפו לשרת המרוחק. המקבל יוכל למשוך רק את מה שכבר נמצא שם."
@@ -877,6 +885,10 @@ msgstr "{indexedCount} מאונדקסים"
 
 #: src/components/llm-endpoints/FundingProvenance.tsx
 msgid "{label}"
+msgstr ""
+
+#: src/components/terminal/interactive-terminal/SessionSurfaceSwitch.tsx
+msgid "{label} — not while the agent is working"
 msgstr ""
 
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
@@ -974,6 +986,10 @@ msgstr ""
 
 #: src/components/helpdesk/AddHelpdeskDialog.tsx
 msgid "{name} was added, but its guides cannot be opened"
+msgstr ""
+
+#: src/pages/entry/AgentLaunchLanding.tsx
+msgid "{name} works on another project. Which one?"
 msgstr ""
 
 #: src/hooks/use-rag-roots.tsx
@@ -1225,6 +1241,10 @@ msgstr "<0>התעלם</0> — הסר את שורת ה-DB, שמור את ספרי
 msgid "<0>New / Stale / Mis-Sc</0> sum to <1>Pending</1>: a Fast index drives them all to 0. <2>Orphan</2> rows persist until you Scan Orphans → sweep."
 msgstr "<0>New / Stale / Mis-Sc</0> מסתכם ל-<1>Pending</1>: אינדקס Fast מוביל אותם כולם ל-0. שורות <2>Orphan</2> נמשכות עד שתנקה Scan Orphans → sweep."
 
+#: src/components/workspace/workspace-switcher.tsx
+msgid "<name>"
+msgstr ""
+
 #: src/components/assets/editor/task/AnalyzeStatusButton.tsx
 msgid "<one short line>"
 msgstr "<שורה קצרה אחת>"
@@ -1272,6 +1292,10 @@ msgstr ""
 #: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 msgid "1 change not published"
+msgstr ""
+
+#: src/components/status-bar/GitResolveButton.tsx
+msgid "1 file needs merging — let the assistant merge it"
 msgstr ""
 
 #: src/components/lens-viewer/ClaudeErrorsViewer.tsx
@@ -1498,6 +1522,10 @@ msgstr ""
 #: src/components/assets/editor/wizard/WizardStepForm.tsx
 msgid "a wizard name"
 msgstr "שם של אשף"
+
+#: src/components/workspace/workspace-switcher.tsx
+msgid "A workspace is a folder of related projects. It starts empty."
+msgstr ""
 
 #: src/components/assets/editor/wizard/WizardForm.tsx
 msgid "about"
@@ -2357,6 +2385,7 @@ msgstr "כל הפריסות עדכניות"
 msgid "All owners"
 msgstr ""
 
+#: src/components/connections-manager.tsx
 #: src/components/connections-manager/credential-rows-view.tsx
 #: src/components/connections-manager/machine-wide-cell.tsx
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
@@ -2536,6 +2565,10 @@ msgstr "פתח גם חלון Terminal נלווה של מערכת ההפעלה"
 
 #: src/components/data-sources/ChannelRouteControl.tsx
 msgid "Also to"
+msgstr ""
+
+#: src/components/project-setup/ProjectSetupDialog.tsx
+msgid "Always"
 msgstr ""
 
 #: src/components/collaboration/LiveSessionView.tsx
@@ -3515,6 +3548,10 @@ msgstr "חזרה למאגרים"
 msgid "Back to stream inbox"
 msgstr "חזרה לתיבת הזרם הנכנס"
 
+#: src/components/top-nav-bar/TopNavBar.tsx
+msgid "Back to tabs"
+msgstr ""
+
 #: src/components/task-bar/SharedTaskView.tsx
 msgid "Back to tasks"
 msgstr "חזור למשימות"
@@ -3965,6 +4002,10 @@ msgstr "לא מצאתם את מה שחיפשתם? שלחו לנו שאלה ומ�
 msgid "Can't launch this agent: it doesn't exist, or you don't have access to it."
 msgstr ""
 
+#: src/pages/entry/AgentLaunchLanding.tsx
+msgid "Can't launch this project: it doesn't exist, or you don't have access to it."
+msgstr ""
+
 #: src/components/diagnose/open-in-terminal-button.tsx
 msgid "Can't open terminal"
 msgstr "לא ניתן לפתוח טרמינל"
@@ -4033,6 +4074,7 @@ msgstr ""
 #: src/components/project-activity-strip/RecentConversationsStrip.tsx
 #: src/components/project-selector/NewProjectDialog.tsx
 #: src/components/project-selector/NewProjectFromGitDialog.tsx
+#: src/components/project-setup/ProjectSetupDialog.tsx
 #: src/components/prompt-library/PromptEditDialog.tsx
 #: src/components/quick-create/McpCreateDialog.tsx
 #: src/components/quick-create/QuickCreateDialog.tsx
@@ -4056,6 +4098,7 @@ msgstr ""
 #: src/components/token-plan/SetBudgetSheet.tsx
 #: src/components/version-popover/version-popover.tsx
 #: src/components/wizard/WizardHost.tsx
+#: src/components/workspace/workspace-switcher.tsx
 #: src/pages/entry/InstallLanding.tsx
 #: src/pages/entry/LaunchLanding.tsx
 #: src/pages/flow-page/VibeWorkerSwitchDialog.tsx
@@ -4227,6 +4270,14 @@ msgstr "שינויים"
 #~ msgid "Changes committed and pushed"
 #~ msgstr "בוצע commit ודחיפה לשינויים"
 
+#: src/lib/publish-state.ts
+msgid "Changes need merging"
+msgstr ""
+
+#: src/components/status-bar/GitResolveButton.tsx
+msgid "Changes need merging — let the assistant finish it"
+msgstr ""
+
 #: src/components/data-sources/MessageChannelsList.tsx
 msgid "Channel"
 msgstr ""
@@ -4278,7 +4329,6 @@ msgid "Chat with this deployed agent"
 msgstr ""
 
 #: src/components/chats-navigator/ChatsNavigator.tsx
-#: src/components/collapsed-sidebar/collapsed-sidebar.tsx
 msgid "Chats"
 msgstr "שיחות"
 
@@ -4345,6 +4395,10 @@ msgstr "בדיקת Git…"
 #: src/components/task-receive/IncomingTaskDialog.tsx
 msgid "Checking if you have a local clone of the repository."
 msgstr "בדיקה אם יש לך קלון מקומי של המאגר."
+
+#: src/components/task-receive/LaunchDialog.tsx
+msgid "Checking out the projects and opening the session."
+msgstr ""
 
 #: src/components/helpdesk/HelpdeskLoadDialog.tsx
 msgid "Checking the help desk files"
@@ -4444,6 +4498,7 @@ msgid "Choose file"
 msgstr ""
 
 #: src/components/quick-create/ScopeSelection.tsx
+#: src/components/workspace/workspace-switcher.tsx
 msgid "Choose folder…"
 msgstr "בחר תיקייה…"
 
@@ -4835,7 +4890,7 @@ msgstr "משבוט…"
 #: src/components/tabs/TabStrip.tsx
 #: src/components/task-receive/IncomingProjectDialog.tsx
 #: src/components/task-receive/IncomingTaskDialog.tsx
-#: src/components/task-receive/IncomingTaskDialog.tsx
+#: src/components/task-receive/LaunchDialog.tsx
 #: src/components/terminal/interactive-terminal/command-status-viewer/CommandStatusViewer.tsx
 #: src/components/terminal/interactive-terminal/EntityShareDialog.tsx
 #: src/components/terminal/interactive-terminal/PaneBar.tsx
@@ -4923,8 +4978,8 @@ msgstr "סגור לימין"
 
 #: src/pages/flow-page/workspace-child-strip.tsx
 #: src/pages/flow-page/workspace-child-strip.tsx
-msgid "Close workspace"
-msgstr "סגירת סביבת העבודה"
+#~ msgid "Close workspace"
+#~ msgstr "סגירת סביבת העבודה"
 
 #: src/components/project-activity-strip/BookmarkColumn.tsx
 msgid "Closed"
@@ -5430,6 +5485,11 @@ msgstr "חיבור פעיל למכונה של {hostName}."
 #: src/components/GitHubConnectionDialog.tsx
 msgid "Connected to GitHub"
 msgstr "מחובר ל-GitHub"
+
+#. placeholder {0}: credential.missingScopes.join(', ')
+#: src/components/connections-manager.tsx
+msgid "Connected without {0}: reconnect to grant them"
+msgstr ""
 
 #: src/components/account/hub-status-visuals.ts
 #: src/components/connections-manager.tsx
@@ -6003,6 +6063,10 @@ msgstr ""
 msgid "Could not create the task"
 msgstr ""
 
+#: src/components/workspace/workspace-switcher.tsx
+msgid "Could not create the workspace"
+msgstr ""
+
 #: src/components/automations/AutomationPage.tsx
 #: src/components/chats-navigator/ChatsNavigator.tsx
 msgid "Could not delete"
@@ -6524,9 +6588,14 @@ msgstr ""
 msgid "Could not sign the sandbox out"
 msgstr "לא ניתן היה להתנתק מארגז החול"
 
+#. placeholder {0}: req.name
 #: src/components/project-setup/ProjectSetupDialog.tsx
-msgid "Could not skip {name}"
+msgid "Could not skip {0}"
 msgstr ""
+
+#: src/components/project-setup/ProjectSetupDialog.tsx
+#~ msgid "Could not skip {name}"
+#~ msgstr ""
 
 #: src/components/assets/editor/agent-profile/deployment/DeploymentProcessPanel.tsx
 #: src/components/assets/editor/wizard/WizardViewer.tsx
@@ -6596,6 +6665,11 @@ msgstr "לא ניתן היה לעבור לטרמינל"
 
 #: src/components/automations/BusView.tsx
 msgid "Could not test it"
+msgstr ""
+
+#. placeholder {0}: req.name
+#: src/components/project-setup/ProjectSetupDialog.tsx
+msgid "Could not undo the skip of {0}"
 msgstr ""
 
 #: src/components/assets/editor/PublishedToggle.tsx
@@ -6685,6 +6759,14 @@ msgstr "לא הצלחנו להשלים את הכנת סביבת העבודה"
 msgid "Couldn't invite {0}: {1}"
 msgstr ""
 
+#: src/components/task-receive/IncomingDeepLink.tsx
+msgid "Couldn't launch"
+msgstr ""
+
+#: src/components/task-receive/LaunchDialog.tsx
+msgid "Couldn't launch."
+msgstr ""
+
 #. placeholder {0}: shellId.slice(0, 8)
 #. placeholder {1}: directCleanup.title
 #: src/routes/loaders/load-shell.ts
@@ -6692,12 +6774,16 @@ msgid "Couldn't load {0}… ({1}) — opened {fallbackPointer} instead."
 msgstr "לא ניתן היה לטעון את {0}… ({1}) — נפתח {fallbackPointer} במקומו."
 
 #: src/pages/entry/AgentLaunchLanding.tsx
-msgid "Couldn't load this agent."
-msgstr ""
+#~ msgid "Couldn't load this agent."
+#~ msgstr ""
 
 #: src/components/terminal/interactive-terminal/side-windows/SkillsAgentsPanel.tsx
 msgid "Couldn’t load transcript"
 msgstr "לא ניתן לטעון את התמליל"
+
+#: src/pages/entry/AgentLaunchLanding.tsx
+msgid "Couldn't load what this link points at."
+msgstr ""
 
 #: src/components/git/RepoPicker.tsx
 msgid "Couldn’t load your repos."
@@ -6717,8 +6803,8 @@ msgid "Couldn't open the project"
 msgstr ""
 
 #: src/lib/publish-state.ts
-msgid "Couldn't publish"
-msgstr "הפרסום נכשל"
+#~ msgid "Couldn't publish"
+#~ msgstr "הפרסום נכשל"
 
 #: src/components/web-url-display/WebUrlDisplay.tsx
 msgid "Couldn't reach {host}."
@@ -6797,7 +6883,6 @@ msgid "Couldn't start the GitHub connection."
 msgstr "לא ניתן היה להתחיל את החיבור ל-GitHub."
 
 #: src/lib/publish-state.ts
-#: src/lib/publish-state.ts
 msgid "Couldn't update"
 msgstr ""
 
@@ -6853,6 +6938,7 @@ msgstr "מעבד:"
 #: src/components/quick-create/QuickCreateDialog.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
+#: src/components/workspace/workspace-switcher.tsx
 #: src/pages/hub-home/NewSandboxDialog.tsx
 msgid "Create"
 msgstr "צור"
@@ -7922,6 +8008,10 @@ msgstr "מצב מפתח"
 #: src/components/collapsed-sidebar/collapsed-sidebar.tsx
 msgid "Dev mode ON — click to disable"
 msgstr "מצב פיתוח פעיל — לחץ כדי להשבית"
+
+#: src/pages/flow-page/content-panel/user-dropdown/user-menu-header.tsx
+msgid "Developer mode is on — double-click to turn it off"
+msgstr ""
 
 #: src/components/developer-layout/dev-menu.tsx
 msgid "Developer Tools"
@@ -9114,6 +9204,10 @@ msgstr "אירוע: "
 msgid "Events"
 msgstr "אירועים"
 
+#: src/components/data-sources/DataSourcePage.tsx
+msgid "Events and settings"
+msgstr ""
+
 #: src/components/data-sources/SourceMenu.tsx
 msgid "Events on the bus"
 msgstr ""
@@ -9293,7 +9387,11 @@ msgstr "הכול כבר מעודכן."
 #~ msgstr ""
 
 #: src/components/project-setup/ProjectSetupDialog.tsx
-msgid "Everything is set up."
+#~ msgid "Everything is set up."
+#~ msgstr ""
+
+#: src/components/project-setup/ProjectSetupDialog.tsx
+msgid "Everything required is set up."
 msgstr ""
 
 #: src/components/assets/editor/llm-endpoint/LlmEndpointAssetView.tsx
@@ -9738,6 +9836,7 @@ msgstr "פתיחת תיקיית {folderType} נכשלה"
 
 #: src/components/open-project-component/use-open-project.ts
 #: src/components/quick-create/QuickCreateDialog.tsx
+#: src/components/workspace/workspace-switcher.tsx
 msgid "Failed to open folder picker"
 msgstr "נכשל בפתיחת בוחר התיקייה"
 
@@ -10371,6 +10470,10 @@ msgstr "אבחון Flowpad"
 msgid "FlowPad didn't open? Install it, then come back to this page."
 msgstr "FlowPad לא נפתח? התקינו אותו וחזרו לדף הזה."
 
+#: src/pages/entry/AgentLaunchLanding.tsx
+msgid "FlowPad didn't open. Install it from flowpad.ai, then try again."
+msgstr ""
+
 #: src/components/git/CreatePrivateRepoForm.tsx
 msgid "Flowpad initializes the repository, then proposes the install on a separate review branch."
 msgstr "Flowpad מאתחל את המאגר, ולאחר מכן מציע את ההתקנה בענף ביקורת נפרד."
@@ -10731,6 +10834,14 @@ msgstr "אפשר להוריד אותו ב-flowpad.ai"
 #: src/journey/JourneyBadge.tsx
 msgid "Getting started — {stepsLeft} steps left"
 msgstr "תחילת העבודה — נותרו {stepsLeft} שלבים"
+
+#: src/components/task-receive/LaunchDialog.tsx
+msgid "Getting the controller project"
+msgstr ""
+
+#: src/components/task-receive/LaunchDialog.tsx
+msgid "Getting the project to work on"
+msgstr ""
 
 #: src/components/graph-view/ui/NodePanel.tsx
 msgid "ghost"
@@ -12191,6 +12302,10 @@ msgstr "אבחנות בעיות שנרשמו על ידי העוזר. לחץ על
 msgid "It doesn't appear to be installed on your computer. Would you like to install it now?"
 msgstr "נראה שהוא לא מותקן במחשב שלך. להתקין אותו עכשיו?"
 
+#: src/components/assets/editor/wizard/wizard-texts.ts
+msgid "It doesn't appear to be installed on your computer. Would you like to install it now? On a Mac, Apple's installer opens in its own window — if you don't see it, look behind this one."
+msgstr "נראה שהוא לא מותקן במחשב שלך. להתקין אותו עכשיו? ב-Mac, המתקין של Apple נפתח בחלון נפרד. אם אינך רואה אותו, חפש מאחורי החלון הזה."
+
 #: src/components/automations/RunDetail.tsx
 msgid "It failed without saying why."
 msgstr ""
@@ -12621,6 +12736,10 @@ msgstr "הפעלה"
 msgid "Launch {0}?"
 msgstr "להפעיל את {0}?"
 
+#: src/pages/entry/AgentLaunchLanding.tsx
+msgid "Launch {name}"
+msgstr ""
+
 #: src/components/assets/editor/agent-profile/AgentVisibilitySection.tsx
 msgid "Launch a new sandbox running this agent"
 msgstr ""
@@ -12633,6 +12752,14 @@ msgstr "יש להפעיל סשן תחילה"
 msgid "Launch failed."
 msgstr ""
 
+#: src/pages/entry/AgentLaunchLanding.tsx
+msgid "Launch in cloud"
+msgstr ""
+
+#: src/pages/entry/AgentLaunchLanding.tsx
+msgid "Launch in my desktop"
+msgstr ""
+
 #: src/pages/hub-home/HubHome.tsx
 msgid "Launch sandbox"
 msgstr "הפעלת ארגז חול"
@@ -12643,6 +12770,10 @@ msgstr "הפעילו את סביבת העבודה"
 
 #: src/pages/entry/LaunchLanding.tsx
 msgid "Launching runs the steps below against your account."
+msgstr ""
+
+#: src/components/task-receive/LaunchDialog.tsx
+msgid "Launching…"
 msgstr ""
 
 #: src/components/lens-viewer/HeartbeatEventsViewer.tsx
@@ -13253,8 +13384,8 @@ msgid "Loading tasks..."
 msgstr "טוען משימות..."
 
 #: src/pages/entry/AgentLaunchLanding.tsx
-msgid "Loading the agent…"
-msgstr ""
+#~ msgid "Loading the agent…"
+#~ msgstr ""
 
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Loading transcript data..."
@@ -13320,6 +13451,7 @@ msgstr "טוען..."
 #: src/components/value-viewer/ValueViewer.tsx
 #: src/components/wiki-tip/HubWikiMarkdown.tsx
 #: src/pages/discover-page/discover-page.tsx
+#: src/pages/entry/AgentLaunchLanding.tsx
 #: src/pages/flow-page/vibe-recent-sessions.tsx
 #: src/pages/hub-browse/HubEntityView.tsx
 #: src/pages/hub-browse/HubRecordsView.tsx
@@ -13355,6 +13487,10 @@ msgstr "רק מקומי — קבוע"
 #: src/components/artifacts/artifact-form.tsx
 msgid "Local path"
 msgstr "נתיב מקומי"
+
+#: src/components/project-setup/ProjectSetupDialog.tsx
+msgid "Locally"
+msgstr ""
 
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Location"
@@ -13789,9 +13925,13 @@ msgstr "שימוש זיכרון (%)"
 msgid "Memory:"
 msgstr "זיכרון:"
 
+#: src/lib/publish-state.ts
+msgid "Merge conflict"
+msgstr ""
+
 #: src/components/task-receive/IncomingTaskDialog.tsx
-msgid "Merge conflicts"
-msgstr "קונפליקטים בהיתוך"
+#~ msgid "Merge conflicts"
+#~ msgstr "קונפליקטים בהיתוך"
 
 #: src/components/assets/PushContextFolderDialog.tsx
 #: src/components/conversation/AttachmentDownloadWarning.tsx
@@ -14547,6 +14687,19 @@ msgstr ""
 #: src/tabs/useTerminalStripController.tsx
 msgid "New Terminal"
 msgstr "טרמינל חדש"
+
+#: src/tabs/useTerminalStripController.tsx
+#: src/tabs/useTerminalStripController.tsx
+msgid "New Vibe"
+msgstr ""
+
+#: src/components/workspace/workspace-switcher.tsx
+msgid "New workspace"
+msgstr ""
+
+#: src/components/workspace/workspace-switcher.tsx
+msgid "New workspace…"
+msgstr ""
 
 #: src/pages/discover-page/DiscoverToolbar.tsx
 msgid "Newest first"
@@ -15393,6 +15546,14 @@ msgstr "לא נמצאו רשומות בדיסק."
 msgid "No records of this type"
 msgstr "אין רשומות מסוג זה"
 
+#: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
+msgid "No remote branch"
+msgstr ""
+
+#: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
+msgid "No remote configured"
+msgstr ""
+
 #: src/pages/hub-home/NewSandboxDialog.tsx
 msgid "no repo"
 msgstr "אין מאגר"
@@ -15837,14 +15998,18 @@ msgid "Not logged in · Please run /login"
 msgstr "לא מחוברים · הריצו /login"
 
 #: src/components/project-setup/ProjectSetupDialog.tsx
-msgid "Not needed here: mark its values optional"
-msgstr ""
+#~ msgid "Not needed here: mark its values optional"
+#~ msgstr ""
 
 #: src/components/assets/editor/wizard/wizard-texts.ts
 #: src/components/install/AddAssetDialog.tsx
 #: src/components/project-home/MissingDependenciesDialog.tsx
 msgid "Not now"
 msgstr "לא עכשיו"
+
+#: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
+msgid "Not on the remote yet — Push publishes this branch"
+msgstr ""
 
 #. placeholder {0}: item.fix
 #: src/components/assets/editor/agent-profile/DeploymentSecretsGate.tsx
@@ -16284,6 +16449,10 @@ msgstr ""
 
 #: src/components/automations/automation-words.ts
 msgid "On the schedule {expr}"
+msgstr ""
+
+#: src/components/project-setup/ProjectSetupDialog.tsx
+msgid "On this machine only — undo any time"
 msgstr ""
 
 #: src/components/account/settings-section.tsx
@@ -17110,12 +17279,17 @@ msgid "optional"
 msgstr ""
 
 #: src/components/assets/dependency-sources.tsx
+#: src/components/project-setup/ProjectSetupDialog.tsx
 msgid "Optional"
 msgstr ""
 
 #: src/components/triggers-view/ScheduleTriggerEditor.tsx
 msgid "Optional — leave blank for home"
 msgstr "אופציונלי — השאר ריק עבור בית"
+
+#: src/components/project-setup/ProjectSetupDialog.tsx
+msgid "optional — skipped here"
+msgstr ""
 
 #: src/components/credentials-view/CredentialView.tsx
 msgid "optional · not set"
@@ -17692,6 +17866,10 @@ msgstr "בחרו ב-FlowPad, בעוזר שאתם כבר משלמים עליו, �
 msgid "pick one"
 msgstr ""
 
+#: src/pages/entry/AgentLaunchLanding.tsx
+msgid "Pick one of your projects…"
+msgstr ""
+
 #: src/components/asset-manager/AssetManagerPopover.tsx
 msgid "Pick project folder"
 msgstr "בחר תיקיית פרויקט"
@@ -17851,12 +18029,20 @@ msgid "Please sign in again to keep using cloud features."
 msgstr "יש להתחבר שוב כדי להמשיך להשתמש בתכונות הענן."
 
 #: src/pages/entry/AgentLaunchLanding.tsx
-msgid "Please sign in to flowpad to continue with the agent creation process."
+#~ msgid "Please sign in to flowpad to continue with the agent creation process."
+#~ msgstr ""
+
+#: src/pages/entry/AgentLaunchLanding.tsx
+msgid "Please sign in to flowpad to continue."
 msgstr ""
 
 #: src/pages/entry/AgentLaunchLanding.tsx
-msgid "Please sign in to start the agent {agentName}…"
+msgid "Please sign in to start {name}…"
 msgstr ""
+
+#: src/pages/entry/AgentLaunchLanding.tsx
+#~ msgid "Please sign in to start the agent {agentName}…"
+#~ msgstr ""
 
 #: src/components/helpdesk/HelpdeskResetButton.tsx
 msgid "Please try again."
@@ -18475,8 +18661,8 @@ msgid "Publish failed."
 msgstr ""
 
 #: src/lib/publish-state.ts
-msgid "Publish hit a conflict"
-msgstr "הפרסום נתקל בהתנגשות"
+#~ msgid "Publish hit a conflict"
+#~ msgstr "הפרסום נתקל בהתנגשות"
 
 #: src/components/assets/editor/agent-profile/AgentVisibilitySection.tsx
 msgid "Publish this agent to share it"
@@ -18559,8 +18745,8 @@ msgid "Pull failed."
 msgstr "משיכה נכשלה."
 
 #: src/lib/publish-state.ts
-msgid "Pull hit a conflict"
-msgstr ""
+#~ msgid "Pull hit a conflict"
+#~ msgstr ""
 
 #: src/components/data-sources/DataSourceDialog.tsx
 msgid "Pull only: edits to the local copy are never written back."
@@ -18591,8 +18777,8 @@ msgid "Push & notify"
 msgstr "דחפו & הודיעו"
 
 #: src/components/assets/PushContextFolderDialog.tsx
-msgid "Push failed"
-msgstr "דחיפה נכשלה"
+#~ msgid "Push failed"
+#~ msgstr "דחיפה נכשלה"
 
 #~ msgid "Push this project to a repository that already exists"
 #~ msgstr ""
@@ -19236,6 +19422,10 @@ msgstr ""
 msgid "Remove from vibe agents"
 msgstr "הסרת סוכן מ־Vibe"
 
+#: src/components/project-setup/ProjectSetupDialog.tsx
+msgid "Remove it from the project — the deletion is staged in git"
+msgstr ""
+
 #: src/components/milkdown-editor/MilkdownEditor.tsx
 msgid "Remove link"
 msgstr "הסר קישור"
@@ -19619,7 +19809,12 @@ msgstr ""
 
 #: src/components/assets/dependency-sources.tsx
 #: src/components/credentials/CredentialDialog.tsx
+#: src/components/project-setup/ProjectSetupDialog.tsx
 msgid "Required"
+msgstr ""
+
+#: src/components/project-setup/ProjectSetupDialog.tsx
+msgid "required — it will not work here until it is set up"
 msgstr ""
 
 #: src/components/terminal/interactive-terminal/WorktreeButtons.tsx
@@ -19690,6 +19885,10 @@ msgstr "מתבצע איפוס…"
 #: src/components/navigator-panel/NavigatorPanel.tsx
 msgid "Resize navigator"
 msgstr "שנה גודל ניווט"
+
+#: src/components/status-bar/GitResolveButton.tsx
+msgid "Resolve"
+msgstr ""
 
 #: src/components/assets/editor/WikiResolveView.tsx
 msgid "Resolving [[{name}]]…"
@@ -19846,8 +20045,8 @@ msgid "Retry download"
 msgstr "הורדה מחדש"
 
 #: src/components/task-receive/IncomingTaskDialog.tsx
-msgid "Retry pull"
-msgstr "נסה משיכה שוב"
+#~ msgid "Retry pull"
+#~ msgstr "נסה משיכה שוב"
 
 #: src/components/data-sources/health-style.ts
 msgid "Retrying"
@@ -20372,6 +20571,11 @@ msgstr ""
 
 #: src/components/data-sources/DataDriversView.tsx
 msgid "Runtime"
+msgstr ""
+
+#. placeholder {0}: data.upstream
+#: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
+msgid "Same commits as {0}"
 msgstr ""
 
 #: src/components/assets/editor/usage-report/UsageReportAssetEditor.tsx
@@ -21602,8 +21806,16 @@ msgid "Setting things up"
 msgstr ""
 
 #: src/pages/entry/AgentLaunchLanding.tsx
-msgid "Setting up your {agentName} on a new sandbox…"
+msgid "Setting up {name} on a new sandbox…"
 msgstr ""
+
+#: src/components/task-receive/LaunchDialog.tsx
+msgid "Setting up the controller"
+msgstr ""
+
+#: src/pages/entry/AgentLaunchLanding.tsx
+#~ msgid "Setting up your {agentName} on a new sandbox…"
+#~ msgstr ""
 
 #: src/components/task-receive/IncomingProjectDialog.tsx
 msgid "Setting up your project…"
@@ -21928,6 +22140,10 @@ msgstr "הצג הכל"
 msgid "Show Annotations"
 msgstr "הצגת הערות"
 
+#: src/pages/flow-page/vibe-chat-pane.tsx
+msgid "Show as"
+msgstr ""
+
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
 msgid "Show coordinates"
 msgstr "הצג קואורדינטות"
@@ -22038,6 +22254,10 @@ msgstr ""
 
 #: src/components/automations/RunDetail.tsx
 msgid "Show the raw record"
+msgstr ""
+
+#: src/components/terminal/interactive-terminal/SessionSurfaceSwitch.tsx
+msgid "Show this session as"
 msgstr ""
 
 #: src/components/settings-view/settings-utils.ts
@@ -22454,6 +22674,10 @@ msgstr "לדלג בינתיים"
 msgid "Skip initial permission check on startup"
 msgstr "דילוג על בדיקת ההרשאות ההתחלתית בעת ההפעלה"
 
+#: src/components/project-setup/ProjectSetupDialog.tsx
+msgid "Skip it…"
+msgstr ""
+
 #: src/components/settings-view/settings-utils.ts
 msgid "Skip Permissions Warmup"
 msgstr "דילוג על חימום ההרשאות"
@@ -22465,6 +22689,10 @@ msgstr ""
 #: src/components/automations/automation-words.ts
 #: src/components/automations/RunsView.tsx
 msgid "Skipped"
+msgstr ""
+
+#: src/components/project-setup/ProjectSetupDialog.tsx
+msgid "Skipped on this machine"
 msgstr ""
 
 #: src/components/automations/automation-words.ts
@@ -22562,8 +22790,8 @@ msgid "Someone else changed the same thing. Let the assistant merge the two vers
 msgstr ""
 
 #: src/lib/publish-state.ts
-msgid "Someone else changed this too. Switch to Advanced view to merge."
-msgstr "מישהו אחר שינה את זה גם כן. יש לעבור לתצוגה המתקדמת כדי למזג."
+#~ msgid "Someone else changed this too. Switch to Advanced view to merge."
+#~ msgstr "מישהו אחר שינה את זה גם כן. יש לעבור לתצוגה המתקדמת כדי למזג."
 
 #: src/components/webapp-display/messages.tsx
 msgid "Something is using this port, but it isn't your app."
@@ -22911,6 +23139,10 @@ msgstr "מתחיל סריקה…"
 #: src/components/assets/editor/wizard/wizard-texts.ts
 msgid "starting the agent"
 msgstr "מפעיל את הסוכן"
+
+#: src/components/task-receive/LaunchDialog.tsx
+msgid "Starting the session"
+msgstr ""
 
 #: src/components/agents/use-agent-launcher.ts
 msgid "Starting the session failed."
@@ -23261,8 +23493,12 @@ msgid "Surface built-in system skills in the Assets browser."
 msgstr "הצג מיומנויות מערכת מובנות בדפדפן הנכסים."
 
 #: src/i18n/pref-labels.ts
-msgid "Surface complexity: Vibe (simplest, creator), Standard (minimal), Advanced, or Dev."
-msgstr "רמת המורכבות של הממשק: Vibe (הפשוט ביותר, ליצירה), Standard (מינימלי), Advanced או Dev."
+#~ msgid "Surface complexity: Vibe (simplest, creator), Standard (minimal), Advanced, or Dev."
+#~ msgstr "רמת המורכבות של הממשק: Vibe (הפשוט ביותר, ליצירה), Standard (מינימלי), Advanced או Dev."
+
+#: src/i18n/pref-labels.ts
+msgid "Surface complexity: Vibe (simplest, creator), Standard (minimal), or Advanced."
+msgstr ""
 
 #: src/components/account/settings-section.tsx
 msgid "Surface developer-only views and controls across the app."
@@ -23670,6 +23906,10 @@ msgstr ""
 #: src/components/llm-endpoints/CredentialField.tsx
 #: src/components/organization/budgets/PayingProviderSetup.tsx
 msgid "That key does not look right"
+msgstr ""
+
+#: src/components/task-receive/IncomingDeepLink.tsx
+msgid "That launch link is incomplete."
 msgstr ""
 
 #. placeholder {0}: foreign.brand
@@ -24157,8 +24397,8 @@ msgid "Then: run its rule code"
 msgstr ""
 
 #: src/components/task-receive/IncomingTaskDialog.tsx
-msgid "There are merge conflicts in <0>{localPath}</0>. Please resolve them and try again."
-msgstr "קיימים קונפליקטים בהיתוך ב-<0>{localPath}</0>. אנא פתור אותם ונסה שוב."
+#~ msgid "There are merge conflicts in <0>{localPath}</0>. Please resolve them and try again."
+#~ msgstr "קיימים קונפליקטים בהיתוך ב-<0>{localPath}</0>. אנא פתור אותם ונסה שוב."
 
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "There is nothing left to send — add a message first."
@@ -24250,8 +24490,8 @@ msgstr "לא ניתן לבטל פעולה זו."
 #~ msgstr ""
 
 #: src/pages/entry/AgentLaunchLanding.tsx
-msgid "This agent isn't published to the cloud, so there's nothing to launch."
-msgstr ""
+#~ msgid "This agent isn't published to the cloud, so there's nothing to launch."
+#~ msgstr ""
 
 #: src/routes/loaders/load-agent-stream-inbox.ts
 msgid "This Agent no longer exists."
@@ -24481,6 +24721,10 @@ msgid "This link doesn't name a repository we can launch."
 msgstr "הקישור הזה לא מציין מאגר שאפשר להפעיל."
 
 #: src/pages/entry/LaunchLanding.tsx
+msgid "This link doesn't point at a project."
+msgstr ""
+
+#: src/pages/entry/LaunchLanding.tsx
 msgid "This link doesn't point at an agent."
 msgstr ""
 
@@ -24497,7 +24741,11 @@ msgid "This link is missing the sandbox it should open."
 msgstr "לקישור הזה חסר ה-Sandbox שהוא אמור לפתוח."
 
 #: src/pages/entry/LaunchLanding.tsx
-msgid "This link names both a repository and an agent. Ask for a link that names just one."
+#~ msgid "This link names both a repository and an agent. Ask for a link that names just one."
+#~ msgstr ""
+
+#: src/pages/entry/LaunchLanding.tsx
+msgid "This link names more than one thing to launch. Ask for a link that names just one."
 msgstr ""
 
 #: src/components/collaboration/LiveSessionView.tsx
@@ -24598,6 +24846,7 @@ msgid "this project"
 msgstr ""
 
 #: src/components/automations/AutomationsList.tsx
+#: src/components/connections-manager.tsx
 #: src/components/connections-manager/credential-rows-view.tsx
 #: src/components/credentials/CredentialDialog.tsx
 msgid "This project"
@@ -24765,6 +25014,10 @@ msgstr "ליכולת הזו יש שינויים שלא בוצע להם commit �
 #: src/components/llm-sources/use-llm-sources.ts
 msgid "This source did not work"
 msgstr "המקור הזה לא עבד"
+
+#: src/components/data-sources/SourceFiles.tsx
+msgid "This source has no folder on this machine yet."
+msgstr ""
 
 #: src/components/data-sources/DataSourcePage.tsx
 msgid "This source is not on this machine (it may have been deleted)."
@@ -25478,6 +25731,7 @@ msgstr "בהערכה"
 
 #: src/components/conversation/task-it.tsx
 #: src/components/image-annotator/AnnotatorToolbar.tsx
+#: src/components/project-setup/ProjectSetupDialog.tsx
 #: src/hooks/favorites-pending-delete.ts
 msgid "Undo"
 msgstr "בטל"
@@ -25659,6 +25913,7 @@ msgstr "עדכני"
 
 #: src/components/assets/editor/agent-profile/AgentPlaceCard.tsx
 #: src/components/assets/editor/agent-profile/AgentPlaceCard.tsx
+#: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 msgid "Up to date"
 msgstr ""
 
@@ -26156,6 +26411,7 @@ msgid "via hub login"
 msgstr "דרך התחברות ל-Hub"
 
 #: src/components/links/LinkMenu.tsx
+#: src/types/ViewType.ts
 msgid "Vibe"
 msgstr ""
 
@@ -26863,10 +27119,15 @@ msgstr ""
 msgid "Working…"
 msgstr "בתהליך…"
 
+#: src/components/workspace/workspace-switcher.tsx
 #: src/i18n/type-labels.ts
 #: src/pages/hub-home/HubHome.tsx
 msgid "Workspace"
 msgstr "מרחב עבודה"
+
+#: src/components/workspace/workspace-switcher.tsx
+msgid "Workspace name"
+msgstr ""
 
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
 msgid "Worktree"
@@ -27208,8 +27469,12 @@ msgid "Your sandbox is ready."
 msgstr ""
 
 #: src/pages/entry/AgentLaunchLanding.tsx
-msgid "Your session has expired. Sign in again to open this agent."
+msgid "Your session has expired. Sign in again to launch."
 msgstr ""
+
+#: src/pages/entry/AgentLaunchLanding.tsx
+#~ msgid "Your session has expired. Sign in again to open this agent."
+#~ msgstr ""
 
 #~ msgid "Your teams"
 #~ msgstr ""

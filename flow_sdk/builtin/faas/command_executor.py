@@ -18,7 +18,9 @@ import time
 from typing import TYPE_CHECKING, Mapping, NamedTuple, Sequence
 
 from flow_sdk.compute.providers.env_prefix import build_env_prefix
+from flow_sdk.config import ComputeProviderType
 from flow_sdk.schema.data_spec.returned_value_spec import CliResult
+from flow_sdk.utils.git_usable import EXIT_NOT_FOUND, NOT_USABLE_MESSAGE, git_usable, is_git_argv
 
 if TYPE_CHECKING:
     from flow_sdk.builtin.faas.compute_node import ComputeNode
@@ -43,6 +45,11 @@ class ComputeNodeCommandExecutor:
     def _windows_shell(self) -> bool:
         return getattr(getattr(self._node, "compute_provider", None), "path_sep", os.sep) == "\\"
 
+    @property
+    def _is_this_machine(self) -> bool:
+        """The node runs on the machine this backend runs on (not a Docker / E2B box with its own git)."""
+        return getattr(self._node, "node_provider_type", None) == ComputeProviderType.LOCAL_MACHINE
+
     def _quote(self, arg: str) -> str:
         """cmd.exe has no single-quote semantics — POSIX quoting would reach the
         far end as literal quote characters and split paths on spaces."""
@@ -66,6 +73,10 @@ class ComputeNodeCommandExecutor:
         finish"), never 0 — reading a missing status as success was the bug.
         """
         command = " ".join(self._quote(arg) for arg in argv)
+        if is_git_argv(argv) and self._is_this_machine and not git_usable():
+            # This Mac has no Command Line Tools: /usr/bin/git would open Apple's installer dialog (the status bar
+            # polls git, so it would open it on every project). Answer as a missing binary; the Git wizard asks.
+            return CliResult.of_process(command, EXIT_NOT_FOUND, "", NOT_USABLE_MESSAGE)
         prefix = build_env_prefix(
             [_EnvPair(name, value) for name, value in (env or {}).items()],
             windows=self._windows_shell,

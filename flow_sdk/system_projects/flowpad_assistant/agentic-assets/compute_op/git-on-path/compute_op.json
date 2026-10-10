@@ -7,7 +7,7 @@
   "subkind": "cli",
   "exe_data": {
     "commands": {
-      "darwin": "brew install git",
+      "darwin": "has_git() { d=\"$(xcode-select -p 2>/dev/null)\" && [ -x \"$d/usr/bin/git\" ]; }; installer_open() { [ -n \"$(lsappinfo find bundleid=com.apple.dt.CommandLineTools.installondemand 2>/dev/null)\" ]; }; has_git && exit 0; if ! xcode-select --install 2>/dev/null; then echo \"Could not start Apple's developer tools installer. Check that this Mac is online, then run this setup again.\" >&2; exit 1; fi; sleep 2; open -b com.apple.dt.CommandLineTools.installondemand 2>/dev/null; gone=0; until has_git; do if installer_open; then gone=0; else gone=$((gone+1)); fi; if [ \"$gone\" -ge 6 ]; then echo \"Apple's developer tools installer closed before git was installed. If the installation is still running, run this setup again when it finishes.\" >&2; exit 1; fi; sleep 5; done",
       "linux": "apt-get update && apt-get install -y git",
       "win32": "$env:Path += ';' + [Environment]::GetEnvironmentVariable('Path','Machine') + ';' + [Environment]::GetEnvironmentVariable('Path','User') + ';' + $env:LOCALAPPDATA + '\\Microsoft\\WindowsApps'; $base = @('install','--id','Git.MinGit','-e','--silent','--accept-package-agreements','--accept-source-agreements','--disable-interactivity'); $src = @('--source','winget'); $scp = @(); $srcErr = @(-1978335138,-1978335210,-1978335163,-1978335157); winget @base @src @scp; $c = $LASTEXITCODE; if ($srcErr -contains $c) { $src = @(); winget @base @src @scp; $c = $LASTEXITCODE }; if ($c -eq -1978335189) { winget uninstall --id Git.MinGit -e --silent --disable-interactivity @src; winget @base @src @scp; $c = $LASTEXITCODE }; if ($null -eq $c) { exit 1 }; exit $c"
     },
@@ -25,7 +25,7 @@
   ],
   "completion_check": {
     "commands": {
-      "darwin": "git --version >/dev/null 2>&1",
+      "darwin": "d=\"$(xcode-select -p 2>/dev/null)\"; { [ -n \"$d\" ] && [ -x \"$d/usr/bin/git\" ]; } || { g=\"$(command -v git 2>/dev/null)\"; [ -n \"$g\" ] && [ \"$g\" != /usr/bin/git ]; }",
       "linux": "git --version >/dev/null 2>&1",
       "win32": "$env:Path += ';' + [Environment]::GetEnvironmentVariable('Path','Machine') + ';' + [Environment]::GetEnvironmentVariable('Path','User'); git --version *> $null; if ($LASTEXITCODE -eq 0) { exit 0 } else { exit 1 }"
     },

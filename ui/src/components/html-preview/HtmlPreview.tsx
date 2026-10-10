@@ -51,7 +51,7 @@ import { useFS } from '@src/hooks/useFS';
 const PREVIEW_SANDBOX = 'allow-scripts allow-same-origin allow-forms allow-modals allow-popups allow-downloads';
 
 export function HtmlPreview({ path }: { path: string }) {
-  const { computeNode, flow } = useAgentContext();
+  const { computeNode, flowId } = useAgentContext();
   const fs = useFS(computeNode?.typeId);
 
   // The revision the FS store bumps on every write to this path. Carrying it in
@@ -61,8 +61,9 @@ export function HtmlPreview({ path }: { path: string }) {
   const revision = fs?.revision(path) ?? 0;
   // The process this page is shown beside. The server writes it into the page as
   // `__FLOWPAD_PROCESS_ID__`, so the page's SDK can reach that process
-  // (`setDisplayContext`, `enqueue`).
-  const processParam = flow?.id ? `&process=${encodeURIComponent(flow.id)}` : '';
+  // (`setDisplayContext`, `enqueue`). The id, not the loaded process: it is in
+  // the URL from the first render, so the frame loads once, already bound.
+  const processParam = flowId ? `&process=${encodeURIComponent(flowId)}` : '';
   const src = computeNode?.typeId && fs ? `${fs.getServeUrl(path)}?r=${revision}${processParam}` : null;
 
   if (!src) {

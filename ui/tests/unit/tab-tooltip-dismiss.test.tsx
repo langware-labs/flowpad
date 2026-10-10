@@ -5,23 +5,22 @@
  * blurs the window with the iframe focused, and that closes the card too.
  */
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { MemoryRouter } from 'react-router';
+import { afterEach, describe, expect, it } from 'vitest';
 import { TabStrip, type TabStripItem } from '@src/components/tabs/TabStrip';
-
-vi.mock('@src/navigation/useDockNavigation', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@src/navigation/useDockNavigation')>()),
-  useCurrentDock: () => null,
-}));
 
 const items: TabStripItem[] = [{ key: 'a', title: 'localhost:5021' }];
 
 function openCard() {
+  // The strip reads the current dock (`useLocation`): a router at `/` is the real answer.
   render(
-    <div>
-      <TabStrip items={items} activeKey="a" onSelect={() => {}} onClose={() => {}} onPopout={() => {}} />
-      <div data-testid="elsewhere" />
-      <iframe data-testid="webapp" title="webapp" />
-    </div>,
+    <MemoryRouter>
+      <div>
+        <TabStrip items={items} activeKey="a" onSelect={() => {}} onClose={() => {}} onPopout={() => {}} />
+        <div data-testid="elsewhere" />
+        <iframe data-testid="webapp" title="webapp" />
+      </div>
+    </MemoryRouter>,
   );
   // Focus opens a Radix tooltip without the hover delay.
   fireEvent.focusIn(screen.getByText('localhost:5021'));
@@ -53,7 +52,7 @@ describe('tab chip hover card dismissal', () => {
     expect(card().length).toBeGreaterThan(0);
 
     act(() => {
-      (screen.getByTestId('webapp')).focus();
+      screen.getByTestId('webapp').focus();
       window.dispatchEvent(new Event('blur'));
     });
     expect(card()).toHaveLength(0);
