@@ -142,11 +142,19 @@ jobs:
   # The desktop wrapper's own unit tests (electron/*.test.js: updater, uv install,
   # shutdown, semver). Plain node scripts — no Electron binary is needed, so
   # skip the postinstall/binary download (`--ignore-scripts`). Seconds to run.
+  # Linux AND Windows: the desktop wrapper's Windows-only paths (application-control
+  # detection and repair, uv install quoting, AppData layouts — FLOWPAD-2231) are
+  # exercised with the real `process.platform`, PowerShell and path semantics only on
+  # a Windows runner; on Linux they run behind a faked platform.
   electron-tests:
-    name: electron (node unit tests)
+    name: electron (node unit tests, ${{ matrix.os }})
     if: ${{ github.event_name != 'workflow_dispatch' || inputs.e2e-only == '' }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -160,6 +168,39 @@ jobs:
       - name: node unit tests
         run: npm test
         working-directory: electron
+
+  # The fast, PTY-free Python tests behind the Windows failure handling (the
+  # server monitor's stop-retry policy, the failure classifier, the native-deps
+  # manifest — FLOWPAD-2231) on a real Windows runner. Not the whole unit tier:
+  # that one spawns servers and PTYs and is sharded for Linux. The 15-minute
+  # cap is the same as the Linux shards; `uv sync` dominates it on Windows.
+  backend-unit-windows:
+    name: backend (pytest unit, windows subset)
+    if: ${{ github.event_name != 'workflow_dispatch' || (inputs.backend-tests && inputs.e2e-only == '') }}
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - name: Set up uv + Python 3.11
+        uses: astral-sh/setup-uv@v10.0.1
+        with:
+          python-version: '3.11'
+          enable-cache: true
+      - name: Disable Python problem matcher (annotates warnings as errors)
+        run: echo "::remove-matcher owner=python::"
+        shell: bash
+      - name: Install dependencies
+        run: uv sync --dev --frozen
+        shell: bash
+      # pytest.ini enforces --timeout=30 per test; never raise it. --long for the same
+      # reason as the Linux shards: CI is not the inner loop.
+      - name: pytest (Windows failure-handling subset)
+        run: >-
+          uv run pytest --long -q
+          tests/unit/test_failure_classification.py
+          tests/unit/test_server_launch_monitor.py
+          tests/unit/test_native_deps_manifest.py
+        shell: bash
 
   e2e-tests:
     name: 'e2e (live backend: vitest headless/api/react + playwright)'
