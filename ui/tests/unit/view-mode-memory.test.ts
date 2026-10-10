@@ -25,8 +25,10 @@ describe('shouldStore', () => {
     }
   });
 
-  it('defaults both scopes to mode switch only', () => {
-    expect(VIEW_MODE_STORE).toEqual({ tab: ViewModeStore.ModeSwitch, project: ViewModeStore.ModeSwitch });
+  it('a tab remembers the mode it was created in; a project only a switch', () => {
+    // A session opened in Terminal and never toggled must resume in Terminal
+    // after a project switch — so its mode is minted when its row is created.
+    expect(VIEW_MODE_STORE).toEqual({ tab: ViewModeStore.TabCreate, project: ViewModeStore.ModeSwitch });
   });
 });
 

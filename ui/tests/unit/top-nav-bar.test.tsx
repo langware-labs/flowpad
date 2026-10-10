@@ -333,7 +333,8 @@ describe('the navigation bar', () => {
     expect(within(popover).getByTestId('projects-counter-open-project')).toBeTruthy();
     await user.click(within(popover).getByRole('button', { name: 'Beta 1' }));
 
-    await waitFor(() => expect(openDock).toHaveBeenCalledWith({ __dock: 'project' }));
+    // A project switch resumes a TOP-LEVEL tab (see use-open-project / project-list-menu).
+    await waitFor(() => expect(openDock).toHaveBeenCalledWith({ __dock: 'project' }, undefined, { topLevel: true }));
     expect(dockForProjectEntry).toHaveBeenCalledWith(OTHER_PROJECT_ID, { tabHash: 'h1' });
     // URL-first: the loader is the single writer of context, never the click.
     expect(setContext).not.toHaveBeenCalled();

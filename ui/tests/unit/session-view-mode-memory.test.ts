@@ -1,13 +1,13 @@
 /**
  * Per-SESSION view-mode memory (`AgenticProcess.last_mode`) under the default
- * `VIEW_MODE_STORE` policy: memory is READ on every open, but WRITTEN only on a
- * mode switch.
+ * `VIEW_MODE_STORE` policy: memory is READ on every open, WRITTEN when the tab
+ * is created and on a mode switch — never by merely opening a tab.
  *
  * Seams:
  *   - `NavigationActions.openDock` seeds a session dock's `?viewMode` from the
- *     session's own memory (read side, cache-only).
- *   - `tabManager.recordViewModeEvent` reports tab opens/creates — which the
- *     default policy ignores.
+ *     session's own memory (read side, cache-only) — never from the mode on screen.
+ *   - `tabManager.recordViewModeEvent` reports tab opens/creates — the default
+ *     policy stores the create and ignores the open.
  *   - `setViewMode(mode, dock)` is the switch — it writes the preference, the
  *     session and the current project.
  */
@@ -66,14 +66,28 @@ describe('per-session view-mode memory (AgenticProcess.last_mode)', () => {
       expect(lastUrl(navigate)).toContain('/dock/vibe/agentic_process-');
     });
 
-    it('a session with no memory displays the mode we are in', () => {
+    // A session never takes the mode we are in — that belongs to the tab being
+    // left. With no memory it is the plain chat.
+    it.each([ViewMode.Advanced, ViewMode.Vibe])('a cached session with no memory opens as the plain chat, not in %s', (here) => {
       cacheSession(fakeSession(null));
-      sitOnSomewhereIn(ViewMode.Advanced);
+      sitOnSomewhereIn(here);
       const navigate = vi.fn();
 
       new NavigationActions(navigate, null).openDock(sessionDock());
 
-      expect(lastUrl(navigate)).toContain(`viewMode=${ViewMode.Advanced}`);
+      expect(lastUrl(navigate)).toContain('/dock/shell/agentic_process-');
+      expect(lastUrl(navigate)).toContain(`viewMode=${ViewMode.Standard}`);
+    });
+
+    it('a session not in cache opens bare — the shell loader states its mode from the entity', () => {
+      cacheSession(null);
+      sitOnSomewhereIn(ViewMode.Vibe);
+      const navigate = vi.fn();
+
+      new NavigationActions(navigate, null).openDock(sessionDock());
+
+      expect(lastUrl(navigate)).toContain('/dock/shell/agentic_process-');
+      expect(lastUrl(navigate)).not.toContain('viewMode=');
     });
 
     it('garbage in `last_mode` reads as no memory rather than as a mode', () => {
@@ -83,7 +97,7 @@ describe('per-session view-mode memory (AgenticProcess.last_mode)', () => {
 
       new NavigationActions(navigate, null).openDock(sessionDock());
 
-      expect(lastUrl(navigate)).toContain(`viewMode=${ViewMode.Advanced}`);
+      expect(lastUrl(navigate)).toContain(`viewMode=${ViewMode.Standard}`);
       expect(lastUrl(navigate)).not.toContain('bogus-mode');
     });
 
@@ -121,13 +135,24 @@ describe('per-session view-mode memory (AgenticProcess.last_mode)', () => {
     });
   });
 
-  describe('opening a tab never mints memory (default policy)', () => {
-    it.each([ViewModeEvent.TabOpen, ViewModeEvent.TabCreate])('%s saves nothing', (event) => {
+  describe('creating a tab mints its mode; merely opening one does not (default policy)', () => {
+    it('TabCreate stamps the mode the session was opened in', () => {
       const session = fakeSession(null);
       cacheSession(session);
       const tab = new Tab({ id: 'tab-1', pointer: SESSION_POINTER, target_type: AgenticProcess.type, target_id: SESSION_ID });
 
-      tabManager.recordViewModeEvent(tab, event, ViewMode.Advanced);
+      tabManager.recordViewModeEvent(tab, ViewModeEvent.TabCreate, ViewMode.Advanced);
+
+      expect(session.last_mode).toBe(ViewMode.Advanced);
+      expect(session.save).toHaveBeenCalledTimes(1);
+    });
+
+    it('TabOpen saves nothing', () => {
+      const session = fakeSession(null);
+      cacheSession(session);
+      const tab = new Tab({ id: 'tab-1', pointer: SESSION_POINTER, target_type: AgenticProcess.type, target_id: SESSION_ID });
+
+      tabManager.recordViewModeEvent(tab, ViewModeEvent.TabOpen, ViewMode.Advanced);
 
       expect(session.last_mode).toBeNull();
       expect(session.save).not.toHaveBeenCalled();

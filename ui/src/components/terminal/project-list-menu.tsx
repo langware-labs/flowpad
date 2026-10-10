@@ -433,7 +433,7 @@ export function useProjectListMenu({
         return;
       }
       setOpen(false);
-      navigation.openDock(await dockForProjectEntry(recovered.id, currentDock));
+      navigation.openDock(await dockForProjectEntry(recovered.id, currentDock), undefined, { topLevel: true });
     } finally {
       setRecoveringId(null);
     }
@@ -451,7 +451,9 @@ export function useProjectListMenu({
     }
     if (bucket.state === 'live' && bucket.project) {
       setOpen(false);
-      navigation.openDock(await dockForProjectEntry(bucket.project.id, currentDock));
+      // A resumed tab is a TOP-LEVEL tab, as its chip is: never a child of the
+      // workspace being left, never painted in its mode.
+      navigation.openDock(await dockForProjectEntry(bucket.project.id, currentDock), undefined, { topLevel: true });
     }
     // 'loading' — ignore; spinner is rendered in the row.
   };
