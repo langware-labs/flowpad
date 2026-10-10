@@ -114,8 +114,8 @@ describe('buildHubRailItems', () => {
     // stream inbox and has its own entry in the desk `navMeta`. What must stay out is an
     // id with no desk entry behind it: that renders a silent `null` slot.
     // `llm-endpoints` and `token-plan` are hub-only and have no desk screen.
-    expect(RAIL_ITEMS.map((i) => i.id as string)).not.toContain('llm-endpoints');
-    expect(RAIL_ITEMS.map((i) => i.id as string)).not.toContain('token-plan');
+    expect(RAIL_ITEMS as readonly string[]).not.toContain('llm-endpoints');
+    expect(RAIL_ITEMS as readonly string[]).not.toContain('token-plan');
   });
 });
 
