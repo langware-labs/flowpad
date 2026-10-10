@@ -6,8 +6,9 @@ consume the trailing incomplete line. It buffers until the next call when
 the newline arrives. Without this, parser.feed would receive truncated JSON
 and silently drop the line.
 
-The fix lives in ``_read_and_fold``: ``rfind(b"\\n")`` finds the last
-newline; ``_byte_offset`` advances only up to it. The trailing bytes stay
+The fix lives in ``_read_and_fold``: the file is iterated one physical
+line at a time and a final line without ``\\n`` is left unread;
+``_byte_offset`` advances only past complete lines. The trailing bytes stay
 in the file (not consumed) for the next call.
 """
 from __future__ import annotations
@@ -18,7 +19,6 @@ from pathlib import Path
 import pytest
 
 from flow_sdk.transcript_analyzer.transcript import AgentTranscriptFile
-
 
 # do not increase timeout without approval
 pytestmark = pytest.mark.timeout(30)
