@@ -353,6 +353,42 @@ async def test_a_test_backend_can_switch_first_run_setup_off(monkeypatch):
     assert resolved == [trigger], "unset: the trigger runs as it does on a real install"
 
 
+@pytest.mark.parametrize(("assigned", "shown"), [(None, True), ("sandbox", False), ("agent", False)])
+async def test_the_popup_is_for_a_persons_own_machine_not_a_box_the_hub_launched(monkeypatch, assigned, shown):
+    """On a desktop someone is watching, the popup waits for their Start. A sandbox or an agent's
+    box comes with its tools: there the setup runs itself and nothing covers the screen."""
+    from types import SimpleNamespace
+
+    from flow_sdk.core.compute import llm_source
+    from flow_sdk.core.wizard import start
+    from flow_sdk.instance_settings import runtime
+    from flow_sdk.models.bootstrap_models import RuntimeKind
+    from flow_sdk.schema.data_spec.returned_value_spec import ExitCode
+    from flow_sdk.server import builtin_triggers
+
+    calls = []
+
+    async def wizard_for(_trigger):
+        return SimpleNamespace(popup=True)
+
+    async def navigate(_wizard):
+        calls.append("popup")
+
+    async def run(_wizard, unattended=False):
+        calls.append("ran itself")
+        return None, SimpleNamespace(busy=False, exit_code=ExitCode.OK, ok=True, detail="")
+
+    monkeypatch.setattr(builtin_triggers, "_wizard_for", wizard_for)
+    monkeypatch.setattr(llm_source, "person_is_watching", lambda: True)
+    monkeypatch.setattr(start, "navigate_to_wizard", navigate)
+    monkeypatch.setattr(start, "start_wizard", run)
+    monkeypatch.setattr(runtime, "get_assigned_runtime", lambda: RuntimeKind(assigned) if assigned else None)
+
+    await builtin_triggers._run_llm_setup_trigger(SimpleNamespace(uname="llm-setup-on-tab-ready"), [])
+
+    assert calls == (["popup"] if shown else ["ran itself"])
+
+
 async def test_a_question_waits_with_no_deadline(monkeypatch):
     for tool in TOOLS:
         assert _op(f"ask-install-{tool}").exe_data.until_answered
