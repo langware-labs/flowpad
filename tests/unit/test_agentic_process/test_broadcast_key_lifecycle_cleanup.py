@@ -4,10 +4,11 @@
 dict (keyed by process id) precisely so it survives the fresh AP instance the
 transcript watcher hydrates per streamer event. That lifetime is the point of
 the design — and the reason nothing implicit ever frees it: the instance dying
-no longer drops the row. ``close()`` and ``delete()`` are the two lifecycle
-exits, so each must drop it explicitly, or the dict grows for the lifetime of
-the server and a re-opened process starts out deduping against the key it last
-broadcast before it went down.
+no longer drops the row. ``close()``, ``delete()`` and a worker that ends on
+its own (``test_self_exit_releases_transcript_state.py``) are the three
+lifecycle exits, so each must drop it explicitly, or the dict grows for the
+lifetime of the server and a re-opened process starts out deduping against the
+key it last broadcast before it went down.
 
 The turn-end reindex watermark (``_REINDEX_WATERMARKS``) is the same shape for
 the same reason, so it is pinned on the same exits here rather than in a
