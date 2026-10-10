@@ -9480,6 +9480,10 @@ msgstr "Execution trace"
 msgid "Executions of this item, shown without leaving the current view."
 msgstr "Executions of this item, shown without leaving the current view."
 
+#: src/components/open-project-component/project-actions-row.tsx
+msgid "existing"
+msgstr "existing"
+
 #: src/components/git/GitTargetDialog.tsx
 msgid "Existing repo"
 msgstr "Existing repo"
@@ -21247,8 +21251,8 @@ msgid "Segment dur"
 msgstr "Segment dur"
 
 #: src/components/open-project-component/project-actions-row.tsx
-msgid "select"
-msgstr "select"
+#~ msgid "select"
+#~ msgstr "select"
 
 #. placeholder {0}: c.displayName
 #: src/components/graph-context/GraphContextViewer.tsx

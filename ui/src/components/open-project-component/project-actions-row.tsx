@@ -12,7 +12,7 @@ import { useActiveWorkspace } from '@src/hooks/use-workspaces';
 
 /**
  * Compact outlined-button presentation — the Vibe hero's under-input strip,
- * read as one sentence: "Select project [folder] [new] [select] [git]".
+ * read as one sentence: "Select project [new] [folder] [existing] [git]".
  * Bordered, filled and foreground-coloured so each action reads as a button,
  * not as muted hint text.
  */
@@ -58,7 +58,7 @@ function ActionButton({
 }
 
 /**
- * The project-actions row — Open folder / Open existing project / New project /
+ * The project-actions row — New project / Open folder / Open existing project /
  * Open from git — plus the three dialogs they drive.
  *
  * Two presentations of the SAME actions, chosen by the host: `tiles` (the
@@ -138,6 +138,14 @@ export function ProjectActionsRow({
             {t`Select project`}
           </span>
         )}
+        <ActionButton
+          variant={variant}
+          Icon={FolderPlus}
+          label={t`New project`}
+          shortLabel={t`new`}
+          onClick={() => setIsNewProjectOpen(true)}
+          testId="vibe-new-project"
+        />
         {canPickHostFolder && (
           <ActionButton
             variant={variant}
@@ -149,20 +157,12 @@ export function ProjectActionsRow({
             testId="vibe-open-project-folder"
           />
         )}
-        <ActionButton
-          variant={variant}
-          Icon={FolderPlus}
-          label={t`New project`}
-          shortLabel={t`new`}
-          onClick={() => setIsNewProjectOpen(true)}
-          testId="vibe-new-project"
-        />
         {hasProjects && (
           <ActionButton
             variant={variant}
             Icon={FolderSearch}
             label={t`Open project`}
-            shortLabel={t`select`}
+            shortLabel={t`existing`}
             onClick={() => setIsProjectModalOpen(true)}
             testId="vibe-open-existing-project"
           />
