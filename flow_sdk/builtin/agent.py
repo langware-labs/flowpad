@@ -814,6 +814,8 @@ class Agent(Entity):
         the next deploy repairs the row rather than preserving a deployment that
         cannot load its files (notably ``avatar.png``).
         """
+        from pathlib import Path  # noqa: PLC0415
+
         from flow_sdk.builtin.agent_places import hub_origin  # noqa: PLC0415
 
         # Published means "in its project's hub repo"; any other origin is
@@ -830,6 +832,10 @@ class Agent(Entity):
         project = await owning_project(self)
         if project is not None:
             await project.ensure_on_hub()
+            # An agent runs inside its project: the hub needs the project's files to stand it
+            # up on another machine, not only the agent's own folder.
+            if (Path(project.fs_storage_mount_path or "") / ".git").exists():
+                await project.publish_files_to_hub()
         # What it needs travels with it: the commit below carries the current requirements.
         await refresh_requirements(self)
         await publish_git_asset(self, actor)

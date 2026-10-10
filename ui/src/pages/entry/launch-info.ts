@@ -1,6 +1,6 @@
 import type { GitOrigin, HubRepoOrigin, ProjectSubkind } from '@sdk';
 import apiClient from '@sdk/client';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 
 /**
  * What the hub knows about a launch link's id — `GET <agent|project>/<id>/launch_info`.
@@ -24,18 +24,21 @@ export function fetchLaunchInfo(kind: LaunchInfoKind, id: string): Promise<Launc
   return apiClient.get<LaunchInfo | null>(`/api/v1/graph/${kind}/${encodeURIComponent(id)}/launch_info`);
 }
 
-export interface LaunchInfoState {
-  info: LaunchInfo | null;
-  loading: boolean;
-  error: unknown;
+type LaunchInfoRead = { info: LaunchInfo | null; loading: boolean; error: unknown };
+
+export interface LaunchInfoState extends LaunchInfoRead {
+  /** Ask the hub again — after a failed read, or once the person has signed in again. */
+  reload: () => void;
 }
 
-const IDLE: LaunchInfoState = { info: null, loading: false, error: null };
+const IDLE: LaunchInfoRead = { info: null, loading: false, error: null };
 
 /** `fetchLaunchInfo`, keyed on the id: a result for a previous id is never returned for this one. */
 export function useLaunchInfo(kind: LaunchInfoKind, id: string | null, enabled: boolean): LaunchInfoState {
-  const key = enabled && id ? `${kind}:${id}` : null;
-  const [loaded, setLoaded] = useState<{ key: string; state: LaunchInfoState } | null>(null);
+  const [attempt, setAttempt] = useState(0);
+  const reload = useCallback(() => setAttempt((n) => n + 1), []);
+  const key = enabled && id ? `${kind}:${id}:${attempt}` : null;
+  const [loaded, setLoaded] = useState<{ key: string; state: LaunchInfoRead } | null>(null);
   useEffect(() => {
     if (!key || !id) return;
     let cancelled = false;
@@ -46,6 +49,6 @@ export function useLaunchInfo(kind: LaunchInfoKind, id: string | null, enabled: 
       cancelled = true;
     };
   }, [key, kind, id]);
-  if (!key) return IDLE;
-  return loaded?.key === key ? loaded.state : { ...IDLE, loading: true };
+  if (!key) return { ...IDLE, reload };
+  return loaded?.key === key ? { ...loaded.state, reload } : { ...IDLE, loading: true, reload };
 }
