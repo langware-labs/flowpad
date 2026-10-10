@@ -198,8 +198,11 @@ export default function AgentLaunchLanding({ params }: { params: URLSearchParams
   const percent = steps.length ? Math.round((100 * done) / steps.length) : 0;
   // An agent link names the agent ("QA manager"), a project link its project.
   const name = (agent && (agent.getDisplayName() || agent.name)) || info?.project_name || '';
+  // Viewable, but its project's files are not shared with this person: neither machine could
+  // check it out, so it is said here instead of after a refused clone.
+  const notShared = info?.project_shared === false;
   // Nothing to check out: the owner never published the project behind this link.
-  const unpublished = !!info && (isController ? !controllerId : !ownTarget(info));
+  const unpublished = !!info && !notShared && (isController ? !controllerId : !ownTarget(info));
   // Why a controller cannot be launched yet — said under the picker, never left to a grey button.
   const pickerHint =
     !isController || plan || unpublished
@@ -281,7 +284,22 @@ export default function AgentLaunchLanding({ params }: { params: URLSearchParams
             </p>
           )}
 
-          {!signedOut && info && !unpublished && (
+          {!signedOut && info && notShared && (
+            <div className={errorClass} data-testid="launch-not-shared">
+              <p>
+                {name ? (
+                  <Trans>You can see {name}, but its project isn't shared with you, so it can't be launched.</Trans>
+                ) : (
+                  <Trans>This project isn't shared with you, so it can't be launched.</Trans>
+                )}
+              </p>
+              <p className="mt-1 text-muted-foreground">
+                <Trans>Ask its owner to share the project with {account || t`your account`}.</Trans>
+              </p>
+            </div>
+          )}
+
+          {!signedOut && info && !unpublished && !notShared && (
             <div className="mt-4 space-y-3" data-testid="launch-choice">
               <p className="text-sm font-medium" data-testid="launch-title">
                 {isController ? (
