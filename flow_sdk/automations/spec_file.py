@@ -112,13 +112,12 @@ def apply_patch(doc: dict[str, Any], patch: dict[str, Any], *, parent_type_id: s
 def gate_doc(gate: Any) -> Any:
     """The row's ``gate`` as the document's ``if``: the sentence a person typed when the op is
     the one-question default it was worded from, else the op itself."""
+    from flow_sdk.schema.data_spec.compute_op_spec import DecisionOp  # noqa: PLC0415
+
     data = gate if isinstance(gate, dict) else gate.model_dump(mode="json")
     sentence = str(data.get("sentence") or "")
-    questions = data.get("questions") or {}
-    require = data.get("require") or {}
-    if sentence and not questions:
-        return sentence  # a sentence nothing worded yet: the file keeps the person's words
-    if sentence and list(questions) == ["match"] and list(require) == ["match"] and (require["match"] or {}).get("yes") == 0.85:
+    # A sentence nothing worded yet keeps the person's words; so does one worded the default way.
+    if sentence and (not data.get("questions") or DecisionOp.is_sentence_form(data)):
         return sentence
     return {k: v for k, v in data.items() if k in ("questions", "require", "input", "sentence") and v not in (None, "", {})}
 

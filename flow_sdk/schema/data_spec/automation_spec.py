@@ -168,7 +168,8 @@ class AutomationRun(DataSpec):
     decision: Optional[dict[str, Any]] = None
     #: The id of what it decided about — the state is rebuilt from it, never stored.
     subject_id: Optional[str] = None
-    #: The ``then`` wizard's result (``compute.returned.wizard``), each step trimmed.
+    #: How the ``then`` wizard went (``WizardResult.outline``): its verdict and, per step, the exit
+    #: code, a short detail and the session it started. Never a step's output.
     wizard: Optional[dict[str, Any]] = None
 
 
@@ -211,8 +212,6 @@ class AutomationSummary(DataSpec):
     last_runs: list[RunMark] = Field(default_factory=list)
     #: Fires the gate declined (``decision_no``), among the rows read.
     passed_over: int = 0
-    #: Real fires started in the last hour — summed across rules for the top bar.
-    started_last_hour: int = 0
     next_run: Optional[str] = None
     fires: int = 0
     #: A test run or a successful real run exercised the rule as it is now.
@@ -232,7 +231,7 @@ class CheckFinding(DataSpec):
     model_config = ConfigDict(frozen=True)
     spec_kind: ClassVar[str] = "automation.check.finding"
 
-    #: when | event | then | state
+    #: when | event | if | decider | then | state
     area: str
     ok: bool
     message: str

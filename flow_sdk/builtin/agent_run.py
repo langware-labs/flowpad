@@ -115,8 +115,6 @@ def process_id_of(answer) -> "str | None":
     if executor:
         return TypeId(executor).id
     if getattr(answer, "steps", None):
-        from flow_sdk.automations.then import AGENT_STEP  # noqa: PLC0415
-
-        found = answer.first_executor(first=AGENT_STEP)
+        found = answer.first_executor()
         return TypeId(found).id if found else None
     return None

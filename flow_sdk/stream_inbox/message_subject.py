@@ -14,6 +14,7 @@ from flow_sdk.automations.decision_subjects import NotCaught
 from flow_sdk.schema.data_spec.compute_op_spec import LaunchContext
 from flow_sdk.schema.data_spec.decision_spec import YesNoQuestion
 from flow_sdk.schema.data_spec.message_state_spec import MessageState, message_head
+from flow_sdk.tags.envelope import parse_target
 
 logger = logging.getLogger(__name__)
 
@@ -31,8 +32,8 @@ class MessageSubject:
     async def of(self, target: str) -> MessageState:
         from flow_sdk.builtin.flow_message import FlowMessage  # noqa: PLC0415
 
-        item_id = str(target).split(":", 1)[-1]
-        fm = await FlowMessage.get_one({"source_item_id": item_id})
+        _, item_id = parse_target(str(target))
+        fm = await FlowMessage.get_one({"source_item_id": item_id}) if item_id else None
         if fm is None:
             raise NotCaught("the message is not in the stream inbox")
         return state_of(fm)
@@ -59,7 +60,8 @@ class MessageSubject:
         from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp  # noqa: PLC0415
         from flow_sdk.stream_inbox.projection import is_message  # noqa: PLC0415
 
-        sources = [s.split(":", 1)[1] for s in (getattr(trigger, "tag_scope", None) or []) if s.startswith("data_source:")]
+        scoped = (parse_target(s) for s in (getattr(trigger, "tag_scope", None) or []))
+        sources = [sid for stype, sid in scoped if stype == "data_source" and sid]
         # Newest first from the database; a few more than asked, since own and outbound messages are
         # refused after the read. Then every message row in ONE query.
         items = await SourceItem.get_all(QueryFilter(
@@ -90,6 +92,20 @@ class MessageSubject:
     def subject_id(self, state: MessageState) -> str:
         return state.message_id
 
+    async def by_id(self, subject_id: str) -> MessageState:
+        return state_of(await _message(subject_id))
+
+    async def test_event(self, subject_id: str) -> dict[str, Any]:
+        """The projected envelope the message arrived on, minus its tag (the caller's own sample)."""
+        from flow_sdk.stream_inbox.stream_inbox_on_tag import projected_envelope  # noqa: PLC0415
+
+        fm = await _message(subject_id)
+        if not fm.source_item_id:
+            raise LookupError("that message did not come in on a channel")
+        origin = getattr(fm, "origin_local", None)
+        envelope = projected_envelope("", str(fm.source_item_id), str(getattr(origin, "data_source_id", "") or ""))
+        return {key: envelope[key] for key in ("target", "data", "scope") if key in envelope}
+
     def on_fired(self, state: MessageState, event: Any) -> None:
         """The existing handling notice, on the cause's own provider segment."""
         from flow_sdk.stream_inbox.stream_inbox_on_tag import emit_message_status  # noqa: PLC0415
@@ -112,6 +128,15 @@ class _Source:
     def __init__(self, source_id: str, provider: str) -> None:
         self.id = source_id
         self.provider = provider
+
+
+async def _message(message_id: str) -> Any:
+    from flow_sdk.builtin.flow_message import FlowMessage  # noqa: PLC0415
+
+    fm = await FlowMessage.get_by_id(message_id) if message_id else None
+    if fm is None:
+        raise LookupError("no such message")
+    return fm
 
 
 def state_of(fm: Any) -> MessageState:

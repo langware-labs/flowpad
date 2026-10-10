@@ -98,8 +98,22 @@ def _why(row: dict[str, Any], catalog: dict[str, tuple[str, str]]) -> str:
     return row.get("reason") or event or "Fired"
 
 
+def _skipped(row: dict[str, Any]) -> bool:
+    return bool(row.get("reason_code") or (row.get("trigger") is False and row.get("hook_event", "").endswith("suppressed")))
+
+
+def started_since(rows: Iterable[dict[str, Any]], floor: str) -> int:
+    """How many real fires (not tests, not skips) among raw history rows are at or after *floor* (an
+    ISO stamp, the log's own format) — a count read straight off the rows, with nothing folded."""
+    return sum(
+        1 for row in rows
+        if row.get("hook_event") != "tag_fire_done" and not row.get("is_test") and not _skipped(row)
+        and str(row.get("ts") or "") >= floor
+    )
+
+
 def _status(row: dict[str, Any], done: Optional[dict[str, Any]]) -> RunStatus:
-    if row.get("reason_code") or (row.get("trigger") is False and row.get("hook_event", "").endswith("suppressed")):
+    if _skipped(row):
         return "skipped"
     outcome = done or row
     if outcome.get("error"):

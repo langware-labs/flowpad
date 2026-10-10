@@ -9,6 +9,7 @@ import { IconWithBadge } from '@src/components/graph-view/icons/IconWithBadge';
 import { sourcesQuery, useSourceSpecs } from '@src/components/data-sources/use-source-specs';
 import { useEntitiesQuery } from '@src/hooks/entity-hooks';
 import { cn } from '@src/lib/utils';
+import { COMPACT } from './CategoryChips';
 import { humanizeType } from '@src/utils/humanize';
 
 /**
@@ -124,7 +125,6 @@ export function useChannelAttribution() {
 }
 
 // Same compact treatment as CategoryChips — one visual language, no new pill.
-const COMPACT = 'gap-0.5 rounded border px-1 py-0 align-middle text-[9px] font-medium leading-tight';
 // The source chip is the one a row is recognised BY, so its glyph is bigger than
 // a category's and keeps its brand colour — the text stays quiet.
 const SOURCE_CHIP = cn(COMPACT, 'gap-1 border-border bg-muted ps-1 pe-1.5 py-px text-[10px] font-semibold text-muted-foreground');

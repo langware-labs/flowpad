@@ -20,7 +20,8 @@ from flow_sdk.builtin.flow_message import FlowMessage
 from flow_sdk.builtin.source_item import SourceItem
 from flow_sdk.builtin.trigger import Trigger
 from flow_sdk.stream_inbox.projection import project_source_item
-from flow_sdk.tags import emit_tag, target_of
+from flow_sdk.stream_inbox.stream_inbox_on_tag import projected_envelope
+from flow_sdk.tags import emit_tag
 from flow_sdk.tags.bus import drain
 from tests.unit.automations._helpers import history
 
@@ -70,8 +71,9 @@ async def _rule(source: DataSource, agent: Agent, **kw) -> Trigger:
 
 
 def _arrives(item: SourceItem, source: DataSource) -> None:
-    emit_tag("stream_inbox.agent.message.projected", target_of("source_item", item.id),
-             {"entity_id": item.id, "source_id": source.id}, ctx={"scope": [target_of("data_source", source.id)]})
+    """The real announcement's envelope (``projected_envelope``), so the gate is proven against it."""
+    parts = projected_envelope("agent", str(item.id), str(source.id))
+    emit_tag(parts["tag"], parts["target"], parts["data"], ctx={"scope": parts["scope"]})
 
 
 @pytest.fixture

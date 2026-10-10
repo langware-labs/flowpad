@@ -366,17 +366,16 @@ export function ConversationView({
     return answered ? all : onlyWithSessions(all, automationSessions);
   }, [answered, orderedItems, messagesById, handledKeys, automationSessions]);
   // "Automate messages like this": the builder, prefilled with this channel and this message. URL-first.
-  const { navigation: automateNavigation } = useDockNavigation();
   const handleAutomate = useCallback(
     (fm: FlowMessage) =>
-      automateNavigation.openDock(
+      dockNavigation.openDock(
         DockPointer.forAutomations({
           creating: 'message',
           source: conversation?.channel_source_id ?? null,
           message: fm.id ?? null,
         }),
       ),
-    [automateNavigation, conversation?.channel_source_id],
+    [dockNavigation, conversation?.channel_source_id],
   );
   const quotedFor = (fm: FlowMessage | null) => {
     if (!fm?.reply_to_id) return null;

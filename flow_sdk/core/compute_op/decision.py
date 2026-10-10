@@ -11,7 +11,7 @@ A verdict is an answer, never a raise: an API that could not be reached is ``met
 
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any
 
 from flow_sdk.schema.data_spec.compute_op_spec import DecisionOp, Require
 from flow_sdk.schema.data_spec.decision_spec import (
@@ -26,12 +26,12 @@ from flow_sdk.schema.data_spec.decision_spec import (
 from flow_sdk.schema.data_spec.returned_value_spec import DecisionVerdict
 
 
-async def decide_op(op: DecisionOp, state: Any, *, endpoint: Optional[str] = None) -> DecisionVerdict:
+async def decide_op(op: DecisionOp, state: Any) -> DecisionVerdict:
     """Ask every question of ``state`` in one call and judge the answers. Never raises."""
     from flow_sdk.decision import DecisionError, decide  # noqa: PLC0415 — the hub client, behind the schema
 
     try:
-        result = await decide(DecisionSpec(state=_plain(state), questions=op.questions), endpoint=endpoint)
+        result = await decide(DecisionSpec(state=_plain(state), questions=op.questions))
     except DecisionError as exc:
         return DecisionVerdict.not_yet(
             f"could not decide: {exc.message}", ran=False, unavailable=exc.reason, confidence=0.0

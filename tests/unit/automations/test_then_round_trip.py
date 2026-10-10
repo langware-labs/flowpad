@@ -72,6 +72,71 @@ def test_the_sugar_expands_to_one_agent_step_handed_the_state():
     assert isinstance(exe, AgentOp) and exe.agent == "agent-1" and exe.input == "MESSAGE" and exe.launch_context == "LAUNCH"
 
 
+def test_a_fire_with_no_state_gives_the_agent_no_input():
+    """A rule with no gate has no subject state in scope: the sugar's agent runs with no input rather
+    than naming a value that is not there (which would answer not-applicable and launch nothing)."""
+    wizard, ops = as_wizard(ThenSpec.model_validate(DOC["then"]), name="refunds")
+    exe = ops[wizard.steps[0].ref].exe_data
+    assert isinstance(exe, AgentOp) and exe.input == ""
+
+
+def test_the_history_row_keeps_an_outline_of_the_wizard_never_its_output():
+    from flow_sdk.schema.data_spec.returned_value_spec import CliResult, PromptResult, WizardResult
+
+    result = WizardResult.satisfied("done", steps={
+        "say": CliResult.satisfied("ok", stdout="x" * 5000),
+        "handle": PromptResult.satisfied("y" * 900, executor="agentic_process-11111111-1111-4111-8111-111111111111"),
+    })
+    outline = result.outline()
+    assert outline["exit_code"] == 0 and list(outline["steps"]) == ["say", "handle"]
+    assert outline["steps"]["say"] == {"exit_code": 0, "detail": "ok"}
+    assert outline["steps"]["handle"]["executor"].startswith("agentic_process-") and len(outline["steps"]["handle"]["detail"]) == 300
+    assert "stdout" not in json.dumps(outline) and result.first_executor() == outline["steps"]["handle"]["executor"]
+
+
+def test_the_gate_is_read_as_its_op_in_one_place():
+    worded = Trigger(name="r", trigger_type="tag", tag_pattern="stream_inbox.*.message.projected", gate={"sentence": "asks for a refund"})
+    assert isinstance(worded.gate_op, DecisionOp) and DecisionOp.is_sentence_form(worded.gate)
+    assert Trigger(name="r", trigger_type="tag", tag_pattern="app.ready", gate={"sentence": "x"}).gate_op is None, "nothing worded it"
+    assert Trigger(name="r", trigger_type="tag", tag_pattern="app.ready").gate_op is None
+    stricter = {**worded.gate, "require": {"match": {"yes": 0.95}}}
+    assert not DecisionOp.is_sentence_form(stricter) and gate_doc(stricter)["require"]["match"]["yes"] == 0.95
+
+
+@async_context
+async def test_a_missing_decision_api_is_its_own_finding(monkeypatch):
+    """The rule's `if` is fine; what is missing is on this machine — so the screen can say exactly that."""
+    import flow_sdk.instance_settings.api_endpoint as api_endpoint
+    from flow_sdk.automations.check import check
+
+    async def none_here():
+        return []
+
+    monkeypatch.setattr(api_endpoint, "decision_endpoints", none_here)
+    rule = Trigger(name="r", trigger_type="tag", tag_pattern="stream_inbox.*.message.projected",
+                   gate={"sentence": "asks for a refund"}, then=DOC["then"])
+    found = {f.area: f for f in (await check(rule)).findings}
+    assert "if" not in found and found["decider"].ok is False and "Decision API to decide" in found["decider"].message
+
+    unworded = Trigger(name="r", trigger_type="tag", tag_pattern="app.ready", gate={"sentence": "x"}, then=DOC["then"])
+    found = {f.area: f for f in (await check(unworded)).findings}
+    assert found["if"].ok is False and "decider" not in found
+
+
+def test_the_last_hour_count_reads_raw_rows():
+    from flow_sdk.automations.runs import started_since
+
+    rows = [
+        {"hook_event": "tag_fire", "trigger": True, "ts": "2026-10-10T12:30:00+00:00"},
+        {"hook_event": "tag_fire_done", "trigger": True, "ts": "2026-10-10T12:30:05+00:00"},   # the same run's outcome
+        {"hook_event": "tag_fire", "trigger": True, "is_test": True, "ts": "2026-10-10T12:31:00+00:00"},
+        {"hook_event": "tag_declined", "trigger": False, "reason_code": "decision_no", "ts": "2026-10-10T12:32:00+00:00"},
+        {"hook_event": "schedule_fire", "trigger": True, "ts": "2026-10-10T12:40:00+00:00"},
+        {"hook_event": "tag_fire", "trigger": True, "ts": "2026-10-10T10:00:00+00:00"},        # older than the floor
+    ]
+    assert started_since(rows, "2026-10-10T12:00:00+00:00") == 2
+
+
 def test_inline_steps_carry_their_ops():
     then = ThenSpec.model_validate({"steps": [{"id": "say", "ref": "say"}],
                                     "ops": {"say": {"subkind": "cli", "exe_data": {"commands": {"darwin": "echo hi"}}}}})

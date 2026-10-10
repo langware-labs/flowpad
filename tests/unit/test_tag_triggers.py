@@ -13,13 +13,8 @@ from flow_sdk.builtin.trigger import Trigger
 from flow_sdk.schema.data_spec.trigger_action import ActionType, TriggerAction
 from flow_sdk.schema.data_spec.trigger_types import TriggerType
 from flow_sdk.tags import emit_tag, target_of
-from flow_sdk.tags.bus import _INFLIGHT
+from flow_sdk.tags.bus import drain
 from tests.pytest_plugin import async_context
-
-#: Drain rounds before we call it a runaway. Not a time budget — each round
-#: awaits real tasks to completion, so this only bounds handler-emits-handler
-#: recursion, and it FAILS rather than passing when it is hit.
-_MAX_DRAIN_ROUNDS = 50
 
 
 async def _settle():
@@ -39,15 +34,7 @@ async def _settle():
     Handlers may emit again (``test_two_tag_triggers_cannot_ping_pong`` depends
     on it), so drain in rounds until the loop is quiet.
     """
-    current = asyncio.current_task()
-    for _ in range(_MAX_DRAIN_ROUNDS):
-        pending = [t for t in _INFLIGHT if t is not current and not t.done()]
-        if not pending:
-            return
-        await asyncio.gather(*pending, return_exceptions=True)
-    raise AssertionError(
-        "tag handlers never went quiet — a handler is re-emitting without converging"
-    )
+    await drain()  # the bus's own drain: rounds, never time; it fails rather than pass when hit
 
 
 @async_context

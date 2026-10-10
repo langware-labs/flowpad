@@ -7,6 +7,7 @@ references in one pass each, then joins them in memory.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any, Optional
 
@@ -63,17 +64,6 @@ async def workflows_by_trigger() -> dict[str, list[str]]:
     return out
 
 
-def started_last_hour(runs: list[AutomationRun]) -> int:
-    """Real fires (not tests, not skips) whose row is younger than an hour."""
-    from datetime import datetime, timedelta, timezone  # noqa: PLC0415
-
-    from flow_sdk.utils.serialization import iso_to_utc  # noqa: PLC0415
-
-    floor = datetime.now(timezone.utc) - timedelta(hours=1)
-    return sum(1 for run in runs
-               if not run.is_test and run.status != "skipped" and (iso_to_utc(run.ts) or floor) > floor)
-
-
 async def summarize(trigger: Any, runs: list[AutomationRun], *, names: Any = None,
                     workflows: Optional[list[str]] = None,
                     catalog: Optional[dict[str, tuple[str, str]]] = None,
@@ -105,7 +95,6 @@ async def summarize(trigger: Any, runs: list[AutomationRun], *, names: Any = Non
         recent_runs=len(real),
         last_runs=[RunMark(id=r.id, ts=r.ts, status=r.status, agentic_process_id=r.agentic_process_id) for r in real],
         passed_over=passed_over,
-        started_last_hour=started_last_hour(runs),
         next_run=next_run,
         fires=int(trigger.counter or 0),
         tested=is_tested(trigger, runs),
@@ -127,6 +116,10 @@ async def overview(*, include_inactive: bool = False) -> list[AutomationSummary]
     rows = RowIndex(discover(None, limit=ROWS_PER_RULE * max(1, len(triggers)), per_rule=ROWS_PER_RULE))
     catalog = event_catalog()
     names = _Names()
+    # Every agent a `then` names, resolved together once: the per-rule sentences below then read the
+    # names from memory instead of one lookup after another.
+    agents = {((t.then or {}).get("run_agent") or {}).get("agent") for t in triggers}
+    await asyncio.gather(*(names.name(agent) for agent in agents if agent))
     flows = await workflows_by_trigger()
     folded = [(trigger, fold(rows.rows_for(str(trigger.id), trigger.name), catalog)) for trigger in triggers]
     # Every automation's newest run asks its agent run how it ended — together.

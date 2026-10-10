@@ -4,7 +4,7 @@
  * (flow_sdk/builtin/trigger.py): name, entity, method, query and body.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { ActionInfo, dataManager, Trigger } from '@sdk';
+import { ActionInfo, dataManager, isMessagePattern, messageRuleFields, parseTarget, Trigger } from '@sdk';
 
 function capture(answer: unknown = {}) {
   const calls: ActionInfo[] = [];
@@ -137,5 +137,22 @@ describe('Trigger automation methods', () => {
     await Trigger.overview({ includeInactive: true });
     expect(calls[0].queryParameters).toEqual({});
     expect(calls[1].queryParameters).toEqual({ include_inactive: 'true' });
+  });
+
+  it('a message pattern is every channel\'s or one channel\'s, and nothing else', () => {
+    expect(isMessagePattern('stream_inbox.*.message.projected')).toBe(true);
+    expect(isMessagePattern('stream_inbox.gmail.message.projected')).toBe(true);
+    expect(isMessagePattern('stream_inbox.gmail.message.status')).toBe(false);
+    expect(isMessagePattern('stream_inbox.a.b.message.projected')).toBe(false);
+    expect(isMessagePattern('app.ready')).toBe(false);
+    expect(isMessagePattern(null)).toBe(false);
+  });
+
+  it('a message rule scopes by colon targets, whichever way the source was named', () => {
+    const fields = messageRuleFields({ catch: 'x', sources: ['ds-1', 'data_source:ds-2'], agent: 'a', prompt: 'p' });
+    expect(fields.tag_scope).toEqual(['data_source:ds-1', 'data_source:ds-2']);
+    expect(parseTarget('data_source:ds-1')).toEqual(['data_source', 'ds-1']);
+    expect(parseTarget('ds-1')).toEqual([null, null]);
+    expect(parseTarget(null)).toEqual([null, null]);
   });
 });

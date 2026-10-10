@@ -87,6 +87,11 @@ export function isProcessLive(status: ProcessStatus | string | null | undefined)
   return status === ProcessStatus.NEW || isProcessRunning(status as ProcessStatus);
 }
 
+/** True when a session ended without finishing its work. */
+export function isProcessFailed(status: ProcessStatus | string | null | undefined): boolean {
+  return status === ProcessStatus.FAILED;
+}
+
 /** @deprecated Use ``isProcessRunning``. Kept as an alias during the rename sweep. */
 export const isProcessActive = isProcessRunning;
 

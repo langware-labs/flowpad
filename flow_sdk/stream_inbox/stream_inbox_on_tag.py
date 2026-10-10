@@ -41,7 +41,7 @@ def emit_projected_tag(item) -> None:
 
 def projected_envelope(provider: str, source_item_id: str, source_id: str) -> dict:
     """The projected-message envelope's parts — the ONE spelling, shared by the real announcement and a
-    test fire on a message (``automations.run_once.message_event``)."""
+    test fire on a message (``MessageSubject.test_event``)."""
     from flow_sdk.tags import target_of  # noqa: PLC0415
 
     return {

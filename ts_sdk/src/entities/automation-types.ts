@@ -84,7 +84,7 @@ export interface AutomationRun {
   status: RunStatus;
   is_test: boolean;
   why: string;
-  reason_code?: string | null;
+  reason_code?: ReasonCode | null;
   error?: string | null;
   duration_ms?: number | null;
   agentic_process_id?: string | null;
@@ -102,8 +102,17 @@ export interface AutomationRun {
   decision?: GateDecision | null;
   /** The id of what it decided about (a stream inbox message's id); the state is rebuilt from it. */
   subject_id?: string | null;
-  /** The `then` wizard's result (`compute.returned.wizard`), each step trimmed. */
-  wizard?: Record<string, unknown> | null;
+  /** How the `then` wizard ended, step by step — outcomes only, never a step's output. */
+  wizard?: WizardOutcome | null;
+}
+
+/** A `then` wizard's outcome as a run row keeps it (`WizardResult.outline`): the verdict and, by step id,
+ *  each step's exit code, a short detail and the session it started — never a step's output. */
+export interface WizardOutcome {
+  exit_code: number;
+  detail: string;
+  stopped_at?: string;
+  steps: Record<string, { exit_code: number; detail: string; executor?: string }>;
 }
 
 /** One execution mark on a list row: when, how it ended, and the session it opens. */
@@ -128,8 +137,8 @@ export interface GateDecision {
 /** One row of the try list (`decide_on_recent`): a recent state and what the gate says of it. */
 export interface TryRow {
   state: Record<string, unknown> & { message_id?: string; sender?: string; subject?: string; text?: string };
-  /** A `DecisionVerdict` asked now (`met`), or the `GateDecision` the log already holds (`caught`). */
-  verdict: Partial<DecisionVerdict> & { caught?: boolean };
+  /** What the gate says: asked now, or read from the log of a real run (`decided_at`). `met` either way. */
+  verdict: Partial<DecisionVerdict>;
   /** Set when the verdict came from a real run's log — no call was made. */
   decided_at?: string | null;
   agentic_process_id?: string | null;
@@ -152,8 +161,6 @@ export interface AutomationSummary {
   last_runs: RunMark[];
   /** Fires the gate declined. */
   passed_over: number;
-  /** Real fires started in the last hour; summed across rules for the top-bar counter. */
-  started_last_hour: number;
   next_run?: string | null;
   fires: number;
   tested: boolean;

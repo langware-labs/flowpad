@@ -122,21 +122,18 @@ async def _gate_findings(trigger: Any) -> list[CheckFinding]:
     """The rule's ``if``: worded, well-formed, and askable here."""
     from pydantic import ValidationError  # noqa: PLC0415
 
-    from flow_sdk.schema.data_spec.compute_op_spec import DecisionOp  # noqa: PLC0415
-
-    gate = getattr(trigger, "gate", None)
-    if not gate:
+    if not getattr(trigger, "gate", None):
         return []
     out: list[CheckFinding] = []
-    if not gate.get("questions"):
-        out.append(CheckFinding(area="if", ok=False,
-                                message="Nothing knows what this rule decides about, so its sentence cannot be asked."))
-        return out
     try:
-        DecisionOp.model_validate(gate)
+        op = trigger.gate_op
     except ValidationError as exc:
         first = exc.errors(include_url=False)[0]
         out.append(CheckFinding(area="if", ok=False, message=f"The if is not right: {first.get('msg', 'invalid')}"))
+        return out
+    if op is None:
+        out.append(CheckFinding(area="if", ok=False,
+                                message="Nothing knows what this rule decides about, so its sentence cannot be asked."))
         return out
     try:
         from flow_sdk.instance_settings.api_endpoint import decision_endpoints  # noqa: PLC0415
@@ -145,10 +142,11 @@ async def _gate_findings(trigger: Any) -> list[CheckFinding]:
     except Exception:  # noqa: BLE001 — no answer is "none here"
         deciders = []
     if deciders:
-        out.append(CheckFinding(area="if", ok=True, message=f"Decided by {deciders[0].name}."))
+        out.append(CheckFinding(area="decider", ok=True, message=f"Decided by {deciders[0].name}."))
     else:
-        out.append(CheckFinding(area="if", ok=False,
-                                message="This needs a Decision API to read messages. Set one up on LLM sources; "
+        # Its own area: the rule is fine, what is missing is on this machine.
+        out.append(CheckFinding(area="decider", ok=False,
+                                message="This needs a Decision API to decide. Set one up on LLM sources; "
                                         "the rule waits until then."))
     return out
 

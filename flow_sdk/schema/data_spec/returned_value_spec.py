@@ -371,20 +371,31 @@ class WizardResult(ReturnedValue):
     #: The step whose ``on_fail: stop`` ended the run early; empty when none did.
     stopped_at: str = ""
 
-    def first_executor(self, prefix: str = "agentic_process-", *, first: str = "") -> Optional[str]:
-        """The first step's ``executor`` naming a *prefix* record — nested wizards walked too. *first*
-        names a step to look at before the others (a sugar-made wizard's agent step)."""
-        order = ([first] if first in self.steps else []) + [k for k in self.steps if k != first]
-        for key in order:
-            step = self.steps[key]
+    def first_executor(self) -> Optional[str]:
+        """The first step's ``executor`` naming an agentic process — nested wizards walked too."""
+        for step in self.steps.values():
             executor = getattr(step, "executor", None)
-            if executor and str(executor).startswith(prefix):
+            if executor and str(executor).startswith("agentic_process-"):
                 return str(executor)
             if isinstance(step, WizardResult):
-                nested = step.first_executor(prefix, first=first)
+                nested = step.first_executor()
                 if nested:
                     return nested
         return None
+
+    def outline(self, detail_cap: int = 300) -> dict[str, Any]:
+        """How the run went, small enough for a history row that is polled: the verdict and, per
+        step, its exit code, a short detail and the session it started — never a step's output."""
+        def short(text: Any) -> str:
+            return str(text or "")[:detail_cap]
+
+        steps: dict[str, dict[str, Any]] = {}
+        for key, step in self.steps.items():
+            executor = step.first_executor() if isinstance(step, WizardResult) else getattr(step, "executor", None)
+            steps[key] = {"exit_code": int(step.exit_code), "detail": short(step.detail),
+                          **({"executor": str(executor)} if executor else {})}
+        return {"exit_code": int(self.exit_code), "detail": short(self.detail),
+                **({"stopped_at": self.stopped_at} if self.stopped_at else {}), "steps": steps}
 
 
 ReturnedValue.model_rebuild()

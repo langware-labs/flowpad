@@ -51,8 +51,8 @@ export function useAutomations(options: { enabled?: boolean; poll?: boolean } = 
 }
 
 /** One automation's summary, from the same list (no second request). */
-export function useAutomation(triggerId: string | null | undefined) {
-  const query = useAutomations({ enabled: !!triggerId });
+export function useAutomation(triggerId: string | null | undefined, options: { poll?: boolean } = {}) {
+  const query = useAutomations({ enabled: !!triggerId, poll: options.poll });
   const automation = triggerId ? ((query.data ?? []).find((a) => a.id === triggerId) ?? null) : null;
   return { ...query, automation };
 }

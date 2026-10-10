@@ -60,6 +60,14 @@ class DecisionSubject(Protocol):
     def subject_id(self, state: DataSpec) -> str:
         """The id a run row keeps so the state can be rebuilt and the thing opened."""
 
+    async def by_id(self, subject_id: str) -> DataSpec:
+        """The state for a ``subject_id`` — the inverse of ``subject_id``. Raises ``LookupError`` when
+        there is no such thing, ``NotCaught`` to decline it."""
+
+    async def test_event(self, subject_id: str) -> dict[str, Any]:
+        """The envelope parts (``target``, ``data``, ``scope``) the real event for that thing carried —
+        what a test run fires with. Raises ``LookupError`` when it is not something a rule can run on."""
+
     def on_fired(self, state: DataSpec, event: Any) -> None:
         """Announce that an agent has taken this state up (best effort, never raises)."""
 
@@ -95,8 +103,10 @@ def all_subjects() -> list[DecisionSubject]:
 
 def for_target(target: str) -> Optional[DecisionSubject]:
     """The subject for an event target in colon form (``source_item:<id>``)."""
-    ttype = str(target or "").split(":", 1)[0]
-    return next((s for s in all_subjects() if s.target_type == ttype), None)
+    from flow_sdk.tags.envelope import parse_target  # noqa: PLC0415
+
+    ttype, _ = parse_target(str(target or ""))
+    return next((s for s in all_subjects() if s.target_type == ttype), None) if ttype else None
 
 
 def for_pattern(pattern: str) -> Optional[DecisionSubject]:
@@ -119,7 +129,7 @@ def for_trigger(trigger: Any) -> Optional[DecisionSubject]:
     return for_pattern(str(getattr(trigger, "tag_pattern", "") or ""))
 
 
-def gate_for(pattern: str, sentence: str, *, min: float = 0.85) -> dict:  # noqa: A002
+def gate_for(pattern: str, sentence: str) -> dict:
     """A string ``if`` (the sentence a person typed) as the decision op the subject words —
     the row's ``gate`` dict. Raises ``LookupError`` when no subject answers for the pattern."""
     from flow_sdk.schema.data_spec.compute_op_spec import DecisionOp  # noqa: PLC0415
@@ -127,5 +137,5 @@ def gate_for(pattern: str, sentence: str, *, min: float = 0.85) -> dict:  # noqa
     subject = for_pattern(str(pattern or ""))
     if subject is None:
         raise LookupError(f"nothing knows what a rule on {pattern!r} would decide about")
-    op = DecisionOp.from_sentence(sentence, question=subject.question_for(sentence), min=min)
+    op = DecisionOp.from_sentence(sentence, question=subject.question_for(sentence))
     return op.model_copy(update={"input": subject.scope_key}).model_dump(mode="json", exclude_defaults=False)

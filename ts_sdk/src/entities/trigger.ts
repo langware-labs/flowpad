@@ -4,6 +4,7 @@ import { IEntity, EntityMerge } from '../IEntity';
 import { ActionInfo } from '../models/ActionInfo';
 import { HttpMethod } from '../models/ApiUrl';
 import { TypeId } from '../models/TypeId';
+import { parseTarget, targetOf } from '../tags/EventBus';
 import { HookEventData, TriggerAction, RelationshipSubAction } from './agent-hook-enums';
 import { AgentHook } from './agent-hook';
 import type {
@@ -46,8 +47,10 @@ export interface TriggerLogRow {
 /** Every tag whose events name a projected stream inbox message (`stream_inbox_on_tag.py`). */
 export const MESSAGE_PROJECTED = 'stream_inbox.*.message.projected';
 
-/** Whether a tag pattern is the one a rule on messages arriving listens to. */
-export const isMessagePattern = (pattern: string | null | undefined): boolean => (pattern ?? '') === MESSAGE_PROJECTED;
+/** Whether a tag pattern is one a rule on messages arriving listens to: every channel's, or one channel's
+ *  (`stream_inbox.<segment>.message.projected`) — what the backend's subject answers for. */
+const MESSAGE_PATTERN = /^stream_inbox\.[^.]+\.message\.projected$/;
+export const isMessagePattern = (pattern: string | null | undefined): boolean => MESSAGE_PATTERN.test(pattern ?? '');
 
 /** What a rule on messages arriving needs: the sentence, the channels, the agent and its prompt. */
 export interface MessageRule {
@@ -71,7 +74,7 @@ export function messageRuleFields(rule: MessageRule, agentName = ''): Partial<IT
     name: rule.name || `${capitalised} → ${agentName || 'an agent'}`,
     trigger_type: 'tag',
     tag_pattern: MESSAGE_PROJECTED,
-    tag_scope: (rule.sources ?? []).map((id) => (id.startsWith('data_source:') ? id : `data_source:${id}`)),
+    tag_scope: (rule.sources ?? []).map((id) => targetOf('data_source', parseTarget(id)[1] ?? id)),
     gate: { sentence },
     then: { run_agent: { agent: rule.agent && !rule.agent.startsWith('agent-') ? `agent-${rule.agent}` : rule.agent, prompt: rule.prompt.trim() } },
     enabled: rule.enabled ?? true,
@@ -275,11 +278,6 @@ export class Trigger extends APIEntity<Trigger> implements ITrigger {
     if (explicit === undefined) return null;
     const target = explicit || this.parent_type_id || '';
     return target.startsWith('agent-') ? target : null;
-  }
-
-  /** The sentence the rule's `if` was written as, when it was. */
-  get sentence(): string {
-    return this.gate?.sentence ?? '';
   }
 
   /** A rule on messages arriving (docs/snippets/stream-inbox-automations.md §2). */
