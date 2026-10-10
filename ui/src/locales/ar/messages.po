@@ -6898,6 +6898,10 @@ msgstr ""
 msgid "Couldn't check for updates: {error}"
 msgstr "تعذر التحقق من التحديثات: {error}"
 
+#: src/pages/entry/AgentLaunchLanding.tsx
+msgid "Couldn't clone that repository: it doesn't exist, or it is private and GitHub isn't connected to your account."
+msgstr ""
+
 #~ msgid "Couldn't close the project's tabs"
 #~ msgstr ""
 
@@ -9495,7 +9499,11 @@ msgid "Every minute"
 msgstr ""
 
 #: src/components/project-home/ProjectHomeMenu.tsx
-msgid "Every open tab and running process of this project will be closed. The project folder is then moved and indexed again at its new location."
+#~ msgid "Every open tab and running process of this project will be closed. The project folder is then moved and indexed again at its new location."
+#~ msgstr ""
+
+#: src/components/project-home/ProjectHomeMenu.tsx
+msgid "Every open tab and running process of this project will be closed. The project folder is then moved and indexed again at its new location. Earlier sessions keep their history but cannot be resumed."
 msgstr ""
 
 #: src/components/connections-manager.tsx
@@ -10472,7 +10480,6 @@ msgid "Finish setting up Flowpad"
 msgstr "إنهاء إعداد Flowpad"
 
 #: src/components/data-sources/source-attention.ts
-#: src/components/data-sources/source-parts.tsx
 msgid "Finish setup, then press Verify."
 msgstr "يُرجى إكمال الإعداد أولاً، ثم الضغط على زر التحقق."
 
@@ -13900,8 +13907,8 @@ msgid "Make a todo app"
 msgstr "إنشاء تطبيق قائمة مهام"
 
 #: src/components/data-sources/source-parts.tsx
-msgid "Make the two the same — edit either one — and the next sync carries on."
-msgstr ""
+#~ msgid "Make the two the same — edit either one — and the next sync carries on."
+#~ msgstr ""
 
 #: src/components/data-sources/source-attention.ts
 msgid "Make the two the same — edit either one — then Pull, or wait for the next sync."
@@ -16286,6 +16293,10 @@ msgstr ""
 #~ msgid "Not done: {0}"
 #~ msgstr ""
 
+#: src/components/data-sources/source-attention.ts
+msgid "Not evaluated yet — nothing has decided how this source starts, so it is not polled."
+msgstr "لم يُقيَّم بعد — لم يُحدَّد كيف يبدأ هذا المصدر، لذلك لا يُجلب منه شيء."
+
 #: src/components/assets/editor/wizard/WizardForm.tsx
 msgid "not fired yet"
 msgstr "لم يعمل بعد"
@@ -17936,12 +17947,12 @@ msgid "Parked"
 msgstr ""
 
 #: src/components/data-sources/source-parts.tsx
-msgid "Parked — the scheduler skips a <0>config_error</0> source, so it will not poll again on its own. <1>Pull</1> clears the latch."
-msgstr ""
+#~ msgid "Parked — the scheduler skips a <0>config_error</0> source, so it will not poll again on its own. <1>Pull</1> clears the latch."
+#~ msgstr ""
 
 #: src/components/data-sources/source-parts.tsx
-msgid "Parked: the scheduler skips it until you pull"
-msgstr ""
+#~ msgid "Parked: the scheduler skips it until you pull"
+#~ msgstr ""
 
 #: src/components/ask/AskView.tsx
 msgid "Part of a setup — see its progress"
@@ -18561,6 +18572,10 @@ msgstr "جاري تحضير مساحة العمل…"
 msgid "Press Resume to listen again."
 msgstr "اضغط «استئناف» للاستماع مجددًا."
 
+#: src/components/data-sources/source-attention.ts
+msgid "Press Verify to evaluate it now."
+msgstr "اضغط «تحقق» لتقييمه الآن."
+
 #: src/components/settings-view/settings-utils.ts
 msgid "Prevent use of bypass permissions mode"
 msgstr "منع استخدام وضع تجاوز الأذونات"
@@ -19138,6 +19153,7 @@ msgid "Published when you deploy"
 msgstr ""
 
 #: src/components/status-bar/GitPullButton.tsx
+#: src/components/stream-inbox-view/AttachedChannelsBar.tsx
 #: src/components/stream-inbox-view/ChannelAttentionBar.tsx
 msgid "Pull"
 msgstr ""
@@ -26951,6 +26967,7 @@ msgstr "تم التحقق"
 
 #: src/components/account/user-info.tsx
 #: src/components/data-sources/source-parts.tsx
+#: src/components/stream-inbox-view/AttachedChannelsBar.tsx
 #: src/components/stream-inbox-view/ChannelAttentionBar.tsx
 msgid "Verify"
 msgstr "التحقق"
@@ -28128,11 +28145,3 @@ msgstr "تكبير"
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "Zoom out"
 msgstr "تصغير"
-
-#: src/components/data-sources/source-attention.ts
-msgid "Not evaluated yet — nothing has decided how this source starts, so it is not polled."
-msgstr "لم يُقيَّم بعد — لم يُحدَّد كيف يبدأ هذا المصدر، لذلك لا يُجلب منه شيء."
-
-#: src/components/data-sources/source-attention.ts
-msgid "Press Verify to evaluate it now."
-msgstr "اضغط «تحقق» لتقييمه الآن."
