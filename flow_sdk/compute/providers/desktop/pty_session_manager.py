@@ -13,9 +13,12 @@ The FSM is driven entirely by the WS lifecycle (see server/routes/websocket.py):
 Output fan-out (pty_actions.on_pty_output) delivers to ``attached_connections``
 only. The frontend declares intent once on open and otherwise just renders.
 
-Two bounded reapers prevent leaks (``cleanup_expired_sessions``): a PtyState with
-no attached connections for > TTL is closed; a parked connection that does not
-reconnect within a grace is dropped from ``detached_connections``.
+Two bounded reapers exist (``cleanup_expired_sessions``): a PtyState with no
+attached connections for > TTL is closed; a parked connection that does not
+reconnect within a grace is dropped from ``detached_connections``. Only the
+second runs in production — server startup schedules ``start_cleanup_task()``
+with no TTL, so the loop is ``reap_parked_connections`` alone and no PTY is ever
+closed by it (``server/app.py::_start_pty_parked_reaper``).
 """
 
 import asyncio
@@ -468,22 +471,14 @@ class PtyRegistry:
             Number of sessions closed
         """
         expired_count = 0
-        expired_keys = []
-
-        now = time.time()
-        for pty_key, session in self.states.items():
-            if self.is_expired(session, ttl_seconds):
-                expired_keys.append(pty_key)
-                continue
-            # Reap stale parked subscriptions on still-live PtyStates.
-            stale = [cid for cid, since in session.detached_connections.items() if now - since > detach_grace_seconds]
-            for cid in stale:
-                session.detached_connections.pop(cid, None)
-                logger.info(f"[PtyRegistry] Reaped stale parked connection {cid} from {pty_key}")
+        expired_keys = [pty_key for pty_key, session in self.states.items() if self.is_expired(session, ttl_seconds)]
 
         for pty_key in expired_keys:
             await self.close_session(pty_key)
             expired_count += 1
+
+        # Reap stale parked subscriptions on the PtyStates still live.
+        self.reap_parked_connections(detach_grace_seconds)
 
         if expired_count > 0:
             logger.info(
@@ -492,30 +487,74 @@ class PtyRegistry:
 
         return expired_count
 
-    async def start_cleanup_task(self, interval_seconds: int = 120, ttl_seconds: int = 900) -> None:
-        """Start background cleanup task.
+    def reap_parked_connections(self, detach_grace_seconds: int = 900) -> int:
+        """Drop parked ids that did not reconnect within the grace. Never touches a PTY.
+
+        A page reload mints a new connection id (``ConnectionManager.id`` is per
+        page load), so the id it parked on every shell it watched can never come
+        back — only this reaper removes it. Synchronous on purpose: no ``await``,
+        so it cannot interleave with ``on_ws_disconnect`` / ``close_session``.
+
+        Returns:
+            Number of parked ids dropped
+        """
+        now = time.time()
+        reaped = 0
+        for pty_key, session in self.states.items():
+            stale = [cid for cid, since in session.detached_connections.items() if now - since > detach_grace_seconds]
+            if not stale:
+                continue
+            # Rebuild rather than pop: a dict keeps its table after pop, so the
+            # bytes would stay even once the entries are gone.
+            session.detached_connections = {
+                cid: since for cid, since in session.detached_connections.items() if cid not in stale
+            }
+            reaped += len(stale)
+            logger.info(f"[PtyRegistry] Reaped {len(stale)} stale parked connection(s) from {pty_key}")
+        return reaped
+
+    async def start_cleanup_task(
+        self,
+        interval_seconds: int = 120,
+        ttl_seconds: int | None = None,
+        detach_grace_seconds: int = 900,
+    ) -> None:
+        """Start the background reaper loop.
+
+        With ``ttl_seconds=None`` (the default, what server startup uses) the loop
+        runs only ``reap_parked_connections`` — it never closes a PTY. Passing a
+        TTL also arms the orphan close (``cleanup_expired_sessions``), which is a
+        product decision that has not been taken: an unpinned agent shell whose
+        viewer left would be killed 15 minutes later.
 
         Args:
-            interval_seconds: Cleanup interval in seconds (default: 2 minutes)
-            ttl_seconds: Session TTL in seconds (default: 15 minutes)
+            interval_seconds: Sweep interval in seconds (default: 2 minutes)
+            ttl_seconds: Orphan TTL in seconds, or None to leave the orphan close off
+            detach_grace_seconds: How long a parked id survives without reconnecting (default: 15 minutes)
         """
         if self._cleanup_task and not self._cleanup_task.done():
             logger.warning("[PtyRegistry] Cleanup task already running")
             return
 
         async def cleanup_loop():
-            logger.info(f"[PtyRegistry] Starting cleanup task (interval: {interval_seconds}s, TTL: {ttl_seconds}s)")
+            logger.info(
+                f"[PtyRegistry] Starting cleanup task (interval: {interval_seconds}s, TTL: {ttl_seconds}s, "
+                f"detach grace: {detach_grace_seconds}s)"
+            )
             while True:
                 try:
                     await asyncio.sleep(interval_seconds)
-                    await self.cleanup_expired_sessions(ttl_seconds)
+                    if ttl_seconds is None:
+                        self.reap_parked_connections(detach_grace_seconds)
+                    else:
+                        await self.cleanup_expired_sessions(ttl_seconds, detach_grace_seconds)
                 except asyncio.CancelledError:
                     logger.info("[PtyRegistry] Cleanup task cancelled")
                     break
                 except Exception as e:
                     logger.error(f"[PtyRegistry] Error in cleanup task: {e}", exc_info=True)
 
-        self._cleanup_task = asyncio.create_task(cleanup_loop())
+        self._cleanup_task = asyncio.create_task(cleanup_loop(), name="pty-parked-reaper")
         logger.info("[PtyRegistry] Cleanup task started")
 
     async def stop_cleanup_task(self) -> None:

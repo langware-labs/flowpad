@@ -229,6 +229,8 @@ async def _on_server_startup():
     except Exception as _e:  # noqa: BLE001
         print(f"  PTY recovery: failed to start ({_e})")
 
+    await _start_pty_parked_reaper()
+
     # Search uses FTS5 (built into SQLite) — no external index needed.
     print("  Search index: FTS5 (SQLite built-in)")
 
@@ -563,6 +565,23 @@ async def _seed_service_triggers() -> None:
         logging.getLogger(__name__).exception("System triggers: failed to seed")
 
 
+async def _start_pty_parked_reaper() -> None:
+    """Start the PtyRegistry sweep that drops parked connection ids.
+
+    Every page reload parks its (per-page-load) connection id on each shell it
+    watched, and nothing but this loop removes an id that never reconnects.
+    Started with no TTL on purpose: the loop reaps parked ids only and never
+    closes a PTY (the orphan close is a separate, untaken product decision).
+    """
+    try:
+        from flow_sdk.compute.providers.desktop.pty_session_manager import pty_registry
+
+        await pty_registry.start_cleanup_task()
+        print("  PTY parked-id reaper: started (background, periodic)")
+    except Exception as _e:  # noqa: BLE001
+        print(f"  PTY parked-id reaper: failed to start ({_e})")
+
+
 async def _start_fsop_watcher() -> None:
     """Start the FSOp watcher: catch up, then spawn one awatch task per trigger."""
     try:
@@ -816,6 +835,14 @@ async def _shutdown_extras():
         from flow_sdk.server.fsop_watcher import fsop_watcher
 
         await fsop_watcher.stop()
+    except Exception:
+        pass
+
+    # Stop the PtyRegistry parked-id reaper loop
+    try:
+        from flow_sdk.compute.providers.desktop.pty_session_manager import pty_registry
+
+        await pty_registry.stop_cleanup_task()
     except Exception:
         pass
 

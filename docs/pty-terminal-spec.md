@@ -345,16 +345,16 @@ Shell entity (status: idle)
     └─ start fails ──→ error
 ```
 
-### 4.5 TTL Cleanup (Backend) — two bounded reapers, no leaks
+### 4.5 TTL Cleanup (Backend) — two bounded reapers, one running
 
-Background task runs every **120 seconds** (`cleanup_expired_sessions`):
+Server startup (`_start_pty_parked_reaper`) runs a background task every **120 seconds**:
 
 ```python
-pty_registry.start_cleanup_task(interval_seconds=120, ttl_seconds=900)
+pty_registry.start_cleanup_task()   # interval 120 s, ttl None, detach grace 900 s
 ```
 
-1. **Orphan TTL** — a `PtyState` with an empty `attached_connections` set for > **900 s** (15 min) is closed (PTY killed). `last_detached_at` is stamped when the last connection parks or detaches, arming the timer; a reconnect clears it.
-2. **Parked grace** — a `DETACHED` connection that does not reconnect within `detach_grace_seconds` is dropped from `detached_connections`, so a long-lived `PtyState` can't accumulate stale parked ids.
+1. **Parked grace** (runs in production, `reap_parked_connections`) — a `DETACHED` connection that does not reconnect within **900 s** is dropped from `detached_connections`, so a long-lived `PtyState` can't accumulate stale parked ids (a page reload mints a new connection id, so the id it parked never returns).
+2. **Orphan TTL** (defined in `cleanup_expired_sessions`, **not started in production**) — a `PtyState` with an empty `attached_connections` set for > `ttl_seconds` is closed (PTY killed). `last_detached_at` is stamped when the last connection parks or detaches, arming the timer; a reconnect clears it. Only a caller that passes `ttl_seconds` to `start_cleanup_task` turns this on; whether it should ever run is an open product decision.
 
 A `PtyState` is "orphaned" when **no connection is ATTACHED** (all parked or gone) — parked subscriptions still alive count as detached, so they don't keep the PTY alive on their own.
 
