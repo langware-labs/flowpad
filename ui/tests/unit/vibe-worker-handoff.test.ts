@@ -8,6 +8,8 @@ const mocks = vi.hoisted(() => {
     prompt,
     loadEmbeddedSubagent: vi.fn().mockResolvedValue(undefined),
     watch: vi.fn().mockResolvedValue(undefined),
+    // The launch watch is a lease that listens for the process's end.
+    on: vi.fn(() => () => undefined),
   };
   return {
     prompt,

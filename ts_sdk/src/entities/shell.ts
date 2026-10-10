@@ -205,6 +205,14 @@ export class Shell extends APIEntity<Shell> implements IShell {
     return this.ptyConnection.getSortedChunks();
   }
 
+  /**
+   * The process in this terminal ended: let the stored output window go. The entity, its PTY
+   * attachment and its listeners stay, so a restart on the same shell attaches as before.
+   */
+  releaseOutput(): void {
+    this.ptyConnection.releaseWindow();
+  }
+
   /** Single chunk by seq — for ptySyncRef.processChunk() in output handler. */
   getPtyChunk(seq: number): import('../pty-sync/types.js').OutputChunk | undefined {
     return this.ptyConnection.getChunk(seq);
