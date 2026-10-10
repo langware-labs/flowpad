@@ -104,6 +104,7 @@ async def test_a_folder_dependency_is_a_private_link_with_its_sidecar(tmp_path):
         "source": f"file:{ctx}",
         "subpath": ".",
         "via": None,
+        "own": True,
         "required": True,
         "cloned": False,
         "read_only": False,

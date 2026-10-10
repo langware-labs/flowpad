@@ -7,6 +7,7 @@ learns while it runs (status, health, the next poll, identities) is row-only, so
 rewrites the file. The file is the truth: a row with no file is removed, with everything it
 ingested (``orphan_cascade_fn``).
 """
+from flow_sdk.dependencies.roots import data_source_roots
 from flow_sdk.fs_store.schema_registry import TypeInfo
 from flow_sdk.schema.data_spec.data_source_spec import DataSourceSpec
 from flow_sdk.schema.types import EntityType
@@ -38,6 +39,7 @@ DATA_SOURCE = TypeInfo(
     # rewritten, and runtime fields are not spec fields, so a poll never touches the file.
     owns_main_ref=True,
     orphan_cascade_fn=_cascade_data_source,
+    dependency_roots_fn=data_source_roots,
 )
 
 # The consumer-side cursor. Tier C (``db_only``): written on every drain, so a disk mirror would be a

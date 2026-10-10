@@ -825,15 +825,25 @@ export class Project extends APIEntity<Project> {
     };
   }
 
-  /** Declare a dependency in `flow.json` and resolve it. `source` is a
-   *  `git+<url>#<branch>`, `hub:<project-id>` or `file:<path>` string — or a
-   *  plain local folder (a folder inside a git checkout is written as its repo)
-   *  or a bare git URL. `path` points at a sub-folder of the source; `optional`
-   *  files it under `optionalDependencies` (and installs it now). Rejects with
-   *  the backend's message on a bad source. */
+  /** Declare a dependency in `flow.json` and resolve it. `source` is an id
+   *  (`<type>-<uuid>` / `<kind>.id.<uuid>`), a `git+<url>#<branch>`,
+   *  `hub:<project-id>` or `file:<path>` string — or a plain local folder (a
+   *  folder inside a git checkout is written as its repo) or a bare git URL.
+   *  `path` points at a sub-folder of the source; `optional` files it under
+   *  `optionalDependencies` (and installs it now); `label` / `description` are
+   *  the entry's human-friendly name; `asset` (a TypeId) declares it in that
+   *  asset's own `flow.json` (ids only). Rejects with the backend's message on a
+   *  bad source. */
   async addDependency(
     source: string,
-    options: { name?: string; path?: string; optional?: boolean } = {},
+    options: {
+      name?: string;
+      path?: string;
+      optional?: boolean;
+      label?: string;
+      description?: string;
+      asset?: string;
+    } = {},
   ): Promise<DependencyState> {
     return this.changingDependencies(async () => {
       const response = await this.post<({ dependency: DependencyState } & ProjectContextPayload) | null>(
