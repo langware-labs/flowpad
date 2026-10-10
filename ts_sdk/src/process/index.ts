@@ -17,6 +17,7 @@ export {
   isProcessLive,
   isProcessActive,
   isProcessStartable,
+  isProcessEnded,
   isWorkerRunning,
   isWorkerTerminal,
   hasWorkerStarted,

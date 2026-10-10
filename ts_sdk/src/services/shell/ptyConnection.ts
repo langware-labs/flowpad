@@ -287,6 +287,18 @@ export class PtyConnection {
     }
   }
 
+  /**
+   * Let the whole replay window go — the program in this PTY ended and no view will replay it
+   * (a restart attaches a new PTY, which `attach` clears for anyway). Only the window: the seq
+   * counter, line buffer, event fires and every listener stay, so the shell reads the same as
+   * before and the next attach dedups and routes as it always did.
+   */
+  releaseWindow(): void {
+    if (this.lastSeq > 0) this.trimmedThroughSeq = this.lastSeq;
+    this.chunks.clear();
+    this._chunkBytes = 0;
+  }
+
   // ── Raw text ──────────────────────────────────────────────────────────────
 
   /**
