@@ -26963,10 +26963,6 @@ msgstr "יש לאמת את ההגדרה תחילה."
 #~ msgid "Verify: {0}"
 #~ msgstr "אימות: {0}"
 
-#: src/components/stream-inbox-view/AttachedChannelsBar.tsx
-msgid "Verify: {reason}"
-msgstr "אימות: {reason}"
-
 #: src/components/assets/editor/skill/UsagePanel.tsx
 msgid "Version-bump + commit the asset"
 msgstr "Version-bump + commit את הנכס"

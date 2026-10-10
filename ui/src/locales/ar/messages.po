@@ -26963,10 +26963,6 @@ msgstr "يجب التحقق من الإعداد أولاً."
 #~ msgid "Verify: {0}"
 #~ msgstr "التحقق: {0}"
 
-#: src/components/stream-inbox-view/AttachedChannelsBar.tsx
-msgid "Verify: {reason}"
-msgstr "تحقق: {reason}"
-
 #: src/components/assets/editor/skill/UsagePanel.tsx
 msgid "Version-bump + commit the asset"
 msgstr "رفع رقم الإصدار وإيداع الأصل"

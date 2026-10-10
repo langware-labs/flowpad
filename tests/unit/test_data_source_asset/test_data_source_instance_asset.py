@@ -88,23 +88,9 @@ async def test_a_poll_writes_the_row_and_leaves_the_file_alone(scope):
     assert (stored.health, stored.cursor) == ("ok", "c3")
 
 
-async def test_a_copied_folder_arrives_parked_until_its_owner_verifies(scope):
-    folder = scope / "agentic-assets" / "data_source" / "received"
-    folder.mkdir(parents=True)
-    document = {"type": "data_source", "id": str(uuid.uuid4()), "name": "received",
-                "data_driver_name": _Mailbox.provider, "data_driver_config": {"address": "them@x.test"}}
-    (folder / "data_source.json").write_text(json.dumps(document), encoding="utf-8")
-
-    await index_path("data_source", folder)
-
-    row = await DataSource.get_by_id(document["id"])
-    assert row.status == SourceStatus.SETUP.value
-    assert row.setup_detail == RECEIVED_SETUP_DETAIL
-
-
-async def _indexed(scope, name: str, provider: str, **fields) -> DataSource:
-    """A ``data_source.json`` that exists BEFORE its row — what the indexer meets after an agent or the
-    CLI wrote the file, or after the DB was rebuilt."""
+async def _indexed(scope, name: str, provider: str = _Mailbox.provider, **fields) -> DataSource:
+    """A ``data_source.json`` that exists BEFORE its row — what the indexer meets after a folder was
+    copied in, an agent or the CLI wrote the file, or the DB was rebuilt."""
     folder = scope / "agentic-assets" / "data_source" / name
     folder.mkdir(parents=True)
     document = {"type": "data_source", "id": str(uuid.uuid4()), "name": name, "data_driver_name": provider,
@@ -112,6 +98,12 @@ async def _indexed(scope, name: str, provider: str, **fields) -> DataSource:
     (folder / "data_source.json").write_text(json.dumps(document), encoding="utf-8")
     await index_path("data_source", folder)
     return await DataSource.get_by_id(document["id"])
+
+
+async def test_a_copied_folder_arrives_parked_until_its_owner_verifies(scope):
+    row = await _indexed(scope, "received")
+
+    assert (row.status, row.setup_detail) == (SourceStatus.SETUP.value, RECEIVED_SETUP_DETAIL)
 
 
 async def _local_owner() -> str:
@@ -127,7 +119,7 @@ async def _local_owner() -> str:
 async def test_a_file_the_local_user_authored_is_not_parked_on_index(scope):
     """Only a file that names nobody, or someone this machine does not know, is a received share. One
     naming this machine's own user runs by the create rules — a driver with no setup step is ACTIVE."""
-    row = await _indexed(scope, "mine", _Mailbox.provider, owner=await _local_owner())
+    row = await _indexed(scope, "mine", owner=await _local_owner())
 
     assert (row.status, row.setup_detail) == (SourceStatus.ACTIVE.value, "")
 
@@ -138,13 +130,13 @@ async def test_a_file_a_local_agent_authored_is_not_parked_on_index(scope):
     agent = Agent(name=f"author {uuid.uuid4().hex[:6]}", worker_type="claude", system_prompt="Be brief.")
     await agent.save()
 
-    row = await _indexed(scope, "agents", _Mailbox.provider, owner=f"agent-{agent.id}")
+    row = await _indexed(scope, "agents", owner=f"agent-{agent.id}")
 
     assert (row.status, row.setup_detail) == (SourceStatus.ACTIVE.value, "")
 
 
 async def test_a_file_naming_an_owner_this_machine_does_not_know_arrives_parked(scope):
-    row = await _indexed(scope, "theirs", _Mailbox.provider, owner=f"user-{uuid.uuid4()}")
+    row = await _indexed(scope, "theirs", owner=f"user-{uuid.uuid4()}")
 
     assert (row.status, row.setup_detail) == (SourceStatus.SETUP.value, RECEIVED_SETUP_DETAIL)
 

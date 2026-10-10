@@ -3,14 +3,12 @@
  * listening, what is wrong, what to do, and the verb — with Verify's answer shown
  * in place rather than toasted.
  */
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { DataSource } from '@sdk';
+import type { DataSource } from '@sdk';
+import { fakeSource } from './fake-source';
 
-const LOCAL = 'user-11111111-1111-4111-8111-111111111111';
-const uuidOf = (name: string) => `${name.charCodeAt(0).toString(16).padStart(8, '0')}-0000-4000-8000-000000000000`;
-const fake = (name: string, fields: Partial<Record<keyof DataSource, unknown>> = {}) =>
-  new DataSource({ id: uuidOf(name), name, provider: 'gmail', channel: 'gmail', owner: LOCAL, status: 'active', ...fields } as never);
+const fake = (name: string, fields: Parameters<typeof fakeSource>[2] = {}) => fakeSource(name, 'gmail', fields);
 const specFor = () => ({ sends: true, icon_name: 'Mail', setup_wiki: '' }) as never;
 
 const openPage = vi.fn();
@@ -20,36 +18,47 @@ vi.mock('@src/navigation/useDockNavigation', () => ({
 vi.mock('@src/notifications', () => ({ notify: { error: vi.fn(), success: vi.fn(), info: vi.fn() } }));
 vi.mock('@src/components/setup-wizard/SetupStagesButton', () => ({ SetupStagesButton: () => null }));
 
-import { ChannelAttentionBar, attentionAmong } from '@src/components/stream-inbox-view/ChannelAttentionBar';
+import { ChannelAttentionBar } from '@src/components/stream-inbox-view/ChannelAttentionBar';
+import { attentionAmong } from '@src/components/stream-inbox-view/channel-owner';
 import { attentionReason } from '@src/components/data-sources/source-attention';
 
 /** The strip over the given sources, each with its reason — what the stream inbox mounts. */
-const bar = (sources: DataSource[]) => (
-  <ChannelAttentionBar items={sources.map((source) => ({ source, reason: attentionReason(source)! }))} specFor={specFor} />
-);
+const bar = (sources: DataSource[]) => {
+  const items = sources.map((source) => ({ source, reason: attentionReason(source)! }));
+  return <ChannelAttentionBar items={items} specFor={specFor} />;
+};
 
 describe('attentionReason', () => {
-  it('names the layer and speaks the source’s own words', () => {
-    expect(attentionReason(fake('s', { status: 'setup', setup_detail: 'Invite the bot.' }))).toEqual({ kind: 'setup', text: 'Invite the bot.' });
-    expect(attentionReason(fake('p', { health: 'config_error', error_code: 'access_denied', error_detail: 'refused the login' }))).toEqual({
-      kind: 'parked',
-      text: 'access denied: refused the login',
-    });
-    expect(attentionReason(fake('d', { status: 'disabled' }))).toEqual({ kind: 'paused', text: '' });
-    expect(attentionReason(fake('ok'))).toBeNull();
-    // Held keeps polling, but a file waits on a person; retrying is the scheduler's own backoff.
-    expect(attentionReason(fake('h', { health: 'ok', error_code: 'write_back_held', error_detail: 'notes.md' }))).toEqual({ kind: 'held', text: 'notes.md' });
-    expect(attentionReason(fake('r', { health: 'transient_error', error_detail: 'IMAP: timed out' }))).toEqual({ kind: 'retrying', text: 'IMAP: timed out' });
-    // A paused source carrying a stale transient error is paused, not retrying.
-    expect(attentionReason(fake('pr', { status: 'disabled', health: 'transient_error' }))?.kind).toBe('paused');
+  // Held keeps polling, but a file waits on a person; retrying is the scheduler's own backoff; and a
+  // paused source carrying a stale transient error is paused, not retrying.
+  it.each([
+    ['setup', { status: 'setup', setup_detail: 'Invite the bot.' }, { kind: 'setup', text: 'Invite the bot.' }],
+    [
+      'parked',
+      { health: 'config_error', error_code: 'access_denied', error_detail: 'refused the login' },
+      { kind: 'parked', text: 'access denied: refused the login' },
+    ],
+    ['paused', { status: 'disabled' }, { kind: 'paused', text: '' }],
+    ['paused, stale error', { status: 'disabled', health: 'transient_error' }, { kind: 'paused', text: '' }],
+    [
+      'held',
+      { health: 'ok', error_code: 'write_back_held', error_detail: 'notes.md' },
+      { kind: 'held', text: 'notes.md' },
+    ],
+    ['retrying', { health: 'transient_error', error_detail: 'IMAP: timed out' }, { kind: 'retrying', text: 'IMAP: timed out' }],
+    ['listening', {}, null],
+  ])('%s: names the kind and speaks the source’s own words', (_name, fields, want) => {
+    expect(attentionReason(fake('x', fields))).toEqual(want);
   });
+});
 
-  it('attentionAmong keeps only the picked channels that are not listening', () => {
-    const rows = [fake('a', { status: 'setup' }), fake('b'), fake('c', { status: 'disabled', provider: 'slack', channel: 'slack' })];
-    const names = (selected: Set<string>) => attentionAmong(rows, selected).map((i) => [i.source.name, i.reason.kind]);
-    expect(names(new Set())).toEqual([]);
-    expect(names(new Set(['gmail|gmail']))).toEqual([['a', 'setup']]);
-    expect(names(new Set(['gmail|gmail', 'slack|slack']))).toEqual([
+describe('attentionAmong', () => {
+  it('keeps only the picked channels that are not listening, each with why', () => {
+    const rows = [fake('a', { status: 'setup' }), fake('b'), fakeSource('c', 'slack', { status: 'disabled' })];
+    const picked = (...keys: string[]) => attentionAmong(rows, new Set(keys)).map((i) => [i.source.name, i.reason.kind]);
+    expect(picked()).toEqual([]);
+    expect(picked('gmail|gmail')).toEqual([['a', 'setup']]);
+    expect(picked('gmail|gmail', 'slack|slack')).toEqual([
       ['a', 'setup'],
       ['c', 'paused'],
     ]);
@@ -102,19 +111,17 @@ describe('ChannelAttentionBar', () => {
 
   it('Verify’s answer replaces the two lines in place: ready, or the steps still owed', async () => {
     const s = fake('s', { status: 'setup', setup_detail: 'Invite the bot.' });
-    const verify = vi.spyOn(s, 'verify').mockResolvedValueOnce({ status: 'setup', ready: false, layer: 'setup', detail: 'Still waiting', pending: ['invite the bot', 'pair the phone'] });
+    const owed = { status: 'setup', ready: false, layer: 'setup', detail: 'Still waiting', pending: ['invite the bot', 'pair the phone'] } as const;
+    const verify = vi.spyOn(s, 'verify').mockResolvedValueOnce({ ...owed, pending: [...owed.pending] });
+    const wrong = () => screen.getByTestId('channel-attention-wrong').textContent;
     render(bar([s]));
-    await act(async () => {
-      fireEvent.click(screen.getByTestId('channel-attention-verify'));
-    });
-    expect(screen.getByTestId('channel-attention-wrong').textContent).toBe('Still waiting');
+    fireEvent.click(screen.getByTestId('channel-attention-verify'));
+    await waitFor(() => expect(wrong()).toBe('Still waiting'));
     expect(screen.getByTestId('channel-attention-next').textContent).toContain('pair the phone');
 
     verify.mockResolvedValueOnce({ status: 'active', ready: true, layer: 'setup', detail: 'ready' });
-    await act(async () => {
-      fireEvent.click(screen.getByTestId('channel-attention-verify'));
-    });
-    expect(screen.getByTestId('channel-attention-wrong').textContent).toBe('Now listening.');
+    fireEvent.click(screen.getByTestId('channel-attention-verify'));
+    await waitFor(() => expect(wrong()).toBe('Now listening.'));
   });
 
   it('a check that did not run says so, in place, without a toast', async () => {
@@ -122,10 +129,8 @@ describe('ChannelAttentionBar', () => {
     vi.spyOn(s, 'verify').mockRejectedValueOnce(new Error('offline'));
     const { notify } = await import('@src/notifications');
     render(bar([s]));
-    await act(async () => {
-      fireEvent.click(screen.getByTestId('channel-attention-verify'));
-    });
-    expect(screen.getByTestId('channel-attention-wrong').textContent).toContain('offline');
+    fireEvent.click(screen.getByTestId('channel-attention-verify'));
+    await waitFor(() => expect(screen.getByTestId('channel-attention-wrong').textContent).toContain('offline'));
     expect(notify.error).not.toHaveBeenCalled();
   });
 
