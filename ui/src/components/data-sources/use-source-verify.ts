@@ -6,7 +6,7 @@
  * invite the bot, press, repeat for whatever is still listed.
  *
  * The outcome is kept as `last` as well as toasted, so a surface that shows it
- * in place (the inbox's attention strip) can pass `{ quiet: true }` and skip the
+ * in place (the stream inbox's attention strip) can pass `{ quiet: true }` and skip the
  * toast — one result, one channel. `verify` never throws: a failed call is an
  * outcome too.
  */

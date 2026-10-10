@@ -1,12 +1,12 @@
 /**
- * The "what is wrong, what to do" strip a channel mark opens above the inbox list.
+ * The "what is wrong, what to do" strip a channel mark opens above the stream inbox list.
  *
  * Clicking a mark on the channels line filters the list to that channel. When that
- * channel is not listening — a setup step is owed, it is parked on a configuration
- * error, or it is paused — the filtered list is empty or stale, and a tooltip is not
- * where a person learns why. This strip sits between the filter row and the list and
- * says, per source: the reason, the next step, and the verb that takes it — Verify or
- * Resume, the source's settings, its setup wizard, its help page.
+ * channel is not delivering — a setup step is owed, it is parked on a configuration
+ * error, it is paused, a file is held, or it is retrying after a failure — the
+ * filtered list is empty or stale, and a tooltip is not where a person learns why. This strip sits between the filter row and the list and
+ * says, per source: the reason, the next step, and the verb that takes it — Verify,
+ * Resume or Pull, the source's settings, its setup wizard, its help page.
  *
  * Verify's answer is shown IN the strip, not toasted: the person is looking here.
  * The strip unmounts by itself once the entity updates to a listening state, because
@@ -18,7 +18,7 @@
  */
 import type { ReactNode } from 'react';
 import { type DataDriver, type DataSource } from '@sdk';
-import { CheckCircle2, Play, Settings2 } from 'lucide-react';
+import { CheckCircle2, Play, RefreshCw, Settings2 } from 'lucide-react';
 import { i18n } from '@lingui/core';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
@@ -35,6 +35,7 @@ import {
   attentionReason,
 } from '@src/components/data-sources/source-attention';
 import { sourceGlyphs } from '@src/components/data-sources/source-icon';
+import { useSourcePull } from '@src/components/data-sources/source-parts';
 import { useSourceToggle } from '@src/components/data-sources/use-source-toggle';
 import { useSourceVerify } from '@src/components/data-sources/use-source-verify';
 import { IconWithBadge } from '@src/components/graph-view/icons/IconWithBadge';
@@ -61,6 +62,8 @@ const TINT: Record<AttentionKind, string> = {
   setup: 'border-amber-500/40 bg-amber-500/10',
   parked: 'border-red-500/60 bg-red-500/10',
   paused: 'border-border bg-muted/40',
+  held: 'border-amber-500/40 bg-amber-500/10',
+  retrying: 'border-amber-500/40 bg-amber-500/10',
 };
 
 export function ChannelAttentionBar({
@@ -87,9 +90,9 @@ function AttentionRow({ source, reason, spec }: { source: DataSource; reason: At
   const { navigation } = useDockNavigation();
   const { verify, busy: verifying, last } = useSourceVerify(source, { quiet: true });
   const { toggle, busy: toggling } = useSourceToggle(source);
+  const { pull, pulling } = useSourcePull(source);
   const { Base, Badge } = sourceGlyphs(spec, source.channel);
   const name = source.name || source.provider;
-  const paused = reason.kind === 'paused';
 
   // What is wrong, and what to do. After a Verify press, its answer replaces both until the
   // entity itself moves on (a ready answer unmounts the row as soon as the row updates).
@@ -115,10 +118,14 @@ function AttentionRow({ source, reason, spec }: { source: DataSource; reason: At
     );
   }
 
-  // The one verb for this kind: Resume un-pauses; Verify re-runs the check and un-parks.
-  const action = paused
-    ? { Icon: Play, label: t`Resume`, run: toggle, busy: toggling, testId: 'channel-attention-resume' }
-    : { Icon: CheckCircle2, label: t`Verify`, run: verify, busy: verifying, testId: 'channel-attention-verify' };
+  // The one verb for this kind: Resume un-pauses; Pull polls now (and carries a held file on once the two
+  // agree); Verify re-runs the check and un-parks.
+  const action =
+    reason.kind === 'paused'
+      ? { Icon: Play, label: t`Resume`, run: toggle, busy: toggling, testId: 'channel-attention-resume' }
+      : reason.kind === 'held' || reason.kind === 'retrying'
+        ? { Icon: RefreshCw, label: t`Pull`, run: pull, busy: pulling, testId: 'channel-attention-pull' }
+        : { Icon: CheckCircle2, label: t`Verify`, run: verify, busy: verifying, testId: 'channel-attention-verify' };
 
   return (
     <div

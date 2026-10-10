@@ -1,5 +1,5 @@
 /**
- * The strip a channel mark opens above the inbox list: per source that is not
+ * The strip a channel mark opens above the stream inbox list: per source that is not
  * listening, what is wrong, what to do, and the verb — with Verify's answer shown
  * in place rather than toasted.
  */
@@ -23,7 +23,7 @@ vi.mock('@src/components/setup-wizard/SetupStagesButton', () => ({ SetupStagesBu
 import { ChannelAttentionBar, attentionAmong } from '@src/components/stream-inbox-view/ChannelAttentionBar';
 import { attentionReason } from '@src/components/data-sources/source-attention';
 
-/** The strip over the given sources, each with its reason — what the inbox mounts. */
+/** The strip over the given sources, each with its reason — what the stream inbox mounts. */
 const bar = (sources: DataSource[]) => (
   <ChannelAttentionBar items={sources.map((source) => ({ source, reason: attentionReason(source)! }))} specFor={specFor} />
 );
@@ -37,8 +37,11 @@ describe('attentionReason', () => {
     });
     expect(attentionReason(fake('d', { status: 'disabled' }))).toEqual({ kind: 'paused', text: '' });
     expect(attentionReason(fake('ok'))).toBeNull();
-    // Held is not attention: the source keeps polling.
-    expect(attentionReason(fake('h', { health: 'ok', error_code: 'write_back_held', error_detail: 'x' }))).toBeNull();
+    // Held keeps polling, but a file waits on a person; retrying is the scheduler's own backoff.
+    expect(attentionReason(fake('h', { health: 'ok', error_code: 'write_back_held', error_detail: 'notes.md' }))).toEqual({ kind: 'held', text: 'notes.md' });
+    expect(attentionReason(fake('r', { health: 'transient_error', error_detail: 'IMAP: timed out' }))).toEqual({ kind: 'retrying', text: 'IMAP: timed out' });
+    // A paused source carrying a stale transient error is paused, not retrying.
+    expect(attentionReason(fake('pr', { status: 'disabled', health: 'transient_error' }))?.kind).toBe('paused');
   });
 
   it('attentionAmong keeps only the picked channels that are not listening', () => {
@@ -83,6 +86,17 @@ describe('ChannelAttentionBar', () => {
     render(bar([d]));
     expect(screen.getByTestId(`channel-attention-${d.id}`).dataset.kind).toBe('paused');
     expect(screen.getByTestId('channel-attention-resume')).toBeTruthy();
+    expect(screen.queryByTestId('channel-attention-verify')).toBeNull();
+  });
+
+  it('a held file and a retrying source are reported with Pull as the verb', () => {
+    const h = fake('h', { health: 'ok', error_code: 'write_back_held', error_detail: 'notes.md' });
+    const r = fake('r', { health: 'transient_error', error_detail: 'IMAP: timed out' });
+    render(bar([h, r]));
+    expect(screen.getByTestId(`channel-attention-${h.id}`).dataset.kind).toBe('held');
+    expect(screen.getByTestId(`channel-attention-${r.id}`).dataset.kind).toBe('retrying');
+    expect(screen.getAllByTestId('channel-attention-wrong').map((e) => e.textContent)).toEqual(['notes.md', 'IMAP: timed out']);
+    expect(screen.getAllByTestId('channel-attention-pull')).toHaveLength(2);
     expect(screen.queryByTestId('channel-attention-verify')).toBeNull();
   });
 

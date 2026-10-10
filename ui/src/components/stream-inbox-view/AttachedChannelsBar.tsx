@@ -42,7 +42,7 @@ import { isMessageDriverSpec, sourcesQuery, useSourceSpecs } from '@src/componen
 import { useSourceDelete } from '@src/components/data-sources/use-source-delete';
 import { useSourceToggle } from '@src/components/data-sources/use-source-toggle';
 import { CallControls } from '@src/components/voice/CallControls';
-import { ATTENTION_FALLBACK, attentionReason } from '@src/components/data-sources/source-attention';
+import { ATTENTION_FALLBACK, attentionReason, needsAPerson } from '@src/components/data-sources/source-attention';
 import { i18n } from '@lingui/core';
 import { channelKeyOf, ownerOf } from './channel-owner';
 
@@ -76,10 +76,11 @@ export function useAttachedChannels(owner: TypeId | null | undefined) {
 
 type SpecFor = (provider: string) => DataDriver | undefined;
 type ChannelState = 'on' | 'off' | 'parked';
-/** The mark's three states, from the one classifier: paused draws dashed, setup and parked draw "!". */
+/** The mark's three states, from the one classifier: paused draws dashed; anything a person must act on
+ *  (setup, parked, a held file) draws "!"; retrying is the scheduler's own business and still draws on. */
 const stateOf = (s: DataSource): ChannelState => {
   const kind = attentionReason(s)?.kind;
-  return kind === undefined ? 'on' : kind === 'paused' ? 'off' : 'parked';
+  return kind === undefined || !needsAPerson(kind) ? 'on' : kind === 'paused' ? 'off' : 'parked';
 };
 
 /** Sources of one channel kind, sharing a mark. Its state is the best of its
