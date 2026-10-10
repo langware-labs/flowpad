@@ -56,6 +56,17 @@ export async function prepareAgentSession(processId: string): Promise<AgenticPro
   return proc;
 }
 
+/**
+ * A NEW session of `agent` acting in `projectId`, ready and started: `use()` with its auto
+ * prompt queued, then `prepareAgentSession`. Returns the process id; the caller opens it.
+ * For an opener that was asked to START one (the launcher, a launch link) — never a resume.
+ */
+export async function startAgentSession(agent: Agent, projectId: string | null): Promise<string> {
+  const { process_id } = await agent.use(projectId, true);
+  await prepareAgentSession(process_id);
+  return process_id;
+}
+
 export function useAgentLauncher(): {
   launch: (agent: Agent, projectId?: string | null) => Promise<void>;
   busyId: string | null;
@@ -68,9 +79,8 @@ export function useAgentLauncher(): {
     async (agent: Agent, projectId?: string | null) => {
       setBusyId(agent.id);
       try {
-        const result = await agent.use(projectId ?? null, true);
-        await prepareAgentSession(result.process_id);
-        await navigation.openShellProcess(result.process_id, { viewMode: ViewMode.Vibe });
+        const processId = await startAgentSession(agent, projectId ?? null);
+        await navigation.openShellProcess(processId, { viewMode: ViewMode.Vibe });
       } catch (e) {
         notify.error({
           title: t`Could not use ${agent.displayName}`,
