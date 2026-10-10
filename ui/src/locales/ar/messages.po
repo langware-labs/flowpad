@@ -21922,6 +21922,7 @@ msgid "Setup instructions"
 msgstr ""
 
 #: src/components/top-nav-bar/ProjectSetupButton.tsx
+#: src/components/top-nav-bar/ProjectSetupButton.tsx
 msgid "Setup required"
 msgstr ""
 
