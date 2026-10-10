@@ -491,7 +491,8 @@ class DataSource(SetupSkippable, Entity):
     async def _existing_account(self) -> "Optional[DataSource]":
         """The source this owner already has on the same account, if any — one source per (driver,
         account, owner) on this machine: the same mailbox polled twice ingests every message twice. The
-        owner stays in the key — a user and an agent may each watch the same account."""
+        owner stays in the key — a user and an agent may each watch the same account. A source that is
+        PART of its account (``account_part``: one group of a number) is a twin only of the same part."""
         driver = self._driver()
         key = getattr(driver, "identity_config_key", "") if driver is not None else ""
         value = (self.config or {}).get(key) if key else None
@@ -499,7 +500,9 @@ class DataSource(SetupSkippable, Entity):
             value = value.get("id")
         if not isinstance(value, str) or not value.strip():
             return None
-        existing = await type(self).find_for_account(self.provider, key, value, owner=self.owner)
+        existing = await type(self).find_for_account(
+            self.provider, key, value, owner=self.owner, part=driver.cls.account_part(self.config or {})
+        )
         return existing if existing is not None and str(existing.id) != str(self.id) else None
 
     async def _adopt(self, existing: "DataSource", *args, **kwargs):
@@ -518,7 +521,7 @@ class DataSource(SetupSkippable, Entity):
 
     @classmethod
     async def find_for_account(
-        cls, provider: str, key: str, value: str, *, owner: "Optional[TypeId]" = None
+        cls, provider: str, key: str, value: str, *, owner: "Optional[TypeId]" = None, part: str = "",
     ) -> "Optional[DataSource]":
         """The source of ``provider`` whose ``config[key]`` names ``value``.
 
@@ -536,13 +539,22 @@ class DataSource(SetupSkippable, Entity):
         other's row. Omitted, it is the pre-owner lookup. Resolved through
         ``owner_of`` rather than the column, so a legacy row that only carries
         ``config.agent_id`` still answers.
+
+        ``part`` is which PART of the account the source is (``account_part``: one group of a number); the
+        default, ``""``, is the account itself — so no caller is handed a group's source for its number's.
         """
+        from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415
         from flow_sdk.stream_inbox.projection import owner_of  # noqa: PLC0415
+
+        driver = DataDriver.loaded(provider)
+        part_of = driver.cls.account_part if driver is not None else (lambda _config: "")
 
         value = str(value or "").strip()
         for row in await cls.get_all({"provider": provider}):
             candidates = [(row.config or {}).get(key)] if key else [row.account_key, *(row.account_identities or [])]
             if not any(str(c or "").strip() == value for c in candidates):
+                continue
+            if part_of(row.config or {}) != part:
                 continue
             if owner is not None and await owner_of(row) != owner:
                 continue
@@ -1713,12 +1725,29 @@ class DataSource(SetupSkippable, Entity):
         except Exception:  # noqa: BLE001 — no credential declared yet: nothing held
             held = None
         if check:
+            declared = await self._declared_claim(driver, dict(self.config or {}))
+            kind = str((declared or {}).get("kind") or "account")
+            if kind != "account":
+                # A part of an account (a group) has no URL of its own: done once the hub routes THAT part here.
+                wanted = {"kind": kind, "key": declared["key"]}
+                routed = any(c.get("claim") == wanted for c in _claims_for(await _hub_claims(), str(self.id)))
+                return ReturnedValue.satisfied(f"the hub routes this {kind} here") if routed else ReturnedValue.not_yet(f"the hub does not route this {kind} here yet")
             return ReturnedValue.satisfied("a public URL is set") if held else ReturnedValue.not_yet("no public URL yet")
         config: dict = {}
         token = str((self.config or {}).get("verify_token") or "")
         if not token and "verify_token" in (driver.config or {}):
             token = config["verify_token"] = secrets.token_urlsafe(24)
         claim = await self._hub_claim(driver, {**(self.config or {}), **config})
+        if claim is not None and claim["parent"] is None:
+            return ReturnedValue.not_yet(f"claim the {claim['claim']['kind']}'s account on the hub first — set up its own source")
+        if claim is not None and claim["claim"]["kind"] != "account":
+            # A part of an account (a group) rides the account's URL: the hub routes it here by its claim, so
+            # there is no URL of its own to keep — the account's stays where it is.
+            data = await hub_post("webhook", claim, None, "chain")
+            if not data or not data.get("id"):
+                return ReturnedValue.not_yet("the hub did not take this claim — sign in to Flowpad cloud first")
+            kind, key = claim["claim"]["kind"], claim["claim"]["key"]
+            return ReturnedValue.satisfied(f"the hub routes this {kind} ({key}) here", value=SourceUpdateSpec(config=config))
         if claim is not None:
             # The account on the hub's chain for this vendor (``webhook/@<provider>``): the hub checks the
             # vendor's signature with the claim's own secret and hands each event to THIS channel on THIS
@@ -1740,8 +1769,8 @@ class DataSource(SetupSkippable, Entity):
         update = SourceUpdateSpec(config=config, secrets={hook.url_var: str(data["url"])})
         return ReturnedValue.satisfied(f"public URL {data['url']}", value=update)
 
-    async def _hub_claim(self, driver, config: dict) -> Optional[dict]:
-        """The chain request for a driver that declares its account as a hub claim (``hub_claim``), or None."""
+    async def _declared_claim(self, driver, config: dict) -> Optional[dict]:
+        """What the driver declares as its hub claim (``hub_claim``) given this source's secrets, or None."""
         declare = getattr(driver.cls, "hub_claim", None)
         if declare is None:
             return None
@@ -1750,16 +1779,37 @@ class DataSource(SetupSkippable, Entity):
         except Exception:  # noqa: BLE001 — no credential yet: nothing to claim with
             return None
         secrets = {k: v.get_secret_value() for k, v in values.items() if v is not None and v.get_secret_value()}
-        claim = declare(config, secrets)
+        return declare(config, secrets) or None
+
+    async def _hub_claim(self, driver, config: dict) -> Optional[dict]:
+        """The chain request for a driver that declares its account as a hub claim (``hub_claim``), or None.
+
+        A declared claim with ``kind`` and ``under`` (``{kind, key}``) is a claim chained under one of the
+        person's own claims — a group under its number's account: its ``parent`` is that claim's id (the one
+        delivering to this instance when there are several places), or ``None`` while it is not claimed yet."""
+        claim = await self._declared_claim(driver, config)
         if not claim:
             return None
         from flow_sdk.instance_settings.runtime import instance_uid  # noqa: PLC0415
 
+        instance = instance_uid()
+        parent: Optional[str] = f"@{claim['provider']}"
+        under = claim.get("under")
+        if isinstance(under, dict):
+            held = sorted(
+                (c for c in await _hub_claims()
+                 if c.get("provider") == claim["provider"] and c.get("status", "active") == "active"
+                 and (c.get("claim") or {}).get("kind") == under.get("kind") and (c.get("claim") or {}).get("key") == under.get("key")),
+                # The claim the vendor's deliveries reach first: one routed HERE, then one routed anywhere at all
+                # (a claim left with no target delivers nothing, so a part chained under it would never be reached).
+                key=lambda c: _parent_rank(c, instance),
+            )
+            parent = str(held[0]["id"]) if held and held[0].get("id") else None
         return {
-            "parent": f"@{claim['provider']}",
-            "claim": {"kind": "account", "key": claim["key"]},
+            "parent": parent,
+            "claim": {"kind": str(claim.get("kind") or "account"), "key": claim["key"]},
             "proof": claim.get("proof") or {},
-            "target": {"kind": "desktop", "instance_id": instance_uid(), "data_source_id": str(self.id)},
+            "target": {"kind": "desktop", "instance_id": instance, "data_source_id": str(self.id)},
         }
 
     @core_action.post(action_name="verify")
@@ -2065,6 +2115,14 @@ def _channel_row(claim: Optional[dict], instance: str, source=None, *, by_hub: b
         "routed": _routed(claim, instance, by_hub=by_hub),
         "answered_by": "" if source is None else answered_by(source),
     }
+
+
+def _parent_rank(claim: dict, instance: str) -> tuple:
+    """Which of several claims a part (a group) chains under: the one the vendor's deliveries reach first — routed
+    HERE, then routed anywhere at all (a claim left with no target delivers nothing, so a part under it would never
+    be reached) — then the oldest."""
+    routed = _routed(claim, instance)
+    return routed != "this", routed in ("nowhere", "polls"), float(claim.get("proven_at") or 0), str(claim.get("id") or "")
 
 
 def _routed(claim: Optional[dict], instance: str, *, by_hub: bool = False) -> str:
