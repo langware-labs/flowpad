@@ -28,6 +28,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Optional
 
 from flow_sdk.core.flow_command import flow_command
+from flow_sdk.request_context.detached import add_detached_done_callback, create_detached_task
 from flow_sdk.schema.data_spec.compute_op_spec import ComputeOpSpec
 from flow_sdk.schema.data_spec.credential_contract import CredentialVarKind
 from flow_sdk.schema.data_spec.project_setup_spec import (
@@ -460,8 +461,10 @@ async def start_setup(project: "Project", *, ai: bool = True, root: str = "") ->
                     approved=True,
                 )
 
-        task = asyncio.create_task(run_setup())
-        task.add_done_callback(_log_failure)
+        # Detached: the run takes minutes and asks the person questions; a plain task
+        # (and a plain done-callback) would hold the Set-up request for all of it.
+        task = create_detached_task(run_setup(), name=f"project-setup:{pid}:{root}")
+        add_detached_done_callback(task, _log_failure)
         _RUNS[key] = task
     return setup_run_address(pid, root)
 

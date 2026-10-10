@@ -53,6 +53,7 @@ from flow_sdk.core.capabilities.models import now_iso
 from flow_sdk.graph_workflow_manager.envelope import EXTERNAL_SOURCE, RunEvent
 from flow_sdk.graph_workflow_manager.function_runner import record_emission
 from flow_sdk.graph_workflow_manager.journal import RunJournal
+from flow_sdk.request_context.detached import create_detached_task
 
 logger = logging.getLogger(__name__)
 
@@ -998,7 +999,12 @@ class GraphWorkflowManager:
         self._emit_node_status(
             run, node, "started", {"program_kind": nd.get("program_kind", "instruction"), "process_id": proc.id}
         )
-        asyncio.create_task(self._watch_agent(run, node, proc.id, rt, seq, fe, agent_id=agent_def.get("agent_id")))
+        # Detached: the watch lasts the agent's whole run; a plain task would hold
+        # the request that started the run for all of it.
+        create_detached_task(
+            self._watch_agent(run, node, proc.id, rt, seq, fe, agent_id=agent_def.get("agent_id")),
+            name=f"workflow-watch-agent:{proc.id}",
+        )
 
     def _agent_instruction(
         self,

@@ -29,6 +29,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Callable, Optional
 
 from flow_sdk.builtin.data_source import DataSource, SourceStatus
+from flow_sdk.request_context.detached import create_detached_task
 from flow_sdk.server.system_heartbeat import register_heartbeat_task
 
 logger = logging.getLogger(__name__)
@@ -116,7 +117,9 @@ def note_attention(source_id: str, cadence_seconds: int) -> None:
     loop = asyncio.get_running_loop()
     task = _attention_tasks.get(loop)
     if task is None or task.done():
-        _attention_tasks[loop] = asyncio.ensure_future(_attention_loop())
+        # Detached: the lane runs until every lease lapses, and the request that
+        # first armed it must not stay in memory for all of that.
+        _attention_tasks[loop] = create_detached_task(_attention_loop(), name="ingest-attention-lane")
     wake_attention_lane()
 
 
@@ -152,7 +155,7 @@ async def _attention_loop() -> None:
                 continue
             if not _claim(source_id):
                 continue
-            asyncio.ensure_future(_run_poll(source, datetime.now(timezone.utc)))
+            create_detached_task(_run_poll(source, datetime.now(timezone.utc)), name=f"ingest-poll:{source_id}")
         # Wait to the nearest upcoming edge (a due round or a lease expiry)
         # instead of a fixed 1s spin — most wakeups were dead time under a 5s
         # cadence. Clamped so a renewal arming a fresh "due now" round never
