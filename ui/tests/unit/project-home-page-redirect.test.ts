@@ -45,7 +45,14 @@ beforeEach(() => {
   sessionStorage.clear();
   mocks.openHomePage.mockReset().mockResolvedValue({ asset: AGENT, type: 'agent' });
   mocks.query.mockReset().mockResolvedValue([]);
-  mocks.getById.mockReset().mockResolvedValue({ watch: mocks.watch, drainQueue: mocks.drainQueue });
+  // The launch watch is a lease that listens for the process's end, so the stand-in
+  // carries the id and the status subscription a real AgenticProcess has.
+  mocks.getById.mockReset().mockResolvedValue({
+    id: NEW_CHAT,
+    watch: mocks.watch,
+    drainQueue: mocks.drainQueue,
+    on: vi.fn(() => () => undefined),
+  });
   mocks.drainQueue.mockReset().mockResolvedValue(undefined);
   mocks.use.mockReset().mockResolvedValue({ process_id: NEW_CHAT });
   mocks.agentGetById.mockReset().mockResolvedValue({ use: mocks.use });

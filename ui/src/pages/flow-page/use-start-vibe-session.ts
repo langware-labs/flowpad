@@ -15,6 +15,7 @@ import {
 } from '@sdk';
 import { useProject } from '@sdk/react/hooks';
 import { HARNESS_CAPABILITY_BY_WORKER } from '@src/components/workers/worker-types';
+import { holdLaunchWatch, releaseLaunchWatch } from '@src/components/agents/launch-watch';
 import { useHarnessInstallPrompt } from '@src/components/terminal/openers/use-harness-install-prompt';
 import { errorDetail } from '@src/lib/error-message';
 
@@ -158,12 +159,19 @@ export async function createVibeProcessForProject(opts: {
     // second round trip that gated navigation); it is established below.
     { pty_mode: false, watchProcess: false },
   );
-  void proc.watch().catch((e) => console.warn('[Vibe] watch failed; live updates degraded', e));
+  // A lease the workspace (or the process's end) gives back — see launch-watch.ts.
+  holdLaunchWatch(proc);
   // The URL only needs the id, and the persona only has to be embedded before
   // the first prompt — which every caller awaits — so neither belongs ahead of
   // the navigation.
   if (open) navigation?.openShellProcess(proc.id, { viewMode: ViewMode.Vibe });
-  await embedVibeSubagent(proc);
+  try {
+    await embedVibeSubagent(proc);
+  } catch (e) {
+    // With `open: false` no workspace mounts to give the lease back.
+    if (!open) releaseLaunchWatch(proc.id);
+    throw e;
+  }
   return proc;
 }
 

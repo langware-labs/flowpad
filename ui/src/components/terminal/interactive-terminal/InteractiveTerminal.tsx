@@ -11,6 +11,7 @@ import {
   dataContext,
   FlowDataSource,
   fsStore,
+  isProcessEnded,
   isProcessRunning,
   PrefKey,
   Shell,
@@ -35,6 +36,7 @@ import { useFS } from '@src/hooks/useFS';
 import { useShell } from '@src/hooks/useShell';
 import { FitAddon } from '@xterm/addon-fit';
 import { useXtermShellAttach } from '../useXtermShellAttach';
+import { releaseLaunchWatch } from '@src/components/agents/launch-watch';
 import { SearchAddon } from '@xterm/addon-search';
 import { Terminal as XTerm } from '@xterm/xterm';
 import { useTheme } from 'next-themes';
@@ -272,6 +274,10 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
   // Keep shellRef in sync so callbacks and hooks that capture shellRef still work.
   shellRef.current = shell;
   const processIsActive = process?.status ? isProcessRunning(process.status) : false;
+  // The process ended (stopped / failed): no PTY to follow until it runs again, so the view gives
+  // back what a live session holds — its watch, its output subscription, the shell's chunk window.
+  // A plain shell (no process) and a process that has not started are not "ended".
+  const processEnded = !!process?.status && isProcessEnded(process.status);
 
   // Live failed-to-start latch → banner. The loader only classifies a latched
   // process on navigation; when the worker dies instantly while this tab is
@@ -297,8 +303,11 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
     onWorkerSessionId?.(process?.session_id ?? null);
   }, [process?.session_id, onWorkerSessionId]);
 
+  // The view's watch, held while the process is live and the view is mounted. Leaving either
+  // way also gives back the launch-time lease its opener took (launch-watch.ts).
   useEffect(() => {
-    if (!process) return;
+    if (!process || processEnded) return;
+    const processId = process.id;
     let disposed = false;
     let unwatch: (() => Promise<void>) | null = null;
     void process.watch().then((release) => {
@@ -311,8 +320,9 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
     return () => {
       disposed = true;
       if (unwatch) void unwatch();
+      releaseLaunchWatch(processId);
     };
-  }, [process?.id]);
+  }, [process?.id, processEnded]);
 
   useEffect(() => {
     firstPromptBufferRef.current = '';
@@ -1160,7 +1170,9 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
   // (useXtermShellAttach: connect / mount / recovery / reconnect). Gated on terminalReady so the
   // replay lands at the fitted size, not 80×24. PtySync sees every chunk; live output goes through
   // the synchronized-output writer above.
-  useXtermShellAttach(shell, terminalReady ? terminalRef.current : null, {
+  // An ended process's view is detached; the xterm keeps its final screen and scrollback, and a
+  // restart attaches again the way a mount does.
+  useXtermShellAttach(processEnded ? null : shell, terminalReady ? terminalRef.current : null, {
     ready: terminalReady,
     onChunk: (chunk) => ptySyncRef.current.processChunk(chunk),
     write: writeLive,
@@ -1194,6 +1206,12 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
       flushSyncFrame();
     },
   });
+
+  // The chunk window only feeds a live view (re-attach backlog, VT rebuild on resize); the
+  // backend recording is untouched and a restart fills a fresh window.
+  useEffect(() => {
+    if (processEnded) shell?.releaseOutput();
+  }, [processEnded, shell]);
 
   // ── The dock's command, typed once the PTY is actually at a prompt ─────────
   //
@@ -1382,6 +1400,8 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
         const snapshot = ptySyncRef.current.getSnapshot();
         if (!term || !shell || !snapshot.adapter || !snapshot.vt) return;
         const chunks = shell.getPtyChunks();
+        // Nothing to replay (an ended session let its window go): the VT keeps its last build.
+        if (!chunks.length) return;
         const tRebuild = performance.now();
         ptySyncRef.current.rebuild(chunks);
         const rebuildMs = performance.now() - tRebuild;
