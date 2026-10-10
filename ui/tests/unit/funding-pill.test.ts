@@ -19,13 +19,18 @@ import type {
 } from '@sdk';
 
 import {
-  amountLeft,
   endpointsSummary,
   keysSummary,
   pillForFlowpad,
   pillForHarness,
-  tightestCostLimit,
 } from '@src/components/harness-login/funding-pill';
+import { tightestCostLimit, usdLeft, type CostLeft } from '@src/components/llm-endpoints/usage-math';
+
+/** A cost limit with `remaining` dollars left of `limit`. */
+const cost = (limit: number, remaining: number): CostLeft => ({
+  key: 'cost_usd_total',
+  remaining: { limit, used: limit - remaining, remaining, window: 'total', resets_at: null },
+});
 
 const KIND = 'harness.claude.cli';
 const DEVICE = 'llm_endpoint-00000000-0000-4000-8000-000000000001';
@@ -137,22 +142,24 @@ describe('pillForHarness', () => {
 
   it('a hub-funded harness carries what is left on that endpoint', () => {
     const pill = pillForHarness(record(harness({ login: LoginState.SignedOut })), funding(HUB), KIND, {
-      [HUB]: { limit: 3, used: 0.42, remaining: 2.58, window: 'total', key: 'cost_usd_total', resets_at: null },
+      [HUB]: cost(3, 2.58),
     });
     expect(pill.kind).toBe('hub');
-    expect(pill.amount).toBe('$2.58 left');
+    expect(pill.usdLeft).toBe(2.58);
+    expect(pill.action).toBe('details');
   });
 
   it('a hub-funded harness with no cost cap carries no amount', () => {
     const pill = pillForHarness(record(harness()), funding(HUB), KIND, { [HUB]: null });
     expect(pill.kind).toBe('hub');
-    expect(pill.amount).toBeUndefined();
+    expect(pill.usdLeft).toBeUndefined();
   });
 
   it('nothing funds it and the login is gone: Signed out, with the backend reason as title', () => {
     const pill = pillForHarness(record(harness({ login: LoginState.SignedOut })), funding(null), KIND);
     expect(pill.kind).toBe('signed_out');
     expect(pill.title).toBe('nothing eligible');
+    expect(pill.action).toBe('sign_in');
   });
 
   it('a not-installed CLI is Not installed whatever the funding record says', () => {
@@ -173,10 +180,18 @@ describe('pillForHarness', () => {
   it('a key-only harness (no device login) with nothing stored reads No source', () => {
     const pill = pillForHarness(record(harness({ has_device_login: false, login: LoginState.NA })), funding(null), KIND);
     expect(pill.kind).toBe('none');
+    // No account to sign in to: the way forward is a key.
+    expect(pill.action).toBe('add_key');
+  });
+
+  it('nothing funds a harness that HAS an account: the action is its sign-in', () => {
+    const pill = pillForHarness(record(harness({ login: LoginState.SignedIn })), funding(null), KIND);
+    expect(pill.kind).toBe('none');
+    expect(pill.action).toBe('sign_in');
   });
 });
 
-describe('tightestCostLimit / amountLeft', () => {
+describe('tightestCostLimit / usdLeft', () => {
   it('picks the smallest remaining cost cap across hops and ignores token caps', () => {
     const r = tightestCostLimit([
       hop({ tokens_per_day: { limit: 1000, used: 999, remaining: 1, window: 'day', resets_at: null } }),
@@ -185,13 +200,13 @@ describe('tightestCostLimit / amountLeft', () => {
         cost_usd_total: { limit: 3, used: 0.42, remaining: 2.58, window: 'total', key: 'cost_usd_total', resets_at: null },
       }),
     ]);
-    expect(r?.remaining).toBe(2.58);
-    expect(amountLeft(r)).toBe('$2.58 left');
+    expect(r?.key).toBe('cost_usd_total');
+    expect(usdLeft(r)).toBe(2.58);
   });
 
   it('no cost cap anywhere → null, and no amount', () => {
     expect(tightestCostLimit([hop({})])).toBeNull();
-    expect(amountLeft(null)).toBeUndefined();
+    expect(usdLeft(null)).toBeUndefined();
   });
 });
 
@@ -199,6 +214,7 @@ describe('pillForFlowpad', () => {
   it('signed in: email and the assistants its endpoints fund', () => {
     const { pill, email, funds } = pillForFlowpad(record(harness()), funding(HUB));
     expect(pill.kind).toBe('plan');
+    expect(pill.action).toBe('details');
     expect(email).toBe('eran@langware.ai');
     expect(funds).toEqual(['Claude']);
   });
@@ -207,6 +223,7 @@ describe('pillForFlowpad', () => {
     const rec = record(harness(), { hub: { login: HubLogin.SignedOut, email: '', user_typeid: '', error: '' } });
     const { pill, funds } = pillForFlowpad(rec, funding(DEVICE));
     expect(pill.kind).toBe('signed_out');
+    expect(pill.action).toBe('sign_in');
     expect(funds).toEqual([]);
   });
 });
@@ -219,14 +236,11 @@ describe('keysSummary / endpointsSummary', () => {
     expect(s.stored).toEqual([{ provider: 'openrouter', hint: '****ab12' }]);
   });
 
-  it('counts hub endpoints, those in use, and the tightest amount among the in-use ones', () => {
-    const s = endpointsSummary(funding(HUB), {
-      [HUB]: { limit: 3, used: 0.42, remaining: 2.58, window: 'total', key: 'cost_usd_total', resets_at: null },
-      [HUB2]: { limit: 100, used: 0, remaining: 100, window: 'total', key: 'cost_usd_total', resets_at: null },
-    });
+  it('counts hub endpoints, and reports the tightest amount among the ones in use', () => {
+    // HUB2 has the smaller remainder but nothing spends it: only endpoints IN USE count.
+    const s = endpointsSummary(funding(HUB), { [HUB]: cost(3, 2.58), [HUB2]: cost(100, 1) });
     expect(s.count).toBe(2);
-    expect(s.inUse).toBe(1);
-    expect(s.amount).toBe('$2.58 left');
+    expect(s.usdLeft).toBe(2.58);
     expect(s.names).toEqual(['eran default', 'global']);
   });
 });

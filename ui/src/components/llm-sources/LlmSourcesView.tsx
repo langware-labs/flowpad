@@ -39,7 +39,7 @@ import { notify } from '@src/notifications';
 
 import { LlmEndpointsSection } from './LlmEndpointsSection';
 import { LlmKeysSection } from './LlmKeysSection';
-import { isLlmSourcesSection, openLlmSources, parseLlmSourcesPointer, type LlmSourcesSection } from './llm-sources-pointer';
+import { isLlmSourcesSection, openLlmSources, parseLlmSourcesPointer } from './llm-sources-pointer';
 import {
   harnessKinds,
   labelForWorker,
@@ -47,7 +47,9 @@ import {
   useTestSource,
   useSelectSource,
   workerOf,
+  hubOffers,
 } from './use-llm-sources';
+import { keysSummary } from '@src/components/harness-login/funding-pill';
 import { visibleSources } from './visible-sources';
 
 /**
@@ -274,6 +276,9 @@ export function LlmSourcesView({ pointer }: { pointer?: string }) {
   const testSource = useTestSource();
 
   const kinds = useMemo(() => harnessKinds(status), [status]);
+  // The same two counts the Assistants & keys rows show, from the same two helpers.
+  const keys = keysSummary(record);
+  const hubCount = hubOffers(status).length;
   // A verdict names an endpoint and mirrors none of its fields, so every render that wants a
   // kind, a provider or a model looks the row up here. Undefined only if the backend listed a
   // verdict whose endpoint it did not also send; callers degrade rather than throw.
@@ -284,7 +289,7 @@ export function LlmSourcesView({ pointer }: { pointer?: string }) {
   const target = parseLlmSourcesPointer(pointer);
   // A box-wide section (`keys` / `endpoints`) instead of a harness. Derived from the URL, like
   // the harness focus: the chips are navigations, never component state.
-  const section: LlmSourcesSection | null = isLlmSourcesSection(target) ? target : null;
+  const section = isLlmSourcesSection(target) ? target : null;
   // Matched against the kinds the box actually reported rather than rebuilt as
   // `harness.<worker>.cli`: a stale or hand-typed worker then falls back to the first harness
   // instead of yielding a kind that matches no chip and no source list. (The repo has an
@@ -413,8 +418,8 @@ export function LlmSourcesView({ pointer }: { pointer?: string }) {
             <div className="font-medium">{sec === 'keys' ? t`API keys` : t`Hub endpoints`}</div>
             <div className="text-muted-foreground">
               {sec === 'keys'
-                ? t`${(record?.keys ?? []).filter((k) => k.stored).length} of ${(record?.keys ?? []).length} set`
-                : t`${(status.available ?? []).filter((e) => e.kind === (LLMFundingKind.Hub as string)).length} available`}
+                ? t`${keys.count} of ${keys.total} set`
+                : t`${hubCount} available`}
             </div>
           </button>
         ))}

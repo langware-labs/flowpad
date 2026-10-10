@@ -14,6 +14,8 @@
 import { i18n } from '@lingui/core';
 import { useLingui } from '@lingui/react/macro';
 import { Check, ChevronRight, Loader2 } from 'lucide-react';
+
+import { formatUsd } from '@src/components/llm-endpoints/usage-math';
 import type { ReactNode } from 'react';
 
 import { Button } from '@src/components/ui/button';
@@ -37,7 +39,7 @@ const WIKI_FRAGMENT: Record<PillKind, string> = {
   signing_in: 'plan',
 };
 
-export function StatePill({
+function StatePill({
   pill,
   text,
   fragment,
@@ -52,9 +54,11 @@ export function StatePill({
   testId: string;
   onClick?: () => void;
 }) {
+  const { t } = useLingui();
   const space = useAssistantWikiSpace();
   const word = text ?? i18n._(pill.short);
-  const Icon = pill.kind === 'signing_in' ? Loader2 : pill.Icon;
+  const Icon = pill.Icon;
+  const left = pill.usdLeft === undefined ? null : formatUsd(pill.usdLeft);
   return (
     <span
       role={onClick ? 'button' : undefined}
@@ -71,7 +75,7 @@ export function StatePill({
       <span className="truncate" onClick={(e) => e.stopPropagation()}>
         <WikiLabel wikiword={FUNDING_WIKI_PAGE} fragment={fragment ?? WIKI_FRAGMENT[pill.kind]} label={word} space={space} />
       </span>
-      {pill.amount && <span className="ml-auto shrink-0 pl-1 font-mono text-[10px] opacity-90">{pill.amount}</span>}
+      {left !== null && <span className="ml-auto shrink-0 pl-1 font-mono text-[10px] opacity-90">{t`${left} left`}</span>}
     </span>
   );
 }

@@ -349,10 +349,8 @@ msgstr ""
 msgid "{0} automations failed last time they ran."
 msgstr ""
 
-#. placeholder {0}: (status.available ?? []).filter((e) => e.kind === (LLMFundingKind.Hub as string)).length
 #. placeholder {0}: s.count
 #: src/components/harness-login/HarnessLoginModal.tsx
-#: src/components/llm-sources/LlmSourcesView.tsx
 msgid "{0} available"
 msgstr ""
 
@@ -625,9 +623,9 @@ msgstr ""
 msgid "{0} of {1}"
 msgstr ""
 
-#. placeholder {0}: (record?.keys ?? []).filter((k) => k.stored).length
+#. placeholder {0}: keys.count
 #. placeholder {0}: s.count
-#. placeholder {1}: (record?.keys ?? []).length
+#. placeholder {1}: keys.total
 #. placeholder {1}: s.total
 #: src/components/harness-login/HarnessLoginModal.tsx
 #: src/components/llm-sources/LlmSourcesView.tsx
@@ -902,6 +900,10 @@ msgstr ""
 msgid "{hostName}'s Claude Code"
 msgstr ""
 
+#: src/components/llm-sources/LlmSourcesView.tsx
+msgid "{hubCount} available"
+msgstr ""
+
 #. placeholder {0}: ignored !== 1 ? 's' : ''
 #: src/components/lens-viewer/CloudSearchResultsModal.tsx
 msgid "{ignored} issue{0} auto-resolved"
@@ -937,6 +939,10 @@ msgstr "{latchedReason} تم إيقاف إعادة التشغيل التلقائ
 
 #: src/components/top-nav-bar/ProjectSetupButton.tsx
 msgid "{left, plural, one {# thing to set up before this project can run} other {# things to set up before this project can run}}"
+msgstr ""
+
+#: src/components/harness-login/StatusRow.tsx
+msgid "{left} left"
 msgstr ""
 
 #: src/components/token-plan/token-plan-math.ts
@@ -13697,6 +13703,7 @@ msgstr "جاري التحميل..."
 #: src/components/assets/LlmEndpointsAssetList.tsx
 #: src/components/assets/MarkdownIndexPanel.tsx
 #: src/components/automations/AutomationPage.tsx
+#: src/components/automations/AutomationPage.tsx
 #: src/components/automations/MessageRulePage.tsx
 #: src/components/automations/RunDetail.tsx
 #: src/components/automations/RunsView.tsx
@@ -14994,7 +15001,6 @@ msgstr ""
 msgid "New workspace"
 msgstr ""
 
-#: src/components/project-home/ProjectHomeMenu.tsx
 #: src/components/workspace/workspace-switcher.tsx
 msgid "New workspace…"
 msgstr ""
@@ -22808,7 +22814,6 @@ msgstr "عرض Sigma للرسم البياني"
 
 #: src/components/account/user-info.tsx
 #: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
-#: src/components/harness-login/HarnessLoginModal.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
 #: src/components/help/AskForHelpDialog.tsx
 #: src/components/llm-sources/LlmSourcesView.tsx

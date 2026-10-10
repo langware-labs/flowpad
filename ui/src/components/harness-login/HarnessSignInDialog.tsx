@@ -19,17 +19,15 @@ import { Button } from '@src/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@src/components/ui/dialog';
 import { Input } from '@src/components/ui/input';
 import { openLlmSources } from '@src/components/llm-sources/llm-sources-pointer';
-import { workerOf } from '@src/components/llm-sources/use-llm-sources';
 import { harnessStatus, useStatusRecord } from '@src/components/status/use-status-record';
 import { openWikiModal } from '@src/components/wiki-tip/wiki-modal';
 import { ViewMode } from '@src/contexts/view-mode-context';
-import { lucideByName } from '@src/lib/lucide-by-name';
 import { openExternal } from '@src/lib/open-external';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { notify } from '@src/notifications';
-import { PROVIDER_META } from '@src/tabs/provider-meta';
 
 import { useHarnessLoginStore } from './harness-login-store';
+import { harnessVisual } from './harness-visual';
 import { closeHarnessSignIn, useHarnessSignInStore } from './harness-sign-in-store';
 
 const INSTALL_WIKI_PAGE = 'Install a harness';
@@ -145,11 +143,8 @@ function useHarnessSignIn(kind: string) {
     setPasted('');
   }, [capability, pasted]);
 
-  const worker = h?.worker_type ?? workerOf(kind);
-  // Brand tints for the vendors that have one; any other harness falls back to its registry icon.
-  const meta = (PROVIDER_META as Partial<Record<string, (typeof PROVIDER_META)['claude']>>)[worker];
+  const { worker, Icon, iconClassName } = harnessVisual(h, kind);
   const name = h?.label || capability?.name || worker;
-  const Icon = meta?.Icon ?? (h?.icon ? lucideByName(h.icon) : undefined);
 
   return {
     capability,
@@ -164,7 +159,7 @@ function useHarnessSignIn(kind: string) {
     account: h?.account.identity || null,
     installCommand: h?.install_command || null,
     Icon,
-    iconClassName: meta?.iconClassName ?? '',
+    iconClassName,
     pasted,
     setPasted,
     signIn,

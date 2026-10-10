@@ -38,6 +38,13 @@ describe('useHubRemaining', () => {
     expect(hubEndpointTypeIds(funding)).toEqual([HUB]);
   });
 
+  it('in-use scope reads only what a harness is spending, not every endpoint on offer', () => {
+    const OTHER = '00000000-0000-4000-8000-000000000009';
+    const more = { ...funding, available: [...funding.available, { id: OTHER, name: 'idle', kind: 'hub' }] } as LLMFundingStatus;
+    expect(hubEndpointTypeIds(more, 'all')).toEqual([HUB, `llm_endpoint-${OTHER}`]);
+    expect(hubEndpointTypeIds(more, 'in-use')).toEqual([HUB]);
+  });
+
   it('fetches the chain once per hub endpoint and reports its tightest cost cap', async () => {
     h.getChain.mockResolvedValue({
       entry: { id: HUB_ID, name: 'x' },
@@ -51,7 +58,8 @@ describe('useHubRemaining', () => {
       ],
     } as unknown as LLMChain);
     const { result } = renderHook(() => useHubRemaining(funding), { wrapper });
-    await waitFor(() => expect(result.current[HUB]?.remaining).toBe(2.58));
+    await waitFor(() => expect(result.current[HUB]?.remaining.remaining).toBe(2.58));
+    expect(result.current[HUB]?.key).toBe('cost_usd_total');
     expect(h.getChain).toHaveBeenCalledTimes(1);
     expect(h.getChain).toHaveBeenCalledWith(HUB_ID);
   });

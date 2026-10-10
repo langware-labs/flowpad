@@ -13,6 +13,7 @@
  * it is a different question from what pays.
  */
 import { i18n } from '@lingui/core';
+import type { MessageDescriptor } from '@lingui/core';
 import { msg } from '@lingui/core/macro';
 import {
   Capability,
@@ -28,6 +29,8 @@ import {
   statusService,
   TypeId,
   WorkerModelTier,
+  type LLMFundingStatus,
+  type StatusRecord,
 } from '@sdk';
 import { usePrimaryContentReady } from '@sdk/react/primary-content';
 import { useCloudStatus, useEntity } from '@sdk/react/hooks';
@@ -43,24 +46,24 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { providerLabel } from '@src/components/llm-sources/provider-label';
 import { openLlmSources } from '@src/components/llm-sources/llm-sources-pointer';
 import { useHubRemaining } from '@src/components/llm-sources/use-hub-remaining';
+import type { CostLeftByEndpoint } from '@src/components/llm-endpoints/usage-math';
 import { useLlmSources, workerOf } from '@src/components/llm-sources/use-llm-sources';
 import { harnessStatus, refreshHarnessStatus, useStatusRecord } from '@src/components/status/use-status-record';
 import { useAssistantWikiSpace } from '@src/components/wiki-tip/assistant-wiki';
 import { WikiLabel } from '@src/components/wiki-tip/WikiLabel';
 import { errorMessage } from '@src/lib/error-message';
-import { lucideByName } from '@src/lib/lucide-by-name';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { notify } from '@src/notifications';
-import { PROVIDER_META } from '@src/tabs/provider-meta';
 
 import {
   endpointsSummary,
   keysSummary,
   pillForFlowpad,
   pillForHarness,
-  type FundingPill,
-  type RemainingByEndpoint,
+  pillOf,
+  type PillAction,
 } from './funding-pill';
+import { harnessVisual } from './harness-visual';
 import { openHarnessLoginModal, useHarnessLoginStore } from './harness-login-store';
 import { openHarnessSignIn } from './harness-sign-in-store';
 import { FUNDING_WIKI_PAGE, StatusRow } from './StatusRow';
@@ -361,16 +364,46 @@ function MappingView({ onBack }: { onBack: () => void }) {
 }
 
 
-/** Dismiss the modal, then go: a dialog left over the page it just sent you to reads as a bug. */
-function useLeaveTo() {
+/** The button label per action; `details` keeps the row's default "Details ›". */
+const ACTION_LABEL: Record<PillAction, MessageDescriptor | null> = {
+  sign_in: msg`Sign in`,
+  add_key: msg`Add key`,
+  details: null,
+};
+
+const actionLabel = (action: PillAction): string | undefined => {
+  const label = ACTION_LABEL[action];
+  return label ? i18n._(label) : undefined;
+};
+
+/** The two records every row reads, read ONCE by the dialog body and handed down. */
+interface Facts {
+  record: StatusRecord | null;
+  funding: LLMFundingStatus | null;
+  left: CostLeftByEndpoint;
+}
+
+/**
+ * Leave the modal for a place that answers the row's question. A dialog left over the page it
+ * just sent you to reads as a bug, so every exit closes it first. Going to LLM sources also
+ * settles the startup gate (the person has seen what funds what); opening a sign-in does not —
+ * that dialog's own Done does.
+ */
+function useExits() {
   const { navigation } = useDockNavigation();
   const { setOpen } = useHarnessLoginStore();
-  return useCallback(
-    (target: string | undefined) => {
-      markHarnessGateSeen();
-      setOpen(false);
-      openLlmSources(navigation, target);
-    },
+  return useMemo(
+    () => ({
+      toSources: (target: string | undefined) => {
+        markHarnessGateSeen();
+        setOpen(false);
+        openLlmSources(navigation, target);
+      },
+      toSignIn: (kind: string) => {
+        setOpen(false);
+        openHarnessSignIn(kind);
+      },
+    }),
     [navigation, setOpen],
   );
 }
@@ -386,7 +419,6 @@ function SectionHeading({ fragment, label, hint }: { fragment: string; label: st
   );
 }
 
-
 /**
  * FlowPad's own account, first in the list: it is the only row that asks the user for nothing
  * they do not already have — a new account is granted a hub endpoint, so signing in IS the
@@ -396,12 +428,10 @@ function SectionHeading({ fragment, label, hint }: { fragment: string; label: st
  * `flowpad-connection-row.tsx` documents: `flowpad_cloud` registers no OAuth flow, so
  * `OAUTH_FLOW_COMPLETE` never fires and the hook's only path for clearing its spinner never runs.
  */
-function FlowpadRow({ onConnected }: { onConnected: () => void }) {
+function FlowpadRow({ record, funding, onConnected }: Omit<Facts, 'left'> & { onConnected: () => void }) {
   const { t } = useLingui();
   const { cloudUrl } = useCloudStatus();
-  const { status: record } = useStatusRecord();
-  const { status: funding } = useLlmSources();
-  const leaveTo = useLeaveTo();
+  const exits = useExits();
   const [busy, setBusy] = useState(false);
   const { pill, email, funds } = pillForFlowpad(record, funding);
   const loggedIn = record?.hub.login === HubLogin.SignedIn;
@@ -460,8 +490,8 @@ function FlowpadRow({ onConnected }: { onConnected: () => void }) {
       pill={pill}
       pillFragment="hub-endpoints"
       actionBusy={signingIn}
-      action={loggedIn ? undefined : <Trans>Sign in</Trans>}
-      onAction={() => (loggedIn ? leaveTo('endpoints') : void connect())}
+      action={actionLabel(pill.action)}
+      onAction={() => (pill.action === 'details' ? exits.toSources('endpoints') : void connect())}
     />
   );
 }
@@ -469,53 +499,34 @@ function FlowpadRow({ onConnected }: { onConnected: () => void }) {
 /** One assistant: its pill, its identity, and the one action its state calls for. */
 function HarnessRow({
   kind,
-  remaining,
+  record,
+  funding,
+  left,
   isDefault,
   onMakeDefault,
-}: {
-  kind: string;
-  remaining: RemainingByEndpoint;
-  isDefault: boolean;
-  onMakeDefault: () => void;
-}) {
-  const { t } = useLingui();
-  const { status: record } = useStatusRecord();
-  const { status: funding } = useLlmSources();
-  const leaveTo = useLeaveTo();
-  const { setOpen } = useHarnessLoginStore();
+}: Facts & { kind: string; isDefault: boolean; onMakeDefault: () => void }) {
+  const exits = useExits();
   const h = harnessStatus(record, kind);
-  const worker = h?.worker_type ?? workerOf(kind);
-  const pill = pillForHarness(record, funding, kind, remaining);
-  // Brand tints for the vendors that have one; any other harness falls back to its registry icon.
-  const meta = (PROVIDER_META as Partial<Record<string, (typeof PROVIDER_META)['claude']>>)[worker];
-  const Icon = meta?.Icon ?? (h?.icon ? lucideByName(h.icon) : undefined);
-  const name = h?.label || worker;
+  const { worker, Icon, iconClassName } = harnessVisual(h, kind);
+  const pill = pillForHarness(record, funding, kind, left);
 
   const identity = [h?.account.identity, h?.account.plan].filter(Boolean).join(' · ');
   const small = [identity, pill.note ? i18n._(pill.note) : ''].filter(Boolean).join(' · ') || undefined;
 
-  // The button names the action the state calls for. "Login/API key" named a topic.
-  const needsLogin = pill.kind === 'signed_out' || pill.kind === 'not_checked' || pill.kind === 'not_installed';
-  const keyOnlyUnfunded = pill.kind === 'none' && h && !h.has_device_login;
+  // The pill names the action; this row only knows where each one goes.
   const onAction = () => {
-    if (needsLogin || (pill.kind === 'none' && h?.has_device_login)) {
-      setOpen(false);
-      openHarnessSignIn(kind);
-    } else if (keyOnlyUnfunded) {
-      leaveTo('keys');
-    } else {
-      leaveTo(worker);
-    }
+    if (pill.action === 'sign_in') exits.toSignIn(kind);
+    else exits.toSources(pill.action === 'add_key' ? 'keys' : worker);
   };
 
   return (
     <StatusRow
       testId={`harness-row-${worker}`}
-      mark={Icon && <Icon className={`h-5 w-5 ${meta?.iconClassName ?? ''}`} />}
-      name={name}
+      mark={Icon && <Icon className={`h-5 w-5 ${iconClassName}`} />}
+      name={h?.label || worker}
       small={small}
       pill={pill}
-      action={needsLogin || (pill.kind === 'none' && h?.has_device_login) ? t`Sign in` : keyOnlyUnfunded ? t`Add key` : undefined}
+      action={actionLabel(pill.action)}
       onAction={onAction}
       isDefault={isDefault}
       onMakeDefault={onMakeDefault}
@@ -523,18 +534,16 @@ function HarnessRow({
   );
 }
 
+const KEYS_SET = { Icon: KeyRound, short: msg`API key`, label: msg`API keys stored on this machine` };
+const KEYS_NONE = { ...KEYS_SET, short: msg`No key` };
+const ENDPOINTS_SOME = { Icon: Cloud, short: msg`LLM Endpoint`, label: msg`Hub endpoints your FlowPad account can spend` };
+const ENDPOINTS_NONE = { ...ENDPOINTS_SOME, short: msg`No endpoint` };
+
 /** The LLM key store, as one row: how many provider slots have a key. */
-function KeysRow() {
+function KeysRow({ record }: Pick<Facts, 'record'>) {
   const { t } = useLingui();
-  const { status: record } = useStatusRecord();
-  const leaveTo = useLeaveTo();
+  const exits = useExits();
   const s = keysSummary(record);
-  const pill: FundingPill = {
-    kind: s.count ? 'api_key' : 'none',
-    Icon: KeyRound,
-    short: s.count ? msg`API key` : msg`No key`,
-    label: msg`API keys stored on this machine`,
-  };
   const small = s.count
     ? s.stored.map((k) => `${providerLabel(k.provider)}${k.hint ? ` ${k.hint}` : ''}`).join(' · ')
     : s.providers.map(providerLabel).join(' · ');
@@ -544,58 +553,70 @@ function KeysRow() {
       mark={<KeyRound className="h-4 w-4 text-muted-foreground" />}
       name={<Trans>API keys</Trans>}
       small={small}
-      pill={pill}
+      pill={s.count ? pillOf('api_key', KEYS_SET, 'details') : pillOf('none', KEYS_NONE, 'details')}
       pillText={t`${s.count} of ${s.total} set`}
       pillFragment="api-keys"
-      onAction={() => leaveTo('keys')}
+      onAction={() => exits.toSources('keys')}
     />
   );
 }
 
 /** The hub endpoints this account can spend, as one row: how many, and what is left. */
-function EndpointsRow({ remaining }: { remaining: RemainingByEndpoint }) {
+function EndpointsRow({ funding, left }: Pick<Facts, 'funding' | 'left'>) {
   const { t } = useLingui();
-  const { status: funding } = useLlmSources();
-  const leaveTo = useLeaveTo();
-  const s = endpointsSummary(funding, remaining);
-  const pill: FundingPill = {
-    kind: s.count ? 'hub' : 'none',
-    Icon: Cloud,
-    short: s.count ? msg`LLM Endpoint` : msg`No endpoint`,
-    label: msg`Hub endpoints your FlowPad account can spend`,
-    amount: s.amount,
-  };
+  const exits = useExits();
+  const s = endpointsSummary(funding, left);
   return (
     <StatusRow
       testId="row-llm-endpoints"
       mark={<Cloud className="h-4 w-4 text-muted-foreground" />}
       name={<Trans>Hub endpoints</Trans>}
       small={s.names.join(' · ') || undefined}
-      pill={pill}
+      pill={
+        s.count
+          ? pillOf('hub', ENDPOINTS_SOME, 'details', { usdLeft: s.usdLeft })
+          : pillOf('none', ENDPOINTS_NONE, 'details')
+      }
       pillText={s.count ? t`${s.count} available` : undefined}
       pillFragment="hub-endpoints"
-      onAction={() => leaveTo('endpoints')}
+      onAction={() => exits.toSources('endpoints')}
     />
   );
 }
 
-export function HarnessLoginModalRoot() {
-  const { open, payload, setOpen } = useHarnessLoginStore();
-  const [selected, setSelected] = useState<'mapping' | null>(null);
+/**
+ * The dialog's contents — mounted only while the modal is OPEN.
+ *
+ * That boundary does two jobs. The root is mounted at app start, so reading funding and the hub
+ * chains there would cost every session a hub round-trip for a dialog most never open; here the
+ * reads start when it opens. And a fresh mount IS the reset: the Mapping sub-view and the
+ * "just connected" banner start clean on every real open, while a redundant `open()` (the LLM
+ * setup route calls it from a mount effect) re-renders this component and discards nothing.
+ */
+function HarnessLoginModalBody({ fresh, dismiss }: { fresh: boolean; dismiss: () => void }) {
+  const [showMapping, setShowMapping] = useState(false);
   // A row just finished connecting — confirmed IN PLACE rather than by closing, so the person
   // can see it landed before deciding whether they are done here or have more to connect.
   const [justConnected, setJustConnected] = useState<string | null>(null);
-  // Which assistant is the default is a status fact (`default_harness`); `picked` only holds a
-  // choice made here until the backend's push carries it into the record.
   const { status: record } = useStatusRecord();
   const { status: funding } = useLlmSources();
-  const remaining = useHubRemaining(funding);
+  // Only the endpoints a harness is spending: all the rows here show.
+  const left = useHubRemaining(funding, 'in-use');
+  // Which assistant is the default is a status fact (`default_harness`); `picked` only holds a
+  // choice made here until the backend's push carries it into the record.
   const [picked, setPicked] = useState<string | null>(null);
   const defaultKind = picked ?? (record?.default_harness || null);
   useEffect(() => {
     if (picked && record?.default_harness === picked) setPicked(null);
   }, [picked, record?.default_harness]);
-  useHarnessLoginGate();
+
+  // Re-check every harness on open (local probes, no money): the dialog that opened because a
+  // login failed must not greet the user with the "Signed in" it last recorded. Not when the
+  // startup gate opened it straight after its own refresh. Mount only — see the docstring.
+  useEffect(() => {
+    if (!fresh) refreshHarnessStatus();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   /** Make one assistant the default. Optimistic, and back to the record's default on failure:
    *  the tick is the only feedback, so it must not claim a change that did not land. */
@@ -607,122 +628,101 @@ export function HarnessLoginModalRoot() {
       setPicked(null);
     }
   }, []);
+  const onConnected = useCallback(() => setJustConnected(i18n._(msg`Signed in to FlowPad.`)), []);
 
-  // Reset + refresh on a REAL re-open — the closed→open transition, not every render while
-  // open. The transition guard is load-bearing: `LlmSetupView` opens this modal from a mount
-  // effect, so a re-mount calls `open()` again, and resetting on it threw away where the user
-  // had navigated to (the Mapping sub-view).
-  const wasOpen = useRef(false);
-  useEffect(() => {
-    if (!open) {
-      wasOpen.current = false;
-      setSelected(null);
-      setJustConnected(null);
-      return;
-    }
-    if (wasOpen.current) return;
-    wasOpen.current = true;
-    setSelected(null);
-    setJustConnected(null);
-    // Re-check every harness on open (local probes, no money): the dialog that opened because a
-    // login failed must not greet the user with the "Signed in" it last recorded. Not when the
-    // startup gate opened it straight after its own refresh.
-    if (!payload?.fresh) refreshHarnessStatus();
-  }, [open, payload]);
+  if (showMapping) return <MappingView onBack={() => setShowMapping(false)} />;
+  return (
+    <div className="flex flex-col">
+      <DialogTitle className="text-lg font-semibold">
+        <Trans>Assistants &amp; keys</Trans>
+      </DialogTitle>
+
+      <div className="mt-4 flex flex-col gap-1.5">
+        {justConnected ? (
+          <div
+            data-testid="harness-just-connected"
+            className="flex items-center justify-between gap-3 rounded-md border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-sm"
+          >
+            <span className="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400">
+              <Check className="h-4 w-4" />
+              {justConnected}
+            </span>
+            <div className="flex shrink-0 items-center gap-1">
+              <Button size="sm" variant="ghost" data-testid="just-connected-keep-open" onClick={() => setJustConnected(null)}>
+                <Trans>Keep browsing</Trans>
+              </Button>
+              <Button size="sm" data-testid="just-connected-close" onClick={dismiss}>
+                <Trans>Close</Trans>
+              </Button>
+            </div>
+          </div>
+        ) : null}
+        <FlowpadRow record={record} funding={funding} onConnected={onConnected} />
+
+        <SectionHeading
+          fragment="default-assistant"
+          label={i18n._(msg`Default assistant`)}
+          hint={
+            <span className="flex items-center gap-1 text-muted-foreground/70">
+              <Check className="h-3 w-3" />
+              <Trans>pick one</Trans>
+            </span>
+          }
+        />
+        {HARNESS_CAPABILITY_KINDS.map((kind) => (
+          <HarnessRow
+            key={kind}
+            kind={kind}
+            record={record}
+            funding={funding}
+            left={left}
+            isDefault={kind === defaultKind}
+            onMakeDefault={() => void makeDefault(kind)}
+          />
+        ))}
+
+        <SectionHeading fragment="api-keys" label={i18n._(msg`Keys & endpoints`)} />
+        <KeysRow record={record} />
+        <EndpointsRow funding={funding} left={left} />
+      </div>
+
+      {/* Mapping stays a link, not a row: it configures which MODEL a funded harness
+          calls, which is a different question from what pays for it. */}
+      <div className="mt-3 flex justify-end">
+        <button
+          type="button"
+          data-testid="open-mapping"
+          onClick={() => setShowMapping(true)}
+          className="inline-flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
+        >
+          <Trans>Mapping</Trans>
+          <ChevronRight className="h-3.5 w-3.5" />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/** Mounted once at app start: the startup gate and the dialog shell. Reads nothing while closed. */
+export function HarnessLoginModalRoot() {
+  const { open, payload, setOpen } = useHarnessLoginStore();
+  useHarnessLoginGate();
+  // Dismissing is a durable choice — record it so the startup gate stops auto-opening (the
+  // footer chip still reopens on demand).
+  const dismiss = useCallback(() => {
+    markHarnessGateSeen();
+    setOpen(false);
+  }, [setOpen]);
 
   if (!open) return null;
   return (
-    <Dialog
-      open
-      onOpenChange={(next) => {
-        // Dismissing the gate is a durable choice — record it so the startup gate stops
-        // auto-opening (footer warning still reopens on demand).
-        if (!next) markHarnessGateSeen();
-        setOpen(next);
-      }}
-    >
+    <Dialog open onOpenChange={(next) => (next ? setOpen(true) : dismiss())}>
       {/* Wide enough that every row fits on ONE line: icon + name + pill + button side by side.
-          No open-autofocus: Radix would land it on the first focusable thing, which is now the
+          No open-autofocus: Radix would land it on the first focusable thing, which is the
           FlowPad pill's wiki word, and a ring around "Signed in" on an untouched dialog reads as
           a validation error. */}
       <DialogContent className="sm:max-w-[660px]" onOpenAutoFocus={(e) => e.preventDefault()}>
-        {selected === 'mapping' ? (
-          <MappingView onBack={() => setSelected(null)} />
-        ) : (
-          <div className="flex flex-col">
-            <DialogTitle className="text-lg font-semibold">
-              <Trans>Assistants &amp; keys</Trans>
-            </DialogTitle>
-
-            <div className="mt-4 flex flex-col gap-1.5">
-              {justConnected ? (
-                <div
-                  data-testid="harness-just-connected"
-                  className="flex items-center justify-between gap-3 rounded-md border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-sm"
-                >
-                  <span className="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400">
-                    <Check className="h-4 w-4" />
-                    {justConnected}
-                  </span>
-                  <div className="flex shrink-0 items-center gap-1">
-                    <Button size="sm" variant="ghost" data-testid="just-connected-keep-open" onClick={() => setJustConnected(null)}>
-                      <Trans>Keep browsing</Trans>
-                    </Button>
-                    <Button
-                      size="sm"
-                      data-testid="just-connected-close"
-                      onClick={() => {
-                        markHarnessGateSeen();
-                        setOpen(false);
-                      }}
-                    >
-                      <Trans>Close</Trans>
-                    </Button>
-                  </div>
-                </div>
-              ) : null}
-              <FlowpadRow onConnected={() => setJustConnected(i18n._(msg`Signed in to FlowPad.`))} />
-
-              <SectionHeading
-                fragment="default-assistant"
-                label={i18n._(msg`Default assistant`)}
-                hint={
-                  <span className="flex items-center gap-1 text-muted-foreground/70">
-                    <Check className="h-3 w-3" />
-                    <Trans>pick one</Trans>
-                  </span>
-                }
-              />
-              {HARNESS_CAPABILITY_KINDS.map((kind) => (
-                <HarnessRow
-                  key={kind}
-                  kind={kind}
-                  remaining={remaining}
-                  isDefault={kind === defaultKind}
-                  onMakeDefault={() => void makeDefault(kind)}
-                />
-              ))}
-
-              <SectionHeading fragment="api-keys" label={i18n._(msg`Keys & endpoints`)} />
-              <KeysRow />
-              <EndpointsRow remaining={remaining} />
-            </div>
-
-            {/* Mapping stays a link, not a row: it configures which MODEL a funded harness
-                calls, which is a different question from what pays for it. */}
-            <div className="mt-3 flex justify-end">
-              <button
-                type="button"
-                data-testid="open-mapping"
-                onClick={() => setSelected('mapping')}
-                className="inline-flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
-              >
-                <Trans>Mapping</Trans>
-                <ChevronRight className="h-3.5 w-3.5" />
-              </button>
-            </div>
-          </div>
-        )}
+        <HarnessLoginModalBody fresh={!!payload?.fresh} dismiss={dismiss} />
       </DialogContent>
     </Dialog>
   );

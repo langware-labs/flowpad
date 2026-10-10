@@ -7,26 +7,38 @@
  * resolver's verdict first — Plan, API key, LLM Endpoint — and only when nothing funds the
  * harness does its own login decide the word: Signed out, Not checked, Not installed.
  *
+ * The pill also names the ACTION its state calls for, so a surface maps one field to a label and
+ * a handler instead of re-deriving it from the kind.
+ *
  * Pure: no React, no fetch. Every input is a record some hook already holds, so the modal, the
  * footer chip and a test can ask the same question and get the same answer.
  */
-import { InstallState, LLMFundingKind, LoginState, HubLogin } from '@sdk';
-import type { LLMChainHop, LLMChainRemaining, LLMFundingStatus, StatusRecord } from '@sdk';
+import { HubLogin, InstallState, LLMFundingKind, LoginState } from '@sdk';
+import type { LLMFundingStatus, StatusRecord } from '@sdk';
 import { msg } from '@lingui/core/macro';
 import type { MessageDescriptor } from '@lingui/core';
 import { CircleUserRound, Download, Loader2, type LucideIcon } from 'lucide-react';
 
-import { endpointOf, labelForWorker, workerOf } from '@src/components/llm-sources/use-llm-sources';
-import { formatAmount, isCostKey } from '@src/components/llm-endpoints/usage-math';
+import { tighterCost, usdLeft, type CostLeft, type CostLeftByEndpoint } from '@src/components/llm-endpoints/usage-math';
 import {
   glyphForFundingKind,
   NO_FUNDING_GLYPH,
   SIGNED_OUT_GLYPH,
   type FundingGlyph,
 } from '@src/components/llm-sources/llm-source-visuals';
+import {
+  endpointOf,
+  hubFunded,
+  hubOffers,
+  labelForWorker,
+  workerOf,
+} from '@src/components/llm-sources/use-llm-sources';
 import { harnessStatus } from '@src/components/status/use-status-record';
 
 export type PillKind = 'plan' | 'api_key' | 'hub' | 'signed_out' | 'none' | 'not_installed' | 'signing_in' | 'not_checked';
+
+/** What the row's button does: sign in to the assistant, add a key, or open its sources. */
+export type PillAction = 'sign_in' | 'add_key' | 'details';
 
 export interface FundingPill {
   kind: PillKind;
@@ -35,8 +47,9 @@ export interface FundingPill {
   short: MessageDescriptor;
   /** The sentence behind it (tooltip). */
   label: MessageDescriptor;
-  /** "$2.58 left" — only for a hub endpoint with a cost cap. */
-  amount?: string;
+  action: PillAction;
+  /** Dollars left — only for a hub endpoint with a cost cap. The surface words it ("$2.58 left"). */
+  usdLeft?: number;
   /** A caveat for the row's small text: the harness is signed out while something else pays. */
   note?: MessageDescriptor;
   /** Backend prose when nothing funds the harness (`funding.blocked[kind]`). */
@@ -61,56 +74,27 @@ const KIND_TO_PILL: Record<string, PillKind> = {
   [LLMFundingKind.Hub]: 'hub',
 };
 
-const NOT_INSTALLED: FundingGlyph = {
+/** What a pill needs from a glyph: tone comes from `PILL_TONE`, never from the glyph. */
+type Glyph = Pick<FundingGlyph, 'Icon' | 'label' | 'short'>;
+
+const NOT_INSTALLED: Glyph = {
   Icon: Download,
-  className: 'text-muted-foreground',
   label: msg`The assistant's CLI is not installed on this machine`,
   short: msg`Not installed`,
 };
-const NOT_CHECKED: FundingGlyph = {
+const NOT_CHECKED: Glyph = {
   Icon: CircleUserRound,
-  className: 'text-muted-foreground',
   label: msg`Installed, and no sign-in check has run yet`,
   short: msg`Not checked`,
 };
-const SIGNING_IN: FundingGlyph = {
+const SIGNING_IN: Glyph = {
   Icon: Loader2,
-  className: 'text-sky-500',
   label: msg`A sign-in is in progress`,
   short: msg`Signing in…`,
 };
 
-function ofGlyph(kind: PillKind, g: FundingGlyph, extra: Partial<FundingPill> = {}): FundingPill {
-  return { kind, Icon: g.Icon, short: g.short, label: g.label, ...extra };
-}
-
-/** One remaining-budget entry, plus WHICH limit it is (`cost_usd_total`...) so a bar can
- *  format it in its own unit. The hub's entry carries the window word, not the key. */
-export type CostRemaining = LLMChainRemaining & { key: string };
-
-/** Remaining per hub endpoint typeid, as `useHubRemaining` reports it. */
-export type RemainingByEndpoint = Record<string, CostRemaining | null>;
-
-/**
- * The tightest COST cap along a chain: the smallest `remaining` over every hop's cost limits.
- * Tokens caps are ignored on purpose — a pill shows money, and mixing units in one "left" is
- * how a budget reads as $0 when it is 50k tokens.
- */
-export function tightestCostLimit(hops: LLMChainHop[] | undefined): CostRemaining | null {
-  let best: CostRemaining | null = null;
-  for (const hop of hops ?? []) {
-    for (const [key, r] of Object.entries(hop.remaining ?? {})) {
-      if (!isCostKey(key) || !(r.limit > 0)) continue;
-      if (!best || r.remaining < best.remaining) best = { ...r, key };
-    }
-  }
-  return best;
-}
-
-/** "$2.58 left", or undefined when the endpoint has no cost cap (or none was read yet). */
-export function amountLeft(r: LLMChainRemaining | null | undefined): string | undefined {
-  if (!r || !(r.limit > 0)) return undefined;
-  return `${formatAmount('cost_usd', Math.max(0, r.remaining))} left`;
+export function pillOf(kind: PillKind, g: Glyph, action: PillAction, extra: Partial<FundingPill> = {}): FundingPill {
+  return { kind, Icon: g.Icon, short: g.short, label: g.label, action, ...extra };
 }
 
 /** The one pill for a harness capability kind. */
@@ -118,66 +102,52 @@ export function pillForHarness(
   record: StatusRecord | null | undefined,
   funding: LLMFundingStatus | null | undefined,
   kind: string,
-  remaining: RemainingByEndpoint = {},
+  left: CostLeftByEndpoint = {},
 ): FundingPill {
   const h = harnessStatus(record, kind);
   const pick = funding?.resolved?.[kind] ?? null;
   const ep = endpointOf(funding, pick ?? undefined);
   const login = h?.login;
+  // The harness has an account of its own and is not signed in to it.
+  const loginGone = !!h?.has_device_login && (login === LoginState.SignedOut || login === LoginState.Error);
+  const blocked = funding?.blocked?.[kind] || undefined;
 
-  if (h?.install === InstallState.NotInstalled) return ofGlyph('not_installed', NOT_INSTALLED);
-  if (login === LoginState.SigningIn) return ofGlyph('signing_in', SIGNING_IN);
+  if (h?.install === InstallState.NotInstalled) return pillOf('not_installed', NOT_INSTALLED, 'sign_in');
+  if (login === LoginState.SigningIn) return pillOf('signing_in', SIGNING_IN, 'details');
 
   if (pick && ep) {
-    const kindOfPay = KIND_TO_PILL[ep.kind] ?? 'none';
-    const glyph = glyphForFundingKind(ep.kind);
-    const extra: Partial<FundingPill> = {};
-    if (kindOfPay === 'hub') extra.amount = amountLeft(remaining[pick.endpoint_typeid]);
-    // Something else pays while the harness's own login is gone: the pill says the payer, the
-    // small text says the caveat. Two facts, two places, never one word trying to say both.
-    if (kindOfPay !== 'plan' && h?.has_device_login && (login === LoginState.SignedOut || login === LoginState.Error)) {
-      extra.note = msg`signed out`;
-    }
-    return ofGlyph(kindOfPay, glyph, extra);
+    const payer = KIND_TO_PILL[ep.kind] ?? 'none';
+    return pillOf(payer, glyphForFundingKind(ep.kind), 'details', {
+      usdLeft: payer === 'hub' ? usdLeft(left[pick.endpoint_typeid]) : undefined,
+      // Something else pays while the harness's own login is gone: the pill says the payer, the
+      // small text says the caveat. Two facts, two places, never one word trying to say both.
+      note: payer !== 'plan' && loginGone ? msg`signed out` : undefined,
+    });
   }
 
-  if (h?.has_device_login && (login === LoginState.SignedOut || login === LoginState.Error)) {
-    return ofGlyph('signed_out', SIGNED_OUT_GLYPH, { title: funding?.blocked?.[kind] || undefined });
-  }
-  if (login === LoginState.NotChecked) return ofGlyph('not_checked', NOT_CHECKED);
-  return ofGlyph('none', NO_FUNDING_GLYPH, { title: funding?.blocked?.[kind] || undefined });
+  if (loginGone) return pillOf('signed_out', SIGNED_OUT_GLYPH, 'sign_in', { title: blocked });
+  if (login === LoginState.NotChecked) return pillOf('not_checked', NOT_CHECKED, 'sign_in');
+  // Nothing pays and there is no login to blame: an account-less harness needs a key; one with
+  // an account is offered its sign-in; an unknown harness only has details to show.
+  const action: PillAction = !h ? 'details' : h.has_device_login ? 'sign_in' : 'add_key';
+  return pillOf('none', NO_FUNDING_GLYPH, action, { title: blocked });
 }
 
-/** The capability kinds whose resolved source is a hub endpoint — what this account pays for. */
-export function kindsFundedByHub(funding: LLMFundingStatus | null | undefined): string[] {
-  return Object.entries(funding?.resolved ?? {})
-    .filter(([, pick]) => !!pick && endpointOf(funding, pick)?.kind === LLMFundingKind.Hub)
-    .map(([kind]) => kind);
-}
-
-const HUB_SIGNED_IN: FundingGlyph = {
-  Icon: CircleUserRound,
-  className: 'text-emerald-500',
-  label: msg`Signed in to FlowPad`,
-  short: msg`Signed in`,
-};
-const HUB_SIGNED_OUT: FundingGlyph = {
-  Icon: CircleUserRound,
-  className: 'text-amber-500',
-  label: msg`Not signed in to FlowPad`,
-  short: msg`Signed out`,
-};
-const HUB_OFFLINE: FundingGlyph = {
-  Icon: CircleUserRound,
-  className: 'text-muted-foreground',
-  label: msg`A FlowPad login is stored but the hub has not confirmed it`,
-  short: msg`Offline`,
-};
-const HUB_REJECTED: FundingGlyph = {
-  Icon: CircleUserRound,
-  className: 'text-amber-500',
-  label: msg`The hub refused the stored FlowPad login`,
-  short: msg`Rejected`,
+/** The FlowPad account's pill per hub login: the kind (tone) and the two strings. */
+const HUB_PILL: Record<HubLogin, { kind: PillKind; label: MessageDescriptor; short: MessageDescriptor }> = {
+  [HubLogin.SignedIn]: { kind: 'plan', label: msg`Signed in to FlowPad`, short: msg`Signed in` },
+  [HubLogin.SigningIn]: { kind: 'signing_in', label: SIGNING_IN.label, short: SIGNING_IN.short },
+  [HubLogin.SignedOut]: { kind: 'signed_out', label: msg`Not signed in to FlowPad`, short: msg`Signed out` },
+  [HubLogin.Offline]: {
+    kind: 'not_checked',
+    label: msg`A FlowPad login is stored but the hub has not confirmed it`,
+    short: msg`Offline`,
+  },
+  [HubLogin.Rejected]: {
+    kind: 'signed_out',
+    label: msg`The hub refused the stored FlowPad login`,
+    short: msg`Rejected`,
+  },
 };
 
 /** The FlowPad row's pill and its small text: who is signed in, and which assistants it funds. */
@@ -186,22 +156,18 @@ export function pillForFlowpad(
   funding: LLMFundingStatus | null | undefined,
 ): { pill: FundingPill; email: string; funds: string[] } {
   const hub = record?.hub;
+  const login = hub?.login ?? HubLogin.SignedOut;
+  const spec = HUB_PILL[login] ?? HUB_PILL[HubLogin.SignedOut];
+  const pill = pillOf(
+    spec.kind,
+    { Icon: login === HubLogin.SigningIn ? Loader2 : CircleUserRound, label: spec.label, short: spec.short },
+    login === HubLogin.SignedIn ? 'details' : 'sign_in',
+    { title: login === HubLogin.Rejected ? hub?.error || undefined : undefined },
+  );
   // The harness's own label from the status record (the backend's "Deep Agents"), falling back
   // to the worker table for a harness the record does not list.
-  const funds = kindsFundedByHub(funding).map((k) => harnessStatus(record, k)?.label || labelForWorker(workerOf(k)));
-  const email = hub?.email ?? '';
-  switch (hub?.login) {
-    case HubLogin.SignedIn:
-      return { pill: ofGlyph('plan', HUB_SIGNED_IN), email, funds };
-    case HubLogin.SigningIn:
-      return { pill: ofGlyph('signing_in', SIGNING_IN), email, funds };
-    case HubLogin.Offline:
-      return { pill: ofGlyph('not_checked', HUB_OFFLINE), email, funds };
-    case HubLogin.Rejected:
-      return { pill: ofGlyph('signed_out', HUB_REJECTED, { title: hub?.error || undefined }), email, funds };
-    default:
-      return { pill: ofGlyph('signed_out', HUB_SIGNED_OUT), email, funds };
-  }
+  const funds = hubFunded(funding).map(({ kind }) => harnessStatus(record, kind)?.label || labelForWorker(workerOf(kind)));
+  return { pill, email: hub?.email ?? '', funds };
 }
 
 export interface KeysSummary {
@@ -220,27 +186,17 @@ export function keysSummary(record: StatusRecord | null | undefined): KeysSummar
 
 export interface EndpointsSummary {
   count: number;
-  inUse: number;
   names: string[];
-  /** The tightest "$X left" over the endpoints in use, when any has a cost cap. */
-  amount?: string;
+  /** Dollars left on the tightest cost cap among the endpoints IN USE, when any has one. */
+  usdLeft?: number;
 }
 
-/** The hub endpoints this account can spend, how many are in use, and what is left on them. */
+/** The hub endpoints this account can spend, and what is left on the ones it is spending. */
 export function endpointsSummary(
   funding: LLMFundingStatus | null | undefined,
-  remaining: RemainingByEndpoint = {},
+  left: CostLeftByEndpoint = {},
 ): EndpointsSummary {
-  const hubs = (funding?.available ?? []).filter((e) => e.kind === (LLMFundingKind.Hub as string));
-  const inUse = new Set(
-    Object.values(funding?.resolved ?? {})
-      .filter((pick): pick is NonNullable<typeof pick> => !!pick && endpointOf(funding, pick)?.kind === LLMFundingKind.Hub)
-      .map((pick) => pick.endpoint_typeid),
-  );
-  let tightest: CostRemaining | null = null;
-  for (const typeid of inUse) {
-    const r = remaining[typeid];
-    if (r && r.limit > 0 && (!tightest || r.remaining < tightest.remaining)) tightest = r;
-  }
-  return { count: hubs.length, inUse: inUse.size, names: hubs.map((e) => e.name), amount: amountLeft(tightest) };
+  const hubs = hubOffers(funding);
+  const tightest = hubFunded(funding).reduce<CostLeft | null>((best, { typeid }) => tighterCost(best, left[typeid]), null);
+  return { count: hubs.length, names: hubs.map((e) => e.name), usdLeft: usdLeft(tightest) };
 }

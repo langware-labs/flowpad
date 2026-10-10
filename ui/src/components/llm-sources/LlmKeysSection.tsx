@@ -32,19 +32,21 @@ function invalidateFundingFacts(): void {
 export function LlmKeysSection() {
   const { t } = useLingui();
   const { status: record } = useStatusRecord();
-  // Only providers a user can key by hand; the hub endpoint is its own section.
-  const allProviders = Object.values(LMApiProvider).filter((p) => p !== LMApiProvider.FlowPad);
-  const [provider, setProvider] = useState<string>(allProviders[0]);
+  // The slots ARE the keyable providers: the backend lists exactly the ones a key can be stored
+  // for, so the select and the list below cannot disagree.
+  const slots = record?.keys ?? [];
+  const allProviders = slots.map((k) => k.provider);
+  const [picked, setProvider] = useState<string | null>(null);
+  const provider = picked ?? allProviders[0] ?? '';
   const [value, setValue] = useState('');
   const [busy, setBusy] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   // Per-provider validity: undefined = untested this session.
   const [validity, setValidity] = useState<Record<string, LmApiKeyValidation | undefined>>({});
   const [testing, setTesting] = useState<string | null>(null);
-  const slots = record?.keys ?? [];
 
   const onSave = async () => {
-    if (!value.trim()) return;
+    if (!value.trim() || !provider) return;
     setBusy(true);
     try {
       const res = await lmKeysService.setLmApi(value.trim(), provider as LMApiProvider);

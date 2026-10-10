@@ -17,6 +17,9 @@ const h = vi.hoisted(() => ({
   cancelLogin: vi.fn(() => Promise.resolve()),
   openPage: vi.fn(),
   openSignIn: vi.fn(),
+  /** How many times the funding hook ran, and with which scope the chain hook was asked. */
+  fundingReads: 0,
+  chainScopes: [] as string[],
   resolvedKind: 'harness.claude.cli' as string | null,
   /** The status record's `install` for every harness. */
   install: 'installed',
@@ -27,7 +30,7 @@ const h = vi.hoisted(() => ({
   /** The claude harness's own login. */
   claudeLogin: 'not_checked',
   keys: [] as { provider: string; stored: boolean; hint: string }[],
-  remaining: {} as Record<string, { limit: number; used: number; remaining: number; window: string; key: string; resets_at: null }>,
+  remaining: {} as Record<string, { key: string; remaining: { limit: number; used: number; remaining: number; window: string; resets_at: null } }>,
 }));
 
 const WORKERS = [
@@ -95,10 +98,18 @@ vi.mock('@src/navigation/useDockNavigation', () => ({
 vi.mock('@src/components/wiki-tip/wiki-modal', () => ({ openWikiModal: vi.fn() }));
 vi.mock('@src/components/wiki-tip/assistant-wiki', () => ({ useAssistantWikiSpace: () => undefined }));
 vi.mock('@src/components/harness-login/harness-sign-in-store', () => ({ openHarnessSignIn: h.openSignIn }));
-vi.mock('@src/components/llm-sources/use-hub-remaining', () => ({ useHubRemaining: () => h.remaining }));
+vi.mock('@src/components/llm-sources/use-hub-remaining', () => ({
+  useHubRemaining: (_funding: unknown, scope: string) => {
+    h.chainScopes.push(scope);
+    return h.remaining;
+  },
+}));
 vi.mock('@src/components/llm-sources/use-llm-sources', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
-  useLlmSources: () => ({ status: funding(), isLoading: false }),
+  useLlmSources: () => {
+    h.fundingReads += 1;
+    return { status: funding(), isLoading: false };
+  },
 }));
 vi.mock('@src/components/status/use-status-record', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
@@ -156,6 +167,22 @@ describe('Assistants & keys — one row per thing that can pay', () => {
       { provider: 'openai', stored: false, hint: '' },
     ];
     h.remaining = {};
+    h.fundingReads = 0;
+    h.chainScopes = [];
+  });
+
+  it('reads nothing while it is closed, and only the in-use chains once open', async () => {
+    // The root is mounted at app start. Reading funding and the hub chains there would cost
+    // every session a hub round-trip for a dialog most never open.
+    const { unmount } = render(<HarnessLoginModalRoot />);
+    expect(h.fundingReads).toBe(0);
+    expect(h.chainScopes).toEqual([]);
+    unmount();
+
+    mount();
+    await screen.findByTestId('harness-row-claude');
+    expect(h.fundingReads).toBeGreaterThan(0);
+    expect(new Set(h.chainScopes)).toEqual(new Set(['in-use']));
   });
 
   it('marks the default assistant, and moves the mark when another is chosen', async () => {
@@ -229,7 +256,7 @@ describe('Assistants & keys — one row per thing that can pay', () => {
 
   it('a hub-funded assistant reads LLM Endpoint with what is left on it', async () => {
     h.resolved = { 'harness.opencode.cli': HUB };
-    h.remaining = { [HUB]: { limit: 3, used: 0.42, remaining: 2.58, window: 'total', key: 'cost_usd_total', resets_at: null } };
+    h.remaining = { [HUB]: { key: 'cost_usd_total', remaining: { limit: 3, used: 0.42, remaining: 2.58, window: 'total', resets_at: null } } };
     mount();
 
     const p = await screen.findByTestId('harness-row-opencode-status');
@@ -293,7 +320,7 @@ describe('Assistants & keys — one row per thing that can pay', () => {
 
   it('the hub endpoints are one row: how many, and the tightest amount left', async () => {
     h.resolved = { 'harness.opencode.cli': HUB };
-    h.remaining = { [HUB]: { limit: 3, used: 0.42, remaining: 2.58, window: 'total', key: 'cost_usd_total', resets_at: null } };
+    h.remaining = { [HUB]: { key: 'cost_usd_total', remaining: { limit: 3, used: 0.42, remaining: 2.58, window: 'total', resets_at: null } } };
     mount();
 
     const p = await screen.findByTestId('row-llm-endpoints-status');
