@@ -89,7 +89,8 @@ export function WorkspacePickerRow() {
       <span className="text-xs text-muted-foreground">
         <Trans>Workspace</Trans>
       </span>
-      <DropdownMenu>
+      {/* Non-modal for the same reason as the account menu: "New workspace…" opens a dialog. */}
+      <DropdownMenu modal={false}>
         <DropdownMenuTrigger asChild>
           <button
             type="button"

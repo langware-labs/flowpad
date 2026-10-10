@@ -426,7 +426,11 @@ export function UserDropdown() {
           <>
             <TooltipProvider>
               <Tooltip>
-                <DropdownMenu>
+                {/* Non-modal: its items open dialogs (Settings, New workspace…). A modal menu
+                    locks `body` (pointer-events: none) while it is still closing, the dialog
+                    opening on top records that lock as the page's own, and restores it on
+                    close — leaving the whole app unclickable until a reload. */}
+                <DropdownMenu modal={false}>
                   <TooltipTrigger asChild>
                     <DropdownMenuTrigger asChild>
                       {/* The fire ring marks developer mode — unless the box is
