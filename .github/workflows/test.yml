@@ -204,7 +204,9 @@ jobs:
 
   e2e-tests:
     name: 'e2e (live backend: vitest headless/api/react + playwright)'
-    needs: [backend-unit, backend-api, frontend-tests]
+    # The Electron tests (both OSes) and the Windows Python subset gate e2e too: a desktop
+    # wrapper or a monitor that fails its unit tests is not worth a 20-minute live run.
+    needs: [backend-unit, backend-api, frontend-tests, electron-tests, backend-unit-windows]
     # !cancelled() + per-result checks so a dispatch-toggled-off upstream job
     # (result == 'skipped') doesn't auto-skip e2e; a FAILED upstream still does.
     if: >-
@@ -212,6 +214,8 @@ jobs:
           && (needs.backend-unit.result == 'success' || needs.backend-unit.result == 'skipped')
           && (needs.backend-api.result == 'success' || needs.backend-api.result == 'skipped')
           && (needs.frontend-tests.result == 'success' || needs.frontend-tests.result == 'skipped')
+          && (needs.electron-tests.result == 'success' || needs.electron-tests.result == 'skipped')
+          && (needs.backend-unit-windows.result == 'success' || needs.backend-unit-windows.result == 'skipped')
           && (github.event_name != 'workflow_dispatch' || inputs.e2e-tests) }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
