@@ -27569,3 +27569,71 @@ msgstr "Zoom in"
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "Zoom out"
 msgstr "Zoom out"
+
+#: src/components/data-sources/source-attention.ts
+msgid "A file changed both here and remotely, so write-back wrote neither."
+msgstr "A file changed both here and remotely, so write-back wrote neither."
+
+#: src/components/stream-inbox-view/ChannelAttentionBar.tsx
+msgid "Could not check — {failed}"
+msgstr "Could not check — {failed}"
+
+#: src/components/stream-inbox-view/ChannelAttentionBar.tsx
+msgid "Finish that, then press Verify again."
+msgstr "Finish that, then press Verify again."
+
+#: src/components/data-sources/source-attention.ts
+msgid "Finish the step above, then press Verify."
+msgstr "Finish the step above, then press Verify."
+
+#: src/components/data-sources/source-attention.ts
+msgid "Fix the configuration — credentials or settings — then press Verify to resume polling."
+msgstr "Fix the configuration — credentials or settings — then press Verify to resume polling."
+
+#: src/components/data-sources/source-attention.ts
+msgid "Make the two the same — edit either one — then Pull, or wait for the next sync."
+msgstr "Make the two the same — edit either one — then Pull, or wait for the next sync."
+
+#: src/components/stream-inbox-view/ChannelAttentionBar.tsx
+msgid "New messages will appear here on the next poll."
+msgstr "New messages will appear here on the next poll."
+
+#: src/components/stream-inbox-view/StreamInboxView.tsx
+msgid "No messages from this channel yet"
+msgstr "No messages from this channel yet"
+
+#: src/components/data-sources/source-attention.ts
+msgid "Nothing to do unless it keeps failing; Pull tries again now."
+msgstr "Nothing to do unless it keeps failing; Pull tries again now."
+
+#: src/components/stream-inbox-view/ChannelAttentionBar.tsx
+msgid "Now listening."
+msgstr "Now listening."
+
+#: src/components/stream-inbox-view/ChannelAttentionBar.tsx
+msgid "Open settings of {name}"
+msgstr "Open settings of {name}"
+
+#: src/components/data-sources/source-attention.ts
+msgid "Paused — nothing is fetched from this channel."
+msgstr "Paused — nothing is fetched from this channel."
+
+#: src/components/data-sources/source-attention.ts
+msgid "Press Resume to listen again."
+msgstr "Press Resume to listen again."
+
+#: src/components/data-sources/source-attention.ts
+msgid "The last poll failed on a configuration error."
+msgstr "The last poll failed on a configuration error."
+
+#: src/components/data-sources/source-attention.ts
+msgid "The last poll failed; the scheduler retries on its own."
+msgstr "The last poll failed; the scheduler retries on its own."
+
+#: src/components/stream-inbox-view/ChannelAttentionBar.tsx
+msgid "Try again in a moment."
+msgstr "Try again in a moment."
+
+#: src/components/stream-inbox-view/AttachedChannelsBar.tsx
+msgid "Verify: {reason}"
+msgstr "Verify: {reason}"

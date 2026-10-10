@@ -27569,3 +27569,71 @@ msgstr "הגדל"
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "Zoom out"
 msgstr "הקטן"
+
+#: src/components/data-sources/source-attention.ts
+msgid "A file changed both here and remotely, so write-back wrote neither."
+msgstr "קובץ השתנה גם כאן וגם מרחוק, ולכן הכתיבה חזרה לא נכתבה לאף אחד מהם."
+
+#: src/components/stream-inbox-view/ChannelAttentionBar.tsx
+msgid "Could not check — {failed}"
+msgstr "לא ניתן לבדוק — {failed}"
+
+#: src/components/stream-inbox-view/ChannelAttentionBar.tsx
+msgid "Finish that, then press Verify again."
+msgstr "סיימו את זה, ואז לחצו שוב על אימות."
+
+#: src/components/data-sources/source-attention.ts
+msgid "Finish the step above, then press Verify."
+msgstr "סיימו את השלב שלמעלה, ואז לחצו על אימות."
+
+#: src/components/data-sources/source-attention.ts
+msgid "Fix the configuration — credentials or settings — then press Verify to resume polling."
+msgstr "תקנו את התצורה — פרטי גישה או הגדרות — ואז לחצו על אימות כדי לחדש את המשיכה."
+
+#: src/components/data-sources/source-attention.ts
+msgid "Make the two the same — edit either one — then Pull, or wait for the next sync."
+msgstr "השוו בין השניים — ערכו את אחד מהם — ואז לחצו על משיכה, או המתינו לסנכרון הבא."
+
+#: src/components/stream-inbox-view/ChannelAttentionBar.tsx
+msgid "New messages will appear here on the next poll."
+msgstr "הודעות חדשות יופיעו כאן במשיכה הבאה."
+
+#: src/components/stream-inbox-view/StreamInboxView.tsx
+msgid "No messages from this channel yet"
+msgstr "אין עדיין הודעות מהערוץ הזה"
+
+#: src/components/data-sources/source-attention.ts
+msgid "Nothing to do unless it keeps failing; Pull tries again now."
+msgstr "אין מה לעשות אלא אם זה ממשיך להיכשל; משיכה מנסה שוב עכשיו."
+
+#: src/components/stream-inbox-view/ChannelAttentionBar.tsx
+msgid "Now listening."
+msgstr "מאזין עכשיו."
+
+#: src/components/stream-inbox-view/ChannelAttentionBar.tsx
+msgid "Open settings of {name}"
+msgstr "פתיחת ההגדרות של {name}"
+
+#: src/components/data-sources/source-attention.ts
+msgid "Paused — nothing is fetched from this channel."
+msgstr "מושהה — שום דבר לא נמשך מהערוץ הזה."
+
+#: src/components/data-sources/source-attention.ts
+msgid "Press Resume to listen again."
+msgstr "לחצו על המשך כדי להאזין שוב."
+
+#: src/components/data-sources/source-attention.ts
+msgid "The last poll failed on a configuration error."
+msgstr "המשיכה האחרונה נכשלה בגלל שגיאת תצורה."
+
+#: src/components/data-sources/source-attention.ts
+msgid "The last poll failed; the scheduler retries on its own."
+msgstr "המשיכה האחרונה נכשלה; המתזמן מנסה שוב בעצמו."
+
+#: src/components/stream-inbox-view/ChannelAttentionBar.tsx
+msgid "Try again in a moment."
+msgstr "נסו שוב בעוד רגע."
+
+#: src/components/stream-inbox-view/AttachedChannelsBar.tsx
+msgid "Verify: {reason}"
+msgstr "אימות: {reason}"

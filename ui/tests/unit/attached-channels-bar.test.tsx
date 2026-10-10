@@ -59,6 +59,13 @@ describe('AttachedChannelsBar', () => {
     expect(screen.queryByTestId('attached-channels-clear')).toBeNull();
   });
 
+  it('a lit mark still wears "!" when one of its sources needs a person', () => {
+    mount([fake('a', 'setup'), fake('b')]);
+    const mark = screen.getByTestId('attached-channel');
+    expect([mark.dataset.state, mark.dataset.attention, mark.getAttribute('aria-label')]).toEqual(['on', '1', 'slack × 2 · needs attention']);
+    expect(screen.getByTestId('attached-channel-attention').textContent).toBe('!');
+  });
+
   it('several sources of one kind share a mark with a count; clicking it filters to that kind', () => {
     const rows = [fake('a'), fake('b'), fake('c', 'disabled'), fake('g', 'active', 'gmail')];
     const save = vi.spyOn(rows[0], 'save');
@@ -77,6 +84,9 @@ describe('AttachedChannelsBar', () => {
   it('a group is parked only when nothing in it listens, and off only when everything is', () => {
     const state = (rows: DataSource[]) => groupChannels(rows)[0].state;
     expect(state([fake('a', 'setup'), fake('b')])).toBe('on');
+    // …but a member that needs a person is still counted, so the "!" survives a listening sibling.
+    expect(groupChannels([fake('a', 'setup'), fake('b')])[0].attention).toBe(1);
+    expect(groupChannels([fake('a'), fake('b')])[0].attention).toBe(0);
     // A held file needs a person, so it draws "!"; a retrying source is the scheduler's own business.
     expect(state([new DataSource({ ...fake('h'), health: 'ok', error_code: 'write_back_held' } as never)])).toBe('parked');
     expect(state([new DataSource({ ...fake('r'), health: 'transient_error' } as never)])).toBe('on');
