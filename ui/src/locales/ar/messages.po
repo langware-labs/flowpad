@@ -27569,3 +27569,71 @@ msgstr "تكبير"
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "Zoom out"
 msgstr "تصغير"
+
+#: src/components/data-sources/source-attention.ts
+msgid "A file changed both here and remotely, so write-back wrote neither."
+msgstr "تغيّر ملف هنا وعن بُعد معًا، فلم تكتب الكتابة الراجعة أيًّا منهما."
+
+#: src/components/stream-inbox-view/ChannelAttentionBar.tsx
+msgid "Could not check — {failed}"
+msgstr "تعذّر التحقق — {failed}"
+
+#: src/components/stream-inbox-view/ChannelAttentionBar.tsx
+msgid "Finish that, then press Verify again."
+msgstr "أكمل ذلك، ثم اضغط «تحقق» مرة أخرى."
+
+#: src/components/data-sources/source-attention.ts
+msgid "Finish the step above, then press Verify."
+msgstr "أكمل الخطوة أعلاه، ثم اضغط «تحقق»."
+
+#: src/components/data-sources/source-attention.ts
+msgid "Fix the configuration — credentials or settings — then press Verify to resume polling."
+msgstr "أصلح الإعداد — بيانات الاعتماد أو الإعدادات — ثم اضغط «تحقق» لاستئناف الجلب."
+
+#: src/components/data-sources/source-attention.ts
+msgid "Make the two the same — edit either one — then Pull, or wait for the next sync."
+msgstr "اجعل النسختين متطابقتين — عدّل أيًّا منهما — ثم اضغط «جلب»، أو انتظر المزامنة التالية."
+
+#: src/components/stream-inbox-view/ChannelAttentionBar.tsx
+msgid "New messages will appear here on the next poll."
+msgstr "ستظهر الرسائل الجديدة هنا في الجلب التالي."
+
+#: src/components/stream-inbox-view/StreamInboxView.tsx
+msgid "No messages from this channel yet"
+msgstr "لا توجد رسائل من هذه القناة بعد"
+
+#: src/components/data-sources/source-attention.ts
+msgid "Nothing to do unless it keeps failing; Pull tries again now."
+msgstr "لا شيء لفعله ما لم يستمر الفشل؛ «جلب» يحاول مرة أخرى الآن."
+
+#: src/components/stream-inbox-view/ChannelAttentionBar.tsx
+msgid "Now listening."
+msgstr "يستمع الآن."
+
+#: src/components/stream-inbox-view/ChannelAttentionBar.tsx
+msgid "Open settings of {name}"
+msgstr "فتح إعدادات {name}"
+
+#: src/components/data-sources/source-attention.ts
+msgid "Paused — nothing is fetched from this channel."
+msgstr "متوقف مؤقتًا — لا يُجلب شيء من هذه القناة."
+
+#: src/components/data-sources/source-attention.ts
+msgid "Press Resume to listen again."
+msgstr "اضغط «استئناف» للاستماع مجددًا."
+
+#: src/components/data-sources/source-attention.ts
+msgid "The last poll failed on a configuration error."
+msgstr "فشل الجلب الأخير بسبب خطأ في الإعداد."
+
+#: src/components/data-sources/source-attention.ts
+msgid "The last poll failed; the scheduler retries on its own."
+msgstr "فشل الجلب الأخير؛ يعيد المجدوِل المحاولة من تلقاء نفسه."
+
+#: src/components/stream-inbox-view/ChannelAttentionBar.tsx
+msgid "Try again in a moment."
+msgstr "حاول مرة أخرى بعد قليل."
+
+#: src/components/stream-inbox-view/AttachedChannelsBar.tsx
+msgid "Verify: {reason}"
+msgstr "تحقق: {reason}"

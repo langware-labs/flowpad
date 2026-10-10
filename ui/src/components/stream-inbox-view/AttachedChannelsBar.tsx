@@ -84,13 +84,16 @@ const stateOf = (s: DataSource): ChannelState => {
 };
 
 /** Sources of one channel kind, sharing a mark. Its state is the best of its
- *  members' — one listening source lights the mark; parked beats paused. */
+ *  members' — one listening source lights the mark; parked beats paused — and
+ *  `attention` counts the members a person must act on, so the "!" is never
+ *  hidden by a listening sibling: a lit mark can still wear it. */
 interface ChannelGroup {
   key: string;
   provider: string;
   channel: string;
   sources: DataSource[];
   state: ChannelState;
+  attention: number;
 }
 export function groupChannels(rows: DataSource[]): ChannelGroup[] {
   const groups = new Map<string, DataSource[]>();
@@ -103,7 +106,8 @@ export function groupChannels(rows: DataSource[]): ChannelGroup[] {
     .map(([key, sources]) => {
       const states = sources.map(stateOf);
       const state: ChannelState = states.includes('on') ? 'on' : states.includes('parked') ? 'parked' : 'off';
-      return { key, provider: sources[0].provider, channel: sources[0].channel, sources, state };
+      const attention = states.filter((st) => st === 'parked').length;
+      return { key, provider: sources[0].provider, channel: sources[0].channel, sources, state, attention };
     })
     .sort((a, b) => a.key.localeCompare(b.key));
 }
@@ -251,12 +255,13 @@ function ChannelMark({
   const { t } = useLingui();
   // The channel's mark, badged with whose way it is (Flow's), as on the data source rows.
   const { Base, Badge } = sourceGlyphs(spec, group.channel);
-  const { state } = group;
+  const { state, attention } = group;
   const count = group.sources.length;
   const title = spec?.title || group.provider;
   // Inline, not a helper taking `t`: the lingui macro only compiles a `t` it can
-  // see come from `useLingui()`.
-  const stateLabel = state === 'parked' ? t`needs attention` : state === 'on' ? t`listening` : t`paused`;
+  // see come from `useLingui()`. A member that needs a person names the mark
+  // "needs attention" even while a sibling listens.
+  const stateLabel = attention > 0 ? t`needs attention` : state === 'on' ? t`listening` : t`paused`;
   return (
     <HoverCard openDelay={150} closeDelay={120}>
       <HoverCardTrigger asChild>
@@ -276,14 +281,18 @@ function ChannelMark({
           data-provider={group.provider}
           data-count={count}
           data-state={state}
+          data-attention={attention}
         >
           {/* The badge sits top-right here: bottom-right is the listening dot's. */}
           <IconWithBadge Base={Base} Badge={Badge} className="size-[17px]" badgeClassName="-top-1 bottom-auto" />
-          {state === 'on' && (
+          {state === 'on' && attention === 0 && (
             <span className="absolute -bottom-0.5 -end-0.5 size-2.5 rounded-full border-2 border-background bg-emerald-500" />
           )}
-          {state === 'parked' && (
-            <span className="absolute -bottom-0.5 -end-0.5 grid size-3.5 place-items-center rounded-full border-2 border-background bg-amber-500 text-[9px] font-bold leading-none text-white">
+          {attention > 0 && (
+            <span
+              className="absolute -bottom-0.5 -end-0.5 grid size-3.5 place-items-center rounded-full border-2 border-background bg-amber-500 text-[9px] font-bold leading-none text-white"
+              data-testid="attached-channel-attention"
+            >
               !
             </span>
           )}
