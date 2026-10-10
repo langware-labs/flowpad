@@ -56,7 +56,11 @@ def watch_file(connection_id: str, local: str, entity: str, path: str) -> None:
     folder = _folder(local)
     loop = _loops.get(folder)
     if loop is None or loop.done():
-        _loops[folder] = asyncio.get_running_loop().create_task(_watch_loop(folder))
+        from flow_sdk.request_context.detached import create_detached_task  # noqa: PLC0415
+
+        # Detached: the loop lives as long as the folder has a watcher, and a plain
+        # task would carry the ``watch`` request that started it for all that time.
+        _loops[folder] = create_detached_task(_watch_loop(folder), name=f"file-watch:{folder}")
 
 
 def unwatch_file(connection_id: str, local: str, entity: str, path: str) -> None:

@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import asyncio
 import contextvars
-from typing import Any, Coroutine, Optional
+from typing import Any, Callable, Coroutine, Optional
 
 _DETACHED: "set[asyncio.Task[Any]]" = set()
 
@@ -40,7 +40,17 @@ def create_detached_task(coro: Coroutine[Any, Any, Any], *, name: Optional[str] 
     loop = asyncio.get_running_loop()
     # `create_task` snapshots the CURRENT context; running it inside the detached
     # one makes that snapshot a copy of it (the `context=` kwarg is 3.11+).
-    task = detached_context().run(loop.create_task, coro, name=name)
+    context = detached_context()
+    task = context.run(loop.create_task, coro, name=name)
     _DETACHED.add(task)
-    task.add_done_callback(_DETACHED.discard)
+    # A done-callback is stored with a copy of the CURRENT context — the caller's
+    # request — for as long as the task runs. Registered under the detached
+    # context instead, so a life-long task does not hold the request (its body,
+    # its user, its target entity) that happened to start it.
+    task.add_done_callback(_DETACHED.discard, context=context)
     return task
+
+
+def add_detached_done_callback(task: "asyncio.Future[Any]", callback: Callable[["asyncio.Future[Any]"], Any]) -> None:
+    """``task.add_done_callback(callback)`` that does not hold the caller's request or session."""
+    task.add_done_callback(callback, context=detached_context())
