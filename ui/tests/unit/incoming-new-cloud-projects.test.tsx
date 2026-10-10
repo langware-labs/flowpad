@@ -49,6 +49,7 @@ describe('IncomingDeepLink — hub projects this desktop never saw', () => {
 
   it('offers each new project set-up, one dialog at a time', async () => {
     const newFromHub = vi.spyOn(Project, 'newFromHub').mockResolvedValue([link(A, 'Course A'), link(B, 'Course B')]);
+    vi.spyOn(Project, 'getById').mockResolvedValue(null);
 
     render(<IncomingDeepLink />);
 
@@ -64,6 +65,7 @@ describe('IncomingDeepLink — hub projects this desktop never saw', () => {
   it('signed out, asks nothing — and asks once the session signs in', async () => {
     h.cloudUser = null;
     const newFromHub = vi.spyOn(Project, 'newFromHub').mockResolvedValue([link(A, 'Course A')]);
+    vi.spyOn(Project, 'getById').mockResolvedValue(null);
 
     const { rerender } = render(<IncomingDeepLink />);
     expect(newFromHub).not.toHaveBeenCalled();
@@ -78,6 +80,7 @@ describe('IncomingDeepLink — hub projects this desktop never saw', () => {
   it('a project a deep link already offered is not offered again', async () => {
     let answer: (links: ReturnType<typeof link>[]) => void = () => {};
     vi.spyOn(Project, 'newFromHub').mockReturnValue(new Promise((resolve) => (answer = resolve)));
+    vi.spyOn(Project, 'getById').mockResolvedValue(null);
 
     render(<IncomingDeepLink />);
     act(() =>
@@ -93,6 +96,21 @@ describe('IncomingDeepLink — hub projects this desktop never saw', () => {
       await Promise.resolve();
     });
     dismiss();
+
+    await vi.waitFor(() => expect(pending()).toMatchObject({ projectId: B }));
+    dismiss();
+    expect(pending()).toBeNull();
+  });
+
+  it('a project set up here since the list was read — by a launch link — is not offered', async () => {
+    vi.spyOn(Project, 'newFromHub').mockResolvedValue([link(A, 'Course A'), link(B, 'Course B')]);
+    vi.spyOn(Project, 'getById').mockImplementation((id: string) =>
+      Promise.resolve(
+        id === A ? (new Project({ id: A, name: 'course-a', fs_storage_mount_path: '/w/course-a' }) as never) : null,
+      ),
+    );
+
+    render(<IncomingDeepLink />);
 
     await vi.waitFor(() => expect(pending()).toMatchObject({ projectId: B }));
     dismiss();

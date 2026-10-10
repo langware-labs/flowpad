@@ -63,6 +63,17 @@ function claimHydrateHop(projectId: string): boolean {
   }
 }
 
+/** Is the project with this id already a checked-out row on this machine? */
+async function checkedOutHere(projectId: string | undefined): Promise<boolean> {
+  if (!projectId) return false;
+  try {
+    const project = await Project.getById<Project>(projectId);
+    return !!project?.fs_storage_mount_path;
+  } catch {
+    return false;
+  }
+}
+
 /**
  * A project shared while this desktop had no FlowPad (or was signed out) reaches
  * no push and no deep link — installing FlowPad from the invite opens it on its
@@ -107,16 +118,27 @@ function useOfferNewCloudProjects() {
       });
   }, [userId]);
 
+  // One offer is looked at a time: the next one waits for this one's check.
+  const [checking, setChecking] = useState(false);
   useEffect(() => {
     if (pendingProject) {
       if (pendingProject.projectId) offered.current.add(pendingProject.projectId);
       return;
     }
-    if (!queue.length) return;
+    if (checking || !queue.length) return;
     const rest = queue.filter((p) => !p.projectId || !offered.current.has(p.projectId));
     setQueue(rest.slice(1));
-    if (rest.length) setPendingProject(rest[0]);
-  }, [pendingProject, queue, setPendingProject]);
+    const next = rest[0];
+    if (!next) return;
+    if (next.projectId) offered.current.add(next.projectId);
+    // The list was read at sign-in; by now something else — a launch link — may have set the
+    // project up here. Offer only what is still missing.
+    setChecking(true);
+    void checkedOutHere(next.projectId).then((here) => {
+      if (!here) setPendingProject(next);
+      setChecking(false);
+    });
+  }, [pendingProject, queue, checking, setPendingProject]);
 }
 
 export function IncomingDeepLink() {
