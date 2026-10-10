@@ -77,6 +77,9 @@ describe('AttachedChannelsBar', () => {
   it('a group is parked only when nothing in it listens, and off only when everything is', () => {
     const state = (rows: DataSource[]) => groupChannels(rows)[0].state;
     expect(state([fake('a', 'setup'), fake('b')])).toBe('on');
+    // A held file needs a person, so it draws "!"; a retrying source is the scheduler's own business.
+    expect(state([new DataSource({ ...fake('h'), health: 'ok', error_code: 'write_back_held' } as never)])).toBe('parked');
+    expect(state([new DataSource({ ...fake('r'), health: 'transient_error' } as never)])).toBe('on');
     expect(state([fake('a', 'setup'), fake('b', 'disabled')])).toBe('parked');
     expect(state([fake('a', 'disabled'), fake('b', 'disabled')])).toBe('off');
   });
