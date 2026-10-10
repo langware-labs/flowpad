@@ -90,6 +90,25 @@ Four mechanisms keep the walk near-free:
   until the one-hour idle TTL. Measured on 120 synthetic sessions (88 MB on
   disk): 120 streamers / 211 MB retained after the walk before this, 0 / 0.1 MB
   after, same 198,000 entries dispatched, same 120 cursor rows.
+- **Parsing in a child process** (`transcript_streamer/catch_up.py` +
+  `catch_up_child.py`): the walk hands its pending list to
+  `python -m flow_sdk.transcript_streamer.catch_up_child` (stdin request,
+  NDJSON records back — the same protocol as the indexer's `scan_child`), which
+  parses one file at a time and streams back only the session id, the
+  `session_meta` fact, the vendor and the pre-parse stat. The parent resolves
+  owners with one `session_id IN (...)` query per 200 records; a file nobody
+  owns (and no id-less running process could adopt) only gets its cursor row
+  (`registry.mark_consumed`), the rest — rare — take `registry.catch_up`
+  in-process. The child never opens the instance DB. Fail-open: a child that
+  cannot spawn latches and the walk parses in-process; a stream that dies
+  part-way hands the unfinished files to the same loop. Shutdown cancels the
+  walk task, which kills the child. Measured on a fresh instance against the
+  real `~/.claude` + `~/.codex` (5,442 files, same tip): in-process, the
+  server sat at a median 83% CPU for 106 s and the `@local/status` call was
+  p95 477 ms / max 922 ms; through the child, the server's median is 1.3%
+  CPU (the child takes the ~95%), status p95 38 ms / max 95 ms, the walk
+  takes 55 s, and the server's footprint peaks at 220 MB instead of 991 MB.
+  Same cursor rows either way.
 
 History: before these fixes the walk parsed all 3,054 JSONLs synchronously on
 the event loop every boot — one measured boot froze the entire loop for 68
