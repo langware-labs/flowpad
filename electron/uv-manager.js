@@ -1155,6 +1155,12 @@ class UvManager {
     await this.start();
   }
 
+  /** Remember which flow binary a later start() runs, without starting it (the fatal-record path of
+   *  installAndStartBackend shows the panel first; its "Retry anyway" then calls start()). */
+  useFlowBin(flowBin) {
+    this._flowBin = flowBin;
+  }
+
   /**
    * Absolute path to the flowpad uv tool venv. The backend interpreter and every
    * agentic-process worker it spawns run this venv's python, so matching on this
