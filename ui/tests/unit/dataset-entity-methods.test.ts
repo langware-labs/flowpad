@@ -6,7 +6,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { DATASET_ROWS_CHANGED, Dataset, EventBus, dataManager } from '@sdk';
 import { ExpressionNode } from '@sdk/FlowSync/query';
-import type { ActionInfo } from '@sdk/models/ActionInfo';
 
 describe('a dataset built from a wire row keeps its actions', () => {
   it('a wire `examples` field does not hide listing the examples', () => {
@@ -24,7 +23,7 @@ describe('a dataset built from a wire row keeps its actions', () => {
 describe('the row actions a dataset client calls', () => {
   const ds = () => new Dataset({ id: '6d1a2b3c-4d5e-4f6a-8b7c-9d0e1f2a3b4c', name: 'n' } as never);
   const spy = (answer: unknown = {}) => vi.spyOn(dataManager, 'callAction').mockResolvedValue(answer as never);
-  const sent = (call: ReturnType<typeof spy>) => call.mock.calls[0][0] as ActionInfo;
+  const sent = (call: ReturnType<typeof spy>) => call.mock.calls[0][0];
 
   afterEach(() => vi.restoreAllMocks());
 
@@ -83,7 +82,7 @@ describe('the row actions a dataset client calls', () => {
     expect(sent(call).method).toBe('POST');
     expect(sent(call).bodyParameters).toEqual({ rows });
     await ds().putMany(rows, { expected: { acme: 'v1' } });
-    expect((call.mock.calls[1][0] as ActionInfo).bodyParameters).toEqual({ rows, expected: { acme: 'v1' } });
+    expect((call.mock.calls[1][0]).bodyParameters).toEqual({ rows, expected: { acme: 'v1' } });
   });
 
   it('deleteRows() posts the keys, and `expected` only when given', async () => {
@@ -92,7 +91,7 @@ describe('the row actions a dataset client calls', () => {
     expect(sent(call).name).toBe('delete-rows');
     expect(sent(call).bodyParameters).toEqual({ keys: ['a', 'b'] });
     await ds().deleteRows(['a'], { expected: { a: 'v1' } });
-    expect((call.mock.calls[1][0] as ActionInfo).bodyParameters).toEqual({ keys: ['a'], expected: { a: 'v1' } });
+    expect((call.mock.calls[1][0]).bodyParameters).toEqual({ keys: ['a'], expected: { a: 'v1' } });
   });
 
   it('a refused bulk write surfaces the server\'s refusal to the caller', async () => {
@@ -111,7 +110,7 @@ describe('the row actions a dataset client calls', () => {
     expect(sent(call).name).toBe('sync-rows');
     expect(sent(call).bodyParameters).toEqual({ rows });
     await ds().sync(rows, { prune: false, match: { op: '$LIKE', operands: ['key', 'crm_'] } as never });
-    expect((call.mock.calls[1][0] as ActionInfo).bodyParameters).toEqual({
+    expect((call.mock.calls[1][0]).bodyParameters).toEqual({
       rows,
       prune: false,
       match: { op: '$LIKE', operands: ['key', 'crm_'] },
