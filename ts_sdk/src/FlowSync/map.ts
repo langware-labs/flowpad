@@ -123,7 +123,9 @@ export class WatchQueryMap<T> {
 
     let watchedQuery = this.watchedQueries.get(key);
     if (!watchedQuery) {
-      watchedQuery = new WatchedQuery<T>(request, results, pendingPromise);
+      // An in-flight record only. Subscribing is registerWatch's job: it is the
+      // one that hands back the unsubscribe.
+      watchedQuery = new WatchedQuery<T>(request, results, pendingPromise, { subscribe: false });
       this.watchedQueries.set(key, watchedQuery);
     } else {
       watchedQuery.results = results;
@@ -131,6 +133,19 @@ export class WatchQueryMap<T> {
       if (pendingPromise) {
         watchedQuery.pendingPromise = pendingPromise;
       }
+    }
+  }
+
+  /**
+   * Drop a settled entry nobody subscribes to — what a one-shot query leaves
+   * once its fetch is over. An entry is kept by its subscribers (it is their
+   * cache and receives their data-ops) or by a fetch still in flight (so a
+   * concurrent caller joins it), and by nothing else.
+   */
+  public releaseIfUnwatched(request: QueryRequest): void {
+    const watchedQuery = this.watchedQueries.get(request.key);
+    if (watchedQuery && !watchedQuery.pendingPromise && !watchedQuery.hasCallbacks()) {
+      this.watchedQueries.delete(request.key);
     }
   }
 
