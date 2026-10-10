@@ -107,7 +107,7 @@ def append_entry(rule_name: str, entry_dict: dict[str, Any]) -> None:
         # ── the gate and the wizard (docs/snippets/stream-inbox-automations.md) ──────
         # What the rule's `if` decided (met, confidence, reason, answers — never the
         # state), the id of what it decided about (a run rebuilds the state from it),
-        # and the `then` wizard's result, each step trimmed.
+        # and how the `then` wizard went (`WizardResult.outline` — verdicts and sessions, no output).
         "decision": entry_dict.get("decision"),
         "subject_id": entry_dict.get("subject_id"),
         "wizard": entry_dict.get("wizard"),

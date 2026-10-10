@@ -96,6 +96,11 @@ async def publish_git_asset(entity, actor: TypeId) -> AssetPublishResult:
     mount_value = getattr(project, "fs_storage_mount_path", None)
     if not mount_value:
         raise AssetPublishError(AssetPublishCode.NOT_GIT_BACKED, "Owning Project has no local mount")
+    # An agent runs inside its project: to stand it up on another machine the hub needs the
+    # project's files, not only the agent's own folder. Here, where every way of publishing an
+    # agent ends up, so no button can publish one that cannot be launched.
+    if entity.get_type() == "agent" and (Path(mount_value) / ".git").exists():
+        await project.publish_files_to_hub()
 
     asset_root = info.storage_root_for(Path(entity.asset_ref))
     try:
@@ -181,6 +186,10 @@ async def publish_git_asset(entity, actor: TypeId) -> AssetPublishResult:
         warning = "Asset was published, but the local cache could not be updated"
     finally:
         _SUPPRESS_STORE.reset(suppress)
+    if warning is None:
+        # The caller gets a receipt, not the entity, and waits to be told the row changed: without
+        # this the page that pressed "Link to cloud" keeps saying "Not published yet" until reloaded.
+        await entity.notify_updated()
 
     hub_asset = hub_result.get("asset")
     return AssetPublishResult(

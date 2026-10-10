@@ -103,10 +103,13 @@ reasons (a 400 carries the validation `errors`).
 
 | Missing | Honest answer today |
 | --- | --- |
-| change events for dataset rows | re-read on focus or on a timer; say it is polling |
 | one schema including another (shared `status`/`owner` fields) | repeat the fields; keep them identical |
 | a rule across rows that is not "these two links name the same row" (a count, an order, a sum) | check it in every writer — the app AND any script — with the same code, and report breaks |
 | a field owned by an outside system (a CRM's stage) | say so in its `description`, keep it read-only in the app; only the sync writes it |
+
+Rows ARE queried, counted, written in bulk and announced: `ds.rows({match, order_by, limit, offset})`
+and `ds.count({match, group_by})` answer only what a page shows; `putMany` / `deleteRows` / `sync`
+write many rows as one step; `ds.onRowsChanged(handler)` replaces polling (`modes/app.md`).
 
 Two writers at once (an app's server and a sync script) are safe: row writes in one project take
 one lock, and `put` / `delete` with `expected` refuse a row changed since it was read — a row that

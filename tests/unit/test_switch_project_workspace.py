@@ -32,7 +32,6 @@ def quiet_move(monkeypatch):
 
     async def _close(self):
         calls["close"].append(str(self.id))
-        return {"processes": 0, "shells": 0, "tabs": 0}
 
     async def _index(self):
         calls["index"].append(canonical_posix_path(self.fs_storage_mount_path))
@@ -43,10 +42,11 @@ def quiet_move(monkeypatch):
     return calls
 
 
-async def _project_in_default(home: Path, name: str = "repo"):
+async def _project_in(root: Path, name: str = "repo"):
+    """A saved project with one file, in ``root`` (a workspace's folder)."""
     from flow_sdk.builtin.project import Project
 
-    folder = home / "Flowpad workspace" / name
+    folder = root / name
     folder.mkdir(parents=True)
     (folder / "notes.md").write_text("# notes\n")
     project = Project(name=name, fs_storage_mount_path=str(folder))
@@ -57,10 +57,8 @@ async def _project_in_default(home: Path, name: str = "repo"):
 async def _workspaces():
     from flow_sdk.builtin.workspace import Workspace
 
-    default = Workspace(name="Local Desktop Workspace", uname="local")
-    await default.save()
-    client = await Workspace.new("Client X")
-    return default, client
+    await Workspace(name="Local Desktop Workspace", uname="local").save()
+    return await Workspace.new("Client X")
 
 
 @pytest.mark.asyncio
@@ -68,15 +66,14 @@ async def test_move_keeps_the_row_and_relocates_the_folder(home, db, quiet_move)
     from flow_sdk.builtin.project import Project
     from flow_sdk.config import workspace_id_for_path
 
-    _default, client = await _workspaces()
-    project, old_folder = await _project_in_default(home)
+    client = await _workspaces()
+    project, old_folder = await _project_in(home / "Flowpad workspace")
     project_id = str(project.id)
 
-    move = await project.move_to_workspace(client.id)
+    indexed = await project.move_to_workspace(client.id)
 
     new_folder = Path(client.folder) / "repo"
-    assert move.previous_path == canonical_posix_path(old_folder)
-    assert move.indexed is True
+    assert indexed is True
     assert not old_folder.exists(), "a move leaves nothing behind"
     assert (new_folder / "notes.md").read_text() == "# notes\n"
     assert str(project.id) == project_id
@@ -93,13 +90,8 @@ async def test_move_keeps_the_row_and_relocates_the_folder(home, db, quiet_move)
 
 @pytest.mark.asyncio
 async def test_move_back_to_the_default_workspace(home, db, quiet_move):
-    from flow_sdk.builtin.project import Project
-
-    _default, client = await _workspaces()
-    folder = Path(client.folder) / "repo"
-    folder.mkdir(parents=True)
-    project = Project(name="repo", fs_storage_mount_path=str(folder))
-    await project.save()
+    client = await _workspaces()
+    project, folder = await _project_in(Path(client.folder))
 
     await project.move_to_workspace(None)
 
@@ -111,8 +103,8 @@ async def test_move_back_to_the_default_workspace(home, db, quiet_move):
 async def test_destination_with_that_name_is_refused(home, db, quiet_move):
     from flow_sdk.builtin.project import ProjectMoveError
 
-    _default, client = await _workspaces()
-    project, old_folder = await _project_in_default(home)
+    client = await _workspaces()
+    project, old_folder = await _project_in(home / "Flowpad workspace")
     (Path(client.folder) / "repo").mkdir(parents=True)
 
     with pytest.raises(ProjectMoveError) as refused:
@@ -127,8 +119,8 @@ async def test_destination_with_that_name_is_refused(home, db, quiet_move):
 async def test_already_there_and_unknown_workspace_are_refused(home, db, quiet_move):
     from flow_sdk.builtin.project import ProjectMoveError
 
-    _default, client = await _workspaces()
-    project, _old = await _project_in_default(home)
+    await _workspaces()
+    project, _old = await _project_in(home / "Flowpad workspace")
 
     with pytest.raises(ProjectMoveError) as same:
         await project.move_to_workspace(None)
@@ -144,8 +136,8 @@ async def test_already_there_and_unknown_workspace_are_refused(home, db, quiet_m
 async def test_a_project_without_a_folder_is_refused(home, db, quiet_move):
     from flow_sdk.builtin.project import Project, ProjectMoveError
 
-    _default, client = await _workspaces()
-    project, folder = await _project_in_default(home)
+    client = await _workspaces()
+    project, folder = await _project_in(home / "Flowpad workspace")
     (folder / "notes.md").unlink()
     folder.rmdir()
     project = await Project.get_by_id(str(project.id))
@@ -159,8 +151,8 @@ async def test_a_project_without_a_folder_is_refused(home, db, quiet_move):
 async def test_unindex_folder_drops_only_records_from_that_folder(home, db):
     from flow_sdk.fs_store import get_default_records_root
 
-    project, folder = await _project_in_default(home)
-    other, _other_folder = await _project_in_default(home, "other")
+    project, folder = await _project_in(home / "Flowpad workspace")
+    other, _other_folder = await _project_in(home / "Flowpad workspace", "other")
     records_root = get_default_records_root()
 
     def shadow(rtype: str, rid: str, pid: str, asset: Path) -> Path:
@@ -187,14 +179,14 @@ async def test_unindex_folder_drops_only_records_from_that_folder(home, db):
 
 
 @pytest.mark.asyncio
-async def test_a_project_on_the_temp_root_is_not_movable(home, db, quiet_move, tmp_path, monkeypatch):
+async def test_a_project_on_the_temp_root_is_not_movable(home, db, quiet_move):
     """A row on a temp root is not a real work folder (``Project._visible``), so it
     cannot be moved — same answer as the picker, which never lists it."""
     import tempfile
 
     from flow_sdk.builtin.project import Project, ProjectMoveError
 
-    _default, client = await _workspaces()
+    client = await _workspaces()
     temp_root = Path(tempfile.gettempdir())
     project = Project(name="scratch", fs_storage_mount_path=str(temp_root))
     await project.save()
@@ -206,39 +198,67 @@ async def test_a_project_on_the_temp_root_is_not_movable(home, db, quiet_move, t
 
 
 @pytest.mark.asyncio
-async def test_an_index_that_cannot_run_is_reported_not_a_failed_move(home, db, monkeypatch):
-    """The folder is moved and the row re-pointed before the index runs, so an indexer
-    that raises (seen live: a broken asset spec) answers ``indexed=False`` — the caller
-    says "moved, rebuild the index" — rather than a 500 for a move that happened."""
+async def test_an_index_that_did_not_run_is_reported_not_a_failed_move(home, db, monkeypatch):
+    """The folder is moved and the row re-pointed before the index runs, so an index
+    that does not run (seen live: an indexer that raised, a consent-gated root) answers
+    ``False`` — the caller says "moved, rebuild the index" — never a failed move."""
     from flow_sdk.builtin.project import Project
 
-    async def _close(self):
-        return {"processes": 0, "shells": 0, "tabs": 0}
-
-    async def _boom(self, node, scope, roots, orphan_action):
-        raise TypeError("asset_setup: asset_spec field 'load' is not a field of AssetSetup")
+    asked: list[dict] = []
 
     class _Node:
-        @staticmethod
-        async def _resolve_scoped_roots(scope, foreground=False):
-            return ["root"]
+        async def _auto_index_project(self, project_id, **kwargs):
+            asked.append({"project_id": project_id, **kwargs})
+            return False
 
     async def _local(create=True):
         return _Node()
 
-    async def _scope(scope, create_missing=False):
-        return scope
+    async def _close(self):
+        return None
 
     monkeypatch.setattr(Project, "close_all_open", _close)
-    monkeypatch.setattr(Project, "_run_move_index", _boom)
     monkeypatch.setattr("flow_sdk.builtin.project.ComputeNode.get_local", _local)
-    monkeypatch.setattr("flow_sdk.server.search_filters.resolve_project_scope", _scope)
 
-    _default, client = await _workspaces()
-    project, old_folder = await _project_in_default(home)
+    client = await _workspaces()
+    project, old_folder = await _project_in(home / "Flowpad workspace")
 
-    move = await project.move_to_workspace(client.id)
+    assert await project.move_to_workspace(client.id) is False
 
-    assert move.indexed is False
     assert not old_folder.exists()
     assert project.fs_storage_mount_path == canonical_posix_path(Path(client.folder) / "repo")
+    # A full index, owed to this move: it waits for a running one instead of skipping.
+    assert asked == [{"project_id": str(project.id), "force": True, "trigger": "switch-workspace", "queue": True}]
+
+
+@pytest.mark.asyncio
+async def test_a_closed_session_follows_the_project_to_its_new_folder(home, db, quiet_move):
+    """A stopped session keeps its ``workdir``. Resuming it spawns there, and a spawn
+    creates its working directory — so a workdir left on the old path would bring the
+    moved folder back, empty, as a project of the old workspace. It follows the move;
+    a session of another project that merely shares the name prefix does not."""
+    from flow_sdk.builtin.agentic_process import AgenticProcess
+    from flow_sdk.schema.entity_factory import type_registry
+
+    if type_registry.get("agentic_process") is None:
+        type_registry.register("agentic_process", AgenticProcess)
+
+    client = await _workspaces()
+    project, old_folder = await _project_in(home / "Flowpad workspace")
+    old = canonical_posix_path(old_folder)
+
+    async def session(workdir: str) -> AgenticProcess:
+        return await AgenticProcess(
+            name="s", workdir=workdir, project_id=str(project.id), status="stopped", visible=False, pty_mode=False
+        ).save()
+
+    at_root = await session(old)
+    in_subfolder = await session(f"{old}/docs")
+    neighbour = await session(f"{old}2")
+
+    await project.move_to_workspace(client.id)
+
+    new = canonical_posix_path(Path(client.folder) / "repo")
+    assert (await AgenticProcess.get_by_id(str(at_root.id))).workdir == new
+    assert (await AgenticProcess.get_by_id(str(in_subfolder.id))).workdir == f"{new}/docs"
+    assert (await AgenticProcess.get_by_id(str(neighbour.id))).workdir == f"{old}2", "`/repo2` is not inside `/repo`"

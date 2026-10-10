@@ -11,13 +11,14 @@ import {
   type ProjectSetupRequirement,
   type ProjectSetupSkipScope,
 } from '@sdk';
-import { AlertTriangle, CheckCircle2, Loader2, Package, Undo2, type LucideIcon } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Info, Loader2, Package, Undo2, type LucideIcon } from 'lucide-react';
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import { cn } from '@src/lib/utils';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { Button } from '@src/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
+import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
 import { AskForm } from '@src/components/ask/AskForm';
 import { errorMessage } from '@src/lib/error-message';
 import { notify } from '@src/notifications';
@@ -62,14 +63,50 @@ export function pointerForRequirement(req: ProjectSetupRequirement, projectId: s
 /** A dependency, source or web app goes by its own name (its title is where it comes from); a credential by its title. */
 const namesItself = (req: ProjectSetupRequirement) => req.kind === 'dependency' || req.kind === 'source' || req.kind === 'webapp';
 
-/** What a row says beside its name: what is missing, or why it is not ready. */
+/**
+ * What a row says beside its name: why it is not ready, else what the credential is needed for, else what is
+ * missing.
+ */
 function detailOf(req: ProjectSetupRequirement): string {
   if (namesItself(req)) return req.note || req.title;
-  if (req.credential_kind === 'oauth') return req.note || `connect ${req.title || req.name}`;
-  return req.vars
-    .filter((v) => !v.present)
-    .map((v) => v.label || v.env_var)
-    .join(', ');
+  if (req.credential_kind === 'oauth') return req.note || req.needed_for || `connect ${req.title || req.name}`;
+  return (
+    req.needed_for ||
+    req.vars
+      .filter((v) => !v.present)
+      .map((v) => v.label || v.env_var)
+      .join(', ')
+  );
+}
+
+/** The full reason a credential is needed — the popover behind the info glyph. */
+function JustificationInfo({ req }: { req: ProjectSetupRequirement }) {
+  const { t } = useLingui();
+  if (!req.justification) return null;
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          onClick={own(() => undefined)}
+          onKeyDown={(event) => event.stopPropagation()}
+          className="grid h-5 w-5 shrink-0 place-items-center rounded-full text-muted-foreground hover:text-foreground"
+          aria-label={t`Why is this needed?`}
+          data-testid={`project-setup-why-${req.name}`}
+        >
+          <Info className="h-3.5 w-3.5" />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent
+        align="start"
+        className="w-80 whitespace-pre-wrap text-xs"
+        onClick={(event) => event.stopPropagation()}
+        data-testid={`project-setup-why-text-${req.name}`}
+      >
+        {req.justification}
+      </PopoverContent>
+    </Popover>
+  );
 }
 
 export function ProjectSetupDialogRoot() {
@@ -322,13 +359,16 @@ function RequirementRow({
       <div className="flex items-center gap-2">
         <Icon className="size-4 shrink-0 text-muted-foreground" />
         <span className="font-medium">{name}</span>
-        <span className="flex-1 truncate text-xs text-muted-foreground" title={[req.title, req.note].filter(Boolean).join(' — ')}>
-          {skipped
-            ? req.required
-              ? t`required — it will not work here until it is set up`
-              : t`optional — skipped here`
-            : detailOf(req)}
-        </span>
+        <div className="flex min-w-0 flex-1 items-center gap-1">
+          <span className="truncate text-xs text-muted-foreground" title={[req.title, req.note].filter(Boolean).join(' — ')}>
+            {skipped
+              ? req.required
+                ? t`required — it will not work here until it is set up`
+                : t`optional — skipped here`
+              : detailOf(req)}
+          </span>
+          {!skipped && <JustificationInfo req={req} />}
+        </div>
         {busy && <Loader2 className="size-3 animate-spin" />}
         {!running && !busy && skipped && (
           <Button

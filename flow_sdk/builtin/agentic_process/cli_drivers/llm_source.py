@@ -199,8 +199,8 @@ def _key_sources(spec, rows: dict, stored: set[str], hints: dict[str, str] | Non
     """One candidate per provider this harness supports, over that provider's endpoint row.
 
     *rows* is the local ``api_key`` endpoints keyed by secret name, *stored* is the set of
-    PROVIDERS with a stored key (``core.status.stored_key_providers``) and *hints* their masked
-    ``****last4`` (``core.status.stored_key_hints``) — all read ONCE by the caller, because this
+    PROVIDERS with a stored key and *hints* their masked
+    ``****last4`` (both from ``core.status.stored_keys``) — all read ONCE by the caller, because this
     runs per harness and the answers do not vary between them.
 
     Presence is tested against those NAMES, never by decrypting a value. Reading a secret
@@ -325,8 +325,7 @@ async def _inventory(worker_type: str) -> tuple[list[Candidate], Any]:
         InstallState,
         harness_install,
         login_state,
-        stored_key_hints,
-        stored_key_providers,
+        stored_keys,
     )
     from flow_sdk.instance_settings.llm_endpoint import (
         fetch_hub_llm_endpoints,
@@ -344,8 +343,9 @@ async def _inventory(worker_type: str) -> tuple[list[Candidate], Any]:
     rows = await LLMEndpoint.key_endpoints()
     # Every status fact comes from the status layer, never re-derived here.
     install = harness_install(worker_type)
-    stored = set(stored_key_providers())
-    hints = stored_key_hints()
+    keys = stored_keys()  # one walk of the secret listing, for both views
+    stored = set(keys)
+    hints = {provider: key["hint"] for provider, key in keys.items()}
 
     # A harness with no account of its own has no device rung to rank (``has_device_login``).
     candidates = (

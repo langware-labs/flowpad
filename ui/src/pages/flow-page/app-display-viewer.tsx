@@ -11,6 +11,8 @@ import { useContext } from '@src/hooks/useContext';
 import { tryParseDock } from '@src/navigation/try-parse-dock';
 import { buildDockPointer } from '@src/components/conversation/EntityChip';
 import { isTypeId, TypeId } from '@sdk';
+import { externalUrl, OPEN_EXTERNAL_MESSAGE } from '@sdk/apps/host';
+import { openExternal } from '@src/lib/open-external';
 
 /**
  * An app, rendered from its ADDRESS, through the endpoints that serve it.
@@ -82,6 +84,16 @@ export function guestNavigation(data: unknown, projectId?: string | null): DockP
   return tryParseDock(message.address);
 }
 
+/**
+ * The outside page a guest app asks the host to open (`{type: 'flowpad:open-external', url}`, the
+ * SDK's `openExternal`), or null. Only an absolute http(s) address: a guest never gets a
+ * `file:`, `javascript:` or app-internal URL opened on its behalf.
+ */
+export function guestExternalUrl(data: unknown): string | null {
+  const message = data as { type?: unknown; url?: unknown } | null;
+  return message?.type === OPEN_EXTERNAL_MESSAGE ? externalUrl(message.url) : null;
+}
+
 export function AppDisplayViewer({
   artifactId,
   microAppId = null,
@@ -124,14 +136,17 @@ export function AppDisplayViewer({
   // Push when the skin moves, and answer the guest's own request — a guest that
   // finished loading after our push would otherwise never hear one.
   // One listener for what the guest asks: its skin (answered to any window, as it always was), and
-  // to open another dock (the eval browser → the dataset editor) — URL-first, the host only
-  // navigates, and only for this frame's own guest.
+  // to open another dock (the eval browser → the dataset editor) or an outside page (a record in
+  // a CRM) — URL-first, the host only navigates, and only for this frame's own guest.
   useEffect(() => {
     pushSkin();
     const onGuest = (event: MessageEvent) => {
       if ((event.data as { type?: string } | null)?.type === 'flowpad:skin-please') return pushSkin();
-      const dock = frameRef.current?.isGuest(event.source) ? guestNavigation(event.data, project?.id) : null;
-      if (dock) navigation.openDock(dock);
+      if (!frameRef.current?.isGuest(event.source)) return;
+      const dock = guestNavigation(event.data, project?.id);
+      if (dock) return navigation.openDock(dock);
+      const outside = guestExternalUrl(event.data);
+      if (outside) openExternal(outside);
     };
     window.addEventListener('message', onGuest);
     return () => window.removeEventListener('message', onGuest);

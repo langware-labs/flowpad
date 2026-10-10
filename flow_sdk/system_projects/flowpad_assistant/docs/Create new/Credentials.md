@@ -27,3 +27,7 @@ the values never appear in a prompt or in your project's history.
 **Create new → Secret** opens the same form. Keys already in a `.env.local` are
 listed under Connections — select them and **Pack** them into one secret.
 Only variables in a pack reach agents and terminals.
+
+**Needed for** is one line saying what the project uses the secret for. Project
+setup shows it beside the secret's name when it asks for the values; the longer
+reason under it opens from the info icon.

@@ -28,11 +28,13 @@ EVENT_KEY = "EVENT"
 AGENT_STEP = "handle"
 
 
-def as_wizard(then: ThenSpec, *, name: str, scope_key: str, parent_type_id: str = "",
+def as_wizard(then: ThenSpec, *, name: str, scope_key: str = "", parent_type_id: str = "",
               label: str = "") -> tuple[WizardSpec, dict[str, ComputeOpSpec]]:
     """The wizard a ``then`` runs, and the inline ops its steps name. A ``ref`` answers an empty
-    spec whose one step calls the named wizard. *label* names a sugar's one op (the agent's name —
-    what a person reads on the message's chip); the rule's name otherwise."""
+    spec whose one step calls the named wizard. *scope_key* names the value the fire put in scope
+    for the sugar's agent to take as its input — empty when the fire has none (a rule with no gate),
+    and the agent then runs with no input. *label* names a sugar's one op (the agent's name — what a
+    person reads on the message's chip); the rule's name otherwise."""
     if then.ref:
         return WizardSpec(name=name, steps=[WizardStepSpec(id="run", kind="wizard", ref=then.ref)]), {}
     if then.run_agent is not None:
@@ -69,8 +71,9 @@ def then_of(trigger: Any) -> Optional[ThenSpec]:
     return raw if isinstance(raw, ThenSpec) else ThenSpec.model_validate(raw)
 
 
-async def run_then(trigger: Any, *, inputs: dict[str, Any], scope_key: str, workdir: Optional[Path] = None) -> WizardResult:
-    """Run the rule's wizard with the fire's values in scope. Never raises for an outcome."""
+async def run_then(trigger: Any, *, inputs: dict[str, Any], scope_key: str = "") -> WizardResult:
+    """Run the rule's wizard with the fire's values in scope (*scope_key* names the one the sugar's
+    agent takes as input, when the fire has one). Never raises for an outcome."""
     from flow_sdk.core.wizard.execute import _resolve_op, _resolve_wizard  # noqa: PLC0415
     from flow_sdk.core.wizard.runner import Resolved, run_wizard  # noqa: PLC0415
 
@@ -80,8 +83,8 @@ async def run_then(trigger: Any, *, inputs: dict[str, Any], scope_key: str, work
     parent = str(getattr(trigger, "parent_type_id", "") or "")
     # The agent's name (the session is named for it) and the rule's folder: independent lookups.
     agent_name, folder = await asyncio.gather(
-        _agent_name(then.run_agent.agent or parent) if then.run_agent is not None else _nothing(),
-        _workdir(trigger) if workdir is None else _nothing(),
+        _agent_name((then.run_agent.agent or parent) if then.run_agent is not None else ""),
+        _workdir(trigger),
     )
     spec, inline = as_wizard(then, name=str(getattr(trigger, "name", "") or "automation"), scope_key=scope_key,
                              parent_type_id=parent, label=agent_name or "")
@@ -96,7 +99,7 @@ async def run_then(trigger: Any, *, inputs: dict[str, Any], scope_key: str, work
     return await run_wizard(
         spec,
         trusted=True,
-        workdir=workdir or folder or Path.cwd(),
+        workdir=folder or Path.cwd(),
         inputs=inputs,
         resolve_op=resolve_op,
         resolve_wizard=_resolve_wizard,
@@ -115,10 +118,6 @@ async def _agent_name(ref: str) -> str:
         return str(getattr(agent, "name", "") or "")
     except Exception:  # noqa: BLE001 — a label is sugar; the run goes on
         return ""
-
-
-async def _nothing() -> None:
-    return None
 
 
 async def _workdir(trigger: Any) -> Optional[Path]:

@@ -226,6 +226,11 @@ class AgentOp(ExeData):
         return self
 
 
+#: How sure an answer must be when nobody says otherwise — one number for a requirement's own
+#: floor and for the sentence form of a decision.
+DEFAULT_SURE = 0.85
+
+
 class Require(DataSpec):
     """What one answer must be for a ``decision`` op to be met. Exactly one of the
     four, each for its question kind: ``choice`` names the option that must win
@@ -241,7 +246,7 @@ class Require(DataSpec):
     no: Optional[float] = Field(default=None, ge=0, le=1)
     at_least: Optional[str] = None
     #: The confidence floor for ``choice``; ``yes`` / ``no`` carry their own.
-    min: float = Field(default=0.85, ge=0, le=1)  # noqa: A003 — the decision snippet's word
+    min: float = Field(default=DEFAULT_SURE, ge=0, le=1)  # noqa: A003 — the decision snippet's word
 
     @model_validator(mode="after")
     def _exactly_one(self) -> "Require":
@@ -269,11 +274,16 @@ class DecisionOp(ExeData):
     ANSWER: ClassVar[type[ReturnedValue]] = DecisionVerdict
     RECHECKED: ClassVar[bool] = False
     PLAIN_VALUE: ClassVar[bool] = True
+    #: The scope name the questions are asked about when the op names none.
+    DEFAULT_INPUT: ClassVar[str] = "STATE"
+    #: The sentence form: ONE yes/no question under this name, met at ``SENTENCE_MIN``.
+    SENTENCE_QUESTION: ClassVar[str] = "match"
+    SENTENCE_MIN: ClassVar[float] = DEFAULT_SURE
 
     questions: dict[str, Question]
     require: dict[str, Require] = {}
     #: The scope value (by name) the questions are asked about.
-    input: str = "STATE"
+    input: str = DEFAULT_INPUT
     #: The one-line form this op was written as, when it was: kept so a document
     #: round-trips the sentence a person typed. Carries no meaning of its own.
     sentence: str = ""
@@ -296,12 +306,26 @@ class DecisionOp(ExeData):
         return self
 
     @classmethod
-    def from_sentence(cls, sentence: str, *, question: Question, min: float = 0.85) -> "DecisionOp":  # noqa: A002
+    def from_sentence(cls, sentence: str, *, question: Question, min: float = DEFAULT_SURE) -> "DecisionOp":  # noqa: A002
         """One yes/no question — written by whoever knows the state's field names — that
         must be ``yes`` at least ``min`` sure. The sentence is kept for the document."""
         if not isinstance(question, YesNoQuestion):
             raise ValueError("a sentence is one yes/no question")
-        return cls(questions={"match": question}, require={"match": Require(yes=min)}, sentence=sentence)
+        name = cls.SENTENCE_QUESTION
+        return cls(questions={name: question}, require={name: Require(yes=min)}, sentence=sentence)
+
+    @classmethod
+    def is_sentence_form(cls, data: dict) -> bool:
+        """Whether an op's document is exactly what ``from_sentence`` builds from its ``sentence`` —
+        so a file may keep the sentence alone and lose nothing."""
+        name = cls.SENTENCE_QUESTION
+        require = data.get("require") or {}
+        return bool(
+            data.get("sentence")
+            and list(data.get("questions") or {}) == [name]
+            and list(require) == [name]
+            and (require[name] or {}).get("yes") == cls.SENTENCE_MIN
+        )
 
 
 class NavigateOp(ExeData):

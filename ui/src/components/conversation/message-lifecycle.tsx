@@ -11,7 +11,7 @@
 import { useCallback, useState } from 'react';
 import { Check, Loader2 } from 'lucide-react';
 import { Trans } from '@lingui/react/macro';
-import { isProcessLive, type AgenticProcess, type FlowMessage } from '@sdk';
+import { isProcessFailed, isProcessLive, type AgenticProcess, type FlowMessage } from '@sdk';
 import { SenderKind, senderOf } from '@sdk/models/MessageSender';
 import type { FlowEvent } from '@sdk/tags/EventBus';
 import { useOnTag } from '@sdk/react/hooks';
@@ -66,7 +66,7 @@ export function lifecyclesOf(
       const session = sessions?.get(fm.id);
       const status = String(session?.status ?? '');
       if (session && isProcessLive(status)) out.set(fm.id, HANDLING);
-      else if (session && status === 'failed') out.set(fm.id, { state: LifecycleState.Failed, detail: String(session.name ?? '') });
+      else if (session && isProcessFailed(status)) out.set(fm.id, { state: LifecycleState.Failed, detail: String(session.name ?? '') });
       else out.set(fm.id, fm.origin?.key && handled.has(fm.origin.key) ? HANDLING : ARRIVED);
       continue;
     }

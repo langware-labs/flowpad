@@ -57,16 +57,22 @@ An automation may carry an **`if`** and a **`then`** (`docs/snippets/stream-inbo
   `run_script` sugar) run by `automations/then.py` through the ordinary wizard runner with the
   fire's scope: the subject's state under its key (`MESSAGE`), the `LaunchContext` the agent step
   stamps (the session keyed to the conversation, the message as a chip, what the rule decided
-  under `context_data["automation"]`), the envelope under `EVENT`. A rule with a `then` runs
-  that instead of `actions`.
-- Log rows gain `decision`, `subject_id` and `wizard`; `AutomationRun` mirrors them;
-  `AutomationSummary` gains `last_runs`, `passed_over` and `started_last_hour`. The verbs:
+  under `context_data["automation"]`), the envelope under `EVENT`. The state is in scope only
+  when a gate caught one: a `then` with no gate runs its agent with no input. A rule with a
+  `then` runs that instead of `actions`.
+- Log rows gain `decision`, `subject_id` and `wizard` (an outline — each step's exit code, short
+  detail and session, never its output); `AutomationRun` mirrors them;
+  `AutomationSummary` gains `last_runs` and `passed_over`; the top bar's last-hour count is its own
+  light call (`Trigger.started_last_hour`: the person's own rules, counted on the log tails). The verbs:
   `Trigger.on_message`, `rule.decide_on`, `rule.decide_on_recent`, `Trigger.runs(include_declined=)`,
   `run_once(message_id=)`, `Agent.runnable_here()`; the screen's "Would it catch this?" asks
   `decide_spec` with the fields as typed, before any save. A bare `gate: {sentence}` (the screen's,
   a file's string `if`) is worded by the row itself on construction (`Trigger._word_gate`), so every
-  writer gates alike. A subject also says how its rules read
-  (`when_text`: "When a message arrives") on the list and in `describe_when`.
+  writer gates alike, and every reader takes the op from `Trigger.gate_op`. A subject also says how
+  its rules read (`when_text`: "When a message arrives") on the list and in `describe_when`, and
+  answers the lookups by id (`by_id`, `test_event`) so the automation code never names a message.
+  Check reports a missing Decision API under its own area, `decider`: the rule is fine, the machine
+  is not ready.
 
 ## Rules that are easy to break
 

@@ -168,7 +168,8 @@ async def credentials_status(project: Optional["Project"], deployment_id: str = 
     for spec, scope in pairs:
         common = dict(
             typeid=str(spec.typeid), name=str(spec.name or ""), title=spec.title or str(spec.name or ""),
-            description=spec.description or "", icon_name=spec.icon_name or "", help_url=spec.help_url or "",
+            description=spec.description or "", needed_for=spec.needed_for,
+            justification=spec.justification, icon_name=spec.icon_name or "", help_url=spec.help_url or "",
             scope=scope.scope, project_id=scope.project_id, environment=environment,
             setup_skipped=spec.setup_skipped, asset_ref=str(spec.asset_ref or ""),
         )

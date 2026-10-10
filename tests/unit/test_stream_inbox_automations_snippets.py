@@ -60,5 +60,5 @@ async def test_the_page_runs_in_order_as_one_session(initialize_test_db, decisio
     assert driver.received_prompts, "the then wizard ran the agent"
     process = ns["process"]
     assert process.context_data["automation"]["trigger_id"] == rule.id
-    assert ns["summary"].started_last_hour >= 1
+    assert ns["started"] >= 1
     assert decision_double["invoked"], "the gate was asked through the hub"

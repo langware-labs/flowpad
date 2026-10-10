@@ -72,20 +72,20 @@ def test_event(trigger: "Trigger", event: Optional[dict[str, Any]] = None) -> "F
     return make_tag_event(sample_tag(pattern), target, {"test": True})
 
 
-async def message_event(trigger: "Trigger", message_id: str) -> dict[str, Any]:
-    """The projected-message envelope a test fires with for one stream inbox message — the same tag,
-    target and data the real one carried, so the gate and the wizard see the real message."""
-    from flow_sdk.builtin.flow_message import FlowMessage  # noqa: PLC0415
-    from flow_sdk.stream_inbox.message_subject import MESSAGE_PROJECTED  # noqa: PLC0415
-    from flow_sdk.stream_inbox.stream_inbox_on_tag import projected_envelope  # noqa: PLC0415
+async def subject_event(trigger: "Trigger", subject_id: str) -> dict[str, Any]:
+    """The envelope a test fires with for one thing the rule decides about (a message): the target,
+    data and scope its real event carried — the subject's to say — under the rule's own sample tag
+    (its pattern may name one provider). The gate and the wizard then see the real thing."""
+    from flow_sdk.automations.decision_subjects import for_trigger  # noqa: PLC0415
 
-    fm = await FlowMessage.get_by_id(message_id)
-    if fm is None or not fm.source_item_id:
-        raise RunOnceRefused("That message is not a stream inbox message this rule can run on.")
-    origin = getattr(fm, "origin_local", None)
-    envelope = projected_envelope("", str(fm.source_item_id), str(getattr(origin, "data_source_id", "") or ""))
-    # The tag is the rule's own sample (its pattern may name one provider), the rest the real envelope's.
-    return {**envelope, "tag": sample_tag(str(trigger.tag_pattern or MESSAGE_PROJECTED))}
+    subject = for_trigger(trigger)
+    try:
+        if subject is None:
+            raise LookupError
+        parts = await subject.test_event(subject_id)
+    except LookupError:
+        raise RunOnceRefused("That is not something this rule can run on.") from None
+    return {**parts, "tag": sample_tag(str(trigger.tag_pattern or ""))}
 
 
 async def run_once(trigger: "Trigger", event: Optional[dict[str, Any]] = None, *,
@@ -97,7 +97,7 @@ async def run_once(trigger: "Trigger", event: Optional[dict[str, Any]] = None, *
     kind = TriggerType(str(trigger.trigger_type))
     tid = trigger.id or ""
     if message_id and kind == TriggerType.TAG:
-        event = await message_event(trigger, message_id)
+        event = await subject_event(trigger, message_id)
 
     if kind == TriggerType.TAG:
         from flow_sdk.builtin.tag_triggers import run_tag_test  # noqa: PLC0415
