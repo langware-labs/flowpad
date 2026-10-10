@@ -67,19 +67,19 @@ msgstr "— פתח, הציץ, או קבל הדגשה כאן"
 msgid "— optional; pins every call to it"
 msgstr "— לא חובה; כל קריאה תשתמש בו"
 
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/DebugMenu.tsx
 msgid "— show annotation gutter"
 msgstr "— הצג שוליים הערות"
 
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/DebugMenu.tsx
 msgid "— show prompt anchors in gutter"
 msgstr "— הצג עוגני פרומפט בשוליים"
 
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/DebugMenu.tsx
 msgid "— show time/index gutter"
 msgstr "— הצג שוליים של זמן/אינדקס"
 
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/DebugMenu.tsx
 msgid "— show trace event gutter"
 msgstr "— הצג שוליים של אירועי עקיבה"
 
@@ -891,7 +891,7 @@ msgstr ""
 msgid "{label} — not while the agent is working"
 msgstr ""
 
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/DebugMenu.tsx
 msgid "{label} docs"
 msgstr "מסמכים {label}"
 
@@ -1137,8 +1137,8 @@ msgid "{value}"
 msgstr "{value}"
 
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
-msgid "{worker} session info"
-msgstr "מידע על סשן {worker}"
+#~ msgid "{worker} session info"
+#~ msgstr "מידע על סשן {worker}"
 
 #: src/components/cron-view/CronForm.tsx
 msgid "* * * * *"
@@ -1557,7 +1557,7 @@ msgstr ""
 #~ msgid "About hook triggers"
 #~ msgstr "אודות עירובי Hook"
 
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/DebugMenu.tsx
 msgid "Abs line"
 msgstr "שורה אבסולוטית"
 
@@ -2686,7 +2686,7 @@ msgstr "עוגן"
 msgid "Anchor range"
 msgstr "טווח העוגן"
 
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/DebugMenu.tsx
 msgid "Anchor time range"
 msgstr "טווח זמן עוגן"
 
@@ -2717,7 +2717,7 @@ msgid "Annotation submitted"
 msgstr "הערה נשלחה"
 
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/DebugMenu.tsx
 msgid "Annotations"
 msgstr "הערות"
 
@@ -4530,11 +4530,11 @@ msgstr ""
 msgid "chosen by you"
 msgstr "נבחר על ידך"
 
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/SessionInfoPopover.tsx
 msgid "Chrome"
 msgstr "Chrome"
 
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/DebugMenu.tsx
 msgid "Chrome browser"
 msgstr "דפדפן Chrome"
 
@@ -4761,8 +4761,8 @@ msgid "Clearing…"
 msgstr "מחיקה…"
 
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
-msgid "CLI launch options"
-msgstr "אפשרויות הפעלת CLI"
+#~ msgid "CLI launch options"
+#~ msgstr "אפשרויות הפעלת CLI"
 
 #: src/components/account/settings-section.tsx
 msgid "CLI Log Level"
@@ -4771,11 +4771,11 @@ msgstr "רמת היומן של ממשק שורת הפקודה"
 #~ msgid "CLI login"
 #~ msgstr ""
 
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/DebugMenu.tsx
 msgid "CLI Options"
 msgstr "אפשרויות CLI"
 
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/SessionInfoPopover.tsx
 msgid "CLI worker status"
 msgstr "סטטוס עובד CLI"
 
@@ -5161,20 +5161,20 @@ msgid "Color by"
 msgstr "צבע לפי"
 
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
-msgid "Column visibility & trace filters"
-msgstr "נראות עמודות ומסננים עקיבה"
+#~ msgid "Column visibility & trace filters"
+#~ msgstr "נראות עמודות ומסננים עקיבה"
 
 #: src/components/search-calibration/SearchCalibrationPanel.tsx
 msgid "Column Weights"
 msgstr "משקלי עמודות"
 
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
-msgid "Columns"
-msgstr "עמודות"
+#~ msgid "Columns"
+#~ msgstr "עמודות"
 
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
-msgid "Columns & Trace"
-msgstr "עמודות וטrace"
+#~ msgid "Columns & Trace"
+#~ msgstr "עמודות וטrace"
 
 #: src/components/organization/budgets/AddPeopleDialog.tsx
 msgid "Columns: name, email, budget"
@@ -5188,14 +5188,14 @@ msgstr "פקודה"
 #: src/components/hooks-manager/HookForm.tsx
 #: src/components/hooks-view/HooksBrowser.tsx
 #: src/components/project-resource-list/resource-meta.ts
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/SessionInfoPopover.tsx
 #: src/i18n/type-labels.ts
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Command"
 msgstr "פקודה"
 
 #: src/components/terminal/interactive-terminal/command-status-viewer/CommandStatusViewer.tsx
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/DebugMenu.tsx
 msgid "Command Status"
 msgstr "סטטוס הפקודה"
 
@@ -5247,12 +5247,11 @@ msgstr "commit"
 msgid "Commit & continue"
 msgstr "לבצע commit ולהמשיך"
 
-#: src/components/terminal/interactive-terminal/WorktreeButtons.tsx
-#: src/components/terminal/interactive-terminal/WorktreeButtons.tsx
+#: src/components/terminal/interactive-terminal/SessionActionsMenu.tsx
 msgid "Commit & Merge"
 msgstr "אישור ומיזוג"
 
-#: src/components/terminal/interactive-terminal/WorktreeButtons.tsx
+#: src/components/terminal/interactive-terminal/SessionActionsMenu.tsx
 msgid "Commit all changes and merge back to the parent branch. Claude will exit the worktree when done."
 msgstr "אשר את כל השינויים ובצע מיזוג לענף הראשי. Claude יצא מ-worktree בעת סיום."
 
@@ -5724,7 +5723,7 @@ msgstr "כרטיסיית Copilot"
 msgid "Copy"
 msgstr "העתק"
 
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/SessionInfoPopover.tsx
 msgid "Copy {label}"
 msgstr "העתק {label}"
 
@@ -5882,7 +5881,7 @@ msgstr ""
 msgid "Copy this file's path to the clipboard"
 msgstr "העתקת נתיב הקובץ הזה ללוח"
 
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/SessionInfoPopover.tsx
 #: src/components/version-popover/version-popover.tsx
 msgid "Copy to clipboard"
 msgstr "העתק ללוח"
@@ -7205,7 +7204,7 @@ msgstr "שורת המאגר הנוכחית שנפתרה — הערות תוכנ�
 msgid "Current resolved buffer row — prompt annotations position by text-search in xterm buffer"
 msgstr "שורת המאגר הנוכחית שנפתרה — הערות פרומפט ממוקמות לפי חיפוש טקסט במאגר של xterm"
 
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/SessionInfoPopover.tsx
 msgid "Current Time"
 msgstr "הזמן הנוכחי"
 
@@ -7346,16 +7345,21 @@ msgid "DB Stats"
 msgstr "סטטיסטיקות DB"
 
 #: src/components/account/settings-section.tsx
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/DebugMenu.tsx
+#: src/components/terminal/interactive-terminal/SessionInfoPopover.tsx
 #: src/i18n/pref-labels.ts
 msgid "Debug"
 msgstr "ניפוי באגים"
+
+#: src/components/terminal/interactive-terminal/DebugMenu.tsx
+msgid "Debug — CLI options, gutters, viewers"
+msgstr ""
 
 #: src/components/account/settings-section.tsx
 msgid "Debug level includes hook invocations."
 msgstr "רמת ניפוי כוללת הפעלות hook."
 
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/DebugMenu.tsx
 msgid "Debug logging"
 msgstr "רישום ניפוי באגים"
 
@@ -8498,6 +8502,7 @@ msgid "Download attachments"
 msgstr ""
 
 #: src/components/terminal/interactive-terminal/EntityShareDialog.tsx
+#: src/components/terminal/interactive-terminal/SessionActionsMenu.tsx
 msgid "Download bundle"
 msgstr "הורד חבילה"
 
@@ -8901,7 +8906,7 @@ msgstr "הפעל הכל"
 msgid "Enable All Project MCP Servers"
 msgstr "הפעילו את כל שרתי ה-MCP בפרויקט"
 
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/DebugMenu.tsx
 msgid "Enable browser automation via Chrome (--chrome)"
 msgstr "הפוך אוטומציה של דפדפן דרך Chrome (--chrome) לזמינה"
 
@@ -10756,7 +10761,7 @@ msgstr "מילון משתני סביבה מלא"
 msgid "Full path to the plan .md file written by the agent"
 msgstr "הנתיב המלא לקובץ ה-‎.md של התוכנית שנכתב על ידי הסוכן"
 
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/DebugMenu.tsx
 msgid "Full Trust"
 msgstr "אמון מלא"
 
@@ -11161,6 +11166,10 @@ msgstr "הגדרה מודרכת"
 msgid "Guides"
 msgstr "מדריכים"
 
+#: src/components/terminal/interactive-terminal/DebugMenu.tsx
+msgid "Gutters"
+msgstr ""
+
 #: src/pages/hub-home/ShareSandboxDialog.tsx
 msgid "Hand it over"
 msgstr "מסרו אותו"
@@ -11193,7 +11202,7 @@ msgstr "נדרשת רתמה"
 #~ msgid "Harness path"
 #~ msgstr "נתיב הרתמה"
 
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/SessionInfoPopover.tsx
 msgid "Harness Session Details"
 msgstr "פרטי סשן הרתמה"
 
@@ -11208,11 +11217,11 @@ msgstr "התחברות לרתמה וסטטוס"
 msgid "Harness status"
 msgstr "סטטוס הרתמה"
 
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/SessionInfoPopover.tsx
 msgid "Harness worker Session ID"
 msgstr "מזהה סשן עובד הרתמה"
 
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/SessionInfoPopover.tsx
 msgid "Harness worker Session Name"
 msgstr "שם סשן עובד הרתמה"
 
@@ -11903,7 +11912,7 @@ msgstr "הכללת הקובץ הזה ב-commit הבא (git add)"
 #~ msgid "Include this session's transcript"
 #~ msgstr ""
 
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/DebugMenu.tsx
 msgid "Index (seq)"
 msgstr "אינדקס (seq)"
 
@@ -12679,7 +12688,7 @@ msgstr "אונדקס לאחרונה: מעולם לא"
 msgid "Last Login:"
 msgstr "ההתחברות האחרונה:"
 
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/SessionInfoPopover.tsx
 msgid "Last message"
 msgstr "הודעה אחרונה"
 
@@ -12902,7 +12911,7 @@ msgstr ""
 msgid "line"
 msgstr "שורה"
 
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/DebugMenu.tsx
 msgid "Line"
 msgstr "שורה"
 
@@ -13647,6 +13656,7 @@ msgid "Manage API keys"
 msgstr "ניהול מפתחות API"
 
 #: src/components/asset-manager/AssetManagerButton.tsx
+#: src/components/terminal/interactive-terminal/SessionActionsMenu.tsx
 msgid "Manage assets"
 msgstr "ניהול נכסים"
 
@@ -14118,7 +14128,7 @@ msgstr "מודל"
 #: src/components/entity-execution-panel/ExecutionSettingsPopover.tsx
 #: src/components/llm-endpoints/UsageByChildTable.tsx
 #: src/components/settings-view/settings-utils.ts
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/SessionInfoPopover.tsx
 #: src/pages/flow-page/vibe-model-select.tsx
 #: src/pages/flow-page/vibe-model-select.tsx
 msgid "Model"
@@ -16625,7 +16635,7 @@ msgstr ""
 msgid "Open {workerName} terminal"
 msgstr "פתח טרמינל של {workerName}"
 
-#: src/components/terminal/interactive-terminal/WorktreeButtons.tsx
+#: src/components/terminal/interactive-terminal/SessionActionsMenu.tsx
 msgid "Open a new isolated git worktree session on a separate branch"
 msgstr "פתח סשן git worktree מבודד חדש בענף נפרד"
 
@@ -16693,7 +16703,7 @@ msgstr "פתיחת דף ההרשאה"
 msgid "Open Backup Folder"
 msgstr "פתח תיקיית גיבוי"
 
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/SessionInfoPopover.tsx
 msgid "Open command in external terminal"
 msgstr "פתח פקודה בטרמינל חיצוני"
 
@@ -16854,7 +16864,7 @@ msgstr "פתח בעורך"
 msgid "Open in external browser"
 msgstr "פתח בדפדפן חיצוני"
 
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/SessionInfoPopover.tsx
 msgid "Open in external terminal"
 msgstr "פתח בטרמינל חיצוני"
 
@@ -16898,7 +16908,7 @@ msgstr "פתח בכרטיסית מיומנויות"
 msgid "Open in terminal"
 msgstr "פתיחה בטרמינל"
 
-#: src/components/terminal/interactive-terminal/WorktreeButtons.tsx
+#: src/components/terminal/interactive-terminal/SessionActionsMenu.tsx
 msgid "Open in Worktree"
 msgstr "פתח ב-Worktree"
 
@@ -17038,7 +17048,7 @@ msgstr ""
 
 #: src/components/diagnose/open-in-terminal-button.tsx
 #: src/components/terminal/interactive-terminal/PlanInteractionBar.tsx
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/SessionActionsMenu.tsx
 msgid "Open terminal"
 msgstr "פתח טרמינל"
 
@@ -17047,8 +17057,8 @@ msgid "Open terminal ({modLabel}+T)"
 msgstr "פתח טרמינל ({modLabel}+T)"
 
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
-msgid "Open terminal in {workdir}"
-msgstr "פתח טרמינל ב-{workdir}"
+#~ msgid "Open terminal in {workdir}"
+#~ msgstr "פתח טרמינל ב-{workdir}"
 
 #: src/components/help/AskForHelpDialog.tsx
 msgid "Open that conversation"
@@ -17215,7 +17225,7 @@ msgstr "פתח את התוכנית מהסשן שלה כדי לעדכן אותה"
 
 #: src/components/assets/editor/wizard/WizardStepInspector.tsx
 #: src/components/process-runs/ProcessRunsPanel.tsx
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/SessionActionsMenu.tsx
 msgid "Open transcript"
 msgstr "פתח תמליל"
 
@@ -17792,7 +17802,7 @@ msgstr ""
 msgid "Permanently delete?"
 msgstr "למחוק קבוע?"
 
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/SessionInfoPopover.tsx
 msgid "Permission"
 msgstr "הרשאה"
 
@@ -18270,11 +18280,11 @@ msgstr "תהליך"
 msgid "Process"
 msgstr "תהליך"
 
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/SessionInfoPopover.tsx
 msgid "Process ID"
 msgstr "מזהה תהליך"
 
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/SessionInfoPopover.tsx
 msgid "Process Name"
 msgstr "שם התהליך"
 
@@ -18496,7 +18506,7 @@ msgstr "פרומפט"
 msgid "Prompt Annotation"
 msgstr "הערת פרומפט"
 
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/DebugMenu.tsx
 msgid "Prompt annotations"
 msgstr "הערות פרומפט"
 
@@ -18641,7 +18651,7 @@ msgstr "החיבור ל-PTY נותק."
 msgid "PTY Events"
 msgstr "אירועי PTY"
 
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/DebugMenu.tsx
 msgid "PTY Events Viewer"
 msgstr "מצפה אירועי PTY"
 
@@ -18649,7 +18659,7 @@ msgstr "מצפה אירועי PTY"
 msgid "pty experiment"
 msgstr "ניסוי PTY"
 
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/SessionInfoPopover.tsx
 msgid "PTY ID"
 msgstr "מזהה PTY"
 
@@ -18658,7 +18668,7 @@ msgstr "מזהה PTY"
 msgid "PTY time"
 msgstr "זמן PTY"
 
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/DebugMenu.tsx
 #: src/components/terminal/interactive-terminal/pty-viewer/PTYViewer.tsx
 msgid "PTY Viewer"
 msgstr "מציג PTY"
@@ -19841,7 +19851,7 @@ msgstr ""
 msgid "required — it will not work here until it is set up"
 msgstr ""
 
-#: src/components/terminal/interactive-terminal/WorktreeButtons.tsx
+#: src/components/terminal/interactive-terminal/SessionActionsMenu.tsx
 msgid "Requires a git repository with at least one commit"
 msgstr "דורש ריפוזיטורי git עם לפחות קומיט אחד"
 
@@ -19958,12 +19968,11 @@ msgstr "הפעלה מחדש"
 msgid "Restart required — {changedCount} {0} changed"
 msgstr "נדרש הפעלה מחדש — {changedCount} {0} השתנו"
 
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/SessionActionsMenu.tsx
 msgid "Restart required — config changed since start"
 msgstr "נדרשת הפעלה מחדש — התצורה השתנתה מאז ההתחלה"
 
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/SessionActionsMenu.tsx
 msgid "Restart session"
 msgstr "הפעל מחדש את הסשן"
 
@@ -19975,7 +19984,7 @@ msgstr "הפעלה מחדש של ההגדרה"
 msgid "Restart this journey"
 msgstr "הפעלה מחדש של המסע הזה"
 
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/SessionActionsMenu.tsx
 msgid "Restarting…"
 msgstr "הפעלה מחדש בתהליך..."
 
@@ -20262,7 +20271,7 @@ msgstr ""
 msgid "Row range"
 msgstr "טווח שורות"
 
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/DebugMenu.tsx
 msgid "Row time range"
 msgstr "טווח זמן שורה"
 
@@ -21408,7 +21417,7 @@ msgstr "שלח הודעה למטה והסוכן יתחיל לעבוד."
 msgid "Send a message first — fork requires conversation history"
 msgstr "שלח הודעה תחילה — יצירת ענף דורשת היסטוריה שיחה"
 
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/SessionActionsMenu.tsx
 msgid "Send a message first — no transcript yet"
 msgstr "שלח הודעה תחילה — אין עדיין תמלול"
 
@@ -21575,6 +21584,7 @@ msgstr "סשן"
 
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/project-resource-list/resource-meta.ts
+#: src/components/terminal/interactive-terminal/SessionActionsMenu.tsx
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Session"
 msgstr "סשן"
@@ -21609,6 +21619,11 @@ msgstr ""
 msgid "Session {workerId} is not in Claude, Codex, or Copilot history."
 msgstr "סשן {workerId} לא נמצא בהיסטוריית Claude, Codex או Copilot."
 
+#: src/components/terminal/interactive-terminal/SessionActionsMenu.tsx
+#: src/components/terminal/interactive-terminal/SessionActionsMenu.tsx
+msgid "Session actions"
+msgstr ""
+
 #: src/components/lens-viewer/shared/transcript-features/AnalysisControls.tsx
 msgid "Session analysis"
 msgstr "ניתוח סשן"
@@ -21634,9 +21649,13 @@ msgstr "שגיאות סשן"
 msgid "Session ID"
 msgstr "מזהה תאימה"
 
+#: src/components/terminal/interactive-terminal/SessionActionsMenu.tsx
+msgid "Session info"
+msgstr ""
+
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/SessionActionsMenu.tsx
+#: src/components/terminal/interactive-terminal/SessionActionsMenu.tsx
 msgid "Session is not running"
 msgstr "הסשן אינו פעיל"
 
@@ -22084,11 +22103,11 @@ msgstr "פקודת shell להוצאה לפועל. השתמש ב-$CLAUDE_PROJECT_
 msgid "Shell commands triggered by tool events"
 msgstr "פקודות shell שמופעלות על ידי אירועי כלים"
 
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/SessionInfoPopover.tsx
 msgid "Shell ID"
 msgstr "מזהה Shell"
 
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/SessionInfoPopover.tsx
 msgid "Shell Name"
 msgstr "שם Shell"
 
@@ -23131,7 +23150,7 @@ msgid "started"
 msgstr "התחיל"
 
 #: src/components/automations/automation-words.ts
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/SessionInfoPopover.tsx
 msgid "Started"
 msgstr "החל"
 
@@ -23206,7 +23225,7 @@ msgstr "מתחיל…"
 #: src/components/machine-overview/machine-overview.tsx
 #: src/components/machine-overview/machine-overview.tsx
 #: src/components/record-search-bar/RecordSearchBar.tsx
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/SessionInfoPopover.tsx
 msgid "Status"
 msgstr "סטטוס"
 
@@ -25205,15 +25224,15 @@ msgstr "זמן"
 #: src/components/conversation/FlowMessageBubble.tsx
 #: src/components/record-search-bar/RecordSearchBar.tsx
 #: src/components/terminal/interactive-terminal/ColumnHeaderBar.tsx
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/DebugMenu.tsx
 msgid "Time"
 msgstr "זמן"
 
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/DebugMenu.tsx
 msgid "Time gutter"
 msgstr "שוליים זמן"
 
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/DebugMenu.tsx
 msgid "Time Gutter Fields"
 msgstr "שדות שוליים זמן"
 
@@ -25544,7 +25563,7 @@ msgstr "סה\"כ טוקנים"
 msgid "Trace"
 msgstr "עקבה"
 
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/DebugMenu.tsx
 #: src/components/terminal/interactive-terminal/TraceGutter.tsx
 msgid "Trace events"
 msgstr "אירועי עקיבוי"
@@ -26383,7 +26402,7 @@ msgstr ""
 msgid "Vault root"
 msgstr "שורש הכספת"
 
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/DebugMenu.tsx
 msgid "Verbose debug output (--debug)"
 msgstr "פלט ניפוי בעיות מפורש (--debug)"
 
@@ -26565,6 +26584,10 @@ msgstr "הצג תמלול"
 #: src/components/lens-viewer/HeartbeatEventsViewer.tsx
 msgid "View trigger log"
 msgstr "הצג רישום טריגר"
+
+#: src/components/terminal/interactive-terminal/DebugMenu.tsx
+msgid "Viewers"
+msgstr ""
 
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
 msgid "viewport px"
@@ -27109,7 +27132,7 @@ msgstr "עובד"
 msgid "Working"
 msgstr "בעיבוד"
 
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/SessionInfoPopover.tsx
 msgid "Working Dir"
 msgstr "ספריית עבודה"
 
@@ -27141,12 +27164,13 @@ msgstr ""
 #: src/components/chats-navigator/ChatHistoryRow.tsx
 #: src/components/project-setup/ProjectSetupDialog.tsx
 #: src/components/setup-wizard/SetupWizardDialog.tsx
+#: src/components/terminal/interactive-terminal/SessionActionsMenu.tsx
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
-#: src/components/terminal/interactive-terminal/WorktreeButtons.tsx
 #: src/components/version-popover/diagnose-modal.tsx
 msgid "Working…"
 msgstr "בתהליך…"
 
+#: src/components/terminal/interactive-terminal/SessionActionsMenu.tsx
 #: src/components/workspace/workspace-switcher.tsx
 #: src/i18n/type-labels.ts
 #: src/pages/hub-home/HubHome.tsx
@@ -27161,7 +27185,7 @@ msgstr ""
 msgid "Workspace name"
 msgstr ""
 
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/SessionInfoPopover.tsx
 msgid "Worktree"
 msgstr "Worktree"
 

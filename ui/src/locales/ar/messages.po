@@ -67,19 +67,19 @@ msgstr "— يمكن الفتح أو المعاينة أو طلب التمييز
 msgid "— optional; pins every call to it"
 msgstr "— اختياري؛ تُثبَّت عليه كل الاستدعاءات"
 
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/DebugMenu.tsx
 msgid "— show annotation gutter"
 msgstr "— إظهار عمود التعليقات التوضيحية"
 
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/DebugMenu.tsx
 msgid "— show prompt anchors in gutter"
 msgstr "— إظهار نقاط تثبيت الطلبات في العمود"
 
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/DebugMenu.tsx
 msgid "— show time/index gutter"
 msgstr "— إظهار عمود الوقت والفهرس"
 
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/DebugMenu.tsx
 msgid "— show trace event gutter"
 msgstr "— إظهار عمود أحداث التتبع"
 
@@ -891,7 +891,7 @@ msgstr ""
 msgid "{label} — not while the agent is working"
 msgstr ""
 
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/DebugMenu.tsx
 msgid "{label} docs"
 msgstr "توثيق {label}"
 
@@ -1137,8 +1137,8 @@ msgid "{value}"
 msgstr "{value}"
 
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
-msgid "{worker} session info"
-msgstr "معلومات جلسة {worker}"
+#~ msgid "{worker} session info"
+#~ msgstr "معلومات جلسة {worker}"
 
 #: src/components/cron-view/CronForm.tsx
 msgid "* * * * *"
@@ -1557,7 +1557,7 @@ msgstr ""
 #~ msgid "About hook triggers"
 #~ msgstr "حول محفزات الخطاف"
 
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/DebugMenu.tsx
 msgid "Abs line"
 msgstr "السطر المطلق"
 
@@ -2686,7 +2686,7 @@ msgstr "مرساة"
 msgid "Anchor range"
 msgstr "نطاق المرسى"
 
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/DebugMenu.tsx
 msgid "Anchor time range"
 msgstr "نطاق وقت التثبيت"
 
@@ -2717,7 +2717,7 @@ msgid "Annotation submitted"
 msgstr "تم إرسال التعليق"
 
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/DebugMenu.tsx
 msgid "Annotations"
 msgstr "التعليقات التوضيحية"
 
@@ -4530,11 +4530,11 @@ msgstr ""
 msgid "chosen by you"
 msgstr "اخترته بنفسك"
 
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/SessionInfoPopover.tsx
 msgid "Chrome"
 msgstr "Chrome"
 
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/DebugMenu.tsx
 msgid "Chrome browser"
 msgstr "متصفح Chrome"
 
@@ -4761,8 +4761,8 @@ msgid "Clearing…"
 msgstr "جاري المسح…"
 
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
-msgid "CLI launch options"
-msgstr "خيارات تشغيل سطر الأوامر"
+#~ msgid "CLI launch options"
+#~ msgstr "خيارات تشغيل سطر الأوامر"
 
 #: src/components/account/settings-section.tsx
 msgid "CLI Log Level"
@@ -4771,11 +4771,11 @@ msgstr "مستوى السجل في سطر الأوامر"
 #~ msgid "CLI login"
 #~ msgstr ""
 
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/DebugMenu.tsx
 msgid "CLI Options"
 msgstr "خيارات سطر الأوامر"
 
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/SessionInfoPopover.tsx
 msgid "CLI worker status"
 msgstr "حالة عامل سطر الأوامر"
 
@@ -5161,20 +5161,20 @@ msgid "Color by"
 msgstr "تلوين حسب"
 
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
-msgid "Column visibility & trace filters"
-msgstr "رؤية الأعمدة ومرشحات التتبع"
+#~ msgid "Column visibility & trace filters"
+#~ msgstr "رؤية الأعمدة ومرشحات التتبع"
 
 #: src/components/search-calibration/SearchCalibrationPanel.tsx
 msgid "Column Weights"
 msgstr "أوزان الأعمدة"
 
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
-msgid "Columns"
-msgstr "الأعمدة"
+#~ msgid "Columns"
+#~ msgstr "الأعمدة"
 
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
-msgid "Columns & Trace"
-msgstr "الأعمدة والتتبع"
+#~ msgid "Columns & Trace"
+#~ msgstr "الأعمدة والتتبع"
 
 #: src/components/organization/budgets/AddPeopleDialog.tsx
 msgid "Columns: name, email, budget"
@@ -5188,14 +5188,14 @@ msgstr "أمر"
 #: src/components/hooks-manager/HookForm.tsx
 #: src/components/hooks-view/HooksBrowser.tsx
 #: src/components/project-resource-list/resource-meta.ts
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/SessionInfoPopover.tsx
 #: src/i18n/type-labels.ts
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Command"
 msgstr "أمر"
 
 #: src/components/terminal/interactive-terminal/command-status-viewer/CommandStatusViewer.tsx
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/DebugMenu.tsx
 msgid "Command Status"
 msgstr "حالة الأمر"
 
@@ -5247,12 +5247,11 @@ msgstr "إيداع"
 msgid "Commit & continue"
 msgstr "تثبيت ومتابعة"
 
-#: src/components/terminal/interactive-terminal/WorktreeButtons.tsx
-#: src/components/terminal/interactive-terminal/WorktreeButtons.tsx
+#: src/components/terminal/interactive-terminal/SessionActionsMenu.tsx
 msgid "Commit & Merge"
 msgstr "الالتزام والدمج"
 
-#: src/components/terminal/interactive-terminal/WorktreeButtons.tsx
+#: src/components/terminal/interactive-terminal/SessionActionsMenu.tsx
 msgid "Commit all changes and merge back to the parent branch. Claude will exit the worktree when done."
 msgstr "الالتزام بجميع التغييرات ودمج الفرع الحالي مع الفرع الأصل. سيغادر Claude بيئة العمل عند الانتهاء."
 
@@ -5724,7 +5723,7 @@ msgstr "علامة تبويب Copilot"
 msgid "Copy"
 msgstr "نسخ"
 
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/SessionInfoPopover.tsx
 msgid "Copy {label}"
 msgstr "نسخ {label}"
 
@@ -5882,7 +5881,7 @@ msgstr ""
 msgid "Copy this file's path to the clipboard"
 msgstr "نسخ مسار هذا الملف إلى الحافظة"
 
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/SessionInfoPopover.tsx
 #: src/components/version-popover/version-popover.tsx
 msgid "Copy to clipboard"
 msgstr "نسخ إلى الحافظة"
@@ -7205,7 +7204,7 @@ msgstr "الصف الحالي المُحدَّد من المخزن المؤقت 
 msgid "Current resolved buffer row — prompt annotations position by text-search in xterm buffer"
 msgstr "الصف الحالي المُحدَّد من المخزن المؤقت — يُحدَّد موضع ملاحظات الموجه بالبحث النصي في مخزن xterm"
 
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/SessionInfoPopover.tsx
 msgid "Current Time"
 msgstr "الوقت الحالي"
 
@@ -7346,16 +7345,21 @@ msgid "DB Stats"
 msgstr "إحصائيات قاعدة البيانات"
 
 #: src/components/account/settings-section.tsx
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/DebugMenu.tsx
+#: src/components/terminal/interactive-terminal/SessionInfoPopover.tsx
 #: src/i18n/pref-labels.ts
 msgid "Debug"
 msgstr "تصحيح"
+
+#: src/components/terminal/interactive-terminal/DebugMenu.tsx
+msgid "Debug — CLI options, gutters, viewers"
+msgstr ""
 
 #: src/components/account/settings-section.tsx
 msgid "Debug level includes hook invocations."
 msgstr "يتضمن مستوى التصحيح استدعاءات الخطافات."
 
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/DebugMenu.tsx
 msgid "Debug logging"
 msgstr "تسجيل التصحيح"
 
@@ -8498,6 +8502,7 @@ msgid "Download attachments"
 msgstr ""
 
 #: src/components/terminal/interactive-terminal/EntityShareDialog.tsx
+#: src/components/terminal/interactive-terminal/SessionActionsMenu.tsx
 msgid "Download bundle"
 msgstr "تنزيل الحزمة"
 
@@ -8901,7 +8906,7 @@ msgstr "تفعيل الكل"
 msgid "Enable All Project MCP Servers"
 msgstr "تفعيل جميع خوادم MCP للمشروع"
 
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/DebugMenu.tsx
 msgid "Enable browser automation via Chrome (--chrome)"
 msgstr "تفعيل أتمتة المتصفح عبر Chrome (--chrome)"
 
@@ -10756,7 +10761,7 @@ msgstr "قاموس متغيرات البيئة الكامل"
 msgid "Full path to the plan .md file written by the agent"
 msgstr "المسار الكامل لملف الخطة .md الذي أنشأه الوكيل"
 
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/DebugMenu.tsx
 msgid "Full Trust"
 msgstr "الثقة الكاملة"
 
@@ -11161,6 +11166,10 @@ msgstr "الإعداد الموجّه"
 msgid "Guides"
 msgstr "الأدلة"
 
+#: src/components/terminal/interactive-terminal/DebugMenu.tsx
+msgid "Gutters"
+msgstr ""
+
 #: src/pages/hub-home/ShareSandboxDialog.tsx
 msgid "Hand it over"
 msgstr "تحويل الملكية"
@@ -11193,7 +11202,7 @@ msgstr "يلزم تثبيت Harness"
 #~ msgid "Harness path"
 #~ msgstr "مسار الأداة"
 
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/SessionInfoPopover.tsx
 msgid "Harness Session Details"
 msgstr "تفاصيل جلسة Harness"
 
@@ -11208,11 +11217,11 @@ msgstr "تسجيل الدخول وحالة Harness"
 msgid "Harness status"
 msgstr "حالة Harness"
 
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/SessionInfoPopover.tsx
 msgid "Harness worker Session ID"
 msgstr "معرّف جلسة عامل Harness"
 
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/SessionInfoPopover.tsx
 msgid "Harness worker Session Name"
 msgstr "اسم جلسة عامل Harness"
 
@@ -11903,7 +11912,7 @@ msgstr "تضمين هذا الملف في الـ commit القادم (git add)"
 #~ msgid "Include this session's transcript"
 #~ msgstr ""
 
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/DebugMenu.tsx
 msgid "Index (seq)"
 msgstr "الفهرس (seq)"
 
@@ -12679,7 +12688,7 @@ msgstr "آخر فهرسة: أبداً"
 msgid "Last Login:"
 msgstr "آخر تسجيل دخول:"
 
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/SessionInfoPopover.tsx
 msgid "Last message"
 msgstr "آخر رسالة"
 
@@ -12902,7 +12911,7 @@ msgstr ""
 msgid "line"
 msgstr "السطر"
 
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/DebugMenu.tsx
 msgid "Line"
 msgstr "السطر"
 
@@ -13647,6 +13656,7 @@ msgid "Manage API keys"
 msgstr "إدارة مفاتيح API"
 
 #: src/components/asset-manager/AssetManagerButton.tsx
+#: src/components/terminal/interactive-terminal/SessionActionsMenu.tsx
 msgid "Manage assets"
 msgstr "إدارة الأصول"
 
@@ -14118,7 +14128,7 @@ msgstr "النموذج"
 #: src/components/entity-execution-panel/ExecutionSettingsPopover.tsx
 #: src/components/llm-endpoints/UsageByChildTable.tsx
 #: src/components/settings-view/settings-utils.ts
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/SessionInfoPopover.tsx
 #: src/pages/flow-page/vibe-model-select.tsx
 #: src/pages/flow-page/vibe-model-select.tsx
 msgid "Model"
@@ -16625,7 +16635,7 @@ msgstr ""
 msgid "Open {workerName} terminal"
 msgstr "فتح طرفية {workerName}"
 
-#: src/components/terminal/interactive-terminal/WorktreeButtons.tsx
+#: src/components/terminal/interactive-terminal/SessionActionsMenu.tsx
 msgid "Open a new isolated git worktree session on a separate branch"
 msgstr "فتح جلسة عمل Git معزولة جديدة على فرع منفصل"
 
@@ -16693,7 +16703,7 @@ msgstr "فتح صفحة التفويض"
 msgid "Open Backup Folder"
 msgstr "فتح مجلد النسخ الاحتياطي"
 
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/SessionInfoPopover.tsx
 msgid "Open command in external terminal"
 msgstr "فتح الأمر في الطرفية الخارجية"
 
@@ -16854,7 +16864,7 @@ msgstr "فتح في المحرر"
 msgid "Open in external browser"
 msgstr "فتح في متصفح خارجي"
 
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/SessionInfoPopover.tsx
 msgid "Open in external terminal"
 msgstr "فتح في الطرفية الخارجية"
 
@@ -16898,7 +16908,7 @@ msgstr "فتح في تبويب المهارات"
 msgid "Open in terminal"
 msgstr "فتح في المحطة الطرفية"
 
-#: src/components/terminal/interactive-terminal/WorktreeButtons.tsx
+#: src/components/terminal/interactive-terminal/SessionActionsMenu.tsx
 msgid "Open in Worktree"
 msgstr "فتح في بيئة العمل"
 
@@ -17038,7 +17048,7 @@ msgstr ""
 
 #: src/components/diagnose/open-in-terminal-button.tsx
 #: src/components/terminal/interactive-terminal/PlanInteractionBar.tsx
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/SessionActionsMenu.tsx
 msgid "Open terminal"
 msgstr "فتح المحطة الطرفية"
 
@@ -17047,8 +17057,8 @@ msgid "Open terminal ({modLabel}+T)"
 msgstr "فتح الطرفية ({modLabel}+T)"
 
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
-msgid "Open terminal in {workdir}"
-msgstr "فتح الطرفية في {workdir}"
+#~ msgid "Open terminal in {workdir}"
+#~ msgstr "فتح الطرفية في {workdir}"
 
 #: src/components/help/AskForHelpDialog.tsx
 msgid "Open that conversation"
@@ -17215,7 +17225,7 @@ msgstr "يجب فتح هذه الخطة من جلستها لتحديثها."
 
 #: src/components/assets/editor/wizard/WizardStepInspector.tsx
 #: src/components/process-runs/ProcessRunsPanel.tsx
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/SessionActionsMenu.tsx
 msgid "Open transcript"
 msgstr "فتح السجل النصي"
 
@@ -17792,7 +17802,7 @@ msgstr ""
 msgid "Permanently delete?"
 msgstr "حذف نهائي؟"
 
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/SessionInfoPopover.tsx
 msgid "Permission"
 msgstr "الصلاحية"
 
@@ -18270,11 +18280,11 @@ msgstr "عملية"
 msgid "Process"
 msgstr "العملية"
 
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/SessionInfoPopover.tsx
 msgid "Process ID"
 msgstr "معرّف العملية"
 
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/SessionInfoPopover.tsx
 msgid "Process Name"
 msgstr "اسم العملية"
 
@@ -18496,7 +18506,7 @@ msgstr "المطالبة"
 msgid "Prompt Annotation"
 msgstr "ملاحظة المطالبة"
 
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/DebugMenu.tsx
 msgid "Prompt annotations"
 msgstr "تعليقات المطالبة"
 
@@ -18641,7 +18651,7 @@ msgstr "انقطع اتصال PTY."
 msgid "PTY Events"
 msgstr "أحداث PTY"
 
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/DebugMenu.tsx
 msgid "PTY Events Viewer"
 msgstr "عارض أحداث PTY"
 
@@ -18649,7 +18659,7 @@ msgstr "عارض أحداث PTY"
 msgid "pty experiment"
 msgstr "تجربة pty"
 
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/SessionInfoPopover.tsx
 msgid "PTY ID"
 msgstr "معرّف PTY"
 
@@ -18658,7 +18668,7 @@ msgstr "معرّف PTY"
 msgid "PTY time"
 msgstr "وقت PTY"
 
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/DebugMenu.tsx
 #: src/components/terminal/interactive-terminal/pty-viewer/PTYViewer.tsx
 msgid "PTY Viewer"
 msgstr "عارض PTY"
@@ -19841,7 +19851,7 @@ msgstr ""
 msgid "required — it will not work here until it is set up"
 msgstr ""
 
-#: src/components/terminal/interactive-terminal/WorktreeButtons.tsx
+#: src/components/terminal/interactive-terminal/SessionActionsMenu.tsx
 msgid "Requires a git repository with at least one commit"
 msgstr "يتطلب مستودع Git يحتوي على التزام واحد على الأقل"
 
@@ -19958,12 +19968,11 @@ msgstr "إعادة تشغيل"
 msgid "Restart required — {changedCount} {0} changed"
 msgstr "يلزم إعادة التشغيل — تغيّر {changedCount} {0}"
 
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/SessionActionsMenu.tsx
 msgid "Restart required — config changed since start"
 msgstr "يجب إعادة التشغيل — تغيرت الإعدادات منذ البدء"
 
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/SessionActionsMenu.tsx
 msgid "Restart session"
 msgstr "إعادة تشغيل الجلسة"
 
@@ -19975,7 +19984,7 @@ msgstr "إعادة تشغيل الإعداد"
 msgid "Restart this journey"
 msgstr "إعادة تشغيل هذه الرحلة"
 
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/SessionActionsMenu.tsx
 msgid "Restarting…"
 msgstr "جاري إعادة التشغيل…"
 
@@ -20262,7 +20271,7 @@ msgstr ""
 msgid "Row range"
 msgstr "نطاق الصفوف"
 
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/DebugMenu.tsx
 msgid "Row time range"
 msgstr "نطاق زمن الصف"
 
@@ -21408,7 +21417,7 @@ msgstr "يمكنك إرسال رسالة أدناه وسيبدأ الوكيل ب
 msgid "Send a message first — fork requires conversation history"
 msgstr "يجب إرسال رسالة أولاً — يتطلب التفرع سجل المحادثة"
 
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/SessionActionsMenu.tsx
 msgid "Send a message first — no transcript yet"
 msgstr "يجب إرسال رسالة أولاً — لم يتم إنشاء السجل بعد"
 
@@ -21575,6 +21584,7 @@ msgstr "الجلسة"
 
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/project-resource-list/resource-meta.ts
+#: src/components/terminal/interactive-terminal/SessionActionsMenu.tsx
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Session"
 msgstr "جلسة"
@@ -21609,6 +21619,11 @@ msgstr ""
 msgid "Session {workerId} is not in Claude, Codex, or Copilot history."
 msgstr "الجلسة {workerId} غير موجودة في سجل Claude أو Codex أو Copilot."
 
+#: src/components/terminal/interactive-terminal/SessionActionsMenu.tsx
+#: src/components/terminal/interactive-terminal/SessionActionsMenu.tsx
+msgid "Session actions"
+msgstr ""
+
 #: src/components/lens-viewer/shared/transcript-features/AnalysisControls.tsx
 msgid "Session analysis"
 msgstr "تحليل الجلسة"
@@ -21634,9 +21649,13 @@ msgstr "أخطاء الجلسة"
 msgid "Session ID"
 msgstr "معرّف الجلسة"
 
+#: src/components/terminal/interactive-terminal/SessionActionsMenu.tsx
+msgid "Session info"
+msgstr ""
+
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/SessionActionsMenu.tsx
+#: src/components/terminal/interactive-terminal/SessionActionsMenu.tsx
 msgid "Session is not running"
 msgstr "الجلسة ليست قيد التشغيل"
 
@@ -22084,11 +22103,11 @@ msgstr "أمر Shell للتنفيذ. استخدم المتغيرات $CLAUDE_PRO
 msgid "Shell commands triggered by tool events"
 msgstr "أوامر Shell التي تُشَغَّل بأحداث الأدوات"
 
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/SessionInfoPopover.tsx
 msgid "Shell ID"
 msgstr "معرّف الصدفة"
 
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/SessionInfoPopover.tsx
 msgid "Shell Name"
 msgstr "اسم الصدفة"
 
@@ -23131,7 +23150,7 @@ msgid "started"
 msgstr "بدأ"
 
 #: src/components/automations/automation-words.ts
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/SessionInfoPopover.tsx
 msgid "Started"
 msgstr "البدء"
 
@@ -23206,7 +23225,7 @@ msgstr "جاري البدء…"
 #: src/components/machine-overview/machine-overview.tsx
 #: src/components/machine-overview/machine-overview.tsx
 #: src/components/record-search-bar/RecordSearchBar.tsx
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/SessionInfoPopover.tsx
 msgid "Status"
 msgstr "الحالة"
 
@@ -25205,15 +25224,15 @@ msgstr "الوقت"
 #: src/components/conversation/FlowMessageBubble.tsx
 #: src/components/record-search-bar/RecordSearchBar.tsx
 #: src/components/terminal/interactive-terminal/ColumnHeaderBar.tsx
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/DebugMenu.tsx
 msgid "Time"
 msgstr "الوقت"
 
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/DebugMenu.tsx
 msgid "Time gutter"
 msgstr "هامش الوقت"
 
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/DebugMenu.tsx
 msgid "Time Gutter Fields"
 msgstr "حقول هامش الوقت"
 
@@ -25544,7 +25563,7 @@ msgstr "إجمالي الرموز"
 msgid "Trace"
 msgstr "التتبع"
 
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/DebugMenu.tsx
 #: src/components/terminal/interactive-terminal/TraceGutter.tsx
 msgid "Trace events"
 msgstr "أحداث التتبع"
@@ -26383,7 +26402,7 @@ msgstr ""
 msgid "Vault root"
 msgstr "جذر Vault"
 
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/DebugMenu.tsx
 msgid "Verbose debug output (--debug)"
 msgstr "مخرجات تصحيح مفصلة (--debug)"
 
@@ -26565,6 +26584,10 @@ msgstr "عرض النص الكامل"
 #: src/components/lens-viewer/HeartbeatEventsViewer.tsx
 msgid "View trigger log"
 msgstr "عرض سجل المحفزات"
+
+#: src/components/terminal/interactive-terminal/DebugMenu.tsx
+msgid "Viewers"
+msgstr ""
 
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
 msgid "viewport px"
@@ -27109,7 +27132,7 @@ msgstr "قيد العمل"
 msgid "Working"
 msgstr "قيد المعالجة"
 
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/SessionInfoPopover.tsx
 msgid "Working Dir"
 msgstr "دليل العمل"
 
@@ -27141,12 +27164,13 @@ msgstr ""
 #: src/components/chats-navigator/ChatHistoryRow.tsx
 #: src/components/project-setup/ProjectSetupDialog.tsx
 #: src/components/setup-wizard/SetupWizardDialog.tsx
+#: src/components/terminal/interactive-terminal/SessionActionsMenu.tsx
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
-#: src/components/terminal/interactive-terminal/WorktreeButtons.tsx
 #: src/components/version-popover/diagnose-modal.tsx
 msgid "Working…"
 msgstr "قيد المعالجة…"
 
+#: src/components/terminal/interactive-terminal/SessionActionsMenu.tsx
 #: src/components/workspace/workspace-switcher.tsx
 #: src/i18n/type-labels.ts
 #: src/pages/hub-home/HubHome.tsx
@@ -27161,7 +27185,7 @@ msgstr ""
 msgid "Workspace name"
 msgstr ""
 
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/SessionInfoPopover.tsx
 msgid "Worktree"
 msgstr "شجرة العمل"
 
