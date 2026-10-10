@@ -57,7 +57,11 @@ def home(tmp_path, monkeypatch):
     monkeypatch.setattr(ap, "get_instance_settings", lambda: patched)
     monkeypatch.setattr(isettings, "get_instance_settings", lambda: patched)
     monkeypatch.setattr(cfg, "agent_workspace_root", lambda: default_root)
-    return home
+    # The root registry is module state. The sandbox clears it on the way out as well, so a module that
+    # borrows this fixture (and so never gets ``_no_workspaces_leak``) cannot hand its workspaces on.
+    yield home
+    cfg.set_workspace_roots({})
+    project_list.invalidate_project_list_cache()
 
 
 @pytest_asyncio.fixture
