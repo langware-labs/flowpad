@@ -28,6 +28,22 @@ Files and reactions:
   person's scope as the message itself, so it lands on the row that message was ingested under
   (ours included — a reaction to our reply names our wamid). One emoji per person: a new one
   replaces the old, and a removal carries no emoji at all.
+
+Groups (Meta's Groups API):
+
+* **A group is a conversation; its sender is still a person.** A message carries ``group_id`` beside
+  ``from`` (the participant), so the conversation is the group — ``(whatsapp, <account>/groups,
+  <group_id>)`` — and its messages live in the group's scope, ``(whatsapp, <account>/groups/<group_id>,
+  <wamid>)``; the sender stays the person's own origin. Sends, replies and reactions into a group go
+  to ``recipient_type: group`` with the group id as ``to``. A 1:1 chat is addressed exactly as before.
+* **A group source** (config ``group``) is one group of the number: its hub claim chains under the
+  number's account claim and routes only that group here, and everyone in the group may write —
+  being in the group is the admission. The number's own source keeps its allowlist for 1:1 chats.
+* **A group's own news is not a message.** ``group_*`` webhook fields (created, members joined or
+  left, subject changed) carry ``value.groups``, never ``messages``; no record kind holds a
+  conversation's title or members, so they yield nothing here. The group verbs (``create_group``,
+  ``invite_link``, ``group_info`` ...) are Graph calls, so they work against Meta and against a
+  service speaking its API alike.
 """
 from __future__ import annotations
 
@@ -84,6 +100,13 @@ TEXTUAL = frozenset({"text", "button", "interactive"})
 MEDIA_STREAM = "media"
 #: Where a reaction report is keyed (by the wamid of the reaction itself).
 REACTIONS_STREAM = "reactions"
+#: Where a group conversation lives, and (narrowed by its id) the group's messages.
+GROUPS_STREAM = "groups"
+#: The webhook fields a new app subscription asks for: messages, and Meta's four group fields (a group's
+#: news — created, people joining, renamed — arrives only to an app subscribed to them).
+WEBHOOK_FIELDS = "messages,group_lifecycle_update,group_participants_update,group_settings_update,group_status_update"
+#: What ``group_info`` reads: Meta's group fields.
+GROUP_FIELDS = "subject,description,participants,total_participant_count,join_approval_mode"
 #: Meta's message ``type`` for a file, by what the recipient's app shows. A voice note is an ``audio``
 #: whose bytes are OGG/Opus — Meta tells them apart by the codec, and reports ``voice: true`` inbound.
 WIRE_TYPE: dict[FileKind, str] = {
@@ -130,6 +153,9 @@ class WhatsAppConfig(SourceConfig):
     allowed_senders: list[Annotated[str, StringConstraints(pattern=r"^[0-9]+$")]] = []
     #: Where Graph is. Empty means Meta's own host; a test names a loopback double. Never a secret.
     base_url: str = ""
+    #: One group of this number (Meta's group id): the source is that group alone, claimed on the hub
+    #: under the number's account. Empty is the number itself.
+    group: Annotated[str, StringConstraints(strip_whitespace=True)] = ""
 
 
 class WhatsAppSource(MessageSource):
@@ -167,6 +193,30 @@ class WhatsAppSource(MessageSource):
     def base_url(self) -> str:
         return str(self.config.get("base_url") or GRAPH_API_BASE).rstrip("/")
 
+    @property
+    def group(self) -> str:
+        """The one group this source is, or ``""`` for the number itself."""
+        return self.account_part(self.config)
+
+    # ── what a group source says about itself ───────────────────────────────
+    @classmethod
+    def account_part(cls, config: Mapping[str, Any]) -> str:
+        """A group source is part of its number: it is not the number's own source's twin. THE reader of ``group``."""
+        return str(config.get("group") or "").strip()
+
+    @classmethod
+    def open_inbound_for(cls, config: Mapping[str, Any]) -> bool:
+        """Everyone in a group may write: its claim routes only that group here, so being in it is the
+        admission. The number itself admits its allowlist."""
+        return bool(cls.account_part(config))
+
+    @classmethod
+    def room_of(cls, item: Any) -> str:
+        """A group message's conversation is continued at the group, never at whoever wrote in it."""
+        namespace = getattr(item, "origin_namespace", "") or getattr(getattr(item, "origin", None), "namespace", "")
+        parts = str(namespace or "").split("/")
+        return parts[-1] if len(parts) >= 2 and parts[-2] == GROUPS_STREAM else ""
+
     def origin(self, key: str, *within: str) -> CloudOrigin:
         return super().origin(key, *(within or (MESSAGES_STREAM,)))
 
@@ -176,6 +226,13 @@ class WhatsAppSource(MessageSource):
 
     def message_origin(self, message_id: str, wa_id: str) -> CloudOrigin:
         return self.origin(message_id, MESSAGES_STREAM, wa_id)
+
+    def group_origin(self, group_id: str) -> CloudOrigin:
+        """The group, which is the conversation."""
+        return self.origin(group_id, GROUPS_STREAM)
+
+    def group_message_origin(self, message_id: str, group_id: str) -> CloudOrigin:
+        return self.origin(message_id, GROUPS_STREAM, group_id)
 
     def media_origin(self, media_id: str) -> CloudOrigin:
         """A media handle: Meta's media id, account-wide (a download needs nothing but the id)."""
@@ -189,12 +246,18 @@ class WhatsAppSource(MessageSource):
         return WhatsAppMessageSpec
 
     def message_for(self, *, thread_key: str, to: str, text: str, subject: str = "", in_reply_to: str = "", conversation_id: str = ""):
-        """``to`` is the person's wa_id — the person IS the conversation — and ``in_reply_to`` quotes
-        their message, which renders as a quote and starts no thread. A subject has no equivalent."""
+        """``to`` is the person's wa_id — the person IS the conversation — or a group's id, and
+        ``in_reply_to`` quotes a message there, which renders as a quote and starts no thread. A
+        subject has no equivalent."""
+        quoted = str(in_reply_to or "").strip()
+        group = next((v for v in (str(to or "").strip(), str(thread_key or "").strip()) if v), "")
+        if is_group_id(group):
+            if quoted:
+                return MessageData(text=text), self.group_message_origin(quoted, group)
+            return MessageData(text=text, conversation=self.group_origin(group)), None
         wa_id = digits(to) or digits(thread_key)
         if not wa_id:
             raise ValueError("a whatsapp send needs the recipient's wa_id in `to`")
-        quoted = str(in_reply_to or "").strip()
         if quoted:
             return MessageData(text=text), self.message_origin(quoted, wa_id)
         return MessageData(text=text, conversation=self.conversation_origin(wa_id)), None
@@ -254,7 +317,8 @@ class WhatsAppSource(MessageSource):
     def events_from_webhook(self, payload: Any) -> list[DataSourceEvent]:
         """Meta's webhook body → the messages it carries, as upserts. Pure, and total: Meta posts
         the same envelope for receipts, alerts and types nothing renders, and a webhook that
-        fails is RETRIED — so an unknown shape yields nothing rather than an error."""
+        fails is RETRIED — so an unknown shape yields nothing rather than an error. A group source
+        takes its own group's messages only; a ``group_*`` field carries none."""
         events: list[DataSourceEvent] = []
         for entry in _list(payload.get("entry") if isinstance(payload, dict) else None):
             for change in _list(entry.get("changes") if isinstance(entry, dict) else None):
@@ -266,7 +330,9 @@ class WhatsAppSource(MessageSource):
                     if isinstance(c, dict)
                 }
                 for message in _list(value.get("messages")):
-                    item = self._item(message, names) if isinstance(message, dict) else None
+                    if not isinstance(message, dict) or (self.group and str(message.get("group_id") or "").strip() != self.group):
+                        continue
+                    item = self._item(message, names)
                     if item is not None:
                         events.append(DataSourceEvent(id=item.origin.key, kind=EventKind.UPSERT, origin=item.origin, item=item))
         return events
@@ -275,9 +341,15 @@ class WhatsAppSource(MessageSource):
         message_id, wa_id, kind = str(message.get("id") or "").strip(), digits(message.get("from")), str(message.get("type") or "")
         if not (message_id and wa_id):
             return None
+        # The person, in a group too: the group is where they wrote, not who they are.
         sender = UserProfile(origin=self.conversation_origin(wa_id), name=names.get(wa_id) or None)
+        group = str(message.get("group_id") or "").strip()
+
+        def at(key: str) -> CloudOrigin:
+            return self.group_message_origin(key, group) if group else self.message_origin(key, wa_id)
+
         if kind == "reaction":
-            return self._reaction(message, message_id, wa_id, sender)
+            return self._reaction(message, message_id, wa_id, sender, at)
         files = tuple(f for f in (self._file(message, kind),) if f is not None)
         # The words are the message's own even when they ride a file: a media message's are its caption.
         text = _text_of(message, kind) if kind in TEXTUAL else (files[0].data.caption or "" if files else "")
@@ -286,14 +358,14 @@ class WhatsAppSource(MessageSource):
         quoted = str((message.get("context") or {}).get("id") or "")
         data = WhatsAppMessageData(
             text=text or None,
-            conversation=self.conversation_origin(wa_id),
+            conversation=self.group_origin(group) if group else self.conversation_origin(wa_id),
             sender=sender,
             sent_at=_when(message.get("timestamp")),
             attachments=files,
-            in_reply_to=self.message_origin(quoted, wa_id) if quoted else None,
+            in_reply_to=at(quoted) if quoted else None,
             raw=message,
         )
-        return MessageItem(origin=self.message_origin(message_id, wa_id), data=data)
+        return MessageItem(origin=at(message_id), data=data)
 
     def _file(self, message: dict, kind: str) -> Optional[FileItem]:
         """The file a media message carries, as its handle; the words on it are its caption."""
@@ -310,15 +382,16 @@ class WhatsAppSource(MessageSource):
         )
         return FileItem(origin=self.media_origin(str(media["id"]).strip()), data=data)
 
-    def _reaction(self, message: dict, message_id: str, wa_id: str, sender: UserProfile) -> Optional[ReactionItem]:
-        """The person's one emoji on a message, now; a removal omits ``emoji`` and says ``()``."""
+    def _reaction(self, message: dict, message_id: str, wa_id: str, sender: UserProfile, at) -> Optional[ReactionItem]:
+        """The person's one emoji on a message, now; a removal omits ``emoji`` and says ``()``. The
+        target is in the scope the message is in (``at``): the person's chat, or the group."""
         reaction = message.get("reaction") if isinstance(message.get("reaction"), dict) else {}
         target = str(reaction.get("message_id") or "").strip()
         if not target:
             return None
         emoji = str(reaction.get("emoji") or "")
         data = ReactionData(
-            target=self.message_origin(target, wa_id),
+            target=at(target),
             sender=sender,
             emojis=(emoji,) if emoji else (),
             mode=ReactionMode.SET,
@@ -433,7 +506,10 @@ class WhatsAppSource(MessageSource):
     async def _me_step(self, *, check: bool, values: Mapping[str, str]) -> ReturnedValue:
         """The person's own phone, proven by a message reaching it: Meta's hello_world template (the one
         a test number may always send). Refused with 131030 until the number is one of the app's test
-        recipients. The number becomes the source's one allowed sender."""
+        recipients. The number becomes the source's one allowed sender. A group source has nobody to
+        prove: everyone in the group may write."""
+        if self.group:
+            return ReturnedValue.not_applicable("a group admits everyone in it")
         number = digits(values.get("my_number") or self.config.get("test_recipient"))
         if not number:
             return ReturnedValue.not_yet("Enter your own WhatsApp number, with its country code.")
@@ -461,8 +537,14 @@ class WhatsAppSource(MessageSource):
         ``public-webhook`` step asks): the hub proves the token reads this number, keeps the app secret and
         verify token write-only, checks Meta's signature at its edge and hands each message to this channel.
         A number on a server of one's own (``base_url``: a WAHA service speaking Meta's API) is proven THERE.
-        ``None`` until the number, its token and its app secret are known."""
+        ``None`` until the number, its token and its app secret are known.
+
+        A group source is a group claim UNDER that account claim (``under``): the hub routes the group's
+        messages here rather than to the number's own place. Nothing to prove — the account claim did."""
         number, token, app_secret = str(config.get("phone_number_id") or ""), secrets.get("access_token"), secrets.get("app_secret")
+        group = cls.account_part(config)
+        if group:
+            return {"provider": "whatsapp", "kind": "group", "key": group, "under": {"kind": "account", "key": number}} if number else None
         if not (number and token and app_secret):
             return None
         proof = {"credential": token, "app_secret": app_secret, "verify_token": str(config.get("verify_token") or "")}
@@ -476,7 +558,10 @@ class WhatsAppSource(MessageSource):
         """Meta sends THIS number's messages to our public URL: the number's own webhook override points at
         it (Meta checks it right away — the hub answers with the verify token) and the business account is
         subscribed to the app. The app's own callback is never repointed: on an app shared by several
-        numbers (or instances) that would take every number's messages — the last setup would win."""
+        numbers (or instances) that would take every number's messages — the last setup would win.
+        A group source rides its number's webhook: there is nothing of its own to point."""
+        if self.group:
+            return ReturnedValue.not_applicable("a group arrives through its number's webhook")
         app_id, secret = str(self.config.get("app_id") or ""), self._secret("app_secret")
         waba, verify_token = str(self.config.get("waba_id") or ""), str(self.config.get("verify_token") or "")
         number, callback = str(self.config.get("phone_number_id") or ""), self._secret("webhook_url")
@@ -501,7 +586,7 @@ class WhatsAppSource(MessageSource):
             if not any(h.get("object") == "whatsapp_business_account" for h in _list(hooks.get("data"))):
                 await self._graph("POST", f"{app_id}/subscriptions", token=app_token, params={
                     "object": "whatsapp_business_account", "callback_url": callback,
-                    "verify_token": verify_token, "fields": "messages",
+                    "verify_token": verify_token, "fields": WEBHOOK_FIELDS,
                 })
             await self._graph("POST", f"{waba}/subscribed_apps")
             await self._graph("POST", number, params={
@@ -521,29 +606,29 @@ class WhatsAppSource(MessageSource):
         if (data.conversation is None) == (not data.recipients):
             raise ValueError("address exactly one of a conversation or recipients")
         if data.conversation is not None:
-            wa_id, conversation = self._person_of(data.conversation), data.conversation
+            (recipient_type, to), conversation = self._chat_of(data.conversation), data.conversation
         else:
             if len(data.recipients) != 1:
                 raise Unsupported("a WhatsApp message goes to exactly one person")
-            wa_id = digits(data.recipients[0].origin.key)
-            conversation = self.conversation_origin(wa_id)
-        if not wa_id:
+            recipient_type, to = "individual", digits(data.recipients[0].origin.key)
+            conversation = self.conversation_origin(to)
+        if not to:
             raise NotFound("no WhatsApp number to send to")
-        return await self._send(wa_id, data, conversation, quoted="")
+        return await self._send(recipient_type, to, data, conversation, quoted="")
 
     async def reply(self, origin: CloudOrigin, data: MessageData) -> MessageItem:
         self._require_open()
         _check_outgoing(data, self.files)
         if data.conversation is not None or data.recipients:
             raise ValueError("a reply is routed from the message it answers; leave conversation and recipients empty")
-        wa_id = self._person_of_message(origin)
-        sent = await self._send(wa_id, data, self.conversation_origin(wa_id), quoted=origin.key)
+        recipient_type, to = self._chat_of_message(origin)
+        conversation = self.group_origin(to) if recipient_type == "group" else self.conversation_origin(to)
+        sent = await self._send(recipient_type, to, data, conversation, quoted=origin.key)
         return MessageItem(origin=sent.origin, data=sent.data.model_copy(update={"in_reply_to": origin}))
 
-    async def _send(self, wa_id: str, data: MessageData, conversation: CloudOrigin, *, quoted: str) -> MessageItem:
-        if not self.phone_number_id:
-            raise Rejected("this source has no phone_number_id; verify it first")
-        payload: dict[str, Any] = {"messaging_product": "whatsapp", "recipient_type": "individual", "to": wa_id}
+    async def _send(self, recipient_type: str, to: str, data: MessageData, conversation: CloudOrigin, *, quoted: str) -> MessageItem:
+        self._number()
+        payload: dict[str, Any] = {"messaging_product": "whatsapp", "recipient_type": recipient_type, "to": to}
         if data.attachments:
             payload.update(await self._media_message(data.attachments[0], data.text))
         else:
@@ -562,7 +647,8 @@ class WhatsAppSource(MessageSource):
             sent_at=datetime.now(timezone.utc),
             raw=body,
         )
-        return MessageItem(origin=self.message_origin(sent_id, wa_id), data=data)
+        at = self.group_message_origin(sent_id, to) if recipient_type == "group" else self.message_origin(sent_id, to)
+        return MessageItem(origin=at, data=data)
 
     async def _media_message(self, file: FileItem, text: Optional[str]) -> dict:
         """Upload the bytes, then the message names the media id Meta answered with."""
@@ -601,37 +687,101 @@ class WhatsAppSource(MessageSource):
         await self._react(target, "")
 
     async def _react(self, target: CloudOrigin, emoji: str) -> None:
-        if not self.phone_number_id:
-            raise Rejected("this source has no phone_number_id; verify it first")
-        wa_id = self._person_of_message(target)
+        self._number()
+        recipient_type, to = self._chat_of_message(target)
         payload = {
             "messaging_product": "whatsapp",
-            "recipient_type": "individual",
-            "to": wa_id,
+            "recipient_type": recipient_type,
+            "to": to,
             "type": "reaction",
             "reaction": {"message_id": target.key, "emoji": emoji},
         }
         await self._graph("POST", f"{self.phone_number_id}/messages", json=payload)
 
-    # ── transport ───────────────────────────────────────────────────────────
-    def _person_of_message(self, origin: object) -> str:
-        """The wa_id a message origin hangs off — its conversation's person."""
-        if not isinstance(origin, CloudOrigin):
-            raise TypeError(f"expected CloudOrigin, got {type(origin).__name__}")
-        base = self.origin("-").namespace
-        if origin.kind != self._scope.kind or not (origin.namespace == base or origin.namespace.startswith(base + "/")):
-            raise ValueError(f"{origin!r} is outside this source's scope")
-        wa_id = digits(origin.namespace[len(base) + 1:]) if origin.namespace != base else ""
-        if not wa_id:
-            raise NotFound(f"{origin!r} names no message", origin=origin)
-        return wa_id
+    # ── groups (Graph calls: Meta's Groups API, or a service speaking it) ───
+    async def create_group(self, subject: str, *, description: Optional[str] = None, join_approval_mode: Optional[str] = None) -> str:
+        """A new group with this number as its admin. Meta answers with a ``request_id`` only: the group's
+        id and invite link arrive later, in the ``group_lifecycle_update`` webhook (``group_create``)."""
+        subject = str(subject or "").strip()
+        if not subject:
+            raise ValueError("a group needs a subject")
+        body: dict[str, Any] = {"messaging_product": "whatsapp", "subject": subject}
+        if description:
+            body["description"] = description
+        if join_approval_mode:
+            body["join_approval_mode"] = join_approval_mode
+        answer = await self._graph("POST", f"{self._number()}/groups", json=body)
+        request_id = str(answer.get("request_id") or "")
+        if not request_id:
+            raise OutcomeUnknown("Meta accepted the group but returned no request id")
+        return request_id
 
-    def _person_of(self, origin: object) -> str:
+    async def list_groups(self, *, limit: Optional[int] = None, after: str = "") -> dict:
+        """The number's groups, one page: Graph's ``{data: [...], paging}`` as it answered."""
+        params: dict[str, Any] = {k: v for k, v in (("limit", limit), ("after", after)) if v}
+        return await self._graph("GET", f"{self._number()}/groups", params=params)
+
+    async def group_info(self, group_id: str) -> dict:
+        """The group's subject, description, participants, their count and its join approval mode."""
+        return await self._graph("GET", _group_id(group_id), params={"fields": GROUP_FIELDS})
+
+    async def invite_link(self, group_id: str) -> str:
+        return await self._link("GET", group_id)
+
+    async def reset_invite_link(self, group_id: str) -> str:
+        """A new invite link; the old one stops working."""
+        return await self._link("POST", group_id, json={"messaging_product": "whatsapp"})
+
+    async def remove_participants(self, group_id: str, wa_ids: list[str]) -> dict:
+        return await self._graph("DELETE", f"{_group_id(group_id)}/participants", json=_participants(wa_ids))
+
+    async def add_participants(self, group_id: str, wa_ids: list[str]) -> dict:
+        """Add people directly. NOT a Meta call — Meta adds people only through the invite link; a service
+        speaking Meta's API over WhatsApp Web (waha-service) extends it with this. Refused, it says so."""
+        try:
+            return await self._graph("POST", f"{_group_id(group_id)}/participants", json=_participants(wa_ids))
+        except (Rejected, NotFound) as exc:
+            raise Rejected(
+                f"{exc} — adding people directly is an extension of a WhatsApp Web-backed service, not a call on "
+                "Meta's Cloud API; on Meta, send them the group's invite link instead"
+            ) from exc
+
+    async def _link(self, verb: str, group_id: str, **kwargs: Any) -> str:
+        link = str((await self._graph(verb, f"{_group_id(group_id)}/invite_link", **kwargs)).get("invite_link") or "")
+        if not link:
+            raise OutcomeUnknown("Meta answered with no invite link")
+        return link
+
+    def _number(self) -> str:
+        if not self.phone_number_id:
+            raise Rejected("this source has no phone_number_id; verify it first")
+        return self.phone_number_id
+
+    # ── transport ───────────────────────────────────────────────────────────
+    def _chat_of_message(self, origin: object) -> tuple[str, str]:
+        """``(recipient_type, to)`` of the chat a message origin hangs off: its person (``individual``,
+        their wa_id) or its group (``group``, the group id, verbatim — it is not a number)."""
         if not isinstance(origin, CloudOrigin):
             raise TypeError(f"expected CloudOrigin, got {type(origin).__name__}")
-        if origin != self.origin(origin.key):
-            raise ValueError(f"{origin!r} is outside this source's scope")
-        return digits(origin.key)
+        for recipient_type, base in (("individual", self.origin("-").namespace), ("group", self.origin("-", GROUPS_STREAM).namespace)):
+            if origin.kind != self._scope.kind or not (origin.namespace == base or origin.namespace.startswith(base + "/")):
+                continue
+            rest = origin.namespace[len(base) + 1:] if origin.namespace != base else ""
+            to = rest.strip() if recipient_type == "group" else digits(rest)
+            if not to:
+                raise NotFound(f"{origin!r} names no message", origin=origin)
+            return recipient_type, to
+        raise ValueError(f"{origin!r} is outside this source's scope")
+
+    def _chat_of(self, origin: object) -> tuple[str, str]:
+        """``(recipient_type, to)`` of a conversation origin: a person, or a group."""
+        if not isinstance(origin, CloudOrigin):
+            raise TypeError(f"expected CloudOrigin, got {type(origin).__name__}")
+        if origin == self.origin(origin.key):
+            return "individual", digits(origin.key)
+        if origin == self.group_origin(origin.key):
+            return "group", origin.key.strip()
+        raise ValueError(f"{origin!r} is outside this source's scope")
 
     def _token(self) -> Optional[str]:
         return self._secret("access_token")
@@ -671,6 +821,27 @@ def digits(value: Any) -> str:
     ways, because one number arrives written three ways, and two spellings of one correspondent
     would fork the conversation."""
     return "".join(ch for ch in str(value or "") if ch.isdigit())
+
+
+def is_group_id(value: Any) -> bool:
+    """A group id is Meta's opaque token, never a phone number: a wa_id is digits (however written);
+    anything else addressed is a group."""
+    text = str(value or "").strip()
+    return bool(text) and not set(text) <= set("+0123456789 -().")
+
+
+def _group_id(value: Any) -> str:
+    group = str(value or "").strip()
+    if not group:
+        raise ValueError("name the group (its id)")
+    return group
+
+
+def _participants(wa_ids: Any) -> dict:
+    people = [d for d in (digits(w) for w in (wa_ids or [])) if d]
+    if not people:
+        raise ValueError("name at least one participant (a phone number with its country code)")
+    return {"messaging_product": "whatsapp", "participants": [{"user": p} for p in people]}
 
 
 def _check_outgoing(data: object, support: FileSupport) -> None:
@@ -725,6 +896,7 @@ def _list(value: Any) -> list:
 __all__ = [
     "GRAPH_API_BASE",
     "GRAPH_VERSION",
+    "GROUPS_STREAM",
     "MEDIA_STREAM",
     "MESSAGES_STREAM",
     "REACTIONS_STREAM",
@@ -732,4 +904,5 @@ __all__ = [
     "WhatsAppMessageData",
     "WhatsAppSource",
     "digits",
+    "is_group_id",
 ]

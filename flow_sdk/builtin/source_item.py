@@ -237,7 +237,7 @@ class VoiceMessageSpec(MessageSpec):
 
 
 class WhatsAppMessageSpec(MessageSpec):
-    """Outbound WhatsApp message: the generic shape, person-targeted replies.
+    """Outbound WhatsApp message: the generic shape, chat-targeted replies — the person, or the group.
 
     No extra fields — WhatsApp has no subject, and templates, media and
     interactive replies are explicit non-goals for now (the driver sends plain
@@ -248,9 +248,11 @@ class WhatsAppMessageSpec(MessageSpec):
     def reply_to(cls, m, *, body: str, files=()) -> "WhatsAppMessageSpec":
         """A reply to inbound message ``m`` — a pure constructor, no I/O.
 
-        WhatsApp replies target the PERSON, and the person IS the thread: a
-        conversation is the pair (business number, wa_id), so ``to`` and
-        ``thread_key`` carry the same id and there is nothing to derive. The
+        WhatsApp replies target the CHAT, and the chat IS the thread: a 1:1
+        conversation is the pair (business number, wa_id), a group's is the
+        group — so ``to`` and ``thread_key`` carry the same id (a wa_id, or the
+        group id: a reply in a group goes to the group, never privately to
+        whoever wrote) and there is nothing to derive. The
         replied-to id rides ``reply_to_external_id`` and becomes Meta's
         ``context`` — which renders as a quote and does not start a thread,
         because WhatsApp has none.

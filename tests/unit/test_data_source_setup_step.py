@@ -255,6 +255,64 @@ async def test_public_webhook_claims_the_account_on_the_hub_chain_when_the_drive
     assert answer.exit_code is ExitCode.OK
 
 
+async def test_public_webhook_chains_a_part_of_an_account_under_the_accounts_claim(stub, monkeypatch):
+    """A driver whose source is PART of an account (a WhatsApp group of a number) declares its claim ``under`` the
+    account: the chain request's parent is the person's own account claim (the one delivering HERE first), the
+    source keeps no URL of its own, and with no account claim yet it says to claim the account first."""
+    from flow_sdk.builtin import data_source as ds
+    from flow_sdk.cloud_client.transport import hub_http
+    from flow_sdk.instance_settings import runtime
+
+    name, kept = stub
+    driver = DataDriver.loaded(name)
+    asked: list = []
+    claims: list = []
+
+    async def hub_post(entity_type, payload, entity_id=None, action=None, *a, **kw):
+        asked.append((entity_type, action, payload))
+        return {"id": "g-1"}
+
+    async def hub_claims():
+        return list(claims)
+
+    def hub_claim(cls, config, secrets):
+        return {"provider": "vendor", "kind": "group", "key": config["group"],
+                "under": {"kind": "account", "key": config["app_id"]}}
+
+    monkeypatch.setattr(hub_http, "hub_post", hub_post)
+    monkeypatch.setattr(ds, "_hub_claims", hub_claims)
+    monkeypatch.setattr(runtime, "instance_uid", lambda: "inst-1")
+    monkeypatch.setattr(driver.cls, "hub_claim", classmethod(hub_claim), raising=False)
+    source = DataSource(provider=name, name="trip", config={"app_id": "A1", "group": "G1"})
+
+    first = await source.step("public-webhook")
+    assert first.exit_code is not ExitCode.OK and "account" in first.detail and asked == []
+
+    claims[:] = [
+        {"id": "acc-orphan", "provider": "vendor", "claim": {"kind": "account", "key": "A1"}, "proven_at": 0,
+         "target": {"kind": "none", "instance_id": ""}},
+        {"id": "acc-elsewhere", "provider": "vendor", "claim": {"kind": "account", "key": "A1"}, "proven_at": 1,
+         "target": {"kind": "desktop", "instance_id": "inst-2"}},
+        {"id": "acc-here", "provider": "vendor", "claim": {"kind": "account", "key": "A1"}, "proven_at": 2,
+         "target": {"kind": "desktop", "instance_id": "inst-1"}},
+        {"id": "acc-other", "provider": "vendor", "claim": {"kind": "account", "key": "A2"}, "proven_at": 0,
+         "target": {"kind": "desktop", "instance_id": "inst-1"}},
+    ]
+    answer = await source.step("public-webhook")
+    ((entity, action, body),) = asked
+    assert (entity, action) == ("webhook", "chain")
+    assert body["parent"] == "acc-here", "under the account claim that delivers to THIS instance"
+
+    asked.clear()
+    claims[:] = [c for c in claims if c["id"] != "acc-here"]
+    await source.step("public-webhook")
+    assert asked[0][2]["parent"] == "acc-elsewhere", "else one that delivers somewhere — never one with no target"
+    assert body["claim"] == {"kind": "group", "key": "G1"}
+    assert body["target"] == {"kind": "desktop", "instance_id": "inst-1", "data_source_id": str(source.id)}
+    assert kept["credentials"] == [], "a part rides its account's URL: nothing of its own to keep"
+    assert answer.exit_code is ExitCode.OK
+
+
 async def test_first_turn_holds_once_an_allowed_sender_spoke_and_an_answer_followed(stub, monkeypatch):
     from types import SimpleNamespace
 

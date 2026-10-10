@@ -1,0 +1,40 @@
+{
+  "object": "whatsapp_business_account",
+  "entry": [
+    {
+      "id": "<WHATSAPP_BUSINESS_ACCOUNT_ID>",
+      "changes": [
+        {
+          "value": {
+            "messaging_product": "whatsapp",
+            "metadata": {
+              "display_phone_number": "<BUSINESS_DISPLAY_PHONE_NUMBER>",
+              "phone_number_id": "<BUSINESS_PHONE_NUMBER_ID>"
+            },
+            "contacts": [
+              {
+                "profile": {
+                  "name": "<WHATSAPP_USER_NAME>"
+                },
+                "wa_id": "<WHATSAPP_USER_PHONE_NUMBER>"
+              }
+            ],
+            "messages": [
+              {
+                "from": "<GROUP_PARTICIPANT_PHONE_NUMBER>",
+                "group_id": "<GROUP_ID>",
+                "id": "<WHATSAPP_MESSAGE_ID>",
+                "timestamp": "<WEBHOOK_TRIGGER_TIMESTAMP>",
+                "text": {
+                  "body": "<MESSAGE_BODY>"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "field": "messages"
+        }
+      ]
+    }
+  ]
+}

@@ -137,6 +137,12 @@ class Source:
         return cls.origin_kind or cls.provider
 
     @classmethod
+    def account_part(cls, config: Mapping[str, Any]) -> str:
+        """What narrows a source to PART of its account (one group of a number), or ``""`` for a source
+        that is its whole account. Two sources on one account are twins only when this agrees."""
+        return ""
+
+    @classmethod
     def namespace_for(cls, binding: SourceBinding) -> str:
         """The per-row scope prefix of every origin this source produces: the account it reads
         as. A source whose ids repeat across containers (a Slack ``ts`` per channel) joins the
