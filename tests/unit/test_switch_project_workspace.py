@@ -229,3 +229,36 @@ async def test_an_index_that_did_not_run_is_reported_not_a_failed_move(home, db,
     assert project.fs_storage_mount_path == canonical_posix_path(Path(client.folder) / "repo")
     # A full index, owed to this move: it waits for a running one instead of skipping.
     assert asked == [{"project_id": str(project.id), "force": True, "trigger": "switch-workspace", "queue": True}]
+
+
+@pytest.mark.asyncio
+async def test_a_closed_session_follows_the_project_to_its_new_folder(home, db, quiet_move):
+    """A stopped session keeps its ``workdir``. Resuming it spawns there, and a spawn
+    creates its working directory — so a workdir left on the old path would bring the
+    moved folder back, empty, as a project of the old workspace. It follows the move;
+    a session of another project that merely shares the name prefix does not."""
+    from flow_sdk.builtin.agentic_process import AgenticProcess
+    from flow_sdk.schema.entity_factory import type_registry
+
+    if type_registry.get("agentic_process") is None:
+        type_registry.register("agentic_process", AgenticProcess)
+
+    client = await _workspaces()
+    project, old_folder = await _project_in(home / "Flowpad workspace")
+    old = canonical_posix_path(old_folder)
+
+    async def session(workdir: str) -> AgenticProcess:
+        return await AgenticProcess(
+            name="s", workdir=workdir, project_id=str(project.id), status="stopped", visible=False, pty_mode=False
+        ).save()
+
+    at_root = await session(old)
+    in_subfolder = await session(f"{old}/docs")
+    neighbour = await session(f"{old}2")
+
+    await project.move_to_workspace(client.id)
+
+    new = canonical_posix_path(Path(client.folder) / "repo")
+    assert (await AgenticProcess.get_by_id(str(at_root.id))).workdir == new
+    assert (await AgenticProcess.get_by_id(str(in_subfolder.id))).workdir == f"{new}/docs"
+    assert (await AgenticProcess.get_by_id(str(neighbour.id))).workdir == f"{old}2", "`/repo2` is not inside `/repo`"
