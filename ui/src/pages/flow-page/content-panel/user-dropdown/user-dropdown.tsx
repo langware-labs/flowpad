@@ -15,6 +15,8 @@ import { notify } from '@src/notifications';
 
 import { AccountInfo } from '@src/components/account/account-info';
 import { UserMenuHeader } from './user-menu-header';
+import { WorkspaceSubmenu } from '@src/components/workspace/workspace-switcher';
+import { isHubOnly } from '@src/navigation/hub-runtime';
 
 import { trackEvent } from '@src/utils/analytics';
 import { redirectToConsole } from '@src/utils/navigation';
@@ -459,6 +461,8 @@ export function UserDropdown() {
                       pictureUrl={pictureIsUrl ? picture : null}
                       pictureIcon={pictureIcon}
                       initials={avatarInitials}
+                      // Desk only: a workspace is a folder of projects on this machine.
+                      bannerSlot={isHubOnly() ? undefined : <WorkspaceSubmenu />}
                     />
                     {/* Rule between who you are and what you can do. `mx-0` so it
                     spans the full menu width — the header block is full-bleed

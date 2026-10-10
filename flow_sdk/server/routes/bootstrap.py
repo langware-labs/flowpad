@@ -443,29 +443,7 @@ def build_app_paths() -> AppPaths:
 
     root = get_os_root_path()
 
-    def _vfs_relative(abs_path: str) -> str:
-        """Normalize an OS-absolute path into a VFS-relative form (no leading slash).
-
-        On Unix: `lstrip("/")`.
-        On Windows: backslashes → forward slashes, then handle three shapes:
-        - Drive-letter (`C:/Users/x`): strip the drive prefix.
-        - UNC (`//server/share/x`): drop the leading `//` but keep `server/share`
-          so the host prefix survives; the OS layer can reassemble UNC from it.
-        - Other shapes: just `lstrip("/")`.
-        """
-        if platform.system() != "Windows":
-            return abs_path.lstrip("/")
-        norm = abs_path.replace("\\", "/")
-        if len(norm) >= 2 and norm[1] == ":":
-            return norm[2:].lstrip("/")
-        if norm.startswith("//"):
-            logging.warning(
-                "UNC path %r encountered — VFS support for UNC paths is limited; "
-                "consider mapping the share to a drive letter.",
-                abs_path,
-            )
-            return norm[2:]
-        return norm.lstrip("/")
+    from flow_sdk.fs_store.path_utils import vfs_relative_path as _vfs_relative  # noqa: PLC0415
 
     home = _vfs_relative(str(get_instance_settings().user_home))
     # This instance's workspace, not prod's: ``~/Flowpad workspace`` belongs to prod, every other instance has
@@ -494,6 +472,7 @@ def build_app_paths() -> AppPaths:
         system_agents=system_agents,
         logs=logs,
         preferences=preferences,
+        workspaces_home=_vfs_relative(str(get_instance_settings().workspaces_home)),
     )
 
 
@@ -2152,6 +2131,18 @@ def entity_to_dict(entity) -> dict:
     }
 
 
+def workspace_to_dict(workspace) -> dict:
+    """``entity_to_dict`` plus the fields the client places and filters projects by:
+    the folder (``root_path``, and ``root`` in the VFS-relative form of
+    ``paths.workspace``) and whether this is the default workspace."""
+    return {
+        **entity_to_dict(workspace),
+        "root_path": workspace.root_path,
+        "root": workspace.root,
+        "is_default": workspace.is_default,
+    }
+
+
 def project_to_dict(project) -> dict:
     """``entity_to_dict`` plus the project fields the client boots ON.
 
@@ -2363,6 +2354,8 @@ async def _ensure_local_entities() -> tuple[User, Project, Workspace, ComputeNod
             user = await get_or_create_local_user()
             project = await get_or_create_local_project(desktop_user=user)
             workspace = await get_or_create_local_workspace(desktop_user=user)
+            # The user-created workspaces' roots, before anything scans for projects.
+            await Workspace.load_roots()
             compute_node = await get_or_create_local_compute_node(local_project=project, desktop_user=user)
             _local_entities = user, project, workspace, compute_node
             from flow_sdk.server.middleware import request_transaction_middleware
@@ -2400,7 +2393,8 @@ async def initialize_bootstrap() -> BootstrapInfo:
             domain=None,
             visitor=None,
             default_project=project_to_dict(project),
-            default_workspace=entity_to_dict(workspace),
+            default_workspace=workspace_to_dict(workspace),
+            workspaces=[workspace_to_dict(w) for w in await Workspace.all_workspaces(default=workspace)],
             default_compute_node=entity_to_dict(compute_node),
             env=EnvInfo(
                 env_name="desktop",

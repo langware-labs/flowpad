@@ -19,6 +19,7 @@ import { AssetMode } from '@src/navigation/asset-doc-types';
 import { ViewType } from '@src/types/ViewType';
 import { clearDockLoadError } from './dock-load-error-store';
 import { DockLoadError, handleDockLoadError } from './dock-load-error';
+import { projectInDockWorkspace } from './workspace-scope';
 import { wikiAuthorityForPage } from '@src/components/wiki/resolve-wiki';
 import { loadAssetRoute } from './load-asset';
 import { loadConversationRoute } from './load-conversation';
@@ -50,7 +51,15 @@ export async function adoptScopeProject(dock: DockPointer): Promise<void> {
   if (!projectId) {
     // Only an unscoped, context-neutral route restores browser memory. Explicit
     // global scopes and entity-owned routes must never inherit a default here.
-    if (!dock.scopeFilter && !dataContext.project && !isHubOnly()) await dataContext.setupProject();
+    // A project of ANOTHER workspace is neither restored nor kept: a workspace
+    // starts with no project, like a fresh install (`?workspace=`, the URL's).
+    const inWorkspace = projectInDockWorkspace(dock);
+    if (inWorkspace && dataContext.project && !inWorkspace(dataContext.project)) {
+      await dataContext.setContextEntityTypeId(ContextEntitiesEnum.CurrentProjectTypeId, null);
+    }
+    if (!dock.scopeFilter && !dataContext.project && !isHubOnly()) {
+      await dataContext.setupProject(inWorkspace ?? undefined);
+    }
     return;
   }
   if (dataContext.project?.id === projectId) return;

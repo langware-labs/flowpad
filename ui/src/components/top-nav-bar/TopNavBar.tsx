@@ -20,6 +20,8 @@ import { ProjectSetupButton } from './ProjectSetupButton';
 import { RuntimeChip } from './RuntimeChip';
 import { TopBarActions } from './TopBarActions';
 import { useEntityBreadcrumbs } from './use-entity-breadcrumbs';
+import { NewWorkspaceDialogHost } from '@src/components/workspace/workspace-switcher';
+import { useActiveWorkspace } from '@src/hooks/use-workspaces';
 
 /**
  * The app's navigation bar — full window width, above the rail and the content
@@ -41,7 +43,11 @@ export function TopNavBar() {
   const [mode, setMode] = useState<'address' | 'search' | 'ask'>('address');
   const assistant = useOptionalFloatingChat();
   const { currentDock, navigation } = useDockNavigation();
-  const { runtimeKind, project } = useContext();
+  const { runtimeKind, project: contextProject } = useContext();
+  // A project of another workspace is not shown as current: a new workspace starts
+  // with none. Display-only — the context is the loader's to write.
+  const { contains } = useActiveWorkspace();
+  const project = contextProject && contains(contextProject.fs_storage_mount_path) ? contextProject : null;
   const { canGoBack, canGoForward, goBack, goForward, reload } = useHistoryNav();
 
   // Resolved ONCE per navigation and shared: the address and the actions both
@@ -94,6 +100,7 @@ export function TopNavBar() {
       />
       <RuntimeChip kind={runtimeKind} project={project} />
       <ProjectSetupButton project={project} />
+      <NewWorkspaceDialogHost />
       {/* One slot, three modes — the address is where you are, search is
           where you'd rather be, and ask (a click on the pill's dead space) is
           what you want done, handed to the Flowpad Assistant. Same pill, same

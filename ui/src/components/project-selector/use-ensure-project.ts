@@ -7,6 +7,7 @@ import { isHubOnly } from '@src/navigation/hub-runtime';
 import { useSandboxes } from '@src/hooks/use-sandboxes';
 import { useCallback } from 'react';
 import { withHomePage } from '@src/project-home-page/home-page-state';
+import { useActiveWorkspace } from '@src/hooks/use-workspaces';
 
 export function canonicalPath(path: string): string {
   return path.trim().replace(/\\/g, '/').replace(/\/+$/, '').replace(/^\/+/, '');
@@ -143,10 +144,12 @@ export function useInstallSharedProjectAndOpen(landing?: ProjectLanding) {
 export function useCloneGitProjectAndOpen(landing?: ProjectLanding) {
   const selectExisting = useSelectExistingProject();
   const land = landing ?? selectExisting;
+  // The clone lands in the active workspace's folder (undefined → the default one).
+  const { scopeId: workspaceId } = useActiveWorkspace();
 
   return useCallback(
     async (computeNodeId: string, url: string, opts?: { targetName?: string; branch?: string }) => {
-      const result = await Project.createFromGitUrl(computeNodeId, url, opts?.targetName, opts?.branch);
+      const result = await Project.createFromGitUrl(computeNodeId, url, opts?.targetName, opts?.branch, workspaceId);
       if (result.kind === 'ok') {
         // The backend minted this row, so the constructor-side seed the local
         // create paths use isn't available — stamp it here, BEFORE `land`
@@ -157,7 +160,7 @@ export function useCloneGitProjectAndOpen(landing?: ProjectLanding) {
       }
       return result;
     },
-    [land],
+    [land, workspaceId],
   );
 }
 

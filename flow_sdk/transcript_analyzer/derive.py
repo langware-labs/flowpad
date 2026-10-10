@@ -80,6 +80,7 @@ _FLOW_VERBS = frozenset(
         "upgrade",
         "uninstall",
         "wizard",
+        "workspace",
     }
 )
 

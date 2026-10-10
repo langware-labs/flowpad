@@ -7,6 +7,7 @@ import { Button } from '@src/components/ui/button';
 import { ProjectSelectorModal, projectListToSelectorItems } from '@src/components/project-selector';
 import { canonicalPath, useEnsureProject } from '@src/components/project-selector/use-ensure-project';
 import { useAllProjects } from '@src/hooks/use-all-projects';
+import { useActiveWorkspace } from '@src/hooks/use-workspaces';
 import { notify } from '@src/notifications';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { openDisplayTarget } from '@src/navigation/open-display-target';
@@ -90,7 +91,8 @@ export function AssetInstallActions({
   // retries independently; a pull failure never indexes stale content).
   const [gitError, setGitError] = useState<string | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
-  const { projects, isLoading: projectsLoading } = useAllProjects({ enabled: pickerOpen });
+  const { scopeId: workspace } = useActiveWorkspace();
+  const { projects, isLoading: projectsLoading } = useAllProjects({ enabled: pickerOpen, workspace });
   const projectItems = useMemo(() => projectListToSelectorItems(projects), [projects]);
   const ensureProject = useEnsureProject();
   const { project: currentProject } = useProject();

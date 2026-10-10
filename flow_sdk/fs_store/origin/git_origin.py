@@ -194,10 +194,14 @@ def _sanitize_leaf(leaf: str, default: str) -> str:
     return "".join(c if c.isalnum() or c in ("-", "_", ".") else "-" for c in (leaf or "")).strip("-. ") or default
 
 
-def _slot(leaf: str, default: str, *, accept) -> Path:
+def _slot(leaf: str, default: str, *, accept, base: Path | None = None) -> Path:
     """``<workspace>/<leaf>`` or the first ``<leaf>-N`` that is free — an
-    existing candidate is taken only when ``accept`` says so."""
-    base = _workspace()
+    existing candidate is taken only when ``accept`` says so. ``base`` picks the
+    workspace root (the default one when None)."""
+    if base is None:
+        base = _workspace()
+    else:
+        base.mkdir(parents=True, exist_ok=True)
     leaf = _sanitize_leaf(leaf, default)
     candidate = base / leaf
     n = 2
@@ -207,7 +211,7 @@ def _slot(leaf: str, default: str, *, accept) -> Path:
     return candidate
 
 
-def fresh_clone_slot(preferred_leaf: str, *, reuse_empty: bool = True) -> Path:
+def fresh_clone_slot(preferred_leaf: str, *, reuse_empty: bool = True, base: Path | None = None) -> Path:
     """An UNUSED workspace directory named after ``preferred_leaf`` — the
     placement policy for a checkout that is a new, independent working copy
     (a template instantiated for the Nth time, a delivered project): it never
@@ -220,9 +224,11 @@ def fresh_clone_slot(preferred_leaf: str, *, reuse_empty: bool = True) -> Path:
     name nothing has claimed at all (a 409 suggestion, a delivered tree)
     passes ``reuse_empty=False``.
 
+    ``base``: the workspace root to place it under; the default one when None.
+
     Blocking (stats the workspace) — call via ``asyncio.to_thread`` on a loop.
     """
-    return _slot(preferred_leaf, "project", accept=lambda p: reuse_empty and not has_content(p))
+    return _slot(preferred_leaf, "project", accept=lambda p: reuse_empty and not has_content(p), base=base)
 
 
 ORIGIN_MODELS.register(GitOrigin, "git")
