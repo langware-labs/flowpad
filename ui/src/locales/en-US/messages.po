@@ -6898,6 +6898,10 @@ msgstr "Couldn't change this member's role."
 msgid "Couldn't check for updates: {error}"
 msgstr "Couldn't check for updates: {error}"
 
+#: src/pages/entry/AgentLaunchLanding.tsx
+msgid "Couldn't clone that repository: it doesn't exist, or it is private and GitHub isn't connected to your account."
+msgstr "Couldn't clone that repository: it doesn't exist, or it is private and GitHub isn't connected to your account."
+
 #~ msgid "Couldn't close the project's tabs"
 #~ msgstr "Couldn't close the project's tabs"
 
@@ -9495,8 +9499,12 @@ msgid "Every minute"
 msgstr "Every minute"
 
 #: src/components/project-home/ProjectHomeMenu.tsx
-msgid "Every open tab and running process of this project will be closed. The project folder is then moved and indexed again at its new location."
-msgstr "Every open tab and running process of this project will be closed. The project folder is then moved and indexed again at its new location."
+#~ msgid "Every open tab and running process of this project will be closed. The project folder is then moved and indexed again at its new location."
+#~ msgstr "Every open tab and running process of this project will be closed. The project folder is then moved and indexed again at its new location."
+
+#: src/components/project-home/ProjectHomeMenu.tsx
+msgid "Every open tab and running process of this project will be closed. The project folder is then moved and indexed again at its new location. Earlier sessions keep their history but cannot be resumed."
+msgstr "Every open tab and running process of this project will be closed. The project folder is then moved and indexed again at its new location. Earlier sessions keep their history but cannot be resumed."
 
 #: src/components/connections-manager.tsx
 msgid "every project"
@@ -10472,7 +10480,6 @@ msgid "Finish setting up Flowpad"
 msgstr "Finish setting up Flowpad"
 
 #: src/components/data-sources/source-attention.ts
-#: src/components/data-sources/source-parts.tsx
 msgid "Finish setup, then press Verify."
 msgstr "Finish setup, then press Verify."
 
@@ -13900,8 +13907,8 @@ msgid "Make a todo app"
 msgstr "Make a todo app"
 
 #: src/components/data-sources/source-parts.tsx
-msgid "Make the two the same — edit either one — and the next sync carries on."
-msgstr "Make the two the same — edit either one — and the next sync carries on."
+#~ msgid "Make the two the same — edit either one — and the next sync carries on."
+#~ msgstr "Make the two the same — edit either one — and the next sync carries on."
 
 #: src/components/data-sources/source-attention.ts
 msgid "Make the two the same — edit either one — then Pull, or wait for the next sync."
@@ -16286,6 +16293,10 @@ msgstr "Not deployed yet — it runs nowhere until you launch it."
 #~ msgid "Not done: {0}"
 #~ msgstr "Not done: {0}"
 
+#: src/components/data-sources/source-attention.ts
+msgid "Not evaluated yet — nothing has decided how this source starts, so it is not polled."
+msgstr "Not evaluated yet — nothing has decided how this source starts, so it is not polled."
+
 #: src/components/assets/editor/wizard/WizardForm.tsx
 msgid "not fired yet"
 msgstr "not fired yet"
@@ -17936,12 +17947,12 @@ msgid "Parked"
 msgstr "Parked"
 
 #: src/components/data-sources/source-parts.tsx
-msgid "Parked — the scheduler skips a <0>config_error</0> source, so it will not poll again on its own. <1>Pull</1> clears the latch."
-msgstr "Parked — the scheduler skips a <0>config_error</0> source, so it will not poll again on its own. <1>Pull</1> clears the latch."
+#~ msgid "Parked — the scheduler skips a <0>config_error</0> source, so it will not poll again on its own. <1>Pull</1> clears the latch."
+#~ msgstr "Parked — the scheduler skips a <0>config_error</0> source, so it will not poll again on its own. <1>Pull</1> clears the latch."
 
 #: src/components/data-sources/source-parts.tsx
-msgid "Parked: the scheduler skips it until you pull"
-msgstr "Parked: the scheduler skips it until you pull"
+#~ msgid "Parked: the scheduler skips it until you pull"
+#~ msgstr "Parked: the scheduler skips it until you pull"
 
 #: src/components/ask/AskView.tsx
 msgid "Part of a setup — see its progress"
@@ -18561,6 +18572,10 @@ msgstr "Preparing your workspace…"
 msgid "Press Resume to listen again."
 msgstr "Press Resume to listen again."
 
+#: src/components/data-sources/source-attention.ts
+msgid "Press Verify to evaluate it now."
+msgstr "Press Verify to evaluate it now."
+
 #: src/components/settings-view/settings-utils.ts
 msgid "Prevent use of bypass permissions mode"
 msgstr "Prevent use of bypass permissions mode"
@@ -19138,6 +19153,7 @@ msgid "Published when you deploy"
 msgstr "Published when you deploy"
 
 #: src/components/status-bar/GitPullButton.tsx
+#: src/components/stream-inbox-view/AttachedChannelsBar.tsx
 #: src/components/stream-inbox-view/ChannelAttentionBar.tsx
 msgid "Pull"
 msgstr "Pull"
@@ -26951,6 +26967,7 @@ msgstr "Verified"
 
 #: src/components/account/user-info.tsx
 #: src/components/data-sources/source-parts.tsx
+#: src/components/stream-inbox-view/AttachedChannelsBar.tsx
 #: src/components/stream-inbox-view/ChannelAttentionBar.tsx
 msgid "Verify"
 msgstr "Verify"
@@ -28128,11 +28145,3 @@ msgstr "Zoom in"
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "Zoom out"
 msgstr "Zoom out"
-
-#: src/components/data-sources/source-attention.ts
-msgid "Not evaluated yet — nothing has decided how this source starts, so it is not polled."
-msgstr "Not evaluated yet — nothing has decided how this source starts, so it is not polled."
-
-#: src/components/data-sources/source-attention.ts
-msgid "Press Verify to evaluate it now."
-msgstr "Press Verify to evaluate it now."
