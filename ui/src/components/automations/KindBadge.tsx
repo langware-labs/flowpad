@@ -3,9 +3,10 @@
  * and a short word. One mapping, used by the gallery, the list and the runs.
  */
 import type { AutomationKind } from '@sdk';
-import { Bot, CalendarClock, FileText, Radio, type LucideIcon } from 'lucide-react';
+import { Bot, CalendarClock, FileText, Mail, Radio, type LucideIcon } from 'lucide-react';
 import { cn } from '@src/lib/utils';
 import { useAutomationWords } from './automation-words';
+import type { CreatingKind } from './automations-pointer';
 
 export const KIND_ICON: Record<AutomationKind, LucideIcon> = {
   schedule: CalendarClock,
@@ -13,6 +14,9 @@ export const KIND_ICON: Record<AutomationKind, LucideIcon> = {
   file: FileText,
   agent_hook: Bot,
 };
+
+/** The gallery's cards: every automation kind, plus a rule on messages arriving (a TAG rule with its own screen). */
+export const CREATING_ICON: Record<CreatingKind, LucideIcon> = { ...KIND_ICON, message: Mail };
 
 export function KindBadge({
   kind,

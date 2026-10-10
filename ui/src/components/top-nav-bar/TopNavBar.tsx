@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useLingui } from '@lingui/react/macro';
-import { ArrowLeft, ArrowRight, FolderOpen, Home, PanelsTopLeft, RefreshCw, type LucideIcon } from 'lucide-react';
+import { ArrowLeft, ArrowRight, FolderOpen, Home, PanelsTopLeft, RefreshCw, Zap, type LucideIcon } from 'lucide-react';
 import { isHomeSurface } from '@src/navigation/dock-layout';
 import { tabDock } from '@src/tabs/project-entry';
 import { useLastKnownTab } from '@src/tabs/use-tab-manager';
@@ -8,14 +8,17 @@ import { tagAttrs } from '@src/tags/tag-attrs';
 import { chromeEntityActionClassName } from '@src/components/entity-actions/action-button-styles';
 import { Button } from '@src/components/ui/button';
 import { cn } from '@src/lib/utils';
+import { NavBadge } from '@src/components/ui/nav-badge';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tooltip';
 import { useContext } from '@src/hooks/useContext';
 import { smartAskOrOpen } from '@src/navigation/smart-ask';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { DockPointer } from '@src/navigation/DockPointer';
+import { useStartedLastHour } from '@src/hooks/automations/useAutomations';
 import { ViewType } from '@src/types/ViewType';
 import { useHistoryNav } from '@src/navigation/use-history-nav';
 import { useDocumentTitle, windowTitleFor } from '@src/navigation/window-title';
-import { useOptionalFloatingChat } from '@src/components/floating-chat/FloatingChatContext';
+import { useOptionalFloatingChat } from '@src/components/floating-chat/floating-chat-context';
 import { AddressAskField } from './AddressAskField';
 import { AddressField } from './AddressField';
 import { AddressSearchField } from './AddressSearchField';
@@ -53,6 +56,8 @@ export function TopNavBar() {
   const { contains } = useActiveWorkspace();
   const project = contextProject && contains(contextProject.fs_storage_mount_path) ? contextProject : null;
   const { canGoBack, canGoForward, goBack, goForward, reload } = useHistoryNav();
+  // Automations started in the last hour, any kind — the ⚡'s counter.
+  const startedLastHour = useStartedLastHour();
   // Home and Tabs are one button that flips: on the (tabless) home it goes BACK to
   // the last active tab; on any tab it goes home. With no tab open, home is all
   // there is, so it stays Home (disabled on the home itself).
@@ -118,6 +123,15 @@ export function TopNavBar() {
         onClick={() => navigation.openTab(ViewType.EXPLORER)}
         testId="top-nav-files"
       />
+      {/* Automations — a place, like Files: the list of rules, every kind. The badge is how many
+          started in the last hour; none shows no badge. */}
+      <NavIconButton
+        icon={Zap}
+        label={startedLastHour ? t`Automations · ${startedLastHour} started in the last hour` : t`Automations`}
+        onClick={() => navigation.openDock(DockPointer.forAutomations())}
+        testId="top-nav-automations"
+        badge={startedLastHour}
+      />
       <RuntimeChip kind={runtimeKind} project={project} />
       <ProjectSetupButton project={project} />
       <NewWorkspaceDialogHost />
@@ -172,11 +186,14 @@ function NavIconButton({
   mirrorInRtl = false,
   testId,
   tag,
+  badge,
 }: {
   icon: LucideIcon;
   label: string;
   onClick: () => void;
   disabled?: boolean;
+  /** A small count on the glyph's corner; 0 shows nothing. */
+  badge?: number;
   /** Mirror the glyph in RTL. For an arrow that means a DIRECTION rather than a
    *  fixed shape: "back" points against the reading flow, so it faces left in
    *  English and right in Hebrew. A house or a folder is the same shape in every
@@ -191,7 +208,7 @@ function NavIconButton({
       <TooltipTrigger asChild>
         {/* The span keeps the tooltip reachable while the button is disabled —
             a disabled button fires no pointer events of its own. */}
-        <span className="inline-flex shrink-0">
+        <span className="relative inline-flex shrink-0">
           <Button
             type="button"
             variant="ghost"
@@ -205,6 +222,8 @@ function NavIconButton({
           >
             <Icon className={cn(mirrorInRtl && 'rtl:-scale-x-100')} />
           </Button>
+          {/* The bar's glyph is smaller than the rail's: the chip sits on the corner. */}
+          <NavBadge count={badge ?? 0} className="-end-0.5 -top-0.5 h-3.5 min-w-3.5 bg-brand text-brand-foreground" testId={`${testId}-badge`} />
         </span>
       </TooltipTrigger>
       <TooltipContent side="bottom" className="text-xs">

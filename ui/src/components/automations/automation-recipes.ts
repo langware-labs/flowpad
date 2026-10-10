@@ -12,6 +12,30 @@ export interface AutomationRecipe {
   draft: () => AutomationDraft;
 }
 
+/** A starter for a rule on messages arriving: the sentence to catch, and what the agent should do. */
+export interface MessageRecipe {
+  id: string;
+  catch: string;
+  prompt: string;
+}
+
+export const MESSAGE_RECIPES: readonly MessageRecipe[] = [
+  {
+    id: 'refund-requests',
+    catch: 'asks for a refund or disputes a charge',
+    prompt: 'Confirm which charge is in question, explain the refund path, and draft the reply in the conversation. Do not send it.',
+  },
+  {
+    id: 'urgent-to-task',
+    catch: 'needs a person to act today',
+    prompt: 'Make a task for me with what is being asked, who asked, and by when.',
+  },
+];
+
+export function messageRecipeById(id: string | null | undefined): MessageRecipe | undefined {
+  return id ? MESSAGE_RECIPES.find((r) => r.id === id) : undefined;
+}
+
 export const AUTOMATION_RECIPES: readonly AutomationRecipe[] = [
   {
     id: 'morning-briefing',

@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Download, Forward, MoreVertical, Pencil, Reply, SmilePlus, Star, Trash2 } from 'lucide-react';
+import { Download, Forward, MoreVertical, Pencil, Reply, SmilePlus, Star, Trash2, Zap } from 'lucide-react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { AgenticProcess, Conversation, TypeId, type ICloudOrigin } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
@@ -40,6 +40,8 @@ interface MessageActionsMenuProps {
   onForward?: () => void;
   /** Present only while the message is not a task yet; an opened task keeps its chips below the body. */
   onTaskIt?: () => void;
+  /** Start a rule on messages like this one (docs/snippets/stream-inbox-automations.md). */
+  onAutomate?: () => void;
   onEditName?: () => void;
   onDelete?: () => void;
   /** Start a worker on this message — the header's launch bar, message-pinned prompt. */
@@ -78,10 +80,10 @@ export function MessageActionsMenu(props: MessageActionsMenuProps) {
   const [pickerOpen, setPickerOpen] = useState(false);
   // Controlled: the worker icons are plain buttons, so a launch closes the menu itself.
   const [menuOpen, setMenuOpen] = useState(false);
-  const { flowMessageId, conversationId, onReply, onReact, onForward, onTaskIt, onEditName, onDelete, onLaunchWorker } =
+  const { flowMessageId, conversationId, onReply, onReact, onForward, onTaskIt, onAutomate, onEditName, onDelete, onLaunchWorker } =
     props;
   // A draft bubble (no stored message) with no handlers has nothing to offer.
-  if (!flowMessageId && !(onReply || onReact || onForward || onTaskIt || onEditName || onDelete)) return null;
+  if (!flowMessageId && !(onReply || onReact || onForward || onTaskIt || onAutomate || onEditName || onDelete)) return null;
 
   return (
     <>
@@ -143,6 +145,7 @@ function MessageMenuItems({
   onReact,
   onForward,
   onTaskIt,
+  onAutomate,
   onEditName,
   onDelete,
   onOpenPicker,
@@ -156,7 +159,7 @@ function MessageMenuItems({
   const showNote = !!flowMessageId && !!worker && isAdvanced;
   const WorkerIcon = workerIcon(worker?.worker_type ?? undefined);
   const conversing = !!(onReply || onReact);
-  const sharing = !!(onForward || onTaskIt || flowMessageId);
+  const sharing = !!(onForward || onTaskIt || onAutomate || flowMessageId);
   const managing = !!(onEditName || onDelete);
 
   return (
@@ -198,6 +201,12 @@ function MessageMenuItems({
         <DropdownMenuItem onSelect={onTaskIt} title={taskItHint()} data-testid="message-task-it">
           <TaskItIcon className={ITEM_ICON} />
           <Trans>Task it</Trans>
+        </DropdownMenuItem>
+      )}
+      {onAutomate && (
+        <DropdownMenuItem onSelect={onAutomate} data-testid="message-automate">
+          <Zap className={ITEM_ICON} />
+          <Trans>Automate messages like this…</Trans>
         </DropdownMenuItem>
       )}
       {flowMessageId && (
