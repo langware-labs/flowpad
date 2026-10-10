@@ -1022,6 +1022,10 @@ ok(!mgr.isToolDirLockedError(null), 'null error → not a lock (no throw)');
       const timers = fakeT(); m._timers = timers;
       m._uvDirs = async () => (withDirs ? dirs : null);
       m._drainVenvProcesses = async () => {};
+      // These tests are about WHEN the guard stops the install, not HOW a process tree is ended (on
+      // Windows that is `taskkill /T`, which a fake child never sees): make the stop observable the same
+      // way on every platform.
+      m._killChildTree = (child) => { if (child && child.exitCode === null) child.kill('SIGTERM'); };
       m._pythonPinForUpgrade = async () => '3.11'; m._pythonPinForUpgradeUnused = true;
       m._ensureShimOnPath = async () => {}; m._resolveFlowBin = async () => null;
       m._getLatestPypiInfo = async () => null;
