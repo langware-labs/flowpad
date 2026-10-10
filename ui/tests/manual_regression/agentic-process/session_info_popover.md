@@ -6,9 +6,9 @@ id: 6db114ca-da89-5322-9491-4406f7e4bbc2
 test 1: Session Info popover opens only when a session exists and shows all expected rows
 - navigate to {APP_URL}/dock/shell/new_terminal
 - wait for the plain shell tab; do NOT click Start Claude
-- validate the Info icon is NOT rendered in the process toolbar (gated on hasSession)
+- validate there is no process toolbar, hence no session actions menu and no "Session info" item (gated on hasSession)
 - click Start Claude and wait for the banner
-- validate the Info icon is now visible; click it
+- open the session actions menu (hamburger right of Fork); validate "Session info" is listed; click it
 - a Popover titled "Session Details" opens
 - validate the following row labels are all present and non-empty (value is the copy target):
   - Process ID, Status, CLI worker status, Started, Last message, Working Dir,
@@ -24,8 +24,8 @@ test 2: CopyRow copy button copies the value and shows a transient check-icon co
 - repeat for the PTY ID row and validate clipboard matches the PTY UUID
 
 test 3: Command row reflects current CLI flags
-- from a running Claude session, open CLI Options and ensure Chrome and Debug and Full Trust are all OFF (apply if needed; verify pty respawns)
+- from a running Claude session, open the debug menu and, under CLI Options, ensure Chrome and Debug and Full Trust are all OFF (apply if needed; verify pty respawns)
 - open the Info popover; validate the "Command" row starts with `cd '<workdir>' && claude` and contains `--resume <uuid>` with no extra flags (ignoring --model if set). The session is already running, so `--resume <uuid>` is correct (not `--session-id`).
-- close popover; open CLI Options; toggle Chrome ON; Apply and wait for respawn
+- close popover; open the debug menu; under CLI Options toggle Chrome ON; Apply and wait for respawn
 - open Info popover; validate the Command row now contains `--chrome`
 - parameterize: Full Trust -> `--dangerously-skip-permissions`; Debug -> `--debug`

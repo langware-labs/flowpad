@@ -64,6 +64,14 @@ interface AssetManagerButtonProps {
   process: AgenticProcess | null;
   /** Optional element used as the trigger; defaults to a small icon button. */
   trigger?: React.ReactNode;
+  /** Controlled open state, for a host that opens the board itself (a menu
+   *  item). Omit to let the trigger toggle it. */
+  open?: boolean;
+  /** Required alongside `open`. */
+  onOpenChange?: (open: boolean) => void;
+  /** Show the board as a centered dialog with no trigger — see
+   *  `AssetManagerPopover.centered`. For a host that opens it from a menu item. */
+  centered?: boolean;
 }
 
 /**
@@ -83,9 +91,17 @@ interface AssetManagerButtonProps {
  * conflating them made every name click mutate `embedded_asset_refs` (and flip
  * `restart_required`) as a side effect of looking around.
  */
-export function AssetManagerButton({ process, trigger }: AssetManagerButtonProps) {
+export function AssetManagerButton({
+  process,
+  trigger,
+  open: controlledOpen,
+  onOpenChange,
+  centered,
+}: AssetManagerButtonProps) {
   const { t } = useLingui();
-  const [open, setOpen] = useState(false);
+  const [uncontrolledOpen, setUncontrolledOpen] = useState(false);
+  const open = controlledOpen ?? uncontrolledOpen;
+  const setOpen = onOpenChange ?? setUncontrolledOpen;
   const [fixDescriptor, setFixDescriptor] = useState<AssetDescriptor | null>(null);
   const [fixText, setFixText] = useState('');
   // The improve input dialog — on submit it genie-flies into the footer's
@@ -376,7 +392,7 @@ export function AssetManagerButton({ process, trigger }: AssetManagerButtonProps
         setBusyAssetKey(null);
       }
     },
-    [activeProcess?.session_id, assetHasDirtyChanges, navigation, t, transcriptWorkerType],
+    [activeProcess?.session_id, assetHasDirtyChanges, navigation, setOpen, t, transcriptWorkerType],
   );
 
   const openImproveDialog = useCallback((descriptor: AssetDescriptor) => {
@@ -425,6 +441,7 @@ export function AssetManagerButton({ process, trigger }: AssetManagerButtonProps
     <>
       <AssetManagerPopover
         trigger={triggerNode}
+        centered={centered}
         open={open}
         onOpenChange={setOpen}
         assets={assets}

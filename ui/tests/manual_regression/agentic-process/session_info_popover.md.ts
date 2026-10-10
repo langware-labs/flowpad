@@ -9,7 +9,7 @@
  * the CopyRow redesign). The Command row reflects current CLI flags.
  */
 import { test, expect, type Page } from '@playwright/test';
-import { dismissSetupModal, gotoNewShell, startClaude, processIdFromUrl, waitForRunningSession, apiBase, activePanel, sessionPopover, AP_HAS_CLAUDE_ONLY_CLI_FLAGS, AP_OPENER } from './_ap_helpers';
+import { dismissSetupModal, gotoNewShell, startClaude, processIdFromUrl, waitForRunningSession, apiBase, sessionPopover, sessionAction, debugMenuButton, AP_HAS_CLAUDE_ONLY_CLI_FLAGS, AP_OPENER } from './_ap_helpers';
 
 const popover = sessionPopover;
 
@@ -27,7 +27,7 @@ function rowCopyButton(page: Page, label: RegExp) {
 }
 
 async function openInfo(page: Page) {
-  await activePanel(page).locator('button[aria-label$="session info"]').click();
+  await (await sessionAction(page, 'session-action-info')).click();
   await expect(popover(page)).toBeVisible({ timeout: 10_000 });
 }
 
@@ -41,8 +41,8 @@ test.describe('session info popover', () => {
     await dismissSetupModal(page);
     await gotoNewShell(page);
 
-    // Plain shell, no Claude session: the toolbar has no Info button.
-    expect(await page.locator('button[aria-label$="session info"]').count()).toBe(0);
+    // Plain shell, no Claude session: no toolbar, so no session actions menu.
+    expect(await page.locator('[data-testid="process-toolbar-menu"]').count()).toBe(0);
 
     await startClaude(page);
     const pid = processIdFromUrl(page);
@@ -100,8 +100,8 @@ test.describe('session info popover', () => {
     await page.keyboard.press('Escape');
     await expect(popover(page)).toHaveCount(0);
 
-    // Toggle Chrome ON via CLI Options dropdown (persists to entity on toggle).
-    await activePanel(page).locator('button[aria-label="CLI Options"]').click();
+    // Toggle Chrome ON via the debug menu's CLI options (persists to entity on toggle).
+    await debugMenuButton(page).click();
     await page.getByRole('menuitemcheckbox', { name: /Chrome browser/ }).click();
     await page.keyboard.press('Escape');
 
