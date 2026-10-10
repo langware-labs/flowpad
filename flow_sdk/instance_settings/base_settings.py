@@ -550,6 +550,19 @@ class BaseInstanceSettings:
         return self.user_home / "Flowpad workspaces" / self.instance_name
 
     @property
+    def workspaces_home(self) -> Path:
+        """Where a NEW user-created workspace's folder goes by default — ``<it>/<name>``.
+
+        ``~/Flowpad`` is prod's. Any other instance gets a dot-dir under ``~/Flowpad
+        workspaces`` (the ``.home/<name>`` precedent of ``user_asset_home``): never inside
+        a workspace root, whose top-level folders are projects, and never ``~/Flowpad
+        workspaces/<name>``, which IS another instance's root.
+        """
+        if self.instance_name == "prod":
+            return self.user_home / "Flowpad"
+        return self.user_home / "Flowpad workspaces" / ".workspaces" / self.instance_name
+
+    @property
     def deepagents_data_dir(self) -> Path:
         """The Deep Agents worker's session store (one LangGraph checkpoint DB per session).
 

@@ -297,7 +297,11 @@ class ScanActionsMixin:
             ApiResponse with projects list and total_count
         """
         try:
-            result = await _list_projects_from_indexer()
+            request_info = get_current_request_info()
+            # ``?workspace=<id>`` keeps the rows of that workspace; absent → every
+            # project, exactly the list before workspaces existed.
+            workspace = request_info.get_param("workspace") if request_info else None
+            result = await _list_projects_from_indexer(workspace=workspace or None)
             return ApiSuccessResponse(data=result)
         except Exception as e:
             logging.exception(f"list-projects failed: {e}")

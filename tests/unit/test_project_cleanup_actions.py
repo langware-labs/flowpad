@@ -49,7 +49,7 @@ def home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
         copilot_session_state_dir = root / ".copilot" / "session-state"
 
     monkeypatch.setattr(project_cleanup, "get_instance_settings", lambda: _Settings())
-    monkeypatch.setattr(project_cleanup, "agent_workspace_root", lambda: workspace)
+    monkeypatch.setattr("flow_sdk.config.agent_workspace_root", lambda: workspace)
     return root
 
 
@@ -253,8 +253,9 @@ def test_guard_refuses_a_path_outside_the_workspace(home: Path, workspace: Path,
 
 
 def test_guard_refuses_the_workspace_root_itself(home: Path, workspace: Path) -> None:
-    """`is_path_under` is true for the root itself, so this case is named."""
-    with pytest.raises(CleanupRefused, match="workspace root"):
+    """`is_path_under` is true for the root itself, so it must be refused — by the
+    protected-path policy (which covers every workspace root) or the named case after it."""
+    with pytest.raises(CleanupRefused, match="protected path|workspace root"):
         guard_deletable(str(workspace))
     assert workspace.is_dir()
 

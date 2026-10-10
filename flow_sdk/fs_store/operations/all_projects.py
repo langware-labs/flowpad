@@ -141,18 +141,22 @@ def iter_codex_project_paths(include_temp: bool = False) -> Iterator[Path]:
 
 
 def iter_workspace_project_paths(include_temp: bool = False) -> Iterator[Path]:
-    """Yield every immediate, non-hidden subdirectory of the Flowpad workspace.
+    """Yield every immediate, non-hidden subdirectory of every workspace root.
 
-    Each top-level folder under this instance's workspace root (``~/Flowpad
-    workspace`` for prod only — see ``agent_workspace_root``) whose name does
-    not start with ``.`` is treated as a project, even with no worker
-    worker history. Hidden folders (``.claude``, ``.flow``, ``.git`` …) are
-    skipped. Same semantics as the Claude/Codex iterators: only existing dirs,
-    temp paths excluded unless ``include_temp``.
+    Each top-level folder under this instance's default workspace root (``~/Flowpad
+    workspace`` for prod only — see ``agent_workspace_root``) and under each
+    user-created workspace's root whose name does not start with ``.`` is treated
+    as a project, even with no worker history. Hidden folders (``.claude``,
+    ``.flow``, ``.git`` …) are skipped. Same semantics as the Claude/Codex
+    iterators: only existing dirs, temp paths excluded unless ``include_temp``.
     """
-    from flow_sdk.config import agent_workspace_root  # noqa: PLC0415 — call time, per instance
+    from flow_sdk.config import all_workspace_roots  # noqa: PLC0415 — call time, per instance
 
-    workspace = agent_workspace_root()
+    for workspace in all_workspace_roots():
+        yield from _iter_root_project_paths(workspace, include_temp)
+
+
+def _iter_root_project_paths(workspace: Path, include_temp: bool) -> Iterator[Path]:
     try:
         # list() forces eager evaluation: iterdir() is a lazy generator, so a
         # missing workspace dir would otherwise raise at the for-loop below,

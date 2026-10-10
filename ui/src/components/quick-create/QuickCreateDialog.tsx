@@ -28,6 +28,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ScopeSelection, type Scope } from './ScopeSelection';
 import { getDescriptor, creationMounts, type QuickCreateDescriptor } from './registry';
 import { useProjectSnapshot } from './useProjectSnapshot';
+import { useActiveWorkspace } from '@src/hooks/use-workspaces';
 
 interface QuickCreateDialogProps {
   open: boolean;
@@ -62,7 +63,9 @@ export function QuickCreateDialog({ open, onOpenChange, type }: QuickCreateDialo
   const { navigation } = useDockNavigation();
   const { project } = useProject();
   const { computeNode } = useAgentContext();
-  const { projects: allProjects, isLoading: isLoadingProjects } = useAllProjects({ enabled: open });
+  // New projects go in the ACTIVE workspace's folder; the picker lists its projects.
+  const { root: defaultWorkspacePath, scopeId } = useActiveWorkspace();
+  const { projects: allProjects, isLoading: isLoadingProjects } = useAllProjects({ enabled: open, workspace: scopeId });
   const { restore, commit } = useProjectSnapshot(open);
 
   const [name, setName] = useState('');
@@ -74,7 +77,6 @@ export function QuickCreateDialog({ open, onOpenChange, type }: QuickCreateDialo
   const [newProjectOpen, setNewProjectOpen] = useState(false);
   const nameRef = useRef<HTMLInputElement | null>(null);
 
-  const defaultWorkspacePath = useMemo(() => dataContext.bootstrapInfo?.desktop_info?.paths?.workspace || '', []);
 
   // Reset form whenever the dialog opens for a new type
   useEffect(() => {

@@ -91,6 +91,14 @@ a `AssetClass.REPO` folder under `agentic-assets/<family>/`.
 | `GraphContext` (`flow_sdk/builtin/graph_context.py`) | A frozen list of typeids bound to a process before launch. | An automation run |
 | **display context** (`context_data.display_context`) | Live state the page shown in a process's display reported about itself (`setDisplayContext`). Read with `flow context display`; delivered to Vibe agents per turn. | One process's display, bound to the shown target |
 
+## Workspaces (2026-10-10)
+
+| Name | Where | What it is |
+|---|---|---|
+| **workspace** | `flow_sdk/builtin/workspace.py` (`Workspace`), `flow workspace`, the account-menu switcher | A folder of related projects. A project belongs to the workspace whose `root_path` contains its folder (a location fact, `workspace_id_for_path` — no membership edge). Ours, not a provider mirror. Everything not owned by a project (conversations, data sources, credentials, user assets, Global tabs) is shared by all workspaces. |
+| **default workspace** ("Flowpad") | the `@local` `Workspace` row | Its folder is the instance's `workspace_root` (`~/Flowpad workspace` on prod), resolved per call, never stored. Every project outside every user-created root belongs to it — so an instance with no user-created workspace behaves exactly as before workspaces. |
+| **active workspace** | URL option `?workspace=<id>` (`WORKSPACE_PARAM`), `useActiveWorkspace()` | Sticky across navigation, switched only by `navigation.openWorkspace()`; absent = the default one. Not the Vibe workspace (`?host=`, a process's display), not a hub/e2b sandbox "workspace", not the `flowpad.workspace` endpoint protocol. |
+
 ## type · subkind · kind (2026-09-19)
 
 Three words that were used interchangeably. Full rules and the namespace

@@ -1,5 +1,5 @@
 import { Trans, useLingui } from '@lingui/react/macro';
-import { dataContext, isHubOnly } from '@sdk';
+import { isHubOnly } from '@sdk';
 import { useProject } from '@sdk/react/hooks';
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import {
@@ -39,6 +39,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tool
 import { QuickCreateDialog } from './QuickCreateDialog';
 import { QUICK_CREATE_REGISTRY, getDescriptor, type QuickCreateGroup } from './registry';
 import { providerMetaFor } from '@src/tabs/provider-meta';
+import { useActiveWorkspace } from '@src/hooks/use-workspaces';
 
 /** Registry types deliberately absent from this launcher (still creatable from
  *  the Assets page's per-type "+"). */
@@ -208,7 +209,8 @@ export function useQuickCreatePick() {
     onError: (message) => notify.error({ title: message }),
   });
   const handleCreateGitProject = useGitCloneDialogSubmit(computeNode?.id);
-  const defaultWorkspacePath = useMemo(() => dataContext.bootstrapInfo?.desktop_info?.paths?.workspace || '', []);
+  // New projects go in the ACTIVE workspace's folder (the default root when there is one workspace).
+  const { root: defaultWorkspacePath } = useActiveWorkspace();
   // A hub project is a pure entity with no folder behind it — the dialog drops
   // the folder row there, exactly as ProjectActionsRow does.
   const withFolder = !isHubOnly();

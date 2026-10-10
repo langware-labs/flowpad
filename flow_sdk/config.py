@@ -448,6 +448,99 @@ def agent_workspace_root() -> Path:
 
 
 # ---------------------------------------------------------------------------
+# Workspaces — folders of related projects
+# ---------------------------------------------------------------------------
+
+# The user-created workspaces' roots, ``{workspace id: canonical root}``. The DEFAULT
+# workspace is never in here: its root is ``agent_workspace_root()``, resolved per
+# call. An in-memory snapshot of the Workspace rows because the readers are sync and
+# hot (``is_protected_path`` runs per candidate cwd); ``Workspace.load_roots`` fills it
+# at bootstrap and every Workspace save/delete refreshes it. Empty == the app before
+# workspaces existed, which is the whole backward-compatibility story.
+_EXTRA_WORKSPACE_ROOTS: dict[str, str] = {}
+# The same roots as path-policy keys ``(flavour, key)`` (``path_utils._path_policy_key``:
+# Windows keys case-folded whatever the host OS), computed once per change — what
+# membership and ``is_protected_path`` compare against.
+_EXTRA_WORKSPACE_ROOT_KEYS: dict[str, tuple[str, str]] = {}
+# The default workspace's row id (the ``@local`` row). The UI names it once a second
+# workspace exists; it resolves to ``agent_workspace_root()`` like the uname does.
+_DEFAULT_WORKSPACE_IDS: set[str] = {"local"}
+
+
+def set_workspace_roots(roots: dict[str, str], default_id: str | None = None) -> bool:
+    """Replace the user-created workspace roots (``{id: root}``); True when they changed."""
+    from flow_sdk.fs_store.path_utils import _path_policy_key, canonical_posix_path  # noqa: PLC0415
+
+    if default_id:
+        _DEFAULT_WORKSPACE_IDS.add(default_id)
+    roots = {workspace_id: root for workspace_id, root in roots.items() if root}
+    canonical = {workspace_id: canonical_posix_path(root) for workspace_id, root in roots.items()}
+    changed = canonical != _EXTRA_WORKSPACE_ROOTS
+    _EXTRA_WORKSPACE_ROOTS.clear()
+    _EXTRA_WORKSPACE_ROOTS.update(canonical)
+    _EXTRA_WORKSPACE_ROOT_KEYS.clear()
+    for workspace_id, root in roots.items():
+        if keyed := _path_policy_key(root):
+            _EXTRA_WORKSPACE_ROOT_KEYS[workspace_id] = (keyed[0], keyed[1])
+    return changed
+
+
+def extra_workspace_roots() -> dict[str, str]:
+    """``{workspace id: canonical root}`` for every user-created workspace (not the default)."""
+    return dict(_EXTRA_WORKSPACE_ROOTS)
+
+
+def extra_workspace_root_keys() -> list[tuple[str, str]]:
+    """The user-created roots as path-policy keys ``(flavour, key)``."""
+    return list(_EXTRA_WORKSPACE_ROOT_KEYS.values())
+
+
+def all_workspace_roots() -> list[Path]:
+    """Every workspace root on this instance — the default one first."""
+    return [agent_workspace_root(), *(Path(root) for root in _EXTRA_WORKSPACE_ROOTS.values())]
+
+
+def workspace_id_for_path(path: str | Path) -> str | None:
+    """The user-created workspace whose root contains ``path``, else None (the default).
+
+    Membership is a LOCATION fact: a project anywhere outside every user-created
+    root — including the default root and a checkout found through worker history —
+    belongs to the default workspace. Compared as path-policy keys, so a Windows path
+    matches case-insensitively on any host.
+    """
+    from flow_sdk.fs_store.path_utils import _path_policy_key, _same_or_under  # noqa: PLC0415
+
+    if not _EXTRA_WORKSPACE_ROOT_KEYS:
+        return None
+    keyed = _path_policy_key(path)
+    if keyed is None:
+        return None
+    flavour, target, _root = keyed
+    for workspace_id, (root_flavour, root) in _EXTRA_WORKSPACE_ROOT_KEYS.items():
+        if root_flavour == flavour and _same_or_under(target, root):
+            return workspace_id
+    return None
+
+
+def path_in_workspace(path: str | Path | None, workspace_id: str) -> bool:
+    """``path`` belongs to ``workspace_id``: inside its root, or — for the default
+    workspace (any id that is not a user-created one) — outside every user-created root."""
+    if not path:
+        return False
+    owner = workspace_id_for_path(path)
+    return owner == workspace_id if workspace_id in _EXTRA_WORKSPACE_ROOTS else owner is None
+
+
+def workspace_root_for_id(workspace_id: str | None) -> Path | None:
+    """The root new projects of ``workspace_id`` go under: the default root for no id
+    or the default workspace's, None for an id that names no workspace on this node."""
+    if not workspace_id or workspace_id in _DEFAULT_WORKSPACE_IDS:
+        return agent_workspace_root()
+    root = _EXTRA_WORKSPACE_ROOTS.get(workspace_id)
+    return Path(root) if root else None
+
+
+# ---------------------------------------------------------------------------
 # Help-desk portal checkouts
 # ---------------------------------------------------------------------------
 
@@ -545,9 +638,10 @@ def is_agent_mount_root(path: str | Path) -> bool:
     from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
 
     # This instance's root and prod's: ``~/Flowpad workspace`` is never a project,
-    # whichever instance is looking at it.
+    # whichever instance is looking at it — nor is any user-created workspace's root.
     prod_root = get_instance_settings().user_home / "Flowpad workspace"
-    return target in _canonical_mount_roots(str(prod_root), str(agent_workspace_root()))
+    roots = (str(prod_root), *(str(root) for root in all_workspace_roots()))
+    return target in _canonical_mount_roots(*roots)
 
 
 def is_hidden_project(cwd: str | Path, system_flag: bool = False) -> bool:

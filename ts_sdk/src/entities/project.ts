@@ -1242,6 +1242,7 @@ export class Project extends APIEntity<Project> {
     projectUrl: string,
     targetName?: string,
     branch?: string,
+    workspaceId?: string,
   ): Promise<
     | { kind: 'ok'; project: Project }
     | { kind: 'collision'; suggestedName: string; attemptedName: string }
@@ -1253,10 +1254,12 @@ export class Project extends APIEntity<Project> {
     action.bodyParameters = {
       git_origin: gitOrigin,
       ...(targetName ? { target_name: targetName } : {}),
+      // The workspace whose folder the clone lands in; absent → the default one.
+      ...(workspaceId ? { workspace: workspaceId } : {}),
     };
     try {
       const response = await dataManager.callAction<
-        { git_origin: GitOrigin; target_name?: string },
+        { git_origin: GitOrigin; target_name?: string; workspace?: string },
         { project: unknown }
       >(action);
       if (!response?.project) return { kind: 'error', message: 'No project returned' };

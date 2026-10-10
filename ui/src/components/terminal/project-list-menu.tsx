@@ -21,6 +21,8 @@ import { HoverCard, HoverCardContent, HoverCardTrigger } from '@src/components/u
 import { WikiButton } from '@src/components/wiki-tip/WikiButton';
 import { FolderOpen, Globe, Loader2, RotateCcw, X } from 'lucide-react';
 import React, { useMemo, useState } from 'react';
+import { useActiveWorkspace } from '@src/hooks/use-workspaces';
+import { WorkspacePickerRow } from '@src/components/workspace/workspace-switcher';
 
 /**
  * THE project list — the "which open project am I in, and which can I switch
@@ -388,7 +390,12 @@ export function useProjectListMenu({
   // cache and re-filters once known.
   // The agent mount ROOT (~/Flowpad workspace) is excluded on the backend
   // (never minted, never listed), so no new tab can open on it here.
-  const buckets = useMemo(() => allBuckets.filter((b) => !isHiddenProject(b.project)), [allBuckets]);
+  // And only the ACTIVE workspace's projects; Global tabs belong to every workspace.
+  const { contains } = useActiveWorkspace();
+  const buckets = useMemo(
+    () => allBuckets.filter((b) => !isHiddenProject(b.project) && contains(b.project?.fs_storage_mount_path)),
+    [allBuckets, contains],
+  );
 
   const tabTotal = buckets.reduce((sum, b) => sum + b.tabCount, 0);
   const projectTotal = buckets.length;
@@ -650,6 +657,7 @@ export function ProjectListPopoverContent({ menu }: { menu: ProjectListMenu }) {
   if (!isGlobalScope && treeRows.length === 0) {
     return (
       <div>
+        <WorkspacePickerRow />
         <div className="px-2 py-1.5 text-xs text-muted-foreground">
           <Trans>No project has open tabs yet.</Trans>
         </div>
@@ -660,6 +668,7 @@ export function ProjectListPopoverContent({ menu }: { menu: ProjectListMenu }) {
 
   return (
     <div className="flex flex-col">
+      <WorkspacePickerRow />
       <ul className="flex flex-col">
         {isGlobalScope ? (
           // The Global scope row — violet-accented so it never reads as a

@@ -2,13 +2,13 @@ import { OpenProjectComponent } from '@src/components/open-project-component/ope
 import { normalizePath, useProjectOpener } from '@src/components/open-project-component/use-open-project';
 import { NewProjectDialog, NewProjectFromGitDialog, useGitCloneDialogSubmit } from '@src/components/project-selector';
 import { notify } from '@src/notifications';
-import { dataContext } from '@sdk';
 import { isHubOnly } from '@src/navigation/hub-runtime';
 import { DesktopTile } from '@src/components/quick-create/QuickCreatePanel';
 import { useProjects } from '@src/hooks/use-projects';
 import { FolderOpen, FolderPlus, FolderSearch, GitBranch, Loader2 } from 'lucide-react';
-import { useMemo, useState, type ComponentType } from 'react';
+import { useState, type ComponentType } from 'react';
 import { useLingui } from '@lingui/react/macro';
+import { useActiveWorkspace } from '@src/hooks/use-workspaces';
 
 /**
  * Compact outlined-button presentation — the Vibe hero's under-input strip,
@@ -96,7 +96,8 @@ export function ProjectActionsRow({
   const [isNewProjectOpen, setIsNewProjectOpen] = useState(false);
   const [isGitProjectOpen, setIsGitProjectOpen] = useState(false);
   const [isOpeningFolder, setIsOpeningFolder] = useState(false);
-  const defaultWorkspacePath = useMemo(() => dataContext.bootstrapInfo?.desktop_info?.paths?.workspace || '', []);
+  // New projects go in the ACTIVE workspace's folder (the default root when there is one workspace).
+  const { root: defaultWorkspacePath } = useActiveWorkspace();
   const { projects } = useProjects();
   const hasProjects = !!projects && projects.length > 0;
 

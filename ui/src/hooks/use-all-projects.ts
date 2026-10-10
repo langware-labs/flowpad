@@ -6,6 +6,9 @@ interface UseAllProjectsOptions {
   enabled?: boolean;
   /** When true, also include SDK-shipped system projects (Flowpad Assistant etc.). */
   includeSystem?: boolean;
+  /** Only this workspace's projects (`useActiveWorkspace().scopeId`) — for a picker,
+   *  not a lookup. Undefined lists every project. */
+  workspace?: string;
 }
 
 /**
@@ -26,8 +29,9 @@ interface UseAllProjectsOptions {
 export function useAllProjects({
   enabled = true,
   includeSystem = false,
+  workspace,
 }: UseAllProjectsOptions = {}) {
-  const { projects, isLoading } = useProjectList({ enabled });
+  const { projects, isLoading } = useProjectList({ enabled, workspace });
   const filtered: ProjectListItem[] = includeSystem
     ? projects
     : projects.filter((p) => !p.hidden);

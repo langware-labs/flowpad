@@ -20,7 +20,14 @@ import {
 import { NavigateFunction } from 'react-router';
 import { isValidIdentifier } from '@sdk/models/TypeId';
 import { getViewMode, rememberedDockViewMode, VIEW_MODE_SWITCH_STATE, ViewMode } from '@src/contexts/view-mode-context';
-import { CAPABILITY_PARAM, DockPointer, JOURNEY_PARAM, JOURNEY_STEP_PARAM, NODE_PARAM } from './DockPointer';
+import {
+  CAPABILITY_PARAM,
+  DockPointer,
+  JOURNEY_PARAM,
+  JOURNEY_STEP_PARAM,
+  NODE_PARAM,
+  WORKSPACE_PARAM,
+} from './DockPointer';
 import { dockPointerForFile } from './local-file-pointer';
 import { getHistoryPosition } from './history-position-store';
 import { beginTabSwitch, dockLabel, tabSwitch } from './tab-switch-state';
@@ -132,7 +139,7 @@ export const SCOPE_SEEDED_VIEWS: ReadonlySet<ViewType> = new Set([
 // URL options that are STICKY across navigation: openDock carries each from the
 // live URL onto any target that doesn't set it. A param here means "topmost
 // until explicitly closed" — clearing it must bypass openDock (see closeJourney).
-export const STICKY_OPTION_PARAMS: readonly string[] = [JOURNEY_PARAM, JOURNEY_STEP_PARAM];
+export const STICKY_OPTION_PARAMS: readonly string[] = [JOURNEY_PARAM, JOURNEY_STEP_PARAM, WORKSPACE_PARAM];
 
 /**
  * The workspace host to carry from `here` onto `target`, or null.
@@ -473,6 +480,18 @@ export class NavigationActions {
     // `commitPointer`, not `openDock`: the sticky carry-forward would put the
     // param straight back. This is the one thing that clears it.
     this.commitPointer(this.here.withJourney(null));
+  }
+
+  /**
+   * Switch the active workspace and land on its home. `null` (or the default
+   * workspace's id) is the default workspace — the param is cleared, so its URLs
+   * are the ones from before workspaces existed.
+   *
+   * `commitPointer`, not `openDock`: the workspace param is sticky, and
+   * `openDock`'s carry-forward would put the OLD workspace straight back.
+   */
+  openWorkspace(workspaceId: string | null): void {
+    this.commitPointer(DockPointer.root().withOption(WORKSPACE_PARAM, workspaceId || null));
   }
 
   // ========== Core Navigation ==========

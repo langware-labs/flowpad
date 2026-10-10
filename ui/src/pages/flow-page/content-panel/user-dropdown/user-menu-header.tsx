@@ -30,9 +30,20 @@ export interface UserMenuHeaderProps {
   pictureIcon?: ReactNode;
   /** Initials, used when there is neither. */
   initials?: string | null;
+  /** Rendered over the banner, top-start (the workspace switcher). The header stays
+   *  presentational: whatever goes here owns its own hooks. */
+  bannerSlot?: ReactNode;
 }
 
-export function UserMenuHeader({ name, title, email, pictureUrl, pictureIcon, initials }: UserMenuHeaderProps) {
+export function UserMenuHeader({
+  name,
+  title,
+  email,
+  pictureUrl,
+  pictureIcon,
+  initials,
+  bannerSlot,
+}: UserMenuHeaderProps) {
   // Suppressed when the name line IS the email (a user with no name falls back
   // to it), so the address never appears twice.
   const emailLine = name ? email : null;
@@ -55,6 +66,7 @@ export function UserMenuHeader({ name, title, email, pictureUrl, pictureIcon, in
         style={backdrop}
         aria-hidden
       />
+      {bannerSlot && <div className="absolute start-2 top-2 z-10">{bannerSlot}</div>}
       <div className="flex items-center gap-3 px-3 pb-3 pt-2">
         <Avatar className="h-10 w-10 shrink-0 ring-2 ring-background">
           {pictureUrl && <AvatarImage src={pictureUrl} alt={name ?? ''} />}

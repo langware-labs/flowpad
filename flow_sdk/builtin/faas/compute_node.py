@@ -1172,14 +1172,14 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
         ``target_name`` set to accept the suggestion.
         """
         from flow_sdk.app.actions.oauth_action import _get_github_token_for_current_user
-        from flow_sdk.config import agent_workspace_root  # noqa: PLC0415
-
-        workspace_root = str(agent_workspace_root())
         from flow_sdk.fs_store.origin.git_origin import GitOrigin
         from flow_sdk.utils.git import derive_repo_leaf_from_url
 
         request_info = get_current_request_info()
         body = await request_info.get_post_data() if request_info else {}
+        workspace_root, error = self._workspace_base(body)
+        if error:
+            return error
         raw_origin = (body or {}).get("git_origin")
         target_name = (body or {}).get("target_name")
         try:
@@ -1210,7 +1210,7 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
             )
 
         target_dir = os.path.join(workspace_root, leaf)
-        suggested = self._next_free_leaf(leaf)
+        suggested = self._next_free_leaf(leaf, base=workspace_root)
         if suggested != leaf:
             # The caller chose this name and it is taken — refuse; offer the
             # next-free `<leaf>-N` so the dialog can suggest it.
@@ -1266,14 +1266,29 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
         )
 
     @staticmethod
-    def _next_free_leaf(leaf: str) -> str:
+    def _next_free_leaf(leaf: str, base: str | None = None) -> str:
         """``leaf``, or the next ``leaf-N`` nothing has claimed at all, under
-        the agent workspace root — ``fresh_clone_slot`` without the empty-dir reuse.
-        All three callers want a path that does not exist: a 409 suggestion, a
-        delivered tree moved into place, and the name-availability probe."""
+        the workspace root ``base`` (the default one when None) — ``fresh_clone_slot``
+        without the empty-dir reuse. All three callers want a path that does not
+        exist: a 409 suggestion, a delivered tree moved into place, and the
+        name-availability probe."""
         from flow_sdk.fs_store.origin.git_origin import fresh_clone_slot  # noqa: PLC0415
 
-        return fresh_clone_slot(leaf, reuse_empty=False).name
+        return fresh_clone_slot(leaf, reuse_empty=False, base=Path(base) if base else None).name
+
+    @staticmethod
+    def _workspace_base(body: dict | None) -> tuple[str, "ApiFailResponse | None"]:
+        """The root a placement action puts its project under: the workspace the
+        body names (``workspace``: its id), else the default root — what every
+        caller got before workspaces existed. A named workspace that is not on this
+        node is refused rather than silently placed in the default one."""
+        from flow_sdk.config import workspace_root_for_id  # noqa: PLC0415
+
+        workspace_id = str((body or {}).get("workspace") or "").strip() or None
+        root = workspace_root_for_id(workspace_id)
+        if root is None:
+            return "", ApiFailResponse(message=f"workspace {workspace_id} is not on this node", status_code=404)
+        return str(root), None
 
     @staticmethod
     async def _materialize_project(target_dir: str, project_id: str | None = None) -> "Project":
@@ -1392,7 +1407,7 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
             return None
         return ApiFailResponse(message="staging_path is required and must be an existing directory", status_code=400)
 
-    async def _place_project(self, leaf: str, raw_project_id: object, deliver) -> ApiResponse:
+    async def _place_project(self, leaf: str, raw_project_id: object, deliver, body: dict | None = None) -> ApiResponse:
         """Put a project at a free slot under ``agent_workspace_root()`` and mint it.
 
         Everything the ways of getting a project onto this box agree on: where it
@@ -1403,18 +1418,18 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
 
         ``path`` rides in the response because the caller's next step is usually
         to attach this checkout to another project as a context folder, and only
-        this side knows where it landed.
+        this side knows where it landed. ``body.workspace`` picks the workspace root.
         """
-        from flow_sdk.config import agent_workspace_root  # noqa: PLC0415
-
-        workspace_root = str(agent_workspace_root())
+        workspace_root, error = self._workspace_base(body)
+        if error:
+            return error
 
         try:
             project_id = self._adopted_project_id(raw_project_id)
         except ValueError as exc:
             return ApiFailResponse(message=str(exc), status_code=400)
 
-        target_dir = os.path.join(workspace_root, self._next_free_leaf(leaf))
+        target_dir = os.path.join(workspace_root, self._next_free_leaf(leaf, base=workspace_root))
         deliver(target_dir)
         project = await self._materialize_project(target_dir, project_id)
         return ApiSuccessResponse(data={"project": project.model_dump(mode="json"), "path": target_dir})
@@ -1452,7 +1467,7 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
             os.makedirs(os.path.dirname(target_dir), exist_ok=True)
             shutil.move(staging_path, target_dir)
 
-        return await self._place_project(leaf, body.get("project_id"), deliver)
+        return await self._place_project(leaf, body.get("project_id"), deliver, body)
 
     @action.post(action_name="refresh-project")
     async def _refresh_project_action(self) -> ApiResponse:
@@ -1467,17 +1482,17 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
         from it stay what they were. Materializing again would park a second copy
         at a suffixed folder. Indexing stays the caller's own step.
 
-        Only a project under ``agent_workspace_root()`` can be refreshed — the folders
-        this node materialized — so a caller cannot aim the overwrite anywhere else.
+        Only a project under a workspace root (``all_workspace_roots()``) can be
+        refreshed — the folders this node materialized — so a caller cannot aim the
+        overwrite anywhere else.
         """
         import asyncio  # noqa: PLC0415
         import shutil  # noqa: PLC0415
         import subprocess  # noqa: PLC0415
 
         from flow_sdk.builtin.project import Project  # noqa: PLC0415
-        from flow_sdk.config import agent_workspace_root  # noqa: PLC0415
-
-        workspace_root = str(agent_workspace_root())
+        from flow_sdk.config import all_workspace_roots  # noqa: PLC0415
+        from flow_sdk.fs_store.path_utils import canonical_posix_path, is_path_under  # noqa: PLC0415
 
         request_info = get_current_request_info()
         body = (await request_info.get_post_data() if request_info else {}) or {}
@@ -1494,8 +1509,8 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
         path = str(getattr(project, "fs_storage_mount_path", "") or "") if project else ""
         if not path or not os.path.isdir(path):
             return ApiFailResponse(message=f"project {project_id} is not on this node", status_code=404)
-        mount_root = os.path.realpath(workspace_root)
-        if os.path.commonpath([mount_root, os.path.realpath(path)]) != mount_root:
+        real = canonical_posix_path(path)
+        if not any(is_path_under(real, canonical_posix_path(root)) for root in all_workspace_roots()):
             return ApiFailResponse(message="only a project this node materialized can be refreshed", status_code=403)
 
         try:
@@ -1536,7 +1551,9 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
 
         # `_next_free_leaf` already proved the path is free, so this only has to
         # create it (parents included).
-        return await self._place_project(leaf, body.get("project_id"), lambda target_dir: os.makedirs(target_dir))
+        return await self._place_project(
+            leaf, body.get("project_id"), lambda target_dir: os.makedirs(target_dir), body
+        )
 
     @action.post(action_name="validate-project-name")
     async def _validate_project_name_action(self) -> ApiResponse:
@@ -1555,7 +1572,10 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
         if not name:
             return ApiFailResponse(message="name is required", status_code=400)
 
-        suggested = self._next_free_leaf(name)
+        workspace_root, error = self._workspace_base(body)
+        if error:
+            return error
+        suggested = self._next_free_leaf(name, base=workspace_root)
         return ApiSuccessResponse(data={"available": suggested == name, "suggested": suggested})
 
     @action.post(action_name="set-default-project")
