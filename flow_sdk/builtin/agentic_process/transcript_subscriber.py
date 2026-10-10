@@ -79,10 +79,11 @@ async def _adopt_unstamped_session(
     from flow_sdk.builtin.agentic_process import AgenticProcess
     from flow_sdk.builtin.process_lifecycle import ProcessStatus
     from flow_sdk.flowpad_types.vendors import vendor_for_path
+    from flow_sdk.instance_settings import get_instance_settings
 
     if not any(getattr(entry, "meta_kind", None) == "session_meta" for entry in entries):
         return []
-    vendor = vendor_for_path(jsonl_path)
+    vendor = vendor_for_path(jsonl_path, get_instance_settings().vendor_homes)
     if vendor is None:
         return []
     try:
