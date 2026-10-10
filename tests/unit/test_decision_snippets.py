@@ -127,3 +127,13 @@ async def test_the_magic_line_route(hub):
 async def test_availability_on_the_funding_status(hub):
     ns = await run_fence(fence_under(DOC, "8."))
     assert ns["decision"].available and ns["decision"].name == "Jev (TypeSafe)"
+
+
+async def test_a_decision_as_a_wizard_step(hub, tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    ns = await run_fence(fence_under(DOC, "9."))
+    result = ns["result"]
+    assert result.ok and result.steps["route"].met and result.steps["billing"].ran
+    assert not result.steps["bugs"].ran and result.stopped_at == ""
+    assert hub["invoked"] == [(DECIDER["id"], "v1/systemone")], "one call answered the gate"
+

@@ -69,12 +69,15 @@ from flow_sdk.core.compute.exec import run_shell
 from flow_sdk.core.compute.process_step import NO_USABLE_LLM_SOURCE, launch_step_process
 from flow_sdk.core.compute.receipt import clear_receipt, read_step_result, receipt_path, result_contract
 from flow_sdk.core.compute.shared_shell import shell_for
+from flow_sdk.core.compute_op.decision import decide_op
 from flow_sdk.schema.data_spec.compute_op_spec import (
     CHECK_TIMEOUT,
     AgentOp,
     AskOp,
     CliOp,
     ComputeOpSpec,
+    DecisionOp,
+    LaunchContext,
     NavigateOp,
     PromptOp,
     fields_of_kind,
@@ -83,11 +86,13 @@ from flow_sdk.schema.data_spec.dock_pointer_spec import DockPointerSpec
 from flow_sdk.schema.data_spec.returned_value_spec import (
     AskResult,
     CliResult,
+    DecisionVerdict,
     ExitCode,
     NavigateResult,
     PromptResult,
     ReturnedValue,
 )
+from flow_sdk.schema.data_spec.spec import DataSpec
 
 #: The name an op's returned value is written under, in an agent's receipt.
 VALUE_KEY = "value"
@@ -133,6 +138,9 @@ class _Seams:
     #: The Wizard entity running this op, when there is one — threaded through
     #: to `_ask` so a question raised mid-wizard can point back to it.
     wizard_id: str = ""
+    #: The caller's scope AS VALUES (``env`` is their JSON): what a ``decision`` op
+    #: decides about, what an agent op mounts as input. ``None`` when not in a run.
+    values: Optional[dict] = None
 
 
 async def check_op(
@@ -311,6 +319,8 @@ async def run_op(
     navigate: Optional[Navigate] = None,
     on_status: Optional[Callable[[str], None]] = None,
     wizard_id: str = "",
+    #: The scope's values themselves (``env`` carries their JSON) — see ``_Seams.values``.
+    values: Optional[dict] = None,
     #: Report the goal's current state and stop — never ask, never run a
     #: command, never spawn an agent. For a status refresh that must not have
     #: side effects (a person clicking a "what's actually installed right
@@ -332,7 +342,7 @@ async def run_op(
         if isinstance(exe, NavigateOp):
             seams = _Seams(
                 workdir=workdir, platform=platform, env=env, subject=subject, ask_timeout=ask_timeout,
-                shell=shell, launch=launch, say=say, wizard_id=wizard_id,
+                shell=shell, launch=launch, say=say, wizard_id=wizard_id, values=values,
             )
             return await _run_navigate(
                 spec, seams=seams, navigate=navigate or navigate_for_subject, check_only=check_only
@@ -357,6 +367,7 @@ async def run_op(
             launch=launch,
             say=say,
             wizard_id=wizard_id,
+            values=values,
         )
         say(f"{spec.display_label}: {spec.subkind}")
         answer = await _attempt(spec, before, executor=executor, seams=seams)
@@ -607,6 +618,7 @@ async def _call_and_check(
         launch=seams.launch,
         say=seams.say,
         wizard_id=seams.wizard_id,
+        values=seams.values,
     )
     if not call.duration_s:
         call = call.model_copy(update={"duration_s": time.monotonic() - started})
@@ -763,7 +775,7 @@ def _with_value(spec: ComputeOpSpec, answer: ReturnedValue, *, said: Optional[Cl
     (``text``, ``stdout``) so a person can still read it.
     """
     if spec.output_spec_kind is None:
-        return answer.model_copy(update={"value": None})
+        return answer if spec.exe_data.PLAIN_VALUE else answer.model_copy(update={"value": None})
     raw = answer.value
     if said is not None and spec.exe_data.VALUE_FROM_CHECK:
         # The same value a later run reads off the check when nothing has to be done.
@@ -1198,6 +1210,7 @@ async def _agent(
     subject: str,
     launch: Launch,
     say: Callable[[str], None],
+    values: Optional[dict] = None,
     **_: Any,
 ) -> PromptResult:
     """A spawned harness with tools. Its value comes through a receipt it writes.
@@ -1212,6 +1225,9 @@ async def _agent(
     prompt = spec.exe_data.prompt if executor else _prompt_for(spec, platform=platform, workdir=workdir)
     if spec.output_spec_kind is not None:
         prompt += result_contract(path, VALUE_KEY, fields_of_kind(spec.output_spec_kind))
+    mounted, context = _agent_scope(spec.exe_data, values)
+    if isinstance(mounted, PromptResult):
+        return mounted
     # An agent that runs a machine-wide installer blocks on the same permission prompt a command does.
     async with _permission_prompt_watch(spec.display_label, platform, say, f"{spec.display_label}: agent") as report:
         said = await launch(
@@ -1219,11 +1235,13 @@ async def _agent(
             prompt=prompt,
             name=spec.display_label,
             workdir=workdir,
-            context_data={"compute_op": spec.name},
-            target_typeid_str=subject,
+            context_data={"compute_op": spec.name, **context.context_data},
+            target_typeid_str=context.target_typeid_str or subject,
             timeout_seconds=spec.exe_data.timeout(),
             on_status=lambda progress: report(getattr(progress, "text", "") or ""),
             executor=executor,
+            input=mounted,
+            shared_context_entities=context.shared_context_entities,
         )
     if spec.output_spec_kind is None or not said.ok:
         return said
@@ -1236,6 +1254,49 @@ async def _agent(
             }
         )
     return said.model_copy(update={"value": receipt.value, "text": said.text or receipt.summary})
+
+
+def _agent_scope(exe: AgentOp, values: Optional[dict]) -> "tuple[Any, LaunchContext]":
+    """What the scope hands this launch: the value to mount as input (``None`` for workdir
+    mode), and the launch context to stamp. A named value that is not what the op said
+    is an answer, not a crash: the ``PromptResult`` that says so comes back in its place."""
+    scope = values or {}
+    mounted: Any = None
+    if exe.input:
+        mounted = scope.get(exe.input)
+        if mounted is None:
+            return PromptResult.not_applicable(f"nothing named {exe.input!r} is in scope to give the agent"), LaunchContext()
+        if not isinstance(mounted, DataSpec):
+            return (
+                PromptResult.not_applicable(f"{exe.input!r} is a {type(mounted).__name__}, not a value an agent can be given"),
+                LaunchContext(),
+            )
+    context = LaunchContext()
+    if exe.launch_context:
+        given = scope.get(exe.launch_context)
+        if isinstance(given, LaunchContext):
+            context = given
+        elif isinstance(given, dict):
+            context = LaunchContext.model_validate(given)
+        elif given is not None:
+            return PromptResult.not_applicable(f"{exe.launch_context!r} is not a launch context"), LaunchContext()
+    return mounted, context
+
+
+async def _decision(
+    spec: ComputeOpSpec,
+    *,
+    values: Optional[dict] = None,
+    say: Callable[[str], None],
+    **_: Any,
+) -> DecisionVerdict:
+    """A closed question about one value in scope. The verdict IS the answer; nothing re-checks it."""
+    exe = spec.exe_data
+    state = (values or {}).get(exe.input)
+    if state is None:
+        return DecisionVerdict.not_applicable(f"{spec.display_label}: nothing named {exe.input!r} is in scope to decide about")
+    say(f"{spec.display_label}: deciding")
+    return await decide_op(exe, state)
 
 
 def _prompt_for(spec: ComputeOpSpec, *, platform: str, workdir: Path) -> str:
@@ -1273,6 +1334,7 @@ def _prompt_for(spec: ComputeOpSpec, *, platform: str, workdir: Path) -> str:
 #: The one call each subkind makes — keyed by its ``exe_data`` class.
 _CALLS: "dict[type, Callable[..., Awaitable[ReturnedValue]]]" = {
     CliOp: _cli,
+    DecisionOp: _decision,
     AskOp: _ask,
     PromptOp: _prompt,
     AgentOp: _agent,
