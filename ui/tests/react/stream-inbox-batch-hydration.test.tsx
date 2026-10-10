@@ -26,6 +26,9 @@ vi.mock('@sdk/react/hooks', () => ({
     currentUser: null,
   }),
   useCloudStatus: () => ({ connection: { status: 'connected' } }),
+  // The rows' automation marks (`useConversationAutomationMarks`): none here — the count under
+  // test is the FlowMessage batch, which goes through `dataManager.watchQuery`, not this hook.
+  useEntitiesQuery: () => ({ data: [], isLoading: false }),
 }));
 
 // The conversation query is scoped to the local user's typeid and not issued until
