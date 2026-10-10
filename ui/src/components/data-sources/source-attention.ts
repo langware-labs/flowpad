@@ -11,10 +11,10 @@ import { i18n, type MessageDescriptor } from '@lingui/core';
 import { msg } from '@lingui/core/macro';
 import type { DataSource } from '@sdk';
 
-/** setup / parked / paused stop polling until a person acts; held keeps polling but a file waits on a
- *  person; retrying is the scheduler's own backoff after a transient failure, shown so an empty
- *  channel explains itself. */
-export type AttentionKind = 'setup' | 'parked' | 'paused' | 'held' | 'retrying';
+/** unresolved / setup / parked / paused are never polled until a person acts — the four reasons
+ *  `DataSource.poll_refusal` gives; held keeps polling but a file waits on a person; retrying is the
+ *  scheduler's own backoff after a transient failure, shown so an empty channel explains itself. */
+export type AttentionKind = 'unresolved' | 'setup' | 'parked' | 'paused' | 'held' | 'retrying';
 
 export interface AttentionReason {
   kind: AttentionKind;
@@ -23,6 +23,7 @@ export interface AttentionReason {
 }
 
 export function attentionReason(source: DataSource): AttentionReason | null {
+  if (source.isUnresolved) return { kind: 'unresolved', text: '' };
   if (source.needsSetup) return { kind: 'setup', text: source.setup_detail || '' };
   if (source.isParked) {
     const code = (source.error_code || '').replace(/_/g, ' ');
@@ -51,6 +52,12 @@ interface AttentionFacts {
 }
 
 export const ATTENTION: Record<AttentionKind, AttentionFacts> = {
+  unresolved: {
+    mark: 'parked',
+    verb: 'verify',
+    fallback: msg`Not evaluated yet — nothing has decided how this source starts, so it is not polled.`,
+    next: msg`Press Verify to evaluate it now.`,
+  },
   setup: {
     mark: 'parked',
     verb: 'verify',

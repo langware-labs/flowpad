@@ -81,6 +81,8 @@ describe('AttachedChannelsBar', () => {
     // A held file needs a person, so it draws "!"; a retrying source is the scheduler's own business.
     expect(state([fake('h', 'active', 'slack', { health: 'ok', error_code: 'write_back_held' })])).toBe('parked');
     expect(state([fake('r', 'active', 'slack', { health: 'transient_error' })])).toBe('on');
+    // Nothing polls a source nobody has evaluated, so it must not draw as listening.
+    expect(state([fake('n', 'new')])).toBe('parked');
     expect(state([fake('a', 'setup'), fake('b', 'disabled')])).toBe('parked');
     expect(state([fake('a', 'disabled'), fake('b', 'disabled')])).toBe('off');
   });

@@ -28128,3 +28128,11 @@ msgstr "تكبير"
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "Zoom out"
 msgstr "تصغير"
+
+#: src/components/data-sources/source-attention.ts
+msgid "Not evaluated yet — nothing has decided how this source starts, so it is not polled."
+msgstr "لم يُقيَّم بعد — لم يُحدَّد كيف يبدأ هذا المصدر، لذلك لا يُجلب منه شيء."
+
+#: src/components/data-sources/source-attention.ts
+msgid "Press Verify to evaluate it now."
+msgstr "اضغط «تحقق» لتقييمه الآن."

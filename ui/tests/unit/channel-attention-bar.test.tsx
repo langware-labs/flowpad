@@ -32,6 +32,7 @@ describe('attentionReason', () => {
   // Held keeps polling, but a file waits on a person; retrying is the scheduler's own backoff; and a
   // paused source carrying a stale transient error is paused, not retrying.
   it.each([
+    ['unresolved', { status: 'new' }, { kind: 'unresolved', text: '' }],
     ['setup', { status: 'setup', setup_detail: 'Invite the bot.' }, { kind: 'setup', text: 'Invite the bot.' }],
     [
       'parked',
