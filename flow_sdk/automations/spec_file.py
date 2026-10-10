@@ -17,7 +17,6 @@ from typing import Any
 from flow_sdk.schema.data_spec.trigger_spec import TriggerSpec
 
 
-
 class SpecFileError(ValueError):
     """An edit the file cannot take. ``status_code`` rides to HTTP."""
 
@@ -98,7 +97,30 @@ def apply_patch(doc: dict[str, Any], patch: dict[str, Any], *, parent_type_id: s
     if "actions" in patch:
         out["actions"] = [_action_doc(a if isinstance(a, dict) else a.model_dump(mode="json"), parent_type_id)
                           for a in patch["actions"] or []]
+    if "gate" in patch:
+        out.pop("if", None)
+        if patch["gate"]:
+            out["if"] = gate_doc(patch["gate"])
+    if "then" in patch:
+        out.pop("then", None)
+        if patch["then"]:
+            out["then"] = patch["then"] if isinstance(patch["then"], dict) else patch["then"].model_dump(mode="json", exclude_defaults=True)
+            out.pop("actions", None)
     return out
+
+
+def gate_doc(gate: Any) -> Any:
+    """The row's ``gate`` as the document's ``if``: the sentence a person typed when the op is
+    the one-question default it was worded from, else the op itself."""
+    data = gate if isinstance(gate, dict) else gate.model_dump(mode="json")
+    sentence = str(data.get("sentence") or "")
+    questions = data.get("questions") or {}
+    require = data.get("require") or {}
+    if sentence and not questions:
+        return sentence  # a sentence nothing worded yet: the file keeps the person's words
+    if sentence and list(questions) == ["match"] and list(require) == ["match"] and (require["match"] or {}).get("yes") == 0.85:
+        return sentence
+    return {k: v for k, v in data.items() if k in ("questions", "require", "input", "sentence") and v not in (None, "", {})}
 
 
 def validate(doc: dict[str, Any]) -> TriggerSpec:

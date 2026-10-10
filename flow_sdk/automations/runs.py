@@ -20,11 +20,15 @@ logger = logging.getLogger(__name__)
 _KIND_BY_EVENT = {
     "schedule_fire": "schedule",
     "tag_fire": "event",
+    "tag_declined": "event",
     "tag_suppressed": "event",
     "storm_suppressed": "event",
     "file_change": "file",
     "hook_fire": "agent_hook",
 }
+
+#: The gate's two reason codes: a fire that was asked and not caught, or could not be asked.
+DECLINED_CODES: frozenset[str] = frozenset({"decision_no", "decision_unavailable"})
 
 #: Why a fire was skipped, in words.
 SKIP_WORDS = {
@@ -33,6 +37,8 @@ SKIP_WORDS = {
     "disabled": "Skipped: the automation was off",
     "self_loop": "Skipped: it would have triggered itself",
     "already_fired": "Skipped: it only runs once, and it already ran",
+    "decision_no": "Passed over: not what the rule catches",
+    "decision_unavailable": "Not decided: the Decision API could not be asked",
 }
 
 
@@ -73,8 +79,11 @@ def _why(row: dict[str, Any], catalog: dict[str, tuple[str, str]]) -> str:
     words from the structured fields (``reason_code``, ``kind``, ``cause_*``,
     ``is_test``), so nothing here is meant to be parsed."""
     event = row.get("hook_event") or ""
-    if row.get("reason_code"):
-        return SKIP_WORDS.get(row["reason_code"], row.get("reason") or "Skipped")
+    code = row.get("reason_code")
+    if code:
+        words = SKIP_WORDS.get(code, row.get("reason") or "Skipped")
+        reason = (row.get("decision") or {}).get("reason") or (row.get("reason") if code in DECLINED_CODES else "")
+        return f"{words}: {reason}" if reason else words
     if event == "schedule_fire":
         return "Scheduled"
     if event in ("tag_fire", "tag_fire_done"):
@@ -141,6 +150,9 @@ def fold(rows: Iterable[dict[str, Any]], catalog: Optional[dict[str, tuple[str, 
             changes_total=row.get("changes_total"),
             actions=[a for a in actions if a],
             spec_hash=outcome.get("spec_hash") or row.get("spec_hash"),
+            decision=row.get("decision") or outcome.get("decision"),
+            subject_id=row.get("subject_id") or outcome.get("subject_id"),
+            wizard=outcome.get("wizard"),
         ))
     return runs
 

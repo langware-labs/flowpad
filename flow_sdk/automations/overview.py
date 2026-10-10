@@ -10,7 +10,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Optional
 
-from flow_sdk.schema.data_spec.automation_spec import AutomationGroup, AutomationRun, AutomationSummary
+from flow_sdk.schema.data_spec.automation_spec import AutomationGroup, AutomationRun, AutomationSummary, RunMark
 
 logger = logging.getLogger(__name__)
 
@@ -63,6 +63,17 @@ async def workflows_by_trigger() -> dict[str, list[str]]:
     return out
 
 
+def started_last_hour(runs: list[AutomationRun]) -> int:
+    """Real fires (not tests, not skips) whose row is younger than an hour."""
+    from datetime import datetime, timedelta, timezone  # noqa: PLC0415
+
+    from flow_sdk.utils.serialization import iso_to_utc  # noqa: PLC0415
+
+    floor = datetime.now(timezone.utc) - timedelta(hours=1)
+    return sum(1 for run in runs
+               if not run.is_test and run.status != "skipped" and (iso_to_utc(run.ts) or floor) > floor)
+
+
 async def summarize(trigger: Any, runs: list[AutomationRun], *, names: Any = None,
                     workflows: Optional[list[str]] = None,
                     catalog: Optional[dict[str, tuple[str, str]]] = None,
@@ -71,6 +82,7 @@ async def summarize(trigger: Any, runs: list[AutomationRun], *, names: Any = Non
     from flow_sdk.automations.runs import join_processes  # noqa: PLC0415
 
     real = [r for r in runs if not r.is_test and r.status != "skipped"][:RECENT_WINDOW]
+    passed_over = sum(1 for r in runs if r.reason_code == "decision_no")
     last = runs[0] if runs else None
     if last is not None and last_joined is None:
         last = (await join_processes([last]))[0]
@@ -91,6 +103,9 @@ async def summarize(trigger: Any, runs: list[AutomationRun], *, names: Any = Non
         last_run=last,
         recent_failures=sum(1 for r in real if r.status == "failed"),
         recent_runs=len(real),
+        last_runs=[RunMark(id=r.id, ts=r.ts, status=r.status, agentic_process_id=r.agentic_process_id) for r in real],
+        passed_over=passed_over,
+        started_last_hour=started_last_hour(runs),
         next_run=next_run,
         fires=int(trigger.counter or 0),
         tested=is_tested(trigger, runs),

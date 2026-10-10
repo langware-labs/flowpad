@@ -33,14 +33,23 @@ def emit_projected_tag(item) -> None:
     screen both filter on it, so an announcement without one is invisible to
     anything narrowing by data source.
     """
-    from flow_sdk.tags import emit_tag, target_of  # noqa: PLC0415
+    from flow_sdk.tags import emit_tag  # noqa: PLC0415
 
-    emit_tag(
-        f"stream_inbox.{item.provider or 'unknown'}.message.projected",
-        target_of("source_item", item.id),
-        {"entity_id": item.id, "source_id": item.data_source_id},
-        ctx={"scope": [target_of("data_source", item.data_source_id)]},
-    )
+    envelope = projected_envelope(item.provider, str(item.id), str(item.data_source_id))
+    emit_tag(envelope["tag"], envelope["target"], envelope["data"], ctx={"scope": envelope["scope"]})
+
+
+def projected_envelope(provider: str, source_item_id: str, source_id: str) -> dict:
+    """The projected-message envelope's parts — the ONE spelling, shared by the real announcement and a
+    test fire on a message (``automations.run_once.message_event``)."""
+    from flow_sdk.tags import target_of  # noqa: PLC0415
+
+    return {
+        "tag": f"stream_inbox.{provider or 'unknown'}.message.projected",
+        "target": target_of("source_item", source_item_id),
+        "data": {"entity_id": source_item_id, "source_id": source_id},
+        "scope": [target_of("data_source", source_id)] if source_id else [],
+    }
 
 
 def emit_message_status(source, message_id: str) -> None:
