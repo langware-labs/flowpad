@@ -94,7 +94,7 @@ class Workspace(Entity):
         save_result = await super().save(owner, notify=notify)
         # TODO consider moving this to a separate action from client side
         await self.grant_access_to_public_data()
-        await type(self).load_roots()
+        await type(self)._roots_changed()
         return save_result
 
     async def delete(self):
@@ -103,7 +103,7 @@ class Workspace(Entity):
         if self._is_default_row:
             raise WorkspaceRootError("the default workspace cannot be deleted")
         result = await super().delete()
-        await type(self).load_roots()
+        await type(self)._roots_changed()
         return result
 
     @classmethod
@@ -155,12 +155,21 @@ class Workspace(Entity):
                 raise WorkspaceRootError(f"{root} is inside the project {project.name!r} ({mount})")
 
     @classmethod
+    async def _roots_changed(cls) -> None:
+        """A workspace was saved or deleted: reload the roots, and refresh the bootstrap,
+        which lists the workspaces by name (so a rename counts too)."""
+        from flow_sdk.server.routes.bootstrap import invalidate_bootstrap_cache  # noqa: PLC0415
+
+        await cls.load_roots()
+        invalidate_bootstrap_cache()
+
+    @classmethod
     async def load_roots(cls) -> None:
         """Refresh the in-memory root registry (``flow_sdk.config``) from the rows.
 
         The project caches depend on the roots, so they are dropped only when the roots
-        changed (a rename changes none); the bootstrap lists the workspaces by name, so
-        it is refreshed on every change.
+        changed (a rename changes none). A read, not a change: the bootstrap calls it
+        while it builds, and must not have its own caches dropped under it.
         """
         from flow_sdk.config import set_workspace_roots  # noqa: PLC0415
 
@@ -177,9 +186,6 @@ class Workspace(Entity):
 
             invalidate_projects_cache()
             invalidate_project_list_cache()
-        from flow_sdk.server.routes.bootstrap import invalidate_bootstrap_cache  # noqa: PLC0415
-
-        invalidate_bootstrap_cache()
 
     @classmethod
     async def _user_created(cls) -> list["Workspace"]:

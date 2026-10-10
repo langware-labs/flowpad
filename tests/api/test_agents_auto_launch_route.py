@@ -26,7 +26,7 @@ def stub_use(monkeypatch):
     route test does not depend on compute-node placement."""
     from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess
 
-    async def _use(self, project_id=None, *, deployment=None, owner=None, auto_prompt=False):
+    async def _use(self, project_id=None, *, deployment=None, owner=None, auto_prompt=False, launch_surface=None):
         proc = AgenticProcess(
             name=self.display_name, worker_type="claude_code", pty_mode=False, visible=True, project_id=project_id
         )
@@ -119,7 +119,7 @@ async def test_a_refused_launch_answers_with_an_error_the_loader_can_read(
     """
     project, _ = await _seed(tmp_path, "tutor")
 
-    async def _boom(self, project_id=None, *, deployment=None, owner=None, auto_prompt=False):
+    async def _boom(self, project_id=None, *, deployment=None, owner=None, auto_prompt=False, launch_surface=None):
         raise RuntimeError("no worker binary")
 
     monkeypatch.setattr(Agent, "use", _boom)
