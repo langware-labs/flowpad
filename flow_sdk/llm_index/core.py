@@ -40,7 +40,7 @@ from __future__ import annotations
 import hashlib
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable, Iterator
+from typing import Callable, Iterable, Iterator
 
 from flow_sdk.fs_store.indexer.walk import gitignore_walk
 from flow_sdk.llm_index.folder_note import FolderNote
@@ -146,11 +146,26 @@ def scan_tree(
     root = Path(root).resolve()
     if not root.is_dir():
         raise NotADirectoryError(str(root))
+    return fold_tree(root, gitignore_walk(root, gitignore=gitignore), on_node=on_node)
 
+
+def fold_tree(
+    root: Path,
+    walk: Iterable[tuple[Path, list[Path], list[Path]]],
+    *,
+    on_node: Callable[[Path, str], None] | None = None,
+) -> FolderNode:
+    """Fold one finished walk of ``root`` (already resolved, a directory) into
+    the hashed :class:`FolderNode` tree.
+
+    The half of :func:`scan_tree` below the walk, so a caller that walks under
+    its own policy (``flow_sdk.diskio``'s Python ``TreeHasher``) hashes with the
+    same code instead of a copy.
+    """
     # One shared-engine walk up front (pre-order); visit() below re-folds it
     # recursively so hashing stays post-order (children before parents).
     listing: dict[Path, tuple[list[Path], list[Path]]] = {}
-    for dir_path, subdirs, files in gitignore_walk(root, gitignore=gitignore):
+    for dir_path, subdirs, files in walk:
         listing[dir_path] = (
             subdirs,
             [

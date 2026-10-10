@@ -93,18 +93,19 @@ async def test_dispatch_status_staged_flag():
 
 async def test_dispatch_status_line_counts_opt_in():
     """``lineCounts`` (query string "true"/"1" or JSON true) adds the numstat pass;
-    without it the status is two git spawns and every count is None."""
+    without it every count is None. Either way the status is ONE invocation: the
+    script's sections carry the remote and the tracked counts."""
     status_out = "## main\n M a.txt"
-    plain = await make_repo([make_cmd(status_out), make_cmd("", exit_code=1)]).dispatch("status")
+    plain = await make_repo([make_cmd(status_out)]).dispatch("status")
     assert [(f["insertions"], f["deletions"]) for f in plain.data["files"]] == [(None, None)]
 
     for flag in ("true", "1", True):
         responses = [
-            make_cmd(status_out),
-            make_cmd("abc123"),  # rev-parse --verify HEAD
-            make_cmd("3\t1\ta.txt"),  # diff --numstat HEAD (real index)
-            make_cmd(""),  # ls-files --others: nothing untracked, no throwaway index
-            make_cmd("", exit_code=1),  # ls-remote --get-url
+            make_cmd(
+                status_out
+                + "\n@@flowpad-git:remote@@\n\n@@flowpad-git:remote-rc=1@@\n"  # ls-remote --get-url: no remote
+                + "\n@@flowpad-git:numstat@@\n3\t1\ta.txt\n\n@@flowpad-git:numstat-rc=0@@\n"  # diff --numstat HEAD
+            ),  # nothing untracked in the status: no second invocation, no throwaway index
         ]
         result = await make_repo(responses).dispatch("status", {"lineCounts": flag})
         assert [(f["insertions"], f["deletions"]) for f in result.data["files"]] == [(3, 1)], flag

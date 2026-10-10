@@ -18,18 +18,18 @@ def _load_doc(journey_dir: Path) -> GraphWorkflowDoc | None:
         return None
 
 
-def journey_asset_hash(ref: FSRef) -> float:
+def journey_asset_hash(ref: FSRef) -> int:
     """Max mtime of graph.json + child *.html — display.json and runs/ excluded."""
     base = ref._path
-    ts = 0.0
+    ts = 0
     try:
-        ts = max(ts, (base / GRAPH_JSON).stat().st_mtime)
+        ts = max(ts, (base / GRAPH_JSON).stat().st_mtime_ns)
     except OSError:
         pass
     try:
         for p in base.glob("*.html"):
             try:
-                ts = max(ts, p.stat().st_mtime)
+                ts = max(ts, p.stat().st_mtime_ns)
             except OSError:
                 pass
     except OSError:

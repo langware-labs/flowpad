@@ -8,12 +8,12 @@ from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.schema.data_spec.task_spec import TaskSpec
 
 
-def task_asset_hash(ref: FSRef) -> float:
+def task_asset_hash(ref: FSRef) -> int:
     base = ref._path if ref._path.is_dir() else ref._path.parent
-    ts = 0.0
+    ts = 0
     for name in (TaskSpec.main_file, "spec.md"):
         try:
-            ts = max(ts, (base / name).stat().st_mtime)
+            ts = max(ts, (base / name).stat().st_mtime_ns)
         except OSError:
             pass
     return ts
