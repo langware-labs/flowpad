@@ -3099,9 +3099,36 @@ class Project(SetupSkippable, Entity):
         await self.unindex_folder(src)
         self.fs_storage_mount_path = target_dir
         await self.save()
+        await self._reroot_paths(src, canonical_posix_path(target_dir))
         invalidate_projects_cache()
         invalidate_project_list_cache()
         return await self._index_after_move()
+
+    async def _reroot_paths(self, old: str, new: str) -> None:
+        """Rows that remember a path inside the old folder follow the project.
+
+        A closed session keeps its ``workdir`` and a trigger its ``workdir`` /
+        ``watch_path``. Left alone, resuming that session (or firing that trigger) would
+        spawn in the OLD path — and a spawn creates its working directory, so the folder
+        that was just moved would come back, empty, as a project of the old workspace.
+        Dependency links need nothing: a link whose cached path is gone re-resolves.
+        """
+        from flow_sdk.builtin.agentic_process import AgenticProcess  # noqa: PLC0415
+        from flow_sdk.builtin.trigger import Trigger  # noqa: PLC0415
+        from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp  # noqa: PLC0415
+
+        for cls, field in ((AgenticProcess, "workdir"), (Trigger, "workdir"), (Trigger, "watch_path")):
+            # LIKE narrows by prefix; ``is_path_under`` is the segment-safe check.
+            rows = await cls.get_all(QueryFilter(match=ExpressionNode(op=QueryOp.LIKE, operands=[field, f"{old}%"])))
+            for row in rows:
+                path = canonical_posix_path(getattr(row, field) or "")
+                if not is_path_under(path, old):
+                    continue
+                try:
+                    setattr(row, field, new + path[len(old) :])
+                    await row.save()
+                except Exception:  # noqa: BLE001 — one row that will not save must not undo a finished move
+                    log.exception("[project-move] re-root %s %s.%s failed", cls.get_type(), row.id, field)
 
     async def _index_after_move(self) -> bool:
         """Full index of the new folder, queued behind any running one. False when it did
