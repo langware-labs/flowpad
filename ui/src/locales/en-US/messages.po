@@ -67,19 +67,19 @@ msgstr "— open, peek, or get highlighted here"
 msgid "— optional; pins every call to it"
 msgstr "— optional; pins every call to it"
 
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/DebugMenu.tsx
 msgid "— show annotation gutter"
 msgstr "— show annotation gutter"
 
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/DebugMenu.tsx
 msgid "— show prompt anchors in gutter"
 msgstr "— show prompt anchors in gutter"
 
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/DebugMenu.tsx
 msgid "— show time/index gutter"
 msgstr "— show time/index gutter"
 
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/DebugMenu.tsx
 msgid "— show trace event gutter"
 msgstr "— show trace event gutter"
 
@@ -891,7 +891,7 @@ msgstr "{label}"
 msgid "{label} — not while the agent is working"
 msgstr "{label} — not while the agent is working"
 
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/DebugMenu.tsx
 msgid "{label} docs"
 msgstr "{label} docs"
 
@@ -1137,8 +1137,8 @@ msgid "{value}"
 msgstr "{value}"
 
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
-msgid "{worker} session info"
-msgstr "{worker} session info"
+#~ msgid "{worker} session info"
+#~ msgstr "{worker} session info"
 
 #: src/components/cron-view/CronForm.tsx
 msgid "* * * * *"
@@ -1557,7 +1557,7 @@ msgstr "About {name}"
 #~ msgid "About hook triggers"
 #~ msgstr "About hook triggers"
 
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/DebugMenu.tsx
 msgid "Abs line"
 msgstr "Abs line"
 
@@ -2686,7 +2686,7 @@ msgstr "anchor"
 msgid "Anchor range"
 msgstr "Anchor range"
 
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/DebugMenu.tsx
 msgid "Anchor time range"
 msgstr "Anchor time range"
 
@@ -2717,7 +2717,7 @@ msgid "Annotation submitted"
 msgstr "Annotation submitted"
 
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/DebugMenu.tsx
 msgid "Annotations"
 msgstr "Annotations"
 
@@ -4530,11 +4530,11 @@ msgstr "Choose…"
 msgid "chosen by you"
 msgstr "chosen by you"
 
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/SessionInfoPopover.tsx
 msgid "Chrome"
 msgstr "Chrome"
 
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/DebugMenu.tsx
 msgid "Chrome browser"
 msgstr "Chrome browser"
 
@@ -4761,8 +4761,8 @@ msgid "Clearing…"
 msgstr "Clearing…"
 
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
-msgid "CLI launch options"
-msgstr "CLI launch options"
+#~ msgid "CLI launch options"
+#~ msgstr "CLI launch options"
 
 #: src/components/account/settings-section.tsx
 msgid "CLI Log Level"
@@ -4771,11 +4771,11 @@ msgstr "CLI Log Level"
 #~ msgid "CLI login"
 #~ msgstr "CLI login"
 
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/DebugMenu.tsx
 msgid "CLI Options"
 msgstr "CLI Options"
 
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/SessionInfoPopover.tsx
 msgid "CLI worker status"
 msgstr "CLI worker status"
 
@@ -5161,20 +5161,20 @@ msgid "Color by"
 msgstr "Color by"
 
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
-msgid "Column visibility & trace filters"
-msgstr "Column visibility & trace filters"
+#~ msgid "Column visibility & trace filters"
+#~ msgstr "Column visibility & trace filters"
 
 #: src/components/search-calibration/SearchCalibrationPanel.tsx
 msgid "Column Weights"
 msgstr "Column Weights"
 
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
-msgid "Columns"
-msgstr "Columns"
+#~ msgid "Columns"
+#~ msgstr "Columns"
 
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
-msgid "Columns & Trace"
-msgstr "Columns & Trace"
+#~ msgid "Columns & Trace"
+#~ msgstr "Columns & Trace"
 
 #: src/components/organization/budgets/AddPeopleDialog.tsx
 msgid "Columns: name, email, budget"
@@ -5188,14 +5188,14 @@ msgstr "command"
 #: src/components/hooks-manager/HookForm.tsx
 #: src/components/hooks-view/HooksBrowser.tsx
 #: src/components/project-resource-list/resource-meta.ts
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/SessionInfoPopover.tsx
 #: src/i18n/type-labels.ts
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Command"
 msgstr "Command"
 
 #: src/components/terminal/interactive-terminal/command-status-viewer/CommandStatusViewer.tsx
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/DebugMenu.tsx
 msgid "Command Status"
 msgstr "Command Status"
 
@@ -5247,12 +5247,11 @@ msgstr "Commit"
 msgid "Commit & continue"
 msgstr "Commit & continue"
 
-#: src/components/terminal/interactive-terminal/WorktreeButtons.tsx
-#: src/components/terminal/interactive-terminal/WorktreeButtons.tsx
+#: src/components/terminal/interactive-terminal/SessionActionsMenu.tsx
 msgid "Commit & Merge"
 msgstr "Commit & Merge"
 
-#: src/components/terminal/interactive-terminal/WorktreeButtons.tsx
+#: src/components/terminal/interactive-terminal/SessionActionsMenu.tsx
 msgid "Commit all changes and merge back to the parent branch. Claude will exit the worktree when done."
 msgstr "Commit all changes and merge back to the parent branch. Claude will exit the worktree when done."
 
@@ -5724,7 +5723,7 @@ msgstr "Copilot tab"
 msgid "Copy"
 msgstr "Copy"
 
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/SessionInfoPopover.tsx
 msgid "Copy {label}"
 msgstr "Copy {label}"
 
@@ -5882,7 +5881,7 @@ msgstr "Copy the terminal command: {0}"
 msgid "Copy this file's path to the clipboard"
 msgstr "Copy this file's path to the clipboard"
 
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/SessionInfoPopover.tsx
 #: src/components/version-popover/version-popover.tsx
 msgid "Copy to clipboard"
 msgstr "Copy to clipboard"
@@ -7205,7 +7204,7 @@ msgstr "Current resolved buffer row — plan annotations position by text-search
 msgid "Current resolved buffer row — prompt annotations position by text-search in xterm buffer"
 msgstr "Current resolved buffer row — prompt annotations position by text-search in xterm buffer"
 
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/SessionInfoPopover.tsx
 msgid "Current Time"
 msgstr "Current Time"
 
@@ -7346,16 +7345,21 @@ msgid "DB Stats"
 msgstr "DB Stats"
 
 #: src/components/account/settings-section.tsx
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/DebugMenu.tsx
+#: src/components/terminal/interactive-terminal/SessionInfoPopover.tsx
 #: src/i18n/pref-labels.ts
 msgid "Debug"
 msgstr "Debug"
+
+#: src/components/terminal/interactive-terminal/DebugMenu.tsx
+msgid "Debug — CLI options, gutters, viewers"
+msgstr "Debug — CLI options, gutters, viewers"
 
 #: src/components/account/settings-section.tsx
 msgid "Debug level includes hook invocations."
 msgstr "Debug level includes hook invocations."
 
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/DebugMenu.tsx
 msgid "Debug logging"
 msgstr "Debug logging"
 
@@ -8498,6 +8502,7 @@ msgid "Download attachments"
 msgstr "Download attachments"
 
 #: src/components/terminal/interactive-terminal/EntityShareDialog.tsx
+#: src/components/terminal/interactive-terminal/SessionActionsMenu.tsx
 msgid "Download bundle"
 msgstr "Download bundle"
 
@@ -8901,7 +8906,7 @@ msgstr "Enable all"
 msgid "Enable All Project MCP Servers"
 msgstr "Enable All Project MCP Servers"
 
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/DebugMenu.tsx
 msgid "Enable browser automation via Chrome (--chrome)"
 msgstr "Enable browser automation via Chrome (--chrome)"
 
@@ -10756,7 +10761,7 @@ msgstr "Full environment variable dictionary"
 msgid "Full path to the plan .md file written by the agent"
 msgstr "Full path to the plan .md file written by the agent"
 
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/DebugMenu.tsx
 msgid "Full Trust"
 msgstr "Full Trust"
 
@@ -11161,6 +11166,10 @@ msgstr "Guided setup"
 msgid "Guides"
 msgstr "Guides"
 
+#: src/components/terminal/interactive-terminal/DebugMenu.tsx
+msgid "Gutters"
+msgstr "Gutters"
+
 #: src/pages/hub-home/ShareSandboxDialog.tsx
 msgid "Hand it over"
 msgstr "Hand it over"
@@ -11193,7 +11202,7 @@ msgstr "Harness is required"
 #~ msgid "Harness path"
 #~ msgstr "Harness path"
 
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/SessionInfoPopover.tsx
 msgid "Harness Session Details"
 msgstr "Harness Session Details"
 
@@ -11208,11 +11217,11 @@ msgstr "Harness sign-in & status"
 msgid "Harness status"
 msgstr "Harness status"
 
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/SessionInfoPopover.tsx
 msgid "Harness worker Session ID"
 msgstr "Harness worker Session ID"
 
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/SessionInfoPopover.tsx
 msgid "Harness worker Session Name"
 msgstr "Harness worker Session Name"
 
@@ -11903,7 +11912,7 @@ msgstr "Include this file in the next commit (git add)"
 #~ msgid "Include this session's transcript"
 #~ msgstr "Include this session's transcript"
 
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/DebugMenu.tsx
 msgid "Index (seq)"
 msgstr "Index (seq)"
 
@@ -12679,7 +12688,7 @@ msgstr "Last indexed: never"
 msgid "Last Login:"
 msgstr "Last Login:"
 
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/SessionInfoPopover.tsx
 msgid "Last message"
 msgstr "Last message"
 
@@ -12902,7 +12911,7 @@ msgstr "Limits remaining"
 msgid "line"
 msgstr "line"
 
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/DebugMenu.tsx
 msgid "Line"
 msgstr "Line"
 
@@ -13647,6 +13656,7 @@ msgid "Manage API keys"
 msgstr "Manage API keys"
 
 #: src/components/asset-manager/AssetManagerButton.tsx
+#: src/components/terminal/interactive-terminal/SessionActionsMenu.tsx
 msgid "Manage assets"
 msgstr "Manage assets"
 
@@ -14118,7 +14128,7 @@ msgstr "model"
 #: src/components/entity-execution-panel/ExecutionSettingsPopover.tsx
 #: src/components/llm-endpoints/UsageByChildTable.tsx
 #: src/components/settings-view/settings-utils.ts
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/SessionInfoPopover.tsx
 #: src/pages/flow-page/vibe-model-select.tsx
 #: src/pages/flow-page/vibe-model-select.tsx
 msgid "Model"
@@ -16625,7 +16635,7 @@ msgstr "Open {vendorLabel} in an OS terminal here"
 msgid "Open {workerName} terminal"
 msgstr "Open {workerName} terminal"
 
-#: src/components/terminal/interactive-terminal/WorktreeButtons.tsx
+#: src/components/terminal/interactive-terminal/SessionActionsMenu.tsx
 msgid "Open a new isolated git worktree session on a separate branch"
 msgstr "Open a new isolated git worktree session on a separate branch"
 
@@ -16693,7 +16703,7 @@ msgstr "Open authorization page"
 msgid "Open Backup Folder"
 msgstr "Open Backup Folder"
 
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/SessionInfoPopover.tsx
 msgid "Open command in external terminal"
 msgstr "Open command in external terminal"
 
@@ -16854,7 +16864,7 @@ msgstr "Open in Editor"
 msgid "Open in external browser"
 msgstr "Open in external browser"
 
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/SessionInfoPopover.tsx
 msgid "Open in external terminal"
 msgstr "Open in external terminal"
 
@@ -16898,7 +16908,7 @@ msgstr "Open in Skills tab"
 msgid "Open in terminal"
 msgstr "Open in terminal"
 
-#: src/components/terminal/interactive-terminal/WorktreeButtons.tsx
+#: src/components/terminal/interactive-terminal/SessionActionsMenu.tsx
 msgid "Open in Worktree"
 msgstr "Open in Worktree"
 
@@ -17038,7 +17048,7 @@ msgstr "Open task"
 
 #: src/components/diagnose/open-in-terminal-button.tsx
 #: src/components/terminal/interactive-terminal/PlanInteractionBar.tsx
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/SessionActionsMenu.tsx
 msgid "Open terminal"
 msgstr "Open terminal"
 
@@ -17047,8 +17057,8 @@ msgid "Open terminal ({modLabel}+T)"
 msgstr "Open terminal ({modLabel}+T)"
 
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
-msgid "Open terminal in {workdir}"
-msgstr "Open terminal in {workdir}"
+#~ msgid "Open terminal in {workdir}"
+#~ msgstr "Open terminal in {workdir}"
 
 #: src/components/help/AskForHelpDialog.tsx
 msgid "Open that conversation"
@@ -17215,7 +17225,7 @@ msgstr "Open this plan from its session to update it"
 
 #: src/components/assets/editor/wizard/WizardStepInspector.tsx
 #: src/components/process-runs/ProcessRunsPanel.tsx
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/SessionActionsMenu.tsx
 msgid "Open transcript"
 msgstr "Open transcript"
 
@@ -17792,7 +17802,7 @@ msgstr "People you share with can view this agent and its files. They can't edit
 msgid "Permanently delete?"
 msgstr "Permanently delete?"
 
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/SessionInfoPopover.tsx
 msgid "Permission"
 msgstr "Permission"
 
@@ -18270,11 +18280,11 @@ msgstr "process"
 msgid "Process"
 msgstr "Process"
 
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/SessionInfoPopover.tsx
 msgid "Process ID"
 msgstr "Process ID"
 
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/SessionInfoPopover.tsx
 msgid "Process Name"
 msgstr "Process Name"
 
@@ -18496,7 +18506,7 @@ msgstr "Prompt"
 msgid "Prompt Annotation"
 msgstr "Prompt Annotation"
 
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/DebugMenu.tsx
 msgid "Prompt annotations"
 msgstr "Prompt annotations"
 
@@ -18641,7 +18651,7 @@ msgstr "PTY disconnected."
 msgid "PTY Events"
 msgstr "PTY Events"
 
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/DebugMenu.tsx
 msgid "PTY Events Viewer"
 msgstr "PTY Events Viewer"
 
@@ -18649,7 +18659,7 @@ msgstr "PTY Events Viewer"
 msgid "pty experiment"
 msgstr "pty experiment"
 
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/SessionInfoPopover.tsx
 msgid "PTY ID"
 msgstr "PTY ID"
 
@@ -18658,7 +18668,7 @@ msgstr "PTY ID"
 msgid "PTY time"
 msgstr "PTY time"
 
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/DebugMenu.tsx
 #: src/components/terminal/interactive-terminal/pty-viewer/PTYViewer.tsx
 msgid "PTY Viewer"
 msgstr "PTY Viewer"
@@ -19841,7 +19851,7 @@ msgstr "Required"
 msgid "required — it will not work here until it is set up"
 msgstr "required — it will not work here until it is set up"
 
-#: src/components/terminal/interactive-terminal/WorktreeButtons.tsx
+#: src/components/terminal/interactive-terminal/SessionActionsMenu.tsx
 msgid "Requires a git repository with at least one commit"
 msgstr "Requires a git repository with at least one commit"
 
@@ -19958,12 +19968,11 @@ msgstr "Restart"
 msgid "Restart required — {changedCount} {0} changed"
 msgstr "Restart required — {changedCount} {0} changed"
 
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/SessionActionsMenu.tsx
 msgid "Restart required — config changed since start"
 msgstr "Restart required — config changed since start"
 
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/SessionActionsMenu.tsx
 msgid "Restart session"
 msgstr "Restart session"
 
@@ -19975,7 +19984,7 @@ msgstr "Restart setup"
 msgid "Restart this journey"
 msgstr "Restart this journey"
 
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/SessionActionsMenu.tsx
 msgid "Restarting…"
 msgstr "Restarting…"
 
@@ -20262,7 +20271,7 @@ msgstr "Roots talk to a provider with a stored key; chains are fed from other en
 msgid "Row range"
 msgstr "Row range"
 
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/DebugMenu.tsx
 msgid "Row time range"
 msgstr "Row time range"
 
@@ -21408,7 +21417,7 @@ msgstr "Send a message below and the agent will get to work."
 msgid "Send a message first — fork requires conversation history"
 msgstr "Send a message first — fork requires conversation history"
 
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/SessionActionsMenu.tsx
 msgid "Send a message first — no transcript yet"
 msgstr "Send a message first — no transcript yet"
 
@@ -21575,6 +21584,7 @@ msgstr "session"
 
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/project-resource-list/resource-meta.ts
+#: src/components/terminal/interactive-terminal/SessionActionsMenu.tsx
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Session"
 msgstr "Session"
@@ -21609,6 +21619,11 @@ msgstr "Session {workerId} is not in Claude, Codex, Copilot or OpenCode history.
 msgid "Session {workerId} is not in Claude, Codex, or Copilot history."
 msgstr "Session {workerId} is not in Claude, Codex, or Copilot history."
 
+#: src/components/terminal/interactive-terminal/SessionActionsMenu.tsx
+#: src/components/terminal/interactive-terminal/SessionActionsMenu.tsx
+msgid "Session actions"
+msgstr "Session actions"
+
 #: src/components/lens-viewer/shared/transcript-features/AnalysisControls.tsx
 msgid "Session analysis"
 msgstr "Session analysis"
@@ -21634,9 +21649,13 @@ msgstr "Session Errors"
 msgid "Session ID"
 msgstr "Session ID"
 
+#: src/components/terminal/interactive-terminal/SessionActionsMenu.tsx
+msgid "Session info"
+msgstr "Session info"
+
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/SessionActionsMenu.tsx
+#: src/components/terminal/interactive-terminal/SessionActionsMenu.tsx
 msgid "Session is not running"
 msgstr "Session is not running"
 
@@ -22084,11 +22103,11 @@ msgstr "Shell command to execute. Use $CLAUDE_PROJECT_DIR, $tool_name, $tool_inp
 msgid "Shell commands triggered by tool events"
 msgstr "Shell commands triggered by tool events"
 
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/SessionInfoPopover.tsx
 msgid "Shell ID"
 msgstr "Shell ID"
 
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/SessionInfoPopover.tsx
 msgid "Shell Name"
 msgstr "Shell Name"
 
@@ -23131,7 +23150,7 @@ msgid "started"
 msgstr "started"
 
 #: src/components/automations/automation-words.ts
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/SessionInfoPopover.tsx
 msgid "Started"
 msgstr "Started"
 
@@ -23206,7 +23225,7 @@ msgstr "Starting…"
 #: src/components/machine-overview/machine-overview.tsx
 #: src/components/machine-overview/machine-overview.tsx
 #: src/components/record-search-bar/RecordSearchBar.tsx
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/SessionInfoPopover.tsx
 msgid "Status"
 msgstr "Status"
 
@@ -25205,15 +25224,15 @@ msgstr "time"
 #: src/components/conversation/FlowMessageBubble.tsx
 #: src/components/record-search-bar/RecordSearchBar.tsx
 #: src/components/terminal/interactive-terminal/ColumnHeaderBar.tsx
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/DebugMenu.tsx
 msgid "Time"
 msgstr "Time"
 
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/DebugMenu.tsx
 msgid "Time gutter"
 msgstr "Time gutter"
 
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/DebugMenu.tsx
 msgid "Time Gutter Fields"
 msgstr "Time Gutter Fields"
 
@@ -25544,7 +25563,7 @@ msgstr "Total Tokens"
 msgid "Trace"
 msgstr "Trace"
 
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/DebugMenu.tsx
 #: src/components/terminal/interactive-terminal/TraceGutter.tsx
 msgid "Trace events"
 msgstr "Trace events"
@@ -26383,7 +26402,7 @@ msgstr "Variables"
 msgid "Vault root"
 msgstr "Vault root"
 
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/DebugMenu.tsx
 msgid "Verbose debug output (--debug)"
 msgstr "Verbose debug output (--debug)"
 
@@ -26565,6 +26584,10 @@ msgstr "View transcript"
 #: src/components/lens-viewer/HeartbeatEventsViewer.tsx
 msgid "View trigger log"
 msgstr "View trigger log"
+
+#: src/components/terminal/interactive-terminal/DebugMenu.tsx
+msgid "Viewers"
+msgstr "Viewers"
 
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
 msgid "viewport px"
@@ -27109,7 +27132,7 @@ msgstr "working"
 msgid "Working"
 msgstr "Working"
 
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/SessionInfoPopover.tsx
 msgid "Working Dir"
 msgstr "Working Dir"
 
@@ -27141,12 +27164,13 @@ msgstr "working…"
 #: src/components/chats-navigator/ChatHistoryRow.tsx
 #: src/components/project-setup/ProjectSetupDialog.tsx
 #: src/components/setup-wizard/SetupWizardDialog.tsx
+#: src/components/terminal/interactive-terminal/SessionActionsMenu.tsx
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
-#: src/components/terminal/interactive-terminal/WorktreeButtons.tsx
 #: src/components/version-popover/diagnose-modal.tsx
 msgid "Working…"
 msgstr "Working…"
 
+#: src/components/terminal/interactive-terminal/SessionActionsMenu.tsx
 #: src/components/workspace/workspace-switcher.tsx
 #: src/i18n/type-labels.ts
 #: src/pages/hub-home/HubHome.tsx
@@ -27161,7 +27185,7 @@ msgstr "Workspace folder path copied"
 msgid "Workspace name"
 msgstr "Workspace name"
 
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/SessionInfoPopover.tsx
 msgid "Worktree"
 msgstr "Worktree"
 
