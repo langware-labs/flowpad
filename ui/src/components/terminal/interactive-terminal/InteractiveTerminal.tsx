@@ -1385,7 +1385,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
         const tRebuild = performance.now();
         ptySyncRef.current.rebuild(chunks);
         const rebuildMs = performance.now() - tRebuild;
-        // Replays EVERY stored chunk on each resize — only slow ones are logged.
+        // Replays the shell's chunk window (bounded, see PtyConnection) — only slow ones are logged.
         if (rebuildMs > 50) {
           toplog.log(
             'pty',

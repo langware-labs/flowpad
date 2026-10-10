@@ -37,7 +37,12 @@ export class VirtualTerminal {
   private cursorCol = 0;
   private pendingWrap = false;
   private totalScrolledOff = 0;
+  // Kept only while the packet still owns a live row: getRowDataRange() reads the timestamp of
+  // a live row's owner and nothing else reads this map on the hot path. A redraw frame that
+  // overwrites its one row is released on the next frame, so a TUI spinner holds one entry.
   private readonly packetResults = new Map<number, PacketSimResult>();
+  // seq → rows this packet still owns in the live buffer. A result stays while > 0.
+  private readonly liveRowCount = new Map<number, number>();
   private readonly cols: number;
   private readonly maxBufferRows: number;
   private readonly env: EnvSetup;
@@ -168,12 +173,49 @@ export class VirtualTerminal {
       }
     }
 
-    // Register so future chunks can update our row records via liveRowIndex
-    this.packetResults.set(chunk.seq, result);
+    // Register so future chunks can update our row records via liveRowIndex — but only a
+    // packet that owns a live row; one that owns none has nothing a reader can ask for.
+    let live = 0;
+    for (const r of result.rows) if (r.status === 'live') live++;
+    if (live > 0) {
+      this.packetResults.set(chunk.seq, result);
+      this.liveRowCount.set(chunk.seq, live);
+    }
 
     return result;
   }
 
+  /**
+   * Prepend `n` blank, unowned rows so this model's live index lines up with an xterm buffer
+   * that holds rows this model never saw (output older than the replay window, or the recorded
+   * history written to xterm on attach). Rows past the buffer bound count as scrolled off, so
+   * absolute rows shift by exactly `n` either way; the padded rows read as "no timestamp".
+   */
+  padTop(n: number): void {
+    if (n <= 0) return;
+    const room = Math.max(0, this.maxBufferRows - this.cells.length);
+    const padRows = Math.min(n, room);
+    if (padRows > 0) {
+      const cells: string[][] = [];
+      const meta: RowMeta[] = [];
+      for (let i = 0; i < padRows; i++) {
+        cells.push(new Array<string>(this.cols).fill(' '));
+        meta.push({ ownerSeq: null, logicalLine: null, isWrapped: false });
+      }
+      this.cells = [...cells, ...this.cells];
+      this.rowMeta = [...meta, ...this.rowMeta];
+      this.cursorRow += padRows;
+    }
+    this.totalScrolledOff += n - padRows;
+    for (const result of this.packetResults.values()) {
+      for (const row of result.rows) row.bufferRow += n;
+    }
+    const shifted = [...this.liveRowIndex.entries()];
+    this.liveRowIndex.clear();
+    for (const [absRow, record] of shifted) this.liveRowIndex.set(absRow + n, record);
+  }
+
+  /** Full buffer serialization (O(buffer)). `packetResults` lists only the packets that still own a live row. */
   getReport(): SimulationReport {
     const virtualBuffer: VirtualRow[] = this.cells.map((_, i) => ({
       content: this._rowText(i),
@@ -268,6 +310,7 @@ export class VirtualTerminal {
     if (record) {
       record.status = 'scrolled_off';
       this.liveRowIndex.delete(evictedAbsRow);
+      this._releaseRow(this.rowMeta[0].ownerSeq);
     }
     this.cells.shift();
     this.rowMeta.shift();
@@ -289,6 +332,7 @@ export class VirtualTerminal {
         oldRecord.status = 'overwritten';
         oldRecord.overwrittenBySeq = seq;
         this.liveRowIndex.delete(absRow);
+        this._releaseRow(meta.ownerSeq);
       }
       meta.logicalLine = null;
       meta.ownerSeq = seq;
@@ -297,6 +341,18 @@ export class VirtualTerminal {
     }
 
     this.cells[liveIdx][col] = ch;
+  }
+
+  /** A packet lost one live row (overwritten or scrolled off); drop its result at zero. */
+  private _releaseRow(seq: number | null): void {
+    if (seq === null) return;
+    const left = (this.liveRowCount.get(seq) ?? 0) - 1;
+    if (left > 0) {
+      this.liveRowCount.set(seq, left);
+      return;
+    }
+    this.liveRowCount.delete(seq);
+    this.packetResults.delete(seq);
   }
 
   private _tagDetectionPass(seq: number): void {
