@@ -12,14 +12,15 @@ import {
   DropdownMenuTrigger,
 } from '@src/components/ui/dropdown-menu';
 import { Input } from '@src/components/ui/input';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
 import { useActiveWorkspace } from '@src/hooks/use-workspaces';
 import { useContext } from '@src/hooks/useContext';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { notify } from '@src/notifications';
 import { errorDetail } from '@src/lib/error-message';
-import { vfsToOsPath, Workspace, workspaceDisplayName } from '@sdk';
-import { Check, ChevronDown, FolderOpen, LayoutGrid, Loader2, Plus } from 'lucide-react';
-import { useCallback, useEffect, useState } from 'react';
+import { fsManager, vfsToOsPath, Workspace, workspaceDisplayName } from '@sdk';
+import { Check, ChevronDown, Copy, FolderOpen, LayoutGrid, Loader2, Plus } from 'lucide-react';
+import { type MouseEvent, useCallback, useEffect, useState } from 'react';
 import { create } from 'zustand';
 import { Trans, useLingui } from '@lingui/react/macro';
 
@@ -120,24 +121,114 @@ function WorkspaceItems({
   onSelect: (workspace: Workspace) => void;
 }) {
   return (
-    <>
+    <TooltipProvider delayDuration={300}>
       {workspaces.map((ws) => (
-        <DropdownMenuItem
-          key={ws.id}
-          onClick={() => onSelect(ws)}
-          className="cursor-pointer"
-          data-testid={`workspace-item-${ws.is_default ? 'default' : ws.id}`}
-        >
-          <Check className={`me-2 h-4 w-4 ${ws.id === activeId ? '' : 'invisible'}`} />
-          <span className="truncate">{workspaceDisplayName(ws)}</span>
-        </DropdownMenuItem>
+        <WorkspaceItem key={ws.id} workspace={ws} active={ws.id === activeId} onSelect={onSelect} />
       ))}
       <DropdownMenuSeparator />
       <DropdownMenuItem onClick={openNewWorkspaceDialog} className="cursor-pointer" data-testid="workspace-new">
         <Plus className="me-2 h-4 w-4" />
         <Trans>New workspace…</Trans>
       </DropdownMenuItem>
-    </>
+    </TooltipProvider>
+  );
+}
+
+/**
+ * One workspace in the list: its name, and — because a workspace IS a folder — where that
+ * folder is. Hovering explains the workspace and shows the full path; the row's two buttons
+ * copy the path (to paste elsewhere) and open the folder in the OS file manager.
+ */
+function WorkspaceItem({
+  workspace,
+  active,
+  onSelect,
+}: {
+  workspace: Workspace;
+  active: boolean;
+  onSelect: (workspace: Workspace) => void;
+}) {
+  const { t } = useLingui();
+  const { computeNode, desktopInfo } = useContext();
+  const name = workspaceDisplayName(workspace);
+  // `root` is VFS-relative (what `fsManager` takes); the OS form is what a person pastes.
+  const root = workspace.root ?? '';
+  const path = root ? vfsToOsPath(root, desktopInfo?.paths?.root ?? '/') : '';
+  const testId = workspace.is_default ? 'default' : workspace.id;
+
+  // The buttons sit inside the menu item: stop the click there, or it also switches workspace.
+  const act = (run: () => Promise<void>) => (event: MouseEvent) => {
+    event.preventDefault();
+    event.stopPropagation();
+    void run();
+  };
+  const copyPath = act(async () => {
+    try {
+      await navigator.clipboard.writeText(path);
+      notify.success({ title: t`Workspace folder path copied`, message: path });
+    } catch {
+      notify.error({ title: t`Could not copy the path`, message: path });
+    }
+  });
+  const openFolder = act(async () => {
+    if (!computeNode?.typeId) return;
+    try {
+      await fsManager.open(computeNode.typeId, root);
+    } catch {
+      notify.error({ title: t`Could not open the workspace folder`, message: path });
+    }
+  });
+
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <DropdownMenuItem
+          onClick={() => onSelect(workspace)}
+          className="cursor-pointer gap-1"
+          data-testid={`workspace-item-${testId}`}
+        >
+          <Check className={`me-1 h-4 w-4 shrink-0 ${active ? '' : 'invisible'}`} />
+          <span className="min-w-0 flex-1 truncate">{name}</span>
+          {path && (
+            <>
+              <button
+                type="button"
+                onClick={copyPath}
+                aria-label={t`Copy the folder path of ${name}`}
+                className="shrink-0 rounded p-1 text-muted-foreground hover:bg-background hover:text-foreground"
+                data-testid={`workspace-copy-path-${testId}`}
+              >
+                <Copy className="h-3.5 w-3.5" />
+              </button>
+              <button
+                type="button"
+                onClick={openFolder}
+                aria-label={t`Open the folder of ${name}`}
+                className="shrink-0 rounded p-1 text-muted-foreground hover:bg-background hover:text-foreground"
+                data-testid={`workspace-open-folder-${testId}`}
+              >
+                <FolderOpen className="h-3.5 w-3.5" />
+              </button>
+            </>
+          )}
+        </DropdownMenuItem>
+      </TooltipTrigger>
+      <TooltipContent side="right" align="start" className="max-w-sm" data-testid={`workspace-tooltip-${testId}`}>
+        <div className="font-medium">{name}</div>
+        <div className="text-xs opacity-80">
+          {workspace.is_default ? (
+            <Trans>The default workspace. Every project outside another workspace's folder belongs here.</Trans>
+          ) : (
+            <Trans>A folder of related projects. New projects and clones are created inside it.</Trans>
+          )}
+        </div>
+        {path && (
+          <div className="mt-1 select-all break-all font-mono text-xs" data-testid={`workspace-path-${testId}`}>
+            {path}
+          </div>
+        )}
+      </TooltipContent>
+    </Tooltip>
   );
 }
 
