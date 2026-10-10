@@ -69,7 +69,8 @@ async def test_here_names_the_project_by_its_own_id_when_the_tab_sends_an_alias(
     # under the project's real id.
     from flow_sdk.builtin.project import Project
 
-    project = await Project(name=str(tmp_path / "aliased"), uname="local").save()
+    # ``@local`` is one row per database: an earlier test in the run may have minted it already.
+    project = await Project.get_by_uname("local") or await Project(name=str(tmp_path / "aliased"), uname="local").save()
     here = await here_from({"CurrentUrl": "/dock/stream_inbox", "CurrentProjectTypeId": "project-@local"}, navigator=True)
     assert here.project.typeid == f"project-{project.id}"
 
