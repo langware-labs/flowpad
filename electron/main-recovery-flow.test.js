@@ -49,7 +49,11 @@ const SAMPLE = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', 'serv
 /** Load a fresh copy of main.js under its own HOME. `opts`: appVersion, desktopFeed, feedFails, feedHangs, downloadFails, engine. */
 function load(opts = {}) {
   const HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'mainrec-'));
-  process.env.HOME = HOME; // main.js derives ~/.flow (logs, instance dir) from it at load
+  // main.js derives ~/.flow (logs, instance dir) from os.homedir() at load: $HOME on POSIX, %USERPROFILE% on
+  // Windows. Both, so the test never reads or writes the real profile on either (on a machine with a real
+  // FlowPad install the export test passed by accident off the real logs).
+  process.env.HOME = HOME;
+  process.env.USERPROFILE = HOME;
   const userData = fs.mkdtempSync(path.join(HOME, 'userdata-'));
   global.setInterval = (fn, ms) => ({ fn, ms, unref() {} });
 
