@@ -3,9 +3,12 @@ const path = require('path');
 const fs = require('fs');
 const os = require('os');
 const { promisify } = require('util');
+const https = require('https');
+const crypto = require('crypto');
 const { SEMVER_RE, isNewer } = require('./semver');
 const { createProgressWatchdog } = require('./progress-watchdog');
 const { showFailureDialog } = require('./failure-dialog');
+const runtimeRepair = require('./runtime-repair');
 
 const execFileAsync = promisify(execFile);
 
@@ -155,10 +158,16 @@ function isInstanceBusyError(err) {
   return /service_busy/.test(String((err && (err.stderr || err.stdout || err.message)) || ''));
 }
 
+// Win32 ERROR_SYSTEM_INTEGRITY_POLICY_VIOLATION (4551) as a process exit code, also as the HRESULT
+// 0x800711C7 an installer (the python.org bootstrapper, seen under an enforced policy on the VM) exits
+// with: 2147946951 unsigned, -2147020345 as a signed 32-bit value. No stderr accompanies it.
+const POLICY_BLOCK_EXIT_CODES = new Set([4551, 2147946951, -2147020345]);
+
 function isPolicyBlockError(err) {
   if (!err) return false;
   const text = [err.stderr, err.stdout, err.message].filter(Boolean).map(String).join('\n');
   if (POLICY_BLOCK_TEXT.test(text)) return true;
+  if (typeof err.code === 'number' && POLICY_BLOCK_EXIT_CODES.has(err.code)) return true;
   return err.code === 'UNKNOWN' || /spawn UNKNOWN/.test(text);
 }
 
@@ -206,6 +215,18 @@ function needsShellOnWin(cmd) {
  */
 function quoteWinCmd(cmd) {
   return /\s/.test(cmd) ? `"${cmd}"` : cmd;
+}
+
+/**
+ * Quote the ARGUMENTS the same way when the command goes through cmd.exe (shell:true): Node then
+ * concatenates them unescaped, so `--python C:\Users\Avi Tal\…\python.exe` reached uv as two
+ * arguments and the install failed with "unexpected argument". Seen on the Windows VM the first
+ * time the runtime repair pinned an interpreter path (user "test 11"). No-op off the shell path,
+ * for arguments without whitespace, and for arguments already quoted.
+ */
+function quoteWinArgs(args, useShell) {
+  if (!useShell || !IS_WIN) return args;
+  return args.map((a) => (/\s/.test(a) && !/^".*"$/.test(a) ? `"${a}"` : a));
 }
 
 /**
@@ -310,10 +331,12 @@ function isPidAlive(pid) {
   try { process.kill(pid, 0); return true; } catch (e) { return e.code === 'EPERM'; }
 }
 
-// The recovery command shown to the user, mirroring installLatest()/upgrade().
-function upgradeCommand() {
-  const v = tryPythonVersion();
-  return `uv tool install ${PYPI_PACKAGE}@latest${v ? ` --python ${v}` : ''} --force`;
+// The recovery command shown to the user, mirroring installLatest()/upgrade(). `python` is the
+// repaired runtime's interpreter when there is one (runtime-repair.js): the command the user
+// pastes must pin the same interpreter the app does, or it puts the engine back on the blocked one.
+function upgradeCommand(python) {
+  const pin = python ? `"${python}"` : tryPythonVersion();
+  return `uv tool install ${PYPI_PACKAGE}@latest${pin ? ` --python ${pin}` : ''} --force`;
 }
 
 const API_PREFIX = '/api/v1';
@@ -594,7 +617,7 @@ class UvManager {
     const useShell = options.shell !== undefined ? options.shell : needsShellOnWin(cmd);
     const cmdToRun = useShell ? quoteWinCmd(cmd) : cmd;
     try {
-      const { stdout, stderr } = await execFileAsync(cmdToRun, args, {
+      const { stdout, stderr } = await execFileAsync(cmdToRun, quoteWinArgs(args, useShell), {
         env,
         timeout: options.timeout || 60000,
         cwd: options.cwd || os.homedir(),
@@ -649,7 +672,7 @@ class UvManager {
     return new Promise((resolve, reject) => {
       let child;
       try {
-        child = spawn(cmdToRun, args, {
+        child = spawn(cmdToRun, quoteWinArgs(args, useShell), {
           env,
           cwd: options.cwd || os.homedir(),
           shell: useShell,
@@ -2054,6 +2077,21 @@ class UvManager {
   }
 
   async _pythonPinForUpgrade(release) {
+    // A repaired runtime (runtime-repair.js: the official python.org interpreter installed because
+    // application control blocked the uv-managed one) is the pin from then on — `--python <path>`
+    // instead of `--python 3.11`, or the next install would silently put the engine back on the
+    // blocked interpreter. If that interpreter is gone (the user deleted the folder), say so and
+    // fall back to the minor pin: the block will be detected again and the repair offered again.
+    const repaired = this.repairedRuntimePython();
+    if (repaired) {
+      this.log.info(`[uv] pinning the engine to the repaired runtime: ${repaired}`);
+      return repaired;
+    }
+    return this._minorPythonPin(release);
+  }
+
+  /** The "<major>.<minor>" pin without the repaired-runtime override (the pre-repair state). */
+  async _minorPythonPin(release) {
     // `release` undefined → the latest release's metadata; null → unknown (bundled pin only); else that release's.
     const info = release === undefined ? await this._getLatestPypiInfo() : release;
     const remote = pythonFloor(info && info.requires_python);
@@ -2386,6 +2424,353 @@ class UvManager {
     this.log.info(`[uv] Repair complete, binary at ${this._flowBin}`);
   }
 
+  // ---------------------------------------------------------------------------
+  // Windows runtime repair (runtime-repair.js): application control blocked a
+  // native module of the uv-managed Python the engine runs on. The pure flow
+  // lives in runtime-repair.js; these are its effects on the real machine.
+  // ---------------------------------------------------------------------------
+
+  /** `<stateDir>/desktop-runtime.json` as an object ({} when absent or unreadable). */
+  _runtimeState() {
+    if (!this._stateDir) return {};
+    return runtimeRepair.readRuntimeState((p) => fs.readFileSync(p, 'utf8'), this._stateDir);
+  }
+
+  _saveRuntimeState(state) {
+    if (!this._stateDir) return;
+    fs.mkdirSync(this._stateDir, { recursive: true });
+    runtimeRepair.writeRuntimeState((p, text) => fs.writeFileSync(p, text, 'utf8'), this._stateDir, state);
+  }
+
+  /**
+   * The interpreter a previous repair installed, when it is still there — the `--python` every
+   * later install must reuse. Null otherwise (never repaired, or the folder was removed: logged,
+   * and the engine goes back to the minor pin until the block is detected and repaired again).
+   */
+  repairedRuntimePython() {
+    const state = this._runtimeState();
+    if (!state.python) return null;
+    if (fs.existsSync(state.python)) return state.python;
+    this.log.warn(`[uv] the repaired runtime recorded in desktop-runtime.json is gone (${state.python}); using the minor pin`);
+    return null;
+  }
+
+  /** Where the repair puts things: `%LOCALAPPDATA%\Flowpad\runtime\{python-<ver>,downloads}`. */
+  _runtimePaths() {
+    const local = process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local');
+    const runtimeDir = path.join(local, 'Flowpad', 'runtime');
+    return { runtimeDir, downloadsDir: path.join(runtimeDir, 'downloads') };
+  }
+
+  /**
+   * Repair the engine's Python runtime after an application-control block (see
+   * runtime-repair.js for the steps and the guarantees). `versions` = { appVersion,
+   * engineVersion } bounds the attempt to one per version; `startBackend` and `healthCheck`
+   * are the caller's (main.js owns the health gate). Resolves the repair result; rejects with
+   * `.step`, `.rolledBack`, `.policyBlocked` set, after recording the attempt.
+   */
+  async repairRuntime({ versions, onProgress = () => {}, startBackend, healthCheck } = {}) {
+    if (!IS_WIN) throw new Error('the runtime repair is Windows-only');
+    this._assertOpen('repair the runtime');
+    const paths = this._runtimePaths();
+    fs.mkdirSync(paths.downloadsDir, { recursive: true });
+    const io = {
+      existingPythonOrgInstall: () => this._existingPythonOrgInstall(runtimeRepair.PYTHON_RUNTIME_MANIFEST.minor),
+      download: (url, dest, onPct) => this._downloadToFile(url, dest, onPct),
+      extractRuntime: (zip, targetDir, manifest) => this._extractRuntime(zip, targetDir, manifest),
+      verifyRuntimeSignatures: (dir, signers) => this._verifyRuntimeSignatures(dir, signers),
+      validateInterpreter: (python, mods) => this._validateInterpreter(python, mods),
+      stageEngine: (python) => this._stageEngine(python, paths.runtimeDir),
+      installEngine: (python) => this._installEngineOn(python),
+      rollbackEngine: () => this._rollbackEngine(),
+      finalizeEngine: () => this._finalizeEngine(),
+      startBackend: () => startBackend(),
+      healthCheck: () => healthCheck(),
+      remove: async (p) => { fs.rmSync(p, { force: true }); },
+    };
+    return runtimeRepair.performRuntimeRepair({
+      io,
+      paths,
+      versions,
+      state: this._runtimeState(),
+      saveState: (s) => this._saveRuntimeState(s),
+      onProgress,
+      log: this.log,
+    });
+  }
+
+  /**
+   * An official python.org CPython of `minor` already registered for this user or machine
+   * (PEP 514: HKCU/HKLM\Software\Python\PythonCore\<minor>\InstallPath, 64-bit key only), whose
+   * python.exe carries a Valid signature by the Python Software Foundation. Null otherwise.
+   * Reusing it means never running an installer over an existing installation.
+   */
+  async _existingPythonOrgInstall(minor) {
+    for (const hive of ['HKCU', 'HKLM']) {
+      const key = `${hive}\\Software\\Python\\PythonCore\\${minor}\\InstallPath`;
+      let out;
+      try {
+        ({ stdout: out } = await this._run('reg.exe', ['query', key, '/v', 'ExecutablePath'], { shell: false, timeout: 15000 }));
+      } catch {
+        continue;
+      }
+      const m = /ExecutablePath\s+REG_SZ\s+(.+)$/m.exec(out);
+      const exe = m ? m[1].trim() : null;
+      if (!exe || !fs.existsSync(exe)) continue;
+      const sig = await this._verifyAuthenticode(exe).catch(() => null);
+      if (sig && sig.status === 'Valid' && sig.subjectCN === runtimeRepair.PYTHON_RUNTIME_MANIFEST.signerSubjectCN) {
+        return { python: exe, hive };
+      }
+      this.log.warn(`[runtime-repair] ${key} points at ${exe} but it is not a PSF-signed interpreter (${sig ? sig.status : 'unreadable'}); ignoring`);
+    }
+    return null;
+  }
+
+  /** GET `url` (following redirects) into `dest`, hashing on the fly. Resolves the SHA-256 hex. */
+  _downloadToFile(url, dest, onPct, redirects = 0) {
+    return new Promise((resolve, reject) => {
+      const partial = `${dest}.partial`;
+      const req = https.get(url, { headers: { 'User-Agent': 'flowpad-desktop' } }, (res) => {
+        if ([301, 302, 303, 307, 308].includes(res.statusCode) && res.headers.location) {
+          res.resume();
+          if (redirects >= 5) return reject(new Error('too many redirects'));
+          return resolve(this._downloadToFile(new URL(res.headers.location, url).toString(), dest, onPct, redirects + 1));
+        }
+        if (res.statusCode !== 200) {
+          res.resume();
+          return reject(new Error(`HTTP ${res.statusCode}`));
+        }
+        const total = Number(res.headers['content-length']) || 0;
+        const hash = crypto.createHash('sha256');
+        const out = fs.createWriteStream(partial);
+        let received = 0;
+        let lastPct = -1;
+        res.on('data', (chunk) => {
+          hash.update(chunk);
+          received += chunk.length;
+          if (total) {
+            const pct = Math.floor((received / total) * 100);
+            if (pct !== lastPct) { lastPct = pct; onPct(pct); }
+          }
+        });
+        res.on('error', (e) => { out.destroy(); reject(e); });
+        out.on('error', reject);
+        res.pipe(out);
+        out.on('finish', () => {
+          try {
+            fs.rmSync(dest, { force: true });
+            fs.renameSync(partial, dest);
+            resolve(hash.digest('hex'));
+          } catch (e) {
+            reject(e);
+          }
+        });
+      });
+      req.on('error', reject);
+    });
+  }
+
+  /** Authenticode status and signer CN of `file`, via Windows PowerShell. */
+  async _verifyAuthenticode(file) {
+    const escaped = String(file).replace(/'/g, "''");
+    const { stdout } = await this._run('powershell.exe', [
+      '-NoProfile', '-Command',
+      `$s = Get-AuthenticodeSignature -LiteralPath '${escaped}'; ` +
+      `Write-Output ($s.Status.ToString() + '|' + [string]$s.SignerCertificate.Subject)`,
+    ], { shell: false, timeout: 60000, env: { PSModulePath: windowsPowerShellModulePath() } });
+    const [status, subject = ''] = String(stdout).trim().split('|');
+    const cn = /CN=([^,]+)/.exec(subject);
+    return { status, subjectCN: cn ? cn[1].trim() : null, subject };
+  }
+
+  /**
+   * Extract the runtime archive (a zip) into `targetDir`: the archive's `manifest.archiveRoot`
+   * subtree becomes targetDir, `manifest.stripDirs` are removed. Windows PowerShell's Expand-Archive
+   * (no third-party unzip, nothing executed from the archive). A policy block here is flagged.
+   */
+  async _extractRuntime(zip, targetDir, manifest) {
+    const scratch = `${targetDir}.extract`;
+    fs.rmSync(scratch, { recursive: true, force: true });
+    fs.rmSync(targetDir, { recursive: true, force: true });
+    const esc = (s) => String(s).replace(/'/g, "''");
+    try {
+      await this._run('powershell.exe', [
+        '-NoProfile', '-Command',
+        `$ErrorActionPreference = 'Stop'; Expand-Archive -LiteralPath '${esc(zip)}' -DestinationPath '${esc(scratch)}' -Force`,
+      ], { shell: false, timeout: 10 * 60 * 1000, env: { PSModulePath: windowsPowerShellModulePath() } });
+      const root = manifest.archiveRoot ? path.join(scratch, manifest.archiveRoot) : scratch;
+      if (!fs.existsSync(path.join(root, 'python.exe'))) throw new Error(`no python.exe under ${root} after extraction`);
+      fs.mkdirSync(path.dirname(targetDir), { recursive: true });
+      fs.renameSync(root, targetDir);
+      for (const d of manifest.stripDirs || []) fs.rmSync(path.join(targetDir, d), { recursive: true, force: true });
+    } catch (err) {
+      if (isPolicyBlockError(err)) err.policyBlocked = true;
+      throw err;
+    } finally {
+      fs.rmSync(scratch, { recursive: true, force: true });
+    }
+  }
+
+  /**
+   * Authenticode status of EVERY exe/dll/pyd under `dir` (Windows PowerShell, one process).
+   * Resolves { checked, invalid: [{ file, status, subjectCN }] } where `invalid` lists files that are
+   * not Valid or whose signer CN is not in `signers`.
+   */
+  async _verifyRuntimeSignatures(dir, signers) {
+    const esc = (s) => String(s).replace(/'/g, "''");
+    const { stdout } = await this._run('powershell.exe', [
+      '-NoProfile', '-Command',
+      // Filter by extension in the pipeline: -Include does not apply to a -LiteralPath without a
+      // wildcard (it then returns every file; seen on the VM: LICENSE.txt and .h files "UnknownError").
+      `Get-ChildItem -LiteralPath '${esc(dir)}' -Recurse -File | Where-Object { @('.exe','.dll','.pyd') -contains $_.Extension.ToLower() } | ForEach-Object { ` +
+      `$s = Get-AuthenticodeSignature -LiteralPath $_.FullName; ` +
+      `Write-Output ($_.FullName.Substring(${String(dir).length + 1}) + '|' + $s.Status.ToString() + '|' + [string]$s.SignerCertificate.Subject) }`,
+    ], { shell: false, timeout: 10 * 60 * 1000, env: { PSModulePath: windowsPowerShellModulePath() } });
+    const invalid = [];
+    let checked = 0;
+    for (const line of String(stdout).split(/\r?\n/)) {
+      if (!line.includes('|')) continue;
+      const [file, status, subject = ''] = line.split('|');
+      const cn = /CN=([^,]+)/.exec(subject);
+      const subjectCN = cn ? cn[1].trim() : null;
+      checked++;
+      if (status !== 'Valid' || !signers.includes(subjectCN)) invalid.push({ file, status, subjectCN });
+    }
+    return { checked, invalid };
+  }
+
+  /** `python -I -c "import …"` must exit 0; a block on a .pyd is reported as a policy block. */
+  async _validateInterpreter(python, mods) {
+    try {
+      await this._run(python, ['-I', '-c', `import ${mods.join(', ')}, sys; print(sys.version)`], { shell: false, timeout: 120000 });
+    } catch (err) {
+      if (isPolicyBlockError(err) || POLICY_BLOCK_TEXT.test(String(err.stderr || ''))) err.policyBlocked = true;
+      throw err;
+    }
+  }
+
+  /**
+   * Stage the engine on `python` in a scratch venv under the runtime dir (never the tool venv):
+   * `uv venv`, `uv pip install flowpad==<installed version>` (the exact engine the user has, from
+   * uv's cache when possible), then the imports that failed in the field — uvicorn pulls
+   * multiprocessing.connection → _multiprocessing. Rejects with `.policyBlocked` when the policy
+   * refuses a file here too; the working installation is untouched either way. The scratch venv
+   * is removed afterwards (uv's cache keeps the wheels, so the real install is fast).
+   */
+  async _stageEngine(python, runtimeDir) {
+    const staging = path.join(runtimeDir, 'staging-venv');
+    fs.rmSync(staging, { recursive: true, force: true });
+    const installed = this.getInstalledVersionSync();
+    const spec = installed ? `${PYPI_PACKAGE}==${installed}` : PYPI_PACKAGE;
+    try {
+      await this._uv(['venv', staging, '--python', python], { timeout: 120000 });
+      const stagingPython = path.join(staging, 'Scripts', 'python.exe');
+      // `uv pip install` spells "never build this one from source" --only-binary; --no-build-package is
+      // the `uv tool install` spelling and is rejected here ("unexpected argument", seen on the VM).
+      await this._runStreaming('uv', ['pip', 'install', '--python', stagingPython, '--only-binary', 'cryptography', spec], {});
+      await this._run(stagingPython, ['-I', '-c', 'import uvicorn, multiprocessing.connection, flow_sdk; print("engine imports ok")'], { shell: false, timeout: 180000 });
+    } catch (err) {
+      if (isPolicyBlockError(err) || POLICY_BLOCK_TEXT.test(String(err.stderr || err.stdout || ''))) err.policyBlocked = true;
+      throw err;
+    } finally {
+      fs.rmSync(staging, { recursive: true, force: true });
+    }
+  }
+
+  /**
+   * Windows Code Integrity events 3077 (policy blocked a file) and 3089 (signature info) from the
+   * last `minutes`, as text lines — the exact blocked binary and the policy id, for the panel, the
+   * log and the support bundle. '' when there are none or the log cannot be read.
+   */
+  async codeIntegrityEvents(minutes = 30) {
+    if (!IS_WIN) return '';
+    try {
+      const { stdout } = await this._run('powershell.exe', [
+        '-NoProfile', '-Command',
+        `$ev = Get-WinEvent -FilterHashtable @{LogName='Microsoft-Windows-CodeIntegrity/Operational'; Id=3077,3089; StartTime=(Get-Date).AddMinutes(-${Number(minutes) || 30})} -MaxEvents 40 -ErrorAction Stop; ` +
+        `foreach ($e in $ev) { Write-Output ($e.TimeCreated.ToString('s') + ' id=' + $e.Id + ' ' + ($e.Message -replace '\\s+', ' ')) }`,
+      ], { shell: false, timeout: 60000, env: { PSModulePath: windowsPowerShellModulePath() } });
+      return String(stdout || '').trim();
+    } catch (err) {
+      this.log.info(`[runtime-repair] no CodeIntegrity events to collect: ${String(err.stderr || err.message).split('\n')[0]}`);
+      return '';
+    }
+  }
+
+  /**
+   * Reinstall the engine on `python` — the same `uv tool install` as reinstall(), explicit
+   * interpreter, and the SAME engine version the user has (`flowpad==<installed>`): a repair
+   * changes the runtime, not the release. Only when the installed version cannot be read
+   * (no `_version.py`) does it fall back to whatever PyPI serves.
+   */
+  async _installEngineOn(python) {
+    const installed = this.getInstalledVersionSync();
+    const spec = installed ? `${PYPI_PACKAGE}==${installed}` : PYPI_PACKAGE;
+    // Reversible switch: the current tool venv is set ASIDE (renamed, not deleted) and a new one is
+    // built next to where it was. Until the repair is finalized (backend healthy), the previous
+    // environment is intact on disk and the rollback is a rename back — no network, and exactly
+    // the environment the user had, not a fresh install of it.
+    await this._drainVenvProcesses();
+    this._setAsidePreRepairVenv();
+    this.log.info(`[runtime-repair] installing ${spec} on ${python}`);
+    await this._uvToolInstallForce(
+      ['tool', 'install', spec, '--python', python, '--reinstall', '--force'],
+    );
+    await this._ensureShimOnPath();
+    this._flowBin = await this._resolveFlowBin();
+  }
+
+  _preRepairVenvDir() {
+    return `${this._toolVenvDir()}.pre-repair`;
+  }
+
+  /** Rename the live tool venv to `<venv>.pre-repair` (replacing an older leftover). No-op without a venv. */
+  _setAsidePreRepairVenv() {
+    const venvDir = this._toolVenvDir();
+    const aside = this._preRepairVenvDir();
+    if (!fs.existsSync(venvDir)) return;
+    fs.rmSync(aside, { recursive: true, force: true });
+    fs.renameSync(venvDir, aside);
+    this.log.info(`[runtime-repair] previous engine set aside → ${aside}`);
+  }
+
+  /** The repair held: drop the set-aside environment. Best effort; a leftover is harmless. */
+  async _finalizeEngine() {
+    const aside = this._preRepairVenvDir();
+    try {
+      fs.rmSync(aside, { recursive: true, force: true });
+      this.log.info('[runtime-repair] previous engine removed (repair finalized)');
+    } catch (e) {
+      this.log.warn(`[runtime-repair] could not remove ${aside}: ${e.message}`);
+    }
+  }
+
+  /**
+   * Put the engine back to the state before the repair. First choice: the set-aside venv, renamed
+   * back into place (exact previous environment, no network). Only when there is none (an older
+   * leftover was cleaned, or the rename itself failed): reinstall on the minor pin, `only-managed` —
+   * with the python.org interpreter now registered (PEP 514), a bare `--python 3.11` could resolve
+   * to IT (seen on the VM), and the rollback must land on uv's own build.
+   */
+  async _rollbackEngine() {
+    const venvDir = this._toolVenvDir();
+    const aside = this._preRepairVenvDir();
+    await this._drainVenvProcesses();
+    if (fs.existsSync(aside)) {
+      this.log.warn('[runtime-repair] restoring the set-aside engine');
+      fs.rmSync(venvDir, { recursive: true, force: true });
+      fs.renameSync(aside, venvDir);
+      this._flowBin = await this._resolveFlowBin();
+      return;
+    }
+    const pin = await this._minorPythonPin();
+    this.log.warn(`[runtime-repair] no set-aside engine; rolling back to --python ${pin} (uv-managed)`);
+    await this._uvToolInstallForce(
+      ['tool', 'install', PYPI_PACKAGE, '--python', pin, '--python-preference', 'only-managed', '--reinstall', '--force'],
+    );
+    this._flowBin = await this._resolveFlowBin();
+  }
+
   /**
    * True when an error from `flow start` indicates the install itself is
    * broken — the interpreter runs but can't import the package. The canonical
@@ -2504,10 +2889,12 @@ module.exports.isPolicyBlockError = isPolicyBlockError;
 module.exports.isInstanceBusyError = isInstanceBusyError;
 module.exports.PY_FLOW_ENTRY = PY_FLOW_ENTRY;
 module.exports.policyBlockedError = policyBlockedError;
+module.exports.POLICY_BLOCK_TEXT = POLICY_BLOCK_TEXT;
 module.exports.maxPythonVersion = maxPythonVersion;
 // Pure helpers exported for unit testing (electron/uv-manager.test.js).
 module.exports.needsShellOnWin = needsShellOnWin;
 module.exports.quoteWinCmd = quoteWinCmd;
+module.exports.quoteWinArgs = quoteWinArgs;
 module.exports.parseNetstatPids = parseNetstatPids;
 module.exports.isInstallProgressLine = isInstallProgressLine;
 module.exports.splitLines = splitLines;
