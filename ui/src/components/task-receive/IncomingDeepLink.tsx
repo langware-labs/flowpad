@@ -80,9 +80,9 @@ async function checkedOutHere(projectId: string | undefined): Promise<boolean> {
  * home. So once a session is signed in, ask the backend for the hub projects it
  * has never seen (in the background: nothing at startup waits on the hub) and
  * offer each one's set-up, one dialog at a time. A project already offered this
- * session — by a deep link too — is not offered again.
+ * session — by a deep link too — is not offered again, and none is offered while `held`.
  */
-function useOfferNewCloudProjects() {
+function useOfferNewCloudProjects(held: boolean) {
   const { cloudUser } = useAuth();
   const { pendingProject, setPendingProject } = useIncomingProjectStore();
   const [queue, setQueue] = useState<IncomingProjectParams[]>([]);
@@ -125,7 +125,7 @@ function useOfferNewCloudProjects() {
       if (pendingProject.projectId) offered.current.add(pendingProject.projectId);
       return;
     }
-    if (checking || !queue.length) return;
+    if (held || checking || !queue.length) return;
     const rest = queue.filter((p) => !p.projectId || !offered.current.has(p.projectId));
     setQueue(rest.slice(1));
     const next = rest[0];
@@ -138,7 +138,7 @@ function useOfferNewCloudProjects() {
       if (!here) setPendingProject(next);
       setChecking(false);
     });
-  }, [pendingProject, queue, checking, setPendingProject]);
+  }, [pendingProject, queue, checking, held, setPendingProject]);
 }
 
 export function IncomingDeepLink() {
@@ -146,7 +146,9 @@ export function IncomingDeepLink() {
   const { pendingTask, setPendingTask } = useIncomingTaskStore();
   const { pendingProject, setPendingProject } = useIncomingProjectStore();
   const [launchPlan, setLaunchPlan] = useState<LaunchPlan | null>(null);
-  useOfferNewCloudProjects();
+  // A launch is fetching its own projects: nothing is offered until it is done, so what it
+  // set up is already here when the offers are looked at.
+  useOfferNewCloudProjects(launchPlan !== null);
 
   useEffect(() => {
     const params = inboundParams();
