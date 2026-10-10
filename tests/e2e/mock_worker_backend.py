@@ -41,6 +41,15 @@ def main() -> None:
         driver = MockDriver(root)
     agentic_process.get_driver = lambda _worker_type: driver
     print(f"[mock-worker] every agent turn answers from MockDriver ({driver.transcript_root})", flush=True)
+    if os.environ.get("MOCK_DECISION"):
+        # The Decision API doubled at the hub's two seams (the same double the unit tests use): a rule's
+        # `if` is answered in Jev's wire shape with no vendor, so a browser can walk a stream stream inbox automation.
+        import flow_sdk.cloud_client.transport.hub_http as hub_http  # noqa: PLC0415
+        from tests.utils.decision_double import seams  # noqa: PLC0415
+
+        state = {"status": 200, "invoked": [], "answers": {}}
+        hub_http.hub_get, hub_http.hub_invoke_raw = seams(state)
+        print("[mock-decision] the Decision API answers from the double (yes 0.9, first option, mid score)", flush=True)
     run.main()
 
 
