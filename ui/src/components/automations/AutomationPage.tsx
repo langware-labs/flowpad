@@ -43,6 +43,7 @@ import { RunDetail } from './RunDetail';
 import { RunsList } from './RunsList';
 import { TestPanel } from './TestPanel';
 import { definitionFile, useAutomationOpen } from './use-automation-open';
+import { MessageRulePage } from './MessageRulePage';
 import { ThenSteps } from './ThenSteps';
 
 export function AutomationPage({ route }: { route: AutomationsRoute }) {
@@ -93,6 +94,8 @@ export function AutomationPage({ route }: { route: AutomationsRoute }) {
 
   if (route.creating === 'agent_hook' && isNew)
     return <AgentRulesExplainer onBack={() => go({ creating: null, recipe: null })} />;
+  // A rule on messages arriving has its own two-box screen (docs/snippets/stream-inbox-automations.md).
+  if (route.creating === 'message' || triggerQuery.data?.isMessageRule) return <MessageRulePage route={route} />;
   if (!draft || !fields) {
     return (
       <div className="p-6 text-sm text-muted-foreground" data-testid="automation-page-loading">

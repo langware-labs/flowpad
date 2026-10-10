@@ -17,6 +17,10 @@ describe('automations route', () => {
       { creating: 'schedule', recipe: 'morning-briefing' },
       '/dock/automations?creating=schedule&recipe=morning-briefing',
     ],
+    [
+      { creating: 'message', source: 'ds-1', message: 'm-1' },
+      '/dock/automations?creating=message&source=ds-1&message=m-1',
+    ],
     [{ place: 'runs', status: 'failed' }, '/dock/automations/runs?status=failed'],
     [{ place: 'bus', tag: 'app.ready' }, '/dock/automations/bus?tag=app.ready'],
   ] as const)('%o ↔ %s', (route, url) => {

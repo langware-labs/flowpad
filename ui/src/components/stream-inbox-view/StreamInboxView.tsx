@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import {
+import { Zap,
   Archive,
   Inbox as InboxIcon,
   Mail,
@@ -36,10 +36,13 @@ import {
   unarchiveConversation,
   conversationRowMessageIds,
   latestPointer,
+  isProcessLive,
 } from '@sdk';
 import { useAuth, useCloudStatus } from '@sdk/react/hooks';
 import { useEntitiesQuery, useEntity } from '@src/hooks/entity-hooks';
 import { EntityBatchHydrator, useEntityBatch } from '@src/components/entity-batch/EntityBatchHydrator';
+import { useConversationAutomationMarks } from '@src/hooks/conversation/useMessageAutomationSessions';
+import type { AgenticProcess } from '@sdk';
 import { Button } from '@src/components/ui/button';
 import { Checkbox } from '@src/components/ui/checkbox';
 import { BulkConfirmDialog } from '@src/components/ui/bulk-confirm-dialog';
@@ -141,6 +144,8 @@ export function matchesColumnFilter(
 }
 
 interface ConversationListRowProps {
+  /** The newest session an automation started on a message of this conversation. */
+  automationMark?: AgenticProcess;
   conv: Conversation;
   isFocused: boolean;
   /** Active stream inbox view:
@@ -217,6 +222,7 @@ export function ConversationListRow({
   refSetter,
   agentId,
   onOpenConversation,
+  automationMark,
 }: ConversationListRowProps) {
   const { navigation } = useDockNavigation();
 
@@ -467,6 +473,29 @@ export function ConversationListRow({
             source-backed ticket wears the source chip alone: the kind chip is
             for the requester's side, where no source exists. */}
         <CategoryChips facets={attribution ? { ...facets, kind: 'direct' } : facets} className="me-1" />
+        {automationMark && (
+          // An automation ran on a message in here: ⚡ + who. Opens that session; the row opens the conversation.
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              navigation.openDock(DockPointer.forProcessRuns({ run: automationMark.id }));
+            }}
+            className={`me-1 inline-flex items-center gap-0.5 rounded border px-1 py-0 align-middle text-[9px] font-medium leading-tight ${
+              isProcessLive(automationMark.status)
+                ? 'border-sky-500/50 bg-sky-500/15 text-sky-700 dark:text-sky-300'
+                : String(automationMark.status ?? '') === 'failed'
+                  ? 'border-dashed border-border text-muted-foreground'
+                  : 'border-emerald-500/50 bg-emerald-500/15 text-emerald-700 dark:text-emerald-300'
+            }`}
+            title={automationMark.name ?? undefined}
+            data-testid="stream-inbox-row-automation"
+            data-status={String(automationMark.status ?? '')}
+          >
+            <Zap className="h-2.5 w-2.5" aria-hidden />
+            {automationMark.name}
+          </button>
+        )}
         <SourceChip attribution={attribution} className="me-1" />
         <span className={isUnread ? 'font-semibold text-foreground' : 'text-foreground/80'}>{subject}</span>
         {snippet && (
@@ -673,6 +702,9 @@ export function StreamInboxView({
   // carry an invitation context — those ids drive a SECOND batch ``$IN`` so the
   // per-row ``useEntity<Invitation>`` also resolves from cache instead of one GET each.
   const batchedMessages = useEntityBatch<FlowMessage>(FlowMessage.type, flowMessageIds);
+  // The sessions automations started on the visible conversations' messages — one query, the newest per row.
+  const conversationIds = useMemo(() => sorted.map((c) => c.id ?? '').filter(Boolean), [sorted]);
+  const automationMarks = useConversationAutomationMarks(conversationIds);
   const invitationIds = useMemo(() => {
     const ids = new Set<string>();
     for (const msg of batchedMessages) {
@@ -1386,6 +1418,7 @@ export function StreamInboxView({
               }}
               agentId={agentId}
               onOpenConversation={onOpenConversation}
+              automationMark={conv.id ? automationMarks.get(conv.id) : undefined}
             />
           ))}
       </div>

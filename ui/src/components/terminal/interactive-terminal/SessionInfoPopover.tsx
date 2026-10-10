@@ -12,6 +12,7 @@ import { Check, Copy, SquareTerminal } from 'lucide-react';
 import { useEffect, useState, type ReactNode } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { buildSessionResumeCommand, getWorkerCliCapabilities } from './process-cli-presentation';
+import { automationLineage } from '@src/hooks/conversation/useMessageAutomationSessions';
 
 /** Shared style for the tiny per-row icon buttons (copy / open-in-terminal). */
 const ROW_ICON_BUTTON_CLASS = 'rounded p-0.5 text-muted-foreground hover:bg-accent hover:text-foreground';
@@ -127,6 +128,7 @@ function SessionInfoBody({
   const debug = cliOpts.debug;
   const worktree = cliOpts.worktree;
 
+  const lineage = automationLineage(process);
   const startDisplay = useTimeDisplay(sessionStartTime);
   const lastDisplay = useTimeDisplay(lastMessageTime);
   const currentTime = useCurrentTime();
@@ -194,6 +196,9 @@ function SessionInfoBody({
     [t`Process ID`, process.id || 'none'],
     [t`Shell Name`, linkedShell?.name || (process.shell_id ? '(unnamed)' : 'none')],
     [t`Shell ID`, process.shell_id || 'none'],
+    ...(lineage
+      ? [[t`Caught by`, `${lineage.name ?? ''} · ${lineage.reason ?? ''} · ${Math.round((lineage.confidence ?? 0) * 100)}%`] as [string, string]]
+      : []),
     [t`Status`, process.status || 'unknown'],
     [t`CLI worker status`, process.workerStatus || 'idle'],
     [t`Current Time`, currentTime],
