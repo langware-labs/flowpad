@@ -7,7 +7,7 @@ test 1: Open Terminal button opens a plain shell in the process workdir
 - navigate to {APP_URL}/dock/shell/new_terminal, then open the tab-opener "+" (data-testid="opener-plus-button") and pick the "Claude Code" row (data-testid="opener-menu-row-claude")
 - wait for the Claude banner
 - verify the process has a known workdir via the Info popover (note the Working Dir value)
-- click the SquareTerminal icon in the process toolbar (tooltip "Open terminal in <workdir>")
+- open the session actions menu (hamburger right of Fork) and click "Open terminal" (its second line shows <workdir>)
 - validate a NEW plain shell tab opens (URL pattern /dock/shell/shell-<uuid>, not agentic_process-<id>)
 - in the new tab, validate the xterm is interactive (type `pwd` + Enter)
 - validate the printed directory matches the process workdir
@@ -16,5 +16,5 @@ test 1: Open Terminal button opens a plain shell in the process workdir
 test 2: Open Terminal button is available without a Claude session
 - navigate to {APP_URL}/dock/shell/new_terminal
 - wait for the plain shell tab; do NOT click Start Claude
-- validate the SquareTerminal icon is still visible in the process toolbar (not embedded mode)
+- validate "Open terminal" is still listed in the session actions menu (not embedded mode)
 - click it; validate a new shell tab opens with a sensible default cwd
