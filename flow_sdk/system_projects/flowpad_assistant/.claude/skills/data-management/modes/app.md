@@ -35,6 +35,7 @@ A static Flowpad-SDK app imports `/sdk/flowpad-sdk.js`:
 | save MANY, as one step | `ds.putMany([{key, input}], {expected: {key: version}})` — one row that does not fit (400, `details` under `<key>.<path>`) or changed since (409) writes nothing | `await ds.put_many([...], expected={...})` |
 | delete MANY, as one step | `ds.deleteRows(keys, {expected})` — all or none; rows deleted together do not hold each other back | `ds.delete_rows(keys, expected={...})` |
 | mirror an outside system | `ds.sync(rows, {prune, match})` → `{created, updated, unchanged, deleted}` | `await ds.sync(rows, prune=True, match=None)` — what a sync script calls each run: unchanged rows are not rewritten, rows not listed are removed (only those `match` selects, when given) |
+| one run of a script at a time (a trigger's run and a "Sync now") | — (a script's concern) | `with single_run(project_root, "crm-sync"):` around the WHOLE run (`flow_sdk.datasets.run`) — a second run waits, or `wait=False` raises `RunBusy`; never a lock file of your own |
 | hear that rows changed | `const off = ds.onRowsChanged(({op, keys, count}) => reload())` — one call per write, by this app, another, or a script; keys, never values | a script's writes tell the running Flowpad by themselves (`ds.announce(op, keys)` to say it by hand) |
 | open an outside page (the record in the CRM) | `openExternal(url)` — http/https only; the host opens it in the person's browser | — |
 | link to a row | put the target's `row.ref` (or `ds.refOf(id)`) in the field typed by its kind; a picker lists `rows()` of `Dataset.forKind(fieldKind)` | same |
@@ -79,10 +80,6 @@ never split `enum:` or `|` yourself. `kindForm(kind).rules` lists the kind's rul
 
 ## Still missing — say so in the app and to the user
 
-- **Nothing stops two runs of one script at once** (a trigger's run and a "Sync now"). A script
-  that writes many rows takes its own lock for the whole run (`flow_sdk.instances.atomic.locked`
-  on a gitignored file in the project), or two runs remove the same rows and overwrite each
-  other's state.
 - **Row events are a hint, not a log.** `onRowsChanged` is best effort: an event sent while the
   page was disconnected is not replayed, and a script that ran while Flowpad was stopped told
   nobody. Re-read on the event AND when the page regains focus; no timer is needed.
