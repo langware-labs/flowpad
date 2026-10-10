@@ -53,6 +53,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // The user confirmed on the panel; main downloads the official python.org interpreter, reinstalls
   // the engine on it and starts it, streaming progress over `startup-status`.
   repairRuntime: () => ipcRenderer.send('repair-runtime'),
+  // FLOWPAD-2231 recovery: install the newer desktop release the panel offered (verified by the updater,
+  // once per version and failure), and save the support zip where the user chooses.
+  updateDesktopRecovery: () => ipcRenderer.send('update-desktop-recovery'),
+  exportLogs: (detail) => ipcRenderer.invoke('export-logs', detail),
 
   // Provision the per-instance Fernet sod-key in the OS keychain via the
   // bundled signed flow-rs binary, and return the value so the renderer
