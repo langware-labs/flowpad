@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { FlowMessage } from '@sdk';
-import { LifecycleState, lifecyclesOf, type Lifecycle } from '@src/components/conversation/message-lifecycle';
+import { LifecycleState, lifecyclesOf, onlyWithSessions, type Lifecycle } from '@src/components/conversation/message-lifecycle';
 
 const inbound = (id: string, key = `wamid.${id}`) =>
   ({ id, origin: { kind: 'whatsapp', namespace: 'n', key, url: null }, sender: { kind: 'external', channel: 'whatsapp', address: '1' } }) as unknown as FlowMessage;
@@ -21,6 +21,12 @@ describe('lifecyclesOf', () => {
   it('an answer replies to what it quotes and to everything still open before it', () => {
     const got = lifecyclesOf([inbound('a'), inbound('b'), answer('r', 'b'), inbound('c')], new Set(['wamid.b']));
     expect(states(got)).toEqual({ a: LifecycleState.Replied, b: LifecycleState.Replied, c: LifecycleState.Arrived });
+  });
+
+  it('on a channel nobody here answers, only a message an automation took gets a line', () => {
+    const sessions = new Map([['b', { id: 'p', status: 'running' } as never]]);
+    const got = onlyWithSessions(lifecyclesOf([inbound('a'), inbound('b')], new Set(), sessions), sessions);
+    expect(states(got)).toEqual({ b: LifecycleState.Handling });
   });
 
   it('hands every bubble the same object per state, so a recomputed feed re-renders nothing', () => {

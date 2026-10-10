@@ -21,6 +21,7 @@
  * scope B (green).
  */
 import { AgenticProcess, dataManager } from '@sdk';
+import { ViewMode } from '@src/contexts/view-mode-context';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { projectScope } from '@src/lib/scope-filter';
 import { loadShellRoute } from '@src/routes/loaders/load-shell';
@@ -72,14 +73,35 @@ describe('opening a chat scopes the side menu to the chat\'s project', () => {
     expect(scope?.activeProjectId).toBe(PROCESS_PROJECT_B); // the opened entity's project wins
   });
 
-  it('does NOT redirect when the URL scope already matches the process project', async () => {
+  it('does NOT redirect when the URL scope already matches the process project and states its mode', async () => {
     const process = arrange();
     const pointer = process.terminalDockPointer.pointer;
 
-    // Already aligned → no redirect-loop.
+    // Already aligned and stated → no redirect-loop.
     await expect(
-      loadShellRoute(pointer, '/dock/shell', { scope: projectScope(PROCESS_PROJECT_B) }),
+      loadShellRoute(pointer, '/dock/shell', { scope: projectScope(PROCESS_PROJECT_B), viewMode: ViewMode.Advanced }),
     ).resolves.toBeUndefined();
+  });
+
+  // A resumed tab, a cold deep link, a hard refresh: an aligned URL that states
+  // no mode takes ONE redirect, decided with the scope before a tab is minted,
+  // onto the session's own memory — else the plain chat, never Vibe.
+  it.each([
+    ['remembered', ViewMode.Advanced, ViewMode.Advanced],
+    ['no memory', null, ViewMode.Standard],
+  ])('an aligned URL stating no mode redirects once onto the session mode (%s)', async (_label, lastMode, expected) => {
+    const process = arrange();
+    process.last_mode = lastMode;
+    const pointer = process.terminalDockPointer.pointer;
+
+    const location = await loadShellRoute(pointer, '/dock/shell', { scope: projectScope(PROCESS_PROJECT_B) }).then(
+      () => null,
+      (e: unknown) => redirectLocation(e),
+    );
+
+    expect(location).toContain('/dock/shell/');
+    expect(DockPointer.fromUrl(location!).viewMode).toBe(expected);
+    expect(DockPointer.fromUrl(location!).scopeFilter?.activeProjectId).toBe(PROCESS_PROJECT_B);
   });
 
   it('still aligns the scope when the PTY runtime soft-fails (entity + project are known)', async () => {

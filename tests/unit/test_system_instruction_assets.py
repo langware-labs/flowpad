@@ -9,6 +9,10 @@ from flow_sdk.builtin.agentic_process import AgenticProcess
 from flow_sdk.flowpad_types.enums import WorkerType
 from flow_sdk.fs_store.record_paths import get_default_records_root, set_default_records_root
 
+# These pin the process-level and persona layers' text exactly; the shipped COMMON /
+# COMMON_UI layers have their own coverage in tests/unit/system_prompt_matrix.
+pytestmark = pytest.mark.usefixtures("no_shipped_layers")
+
 
 @pytest.fixture()
 def records_root(tmp_path):
@@ -66,6 +70,7 @@ async def test_embedded_assets_default_none_then_materialized(records_root, tmp_
 
 @pytest.mark.asyncio
 async def test_no_system_instructions_leaves_assets_uncreated(records_root, tmp_path):
+    """Nothing to say (no layer has text) and nothing embedded: the process stays write-free."""
     process = _process(WorkerType.CODEX, tmp_path)
 
     assets = await process.prepare_system_instruction_assets()
@@ -73,6 +78,24 @@ async def test_no_system_instructions_leaves_assets_uncreated(records_root, tmp_
     assert assets is None
     assert process.embedded_assets is None
     assert process.additional_dirs == []
+
+
+@pytest.mark.asyncio
+async def test_the_common_layer_alone_mounts_and_projects(records_root, tmp_path, monkeypatch):
+    """With a shipped COMMON layer a bare process has something to say — it gets its mount."""
+    from flow_sdk.builtin.agentic_process import system_prompt
+
+    shipped = tmp_path / "shipped"
+    shipped.mkdir()
+    (shipped / "common.md").write_text("Shared rule.\n", encoding="utf-8")
+    monkeypatch.setattr(system_prompt, "SHIPPED_INSTRUCTIONS_DIR", shipped)
+    process = _process(WorkerType.CODEX, tmp_path)
+
+    assets = await process.prepare_system_instruction_assets()
+
+    assert assets.layers == ["common"]
+    assert assets.instructions == "Shared rule."
+    assert (assets.assets_dir / "AGENTS.md").read_text(encoding="utf-8") == "Shared rule.\n"
 
 
 @pytest.mark.asyncio
@@ -91,7 +114,6 @@ async def test_system_instruction_assets_applied_to_worker_options(records_root,
     process._apply_system_instruction_assets(cmd, assets)
 
     assert str(assets.assets_dir) in getattr(cmd, "add_dirs", [])
-    assert cmd.system_prompt_append is None
     assert cmd.system_prompt_file == str(assets.claude_file)
 
     if worker_type is WorkerType.CODEX:
@@ -365,9 +387,16 @@ async def test_persona_survives_fresh_entity_instance(records_root, tmp_path, mo
     "worker_type",
     [WorkerType.CLAUDE_CODE, WorkerType.CODEX, WorkerType.COPILOT],
 )
-async def test_pty_seam_never_applies_the_project_language(records_root, tmp_path, worker_type):
-    """A visible terminal session is the user driving the CLI directly — it does not
-    take the project locale. Only headless turns do, via AgenticContext.language."""
+async def test_pty_seam_carries_the_project_language_as_a_layer(records_root, tmp_path, monkeypatch, worker_type):
+    """The project locale is the ``LANGUAGE`` layer of the one system prompt, so a PTY
+    launch carries it exactly as a headless turn does — through the same file/flag as
+    every other layer, never a vendor side channel (Claude ``--settings``)."""
+    from flow_sdk.builtin.agentic_process.cli_drivers import cli_worker_base_driver
+
+    async def _hebrew(_process):
+        return "Hebrew"
+
+    monkeypatch.setattr(cli_worker_base_driver, "resolve_worker_language", _hebrew)
     prompt = "Your name is TEST_AGENT."
     process = _process(worker_type, tmp_path, context_data={"instructions": prompt})
     assets = await process.prepare_system_instruction_assets()
@@ -375,12 +404,15 @@ async def test_pty_seam_never_applies_the_project_language(records_root, tmp_pat
     cmd = process.driver.cli_options(process)
     process._apply_system_instruction_assets(cmd, assets)
 
+    assert assets.layers == ["instructions", "language"]
+    assert assets.instructions.startswith(prompt)
+    assert "# Language\nAlways respond in Hebrew." in assets.instructions
     assert getattr(cmd, "settings_json", None) is None
     if worker_type is WorkerType.CLAUDE_CODE:
         argv, _env, _stdin = cmd.to_spawn(instruction="hi")
         assert "--settings" not in argv
     if worker_type is WorkerType.CODEX:
-        assert cmd.developer_instructions == prompt
+        assert cmd.developer_instructions == assets.instructions
 
 @pytest.mark.parametrize(
     ("worker_type", "discovery_file"),

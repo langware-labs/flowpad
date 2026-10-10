@@ -340,8 +340,9 @@ test('warm tab switches: content visible within budget', async ({ page }) => {
 
   await page.goto('/dock/desktop?viewMode=advanced');
   await awaitSteerable(page);
-  // Visit each place once (cold), so every later visit is warm.
-  await navigateTo(page, `shell/agentic_process-${a.processId}`, `/shell/agentic_process-${a.processId}`);
+  // Visit each place once (cold), so every later visit is warm. The session is opened AS a terminal:
+  // a session never inherits the mode on screen, and a bare address is the plain chat.
+  await navigateTo(page, `shell/agentic_process-${a.processId}?viewMode=advanced`, `/shell/agentic_process-${a.processId}`);
   await expect(page.locator(`[data-session-id="agentic_process-${a.processId}"]`)).toContainText(MOCK_MARKER, {
     timeout: 15_000,
   });
@@ -401,8 +402,10 @@ test('project switch between visited projects: content visible within budget', a
   const { toplog } = await installObservers(page);
   await page.goto('/dock/desktop?viewMode=advanced');
   await awaitSteerable(page);
-  const toA = () => navigateTo(page, `shell/agentic_process-${a.processId}`, `/shell/agentic_process-${a.processId}`);
-  const toB = () => navigateTo(page, `shell/agentic_process-${b.processId}`, `/shell/agentic_process-${b.processId}`);
+  const toA = () =>
+    navigateTo(page, `shell/agentic_process-${a.processId}?viewMode=advanced`, `/shell/agentic_process-${a.processId}`);
+  const toB = () =>
+    navigateTo(page, `shell/agentic_process-${b.processId}?viewMode=advanced`, `/shell/agentic_process-${b.processId}`);
   await toA();
   await expect(page.locator(`[data-session-id="agentic_process-${a.processId}"]`)).toContainText(MOCK_MARKER, {
     timeout: 15_000,
@@ -600,7 +603,7 @@ async function coldOpen(page: Page, w: World): Promise<{ ms: number; line: strin
   await page.goto('/dock/desktop?viewMode=advanced');
   await awaitSteerable(page);
   const before = switches(toplog).size;
-  await navigateTo(page, `shell/agentic_process-${w.processId}`, `/shell/agentic_process-${w.processId}`);
+  await navigateTo(page, `shell/agentic_process-${w.processId}?viewMode=advanced`, `/shell/agentic_process-${w.processId}`);
   const sw = await awaitSwitch(page, toplog, before, 'ready', 30_000);
   const line = toplog.find((l) => new RegExp(`\\bready sw=${sw.id} `).test(l)) ?? '';
   return { ms: sw.ready!, line: line.slice(line.indexOf('ready')) };

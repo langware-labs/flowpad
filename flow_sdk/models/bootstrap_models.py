@@ -28,6 +28,7 @@ class AppPaths(BaseModel):
     user_agents: str = ""  # Personal agents folder ("Users/alice/.claude/agents")
     logs: str  # Logs folder ("Users/alice/Flowpad workspace/.flow/logs")
     preferences: str  # Per-instance UI preferences file ("Users/alice/.flow/instances/<name>/preferences.json")
+    workspaces_home: str = ""  # Default parent of a NEW workspace's folder ("Users/alice/Flowpad" for prod)
 
 
 class RuntimeKind(StrEnum):
@@ -146,6 +147,9 @@ class BootstrapInfo(BaseModel):
     visitor: Optional[Dict[str, Any]] = None
     default_project: Optional[Dict[str, Any]] = None
     default_workspace: Optional[Dict[str, Any]] = None
+    # Every workspace on this instance, the default one first — what the UI's loaders
+    # read before the workspace list is fetched. Refreshed when a workspace changes.
+    workspaces: List[Dict[str, Any]] = []
     default_compute_node: Optional[Dict[str, Any]] = None
     sandbox_available: bool = False
     sandbox_compute_node: Optional[Dict[str, Any]] = None

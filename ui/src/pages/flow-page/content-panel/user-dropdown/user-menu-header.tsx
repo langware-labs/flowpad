@@ -31,6 +31,9 @@ export interface UserMenuHeaderProps {
   pictureIcon?: ReactNode;
   /** Initials, used when there is neither. */
   initials?: string | null;
+  /** Rendered over the banner, top-start (the workspace switcher). The header stays
+   *  presentational: whatever goes here owns its own hooks. */
+  bannerSlot?: ReactNode;
   /** Developer mode is on: the avatar wears the fire ring. */
   devMode?: boolean;
   /** Double-clicking the avatar — the door to developer mode. */
@@ -44,6 +47,7 @@ export function UserMenuHeader({
   pictureUrl,
   pictureIcon,
   initials,
+  bannerSlot,
   devMode = false,
   onAvatarDoubleClick,
 }: UserMenuHeaderProps) {
@@ -70,6 +74,7 @@ export function UserMenuHeader({
         style={backdrop}
         aria-hidden
       />
+      {bannerSlot && <div className="absolute start-2 top-2 z-10">{bannerSlot}</div>}
       <div className="flex items-center gap-3 px-3 pb-3 pt-2">
         {/* A double-click toggles developer mode; the fire ring says it is on. A
             plain span, not a button: it is a hidden gesture, not a menu item, and

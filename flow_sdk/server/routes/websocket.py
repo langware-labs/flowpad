@@ -686,6 +686,12 @@ async def websocket_endpoint(websocket: WebSocket, connection_id: str):
 
         cleanup_connection(connection_id)
 
+        # A file watch owns a task and a thread, not just a registry row: end
+        # the folder loops this connection was the last to listen to.
+        from flow_sdk.actions.fs.file_watch import release_unwatched
+
+        release_unwatched()
+
         # Release this connection's hub context-watches (unwatch any entity no
         # other connection still holds in context).
         from flow_sdk.cloud_client.context_watch import browser_context_watch

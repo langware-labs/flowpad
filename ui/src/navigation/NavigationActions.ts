@@ -15,6 +15,7 @@ import {
   toplog,
   TypeId,
   VFSPath,
+  viewModeMemory,
   ViewType,
 } from '@sdk';
 import { NavigateFunction } from 'react-router';
@@ -27,7 +28,14 @@ import {
   VIEW_MODE_SWITCH_STATE,
   ViewMode,
 } from '@src/contexts/view-mode-context';
-import { CAPABILITY_PARAM, DockPointer, JOURNEY_PARAM, JOURNEY_STEP_PARAM, NODE_PARAM } from './DockPointer';
+import {
+  CAPABILITY_PARAM,
+  DockPointer,
+  JOURNEY_PARAM,
+  JOURNEY_STEP_PARAM,
+  NODE_PARAM,
+  WORKSPACE_PARAM,
+} from './DockPointer';
 import { dockPointerForFile } from './local-file-pointer';
 import { getHistoryPosition } from './history-position-store';
 import { beginTabSwitch, dockLabel, tabSwitch } from './tab-switch-state';
@@ -44,7 +52,7 @@ import { isProjectHomePage, withHomePage } from '@src/project-home-page/home-pag
 import { placeDockInProject, presentDockTab } from './present-dock-tab';
 import { openExternal } from '@src/lib/open-external';
 import { openInBrowserProfile } from '@src/lib/browser-profiles';
-import { appLinkPath, isWebUrl } from '@src/lib/link-kind';
+import { appLinkPath, bareWebUrl, isWebUrl, localWebUrl } from '@src/lib/link-kind';
 import { errorMessage } from '@src/lib/error-message';
 import type { LinkSource } from '@src/components/links/link-events';
 import { notify } from '@src/notifications/notify';
@@ -145,7 +153,7 @@ export const SCOPE_SEEDED_VIEWS: ReadonlySet<ViewType> = new Set([
 // URL options that are STICKY across navigation: openDock carries each from the
 // live URL onto any target that doesn't set it. A param here means "topmost
 // until explicitly closed" — clearing it must bypass openDock (see closeJourney).
-export const STICKY_OPTION_PARAMS: readonly string[] = [JOURNEY_PARAM, JOURNEY_STEP_PARAM];
+export const STICKY_OPTION_PARAMS: readonly string[] = [JOURNEY_PARAM, JOURNEY_STEP_PARAM, WORKSPACE_PARAM];
 
 /**
  * The workspace host to carry from `here` onto `target`, or null.
@@ -268,8 +276,17 @@ export class NavigationActions {
       return target.withViewMode(ViewMode.Vibe);
     }
     if (target.viewMode !== null) return target;
-    const mode = rememberedDockViewMode(target) ?? liveMode();
-    return mode ? target.withViewMode(mode) : target;
+    const remembered = rememberedDockViewMode(target);
+    if (remembered) return target.withViewMode(remembered);
+    // A session never takes the mode on screen — that belongs to the tab being
+    // LEFT. In cache with no memory it is the plain chat (the shell loader's own
+    // default, stated here to spare its redirect); not in cache it opens bare
+    // and the loader states it from the entity.
+    if (sessionIdForDock(target)) {
+      return viewModeMemory.targetFor(target.targetTypeId) ? target.withViewMode(ViewMode.Standard) : target;
+    }
+    const live = liveMode();
+    return live ? target.withViewMode(live) : target;
   }
 
   private static clearCommittedPendingNavigation(): void {
@@ -504,6 +521,29 @@ export class NavigationActions {
     this.commitPointer(this.here.withJourney(null));
   }
 
+  /**
+   * Switch the active workspace and land on its home. `null` (or the default
+   * workspace's id) is the default workspace — the param is cleared, so its URLs
+   * are the ones from before workspaces existed.
+   *
+   * `commitPointer`, not `openDock`: the workspace param is sticky, and
+   * `openDock`'s carry-forward would put the OLD workspace straight back.
+   */
+  openWorkspace(workspaceId: string | null): void {
+    this.commitPointer(DockPointer.root().withOption(WORKSPACE_PARAM, workspaceId || null));
+  }
+
+  /**
+   * Open a project's home INSIDE a workspace — after the project was moved there
+   * (`Project.switchWorkspace`). The loader drops a project outside the URL's
+   * workspace, so the pointer must name the new one; and like `openWorkspace` this
+   * is `commitPointer`, not `openDock`, because the sticky param's carry-forward
+   * would put the OLD workspace straight back (`null` = the default workspace).
+   */
+  openProjectInWorkspace(projectId: string, workspaceId: string | null): void {
+    this.commitPointer(DockPointer.forProject(projectId).withOption(WORKSPACE_PARAM, workspaceId || null));
+  }
+
   // ========== Core Navigation ==========
 
   /**
@@ -598,29 +638,14 @@ export class NavigationActions {
       dock = dock.withScopeFilter(projectId ? projectScope(projectId) : allScope());
     }
 
-    // Inherit the live URL's ?viewMode unless the target names its own (mirrors
-    // the scope-seed above); explicit target / ViewToggle mode still wins. Since
-    // useDockViewModeOverrideSync now adopts the URL's mode into the persisted
-    // preference on load, this inheritance matters only for navigations issued
-    // BEFORE that adopt effect commits (e.g. a redirect right after a hard load
-    // on a ?viewMode URL) — not for general mode stickiness.
-    //
-    // The ROOT is stamped too (2026-09-03). It used to be excluded, to keep the
-    // canonical home URL bare and let the persisted preference decide the mode
-    // there — but a bare entry does not STATE its mode, it re-resolves through a
-    // preference that the ViewToggle itself mutates. So Back onto a home entry
-    // rendered it in the mode you had just switched TO: a history step that
-    // visibly did nothing, with Forward lit. Every entry must state its own mode
-    // for a Back step to be visible, home included. The cold-load entry is
-    // canonicalized in `loadHomePage`, which this cannot reach.
-    //
-    // A SESSION or PROJECT dock is the exception, and takes its own remembered
-    // mode instead: it opens in the mode it was last switched to, so switching to
-    // Terminal in one chat no longer repaints every other chat you click into.
-    // Inheritance is still the fallback for a dock with no memory yet; it only
-    // DISPLAYS that mode — memory is minted by `VIEW_MODE_STORE`, not by opening.
-    // Cache-only: a cold deep link has no entity to read here, and the shell
-    // loader redirects a session onto its remembered mode instead.
+    // Every entry STATES its mode (an address that states none paints the app's
+    // unstated mode, and a Back step onto it would visibly do nothing). A dock
+    // whose target owns memory — a session, a project — takes that memory; a
+    // session with none still never takes the screen's mode (see
+    // `withTargetViewMode`). Everything else is workspace content and follows
+    // the mode on screen. Opening only DISPLAYS a mode; memory is minted by
+    // `VIEW_MODE_STORE`. Cache-only: a cold deep link has no entity to read
+    // here, and the shell loader states a session's mode instead.
     dock = NavigationActions.withTargetViewMode(
       dock,
       () => NavigationActions.currentBrowserViewMode() ?? this.currentDock?.viewMode ?? null,
@@ -815,6 +840,7 @@ export class NavigationActions {
   /** Resolve a clicked link (terminal output, message text) to the dock that presents it. */
   private async resolveLinkDock(link: string, source: LinkSource | null): Promise<DockPointer> {
     if (!source) throw new Error(t`This link has no source yet`);
+    link = localWebUrl(link) ?? link;
     // An app URL copied from this browser is an internal address, not an iframe.
     link = appLinkPath(link, window.location.origin) ?? link;
     const dock = dockForDisplayTarget(await source.resolveDisplayTarget(link));
@@ -881,7 +907,15 @@ export class NavigationActions {
 
   private async browserUrlFor(link: string, source: LinkSource | null): Promise<string> {
     if (isWebUrl(link)) return link;
-    return this.getDockUrl(placeDockInProject(await this.resolveLinkDock(link, source), source?.project_id));
+    // `clau.de/reset` is a web page written without its scheme, not a file to look up.
+    const web = bareWebUrl(link);
+    if (web?.sure) return web.url;
+    try {
+      return this.getDockUrl(placeDockInProject(await this.resolveLinkDock(link, source), source?.project_id));
+    } catch (error) {
+      if (web) return web.url;
+      throw error;
+    }
   }
 
   /**

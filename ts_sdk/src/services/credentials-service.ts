@@ -59,6 +59,9 @@ export interface CredentialStatusRow {
   name: string;
   title: string;
   description: string;
+  /** What it is needed for, in one line, and the full reason. */
+  needed_for?: string;
+  justification?: string;
   icon_name: string;
   help_url: string;
   setup_wiki: string;
@@ -70,9 +73,18 @@ export interface CredentialStatusRow {
   /** Where that deployment keeps this credential; `mixed` when its variables are split. */
   value_store: CredentialValueStore;
   lm_provider: string;
-  state: 'connected' | 'partial' | 'missing';
+  /** `env` (values are variables) or `oauth` (a provider's grant, held by the connection). */
+  kind?: CredentialKind;
+  /** oauth: the connection provider, the scopes the project needs, and those the held grant does not cover. */
+  provider?: string;
+  scopes?: string[];
+  missing_scopes?: string[];
+  /** `partial`: some values / a grant missing scopes; `needs_reauth`: oauth, the grant went stale. */
+  state: 'connected' | 'partial' | 'missing' | 'needs_reauth';
   vars: CredentialVarStatus[];
 }
+
+export type CredentialKind = 'env' | 'oauth';
 
 export interface DetectedEnvKey {
   key: string;
@@ -176,6 +188,8 @@ export interface CredentialManifestInput {
   name: string;
   title?: string;
   description?: string;
+  needed_for?: string;
+  justification?: string;
   icon_name?: string;
   help_url?: string;
   setup_wiki?: string;

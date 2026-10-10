@@ -99,7 +99,7 @@ Everything below hangs off ONE table row and ONE package. Do these first; most o
   `cli_worker_base_driver.py`). Omit either and the vendor raises `AttributeError` on first
   use. There is no registry dict and no alias map to edit.
 - **Files a vendor ships:** `driver.py` (`DRIVER`), `cli.py` (`AGENT_OPTIONS`; class knobs
-  `MODEL_TIERS`, `EXECUTABLE`, `PROMPT_CHANNEL`, `SYSTEM_PROMPT_FLAG`/`_FILE_FLAG`, and the
+  `MODEL_TIERS`, `EXECUTABLE`, `PROMPT_CHANNEL`, `SYSTEM_PROMPT_FILE_FLAG`, and the
   serialization trio `SERIALIZED_FIELDS` / `WORKER_TYPE` / `_COERCE`), `stream_worker.py`,
   `event_to_flowdata.py`, `session_history.py`, `asset_inventory.py`; `status.py` when the
   tail classifier is not claude-shaped; vendor extras (`opencode/config_gen.py`,

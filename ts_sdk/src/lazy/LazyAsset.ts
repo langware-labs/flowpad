@@ -9,6 +9,7 @@ export enum LazyAsset {
   AssetStats = 'asset-stats',
   Projects = 'projects',
   DiscoveredProjects = 'discovered-projects',
+  Workspaces = 'workspaces',
   ProjectResources = 'project-resources',
   Skills = 'skills',
   Bookmarks = 'bookmarks',

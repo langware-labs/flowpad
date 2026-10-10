@@ -28,6 +28,10 @@ from flow_sdk.core.flow.models.webhook_flow_data import AgentHookData
 from flow_sdk.flowpad_types.enums import WorkerType
 from flow_sdk.fs_store.record_paths import get_default_records_root, set_default_records_root
 
+# The "nothing to say → write-free" and exact-text contracts below assume no shipped
+# system-prompt layers; those are covered by tests/unit/system_prompt_matrix.
+pytestmark = pytest.mark.usefixtures("no_shipped_layers")
+
 
 @pytest.fixture(autouse=True)
 def _clear_callbacks():

@@ -3,7 +3,8 @@ id: 48fe7963-b589-4540-ae1d-6bf0b53fcb1c
 ---
 # Compute ops — one call that converges, composes, and can ask
 
-A ComputeOp is ONE call of one subkind — a shell one-liner (`cli`), a model
+A ComputeOp is ONE call of one subkind — a shell one-liner (`cli`), a closed
+question to the Decision API (`decision`, [decisions](decisions.md) §9), a model
 (`prompt`), an agent with tools (`agent`), or a person (`ask`). It declares the
 kind it RETURNS, and it knows when it is already done — so running it twice does
 the work once. Every op answers with a `ReturnedValue`; the shapes, and every

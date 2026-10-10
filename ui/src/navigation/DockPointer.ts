@@ -295,6 +295,17 @@ export const JOURNEY_PARAM = 'journeyId';
 export const JOURNEY_STEP_PARAM = 'journeyStep';
 
 /**
+ * URL query-param key naming the ACTIVE workspace — a folder of related projects
+ * (`flow_sdk/builtin/workspace.py`). Its value is the Workspace id; absent means the
+ * default workspace ("Flowpad"), so every URL from before workspaces existed still
+ * means exactly what it meant. Sticky (see `STICKY_OPTION_PARAMS`): it rides every
+ * navigation until `navigation.openWorkspace()` changes it. Read through
+ * `useActiveWorkspace()` — the active workspace is derived from the URL, never
+ * written into context. Not the Vibe workspace `host` (`HOST_PARAM`).
+ */
+export const WORKSPACE_PARAM = 'workspace';
+
+/**
  * URL query-param key naming the capability the user was reaching for when they
  * were routed to the Capabilities view — e.g. clicking "Start Codex" on an
  * opener whose harness looks unavailable lands here with
@@ -2187,13 +2198,15 @@ export class DockPointer implements IDockPointer {
    * `credentialsPointer` owns it, so a change there reaches every caller.
    * @param tab - Which tab is active; omitted lands on the caller's leading tab
    * @param projectId - Project whose environment is shown (Environment tab)
+   * @param entry - The credential (typeid) shown selected — needs a project
    */
   static forCredentials(
     tab: CredentialsSubview = CredentialsSubview.CONNECTIONS,
     projectId?: string,
     layout: Layout = Layout.DOCK,
+    entry?: string,
   ): DockPointer {
-    return new DockPointer(ViewType.CREDENTIALS, credentialsPointer(tab, projectId), {}, layout);
+    return new DockPointer(ViewType.CREDENTIALS, credentialsPointer(tab, projectId, entry), {}, layout);
   }
 
   /**

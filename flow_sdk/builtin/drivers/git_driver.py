@@ -49,7 +49,8 @@ class GitOriginDriver:
         picks the slot. ``token`` is the caller's credential (anonymous by
         default — the driver never looks one up).
         """
-        from flow_sdk.utils.git import find_project_root, git_clone, git_pull  # noqa: PLC0415
+        from flow_sdk.builtin.faas.git_repo import GitRepo  # noqa: PLC0415
+        from flow_sdk.utils.git import find_project_root, git_clone  # noqa: PLC0415
 
         async def resolved(root: Path) -> tuple[Path, Optional[str]]:
             return root, await _project_id_for_checkout(root, preferred_root, preferred_project_id)
@@ -66,9 +67,9 @@ class GitOriginDriver:
                 candidates.append(local)
             for candidate in candidates:
                 if origin.branch:
-                    pulled = await git_pull(str(candidate), branch=origin.branch)
+                    pulled = await (await GitRepo.local(str(candidate))).pull(branch=origin.branch)
                     if not pulled.ok:
-                        logger.info("[git] pull failed for %s: %s", candidate, pulled.detail)
+                        logger.info("[git] pull %s for %s: %s", pulled.kind, candidate, pulled.message)
                 asset_root = safe_join(candidate, origin.rel_path or ".")
                 if asset_root is not None and asset_root.exists():
                     return await resolved(candidate)

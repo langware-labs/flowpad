@@ -44,7 +44,11 @@ from flow_sdk.schema.data_spec.spec import DataSpec
 #: What a step does when its action fails.
 ON_FAIL_ABORT = "abort"
 ON_FAIL_CONTINUE = "continue"
-ON_FAIL_VALUES = (ON_FAIL_ABORT, ON_FAIL_CONTINUE)
+#: End the run QUIETLY: the run answers ``OK`` with nothing after this step, and says
+#: which step stopped it. For a step whose "no" is an answer, not a problem — a
+#: ``decision`` op that found nothing to do.
+ON_FAIL_STOP = "stop"
+ON_FAIL_VALUES = (ON_FAIL_ABORT, ON_FAIL_CONTINUE, ON_FAIL_STOP)
 
 
 class StepKind(StrEnum):
@@ -93,6 +97,10 @@ class WizardStepSpec(DataSpec):
     #: and naming it by default would put every value into the environment.
     bind: str = ""
     on_fail: str = ON_FAIL_ABORT
+    #: Run this step only while every named scope value EQUALS the text given
+    #: (``{"TEAM": "billing"}``), else it is passed as not applicable. An equality on
+    #: values already in scope, like ``args``: never a template, never an expression.
+    when: dict[str, str] = {}
 
     @model_validator(mode="after")
     def _legal(self) -> "WizardStepSpec":

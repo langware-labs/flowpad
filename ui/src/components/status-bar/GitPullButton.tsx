@@ -6,7 +6,8 @@ import { useGitStatus } from './GitStatusContext';
 
 /**
  * One-click "pull from cloud" for the current project — the inbound twin of
- * ``GitPushButton``. Hidden unless the upstream has commits this checkout lacks;
+ * ``GitPushButton``. Hidden while the tree is stuck in a conflict
+ * (``GitResolveButton`` stands in), and unless the upstream has commits this checkout lacks;
  * ``behind`` comes from the background fetch the shared GitStatusContext runs
  * after each status check, and the context refreshes after the pull.
  */
@@ -18,7 +19,7 @@ export const GitPullButton: React.FC = () => {
   const { t } = useLingui();
 
   const behind = status?.behind ?? 0;
-  if (!status || !status.hasRepo || behind <= 0 || !computeNodeId || !workdir) {
+  if (!status || !status.hasRepo || status.conflict || behind <= 0 || !computeNodeId || !workdir) {
     return null;
   }
 

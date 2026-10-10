@@ -41,6 +41,7 @@ from flow_sdk.core.wizard.state import input_env
 from flow_sdk.schema.data_spec.returned_value_spec import ExitCode, ReturnedValue, WizardResult
 from flow_sdk.schema.data_spec.wizard_spec import (
     ON_FAIL_ABORT,
+    ON_FAIL_STOP,
     StepKind,
     WizardSpec,
     WizardStepSpec,
@@ -231,7 +232,13 @@ async def _steps(run: _Run, root: Any) -> WizardResult:
         # is true, while a fabricated failed one would blame a step that never ran.
         child = root.child_or_self(step.id).label(step.display_label)
         root.current(step.display_label)
-        answer = await _step(run, step, child)
+        unmatched = _unmatched(run, step)
+        if unmatched:
+            # Not this run's business, by the step's own `when`: passed, not failed — the same
+            # reading as an op that does not apply to this machine.
+            answer = ReturnedValue.not_applicable(f"step {step.id!r}: {unmatched}")
+        else:
+            answer = await _step(run, step, child)
         run.steps[step.id] = answer
         await _report_progress(run)
 
@@ -246,6 +253,12 @@ async def _steps(run: _Run, root: Any) -> WizardResult:
         elif answer.ok:
             child.done(answer.detail or "done")
             root.inc_success()
+        elif step.on_fail == ON_FAIL_STOP:
+            # The step's "no" is the run's answer, not its problem: nothing after it, and the
+            # run is OK. The step keeps its own answer in `steps` for whoever reads why.
+            child.done(answer.detail or "stopped here")
+            root.inc_skipped()
+            return _held_to_output(run, _answer(run, WizardResult.satisfied, answer.detail, stopped_at=step.id))
         else:
             child.fail(answer.detail or "failed")
             root.inc_error(answer.detail, ref=step.id)
@@ -287,7 +300,18 @@ def _still_unmet(run: _Run) -> Optional[ReturnedValue]:
     return None
 
 
-def _answer(run: _Run, make: Callable[..., WizardResult], detail: str) -> WizardResult:
+def _unmatched(run: _Run, step: WizardStepSpec) -> str:
+    """Why the step's ``when`` does not hold, in a sentence; empty when it does (or has none)."""
+    for name, wanted in step.when.items():
+        if name not in run.values:
+            return f"nothing named {name!r} is in scope"
+        actual = run.values[name]
+        if str(actual) != wanted:
+            return f"{name} is {actual!r}, not {wanted!r}"
+    return ""
+
+
+def _answer(run: _Run, make: Callable[..., WizardResult], detail: str, **fields: Any) -> WizardResult:
     """The wizard's answer; its value is what each step that reached its goal returned.
 
     ``ran`` is computed here and nowhere else: a run that installed two things and
@@ -300,6 +324,7 @@ def _answer(run: _Run, make: Callable[..., WizardResult], detail: str) -> Wizard
         value=outputs or None,
         steps=run.steps,
         ran=any(answer.ran for answer in run.steps.values()),
+        **fields,
     )
 
 
@@ -381,6 +406,7 @@ async def _call_op(run: _Run, step: WizardStepSpec, child: Any) -> ReturnedValue
     found = await _resolve(run, step, run.resolve_op, "compute op")
     if isinstance(found, ReturnedValue):
         return found
+    scope = _scope(run, step)
     return await run_op(
         found.spec,
         subject=run.subject_entity or "",
@@ -389,7 +415,8 @@ async def _call_op(run: _Run, step: WizardStepSpec, child: Any) -> ReturnedValue
         platform=run.platform,
         shell=run.shell,
         launch=run.launch,
-        env=input_env(_scope(run, step)),
+        env=input_env(scope),
+        values=scope,
         on_status=lambda text: child.current(text),
         wizard_id=run.wizard_id,
         check_only=run.check_only,

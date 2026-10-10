@@ -1,12 +1,15 @@
 /**
  * C16 — vendor-aware ProcessToolbar surfaces, rendered end-to-end.
  *
- * A Codex process must show ONLY the controls the codex CLI supports: the CLI
- * Options dropdown carries a single Full Trust item (codex bypass flag, OpenAI
+ * A Codex process must show ONLY the controls the codex CLI supports: the debug
+ * menu's CLI options carry a single Full Trust item (codex bypass flag, OpenAI
  * docs link) — no Chrome / Debug toggles, no Anthropic links — and Session Info
  * hides the Chrome/Debug/Worktree rows and shows a `codex … resume <session>`
  * command. A Claude process must keep the exact pre-vendor-split surface. An
- * unknown worker gets no CLI Options dropdown at all.
+ * unknown worker gets no CLI options section at all.
+ *
+ * Also the bar's one arrangement: the debug menu on the terminal surface only,
+ * and every other action in the session actions menu on every surface.
  *
  * The toolbar is rendered for real (chrome-only siblings stubbed); the vendor
  * knowledge itself lives in process-cli-presentation.ts and is consumed here
@@ -19,37 +22,30 @@ import React from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 // Sibling chrome that is not under test — stubbed to keep the mount light.
-vi.mock('@src/components/terminal/interactive-terminal/WorktreeButtons', () => ({
-  CommitMergeButton: () => null,
-  OpenInWorktreeButton: () => null,
+vi.mock('@src/components/terminal/interactive-terminal/use-worktree-actions', () => ({
+  useCommitMerge: () => ({ available: false, working: false, run: () => {} }),
+  useOpenInWorktree: () => ({ loading: false, hasCommit: true, open: () => Promise.resolve() }),
 }));
-vi.mock('@src/components/entity-actions/EntityActionsToolbar', () => ({ EntityActionsToolbar: () => null }));
-vi.mock('@src/components/entity-actions/ExportEntityButton', () => ({ ExportEntityButton: () => null }));
+vi.mock('@src/components/terminal/interactive-terminal/EntityShareDialog', () => ({ EntityShareDialog: () => null }));
+vi.mock('@src/components/terminal/interactive-terminal/SessionSurfaceSwitch', () => ({
+  SessionSurfaceSwitch: () => null,
+}));
 vi.mock('@src/components/asset-manager', () => ({ AssetManagerButton: () => null }));
-vi.mock('@src/components/view-mode', () => ({
-  ViewSwap: ({ advanced }: { advanced: React.ReactNode }) => <>{advanced}</>,
-}));
-// The header is pure arrangement — render every slot so the real toolbar
-// content (CLI Options, Session Info, …) stays in the tree.
-vi.mock('@src/components/terminal/interactive-terminal/InteractiveTabHeader', () => ({
-  AdvancedInteractiveTabHeader: (p: Record<string, React.ReactNode>) => (
-    <div>
-      {p.debug}
-      {p.restart}
-      {p.title}
-      {p.actions}
-      {p.download}
-      {p.right}
-    </div>
-  ),
-  StandardInteractiveTabHeader: () => null,
-}));
+// The surface on screen — the debug menu is offered on the terminal one only.
+const viewMode = vi.hoisted(() => ({ current: 'advanced' }));
+vi.mock('@src/contexts/view-mode-context', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@src/contexts/view-mode-context')>();
+  return { ...actual, useSessionSurface: () => actual.surfaceForViewMode(viewMode.current as never) };
+});
 vi.mock('@src/components/terminal/interactive-terminal/pty-viewer', () => ({ PTYViewer: () => null }));
 vi.mock('@src/components/terminal/interactive-terminal/pty-events-viewer', () => ({ PTYEventsViewer: () => null }));
 vi.mock('@src/components/terminal/interactive-terminal/command-status-viewer', () => ({
   CommandStatusViewer: () => null,
 }));
-vi.mock('@src/navigation/useDockNavigation', () => ({ useDockNavigation: () => ({ navigation: {} }), useCurrentDock: () => null }));
+vi.mock('@src/navigation/useDockNavigation', () => ({
+  useDockNavigation: () => ({ navigation: {} }),
+  useCurrentDock: () => null,
+}));
 // SessionInfoPopover discovers the on-disk session record on mount — no
 // backend in this tier.
 vi.mock('@sdk/resource_management/fs_records/claude/claude-session.js', () => ({
@@ -109,13 +105,23 @@ function renderToolbar(workerType: string, process = makeProcess(workerType), em
   );
 }
 
-afterEach(() => cleanup());
+afterEach(() => {
+  cleanup();
+  viewMode.current = 'advanced';
+});
 
-describe('ProcessToolbar — vendor-gated CLI Options dropdown', () => {
+const openDebug = () => userEvent.click(screen.getByRole('button', { name: 'Debug' }));
+const openActions = () => userEvent.click(screen.getByRole('button', { name: 'Session actions' }));
+const openSessionInfo = async () => {
+  await openActions();
+  await userEvent.click(screen.getByRole('menuitem', { name: /Session info/ }));
+};
+
+describe('ProcessToolbar — vendor-gated CLI options in the debug menu', () => {
   it('codex: only Full Trust, codex flag description, OpenAI docs — no Anthropic surface', async () => {
     renderToolbar('codex');
 
-    await userEvent.click(screen.getByRole('button', { name: 'CLI Options' }));
+    await openDebug();
 
     // Only the codex-supported toggle is offered.
     expect(screen.getByText('Full Trust')).toBeTruthy();
@@ -126,16 +132,14 @@ describe('ProcessToolbar — vendor-gated CLI Options dropdown', () => {
     expect(screen.getByText('Skip approvals and sandboxing (--dangerously-bypass-approvals-and-sandbox)')).toBeTruthy();
     const docsLink = screen.getByRole('link', { name: 'Full Trust docs' });
     expect(docsLink.href).toContain('developers.openai.com/codex');
-    const anthropicLinks = Array.from(document.querySelectorAll('a')).filter((a) =>
-      a.href.includes('anthropic.com'),
-    );
+    const anthropicLinks = Array.from(document.querySelectorAll('a')).filter((a) => a.href.includes('anthropic.com'));
     expect(anthropicLinks).toEqual([]);
   });
 
   it('claude: keeps the full pre-split surface — Chrome, Full Trust, Debug, Anthropic docs', async () => {
     renderToolbar('claude');
 
-    await userEvent.click(screen.getByRole('button', { name: 'CLI Options' }));
+    await openDebug();
 
     expect(screen.getByText('Chrome browser')).toBeTruthy();
     expect(screen.getByText('Full Trust')).toBeTruthy();
@@ -145,9 +149,120 @@ describe('ProcessToolbar — vendor-gated CLI Options dropdown', () => {
     expect(trustDocs.href).toContain('docs.anthropic.com');
   });
 
-  it('unknown worker: no CLI Options dropdown at all', () => {
+  it('unknown worker: the debug menu has no CLI options section, only gutters and viewers', async () => {
     renderToolbar('custom-worker');
-    expect(screen.queryByRole('button', { name: 'CLI Options' })).toBeNull();
+
+    await openDebug();
+
+    expect(screen.queryByText('CLI Options')).toBeNull();
+    expect(screen.getByText('Gutters')).toBeTruthy();
+    expect(screen.getByRole('menuitem', { name: 'PTY Viewer' })).toBeTruthy();
+  });
+});
+
+describe('ProcessToolbar — one bar for every surface', () => {
+  const standalone = (mode: string) => {
+    viewMode.current = mode;
+    renderToolbar('claude', makeProcess('claude'), false);
+  };
+
+  it('terminal: debug menu and Restart on the left, Fork and the session actions menu on the right', () => {
+    standalone('advanced');
+    expect(screen.getByRole('button', { name: 'Debug' })).toBeTruthy();
+    expect(screen.getByTestId('process-toolbar-restart-button')).toBeTruthy();
+    expect(screen.getByTestId('process-toolbar-fork')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Session actions' })).toBeTruthy();
+  });
+
+  it.each(['standard', 'vibe'])(
+    '%s: no debug menu or Restart button, the same Fork and session actions menu',
+    (mode) => {
+      standalone(mode);
+      expect(screen.queryByRole('button', { name: 'Debug' })).toBeNull();
+      expect(screen.queryByTestId('process-toolbar-restart-button')).toBeNull();
+      expect(screen.getByTestId('process-toolbar-fork')).toBeTruthy();
+      expect(screen.getByRole('button', { name: 'Session actions' })).toBeTruthy();
+    },
+  );
+
+  it('the session actions menu carries every action the old icon row had', async () => {
+    standalone('standard');
+
+    await openActions();
+
+    const items = screen.getAllByRole('menuitem').map((el) => el.getAttribute('data-testid'));
+    expect(items).toEqual([
+      'session-action-info',
+      'session-action-transcript',
+      'session-action-assets',
+      'process-toolbar-restart',
+      'session-action-terminal',
+      'session-action-worktree',
+      'entity-actions-export',
+    ]);
+  });
+
+  it('embedded: no nav-out actions in the menu, and no Fork', async () => {
+    renderToolbar('claude');
+    expect(screen.queryByTestId('process-toolbar-fork')).toBeNull();
+
+    await openActions();
+
+    const items = screen.getAllByRole('menuitem').map((el) => el.getAttribute('data-testid'));
+    expect(items).toEqual([
+      'session-action-info',
+      'session-action-transcript',
+      'session-action-assets',
+      'process-toolbar-restart',
+    ]);
+  });
+
+  it.each(['standard', 'vibe'])('%s, restart required: the closed menu button carries the signal', (mode) => {
+    viewMode.current = mode;
+    renderToolbar('claude', { ...makeProcess('claude'), restart_required: true } as AgenticProcess, false);
+    expect(screen.getByTestId('process-toolbar-menu').getAttribute('data-restart-required')).toBe('true');
+  });
+
+  it('embedded (always a terminal), restart required: the Restart button carries the signal', () => {
+    renderToolbar('claude', { ...makeProcess('claude'), restart_required: true } as AgenticProcess);
+    expect(screen.getByTestId('process-toolbar-restart-button').getAttribute('data-attention')).toBe('true');
+    expect(screen.getByTestId('process-toolbar-menu').getAttribute('data-restart-required')).toBe('false');
+  });
+
+  it('terminal, restart required: the Restart button glows and the menu button does not', () => {
+    viewMode.current = 'advanced';
+    renderToolbar('claude', { ...makeProcess('claude'), restart_required: true } as AgenticProcess, false);
+    expect(screen.getByTestId('process-toolbar-restart-button').getAttribute('data-attention')).toBe('true');
+    expect(screen.getByTestId('process-toolbar-menu').getAttribute('data-restart-required')).toBe('false');
+  });
+
+  it('terminal: the Restart button is plain when no restart is required, disabled when not running', () => {
+    viewMode.current = 'advanced';
+    renderToolbar('claude', makeProcess('claude'), false);
+    const button = screen.getByTestId('process-toolbar-restart-button') as HTMLButtonElement;
+    expect(button.getAttribute('data-attention')).toBe('false');
+    expect(button.disabled).toBe(false);
+    cleanup();
+    renderToolbar('claude', { ...makeProcess('claude'), status: ProcessStatus.STOPPED } as AgenticProcess, false);
+    expect((screen.getByTestId('process-toolbar-restart-button') as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it('terminal: the Restart button restarts the process', async () => {
+    viewMode.current = 'advanced';
+    const restart = vi.fn(() => Promise.resolve());
+    renderToolbar('claude', { ...makeProcess('claude'), restart } as unknown as AgenticProcess, false);
+    await userEvent.click(screen.getByTestId('process-toolbar-restart-button'));
+    expect(restart).toHaveBeenCalledTimes(1);
+  });
+
+  it('Restart session restarts the process', async () => {
+    const restart = vi.fn(() => Promise.resolve());
+    renderToolbar('claude', { ...makeProcess('claude'), restart } as unknown as AgenticProcess);
+
+    await openActions();
+    await userEvent.click(screen.getByTestId('process-toolbar-restart'));
+
+    expect(restart).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -155,7 +270,7 @@ describe('ProcessToolbar — vendor-gated Session Info popover', () => {
   it('codex: hides Chrome/Debug/Worktree rows and shows the codex resume command', async () => {
     renderToolbar('codex');
 
-    await userEvent.click(screen.getByRole('button', { name: 'Codex session info' }));
+    await openSessionInfo();
 
     expect(screen.queryByText('Chrome')).toBeNull();
     expect(screen.queryByText('Debug')).toBeNull();
@@ -168,7 +283,7 @@ describe('ProcessToolbar — vendor-gated Session Info popover', () => {
   it('claude: keeps all rows and the claude --resume command', async () => {
     renderToolbar('claude');
 
-    await userEvent.click(screen.getByRole('button', { name: 'Claude session info' }));
+    await openSessionInfo();
 
     expect(screen.getByText('Chrome')).toBeTruthy();
     expect(screen.getByText('Debug')).toBeTruthy();

@@ -35,6 +35,7 @@
       "published",
       "remote",
       "scope",
+      "setup_skipped",
       "shared_context_entity_data",
       "system",
       "tags",

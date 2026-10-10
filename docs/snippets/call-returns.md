@@ -66,6 +66,26 @@ class AgentOp(ExeData):                       # compute_op.agent — a harness w
     agent: str
     prompt: str
     retries: int                              # further turns in the SAME session while the check fails
+    input: str                                # a scope value (by name) mounted as the process's input folder
+    launch_context: str                       # a scope value (by name) holding a LaunchContext
+
+class LaunchContext(DataSpec):                # compute_op.agent.launch_context — what a caller stamps on the spawned process
+    context_data: dict[str, Any]              # merged into the process's context_data
+    shared_context_entities: list[str]        # context chips, '<type>-<uuid>'
+    target_typeid_str: str                    # what the session is keyed to, when not the run's subject
+
+class Require(DataSpec):                      # compute_op.decision.require — exactly one of the four
+    choice: str | None                        # the option that must win, `min` sure
+    yes: float | None                         # the probability floor of yes
+    no: float | None                          # the probability floor of no
+    at_least: str | None                      # the lowest score level that counts
+    min: float                                # the confidence floor for `choice`
+
+class DecisionOp(ExeData):                    # compute_op.decision — a closed question to the Decision API
+    questions: dict[str, Question]            # the decision API's own: choice / score / yes_no
+    require: dict[str, Require]               # what each named answer must be; ALL must hold
+    input: str                                # the scope value (by name) the questions are about
+    sentence: str                             # the one-line form it was written as, kept for the document
 
 class AskOp(ExeData):                         # compute_op.ask — a person
     prompt: str
@@ -87,8 +107,8 @@ class ComputeOpSpec(AssetDocumentSpec):       # compute_op.json
     name: str
     label: str
     description: str
-    subkind: OpSubkind                        # cli | prompt | agent | ask
-    exe_data: CliOp | PromptOp | AgentOp | AskOp
+    subkind: OpSubkind                        # navigate | cli | decision | prompt | agent | ask
+    exe_data: NavigateOp | CliOp | DecisionOp | PromptOp | AgentOp | AskOp
     output_spec_kind: str | None              # a registered DataSpec kind, or a primitive
     completion_check: CliOp | None            # the SAME class as a cli op's exe_data
     status_check: str | None                  # OR a status fact (install:<harness>), asked in-process
@@ -135,11 +155,22 @@ class AskResult(ReturnedValue):               # compute.returned.ask
 
 class WizardResult(ReturnedValue):            # compute.returned.wizard
     steps: dict[str, ReturnedValue]           # step id → that step's OWN answer
+    stopped_at: str                           # the step whose on_fail: stop ended the run early
+
+class DecisionVerdict(ReturnedValue):         # compute.returned.decision
+    met: bool                                 # every requirement held
+    confidence: float                         # the least sure requirement's own probability
+    reason: str                               # the requirement that held, or the first that did not
+    answers: dict[str, Any]                   # every question's answer, as the API gave it
+    unavailable: str | None                   # the closed DecisionError.reason when it could not be asked
+    endpoint: str                             # 'api_endpoint-<id>'
+    latency_ms: float
 ```
 
 | subkind | answers with | `executor` |
 | --- | --- | --- |
 | `cli` | `CliResult` | `None`, or `shell-<id>` when it ran in a terminal |
+| `decision` | `DecisionVerdict` | `None` — the verdict is its own proof, never re-checked |
 | `prompt` | `PromptResult` | `None` |
 | `agent` | `PromptResult` | `agentic_process-<id>` |
 | `ask` | `AskResult` | `None` |

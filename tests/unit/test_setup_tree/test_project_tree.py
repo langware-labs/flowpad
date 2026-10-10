@@ -35,6 +35,7 @@ class FakeSource:
     provider: str
     owner: str = ""
     asset_ref: str = ""
+    setup_skipped: object = None
 
     @property
     def typeid(self) -> str:
@@ -68,7 +69,7 @@ def project(tmp_path, monkeypatch):
     reqs = [
         SetupRequirementSpec(kind="pack", name="stripe", vars=[SetupVarSpec(env_var="STRIPE_KEY", present=True)],
                              used_by=["project"], satisfied=True),
-        SetupRequirementSpec(kind="oauth", name="google", scopes=["drive"], used_by=["drive"]),
+        SetupRequirementSpec(kind="pack", credential_kind="oauth", name="google", provider="google", scopes=["drive"], used_by=["drive"]),
         SetupRequirementSpec(kind="gap", name="MYSTERY", used_by=["drive"], note="nobody declares it"),
     ]
     sources = [FakeSource("d1", "drive", "gdrive"), FakeSource("w1", "waha", "waha", owner="agent-a")]
@@ -104,7 +105,7 @@ def project(tmp_path, monkeypatch):
         return [declared]
 
     async def webapps(_self):
-        return [SimpleNamespace(id="a1", name="site", typeid="micro_app-a1", asset_ref=str(root / "site"))]
+        return [SimpleNamespace(id="a1", name="site", typeid="micro_app-a1", asset_ref=str(root / "site"), setup_skipped=None)]
 
     async def source_step(op, env, *, check, platform):
         """A fake source's own steps hold (its verify passes): the in-process step is the source's business."""
@@ -142,6 +143,10 @@ async def test_the_tree_puts_each_need_under_the_asset_that_needs_it(project):
     assert [g.name for g in tree.gaps] == ["MYSTERY"] and "gap:MYSTERY" not in node
     assert node["asset_setup:waha-container"].trusted is False, "a connector's own wizard is not ours"
     assert [s.ref for s in node["micro_app-a1"].run.steps] == ["micro_app-a1:install", "micro_app-a1:build", "micro_app-a1:start"]
+    assert node["micro_app-a1"].on_load is node["micro_app-a1"].run, (
+        "loading a web app is making sure it is up: the same chain, judged by its checks"
+    )
+    assert node["asset_setup:waha-container"].on_load is None, "a declared node loads only what it declares"
 
 
 @pytest.mark.asyncio
@@ -217,3 +222,30 @@ def test_a_declared_setup_belongs_to_the_asset_folder_that_holds_it():
     assert _holder("/p/agentic-assets/data_driver/waha/agentic-assets/asset_setup/c") == "data_driver:waha"
     assert _holder("/p/agentic-assets/data_source/feed/asset_setup/c") == "data_source:feed"
     assert _holder(str(Path("/p/agentic-assets/asset_setup/c"))) == "project"
+
+
+@pytest.mark.asyncio
+async def test_a_declared_load_wizard_resolves_like_the_other_two(project, monkeypatch):
+    monkeypatch.setattr(AssetSetup, "spec", lambda self: AssetSetupSpec(name="waha-container", run="waha-container", on_load="waha-container"))
+    tree = await ProjectTree(project).load()
+    assert tree.nodes["asset_setup:waha-container"].on_load.name == "waha-container"
+
+
+@pytest.mark.asyncio
+async def test_a_declared_load_wizard_that_is_missing_is_a_problem_too(project, monkeypatch):
+    monkeypatch.setattr(AssetSetup, "spec", lambda self: AssetSetupSpec(name="waha-container", on_load="no-such-warmer"))
+    tree = await ProjectTree(project).load()
+    assert tree.nodes["asset_setup:waha-container"].problem == "waha-container names the wizard 'no-such-warmer', which is not here"
+
+
+@pytest.mark.asyncio
+async def test_a_web_apps_node_alone_derives_from_its_row_without_the_project(project, monkeypatch):
+    """A load reads one node: for a web app nothing of the project is collected."""
+    async def never(*_a, **_k):
+        raise AssertionError("the project tree was built for a one-node load")
+
+    monkeypatch.setattr(project_setup, "collect_requirements", never)
+    app = SimpleNamespace(id="a1", name="site", typeid="micro_app-a1", asset_ref="/p/site", setup_skipped=None,
+                          get_type=lambda: "micro_app")
+    tree = await ProjectTree(project).load_one(app)
+    assert list(tree.nodes) == ["micro_app-a1"] and tree.nodes["micro_app-a1"].on_load is not None

@@ -45,7 +45,7 @@ declaration-withheld field stays hidden even if `_hub_body()` is rewritten,
 while a popped one is hidden only for as long as that line survives:
 
 <!-- pinned:withheld -->
-`asset_occurrences`, `created_by`, `created_date`, `fetched_at`, `fs_storage_mount_path`, `fs_storage_provider`, `host_member_id`, `last_mode`, `last_session_at`, `llm_endpoint_typeid`, `members`, `origin_id`, `presence`, `private_context_entities_`, `private_context_entity_data`, `project_id`, `published`, `remote`, `scope`, `session_code`, `session_count`, `shared_context_entity_data`, `system`, `tags`, `updated_by`, `updated_date`, `visitor_role`
+`asset_occurrences`, `created_by`, `created_date`, `fetched_at`, `fs_storage_mount_path`, `fs_storage_provider`, `host_member_id`, `last_mode`, `last_session_at`, `llm_endpoint_typeid`, `members`, `origin_id`, `presence`, `private_context_entities_`, `private_context_entity_data`, `project_id`, `published`, `remote`, `scope`, `session_code`, `session_count`, `setup_skipped`, `shared_context_entity_data`, `system`, `tags`, `updated_by`, `updated_date`, `visitor_role`
 <!-- pinned:/withheld -->
 
 Note what is in that list: `fs_storage_mount_path` and `fs_storage_provider` —

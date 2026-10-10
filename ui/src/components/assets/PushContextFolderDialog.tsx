@@ -6,6 +6,7 @@ import { useAuth } from '@sdk/react/hooks';
 import { useContext as useDataContext } from '@src/hooks/useContext';
 import { useConversationsForContacts } from '@src/hooks/use-conversations-for-contacts';
 import { useSendToConversation, type SendTarget } from '@src/hooks/use-send-to-conversation';
+import { notifyGitOutcome } from '@src/lib/git-outcome';
 import { notify } from '@src/notifications';
 import { AddressBookButton } from '@src/components/contact-picker/AddressBookButton';
 import { ContactPicker } from '@src/components/contact-picker/ContactPicker';
@@ -33,6 +34,8 @@ interface PushContextFolderDialogProps {
   onOpenChange: (open: boolean) => void;
   /** Basename of the git dependency folder (for titles/labels). */
   folderName: string;
+  /** The dependency folder's repo workdir — where a conflict's resolver runs. */
+  workdir: string;
   /** Current branch, shown in the header line. */
   branch?: string | null;
   /** Scoped project id — anchors the recent-conversation search and new
@@ -59,6 +62,7 @@ export function PushContextFolderDialog({
   open,
   onOpenChange,
   folderName,
+  workdir,
   branch,
   projectId,
   folderTypeId,
@@ -112,12 +116,14 @@ export function PushContextFolderDialog({
     const result = await push();
     if (!result) return;
     if (!result.ok) {
-      setLocalError(result.message);
-      notify.error({ title: t`Push failed`, message: result.message });
+      // The same toast — and on a conflict the same Resolve — as every other push.
+      notifyGitOutcome('push', result, workdir);
+      if (result.kind === 'conflict') onOpenChange(false);
+      else setLocalError(result.message);
       return;
     }
     if (!notifying) {
-      notify.success({ title: result.nothing ? t`Nothing to push` : t`Pushed to remote` });
+      notify.success({ title: result.kind === 'nothing' ? t`Nothing to push` : t`Pushed to remote` });
       onOpenChange(false);
       return;
     }
@@ -144,7 +150,7 @@ export function PushContextFolderDialog({
     });
     if (!convId) return; // sendError renders inline; keep the dialog open.
     notify.success({
-      title: result.nothing ? t`Nothing new to push — message sent` : t`Pushed and message sent`,
+      title: result.kind === 'nothing' ? t`Nothing new to push — message sent` : t`Pushed and message sent`,
     });
     onOpenChange(false);
   };

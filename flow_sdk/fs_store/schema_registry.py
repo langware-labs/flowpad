@@ -315,6 +315,10 @@ class TypeInfo:
     row_derive_fn: Any = field(default=None, compare=False, repr=False, metadata=_MERGE)
     # Optional async projection for process attachment/reveal/detach.
     process_projection: Any = field(default=None, compare=False, repr=False, metadata=_MERGE)
+    # ``async (row) -> DependencyRoots``: what a row of this type puts in context when something depends
+    # on it, and where its own ``flow.json`` lives (``flow_sdk/dependencies/resolve.py``). None: a folder
+    # asset is its own folder, a single-file asset neither.
+    dependency_roots_fn: Any = field(default=None, compare=False, repr=False, metadata=_MERGE)
     # The entity field naming the rows' on-disk layout (``"data_layout"`` for a
     # dataset). Tells the disk serializer this type has layout-written rows,
     # without the serializer ever naming the type.

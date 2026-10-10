@@ -1,13 +1,14 @@
 /**
- * The strip's openers (its `trailing` slot: Start Claude, "+") are the LAST
- * thing in the strip whatever else shows.
+ * The strip's openers (its `trailing` slot: the quick-launch slot, "+") sit
+ * right after the tab row, and Close All is the strip's LAST control.
  *
  * Regression (2026-10-07, live on htab-8): Close All appears at 2+ tabs and
- * used to render AFTER the openers, sliding them left and landing exactly where
- * "Start Claude" had been — so clicking Start Claude twice on the same spot
- * opened a session, then closed every tab. jsdom has no layout, so the
- * invariant is pinned at its source: the openers are the strip's last child in
- * both states, Close All never comes after them.
+ * used to render between the row and the openers, sliding them left and
+ * landing exactly where "Start Claude" had been — so clicking Start Claude
+ * twice on the same spot opened a session, then closed every tab. The fix put
+ * Close All AFTER the openers (2026-10-10): appearing never moves them. jsdom
+ * has no layout, so the invariant is pinned at its source: the openers keep
+ * the same position in both states, and Close All comes after them.
  */
 import { cleanup, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
@@ -29,25 +30,31 @@ const renderStrip = (items: TabStripItem[]) =>
     </MemoryRouter>,
   );
 
-const lastChild = () => screen.getByTestId('strip').lastElementChild;
+const strip = () => screen.getByTestId('strip');
+const openerIndex = () =>
+  Array.from(strip().children).findIndex((child) => child.contains(screen.getByTestId('opener')));
 
-describe('the strip openers stay pinned at its end', () => {
+describe('the strip openers stay put; Close All is last', () => {
   afterEach(cleanup);
 
-  it('one tab: no Close All, openers last', () => {
+  it('one tab: no Close All, openers right after the tab row', () => {
     renderStrip([{ key: 'a', title: 'Alpha' }]);
     expect(screen.queryByTestId('close-all-tabs-button')).toBeNull();
-    expect(lastChild()?.contains(screen.getByTestId('opener'))).toBe(true);
+    expect(openerIndex()).toBe(1);
   });
 
-  it('two tabs: Close All appears BEFORE the openers, never after', () => {
+  it('two tabs: Close All appears AFTER the openers, which do not move', () => {
     renderStrip([
       { key: 'a', title: 'Alpha' },
       { key: 'b', title: 'Bravo' },
     ]);
     const closeAll = screen.getByTestId('close-all-tabs-button');
     const opener = screen.getByTestId('opener');
-    expect(lastChild()?.contains(opener)).toBe(true);
-    expect(closeAll.compareDocumentPosition(opener) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(openerIndex()).toBe(1);
+    expect(strip().lastElementChild?.contains(closeAll)).toBe(true);
+    expect(opener.compareDocumentPosition(closeAll) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // The same shape as "+" (h-7, rounded, bordered) and a clear gap from the openers.
+    expect(closeAll.className).toMatch(/\bh-7\b/);
+    expect(closeAll.className).toMatch(/\bms-3\b/);
   });
 });

@@ -1,5 +1,6 @@
+import { RuntimeStrip } from '@src/components/top-nav-bar/RuntimeStrip';
 import { cloudManager } from '@sdk';
-import { formatGitOrigin, gitOriginCloneUrl, isGitOrigin } from '@sdk';
+import { formatGitOrigin, gitOriginCloneUrl } from '@sdk';
 import { Button } from '@src/components/ui/button';
 import { plannedSteps, useSandboxes } from '@src/hooks/use-sandboxes';
 import { StepList } from '@src/components/ui/step-list';
@@ -62,18 +63,19 @@ function takeLaunchIntent(link: string): boolean {
 }
 
 /**
- * `/launch?repo=<git url>` or `/launch?agent=<agent id>` — the one-click entry point
+ * `/launch?repo=<git url>`, `/launch?agent=<agent id>` or `/launch?project=<project id>` — the one-click entry point
  * for "try this repo" / "try this agent".
  *
- * The two are different pages behind one route. An agent link goes to
- * `AgentLaunchLanding`: sign in, then straight into a sandbox, no approve step.
+ * The two are different pages behind one route. An agent or project link goes to
+ * `AgentLaunchLanding`: sign in, pick a target for a controller, then the desktop or a sandbox.
  * Everything else — a repo link, and a link that is not valid as either — stays on
  * the repo card below. Decided from the raw query (`parseLaunchParams`), before any
  * hook that only one of the two pages needs.
  */
 export default function LaunchLanding() {
   const [params] = useSearchParams();
-  return parseLaunchParams(params).kind === 'agent' ? <AgentLaunchLanding params={params} /> : <RepoLaunchLanding />;
+  const kind = parseLaunchParams(params).kind;
+  return kind === 'agent' || kind === 'project' ? <AgentLaunchLanding params={params} /> : <RepoLaunchLanding />;
 }
 
 /**
@@ -128,10 +130,7 @@ function RepoLaunchLanding() {
   const { currentUser } = useAuth();
   const signedIn = !!currentUser;
 
-  const { target, gitOrigin: launchOrigin } = useLaunchTarget(params, signedIn);
-  // This page only launches repo links, whose origin is always a git one; a hub-hosted
-  // (`hub_repo`) origin belongs to an agent link, which `AgentLaunchLanding` handles.
-  const gitOrigin = isGitOrigin(launchOrigin) ? launchOrigin : null;
+  const { target, gitOrigin } = useLaunchTarget(params, signedIn);
   const name = (params.get('name') || gitOrigin?.name || '').trim();
   const link = useMemo(() => linkIdentity(params), [params]);
 
@@ -208,10 +207,12 @@ function RepoLaunchLanding() {
 
   const invalidMessage =
     target.kind === 'invalid' && target.reason === 'both'
-      ? t`This link names both a repository and an agent. Ask for a link that names just one.`
+      ? t`This link names more than one thing to launch. Ask for a link that names just one.`
       : target.kind === 'invalid' && target.reason === 'bad-agent-id'
         ? t`This link doesn't point at an agent.`
-        : null;
+        : target.kind === 'invalid' && target.reason === 'bad-project-id'
+          ? t`This link doesn't point at a project.`
+          : null;
 
   let description: ReactNode = null;
   if (invalidMessage) {
@@ -235,60 +236,62 @@ function RepoLaunchLanding() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background p-6">
-      <div className="w-full max-w-md">
-        {declined ? (
-          <p className="text-center text-sm text-muted-foreground">
-            <Trans>Nothing was launched. You can close this tab.</Trans>
-          </p>
-        ) : (
-          <div className="rounded-lg border border-border p-5 text-start" data-testid="launch-panel">
-            <div className="mb-1 flex items-center justify-between gap-2">
-              <div className="flex items-center gap-2">
-                <ExternalLink className="h-4 w-4 text-muted-foreground" />
-                <h1 className="text-sm font-semibold">
-                  <Trans>External link</Trans>
-                </h1>
-              </div>
-              {!started && (
-                <Button variant="ghost" size="sm" onClick={() => setDeclined(true)} data-testid="launch-cancel">
-                  <Trans>Cancel</Trans>
-                </Button>
-              )}
-            </div>
-
-            {description && <p className="mb-3 text-xs text-muted-foreground">{description}</p>}
-
-            {invalidMessage && (
-              <p
-                className="mb-4 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs"
-                data-testid="launch-invalid-link"
-              >
-                {invalidMessage}
-              </p>
-            )}
-
-            {gitOrigin ? (
-              <div className="mb-4 rounded-md border border-border bg-muted/40 px-3 py-2.5">
-                <div className="flex items-center gap-1.5 text-sm font-medium">
-                  <GitBranch className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                  <span className="truncate" data-testid="launch-repo">
-                    {formatGitOrigin(gitOrigin)}
-                  </span>
+    <div className="flex min-h-screen flex-col bg-background">
+      <RuntimeStrip />
+      <div className="flex flex-1 items-center justify-center p-6">
+        <div className="w-full max-w-md">
+          {declined ? (
+            <p className="text-center text-sm text-muted-foreground">
+              <Trans>Nothing was launched. You can close this tab.</Trans>
+            </p>
+          ) : (
+            <div className="rounded-lg border border-border p-5 text-start" data-testid="launch-panel">
+              <div className="mb-1 flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <ExternalLink className="h-4 w-4 text-muted-foreground" />
+                  <h1 className="text-sm font-semibold">
+                    <Trans>External link</Trans>
+                  </h1>
                 </div>
-                <p className="mt-1 break-all font-mono text-[11px] text-muted-foreground">
-                  {gitOriginCloneUrl(gitOrigin)}
-                </p>
+                {!started && (
+                  <Button variant="ghost" size="sm" onClick={() => setDeclined(true)} data-testid="launch-cancel">
+                    <Trans>Cancel</Trans>
+                  </Button>
+                )}
               </div>
-            ) : (
-              !invalidMessage && (
-                <p className="mb-4 break-all rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 font-mono text-xs">
-                  {params.get('repo') || t`(no repo given)`}
-                </p>
-              )
-            )}
 
-            {/* Phase 1: full-width like the phase 3 button, and permanent like
+              {description && <p className="mb-3 text-xs text-muted-foreground">{description}</p>}
+
+              {invalidMessage && (
+                <p
+                  className="mb-4 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs"
+                  data-testid="launch-invalid-link"
+                >
+                  {invalidMessage}
+                </p>
+              )}
+
+              {gitOrigin ? (
+                <div className="mb-4 rounded-md border border-border bg-muted/40 px-3 py-2.5">
+                  <div className="flex items-center gap-1.5 text-sm font-medium">
+                    <GitBranch className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                    <span className="truncate" data-testid="launch-repo">
+                      {formatGitOrigin(gitOrigin)}
+                    </span>
+                  </div>
+                  <p className="mt-1 break-all font-mono text-[11px] text-muted-foreground">
+                    {gitOriginCloneUrl(gitOrigin)}
+                  </p>
+                </div>
+              ) : (
+                !invalidMessage && (
+                  <p className="mb-4 break-all rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 font-mono text-xs">
+                    {params.get('repo') || t`(no repo given)`}
+                  </p>
+                )
+              )}
+
+              {/* Phase 1: full-width like the phase 3 button, and permanent like
                 it — present for the whole run, greyed rather than removed once
                 the pipeline starts, so no phase ever vacates its slot. Disabled
                 on `started`, which also guards against a second click starting
@@ -298,50 +301,51 @@ function RepoLaunchLanding() {
                 a popup sign-in `signedIn` flips true in place, so the label
                 moves to the signed-in wording at the same moment the resume
                 effect greys it — both now true. */}
-            {showApprove && (
-              <Button
-                size="sm"
-                onClick={signedIn ? onLaunch : onSignIn}
-                disabled={started}
-                className="mb-3 w-full gap-1.5"
-                data-testid="launch-approve"
-              >
-                {signedIn ? (
-                  <Trans>Already signed in, launch sandbox</Trans>
-                ) : (
-                  <>
-                    <LogIn className="h-3.5 w-3.5" />
-                    <Trans>Sign In</Trans>
-                  </>
-                )}
-              </Button>
-            )}
+              {showApprove && (
+                <Button
+                  size="sm"
+                  onClick={signedIn ? onLaunch : onSignIn}
+                  disabled={started}
+                  className="mb-3 w-full gap-1.5"
+                  data-testid="launch-approve"
+                >
+                  {signedIn ? (
+                    <Trans>Already signed in, launch sandbox</Trans>
+                  ) : (
+                    <>
+                      <LogIn className="h-3.5 w-3.5" />
+                      <Trans>Sign In</Trans>
+                    </>
+                  )}
+                </Button>
+              )}
 
-            {/* Phase 2: every setup row visible from the very first paint —
+              {/* Phase 2: every setup row visible from the very first paint —
                 not revealed a piece at a time. An untouched row is already
                 `idle` (grey, no checkmark), which is what makes "later phases
                 wait for earlier ones" visible without a separate locked style. */}
-            {setupSteps && <StepList steps={setupSteps} testIdPrefix="launch" className="flex flex-col gap-1.5" />}
+              {setupSteps && <StepList steps={setupSteps} testIdPrefix="launch" className="flex flex-col gap-1.5" />}
 
-            {/* Phase 3. Visible and disabled from the first paint too, same
+              {/* Phase 3. Visible and disabled from the first paint too, same
                 reasoning as every row above it: a control that only appears once
                 it works reads as a surprise, not as the next step. */}
-            {gitOrigin &&
-              (launchUrl ? (
-                <Button asChild size="sm" className="mt-3 w-full gap-1.5">
-                  <a href={launchUrl} target="_blank" rel="noreferrer" data-testid="launch-open">
+              {gitOrigin &&
+                (launchUrl ? (
+                  <Button asChild size="sm" className="mt-3 w-full gap-1.5">
+                    <a href={launchUrl} target="_blank" rel="noreferrer" data-testid="launch-open">
+                      <ExternalLink className="h-3.5 w-3.5" />
+                      <Trans>Open the sandbox</Trans>
+                    </a>
+                  </Button>
+                ) : (
+                  <Button size="sm" className="mt-3 w-full gap-1.5" disabled data-testid="launch-open-pending">
                     <ExternalLink className="h-3.5 w-3.5" />
                     <Trans>Open the sandbox</Trans>
-                  </a>
-                </Button>
-              ) : (
-                <Button size="sm" className="mt-3 w-full gap-1.5" disabled data-testid="launch-open-pending">
-                  <ExternalLink className="h-3.5 w-3.5" />
-                  <Trans>Open the sandbox</Trans>
-                </Button>
-              ))}
-          </div>
-        )}
+                  </Button>
+                ))}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

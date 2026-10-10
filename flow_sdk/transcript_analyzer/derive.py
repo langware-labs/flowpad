@@ -9,11 +9,12 @@ parsers get it for free and there is exactly one rule to test.
 
 Two seams call this:
 
-* history — ``AgentTranscriptFile._refold`` (runs on every delta too);
+* history — ``AgentTranscriptFile._refold`` (the full list on the first read,
+  only the new entries on a delta);
 * live — the per-worker ``event_to_flowdata`` converters.
 
 Derivation must stay **pure and idempotent**: re-deriving an already-derived
-entry returns it unchanged, so a refold over the full retained list never
+entry returns it unchanged, so a full refold over the retained list never
 compounds.
 """
 
@@ -80,6 +81,7 @@ _FLOW_VERBS = frozenset(
         "upgrade",
         "uninstall",
         "wizard",
+        "workspace",
     }
 )
 
@@ -110,8 +112,7 @@ def derive_entry(entry: TranscriptEntry) -> TranscriptEntry:
 
     The live path converts one worker event into one frame, so it wants the
     entry a chip should render, not the whole chain. The recorded transcript
-    still carries both, because ``derive_entries`` runs additively over the
-    retained list on every refold.
+    still carries both, because the history fold derives additively.
     """
     from .derivation.registry import _derive_from  # noqa: PLC0415 — cycle
 
@@ -178,9 +179,9 @@ def parse_flow_invocation(command: str) -> dict[str, Any] | None:
     preceded by ``VAR=value`` assignments) followed by a known verb counts, so
     ``./flow``, ``flowctl`` and ``echo flow show`` are left alone.
     """
-    # Cheap guard before the lexer: refolds re-derive the whole retained list on
-    # every delta, and shlex.split is a real scan of what can be a multi-KB
-    # heredoc. No ``flow`` substring, no possible flow invocation.
+    # Cheap guard before the lexer: this runs once per shell command on the
+    # first full parse, and shlex.split is a real scan of what can be a
+    # multi-KB heredoc. No ``flow`` substring, no possible flow invocation.
     if "flow" not in command:
         return None
     try:

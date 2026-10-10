@@ -47,9 +47,15 @@ export interface DockNavigationAction extends Omit<DockNavigationActionSpec, 'na
   name: string;
 }
 
+/** The fields an asset's target is found from — any row that names an asset carries them. */
+export type AssetRow = Pick<SearchRow, 'record_id' | 'record_type' | 'asset_ref'>;
+
 export interface RecordTypeNav {
   /** Sync primary click — produces a DockPointer directly */
   dockPointer?: (result: SearchRow) => DockPointer | null;
+  /** Async pointer — the target is a URL, but finding it needs a lookup (a dataset's editor).
+   *  Preferred over `primaryAction`: every surface (record list, asset tree) can open it. */
+  resolvePointer?: (asset: AssetRow) => Promise<DockPointer | null>;
   /** Async primary click — use when navigation requires entity lookup */
   primaryAction?: (result: SearchRow, navigation: NavigationActions) => void | Promise<void>;
   /** Extra reachability check for imperative arms whose target fields are optional. */
@@ -115,7 +121,7 @@ export function resultTypeId(
  * resolves by id with no path discovery — relocation-proof and instant. Falls
  * back to the vfs/path form only when no usable id is present.
  */
-function assetEditorPointer(assetType: string, r: SearchRow): DockPointer | null {
+function assetEditorPointer(assetType: string, r: AssetRow): DockPointer | null {
   const tid = resultTypeId(r);
   if (tid) return DockPointer.forAssetEditorByTypeId(assetType, tid);
   return r.asset_ref ? DockPointer.forAssetEditor(assetType, r.asset_ref) : null;
@@ -125,7 +131,7 @@ function assetEditorPointer(assetType: string, r: SearchRow): DockPointer | null
  * navigation arms below still win; this keeps new editable asset types from
  * becoming inert search/recent-activity rows just because this dispatcher was
  * not updated in lockstep with the editor registry. */
-function registeredAssetPointer(result: SearchRow): DockPointer | null {
+function registeredAssetPointer(result: AssetRow): DockPointer | null {
   return editorForType(result.record_type) ? assetEditorPointer(result.record_type, result) : null;
 }
 
@@ -174,15 +180,7 @@ export const RECORD_TYPE_NAV: Partial<Record<string, RecordTypeNav>> = {
   // declared kind, else the generic dataset editor (`flow_sdk/builtin/faas/editors.py`). No editor at
   // all falls back to the folder, like any asset without an editor.
   dataset: {
-    primaryAction: async (r, navigation) => {
-      const editor = await subjectEditorPointer(`dataset-${r.record_id}`);
-      if (editor) {
-        navigation.openDock(editor);
-        return;
-      }
-      const fallback = registeredAssetPointer(r);
-      if (fallback) navigation.openDock(fallback);
-    },
+    resolvePointer: async (r) => (await subjectEditorPointer(`dataset-${r.record_id}`)) ?? registeredAssetPointer(r),
   },
   bookmark: {
     isNavigable: (r) => !!r.session_id,
@@ -449,12 +447,27 @@ export function getDockPointerForResult(result: SearchRow): DockPointer | null {
 export function isResultNavigable(result: SearchRow): boolean {
   const nav = RECORD_TYPE_NAV[result.record_type];
   if (nav?.isNavigable && !nav.isNavigable(result)) return false;
-  if (nav?.primaryAction) return true;
+  if (nav?.primaryAction || nav?.resolvePointer) return true;
   if (nav?.dockPointer?.(result)) return true;
   return registeredAssetPointer(result) != null;
 }
 
-/** Navigate to a result — handles both sync dockPointer and async primaryAction */
+/** Whether a type's assets open through a lookup (`assetTargetLookup`) — openable with no static editor. */
+export function opensThroughLookup(recordType: string): boolean {
+  return !!RECORD_TYPE_NAV[recordType]?.resolvePointer;
+}
+
+/**
+ * Where an asset opens when its type has to look the target up first (a dataset opens in its
+ * editor app, `RecordTypeNav.resolvePointer`); null for a type whose sync pointer stands. Asset
+ * rows (the Assets page, the asset trees) open through this so every surface lands alike.
+ */
+export function assetTargetLookup(asset: AssetRow): (() => Promise<DockPointer | null>) | null {
+  const resolve = RECORD_TYPE_NAV[asset.record_type]?.resolvePointer;
+  return resolve ? () => resolve(asset) : null;
+}
+
+/** Navigate to a result through its type's arm: primaryAction, resolvePointer, or the sync dockPointer */
 export async function navigateToResult(result: SearchRow, navigation: NavigationActions): Promise<void> {
   const nav = RECORD_TYPE_NAV[result.record_type];
   if (nav?.isNavigable && !nav.isNavigable(result)) return;
@@ -462,7 +475,7 @@ export async function navigateToResult(result: SearchRow, navigation: Navigation
     await nav.primaryAction(result, navigation);
     return;
   }
-  const dock = nav?.dockPointer?.(result) ?? registeredAssetPointer(result);
+  const dock = nav?.resolvePointer ? await nav.resolvePointer(result) : getDockPointerForResult(result);
   if (dock) navigation.openDock(dock);
 }
 

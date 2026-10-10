@@ -11,7 +11,6 @@ TypeId format: ``shell-<uuid>``.
 from __future__ import annotations
 
 import asyncio
-import collections
 import contextlib
 import logging
 import os
@@ -34,6 +33,7 @@ from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 from flow_sdk.fs_store.fs_record import FSRecord
 from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccessResponse
+from flow_sdk.stream_inbox._locks import keyed_loop_lock, new_registry
 from flow_sdk.utils.serialization import now_epoch_ms
 
 if TYPE_CHECKING:
@@ -54,8 +54,10 @@ logger = logging.getLogger(__name__)
 # can't both slip past the "already alive?" check and each ``create_pty`` — which
 # would leak a second OS PTY over the same shell. Mirrors ``_OPEN_LOCKS`` in
 # agentic_process.py. Process-local (PTYs are process-local), so no cross-process
-# coordination is needed.
-_START_PTY_LOCKS: dict[str, asyncio.Lock] = collections.defaultdict(asyncio.Lock)
+# coordination is needed. Weak-valued (``stream_inbox/_locks``): a shell's lock
+# exists only while a ``start_pty`` holds or awaits it, so the registry does not
+# keep one lock per shell ever opened.
+_START_PTY_LOCKS = new_registry()
 
 
 async def _next_unseen_pty_output(
@@ -622,7 +624,7 @@ class Shell(Entity):
         if not await self.ensure_live_compute_node_binding():
             raise RuntimeError(f"Compute node not found for shell session ({self._compute_node_lookup_hint()})")
 
-        async with _START_PTY_LOCKS[self.id]:
+        async with keyed_loop_lock(_START_PTY_LOCKS, str(self.id)):
             cn = self.compute_node
             existing = cn.get_pty(self.id)
 

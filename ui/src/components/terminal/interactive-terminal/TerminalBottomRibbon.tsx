@@ -6,7 +6,7 @@ import { Button } from '@src/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
 import { cn } from '@src/lib/utils';
-import { BookMarked, ChevronDown, FileText, Layers } from 'lucide-react';
+import { BookMarked, ChevronDown, FileText, Monitor } from 'lucide-react';
 import { DisplayHistoryList } from '@src/pages/flow-page/display-history-button';
 import { latestPerTarget } from '@src/pages/flow-page/display-stack';
 import { PromptLibraryMenu } from '@src/components/prompt-library/PromptLibraryMenu';
@@ -301,7 +301,7 @@ const ShownChip: React.FC<{
           title={t`Everything this run has shown`}
           className={cn(SHOWN_CHIP_CLASSES, 'gap-1.5 px-2 text-[11px]')}
         >
-          <Layers className="h-3.5 w-3.5" />
+          <Monitor className="h-3.5 w-3.5" />
           <span className="tabular-nums">{latestPerTarget(shown).length}</span>
         </Button>
       </PopoverTrigger>

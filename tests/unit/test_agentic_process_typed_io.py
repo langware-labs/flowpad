@@ -205,6 +205,7 @@ async def test_an_invalid_output_is_not_registered(initialize_test_db, mock, tmp
 
 
 @pytest.mark.asyncio
+@pytest.mark.usefixtures("no_shipped_layers")
 async def test_the_io_block_is_its_own_part_of_the_system_prompt(tmp_path):
     proc = AgenticProcess(workdir=str(tmp_path), pty_mode=False, context_data={"instructions": "Be brief."})
     process_io.prepare_io(proc)
@@ -212,8 +213,11 @@ async def test_the_io_block_is_its_own_part_of_the_system_prompt(tmp_path):
     process_io.prepare_io(proc, input=CV, output_spec=CVSpec)
     process_io.prepare_io(proc, input=CV, output_spec=CVSpec)
     assert proc.context_data["instructions"] == "Be brief.", "the caller's instructions are never edited"
-    told = await proc.resolve_system_instructions()
-    assert told.startswith("Be brief.") and told.count("Your result MUST be") == 1
+    from flow_sdk.builtin.agentic_process.system_prompt import LayerKey, compose_layers
+
+    layers = await compose_layers(proc)
+    assert [layer.key for layer in layers] == [LayerKey.INSTRUCTIONS, LayerKey.IO]
+    assert layers[0].text == "Be brief." and layers[1].text.count("Your result MUST be") == 1
 
 
 # ── Agent.launch: the same contract, and the agent's declared shapes ────────────────────────────

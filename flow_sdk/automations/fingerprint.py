@@ -23,6 +23,7 @@ BEHAVIOUR_FIELDS: tuple[str, ...] = (
     "tag_pattern", "tag_target", "tag_scope", "confirm", "fire_once",
     "mask", "hook_events",
     "instruction", "workdir",
+    "gate", "then",
 )
 
 

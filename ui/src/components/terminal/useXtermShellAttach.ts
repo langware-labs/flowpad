@@ -139,7 +139,12 @@ export function useXtermShellAttach(
           historyKb: history ? history.length / 1024 : 0,
           chunks: chunks.length,
         };
-        toplog.log('pty', `on_connected done shell=${shellId} source=${source} gen=${gen} ms=${info.ms.toFixed(0)} chunks=${info.chunks}`);
+        // `trimmed` above `history_last_seq` means output fell out of the chunk window before the
+        // recording covered it — the only case the window and the recording together miss.
+        toplog.log(
+          'pty',
+          `on_connected done shell=${shellId} source=${source} gen=${gen} ms=${info.ms.toFixed(0)} chunks=${info.chunks} trimmed=${shell.ptyConnection.trimmedThroughSeq} history_last_seq=${historyLastSeq}`,
+        );
         cb.current.onAttached?.(info);
       })();
     };

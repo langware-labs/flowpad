@@ -14,6 +14,16 @@
  * re-triggers on every reload.
  */
 
+/**
+ * The `?action=` values a deep link carries — "someone sent you here to do X". A load carrying
+ * one belongs to its handler (`IncomingDeepLink`): no ambient redirect may run first.
+ */
+export const DeepLinkAction = { OPEN: 'open', LAUNCH: 'launch' } as const;
+
+export function isDeepLinkAction(action: string | null): boolean {
+  return Object.values(DeepLinkAction).includes(action as (typeof DeepLinkAction)[keyof typeof DeepLinkAction]);
+}
+
 /** The params of the inbound URL, read but not consumed. */
 export function inboundParams(url: string = window.location.href): URLSearchParams {
   return new URL(url, window.location.origin).searchParams;

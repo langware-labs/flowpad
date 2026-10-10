@@ -2,17 +2,17 @@ import { OpenProjectComponent } from '@src/components/open-project-component/ope
 import { normalizePath, useProjectOpener } from '@src/components/open-project-component/use-open-project';
 import { NewProjectDialog, NewProjectFromGitDialog, useGitCloneDialogSubmit } from '@src/components/project-selector';
 import { notify } from '@src/notifications';
-import { dataContext } from '@sdk';
 import { isHubOnly } from '@src/navigation/hub-runtime';
 import { DesktopTile } from '@src/components/quick-create/QuickCreatePanel';
 import { useProjects } from '@src/hooks/use-projects';
 import { FolderOpen, FolderPlus, FolderSearch, GitBranch, Loader2 } from 'lucide-react';
-import { useMemo, useState, type ComponentType } from 'react';
+import { useState, type ComponentType } from 'react';
 import { useLingui } from '@lingui/react/macro';
+import { useActiveWorkspace } from '@src/hooks/use-workspaces';
 
 /**
  * Compact outlined-button presentation — the Vibe hero's under-input strip,
- * read as one sentence: "Select project [folder] [new] [select] [git]".
+ * read as one sentence: "Select project [new] [folder] [existing] [git]".
  * Bordered, filled and foreground-coloured so each action reads as a button,
  * not as muted hint text.
  */
@@ -58,7 +58,7 @@ function ActionButton({
 }
 
 /**
- * The project-actions row — Open folder / Open existing project / New project /
+ * The project-actions row — New project / Open folder / Open existing project /
  * Open from git — plus the three dialogs they drive.
  *
  * Two presentations of the SAME actions, chosen by the host: `tiles` (the
@@ -96,7 +96,8 @@ export function ProjectActionsRow({
   const [isNewProjectOpen, setIsNewProjectOpen] = useState(false);
   const [isGitProjectOpen, setIsGitProjectOpen] = useState(false);
   const [isOpeningFolder, setIsOpeningFolder] = useState(false);
-  const defaultWorkspacePath = useMemo(() => dataContext.bootstrapInfo?.desktop_info?.paths?.workspace || '', []);
+  // New projects go in the ACTIVE workspace's folder (the default root when there is one workspace).
+  const { root: defaultWorkspacePath } = useActiveWorkspace();
   const { projects } = useProjects();
   const hasProjects = !!projects && projects.length > 0;
 
@@ -137,6 +138,14 @@ export function ProjectActionsRow({
             {t`Select project`}
           </span>
         )}
+        <ActionButton
+          variant={variant}
+          Icon={FolderPlus}
+          label={t`New project`}
+          shortLabel={t`new`}
+          onClick={() => setIsNewProjectOpen(true)}
+          testId="vibe-new-project"
+        />
         {canPickHostFolder && (
           <ActionButton
             variant={variant}
@@ -148,20 +157,12 @@ export function ProjectActionsRow({
             testId="vibe-open-project-folder"
           />
         )}
-        <ActionButton
-          variant={variant}
-          Icon={FolderPlus}
-          label={t`New project`}
-          shortLabel={t`new`}
-          onClick={() => setIsNewProjectOpen(true)}
-          testId="vibe-new-project"
-        />
         {hasProjects && (
           <ActionButton
             variant={variant}
             Icon={FolderSearch}
             label={t`Open project`}
-            shortLabel={t`select`}
+            shortLabel={t`existing`}
             onClick={() => setIsProjectModalOpen(true)}
             testId="vibe-open-existing-project"
           />

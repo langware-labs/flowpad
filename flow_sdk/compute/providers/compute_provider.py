@@ -118,7 +118,10 @@ class ComputeProvider(ABC):
 
     def __init__(self):
         """Initialize the compute provider."""
-        self.running_commands: dict[str, CLICommand] = {}
+        # No registry of commands: the CLICommand a provider returns is the only
+        # handle anyone uses, and a per-process dict keyed by a one-time uuid
+        # would pin every command's output and queues for the life of the
+        # backend.
         self.default_working_dir: str = "."
 
     @property

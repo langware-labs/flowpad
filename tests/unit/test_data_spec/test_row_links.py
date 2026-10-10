@@ -350,3 +350,98 @@ async def test_a_hidden_file_dropped_in_a_row_does_not_move_its_version(crm):
     (after,) = companies.read_rows()
     assert after.version == before.version
     await companies.put("acme", {"input": {"name": "Acme Inc"}}, expected=before.version)
+
+
+# ── which datasets can link to a kind, and deleting many rows at once ─────────
+
+
+def test_only_the_datasets_whose_schema_links_to_a_kind_are_its_linkers(crm):
+    from flow_sdk.datasets.links import linkers_of
+
+    root, companies, leads = crm
+    ns = companies.row_kind.split("--")[1]
+    notes = _dataset(root, "notes", f"--{ns}--.crm.note")
+    names = lambda kind: [f.name for f in linkers_of(kind, root)]   # noqa: E731
+    assert names(companies.row_kind) == ["leads"]              # a lead links to a company
+    assert names(leads.row_kind) == ["leads"]                  # ... and to a lead (`about`)
+    assert names(notes.row_kind) == ["leads"]                  # a lead HOLDS notes, so it can hold a ref to one
+    assert names(f"--{ns}--.crm.nobody") == []
+
+
+def test_a_dataset_whose_kind_is_not_registered_may_link_to_anything(crm):
+    from flow_sdk.datasets.links import linkers_of
+
+    root, companies, _ = crm
+    _dataset(root, "mystery", "--nobody--.un.registered")
+    assert [f.name for f in linkers_of(companies.row_kind, root)] == ["leads", "mystery"]
+
+
+def test_a_dataset_reaching_a_kind_through_another_kind_is_its_linker_too(crm):
+    from flow_sdk.datasets.links import linkers_of
+    from flow_sdk.schema.data_spec.declared import load_root
+
+    root, companies, leads = crm
+    ns = companies.row_kind.split("--")[1]
+    _schema(root, ns, "crm.deal", {"lead": {"shape": "crm.lead", "description": "Whose deal."}})
+    assert not any(load_root(root).values())
+    _dataset(root, "deals", f"--{ns}--.crm.deal")
+    assert [f.name for f in linkers_of(companies.row_kind, root)] == ["deals", "leads"]   # a deal's lead names a company
+    assert [f.name for f in linkers_of(f"--{ns}--.crm.deal", root)] == []
+
+
+async def test_deleting_a_row_nothing_can_link_to_reads_no_other_row(crm, monkeypatch):
+    from flow_sdk.builtin.dataset import Dataset
+
+    root, companies, leads = crm
+    await companies.append([{"key": "acme", "input": {"name": "Acme"}}])
+    ns = companies.row_kind.split("--")[1]
+    notes = _dataset(root, "notes", f"--{ns}--.crm.note")
+    _schema(root, ns, "crm.tag", {"name": {"shape": "string", "description": "A tag."}})
+    from flow_sdk.schema.data_spec.declared import load_root
+    assert not any(load_root(root).values())
+    tags = _dataset(root, "tags", f"--{ns}--.crm.tag")
+    await tags.append([{"key": f"t{n}", "input": {"name": f"T{n}"}} for n in range(5)])
+    read = []
+    monkeypatch.setattr(Dataset, "read_lenient", lambda self: read.append(self._folder().name) or ([], []))
+    assert tags.delete_rows(["t0", "t1", "t2"]) == ["t0", "t1", "t2"]
+    assert read == []                                           # no schema links to a tag: nothing is scanned
+    companies.delete_rows(["acme"])
+    assert read == ["leads"]                                    # one read of the one dataset that can, per CALL
+    assert notes.rows_and_problems() == ([], [])
+
+
+async def test_delete_rows_is_all_or_nothing(crm):
+    from flow_sdk.builtin.dataset import ConflictError, LinkError
+
+    _, companies, leads = crm
+    ids = await companies.append([{"key": k, "input": {"name": k}} for k in ("acme", "bolt", "core")])
+    await leads.append([{"key": "dana", "input": {"name": "Dana", "company": companies.ref_of(ids[1]), "past": [], "notes": []}}])
+    keys = lambda: sorted(r.key for r in companies.read_rows())   # noqa: E731
+    with pytest.raises(LinkError, match=f"bolt: used by {leads.row_kind} dana"):
+        companies.delete_rows(["acme", "bolt", "core"])
+    with pytest.raises(LookupError, match="ghost"):
+        companies.delete_rows(["acme", "ghost"])
+    with pytest.raises(ConflictError, match="core"):
+        companies.delete_rows(["acme", "core"], expected={"core": "0" * 16})
+    assert keys() == ["acme", "bolt", "core"]                    # every refusal removed nothing
+    seen = companies.example("core")["version"]
+    assert companies.delete_rows(["acme", "core", "acme"], expected={"core": seen}) == ["acme", "core"]
+    assert keys() == ["bolt"]
+
+
+async def test_rows_deleted_together_do_not_hold_each_other_back(crm):
+    from flow_sdk.builtin.dataset import LinkError
+
+    _, _, leads = crm
+    (dana,) = await leads.append([{"key": "dana", "input": {"name": "Dana", "past": [], "notes": []}}])
+    await leads.append([{"key": "eli", "input": {"name": "Eli", "about": leads.ref_of(dana), "past": [], "notes": []}}])
+    with pytest.raises(LinkError, match="eli"):
+        leads.delete_rows(["dana"])
+    assert leads.delete_rows(["dana", "eli"]) == ["dana", "eli"]
+    assert leads.read_rows() == []
+
+
+async def test_a_kind_links_to_itself_in_a_namespaced_project(crm):
+    _, _, leads = crm
+    (dana,) = await leads.append([{"key": "dana", "input": {"name": "Dana", "past": [], "notes": []}}])
+    assert leads.check({"input": {"name": "Eli", "about": leads.ref_of(dana), "past": [], "notes": []}}) == []

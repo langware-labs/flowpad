@@ -11,8 +11,8 @@ places that answered these questions one at a time cannot disagree:
 | ``credential:<name>`` | — | ask each missing value → ``credentials set`` ✓ ``credentials check`` (same) |
 | ``data_source-<id>`` | the connections and credentials it needs, then its last setup stage | — |
 | ``stage:<source>:<wizard>`` | the stage before it (a stage is never set up before the one it follows) | the driver's stage wizard, FOR the source — recorded where the stage list reads it |
-| ``micro_app-<id>`` | — | install → build → start (``webapp_setup``), each with its own check |
-| ``asset_setup:<name>`` | its declared children | its declared ``prepare`` / ``run`` wizards |
+| ``micro_app-<id>`` | — | install → build → start (``webapp_setup``), each with its own check; its ``on_load`` is the same chain |
+| ``asset_setup:<name>`` | its declared children | its declared ``prepare`` / ``run`` wizards (and ``on_load``, run on display — ``core/setup/load``) |
 
 A declared ``asset_setup`` attaches to the node it is for: its ``subject`` (a node id, or
 ``data_driver:<name>`` for every source of that driver), else the asset whose folder holds it — so a
@@ -21,6 +21,7 @@ connector ships the setup of what it needs (WAHA's container) inside its own fol
 
 from __future__ import annotations
 
+import asyncio
 import dataclasses
 import logging
 from pathlib import Path
@@ -116,6 +117,8 @@ class ProjectTree:
         for req in requirements:
             if req.kind == REQUIREMENT_GAP:
                 continue  # nobody's to run: reported beside the tree, never a node that blocks it
+            if not req.required and req.skipped is None:
+                continue  # optional: set up from its own page when wanted, never a node a project waits on
             node_id = self._requirement_node(req)
             users = [who for who in req.used_by if who in source_names]
             for who in users:
@@ -135,14 +138,25 @@ class ProjectTree:
         )
         return self
 
+    def _skipped(self, node_id: str, label: str, mark) -> bool:
+        """A node skipped here (``mark`` set) settles SKIPPED: nothing of it compiles or runs."""
+        if mark is None:
+            return False
+        note = str(getattr(mark, "note", "") or "").strip()
+        detail = f"skipped on this machine — {note}" if note else "skipped on this machine"
+        self.nodes[node_id] = SetupNode(id=node_id, label=label, skipped=detail)
+        return True
+
     def _requirement_node(self, req) -> str:
         from flow_sdk.builtin.project_setup import compile_setup  # noqa: PLC0415
 
         node_id = requirement_node_id(req)
         if node_id not in self.nodes:
+            label = req.title or req.name
+            if self._skipped(node_id, label, req.skipped):
+                return node_id
             wizard, ops = compile_setup(self.pid, [req], ai=self.ai)
             self.ops.update(ops)
-            label = req.title or req.name
             self.nodes[node_id] = SetupNode(
                 id=node_id, label=label,
                 run=wizard.model_copy(update={"name": node_id, "label": label}) if wizard.steps else None,
@@ -151,6 +165,8 @@ class ProjectTree:
 
     async def _source_node(self, source, needs: list[str]) -> str:
         node_id = str(source.typeid)
+        if self._skipped(node_id, str(source.name or source.provider), source.setup_skipped):
+            return node_id
         inputs = (("source", str(source.id)), ("owner", str(source.owner or "")))
         driver = await self._driver(source.provider or "")
         needs = list(dict.fromkeys(needs))
@@ -196,16 +212,26 @@ class ProjectTree:
     def _webapp_node(self, app) -> str:
         node_id = str(app.typeid)
         label = str(app.title or app.name) if hasattr(app, "title") else str(app.name)
+        if self._skipped(node_id, label, app.setup_skipped):
+            return node_id
         steps = []
         for step, what in (("install", "Install"), ("build", "Build"), ("start", "Start")):
             op = _op(f"{node_id}:{step}", f"{what} {label}", step)
             self.ops[op.name] = op
             steps.append({"id": step, "label": what, "kind": "compute", "ref": op.name})
-        self.nodes[node_id] = SetupNode(
-            id=node_id, label=label, inputs=(("webapp", str(app.id)),),
-            run=WizardSpec.model_validate({"name": node_id, "label": f"Run {label}", "steps": steps}),
-        )
+        chain = WizardSpec.model_validate({"name": node_id, "label": f"Run {label}", "steps": steps})
+        # Loading the app is making sure it is up: the same chain, whose checks are what "up" means
+        # (installed, built, a server answering its health path). Done already, it costs three checks.
+        self.nodes[node_id] = SetupNode(id=node_id, label=label, inputs=(("webapp", str(app.id)),), run=chain, on_load=chain)
         return node_id
+
+    async def load_one(self, asset: Any) -> "ProjectTree":
+        """Only ``asset``'s own node — what a LOAD needs (``core/setup/load``). A web app's node derives from
+        its row alone, so no requirement, source or declared setup is read; any other asset needs the tree."""
+        if getattr(asset, "get_type", lambda: "")() == "micro_app" and getattr(asset, "asset_ref", ""):
+            self._webapp_node(asset)
+            return self
+        return await self.load()
 
     async def _declared(self, sources: list, under: dict[str, list[str]]) -> None:
         """Every ``asset_setup`` the project's folder or its sources' drivers hold, attached where it is for."""
@@ -239,12 +265,12 @@ class ProjectTree:
                 self.nodes[node_id] = SetupNode(id=node_id, label=str(row.name), problem=(
                     f"{row.asset_ref}/asset_setup.json cannot be read"))
                 continue
-            prepare, run = await wizard(spec.prepare), await wizard(spec.run)
-            missing = [n for n, w in ((spec.prepare, prepare), (spec.run, run)) if n and w is None]
+            prepare, run, load = await asyncio.gather(wizard(spec.prepare), wizard(spec.run), wizard(spec.on_load))
+            missing = [n for n, w in ((spec.prepare, prepare), (spec.run, run), (spec.on_load, load)) if n and w is None]
             children = tuple(f"asset_setup:{c}" if c in by_name else c for c in spec.children)
             self.nodes[node_id] = SetupNode(
                 id=node_id, label=spec.label or spec.name or row.name, prepare=prepare,
-                run=run, children=children, trusted=row.is_system(),
+                run=run, on_load=load, children=children, trusted=row.is_system(),
                 inputs=tuple((str(k), str(v)) for k, v in (spec.inputs or {}).items()),
                 problem=f"{spec.name} names the wizard {', '.join(map(repr, missing))}, which is not here" if missing else "",
             )
@@ -270,9 +296,11 @@ class ProjectTree:
 
 def requirement_node_id(req) -> str:
     """The tree node a collected requirement is (``dependency:`` / ``connection:`` / ``credential:<name>``)."""
-    from flow_sdk.schema.data_spec.project_setup_spec import REQUIREMENT_DEPENDENCY, REQUIREMENT_OAUTH  # noqa: PLC0415
+    from flow_sdk.schema.data_spec.project_setup_spec import REQUIREMENT_DEPENDENCY  # noqa: PLC0415
 
-    prefix = {REQUIREMENT_DEPENDENCY: "dependency", REQUIREMENT_OAUTH: "connection"}.get(req.kind, "credential")
+    if req.is_oauth:
+        return f"connection:{req.provider or req.name}"
+    prefix = {REQUIREMENT_DEPENDENCY: "dependency"}.get(req.kind, "credential")
     return f"{prefix}:{req.name}"
 
 

@@ -166,30 +166,61 @@ export interface ProjectSetupVar {
   present: boolean;
 }
 
-/** One thing to set up (`SetupRequirementSpec`): a connection, a credential pack, or a gap. */
-export interface ProjectSetupRequirement {
-  /** `dependency`: a required dependency that is not here — name = the dependency,
-   *  title = its source, note = why. */
-  kind: 'oauth' | 'pack' | 'gap' | 'dependency' | 'source' | 'webapp';
-  name: string;
-  title: string;
-  vars: ProjectSetupVar[];
-  used_by: string[];
+/** A requirement skipped in a project's setup on THIS machine (`SetupSkipSpec`, on its record). */
+export interface ProjectSetupSkip {
+  at: number;
+  by: string;
   note: string;
 }
 
-/** `GET project/<id>/setup-requirements` — is this project ready here? MUST values only. */
+/** How a skip is made: `local` marks the record here; `always` removes the asset from the project (staged in git). */
+export type ProjectSetupSkipScope = 'local' | 'always';
+
+/** One thing to set up (`SetupRequirementSpec`): a credential (env or oauth), a dependency, a source, a web app,
+ *  or a gap. */
+export interface ProjectSetupRequirement {
+  /** `dependency`: a dependency that is not here — name = the dependency, title = its source, note = why.
+   *  `oauth` is retired: a connection is a `pack` whose `credential_kind` is `oauth`. */
+  kind: 'pack' | 'gap' | 'dependency' | 'source' | 'webapp';
+  name: string;
+  title: string;
+  /** pack: what the credential is needed for, in one line, and the full reason (`CredentialSpec`). */
+  needed_for?: string;
+  justification?: string;
+  /** The record it IS (a credential, data source, web app; the project for a dependency). */
+  typeid: string;
+  /** pack: `env` (values to provide) or `oauth` (a provider's grant to connect). */
+  credential_kind?: 'env' | 'oauth';
+  provider?: string;
+  scopes?: string[];
+  vars: ProjectSetupVar[];
+  used_by: string[];
+  note: string;
+  satisfied?: boolean | null;
+  /** The project does not work without it; `false` turns a feature on and never counts. */
+  required: boolean;
+  skipped: ProjectSetupSkip | null;
+  /** Whether "Skip → Always" can remove it from the project, and if not, why. */
+  can_skip_always: boolean;
+  why_not_always: string;
+}
+
+/** `GET project/<id>/setup-requirements` — is this project ready here? */
 export interface ProjectReadiness {
   project_id: string;
   ready: boolean;
-  /** What still needs someone — what the setup wizard walks through. */
+  /** What still needs someone — required, not skipped. What the setup wizard walks through. */
   to_do: ProjectSetupRequirement[];
+  /** What turns a feature on and is not set up yet: listed, never counted. */
+  optional?: ProjectSetupRequirement[];
+  /** What was skipped on this machine: listed with an Undo. */
+  skipped?: ProjectSetupRequirement[];
   /** What no credential declares: shown, never runnable. */
   gaps: ProjectSetupRequirement[];
 }
 
 /** Where one node of the setup tree stands (`setup.node`). */
-export type SetupNodeState = 'pending' | 'running' | 'done' | 'failed' | 'blocked' | 'refused' | 'held';
+export type SetupNodeState = 'pending' | 'running' | 'done' | 'failed' | 'blocked' | 'refused' | 'held' | 'skipped';
 
 /** One step of a node's wizard, as its run answered it. */
 export interface SetupStepAnswer {
@@ -244,6 +275,9 @@ export interface NewCloudProjectLink {
   title?: string;
 }
 
+/** What a project is for — mirror of `flow_sdk/schema/data_spec/project_manifest_spec.py` `ProjectSubkind`. */
+export type ProjectSubkind = 'standard' | 'controller' | 'addon';
+
 /** `GET project/<id>/home-page` — `Project.open_home_page()`. */
 export interface ProjectHomePage {
   /** The declared asset's TypeId, once it resolves inside this project. */
@@ -251,6 +285,10 @@ export interface ProjectHomePage {
   type: string | null;
   /** Set when the backend tried and failed; the rest is null alongside it. */
   error?: string;
+  /** A web app home that was not up: the address of the run bringing it up (the app's own setup node, load
+   *  phase). The app view adopts that run by root and shows "Setting things up" until the server answers.
+   *  Null when the app was up already, or is files Flowpad serves itself. */
+  load_run?: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -794,15 +832,25 @@ export class Project extends APIEntity<Project> {
     };
   }
 
-  /** Declare a dependency in `flow.json` and resolve it. `source` is a
-   *  `git+<url>#<branch>`, `hub:<project-id>` or `file:<path>` string — or a
-   *  plain local folder (a folder inside a git checkout is written as its repo)
-   *  or a bare git URL. `path` points at a sub-folder of the source; `optional`
-   *  files it under `optionalDependencies` (and installs it now). Rejects with
-   *  the backend's message on a bad source. */
+  /** Declare a dependency in `flow.json` and resolve it. `source` is an id
+   *  (`<type>-<uuid>` / `<kind>.id.<uuid>`), a `git+<url>#<branch>`,
+   *  `hub:<project-id>` or `file:<path>` string — or a plain local folder (a
+   *  folder inside a git checkout is written as its repo) or a bare git URL.
+   *  `path` points at a sub-folder of the source; `optional` files it under
+   *  `optionalDependencies` (and installs it now); `label` / `description` are
+   *  the entry's human-friendly name; `asset` (a TypeId) declares it in that
+   *  asset's own `flow.json` (ids only). Rejects with the backend's message on a
+   *  bad source. */
   async addDependency(
     source: string,
-    options: { name?: string; path?: string; optional?: boolean } = {},
+    options: {
+      name?: string;
+      path?: string;
+      optional?: boolean;
+      label?: string;
+      description?: string;
+      asset?: string;
+    } = {},
   ): Promise<DependencyState> {
     return this.changingDependencies(async () => {
       const response = await this.post<({ dependency: DependencyState } & ProjectContextPayload) | null>(
@@ -880,7 +928,7 @@ export class Project extends APIEntity<Project> {
    * {@link AdoptHelpdeskOutcome}. Returns a summary rather than the whole
    * project, so `include_dirs` on this entity is NOT refreshed — refetch the
    * project if a surface renders its dependencies. */
-  async adoptHelpdeskFromGit(url: string, branch: string = '', optional: boolean = false): Promise<AdoptHelpdeskResult> {
+  async adoptHelpdeskFromGit(url: string, branch: string = '', optional: boolean = true): Promise<AdoptHelpdeskResult> {
     return this.changingDependencies(() =>
       this.post<AdoptHelpdeskResult>('adopt-helpdesk-from-git', { url, branch, optional }),
     );
@@ -926,12 +974,25 @@ export class Project extends APIEntity<Project> {
     return data?.run ?? '';
   }
 
-  /** Take the credential `name` out of the setup (`POST project/<id>/setup-skip`): its values are
-   *  marked OPTIONAL. Answers with the readiness that follows. */
-  static async skipSetup(projectId: string, name: string): Promise<ProjectReadiness | null> {
+  /** Skip a requirement of the setup (`POST project/<id>/setup-skip`): `local` marks its record on this machine;
+   *  `always` removes its asset from the project and stages that in git. A dependency is the project's typeid and
+   *  its `name`. Answers with the readiness that follows. */
+  static async skipSetup(
+    projectId: string,
+    typeid: string,
+    scope: ProjectSetupSkipScope = 'local',
+    options: { name?: string; note?: string } = {},
+  ): Promise<ProjectReadiness | null> {
     const actionInfo = new ActionInfo('setup-skip', Project.type, projectId, 'POST');
-    actionInfo.bodyParameters = { name };
-    return (await dataManager.callAction<{ name: string }, ProjectReadiness>(actionInfo)) ?? null;
+    actionInfo.bodyParameters = { typeid, scope, name: options.name ?? '', note: options.note ?? '' };
+    return (await dataManager.callAction<Record<string, string>, ProjectReadiness>(actionInfo)) ?? null;
+  }
+
+  /** Undo a local skip (`POST project/<id>/setup-unskip`). Answers with the readiness that follows. */
+  static async unskipSetup(projectId: string, typeid: string, name = ''): Promise<ProjectReadiness | null> {
+    const actionInfo = new ActionInfo('setup-unskip', Project.type, projectId, 'POST');
+    actionInfo.bodyParameters = { typeid, name };
+    return (await dataManager.callAction<Record<string, string>, ProjectReadiness>(actionInfo)) ?? null;
   }
 
   /** The setup run's state (`GET project/<id>/setup-run`). */
@@ -939,6 +1000,40 @@ export class Project extends APIEntity<Project> {
     const actionInfo = new ActionInfo('setup-run', Project.type, projectId, 'GET');
     if (root) actionInfo.queryParameters = { root };
     return (await dataManager.callAction<void, ProjectSetupRun>(actionInfo)) ?? null;
+  }
+
+  /** Send this project's files to its cloud repository (`POST project/<id>/share {via: hub_repo}`),
+   *  so another machine or a sandbox can check it out with nothing but a cloud sign-in. Linked
+   *  first when it is not yet; sent again on every call. Throws with the backend's reason. */
+  async publishFiles(): Promise<void> {
+    const actionInfo = new ActionInfo('share', Project.type, this.id, 'POST');
+    actionInfo.bodyParameters = { via: 'hub_repo' };
+    try {
+      await dataManager.callAction<{ via: string }, unknown>(actionInfo);
+    } catch (err: unknown) {
+      const ax = err as { response?: { data?: { message?: string } }; message?: string };
+      throw new Error(ax.response?.data?.message ?? ax.message ?? "The project's files could not be sent.");
+    }
+  }
+
+  /** A launched project, present and checked out on THIS machine (`POST project/<id>/launch-ensure`):
+   *  mirrored from the hub when there is no row, materialized from its origin when there is no
+   *  checkout, returned as is otherwise. Throws with the backend's reason. */
+  static async launchEnsure(projectId: string): Promise<Project> {
+    const actionInfo = new ActionInfo('launch-ensure', Project.type, projectId, 'POST');
+    actionInfo.bodyParameters = {};
+    let data: Record<string, unknown> | undefined;
+    try {
+      data = await dataManager.callAction<Record<string, never>, Record<string, unknown>>(actionInfo);
+    } catch (err: unknown) {
+      const ax = err as { response?: { data?: { message?: string } }; message?: string };
+      // No response at all is this machine's own FlowPad not answering — starting up, or busy —
+      // and the transport's "Network Error" says nothing a person can act on.
+      if (!ax.response) throw new Error("FlowPad on this machine didn't answer. It may still be starting; try again.");
+      throw new Error(ax.response.data?.message ?? ax.message ?? 'The project could not be set up here.');
+    }
+    if (!data) throw new Error('The project could not be set up here.');
+    return dataManager.updateEntityFromJson<Project>(data);
   }
 
   /** The declared home page resolved to its asset (`GET project/<id>/home-page`),
@@ -1201,6 +1296,7 @@ export class Project extends APIEntity<Project> {
     projectUrl: string,
     targetName?: string,
     branch?: string,
+    workspaceId?: string,
   ): Promise<
     | { kind: 'ok'; project: Project }
     | { kind: 'collision'; suggestedName: string; attemptedName: string }
@@ -1212,10 +1308,12 @@ export class Project extends APIEntity<Project> {
     action.bodyParameters = {
       git_origin: gitOrigin,
       ...(targetName ? { target_name: targetName } : {}),
+      // The workspace whose folder the clone lands in; absent → the default one.
+      ...(workspaceId ? { workspace: workspaceId } : {}),
     };
     try {
       const response = await dataManager.callAction<
-        { git_origin: GitOrigin; target_name?: string },
+        { git_origin: GitOrigin; target_name?: string; workspace?: string },
         { project: unknown }
       >(action);
       if (!response?.project) return { kind: 'error', message: 'No project returned' };
@@ -1237,6 +1335,20 @@ export class Project extends APIEntity<Project> {
       const message = ax.response?.data?.message ?? ax.message ?? 'Unknown error';
       return { kind: 'error', message };
     }
+  }
+
+  /**
+   * Move this project into another workspace (`undefined`: the default one). The backend
+   * closes everything open in it, moves its folder and re-points this same row. Resolves
+   * with whether the new folder was indexed; rejects with the backend's refusal (409 when
+   * the destination already has a folder of that name) for the caller to show.
+   */
+  async switchWorkspace(workspaceId: string | undefined): Promise<{ indexed: boolean }> {
+    const res = await this.post<{ project?: Record<string, unknown>; indexed?: boolean }>('switch-workspace', {
+      workspace: workspaceId ?? '',
+    });
+    if (res?.project) dataManager.updateEntityFromJson<Project>(res.project);
+    return { indexed: res?.indexed !== false };
   }
 
   /**

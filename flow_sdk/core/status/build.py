@@ -133,27 +133,49 @@ async def _harness(vendor: Vendor) -> HarnessStatusSpec:
 # ── keys ────────────────────────────────────────────────────────────────────────
 
 
-def stored_key_providers() -> dict[str, str]:
-    """THE answer to "which LLM-provider keys are stored": ``{provider: created_at}``.
+def stored_keys() -> dict[str, dict[str, str]]:
+    """THE answer to "which LLM-provider keys are stored": ``{provider: {created_at, hint}}``.
 
-    Names only -- ``get_secrets`` lists the shadow records and never opens the store, so
-    nothing here decrypts a key or proves it works.
+    ONE walk of the shadow records. Names and the masked ``****last4`` only -- ``get_secrets``
+    never opens the store, so nothing here decrypts a key or proves it works. A key stored before
+    hints existed has ``hint == ""``.
     """
     from flow_sdk.cli.auth.secrets import get_secrets  # noqa: PLC0415
     from flow_sdk.schema.data_spec.credential_contract import LM_SECRET_PREFIX  # noqa: PLC0415
 
-    out: dict[str, str] = {}
+    out: dict[str, dict[str, str]] = {}
     for record in get_secrets():
         name = str(record.get("name") or "")
         if name.startswith(LM_SECRET_PREFIX):
-            out[name[len(LM_SECRET_PREFIX) :]] = str(record.get("created_at") or "")
+            out[name[len(LM_SECRET_PREFIX) :]] = {
+                "created_at": str(record.get("created_at") or ""),
+                "hint": str(record.get("hint") or ""),
+            }
     return out
 
 
+def stored_key_providers() -> dict[str, str]:
+    """``{provider: created_at}`` -- the view of :func:`stored_keys` most callers want."""
+    return {provider: key["created_at"] for provider, key in stored_keys().items()}
+
+
+def stored_key_hints() -> dict[str, str]:
+    """``{provider: hint}`` -- the masked ``****last4`` of each stored key, never the value."""
+    return {provider: key["hint"] for provider, key in stored_keys().items()}
+
+
 def _keys() -> tuple[KeyStatusSpec, ...]:
-    stored = stored_key_providers()
+    stored = stored_keys()
     providers = [p.value for p in LMApiProvider if p is not LMApiProvider.FLOWPAD]
-    return tuple(KeyStatusSpec(provider=p, stored=p in stored, created_at=stored.get(p, "")) for p in providers)
+    return tuple(
+        KeyStatusSpec(
+            provider=p,
+            stored=p in stored,
+            created_at=stored.get(p, {}).get("created_at", ""),
+            hint=stored.get(p, {}).get("hint", ""),
+        )
+        for p in providers
+    )
 
 
 # ── hub ─────────────────────────────────────────────────────────────────────────

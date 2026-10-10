@@ -59,7 +59,7 @@ export const AP_QUICK_CREATE_LABEL = AP_OPENER === 'opencode' ? 'OpenCode' : 'Cl
 /**
  * Does this vendor actually HAVE `--chrome` / `--debug` / `--worktree`?
  *
- * Only claude does. The CLI Options menu is built from
+ * Only claude does. The debug menu's CLI options are built from
  * `getWorkerCliCapabilities` (`process-cli-presentation.ts`), which reports
  * `chrome/debug/worktree: false` for codex, copilot and opencode — so on those
  * arms the toggles legitimately do not render, and a test that clicks one is
@@ -88,6 +88,28 @@ export async function startClaude(page: Page) {
  */
 export function activePanel(page: Page) {
   return page.locator('[data-testid="terminal-panel"][data-active="true"]').last();
+}
+
+/** The session actions menu button (the hamburger right of Fork) of the active panel. */
+export function sessionActionsButton(page: Page) {
+  return activePanel(page).locator('[data-testid="process-toolbar-menu"]');
+}
+
+/**
+ * Open the active panel's session actions menu and return one of its items by
+ * test id (`session-action-info`, `session-action-transcript`,
+ * `session-action-assets`, `process-toolbar-restart`, `session-action-terminal`,
+ * `session-action-worktree`, `session-action-commit-merge`,
+ * `entity-actions-export`). The menu is portaled, so items are page-scoped.
+ */
+export async function sessionAction(page: Page, testId: string) {
+  if ((await page.getByRole('menu').count()) === 0) await sessionActionsButton(page).click();
+  return page.getByTestId(testId);
+}
+
+/** The debug menu button (left of the top bar, terminal surface only). */
+export function debugMenuButton(page: Page) {
+  return activePanel(page).locator('button[aria-label="Debug"]');
 }
 
 /** Return the agentic_process id parsed from the current URL. */

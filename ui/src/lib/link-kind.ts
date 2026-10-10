@@ -20,9 +20,36 @@ const POSITION_SUFFIX = /(?::\d+(?::\d+)?|#L\d+)$/;
 
 export const isWebUrl = (link: string): boolean => /^https?:\/\//i.test(link);
 
+/** A web address written without its scheme: `clau.de/reset`, `example.org`, `x.io:8080/a?b`. */
+const BARE_HOST = /^(?:[a-z0-9-]+\.)+[a-z]{2,}(?::\d+)?(?<rest>[/?#]\S*)?$/i;
+
+const LOCAL_HOST = /^(?:localhost|\d{1,3}(?:\.\d{1,3}){3}):\d+(?:[/?#]\S*)?$/i;
+
+/**
+ * The http URL of this machine, or a numbered one, written with its port and no scheme
+ * (`localhost:5001/dock`, `127.0.0.1:8093`), or null. Unlike a dotted host, never a file path.
+ */
+export function localWebUrl(link: string): string | null {
+  return LOCAL_HOST.test(link) ? `http://${link}` : null;
+}
+
+/**
+ * The https URL a scheme-less web address names, or null when the link is not shaped like
+ * one. `sure` means it carries a path after the host (`clau.de/reset`) — no relative file
+ * path starts with a dotted host — while a bare `README.md` reads as a host too, so a
+ * caller tries it as a file first.
+ */
+export function bareWebUrl(link: string): { url: string; sure: boolean } | null {
+  const local = localWebUrl(link);
+  if (local) return { url: local, sure: true };
+  const match = BARE_HOST.exec(link);
+  return match ? { url: `https://${link}`, sure: Boolean(match.groups?.rest) } : null;
+}
+
 /** The in-app address an app URL copied from this browser names, or null when it is not one. */
 export function appLinkPath(link: string, origin: string): string | null {
   if (APP_PATH.test(link)) return link;
+  link = localWebUrl(link) ?? link;
   if (!isWebUrl(link)) return null;
   try {
     const url = new URL(link);
@@ -34,7 +61,7 @@ export function appLinkPath(link: string, origin: string): string | null {
 
 export function linkKind(link: string, origin: string): LinkKind {
   if (appLinkPath(link, origin)) return 'app';
-  if (isWebUrl(link)) return 'web';
+  if (isWebUrl(link) || localWebUrl(link)) return 'web';
   if (TYPE_ID.test(link)) return 'entity';
   return 'file';
 }

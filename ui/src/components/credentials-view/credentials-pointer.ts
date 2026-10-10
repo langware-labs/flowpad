@@ -1,7 +1,8 @@
 import { CredentialsSubview } from '@sdk';
 
 /**
- * The credentials view's pointer: `<subview>[/<projectId>]`.
+ * The credentials view's pointer: `<subview>[/<projectId>[/<entry>]]` — `entry` is the typeid of the credential
+ * shown selected (what a setup dialog's row links to).
  *
  * Both the active tab and the selected project live in the URL rather than in
  * component state — so a reload lands where you were, and picking a project is
@@ -24,8 +25,9 @@ export function credentialsTabs(_hubOnly: boolean): CredentialsSubview[] {
   return [CredentialsSubview.CONNECTIONS];
 }
 
-export function credentialsPointer(tab: CredentialsSubview, projectId?: string): string {
-  return projectId ? `${tab}/${projectId}` : tab;
+export function credentialsPointer(tab: CredentialsSubview, projectId?: string, entry?: string): string {
+  if (!projectId) return tab;
+  return entry ? `${tab}/${projectId}/${encodeURIComponent(entry)}` : `${tab}/${projectId}`;
 }
 
 export function parseCredentialsPointer(
@@ -35,12 +37,20 @@ export function parseCredentialsPointer(
 ): {
   tab: CredentialsSubview;
   projectId?: string;
+  /** The selected credential's typeid; absent with no project segment. */
+  entry?: string;
 } {
-  const [rawTab, projectId] = (pointer ?? '').split('/').filter(Boolean);
+  const [rawTab, projectId, rawEntry] = (pointer ?? '').split('/').filter(Boolean);
   // Connections is the only live subview, so a retired one (`environment`,
   // `api-keys`) resolves to the fallback like any unknown segment — the project
   // segment survives either way. `RETIRED_DOCK_VIEWS` owns the forwarding of
   // persisted tabs; a second table here would be a second place to forget.
   const tab = rawTab === CredentialsSubview.CONNECTIONS ? CredentialsSubview.CONNECTIONS : fallback;
-  return { tab, projectId: projectId || undefined };
+  let entry: string | undefined;
+  try {
+    entry = rawEntry ? decodeURIComponent(rawEntry) : undefined;
+  } catch {
+    entry = undefined; // a mangled segment selects nothing, never an error page
+  }
+  return { tab, projectId: projectId || undefined, entry: projectId ? entry : undefined };
 }

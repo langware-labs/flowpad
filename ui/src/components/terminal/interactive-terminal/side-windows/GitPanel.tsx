@@ -218,6 +218,20 @@ const IconBtn: React.FC<{
 
 // ---------------------------------------------------------------------------
 // GitPanel
+// Header chips beside the branch name: sync state, ↑ahead, ↓behind.
+const HEADER_CHIP = 'shrink-0 rounded-full px-1.5 py-0.5 text-[9px] font-bold';
+
+const HeaderChip: React.FC<{ title?: string; testId?: string; className?: string; children: React.ReactNode }> = ({
+  title,
+  testId,
+  className = 'bg-muted text-muted-foreground',
+  children,
+}) => (
+  <span title={title} data-testid={testId} className={`${HEADER_CHIP} ${className}`}>
+    {children}
+  </span>
+);
+
 // ---------------------------------------------------------------------------
 // ↑N badge — click to list the commits it counts (hash + one-liner). Loaded on
 // open, so the 5s status poll never pays for a `git log`.
@@ -243,7 +257,7 @@ const UnpushedCommitsBadge: React.FC<{ git: GitWorkdir; ahead: number }> = ({ gi
           type="button"
           title={t`Show unpushed commits`}
           data-testid="git-panel-ahead"
-          className="shrink-0 rounded-full bg-green-500/20 px-1.5 py-0.5 text-[9px] font-bold text-green-500 hover:bg-green-500/30"
+          className={`${HEADER_CHIP} bg-green-500/20 text-green-500 hover:bg-green-500/30`}
         >
           ↑{ahead}
         </button>
@@ -518,11 +532,22 @@ export const GitPanel: React.FC<GitPanelProps> = ({ computeNodeId, workdir, onPu
                   copiedIconClassName="text-green-500"
                 />
               )}
+              {data && !data.error && data.branch && !data.upstream && (
+                <HeaderChip
+                  title={data.remoteUrl ? t`Not on the remote yet — Push publishes this branch` : t`No remote configured`}
+                  testId="git-panel-no-upstream"
+                >
+                  <Trans>No remote branch</Trans>
+                </HeaderChip>
+              )}
+              {data && !data.error && data.upstream && data.ahead === 0 && data.behind === 0 && (
+                <HeaderChip title={t`Same commits as ${data.upstream}`} testId="git-panel-in-sync">
+                  <Trans>Up to date</Trans>
+                </HeaderChip>
+              )}
               {data && !data.error && data.ahead > 0 && <UnpushedCommitsBadge git={git} ahead={data.ahead} />}
               {data && !data.error && data.behind > 0 && (
-                <span className="shrink-0 rounded-full bg-amber-500/20 px-1.5 py-0.5 text-[9px] font-bold text-amber-500">
-                  ↓{data.behind}
-                </span>
+                <HeaderChip className="bg-amber-500/20 text-amber-500">↓{data.behind}</HeaderChip>
               )}
             </div>
             {data && !data.error && data.remoteUrl && (

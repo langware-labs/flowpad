@@ -1,0 +1,16 @@
+{
+  "type": "data_source",
+  "id": "b6108026-501e-46cc-9bcb-23dae05537dd",
+  "name": "My tasks",
+  "data_driver_name": "task_manager",
+  "data_driver_config": {
+    "principal": "user:local"
+  },
+  "owner": "user-56cb3eae-77ff-5727-8d01-08fce10852e0",
+  "reflect": "record",
+  "reflect_into": "",
+  "poll_interval_seconds": 300,
+  "window_days": 7,
+  "required_capabilities": [],
+  "connection": ""
+}

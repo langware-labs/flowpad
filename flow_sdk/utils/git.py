@@ -3,7 +3,6 @@ import logging
 import os
 import re
 import subprocess
-from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterable, Optional, Tuple
@@ -35,19 +34,6 @@ def _git_token_auth(token: Optional[str]) -> Tuple[list[str], Optional[dict]]:
     if not token:
         return [], {**os.environ, **NO_PROMPT_ENV}
     return list(CREDENTIAL_HELPER_ARGS), {**os.environ, GIT_TOKEN_ENV: token, **NO_PROMPT_ENV}
-
-
-@dataclass
-class GitPushResult:
-    ok: bool
-    message: str
-    warning: Optional[str] = None
-    #: HEAD after a successful commit — the thing a caller advertises to others.
-    sha: Optional[str] = None
-    #: False when the paths were already clean (``ok`` is still True).
-    committed: bool = False
-    pushed: bool = False
-    branch: Optional[str] = None
 
 
 commit_hash = None  # Global variable to store the commit hash
@@ -99,15 +85,6 @@ async def _git(args: list[str], cwd: str, timeout: int = 60) -> subprocess.Compl
     return await asyncio.to_thread(_run_git, args, cwd, timeout)
 
 
-async def _checked_out_branch(repo_path: str) -> Optional[str]:
-    """The branch a checkout is on, or ``None`` when detached.
-
-    Shared by ``git_pull`` and ``git_sync_mirror``: both must refuse to act on a
-    detached HEAD, and that rule should not live in two places.
-    """
-    return await asyncio.to_thread(git_current_branch, repo_path) or None
-
-
 def _git_err(result: subprocess.CompletedProcess, verb: str) -> str:
     """One phrasing for a failed invocation. `stderr or stdout` in one place, so
     the fallback order cannot drift between call sites."""
@@ -118,8 +95,8 @@ def _git_err(result: subprocess.CompletedProcess, verb: str) -> str:
 
 def _answer(result: subprocess.CompletedProcess, verb: str, done: str, **fields) -> CliResult:
     """A finished git invocation as the answer these helpers give. ``detail`` is
-    the sentence a caller shows (and a few match on — "already exists",
-    "CONFLICT"); the streams ride whole beside it."""
+    the sentence a caller shows (and ``task_receive`` matches on — "already
+    exists"); the streams ride whole beside it."""
     ok = result.returncode == 0
     detail = ((result.stdout or result.stderr or "").strip() or done) if ok else _git_err(result, verb)
     return CliResult.of_process(
@@ -241,7 +218,7 @@ async def git_sync_mirror(repo_path: str, branch: Optional[str] = None) -> CliRe
     """Force a checkout to match its remote, discarding local changes.
 
     For a MIRROR — a checkout the app manages and the user never edits — as
-    opposed to ``git_pull``, which is for a working tree whose local changes
+    opposed to ``GitRepo.pull``, which is for a working tree whose local changes
     must be preserved. Use it only where local modifications are known to be
     machine-made and disposable; it throws away uncommitted work.
 
@@ -258,7 +235,7 @@ async def git_sync_mirror(repo_path: str, branch: Optional[str] = None) -> CliRe
     locale changes.
     """
     try:
-        branch = branch or await _checked_out_branch(repo_path)
+        branch = branch or await asyncio.to_thread(git_current_branch, repo_path) or None
         if not branch:
             return CliResult.not_applicable("Skipped sync (detached HEAD).", value=False)
 
@@ -298,26 +275,6 @@ async def git_sync_mirror(repo_path: str, branch: Optional[str] = None) -> CliRe
         )
     except Exception as e:
         return _unanswered(["git", "reset", "--hard", f"origin/{branch}"], "mirror sync", e, value=False)
-
-
-async def git_pull(repo_path: str, branch: Optional[str] = None) -> CliResult:
-    """Pull latest from origin for the given branch, or the current branch if not specified.
-
-    For a WORKING TREE whose local changes must be preserved — the opposite of
-    ``git_sync_mirror``, which discards them.
-
-    Answers a ``CliResult``; ``detail`` is the message to show.
-    """
-    cmd = ["git", "pull", "origin", branch or ""]
-    try:
-        branch = branch or await _checked_out_branch(repo_path)
-        if not branch:
-            logger.warning("[git] Detached HEAD at %s — skipping pull", repo_path)
-            return CliResult.not_applicable("Skipped git pull (detached HEAD). Files may not be up to date.")
-        cmd = ["git", "pull", "origin", branch]
-        return _answer(await _git(cmd, repo_path), f"pull origin {branch}", "Already up to date.")
-    except Exception as e:
-        return _unanswered(cmd, "pull", e)
 
 
 async def git_clone(
@@ -378,97 +335,6 @@ async def git_remote_access(clone_url: str, token: Optional[str] = None) -> Tupl
     except Exception as e:
         logger.warning("[git] ls-remote error for %s: %s", clone_url, e)
         return False, None
-
-
-async def git_add_commit_push(repo_path: str, paths: list[str], commit_message: str) -> GitPushResult:
-    """Stage exactly ``paths``, commit them, and push the branch.
-
-    Pathspec-scoped throughout: an unrelated dirty or staged file elsewhere in
-    the repo is never committed. That is the whole point — callers use this to
-    publish a couple of known files out of a working tree they do not own.
-
-    Three things this is careful about, each of which was a real defect:
-
-    * **The staged check carries the pathspec.** Without it, an unrelated
-      pre-staged file makes an otherwise-clean run believe our paths changed.
-    * **The commit's return code is checked.** A pathspec that matches nothing
-      fails the commit; pushing anyway and reporting success would advertise a
-      URL for content that never reached the remote.
-    * **Only paths that exist are passed on.** A missing path is what makes
-      ``git commit`` fail in the first place.
-
-    ``ok=True`` with ``committed=False`` means the paths were already clean —
-    a successful no-op, not a failure.
-    """
-    try:
-
-        async def _run(*args):
-            return await asyncio.to_thread(_run_git, ["git", *args], repo_path, 30)
-
-        present, missing = [], []
-        for path in paths:
-            (present if Path(repo_path, path).exists() else missing).append(path)
-        if not present:
-            return GitPushResult(ok=False, message=f"none of the given paths exist in {repo_path}: {paths}")
-        missing_warning = f"not found, so not committed: {', '.join(missing)}" if missing else None
-
-        # One invocation for every path — same semantics, one process.
-        await _run("add", "--", *present)
-
-        # Scoped to OUR paths, so somebody else's staged work doesn't read as ours.
-        staged = await _run("diff", "--cached", "--quiet", "--", *present)
-        branch_result = await _run("rev-parse", "--abbrev-ref", "HEAD")
-        current_branch = (branch_result.stdout.strip() if branch_result.returncode == 0 else "") or "HEAD"
-
-        if staged.returncode == 0:
-            logger.info("[git] paths already committed, nothing to do")
-            return GitPushResult(
-                ok=True,
-                message="Nothing to commit",
-                branch=current_branch,
-                warning=missing_warning,
-            )
-
-        commit = await _run("commit", "-m", commit_message, "--", *present)
-        if commit.returncode != 0:
-            err = (commit.stderr or commit.stdout or "").strip()
-            logger.warning("[git] commit failed: %s", err)
-            return GitPushResult(ok=False, message=err or "git commit failed", branch=current_branch)
-
-        head = await _run("rev-parse", "HEAD")
-        sha = head.stdout.strip() if head.returncode == 0 else None
-
-        # Rebase only when the upstream actually moved. An unconditional pull
-        # aborts on an unrelated dirty tree, and swallowing that failure turns
-        # into a confusing non-fast-forward push rejection one step later.
-        pull_warning: Optional[str] = None
-        behind = await _run("rev-list", "--count", "HEAD..@{u}")
-        if behind.returncode == 0 and (behind.stdout.strip() or "0") != "0":
-            pull_result = await _run("pull", "--rebase", "origin", current_branch)
-            if pull_result.returncode != 0:
-                pull_warning = (pull_result.stderr or pull_result.stdout or "").strip()
-                logger.warning("[git] pull --rebase before push failed: %s", pull_warning)
-
-        result = await _run("push", "origin", current_branch)
-        if result.returncode != 0:
-            err = (result.stderr or result.stdout or "").strip()
-            logger.warning("[git] push failed: %s", err)
-            return GitPushResult(
-                ok=False, message=err, warning=pull_warning, sha=sha, committed=True, branch=current_branch
-            )
-        logger.info("[git] push succeeded")
-        return GitPushResult(
-            ok=True,
-            message="Pushed successfully",
-            warning=pull_warning or missing_warning,
-            sha=sha,
-            committed=True,
-            pushed=True,
-            branch=current_branch,
-        )
-    except Exception as e:
-        logger.warning("[git] push error (non-fatal): %s", e)
-        return GitPushResult(ok=False, message=str(e))
 
 
 # ── Per-file revision history (local, no push) ────────────────────────────────

@@ -1,6 +1,6 @@
-import { useCallback } from 'react';
 import { PrefKey } from '@sdk';
 import { usePreference } from '@src/hooks/use-preference';
+import { rememberLaunch } from './last-launch';
 import { type OpenerId } from './tab_opener_types';
 import type { WorkerType } from '@src/components/workers/worker-types';
 
@@ -48,10 +48,16 @@ export function workerToOpener(worker: WorkerType): WorkerOpenerId {
   return WORKER_TO_OPENER[worker];
 }
 
+function rememberWorker(worker: WorkerType): void {
+  rememberLaunch(workerToOpener(worker), null);
+}
+
 export interface UseLastWorkerTypeResult {
   /** Last worker launched from any surface, or null if none / a non-worker opener. */
   lastWorker: WorkerType | null;
-  /** Persist `worker` as the last opener (keeps the terminal strip in sync). */
+  /** Persist `worker` as the last opener (keeps the terminal strip in sync).
+   *  The shape is unknown on these paths (task runners pin their own transport),
+   *  so the quick-launch slot falls back to a terminal for it. */
   rememberWorker: (worker: WorkerType) => void;
 }
 
@@ -60,15 +66,7 @@ export interface UseLastWorkerTypeResult {
  * Stays live as either the toolbar or the terminal strip writes the key.
  */
 export function useLastWorkerType(): UseLastWorkerTypeResult {
-  const [lastOpener, setLastOpener] = usePreference<OpenerId | null>(PrefKey.LAST_OPENER);
+  const [lastOpener] = usePreference<OpenerId | null>(PrefKey.LAST_OPENER);
   const lastWorker = openerToWorker(lastOpener);
-
-  const rememberWorker = useCallback(
-    (worker: WorkerType) => {
-      setLastOpener(workerToOpener(worker));
-    },
-    [setLastOpener],
-  );
-
   return { lastWorker, rememberWorker };
 }
