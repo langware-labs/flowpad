@@ -109,7 +109,8 @@ export function ProjectHomeMenu({ project }: { project: Project }) {
             <DialogDescription>
               <Trans>
                 Every open tab and running process of this project will be closed. The project folder is then
-                moved and indexed again at its new location.
+                moved and indexed again at its new location. Earlier sessions keep their history but cannot be
+                resumed.
               </Trans>
             </DialogDescription>
           </DialogHeader>
