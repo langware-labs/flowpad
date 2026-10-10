@@ -1145,7 +1145,6 @@ async def _reap_protected_path_projects() -> None:
     from flow_sdk.builtin.tab import delete_tabs_for_missing_project  # noqa: PLC0415
     from flow_sdk.core.cache.entity_cache import uname_cache  # noqa: PLC0415
     from flow_sdk.db import get_db_driver  # noqa: PLC0415
-    from flow_sdk.fs_store.indexer.roots import _CWD_PID_CACHE  # noqa: PLC0415
     from flow_sdk.fs_store.operations.all_projects import (  # noqa: PLC0415
         invalidate_projects_cache,
     )
@@ -1251,7 +1250,6 @@ async def _reap_protected_path_projects() -> None:
 
     if protected_row_ids:
         invalidate_projects_cache()
-        _CWD_PID_CACHE.clear()
 
 
 async def _index_system_project_markdowns(projects: list[Project]) -> None:
