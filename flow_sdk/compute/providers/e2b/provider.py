@@ -374,7 +374,6 @@ class E2BComputeProvider(ComputeProvider):
         sandbox = await self._get_or_boot_sandbox(provider_node_id)
         message_id = str(uuid.uuid4())
         cmd = CLICommand(command, message_id=message_id)
-        self.running_commands[message_id] = cmd
 
         # Values join the string here and nowhere else — the log line above
         # carries the bare command.
@@ -383,8 +382,8 @@ class E2BComputeProvider(ComputeProvider):
         try:
             process = await sandbox.commands.run(
                 full_command,
-                on_stdout=lambda data: self._handle_stdout(message_id, data),
-                on_stderr=lambda data: self._handle_stderr(message_id, data),
+                on_stdout=cmd.append_stdout,
+                on_stderr=cmd.append_stderr,
                 timeout=None,
                 background=background,
                 cwd=self.default_working_dir,
@@ -411,16 +410,6 @@ class E2BComputeProvider(ComputeProvider):
             cmd.mark_complete(None)
 
         return cmd
-
-    def _handle_stdout(self, message_id: str, data: str):
-        cmd = self.running_commands.get(message_id)
-        if cmd is not None:
-            cmd.append_stdout(data)
-
-    def _handle_stderr(self, message_id: str, data: str):
-        cmd = self.running_commands.get(message_id)
-        if cmd is not None:
-            cmd.append_stderr(data)
 
     # ---------------------------------------------------------------- pty
 

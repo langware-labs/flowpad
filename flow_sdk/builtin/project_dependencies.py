@@ -444,7 +444,10 @@ def schedule_resolve(project: "Project") -> None:
         except Exception:  # noqa: BLE001 — a background resolve reports through states, never raises
             logger.warning("[deps] background resolve failed for %s", pid, exc_info=True)
 
-    _TASKS[pid] = asyncio.get_running_loop().create_task(run())
+    from flow_sdk.request_context.detached import create_detached_task  # noqa: PLC0415
+
+    # Detached: a plain task would hold the activation request for the whole fetch.
+    _TASKS[pid] = create_detached_task(run(), name=f"deps-resolve:{pid}")
 
 
 async def _resolve(
