@@ -3,8 +3,8 @@
  * instance used to hide a method of that name, so the dataset editor failed to start with
  * "examples is not a function" -- found in the browser, pinned here.
  */
-import { afterEach, describe, expect, it, vi } from 'vitest';
-import { DATASET_ROWS_CHANGED, Dataset, EventBus, dataManager } from '@sdk';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { ConnectionManager, DATASET_ROWS_CHANGED, Dataset, EventBus, dataManager } from '@sdk';
 import { ExpressionNode } from '@sdk/FlowSync/query';
 
 describe('a dataset built from a wire row keeps its actions', () => {
@@ -124,7 +124,25 @@ describe('hearing that rows changed', () => {
   const frame = (target: string, data: Record<string, unknown>) =>
     EventBus.deliver({ id: 'e1', timestamp: '2026-10-10T00:00:00Z', tag: DATASET_ROWS_CHANGED, target, data, ctx: { origin: 'local_server' } } as never);
 
-  afterEach(() => EventBus.clear());
+  let connect: ReturnType<typeof vi.spyOn>;
+  beforeEach(() => {
+    connect = vi.spyOn(ConnectionManager.getInstance(), 'connect').mockResolvedValue(undefined);
+  });
+  afterEach(() => {
+    EventBus.clear();
+    vi.restoreAllMocks();
+  });
+
+  it('opens the socket the events arrive on — a served app\'s initSdk() does not', () => {
+    new Dataset({ id: ID, name: 'n' } as never).onRowsChanged(() => undefined);
+    expect(connect).toHaveBeenCalledTimes(1);
+  });
+
+  it('a socket that cannot open is not an error for the page', async () => {
+    connect.mockRejectedValue(new Error('refused'));
+    expect(() => new Dataset({ id: ID, name: 'n' } as never).onRowsChanged(() => undefined)).not.toThrow();
+    await Promise.resolve();
+  });
 
   it('calls back for this dataset with the keys that moved', () => {
     const heard: unknown[] = [];
