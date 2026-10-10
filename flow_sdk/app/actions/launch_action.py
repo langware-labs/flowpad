@@ -8,8 +8,9 @@ the hub first (``Project.hydrate_from_hub``, the same hop a share link takes), t
 materialized from its origin in place (``setup_from_git_origin`` — reuses a checkout of the
 same repo, indexes it so the agents it ships are rows, resolves its dependencies).
 
-Idempotent: a project already checked out here is returned as is, so the cloud leg — where
-the hub provisioned both projects before the browser arrived — passes straight through.
+Idempotent: a project already checked out here is only indexed again (a no-op when it is up
+to date), so the cloud leg — where the hub provisioned both projects before the browser
+arrived — passes through, and a retry heals a first try whose index did not finish.
 Runs with no local row (``allow_missing_target``): that row is what it is there to fetch.
 """
 
@@ -61,7 +62,14 @@ async def ensure_launched_project(project_id: str, someone_typeid: str | None = 
     if project is None:
         raise LookupError("This project isn't available to the account signed in on this machine.")
     if not _checked_out(project):
-        project = await project.setup_from_git_origin()
+        return await project.setup_from_git_origin()
+    # Checked out already — by the hub on a box, or by an earlier try on this machine. That try's
+    # index may not have finished (a busy machine), which leaves a project whose agents are not
+    # rows and a launch that cannot find the one it was sent for; nothing would ever look again.
+    # Indexing is idempotent, so every launch makes sure — and says so if it cannot.
+    from flow_sdk.builtin.agentic_process.agentic_process import _index_additional_dir  # noqa: PLC0415
+
+    await _index_additional_dir(str(project.fs_storage_mount_path), read_only=True, strict=True)
     return project
 
 

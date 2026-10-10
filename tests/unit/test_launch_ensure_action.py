@@ -22,7 +22,12 @@ pytestmark = pytest.mark.timeout(10)  # do not increase without approval
 
 @pytest.fixture
 def calls(monkeypatch):
-    seen: dict[str, list] = {"hydrate": [], "setup": []}
+    seen: dict[str, list] = {"hydrate": [], "setup": [], "index": []}
+
+    async def _index(path, **kwargs):
+        seen["index"].append((path, kwargs.get("strict")))
+
+    monkeypatch.setattr("flow_sdk.builtin.agentic_process.agentic_process._index_additional_dir", _index)
 
     async def _setup(self):
         seen["setup"].append(self.id)
@@ -46,7 +51,10 @@ async def test_a_checked_out_project_passes_through(tmp_path, monkeypatch, calls
 
     assert resp.status_code == 200, resp.text
     assert resp.json()["data"]["id"] == project.id
-    assert calls == {"hydrate": [], "setup": []}
+    # Nothing is fetched again, but its contents are made sure of: an earlier try's index may not
+    # have finished, and a project whose agents are not rows cannot be launched.
+    assert calls["hydrate"] == [] and calls["setup"] == []
+    assert calls["index"] == [(project.fs_storage_mount_path, True)]
 
 
 @pytest.mark.asyncio
@@ -62,7 +70,7 @@ async def test_a_missing_project_is_mirrored_from_the_hub_then_checked_out(tmp_p
     resp = await _call_local("POST", f"project/{pid}/launch-ensure", json={})
 
     assert resp.status_code == 200, resp.text
-    assert calls == {"hydrate": [pid], "setup": [pid]}
+    assert calls["hydrate"] == [pid] and calls["setup"] == [pid]
 
 
 @pytest.mark.asyncio
@@ -117,3 +125,19 @@ async def test_a_checkout_that_fails_carries_gits_own_words(monkeypatch):
 
     assert resp.status_code == 400, resp.text
     assert resp.json()["message"] == "Couldn't set up the project: git clone against the hub failed — repository not found"
+
+
+@pytest.mark.asyncio
+async def test_a_checked_out_project_that_cannot_be_indexed_says_so(tmp_path, monkeypatch, calls):
+    project = await Project(name=str(tmp_path / "q")).save()
+    (tmp_path / "q").mkdir(exist_ok=True)
+
+    async def _index(path, **kwargs):
+        raise RuntimeError("Context indexing reported 2 error(s)")
+
+    monkeypatch.setattr("flow_sdk.builtin.agentic_process.agentic_process._index_additional_dir", _index)
+
+    resp = await _call_local("POST", f"project/{project.id}/launch-ensure", json={})
+
+    assert resp.status_code == 400, resp.text
+    assert "indexing reported 2 error(s)" in resp.json()["message"]
