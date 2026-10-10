@@ -33,6 +33,22 @@ def _checked_out(project: Project) -> bool:
     return bool(mount) and Path(mount).is_dir()
 
 
+def _hub_trouble(error: HubError) -> str:
+    """Why the hub could not be asked, in the launch dialog's words."""
+    if error.status_code == 401:
+        return "Your cloud sign-in on this machine has expired. Sign in to the cloud again, then try again."
+    if error.status_code == 0:
+        return "Couldn't reach the cloud from this machine. Check the connection, then try again."
+    return f"The cloud couldn't hand this project over: {error.reason}"
+
+
+def _setup_trouble(error: Exception) -> str:
+    """Why a project the hub handed over could not be checked out here."""
+    # A clone's own words (auth, network, a missing repository) are in ``data.detail``.
+    detail = str((getattr(error, "data", None) or {}).get("detail") or "").strip()
+    return f"Couldn't set up the project: {error}" + (f" — {detail}" if detail else "")
+
+
 async def ensure_launched_project(project_id: str, someone_typeid: str | None = None) -> Project:
     """The project ``project_id`` names, with a checkout on this machine. Raises
     ``LookupError`` when neither this machine nor the hub (for this caller) has it."""
@@ -41,9 +57,9 @@ async def ensure_launched_project(project_id: str, someone_typeid: str | None = 
         try:
             project = await Project.hydrate_from_hub(project_id, someone_typeid)
         except HubError as e:
-            raise LookupError(f"Couldn't reach the hub to load project {project_id}: {e}") from e
+            raise LookupError(_hub_trouble(e)) from e
     if project is None:
-        raise LookupError(f"Project {project_id} is not available to you")
+        raise LookupError("This project isn't available to the account signed in on this machine.")
     if not _checked_out(project):
         project = await project.setup_from_git_origin()
     return project
@@ -61,5 +77,5 @@ async def launch_ensure_project() -> ApiResponse:
         return ApiFailResponse(message=str(e), status_code=404)
     except Exception as e:  # noqa: BLE001 — the launch dialog shows a reason, not a stack
         logger.error("[launch] ensure %s failed: %s", project_id, e, exc_info=True)
-        return ApiFailResponse(message=f"Couldn't set up the project: {e}", status_code=400)
+        return ApiFailResponse(message=_setup_trouble(e), status_code=400)
     return ApiSuccessResponse(data=project)

@@ -768,7 +768,11 @@ class Project(SetupSkippable, Entity):
         Every MUST value and needed connection counts; OPTIONAL values never do. Names only."""
         from flow_sdk.builtin.project_setup import readiness_of  # noqa: PLC0415
 
-        return ApiSuccessResponse(data=(await readiness_of(self)).model_dump(mode="json"))
+        try:
+            return ApiSuccessResponse(data=(await readiness_of(self)).model_dump(mode="json"))
+        except Exception as exc:  # noqa: BLE001 — the caller shows why, not a bare 500
+            log.warning("project setup requirements failed for %s: %s", self.id, exc, exc_info=True)
+            return ApiFailResponse(message=f"Couldn't check what this project needs here: {exc}")
 
     @action.post(action_name="setup")
     async def setup_action(self, root: str = "") -> "ApiResponse":
@@ -1375,7 +1379,7 @@ class Project(SetupSkippable, Entity):
 
         ``via=ShareVia.HUB_REPO`` (opt-in) also pushes the project's HEAD to its
         hub-hosted repository and points the hub row's origin there, so recipients
-        clone it with their hub login (``_publish_to_hosted_repo``). The default
+        clone it with their hub login (``publish_files_to_hub``). The default
         leaves the origin as the project's own git remote.
 
         Each new invitee gets ONE ``MembershipRequest`` via
@@ -1427,7 +1431,7 @@ class Project(SetupSkippable, Entity):
             # shared to me" — which is what the push-to-cloud gate needs.
             self.hub_published_at = _now_iso()
             if via is ShareVia.HUB_REPO:
-                await self._publish_to_hosted_repo()
+                await self.publish_files_to_hub()
             if invitees or teams:
                 await self._send_invites(client, creds, invitees, teams, note)
         warnings = self.share_warnings()
@@ -1449,12 +1453,13 @@ class Project(SetupSkippable, Entity):
             if dep.required and dep.parsed.kind == "file"
         ]
 
-    async def _publish_to_hosted_repo(self) -> HubRepoOrigin:
-        """Push HEAD to this project's hub-hosted repository and make that the hub
-        row's origin. The LOCAL row keeps its own git origin: only recipients read
-        the hub's. Needs a committed checkout — what travels is HEAD, never the
-        working tree."""
-        from flow_sdk.assets.hub_repo_sync import HubRepoCheckout  # noqa: PLC0415
+    async def publish_files_to_hub(self) -> HubRepoOrigin:
+        """Put the project folder into this project's hub-hosted repository and make that
+        the hub row's origin. The LOCAL row keeps its own git origin: only recipients read
+        the hub's. Needs a git checkout — what git tracks there is what travels."""
+        from flow_sdk.assets.git_publish import GitAuthor  # noqa: PLC0415
+        from flow_sdk.assets.hub_repo_sync import HubRepoMirror, mirror_root, sync_project_with_hub  # noqa: PLC0415
+        from flow_sdk.builtin.asset_publishing import actor_author  # noqa: PLC0415
         from flow_sdk.cli.auth.hub_login import resolve_hub_api_key  # noqa: PLC0415
         from flow_sdk.cloud_client.transport.hub_http import hub_graph_url, hub_post, hub_put  # noqa: PLC0415
 
@@ -1468,14 +1473,22 @@ class Project(SetupSkippable, Entity):
         token = resolve_hub_api_key(require_live=True)
         if not token:
             raise RuntimeError("Cloud login required to share through the hub repository")
-        await HubRepoCheckout(
-            root=mount,
-            # This desktop's own hub URL, not the hub's ``clone_url``: the hub spells it
-            # with ITS external host, which a box behind a proxy (Docker) cannot reach.
-            clone_url=hub_graph_url("git_repo", origin.repo_id, "git"),
-            branch=repo.get("default_branch") or "main",
-            token=token,
-        ).push_head()
+        request_info = get_current_request_info()
+        actor = request_info.someone_typeid if request_info else None
+        author = await actor_author(actor) if actor else GitAuthor(name="FlowPad User", email="flowpad@local.invalid")
+        await sync_project_with_hub(
+            mirror=HubRepoMirror(
+                root=mirror_root(origin.repo_id),
+                # This desktop's own hub URL, not the hub's ``clone_url``: the hub spells it
+                # with ITS external host, which a box behind a proxy (Docker) cannot reach.
+                clone_url=hub_graph_url("git_repo", origin.repo_id, "git"),
+                branch=repo.get("default_branch") or "main",
+                token=token,
+            ),
+            checkout=mount,
+            author=author,
+            project_typeid=str(self.typeid),
+        )
         await hub_put(BuiltinEntityType.PROJECT, str(self.id), {"git_origin": origin.model_dump(mode="json")})
         return origin
 

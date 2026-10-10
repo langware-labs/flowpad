@@ -107,3 +107,14 @@ def test_rejected_key_never_reaches_the_switch_check(client, clear_user_data):
         _callback(client)
 
     clear_user_data.assert_not_awaited()
+
+
+def test_a_refused_next_still_lands_in_the_app(client, finalize_login):
+    """A link that asked to land somewhere never ends on the static sign-in page: an unsafe
+    path is swapped for the app's root, and a safe one is followed."""
+    with _validate_returns("user-1"), _current_user("user-1"):
+        refused = _callback(client, next="//evil.com/x")
+        followed = _callback(client, next="/dock/home?action=launch&target=p1")
+
+    assert (refused.status_code, refused.headers["location"]) == (302, "/")
+    assert (followed.status_code, followed.headers["location"]) == (302, "/dock/home?action=launch&target=p1")

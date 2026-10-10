@@ -41,7 +41,7 @@ async def owning_project(entity):
     return await Project.get_one({"id": project_id}) if project_id else None
 
 
-async def _actor_author(actor: TypeId) -> GitAuthor:
+async def actor_author(actor: TypeId) -> GitAuthor:
     from flow_sdk.builtin.user import User  # noqa: PLC0415
 
     user = await User.get_by_typeid(actor)
@@ -141,7 +141,7 @@ async def publish_git_asset(entity, actor: TypeId) -> AssetPublishResult:
         rel_path=rel_path,
         is_file=real_asset.is_file(),
         last_tree=last_tree,
-        author=await _actor_author(actor),
+        author=await actor_author(actor),
         asset_typeid=str(entity.typeid),
     )
 

@@ -995,6 +995,20 @@ export class Project extends APIEntity<Project> {
     return (await dataManager.callAction<void, ProjectSetupRun>(actionInfo)) ?? null;
   }
 
+  /** Send this project's files to its cloud repository (`POST project/<id>/share {via: hub_repo}`),
+   *  so another machine or a sandbox can check it out with nothing but a cloud sign-in. Linked
+   *  first when it is not yet; sent again on every call. Throws with the backend's reason. */
+  async publishFiles(): Promise<void> {
+    const actionInfo = new ActionInfo('share', Project.type, this.id, 'POST');
+    actionInfo.bodyParameters = { via: 'hub_repo' };
+    try {
+      await dataManager.callAction<{ via: string }, unknown>(actionInfo);
+    } catch (err: unknown) {
+      const ax = err as { response?: { data?: { message?: string } }; message?: string };
+      throw new Error(ax.response?.data?.message ?? ax.message ?? "The project's files could not be sent.");
+    }
+  }
+
   /** A launched project, present and checked out on THIS machine (`POST project/<id>/launch-ensure`):
    *  mirrored from the hub when there is no row, materialized from its origin when there is no
    *  checkout, returned as is otherwise. Throws with the backend's reason. */

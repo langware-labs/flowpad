@@ -53,7 +53,7 @@ export const RUNTIME_HOVER_OPEN_DELAY_MS = 1500;
 /** The runtime's glyph at the chip's size. `bg-inherit` on the wrapper and the
  *  badge cut-out so it wears whatever surface it sits on (the pill, or the
  *  hover card's Env chip). */
-function RuntimeIcon({ kind, className }: { kind: RuntimeKind; className: string }) {
+export function RuntimeIcon({ kind, className }: { kind: RuntimeKind; className: string }) {
   const { base, badge } = RUNTIME_APPEARANCE[kind];
   return (
     <IconWithBadge
@@ -77,7 +77,7 @@ const RAISED_SEGMENT =
 /** One header chip in the hover card. */
 const HEADER_CHIP = 'inline-flex h-6 items-center gap-1 rounded-full px-2 text-[11px]';
 
-function RuntimeLabel({ kind }: { kind: RuntimeKind }) {
+export function RuntimeLabel({ kind }: { kind: RuntimeKind }) {
   // "Cloud", not "Hub": the chip answers "whose machine am I on", and to a user
   // the hub backend is simply the cloud. "Hub" is our internal word for the
   // component, and it collides with the hub PAGE you can open from a desktop.

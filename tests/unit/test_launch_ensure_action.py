@@ -76,3 +76,44 @@ async def test_a_project_the_hub_refuses_is_a_404(monkeypatch, calls):
 
     assert resp.status_code == 404, resp.text
     assert calls["setup"] == []
+
+
+@pytest.mark.parametrize(
+    ("status", "says"),
+    [(0, "Couldn't reach the cloud"), (401, "sign-in on this machine has expired"), (500, "boom")],
+)
+@pytest.mark.asyncio
+async def test_a_hub_that_cannot_be_asked_says_why(monkeypatch, calls, status, says):
+    from flow_sdk.cloud_client.shared.errors import HubError
+
+    async def _hydrate(cls, *_a, **_k):
+        raise HubError(status, "boom")
+
+    monkeypatch.setattr(Project, "hydrate_from_hub", classmethod(_hydrate))
+
+    resp = await _call_local("POST", f"project/{uuid4()}/launch-ensure", json={})
+
+    assert resp.status_code == 404, resp.text
+    assert says in resp.json()["message"]
+    assert calls["setup"] == []
+
+
+@pytest.mark.asyncio
+async def test_a_checkout_that_fails_carries_gits_own_words(monkeypatch):
+    from flow_sdk.assets.git_publish import AssetPublishCode, AssetPublishError
+
+    async def _hydrate(cls, project_id, someone_typeid=None):
+        return Project(id=project_id, name="q-agent-test")
+
+    async def _setup(self):
+        raise AssetPublishError(
+            AssetPublishCode.HUB_PUBLISH_FAILED, "git clone against the hub failed", data={"detail": "repository not found"}
+        )
+
+    monkeypatch.setattr(Project, "hydrate_from_hub", classmethod(_hydrate))
+    monkeypatch.setattr(Project, "setup_from_git_origin", _setup)
+
+    resp = await _call_local("POST", f"project/{uuid4()}/launch-ensure", json={})
+
+    assert resp.status_code == 400, resp.text
+    assert resp.json()["message"] == "Couldn't set up the project: git clone against the hub failed — repository not found"

@@ -63,7 +63,7 @@ def hub(tmp_path, monkeypatch):
         "flow_sdk.assets.hub_repo_sync.mirror_root", lambda repo_id: tmp_path / "hub_git" / "mirrors" / repo_id
     )
     monkeypatch.setattr(
-        "flow_sdk.builtin.asset_publishing._actor_author",
+        "flow_sdk.builtin.asset_publishing.actor_author",
         lambda actor: _async(GitAuthor(name="Q", email="q@example.com", typeid=str(actor))),
     )
     monkeypatch.setattr(Agent, "save", save)
