@@ -186,6 +186,10 @@ async def publish_git_asset(entity, actor: TypeId) -> AssetPublishResult:
         warning = "Asset was published, but the local cache could not be updated"
     finally:
         _SUPPRESS_STORE.reset(suppress)
+    if warning is None:
+        # The caller gets a receipt, not the entity, and waits to be told the row changed: without
+        # this the page that pressed "Link to cloud" keeps saying "Not published yet" until reloaded.
+        await entity.notify_updated()
 
     hub_asset = hub_result.get("asset")
     return AssetPublishResult(

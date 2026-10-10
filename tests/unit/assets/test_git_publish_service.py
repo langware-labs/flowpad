@@ -66,7 +66,11 @@ def hub(tmp_path, monkeypatch):
         "flow_sdk.builtin.asset_publishing.actor_author",
         lambda actor: _async(GitAuthor(name="Q", email="q@example.com", typeid=str(actor))),
     )
+    async def notify_updated(self):
+        saved.append(("announced", self.remote))
+
     monkeypatch.setattr(Agent, "save", save)
+    monkeypatch.setattr(Agent, "notify_updated", notify_updated)
     return bare, calls, saved
 
 
@@ -139,7 +143,8 @@ async def test_publish_pushes_the_asset_into_the_hub_repo_and_registers_it(tmp_p
     assert agent.origin.head_commit == _git(bare, "rev-parse", "main")
     assert agent.origin.tree == _git(bare, "rev-parse", f"main:{REL}")
     assert agent.remote is True
-    assert saved == [(actor, {"notify": False})]
+    # Saved quietly (no file write), then announced: the page that asked gets a receipt, not the row.
+    assert saved == [(actor, {"notify": False}), ("announced", True)]
     assert project.model_dump(mode="json") == project_before
 
     assert result.project == {"id": project.id}
