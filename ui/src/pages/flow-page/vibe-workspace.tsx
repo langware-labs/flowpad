@@ -1,4 +1,6 @@
 import CodeEditor from '@src/components/code-editor/CodeEditor';
+import { rememberLaunch } from '@src/components/terminal/openers/last-launch';
+import { ViewMode } from '@src/contexts/view-mode-context';
 import DiffViewer from '@src/components/code-editor/DiffViewer';
 import { DisplayToolbar } from '@src/components/display-toolbar';
 import { ResizablePanel, ResizablePanelGroup, ResizableHandle } from '@src/components/ui/resizable';
@@ -187,6 +189,7 @@ export function VibeWorkspace({ session }: VibeWorkspaceProps) {
         if (!project?.id) {
           throw new Error(`no vibe session resolved for ${session.processId} and no active project to start one in`);
         }
+        rememberLaunch('vibe', ViewMode.Vibe);
         await launchVibeSessionForProject({
           projectId: project.id,
           workdir: project.fs_storage_mount_path || project.name || undefined,

@@ -1,6 +1,8 @@
 import { AgenticProcess, dataContext, ProcessKind, toplog, type ComputeNode } from '@sdk';
 import { surfaceForViewMode, ViewMode, viewModePtyMode } from '@src/contexts/view-mode-context';
 import { chatTargetForProject } from '@src/lib/chat-target';
+import { rememberLaunch } from '@src/components/terminal/openers/last-launch';
+import { workerToOpener } from '@src/components/terminal/openers/useLastWorkerType';
 import { embedStandardAgent } from './embed-standard-agent';
 import type { NavigationActions } from './NavigationActions';
 
@@ -65,6 +67,10 @@ export async function openNewChat(
     'agentic_process.load',
     `openNewChat click worker=${options.workerType ?? 'default'} mode=${mode} pty=${ptyMode} visibility=${document.visibilityState}`,
   );
+
+  // Remembered BEFORE the spawn, so the strip's quick-launch slot reflects the
+  // user's pick (vendor + shape) even when the harness turns out to be missing.
+  if (options.workerType) rememberLaunch(workerToOpener(options.workerType), mode);
 
   const tCreate = performance.now();
   const process = await computeNode.createProcess(
