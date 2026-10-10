@@ -429,3 +429,5 @@ def isolated_kinds(monkeypatch):
     for attr in ("_READ", "_PENDING", "_OWNER", "_BUILT", "_ERRORS"):
         monkeypatch.setattr(declared, attr, getattr(declared, attr).copy())
     monkeypatch.setattr(declared, "_shipped_loaded", declared._shipped_loaded)
+
+from tests.utils.decision_double import decision_double  # noqa: E402, F401 — the doubled Decision API, a fixture

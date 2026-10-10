@@ -69,7 +69,24 @@ export interface AskResult extends ReturnedValue {
 
 export interface WizardResult extends ReturnedValue {
   /** Each step's own answer, by step id. A step never reached is absent. */
-  steps?: Record<string, ReturnedValue & Partial<CliResult & PromptResult & AskResult & WizardResult>>;
+  steps?: Record<string, ReturnedValue & Partial<CliResult & PromptResult & AskResult & WizardResult & DecisionVerdict>>;
+  /** The step whose `on_fail: stop` ended the run early; empty when none did. */
+  stopped_at?: string;
+}
+
+/** What a `decision` op answered: did every requirement hold, and how sure. */
+export interface DecisionVerdict extends ReturnedValue {
+  met?: boolean;
+  /** The deciding requirement's own probability — the least sure when several. */
+  confidence?: number;
+  /** The requirement that held, or the first that did not, in a sentence. */
+  reason?: string;
+  /** Every question's answer as the decision API gave it, by question name. */
+  answers?: Record<string, { type: 'choice' | 'score' | 'yes_no'; [key: string]: unknown }>;
+  /** The closed `DecisionError.reason` when the question could not be asked. */
+  unavailable?: string | null;
+  endpoint?: string;
+  latency_ms?: number;
 }
 
 /**
@@ -82,6 +99,7 @@ export const ANSWER_KIND = {
   prompt: 'compute.returned.prompt',
   ask: 'compute.returned.ask',
   wizard: 'compute.returned.wizard',
+  decision: 'compute.returned.decision',
 } as const;
 
 /** Is this answer a process record? Read from its kind — not inferred from
@@ -89,6 +107,11 @@ export const ANSWER_KIND = {
  *  never started, and a future answer class may carry one too). */
 export const isCliResult = (answer: Pick<ReturnedValue, 'spec_kind'> | null | undefined): answer is CliResult =>
   answer?.spec_kind === ANSWER_KIND.cli;
+
+/** Is this answer a decision op's verdict? */
+export const isDecisionVerdict = (
+  answer: Pick<ReturnedValue, 'spec_kind'> | null | undefined,
+): answer is DecisionVerdict => answer?.spec_kind === ANSWER_KIND.decision;
 
 /** Is this answer a nested wizard's own result? */
 export const isWizardResult = (answer: Pick<ReturnedValue, 'spec_kind'> | null | undefined): answer is WizardResult =>

@@ -35,12 +35,11 @@ The decisions, one problem at a time: ``docs/snippets/call-returns.md``.
 
 from __future__ import annotations
 
+from enum import IntEnum
 from typing import Annotated, Any, ClassVar, Optional
 
 from pydantic import BeforeValidator, WrapSerializer
 from typing_extensions import Self
-
-from enum import IntEnum
 
 from flow_sdk.schema.data_spec.spec import DataSpec, Tagged, _by_kind, _with_kind
 
@@ -334,6 +333,31 @@ class NavigateResult(ReturnedValue):
     verdict: Optional[str] = None
 
 
+class DecisionVerdict(ReturnedValue):
+    """What a ``decision`` op answered: did every requirement hold, and how sure.
+
+    ``OK`` when ``met``; ``NOT_YET`` when a requirement did not hold (``ran=True`` — the
+    question WAS asked), or when it could not be asked (``ran=False``, ``unavailable``
+    names the closed reason). ``value`` is the plain answer(s) a later step can bind: one
+    question's answer on its own, several as ``{name: answer}``.
+    """
+
+    spec_kind: ClassVar[str] = "compute.returned.decision"
+
+    met: bool = False
+    #: The deciding requirement's own probability — the LEAST sure of them when several.
+    confidence: float = 0.0
+    #: Why, in a sentence: the requirement that held, or the first that did not.
+    reason: str = ""
+    #: Every question's answer, as the decision API gave it.
+    answers: dict[str, Any] = {}
+    #: The ``DecisionError.reason`` when the question could not be asked.
+    unavailable: Optional[str] = None
+    #: The APIEndpoint that answered, as ``api_endpoint-<id>``.
+    endpoint: str = ""
+    latency_ms: float = 0.0
+
+
 class WizardResult(ReturnedValue):
     """A wizard's answer: its own verdict, and each step's answer as the step's
     OWN result — a ``CliResult``, a ``PromptResult``, a nested ``WizardResult``.
@@ -344,6 +368,23 @@ class WizardResult(ReturnedValue):
     spec_kind: ClassVar[str] = "compute.returned.wizard"
 
     steps: dict[str, Tagged[ReturnedValue]] = {}
+    #: The step whose ``on_fail: stop`` ended the run early; empty when none did.
+    stopped_at: str = ""
+
+    def first_executor(self, prefix: str = "agentic_process-", *, first: str = "") -> Optional[str]:
+        """The first step's ``executor`` naming a *prefix* record — nested wizards walked too. *first*
+        names a step to look at before the others (a sugar-made wizard's agent step)."""
+        order = ([first] if first in self.steps else []) + [k for k in self.steps if k != first]
+        for key in order:
+            step = self.steps[key]
+            executor = getattr(step, "executor", None)
+            if executor and str(executor).startswith(prefix):
+                return str(executor)
+            if isinstance(step, WizardResult):
+                nested = step.first_executor(prefix, first=first)
+                if nested:
+                    return nested
+        return None
 
 
 ReturnedValue.model_rebuild()
