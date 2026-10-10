@@ -604,7 +604,7 @@ VIEW_META: Mapping[ViewType, ViewMeta] = {
     ViewType.RAG: _m(
         _NONE,
         label="Search indexes",
-        aliases=("embeddings", "knowledge index", "vector index"),
+        aliases=("embeddings", "knowledge index", "vector index", "brain", "knowledge base"),
     ),
     # The counter it came from is a query pair (?group=&counter=), not a pointer.
     # Labelled apart from `assets` (the tree): this is one counter's table.

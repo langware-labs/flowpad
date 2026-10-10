@@ -155,6 +155,9 @@ def _static_options() -> tuple[dict[str, str], dict[str, str]]:
         if name not in screens:
             names.setdefault(name, f"view:{place_address(assets, pointer)}")
     options.update(_fixed_targets())
+    for key, called in _FIXED_NAMES.items():
+        for name in called:
+            names.setdefault(name, key)
     return options, names
 
 
@@ -182,6 +185,10 @@ def _fixed_targets() -> dict[str, str]:
         f"url:{FLOWPAD_CLOUD_URL}": "Flowpad cloud: the hub's website",
         **{f"action:{key}": f"Do it: {what}" for key, what in ui_actions().items()},
     }
+
+
+#: What a fixed target is called, for the rules: an app page has no place on the map to name it.
+_FIXED_NAMES = {"url:/discover": ("discover", "discover page", "marketplace")}
 
 
 @lru_cache(maxsize=1)
@@ -371,7 +378,10 @@ def rule_hit(utterance: str) -> Optional[NavigationTarget]:
     if core in SELF_LOG_NAMES or _YOUR_LOG.fullmatch(core):
         return NavigationTarget(kind="log", value="smart-navigation")
     key = _screen_named(core) if core else None
-    return NavigationTarget(kind="view", value=key[len("view:") :]) if key else None
+    if not key:
+        return None
+    kind, _, value = key.partition(":")
+    return NavigationTarget(kind=kind, value=value)
 
 
 #: "this project's connections", "the current session's transcript": a screen of the entity in context.
