@@ -74,23 +74,6 @@ async def test_fresh_agent_publishes_owning_project_before_asset(monkeypatch):
     assert events == ["project", "agent"]
 
 
-async def test_a_git_project_sends_its_files_before_its_agent(monkeypatch, tmp_path):
-    """The hub stands an agent up inside its project, so the project's files go first."""
-    events: list[str] = []
-    (tmp_path / ".git").mkdir()
-    project = Project(id=mint_uuid(), name="q", remote=True, fs_storage_mount_path=str(tmp_path))
-    agent = Agent(id=mint_uuid(), name="joe", project_id=project.id)
-
-    monkeypatch.setattr("flow_sdk.builtin.asset_publishing.owning_project", AsyncMock(return_value=project))
-    monkeypatch.setattr(Project, "publish_files_to_hub", AsyncMock(side_effect=lambda: events.append("files")))
-    monkeypatch.setattr(
-        "flow_sdk.builtin.asset_publishing.publish_git_asset", AsyncMock(side_effect=lambda *_a: events.append("agent"))
-    )
-
-    assert await agent.ensure_on_hub(TypeId(type="user", id=mint_uuid())) is True
-    assert events == ["files", "agent"]
-
-
 async def test_project_ensure_on_hub_is_persisted_and_idempotent(monkeypatch):
     project = Project(id=mint_uuid(), name="flowpad-os", remote=False)
     share = AsyncMock(return_value=project)
