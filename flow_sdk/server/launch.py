@@ -22,6 +22,7 @@ from filelock import FileLock
 
 from flow_sdk import singleton_lock
 from flow_sdk.instance_settings.base_settings import DEFAULT_PROD_PORT
+from flow_sdk.server import failure_classification as fc
 from flow_sdk.server.memory_probe import memory_snapshot
 from flow_sdk.service_log import cleanup_old_logs, generate_timestamped_log_path
 
@@ -67,6 +68,27 @@ _server_log_seen: int = 0
 _server_booting: bool = False
 _boot_started_at: float = 0.0
 BOOT_CEILING_SECONDS = 600.0
+
+# Deaths of the spawned backend before it ever answered a health probe, in a
+# row. Reset by a healthy probe. The crash-loop bound (fc.CRASH_LOOP_LIMIT) is
+# counted on this: a backend that never came up N times running is not going
+# to on the N+1th, whatever the log says.
+_boot_deaths: int = 0
+# The last verdict the classifier gave for a death (fatal or not), for the
+# crash-loop record and the log.
+_last_verdict: fc.FailureVerdict | None = None
+
+# Tail of the server log the classifier reads after a death.
+FAILURE_LOG_TAIL_BYTES = 64 * 1024
+
+# ``FLOWPAD_FORCE_START=true``: start even though a fatal record for the same
+# runtime exists. The desktop app's "Retry anyway" clears the record instead;
+# this is for a shell user who knows the cause was fixed outside our view (IT
+# allowed the file).
+ENV_FORCE_START = "FLOWPAD_FORCE_START"
+
+#: Exit code of a monitor that stopped supervising because of a fatal failure.
+EXIT_FATAL_FAILURE = 3
 
 # Held for the monitor's lifetime; see acquire_monitor_singleton.
 _monitor_lock: FileLock | None = None
@@ -249,7 +271,16 @@ def start_server_process(port: int) -> int:
     server_log = open(server_log_path, "a")  # noqa: WPS515 — fd inherited by child
     args = [sys.executable, "-u", "-m", "flow_sdk.server.run"]
     global _server_child, _server_log_path, _server_log_seen, _server_booting, _boot_started_at
-    _server_child = start_detached_process(args, env=env, stdout=server_log, stderr=server_log)
+    try:
+        _server_child = start_detached_process(args, env=env, stdout=server_log, stderr=server_log)
+    except OSError as exc:
+        # CreateProcess refused the interpreter itself (policy, wrong architecture, gone):
+        # there is no child and no log line -- the exception is the evidence.
+        server_log.close()
+        verdict = fc.classify_spawn_error(exc)
+        if verdict.fatal:
+            raise FatalBackendFailure(verdict, server_log=str(server_log_path)) from exc
+        raise
     server_log.close()
     _server_log_path = Path(server_log_path)
     _server_log_seen = 0
@@ -262,8 +293,16 @@ def start_server_process(port: int) -> int:
 def _mark_boot_done() -> None:
     """The spawned backend answered a health probe: from here on a failed probe is
     a hang, and log growth no longer excuses it."""
-    global _server_booting
+    global _server_booting, _boot_deaths
     _server_booting = False
+    _boot_deaths = 0
+    # A healthy backend proves the recorded failure (if any) no longer applies -- the record and the
+    # server.json flag the desktop app and `flow status` read.
+    try:
+        if clear_failure_record("the backend became healthy") or _load_info().get("fatal_failure"):
+            _set_info({"fatal_failure": False})
+    except Exception:  # noqa: BLE001 -- bookkeeping, never a reason to drop supervision
+        pass
 
 
 def _boot_still_progressing() -> bool:
@@ -290,12 +329,140 @@ def _boot_still_progressing() -> bool:
     return grew
 
 
+class FatalBackendFailure(Exception):
+    """The backend died for a reason restarting cannot change (fc.FailureVerdict.fatal).
+
+    Raised inside the monitor to stop supervising; ``record_fatal_failure`` has
+    been (or will be) written for the desktop app by the time it propagates."""
+
+    def __init__(self, verdict: fc.FailureVerdict, *, server_log: str | None = None):
+        super().__init__(verdict.reason)
+        self.verdict = verdict
+        self.server_log = server_log
+
+
+def failure_record_path() -> Path:
+    """``server-failure.json`` next to server.json: the structured reason the
+    monitor stopped, read by the desktop app (electron/fatal-failure.js)."""
+    from flow_sdk.instance_settings import get_instance_settings
+
+    return get_instance_settings().instance_dir / "server-failure.json"
+
+
+def load_failure_record() -> dict | None:
+    import json
+
+    p = failure_record_path()
+    try:
+        data = json.loads(p.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    return data if isinstance(data, dict) and data.get("kind") else None
+
+
+def clear_failure_record(reason: str) -> bool:
+    p = failure_record_path()
+    try:
+        p.unlink()
+    except FileNotFoundError:
+        return False
+    except OSError as exc:
+        log.warning("Could not remove %s: %s", p, exc)
+        return False
+    log.info("Cleared fatal-failure record (%s)", reason)
+    return True
+
+
+def record_fatal_failure(verdict: fc.FailureVerdict, *, server_log: str | None, attempts: int) -> Path:
+    """Write ``server-failure.json`` atomically. The desktop app shows it; the next
+    monitor refuses to start the same runtime on it (``refuse_start_reason``)."""
+    import json
+
+    record = verdict.to_record(
+        fingerprint=fc.runtime_fingerprint(),
+        at=datetime.now(timezone.utc).isoformat(),
+        attempts=attempts,
+        server_log=server_log,
+        monitor_pid=os.getpid(),
+        engine_version=fc.runtime_fingerprint()["engine_version"],
+    )
+    p = failure_record_path()
+    p.parent.mkdir(parents=True, exist_ok=True)
+    tmp = p.with_suffix(".tmp")
+    tmp.write_text(json.dumps(record, indent=2), encoding="utf-8")
+    os.replace(str(tmp), str(p))
+    log.error(
+        "FATAL backend failure (%s): %s -- restarts stopped, recorded in %s",
+        verdict.kind,
+        verdict.excerpt or verdict.reason,
+        p,
+    )
+    return p
+
+
+def refuse_start_reason(*, force: bool | None = None) -> str | None:
+    """Why a backend must NOT be started now, or None.
+
+    A fatal record for the SAME runtime fingerprint means nothing we can see has
+    changed since the backend last died deterministically; starting it again
+    reproduces the failure. A record for a different fingerprint (the runtime was
+    repaired, the engine upgraded) is stale and is cleared here.
+    """
+    if force is None:
+        force = os.environ.get(ENV_FORCE_START, "").lower() == "true"
+    record = load_failure_record()
+    if not record or not record.get("fatal"):
+        return None
+    if not fc.same_fingerprint(record.get("fingerprint"), fc.runtime_fingerprint()):
+        clear_failure_record("runtime fingerprint changed since the failure")
+        return None
+    if force:
+        clear_failure_record(f"{ENV_FORCE_START}=true")
+        return None
+    return (
+        f"the backend was stopped after a fatal failure ({record.get('kind')}) at {record.get('at')} and the runtime "
+        f"is unchanged: {record.get('reason')} -- fix the cause, then retry from the desktop app "
+        f"(or run with {ENV_FORCE_START}=true)"
+    )
+
+
+def _server_log_tail() -> str:
+    if _server_log_path is None:
+        return ""
+    try:
+        with open(_server_log_path, "rb") as fh:
+            fh.seek(0, os.SEEK_END)
+            size = fh.tell()
+            fh.seek(max(0, size - FAILURE_LOG_TAIL_BYTES))
+            return fh.read().decode("utf-8", errors="replace")
+    except OSError:
+        return ""
+
+
 def _reap_server_child() -> None:
-    """Collect the spawned backend if it has exited, so it never lingers as a zombie."""
-    global _server_child
+    """Collect the spawned backend if it has exited, so it never lingers as a zombie.
+
+    A death is classified (fc.classify_server_log on the log tail): a fatal
+    verdict, or the crash-loop bound, raises FatalBackendFailure so the monitor
+    stops supervising instead of restarting the same failure."""
+    global _server_child, _boot_deaths, _last_verdict
     if _server_child is not None and (rc := _server_child.poll()) is not None:
-        log.warning("Server child PID=%d exited with code %s", _server_child.pid, rc)
+        pid = _server_child.pid
+        log.warning("Server child PID=%d exited with code %s", pid, rc)
         _server_child = None
+        verdict = fc.classify_server_log(_server_log_tail(), exit_code=rc)
+        _last_verdict = verdict
+        if _server_booting:
+            _boot_deaths += 1
+        server_log = str(_server_log_path) if _server_log_path else None
+        if verdict.fatal:
+            record_fatal_failure(verdict, server_log=server_log, attempts=_boot_deaths)
+            raise FatalBackendFailure(verdict, server_log=server_log)
+        if _server_booting and _boot_deaths >= fc.CRASH_LOOP_LIMIT:
+            loop = fc.crash_loop_verdict(_boot_deaths, verdict)
+            record_fatal_failure(loop, server_log=server_log, attempts=_boot_deaths)
+            raise FatalBackendFailure(loop, server_log=server_log)
+        log.warning("Server death classified as %s (%s); it will be restarted", verdict.kind, verdict.reason)
 
 
 def _live_server_pid() -> int | None:
@@ -437,7 +604,13 @@ def ensure_monitor_singleton(port: int) -> None:
 
 
 def monitor_loop(port: int, interval: float = 30.0) -> None:
-    """Infinite loop: sleep → health check → restart if needed."""
+    """Loop: sleep → health check → restart if needed.
+
+    Ends only by raising: ``FatalBackendFailure`` when a death is classified as
+    deterministic (or the crash-loop bound is reached) -- the record for the
+    desktop app is already on disk by then -- or whatever ``time.sleep`` raises
+    in tests.
+    """
     consecutive_failures = 0
     restart_failure_threshold = 3
     max_backoff = 300.0  # 5 minutes
@@ -544,6 +717,14 @@ def launch_monitor(port: int) -> None:
 
         if check_server_health(port):
             log.info("Server already healthy on port %d — adopting it", port)
+            clear_failure_record("a healthy server is running")
+        elif (refusal := refuse_start_reason()) is not None:
+            # The last backend died for a reason restarting cannot change, and nothing
+            # about the runtime differs: do not reproduce it. The desktop app shows the
+            # record and clears it on an explicit Retry; `flow start` prints this reason.
+            log.error("Not starting the server: %s", refusal)
+            _set_info({"fatal_failure": True})
+            return
         else:
             # Kill any stale server process before starting a fresh one; this
             # frees the port on Windows where TIME_WAIT can block a new bind.
@@ -567,6 +748,14 @@ def launch_monitor(port: int) -> None:
         # it, not exit and leave server.json naming a dead monitor.
         log.info("Entering monitor loop...")
         monitor_loop(port)
+    except FatalBackendFailure as exc:
+        # Recorded already (record_fatal_failure) unless it came from a spawn
+        # failure, which has no log to classify: record that here.
+        if exc.verdict.source == "spawn":
+            record_fatal_failure(exc.verdict, server_log=exc.server_log, attempts=_boot_deaths + 1)
+        log.error("Monitor stopped supervising: %s", exc.verdict.reason)
+        _set_info({"fatal_failure": True})
+        raise
     except Exception:
         log.exception("Monitor crashed with unhandled exception")
         raise
@@ -717,6 +906,8 @@ if __name__ == "__main__":
     port = int(sys.argv[1]) if len(sys.argv) > 1 else 9007
     try:
         launch_monitor(port)
+    except FatalBackendFailure:
+        sys.exit(EXIT_FATAL_FAILURE)
     except Exception:
         _setup_logging()
         log.exception("Monitor crashed with unhandled exception")

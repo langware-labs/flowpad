@@ -311,7 +311,13 @@ def _start_service_guarded(port: int) -> None:
     # already completed, so this is safe on every start.
     from flow_sdk import boot_progress
     from flow_sdk.migrations import runner as migration_runner
-    from flow_sdk.server.launch import check_server_health, start_monitor_detached, wait_for_server_health
+    from flow_sdk.server.launch import (
+        EXIT_FATAL_FAILURE,
+        check_server_health,
+        refuse_start_reason,
+        start_monitor_detached,
+        wait_for_server_health,
+    )
 
     # Each step below is a boot phase the desktop app's startup gate can see
     # (boot_progress writes to this process's stdout when the app asked for
@@ -329,6 +335,12 @@ def _start_service_guarded(port: int) -> None:
 
         if check_server_health(port):
             typer.echo(f"Server already running on port {port}")
+        elif (refusal := refuse_start_reason()) is not None:
+            # The last backend died deterministically (FLOWPAD-2231) and the runtime is the
+            # same: starting it again would only reproduce the failure. The monitor would refuse
+            # too; saying it here puts the reason on the terminal instead of in a log.
+            typer.echo(f"Not starting the Flow server: {refusal}", err=True)
+            raise typer.Exit(EXIT_FATAL_FAILURE)
         else:
             typer.echo(f"Starting Flow server on http://127.0.0.1:{port}")
             boot_progress.set_phase("spawn")

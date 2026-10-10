@@ -211,6 +211,7 @@ def test_monitor_loop_treats_a_booting_child_as_alive_until_threshold(monkeypatc
     monkeypatch.setattr(launch, "check_server_health", lambda _port: False)
     monkeypatch.setattr(launch, "_load_info", lambda: {})
     monkeypatch.setattr(launch, "is_process_alive", lambda *_a, **_k: False)
+
     def fake_kill(pid: int) -> bool:
         killed.append(pid)
         booting.rc = -15  # dead now, so the next poll() reaps it
@@ -657,3 +658,227 @@ def test_server_marker_never_matches_the_monitor_cmdline():
     """A bare "flow_sdk.server" is a prefix of "flow_sdk.server.launch": the
     monitor would pass the *server* liveness check and be killed as one."""
     assert launch._SERVER_CMD_MARKER not in launch._MONITOR_CMD_MARKER
+
+
+# ---------------------------------------------------------------------------
+# FLOWPAD-2231: deterministic fatal failures stop the monitor; transient ones
+# are retried with backoff, but boundedly. The record the monitor writes is
+# what the desktop app shows, and what the next monitor refuses to repeat.
+# ---------------------------------------------------------------------------
+
+from flow_sdk.server import failure_classification as fc  # noqa: E402
+
+POLICY_LOG = (
+    "Traceback (most recent call last):\n"
+    '  File "C:\\\\py\\\\Lib\\\\multiprocessing\\\\connection.py", line 22, in <module>\n'
+    "    import _multiprocessing\n"
+    "ImportError: DLL load failed while importing _multiprocessing: An Application Control policy has blocked this file.\n"
+)
+
+
+@pytest.fixture
+def failure_dir(monkeypatch, tmp_path):
+    """The record lands in tmp, and the fingerprint is fixed so tests can forge a matching one."""
+    monkeypatch.setattr(launch, "failure_record_path", lambda: tmp_path / "server-failure.json")
+    monkeypatch.setattr(
+        fc,
+        "runtime_fingerprint",
+        lambda **_k: {
+            "hash": "abc",
+            "python": "C:/py/python.exe",
+            "engine_version": "0.2.203",
+            "platform": "win32-amd64",
+        },
+    )
+    return tmp_path
+
+
+def _dying_child(monkeypatch, tmp_path, log_text: str, *, rc: int = 1):
+    """A child the monitor spawned that has already exited, with `log_text` as its server log."""
+    server_log = tmp_path / "server.log"
+    server_log.write_text(log_text, encoding="utf-8")
+    monkeypatch.setattr(launch, "_server_log_path", server_log)
+    monkeypatch.setattr(launch, "_server_booting", True)
+    monkeypatch.setattr(launch, "_boot_deaths", 0)
+    monkeypatch.setattr(launch, "_server_child", FakeChild(777, rc=rc))
+    return server_log
+
+
+def test_enforced_policy_block_stops_the_monitor_with_zero_restarts(monkeypatch, failure_dir, set_infos):
+    """Test 1: the field ImportError is fatal -- the monitor restarts NOTHING and records why."""
+    _stop_after(monkeypatch, 5)
+    _dying_child(monkeypatch, failure_dir, POLICY_LOG)
+    started: list[int] = []
+    monkeypatch.setattr(launch, "check_server_health", lambda _port: False)
+    monkeypatch.setattr(launch, "_load_info", lambda: {})
+    monkeypatch.setattr(launch, "is_process_alive", lambda *_a, **_k: False)
+    monkeypatch.setattr(launch, "start_server_process", lambda port: started.append(port) or 456)
+
+    with pytest.raises(launch.FatalBackendFailure) as info:
+        launch.monitor_loop(9007, interval=0)
+
+    assert started == [], "a deterministic failure must not be retried"
+    assert info.value.verdict.kind == fc.POLICY_BLOCKED
+    record = launch.load_failure_record()
+    assert record["kind"] == "policy-blocked" and record["fatal"] is True and record["restarts_stopped"] is True
+    assert record["module"] == "_multiprocessing" and record["attempts"] == 1
+    assert record["fingerprint"]["hash"] == "abc"
+    assert record["server_log"].endswith("server.log")
+
+
+def test_audit_only_evidence_never_stops_the_monitor(monkeypatch, failure_dir):
+    """Test 2: an audit-mode Code Integrity event (3076) is information. A child that died
+    with no recognised cause in its log is restarted, whatever the event log says."""
+    _stop_after(monkeypatch, 1)
+    _dying_child(monkeypatch, failure_dir, "INFO booting\nINFO something transient\n")
+    started: list[int] = []
+    monkeypatch.setattr(launch, "check_server_health", lambda _port: False)
+    monkeypatch.setattr(launch, "_load_info", lambda: {})
+    monkeypatch.setattr(launch, "is_process_alive", lambda *_a, **_k: False)
+    monkeypatch.setattr(launch, "start_server_process", lambda port: started.append(port) or 456)
+    monkeypatch.setattr(launch, "wait_for_server_health", lambda *_a, **_k: True)
+    assert fc.classify_code_integrity_events([{"id": 3076}])["enforced_block"] is False
+
+    with pytest.raises(StopMonitor):
+        launch.monitor_loop(9007, interval=0)
+
+    assert started == [9007]
+    assert launch.load_failure_record() is None
+
+
+def test_unknown_transient_failure_is_retried_with_backoff_but_boundedly(monkeypatch, failure_dir):
+    """Test 3 + 4: a crash with no recognised cause is restarted (with the doubling backoff),
+    but a backend that never comes up CRASH_LOOP_LIMIT times running is deterministic by
+    repetition: the monitor stops and records a crash-loop."""
+    sleeps: list[float] = []
+    monkeypatch.setattr(launch.time, "sleep", lambda s: sleeps.append(s))
+    server_log = _dying_child(monkeypatch, failure_dir, "INFO booting\nSegmentation fault\n")
+    started: list[int] = []
+
+    def fake_start(port):
+        started.append(port)
+        launch._server_child = FakeChild(1000 + len(started), rc=139)  # dies again at once
+        launch._server_log_path = server_log
+        launch._server_booting = True
+        return launch._server_child.pid
+
+    monkeypatch.setattr(launch, "check_server_health", lambda _port: False)
+    monkeypatch.setattr(launch, "_load_info", lambda: {})
+    monkeypatch.setattr(launch, "is_process_alive", lambda *_a, **_k: False)
+    monkeypatch.setattr(launch, "start_server_process", fake_start)
+    monkeypatch.setattr(launch, "wait_for_server_health", lambda *_a, **_k: False)
+
+    with pytest.raises(launch.FatalBackendFailure) as info:
+        launch.monitor_loop(9007, interval=0)
+
+    assert info.value.verdict.kind == fc.CRASH_LOOP
+    assert len(started) == fc.CRASH_LOOP_LIMIT - 1, "retried, but not forever"
+    assert max(sleeps) >= 8, "the doubling backoff kicked in between retries"
+    record = launch.load_failure_record()
+    assert record["kind"] == "crash-loop" and record["attempts"] == fc.CRASH_LOOP_LIMIT
+
+
+def test_a_matching_fatal_record_refuses_to_start_the_same_runtime(monkeypatch, failure_dir, set_infos):
+    """Test 4: the next monitor does not reproduce a recorded fatal failure under an unchanged runtime."""
+    launch.record_fatal_failure(fc.classify_server_log(POLICY_LOG, exit_code=1), server_log="x", attempts=1)
+    started: list[int] = []
+    monkeypatch.setattr(launch, "_setup_logging", lambda: None)
+    monkeypatch.setattr(launch, "acquire_monitor_singleton", lambda: True)
+    monkeypatch.setattr(launch, "ensure_monitor_singleton", lambda port: None)
+    monkeypatch.setattr(launch, "check_server_health", lambda _port: False)
+    monkeypatch.setattr(launch, "start_server_process", lambda port: started.append(port) or 1)
+    monkeypatch.setattr(launch, "monitor_loop", lambda port, interval=30.0: None)
+    monkeypatch.delenv(launch.ENV_FORCE_START, raising=False)
+
+    launch.launch_monitor(9007)
+
+    assert started == []
+    assert any(w.get("fatal_failure") for w in set_infos)
+    assert launch.load_failure_record() is not None, "the record stays until the cause changes or the user retries"
+    assert "unchanged" in launch.refuse_start_reason()
+
+
+def test_a_changed_runtime_clears_the_record_and_starts(monkeypatch, failure_dir, set_infos):
+    """The repair installed another interpreter: the old record is stale, the backend starts."""
+    launch.record_fatal_failure(fc.classify_server_log(POLICY_LOG, exit_code=1), server_log="x", attempts=1)
+    monkeypatch.setattr(
+        fc,
+        "runtime_fingerprint",
+        lambda **_k: {
+            "hash": "repaired",
+            "python": "C:/repaired/python.exe",
+            "engine_version": "0.2.203",
+            "platform": "win32-amd64",
+        },
+    )
+    assert launch.refuse_start_reason() is None
+    assert launch.load_failure_record() is None
+
+
+def test_force_start_clears_a_matching_record(monkeypatch, failure_dir):
+    launch.record_fatal_failure(fc.classify_server_log(POLICY_LOG, exit_code=1), server_log="x", attempts=1)
+    monkeypatch.setenv(launch.ENV_FORCE_START, "true")
+    assert launch.refuse_start_reason() is None
+    assert launch.load_failure_record() is None
+
+
+def test_a_healthy_backend_resets_the_death_count_and_writes_no_record(monkeypatch, failure_dir, set_infos):
+    """Test 5: no behaviour change on the happy path -- and a stale record / server.json flag is cleared."""
+    _stop_after(monkeypatch, 2)
+    launch.record_fatal_failure(fc.classify_server_log(POLICY_LOG, exit_code=1), server_log="x", attempts=1)
+    monkeypatch.setattr(launch, "_load_info", lambda: {"fatal_failure": True})
+    monkeypatch.setattr(launch, "_boot_deaths", 3)
+    monkeypatch.setattr(launch, "_server_booting", True)
+    monkeypatch.setattr(launch, "check_server_health", lambda _port: True)
+
+    with pytest.raises(StopMonitor):
+        launch.monitor_loop(9007, interval=0)
+
+    assert launch._boot_deaths == 0 and launch._server_booting is False
+    assert launch.load_failure_record() is None, "a healthy backend clears the stale record"
+    assert {"fatal_failure": False} in set_infos, "and the server.json flag"
+
+
+def test_a_slow_but_progressing_boot_is_never_classified(monkeypatch, failure_dir, tmp_path):
+    """Test 14: a child that is alive and still writing its log is not a death -- no verdict, no restart."""
+    _stop_after(monkeypatch, 4)
+    server_log = tmp_path / "server.log"
+    server_log.write_text("x", encoding="utf-8")
+    monkeypatch.setattr(launch, "_server_log_path", server_log)
+    monkeypatch.setattr(launch, "_server_booting", True)
+    monkeypatch.setattr(launch, "_boot_started_at", launch.time.monotonic())
+    monkeypatch.setattr(launch, "_server_child", FakeChild(321, rc=None))
+    ticks = {"n": 0}
+
+    def health(_port):
+        ticks["n"] += 1
+        server_log.write_text("x" * (ticks["n"] + 1), encoding="utf-8")  # grows every probe
+        return False
+
+    started: list[int] = []
+    monkeypatch.setattr(launch, "check_server_health", health)
+    monkeypatch.setattr(launch, "_load_info", lambda: {})
+    monkeypatch.setattr(launch, "is_process_alive", lambda *_a, **_k: False)
+    monkeypatch.setattr(launch, "start_server_process", lambda port: started.append(port) or 1)
+
+    with pytest.raises(StopMonitor):
+        launch.monitor_loop(9007, interval=0)
+
+    assert started == [] and launch._boot_deaths == 0 and launch.load_failure_record() is None
+
+
+def test_a_refused_interpreter_at_spawn_is_fatal_and_recorded(monkeypatch, failure_dir, tmp_path):
+    """The interpreter itself cannot be started: no child, no log line -- the OSError is the evidence."""
+    exc = OSError(22, "An Application Control policy has blocked this file")
+    exc.winerror = 4551
+
+    def refuse(*_a, **_k):
+        raise exc
+
+    monkeypatch.setattr(launch, "start_detached_process", refuse)
+    monkeypatch.setattr(launch, "_logs_base", lambda: tmp_path)
+    monkeypatch.setattr(launch, "generate_timestamped_log_path", lambda _name: str(tmp_path / "s.log"))
+    monkeypatch.setattr(launch, "cleanup_old_logs", lambda _d: None)
+    with pytest.raises(launch.FatalBackendFailure) as info:
+        launch.start_server_process(9007)
+    assert info.value.verdict.kind == fc.INTERPRETER_BLOCKED and info.value.verdict.source == "spawn"
