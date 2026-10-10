@@ -10,7 +10,7 @@
  *
  * **Pure.** `now` is a parameter everywhere, so tests pin the clock.
  */
-import type { LLMChainRemaining, LLMUsageCounters, LLMUsageGranularity, LLMUsagePoint } from '@sdk';
+import type { LLMChainHop, LLMChainRemaining, LLMUsageCounters, LLMUsageGranularity, LLMUsagePoint } from '@sdk';
 import { formatValue, type TimeCohort } from '@src/components/cost-dashboard/constants';
 
 import { endpointIdFromTypeId } from './llm-endpoints-pointer';
@@ -162,6 +162,43 @@ export function ratioTone(used: number): RatioTone {
 
 export function isCostKey(key: string): boolean {
   return key.startsWith('cost_usd');
+}
+
+/** One cost limit's remaining entry, with WHICH limit it is (`cost_usd_total`...). The hub's
+ *  `remaining` map is keyed by limit; picking one entry out of it must keep the key, or a bar
+ *  cannot label or format it. */
+export interface CostLeft {
+  key: string;
+  remaining: LLMChainRemaining;
+}
+
+/** Cost left per hub endpoint typeid; `null` until read, or when the chain has no cost cap. */
+export type CostLeftByEndpoint = Record<string, CostLeft | null>;
+
+/** The tighter of two cost limits (the smaller `remaining`); `null` only when both are. */
+export function tighterCost(a: CostLeft | null | undefined, b: CostLeft | null | undefined): CostLeft | null {
+  if (!a || !b) return a ?? b ?? null;
+  return b.remaining.remaining < a.remaining.remaining ? b : a;
+}
+
+/**
+ * The tightest COST cap along a chain: the smallest `remaining` over every hop's cost limits.
+ * Token caps are ignored on purpose — a "left" figure is money, and mixing units in one number
+ * is how a budget reads as $0 when it is 50k tokens.
+ */
+export function tightestCostLimit(hops: readonly LLMChainHop[] | undefined): CostLeft | null {
+  let best: CostLeft | null = null;
+  for (const hop of hops ?? []) {
+    for (const [key, remaining] of Object.entries(hop.remaining ?? {})) {
+      if (isCostKey(key) && remaining.limit > 0) best = tighterCost(best, { key, remaining });
+    }
+  }
+  return best;
+}
+
+/** Dollars left on a cost limit, never negative; `undefined` when there is no limit to speak of. */
+export function usdLeft(left: CostLeft | null | undefined): number | undefined {
+  return left ? Math.max(0, left.remaining.remaining) : undefined;
 }
 
 /** Format an amount in its limit key's own unit: dollars, tokens, plain count. */

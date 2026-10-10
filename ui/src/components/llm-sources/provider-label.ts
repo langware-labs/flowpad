@@ -1,12 +1,11 @@
 import { LMApiProvider } from '@sdk';
 
-/** Display names for the LLM key providers. Brand names: not translated. */
-const PROVIDER_LABEL: Record<string, string> = {
-  [LMApiProvider.OpenRouter]: 'OpenRouter',
-  [LMApiProvider.Anthropic]: 'Anthropic',
-  [LMApiProvider.OpenAI]: 'OpenAI',
-  [LMApiProvider.FlowPad]: 'FlowPad Hub endpoint',
-};
+import { providerSpec } from '@src/components/llm-endpoints/endpoint-catalog';
 
-/** Display name for a provider value, falling back to the raw value. */
-export const providerLabel = (provider: string): string => PROVIDER_LABEL[provider] ?? provider;
+/**
+ * Display name for an LLM key provider: the brand the endpoint catalog already declares, so a
+ * new provider is named in one place. FlowPad's hub endpoint is not a catalog provider (nobody
+ * keys it by hand), so it is the one name kept here.
+ */
+export const providerLabel = (provider: string): string =>
+  provider === (LMApiProvider.FlowPad as string) ? 'FlowPad Hub endpoint' : (providerSpec(provider)?.brand ?? provider);
