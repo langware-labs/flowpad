@@ -37,14 +37,16 @@ SubscriberCb = Callable[[str, Path, list[TranscriptEntry]], Awaitable[None]]
 
 
 def _infer_worker_type(path: Path) -> str:
-    """Infer worker_type from the transcript file's path. Matches the canonical
-    on-disk layout: Claude under ``~/.claude/projects/...``, Codex under
-    ``~/.codex/sessions/...``, Copilot under ``~/.copilot/session-state/...``.
+    """Infer worker_type from the transcript file's path: the vendor whose home it
+    sits under — Claude's ``projects/...``, Codex's ``sessions/...``, Copilot's
+    ``session-state/...`` — wherever the instance settings say that home is.
 
     Returns the key understood by :func:`flow_sdk.transcript_analyzer.parsers.get_parser_class`:
     ``"claude"``, ``"codex"``, or ``"copilot"``.
     """
-    vendor = vendor_for_path(path)
+    from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
+
+    vendor = vendor_for_path(path, get_instance_settings().vendor_homes)
     if vendor is None:
         raise ValueError(f"Cannot infer worker_type from path: {path}")
     return vendor.key

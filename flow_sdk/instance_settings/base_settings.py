@@ -490,6 +490,18 @@ class BaseInstanceSettings:
     # spans instances, like the migration ledger.
 
     @property
+    def vendor_homes(self) -> dict[str, Path]:
+        """Each harness vendor's home directory, by vendor key — wherever it was redirected to.
+
+        A home's own name says nothing: ``CLAUDE_CONFIG_DIR`` may point anywhere. Whoever
+        asks which vendor a file belongs to asks here rather than reading a dot-dir off the path.
+        """
+        from flow_sdk.flowpad_types.vendors import VENDORS  # noqa: PLC0415
+
+        homes = ((v.key, getattr(self, f"{v.key}_home", None)) for v in VENDORS)
+        return {key: home for key, home in homes if home is not None}
+
+    @property
     def ui_port(self) -> int:
         """The port a BROWSER should be pointed at to reach this instance's UI.
 
