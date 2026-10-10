@@ -16,6 +16,8 @@ command, question and agent still lives in a ComputeOp, and every node's wizard 
   trust gate exists to prevent.
 * **Check only** runs every node's wizards in check mode — nothing asks, installs or spawns — so "is this
   project ready" and "set this project up" are the same walk.
+* **A load is a one-node tree.** ``core/setup/load`` wraps the resolver so the asset's node arrives with
+  no prepare, no children and its ``on_load`` as ``run``; the walk, the slot and the record are the same.
 
 **One report.** The Activity tree is ``<root>`` → one node per asset (its depth under the root in the
 ``level`` counter, so a screen indents it) → ``prepare`` / ``run`` → the wizard's steps. The asset
@@ -167,7 +169,7 @@ class _Walk:
             detail=detail,
             root=self.root.render() if self.root is not None else None,
             total=len(nodes),
-            done=sum(1 for node in nodes if node.state is SetupState.DONE),
+            done=sum(1 for node in nodes if node.state in (SetupState.DONE, SetupState.SKIPPED)),
             ran=self.ran,
         )
 
@@ -208,6 +210,8 @@ class _Walk:
             return node.state
         if spec.problem:
             return self.settle(node, act, SetupState.FAILED, spec.problem)
+        if spec.skipped:
+            return self.settle(node, act, SetupState.SKIPPED, spec.skipped)
         node.state = SetupState.RUNNING
         act.current("starting")
         await self.emit()
@@ -220,7 +224,8 @@ class _Walk:
             if isinstance(node.prepare.value, dict):
                 scope = {**scope, **node.prepare.value}
 
-        stuck = [child for child in node.children if await self.visit(child, scope) not in (SetupState.DONE,)]
+        settled = (SetupState.DONE, SetupState.SKIPPED)  # a skipped child holds nothing up
+        stuck = [child for child in node.children if await self.visit(child, scope) not in settled]
         if stuck:
             names = ", ".join(child.label for child in stuck)
             return self.settle(node, act, SetupState.BLOCKED, f"waiting on {names}")
@@ -246,7 +251,7 @@ class _Walk:
 
     def settle(self, node: _Node, act: Any, state: SetupState, detail: str) -> SetupState:
         node.state, node.detail = state, detail
-        if state is SetupState.DONE:
+        if state in (SetupState.DONE, SetupState.SKIPPED):
             act.done(detail)
         elif state is SetupState.BLOCKED:
             act.cancel(f"Blocked — {detail}")
@@ -260,6 +265,8 @@ class _Walk:
             return
         if node.state is SetupState.DONE:
             self.activity.inc_success()
+        elif node.state is SetupState.SKIPPED:
+            self.activity.inc("skipped")
         elif node.state is SetupState.BLOCKED:
             self.activity.inc("blocked")
         else:

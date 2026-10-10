@@ -35,6 +35,7 @@ from flow_sdk.core import Entity, action
 from flow_sdk.core.entity.entity_model import migrate_presence_shaped_members
 from flow_sdk.core.flow.flow_source_control import ComputeSourceControlInitializeOptions
 from flow_sdk.core.flow.models.execution.env_context import get_env_vars_context
+from flow_sdk.core.setup.skip_mark import SetupSkippable
 from flow_sdk.core.urls.service_urls import build_hub_url
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 from flow_sdk.fs_store.operations.all_projects import invalidate_projects_cache
@@ -52,6 +53,7 @@ from flow_sdk.request_context.methods import (
     get_current_request_info,
 )
 from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccessResponse
+from flow_sdk.schema.data_spec.asset_setup_spec import SetupSkipSpec
 from flow_sdk.schema.data_spec.share_request_spec import ShareVia
 from flow_sdk.schema.data_spec.share_result_spec import (
     ShareFailedSpec,
@@ -195,6 +197,16 @@ class NestedProjectError(ValueError):
 
 class DuplicateProjectNameError(ValueError):
     """A project was about to take a name another visible project already has."""
+
+
+class ProjectMoveError(ValueError):
+    """A project could not be moved to another workspace. ``status_code`` is the HTTP
+    status the move action answers with: 404 (no such local project / workspace), 400
+    (already there, or not a movable project) or 409 (the destination has that name)."""
+
+    def __init__(self, message: str, status_code: int = 400):
+        super().__init__(message)
+        self.status_code = status_code
 
 
 def project_name_key(name: str | None) -> str:
@@ -358,7 +370,7 @@ def _invite_message_text(project_name: str, note: Optional[str]) -> str:
     return f"{text}\n\n{note}" if note else text
 
 
-class Project(Entity):
+class Project(SetupSkippable, Entity):
     @classmethod
     async def get_last_active(cls) -> Optional["Project"]:
         """The most recently opened visible project; hydrate only the winner."""
@@ -377,6 +389,10 @@ class Project(Entity):
 
     type: str = APIField(default=BuiltinEntityType.PROJECT.value)
     name: str | None = APIField(default=None, description="Display name of the project")
+    #: The ``flow.json`` dependencies skipped in this project's setup on THIS machine, by dependency name
+    #: (``SetupSkipSpec``, ``core/setup/skip_mark``). PRIVATE: a dependency has no row of its own here — the
+    #: project's flow.json declares it — so the project carries its mark.
+    setup_skipped: dict[str, SetupSkipSpec] = APIField(default_factory=dict, sharing=Sharing.PRIVATE)
     artifacts: List[str] = APIField(
         default_factory=list,
         description="List of artifact IDs belonging to this project",
@@ -729,8 +745,10 @@ class Project(Entity):
 
         A web app home (the project opens app-first) is made displayable here first: its
         endpoint on this machine is placed when missing — idempotent, the same placement
-        ``flow show`` does — so the app view the redirect lands on finds something to show."""
-        from flow_sdk.builtin.webapp_placement import place_webapp_locally  # noqa: PLC0415
+        ``flow show`` does — so the app view the redirect lands on finds something to show.
+        Then it is LOADED (``core/setup/load``): ``load_run`` is the run bringing it up, or null —
+        the view adopts it as the app's setup. Never waited on here."""
+        from flow_sdk.builtin.webapp_placement import show_webapp_locally  # noqa: PLC0415
 
         typeid = self.home_page_typeid()
         if typeid:
@@ -738,9 +756,10 @@ class Project(Entity):
         asset = await self._own_asset(typeid) if typeid else None
         if asset is None:
             return {"asset": None, "type": None}
+        answer: dict[str, Any] = {"asset": typeid, "type": asset.get_type()}
         if asset.get_type() == "micro_app":
-            await place_webapp_locally(asset)
-        return {"asset": typeid, "type": asset.get_type()}
+            _endpoint, answer["load_run"] = await show_webapp_locally(asset, self)
+        return answer
 
     @action.get(action_name="home-page")
     async def home_page_action(self) -> "ApiResponse":
@@ -762,7 +781,11 @@ class Project(Entity):
         Every MUST value and needed connection counts; OPTIONAL values never do. Names only."""
         from flow_sdk.builtin.project_setup import readiness_of  # noqa: PLC0415
 
-        return ApiSuccessResponse(data=(await readiness_of(self)).model_dump(mode="json"))
+        try:
+            return ApiSuccessResponse(data=(await readiness_of(self)).model_dump(mode="json"))
+        except Exception as exc:  # noqa: BLE001 — the caller shows why, not a bare 500
+            log.warning("project setup requirements failed for %s: %s", self.id, exc, exc_info=True)
+            return ApiFailResponse(message=f"Couldn't check what this project needs here: {exc}")
 
     @action.post(action_name="setup")
     async def setup_action(self, root: str = "") -> "ApiResponse":
@@ -774,17 +797,32 @@ class Project(Entity):
         return ApiSuccessResponse(data={"run": await start_setup(self, root=root)})
 
     @action.post(action_name="setup-skip")
-    async def setup_skip_action(self, name: str = "") -> "ApiResponse":
-        """`POST /project/<id>/setup-skip {name}` — the credential ``name`` leaves the setup: its
-        variables are marked OPTIONAL in the project. Answers with the readiness that follows."""
-        from flow_sdk.builtin.credential_service import CredentialError, make_optional  # noqa: PLC0415
-        from flow_sdk.builtin.project_setup import readiness_of  # noqa: PLC0415
+    async def setup_skip_action(self, typeid: str = "", scope: str = "local", name: str = "", note: str = "") -> "ApiResponse":
+        """`POST /project/<id>/setup-skip {typeid, scope, name?, note?}` — skip a requirement of this project's setup:
+        ``local`` marks its record on this machine; ``always`` removes its asset from the project and stages
+        that in git (a dependency: ``typeid`` is the project's and ``name`` the dependency's). Answers with the
+        readiness that follows."""
+        from flow_sdk.builtin.project_setup import SkipRefused, readiness_of, skip_requirement  # noqa: PLC0415
+        from flow_sdk.request_context.json_body import current_user_id  # noqa: PLC0415
 
-        if not name:
-            return ApiFailResponse(message="name is required", status_code=400)
+        if not typeid:
+            return ApiFailResponse(message="typeid is required", status_code=400)
         try:
-            await make_optional(name, self)
-        except CredentialError as exc:
+            await skip_requirement(self, typeid, scope=scope, name=name, note=note, by=current_user_id())
+        except SkipRefused as exc:
+            return ApiFailResponse(message=str(exc), status_code=409)
+        return ApiSuccessResponse(data=(await readiness_of(self)).model_dump(mode="json"))
+
+    @action.post(action_name="setup-unskip")
+    async def setup_unskip_action(self, typeid: str = "", name: str = "") -> "ApiResponse":
+        """`POST /project/<id>/setup-unskip {typeid, name?}` — undo a local skip. Answers with the readiness."""
+        from flow_sdk.builtin.project_setup import SkipRefused, readiness_of, unskip_requirement  # noqa: PLC0415
+
+        if not typeid:
+            return ApiFailResponse(message="typeid is required", status_code=400)
+        try:
+            await unskip_requirement(self, typeid, name=name)
+        except SkipRefused as exc:
             return ApiFailResponse(message=str(exc), status_code=409)
         return ApiSuccessResponse(data=(await readiness_of(self)).model_dump(mode="json"))
 
@@ -1354,7 +1392,7 @@ class Project(Entity):
 
         ``via=ShareVia.HUB_REPO`` (opt-in) also pushes the project's HEAD to its
         hub-hosted repository and points the hub row's origin there, so recipients
-        clone it with their hub login (``_publish_to_hosted_repo``). The default
+        clone it with their hub login (``publish_files_to_hub``). The default
         leaves the origin as the project's own git remote.
 
         Each new invitee gets ONE ``MembershipRequest`` via
@@ -1406,7 +1444,7 @@ class Project(Entity):
             # shared to me" — which is what the push-to-cloud gate needs.
             self.hub_published_at = _now_iso()
             if via is ShareVia.HUB_REPO:
-                await self._publish_to_hosted_repo()
+                await self.publish_files_to_hub()
             if invitees or teams:
                 await self._send_invites(client, creds, invitees, teams, note)
         warnings = self.share_warnings()
@@ -1428,12 +1466,13 @@ class Project(Entity):
             if dep.required and dep.parsed.kind == "file"
         ]
 
-    async def _publish_to_hosted_repo(self) -> HubRepoOrigin:
-        """Push HEAD to this project's hub-hosted repository and make that the hub
-        row's origin. The LOCAL row keeps its own git origin: only recipients read
-        the hub's. Needs a committed checkout — what travels is HEAD, never the
-        working tree."""
-        from flow_sdk.assets.hub_repo_sync import HubRepoCheckout  # noqa: PLC0415
+    async def publish_files_to_hub(self) -> HubRepoOrigin:
+        """Put the project folder into this project's hub-hosted repository and make that
+        the hub row's origin. The LOCAL row keeps its own git origin: only recipients read
+        the hub's. Needs a git checkout — what git tracks there is what travels."""
+        from flow_sdk.assets.git_publish import GitAuthor  # noqa: PLC0415
+        from flow_sdk.assets.hub_repo_sync import HubRepoMirror, mirror_root, sync_project_with_hub  # noqa: PLC0415
+        from flow_sdk.builtin.asset_publishing import actor_author  # noqa: PLC0415
         from flow_sdk.cli.auth.hub_login import resolve_hub_api_key  # noqa: PLC0415
         from flow_sdk.cloud_client.transport.hub_http import hub_graph_url, hub_post, hub_put  # noqa: PLC0415
 
@@ -1447,14 +1486,22 @@ class Project(Entity):
         token = resolve_hub_api_key(require_live=True)
         if not token:
             raise RuntimeError("Cloud login required to share through the hub repository")
-        await HubRepoCheckout(
-            root=mount,
-            # This desktop's own hub URL, not the hub's ``clone_url``: the hub spells it
-            # with ITS external host, which a box behind a proxy (Docker) cannot reach.
-            clone_url=hub_graph_url("git_repo", origin.repo_id, "git"),
-            branch=repo.get("default_branch") or "main",
-            token=token,
-        ).push_head()
+        request_info = get_current_request_info()
+        actor = request_info.someone_typeid if request_info else None
+        author = await actor_author(actor) if actor else GitAuthor(name="FlowPad User", email="flowpad@local.invalid")
+        await sync_project_with_hub(
+            mirror=HubRepoMirror(
+                root=mirror_root(origin.repo_id),
+                # This desktop's own hub URL, not the hub's ``clone_url``: the hub spells it
+                # with ITS external host, which a box behind a proxy (Docker) cannot reach.
+                clone_url=hub_graph_url("git_repo", origin.repo_id, "git"),
+                branch=repo.get("default_branch") or "main",
+                token=token,
+            ),
+            checkout=mount,
+            author=author,
+            project_typeid=str(self.typeid),
+        )
         await hub_put(BuiltinEntityType.PROJECT, str(self.id), {"git_origin": origin.model_dump(mode="json")})
         return origin
 
@@ -2550,24 +2597,34 @@ class Project(Entity):
         name: str | None = None,
         path: str | None = None,
         optional: bool = False,
+        label: str | None = None,
+        description: str | None = None,
+        asset: str | None = None,
     ) -> "DependencyState":
         """Declare a dependency in ``flow.json`` and resolve it.
 
-        ``source`` is a source string (``git+<url>#<branch>``, ``hub:<project id>``,
-        ``file:<path>``), a bare git URL, or a folder on disk. A folder inside a git
-        repository is written as its repository — never as its path — so the line means
-        the same thing on a teammate's machine.
+        ``source`` is an id (``<type>-<uuid>`` / ``<kind>.id.<uuid>``), a source string
+        (``git+<url>#<branch>``, ``hub:<project id>``, ``file:<path>``), a bare git URL, or a
+        folder on disk. A folder inside a git repository is written as its repository — never
+        as its path — so the line means the same thing on a teammate's machine.
+
+        ``asset`` (a TypeId) declares it in THAT asset's own ``flow.json`` instead of the
+        project's — ids only. ``label`` / ``description`` are the entry's human-friendly name.
         """
         from flow_sdk.assets import flow_json  # noqa: PLC0415
         from flow_sdk.builtin import project_dependencies  # noqa: PLC0415
-        from flow_sdk.schema.data_spec.flow_json_spec import FlowDependency, parse_source  # noqa: PLC0415
+        from flow_sdk.schema.data_spec.flow_json_spec import FlowDependency, parse_id, parse_source  # noqa: PLC0415
         from flow_sdk.utils.git_identity import parse_git_origin_url  # noqa: PLC0415
 
         if not self.fs_storage_mount_path:
             raise ValueError("this project has no folder to hold a flow.json")
         raw = str(source or "").strip()
         default_name, rel = None, "."
-        if raw.startswith(("git+", "hub:", "file:")):
+        if asset:
+            return await project_dependencies.add_to_asset(
+                self, asset, raw, name=name, label=label, description=description, optional=optional,
+            )
+        if raw.startswith(("git+", "hub:", "file:")) or parse_id(raw):
             parse_source(raw)
         elif Path(raw).expanduser().is_dir():
             folder = canonical_posix_path(str(Path(raw).expanduser()))
@@ -2577,16 +2634,16 @@ class Project(Entity):
         elif parse_git_origin_url(raw):
             raw = f"git+{raw}"
         else:
-            raise ValueError(f"{source!r} is not a folder, a git URL, or a git+/hub:/file: source")
+            raise ValueError(f"{source!r} is not an id, a folder, a git URL, or a git+/hub:/file: source")
         if not default_name:
-            parsed = parse_source(raw)
-            leaf = parsed.target.rstrip("/").rsplit("/", 1)[-1].removesuffix(".git")
-            default_name = leaf if parsed.kind != "hub" else f"hub-{parsed.target[:8]}"
+            default_name = project_dependencies.default_name(raw)
         dep = FlowDependency(
             name=name or project_dependencies.safe_name(default_name),
             source=raw,
             path=path or rel,
             required=not optional,
+            label=label or None,
+            description=description or None,
         )
         flow_json.write_dependency(Path(self.fs_storage_mount_path), dep)
         states = await project_dependencies.resolve(self, fetch=True, install=[dep.name] if optional else ())
@@ -2647,10 +2704,14 @@ class Project(Entity):
 
     @action.post(action_name="add-dependency")
     async def add_dependency_action(
-        self, source: str = "", name: str = "", path: str = "", optional: bool = False
+        self, source: str = "", name: str = "", path: str = "", optional: bool = False,
+        label: str = "", description: str = "", asset: str = "",
     ) -> "ApiResponse":
         try:
-            state = await self.add_dependency(source, name=name or None, path=path or None, optional=optional)
+            state = await self.add_dependency(
+                source, name=name or None, path=path or None, optional=optional,
+                label=label or None, description=description or None, asset=asset or None,
+            )
         except ValueError as exc:
             return ApiFailResponse(message=str(exc), status_code=400)
         return ApiSuccessResponse(data={"dependency": state.model_dump(mode="json"), **self._context_payload()})
@@ -2695,9 +2756,12 @@ class Project(Entity):
         self,
         url: str,
         branch: str = "",
-        optional: bool = False,
+        optional: bool = True,
     ) -> "ApiResponse":
         """Add a repo as a dependency and report the help desk it carries.
+
+        Optional by default: a help desk portal is an ``addon`` (``ProjectSubkind``) — the
+        host works without it, so a clone that cannot fetch it must not fail.
 
         This does NOT attach differently from ``add_dependency`` — it delegates to
         it verbatim and adds only a REPORT. That distinction is the
@@ -2976,6 +3040,206 @@ class Project(Entity):
         updated = await self._touch_member(member_id)
         return ApiSuccessResponse(data={"ok": updated, "presence": self.presence})
 
+    # -- Move to another workspace -------------------------------------------
+
+    @action.post(action_name="switch-workspace")
+    async def switch_workspace_action(self, workspace: str = "") -> "ApiResponse":
+        """`POST /project/<id>/switch-workspace {workspace}` — move this project into a
+        workspace (empty: the default one). Answers ``{project, indexed}``; a refused move
+        answers with the status its ``ProjectMoveError`` names."""
+        try:
+            indexed = await self.move_to_workspace(workspace.strip() or None)
+        except ProjectMoveError as exc:
+            return ApiFailResponse(message=str(exc), status_code=exc.status_code)
+        except OSError as exc:
+            return ApiFailResponse(message=f"could not move the project folder: {exc}", status_code=500)
+        return ApiSuccessResponse(data={"project": self.model_dump(mode="json"), "indexed": indexed})
+
+    async def move_to_workspace(self, workspace_id: str | None) -> bool:
+        """Move this project's folder into a workspace and keep the SAME row.
+
+        A workspace is a folder, and membership is where a project's folder is
+        (``config.workspace_id_for_path``) — so a move IS a folder move, plus the
+        bookkeeping that keeps this row the project: everything open in it is closed, the
+        rows indexed from the old folder are dropped, the row is re-pointed (its record
+        mirrors the path) and the new folder gets a full index. The id does not change, so
+        tasks, conversations, processes and the wiki stay this project's.
+
+        Returns whether that index ran; the move stands either way. Raises
+        ``ProjectMoveError``: 404 the workspace is not on this node or the project has no
+        folder, 400 it already lives there or is not a movable project, 409 the destination
+        already holds a folder of that name — never auto-suffixed: a move must land where
+        the user was told it would.
+        """
+        import shutil  # noqa: PLC0415
+
+        from flow_sdk.builtin.faas.project_list import invalidate_project_list_cache  # noqa: PLC0415
+        from flow_sdk.config import workspace_root_for_id  # noqa: PLC0415
+
+        root = workspace_root_for_id(workspace_id)
+        if root is None:
+            raise ProjectMoveError(f"workspace {workspace_id} is not on this node", 404)
+        src = self.fs_storage_mount_path or ""
+        if not src or not os.path.isdir(src):
+            raise ProjectMoveError("the project has no folder on this node", 404)
+        if self.remote or self.system or self.protected_path or not self._visible():
+            raise ProjectMoveError(f"project {self.name!r} cannot be moved", 400)
+        src = canonical_posix_path(src)
+        workspace_root = canonical_posix_path(root)
+        if is_path_under(src, workspace_root):
+            raise ProjectMoveError("the project is already in that workspace", 400)
+        leaf = os.path.basename(src.rstrip("/"))
+        target_dir = os.path.join(workspace_root, leaf)
+        if os.path.exists(target_dir):
+            raise ProjectMoveError(f"'{leaf}' already exists in that workspace", 409)
+
+        await self.close_all_open()
+        os.makedirs(workspace_root, exist_ok=True)
+        await asyncio.to_thread(shutil.move, src, target_dir)
+        await self.unindex_folder(src)
+        self.fs_storage_mount_path = target_dir
+        await self.save()
+        await self._reroot_paths(src, canonical_posix_path(target_dir))
+        invalidate_projects_cache()
+        invalidate_project_list_cache()
+        return await self._index_after_move()
+
+    async def _reroot_paths(self, old: str, new: str) -> None:
+        """Rows that remember a path inside the old folder follow the project.
+
+        A closed session keeps its ``workdir`` and a trigger its ``workdir`` /
+        ``watch_path``. Left alone, resuming that session (or firing that trigger) would
+        spawn in the OLD path — and a spawn creates its working directory, so the folder
+        that was just moved would come back, empty, as a project of the old workspace.
+        Dependency links need nothing: a link whose cached path is gone re-resolves.
+        """
+        from flow_sdk.builtin.agentic_process import AgenticProcess  # noqa: PLC0415
+        from flow_sdk.builtin.trigger import Trigger  # noqa: PLC0415
+        from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp  # noqa: PLC0415
+
+        for cls, field in ((AgenticProcess, "workdir"), (Trigger, "workdir"), (Trigger, "watch_path")):
+            # LIKE narrows by prefix; ``is_path_under`` is the segment-safe check.
+            rows = await cls.get_all(QueryFilter(match=ExpressionNode(op=QueryOp.LIKE, operands=[field, f"{old}%"])))
+            for row in rows:
+                path = canonical_posix_path(getattr(row, field) or "")
+                if not is_path_under(path, old):
+                    continue
+                try:
+                    setattr(row, field, new + path[len(old) :])
+                    await row.save()
+                except Exception:  # noqa: BLE001 — one row that will not save must not undo a finished move
+                    log.exception("[project-move] re-root %s %s.%s failed", cls.get_type(), row.id, field)
+
+    async def _index_after_move(self) -> bool:
+        """Full index of the new folder, queued behind any running one. False when it did
+        not run (no node, a gated or unreadable root, an indexer failure) — the folder is
+        already moved, so that is reported, never raised."""
+        node = await ComputeNode.get_local(create=False)
+        indexed = node is not None and await node._auto_index_project(
+            str(self.id), force=True, trigger="switch-workspace", queue=True
+        )
+        if not indexed:
+            log.warning("[project-move] %s: no index ran at %s", self.id, self.fs_storage_mount_path)
+        return indexed
+
+    async def close_all_open(self) -> None:
+        """Close everything open in this project: its running agentic processes, the
+        shells working inside its folder (background terminals included — a shell carries
+        no reliable project id) and every remaining visible tab. Each goes through its own
+        close path, one after the other; the tab strip is told once at the end. One that
+        fails to close is logged and does not keep the rest open."""
+        from flow_sdk.builtin.agentic_process import AgenticProcess  # noqa: PLC0415
+        from flow_sdk.builtin.process_lifecycle import ProcessStatus, is_running  # noqa: PLC0415
+        from flow_sdk.builtin.shell import Shell, ShellStatus  # noqa: PLC0415
+        from flow_sdk.builtin.tab import Tab, _resolve_tab_projects, broadcast_tabs_changed  # noqa: PLC0415
+        from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp  # noqa: PLC0415
+
+        pid = str(self.id)
+        folder = canonical_posix_path(self.fs_storage_mount_path or "")
+
+        def in_folder(row) -> bool:
+            return bool(folder and row.workdir and is_path_under(canonical_posix_path(row.workdir), folder))
+
+        def live(proc) -> bool:
+            try:
+                return is_running(ProcessStatus(str(proc.status)))
+            except ValueError:
+                return False
+
+        async def close_each(kind: str, rows) -> None:
+            for row in rows:
+                try:
+                    await row.close()
+                except Exception:  # noqa: BLE001 — one stuck row must not keep the rest open
+                    log.exception("[project-move] close %s %s failed", kind, row.id)
+
+        # LIKE narrows by prefix; ``in_folder`` is the segment-safe check (`/repo2` is not in `/repo`).
+        by_workdir = QueryFilter(match=ExpressionNode(op=QueryOp.LIKE, operands=["workdir", f"{folder}%"]))
+        processes = {p.id: p for p in await AgenticProcess.get_all({"project_id": pid})}
+        if folder:
+            processes.update({p.id: p for p in await AgenticProcess.get_all(by_workdir) if in_folder(p)})
+        await close_each("process", [p for p in processes.values() if live(p)])
+        if folder:
+            closed = (ShellStatus.CLOSING, ShellStatus.CLOSED, ShellStatus.ERROR)
+            shells = [s for s in await Shell.get_all(by_workdir) if s.status not in closed and in_folder(s)]
+            await close_each("shell", shells)
+        tabs = await Tab.get_all({"visible": True})
+        await _resolve_tab_projects(tabs)
+        await close_each("tab", [t for t in tabs if str(getattr(t, "project_id", None) or "") == pid])
+        await broadcast_tabs_changed()
+
+    def _child_record_metas(self) -> list[dict]:
+        """The ``metadata.json`` of every record whose ``project_id`` is this project,
+        read from the shadow store: ``Entity.get_all`` is type-locked, but each record
+        carries its ``project_id``, so one sweep of the records root finds children of
+        every type. Malformed records and the project's own are skipped. Blocking — it
+        reads every record on the instance."""
+        import json  # noqa: PLC0415
+
+        from flow_sdk.fs_store import get_default_records_root  # noqa: PLC0415
+
+        pid = str(self.id)
+        records_root = get_default_records_root()
+        metas: list[dict] = []
+        if not records_root.exists():
+            return metas
+        for type_dir in sorted(records_root.iterdir()):
+            if not type_dir.is_dir():
+                continue
+            for rec_dir in type_dir.iterdir():
+                meta_path = rec_dir / "metadata.json"
+                if not meta_path.exists():
+                    continue
+                try:
+                    data = json.loads(meta_path.read_text(encoding="utf-8"))
+                except (OSError, ValueError):
+                    continue
+                if data.get("project_id") != pid:
+                    continue
+                if not data.get("type") or not data.get("id") or data.get("id") == pid:
+                    continue
+                metas.append(data)
+        return metas
+
+    async def unindex_folder(self, root: str) -> int:
+        """Drop every record of this project that was indexed from a file under ``root``
+        (DB row, FTS entry, wiki edges and the on-disk shadow) — the old folder after a
+        move. Records with no file (processes, chats) stay. Returns how many were dropped."""
+        from flow_sdk.fs_store import FSRecord  # noqa: PLC0415
+
+        root = canonical_posix_path(root)
+        dropped = 0
+        for meta in await asyncio.to_thread(self._child_record_metas):
+            asset = meta.get("asset_ref")
+            if not isinstance(asset, str) or not is_path_under(canonical_posix_path(asset), root):
+                continue
+            try:
+                await FSRecord.from_dict(meta).destroy()
+                dropped += 1
+            except Exception as exc:  # noqa: BLE001
+                log.warning("[project-move] unindex %s:%s failed: %s", meta.get("type"), meta.get("id"), exc)
+        return dropped
+
     async def _delete_with_children(
         self,
         *,
@@ -3009,25 +3273,17 @@ class Project(Entity):
         ``protected_path`` policy permits that destructive operation
         (``fs_storage_mount_path`` — the user's real files).
 
-        Cross-type enumeration walks the shadow store on disk: ``Entity.get_all``
-        is type-locked, but each ``metadata.json`` carries its ``project_id``,
-        so a single sweep of ``records_root`` finds children of every type.
+        The children come from ``_child_record_metas`` (one sweep of the shadow store).
         """
-        import json  # noqa: PLC0415
         import logging  # noqa: PLC0415
         import shutil  # noqa: PLC0415
 
         from flow_sdk.builtin.agentic_process import AgenticProcess  # noqa: PLC0415
-        from flow_sdk.fs_store import (  # noqa: PLC0415
-            FSRecord,
-            get_default_records_data_root,
-            get_default_records_root,
-        )
+        from flow_sdk.fs_store import FSRecord, get_default_records_data_root  # noqa: PLC0415
         from flow_sdk.fs_store.operations.project_cleanup import HarnessIndex, clear_harness_state  # noqa: PLC0415
 
         log = logging.getLogger(__name__)
         pid = str(self.id)
-        records_root = get_default_records_root()
         data_root = get_default_records_data_root()
         ap_type = AgenticProcess.get_type()
 
@@ -3061,24 +3317,7 @@ class Project(Entity):
         # 1. Collect every child record's metadata by scanning the shadow store.
         #    Materialize the full list first — destroy() rmtree's folders, so we
         #    must not mutate the directory tree while iterating it.
-        targets: list[dict] = []
-        if records_root.exists():
-            for type_dir in sorted(records_root.iterdir()):
-                if not type_dir.is_dir():
-                    continue
-                for rec_dir in type_dir.iterdir():
-                    meta_path = rec_dir / "metadata.json"
-                    if not meta_path.exists():
-                        continue
-                    try:
-                        data = json.loads(meta_path.read_text(encoding="utf-8"))
-                    except (OSError, ValueError):
-                        continue
-                    if data.get("project_id") != pid:
-                        continue
-                    if not data.get("type") or not data.get("id") or data.get("id") == pid:
-                        continue  # skip malformed + the project's own record
-                    targets.append(data)
+        targets = self._child_record_metas()
 
         # 1b. Terminate live workers BEFORE destroying their rows. ``_destroy``
         #     only removes the DB row + shadow; it never touches the OS child.

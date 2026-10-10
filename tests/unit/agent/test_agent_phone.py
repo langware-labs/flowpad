@@ -15,12 +15,13 @@ from flow_sdk.schema.type_info import register_all
 
 pytestmark = pytest.mark.timeout(10)  # do not increase without approval
 
-REPO = Path(__file__).resolve().parents[3]
+#: A test agent, kept with its test: as a repo asset it made every checkout of this project ask for its channel.
+FIXTURE = Path(__file__).resolve().parent / "fixtures" / "whatsapp-e2e"
 
 
 def test_the_whatsapp_test_agent_declares_its_israeli_number():
     register_all()
-    record = read_asset_data(REPO / "agentic-assets/agent/whatsapp-e2e", SchemaRegistry.get("agent"))
+    record = read_asset_data(FIXTURE, SchemaRegistry.get("agent"))
     phone = Agent.model_validate({"name": "whatsapp-e2e", "phone": record.phone}).phone
     assert (phone.digits, phone.e164) == ("972557709288", "+972557709288")
 

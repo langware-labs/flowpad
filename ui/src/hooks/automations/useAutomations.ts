@@ -10,6 +10,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useDebounced } from '@src/hooks/useDebounced';
 import {
+  Agent,
   Trigger,
   type AutomationCheck,
   type AutomationRun,
@@ -21,7 +22,9 @@ import {
   type NextRuns,
   type RunOnceStarted,
   type RunsQuery,
+  type TryRow,
 } from '@sdk';
+import type { DecisionVerdict } from '@sdk/models/ReturnedValue';
 
 /** How often the list and the runs refresh while the screen is open. */
 const AUTOMATIONS_POLL_MS = 5000;
@@ -29,6 +32,7 @@ const AUTOMATIONS_POLL_MS = 5000;
 const automationKeys = {
   all: ['automations'] as const,
   overview: () => ['automations', 'overview'] as const,
+  startedLastHour: () => ['automations', 'started-last-hour'] as const,
   runs: (q: RunsQuery) =>
     ['automations', 'runs', q.triggerId ?? null, q.status ?? null, q.includeTests ?? true, q.includeBuiltin ?? true, q.limit ?? null] as const,
   run: (id: string | null) => ['automations', 'run', id] as const,
@@ -47,8 +51,8 @@ export function useAutomations(options: { enabled?: boolean; poll?: boolean } = 
 }
 
 /** One automation's summary, from the same list (no second request). */
-export function useAutomation(triggerId: string | null | undefined) {
-  const query = useAutomations({ enabled: !!triggerId });
+export function useAutomation(triggerId: string | null | undefined, options: { poll?: boolean } = {}) {
+  const query = useAutomations({ enabled: !!triggerId, poll: options.poll });
   const automation = triggerId ? ((query.data ?? []).find((a) => a.id === triggerId) ?? null) : null;
   return { ...query, automation };
 }
@@ -103,13 +107,70 @@ function useInvalidateAutomations() {
     );
 }
 
-/** *Run once now*. The run keeps going in the background; the lists pick it up. */
+/** *Run once now*. The run keeps going in the background; the lists pick it up.
+ *  `messageId` runs a stream inbox rule on that message (its real envelope). */
 export function useRunOnce() {
   const invalidate = useInvalidateAutomations();
-  return useMutation<RunOnceStarted, Error, { triggerId: string; event?: AutomationTestEvent | null }>({
-    mutationFn: ({ triggerId, event }) => Trigger.runOnce(triggerId, event),
+  return useMutation<
+    RunOnceStarted,
+    Error,
+    { triggerId: string; event?: AutomationTestEvent | null; messageId?: string }
+  >({
+    mutationFn: ({ triggerId, event, messageId }) => Trigger.runOnce(triggerId, event, { messageId }),
     onSettled: () => void invalidate(),
   });
+}
+
+// ── Stream stream inbox automations (docs/snippets/stream-inbox-automations.md) ───────────────────
+
+/** The fast test: the rule's gate asked about text typed in, or one message. Records nothing.
+ *  A saved, unchanged rule is asked by id; the builder's fields (`spec`) otherwise, so the sentence
+ *  being typed is what is tested. */
+export function useDecideOn() {
+  return useMutation<
+    DecisionVerdict,
+    Error,
+    { triggerId?: string | null; spec?: Partial<ITrigger>; text?: string; messageId?: string }
+  >({
+    mutationFn: ({ triggerId, spec, text, messageId }) =>
+      spec ? Trigger.decideSpec(spec, { text, messageId }) : Trigger.decideOn(triggerId as string, { text, messageId }),
+  });
+}
+
+/** The try list: recent messages on the rule's sources, each with what the gate says of it.
+ *  Asked on demand (`refetch`) — every row not already decided for real costs one decision. */
+export function useDecideOnRecent(triggerId: string | null | undefined, limit = 20) {
+  return useQuery<TryRow[]>({
+    queryKey: ['automations', 'try', triggerId ?? null, limit],
+    queryFn: () => Trigger.decideOnRecent(triggerId as string, { limit }),
+    enabled: false,
+    retry: false,
+  });
+}
+
+/** The agents a rule here may run — what the picker offers. */
+export function useRunnableAgents() {
+  return useQuery<Agent[]>({
+    queryKey: ['automations', 'runnable-agents'],
+    queryFn: () => Agent.runnableHere(),
+    staleTime: 30_000,
+  });
+}
+
+/** How often the top bar's counter refreshes: one light request a minute, and on focus. */
+const STARTED_POLL_MS = 60_000;
+
+/** The person's own automations started in the last hour — the top-bar counter. One light call
+ *  (a count, not the overview), once a minute and on focus. */
+export function useStartedLastHour(): number {
+  const { data } = useQuery<number>({
+    queryKey: automationKeys.startedLastHour(),
+    queryFn: () => Trigger.startedLastHour(),
+    refetchInterval: STARTED_POLL_MS,
+    refetchOnWindowFocus: true,
+    staleTime: STARTED_POLL_MS / 2,
+  });
+  return data ?? 0;
 }
 
 export function useSetAutomationEnabled() {

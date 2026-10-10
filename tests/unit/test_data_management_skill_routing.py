@@ -177,3 +177,61 @@ def test_probe_drop_refuses_a_probe_whose_assets_carry_ids(tmp_path, monkeypatch
     with pytest.raises(ValueError, match="carry entity ids"):
         dm_ctl.cmd_probe_drop(SimpleNamespace(project_id="p1"))
     assert all(m == "GET" for m, _ in calls) and root.exists()           # nothing deleted
+
+
+def _dm_calls(monkeypatch, argv, answer=None):
+    """Run one dm_ctl verb with the transport doubled: what it asked the server for."""
+    dm_ctl, calls = _dm_ctl(), []
+    monkeypatch.setattr(dm_ctl, "_dataset", lambda ref: {"id": "ds1"})
+    monkeypatch.setattr(dm_ctl, "_call", lambda method, path, body=None: calls.append((method, path, body)) or (answer or {}))
+    assert dm_ctl.main(argv) == 0
+    return calls
+
+
+def test_dm_ctl_reads_some_rows_with_one_filter_parameter(monkeypatch, capsys):
+    import json
+    from urllib.parse import parse_qs, urlsplit
+
+    match = {"op": "$GE", "operands": ["input.day", "2026-09-01"]}
+    ((method, path, body),) = _dm_calls(monkeypatch, ["ds-rows", "leads", "--match", json.dumps(match), "--order", '{"input.day": "desc"}',
+                                                      "--limit", "50", "--offset", "0"], {"rows": [{"key": "a"}], "total": 9, "problems": []})
+    assert (method, body, urlsplit(path).path) == ("GET", None, "/graph/dataset/ds1/rows")
+    assert json.loads(parse_qs(urlsplit(path).query)["filter"][0]) == {"match": match, "order_by": {"input.day": "desc"}, "limit": 50, "offset": 0}
+    out = json.loads(capsys.readouterr().out)
+    assert (out["count"], out["total"]) == (1, 9)                              # one came back, nine matched
+
+    ((_, plain, _),) = _dm_calls(monkeypatch, ["ds-rows", "leads"])
+    assert plain == "/graph/dataset/ds1/rows"                                   # nothing asked: every row, as before
+
+
+def test_dm_ctl_counts_with_a_match_and_groups(monkeypatch):
+    import json
+    from urllib.parse import parse_qs, urlsplit
+
+    ((method, path, _),) = _dm_calls(monkeypatch, ["ds-count", "leads", "--match", '{"input.stage": "won"}', "--group-by", "input.owner,input.day"])
+    query = parse_qs(urlsplit(path).query)
+    assert (method, urlsplit(path).path) == ("GET", "/graph/dataset/ds1/count")
+    assert json.loads(query["filter"][0]) == {"match": {"input.stage": "won"}} and query["group_by"] == ["input.owner,input.day"]
+
+
+def test_dm_ctl_writes_many_rows_in_one_call(monkeypatch):
+    rows = '[{"key": "a", "input": {"name": "A"}}]'
+    assert _dm_calls(monkeypatch, ["ds-put-many", "leads", rows, "--expected", '{"a": "v1"}']) == [
+        ("POST", "/graph/dataset/ds1/put-rows", {"rows": [{"key": "a", "input": {"name": "A"}}], "expected": {"a": "v1"}})]
+    assert _dm_calls(monkeypatch, ["ds-put-many", "leads", rows])[0][2] == {"rows": [{"key": "a", "input": {"name": "A"}}]}
+    assert _dm_calls(monkeypatch, ["ds-sync", "leads", rows]) == [
+        ("POST", "/graph/dataset/ds1/sync-rows", {"rows": [{"key": "a", "input": {"name": "A"}}], "prune": True})]
+    assert _dm_calls(monkeypatch, ["ds-sync", "leads", rows, "--no-prune", "--match", '{"input.source": "crm"}'])[0][2] == {
+        "rows": [{"key": "a", "input": {"name": "A"}}], "prune": False, "match": {"input.source": "crm"}}
+
+
+def test_dm_ctl_deletes_one_row_or_several_in_one_step(monkeypatch, capsys):
+    assert _dm_calls(monkeypatch, ["ds-delete", "leads", "a", "--expected", "v1"]) == [
+        ("POST", "/graph/dataset/ds1/delete-row", {"key": "a", "expected": "v1"})]
+    assert _dm_calls(monkeypatch, ["ds-delete", "leads", "a", "b", "c"]) == [
+        ("POST", "/graph/dataset/ds1/delete-rows", {"keys": ["a", "b", "c"]})]
+    dm_ctl = _dm_ctl()
+    monkeypatch.setattr(dm_ctl, "_dataset", lambda ref: {"id": "ds1"})
+    capsys.readouterr()
+    assert dm_ctl.main(["ds-delete", "leads", "a", "b", "--expected", "v1"]) == 1   # one version cannot vouch for two rows
+    assert "--expected takes one key" in capsys.readouterr().out

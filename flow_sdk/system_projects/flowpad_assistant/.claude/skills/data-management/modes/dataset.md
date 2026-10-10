@@ -50,6 +50,11 @@ it, never overwrite it.
 | create or replace one | `DM ds-put <ds> dana '{"input": {…}}'` | gold / output / context and metadata are kept unless given |
 | check without writing | `DM ds-check <ds> '{"input": {…}}'` | `ok`, `errors` |
 | read | `DM ds-rows <ds>` / `DM ds-row <ds> dana` | every row has `key` and `id` |
+| read SOME rows | `DM ds-rows <ds> --match '{"op": "$GE", "operands": ["input.day", "2026-09-01"]}' --order '{"input.day": "desc"}' --limit 50` | a field is a path into the row (`key`, `input.stage`); `total` counts the matches before paging; `problems` is still every broken row |
+| count | `DM ds-count <ds> --match '{"input.stage": "won"}' --group-by input.owner` | `{total, groups: [{by, count}]}` |
+| create or replace MANY | `DM ds-put-many <ds> '[{"key": "dana", "input": {…}}, …]'` | one step: one row that does not fit writes nothing, named by key |
+| mirror an outside system | `DM ds-sync <ds> '[{"key": …, "input": {…}}, …]' [--match '{…}'] [--no-prune]` | the dataset made to hold exactly these rows → `created / updated / unchanged / deleted`; `--match` prunes only the slice it selects |
+| delete MANY | `DM ds-delete <ds> dana eli fay` | one step, all or none; rows deleted together do not hold each other back |
 | rename | `DM ds-rename <ds> dana dana_levi [--expected <version>]` | the id (stored in the row) stays, so links to it hold |
 | delete | `DM ds-delete <ds> dana [--expected <version>]` | refused (409) while another row links to it — re-point or delete that one first; with `--expected`, also when it changed since. A row already gone is 404 (`LookupError`), not 409 — a script that removes rows treats it as done |
 | repair a row that no longer fits | `DM ds-put <ds> <key> '{…}' --expected <version from ds-rows problems>` | a broken row is reported WITH its version |
@@ -58,8 +63,9 @@ it, never overwrite it.
 | refuse a stale write | `DM ds-put <ds> dana '{…}' --expected <version from ds-rows>` | 409 when the row changed since |
 
 `<ds>` is the dataset's folder path, id, or exact name. Bulk data (a CSV, a JSON
-export): turn it into rows in a script and `ds-append` them in one call — never copy
-files into `examples/`.
+export): turn it into rows in a script and `ds-append` them in one call (`ds-sync` when the
+script runs again and again) — never copy files into `examples/`, and never loop `ds-put` /
+`ds-delete` over hundreds of rows: the bulk verbs take the lock and read the links once.
 
 ## Gate 4 — probe, then for real
 

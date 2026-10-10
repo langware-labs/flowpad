@@ -23,6 +23,7 @@ export type {
   AppUpgrade,
   IComputeNode,
   NodeStatus,
+  ProvisionCompanion,
   ProvisionContextProject,
   ProvisionResult,
   ProvisionSetup,

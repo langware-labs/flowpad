@@ -158,7 +158,7 @@ async def test_a_ready_tab_runs_the_shipped_wizard_through_its_declared_trigger(
 
         reached: list = []
 
-        async def _setup(target, *, unattended):
+        async def _setup(target, *, unattended, shown=True):
             reached.append((target.id, unattended))
             from flow_sdk.schema.data_spec.returned_value_spec import CliResult, WizardResult
 

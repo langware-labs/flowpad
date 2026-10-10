@@ -45,11 +45,13 @@ from pydantic import Field, model_validator
 
 from flow_sdk._compat import StrEnum
 from flow_sdk.schema.data_spec import AssetDocumentSpec, DataSpec
+from flow_sdk.schema.data_spec.decision_spec import ChoiceQuestion, Question, ScoreQuestion, YesNoQuestion
 from flow_sdk.schema.data_spec.dock_pointer_spec import DockPointerSpec
 from flow_sdk.schema.data_spec.io.native import Text
 from flow_sdk.schema.data_spec.returned_value_spec import (
     AskResult,
     CliResult,
+    DecisionVerdict,
     ExitCode,
     NavigateResult,
     PromptResult,
@@ -84,13 +86,15 @@ class OpSubkind(StrEnum):
     """Who does the work. The order is the cost order.
 
     ``navigate`` shows a place and answers whether it can be used there;
-    ``cli`` is a subprocess; ``prompt`` is a model with no tools; ``agent`` is a
-    spawned harness carrying an Agent's identity, with tools; ``ask`` is a
-    person — the most expensive thing to spend.
+    ``cli`` is a subprocess; ``decision`` is a closed question put to the Decision
+    API (no text, calibrated answers); ``prompt`` is a model with no tools;
+    ``agent`` is a spawned harness carrying an Agent's identity, with tools;
+    ``ask`` is a person — the most expensive thing to spend.
     """
 
     NAVIGATE = "navigate"
     CLI = "cli"
+    DECISION = "decision"
     PROMPT = "prompt"
     AGENT = "agent"
     ASK = "ask"
@@ -125,6 +129,10 @@ class ExeData(DataSpec):
     #: is convergent with no ``completion_check``, and its ``attempts`` are judged by
     #: calling it once more after each.
     SELF_CHECKING: ClassVar[bool] = False
+    #: Does the call's value stand WITHOUT a declared ``output_spec_kind``? Only for a
+    #: call whose value is its own plain answer (a decision's chosen option) — every
+    #: other op's value is held to the kind it declared, or dropped.
+    PLAIN_VALUE: ClassVar[bool] = False
 
     def timeout(self, default: Optional[float] = None) -> float:
         """This call's budget: its own when set, else the role's default."""
@@ -172,6 +180,22 @@ class PromptOp(ExeData):
     prompt: str
 
 
+class LaunchContext(DataSpec):
+    """What a caller may stamp on the process an agent op spawns, as ONE scope value
+    (``AgentOp.launch_context`` names it). The runner forwards it and reads none of it:
+    the lineage a sequence wants on its agent's session is the sequence's business.
+    """
+
+    spec_kind: ClassVar[str] = "compute_op.agent.launch_context"
+
+    #: Merged into the process's ``context_data``.
+    context_data: dict[str, Any] = {}
+    #: Context chips on the process (``<type>-<uuid>`` strings).
+    shared_context_entities: list[str] = []
+    #: What the session is keyed to, when not the run's own subject.
+    target_typeid_str: str = ""
+
+
 class AgentOp(ExeData):
     """A spawned harness with tools, carrying an Agent's identity."""
 
@@ -183,6 +207,11 @@ class AgentOp(ExeData):
     agent: str
     #: What it is asked to do. Appended to the op's description and setup.
     prompt: str = ""
+    #: A scope value (by name) mounted as the process's INPUT folder — a ``DataSpec``
+    #: value, the way ``Agent.launch(input=…)`` mounts one. Empty: workdir mode.
+    input: str = ""
+    #: A scope value (by name) holding a ``LaunchContext``. Empty: nothing stamped.
+    launch_context: str = ""
     #: Further turns when a turn ends and the completion check still fails. Not a new
     #: process: the SAME session, told only what the check printed. A turn that ran out
     #: of time is not retried — that process is busy, not finished.
@@ -195,6 +224,108 @@ class AgentOp(ExeData):
         if self.retries < 0:
             raise ValueError("retries cannot be negative")
         return self
+
+
+#: How sure an answer must be when nobody says otherwise — one number for a requirement's own
+#: floor and for the sentence form of a decision.
+DEFAULT_SURE = 0.85
+
+
+class Require(DataSpec):
+    """What one answer must be for a ``decision`` op to be met. Exactly one of the
+    four, each for its question kind: ``choice`` names the option that must win
+    (``min`` sure); ``yes`` / ``no`` is the probability floor of that answer;
+    ``at_least`` names the lowest ``score`` level that counts.
+    """
+
+    spec_kind: ClassVar[str] = "compute_op.decision.require"
+    FIELDS: ClassVar[tuple[str, ...]] = ("choice", "yes", "no", "at_least")
+
+    choice: Optional[str] = None
+    yes: Optional[float] = Field(default=None, ge=0, le=1)
+    no: Optional[float] = Field(default=None, ge=0, le=1)
+    at_least: Optional[str] = None
+    #: The confidence floor for ``choice``; ``yes`` / ``no`` carry their own.
+    min: float = Field(default=DEFAULT_SURE, ge=0, le=1)  # noqa: A003 — the decision snippet's word
+
+    @model_validator(mode="after")
+    def _exactly_one(self) -> "Require":
+        given = [name for name in self.FIELDS if getattr(self, name) is not None]
+        if len(given) != 1:
+            raise ValueError(f"a requirement is exactly one of choice / yes / no / at_least, got {given or 'none'}")
+        return self
+
+    @property
+    def kind(self) -> str:
+        return next(name for name in self.FIELDS if getattr(self, name) is not None)
+
+
+class DecisionOp(ExeData):
+    """A closed question put to the Decision API about one value in scope.
+
+    ``questions`` are the decision API's own (choice / score / yes_no); ``require`` says
+    what each named answer must be, and EVERY requirement must hold for the op to be met.
+    One call answers every question. The answer is a ``DecisionVerdict``: its own verdict,
+    never re-checked.
+    """
+
+    spec_kind: ClassVar[str] = "compute_op.decision"
+    DEFAULT_TIMEOUT: ClassVar[float] = PROMPT_TIMEOUT
+    ANSWER: ClassVar[type[ReturnedValue]] = DecisionVerdict
+    RECHECKED: ClassVar[bool] = False
+    PLAIN_VALUE: ClassVar[bool] = True
+    #: The scope name the questions are asked about when the op names none.
+    DEFAULT_INPUT: ClassVar[str] = "STATE"
+    #: The sentence form: ONE yes/no question under this name, met at ``SENTENCE_MIN``.
+    SENTENCE_QUESTION: ClassVar[str] = "match"
+    SENTENCE_MIN: ClassVar[float] = DEFAULT_SURE
+
+    questions: dict[str, Question]
+    require: dict[str, Require] = {}
+    #: The scope value (by name) the questions are asked about.
+    input: str = DEFAULT_INPUT
+    #: The one-line form this op was written as, when it was: kept so a document
+    #: round-trips the sentence a person typed. Carries no meaning of its own.
+    sentence: str = ""
+
+    @model_validator(mode="after")
+    def _requirements_name_questions(self) -> "DecisionOp":
+        if not self.questions:
+            raise ValueError("a decision op asks at least one question")
+        for name, req in self.require.items():
+            question = self.questions.get(name)
+            if question is None:
+                raise ValueError(f"require.{name} names no question (the questions are {sorted(self.questions)})")
+            wanted = {"choice": ChoiceQuestion, "yes": YesNoQuestion, "no": YesNoQuestion, "at_least": ScoreQuestion}[req.kind]
+            if not isinstance(question, wanted):
+                raise ValueError(f"require.{name}: a {req.kind} requirement needs a {wanted.model_fields['type'].default} question")
+            if req.choice is not None and req.choice not in question.options:
+                raise ValueError(f"require.{name}: {req.choice!r} is not one of its options {sorted(question.options)}")
+            if req.at_least is not None and req.at_least not in question.levels:
+                raise ValueError(f"require.{name}: {req.at_least!r} is not one of its levels {question.levels}")
+        return self
+
+    @classmethod
+    def from_sentence(cls, sentence: str, *, question: Question, min: float = DEFAULT_SURE) -> "DecisionOp":  # noqa: A002
+        """One yes/no question — written by whoever knows the state's field names — that
+        must be ``yes`` at least ``min`` sure. The sentence is kept for the document."""
+        if not isinstance(question, YesNoQuestion):
+            raise ValueError("a sentence is one yes/no question")
+        name = cls.SENTENCE_QUESTION
+        return cls(questions={name: question}, require={name: Require(yes=min)}, sentence=sentence)
+
+    @classmethod
+    def is_sentence_form(cls, data: dict) -> bool:
+        """Whether an op's document is exactly what ``from_sentence`` builds from its ``sentence`` —
+        so a file may keep the sentence alone and lose nothing."""
+        name = cls.SENTENCE_QUESTION
+        require = data.get("require") or {}
+        return bool(
+            data.get("sentence")
+            and list(data.get("questions") or {}) == [name]
+            and list(require) == [name]
+            and (require[name] or {}).get("yes") == cls.SENTENCE_MIN
+        )
 
 
 class NavigateOp(ExeData):
@@ -278,6 +409,7 @@ class AskOp(ExeData):
 EXE_DATA: dict[OpSubkind, type[ExeData]] = {
     OpSubkind.NAVIGATE: NavigateOp,
     OpSubkind.CLI: CliOp,
+    OpSubkind.DECISION: DecisionOp,
     OpSubkind.PROMPT: PromptOp,
     OpSubkind.AGENT: AgentOp,
     OpSubkind.ASK: AskOp,
@@ -366,7 +498,7 @@ class ComputeOpSpec(AssetDocumentSpec):
     description: str = ""
     subkind: OpSubkind = OpSubkind.CLI
     #: The call itself — the DataSpec ``compute_op.<subkind>``.
-    exe_data: Union[NavigateOp, CliOp, PromptOp, AgentOp, AskOp]
+    exe_data: Union[NavigateOp, CliOp, DecisionOp, PromptOp, AgentOp, AskOp]
     #: The kind of what this op RETURNS: a registered DataSpec kind, or a
     #: primitive (``string`` / ``int`` / ``float`` / ``bool``). Absent ⇒ no value.
     output_spec_kind: Optional[str] = None

@@ -4,7 +4,7 @@ import { t } from '@lingui/core/macro';
 import { useAuth } from '@sdk/react/hooks';
 import { isHubOnly } from '@src/navigation/hub-runtime';
 import { DockPointer } from '@src/navigation/DockPointer';
-import { consumeInboundParams, inboundParams } from '@src/navigation/inbound-link';
+import { consumeInboundParams, DeepLinkAction, inboundParams } from '@src/navigation/inbound-link';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { notify } from '@src/notifications/notify';
 import { withHomePage } from '@src/project-home-page/home-page-state';
@@ -13,6 +13,9 @@ import { useIncomingTaskStore } from '@src/store/use-incoming-task-store';
 import { useEffect, useRef, useState } from 'react';
 import { IncomingProjectDialog } from './IncomingProjectDialog';
 import { IncomingTaskDialog } from './IncomingTaskDialog';
+import { LaunchDialog } from './LaunchDialog';
+import { LAUNCH_ACTION, LAUNCH_PARAMS, launchPlanFromParams } from '@src/pages/entry/launch-plan';
+import { closeLaunch, openLaunch, useLaunchStore } from './launch-store';
 
 /**
  * The `?action=open&…` deep-link handler — "someone sent you here to open X".
@@ -61,15 +64,26 @@ function claimHydrateHop(projectId: string): boolean {
   }
 }
 
+/** Is the project with this id already a checked-out row on this machine? */
+async function checkedOutHere(projectId: string | undefined): Promise<boolean> {
+  if (!projectId) return false;
+  try {
+    const project = await Project.getById<Project>(projectId);
+    return !!project?.fs_storage_mount_path;
+  } catch {
+    return false;
+  }
+}
+
 /**
  * A project shared while this desktop had no FlowPad (or was signed out) reaches
  * no push and no deep link — installing FlowPad from the invite opens it on its
  * home. So once a session is signed in, ask the backend for the hub projects it
  * has never seen (in the background: nothing at startup waits on the hub) and
  * offer each one's set-up, one dialog at a time. A project already offered this
- * session — by a deep link too — is not offered again.
+ * session — by a deep link too — is not offered again, and none is offered while `held`.
  */
-function useOfferNewCloudProjects() {
+function useOfferNewCloudProjects(held: boolean) {
   const { cloudUser } = useAuth();
   const { pendingProject, setPendingProject } = useIncomingProjectStore();
   const [queue, setQueue] = useState<IncomingProjectParams[]>([]);
@@ -105,27 +119,50 @@ function useOfferNewCloudProjects() {
       });
   }, [userId]);
 
+  // One offer is looked at a time: the next one waits for this one's check.
+  const [checking, setChecking] = useState(false);
   useEffect(() => {
     if (pendingProject) {
       if (pendingProject.projectId) offered.current.add(pendingProject.projectId);
       return;
     }
-    if (!queue.length) return;
+    if (held || checking || !queue.length) return;
     const rest = queue.filter((p) => !p.projectId || !offered.current.has(p.projectId));
     setQueue(rest.slice(1));
-    if (rest.length) setPendingProject(rest[0]);
-  }, [pendingProject, queue, setPendingProject]);
+    const next = rest[0];
+    if (!next) return;
+    if (next.projectId) offered.current.add(next.projectId);
+    // The list was read at sign-in; by now something else — a launch link — may have set the
+    // project up here. Offer only what is still missing.
+    setChecking(true);
+    void checkedOutHere(next.projectId).then((here) => {
+      if (!here) setPendingProject(next);
+      setChecking(false);
+    });
+  }, [pendingProject, queue, checking, held, setPendingProject]);
 }
 
 export function IncomingDeepLink() {
   const { navigation } = useDockNavigation();
   const { pendingTask, setPendingTask } = useIncomingTaskStore();
   const { pendingProject, setPendingProject } = useIncomingProjectStore();
-  useOfferNewCloudProjects();
+  const launchPlan = useLaunchStore((state) => state.payload);
+  // A launch is fetching its own projects: nothing is offered until it is done, so what it
+  // set up is already here when the offers are looked at.
+  useOfferNewCloudProjects(launchPlan !== null);
 
   useEffect(() => {
     const params = inboundParams();
-    if (params.get('action') !== 'open') return;
+    // A launch link (`/launch` on the hub → this machine): its SETUP stage, one handler for
+    // the desktop and a cloud box alike. A malformed one is scrubbed and dropped.
+    if (params.get('action') === LAUNCH_ACTION) {
+      const plan = launchPlanFromParams(params);
+      consumeInboundParams(LAUNCH_PARAMS);
+      if (plan) openLaunch(plan);
+      else notify.error({ title: t`Couldn't launch`, message: t`That launch link is incomplete.`, forceToast: true });
+      return;
+    }
+    if (params.get('action') !== DeepLinkAction.OPEN) return;
     const fmId = params.get('fm') || '';
     const convId = params.get('conversation_id') || '';
     const taskId = params.get('task_id') || '';
@@ -222,6 +259,8 @@ export function IncomingDeepLink() {
 
   return (
     <>
+      {launchPlan && <LaunchDialog plan={launchPlan} onClose={closeLaunch} />}
+
       {/* Incoming task dialog — pull/clone flow for shared tasks */}
       {pendingTask && (
         <IncomingTaskDialog

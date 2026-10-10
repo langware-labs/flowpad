@@ -1,4 +1,5 @@
 import { Agent, Conversation, type DataSource, ExpressionNode, QueryFilter, QueryRequest, TypeId, User } from '@sdk';
+import { type AttentionReason, attentionReason } from '@src/components/data-sources/source-attention';
 
 /** The backend's `owner_of` rule (`flow_sdk/stream_inbox/projection.py`), client-side, for a
  *  row written before `owner` existed: the agent its legacy `config.agent_id` names,
@@ -40,4 +41,24 @@ export function streamInboxConversationsRequest(owner: TypeId): QueryRequest {
 export function sourceConversationsRequest(sourceId: string): QueryRequest {
   const match = new ExpressionNode({ op: '$EQ', operands: ['channel_source_id', sourceId] });
   return new QueryRequest({ type: Conversation.type, query: new QueryFilter({ match }) });
+}
+
+/** The identity a channel mark draws: provider AND channel, because one transport
+ *  (`agent`) reaches several channels and wears a different glyph for each. */
+export const channelKeyOf = (s: DataSource) => `${s.provider}|${s.channel}`;
+
+export interface AttentionItem {
+  source: DataSource;
+  reason: AttentionReason;
+}
+
+/** The sources among `rows` whose channel the list is narrowed to and that are not delivering,
+ *  each with why — what the attention strip above the list draws. */
+export function attentionAmong(rows: DataSource[], selected: ReadonlySet<string>): AttentionItem[] {
+  return rows
+    .filter((source) => selected.has(channelKeyOf(source)))
+    .flatMap((source) => {
+      const reason = attentionReason(source);
+      return reason ? [{ source, reason }] : [];
+    });
 }

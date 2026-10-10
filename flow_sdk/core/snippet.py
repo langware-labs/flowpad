@@ -30,6 +30,7 @@ import shlex
 import sys
 import tempfile
 import time
+from collections import OrderedDict
 from pathlib import Path
 from typing import Literal, Optional
 
@@ -313,9 +314,13 @@ def write_temp_snippet(code: str, ext: str, name: Optional[str] = None) -> Path:
     return target
 
 
-#: A check's answer by (file, content): the editor re-checks after every save, and an unchanged
-#: file must not re-import its modules each time.
-_CHECKED: dict[tuple[str, str], list[SnippetDiagnostic]] = {}
+#: The last check's answer per file, with the content it was given for: the editor re-checks after
+#: every save, and an unchanged file must not re-import its modules each time. One entry per file —
+#: a save REPLACES it (the content hash is in the value, not the key, so a save cannot mint a key
+#: that is never asked for again) — and only the most recently checked files are kept, so one-off
+#: temp snippets and deleted files cannot accumulate either. Same ring as ``webhook_relay._HANDLED``.
+_CHECKED: "OrderedDict[str, tuple[str, list[SnippetDiagnostic]]]" = OrderedDict()
+_CHECKED_CAP = 64
 
 
 async def check_snippet(
@@ -332,9 +337,11 @@ async def check_snippet(
     if path.suffix.lower() != ".py" or not path.is_file():
         return []
     text = path.read_bytes()
-    key = (str(path), hashlib.sha256(text).hexdigest())
-    if key in _CHECKED:
-        return _CHECKED[key]
+    key, digest = str(path), hashlib.sha256(text).hexdigest()
+    known = _CHECKED.get(key)
+    if known is not None and known[0] == digest:
+        _CHECKED.move_to_end(key)
+        return known[1]
     said = await run_shell(
         f"{shlex.quote(sys.executable)} -m flow_sdk.snippet_launch --check {shlex.quote(str(path))}",
         timeout_seconds=timeout_seconds,
@@ -357,7 +364,10 @@ async def check_snippet(
                 line=1, col=1, end_line=1, end_col=2, severity="warning", kind="check", message=f"the check {reason}"
             )
         ]
-    _CHECKED[key] = found
+    _CHECKED[key] = (digest, found)
+    _CHECKED.move_to_end(key)
+    while len(_CHECKED) > _CHECKED_CAP:
+        _CHECKED.popitem(last=False)
     return found
 
 

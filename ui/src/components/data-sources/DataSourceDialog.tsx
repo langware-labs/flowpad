@@ -43,7 +43,7 @@ import { sourceIconName } from './source-icon';
 import { DesktopTile, TILE_TIP_DELAY, TileSection } from '@src/components/quick-create/QuickCreatePanel';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tooltip';
 import { cn } from '@src/lib/utils';
-import { useSourceSpecs } from './use-source-specs';
+import { useSourceSpecs, isObjectDriverSpec } from './use-source-specs';
 import { FieldType, type DataSourceChoice, type DataDriver, type SpecConfigField } from '@sdk';
 
 /**
@@ -515,7 +515,7 @@ export function DataSourceDialog({
 
                 {showAdvanced && (
                   <div className="space-y-3 rounded border p-3">
-                    {spec?.family === 'object' && (
+                    {isObjectDriverSpec(spec) && (
                       <>
                         <SwitchRow
                           id="ds-read-only"

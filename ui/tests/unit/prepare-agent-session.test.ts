@@ -9,10 +9,12 @@ import { renderHook } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { prepareAgentSession, useAgentLauncher } from '@src/components/agents/use-agent-launcher';
+import { hasLaunchWatch, releaseLaunchWatch } from '@src/components/agents/launch-watch';
 
 const mocks = vi.hoisted(() => ({
   getById: vi.fn(),
   watch: vi.fn(),
+  releaseWatch: vi.fn(),
   drainQueue: vi.fn(),
   drainById: vi.fn(),
   embed: vi.fn(),
@@ -43,14 +45,23 @@ vi.mock('@src/notifications', () => ({ notify: { error: mocks.notifyError } }));
 
 const PROCESS_ID = '00000000-0000-4000-8000-000000000002';
 
-beforeEach(() => {
+beforeEach(async () => {
+  // A lease left by the previous test releases on a microtask: let it land before the reset.
+  releaseLaunchWatch(PROCESS_ID);
+  await new Promise((r) => setTimeout(r, 0));
   for (const fn of Object.values(mocks)) fn.mockReset();
   mocks.embed.mockResolvedValue(undefined);
-  mocks.watch.mockResolvedValue(undefined);
+  mocks.releaseWatch.mockResolvedValue(undefined);
+  mocks.watch.mockResolvedValue(mocks.releaseWatch);
   mocks.drainQueue.mockResolvedValue(undefined);
   mocks.drainById.mockResolvedValue(undefined);
   mocks.openShellProcess.mockResolvedValue(undefined);
-  mocks.getById.mockResolvedValue({ id: PROCESS_ID, watch: mocks.watch, drainQueue: mocks.drainQueue });
+  mocks.getById.mockResolvedValue({
+    id: PROCESS_ID,
+    watch: mocks.watch,
+    drainQueue: mocks.drainQueue,
+    on: () => () => undefined,
+  });
 });
 
 describe('prepareAgentSession', () => {
@@ -71,6 +82,30 @@ describe('prepareAgentSession', () => {
 
     expect(proc).not.toBeNull();
     expect(warn).toHaveBeenCalled();
+  });
+
+  it('holds the launch watch as a lease: one count for two prepares, given back on release', async () => {
+    await prepareAgentSession(PROCESS_ID);
+    await prepareAgentSession(PROCESS_ID);
+
+    expect(mocks.watch).toHaveBeenCalledTimes(1);
+    expect(hasLaunchWatch(PROCESS_ID)).toBe(true);
+    expect(mocks.releaseWatch).not.toHaveBeenCalled();
+
+    releaseLaunchWatch(PROCESS_ID);
+    await Promise.resolve();
+    expect(mocks.releaseWatch).toHaveBeenCalledTimes(1);
+    expect(hasLaunchWatch(PROCESS_ID)).toBe(false);
+  });
+
+  it('a prepare that fails before any view opens gives the lease back itself', async () => {
+    mocks.embed.mockRejectedValue(new Error('embed failed'));
+
+    await expect(prepareAgentSession(PROCESS_ID)).rejects.toThrow('embed failed');
+
+    expect(hasLaunchWatch(PROCESS_ID)).toBe(false);
+    await Promise.resolve();
+    expect(mocks.releaseWatch).toHaveBeenCalledTimes(1);
   });
 
   it('still sends the queued prompt by id when the process is not readable yet', async () => {

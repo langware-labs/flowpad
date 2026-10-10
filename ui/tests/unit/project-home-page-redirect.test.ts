@@ -45,7 +45,14 @@ beforeEach(() => {
   sessionStorage.clear();
   mocks.openHomePage.mockReset().mockResolvedValue({ asset: AGENT, type: 'agent' });
   mocks.query.mockReset().mockResolvedValue([]);
-  mocks.getById.mockReset().mockResolvedValue({ watch: mocks.watch, drainQueue: mocks.drainQueue });
+  // The launch watch is a lease that listens for the process's end, so the stand-in
+  // carries the id and the status subscription a real AgenticProcess has.
+  mocks.getById.mockReset().mockResolvedValue({
+    id: NEW_CHAT,
+    watch: mocks.watch,
+    drainQueue: mocks.drainQueue,
+    on: vi.fn(() => () => undefined),
+  });
   mocks.drainQueue.mockReset().mockResolvedValue(undefined);
   mocks.use.mockReset().mockResolvedValue({ process_id: NEW_CHAT });
   mocks.agentGetById.mockReset().mockResolvedValue({ use: mocks.use });
@@ -97,6 +104,16 @@ describe('project home page redirect — only navigations that ask for it', () =
     expect(mocks.embed).not.toHaveBeenCalled();
     // A resumed chat already had its turn 1: nothing is re-sent.
     expect(mocks.drainQueue).not.toHaveBeenCalled();
+  });
+
+  it('a resumed chat keeps its remembered mode — landing never switches a session', async () => {
+    mocks.query.mockResolvedValue([{ id: LAST_CHAT, last_active_at: 5, last_mode: 'advanced' }]);
+
+    const response = await projectHomePageRedirect(new Request(HOME_BUTTON_URL));
+
+    expect(locationOf(response)).toContain(`/dock/shell/agentic_process-${LAST_CHAT}`);
+    expect(locationOf(response)).toContain('viewMode=advanced');
+    expect(mocks.use).not.toHaveBeenCalled();
   });
 
   it("opens the agent's FIRST chat with the launcher's pre-turn stack", async () => {

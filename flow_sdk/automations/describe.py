@@ -62,6 +62,7 @@ def describe_event(pattern: str, target: Optional[str] = None,
 
 
 def describe_when(trigger: Any, catalog: Optional[dict[str, tuple[str, str]]] = None) -> WhenPart:
+    from flow_sdk.automations.decision_subjects import for_pattern  # noqa: PLC0415
     from flow_sdk.automations.schedule import read_schedule, schedule_text  # noqa: PLC0415
 
     kind = kind_of(trigger)
@@ -70,6 +71,9 @@ def describe_when(trigger: Any, catalog: Optional[dict[str, tuple[str, str]]] = 
         return WhenPart(kind=kind, text=schedule_text(schedule), schedule=schedule)
     if kind == "event":
         event = describe_event(str(trigger.tag_pattern or ""), trigger.tag_target, catalog)
+        subject = for_pattern(event.pattern)
+        if subject is not None and subject.when_text:
+            return WhenPart(kind=kind, text=subject.when_text, event=event)
         label = event.title or event.pattern or "an event"
         return WhenPart(kind=kind, text=f"When {label} happens", event=event)
     if kind == "file":
@@ -106,14 +110,44 @@ class _Names:
         return found
 
 
+async def _describe_then_wizard(spec: Any, *, names: _Names, parent_type_id: str = "") -> list[ThenPart]:
+    """A ``then`` wizard in words: the sugar's one agent or script, else the steps."""
+    if spec.run_agent is not None:
+        target = spec.run_agent.agent or parent_type_id or None
+        who = await names.name(target)
+        return [ThenPart(kind="run_agent", text=f"Run {who or 'an agent'}", target=target, target_name=who,
+                         prompt=spec.run_agent.prompt)]
+    if spec.run_script is not None:
+        return [ThenPart(kind="run_script", text=f"Run {spec.run_script}", target_name=spec.run_script)]
+    if spec.ref:
+        return [ThenPart(kind="workflow", text=f"Run the wizard {spec.ref}", target_name=spec.ref)]
+    return [ThenPart(kind="workflow", text=f"Run {len(spec.steps)} steps", detail=", ".join(s.id for s in spec.steps))]
+
+
 async def describe_then(trigger: Any, *, names: Optional[_Names] = None,
                         workflows: Optional[list[str]] = None) -> list[ThenPart]:
     """What the rule does, one part per action — plus the workflows it starts."""
-    from flow_sdk.builtin import trigger_callbacks  # noqa: PLC0415
+    from flow_sdk.automations.then import then_of  # noqa: PLC0415
 
     names = names or _Names()
+    then = then_of(trigger)
+    if then is not None:
+        parts = await _describe_then_wizard(then, names=names, parent_type_id=str(trigger.parent_type_id or ""))
+    else:
+        parts = await _describe_actions(trigger, names)
+    for name in workflows or []:
+        parts.append(ThenPart(kind="workflow", text=f"Start workflow {name}", target_name=name))
+    if not parts:
+        parts.append(ThenPart(kind="nothing", text="Do nothing yet"))
+    return parts
+
+
+async def _describe_actions(trigger: Any, names: _Names) -> list[ThenPart]:
+    """One part per action, and the bare ``instruction`` a rule with no action carries."""
+    from flow_sdk.builtin import trigger_callbacks  # noqa: PLC0415
+
     parts: list[ThenPart] = []
-    for action in list(trigger.actions or []):
+    for action in trigger.actions or []:
         atype = str(action.action_type)
         target = action.target_type_id or None
         if atype == ActionType.RUN_AGENT.value:
@@ -142,8 +176,4 @@ async def describe_then(trigger: Any, *, names: Optional[_Names] = None,
             parts.append(ThenPart(kind="notify", text=f"Notify {who or 'the linked item'}", target=target, target_name=who))
     if trigger.instruction:
         parts.append(ThenPart(kind="run_agent", text="Run an agent", prompt=trigger.instruction))
-    for name in workflows or []:
-        parts.append(ThenPart(kind="workflow", text=f"Start workflow {name}", target_name=name))
-    if not parts:
-        parts.append(ThenPart(kind="nothing", text="Do nothing yet"))
     return parts

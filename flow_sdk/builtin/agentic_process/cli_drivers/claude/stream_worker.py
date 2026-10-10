@@ -5,8 +5,6 @@ reads stdout line-by-line, parses each line once, and converts the event
 into FlowData via ``claude_event_to_flowdata.convert_event``, yielding it to
 the caller.
 
-Contrast with ``claude_cli_worker.ClaudeCLIWorker`` (sibling) which uses
-``proc.communicate()`` — fully buffered, emits one CHAT block at the end.
 This worker is the one used by the ``AgenticProcess.prompt`` action for
 chat surfaces that need live FlowData.
 
@@ -399,11 +397,6 @@ class ClaudeCLIStreamWorker(AgenticWorker):
             effort=context.effort,
             add_dirs=list(context.add_dirs),
             plugin_dirs=list(context.plugin_dirs),
-            # Claude has a first-class ``language`` setting and builds its own
-            # ``# Language`` system-prompt section from it — so it needs the name,
-            # not the text. Additional layer only: the on-disk user/project
-            # settings (and the hooks claude_settings_sync writes there) still apply.
-            settings_json={"language": context.language} if context.language else None,
             disallowed_tools=context.disallowed_tools,
             # Debug is ALWAYS on for the headless per-turn spawn, redirected to
             # a file we own. This is not a tuning knob: the CLI's own auth /
@@ -449,7 +442,7 @@ class ClaudeCLIStreamWorker(AgenticWorker):
         opts.system_prompt_file = context.system_prompt_file
         # No argv instruction — the prompt is delivered over stdin (below) so
         # the pipe stays open as the graceful-interrupt channel.
-        argv = opts.cli_cmd(instruction=None, system_prompt_append=context.instructions)
+        argv = opts.cli_cmd(instruction=None)
         argv.extend(["--input-format", "stream-json"])
         # Opt in to summarized thinking BEFORE the first user message.
         #

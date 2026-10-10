@@ -44,6 +44,16 @@ CLAUDE_SID = "11111111-1111-4111-8111-111111111111"
 #     or a machine defaulting to ``master`` silently breaks the fixture.
 
 
+class LocalNode:
+    """The smallest compute node ``GitRepo`` accepts: it runs the shell string here."""
+
+    compute_provider = None
+
+    async def run_command(self, command: str, background: bool = False):
+        p = subprocess.run(["/bin/sh", "-c", command], capture_output=True, text=True)
+        return SimpleNamespace(all_stdout=p.stdout, all_stderr=p.stderr, exit_code=p.returncode)
+
+
 def git_cmd(path: Path, *args: str) -> str:
     """Run git in ``path`` and return trimmed stdout; raises on failure."""
     result = subprocess.run(["git", *args], cwd=path, capture_output=True, text=True, check=True)
@@ -262,6 +272,18 @@ def home(fresh_user_scope):
 
 
 @pytest.fixture
+def no_shipped_layers(tmp_path, monkeypatch):
+    """Empty the shipped ``common`` / ``common_ui`` system-prompt layers.
+
+    For tests that pin another layer's exact text, or the "nothing to say → write-free"
+    contract; where the shipped layers land is ``tests/unit/system_prompt_matrix``'s job.
+    """
+    from flow_sdk.builtin.agentic_process import system_prompt
+
+    monkeypatch.setattr(system_prompt, "SHIPPED_INSTRUCTIONS_DIR", tmp_path / "no-shipped-layers")
+
+
+@pytest.fixture
 def mock_driver(monkeypatch, tmp_path):
     """Install the mock worker at the driver-resolution seam: ``mock_driver(behavior, **kw) -> MockDriver``."""
     from tests.utils.mock_worker import MockDriver
@@ -407,3 +429,5 @@ def isolated_kinds(monkeypatch):
     for attr in ("_READ", "_PENDING", "_OWNER", "_BUILT", "_ERRORS"):
         monkeypatch.setattr(declared, attr, getattr(declared, attr).copy())
     monkeypatch.setattr(declared, "_shipped_loaded", declared._shipped_loaded)
+
+from tests.utils.decision_double import decision_double  # noqa: E402, F401 — the doubled Decision API, a fixture

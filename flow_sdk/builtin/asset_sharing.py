@@ -276,16 +276,22 @@ def _repo_relative_paths(entity, mount: str, with_paths: list[str]) -> tuple[str
 
 
 async def _commit_paths(repo_root: str, rel_paths: list[str], message: Optional[str], entity, warnings: list[str]) -> dict:
-    from flow_sdk.utils.git import git_add_commit_push
+    from flow_sdk.builtin.faas.git_repo import GitRepo
 
     dirty_others = await _other_dirty_files(repo_root, rel_paths)
-    result = await git_add_commit_push(repo_root, rel_paths, message or _default_message(entity))
-    if not result.ok:
+    repo = await GitRepo.local(repo_root)
+    result = await repo.push(paths=rel_paths, message=message or _default_message(entity))
+    data = {"committed": result.committed, "sha": result.sha}
+    if result.kind == "conflict":
+        # Left mid-rebase for the same resolver the footer's Publish offers.
         raise ShareBlocked(
-            code="PUSH_FAILED" if result.committed else "COMMIT_FAILED",
+            code="CONFLICT",
             message=result.message,
-            data={"committed": result.committed, "sha": result.sha},
+            remediation=["Open the project in Flowpad and press Resolve, then share again."],
+            data={**data, "branch": result.branch, "conflicted": result.conflicted, "workdir": repo_root},
         )
+    if not result.ok:
+        raise ShareBlocked(code="PUSH_FAILED" if result.committed else "COMMIT_FAILED", message=result.message, data=data)
     if result.warning:
         warnings.append(result.warning)
     if dirty_others:
@@ -297,7 +303,7 @@ async def _commit_paths(repo_root: str, rel_paths: list[str], message: Optional[
         "paths": rel_paths,
         "state": "committed" if result.committed else "nothing-to-commit",
         "sha": result.sha,
-        "pushed": result.pushed,
+        "pushed": result.kind == "pushed",
         "branch": result.branch,
     }
 

@@ -23,6 +23,7 @@ portable; without the stamp it would name a fact only the author's DB knows.
 
 from __future__ import annotations
 
+from enum import StrEnum
 from typing import ClassVar, Optional
 
 from pydantic import ConfigDict, Field, field_validator
@@ -41,6 +42,22 @@ DEPS_MAIN = "deps.json"
 #: The types a row may name in phase 1: every file-backed type whose carrier can
 #: hold an id. ``spec`` is row-only (no carrier, no rel_path) and stays out.
 PUBLISHABLE_TYPES: tuple[str, ...] = ("skill", "subagent", "markdown", "mcp")
+
+
+class ProjectSubkind(StrEnum):
+    """What a project is FOR — a closed per-type variant (``docs/ontology.md``); its kind
+    ``project.<subkind>`` is derived, never stored.
+
+    ``standard`` opens as itself. ``controller`` is a project used to do work on ANOTHER
+    project: launched, the other project (the target) is the one opened, and this one's
+    home page is the face acting in it. ``addon`` is attached BY a host — a ``flow.json``
+    dependency (a help desk portal) that contributes to the host and is never opened as
+    the user's project.
+    """
+
+    STANDARD = "standard"
+    CONTROLLER = "controller"
+    ADDON = "addon"
 
 
 def _clean_rel_path(value: object) -> str:
@@ -153,6 +170,10 @@ class ProjectManifestSpec(DataSpec):
     #: here, beside ``ns``, because it is a declaration about the whole project
     #: that must travel with a clone — which is exactly what this file is for.
     home_page: Optional[str] = None
+    #: What the project is for (``ProjectSubkind``). Declared here, beside ``home_page``,
+    #: because a clone must know it before anything is opened: a ``controller`` asks for
+    #: a target first.
+    subkind: ProjectSubkind = ProjectSubkind.STANDARD
     #: THE rule for declared env files: project-relative paths (``backend/.env``) the
     #: project's credentials read, in order, after the root ``.env.local`` — read-only
     #: (values are written to the root file only), ``development`` values only. Here
@@ -261,6 +282,11 @@ class ProjectManifestSpec(DataSpec):
             # that actually names a home page does. (Also keeps ``deps.json``,
             # which shares this shape, free of a field it has no use for.)
             document.pop("home_page", None)
+        if document.get("subkind") == ProjectSubkind.STANDARD:
+            # Silent for ``home_page``'s second reason: an older desk would refuse the key.
+            document.pop("subkind", None)
+        else:
+            document["subkind"] = str(document["subkind"])
         if not document.get("env_files"):
             # Silent for ``home_page``'s second reason: an older desk would refuse the key.
             document.pop("env_files", None)

@@ -95,6 +95,8 @@ class KeyStatusSpec(DataSpec):
     provider: str
     stored: bool
     created_at: str = ""
+    #: Masked ``****last4`` of the stored key, never the value; empty for keys stored before hints existed.
+    hint: str = ""
 
 
 class HubStatusSpec(DataSpec):

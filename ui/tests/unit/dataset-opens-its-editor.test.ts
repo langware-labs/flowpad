@@ -41,3 +41,21 @@ describe('a dataset opens in the app that edits it', () => {
     if (openDock.mock.calls.length) expect(openDock.mock.calls[0][0].viewType).not.toBe('app');
   });
 });
+
+describe('the asset tree opens a dataset where the record list does', () => {
+  afterEach(() => vi.clearAllMocks());
+
+  it("a dataset row opens its editor app, not the folder", async () => {
+    const { buildAssetChild } = await import('@src/components/browseable-tree/adapters/assetTypeRoot');
+    const { openBrowseable } = await import('@src/components/browseable-tree/open');
+    editorsFor.mockResolvedValue([{ typeid: EDITOR, name: 'editor', title: 'editor', why: 'nested' }]);
+    const node = buildAssetChild('dataset', row as never, true, 'root');
+    expect(node.pointer).toBeNull();
+    const navigate = vi.fn();
+    expect(openBrowseable(node, navigate)).toBe(true);
+    await vi.waitFor(() => expect(navigate).toHaveBeenCalledTimes(1));
+    const dock = navigate.mock.calls[0][0];
+    expect(dock.viewType).toBe('app');
+    expect(dock.options).toMatchObject({ subject: `dataset-${DATASET}` });
+  });
+});

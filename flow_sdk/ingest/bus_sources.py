@@ -66,21 +66,21 @@ def _handler_for(provider: str, wants=None):
         if wants is not None and not wants(event.tag, data):
             return
 
-        async def pull() -> None:
-            from flow_sdk.request_context.detached import create_detached_task  # noqa: PLC0415
+        from flow_sdk.request_context.detached import add_detached_done_callback, create_detached_task  # noqa: PLC0415
 
+        async def pull() -> None:
             # Detached: its own session, never the writer's.
             task = create_detached_task(deliver(provider, event.tag, data), name=f"bus-source:{provider}")
             _INFLIGHT.add(task)
-            task.add_done_callback(_INFLIGHT.discard)
+            add_detached_done_callback(task, _INFLIGHT.discard)
 
         from flow_sdk.db import get_db_driver  # noqa: PLC0415
 
         # Queued on the writer's transaction right here, inside ``emit``; with none bound the write is durable.
         if not get_db_driver().defer_to_commit(pull):
-            registering = asyncio.ensure_future(pull())
+            registering = create_detached_task(pull(), name=f"bus-source:{provider}:register")
             _INFLIGHT.add(registering)
-            registering.add_done_callback(_INFLIGHT.discard)
+            add_detached_done_callback(registering, _INFLIGHT.discard)
 
     return _on_event
 

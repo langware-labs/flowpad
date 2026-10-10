@@ -148,6 +148,15 @@ describe('validateDraft', () => {
 });
 
 describe('toSaveRequest', () => {
+  it('carries what the credential is needed for, and the full reason', () => {
+    const d = { ...customDraft('project'), title: 'Stripe', setup: 'x', neededFor: ' Charges cards. ', justification: ' pay.ts ' };
+    d.vars = [emptyVar('STRIPE_KEY')];
+
+    const { manifest } = toSaveRequest(d, 'p1');
+
+    expect([manifest.needed_for, manifest.justification]).toEqual(['Charges cards.', 'pay.ts']);
+  });
+
   it('a new credential names its scope and project, and only filled values travel', () => {
     const d = { ...customDraft('project'), title: 'My Stripe', description: ' Payments ', setup: 'From the Stripe dashboard.' };
     d.vars = [

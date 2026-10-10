@@ -11,13 +11,14 @@ import {
   DialogTitle,
 } from '@src/components/ui/dialog';
 import { Input } from '@src/components/ui/input';
+import { notifyGitOutcome } from '@src/lib/git-outcome';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { AlertTriangle, CheckCircle2, FolderOpen, GitBranch, Loader2 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 
-type Step = 'checking' | 'found' | 'not_found' | 'pulling' | 'cloning' | 'conflict' | 'success' | 'error';
+type Step = 'checking' | 'found' | 'not_found' | 'pulling' | 'cloning' | 'success' | 'error';
 
 interface KnownProject {
   name: string;
@@ -89,8 +90,11 @@ export function IncomingTaskDialog({ open, taskId, taskTitle, senderName, gitOri
     setStep('pulling');
     try {
       const result = await pullForTask(taskId, localPath || undefined, { gitOrigin });
-      if (result.conflicts) {
-        setStep('conflict');
+      if (result.kind === 'conflict') {
+        // The same stuck tree the footer's Pull leaves: the same toast and
+        // Resolve, aimed at the task's repo — not a dialog step of its own.
+        notifyGitOutcome('pull', result, result.local_path ?? localPath);
+        handleClose();
       } else if (result.success) {
         setStep('success');
         setTimeout(() => {
@@ -112,9 +116,13 @@ export function IncomingTaskDialog({ open, taskId, taskTitle, senderName, gitOri
     setStep('cloning');
     try {
       const result = await cloneForTask(taskId, cloneTarget, { gitOrigin });
-      if (result.conflicts) {
-        setLocalPath(result.cloned_path ?? cloneTarget);
-        setStep('conflict');
+      if (result.kind === 'conflict') {
+        notifyGitOutcome(
+          'pull',
+          { kind: 'conflict', branch: result.branch ?? null, message: result.message ?? '' },
+          result.cloned_path ?? cloneTarget,
+        );
+        handleClose();
       } else if (result.success) {
         setStep('success');
         setTimeout(() => {
@@ -318,31 +326,6 @@ export function IncomingTaskDialog({ open, taskId, taskTitle, senderName, gitOri
                 <Trans>Opening task…</Trans>
               </DialogDescription>
             </DialogHeader>
-          </>
-        )}
-
-        {/* Conflict */}
-        {step === 'conflict' && (
-          <>
-            <DialogHeader>
-              <DialogTitle className="flex items-center gap-2">
-                <AlertTriangle className="h-5 w-5 text-yellow-500" />
-                <Trans>Merge conflicts</Trans>
-              </DialogTitle>
-              <DialogDescription>
-                <Trans>
-                  There are merge conflicts in <code>{localPath}</code>. Please resolve them and try again.
-                </Trans>
-              </DialogDescription>
-            </DialogHeader>
-            <DialogFooter>
-              <Button variant="ghost" onClick={handleClose}>
-                <Trans>Close</Trans>
-              </Button>
-              <Button onClick={() => void handleConfirmPull()}>
-                <Trans>Retry pull</Trans>
-              </Button>
-            </DialogFooter>
           </>
         )}
 

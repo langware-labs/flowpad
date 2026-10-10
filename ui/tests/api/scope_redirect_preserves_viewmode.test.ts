@@ -70,7 +70,9 @@ describe('api: scope-align redirect preserves query options', () => {
     expect(location).toContain('matrix=legacy');
   }, 15000);
 
-  it('standard entry (no viewMode) redirects without inventing one', async () => {
+  // A bare session URL states the session's own mode in its one identity redirect: what it was
+  // opened in, else Standard — never the mode on screen (001fd536e).
+  it('standard entry (no viewMode) redirects stating the session\'s own mode: Standard', async () => {
     const id = uuidv4();
     const projectId = uuidv4();
     await new AgenticProcess({
@@ -85,7 +87,7 @@ describe('api: scope-align redirect preserves query options', () => {
     expect(redirect).not.toBeNull();
     const location = redirect!.headers.get('Location') ?? '';
     expect(location).toContain(`scope-activeProjectId=${projectId}`);
-    expect(location).not.toContain('viewMode=');
+    expect(location).toContain('viewMode=standard');
   }, 15000);
 
   it('projectless process clears an ambient project scope before tab materialization', async () => {

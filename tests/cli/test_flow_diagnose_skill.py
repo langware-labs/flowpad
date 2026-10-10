@@ -8,6 +8,7 @@ CLI). If any of that drifts, the recording step silently breaks at runtime.
 """
 
 import importlib.util
+import os
 import re
 import shlex
 import subprocess
@@ -114,7 +115,8 @@ async def _diagnose_worker_env() -> dict[str, str]:
     Assembled through the product's own chain, not by hand:
     ``_build_diagnose_process`` is what `flow diagnose` launches,
     ``apply_worker_env`` is the single chokepoint every spawn path calls, and
-    ``ClaudeCLIWorker.build_env`` is what turns that into the subprocess env.
+    the Claude stream worker overlays it on ``without_inherited_claude_session``
+    (``ClaudeCLIStreamWorker`` → ``build_worker_spawn_env``) for the subprocess env.
 
     ``VIRTUAL_ENV`` is then dropped, because this test process is the exception
     rather than the rule: it runs under ``uv run pytest`` from the dev checkout,
@@ -126,13 +128,12 @@ async def _diagnose_worker_env() -> dict[str, str]:
     instead of the product, and pass while every real install fails.
     """
     from flow_sdk.builtin.agentic_process.cli_drivers import apply_worker_env
-    from flow_sdk.builtin.agentic_process.cli_drivers.claude.cli_worker import ClaudeCLIWorker
-    from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import AgenticContext
+    from flow_sdk.claude_env import without_inherited_claude_session
     from flow_sdk.cli.commands.diagnose_cmd import _build_diagnose_process
 
     process = await _build_diagnose_process()
     env_vars = apply_worker_env(dict((process.cli_config or {}).get("env_vars") or {}), process)
-    env = ClaudeCLIWorker.build_env(AgenticContext(workdir=process.workdir, env_vars=env_vars))
+    env = {**without_inherited_claude_session(os.environ), **env_vars}
     env.pop("VIRTUAL_ENV", None)
     return env
 

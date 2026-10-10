@@ -442,3 +442,18 @@ async def test_a_node_with_a_problem_fails_with_it_and_blocks_its_parent(tmp_pat
     assert _states(result) == {"p": "blocked", "broken": "failed", "fine": "done"}
     assert result.root.children[0].detail == "names the wizard 'nope', which is not here"
     assert machine.installs == ["f-run"]
+
+
+async def test_a_skipped_node_settles_skipped_runs_nothing_and_holds_up_no_parent(tmp_path):
+    tree = Tree().node("root", run="finish", children=["key", "app"]).node("app", run="app")
+    tree.ops["key-op"] = _op("key-op")
+    tree.nodes["key"] = SetupNode(id="key", label="KEY", run=_wizard("key-op"), skipped="skipped on this machine")
+    machine = Machine()
+
+    result = await _setup(tree, "root", machine, tmp_path)
+
+    states = _states(result)
+    assert states["key"] == SetupState.SKIPPED.value and states["root"] == SetupState.DONE.value
+    assert "key-op" not in machine.installs, "a skipped node's wizard never runs"
+    assert result.state is SetupState.DONE and result.done == result.total, "skipped counts as settled"
+

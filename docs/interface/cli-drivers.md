@@ -114,15 +114,15 @@ Turns a structured config into an argv (canonical) and a shell string (derived) 
 injection or subprocess spawn. Subclasses declare a vendor spec and override `_emit_flags()`.
 
 - **Vendor spec knobs:** `EXECUTABLE`, `PROMPT_CHANNEL` (`"argv"` claude / `"stdin"`
-  codex+copilot), `SYSTEM_PROMPT_FLAG` (legacy inline append, claude
-  `--append-system-prompt`; `None` ⇒ prepend into the prompt body),
-  `SYSTEM_PROMPT_FILE_FLAG` (claude `--append-system-prompt-file`), `MODEL_TIERS`
+  codex+copilot), `SYSTEM_PROMPT_FILE_FLAG` (claude `--append-system-prompt-file`,
+  deepagents `--system-prompt-file`; the composed system prompt — see
+  `docs/agent/system-prompt-layers.md` — never rides the prompt body), `MODEL_TIERS`
   (tier→model/auto map; empty base = pass-through).
 - **Model-tier resolution lives here, once:** `model` preserves the raw persisted intent;
   `resolved_model` runs it through `MODEL_TIERS` only when the command is emitted. A tier
   may resolve to a concrete model or to vendor auto (`None`, so no model flag); a concrete
   name passes through.
-- **argv is the single source of truth.** `cli_cmd(instruction, system_prompt_append)` →
+- **argv is the single source of truth.** `cli_cmd(instruction)` →
   argv; `stdin_text(...)` → the stdin string (or `None` for argv-channel vendors);
   `to_spawn(...)` → the one IO contract `(argv, env, stdin|None)`; `to_spawn_args(...)` →
   back-compat `(argv, env)`; `to_shell_string(...)` → posix/win32 shell form derived from

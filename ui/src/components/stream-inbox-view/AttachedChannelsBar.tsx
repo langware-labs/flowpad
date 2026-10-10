@@ -2,7 +2,7 @@
  * The attached channels of ONE owner — the local user's stream inbox or an agent's —
  * on the stream inbox's header line, as a row of round marks with a status dot
  * (presence-row pattern): green dot = listening, dashed ring = paused, "!" =
- * parked. ONE mark per channel kind (provider + channel, the identity a
+ * a person must act (`ATTENTION[kind].mark`). ONE mark per channel kind (provider + channel, the identity a
  * glyph draws): several sources of one kind share a mark that carries their
  * count, and hovering it lists just those sources with their switches.
  * Clicking a mark FILTERS the list to that kind; while a filter is on, the
@@ -42,7 +42,15 @@ import { isMessageDriverSpec, sourcesQuery, useSourceSpecs } from '@src/componen
 import { useSourceDelete } from '@src/components/data-sources/use-source-delete';
 import { useSourceToggle } from '@src/components/data-sources/use-source-toggle';
 import { CallControls } from '@src/components/voice/CallControls';
-import { ownerOf } from './channel-owner';
+import {
+  ATTENTION,
+  type AttentionReason,
+  type ChannelMark,
+  attentionReason,
+  attentionText,
+} from '@src/components/data-sources/source-attention';
+import { useSourcePull } from '@src/components/data-sources/source-parts';
+import { channelKeyOf, ownerOf } from './channel-owner';
 
 const EMPTY: DataSource[] = [];
 
@@ -71,21 +79,20 @@ export function useAttachedChannels(owner: TypeId | null | undefined) {
 }
 
 type SpecFor = (provider: string) => DataDriver | undefined;
-type ChannelState = 'on' | 'off' | 'parked';
-const stateOf = (s: DataSource): ChannelState => (s.needsAttention ? 'parked' : s.status === 'disabled' ? 'off' : 'on');
-
-/** The identity a mark draws: provider AND channel, because one transport
- *  (`agent`) reaches several channels and wears a different glyph for each. */
-export const channelKeyOf = (s: DataSource) => `${s.provider}|${s.channel}`;
+/** How the mark draws a source, from the one classifier: lit unless its kind says otherwise. */
+const markOf = (reason: AttentionReason | null): ChannelMark => (reason ? ATTENTION[reason.kind].mark : 'on');
 
 /** Sources of one channel kind, sharing a mark. Its state is the best of its
- *  members' — one listening source lights the mark; parked beats paused. */
+ *  members' — one listening source lights the mark; parked beats paused — and
+ *  `attention` counts the members a person must act on, so the "!" is never
+ *  hidden by a listening sibling: a lit mark can still wear it. */
 interface ChannelGroup {
   key: string;
   provider: string;
   channel: string;
   sources: DataSource[];
-  state: ChannelState;
+  state: ChannelMark;
+  attention: number;
 }
 export function groupChannels(rows: DataSource[]): ChannelGroup[] {
   const groups = new Map<string, DataSource[]>();
@@ -96,9 +103,10 @@ export function groupChannels(rows: DataSource[]): ChannelGroup[] {
   }
   return [...groups.entries()]
     .map(([key, sources]) => {
-      const states = sources.map(stateOf);
-      const state: ChannelState = states.includes('on') ? 'on' : states.includes('parked') ? 'parked' : 'off';
-      return { key, provider: sources[0].provider, channel: sources[0].channel, sources, state };
+      const states = sources.map((s) => markOf(attentionReason(s)));
+      const state: ChannelMark = states.includes('on') ? 'on' : states.includes('parked') ? 'parked' : 'off';
+      const attention = states.filter((st) => st === 'parked').length;
+      return { key, provider: sources[0].provider, channel: sources[0].channel, sources, state, attention };
     })
     .sort((a, b) => a.key.localeCompare(b.key));
 }
@@ -246,12 +254,13 @@ function ChannelMark({
   const { t } = useLingui();
   // The channel's mark, badged with whose way it is (Flow's), as on the data source rows.
   const { Base, Badge } = sourceGlyphs(spec, group.channel);
-  const { state } = group;
+  const { state, attention } = group;
   const count = group.sources.length;
   const title = spec?.title || group.provider;
   // Inline, not a helper taking `t`: the lingui macro only compiles a `t` it can
-  // see come from `useLingui()`.
-  const stateLabel = state === 'parked' ? t`needs attention` : state === 'on' ? t`listening` : t`paused`;
+  // see come from `useLingui()`. A member that needs a person names the mark
+  // "needs attention" even while a sibling listens.
+  const stateLabel = attention > 0 ? t`needs attention` : state === 'on' ? t`listening` : t`paused`;
   return (
     <HoverCard openDelay={150} closeDelay={120}>
       <HoverCardTrigger asChild>
@@ -271,14 +280,18 @@ function ChannelMark({
           data-provider={group.provider}
           data-count={count}
           data-state={state}
+          data-attention={attention}
         >
           {/* The badge sits top-right here: bottom-right is the listening dot's. */}
           <IconWithBadge Base={Base} Badge={Badge} className="size-[17px]" badgeClassName="-top-1 bottom-auto" />
-          {state === 'on' && (
+          {state === 'on' && attention === 0 && (
             <span className="absolute -bottom-0.5 -end-0.5 size-2.5 rounded-full border-2 border-background bg-emerald-500" />
           )}
-          {state === 'parked' && (
-            <span className="absolute -bottom-0.5 -end-0.5 grid size-3.5 place-items-center rounded-full border-2 border-background bg-amber-500 text-[9px] font-bold leading-none text-white">
+          {attention > 0 && (
+            <span
+              className="absolute -bottom-0.5 -end-0.5 grid size-3.5 place-items-center rounded-full border-2 border-background bg-amber-500 text-[9px] font-bold leading-none text-white"
+              data-testid="attached-channel-attention"
+            >
               !
             </span>
           )}
@@ -343,9 +356,9 @@ const specFor =
   () =>
     spec;
 
-/** One line of a channel list: glyph, name, its setup note, the on/off switch
- *  and a delete. A parked row's setup note IS its verify control — pressing
- *  the step it names re-runs the check. */
+/** One line of a channel list: glyph, name, why it is not delivering, the on/off
+ *  switch and a delete. For a row a person must act on, the reason IS the control —
+ *  pressing it runs the verb that recovers that kind (`ATTENTION[kind].verb`). */
 function ChannelRow({
   source,
   spec,
@@ -358,8 +371,18 @@ function ChannelRow({
   const { t } = useLingui();
   const { toggle, busy } = useSourceToggle(source);
   const { verify, busy: verifying } = useSourceVerify(source);
+  const { pull, pulling } = useSourcePull(source);
   const { Base, Badge } = sourceGlyphs(spec, source.channel);
-  const state = stateOf(source);
+  const attention = attentionReason(source);
+  const state = markOf(attention);
+  // The words stay the foreground colour (coloured text on a dark theme does not read); the strip
+  // above the list says the same thing at full width. A paused row needs no line: its switch says it.
+  const flagged = attention && state === 'parked' ? attention : null;
+  const reason = flagged ? attentionText(flagged) : '';
+  const recover =
+    flagged && ATTENTION[flagged.kind].verb === 'pull'
+      ? { label: t`Pull`, run: pull, busy: pulling }
+      : { label: t`Verify`, run: verify, busy: verifying };
   return (
     <div
       className="flex items-center gap-2.5 px-3 py-2 text-[13px]"
@@ -375,16 +398,16 @@ function ChannelRow({
             {source.account_key}
           </span>
         )}
-        {state === 'parked' && source.setup_detail && (
+        {reason && (
           <button
             type="button"
-            onClick={() => void verify()}
-            disabled={verifying}
-            title={t`Verify: ${source.setup_detail}`}
-            className="block w-full truncate text-left text-[11px] text-amber-500 hover:underline disabled:opacity-60"
+            onClick={() => void recover.run()}
+            disabled={recover.busy}
+            title={`${recover.label}: ${reason}`}
+            className="block w-full truncate text-left text-[11px] underline decoration-dotted underline-offset-2 hover:decoration-solid disabled:opacity-60"
             data-testid="attached-channel-verify"
           >
-            {source.setup_detail}
+            {reason}
           </button>
         )}
       </span>

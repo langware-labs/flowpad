@@ -225,3 +225,26 @@ describe('buildDetectedGroups', () => {
     ]);
   });
 });
+
+describe('buildCredentialRows — an oauth credential', () => {
+  it('is a credential row of kind oauth: its provider, the scopes it needs, those the grant lacks, needed whole', () => {
+    const [google] = buildCredentialRows(
+      status({
+        credentials: [
+          row({ typeid: 'credential-g', name: 'google', scope: 'project', value_store: 'connection', kind: 'oauth', provider: 'Google',
+                scopes: ['drive.readonly'], missing_scopes: ['drive'], state: 'partial', vars: [] }),
+        ],
+      }),
+    );
+    expect(google).toMatchObject({
+      typeid: 'credential-g', kind: 'oauth', provider: 'google', scopes: ['drive.readonly'], missingScopes: ['drive'],
+      required: 'MUST', state: 'needs-values', missing: [],
+    });
+  });
+
+  it('leaves an env credential an env credential', () => {
+    const [key] = buildCredentialRows(status({ credentials: [row({ name: 'openai', scope: 'user', vars: [v('OPENAI_API_KEY')] })] }));
+    expect(key.kind).toBe('env');
+    expect(key.scopes).toEqual([]);
+  });
+});

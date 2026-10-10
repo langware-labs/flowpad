@@ -880,9 +880,13 @@ export function EntityExecutionPanel({
     onChange: handleModelChange,
     activeProcess,
   });
+  // A live session changes worker only through the host's own switch flow; a host
+  // without one keeps the worker it started with rather than offering a picker that
+  // does nothing.
+  const workerLocked = !!activeProcess && !onActiveWorkerChange;
   const workerSettingsNode = workerSelectSlot?.({
     value: effectiveWorkerType,
-    disabled: !targetStr || sending || busy,
+    disabled: !targetStr || sending || busy || workerLocked,
     onChange: handleWorkerChange,
     activeProcess,
   });
@@ -969,7 +973,7 @@ export function EntityExecutionPanel({
                 groups={inlineGroups}
                 worker={activeProcess?.worker_type ?? undefined}
                 agent={launchingAgent}
-                onWorkerChange={handleWorkerChange}
+                onWorkerChange={workerLocked ? undefined : handleWorkerChange}
               />
               {activeProcess && (
                 <ChatActivityLine process={activeProcess} trailing={<TurnEventChip events={liveEvents} />} />

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { gitResolvePrompt } from '@src/components/status-bar/gitResolvePrompt';
+import { gitResolvePrompt } from '@src/lib/git-resolve-prompt';
 
 describe('gitResolvePrompt — push and pull finish differently', () => {
   it('push: continues the rebase, then pushes', () => {

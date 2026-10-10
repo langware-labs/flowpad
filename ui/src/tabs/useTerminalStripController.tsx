@@ -130,7 +130,7 @@ export function useTerminalStripController({
 
   // "Start <vendor>" — create the AgenticProcess then navigate to its terminal.
   const startAgenticTab = useCallback(
-    async (kind: 'claude' | 'codex' | 'copilot' | 'opencode', workerType?: WorkerType) => {
+    async (kind: 'claude' | 'codex' | 'copilot' | 'opencode', workerType?: WorkerType, mode?: ViewMode) => {
       if (tabCreationLockRef.current) return;
       tabCreationLockRef.current = true;
       setPendingTabCreation(kind);
@@ -150,13 +150,14 @@ export function useTerminalStripController({
         // openNewChat creates AND navigates — it owns the chat-mode propagation,
         // so a second openShellProcess here would re-navigate the same dock
         // without `?viewMode` and strip the mode back off the URL.
-        // The strip's openers ALWAYS start a terminal (PTY) session, whatever
-        // mode is on screen — a tab beside the current one, never another Vibe
-        // ("New Vibe" is its own opener).
+        // The strip's openers start a terminal (PTY) session, whatever mode is
+        // on screen — a tab beside the current one, never another Vibe ("New
+        // Vibe" is its own opener). Only `launchIn` (the quick-launch slot)
+        // names another shape.
         await openNewChat(navigation, {
           ...(spawnProjectId ? { projectId: spawnProjectId } : {}),
           ...(workerType ? { workerType } : {}),
-          mode: ViewMode.Advanced,
+          mode: mode ?? ViewMode.Advanced,
         });
       } catch (error: unknown) {
         // The spawn failed. ASK what is wrong rather than assuming, because the
@@ -283,6 +284,7 @@ export function useTerminalStripController({
         Icon: PROVIDER_META.claude.Icon,
         iconClassName: PROVIDER_META.claude.iconClassName,
         onActivate: () => void handleStartClaude(),
+        launchIn: (mode) => void startAgenticTab('claude', 'claude_code', mode),
         available: true,
         warning: warnings.claude_code,
         capabilityKind: HARNESS_CAPABILITY_BY_WORKER.claude_code,
@@ -295,6 +297,7 @@ export function useTerminalStripController({
         Icon: PROVIDER_META.codex.Icon,
         iconClassName: PROVIDER_META.codex.iconClassName,
         onActivate: () => void handleStartCodex(),
+        launchIn: (mode) => void startAgenticTab('codex', 'codex', mode),
         available: true,
         warning: warnings.codex,
         capabilityKind: HARNESS_CAPABILITY_BY_WORKER.codex,
@@ -307,6 +310,7 @@ export function useTerminalStripController({
         Icon: PROVIDER_META.copilot.Icon,
         iconClassName: PROVIDER_META.copilot.iconClassName,
         onActivate: () => void handleStartCopilot(),
+        launchIn: (mode) => void startAgenticTab('copilot', 'copilot', mode),
         available: true,
         warning: warnings.copilot,
         capabilityKind: HARNESS_CAPABILITY_BY_WORKER.copilot,
@@ -319,6 +323,7 @@ export function useTerminalStripController({
         Icon: PROVIDER_META.opencode.Icon,
         iconClassName: PROVIDER_META.opencode.iconClassName,
         onActivate: () => void handleStartOpenCode(),
+        launchIn: (mode) => void startAgenticTab('opencode', 'opencode', mode),
         available: true,
         warning: warnings.opencode,
         capabilityKind: HARNESS_CAPABILITY_BY_WORKER.opencode,
@@ -372,6 +377,7 @@ export function useTerminalStripController({
     [
       modLabel,
       handleNewVibe,
+      startAgenticTab,
       handleStartClaude,
       handleStartCodex,
       handleStartCopilot,

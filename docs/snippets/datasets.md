@@ -183,3 +183,42 @@ problems = leads.check({"input": {"name": "Eli", "company": companies.ref_of("0b
 refuses while one points at the row. Rows carry `ref` and `version` over HTTP too — pass the version
 back as `put-row {key, row, expected}` and a row changed since answers 409. The datasets holding a
 kind: `GET /api/v1/kinds/<kind>/datasets?project=<id>` (TypeScript `Dataset.forKind(kind, projectId)`).
+
+## 9. Mirror an outside system, and read only what you show
+
+An app that keeps real records — a mirror of a CRM, a log of outreach — writes many rows per run and
+shows a few of them. `sync` makes the dataset hold exactly the rows given, in one step; `query` and
+`count` answer the rows that match, so a number on a dashboard and the list behind it are one question.
+
+```python
+from flow_sdk.builtin.dataset import Dataset
+
+companies = Dataset.at(project / "agentic-assets/dataset/companies")
+await companies.put_many([{"key": k, "input": {"name": n}} for k, n in [("acme", "Acme"), ("bolt", "Bolt"), ("core", "Core")]])
+done = await companies.sync([                              # what the outside system holds NOW
+    {"key": "acme", "input": {"name": "Acme"}},            # reads the same: left untouched
+    {"key": "bolt", "input": {"name": "Bolt Ltd"}},        # changed: replaced
+    {"key": "dyne", "input": {"name": "Dyne"}},            # new: created -- and `core`, not listed, is removed
+])
+found = companies.query({"op": "$LIKE", "operands": ["input.name", "ltd"]}, order_by={"key": "asc"}, limit=10)
+names = [row["input"]["name"] for row in found["rows"]]   # ['Bolt Ltd'] -- found["total"] counts before paging
+tally = companies.count(group_by=["kind"])                 # {"total": 3, "groups": [{"by": {"kind": "train"}, "count": 3}]}
+gone = companies.delete_rows(["acme", "dyne"])             # all of them, or none
+```
+
+`put_many`, `delete_rows` and `sync` are each ONE step — every row is checked first, and one that
+does not fit, changed since (`expected={key: version}`) or is still linked to writes nothing; the
+refusal names every such row by key. `sync(rows, match=…)` prunes only the rows `match` selects, so
+a writer that owns one slice of a dataset never removes another's. A match is the entity query
+expression (`{op, operands}`: `$EQ $NE $GT $GE $LT $LE $IN $NIN $LIKE $IS_NULL $IS_NOT_NULL`, under
+`$AND` / `$OR`) or a plain `{path: value}` map; a field is a path into the row as it travels —
+`key`, `input.stage`, `input.stage_dates.won` — and a date compares as its ISO string.
+
+Over HTTP: `GET dataset/<id>/rows?filter={match, order_by, limit, offset}` → `{rows, total, problems}`,
+`GET count?filter=…&group_by=a,b` → `{total, groups}`, `POST put-rows {rows, expected?}`,
+`POST delete-rows {keys, expected?}`, `POST sync-rows {rows, prune?, match?}`. TypeScript:
+`dataset.rows(query)`, `count`, `putMany`, `deleteRows`, `sync` — and `dataset.onRowsChanged(handler)`:
+every row write says `dataset.rows.changed` once (the keys that moved, never their values), so a page
+re-reads when told instead of on a timer. A script outside the server is heard too (the write tells
+the running instance; best effort). An app opens an outside page — the record in the CRM — with
+`openExternal(url)` (http/https only; the host opens it in the person's browser).

@@ -678,7 +678,7 @@ async def test_agent_node_resolves_agent_entity_definition(tmp_path):
     assert agent_def["model"] == "sonnet"
     # md model applies; node model_size (when set) wins.
     assert fm._agent_model(agent_def, node.node_data) == "sonnet"
-    assert fm._agent_model(agent_def, {**node.node_data, "model_size": "sm"}) == "haiku"
+    assert fm._agent_model(agent_def, {**node.node_data, "model_size": "sm"}) == "sm"
 
     run = await fm._start_run(loaded)
     from flow_sdk.graph_workflow_manager.envelope import RunEvent

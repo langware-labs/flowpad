@@ -1,7 +1,8 @@
 // A guest app asks the host to open a dock; only a `/dock/` address that parses is honoured.
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { guestNavigation } from '@src/pages/flow-page/app-display-viewer';
+import { OPEN_EXTERNAL_MESSAGE, externalUrl, openExternal } from '@sdk/apps/host';
+import { guestExternalUrl, guestNavigation } from '@src/pages/flow-page/app-display-viewer';
 
 describe('flowpad:navigate', () => {
   it('opens a dock address — another app, on its subject', () => {
@@ -25,5 +26,56 @@ describe('flowpad:navigate', () => {
     ['nothing', null],
   ])('ignores %s', (_why, data) => {
     expect(guestNavigation(data)).toBeNull();
+  });
+});
+
+// A guest app asks the host to open an OUTSIDE page (a record in a CRM): only an absolute http(s) address.
+describe('flowpad:open-external', () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it('the host opens an http(s) address a guest asks for', () => {
+    expect(guestExternalUrl({ type: 'flowpad:open-external', url: 'https://crm.example.com/object/opportunity/42' })).toBe(
+      'https://crm.example.com/object/opportunity/42',
+    );
+    expect(guestExternalUrl({ type: OPEN_EXTERNAL_MESSAGE, url: 'http://localhost:3000/x?y=1' })).toBe('http://localhost:3000/x?y=1');
+  });
+
+  it.each([
+    ['a script address', { type: 'flowpad:open-external', url: 'javascript:alert(1)' }],
+    ['a file', { type: 'flowpad:open-external', url: 'file:///etc/passwd' }],
+    ['a relative path', { type: 'flowpad:open-external', url: '/dock/home' }],
+    ['a data address', { type: 'flowpad:open-external', url: 'data:text/html,<b>x</b>' }],
+    ['no url', { type: 'flowpad:open-external' }],
+    ['a url that is not text', { type: 'flowpad:open-external', url: { href: 'https://x.example' } }],
+    ['another message type', { type: 'flowpad:navigate', url: 'https://x.example' }],
+    ['nothing', null],
+  ])('the host ignores %s', (_why, data) => {
+    expect(guestExternalUrl(data)).toBeNull();
+  });
+
+  it('a navigate message is not an open-external one, and the reverse', () => {
+    expect(guestNavigation({ type: 'flowpad:open-external', url: 'https://x.example' })).toBeNull();
+  });
+
+  it('the app side posts the message the host reads, to its parent', () => {
+    const post = vi.fn();
+    vi.spyOn(window, 'parent', 'get').mockReturnValue({ postMessage: post } as never);
+    openExternal('https://crm.example.com/object/42');
+    expect(post).toHaveBeenCalledWith({ type: OPEN_EXTERNAL_MESSAGE, url: 'https://crm.example.com/object/42' }, '*');
+    expect(guestExternalUrl(post.mock.calls[0][0])).toBe('https://crm.example.com/object/42');   // what one sends, the other opens
+  });
+
+  it('an app shown on its own opens a new tab itself', () => {
+    const open = vi.spyOn(window, 'open').mockReturnValue(null);
+    openExternal('https://crm.example.com/a');
+    expect(open).toHaveBeenCalledWith('https://crm.example.com/a', '_blank', 'noopener,noreferrer');
+  });
+
+  it('the app side refuses anything that is not an absolute http(s) address', () => {
+    const open = vi.spyOn(window, 'open').mockReturnValue(null);
+    expect(() => openExternal('javascript:alert(1)')).toThrow(/absolute http\(s\) address/);
+    expect(() => openExternal('/relative')).toThrow();
+    expect(open).not.toHaveBeenCalled();
+    expect(externalUrl(7)).toBeNull();
   });
 });

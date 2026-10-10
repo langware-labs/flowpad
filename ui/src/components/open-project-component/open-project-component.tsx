@@ -24,6 +24,7 @@ import { AdvancedOnly } from '@src/components/view-mode';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { Trans, useLingui } from '@lingui/react/macro';
+import { useActiveWorkspace } from '@src/hooks/use-workspaces';
 
 /** Free-text match against a project's display name or cwd. `q` must already be
  *  trimmed + lowercased. */
@@ -560,16 +561,18 @@ export function OpenProjectComponent({
   // with no compute node of their own has no machine scan to read them from.
   const hub = isHubOnly();
   const { navigation } = useDockNavigation();
+  // New projects go in the ACTIVE workspace's folder; the list shows its projects.
+  const { root: defaultWorkspacePath, scopeId } = useActiveWorkspace();
   const { projects: scannedProjects, isLoading: isLoadingScan } = useAllProjects({
     enabled: open && !hub,
     includeSystem: showSystem,
+    workspace: scopeId,
   });
   const { projects: hubProjects, isLoading: isLoadingHub } = useProjects({ enabled: open && hub });
   const hubItems = useMemo(() => hubProjectListItems(hubProjects, showSystem), [hubProjects, showSystem]);
   const mergedProjects = hub ? hubItems : scannedProjects;
   const isLoadingScanProjects = hub ? isLoadingHub : isLoadingScan;
 
-  const defaultWorkspacePath = useMemo(() => dataContext.bootstrapInfo?.desktop_info?.paths?.workspace || '', []);
 
   useEffect(() => {
     if (!open) {
@@ -635,7 +638,7 @@ export function OpenProjectComponent({
     } finally {
       setIsSubmitting(false);
     }
-  }, [pickFolder, ensureProjectAndSetContext, onOpenChange, t]);
+  }, [pickFolder, defaultWorkspacePath, ensureProjectAndSetContext, onOpenChange, t]);
 
   // NewProjectDialog calls this after validation
   const handleCreate = useCallback(

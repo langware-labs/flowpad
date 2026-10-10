@@ -5,6 +5,8 @@ Each worker CLI answers "am I logged in?" differently:
 - claude: ``claude auth status`` prints JSON (exit code is 0 either way, so
   the decision is made on the ``loggedIn`` field, never the return code).
 - codex: ``codex login status`` — exit 0 = logged in, nonzero = logged out.
+  WHO is signed in comes from the id_token in ``$CODEX_HOME/auth.json`` (its
+  claims are read, never verified — presence is all the exit code proves too).
 - copilot: has NO status subcommand. Best-effort heuristic only: an auth
   token in the environment, else a past-login marker in
   ``~/.copilot/config.json``. The real token lives in the OS credential
@@ -21,6 +23,8 @@ raise, and map "couldn't check" (timeout, exec error, unparseable output) to
 
 from __future__ import annotations
 
+import base64
+import binascii
 import json
 import re
 import subprocess
@@ -135,7 +139,7 @@ class WorkerAuthResult:
     # knows its vendor's JSON. `details` keeps the vendor's own keys for anyone
     # who wants them; a consumer that just wants to show the account reads
     # these, and does not learn that claude spells a plan `subscriptionType`.
-    # Empty whenever the vendor does not say, which is every vendor but claude.
+    # Empty whenever the vendor does not say (codex and copilot say who, never on what plan).
     identity: str = ""
     plan: str = ""
 
@@ -212,19 +216,48 @@ def probe_claude_auth(
     )
 
 
+def _codex_account(env: Mapping[str, str], home: Path) -> tuple[str, str]:
+    """``(email, plan)`` from the id_token codex stores in ``auth.json`` — ``("", "")`` when unreadable.
+
+    Pure and local: the JWT payload is base64url-decoded and read for its ``email`` and
+    ChatGPT plan claims. No network, no signature check — this is who codex SAYS is signed
+    in, which is all the status line needs. The token and its claims are never logged.
+    """
+    path = Path(env.get("CODEX_HOME") or (home / ".codex")) / "auth.json"
+    try:
+        auth = json.loads(path.read_text(encoding="utf-8"))
+        segment = str(auth["tokens"]["id_token"]).split(".")[1]
+        claims = json.loads(base64.urlsafe_b64decode(segment + "=" * (-len(segment) % 4)))
+        identity = str(claims.get("email") or "")
+        plan = str((claims.get("https://api.openai.com/auth") or {}).get("chatgpt_plan_type") or "")
+    except (OSError, ValueError, KeyError, TypeError, IndexError, AttributeError, binascii.Error):
+        return "", ""
+    return identity, plan
+
+
 def probe_codex_auth(
     executable: str,
     env: Mapping[str, str],
     timeout: float = PROBE_TIMEOUT_SECONDS,
+    home: Path | None = None,
 ) -> WorkerAuthResult:
-    """``codex login status`` — exit 0 = logged in, nonzero = logged out."""
+    """``codex login status`` — exit 0 = logged in, nonzero = logged out.
+
+    The exit code says WHETHER; ``auth.json`` (``$CODEX_HOME``, else ``<home>/.codex``) says
+    WHO and on WHAT plan. A missing or unreadable file leaves identity/plan empty and the
+    verdict untouched.
+    """
     proc = _run_cli([executable, "login", "status"], env, timeout)
     message = ((proc.stdout or "") + (proc.stderr or "")).strip()[:500]
     if proc.returncode == 0:
+        identity, plan = _codex_account(env, home if home is not None else Path.home())
         return WorkerAuthResult(
             status=WorkerAuthStatus.LOGGED_IN,
             verified=True,
             message=message or "codex CLI has stored credentials.",
+            details={"email": identity, "plan": plan} if identity or plan else {},
+            identity=identity,
+            plan=plan,
         )
     return WorkerAuthResult(
         status=WorkerAuthStatus.LOGGED_OUT,
@@ -276,6 +309,13 @@ def probe_opencode_auth(
     )
 
 
+def _copilot_login(marker: object) -> str:
+    """The GitHub login a copilot ``lastLoggedInUser`` marker names: ``{host, login}`` or a string."""
+    if isinstance(marker, dict):
+        return str(marker.get("login") or "")
+    return str(marker or "")
+
+
 def probe_copilot_auth(
     env: Mapping[str, str],
     home: Path,
@@ -322,6 +362,9 @@ def probe_copilot_auth(
             status=WorkerAuthStatus.LOGGED_IN,
             message="copilot config.json records a past login (token not validated).",
             details={"source": "config", "users": logins},
+            # The account the CLI last used, else the most recently recorded login. The marker is
+            # an object (`{host, login}`) on a real install; a bare string is tolerated.
+            identity=_copilot_login(config.get("lastLoggedInUser")) or (logins[-1] if logins else ""),
         )
     return WorkerAuthResult(
         status=WorkerAuthStatus.LOGGED_OUT,
@@ -354,7 +397,7 @@ def probe_worker_auth(
         if worker_type == "claude":
             return probe_claude_auth(executable_path, env)
         if worker_type == "codex":
-            return probe_codex_auth(executable_path, env)
+            return probe_codex_auth(executable_path, env, home=home)
         if worker_type == "copilot":
             return probe_copilot_auth(env, home, copilot_home)
         if worker_type == "opencode":

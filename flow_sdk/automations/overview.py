@@ -7,10 +7,11 @@ references in one pass each, then joins them in memory.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any, Optional
 
-from flow_sdk.schema.data_spec.automation_spec import AutomationGroup, AutomationRun, AutomationSummary
+from flow_sdk.schema.data_spec.automation_spec import AutomationGroup, AutomationRun, AutomationSummary, RunMark
 
 logger = logging.getLogger(__name__)
 
@@ -71,6 +72,7 @@ async def summarize(trigger: Any, runs: list[AutomationRun], *, names: Any = Non
     from flow_sdk.automations.runs import join_processes  # noqa: PLC0415
 
     real = [r for r in runs if not r.is_test and r.status != "skipped"][:RECENT_WINDOW]
+    passed_over = sum(1 for r in runs if r.reason_code == "decision_no")
     last = runs[0] if runs else None
     if last is not None and last_joined is None:
         last = (await join_processes([last]))[0]
@@ -91,6 +93,8 @@ async def summarize(trigger: Any, runs: list[AutomationRun], *, names: Any = Non
         last_run=last,
         recent_failures=sum(1 for r in real if r.status == "failed"),
         recent_runs=len(real),
+        last_runs=[RunMark(id=r.id, ts=r.ts, status=r.status, agentic_process_id=r.agentic_process_id) for r in real],
+        passed_over=passed_over,
         next_run=next_run,
         fires=int(trigger.counter or 0),
         tested=is_tested(trigger, runs),
@@ -112,6 +116,10 @@ async def overview(*, include_inactive: bool = False) -> list[AutomationSummary]
     rows = RowIndex(discover(None, limit=ROWS_PER_RULE * max(1, len(triggers)), per_rule=ROWS_PER_RULE))
     catalog = event_catalog()
     names = _Names()
+    # Every agent a `then` names, resolved together once: the per-rule sentences below then read the
+    # names from memory instead of one lookup after another.
+    agents = {((t.then or {}).get("run_agent") or {}).get("agent") for t in triggers}
+    await asyncio.gather(*(names.name(agent) for agent in agents if agent))
     flows = await workflows_by_trigger()
     folded = [(trigger, fold(rows.rows_for(str(trigger.id), trigger.name), catalog)) for trigger in triggers]
     # Every automation's newest run asks its agent run how it ended — together.

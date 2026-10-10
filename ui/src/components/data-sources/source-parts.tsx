@@ -6,7 +6,7 @@
 import { useCallback, useState } from 'react';
 import { type DataSource, type DataDriver } from '@sdk';
 import { CheckCircle2 } from 'lucide-react';
-import { Trans, useLingui } from '@lingui/react/macro';
+import { useLingui } from '@lingui/react/macro';
 import { i18n } from '@lingui/core';
 import { Button } from '@src/components/ui/button';
 import { notify } from '@src/notifications';
@@ -19,6 +19,7 @@ import { statusStyle } from './status-style';
 import { PARKED_DOT, type SourceLook } from './source-look';
 import { ChannelRouteControl } from './ChannelRouteControl';
 import { SourceMenu } from './SourceMenu';
+import { ATTENTION, type AttentionKind, attentionReason, attentionText } from './source-attention';
 import { useSourceToggle } from './use-source-toggle';
 import { useSourceVerify } from './use-source-verify';
 
@@ -35,7 +36,7 @@ export function SourceStatusLine({ source, className }: { source: DataSource; cl
   const look = sourceLook(source);
   // One view of the line: parked, held (running, but a file waits on a person), or the source's own look.
   const view = source.isParked
-    ? { text: 'text-foreground', dot: PARKED_DOT, label: t`Parked`, title: t`Parked: the scheduler skips it until you pull` }
+    ? { text: 'text-foreground', dot: PARKED_DOT, label: t`Parked`, title: i18n._(ATTENTION.parked.next) }
     : source.isHeld
       ? { text: 'text-amber-600 dark:text-amber-400', dot: 'bg-amber-500', label: t`Running · needs you`, title: source.error_detail || undefined }
       : { text: look.text, dot: look.dot, label: i18n._(look.label), title: undefined };
@@ -83,15 +84,17 @@ interface ActionsProps {
   onDelete: (source: DataSource) => void;
 }
 
-/** Verify (while setup is unfinished), the setup stages, and the menu — Pull and the rest live there. */
+/** Verify (whenever Verify is what recovers the source — `ATTENTION[kind].verb`: setup unfinished, parked,
+ *  or never evaluated), the setup stages, and the menu — Pull and the rest live there. */
 export function SourceActions({ source, spec, onEdit, onReplay, onDelete }: ActionsProps) {
   const { t } = useLingui();
   const { pull, pulling } = useSourcePull(source);
   const { verify, busy: verifying } = useSourceVerify(source);
   const { toggle: toggleEnabled } = useSourceToggle(source);
+  const reason = attentionReason(source);
   return (
     <div className="flex items-center justify-end gap-1">
-      {source.needsSetup && (
+      {reason && ATTENTION[reason.kind].verb === 'verify' && (
         <Button
           size="sm"
           variant="secondary"
@@ -119,16 +122,28 @@ export function SourceActions({ source, spec, onEdit, onReplay, onDelete }: Acti
   );
 }
 
-/** What is unfinished (with its wiki page), where the source's messages go, and why a parked source will not poll. */
+// The kinds this screen spells out under the source: the ones a person has to act on and that the status
+// line alone does not explain. Tinted with a coloured border; the words stay the foreground colour (red
+// text on a dark theme does not read).
+const NOTE: Partial<Record<AttentionKind, string>> = {
+  unresolved: 'border-amber-500/60 bg-amber-500/10',
+  held: 'border-amber-500/60 bg-amber-500/10',
+  parked: 'border-red-500/60 bg-red-500/10',
+};
+
+/** What is unfinished (with its wiki page), where the source's messages go, and — in the same words and with
+ *  the same next step as the stream inbox's attention strip (`ATTENTION`) — why a source is not delivering. */
 export function SourceSetupDetails({ source, spec }: { source: DataSource; spec?: DataDriver | null }) {
   const { t } = useLingui();
   // The setup page comes from the source's own manifest, so a new source brings its own help.
   const wiki = spec?.setup_wiki || undefined;
+  const reason = attentionReason(source);
+  const note = reason && NOTE[reason.kind];
   return (
     <>
-      {source.needsSetup && (
+      {reason?.kind === 'setup' && (
         <div className="flex items-start gap-1.5 rounded bg-amber-500/10 px-2 py-1.5 text-[11px] leading-snug text-amber-700 dark:text-amber-400">
-          <p className="flex-1">{source.setup_detail || t`Finish setup, then press Verify.`}</p>
+          <p className="flex-1">{attentionText(reason)}</p>
           {/* A wiki page, not a tooltip: "invite the bot" is a multi-step task performed in ANOTHER application,
               and a hover card cannot be read while doing it. */}
           {wiki && <WikiButton wikiword={wiki} label={t`How to finish setup`} />}
@@ -137,24 +152,13 @@ export function SourceSetupDetails({ source, spec }: { source: DataSource; spec?
 
       <ChannelRouteControl source={source} />
 
-      {source.isHeld && (
+      {reason && note && (
         <p
-          className="rounded border border-amber-500/60 bg-amber-500/10 px-2 py-1.5 text-[11px] leading-snug"
-          data-testid={`source-held-${source.id}`}
+          className={cn('rounded border px-2 py-1.5 text-[11px] leading-snug', note)}
+          data-testid={`source-${reason.kind}-${source.id}`}
         >
-          {source.error_detail}.{' '}
-          <Trans>Make the two the same — edit either one — and the next sync carries on.</Trans>
-        </p>
-      )}
-
-      {source.isParked && (
-        // Tinted with a red border; the words stay the foreground colour (red text on a dark theme does not read).
-        <p className="rounded border border-red-500/60 bg-red-500/10 px-2 py-1.5 text-[11px] leading-snug">
-          <Trans>
-            Parked — the scheduler skips a <code>config_error</code> source, so it will not poll again on its own.{' '}
-            <strong>Pull</strong> clears the latch.
-          </Trans>
-          {source.error_detail ? ` (${source.error_detail})` : ''}
+          <span className="block break-words">{attentionText(reason)}</span>
+          <span className="block text-muted-foreground">{i18n._(ATTENTION[reason.kind].next)}</span>
         </p>
       )}
     </>

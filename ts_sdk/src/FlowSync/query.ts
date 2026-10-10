@@ -17,6 +17,23 @@ export type QueryOp =
   | '$IS_NOT_NULL'
   | '$PROP';
 
+/**
+ * The value at `path` in `data`: the key as written when the object has it, else walked dot by dot
+ * (`input.stage_dates.won`; a list is stepped into by index). `undefined` when the path leads
+ * nowhere. The Python twin is `flow_sdk.datasets.query.field_of`; the two are held together by
+ * `test_fixtures/dataset_query_cases.json`.
+ */
+export function fieldOf(data: any, path: unknown): any {
+  if (data == null || typeof path !== 'string') return undefined;
+  if (Object.prototype.hasOwnProperty.call(data, path)) return data[path];
+  let at = data;
+  for (const step of path.split('.')) {
+    if (at == null || typeof at !== 'object') return undefined;
+    at = at[step];
+  }
+  return at;
+}
+
 export class ExpressionNode {
   // IS_NULL/IS_NOT_NULL are unary: canonical leaf shape is ``operands:
   // [field]`` — a trailing ``null`` would be DROPPED by axios GET param
@@ -228,10 +245,12 @@ export class QueryFilter extends ExpansionRequest {
         // query splices it OUT of the results (the Vibe help button lost its unread count that way).
         // The older ``[value, {$PROP: field}]`` — "this array field contains the value" — is kept.
         if (Array.isArray(operands[1])) {
-          const hit = (operands[1] as unknown[]).includes(data?.[operands[0] as string]);
+          const hit = (operands[1] as unknown[]).includes(fieldOf(data, operands[0]));
           return op === '$IN' ? hit : !hit;
         }
-        const contains = (a: any, b: any) => (op === '$IN' ? a.includes(b) : !a.includes(b));
+        // a field that is no list holds nothing: neither `in` nor `not in` passes (as the Python twin)
+        const contains = (a: any, b: any) =>
+          (Array.isArray(a) || typeof a === 'string') && (op === '$IN' ? a.includes(b) : !a.includes(b));
         return this.isValid(data, operands, contains, true);
       }
       case '$LIKE': {
@@ -248,9 +267,9 @@ export class QueryFilter extends ExpansionRequest {
       // Loose null-check on purpose: an unset field is `undefined` on the
       // cached entity but NULL in the DB — both must match $IS_NULL.
       case '$IS_NULL':
-        return data[operands[0] as keyof any] == null;
+        return fieldOf(data, operands[0]) == null;
       case '$IS_NOT_NULL':
-        return data[operands[0] as keyof any] != null;
+        return fieldOf(data, operands[0]) != null;
       default:
         throw new Error(`Unsupported operation: ${op}`);
     }
@@ -282,13 +301,13 @@ export class QueryFilter extends ExpansionRequest {
       if (operands[1].op && operands[1].op === '$PROP') {
         // If the second operand is a PROP operation, assume it's a field
         const field = operands[1].operands[0];
-        return operand(data[field], operands[0]);
+        return operand(fieldOf(data, field), operands[0]);
       } else {
         if (mustContainsPROP) {
           return false;
         }
         // Otherwise, compare the field directly with the value in the second operand
-        return operand(data[operands[0]], operands[1]);
+        return operand(fieldOf(data, operands[0]), operands[1]);
       }
     } else {
       return false; // If there are not exactly 2 operands, return false
@@ -337,7 +356,16 @@ export class WatchedQuery<T = any> {
   public pendingPromise?: Promise<T[]>;
   private callbacks: Map<string, QueryCallback<T>>;
 
-  constructor(request: QueryRequest, results?: T[], pendingPromise?: Promise<T[]>) {
+  /**
+   * `subscribe: false` builds an in-flight record: it carries the request's
+   * promise and results but subscribes nobody, whatever callback the request has.
+   */
+  constructor(
+    request: QueryRequest,
+    results?: T[],
+    pendingPromise?: Promise<T[]>,
+    { subscribe = true }: { subscribe?: boolean } = {},
+  ) {
     WatchedQuery.instanceCounter++;
     this.instance_id = WatchedQuery.instanceCounter;
     this.request = request;
@@ -346,7 +374,7 @@ export class WatchedQuery<T = any> {
     this.callbacks = new Map();
 
     // Add the initial callback from the request if it exists
-    if (request.callback) {
+    if (subscribe && request.callback) {
       const queryCallback = new QueryCallback({
         callback: request.callback as (entities: T[]) => void | Promise<void>,
         name: request.name,

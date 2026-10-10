@@ -73,7 +73,9 @@ child of the asset it sits in, so re-indexing makes it that asset's app — serv
 by the `static` endpoint indexing gives it (`service_endpoint/<id>/service/`)
 and opened at `/dock/app/micro_app-<id>` like any other webapp — with `Project / <parent> / <name>` in the address bar.
 
-Mark what it is to its parent with `kind` in `webapp.json`:
+The folder's `webapp.json` is what makes it an app (`name` = the folder name, `build: "."`
+= serve these files as they are; a dev server would be a `proxy` entry under `endpoints` —
+see the web-app-builder skill, *Register the app*). Mark what it is to its parent with `kind` in `webapp.json`:
 `application.web.editor` is what makes the parent offer it as its editor. The
 rules above still hold; the one addition is that the app can ask who contains
 it, which is how an editor knows what it edits:

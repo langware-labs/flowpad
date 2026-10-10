@@ -46,3 +46,23 @@ def keyed_loop_lock(registry: "weakref.WeakKeyDictionary", key: str) -> asyncio.
     if lock is None:
         lock = per_loop[key] = asyncio.Lock()
     return lock
+
+
+def keyed_lock_held(registry: "weakref.WeakKeyDictionary", key: str) -> bool:
+    """Whether *key*'s lock is held on any loop. Never creates a lock.
+
+    The read-only companion of ``keyed_loop_lock`` for a status predicate: a lock
+    nobody holds is not in the registry at all, so a lookup that minted one would
+    both answer wrongly (a fresh lock is unlocked) and pin it. Needs no running
+    loop — a serializer or a sync test asks this outside one.
+    """
+    for per_loop in list(registry.values()):
+        lock = per_loop.get(key)
+        if lock is not None and lock.locked():
+            return True
+    return False
+
+
+def any_keyed_lock_held(registry: "weakref.WeakKeyDictionary") -> bool:
+    """Whether any key's lock in *registry* is held. Never creates a lock."""
+    return any(lock.locked() for per_loop in list(registry.values()) for lock in list(per_loop.values()))

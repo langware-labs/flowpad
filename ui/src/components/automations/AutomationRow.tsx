@@ -7,11 +7,14 @@
  * the automation (URL-first: the click only navigates).
  */
 import { Trans, useLingui } from '@lingui/react/macro';
-import type { AutomationSummary } from '@sdk';
+import { isMessagePattern, type AutomationSummary } from '@sdk';
 import { AlertTriangle, ArrowRight, FlaskConical, FolderOpen, Play } from 'lucide-react';
 import { Button } from '@src/components/ui/button';
 import { Switch } from '@src/components/ui/switch';
 import { cn } from '@src/lib/utils';
+import { DockPointer } from '@src/navigation/DockPointer';
+import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { RunStatusDot } from './RunStatusPill';
 import { sentenceOf, useAutomationWords } from './automation-words';
 import { KindBadge } from './KindBadge';
 import { useAutomationOpen } from './use-automation-open';
@@ -32,6 +35,9 @@ export function AutomationRow({ automation: a, onOpen, onToggle, onRunOnce, busy
   const problem = a.then.find((p) => p.problem)?.problem;
   const flaky = a.recent_failures > 0 && a.recent_runs > 0;
   const open = useAutomationOpen();
+  const { navigation } = useDockNavigation();
+  const isMessageRule = isMessagePattern(a.when.event?.pattern);
+  const marks = a.last_runs ?? [];
 
   return (
     <div
@@ -143,6 +149,35 @@ export function AutomationRow({ automation: a, onOpen, onToggle, onRunOnce, busy
             >
               <AlertTriangle className="size-3" aria-hidden />
               <Trans>Needs attention</Trans>
+            </span>
+          )}
+          {isMessageRule && (
+            <span data-testid={`automation-counts-${a.id}`}>
+              <Trans>
+                {a.fires} caught · {a.passed_over ?? 0} passed over
+              </Trans>
+            </span>
+          )}
+          {marks.length > 0 && (
+            // The last five executions, newest first — each one opens its session.
+            <span className="inline-flex items-center gap-1" data-testid={`automation-marks-${a.id}`}>
+              {marks.map((r) => (
+                <button
+                  key={r.id}
+                  type="button"
+                  title={`${words.at(r.ts)} · ${words.status(r.status)}`}
+                  aria-label={`${words.at(r.ts)} · ${words.status(r.status)}`}
+                  disabled={!r.agentic_process_id}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (r.agentic_process_id) navigation.openDock(DockPointer.forProcessRuns({ run: r.agentic_process_id }));
+                  }}
+                  className="rounded p-0.5 hover:bg-accent disabled:cursor-default"
+                  data-testid={`automation-mark-${r.id}`}
+                >
+                  <RunStatusDot status={r.status} className="size-2.5 rounded-sm" />
+                </button>
+              ))}
             </span>
           )}
         </div>

@@ -64,11 +64,11 @@ def register_builtin_kinds() -> None:
     import flow_sdk.schema.data_spec.activity_spec  # noqa: F401  — registers ``activity.progress`` / ``activity.error``
     import flow_sdk.schema.data_spec.agent_spec  # noqa: F401  — registers ``agent.place``
     import flow_sdk.schema.data_spec.api_endpoint_spec  # noqa: F401  — registers ``api_endpoint.offer``
-    import flow_sdk.schema.data_spec.asset_setup_spec  # noqa: F401  — registers ``asset.setup`` / ``setup.node`` / ``setup.tree``
+    import flow_sdk.schema.data_spec.asset_setup_spec  # noqa: F401  — registers ``asset.setup`` / ``setup.skip`` / ``setup.node`` / ``setup.tree``
     import flow_sdk.schema.data_spec.automation_spec  # noqa: F401  — registers ``automation.*``
     import flow_sdk.schema.data_spec.channel_spec  # noqa: F401  — registers ``conversation.channel``
     import flow_sdk.schema.data_spec.choice_spec  # noqa: F401  — registers ``ingest.choice`` / ``ingest.choice_set``
-    import flow_sdk.schema.data_spec.compute_op_spec  # noqa: F401  — registers ``compute_op`` / ``compute_op.cli`` / ``compute_op.prompt`` / ``compute_op.agent`` / ``compute_op.ask``
+    import flow_sdk.schema.data_spec.compute_op_spec  # noqa: F401  — registers ``compute_op`` / ``compute_op.cli`` / ``compute_op.decision`` / ``compute_op.prompt`` / ``compute_op.agent`` / ``compute_op.ask``
     import flow_sdk.schema.data_spec.confirm_spec  # noqa: F401  — registers ``confirm``
     import flow_sdk.schema.data_spec.connection_spec  # noqa: F401  — registers ``connection``
     import flow_sdk.schema.data_spec.dataset_spec  # noqa: F401  — self-registering leaves
@@ -90,6 +90,7 @@ def register_builtin_kinds() -> None:
     import flow_sdk.schema.data_spec.mcp_spec  # noqa: F401  — registers ``mcp.server``
     import flow_sdk.schema.data_spec.message_reaction_spec  # noqa: F401  — registers ``message.reaction``
     import flow_sdk.schema.data_spec.message_sender_spec  # noqa: F401  — registers ``message.sender``
+    import flow_sdk.schema.data_spec.message_state_spec  # noqa: F401  — registers ``stream_inbox.message.state``
     import flow_sdk.schema.data_spec.navigator_spec  # noqa: F401  — registers ``navigator.route`` / ``navigator.target``
     import flow_sdk.schema.data_spec.permission_spec  # noqa: F401  — registers ``permission.mapping`` / ``permission.need`` / ``permission.authorization``
     import flow_sdk.schema.data_spec.phone_spec  # noqa: F401  — registers ``phone_number``
@@ -98,7 +99,7 @@ def register_builtin_kinds() -> None:
     import flow_sdk.schema.data_spec.project_setup_spec  # noqa: F401  — registers ``project.setup.requirement`` / ``project.setup.var``
     import flow_sdk.schema.data_spec.rag_spec  # noqa: F401  — registers ``rag.chunk`` / ``rag.hit``
     import flow_sdk.schema.data_spec.requirement_spec  # noqa: F401  — registers ``agent.requirement`` / ``agent.readiness`` / ``agent.readiness.item``
-    import flow_sdk.schema.data_spec.returned_value_spec  # noqa: F401  — registers ``compute.returned`` and its ``.cli`` / ``.prompt`` / ``.ask`` / ``.wizard`` answers
+    import flow_sdk.schema.data_spec.returned_value_spec  # noqa: F401  — registers ``compute.returned`` and its ``.cli`` / ``.prompt`` / ``.ask`` / ``.wizard`` / ``.decision`` answers
     import flow_sdk.schema.data_spec.runtime_info_spec  # noqa: F401 — registers ``runtime.info``
     import flow_sdk.schema.data_spec.service_endpoint_spec  # noqa: F401  — registers ``web.app`` / ``api.rest`` / ``api.chat.openai`` / ``api.mcp`` / ``flowpad.workspace``
     import flow_sdk.schema.data_spec.session_spec  # noqa: F401  — registers ``session.start``
@@ -106,7 +107,7 @@ def register_builtin_kinds() -> None:
     import flow_sdk.schema.data_spec.source_item_spec  # noqa: F401  — registers ``ingest.source_item``
     import flow_sdk.schema.data_spec.status_spec  # noqa: F401  — registers ``status`` / ``status.harness`` / ``status.key`` / ``status.hub`` / ``status.account``
     import flow_sdk.schema.data_spec.token_allocation_spec  # noqa: F401
-    import flow_sdk.schema.data_spec.trigger_spec  # noqa: F401  — registers ``trigger`` / ``trigger.tag`` / ``trigger.schedule`` / ``trigger.watch`` / ``trigger.hook`` / ``trigger.action``
+    import flow_sdk.schema.data_spec.trigger_spec  # noqa: F401  — registers ``trigger`` / ``trigger.tag`` / ``trigger.schedule`` / ``trigger.watch`` / ``trigger.hook`` / ``trigger.action`` / ``trigger.then``
     import flow_sdk.schema.data_spec.webhook_spec  # noqa: F401
     import flow_sdk.schema.data_spec.wizard_spec  # noqa: F401  — registers ``wizard`` / ``wizard.step`` / ``wizard.issue`` / ``wizard.validation`` / ``wizard.run_detail``
     import flow_sdk.secrets  # noqa: F401  — registers ``secrets.store_ref`` / ``secrets.vault``

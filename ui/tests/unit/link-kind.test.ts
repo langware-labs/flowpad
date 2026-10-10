@@ -1,6 +1,6 @@
 /** What a detected link is, and which actions it offers — the pure layers under every link surface. */
 import { describe, expect, it } from 'vitest';
-import { appLinkPath, lightboxMediaName, linkKind } from '@src/lib/link-kind';
+import { appLinkPath, bareWebUrl, lightboxMediaName, linkKind } from '@src/lib/link-kind';
 import { linkActions, type LinkContext } from '@src/components/links/link-actions';
 
 const ORIGIN = 'http://localhost:5032';
@@ -10,6 +10,8 @@ describe('linkKind', () => {
     expect(linkKind(`${ORIGIN}/dock/explorer/tmp?x=1`, ORIGIN)).toBe('app');
     expect(linkKind('/dock/preferences/appearance', ORIGIN)).toBe('app');
     expect(linkKind('http://localhost:9007/dock/explorer', ORIGIN)).toBe('web');
+    expect(linkKind('localhost:9007/dock/explorer', ORIGIN)).toBe('web');
+    expect(linkKind('localhost:5032/dock/explorer', ORIGIN)).toBe('app');
     expect(linkKind('https://example.org/page', ORIGIN)).toBe('web');
     expect(linkKind('skill-0b6f0a3e-1c2d-4e5f-8a9b-0c1d2e3f4a5b', ORIGIN)).toBe('entity');
     expect(linkKind('skill-@link-probe', ORIGIN)).toBe('entity');
@@ -22,6 +24,19 @@ describe('linkKind', () => {
     expect(appLinkPath(`${ORIGIN}/dock/explorer/tmp?x=1`, ORIGIN)).toBe('/dock/explorer/tmp?x=1');
     expect(appLinkPath(`${ORIGIN}/assets/logo.png`, ORIGIN)).toBeNull();
     expect(appLinkPath('https://other.test/dock/x', ORIGIN)).toBeNull();
+  });
+
+  it('reads a scheme-less web address as https, sure only when a path follows the host', () => {
+    expect(bareWebUrl('clau.de/reset')).toEqual({ url: 'https://clau.de/reset', sure: true });
+    expect(bareWebUrl('x.io:8080?a=1')).toEqual({ url: 'https://x.io:8080?a=1', sure: true });
+    expect(bareWebUrl('example.org')).toEqual({ url: 'https://example.org', sure: false });
+    expect(bareWebUrl('README.md')).toEqual({ url: 'https://README.md', sure: false });
+    // This machine speaks http, and is never a file path.
+    expect(bareWebUrl('localhost:5001/dock/hub/home')).toEqual({ url: 'http://localhost:5001/dock/hub/home', sure: true });
+    expect(bareWebUrl('127.0.0.1:8093')).toEqual({ url: 'http://127.0.0.1:8093', sure: true });
+    for (const file of ['src/a.ts:3', '/tmp/x', './a.md', 'C:\\x\\y.txt', 'notes', 'a.b/c d']) {
+      expect(bareWebUrl(file)).toBeNull();
+    }
   });
 
   it('names media by its path, without position or query', () => {

@@ -1,19 +1,22 @@
 import { useCallback } from 'react';
 import { PrefKey } from '@sdk';
 import { usePreference } from '@src/hooks/use-preference';
+import type { ViewMode } from '@src/contexts/view-mode-context';
 import { type OpenerId } from './tab_opener_types';
 
 export interface UsePinnedOpenersResult {
   pinned: OpenerId[];
   lastOpened: OpenerId | null;
+  /** The view mode the last launch opened in — the "shape" the quick-launch slot reproduces. */
+  lastMode: ViewMode | null;
   isPinned: (id: OpenerId) => boolean;
   togglePin: (id: OpenerId) => void;
-  rememberOpened: (id: OpenerId) => void;
 }
 
 export function usePinnedOpeners(): UsePinnedOpenersResult {
   const [pinned, setPinned] = usePreference<OpenerId[]>(PrefKey.PINNED_OPENERS);
-  const [lastOpened, setLastOpened] = usePreference<OpenerId | null>(PrefKey.LAST_OPENER);
+  const [lastOpened] = usePreference<OpenerId | null>(PrefKey.LAST_OPENER);
+  const [lastMode] = usePreference<ViewMode | null>(PrefKey.LAST_OPENER_MODE);
 
   const isPinned = useCallback((id: OpenerId) => pinned.includes(id), [pinned]);
 
@@ -24,18 +27,11 @@ export function usePinnedOpeners(): UsePinnedOpenersResult {
     [pinned, setPinned],
   );
 
-  const rememberOpened = useCallback(
-    (id: OpenerId) => {
-      setLastOpened(id);
-    },
-    [setLastOpened],
-  );
-
   return {
     pinned,
     lastOpened,
+    lastMode,
     isPinned,
     togglePin,
-    rememberOpened,
   };
 }

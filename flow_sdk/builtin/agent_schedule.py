@@ -113,7 +113,7 @@ def _validate(doc: dict[str, Any]) -> TriggerSpec:
 def _write(folder: Path, spec: TriggerSpec) -> None:
     from flow_sdk.assets.types.trigger import TRIGGER_JSON  # noqa: PLC0415
 
-    text = json.dumps(spec.model_dump(mode="json", exclude_defaults=True), indent=2) + "\n"
+    text = json.dumps(spec.model_dump(mode="json", exclude_defaults=True, by_alias=True), indent=2) + "\n"
     (folder / TRIGGER_JSON).write_text(text, encoding="utf-8")
 
 

@@ -2,6 +2,7 @@ import { t } from '@lingui/core/macro';
 import { MembersAvatarStack } from '@src/components/conversation/MembersAvatarStack';
 import { ProjectGitChecksDialog } from '@src/components/project-home/ProjectGitChecksDialog';
 import { ProjectGitChip, type GitCheck } from '@src/components/project-home/ProjectGitChip';
+import { ProjectHomeMenu } from '@src/components/project-home/ProjectHomeMenu';
 import { GitTargetDialog, type GitTarget } from '@src/components/git/GitTargetDialog';
 import { ProjectCloudLinkButton } from '@src/components/project-home/ProjectCloudLinkButton';
 import { ProjectGitShareToggle } from '@src/components/project-home/ProjectGitShareToggle';
@@ -245,6 +246,7 @@ export const ProjectHome: React.FC<ProjectHomeProps> = ({ spawnProjectId, create
               </>
             ) : (
               <>
+                {project && <ProjectHomeMenu project={project} />}
                 <ProjectGitChip projectTypeId={projectTypeId} onChecked={setGitChecks} />
                 {project && <ProjectCloudLinkButton project={project} />}
                 {project && <ProjectGitShareToggle project={project} />}

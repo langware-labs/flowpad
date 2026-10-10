@@ -16,6 +16,7 @@ dotted ``package`` path from the consumer that needs them.
 from __future__ import annotations
 
 import os
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import PurePath
 
@@ -174,10 +175,18 @@ def vendor_by(attr: str, value: object) -> Vendor | None:
 HIDDEN_CAPABILITY_KINDS: frozenset[str] = frozenset(v.capability_kind for v in VENDORS if v.hidden)
 
 
-def vendor_for_path(path: PurePath) -> Vendor | None:
-    """The vendor a transcript file belongs to: the dot-dir it sits under, else a
+def vendor_for_path(path: PurePath, homes: Mapping[str, PurePath] | None = None) -> Vendor | None:
+    """The vendor a transcript file belongs to: the home it sits under, else a
     declared ``transcript_stems`` match — the files FlowPad itself writes for a
-    vendor with no dot-dir to sniff (opencode, deepagents)."""
+    vendor with no dot-dir to sniff (opencode, deepagents).
+
+    ``homes`` is where each vendor's home really is (vendor key → directory), and it
+    wins: a home can be redirected to a directory of any name, so the dot-dir in the
+    path is only what is left to go on when nobody says where the homes are."""
+    for v in VENDORS:
+        home = (homes or {}).get(v.key)
+        if home is not None and path.is_relative_to(home):
+            return v
     for v in VENDORS:
         if v.dot_dir and v.dot_dir in path.parts:
             return v

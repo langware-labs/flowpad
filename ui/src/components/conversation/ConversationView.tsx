@@ -1,4 +1,5 @@
-import { lifecyclesOf, useHandledKeys } from './message-lifecycle';
+import { lifecyclesOf, onlyWithSessions, useHandledKeys } from './message-lifecycle';
+import { useMessageAutomationSessions } from '@src/hooks/conversation/useMessageAutomationSessions';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Trans } from '@lingui/react/macro';
 import { useLingui } from '@lingui/react/macro';
@@ -351,14 +352,31 @@ export function ConversationView({
   // A channel nobody else answers (the person's own — their Tasks channel) has no such way: no line.
   const answered = !!channel && conversation?.channel_answered !== false;
   const handledKeys = useHandledKeys(answered ? conversation?.channel_source_id : null);
+  // The sessions automations started on this conversation's messages (one live query): the chip on each
+  // message, and the lifecycle line's handling / didn't-finish states.
+  const automationSessions = useMessageAutomationSessions(conversationId);
   const lifecycles = useMemo(() => {
-    if (!answered) return null;
+    // A channel nobody here answers still shows the way of a message an automation's agent took.
+    if (!answered && automationSessions.size === 0) return null;
     const ordered = orderedItems.flatMap((it): FlowMessage[] => {
       const fm = it.kind === ConversationItemKind.POINTER ? messagesById.get(it.messageId) : undefined;
       return fm ? [fm] : [];
     });
-    return lifecyclesOf(ordered, handledKeys);
-  }, [answered, orderedItems, messagesById, handledKeys]);
+    const all = lifecyclesOf(ordered, handledKeys, automationSessions);
+    return answered ? all : onlyWithSessions(all, automationSessions);
+  }, [answered, orderedItems, messagesById, handledKeys, automationSessions]);
+  // "Automate messages like this": the builder, prefilled with this channel and this message. URL-first.
+  const handleAutomate = useCallback(
+    (fm: FlowMessage) =>
+      dockNavigation.openDock(
+        DockPointer.forAutomations({
+          creating: 'message',
+          source: conversation?.channel_source_id ?? null,
+          message: fm.id ?? null,
+        }),
+      ),
+    [dockNavigation, conversation?.channel_source_id],
+  );
   const quotedFor = (fm: FlowMessage | null) => {
     if (!fm?.reply_to_id) return null;
     const parent = messagesById.get(fm.reply_to_id);
@@ -569,6 +587,8 @@ export function ConversationView({
           showEmailHeaders={!!agentId}
           channelTraits={channelTraits}
           lifecycle={lifecycles?.get(id) ?? null}
+          onAutomate={conversation?.channel_source_id ? handleAutomate : undefined}
+          automationSession={automationSessions.get(id) ?? null}
           quoted={quotedFor(fm)}
           onReply={channelSpec?.replies ? setReplyTo : undefined}
           messageTask={taskOfMessage(id) ?? threadTask}

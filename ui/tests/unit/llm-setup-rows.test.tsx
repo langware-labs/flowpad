@@ -1,11 +1,12 @@
 /**
- * The Assistants & keys list, after it became ONE list.
+ * The Assistants & keys list: one line per thing that can pay, ONE word per row.
  *
- * FlowPad, the four assistants and the LLM-key store used to be drawn three different ways in
- * three stacked sections. They answer the same question — what pays for your LLM calls — so
- * they now share one row shape and one vocabulary. These tests pin the parts of that which are
- * easy to get subtly wrong and impossible to notice: a word that promises something the row
- * cannot do, and a tick that silently fails to move.
+ * The word is what pays — Plan, API key, LLM Endpoint — and only when nothing does, why not:
+ * Signed out, Not checked, Not installed. "Signed in" beside "Plan" was the old double answer,
+ * and these tests pin the parts of the new one that are easy to get subtly wrong: a word that
+ * promises something the row cannot do, a button that names a topic instead of an action, a
+ * Details that lands somewhere other than the row it describes, and a tick that silently fails
+ * to move.
  */
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -14,14 +15,22 @@ const h = vi.hoisted(() => ({
   setReferenceKind: vi.fn(() => Promise.resolve()),
   login: vi.fn(() => Promise.resolve()),
   cancelLogin: vi.fn(() => Promise.resolve()),
+  openPage: vi.fn(),
+  openSignIn: vi.fn(),
+  /** How many times the funding hook ran, and with which scope the chain hook was asked. */
+  fundingReads: 0,
+  chainScopes: [] as string[],
   resolvedKind: 'harness.claude.cli' as string | null,
   /** The status record's `install` for every harness. */
   install: 'installed',
   /** The status record's FlowPad login. */
   hubLogin: 'signed_out',
-  /** Which harnesses a FlowPad hub endpoint pays for — empty means signed in with nothing
-   *  bound, non-empty means it is actually funding calls. */
-  hubFunds: [] as string[],
+  /** Per harness kind, the endpoint typeid the resolver landed on. */
+  resolved: {} as Record<string, string>,
+  /** The claude harness's own login. */
+  claudeLogin: 'not_checked',
+  keys: [] as { provider: string; stored: boolean; hint: string }[],
+  remaining: {} as Record<string, { key: string; remaining: { limit: number; used: number; remaining: number; window: string; resets_at: null } }>,
 }));
 
 const WORKERS = [
@@ -31,7 +40,11 @@ const WORKERS = [
   ['opencode', false],
 ] as const;
 
-/** The status record as the backend serves it: four harnesses, no keys stored. */
+const DEVICE = 'llm_endpoint-00000000-0000-4000-8000-00000000000d';
+const KEY = 'llm_endpoint-00000000-0000-4000-8000-00000000000a';
+const HUB = 'llm_endpoint-00000000-0000-4000-8000-00000000000b';
+
+/** The status record as the backend serves it. */
 function record() {
   return {
     harnesses: WORKERS.map(([w, device]) => ({
@@ -42,36 +55,61 @@ function record() {
       install: h.install,
       version: '',
       path: '',
-      login: h.install === 'installed' ? (device ? 'not_checked' : 'n_a') : 'n_a',
+      login: h.install !== 'installed' ? 'n_a' : !device ? 'n_a' : w === 'claude' ? h.claudeLogin : 'not_checked',
       login_checked_at: '',
       login_message: '',
-      account: { identity: '', plan: '' },
+      account: w === 'claude' && h.claudeLogin === 'signed_in' ? { identity: 'eran@x.io', plan: 'max' } : { identity: '', plan: '' },
       has_device_login: device,
       key_providers: ['openrouter'],
       install_command: '',
       homepage_url: '',
     })),
-    keys: [],
-    hub: { login: h.hubLogin, email: '', user_typeid: '', error: '' },
+    keys: h.keys.map((k) => ({ ...k, created_at: '' })),
+    hub: { login: h.hubLogin, email: h.hubLogin === 'signed_in' ? 'eran@x.io' : '', user_typeid: '', error: '' },
     default_harness: 'harness.claude.cli',
   };
 }
 
+function funding() {
+  return {
+    resolved: Object.fromEntries(
+      WORKERS.map(([w]) => {
+        const kind = `harness.${w}.cli`;
+        const typeid = h.resolved[kind];
+        return [kind, typeid ? { endpoint_typeid: typeid, name: typeid } : null];
+      }),
+    ),
+    endpoints: {
+      [DEVICE]: { id: 'd', kind: 'device', name: 'claude device login' },
+      [KEY]: { id: 'a', kind: 'api_key', name: 'openrouter key' },
+      [HUB]: { id: '00000000-0000-4000-8000-00000000000b', kind: 'hub', name: 'eran default' },
+    },
+    available: [{ id: '00000000-0000-4000-8000-00000000000b', kind: 'hub', name: 'eran default' }],
+    blocked: {},
+  };
+}
+
 vi.mock('@src/navigation/useDockNavigation', () => ({
-  useDockNavigation: () => ({ navigation: { openNewShell: vi.fn(), openDock: vi.fn() }, currentDock: null }),
+  useDockNavigation: () => ({
+    navigation: { openNewShell: vi.fn(), openDock: vi.fn(), openPage: h.openPage },
+    currentDock: null,
+  }),
 }));
 vi.mock('@src/components/wiki-tip/wiki-modal', () => ({ openWikiModal: vi.fn() }));
-vi.mock('@src/components/llm-endpoints/llm-endpoints-pointer', () => ({ openLlmEndpoint: vi.fn() }));
+vi.mock('@src/components/wiki-tip/assistant-wiki', () => ({ useAssistantWikiSpace: () => undefined }));
+vi.mock('@src/components/harness-login/harness-sign-in-store', () => ({ openHarnessSignIn: h.openSignIn }));
+vi.mock('@src/components/llm-sources/use-hub-remaining', () => ({
+  useHubRemaining: (_funding: unknown, scope: string) => {
+    h.chainScopes.push(scope);
+    return h.remaining;
+  },
+}));
 vi.mock('@src/components/llm-sources/use-llm-sources', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
-  useLlmSources: () => ({
-    status: {
-      resolved: Object.fromEntries(h.hubFunds.map((k) => [k, { endpoint_typeid: 'llm_endpoint-hub', name: 'Hub' }])),
-      endpoints: { 'llm_endpoint-hub': { id: 'hub', kind: 'hub' } },
-      blocked: {},
-    },
-    isLoading: false,
-  }),
+  useLlmSources: () => {
+    h.fundingReads += 1;
+    return { status: funding(), isLoading: false };
+  },
 }));
 vi.mock('@src/components/status/use-status-record', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
@@ -88,14 +126,12 @@ vi.mock('@sdk', async (importOriginal) => {
   return {
     ...actual,
     cloudManager: { login: h.login, logout: vi.fn(), cancelLogin: h.cancelLogin },
-    lmKeysService: { list: () => Promise.resolve([]) },
+    lmKeysService: { list: () => Promise.resolve([]), listModels: () => Promise.resolve([]), getMappings: () => Promise.resolve({}) },
     statusService: { refresh: () => Promise.resolve(record()) },
     capabilityManager: {
       getSnapshot: () => ({ capability: null, resolvedKind: h.resolvedKind }),
       subscribe: () => () => {},
-      // Behaves like the real manager: a successful set moves `resolvedKind`, which is what
-      // `makeDefault` re-reads to confirm the change landed. A mock that always answered the
-      // old value would fight the code rather than test it.
+      // Behaves like the real manager: a successful set moves `resolvedKind`.
       setReferenceKind: (_kind: string, value: string) => {
         h.resolvedKind = value;
         return h.setReferenceKind(_kind, value);
@@ -104,23 +140,49 @@ vi.mock('@sdk', async (importOriginal) => {
   };
 });
 
+import { PageId, ViewType } from '@sdk';
 import { HarnessLoginModalRoot } from '@src/components/harness-login/HarnessLoginModal';
-import { openHarnessLoginModal } from '@src/components/harness-login/harness-login-store';
-import { notify } from '@src/notifications';
+import { openHarnessLoginModal, useHarnessLoginStore } from '@src/components/harness-login/harness-login-store';
 
 function mount() {
   openHarnessLoginModal();
   render(<HarnessLoginModalRoot />);
 }
 
+const pill = (testId: string) => screen.getByTestId(testId);
+
 describe('Assistants & keys — one row per thing that can pay', () => {
   beforeEach(() => {
     cleanup();
     vi.clearAllMocks();
+    useHarnessLoginStore.setState({ open: false, payload: null });
     h.resolvedKind = 'harness.claude.cli';
     h.install = 'installed';
     h.hubLogin = 'signed_out';
-    h.hubFunds = [];
+    h.resolved = {};
+    h.claudeLogin = 'not_checked';
+    h.keys = [
+      { provider: 'openrouter', stored: false, hint: '' },
+      { provider: 'anthropic', stored: false, hint: '' },
+      { provider: 'openai', stored: false, hint: '' },
+    ];
+    h.remaining = {};
+    h.fundingReads = 0;
+    h.chainScopes = [];
+  });
+
+  it('reads nothing while it is closed, and only the in-use chains once open', async () => {
+    // The root is mounted at app start. Reading funding and the hub chains there would cost
+    // every session a hub round-trip for a dialog most never open.
+    const { unmount } = render(<HarnessLoginModalRoot />);
+    expect(h.fundingReads).toBe(0);
+    expect(h.chainScopes).toEqual([]);
+    unmount();
+
+    mount();
+    await screen.findByTestId('harness-row-claude');
+    expect(h.fundingReads).toBeGreaterThan(0);
+    expect(new Set(h.chainScopes)).toEqual(new Set(['in-use']));
   });
 
   it('marks the default assistant, and moves the mark when another is chosen', async () => {
@@ -128,8 +190,6 @@ describe('Assistants & keys — one row per thing that can pay', () => {
 
     const claude = await screen.findByTestId('harness-row-claude-default');
     const codex = await screen.findByTestId('harness-row-codex-default');
-    // The tick IS the only signal of which is default — the dropdown it replaced is gone — so
-    // it has to be readable by something other than colour.
     expect(claude.getAttribute('aria-pressed')).toBe('true');
     expect(codex.getAttribute('aria-pressed')).toBe('false');
 
@@ -138,67 +198,136 @@ describe('Assistants & keys — one row per thing that can pay', () => {
     await waitFor(() =>
       expect(screen.getByTestId('harness-row-codex-default').getAttribute('aria-pressed')).toBe('true'),
     );
-    // ...and the old one lets go. A second green tick would say the box has two defaults,
-    // which is not a state the backend has.
     expect(screen.getByTestId('harness-row-claude-default').getAttribute('aria-pressed')).toBe('false');
     expect(h.setReferenceKind).toHaveBeenCalledWith('harness', 'harness.codex.cli');
   });
 
   it('puts the mark back if the backend refuses the change', async () => {
     h.setReferenceKind.mockImplementationOnce(() => {
-      h.resolvedKind = 'harness.claude.cli'; // the backend kept the old value
+      h.resolvedKind = 'harness.claude.cli';
       return Promise.reject(new Error('nope'));
     });
     mount();
 
     fireEvent.click(await screen.findByTestId('harness-row-codex-default'));
 
-    // Optimistic is fine; lying is not. The tick is the whole feedback, so it must not keep
-    // claiming a change the backend threw away.
     await waitFor(() =>
       expect(screen.getByTestId('harness-row-claude-default').getAttribute('aria-pressed')).toBe('true'),
     );
     expect(screen.getByTestId('harness-row-codex-default').getAttribute('aria-pressed')).toBe('false');
   });
 
-  it('says "Not installed" for an assistant whose CLI is missing', async () => {
-    h.install = 'not_installed'; // nothing installed at all
+  it('a plan-funded, signed-in assistant reads Plan — never "Signed in" beside it', async () => {
+    h.claudeLogin = 'signed_in';
+    h.resolved = { 'harness.claude.cli': DEVICE };
     mount();
 
     const row = await screen.findByTestId('harness-row-claude');
-    // A CLI that is not on this machine funds nothing, so it IS the answer to "what pays for
-    // your calls". Reporting it as "Not signed in" hid why the row could not pay.
-    expect(row.textContent).toContain('Not installed');
-    expect(row.textContent).not.toContain('Not signed in');
+    expect(pill('harness-row-claude-status').getAttribute('data-state')).toBe('plan');
+    expect(pill('harness-row-claude-status').textContent).toContain('Plan');
+    expect(row.textContent).not.toContain('Signed in');
+    // Identity and plan ride the small text, from the status record.
+    expect(row.textContent).toContain('eran@x.io');
+    expect(row.textContent).toContain('max');
   });
 
-  it('offers a login only where there is something to log in to', async () => {
+  it('Details on a funded assistant lands on LLM sources focused on it, and closes the modal', async () => {
+    h.claudeLogin = 'signed_in';
+    h.resolved = { 'harness.claude.cli': DEVICE };
     mount();
 
-    await screen.findByTestId('harness-row-claude');
-    // OpenCode is a client that spends a key; it has no account. Offering "Login" there is a
-    // promise the row cannot keep.
-    expect(screen.getByTestId('harness-row-claude-action').textContent).toContain('Login');
-    expect(screen.getByTestId('harness-row-opencode-action').textContent).toBe('API key');
+    const action = await screen.findByTestId('harness-row-claude-action');
+    expect(action.textContent).toContain('Details');
+    fireEvent.click(action);
+
+    expect(h.openPage).toHaveBeenCalledWith(PageId.DESK, ViewType.LLM_SOURCES, 'claude');
+    await waitFor(() => expect(useHarnessLoginStore.getState().open).toBe(false));
   });
 
-  it('reports a key-only assistant in key words, not login words', async () => {
+  it('a key-funded assistant that is signed out reads API key, and notes the sign-out beside it', async () => {
+    h.claudeLogin = 'signed_out';
+    h.resolved = { 'harness.claude.cli': KEY };
     mount();
 
-    await screen.findByTestId('harness-row-opencode');
-    // No key is configured in this fixture, so the honest state is "Key not set" — NOT
-    // "Not signed in", which names a state OpenCode can never leave.
-    expect(screen.getByTestId('harness-row-opencode-status').textContent).toContain('Key not set');
+    const row = await screen.findByTestId('harness-row-claude');
+    expect(pill('harness-row-claude-status').getAttribute('data-state')).toBe('api_key');
+    expect(row.textContent).toContain('signed out');
   });
 
-  it('shows the key store as its own row, reporting whether a key exists', async () => {
+  it('a hub-funded assistant reads LLM Endpoint with what is left on it', async () => {
+    h.resolved = { 'harness.opencode.cli': HUB };
+    h.remaining = { [HUB]: { key: 'cost_usd_total', remaining: { limit: 3, used: 0.42, remaining: 2.58, window: 'total', resets_at: null } } };
     mount();
 
-    const row = await screen.findByTestId('row-llm-keys-status');
-    expect(row.textContent).toContain('Key not set');
-    // "API key", not "Manage" — every button in this list names the credential it takes you
-    // to set, rather than what it does to it.
-    expect(screen.getByTestId('row-llm-keys-action').textContent).toContain('API key');
+    const p = await screen.findByTestId('harness-row-opencode-status');
+    expect(p.getAttribute('data-state')).toBe('hub');
+    expect(p.textContent).toContain('LLM Endpoint');
+    expect(p.textContent).toContain('$2.58 left');
+  });
+
+  it('nothing funds it and it has a login: Signed out, and the button is Sign in', async () => {
+    h.claudeLogin = 'signed_out';
+    mount();
+
+    const p = await screen.findByTestId('harness-row-claude-status');
+    expect(p.getAttribute('data-state')).toBe('signed_out');
+    const action = screen.getByTestId('harness-row-claude-action');
+    expect(action.textContent).toContain('Sign in');
+
+    fireEvent.click(action);
+    expect(h.openSignIn).toHaveBeenCalledWith('harness.claude.cli');
+    await waitFor(() => expect(useHarnessLoginStore.getState().open).toBe(false));
+  });
+
+  it('an unprobed login is Not checked, never presumed signed in', async () => {
+    mount();
+    const p = await screen.findByTestId('harness-row-codex-status');
+    expect(p.getAttribute('data-state')).toBe('not_checked');
+    expect(p.textContent).not.toContain('Signed in');
+  });
+
+  it('says "Not installed" for an assistant whose CLI is missing', async () => {
+    h.install = 'not_installed';
+    mount();
+
+    const p = await screen.findByTestId('harness-row-claude-status');
+    expect(p.textContent).toContain('Not installed');
+    expect(p.textContent).not.toContain('Not signed in');
+  });
+
+  it('a key-only assistant with no source offers Add key, never a login', async () => {
+    mount();
+
+    const action = await screen.findByTestId('harness-row-opencode-action');
+    // OpenCode is a client that spends a key; it has no account. Offering "Sign in" there is a
+    // promise the row cannot keep — the way forward is the keys section.
+    expect(action.textContent).toContain('Add key');
+    expect(action.textContent).not.toContain('Sign in');
+    fireEvent.click(action);
+    expect(h.openPage).toHaveBeenCalledWith(PageId.DESK, ViewType.LLM_SOURCES, 'keys');
+  });
+
+  it('the key store is one row: how many slots have a key, with the masked hint of each', async () => {
+    h.keys[0] = { provider: 'openrouter', stored: true, hint: '****ab12' };
+    mount();
+
+    const p = await screen.findByTestId('row-llm-keys-status');
+    expect(p.textContent).toContain('1 of 3 set');
+    expect(screen.getByTestId('row-llm-keys').textContent).toContain('****ab12');
+    fireEvent.click(screen.getByTestId('row-llm-keys-action'));
+    expect(h.openPage).toHaveBeenCalledWith(PageId.DESK, ViewType.LLM_SOURCES, 'keys');
+  });
+
+  it('the hub endpoints are one row: how many, and the tightest amount left', async () => {
+    h.resolved = { 'harness.opencode.cli': HUB };
+    h.remaining = { [HUB]: { key: 'cost_usd_total', remaining: { limit: 3, used: 0.42, remaining: 2.58, window: 'total', resets_at: null } } };
+    mount();
+
+    const p = await screen.findByTestId('row-llm-endpoints-status');
+    expect(p.textContent).toContain('1 available');
+    expect(p.textContent).toContain('$2.58 left');
+    fireEvent.click(screen.getByTestId('row-llm-endpoints-action'));
+    expect(h.openPage).toHaveBeenCalledWith(PageId.DESK, ViewType.LLM_SOURCES, 'endpoints');
   });
 
   it('lets FlowPad be signed in to, and never offers to sign out from here', async () => {
@@ -206,21 +335,16 @@ describe('Assistants & keys — one row per thing that can pay', () => {
 
     const action = await screen.findByTestId('harness-row-flowpad-action');
     expect(action.textContent).toContain('Sign in');
-    // Signing OUT of FlowPad affects sharing, backup and the hub socket — far beyond funding.
-    // Beside four "Login/API key" buttons it would read as a funding toggle.
     expect(action.textContent).not.toContain('Sign out');
 
     fireEvent.click(action);
     await waitFor(() => expect(h.login).toHaveBeenCalled());
   });
 
-  it('one click on Sign in starts ONE sign-in, and a click on the row itself starts none', async () => {
-    // The row used to sign in on ANY click (a stray click on its name started one), and the
-    // button's click bubbled to the row, so each press of Sign in started two.
+  it('a click on the row itself starts no sign-in; the pill and the button each start one', async () => {
     mount();
 
     fireEvent.click(await screen.findByTestId('harness-row-flowpad'));
-    fireEvent.click(screen.getByTestId('harness-row-flowpad-status'));
     expect(h.login).not.toHaveBeenCalled();
 
     fireEvent.click(screen.getByTestId('harness-row-flowpad-action'));
@@ -228,7 +352,6 @@ describe('Assistants & keys — one row per thing that can pay', () => {
   });
 
   it('while signing in, says where to finish, and offers the page again or a way out', async () => {
-    // A browser sign-in waits on a page this screen cannot see; it may never have opened.
     h.hubLogin = 'signing_in';
     mount();
 
@@ -242,56 +365,32 @@ describe('Assistants & keys — one row per thing that can pay', () => {
     expect(h.login).toHaveBeenCalledTimes(1);
   });
 
-  it('says FlowPad is signed in once it is, without offering the login again', async () => {
+  it('signed in: says so, names the account and what it funds, and Details goes to the endpoints', async () => {
     h.hubLogin = 'signed_in';
+    h.resolved = { 'harness.opencode.cli': HUB };
     mount();
 
-    const action = await screen.findByTestId('harness-row-flowpad-action');
-    expect(action.textContent).toContain('Signed in');
+    const row = await screen.findByTestId('harness-row-flowpad');
     expect(screen.getByTestId('harness-row-flowpad-status').textContent).toContain('Signed in');
-  });
+    expect(row.textContent).toContain('eran@x.io');
+    expect(row.textContent).toContain('funds opencode');
+    expect(screen.getByTestId('harness-row-flowpad-action').textContent).not.toContain('Sign in');
 
-  it('clicking a signed-in, funding FlowPad row confirms the choice and offers a way out', async () => {
-    h.hubLogin = 'signed_in';
-    h.hubFunds = ['harness.claude.cli'];
-    mount();
-
-    fireEvent.click(await screen.findByTestId('harness-row-flowpad-action'));
-
-    // The row's own button reads "Signed in" whether or not anything is actually funded by it —
-    // clicking it used to be silently inert either way, which reads as broken. Confirming lands
-    // in the SAME place a fresh sign-in does: the banner with Close / Keep browsing, not a toast
-    // with no way out — clicking FlowPad is as much "I choose this" as connecting a harness is.
-    await screen.findByTestId('harness-just-connected');
+    fireEvent.click(screen.getByTestId('harness-row-flowpad-action'));
     expect(h.login).not.toHaveBeenCalled();
-
-    fireEvent.click(screen.getByTestId('just-connected-close'));
-    await waitFor(() => expect(screen.queryByTestId('harness-just-connected')).toBeNull());
+    expect(h.openPage).toHaveBeenCalledWith(PageId.DESK, ViewType.LLM_SOURCES, 'endpoints');
   });
 
-  it('clicking a signed-in FlowPad row that funds nothing says THAT, not that it is funding', async () => {
-    h.hubLogin = 'signed_in';
-    h.hubFunds = []; // signed in, but no endpoint bound — a real, honest state
+  it('keeps the Mapping view open when the dialog is re-opened underneath you', async () => {
     mount();
 
-    fireEvent.click(await screen.findByTestId('harness-row-flowpad-action'));
-
-    await waitFor(() => expect(notify.warning).toHaveBeenCalled());
-    expect(notify.success).not.toHaveBeenCalled();
-  });
-
-  it('keeps the panel you opened when the dialog is re-opened underneath you', async () => {
-    mount();
-
-    fireEvent.click(await screen.findByTestId('harness-row-codex-action'));
-    await screen.findByTestId('harness-authmode-toggle');
+    fireEvent.click(await screen.findByTestId('open-mapping'));
+    await screen.findByTestId('mapping-harness-select');
 
     // `LlmSetupView` opens this modal from a mount effect, so anything that re-mounts it calls
-    // open() again. That used to reset `selected` to null: the click selected a harness and the
-    // next re-open silently threw it away, so the button appeared to do nothing at all with no
-    // error anywhere. A redundant open() must never discard where the user navigated to.
+    // open() again. A redundant open() must never discard where the user navigated to.
     openHarnessLoginModal();
 
-    await waitFor(() => expect(screen.queryByTestId('harness-authmode-toggle')).not.toBeNull());
+    await waitFor(() => expect(screen.queryByTestId('mapping-harness-select')).not.toBeNull());
   });
 });

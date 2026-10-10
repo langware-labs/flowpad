@@ -26,6 +26,7 @@ vi.mock('@src/tabs/tab-content-lifecycle', async (orig) => ({
 }));
 
 import { useVibeWorkspaceSessionHost } from '@src/pages/flow-page/use-vibe-workspace-session';
+import { hasLaunchWatch, holdLaunchWatch } from '@src/components/agents/launch-watch';
 
 afterEach(() => {
   cleanup();
@@ -66,5 +67,35 @@ describe('useVibeWorkspaceSessionHost', () => {
     // and this session already has one.
     expect(mocks.setupTabAndAdopt).not.toHaveBeenCalled();
     unmount();
+  });
+
+  it('leaving the workspace gives the launch-time watch lease back', async () => {
+    const release = vi.fn().mockResolvedValue(undefined);
+    const launched = {
+      id: mocks.process.id,
+      watch: vi.fn().mockResolvedValue(release),
+      on: () => () => undefined,
+    } as unknown as AgenticProcess;
+    holdLaunchWatch(launched);
+    const processDock = new DockPointer(ViewType.SHELL, `agentic_process-${mocks.process.id}`);
+    const session: VibeWorkspaceSession = {
+      processId: mocks.process.id,
+      processDock,
+      processTab: new Tab({
+        id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+        pointer: JSON.stringify(processDock),
+        target_type: AgenticProcess.type,
+        target_id: mocks.process.id,
+      }),
+      onProcessUrl: true,
+    };
+
+    const { unmount } = renderHook(() => useVibeWorkspaceSessionHost(session));
+    expect(hasLaunchWatch(mocks.process.id)).toBe(true); // held while the workspace is up
+
+    unmount();
+    expect(hasLaunchWatch(mocks.process.id)).toBe(false);
+    await Promise.resolve();
+    expect(release).toHaveBeenCalledTimes(1);
   });
 });

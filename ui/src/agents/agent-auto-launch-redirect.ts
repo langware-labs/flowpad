@@ -1,5 +1,5 @@
 import apiClient from '@sdk/client';
-import { dataContext, isHubOnly } from '@sdk';
+import { dataContext, isHubOnly, launchSurfaceField } from '@sdk';
 import { redirect } from 'react-router';
 
 import { DockPointer } from '@src/navigation/DockPointer';
@@ -58,7 +58,10 @@ export async function agentAutoLaunchRedirect(request: Request): Promise<Respons
 
   let data: AgentAutoLaunchResponse;
   try {
-    data = await apiClient.post<AgentAutoLaunchResponse>(AGENT_AUTO_LAUNCH_ENDPOINT, { project_id: projectId });
+    data = await apiClient.post<AgentAutoLaunchResponse>(AGENT_AUTO_LAUNCH_ENDPOINT, {
+      project_id: projectId,
+      ...launchSurfaceField(),
+    });
   } catch (e) {
     console.warn('[agent-auto-launch] backend call failed; no auto-launch', e);
     return null;

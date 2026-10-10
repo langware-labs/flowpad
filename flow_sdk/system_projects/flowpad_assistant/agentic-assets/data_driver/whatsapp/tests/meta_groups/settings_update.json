@@ -1,0 +1,41 @@
+{
+  "object": "whatsapp_business_account",
+  "entry": [
+    {
+      "id": "<ID>",
+      "changes": [
+        {
+          "value": {
+            "messaging_product": "whatsapp",
+            "metadata": {
+              "display_phone_number": "DISPLAY_NUMBER",
+              "phone_number_id": "PHONE_NUMBER_ID"
+            },
+            "groups": [
+              {
+                "timestamp": "TIMESTAMP",
+                "group_id": "GROUP_ID",
+                "type": "group_settings_update",
+                "request_id": "REQUEST_ID",
+                "profile_picture": {
+                  "mime_type": "image/jpeg",
+                  "update_successful": true,
+                  "sha256": "PHOTO_HASH"
+                },
+                "group_subject": {
+                  "text": "Test Subject",
+                  "update_successful": true
+                },
+                "group_description": {
+                  "text": "Test Description",
+                  "update_successful": true
+                }
+              }
+            ]
+          },
+          "field": "group_settings_update"
+        }
+      ]
+    }
+  ]
+}

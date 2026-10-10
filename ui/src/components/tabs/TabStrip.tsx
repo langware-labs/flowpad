@@ -645,9 +645,14 @@ export const TabStrip: React.FC<TabStripProps> = ({
         {items.map((item, index) => renderChip(item, index, items))}
       </div>
 
-      {/* Close All button — shown when 2+ tabs are open, BEFORE the openers so
-          appearing never moves them. Tab count badge hints at the destructive
-          scope before clicking. */}
+      {/* Opener toolbar — a fixed sibling (never overlaps or shrinks); the
+          chips absorb all width pressure. */}
+      {trailing && <div className="flex shrink-0 items-center self-stretch">{trailing}</div>}
+
+      {/* Close All — the strip's LAST control, at a clear distance from the
+          openers so a click aimed at "+" can't land on it. Same shape as "+"
+          (a 7×7 rounded bordered button), its own colour. Shown at 2+ tabs; the
+          count badge hints at the destructive scope before clicking. */}
       {!hideCloseAllButton && allVisibleItems.length >= 2 && (
         <TooltipProvider delayDuration={600}>
           <Tooltip>
@@ -655,7 +660,7 @@ export const TabStrip: React.FC<TabStripProps> = ({
               <Button
                 variant="outline"
                 size="sm"
-                className="mx-1.5 h-6 shrink-0 gap-1.5 rounded-md border-border bg-background px-2 text-foreground shadow-sm hover:border-destructive/60 hover:bg-destructive/10 hover:text-destructive"
+                className="ms-3 me-1 h-7 shrink-0 gap-1 rounded-md border-border bg-background px-1.5 text-foreground shadow-sm hover:border-destructive/60 hover:bg-destructive/10 hover:text-destructive"
                 onClick={() => closeMany(allVisibleItems.map((i) => i.key))}
                 aria-label={t`Close all ${allVisibleItems.length} tabs`}
                 data-testid="close-all-tabs-button"
@@ -673,13 +678,6 @@ export const TabStrip: React.FC<TabStripProps> = ({
         </TooltipProvider>
       )}
 
-      {/* Trailing toolbar (the openers) — LAST, so it is pinned to the strip's
-          end whatever else shows. It used to sit before Close All, which appears
-          at 2+ tabs: opening a second tab slid the openers left and parked Close
-          All exactly where "Start Claude" had been, so a second click on the
-          same spot closed every tab. A fixed sibling (never overlaps or shrinks);
-          the chips absorb all width pressure. */}
-      {trailing && <div className="flex shrink-0 items-center self-stretch">{trailing}</div>}
     </div>
   );
 };

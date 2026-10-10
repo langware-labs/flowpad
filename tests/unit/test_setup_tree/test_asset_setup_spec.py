@@ -38,3 +38,15 @@ def test_a_broken_document_is_no_node_not_a_crash(tmp_path):
     folder.mkdir(parents=True)
     (folder / "asset_setup.json").write_text("{ not json")
     assert AssetSetup(name="bad", asset_ref=str(folder)).spec() is None
+
+
+def test_a_declared_load_wizard_reads_back(tmp_path):
+    """``on_load`` names the wizard run when the asset is SHOWN — a third slot beside ``prepare`` / ``run``."""
+    folder = tmp_path / "agentic-assets" / "asset_setup" / "shop"
+    folder.mkdir(parents=True)
+    (folder / "asset_setup.json").write_text(json.dumps({"name": "shop", "run": "shop-setup", "on_load": "shop-warm"}))
+
+    spec = AssetSetup(name="shop", asset_ref=str(folder)).spec()
+
+    assert spec == AssetSetupSpec(name="shop", run="shop-setup", on_load="shop-warm")
+    assert AssetSetup(name="shop", on_load="shop-warm").on_load == "shop-warm", "the row mirrors the document"

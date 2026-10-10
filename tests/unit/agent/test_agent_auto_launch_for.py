@@ -41,7 +41,7 @@ def used(monkeypatch):
     """Stub ``Agent.use`` and capture every session it would have opened."""
     opened: list[_FakeProcess] = []
 
-    async def _use(self, project_id=None, *, deployment=None, owner=None, auto_prompt=False):
+    async def _use(self, project_id=None, *, deployment=None, owner=None, auto_prompt=False, launch_surface=None):
         proc = _FakeProcess(self, project_id, auto_prompt)
         opened.append(proc)
         return proc
@@ -182,7 +182,7 @@ async def test_a_failed_session_open_leaves_the_mark_unset_so_the_next_open_retr
 
     working = Agent.use  # the fixture's stub, restored for the retry below
 
-    async def _boom(self, project_id=None, *, deployment=None, owner=None, auto_prompt=False):
+    async def _boom(self, project_id=None, *, deployment=None, owner=None, auto_prompt=False, launch_surface=None):
         raise RuntimeError("no worker binary")
 
     monkeypatch.setattr(Agent, "use", _boom)

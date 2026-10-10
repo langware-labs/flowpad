@@ -1,12 +1,13 @@
 import { useMemo, useRef, useState, type MouseEvent, type ReactNode } from 'react';
-import { Check, CheckCheck, Clock } from 'lucide-react';
-import { resendConversation, type AgenticProcess, type FlowMessage } from '@sdk';
+import { Check, CheckCheck, Clock, Zap } from 'lucide-react';
+import { isProcessFailed, resendConversation, type AgenticProcess, type FlowMessage } from '@sdk';
 import type { ConversationMessage } from '@sdk/entities/conversation';
 import type { DeliveryStatus } from '@sdk/entities/flow-message';
 import { Task, type ITask } from '@sdk/entities/task';
 import { TaskChips, type TaskPeople } from './task-it';
 import { MessageActionsMenu } from './MessageActionsMenu';
 import { FavoriteStar } from '@src/components/favorites/FavoriteStar';
+import { CHIP_LAYOUT } from './EntityChip';
 import { messageFavoriteRef } from '@src/components/favorites/favorite-target';
 import { MarkdownView } from '@src/components/markdown-view';
 import { useLinks } from '@src/components/links/LinkMenu';
@@ -47,6 +48,10 @@ interface MessageBubbleProps {
   /** "Task it": make this message a task (a ⋮ menu item) — or, once it is one (`task`), open it
    *  from the chips under the body, which also show its status and owner. */
   taskIt?: { onClick: () => void; task?: Task | null; people?: TaskPeople };
+  /** The quick door to a rule on messages like this one: a ⚡ beside the star, and a ⋮ item. */
+  onAutomate?: () => void;
+  /** The session an automation started on this message: ⚡ + who, a link to it. */
+  automation?: { name: string; status?: string | null; onOpen: () => void };
   /** Spawn a Claude Code session pre-loaded with the receiver-context prompt
    *  (spec + transcript + conversation + attachments). Renders an emerald CTA
    *  chip styled like the primary attachment action when the bubble's message
@@ -238,6 +243,8 @@ export function MessageBubble({
   onForwardMessage,
   onLaunchWorker,
   taskIt,
+  onAutomate,
+  automation,
   onImplementPlan,
   onOpenPlanSession,
   onViewPlan,
@@ -372,6 +379,18 @@ export function MessageBubble({
               <FavoriteStar {...favoriteRef} size={12} hoverSurface="none" revealOnHover className="p-0.5" />
             </span>
           )}
+          {!editing && onAutomate && (
+            <button
+              type="button"
+              onClick={onAutomate}
+              title={t`Automate messages like this`}
+              aria-label={t`Automate messages like this`}
+              className="self-center rounded p-0.5 text-muted-foreground opacity-0 transition-opacity hover:bg-muted hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100"
+              data-testid={`message-automate-quick-${flowMessageId}`}
+            >
+              <Zap className="size-3" />
+            </button>
+          )}
           {!editing && (
             <span className="self-center">
               <MessageActionsMenu
@@ -386,6 +405,7 @@ export function MessageBubble({
                 onForward={onForwardMessage}
                 onLaunchWorker={onLaunchWorker}
                 onTaskIt={taskIt && !taskIt.task ? taskIt.onClick : undefined}
+                onAutomate={onAutomate}
                 onEditName={!isBot && onEditName ? startEdit : undefined}
                 onDelete={onDeleteMessage ? () => setConfirmingDelete(true) : undefined}
               />
@@ -412,6 +432,25 @@ export function MessageBubble({
           />
         )}
         {footer}
+        {automation && !editing && (
+          <div className="mt-1.5 flex flex-wrap items-center gap-1.5" data-testid="message-automation-chips">
+            <button
+              type="button"
+              onClick={automation.onOpen}
+              className={`${CHIP_LAYOUT} border ${
+                isProcessFailed(automation.status)
+                  ? 'border-dashed border-border text-muted-foreground'
+                  : 'border-foreground/25 bg-background text-foreground'
+              }`}
+              title={t`Open the session`}
+              data-testid="message-automation-chip"
+              data-status={automation.status ?? ''}
+            >
+              <Zap className="h-3 w-3 shrink-0" />
+              <span className="max-w-[24rem] truncate">{automation.name}</span>
+            </button>
+          </div>
+        )}
         {/* An opened task stays in view: its chip (opens it), its status and its owner — both act here. */}
         {taskIt?.task && !editing && <TaskChips task={taskIt.task} onOpen={taskIt.onClick} people={taskIt.people} />}
         {reactions && reactions.length > 0 && <ReactionChips reactions={reactions} onToggle={onReact} />}

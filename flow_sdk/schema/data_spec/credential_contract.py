@@ -86,6 +86,19 @@ def as_requirement(value: Any) -> Any:
     return value
 
 
+class CredentialKind(StrEnum):
+    """What a credential IS, and so where its value comes from.
+
+    ``env``: named environment variables a person (or an agent) provides, kept in ``.env.local`` or the
+    vault per deployment. ``oauth``: a grant a person consents to in a browser for ``provider`` — the
+    token is held by this instance's encrypted store or the hub and refreshed there, never a variable;
+    the credential declares the need (and the scopes), the connection holds the grant.
+    """
+
+    ENV = "env"
+    OAUTH = "oauth"
+
+
 class CredentialVarKind(StrEnum):
     """What a credential variable's value IS.
 

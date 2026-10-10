@@ -31,6 +31,7 @@ from flow_sdk.fs_store.operations.markdown_index import (
 from flow_sdk.llm_index import LLMIndexer, typeid_for
 from flow_sdk.llm_index.diff import MAX_DIFF_BYTES, git_unified_diff, is_binary_bytes
 from flow_sdk.llm_index.indexer import ScanTick
+from flow_sdk.stream_inbox._locks import keyed_loop_lock, new_registry
 from flow_sdk.utils.git_usable import git_usable
 
 logger = logging.getLogger(__name__)
@@ -40,8 +41,9 @@ router = APIRouter()
 # progress_report by job_name). A docs scan is a scan; reuse that activity.
 _JOB = "scan"
 
-# Stamp is an explicit user action; serialize concurrent stamps per root.
-_stamp_locks: dict[str, asyncio.Lock] = {}
+# Stamp is an explicit user action; serialize concurrent stamps per root. Weak-valued
+# (``stream_inbox/_locks``): a root's lock lives only while a stamp holds or awaits it.
+_stamp_locks = new_registry()
 
 
 def _indexer(root_path: Path) -> LLMIndexer:
@@ -124,7 +126,7 @@ async def docs_graph_stamp(root: str = Query(...)) -> dict:
     stores content blobs (CAS) for later line diffs and GC's orphans.
     """
     root_path = _resolve_root(root)
-    lock = _stamp_locks.setdefault(str(root_path), asyncio.Lock())
+    lock = keyed_loop_lock(_stamp_locks, str(root_path))
     async with lock:
         stats = await asyncio.to_thread(lambda: _indexer(root_path).scan(root_path).stamp())
     return {"status": "SUCCESS", "message": "success", "data": asdict(stats)}

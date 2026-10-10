@@ -205,6 +205,14 @@ export class Shell extends APIEntity<Shell> implements IShell {
     return this.ptyConnection.getSortedChunks();
   }
 
+  /**
+   * The process in this terminal ended: let the stored output window go. The entity, its PTY
+   * attachment and its listeners stay, so a restart on the same shell attaches as before.
+   */
+  releaseOutput(): void {
+    this.ptyConnection.releaseWindow();
+  }
+
   /** Single chunk by seq — for ptySyncRef.processChunk() in output handler. */
   getPtyChunk(seq: number): import('../pty-sync/types.js').OutputChunk | undefined {
     return this.ptyConnection.getChunk(seq);
@@ -357,8 +365,8 @@ export class Shell extends APIEntity<Shell> implements IShell {
   }
 
   /** Size the PTY to the view on screen — kept, and asserted on every attach. */
-  async resize(cols: number, rows: number): Promise<void> {
-    return this.ptyConnection.resize(cols, rows);
+  async resize(cols: number, rows: number, opts: { repaint?: boolean } = {}): Promise<boolean> {
+    return this.ptyConnection.resize(cols, rows, opts);
   }
 
   /** The view showing this shell went off screen: it no longer sizes the PTY. */

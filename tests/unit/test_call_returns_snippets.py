@@ -165,11 +165,14 @@ async def test_every_fence_runs_as_written(index, tmp_path):
 _CLASSES = {
     **{
         name: getattr(compute_op_spec, name)
-        for name in ("ExeData", "CliOp", "PromptOp", "AgentOp", "AskOp", "Rung", "ComputeOpSpec")
+        for name in (
+            "ExeData", "CliOp", "PromptOp", "AgentOp", "LaunchContext", "Require", "DecisionOp", "AskOp", "Rung",
+            "ComputeOpSpec",
+        )
     },
     **{
         name: getattr(returned_value_spec, name)
-        for name in ("ReturnedValue", "CliResult", "PromptResult", "AskResult", "WizardResult")
+        for name in ("ReturnedValue", "CliResult", "PromptResult", "AskResult", "WizardResult", "DecisionVerdict")
     },
 }
 

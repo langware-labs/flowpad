@@ -55,7 +55,7 @@ def _scope(tmp_path: Path) -> dict:
 
 
 def test_the_page_has_its_fences():
-    assert len(FENCES) == 5, "one per section — a section without one proves nothing"
+    assert len(FENCES) == 7, "one per section — a section without one proves nothing"
 
 
 @pytest.mark.parametrize("index", range(len(FENCES)))

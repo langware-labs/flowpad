@@ -154,7 +154,63 @@ returning something else is a failure here rather than a surprise in whatever
 binds the value later; the steps stay on the answer, so what WAS produced is
 still readable.
 
-## 5. A wizard that calls itself answers, and never recurses
+## 5. A step runs only while a value matches
+
+```python
+letter = ComputeOpSpec(name="letter", subkind="cli", output_spec_kind="string",
+                       exe_data=CliOp(commands={"darwin": "echo a", "linux": "echo a"}))
+touch = ComputeOpSpec(name="touch", subkind="cli",
+                      exe_data=CliOp(commands={"darwin": "touch matched.txt", "linux": "touch matched.txt"}))
+ops = {"letter": letter, "touch": touch}
+
+async def resolve(name):
+    return Resolved(ops[name], trusted=True)
+
+result = await run_wizard(
+    WizardSpec(name="branch", steps=[
+        WizardStepSpec(id="read", ref="letter", bind="LETTER"),
+        WizardStepSpec(id="if-a", ref="touch", when={"LETTER": "a"}),
+        WizardStepSpec(id="if-b", ref="touch", when={"LETTER": "b"}),
+    ]),
+    trusted=True, workdir=tmp, resolve_op=resolve, platform="darwin",
+)
+result.ok                              # True
+result.steps["if-a"].ran               # True
+result.steps["if-b"].ran               # False — passed as not applicable, the run goes on
+result.steps["if-b"].detail            # "step 'if-b': LETTER is 'a', not 'b'"
+```
+
+`when` is an equality on values already in scope, like `args`: a mapping, never a template
+or an expression. A name not in scope does not match, and says so.
+
+## 6. Stop quietly
+
+```python
+no = ComputeOpSpec(name="no", subkind="cli", exe_data=CliOp(commands={"darwin": "false", "linux": "false"}))
+touch = ComputeOpSpec(name="touch", subkind="cli",
+                      exe_data=CliOp(commands={"darwin": "touch never.txt", "linux": "touch never.txt"}))
+ops = {"no": no, "touch": touch}
+
+async def resolve(name):
+    return Resolved(ops[name], trusted=True)
+
+result = await run_wizard(
+    WizardSpec(name="gate", steps=[
+        WizardStepSpec(id="gate", ref="no", on_fail="stop"),
+        WizardStepSpec(id="never", ref="touch"),
+    ]),
+    trusted=True, workdir=tmp, resolve_op=resolve, platform="darwin",
+)
+result.ok                              # True — a "no" was the answer, not a problem
+result.stopped_at                      # 'gate'
+"never" in result.steps                # False
+```
+
+The third `on_fail`, for a step whose failing IS the sequence's answer: nothing after it
+runs, the run is `OK`, and `stopped_at` says which step decided. A `decision` op is the
+step this exists for ([decisions](decisions.md) §9).
+
+## 7. A wizard that calls itself answers, and never recurses
 
 ```python
 loop = WizardSpec(name="loop", steps=[WizardStepSpec(id="again", kind="wizard", ref="loop")])
@@ -182,6 +238,7 @@ an answer.
 | --- | --- | --- |
 | `abort` (the default) | stops the run | absent from `steps` — never reached |
 | `continue` | is recorded and passed | run in order |
+| `stop` | ends the run QUIETLY: `ok=True`, `stopped_at` names the step | absent — the step's "no" was the answer |
 
 A REFUSAL is not covered by either: it stops the run whatever `on_fail` says,
 because continuing past an untrusted callee is exactly what the trust gate

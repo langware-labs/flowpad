@@ -177,11 +177,17 @@ async def stream_ndjson(
     *,
     collect_candidates: bool,
     label: str = "indexer child",
+    on_record: Callable[[dict], Awaitable[None]] | None = None,
 ) -> tuple[dict | None, list[dict]]:
     """Drive an already-spawned child, translating its stdout NDJSON.
 
     Returns ``(result_json, candidates)``. Raises ``RuntimeError`` when the
     child exits with a code outside ``OK_RETURNCODES``.
+
+    ``on_record`` receives every other object line as it arrives — the hook a
+    child with its own record shape (the transcript catch-up child) uses to
+    act on records while the stream is still running, instead of collecting
+    candidates for the caller to decode afterwards.
 
     Two details are load-bearing:
 
@@ -214,6 +220,8 @@ async def stream_ndjson(
                 candidates.append(d)
             elif "job_name" in d and on_progress is not None:
                 await on_progress(table_from_json(d))
+            elif on_record is not None:
+                await on_record(d)
         stderr = await stderr_task
         rc = await proc.wait()
         if rc not in OK_RETURNCODES:

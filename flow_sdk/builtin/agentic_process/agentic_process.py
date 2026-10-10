@@ -10,7 +10,7 @@ implementing the ``WorkerDriver`` Protocol and registering with ``get_driver``.
 from __future__ import annotations
 
 import asyncio
-import collections
+import contextvars
 import json
 import logging
 import time
@@ -52,7 +52,6 @@ from flow_sdk.builtin.agentic_process.cli_drivers import (
     apply_worker_secret_env,
     get_driver,
     latch_spawn_failure,
-    resolve_worker_language,
 )
 from flow_sdk.builtin.agentic_process.display_context import (
     DISPLAY_CONTEXT_KEY,
@@ -98,6 +97,7 @@ from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse
 from flow_sdk.schema.data_spec.mcp_spec import McpSpec
+from flow_sdk.stream_inbox._locks import any_keyed_lock_held, keyed_lock_held, keyed_loop_lock, new_registry
 from flow_sdk.transcript_analyzer.worker_status import StatusDetail, WorkerStatus
 from flow_sdk.transcript_analyzer.worker_status import is_terminal as is_worker_terminal
 
@@ -206,7 +206,11 @@ class TranscriptSubpath(StrEnum):
 # to its worker.  Keeping setup in the same process-global registry projection is
 # important: transcript watchers hydrate a different AgenticProcess object than
 # the request object, so an object-local flag cannot serialize those callers.
-_PROMPT_LOCKS: dict[str, asyncio.Lock] = collections.defaultdict(asyncio.Lock)
+# Weak-valued (``stream_inbox/_locks``): a process's lock exists only while a
+# turn holds or awaits it. A strong ``defaultdict(asyncio.Lock)`` here kept one
+# lock per process id ever SERIALIZED — the ``busy`` read minted on lookup — for
+# the backend's life, and ``any_prompt_in_flight`` scanned all of them.
+_PROMPT_LOCKS = new_registry()
 _PROMPT_ADMISSIONS: dict[str, object] = {}
 _PROMPT_WORKERS: dict[str, Any] = {}
 _PROMPT_TASKS: dict[str, asyncio.Task] = {}
@@ -271,7 +275,7 @@ def prompt_lock_locked(process_id: str) -> bool:
     can consult it without importing this module at load time (which would
     cycle — ``agentic_process`` imports ``status_predicates``).
     """
-    return _PROMPT_LOCKS[process_id].locked()
+    return keyed_lock_held(_PROMPT_LOCKS, str(process_id))
 
 
 def prompt_worker_active(process_id: str) -> bool:
@@ -295,7 +299,7 @@ def any_prompt_in_flight() -> bool:
     unattended. A native-xterm turn is not seen here -- it holds no lock -- but a
     person is typing into it, and that is reported as user activity instead.
     """
-    return bool(_PROMPT_ADMISSIONS or _PROMPT_WORKERS) or any(lock.locked() for lock in _PROMPT_LOCKS.values())
+    return bool(_PROMPT_ADMISSIONS or _PROMPT_WORKERS) or any_keyed_lock_held(_PROMPT_LOCKS)
 
 
 def try_admit_prompt(process_id: str) -> object | None:
@@ -306,7 +310,7 @@ def try_admit_prompt(process_id: str) -> object | None:
     opaque token makes release owner-safe when an older setup unwinds after a
     newer admission has already been installed.
     """
-    if process_id in _PROMPT_ADMISSIONS or process_id in _PROMPT_WORKERS or _PROMPT_LOCKS[process_id].locked():
+    if process_id in _PROMPT_ADMISSIONS or process_id in _PROMPT_WORKERS or prompt_lock_locked(process_id):
         return None
     token = object()
     _PROMPT_ADMISSIONS[process_id] = token
@@ -362,7 +366,8 @@ _VALID_PERMISSION_MODES = frozenset({"plan", "default", "acceptEdits", "bypassPe
 
 # Per-process serialization for the ``open``/``start`` lifecycle so two
 # concurrent refresh-driven calls can't both run recovery on the same process.
-_OPEN_LOCKS: dict[str, asyncio.Lock] = collections.defaultdict(asyncio.Lock)
+# Weak-valued, like ``_PROMPT_LOCKS``.
+_OPEN_LOCKS = new_registry()
 
 #: Every field ``_perform_open`` mints during a launch. ``start_pty`` runs the
 #: launch on a DB-fresh copy (so two concurrent opens can't double-spawn), then
@@ -398,8 +403,8 @@ _LAUNCH_OUTPUT_FIELDS: tuple[str, ...] = (
 )
 
 # Per-process serialization for prompt-queue drains so two ready edges can't
-# pop+inject the same head twice.
-_QUEUE_LOCKS: dict[str, asyncio.Lock] = collections.defaultdict(asyncio.Lock)
+# pop+inject the same head twice. Weak-valued, like ``_PROMPT_LOCKS``.
+_QUEUE_LOCKS = new_registry()
 
 #: Broadcast dedup key — private, reached only via ``AgenticProcess._last_broadcast_key``, so its shape can change freely.
 _BroadcastKey = NamedTuple(
@@ -441,18 +446,53 @@ def _release_process_transcript_state(process: "AgenticProcess") -> None:
     process", not "release these four things". ``_REINDEX_WATERMARKS`` arrived
     from a separate branch and joined here for exactly that reason — a
     re-opened process must also rescan from 0, since its transcript is a new
-    file.
+    file. The ``recovered`` flag (``pty_recovery``) rides along for the same
+    reason: it describes the respawned worker, and goes with it.
+
+    Three exits reach here: ``close()``, ``delete()``, and a worker that ends
+    on its own (``_on_pty_exit`` / the headless arm of ``exit()``), the last
+    through :func:`_release_after_armed_flush`, which lets an armed flush
+    finish first. The flush itself releases when it finds the row terminal.
     """
+    from flow_sdk.server.pty_recovery import forget_recovered
+
     key = str(process.id)
     process._last_broadcast_key = None  # setter drops the row
     _PENDING_ENTRIES.pop(key, None)
     _REINDEX_WATERMARKS.pop(key, None)
     _TRANSCRIPT_SIZE_AT_PROMPT.pop(key, None)
+    forget_recovered(key)
     task = _DEBOUNCE_TASKS.pop(key, None)
-    if task is not None and not task.done():
+    # A flush that releases its own process must not cancel itself.
+    if task is not None and not task.done() and task is not asyncio.current_task():
         # The flush re-reads the row and bails when it is gone, but an armed
         # timer on a dead process is pure latency on shutdown.
         task.cancel()
+
+
+def _release_after_armed_flush(process: "AgenticProcess") -> None:
+    """Release on a self-exit without losing the flush that is already armed.
+
+    The worker's last lines can carry its session name, and only the flush
+    applies it. ``close()`` / ``delete()`` cancel that flush; a worker that quit
+    on its own must not, so the release waits for it. A flush that had already
+    read the row as RUNNING finishes down its normal path and writes its key
+    after the exit handler has passed — hence the done-callback rather than
+    leaving the release to the flush's own terminal branch.
+    """
+    key = str(process.id)
+    task = _DEBOUNCE_TASKS.get(key)
+    if task is None or task.done():
+        _release_process_transcript_state(process)
+        return
+
+    def _done(finished: asyncio.Task) -> None:
+        if _DEBOUNCE_TASKS.get(key) is finished:  # a newer flush releases itself
+            _release_process_transcript_state(process)
+
+    # The callback touches module dicts only; an empty context keeps it from
+    # pinning the request this may run inside (the headless ``exit()`` arm).
+    task.add_done_callback(_done, context=contextvars.Context())
 
 
 #: Where a process remembers the terminal it opened for the user, so
@@ -1350,7 +1390,7 @@ class AgenticProcess(Entity):
         snapshots and double-spawn Claude.
         """
         t_lock = time.monotonic()
-        async with _OPEN_LOCKS[self.id]:
+        async with keyed_loop_lock(_OPEN_LOCKS, str(self.id)):
             toplog.log(
                 "agentic_process.load",
                 "open lock acquired process=%s wait_ms=%.0f",
@@ -1646,7 +1686,7 @@ class AgenticProcess(Entity):
             # the enqueue drain from cold-starting visible processes, so nothing
             # competes for the head.
             if instruction is None:
-                async with _QUEUE_LOCKS[self.id]:
+                async with keyed_loop_lock(_QUEUE_LOCKS, str(self.id)):
                     q = self.queue
                     state = q.read()
                     if state.get("enabled", True) and state.get("entries"):
@@ -1872,6 +1912,9 @@ class AgenticProcess(Entity):
             # Headless: a finished turn leaves nothing to kill, but the process still ends STOPPED.
             self.status = ProcessStatus.STOPPED.value
             await self.save()
+            # No PTY exit callback follows for a headless worker, so this arm
+            # is its self-exit: release its per-process state here.
+            _release_after_armed_flush(self)
             return ApiSuccessResponse(data={"status": "stopped"})
 
         try:
@@ -2462,7 +2505,7 @@ class AgenticProcess(Entity):
         if self.hub_route:
             return  # never inject or cold-start a route row: its worker is elsewhere
         q = self.queue
-        async with _QUEUE_LOCKS[self.id]:
+        async with keyed_loop_lock(_QUEUE_LOCKS, str(self.id)):
             state = q.read()
             if not state.get("enabled", True) or not state.get("entries"):
                 q.log("drain_check", source, reason="empty_or_disabled")
@@ -3709,6 +3752,52 @@ class AgenticProcess(Entity):
     # map to FlowData and land on the shared
     # StreamingResponseHandler queue for streaming back to the caller.
 
+    async def _inline_turn_context(self, *, permission_mode: str | None = None, resumable: bool = False):
+        """The ``AgenticContext`` an inline print-mode turn (the ``prompt`` action) spawns with.
+
+        Its own method so the system-prompt matrix proves what this path hands the
+        stream worker, not a copy of it.
+        """
+        from flow_sdk.builtin.agentic_process.cli_drivers.api_auth import (  # noqa: PLC0415
+            apply_api_model_to_options,
+        )
+
+        # Resolve the owning project and stamp its context folders onto the
+        # transient cache so ``resolved_add_dirs`` mounts them this turn.
+        try:
+            await self.get_project()
+        except Exception:
+            logger.debug("prompt: get_project failed", exc_info=True)
+
+        process_assets = await self.prepare_process_assets()
+
+        try:
+            env_vars = dict(self.driver.cli_options(self).env_vars)
+        except Exception:
+            env_vars = dict((self.cli_config or {}).get("env_vars") or {})
+        apply_worker_env(env_vars, self)
+        await apply_worker_secret_env(env_vars, self)
+
+        context = _AgenticContext(
+            workdir=self.workdir,
+            env_vars=env_vars,
+            model=(self.cli_config or {}).get("model"),
+            permission_mode=permission_mode or (self.cli_config or {}).get("permission_mode", "bypassPermissions"),
+            effort=(self.cli_config or {}).get("effort"),
+            add_dirs=list(self.resolved_add_dirs or []),
+            session_id=self.session_id if (self.session_id and not resumable) else None,
+            resume_session_id=self.session_id if resumable else None,
+            disallowed_tools=(self.cli_config or {}).get("disallowed_tools") or [],
+            **self._process_asset_context_kwargs(process_assets),
+        )
+
+        # API-key auth (harness in "api" mode): override the model with the
+        # provider slug and carry codex's -c overrides onto the context. The
+        # env/token already landed via apply_worker_secret_env above. Same
+        # helper as the visible-PTY path; no-op in device mode.
+        await apply_api_model_to_options(context, self)
+        return context
+
     @action.post(action_name="prompt")
     async def _http_prompt(self) -> Any:
         from starlette.responses import StreamingResponse  # local import — starlette is an app-layer dep
@@ -3740,7 +3829,7 @@ class AgenticProcess(Entity):
                 status_code=409,
             )
 
-        lock = _PROMPT_LOCKS[self.id]
+        lock = keyed_loop_lock(_PROMPT_LOCKS, str(self.id))
         if lock.locked():
             return ApiFailResponse(
                 message="another prompt turn is already in flight for this process",
@@ -3786,46 +3875,7 @@ class AgenticProcess(Entity):
                 except Exception:
                     logger.warning("prompt: preassigned session_id save failed", exc_info=True)
 
-            # Resolve the owning project and stamp its context folders onto the
-            # transient cache so ``resolved_add_dirs`` mounts them this turn.
-            try:
-                await self.get_project()
-            except Exception:
-                logger.debug("prompt: get_project failed", exc_info=True)
-
-            process_assets = await self.prepare_process_assets()
-
-            try:
-                env_vars = dict(self.driver.cli_options(self).env_vars)
-            except Exception:
-                env_vars = dict((self.cli_config or {}).get("env_vars") or {})
-            apply_worker_env(env_vars, self)
-            await apply_worker_secret_env(env_vars, self)
-
-            context = _AgenticContext(
-                workdir=self.workdir,
-                env_vars=env_vars,
-                model=(self.cli_config or {}).get("model"),
-                permission_mode=_turn_permission_mode
-                or (self.cli_config or {}).get("permission_mode", "bypassPermissions"),
-                effort=(self.cli_config or {}).get("effort"),
-                add_dirs=list(self.resolved_add_dirs or []),
-                session_id=self.session_id if (self.session_id and not resumable) else None,
-                resume_session_id=self.session_id if resumable else None,
-                language=await resolve_worker_language(self),
-                disallowed_tools=(self.cli_config or {}).get("disallowed_tools") or [],
-                **self._process_asset_context_kwargs(process_assets),
-            )
-
-            # API-key auth (harness in "api" mode): override the model with the
-            # provider slug and carry codex's -c overrides onto the context. The
-            # env/token already landed via apply_worker_secret_env above. Same
-            # helper as the visible-PTY path; no-op in device mode.
-            from flow_sdk.builtin.agentic_process.cli_drivers.api_auth import (
-                apply_api_model_to_options,
-            )
-
-            await apply_api_model_to_options(context, self)
+            context = await self._inline_turn_context(permission_mode=_turn_permission_mode, resumable=resumable)
 
             # Vendor hook retained for compatibility; embedded-agent/persona
             # instructions are materialized into process instruction assets.
@@ -4173,7 +4223,7 @@ class AgenticProcess(Entity):
         from flow_sdk.transcript_analyzer.resolver import transcript_change_signature
 
         poll_interval = 0.3
-        lock = _PROMPT_LOCKS[self.id]
+        lock = keyed_loop_lock(_PROMPT_LOCKS, str(self.id))
         worker_type = self.driver.name
 
         # ── Transcript resolution + parsing strategy ────────────────────────
@@ -6844,26 +6894,6 @@ class AgenticProcess(Entity):
         self.load_flowpad_assistant = True
         return self
 
-    async def resolve_system_instructions(self) -> str | None:
-        """The worker's full system-prompt append.
-
-        Merges the caller's standing directions (``context_data.instructions``,
-        set at create time by the SDK) with the io, always-use-skills and
-        open-task blocks. Any part may be empty; ``None`` when all are. This is
-        the single source both turn paths (headless driver + inline print-mode)
-        must use.
-        """
-        explicit = str((self.context_data or {}).get("instructions") or "").strip()
-        io = str((self.context_data or {}).get("io_instructions") or "").strip()  # ``process_io.prepare_io``
-        always = self._resolve_always_use_skills_block()
-        # A Chief of Staff reads its open tasks every turn — resolved now, not at launch.
-        tasks = ""
-        if (self.context_data or {}).get("chief_of_staff"):
-            from flow_sdk.tasks.cos import open_tasks_block  # noqa: PLC0415
-
-            tasks = await open_tasks_block(self)
-        return "\n\n".join(p for p in (explicit, io, always, tasks) if p) or None
-
     def _resolve_always_use_skills_block(self) -> str:
         """The project's ``always_use_skills`` as a system-prompt directive.
 
@@ -7392,13 +7422,18 @@ class AgenticProcess(Entity):
         # without an async fetch. Refreshed every call, so later edits to
         # ``project.include_dirs`` take effect on the next launch.
         context_dirs: list[str] = []
+        locale = None
         if self.project_id:
             project = await Project.get_by_id(self.project_id)
             if project:
                 if not self.workdir and project.fs_storage_mount_path:
                     self.workdir = str(project.fs_storage_mount_path)
                 context_dirs = list(getattr(project, "include_dirs", []) or [])
+                locale = getattr(project, "locale", None)
         object.__setattr__(self, "_project_context_dirs", context_dirs)
+        # Same fetch, same lifetime: the LANGUAGE system-prompt layer reads it
+        # (``resolve_worker_language``) instead of fetching the project again.
+        object.__setattr__(self, "_project_locale", locale)
 
     @action.get(action_name="input-dir")
     async def get_input_dir(self):
@@ -7873,6 +7908,12 @@ class AgenticProcess(Entity):
                 # Deliberately WITHOUT draining: entries buffered before the
                 # process reached RUNNING stay queued for the next flush. They
                 # used to die here with the instance that held them.
+                # A process that is gone or terminal has no next flush: release
+                # it, or a late change to its file (the watcher delivering the
+                # worker's last lines after the exit, the startup catch-up walk)
+                # buffers entries nothing will ever drain.
+                if durable is None or durable.status in (ProcessStatus.STOPPED.value, ProcessStatus.FAILED.value):
+                    _release_process_transcript_state(self)
                 return
 
             # Consume exactly what was read. Anything that arrived during the
@@ -8345,6 +8386,7 @@ class AgenticProcess(Entity):
                         if proc.status == ProcessStatus.STOPPING.value:
                             proc.status = ProcessStatus.STOPPED.value
                         await proc.save()
+                        _release_after_armed_flush(proc)
                         return
                     if backend_restart_requested():
                         # `flow instance restart-backend` marks its intent
@@ -8411,6 +8453,10 @@ class AgenticProcess(Entity):
                     # exited non-zero indistinguishable from a clean one.
                     proc.exit_code = exit_code
                     await proc.save()
+                    # The row is terminal (STOPPED / FAILED) on every arm that
+                    # reaches here; the restart and recoverable-signal arms
+                    # returned above and keep their state for the respawn.
+                    _release_after_armed_flush(proc)
 
                     if session_id:
                         asyncio.create_task(_index_session_on_close(session_id, display_name=proc.name))

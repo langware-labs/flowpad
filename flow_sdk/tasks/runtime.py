@@ -42,11 +42,11 @@ def start(*, watchdog: bool = True) -> None:
     from flow_sdk.tags import on_tag  # noqa: PLC0415
 
     async def _on(event) -> None:
-        from flow_sdk.request_context.detached import create_detached_task  # noqa: PLC0415
+        from flow_sdk.request_context.detached import add_detached_done_callback, create_detached_task  # noqa: PLC0415
 
         task = create_detached_task(_safely(dict(event.data or {})), name="task-runtime")
         _INFLIGHT.add(task)
-        task.add_done_callback(_INFLIGHT.discard)
+        add_detached_done_callback(task, _INFLIGHT.discard)
 
     _UNSUBSCRIBE.append(on_tag("task.*", _on))
     bus_sources.start()

@@ -17,6 +17,7 @@ from . import (  # noqa: F401
     group_task_action,
     helpdesk_action,
     icons_action,
+    launch_action,
     llm_endpoint_models_action,
     machine_enroll_action,
     members_action,

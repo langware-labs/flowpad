@@ -5,9 +5,15 @@ import { useLazyAsset } from '@sdk/react/hooks/useLazyAsset';
 import { useEffect } from 'react';
 const NO_PROJECTS: ProjectListItem[] = [];
 
-export function useProjectList(options: { enabled?: boolean } = {}) {
+export function useProjectList(options: { enabled?: boolean; workspace?: string } = {}) {
   const { computeNode } = useAgentContext();
-  const result = useLazyAsset(LazyAsset.DiscoveredProjects, { nodeId: computeNode?.id ?? '' }, {
+  // `workspace`: only that workspace's projects (`useActiveWorkspace().scopeId`) — for
+  // a surface that LISTS projects to pick from. A lookup (id → name, cwd → project)
+  // passes none. While only the default workspace exists `scopeId` is undefined, so
+  // the request is the one from before workspaces.
+  const workspace = options.workspace;
+  const params = workspace ? { nodeId: computeNode?.id ?? '', workspace } : { nodeId: computeNode?.id ?? '' };
+  const result = useLazyAsset(LazyAsset.DiscoveredProjects, params, {
     enabled: options.enabled !== false && !!computeNode?.id,
   });
   return { projects: result.data?.projects ?? NO_PROJECTS, totalCount: result.data?.total_count ?? 0,

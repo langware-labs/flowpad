@@ -12,6 +12,7 @@ describe('GitWorkdir', () => {
     const statusData: GitStatus = {
       error: null,
       branch: 'main',
+      upstream: null,
       ahead: 0,
       behind: 0,
       files: [],

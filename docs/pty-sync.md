@@ -112,7 +112,7 @@ initialize(term)  -->  processChunk() x N  -->  [resize: rebuild(chunks)]  -->  
 |--------|-------------|
 | `initialize(term)` | Creates `LiveXtermAdapter` from the xterm `Terminal`, creates `VirtualTerminal` with matching dimensions (cols, rows, cellWidth, cellHeight). Called once after `xterm.open()` + `FitAddon.fit()`. |
 | `processChunk(chunk)` | Feeds chunk through VT, syncs `adapter.setEvictionOffset(vt.getTotalScrolledOff())`. Bumps version. |
-| `rebuild(chunks)` | Creates fresh VT with current adapter dimensions, replays all chunks into it, syncs eviction offset. Called from ResizeObserver handler. |
+| `rebuild(chunks)` | Creates fresh VT with current adapter dimensions, replays the shell's chunk window into it (`PtyConnection.chunks` keeps the newest `CHUNK_WINDOW_MAX_CHUNKS` / `CHUNK_WINDOW_MAX_BYTES`, not the whole session), pads the model's top so its cursor lands on xterm's (`VirtualTerminal.padTop`), syncs eviction offset. Rows older than the window carry no owner and no timestamp. Called from ResizeObserver handler. |
 | `resetSession()` | Nulls VT. Used for session switching. |
 | `dispose()` | Nulls adapter and VT. Called on terminal unmount. |
 

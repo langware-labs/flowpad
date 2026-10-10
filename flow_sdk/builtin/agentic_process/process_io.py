@@ -145,7 +145,7 @@ def prepare_io(process: "AgenticProcess", *, input: Any = None, output_spec: Opt
 
     Workdir mode (no ``input``, no ``output_spec``) touches nothing. Otherwise a failure raises: the caller
     asked for that data. The block lands in ``context_data["io_instructions"]`` — its own part of the
-    system prompt (``resolve_system_instructions``), never spliced into the caller's instructions.
+    system prompt (the ``IO`` layer of ``system_prompt.compose_layers``), never spliced into the caller's instructions.
     """
     from flow_sdk.schema.data_spec import DataSpec  # noqa: PLC0415
     from flow_sdk.schema.data_spec.io import save  # noqa: PLC0415

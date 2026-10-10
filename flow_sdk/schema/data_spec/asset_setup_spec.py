@@ -11,13 +11,16 @@ the project is the root. Per node, in this order::
 A node whose child failed does not run: it is ``blocked``, and says which child. Its siblings still run,
 so one broken leaf never hides the state of the others.
 
+A node may also carry ``on_load``, which is NOT part of that walk: the wizard a LOAD runs when the asset is
+shown (``core/setup/load``). It never asks; a web app's is its own install → build → start.
+
 Two shapes live here:
 
 * ``AssetSetupSpec`` — the DECLARED node, an asset document (``agentic-assets/asset_setup/<name>/``).
   Most nodes are derived (a project's credentials, its sources); a declaration adds children or wizards a
   derivation cannot know — a WAHA source's container, say.
 * ``SetupNodeResult`` / ``SetupTreeResult`` — the run's answer, the same tree, each node with its state
-  and its two wizards' own ``WizardResult``. Recorded as the run goes, so a screen that missed a push
+  and its wizards' own ``WizardResult``. Recorded as the run goes, so a screen that missed a push
   reads the whole picture.
 """
 
@@ -54,9 +57,25 @@ class AssetSetupSpec(AssetDocumentSpec):
     prepare: str = ""
     #: The wizard run on the way up, once every child is set up. Empty: the node is its children.
     run: str = ""
+    #: The wizard a load runs when the asset is shown here (``core/setup/load``). Never asks. Empty: none.
+    on_load: str = ""
     #: Values this node puts in scope for its own wizards and every node below it (a container's name,
     #: the image it runs, its port) — ``FLOWPAD_WIZARD_INPUT_<NAME>`` to a command.
     inputs: dict[str, str] = {}
+
+
+class SetupSkipSpec(DataSpec):
+    """A person skipped this requirement of a project's setup ON THIS MACHINE (``setup_skipped`` on its record,
+    never shared): it is listed under "Skipped", stops counting toward "Setup required", and its setup-tree
+    node settles SKIPPED. Undone by un-skipping. Skipping "always" is not a mark: it removes the asset."""
+
+    spec_kind: ClassVar[str] = "setup.skip"
+    model_config = ConfigDict(frozen=True)
+
+    #: When (epoch seconds) and by whom (a user id; empty when unknown).
+    at: float
+    by: str = ""
+    note: str = ""
 
 
 class SetupState(StrEnum):
@@ -73,6 +92,8 @@ class SetupState(StrEnum):
     REFUSED = "refused"
     #: Another setup of the same root holds the slot. Nothing ran.
     HELD = "held"
+    #: A person skipped it (``setup_skipped`` on its record): settled without running, so its parent goes on.
+    SKIPPED = "skipped"
 
 
 class SetupNodeResult(DataSpec):

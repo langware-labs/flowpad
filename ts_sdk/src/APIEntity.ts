@@ -687,9 +687,11 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
     return dataManager.callAction<undefined, R>(info);
   }
 
-  /** GET one of this entity's actions and return the envelope's `data`. */
-  protected get<R>(action: string): Promise<R> {
-    return dataManager.callAction<undefined, R>(new ActionInfo(action, this.getType(), this.id, 'GET' as HttpMethod));
+  /** GET one of this entity's actions (with `query` as its query string) and return the envelope's `data`. */
+  protected get<R>(action: string, query?: Record<string, unknown>): Promise<R> {
+    const info = new ActionInfo(action, this.getType(), this.id, 'GET' as HttpMethod);
+    if (query && Object.keys(query).length) info.queryParameters = query;
+    return dataManager.callAction<undefined, R>(info);
   }
 
   /**

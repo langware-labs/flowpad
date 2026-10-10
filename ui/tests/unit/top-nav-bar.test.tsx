@@ -72,6 +72,8 @@ vi.mock('@src/components/top-nav-bar/use-entity-breadcrumbs', () => ({
   }),
 }));
 vi.mock('@src/components/top-nav-bar/TopBarActions', () => ({ TopBarActions: () => null }));
+/** The ⚡'s counter reads react-query; the bar's own tests pin the counter in top-nav-automations.test.tsx. */
+vi.mock('@src/hooks/automations/useAutomations', () => ({ useStartedLastHour: () => 0 }));
 // The project switcher is a heavy surface with its own tests; here we only care
 // THAT the project crumb summons it.
 vi.mock('@src/components/open-project-component/open-project-component', () => ({
@@ -109,7 +111,7 @@ vi.mock('@src/tabs/project-entry', async (importOriginal) => ({
 vi.mock('@src/components/wiki-tip/wiki-modal', () => ({ openWikiModal }));
 /** The Flowpad Assistant, when the bar is mounted under its provider. */
 const assistant = vi.hoisted(() => ({ current: null as { ask: ReturnType<typeof vi.fn> } | null }));
-vi.mock('@src/components/floating-chat/FloatingChatContext', () => ({
+vi.mock('@src/components/floating-chat/floating-chat-context', () => ({
   useOptionalFloatingChat: () => assistant.current,
 }));
 // The single writer of URL-derived context — a crumb click must never touch it.
@@ -333,7 +335,8 @@ describe('the navigation bar', () => {
     expect(within(popover).getByTestId('projects-counter-open-project')).toBeTruthy();
     await user.click(within(popover).getByRole('button', { name: 'Beta 1' }));
 
-    await waitFor(() => expect(openDock).toHaveBeenCalledWith({ __dock: 'project' }));
+    // A project switch resumes a TOP-LEVEL tab (see use-open-project / project-list-menu).
+    await waitFor(() => expect(openDock).toHaveBeenCalledWith({ __dock: 'project' }, undefined, { topLevel: true }));
     expect(dockForProjectEntry).toHaveBeenCalledWith(OTHER_PROJECT_ID, { tabHash: 'h1' });
     // URL-first: the loader is the single writer of context, never the click.
     expect(setContext).not.toHaveBeenCalled();

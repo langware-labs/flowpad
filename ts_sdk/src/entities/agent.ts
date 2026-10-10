@@ -1,4 +1,6 @@
+import { launchSurfaceField } from '../process/launch-surface';
 import { APIEntity, registerEntity } from '../APIEntity';
+import { QueryFilter, QueryRequest } from '../FlowSync/query';
 import { TypeId } from '../models/TypeId';
 import type { GitOrigin } from '../models/GitOrigin';
 import type { HubRepoOrigin } from '../models/FSOrigin';
@@ -275,6 +277,19 @@ export class Agent extends APIEntity<Agent> {
     return this.doc?.parent.child(AGENT_AVATAR_FILE).getDownloadUrl() ?? null;
   }
 
+  /** The agents a rule on this machine may run: enabled, by name — what a picker offers
+   *  (`Agent.runnable_here` in Python). */
+  static async runnableHere(): Promise<Agent[]> {
+    const request = new QueryRequest({
+      type: Agent.type,
+      scope: [],
+      name: 'agents:runnable-here',
+      query: new QueryFilter({ match: { enabled: true } }),
+    });
+    const rows = await Agent.query(request, true);
+    return rows.sort((a, b) => (a.name || '').localeCompare(b.name || '') || String(a.id).localeCompare(String(b.id)));
+  }
+
   /** Create in the selected scope, optionally at an exact authorized folder. */
   static async createInProject(
     project: { typeId?: TypeId } | null,
@@ -337,7 +352,11 @@ export class Agent extends APIEntity<Agent> {
    * prompt, or the auto prompt runs second.
    */
   async use(projectId?: string | null, autoPrompt = false): Promise<AgentUseResult> {
-    return (await this.post('use', { project_id: projectId ?? null, ...autoPromptBody(autoPrompt) })) as AgentUseResult;
+    return (await this.post('use', {
+      project_id: projectId ?? null,
+      ...autoPromptBody(autoPrompt),
+      ...launchSurfaceField(),
+    })) as AgentUseResult;
   }
 
   /**
@@ -350,7 +369,11 @@ export class Agent extends APIEntity<Agent> {
    * placement on this machine.
    */
   async useDeployment(deploymentId: string, autoPrompt = false): Promise<AgentUseResult> {
-    return (await this.post('use', { deployment_id: deploymentId, ...autoPromptBody(autoPrompt) })) as AgentUseResult;
+    return (await this.post('use', {
+      deployment_id: deploymentId,
+      ...autoPromptBody(autoPrompt),
+      ...launchSurfaceField(),
+    })) as AgentUseResult;
   }
 
   /**

@@ -1,7 +1,8 @@
+import asyncio
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, ClassVar, Optional, Union
+from typing import TYPE_CHECKING, Any, ClassVar, Optional, Union
 
 from pydantic import model_validator
 from starlette.requests import Request
@@ -28,7 +29,13 @@ from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccess
 from flow_sdk.schema.data_spec.trigger_action import ActionType, TriggerAction
 from flow_sdk.schema.data_spec.trigger_types import TriggerType
 
+if TYPE_CHECKING:
+    from flow_sdk.schema.data_spec.compute_op_spec import DecisionOp
+
 logger = logging.getLogger(__name__)
+
+#: How far back one rule's log tail is read for the top-bar's last-hour count.
+LAST_HOUR_ROWS = 50
 
 
 
@@ -237,11 +244,24 @@ class DispatchOutcome:
     def error(self) -> Optional[str]:
         return "; ".join(self.errors) or None
 
+    @property
+    def wizard(self) -> Optional[dict[str, Any]]:
+        """How the `then` wizard went, as the log row keeps it (``WizardResult.outline``: verdicts and
+        sessions, never a step's output) — None when actions ran instead."""
+        from flow_sdk.schema.data_spec.returned_value_spec import WizardResult  # noqa: PLC0415
 
-async def run_trigger_actions(trigger: "Trigger", changes: list) -> DispatchOutcome:
+        found = next((r for r in self.results if isinstance(r, WizardResult)), None)
+        return found.outline() if found is not None else None
+
+
+async def run_trigger_actions(trigger: "Trigger", changes: list, *, inputs: Optional[dict[str, Any]] = None,
+                              scope_key: str = "") -> DispatchOutcome:
     """Action dispatch on any trigger fire — THE shared loop for every trigger
     kind. Per-action try/except so one bad handler can't skip the rest.
     ``changes`` is empty for schedule/tag fires; FSOp passes its batch.
+    ``inputs`` is the fire's scope for a rule whose `then` is a wizard (the
+    envelope under ``EVENT`` and, when a gate caught, the subject's state under
+    ``scope_key``; no key, no state).
 
     A failing action is reported three ways: logged, emitted as
     ``trigger.failed``, and returned in ``errors`` for the fire's log row."""
@@ -252,6 +272,26 @@ async def run_trigger_actions(trigger: "Trigger", changes: list) -> DispatchOutc
     started = time.monotonic()
     results: list[Any] = []
     errors: list[str] = []
+    if getattr(trigger, "then", None):
+        # A rule with a `then` runs its wizard — the one engine — with the fire's scope.
+        from flow_sdk.automations.then import run_then  # noqa: PLC0415
+
+        error = ""
+        try:
+            result = await run_then(trigger, inputs=dict(inputs or {}), scope_key=scope_key)
+            results.append(result)
+            if not result.ok:
+                error = result.detail or "the wizard did not finish"
+        except Exception as exc:  # noqa: BLE001 — the fire's row must still be written
+            logger.exception("Trigger %s: the then wizard raised", trigger.name)
+            error = f"then: {exc}"
+        if error:
+            errors.append(error)
+            emit_trigger_failed(
+                trigger.id or "", str(trigger.trigger_type), trigger.name or trigger.id or "",
+                stage="action", error=error, action_type="then", project_id=trigger.project_id,
+            )
+        return DispatchOutcome(results, errors, int((time.monotonic() - started) * 1000))
     for action in trigger.actions:
         try:
             handler = get_action_handler(action.action_type)
@@ -472,9 +512,46 @@ class Trigger(Entity):
     # in-memory subscription could not hold one, which is why a wizard's
     # declared trigger is a row.
     fire_once: bool = APIField(default=False, description="Fire at most once ever (TAG only). The trigger's own counter is the durable record; a spent trigger is suppressed, not deleted, so the Triggers screen still shows that it ran.")
+    #: The GATE (docs/snippets/stream-inbox-automations.md): a `compute_op.decision` op's exe_data, asked of the
+    #: event's subject before the counter moves. A declined fire costs one decision and spends nothing.
+    gate: Optional[dict[str, Any]] = APIField(None, description="The if: a decision op (questions, require, input, sentence) asked before a fire counts. TAG only.")
+    #: What it does, as a WIZARD (`trigger.then`): a ref, inline steps, or the run_agent / run_script sugar.
+    #: Runs instead of `actions` when set.
+    then: Optional[dict[str, Any]] = APIField(None, description="What runs on a fire, as a wizard: {ref} | {steps, ops} | {run_agent} | {run_script}.")
 
     _api_visible: ClassVar[bool] = True
     _unique: ClassVar[list[str]] = []
+
+    @property
+    def gate_op(self) -> Optional["DecisionOp"]:
+        """The rule's ``if`` as the op it is — None when it has none, or only a sentence nothing has
+        worded. Raises ``pydantic.ValidationError`` for a worded gate that is not a valid op; every
+        reader asks here instead of testing the dict."""
+        from flow_sdk.schema.data_spec.compute_op_spec import DecisionOp  # noqa: PLC0415
+
+        gate = self.gate
+        return DecisionOp.model_validate(gate) if gate and gate.get("questions") else None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _word_gate(cls, data: Any) -> Any:
+        """A bare ``gate: {"sentence": …}`` — what the screen sends, what a file's string ``if`` is —
+        becomes the decision op the event's subject words, on construction. Every writer (a file's
+        index, the screen's create / update, a draft for the fast test) converges here. A gate that
+        already carries ``questions`` stands; a sentence nothing can word is kept as a sentence-only
+        gate, which Check reports."""
+        if not isinstance(data, dict):
+            return data
+        gate = data.get("gate")
+        if not isinstance(gate, dict) or gate.get("questions") or not str(gate.get("sentence") or "").strip():
+            return data
+        from flow_sdk.automations.decision_subjects import gate_for  # noqa: PLC0415
+
+        try:
+            worded = gate_for(str(data.get("tag_pattern") or ""), str(gate["sentence"]).strip())
+        except LookupError:
+            return data
+        return {**data, "gate": worded}
 
     @model_validator(mode="before")
     @classmethod
@@ -909,6 +986,186 @@ class Trigger(Entity):
     # ``automation.*`` DataSpec, dumped. The UI reaches these only through the
     # TS SDK's ``Trigger`` methods.
 
+    # ── stream inbox automations: the builder and the gate's verbs ──────────────────
+
+    @classmethod
+    async def on_message(cls, *, catch: str, sources: Optional[list[Any]] = None, agent: Any, prompt: str,
+                         name: str = "", project_id: Optional[str] = None, enabled: bool = True) -> "Trigger":
+        """A rule on messages arriving: when one lands on ``sources`` (every channel when none),
+        if ``catch`` is true of it (one yes/no question, 85% sure), have ``agent`` do ``prompt``
+        with the message as its input. The screen's Save, the CLI and a ``trigger.json`` all
+        produce this row; a rule in a project is written to its file by the caller."""
+        from flow_sdk.builtin.trigger_arming import arm_trigger  # noqa: PLC0415
+        from flow_sdk.stream_inbox.message_subject import MESSAGE_PROJECTED  # noqa: PLC0415
+        from flow_sdk.tags.envelope import target_of  # noqa: PLC0415
+
+        agent_id = f"agent-{agent.id}" if hasattr(agent, "id") else str(agent)
+        agent_name = getattr(agent, "name", None) or agent_id
+        scope = [target_of("data_source", str(getattr(s, "id", s))) for s in (sources or [])]
+        row = cls(
+            name=name or f"{catch.strip().rstrip('.')[:1].upper()}{catch.strip().rstrip('.')[1:]} → {agent_name}",
+            trigger_type=TriggerType.TAG,
+            tag_pattern=MESSAGE_PROJECTED,
+            tag_scope=scope,
+            gate={"sentence": catch},  # worded by the row (`_word_gate`), like every other writer
+            then={"run_agent": {"agent": agent_id, "prompt": prompt}},
+            enabled=enabled,
+            project_id=project_id,
+            scope="user",
+        )
+        await row.save()
+        await arm_trigger(row, replace=True)
+        return row
+
+    async def decide_on(self, *, text: Optional[str] = None, message_id: Optional[str] = None) -> Any:
+        """Ask this rule's gate about one state — ``text=`` typed in, or the thing ``message_id=`` names —
+        and answer the ``DecisionVerdict``. Nothing is recorded and nothing runs."""
+        from flow_sdk.automations.decision_subjects import NotCaught, for_trigger  # noqa: PLC0415
+        from flow_sdk.core.compute_op.decision import decide_op  # noqa: PLC0415
+        from flow_sdk.schema.data_spec.returned_value_spec import DecisionVerdict  # noqa: PLC0415
+
+        op = self.gate_op
+        if op is None:
+            return DecisionVerdict.not_applicable("this rule has no if")
+        subject = for_trigger(self)
+        if subject is None:
+            return DecisionVerdict.not_applicable("nothing knows what this rule decides about")
+        try:
+            state = await subject.by_id(message_id) if message_id else subject.from_text(text or "")
+        except LookupError as exc:
+            return DecisionVerdict.not_found(str(exc) or "no such thing")
+        except NotCaught as exc:
+            return DecisionVerdict.not_yet(exc.reason, ran=False, reason=exc.reason)
+        return await decide_op(op, state)
+
+    async def decide_on_recent(self, limit: int = 20) -> list[dict[str, Any]]:
+        """The try list: this rule's gate asked of recent states on its sources. A state the rule already
+        decided for real answers from the log (no call); the rest are asked now. Each row: ``state``,
+        ``verdict``, ``decided_at`` (when it came from the log), ``agentic_process_id``."""
+        from flow_sdk.automations.decision_subjects import for_trigger  # noqa: PLC0415
+        from flow_sdk.automations.runs import rows_for  # noqa: PLC0415
+        from flow_sdk.core.compute_op.decision import decide_op  # noqa: PLC0415
+        from flow_sdk.fs_store.operations.trigger_log import discover  # noqa: PLC0415
+
+        subject = for_trigger(self)
+        op = self.gate_op
+        if subject is None or op is None:
+            return []
+        states = await subject.recent(self, limit)
+        known: dict[str, dict[str, Any]] = {}
+        for row in rows_for(str(self.id), self.name, discover(self.name, limit=limit * 4)):
+            sid = row.get("subject_id")
+            if sid and row.get("decision") and sid not in known:
+                known[sid] = row
+        # The states the log has not decided are asked together: each is one independent call.
+        fresh = [s for s in states if subject.subject_id(s) not in known]
+        verdicts = dict(zip((subject.subject_id(s) for s in fresh), await asyncio.gather(*(decide_op(op, s) for s in fresh))))
+        out: list[dict[str, Any]] = []
+        for state in states:
+            sid = subject.subject_id(state)
+            row = known.get(sid)
+            if row is not None:
+                # One verdict shape for both: a logged decision says `caught`, a verdict says `met`.
+                decision = row["decision"]
+                out.append({"state": state.model_dump(mode="json"),
+                            "verdict": {**decision, "met": bool(decision.get("caught"))},
+                            "decided_at": row.get("ts"), "agentic_process_id": row.get("agentic_process_id")})
+            else:
+                out.append({"state": state.model_dump(mode="json"), "verdict": verdicts[sid].model_dump(mode="json"),
+                            "decided_at": None, "agentic_process_id": None})
+        return out
+
+    @classmethod
+    async def runs(cls, trigger_id: Optional[str] = None, *, include_declined: bool = False,
+                   include_tests: bool = True, include_builtin: bool = True, limit: int = 200) -> list[Any]:
+        """Runs newest first — one rule's when ``trigger_id`` is given (its own log, by name), else every
+        rule's. Each launched agent run is asked how it ended. ``include_builtin=False`` leaves out
+        Flowpad's own (a transcript watcher fires on every step of an agent's work)."""
+        from flow_sdk.automations.runs import DECLINED_CODES, fold, join_processes, rows_for  # noqa: PLC0415
+        from flow_sdk.fs_store.operations.trigger_log import discover  # noqa: PLC0415
+
+        if trigger_id:
+            row = await cls.get_by_id(trigger_id)
+            # The log is keyed by rule name: one file. A renamed rule's old rows sit under its old name.
+            rows = rows_for(trigger_id, row.name if row else None,
+                            discover(row.name, limit=limit * 2) if row else discover(None, limit=10_000, per_rule=limit * 2))
+        elif not include_builtin:
+            builtin = {str(t.id) for t in await cls.every() if t.is_builtin}
+            rows = [r for r in discover(None, limit=10_000, per_rule=limit * 2)
+                    if r.get("trigger_id") not in builtin][: limit * 2]
+        else:
+            rows = discover(None, limit=limit * 2)
+        runs = fold(rows)
+        if not include_tests:
+            runs = [r for r in runs if not r.is_test]
+        if not include_declined:
+            runs = [r for r in runs if r.reason_code not in DECLINED_CODES]
+        return await join_processes(runs[:limit])
+
+    @classmethod
+    async def started_last_hour(cls) -> int:
+        """Real fires (not tests, not skips) younger than an hour over the person's own rules — the
+        top-bar count. Tails the logs; no describing, no joining."""
+        from flow_sdk.automations.runs import rows_for, started_since  # noqa: PLC0415
+        from flow_sdk.fs_store.operations.trigger_log import discover  # noqa: PLC0415
+
+        # Each own rule's log tail, read by name (Flowpad's own rules are never opened), counted on the
+        # raw rows: nothing is folded, described or joined for a number.
+        floor = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
+        return sum(
+            started_since(rows_for(str(t.id), t.name, discover(t.name, limit=LAST_HOUR_ROWS)), floor)
+            for t in await cls.every() if not t.is_builtin and t.name
+        )
+
+    @classmethod
+    async def overview(cls, *, include_inactive: bool = False) -> list[Any]:
+        """Every automation as a sentence with its health (``automation.summary``)."""
+        from flow_sdk.automations.overview import overview  # noqa: PLC0415
+
+        return await overview(include_inactive=include_inactive)
+
+    @core_action.post(action_name="decide_spec")
+    async def decide_spec_action(cls, request: Request) -> ApiResponse:
+        """POST /api/v1/graph/trigger/decide_spec — the fast test for a rule not saved yet (or edited):
+        ``{"spec": {<trigger fields>}, "text": …}`` or ``"message_id"``. Answers the verdict; records nothing."""
+        from pydantic import ValidationError  # noqa: PLC0415
+
+        from flow_sdk.automations.check import trigger_from_spec  # noqa: PLC0415
+
+        request_info = get_current_request_info()
+        body = (await request_info.get_post_data() if request_info else None) or {}
+        try:
+            draft = trigger_from_spec(body.get("spec") if isinstance(body.get("spec"), dict) else {})
+        except (ValidationError, ValueError) as exc:
+            return ApiFailResponse(message=f"That rule can't be read: {exc}", status_code=422)
+        verdict = await draft.decide_on(text=body.get("text"), message_id=body.get("message_id"))
+        return ApiSuccessResponse(data=verdict.model_dump(mode="json"))
+
+    @core_action.post(action_name="decide_on")
+    async def decide_on_action(self, request: Request) -> ApiResponse:
+        """POST /api/v1/graph/trigger/{id}/decide_on — the fast test: ``{"text": …}`` or ``{"message_id": …}``.
+        Answers the verdict (``compute.returned.decision``). Nothing is recorded, nothing runs."""
+        request_info = get_current_request_info()
+        body = (await request_info.get_post_data() if request_info else None) or {}
+        verdict = await self.decide_on(text=body.get("text"), message_id=body.get("message_id"))
+        return ApiSuccessResponse(data=verdict.model_dump(mode="json"))
+
+    @core_action.get(action_name="decide_on_recent")
+    async def decide_on_recent_action(self, request: Request) -> ApiResponse:
+        """GET /api/v1/graph/trigger/{id}/decide_on_recent?limit=20 — the try list: the rule's gate
+        asked of recent states on its sources. A state the rule already decided for real answers
+        from the log (no call); the rest are asked now. Each row: the state, its verdict, ``decided_at``
+        when it came from the log."""
+        params = get_current_request_info().request_parameters or {}
+        limit = max(1, min(50, int(params.get("limit", 20))))
+        return ApiSuccessResponse(data=await self.decide_on_recent(limit))
+
+    @core_action.get(action_name="started_last_hour")
+    async def started_last_hour_action(cls, request: Request) -> ApiResponse:
+        """GET /api/v1/graph/trigger/started_last_hour — real fires in the last hour over the person's
+        own rules: the top-bar count, cheap enough to poll."""
+        return ApiSuccessResponse(data=await cls.started_last_hour())
+
     @core_action.get(action_name="overview")
     async def overview_action(cls, request: Request) -> ApiResponse:
         """GET /api/v1/graph/trigger/overview — every automation as a sentence with its health.
@@ -1035,28 +1292,18 @@ class Trigger(Entity):
         every automation's. ``include_builtin=false`` leaves out Flowpad's own (a
         transcript watcher fires on every step of an agent's work and would bury
         everything else). Each launched agent run is asked how it ended."""
-        from flow_sdk.automations.runs import fold, join_processes, rows_for  # noqa: PLC0415
-        from flow_sdk.fs_store.operations.trigger_log import discover  # noqa: PLC0415
-
         params = get_current_request_info().request_parameters or {}
-        limit = max(1, min(1000, int(params.get("limit", 200))))
-        trigger_id = str(params.get("trigger_id") or "") or None
-        if trigger_id:
-            # Every file is read (a renamed rule's old rows sit under its old name),
-            # but only this rule's recent rows from each.
-            row = await cls.get_by_id(trigger_id)
-            rows = rows_for(trigger_id, row.name if row else None,
-                            discover(None, limit=10_000, per_rule=limit * 2))
-        elif str(params.get("include_builtin", "true")).lower() == "false":
-            builtin = {str(t.id) for t in await cls.every() if t.is_builtin}
-            rows = [r for r in discover(None, limit=10_000, per_rule=limit * 2)
-                    if r.get("trigger_id") not in builtin][: limit * 2]
-        else:
-            rows = discover(None, limit=limit * 2)
-        runs = fold(rows)
-        if str(params.get("include_tests", "true")).lower() == "false":
-            runs = [r for r in runs if not r.is_test]
-        runs = await join_processes(runs[:limit])
+
+        def flag(name: str, default: str) -> bool:
+            return str(params.get(name, default)).lower() == "true"
+
+        runs = await cls.runs(
+            str(params.get("trigger_id") or "") or None,
+            include_declined=flag("include_declined", "false"),
+            include_tests=flag("include_tests", "true"),
+            include_builtin=flag("include_builtin", "true"),
+            limit=max(1, min(1000, int(params.get("limit", 200)))),
+        )
         status = str(params.get("status") or "")
         if status:
             runs = [r for r in runs if r.status == status]
@@ -1120,7 +1367,8 @@ class Trigger(Entity):
         body = (await request_info.get_post_data() if request_info else None) or {}
         event = body.get("event") if isinstance(body, dict) else None
         try:
-            started = await run_once(self, event if isinstance(event, dict) else None)
+            started = await run_once(self, event if isinstance(event, dict) else None,
+                                     message_id=body.get("message_id") if isinstance(body, dict) else None)
         except RunOnceRefused as exc:
             return ApiFailResponse(message=str(exc), status_code=422)
         return ApiSuccessResponse(data=started.model_dump(mode="json"))

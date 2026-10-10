@@ -304,14 +304,25 @@ interface DataOpMessage extends EntityMessage {
   data?: { [key: string]: any }; // Use a dictionary to represent the data or define the specific structure if known
 }
 
+/**
+ * How many sequence numbers behind the newest accepted data-op a late frame can
+ * still be. The backend stamps one rising counter on every outbound data-op, so
+ * an entity's last sequence is needed only to refuse an older frame for it; once
+ * the stream is this far past that sequence, no such frame is still in flight.
+ * A distance in frames, not a time.
+ */
+export const DATA_OP_REORDER_WINDOW = 4096;
+
 export class ConnectionManager extends EventEmitter {
   id = uuidv4();
   private static instance: ConnectionManager;
   private socket: WebSocket | null = null;
   private pendingRequests: Map<string, PendingRequest<unknown>> = new Map();
   private warnedMessageTypes = new Set<string>();
-  /** Last accepted data-op sequence per entity on the current socket. */
+  /** Last accepted data-op sequence per entity on the current socket, in acceptance order. */
   private lastDataOpInstanceByEntity = new Map<string, number>();
+  /** Highest data-op sequence accepted on the current socket. */
+  private highestDataOpInstance = 0;
   private requestTimeoutMs: number = 30000;
 
   // Reconnect state
@@ -521,6 +532,7 @@ export class ConnectionManager extends EventEmitter {
     // deliver frames after this new connection opens, so sequence ownership is
     // per socket generation.
     this.lastDataOpInstanceByEntity.clear();
+    this.highestDataOpInstance = 0;
     this.reportLifecycle('ws_open', { attempts_used: this.reconnectAttempts });
     // Reset reconnect attempts on successful connection
     this.reconnectAttempts = 0;
@@ -761,7 +773,16 @@ export class ConnectionManager extends EventEmitter {
     if (typeof instanceId === 'number' && Number.isSafeInteger(instanceId)) {
       const previous = this.lastDataOpInstanceByEntity.get(key);
       if (previous !== undefined && instanceId <= previous) return;
+      // Re-insert so the map stays in acceptance order, then forget the entities
+      // at its front whose last sequence is outside the reorder window.
+      this.lastDataOpInstanceByEntity.delete(key);
       this.lastDataOpInstanceByEntity.set(key, instanceId);
+      if (instanceId > this.highestDataOpInstance) this.highestDataOpInstance = instanceId;
+      const floor = this.highestDataOpInstance - DATA_OP_REORDER_WINDOW;
+      for (const [staleKey, sequence] of this.lastDataOpInstanceByEntity) {
+        if (sequence >= floor) break;
+        this.lastDataOpInstanceByEntity.delete(staleKey);
+      }
     }
     this.emit('on_data_op', key, data.op, data.data, fromEntity?.toString() ?? null);
   }

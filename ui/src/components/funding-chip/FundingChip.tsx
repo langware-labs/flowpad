@@ -9,8 +9,8 @@ import { openHarnessLoginModal } from '@src/components/harness-login/harness-log
 import { endpointOf, labelForWorker, useLlmSources, workerOf } from '@src/components/llm-sources/use-llm-sources';
 
 /**
- * Who is paying for the next agent run, in two glyphs — the default harness, and the KIND of
- * credential funding it.
+ * Who is paying for the next agent run — the default harness's mark, and the ONE word for what
+ * funds it: Plan, API key, LLM Endpoint, or No source.
  *
  * It exists because that answer was unreachable. A box can sit pinned to a stored OpenRouter
  * key while a paid vendor subscription is signed in and idle, and every process silently
@@ -88,8 +88,10 @@ export function FundingChip() {
       data-testid="funding-chip-trigger"
       data-unfunded={unfunded || undefined}
     >
-      <glyph.Icon className={cn('h-3.5 w-3.5', glyph.className)} />
       <harnessMeta.Icon className={cn('h-3.5 w-3.5', harnessMeta.iconClassName)} />
+      <glyph.Icon className={cn('h-3.5 w-3.5', glyph.className)} />
+      {/* The same word the Assistants & keys row shows for this harness — one vocabulary. */}
+      <span data-testid="funding-chip-word">{t(glyph.short)}</span>
     </button>
   );
 }

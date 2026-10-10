@@ -3,6 +3,7 @@ import { i18n } from '@lingui/core';
 import { msg } from '@lingui/core/macro';
 import { Download, Folder, FolderPlus, FolderTree, GitBranch, Trash2 } from 'lucide-react';
 import { DockPointer } from '@src/navigation/DockPointer';
+import { assetRowOpen } from '@src/components/browseable-tree/open';
 import apiClient from '@sdk/client';
 import { VFSPath, type DependencyState, type ProjectContextDirInfo, type ProjectMenuNode, type TypeId } from '@sdk';
 import { CountChip } from '@src/components/browseable-tree/CountChip';
@@ -127,7 +128,10 @@ function typeRowChildren(dir: string, typeName: string, selfId: string) {
       label: e.name || basename(normalizeRel(e.asset_ref)) || e.asset_ref,
       icon: <Icon className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />,
       hasChildren: false as const,
-      pointer: DockPointer.forAssetEditor(typeName, e.asset_ref),
+      ...assetRowOpen(
+        { record_id: e.id, record_type: typeName, asset_ref: e.asset_ref },
+        DockPointer.forAssetEditor(typeName, e.asset_ref),
+      ),
       // The typeid form, so a typeid-addressed URL still selects this row.
       selectionKey: `${e.type}-${e.id}`,
     }));

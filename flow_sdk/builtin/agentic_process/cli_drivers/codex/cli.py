@@ -83,7 +83,6 @@ class CodexAgentOptions(AgentOptions):
 
     EXECUTABLE = "codex"
     PROMPT_CHANNEL = "stdin"  # codex reads the prompt from stdin (the `-` sentinel)
-    SYSTEM_PROMPT_FLAG = None  # no flag — a system-prompt addition prepends into stdin
 
     def _common_tail(self) -> list[str]:
         """Flags shared by both transports: cwd, model, add-dirs, resume."""

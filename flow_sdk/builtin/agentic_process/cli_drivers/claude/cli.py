@@ -50,7 +50,6 @@ class ClaudeAgentOptions(AgentOptions):
 
     EXECUTABLE = "claude"
     PROMPT_CHANNEL = "argv"  # claude takes the prompt as a `-- <text>` positional
-    SYSTEM_PROMPT_FLAG = "--append-system-prompt"
     SYSTEM_PROMPT_FILE_FLAG = "--append-system-prompt-file"
 
     def __init__(
@@ -223,8 +222,6 @@ class ClaudeAgentOptions(AgentOptions):
         # is exactly this string, and the interactive CLI accepts the flag.
         if self.system_prompt_file and self.SYSTEM_PROMPT_FILE_FLAG:
             rest.extend([self.SYSTEM_PROMPT_FILE_FLAG, self.system_prompt_file])
-        if self.system_prompt_append and self.SYSTEM_PROMPT_FLAG:
-            rest.extend([self.SYSTEM_PROMPT_FLAG, self.system_prompt_append])
 
         def quote_all(values: list[str]) -> list[str]:
             return [quote_shell_arg(value, platform) for value in values]

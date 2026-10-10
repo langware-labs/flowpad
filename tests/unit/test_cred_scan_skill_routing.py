@@ -81,6 +81,14 @@ def test_bundling_writes_only_through_declare():
     assert "--types credential" not in text
 
 
+def test_bundling_says_what_each_credential_is_needed_for():
+    # The setup dialog shows `needed_for` beside the credential and `justification` behind its info icon;
+    # a scanned credential without them asks a person for a key and never says why.
+    text = (SKILL_DIR / "phases/3-bundle.md").read_text(encoding="utf-8")
+    assert '"needed_for"' in text and '"justification"' in text, "the example manifest carries both"
+    assert "`needed_for` is required" in text
+
+
 def test_the_skill_never_reaches_for_the_navigating_verb():
     forbidden = "flow " + "navigate"
     for path in [INDEX, *_authored_files()]:

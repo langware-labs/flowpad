@@ -33,6 +33,10 @@ import pytest
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _AGENTS_DIR = _REPO_ROOT / "flow_sdk" / "system_projects" / "flowpad_assistant" / ".claude" / "agents"
+# The shipped system-prompt layers (``system_prompt.shipped_layer``). The chat
+# personas' shared language rule lives in ``common_ui.md`` — every app launch
+# gets it — so it is held to the same rules as a persona.
+_LAYERS_DIR = _REPO_ROOT / "flow_sdk" / "system_projects" / "flowpad_assistant" / "instructions"
 
 # `\s+` between every word on purpose: the original directive wrapped "Never switch\n
 # to English" across a newline, and a naive `grep "Never switch to English"` found
@@ -52,7 +56,7 @@ _LANGUAGE_HEADING = re.compile(r"^\*\*Language:\*\*", re.MULTILINE)
 
 
 def _persona_files() -> list[Path]:
-    return sorted(_AGENTS_DIR.glob("*.md"))
+    return sorted(_AGENTS_DIR.glob("*.md")) + sorted(_LAYERS_DIR.glob("*.md"))
 
 
 def _language_block(text: str) -> str | None:
@@ -119,17 +123,17 @@ def test_language_block_names_a_fallback(path: Path):
     )
 
 
-def test_vibe_and_standard_agree():
+def test_chat_personas_share_one_language_rule():
     """The two chat personas are the same product surface; their language rule
-    drifting apart is how one of them keeps the bug after the other is fixed."""
-    vibe = _language_block((_AGENTS_DIR / "vibe.md").read_text(encoding="utf-8"))
-    standard = _language_block((_AGENTS_DIR / "standard.md").read_text(encoding="utf-8"))
-    assert vibe is not None and standard is not None, "both chat personas should carry a language rule"
-    assert vibe.split() == standard.split(), (
-        "vibe.md and standard.md language rules differ (compared ignoring whitespace):\n"
-        f"  vibe    : {vibe}\n"
-        f"  standard: {standard}"
-    )
+    drifting apart is how one of them keeps the bug after the other is fixed. So
+    neither carries its own: the one rule lives in ``common_ui.md``, the layer
+    every app launch receives."""
+    for name in ("vibe.md", "standard.md"):
+        assert _language_block((_AGENTS_DIR / name).read_text(encoding="utf-8")) is None, (
+            f"{name} carries its own **Language:** block — the rule belongs in instructions/common_ui.md"
+        )
+    shared = _language_block((_LAYERS_DIR / "common_ui.md").read_text(encoding="utf-8"))
+    assert shared is not None, "instructions/common_ui.md must carry the chat language rule"
 
 
 def test_detector_catches_the_original_regression():

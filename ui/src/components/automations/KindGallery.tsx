@@ -6,21 +6,26 @@
  * Agent activity is listed last and marked Advanced — those rules are code.
  */
 import { Trans, useLingui } from '@lingui/react/macro';
-import type { AutomationKind } from '@sdk';
 import { Sparkles } from 'lucide-react';
 import { cn } from '@src/lib/utils';
-import { AUTOMATION_RECIPES } from './automation-recipes';
-import { KIND_ICON } from './KindBadge';
+import { AUTOMATION_RECIPES, MESSAGE_RECIPES } from './automation-recipes';
+import type { CreatingKind } from './automations-pointer';
+import { CREATING_ICON } from './KindBadge';
 
 export interface KindGalleryProps {
-  onPick: (kind: AutomationKind, recipe?: string) => void;
+  onPick: (kind: CreatingKind, recipe?: string) => void;
   /** Compact = inside the list header's chooser rather than the full empty state. */
   compact?: boolean;
 }
 
 export function KindGallery({ onPick, compact }: KindGalleryProps) {
   const { t } = useLingui();
-  const kinds: Array<{ kind: AutomationKind; title: string; body: string; advanced?: boolean }> = [
+  const kinds: Array<{ kind: CreatingKind; title: string; body: string; advanced?: boolean }> = [
+    {
+      kind: 'message',
+      title: t`When a message arrives`,
+      body: t`Mail, chat, a support channel. Say what the message must be about; Flowpad reads each one and decides.`,
+    },
     {
       kind: 'schedule',
       title: t`On a schedule`,
@@ -43,6 +48,11 @@ export function KindGallery({ onPick, compact }: KindGalleryProps) {
       advanced: true,
     },
   ];
+  // Message recipes first: the door most people come through.
+  const recipes: Array<{ id: string; kind: CreatingKind }> = [
+    ...MESSAGE_RECIPES.map((r) => ({ id: r.id, kind: 'message' as const })),
+    ...AUTOMATION_RECIPES.map((r) => ({ id: r.id, kind: r.kind })),
+  ];
   const recipeWords: Record<string, { title: string; body: string }> = {
     'morning-briefing': {
       title: t`Morning briefing`,
@@ -53,6 +63,8 @@ export function KindGallery({ onPick, compact }: KindGalleryProps) {
       body: t`When a .md file in a folder changes, an agent reviews it.`,
     },
     'task-assigned': { title: t`When a task changes`, body: t`An agent reads the task and tells you if it needs you.` },
+    'refund-requests': { title: t`Refund requests → an agent`, body: t`Mail that asks for a refund; an agent drafts the reply.` },
+    'urgent-to-task': { title: t`Urgent messages → a task`, body: t`Anything that needs a person today becomes a task for you.` },
   };
 
   return (
@@ -63,7 +75,7 @@ export function KindGallery({ onPick, compact }: KindGalleryProps) {
         </h3>
         <div className="grid gap-3 sm:grid-cols-2">
           {kinds.map(({ kind, title, body, advanced }) => {
-            const Icon = KIND_ICON[kind];
+            const Icon = CREATING_ICON[kind];
             return (
               <button
                 key={kind}
@@ -95,7 +107,7 @@ export function KindGallery({ onPick, compact }: KindGalleryProps) {
           <Trans>Or start from one of these</Trans>
         </h3>
         <div className="grid gap-2 sm:grid-cols-3">
-          {AUTOMATION_RECIPES.map((r) => (
+          {recipes.map((r) => (
             <button
               key={r.id}
               type="button"

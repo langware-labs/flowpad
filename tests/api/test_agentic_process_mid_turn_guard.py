@@ -15,6 +15,7 @@ import pytest
 
 from flow_sdk.builtin.agentic_process.agentic_process import _PROMPT_LOCKS
 from flow_sdk.responses.response import ApiResponse
+from flow_sdk.stream_inbox._locks import keyed_loop_lock
 
 
 async def _create_process(client) -> str:
@@ -32,8 +33,9 @@ async def test_switch_mode_and_restart_409_while_prompt_in_flight(bootstrapped_c
     base = f"/api/v1/graph/agentic_process/{pid}"
 
     # Simulate an in-flight prompt turn by holding the real per-process lock the
-    # prompt path acquires (same module-level registry the handler checks).
-    lock = _PROMPT_LOCKS[pid]
+    # prompt path acquires (same module-level registry the handler checks). The
+    # registry is weak-valued, so ``lock`` must stay referenced while it is held.
+    lock = keyed_loop_lock(_PROMPT_LOCKS, pid)
     await lock.acquire()
     try:
         for body in ({"mode": "interactive"}, {"mode": "cli"}):

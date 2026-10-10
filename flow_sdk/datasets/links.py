@@ -216,15 +216,88 @@ def slot_values(row: Any) -> Iterator[tuple[str, Any]]:
                 yield slot, value
 
 
-def link_index(owner: Path | str, *, read: Any) -> dict[str, list[tuple[Path, str, str, Any]]]:
-    """``{reference: [(dataset folder, row kind, key, row or None)]}`` -- who points at whom, across
-    the datasets beside ``owner``, read ONCE. ``read(folder)`` answers ``(typed rows, broken)`` with
-    ``broken`` as ``(key, input as stored)`` (``Dataset.read_lenient``): a row's every slot counts,
-    and a row that does not fit counts by its stored input (its row is None) -- so a row broken today
-    still protects what it points at."""
-    root, index = Path(owner) / "agentic-assets" / DATASET_FAMILY, {}
+def _spec_forms(spec: Any) -> Optional[list]:
+    """The authoring forms of every slot a dataset's ``spec`` declares, or None when it cannot be read
+    (a kind nobody registered): the caller then assumes the dataset may link to anything."""
+    if isinstance(spec, str):
+        from flow_sdk.schema.data_spec.dataset_spec import DatasetSpec  # noqa: PLC0415
+
+        try:
+            spec = getattr(DatasetSpec.parse(spec), "__authoring__", None)
+        except ValueError:
+            return None
+    examples = spec.get("examples") if isinstance(spec, dict) else None
+    rows = examples if isinstance(examples, list) else [examples]
+    if not rows or not all(isinstance(row, dict) for row in rows):
+        return None
+    return [form for row in rows for slot, form in row.items() if slot in SLOTS]
+
+
+def _kinds_within(forms: list) -> Optional[set[str]]:
+    """Every kind a FIELD of these forms names, all the way down -- the kinds a value of these forms
+    can hold a reference to. A slot's own kind is what the row IS, not a link (unless one of its
+    fields names it again). None when a kind is not registered (its fields are unknown)."""
+    from flow_sdk.schema.data_spec.declared import _refs  # noqa: PLC0415
+    from flow_sdk.schema.data_spec.spec import DataSpec  # noqa: PLC0415
+
+    def fields_of(kind: str) -> Optional[list[str]]:
+        shape = DataSpec.parse(kind)
+        return None if shape is Any else _refs(getattr(shape, "__authoring__", None) or {})
+
+    held: set[str] = set()
+    todo: list[str] = []
+    for form in forms:
+        if isinstance(form, str):   # the slot's kind: only its fields count
+            for kind in _refs(form):
+                inner = fields_of(kind)
+                if inner is None:
+                    return None
+                todo += inner
+        else:
+            todo += _refs(form)
+    while todo:
+        kind = todo.pop()
+        if kind in held:
+            continue
+        held.add(kind)
+        inner = fields_of(kind)
+        if inner is None:
+            return None
+        todo += inner
+    return held
+
+
+def linkers_of(kind: str, owner: Path | str) -> list[Path]:
+    """The dataset folders beside ``owner`` whose rows CAN reach a ``kind`` row -- by a link of their
+    own, or through the kinds their fields name, all the way down (a deal names a lead, a lead names
+    a company: both reach a company). Read off the schemas; no row is opened. A dataset whose kinds
+    do not resolve is included (it may link to anything). What ``referrers`` and the rule checks
+    scan instead of every dataset of the project: a kind nothing links to costs nothing to delete.
+    (A row that no longer fits is still found by its stored references, as long as its dataset's
+    schema declares a way to ``kind``.)"""
+    from flow_sdk.worldview.ontology import kind_matches  # noqa: PLC0415
+
+    root, found = Path(owner) / "agentic-assets" / DATASET_FAMILY, []
     for folder in sorted(root.iterdir()) if root.is_dir() else []:
         if not (folder / MANIFEST).is_file():
+            continue
+        forms = _spec_forms(_manifest_spec(folder))
+        kinds = _kinds_within(forms) if forms is not None else None
+        if kinds is None or any(kind_matches(k, kind) for k in kinds):
+            found.append(folder)
+    return found
+
+
+def link_index(owner: Path | str, *, read: Any, only: Optional[list[Path]] = None) -> dict[str, list[tuple[Path, str, str, Any]]]:
+    """``{reference: [(dataset folder, row kind, key, row or None)]}`` -- who points at whom, across
+    the datasets beside ``owner`` (those in ``only`` when given: ``linkers_of``), read ONCE.
+    ``read(folder)`` answers ``(typed rows, broken)`` with ``broken`` as ``(key, input as stored)``
+    (``Dataset.read_lenient``): a row's every slot counts, and a row that does not fit counts by its
+    stored input (its row is None) -- so a row broken today still protects what it points at."""
+    root, index = Path(owner) / "agentic-assets" / DATASET_FAMILY, {}
+    wanted = None if only is None else set(only)
+    for folder in sorted(root.iterdir()) if root.is_dir() else []:
+        if not (folder / MANIFEST).is_file() or (wanted is not None and folder not in wanted):
             continue
         kind = row_kind(_manifest_spec(folder))
         rows, broken = read(folder)
@@ -237,9 +310,14 @@ def link_index(owner: Path | str, *, read: Any) -> dict[str, list[tuple[Path, st
     return index
 
 
-def referrers(ref: str, owner: Path | str, *, read: Any) -> list[str]:
-    """Who points at ``ref``: ``"<kind> <key>"`` per row, across the datasets beside it (``link_index``)."""
-    return [f"{kind} {key}" for _, kind, key, _ in link_index(owner, read=read).get(ref, [])]
+def referrers(ref: str, owner: Path | str, *, read: Any, index: Optional[dict] = None) -> list[tuple[Path, str, str]]:
+    """Who points at ``ref``: ``(dataset folder, row kind, key)`` per row. Only the datasets that can
+    link to its kind are read (``linkers_of``); ``index`` is a ``link_index`` already built, for a
+    caller asking about many rows at once."""
+    if index is None:
+        parsed = parse_ref(ref)
+        index = link_index(owner, read=read, only=linkers_of(parsed[0], owner) if parsed else None)
+    return [(folder, kind, key) for folder, kind, key, _ in index.get(ref, [])]
 
 
 def find_row(ref: str, owner: Path | str, *, cache: Optional[dict] = None) -> Optional[tuple[Path, str]]:
@@ -262,5 +340,5 @@ def detail_lines(details: list[dict]) -> list[str]:
     return [f"{d['path']}: {d['message']}" if d.get("path") else d["message"] for d in details]
 
 
-__all__ = ["SLOTS", "dangling_details", "datasets_for_kind", "detail_lines", "find_row", "link_index", "links_in",
+__all__ = ["SLOTS", "dangling_details", "datasets_for_kind", "detail_lines", "find_row", "link_index", "linkers_of", "links_in",
            "owner_of", "raw_dangling_details", "referrers", "refs_in_raw", "row_kind", "shape_details", "slot_values"]

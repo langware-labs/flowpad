@@ -28,7 +28,12 @@ from flow_sdk.app.actions.watch_registry import add_watch, remove_watch
 from flow_sdk.builtin.agentic_process import AgenticProcess
 from flow_sdk.builtin.process_lifecycle import ProcessStatus
 from flow_sdk.responses.response import ApiSuccessResponse
-from flow_sdk.server.pty_recovery import reconcile_orphaned_workers, run_pty_recovery
+from flow_sdk.server.pty_recovery import (
+    mark_recovered,
+    reconcile_orphaned_workers,
+    run_pty_recovery,
+    was_recovered,
+)
 
 
 def _proc(**kwargs) -> AgenticProcess:
@@ -113,3 +118,35 @@ async def test_run_pty_recovery_keys_on_pty_mode(pty_mode, should_respawn, monke
         remove_watch(watcher, watch_key)
 
     assert (proc.id in respawned) is should_respawn
+
+
+# The ``recovered`` flag describes the respawned worker, so it goes with the
+# process: it used to be kept for the backend lifetime, one id per recovered
+# process, and a closed process kept sending ``recovered_msg`` to every new
+# watcher (a pointless forced re-attach). Both lifecycle exits enter through
+# the real ``close()`` / ``delete()``; the self-exit arm is covered in
+# ``test_agentic_process/test_self_exit_releases_transcript_state.py``.
+
+
+@pytest.mark.asyncio
+async def test_delete_forgets_recovered():
+    proc = _proc(status=ProcessStatus.STOPPED.value, visible=False, pty_mode=True)
+    await proc.save()
+    mark_recovered(proc.id)
+    assert was_recovered(proc.id)
+
+    await proc.delete()
+
+    assert not was_recovered(proc.id)
+    assert await AgenticProcess.get_by_id(proc.id) is None
+
+
+@pytest.mark.asyncio
+async def test_close_forgets_recovered():
+    proc = _proc(status=ProcessStatus.RUNNING.value, visible=True, pty_mode=True)
+    await proc.save()
+    mark_recovered(proc.id)
+
+    assert await proc.close() is True
+
+    assert not was_recovered(proc.id)

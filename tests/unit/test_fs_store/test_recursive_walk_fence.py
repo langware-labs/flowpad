@@ -42,7 +42,6 @@ ALLOWED: dict[str, str] = {
     "flow_sdk/graph_workflow_manager/manager.py": "one workflow run's output dir",
     "flow_sdk/fs_store/operations/record_retention.py": "one record's execution/output dir, for its newest mtime",
     "flow_sdk/llm_index/indexer.py": "sidecars under the index's own baseline dir",
-    "flow_sdk/template_engine/engine.py": "template folder shipped with the package",
     "flow_sdk/transcript_analyzer/synthesizers/agent_trace.py": "one trace output dir",
     "flow_sdk/transcript_analyzer/transcript.py": "entry-tree walk, not a filesystem",
     "flow_sdk/schema/data_spec/activity_spec.py": "spec node walk, not a filesystem",

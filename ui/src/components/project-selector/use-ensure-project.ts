@@ -7,6 +7,7 @@ import { isHubOnly } from '@src/navigation/hub-runtime';
 import { useSandboxes } from '@src/hooks/use-sandboxes';
 import { useCallback } from 'react';
 import { withHomePage } from '@src/project-home-page/home-page-state';
+import { useActiveWorkspace } from '@src/hooks/use-workspaces';
 
 export function canonicalPath(path: string): string {
   return path.trim().replace(/\\/g, '/').replace(/\/+$/, '').replace(/^\/+/, '');
@@ -140,24 +141,40 @@ export function useInstallSharedProjectAndOpen(landing?: ProjectLanding) {
  * pass a stable (memoized) callback. Returns the raw result; each caller maps
  * it to its own UI (form banner vs. step machine).
  */
+/**
+ * Clone a git repo into a fresh, desktop-wired Project — `useCloneGitProjectAndOpen` without
+ * the landing, for callers that decide where to go themselves (a launch link's setup).
+ * `workspaceId` picks the workspace folder (undefined → the default one).
+ */
+export async function cloneGitProject(
+  computeNodeId: string,
+  url: string,
+  opts?: { targetName?: string; branch?: string; workspaceId?: string },
+): Promise<Awaited<ReturnType<typeof Project.createFromGitUrl>>> {
+  const result = await Project.createFromGitUrl(computeNodeId, url, opts?.targetName, opts?.branch, opts?.workspaceId);
+  if (result.kind === 'ok') {
+    // The backend minted this row, so the constructor-side seed the local
+    // create paths use isn't available — stamp it here, BEFORE a caller lands
+    // on the project and `applyProjectLocale` reads it.
+    await stampNewProjectLocale(result.project);
+    await result.project.setupForDesktop();
+  }
+  return result;
+}
+
 export function useCloneGitProjectAndOpen(landing?: ProjectLanding) {
   const selectExisting = useSelectExistingProject();
   const land = landing ?? selectExisting;
+  // The clone lands in the active workspace's folder (undefined → the default one).
+  const { scopeId: workspaceId } = useActiveWorkspace();
 
   return useCallback(
     async (computeNodeId: string, url: string, opts?: { targetName?: string; branch?: string }) => {
-      const result = await Project.createFromGitUrl(computeNodeId, url, opts?.targetName, opts?.branch);
-      if (result.kind === 'ok') {
-        // The backend minted this row, so the constructor-side seed the local
-        // create paths use isn't available — stamp it here, BEFORE `land`
-        // adopts the project and `applyProjectLocale` reads it.
-        await stampNewProjectLocale(result.project);
-        await result.project.setupForDesktop();
-        await land(result.project);
-      }
+      const result = await cloneGitProject(computeNodeId, url, { ...opts, workspaceId });
+      if (result.kind === 'ok') await land(result.project);
       return result;
     },
-    [land],
+    [land, workspaceId],
   );
 }
 

@@ -6,7 +6,7 @@
  * The hooks layer is mocked — the screen's only door to the backend — so these
  * pin what the person sees and what each click asks for.
  */
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import type { AutomationRun, AutomationSummary } from '@sdk';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -18,19 +18,23 @@ vi.mock('@src/navigation/useDockNavigation', () => ({
 vi.mock('@src/hooks/useContext', () => ({ useContext: () => ({ project: { id: 'p1' } }) }));
 vi.mock('@src/notifications', () => ({ notify: { success: vi.fn(), error: vi.fn() } }));
 vi.mock('@src/hooks/entity-hooks', () => ({
-  useEntitiesQuery: () => ({ data: [{ id: 'a1', name: 'Chief of Staff' }] }),
+  // One answer for every entity query the screen makes: an agent to pick, and (as a data source) a channel.
+  useEntitiesQuery: () => ({ data: [{ id: 'a1', name: 'Chief of Staff', channel: 'gmail' }] }),
 }));
 
 const state = vi.hoisted(() => ({
   automations: [] as AutomationSummary[],
   runs: [] as AutomationRun[],
   run: null as AutomationRun | null,
+  tries: [] as Array<Record<string, unknown>>,
   mutate: {
     runOnce: vi.fn(),
     setEnabled: vi.fn(),
     save: vi.fn(),
     check: vi.fn(),
     remove: vi.fn(),
+    decideOn: vi.fn(),
+    tryRecent: vi.fn(),
   },
 }));
 const mutation = (fn: ReturnType<typeof vi.fn>) => ({
@@ -46,7 +50,20 @@ vi.mock('@src/hooks/automations/useAutomations', () => ({
   useAutomations: () => ({ data: state.automations, isLoading: false, error: null }),
   useAutomation: (id: string | null) => ({ automation: state.automations.find((a) => a.id === id) ?? null }),
   useAutomationTrigger: (id: string | null) => ({
-    data: id
+    data:
+      id === 'r1'
+        ? {
+            id,
+            name: 'Refunds',
+            trigger_type: 'tag',
+            tag_pattern: 'stream_inbox.*.message.projected',
+            tag_scope: ['data_source:ds-1'],
+            gate: { sentence: 'asks for a refund' },
+            then: { run_agent: { agent: 'agent-a1', prompt: 'Go' } },
+            enabled: true,
+            isMessageRule: true,
+          }
+        : id
       ? {
           id,
           name: 'Morning',
@@ -75,6 +92,10 @@ vi.mock('@src/hooks/automations/useAutomations', () => ({
   useDeleteAutomation: () => mutation(state.mutate.remove),
   useDiscoverRules: () => mutation(vi.fn()),
   useRuleCode: () => ({ data: '', error: null, save: mutation(vi.fn()) }),
+  useDecideOn: () => mutation(state.mutate.decideOn),
+  useDecideOnRecent: () => ({ data: state.tries, isFetching: false, error: null, refetch: state.mutate.tryRecent }),
+  useRunnableAgents: () => ({ data: [{ id: 'a1', name: 'Chief of Staff' }] }),
+  useStartedLastHour: () => 0,
 }));
 
 import { AutomationsView } from '@src/components/automations/AutomationsView';
@@ -125,6 +146,7 @@ beforeEach(() => {
   state.automations = [];
   state.runs = [];
   state.run = null;
+  state.tries = [];
 });
 afterEach(() => {
   cleanup();
@@ -384,5 +406,58 @@ describe('browsing what an automation is made of', () => {
     expect(nav.openMachinePath.mock.calls[0][0]).toBe('/w/agentic-assets/trigger/morning/trigger.json');
     fireEvent.click(screen.getByTestId('automation-name-w'));
     expect(nav.openDock.mock.calls[0][0].options).toEqual({ trigger: 'w' });
+  });
+});
+
+
+describe('a rule on messages arriving', () => {
+  it('is the first card, and its starters open the two-box screen', () => {
+    render(<AutomationsView />);
+    const cards = screen.getAllByTestId(/^automation-kind-(message|schedule|event|file|agent_hook)$/);
+    expect(cards[0].getAttribute('data-testid')).toBe('automation-kind-message');
+    fireEvent.click(screen.getByTestId('automation-recipe-refund-requests'));
+    expect(nav.openDock.mock.calls[0][0].toUrl('/')).toBe('/dock/automations?creating=message&recipe=refund-requests');
+  });
+
+  it('a new rule from a message: two boxes, prefilled, saved as a gate and a then', () => {
+    state.mutate.save.mockResolvedValue({ id: 'new-1' });
+    dock.current = { options: { creating: 'message', source: 'a1', recipe: 'refund-requests' } };
+    render(<AutomationsView />);
+    expect(screen.getByTestId('message-rule-page')).toBeTruthy();
+    const sentence = screen.getByTestId('message-rule-catch-text') as HTMLTextAreaElement;
+    expect(sentence.value).toBe('asks for a refund or disputes a charge');
+    expect(screen.getByTestId('message-rule-source-a1').getAttribute('aria-pressed')).toBe('true');
+    fireEvent.change(screen.getByTestId('message-rule-agent'), { target: { value: 'agent-a1' } });
+    fireEvent.click(screen.getByTestId('automation-save'));
+    const { fields } = state.mutate.save.mock.calls[0][0];
+    expect(fields).toMatchObject({
+      trigger_type: 'tag',
+      tag_pattern: 'stream_inbox.*.message.projected',
+      tag_scope: ['data_source:a1'],
+      gate: { sentence: 'asks for a refund or disputes a charge' },
+      then: { run_agent: { agent: 'agent-a1' } },
+      enabled: true,
+    });
+    expect(fields.name).toBe('Asks for a refund or disputes a charge → Chief of Staff');
+  });
+
+  it('the fast test asks the gate about the typed text, and the try list shows each verdict', async () => {
+    state.tries = [
+      { state: { message_id: 'm1', sender: 'Dana Levi <d@x>', subject: 'Charged twice', text: 'two charges' }, verdict: { met: true, confidence: 0.93 }, decided_at: null },
+      { state: { message_id: 'm2', sender: 'Acme', subject: 'Invoice', text: 'attached' }, verdict: { caught: false, confidence: 0.08 }, decided_at: '2026-10-10T10:00:00Z' },
+    ];
+    state.automations = [automation({ id: 'r1', kind: 'event', when: { kind: 'event', text: '', event: { pattern: 'stream_inbox.*.message.projected', title: '', description: '' } } })];
+    dock.current = { options: { trigger: 'r1' } };
+    render(<AutomationsView />);
+    fireEvent.change(screen.getByTestId('message-rule-sample'), { target: { value: 'I was billed twice' } });
+    fireEvent.click(screen.getByTestId('message-rule-fast-test-run'));
+    await waitFor(() => expect(state.mutate.decideOn).toHaveBeenCalledWith({ triggerId: 'r1', text: 'I was billed twice' }));
+    // Edit the sentence: the fast test now tests the fields as typed, not the saved row.
+    fireEvent.change(screen.getByTestId('message-rule-catch-text'), { target: { value: 'mentions a refund' } });
+    fireEvent.click(screen.getByTestId('message-rule-fast-test-run'));
+    await waitFor(() => expect(state.mutate.decideOn).toHaveBeenLastCalledWith(expect.objectContaining({ spec: expect.objectContaining({ gate: { sentence: 'mentions a refund' } }), text: 'I was billed twice' })));
+    const rows = screen.getAllByTestId('message-rule-try-row');
+    expect(rows.map((r) => r.getAttribute('data-verdict'))).toEqual(['yes', 'no']);
+    expect(rows[1].textContent).toContain('decided');
   });
 });

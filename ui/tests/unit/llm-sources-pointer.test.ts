@@ -33,3 +33,20 @@ describe('llm-sources pointer', () => {
     expect(parseLlmSourcesPointer('not-a-worker')).toBe('not-a-worker');
   });
 });
+
+describe('llm-sources sections', () => {
+  it('names the two box-wide sections and nothing else', async () => {
+    const { isLlmSourcesSection, LLM_SOURCES_SECTIONS } = await import(
+      '@src/components/llm-sources/llm-sources-pointer'
+    );
+    expect([...LLM_SOURCES_SECTIONS]).toEqual(['keys', 'endpoints']);
+    expect(isLlmSourcesSection('keys')).toBe(true);
+    expect(isLlmSourcesSection('endpoints')).toBe(true);
+    expect(isLlmSourcesSection('claude')).toBe(false);
+    expect(isLlmSourcesSection(undefined)).toBe(false);
+  });
+
+  it('a section round-trips through the pointer like a worker', () => {
+    expect(parseLlmSourcesPointer(llmSourcesPointer('keys'))).toBe('keys');
+  });
+});

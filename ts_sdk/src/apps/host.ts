@@ -56,6 +56,31 @@ export function navigateHost(target: { address: string } | { typeid: string }): 
   window.parent?.postMessage({ type: 'flowpad:navigate', ...target }, '*');
 }
 
+/** The message an app sends to have the host open an outside page (`openExternal`). */
+export const OPEN_EXTERNAL_MESSAGE = 'flowpad:open-external';
+
+/** `url` when it is an absolute http(s) address — the only kind that leaves the app — else null. */
+export function externalUrl(url: unknown): string | null {
+  if (typeof url !== 'string') return null;
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:' ? parsed.href : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Open an outside page (a record in a CRM, a report) in the person's browser. The HOST opens it —
+ *  in the desktop app that is the system browser, which a frame's own `window.open` does not
+ *  reliably reach. Only an absolute http(s) address is opened (anything else throws: a typo
+ *  should not pass silently); an app shown on its own, outside Flowpad, opens a new tab itself. */
+export function openExternal(url: string): void {
+  const address = externalUrl(url);
+  if (!address) throw new Error(`openExternal: an absolute http(s) address is required, not ${JSON.stringify(url)}`);
+  if (window.parent && window.parent !== window) window.parent.postMessage({ type: OPEN_EXTERNAL_MESSAGE, url: address }, '*');
+  else window.open(address, '_blank', 'noopener,noreferrer');
+}
+
 /** Why a call failed, in words: the server's message, else the error's own. */
 export function errorText(error: any): string {
   return String(error?.response?.data?.message ?? error?.message ?? error);

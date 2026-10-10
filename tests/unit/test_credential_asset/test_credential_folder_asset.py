@@ -139,6 +139,22 @@ def test_every_shipped_template_commits_a_unique_v4_id(folder):
     assert len(ids) == len(SHIPPED), "shipped ids must be unique"
 
 
+@pytest.mark.parametrize("name", sorted(SHIPPED))
+def test_every_shipped_credential_says_what_it_is_needed_for(name):
+    """The setup dialog shows ``needed_for`` beside the credential's name: one line, never empty."""
+    manifest = CredentialSpec.model_validate(json.loads((SHIPPED[name] / "credential.json").read_text()))
+
+    assert manifest.needed_for.strip(), f"{name}: no needed_for"
+    assert "\n" not in manifest.needed_for, f"{name}: needed_for is one line; the rest is justification"
+
+
+def test_every_manifest_field_reaches_the_row():
+    """``save_credential`` copies only ``_MANIFEST_FIELDS``: a spec field missing there validates, then is dropped."""
+    from flow_sdk.builtin.credential_service import _MANIFEST_FIELDS
+
+    assert set(CredentialSpec.model_fields) - {"name", "manifest_schema", "setup_wizards"} == set(_MANIFEST_FIELDS)
+
+
 def test_the_shipped_gmail_definition_is_valid():
     manifest = CredentialSpec.model_validate(json.loads((SHIPPED["gmail"] / "credential.json").read_text()))
 

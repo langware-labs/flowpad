@@ -2,10 +2,9 @@
 
 One requirement per thing a person has to provide:
 
-* ``oauth`` — a connection a data source acts through (``auth.connector``), with the union of the
-  scopes every requester needs;
-* ``pack`` — a credential (a Credential) the project declares or a data source names, with the
-  values it still lacks in development;
+* ``pack`` — a credential (a Credential) the project declares or a data source names: an ``env`` one with the
+  values it still lacks in development, or an ``oauth`` one (a connection a source acts through, declared with
+  the union of the scopes its requesters need) that is not connected yet;
 * ``gap`` — something the project needs that nothing declares how to provide. Reported, never run.
 
 Names and presence only: no value ever appears in these shapes.
@@ -16,9 +15,9 @@ from typing import ClassVar, Optional
 
 from pydantic import ConfigDict
 
+from flow_sdk.schema.data_spec.asset_setup_spec import SetupSkipSpec
 from flow_sdk.schema.data_spec.spec import DataSpec
 
-REQUIREMENT_OAUTH = "oauth"
 REQUIREMENT_PACK = "pack"
 REQUIREMENT_GAP = "gap"
 #: A required ``flow.json`` dependency that is not on this machine.
@@ -59,12 +58,21 @@ class SetupRequirementSpec(DataSpec):
     spec_kind: ClassVar[str] = "project.setup.requirement"
     model_config = ConfigDict(frozen=True)
 
-    #: ``oauth`` / ``pack`` / ``gap``.
+    #: ``pack`` / ``gap`` / ``dependency`` / ``source`` / ``webapp``.
     kind: str
-    #: The provider (oauth) or the credential's name (pack).
+    #: The credential's name (pack), the dependency's, the source's or the web app's.
     name: str
     title: str = ""
-    #: oauth: every scope a requester needs.
+    #: pack: what the credential is needed for, in one line, and the full reason (``CredentialSpec``).
+    needed_for: str = ""
+    justification: str = ""
+    #: The record this requirement IS (a Credential, DataSource, WebApp; the Project for a dependency).
+    typeid: str = ""
+    #: pack: ``env`` (values to provide) or ``oauth`` (a provider's grant to connect).
+    credential_kind: str = "env"
+    #: pack, oauth: the connection provider.
+    provider: str = ""
+    #: pack, oauth: every scope a requester needs.
     scopes: list[str] = []
     #: pack: the values it needs in development.
     vars: list[SetupVarSpec] = []
@@ -81,10 +89,22 @@ class SetupRequirementSpec(DataSpec):
     used_by: list[str] = []
     #: Why a gap is one, or what is off about a requirement (a pack with no setup instructions).
     note: str = ""
+    #: The project does not work without it. ``False``: it turns a feature on (an env credential with only
+    #: OPTIONAL values, a dependency flow.json marks optional) — listed, never counted toward "Setup required".
+    required: bool = True
+    #: Skipped in this project's setup on this machine — read off its record (``core/setup/skip_mark``).
+    skipped: Optional[SetupSkipSpec] = None
+    #: Whether "Skip → Always" can remove it from the project (its asset is the project's own), and if not, why.
+    can_skip_always: bool = False
+    why_not_always: str = ""
 
     @property
     def missing(self) -> list[SetupVarSpec]:
         return [v for v in self.vars if not v.present]
+
+    @property
+    def is_oauth(self) -> bool:
+        return self.kind == REQUIREMENT_PACK and self.credential_kind == "oauth"
 
 
 class ProjectReadinessSpec(DataSpec):
@@ -95,7 +115,11 @@ class ProjectReadinessSpec(DataSpec):
 
     project_id: str
     ready: bool
-    #: What still needs someone — what the setup wizard walks through.
+    #: What still needs someone — what the setup wizard walks through. Required, and not skipped.
     to_do: list[SetupRequirementSpec] = []
+    #: What turns a feature on and is not set up yet — listed, never counted.
+    optional: list[SetupRequirementSpec] = []
+    #: What a person skipped on this machine (required or not) — listed with an Undo.
+    skipped: list[SetupRequirementSpec] = []
     #: What no credential declares: reported, never runnable (``note`` says what to add).
     gaps: list[SetupRequirementSpec] = []

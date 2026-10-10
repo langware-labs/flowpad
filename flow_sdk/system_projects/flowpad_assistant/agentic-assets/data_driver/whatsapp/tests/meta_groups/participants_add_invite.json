@@ -1,0 +1,33 @@
+{
+  "object": "whatsapp_business_account",
+  "entry": [
+    {
+      "id": "WHATSAPP_ACCOUNT_ID",
+      "changes": [
+        {
+          "value": {
+            "messaging_product": "whatsapp",
+            "metadata": {
+              "display_phone_number": "DISPLAY_PHONE_NUMBER",
+              "phone_number_id": "PHONE_NUMBER_ID"
+            },
+            "groups": [
+              {
+                "timestamp": "TIMESTAMP",
+                "group_id": "GROUP_ID",
+                "type": "group_participants_add",
+                "reason": "invite_link",
+                "added_participants": [
+                  {
+                    "wa_id": "WHATSAPP_ID"
+                  }
+                ]
+              }
+            ]
+          },
+          "field": "group_participants_update"
+        }
+      ]
+    }
+  ]
+}

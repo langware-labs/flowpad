@@ -1,5 +1,5 @@
 import '@src/i18n-init';
-import { toplog } from '@sdk';
+import { setLaunchSurface, toplog } from '@sdk';
 import { sdkConfig } from '@sdk/config/index';
 import { initDesktopBackend } from '@sdk/config/desktop';
 import '@src/styles/index.css';
@@ -72,6 +72,9 @@ function bindUncaughtErrorTrace() {
 // loader-gated subtree (see `RootLayout` in `router.tsx`) so its hooks only
 // mount after `loadRoot` has finished `initSdk()`.
 async function init() {
+  // Every process this app launches is an app launch — the backend gives it the
+  // COMMON_UI system-prompt layer (`common_ui.md`). Set before anything can launch.
+  setLaunchSurface('app');
   defineGlobals();
   bindNavigationTrace();
   bindUncaughtErrorTrace();

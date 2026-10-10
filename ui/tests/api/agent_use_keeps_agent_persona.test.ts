@@ -20,7 +20,7 @@
  * Requires: a live backend (FLOW_INSTANCE=<name>) + Claude Code installed.
  */
 
-import { Agent, AgenticProcess, Project } from '@sdk';
+import { Agent, AgenticProcess, Project, setLaunchSurface } from '@sdk';
 import apiClient from '@sdk/client';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import * as fs from 'fs';
@@ -57,6 +57,9 @@ describe('agent session persona', () => {
 
   beforeAll(async (ctx: any) => {
     await apiTestSetup(getTestSignupInfo(), ctx.name);
+    // This suite stands in for the app (Use button / auto-launch), which stamps every
+    // launch at boot (`ui/src/main.tsx`) — so the session gets the COMMON_UI layer.
+    setLaunchSurface('app');
     const mount = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-persona-'));
     project = trackForCleanup(
       await new Project({ name: `agent-persona-${Date.now()}`, fs_storage_mount_path: mount }).save([]),
@@ -71,6 +74,7 @@ describe('agent session persona', () => {
   }, TIMEOUT);
 
   afterAll(async () => {
+    setLaunchSurface(null);
     await purgeTracked();
   });
 
@@ -94,6 +98,13 @@ describe('agent session persona', () => {
       expect(rendered).toContain(AGENT_MARKER);
       // ... and nothing after it claims a different identity.
       expect(rendered).not.toContain("# You are the 'vibe' agent");
+      // The system-prompt layers, in order (docs/agent/system-prompt-layers.md):
+      // common.md → common_ui.md (an app launch) → the agent's prompt → the vibe layer.
+      const order = ['- Use the skill tool', '# Flowpad app', AGENT_MARKER, '# Embedded agent specs'].map((m) =>
+        rendered.indexOf(m),
+      );
+      expect(order.every((i) => i >= 0), `every layer present: ${order}`).toBe(true);
+      expect([...order].sort((a, b) => a - b)).toEqual(order);
     },
     TIMEOUT,
   );

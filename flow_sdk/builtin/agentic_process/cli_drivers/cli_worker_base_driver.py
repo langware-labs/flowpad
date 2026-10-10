@@ -463,7 +463,7 @@ def apply_worker_env(env: dict[str, str], process: "AgenticProcess") -> dict[str
     install does (upgrade, reinstall). A stale one persisted in a process's
     ``cli_config["env_vars"]`` would silently point workers at an interpreter
     that no longer exists — the same failure this var was added to remove. Same
-    reasoning as ``FLOW_INSTANCE`` in ``ClaudeCLIWorker.build_env``.
+    reasoning as ``FLOW_INSTANCE`` below.
     """
     import json as _json  # noqa: PLC0415
 
@@ -588,28 +588,30 @@ async def resolve_worker_language(process: "AgenticProcess") -> str | None:
     inferring the language from the conversation. That default is what drifts to
     English mid-session; naming the language outright is the fix.
 
-    Resolution only. How a language reaches a given CLI is that vendor's business:
-    Claude has a first-class ``language`` setting, Codex has none and takes the
-    text in its developer message, Copilot has neither.
-
-    Headless turns only. The PTY/interactive seam deliberately does not consult the
-    locale — a visible terminal session is the user driving the CLI directly.
+    Resolution only. The ``# Language`` text reaches every worker, on every turn
+    path, as the ``LANGUAGE`` layer of ``system_prompt.compose_layers`` — the same
+    channel as every other standing instruction.
     """
     from flow_sdk.builtin.project import Project  # noqa: PLC0415
     from flow_sdk.i18n.supported_locales import language_name  # noqa: PLC0415
 
-    project_id = getattr(process, "project_id", None)
-    if not project_id:
-        return None
-    try:
-        project = await Project.get_by_id(project_id)
-    except Exception:
-        logger.debug("language: project lookup failed", exc_info=True)
-        return None
-    locale = getattr(project, "locale", None) if project else None
+    # Every turn path runs ``get_project()`` first, which stashes the locale from its
+    # own project fetch — so a turn costs no second lookup. A bare call still resolves.
+    if "_project_locale" in getattr(process, "__dict__", {}):
+        locale = process.__dict__["_project_locale"]
+    else:
+        project_id = getattr(process, "project_id", None)
+        if not project_id:
+            return None
+        try:
+            project = await Project.get_by_id(project_id)
+        except Exception:
+            logger.debug("language: project lookup failed", exc_info=True)
+            return None
+        locale = getattr(project, "locale", None) if project else None
     name = language_name(locale)
     if name:
-        logger.info("[lang] process=%s locale=%s language=%s", process.id, locale, name)
+        logger.debug("[lang] process=%s locale=%s language=%s", process.id, locale, name)
     return name
 
 
@@ -775,12 +777,6 @@ class AgenticContext(BaseModel):
     system_prompt_file: str | None = None
     developer_instructions: str | None = None
     custom_instruction_dirs: list[str] = Field(default_factory=list)
-    # English name of the language the worker must reply in, from the project
-    # locale (see resolve_worker_language). Vendor-neutral on purpose: each stream
-    # worker maps it to its own channel — Claude to ``--settings {"language": …}``,
-    # Codex to a ``# Language`` block on its developer message, Copilot to nothing.
-    # Re-derived on every spawn, so — like plugin_dirs — never persisted.
-    language: str | None = None
     # Tool patterns the worker may never run — its agent's ``disallowed_tools``, from ``cli_config``.
     # Honoured by Claude (``--disallowedTools``); ignored by vendors without a deny list.
     disallowed_tools: list[str] = Field(default_factory=list)
@@ -818,7 +814,6 @@ class AgenticContext(BaseModel):
                 "plugin_dirs",
                 "extra_config_overrides",
                 "bypass_hook_trust",
-                "language",
                 "mcp_config_json",
                 "mcp_config_fragment",
                 # Resolved per turn from the process's endpoint; persisting it would let a
@@ -924,9 +919,9 @@ class AgentOptions:
     # Where the per-turn prompt is delivered: 'argv' (claude, ``-- <text>``) or
     # 'stdin' (codex/copilot pipe it). Drives both ``cli_cmd`` and ``stdin_text``.
     PROMPT_CHANNEL: str = "argv"
-    # How a system-prompt addition reaches the worker: a CLI flag name
-    # (claude ``--append-system-prompt``) or None ⇒ prepend into the prompt body.
-    SYSTEM_PROMPT_FLAG: str | None = None
+    # The flag a vendor reads its system-prompt FILE from (``system_prompt.render``
+    # projected by ``prepare_instruction_assets``), or None when it reaches the
+    # text another way (developer_instructions / custom dirs / generated config).
     SYSTEM_PROMPT_FILE_FLAG: str | None = None
 
     def __init__(
@@ -941,10 +936,8 @@ class AgentOptions:
         # ``hasattr`` guard. Only claude's ``to_json`` serializes it, so the wire
         # shape (and restart hash) of codex/copilot is unaffected.
         self.fork_session_id: str | None = None
-        # Launch-time system-prompt append (``resolve_system_instructions()``),
-        # set by the launcher; derived state — not a ctor param, not serialized,
-        # so restart hashing is unaffected.
-        self.system_prompt_append: str | None = None
+        # Launch-time system-prompt file (``apply_instruction_assets``); derived
+        # state — not a ctor param, not serialized, so restart hashing is unaffected.
         self.system_prompt_file: str | None = None
         # Rendered per-process MCP for this launch — see ``ProcessMcpRuntime``
         # for why it is launch-only. On the base so every vendor can be stamped
@@ -987,7 +980,6 @@ class AgentOptions:
             if assets_path not in add_dirs:
                 add_dirs.append(assets_path)
                 self.add_dirs = add_dirs
-        self.system_prompt_append = None
         # None when the process has assets but no instruction text; the MOUNT
         # above still applies. See ``SystemInstructionAssets``.
         self.system_prompt_file = assets.system_prompt_file
@@ -1014,10 +1006,6 @@ class AgentOptions:
                 *runtime.config_overrides,
             ]
 
-    def _system_prompt(self, override: str | None) -> str | None:
-        """Explicit per-call value wins; else the launch-derived field."""
-        return override if override is not None else self.system_prompt_append
-
     # ── Unified arg construction (argv is canonical; shell is derived) ───────
 
     def _resolve_binary(self) -> list[str]:
@@ -1029,43 +1017,34 @@ class AgentOptions:
     def _emit_flags(self) -> list[str]:
         """Vendor hook: every argv token AFTER the binary, EXCEPT the per-turn
         instruction (placed by ``cli_cmd`` per ``PROMPT_CHANNEL``) and the
-        system-prompt addition (placed per ``SYSTEM_PROMPT_FLAG``). This is the
+        system-prompt file (placed per ``SYSTEM_PROMPT_FILE_FLAG``). This is the
         ONLY arg builder a vendor writes — the shell string is derived from it."""
         raise NotImplementedError
 
-    def cli_cmd(self, instruction: str | None = None, system_prompt_append: str | None = None) -> list[str]:
+    def cli_cmd(self, instruction: str | None = None) -> list[str]:
         """Canonical argv. The single source of truth; the shell string and the
         spawn tuple both derive from this."""
         argv: list[str] = [*self._resolve_binary(), *self._emit_flags()]
-        spa = self._system_prompt(system_prompt_append)
         if self.system_prompt_file and self.SYSTEM_PROMPT_FILE_FLAG:
             argv.extend([self.SYSTEM_PROMPT_FILE_FLAG, self.system_prompt_file])
-        if spa and self.SYSTEM_PROMPT_FLAG:
-            argv.extend([self.SYSTEM_PROMPT_FLAG, spa])
         if self.PROMPT_CHANNEL == "argv" and instruction:
             argv.extend(["--", instruction])
         return argv
 
-    def stdin_text(self, instruction: str | None = None, system_prompt_append: str | None = None) -> str | None:
+    def stdin_text(self, instruction: str | None = None) -> str | None:
         """The text to pipe to the worker's stdin, or None for argv-channel
-        vendors. For stdin vendors with no system-prompt flag, the addition is
-        prepended into the prompt body (their only sink)."""
+        vendors. Only the user turn — standing instructions never ride the
+        prompt body (see ``system_prompt``)."""
         if self.PROMPT_CHANNEL != "stdin":
             return None
-        body = instruction or ""
-        spa = self._system_prompt(system_prompt_append)
-        if spa and not self.SYSTEM_PROMPT_FLAG:
-            body = f"{spa}\n\n{body}".strip() if body else spa
-        return body
+        return instruction or ""
 
-    def to_spawn(
-        self, instruction: str | None = None, system_prompt_append: str | None = None
-    ) -> tuple[list[str], dict[str, str], str | None]:
+    def to_spawn(self, instruction: str | None = None) -> tuple[list[str], dict[str, str], str | None]:
         """The one IO contract a worker needs: (argv, env, stdin|None)."""
         return (
-            self.cli_cmd(instruction=instruction, system_prompt_append=system_prompt_append),
+            self.cli_cmd(instruction=instruction),
             dict(self.env_vars),
-            self.stdin_text(instruction, system_prompt_append),
+            self.stdin_text(instruction),
         )
 
     def to_spawn_args(self, instruction: str | None = None) -> tuple[list[str], dict[str, str]]:

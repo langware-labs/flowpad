@@ -126,3 +126,11 @@ async def test_links_between_rows(project):
     ns = await run_fence(fence_under(DOC, "8."), {"project": project})
     assert ns["reason"].startswith("used by --demo") and ns["reason"].endswith(".crm.lead dana")
     assert ns["problems"] and "no --demo" in ns["problems"][0]
+
+
+async def test_mirror_an_outside_system_and_read_only_what_you_show(project):
+    ns = await run_fence(fence_under(DOC, "9."), {"project": project})
+    assert ns["done"] == {"created": ["dyne"], "updated": ["bolt"], "unchanged": ["acme"], "deleted": ["core"]}
+    assert ns["names"] == ["Bolt Ltd"] and ns["found"]["total"] == 1
+    assert ns["tally"] == {"total": 3, "groups": [{"by": {"kind": "train"}, "count": 3}]}
+    assert ns["gone"] == ["acme", "dyne"]

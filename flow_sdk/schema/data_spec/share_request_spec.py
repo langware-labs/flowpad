@@ -117,7 +117,7 @@ class ShareRequestSpec(DataSpec):
       principal by ``Project.share`` (no expansion into people).
     * ``note`` — the sharer's personal message, carried in each invite message.
     * ``via`` — how a Project's files travel (``ShareVia``); ``hub_repo`` re-publishes
-      (pushes the current HEAD) even when the project is already linked.
+      (sends the folder's files as git sees them) even when the project is already linked.
 
     ``teams`` and ``note`` apply to a Project share only; the handler enforces
     that, since it depends on the target in the URL, not on the body.

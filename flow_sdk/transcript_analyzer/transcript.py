@@ -8,6 +8,7 @@ import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Iterator
 
+from .derivation.registry import _derive_from
 from .derive import derive_entries
 from .entries import (
     AssistantMessageEntry,
@@ -28,6 +29,16 @@ from .parsers import get_parser_class
 # available on the original ToolResultEntry when the catch-all path is used.
 _FOLD_PREVIEW_MAX_CHARS = 4000
 
+# The kinds a ``ToolResultEntry`` folds INTO (one row per agent operation).
+# Catch-all ``ToolUseEntry`` results stay standalone — see
+# ``AgentTranscriptFile._fold_tool_results``.
+_SEMANTIC_CALL_KINDS = frozenset({
+    EntryKind.SHELL_COMMAND,
+    EntryKind.FILE_READ,
+    EntryKind.FILE_WRITE,
+    EntryKind.FILE_EDIT,
+})
+
 # User-message texts that are synthetic (Claude Code injects them on user
 # interrupts). They're "user" lines in the JSONL but the human didn't type
 # them — drop from the prompts collection.
@@ -41,6 +52,226 @@ if TYPE_CHECKING:
     from .pricing.base import ModelPricing
 
 logger = logging.getLogger(__name__)
+
+
+def _apply_tool_result(target: TranscriptEntry, result: ToolResultEntry) -> None:
+    """Fold ``result``'s payload into the semantic call it answers.
+
+    The ONE rule for what a result contributes to its call, shared by the full
+    fold (``_fold_tool_results``) and the incremental one (``_FoldState.feed``).
+    Mutates ``target`` — callers hand it a copy when the original must stay
+    pristine.
+    """
+    output = result.tool_output or ""
+    # Preserve the result's error flag on the surviving call entry —
+    # modern Claude Bash results carry no exitCode, only the block's
+    # is_error, so dropping the row would lose the failure signal.
+    if result.is_error and not getattr(target, "is_error", False):
+        target.is_error = True
+    if isinstance(target, ShellCommandEntry):
+        if target.exit_code is None and result.exit_code is not None:
+            target.exit_code = result.exit_code
+        if target.duration_ms is None and result.duration_ms is not None:
+            target.duration_ms = result.duration_ms
+        if target.stdout_preview is None and output:
+            target.stdout_preview = output[:_FOLD_PREVIEW_MAX_CHARS]
+    elif isinstance(target, FileReadEntry):
+        if target.bytes_count is None and output:
+            target.bytes_count = len(output.encode("utf-8"))
+        if target.content_preview is None and output:
+            target.content_preview = output[:_FOLD_PREVIEW_MAX_CHARS]
+    # FileWriteEntry / FileEditEntry: result is usually a one-line
+    # "Updated …" — no field worth surfacing. Result row is dropped.
+
+
+def _fold_targets(unfolded: list[TranscriptEntry]) -> set[int]:
+    """``id()`` of every entry a full fold will MUTATE: the first row of each
+    multi-row assistant message, and every semantic call that has a result.
+    Only those need a copy to keep ``_unfolded`` pristine — the rest can be
+    shared with the folded list as-is.
+    """
+    first_row: dict[str, int] = {}
+    targets: set[int] = set()
+    calls: dict[str, int] = {}
+    result_ids: set[str] = set()
+    for e in unfolded:
+        if isinstance(e, AssistantMessageEntry):
+            if e.entry_id:
+                if e.entry_id in first_row:
+                    targets.add(first_row[e.entry_id])
+                else:
+                    first_row[e.entry_id] = id(e)
+        elif isinstance(e, ToolResultEntry):
+            if e.tool_use_id:
+                result_ids.add(e.tool_use_id)
+        else:
+            tuid = getattr(e, "tool_use_id", None)
+            if tuid and e.kind in _SEMANTIC_CALL_KINDS and tuid not in calls:
+                calls[tuid] = id(e)
+    targets.update(i for tuid, i in calls.items() if tuid in result_ids)
+    return targets
+
+
+class _NeedsFullRefold(Exception):
+    """Raised by ``_FoldState.feed`` when the new tail cannot be folded
+    locally — a write-order inversion the full fold resolves by seeing the
+    whole list at once. The caller falls back to ``_refold_full``; nothing
+    is retried or waited for."""
+
+
+class _FoldState:
+    """Fold indexes kept between deltas so a new line folds into the entries
+    it belongs with, without touching the rest of the session.
+
+    Built once from a full fold (``unfolded[:n]`` + the folded ``entries``)
+    and then kept current by ``feed``. Every entry it holds is either shared
+    with ``_unfolded`` or a copy made when a later line folded into it —
+    **copy-on-write**: a folded entry that has been published in an earlier
+    ``entries`` list is never mutated, its replacement is swapped in at the
+    same index. Readers on the event loop keep a stable snapshot.
+    """
+
+    __slots__ = (
+        "n", "buf", "pos", "assistants", "calls",
+        "canonical", "mirrors", "loose", "known", "derived",
+    )
+
+    def __init__(self, unfolded: list[TranscriptEntry], entries: list[TranscriptEntry]) -> None:
+        # How many of ``_unfolded`` are folded into ``buf``.
+        self.n = len(unfolded)
+        # The folded + derived list (what ``entries`` is a copy of).
+        self.buf: list[TranscriptEntry] = list(entries)
+        # Every id in ``buf`` — the ``known`` set ``_derive_from`` dedups on.
+        self.known: set[str] = {e.id for e in entries}
+        # Ids of derived (virtual) entries, to catch a physical id colliding.
+        self.derived: set[str] = {e.id for e in entries if e.virtual}
+        # id(obj) -> index in buf, fold targets only (what ``replace`` swaps).
+        self.pos: dict[int, int] = {}
+        # entry_id -> [survivor, texts, thinkings]: the pristine parts a
+        # multi-row assistant message joins, so a later row re-joins exactly
+        # what ``_fold_assistant_messages`` would.
+        self.assistants: dict[str, list] = {}
+        # tool_use_id -> the folded semantic call (first row per id).
+        self.calls: dict[str, TranscriptEntry] = {}
+        # tool_use_ids of results kept standalone (no semantic call to fold into).
+        self.loose: set[str] = set()
+        for i, e in enumerate(entries):
+            if e.virtual:
+                continue
+            if isinstance(e, AssistantMessageEntry) and e.entry_id and e.entry_id not in self.assistants:
+                self.assistants[e.entry_id] = [e, [], []]
+                self.pos[id(e)] = i
+            elif isinstance(e, ToolResultEntry):
+                if e.tool_use_id:
+                    self.loose.add(e.tool_use_id)
+            else:
+                tuid = getattr(e, "tool_use_id", None)
+                if tuid and e.kind in _SEMANTIC_CALL_KINDS and tuid not in self.calls:
+                    self.calls[tuid] = e
+                    self.pos[id(e)] = i
+        # Result ids seen, split by transport mirror vs canonical (see the
+        # mirror note in ``_fold_tool_results``).
+        self.canonical: set[str] = set()
+        self.mirrors: set[str] = set()
+        for u in unfolded:  # pristine parts, in source order
+            if isinstance(u, AssistantMessageEntry) and u.entry_id:
+                grp = self.assistants[u.entry_id]
+                if u.text:
+                    grp[1].append(u.text)
+                if u.thinking:
+                    grp[2].append(u.thinking)
+            elif isinstance(u, ToolResultEntry) and u.tool_use_id:
+                (self.mirrors if u.is_transport_mirror else self.canonical).add(u.tool_use_id)
+
+    # ── primitives ──
+
+    def _append(self, e: TranscriptEntry, track: bool) -> None:
+        if track:
+            self.pos[id(e)] = len(self.buf)
+        self.buf.append(e)
+        # Derivation runs on the folded entry, so a derived child inherits
+        # whatever result has already been folded in (same as the full path).
+        children = _derive_from(e, self.known)  # adds e.id + child ids to known
+        self.buf.extend(children)
+        self.derived.update(c.id for c in children)
+
+    def _replace(self, old: TranscriptEntry, new: TranscriptEntry) -> None:
+        """Swap a folded entry for its mutated copy and regenerate what
+        derives from it (derived children copy the outcome at derive time)."""
+        i = self.pos.pop(id(old))
+        self.buf[i] = new
+        self.pos[id(new)] = i
+        # The derived chain sits right after its source, in layer order.
+        j, chain = i + 1, {new.id}
+        while j < len(self.buf) and self.buf[j].virtual and self.buf[j].derived_from in chain:
+            chain.add(self.buf[j].id)
+            j += 1
+        if j == i + 1:
+            return
+        old_ids = [c.id for c in self.buf[i + 1 : j]]
+        self.known.difference_update(old_ids)
+        fresh = _derive_from(new, self.known)
+        if [c.id for c in fresh] != old_ids:
+            raise _NeedsFullRefold("derived children changed shape")
+        self.buf[i + 1 : j] = fresh
+
+    def feed(self, u: TranscriptEntry) -> None:
+        """Fold one newly parsed (pristine) entry into ``buf``."""
+        if u.id in self.derived:
+            raise _NeedsFullRefold("physical id collides with a derived id")
+        if isinstance(u, AssistantMessageEntry) and u.entry_id:
+            grp = self.assistants.get(u.entry_id)
+            if grp is None:
+                self.assistants[u.entry_id] = [
+                    u, [u.text] if u.text else [], [u.thinking] if u.thinking else [],
+                ]
+                self._append(u, True)
+                return
+            # A later row of a known message: join exactly as the full fold does.
+            if u.text:
+                grp[1].append(u.text)
+            if u.thinking:
+                grp[2].append(u.thinking)
+            new = copy.copy(grp[0])
+            new.text = "\n".join(grp[1]) if grp[1] else ""
+            new.thinking = "\n".join(grp[2]) if grp[2] else None
+            self._replace(grp[0], new)
+            grp[0] = new
+            return
+        if isinstance(u, ToolResultEntry):
+            tuid = u.tool_use_id
+            if u.is_transport_mirror:
+                if tuid in self.canonical:
+                    return  # canonical already there: drop the mirror
+                if tuid:
+                    self.mirrors.add(tuid)
+            elif tuid:
+                if tuid in self.mirrors:
+                    # The full fold would have dropped the mirror that is
+                    # already in ``buf`` — only it can see both at once.
+                    raise _NeedsFullRefold("canonical result after its transport mirror")
+                self.canonical.add(tuid)
+            target = self.calls.get(tuid) if tuid else None
+            if target is None:
+                if tuid:
+                    self.loose.add(tuid)
+                self._append(u, False)
+                return
+            new = copy.copy(target)
+            _apply_tool_result(new, u)
+            self._replace(target, new)
+            self.calls[tuid] = new
+            return
+        tuid = getattr(u, "tool_use_id", None)
+        if tuid and u.kind in _SEMANTIC_CALL_KINDS and tuid not in self.calls:
+            if tuid in self.loose:
+                # Its result is already standalone in ``buf``; the full fold
+                # pairs them regardless of order.
+                raise _NeedsFullRefold("call arrived after its result")
+            self.calls[tuid] = u
+            self._append(u, True)
+            return
+        self._append(u, False)
 
 
 class AgentTranscriptFile:
@@ -77,11 +308,17 @@ class AgentTranscriptFile:
         self._byte_offset: int = 0
         # Monotonic line counter passed to parser.feed(raw, idx).
         self._line_idx: int = 0
-        # Pre-fold retained list. Folding spans delta boundaries, so we must
-        # refold the FULL list every call — partial folding would lose
-        # entries split across two appends (e.g. one assistant message
-        # written across multiple JSONL lines sharing entry_id).
+        # Pre-fold retained list, kept pristine: a fold can reach back across
+        # a delta boundary (a second row of an assistant message, a tool
+        # result for an earlier call), and the entry it lands on is never
+        # mutated in place but replaced by a copy — see ``_refold``.
         self._unfolded: list[TranscriptEntry] = []
+        # Fold indexes kept between deltas (built lazily on the first delta,
+        # so a one-shot parse pays nothing for them). ``None`` = next fold
+        # is full. ``_folded_upto`` is how many of ``_unfolded`` are folded
+        # into ``entries``; ``None`` until the first full fold.
+        self._fold: _FoldState | None = None
+        self._folded_upto: int | None = None
         # Cut index into folded ``self.entries`` for the delta API.
         self._last_emitted: int = 0
         self.entries: list[TranscriptEntry] = []
@@ -98,7 +335,7 @@ class AgentTranscriptFile:
 
     def _read_and_fold(self) -> list[TranscriptEntry]:
         """Read new bytes from ``_byte_offset`` to last newline, feed parser,
-        append to ``_unfolded``, refold full retained list, set ``self.entries``.
+        append to ``_unfolded``, fold the new tail in, set ``self.entries``.
 
         Trailing incomplete line (no final ``\\n``) is buffered until the next
         call. Truncate/rewrite resets state and re-parses from offset 0.
@@ -121,26 +358,50 @@ class AgentTranscriptFile:
         if file_size < self._byte_offset:
             self._reset_state()
 
+        # One physical line at a time. The first read is the WHOLE file, and
+        # slurping it meant holding the bytes, one decoded str (4 bytes per
+        # char once any emoji is present) and a list of lines at once — a
+        # transient peak of ~7x the file size. Iterating the buffered binary
+        # file keeps nothing bigger than the longest line alive besides the
+        # parsed entries. Binary iteration splits on b"\n" only, which is
+        # exactly the boundary the partial-line rule needs.
+        consumed = False
         try:
             with self.path.open("rb") as f:
                 f.seek(self._byte_offset)
-                new_bytes = f.read()
+                for raw_bytes in f:
+                    if not raw_bytes.endswith(b"\n"):
+                        # Partial-line buffering: a trailing line with no
+                        # final newline is deferred until the next call.
+                        break
+                    self._byte_offset += len(raw_bytes)
+                    consumed = True
+                    self._feed_line(raw_bytes)
         except OSError as exc:
+            # Lines fed before the failure are already counted in
+            # ``_byte_offset``; fall through so ``entries`` reflects them.
             logger.debug("AgentTranscriptFile: read failed %s: %s", self.path, exc)
+
+        if not consumed:
             return self.entries
 
-        if not new_bytes:
-            return self.entries
+        # Fold the new entries in. Both fold passes write on the survivor
+        # entry (assistant_messages joins `.text`/`.thinking`; tool_results
+        # writes ``stdout_preview`` / ``content_preview`` / ``exit_code`` /
+        # etc. on the call entry), so a fold target is always a shallow copy
+        # and ``self._unfolded`` stays pristine across delta boundaries — an
+        # earlier fold never feeds back into a later one.
+        return self._refold()
 
-        # Partial-line buffering: consume only up to the last complete line.
-        last_newline = new_bytes.rfind(b"\n")
-        if last_newline == -1:
-            # No complete line yet — defer until next call.
-            return self.entries
-        complete_part = new_bytes[: last_newline + 1]
-        self._byte_offset += len(complete_part)
-
-        for raw_line in complete_part.decode("utf-8", errors="replace").splitlines():
+    def _feed_line(self, raw_bytes: bytes) -> None:
+        """Decode one complete physical line and feed its JSONL row(s) to the
+        parser. ``splitlines()`` is kept on purpose: it is the line-boundary
+        rule the whole-file decode used (it also splits on ``\\r``, U+2028,
+        ...), so a row's ``_line_idx`` is unchanged by the line-at-a-time read.
+        A multi-byte UTF-8 sequence never contains ``0x0A``, so decoding per
+        physical line yields the same text as decoding the whole delta.
+        """
+        for raw_line in raw_bytes.decode("utf-8", errors="replace").splitlines():
             line = raw_line.strip()
             if not line:
                 continue
@@ -156,24 +417,51 @@ class AgentTranscriptFile:
             self._unfolded.extend(self._parser.feed(raw, self._line_idx))
             self._line_idx += 1
 
-        # Refold the FULL retained list — folds may span delta boundaries.
-        # Both fold passes mutate the survivor entry in place (assistant_messages
-        # joins `.text`/`.thinking`; tool_results writes ``stdout_preview`` /
-        # ``content_preview`` / ``exit_code`` / etc. on the call entry). With
-        # repeated folds (one per delta), an in-place mutation from an earlier
-        # fold would feed back into the next fold's input — producing duplicated
-        # joined text and other re-mutation artifacts. We fold over shallow
-        # copies so ``self._unfolded`` stays pristine across delta boundaries.
-        return self._refold()
-
     def _refold(self) -> list[TranscriptEntry]:
-        """Refold ``self._unfolded`` (over shallow copies, so the retained list
-        stays pristine across delta boundaries) into ``self.entries``."""
-        snapshot = [copy.copy(e) for e in self._unfolded]
+        """Fold ``self._unfolded`` into ``self.entries``.
+
+        Incremental on a delta: only the entries parsed from the new lines are
+        folded and derived, and an already-folded entry is touched only when a
+        new line folds into it (replaced by a copy — ``_FoldState``). Cost per
+        delta is O(new entries), not O(session). The full path runs for the
+        first read, after a reset, for whole-document workers (their parser
+        REPLACES ``_unfolded``) and for a write-order inversion the tail
+        cannot resolve on its own — same algorithm, same output.
+        """
+        n = self._folded_upto
+        if n is None or n > len(self._unfolded) or getattr(self._parser, "whole_document", False):
+            return self._refold_full()
+        if n == len(self._unfolded):
+            return self.entries  # nothing new parsed
+        if self._fold is None:  # lazily, on the first delta only
+            self._fold = _FoldState(self._unfolded[:n], self.entries)
+        try:
+            for entry in self._unfolded[self._fold.n :]:
+                self._fold.feed(entry)
+        except _NeedsFullRefold as exc:
+            logger.debug("AgentTranscriptFile: full refold of %s: %s", self.path, exc)
+            return self._refold_full()
+        self._fold.n = self._folded_upto = len(self._unfolded)
+        # A new list per delta: a reader on the event loop keeps iterating
+        # the snapshot it holds while the next delta is folded in a thread.
+        self.entries = self._fold.buf[:]
+        return self.entries
+
+    def _refold_full(self) -> list[TranscriptEntry]:
+        """Stock fold order over the whole retained list, copying only the
+        entries a fold mutates (``_fold_targets``). Every other row is the
+        SAME object as in ``_unfolded``, so a parser that amends an
+        already-emitted row in place (Claude's keep-last usage dedup,
+        ``parsers/claude.py``) stays visible in ``entries``.
+        """
+        self._fold = None
+        targets = _fold_targets(self._unfolded)
+        snapshot = [copy.copy(e) if id(e) in targets else e for e in self._unfolded]
         folded = self._fold_assistant_messages(snapshot)
         # Derivation runs LAST, after tool results have been folded in, so a
         # derived entry (e.g. FlowCommandEntry) inherits exit_code/stdout.
         self.entries = derive_entries(self._fold_tool_results(folded))
+        self._folded_upto = len(self._unfolded)
         return self.entries
 
     def _read_whole_document(self) -> list[TranscriptEntry]:
@@ -213,6 +501,8 @@ class AgentTranscriptFile:
         self._byte_offset = 0
         self._line_idx = 0
         self._unfolded = []
+        self._fold = None
+        self._folded_upto = None
         self._last_emitted = 0
         self.entries = []
 
@@ -296,13 +586,7 @@ class AgentTranscriptFile:
             tuid = getattr(e, "tool_use_id", None)
             if not tuid:
                 continue
-            kind = e.kind
-            if kind not in (
-                EntryKind.SHELL_COMMAND,
-                EntryKind.FILE_READ,
-                EntryKind.FILE_WRITE,
-                EntryKind.FILE_EDIT,
-            ):
+            if e.kind not in _SEMANTIC_CALL_KINDS:
                 continue
             if tuid in call_index:
                 continue
@@ -310,11 +594,12 @@ class AgentTranscriptFile:
 
         # Transport mirrors (codex ``event_msg.patch_apply_end``) duplicate a
         # canonical result under the same tool_use_id. Drop a mirror whenever
-        # the canonical (non-mirror) result exists anywhere in the list —
-        # folding runs over the FULL retained list, so this pairing works
-        # across delta boundaries regardless of write order. A mirror whose
-        # canonical line never arrived (turn killed between the two writes)
-        # survives as the durable result frame.
+        # the canonical (non-mirror) result exists anywhere in the list — this
+        # pass sees the whole retained list, so the pairing holds regardless
+        # of write order (the incremental fold defers to it when the
+        # canonical line lands after its mirror). A mirror whose canonical
+        # line never arrived (turn killed between the two writes) survives
+        # as the durable result frame.
         canonical_result_ids = {
             e.tool_use_id
             for e in entries
@@ -334,26 +619,7 @@ class AgentTranscriptFile:
                 # paired call) — keep as standalone row.
                 kept.append(e)
                 continue
-            output = e.tool_output or ""
-            # Preserve the result's error flag on the surviving call entry —
-            # modern Claude Bash results carry no exitCode, only the block's
-            # is_error, so dropping the row would lose the failure signal.
-            if e.is_error and not getattr(target, "is_error", False):
-                target.is_error = True
-            if isinstance(target, ShellCommandEntry):
-                if target.exit_code is None and e.exit_code is not None:
-                    target.exit_code = e.exit_code
-                if target.duration_ms is None and e.duration_ms is not None:
-                    target.duration_ms = e.duration_ms
-                if target.stdout_preview is None and output:
-                    target.stdout_preview = output[:_FOLD_PREVIEW_MAX_CHARS]
-            elif isinstance(target, FileReadEntry):
-                if target.bytes_count is None and output:
-                    target.bytes_count = len(output.encode("utf-8"))
-                if target.content_preview is None and output:
-                    target.content_preview = output[:_FOLD_PREVIEW_MAX_CHARS]
-            # FileWriteEntry / FileEditEntry: result is usually a one-line
-            # "Updated …" — no field worth surfacing. Result row is dropped.
+            _apply_tool_result(target, e)
         return kept
 
     # ── access ───────────────────────────────────────────────────────────────

@@ -343,14 +343,11 @@ export const EditorPane: React.FC<EditorPaneProps> = ({
     void setupEditor(file.language);
   };
 
-  // Cleanup Monaco Editor on unmount
-  useEffect(() => {
-    return () => {
-      if (editorRef.current) {
-        editorRef.current.dispose();
-      }
-    };
-  }, []);
+  // No manual dispose here: <Editor> disposes its model and then its editor on
+  // unmount. A parent-side `editorRef.current.dispose()` ran BEFORE that cleanup
+  // (React runs the parent's effect cleanup first) and detached the model
+  // without disposing it, so the library's `getModel()?.dispose()` saw null —
+  // one orphan model holding the whole file text per unmount (B8).
 
   // Stable onChange handler — uses a ref so MilkdownEditor's useEditor (which
   // depends on [onChange]) doesn't re-initialize and lose focus on every keystroke.

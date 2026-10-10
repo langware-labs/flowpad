@@ -9,7 +9,8 @@ import json
 from pathlib import Path
 
 from flow_sdk.tags import FlowEvent, TagEventBus, emit_tag, event_bus, on_tag
-from flow_sdk.tags.bus import tag_matches, target_matches
+from flow_sdk.tags.bus import target_matches
+from flow_sdk.tags.grammar import tag_matches
 
 FIXTURE = json.loads(
     (Path(__file__).parent.parent / "fixtures" / "flow_event_contract.json").read_text()

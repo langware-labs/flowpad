@@ -1154,7 +1154,12 @@ class DataContext extends EventEmitter {
     }
   }
 
-  async setupProject() {
+  /**
+   * Restore the remembered project (else the server's choice) into context.
+   * `accept` narrows what may be restored — the UI passes "belongs to the active
+   * workspace", so a workspace never wakes up in another workspace's project.
+   */
+  async setupProject(accept?: (project: Project) => boolean) {
     // Skip if no user logged in
     if (!this.userTypeId) {
       return;
@@ -1192,7 +1197,7 @@ class DataContext extends EventEmitter {
     // that rule existed, and it would otherwise be reinstated on every load.
     // Dropped rather than adopted, so the server's choice still gets its turn.
     const unlessHidden = (project: Project | null): Project | null =>
-      project && !isHiddenProject(project) ? project : null;
+      project && !isHiddenProject(project) && (!accept || accept(project)) ? project : null;
     const remembered = unlessHidden(persistedProjectTypeId ? await resolveProject(persistedProjectTypeId) : null);
     const serverChoiceId = this.bootstrapInfo?.default_project?.id;
     const targetProject =

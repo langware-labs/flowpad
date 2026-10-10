@@ -4,7 +4,7 @@ import { chipsFor, type ConversationFacets } from './conversation-category';
 
 // Compact override so the category chip reads as an inline tag, not the
 // default full-size Badge. Tone classes come from each ChipSpec.
-const COMPACT = 'gap-0.5 rounded border px-1 py-0 align-middle text-[9px] font-medium leading-tight';
+export const COMPACT = 'gap-0.5 rounded border px-1 py-0 align-middle text-[9px] font-medium leading-tight';
 
 /** Per-row category chips (Support / Archived). Renders nothing for plain rows.
  *  Shared by StreamInboxView and RecentConversationsStrip. */

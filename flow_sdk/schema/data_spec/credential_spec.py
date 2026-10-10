@@ -1,8 +1,13 @@
 """``credential.json`` — the on-disk shape of a ``Credential``.
 
-A credential is a named set of environment variables: WHAT is needed. The
-manifest declares them; it never carries a value, and it never says where values
-live — each Deployment does (``DeploymentSecretsSpec``). See ``credential_contract``.
+A credential declares WHAT is needed, never a value:
+
+* ``kind: env`` (the default) — a named set of environment variables. Where their values live is each
+  Deployment's (``DeploymentSecretsSpec``).
+* ``kind: oauth`` — a grant from ``provider`` covering ``scopes``, given by a person in a browser. The
+  token lives with the connection (this instance's encrypted store, or the hub), never in a variable.
+
+See ``credential_contract``.
 """
 from __future__ import annotations
 
@@ -13,6 +18,7 @@ from pydantic import ConfigDict, Field, field_validator, model_validator
 
 from flow_sdk.flowpad_types.enums.lm_provider_enums import LMApiProvider
 from flow_sdk.schema.data_spec.credential_contract import (
+    CredentialKind,
     CredentialRequirement,
     CredentialVarKind,
     Requirement,
@@ -78,6 +84,11 @@ class CredentialSpec(DataSpec):
     name: str
     title: str = ""
     description: str = ""
+    #: One line: what the project uses this credential FOR — shown beside its name when a person is asked
+    #: for it. ``description`` says what the credential is; this says why it is wanted here.
+    needed_for: str = ""
+    #: The full reason, when one line is not enough — shown behind the info icon next to ``needed_for``.
+    justification: str = ""
     #: A lucide glyph name. Not ``icon``: ``APIEntity.icon`` is a getter.
     icon_name: str = ""
     #: The file says ``schema``; the row says ``manifest_schema`` because the
@@ -100,7 +111,15 @@ class CredentialSpec(DataSpec):
     #: The LLM provider this credential's single key funds. Its value always lives in the vault
     #: entry the funding resolver reads (``lm_api.<provider>``), whatever a deployment says.
     lm_provider: str = ""
-    #: The variables, keyed by env var NAME.
+    #: ``env``: values are variables. ``oauth``: the value is a grant (``provider``, ``scopes``).
+    kind: CredentialKind = CredentialKind.ENV
+    #: oauth: the connection provider the grant is from (the OAuth registry's or the hub's name).
+    provider: str = ""
+    #: oauth: the scopes the grant must cover — the union of what the project's sources need.
+    scopes: list[str] = Field(default_factory=list)
+    #: oauth: scopes that turn an extra feature on; never needed for the credential to count as connected.
+    optional_scopes: list[str] = Field(default_factory=list)
+    #: The variables, keyed by env var NAME. Required for ``env``; an ``oauth`` credential needs none.
     vars: dict[str, CredentialVarSpec] = Field(default_factory=dict)
     #: The wizards this credential's values are obtained with, in order (``setup_stage_spec.py``).
     #: Empty: the default ask-store-check wizard ``flow project setup`` compiles from ``vars``.
@@ -139,12 +158,30 @@ class CredentialSpec(DataSpec):
     @field_validator("vars")
     @classmethod
     def _usable_vars(cls, value: dict[str, CredentialVarSpec]) -> dict[str, CredentialVarSpec]:
-        if not value:
-            raise ValueError("a credential declares at least one variable")
         for name in value:
             if not is_valid_env_var(name):
                 raise ValueError(f"{name!r} is not a valid environment variable name")
         return value
+
+    @field_validator("provider")
+    @classmethod
+    def _provider_name(cls, value: str) -> str:
+        return str(value or "").strip().lower()
+
+    @model_validator(mode="after")
+    def _kind_rules(self) -> "CredentialSpec":
+        """An ``env`` credential IS its variables; an ``oauth`` one IS its provider's grant."""
+        if self.kind is CredentialKind.OAUTH:
+            if not self.provider:
+                raise ValueError("an oauth credential names its provider")
+            if self.lm_provider:
+                raise ValueError("an oauth credential cannot fund an LLM provider (lm_provider is a key)")
+        else:
+            if not self.vars:
+                raise ValueError("a credential declares at least one variable")
+            if self.provider or self.scopes or self.optional_scopes:
+                raise ValueError("provider and scopes belong to an oauth credential (kind: oauth)")
+        return self
 
     @model_validator(mode="before")
     @classmethod

@@ -39,7 +39,7 @@ import { showCleanupModal } from '@src/components/recovery/cleanup-modal';
 import { notify } from '@src/notifications';
 import { buildShellRedirectUrl, detectLayout, DockPointer } from '@src/navigation';
 import { rememberedViewMode, ViewMode } from '@src/contexts/view-mode-context';
-import { NODE_PARAM, VIEW_MODE_PARAM } from '@src/navigation/DockPointer';
+import { NODE_PARAM } from '@src/navigation/DockPointer';
 import { isHubOnly } from '@src/navigation/hub-runtime';
 import { activeDisplayDock } from '@src/navigation/open-active-display';
 
@@ -252,29 +252,21 @@ async function reconcileProcessScope(processId: string, requestPath: string, car
   if (!proc) return;
   const pathProject = !proc.project_id && proc.workdir ? await Project.getProjectByPath(proc.workdir) : null;
   const ownerProjectId = proc.project_id ?? pathProject?.id ?? null;
+  // The mode rides the same identity redirect, so the route takes ONE redirect
+  // before a tab is minted (I2): a bare URL states the session's remembered
+  // mode, else the plain chat — never Vibe, which is its own address family.
+  // Restoring writes nothing; memory is minted by `VIEW_MODE_STORE`.
+  const want = ownerProjectId ? projectScope(ownerProjectId) : null;
+  const aligned = want ? !!carry?.scope && scopeFilterEqual(carry.scope, want) : !carry?.scope;
+  if (aligned && carry?.viewMode) return; // already aligned and stated — no redirect loop
   const base = new DockPointer(
     ViewType.SHELL,
     proc.terminalDockPointer.pointer,
     carry?.options,
     detectLayout(requestPath),
-  );
-  if (!ownerProjectId) {
-    if (!carry?.scope) return;
-    const url = base
-      .withoutScopeFilter()
-      .withViewMode(carry?.viewMode ?? null)
-      .toUrl(requestPath);
-    // eslint-disable-next-line @typescript-eslint/only-throw-error
-    throw replace(url);
-  }
-  const want = projectScope(ownerProjectId);
-  if (carry?.scope && scopeFilterEqual(carry.scope, want)) return; // already aligned — no redirect loop
-  const url = base
-    .withScopeFilter(want)
-    .withViewMode(carry?.viewMode ?? null)
-    .toUrl(requestPath);
+  ).withViewMode(carry?.viewMode ?? rememberedViewMode(proc) ?? ViewMode.Standard);
   // eslint-disable-next-line @typescript-eslint/only-throw-error
-  throw replace(url);
+  throw replace((want ? base.withScopeFilter(want) : base.withoutScopeFilter()).toUrl(requestPath));
 }
 
 /**
@@ -347,16 +339,9 @@ async function routeProcessPointer(
   // this one and threw its `replace()` if the URL diverged from the process's
   // project. By here the scopes match, so the runtime attaches under the right one.
   try {
-    const { process } = await loadProcess(processId);
-    // A URL with no mode (cold deep link, hard refresh) opens the session in its
-    // remembered mode by STATING it on the URL. Restoring never writes memory or
-    // the preference — only a mode switch does (`VIEW_MODE_STORE`).
-    const remembered = carry?.viewMode ? null : rememberedViewMode(process);
-    if (remembered) {
-      const pointer = `${AgenticProcess.type}${TypeId.DELIMITER}${processId}`;
-      // eslint-disable-next-line @typescript-eslint/only-throw-error
-      throw replace(buildShellRedirectUrl(requestPath, pointer, { ...carry?.options, [VIEW_MODE_PARAM]: remembered }));
-    }
+    await loadProcess(processId);
+    // The URL states its mode by here — `reconcileProcessScope` redirected a bare
+    // one onto the session's remembered mode before any tab was minted.
     // Successful load — clear any prior runtime-error banner.
     dataContext.setTerminalRuntimeError(null);
     // Restore AFTER the load: the process is in cache, and the scope has already

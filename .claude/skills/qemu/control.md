@@ -35,11 +35,21 @@ scripts/vmrun.py --status                                             # seconds 
   later are missing: prefix jobs with
   `$env:Path = [Environment]::GetEnvironmentVariable('Path','Machine') + ';' + [Environment]::GetEnvironmentVariable('Path','User')`.
 - **Three timeouts stack:** the agent kills the job tree at `-t` (exit -1); `vmrun.py` waits for
-  it; the Bash tool caps at 600 s — for long jobs run `vmrun.py` in the background. If the Mac side
-  gives up first, the job keeps running in the guest.
+  it; the Bash tool caps at 600 s. If the Mac side gives up first, the job keeps running in the
+  guest and `vmrun.py` prints NOTHING — no partial result, no error. So an empty answer means
+  "the Mac stopped waiting": run anything slow as `vmrun.py -t <secs> … > out.log` in the
+  background and wait on the file. On a loaded Mac even a one-line job can take a minute.
+- **Quotes inside a one-liner get mangled** (PowerShell → the job file → nested strings). Anything
+  with `"…"` inside `'…'`, a here-string or `Add-Type` goes in a `.ps1` fed on stdin (`- < file`).
 - **One job per lane at a time.** A job that waits on invisible UI (a sign-in, a credential
   prompt — e.g. Git Credential Manager) blocks every job behind it. Unblock from the other lane:
   `vmrun.py -a 'taskkill /F /T /IM git-credential-manager.exe'`.
+- **Your own waiting job holds its lane too.** A background `while (-not (Test-Path …)) { Start-Sleep }`
+  keeps the lane for its whole `-t` and later jobs queue silently behind it — `--status` showing
+  a lane hundreds of seconds old means a job is running there, not that the agent died. Poll
+  from the Mac instead when you can (an exposed port). To cancel a job, stop its PowerShell from
+  the other lane: jobs run as `powershell … C:\vmagent\jobs\<id>.ps1`, so match the command line
+  on `vmagent\jobs` and read the file before `Stop-Process`.
 - **A dead agent** (lanes stop polling): `qmp.py key meta_l-r`, `qmp.py type 'powershell -ExecutionPolicy Bypass -WindowStyle Minimized -File C:\vmagent\agent.ps1\n'`,
   or reboot the guest (the logon tasks start both lanes).
 - **Updating `agent.ps1` in the guest:** a job that restarts its own agent never returns its result
@@ -63,6 +73,12 @@ then poll `vmrun.py --status` until both lanes report a few seconds.
 - **Keys:** `qmp.py key <combo>` (HMP `sendkey` names: `ret`, `esc`, `tab`, `meta_l-r`,
   `ctrl-alt-delete`); `qmp.py type 'text'` sends ~10 keys/s — faster drops characters.
 - **Clicks:** `qmp.py click X Y` in screenshot pixels (QMP absolute axes; needs the conf's `-qmp`).
+  `ConnectionRefusedError` from `click` while `shot` still works means the QMP socket is not there
+  (screenshots go over HMP) — the click never happened, however unchanged the next screenshot looks.
+- **Pressing a button in a native dialog** (a browser's own prompt, a system dialog — nothing a
+  web/CDP client can reach): `scripts/ui-invoke.ps1`, by the button's NAME, no coordinates:
+  `(echo '$Button="Open"; $Window="*Edge*"'; cat scripts/ui-invoke.ps1) | scripts/vmrun.py -t 240 -`.
+  It prints the dialog's texts and `invoked <Button>` / `no <Button> button`.
 - **Typing into a GUI app from a job** (no coordinates needed): user lane,
   `$w=New-Object -ComObject WScript.Shell; $w.AppActivate((Get-Process msedge | ? MainWindowTitle | select -First 1).Id); $w.SendKeys('text{TAB}more{ENTER}')`
   — `+ ^ % ~ ( ) { } [ ]` are SendKeys syntax. Confirm with a screenshot every time: focus can move.

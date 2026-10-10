@@ -2,6 +2,7 @@ import apiClient from '../client';
 import type { APIEntity } from '../APIEntity';
 import type { Project } from '../entities/project';
 import type { Bookmark } from '../entities/bookmark';
+import type { Workspace } from '../entities/workspace';
 import type { RagIndex } from '../entities/rag-index';
 import type { GitOrigin } from '../models';
 import type { GitProvider } from '../services/git-providers';
@@ -147,13 +148,14 @@ export const assetDefinitions = {
     },
   }),
   [LazyAsset.Projects]: entities<Project>('project'),
+  [LazyAsset.Workspaces]: entities<Workspace>('workspace', true),
   [LazyAsset.Bookmarks]: entities<Bookmark>('bookmark', true),
   [LazyAsset.RagIndexes]: entities<RagIndex>('rag_index', true),
   [LazyAsset.DiscoveredProjects]: defineAsset({
     staleTime: 120_000,
-    load: async (p: { nodeId: string }, ctx: LoadContext) => {
+    load: async (p: { nodeId: string; workspace?: string }, ctx: LoadContext) => {
       const { listProjectsFromComputeNode } = await import('../entities/compute-node/system-profile');
-      const result = await listProjectsFromComputeNode(p.nodeId, ctx.signal);
+      const result = await listProjectsFromComputeNode(p.nodeId, ctx.signal, p.workspace);
       if (ctx.isCurrent()) (await import('../stores/project-cleanup-store')).ingestCleanupSummary(result.cleanup);
       return result;
     },

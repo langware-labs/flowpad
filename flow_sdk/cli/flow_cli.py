@@ -64,6 +64,7 @@ LAZY_COMMANDS: dict[str, tuple[str, str, Optional[dict]]] = {
     "wizard": ("flow_sdk.cli.commands.wizard_cmd", "wizard_command", _EXTRA),
     "migrate": ("flow_sdk.cli.commands.migrate_cmd", "migrate_app", None),
     "instance": ("flow_sdk.cli.commands.instance_cmd", "instance_app", None),
+    "workspace": ("flow_sdk.cli.commands.workspace_cmd", "workspace_app", None),
     "diagnose": ("flow_sdk.cli.commands.diagnose_cmd", "diagnose_command", _EXTRA),
 }
 

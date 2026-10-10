@@ -136,8 +136,12 @@ def test_a_shape_we_do_not_render_yields_nothing_rather_than_raising():
     assert _items(_webhook(notice, bare)) == [] and _items({"entry": "not a list"}) == [] and _items({}) == []
 
 
-def _events(payload):
-    return [e.item for e in WhatsAppSource(_binding()).events_from_webhook(payload)]
+def _events(payload, **config):
+    """What the source makes of a delivery — a group source when ``group`` is configured."""
+    binding = _binding()
+    if config:
+        binding = binding.model_copy(update={"config": {**binding.config, **config}})
+    return [e.item for e in WhatsAppSource(binding).events_from_webhook(payload)]
 
 
 @pytest.mark.parametrize(("wire", "extra", "kind"), [
@@ -618,3 +622,175 @@ async def test_the_double_carries_files_quotes_and_reactions_both_ways(monkeypat
         await driver.send(source, thread_key=WA_ID, to=WA_ID, text="", files=[local_file(note, as_="voice")])
         (sent,) = double.sent()
         assert sent["files"] == [{"as_": "audio", "name": "note.ogg", "media_type": "audio/ogg", "caption": None, "bytes": b"OggS voice"}]
+
+
+# ── groups (Meta's Groups API) ───────────────────────────────────────────────
+# Held to Meta's own samples (``meta_groups/``, copied from waha-service's ``tests/meta_samples/groups``): a group
+# is a conversation whose sender is still a person; what we send, reply and react there goes to
+# ``recipient_type: group``; a group source is one group of its number, claimed on the hub under the number's
+# account, and everyone in it may write.
+
+from pathlib import Path  # noqa: E402
+
+module = asset_module("whatsapp")
+SAMPLES = Path(__file__).parent / "meta_groups"
+GROUP = "Y2FwaV9ncm91cDoxMjM0NTY3ODkwMTIzNDU6MTIwMzYzMDAwMDAwMDAwMDAx"
+OTHER_GROUP = "Y2FwaV9ncm91cDoxMjM0NTY3ODkwMTIzNDU6MTIwMzYzMDAwMDAwMDAwMDAy"
+
+
+def _sample(name: str) -> dict:
+    return json.loads((SAMPLES / f"{name}.json").read_text())
+
+
+def _group_message(message_id: str, body: str, *, sender: str = WA_ID, group: str = GROUP, **extra) -> dict:
+    """Meta's inbound group sample, filled in."""
+    payload = _sample("inbound_text")
+    value = payload["entry"][0]["changes"][0]["value"]
+    value["metadata"] = {"display_phone_number": "15550001111", "phone_number_id": PHONE_ID}
+    value["contacts"] = [{"profile": {"name": "Dana"}, "wa_id": sender}]
+    value["messages"] = [{"from": sender, "group_id": group, "id": message_id, "timestamp": "1789000000",
+                          "type": "text", "text": {"body": body}, **extra}]
+    return payload
+
+
+# ── inbound ──────────────────────────────────────────────────────────────────
+
+
+def test_a_group_message_is_the_groups_conversation_written_by_a_person():
+    (item,) = _events(_group_message("wamid.G1", "where is our driver?"))
+    source = WhatsAppSource(_binding())
+    assert item.data.conversation == source.group_origin(GROUP)
+    assert item.origin == source.group_message_origin("wamid.G1", GROUP)
+    assert item.data.sender.origin == source.conversation_origin(WA_ID), "the sender is the person, not the group"
+    assert item.data.sender.name == "Dana" and item.data.text == "where is our driver?"
+
+
+def test_metas_reference_sample_parses_too():
+    payload = _sample("inbound_text_reference")
+    group = payload["entry"][0]["changes"][0]["value"]["messages"][0]["group_id"]
+    (item,) = _events(payload)
+    assert item.data.conversation == WhatsAppSource(_binding()).group_origin(group)
+
+
+def test_a_quote_and_a_reaction_in_a_group_stay_in_the_group():
+    source = WhatsAppSource(_binding())
+    (quoted,) = _events(_group_message("wamid.G2", "about that", context={"from": "972500000009", "id": "wamid.G1"}))
+    reaction = _group_message("wamid.R1", "")
+    reaction["entry"][0]["changes"][0]["value"]["messages"][0].update(
+        type="reaction", reaction={"message_id": "wamid.G1", "emoji": "👍"})
+    (reacted,) = _events(reaction)
+    assert quoted.data.in_reply_to == source.group_message_origin("wamid.G1", GROUP)
+    assert reacted.data.target == source.group_message_origin("wamid.G1", GROUP)
+
+
+@pytest.mark.parametrize("name", ["lifecycle_create", "participants_add_invite", "participants_remove", "settings_update"])
+def test_a_groups_own_news_is_not_a_message(name):
+    assert _events(_sample(name)) == []
+
+
+def test_a_group_source_takes_its_own_group_only():
+    both = _group_message("wamid.G1", "ours")
+    both["entry"][0]["changes"][0]["value"]["messages"].append(
+        {"from": WA_ID, "group_id": OTHER_GROUP, "id": "wamid.X1", "timestamp": "1789000000", "type": "text",
+         "text": {"body": "theirs"}})
+    assert [i.data.text for i in _events(both, group=GROUP)] == ["ours"]
+    assert [i.data.text for i in _events(both)] == ["ours", "theirs"], "the number's own source hears every group"
+
+
+# ── outbound ─────────────────────────────────────────────────────────────────
+
+
+async def test_send_reply_and_react_in_a_group_go_to_the_group(serve):
+    graph = serve([(200, _sample("send_group_response") | {"messages": [{"id": "wamid.OUT"}]})])
+    async with WhatsAppSource(_binding()) as source:
+        from flow_sdk.sources.values.items import MessageData  # noqa: PLC0415
+
+        await source.send(MessageData(text="Juan is at arrivals", conversation=source.group_origin(GROUP)))
+        await source.reply(source.group_message_origin("wamid.G1", GROUP), MessageData(text="on it"))
+        await source.react(source.group_message_origin("wamid.G1", GROUP), "👍")
+    sent, replied, reacted = _posts(graph)
+    for body in (sent, replied, reacted):
+        assert (body["recipient_type"], body["to"]) == ("group", GROUP)
+    assert replied["context"] == {"message_id": "wamid.G1"}
+    assert reacted["reaction"] == {"message_id": "wamid.G1", "emoji": "👍"}
+
+
+async def test_a_reply_to_a_group_message_through_the_driver_goes_to_the_group(serve, monkeypatch):
+    graph = serve([(200, {"messages": [{"id": "wamid.OUT"}]})])
+
+    async def _ingest(item, **_kw):
+        from flow_sdk.ingest.models import IngestOutcome  # noqa: PLC0415
+
+        return IngestOutcome(entity_id="row", external_id=item.external_id, status="created")
+
+    monkeypatch.setattr("flow_sdk.ingest.ingestor.ingest_item", _ingest)
+    await DataDriver.loaded("whatsapp").send(_source(), thread_key=GROUP, to=GROUP, text="hi all", in_reply_to="wamid.G1")
+    (body,) = _posts(graph)
+    assert (body["recipient_type"], body["to"], body["context"]) == ("group", GROUP, {"message_id": "wamid.G1"})
+
+
+def test_the_reply_spec_of_a_group_message_addresses_the_group():
+    from flow_sdk.builtin.source_item import WhatsAppMessageSpec  # noqa: PLC0415
+
+    class _Row:
+        thread_key, external_id, author_external_id, subject = GROUP, "wamid.G1", WA_ID, ""
+
+    spec = WhatsAppMessageSpec.reply_to(_Row(), body="on it")
+    assert list(spec.to) == [GROUP] and spec.thread_key == GROUP
+
+
+# ── the group verbs: Graph calls ─────────────────────────────────────────────
+
+
+async def test_the_group_verbs_are_metas_calls(serve):
+    graph = serve([
+        (200, {"messaging_product": "whatsapp", "request_id": "req-1"}),
+        (200, _sample("group_info_response")),
+        (200, _sample("invite_link_response")),
+        (200, _sample("invite_link_response")),
+        (200, {"messaging_product": "whatsapp", "request_id": "req-2"}),
+        (200, {"messaging_product": "whatsapp", "request_id": "req-3"}),
+    ])
+    async with WhatsAppSource(_binding()) as source:
+        assert await source.create_group("Cohen trip", description="Villa Azul", join_approval_mode="auto_approve") == "req-1"
+        info = await source.group_info(GROUP)
+        link = await source.invite_link(GROUP)
+        await source.reset_invite_link(GROUP)
+        await source.add_participants(GROUP, ["+972 50-000-0001"])
+        await source.remove_participants(GROUP, ["972500000001"])
+    paths = [r.split("?")[0] for r in graph.requests]
+    assert paths == [f"/v23.0/{PHONE_ID}/groups", f"/v23.0/{GROUP}", f"/v23.0/{GROUP}/invite_link",
+                     f"/v23.0/{GROUP}/invite_link", f"/v23.0/{GROUP}/participants", f"/v23.0/{GROUP}/participants"]
+    created, *_, added, removed = [json.loads(b) if b else {} for b in graph.bodies]
+    assert created == {"messaging_product": "whatsapp", "subject": "Cohen trip", "description": "Villa Azul",
+                       "join_approval_mode": "auto_approve"}
+    assert added == removed == {"messaging_product": "whatsapp", "participants": [{"user": "972500000001"}]}
+    assert info["id"] and link.startswith("https://chat.whatsapp.com/")
+    assert "fields=subject" in graph.requests[1]
+
+
+async def test_adding_people_on_meta_says_it_is_not_a_meta_call(serve):
+    serve([(400, {"error": {"message": "(#100) Unsupported post request", "code": 100}})])
+    async with WhatsAppSource(_binding()) as source:
+        with pytest.raises(Exception, match="invite link"):
+            await source.add_participants(GROUP, ["972500000001"])
+
+
+# ── a group source ───────────────────────────────────────────────────────────
+
+
+def test_a_group_source_claims_its_group_under_the_numbers_account():
+    claim = WhatsAppSource.hub_claim({"phone_number_id": PHONE_ID, "group": GROUP}, {})
+    assert claim == {"provider": "whatsapp", "kind": "group", "key": GROUP, "under": {"kind": "account", "key": PHONE_ID}}
+    assert WhatsAppSource.open_inbound_for({"phone_number_id": PHONE_ID, "group": GROUP}) is True
+    assert WhatsAppSource.open_inbound_for({"phone_number_id": PHONE_ID}) is False, "the number keeps its allowlist"
+    assert WhatsAppSource.account_part({"group": GROUP}) == GROUP and WhatsAppSource.account_part({}) == ""
+
+
+def test_a_new_app_subscription_asks_for_the_group_fields():
+    assert module.WEBHOOK_FIELDS.split(",") == ["messages", "group_lifecycle_update", "group_participants_update",
+                                                "group_settings_update", "group_status_update"]
+
+
+def test_a_group_id_is_never_a_phone_number():
+    assert module.is_group_id(GROUP) and not module.is_group_id("+972 50-123-4567") and not module.is_group_id("")

@@ -195,37 +195,12 @@ agents_json = proc.get_agents_json()           # → {"task-analyze": {"prompt":
 Process lifecycle (status, turns, completion) is the `AgenticProcess`'s own — see
 `docs/agentic-process.md` rather than anything sub-agent specific.
 
-#### ClaudeCLIWorker
+#### ClaudeCLIStreamWorker
 
-Subprocess-based worker that implements the `AgenticWorker` interface.
-
-**File:** `flow_sdk/builtin/agentic_process/cli_drivers/claude/cli_worker.py`
-
-Has two pure, unit-testable static methods:
-
-```python
-# Build the CLI argument list
-args = ClaudeCLIWorker.build_args(
-    claude_bin="/usr/bin/claude",
-    prompt="Do stuff",
-    session_id="sess-1",
-    context=AgenticContext(workdir="/tmp", model="sonnet"),
-    agents_json={"my-agent": {"description": "...", "prompt": "..."}}
-)
-# → ["/usr/bin/claude", "--dangerously-skip-permissions", "--session-id", "sess-1",
-#    "--model", "sonnet", "--agents", '{"my-agent": {...}}', "-p", "Do stuff"]
-
-# Build sanitized environment
-env = ClaudeCLIWorker.build_env(context)
-```
-
-The `execute()` method launches `claude` via `asyncio.create_subprocess_exec` and yields `FlowData` chunks:
-
-* `STATUS` — session started
-
-* `CHAT` — stdout output (complete response)
-
-* `ERROR` — if subprocess fails or claude binary not found
+The worker every headless Claude turn runs (`flow_sdk/builtin/agentic_process/cli_drivers/claude/stream_worker.py`):
+`claude -p --output-format stream-json`, each stdout event converted to `FlowData` as it arrives. Its argv
+comes from `ClaudeAgentOptions` (`claude/cli.py`) — embedded sub-agents ride `--agents`, the composed
+system prompt `--append-system-prompt-file` (`docs/agent/system-prompt-layers.md`).
 
 There is also `ClaudeCodeAgenticWorker` (`flow_sdk/builtin/agentic_process/cli_drivers/claude/code_agentic_worker.py`), written against the `claude_agent_sdk` Python package. **It is not wired:** no driver instantiates it, and `claude_agent_sdk` is not a declared dependency (its wheel bundles a ~215 MB CLI binary, which is why it was not adopted). The worker that needs no vendor CLI is the hidden `deepagents` vendor (`cli_drivers/deepagents/`) — see `worker_spec/AgenticWorkerSpec.md` §0.
 
@@ -325,8 +300,7 @@ Embed it into an unsaved process and build the CLI args — no worker is spawned
 
 ```python
 from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess
-from flow_sdk.builtin.agentic_process.cli_drivers.claude.cli_worker import ClaudeCLIWorker
-from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import AgenticContext
+from flow_sdk.builtin.agentic_process.cli_drivers.claude.cli import ClaudeAgentOptions
 
 
 def test_my_agent_reaches_agents_flag():
@@ -338,13 +312,7 @@ def test_my_agent_reaches_agents_flag():
     assert agents_json["my-agent"]["model"] == "sonnet"
     assert agents_json["my-agent"]["maxTurns"] == 20
 
-    args = ClaudeCLIWorker.build_args(
-        claude_bin="claude",
-        prompt="Do the task",
-        session_id="sess-1",
-        context=AgenticContext(workdir="/tmp"),
-        agents_json=agents_json,
-    )
+    args = ClaudeAgentOptions(workdir="/tmp", agents_json=agents_json).cli_cmd(instruction="Do the task")
     assert args[args.index("--agents") + 1].startswith('{"my-agent"')
 ```
 

@@ -31,15 +31,15 @@ router = APIRouter(prefix="/auth")
 logger = logging.getLogger(__name__)
 
 
-def _safe_next(candidate: str | None, default: str = "/") -> str:
-    """A same-origin redirect target, or ``default``.
+def _safe_next(candidate: str | None) -> str:
+    """A same-origin redirect target, or the app's root.
 
     ``startswith("/")`` alone is not enough: ``//evil.com`` is a protocol-relative
     URL, which a browser follows straight off the origin. Anything that is not a
     single-slash absolute path is refused.
     """
     if not candidate or not candidate.startswith("/") or candidate.startswith("//"):
-        return default
+        return "/"
     return candidate
 
 
@@ -253,9 +253,10 @@ async def login_callback(
             except ValueError:
                 logger.warning("login_callback: ignoring unassignable runtime %r", runtime)
 
-        safe_next = _safe_next(next, default="")
-        if safe_next:
-            return RedirectResponse(url=safe_next, status_code=302)
+        # A link that asked to land somewhere lands in the app: on its path, or on home when
+        # that path is refused. The page below is for a sign-in that named nowhere to go.
+        if next:
+            return RedirectResponse(url=_safe_next(next), status_code=302)
 
         user_id = user_info.get("id", "Unknown")
         s = get_instance_settings()

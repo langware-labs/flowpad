@@ -263,6 +263,18 @@ export class DataManager<T extends Manageable> extends EventEmitter {
   }
 
   private watchedQueries: WatchQueryMap<T> = new WatchQueryMap<T>();
+  /** One bound reference per connection event: on() and off() must be given the same function. */
+  private readonly connectionHandlers: ReadonlyArray<readonly [string, (...args: any[]) => void]> = [
+    ['on_open', this.onConnectionOpen.bind(this)],
+    ['on_close', this.onConnectionClose.bind(this)],
+    ['on_data_op', this.onDataOp.bind(this)],
+    ['on_control_msg', this.onControlMessage.bind(this)],
+    ['on_oauth_msg', this.onOAuthMessage.bind(this)],
+    ['on_pty_output_msg', this.onPtyOutputMessage.bind(this)],
+    ['on_flow_data', this.onFlowData.bind(this)],
+  ];
+  /** Managers this store listens to; attaching one twice would deliver every event twice. */
+  private readonly attachedManagers = new Set<ConnectionManager>();
   private streamingRequestsCount: number = 0;
   private editMarker: EntityEditMarker;
   scanInfo: ScanInfo | null = null;
@@ -286,23 +298,14 @@ export class DataManager<T extends Manageable> extends EventEmitter {
   }
 
   public attach_connection_manager(manager: ConnectionManager) {
-    manager.on('on_open', this.onConnectionOpen.bind(this));
-    manager.on('on_close', this.onConnectionClose.bind(this));
-    manager.on('on_data_op', this.onDataOp.bind(this));
-    manager.on('on_control_msg', this.onControlMessage.bind(this));
-    manager.on('on_oauth_msg', this.onOAuthMessage.bind(this));
-    manager.on('on_pty_output_msg', this.onPtyOutputMessage.bind(this));
-    manager.on('on_flow_data', this.onFlowData.bind(this));
+    if (this.attachedManagers.has(manager)) return;
+    this.attachedManagers.add(manager);
+    for (const [event, handler] of this.connectionHandlers) manager.on(event, handler);
   }
 
   public detach_connection_manager(manager: ConnectionManager) {
-    manager.off('on_open', this.onConnectionOpen.bind(this));
-    manager.off('on_close', this.onConnectionClose.bind(this));
-    manager.off('on_data_op', this.onDataOp.bind(this));
-    manager.off('on_control_msg', this.onControlMessage.bind(this));
-    manager.off('on_oauth_msg', this.onOAuthMessage.bind(this));
-    manager.off('on_pty_output_msg', this.onPtyOutputMessage.bind(this));
-    manager.off('on_flow_data', this.onFlowData.bind(this));
+    if (!this.attachedManagers.delete(manager)) return;
+    for (const [event, handler] of this.connectionHandlers) manager.off(event, handler);
   }
 
   public getSchema(type: string): JSONSchemaParser {
@@ -1982,6 +1985,7 @@ export class DataManager<T extends Manageable> extends EventEmitter {
         watchedQuery.results = results;
         watchedQuery.pendingPromise = undefined;
       }
+      this.watchedQueries.releaseIfUnwatched(request);
       return results;
     } catch (error) {
       // Clear pending promise on error
@@ -1989,6 +1993,7 @@ export class DataManager<T extends Manageable> extends EventEmitter {
       if (epoch === this.queryEpoch && watchedQuery?.pendingPromise === queryPromise) {
         watchedQuery.pendingPromise = undefined;
       }
+      this.watchedQueries.releaseIfUnwatched(request);
       throw error;
     }
   }

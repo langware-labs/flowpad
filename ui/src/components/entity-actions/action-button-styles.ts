@@ -3,6 +3,13 @@ export const compactEntityActionClassName =
   'inline-flex h-7 w-7 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring';
 
 /**
+ * The compact action while it demands attention (a restart the backend says is
+ * required): amber, pulsing, haloed. Layered on the compact base so the
+ * button keeps its size and focus ring.
+ */
+export const attentionEntityActionClassName = `${compactEntityActionClassName} animate-pulse motion-reduce:animate-none bg-amber-500/20 text-amber-500 shadow-[0_0_12px_rgba(245,158,11,0.55)] ring-2 ring-amber-500/60 hover:bg-amber-500/30 hover:text-amber-500 dark:text-amber-400`;
+
+/**
  * The same contract one size up, for WINDOW CHROME — the navigation bar's own
  * controls, which are hit at a glance rather than read inside a view.
  *

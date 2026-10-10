@@ -43,3 +43,6 @@ export function useSourceSpecs(options?: { enabled?: boolean }) {
 /** A MessageSource's spec: its driver can push a reply back (`IngestDriver.sends`).
  *  The one client-side spelling of `agent_scope.is_message_source`'s driver half. */
 export const isMessageDriverSpec = (spec: DataDriver | undefined | null): boolean => !!spec?.sends;
+
+/** A driver whose items are files (the `object` family): its page shows those files. */
+export const isObjectDriverSpec = (spec: DataDriver | undefined | null): boolean => spec?.family === 'object';

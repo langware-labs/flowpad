@@ -26,6 +26,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Callable
 
 from flow_sdk.builtin.agentic_process.model_tiers import (
+    CLAUDE_CLI_ALIASES,
     CLAUDE_MODEL_TIERS,
     is_family_model,
     is_model_tier,
@@ -242,7 +243,7 @@ CLAUDE_API_AUTH_SPEC = ApiAuthSpec(
         "DISABLE_INTERLEAVED_THINKING": "1",
     },
     tier_models={
-        "sm": "anthropic/claude-haiku-4.5",
+        "sm": "anthropic/claude-haiku-5.5",
         "md": "anthropic/claude-sonnet-4.5",
         "lg": "anthropic/claude-opus-4.1",
     },
@@ -252,7 +253,7 @@ CLAUDE_API_AUTH_SPEC = ApiAuthSpec(
     supported_providers=(LMApiProvider.OPENROUTER, LMApiProvider.FLOWPAD),
     default_provider=LMApiProvider.OPENROUTER,
     prompt_model_env_vars=("ANTHROPIC_MODEL",),
-    native_tiers={name: size for size, name in CLAUDE_MODEL_TIERS.items()},
+    native_tiers={**CLAUDE_CLI_ALIASES, **{name: size for size, name in CLAUDE_MODEL_TIERS.items()}},
     user_config_path=".claude/settings.json",
     user_config_fmt="json",
     hub_endpoint_binding=_claude_hub_binding,

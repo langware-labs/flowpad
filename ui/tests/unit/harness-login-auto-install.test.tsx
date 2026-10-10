@@ -1,11 +1,10 @@
 /**
- * "Try auto install" inside the Assistants & keys modal.
+ * "Try auto install" inside the assistant sign-in dialog.
  *
- * This modal is where a person already goes to ask "what is wrong with my
- * assistant" — it lists each harness as Signed in / Not signed in / Not
- * installed. The "Not installed" arm knew the answer and offered only a wiki
- * page: read this guide, install it yourself, come back. The vendor's own
- * one-liner was on the status record the whole time.
+ * The dialog is where a person goes when a row says "Not installed". That arm
+ * knew the answer and offered only a wiki page: read this guide, install it
+ * yourself, come back. The vendor's own one-liner was on the status record the
+ * whole time.
  *
  * So the install affordance now lives on the status surface the user already
  * consults, not only on the two dialogs they reach by failing at something.
@@ -75,7 +74,7 @@ vi.mock('@src/components/status/use-status-record', async (importOriginal) => ({
   }),
 }));
 
-import { HarnessDetail } from '@src/components/harness-login/HarnessLoginModal';
+import { HarnessSignInDialog } from '@src/components/harness-login/HarnessSignInDialog';
 import { Dialog, DialogContent } from '@src/components/ui/dialog';
 
 const INSTALL = 'curl -fsSL https://claude.ai/install.sh | bash && export PATH="$HOME/.local/bin:$PATH"';
@@ -99,7 +98,7 @@ function mount(installCommand: string | null) {
   render(
     <Dialog open>
       <DialogContent>
-        <HarnessDetail kind="harness.claude.cli" onBack={vi.fn()} onManageKeys={vi.fn()} onDone={onDone} />
+        <HarnessSignInDialog kind="harness.claude.cli" onDone={onDone} />
       </DialogContent>
     </Dialog>,
   );
@@ -120,7 +119,7 @@ describe('Assistants & keys — a harness that is not installed', () => {
     expect(h.openNewShell).toHaveBeenCalledWith(
       expect.objectContaining({ startCommand: INSTALL, viewMode: 'advanced' }),
     );
-    // The modal gets out of the way — otherwise it covers the terminal it just
+    // The dialog gets out of the way — otherwise it covers the terminal it just
     // told the user to look at.
     expect(onDone).toHaveBeenCalled();
   });

@@ -25,7 +25,6 @@ neither well.
 
 from __future__ import annotations
 
-import asyncio
 from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
@@ -37,6 +36,7 @@ from flow_sdk._compat import StrEnum
 from flow_sdk.api.api_types.api_field import APIField, Sharing
 from flow_sdk.core import Entity
 from flow_sdk.schema.types import EntityType
+from flow_sdk.stream_inbox._locks import keyed_loop_lock, new_registry
 
 if TYPE_CHECKING:
     from flow_sdk.responses.response import ApiResponse
@@ -50,7 +50,8 @@ _BUCKET = "private"
 DEFAULT_INDEX_NAME = "Default RAG"
 
 #: One asyncio lock per index id, guarding its usearch handle. See ``RagIndex.open_store``.
-_STORE_LOCKS: dict[str, asyncio.Lock] = {}
+#: Weak-valued (``stream_inbox/_locks``): it lives only while a store is open or awaited.
+_STORE_LOCKS = new_registry()
 
 #: Index ids with an embed running in THIS process. ``indexing`` on a row that is not in here was
 #: left by a process that died mid-pass; see ``RagIndex.clear_stale_indexing``.
@@ -228,7 +229,7 @@ class RagIndex(Entity):
         """
         from flow_sdk.rag.store import RagStore  # noqa: PLC0415
 
-        lock = _STORE_LOCKS.setdefault(str(self.id), asyncio.Lock())
+        lock = keyed_loop_lock(_STORE_LOCKS, str(self.id))
         async with lock:
             with RagStore(self.store_dir) as store:
                 yield store

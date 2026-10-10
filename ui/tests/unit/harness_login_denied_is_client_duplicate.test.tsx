@@ -30,6 +30,8 @@ import apiClient from '@sdk/client';
 import { useHarnessLoginStore } from '@src/components/harness-login/harness-login-store';
 import { useHarnessLoginOnAuthError } from '@src/components/harness-login/use-harness-login-on-auth-error';
 import { HarnessLoginModalRoot } from '@src/components/harness-login/HarnessLoginModal';
+import { HarnessSignInDialogRoot } from '@src/components/harness-login/HarnessSignInDialog';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 const CLAUDE = CapabilityKinds.ClaudeCode;
 const CLAUDE_ID = '6f1a4f2e-8c5d-4c2b-9f77-2a0f5c9d3e11';
@@ -96,9 +98,21 @@ const denied = () => record('signed_out', DENIAL);
 /** The retraction, as a completed login / verified probe / Test leaves it. */
 const retracted = () => record('signed_in', 'claude CLI has stored credentials.');
 
+/** The row's own button: on a signed-out row it reads "Sign in" and opens the sign-in dialog. */
 async function openClaudeDetail(user: ReturnType<typeof userEvent.setup>) {
   await waitFor(() => expect(useHarnessLoginStore.getState().open).toBe(true));
-  await user.click(await screen.findByTestId('harness-row-claude'));
+  await user.click(await screen.findByTestId('harness-row-claude-action'));
+}
+
+/** The modal and the sign-in dialog, mounted the way `App` mounts them. */
+function Roots() {
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return (
+    <QueryClientProvider client={qc}>
+      <HarnessLoginModalRoot />
+      <HarnessSignInDialogRoot />
+    </QueryClientProvider>
+  );
 }
 
 describe('harness login — the refusal is read from the backend, not copied', () => {
@@ -132,7 +146,7 @@ describe('harness login — the refusal is read from the backend, not copied', (
     render(
       <MemoryRouter>
         <ProcessStatus detail={DENIAL} />
-        <HarnessLoginModalRoot />
+        <Roots />
       </MemoryRouter>,
     );
 
@@ -157,8 +171,8 @@ describe('harness login — the refusal is read from the backend, not copied', (
     });
     expect(screen.queryByTestId('harness-status-reason')).toBeNull();
 
-    // Done dismisses the modal outright — not one level up into the assistants
-    // list, which just reads as a second popup opening by itself.
+    // Done dismisses the dialog AND the modal under it — not one level up into the
+    // assistants list, which just reads as a second popup opening by itself.
     await user.click(screen.getByTestId('harness-done'));
     await waitFor(() => expect(useHarnessLoginStore.getState().open).toBe(false));
     expect(screen.queryByText('Assistants & keys')).toBeNull();
@@ -169,7 +183,7 @@ describe('harness login — the refusal is read from the backend, not copied', (
     render(
       <MemoryRouter>
         <ProcessStatus detail={DENIAL} />
-        <HarnessLoginModalRoot />
+        <Roots />
       </MemoryRouter>,
     );
 

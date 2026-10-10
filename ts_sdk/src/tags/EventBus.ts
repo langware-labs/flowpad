@@ -70,6 +70,12 @@ export function targetOf(entityType: string, entityId: string): string {
   return `${entityType}:${entityId}`;
 }
 
+/** The inverse of `targetOf` — `[type, id]`, or `[null, null]` for anything that is not `type:id`. */
+export function parseTarget(target: string | null | undefined): [string, string] | [null, null] {
+  const at = (target ?? '').indexOf(':');
+  return at > 0 && at < (target ?? '').length - 1 ? [target!.slice(0, at), target!.slice(at + 1)] : [null, null];
+}
+
 /** Exact match, or `type:*` — pattern up to the first colon, then `*` for the rest. */
 export function targetMatches(pattern: string, target: string): boolean {
   if (pattern === target || pattern === '*') return true;

@@ -7,8 +7,10 @@ matches stored values across macOS, Linux, and Windows on the same host.
 
 from __future__ import annotations
 
+import logging
 import ntpath
 import os
+import platform
 import tempfile
 import unicodedata
 from pathlib import Path, PureWindowsPath
@@ -178,13 +180,17 @@ def is_protected_path(path: Path | str | None) -> bool:
     # own projects live there whichever instance is asking.
     if home and candidate == home + ("/flowpad workspace" if flavour == "windows" else "/Flowpad workspace"):
         return True
+    # Every workspace root — the default one and each user-created one — holds the
+    # user's projects, so none of them may be removed wholesale. The user-created
+    # roots' keys are precomputed when they change; only the default one resolves here.
     try:
-        from flow_sdk.config import agent_workspace_root  # noqa: PLC0415
+        from flow_sdk.config import agent_workspace_root, extra_workspace_root_keys  # noqa: PLC0415
 
         root = _same_flavour_key(agent_workspace_root(), flavour)
+        extra = {key for key_flavour, key in extra_workspace_root_keys() if key_flavour == flavour}
     except Exception:
-        root = None
-    if root and candidate == root:
+        root, extra = None, set()
+    if (root and candidate == root) or candidate in extra:
         return True
 
     if candidate in _temp_root_keys(flavour):
@@ -345,3 +351,28 @@ def trash_path(path: Path | str) -> str:
         return "trash_fallback"
     send2trash(str(target))
     return "trash"
+
+
+def vfs_relative_path(abs_path: str) -> str:
+    """Normalize an OS-absolute path into a VFS-relative form (no leading slash).
+
+    On Unix: `lstrip("/")`.
+    On Windows: backslashes → forward slashes, then handle three shapes:
+    - Drive-letter (`C:/Users/x`): strip the drive prefix.
+    - UNC (`//server/share/x`): drop the leading `//` but keep `server/share`
+      so the host prefix survives; the OS layer can reassemble UNC from it.
+    - Other shapes: just `lstrip("/")`.
+    """
+    if platform.system() != "Windows":
+        return abs_path.lstrip("/")
+    norm = abs_path.replace("\\", "/")
+    if len(norm) >= 2 and norm[1] == ":":
+        return norm[2:].lstrip("/")
+    if norm.startswith("//"):
+        logging.warning(
+            "UNC path %r encountered — VFS support for UNC paths is limited; "
+            "consider mapping the share to a drive letter.",
+            abs_path,
+        )
+        return norm[2:]
+    return norm.lstrip("/")

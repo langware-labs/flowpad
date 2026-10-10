@@ -58,8 +58,11 @@ def test_event(trigger: "Trigger", event: Optional[dict[str, Any]] = None) -> "F
     from flow_sdk.tags.envelope import target_of  # noqa: PLC0415
 
     if event and event.get("tag"):
-        return make_tag_event(str(event["tag"]), str(event.get("target") or target_of("trigger", trigger.id or "")),
+        made = make_tag_event(str(event["tag"]), str(event.get("target") or target_of("trigger", trigger.id or "")),
                               dict(event.get("data") or {}))
+        if event.get("scope"):
+            made = made.model_copy(update={"ctx": made.ctx.model_copy(update={"scope": list(event["scope"])})})
+        return made
     pattern = str(trigger.tag_pattern or "")
     if not pattern:
         raise RunOnceRefused("This automation has no event to listen for yet. Pick one under When.")
@@ -69,12 +72,32 @@ def test_event(trigger: "Trigger", event: Optional[dict[str, Any]] = None) -> "F
     return make_tag_event(sample_tag(pattern), target, {"test": True})
 
 
-async def run_once(trigger: "Trigger", event: Optional[dict[str, Any]] = None) -> RunOnceStarted:
-    """Start one test run of ``trigger``. Raises ``RunOnceRefused`` with a fix-it message."""
+async def subject_event(trigger: "Trigger", subject_id: str) -> dict[str, Any]:
+    """The envelope a test fires with for one thing the rule decides about (a message): the target,
+    data and scope its real event carried — the subject's to say — under the rule's own sample tag
+    (its pattern may name one provider). The gate and the wizard then see the real thing."""
+    from flow_sdk.automations.decision_subjects import for_trigger  # noqa: PLC0415
+
+    subject = for_trigger(trigger)
+    try:
+        if subject is None:
+            raise LookupError
+        parts = await subject.test_event(subject_id)
+    except LookupError:
+        raise RunOnceRefused("That is not something this rule can run on.") from None
+    return {**parts, "tag": sample_tag(str(trigger.tag_pattern or ""))}
+
+
+async def run_once(trigger: "Trigger", event: Optional[dict[str, Any]] = None, *,
+                   message_id: Optional[str] = None) -> RunOnceStarted:
+    """Start one test run of ``trigger``. Raises ``RunOnceRefused`` with a fix-it message.
+    ``message_id`` runs a stream inbox rule on that message (its real envelope)."""
     from flow_sdk.builtin.trigger_on_tag import emit_trigger_fired  # noqa: PLC0415
 
     kind = TriggerType(str(trigger.trigger_type))
     tid = trigger.id or ""
+    if message_id and kind == TriggerType.TAG:
+        event = await subject_event(trigger, message_id)
 
     if kind == TriggerType.TAG:
         from flow_sdk.builtin.tag_triggers import run_tag_test  # noqa: PLC0415

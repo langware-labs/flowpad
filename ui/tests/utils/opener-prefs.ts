@@ -10,5 +10,6 @@ import { instancePreferences, PrefKey } from '@sdk';
  */
 export function resetOpenerPrefs(): void {
   instancePreferences.set(PrefKey.LAST_OPENER, null);
+  instancePreferences.set(PrefKey.LAST_OPENER_MODE, null);
   instancePreferences.set(PrefKey.PINNED_OPENERS, []);
 }

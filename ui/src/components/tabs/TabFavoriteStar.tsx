@@ -27,7 +27,13 @@ export function TabFavoriteStar({ favorite, chip }: { favorite: FavoriteRef; chi
         {...favorite}
         hoverSurface="none"
         size={12}
-        className="p-0"
+        // Off and hovered, a 12px amber outline is too faint to read as a target
+        // on the chip: brighten it, thicken the stroke and tint the inside.
+        className={cn(
+          'p-0',
+          !on &&
+            'hover:text-amber-600 hover:[&_svg]:fill-amber-500/40 hover:[&_svg]:stroke-[2.5] dark:hover:text-amber-300 dark:hover:[&_svg]:fill-amber-300/40',
+        )}
         onFavorited={() => animatePointToBookmarks(chip())}
       />
     </span>

@@ -6,6 +6,7 @@
  */
 import {
   CredentialRequirement,
+  type CredentialKind,
   credentialEnvFileName,
   type CredentialScopeFile,
   type CredentialScopeName,
@@ -33,6 +34,8 @@ export interface CredentialRow {
   title: string;
   iconName?: string;
   description?: string;
+  neededFor?: string;
+  justification?: string;
   scope: CredentialScopeName;
   store: CredentialValueStore;
   state: CredentialRowState;
@@ -45,6 +48,12 @@ export interface CredentialRow {
   shadowed: boolean;
   /** The `.env.local` this credential reads, when it keeps values there and the file exists. */
   envPath?: string;
+  /** `env`: values are variables. `oauth`: a provider's grant — rendered with the connection's own row. */
+  kind: CredentialKind;
+  /** oauth: the connection provider (lower-case), the scopes the project needs, and those the grant lacks. */
+  provider?: string;
+  scopes: string[];
+  missingScopes: string[];
   /** The status row the edit and set-values forms start from. */
   source: CredentialStatusRow;
 }
@@ -103,14 +112,21 @@ export function buildCredentialRows(status: CredentialsStatus): CredentialRow[] 
         title: row.title || row.name,
         iconName: row.icon_name || undefined,
         description: row.description || undefined,
+        neededFor: row.needed_for || undefined,
+        justification: row.justification || undefined,
         scope: row.scope,
         store: row.value_store,
         state: row.state === 'connected' ? 'connected' : 'needs-values',
         vars: row.vars.map((v) => ({ envVar: v.env_var, required: v.required, present: v.present, warning: v.warning })),
-        required: row.vars.some((v) => v.required === MUST) ? MUST : CredentialRequirement.OPTIONAL,
+        // An oauth credential the project declares is needed whole: there are no variables to weigh.
+        required: row.kind === 'oauth' || row.vars.some((v) => v.required === MUST) ? MUST : CredentialRequirement.OPTIONAL,
         missing: row.vars.filter((v) => v.required === MUST && !v.present).map((v) => v.env_var),
         shadowed: row.vars.length > 0 && row.vars.every((v) => !!v.shadowed_by),
         envPath: envFile(row),
+        kind: row.kind ?? 'env',
+        provider: row.provider ? row.provider.toLowerCase() : undefined,
+        scopes: row.scopes ?? [],
+        missingScopes: row.missing_scopes ?? [],
         source: row,
       }),
     )

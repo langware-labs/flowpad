@@ -11,7 +11,7 @@
 import { useCallback, useState } from 'react';
 import { Check, Loader2 } from 'lucide-react';
 import { Trans } from '@lingui/react/macro';
-import type { FlowMessage } from '@sdk';
+import { isProcessFailed, isProcessLive, type AgenticProcess, type FlowMessage } from '@sdk';
 import { SenderKind, senderOf } from '@sdk/models/MessageSender';
 import type { FlowEvent } from '@sdk/tags/EventBus';
 import { useOnTag } from '@sdk/react/hooks';
@@ -21,11 +21,15 @@ export const LifecycleState = {
   Arrived: 'arrived',
   Handling: 'handling',
   Replied: 'replied',
+  /** An automation's agent took it and did not finish. */
+  Failed: 'failed',
 } as const;
 export type LifecycleState = (typeof LifecycleState)[keyof typeof LifecycleState];
 
 export interface Lifecycle {
   state: LifecycleState;
+  /** For `Failed`: what the session said. */
+  detail?: string;
 }
 
 // One object per state: a recomputed feed hands every bubble the same value, so nothing re-renders for nothing.
@@ -46,14 +50,24 @@ export function useHandledKeys(sourceId: string | null | undefined): ReadonlySet
   return handled;
 }
 
-/** Each incoming message's lifecycle, by message id — from the feed (in order) and what was heard. */
-export function lifecyclesOf(ordered: FlowMessage[], handled: ReadonlySet<string>): Map<string, Lifecycle> {
+/** Each incoming message's lifecycle, by message id — from the feed (in order), what was heard, and the
+ *  sessions an automation started on them (`useMessageAutomationSessions`): a running one is handling, a failed
+ *  one that never answered is failed. */
+export function lifecyclesOf(
+  ordered: FlowMessage[],
+  handled: ReadonlySet<string>,
+  sessions?: ReadonlyMap<string, AgenticProcess>,
+): Map<string, Lifecycle> {
   const out = new Map<string, Lifecycle>();
   const open: FlowMessage[] = [];
   for (const fm of ordered) {
     if (senderOf(fm)?.kind === SenderKind.External) {
       open.push(fm);
-      out.set(fm.id, fm.origin?.key && handled.has(fm.origin.key) ? HANDLING : ARRIVED);
+      const session = sessions?.get(fm.id);
+      const status = String(session?.status ?? '');
+      if (session && isProcessLive(status)) out.set(fm.id, HANDLING);
+      else if (session && isProcessFailed(status)) out.set(fm.id, { state: LifecycleState.Failed, detail: String(session.name ?? '') });
+      else out.set(fm.id, fm.origin?.key && handled.has(fm.origin.key) ? HANDLING : ARRIVED);
       continue;
     }
     // An answer: what it quotes is replied, and so is everything still open before it (a channel that threads
@@ -63,6 +77,15 @@ export function lifecyclesOf(ordered: FlowMessage[], handled: ReadonlySet<string
     if (fm.reply_to_id && out.has(fm.reply_to_id)) out.set(fm.reply_to_id, REPLIED);
   }
   return out;
+}
+
+/** On a channel nobody here answers (a person's own), only a message an automation took has a way to an
+ *  answer: the lines of the others are dropped. */
+export function onlyWithSessions(
+  lifecycles: ReadonlyMap<string, Lifecycle>,
+  sessions: ReadonlyMap<string, AgenticProcess>,
+): Map<string, Lifecycle> {
+  return new Map([...lifecycles].filter(([id]) => sessions.has(id)));
 }
 
 const STEPS = [LifecycleState.Arrived, LifecycleState.Handling, LifecycleState.Replied] as const;
@@ -79,6 +102,20 @@ export function MessageLifecycle({ lifecycle }: { lifecycle: Lifecycle }) {
       >
         <Check className="size-3" />
         <Trans>Replied</Trans>
+      </p>
+    );
+  }
+  if (state === LifecycleState.Failed) {
+    return (
+      <p
+        className="ms-10 flex items-center gap-1 text-[10px] text-muted-foreground"
+        data-testid="message-lifecycle"
+        data-state={state}
+      >
+        <span className="font-semibold text-foreground">
+          <Trans>Didn’t finish</Trans>
+        </span>
+        {lifecycle.detail && <span>· {lifecycle.detail}</span>}
       </p>
     );
   }

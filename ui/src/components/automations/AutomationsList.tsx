@@ -21,6 +21,7 @@ import { notify } from '@src/notifications';
 import { useAutomationWords } from './automation-words';
 import { AutomationRow } from './AutomationRow';
 import { KindGallery } from './KindGallery';
+import type { CreatingKind } from './automations-pointer';
 import { IfThenGraphic } from './IfThenGraphic';
 import { Pills } from './Pills';
 
@@ -56,7 +57,7 @@ export function AutomationsList() {
   const builtinFailing = groups.builtin.filter((a) => a.last_run?.status === 'failed');
 
   const open = (a: AutomationSummary) => navigation.openDock(DockPointer.forAutomations({ trigger: a.id }));
-  const create = (k: AutomationKind, recipe?: string) =>
+  const create = (k: CreatingKind, recipe?: string) =>
     navigation.openDock(DockPointer.forAutomations({ creating: k, recipe: recipe ?? null }));
 
   const onRunOnce = (a: AutomationSummary) =>
