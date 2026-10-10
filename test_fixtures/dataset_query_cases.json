@@ -1,0 +1,44 @@
+{
+  "about": "One table of (match, row) -> passes, run by BOTH evaluators: flow_sdk.datasets.query.matches (tests/unit/test_data_spec/test_dataset_query.py) and the TypeScript QueryFilter.validate (ui/tests/unit/dataset-query-parity.test.ts). Add a case here, never to one side only.",
+  "row": {
+    "key": "m_001", "id": "9f0b", "kind": "train",
+    "input": {
+      "metric": "em_reply", "day": "2026-09-14", "person": "Dana Levi", "company": null,
+      "score": 7, "won": false, "tags": ["warm", "fintech"],
+      "stage_dates": {"mql": "2026-09-02", "won": null},
+      "steps": [{"name": "intro"}, {"name": "demo"}]
+    }
+  },
+  "cases": [
+    {"name": "a plain map is equality", "match": {"key": "m_001"}, "passes": true},
+    {"name": "a plain map with several keys: all must hold", "match": {"key": "m_001", "kind": "eval"}, "passes": false},
+    {"name": "a dotted path into a slot", "match": {"input.metric": "em_reply"}, "passes": true},
+    {"name": "a dotted path two levels down", "match": {"input.stage_dates.mql": "2026-09-02"}, "passes": true},
+    {"name": "a dotted path through a list index", "match": {"input.steps.1.name": "demo"}, "passes": true},
+    {"name": "a path that leads nowhere equals nothing", "match": {"input.nope.deeper": "x"}, "passes": false},
+    {"name": "$NE", "match": {"op": "$NE", "operands": ["input.metric", "em_sent"]}, "passes": true},
+    {"name": "$GE on an ISO date", "match": {"op": "$GE", "operands": ["input.day", "2026-09-01"]}, "passes": true},
+    {"name": "$LE on an ISO date, outside", "match": {"op": "$LE", "operands": ["input.day", "2026-09-13"]}, "passes": false},
+    {"name": "a date range", "match": {"op": "$AND", "operands": [
+        {"op": "$GE", "operands": ["input.day", "2026-09-01"]},
+        {"op": "$LE", "operands": ["input.day", "2026-09-30"]},
+        {"input.metric": "em_reply"}]}, "passes": true},
+    {"name": "$GT on a number", "match": {"op": "$GT", "operands": ["input.score", 6]}, "passes": true},
+    {"name": "$LT on a number, equal is not less", "match": {"op": "$LT", "operands": ["input.score", 7]}, "passes": false},
+    {"name": "a comparison with a missing field is false", "match": {"op": "$GT", "operands": ["input.absent", 1]}, "passes": false},
+    {"name": "$OR", "match": {"op": "$OR", "operands": [{"input.metric": "em_sent"}, {"input.score": 7}]}, "passes": true},
+    {"name": "$OR with no branch true", "match": {"op": "$OR", "operands": [{"input.metric": "em_sent"}, {"input.score": 8}]}, "passes": false},
+    {"name": "$IN: the field is one of the values", "match": {"op": "$IN", "operands": ["input.metric", ["em_reply", "em_mtg"]]}, "passes": true},
+    {"name": "$IN: not among them", "match": {"op": "$IN", "operands": ["input.metric", ["em_sent"]]}, "passes": false},
+    {"name": "$NIN", "match": {"op": "$NIN", "operands": ["input.metric", ["em_sent"]]}, "passes": true},
+    {"name": "$IN with $PROP: the list field holds the value", "match": {"op": "$IN", "operands": ["fintech", {"op": "$PROP", "operands": ["input.tags"]}]}, "passes": true},
+    {"name": "$NIN with $PROP", "match": {"op": "$NIN", "operands": ["cold", {"op": "$PROP", "operands": ["input.tags"]}]}, "passes": true},
+    {"name": "$LIKE is a case-insensitive substring", "match": {"op": "$LIKE", "operands": ["input.person", "LEVI"]}, "passes": true},
+    {"name": "$LIKE that is not there", "match": {"op": "$LIKE", "operands": ["input.person", "cohen"]}, "passes": false},
+    {"name": "$IS_NULL on a null field", "match": {"op": "$IS_NULL", "operands": ["input.company"]}, "passes": true},
+    {"name": "$IS_NULL on a field that is not there", "match": {"op": "$IS_NULL", "operands": ["input.stage_dates.poc"]}, "passes": true},
+    {"name": "$IS_NOT_NULL", "match": {"op": "$IS_NOT_NULL", "operands": ["input.stage_dates.mql"]}, "passes": true},
+    {"name": "$IS_NOT_NULL on null", "match": {"op": "$IS_NOT_NULL", "operands": ["input.stage_dates.won"]}, "passes": false},
+    {"name": "false is a value, not null", "match": {"input.won": false}, "passes": true}
+  ]
+}
