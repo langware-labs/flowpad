@@ -1027,7 +1027,10 @@ export class Project extends APIEntity<Project> {
       data = await dataManager.callAction<Record<string, never>, Record<string, unknown>>(actionInfo);
     } catch (err: unknown) {
       const ax = err as { response?: { data?: { message?: string } }; message?: string };
-      throw new Error(ax.response?.data?.message ?? ax.message ?? 'The project could not be set up here.');
+      // No response at all is this machine's own FlowPad not answering — starting up, or busy —
+      // and the transport's "Network Error" says nothing a person can act on.
+      if (!ax.response) throw new Error("FlowPad on this machine didn't answer. It may still be starting; try again.");
+      throw new Error(ax.response.data?.message ?? ax.message ?? 'The project could not be set up here.');
     }
     if (!data) throw new Error('The project could not be set up here.');
     return dataManager.updateEntityFromJson<Project>(data);
