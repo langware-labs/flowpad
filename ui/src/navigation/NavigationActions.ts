@@ -51,7 +51,7 @@ import { isProjectHomePage, withHomePage } from '@src/project-home-page/home-pag
 import { placeDockInProject, presentDockTab } from './present-dock-tab';
 import { openExternal } from '@src/lib/open-external';
 import { openInBrowserProfile } from '@src/lib/browser-profiles';
-import { appLinkPath, bareWebUrl, isWebUrl } from '@src/lib/link-kind';
+import { appLinkPath, bareWebUrl, isWebUrl, localWebUrl } from '@src/lib/link-kind';
 import { errorMessage } from '@src/lib/error-message';
 import type { LinkSource } from '@src/components/links/link-events';
 import { notify } from '@src/notifications/notify';
@@ -834,6 +834,7 @@ export class NavigationActions {
   /** Resolve a clicked link (terminal output, message text) to the dock that presents it. */
   private async resolveLinkDock(link: string, source: LinkSource | null): Promise<DockPointer> {
     if (!source) throw new Error(t`This link has no source yet`);
+    link = localWebUrl(link) ?? link;
     // An app URL copied from this browser is an internal address, not an iframe.
     link = appLinkPath(link, window.location.origin) ?? link;
     const dock = dockForDisplayTarget(await source.resolveDisplayTarget(link));
