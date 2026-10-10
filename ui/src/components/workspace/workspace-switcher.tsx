@@ -111,19 +111,29 @@ export function WorkspacePickerRow() {
   );
 }
 
-function WorkspaceItems({
+/** The workspace rows + "New workspace…", for any menu that picks a workspace. Render inside
+ *  dropdown content. `disableActive`: the active one cannot be picked (a move's destination). */
+export function WorkspaceItems({
   workspaces,
   activeId,
   onSelect,
+  disableActive = false,
 }: {
   workspaces: Workspace[];
   activeId: string | undefined;
   onSelect: (workspace: Workspace) => void;
+  disableActive?: boolean;
 }) {
   return (
     <TooltipProvider delayDuration={300}>
       {workspaces.map((ws) => (
-        <WorkspaceItem key={ws.id} workspace={ws} active={ws.id === activeId} onSelect={onSelect} />
+        <WorkspaceItem
+          key={ws.id}
+          workspace={ws}
+          active={ws.id === activeId}
+          disabled={disableActive && ws.id === activeId}
+          onSelect={onSelect}
+        />
       ))}
       <DropdownMenuSeparator />
       <DropdownMenuItem onClick={openNewWorkspaceDialog} className="cursor-pointer" data-testid="workspace-new">
@@ -142,10 +152,12 @@ function WorkspaceItems({
 function WorkspaceItem({
   workspace,
   active,
+  disabled,
   onSelect,
 }: {
   workspace: Workspace;
   active: boolean;
+  disabled: boolean;
   onSelect: (workspace: Workspace) => void;
 }) {
   const { t } = useLingui();
@@ -184,6 +196,7 @@ function WorkspaceItem({
       <TooltipTrigger asChild>
         <DropdownMenuItem
           onClick={() => onSelect(workspace)}
+          disabled={disabled}
           className="cursor-pointer gap-1"
           data-testid={`workspace-item-${testId}`}
         >
