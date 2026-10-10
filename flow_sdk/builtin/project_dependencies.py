@@ -9,8 +9,15 @@ home agent tiles, journeys, the help desk resolver) — reads those links, so it
 no knowledge of ``flow.json`` at all. The links are a per-machine CACHE: private,
 rebuilt from the file, never shared (the file is what travels).
 
+Two kinds of entry, one walk. An entry is an ID (``<type>-<uuid>`` / ``<kind>.id.<uuid>``,
+``flow_sdk/dependencies/resolve.py``: this machine, then the hub, else ``not_found``) or — in the
+project's root file only — a LOCATION (``git+`` / ``hub:`` / ``file:``). The project declares in its
+root file AND through every folder asset of its own that carries a ``flow.json``
+(``agentic-assets/<family>/<name>/flow.json``): an asset it holds is an asset it depends on.
+
 Resolution is breadth-first and transitive. A resolved dependency's own ``flow.json``
-is followed, with three rules that keep a graph you do not control from doing harm:
+is followed — an id's in its asset folder, a location's at its root — with three rules
+that keep a graph you do not control from doing harm:
 
 * its ``optionalDependencies`` are skipped — optional is the declaring project's choice;
 * its ``file:`` sources are ignored — a cloned repo must not mount ``~/.ssh`` for you;
@@ -35,14 +42,18 @@ from flow_sdk.assets import flow_json
 from flow_sdk.fs_store.origin.fs_origin import safe_join
 from flow_sdk.fs_store.path_utils import canonical_posix_path, is_path_under
 from flow_sdk.schema.data_spec.flow_json_spec import (
+    AssetFlowJsonSpec,
+    DependencySource,
     DependencyState,
     FlowDependency,
     expand_file_target,
+    parse_source,
 )
 
 if TYPE_CHECKING:
     from flow_sdk.builtin.folder import Folder
     from flow_sdk.builtin.project import Project
+    from flow_sdk.dependencies.resolve import Resolved
 
 logger = logging.getLogger(__name__)
 
@@ -78,12 +89,16 @@ def is_dismissed(project_id: str, name: str) -> bool:
 class _Found:
     """A materialized dependency: its folder entity and the asset root on disk."""
 
-    folder: "Folder"
-    path: str
+    #: None for an id with nothing to link: a value, a single-file asset, or an asset already
+    #: inside the project (``path`` then says where it is).
+    folder: Optional["Folder"]
+    path: Optional[str]
     origin_kind: str
     transportable: bool
     cloned: bool = False
     note: Optional[str] = None
+    #: An id entry: what it resolved to (its TypeId, and where its own flow.json lives).
+    resolved: Optional["Resolved"] = None
 
 
 class _NotReady(Exception):
@@ -191,13 +206,10 @@ async def _hub(dep: FlowDependency, project_id: str, *, fetch: bool, update: boo
     try:
         row = await hub_get_or_raise(BuiltinEntityType.PROJECT, project_id)
     except HubError as exc:
+        from flow_sdk.dependencies.resolve import hub_reason  # noqa: PLC0415
+
         status = getattr(exc, "status_code", 0)
-        reason = {
-            0: "the hub is not reachable (log in to the cloud)",
-            401: "log in to the cloud to fetch it",
-            403: "you do not have access to this hub project",
-            404: "this hub project does not exist",
-        }.get(status, f"the hub answered {status}")
+        reason = "this hub project does not exist" if status == 404 else hub_reason(status)
         raise _NotReady("unreachable", reason) from exc
     data = row.get("data", row) if isinstance(row, dict) else {}
     origin = ORIGIN_ADAPTER.validate_python(data.get("git_origin")) if data.get("git_origin") else None
@@ -233,9 +245,75 @@ async def _materialize(dep: FlowDependency, base: Path, *, fetch: bool, update: 
     return await _file(source.target, base)
 
 
+async def _ref(
+    project: "Project", dep: FlowDependency, source: DependencySource, via: Optional[str], root: Path, *, fetch: bool, rows: dict
+) -> _Found:
+    """An id entry: resolved here, else on the hub (whose project holding it is fetched here and
+    indexed, so its rows exist), else :class:`_NotReady`. Nothing is linked for an id with no folder
+    of its own (a value, a single-file asset, a record source) or one already inside the project."""
+    from flow_sdk.builtin.folder import Folder  # noqa: PLC0415
+    from flow_sdk.dependencies.resolve import NotResolved, resolve_ref  # noqa: PLC0415
+    from flow_sdk.fs_store.type_id import TypeId  # noqa: PLC0415
+
+    async def fetch_project(project_id: str) -> None:
+        found = await _hub(FlowDependency(name=dep.name, source=f"hub:{project_id}"), project_id, fetch=True, update=False, cloned=False)
+        from flow_sdk.builtin.agentic_process.agentic_process import _index_additional_dir  # noqa: PLC0415
+
+        await _index_additional_dir(found.path, read_only=True, project_id=None)
+
+    try:
+        resolved = await resolve_ref(source, near=root, rows=rows, fetch=fetch, fetch_project=fetch_project)
+    except NotResolved as exc:
+        raise _NotReady(exc.state, exc.reason) from exc
+    path = canonical_posix_path(resolved.context) if resolved.context else None
+    if path is None or is_path_under(path, canonical_posix_path(str(root))):
+        return _Found(None, path, "local", False, resolved=resolved)
+    # The link from the last resolve names this folder already: minting again would re-detect its
+    # origin (git subprocesses) on every status read.
+    link = _link_for(project, dep.name, via)
+    same = link is not None and link[1].get("path") == path
+    folder = (await Folder.get_by_id(TypeId(link[0]).id) if same else None) or await Folder.mint_for_path(path)
+    cloned = resolved.fetched or bool(same and link[1].get("cloned"))
+    return _Found(folder, path, "local", False, cloned=cloned, resolved=resolved)
+
+
+def _sidecar(found: _Found, dep: FlowDependency, via: Optional[str], own: bool) -> dict:
+    """What a dependency's folder link remembers — the per-machine cache a status read answers from."""
+    data = {
+        "path": found.path,
+        "origin_kind": found.origin_kind,
+        DEP_KEY: dep.name,
+        "source": dep.source,
+        "subpath": dep.path,
+        "via": via,
+        "own": own,
+        "required": dep.required,
+        "cloned": found.cloned,
+        "read_only": found.transportable,
+    }
+    if found.resolved is not None:
+        data["typeid"] = found.resolved.typeid
+    return data
+
+
+def _declared_by(found: _Found) -> tuple[list[FlowDependency], Path]:
+    """What a resolved dependency itself depends on, and the folder its entries are relative to. An
+    id's own file is read strictly (:class:`flow_json.FlowJsonError`): it was written to be followed.
+    A location's root file is read the way a project's is on open — a broken one declares nothing."""
+    if found.resolved is None:
+        return flow_json.read(Path(found.path)).entries(), Path(found.path)
+    folder = found.resolved.declares
+    declared = flow_json.read_strict(folder, found.resolved.spec) if folder is not None else None
+    return (declared.entries() if declared else []), folder or Path()
+
+
 def _identity(dep: FlowDependency, base: Path) -> str:
     """What makes two declarations the SAME dependency, without touching the network."""
     source = dep.parsed
+    if source.kind == "ref":
+        from flow_sdk.dependencies.resolve import typeid_of  # noqa: PLC0415
+
+        return f"ref:{typeid_of(source)}"
     if source.kind == "git":
         from flow_sdk.fs_store.origin.git_origin import GitOrigin  # noqa: PLC0415
 
@@ -246,9 +324,11 @@ def _identity(dep: FlowDependency, base: Path) -> str:
     return f"file:{canonical_posix_path(str(expand_file_target(source.target, base=base)))}"
 
 
-def _own_identities(root: Path) -> set[str]:
+def _own_identities(root: Path, project_id: Optional[str] = None) -> set[str]:
     """The project's own identities, so a dependency pointing back at it is a no-op."""
     out = {f"file:{canonical_posix_path(str(root))}"}
+    if project_id:
+        out.add(f"ref:project-{project_id}")
     try:
         from flow_sdk.fs_store.origin.git_origin import GitOrigin  # noqa: PLC0415
 
@@ -272,7 +352,9 @@ def _installed_optionals(project: "Project") -> set[str]:
     return {
         data[DEP_KEY]
         for data in _links(project).values()
-        if data.get(DEP_KEY) and not data.get("via") and data.get("required") is False
+        # Declared by the project itself — its root file or one of its own assets (``own``; a link
+        # written before that flag existed is the root file's when it has no ``via``).
+        if data.get(DEP_KEY) and data.get("own", not data.get("via")) and data.get("required") is False
     }
 
 
@@ -375,27 +457,40 @@ async def _resolve(
         return [DependencyState(name="flow.json", source="", state="invalid", reason=str(exc))]
     spec = spec or flow_json.FlowJsonSpec()
     wanted_optionals = _installed_optionals(project) | set(install)
+    pid, root_canon = str(project.id), canonical_posix_path(str(root))
 
     states: list[DependencyState] = []
     desired: dict[str, tuple["Folder", dict]] = {}
-    seen = _own_identities(root)
+    seen = _own_identities(root, pid)
     declared_by: dict[str, str] = {}
-    queue: deque[tuple[FlowDependency, Optional[str], Path]] = deque((d, None, root) for d in spec.entries())
+    rows: dict = {}   # dataset rows, read once for every value id this walk resolves
+    # (entry, base, own, via_path): ``own`` = declared by this project — its root file or one of its
+    # own assets — so its optional entries count; a dependency's own optionals never do.
+    queue: deque[tuple[FlowDependency, Path, bool, list[str]]] = deque((d, root, True, []) for d in spec.entries())
+    for label, entries, problem in _own_asset_entries(root):
+        if problem:
+            states.append(DependencyState(name=label, source="", state="invalid", reason=problem, via=label, via_path=[label]))
+            continue
+        queue.extend((d, root, True, [label]) for d in entries)
     visited = 0
     while queue:
-        dep, via, base = queue.popleft()
-        if via is not None and not dep.required:
+        dep, base, own, via_path = queue.popleft()
+        if not own and not dep.required:
             continue
-        source = dep.parsed
+        via = via_path[-1] if via_path else None
+        source, key = dep.parsed, (pid, dep.name, via)
 
         def state(name: str, **kw: Any) -> DependencyState:
-            return DependencyState(name=dep.name, source=dep.source, required=dep.required, path=dep.path, via=via, state=name, **kw)
+            return DependencyState(
+                name=dep.name, source=dep.source, required=dep.required, path=dep.path, via=via, state=name,
+                via_path=list(via_path), label=dep.label, description=dep.description, **kw,
+            )
 
         if via is not None and source.kind == "file":
             states.append(state("invalid", reason=f"ignored: a file: source is honoured only in a project's own {flow_json.FLOW_JSON}"))
             continue
         if not dep.required and dep.name not in wanted_optionals:
-            failed = _LAST_FAILURE.get((str(project.id), dep.name, via))
+            failed = _LAST_FAILURE.get(key)
             # An install that was tried and failed says why; one never tried is just waiting.
             states.append(state(failed[0], reason=failed[1]) if failed else state("not_installed"))
             continue
@@ -416,11 +511,13 @@ async def _resolve(
             break
         visited += 1
         try:
-            found = None if (fetch and update) else await _from_link(project, dep, via)
-            if found is None:
-                found = await _materialize(dep, base, fetch=fetch, update=update, cloned=_was_cloned(project, dep.name, via))
+            if source.kind == "ref":
+                found = await _ref(project, dep, source, via, root, fetch=fetch, rows=rows)
+            else:
+                found = None if (fetch and update) else await _from_link(project, dep, via)
+                if found is None:
+                    found = await _materialize(dep, base, fetch=fetch, update=update, cloned=_was_cloned(project, dep.name, via))
         except _NotReady as exc:
-            key = (str(project.id), dep.name, via)
             if fetch:
                 _LAST_FAILURE[key] = (exc.state, exc.reason)
             elif key in _LAST_FAILURE and exc.state == "missing":
@@ -432,37 +529,57 @@ async def _resolve(
         except Exception as exc:  # noqa: BLE001 — one dependency never breaks the rest
             logger.warning("[deps] %s failed", dep.name, exc_info=True)
             if fetch:
-                _LAST_FAILURE[(str(project.id), dep.name, via)] = ("unreachable", str(exc))
+                _LAST_FAILURE[key] = ("unreachable", str(exc))
             states.append(state("unreachable", reason=str(exc)))
             continue
-        _LAST_FAILURE.pop((str(project.id), dep.name, via), None)
-        if is_path_under(found.path, canonical_posix_path(str(root))):
+        _LAST_FAILURE.pop(key, None)
+        # A LOCATION inside the project is a mistake; an ID that names one of the project's own
+        # assets is simply already in its context (``_ref`` returns it with nothing to link).
+        if found.resolved is None and is_path_under(found.path, root_canon):
             states.append(state("invalid", reason="a dependency cannot be inside the project itself"))
             continue
-        states.append(state("ready", local_path=found.path, reason=found.note))
-        desired[str(found.folder.typeid)] = (
-            found.folder,
-            {
-                "path": found.path,
-                "origin_kind": found.origin_kind,
-                DEP_KEY: dep.name,
-                "source": dep.source,
-                "subpath": dep.path,
-                "via": via,
-                "required": dep.required,
-                "cloned": found.cloned,
-                "read_only": found.transportable,
-            },
-        )
-        for child in flow_json.read(Path(found.path)).entries():
-            queue.append((child, dep.name, Path(found.path)))
+        states.append(state(
+            "ready", local_path=found.path, reason=found.note, typeid=found.resolved.typeid if found.resolved else None,
+        ))
+        if found.folder is not None:
+            desired[str(found.folder.typeid)] = (found.folder, _sidecar(found, dep, via, own))
+        try:
+            children, child_base = _declared_by(found)
+        except flow_json.FlowJsonError as exc:
+            states.append(state("invalid", reason=f"{found.resolved.typeid}: {exc}"))
+            continue
+        queue.extend((child, child_base, False, via_path + [dep.name]) for child in children)
 
-    pid = str(project.id)
     states = [s.model_copy(update={"dismissed": True}) if is_dismissed(pid, s.name) and s.state != "ready" else s for s in states]
     added = await _reconcile(project, desired)
     if index:
         await _index(project, [desired[tid] for tid in added])
     return states
+
+
+def _own_asset_entries(root: Path) -> list[tuple[str, list[FlowDependency], Optional[str]]]:
+    """``(label, entries, problem)`` for every folder asset of the project that carries a
+    ``flow.json`` — found where each folder-backed type is placed (``agentic-assets/<family>/``,
+    ``.claude/skills/`` …), never by a path spelled here. ``label`` is ``<family>/<name>``,
+    ``problem`` why its file could not be read."""
+    from flow_sdk.assets.scope import folder_backed_types  # noqa: PLC0415
+
+    out: list[tuple[str, list[FlowDependency], Optional[str]]] = []
+    mounts = sorted({mount for info in folder_backed_types() for mount in info.scan_mounts})
+    for mount in mounts:
+        family = root / mount
+        if not family.is_dir():
+            continue
+        for folder in sorted(p for p in family.iterdir() if (p / flow_json.FLOW_JSON).is_file()):
+            label = f"{family.name}/{folder.name}"
+            try:
+                declared = flow_json.read_strict(folder, AssetFlowJsonSpec)
+            except flow_json.FlowJsonError as exc:
+                out.append((label, [], str(exc)))
+                continue
+            if declared is not None:
+                out.append((label, declared.entries(), None))
+    return out
 
 
 async def _reconcile(project: "Project", desired: dict[str, tuple["Folder", dict]]) -> list[str]:
@@ -530,12 +647,66 @@ async def declaration_for_path(path: str) -> tuple[str, str, str]:
     return Path(canonical).name, f"file:{canonical}", "."
 
 
+def default_name(source: str) -> str:
+    """A name for an entry declared without one: an id's type and the head of its uuid, a repo or
+    folder's leaf, a hub project's id head."""
+    parsed = parse_source(source)
+    if parsed.kind == "ref":
+        return f"{parsed.ref_type.replace('.', '-')}-{parsed.ref_id[:8]}"
+    if parsed.kind == "hub":
+        return f"hub-{parsed.target[:8]}"
+    return parsed.target.rstrip("/").rsplit("/", 1)[-1].removesuffix(".git")
+
+
+async def add_to_asset(
+    project: "Project", asset: str, source: str, *, name: Optional[str] = None, label: Optional[str] = None,
+    description: Optional[str] = None, optional: bool = False,
+) -> DependencyState:
+    """Declare ``source`` (an id) in ``asset``'s own ``flow.json``, then resolve ``project``. The
+    answer is the entry as ``project`` reaches it — or, when it does not reach that asset at all,
+    a ``not_installed`` state saying so."""
+    from flow_sdk.dependencies.resolve import NotResolved, resolve_local  # noqa: PLC0415
+
+    target = parse_source(asset)
+    if target.kind != "ref":
+        raise ValueError(f"{asset!r} is not an asset id (<type>-<uuid>)")
+    try:
+        holder = await resolve_local(target, near=Path(project.fs_storage_mount_path))
+    except NotResolved as exc:
+        raise ValueError(exc.reason) from exc
+    if holder is None or holder.declares is None:
+        raise ValueError(f"{asset} is not a folder asset on this machine — only a folder asset declares dependencies")
+    if holder.spec.locations:
+        raise ValueError(f"{asset} is a project: declare it in the project's own flow.json")
+    dep = FlowDependency(
+        name=name or safe_name(default_name(source)), source=source.strip(), required=not optional,
+        label=label or None, description=description or None,
+    )
+    try:
+        flow_json.write_dependency(holder.declares, dep, AssetFlowJsonSpec)
+    except flow_json.FlowJsonError as exc:
+        raise ValueError(str(exc)) from exc
+    states = await resolve(project, fetch=True, install=[dep.name] if optional else ())
+    found = next((s for s in states if s.name == dep.name and s.source == dep.source), None)
+    return found or DependencyState(
+        name=dep.name, source=dep.source, required=dep.required, state="not_installed", label=dep.label,
+        description=dep.description, reason=f"declared in {asset}, which this project does not depend on",
+    )
+
+
+def requirement_key(state: DependencyState) -> str:
+    """What setup and ``flow dep check`` call a dependency: its name when the project's own file
+    declares it, else the id (or source) it names — a name is unique only in the file it sits in.
+    ``flow dep check`` (``cli/commands/dep_cmd.py``) applies the same rule to the wire rows."""
+    return state.name if state.via is None else state.source
+
+
 def warnings_for(project_id: str, states: list[DependencyState]) -> list[DependencyState]:
     """Required dependencies that could not be brought here and were not dismissed — what the
     open dialog lists. A transitive one counts too: the project needs what its dependencies need."""
     return [
         s for s in states
-        if s.required and not s.dismissed and (s.state in ("missing", "unreachable") or (s.via is None and s.state == "invalid"))
+        if s.required and not s.dismissed and (s.state in ("missing", "unreachable", "not_found") or (s.via is None and s.state == "invalid"))
     ]
 
 
@@ -543,7 +714,10 @@ __all__ = [
     "DEP_KEY",
     "safe_name",
     "MAX_NODES",
+    "add_to_asset",
     "declaration_for_path",
+    "default_name",
+    "requirement_key",
     "dismiss",
     "is_dismissed",
     "resolve",

@@ -2571,24 +2571,34 @@ class Project(SetupSkippable, Entity):
         name: str | None = None,
         path: str | None = None,
         optional: bool = False,
+        label: str | None = None,
+        description: str | None = None,
+        asset: str | None = None,
     ) -> "DependencyState":
         """Declare a dependency in ``flow.json`` and resolve it.
 
-        ``source`` is a source string (``git+<url>#<branch>``, ``hub:<project id>``,
-        ``file:<path>``), a bare git URL, or a folder on disk. A folder inside a git
-        repository is written as its repository — never as its path — so the line means
-        the same thing on a teammate's machine.
+        ``source`` is an id (``<type>-<uuid>`` / ``<kind>.id.<uuid>``), a source string
+        (``git+<url>#<branch>``, ``hub:<project id>``, ``file:<path>``), a bare git URL, or a
+        folder on disk. A folder inside a git repository is written as its repository — never
+        as its path — so the line means the same thing on a teammate's machine.
+
+        ``asset`` (a TypeId) declares it in THAT asset's own ``flow.json`` instead of the
+        project's — ids only. ``label`` / ``description`` are the entry's human-friendly name.
         """
         from flow_sdk.assets import flow_json  # noqa: PLC0415
         from flow_sdk.builtin import project_dependencies  # noqa: PLC0415
-        from flow_sdk.schema.data_spec.flow_json_spec import FlowDependency, parse_source  # noqa: PLC0415
+        from flow_sdk.schema.data_spec.flow_json_spec import FlowDependency, parse_id, parse_source  # noqa: PLC0415
         from flow_sdk.utils.git_identity import parse_git_origin_url  # noqa: PLC0415
 
         if not self.fs_storage_mount_path:
             raise ValueError("this project has no folder to hold a flow.json")
         raw = str(source or "").strip()
         default_name, rel = None, "."
-        if raw.startswith(("git+", "hub:", "file:")):
+        if asset:
+            return await project_dependencies.add_to_asset(
+                self, asset, raw, name=name, label=label, description=description, optional=optional,
+            )
+        if raw.startswith(("git+", "hub:", "file:")) or parse_id(raw):
             parse_source(raw)
         elif Path(raw).expanduser().is_dir():
             folder = canonical_posix_path(str(Path(raw).expanduser()))
@@ -2598,16 +2608,16 @@ class Project(SetupSkippable, Entity):
         elif parse_git_origin_url(raw):
             raw = f"git+{raw}"
         else:
-            raise ValueError(f"{source!r} is not a folder, a git URL, or a git+/hub:/file: source")
+            raise ValueError(f"{source!r} is not an id, a folder, a git URL, or a git+/hub:/file: source")
         if not default_name:
-            parsed = parse_source(raw)
-            leaf = parsed.target.rstrip("/").rsplit("/", 1)[-1].removesuffix(".git")
-            default_name = leaf if parsed.kind != "hub" else f"hub-{parsed.target[:8]}"
+            default_name = project_dependencies.default_name(raw)
         dep = FlowDependency(
             name=name or project_dependencies.safe_name(default_name),
             source=raw,
             path=path or rel,
             required=not optional,
+            label=label or None,
+            description=description or None,
         )
         flow_json.write_dependency(Path(self.fs_storage_mount_path), dep)
         states = await project_dependencies.resolve(self, fetch=True, install=[dep.name] if optional else ())
@@ -2668,10 +2678,14 @@ class Project(SetupSkippable, Entity):
 
     @action.post(action_name="add-dependency")
     async def add_dependency_action(
-        self, source: str = "", name: str = "", path: str = "", optional: bool = False
+        self, source: str = "", name: str = "", path: str = "", optional: bool = False,
+        label: str = "", description: str = "", asset: str = "",
     ) -> "ApiResponse":
         try:
-            state = await self.add_dependency(source, name=name or None, path=path or None, optional=optional)
+            state = await self.add_dependency(
+                source, name=name or None, path=path or None, optional=optional,
+                label=label or None, description=description or None, asset=asset or None,
+            )
         except ValueError as exc:
             return ApiFailResponse(message=str(exc), status_code=400)
         return ApiSuccessResponse(data={"dependency": state.model_dump(mode="json"), **self._context_payload()})

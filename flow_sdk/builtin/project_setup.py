@@ -253,14 +253,19 @@ async def collect_requirements(project: "Project", deployment_id: str = "") -> l
     out.sort(key=lambda req: not req.is_oauth)
     # Required dependencies not on this machine come first: nothing in them runs until they are.
     # A dependency has no row of its own here (flow.json declares it), so the project carries its skip mark.
+    from flow_sdk.builtin import project_dependencies  # noqa: PLC0415
+
     skips = getattr(project, "setup_skipped", None) or {}
-    dependencies = [
-        SetupRequirementSpec(kind=REQUIREMENT_DEPENDENCY, name=dep.name, title=dep.source, typeid=str(project.typeid),
-                             satisfied=False, used_by=[PROJECT], note=dep.reason or dep.state, required=dep.required,
-                             skipped=skips.get(dep.name), can_skip_always=True)
-        for dep in await project.dependencies()
-        if dep.state in ("missing", "unreachable")
-    ]
+    dependencies = []
+    for dep in await project.dependencies():
+        if dep.state not in ("missing", "unreachable", "not_found"):
+            continue
+        key = project_dependencies.requirement_key(dep)
+        dependencies.append(SetupRequirementSpec(
+            kind=REQUIREMENT_DEPENDENCY, name=key, title=dep.label or dep.source, typeid=str(project.typeid),
+            satisfied=False, used_by=[PROJECT], note=dep.reason or dep.state, required=dep.required,
+            skipped=skips.get(key), can_skip_always=dep.via is None,
+        ))
     return dependencies + out + gaps
 
 
