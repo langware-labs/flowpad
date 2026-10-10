@@ -49,6 +49,7 @@ from flow_sdk.schema.data_spec.flow_json_spec import (
     expand_file_target,
     parse_source,
 )
+from flow_sdk.stream_inbox._locks import keyed_loop_lock, new_registry
 
 if TYPE_CHECKING:
     from flow_sdk.builtin.folder import Folder
@@ -63,7 +64,8 @@ MAX_NODES = 32
 DEP_KEY = "dependency"
 
 #: One resolve at a time per project: two would race on the same links and clones.
-_LOCKS: dict[str, "asyncio.Lock"] = {}
+#: Weak-valued (``stream_inbox/_locks``): it lives only while a resolve holds or awaits it.
+_LOCKS = new_registry()
 #: The detached resolve a project's activation started, by project.
 _TASKS: dict[str, "asyncio.Task"] = {}
 
@@ -416,7 +418,7 @@ async def resolve(
     root_str = getattr(project, "fs_storage_mount_path", None)
     if not root_str:
         return []
-    lock = _LOCKS.setdefault(str(project.id), asyncio.Lock())
+    lock = keyed_loop_lock(_LOCKS, str(project.id))
     async with lock:
         return await _resolve(project, Path(root_str), fetch=fetch, install=install, update=update, index=index)
 

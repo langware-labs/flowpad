@@ -20,8 +20,6 @@ NOT the same thing as a ``SubAgent``: that is the provider-owned
 may *reference* SubAgents through ``subagents`` — they render to that path
 verbatim and are never absorbed here.
 """
-import asyncio
-import collections
 import functools
 import logging
 from dataclasses import dataclass
@@ -54,6 +52,7 @@ from flow_sdk.schema.data_spec.auto_open_spec import AutoOpenEntry
 from flow_sdk.schema.data_spec.phone_spec import PhoneNumberSpec
 from flow_sdk.schema.data_spec.requirement_spec import RequirementSpec
 from flow_sdk.schema.types import EntityType
+from flow_sdk.stream_inbox._locks import keyed_loop_lock, new_registry
 
 if TYPE_CHECKING:  # pragma: no cover
     from flow_sdk.assets.scanning import AssetCandidate
@@ -92,8 +91,9 @@ def worker_type_value(worker: str | None) -> str:
 
 
 #: One lock per project so concurrent auto-launch calls (two tabs, a reload
-#: storm) select-and-mark exactly once.
-_AUTO_LAUNCH_LOCKS: dict[str, asyncio.Lock] = collections.defaultdict(asyncio.Lock)
+#: storm) select-and-mark exactly once. Weak-valued (``stream_inbox/_locks``):
+#: it lives only while an auto-launch holds or awaits it.
+_AUTO_LAUNCH_LOCKS = new_registry()
 
 
 def _launches_on_open(candidate: "AssetCandidate") -> bool:
@@ -594,7 +594,7 @@ class Agent(Entity):
         auto-launches it again. Other agents' marks are kept."""
         from flow_sdk.project_device_state import update_project_device_state  # noqa: PLC0415
 
-        async with _AUTO_LAUNCH_LOCKS[project_id]:
+        async with keyed_loop_lock(_AUTO_LAUNCH_LOCKS, str(project_id)):
             remaining = [i for i in Agent.auto_launched_ids(project_id) if i != str(agent_id)]
             update_project_device_state(project_id, **{_AUTO_LAUNCHED_KEY: remaining})
 
@@ -638,7 +638,7 @@ class Agent(Entity):
             created = agent.created_date.isoformat() if agent.created_date else ""
             return (created, agent.asset_ref or "", agent.id)
 
-        async with _AUTO_LAUNCH_LOCKS[project_id]:
+        async with keyed_loop_lock(_AUTO_LAUNCH_LOCKS, str(project_id)):
             done = set(Agent.auto_launched_ids(project_id))
             flagged = await Agent.get_all({"match": {"auto_launch": True, "enabled": True}})
             candidates = assets_under_roots([agent for agent in flagged if agent.id not in done], roots)
