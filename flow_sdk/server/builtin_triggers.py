@@ -372,14 +372,15 @@ async def _run_llm_setup_trigger(trigger: Trigger, changes: list[ChangeEvent]) -
     #
     # Not on a box the hub launched (a sandbox, an agent's machine): its template already carries
     # every tool this wizard asks about, so there is nothing to read first and nothing to install —
-    # the popup would only cover what the person opened the box for. There it runs itself.
+    # the popup would only cover what the person opened the box for. There it runs itself, off screen.
     from flow_sdk.instance_settings.runtime import get_assigned_runtime  # noqa: PLC0415
 
-    if wizard.popup and person_is_watching() and get_assigned_runtime() is None:
+    on_hub_box = get_assigned_runtime() is not None
+    if wizard.popup and person_is_watching() and not on_hub_box:
         await navigate_to_wizard(wizard)
         return
 
-    _source, result = await start_wizard(wizard, unattended=True)
+    _source, result = await start_wizard(wizard, unattended=True, shown=not on_hub_box)
     if result.busy:
         # Replaced by a newer run (or held by one started from the wizard page):
         # that run reports for itself, so this one has nothing to tell the person.

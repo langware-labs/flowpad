@@ -356,7 +356,7 @@ async def test_a_test_backend_can_switch_first_run_setup_off(monkeypatch):
 @pytest.mark.parametrize(("assigned", "shown"), [(None, True), ("sandbox", False), ("agent", False)])
 async def test_the_popup_is_for_a_persons_own_machine_not_a_box_the_hub_launched(monkeypatch, assigned, shown):
     """On a desktop someone is watching, the popup waits for their Start. A sandbox or an agent's
-    box comes with its tools: there the setup runs itself and nothing covers the screen."""
+    box comes with its tools: there the setup runs itself and is never put on screen."""
     from types import SimpleNamespace
 
     from flow_sdk.core.compute import llm_source
@@ -374,8 +374,8 @@ async def test_the_popup_is_for_a_persons_own_machine_not_a_box_the_hub_launched
     async def navigate(_wizard):
         calls.append("popup")
 
-    async def run(_wizard, unattended=False):
-        calls.append("ran itself")
+    async def run(_wizard, unattended=False, shown=True):
+        calls.append("ran itself" if shown else "ran itself, off screen")
         return None, SimpleNamespace(busy=False, exit_code=ExitCode.OK, ok=True, detail="")
 
     monkeypatch.setattr(builtin_triggers, "_wizard_for", wizard_for)
@@ -386,7 +386,7 @@ async def test_the_popup_is_for_a_persons_own_machine_not_a_box_the_hub_launched
 
     await builtin_triggers._run_llm_setup_trigger(SimpleNamespace(uname="llm-setup-on-tab-ready"), [])
 
-    assert calls == (["popup"] if shown else ["ran itself"])
+    assert calls == (["popup"] if shown else ["ran itself, off screen"])
 
 
 async def test_a_question_waits_with_no_deadline(monkeypatch):
