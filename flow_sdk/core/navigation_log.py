@@ -149,6 +149,21 @@ async def _indexed() -> Any:
     return next((r for r in rows if getattr(r, "asset_ref", None) and Path(r.asset_ref).resolve() == here), None)
 
 
+async def dataset() -> Any:
+    """The SmartNavigationLog dataset, created on first use — to read, label and evaluate it.
+
+    The indexed row when there is one (the cheap handle ``log`` appends through), else the
+    folder itself, so it works with no DB too.
+    """
+    from flow_sdk.builtin.dataset import Dataset  # noqa: PLC0415
+
+    indexed = await _indexed()
+    if indexed is not None:
+        return indexed
+    _create()
+    return Dataset.at(folder())
+
+
 async def address() -> str:
     """Where asking for the log takes you: the log open in the app that edits it, or -- when it was
     never on, so there is no log -- Preferences > Advanced, where the switch is."""
@@ -171,4 +186,4 @@ async def drain() -> None:
         await asyncio.gather(*list(_pending), return_exceptions=True)
 
 
-__all__ = ["NAME", "TITLE", "address", "drain", "folder", "log", "log_soon", "row_of"]
+__all__ = ["NAME", "TITLE", "address", "dataset", "drain", "folder", "log", "log_soon", "row_of"]
