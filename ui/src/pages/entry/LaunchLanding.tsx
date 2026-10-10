@@ -1,5 +1,5 @@
 import { cloudManager } from '@sdk';
-import { formatGitOrigin, gitOriginCloneUrl, isGitOrigin } from '@sdk';
+import { formatGitOrigin, gitOriginCloneUrl } from '@sdk';
 import { Button } from '@src/components/ui/button';
 import { plannedSteps, useSandboxes } from '@src/hooks/use-sandboxes';
 import { StepList } from '@src/components/ui/step-list';
@@ -62,18 +62,19 @@ function takeLaunchIntent(link: string): boolean {
 }
 
 /**
- * `/launch?repo=<git url>` or `/launch?agent=<agent id>` — the one-click entry point
+ * `/launch?repo=<git url>`, `/launch?agent=<agent id>` or `/launch?project=<project id>` — the one-click entry point
  * for "try this repo" / "try this agent".
  *
- * The two are different pages behind one route. An agent link goes to
- * `AgentLaunchLanding`: sign in, then straight into a sandbox, no approve step.
+ * The two are different pages behind one route. An agent or project link goes to
+ * `AgentLaunchLanding`: sign in, pick a target for a controller, then the desktop or a sandbox.
  * Everything else — a repo link, and a link that is not valid as either — stays on
  * the repo card below. Decided from the raw query (`parseLaunchParams`), before any
  * hook that only one of the two pages needs.
  */
 export default function LaunchLanding() {
   const [params] = useSearchParams();
-  return parseLaunchParams(params).kind === 'agent' ? <AgentLaunchLanding params={params} /> : <RepoLaunchLanding />;
+  const kind = parseLaunchParams(params).kind;
+  return kind === 'agent' || kind === 'project' ? <AgentLaunchLanding params={params} /> : <RepoLaunchLanding />;
 }
 
 /**
@@ -128,10 +129,7 @@ function RepoLaunchLanding() {
   const { currentUser } = useAuth();
   const signedIn = !!currentUser;
 
-  const { target, gitOrigin: launchOrigin } = useLaunchTarget(params, signedIn);
-  // This page only launches repo links, whose origin is always a git one; a hub-hosted
-  // (`hub_repo`) origin belongs to an agent link, which `AgentLaunchLanding` handles.
-  const gitOrigin = isGitOrigin(launchOrigin) ? launchOrigin : null;
+  const { target, gitOrigin } = useLaunchTarget(params, signedIn);
   const name = (params.get('name') || gitOrigin?.name || '').trim();
   const link = useMemo(() => linkIdentity(params), [params]);
 
@@ -208,10 +206,12 @@ function RepoLaunchLanding() {
 
   const invalidMessage =
     target.kind === 'invalid' && target.reason === 'both'
-      ? t`This link names both a repository and an agent. Ask for a link that names just one.`
+      ? t`This link names more than one thing to launch. Ask for a link that names just one.`
       : target.kind === 'invalid' && target.reason === 'bad-agent-id'
         ? t`This link doesn't point at an agent.`
-        : null;
+        : target.kind === 'invalid' && target.reason === 'bad-project-id'
+          ? t`This link doesn't point at a project.`
+          : null;
 
   let description: ReactNode = null;
   if (invalidMessage) {

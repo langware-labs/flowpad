@@ -4,7 +4,7 @@ import { t } from '@lingui/core/macro';
 import { useAuth } from '@sdk/react/hooks';
 import { isHubOnly } from '@src/navigation/hub-runtime';
 import { DockPointer } from '@src/navigation/DockPointer';
-import { consumeInboundParams, inboundParams } from '@src/navigation/inbound-link';
+import { consumeInboundParams, DeepLinkAction, inboundParams } from '@src/navigation/inbound-link';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { notify } from '@src/notifications/notify';
 import { withHomePage } from '@src/project-home-page/home-page-state';
@@ -13,6 +13,8 @@ import { useIncomingTaskStore } from '@src/store/use-incoming-task-store';
 import { useEffect, useRef, useState } from 'react';
 import { IncomingProjectDialog } from './IncomingProjectDialog';
 import { IncomingTaskDialog } from './IncomingTaskDialog';
+import { LaunchDialog } from './LaunchDialog';
+import { LAUNCH_ACTION, LAUNCH_PARAMS, type LaunchPlan, launchPlanFromParams } from '@src/pages/entry/launch-plan';
 
 /**
  * The `?action=open&…` deep-link handler — "someone sent you here to open X".
@@ -121,11 +123,21 @@ export function IncomingDeepLink() {
   const { navigation } = useDockNavigation();
   const { pendingTask, setPendingTask } = useIncomingTaskStore();
   const { pendingProject, setPendingProject } = useIncomingProjectStore();
+  const [launchPlan, setLaunchPlan] = useState<LaunchPlan | null>(null);
   useOfferNewCloudProjects();
 
   useEffect(() => {
     const params = inboundParams();
-    if (params.get('action') !== 'open') return;
+    // A launch link (`/launch` on the hub → this machine): its SETUP stage, one handler for
+    // the desktop and a cloud box alike. A malformed one is scrubbed and dropped.
+    if (params.get('action') === LAUNCH_ACTION) {
+      const plan = launchPlanFromParams(params);
+      consumeInboundParams(LAUNCH_PARAMS);
+      if (plan) setLaunchPlan(plan);
+      else notify.error({ title: t`Couldn't launch`, message: t`That launch link is incomplete.`, forceToast: true });
+      return;
+    }
+    if (params.get('action') !== DeepLinkAction.OPEN) return;
     const fmId = params.get('fm') || '';
     const convId = params.get('conversation_id') || '';
     const taskId = params.get('task_id') || '';
@@ -222,6 +234,8 @@ export function IncomingDeepLink() {
 
   return (
     <>
+      {launchPlan && <LaunchDialog plan={launchPlan} onClose={() => setLaunchPlan(null)} />}
+
       {/* Incoming task dialog — pull/clone flow for shared tasks */}
       {pendingTask && (
         <IncomingTaskDialog

@@ -14,7 +14,12 @@ from pathlib import Path
 from flow_sdk.actions.action_registry import action as _action_registry
 from flow_sdk.api.api_types.api_field import APIField
 from flow_sdk.core import Entity
-from flow_sdk.schema.data_spec.project_manifest_spec import PROJECT_MANIFEST_SCHEMA, PublishedAssetSpec, split_typeid
+from flow_sdk.schema.data_spec.project_manifest_spec import (
+    PROJECT_MANIFEST_SCHEMA,
+    ProjectSubkind,
+    PublishedAssetSpec,
+    split_typeid,
+)
 from flow_sdk.schema.types import EntityType
 
 logger = logging.getLogger(__name__)
@@ -43,6 +48,10 @@ class ProjectManifest(Entity):
     env_files: list[str] = APIField(
         default_factory=list,
         description="Project-relative env files credentials also read, after the root .env.local.",
+    )
+    subkind: ProjectSubkind = APIField(
+        default=ProjectSubkind.STANDARD,
+        description="What the project is for: standard, controller (works on another project) or addon.",
     )
     asset_ref: str = APIField(default="")
 

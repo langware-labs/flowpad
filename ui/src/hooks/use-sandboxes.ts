@@ -75,7 +75,17 @@ export const WORKSPACE_SERVICE = 'workspace';
 // (see paintTab) — something the generic runner has no concept of.
 import type { Step as GenericStep } from './use-step-flow';
 
-export type StepId = 'launch' | 'health' | 'validate' | 'clone' | 'init' | 'index' | 'context' | 'default' | 'open';
+export type StepId =
+  | 'launch'
+  | 'health'
+  | 'validate'
+  | 'clone'
+  | 'init'
+  | 'index'
+  | 'companion'
+  | 'context'
+  | 'default'
+  | 'open';
 export type Step = GenericStep<StepId>;
 
 /** Every row from `validate` to `default` is one `computeNodeTools` command, so
@@ -88,6 +98,7 @@ const STEP_LABELS: Record<StepId, string> = {
   clone: 'Cloning the repository',
   init: 'Setting up the project',
   index: 'Indexing the project',
+  companion: 'Setting up the controller project',
   context: 'Adding dependencies',
   default: 'Choosing the project to open',
   open: 'Finishing up',
@@ -122,7 +133,10 @@ function hasContextWork(setup: SandboxSetup): boolean {
  * showing them idle would report work that is not going to happen.
  */
 function plannedProjectSteps(setup: SandboxSetup): Step[] {
+  // No repo to fetch → the box mounts the project empty instead, and an empty
+  // directory has nothing to index.
   const ids: StepId[] = setup.gitOrigin ? (['validate', 'clone', 'index'] as StepId[]) : (['init'] as StepId[]);
+  if (setup.companions?.length) ids.push('companion');
   if (hasContextWork(setup)) ids.push('context');
   ids.push('default', 'open');
   return ids.map((id) => ({ id, label: STEP_LABELS[id], status: 'idle' }));
@@ -133,16 +147,9 @@ function plannedProjectSteps(setup: SandboxSetup): Step[] {
  *  can render the SAME row set this hook would drive, instead of a placeholder
  *  that has to be kept in sync with it by hand. */
 export function plannedSteps(setup?: SandboxSetup): Step[] {
-  const ids: StepId[] = ['launch', 'health'];
-  if (setup) {
-    // No repo to fetch → the box mounts the project empty instead, and an empty
-    // directory has nothing to index.
-    ids.push(...(setup.gitOrigin ? (['validate', 'clone', 'index'] as StepId[]) : (['init'] as StepId[])));
-    if (hasContextWork(setup)) ids.push('context');
-    ids.push('default');
-  }
-  ids.push('open');
-  return ids.map((id) => ({ id, label: STEP_LABELS[id], status: 'idle' }));
+  const step = (id: StepId): Step => ({ id, label: STEP_LABELS[id], status: 'idle' });
+  // The project rows end in `open`; with no project there is only the box to open.
+  return [step('launch'), step('health'), ...(setup ? plannedProjectSteps(setup) : [step('open')])];
 }
 
 /**
@@ -200,9 +207,12 @@ function hubEntityJson(node: ComputeNode, patch: Record<string, unknown> = {}): 
  * Exported so the wire-contract test asserts against the URL production
  * actually navigates to, rather than re-deriving one from copied literals.
  */
-export function workspaceServiceUrl(nodeId: string): string {
+export function workspaceServiceUrl(nodeId: string, next?: string): string {
   const info = new ActionInfo('open-service', ComputeNode.type, nodeId, 'GET');
   info.subpath = WORKSPACE_SERVICE;
+  // `next`: the app path the box opens on once it is up — a launch's `action=launch` link.
+  // The hub accepts only a same-origin path and carries it through its sign-in gate.
+  if (next) info.queryParameters = { ...(info.queryParameters ?? {}), next };
   return info.fullActionUrl;
 }
 
@@ -292,9 +302,20 @@ export interface SandboxSetup {
   /** Help desks / skills repos to clone and add as dependencies of this project.
    *  Defaults to whatever the cloned repo's own manifest declares. */
   contextProjects?: ContextProject[];
+  /** Projects provisioned BESIDE this one, each its own project and never attached — a
+   *  launch's controller, checked out next to the target it works on. */
+  companions?: SandboxCompanion[];
   /** Review-branch content installation, applied to the hub's checkout before
    *  the tree is copied in, then reconciled on the box. Git-backed only. */
   install?: ContentInstallSpec;
+}
+
+/** A project provisioned beside the main one (`SandboxSetup.companions`). */
+export interface SandboxCompanion {
+  gitOrigin: GitOrigin | HubRepoOrigin;
+  name: string;
+  /** Adopted by the box, so the launch handler finds it by the hub's id. */
+  projectId?: string;
 }
 
 /** A repo that becomes its own project on the box AND a dependency of the
@@ -328,6 +349,15 @@ function provisionSetupOf(setup: SandboxSetup): ProvisionSetup {
             git_origin: ctx.gitOrigin as unknown as Record<string, unknown>,
             name: ctx.name,
             optional: ctx.optional,
+          })),
+        }
+      : {}),
+    ...(setup.companions?.length
+      ? {
+          companions: setup.companions.map((c) => ({
+            git_origin: c.gitOrigin as unknown as Record<string, unknown>,
+            name: c.name,
+            ...(c.projectId ? { project_id: c.projectId } : {}),
           })),
         }
       : {}),

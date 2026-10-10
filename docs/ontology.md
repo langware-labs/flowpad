@@ -254,6 +254,14 @@ its own: its `output_spec_kind` names a primitive, a kind whose schema is code, 
   (see Coverage above) — no shipped op needs one, and giving a JSON document a
   module to import is a bigger decision than it looks.
 
+* Project has a `subkind` (`standard | controller | addon`, `ProjectSubkind` in
+  `flow_sdk/schema/data_spec/project_manifest_spec.py`), declared in the project's
+  `project_manifest.json` so a clone knows it before anything opens — `standard` is the
+  silent default. `controller` is a project used to do work on ANOTHER project: a launch
+  opens the other one (the target) and this one's home page acts in it, never attached;
+  `addon` is attached BY a host as a `flow.json` dependency (a help desk portal). Its kind
+  `project.<subkind>` is derived, never stored.
+
 * Rules 1–2 (`subkind`, derived `kind`, payload-kind) are otherwise unimplemented. The
   blockers: `Conversation.kind` is a two-repo change gating hub authorization,
   `FlowMessage.kind` is on the wire, and `SourceItem.kind` is first in

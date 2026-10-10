@@ -272,6 +272,9 @@ export interface NewCloudProjectLink {
   title?: string;
 }
 
+/** What a project is for — mirror of `flow_sdk/schema/data_spec/project_manifest_spec.py` `ProjectSubkind`. */
+export type ProjectSubkind = 'standard' | 'controller' | 'addon';
+
 /** `GET project/<id>/home-page` — `Project.open_home_page()`. */
 export interface ProjectHomePage {
   /** The declared asset's TypeId, once it resolves inside this project. */
@@ -908,7 +911,7 @@ export class Project extends APIEntity<Project> {
    * {@link AdoptHelpdeskOutcome}. Returns a summary rather than the whole
    * project, so `include_dirs` on this entity is NOT refreshed — refetch the
    * project if a surface renders its dependencies. */
-  async adoptHelpdeskFromGit(url: string, branch: string = '', optional: boolean = false): Promise<AdoptHelpdeskResult> {
+  async adoptHelpdeskFromGit(url: string, branch: string = '', optional: boolean = true): Promise<AdoptHelpdeskResult> {
     return this.changingDependencies(() =>
       this.post<AdoptHelpdeskResult>('adopt-helpdesk-from-git', { url, branch, optional }),
     );
@@ -980,6 +983,23 @@ export class Project extends APIEntity<Project> {
     const actionInfo = new ActionInfo('setup-run', Project.type, projectId, 'GET');
     if (root) actionInfo.queryParameters = { root };
     return (await dataManager.callAction<void, ProjectSetupRun>(actionInfo)) ?? null;
+  }
+
+  /** A launched project, present and checked out on THIS machine (`POST project/<id>/launch-ensure`):
+   *  mirrored from the hub when there is no row, materialized from its origin when there is no
+   *  checkout, returned as is otherwise. Throws with the backend's reason. */
+  static async launchEnsure(projectId: string): Promise<Project> {
+    const actionInfo = new ActionInfo('launch-ensure', Project.type, projectId, 'POST');
+    actionInfo.bodyParameters = {};
+    let data: Record<string, unknown> | undefined;
+    try {
+      data = await dataManager.callAction<Record<string, never>, Record<string, unknown>>(actionInfo);
+    } catch (err: unknown) {
+      const ax = err as { response?: { data?: { message?: string } }; message?: string };
+      throw new Error(ax.response?.data?.message ?? ax.message ?? 'The project could not be set up here.');
+    }
+    if (!data) throw new Error('The project could not be set up here.');
+    return dataManager.updateEntityFromJson<Project>(data);
   }
 
   /** The declared home page resolved to its asset (`GET project/<id>/home-page`),
