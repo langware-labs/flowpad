@@ -41,6 +41,10 @@ def clones(tmp_path: Path) -> tuple[Path, Path]:
     _git(mine, "push", "-qu", "origin", "main")
     theirs = tmp_path / "theirs"
     _git(tmp_path, "clone", "-q", "-b", "main", str(origin), str(theirs))
+    # GitRepo commits and rebases as the repo's own user: a machine with no global identity (CI) has none.
+    for repo in (mine, theirs):
+        _git(repo, "config", "user.email", "t@t")
+        _git(repo, "config", "user.name", "t")
     return mine, theirs
 
 
