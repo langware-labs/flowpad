@@ -80,7 +80,9 @@ Two axes, shown together because they disagree in the interesting cases:
 
 - `status` (`new` / `setup` / `active` / `disabled`) is "should this run"; `health` (`never_synced` / `ok` / `transient_error` / `config_error`) is "does it work".
 - The chip and the card's left border use `healthStyle(source.health)` when the source `isActive`, else `statusStyle(source.status)` — health on a source that is not running describes the last time it ran and is stale by construction.
-- `needsSetup` (`status === 'setup'`) opens the amber setup panel with `setup_detail`, a `WikiButton` to the spec's `setup_wiki`, and **Verify**; **Pull changes** is disabled until verified.
-- `parked` (`isActive && health === 'config_error'`) shows a red note: the scheduler skips a `config_error` source, and **Pull changes** clears the latch.
+- Why a source is not delivering is ONE classifier, `attentionReason(source)` (`ui/src/components/data-sources/source-attention.ts`), read by this screen, the stream inbox's channel marks, their hover list and the attention strip above the inbox list. Its `ATTENTION` table gives each kind its mark, its recovery verb, a fallback sentence and the next step, so no two surfaces word a state or name a recovery differently.
+- `setup` (`needsSetup`) opens the amber setup panel with `setup_detail`, a `WikiButton` to the spec's `setup_wiki`, and **Verify**; **Pull changes** is disabled until verified.
+- `parked` (`isActive && health === 'config_error'`) shows a red note with the error and the next step, and **Verify** — the verb the strip offers too. Verify probes the connection and the driver's own check and answers; **Pull changes** in the menu also clears the latch, by simply retrying.
+- `unresolved` (`status === 'new'`, never polled) and `held` (a file changed on both sides) show an amber note with the next step: **Verify** and **Pull** respectively.
 - The card icon is the spec's `channel_icon_names[channel]`, else the spec's `icon_name` (both via `lucideByName`), else `iconForType(DataSource.type)` from the registry. The view header and the `ViewType` tab chip use the registry glyph (`Antenna`, matching the backend `TypeInfo.icon`).
 - Every verb reports through `notify` toasts; a not-ready `verify()` is an info toast, not an error.

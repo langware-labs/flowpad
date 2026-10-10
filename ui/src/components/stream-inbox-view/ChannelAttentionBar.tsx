@@ -2,8 +2,8 @@
  * The "what is wrong, what to do" strip a channel mark opens above the stream inbox list.
  *
  * Clicking a mark on the channels line filters the list to that channel. When that
- * channel is not delivering — a setup step is owed, it is parked on a configuration
- * error, it is paused, a file is held, or it is retrying after a failure — the
+ * channel is not delivering — nothing has evaluated it yet, a setup step is owed, it is
+ * parked on a configuration error, it is paused, a file is held, or it is retrying — the
  * filtered list is empty or stale, and a tooltip is not where a person learns why.
  * This strip sits between the filter row and the list and says, per source: the
  * reason, the next step, and the verb that takes it — Verify, Resume or Pull — beside
@@ -45,6 +45,7 @@ import type { AttentionItem } from './channel-owner';
 // Tinted row, coloured border, foreground words: red (or amber) text on a dark theme does not read.
 const AMBER = 'border-amber-500/40 bg-amber-500/10';
 const TINT: Record<AttentionKind, string> = {
+  unresolved: AMBER,
   setup: AMBER,
   parked: 'border-red-500/60 bg-red-500/10',
   paused: 'border-border bg-muted/40',
