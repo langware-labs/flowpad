@@ -1332,28 +1332,17 @@ export class Project extends APIEntity<Project> {
   }
 
   /**
-   * Move a project into another workspace (`POST compute_node/<id>/switch-project-workspace`):
-   * everything open in it is closed, its folder moves under the workspace's root, the SAME
-   * row is re-pointed and the new location fully indexed. `workspaceId` undefined = the
-   * default workspace. Rejects with the backend's error (409 when the destination already
-   * has a folder of that name, 400 already there / not movable, 404 unknown) — the caller
-   * shows it; nothing is auto-suffixed.
+   * Move this project into another workspace (`undefined`: the default one). The backend
+   * closes everything open in it, moves its folder and re-points this same row. Resolves
+   * with whether the new folder was indexed; rejects with the backend's refusal (409 when
+   * the destination already has a folder of that name) for the caller to show.
    */
-  static async switchWorkspace(
-    computeNodeId: string,
-    projectId: string,
-    workspaceId: string | undefined,
-  ): Promise<{ project: Project; path: string; previousPath: string; indexed: boolean }> {
-    const action = new ActionInfo('switch-project-workspace', 'compute_node', computeNodeId, 'POST');
-    action.bodyParameters = { project_id: projectId, ...(workspaceId ? { workspace: workspaceId } : {}) };
-    const response = await dataManager.callAction<
-      { project_id: string; workspace?: string },
-      { project: Record<string, unknown>; path: string; previous_path: string; indexed?: boolean }
-    >(action);
-    if (!response?.project) throw new Error('No project returned');
-    const project = dataManager.updateEntityFromJson<Project>(response.project);
-    // `indexed === false`: moved, but the new folder's index did not run — say so.
-    return { project, path: response.path, previousPath: response.previous_path, indexed: response.indexed !== false };
+  async switchWorkspace(workspaceId: string | undefined): Promise<{ indexed: boolean }> {
+    const res = await this.post<{ project?: Record<string, unknown>; indexed?: boolean }>('switch-workspace', {
+      workspace: workspaceId ?? '',
+    });
+    if (res?.project) dataManager.updateEntityFromJson<Project>(res.project);
+    return { indexed: res?.indexed !== false };
   }
 
   /**
