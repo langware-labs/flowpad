@@ -134,3 +134,15 @@ def test_the_cache_is_per_class_not_inherited():
 
     assert "extra_private_f" in _Other.fields_not_sent_to_hub()
     assert "extra_private_f" not in _Probe.fields_not_sent_to_hub()
+
+
+def test_the_blob_fields_cache_is_weak_keyed():
+    """The module once declared ``_BLOB_FIELDS_CACHE`` twice -- the weak dict, then a plain dict that
+    shadowed it -- so a record class that left the type registry stayed pinned by its cache entry. The
+    type assertion is the honest guard: the behavioural case needs a class dropped from the registry,
+    which no production path does."""
+    from weakref import WeakKeyDictionary
+
+    from flow_sdk.db.drivers import db_base_record
+
+    assert isinstance(db_base_record._BLOB_FIELDS_CACHE, WeakKeyDictionary)

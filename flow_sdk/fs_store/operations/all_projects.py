@@ -52,9 +52,15 @@ _PROJECTS_CACHE: list | None = None
 def invalidate_projects_cache() -> None:
     """Drop the cached Project list. Called when a project is materialized; the
     scope resolver also force-refreshes on a token miss, so a freshly-created
-    project self-heals even without an explicit invalidate."""
+    project self-heals even without an explicit invalidate.
+
+    The indexer's cwd -> project id memo is the same fact in another shape, so
+    it goes with it: a deleted project must stop being stamped on new records."""
     global _PROJECTS_CACHE
     _PROJECTS_CACHE = None
+    from flow_sdk.fs_store.indexer.roots import forget_project_cwd_ids  # noqa: PLC0415
+
+    forget_project_cwd_ids()
 
 
 async def get_cached_projects(*, force: bool = False):

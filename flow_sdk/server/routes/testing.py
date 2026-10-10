@@ -46,7 +46,8 @@ async def get_pings():
     Returns:
         JSON response with all ping results
     """
-    return JSONResponse(content={"pings": state.ping_results})
+    # A deque is not JSON-serialisable; the ring is snapshotted as a list.
+    return JSONResponse(content={"pings": list(state.ping_results)})
 
 
 @router.get("/prompt")
@@ -83,4 +84,4 @@ async def get_prompts():
     Returns:
         JSON response with all prompt results
     """
-    return JSONResponse(content={"prompts": state.prompt_completions})
+    return JSONResponse(content={"prompts": list(state.prompt_completions)})

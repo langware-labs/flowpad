@@ -40,16 +40,28 @@ import types
 from enum import Enum
 from pathlib import PurePath
 from typing import Annotated, Any, ClassVar, Literal, Optional, Union, get_args, get_origin
+from weakref import WeakValueDictionary
 
-from pydantic import BaseModel, BeforeValidator, ConfigDict, Discriminator, PlainSerializer, Tag, create_model, model_validator
+from pydantic import (
+    BaseModel,
+    BeforeValidator,
+    ConfigDict,
+    Discriminator,
+    PlainSerializer,
+    Tag,
+    create_model,
+    model_validator,
+)
 
 from flow_sdk.schema.data_spec._namespace import current as current_ns
 from flow_sdk.schema.data_spec._namespace import qualified
 from flow_sdk.tags.grammar import normalize_tag
 
 # Compiled anonymous subclasses, keyed by canonical authoring form so two
-# identical shapes share one class.
-_COMPILED: dict[str, type] = {}
+# identical shapes share one class WHILE one is in use. Weak-valued: an inline
+# form edited away in a data schema is a class nobody annotates any more, and
+# it must be freed with the declared class that held it.
+_COMPILED: "WeakValueDictionary[str, type]" = WeakValueDictionary()
 
 
 class DataSpec(BaseModel):

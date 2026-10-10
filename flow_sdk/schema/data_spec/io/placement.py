@@ -39,9 +39,9 @@ from __future__ import annotations
 
 import types
 import typing
-from functools import lru_cache
 from types import MappingProxyType
 from typing import Any, Mapping, Optional, Union, get_args, get_origin
+from weakref import WeakKeyDictionary
 
 from flow_sdk._compat import StrEnum
 from flow_sdk.schema.data_spec.frontmatter import AssetDocumentSpec
@@ -191,7 +191,13 @@ def placement_of(annotation: Any) -> Placement:
     return Placement.INLINE
 
 
-@lru_cache(maxsize=None)
+# Weak-keyed, not ``lru_cache``: a data schema edited at runtime is a NEW class
+# (``declared._build``), and its registry entry is rebound — so the memo must
+# not be what keeps the old class alive. The value holds no reference to the
+# class, so the key can die. Same idiom as ``db_base_record._SHARING_CACHE``.
+_PLACEMENTS: "WeakKeyDictionary[type, Mapping[str, Placement]]" = WeakKeyDictionary()
+
+
 def placements(spec: type) -> "Mapping[str, Placement]":
     """Every field of *spec*, by placement. The reader and the writer share it,
     which is what makes a round trip symmetric by construction rather than by
@@ -201,12 +207,21 @@ def placements(spec: type) -> "Mapping[str, Placement]":
     caller's edit reach every later caller. No caller mutates it today, which is
     exactly why the day one does would be hard to find.
     """
+    hit = _PLACEMENTS.get(spec)
+    if hit is not None:
+        return hit
     out: dict[str, Placement] = {}
     for name, field in spec.model_fields.items():
         # ``rebuild_annotation`` re-wraps what pydantic moved into
         # ``FieldInfo.metadata``; ``.annotation`` alone silently drops it.
         out[name] = placement_of(field.rebuild_annotation())
-    return MappingProxyType(out)
+    hit = _PLACEMENTS[spec] = MappingProxyType(out)
+    return hit
+
+
+# ``SchemaRegistry.register`` clears it alongside the serializer's two
+# ``lru_cache`` tables; keep the same spelling.
+placements.cache_clear = _PLACEMENTS.clear  # type: ignore[attr-defined]
 
 
 __all__ = [
