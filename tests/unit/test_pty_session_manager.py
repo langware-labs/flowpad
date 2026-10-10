@@ -9,6 +9,7 @@ Two invariants:
      subscriptions and orphaned PtyStates are bounded by explicit reapers.
 """
 
+import asyncio
 import time
 
 import pytest
@@ -147,3 +148,78 @@ async def test_detach_grace_reaps_stale_parked_id_on_live_state(manager: PtyRegi
     assert closed == 0, "state has an attached viewer — must not be closed"
     assert CONN_B not in state.detached_connections, "stale parked id reaped"
     assert state.attached_connections == {CONN_A}
+
+
+# ── Parked-id reaper: the half of the sweep that runs in production ──────────
+
+ORPHAN_KEY = ("compute-1", "provider-1", "session-orphan")
+
+
+async def _one_live_and_one_orphan_state(manager: PtyRegistry, backdate: float = 10_000):
+    """A viewed state with a stale parked id, and a state nobody views any more."""
+    await manager.generate_session(PTY_KEY, "compute-1", CONN_A)
+    await manager.attach(PTY_KEY, CONN_B)
+    await manager.on_ws_disconnect(CONN_B)  # B parked on the live state
+    await manager.generate_session(ORPHAN_KEY, "compute-1", "conn-gone")
+    await manager.on_ws_disconnect("conn-gone")  # its only viewer parked -> orphan TTL armed
+
+    live = await manager.get_session(PTY_KEY)
+    orphan = await manager.get_session(ORPHAN_KEY)
+    live.detached_connections[CONN_B] = time.time() - backdate
+    orphan.detached_connections["conn-gone"] = time.time() - backdate
+    orphan.last_detached_at = time.time() - backdate
+    return live, orphan
+
+
+@pytest.mark.asyncio
+async def test_reap_parked_connections_drops_stale_ids_and_closes_nothing(manager: PtyRegistry):
+    """Backdated parked ids go, on a viewed state and on an orphan alike; no PTY is closed."""
+    live, orphan = await _one_live_and_one_orphan_state(manager)
+    live.detached_connections["conn-fresh"] = time.time()  # parked just now: must survive
+
+    reaped = manager.reap_parked_connections(detach_grace_seconds=900)
+
+    assert reaped == 2
+    assert live.detached_connections == {"conn-fresh": live.detached_connections["conn-fresh"]}
+    assert orphan.detached_connections == {}
+    assert live.attached_connections == {CONN_A}
+    assert await manager.get_session(ORPHAN_KEY) is orphan, "the reaper never closes a PTY, orphan or not"
+
+
+@pytest.mark.asyncio
+async def test_default_cleanup_task_reaps_parked_ids_only(manager: PtyRegistry):
+    """``start_cleanup_task()`` with defaults (what server startup calls): one tick drops the
+    backdated parked ids and leaves a state whose orphan TTL has long passed alone."""
+    live, orphan = await _one_live_and_one_orphan_state(manager)
+
+    await manager.start_cleanup_task(interval_seconds=0.01)
+    assert manager._cleanup_task is not None and not manager._cleanup_task.done()
+    assert manager._cleanup_task.get_name() == "pty-parked-reaper"
+    for _ in range(50):  # one tick is 10 ms; bail out as soon as it landed
+        await asyncio.sleep(0.01)
+        if not live.detached_connections:
+            break
+
+    assert live.detached_connections == {}
+    assert orphan.detached_connections == {}
+    assert await manager.get_session(ORPHAN_KEY) is orphan, "orphan TTL stays off in the default loop"
+    assert len(manager.states) == 2
+
+    await manager.stop_cleanup_task()
+    assert manager._cleanup_task.done()
+
+
+@pytest.mark.asyncio
+async def test_cleanup_task_with_ttl_still_closes_orphans(manager: PtyRegistry):
+    """Passing a TTL keeps the full sweep (orphan close + parked reap) for a caller that wants it."""
+    _live, orphan = await _one_live_and_one_orphan_state(manager)
+
+    await manager.start_cleanup_task(interval_seconds=0.01, ttl_seconds=900)
+    for _ in range(50):
+        await asyncio.sleep(0.01)
+        if ORPHAN_KEY not in manager.states:
+            break
+    await manager.stop_cleanup_task()
+
+    assert await manager.get_session(ORPHAN_KEY) is None
+    assert await manager.get_session(PTY_KEY) is not None
