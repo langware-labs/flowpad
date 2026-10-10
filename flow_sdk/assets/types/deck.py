@@ -171,23 +171,23 @@ def extract_deck(ref: FSRef, resolved_id: str) -> list[FSRecord]:
     return [rec]
 
 
-def deck_asset_hash(ref: FSRef) -> float:
+def deck_asset_hash(ref: FSRef) -> int:
     """mtime across the deck's build record + assembled HTML.
 
     A folder's own mtime doesn't move when a child's content is edited, so stat
     deck.json plus every ``*.html`` directly. Mirrors ``deck_template_asset_hash``.
     """
     base = ref._path
-    ts = 0.0
+    ts = 0
     try:
-        ts = max(ts, (base / MANIFEST).stat().st_mtime)
+        ts = max(ts, (base / MANIFEST).stat().st_mtime_ns)
     except OSError:
         pass
     if base.is_dir():
         for child in base.iterdir():
             if child.is_file() and child.suffix == ".html":
                 try:
-                    ts = max(ts, child.stat().st_mtime)
+                    ts = max(ts, child.stat().st_mtime_ns)
                 except OSError:
                     pass
     return ts

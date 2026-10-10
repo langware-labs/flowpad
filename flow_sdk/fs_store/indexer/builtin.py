@@ -50,30 +50,15 @@ def indexable_types() -> list[RecordType]:
 def build_default_indexer(scan_mode: "ScanMode | None" = None) -> FSIndexer:
     """Construct the canonical indexer: root set + all functions registered.
 
-    Honors the ``indexer_backend`` toggle (env ``FLOWPAD_INDEXER_BACKEND`` >
-    pref ``preferences.advanced.indexer_backend``): ``rust`` returns the
-    RSIndexerAdapter behind the same surface (fail-open to FSIndexer when the
-    binary doesn't resolve). Default is the Python FSIndexer.
+    The Rust/Python choice is NOT made here: the ``diskio`` backend
+    (``FLOWPAD_DISKIO_BACKEND`` / ``preferences.advanced.diskio_backend``) is read by the
+    walkers themselves on every scan, so one indexer serves both.
 
     ``scan_mode`` selects where the Python backend's *discovery* phase runs
     (``preferences.auto_index.index_function``). Pass it explicitly to pin the
     mode — ``scan_child`` MUST do so, since defaulting there would re-read the
     preference, resolve SUBPROCESS again, and fork-bomb.
     """
-    rs = _maybe_rs_indexer()
-    if rs is not None:
-        # TypeInfo registry must still be complete — scan-projection callers
-        # run from_disk_fn Python-side on the adapter's FSRefs.
-        import flow_sdk.fs_store.indexer.registrations  # noqa: F401, PLC0415
-        # `scan_mode` is a no-op here: RSIndexerAdapter is not an FSIndexer
-        # subclass and its scan already runs out-of-process in the Rust binary.
-        if scan_mode is not None:
-            import logging  # noqa: PLC0415
-            logging.info(
-                "indexer_backend=rust is active; index_function=%s is a no-op "
-                "(the Rust binary already scans out-of-process)", scan_mode.value,
-            )
-        return rs
     # Transcript handlers are opt-in (full-JSONL parse is expensive — see
     # flow_sdk/fs_store/transcript_indexer/).
     # Default is the in-process walk. The auto-index preference is applied only
@@ -92,7 +77,7 @@ def register_default_functions(idx: FSIndexer) -> None:
     """Wire every production walker onto ``idx`` — the one registration graph.
 
     Split from ``build_default_indexer`` so a caller that needs the graph but
-    not the roots (``indexable_types`` under the Rust backend) does not walk
+    not the roots (``indexable_types``) does not walk
     anything to get it.
     """
     import flow_sdk.fs_store.indexer.registrations  # noqa: F401, PLC0415
@@ -304,50 +289,12 @@ def get_auto_scan_indexer() -> FSIndexer:
     return _auto_scan_shared
 
 
-def _maybe_rs_indexer():
-    """Return an RSIndexerAdapter when the instance selects the Rust backend
-    AND the external binary resolves; else None (Python FSIndexer).
-
-    Fail-open by design: a selected-but-unresolvable Rust backend logs one
-    warning and falls back to Python, mirroring ``vendored_flow_rs_enabled``.
-    The custom-slice builders (project_list, single-file self-heal) always
-    build FSIndexer directly and are unaffected by this toggle.
-    """
-    from flow_sdk.fs_store.indexer.rs_adapter import (  # noqa: PLC0415
-        RSIndexerAdapter,
-        resolve_rs_indexer_bin,
-        rs_backend_selected,
-    )
-
-    try:
-        if not rs_backend_selected():
-            return None
-        bin_path = resolve_rs_indexer_bin()
-        if bin_path is None:
-            import logging  # noqa: PLC0415
-
-            logging.warning(
-                "indexer_backend=rust selected but no usable binary "
-                "(set FLOWPAD_RS_INDEXER_BIN); using the Python FSIndexer"
-            )
-            return None
-        return RSIndexerAdapter(bin_path)
-    except Exception:
-        import logging  # noqa: PLC0415
-
-        logging.warning("RSIndexer backend selection failed; using FSIndexer", exc_info=True)
-        return None
-
-
 _shared: FSIndexer | None = None
 _derived_types: list[RecordType] | None = None
 
 
 def get_shared_indexer() -> FSIndexer:
     """Return the process-wide indexer, lazily constructed on first call.
-
-    The backend toggle lives in ``build_default_indexer`` so every caller —
-    this singleton AND direct ``build_default_indexer()`` users — honors it.
     """
     global _shared
     if _shared is None:

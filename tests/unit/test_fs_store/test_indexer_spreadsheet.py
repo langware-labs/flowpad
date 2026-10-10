@@ -160,6 +160,6 @@ def test_asset_hash_tracks_mtime(tmp_path: Path) -> None:
     p = _seed_csv(tmp_path, "d.csv")
     ref = FSRef(p)
     h1 = spreadsheet_asset_hash(ref)
-    future = h1 + 100
-    os.utime(p, (future, future))
-    assert spreadsheet_asset_hash(ref) == pytest.approx(future)
+    future = h1 + 100 * 10**9  # the fingerprint is integer nanoseconds
+    os.utime(p, ns=(future, future))
+    assert spreadsheet_asset_hash(ref) == future

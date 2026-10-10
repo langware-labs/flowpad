@@ -55,7 +55,13 @@ def _header(text: str) -> tuple[str, str, str | None]:
     raise ValueError("Unclosed YAML frontmatter")
 
 
-class _DocumentLoader(yaml.SafeLoader):
+#: libyaml's parser when PyYAML was built with it (it is, in every wheel we ship on), else the
+#: pure-Python one. Same YAML 1.1 resolution and the same constructors either way — the strict
+#: mapping rule below lives in the constructor, which both share — at about 1.6x the speed.
+_BaseLoader = getattr(yaml, "CSafeLoader", yaml.SafeLoader)
+
+
+class _DocumentLoader(_BaseLoader):
     def construct_mapping(self, node, deep=False):
         self.flatten_mapping(node)
         keys = [self.construct_object(key, deep=deep) for key, _ in node.value]
