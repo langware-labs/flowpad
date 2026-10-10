@@ -82,6 +82,11 @@ export function isProcessRunning(status: ProcessStatus): boolean {
   return RUNNING_PROCESS_STATUSES.has(status);
 }
 
+/** True while a session is on its way or live (NEW/STARTING/RUNNING/STOPPING) — what a chip tints as "handling". */
+export function isProcessLive(status: ProcessStatus | string | null | undefined): boolean {
+  return status === ProcessStatus.NEW || isProcessRunning(status as ProcessStatus);
+}
+
 /** @deprecated Use ``isProcessRunning``. Kept as an alias during the rename sweep. */
 export const isProcessActive = isProcessRunning;
 

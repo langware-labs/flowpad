@@ -8,9 +8,9 @@ import { ActionInfo, dataManager, Trigger } from '@sdk';
 
 function capture(answer: unknown = {}) {
   const calls: ActionInfo[] = [];
-  vi.spyOn(dataManager, 'callAction').mockImplementation(async (action: ActionInfo) => {
+  vi.spyOn(dataManager, 'callAction').mockImplementation((action: ActionInfo) => {
     calls.push(action);
-    return answer as never;
+    return Promise.resolve(answer as never);
   });
   return calls;
 }
@@ -22,6 +22,7 @@ afterEach(() => vi.restoreAllMocks());
 describe('Trigger automation methods', () => {
   it.each([
     ['overview', () => Trigger.overview(), 'GET', '/graph/trigger/overview'],
+    ['started_last_hour', () => Trigger.startedLastHour(), 'GET', '/graph/trigger/started_last_hour'],
     [
       'runs',
       () => Trigger.runs({ triggerId: 't1', status: 'failed', includeTests: false, limit: 50 }),
@@ -37,6 +38,7 @@ describe('Trigger automation methods', () => {
     ],
     ['bus_map', () => Trigger.busMap(), 'GET', '/graph/trigger/bus_map'],
     ['check_spec', () => Trigger.checkSpec({ trigger_type: 'tag' }), 'POST', '/graph/trigger/check_spec'],
+    ['decide_spec', () => Trigger.decideSpec({ trigger_type: 'tag' }, { text: 'x' }), 'POST', '/graph/trigger/decide_spec'],
     [
       'match_pattern',
       () => Trigger.matchPattern('task.*', { tag: 'task.x', target: 't:1' }),
@@ -45,6 +47,12 @@ describe('Trigger automation methods', () => {
     ],
     ['recent_events', () => Trigger.recentEvents('task.*'), 'GET', '/graph/trigger/recent_events'],
     ['create', () => Trigger.createAutomation({ name: 'n', trigger_type: 'tag' }), 'POST', '/graph/trigger/create'],
+    [
+      'create',
+      () => Trigger.onMessage({ catch: 'asks for a refund', sources: ['ds-1'], agent: 'ag-1', prompt: 'Go' }),
+      'POST',
+      '/graph/trigger/create',
+    ],
   ] as const)('%s', async (name, call, method, path) => {
     const calls = capture([]);
     await call();
@@ -56,6 +64,8 @@ describe('Trigger automation methods', () => {
 
   it.each([
     ['test', () => Trigger.runOnce(ID, { tag: 'a.b', target: 'x:1' }), 'POST'],
+    ['decide_on', () => Trigger.decideOn(ID, { text: 'refund me' }), 'POST'],
+    ['decide_on_recent', () => Trigger.decideOnRecent(ID, { limit: 5 }), 'GET'],
     ['check', () => Trigger.check(ID), 'POST'],
     ['samples', () => Trigger.samples(ID), 'GET'],
     ['update', () => Trigger.setEnabled(ID, false), 'PATCH'],
@@ -73,7 +83,38 @@ describe('Trigger automation methods', () => {
   it('runs sends only the filters given', async () => {
     const calls = capture([]);
     await Trigger.runs({ triggerId: 't1', includeTests: false });
+    await Trigger.runs({ triggerId: 't1', includeDeclined: true });
     expect(calls[0].queryParameters).toEqual({ trigger_id: 't1', include_tests: 'false' });
+    expect(calls[1].queryParameters).toEqual({ trigger_id: 't1', include_declined: 'true' });
+  });
+
+  it('onMessage sends the rule the Python builder makes: the pattern, the scope, a sentence gate, the sugar', async () => {
+    const calls = capture({ id: ID, name: 'n' });
+    await Trigger.onMessage({ catch: 'asks for a refund', sources: ['ds-1', 'data_source:ds-2'], agent: 'agent-ag-1', prompt: 'Go' });
+    expect(calls[0].bodyParameters).toEqual({
+      name: 'Asks for a refund → an agent',
+      trigger_type: 'tag',
+      tag_pattern: 'stream_inbox.*.message.projected',
+      tag_scope: ['data_source:ds-1', 'data_source:ds-2'],
+      gate: { sentence: 'asks for a refund' },
+      then: { run_agent: { agent: 'agent-ag-1', prompt: 'Go' } },
+      enabled: true,
+      project_id: null,
+    });
+  });
+
+  it('decideOn asks about a message by id, or about text', async () => {
+    const calls = capture({});
+    await Trigger.decideOn(ID, { messageId: 'm-1' });
+    await Trigger.decideOn(ID, { text: 'hi' });
+    expect(calls[0].bodyParameters).toEqual({ message_id: 'm-1' });
+    expect(calls[1].bodyParameters).toEqual({ text: 'hi' });
+  });
+
+  it('run once on a message carries its id', async () => {
+    const calls = capture({});
+    await Trigger.runOnce(ID, null, { messageId: 'm-1' });
+    expect(calls[0].bodyParameters).toEqual({ message_id: 'm-1' });
   });
 
   it('run once carries the picked event, and nothing when none is picked', async () => {

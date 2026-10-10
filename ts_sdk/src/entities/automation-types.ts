@@ -6,9 +6,20 @@
  * language; `text` is the backend's English rendering, for fallbacks only.
  */
 
+import type { DecisionVerdict } from '../models/ReturnedValue';
+
 export type AutomationKind = 'schedule' | 'event' | 'file' | 'agent_hook';
 export type AutomationGroup = 'project' | 'mine' | 'builtin';
 export type RunStatus = 'running' | 'launched' | 'succeeded' | 'failed' | 'skipped';
+/** Why a fire did not happen. The two `decision_*` codes are the gate's (docs/snippets/stream-inbox-automations.md). */
+export type ReasonCode =
+  | 'storm'
+  | 'confirm_failed'
+  | 'disabled'
+  | 'self_loop'
+  | 'already_fired'
+  | 'decision_no'
+  | 'decision_unavailable';
 export type SchedulePreset = 'daily' | 'weekdays' | 'weekly' | 'monthly' | 'every' | 'once' | 'cron';
 export type ThenKind = 'run_agent' | 'run_script' | 'open_wizard' | 'builtin_step' | 'notify' | 'workflow' | 'nothing';
 
@@ -87,6 +98,41 @@ export interface AutomationRun {
   changes_total?: number | null;
   actions: string[];
   spec_hash?: string | null;
+  /** What the rule's `if` decided — never the state. */
+  decision?: GateDecision | null;
+  /** The id of what it decided about (a stream inbox message's id); the state is rebuilt from it. */
+  subject_id?: string | null;
+  /** The `then` wizard's result (`compute.returned.wizard`), each step trimmed. */
+  wizard?: Record<string, unknown> | null;
+}
+
+/** One execution mark on a list row: when, how it ended, and the session it opens. */
+export interface RunMark {
+  id: string;
+  ts: string;
+  status: RunStatus;
+  agentic_process_id?: string | null;
+}
+
+/** The gate's decision as a run row keeps it (`tag_triggers.GateOutcome.row`). */
+export interface GateDecision {
+  caught: boolean;
+  confidence: number;
+  reason: string;
+  answers: Record<string, unknown>;
+  unavailable?: string | null;
+  endpoint?: string | null;
+  latency_ms?: number;
+}
+
+/** One row of the try list (`decide_on_recent`): a recent state and what the gate says of it. */
+export interface TryRow {
+  state: Record<string, unknown> & { message_id?: string; sender?: string; subject?: string; text?: string };
+  /** A `DecisionVerdict` asked now (`met`), or the `GateDecision` the log already holds (`caught`). */
+  verdict: Partial<DecisionVerdict> & { caught?: boolean };
+  /** Set when the verdict came from a real run's log — no call was made. */
+  decided_at?: string | null;
+  agentic_process_id?: string | null;
 }
 
 export interface AutomationSummary {
@@ -102,6 +148,12 @@ export interface AutomationSummary {
   last_run?: AutomationRun | null;
   recent_failures: number;
   recent_runs: number;
+  /** The last five real runs, newest first — the row's execution marks. */
+  last_runs: RunMark[];
+  /** Fires the gate declined. */
+  passed_over: number;
+  /** Real fires started in the last hour; summed across rules for the top-bar counter. */
+  started_last_hour: number;
   next_run?: string | null;
   fires: number;
   tested: boolean;
@@ -135,6 +187,8 @@ export interface RunsQuery {
   triggerId?: string | null;
   status?: RunStatus | null;
   includeTests?: boolean;
+  /** Rows the gate declined (`decision_no` / `decision_unavailable`); default false. */
+  includeDeclined?: boolean;
   /** Flowpad's own automations' runs (default true). */
   includeBuiltin?: boolean;
   limit?: number;

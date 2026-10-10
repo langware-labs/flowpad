@@ -1,5 +1,6 @@
 import { launchSurfaceField } from '../process/launch-surface';
 import { APIEntity, registerEntity } from '../APIEntity';
+import { QueryFilter, QueryRequest } from '../FlowSync/query';
 import { TypeId } from '../models/TypeId';
 import type { GitOrigin } from '../models/GitOrigin';
 import type { HubRepoOrigin } from '../models/FSOrigin';
@@ -274,6 +275,19 @@ export class Agent extends APIEntity<Agent> {
   get avatarImageUrl(): string | null {
     if (this.avatar !== AGENT_AVATAR_REF) return null;
     return this.doc?.parent.child(AGENT_AVATAR_FILE).getDownloadUrl() ?? null;
+  }
+
+  /** The agents a rule on this machine may run: enabled, by name — what a picker offers
+   *  (`Agent.runnable_here` in Python). */
+  static async runnableHere(): Promise<Agent[]> {
+    const request = new QueryRequest({
+      type: Agent.type,
+      scope: [],
+      name: 'agents:runnable-here',
+      query: new QueryFilter({ match: { enabled: true } }),
+    });
+    const rows = await Agent.query(request, true);
+    return rows.sort((a, b) => (a.name || '').localeCompare(b.name || '') || String(a.id).localeCompare(String(b.id)));
   }
 
   /** Create in the selected scope, optionally at an exact authorized folder. */
