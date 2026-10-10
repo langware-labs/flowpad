@@ -138,6 +138,10 @@ if (window.electronAPI && window.electronAPI.onStartupStatus) {
   const diagnoseEl = document.getElementById('diagnose-cmd');
   const quitBtn = document.getElementById('quit-btn');
   const retryBtn = document.getElementById('retry-btn');
+  const repairBtn = document.getElementById('repair-btn');
+  const updateBtn = document.getElementById('update-btn');
+  const exportBtn = document.getElementById('export-logs');
+  const recoveryNote = document.getElementById('recovery-note');
   const spinner = document.querySelector('.spinner');
   const statusEl = document.getElementById('status-text');
 
@@ -215,6 +219,39 @@ if (window.electronAPI && window.electronAPI.onStartupStatus) {
   // A new error re-arms the note (a retry that fails again shows the default text).
   const resetShareNote = () => { if (shareStatus) { shareStatus.className = 'error-share-note'; shareStatus.textContent = shareIdle; } };
 
+  // "Export logs": the same zip as "Share with us", saved where the user chooses (no mail client needed).
+  if (exportBtn && api.exportLogs) {
+    exportBtn.addEventListener('click', async () => {
+      exportBtn.disabled = true;
+      exportBtn.textContent = 'Exporting…';
+      try {
+        const r = await api.exportLogs(detailEl ? detailEl.textContent : '');
+        if (shareStatus && !(r && r.canceled)) {
+          shareStatus.className = 'error-share-note ' + (r && r.ok ? 'ok' : 'fail');
+          shareStatus.textContent = r && r.ok
+            ? `Logs saved to ${r.zipPath}. Send that file to the FlowPad team.`
+            : `Couldn’t export the logs${r && r.error ? `: ${r.error}` : ''}. Use “Open logs folder” and copy the newest files by hand.`;
+        }
+      } catch (e) {
+        if (shareStatus) { shareStatus.className = 'error-share-note fail'; shareStatus.textContent = `Couldn’t export the logs: ${e && e.message ? e.message : e}`; }
+      } finally {
+        exportBtn.disabled = false;
+        exportBtn.textContent = 'Export logs';
+      }
+    });
+  }
+
+  // "Update FlowPad to X": the desktop updater downloads and verifies the release, then the app restarts
+  // into the installer. Main streams the download into the status line.
+  if (updateBtn && api.updateDesktopRecovery) {
+    updateBtn.addEventListener('click', () => {
+      if (overlay) overlay.classList.remove('visible');
+      if (spinner) spinner.style.display = '';
+      if (statusEl) statusEl.textContent = 'Downloading the FlowPad update';
+      api.updateDesktopRecovery();
+    });
+  }
+
   wireCopy('copy-upgrade', () => upgradeEl.textContent);
   wireCopy('copy-diagnose', () => diagnoseEl.textContent);
 
@@ -233,6 +270,17 @@ if (window.electronAPI && window.electronAPI.onStartupStatus) {
     });
   }
 
+  // Repair: the user's explicit go-ahead for the runtime repair. Back to the loading view; main
+  // streams each step ("downloading Python 3.11.9 from python.org — 40%") into the status line.
+  if (repairBtn && api.repairRuntime) {
+    repairBtn.addEventListener('click', () => {
+      if (overlay) overlay.classList.remove('visible');
+      if (spinner) spinner.style.display = '';
+      if (statusEl) statusEl.textContent = 'Repairing the FlowPad runtime';
+      api.repairRuntime();
+    });
+  }
+
   api.onStartupError((data) => {
     if (!data) return;
     if (detailEl) detailEl.textContent = data.detail || '';
@@ -243,7 +291,11 @@ if (window.electronAPI && window.electronAPI.onStartupStatus) {
     }
     if (upgradeEl) upgradeEl.textContent = data.upgradeCommand || '';
     if (diagnoseEl) diagnoseEl.textContent = data.diagnoseCommand || '';
-    if (retryBtn) retryBtn.hidden = !data.retryable;
+    if (retryBtn) { retryBtn.hidden = !data.retryable; retryBtn.textContent = data.retryLabel || 'Retry'; }
+    if (repairBtn) repairBtn.hidden = !data.repairable;
+    if (updateBtn) { updateBtn.hidden = !data.updateVersion; updateBtn.textContent = data.updateVersion ? `Update FlowPad to ${data.updateVersion}` : 'Update FlowPad'; }
+    if (exportBtn) exportBtn.hidden = !data.exportable;
+    if (recoveryNote) { recoveryNote.hidden = !data.retryWarning; recoveryNote.textContent = data.retryWarning || ''; }
     document.querySelectorAll('.error-step').forEach((el) => { el.hidden = !!data.policyBlocked; });
     if (overlay) overlay.classList.add('visible');
     // Stop the spinner/status from animating behind the overlay.

@@ -59,6 +59,21 @@ repos:
         files: '^electron/.*\.(js|cjs|json)$'
         pass_filenames: false
 
+      # ---------- Native-dependency manifest (electron/native-deps.json) ----------
+      # The desktop app freezes the engine's dependencies in time at install
+      # (`uv tool install --exclude-newer`, electron/uv-manager.js) and applies the
+      # reputation margin only to packages that ship native wheels. That list is
+      # derived from uv.lock, so a `uv lock` that adds or drops a native package
+      # must regenerate it. The hook rewrites the manifest; if it changed,
+      # pre-commit fails so you re-stage + commit it (same flow as lingui below).
+      # tests/unit/test_native_deps_manifest.py is the CI side of the same guard.
+      - id: native-deps-manifest
+        name: Native dependency manifest (electron/native-deps.json)
+        entry: uv run python scripts/native_deps_from_lock.py
+        language: system
+        files: '^(uv\.lock|electron/native-deps\.json|scripts/native_deps_from_lock\.py)$'
+        pass_filenames: false
+
       # ---------- TypeScript SDK (ts_sdk/) ----------
       # ts_sdk is a top-level SIBLING of ui/ with no TypeScript of its own, so it
       # can't run tsc against its own tsconfig (the @types it references live in

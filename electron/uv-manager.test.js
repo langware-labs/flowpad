@@ -8,6 +8,11 @@
 
 const assert = require('assert');
 const UvManager = require('./uv-manager');
+// The dependency cut-off (`--exclude-newer`, see uv-manager.js) looks the engine release's upload time up on
+// PyPI before every install. Unit tests must not touch the network: no cut-off unless a test opts back in
+// with `realExcludeNewerStrategies`.
+const realExcludeNewerStrategies = UvManager.prototype._excludeNewerStrategies;
+UvManager.prototype._excludeNewerStrategies = async () => [{ label: 'none', flags: [] }];
 const {
   needsShellOnWin, quoteWinCmd, parseNetstatPids, isInstallProgressLine,
   pythonVersionFromPyproject, getPythonVersion, tryPythonVersion, upgradeCommand,
@@ -35,6 +40,21 @@ UvManager.prototype._uvDirs = async () => null;
     }
     return realRunStreaming.call(this, cmd, args, opts);
   };
+}
+
+// SAFETY NET 2: the runtime-repair helpers rename / drain the REAL tool venv. A test that reaches them
+// without pointing `_toolVenvDir` at a temp dir (and stubbing the drain) would rename the developer's
+// ~/.local/share/uv/tools/flowpad and SIGTERM their running backend. Fail loudly instead.
+{
+  const realVenvDir = UvManager.prototype._toolVenvDir;
+  const guard = (name, fn) => function guarded(...args) {
+    const dir = this._toolVenvDir();
+    if (dir === realVenvDir.call(this)) throw new Error(`test reached ${name} against the REAL tool venv (${dir}); point _toolVenvDir at a temp dir`);
+    return fn.apply(this, args);
+  };
+  for (const name of ['_drainVenvProcesses', '_setAsidePreRepairVenv', '_rollbackEngine', '_finalizeEngine', '_installEngineOn']) {
+    UvManager.prototype[name] = guard(name, UvManager.prototype[name]);
+  }
 }
 
 let passed = 0;
@@ -1002,6 +1022,10 @@ ok(!mgr.isToolDirLockedError(null), 'null error → not a lock (no throw)');
       const timers = fakeT(); m._timers = timers;
       m._uvDirs = async () => (withDirs ? dirs : null);
       m._drainVenvProcesses = async () => {};
+      // These tests are about WHEN the guard stops the install, not HOW a process tree is ended (on
+      // Windows that is `taskkill /T`, which a fake child never sees): make the stop observable the same
+      // way on every platform.
+      m._killChildTree = (child) => { if (child && child.exitCode === null) child.kill('SIGTERM'); };
       m._pythonPinForUpgrade = async () => '3.11'; m._pythonPinForUpgradeUnused = true;
       m._ensureShimOnPath = async () => {}; m._resolveFlowBin = async () => null;
       m._getLatestPypiInfo = async () => null;
@@ -1490,6 +1514,208 @@ ok(!mgr.isToolDirLockedError(null), 'null error → not a lock (no throw)');
     await m.stop();
     eq(signalledBeforeFlowStop, true, 'flow start is signalled before flow stop runs');
     try { child.kill('SIGKILL'); } catch { /* already gone */ }
+  }
+
+  // ── runtime repair (runtime-repair.js) wiring: the repaired interpreter becomes the pin ──
+  {
+    // An installer refused by application control exits with ERROR_SYSTEM_INTEGRITY_POLICY_VIOLATION and
+    // says nothing on stderr (python.org bootstrapper under the enforced test policy on the VM).
+    for (const code of [4551, 2147946951, -2147020345]) {
+      ok(isPolicyBlockError(Object.assign(new Error('Command failed: python-3.11.9-amd64.exe /quiet'), { code, stderr: '' })),
+        `exit code ${code} is a policy block`);
+    }
+    ok(!isPolicyBlockError(Object.assign(new Error('Command failed'), { code: 1, stderr: '' })), 'exit 1 is not');
+    ok(!isPolicyBlockError(Object.assign(new Error('Command failed'), { code: 1602, stderr: '' })), 'user cancel (1602) is not');
+  }
+  {
+    // _verifyRuntimeSignatures parses one "relative|Status|Subject" line per executable file.
+    const m = new UvManager(silentLog);
+    m._run = async (cmd, args) => {
+      ok(/Extension\.ToLower\(\)/.test(args[2]) && /\.pyd/.test(args[2]), 'only exe/dll/pyd are checked, filtered in the pipeline');
+      return { stdout: [
+        'python.exe|Valid|CN=Python Software Foundation, O=Python Software Foundation, L=Beaverton, S=Oregon, C=US',
+        'vcruntime140.dll|Valid|CN=Microsoft Windows Software Compatibility Publisher, O=Microsoft Corporation, L=Redmond, S=Washington, C=US',
+        'DLLs\\_ssl.pyd|NotSigned|',
+        'DLLs\\_evil.pyd|Valid|CN=Nobody Inc., O=Nobody',
+      ].join('\r\n'), stderr: '' };
+    };
+    const r = await m._verifyRuntimeSignatures('C:\\x\\python-3.11.9', ['Python Software Foundation', 'Microsoft Windows Software Compatibility Publisher']);
+    eq(r.checked, 4, 'every line is counted');
+    eq(r.invalid, [
+      { file: 'DLLs\\_ssl.pyd', status: 'NotSigned', subjectCN: null },
+      { file: 'DLLs\\_evil.pyd', status: 'Valid', subjectCN: 'Nobody Inc.' },
+    ], 'unsigned and wrongly signed files are listed, accepted signers pass');
+  }
+  {
+    // _stageEngine: a scratch venv on the repaired interpreter, the pinned engine installed with
+    // `uv pip install` flags (--only-binary, NOT the tool-install-only --no-build-package), the
+    // field imports checked, and the scratch venv removed whether it passed or failed.
+    const os = require('os');
+    const fs = require('fs');
+    const path = require('path');
+    const runtimeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'stage-engine-'));
+    const m = new UvManager(silentLog);
+    m.getInstalledVersionSync = () => '0.2.203';
+    const calls = [];
+    m._uv = async (args) => { calls.push(['uv', ...args]); fs.mkdirSync(path.join(args[1], 'Scripts'), { recursive: true }); return { stdout: '', stderr: '' }; };
+    m._runStreaming = async (cmd, args) => { calls.push([cmd, ...args]); return { stdout: '', stderr: '' }; };
+    m._run = async (cmd, args) => { calls.push([cmd, ...args]); return { stdout: 'engine imports ok', stderr: '' }; };
+    await m._stageEngine('C:\\rt\\python.exe', runtimeDir);
+    const staging = path.join(runtimeDir, 'staging-venv');
+    eq(calls[0], ['uv', 'venv', staging, '--python', 'C:\\rt\\python.exe'], 'stage: venv on the repaired interpreter');
+    eq(calls[1], ['uv', 'pip', 'install', '--python', path.join(staging, 'Scripts', 'python.exe'), '--only-binary', 'cryptography', 'flowpad==0.2.203'],
+      'stage: pinned engine installed with the uv pip spelling of "wheels only for cryptography"');
+    ok(!calls.flat().includes('--no-build-package'), 'stage: --no-build-package is not a `uv pip install` flag');
+    ok(/import uvicorn, multiprocessing\.connection, flow_sdk/.test(calls[2].join(' ')), 'stage: the field imports are exercised');
+    ok(!fs.existsSync(staging), 'stage: scratch venv removed on success');
+    m._runStreaming = async () => { const e = new Error('Command failed'); e.stderr = 'ImportError: DLL load failed while importing _ssl: An Application Control policy has blocked this file.'; throw e; };
+    let thrown = null;
+    try { await m._stageEngine('C:\\rt\\python.exe', runtimeDir); } catch (e) { thrown = e; }
+    ok(thrown && thrown.policyBlocked === true, 'stage: a policy block in the staging output is flagged policyBlocked');
+    ok(!fs.existsSync(staging), 'stage: scratch venv removed on failure');
+    fs.rmSync(runtimeDir, { recursive: true, force: true });
+  }
+  {
+    // Dependencies frozen in time: the `--exclude-newer` cut-offs and their fallback order.
+    const { engineVersionFromInstallArgs, excludeNewerFlagSets, isResolutionError, EXCLUDE_NEWER_MARGIN_DAYS } = UvManager;
+    eq(engineVersionFromInstallArgs(['tool', 'install', 'flowpad==0.2.203', '--force']), '0.2.203', 'pinned spec → version');
+    eq(engineVersionFromInstallArgs(['tool', 'install', 'flowpad', '--force']), null, 'bare name → latest (null)');
+    eq(engineVersionFromInstallArgs(['tool', 'install', 'flowpad@latest']), null, '@latest → null');
+    const release = Date.parse('2026-10-09T17:04:50Z');
+    const day = 24 * 60 * 60 * 1000;
+    const base = ['--exclude-newer', '2026-10-09T17:05:50Z', '--exclude-newer-package', 'flowpad=2026-10-09T17:05:50Z', '--prerelease', 'disallow'];
+    const fresh = excludeNewerFlagSets({ releaseUploadedAt: release, now: release + 2 * day, nativePackages: ['pydantic-core', 'cryptography'] });
+    eq(fresh.map((s) => s.label), [`${EXCLUDE_NEWER_MARGIN_DAYS}-day margin on native packages`, 'release date', 'none'], 'two days after the release: native margin, then release date, then none');
+    eq(fresh[0].flags, [...base, '--exclude-newer-package', 'pydantic-core=2026-08-12T17:04:50Z', '--exclude-newer-package', 'cryptography=2026-08-12T17:04:50Z'],
+      'release date for everything, now − 60 d for the native packages only, the engine allowed, no pre-releases');
+    eq(fresh[1].flags, base, 'release-date cut-off = upload + 1 min');
+    const late = excludeNewerFlagSets({ releaseUploadedAt: release, now: release + 200 * day, nativePackages: ['pydantic-core'] });
+    eq(late.map((s) => s.label), ['release date', 'none'], 'months later the margin would be AFTER the release: only the release-date cut-off');
+    eq(excludeNewerFlagSets({ releaseUploadedAt: null }), [{ label: 'none', flags: [] }], 'unknown release time → no cut-off');
+    ok(UvManager.NATIVE_DEPS.includes('pydantic-core') && UvManager.NATIVE_DEPS.includes('cryptography') && !UvManager.NATIVE_DEPS.includes('typer'), 'native-deps.json: native packages in, pure-Python out');
+    ok(excludeNewerFlagSets({ releaseUploadedAt: release, now: release + 2 * day })[0].flags.includes('pydantic-core=2026-08-12T17:04:50Z'), 'the shipped manifest is the default list');
+    ok(isResolutionError({ stderr: '  × No solution found when resolving dependencies:\n  ╰─▶ Because only langchain-openai<=1.5.0 is available...' }), 'uv "No solution found" is a resolution error');
+    ok(isResolutionError({ message: 'Command failed: uv tool install … were excluded because they were published after 2026-08-12' }), 'uv exclude-newer wording');
+    ok(!isResolutionError({ stderr: 'error: Failed to download distributions: network unreachable' }), 'a network failure is not');
+    ok(!isResolutionError({ stderr: 'An Application Control policy has blocked this file' }), 'a policy block is not');
+  }
+  {
+    // The install tries the margin cut-off, falls back to the release date when uv finds no solution,
+    // and never retries a non-resolution failure that way.
+    const m = new UvManager(silentLog);
+    m._excludeNewerStrategies = realExcludeNewerStrategies; // the real lookup, with its inputs mocked below
+    const release = Date.parse('2026-10-09T17:04:50Z');
+    m._now = () => release + 2 * 24 * 60 * 60 * 1000;
+    m._releaseUploadedAt = async (v) => (v === '0.2.203' ? release : null);
+    m._drainVenvProcesses = async () => {};
+    m._writeInstallMarker = () => {}; m._clearInstallMarker = () => {};
+    const runs = [];
+    m._runToolInstallGuarded = async (args) => {
+      runs.push(args);
+      if (args.some((a) => String(a).endsWith('=2026-08-12T17:04:50Z'))) { const e = new Error('Command failed'); e.stderr = 'No solution found when resolving dependencies'; throw e; }
+      return { stdout: 'ok' };
+    };
+    await m._uvToolInstallForce(['tool', 'install', 'flowpad==0.2.203', '--force']);
+    eq(runs.length, 2, 'margin failed on resolution → one fallback run');
+    ok(runs[0].includes('--exclude-newer') && runs[0].includes('pydantic-core=2026-08-12T17:04:50Z'), 'first: the 60-day margin on native packages');
+    ok(runs[1].includes('2026-10-09T17:05:50Z') && runs[1].includes('flowpad=2026-10-09T17:05:50Z'), 'then: the release-date cut-off with the engine allowed');
+    ok(runs[1].includes('--compile-bytecode') && runs[1].includes('--no-build-package'), 'the other install flags stay');
+    runs.length = 0;
+    m._runToolInstallGuarded = async (args) => { runs.push(args); const e = new Error('Command failed'); e.stderr = 'error: Failed to download distributions'; throw e; };
+    let thrown = null;
+    try { await m._uvToolInstallForce(['tool', 'install', 'flowpad==0.2.203', '--force']); } catch (e) { thrown = e; }
+    ok(thrown && /download/.test(thrown.stderr) && runs.length === 1, 'a non-resolution failure is NOT retried with a looser cut-off');
+    runs.length = 0;
+    m._runToolInstallGuarded = async (args) => { runs.push(args); if (args.includes('--exclude-newer')) { const e = new Error('Command failed'); e.stderr = "error: unexpected argument '--exclude-newer-package' found"; throw e; } return { stdout: 'ok' }; };
+    await m._uvToolInstallForce(['tool', 'install', 'flowpad==0.2.203', '--force']);
+    eq(runs.length, 2, 'an old uv that rejects the flag: one retry, straight to no cut-off');
+    ok(!runs[1].includes('--exclude-newer'), 'the install itself is not lost to an unknown flag');
+    runs.length = 0;
+    m._releaseUploadedAt = async () => null;
+    m._runToolInstallGuarded = async (args) => { runs.push(args); return { stdout: 'ok' }; };
+    await m._uvToolInstallForce(['tool', 'install', 'flowpad==0.2.203', '--force']);
+    ok(runs.length === 1 && !runs[0].includes('--exclude-newer'), 'offline (unknown release time): no cut-off, one run');
+  }
+  {
+    const { quoteWinArgs } = UvManager;
+    const args = ['tool', 'install', 'flowpad', '--python', 'C:\\Users\\test 11\\AppData\\Local\\Flowpad\\runtime\\python-3.11.9\\python.exe', '--force', '"already quoted"'];
+    eq(quoteWinArgs(args, false), args, 'no shell → arguments untouched');
+    if (IS_WIN) {
+      eq(quoteWinArgs(args, true)[4], '"C:\\Users\\test 11\\AppData\\Local\\Flowpad\\runtime\\python-3.11.9\\python.exe"',
+        'through cmd.exe an argument with a space is quoted (the VM failure: uv saw two arguments)');
+      eq(quoteWinArgs(args, true)[6], '"already quoted"', 'an already quoted argument is left alone');
+      eq(quoteWinArgs(args, true).slice(0, 4), ['tool', 'install', 'flowpad', '--python'], 'arguments without whitespace are untouched');
+    } else {
+      eq(quoteWinArgs(args, true), args, 'off Windows nothing is quoted');
+    }
+    ok(UvManager.POLICY_BLOCK_TEXT instanceof RegExp, 'POLICY_BLOCK_TEXT is exported for the server-log detector');
+    eq(upgradeCommand('C:\\Users\\a b\\AppData\\Local\\Flowpad\\runtime\\python-3.11.9\\python.exe'),
+      'uv tool install flowpad@latest --python "C:\\Users\\a b\\AppData\\Local\\Flowpad\\runtime\\python-3.11.9\\python.exe" --force',
+      'the recovery command pins the repaired interpreter, quoted');
+  }
+  {
+    const os = require('os');
+    const fs = require('fs');
+    const path = require('path');
+    const stateDir = fs.mkdtempSync(path.join(os.tmpdir(), 'flowpad-runtime-state-'));
+    const m = new UvManager(silentLog, { stateDir });
+    eq(m.repairedRuntimePython(), null, 'no state file → no repaired runtime');
+    eq(m._runtimeState(), {}, 'state reads as empty');
+    const fakePython = path.join(stateDir, 'python.exe');
+    fs.writeFileSync(fakePython, '');
+    m._saveRuntimeState({ python: fakePython, version: '3.11.9', source: 'python.org' });
+    eq(m.repairedRuntimePython(), fakePython, 'a persisted, existing interpreter is the repaired runtime');
+    m._getLatestPypiInfo = async () => null;
+    eq(await m._pythonPinForUpgrade(), fakePython, 'the pin for every install is the repaired interpreter');
+    eq(await m._minorPythonPin(null), tryPythonVersion(), 'the minor pin (rollback) ignores the override');
+    fs.rmSync(fakePython);
+    eq(m.repairedRuntimePython(), null, 'a vanished interpreter is not used');
+    eq(await m._pythonPinForUpgrade(), tryPythonVersion(), 'and the pin falls back to the minor');
+    eq(new UvManager(silentLog).repairedRuntimePython(), null, 'no stateDir → no repaired runtime, no throw');
+    fs.rmSync(stateDir, { recursive: true, force: true });
+  }
+  if (!IS_WIN) {
+    const m = new UvManager(silentLog);
+    const err = await m.repairRuntime({ versions: { appVersion: '1', engineVersion: '1' } }).then(() => null, (e) => e);
+    ok(err && /Windows-only/.test(err.message), 'the runtime repair refuses to run off Windows');
+  }
+  {
+    // The engine install on the repaired interpreter, the reversible switch and the rollback —
+    // against a TEMP tool venv (never the developer's real ~/.local/share/uv/tools/flowpad).
+    const os = require('os');
+    const fs = require('fs');
+    const path = require('path');
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'flowpad-tools-'));
+    const venv = path.join(tmp, 'flowpad');
+    const m = new UvManager(silentLog);
+    m._toolVenvDir = () => venv;
+    m._drainVenvProcesses = async () => {};
+    const seen = [];
+    m._uvToolInstallForce = async (args) => { seen.push(args); fs.mkdirSync(venv, { recursive: true }); fs.writeFileSync(path.join(venv, 'NEW'), ''); };
+    m._ensureShimOnPath = async () => {};
+    m._resolveFlowBin = async () => 'flow';
+    m._getLatestPypiInfo = async () => null;
+    m.getInstalledVersionSync = () => '0.2.202';
+    fs.mkdirSync(venv, { recursive: true });
+    fs.writeFileSync(path.join(venv, 'OLD'), '');
+    await m._installEngineOn('C:\\Users\\a b\\AppData\\Local\\Flowpad\\runtime\\python-3.11.9\\python.exe');
+    eq(seen[0], ['tool', 'install', 'flowpad==0.2.202', '--python', 'C:\\Users\\a b\\AppData\\Local\\Flowpad\\runtime\\python-3.11.9\\python.exe', '--reinstall', '--force'],
+      'the engine is reinstalled on the explicit interpreter path, pinned to the installed release (a repair changes the runtime, not the version)');
+    ok(fs.existsSync(path.join(`${venv}.pre-repair`, 'OLD')) && fs.existsSync(path.join(venv, 'NEW')), 'the previous venv is set aside intact, the new one is in place');
+    await m._rollbackEngine();
+    ok(fs.existsSync(path.join(venv, 'OLD')) && !fs.existsSync(`${venv}.pre-repair`), 'rollback renames the previous venv back (no reinstall)');
+    eq(seen.length, 1, 'no uv command ran for that rollback');
+    await m._installEngineOn('C:\\p\\python.exe');
+    await m._finalizeEngine();
+    ok(fs.existsSync(path.join(venv, 'NEW')) && !fs.existsSync(`${venv}.pre-repair`), 'finalize drops the set-aside venv once the repair held');
+    m.getInstalledVersionSync = () => null;
+    await m._installEngineOn('C:\\p\\python.exe');
+    eq(seen[2][2], 'flowpad', 'unknown installed version → unpinned (last resort)');
+    fs.rmSync(`${venv}.pre-repair`, { recursive: true, force: true });
+    await m._rollbackEngine();
+    eq(seen[3], ['tool', 'install', 'flowpad', '--python', tryPythonVersion(), '--python-preference', 'only-managed', '--reinstall', '--force'],
+      'without a set-aside venv the rollback pins the minor AND only uv-managed interpreters (a registered python.org one must not win)');
+    fs.rmSync(tmp, { recursive: true, force: true });
   }
 
   console.log(`uv-manager.test.js: ${passed} assertions passed`);

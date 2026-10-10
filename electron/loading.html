@@ -433,6 +433,7 @@
         <button class="quit-btn" id="copy-details">Copy error details</button>
         <button class="quit-btn" id="open-logs">Open logs folder</button>
         <button class="quit-btn" id="share-logs">Share with us</button>
+        <button class="quit-btn" id="export-logs" hidden>Export logs</button>
       </div>
       <p class="error-share-note" id="share-status">
         “Share with us” opens your email app with a short message to the Flowpad team and shows a zip of
@@ -461,9 +462,17 @@
         </div>
       </div>
 
+      <!-- Recovery note (FLOWPAD-2231): why retrying an unchanged runtime will not help. -->
+      <p class="error-share-note" id="recovery-note" hidden></p>
       <div class="error-actions">
         <button class="quit-btn" id="quit-btn">Quit</button>
+        <!-- The desktop update as a way out: shown only when a newer release exists and was not yet tried
+             for this failure (update-recovery.js). It never claims to fix a blocked Python runtime. -->
+        <button class="retry-btn" id="update-btn" hidden>Update FlowPad</button>
         <button class="retry-btn" id="retry-btn" hidden>Retry</button>
+        <!-- Windows application control blocked the engine's Python: one explicit click starts the
+             runtime repair (runtime-repair.js); nothing is downloaded or installed before it. -->
+        <button class="retry-btn" id="repair-btn" hidden>Repair FlowPad</button>
       </div>
     </div>
   </div>

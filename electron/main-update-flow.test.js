@@ -20,7 +20,7 @@ const { EventEmitter } = require('events');
 const MAIN = path.join(__dirname, 'main.js');
 const EXPOSE = `
 module.exports.__t = {
-  offerDesktopUpdate, offerPostponedRestartPrompt, backendWaitAborted, showDesktopReadyPrompt, installAndStartBackend, showStartupErrorPanel, reportStartupCrash, checkPackageUpdateInBackground,
+  offerDesktopUpdate, offerPostponedRestartPrompt, backendWaitAborted, showDesktopReadyPrompt, installAndStartBackend, showStartupErrorPanel, reportStartupCrash, checkPackageUpdateInBackground, waitForBackend,
   setupElectronAutoUpdater, readyReminder, pendingEngineStore, restartApplier,
   getState: () => ({ pendingDesktopVersion, offeredDesktopVersion, desktopDownloadedVersion, deferredDesktopVersion,
                      desktopRestartPromptOpen, packageUpdateInFlight }),
@@ -341,6 +341,24 @@ const reminderTimer = (env) => env.intervals.find((i) => i.ms === REMINDER_MS);
     ok(env.dialogCalls[0].buttons.includes('Share with us'), 'with Share with us');
   }
 
-  console.log(`main-update-flow.test.js: ${passed} assertions passed`);
+    // ── a policy block in the LAUNCHER's output (flow start → pydantic → _pydantic_core, Rich-wrapped) ──
+  {
+    const env = load();
+    global.fetch = async () => { throw new Error('ECONNREFUSED'); }; // nothing answers on the port
+    const launch = {
+      startedAt: Date.now(), lines: 1, lastLine: '', exit: { code: 1, signal: null },
+      stdout: '2026-10-10T16:13:26.236Z [boot] t=14.1s phase=import modules=247 last=pydantic_core\n',
+      stderr: '└──────┘\nImportError: DLL load failed while importing _pydantic_core: An Application \nControl policy has blocked this file.\n',
+      tail: () => 'tail',
+    };
+    const w = await env.t.waitForBackend({ maxChecks: 2, launch });
+    eq([w.ready, w.reason, w.policyBlock && w.policyBlock.module], [false, 'policy-blocked', '_pydantic_core'], 'a launcher exit with the policy signature is policy-blocked, not launcher-failed');
+    ok(/launcher/.test(w.policyBlock.path), 'attributed to the launcher output');
+    const plain = { ...launch, stderr: 'Traceback …\nModuleNotFoundError: No module named flow_sdk\n' };
+    eq((await env.t.waitForBackend({ maxChecks: 2, launch: plain })).reason, 'launcher-failed', 'any other launcher failure stays launcher-failed');
+    delete global.fetch;
+  }
+
+console.log(`main-update-flow.test.js: ${passed} assertions passed`);
   process.exit(0);
 })().catch((e) => { console.error(e); process.exit(1); });
