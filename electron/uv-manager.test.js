@@ -1604,9 +1604,12 @@ ok(!mgr.isToolDirLockedError(null), 'null error → not a lock (no throw)');
     ok(UvManager.NATIVE_DEPS.includes('pydantic-core') && UvManager.NATIVE_DEPS.includes('cryptography') && !UvManager.NATIVE_DEPS.includes('typer'), 'native-deps.json: native packages in, pure-Python out');
     ok(excludeNewerFlagSets({ releaseUploadedAt: release, now: release + 2 * day })[0].flags.includes('pydantic-core=2026-08-12T17:04:50Z'), 'the shipped manifest is the default list');
     ok(isResolutionError({ stderr: '  × No solution found when resolving dependencies:\n  ╰─▶ Because only langchain-openai<=1.5.0 is available...' }), 'uv "No solution found" is a resolution error');
-    ok(isResolutionError({ message: 'Command failed: uv tool install … were excluded because they were published after 2026-08-12' }), 'uv exclude-newer wording');
+    ok(isResolutionError({ message: 'Command failed: uv tool install flowpad==1 --exclude-newer 2026-08-12\nerror: … were excluded because they were published after 2026-08-12' }), 'uv exclude-newer wording (below the echoed command)');
     ok(!isResolutionError({ stderr: 'error: Failed to download distributions: network unreachable' }), 'a network failure is not');
     ok(!isResolutionError({ stderr: 'An Application Control policy has blocked this file' }), 'a policy block is not');
+    ok(!isResolutionError({ message: 'Command failed: uv tool install flowpad==1 --exclude-newer 2026-08-12 --exclude-newer-package pydantic-core=2026-07-01\nerror: Failed to spawn: `python.exe`\n  Caused by: An Application Control policy has blocked this file. (os error 4551)', stderr: 'error: Failed to spawn: `python.exe`\n  Caused by: An Application Control policy has blocked this file. (os error 4551)' }),
+      'a policy block under a cut-off is NOT a resolution error: the flag in the echoed command line must not match');
+    ok(!isResolutionError({ message: 'Command failed: uv tool install flowpad==1 --exclude-newer 2026-08-12\n' }), 'an error that says nothing but the command is not one either');
   }
   {
     // The install tries the margin cut-off, falls back to the release date when uv finds no solution,
