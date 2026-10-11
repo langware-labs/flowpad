@@ -33,13 +33,13 @@ const source = (id: string, displayName: string) => ({ id, displayName, provider
 it('adds and removes the source category and refreshes already expanded children', async () => {
   const { rerender } = render(<Sidebar />);
   expect(screen.queryByRole('button')).toBeNull();
-  sources = [source('10000000-0000-4000-8000-000000000001', 'Inbox')];
+  sources = [source('10000000-0000-4000-8000-000000000001', 'Support mail')];
   rerender(<Sidebar />);
   act(() => screen.getByRole('button').click());
-  expect((await screen.findByRole('link', { name: 'Inbox' })).getAttribute('href')).toContain('/data-sources/10000000-0000-4000-8000-000000000001');
+  expect((await screen.findByRole('link', { name: 'Support mail' })).getAttribute('href')).toContain('/data-sources/10000000-0000-4000-8000-000000000001');
   sources = [source('10000000-0000-4000-8000-000000000002', 'Archive')];
   rerender(<Sidebar />);
-  await waitFor(() => expect(screen.queryByRole('link', { name: 'Inbox' })).toBeNull());
+  await waitFor(() => expect(screen.queryByRole('link', { name: 'Support mail' })).toBeNull());
   expect(screen.getByRole('link', { name: 'Archive' })).toBeTruthy();
   sources = [];
   rerender(<Sidebar />);
