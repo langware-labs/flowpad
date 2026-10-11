@@ -156,7 +156,10 @@ test('the card lists every dependency with its state, and Install brings in an o
 
 test("a dependency's agent runs in the host project, with its own folder mounted", async ({ page }) => {
   await dismissWarnings();
+  // Project Home lists agents to open; the home landing is where one is launched.
   await page.goto(`/dock/project/${projectId}`);
+  await expect(page.getByTestId('project-agents-strip')).toBeVisible();
+  await page.goto('/dock/home');
   const tile = page.locator(`[data-testid="project-agent-tile"][data-agent-name="${agentName}"]`);
   await expect(tile).toBeVisible();
   await tile.click();

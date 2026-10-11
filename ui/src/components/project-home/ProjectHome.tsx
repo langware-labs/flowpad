@@ -17,6 +17,7 @@ import type { PanelHandlers } from '@src/components/quick-create';
 import { HomeCustomizationCard } from './HomeCustomizationCard';
 import { ProjectLanguageCard } from './ProjectLanguageCard';
 import { ProjectDataSources } from './ProjectDataSources';
+import { ProjectDependenciesCard } from './ProjectDependenciesCard';
 import { QuickCreateModal } from '@src/components/quick-create/QuickCreateModal';
 import { Button } from '@src/components/ui/button';
 import { Plus } from 'lucide-react';
@@ -71,7 +72,11 @@ const SessionTiles: React.FC<{ project: Project | null; panelProps: PanelHandler
   );
 };
 
-const Overview: React.FC<{ project: Project | null; panelProps: PanelHandlers }> = ({ project, panelProps }) => {
+const Overview: React.FC<{ project: Project | null; panelProps: PanelHandlers; dependencies: boolean }> = ({
+  project,
+  panelProps,
+  dependencies,
+}) => {
   const [newOpen, setNewOpen] = useState(false);
   return (
     <div className="flex flex-col gap-6" data-testid="project-home-overview">
@@ -92,6 +97,8 @@ const Overview: React.FC<{ project: Project | null; panelProps: PanelHandlers }>
         </Button>
       </section>
       {project && <ProjectAgentsStrip projectId={project.id} presentation="browse" />}
+      {/* The project's flow.json dependencies — not on the terminal empty state. */}
+      {project && dependencies && <ProjectDependenciesCard project={project} />}
       <ProjectDataSources />
       <QuickCreateModal
         open={newOpen}
@@ -210,7 +217,7 @@ export const ProjectHome: React.FC<ProjectHomeProps> = ({ spawnProjectId, create
     return Promise.resolve();
   }, [project]);
 
-  const overview = <Overview project={resolvedProject ?? null} panelProps={panelProps} />;
+  const overview = <Overview project={resolvedProject ?? null} panelProps={panelProps} dependencies={!createOnly} />;
 
   // A `?highlight=` target that lives on a tab we aren't showing would never
   // mount, so the generic TagHighlightObserver would find nothing — open the
