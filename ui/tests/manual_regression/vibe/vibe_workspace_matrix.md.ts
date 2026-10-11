@@ -66,7 +66,7 @@ test.describe('Claude Vibe Workspace browser matrix', () => {
       expect(new URL(page.url()).searchParams.get('matrix')).toBe('legacy');
       await expect(page.locator('[data-testid="entity-execution-new"]:visible')).toBeVisible();
       await expect(page.getByTestId('workspace-display-tab')).toHaveAttribute('aria-current', 'true');
-      await expect(page.getByTestId('view-toggle-vibe')).toHaveAttribute('aria-checked', 'true');
+      await expect(page.getByTestId('session-surface-vibe')).toHaveAttribute('aria-checked', 'true');
 
       const tabsResponse = await request.get(`${API}/api/v1/graph/tab/list_all`);
       expect(tabsResponse.status()).toBe(200);
@@ -506,7 +506,7 @@ test.describe('Claude Vibe Workspace browser matrix', () => {
 
       // VW-26: leaving vibe strips BOTH the host and the active-display marker —
       // they only mean something while a display pane is on screen to be one.
-      await page.getByTestId('view-toggle-standard').click();
+      await page.getByTestId('session-surface-chat').click();
       await expect(page).not.toHaveURL(/activeDisplay=1/);
       await expect(page).not.toHaveURL(/[?&]host=/);
       await expect(page).toHaveURL(new RegExp(`/dock/app/artifact-${artifactId}`));

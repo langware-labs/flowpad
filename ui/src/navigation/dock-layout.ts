@@ -60,11 +60,15 @@ export function resolveDockLayout({ dock, isVibe, hasVibeSession }: DockLayoutIn
   // host, not the mode, decides. (Its address also implies Vibe, so today the two
   // agree; the check is what keeps a future host from depending on the mode.)
   if (!hubMode && hasVibeSession && isHostDock(dock)) return { layout: DockLayout.VIBE_WORKSPACE, assetChatBeside: false };
-  if (!isVibe || hubMode) return content;
+  if (hubMode) return content;
+  // The home is ONE screen — the tabless Vibe hero — whatever mode was on screen
+  // when it was asked for. It has no mode of its own.
+  if (!hasVibeSession && isHomeSurface(dock)) {
+    const noProcess = dock?.options?.vibeNoProcess === 'true';
+    return { layout: noProcess ? DockLayout.VIBE_NO_PROCESS : DockLayout.VIBE_NEW_CHAT, assetChatBeside: false };
+  }
+  if (!isVibe) return content;
   if (hasVibeSession) return { layout: DockLayout.VIBE_WORKSPACE, assetChatBeside: false };
-  const isHome = isHomeSurface(dock);
-  if (isHome && dock?.options?.vibeNoProcess === 'true') return { layout: DockLayout.VIBE_NO_PROCESS, assetChatBeside: false };
-  if (isHome) return { layout: DockLayout.VIBE_NEW_CHAT, assetChatBeside: false };
   // Any other real dock URL in Vibe (project home, assets list, a conversation…)
   // is a navigable destination through the normal content panel, with its own Vibe skin.
   return content;

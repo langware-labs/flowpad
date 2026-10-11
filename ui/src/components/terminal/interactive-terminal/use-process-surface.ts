@@ -52,7 +52,7 @@ export interface SurfaceTransportGate {
 
 /**
  * ONE predicate for "can this session change transport now", shared by the
- * reconcile effect and the footer `ViewToggle`, mirroring the one server answer:
+ * reconcile effect and the session's `SessionSurfaceSwitch`, mirroring the one server answer:
  * `switch-mode` 409s while `is_turn_busy`, in both directions. →PTY used to take
  * the unguarded `open`, so this blocked nothing there (FLOWPAD-2130). Keyed on
  * BUSY: a FAILED session and an `/exit`-ed PTY are not ready but need the click.
@@ -70,7 +70,7 @@ export function surfaceTransportGate(
 
 /**
  * Keep one process's TRANSPORT aligned with the view mode — the whole of what a
- * session needs beyond rendering, now that the footer `ViewToggle` is the single
+ * session needs beyond rendering, now that the session's `SessionSurfaceSwitch` is the single
  * mode selector.
  *
  * Mode selection itself is pure navigation (`?viewMode=`, adopted as the
