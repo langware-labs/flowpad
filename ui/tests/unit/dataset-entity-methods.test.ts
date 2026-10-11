@@ -240,3 +240,69 @@ describe('a kind form carries owners and both kinds of rule', () => {
     expect(unique).toEqual(['crm_id']);
   });
 });
+
+/** Reads that cross links, count more than rows, and read text — each option reaches the server
+ *  exactly as `Dataset._query_params` reads it. */
+describe('asking more of rows and count', () => {
+  const ds = () => new Dataset({ id: '6d1a2b3c-4d5e-4f6a-8b7c-9d0e1f2a3b4c', name: 'n' } as never);
+  let call: ReturnType<typeof vi.spyOn>;
+  const sent = (n = 0) => call.mock.calls[n][0] as { name: string; method: string; queryParameters: Record<string, string> };
+
+  beforeEach(() => {
+    call = vi.spyOn(dataManager, 'callAction').mockResolvedValue({} as never);
+  });
+  afterEach(() => vi.restoreAllMocks());
+
+  it('rows() sends link paths to expand inside the filter, and q beside it', async () => {
+    await ds().rows({ match: { 'input.persona.icp.key': 'fintech' }, expand: ['input.persona', 'input.messages.*'], q: 'pricing objection' });
+    expect(JSON.parse(sent().queryParameters.filter)).toEqual({
+      match: { 'input.persona.icp.key': 'fintech' },
+      expand: ['input.persona', 'input.messages.*'],
+    });
+    expect(sent().queryParameters.q).toBe('pricing objection');
+  });
+
+  it('rows() answers the linked rows the server put beside', async () => {
+    const linked = { 'crm.co.id.1': { dataset_id: 'd', key: 'acme', row: { key: 'acme', input: { name: 'Acme' } } } };
+    call.mockResolvedValue({ rows: [], total: 0, problems: [], linked } as never);
+    expect((await ds().rows({ expand: ['input.company'] })).linked).toEqual(linked);
+  });
+
+  it('a blank q and an empty expand are not sent', async () => {
+    await ds().rows({ q: '   ', expand: [] });
+    expect(sent().queryParameters).toEqual({});
+  });
+
+  it('count() sends buckets, metrics, order and the week start', async () => {
+    await ds().count({
+      match: { 'input.metric': 'em_reply' },
+      q: 'levi',
+      group_by: ['week:input.day', 'input.metric'],
+      metrics: { people: 'distinct:input.email', first: 'min:input.day' },
+      order_by: { 'week:input.day': 'asc' },
+      week_start: 'sunday',
+    });
+    const p = sent().queryParameters;
+    expect(sent().name).toBe('count');
+    expect(JSON.parse(p.filter)).toEqual({ match: { 'input.metric': 'em_reply' } });
+    expect(p.q).toBe('levi');
+    expect(JSON.parse(p.group_by)).toEqual(['week:input.day', 'input.metric']);
+    expect(JSON.parse(p.metrics)).toEqual({ people: 'distinct:input.email', first: 'min:input.day' });
+    expect(JSON.parse(p.order_by)).toEqual({ 'week:input.day': 'asc' });
+    expect(p.week_start).toBe('sunday');
+  });
+
+  it('count() with only a match sends nothing else', async () => {
+    await ds().count({ match: { 'input.metric': 'em_sent' } });
+    expect(Object.keys(sent().queryParameters)).toEqual(['filter']);
+  });
+
+  it('usedBy() asks who links to the rows, and answers the map', async () => {
+    const used_by = { acme: [{ dataset_id: 'd', kind: 'crm.lead', key: 'dana' }], bolt: [] };
+    call.mockResolvedValue({ used_by } as never);
+    expect(await ds().usedBy(['acme', 'bolt'])).toEqual(used_by);
+    expect([sent().name, sent().method, sent().queryParameters]).toEqual(['used-by', 'GET', { keys: 'acme,bolt' }]);
+    await ds().usedBy();
+    expect(sent(1).queryParameters).toEqual({});
+  });
+});

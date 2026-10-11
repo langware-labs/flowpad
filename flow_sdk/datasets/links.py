@@ -184,10 +184,38 @@ def _inline_detail(where: str, tag: str, owner: Path | str, cache: dict) -> Opti
     return None
 
 
+def record_type_of(kind: str, cache: Optional[dict] = None) -> Optional[str]:
+    """The Flowpad record type whose document a kind is (``ingest.source_item`` -> ``source_item``),
+    or None for a kind that is not a record's. A reference of such a kind names a RECORD -- kept by
+    the instance, not in a dataset beside this one."""
+    from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+    from flow_sdk.schema.data_spec.spec import spec_tag  # noqa: PLC0415
+
+    slot = ("record-types",)
+    known = (cache or {}).get(slot)
+    if known is None:
+        known = {}
+        for name in SchemaRegistry.get_all_types():
+            info = SchemaRegistry.get(name)
+            spec = getattr(info, "asset_spec", None)
+            if isinstance(spec, type):
+                for kind_name in (getattr(spec, "spec_kind", ""), spec_tag(spec)):   # the kind as declared, and as registered
+                    if kind_name:
+                        known.setdefault(kind_name, name)
+        if cache is not None:
+            cache[slot] = known
+    return known.get(kind)
+
+
 def _ref_detail(where: str, ref: str, owner: Path | str, stores: tuple, cache: dict) -> Optional[dict]:
     from flow_sdk.values import resolve_ref  # noqa: PLC0415
 
     kind, rid = parse_ref(ref)  # type: ignore[misc]
+    if record_type_of(kind, cache) is not None:
+        # a link to a RECORD (an ingested email: `ingest.source_item.id.<id>`): it lives in the
+        # instance's store, which a write from disk cannot see -- so it is not judged here (and never
+        # against a dataset beside that happens to hold promoted items of the same kind)
+        return None
     rows = _row_index(kind, owner, cache)
     if rows is not None:
         return None if rid in rows else {"path": where, "code": "dangling_ref", "message": f"no {kind} row {rid}"}
@@ -375,4 +403,4 @@ def detail_lines(details: list[dict]) -> list[str]:
 
 
 __all__ = ["SLOTS", "dangling_details", "datasets_for_kind", "detail_lines", "find_row", "link_index", "linkers_of", "links_in",
-           "owner_of", "raw_dangling_details", "referrers", "refs_in_raw", "row_kind", "shape_details", "slot_values"]
+           "owner_of", "raw_dangling_details", "record_type_of", "referrers", "refs_in_raw", "row_kind", "shape_details", "slot_values"]

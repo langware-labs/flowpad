@@ -18,8 +18,13 @@ Verbs
   ref REF --project ID               the row a reference (<kind>.id.<uuid>) names: its dataset, key and value
   ds-find KIND                       the datasets whose rows are KIND (--project ID: a bare kind, e.g. crm.lead, works)
   ds-rows DATASET                    every row with its key -- or SOME: --match JSON (an expression, or {path: value}),
-                                     --order JSON ({path: "asc"|"desc"}), --limit N, --offset N; `total` counts the matches
-  ds-count DATASET                   how many rows match (--match JSON), and per value of --group-by PATH[,PATH]
+                                     --q WORDS (the row's text holds them all), --order JSON, --limit N, --offset N;
+                                     `total` counts the matches. A path follows links (input.persona.icp);
+                                     --expand PATH[,PATH] brings the linked rows back beside (`linked`)
+  ds-count DATASET                   how many rows match (--match / --q), per --group-by PATH[,PATH] -- a path or a date
+                                     bucket (week:input.day, month:…, quarter:…; --week-start sunday) -- with
+                                     --metrics JSON ({"people": "distinct:input.email"}: distinct | min | max | sum)
+  ds-used-by DATASET [KEY ...]       who links to each row (every row when no key): [] = nothing links to it
   ds-row DATASET KEY                 one row, by key or id
   ds-append DATASET ROWS             rows in (each may carry a "key"); one bad row writes nothing
   ds-put DATASET KEY ROW             create or replace the row KEY
@@ -301,10 +306,11 @@ def cmd_ds_find(args) -> dict:
 
 
 def _row_filter(args) -> dict:
-    """The ``filter`` the read actions take, from ``--match`` / ``--order`` / ``--limit`` / ``--offset``."""
+    """The ``filter`` the read actions take, from ``--match`` / ``--order`` / ``--limit`` / ``--offset`` / ``--expand``."""
     asked = {"match": _json(args.match) if getattr(args, "match", "") else None,
              "order_by": _json(args.order) if getattr(args, "order", "") else None,
-             "limit": getattr(args, "limit", None), "offset": getattr(args, "offset", None)}
+             "limit": getattr(args, "limit", None), "offset": getattr(args, "offset", None),
+             "expand": [p.strip() for p in args.expand.split(",") if p.strip()] if getattr(args, "expand", "") else None}
     return {name: value for name, value in asked.items() if value is not None}
 
 
@@ -317,14 +323,25 @@ def _query(params: dict) -> str:
 
 def cmd_ds_rows(args) -> dict:
     """The rows that fit (each with ``key``, ``id``, ``ref``, ``version``) -- every one, or those the
-    filter selects -- and the ``problems``. ``count`` is how many came back, ``total`` how many matched."""
-    got = _ds(args, "rows" + _query({"filter": _row_filter(args)}), "GET") or {}
+    filter and ``--q`` select -- and the ``problems``. ``count`` is how many came back, ``total`` how
+    many matched; ``linked`` holds the rows ``--expand`` asked for."""
+    got = _ds(args, "rows" + _query({"filter": _row_filter(args), "q": args.q}), "GET") or {}
     rows = got.get("rows") or []
-    return {"count": len(rows), "total": got.get("total", len(rows)), "rows": rows, "problems": got.get("problems") or []}
+    out = {"count": len(rows), "total": got.get("total", len(rows)), "rows": rows, "problems": got.get("problems") or []}
+    return {**out, "linked": got["linked"]} if "linked" in got else out
 
 
 def cmd_ds_count(args) -> dict:
-    return _ds(args, "count" + _query({"filter": _row_filter(args), "group_by": args.group_by}), "GET") or {}
+    asked = _row_filter(args)
+    order = asked.pop("order_by", None)     # for a count, the order is of the GROUPS: beside the filter
+    return _ds(args, "count" + _query({"filter": asked, "q": args.q, "group_by": args.group_by,
+                                         "metrics": _json(args.metrics) if args.metrics else None, "order_by": order,
+                                         "week_start": args.week_start}), "GET") or {}
+
+
+def cmd_ds_used_by(args) -> dict:
+    """Who links to each row (every row, or the keys named): ``[]`` for a row nothing links to."""
+    return _ds(args, "used-by" + _query({"keys": ",".join(args.key)}), "GET") or {}
 
 
 def _by(args, body: dict) -> dict:
@@ -386,6 +403,8 @@ def cmd_ds_validate(args) -> dict:
 
 _DS = ("dataset", {"help": "dataset id, name, title or folder path"})
 _BY = ("--by", {"default": "", "help": "the outside system you write as (\"crm\"): the owner of the schema's owned_by fields"})
+_Q = ("--q", {"default": "", "help": "keep the rows whose text holds every word of this"})
+_ORDER = ("--order", {"default": "", "help": 'JSON: {"<path>": "asc"|"desc"}, or a list of them (ds-count: by a group_by entry, count or a metric)'})
 _MATCH = ("--match", {"default": "", "help": 'JSON: {"op": "$GE", "operands": ["input.day", "2026-09-01"]} or {"<path>": value}'})
 VERBS: dict[str, tuple] = {
     "probe-new": (cmd_probe_new, []),
@@ -397,9 +416,14 @@ VERBS: dict[str, tuple] = {
                           ("--project", {"default": "", "help": "also its links and rules, among this project's rows"})]),
     "ref": (cmd_ref, [("ref", {}), ("--project", {"required": True, "help": "the project whose rows to look in"})]),
     "ds-find": (cmd_ds_find, [("kind", {}), ("--project", {"default": "", "help": "only this project's (and a bare kind resolves in it)"})]),
-    "ds-rows": (cmd_ds_rows, [_DS, _MATCH, ("--order", {"default": "", "help": 'JSON: {"<path>": "asc"|"desc"}, or a list of them'}),
-                              ("--limit", {"type": int, "default": None}), ("--offset", {"type": int, "default": None})]),
-    "ds-count": (cmd_ds_count, [_DS, _MATCH, ("--group-by", {"default": "", "help": "field paths, comma-separated"})]),
+    "ds-rows": (cmd_ds_rows, [_DS, _MATCH, _Q, _ORDER,
+                              ("--limit", {"type": int, "default": None}), ("--offset", {"type": int, "default": None}),
+                              ("--expand", {"default": "", "help": "link paths whose rows come back beside, comma-separated (input.persona)"})]),
+    "ds-count": (cmd_ds_count, [_DS, _MATCH, _Q, _ORDER,
+                                ("--group-by", {"default": "", "help": "paths or date buckets, comma-separated (week:input.day,input.stage)"}),
+                                ("--metrics", {"default": "", "help": 'JSON: {"people": "distinct:input.email", "first": "min:input.day"}'}),
+                                ("--week-start", {"default": "", "choices": ["", "monday", "sunday"], "help": "the day a week bucket begins (monday)"})]),
+    "ds-used-by": (cmd_ds_used_by, [_DS, ("key", {"nargs": "*", "help": "row keys (every row when none)"})]),
     "ds-put-many": (cmd_ds_put_many, [_DS, ("rows", {}), ("--expected", {"default": "", "help": "JSON: {key: the version you read}"}), _BY]),
     "ds-sync": (cmd_ds_sync, [_DS, ("rows", {}), _MATCH, ("--no-prune", {"action": "store_true", "help": "remove nothing"}), _BY]),
     "ds-row": (cmd_ds_row, [_DS, ("key", {})]),

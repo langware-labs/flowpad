@@ -101,18 +101,80 @@ export interface DatasetRowProblem {
 /** A row written by key (`putMany`, `sync`): the row's slots and the key it lands under. */
 export type DatasetKeyedRow = Omit<DatasetRowInput, 'key'> & { key: string };
 
-/** Which rows to read: `match` is an expression (`{op, operands}`) or a plain `{path: value}` map
- *  (all must hold); `order_by` is `{path: 'asc' | 'desc'}`, or a list of them (the first wins). */
+/** Which rows to read. `match` is an expression (`{op, operands}`) or a plain `{path: value}` map
+ *  (all must hold); `q` keeps the rows whose text holds every word of it; `order_by` is
+ *  `{path: 'asc' | 'desc'}`, or a list of them (the first wins).
+ *
+ *  A path is written as a schema's rules write theirs, with the slot spelled out: `key`,
+ *  `input.stage`, `input.stage_dates.won`, `input.tags.*` (any element of a list) — and
+ *  `input.persona.icp`: a path FOLLOWS a link into the linked row (`input.persona.key` is that
+ *  row's key). `expand` names link paths whose rows should come back beside (`linked`). */
 export interface DatasetRowQuery {
   match?: ExpressionNode | Partial<ExpressionNode> | MatchMap;
+  q?: string;
   order_by?: OrderByType | OrderByType[];
   limit?: number;
   offset?: number;
+  expand?: string[];
+}
+
+/** The row a link names, as `GET /refs/<ref>` and `rows({expand})` answer it. */
+export interface LinkedRow {
+  dataset_id: string;
+  key: string;
+  row: DatasetRow;
+}
+
+/** How to count. `group_by` entries are paths (links followed, as in `DatasetRowQuery`) or a date
+ *  BUCKET `<day|week|month|quarter>:<path>`, keyed `2026-09-13` (the week's first day),
+ *  `2026-09`, `2026-Q3`; `metrics` names further measures `{name: '<distinct|min|max|sum>:<path>'}`;
+ *  `order_by` orders the groups by an entry, `count` or a metric's name (else largest first). */
+export interface DatasetCountQuery {
+  match?: DatasetRowQuery['match'];
+  q?: string;
+  group_by?: string[];
+  metrics?: Record<string, string>;
+  order_by?: OrderByType | OrderByType[];
+  week_start?: 'monday' | 'sunday';
 }
 
 export interface DatasetRowCount {
   total: number;
-  groups: { by: Record<string, unknown>; count: number }[];
+  /** Present when `metrics` were asked: each measure over every matching row. */
+  metrics?: Record<string, unknown>;
+  groups: { by: Record<string, unknown>; count: number; metrics?: Record<string, unknown> }[];
+}
+
+/** A row that links to another (`usedBy`): the dataset it is in, its kind and its key. */
+export interface RowUser {
+  dataset_id: string;
+  kind: string;
+  key: string;
+}
+
+/** The period a calendar day falls in, as `count` keys a bucket: `day` `2026-09-13` · `week` the
+ *  week's FIRST day · `month` `2026-09` · `quarter` `2026-Q3`. Read from the first ten characters
+ *  as written (no time zone); null for a value that is no date. The twin of the server's
+ *  `bucket_of`, held to it by `test_fixtures/dataset_count_cases.json` — for an app that labels a
+ *  period or asks for one by its key. */
+export function bucketOf(
+  day: unknown,
+  unit: 'day' | 'week' | 'month' | 'quarter',
+  weekStart: 'monday' | 'sunday' = 'monday',
+): string | null {
+  const text = typeof day === 'string' ? day.slice(0, 10) : '';
+  const parts = /^(\d{4})-(\d{2})-(\d{2})$/.exec(text);
+  if (!parts) return null;
+  const date = new Date(Date.UTC(+parts[1], +parts[2] - 1, +parts[3]));
+  if (date.getUTCMonth() !== +parts[2] - 1 || date.getUTCDate() !== +parts[3]) return null; // Feb 30
+  const iso = (d: Date) => d.toISOString().slice(0, 10);
+  if (unit === 'day') return iso(date);
+  if (unit === 'week') {
+    const back = weekStart === 'sunday' ? date.getUTCDay() : (date.getUTCDay() + 6) % 7;
+    return iso(new Date(date.getTime() - back * 864e5));
+  }
+  if (unit === 'month') return text.slice(0, 7);
+  return `${parts[1]}-Q${Math.floor((+parts[2] - 1) / 3) + 1}`;
 }
 
 export interface DatasetSyncResult {
@@ -153,7 +215,11 @@ function rowQueryParams(query: DatasetRowQuery): Record<string, unknown> {
   if (query.order_by) filter.order_by = query.order_by;
   if (query.limit !== undefined) filter.limit = query.limit;
   if (query.offset !== undefined) filter.offset = query.offset;
-  return Object.keys(filter).length ? { filter: JSON.stringify(filter) } : {};
+  if (query.expand?.length) filter.expand = query.expand;
+  return {
+    ...(Object.keys(filter).length ? { filter: JSON.stringify(filter) } : {}),
+    ...(query.q?.trim() ? { q: query.q } : {}),
+  };
 }
 
 export interface IDataset extends IEntity {
@@ -247,7 +313,7 @@ export class Dataset extends APIEntity<Dataset> implements IDataset {
 
   /** The row a reference (`<kind>.id.<uuid>`) names among the project's datasets — 404 (thrown) when
    *  none holds it. */
-  static async findRow(ref: string, projectId: string): Promise<{ dataset_id: string; key: string; row: DatasetRow }> {
+  static async findRow(ref: string, projectId: string): Promise<LinkedRow> {
     return apiClient.get(`/api/v1/refs/${encodeURIComponent(ref)}`, { params: { project: projectId } });
   }
 
@@ -288,16 +354,30 @@ export class Dataset extends APIEntity<Dataset> implements IDataset {
    *  match, ordered and paged — `total` is how many matched before paging; `problems` is still
    *  every row that does not fit. A field is a path into the row: `key`, `input.stage`,
    *  `input.stage_dates.won`; a date compares as its ISO string. */
-  async rows(query: DatasetRowQuery = {}): Promise<{ rows: DatasetRow[]; total: number; problems: DatasetRowProblem[] }> {
+  async rows(
+    query: DatasetRowQuery = {},
+  ): Promise<{ rows: DatasetRow[]; total: number; problems: DatasetRowProblem[]; linked?: Record<string, LinkedRow> }> {
     return this.get('rows', rowQueryParams(query));
   }
 
-  /** How many rows match — and, with `group_by` (field paths), how many per distinct combination
-   *  of those fields, largest first. Rows that do not fit their shape are not counted. */
-  async count(query: Pick<DatasetRowQuery, 'match'> & { group_by?: string[] } = {}): Promise<DatasetRowCount> {
-    const params = rowQueryParams(query);
+  /** How many rows match — the SAME `match` and `q` as `rows`, so a number and the list behind it
+   *  are one question — and, with `group_by`, how many per distinct combination (a path, or a date
+   *  bucket `week:input.day`), with `metrics` (`distinct:` / `min:` / `max:` / `sum:`) overall and
+   *  per group. Rows that do not fit their shape are not counted. */
+  async count(query: DatasetCountQuery = {}): Promise<DatasetRowCount> {
+    const params = rowQueryParams({ match: query.match, q: query.q });
     if (query.group_by?.length) params.group_by = JSON.stringify(query.group_by);
+    if (query.metrics && Object.keys(query.metrics).length) params.metrics = JSON.stringify(query.metrics);
+    if (query.order_by) params.order_by = JSON.stringify(query.order_by);
+    if (query.week_start) params.week_start = query.week_start;
     return this.get('count', params);
+  }
+
+  /** Who links to each row: `{key: [{dataset_id, kind, key}]}` for `keys` (every row when left
+   *  out) — `[]` for a row nothing links to. What a delete is refused for, asked ahead of time. */
+  async usedBy(keys?: string[]): Promise<Record<string, RowUser[]>> {
+    const found = await this.get<{ used_by: Record<string, RowUser[]> }>('used-by', keys?.length ? { keys: keys.join(',') } : {});
+    return found.used_by;
   }
 
   /** Hear that rows of THIS dataset were written — by this app, another one, or a script — instead

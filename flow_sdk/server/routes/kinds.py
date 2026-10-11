@@ -208,14 +208,14 @@ async def get_value(ref: str, within: str) -> ApiResponse:
 
     parsed = parse_ref(ref)
     if parsed is None:
-        return ApiFailResponse(message=f"{ref!r} is not a reference ('<kind>.id.<uuid>')", status_code=400)
+        return _fail(f"{ref!r} is not a reference ('<kind>.id.<uuid>')", 400)
     owner = await Entity.get_by_typeid(within)
     if owner is None or not getattr(owner, "asset_ref", None):
-        return ApiFailResponse(message=f"no {within} to look in", status_code=404)
+        return _fail(f"no {within} to look in", 404)
     try:
         value = await asyncio.to_thread(resolve_ref, ref, store_of(Path(str(owner.asset_ref))))
     except LookupError as exc:
-        return ApiFailResponse(message=str(exc), status_code=404)
+        return _fail(str(exc), 404)
     return ApiSuccessResponse(data={"kind": parsed[0], "id": parsed[1], "ref": ref, "value": value.model_dump(mode="json")})
 
 
@@ -226,7 +226,7 @@ async def get_editors(typeid: str) -> ApiResponse:
 
     subject = await Entity.get_by_typeid(typeid)
     if subject is None:
-        return ApiFailResponse(message=f"no {typeid}", status_code=404)
+        return _fail(f"no {typeid}", 404)
     return ApiSuccessResponse(data=await editors_for(subject))
 
 
@@ -239,5 +239,5 @@ async def get_viewers(kind: str, shape: ViewShape = "single", within: str = "") 
     try:
         normalize_kind(kind)
     except ValueError as exc:  # a malformed kind (``*`` is a viewer's wildcard, not a kind) is the caller's
-        return ApiFailResponse(message=f"{kind!r} is not a kind: {exc}", status_code=400)
+        return _fail(f"{kind!r} is not a kind: {exc}", 400)
     return ApiSuccessResponse(data=await viewers_for(kind, shape, within or None))

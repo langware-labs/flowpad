@@ -245,3 +245,28 @@ def test_dm_ctl_says_who_a_write_is_for(monkeypatch):
     assert _dm_calls(monkeypatch, ["ds-append", "leads", row, "--by", "crm"])[0][2] == {"rows": [{"input": {"name": "A"}}], "by": "crm"}
     assert _dm_calls(monkeypatch, ["ds-check", "leads", row, "--by", "crm"])[0][2] == {"row": {"input": {"name": "A"}}, "by": "crm"}
     assert "by" not in _dm_calls(monkeypatch, ["ds-put", "leads", "a", row])[0][2]         # an app's own edit names no owner
+
+
+def test_dm_ctl_asks_more_of_rows_and_count(monkeypatch):
+    import json
+    from urllib.parse import parse_qs, urlsplit
+
+    ((_, path, _),) = _dm_calls(monkeypatch, ["ds-rows", "deals", "--match", '{"input.persona.icp.key": "fintech"}',
+                                              "--expand", "input.persona, input.messages.*", "--q", "pricing objection"])
+    query = parse_qs(urlsplit(path).query)
+    assert json.loads(query["filter"][0]) == {"match": {"input.persona.icp.key": "fintech"}, "expand": ["input.persona", "input.messages.*"]}
+    assert query["q"] == ["pricing objection"]
+
+    ((_, path, _),) = _dm_calls(monkeypatch, ["ds-count", "outreach", "--match", '{"input.metric": "em_reply"}',
+                                              "--group-by", "week:input.day", "--metrics", '{"people": "distinct:input.email"}',
+                                              "--order", '{"week:input.day": "asc"}', "--week-start", "sunday"])
+    query = parse_qs(urlsplit(path).query)
+    assert urlsplit(path).path == "/graph/dataset/ds1/count"
+    assert json.loads(query["filter"][0]) == {"match": {"input.metric": "em_reply"}}          # the order is of the groups: beside it
+    assert query["group_by"] == ["week:input.day"] and json.loads(query["metrics"][0]) == {"people": "distinct:input.email"}
+    assert json.loads(query["order_by"][0]) == {"week:input.day": "asc"} and query["week_start"] == ["sunday"]
+
+
+def test_dm_ctl_asks_who_uses_rows(monkeypatch):
+    assert _dm_calls(monkeypatch, ["ds-used-by", "companies", "acme", "bolt"]) == [("GET", "/graph/dataset/ds1/used-by?keys=acme%2Cbolt", None)]
+    assert _dm_calls(monkeypatch, ["ds-used-by", "companies"]) == [("GET", "/graph/dataset/ds1/used-by", None)]
