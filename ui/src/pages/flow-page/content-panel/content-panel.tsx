@@ -251,7 +251,10 @@ function ContentPanelBody({
   // Chrome-less either because the host asked (embedded, e.g. the vibe display
   // pane) or a Vibe creator surface. No longer vibe-only — hence `suppressChrome`.
   const isVibe = useIsVibe();
-  const suppressChrome = minimalChrome || (isVibe && VIBE_CREATOR_SURFACES.has(bodyViewType));
+  // Only a dock that HAS a mode (a session, or a child its workspace hosts) can
+  // be a Vibe creator surface; an ordinary page keeps its navigator and framing.
+  const suppressChrome =
+    minimalChrome || (isVibe && !!currentDock?.carriesViewMode && VIBE_CREATOR_SURFACES.has(bodyViewType));
 
   // Chrome-less when the surface is full-bleed (Home — a welcome landing, not a
   // tabbed workspace), in the win/ focus layout, or a Vibe creator surface.

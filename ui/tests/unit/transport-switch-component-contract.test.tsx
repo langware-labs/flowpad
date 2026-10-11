@@ -10,8 +10,8 @@ import { resolve } from 'node:path';
  * This file pins the two things the user actually touches, driven with the
  * SAME server-shaped busy state the backend would be carrying:
  *
- *   • the footer `ViewToggle` — which segment greys, and whether a click on it
- *     navigates (running the REAL `useViewToggleGate`, not a stub);
+ *   • the session's `SessionSurfaceSwitch` — which segment greys, and whether a
+ *     click on it switches (through the REAL `surfaceTransportGate`);
  *   • `useProcessSurface` — which lifecycle call, if any, actually goes out.
  *
  * and asserts both behave the way the ROUTE behaves. There is one route now —
@@ -69,15 +69,15 @@ const dock = vi.hoisted(() => ({
   },
 }));
 vi.mock('@src/navigation', () => ({
-  useDockNavigation: () => ({ currentDock: dock, navigation: { openDock } }),
+  useDockNavigation: () => ({ currentDock: dock, navigation: { openDock, switchSessionSurface: openDock } }),
 }));
 vi.mock('@src/navigation/useDockNavigation', () => ({
   useCurrentDock: () => dock,
-  useDockNavigation: () => ({ currentDock: dock, navigation: { openDock } }),
+  useDockNavigation: () => ({ currentDock: dock, navigation: { openDock, switchSessionSurface: openDock } }),
 }));
 
-import { ViewMode } from '@src/contexts/view-mode-context';
-import { ViewToggle } from '@src/components/view-toggle/view-toggle';
+import { surfaceForViewMode, ViewMode } from '@src/contexts/view-mode-context';
+import { SessionSurfaceSwitch } from '@src/components/terminal/interactive-terminal/SessionSurfaceSwitch';
 import {
   resetSurfaceReconcileState,
   useProcessSurface,
@@ -176,10 +176,11 @@ describe('the reconcile effect issues exactly the call the route accepts', () =>
   });
 });
 
-describe('the ViewToggle greys exactly what the effect would refuse', () => {
-  const seg = (m: string) => screen.getByTestId(`view-toggle-${m}`);
+describe('the session switch greys exactly what the effect would refuse', () => {
+  const seg = (m: ViewMode) => screen.getByTestId(`session-surface-${surfaceForViewMode(m)}`);
+  const renderSwitch = () => render(<SessionSurfaceSwitch process={live.proc as never} />);
 
-  // The toggle has no Dev segment: Dev is a switch now (the avatar double-click),
+  // The switch has no Dev segment: Dev is a switch now (the avatar double-click),
   // not a surface. A Dev row's transport is still pinned by the effect suite above.
   const toggleCases = CASES.filter((c) => c.view_mode !== 'dev');
   it.each(toggleCases.map((c) => [c.label, c] as const))('%s', (_label, c) => {
@@ -188,7 +189,7 @@ describe('the ViewToggle greys exactly what the effect would refuse', () => {
     live.proc = processFor(c);
     // Every row starts on the transport it is currently running.
     live.mode = c.pty_mode ? ViewMode.Advanced : ViewMode.Standard;
-    render(<ViewToggle />);
+    renderSwitch();
 
     const target = seg(VIEW_MODES[c.view_mode]);
     expect(target.getAttribute('aria-disabled')).toBe(c.blocked ? 'true' : null);
@@ -204,7 +205,7 @@ describe('the ViewToggle greys exactly what the effect would refuse', () => {
     live.ptyMode = true;
     live.proc = processFor(busyPty);
     live.mode = ViewMode.Advanced;
-    const view = render(<ViewToggle />);
+    const view = renderSwitch();
 
     expect(seg(ViewMode.Standard).getAttribute('aria-disabled')).toBe('true');
     fireEvent.click(seg(ViewMode.Standard));
@@ -215,7 +216,7 @@ describe('the ViewToggle greys exactly what the effect would refuse', () => {
     live.ptyMode = false;
     live.proc = processFor(busyHeadless);
     live.mode = ViewMode.Standard;
-    render(<ViewToggle />);
+    renderSwitch();
 
     expect(seg(ViewMode.Advanced).getAttribute('aria-disabled')).toBe('true');
     fireEvent.click(seg(ViewMode.Advanced));
