@@ -69,14 +69,17 @@ export interface DatasetRow extends DatasetRowInput {
 }
 
 /** One thing wrong with a row or a value: where, what kind of problem (`shape:<pydantic type>`,
- *  `dangling_ref`, `inline_row`, `rule`; on a 409 `conflict`, `gone`, `referenced`), and the message
+ *  `dangling_ref`, `inline_row`, `rule`, `unique`, `owned`; on a 409 `conflict`, `gone`, `referenced`), and the message
  *  `errors` carries as a line. */
 export interface CheckDetail {
   path: string;
   code: string;
   message: string;
-  /** `code: "rule"`: the rule broken — both ends (`same`) and why. */
-  rule?: { same: [string, string]; description: string };
+  /** `code: "rule"` / `"unique"`: the rule broken — both ends (`same`) or the fields no two rows
+   *  share (`unique`), and why. */
+  rule?: { same?: [string, string]; unique?: string[]; description: string };
+  /** `code: "owned"`: the outside system that owns the field (the schema's `owned_by`). */
+  owned_by?: string;
 }
 
 /** A row that does not fit: by key, with everything wrong, its version (to repair it with `put`
@@ -128,6 +131,14 @@ export interface DatasetRowsChange {
   op: 'put' | 'delete' | 'rename' | 'sync';
   keys: string[];
   count: number;
+}
+
+/** Who a write is made for, as the row actions read it. `by` names the outside system the writer
+ *  writes as (`"crm"`): only that writer sets a field the schema marks `owned_by` it — anyone else
+ *  changing one is refused (400, `details[].code === 'owned'`). An app editing its own fields
+ *  leaves it out. A guard against mistakes between cooperating writers, not a permission. */
+function writer(options: { by?: string }): { by?: string } {
+  return options.by ? { by: options.by } : {};
 }
 
 function matchJson(match: NonNullable<DatasetRowQuery['match']>): unknown {
@@ -265,8 +276,11 @@ export class Dataset extends APIEntity<Dataset> implements IDataset {
   }
 
   /** Typed rows in — each checked against the declared shape; one bad row writes nothing. */
-  async append(rows: DatasetRowInput[]): Promise<{ example_ids: string[]; num_examples: number }> {
-    return this.post('append', { rows });
+  async append(
+    rows: DatasetRowInput[],
+    options: { by?: string } = {},
+  ): Promise<{ example_ids: string[]; num_examples: number }> {
+    return this.post('append', { rows, ...writer(options) });
   }
 
   /** Every row that fits, with its slots' values, and `problems`: the rows that do not, by key with
@@ -336,9 +350,9 @@ export class Dataset extends APIEntity<Dataset> implements IDataset {
   async put(
     key: string,
     row: Omit<DatasetRowInput, 'key'>,
-    options: { expected?: string } = {},
+    options: { expected?: string; by?: string } = {},
   ): Promise<{ example_id: string; key: string; num_examples: number }> {
-    return this.post('put-row', { key, row, ...(options.expected ? { expected: options.expected } : {}) });
+    return this.post('put-row', { key, row, ...(options.expected ? { expected: options.expected } : {}), ...writer(options) });
   }
 
   /** Remove one row, by key or id. Refused (409) while another row links to it, and — with
@@ -352,9 +366,9 @@ export class Dataset extends APIEntity<Dataset> implements IDataset {
    *  (`{key: version}`; 409) writes nothing. */
   async putMany(
     rows: DatasetKeyedRow[],
-    options: { expected?: Record<string, string> } = {},
+    options: { expected?: Record<string, string>; by?: string } = {},
   ): Promise<{ example_ids: string[]; keys: string[]; num_examples: number }> {
-    return this.post('put-rows', { rows, ...(options.expected ? { expected: options.expected } : {}) });
+    return this.post('put-rows', { rows, ...(options.expected ? { expected: options.expected } : {}), ...writer(options) });
   }
 
   /** Remove several rows as ONE step — all of them, or none (404 a key that is no row, 409 a row
@@ -372,12 +386,13 @@ export class Dataset extends APIEntity<Dataset> implements IDataset {
    *  nothing. */
   async sync(
     rows: DatasetKeyedRow[],
-    options: { prune?: boolean; match?: DatasetRowQuery['match'] } = {},
+    options: { prune?: boolean; match?: DatasetRowQuery['match']; by?: string } = {},
   ): Promise<DatasetSyncResult> {
     return this.post('sync-rows', {
       rows,
       ...(options.prune === undefined ? {} : { prune: options.prune }),
       ...(options.match ? { match: matchJson(options.match) } : {}),
+      ...writer(options),
     });
   }
 
@@ -388,10 +403,15 @@ export class Dataset extends APIEntity<Dataset> implements IDataset {
     return this.post('rename-row', { key: keyOrId, new_key: newKey, ...(options.expected ? { expected: options.expected } : {}) });
   }
 
-  /** Would this row fit — its shape, its links and its schema's rules across rows? Nothing is
-   *  written. `details` says where and what kind of problem (`code`), all at once. */
-  async check(row: Omit<DatasetRowInput, 'key'>): Promise<{ ok: boolean; errors: string[]; details: CheckDetail[] }> {
-    return this.post('check-row', { row });
+  /** Would this row fit — its shape, its links, its schema's rules across rows (a `unique` value
+   *  another row holds), and the fields an outside system owns? Nothing is written. A row that
+   *  carries its `key` is checked as a `put` of that row would be; one without, as a new row.
+   *  `details` says where and what kind of problem (`code`), all at once. */
+  async check(
+    row: DatasetRowInput,
+    options: { by?: string } = {},
+  ): Promise<{ ok: boolean; errors: string[]; details: CheckDetail[] }> {
+    return this.post('check-row', { row, ...writer(options) });
   }
 
   /** Every row checked against the declared shape; `problems` names the rows that do not fit, by key. */

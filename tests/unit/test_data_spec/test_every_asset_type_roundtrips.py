@@ -71,6 +71,10 @@ VALID: dict[str, dict] = {
         "fields": {"utterance": {"shape": "string", "description": "what was typed"}},
         "examples": None,
         "ns": "acme",
+        # a rule is ONE of `same` / `unique`, never both filled
+        "rules": [{"same": ["persona.icp", "icp"], "description": "the persona is one of the row's ICP's"},
+                  {"unique": ["utterance"], "description": "said once"}],
+        "include": ["acme.shared"],
     },
     "compute_op": {
         "subkind": "cli",

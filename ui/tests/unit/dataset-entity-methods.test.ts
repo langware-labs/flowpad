@@ -5,7 +5,9 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ConnectionManager, DATASET_ROWS_CHANGED, Dataset, EventBus, dataManager } from '@sdk';
+import type { CheckDetail } from '@sdk/entities/dataset';
 import { ExpressionNode } from '@sdk/FlowSync/query';
+import type { KindForm, KindRule } from '@sdk/viewers/contract';
 
 describe('a dataset built from a wire row keeps its actions', () => {
   it('a wire `examples` field does not hide listing the examples', () => {
@@ -169,5 +171,72 @@ describe('hearing that rows changed', () => {
 
   it('names the tag the server emits', () => {
     expect(DATASET_ROWS_CHANGED).toBe('dataset.rows.changed');
+  });
+});
+
+/** A field an outside system owns (`owned_by` in the schema) is set only by a writer that says it
+ *  writes as that owner: `by` travels on every write and on `check`, and only when given. */
+describe('writing as the owner of outside-owned fields', () => {
+  const ds = () => new Dataset({ id: '6d1a2b3c-4d5e-4f6a-8b7c-9d0e1f2a3b4c', name: 'n' } as never);
+  const rows = [{ key: 'a', input: { name: 'A' } }];
+  let call: ReturnType<typeof vi.spyOn>;
+  const body = (n = 0) => (call.mock.calls[n][0] as { bodyParameters: Record<string, unknown> }).bodyParameters;
+
+  beforeEach(() => {
+    call = vi.spyOn(dataManager, 'callAction').mockResolvedValue({} as never);
+  });
+  afterEach(() => vi.restoreAllMocks());
+
+  it('put, putMany, sync, append and check carry `by` when given', async () => {
+    await ds().put('a', { input: { name: 'A' } }, { expected: 'v1', by: 'crm' });
+    await ds().putMany(rows, { by: 'crm' });
+    await ds().sync(rows, { prune: false, by: 'crm' });
+    await ds().append(rows, { by: 'crm' });
+    await ds().check({ key: 'a', input: { name: 'A' } }, { by: 'crm' });
+    expect(body(0)).toEqual({ key: 'a', row: { input: { name: 'A' } }, expected: 'v1', by: 'crm' });
+    expect(body(1)).toEqual({ rows, by: 'crm' });
+    expect(body(2)).toEqual({ rows, prune: false, by: 'crm' });
+    expect(body(3)).toEqual({ rows, by: 'crm' });
+    expect(body(4)).toEqual({ row: { key: 'a', input: { name: 'A' } }, by: 'crm' });
+  });
+
+  it('an app editing its own fields sends no `by`', async () => {
+    await ds().put('a', { input: { name: 'A' } });
+    await ds().putMany(rows);
+    await ds().sync(rows);
+    await ds().append(rows);
+    await ds().check({ input: { name: 'A' } });
+    for (let n = 0; n < 5; n++) expect(body(n)).not.toHaveProperty('by');
+  });
+
+  it('a refusal says which field is owned, and by whom', async () => {
+    const refusal = {
+      response: { status: 400, data: { data: { details: [{ path: 'input.stage', code: 'owned', owned_by: 'crm', message: 'stage is owned by crm' }] } } },
+    };
+    call.mockRejectedValue(refusal as never);
+    const caught = await ds()
+      .put('a', { input: { stage: 'won' } })
+      .catch((error: typeof refusal) => error);
+    const detail: CheckDetail = (caught as typeof refusal).response.data.data.details[0];
+    expect([detail.code, detail.owned_by]).toEqual(['owned', 'crm']);
+  });
+});
+
+/** What a kind's form says beyond shapes: who owns a field, and the rules across rows. */
+describe('a kind form carries owners and both kinds of rule', () => {
+  it('a field may name its owner; a rule is `same` or `unique`', () => {
+    const form: KindForm = {
+      kind: '--acme--.crm.deal',
+      subkind: 'record',
+      fields: { stage: { shape: 'enum:open|won', required: true, owned_by: 'crm' }, notes: { shape: '?string' } },
+      rules: [
+        { same: ['persona.icp', 'icp'], description: '' },
+        { unique: ['crm_id'], description: 'one row per CRM record' },
+      ],
+    };
+    const readOnly = Object.entries(form.fields ?? {}).filter(([, field]) => field.owned_by).map(([name]) => name);
+    const unique = (form.rules ?? []).flatMap((rule: KindRule) => rule.unique ?? []);
+    expect(readOnly).toEqual(['stage']);
+    expect(unique).toEqual(['crm_id']);
   });
 });
