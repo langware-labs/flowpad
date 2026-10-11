@@ -99,10 +99,10 @@ class WikiSource(RecordSource, CollectionSource):   # the family first
     async def _lookup(self, key): ...
     def _item(self, key, raw) -> SourceItemSpec: ...
 
-    # A SYSTEM OF RECORD (a CRM, a tracker) also writes back -- implement all three (`Mutable`) and name
-    # the record shape `create` takes. A source then mirrors into a dataset (`mirror` in data_source.json)
-    # and the app's row writes reach the system through these: docs/data-management/mirroring-a-system-of-record.md
-    record_type = WikiPageData   # its RecordData subclass
+    # A SYSTEM OF RECORD (a CRM, a tracker) also writes back -- implement all three (`Mutable`); the type
+    # `create` names (a RecordData subclass) is what `create_item` checks a new record against. A source then
+    # mirrors into a dataset (`mirror` in data_source.json) and the app's row writes reach the system
+    # through these: docs/data-management/mirroring-a-system-of-record.md
     async def create(self, data: WikiPageData) -> SourceItemSpec: ...
     async def update(self, origin, changes: dict) -> SourceItemSpec: ...   # changes = the system's own field names
     async def delete(self, origin) -> None: ...

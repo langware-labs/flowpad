@@ -17,13 +17,12 @@ source proved it gone (``lists_everything``), so a row goes only with its record
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import re
 from pathlib import Path
 from typing import Any, Optional
 
-from flow_sdk.stream_inbox._locks import new_registry
+from flow_sdk.stream_inbox._locks import new_registry, single_flight
 
 logger = logging.getLogger(__name__)
 
@@ -95,24 +94,8 @@ async def _project(source_id: str) -> None:
 async def _on_sync(event: Any) -> None:
     """One sweep per source at a time; a sync that completes during it buys ONE more round."""
     source_id = str((getattr(event, "data", None) or {}).get("source_id") or "")
-    if not source_id:
-        return
-    pending = _sweeps.setdefault(asyncio.get_running_loop(), {})
-    if source_id in pending:
-        pending[source_id] = True
-        return
-    pending[source_id] = False
-    try:
-        while True:
-            try:
-                await _project(source_id)
-            except Exception:  # noqa: BLE001 -- a broken mirror is logged; the next sync tries again
-                logger.exception("[mirror] projecting source %s failed", source_id)
-            if not pending[source_id]:
-                return
-            pending[source_id] = False
-    finally:
-        pending.pop(source_id, None)
+    if source_id:
+        await single_flight(_sweeps, source_id, lambda: _project(source_id), "[mirror] projecting source %s failed")
 
 
 def start_dataset_projection() -> None:
@@ -131,12 +114,27 @@ def start_dataset_projection() -> None:
 _WRITABLE = re.compile(r"data\.([A-Za-z_][A-Za-z0-9_]*)")
 
 
+def is_link(spec: Any) -> bool:
+    """A map entry that makes the outside system's id a link: ``{"link", "by", "path"}``."""
+    return isinstance(spec, dict) and set(spec) == {"link", "by", "path"}
+
+
+def _owned(dataset: Any) -> dict:
+    return getattr(dataset.row_type.input_type(), "__owned__", None) or {}
+
+
 async def mirror_of(dataset: Any) -> Any:
-    """The data source that mirrors into ``dataset``, or None."""
+    """The data source that mirrors into ``dataset``, or None -- asked of the index for the sources
+    of the dataset's own project only (a mirror names a dataset beside it)."""
     from flow_sdk.builtin.data_source import DataSource  # noqa: PLC0415
+    from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp  # noqa: PLC0415
+    from flow_sdk.fs_store.path_utils import asset_refs_under  # noqa: PLC0415
 
     folder = Path(dataset._folder()).resolve()
-    for source in await DataSource.get_all({}) or []:
+    sources = Path(dataset._owner()).resolve() / "agentic-assets" / "data_source"
+    likes = [ExpressionNode(op=QueryOp.LIKE, operands=["asset_ref", pattern]) for pattern in asset_refs_under(str(sources))]
+    match = likes[0] if len(likes) == 1 else ExpressionNode(op=QueryOp.OR, operands=likes)
+    for source in await DataSource.get_all(QueryFilter(match=match)) or []:
         if not source.mirror:
             continue
         try:
@@ -154,59 +152,69 @@ def _refused(code: str, message: str, path: str = "") -> Exception:
     return LinkError([{"path": path, "code": code, "message": message}])
 
 
-def _outside_id(ref: Any, by: str, owner: Path) -> Any:
-    """The outside system's id a link stands for: the linked row's ``by`` field."""
-    from flow_sdk.builtin.dataset import Dataset  # noqa: PLC0415
-
-    found = Dataset.find_row(ref, owner) if isinstance(ref, str) else None
-    if found is None:
-        return None
-    dataset, key = found
-    row = next((r for r in dataset.rows()["rows"] if r["key"] == key), None)
-    return (row or {}).get("input", {}).get(by)
-
-
-def outside_changes(shape: dict, fields: dict, owner: Path) -> dict:
+def outside_changes(shape: dict, fields: dict, owner: Path, links: dict) -> dict:
     """``fields`` (row fields the outside system owns, as the app wrote them) as the outside system's
-    own fields -- the map read backwards. Only ``data.<name>`` paths, and links over one, go back;
-    any other is refused (``not_writable``)."""
+    own fields -- the map read backwards. Only ``data.<name>`` paths, and links over one (sent as the
+    linked rows' ``by`` field), go back; any other is refused (``not_writable``). ``links`` remembers
+    the linked rows read across calls."""
+    from flow_sdk.builtin.dataset import Dataset, LinkError  # noqa: PLC0415
+
+    def outside_id(ref: Any, by: str) -> Any:
+        if (ref, by) not in links:
+            found = Dataset.find_row(ref, owner) if isinstance(ref, str) else None
+            rows = found[0].rows({"key": found[1]})["rows"] if found else []
+            links[(ref, by)] = rows[0]["input"].get(by) if rows else None
+        return links[(ref, by)]
+
     changes, refused = {}, []
     for name, value in fields.items():
         spec = shape["input"].get(name)
-        path = spec["path"] if isinstance(spec, dict) and set(spec) == {"link", "by", "path"} else spec
+        path = spec["path"] if is_link(spec) else spec
         match = _WRITABLE.fullmatch(path.removesuffix(".*")) if isinstance(path, str) else None
         if match is None:
             refused.append({"path": f"input.{name}", "code": "not_writable",
                             "message": f"{name} comes from the outside system through {spec!r}, which a change cannot go back through"})
-        elif isinstance(spec, dict):
-            ids = [_outside_id(ref, spec["by"], owner) for ref in (value if isinstance(value, list) else [value]) if ref]
+        elif is_link(spec):
+            ids = [outside_id(ref, spec["by"]) for ref in (value if isinstance(value, list) else [value]) if ref]
             changes[match.group(1)] = ids if isinstance(value, list) else (ids[0] if ids else None)
         else:
             changes[match.group(1)] = value
     if refused:
-        from flow_sdk.builtin.dataset import LinkError  # noqa: PLC0415
-
         raise LinkError(refused)
     return changes
 
 
-async def _item_of(source: Any, shape: dict, held: Any) -> Any:
-    """The record of ``source`` whose key path holds ``held`` (the row's key field)."""
+async def _records(source: Any, shape: dict) -> dict:
+    """``{key path value: record}`` over the source's records -- read once per write."""
     from flow_sdk.builtin.source_item import SourceItem  # noqa: PLC0415
     from flow_sdk.datasets.query import field_of  # noqa: PLC0415
 
-    for item in await SourceItem.get_all({"data_source_id": str(source.id)}) or []:
-        if field_of(item.model_dump(mode="json"), shape["key"]) == held:
-            return item
-    return None
+    return {field_of(item.model_dump(mode="json"), shape["key"]): item
+            for item in await SourceItem.get_all({"data_source_id": str(source.id)}) or []}
+
+
+_ORIGIN_KEY = ("external_id", "origin.key", "origin_key")
+
+
+async def _key_of(done: dict, shape: dict) -> Any:
+    """What the map's key path holds for the record a write-back answered: its origin's key for the
+    usual key paths, else read from the record kept."""
+    if shape["key"] in _ORIGIN_KEY:
+        return done["origin"]["key"]
+    from flow_sdk.builtin.source_item import SourceItem  # noqa: PLC0415
+    from flow_sdk.datasets.query import field_of  # noqa: PLC0415
+
+    item = await SourceItem.get_by_id(done["item_id"])
+    return field_of(item.model_dump(mode="json"), shape["key"]) if item is not None else None
 
 
 async def write_through(dataset: Any, rows: list[tuple[Optional[str], dict]], by: Optional[str],
                         expected: Optional[dict] = None) -> Optional[tuple[list[tuple[str, dict]], str]]:
     """Send what ``rows`` change in outside-owned fields to the outside system, before the rows are
     written here. ``rows`` are ``(key, row)`` -- ``key`` None for a new row. None when nothing here
-    applies (no source mirrors into ``dataset``, the writer writes AS that system, no row changes a
-    field it owns, or the source cannot write -- the plain write then refuses as ``owned``).
+    applies (the row kind owns nothing, no source mirrors into ``dataset``, the writer writes AS that
+    system, no row changes a field it owns, or the source cannot write -- the plain write then
+    refuses as ``owned``).
 
     Otherwise every row is checked first (as a write by that system would be); then each change goes
     through the source (``create_item`` / ``update_item``), the dataset is re-mirrored, and the
@@ -215,14 +223,17 @@ async def write_through(dataset: Any, rows: list[tuple[Optional[str], dict]], by
     the outside system is ``LinkError`` code ``source_refused``; nothing more is sent."""
     from flow_sdk.builtin.dataset import ConflictError, LinkError  # noqa: PLC0415
 
+    if not _owned(dataset):
+        return None                                      # nothing here is anyone else's: no I/O at all
     source = await mirror_of(dataset)
     if source is None:
         return None
     shape, as_ = source.mirror["map"], source.mirror.get("by") or source.provider
     if by == as_:
         return None
-    owned = {name for name, who in (getattr(dataset.row_type.input_type(), "__owned__", None) or {}).items() if who == as_}
+    owned = {name for name, who in _owned(dataset).items() if who == as_}
     have = {row["key"]: row for row in dataset.rows()["rows"]}
+    owner, links, checked = Path(dataset._owner()), {}, {}
     plan = []
     for key, row in rows:
         old = (have.get(key) or {}).get("input") if key else None
@@ -231,33 +242,33 @@ async def write_through(dataset: Any, rows: list[tuple[Optional[str], dict]], by
             sent = {f: v for f, v in new.items() if f in owned and v not in (None, "", [], {})}
         else:
             sent = {f: new.get(f) for f in owned if f in new and new.get(f) != old.get(f)}
-        plan.append((key, row, old, sent))
-    if not any(sent for *_, sent in plan):
+        plan.append([key, row, old, sent, None])
+    if not any(step[3] for step in plan):
         return None
-    owner = Path(dataset._owner())
-    for key, row, old, sent in plan:
+    for step in plan:
+        key, row, old, sent, _ = step
         if key and (expected or {}).get(key) not in (None, have.get(key, {}).get("version")):
             raise ConflictError(f"row {key!r} changed since version {expected[key]}")
-        details = dataset.check_details({**({"key": key} if old is not None else {}), **row}, by=as_)
+        details = dataset.check_details({**({"key": key} if old is not None else {}), **row}, cache=checked, by=as_)
         if details:
             raise LinkError([{**d, "path": f"{key}.{d['path']}" if key and len(rows) > 1 else d["path"]} for d in details])
-        outside_changes(shape, sent, owner)             # refuses a field that cannot go back, before any I/O
-    key_field_, held_at = key_field(shape), {}
+        step[4] = outside_changes(shape, sent, owner, links) if sent else None   # refused before any I/O
+    key_field_, records, sent_to = key_field(shape), None, {}
     try:
-        for n, (key, row, old, sent) in enumerate(plan):
-            if not sent:
+        for n, (key, row, old, sent, changes) in enumerate(plan):
+            if changes is None:
                 continue
-            changes = outside_changes(shape, sent, owner)
             if old is None:
                 done = await source.create_item(changes)
             else:
-                item = await _item_of(source, shape, old.get(key_field_))
+                records = records if records is not None else await _records(source, shape)
+                item = records.get(old.get(key_field_))
                 if item is None:
                     raise _refused("source_refused", f"row {key!r} has no record in {source.provider} yet: sync the source first")
                 done = await source.update_item(str(item.id), changes)
-            held_at[n] = await _key_value(done["item_id"], shape)
+            sent_to[n] = await _key_of(done, shape)
     except (PermissionError, NotImplementedError):
-        if not held_at:
+        if not sent_to:
             return None                                  # the source cannot write: the plain write says `owned`
         raise
     except LinkError:
@@ -267,8 +278,8 @@ async def write_through(dataset: Any, rows: list[tuple[Optional[str], dict]], by
     await project_source(source)
     now = {row["input"].get(key_field_): row for row in dataset.rows()["rows"]}
     out = []
-    for n, (key, row, old, sent) in enumerate(plan):
-        mirrored = now.get(held_at[n]) if n in held_at else None
+    for n, (key, row, *_rest) in enumerate(plan):
+        mirrored = now.get(sent_to.get(n)) if n in sent_to else None
         if mirrored is None:
             out.append((key, row))
             continue
@@ -277,38 +288,25 @@ async def write_through(dataset: Any, rows: list[tuple[Optional[str], dict]], by
     return out, as_
 
 
-async def _key_value(item_id: str, shape: dict) -> Any:
-    from flow_sdk.builtin.source_item import SourceItem  # noqa: PLC0415
-    from flow_sdk.datasets.query import field_of  # noqa: PLC0415
-
-    item = await SourceItem.get_by_id(item_id)
-    return field_of(item.model_dump(mode="json"), shape["key"]) if item is not None else None
-
-
-async def delete_through(dataset: Any, keys: list[str]) -> Optional[list[str]]:
+async def delete_through(dataset: Any, keys: list[str], expected: Optional[dict] = None) -> Optional[list[str]]:
     """Remove the records behind ``keys`` from the outside system, then the rows. None when no source
-    mirrors into ``dataset`` (the plain delete applies). A row others still link to is refused
-    before any I/O, as the plain delete refuses it; a source that cannot delete refuses as
-    ``owned`` -- the row would only come back with the next sync."""
-    from flow_sdk.builtin.dataset import LinkError  # noqa: PLC0415
-
+    mirrors into ``dataset`` (the plain delete applies). Everything the plain delete refuses -- a key
+    that is no row, a row changed since ``expected``, a row others still link to -- is refused before
+    any I/O; a source that cannot delete refuses as ``owned``: the row would only come back with the
+    next sync."""
+    if not _owned(dataset):
+        return None
     source = await mirror_of(dataset)
     if source is None:
         return None
-    shape, key_field_ = source.mirror["map"], key_field(source.mirror["map"])
+    shape = source.mirror["map"]
+    with dataset._lock():
+        dataset._check_delete(keys, expected or {})
     have = {row["key"]: row for row in dataset.rows()["rows"]}
-    missing = [k for k in keys if k not in have]
-    if missing:
-        raise LookupError(f"no example {', '.join(missing)}")
-    going = set(keys)
-    held = [{"path": k if len(keys) > 1 else "", "code": "referenced", "message": f"used by {', '.join(u['kind'] + ' ' + u['key'] for u in still)}"}
-            for k, users in dataset.used_by(keys).items()
-            if (still := [u for u in users if not (u.get("dataset_id") == dataset.id and u["key"] in going)])]
-    if held:
-        raise LinkError(held)
+    records, key_field_ = await _records(source, shape), key_field(shape)
     try:
         for key in keys:
-            item = await _item_of(source, shape, have[key]["input"].get(key_field_))
+            item = records.get(have[key]["input"].get(key_field_)) if key in have else None
             if item is not None:
                 await source.delete_item(str(item.id))
     except (PermissionError, NotImplementedError) as exc:
