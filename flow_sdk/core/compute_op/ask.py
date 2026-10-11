@@ -38,7 +38,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Optional
 
 if TYPE_CHECKING:  # pragma: no cover
-    from flow_sdk.schema.data_spec.compute_op_spec import AskChoiceSpec
+    from flow_sdk.schema.data_spec.compute_op_spec import AskChoiceSpec, AskItemSpec
     from flow_sdk.schema.data_spec.returned_value_spec import AskResult
 
 
@@ -73,6 +73,10 @@ class Question:
     auto: bool = False
     #: Several ways to answer, of which the person picks one (``AskOp.choices``).
     choices: "list[AskChoiceSpec]" = field(default_factory=list)
+    #: SEVERAL questions asked as one — everything a wizard run needs, put to the person before it
+    #: starts (``AskItemSpec``, as plain dicts). The answer is then ``{item path: its value}``, and
+    #: an item left out is declined. Empty: an ordinary question.
+    items: list = field(default_factory=list)
     #: The Wizard entity this question is a step of, when it is one — its
     #: TypeId's uuid half. Empty for an op run outside any wizard. This is the
     #: one thread back from a settled question to the run that is still going:
@@ -118,6 +122,7 @@ class Question:
             "file": self.file,
             "auto": self.auto,
             "choices": [choice.model_dump(mode="json") for choice in self.choices],
+            "items": self.items,
             "wizard_id": self.wizard_id,
             "run": self.run,
             "guide": self.guide,
@@ -194,6 +199,7 @@ def open_question(
     file: bool = False,
     auto: bool = False,
     choices: "Optional[list[AskChoiceSpec]]" = None,
+    items: Optional[list] = None,
     wizard_id: str = "",
     guide: str = "",
     assist_agent: str = "",
@@ -218,6 +224,7 @@ def open_question(
         file=file,
         auto=auto,
         choices=list(choices or []),
+        items=list(items or []),
         wizard_id=wizard_id,
         run=ASKING_RUN.get(),
         guide=guide,
@@ -229,6 +236,20 @@ def open_question(
     )
     _PENDING[question.id] = question
     return question
+
+
+def answer_items(items: list, decide: "Callable[[AskItemSpec], Any]") -> dict:
+    """A list question's answer, built one item at a time: ``decide(item)`` gives the item's value,
+    or ``None`` to decline it (it is then left out). The one spelling of that answer for every
+    answerer that is not the form."""
+    from flow_sdk.schema.data_spec.compute_op_spec import AskItemSpec  # noqa: PLC0415
+
+    given: dict = {}
+    for item in (AskItemSpec.model_validate(raw) for raw in items):
+        value = decide(item)
+        if value is not None:
+            given[item.path] = value
+    return given
 
 
 def pending(question_id: str) -> Optional[Question]:
@@ -348,6 +369,7 @@ async def ask_person(
     file: bool = False,
     auto: bool = False,
     choices: "Optional[list[AskChoiceSpec]]" = None,
+    items: Optional[list] = None,
     wizard_id: str = "",
     guide: str = "",
     assist_agent: str = "",
@@ -377,6 +399,7 @@ async def ask_person(
         file=file,
         auto=auto,
         choices=choices,
+        items=items,
         wizard_id=wizard_id,
         guide=guide,
         assist_agent=assist_agent,
@@ -441,6 +464,7 @@ async def ask_through_backend(
     file: bool = False,
     auto: bool = False,
     choices: "Optional[list[AskChoiceSpec]]" = None,
+    items: Optional[list] = None,
     wizard_id: str = "",
     guide: str = "",
     assist_agent: str = "",
@@ -472,6 +496,7 @@ async def ask_through_backend(
         "file": file,
         "auto": auto,
         "choices": [choice.model_dump(mode="json") for choice in choices or []],
+        "items": list(items or []),
         "wizard_id": wizard_id,
         "guide": guide,
         "assist_agent": assist_agent,

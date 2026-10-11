@@ -9,6 +9,7 @@ import { showWizard } from '@src/components/assets/editor/wizard/wizard-popup-st
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { pickLiveActivity, useActivitySpec } from '@src/store/activity-store';
 import type { AssistState } from './AskAssist';
+import type { AskItem } from './AskItems';
 
 /**
  * A question a ComputeOp put to a person — the data and actions behind it,
@@ -49,6 +50,8 @@ export interface AskQuestion {
   file?: boolean;
   /** The ways to answer, when there is more than one; empty for every ordinary question. */
   choices?: AskChoice[];
+  /** Several questions asked as one (`AskItems`); empty for every ordinary question. */
+  items?: AskItem[];
   /** The Wizard this question is one step of, when it is one. Empty for a
    *  question an op raised outside any wizard. */
   wizard_id?: string;
@@ -122,8 +125,8 @@ export function useAskQuestion(questionId: string | undefined) {
     return send('/answer', { value });
   }, [question, values, send]);
 
-  /** A chosen way's answer (`AskChoiceBlock`): one string, sent as it is. */
-  const answer = useCallback((value: string) => send('/answer', { value }), [send]);
+  /** A chosen way's answer (`AskChoiceBlock`, one string) or a list's (`AskItems`), sent as it is. */
+  const answer = useCallback((value: string | Record<string, unknown>) => send('/answer', { value }), [send]);
 
   const cancel = useCallback(() => send('/cancel'), [send]);
   /** The cards are the form (`AskChoiceBlock`): no bare field, and no Send of the question's own. */

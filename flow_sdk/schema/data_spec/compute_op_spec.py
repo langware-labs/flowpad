@@ -82,6 +82,10 @@ ASK_TIMEOUT_SECONDS = 60.0
 SETUP_TIMEOUT = 600.0
 
 
+#: The kind of a yes/no answer (``ConfirmSpec``).
+CONFIRM_KIND = "confirm"
+
+
 class OpSubkind(StrEnum):
     """Who does the work. The order is the cost order.
 
@@ -364,6 +368,32 @@ class AskChoiceSpec(DataSpec):
     file: bool = False
     #: The command the person runs instead of giving a value, on this machine.
     command: str = ""
+
+
+class AskItemSpec(DataSpec):
+    """One question of several asked as ONE (``Question.items``) — everything a wizard run needs,
+    put to the person before it starts. The list's answer is ``{path: this item's value}``; an item
+    left out is declined."""
+
+    spec_kind: ClassVar[str] = "compute_op.ask.item"
+
+    #: What the answer is keyed by — for a wizard, the asking step from the top down (``node/ask``).
+    path: str
+    #: The ``ask`` op behind it.
+    op: str = ""
+    #: What is asked, and what it is for.
+    prompt: str = ""
+    detail: str = ""
+    #: The answer's declared kind. ``confirm`` is an approval; anything else is one typed value.
+    kind: Optional[str] = None
+    secret: bool = False
+    #: Declining it leaves the run unfinished (``WizardStepSpec.required``).
+    required: bool = True
+
+    @property
+    def is_approval(self) -> bool:
+        """Nothing to type, only to agree to."""
+        return self.kind == CONFIRM_KIND
 
 
 class AskOp(ExeData):

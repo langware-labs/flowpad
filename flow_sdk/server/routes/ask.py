@@ -70,6 +70,8 @@ class AskRequest(BaseModel):
     auto: bool = False
     #: Several ways to answer, of which the person picks one (``AskOp.choices``).
     choices: list[AskChoiceSpec] = []
+    #: Several questions asked as one (``Question.items``).
+    items: list[dict] = []
     #: The Wizard entity this question is a step of, when it is one.
     wizard_id: str = ""
     #: How a person finds the value (the op's ``setup.md``).
@@ -99,6 +101,7 @@ async def ask_for_another_process(body: AskRequest):
         file=body.file,
         auto=body.auto,
         choices=body.choices,
+        items=body.items,
         wizard_id=body.wizard_id,
         guide=body.guide,
         assist_agent=body.assist_agent,
@@ -137,7 +140,12 @@ async def answer_question(question_id: str, body: AnswerRequest):
         return _fail("that question is no longer waiting", 404)
 
     value: Optional[Any] = body.value
-    if question.shape is not None:
+    if question.items:
+        try:
+            value = _item_values(question.items, value)
+        except DeclaredShapeError as mismatch:
+            return _fail(str(mismatch), 422)
+    elif question.shape is not None:
         try:
             value = to_declared(value, question.shape)
         except DeclaredShapeError as mismatch:
@@ -148,6 +156,26 @@ async def answer_question(question_id: str, body: AnswerRequest):
     if not deliver_answer(question_id, value):
         return _fail("that question is no longer waiting", 404)
     return ApiSuccessResponse(data={"answered": question_id})
+
+
+def _item_values(items: list[dict], value: Any) -> dict:
+    """A list question's answer, each given value held to ITS item's kind. An item left out is
+    declined, which is an answer; a key that names no item is a mistake."""
+    if not isinstance(value, dict):
+        raise DeclaredShapeError("the answer to a list of questions is an object: {item path: its value}")
+    by_path = {item.get("path"): item for item in items}
+    held: dict = {}
+    for path, given in value.items():
+        item = by_path.get(path)
+        if item is None:
+            raise DeclaredShapeError(f"{path!r} is not one of the questions asked")
+        if item.get("kind"):
+            try:
+                given = to_declared(given, item["kind"])
+            except DeclaredShapeError as mismatch:
+                raise DeclaredShapeError(f"{item.get('prompt') or path}: {mismatch}") from mismatch
+        held[path] = given
+    return held
 
 
 @router.post("/{question_id}/cancel")

@@ -176,9 +176,19 @@ _MACHINES: list = []
 
 
 async def _person(replies: dict[str, str], asked: list[str]) -> None:
-    """Answer every question raised: Send for "yes", Cancel otherwise."""
+    """Answer every question raised: Send for "yes", Cancel otherwise.
+
+    The run asks for everything ONCE, as a list (``Question.items``): each item is answered by its
+    own op's reply — "yes" approves it, anything else (or no reply) leaves it out, which declines it.
+    """
     while True:
         for question in ask.open_questions():
+            if question.items:
+                if not any(item["op"] in replies for item in question.items):
+                    continue
+                asked.extend(item["op"] for item in question.items)
+                ask.answer(question.id, {item["path"]: {} for item in question.items if replies.get(item["op"]) == "yes"})
+                continue
             reply = replies.get(question.op_name)
             if reply is None:
                 # Not one this test is driving — e.g. a give-up race, where the
@@ -278,9 +288,10 @@ async def test_a_missing_tool_is_installed_only_after_send(platform):
     assert result.exit_code is ExitCode.OK
     assert machine.installed == EVERYTHING
     assert machine.agents == [], "the plain command worked — the agent is never called"
-    # Where npm ships with node (brew, winget) its check then holds and nobody
-    # is asked; on apt it is its own package, so it is its own question.
-    assert asked == (["ask-install-node", "ask-install-npm"] if platform == "linux" else ["ask-install-node"])
+    # Everything is asked ONCE, before anything is installed — so npm is a row of
+    # that list on every platform. Where it ships with node (brew, winget) its
+    # check then holds and its install step has nothing to do.
+    assert asked == ["ask-install-node", "ask-install-npm"]
 
 
 @PLATFORMS
@@ -302,15 +313,16 @@ async def test_cancel_leaves_the_tool_uninstalled_and_the_run_goes_on(platform):
 
 
 @PLATFORMS
-async def test_declining_node_never_asks_about_npm(platform):
+async def test_declining_node_is_never_followed_by_a_question_about_npm(platform):
     """npm is folded into node's own sub-wizard, checked strictly AFTER it —
     so a person who declines Node.js is never followed by a second, orphaned
-    question about npm, which is useless without it."""
+    question about npm, which is useless without it. Both are rows of the ONE
+    list the run opens with; nothing is asked after it."""
     machine = Machine(platform, EVERYTHING - {"node", "npm"})  # node AND npm both missing
     result, asked = await _run(machine, platform, {"ask-install-node": "cancel"})
 
     assert result.exit_code is ExitCode.NOT_YET
-    assert asked == ["ask-install-node"]
+    assert asked == ["ask-install-node", "ask-install-npm"], "one list, asked once"
     assert not machine.installed_anything
     node = result.steps["node"]
     # "no activity child for a step never reached" (core/wizard/runner.py) —
@@ -419,12 +431,10 @@ async def test_nobody_to_ask_gives_up_after_the_presence_grace_and_installs_noth
 
     monkeypatch.setattr(op_ask, "PRESENCE_GRACE_SECONDS", 0.03)
     monkeypatch.setattr(op_ask, "PRESENCE_POLL_SECONDS", 0.01)
-    # Every tool but python is missing. Each one's OWN ask gives up in turn —
-    # keyed by op name because their calls interleave in one flat timeline
-    # otherwise. npm's ask is never reached at all: it is node's
-    # sub-wizard's THIRD step, behind `on_fail: abort` on node's own ask giving
-    # up — asking it too would just reach the identical "nobody's there"
-    # conclusion a second time, 15s later, for nothing.
+    # Every tool but python is missing, and the run asks about all of them ONCE,
+    # as its opening list. That one question gives up; none of the tools' own
+    # asks is then raised in its place — each would only reach the identical
+    # "nobody's there" conclusion again, 15s later, for nothing.
     calls: dict[str, list[bool]] = {}
 
     async def not_shown(question, **kwargs):
@@ -439,7 +449,8 @@ async def test_nobody_to_ask_gives_up_after_the_presence_grace_and_installs_noth
     assert asked == [] and ask.open_questions() == []
     assert not machine.installed_anything
     assert machine.agents == []
-    assert set(calls) == {f"ask-install-{tool}" for tool in ("claude-code", "git", "node")}
+    # ONE question was tried — the run's list — not one per missing tool.
+    assert set(calls) == {"llm-setup"}
     assert set(result.steps["node"].steps) == {"ask"}
     for op_calls in calls.values():
         # The FIRST attempt may still open a browser; every retry after it

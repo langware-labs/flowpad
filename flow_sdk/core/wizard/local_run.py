@@ -104,7 +104,14 @@ async def _answer_questions(stop: asyncio.Event, *, yes: bool, say: Callable[[st
 
     while not stop.is_set():
         for question in ask.open_questions():
-            if yes and question.shape == "confirm":
+            if yes and question.items:
+                # Everything the run needs, asked at once: --yes approves each confirm in the list.
+                def approve(item: Any) -> Any:
+                    say(f"? {item.prompt} — " + ("yes (--yes)" if item.is_approval else "not answered: it needs a person (--yes answers confirm questions only)"))
+                    return {} if item.is_approval else None
+
+                ask.answer(question.id, ask.answer_items(question.items, approve))
+            elif yes and question.shape == "confirm":
                 say(f"? {question.prompt} — yes (--yes)")
                 ask.answer(question.id, {})
             else:
