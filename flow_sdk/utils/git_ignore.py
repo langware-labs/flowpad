@@ -106,6 +106,17 @@ def ensure_ignored(path: Path | str) -> str:
     return ignore_status(p)
 
 
+def protect_env_local(root: Path | str) -> None:
+    """Keep a checkout's ``.env.local`` out of commits, or refuse: a tracked one is already in
+    history's path, and a rule git will not honour protects nothing. Outside a work tree there is
+    nothing to protect."""
+    status = ensure_ignored(Path(root) / ".env.local")
+    if status == TRACKED:
+        raise RuntimeError(".env.local is already tracked; remove it from the Git index first")
+    if status in (NOT_IGNORED, GIT_FAILURE):
+        raise RuntimeError(".env.local is not excluded by Git")
+
+
 def ignored_under(root: Path | str) -> set[Path]:
     """The paths under ``root`` git excludes, as absolute paths; a whole excluded folder is ONE
     entry (git's ``--directory``). ``{root}`` when ``root`` itself is excluded. Empty outside a work

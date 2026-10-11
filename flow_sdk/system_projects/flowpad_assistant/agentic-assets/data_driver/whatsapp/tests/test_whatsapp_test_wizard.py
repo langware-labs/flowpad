@@ -107,9 +107,13 @@ async def _person(asked: list[str], stop_after: int | None = None):
     """Answer every question the wizard raises, as the person would from the setup dialog."""
     while True:
         for q in ask.open_questions():
-            asked.append(q.prompt)
-            assert q.guide, f"{q.prompt!r} is asked with its guide beside it"
-            ask.answer(q.id, ANSWERS[q.prompt])
+            if q.items:  # everything the run needs, asked once before it starts
+                asked.extend(item.prompt for item in q.items)
+                ask.answer(q.id, ask.answer_items(q.items, lambda item: ANSWERS[item.prompt]))
+            else:
+                asked.append(q.prompt)
+                assert q.guide, f"{q.prompt!r} is asked with its guide beside it"
+                ask.answer(q.id, ANSWERS[q.prompt])
             if stop_after is not None and len(asked) >= stop_after:
                 return
         await asyncio.sleep(0.005)
