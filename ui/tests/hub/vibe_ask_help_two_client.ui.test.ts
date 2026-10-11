@@ -252,7 +252,7 @@ describe('vibe workspace — one ask-for-help button: task + message to bob', ()
     expect(text, 'the notes ride along').toContain(NOTES);
   }, 30_000);
 
-  it('bob receives the issue, the task chips, and the transcript', async () => {
+  it('bob receives the issue and the task chip; the diagnosis follows as its own message', async () => {
     await syncAssignedConversation(bob, conversationId);
 
     const received = await pollUntil(async () => {
@@ -274,9 +274,29 @@ describe('vibe workspace — one ask-for-help button: task + message to bob', ()
     // (the assignee's member task plus the parent overview).
     const taskChips = refs.filter((r) => r.startsWith('task-'));
     expect(taskChips, `task chips in ${refs.join(',')}`).toEqual([`task-${taskId}`]);
+    // "Send diagnostic" (on by default) replaced "Include this session's transcript": the request
+    // carries no transcript, and the diagnosis follows as its own message.
     expect(
-      refs.some((r) => r === `claude_session-${SESSION_ID}`),
-      `transcript chip (attached by default) in ${refs.join(',')}`,
-    ).toBe(true);
+      refs.some((r) => r.startsWith('claude_session-')),
+      `no transcript chip in ${refs.join(',')}`,
+    ).toBe(false);
+    await pollUntil(
+      async () => {
+        const rows: any[] = ((await alice.sdk.FlowMessage.query(
+          new alice.sdk.QueryRequest({
+            type: 'flow_message',
+            query: { conversation_id: conversationId },
+            name: 'ask-help diagnosis message',
+          }),
+          true,
+        ).catch(() => [])) ?? []) as any[];
+        return (
+          rows.find((m) => (m.attachment ?? []).some((a: any) => String(a.data).endsWith('diagnosis.value.json'))) ??
+          null
+        );
+      },
+      25_000,
+      'the diagnosis message following the request on alice',
+    );
   }, 60_000);
 });

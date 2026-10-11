@@ -62,7 +62,7 @@ test.describe('Claude Vibe Workspace browser matrix', () => {
   });
       await page.goto(`/dock/display/agentic_process-${fixture.processId}?viewMode=vibe&matrix=legacy`);
 
-      await expect(page).toHaveURL(new RegExp(`/dock/shell/agentic_process-${fixture.processId}\\?.*viewMode=vibe`));
+      await expect(page).toHaveURL(processUrlRe(fixture.processId));
       expect(new URL(page.url()).searchParams.get('matrix')).toBe('legacy');
       await expect(page.locator('[data-testid="entity-execution-new"]:visible')).toBeVisible();
       await expect(page.getByTestId('workspace-display-tab')).toHaveAttribute('aria-current', 'true');
@@ -258,6 +258,7 @@ test.describe('Claude Vibe Workspace browser matrix', () => {
   }) => {
     const fixture = await createVibeFixture(request, 'vibe-asset-origin');
     const createdIds: string[] = [];
+    let discussProcessId: string | null = null;
     try {
       const source = await seedMarkedMarkdown(request, fixture.projectId, createdIds, 'vibe-origin-source', 'VW17_ORIGINAL');
 
@@ -292,19 +293,29 @@ test.describe('Claude Vibe Workspace browser matrix', () => {
       const before = new URL(page.url());
       await page.getByTestId('asset-discuss-in-vibe').click();
 
-      // Discuss keeps the document at its natural asset address and only adds
-      // the view mode: no workspace host is inferred or invented for it.
+      // Discuss opens a Vibe HOST tab with the document as its child (bd2e5b0d1,
+      // `navigation.discussAsset`): the document keeps its own editor tail, now
+      // addressed under the session that discusses it.
+      const tail = before.pathname.slice(`/dock/project/${fixture.projectId}/`.length);
       await expect(page).toHaveURL(
-        new RegExp(`/dock/project/${fixture.projectId}/editor/markdown/.*viewMode=vibe`),
+        new RegExp(
+          `/dock/project/${fixture.projectId}/process/agentic_process-[0-9a-f-]+/display/${tail}\\?.*viewMode=vibe`,
+        ),
       );
-      const after = new URL(page.url());
-      expect(after.pathname).toBe(before.pathname);
-      // No host means no session yet (1dedd3668): the chat pane offers to start
-      // one — enabled, because the document is inside its project — and there is
-      // no workspace strip, since no workspace was invented for the document.
-      await expect(page.getByTestId('vibe-start-new-chat')).toBeEnabled();
+      discussProcessId = new URL(page.url()).pathname.match(/\/process\/agentic_process-([0-9a-f-]+)\/display\//)![1];
+      // No chat about this document existed, so one was created FOR it — in the
+      // document's project, targeted at the document — not borrowed from the
+      // project's unrelated session.
+      expect(discussProcessId).not.toBe(fixture.processId);
+      const host = (await (await request.get(`${API}/api/v1/graph/agentic_process/${discussProcessId}`)).json()).data;
+      expect(host.project_id).toBe(fixture.projectId);
+      expect(host.target_typeid_str).toContain(source.id);
+      // The chat beside the document is that session (nothing left to start),
+      // and the document is a child of its workspace.
+      await expect(page.locator('[data-testid="entity-execution-new"]:visible')).toBeVisible();
+      await expect(page.getByTestId('vibe-start-new-chat')).toHaveCount(0);
       await expect(crumb).toHaveAttribute('title', 'vibe-origin-source.md');
-      await expect(page.getByTestId('workspace-child-strip')).toHaveCount(0);
+      await expect(page.getByTestId('workspace-child-strip')).toBeVisible();
       expect(await page.locator('[data-panel-id="asset-vibe-chat"]').getAttribute('data-panel-size')).toBe('36.0');
       expect(await page.locator('[data-panel-id="asset-vibe-content"]').getAttribute('data-panel-size')).toBe('64.0');
 
@@ -316,6 +327,9 @@ test.describe('Claude Vibe Workspace browser matrix', () => {
       await expect(page.getByText('VW18_LIVE_UPDATE')).toBeVisible();
 
     } finally {
+      if (discussProcessId) {
+        await request.delete(`${API}/api/v1/graph/agentic_process/${discussProcessId}`).catch(() => undefined);
+      }
       for (const id of createdIds) {
         await request.delete(`${API}/api/v1/graph/markdown/${id}`).catch(() => undefined);
       }

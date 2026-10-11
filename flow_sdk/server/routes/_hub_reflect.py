@@ -231,6 +231,20 @@ async def _reflect_fs_to_hub(et, hub_id: str, sub_path: str | None) -> Any:
     return REFLECT_CONTINUE_LOCAL
 
 
+def _changes_only_local_fields(entity: Entity, body: dict[str, Any]) -> bool:
+    """True when a bare update changes something, and none of it is the hub's to be told: every
+    changed field is declared ``PRIVATE`` (never leaves this machine) or ``HUB_READ`` (the hub's
+    own clocks, which a client's whole-entity save echoes back in another spelling)."""
+    not_for_hub = type(entity).fields_not_sent_to_hub()
+    if not (body.keys() & not_for_hub):
+        return False
+    # A dump leaves out the fields that are unset, so a field is read with ``get``: unset is None.
+    fields = type(entity).model_fields
+    current = entity.model_dump(mode="json", include=set(body))
+    changed = {name for name, value in body.items() if name in fields and current.get(name) != value}
+    return bool(changed) and changed <= not_for_hub
+
+
 async def reflect_to_hub(
     a: Action,
     entity: Entity,
@@ -294,6 +308,10 @@ async def reflect_to_hub(
         # segment — the bare field update below. Raises HubError on non-200 (e.g.
         # 403 from the hub's ``can_assign`` ceiling), propagated to the caller.
         hub_resp = await hub_put(et, hub_id, body or {}, action=a.action_name, sub_path=sub_path)
+    elif verb in ("put", "patch") and _changes_only_local_fields(entity, body or {}):
+        # Nothing in this update is the hub's to hold (a project's ``last_mode``, say): it is a
+        # local write, and a reader — who may not write the shared entity — must not be refused it.
+        return REFLECT_CONTINUE_LOCAL
     elif verb in ("put", "patch"):
         # A bare entity field update (the generic ``update`` CRUD action, e.g. a
         # conversation rename) reflects as a hub PUT to ``/<type>/<id>``. Merge the

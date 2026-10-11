@@ -17,7 +17,6 @@ import { homedir, tmpdir } from 'os';
 import path from 'path';
 import { expect, type Page } from '@playwright/test';
 import { apiOrigin } from '../_shared/api';
-import { awaitSteerable as awaitSteerableOn } from '../_shared/control-plane';
 
 export const INSTANCE = process.env.FLOW_INSTANCE || 'dlm-7';
 export const BACKEND = apiOrigin();
@@ -241,8 +240,66 @@ function longTranscript(sessionId: string, cwd: string, turns: number): string {
   return lines.map((l) => JSON.stringify(l)).join('\n') + '\n';
 }
 
-/** Wait until the backend can steer this page (see _shared/control-plane). */
-export const awaitSteerable = (page: Page) => awaitSteerableOn(page, BACKEND);
+/**
+ * The control-plane connection each page holds — read off the page's own socket
+ * (`/api/v1/connect/ws/<connection id>`), newest open one wins (the app reconnects).
+ *
+ * Steering names it. "The active tab" is the backend's guess, and it guesses the
+ * visible, focused one: any other window left open on this instance (a debugging
+ * browser, a probe page) outranks a headless test page, answers `/agent/context`
+ * for it, and receives its navigations — the spec then waits on a page nobody moved.
+ */
+const connections = new WeakMap<Page, string[]>();
+
+function trackConnection(page: Page): void {
+  if (connections.has(page)) return;
+  const open: string[] = [];
+  connections.set(page, open);
+  page.on('websocket', (ws) => {
+    const id = /\/api\/v1\/connect\/ws\/([^/?#]+)/.exec(ws.url())?.[1];
+    if (!id) return;
+    open.push(id);
+    ws.on('close', () => {
+      const at = open.indexOf(id);
+      if (at !== -1) open.splice(at, 1);
+    });
+  });
+}
+
+function connectionOf(page: Page): string | null {
+  const open = connections.get(page);
+  if (!open) throw new Error('installObservers(page) must run before the page is steered');
+  return open.at(-1) ?? null;
+}
+
+/**
+ * Wait until the backend can steer THIS page: its own connection answered
+ * `/agent/context` twice and the page neither reconnected nor navigated between
+ * the answers (the settle rule of _shared/control-plane, asked of the page's own
+ * connection rather than of whichever tab the backend calls active).
+ */
+export async function awaitSteerable(page: Page): Promise<void> {
+  let lastCid: string | null = null;
+  let lastUrl: string | null = null;
+  await expect
+    .poll(
+      async () => {
+        const urlBefore = page.url();
+        const cid = connectionOf(page);
+        const r = cid === null ? null : await fetch(`${BACKEND}/api/v1/agent/context?connection_id=${cid}`);
+        if (r?.status !== 200) {
+          lastCid = lastUrl = null;
+          return false;
+        }
+        const settled = cid === lastCid && urlBefore === lastUrl && page.url() === urlBefore && connectionOf(page) === cid;
+        lastCid = cid;
+        lastUrl = urlBefore;
+        return settled;
+      },
+      { timeout: 15_000 },
+    )
+    .toBe(true);
+}
 
 /**
  * Steer the page in-app to a dock address (`<view>/<pointer>?<options>`) and wait
@@ -254,7 +311,7 @@ export async function navigateTo(page: Page, address: string, expectPath: string
   const committedBefore = await committedPaths(page);
   // The request `flow navigate view` makes, without the CLI around it: a Python process per steer
   // cost ~1 s of a spec's wall clock on CI, ten times over in a spec — none of it the app's.
-  const res = await post('agent/navigate/view', { view: address });
+  const res = await post('agent/navigate/view', { view: address, connection_id: connectionOf(page) });
   // A NavigateResult in the standard envelope: shown is exit_code 0, handed to a tab.
   const verdict = ((await res.json()) as { data?: { exit_code?: number; delivered?: boolean } }).data;
   expect(verdict?.exit_code === 0 && verdict.delivered, `navigate view ${address} → ${JSON.stringify(verdict)}`).toBe(true);
@@ -291,6 +348,7 @@ async function committedPaths(page: Page): Promise<string[] | null> {
  */
 export async function installObservers(page: Page): Promise<{ toplog: string[] }> {
   const toplog: string[] = [];
+  trackConnection(page);
   page.on('console', (m) => {
     const text = m.text();
     if (text.startsWith('[toplog:')) toplog.push(text);

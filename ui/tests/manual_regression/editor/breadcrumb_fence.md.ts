@@ -8,7 +8,7 @@
  * opening the real FilePreviewSheet.
  */
 import { expect, test, type Page } from '@playwright/test';
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
 import { activeProject, createProjectMarkdown, deleteMarkdown } from './_seed';
@@ -58,9 +58,16 @@ async function seed(page: Page): Promise<Fixture> {
   const doc = await createProjectMarkdown(page.request, `qa-breadcrumb-${stamp}`);
   if (!doc.assetRef) throw new Error('seed markdown returned no asset_ref');
 
+  // Under the frontmatter the create wrote — it carries the doc's `id:`. A file
+  // written without it is re-stamped by the app once the doc is opened, which
+  // rewrites the document under the mounted editor; the fixture is authored
+  // content, not an external edit racing the page.
+  const frontmatter = readFileSync(doc.assetRef, 'utf8').trimEnd();
   writeFileSync(
     doc.assetRef,
     [
+      frontmatter,
+      '',
       '# QA breadcrumb probe',
       '',
       '## Bound tests',
@@ -95,7 +102,7 @@ async function seed(page: Page): Promise<Fixture> {
 async function openDoc(page: Page, markdownId: string) {
   await page.goto(`/dock/assets/editor/markdown/typeid/markdown-${markdownId}`);
   await expect(page.locator('[data-testid="editor-mode-chip-view"]')).toBeVisible({ timeout: 20_000 });
-  await page.evaluate(() => window.setView('advanced'));
+  await page.evaluate(() => window.setDev(true));
   await expect(page.locator('[data-testid="editor-mode-chip-review"]')).toBeVisible({ timeout: 10_000 });
 }
 

@@ -53,6 +53,11 @@ async function openWhiteboardListExpanded(page: Page, projectId: string, whitebo
   await expect
     .poll(() => page.evaluate(() => document.documentElement.getAttribute('data-view')), { timeout: 10_000 })
     .toBe('advanced');
+  // Since host tabs (71e9272c6) "Advanced" is a surface, not a tier: the types
+  // that are `browseable_by=advanced` follow the developer switch
+  // (`useTierMode()`), which the URL's `viewMode` no longer turns on. Flip it
+  // through the app's own `window.setDev`, the call the avatar double-click makes.
+  await page.evaluate(() => (window as any).setDev(true));
   const chevron = page.getByTestId('browseable-chevron-asset-type:whiteboard');
   await expect(chevron).toBeVisible({ timeout: 15_000 });
   // The row's delete button is its stable handle, but a row toolbar is

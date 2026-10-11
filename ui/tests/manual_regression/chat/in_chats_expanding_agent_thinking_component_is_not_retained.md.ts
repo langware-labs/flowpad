@@ -94,6 +94,13 @@ test('thinking expansion is retained when switching between two chat tabs', asyn
       'advanced',
     ),
   );
+  // The transcript's Chat/Trace chips are an Advanced surface, and Advanced is
+  // the developer switch now (bd2e5b0d1) — `?viewMode=advanced` only picks the
+  // Terminal surface. Flip it the way the avatar double-click does, on the page
+  // that needs it: the switch is a saved preference, and a document navigation
+  // right behind the flip can cut its save short.
+  await expect(page.getByTestId('top-nav-bar')).toBeVisible();
+  await page.evaluate(() => window.setDev(true));
 
   // The persisted mode can be either Chat or Trace after earlier scenarios.
   // Selecting the already-active chip is intentionally a no-op, so switch away
