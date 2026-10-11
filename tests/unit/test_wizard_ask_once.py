@@ -28,10 +28,9 @@ pytestmark = pytest.mark.timeout(5)
 def _asked_here(monkeypatch):
     """This process is where answers arrive, and a test is the person."""
     monkeypatch.setenv("FLOWPAD_NO_BROWSER", "1")
-    monkeypatch.setattr(ask, "_SERVED_HERE", True)
-    monkeypatch.setattr(ask, "_ANSWERER_HERE", True)
     ask._PENDING.clear()
-    yield
+    with ask.answered_here(present=True):
+        yield
     ask._PENDING.clear()
 
 
@@ -344,19 +343,19 @@ def test_no_step_may_take_the_exit_error_id():
 
 def test_a_list_answer_is_held_item_by_item():
     from flow_sdk.core.compute.declared_value import DeclaredShapeError
-    from flow_sdk.server.routes.ask import _item_values
+    from flow_sdk.schema.data_spec.compute_op_spec import AskItemSpec
 
-    items = [{"path": "git/ask", "prompt": "Install Git?", "kind": "confirm"},
-             {"path": "port", "prompt": "Port", "kind": "int"}]
-    held = _item_values(items, {"git/ask": {}, "port": 8080})
+    items = [AskItemSpec(path="git/ask", prompt="Install Git?", kind="confirm"),
+             AskItemSpec(path="port", prompt="Port", kind="int")]
+    held = ask.held_items(items, {"git/ask": {}, "port": 8080})
     assert set(held) == {"git/ask", "port"} and held["port"] == 8080
-    assert _item_values(items, {}) == {}, "an item left out is declined, which is an answer"
+    assert ask.held_items(items, {}) == {}, "an item left out is declined, which is an answer"
     with pytest.raises(DeclaredShapeError, match="Port"):
-        _item_values(items, {"port": "eighty"})
+        ask.held_items(items, {"port": "eighty"})
     with pytest.raises(DeclaredShapeError, match="not one of the questions"):
-        _item_values(items, {"nope": 1})
+        ask.held_items(items, {"nope": 1})
     with pytest.raises(DeclaredShapeError):
-        _item_values(items, "yes")
+        ask.held_items(items, "yes")
 
 
 async def test_yes_on_a_terminal_approves_the_confirms_of_a_list(tmp_path):

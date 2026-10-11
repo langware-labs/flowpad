@@ -184,10 +184,10 @@ async def _person(replies: dict[str, str], asked: list[str]) -> None:
     while True:
         for question in ask.open_questions():
             if question.items:
-                if not any(item["op"] in replies for item in question.items):
+                if not any(item.op in replies for item in question.items):
                     continue
-                asked.extend(item["op"] for item in question.items)
-                ask.answer(question.id, {item["path"]: {} for item in question.items if replies.get(item["op"]) == "yes"})
+                asked.extend(item.op for item in question.items)
+                ask.answer(question.id, ask.answer_items(question.items, lambda item: {} if replies.get(item.op) == "yes" else None))
                 continue
             reply = replies.get(question.op_name)
             if reply is None:

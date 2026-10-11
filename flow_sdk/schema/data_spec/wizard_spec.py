@@ -107,9 +107,9 @@ class WizardStepSpec(DataSpec):
     #: values already in scope, like ``args``: never a template, never an expression.
     when: dict[str, str] = {}
     #: A person who DECLINES this step's question has left the run unfinished: the step fails and
-    #: ``on_fail`` decides what follows. ``False``: a decline is an answer — this wizard stops there
-    #: quietly, as ``on_fail: stop`` would, and its caller carries on. On a ``wizard`` step it covers
-    #: every question underneath.
+    #: ``on_fail`` decides what follows. ``False``: a decline is an answer — the wizard that holds
+    #: the declined question stops there quietly, as ``on_fail: stop`` would, and whoever called it
+    #: carries on. On a ``wizard`` step it covers every question underneath.
     required: bool = True
 
     @model_validator(mode="after")
@@ -177,6 +177,10 @@ class WizardSpec(DataSpec):
     #: ``exit_error``; the run's own verdict stays what it was. Empty: nothing runs.
     exit_error: str = ""
     steps: list[WizardStepSpec] = []
+
+    @property
+    def display_label(self) -> str:
+        return self.label or self.name or "wizard"
 
     @model_validator(mode="after")
     def _conversational_or_stepped(self) -> "WizardSpec":
