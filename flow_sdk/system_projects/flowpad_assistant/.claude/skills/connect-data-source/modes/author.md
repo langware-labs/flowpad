@@ -87,6 +87,7 @@ class WikiSource(RecordSource, CollectionSource):   # the family first
     provider = "wiki"            # = the manifest's name
     Config = WikiConfig          # its fields = the manifest's config keys
     durable_cursor = False       # True only when the provider can resume from your cursor string
+    lists_everything = False     # True when a full listing is the WHOLE collection (a table, a CRM object): records gone outside are removed here
 
     def query(self):             # the ONE stream this source reads, from its config
         return None              # or a DataQuery built from self.config
