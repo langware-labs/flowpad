@@ -106,7 +106,6 @@ reasons (a 400 carries the validation `errors`).
 | a rule across rows that is a count, an order or a sum (not "the same row", not "unique") | check it in every writer — the app AND any script — with the same code, and report breaks |
 
 | a row's past values (history) | a date you will ask about is a FIELD (`stage_dates`); a dataset in git has its commits |
-| a join on a value that is not a link (an email address) | two calls and `$IN` — or model it as a link: a path follows links |
 
 Rows ARE queried across links, counted, searched, written in bulk and announced (`modes/app.md`):
 `ds.rows({match, q, expand})` — a path follows a link (`input.persona.icp.key`) and `expand` brings

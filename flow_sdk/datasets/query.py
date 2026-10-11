@@ -12,6 +12,9 @@ ONE PATH GRAMMAR, the one a schema's ``rules`` already write, with the slot spel
 * ``key``, ``input.day``, ``input.stage_dates.won`` -- dot by dot; a list by index (``input.steps.0``);
 * ``input.tags.*`` -- every element of a list (``*``, as in a rule's ``messages.*.use_case``): the
   path then has SEVERAL values, and a test passes when ANY of them does;
+* (a join on a value that is NOT a link: ``{"op": "$IN", "operands": ["input.email", {"op": "$PROP",
+  "operands": ["input.email", {"input.metric": "em_reply"}]}]}`` -- "whose email is among the emails
+  of the rows that match"; a third operand names another kind's rows. ``with_subqueries``.)
 * ``input.persona.icp`` -- a step that lands on a reference to a row (``<kind>.id.<uuid>``) with
   more path to go FOLLOWS the link and carries on in the linked row's ``input``; right after a link,
   ``key`` / ``id`` / ``ref`` name the linked row itself (``input.persona.key``). Followed only when
@@ -121,6 +124,45 @@ def _prop(operand: Any) -> Optional[str]:
     if isinstance(operand, ExpressionNode) and operand.op == QueryOp.PROP and operand.operands:
         return operand.operands[0]  # type: ignore[return-value]
     return None
+
+
+def is_subquery(operand: Any) -> bool:
+    """``{$PROP: [path, match, of?]}`` -- "the values ``path`` takes in the rows that ``match``" (of
+    this dataset, or of the kind ``of``): the second operand of an ``$IN`` / ``$NIN`` that joins on a
+    value which is not a link. (One operand is the older form: a list field of THIS row.)"""
+    return isinstance(operand, ExpressionNode) and operand.op == QueryOp.PROP and len(operand.operands) >= 2
+
+
+def paths_of(node: Optional[ExpressionNode]) -> list[str]:
+    """Every field path an expression reads (sub-queries left out: they are asked on their own)."""
+    if node is None:
+        return []
+    if node.op in (QueryOp.AND, QueryOp.OR):
+        return [p for operand in node.operands if isinstance(operand, ExpressionNode) for p in paths_of(operand)]
+    out = []
+    if node.operands and isinstance(node.operands[0], str):
+        out.append(node.operands[0])
+    if len(node.operands) > 1 and not is_subquery(node.operands[1]):
+        field = _prop(node.operands[1])
+        if field:
+            out.append(field)
+    return out
+
+
+def with_subqueries(node: Optional[ExpressionNode], values: Callable[[str, Optional[ExpressionNode], Optional[str]], list]) -> Optional[ExpressionNode]:
+    """The expression with every sub-query answered: an ``$IN [field, {$PROP: [path, match, of?]}]``
+    becomes ``$IN [field, [the values]]`` (``values(path, match, of)`` asks the rows). The join on a
+    value that is not a link -- "people who replied AND have a meeting" -- in one question."""
+    if node is None:
+        return None
+    if node.op in (QueryOp.AND, QueryOp.OR):
+        return ExpressionNode(op=node.op, operands=[with_subqueries(o, values) if isinstance(o, ExpressionNode) else o for o in node.operands])
+    if node.op in (QueryOp.IN, QueryOp.NIN) and len(node.operands) == 2 and is_subquery(node.operands[1]):
+        path, sub, *rest = node.operands[1].operands
+        if not isinstance(path, str) or not (sub is None or isinstance(sub, ExpressionNode)) or (rest and not isinstance(rest[0], str)):
+            raise ValueError("a sub-query is {\"op\": \"$PROP\", \"operands\": [<path>, <match>, <kind>?]}")
+        return ExpressionNode(op=node.op, operands=[node.operands[0], list(values(path, sub, rest[0] if rest else None))])
+    return node
 
 
 def matches(node: Optional[ExpressionNode], row: Any, follow: Optional[Follow] = None) -> bool:
@@ -358,5 +400,16 @@ def count(rows: Iterable[Any], *, match: Any = None, group_by: Optional[list[str
     return out
 
 
-__all__ = ["BUCKETS", "METRICS", "Follow", "Many", "bucket_of", "count", "expression", "field_of", "matches",
-           "order", "says", "select", "texts_of"]
+def asked_paths(match: Any = None, order_by: Any = None, group_by: Optional[list] = None,
+                metrics: Optional[dict] = None, expand: Optional[list] = None) -> list[str]:
+    """Every path a question reads -- what a caller that must fetch linked RECORDS first walks."""
+    out = paths_of(expression(match)) if not isinstance(match, ExpressionNode) else paths_of(match)
+    out += [path for path, _ in _pairs(order_by)] if order_by else []
+    out += [entry.partition(":")[2] or entry for entry in (group_by or []) if isinstance(entry, str)]
+    out += [spec.partition(":")[2] for spec in (metrics or {}).values() if isinstance(spec, str)]
+    out += [path for path in (expand or []) if isinstance(path, str)]
+    return [path for path in out if path]
+
+
+__all__ = ["BUCKETS", "METRICS", "Follow", "Many", "asked_paths", "bucket_of", "count", "expression", "field_of",
+           "is_subquery", "matches", "order", "paths_of", "says", "select", "texts_of", "with_subqueries"]

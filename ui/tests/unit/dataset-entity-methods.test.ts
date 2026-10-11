@@ -262,6 +262,18 @@ describe('asking more of rows and count', () => {
     expect(sent().queryParameters.q).toBe('pricing objection');
   });
 
+  it('a join on a value travels as a sub-query the server answers', async () => {
+    const replied = { op: '$PROP', operands: ['input.email', { 'input.metric': 'em_reply' }] };
+    const match = { op: '$AND', operands: [{ 'input.metric': 'em_mtg' }, { op: '$IN', operands: ['input.email', replied] }] };
+    await ds().rows({ match: match as never });
+    expect(JSON.parse(sent().queryParameters.filter)).toEqual({ match });
+    await ds().rows({ match: new ExpressionNode(match) });                       // ... and as an ExpressionNode
+    expect(JSON.parse(sent(1).queryParameters.filter).match.operands[1].operands[1]).toEqual({
+      op: '$PROP',
+      operands: ['input.email', { op: '$EQ', operands: ['input.metric', 'em_reply'] }],
+    });
+  });
+
   it('rows() answers the linked rows the server put beside', async () => {
     const linked = { 'crm.co.id.1': { dataset_id: 'd', key: 'acme', row: { key: 'acme', input: { name: 'Acme' } } } };
     call.mockResolvedValue({ rows: [], total: 0, problems: [], linked } as never);
