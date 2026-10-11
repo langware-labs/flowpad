@@ -4,7 +4,7 @@
  * "examples is not a function" -- found in the browser, pinned here.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { ConnectionManager, DATASET_ROWS_CHANGED, Dataset, EventBus, dataManager } from '@sdk';
+import { ConnectionManager, DATASET_ROWS_CHANGED, DataSource, Dataset, EventBus, dataManager } from '@sdk';
 import type { CheckDetail } from '@sdk/entities/dataset';
 import { ExpressionNode } from '@sdk/FlowSync/query';
 import type { KindForm, KindRule } from '@sdk/viewers/contract';
@@ -316,5 +316,42 @@ describe('asking more of rows and count', () => {
     expect([sent().name, sent().method, sent().queryParameters]).toEqual(['used-by', 'GET', { keys: 'acme,bolt' }]);
     await ds().usedBy();
     expect(sent(1).queryParameters).toEqual({});
+  });
+});
+
+/** A system of record through a data source: its items mirrored as typed rows, and an app-owned
+ *  field written back through the source's driver — never a client or a key in the frame. */
+describe('mirroring a data source and writing back through it', () => {
+  let call: ReturnType<typeof vi.spyOn>;
+  const sent = (n = 0) => call.mock.calls[n][0] as { name: string; method: string; bodyParameters: Record<string, unknown> };
+
+  beforeEach(() => {
+    call = vi.spyOn(dataManager, 'callAction').mockResolvedValue({} as never);
+  });
+  afterEach(() => vi.restoreAllMocks());
+
+  it('mirror() posts the source and the map; by / prune / match only when given', async () => {
+    const ds = new Dataset({ id: '6d1a2b3c-4d5e-4f6a-8b7c-9d0e1f2a3b4c', name: 'n' } as never);
+    const map = { key: 'external_id', input: { name: 'name', stage: 'data.stage' } };
+    await ds.mirror('src-1', map);
+    expect([sent().name, sent().method, sent().bodyParameters]).toEqual(['mirror', 'POST', { source_id: 'src-1', map }]);
+    await ds.mirror('src-1', map, { by: 'crm', prune: false, match: { 'input.source': 'crm' } });
+    expect(sent(1).bodyParameters).toEqual({ source_id: 'src-1', map, by: 'crm', prune: false, match: { 'input.source': 'crm' } });
+  });
+
+  it('updateItem() and deleteItem() ask the source to write to its own system', async () => {
+    const source = new DataSource({ id: '7e2b3c4d-5e6f-4a7b-9c8d-0e1f2a3b4c5d', name: 'CRM' } as never);
+    const answer = { item_id: 'i1', origin: { kind: 'record', namespace: 'crm', key: 'OPP-1' }, status: 'updated' };
+    call.mockResolvedValue(answer as never);
+    expect(await source.updateItem('i1', { gtmPersona: 'cfo' })).toEqual(answer);
+    expect([sent().name, sent().bodyParameters]).toEqual(['update_item', { item_id: 'i1', changes: { gtmPersona: 'cfo' } }]);
+    await source.deleteItem('i1');
+    expect([sent(1).name, sent(1).bodyParameters]).toEqual(['delete_item', { item_id: 'i1' }]);
+  });
+
+  it('a refused write-back reaches the caller (a read-only source, a driver that cannot)', async () => {
+    const refusal = { response: { status: 403, data: { message: 'this source is read-only' } } };
+    call.mockRejectedValue(refusal as never);
+    await expect(new DataSource({ id: '7e2b3c4d-5e6f-4a7b-9c8d-0e1f2a3b4c5d', name: 'CRM' } as never).updateItem('i1', { x: 1 })).rejects.toBe(refusal);
   });
 });

@@ -156,6 +156,13 @@ export interface DataSourceChoiceSet {
   detail: string;
 }
 
+/** What a write to the outside system answered (`updateItem`, `deleteItem`). */
+export interface DataSourceWriteBack {
+  item_id: string;
+  origin: { kind: string; namespace: string; key: string; url?: string | null };
+  status: 'updated' | 'deleted';
+}
+
 // The decorator binds to the declaration IMMEDIATELY below it. Anything slipped in
 // between silently unhooks it — the class stops registering, and the store then has no
 // constructor for `data_source`, so every list of sources renders empty with nothing
@@ -426,6 +433,19 @@ export class DataSource extends APIEntity<DataSource> implements IDataSource {
   /** Reply to one of this source's records; who it reaches is the channel's rule. */
   async reply(itemId: string, text: string): Promise<DataSourceSendOutcome> {
     return this.post('reply', { item_id: itemId, text });
+  }
+
+  /** Change one record IN THE OUTSIDE SYSTEM — the record `itemId` of this source — through the
+   *  source's driver and the credential it already holds: how a field the app owns goes back to a
+   *  system of record. `changes` are the outside system's own fields; the record here is read back
+   *  by the next sync. 404 no such item · 403 a read-only source · 400 a driver that cannot. */
+  async updateItem(itemId: string, changes: Record<string, unknown>): Promise<DataSourceWriteBack> {
+    return this.post('update_item', { item_id: itemId, changes });
+  }
+
+  /** Remove one record FROM THE OUTSIDE SYSTEM, through the driver (as `updateItem`). */
+  async deleteItem(itemId: string): Promise<DataSourceWriteBack> {
+    return this.post('delete_item', { item_id: itemId });
   }
 
   /** This source's records, newest first. */
