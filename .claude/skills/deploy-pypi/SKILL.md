@@ -402,6 +402,12 @@ Check the wheel contains no unexpected heavy deps (e.g. `lancedb`):
 unzip -p dist/flowpad-$NEW-py3-none-any.whl "flowpad-$NEW.dist-info/METADATA" | grep "Requires-Dist" | sort
 ```
 
+Check that every hub route this release starts calling already exists on the **prod** hub.
+The app reaches users before the hub deploys, so a route that is missing on prod returns
+404 for everyone and shows them "Cloud Request Failed". To find new calls, diff the release for
+added `hub_get` / `hub_post` / `hub_get_or_raise` calls. If one is not live yet, ship the hub
+first or hold the release. See the trap in `deploy-pypi-e2b-hub`.
+
 ## Validate after publishing
 
 The automated script self-validates (clean-env install + `validate_install.sh`).

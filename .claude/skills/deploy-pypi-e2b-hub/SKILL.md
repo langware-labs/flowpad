@@ -92,6 +92,16 @@ serving a UI three releases old — no error, the feature was simply absent.
 the right name. Verify from the build log that `pip show flowpad` reported the version you
 asked for — not just the ledger entry, which records what was *requested*.
 
+**An app that calls a hub route prod does not have yet.** The order above ships the app
+FIRST, so any new hub route the app release calls is a 404 on every user's machine until
+the hub deploy lands. Users see a "Cloud Request Failed" warning, and nothing on the app side
+can tell "not deployed yet" from "broken". Observed: app `0.2.173` (Sep 22) called
+`token_plan/allowances` while the hub that serves it was tagged on Sep 24 (`v0.29.117`).
+Users who upgraded got `404: unknown token_plan route` until prod caught up. Before publishing,
+diff the release for new hub calls (`hub_get`/`hub_post`/`hub_get_or_raise` and new actions)
+and confirm each one answers non-404 on prod. If one doesn't, deploy that hub change first
+(its own hub release) or hold the app release.
+
 **Strings can ship without their code.** `lingui extract` can sweep new `<Trans>` strings
 into the catalogs from an uncommitted working tree, so a release ships the translations for
 a feature whose code is on an unmerged branch. Before publishing, grep the built wheel for
@@ -118,7 +128,8 @@ and `feedback_no_deploy_without_permission` memories.
 Three checkpoints, each of which has caught a real failure:
 
 1. **Before publishing** — the built wheel contains the change (grep an identifier from
-   the code, not from a translated string).
+   the code, not from a translated string), and every hub route new in this release
+   already answers on prod (see the trap above).
 2. **After building the template** — the build log's `pip show flowpad` says the version
    you asked for.
 3. **After deploying** — the environment reports the new hub version AND the new app
