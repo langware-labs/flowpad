@@ -1085,6 +1085,10 @@ msgstr ""
 msgid "{projectName} is already shared"
 msgstr ""
 
+#: src/components/project-setup/ProjectLoadDialog.tsx
+msgid "{projectName} requires setup"
+msgstr "{projectName} requires setup"
+
 #: src/components/organization/budgets/ShareProjectPanel.tsx
 #: src/components/organization/budgets/ShareProjectPanel.tsx
 msgid "{projectName} shared"
@@ -1880,6 +1884,10 @@ msgstr ""
 msgid "Add a personal note…"
 msgstr "إضافة ملاحظة شخصية…"
 
+#: src/components/agent-resources/AgentDataSourcesSection.tsx
+msgid "Add a project data source to include its dependencies"
+msgstr ""
+
 #: src/components/stream-inbox-view/AttachedChannelsBar.tsx
 msgid "Add a source"
 msgstr ""
@@ -1975,7 +1983,8 @@ msgstr ""
 msgid "Add credential"
 msgstr ""
 
-#: src/components/agent-resources/AgentResourcesBody.tsx
+#: src/components/agent-resources/AgentDataSourcesSection.tsx
+#: src/components/agent-resources/AgentDataSourcesSection.tsx
 msgid "Add data source"
 msgstr "إضافة مصدر بيانات"
 
@@ -2109,6 +2118,10 @@ msgstr "إضافة وسم…"
 msgid "Add this key under Connections"
 msgstr "أضف هذا المفتاح ضمن الاتصالات"
 
+#: src/components/agent-resources/AgentDataSourcesSection.tsx
+msgid "Add to agent"
+msgstr ""
+
 #: src/components/conversation/MessageActionsMenu.tsx
 #: src/components/favorites/FavoriteStar.tsx
 #: src/components/favorites/FavoriteStar.tsx
@@ -2168,6 +2181,10 @@ msgstr ""
 #. placeholder {0}: draft.name.trim()
 #: src/components/llm-endpoints/LlmEndpointDialog.tsx
 msgid "Added {0}, but the key was not saved"
+msgstr ""
+
+#: src/components/agent-resources/AgentDataSourcesSection.tsx
+msgid "Added directly"
 msgstr ""
 
 #: src/components/install/AddAssetDialog.tsx
@@ -3604,8 +3621,8 @@ msgid "Automations"
 msgstr ""
 
 #: src/components/top-nav-bar/TopNavBar.tsx
-msgid "Automations · {startedLastHour} started in the last hour"
-msgstr ""
+#~ msgid "Automations · {startedLastHour} started in the last hour"
+#~ msgstr ""
 
 #: src/components/automations/BusView.tsx
 #~ msgid "Automations listening"
@@ -4181,6 +4198,7 @@ msgid "Can't update right now — showing the last synced list."
 msgstr ""
 
 #: src/components/account/secrets-section.tsx
+#: src/components/agent-resources/AgentDataSourcesSection.tsx
 #: src/components/anchored-markdown/CommentPin.tsx
 #: src/components/artifacts/artifact-form.tsx
 #: src/components/ask/AskForm.tsx
@@ -4439,6 +4457,10 @@ msgstr "التغييرات"
 #~ msgid "Changes ({0})"
 #~ msgstr "التغييرات ({0})"
 
+#: src/components/agent-resources/AgentDataSourcesSection.tsx
+msgid "Changes apply to new sessions."
+msgstr ""
+
 #~ msgid "Changes committed and pushed"
 #~ msgstr "تم تثبيت التغييرات ودفعها"
 
@@ -4573,6 +4595,10 @@ msgstr "جاري التحقق من وجود نسخة محلية من المست�
 msgid "Checking out the projects and opening the session."
 msgstr ""
 
+#: src/components/webapp-display/WebappDisplay.tsx
+msgid "Checking the app…"
+msgstr "Checking the app…"
+
 #: src/components/helpdesk/HelpdeskLoadDialog.tsx
 msgid "Checking the help desk files"
 msgstr "جارٍ التحقق من ملفات مكتب المساعدة"
@@ -4616,6 +4642,10 @@ msgstr ""
 
 #: src/components/organization/budgets/ShareProjectPanel.tsx
 msgid "Choose"
+msgstr ""
+
+#: src/components/agent-resources/AgentDataSourcesSection.tsx
+msgid "Choose a data source from this project by name."
 msgstr ""
 
 #: src/components/docs-viewer/DocsViewer.tsx
@@ -5058,6 +5088,7 @@ msgstr "جارِ الاستنساخ…"
 #: src/components/login-required-dialog.tsx
 #: src/components/organization/budgets/AdvancedEndpointDialog.tsx
 #: src/components/project-home/ProjectGitChecksDialog.tsx
+#: src/components/project-setup/ProjectLoadDialog.tsx
 #: src/components/search-index/SweepOrphansDialog.tsx
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 #: src/components/tabs/TabStrip.tsx
@@ -5572,8 +5603,8 @@ msgid "Connect a data source for me and help me define what I want out of each i
 msgstr ""
 
 #: src/components/agent-resources/AgentResourcesBody.tsx
-msgid "Connect a data source to make it available here"
-msgstr ""
+#~ msgid "Connect a data source to make it available here"
+#~ msgstr ""
 
 #: src/components/account/settings-section.tsx
 msgid "Connect an LLM source, then install the tools Flowpad needs. Runs once on first launch."
@@ -5611,6 +5642,10 @@ msgstr "الاتصال بـ GitHub للاختيار من مستودعاتك، ب
 
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "Connect GitHub to share a project whose files live in a GitHub repository."
+msgstr ""
+
+#: src/components/agent-resources/AgentDataSourcesSection.tsx
+msgid "Connect new source"
 msgstr ""
 
 #: src/components/quick-create/McpCreateDialog.tsx
@@ -7503,7 +7538,7 @@ msgstr ""
 msgid "Data source name"
 msgstr ""
 
-#: src/components/agent-resources/AgentResourcesBody.tsx
+#: src/components/agent-resources/AgentDataSourcesSection.tsx
 #: src/components/data-sources/DataSourceDialog.tsx
 #: src/components/data-sources/DataSourcesView.tsx
 #: src/components/schema-tree/SchemaTreeView.tsx
@@ -7813,6 +7848,7 @@ msgstr "حذف \"{0}\" من سلسلة مفاتيح نظام التشغيل؟ ل
 #. placeholder {0}: row.label
 #: src/components/account/secrets-section.tsx
 #: src/components/agent-resources/AgentCredentialsSection.tsx
+#: src/components/agent-resources/AgentDataSourcesSection.tsx
 #: src/components/agent-resources/AgentResourcesBody.tsx
 #: src/components/agent-resources/AgentResourcesBody.tsx
 #: src/components/graph-context/GraphContextViewer.tsx
@@ -10439,6 +10475,10 @@ msgstr "الملفات"
 msgid "Files & Directories"
 msgstr "الملفات والمجلدات"
 
+#: src/components/agent-resources/AgentDataSourcesSection.tsx
+msgid "Files not available"
+msgstr ""
+
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "Files on disk not yet in the DB"
 msgstr "ملفات موجودة على القرص ولم تُضف بعد إلى قاعدة البيانات"
@@ -12269,6 +12309,10 @@ msgstr "تضمين هذا الملف في الـ commit القادم (git add)"
 #~ msgid "Include this session's transcript"
 #~ msgstr ""
 
+#: src/components/agent-resources/AgentDataSourcesSection.tsx
+msgid "Included through this source's dependencies. Changes apply to new sessions."
+msgstr ""
+
 #: src/components/terminal/interactive-terminal/DebugMenu.tsx
 msgid "Index (seq)"
 msgstr "الفهرس (seq)"
@@ -13643,6 +13687,10 @@ msgstr "جاري تحميل المقارنة…"
 msgid "Loading conversation…"
 msgstr "جاري تحميل المحادثة…"
 
+#: src/components/agent-resources/AgentDataSourcesSection.tsx
+msgid "Loading data sources…"
+msgstr ""
+
 #: src/components/machine-overview/service-status-led.tsx
 msgid "Loading deployment status…"
 msgstr "جاري تحميل حالة الإطلاق…"
@@ -14851,6 +14899,7 @@ msgstr ""
 
 #: src/components/automations/AutomationRow.tsx
 #: src/components/data-sources/health-style.ts
+#: src/components/project-home/ProjectDependenciesCard.tsx
 msgid "Needs attention"
 msgstr ""
 
@@ -15462,6 +15511,10 @@ msgstr ""
 msgid "No data available"
 msgstr "لا توجد بيانات متاحة"
 
+#: src/components/agent-resources/AgentDataSourcesSection.tsx
+msgid "No data sources in this project yet"
+msgstr ""
+
 #: src/components/terminal/interactive-terminal/command-status-viewer/CommandStatusViewer.tsx
 msgid "No data."
 msgstr "لا توجد بيانات."
@@ -16047,12 +16100,12 @@ msgid "No records of this type"
 msgstr "لا توجد سجلات من هذا النوع"
 
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
-msgid "No remote branch"
-msgstr ""
+#~ msgid "No remote branch"
+#~ msgstr ""
 
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
-msgid "No remote configured"
-msgstr ""
+#~ msgid "No remote configured"
+#~ msgstr ""
 
 #: src/pages/hub-home/NewSandboxDialog.tsx
 msgid "no repo"
@@ -16316,6 +16369,11 @@ msgstr "لا توجد محادثات غير مقروءة"
 msgid "No unsaved changes"
 msgstr "لا توجد تغييرات غير محفوظة."
 
+#: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
+#: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
+msgid "No upstream configured"
+msgstr ""
+
 #: src/components/token-plan/ConsumptionPanel.tsx
 msgid "No usage in the last 30 days."
 msgstr ""
@@ -16523,12 +16581,13 @@ msgstr "غير مسجّل الدخول · شغّل /login"
 #: src/components/assets/editor/wizard/wizard-texts.ts
 #: src/components/install/AddAssetDialog.tsx
 #: src/components/project-home/MissingDependenciesDialog.tsx
+#: src/components/project-setup/ProjectLoadDialog.tsx
 msgid "Not now"
 msgstr "ليس الآن"
 
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
-msgid "Not on the remote yet — Push publishes this branch"
-msgstr ""
+#~ msgid "Not on the remote yet — Push publishes this branch"
+#~ msgstr ""
 
 #. placeholder {0}: item.fix
 #: src/components/assets/editor/agent-profile/DeploymentSecretsGate.tsx
@@ -17142,6 +17201,7 @@ msgstr ""
 #: src/components/lens-viewer/shared/transcript-features/OperationRow.tsx
 #: src/components/milkdown-editor/MilkdownEditor.tsx
 #: src/components/project-activity-strip/BookmarkColumn.tsx
+#: src/components/project-home/ProjectDependenciesCard.tsx
 #: src/components/runs/RunPreviewRoot.tsx
 #: src/components/schema-tree/SchemaTreeView.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
@@ -17873,6 +17933,10 @@ msgstr "تم فتح مقارنة الأصول."
 msgid "Opened existing project"
 msgstr "تم فتح المشروع الموجود"
 
+#: src/components/webapp-display/WebappSetupGate.tsx
+msgid "Opening app…"
+msgstr "Opening app…"
+
 #: src/components/task-receive/IncomingTaskDialog.tsx
 msgid "Opening task…"
 msgstr "جاري فتح المهمة…"
@@ -17884,6 +17948,10 @@ msgstr "جاري فتح مكتب المساعدة"
 #: src/components/helpdesk/HelpdeskLoadDialog.tsx
 msgid "Opening the help desk…"
 msgstr "جاري فتح مكتب المساعدة…"
+
+#: src/project-home-page/AgentHomeAfterLoad.tsx
+msgid "Opening your agent…"
+msgstr "Opening your agent…"
 
 #: src/components/task-receive/IncomingProjectDialog.tsx
 msgid "Opening your project…"
@@ -18793,6 +18861,10 @@ msgstr "اللغة المفضلة للردود"
 msgid "Prefers Reduced Motion"
 msgstr "تفضيل تقليل الحركة"
 
+#: src/components/project-setup/ProjectLoadDialog.tsx
+msgid "Preparing this project for use."
+msgstr "Preparing this project for use."
+
 #: src/pages/entry/LaunchLanding.tsx
 #: src/pages/entry/OpenSandboxLanding.tsx
 msgid "Preparing your sandbox…"
@@ -18802,8 +18874,11 @@ msgstr "جاري تحضير الصندوق الرملي…"
 msgid "Preparing your workspace…"
 msgstr "جاري تحضير مساحة العمل…"
 
-#~ msgid "Preparing…"
-#~ msgstr "جاري التحضير…"
+#: src/components/project-home/ProjectDependenciesCard.tsx
+#: src/components/project-setup/ProjectLoadDialog.tsx
+#: src/components/project-setup/ProjectLoadGate.tsx
+msgid "Preparing…"
+msgstr "Preparing…"
 
 #: src/components/data-sources/source-attention.ts
 msgid "Press Resume to listen again."
@@ -19607,6 +19682,10 @@ msgstr "اقرأ النتيجة في FlowPad"
 msgid "Reading"
 msgstr "يقرأ"
 
+#: src/components/agent-resources/AgentDataSourcesSection.tsx
+msgid "Reading dependencies…"
+msgstr ""
+
 #: src/components/organization/budgets/BudgetHistoryDialog.tsx
 msgid "Reading the history…"
 msgstr ""
@@ -20028,6 +20107,10 @@ msgstr "إزالة {label}"
 #: src/components/conversation/MembersAvatarStack.tsx
 #: src/components/conversation/MembersAvatarStack.tsx
 msgid "Remove {label} from the list"
+msgstr ""
+
+#: src/components/agent-resources/AgentDataSourcesSection.tsx
+msgid "Remove {name} from agent"
 msgstr ""
 
 #: src/components/connections-manager/usage-cell.tsx
@@ -21747,6 +21830,11 @@ msgstr "معايرة البحث"
 #~ msgid "Search chats…"
 #~ msgstr "البحث في المحادثات…"
 
+#: src/components/agent-resources/AgentDataSourcesSection.tsx
+#: src/components/agent-resources/AgentDataSourcesSection.tsx
+msgid "Search data sources"
+msgstr ""
+
 #: src/components/docs-viewer/DocsNavigator.tsx
 msgid "Search docs…"
 msgstr "البحث في التوثيق…"
@@ -22482,6 +22570,10 @@ msgstr ""
 msgid "Set conversation project"
 msgstr "تعيين مشروع المحادثة"
 
+#: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
+msgid "Set it"
+msgstr ""
+
 #: src/components/conversation/ConversationRoute.tsx
 #: src/components/conversation/ConversationRoute.tsx
 msgid "Set project"
@@ -22492,6 +22584,7 @@ msgid "Set public"
 msgstr ""
 
 #: src/components/capabilities-view/CapabilitiesView.tsx
+#: src/components/project-setup/ProjectLoadDialog.tsx
 #: src/components/task-receive/use-shared-project-warnings.ts
 #: src/journey/SetupJourneyButton.tsx
 msgid "Set up"
@@ -22518,7 +22611,6 @@ msgstr "سيتم إعداد <0>{projectName}</0> في مساحة العمل هذ
 #~ msgstr "إعداد مجلد سياق مدعوم بـ Git لهذا المشروع."
 
 #: src/components/setup-wizard/SourceSetupDialog.tsx
-#: src/components/webapp-display/WebappSetupGate.tsx
 msgid "Set up again"
 msgstr "أعد الإعداد"
 
@@ -22667,6 +22759,8 @@ msgstr ""
 
 #: src/components/data-sources/source-attention.ts
 #: src/components/data-sources/status-style.ts
+#: src/components/project-home/ProjectDependenciesCard.tsx
+#: src/components/project-setup/ProjectLoadGate.tsx
 #: src/components/top-nav-bar/ProjectSetupButton.tsx
 #: src/components/top-nav-bar/ProjectSetupButton.tsx
 msgid "Setup required"
@@ -25401,8 +25495,8 @@ msgid "This Agent stream inbox URL is malformed."
 msgstr "عنوان URL لصندوق التدفق الوارد الخاص بالوكيل غير صالح."
 
 #: src/components/webapp-display/WebappSetupGate.tsx
-msgid "This app could not be set up"
-msgstr ""
+#~ msgid "This app could not be set up"
+#~ msgstr ""
 
 #: src/navigation/record-type-nav.ts
 msgid "This app is no longer available."
@@ -26454,6 +26548,11 @@ msgstr "عرض التتبع"
 msgid "Traceback ({0} lines)"
 msgstr "تتبع المكدس ({0} سطر)"
 
+#. placeholder {0}: data.upstreamCandidate
+#: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
+msgid "Track {0}"
+msgstr ""
+
 #: src/components/lens-viewer/ClaudeTasksViewer.tsx
 #: src/navigation/record-type-nav.ts
 #: src/navigation/record-type-nav.ts
@@ -26514,6 +26613,8 @@ msgstr "المشغّلات"
 #: src/components/conversation/asset-review/ProjectInstallAction.tsx
 #: src/components/cost-dashboard/CostDashboard.tsx
 #: src/components/organization/budgets/BudgetSection.tsx
+#: src/components/project-setup/ProjectLoadDialog.tsx
+#: src/components/project-setup/ProjectLoadGate.tsx
 #: src/components/task-receive/LaunchDialog.tsx
 #: src/components/terminal/TerminalPanel.tsx
 #: src/components/web-url-display/WebUrlDisplay.tsx
@@ -27344,6 +27445,10 @@ msgstr "منطقة Vertex"
 
 #: src/components/llm-endpoints/UsageByChildTable.tsx
 msgid "Via"
+msgstr ""
+
+#: src/components/agent-resources/AgentDataSourcesSection.tsx
+msgid "Via {path}"
 msgstr ""
 
 #: src/components/browseable-tree/adapters/assetContextFoldersRoot.tsx
@@ -28544,86 +28649,3 @@ msgstr "تكبير"
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "Zoom out"
 msgstr "تصغير"
-
-#: src/components/project-setup/ProjectLoadDialog.tsx
-msgid "{projectName} requires setup"
-msgstr "{projectName} requires setup"
-
-#: src/components/webapp-display/WebappDisplay.tsx
-msgid "Checking the app…"
-msgstr "Checking the app…"
-
-#: src/components/webapp-display/WebappSetupGate.tsx
-msgid "Opening app…"
-msgstr "Opening app…"
-
-#: src/project-home-page/AgentHomeAfterLoad.tsx
-msgid "Opening your agent…"
-msgstr "Opening your agent…"
-
-#: src/components/project-setup/ProjectLoadDialog.tsx
-msgid "Preparing this project for use."
-msgstr "Preparing this project for use."
-
-#: src/components/project-home/ProjectDependenciesCard.tsx
-#: src/components/project-setup/ProjectLoadDialog.tsx
-#: src/components/project-setup/ProjectLoadGate.tsx
-msgid "Preparing…"
-msgstr "Preparing…"
-
-#: src/components/agent-resources/AgentDataSourcesSection.tsx
-msgid "Add a project data source to include its dependencies"
-msgstr ""
-
-#: src/components/agent-resources/AgentDataSourcesSection.tsx
-msgid "Add to agent"
-msgstr ""
-
-#: src/components/agent-resources/AgentDataSourcesSection.tsx
-msgid "Added directly"
-msgstr ""
-
-#: src/components/agent-resources/AgentDataSourcesSection.tsx
-msgid "Changes apply to new sessions."
-msgstr ""
-
-#: src/components/agent-resources/AgentDataSourcesSection.tsx
-msgid "Choose a data source from this project by name."
-msgstr ""
-
-#: src/components/agent-resources/AgentDataSourcesSection.tsx
-msgid "Connect new source"
-msgstr ""
-
-#: src/components/agent-resources/AgentDataSourcesSection.tsx
-msgid "Files not available"
-msgstr ""
-
-#: src/components/agent-resources/AgentDataSourcesSection.tsx
-msgid "Included through this source's dependencies. Changes apply to new sessions."
-msgstr ""
-
-#: src/components/agent-resources/AgentDataSourcesSection.tsx
-msgid "Loading data sources…"
-msgstr ""
-
-#: src/components/agent-resources/AgentDataSourcesSection.tsx
-msgid "No data sources in this project yet"
-msgstr ""
-
-#: src/components/agent-resources/AgentDataSourcesSection.tsx
-msgid "Reading dependencies…"
-msgstr ""
-
-#: src/components/agent-resources/AgentDataSourcesSection.tsx
-msgid "Remove {name} from agent"
-msgstr ""
-
-#: src/components/agent-resources/AgentDataSourcesSection.tsx
-#: src/components/agent-resources/AgentDataSourcesSection.tsx
-msgid "Search data sources"
-msgstr ""
-
-#: src/components/agent-resources/AgentDataSourcesSection.tsx
-msgid "Via {path}"
-msgstr ""
