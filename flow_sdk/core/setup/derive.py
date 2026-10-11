@@ -237,6 +237,7 @@ class ProjectTree:
         """Every ``asset_setup`` the project's folder or its sources' drivers hold, attached where it is for."""
         from flow_sdk.builtin.asset_setup import AssetSetup  # noqa: PLC0415
         from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp  # noqa: PLC0415
+        from flow_sdk.fs_store.path_utils import asset_refs_under  # noqa: PLC0415
 
         roots = [str(getattr(self.project, "fs_storage_mount_path", "") or "")]
         for source in sources:
@@ -244,12 +245,13 @@ class ProjectTree:
             folder = str(getattr(driver, "folder", "") or getattr(driver, "asset_ref", "") or "")
             if folder:
                 roots.append(folder)
-        roots = [r.rstrip("/") for r in roots if r]
+        roots = [r for r in roots if r]
         if not roots:
             return
         # Only what lives under the project's folder or its sources' driver folders — asked of the index,
         # never every setup on the machine filtered here.
-        likes = [ExpressionNode(op=QueryOp.LIKE, operands=["asset_ref", f"{root}/%"]) for root in roots]
+        likes = [ExpressionNode(op=QueryOp.LIKE, operands=["asset_ref", pattern])
+                 for root in roots for pattern in asset_refs_under(root)]
         match = likes[0] if len(likes) == 1 else ExpressionNode(op=QueryOp.OR, operands=likes)
         rows = [row for row in await AssetSetup.get_all(QueryFilter(match=match)) if row.asset_ref]
         by_name = {str(row.name): row for row in rows}
