@@ -7745,15 +7745,37 @@ class AgenticProcess(Entity):
         own file by construction; no streamer (a restored process before its
         first delta) falls back to the parse.
         """
+        if self.transcript_path is None:
+            return None
+        streamer = self._transcript_streamer()
+        if streamer is not None:
+            return streamer.transcript
+        return self._load_transcript()
+
+    def _transcript_streamer(self):
+        """The streamer registered for this session's transcript file, if any."""
         path = self.transcript_path
         if path is None:
             return None
         from flow_sdk.transcript_streamer.registry import transcript_streamer_registry  # noqa: PLC0415
 
-        streamer = transcript_streamer_registry.get_streamer_by_path(path)
+        return transcript_streamer_registry.get_streamer_by_path(path)
+
+    async def _read_transcript(self, fn):
+        """``fn(transcript)`` over this session's transcript; None when there is none.
+
+        With a streamer the walk runs on its live copy through
+        :meth:`TranscriptStreamer.read`, which excludes a concurrent
+        ``parse_delta`` — that parse rewrites usage rows the copy already
+        holds, so an unguarded walk can read totals mid-rewrite. Without one
+        (a restored process before its first delta) the file is parsed off the
+        event loop and walked here.
+        """
+        streamer = self._transcript_streamer()
         if streamer is not None:
-            return streamer.transcript
-        return self._load_transcript()
+            return await streamer.read(fn)
+        transcript = await asyncio.to_thread(self._load_transcript)
+        return fn(transcript) if transcript is not None else None
 
     async def _caught_up_transcript(self) -> "AgentTranscriptFile | None":
         """``_current_transcript``, first catching the streamer up to the file on disk.
@@ -7766,17 +7788,16 @@ class AgenticProcess(Entity):
         dispatched to subscribers as usual) instead of answering from the stale copy.
         """
         path = self.transcript_path
-        if path is not None:
-            from flow_sdk.transcript_streamer.registry import transcript_streamer_registry  # noqa: PLC0415
+        streamer = self._transcript_streamer()
+        if streamer is not None:
+            try:
+                behind = streamer.transcript._byte_offset < Path(path).stat().st_size
+            except (OSError, AttributeError):
+                behind = False
+            if behind:
+                from flow_sdk.transcript_streamer.registry import transcript_streamer_registry  # noqa: PLC0415
 
-            streamer = transcript_streamer_registry.get_streamer_by_path(path)
-            if streamer is not None:
-                try:
-                    behind = streamer.transcript._byte_offset < Path(path).stat().st_size
-                except (OSError, AttributeError):
-                    behind = False
-                if behind:
-                    await transcript_streamer_registry.notify_change(Path(path))
+                await transcript_streamer_registry.notify_change(Path(path))
         return self._current_transcript()
 
     def _collect_touched_from_transcript_tail(self) -> list[str]:
@@ -8159,16 +8180,11 @@ class AgenticProcess(Entity):
         changed. Watcher-scoped via ``emit_flow_data`` (only clients watching
         this process), not the global scan-pill ``broadcast_progress``.
 
-        The whole-file parse is offloaded off the event loop (same pattern the
-        streamer uses for ``parse_delta``) so N active workers folding once per
-        debounce second don't serialize their parses on the loop. A fresh
-        transcript object is parsed here (not the streamer's live one) to avoid
-        racing its concurrent ``parse_delta`` mutation.
+        The report is a walk over the transcript the streamer already holds
+        (:meth:`_read_transcript`), never a parse of its own: the walk is
+        milliseconds where a whole-file parse is linear in the session's size.
         """
         try:
-            transcript = await asyncio.to_thread(self._load_transcript)
-            if transcript is None:
-                return
             from flow_sdk.external_apis.llm.llm_drivers.flow_data import (
                 FlowDataType as _FDT,
             )
@@ -8180,13 +8196,17 @@ class AgenticProcess(Entity):
                 ProcessStatusReport,
             )
 
-            report = ProcessStatusReport.from_transcript(
-                transcript,
-                worker_status=(current.value if current is not None else ""),
-                process_status=self.status,
-                busy=current_busy,
-                focused_asset=self._derive_focused_asset(transcript),
+            report = await self._read_transcript(
+                lambda transcript: ProcessStatusReport.from_transcript(
+                    transcript,
+                    worker_status=(current.value if current is not None else ""),
+                    process_status=self.status,
+                    busy=current_busy,
+                    focused_asset=self._derive_focused_asset(transcript),
+                )
             )
+            if report is None:
+                return
             report_dict = report.model_dump()
 
             # A running process IS an activity: mirror this flush onto its Activity so one
