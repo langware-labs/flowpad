@@ -145,6 +145,7 @@ class ViewType(StrEnum):
     SIGNALS = "signals"  # Retired → automations/bus
     DATA_SOURCES = "data-sources"  # Configured ingestion sources
     RAG = "rag"  # Search indexes and the folders they cover
+    SCHEMA_TREE = "schema-tree"  # A project's data schemas, top to bottom — [<kind>…], scoped to a project
     ASSET_LIST = "asset-list"  # One home counter's assets as a table — ?group=<g>&counter=<c>
     PROCESS_RUNS = "process-runs"  # AgenticProcess execution history
     PLAN = "plan"  # Plan viewer with Milkdown editor
@@ -605,6 +606,14 @@ VIEW_META: Mapping[ViewType, ViewMeta] = {
         _NONE,
         label="Search indexes",
         aliases=("embeddings", "knowledge index", "vector index", "brain", "knowledge base"),
+    ),
+    # A project's screen (the project is the scope); the pointer is the selection: the kinds
+    # unfolded down to the selected one.
+    ViewType.SCHEMA_TREE: _m(
+        _OPT,
+        scope_keyed=True,
+        label="Schema",
+        aliases=("schema tree", "data schema", "schemas", "data model"),
     ),
     # The counter it came from is a query pair (?group=&counter=), not a pointer.
     # Labelled apart from `assets` (the tree): this is one counter's table.

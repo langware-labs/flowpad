@@ -121,6 +121,9 @@ const AssetListView = lazy(() =>
 const DataSourcesView = lazy(() =>
   import('@src/components/data-sources/DataSourcesView').then((m) => ({ default: m.DataSourcesView })),
 );
+const SchemaTreeView = lazy(() =>
+  import('@src/components/schema-tree/SchemaTreeView').then((m) => ({ default: m.SchemaTreeView })),
+);
 const RagView = lazy(() => import('@src/components/rag/RagView').then((m) => ({ default: m.RagView })));
 const RunsView = lazy(() => import('@src/components/runs/RunsView').then((m) => ({ default: m.RunsView })));
 const SurveyView = lazy(() => import('@src/components/survey/SurveyView').then((m) => ({ default: m.SurveyView })));
@@ -506,6 +509,12 @@ function ContentPanelBody({
         return (
           <Suspense fallback={<PrimaryContentFallback />}>
             <DataSourcesView />
+          </Suspense>
+        );
+      case ViewType.SCHEMA_TREE:
+        return (
+          <Suspense fallback={<PrimaryContentFallback />}>
+            <SchemaTreeView />
           </Suspense>
         );
       case ViewType.RAG:
