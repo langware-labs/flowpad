@@ -867,7 +867,11 @@ class Dataset(Entity):
         list of dicts (a script: ``local_client.graph_get("source_item", {...})``). ``map`` says how an
         item becomes a row, in the path grammar -- ``{"key": "external_id", "input": {"name": "name",
         "stage": "data.stage", "crm_id": "external_id"}}``: each value is a PATH into the item
-        (``{"value": x}`` is a constant; a nested object maps field by field). The mirror owns the
+        (``{"value": x}`` is a constant; a nested object maps field by field; a path through ``*``
+        gives a list). ``{"link": <kind>, "by": <field>, "path": <path>}`` makes the outside system's
+        id at ``path`` a LINK: the row of ``kind`` whose ``by`` -- a ``unique`` field of that kind --
+        holds it (one reference, or a list through ``*``); an id no row holds is left out and named
+        in the answer's ``unlinked`` (``[{key, field, value}]``). The mirror owns the
         fields the map names and no others: a field the app keeps on a mirrored row stays as it is.
         An item whose ``key`` path is empty is skipped; a key is made a row key (lowercased, other
         characters ``-``).
@@ -876,7 +880,8 @@ class Dataset(Entity):
         may remove, as in ``sync``."""
         import re  # noqa: PLC0415
 
-        from flow_sdk.datasets.query import field_of  # noqa: PLC0415
+        from flow_sdk.datasets.query import Many, field_of  # noqa: PLC0415
+        from flow_sdk.datasets.rules import unique_rules  # noqa: PLC0415
 
         if not isinstance(map, dict) or not isinstance(map.get("key"), str) or not isinstance(map.get("input"), dict):
             raise ValueError('map: {"key": <path>, "input": {<field>: <path>}} is required')
@@ -888,17 +893,48 @@ class Dataset(Entity):
             found = await SourceItem.get_all({"data_source_id": str(items.id)}) or []
             items = [item.model_dump(mode="json") for item in found]
 
-        def shaped(spec: Any, item: dict) -> Any:
+        targets: dict[tuple[str, str], dict[str, str]] = {}
+        unlinked: list[dict] = []
+
+        def linked_by(kind: str, by: str) -> dict[str, str]:
+            """``{<by> value: reference}`` over every row of ``kind`` -- read once per mirror."""
+            if (kind, by) not in targets:
+                found = Dataset.for_kind(kind, self._owner())
+                if not found:
+                    raise ValueError(f"map: no dataset holds {kind} rows to link to")
+                index: dict[str, str] = {}
+                for dataset in found:
+                    if [by] not in [list(rule.unique) for rule in unique_rules(dataset.row_type.input_type())]:
+                        raise ValueError(f"map: {by} is not a unique field of {kind}, so it cannot name one row")
+                    for row in dataset.read_lenient()[0]:
+                        held = getattr(row.input, by, None)
+                        if held not in (None, ""):
+                            index[str(held)] = dataset.ref_of(row.id)
+                targets[(kind, by)] = index
+            return targets[(kind, by)]
+
+        def shaped(spec: Any, item: dict, key: str, where: str) -> Any:
             if isinstance(spec, str):
-                return field_of(item, spec)
+                found = field_of(item, spec)
+                return list(found) if isinstance(found, Many) else found
             if isinstance(spec, dict) and set(spec) == {"value"}:
                 return spec["value"]
+            if isinstance(spec, dict) and set(spec) == {"link", "by", "path"}:
+                index, found = linked_by(str(spec["link"]), str(spec["by"])), field_of(item, spec["path"])
+                ids = [found] if not isinstance(found, Many) else list(found)
+                refs = []
+                for outside in (str(v) for v in ids if v not in (None, "")):
+                    if outside in index:
+                        refs.append(index[outside])
+                    else:
+                        unlinked.append({"key": key, "field": where, "value": outside})
+                return refs if isinstance(found, Many) else (refs[0] if refs else None)
             if isinstance(spec, dict):
-                made = {name: shaped(inner, item) for name, inner in spec.items()}
+                made = {name: shaped(inner, item, key, f"{where}.{name}" if where else name) for name, inner in spec.items()}
                 return {name: value for name, value in made.items() if value is not None}
             if isinstance(spec, list):
-                return [value for value in (shaped(inner, item) for inner in spec) if value is not None]
-            raise ValueError(f"map: a path, {{\"value\": x}}, an object or a list is required, not {spec!r}")
+                return [value for value in (shaped(inner, item, key, where) for inner in spec) if value is not None]
+            raise ValueError(f"map: a path, {{\"value\": x}}, {{\"link\", \"by\", \"path\"}}, an object or a list is required, not {spec!r}")
 
         # The mirror owns the fields its map names and no others: what the app keeps on a mirrored
         # row (its notes, its tags) stays, whatever the source did to the rest.
@@ -915,8 +951,9 @@ class Dataset(Entity):
                 raise ValueError(f"mirror: two items map to the row key {key!r} (from {named!r})" if key else f"mirror: {named!r} gives no row key")
             taken.add(key)
             own = {name: value for name, value in held.get(key, {}).items() if name not in map["input"]}
-            rows.append({"key": key, "input": {**own, **shaped(map["input"], item)}})
-        return await self.sync(rows, prune=prune, match=match, by=by or provider)
+            rows.append({"key": key, "input": {**own, **shaped(map["input"], item, key, "")}})
+        done = await self.sync(rows, prune=prune, match=match, by=by or provider)
+        return {**done, "unlinked": unlinked} if unlinked else done
 
     def _check_delete(self, keys: list[str], expected: dict[str, str]) -> list[Path]:
         """The row folders ``keys`` (keys or ids) name, once every one of them may go -- else the
