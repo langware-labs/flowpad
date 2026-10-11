@@ -12,6 +12,7 @@ import { ActionInfo } from '../models/ActionInfo';
 import { APIEntity, dataManager, registerEntity } from '../APIEntity';
 import { IEntity, EntityMerge } from '../IEntity';
 import type { SetupStageState } from './data-driver';
+import type { ProjectSetupRun } from './project';
 
 /** Mirror of flow_sdk/ingest/health.py SourceHealth. */
 export type SourceHealth = 'never_synced' | 'ok' | 'transient_error' | 'config_error';
@@ -329,6 +330,18 @@ export class DataSource extends APIEntity<DataSource> implements IDataSource {
   /** The setup wizards this source's driver declares, each as it stands for THIS source. */
   async setupStages(): Promise<SetupStageState[]> {
     return this.get('setup_stages');
+  }
+
+  /** Set this source up (`POST data_source/<id>/setup`): its node of its project's setup tree — what its
+   *  driver needs, then its stages or Verify. Its questions come to this app. Answers at once with the
+   *  run's address, which a screen claims (`claimAskRun`). Throws when no project holds the source. */
+  async startSetup(): Promise<string> {
+    return (await this.post<{ run: string }>('setup'))?.run ?? '';
+  }
+
+  /** This source's setup run (`GET data_source/<id>/setup-run`): going or not, and its tree so far. */
+  async setupRun(): Promise<ProjectSetupRun | null> {
+    return (await this.get<ProjectSetupRun>('setup-run')) ?? null;
   }
 
   /** Which place the hub hands this channel's messages to — read from the hub, never cached. */

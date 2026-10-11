@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { Project, type SetupTreeResult } from '@sdk';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { type DataSource, Project, type ProjectSetupRun, type SetupTreeResult } from '@sdk';
 import { claimAskRun, openQuestionOf } from '@src/components/ask/ask-claims';
 
 /** How often the run's tree is re-read while it is going. A display refresh, not a wait. */
@@ -31,6 +31,37 @@ export function useSetupRun(
   projectId: string,
   root = '',
   onSettled?: () => void | Promise<void>,
+  options: { autoStart?: boolean } = {},
+): SetupRun {
+  const calls = useMemo<SetupCalls | null>(
+    () =>
+      projectId
+        ? { start: () => Project.startSetup(projectId, root), read: () => Project.setupRun(projectId, root) }
+        : null,
+    [projectId, root],
+  );
+  return useRun(calls, onSettled, options);
+}
+
+/** One SOURCE's setup run: its own node of its project's tree (`POST data_source/<id>/setup`) — what its
+ *  driver needs, then its stages or Verify. The source finds its project; the screen never names it. */
+export function useSourceSetupRun(source: DataSource): SetupRun {
+  const calls = useMemo<SetupCalls>(
+    () => ({ start: () => source.startSetup(), read: () => source.setupRun() }),
+    [source],
+  );
+  return useRun(calls);
+}
+
+/** The two calls a run is followed through: start (or join) it, and read where it got to. */
+interface SetupCalls {
+  start: () => Promise<string>;
+  read: () => Promise<ProjectSetupRun | null>;
+}
+
+function useRun(
+  calls: SetupCalls | null,
+  onSettled?: () => void | Promise<void>,
   { autoStart = false }: { autoStart?: boolean } = {},
 ): SetupRun {
   const [tree, setTree] = useState<SetupTreeResult | null>(null);
@@ -51,9 +82,10 @@ export function useSetupRun(
 
   // What an earlier run left — a setup reopened mid-run, or after it stopped, shows where it got to.
   useEffect(() => {
-    if (!projectId) return;
+    if (!calls) return;
     let live = true;
-    void Project.setupRun(projectId, root)
+    void calls
+      .read()
       .then((state) => {
         if (!live || !state) return;
         setTree(state.tree);
@@ -66,16 +98,16 @@ export function useSetupRun(
     return () => {
       live = false;
     };
-  }, [projectId, root, claim]);
+  }, [calls, claim]);
 
   // While it runs: re-read the tree — the next read only after the last one answered, so a slow backend
   // never stacks requests (or settles twice).
   useEffect(() => {
-    if (!running) return;
+    if (!running || !calls) return;
     let live = true;
     let timer: ReturnType<typeof setTimeout>;
     const poll = async () => {
-      const next = await Project.setupRun(projectId, root).catch(() => null);
+      const next = await calls.read().catch(() => null);
       if (!live) return;
       if (next) setTree(next.tree);
       if (next && !next.running) {
@@ -92,34 +124,34 @@ export function useSetupRun(
       live = false;
       clearTimeout(timer);
     };
-  }, [running, projectId, root]);
+  }, [running, calls]);
 
   useEffect(() => () => release.current(), []);
 
   const start = useCallback(async () => {
-    if (!projectId) return;
+    if (!calls) return;
     setStarting(true);
     try {
-      const address = await Project.startSetup(projectId, root);
+      const address = await calls.start();
       // Claimed at once, so the first question is drawn here rather than sending the tab away.
       claim(address);
       setRunning(true);
     } finally {
       setStarting(false);
     }
-  }, [projectId, root, claim]);
+  }, [calls, claim]);
 
   useEffect(() => {
-    if (!autoStart || autoStarted.current || running || !projectId) return;
+    if (!autoStart || autoStarted.current || running || !calls) return;
     autoStarted.current = true;
     void start().catch(() => {});
-  }, [autoStart, running, projectId, start]);
+  }, [autoStart, running, calls, start]);
 
   return {
     tree,
     running,
     // Asked to start but not yet asked: still the setup's screen, never the error it is about to fix.
-    starting: starting || (autoStart && !autoStarted.current && !!projectId),
+    starting: starting || (autoStart && !autoStarted.current && !!calls),
     questionId,
     settleQuestion: () => setQuestionId(null),
     start,
