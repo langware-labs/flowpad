@@ -206,7 +206,7 @@ def test_the_record_is_json_and_carries_what_the_desktop_app_reads(tmp_path):
         monitor_pid=42,
         engine_version="0.2.203",
     )
-    text = json.dumps(record)  # must serialise
+    text = json.dumps(record.as_json())  # must serialise
     back = json.loads(text)
     for key in (
         "schema",
@@ -250,7 +250,8 @@ def test_the_committed_electron_fixture_is_what_this_classifier_produces():
         monitor_pid=fixture["monitor_pid"],
         engine_version=fixture["engine_version"],
     )
-    assert produced == fixture
+    assert produced.as_json() == fixture
+    assert fc.ServerFailureRecord.from_json(fixture) == produced, "the fixture loads back as the same value"
 
 
 def test_a_policy_block_on_a_wheel_module_is_fatal_but_not_repairable():

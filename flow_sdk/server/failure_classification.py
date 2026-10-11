@@ -29,7 +29,11 @@ import sys
 from dataclasses import dataclass, field
 from typing import Iterable, Mapping
 
-SCHEMA_VERSION = 1
+from flow_sdk.schema.data_spec.server_failure_spec import (  # noqa: E402
+    SCHEMA_VERSION,
+    RuntimeFingerprint,
+    ServerFailureRecord,
+)
 
 # ---------------------------------------------------------------------------
 # Kinds
@@ -211,32 +215,32 @@ class FailureVerdict:
         server_log: str | None,
         monitor_pid: int | None,
         engine_version: str | None,
-    ) -> dict:
-        """The on-disk shape the desktop app reads (``server-failure.json``).
-
-        Every key here is read by ``electron/fatal-failure.js``; the two sides
-        are tested against the same sample (test 15: the monitor and Electron
-        agree on the fatal reason)."""
-        return {
-            "schema": SCHEMA_VERSION,
-            "kind": self.kind,
-            "fatal": self.fatal,
-            "repairable": self.repairable,
-            "reason": self.reason,
-            "module": self.module,
-            "excerpt": self.excerpt,
-            "traceback": self.traceback,
-            "source": self.source,
-            "exit_code": self.exit_code,
-            "evidence": dict(self.evidence),
-            "attempts": attempts,
-            "restarts_stopped": self.fatal,
-            "fingerprint": dict(fingerprint),
-            "engine_version": engine_version,
-            "server_log": server_log,
-            "at": at,
-            "monitor_pid": monitor_pid,
-        }
+    ) -> ServerFailureRecord:
+        """The record the desktop app reads (``server-failure.json``): a value of the
+        ``server.failure_record`` schema, so a key the two sides disagree on fails
+        at validation, not in the panel. Every field is read by
+        ``electron/fatal-failure.js``; the two sides are tested against the same
+        sample (test 15: the monitor and Electron agree on the fatal reason)."""
+        return ServerFailureRecord(
+            schema_version=SCHEMA_VERSION,
+            kind=self.kind,
+            fatal=self.fatal,
+            repairable=self.repairable,
+            reason=self.reason,
+            module=self.module,
+            excerpt=self.excerpt,
+            traceback=self.traceback,
+            source=self.source,
+            exit_code=self.exit_code,
+            evidence=dict(self.evidence),
+            attempts=attempts,
+            restarts_stopped=self.fatal,
+            fingerprint=RuntimeFingerprint(**dict(fingerprint)),
+            engine_version=engine_version,
+            server_log=server_log,
+            at=at,
+            monitor_pid=monitor_pid,
+        )
 
 
 def transient(reason: str = "no recognised fatal cause", *, exit_code: int | None = None) -> FailureVerdict:
@@ -478,6 +482,8 @@ def _engine_version() -> str:
 
 __all__ = [
     "SCHEMA_VERSION",
+    "RuntimeFingerprint",
+    "ServerFailureRecord",
     "POLICY_BLOCKED",
     "INTERPRETER_BLOCKED",
     "NATIVE_MISSING",

@@ -349,15 +349,24 @@ def failure_record_path() -> Path:
     return get_instance_settings().instance_dir / "server-failure.json"
 
 
-def load_failure_record() -> dict | None:
+def load_failure_record() -> fc.ServerFailureRecord | None:
+    """The record on disk as a ``server.failure_record`` value, or None when there is
+    none -- or when what is there is not one (a foreign or half-written file is
+    logged and ignored, never acted on)."""
     import json
+
+    from pydantic import ValidationError
 
     p = failure_record_path()
     try:
         data = json.loads(p.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return None
-    return data if isinstance(data, dict) and data.get("kind") else None
+    try:
+        return fc.ServerFailureRecord.from_json(data)
+    except ValidationError as exc:
+        log.warning("Ignoring %s: not a server failure record (%s)", p, str(exc).splitlines()[0])
+        return None
 
 
 def clear_failure_record(reason: str) -> bool:
@@ -389,7 +398,7 @@ def record_fatal_failure(verdict: fc.FailureVerdict, *, server_log: str | None, 
     p = failure_record_path()
     p.parent.mkdir(parents=True, exist_ok=True)
     tmp = p.with_suffix(".tmp")
-    tmp.write_text(json.dumps(record, indent=2), encoding="utf-8")
+    tmp.write_text(json.dumps(record.as_json(), indent=2), encoding="utf-8")
     os.replace(str(tmp), str(p))
     log.error(
         "FATAL backend failure (%s): %s -- restarts stopped, recorded in %s",
@@ -411,17 +420,17 @@ def refuse_start_reason(*, force: bool | None = None) -> str | None:
     if force is None:
         force = os.environ.get(ENV_FORCE_START, "").lower() == "true"
     record = load_failure_record()
-    if not record or not record.get("fatal"):
+    if not record or not record.fatal:
         return None
-    if not fc.same_fingerprint(record.get("fingerprint"), fc.runtime_fingerprint()):
+    if not fc.same_fingerprint(record.fingerprint.model_dump(), fc.runtime_fingerprint()):
         clear_failure_record("runtime fingerprint changed since the failure")
         return None
     if force:
         clear_failure_record(f"{ENV_FORCE_START}=true")
         return None
     return (
-        f"the backend was stopped after a fatal failure ({record.get('kind')}) at {record.get('at')} and the runtime "
-        f"is unchanged: {record.get('reason')} -- fix the cause, then retry from the desktop app "
+        f"the backend was stopped after a fatal failure ({record.kind}) at {record.at} and the runtime "
+        f"is unchanged: {record.reason} -- fix the cause, then retry from the desktop app "
         f"(or run with {ENV_FORCE_START}=true)"
     )
 
