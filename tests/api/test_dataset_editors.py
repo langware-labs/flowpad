@@ -132,7 +132,7 @@ async def test_a_projects_schemas_read_as_one_tree(bootstrapped_client, user, tm
     monkeypatch.setattr(kinds, "_project_root", root)
     resp = await bootstrapped_client.get("/api/v1/kinds", params={"project": project})
     assert resp.json()["status"] == "SUCCESS", resp.text
-    nodes = {n["name"]: n for n in resp.json()["data"]["kinds"]}
+    nodes = {n["name"]: n for n in resp.json()["data"]["schemas"]}
     assert sorted(nodes) == ["crm.company", "crm.lead", "crm.note"]
     assert [(u["kind"], u["held"]) for u in nodes["crm.lead"]["uses"]] == [
         (f"--{ns}--.crm.company", "link"), (f"--{ns}--.crm.note", "inside")]
