@@ -1,14 +1,14 @@
 ---
 type: markdown_index
 id: markdown_index-bd7ef5f5-cf38-55ee-b3c9-b1549c57f267
-inputs_hash: 0aa55e335e6e6101e0aa68bee704eede7a7f8cbf621f2c62be518f4b80835014
+inputs_hash: 6f732baee9de13f459fd5bc0253542a5efc7ff25d61085eb8eeae8fe6bdd5d7c
 template_version: 1
 prompt_version: 1
 parent_ref: markdown_index-6136dbba-27ed-59c3-a192-fe2894f3ec30
 vault_root: /Users/shlom/Documents/dev/flowpad-oss/docs
-generated_at: '2026-09-22T10:22:30.916793+00:00'
+generated_at: '2026-10-07T14:33:53Z'
 latest_process_ref: ''
-file_count: 20
+file_count: 21
 subfolder_count: 0
 ---
 
@@ -25,6 +25,7 @@ subfolder_count: 0
 - [A process declares its persona; the renderer never infers one](declared_persona.md) — Why a session's persona must be declared by the caller via set_ap_persona rather than inferred from how many sub-agents are embedded.
 - [Dev port picking for agent-started servers](dev_port_picking.md) — Agent-started dev servers must ask for a port via flow app free-dev-port rather than typing one; the probe, the band, and why no lease exists.
 - [What evidence may write a harness login state](harness_login_state.md) — What evidence may write a harness login state: why an undetermined probe must not read as signed out, and presence-only must not overturn a refusal.
+- [Hub sign-in survives a hub socket reconnect](hub_signin_reconnect.md) — Ground-truth rules for keeping a box signed in to the hub across websocket reconnects, with the test and internals that pin them
 - [Live frames must name their transcript entry](live_frame_identity.md) — Why live frames must carry transcript-entry-id: to_xml drops process_entry, so an observing client's resume position freezes and observe-turn replays every turn.
 - [Live plan detection — the plan path lives on the attachment](live_plan_detection.md) — Where a live plan's file path actually lives: on the earlier plan_mode attachment, not on ExitPlanMode, resolved through plan_path_from_attachments.
 - [Migration open-slot must be advanced by the release](migration_slot.md) — Migration recipe directories must always leave one unreleased open slot; a release bump that consumes it strands new migrations unreachably.
@@ -34,7 +35,7 @@ subfolder_count: 0
 - [Sandbox preview urls: browser vs server](sandbox_browser_url.md) — A dev-server port has two correct URLs in a cloud box: loopback for the server, the public per-port host for the browser.
 - [Served app HTML must be read as UTF-8](served_html_encoding.md) — Served app HTML must be read as UTF-8: without an encoding it decodes as cp1252 on Windows, giving mojibake and 500s.
 - [Surface change must reconcile the transcript](surface_transcript_reconcile.md) — A surface change owes both transport and transcript: leaving the terminal must unlatch pty_mode, and history must be force-reloaded, gate mirroring the server per route.
-- [Terminal RTL/bidi rendering contract](terminal_bidi.md) — The terminal RTL/bidi contract: one bidi paragraph per row, buffer order chosen per CLI not per platform, stamped on both mount and vendor resolution.
+- [Terminal RTL/bidi rendering contract](terminal_bidi.md) — Terminal RTL/bidi rendering contract: one bidi paragraph per row, buffer order chosen per CLI rather than platform, stamped on container mount and vendor resolution.
 - [Worker interpreter resolution](worker_interpreter.md) — Workers are handed an absolute interpreter path as FLOWPAD_PYTHON, because uv run and bare python resolve from CWD or PATH and cannot import flow_sdk.
 - [Worker terminal theme is pinned at launch](worker_terminal_theme.md) — Worker terminal theme is pinned at launch: the CLI theme must ride createProcess, not a later open, because truecolor output ignores the host xterm palette.
 - [XML entity decode belongs to the XML transport, not to FlowData](xml_entity_decode.md) — Entity decoding belongs to the XML transport alone: the client must decode exactly amp, lt, gt, or get-history replays get rewritten and dropped.

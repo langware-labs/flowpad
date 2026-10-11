@@ -156,6 +156,22 @@ describe('ProjectCloudLinkButton', () => {
     );
   });
 
+  it('a linked project can send its files to the cloud, and says when that fails', async () => {
+    mocks.project.remote = true;
+    const publishFiles = vi
+      .fn()
+      .mockResolvedValueOnce(undefined)
+      .mockRejectedValueOnce(new Error('not a git checkout'));
+    render(<ProjectCloudLinkButton project={{ ...project, publishFiles } as unknown as Project} />);
+
+    await userEvent.click(screen.getByTestId('project-publish-files'));
+    await waitFor(() => expect(mocks.success).toHaveBeenCalledTimes(1));
+    await userEvent.click(screen.getByTestId('project-publish-files'));
+
+    await waitFor(() => expect(mocks.error).toHaveBeenCalledTimes(1));
+    expect(mocks.error.mock.calls[0][0].message).toBe('not a git checkout');
+  });
+
   it('is hidden on the Hub Project page', () => {
     mocks.hubMode = true;
     render(<ProjectCloudLinkButton project={project} />);

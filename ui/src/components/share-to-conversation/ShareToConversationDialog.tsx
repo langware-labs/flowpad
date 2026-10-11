@@ -3,7 +3,8 @@ import { Check, Download, GitBranch, Loader2, MessageSquarePlus, Send } from 'lu
 import { Trans, useLingui } from '@lingui/react/macro';
 import {
   Conversation,
-  findUnshippableReferences,
+  checkShareAttachments,
+  type GitignoredReference,
   hasRemoteParticipant,
   hasSomethingToSend,
   normalizeEmail,
@@ -30,6 +31,7 @@ import { useLocalUser } from '@src/components/conversation/useLocalUser';
 import { SendProgressNotice } from '@src/components/conversation/SendProgressNotice';
 import type { ShareSource } from '@src/hooks/share-sources';
 import { type CarriedEntity, DownloadMessageDialog } from '@src/components/share-to-conversation/DownloadMessageForm';
+import { GitignoredNotice } from '@src/components/share-to-conversation/GitignoredNotice';
 import { useGitSharePreflight } from '@src/hooks/use-git-share-preflight';
 import { WikiTip } from '@src/components/wiki-tip/WikiTip';
 import { ContactPicker } from '@src/components/contact-picker/ContactPicker';
@@ -181,6 +183,11 @@ export function ShareToConversationDialog({
     gaps: UnshippableReference[];
     canSendWithout: boolean;
   } | null>(null);
+  // Attachments whose copy would carry files git excludes (often private). Shown before anything is
+  // created; "Send anyway" sends them.
+  const [gitignored, setGitignored] = useState<{ existingId: string | null; items: GitignoredReference[] } | null>(
+    null,
+  );
   // A non-null id is the single source of truth for "share succeeded".
   const shared = sharedConversationId !== null;
 
@@ -226,6 +233,7 @@ export function ShareToConversationDialog({
     setSharedConversationId(null);
     setLocalError(null);
     setUnshippable(null);
+    setGitignored(null);
     resetDraft();
   }, [open, resetDraft]);
 
@@ -303,10 +311,15 @@ export function ShareToConversationDialog({
     }
   };
 
-  const doShare = async (existingId: string | null, dropRefs?: ReadonlySet<string>) => {
+  const doShare = async (
+    existingId: string | null,
+    dropRefs?: ReadonlySet<string>,
+    opts: { includeGitignored?: boolean } = {},
+  ) => {
     if (busy) return;
     setLocalError(null);
     setUnshippable(null);
+    setGitignored(null);
     // Fail closed: Git is on but the asset isn't (yet) eligible. Never fall back
     // to a silent copy — the sender must turn Git off to share it as a copy.
     if (gitBlocked) {
@@ -369,6 +382,7 @@ export function ShareToConversationDialog({
       let mergedShareConfig = prepared.shareConfig ?? source.shareConfig;
       if (gitMode) mergedShareConfig = { ...(mergedShareConfig ?? {}), transferMode: 'git' as const };
       if (createBookmark) mergedShareConfig = { ...(mergedShareConfig ?? {}), createBookmark: true };
+      if (opts.includeGitignored) mergedShareConfig = { ...(mergedShareConfig ?? {}), includeGitignored: true };
       payload = {
         text: note.trim(),
         files: prepared.files,
@@ -389,14 +403,23 @@ export function ShareToConversationDialog({
         // recipient first, so a refusal after that would leave them holding an empty conversation.
         // Fail open — if the check itself cannot run, the send's own refusal is still the backstop.
         let gaps: UnshippableReference[] = [];
+        let excluded: GitignoredReference[] = [];
         try {
-          gaps = await findUnshippableReferences(payload.assetReferences ?? []);
+          const check = await checkShareAttachments(payload.assetReferences ?? [], {
+            transferMode: gitMode ? 'git' : 'copy',
+          });
+          gaps = check.unshippable;
+          excluded = check.gitignored;
         } catch (checkErr) {
-          console.warn('[share] could not check what would arrive empty', checkErr);
+          console.warn('[share] could not check the attachments', checkErr);
         }
         if (gaps.length > 0) {
           const without = withoutReferences(payload, new Set(gaps.map((g) => g.type_id)));
           setUnshippable({ existingId, gaps, canSendWithout: hasSomethingToSend(without) });
+          return;
+        }
+        if (excluded.length > 0 && !opts.includeGitignored) {
+          setGitignored({ existingId, items: excluded });
           return;
         }
       }
@@ -800,6 +823,15 @@ export function ShareToConversationDialog({
                   </Button>
                 </div>
               </div>
+            )}
+            {gitignored && (
+              <GitignoredNotice
+                items={gitignored.items}
+                busy={busy}
+                confirmLabel={<Trans>Send anyway</Trans>}
+                onConfirm={() => void doShare(gitignored.existingId, undefined, { includeGitignored: true })}
+                onCancel={() => setGitignored(null)}
+              />
             )}
             {shownError && <p className="text-xs text-destructive">{shownError}</p>}
 

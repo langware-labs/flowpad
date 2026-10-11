@@ -435,10 +435,16 @@ async def place_webapp_locally(app) -> Optional[Any]:
 
     if not app.asset_ref:
         return None
-    name, spec = next(
-        ((name, spec) for name, spec in _app_specs(app) if spec.serving.type == "static"),
-        (app.name, WebappEndpointSpec(name=app.name)),
-    )
+    declared = next(((name, spec) for name, spec in _app_specs(app) if spec.serving.type == "static"), None)
+    # The folder is served as the app only when that IS the app: it declares no endpoints, or it has a build
+    # of its own. An app that declares only a dev server keeps SOURCE in its folder — serving that raw would
+    # show a page that is not the app, and hide that the app is not running (the setup tree starts it).
+    if declared is None and app.endpoints and str(app.build or ".") in ("", "."):
+        for endpoint in await webapp_endpoints(app.id):
+            if endpoint.backend.type == "static":
+                await endpoint.delete()
+        return None
+    name, spec = declared or (app.name, WebappEndpointSpec(name=app.name))
     fields = dict(
         name=name,
         backend=_static_backend(app, spec),
@@ -458,6 +464,20 @@ async def place_webapp_locally(app) -> Optional[Any]:
     if saved:
         tell_hub(deployment)
     return row
+
+
+async def show_webapp_locally(app, project=None) -> tuple[Optional[Any], Optional[str]]:
+    """Showing a webapp asset here: its static endpoint placed, then the app LOADED (``core/setup/load``).
+
+    ``(endpoint, load_run)`` — the run bringing the app up, or ``None`` when it is up already or is files
+    Flowpad serves itself. One call for every display path (the home page, ``flow show``), so none can
+    place without loading. ``project``: the app's, when the caller holds it."""
+    from flow_sdk.builtin.asset_publishing import owning_project  # noqa: PLC0415
+    from flow_sdk.core.setup.load import load_asset  # noqa: PLC0415
+
+    endpoint = await place_webapp_locally(app)
+    project = project or await owning_project(app)
+    return endpoint, (await load_asset(project, app) if project is not None else None)
 
 
 async def unplace_webapp(webapp_id: str) -> None:
@@ -628,6 +648,7 @@ __all__ = [
     "prune_delivery_rows",
     "register_dev_endpoint",
     "served_dir",
+    "show_webapp_locally",
     "tell_hub",
     "upsert_artifact",
     "upsert_artifact_endpoints",

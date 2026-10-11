@@ -1,24 +1,34 @@
 import { useState } from 'react';
 import { useLingui } from '@lingui/react/macro';
-import { ArrowLeft, ArrowRight, FolderOpen, Home, RefreshCw, type LucideIcon } from 'lucide-react';
+import { ArrowLeft, ArrowRight, FolderOpen, Home, PanelsTopLeft, RefreshCw, Zap, type LucideIcon } from 'lucide-react';
+import { isHomeSurface } from '@src/navigation/dock-layout';
+import { tabDock } from '@src/tabs/project-entry';
+import { useLastKnownTab } from '@src/tabs/use-tab-manager';
+import { tagAttrs } from '@src/tags/tag-attrs';
 import { chromeEntityActionClassName } from '@src/components/entity-actions/action-button-styles';
 import { Button } from '@src/components/ui/button';
 import { cn } from '@src/lib/utils';
+import { NavBadge } from '@src/components/ui/nav-badge';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tooltip';
 import { useContext } from '@src/hooks/useContext';
 import { smartAskOrOpen } from '@src/navigation/smart-ask';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { DockPointer } from '@src/navigation/DockPointer';
+import { useStartedLastHour } from '@src/hooks/automations/useAutomations';
 import { ViewType } from '@src/types/ViewType';
 import { useHistoryNav } from '@src/navigation/use-history-nav';
 import { useDocumentTitle, windowTitleFor } from '@src/navigation/window-title';
-import { useOptionalFloatingChat } from '@src/components/floating-chat/FloatingChatContext';
+import { useOptionalFloatingChat } from '@src/components/floating-chat/floating-chat-context';
 import { AddressAskField } from './AddressAskField';
 import { AddressField } from './AddressField';
 import { AddressSearchField } from './AddressSearchField';
 import { NewChatButton } from './NewChatButton';
+import { ProjectSetupButton } from './ProjectSetupButton';
 import { RuntimeChip } from './RuntimeChip';
 import { TopBarActions } from './TopBarActions';
 import { useEntityBreadcrumbs } from './use-entity-breadcrumbs';
+import { NewWorkspaceDialogHost } from '@src/components/workspace/workspace-switcher';
+import { useActiveWorkspace } from '@src/hooks/use-workspaces';
 
 /**
  * The app's navigation bar — full window width, above the rail and the content
@@ -40,8 +50,19 @@ export function TopNavBar() {
   const [mode, setMode] = useState<'address' | 'search' | 'ask'>('address');
   const assistant = useOptionalFloatingChat();
   const { currentDock, navigation } = useDockNavigation();
-  const { runtimeKind, project } = useContext();
+  const { runtimeKind, project: contextProject } = useContext();
+  // A project of another workspace is not shown as current: a new workspace starts
+  // with none. Display-only — the context is the loader's to write.
+  const { contains } = useActiveWorkspace();
+  const project = contextProject && contains(contextProject.fs_storage_mount_path) ? contextProject : null;
   const { canGoBack, canGoForward, goBack, goForward, reload } = useHistoryNav();
+  // Automations started in the last hour, any kind — the ⚡'s counter.
+  const startedLastHour = useStartedLastHour();
+  // Home and Tabs are one button that flips: on the (tabless) home it goes BACK to
+  // the last active tab; on any tab it goes home. With no tab open, home is all
+  // there is, so it stays Home (disabled on the home itself).
+  const atHome = isHomeSurface(currentDock ?? null);
+  const lastTabDock = tabDock(useLastKnownTab(atHome));
 
   // Resolved ONCE per navigation and shared: the address and the actions both
   // need the dock's target, and resolving it twice would double the work on
@@ -77,12 +98,23 @@ export function TopNavBar() {
       {/* A full window reload, the same as the browser's own — no modifier
           gesture and no soft variant. Anything less does not reload. */}
       <NavIconButton icon={RefreshCw} label={t`Reload`} onClick={reload} testId="top-nav-reload" />
-      <NavIconButton
-        icon={Home}
-        label={t`Home`}
-        onClick={() => navigation.goHome({ homePage: true })}
-        testId="top-nav-home"
-      />
+      {lastTabDock ? (
+        <NavIconButton
+          icon={PanelsTopLeft}
+          label={t`Back to tabs`}
+          onClick={() => navigation.openDock(lastTabDock, undefined, { topLevel: true })}
+          testId="top-nav-tabs"
+          tag="TopNavTabs"
+        />
+      ) : (
+        <NavIconButton
+          icon={Home}
+          label={t`Home`}
+          onClick={() => navigation.goHome({ homePage: true })}
+          disabled={atHome}
+          testId="top-nav-home"
+        />
+      )}
       {/* Files sat on the rail; same destination, same one-liner, just beside
           the other place-buttons instead of below them. */}
       <NavIconButton
@@ -91,7 +123,18 @@ export function TopNavBar() {
         onClick={() => navigation.openTab(ViewType.EXPLORER)}
         testId="top-nav-files"
       />
+      {/* Automations — a place, like Files: the list of rules, every kind. The badge is how many
+          started in the last hour; none shows no badge. */}
+      <NavIconButton
+        icon={Zap}
+        label={startedLastHour ? t`Automations · ${startedLastHour} started in the last hour` : t`Automations`}
+        onClick={() => navigation.openDock(DockPointer.forAutomations())}
+        testId="top-nav-automations"
+        badge={startedLastHour}
+      />
       <RuntimeChip kind={runtimeKind} project={project} />
+      <ProjectSetupButton project={project} />
+      <NewWorkspaceDialogHost />
       {/* One slot, three modes — the address is where you are, search is
           where you'd rather be, and ask (a click on the pill's dead space) is
           what you want done, handed to the Flowpad Assistant. Same pill, same
@@ -142,24 +185,30 @@ function NavIconButton({
   disabled = false,
   mirrorInRtl = false,
   testId,
+  tag,
+  badge,
 }: {
   icon: LucideIcon;
   label: string;
   onClick: () => void;
   disabled?: boolean;
+  /** A small count on the glyph's corner; 0 shows nothing. */
+  badge?: number;
   /** Mirror the glyph in RTL. For an arrow that means a DIRECTION rather than a
    *  fixed shape: "back" points against the reading flow, so it faces left in
    *  English and right in Hebrew. A house or a folder is the same shape in every
    *  language and must NOT be flipped. */
   mirrorInRtl?: boolean;
   testId: string;
+  /** Observable/highlightable tag word (journeys target it). */
+  tag?: string;
 }) {
   return (
     <Tooltip>
       <TooltipTrigger asChild>
         {/* The span keeps the tooltip reachable while the button is disabled —
             a disabled button fires no pointer events of its own. */}
-        <span className="inline-flex shrink-0">
+        <span className="relative inline-flex shrink-0">
           <Button
             type="button"
             variant="ghost"
@@ -169,9 +218,12 @@ function NavIconButton({
             onClick={onClick}
             aria-label={label}
             data-testid={testId}
+            {...(tag ? tagAttrs(tag, 'button') : {})}
           >
             <Icon className={cn(mirrorInRtl && 'rtl:-scale-x-100')} />
           </Button>
+          {/* The bar's glyph is smaller than the rail's: the chip sits on the corner. */}
+          <NavBadge count={badge ?? 0} className="-end-0.5 -top-0.5 h-3.5 min-w-3.5 bg-brand text-brand-foreground" testId={`${testId}-badge`} />
         </span>
       </TooltipTrigger>
       <TooltipContent side="bottom" className="text-xs">

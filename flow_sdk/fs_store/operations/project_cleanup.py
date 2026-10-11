@@ -43,7 +43,7 @@ from typing import Any, Iterable, Optional
 
 import tomllib as _tomllib
 
-from flow_sdk.config import agent_workspace_root
+from flow_sdk.config import all_workspace_roots
 from flow_sdk.fs_store.gitignore import is_denylisted
 from flow_sdk.fs_store.path_utils import (
     canonical_posix_path,
@@ -505,19 +505,19 @@ def guard_deletable(cwd: str) -> Path:
     path = Path(cwd)
     if is_protected_path(path):
         raise CleanupRefused(f"{cwd} is a protected path")
-    workspace = agent_workspace_root()
     try:
         resolved = canonical_posix_path(path)
-        workspace_canonical = canonical_posix_path(workspace)
+        roots = [canonical_posix_path(root) for root in all_workspace_roots()]
     except (OSError, ValueError) as exc:
         raise CleanupRefused(f"Cannot resolve {cwd}") from exc
-    if resolved == workspace_canonical:
-        # `is_path_under` is true for the root itself, and `is_protected_path`
-        # covers only the REAL configured workspace — so name this case rather
-        # than let either stand alone between a caller and the whole tree.
+    if resolved in roots:
+        # `is_path_under` is true for the root itself. `is_protected_path` refuses
+        # it too, but name the case here rather than let one check stand alone
+        # between a caller and the whole tree.
         raise CleanupRefused(f"{cwd} is the workspace root")
-    if not is_path_under(resolved, workspace_canonical):
-        raise CleanupRefused(f"{cwd} is outside {workspace}")
+    # Any workspace's project is deletable; nothing outside every workspace is.
+    if not any(is_path_under(resolved, root) for root in roots):
+        raise CleanupRefused(f"{cwd} is outside every workspace ({', '.join(roots)})")
     return Path(resolved)
 
 

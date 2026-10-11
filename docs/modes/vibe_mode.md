@@ -21,23 +21,25 @@ target-specific Vibe chat while keeping the same content surface mounted.
 
 ## Architecture (non-negotiable)
 
-1. **The URL is the standard agentic-process dock URL + the view mode.** A Vibe
-   session rides the normal `/dock/shell/agentic_process-<id>` URL, with the mode
-   carried by the `?viewMode` search param and reflected as `data-view="vibe"` on
-   `<html>`. Vibe invents no route, no loader, no URL grammar — one process is ONE
-   `Tab` identity in every mode. (A per-mode URL family was tried and collapsed;
-   see [Vibe Display surface](../tabs/display.md) §3.)
+1. **A Vibe session is a HOST tab.** It lives at `/dock/vibe/agentic_process-<id>`,
+   an address that implies the Vibe mode (`data-view="vibe"` on `<html>`), and it
+   hosts its own nested tabs one level deep. Its `tabHash` folds onto the process's
+   shell identity, so one process is ONE `Tab` row in every mode, and it reuses the
+   shell loaders. Old `?viewMode=vibe` process URLs redirect to it once. See
+   [Tab Management → Host tabs](../tab-management.md#host-tabs-nested-tabs-one-level-deep)
+   and [Vibe Display surface](../tabs/display.md) §3.
 2. **Navigation stays URL-first.** Entering Vibe changes only the current dock's
-   `viewMode` option. A `flow show` target pins the Display pane — local process
-   state, no URL change. When it is opened as a child dock instead, that goes
-   through `navigation.openDock` and its loader is the only context writer.
-3. **No baggage.** The display resolves its data through the **existing**
-   structured channels — project-scoped artifacts + `focus.metadata.port` fed into
-   `useViewerStore.currentContext` (the exact channel `WebappViewer` already
-   reads). No prose port-sniffing, no viewer-specific override props.
+   `viewMode` option. A `flow show` target is an ADDRESS: the workspace navigates
+   to the target's own dock carrying `host` + `activeDisplay=1`
+   (`openActiveDisplay`), and that dock's loader is the only context writer. See
+   [Vibe Display surface](../tabs/display.md) §3.
+3. **No baggage.** The display renders the shown target through the **existing**
+   dock and viewer for it (`ContentPanel minimalChrome`); a running app is a
+   `ServiceEndpoint` addressed by the APP dock. No prose port-sniffing, no
+   viewer-specific override props.
 4. **MCP UI is a shown file target, not a Vibe URL.** A `.mcp.html` file shown
-   with `flow show file` is restored from `context_data.last_shown`, rendered by
-   `McpAppPreview`, read through a `ui://flowpad-local/...` MCP resource URI, and
+   with `flow show file` is addressed by its file dock like any shown file,
+   rendered by `McpAppPreview` (via `AssetEditorRouter`), read through a `ui://flowpad-local/...` MCP resource URI, and
    hosted in the backend sandbox proxy. See [MCP UI Architecture](../mcp-ui.md).
 5. **One stable asset host.** Asset/file docks render through
    `AssetVibeWorkspace` in both modes. Standard collapses the chat panel; Vibe
@@ -53,9 +55,17 @@ Everything Vibe touches lives in the UI layer. Concretely:
 2. **Layout / chrome** — a centered VibeHome empty state, the process
    chat↔Display split, and the asset chat↔content split. The shared left rail
    retains its reserved footprint in every mode.
-3. **Chrome-less creator surfaces** — on the curated `VIBE_CREATOR_SURFACES`
-   ViewTypes (`content-panel.tsx`), Vibe strips the tab strip + navigator. Any
-   *other* surface keeps normal Standard chrome even in Vibe.
+3. **Vibe is a TAB** — once a prompt is sent, the session opens as a Vibe tab
+   (`/dock/vibe/<process>`) under the global tab strip, beside any other tabs
+   (terminals, documents, other Vibe tabs); its own nested strip (the Display
+   square + its children) sits inside it. Only the Vibe home (the hero prompt,
+   and the no-process pane) is tabless. On the curated `VIBE_CREATOR_SURFACES`
+   ViewTypes (`content-panel.tsx`) Vibe still drops the left navigator.
+   The strip's "+" opens tabs BESIDE the Vibe tab: "New Vibe" goes to the Vibe
+   home, an agent opener starts a chat/terminal in the user's last non-Vibe mode,
+   and a terminal or a chip click is top-level (`NavigationCommitOptions.topLevel`,
+   never adopted into the Vibe tab on screen). The skin follows the active tab;
+   only an explicit mode switch plays the glow.
 4. **Assets tabs keep their Standard structure** — opening an Assets tab in Vibe
    renders the same Standard asset catalog and navigator, so a deep-linked asset
    can expand its type and select its row. The Vibe skin may change the surrounding
@@ -124,8 +134,9 @@ not overwritten.
      `open <file>` into the user's browser instead of `flow show`. Verify a
      session by its materialized `CLAUDE.md`: it must read *"You are the 'vibe'
      agent"*, not *"the 'agent' agent"*.
-2. `flow-page.tsx` sees `isVibe` + an active agentic-process dock and renders the
-   **VibeWorkspace** split instead of the single content panel.
+2. `resolveDockLayout` (`ui/src/navigation/dock-layout.ts`) answers
+   `VIBE_WORKSPACE` for `isVibe` + a resolved workspace session, and `flow-page`
+   renders the **VibeWorkspace** split instead of the single content panel.
 
 ## The workspace (side chat + display)
 
@@ -138,13 +149,15 @@ not overwritten.
 - **Chat** is the existing agentic-process chat UI. Process-home sessions use
   their existing target; asset-origin sessions are keyed by the exact
   `target_typeid_str`. The standard New/Recent session controls remain present.
-- **Display** is a preview-first viewer switch that **reuses the existing viewer
-  components** (`WebappViewer` / `CodeEditor` / `DiffViewer`) plus the MCP App
-  preview host for `.mcp.html` files. It defaults to the web preview.
-- **Display selection:** explicit `flow show` targets pin the display and are
-  restored from `context_data.last_shown`; stream focus is only the secondary
-  signal for code/diff/write noise. The web preview is the fallback when neither
-  exists.
+- **Display** renders the URL: on a shown target's address (or a child tab) it
+  mounts `ContentPanel minimalChrome` for that dock, so every target uses its own
+  standard viewer. On the bare process URL it falls back to the stream `focus`
+  (`CodeEditor` / `DiffViewer`), then to the starter prompts.
+- **Display selection:** an explicit `flow show` navigates the workspace to the
+  target's address (`openActiveDisplay`). A reload restores the last one once per
+  browser session through the loader's `restoreDisplayRedirect`, which reads
+  `context_data.last_shown`. Stream focus is only the fallback for code/diff
+  noise on the bare process URL.
 - **A running app is an address:** `flow show webapp --port <p>` registers the
   server as a `proxy` `ServiceEndpoint` of the project's placement and the display
   NAVIGATES to its APP dock (`/dock/app/service_endpoint-<id>`), like every other
@@ -172,10 +185,11 @@ PersistentIframe → direct-url (localhost:<p>, or the box's public host in a sa
 MCP UI uses the same `flow show` pin as other display targets, but it renders
 through a dedicated MCP Apps host instead of the webapp preview:
 
-`flow show file <path.mcp.html> → context_data.last_shown → VibeWorkspace →
-McpAppPreview → @mcp-ui/client → backend sandbox proxy`
+`flow show file <path.mcp.html> → openActiveDisplay → file dock (host +
+activeDisplay) → AssetEditorRouter → McpAppPreview → @mcp-ui/client → backend
+sandbox proxy`
 
-The process dock URL stays the workspace URL. The shown file path becomes an
+The process stays the workspace host. The shown file path becomes an
 internal `ui://flowpad-local/...` resource URI; that URI is resolved through
 `onReadResource` and `FSRef`, not through browser navigation. The iframe itself
 loads `/mcp-sandbox/sandbox_proxy.html` from the backend origin and receives the
@@ -233,9 +247,9 @@ ordinary headless chat process:
   `vibe`.
 - Headless↔PTY toggling, resume, session history, and process lifecycle are the
   shared `EntityExecutionPanel` / agentic-process machinery, identical to Standard.
-  The **only** Vibe-specific wiring is `useVibeFocus` reading the agent's `focus`
-  stream to pick which *viewer* the display shows — and that never touches the URL
-  or the process (principle #2).
+  The Vibe-specific wiring is the display navigation (`openActiveDisplay`, a URL
+  write like any click) and `useVibeFocus` reading the agent's `focus` stream for
+  the bare-process fallback — neither touches the process (principle #2).
 
 **Conclusion:** Vibe is still built from shared primitives, but asset-origin
 workspaces intentionally add target-specific process grouping and live
@@ -256,7 +270,8 @@ Projectless asset entry also requires a project before a Chat can be created.
 | Footer toggle | `ui/src/components/view-toggle/view-toggle.tsx` |
 | Theme (hub palette + gradients) | `ui/src/styles/index.css` (`[data-view='vibe']`) |
 | VibeHome + build submit | `ui/src/pages/home-landing/HomeLanding.tsx` |
-| Overlay shell (no rail, split vs home) | `ui/src/pages/flow-page/flow-page.tsx` |
+| Layout rule (workspace vs home vs content) | `ui/src/navigation/dock-layout.ts` (`resolveDockLayout`); `flow-page.tsx` renders it |
+| Show → navigate / reload restore | `ui/src/navigation/open-active-display.ts`, `ui/src/routes/loaders/load-shell.ts` (`restoreDisplayRedirect`) |
 | The chat↔display split + focus reader | `ui/src/pages/flow-page/vibe-workspace.tsx` |
 | Stable asset chat↔content host | `ui/src/pages/flow-page/asset-vibe-workspace.tsx` |
 | Asset classification and process target | `ui/src/navigation/content-asset-dock.ts` |
@@ -267,7 +282,7 @@ Projectless asset entry also requires a project before a Chat can be created.
 | MCP UI resource and sandbox helpers | `ui/src/lib/mcp-app-resources.ts`, `ui/src/lib/mcp-sandbox.ts` |
 | Curated chrome-less surfaces | `ui/src/pages/flow-page/content-panel/content-panel.tsx` (`VIBE_CREATOR_SURFACES`) |
 | Chat (leadingSlot, image paste) | `ui/src/components/entity-execution-panel/EntityExecutionPanel.tsx` |
-| Display / web preview | `ui/src/components/webapp-viewer.tsx` |
+| App display (APP dock) | `ui/src/pages/flow-page/app-display-viewer.tsx` |
 | App address → endpoint → iframe src | `ui/src/hooks/flow-hooks/useAppDisplay.ts` |
 | Port → endpoint registration | `flow_sdk/builtin/webapp_placement.py` `register_dev_endpoint` |
 | web-app-builder skill | `flow_sdk/system_projects/flowpad_assistant/.claude/skills/web-app-builder/` |

@@ -75,7 +75,9 @@ test('a terminal survives every trip away and back', async ({ page }) => {
 
   const processAddress = `shell/agentic_process-${world.processId}`;
   const processPath = `/shell/agentic_process-${world.processId}`;
-  await navigateTo(page, processAddress, processPath);
+  // Stated: a session that names no mode opens in the last one the user selected,
+  // and this spec is about the terminal.
+  await navigateTo(page, `${processAddress}?viewMode=advanced`, processPath);
   await expect(panel(page, world.processId).locator('.xterm')).toBeVisible();
   await expect(panel(page, world.processId)).toContainText(MOCK_MARKER, { timeout: 15_000 });
   await pinTerminalNode(page, world.processId);
@@ -95,7 +97,13 @@ test('a terminal survives every trip away and back', async ({ page }) => {
     { name: 'the assets browser', address: 'assets/list/skill', path: '/assets/list/skill' },
     { name: 'the automations screen', address: 'automations', path: '/automations' },
     { name: 'a plain shell', address: `shell/shell-${world.shellId}`, path: `/shell/shell-${world.shellId}` },
-    { name: 'the same session in Vibe', address: `${processAddress}?viewMode=vibe`, path: processPath, modeSwitch: true },
+    // In Vibe the session is its Vibe HOST tab, at `/dock/vibe/…` (the same tab row).
+    {
+      name: 'the same session in Vibe',
+      address: `${processAddress}?viewMode=vibe`,
+      path: `/vibe/agentic_process-${world.processId}`,
+      modeSwitch: true,
+    },
     { name: 'the desktop', address: 'desktop', path: '/desktop' },
   ];
 

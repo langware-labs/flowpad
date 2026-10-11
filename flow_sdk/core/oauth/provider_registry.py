@@ -138,6 +138,9 @@ class LocalOAuthProvider:
     icon: Optional[str] = None
     kind: OAuthFlowKind = OAuthFlowKind.LOOPBACK
     scopes: tuple[str, ...] = ()
+    #: Scopes a connect adds only when something on this machine needs them (a data source that writes
+    #: back: ``core/oauth/wanted_scopes.py``). Nothing outside this list is ever requested that way.
+    optional_scopes: tuple[str, ...] = ()
 
     #: Where the flow goes. ``None`` means "only the hub can run this one" — the
     #: presence of endpoints IS the predicate that used to be a comparison
@@ -269,6 +272,9 @@ _PROVIDERS: dict[str, LocalOAuthProvider] = {
             "https://www.googleapis.com/auth/drive.readonly",
             "https://www.googleapis.com/auth/devstorage.read_only",
         ),
+        # Full Drive, asked for only while a Drive source on this machine writes back (not read-only).
+        # A restricted scope: a person connecting only to read never consents to it.
+        optional_scopes=("https://www.googleapis.com/auth/drive",),
         endpoints=OAuthEndpoints(
             authorize_url="https://accounts.google.com/o/oauth2/v2/auth",
             token_url="https://oauth2.googleapis.com/token",

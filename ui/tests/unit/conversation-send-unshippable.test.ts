@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { dataManager } from '@sdk';
 import {
-  findUnshippableReferences,
+  checkShareAttachments,
   hasSomethingToSend,
   withoutReferences,
   type ConversationSendPayload,
@@ -15,15 +15,16 @@ afterEach(() => vi.restoreAllMocks());
 // FLOWPAD-2153. Sharing a session whose transcript is gone must not leave the recipient with an empty
 // bundle, and it must not create + invite first and fail after. These pin the pieces the share dialog
 // leans on to ask first and to "send without it".
-describe('findUnshippableReferences', () => {
+describe('checkShareAttachments', () => {
   it('asks the backend once, with the references de-duplicated', async () => {
     const call = vi.spyOn(dataManager, 'callAction').mockResolvedValue({
       unshippable: [{ type_id: SESSION, reason: 'its file is not on this machine' }],
     });
 
-    const gaps = await findUnshippableReferences([SESSION, SESSION]);
+    const { unshippable, gitignored } = await checkShareAttachments([SESSION, SESSION]);
 
-    expect(gaps).toEqual([{ type_id: SESSION, reason: 'its file is not on this machine' }]);
+    expect(unshippable).toEqual([{ type_id: SESSION, reason: 'its file is not on this machine' }]);
+    expect(gitignored).toEqual([]);
     expect(call).toHaveBeenCalledTimes(1);
     const info = call.mock.calls[0][0] as { bodyParameters: { asset_references: string[] } };
     expect(info.bodyParameters.asset_references).toEqual([SESSION]);
@@ -31,13 +32,13 @@ describe('findUnshippableReferences', () => {
 
   it('does not call the backend when there is nothing attached', async () => {
     const call = vi.spyOn(dataManager, 'callAction');
-    expect(await findUnshippableReferences([])).toEqual([]);
+    expect(await checkShareAttachments([])).toEqual({ unshippable: [], gitignored: [] });
     expect(call).not.toHaveBeenCalled();
   });
 
   it('treats a reply with no list as "nothing is wrong"', async () => {
     vi.spyOn(dataManager, 'callAction').mockResolvedValue({});
-    expect(await findUnshippableReferences([SESSION])).toEqual([]);
+    expect(await checkShareAttachments([SESSION])).toEqual({ unshippable: [], gitignored: [] });
   });
 });
 

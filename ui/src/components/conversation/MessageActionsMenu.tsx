@@ -1,12 +1,14 @@
 import { useMemo, useState } from 'react';
-import { Download, Forward, MoreVertical, Pencil, Reply, SmilePlus, Star, Trash2 } from 'lucide-react';
+import { Download, Forward, MoreVertical, Pencil, Reply, SmilePlus, Star, Trash2, Zap } from 'lucide-react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { AgenticProcess, Conversation, TypeId, type ICloudOrigin } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
 import { workerIcon } from '@src/components/lens-viewer/shared/transcript-features/transcript-utils';
 import { useFavorites } from '@src/hooks/use-favorites';
+import { messageFavoriteRef } from '@src/components/favorites/favorite-target';
 import { useIsAdvanced } from '@src/components/view-mode';
 import { InputDialog } from '@src/components/ui/input-dialog';
+import { WorkerToolbar } from '@src/components/workers/WorkerToolbar';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -20,6 +22,7 @@ import { localBundleUrl } from './flow-message-drafts';
 import { ChannelBadge } from './ChannelBadge';
 import { EmojiPickerContent } from './EmojiPicker';
 import { TaskItIcon, taskItHint } from './task-it';
+import type { WorkerType } from './conversation-session-constants';
 
 interface MessageActionsMenuProps {
   flowMessageId?: string;
@@ -37,15 +40,12 @@ interface MessageActionsMenuProps {
   onForward?: () => void;
   /** Present only while the message is not a task yet; an opened task keeps its chips below the body. */
   onTaskIt?: () => void;
+  /** Start a rule on messages like this one (docs/snippets/stream-inbox-automations.md). */
+  onAutomate?: () => void;
   onEditName?: () => void;
   onDelete?: () => void;
-}
-
-/** First `n` whitespace-delimited words of `text`, trimmed. Empty when no text. */
-function firstWords(text: string | undefined, n: number): string {
-  const t = (text ?? '').trim();
-  if (!t) return '';
-  return t.split(/\s+/).slice(0, n).join(' ');
+  /** Start a worker on this message — the header's launch bar, message-pinned prompt. */
+  onLaunchWorker?: (worker: WorkerType) => void;
 }
 
 /** The conversation's current worker: the most-recently-linked AgenticProcess in its shared context. */
@@ -71,21 +71,24 @@ const ITEM_ICON = 'h-3.5 w-3.5 text-muted-foreground';
  * of these per message. The note dialog and the emoji picker live OUTSIDE the
  * menu: selecting an item closes the menu, and they must outlive it.
  *
- * There is intentionally no per-message *launch* item — a worker is launched
- * once per conversation; per-message actions feed that worker via its queue.
+ * The worker icons are the conversation header's launch bar; the host's
+ * `onLaunchWorker` starts the session with a prompt pinned to this message.
  */
 export function MessageActionsMenu(props: MessageActionsMenuProps) {
   const { t } = useLingui();
   const [noteOpen, setNoteOpen] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
-  const { flowMessageId, conversationId, onReply, onReact, onForward, onTaskIt, onEditName, onDelete } = props;
+  // Controlled: the worker icons are plain buttons, so a launch closes the menu itself.
+  const [menuOpen, setMenuOpen] = useState(false);
+  const { flowMessageId, conversationId, onReply, onReact, onForward, onTaskIt, onAutomate, onEditName, onDelete, onLaunchWorker } =
+    props;
   // A draft bubble (no stored message) with no handlers has nothing to offer.
-  if (!flowMessageId && !(onReply || onReact || onForward || onTaskIt || onEditName || onDelete)) return null;
+  if (!flowMessageId && !(onReply || onReact || onForward || onTaskIt || onAutomate || onEditName || onDelete)) return null;
 
   return (
     <>
       <Popover open={pickerOpen} onOpenChange={setPickerOpen}>
-        <DropdownMenu modal={false}>
+        <DropdownMenu modal={false} open={menuOpen} onOpenChange={setMenuOpen}>
           <PopoverAnchor asChild>
             <DropdownMenuTrigger asChild>
               <button
@@ -100,7 +103,18 @@ export function MessageActionsMenu(props: MessageActionsMenuProps) {
             </DropdownMenuTrigger>
           </PopoverAnchor>
           <DropdownMenuContent align="end" className="min-w-[13rem] text-xs" onClick={(e) => e.stopPropagation()}>
-            <MessageMenuItems {...props} onOpenPicker={() => setPickerOpen(true)} onOpenNote={() => setNoteOpen(true)} />
+            <MessageMenuItems
+              {...props}
+              onOpenPicker={() => setPickerOpen(true)}
+              onOpenNote={() => setNoteOpen(true)}
+              onLaunchWorker={
+                onLaunchWorker &&
+                ((worker) => {
+                  setMenuOpen(false);
+                  onLaunchWorker(worker);
+                })
+              }
+            />
           </DropdownMenuContent>
         </DropdownMenu>
         {onReact && pickerOpen && (
@@ -131,10 +145,12 @@ function MessageMenuItems({
   onReact,
   onForward,
   onTaskIt,
+  onAutomate,
   onEditName,
   onDelete,
   onOpenPicker,
   onOpenNote,
+  onLaunchWorker,
 }: MessageActionsMenuProps & { onOpenPicker: () => void; onOpenNote: () => void }) {
   const isAdvanced = useIsAdvanced();
   const { isFavorited, toggleFavorite } = useFavorites();
@@ -143,7 +159,7 @@ function MessageMenuItems({
   const showNote = !!flowMessageId && !!worker && isAdvanced;
   const WorkerIcon = workerIcon(worker?.worker_type ?? undefined);
   const conversing = !!(onReply || onReact);
-  const sharing = !!(onForward || onTaskIt || flowMessageId);
+  const sharing = !!(onForward || onTaskIt || onAutomate || flowMessageId);
   const managing = !!(onEditName || onDelete);
 
   return (
@@ -187,6 +203,12 @@ function MessageMenuItems({
           <Trans>Task it</Trans>
         </DropdownMenuItem>
       )}
+      {onAutomate && (
+        <DropdownMenuItem onSelect={onAutomate} data-testid="message-automate">
+          <Zap className={ITEM_ICON} />
+          <Trans>Automate messages like this…</Trans>
+        </DropdownMenuItem>
+      )}
       {flowMessageId && (
         <DropdownMenuItem asChild data-testid="message-download">
           <a href={localBundleUrl(flowMessageId)} download>
@@ -201,20 +223,21 @@ function MessageMenuItems({
           <Trans>Add a note to the running session</Trans>
         </DropdownMenuItem>
       )}
-      {flowMessageId && (
+      {flowMessageId && conversationId && (
         <DropdownMenuItem
           onSelect={() =>
-            void toggleFavorite({
-              entityType: 'flow_message',
-              entityId: flowMessageId,
-              title: firstWords(messageText, 10) || `Message ${flowMessageId.slice(0, 8)}`,
-            })
+            void toggleFavorite(messageFavoriteRef(flowMessageId, conversationId, messageText))
           }
           data-testid="message-favorite"
         >
           <Star className={`${ITEM_ICON} ${favorited ? 'fill-current text-amber-500' : ''}`} />
           {favorited ? <Trans>Remove from favorites</Trans> : <Trans>Add to favorites</Trans>}
         </DropdownMenuItem>
+      )}
+      {onLaunchWorker && (
+        <div className="px-2 py-1">
+          <WorkerToolbar onLaunch={onLaunchWorker} testIdPrefix="message" />
+        </div>
       )}
       {managing && (conversing || sharing) && <DropdownMenuSeparator />}
       {onEditName && (
@@ -226,7 +249,8 @@ function MessageMenuItems({
       {onDelete && (
         <DropdownMenuItem onSelect={onDelete} className="text-destructive focus:text-destructive" data-testid="message-delete">
           <Trash2 className="h-3.5 w-3.5" />
-          <Trans>Delete message</Trans>
+          {/* A channel's message lives on the channel: only Flowpad's copy can go. */}
+          {origin ? <Trans>Remove from Flowpad</Trans> : <Trans>Delete message</Trans>}
         </DropdownMenuItem>
       )}
     </>
@@ -261,3 +285,4 @@ function NoteDialog({
     />
   );
 }
+

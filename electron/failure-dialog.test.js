@@ -6,7 +6,7 @@
  */
 
 const assert = require('assert');
-const { showFailureDialog } = require('./failure-dialog');
+const { showFailureDialog, clampDetail } = require('./failure-dialog');
 
 let passed = 0;
 const eq = (a, b, m) => { assert.deepStrictEqual(a, b, m); passed++; };
@@ -68,6 +68,24 @@ function fakeDialog(responses) {
   {
     const d = { showMessageBox: async () => { throw new Error('no window'); } };
     eq(await showFailureDialog({ dialog: d, title: 'T', message: 'M', share: async () => ({ ok: true }), log: silentLog }), 'ok');
+  }
+  // 7. A long error cannot push the buttons off the screen: the dialog shows an excerpt, the share gets it all.
+  {
+    const long = ['error: Failed to build `cryptography==50.0.2`', ...Array.from({ length: 60 }, (_, i) => `note line ${i} ${'x'.repeat(120)}`), 'Last output: the final line'].join('\n');
+    const short = 'error: boom\nCaused by: a thing';
+    eq(clampDetail(short), short, 'a short detail is untouched');
+    eq(clampDetail(''), '', 'empty stays empty');
+    eq(clampDetail(undefined), '', 'undefined tolerated');
+    const c = clampDetail(long);
+    assert.ok(c.length < 1400 && c.split('\n').length <= 20, `bounded (${c.length} chars, ${c.split('\n').length} lines)`); passed++;
+    assert.ok(c.startsWith('error: Failed to build `cryptography==50.0.2`'), 'the cause line (first) survives'); passed++;
+    assert.ok(c.includes('Last output: the final line'), 'the last line survives'); passed++;
+    assert.ok(/full text is in the logs/.test(c), 'says something was left out'); passed++;
+    const d = fakeDialog([1]);
+    let shared = null;
+    await showFailureDialog({ dialog: d, title: 'T', message: 'M', detail: long, share: async (t) => { shared = t; return { ok: true }; }, log: silentLog });
+    assert.ok(d.shown[0].opts.detail.length < 1400, 'the dialog got the excerpt'); passed++;
+    assert.ok(shared.includes('note line 30') && shared.includes(long), 'Share with us got the whole text'); passed++;
   }
   console.log(`failure-dialog: ${passed} assertions passed`);
 })().catch((e) => { console.error(e); process.exit(1); });

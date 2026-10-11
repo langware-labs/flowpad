@@ -28,7 +28,10 @@ import {
 } from '@src/components/ui/context-menu';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
 import { TabTooltipName } from '@src/components/tabs/TabTooltipName';
+import { TabFavoriteStar } from '@src/components/tabs/TabFavoriteStar';
+import type { FavoriteRef } from '@src/hooks/use-favorites';
 import { useIsAdvanced } from '@src/contexts/view-mode-context';
+import { useCloseOnIframeFocus } from '@src/hooks/use-close-on-iframe-focus';
 import { animateGlow } from '@src/lib/animate-glow';
 import { consumeTabHighlight, TAB_HIGHLIGHT_MS, useTabHighlights } from '@src/tabs/tab-highlight';
 import { ExternalLink, X, type LucideIcon } from 'lucide-react';
@@ -46,6 +49,26 @@ import { useLingui } from '@lingui/react/macro';
  * the app's top edge reads as two mismatched steps.
  */
 export const TAB_LINE_HEIGHT_CLASS = 'h-[35px]';
+
+/**
+ * A chip's hover card. It is hoverable (it carries a copy button), and Radix
+ * dismisses it on a press elsewhere in this document — but a press inside a
+ * web app tab's iframe never reaches the document, so that closes it too.
+ */
+function TabChipTooltip({ trigger, children }: { trigger: React.ReactNode; children: React.ReactNode }) {
+  const [open, setOpen] = useState(false);
+  const close = useCallback(() => setOpen(false), []);
+  useCloseOnIframeFocus(open, close);
+
+  return (
+    <TooltipProvider delayDuration={600}>
+      <Tooltip open={open} onOpenChange={setOpen}>
+        <TooltipTrigger asChild>{trigger}</TooltipTrigger>
+        {children}
+      </Tooltip>
+    </TooltipProvider>
+  );
+}
 
 /** One chip in the strip. Kind-agnostic: terminals, entity tabs, and the
  *  transient preview tab all render through this shape. */
@@ -70,6 +93,9 @@ export interface TabStripItem {
    *  keep meaning "the row I am", so select/close/rename stay pointed at this
    *  tab; only the rendered icon and label defer. */
   standsFor?: { icon?: React.ReactNode; title: string };
+  /** What bookmarking THIS tab means (`favoriteTargetForDock`) — present iff the
+   *  tab is bookmarkable; the chip then leads with its own star. */
+  favorite?: FavoriteRef | null;
   /** Whether the chip can be closed (default true). A `closable: false` chip
    *  hides its X, is excluded from close-all/close-others/close-right, and shows
    *  no "Close" context item — for pinned fixtures like the vibe "Display" chip. */
@@ -484,6 +510,9 @@ export const TabStrip: React.FC<TabStripProps> = ({
         data-active={isActive ? 'true' : undefined}
         {...(item.dataAttributes ?? {})}
       >
+        {item.favorite && density === 'normal' && !isEditing && (
+          <TabFavoriteStar favorite={item.favorite} chip={() => tabRefs.current[key] ?? null} />
+        )}
         {item.standsFor?.icon ?? item.icon}
         {!iconOnly && item.badge}
         {isEditing ? (
@@ -528,12 +557,14 @@ export const TabStrip: React.FC<TabStripProps> = ({
     // the raised tab reads as a single surface. Kept as a transparent element
     // (not removed) so chip geometry is stable; shown everywhere during a drag
     // to avoid flicker while the active index moves under the preview.
+    // A FOREGROUND tint, not `bg-border`: in dark the border token IS the band's
+    // colour (both hsl 0 0% 14.9%), so the separator was drawn and invisible.
     const hideSeparator = !dragKey && (index - 1 === activeIndex || index === activeIndex);
     const separator =
       index > 0 ? (
         <div
           aria-hidden
-          className={`h-4 w-px shrink-0 self-center ${hideSeparator ? 'bg-transparent' : 'bg-border/60'}`}
+          className={`h-4 w-px shrink-0 self-center ${hideSeparator ? 'bg-transparent' : 'bg-foreground/20'}`}
         />
       ) : null;
 
@@ -541,12 +572,8 @@ export const TabStrip: React.FC<TabStripProps> = ({
       <React.Fragment key={key}>
         {separator}
         <ContextMenu>
-          <TooltipProvider delayDuration={600}>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <ContextMenuTrigger asChild>{tabContent}</ContextMenuTrigger>
-              </TooltipTrigger>
-              {isAdvanced && item.tooltip ? (
+          <TabChipTooltip trigger={<ContextMenuTrigger asChild>{tabContent}</ContextMenuTrigger>}>
+            {isAdvanced && item.tooltip ? (
                 <TooltipContent side="bottom" className="border bg-popover p-2.5 text-popover-foreground shadow-md">
                   {item.tooltip}
                 </TooltipContent>
@@ -557,8 +584,7 @@ export const TabStrip: React.FC<TabStripProps> = ({
                   <TabTooltipName name={item.title} className="font-normal" />
                 </TooltipContent>
               ) : null}
-            </Tooltip>
-          </TooltipProvider>
+          </TabChipTooltip>
           <ContextMenuContent>
             {/* Emphasized shortcuts (e.g. "Open Project") sit above the tab
                 operations as an accented header group — they navigate, they
@@ -619,12 +645,14 @@ export const TabStrip: React.FC<TabStripProps> = ({
         {items.map((item, index) => renderChip(item, index, items))}
       </div>
 
-      {/* Trailing toolbar — a fixed sibling AFTER the row (never overlaps or
-          shrinks); the chips absorb all width pressure. */}
+      {/* Opener toolbar — a fixed sibling (never overlaps or shrinks); the
+          chips absorb all width pressure. */}
       {trailing && <div className="flex shrink-0 items-center self-stretch">{trailing}</div>}
 
-      {/* Close All button — shown when 2+ tabs are open. Tab count badge
-          hints at the destructive scope before clicking. */}
+      {/* Close All — the strip's LAST control, at a clear distance from the
+          openers so a click aimed at "+" can't land on it. Same shape as "+"
+          (a 7×7 rounded bordered button), its own colour. Shown at 2+ tabs; the
+          count badge hints at the destructive scope before clicking. */}
       {!hideCloseAllButton && allVisibleItems.length >= 2 && (
         <TooltipProvider delayDuration={600}>
           <Tooltip>
@@ -632,7 +660,7 @@ export const TabStrip: React.FC<TabStripProps> = ({
               <Button
                 variant="outline"
                 size="sm"
-                className="mx-1.5 h-6 shrink-0 gap-1.5 rounded-md border-border bg-background px-2 text-foreground shadow-sm hover:border-destructive/60 hover:bg-destructive/10 hover:text-destructive"
+                className="ms-3 me-1 h-7 shrink-0 gap-1 rounded-md border-border bg-background px-1.5 text-foreground shadow-sm hover:border-destructive/60 hover:bg-destructive/10 hover:text-destructive"
                 onClick={() => closeMany(allVisibleItems.map((i) => i.key))}
                 aria-label={t`Close all ${allVisibleItems.length} tabs`}
                 data-testid="close-all-tabs-button"
@@ -649,6 +677,7 @@ export const TabStrip: React.FC<TabStripProps> = ({
           </Tooltip>
         </TooltipProvider>
       )}
+
     </div>
   );
 };

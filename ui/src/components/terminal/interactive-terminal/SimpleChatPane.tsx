@@ -15,6 +15,7 @@ import { Trans } from '@lingui/react/macro';
 import { MessageSquare } from 'lucide-react';
 import { useEffect, useMemo, useRef } from 'react';
 import { PlanInteractionBar } from './PlanInteractionBar';
+import { LinkScope } from '@src/components/links/LinkHandlersContext';
 import { useTurnCompletionReconcile } from './useTurnCompletionReconcile';
 
 interface SimpleChatPaneProps {
@@ -127,42 +128,44 @@ export function SimpleChatPane({ process, className, focusAt = null }: SimpleCha
 
   return (
     <div ref={paneRef} className={cn('flex h-full min-h-0 flex-col bg-background', className)} data-testid="simple-chat-pane">
-      <AutoScrollContainer ref={scrollRef} className="flex-1 overflow-y-auto">
-        {!hasRows ? (
-          // A turn can be in flight with nothing rendered yet — the pane mounted
-          // mid-turn, before any row landed. The empty state must still carry
-          // the activity line, or a working agent reads as an idle session
-          // inviting a first message.
-          <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center text-muted-foreground">
-            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-muted">
-              <MessageSquare className="h-6 w-6" />
-            </div>
-            {activity.active ? (
-              <ChatActivityLine process={process} />
-            ) : (
-              <div>
-                <p className="text-[15px] font-medium text-foreground"><Trans>Start a conversation</Trans></p>
-                <p className="mt-1 text-sm"><Trans>Send a message below and the agent will get to work.</Trans></p>
+      <LinkScope process={process}>
+        <AutoScrollContainer ref={scrollRef} className="flex-1 overflow-y-auto">
+          {!hasRows ? (
+            // A turn can be in flight with nothing rendered yet — the pane mounted
+            // mid-turn, before any row landed. The empty state must still carry
+            // the activity line, or a working agent reads as an idle session
+            // inviting a first message.
+            <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center text-muted-foreground">
+              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-muted">
+                <MessageSquare className="h-6 w-6" />
               </div>
-            )}
-          </div>
-        ) : (
-          <div className="w-full px-4 py-3">
-            <AgentIntroMessage agent={launchingAgent} />
-            <TurnGroupsList
-              groups={turnGroups}
-              worker={process.worker_type ?? undefined}
-              agent={launchingAgent}
-              showTurnFiles={viewMode === ViewMode.Standard}
-              process={process}
-              turnActive={activity.active}
-              anchorIndex={anchorIndex}
-            />
-            <ChatActivityLine process={process} />
-          </div>
-        )}
-      </AutoScrollContainer>
-      <PlanInteractionBar items={items} />
+              {activity.active ? (
+                <ChatActivityLine process={process} />
+              ) : (
+                <div>
+                  <p className="text-[15px] font-medium text-foreground"><Trans>Start a conversation</Trans></p>
+                  <p className="mt-1 text-sm"><Trans>Send a message below and the agent will get to work.</Trans></p>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="w-full px-4 py-3">
+              <AgentIntroMessage agent={launchingAgent} />
+              <TurnGroupsList
+                groups={turnGroups}
+                worker={process.worker_type ?? undefined}
+                agent={launchingAgent}
+                showTurnFiles={viewMode === ViewMode.Standard}
+                process={process}
+                turnActive={activity.active}
+                anchorIndex={anchorIndex}
+              />
+              <ChatActivityLine process={process} />
+            </div>
+          )}
+        </AutoScrollContainer>
+        <PlanInteractionBar items={items} />
+      </LinkScope>
     </div>
   );
 }

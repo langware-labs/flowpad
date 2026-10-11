@@ -36,6 +36,7 @@ from flow_sdk.schema.data_spec.credential_contract import (
     DEFAULT_ENVIRONMENT,
     SCOPE_PROJECT,
     SCOPE_USER,
+    CredentialKind,
     CredentialVarKind,
 )
 from flow_sdk.schema.data_spec.credential_status_spec import CredentialDeletedSpec
@@ -49,7 +50,15 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-_MANIFEST_FIELDS = ("title", "description", "icon_name", "help_url", "setup_wiki", "setup", "setup_timeout_seconds", "lm_provider", "vars")
+_MANIFEST_FIELDS = (
+    "title", "description", "needed_for", "justification", "icon_name", "help_url", "setup_wiki", "setup", "setup_timeout_seconds", "lm_provider",
+    "kind", "provider", "scopes", "optional_scopes", "vars",
+)
+
+
+def _manifest_of(spec: "Credential") -> dict[str, Any]:
+    """``spec`` as the manifest ``save_credential`` takes — what re-saving it would write."""
+    return {"name": spec.name, **{field: getattr(spec, field) for field in _MANIFEST_FIELDS}}
 
 
 class CredentialError(ValueError):
@@ -187,10 +196,13 @@ async def save_credential(
     values: Optional[dict[str, Any]] = None,
     deployment_id: Optional[str] = None,
     store: Optional[str] = None,
+    require_setup: bool = True,
 ) -> "Credential":
     """Create a credential in a scope, or update one; then write any values where ``deployment_id``
     (default: this computer) keeps them. ``store`` (``env`` / ``vault``) first makes that deployment
-    keep this credential's variables there — the choice a form offers, never part of the credential."""
+    keep this credential's variables there — the choice a form offers, never part of the credential.
+    ``require_setup=False`` is for a save that only re-files what already exists: ``setup`` is required
+    of an author, not of a credential found on disk without it."""
     from flow_sdk.assets.creation import destination_in  # noqa: PLC0415
     from flow_sdk.builtin.asset_placement import resolve_default_harness, resolve_destination  # noqa: PLC0415
     from flow_sdk.builtin.credential import Credential  # noqa: PLC0415
@@ -214,7 +226,8 @@ async def save_credential(
         parsed = CredentialSpec.model_validate({**manifest_in, "schema": CURRENT_SCHEMA})
     except ValidationError as e:
         raise CredentialError("; ".join(str(err["msg"]).removeprefix("Value error, ") for err in e.errors())) from e
-    if not parsed.setup.strip():
+    # An oauth credential's "setup" is a person's consent click — there are no values to obtain by hand.
+    if require_setup and parsed.kind is not CredentialKind.OAUTH and not parsed.setup.strip():
         raise CredentialError(
             "a credential needs setup instructions: how to obtain its values and store them "
             f"(piped as `VAR=VALUE` lines into `flow credentials set {parsed.name} --stdin`)"
@@ -306,7 +319,7 @@ async def credential_named(name: str, project: Optional["Project"], *, declare: 
         raise CredentialError(f"no credential or template named {name!r}")
     scope = SCOPE_USER if template.lm_provider or project is None else SCOPE_PROJECT
     return await save_credential(
-        manifest={"name": name, **{field: getattr(template, field) for field in _MANIFEST_FIELDS}},
+        manifest=_manifest_of(template),
         scope=scope,
         project_id=str(project.id) if project is not None else None,
     )
@@ -325,7 +338,62 @@ async def set_credential_by_name(
     return await set_credential_values(str(spec.typeid), values, deployment_id)
 
 
-async def declare_credential(manifest: dict[str, Any], *, project_id: str) -> "Credential":
+async def _provider_title(provider: str) -> str:
+    """A provider's display name, as the Connections screen shows it; else its name.
+
+    A provider this build ships answers from the registry, in-process. Only one the hub alone
+    defines asks the connection service — which borrows a running backend or STARTS one, far
+    too much for a title when the registry already knows it.
+    """
+    from flow_sdk.core.oauth.provider_registry import get_local_provider  # noqa: PLC0415
+
+    known = get_local_provider(provider)
+    if known is not None and known.display_name:
+        return known.display_name
+    try:
+        from flow_sdk.core.connections.specs import resolve_connection_spec  # noqa: PLC0415
+
+        spec = await resolve_connection_spec(provider)
+        if spec is not None and spec.display_name:
+            return spec.display_name
+    except Exception:  # noqa: BLE001 — a title is cosmetic; the name serves
+        pass
+    return provider.title()
+
+
+async def declare_oauth(project: "Project", provider: str, scopes: list[str]) -> tuple["Credential", bool]:
+    """The project's oauth credential for ``provider``, covering at least ``scopes`` — declared from the shipped
+    template (or, for a provider only the hub defines, from its catalogue row) when the project has none, and
+    widened in place when a source needs more. Declaring what is already declared writes nothing.
+    Returns ``(credential, changed)``."""
+    from flow_sdk.builtin.credential_resolver import credentials_in_scope  # noqa: PLC0415
+
+    provider = str(provider or "").strip().lower()
+    wanted = [str(scope) for scope in scopes or []]
+    # Found by what it IS — the project's oauth credential for this provider — whatever it is named.
+    pairs = await credentials_in_scope(project)
+    own = next((spec for spec, _ in pairs
+                if spec.is_oauth and spec.scope == SCOPE_PROJECT and str(spec.provider or "").lower() == provider), None)
+    if own is not None:
+        merged = list(dict.fromkeys([*(own.scopes or []), *wanted]))
+        if merged == list(own.scopes or []):
+            return own, False
+        return await declare_credential({**_manifest_of(own), "scopes": merged}, project_id=str(project.id),
+                                        require_setup=False), True
+    # A new one is named for its provider — unless an env credential (an API key named "google") has that name.
+    taken = {str(spec.name) for spec, _ in pairs}
+    name = provider if provider not in taken else f"{provider}-oauth"
+    template = await template_named(provider)
+    if template is not None and template.is_oauth:
+        manifest = {**_manifest_of(template), "name": name,
+                    "scopes": list(dict.fromkeys([*(template.scopes or []), *wanted]))}
+    else:
+        manifest = {"name": name, "title": await _provider_title(provider), "kind": CredentialKind.OAUTH.value,
+                    "provider": provider, "scopes": wanted}
+    return await declare_credential(manifest, project_id=str(project.id), require_setup=False), True
+
+
+async def declare_credential(manifest: dict[str, Any], *, project_id: str, require_setup: bool = True) -> "Credential":
     """``flow credentials declare``: save ``manifest`` in the project — updating the project's own
     credential of that name in place, so declaring twice is declaring once. (``save_credential``
     stays create-or-refuse: a dialog creating a second ``telegram`` must not overwrite the first.)"""
@@ -334,8 +402,8 @@ async def declare_credential(manifest: dict[str, Any], *, project_id: str) -> "C
         raise CredentialError("project not found")
     own = await credential_named(str(manifest.get("name") or ""), project)
     if own is not None and own.scope == SCOPE_PROJECT:
-        return await save_credential(manifest=manifest, typeid=str(own.typeid))
-    return await save_credential(manifest=manifest, scope=SCOPE_PROJECT, project_id=project_id)
+        return await save_credential(manifest=manifest, typeid=str(own.typeid), require_setup=require_setup)
+    return await save_credential(manifest=manifest, scope=SCOPE_PROJECT, project_id=project_id, require_setup=require_setup)
 
 
 async def _release_orphaned_bindings(env_vars: list[str]) -> None:
@@ -450,8 +518,7 @@ async def declare_vars(
         return await save_credential(manifest=manifest, scope=SCOPE_USER)
     if not new:
         return existing
-    manifest = {"name": credential, **{field: getattr(existing, field) for field in _MANIFEST_FIELDS}}
-    manifest["vars"] = {**(existing.vars or {}), **{v: {} for v in new}}
+    manifest = {**_manifest_of(existing), "vars": {**(existing.vars or {}), **{v: {} for v in new}}}
     return await save_credential(manifest=manifest, typeid=str(existing.typeid))
 
 

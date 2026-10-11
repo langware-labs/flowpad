@@ -216,11 +216,23 @@ class LLMClient:
         self, texts: Sequence[str], *, model: str | None = None, timeout: float = 60.0
     ) -> list[list[float]]:
         """Embed each text, preserving order. One request per ``OPENAI_EMBEDDING_BATCH`` inputs."""
+        vectors, _ = await self.create_embeddings_with_model(texts, model=model, timeout=timeout)
+        return vectors
+
+    async def create_embeddings_with_model(
+        self, texts: Sequence[str], *, model: str | None = None, timeout: float = 60.0
+    ) -> tuple[list[list[float]], str]:
+        """``(vectors, model)``: the embeddings, and the model the provider says produced them.
+
+        The model is the RESPONSE's, not the request's — a relay (the hub, OpenRouter) may route
+        a slug to something else, and an index that pinned one model must be able to see that
+        before it stores a vector from another. ``""`` when the provider does not say.
+        """
         if not self.dialect.supports_embeddings:
             raise LLMNotSupported(f"{self.label}: this provider has no embeddings API")
         items = list(texts)
         if not items:
-            return []
+            return [], ""
         slug = self._model_for(model, "embedding")
         client = self._openai_client()
         batches = [items[i : i + OPENAI_EMBEDDING_BATCH] for i in range(0, len(items), OPENAI_EMBEDDING_BATCH)]
@@ -232,13 +244,12 @@ class LLMClient:
 
         # ``timeout`` still covers the WHOLE call, not each batch: a per-batch ceiling would
         # quietly multiply the caller's budget by the number of batches.
-        results = await self._await_upstream(
-            asyncio.gather(*(_embed(batch) for batch in batches)), timeout=timeout
-        )
+        results = await self._await_upstream(asyncio.gather(*(_embed(batch) for batch in batches)), timeout=timeout)
         out: list[list[float]] = []
         for result in results:
             out.extend(item.embedding for item in result.data)
-        return out
+        answered = str(getattr(results[0], "model", "") or "") if results else ""
+        return out, answered
 
     # ── listing and probing ─────────────────────────────────────────────────
 
@@ -281,9 +292,7 @@ class LLMClient:
             self._sdk_client = AsyncOpenAI(base_url=base_url, api_key=key)
         return self._sdk_client
 
-    async def _request_json(
-        self, method: str, sub_path: str, *, json_body: dict | None = None, timeout: float
-    ) -> Any:
+    async def _request_json(self, method: str, sub_path: str, *, json_body: dict | None = None, timeout: float) -> Any:
         """One authenticated HTTP call against this endpoint, decoded. Raises on any failure."""
         import httpx  # noqa: PLC0415
 
@@ -306,7 +315,9 @@ class LLMClient:
         try:
             return response.json()
         except ValueError as exc:
-            raise LLMUpstreamError(f"{self.label}: {sub_path} did not answer JSON", status=response.status_code) from exc
+            raise LLMUpstreamError(
+                f"{self.label}: {sub_path} did not answer JSON", status=response.status_code
+            ) from exc
 
     def _status_error(self, status: int, body: str) -> LLMError:
         from flow_sdk.external_apis.llm.errors import LLMAuthError, LLMRateLimited  # noqa: PLC0415

@@ -12,7 +12,7 @@
  * asserts the thrown redirect Response carries the project scope and every
  * unrelated query option.
  */
-import { AgenticProcess } from '@sdk';
+import { AgenticProcess, instancePreferences, PrefKey } from '@sdk';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -39,7 +39,7 @@ describe('api: scope-align redirect preserves query options', () => {
     await apiTestSetup(info, context.task.name);
   });
 
-  it('project-owned process + no scope on URL → redirect keeps viewMode=vibe', async () => {
+  it('project-owned process + no scope on URL → redirect keeps Vibe (its /dock/vibe/ address)', async () => {
     const id = uuidv4();
     const projectId = uuidv4();
     await new AgenticProcess({
@@ -64,12 +64,15 @@ describe('api: scope-align redirect preserves query options', () => {
     const location = redirect!.headers.get('Location') ?? '';
     expect(location).toContain(`agentic_process-${id}`);
     expect(location).toContain(`scope-activeProjectId=${projectId}`);
-    expect(location).toContain('viewMode=vibe');
+    // Vibe is kept as the Vibe HOST address (`/dock/vibe/…` — the path states it).
+    expect(location).toContain(`/dock/vibe/agentic_process-${id}`);
     expect(location).toContain('sideWindows=dir');
     expect(location).toContain('matrix=legacy');
   }, 15000);
 
-  it('standard entry (no viewMode) redirects without inventing one', async () => {
+  // A bare session URL states the session's own mode in its one identity redirect: what it was
+  // opened in, else the last mode the user selected — never the mode on screen (001fd536e).
+  it('standard entry (no viewMode) redirects stating the last selected mode', async () => {
     const id = uuidv4();
     const projectId = uuidv4();
     await new AgenticProcess({
@@ -79,12 +82,13 @@ describe('api: scope-align redirect preserves query options', () => {
       project_id: projectId,
     } as any).save();
 
+    instancePreferences.set(PrefKey.VIEW_MODE, 'standard');
     const redirect = await captureRedirect(() => loadShellRoute(`agentic_process-${id}`, '/dock/shell'));
 
     expect(redirect).not.toBeNull();
     const location = redirect!.headers.get('Location') ?? '';
     expect(location).toContain(`scope-activeProjectId=${projectId}`);
-    expect(location).not.toContain('viewMode=');
+    expect(location).toContain('viewMode=standard');
   }, 15000);
 
   it('projectless process clears an ambient project scope before tab materialization', async () => {
@@ -114,8 +118,7 @@ describe('api: scope-align redirect preserves query options', () => {
 
     expect(redirect).not.toBeNull();
     const location = redirect!.headers.get('Location') ?? '';
-    expect(location).toContain(`agentic_process-${id}`);
-    expect(location).toContain('viewMode=vibe');
+    expect(location).toContain(`/dock/vibe/agentic_process-${id}`);
     expect(location).toContain('matrix=global');
     expect(location).not.toContain('scope-');
   });

@@ -7,19 +7,9 @@
  * `recentBusEvents`, `emitBusEvent`); the live half is `useOnTag`.
  */
 import { Trans, useLingui } from '@lingui/react/macro';
-import {
-  emitBusEvent,
-  recentBusEvents,
-  tagMatches,
-  targetMatches,
-  Trigger,
-  type BusEventType,
-  type PatternMatch,
-} from '@sdk';
-import { useOnTag } from '@sdk/react/hooks';
-import type { FlowEvent } from '@sdk/tags/EventBus';
-import { ArrowRight, Pause, Play, Plus, Search, Send, Zap } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { emitBusEvent, Trigger, type BusEventType, type PatternMatch } from '@sdk';
+import { ArrowRight, Plus, Search, Send, Zap } from 'lucide-react';
+import { useMemo, useState } from 'react';
 import { Button } from '@src/components/ui/button';
 import { Input } from '@src/components/ui/input';
 import { Textarea } from '@src/components/ui/textarea';
@@ -30,9 +20,7 @@ import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { useAutomationWords } from './automation-words';
 import type { AutomationsRoute } from './automations-pointer';
-
-/** How many events the live stream keeps in view. */
-const STREAM_CAP = 200;
+import { BusStream } from './BusStream';
 
 export function BusView({ route }: { route: AutomationsRoute }) {
   const { t } = useLingui();
@@ -40,24 +28,8 @@ export function BusView({ route }: { route: AutomationsRoute }) {
   const { navigation } = useDockNavigation();
   const { data: map, error } = useBusMap();
   const [query, setQuery] = useState('');
-  const [events, setEvents] = useState<FlowEvent[]>([]);
-  const [paused, setPaused] = useState(false);
   const go = (patch: Partial<AutomationsRoute>) =>
     navigation.openDock(DockPointer.forAutomations({ ...route, place: 'bus', ...patch }));
-
-  // Seed from the backend ring (the bus keeps no history), then follow live.
-  useEffect(() => {
-    let alive = true;
-    void recentBusEvents()
-      .then((r) => alive && setEvents(r.events.slice(-STREAM_CAP)))
-      .catch(() => undefined);
-    return () => {
-      alive = false;
-    };
-  }, []);
-  useOnTag('*', (event) => {
-    if (!paused) setEvents((prev) => [...prev.slice(-(STREAM_CAP - 1)), event]);
-  });
 
   const types = useMemo(
     () =>
@@ -68,11 +40,6 @@ export function BusView({ route }: { route: AutomationsRoute }) {
     [map, query],
   );
   const selected: BusEventType | undefined = map?.event_types.find((e) => e.name === route.tag);
-  const stream = events
-    .filter((e) => (route.tag ? tagMatches(route.tag, e.tag) : true))
-    .filter((e) => (route.target ? targetMatches(route.target, e.target) : true))
-    .slice()
-    .reverse();
 
   return (
     <div className="flex h-full min-h-0 flex-col" data-testid="automations-bus">
@@ -229,49 +196,7 @@ export function BusView({ route }: { route: AutomationsRoute }) {
             </p>
           )}
 
-          <section data-testid="bus-stream">
-            <div className="mb-2 flex items-center gap-2">
-              <h3 className="text-sm font-medium">
-                <Trans>Live</Trans>
-              </h3>
-              {(route.tag || route.target) && (
-                <span className="text-xs text-muted-foreground">
-                  <Trans>filtered to {route.tag ?? route.target}</Trans>
-                </span>
-              )}
-              <span className="flex-1" />
-              <Button
-                size="sm"
-                variant="ghost"
-                className="gap-1"
-                onClick={() => setPaused((p) => !p)}
-                data-testid="bus-pause"
-              >
-                {paused ? <Play className="size-3.5" aria-hidden /> : <Pause className="size-3.5" aria-hidden />}
-                {paused ? <Trans>Resume</Trans> : <Trans>Pause</Trans>}
-              </Button>
-            </div>
-            <div className="max-h-72 overflow-auto rounded border border-border font-mono text-[11px]">
-              {stream.length === 0 ? (
-                <p className="p-3 font-sans text-xs text-muted-foreground">
-                  <Trans>
-                    Nothing yet. Only some event families reach the app; the counts above cover every event.
-                  </Trans>
-                </p>
-              ) : (
-                stream.map((e) => (
-                  <div
-                    key={e.id}
-                    className="grid grid-cols-[6rem_minmax(0,12rem)_minmax(0,1fr)] gap-2 border-t border-border px-2 py-1 first:border-t-0"
-                  >
-                    <span className="text-muted-foreground">{new Date(e.timestamp).toLocaleTimeString()}</span>
-                    <span className="truncate">{e.tag}</span>
-                    <span className="truncate text-muted-foreground">{e.target}</span>
-                  </div>
-                ))
-              )}
-            </div>
-          </section>
+          <BusStream tag={route.tag} target={route.target} />
 
           <PatternSandbox defaultPattern={route.tag ?? ''} />
           <SendEvent defaultTag={route.tag ?? ''} />

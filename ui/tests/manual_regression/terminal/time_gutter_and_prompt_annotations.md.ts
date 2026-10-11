@@ -13,8 +13,8 @@
  * annotation markers) — that needs Claude to actively think+respond for minutes
  * with non-deterministic output, so they are skipped per the live-claude rule.
  *
- * Column visibility & trace filters: ProcessToolbar "Columns & Trace" dropdown
- * (aria-label="Columns & Trace"), checkboxes: "Trace events", "Time gutter",
+ * Column visibility & trace filters: the ProcessToolbar debug menu
+ * (aria-label="Debug"), "Gutters" section, checkboxes: "Trace events", "Time gutter",
  * "Annotations", "Prompt annotations", time fields "Time", "Index (seq)",
  * "Line", "Abs line", "Row time range", "Anchor time range".
  * Column header bar (18px strip) hide/show buttons:
@@ -69,12 +69,15 @@ async function ensurePtyContent(page: Page) {
 }
 
 function colDropdown(page: Page) {
-  return page.locator('button[aria-label="Columns & Trace"]');
+  return page.locator('button[aria-label="Debug"]');
 }
 
 async function openColDropdown(page: Page) {
   await colDropdown(page).click();
   await expect(page.getByText('Time gutter', { exact: false }).first()).toBeVisible({ timeout: 5_000 });
+  // The per-field toggles (Time, Index, Abs line, …) live in a submenu.
+  await page.getByRole('menuitem', { name: 'Time Gutter Fields' }).click();
+  await expect(page.getByRole('menuitemcheckbox', { name: /^Time$/ })).toBeVisible({ timeout: 5_000 });
 }
 
 async function toggleCheckbox(page: Page, name: RegExp | string) {
@@ -237,7 +240,7 @@ test.describe('Time gutter & prompt annotations', () => {
     await expect(page.locator('[data-testid="trace-gutter"]').first()).toBeVisible({ timeout: 15_000 });
 });
 
-  test('test 9: BugPlay dropdown — Trace and Annotations column toggles (entry-point parity)', async ({ page }) => {
+  test('test 9: debug menu — Trace and Annotations column toggles (entry-point parity)', async ({ page }) => {
     test.skip(true, LIVE_CLAUDE_SKIP);
     test.setTimeout(60_000);
     await gotoAgenticProcess(page);

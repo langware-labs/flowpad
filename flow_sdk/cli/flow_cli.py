@@ -49,6 +49,7 @@ LAZY_COMMANDS: dict[str, tuple[str, str, Optional[dict]]] = {
     "status": ("flow_sdk.cli.commands.status_cmd", "status_app", None),
     "credentials": ("flow_sdk.cli.commands.credentials_cmd", "credentials_app", None),
     "agent": ("flow_sdk.cli.commands.agent_cmd", "agent_app", None),
+    "dep": ("flow_sdk.cli.commands.dep_cmd", "dep_app", None),
     "project": ("flow_sdk.cli.commands.project_cmd", "project_app", None),
     "schema": ("flow_sdk.cli.commands.schema_cmd", "schema_app", None),
     "progress": ("flow_sdk.cli.commands.progress_cmd", "progress_app", None),
@@ -63,6 +64,7 @@ LAZY_COMMANDS: dict[str, tuple[str, str, Optional[dict]]] = {
     "wizard": ("flow_sdk.cli.commands.wizard_cmd", "wizard_command", _EXTRA),
     "migrate": ("flow_sdk.cli.commands.migrate_cmd", "migrate_app", None),
     "instance": ("flow_sdk.cli.commands.instance_cmd", "instance_app", None),
+    "workspace": ("flow_sdk.cli.commands.workspace_cmd", "workspace_app", None),
     "diagnose": ("flow_sdk.cli.commands.diagnose_cmd", "diagnose_command", _EXTRA),
 }
 
@@ -263,6 +265,7 @@ def upgrade(
         )
         typer.echo(f"Upgrading flowpad {__version__} -> {latest} as soon as this command exits (about a minute).")
         typer.echo(f"Progress: {log}   Check with: flow")
+        _echo_restart_hint(latest)
         return
     typer.echo(f"Upgrading flowpad {__version__} -> {latest}...")
     result = subprocess.run(self_update.build_install_command(latest))
@@ -270,6 +273,22 @@ def upgrade(
         typer.echo("Upgrade failed.", err=True)
         raise typer.Exit(result.returncode)
     typer.echo(f"flowpad upgraded: {__version__} -> {latest}.")
+    _echo_restart_hint(latest)
+
+
+def _echo_restart_hint(latest: str) -> None:
+    """A running server keeps the code it started with: say so, or it serves the old version on."""
+    from flow_sdk.server.launch import server_alive
+
+    try:
+        running = server_alive()
+    except Exception:  # noqa: BLE001 -- a hint, never a reason to fail the upgrade
+        return
+    if running:
+        typer.echo(
+            f"Flowpad is still running the old version. Restart it to use {latest}: "
+            "`flow stop`, then `flow start` (or quit and reopen the desktop app)."
+        )
 
 
 def _start_service(port: int) -> None:

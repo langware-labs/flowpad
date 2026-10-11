@@ -6,8 +6,9 @@ import { Button } from '@src/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
 import { cn } from '@src/lib/utils';
-import { BookMarked, ChevronDown, FileText, Layers } from 'lucide-react';
+import { BookMarked, ChevronDown, FileText, Monitor } from 'lucide-react';
 import { DisplayHistoryList } from '@src/pages/flow-page/display-history-button';
+import { latestPerTarget } from '@src/pages/flow-page/display-stack';
 import { PromptLibraryMenu } from '@src/components/prompt-library/PromptLibraryMenu';
 import { useIsAdvanced } from '@src/components/view-mode';
 import { compareArtifactsNewest } from '@src/hooks/use-process-artifacts';
@@ -82,7 +83,7 @@ export const TerminalBottomRibbon: React.FC<TerminalBottomRibbonProps> = ({
       {/* Controls strip: status LED + plan/doc chips + side-tab launchers. */}
       <div className="flex items-center px-4 py-1.5">
         {/* Left: worker status LED. The chat⇄terminal toggle that used to live
-          here is now the mode selector in the footer (ViewToggle). */}
+          here is now the session's own switch (SessionSurfaceSwitch). */}
         <div className="flex items-center gap-2">
           <span className={`inline-flex h-2 w-2 rounded-full ${isActive ? 'bg-emerald-500' : 'bg-red-500'}`} />
           {hasLastPlan && onOpenLastPlan && (
@@ -275,10 +276,11 @@ const ArtifactsChip: React.FC<{
  * process's tab chip: the tab strip is for tabs, and a run's output belongs on
  * the run's own ribbon.
  *
- * One button with a count; clicking it lists the whole `display_stack`
- * newest-first with an "ago" stamp, and a row opens that target as a tab. The
- * stack rides on the process entity (backend-capped at 50), so this costs no
- * fetch, and the rows mount only while the popover is open.
+ * One button with a count of distinct targets; clicking it lists them
+ * newest-first (a target shown twice is one row, stamped with its latest show),
+ * and a row opens that target as a tab. The stack rides on the process entity
+ * (backend-capped at 50), so this costs no fetch, and the rows mount only while
+ * the popover is open.
  */
 const SHOWN_CHIP_CLASSES = 'h-6 text-sky-400 border-sky-400/40 hover:border-sky-400 hover:text-sky-300';
 
@@ -299,8 +301,8 @@ const ShownChip: React.FC<{
           title={t`Everything this run has shown`}
           className={cn(SHOWN_CHIP_CLASSES, 'gap-1.5 px-2 text-[11px]')}
         >
-          <Layers className="h-3.5 w-3.5" />
-          <span className="tabular-nums">{shown.length}</span>
+          <Monitor className="h-3.5 w-3.5" />
+          <span className="tabular-nums">{latestPerTarget(shown).length}</span>
         </Button>
       </PopoverTrigger>
       <PopoverContent align="start" side="top" className="w-72 p-1">

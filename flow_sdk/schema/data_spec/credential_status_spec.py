@@ -8,6 +8,7 @@ from typing import Optional
 
 from pydantic import ConfigDict
 
+from flow_sdk.schema.data_spec.asset_setup_spec import SetupSkipSpec
 from flow_sdk.schema.data_spec.credential_contract import (
     DEFAULT_ENVIRONMENT,
     CredentialRequirement,
@@ -55,6 +56,9 @@ class CredentialStatusRowSpec(DataSpec):
     name: str
     title: str = ""
     description: str = ""
+    #: What it is needed for, in one line, and the full reason (``CredentialSpec``).
+    needed_for: str = ""
+    justification: str = ""
     icon_name: str = ""
     help_url: str = ""
     setup_wiki: str = ""
@@ -70,7 +74,18 @@ class CredentialStatusRowSpec(DataSpec):
     #: ``mixed`` when its variables are split (each var row says its own).
     value_store: str
     lm_provider: str = ""
-    #: ``connected`` (every required value present), ``partial`` or ``missing``.
+    #: ``env`` (values are variables) or ``oauth`` (a provider's grant).
+    kind: str = "env"
+    #: oauth: the provider, the scopes the project needs, and those the held grant does not cover.
+    provider: str = ""
+    scopes: list[str] = []
+    missing_scopes: list[str] = []
+    #: Skipped in the project's setup on this machine (the record's ``setup_skipped``).
+    setup_skipped: Optional[SetupSkipSpec] = None
+    #: Where its folder is on this machine — what "Skip → Always" would remove.
+    asset_ref: str = ""
+    #: ``connected`` (every required value present / the grant held and covering), ``partial`` (some values;
+    #: a grant missing scopes), ``needs_reauth`` (oauth: the grant went stale) or ``missing``.
     state: str
     vars: list[CredentialVarStatusSpec] = []
 

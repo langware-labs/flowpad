@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import csv
 import json
+import re
 import shutil
 import uuid
 from datetime import datetime, timezone
@@ -50,6 +51,17 @@ TEXT_EXTS = {".txt", ".md"}            # a file naming one of these is text, not
 
 _Doc = tuple[dict[str, Any], dict[str, Any]]  # a two-section doc: (metadata, data)
 
+#: A row KEY is its example folder's name. One a caller chooses is lower-case letters, digits,
+#: ``_`` and ``-`` -- never a leading dot (the layout's own scratch dirs are dotted).
+ROW_KEY = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
+
+
+def check_key(key: Any) -> str:
+    """``key`` when it can name an example folder, else ``ValueError``."""
+    if not isinstance(key, str) or len(key) > 120 or not ROW_KEY.match(key):
+        raise ValueError(f"{key!r} cannot be a row key: use a-z, 0-9, _ and -, starting with a letter or digit")
+    return key
+
 
 # ── shared helpers ────────────────────────────────────────────────────────────
 
@@ -63,6 +75,50 @@ def example_id(dataset_id: str, key: str) -> str:
     from flow_sdk.api.api_types.identifier import mint_uuid  # noqa: PLC0415
 
     return mint_uuid(f"{dataset_id}:{key}", namespace=uuid.NAMESPACE_DNS)
+
+
+#: Where a row keeps its own id: ``example.json`` ``metadata.id`` -- a v4 minted when a new row is first
+#: written (a row from before keeps its legacy v5, stored on its next write), so it survives a rename,
+#: a re-clone (the dataset's own id is not in git) and a re-index. A row kept OUT of git (gitignored
+#: rows) gets its id on each machine: a dataset in git must not link to it.
+ROW_ID = "id"
+
+
+def stored_row_id(metadata: dict[str, Any]) -> Optional[str]:
+    """The id a row stores, when it is a valid entity id."""
+    from flow_sdk.api.api_types.identifier import is_valid_entity_id  # noqa: PLC0415
+
+    held = metadata.get(ROW_ID)
+    return held if is_valid_entity_id(held) else None
+
+
+def row_id(ex_dir: Path, dataset_id: str, metadata: Optional[dict[str, Any]] = None) -> str:
+    """A row's id: the one it stores, else (a row written before ids were stored) the legacy id
+    derived from the dataset id and its folder name -- adopted, i.e. stored, on its next write."""
+    held = stored_row_id(metadata if metadata is not None else _load_example_meta(Path(ex_dir))[0])
+    return held or example_id(dataset_id, Path(ex_dir).name)
+
+
+def row_version(ex_dir: Path) -> str:
+    """A row's version: a digest of every file in its folder. Read off the bytes, so a row that no
+    longer fits its schema has one too (it can be repaired or deleted with a version check), and any
+    write -- by Flowpad or anyone -- moves it. Hidden files and folders (``.DS_Store``) are not the
+    row: a file browser dropping one never makes a save look like a conflict."""
+    import hashlib  # noqa: PLC0415
+    import os  # noqa: PLC0415
+
+    digest = hashlib.sha256()
+    root = Path(ex_dir)
+    for here, dirs, files in os.walk(root):
+        dirs[:] = sorted(d for d in dirs if not d.startswith("."))
+        for name in sorted(f for f in files if not f.startswith(".")):
+            path = Path(here) / name
+            digest.update(path.relative_to(root).as_posix().encode() + b"\0")
+            try:
+                digest.update(path.read_bytes())
+            except OSError:
+                pass
+    return digest.hexdigest()[:16]
 
 
 def coerce_dataset_enum(value: Any, enum_cls: type, default: Any) -> Any:
@@ -91,7 +147,7 @@ def load_doc(path: Path) -> _Doc:
 
 
 def write_doc(path: Path, metadata: dict[str, Any], data: dict[str, Any]) -> None:
-    _write(path, json.dumps({"metadata": metadata, "data": data}, indent=2, default=str) + "\n")
+    _write(path, json.dumps({"metadata": metadata, "data": data}, indent=2, default=str, ensure_ascii=False) + "\n")
 
 
 def _write(path: Path, text: str) -> None:
@@ -145,6 +201,9 @@ class DatasetLayout:
     def annotate(self, folder, example_id_: str, ground_truth: Any, *, dataset_id: str, by: str = "",
                  main: str = ANNOTATION_FILE) -> Path:
         raise NotImplementedError("annotate is io_folder only — a CSV dataset is rewritten whole")
+
+    def set_data(self, folder, example_id_: str, data: dict[str, Any], *, dataset_id: str) -> Path:
+        raise NotImplementedError("set_data is io_folder only — a CSV dataset is rewritten whole")
 
     def index(self, folder, *, dataset_id: str) -> list[dict[str, Any]]:
         """Per-example scalars (id, source item, kind, gold present) without
@@ -330,7 +389,8 @@ def _example_dirs(folder) -> list[Path]:
     examples_dir = Path(folder) / EXAMPLES_DIR
     if not examples_dir.is_dir():
         return []
-    return sorted((p for p in examples_dir.iterdir() if p.is_dir()), key=lambda p: p.name)
+    return sorted((p for p in examples_dir.iterdir() if p.is_dir() and not p.name.startswith(".")),
+                  key=lambda p: p.name)
 
 
 def _main_document(shape: type) -> str:
@@ -506,7 +566,9 @@ class FolderLayout(DatasetLayout):
                 (only,) = held.files.values()
                 if isinstance(only, FileRef):
                     row[base] = only
-        row["id"] = example_id(dataset_id, ex_dir.name)
+        row["id"] = row_id(ex_dir, dataset_id)
+        row["key"] = ex_dir.name
+        row["version"] = row_version(ex_dir)
         return spec.model_validate(row)
 
     @staticmethod
@@ -558,7 +620,8 @@ class FolderLayout(DatasetLayout):
         ex_meta, ex_data = _load_example_meta(ex_dir)
         row: dict[str, Any] = {
             "kind": coerce_dataset_enum(ex_meta.get("kind"), ExampleKind, ExampleKind.TRAIN),
-            "metadata": dict(ex_meta),
+            # The row's id is the row's (``row_id``), not part of the metadata it carries.
+            "metadata": {k: v for k, v in ex_meta.items() if k != ROW_ID},
             "data": ex_data,
         }
         for base in (*SLOT_BASES, *([EXPECTED_LEGACY] if alias else [])):
@@ -599,19 +662,30 @@ class FolderLayout(DatasetLayout):
         (ids,) = self.append_many(folder, [(ex, contents)], dataset_id=dataset_id)
         return ids
 
-    def append_many(self, folder, rows: Sequence[tuple], *, dataset_id: str) -> list[str]:
+    def append_many(self, folder, rows: Sequence[tuple], *, dataset_id: str,
+                    keys: Optional[Sequence[Optional[str]]] = None) -> list[str]:
         """Append a batch: ONE directory scan for the whole batch, then a dir
-        per row (``rows`` is ``(example, contents)`` pairs). Numbering follows
-        the highest existing ``NNNN``, never the count, so a gap is preserved."""
+        per row (``rows`` is ``(example, contents)`` pairs). A row with a
+        ``keys`` entry lands in ``examples/<key>/`` (refused when taken, before
+        anything is written); the others are numbered after the highest
+        existing ``NNNN``, never the count, so a gap is preserved."""
         examples_dir = Path(folder) / EXAMPLES_DIR
         examples_dir.mkdir(parents=True, exist_ok=True)
-        taken = [int(p.name) for p in examples_dir.iterdir() if p.is_dir() and p.name.isdigit()]
+        keys = list(keys) if keys is not None else [None] * len(rows)
+        if len(keys) != len(rows):
+            raise ValueError("keys: one entry per row")
+        existing = {p.name for p in examples_dir.iterdir() if p.is_dir()}
+        chosen = [check_key(k) for k in keys if k is not None]
+        clash = sorted({k for k in chosen if k in existing or chosen.count(k) > 1})
+        if clash:
+            raise ValueError(f"row keys already taken: {clash}")
+        taken = [int(name) for name in existing if name.isdigit()]
         nxt = (max(taken) + 1) if taken else 1
         ids = []
-        for offset, (ex, contents) in enumerate(rows):
-            name = f"{nxt + offset:04d}"
-            self.write_example(examples_dir / name, ex, contents=contents)
-            ids.append(example_id(dataset_id, name))
+        for (ex, contents), key in zip(rows, keys):
+            if key is None:
+                key, nxt = f"{nxt:04d}", nxt + 1
+            ids.append(self.write_example(examples_dir / key, ex, contents=contents))
         return ids
 
     def index(self, folder, *, dataset_id: str) -> list[dict[str, Any]]:
@@ -624,7 +698,8 @@ class FolderLayout(DatasetLayout):
         for ex_dir in _example_dirs(folder):
             meta, _ = _load_example_meta(ex_dir)
             out.append({
-                "example_id": example_id(dataset_id, ex_dir.name),
+                "example_id": row_id(ex_dir, dataset_id, meta),
+                "key": ex_dir.name,
                 "item_id": (meta.get("source") or {}).get("item_id"),
                 "kind": str(coerce_dataset_enum(meta.get("kind"), ExampleKind, ExampleKind.TRAIN).value),
                 "annotated": self.has_ground_truth(ex_dir),
@@ -632,10 +707,61 @@ class FolderLayout(DatasetLayout):
         return out
 
     def example_dir(self, folder, example_id_: str, *, dataset_id: str) -> Optional[Path]:
-        """The directory behind an example id, or None. Ids are a pure (cached)
-        function of ``(dataset_id, dir name)``, so this is a scan, never a
-        lookup table."""
-        return next((p for p in _example_dirs(folder) if example_id(dataset_id, p.name) == example_id_), None)
+        """The directory behind an example id OR key, or None. A key is the directory itself; an id
+        is a scan of the rows' stored ids (``row_id``), never a lookup table."""
+        if isinstance(example_id_, str) and ROW_KEY.match(example_id_):
+            direct = Path(folder) / EXAMPLES_DIR / example_id_
+            if direct.is_dir():
+                return direct
+        return next((p for p in _example_dirs(folder) if row_id(p, dataset_id) == example_id_), None)
+
+    def put_example(self, folder, key: str, ex: ExampleSpec, *, dataset_id: str,
+                    contents: Optional[dict[str, Any]] = None) -> str:
+        """Write ``ex`` as the example ``key`` -- a new one, or a REPLACEMENT of the one there, which
+        keeps the replaced row's id. Built in a scratch dir beside it and swapped in, so a reader
+        sees the old example or the new one, never half of each. Returns the id."""
+        examples_dir = Path(folder) / EXAMPLES_DIR
+        examples_dir.mkdir(parents=True, exist_ok=True)
+        target = examples_dir / check_key(key)
+        if target.is_dir() and not stored_row_id(ex.metadata):
+            ex = ex.model_copy(update={"metadata": {**ex.metadata, ROW_ID: row_id(target, dataset_id)}})
+        stamp = uuid.uuid4().hex[:8]
+        scratch, old = examples_dir / f".{key}.new-{stamp}", examples_dir / f".{key}.old-{stamp}"
+        try:
+            rid = self.write_example(scratch, ex, contents=contents)
+            if target.exists():
+                target.rename(old)
+            scratch.rename(target)
+        finally:
+            for leftover in (scratch, old):
+                if leftover.exists():
+                    shutil.rmtree(leftover)
+        return rid
+
+    def delete_example(self, folder, example_id_: str, *, dataset_id: str) -> str:
+        """Remove one example (its whole directory). Returns its key; ``LookupError`` when absent."""
+        ex_dir = self.example_dir(folder, example_id_, dataset_id=dataset_id)
+        if ex_dir is None:
+            raise LookupError(f"no example {example_id_} in {folder}")
+        shutil.rmtree(ex_dir)
+        return ex_dir.name
+
+    def rename_example(self, folder, example_id_: str, new_key: str, *, dataset_id: str) -> str:
+        """Give one example a new key (its directory is moved). Its id does NOT change -- a row
+        written before ids were stored has its legacy id stored first -- so every reference to it
+        (``<kind>.id.<uuid>``) still resolves. Returns the id."""
+        ex_dir = self.example_dir(folder, example_id_, dataset_id=dataset_id)
+        if ex_dir is None:
+            raise LookupError(f"no example {example_id_} in {folder}")
+        target = ex_dir.parent / check_key(new_key)
+        if target.exists():
+            raise ValueError(f"row key already taken: {new_key!r}")
+        metadata, data = _load_example_meta(ex_dir)
+        rid = row_id(ex_dir, dataset_id, metadata)
+        if not stored_row_id(metadata):
+            self.write_example_meta(ex_dir, {**metadata, ROW_ID: rid}, data)
+        ex_dir.rename(target)
+        return rid
 
     def annotate(self, folder, example_id_: str, ground_truth: Any, *, dataset_id: str, by: str = "",
                  main: str = ANNOTATION_FILE) -> Path:
@@ -665,10 +791,21 @@ class FolderLayout(DatasetLayout):
         self.write_example_meta(ex_dir, metadata, data)
         return ex_dir
 
+    def set_data(self, folder, example_id_: str, data: dict[str, Any], *, dataset_id: str) -> Path:
+        """Replace one example's free ``data`` (its ``example.json`` data section); metadata is kept."""
+        ex_dir = self.example_dir(folder, example_id_, dataset_id=dataset_id)
+        if ex_dir is None:
+            raise LookupError(f"no example {example_id_} in {folder}")
+        metadata, _ = _load_example_meta(ex_dir)
+        self.write_example_meta(ex_dir, metadata, data)
+        return ex_dir
+
     def write_example(self, ex_dir: Path, ex: ExampleSpec, *, contents: Optional[dict[str, Any]] = None,
-                      source: Optional[Path] = None, stamp: bool = True) -> None:
+                      source: Optional[Path] = None, stamp: bool = True) -> str:
         """The primitive: one example into one directory. ``contents`` supplies
-        file bytes/JSON by relative path; else ``source`` is copied; else empty."""
+        file bytes/JSON by relative path; else ``source`` is copied; else empty.
+        Returns the row's id, stored in ``example.json`` when stamping: the one the example
+        carries (``metadata.id``, else a valid ``ex.id`` read back from disk), else a new v4."""
         ex_dir = Path(ex_dir)
         ex_dir.mkdir(parents=True, exist_ok=True)
         contents = contents or {}
@@ -686,8 +823,15 @@ class FolderLayout(DatasetLayout):
                 sc = meta.pop(key)
                 if isinstance(sc, dict):
                     write_doc(ex_dir / key, sc.get("metadata") or {}, sc.get("data") or {})
+        from flow_sdk.api.api_types.identifier import is_valid_entity_id, mint_uuid  # noqa: PLC0415
+
+        # An example rewritten in place keeps the id its folder already stores: storing the same
+        # rows twice must not mint new ids (every save would churn every example.json).
+        rid = (stored_row_id(meta) or (ex.id if is_valid_entity_id(ex.id) else None)
+               or stored_row_id(_load_example_meta(ex_dir)[0]) or mint_uuid())
         if stamp:
-            self.write_example_meta(ex_dir, {**meta, "kind": ex.kind.value}, ex.data)
+            self.write_example_meta(ex_dir, {**meta, ROW_ID: rid, "kind": ex.kind.value}, ex.data)
+        return rid
 
     def write_example_meta(self, ex_dir: Path, metadata: dict[str, Any], data: Optional[dict[str, Any]] = None) -> None:
         """``example.json`` — the ONE writer."""
@@ -715,7 +859,7 @@ class FolderLayout(DatasetLayout):
                 elif isinstance(payload, str):
                     _write(target, payload)
                 else:
-                    _write(target, json.dumps(payload, indent=2, default=str) + "\n")
+                    _write(target, json.dumps(payload, indent=2, default=str, ensure_ascii=False) + "\n")
             elif source is not None and (source / node.path).is_file():
                 shutil.copyfile(source / node.path, target)
             elif not target.exists():

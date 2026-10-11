@@ -98,34 +98,30 @@ def build_dir_zip(local_path: str) -> BytesIO:
     if not root.is_dir():
         raise ValueError(f"copy_folder: not a directory: {local_path}")
 
+    from flow_sdk.utils.git_ignore import ignored_under, is_under  # noqa: PLC0415
+
+    # What git excludes never leaves for another machine through here: nobody chose those files.
+    ignored = ignored_under(root)
     buf = BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
         for p in sorted(root.rglob("*"), key=str):
-            if p.is_file() and not p.is_symlink():
+            if p.is_file() and not p.is_symlink() and not is_under(p, ignored):
                 zf.write(p, p.relative_to(root).as_posix())
     buf.seek(0)
     return buf
 
 
-def _bootstrap_report(declared: object) -> dict:
-    """Flatten a ``reconcile_bootstrap`` outcome into the clone's response.
-
-    It returns an ``ApiSuccessResponse`` on success and this action already has
-    its own envelope, so the interesting part — did what the manifest declared
-    actually land — is unwrapped here rather than nested two envelopes deep
-    where no caller would look for it.
-    """
-    if isinstance(declared, dict):  # the failure marker built above
-        return declared
-    data = getattr(declared, "data", None)
-    if not isinstance(data, dict):
-        return {"status": "none"}
-    return {
-        "status": data.get("status") or "none",
-        "content_projects": data.get("content_projects") or [],
-        "failed": data.get("failed") or [],
-        "helpdesk_id": data.get("helpdesk_id"),
-    }
+def _dependencies_report(states: object) -> dict:
+    """What the clone's ``flow.json`` declared and whether it landed: ``ok`` when every
+    required dependency is ready, ``failed`` otherwise (or the failure marker), ``none``
+    when nothing is declared."""
+    if isinstance(states, dict):  # the failure marker built above
+        return states
+    rows = [s.model_dump(mode="json") for s in (states or [])]
+    if not rows:
+        return {"status": "none", "dependencies": []}
+    missing = [r for r in rows if r["required"] and r["state"] != "ready"]
+    return {"status": "failed" if missing else "ok", "dependencies": rows}
 
 
 class ComputeNode(
@@ -1176,14 +1172,14 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
         ``target_name`` set to accept the suggestion.
         """
         from flow_sdk.app.actions.oauth_action import _get_github_token_for_current_user
-        from flow_sdk.config import agent_workspace_root  # noqa: PLC0415
-
-        workspace_root = str(agent_workspace_root())
         from flow_sdk.fs_store.origin.git_origin import GitOrigin
         from flow_sdk.utils.git import derive_repo_leaf_from_url
 
         request_info = get_current_request_info()
         body = await request_info.get_post_data() if request_info else {}
+        workspace_root, error = self._workspace_base(body)
+        if error:
+            return error
         raw_origin = (body or {}).get("git_origin")
         target_name = (body or {}).get("target_name")
         try:
@@ -1214,7 +1210,7 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
             )
 
         target_dir = os.path.join(workspace_root, leaf)
-        suggested = self._next_free_leaf(leaf)
+        suggested = self._next_free_leaf(leaf, base=workspace_root)
         if suggested != leaf:
             # The caller chose this name and it is taken — refuse; offer the
             # next-free `<leaf>-N` so the dialog can suggest it.
@@ -1241,57 +1237,58 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
 
         project = await self._materialize_project(target_dir)
 
-        # Converge what the repo DECLARES, not just what it contains.
-        #
-        # A repo's `.flowpad/bootstrap.json` can name live content projects — the
-        # help desk that answers its tickets, a skills repo its agents rely on.
-        # Without this the manifest was honoured on exactly one path
-        # (`setup-from-bootstrap-git`, which SEVERS the git link and is for
-        # templates), so a plain "Open from git" cloned a project whose declared
-        # desk and agents simply never arrived: the user landed in a project
-        # whose own task file told them to ask an agent that was not there.
-        #
-        # AFTER the one-shot scan below, deliberately. `_index_additional_dir`
-        # re-saves this Project, and doing that after the reconcile clobbered the
-        # per-entry sidecar `add_context_dir` had just stamped — leaving the desk
-        # LINKED (`shared_context_entities`) but pathless, so `include_dirs` and
-        # therefore `context_roots` stayed empty and the agents the manifest
-        # brought in were invisible to the project home. The sidecar write is
-        # guarded by `not already_linked`, so once lost it is never re-stamped.
+        # Converge what the repo DECLARES, not just what it contains: its
+        # ``flow.json`` dependencies (a help desk, a skills repo its agents rely on).
+        # AFTER the one-shot scan below, deliberately: ``_index_additional_dir``
+        # re-saves this Project, and resolving first had that save clobber the
+        # links resolving had just written.
         declared: object = None
         # The sanctioned one-shot scan, not a banned auto-walk: the user asked
         # for this clone, and it has to be searchable when they land in it.
         await _index_additional_dir(target_dir)
 
         try:
-            declared = await project.reconcile_bootstrap()
+            declared = await project.resolve_dependencies()
         except Exception as exc:  # noqa: BLE001 -- a declaration must not fail the open
-            # Best-effort is about the MANIFEST — third-party content that may be
-            # malformed or name an unreachable repo. It is not licence to hide a
-            # failure of ours: the project is now missing what it declared, and a
-            # caller that is told nothing cannot offer the re-open that fixes it.
-            # `reconcile_bootstrap` is idempotent, so saying so is enough.
-            logging.error("create-project-from-git: bootstrap reconcile FAILED: %s", exc, exc_info=True)
+            # Best-effort is about the DECLARATION — third-party content that may name
+            # an unreachable repo. It is not licence to hide a failure of ours: the
+            # caller is told, and resolving is idempotent, so a re-open fixes it.
+            logging.error("create-project-from-git: resolving dependencies FAILED: %s", exc, exc_info=True)
             declared = {"status": "failed", "error": str(exc)}
 
         return ApiSuccessResponse(
             data={
                 "project": project.model_dump(mode="json"),
-                # What the manifest asked for and whether it landed. Silence here
-                # is what let a half-built project look finished.
-                "bootstrap": _bootstrap_report(declared),
+                # What flow.json asked for and whether it landed. Silence here is
+                # what let a half-built project look finished.
+                "dependencies": _dependencies_report(declared),
             }
         )
 
     @staticmethod
-    def _next_free_leaf(leaf: str) -> str:
+    def _next_free_leaf(leaf: str, base: str | None = None) -> str:
         """``leaf``, or the next ``leaf-N`` nothing has claimed at all, under
-        the agent workspace root — ``fresh_clone_slot`` without the empty-dir reuse.
-        All three callers want a path that does not exist: a 409 suggestion, a
-        delivered tree moved into place, and the name-availability probe."""
+        the workspace root ``base`` (the default one when None) — ``fresh_clone_slot``
+        without the empty-dir reuse. All three callers want a path that does not
+        exist: a 409 suggestion, a delivered tree moved into place, and the
+        name-availability probe."""
         from flow_sdk.fs_store.origin.git_origin import fresh_clone_slot  # noqa: PLC0415
 
-        return fresh_clone_slot(leaf, reuse_empty=False).name
+        return fresh_clone_slot(leaf, reuse_empty=False, base=Path(base) if base else None).name
+
+    @staticmethod
+    def _workspace_base(body: dict | None) -> tuple[str, "ApiFailResponse | None"]:
+        """The root a placement action puts its project under: the workspace the
+        body names (``workspace``: its id), else the default root — what every
+        caller got before workspaces existed. A named workspace that is not on this
+        node is refused rather than silently placed in the default one."""
+        from flow_sdk.config import workspace_root_for_id  # noqa: PLC0415
+
+        workspace_id = str((body or {}).get("workspace") or "").strip() or None
+        root = workspace_root_for_id(workspace_id)
+        if root is None:
+            return "", ApiFailResponse(message=f"workspace {workspace_id} is not on this node", status_code=404)
+        return str(root), None
 
     @staticmethod
     async def _materialize_project(target_dir: str, project_id: str | None = None) -> "Project":
@@ -1410,7 +1407,7 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
             return None
         return ApiFailResponse(message="staging_path is required and must be an existing directory", status_code=400)
 
-    async def _place_project(self, leaf: str, raw_project_id: object, deliver) -> ApiResponse:
+    async def _place_project(self, leaf: str, raw_project_id: object, deliver, body: dict | None = None) -> ApiResponse:
         """Put a project at a free slot under ``agent_workspace_root()`` and mint it.
 
         Everything the ways of getting a project onto this box agree on: where it
@@ -1421,18 +1418,18 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
 
         ``path`` rides in the response because the caller's next step is usually
         to attach this checkout to another project as a context folder, and only
-        this side knows where it landed.
+        this side knows where it landed. ``body.workspace`` picks the workspace root.
         """
-        from flow_sdk.config import agent_workspace_root  # noqa: PLC0415
-
-        workspace_root = str(agent_workspace_root())
+        workspace_root, error = self._workspace_base(body)
+        if error:
+            return error
 
         try:
             project_id = self._adopted_project_id(raw_project_id)
         except ValueError as exc:
             return ApiFailResponse(message=str(exc), status_code=400)
 
-        target_dir = os.path.join(workspace_root, self._next_free_leaf(leaf))
+        target_dir = os.path.join(workspace_root, self._next_free_leaf(leaf, base=workspace_root))
         deliver(target_dir)
         project = await self._materialize_project(target_dir, project_id)
         return ApiSuccessResponse(data={"project": project.model_dump(mode="json"), "path": target_dir})
@@ -1470,7 +1467,7 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
             os.makedirs(os.path.dirname(target_dir), exist_ok=True)
             shutil.move(staging_path, target_dir)
 
-        return await self._place_project(leaf, body.get("project_id"), deliver)
+        return await self._place_project(leaf, body.get("project_id"), deliver, body)
 
     @action.post(action_name="refresh-project")
     async def _refresh_project_action(self) -> ApiResponse:
@@ -1485,17 +1482,17 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
         from it stay what they were. Materializing again would park a second copy
         at a suffixed folder. Indexing stays the caller's own step.
 
-        Only a project under ``agent_workspace_root()`` can be refreshed — the folders
-        this node materialized — so a caller cannot aim the overwrite anywhere else.
+        Only a project under a workspace root (``all_workspace_roots()``) can be
+        refreshed — the folders this node materialized — so a caller cannot aim the
+        overwrite anywhere else.
         """
         import asyncio  # noqa: PLC0415
         import shutil  # noqa: PLC0415
         import subprocess  # noqa: PLC0415
 
         from flow_sdk.builtin.project import Project  # noqa: PLC0415
-        from flow_sdk.config import agent_workspace_root  # noqa: PLC0415
-
-        workspace_root = str(agent_workspace_root())
+        from flow_sdk.config import all_workspace_roots  # noqa: PLC0415
+        from flow_sdk.fs_store.path_utils import canonical_posix_path, is_path_under  # noqa: PLC0415
 
         request_info = get_current_request_info()
         body = (await request_info.get_post_data() if request_info else {}) or {}
@@ -1512,8 +1509,8 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
         path = str(getattr(project, "fs_storage_mount_path", "") or "") if project else ""
         if not path or not os.path.isdir(path):
             return ApiFailResponse(message=f"project {project_id} is not on this node", status_code=404)
-        mount_root = os.path.realpath(workspace_root)
-        if os.path.commonpath([mount_root, os.path.realpath(path)]) != mount_root:
+        real = canonical_posix_path(path)
+        if not any(is_path_under(real, canonical_posix_path(root)) for root in all_workspace_roots()):
             return ApiFailResponse(message="only a project this node materialized can be refreshed", status_code=403)
 
         try:
@@ -1554,7 +1551,9 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
 
         # `_next_free_leaf` already proved the path is free, so this only has to
         # create it (parents included).
-        return await self._place_project(leaf, body.get("project_id"), lambda target_dir: os.makedirs(target_dir))
+        return await self._place_project(
+            leaf, body.get("project_id"), lambda target_dir: os.makedirs(target_dir), body
+        )
 
     @action.post(action_name="validate-project-name")
     async def _validate_project_name_action(self) -> ApiResponse:
@@ -1573,7 +1572,10 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
         if not name:
             return ApiFailResponse(message="name is required", status_code=400)
 
-        suggested = self._next_free_leaf(name)
+        workspace_root, error = self._workspace_base(body)
+        if error:
+            return error
+        suggested = self._next_free_leaf(name, base=workspace_root)
         return ApiSuccessResponse(data={"available": suggested == name, "suggested": suggested})
 
     @action.post(action_name="set-default-project")
@@ -1646,21 +1648,28 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
     async def _navigation_decision_action(self) -> ApiResponse:
         """``POST {utterance, here?}`` -> ``navigation.outcome``: a dock to navigate, OR a prompt
         for the assistant (``flow_sdk.core.navigation_decision``). ``here`` defaults to where the
-        active tab is -- its own ``browser_context`` -- so the UI sends only what was typed.
+        tab that asked is (``get_request_connection_info``) -- its own ``browser_context`` -- so the
+        UI sends only what was typed.
         Never fails: anything missing or unsure is the prompt, and with no decision API on the
         hub that is every answer. With SmartNavigationLog on, the decision is appended to the
         SmartNavigationLog dataset AFTER this answers (``flow_sdk.core.navigation_log``)."""
-        from flow_sdk.core.navigation import here_from  # noqa: PLC0415
+        from pydantic import ValidationError  # noqa: PLC0415
+
+        from flow_sdk.core.navigation import here_from, kind  # noqa: PLC0415
         from flow_sdk.core.navigation_decision import decide_run  # noqa: PLC0415
         from flow_sdk.core.navigation_log import log_soon  # noqa: PLC0415
-        from flow_sdk.server.routes.websocket import get_active_connection_info  # noqa: PLC0415
+        from flow_sdk.server.routes.websocket import get_request_connection_info  # noqa: PLC0415
 
         request_info = get_current_request_info()
         body = (await request_info.get_post_data() if request_info else {}) or {}
-        here = body.get("here") if isinstance(body.get("here"), dict) else None
+        here = body.get("here")
+        try:
+            kind("navigation.here").model_validate(here)
+        except ValidationError:
+            here = None  # absent, or not a navigation.here: the tab is read instead
         if here is None:
-            active = get_active_connection_info()
-            here = (await here_from(active[1].browser_context if active else {})).model_dump(
+            info = get_request_connection_info()
+            here = (await here_from(info.browser_context if info else {}, navigator=True)).model_dump(
                 mode="json", exclude_none=True
             )
         request = {"utterance": str(body.get("utterance") or ""), "here": here}

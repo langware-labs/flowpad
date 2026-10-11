@@ -7,9 +7,10 @@
  */
 
 import apiClient from '../client';
+import { ConnectionManager } from '../websocket';
 
 export interface NavigationTarget {
-  kind: 'view' | 'entity' | 'file' | 'url' | 'webapp' | 'app';
+  kind: 'view' | 'entity' | 'file' | 'url' | 'webapp' | 'app' | 'log' | 'action';
   /** A dock address, a TypeId, a path, a URL, a port or an artifact id — what `kind` says. */
   value: string;
 }
@@ -33,8 +34,8 @@ export interface NavigationOutcome {
 }
 
 /**
- * `here` (a `navigation.here`) defaults to where the active tab is: the backend reads that tab's
- * own browser context, so a caller in the UI sends only what was typed.
+ * `here` (a `navigation.here`) defaults to where THIS tab is: it names itself (`X-Flow-Connection-Id`)
+ * and the backend reads that tab's own browser context, so a caller in the UI sends only what was typed.
  */
 export async function navigationDecision(
   utterance: string,
@@ -42,10 +43,12 @@ export async function navigationDecision(
 ): Promise<NavigationOutcome> {
   const asked: NavigationOutcome = { decision: { route: 'agentic' }, candidates: [], prompt: utterance };
   try {
-    const outcome = await apiClient.post<NavigationOutcome>('/api/v1/graph/compute_node/@local/navigation-decision', {
-      utterance,
-      ...(options.here ? { here: options.here } : {}),
-    });
+    const outcome = await apiClient.post<NavigationOutcome>(
+      '/api/v1/graph/compute_node/@local/navigation-decision',
+      { utterance, ...(options.here ? { here: options.here } : {}) },
+      // This tab names itself, so the backend reads ITS context -- not whichever tab it thinks is active.
+      { headers: { 'X-Flow-Connection-Id': ConnectionManager.getInstance().id } },
+    );
     return outcome ?? asked;
   } catch {
     return asked; // a box that cannot answer is a box that asks as today

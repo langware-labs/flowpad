@@ -42,7 +42,7 @@ test('C01/C03/C09/C10: a new headless Codex opens as chat and reload preserves t
     await expect(active.getByTestId('simple-chat-pane')).toBeVisible();
     await expect(active.locator('.xterm')).toHaveCount(0);
     // Headless ⇒ the Chat surface, which the footer mode selector shows selected.
-    await expect(page.getByTestId('view-toggle-standard')).toHaveAttribute('aria-checked', 'true');
+    await expect(page.getByTestId('session-surface-chat')).toHaveAttribute('aria-checked', 'true');
 
     await page.reload();
     await expect(page).toHaveURL(new RegExp(`/dock/shell/agentic_process-${processId}`));
@@ -65,7 +65,7 @@ test('C02-C16: transport switching stays one URL-first process with busy and acc
   // The chat⇄terminal switch is the 3-mode control in the terminal footer; the
   // always-mounted TerminalPanel owns the transport hook so its startup child
   // cannot swallow a mode change.
-  const modeSwitch = readFileSync(join(repo, 'ui/src/components/view-toggle/view-toggle.tsx'), 'utf8');
+  const modeSwitch = readFileSync(join(repo, 'ui/src/components/terminal/interactive-terminal/SessionSurfaceSwitch.tsx'), 'utf8');
   const modeSwitchHook = readFileSync(
     join(repo, 'ui/src/components/terminal/interactive-terminal/use-process-surface.ts'),
     'utf8',

@@ -61,11 +61,13 @@ async def test_pre_expired_credentials_short_circuit_without_network(memory_keyr
     async def handler(request: httpx.Request):
         raise AssertionError("network should not be called")
 
-    save_credentials(UserHubCredentials(
-        api_key="expired-token",
-        expires_at=time.time() - 10,
-        user={"id": "u1"},
-    ))
+    save_credentials(
+        UserHubCredentials(
+            api_key="expired-token",
+            expires_at=time.time() - 10,
+            user={"id": "u1"},
+        )
+    )
     set_user({"id": "u1"})
     client = FlowpadClient(
         ApiConfig(api_base_url="https://hub.test/api/v1"),
@@ -135,12 +137,14 @@ async def test_auth_failure_status_keeps_credentials_and_reports_warning(
     assert is_logged_in()
     assert not any("auth_expired_msg" in message for message in capture_broadcast)
     # Full detail forwarded to the warning surface.
-    assert reports == [{
-        "status_code": status_code,
-        "method": "GET",
-        "path": "/api/v1/current-user",
-        "message": "no valid access for role ['member']",
-    }]
+    assert reports == [
+        {
+            "status_code": status_code,
+            "method": "GET",
+            "path": "/api/v1/current-user",
+            "message": "no valid access for role ['member']",
+        }
+    ]
 
 
 @pytest.mark.asyncio
@@ -196,12 +200,14 @@ async def test_500_reports_error_without_clearing_credentials(monkeypatch, memor
 
     assert load_credentials().api_key == "token-1"
     assert is_logged_in()
-    assert reports == [{
-        "status_code": 500,
-        "method": "GET",
-        "path": "/api/v1/broken",
-        "message": "server broke",
-    }]
+    assert reports == [
+        {
+            "status_code": 500,
+            "method": "GET",
+            "path": "/api/v1/broken",
+            "message": "server broke",
+        }
+    ]
 
 
 @pytest.mark.asyncio
@@ -230,3 +236,27 @@ async def test_non_auth_status_does_not_clear_credentials(monkeypatch, memory_ke
 
     assert load_credentials().api_key == "token-1"
     assert is_logged_in()
+
+
+@pytest.mark.asyncio
+async def test_an_anonymous_request_sends_no_login_and_a_lapsed_one_does_not_stop_it(memory_keyring, capture_broadcast):
+    """The id is the credential (a diagnosis request's ``brief``): this box's login is not attached,
+    an EXPIRED one does not short-circuit the call, and the hub's answer signs no one out."""
+    from flow_sdk.cloud_client.client_hooks import ANONYMOUS_EXTENSION
+
+    seen = []
+
+    async def handler(request: httpx.Request):
+        seen.append(request)
+        return httpx.Response(401, json={"status": "FAIL", "data": {"error_code": "unauthenticated"}}, request=request)
+
+    save_credentials(UserHubCredentials(api_key="expired-token", expires_at=time.time() - 10, user={"id": "u1"}))
+    set_user({"id": "u1"})
+    client = FlowpadClient(ApiConfig(api_base_url="https://hub.test/api/v1"), transport=httpx.MockTransport(handler))
+
+    async with client:
+        resp = await client.request("GET", "/graph/diagnosis_request/x/brief", extensions={ANONYMOUS_EXTENSION: True})
+
+    assert resp.status_code == 401
+    assert "Authorization" not in seen[0].headers
+    assert load_credentials() is not None and is_logged_in(), "an answer to no credential says nothing about ours"

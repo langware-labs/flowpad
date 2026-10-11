@@ -282,6 +282,21 @@ async def test_a_stored_key_funds_a_harness_whose_login_nobody_checked(env) -> N
     assert str((await resolve_llm_endpoint(_process())).endpoint.kind) == "api_key"
 
 
+async def test_a_stored_keys_offer_shows_its_masked_hint_and_nothing_else(env) -> None:
+    """``detail`` is display only: the ``****last4`` the shadow carries, so the picker can say
+    WHICH key funds the slot -- never the value, and nothing on a slot with no key."""
+    from flow_sdk.lm_api import LMApiProvider, set_lm_api
+
+    async def _openrouter_offer():
+        return next(s for s in await _list_sources("claude") if s.name == "openrouter key")
+
+    assert (await _openrouter_offer()).detail == "", "no key stored, nothing to hint"
+    set_lm_api("sk-or-test", LMApiProvider.OPENROUTER)
+    offer = await _openrouter_offer()
+    assert offer.detail == "****test"
+    assert "sk-or-test" not in repr(offer)
+
+
 async def test_a_bound_box_funds_an_unprobed_harness_from_its_endpoint(env, monkeypatch) -> None:
     """The sandbox case: claude installed, never signed in, an endpoint pushed after login."""
     from flow_sdk.builtin.agentic_process.cli_drivers.llm_source import resolve_llm_endpoint
@@ -1416,3 +1431,24 @@ async def test_a_hub_token_the_hub_rejected_funds_nothing(env, monkeypatch) -> N
     finally:
         await hub_ws_manager._set_state(HubConnectionStatus.DISCONNECTED, connected=False, verified=False)
         clear_user()
+
+
+async def test_a_process_pinned_to_a_public_endpoint_spends_it_signed_out_and_only_that_process(env) -> None:
+    """``flow diagnose <request id>`` on a box with no hub login: the request's budget is public,
+    so the PROCESS that was told so may spend it -- and the box's own default is untouched, so a
+    process that was not told so still may not."""
+    from flow_sdk.builtin.agentic_process.cli_drivers.llm_source import resolve_llm_endpoint
+    from flow_sdk.schema.data_spec.llm_source_spec import LLMScope
+
+    told = SimpleNamespace(**vars(_process(endpoint=EP2)), llm_endpoint_public=True)
+
+    endpoint, chosen = await resolve_llm_endpoint(told)
+    untold = [
+        s
+        for s in await _list_sources("claude", LLMScope.of_process(_process(endpoint=EP2)))
+        if s.endpoint_typeid == EP2
+    ]
+
+    assert chosen.endpoint_typeid == EP2 and chosen.eligible
+    assert endpoint.public, "the stub must carry public so the key resolves to the public placeholder"
+    assert not untold[0].eligible and "not logged in" in untold[0].reason

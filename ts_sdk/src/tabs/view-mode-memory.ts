@@ -37,9 +37,14 @@ export interface ViewModeStorePolicy {
   project: ViewModeStore;
 }
 
+// A session tab remembers the mode it was last SHOWN in: stated when its row is
+// created, restated whenever it is opened in another mode (an address, a switch,
+// Back/Forward), so leaving a tab and coming back never changes it. The stamp's
+// equality guard keeps a plain reopen from costing a save. A project remembers
+// no mode — only a session has one.
 export const VIEW_MODE_STORE: ViewModeStorePolicy = {
-  tab: ViewModeStore.ModeSwitch,
-  project: ViewModeStore.ModeSwitch,
+  tab: ViewModeStore.TabOpen,
+  project: ViewModeStore.Never,
 };
 
 /** Anything that remembers a mode — `Project` and `AgenticProcess` both fit. */

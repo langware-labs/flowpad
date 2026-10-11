@@ -19,6 +19,7 @@ import { AssetMode } from '@src/navigation/asset-doc-types';
 import { ViewType } from '@src/types/ViewType';
 import { clearDockLoadError } from './dock-load-error-store';
 import { DockLoadError, handleDockLoadError } from './dock-load-error';
+import { projectInDockWorkspace } from './workspace-scope';
 import { wikiAuthorityForPage } from '@src/components/wiki/resolve-wiki';
 import { loadAssetRoute } from './load-asset';
 import { loadConversationRoute } from './load-conversation';
@@ -35,11 +36,12 @@ export interface DockLoaderContext {
 }
 
 /**
- * Adopt the project pinned in a dock's scope filter into context. This is the
- * URL-first project write for CONTEXT-NEUTRAL docks — the scoped browse views
- * (assets list, explorer, desktop, triggers) whose loaders have no entity to
- * derive a project from. Without it, entering a project whose landing tab is
- * one of these views leaves `CurrentProjectTypeId` pointing at the PREVIOUS
+ * Adopt the project pinned in a dock's scope filter into context: the URL-first
+ * project write for any dock whose loader has no entity to derive a project
+ * from (browse views, micro apps, lenses). `main-loader` runs it for every
+ * scope-pinned dock before the tab is materialized; the per-view calls below
+ * cover the unscoped restore. Without it, entering a project whose landing tab
+ * is one of these views leaves `CurrentProjectTypeId` pointing at the PREVIOUS
  * project (the stuck-footer switch bug). Entity-backed docks keep their own
  * derivation: they run after this and their entity's project wins.
  * Best-effort — a missing project must not fail a browse landing.
@@ -49,7 +51,15 @@ export async function adoptScopeProject(dock: DockPointer): Promise<void> {
   if (!projectId) {
     // Only an unscoped, context-neutral route restores browser memory. Explicit
     // global scopes and entity-owned routes must never inherit a default here.
-    if (!dock.scopeFilter && !dataContext.project && !isHubOnly()) await dataContext.setupProject();
+    // A project of ANOTHER workspace is neither restored nor kept: a workspace
+    // starts with no project, like a fresh install (`?workspace=`, the URL's).
+    const inWorkspace = projectInDockWorkspace(dock);
+    if (inWorkspace && dataContext.project && !inWorkspace(dataContext.project)) {
+      await dataContext.setContextEntityTypeId(ContextEntitiesEnum.CurrentProjectTypeId, null);
+    }
+    if (!dock.scopeFilter && !dataContext.project && !isHubOnly()) {
+      await dataContext.setupProject(inWorkspace ?? undefined);
+    }
     return;
   }
   if (dataContext.project?.id === projectId) return;
@@ -276,6 +286,7 @@ export async function loadDockPointer(dock: DockPointer, context: DockLoaderCont
   try {
     switch (dock.viewType) {
       case ViewType.SHELL:
+      case ViewType.VIBE:
         // Step 3 ran in the dispatcher, before the tab was minted.
         await loadShellRoute(dock.pointer, context.requestPath, processRouteCarry(dock, { resolved: true }));
         break;
@@ -327,12 +338,9 @@ export async function loadDockPointer(dock: DockPointer, context: DockLoaderCont
         break;
       case ViewType.LENS:
         // Only a claude transcript owns a project (its session's). Every other
-        // lens (codex/copilot transcripts, logs, …) is context-neutral, so the
-        // project the URL pins is the only project it has — without adopting
-        // it, a fresh load left no active project and the strip (which filters
-        // by project) hid the very tab being shown. A claude transcript's own
-        // project still wins: its loader runs after this.
-        if (dock.scopeProjectId) await adoptScopeProject(dock);
+        // lens is context-neutral: the project its URL pins was already adopted
+        // by the dispatcher (`main-loader`), and a claude transcript's own
+        // project wins here.
         await loadLensRoute(dock.pointer);
         break;
       case ViewType.GRAPH:
@@ -350,8 +358,8 @@ export async function loadDockPointer(dock: DockPointer, context: DockLoaderCont
         loadSubgraphRoute(dock);
         break;
       default:
-        // Explorer, desktop, and other loader-less views: still honor a
-        // project-pinned scope so a scoped browse landing switches the project.
+        // Explorer, desktop, and other loader-less views: an unscoped one
+        // restores the remembered project (a scoped one was adopted up front).
         await adoptScopeProject(dock);
         break;
     }

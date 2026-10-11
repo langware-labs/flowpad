@@ -77,7 +77,17 @@ def lookup_project_id_by_uname(uname: str) -> str | None:
         conn.close()
 
 
+# Canonical cwd -> real project id. A second copy of "which project owns this
+# folder" next to ``all_projects._PROJECTS_CACHE``, and it must follow the same
+# lifecycle: ``invalidate_projects_cache`` drops both, so a deleted project's id
+# is never stamped on a record again and the dict holds at most one entry per
+# live project row.
 _CWD_PID_CACHE: dict[str, str | None] = {}
+
+
+def forget_project_cwd_ids() -> None:
+    """Drop every cached cwd -> project id. Called when the set of projects changes."""
+    _CWD_PID_CACHE.clear()
 
 
 def resolve_project_id_for_cwd(cwd: str | None) -> str | None:
@@ -117,25 +127,27 @@ def resolve_project_id_for_cwd(cwd: str | None) -> str | None:
     if not is_valid_project_cwd(cwd, include_temp=True):
         return None
 
-    # Cache only confirmed real-id hits — a project's id won't change once it
-    # exists. The derived-alias fallback is intentionally NOT cached so a
-    # project created later in this process's lifetime (e.g. by a project
-    # walker in the same index run) is picked up on the next call instead of
-    # being masked by a stale alias. Keyed by the RAW cwd so a repeat hit —
-    # the common case, many sessions sharing one project cwd — skips both the
-    # Path.resolve() syscall and the project-table scan.
-    cached = _CWD_PID_CACHE.get(cwd)
-    if cached is not None:
-        return cached
-
     try:
         canonical = canonical_posix_path(cwd)
     except OSError:
         return None
 
+    # Cache only confirmed real-id hits — a project's id won't change while it
+    # exists. The derived-alias fallback is intentionally NOT cached so a
+    # project created later in this process's lifetime (e.g. by a project
+    # walker in the same index run) is picked up on the next call instead of
+    # being masked by a stale alias. Keyed by the CANONICAL cwd so one folder
+    # is one entry however a session spells it; the ``is_valid_project_cwd``
+    # check above already costs several times what canonicalising does, so a
+    # repeat hit — many sessions sharing one project cwd — still skips only
+    # what matters, the project-table scan.
+    cached = _CWD_PID_CACHE.get(canonical)
+    if cached is not None:
+        return cached
+
     real = _lookup_project_id_by_cwd(canonical)
     if real is not None:
-        _CWD_PID_CACHE[cwd] = real
+        _CWD_PID_CACHE[canonical] = real
         return real
     return Project.derive_id_for_path(canonical)
 

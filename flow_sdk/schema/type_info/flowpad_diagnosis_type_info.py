@@ -11,6 +11,7 @@ from typing import Optional
 from pydantic import Field
 
 from flow_sdk.fs_store.schema_registry import TypeInfo
+from flow_sdk.schema.data_spec.diagnose_spec import DiagnosisSpec
 from flow_sdk.schema.type_info.base_meta import BaseMeta
 from flow_sdk.schema.types import EntityType
 from flow_sdk.schema.view_mode import ViewMode
@@ -97,12 +98,17 @@ class FlowpadDiagnosisMetadata(BaseMeta):
             "a helper on another machine can see which project it happened on."
         ),
     )
+    diagnosis: Optional[DiagnosisSpec] = Field(
+        default=None,
+        description="The full diagnosis value (DiagnosisSpec): findings, machine, log tails.",
+    )
 
 
 FLOWPAD_DIAGNOSIS = TypeInfo(
     type_name=EntityType.FLOWPAD_DIAGNOSIS,
     icon="Stethoscope",
-    browseable_by=ViewMode.DEV,
+    browseable_by=ViewMode.ADVANCED,
+    dev_only=True,
     creatable=True,
     api_visible=True,
     index_fields=["title", "symptoms"],

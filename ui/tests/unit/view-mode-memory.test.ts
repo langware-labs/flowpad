@@ -25,8 +25,10 @@ describe('shouldStore', () => {
     }
   });
 
-  it('defaults both scopes to mode switch only', () => {
-    expect(VIEW_MODE_STORE).toEqual({ tab: ViewModeStore.ModeSwitch, project: ViewModeStore.ModeSwitch });
+  it('a session tab remembers the mode it was last shown in; a project remembers none', () => {
+    // Leaving a tab and coming back must never change its mode, however that
+    // mode got on screen — and only a session has one.
+    expect(VIEW_MODE_STORE).toEqual({ tab: ViewModeStore.TabOpen, project: ViewModeStore.Never });
   });
 });
 

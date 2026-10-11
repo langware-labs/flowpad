@@ -24,18 +24,18 @@ for the assistant.
 from __future__ import annotations
 
 import logging
-from typing import Any, Awaitable, Callable, Optional
+from typing import Any, Optional
 
-from flow_sdk.core.dock_address import VIEW_META, parse_dock_url, parse_view_type
+from flow_sdk.core.dock_address import VIEW_META, ViewType, canonical_address, dock_url, parse_dock_url, parse_view_type
 from flow_sdk.core.navigation import kind
 from flow_sdk.schema.data_spec.dock_pointer_spec import DockPointerSpec
 from flow_sdk.schema.data_spec.navigator_spec import NavigationTarget, NavigatorRoute
 
 logger = logging.getLogger(__name__)
 
-Engine = Callable[..., Awaitable[NavigatorRoute]]
-#: Targets the UI turns into a dock itself (``dockForTarget``): navigated, never a prompt.
-UI_BUILT = ("file", "url", "webapp")
+#: Targets the UI carries out itself: a file, URL or web-app port it turns into a dock
+#: (``dockForTarget``), an action it runs (``runUiAction``) -- handled, never a prompt.
+UI_BUILT = ("file", "url", "webapp", "action")
 
 
 def decision_of(answer: NavigatorRoute) -> dict[str, Any]:
@@ -62,7 +62,43 @@ def address_of(target: NavigationTarget) -> Optional[str]:
         view = parse_view_type(type_name)
         if view is not None and VIEW_META[view].addressable and VIEW_META[view].pointer.value != "none":
             return f"/dock/{view.value}/{ident}"
+        # The screen that is its own page (a data source's page, a trigger in Automations).
+        from flow_sdk.core.navigation import forms_for, open_form, place_address  # noqa: PLC0415
+
+        for place, form, what in forms_for(type_name):
+            if what == "page" and (pointer := open_form(form, {"typeid": target.value})) is not None:
+                return f"/dock/{place_address(place, pointer)}"
     return None
+
+
+def same_place(a: NavigationTarget, b: NavigationTarget) -> bool:
+    """``a`` and ``b`` land the person in one place: the same target, the same canonical dock
+    address (a session as an entity and as its screen; a screen and its default tab), or the same
+    page (a web-app port is its localhost URL)."""
+
+    def plain(t: NavigationTarget) -> NavigationTarget:
+        return NavigationTarget(kind="url", value=f"http://localhost:{t.value}") if t.kind == "webapp" else t
+
+    a, b = plain(a), plain(b)
+    if (a.kind, a.value) == (b.kind, b.value):
+        return True
+    there, here = address_of(a), address_of(b)
+    return there is not None and here is not None and canonical_address(there) == canonical_address(here)
+
+
+async def entity_app_address(typeid: str) -> Optional[str]:
+    """The editor app an entity opens in when nothing else addresses it (a dataset in the
+    dataset editor): the best one ``editors_for`` ranks, opened on the entity."""
+    from flow_sdk.builtin.faas.editors import editors_for  # noqa: PLC0415
+    from flow_sdk.core.entity.entity_model import Entity  # noqa: PLC0415
+
+    try:
+        subject = await Entity.get_by_typeid(typeid)
+        apps = await editors_for(subject) if subject is not None else []
+    except Exception as exc:  # noqa: BLE001 -- an address is a nicety; without one it is the prompt
+        logger.debug("no editor app for %s: %s", typeid, exc)
+        return None
+    return dock_url(ViewType.APP, str(apps[0]["typeid"]), {"subject": typeid}) if apps else None
 
 
 def _dock(address: str) -> Optional[DockPointerSpec]:
@@ -76,25 +112,37 @@ def _dock(address: str) -> Optional[DockPointerSpec]:
         return None
 
 
-async def decide(request: Any, *, engine: Optional[Engine] = None) -> Any:
+async def decide(request: Any, *, candidates: Optional[list[dict]] = None) -> Any:
     """``navigator.request`` (or its dict) -> a validated ``navigation.outcome``.
 
-    ``request.candidates`` is not a field: the engine searches, and what it offered rides back on
-    the outcome. An eval passes ``engine`` bound to a row's recorded candidates.
+    ``request.candidates`` is not a field: the navigator searches, and what it offered rides back on
+    the outcome. An eval passes ``candidates`` -- a row's recorded matches -- so it replays exactly.
     """
-    return (await decide_run(request, engine=engine))[0]
+    return (await decide_run(request, candidates=candidates))[0]
 
 
-async def decide_run(request: Any, *, engine: Optional[Engine] = None) -> tuple[Any, NavigatorRoute]:
-    """``decide``, plus the engine's own answer (its ``reason`` and ``latency_ms``) for the log."""
+async def decide_run(
+    request: Any, *, candidates: Optional[list[dict]] = None
+) -> tuple[Any, NavigatorRoute]:
+    """``decide``, plus the engine's own answer (its ``reason`` and ``latency_ms``) for the log.
+
+    ``candidates``: the search matches to offer; searched for when None. An eval passes the ones a
+    row recorded, so the row replays on exactly the options it was labelled against."""
     from flow_sdk.core.navigator import route  # noqa: PLC0415
 
     req = kind("navigator.request").model_validate(request)
     here = req.here.model_dump(mode="json", exclude_none=True) if req.here else None
-    answer = await (engine or route)(req.utterance, here=here)
+    answer = await route(req.utterance, here=here, candidates=candidates)
     outcome: dict[str, Any] = {"decision": decision_of(answer), "candidates": answer.offered}
     target = answer.target if answer.route == "quick" else None
-    address = address_of(target) if target is not None else None
+    if target is not None and target.kind == "log":
+        from flow_sdk.core.navigation_log import address as log_address  # noqa: PLC0415
+
+        address = await log_address()
+    else:
+        address = address_of(target) if target is not None else None
+        if address is None and target is not None and target.kind == "entity":
+            address = await entity_app_address(target.value)
     if address:
         outcome["address"] = address
         outcome["dock"] = _dock(address)
@@ -104,4 +152,4 @@ async def decide_run(request: Any, *, engine: Optional[Engine] = None) -> tuple[
     return out, answer
 
 
-__all__ = ["UI_BUILT", "address_of", "decide", "decide_run", "decision_of"]
+__all__ = ["UI_BUILT", "address_of", "decide", "decide_run", "decision_of", "entity_app_address"]

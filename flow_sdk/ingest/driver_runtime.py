@@ -314,6 +314,7 @@ def binding_of(row: Any, *, credentials: Optional[ResolvedSecrets] = None, perso
         config=config,
         credentials=credentials,
         persona=persona or Persona(),
+        read_only=bool(getattr(row, "read_only", False)),
     )
 
 
@@ -393,6 +394,11 @@ class DriverRuntime:
         return issubclass(self.cls, Verifiable)
 
     @property
+    def push_only(self) -> bool:
+        """A webhook is its only delivery: a poll finds nothing to fetch."""
+        return not issubclass(self.cls, Listable)
+
+    @property
     def offers_choices(self) -> bool:
         return callable(getattr(self.cls, "choices_for", None)) or issubclass(self.cls, Choosing)
 
@@ -404,6 +410,10 @@ class DriverRuntime:
     @property
     def open_inbound(self) -> bool:
         return self.can_send and self.cls.open_inbound
+
+    def open_inbound_for(self, config: Any) -> bool:
+        """``open_inbound`` for one source's config (``MessageSource.open_inbound_for``)."""
+        return self.can_send and self.cls.open_inbound_for(config or {})
 
     @property
     def identity_config_key(self) -> str:
@@ -520,7 +530,7 @@ class DriverRuntime:
     async def traverse(self, row: Any, position: Optional[Position] = None) -> Pass:
         """One pass over the source's stream from ``position`` (the row's own when omitted)."""
         position = position or position_of(row)
-        if not issubclass(self.cls, Listable):
+        if self.push_only:
             # A push-only source (a webhook is its only delivery): a poll finds nothing.
             return Pass(cursor=position.cursor, manifest=dict(position.manifest), unchanged=True)
         source = await self.open(row)
@@ -815,7 +825,9 @@ class DriverRuntime:
             return False
         return True
 
-    async def ingest_pushed(self, row: Any, payload: Any, *, headers: Any = None, raw: bytes = b"") -> dict:
+    async def ingest_pushed(
+        self, row: Any, payload: Any, *, headers: Any = None, raw: bytes = b"", verified_by_hub: bool = False
+    ) -> dict:
         """A provider's push delivery (a webhook body), as the records it carries, through the one
         ingestion chokepoint. Total: a payload carrying nothing we render ingests nothing.
 
@@ -825,7 +837,9 @@ class DriverRuntime:
         # dict — a class that checks a signature reads them lowercased either way.
         headers = {str(k).lower(): v for k, v in dict(headers or {}).items()}
         credentials = await self.credentials_for(row)
-        authentic = getattr(self.cls, "webhook_authentic", None)
+        # ``verified_by_hub``: the hub checked the vendor's signature at its edge and split the batch, so the
+        # vendor's signature no longer covers these bytes (``/<source id>/webhook``, reached only from the hub).
+        authentic = None if verified_by_hub else getattr(self.cls, "webhook_authentic", None)
         if authentic is not None and not authentic(headers or {}, raw, credentials):
             raise Rejected("the delivery's signature did not verify")
         source = await self.open(row, credentials=credentials)

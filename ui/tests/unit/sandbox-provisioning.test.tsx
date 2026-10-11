@@ -196,14 +196,25 @@ describe('sandbox provisioning asks the hub for the outcome', () => {
 
   it('forwards chosen context projects and an install spec', async () => {
     await launchWithGit({
-      contextProjects: [{ gitOrigin: ORIGIN, name: 'acme-support', scope: 'shared' }],
+      contextProjects: [{ gitOrigin: ORIGIN, name: 'acme-support', optional: false }],
       install: { kind: 'journey', id: 'onboarding' },
     });
 
     expect(bodyOf('provision-project')).toMatchObject({
-      context_projects: [{ git_origin: ORIGIN, name: 'acme-support', scope: 'shared' }],
+      context_projects: [{ git_origin: ORIGIN, name: 'acme-support', optional: false }],
       install: { kind: 'journey', id: 'onboarding' },
     });
+  });
+
+  it('forwards companions — provisioned beside the project, keeping their ids', async () => {
+    const companion = '66666666-7777-4888-8999-aaaaaaaaaaaa';
+    await launchWithGit({ projectId: PROJECT_ID, companions: [{ gitOrigin: ORIGIN, name: 'q', projectId: companion }] });
+
+    expect(bodyOf('provision-project')).toMatchObject({
+      project_id: PROJECT_ID,
+      companions: [{ git_origin: ORIGIN, name: 'q', project_id: companion }],
+    });
+    expect(bodyOf('provision-project')).not.toHaveProperty('context_projects');
   });
 
   it('opens through open-service, and never resolves a host itself', async () => {
@@ -300,12 +311,12 @@ describe('sandbox provisioning asks the hub for the outcome', () => {
     answers({ 'provision-project': provisioned(['init', 'context', 'default']) });
 
     const result = await launchWithoutRepo({
-      contextProjects: [{ gitOrigin: ORIGIN, name: 'acme-support', scope: 'shared' }],
+      contextProjects: [{ gitOrigin: ORIGIN, name: 'acme-support', optional: false }],
     });
 
     expect(rows(result)).toContain('context');
     expect(bodyOf('provision-project')).toMatchObject({
-      context_projects: [{ git_origin: ORIGIN, name: 'acme-support', scope: 'shared' }],
+      context_projects: [{ git_origin: ORIGIN, name: 'acme-support', optional: false }],
     });
   });
 

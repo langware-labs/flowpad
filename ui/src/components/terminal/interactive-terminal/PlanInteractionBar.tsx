@@ -1,9 +1,10 @@
 import { FlowData, FlowElementTypes } from '@sdk';
 import { MarkdownView } from '@src/components/markdown-view';
+import { useLinkHandlers } from '@src/components/links/LinkHandlersContext';
 import { cn } from '@src/lib/utils';
 import { t } from '@lingui/core/macro';
 import { Trans } from '@lingui/react/macro';
-import { setViewMode, ViewMode } from '@src/contexts/view-mode-context';
+import { ViewMode } from '@src/contexts/view-mode-context';
 import { useDockNavigation } from '@src/navigation';
 import { ClipboardCheck, ListChecks, Play, Terminal } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
@@ -151,14 +152,10 @@ export function PlanInteractionBar({ items, allowPicker = true }: PlanInteractio
 function AnswerInTerminalNotice({ kind }: { kind: 'question' | 'plan' }) {
   const { currentDock, navigation } = useDockNavigation();
 
-  // URL-first, the same two branches as the footer ViewToggle's `select`: on a
-  // dock route the URL carries the mode and is authoritative in the render that
-  // commits it, so the click must NAVIGATE — writing the preference alone left
-  // `?viewMode=` untouched and the surface never changed. Only a pointerless
-  // route (no dock URL to carry the mode) sets the preference directly.
+  // URL-first, a mode switch like the session's own: the address carries the
+  // mode, so the click navigates (marked, so it counts as the user's selection).
   const openTerminal = () => {
-    if (currentDock) navigation.openDock(currentDock.withViewMode(ViewMode.Advanced));
-    else setViewMode(ViewMode.Advanced);
+    if (currentDock) navigation.openDock(currentDock.withViewMode(ViewMode.Advanced), undefined, { viewModeSwitch: true });
   };
 
   return (
@@ -286,6 +283,7 @@ function PlanReadyCard({
   onExecute: () => void | Promise<void>;
 }) {
   const [open, setOpen] = useState(false);
+  const links = useLinkHandlers();
   return (
     <div className="flex flex-col gap-2">
       <div className="flex items-center justify-between gap-2">
@@ -310,7 +308,7 @@ function PlanReadyCard({
       </div>
       {open && plan && (
         <div className="max-h-60 overflow-y-auto rounded-md border border-border/60 bg-muted/30 p-2 text-[12px]">
-          <MarkdownView value={plan} compact codeChrome={false} />
+          <MarkdownView value={plan} compact codeChrome={false} links={links} />
         </div>
       )}
     </div>

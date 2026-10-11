@@ -120,6 +120,16 @@ def suppress_store():
         _SUPPRESS_STORE.reset(token)
 
 
+def in_remote_reflection() -> bool:
+    """Is the current save a verbatim reflection of a hub-origin row (``remote_reflection``)?"""
+    return _REMOTE_REFLECTION.get()
+
+
+def store_suppressed() -> bool:
+    """Does the current save write the row only (``suppress_store`` — the disk→DB adopt path)?"""
+    return _SUPPRESS_STORE.get()
+
+
 @contextmanager
 def remote_reflection():
     """Mark the enclosed save(s) as a verbatim reflection of hub-origin rows.
@@ -703,8 +713,10 @@ class Entity(DBEntity):
         record_type: str | None = None,
         status: str | None = None,
         calibration: "Any | None" = None,
+        match: Literal["all", "any"] = "all",
     ) -> list[Entity]:
-        """Full-text search using FTS5 MATCH. Returns Entity objects."""
+        """Full-text search using FTS5 MATCH. Returns Entity objects. ``match="any"`` ranks rows that
+        match any of the words (a sentence) instead of requiring all of them."""
         if not query:
             return []
         from flow_sdk.db import get_db_driver
@@ -713,7 +725,7 @@ class Entity(DBEntity):
         if not hasattr(driver, "fts_search"):
             return []
         return await driver.fts_search(
-            query=query, limit=limit, record_type=record_type, status=status, calibration=calibration
+            query=query, limit=limit, record_type=record_type, status=status, calibration=calibration, match=match
         )
 
     @classmethod
@@ -2444,6 +2456,34 @@ class Entity(DBEntity):
             cur = await cur.parent()
         return None
 
+    async def add_child_shared(self: EntityType, child: "Entity", someone_typeid=None) -> "Entity":
+        """Save ``child`` under this entity — and, when this entity is reachable on the hub, as a hub child
+        too, so every watcher of the shared parent receives it (``child_*``). The one way a child is made
+        under a parent, from a create request or from server-side code (a channel commenting on a shared
+        task), so a child never stays local by accident.
+
+        The hub may not host this entity's type (``markdown``): the child is then created under the nearest
+        ancestor with its OWN hub row, keeping ``parent_type_id`` = this entity. The share is non-fatal."""
+        # Canonical parent pointer, set before ``add_child`` (which saves the child first).
+        if "parent_type_id" in type(child).model_fields:
+            child.parent_type_id = str(self.typeid)
+        await self.add_child(child)
+        try:
+            hub_parent = await self.nearest_remote_ancestor()
+            if hub_parent is not None:
+                await hub_parent.create_child(child)
+                if getattr(child, "remote", False):
+                    await child.save(someone_typeid)
+        except Exception as e:  # noqa: BLE001
+            from flow_sdk.cloud_client.shared.errors import is_permission_refusal  # noqa: PLC0415
+
+            logging.getLogger(__name__).warning(
+                "[create] auto-share child %s under %s %s%s", child.typeid, self.typeid,
+                "REFUSED by the hub (permissions, not transient — it will never propagate): "
+                if is_permission_refusal(e) else "failed (non-fatal): ", e,
+            )
+        return child
+
     async def nearest_remote_ancestor(self: EntityType) -> Optional["Entity"]:
         """Closest entity (self or an ancestor) that has its OWN hub row
         (``remote=True``), walking ``parent``. ``None`` if none is remote.
@@ -3645,6 +3685,34 @@ class Entity(DBEntity):
         await self.update()
 
         return True
+
+    # ── Clicked links ───────────────────────────────────────────────────────
+    # A link clicked in this entity's text (a terminal line, a chat turn, a
+    # message) resolves where the entity lives. The resolver (`display_link`)
+    # only asks these two; an entity that knows better overrides them.
+
+    async def link_node(self):
+        """The compute node this entity's paths live on, or None for this machine."""
+        node_id = getattr(self, "compute_node_id", None)
+        if not node_id:
+            return None
+        from flow_sdk.builtin.faas.compute_node import ComputeNode  # noqa: PLC0415
+
+        return await ComputeNode.get_by_id(node_id)
+
+    async def link_roots(self) -> list[str]:
+        """The folders a relative link resolves against, nearest first."""
+        node = await self.link_node()
+        # Output names paths relative to where the shell IS now, not where it started.
+        live_cwd = node.compute_provider.get_pty_cwd(node.node_provider_id, self.id) if node else None
+        roots = [live_cwd, getattr(self, "workdir", None), getattr(self, "fs_storage_mount_path", None)]
+        project_id = getattr(self, "project_id", None)
+        if project_id:
+            from flow_sdk.builtin.project import Project  # noqa: PLC0415
+
+            project = await Project.get_by_id(project_id)
+            roots.append(project.fs_storage_mount_path if project else None)
+        return [root for root in roots if root]
 
 
 # NOTE: the former ACL ``Group`` (name-unique principal with a "public" group)

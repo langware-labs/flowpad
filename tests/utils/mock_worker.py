@@ -370,6 +370,12 @@ class _MockDriverMixin:
         )
 
     async def headless_prompt(self, process, instruction: str):
+        # Like every real driver's headless turn: bind the project and load its context
+        # (dependencies) first, so ``turn.process.resolved_add_dirs`` is what a worker mounts.
+        try:
+            await process.get_project()
+        except Exception:  # noqa: BLE001 — the real drivers log and continue too
+            logger.debug("MockDriver.headless_prompt: get_project failed", exc_info=True)
         if not process.session_id:
             process.session_id = mint_uuid()
         transcript_path = self.transcript_root / f"{process.id}.jsonl"

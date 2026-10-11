@@ -162,6 +162,7 @@ class FlowpadClient:
         content: Any = None,
         headers: dict[str, str] | None = None,
         timeout: float | httpx.Timeout | None = None,
+        extensions: dict[str, Any] | None = None,
     ) -> httpx.Response:
         """Make a raw HTTP request with hub hooks attached.
 
@@ -181,6 +182,7 @@ class FlowpadClient:
                 content=content,
                 headers=headers,
                 timeout=timeout,
+                extensions=extensions,
             )
         except HubAuthExpiredError:
             raise
@@ -246,6 +248,7 @@ class FlowpadClient:
         user_data = await self.get("/current-user")
         if "id" not in user_data:
             import json
+
             raise ValueError(f"Invalid user data: missing 'id' field. Got:\n{json.dumps(user_data, indent=2)}")
         return user_data
 

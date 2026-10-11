@@ -35,6 +35,7 @@ import pytest
 import tests.unit.test_data_spec.test_asset_roundtrip  # noqa: F401
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
 from flow_sdk.schema.data_spec.compute_op_spec import Rung
+from flow_sdk.schema.data_spec.data_schema_spec import DataSchemaRule
 from tests.unit.test_data_spec._roundtrip import (
     NOT_COMPARED,
     NOT_ON_DISK,
@@ -63,9 +64,9 @@ VALID: dict[str, dict] = {
     # `exe_data` is the class its `subkind` names, and `output_spec_kind` must
     # name a registered kind — a filler string is refused at read, by design
     # A completion_check OR a status_check, never both: filled, the other stays unset.
-    # a data spec defines ONE shape: a record's fields, or a dataset's example slots -- not both;
+    # a data schema defines ONE shape: a record's fields, or a dataset's example slots -- not both;
     # a field's shape is an authoring form, and a declared subkind must match the body
-    "data_spec": {
+    "data_schema": {
         "subkind": "record",
         "fields": {"utterance": {"shape": "string", "description": "what was typed"}},
         "examples": None,
@@ -101,7 +102,9 @@ VALID: dict[str, dict] = {
     # a timestamp is normalised on read, so it has to be one going in
     "source_item": {"occurred_at": "2026-01-02T03:04:05+00:00"},
     # `lm_provider` is a closed set, and an lm_provider credential is one key
-    "credential": {"lm_provider": "anthropic", "manifest_schema": 2},
+    "credential": {"lm_provider": "anthropic", "manifest_schema": 2,
+                   # an env credential (it funds an LLM); an oauth one's fields round-trip in test_oauth_credential
+                   "kind": "env", "provider": "", "scopes": [], "optional_scopes": []},
 }
 
 #: Fields the disk deliberately does not give back, and why. Each entry is a
@@ -129,6 +132,8 @@ DERIVED: dict[str, dict[str, str]] = {
 # is tagged exactly like the op's own `subkind`/`exe_data` pair, and the sampler
 # cannot invent that pairing any more than it can for `compute_op` itself.
 OVERRIDES[Rung] = {"subkind": "agent", "exe_data": {"agent": "provisioner", "prompt": "install"}}
+# A data schema's rule names exactly TWO paths -- a pairing the sampler's one-element list cannot make.
+OVERRIDES[DataSchemaRule] = {"same": ["persona.icp", "icp"]}
 
 
 def _asset_types() -> list[tuple[str, type]]:
@@ -167,7 +172,7 @@ def _prepare(name: str, entity: type) -> None:
 
 def test_the_registry_has_the_asset_types_we_think_it_does():
     """A new asset type lands in this list on its own; the count is the notice."""
-    assert len(TYPES) == 21, [n for n, _ in TYPES]
+    assert len(TYPES) == 22, [n for n, _ in TYPES]
 
 
 @pytest.mark.parametrize(("name", "entity"), TYPES, ids=[n for n, _ in TYPES])

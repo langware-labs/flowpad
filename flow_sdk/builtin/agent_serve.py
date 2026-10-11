@@ -495,8 +495,9 @@ def admits(source, author: str) -> bool:
     Answered from the SOURCE alone — its status and its cached allowlist. The
     allowlist is the rule (``sender_allowed``, the one fold). ``open_inbound`` is a
     driver's declaration that strangers are the point of its channel (a help desk,
-    a chat endpoint), under which an EMPTY list admits everyone; a non-empty list
-    restricts either way, and a paused source admits nobody either way.
+    a chat endpoint) — or, per source (``open_inbound_for``), that its claim already
+    admits only who may write (a group) — under which an EMPTY list admits everyone; a
+    non-empty list restricts either way, and a paused source admits nobody either way.
     """
     from flow_sdk.builtin.agent_mailbox import sender_allowed  # noqa: PLC0415
     from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415
@@ -508,7 +509,7 @@ def admits(source, author: str) -> bool:
     if sender_allowed(allowlist, author):
         return True
     driver = DataDriver.loaded(getattr(source, "provider", "") or "")
-    return bool(driver is not None and driver.open_inbound and not allowlist)
+    return bool(driver is not None and driver.open_inbound_for(getattr(source, "config", None)) and not allowlist)
 
 
 def is_own_outgoing(source, author: str) -> bool:

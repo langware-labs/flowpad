@@ -38,7 +38,7 @@ from flow_sdk.assets.layout import (  # noqa: F401 — Layout/LayoutKind re-expo
     shape_from_spec,
 )
 from flow_sdk.fs_store.record_types import RecordType
-from flow_sdk.schema.view_mode import ViewMode, view_mode_rank, visible_in
+from flow_sdk.schema.view_mode import LEGACY_DEV_TIER, ViewMode, view_mode_rank, visible_in
 
 # ---------------------------------------------------------------------------
 # Hardcoded fallback list so get_default_index_types() works before any
@@ -119,6 +119,10 @@ class TypeInfo:
     # Minimum view mode at which this type is browseable (None ⇒ never). See
     # flow_sdk/schema/view_mode.py — visibility is cumulative.
     browseable_by: ViewMode | None = None
+    # Shown only with developer mode on, on top of ``browseable_by`` — Dev is a
+    # switch, not a tier (flow_sdk/schema/view_mode.py). Presentational: NOT in
+    # ``schema_hash``, so the flag never forces a reindex.
+    dev_only: bool = field(default=False, metadata=_MERGE)
     creatable: bool = field(default=False, metadata=_MERGE)
     api_visible: bool = field(default=False, metadata=_MERGE)
     icon: str | None = field(default=None, metadata=_MERGE)
@@ -293,6 +297,9 @@ class TypeInfo:
     # Main documents this type USED to carry (``agent.md``). A folder holding one and not the current
     # main is a RETIRED form: reported with the migration that converts it, never indexed or written.
     retired_mains: tuple[str, ...] = field(default=(), compare=False, repr=False, metadata=_MERGE)
+    # Family folder names this type USED to live under (``data_spec``). Not read: a scan reports the
+    # folder as an issue naming the rename, so its assets never vanish without a word.
+    retired_families: tuple[str, ...] = field(default=(), compare=False, repr=False, metadata=_MERGE)
     # What an orphan row of this type takes with it, awaited with the row's id before the row is dropped
     # (``fs_store.orphan_removal``). ``None``: the row alone. A data source's records and cursors hang off
     # its id, so removing the row without them leaves orphans no sweep reaches.
@@ -308,6 +315,10 @@ class TypeInfo:
     row_derive_fn: Any = field(default=None, compare=False, repr=False, metadata=_MERGE)
     # Optional async projection for process attachment/reveal/detach.
     process_projection: Any = field(default=None, compare=False, repr=False, metadata=_MERGE)
+    # ``async (row) -> DependencyRoots``: what a row of this type puts in context when something depends
+    # on it, and where its own ``flow.json`` lives (``flow_sdk/dependencies/resolve.py``). None: a folder
+    # asset is its own folder, a single-file asset neither.
+    dependency_roots_fn: Any = field(default=None, compare=False, repr=False, metadata=_MERGE)
     # The entity field naming the rows' on-disk layout (``"data_layout"`` for a
     # dataset). Tells the disk serializer this type has layout-written rows,
     # without the serializer ever naming the type.
@@ -695,6 +706,7 @@ class TypeInfo:
             "defaults": self.defaults,
             "indexed_by_default": self.indexed_by_default,
             "browseable_by": self.browseable_by_str,
+            "dev_only": self.dev_only,
             "creatable": self.creatable,
             "api_visible": self.api_visible,
             "cloud_file_transport": self.cloud_file_transport,
@@ -738,7 +750,8 @@ class TypeInfo:
             index_fields=data.get("index_fields", []),
             defaults=data.get("defaults", {}),
             indexed_by_default=data.get("indexed_by_default", False),
-            browseable_by=ViewMode(data["browseable_by"]) if data.get("browseable_by") else None,
+            browseable_by=_browseable_tier(data.get("browseable_by")),
+            dev_only=bool(data.get("dev_only")) or data.get("browseable_by") == LEGACY_DEV_TIER,
             creatable=data.get("creatable", False),
             api_visible=data.get("api_visible", False),
             cloud_file_transport=data.get("cloud_file_transport", "embedded"),
@@ -884,6 +897,14 @@ def check_asset_spec(type_name: str, entity_cls: type, spec: type) -> None:
 
 #: The ``merge``-tagged TypeInfo fields: a later registration's non-default value wins.
 _MERGE_SLOTS = tuple(f for f in fields(TypeInfo) if f.metadata.get("merge"))
+
+
+def _browseable_tier(value: str | None) -> ViewMode | None:
+    """A stored ``browseable_by``; the retired ``"dev"`` tier reads as ``ADVANCED``
+    (its developer-only half lands on ``dev_only``)."""
+    if not value:
+        return None
+    return ViewMode.ADVANCED if value == LEGACY_DEV_TIER else ViewMode(value)
 
 
 def _slot_default(slot: Any) -> Any:
@@ -1039,6 +1060,10 @@ class SchemaRegistry:
         cls._entities_loading = True
         try:
             import flow_sdk.fs_store.indexer.registrations  # noqa: F401, PLC0415 — binds entity_cls
+            # Every builtin entity the server binds at boot. Without it a bare script indexes an
+            # ``agentic-assets/agent/*`` folder as a typeless ``Entity`` row — no ``asset_ref`` —
+            # so a project's home never lists the agent (the indexer covers only its own types).
+            import flow_sdk.models.entities  # noqa: F401, PLC0415
             cls._entities_loaded = True
         finally:
             cls._entities_loading = False
@@ -1111,7 +1136,7 @@ class SchemaRegistry:
 
         What holds WITHOUT exception is the other half: an entity type name
         resolves to that type's ``asset_spec`` — its document shape — and never
-        to the Entity class. A row model is not a shape, and a ``SpecType`` field
+        to the Entity class. A row model is not a shape, and a ``ShapeForm`` field
         holding one could not validate a value against it: it would demand ids
         and DB columns the value has never heard of. A registered type with no
         asset document therefore names nothing here, and ``resolve_kind`` turns
@@ -1616,9 +1641,13 @@ class SchemaRegistry:
         return info.browseable_by if info else None
 
     @classmethod
-    def is_browseable_in(cls, type_name: str, mode: ViewMode) -> bool:
-        """True iff ``type_name`` is browseable in the given view ``mode`` (cumulative)."""
-        return visible_in(cls.browseable_by(type_name), mode)
+    def is_browseable_in(cls, type_name: str, mode: ViewMode, *, dev: bool = False) -> bool:
+        """True iff ``type_name`` is browseable in view ``mode`` (cumulative) — and,
+        for a ``dev_only`` type, only with developer mode on."""
+        info = cls.get(type_name)
+        if info is None or (info.dev_only and not dev):
+            return False
+        return visible_in(info.browseable_by, mode)
 
     @classmethod
     def is_creatable(cls, type_name: str) -> bool:

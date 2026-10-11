@@ -90,7 +90,7 @@ async def main(cases_path: Path, folder: Path) -> None:
         raise SystemExit(f"{folder} already holds examples; refusing to duplicate them")
     errors = {str(f): e for f, e in declared.load_root(folder).items() if e}
     if errors:
-        raise SystemExit(f"the dataset's data specs did not register: {errors}")
+        raise SystemExit(f"the dataset's data schemas did not register: {errors}")
     ds = Dataset.at(folder)
     cases = [json.loads(line) for line in cases_path.read_text().splitlines() if line.strip()]
     ids = await ds.append([row(c) for c in cases])
@@ -103,7 +103,7 @@ async def main(cases_path: Path, folder: Path) -> None:
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("cases", type=Path)
-    from flow_sdk.core.navigator_eval import DATASET
+    from flow_sdk.core.navigation import DATASET
 
     ap.add_argument("--dataset", type=Path, default=DATASET)
     a = ap.parse_args()

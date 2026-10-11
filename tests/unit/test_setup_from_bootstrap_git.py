@@ -6,9 +6,9 @@ this pins is the whole design:
 * **The template body becomes the customer's.** History is severed, a fresh
   empty repo is initialized, and the vendor's remote is gone. Their first commit
   is their own. So the template goes stale the moment it is cloned.
-* **The declared help desks do not.** They are attached as ordinary context
-  folders pointing at the VENDOR's repo, so they keep updating in every live
-  engagement long after the template that named them was copied.
+* **The template's ``flow.json`` dependencies do not.** They resolve as ordinary
+  dependencies pointing at the VENDOR's repo, so a help desk the template names
+  keeps updating in every live engagement long after the template was copied.
 
 Get that backwards and the demo's punchline ("we sharpen the method and every
 engagement gets it") quietly stops being true, with nothing failing to show it.
@@ -27,11 +27,8 @@ from pathlib import Path
 
 import pytest
 
-from flow_sdk.builtin.bootstrap_manifest import (
-    BootstrapContentProject,
-    BootstrapManifest,
-    read_bootstrap_manifest,
-)
+from flow_sdk.assets import flow_json
+from flow_sdk.builtin import project_dependencies
 from flow_sdk.builtin.project import Project
 from flow_sdk.schema.type_info import register_all
 from tests.unit._project_names import unique_project_name
@@ -55,13 +52,34 @@ def _commit(root: Path) -> None:
     )
 
 
+@pytest.fixture(autouse=True)
+def workspace(tmp_path, monkeypatch):
+    """Dependency clones land in this test's own workspace."""
+    ws = tmp_path / "workspace"
+    ws.mkdir()
+    monkeypatch.setattr("flow_sdk.fs_store.origin.git_origin._workspace", lambda: ws)
+    project_dependencies._DISMISSED.clear()
+    return ws
+
+
 @pytest.fixture
 def helpdesk_repo(tmp_path: Path) -> str:
-    """The vendor's capability layer — stays theirs, keeps updating."""
+    """The vendor's capability layer — stays theirs, keeps updating. A git source."""
     root = tmp_path / "vendor-helpdesk"
     desk = root / "agentic-assets" / "helpdesk" / "cloudnsite"
     desk.mkdir(parents=True)
     (desk / "helpdesk.json").write_text(json.dumps(DESK_MANIFEST), encoding="utf-8")
+    _commit(root)
+    return f"git+file://{root}"
+
+
+def _template(root: Path, declaration: dict | None) -> str:
+    """A template repo at ``root`` declaring ``declaration`` as its flow.json."""
+    root.mkdir(parents=True)
+    if declaration is not None:
+        (root / "flow.json").write_text(json.dumps(declaration), encoding="utf-8")
+    (root / "docs").mkdir()
+    (root / "docs" / "00-discovery.md").write_text("# Discovery\n", encoding="utf-8")
     _commit(root)
     return f"file://{root}"
 
@@ -69,16 +87,10 @@ def helpdesk_repo(tmp_path: Path) -> str:
 @pytest.fixture
 def bootstrap_repo(tmp_path: Path, helpdesk_repo: str) -> str:
     """The engagement template — becomes the customer's on clone."""
-    root = tmp_path / "vendor-bootstrap"
-    (root / ".flowpad").mkdir(parents=True)
-    (root / ".flowpad" / "bootstrap.json").write_text(
-        json.dumps({"helpdesks": [helpdesk_repo], "autolaunch_journey": "engagement-setup"}),
-        encoding="utf-8",
+    return _template(
+        tmp_path / "vendor-bootstrap",
+        {"dependencies": {"cloudnsite": helpdesk_repo}, "autolaunchJourney": "engagement-setup"},
     )
-    (root / "docs").mkdir()
-    (root / "docs" / "00-discovery.md").write_text("# Discovery\n", encoding="utf-8")
-    _commit(root)
-    return f"file://{root}"
 
 
 async def _project(name: str = "customer-engagement") -> Project:
@@ -93,86 +105,21 @@ def _git(repo: Path, *args: str) -> str:
     ).stdout.strip()
 
 
-# ── the manifest reader ─────────────────────────────────────────────────────
-
-
-def test_manifest_reads_declared_helpdesks_and_journey(tmp_path: Path) -> None:
-    (tmp_path / ".flowpad").mkdir()
-    (tmp_path / ".flowpad" / "bootstrap.json").write_text(
-        json.dumps({"helpdesks": ["https://x/a", "https://x/b"], "autolaunch_journey": "setup"}),
-        encoding="utf-8",
-    )
-    manifest = read_bootstrap_manifest(tmp_path)
-    assert manifest.helpdesks == ("https://x/a", "https://x/b")
-    assert manifest.autolaunch_journey == "setup"
+def _deps(data: dict) -> dict[str, dict]:
+    return {d["name"]: d for d in data["dependencies"]}
 
 
 @pytest.mark.parametrize(
     "body",
-    [None, "", "{not json", "[]", '"a string"', '{"helpdesks": "not-a-list"}', '{"helpdesks": [1, 2]}'],
-    ids=["missing", "empty", "invalid", "array", "scalar", "wrong-type", "non-strings"],
+    [None, "", "{not json", "[]", '"a string"', '{"dependencies": "not-a-map"}', '{"dependencies": {"x": 1}}'],
+    ids=["missing", "empty", "invalid", "array", "scalar", "wrong-type", "non-source"],
 )
-def test_a_hostile_or_broken_manifest_declares_nothing(tmp_path: Path, body) -> None:
-    """This file comes from a third-party repo. It must degrade to "declares
-    nothing" rather than fail a project setup that is already half done."""
+def test_a_hostile_or_broken_flow_json_declares_nothing(tmp_path: Path, body) -> None:
+    """This file comes from a third-party repo. The reader setup uses must
+    degrade to "declares nothing" rather than fail a setup that is half done."""
     if body is not None:
-        (tmp_path / ".flowpad").mkdir()
-        (tmp_path / ".flowpad" / "bootstrap.json").write_text(body, encoding="utf-8")
-    assert read_bootstrap_manifest(tmp_path) == BootstrapManifest()
-
-
-def test_declared_helpdesks_are_bounded_and_deduped(tmp_path: Path) -> None:
-    """A template declaring hundreds of desks is a mistake or an attack — it
-    must not turn setup into an unbounded series of clones."""
-    (tmp_path / ".flowpad").mkdir()
-    (tmp_path / ".flowpad" / "bootstrap.json").write_text(
-        json.dumps({"helpdesks": ["https://x/same"] * 3 + [f"https://x/{i}" for i in range(50)]}),
-        encoding="utf-8",
-    )
-    desks = read_bootstrap_manifest(tmp_path).helpdesks
-    assert len(desks) == len(set(desks)), "repeated URLs must not prompt repeatedly"
-    assert len(desks) <= 8
-
-
-def test_manifest_reads_bounded_content_projects_without_hiding_conflicts(tmp_path: Path) -> None:
-    (tmp_path / ".flowpad").mkdir()
-    entries = [
-        {"url": "https://github.com/acme/support", "branch": "main", "scope": "shared"},
-        {"url": "https://github.com/acme/support", "branch": "main", "scope": "shared"},
-        {"url": "https://github.com/acme/support", "branch": "other", "scope": "private"},
-        {"url": "https://github.com/acme/private", "scope": "private"},
-        {"url": "https://github.com/acme/invalid", "scope": "everyone"},
-    ] + [{"url": f"https://github.com/acme/{i}"} for i in range(30)]
-    (tmp_path / ".flowpad" / "bootstrap.json").write_text(
-        json.dumps({"content_projects": entries}), encoding="utf-8"
-    )
-
-    content = read_bootstrap_manifest(tmp_path).content_projects
-
-    assert content[0] == BootstrapContentProject(
-        url="https://github.com/acme/support", branch="main", scope="shared"
-    )
-    assert content[1] == BootstrapContentProject(
-        url="https://github.com/acme/support", branch="other", scope="private"
-    )
-    assert content[2] == BootstrapContentProject(
-        url="https://github.com/acme/private", branch="", scope="private"
-    )
-    declarations = {(entry.url, entry.branch, entry.scope) for entry in content}
-    assert len(content) == len(declarations), "exact repeated declarations must be deduped"
-    assert len(content) <= 8
-
-
-@pytest.mark.parametrize(
-    "entry",
-    [None, "repo", [], {}, {"url": ""}, {"url": 1}, {"url": "https://x", "scope": "bad"}],
-)
-def test_manifest_ignores_malformed_content_projects(tmp_path: Path, entry) -> None:
-    (tmp_path / ".flowpad").mkdir()
-    (tmp_path / ".flowpad" / "bootstrap.json").write_text(
-        json.dumps({"content_projects": [entry]}), encoding="utf-8"
-    )
-    assert read_bootstrap_manifest(tmp_path).content_projects == ()
+        (tmp_path / "flow.json").write_text(body, encoding="utf-8")
+    assert flow_json.read(tmp_path) == flow_json.FlowJsonSpec()
 
 
 # ── the flow ────────────────────────────────────────────────────────────────
@@ -205,26 +152,24 @@ async def test_template_files_become_the_customers_with_no_vendor_history(
 
 @pytest.mark.long  # 1.12s
 @pytest.mark.asyncio
-async def test_declared_helpdesk_is_attached_as_a_link_not_a_copy(
-    bootstrap_repo: str, helpdesk_repo: str
-) -> None:
+async def test_declared_helpdesk_is_attached_as_a_link_not_a_copy(bootstrap_repo: str) -> None:
     """The other half: what must NOT become the customer's.
 
-    The desk is attached as a context folder pointing at the vendor's repo, so
-    it keeps updating. A copy inside the project would freeze at clone time.
+    The desk resolves as a dependency pointing at the vendor's repo, so it keeps
+    updating. A copy inside the project would freeze at clone time.
     """
     project = await _project()
     response = await project.setup_from_bootstrap_git(bootstrap_repo)
     assert response.status == "SUCCESS", response
     data = response.data
 
-    assert not data["helpdesks_failed"], data["helpdesks_failed"]
-    assert len(data["helpdesks"]) == 1
-    desk_path = Path(data["helpdesks"][0]["path"])
+    desk = _deps(data)["cloudnsite"]
+    assert desk["state"] == "ready", desk
+    desk_path = Path(desk["local_path"])
 
     assert desk_path.is_dir()
     assert (desk_path / "agentic-assets" / "helpdesk" / "cloudnsite" / "helpdesk.json").is_file()
-    assert str(desk_path) in project.include_dirs, "must reach workers as a context dir"
+    assert desk["local_path"] in project.include_dirs, "must reach workers as a context dir"
 
     # Outside the project tree, and still a git checkout — that is what lets a
     # vendor-side change reach this engagement on a later pull.
@@ -234,6 +179,10 @@ async def test_declared_helpdesk_is_attached_as_a_link_not_a_copy(
     )
     assert (desk_path / ".git").exists(), "the desk must stay linked to the vendor's repo"
 
+    # The declaration itself survives the history cut: it is the customer's now.
+    assert json.loads((Path(data["path"]) / "flow.json").read_text())["dependencies"] == {
+        "cloudnsite": desk["source"]
+    }
     assert data["autolaunch_journey"] == "engagement-setup"
 
 
@@ -241,242 +190,70 @@ async def test_declared_helpdesk_is_attached_as_a_link_not_a_copy(
 async def test_an_unreachable_desk_does_not_undo_a_finished_setup(tmp_path: Path) -> None:
     """A vendor's desk being down must not cost the customer their project —
     the files are already on disk and the failure is reportable."""
-    root = tmp_path / "bootstrap-bad-desk"
-    (root / ".flowpad").mkdir(parents=True)
-    (root / ".flowpad" / "bootstrap.json").write_text(
-        json.dumps({"helpdesks": [f"file://{tmp_path / 'nope'}"]}), encoding="utf-8"
+    url = _template(
+        tmp_path / "bootstrap-bad-desk",
+        {"dependencies": {"desk": f"git+file://{tmp_path / 'nope'}"}},
     )
-    (root / "README.md").write_text("# Engagement\n", encoding="utf-8")
-    _commit(root)
 
     project = await _project()
-    response = await project.setup_from_bootstrap_git(f"file://{root}")
+    response = await project.setup_from_bootstrap_git(url)
 
     assert response.status == "SUCCESS", "the project itself succeeded"
-    assert (Path(response.data["path"]) / "README.md").is_file()
-    assert response.data["helpdesks"] == []
-    assert len(response.data["helpdesks_failed"]) == 1, "the failure must be reported, not swallowed"
+    assert (Path(response.data["path"]) / "docs" / "00-discovery.md").is_file()
+    desk = _deps(response.data)["desk"]
+    assert desk["state"] == "unreachable", "the failure must be reported, not swallowed"
+    assert project.include_dirs == []
+    assert [w.name for w in await project.dependency_warnings()] == ["desk"]
 
 
 @pytest.mark.asyncio
-async def test_a_template_with_no_manifest_is_an_ordinary_template(tmp_path: Path) -> None:
-    """Declaring a desk is optional — a plain repo must still work as a
-    template, or every template author is forced into the mechanism."""
-    root = tmp_path / "plain-template"
-    root.mkdir()
-    (root / "README.md").write_text("# Plain\n", encoding="utf-8")
-    _commit(root)
-
+async def test_a_partial_resolve_links_what_landed_and_reports_the_rest(
+    tmp_path: Path, helpdesk_repo: str
+) -> None:
+    url = _template(
+        tmp_path / "bootstrap-partial",
+        {"dependencies": {"desk": helpdesk_repo, "gone": f"git+file://{tmp_path / 'missing-second'}"}},
+    )
     project = await _project()
-    response = await project.setup_from_bootstrap_git(f"file://{root}")
+    response = await project.setup_from_bootstrap_git(url)
 
     assert response.status == "SUCCESS", response
-    assert (Path(response.data["path"]) / "README.md").is_file()
-    assert response.data["helpdesks"] == []
+    deps = _deps(response.data)
+    assert (deps["desk"]["state"], deps["gone"]["state"]) == ("ready", "unreachable")
+    assert project.include_dirs == [deps["desk"]["local_path"]]
+
+
+@pytest.mark.asyncio
+async def test_a_template_with_no_flow_json_is_an_ordinary_template(tmp_path: Path) -> None:
+    """Declaring a desk is optional — a plain repo must still work as a
+    template, or every template author is forced into the mechanism."""
+    url = _template(tmp_path / "plain-template", None)
+
+    project = await _project()
+    response = await project.setup_from_bootstrap_git(url)
+
+    assert response.status == "SUCCESS", response
+    assert (Path(response.data["path"]) / "docs" / "00-discovery.md").is_file()
+    assert response.data["dependencies"] == []
     assert response.data["autolaunch_journey"] is None
+    assert response.data["template_url"]
 
 
 @pytest.mark.long  # 1.58s
 @pytest.mark.asyncio
-async def test_reconcile_bootstrap_attaches_content_project_once(
-    tmp_path: Path, helpdesk_repo: str
-) -> None:
-    target_root = tmp_path / "customer-project"
-    (target_root / ".flowpad").mkdir(parents=True)
-    (target_root / ".flowpad" / "bootstrap.json").write_text(
-        json.dumps(
-            {
-                "content_projects": [
-                    {"url": helpdesk_repo, "branch": "", "scope": "shared"}
-                ]
-            }
-        ),
-        encoding="utf-8",
-    )
-    project = Project(name=unique_project_name("customer-project"), fs_storage_mount_path=str(target_root))
-    await project.save()
+async def test_resolving_again_links_the_desk_once(bootstrap_repo: str, workspace: Path) -> None:
+    """Re-opening an engagement re-resolves; it must converge, not pile up links
+    or clones."""
+    project = await _project()
+    response = await project.setup_from_bootstrap_git(bootstrap_repo)
+    first = _deps(response.data)["cloudnsite"]
 
-    first = await project.reconcile_bootstrap()
-    second = await project.reconcile_bootstrap()
+    again = {s.name: s for s in await project.resolve_dependencies()}
 
-    assert first.status == "SUCCESS", first
-    assert first.data["status"] == "installed"
-    assert len(first.data["content_projects"]) == 1
-    assert first.data["content_projects"][0]["scope"] == "shared"
-    assert first.data["helpdesk_id"]
-    assert second.status == "SUCCESS", second
-    assert second.data["status"] == "already_installed"
-    assert len(project.include_dirs) == 1
-
-
-@pytest.mark.asyncio
-async def test_reconcile_rejects_aliases_with_conflicting_branch_before_mutation(
-    tmp_path: Path,
-) -> None:
-    target_root = tmp_path / "customer-conflicting-content"
-    (target_root / ".flowpad").mkdir(parents=True)
-    (target_root / ".flowpad" / "bootstrap.json").write_text(
-        json.dumps(
-            {
-                "content_projects": [
-                    {
-                        "url": "https://github.com/acme/cloudnsite-content",
-                        "branch": "main",
-                        "scope": "shared",
-                    },
-                    {
-                        "url": "git@github.com:acme/cloudnsite-content.git",
-                        "branch": "release",
-                        "scope": "shared",
-                    },
-                ]
-            }
-        ),
-        encoding="utf-8",
-    )
-    project = Project(name=unique_project_name("customer-conflicting-content"), fs_storage_mount_path=str(target_root))
-    await project.save()
-
-    response = await project.reconcile_bootstrap()
-
-    assert response.status == "FAIL"
-    assert response.status_code == 409
-    assert "conflicting" in response.message
-    assert project.include_dirs == []
-
-
-@pytest.mark.asyncio
-async def test_reconcile_dedupes_equivalent_git_url_aliases(
-    tmp_path: Path, monkeypatch
-) -> None:
-    target_root = tmp_path / "customer-aliased-content"
-    (target_root / ".flowpad").mkdir(parents=True)
-    (target_root / ".flowpad" / "bootstrap.json").write_text(
-        json.dumps(
-            {
-                "content_projects": [
-                    {
-                        "url": "https://github.com/acme/cloudnsite-content",
-                        "branch": "main",
-                        "scope": "shared",
-                    },
-                    {
-                        "url": "git@github.com:acme/cloudnsite-content.git",
-                        "branch": "main",
-                        "scope": "shared",
-                    },
-                ]
-            }
-        ),
-        encoding="utf-8",
-    )
-    project = Project(name=unique_project_name("customer-aliased-content"), fs_storage_mount_path=str(target_root))
-    await project.save()
-
-    calls: list[str] = []
-
-    async def install_once(_self, url: str, **_kwargs):
-        calls.append(url)
-        from flow_sdk.responses.response import ApiFailResponse
-
-        return ApiFailResponse(message="stop after preflight")
-
-    monkeypatch.setattr(Project, "add_context_dir_from_git", install_once)
-
-    response = await project.reconcile_bootstrap()
-
-    assert response.status == "FAIL"
-    assert calls == ["https://github.com/acme/cloudnsite-content"]
-
-
-@pytest.mark.asyncio
-async def test_reconcile_fails_when_every_declared_content_project_fails(tmp_path: Path) -> None:
-    target_root = tmp_path / "customer-missing-content"
-    missing_url = f"file://{tmp_path / 'missing-content'}"
-    (target_root / ".flowpad").mkdir(parents=True)
-    (target_root / ".flowpad" / "bootstrap.json").write_text(
-        json.dumps(
-            {
-                "content_projects": [
-                    {"url": missing_url, "branch": "", "scope": "shared"}
-                ]
-            }
-        ),
-        encoding="utf-8",
-    )
-    project = Project(name="customer-missing-content", fs_storage_mount_path=str(target_root))
-    await project.save()
-
-    response = await project.reconcile_bootstrap()
-
-    assert response.status == "FAIL"
-    assert response.data["content_projects"] == []
-    assert response.data["failed"][0]["url"] == missing_url
-    assert project.include_dirs == []
-
-
-@pytest.mark.asyncio
-async def test_reconcile_reports_partial_install_as_failure(
-    tmp_path: Path, helpdesk_repo: str
-) -> None:
-    target_root = tmp_path / "customer-partial-content"
-    missing_url = f"file://{tmp_path / 'missing-second-content'}"
-    (target_root / ".flowpad").mkdir(parents=True)
-    (target_root / ".flowpad" / "bootstrap.json").write_text(
-        json.dumps(
-            {
-                "content_projects": [
-                    {"url": helpdesk_repo, "branch": "", "scope": "shared"},
-                    {"url": missing_url, "branch": "", "scope": "shared"},
-                ]
-            }
-        ),
-        encoding="utf-8",
-    )
-    project = Project(name="customer-partial-content", fs_storage_mount_path=str(target_root))
-    await project.save()
-
-    response = await project.reconcile_bootstrap()
-
-    assert response.status == "FAIL"
-    assert len(response.data["content_projects"]) == 1
-    assert response.data["content_projects"][0]["url"] == helpdesk_repo
-    assert response.data["failed"][0]["url"] == missing_url
-    assert len(project.include_dirs) == 1
-
-
-@pytest.mark.asyncio
-async def test_reconcile_does_not_link_content_when_indexing_fails(
-    tmp_path: Path, helpdesk_repo: str, monkeypatch
-) -> None:
-    target_root = tmp_path / "customer-index-failure"
-    (target_root / ".flowpad").mkdir(parents=True)
-    (target_root / ".flowpad" / "bootstrap.json").write_text(
-        json.dumps(
-            {
-                "content_projects": [
-                    {"url": helpdesk_repo, "branch": "", "scope": "shared"}
-                ]
-            }
-        ),
-        encoding="utf-8",
-    )
-    project = Project(name="customer-index-failure", fs_storage_mount_path=str(target_root))
-    await project.save()
-
-    async def fail_index(*_args, **_kwargs) -> None:
-        raise RuntimeError("forced indexing failure")
-
-    monkeypatch.setattr(
-        "flow_sdk.builtin.agentic_process.agentic_process._index_additional_dir",
-        fail_index,
-    )
-
-    response = await project.reconcile_bootstrap()
-
-    assert response.status == "FAIL"
-    assert "forced indexing failure" in response.data["failed"][0]["error"]
-    assert project.include_dirs == []
+    assert again["cloudnsite"].local_path == first["local_path"]
+    assert project.include_dirs == [first["local_path"]]
+    desk_clones = [d for d in workspace.iterdir() if d.name.startswith("vendor-helpdesk")]
+    assert desk_clones == [Path(first["local_path"])], "the desk was cloned once"
 
 
 @pytest.mark.long  # 1.25s
@@ -499,7 +276,7 @@ async def test_the_checkout_is_named_after_the_engagement_not_the_template(
     assert leaf.startswith("northwind-support"), leaf
 
 
-def test_an_empty_reservation_is_not_a_collision(tmp_path: Path, monkeypatch) -> None:
+def test_an_empty_reservation_is_not_a_collision(workspace: Path) -> None:
     """A Project reserves ``<workspace>/<name>`` when it is constructed.
 
     Treating that empty reservation as taken renamed every engagement to
@@ -509,9 +286,7 @@ def test_an_empty_reservation_is_not_a_collision(tmp_path: Path, monkeypatch) ->
     """
     from flow_sdk.fs_store.origin.git_origin import fresh_clone_slot
 
-    workspace = tmp_path / "workspace"
-    workspace.mkdir()
-    monkeypatch.setattr("flow_sdk.config.agent_workspace_root", lambda: workspace)
+    # ``workspace`` (the autouse fixture) is the root fresh_clone_slot picks under.
 
     # Nothing there yet → the plain name.
     assert fresh_clone_slot("acme").name == "acme"
@@ -541,7 +316,7 @@ async def test_two_engagements_from_one_template_are_independent(bootstrap_repo:
     assert ra.data["path"] != rb.data["path"], "two engagements must not share a working copy"
 
     # ...but the DESK is shared: one vendor repo, one checkout, N engagements.
-    assert ra.data["helpdesks"][0]["path"] == rb.data["helpdesks"][0]["path"]
+    assert _deps(ra.data)["cloudnsite"]["local_path"] == _deps(rb.data)["cloudnsite"]["local_path"]
 
 
 @pytest.mark.asyncio

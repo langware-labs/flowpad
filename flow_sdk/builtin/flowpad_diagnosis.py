@@ -14,6 +14,7 @@ from typing import Optional
 
 from flow_sdk.api.api_types.api_field import APIField
 from flow_sdk.core import Entity
+from flow_sdk.schema.data_spec.diagnose_spec import DiagnosisSpec
 from flow_sdk.schema.types import EntityType
 
 
@@ -76,4 +77,12 @@ class FlowpadDiagnosis(Entity):
     origin_project_name: Optional[str] = APIField(
         None,
         description="Display name of ``origin_project_id`` — travels with the diagnosis.",
+    )
+    diagnosis: Optional[DiagnosisSpec] = APIField(
+        None,
+        description=(
+            "The full ``diagnosis`` value (``DiagnosisSpec``): the fixed sweep's findings, the "
+            "machine and its log tails, merged with what the repair agent concluded. The flat "
+            "fields above are its headline, kept for the lists that read them."
+        ),
     )

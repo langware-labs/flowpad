@@ -1,0 +1,27 @@
+{
+  "type": "compute_op",
+  "id": "be9124a3-58d9-4cc6-b6ec-e4c4be390c3c",
+  "name": "flow-slack-connect",
+  "label": "Connect Slack",
+  "description": "A Connect code from the hub, and the link that adds Flow to your Slack workspace and opens its DM.",
+  "subkind": "cli",
+  "output_spec_kind": "source.setup_shown",
+  "exe_data": {
+    "commands": {
+      "darwin": "\"$FLOWPAD_FLOW\" source step \"$FLOWPAD_WIZARD_INPUT_SOURCE\" connect --value",
+      "linux": "\"$FLOWPAD_FLOW\" source step \"$FLOWPAD_WIZARD_INPUT_SOURCE\" connect --value",
+      "win32": "& $env:FLOWPAD_FLOW source step $env:FLOWPAD_WIZARD_INPUT_SOURCE connect --value; exit $LASTEXITCODE"
+    },
+    "timeout_seconds": 60,
+    "source_step": "connect"
+  },
+  "completion_check": {
+    "commands": {
+      "darwin": "\"$FLOWPAD_FLOW\" source step \"$FLOWPAD_WIZARD_INPUT_SOURCE\" connect --check --value",
+      "linux": "\"$FLOWPAD_FLOW\" source step \"$FLOWPAD_WIZARD_INPUT_SOURCE\" connect --check --value",
+      "win32": "& $env:FLOWPAD_FLOW source step $env:FLOWPAD_WIZARD_INPUT_SOURCE connect --check --value; exit $LASTEXITCODE"
+    },
+    "timeout_seconds": 30,
+    "source_step": "connect"
+  }
+}

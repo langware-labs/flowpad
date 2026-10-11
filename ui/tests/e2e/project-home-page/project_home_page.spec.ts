@@ -26,7 +26,8 @@ import { expect, test, type Page } from '@playwright/test';
 
 const BE = `http://localhost:${process.env.HP_BE_PORT || '6001'}`;
 const GRAPH = `${BE}/api/v1/graph`;
-const SESSION_URL = /\/dock\/shell\/agentic_process-([0-9a-f-]+).*viewMode=vibe/;
+// A session shown in Vibe is its Vibe HOST tab: `/dock/vibe/agentic_process-<id>`.
+const SESSION_URL = /\/dock\/vibe\/agentic_process-([0-9a-f-]+)/;
 
 interface Seeded {
   id: string;
@@ -127,9 +128,10 @@ async function clickHome(page: Page) {
 
 /** On a default home: the root, not a session — and the app is still rendered. */
 async function expectDefaultHome(page: Page) {
-  await expect(page).not.toHaveURL(/\/dock\/shell\//);
+  await expect(page).not.toHaveURL(/\/dock\/(shell|vibe)\//);
   await expect(page).toHaveURL(/\/(\?|$)/);
-  await expect(page.getByTestId('top-nav-home')).toBeVisible();
+  // On the home the bar's Home slot reads "Back to tabs" while tabs are open.
+  await expect(page.getByTestId('top-nav-home').or(page.getByTestId('top-nav-tabs'))).toBeVisible();
 }
 
 test.beforeAll(async () => {
@@ -188,6 +190,56 @@ test.describe('project home page', () => {
     // And Home honours it.
     await clickHome(page);
     await expect(page).toHaveURL(SESSION_URL);
+
+    declare(null);
+    expect(errors).toEqual([]);
+  });
+
+  test('a web app home: the project opens app-first, on the app running', async ({ page }) => {
+    const errors = collectPageErrors(page);
+    declare(null);
+    // A static web app in the project — `webapp.json` naming its build folder, a page in it.
+    const appName = `hp-app-${Date.now()}`;
+    const appDir = join(home.root, 'agentic-assets', 'webapp', appName);
+    mkdirSync(join(appDir, 'build'), { recursive: true });
+    writeFileSync(join(appDir, 'webapp.json'), JSON.stringify({ name: appName, title: appName, build: 'build' }));
+    writeFileSync(
+      join(appDir, 'build', 'index.html'),
+      `<!doctype html><title>${appName}</title><h1 data-testid="app-first-title">${appName}</h1>`,
+    );
+
+    // Indexed the way the machine indexes a new asset folder (`flow record index`).
+    const indexed = await post(
+      `${GRAPH}/compute_node/@local/fs-records/index?${new URLSearchParams({ type: 'micro_app', path: appDir })}`,
+    );
+    const appTypeId = String(indexed?.data?.typeid ?? indexed?.typeid ?? '');
+    expect(appTypeId).toMatch(/^micro_app-[0-9a-f-]{36}$/);
+
+    // Picked like any home page: the picker offers web apps.
+    const card = await openCustomize(page, home.id);
+    const picker = card.getByTestId('home-page-picker');
+    await picker.click();
+    const popover = page.getByTestId('asset-manager-popover');
+    await expect(popover).toBeVisible();
+    const appRow = popover.locator(`[data-testid^="asset-manager-select-${appTypeId}-"]`).first();
+    await expect(appRow).toBeVisible({ timeout: 60_000 });
+    await appRow.click();
+    await expect(picker).toContainText(appName);
+    await expect.poll(declaredHomePage).toBe(appTypeId);
+
+    // Home lands on the app RUNNING, pinned to the project — and the app is not handed the scope.
+    await clickHome(page);
+    await expect(page).toHaveURL(new RegExp(`/dock/app/${appTypeId}\\?.*scope-activeProjectId=${home.id}`));
+    const frame = page.frameLocator('[data-testid="vibe-app-frame"]');
+    await expect(frame.getByTestId('app-first-title')).toHaveText(appName, { timeout: 30_000 });
+    const src = await page.getByTestId('vibe-app-frame').first().getAttribute('src');
+    expect(src ?? '').not.toContain('scope-');
+
+    // Home from the app steps off it; the card still names the app after a reload.
+    await clickHome(page);
+    await expectDefaultHome(page);
+    const reloaded = await openCustomize(page, home.id);
+    await expect(reloaded.getByTestId('home-page-picker')).toContainText(appName);
 
     declare(null);
     expect(errors).toEqual([]);

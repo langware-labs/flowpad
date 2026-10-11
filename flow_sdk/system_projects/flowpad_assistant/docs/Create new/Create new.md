@@ -31,13 +31,11 @@ context.
 - [[Whiteboard assets]] — an Excalidraw drawing.
 - [[Prompt library]] — reusable prompt text you can queue into a session.
 - [[Credentials]] — a named set of environment variables (an API key) that agents and terminals receive.
+- [[Diagnosis requests]] — diagnose Flowpad on someone else's computer: they run one command, you read the result.
 
-**New folder** — extra directories agents can see:
+**Add dependency** — folders the project expects in its context:
 
-- [[Context folders]] — attach a folder on disk to the project.
-- [[Private context folders]] — kept to this machine.
-- [[Shared context folders]] — travel with the project, by location not by copy.
-- [[Git context folders]] — set up a Git repository as a context folder.
+- [[Dependencies]] — a Git repository, a hub project or a folder, listed in the project's `flow.json`, required or optional.
 
 **Add help desk** — support published by someone else:
 

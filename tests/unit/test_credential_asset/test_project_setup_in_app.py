@@ -148,6 +148,117 @@ async def test_setting_the_must_value_makes_it_ready(project, templates):
     assert (await project_setup.readiness_of(project)).ready is True
 
 
+async def test_skipping_locally_marks_the_record_here_and_never_the_file(project, templates):
+    spec = await save_credential(manifest=GCP, scope="project", project_id=project.id)
+
+    await project_setup.skip_requirement(project, str(spec.typeid), scope="local", note="not on this laptop")
+
+    readiness = await project_setup.readiness_of(project)
+    assert readiness.ready is True and readiness.to_do == []
+    (skipped,) = readiness.skipped
+    assert skipped.typeid == str(spec.typeid) and skipped.required and skipped.skipped.note == "not on this laptop"
+    written = json.loads((Path(spec.asset_ref) / "credential.json").read_text())
+    assert written["vars"]["GOOGLE_APPLICATION_CREDENTIALS"].get("required", "MUST") == "MUST", "the declaration is untouched"
+    assert "setup_skipped" not in json.dumps(written), "a skip is this machine's, never the file's"
+
+
+async def test_a_local_skip_survives_every_other_save_of_the_record(project, templates):
+    from flow_sdk.builtin.credential import Credential
+
+    spec = await save_credential(manifest=GCP, scope="project", project_id=project.id)
+    await project_setup.skip_requirement(project, str(spec.typeid), scope="local")
+
+    # A copy that knows nothing of the mark (the indexer re-reading the file, an edit).
+    stale = (await Credential.get_by_id(str(spec.id))).model_copy(update={"setup_skipped": None})
+    with pytest.raises(AttributeError, match="write_setup_skip"):
+        stale.setup_skipped = None  # and nobody writes it but the skip
+    stale.description = "edited"
+    await stale.save()
+
+    kept = await Credential.get_by_id(str(spec.id))
+    assert kept.setup_skipped is not None and kept.description == "edited"
+
+
+async def test_unskipping_puts_it_back(project, templates):
+    spec = await save_credential(manifest=GCP, scope="project", project_id=project.id)
+    await project_setup.skip_requirement(project, str(spec.typeid), scope="local")
+
+    await project_setup.unskip_requirement(project, str(spec.typeid))
+
+    readiness = await project_setup.readiness_of(project)
+    assert readiness.ready is False and [r.typeid for r in readiness.to_do] == [str(spec.typeid)]
+    assert readiness.skipped == []
+
+
+async def test_skipping_always_removes_the_asset_and_stages_it_in_git(project, templates):
+    import subprocess
+
+    root = Path(project.fs_storage_mount_path)
+    spec = await save_credential(manifest=GCP, scope="project", project_id=project.id)
+    folder = Path(spec.asset_ref)
+    subprocess.run(["git", "init", "-q", str(root)], check=True)
+    subprocess.run(["git", "-C", str(root), "add", "-A"], check=True)
+    subprocess.run(["git", "-C", str(root), "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "init"],
+                   check=True)
+
+    await project_setup.skip_requirement(project, str(spec.typeid), scope="always")
+
+    from flow_sdk.builtin.credential import Credential
+
+    assert not folder.exists() and await Credential.get_by_id(str(spec.id)) is None
+    staged = subprocess.run(["git", "-C", str(root), "diff", "--cached", "--name-status"], capture_output=True,
+                            text=True, check=True).stdout
+    assert "D\t" in staged and "credential.json" in staged, staged
+    log = subprocess.run(["git", "-C", str(root), "log", "--oneline"], capture_output=True, text=True).stdout
+    assert len(log.splitlines()) == 1, "staged, never committed"
+    assert (await project_setup.readiness_of(project)).ready is True
+
+
+async def test_always_is_refused_for_what_is_not_this_projects_own(project, templates, monkeypatch):
+    from flow_sdk.builtin.data_source import DataSource
+
+    rows = [DataSource(name="telegram source", provider="telegram")]
+
+    async def of_project(_project):
+        return rows
+
+    monkeypatch.setattr(project_setup, "project_sources", of_project)
+    reqs = {r.name: r for r in await project_setup.collect_requirements(project)}
+    telegram = reqs["telegram"]
+    assert not telegram.declared and not telegram.can_skip_always and "template" in telegram.why_not_always
+
+    with pytest.raises(project_setup.SkipRefused, match="template"):
+        await project_setup.skip_requirement(project, telegram.typeid, scope="always")
+    assert (await credential_service.template_named("telegram")) is not None, "the shipped template is untouched"
+
+
+async def test_an_optional_credential_is_listed_and_never_counted(project, templates):
+    hue = await save_credential(
+        manifest={"name": "hue", "setup": "x", "vars": {"HUE_TOKEN": {"required": "OPTIONAL"}}},
+        scope="project", project_id=project.id,
+    )
+    readiness = await project_setup.readiness_of(project)
+    assert readiness.ready is True and readiness.to_do == []
+    (optional,) = readiness.optional
+    assert optional.typeid == str(hue.typeid) and not optional.required
+    assert [v.env_var for v in optional.missing] == ["HUE_TOKEN"]
+
+
+async def test_every_listed_requirement_is_a_record(project, templates):
+    from flow_sdk.builtin.credential import Credential
+    from flow_sdk.schema.data_spec.project_manifest_spec import split_typeid
+
+    await save_credential(manifest=GCP, scope="project", project_id=project.id)
+    for req in await project_setup.collect_requirements(project):
+        if req.kind == "pack":
+            assert await Credential.get_by_id(split_typeid(req.typeid)[1]) is not None, req.name
+
+
+async def test_skipping_something_setup_does_not_list_is_refused(project, templates):
+    with pytest.raises(project_setup.SkipRefused):
+        await project_setup.skip_requirement(project, "credential-00000000-0000-4000-8000-000000000000")
+
+
 # ── the setup run the app starts ─────────────────────────────────────────────
 
 
@@ -167,7 +278,7 @@ async def test_with_ai_the_question_offers_ai_assist(project, templates, served_
         assert question.to_payload()["assist_available"] is True
         assert question.setup_timeout == SETUP_TIMEOUT
     finally:
-        project_setup._RUNS.pop(str(project.id)).cancel()
+        project_setup._RUNS.pop((str(project.id), "")).cancel()
 
 
 async def test_the_setup_asks_in_the_app_with_a_file_block_for_a_file_value(project, templates, served_here):
@@ -186,4 +297,16 @@ async def test_the_setup_asks_in_the_app_with_a_file_block_for_a_file_value(proj
         assert project_setup.setup_run(str(project.id))["running"] is True
         assert await project_setup.start_setup(project, ai=False) == address, "a second start joins the run"
     finally:
-        project_setup._RUNS.pop(str(project.id)).cancel()
+        project_setup._RUNS.pop((str(project.id), "")).cancel()
+
+
+async def test_a_local_skip_never_rewrites_the_asset_file(project, templates):
+    spec = await save_credential(manifest=GCP, scope="project", project_id=project.id)
+    manifest = Path(spec.asset_ref) / "credential.json"
+    manifest.write_text('{"schema": 2, "name": "google-cloud", "vars": {"GOOGLE_APPLICATION_CREDENTIALS": {"kind": "file", "required": "MUST"}}}')
+    before = manifest.read_bytes()
+
+    await project_setup.skip_requirement(project, str(spec.typeid), scope="local")
+    await project_setup.unskip_requirement(project, str(spec.typeid))
+
+    assert manifest.read_bytes() == before, "a skip is a row change: the file is byte for byte as authored"

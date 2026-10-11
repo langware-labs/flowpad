@@ -36,6 +36,7 @@ from flow_sdk.builtin.project import HelpdeskConfig, Project
 from flow_sdk.config import helpdesk_project_dir, helpdesk_root, is_system_project_path
 from flow_sdk.fs_store.path_utils import is_protected_path, is_valid_project_cwd
 from flow_sdk.responses.response import ApiResponseStatus
+from tests.unit._project_deps import link_context_dirs
 
 pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
 
@@ -193,15 +194,12 @@ async def test_project_adopted_helpdesk_routes_to_manifest_queue(tmp_path) -> No
         encoding="utf-8",
     )
     portal = Project(name="cloudnsite-support", fs_storage_mount_path=str(portal_root))
-    target = Project(
-        name="customer",
-        fs_storage_mount_path=str(tmp_path / "customer"),
-        legacy_include_dirs_=[str(portal_root)],
-    )
+    target = Project(name="customer", fs_storage_mount_path=str(tmp_path / "customer"))
     desk = Helpdesk(name="CloudNSite Support", asset_ref=str(desk_dir))
     await portal.save()
     await target.save()
     await desk.save()
+    await link_context_dirs(target, [portal_root])
 
     with patch.object(fma, "_hub_default_helpdesk", AsyncMock()) as fallback:
         resolved = await fma.resolve_helpdesk(target.id)

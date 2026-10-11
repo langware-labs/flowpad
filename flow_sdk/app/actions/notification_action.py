@@ -42,10 +42,7 @@ from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccessResponse
 from flow_sdk.schema.data_spec.hub_failure_spec import HubFailure, HubFailureKind
 from flow_sdk.schema.types import MEMBERSHIP_CONTAINER_TYPES
-from flow_sdk.utils.git import (
-    find_project_root,
-    git_pull,
-)
+from flow_sdk.utils.git import find_project_root
 from flow_sdk.utils.hub import hub_get
 
 logger = logging.getLogger(__name__)
@@ -345,6 +342,13 @@ def _parse_share_create_bookmark(body: dict) -> bool:
     desktop" share opt-in) off the same share_config carrier."""
     config = _parse_share_config(body)
     return bool(config.get("create_bookmark") or config.get("createBookmark"))
+
+
+def _parse_share_include_gitignored(body: dict) -> bool:
+    """Read share_config.include_gitignored: the sender saw which files git excludes and chose to send
+    them anyway. Without it, a copy-mode send that would carry such files is refused once, with the list."""
+    config = _parse_share_config(body)
+    return bool(config.get("include_gitignored") or config.get("includeGitignored"))
 
 
 async def _attach_asset_references(reply_fm: "FlowMessage", asset_typeids: list) -> None:
@@ -816,6 +820,16 @@ def _unshippable_payload(gaps) -> list[dict]:
     return [{"type_id": str(tid), "reason": why} for tid, why in gaps]
 
 
+def _typeids_of(asset_references: list) -> list[TypeId]:
+    typeids: list[TypeId] = []
+    for raw in dict.fromkeys(asset_references):
+        try:
+            typeids.append(TypeId(raw))
+        except Exception:  # noqa: BLE001 — a malformed ref is the send's problem to report, not the preflight's
+            continue
+    return typeids
+
+
 async def find_unshippable_references(asset_references: list) -> list[tuple[TypeId, str]]:
     """Which of these asset references would the packer silently ship nothing for?
 
@@ -825,12 +839,7 @@ async def find_unshippable_references(asset_references: list) -> list[tuple[Type
     """
     from flow_sdk.builtin.flow_message_bundle import attachments_that_would_ship_nothing  # noqa: PLC0415
 
-    typeids: list[TypeId] = []
-    for raw in dict.fromkeys(asset_references):
-        try:
-            typeids.append(TypeId(raw))
-        except Exception:  # noqa: BLE001 — a malformed ref is the send's problem to report, not the preflight's
-            continue
+    typeids = _typeids_of(asset_references)
     await _ensure_claude_session_rows(typeids)
     return await attachments_that_would_ship_nothing(typeids)
 
@@ -848,7 +857,12 @@ async def check_attachments() -> ApiResponse:
     body = (await request_info.get_post_data() if request_info else None) or {}
     refs = _parse_asset_references(body.get("asset_references") if isinstance(body, dict) else None)
     gaps = await find_unshippable_references(refs)
-    return ApiSuccessResponse(data={"unshippable": _unshippable_payload(gaps)})
+    gitignored = []
+    if _parse_share_transfer_mode(body if isinstance(body, dict) else {}) == "copy":
+        from flow_sdk.builtin.flow_message_bundle import attachments_holding_gitignored, gitignored_payload  # noqa: PLC0415
+
+        gitignored = gitignored_payload(await attachments_holding_gitignored(_typeids_of(refs)))
+    return ApiSuccessResponse(data={"unshippable": _unshippable_payload(gaps), "gitignored": gitignored})
 
 
 async def handle_add_message(
@@ -928,10 +942,8 @@ async def handle_add_message(
         remote_worker_session_id = mint_uuid()
         start_settings = SessionStartSettings(reply_policy=reply_policy)
     elif remote_worker_session_id and is_prompt_send:
-        from flow_sdk.builtin.remote_worker_session import is_terminal  # noqa: PLC0415
-
         existing_session = await RemoteWorkerSession.resolve_state(remote_worker_session_id)
-        if existing_session is not None and is_terminal(existing_session.status):
+        if existing_session is not None and not existing_session.is_open:
             return ApiFailResponse(
                 message="this live session has ended — send a new prompt to start another",
                 status_code=409,
@@ -1006,6 +1018,13 @@ async def handle_add_message(
             status_code=400,
             data={"unshippable": _unshippable_payload(gaps)},
         )
+    # A copy carries the asset folder whole — files git excludes (often private) included. The sender is
+    # told which and decides: refused ONCE, before anything is written; ``include_gitignored`` sends them.
+    if transfer_mode == "copy" and not _parse_share_include_gitignored(body):
+        from flow_sdk.builtin.flow_message_bundle import refuse_gitignored  # noqa: PLC0415
+
+        if refused := await refuse_gitignored(_parse_context_typeids(conv, asset_references, [])):
+            return refused
     await _merge_shared_context_into_conversation(conv, context_typeids, someone_typeid)
 
     sender_participant = await User.current_sender_participant(body.get("sender_name"))
@@ -1396,7 +1415,11 @@ async def handle_refresh_notifications(project_path: str) -> ApiResponse:
 
     project_root = find_project_root(project_path) if project_path else None
     if project_root:
-        await git_pull(project_root)
+        from flow_sdk.builtin.faas.git_repo import GitRepo  # noqa: PLC0415
+
+        pulled = await (await GitRepo.local(project_root)).pull()
+        if not pulled.ok:
+            logger.info("[notification_action] pull %s for %s: %s", pulled.kind, project_root, pulled.message)
     try:
         from flow_sdk.app.actions.notification_scanner import scan_incoming_notifications
 

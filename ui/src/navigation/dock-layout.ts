@@ -2,6 +2,7 @@ import { PageId } from '@sdk';
 import { ViewType } from '@src/types/ViewType';
 import type { DockPointer } from './DockPointer';
 import { isContentAssetDock, isOwnChatAssetDock, isPreviewAssetDock } from './content-asset-dock';
+import { isHostDock } from './tab-hosts';
 
 /**
  * The layout a dock renders in — step 5 of docs/navigation/dock-loading.md, and
@@ -48,16 +49,26 @@ export function resolveDockLayout({ dock, isVibe, hasVibeSession }: DockLayoutIn
   const hubMode = dock?.page === PageId.HUB;
   // A `flow show`-pinned preview stays in the Vibe workspace's display pane; only
   // the agent's own pin (`isActiveDisplay`) — a file the USER opened keeps the asset chrome.
-  const isPreviewDisplay = isVibe && !!dock && dock.isActiveDisplay && isPreviewAssetDock(dock);
+  const isPreviewDisplay = !!dock && !!dock.hostProcessId && dock.isActiveDisplay && isPreviewAssetDock(dock);
   if (dock && !hubMode && isContentAssetDock(dock) && !isPreviewDisplay) {
-    // An asset with its own chat (an agent) is not a Vibe surface: no Vibe chat beside it.
-    return { layout: DockLayout.ASSET_WORKSPACE, assetChatBeside: isVibe && !isOwnChatAssetDock(dock) };
+    // The chat beside an asset is its HOST's session (Discuss → a Vibe host tab with
+    // the asset as its child), never the ambient mode. An asset with its own chat
+    // (an agent) is not a Vibe surface: no Vibe chat beside it.
+    return { layout: DockLayout.ASSET_WORKSPACE, assetChatBeside: !!dock.hostProcessId && !isOwnChatAssetDock(dock) };
   }
-  if (!isVibe || hubMode) return content;
+  // A HOST tab (`/dock/vibe/…`) is its workspace whatever the ambient mode — the
+  // host, not the mode, decides. (Its address also implies Vibe, so today the two
+  // agree; the check is what keeps a future host from depending on the mode.)
+  if (!hubMode && hasVibeSession && isHostDock(dock)) return { layout: DockLayout.VIBE_WORKSPACE, assetChatBeside: false };
+  if (hubMode) return content;
+  // The home is ONE screen — the tabless Vibe hero — whatever mode was on screen
+  // when it was asked for. It has no mode of its own.
+  if (!hasVibeSession && isHomeSurface(dock)) {
+    const noProcess = dock?.options?.vibeNoProcess === 'true';
+    return { layout: noProcess ? DockLayout.VIBE_NO_PROCESS : DockLayout.VIBE_NEW_CHAT, assetChatBeside: false };
+  }
+  if (!isVibe) return content;
   if (hasVibeSession) return { layout: DockLayout.VIBE_WORKSPACE, assetChatBeside: false };
-  const isHome = isHomeSurface(dock);
-  if (isHome && dock?.options?.vibeNoProcess === 'true') return { layout: DockLayout.VIBE_NO_PROCESS, assetChatBeside: false };
-  if (isHome) return { layout: DockLayout.VIBE_NEW_CHAT, assetChatBeside: false };
   // Any other real dock URL in Vibe (project home, assets list, a conversation…)
   // is a navigable destination through the normal content panel, with its own Vibe skin.
   return content;

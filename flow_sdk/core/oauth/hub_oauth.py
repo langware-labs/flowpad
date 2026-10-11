@@ -71,11 +71,13 @@ async def _hub_data(
     return data if isinstance(data, dict) else payload
 
 
-async def hub_start_auth(provider: str, *, return_to: str = "") -> Optional[dict[str, Any]]:
+async def hub_start_auth(provider: str, *, return_to: str = "", scopes: "list[str] | tuple[str, ...]" = ()) -> Optional[dict[str, Any]]:
     """Ask the hub to open an OAuth session for ``provider``.
 
     ``return_to`` is where the hub sends the browser once it has stored the grant.
-    A hub that predates it ignores the parameter and shows its own page.
+    A hub that predates it ignores the parameter and shows its own page. ``scopes`` are
+    asked for on top of the provider's base set (``wanted_extra_scopes``); the hub refuses
+    one its manifest does not list as optional.
 
     Returns the hub's ``OauthClientRequestInfo`` payload, or ``None`` when the
     hub is unreachable / not logged in / does not know the provider — callers
@@ -98,7 +100,7 @@ async def hub_start_auth(provider: str, *, return_to: str = "") -> Optional[dict
         user_id,
         action="oauth",
         sub_path=f"{hub_provider_name(provider)}/auth",
-        params={"return_to": return_to} if return_to else None,
+        params={k: v for k, v in (("return_to", return_to), ("scopes", " ".join(scopes))) if v} or None,
     )
     if not data.get("auth_url"):
         logger.warning("[oauth] hub returned no auth_url for %r", provider)

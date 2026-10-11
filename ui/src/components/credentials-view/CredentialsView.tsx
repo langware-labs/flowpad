@@ -33,7 +33,7 @@ export const CredentialsView: React.FC = () => {
   // (`environment`, `api-keys`) is forwarded here rather than 404-ing, so old
   // saved tabs and bookmarks still resolve.
   const [tab] = credentialsTabs(isHubOnly());
-  const { projectId } = parseCredentialsPointer(currentDock?.pointer, tab);
+  const { projectId, entry } = parseCredentialsPointer(currentDock?.pointer, tab);
 
   // An unscoped URL manages the person's credentials. Falling back to a
   // recent/context project silently turns Test into a project permission check
@@ -69,7 +69,7 @@ export const CredentialsView: React.FC = () => {
       </div>
 
       <div className="min-h-0 flex-1 overflow-auto p-4">
-        <ConnectionsManager projectTypeId={selected?.typeId} project={selected} header={false} />
+        <ConnectionsManager projectTypeId={selected?.typeId} project={selected} header={false} selectedTypeid={entry} />
       </div>
     </div>
   );

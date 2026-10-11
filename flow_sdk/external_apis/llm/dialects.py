@@ -140,7 +140,7 @@ DIALECTS: dict[LMApiProvider, ProviderDialect] = {
         default_models={
             # The slugs proven against OpenRouter for the CLI harnesses
             # (``cli_drivers/api_auth.py``), so one catalog serves both.
-            "sm": "anthropic/claude-haiku-4.5",
+            "sm": "anthropic/claude-haiku-5.5",
             "md": "anthropic/claude-sonnet-4.5",
             "lg": "anthropic/claude-opus-4.1",
             # Priced by the hub's ``genai_prices`` table through its vendor fallback, so a
@@ -159,7 +159,7 @@ DIALECTS: dict[LMApiProvider, ProviderDialect] = {
         supports_embeddings=False,
         default_models={
             # Vendor-direct spelling is dashed, unlike the dotted OpenRouter slugs.
-            "sm": "claude-haiku-4-5",
+            "sm": "claude-haiku-5-5",
             "md": "claude-sonnet-4-5",
             "lg": "claude-opus-4-1",
         },
@@ -189,11 +189,27 @@ def get_dialect(provider: LMApiProvider | str) -> ProviderDialect:
         raise ValueError(f"unknown LLM provider {key!r}; known providers are {sorted(p.value for p in DIALECTS)}")
 
 
+def same_model(a: str, b: str) -> bool:
+    """Whether two model names mean the same model.
+
+    Relays prefix the vendor (``openai/text-embedding-3-small``) where the vendor itself does not
+    (``text-embedding-3-small``), and either spelling can come back in a response. Only the
+    leading ``vendor/`` and case are forgiven; anything else is a different model.
+    """
+
+    def bare(name: str) -> str:
+        cleaned = (name or "").strip().lower()
+        return cleaned.split("/", 1)[1] if "/" in cleaned else cleaned
+
+    return bare(a) == bare(b)
+
+
 def default_base_url_for(provider: LMApiProvider | str) -> str:
     return get_dialect(provider).default_base_url
 
 
 __all__ = [
+    "same_model",
     "ANTHROPIC_VERSION_DEFAULT",
     "DIALECTS",
     "OPENROUTER_REFERER",

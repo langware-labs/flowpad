@@ -203,6 +203,11 @@ async def launch_step_process(
     timeout_seconds: float = 1800.0,
     on_status: Optional[Callable[[ProcessProgress], None]] = None,
     executor: Optional[str] = None,
+    #: A ``DataSpec`` value mounted as the process's input folder (``prepare_io``), the way
+    #: ``Agent.launch(input=…)`` does. ``None`` is workdir mode.
+    input: Any = None,  # noqa: A002 — the launch verb's own word
+    #: Context chips stamped on the process (``<type>-<uuid>`` strings).
+    shared_context_entities: Optional[list[str]] = None,
 ) -> PromptResult:
     """Spawn a headless agent process for one step and wait for it to settle.
 
@@ -264,6 +269,14 @@ async def launch_step_process(
             context_data={**(context_data or {}), "wizard_step_prompt": prompt},
             target_typeid_str=target_typeid_str,
         )
+        if input is not None:
+            from flow_sdk.builtin.agentic_process.process_io import prepare_io  # noqa: PLC0415
+
+            prepare_io(process, input=input)
+        if shared_context_entities:
+            from flow_sdk.fs_store.type_id import TypeId  # noqa: PLC0415
+
+            process.add_shared_context_entities([TypeId(entry) for entry in shared_context_entities])
         await process.save(notify=True)
     except Exception as exc:  # noqa: BLE001
         return PromptResult.not_yet(f"Could not start the agent: {exc}", ran=False)

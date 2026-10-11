@@ -3,7 +3,10 @@
 The file counterpart of the entity ``watch`` action, built from the same parts:
 watchers live in ``watch_registry`` (under a ``file:`` key, so a dropped socket's
 ``cleanup_connection`` clears them too), and the change reaches exactly the
-connections watching it over their own WebSocket.
+connections watching it over their own WebSocket. Unlike an entity watch, a file
+watch also owns a running task and a watcher thread, which the registry knows
+nothing about — so the WebSocket teardown calls ``release_unwatched`` right after
+``cleanup_connection`` to end the loops nobody is left to hear.
 
 One watch loop per FOLDER, started by its first watcher and stopped when none is
 left. The folder rather than the file because saves replace the file by rename
@@ -56,13 +59,30 @@ def watch_file(connection_id: str, local: str, entity: str, path: str) -> None:
     folder = _folder(local)
     loop = _loops.get(folder)
     if loop is None or loop.done():
-        _loops[folder] = asyncio.get_running_loop().create_task(_watch_loop(folder))
+        from flow_sdk.request_context.detached import create_detached_task  # noqa: PLC0415
+
+        # Detached: the loop lives as long as the folder has a watcher, and a plain
+        # task would carry the ``watch`` request that started it for all that time.
+        _loops[folder] = create_detached_task(_watch_loop(folder), name=f"file-watch:{folder}")
 
 
 def unwatch_file(connection_id: str, local: str, entity: str, path: str) -> None:
     remove_watch(connection_id, _key(entity, path))
     if not _watched(local):
         _stop(local)
+
+
+def release_unwatched() -> None:
+    """Stop every file nobody watches any more — a dropped socket sends no unwatch.
+
+    Called from the WebSocket teardown after ``watch_registry.cleanup_connection``
+    has dropped the connection's keys. Without it an idle folder's loop (and the
+    worker thread ``awatch`` holds) would live until a file in it changes.
+    Synchronous on purpose, so it cannot interleave with ``watch_file``.
+    """
+    for local in list(_addresses):
+        if not _watched(local):
+            _stop(local)
 
 
 def _stop(local: str) -> None:

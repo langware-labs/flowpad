@@ -27,8 +27,8 @@ export interface ExplorerComputeNode {
   projectId: string | null;
   /** Current project display name (root label / tooltip), or null. */
   projectName: string | null;
-  /** Project context folders (absolute canonical posix paths) — the source for
-   *  the Explorer's `context_folders` grouping root. Empty when none. */
+  /** Project dependency folders (absolute canonical posix paths) — the source for
+   *  the Explorer's `dependencies` grouping root. Empty when none. */
   contextDirs: string[];
 }
 

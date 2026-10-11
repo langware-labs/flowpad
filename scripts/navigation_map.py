@@ -21,7 +21,7 @@ sys.path.insert(0, str(REPO))
 
 def main() -> None:
     from flow_sdk.core.navigation import navigation_map
-    from flow_sdk.core.navigator_eval import DATASET
+    from flow_sdk.core.navigation import DATASET
 
     out = DATASET / "map.json"
     out.write_text(json.dumps(navigation_map().model_dump(mode="json"), indent=2) + "\n")

@@ -49,6 +49,7 @@ import { Trans, useLingui } from '@lingui/react/macro';
 import { consumeInboundParams } from '@src/navigation/inbound-link';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { isSignedInAsMe } from './signed-in-as-me';
+import { useUiActionRequest } from '@src/navigation/ui-actions';
 
 // Live sandbox status styling, keyed off the backend `ExecutionEnvironmentStatus`
 // (`ops/status`). `card` tints the whole sandbox block so status reads at a glance.
@@ -59,6 +60,20 @@ const STATUS_STYLE: Record<ExecutionEnvironmentStatus, { dot: string; card: stri
   [ExecutionEnvironmentStatus.ERROR]: { dot: 'bg-destructive', card: 'border-destructive/40 bg-destructive/5' },
   [ExecutionEnvironmentStatus.NEW]: { dot: 'bg-muted-foreground/40', card: 'border-border' },
 };
+
+/**
+ * The glyph that says what kind of box a card is: a connected computer or a workspace. Anything
+ * else — agent machines included — gets none: no field on a node marks it as an agent's (the hub
+ * records that on the deployment), so any other glyph would be a guess.
+ */
+function CardGlyph({ node }: { node: ComputeNode }) {
+  const { t } = useLingui();
+  const cls = 'h-4 w-4 shrink-0 text-muted-foreground';
+  if (isUserMachine(node))
+    return <Laptop className={cls} aria-label={t`Connected computer`} data-testid="sandbox-kind-machine" />;
+  if (node.isSandbox) return <Monitor className={cls} aria-label={t`Workspace`} data-testid="sandbox-kind-workspace" />;
+  return null;
+}
 
 /** Border/background tint for a sandbox card, by live status. */
 function statusCardClass(status?: ExecutionEnvironmentStatus): string {
@@ -311,6 +326,10 @@ export function HubHome() {
   }, [pendingInviteCount, refetch]);
   // `flow connect` device-code approval: null = closed, '' = open blank, 'XXXX-XXXX' = prefilled.
   const [addMachineCode, setAddMachineCode] = useState<string | null>(null);
+  // "create a sandbox" / "add a machine" (smart navigation): the same dialogs the buttons open.
+  useUiActionRequest(['new-sandbox-hub', 'add-machine-hub'], (id) =>
+    id === 'new-sandbox-hub' ? setNewSandbox({}) : setAddMachineCode(''),
+  );
   useEffect(() => {
     // Read-and-scrub in one call, so a refresh cannot re-open the dialog.
     const { setup_git: gitUrl, connect_code: connectCode } = consumeInboundParams(['setup_git', 'connect_code']);
@@ -480,7 +499,7 @@ export function HubHome() {
                 )} ${cardEnabled(d) ? '' : 'opacity-60'}`}
               >
                 <div className="flex items-center gap-3">
-                  <Monitor className="h-4 w-4 shrink-0 text-muted-foreground" />
+                  <CardGlyph node={d} />
                   {editingId === d.id ? (
                     <input
                       autoFocus

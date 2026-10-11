@@ -17,6 +17,7 @@ from ``ingest.*.item.created``, and the one a consumer needs, because a thread's
 consumer keyed on the ingest tag is racing that write: Law 3 detaches every
 handler, so it reads no thread and drops the message with a warning nobody sees.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -32,13 +33,51 @@ def emit_projected_tag(item) -> None:
     screen both filter on it, so an announcement without one is invisible to
     anything narrowing by data source.
     """
+    from flow_sdk.tags import emit_tag  # noqa: PLC0415
+
+    envelope = projected_envelope(item.provider, str(item.id), str(item.data_source_id))
+    emit_tag(envelope["tag"], envelope["target"], envelope["data"], ctx={"scope": envelope["scope"]})
+
+
+def projected_envelope(provider: str, source_item_id: str, source_id: str) -> dict:
+    """The projected-message envelope's parts — the ONE spelling, shared by the real announcement and a
+    test fire on a message (``MessageSubject.test_event``)."""
+    from flow_sdk.tags import target_of  # noqa: PLC0415
+
+    return {
+        "tag": f"stream_inbox.{provider or 'unknown'}.message.projected",
+        "target": target_of("source_item", source_item_id),
+        "data": {"entity_id": source_item_id, "source_id": source_id},
+        "scope": [target_of("data_source", source_id)] if source_id else [],
+    }
+
+
+def emit_message_status(source, message_id: str) -> None:
+    """An agent on this machine took one of ``source``'s messages (``message_id``, its origin key): it is being
+    handled. Live only — nothing is kept; the conversation shows it until the reply lands."""
     from flow_sdk.tags import emit_tag, target_of  # noqa: PLC0415
 
+    if not message_id:
+        return
     emit_tag(
-        f"stream_inbox.{item.provider or 'unknown'}.message.projected",
-        target_of("source_item", item.id),
-        {"entity_id": item.id, "source_id": item.data_source_id},
-        ctx={"scope": [target_of("data_source", item.data_source_id)]},
+        f"stream_inbox.{source.provider or 'unknown'}.message.status",
+        target_of("data_source", source.id),
+        {"message_id": message_id, "state": "handling", "source_id": source.id},
+        ctx={"scope": [target_of("data_source", source.id)]},
+    )
+
+
+def emit_reply_failed(source, conversation_id: str, reason: str) -> None:
+    """A reply sent into ``conversation_id`` through ``source`` did not go: the channel's own words. The send ran
+    after its request returned, so this is how the person who pressed Send hears."""
+    from flow_sdk.tags import emit_tag, target_of  # noqa: PLC0415
+
+    source_id = str(getattr(source, "id", "") or "")
+    emit_tag(
+        f"stream_inbox.{getattr(source, 'provider', '') or 'unknown'}.reply.failed",
+        target_of("conversation", conversation_id),
+        {"conversation_id": conversation_id, "reason": reason[:500], "source_id": source_id},
+        ctx={"scope": [target_of("data_source", source_id)]} if source_id else None,
     )
 
 

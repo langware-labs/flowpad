@@ -83,3 +83,5 @@ class ShareResultSpec(DataSpec):
     granted_teams: list[ShareGrantedTeamSpec] = Field(default_factory=list)
     skipped_teams: list[ShareSkippedTeamSpec] = Field(default_factory=list)
     failed_teams: list[ShareFailedTeamSpec] = Field(default_factory=list)
+    #: What members will be missing — a required dependency that is a folder on this machine only.
+    warnings: list[str] = Field(default_factory=list)

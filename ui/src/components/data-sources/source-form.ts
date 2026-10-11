@@ -34,6 +34,10 @@ export interface SourceDraft {
   window_days: number;
   /** Quiet this long ends a thread; the next message starts a new one. Null = never. */
   thread_timeout_seconds: number | null;
+  /** A file source pulls only and never writes back. */
+  read_only: boolean;
+  /** A file source's local copy is kept out of git. */
+  gitignored: boolean;
   /** Raw strings straight off the inputs; `buildConfig` types them. */
   fields: Record<string, string>;
   /**
@@ -71,7 +75,8 @@ export function emptyDraft(spec?: DataDriver): SourceDraft {
     // The driver's own title, so nothing is required of a person who has nothing to say about
     // the name — an empty box under a red "Name is required." is the form asking for a word it
     // could supply itself.
-    name: spec?.title ?? '',
+    // A driver may name what a new source IS ("Flow WhatsApp agent") better than its title does.
+    name: spec?.default_name || spec?.title || '',
     provider: spec?.name ?? '',
     // Empty means "derive from the fields" — `accountKeyFor` owns the default,
     // so exactly one place knows it.
@@ -80,6 +85,8 @@ export function emptyDraft(spec?: DataDriver): SourceDraft {
     poll_interval_seconds: 300,
     window_days: 7,
     thread_timeout_seconds: null,
+    read_only: false,
+    gitignored: true,
     // A manifest `default` is what a new source starts with, not a hint the user must retype —
     // rendered the way an edited source's stored value is, so create and edit show the same text.
     fields: Object.fromEntries(

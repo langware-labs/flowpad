@@ -147,6 +147,9 @@ class EntityType(StrEnum):
     # discovered anywhere in a project, rendered in a grid editor.
     SPREADSHEET = "spreadsheet"
     FLOWPAD_DIAGNOSIS = "flowpad_diagnosis"
+    # A diagnosis someone ELSE runs and writes into on the hub, by id, with no login
+    # (``flow diagnose <id>``). Subclass of FLOWPAD_DIAGNOSIS — see builtin/diagnosis_request.py.
+    DIAGNOSIS_REQUEST = "diagnosis_request"
     COLLABORATION_ROOM = "collaboration_room"
     # A host/guest remote-execution session that lives inside a CollaborationRoom
     # (alongside its files/assets): guest sends Prompts, host's worker returns
@@ -227,6 +230,9 @@ class EntityType(StrEnum):
     # one-liner, then an agent). A Wizard SEQUENCES steps; a ComputeOp is one
     # step's worth of "make this true and prove it", reusable on its own.
     COMPUTE_OP = "compute_op"
+    # A folder-backed SETUP NODE: asset_setup.json naming what an asset needs set up before it works
+    # (``prepare`` / ``run`` wizards) and what must be set up first (``children``) — core/setup walks them.
+    ASSET_SETUP = "asset_setup"
     # A folder-backed support desk PORTAL: guides plus a helpdesk.json naming the
     # hub project that owns the ticket queue. A repo declares itself a help desk
     # by shipping one, so cloning it as a context folder is what gives a project
@@ -261,9 +267,10 @@ class EntityType(StrEnum):
     #: The AUTHORED half of a source — a folder asset describing what a source
     #: is. ``DATA_DRIVER`` is the configured instance; this is its definition.
     DATA_DRIVER = "data_driver"
-    #: A DataSpec KIND defined by a folder, not by code: ``agentic-assets/data_spec/<full.kind>/``
-    #: holding ``data_spec.json`` (the fields) and ``description.md``. Indexing it registers the kind.
-    DATA_SPEC = "data_spec"
+    #: A SCHEMA defined by a folder, not by code: ``agentic-assets/data_schema/<full.kind>/``
+    #: holding ``data_schema.json`` (the fields) and ``description.md``. Indexing it registers the
+    #: schema under its kind (the folder name).
+    DATA_SCHEMA = "data_schema"
     #: The authored definition of a NAMED SET OF ENV VARS a provider needs
     #: (gmail = GMAIL_ADDRESS + GMAIL_APP_PASSWORD) — the only way secrets are
     #: declared, in user or project scope.

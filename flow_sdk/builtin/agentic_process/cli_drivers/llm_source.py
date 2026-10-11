@@ -195,12 +195,13 @@ def _device_source(worker_type: str, install: "InstallState", login: "LoginState
     return verdict(reason=reason, code=code)
 
 
-def _key_sources(spec, rows: dict, stored: set[str]) -> list[Candidate]:
+def _key_sources(spec, rows: dict, stored: set[str], hints: dict[str, str] | None = None) -> list[Candidate]:
     """One candidate per provider this harness supports, over that provider's endpoint row.
 
-    *rows* is the local ``api_key`` endpoints keyed by secret name and *stored* is the set of
-    PROVIDERS with a stored key (``core.status.stored_key_providers``) — both read ONCE by the
-    caller, because this runs per harness and the answers do not vary between them.
+    *rows* is the local ``api_key`` endpoints keyed by secret name, *stored* is the set of
+    PROVIDERS with a stored key and *hints* their masked
+    ``****last4`` (both from ``core.status.stored_keys``) — all read ONCE by the caller, because this
+    runs per harness and the answers do not vary between them.
 
     Presence is tested against those NAMES, never by decrypting a value. Reading a secret
     opens, decrypts and re-parses the whole sod blob; asking four harnesses whether a key
@@ -230,6 +231,9 @@ def _key_sources(spec, rows: dict, stored: set[str]) -> list[Candidate]:
                 LLMSource(
                     endpoint_typeid=str(endpoint.typeid),
                     name=endpoint.name or f"{provider.value} key",
+                    # Display only: the masked hint of the stored key, so the picker can say
+                    # WHICH key funds this; nothing for a slot with no key.
+                    detail=(hints or {}).get(provider.value, "") if has_key else "",
                     rank=_RANK_KEY,
                     eligible=has_key,
                     auto=has_key,
@@ -317,7 +321,12 @@ async def _inventory(worker_type: str) -> tuple[list[Candidate], Any]:
     from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import worker_capability_kind
     from flow_sdk.builtin.capability import Capability
     from flow_sdk.builtin.llm_endpoint import LLMEndpoint
-    from flow_sdk.core.status import InstallState, harness_install, login_state, stored_key_providers
+    from flow_sdk.core.status import (
+        InstallState,
+        harness_install,
+        login_state,
+        stored_keys,
+    )
     from flow_sdk.instance_settings.llm_endpoint import (
         fetch_hub_llm_endpoints,
         get_hub_llm_endpoint,
@@ -334,7 +343,9 @@ async def _inventory(worker_type: str) -> tuple[list[Candidate], Any]:
     rows = await LLMEndpoint.key_endpoints()
     # Every status fact comes from the status layer, never re-derived here.
     install = harness_install(worker_type)
-    stored = set(stored_key_providers())
+    keys = stored_keys()  # one walk of the secret listing, for both views
+    stored = set(keys)
+    hints = {provider: key["hint"] for provider, key in keys.items()}
 
     # A harness with no account of its own has no device rung to rank (``has_device_login``).
     candidates = (
@@ -342,7 +353,7 @@ async def _inventory(worker_type: str) -> tuple[list[Candidate], Any]:
         if spec.has_device_login
         else []
     )
-    candidates += _key_sources(spec, rows, stored)
+    candidates += _key_sources(spec, rows, stored, hints)
     candidates += _endpoint_sources(spec, endpoints, bound, _hub_has_token(), listing_supersedes_binding())
     if install not in (InstallState.INSTALLED, InstallState.BUILT_IN):
         # Nothing funds a harness that cannot run: a stored key or a hub budget would only be
@@ -394,7 +405,7 @@ def _hub_spendable() -> bool:
     return _hub_has_token() or public_binding() is not None
 
 
-async def resolve_constraint(scope: LLMScope) -> tuple[str, LLMSourceOrigin] | None:
+async def resolve_constraint(scope: LLMScope) -> tuple[str, LLMSourceOrigin, bool] | None:
     """The endpoint this question is REQUIRED to answer with, and who required it.
 
     Process beats project. A scope with no project contributes nothing rather than
@@ -407,7 +418,7 @@ async def resolve_constraint(scope: LLMScope) -> tuple[str, LLMSourceOrigin] | N
     pin was invisible on the one screen whose job is to say what funds a spawn.
     """
     if scope.process_llm_endpoint_typeid:
-        return scope.process_llm_endpoint_typeid, LLMSourceOrigin.PROCESS
+        return scope.process_llm_endpoint_typeid, LLMSourceOrigin.PROCESS, scope.process_llm_endpoint_public
 
     from flow_sdk.builtin.project import Project
 
@@ -422,12 +433,12 @@ async def resolve_constraint(scope: LLMScope) -> tuple[str, LLMSourceOrigin] | N
             project = None
     typeid = str(getattr(project, "llm_endpoint_typeid", "") or "") if project is not None else ""
     if typeid:
-        return typeid, LLMSourceOrigin.PROJECT
+        return typeid, LLMSourceOrigin.PROJECT, False
     return None
 
 
 def _apply_constraint(
-    candidates: list[Candidate], typeid: str, origin: LLMSourceOrigin, hub_logged_in: bool
+    candidates: list[Candidate], typeid: str, origin: LLMSourceOrigin, known_public: bool, hub_logged_in: bool
 ) -> list[Candidate]:
     """Render the constraint ONTO the list: the named endpoint stays, everything else
     comes back ineligible carrying the sentence that says why.
@@ -461,7 +472,9 @@ def _apply_constraint(
         # emphatically it was named.
         from flow_sdk.instance_settings.llm_endpoint import public_binding  # noqa: PLC0415
 
-        public = public_binding(typeid) is not None
+        # Public when the box holds a public binding to it, or the PIN itself says so
+        # (``AgenticProcess.llm_endpoint_public`` -- one process spending a public budget).
+        public = known_public or public_binding(typeid) is not None
         unusable = "" if hub_logged_in or public else "this box is not logged in to the hub"
         unusable_code = "" if not unusable else LLMSourceRefusal.HUB_SIGNED_OUT.value
         stub = _hub_stub(typeid, name=typeid, public=public)
@@ -572,7 +585,7 @@ def _overlay(
     candidates: list[Candidate],
     cap,
     worker_type: str,
-    constraint: tuple[str, LLMSourceOrigin] | None,
+    constraint: tuple[str, LLMSourceOrigin, bool] | None,
 ) -> list[Candidate]:
     """The ranked answer for an inventory that has ALREADY been read.
 
@@ -676,7 +689,7 @@ async def llm_picker_view(worker_type: str, scope: LLMScope = LLMScope()) -> Pic
     return await picker_view_for(worker_type, await resolve_constraint(scope))
 
 
-async def picker_view_for(worker_type: str, constraint: tuple[str, LLMSourceOrigin] | None) -> PickerView:
+async def picker_view_for(worker_type: str, constraint: tuple[str, LLMSourceOrigin, bool] | None) -> PickerView:
     """:func:`llm_picker_view` for a constraint that has already been resolved.
 
     The batch form. ``resolve_constraint`` is a project lookup and does not depend on the harness, so

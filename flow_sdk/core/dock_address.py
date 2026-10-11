@@ -177,13 +177,17 @@ class ViewType(StrEnum):
     TOKEN_PLAN = "token-plan"  # Hub token plan (me / team / org budgets) - /dock/hub/token-plan[/<scope>]
     # DESK page: what funds this machine's harnesses. Every fact it renders is a box fact
     # (a device token, a stored key, the endpoint BINDING), so it has no hub half.
-    LLM_SOURCES = "llm-sources"  # /dock/llm-sources[/<worker>] -- the harness in focus
+    LLM_SOURCES = "llm-sources"  # /dock/llm-sources[/<worker>|keys|endpoints] -- the harness or section in focus
     # DESK page: the first-run chooser -- "what should issue your LLM calls". Its own address
     # rather than a state on LLM_SOURCES because ``flow llm set auto`` opens it in a BROWSER,
     # and a CLI can hand a user nothing but a URL. LLM_SOURCES answers "what funds each harness
     # and why"; this answers "you have nothing yet, pick something" -- one question, no pointer.
     LLM_SETUP = "llm-setup"  # /dock/llm-setup -- the whole screen is one question
     ASSISTANT = "assistant"  # /win/assistant -- the Flowpad Assistant popped out into its own window
+    # A HOST tab: an agentic process shown as the Vibe workspace (chat + Display +
+    # its nested child tabs). Folds onto the process's shell tab identity, so one
+    # process is one Tab row whichever of the two it is shown as.
+    VIBE = "vibe"  # /dock/vibe/agentic_process-<id>
 
 
 # ── pointer vocabularies for the views whose pointer is a closed set ───────
@@ -365,8 +369,20 @@ class ViewMeta:
     #: the entity itself (a project's dependency graph, a session's transcript).
     opens: tuple[str, ...] = ()
     #: ``(pointer, name)`` for the tabs and filters worth naming as places of their own. The
-    #: name is whole ("Assets filtered to skills"): it is what a person is matched against.
+    #: name is whole ("Assets filtered to skills"): it is what a person is matched against. A
+    #: pointer starting ``?`` is the screen's options (``?creating=schedule``); one starting ``/``
+    #: is a whole address of its own (``/hub/worldview/world``, a projection the hub renders).
     subplaces: tuple[tuple[str, str], ...] = ()
+    #: ``(entity type, pointer form, name)``: how this screen opens ON an entity in context when
+    #: that is more than its bare id -- ``("agentic_process", "<harness>/transcript/<session>",
+    #: "transcript")``. The form's placeholders are ``<id>``, ``<type>``, ``<path>`` and any field
+    #: the context carries for that entity (``navigation.ref``); a form with one unknown is not
+    #: offered, so no option names an address the app cannot open. A form named ``page`` is the
+    #: entity's own page: where opening the entity itself goes when it has no asset editor.
+    open_forms: tuple[tuple[str, str, str], ...] = ()
+    #: The tab the bare address opens (``credentials`` shows ``connections``): the two addresses
+    #: are one place, so ``canonical_address`` folds the tab away.
+    default_tab: str = ""
 
 
 #: The table below builds rows directly. ``pointer`` leads and ``addressable``
@@ -383,7 +399,24 @@ _NONE = PointerRequirement.NONE
 #: view added in TypeScript cannot land here unclassified.
 VIEW_META: Mapping[ViewType, ViewMeta] = {
     ViewType.HOME: _m(_OPT, chrome="fullbleed", label="Home", aliases=("landing", "start")),
-    ViewType.SYSTEM_PROFILE: _m(_OPT, label="System Profile", aliases=("claude code status", "live status")),
+    ViewType.SYSTEM_PROFILE: _m(
+        _OPT,
+        label="System Profile",
+        aliases=("claude code status", "live status"),
+        subplaces=tuple(
+            (tab, f"System Profile (diagnostics of the running Claude Code session) > {name}")
+            # Only the tabs no other place has: its skills / commands / agents / sessions / plans /
+            # todos / projects tabs are the asset lists and screens again, and offering a request
+            # both splits one answer in two (measured: "show commands" 0.44 / 0.44, never acted on).
+            for tab, name in (
+                ("plugins", "installed plugins"),
+                ("transcripts", "transcripts"),
+                ("repos", "repositories"),
+                ("directories", "directories"),
+                ("ide", "IDE integration"),
+            )
+        ),
+    ),
     ViewType.ANALYSIS: _m(_OPT, addressable=False),
     ViewType.CHAT: _m(_OPT, addressable=False),
     ViewType.SHELL: _m(_OPT, label="Worker", aliases=("chats", "terminal"), provides=("process",)),
@@ -396,12 +429,13 @@ VIEW_META: Mapping[ViewType, ViewMeta] = {
     # with a different screen is worse than one that errors.
     ViewType.ENVIRONMENT: _m(_NONE, addressable=False),
     ViewType.CONNECTIONS: _m(_NONE, addressable=False),
-    ViewType.ARTIFACTS: _m(_OPT, label="Artifacts", aliases=("deliverables",)),
+    ViewType.ARTIFACTS: _m(_OPT, label="Artifacts", aliases=("deliverables", "what we delivered")),
     ViewType.REASONING: _m(_OPT, addressable=False),
-    ViewType.DIFF: _m(_REQ, label="Diff Viewer", aliases=("changes",), opens=("agentic_process",)),
+    ViewType.DIFF: _m(_REQ, label="Diff Viewer", aliases=("changes",)),
     ViewType.UNSUPPORTED: _m(_OPT, addressable=False),
-    ViewType.MARKDOWN: _m(_OPT, label="Markdown", aliases=("document",)),
-    ViewType.DOCS: _m(_OPT, label="Docs", aliases=("documentation",)),
+    # No "document" alias: bare, this viewer shows nothing; "my documents" is the documents list.
+    ViewType.MARKDOWN: _m(_OPT, label="Markdown"),
+    ViewType.DOCS: _m(_OPT, label="Docs", aliases=("documentation", "flowpad documentation", "help pages")),
     ViewType.ASSISTANCE: _m(_OPT, label="Assistance", aliases=("expert assistance",)),
     ViewType.SURVEY: _m(_OPT, label="Survey"),
     ViewType.API_KEYS: _m(_NONE, addressable=False),
@@ -410,10 +444,13 @@ VIEW_META: Mapping[ViewType, ViewMeta] = {
         _OPT,
         label="Machine",
         aliases=("system", "this machine"),
+        default_tab="processes",
         subplaces=(
             ("processes", "Machine > running processes"),
             ("network", "Machine > network / ports"),
             ("secrets", "Machine > machine secrets"),
+            ("metrics", "Machine > sandbox metrics (CPU, memory, disk)"),
+            ("logs", "Machine > sandbox logs"),
         ),
     ),
     ViewType.EXPLORER: _m(_OPT, scope_keyed=True, label="Files", aliases=("file tree", "folders")),
@@ -421,27 +458,102 @@ VIEW_META: Mapping[ViewType, ViewMeta] = {
     ViewType.AI_CONFIG: _m(
         _OPT,
         label="AI Configuration",
-        aliases=("ai config", "llm apis", "models", "clis"),
-        subplaces=(("llm-apis", "AI Configuration > LLM APIs tab"), ("clis", "AI Configuration > CLIs tab")),
+        aliases=("ai config", "llm apis", "models"),
+        default_tab="llm-apis",
+        subplaces=(
+            ("llm-apis", "AI Configuration > LLM APIs tab"),
+            ("clis", "AI Configuration > CLIs tab: the coding CLIs / harnesses (Claude Code, Codex, Copilot, OpenCode)"),
+        ),
     ),
     ViewType.SHOW: _m(_REQ, label="Show"),
     # Fullbleed: the question IS the window, so there is no workspace around it.
     ViewType.ASK: _m(_REQ, label="Ask", chrome="fullbleed"),
     ViewType.APPS: _m(_REQ, folds_sub_pointer=True, label="Skill apps"),
-    ViewType.GRAPH: _m(_REQ, label="Graph", aliases=("dep graph", "dependency graph"), provides=("entity",), opens=("project",)),
-    ViewType.WORLDVIEW: _m(_REQ, label="WorldView", aliases=("world", "org graph"), pages=("desk", "hub"), provides=("entity",)),
+    ViewType.GRAPH: _m(
+        _REQ,
+        label="Graph",
+        aliases=("dep graph", "dependency graph"),
+        provides=("entity",),
+        # The pointer is ``<type>/<id>`` -- a bare id is "Graph root not found".
+        open_forms=(("project", "project/<id>", "dependency graph"),),
+    ),
+    ViewType.WORLDVIEW: _m(
+        _REQ,
+        label="WorldView",
+        aliases=("world", "org graph"),
+        pages=("desk", "hub"),
+        provides=("entity",),
+        # The three projections; the world and the organization are drawn by the hub.
+        subplaces=(
+            ("/hub/worldview/world", "WorldView > my world: everything I am part of"),
+            ("/hub/worldview/organization", "WorldView > the org graph: people, teams and what they own"),
+            ("deployment", "WorldView > deployed apps and deployments"),
+        ),
+    ),
     # OPTIONAL, not REQUIRED like the graph beside it: the screen opens on the
     # organization you belong to, and only carries a pointer when you deep-link to
     # a particular team.
     ViewType.ORGANIZATION: _m(_OPT, label="Organization", aliases=("people", "teams", "members"), pages=("hub",)),
-    ViewType.TAG: _m(_REQ, folds_pointer=True, label="Tag Graph", aliases=("tags", "taxonomy")),
+    ViewType.TAG: _m(
+        _REQ,
+        folds_pointer=True,
+        label="Tag Graph",
+        aliases=("tags", "taxonomy"),
+        subplaces=(("graph", "Tag Graph: the whole tag taxonomy"),),
+    ),
     ViewType.SUBGRAPH: _m(_REQ, folds_pointer=True, label="Subgraph"),
-    ViewType.K_BROWSER: _m(_REQ, label="Knowledge Browser", aliases=("docs browser",)),
-    ViewType.LENS: _m(_REQ, label="Lens", aliases=("transcript",), opens=("agentic_process",)),
+    # Bare, it has no docs root to show: it opens on a folder (``vfs/<path>``).
+    ViewType.K_BROWSER: _m(
+        _REQ,
+        label="Knowledge Browser",
+        aliases=("docs browser",),
+        open_forms=(("project", "vfs/<path>", "knowledge browser"),),
+    ),
+    # ``<category>/<type>[/<ref>]``: a viewer per log or record kind.
+    ViewType.LENS: _m(
+        _REQ,
+        label="Lens",
+        aliases=("transcript",),
+        subplaces=(
+            ("fs-records/scan", "Indexer status: the file scan"),
+            ("fs-records/llm-indexers", "LLM indexers"),
+            ("cli/log/all", "The CLI log: every flow command run"),
+            ("heartbeat/errors/open", "Errors: the open errors the app recorded"),
+            ("heartbeat/events/live", "The app's internal heartbeat stream (for debugging the app)"),
+        ),
+        open_forms=(
+            ("agentic_process", "<harness>/transcript/<session>", "transcript"),
+            # Claude Code alone keeps a todo list per session.
+            ("agentic_process", "<harness=claude>/tasks/<session>", "todo list"),
+            ("trigger", "trigger/log/<id>", "trigger log"),
+        ),
+    ),
     ViewType.SESSION: _m(_REQ, addressable=False, provides=("entity", "process")),
     ViewType.TASKS: _m(_OPT, label="Tasks", aliases=("todo",), provides=("entity",)),
     ViewType.SETTINGS: _m(_OPT, label="Settings", aliases=("claude settings",)),
-    ViewType.PREFERENCES: _m(_OPT, folds_pointer=True, label="Preferences", aliases=("my preferences", "appearance")),
+    ViewType.PREFERENCES: _m(
+        _OPT,
+        folds_pointer=True,
+        label="Preferences",
+        aliases=("my preferences", "appearance"),
+        # The tabs of ``PREF_CATEGORIES`` (ts_sdk/src/preferences/prefRegistry.ts), named by what is in them.
+        subplaces=tuple(
+            (tab, f"Preferences > {name}")
+            for tab, name in (
+                ("general", "General: show system skills"),
+                ("terminal", "Terminal: scrollback sync, history, terminal openers"),
+                ("notifications", "Notifications: turn the sound on or off when an agent waits, message status, sign-in ask"),
+                ("advanced", "Advanced: turn the smart navigation log on or off, terminal scrollback lines"),
+                ("auto_index", "Auto index: which folders are indexed automatically"),
+                ("i18n", "Language"),
+                ("ui", "Interface: choose the view mode (vibe or terminal), the vibe model, system projects"),
+                ("chat", "Chat: show tool calls"),
+                ("errors", "Errors: time span, status filter, de-duplication"),
+                ("debug", "Debug: event sniffer"),
+                ("onboarding", "Onboarding"),
+            )
+        ),
+    ),
     ViewType.AGENTIC_PROCESS: _m(_REQ, label="Process", provides=("entity", "process"), opens=("agentic_process",)),
     ViewType.SEARCH: _m(_NONE, label="Search", aliases=("find",)),
     # Pointer `[runs|bus]`: the list, every run, the event bus — one tab chip
@@ -450,11 +562,19 @@ VIEW_META: Mapping[ViewType, ViewMeta] = {
         _OPT,
         folds_pointer=True,
         label="Automations",
-        aliases=("events", "triggers", "rules", "schedules", "scheduled jobs", "cron", "trigger history"),
+        # "new automation" names this screen: its New buttons are where a kind is chosen.
+        aliases=("events", "triggers", "rules", "schedules", "scheduled jobs", "cron", "cron jobs", "trigger history", "new automation"),
+        provides=("entity",),
         subplaces=(
             ("runs", "Automations > Runs (every time one fired, with errors)"),
-            ("bus", "Automations > Event bus (events, who listens, live stream)"),
+            ("runs?status=failed", "Automations > Runs that failed"),
+            ("bus", "Automations > Event bus (events, signals, who listens, live stream)"),
+            ("?creating=schedule", "New scheduled automation (an empty form): schedule a job"),
+            ("?creating=event", "New automation that runs when an event happens (an empty form)"),
+            ("?creating=file", "New file-watcher automation: runs when a file changes (an empty form)"),
+            ("?creating=agent_hook", "New agent-hook automation (an empty form)"),
         ),
+        open_forms=(("trigger", "?trigger=<id>", "page"), ("event", "?trigger=<id>", "page")),
     ),
     ViewType.EVENTS: _m(_NONE, addressable=False),
     ViewType.TRIGGERS: _m(_NONE, addressable=False),
@@ -468,17 +588,29 @@ VIEW_META: Mapping[ViewType, ViewMeta] = {
         folds_pointer=True,
         label="Data sources",
         aliases=("connectors", "integrations", "ingestion", "sources"),
+        provides=("entity",),
+        subplaces=(
+            ("drivers", "Data sources > drivers: every kind of source that can be connected"),
+            ("channels", "Data sources > channels: where each channel's messages are routed"),
+        ),
+        # Each shipped driver's page (``drivers/<name>``) is generated: ``navigation.place_of``.
+        open_forms=(
+            ("data_source", "<id>", "page"),
+            ("data_source", "<id>/messages", "messages"),
+            ("data_source", "<id>/settings", "settings"),
+            ("data_source", "drivers/<provider>", "driver"),
+        ),
     ),
     ViewType.RAG: _m(
         _NONE,
         label="Search indexes",
-        aliases=("embeddings", "knowledge index", "vector index"),
+        aliases=("embeddings", "knowledge index", "vector index", "brain", "knowledge base"),
     ),
     # The counter it came from is a query pair (?group=&counter=), not a pointer.
     # Labelled apart from `assets` (the tree): this is one counter's table.
     ViewType.ASSET_LIST: _m(_NONE, label="Asset list", aliases=("counter assets",)),
     ViewType.PROCESS_RUNS: _m(_OPT, label="Runs", aliases=("history",)),
-    ViewType.PLAN: _m(_REQ, label="Plan"),
+    ViewType.PLAN: _m(_REQ, label="Plan", open_forms=(("agentic_process", "vfs/<plan_path>", "plan"),)),
     ViewType.CRON: _m(_NONE, addressable=False),
     # OPTIONAL, not REQUIRED: `/dock/assets` already renders — `AssetsPage` takes no
     # pointer prop and tab identity is the SCOPE (scope_keyed), not the pointer. The
@@ -491,15 +623,18 @@ VIEW_META: Mapping[ViewType, ViewMeta] = {
         aliases=("library", "docs tree"),
         pages=("desk", "hub"),
         provides=("entity",),
-        subplaces=(
-            ("list/skill", "Assets filtered to skills"),
-            ("list/agent", "Assets filtered to agents"),
-            ("list/prompt", "Assets filtered to prompts"),
-        ),
+        # The per-type lists (``list/<type>``) come from the type registry: ``navigation.place_of``.
+        subplaces=(("project-home", "Project home: the current project's overview page"),),
     ),
     # Same: a bare project dock is the assets workspace (see the PROJECT arm in
     # `content-panel.tsx`, which documents exactly that and was unaddressable).
-    ViewType.PROJECT: _m(_OPT, label="Collaboration", aliases=("room",), pages=("desk", "hub")),
+    ViewType.PROJECT: _m(
+        _OPT,
+        label="Collaboration",
+        aliases=("room",),
+        pages=("desk", "hub"),
+        open_forms=(("project", "<id>/collaboration_room/<room>", "collaboration room"),),
+    ),
     # `<agentId>/stream_inbox` — the id leads, so the pointer is required. The agent
     # ITSELF is an entity: `flow show entity agent-<id>` opens its editor.
     ViewType.AGENT: _m(
@@ -508,6 +643,7 @@ VIEW_META: Mapping[ViewType, ViewMeta] = {
         pointer_form="<id>/stream_inbox",
         pointer_shape=r"[^/]+/stream_inbox",
         provides=("entity",),
+        open_forms=(("agent", "<id>/stream_inbox", "stream inbox"),),
     ),
     ViewType.STREAM_INBOX: _m(_NONE, label="Stream Inbox", aliases=("messages",)),
     ViewType.CONVERSATION: _m(_REQ, folds_sub_pointer=True, label="Conversation", pages=("desk", "hub"), provides=("entity",)),
@@ -515,7 +651,9 @@ VIEW_META: Mapping[ViewType, ViewMeta] = {
     ViewType.GRAPH_CONTEXT: _m(_REQ, label="Context", aliases=("frozen context",)),
     ViewType.DIAGNOSIS: _m(_REQ, label="Diagnosis"),
     ViewType.DESKTOP: _m(_NONE, scope_keyed=True, label="Desktop", aliases=("favorites",)),
-    ViewType.LIVE_SESSION: _m(_REQ, label="Live Session"),
+    ViewType.LIVE_SESSION: _m(
+        _REQ, label="Live Session", open_forms=(("agentic_process", "<live_session>", "live session"),)
+    ),
     ViewType.HELPDESK: _m(_REQ, folds_pointer=True, label="Help desk", aliases=("support",), opens=("project",)),
     ViewType.ATLAS: _m(_OPT, addressable=False),
     ViewType.HUB_RECORDS: _m(_REQ, label="Records", aliases=("hub records",), pages=("hub",)),
@@ -532,27 +670,57 @@ VIEW_META: Mapping[ViewType, ViewMeta] = {
         pages=("desk", "hub"),
         # One tab is left: API keys and environment variables are rows of Connections now.
         subplaces=(("connections", "Credentials > Connections (OAuth accounts) tab"),),
+        default_tab="connections",
+        open_forms=(("project", "connections/<id>", "connections"),),
     ),
     # Pointer REQUIRED: an app with no artifact is not an address. Runtime rides in
     # options, so it is excluded from tab identity and switching dev/served
     # re-points the SAME tab instead of forking one per runtime.
     ViewType.APP: _m(_REQ, label="App"),
-    ViewType.LLM_ENDPOINTS: _m(_OPT, folds_pointer=True, label="LLM Endpoints", aliases=("endpoints",), pages=("hub",)),
+    ViewType.LLM_ENDPOINTS: _m(
+        _OPT,
+        folds_pointer=True,
+        label="LLM Endpoints",
+        aliases=("endpoints",),
+        pages=("hub",),
+        provides=("entity",),
+        open_forms=(
+            ("llm_endpoint", "<id>", "page"),
+            ("llm_endpoint", "<id>/usage", "usage"),
+            ("llm_endpoint", "<id>/models", "models"),
+        ),
+    ),
     ViewType.TOKEN_PLAN: _m(
         _OPT,
         folds_pointer=True,
         label="Token plan",
         aliases=("budget", "token budget"),
         pages=("hub",),
+        default_tab="me",
         subplaces=(("me", "Hub token plan > my budget"), ("team", "Hub token plan > team budget")),
     ),
-    ViewType.LLM_SOURCES: _m(_OPT, folds_pointer=True, label="LLM sources", aliases=("harness funding",)),
+    ViewType.LLM_SOURCES: _m(
+        _OPT,
+        folds_pointer=True,
+        label="LLM sources",
+        aliases=("harness funding",),
+        subplaces=tuple(
+            (h, f"LLM sources > how {name} is funded (its key, plan or allowance)")
+            for h, name in (("claude", "Claude Code"), ("codex", "Codex"), ("copilot", "Copilot"), ("opencode", "OpenCode"))
+        )
+        + (
+            ("keys", "LLM sources > the API keys stored on this machine"),
+            ("endpoints", "LLM sources > the hub endpoints this account can spend"),
+        ),
+    ),
     # Pointer NONE: the screen asks one question and has no selection to address. It is the
     # destination ``flow llm set auto`` opens when the box can fund nothing, so the aliases are
     # the words someone stuck at that moment actually says.
     ViewType.LLM_SETUP: _m(_NONE, label="Set up LLM", aliases=("llm setup", "choose llm", "connect llm")),
     # The chat IS the window: no workspace frame, never a tab (ASK precedent).
     ViewType.ASSISTANT: _m(_NONE, chrome="fullbleed", label="Flowpad Assistant", aliases=("assistant chat", "help chat")),
+    # Pointer REQUIRED: the host is a process; a bare /dock/vibe addresses nothing.
+    ViewType.VIBE: _m(_REQ, label="Vibe", aliases=("vibe workspace", "vibe session"), provides=("process",)),
 }
 
 
@@ -767,4 +935,19 @@ def parse_dock_url(path: str) -> Optional[DockAddress]:
         layout=Layout(segments[layout_index]),
         page=page,
         base=base,
+    )
+
+
+def canonical_address(path: str) -> str:
+    """One spelling per place: a screen's default tab folded into its bare address
+    (``credentials/connections`` is ``credentials``), segments and options encoded one way and
+    the options in one order. Not a dock URL: returned unchanged."""
+    parsed = parse_dock_url(path)
+    if parsed is None:
+        return path
+    pointer = parsed.pointer
+    if pointer and pointer == VIEW_META[parsed.view_type].default_tab:
+        pointer = None
+    return dock_url(
+        parsed.view_type, pointer, dict(sorted(parsed.options.items())), layout=parsed.layout, page=parsed.page, base=parsed.base
     )

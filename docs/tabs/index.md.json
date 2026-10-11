@@ -5,7 +5,7 @@
   "vault_root": "/Users/shlom/Documents/dev/flowpad-oss/docs",
   "folder_rel_path": "tabs",
   "folder_name": "tabs",
-  "inputs_hash": "ca533fab86503809f37a9360c1517505abf503b1b0f9dab6950e9d54f2943730",
+  "inputs_hash": "38e82f24b0ea8ab544edc398dfdfe5cd029740734bf6c253c4b1c303baf8c51a",
   "template_version": 1,
   "prompt_version": 1,
   "self_summary": "The Display pane as an address: how `flow show` navigates a URL-owned target and why the display stack belongs to the router rather than to component state.",
@@ -14,12 +14,12 @@
       "name": "display.md",
       "rel_path": "display.md",
       "title": "Vibe Display surface",
-      "summary": "The vibe Display surface: display-stack data model, flow show target resolution, transport channels, reactivity guards, and the display as an address.",
-      "content_hash": "22bc728d33eadfb8962ec1445f6d4b1b938b10c753b6751efaeb1d1b3571dfd6",
-      "size_bytes": 21393
+      "summary": "Vibe Display pane: an address-based surface where flow show navigates to a URL, the display stack as history, and show behavior outside Vibe.",
+      "content_hash": "a25ddfc324359f036ac0b01fffcadb1fed79517b99092b327b1ebd727a86f0d7",
+      "size_bytes": 21527
     }
   ],
   "subfolders": [],
-  "generated_at": "2026-09-22T10:22:31.474894+00:00",
+  "generated_at": "2026-10-07T14:33:53Z",
   "latest_process_ref": ""
 }

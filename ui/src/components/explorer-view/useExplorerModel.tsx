@@ -64,7 +64,7 @@ export function useExplorerModel() {
     const list: BrowseableRoot[] = [
       fsFolderRoot({ typeId, locatorTypeId, anchorRelPath, scope, label: rootLabel, rootIcon, projectRootPath }),
     ];
-    // Project context folders (include_dirs) get their own grouping root, shown
+    // Project dependencies (include_dirs) get their own grouping root, shown
     // whenever the current project has any — browseable like any FS root.
     if (contextDirs.length > 0) {
       list.push(contextFoldersRoot({ typeId, locatorTypeId, scope, dirs: contextDirs }));

@@ -1,10 +1,18 @@
 import { useCallback, useEffect, useRef } from 'react';
 import { type PersistentIframeHandle } from '@src/components/persistent-iframe';
 import { WebappDisplay } from '@src/components/webapp-display/WebappDisplay';
+import { WebappSetupGate } from '@src/components/webapp-display/WebappSetupGate';
 import { WebappDisplayToolbar } from '@src/components/display-toolbar';
 import { hostBrand, useAppDisplay } from '@src/hooks/flow-hooks';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { APP_RUNTIME_PARAM, type AppRuntime } from '@src/navigation/app-dock';
+import { DockPointer } from '@src/navigation/DockPointer';
+import { useContext } from '@src/hooks/useContext';
+import { tryParseDock } from '@src/navigation/try-parse-dock';
+import { buildDockPointer } from '@src/components/conversation/EntityChip';
+import { isTypeId, TypeId } from '@sdk';
+import { externalUrl, OPEN_EXTERNAL_MESSAGE } from '@sdk/apps/host';
+import { openExternal } from '@src/lib/open-external';
 
 /**
  * An app, rendered from its ADDRESS, through the endpoints that serve it.
@@ -58,6 +66,34 @@ function reloadOnNewEpoch(src: string, epoch: number | undefined, reload: () => 
   if (seen !== undefined && seen !== epoch) reload();
 }
 
+/**
+ * The dock a guest app asks the host to open, or null: `{type: 'flowpad:navigate', address: '/dock/…'}`
+ * (only a `/dock/` address that parses is honoured — a guest navigates the app, never the window to
+ * an arbitrary URL), or `{…, typeid}` — an entity, opened where its type lives, inside the current
+ * project: the same rule an entity chip follows (`buildDockPointer`, then rebased onto the project).
+ */
+export function guestNavigation(data: unknown, projectId?: string | null): DockPointer | null {
+  const message = data as { type?: unknown; address?: unknown; typeid?: unknown } | null;
+  if (message?.type !== 'flowpad:navigate') return null;
+  if (typeof message.typeid === 'string' && isTypeId(message.typeid)) {
+    const typeId = new TypeId(message.typeid);
+    const pointer = buildDockPointer({ type: typeId.type, id: typeId.id }, undefined);
+    return pointer ? DockPointer.rebaseAssetsOntoProject(pointer, projectId) : null;
+  }
+  if (typeof message.address !== 'string' || !message.address.startsWith('/dock/')) return null;
+  return tryParseDock(message.address);
+}
+
+/**
+ * The outside page a guest app asks the host to open (`{type: 'flowpad:open-external', url}`, the
+ * SDK's `openExternal`), or null. Only an absolute http(s) address: a guest never gets a
+ * `file:`, `javascript:` or app-internal URL opened on its behalf.
+ */
+export function guestExternalUrl(data: unknown): string | null {
+  const message = data as { type?: unknown; url?: unknown } | null;
+  return message?.type === OPEN_EXTERNAL_MESSAGE ? externalUrl(message.url) : null;
+}
+
 export function AppDisplayViewer({
   artifactId,
   microAppId = null,
@@ -67,6 +103,7 @@ export function AppDisplayViewer({
   reloadKey,
 }: AppDisplayViewerProps) {
   const { currentDock, navigation } = useDockNavigation();
+  const { project } = useContext();
   const frameRef = useRef<PersistentIframeHandle>(null);
 
   // No memo: `useAppDisplay` reduces this to strings before anything depends on
@@ -98,20 +135,39 @@ export function AppDisplayViewer({
 
   // Push when the skin moves, and answer the guest's own request — a guest that
   // finished loading after our push would otherwise never hear one.
+  // One listener for what the guest asks: its skin (answered to any window, as it always was), and
+  // to open another dock (the eval browser → the dataset editor) or an outside page (a record in
+  // a CRM) — URL-first, the host only navigates, and only for this frame's own guest.
   useEffect(() => {
     pushSkin();
     const onGuest = (event: MessageEvent) => {
-      if ((event.data as { type?: string } | null)?.type === 'flowpad:skin-please') pushSkin();
+      if ((event.data as { type?: string } | null)?.type === 'flowpad:skin-please') return pushSkin();
+      if (!frameRef.current?.isGuest(event.source)) return;
+      const dock = guestNavigation(event.data, project?.id);
+      if (dock) return navigation.openDock(dock);
+      const outside = guestExternalUrl(event.data);
+      if (outside) openExternal(outside);
     };
     window.addEventListener('message', onGuest);
     return () => window.removeEventListener('message', onGuest);
-  }, [pushSkin, appDisplay.src]);
+  }, [pushSkin, appDisplay.src, navigation, project?.id]);
 
   // URL-carried, so the choice survives a reload and the Back button — it used to
   // be component state and vanished on both.
   const setRuntime = (next: string) => {
     if (currentDock) navigation.openDock(currentDock.withOption(APP_RUNTIME_PARAM, next));
   };
+
+  // A web app ASSET whose dev server does not answer is set up, not reported missing: its node of the
+  // project's setup tree runs with the live tree on screen, and the app takes over once it answers.
+  // Only once its endpoints answered: an app not looked up yet is not down, and setting it up would run
+  // a setup for an app (a built-in editor, say) that is no node of this project's tree.
+  if (appDisplay.loading) return null;
+  const setupWebapp = appDisplay.idleDev?.webapp_id ?? (!appDisplay.src ? microAppId : null);
+  const setupProject = appDisplay.idleDev?.project_id ?? project?.id ?? '';
+  if (!appDisplay.src && setupWebapp && setupProject) {
+    return <WebappSetupGate projectId={setupProject} webappId={setupWebapp} />;
+  }
 
   if (!appDisplay.src) {
     return (

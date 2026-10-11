@@ -15,6 +15,7 @@
  */
 import { dataManager, type AnyEntity } from '../APIEntity';
 import { TypeId } from '../models/TypeId';
+import { installTooltips } from '../viewers/dom';
 
 /** The endpoint this page is being served by, from `location.pathname`. */
 export function appTypeId(pathname: string = location.pathname): TypeId | null {
@@ -48,6 +49,43 @@ export async function resolveAppHost(): Promise<AppHost> {
   return { app, subject };
 }
 
+/** Ask the host to open a dock (`{address: '/dock/...'}`) or an entity where its type lives
+ *  (`{typeid}`). URL-first: the HOST navigates; an app never moves the window itself. The host
+ *  honours it only from this app's own frame (`app-display-viewer.tsx`). */
+export function navigateHost(target: { address: string } | { typeid: string }): void {
+  window.parent?.postMessage({ type: 'flowpad:navigate', ...target }, '*');
+}
+
+/** The message an app sends to have the host open an outside page (`openExternal`). */
+export const OPEN_EXTERNAL_MESSAGE = 'flowpad:open-external';
+
+/** `url` when it is an absolute http(s) address — the only kind that leaves the app — else null. */
+export function externalUrl(url: unknown): string | null {
+  if (typeof url !== 'string') return null;
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:' ? parsed.href : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Open an outside page (a record in a CRM, a report) in the person's browser. The HOST opens it —
+ *  in the desktop app that is the system browser, which a frame's own `window.open` does not
+ *  reliably reach. Only an absolute http(s) address is opened (anything else throws: a typo
+ *  should not pass silently); an app shown on its own, outside Flowpad, opens a new tab itself. */
+export function openExternal(url: string): void {
+  const address = externalUrl(url);
+  if (!address) throw new Error(`openExternal: an absolute http(s) address is required, not ${JSON.stringify(url)}`);
+  if (window.parent && window.parent !== window) window.parent.postMessage({ type: OPEN_EXTERNAL_MESSAGE, url: address }, '*');
+  else window.open(address, '_blank', 'noopener,noreferrer');
+}
+
+/** Why a call failed, in words: the server's message, else the error's own. */
+export function errorText(error: any): string {
+  return String(error?.response?.data?.message ?? error?.message ?? error);
+}
+
 /** A query-string option the dock passed through, e.g. `?source=<id>`. */
 export function appOption(name: string): string | null {
   return new URLSearchParams(location.search).get(name);
@@ -74,6 +112,8 @@ export function applyHostTheme(): 'light' | 'dark' {
   const prefersDark = typeof matchMedia === 'function' && matchMedia('(prefers-color-scheme: dark)').matches;
   const theme = (param ? param === 'dark' : prefersDark) ? 'dark' : 'light';
   applyHostSkin(theme, appOption('view'), appOption('primary'), appOption('primaryInk'));
+  // An app's hover help: its frame shows no native `title` tooltip in the desktop app.
+  installTooltips();
   // The URL carries the skin for the FIRST paint only — it is frozen there,
   // because the host addresses this frame by its src and re-addressing it would
   // reload the whole app to recolour it. Later changes arrive as a message, and

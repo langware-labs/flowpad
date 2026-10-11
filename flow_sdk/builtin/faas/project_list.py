@@ -326,7 +326,7 @@ def _recency_ms(item: dict[str, Any]) -> float:
     return 0.0
 
 
-async def list_projects_from_indexer() -> dict[str, Any]:
+async def list_projects_from_indexer(workspace: str | None = None) -> dict[str, Any]:
     """Return one project row per canonical cwd.
 
     Single source of truth: the ``get_all_projects()`` pieces (Claude scan ∪
@@ -339,11 +339,19 @@ async def list_projects_from_indexer() -> dict[str, Any]:
     The disk half comes from ``_disk_snapshot`` (cached); the entity join and the
     row dicts are rebuilt on every call, so a rename, activate or delete shows up
     on the next request without a rescan.
+
+    ``workspace`` (a Workspace id) keeps only that workspace's projects — by
+    location, ``path_in_workspace`` — AFTER the join, so the disk snapshot
+    stays one instance-wide cache. None lists every project.
     """
     from flow_sdk.fs_store.operations import all_projects
 
     snapshot = await _disk_snapshot()
     infos = await all_projects.join_projects(snapshot.project_cwds, create_missing=False)
+    if workspace:
+        from flow_sdk.config import path_in_workspace  # noqa: PLC0415
+
+        infos = [info for info in infos if path_in_workspace(info.cwd, workspace)]
     # ``summarize`` does one ``listdir`` per row — off the loop like the scan.
     return await asyncio.to_thread(_build_project_rows, infos, snapshot)
 

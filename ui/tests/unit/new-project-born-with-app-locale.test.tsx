@@ -38,7 +38,6 @@ vi.mock('@src/components/project-selector', async (importOriginal) => ({
   selectProjectContext: selectProjectContextMock,
 }));
 vi.mock('@src/tabs/project-entry', () => ({
-  agenticProcessIdForProjectEntry: vi.fn(() => Promise.resolve(null)),
   dockForProjectEntry: vi.fn(),
 }));
 vi.mock('@src/components/agent-layout/agent-layout', () => ({

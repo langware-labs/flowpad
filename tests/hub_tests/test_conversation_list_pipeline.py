@@ -275,10 +275,7 @@ async def test_single_flight_per_conversation(hub_base_url, hub_login_payload):
     missing messages should all see them materialized, exactly once, with
     only one background fetcher running at a time per conv id."""
     api_key = _stash_credentials(hub_login_payload)
-    from flow_sdk.app.actions.flow_message_action import (
-        _conv_fetch_locks,
-        handle_conversation_list,
-    )
+    from flow_sdk.app.actions.flow_message_action import handle_conversation_list
     from flow_sdk.builtin.flow_message import FlowMessage
 
     conv_id = await _hub_create_conversation(hub_base_url, api_key, title=f"sf-{uuid.uuid4()}")
@@ -302,11 +299,10 @@ async def test_single_flight_per_conversation(hub_base_url, hub_login_payload):
         )
         assert got is not None, f"FM {fm_id[:8]} missed under contention"
 
-    # Lock entry was created; we don't assert exact "one fetch" without
-    # an instrumented counter — the FM-count assertion is the
-    # observable signal that the single-flight gate worked (no dupes,
-    # no crashes, all messages present).
-    assert conv_id in _conv_fetch_locks
+    # We don't assert exact "one fetch" without an instrumented counter — the
+    # FM-count assertion is the observable signal that the single-flight gate
+    # worked (no dupes, no crashes, all messages present). The per-conversation
+    # lock itself is weak-valued and gone once the fetch ends, by design.
 
 
 # ---------------------------------------------------------------------------

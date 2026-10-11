@@ -137,13 +137,23 @@ def test_declared_fields_really_never_reach_a_launch():
 
     text = _read(SKILL_DIR / "references/agent-json.md")
     declared = set(re.findall(r"^\| `([a-z_]+)` \|[^|]*\| declared \|", text, re.M))
-    assert {"max_turns", "tools", "disallowed_tools", "skills"} <= declared, declared
+    assert {"max_turns", "tools", "skills"} <= declared, declared
 
-    sentinels = {"max_turns": 7771, "tools": ["SentinelToolA"], "disallowed_tools": ["SentinelToolB"]}
+    sentinels = {"max_turns": 7771, "tools": ["SentinelToolA"]}
     agent = Agent(name="declared-probe", model="md", **sentinels)
     launched = json.dumps(agent.to_agent_options(worker_type="claude").to_json(), default=str)
     for field, value in sentinels.items():
         assert json.dumps(value).strip("[]") not in launched, f"{field} now reaches the launch — mark it enforced"
+
+
+def test_disallowed_tools_is_enforced_on_claude():
+    """The one tool limit that IS applied: a denied tool reaches the Claude launch."""
+    from flow_sdk.builtin.agent import Agent
+
+    text = _read(SKILL_DIR / "references/agent-json.md")
+    assert re.search(r"^\| `disallowed_tools` \|[^|]*\| yes \| claude \|", text, re.M)
+    agent = Agent(name="deny-probe", disallowed_tools=["SentinelToolB"])
+    assert "SentinelToolB" in json.dumps(agent.to_agent_options(worker_type="claude").to_json())
 
 
 def test_the_validation_loop_keeps_its_script_template():

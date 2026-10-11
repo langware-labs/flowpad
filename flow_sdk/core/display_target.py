@@ -110,6 +110,10 @@ async def resolve_display_target(
             return await _asset_app_payload(entity)
         if entity.get_type() == "service_endpoint":
             return endpoint_target(entity)
+        if entity.get_type() == "project":
+            # A project has no document editor: it opens on its own page, the
+            # one its "Open project home" button and its tab land on.
+            return await dock_target(f"project/{entity.id}")
         return _entity_payload(entity)
 
     if path:
@@ -203,11 +207,12 @@ async def _asset_app_payload(micro_app) -> dict:
     Shown through the ``static`` endpoint indexing gave it; one that is missing
     (an asset indexed before its project existed) is placed now. The frontend
     reads the ``typeid`` as the address, which is also what gives the app a
-    breadcrumb — its row has a parent, an endpoint names a placement.
+    breadcrumb — its row has a parent, an endpoint names a placement. Showing
+    is LOADING: ``load_run`` is the run bringing the app up, or None.
     """
-    from flow_sdk.builtin.webapp_placement import place_webapp_locally  # noqa: PLC0415
+    from flow_sdk.builtin.webapp_placement import show_webapp_locally  # noqa: PLC0415
 
-    endpoint = await place_webapp_locally(micro_app)
+    endpoint, load_run = await show_webapp_locally(micro_app)
     name = micro_app.title or micro_app.name
     payload = endpoint_target(endpoint, name=name) if endpoint is not None else {"kind": DisplayTargetKind.APP}
     return {
@@ -216,6 +221,7 @@ async def _asset_app_payload(micro_app) -> dict:
         "micro_app_id": micro_app.id,
         "name": name,
         "runtime": "served" if endpoint is not None else "unbuilt",
+        "load_run": load_run,
     }
 
 

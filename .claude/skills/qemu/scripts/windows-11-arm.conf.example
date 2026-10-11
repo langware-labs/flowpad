@@ -1,0 +1,20 @@
+#!/usr/bin/env quickemu --vm
+# Lives NEXT TO the VM folder: ~/VMs/windows-11-arm.conf + ~/VMs/windows-11-arm/. Paths are relative to ~/VMs.
+guest_os="windows"
+arch="aarch64"
+disk_img="windows-11-arm/disk.qcow2"
+# Uncomment only to (re)install; comment it out again once Windows is on the disk.
+#iso="windows-11-arm/windows-11-arm64.iso"
+disk_size="64G"
+ram="8G"
+cpu_cores="6"
+# Homebrew QEMU has no TPM for the ARM virt machine; the answer file bypasses the Win11 checks instead.
+tpm="off"
+secureboot="off"
+sound_card="none"
+# extra_args, in order:
+#  1. unattend.iso (answer file + ARM64 virtio drivers) as a USB CD — WinPE reads USB, not virtio-scsi
+#  2. host<->guest clipboard: qemu-vdagent channel; the guest runs spice-vdagent (setup-vm.ps1)
+#  3. QMP socket for absolute mouse clicks (qmp.py click) — quickemu itself only opens HMP
+#  4. zoom-to-fit so the fixed 800x600 ramfb window scales when dragged (the later -display wins)
+extra_args="-device qemu-xhci,id=xhci -device usb-bot,id=ubot,bus=xhci.0 -drive id=unattend,if=none,format=raw,media=cdrom,readonly=on,file=windows-11-arm/unattend.iso -device scsi-cd,drive=unattend,bus=ubot.0 -device virtio-serial-pci,id=vser0 -chardev qemu-vdagent,id=vdagent,name=vdagent,clipboard=on -device virtserialport,bus=vser0.0,chardev=vdagent,name=com.redhat.spice.0 -qmp unix:windows-11-arm/qmp.socket,server,nowait -display cocoa,zoom-to-fit=on"

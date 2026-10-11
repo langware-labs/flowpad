@@ -115,7 +115,7 @@ export function SessionInput({
       onSubmit={handleSubmit}
       {...picker.dragProps}
       className={cn(
-        'flex min-h-0 w-full !shrink flex-col gap-2 rounded-md border bg-accent/50 p-1 shadow-sm ring-offset-background focus-within:outline-none focus-within:ring-1 focus-within:ring-ring',
+        'flex w-full flex-col gap-2 rounded-md border bg-accent/50 p-1 shadow-sm ring-offset-background focus-within:outline-none focus-within:ring-1 focus-within:ring-ring',
         picker.dragging && 'border-primary ring-1 ring-primary',
       )}
     >
@@ -127,10 +127,10 @@ export function SessionInput({
         className="shrink-0 px-1 pt-1"
       />
       {/* Without footer controls the send button sits in the text's bottom corner,
-          so the box doesn't reserve an empty row just for it. The textarea is the
-          one part that yields: in a flex column it shrinks (down to min-h) and
-          scrolls, so a long prompt never pushes the controls below off screen. */}
-      <div className="relative flex min-h-0 flex-col">
+          so the box doesn't reserve an empty row just for it. The box never shrinks
+          (a shrinking flex column has no floor, so the text and footer spilled out
+          of it); instead the textarea grows only up to max-h, then scrolls. */}
+      <div className="relative flex flex-col">
         <Textarea
           ref={textareaRef}
           value={message}
@@ -140,7 +140,7 @@ export function SessionInput({
           placeholder={picker.dragging ? undefined : placeholder}
           aria-label={placeholder || 'Session input'}
           className={cn(
-            'max-h-[50vh] min-h-[40px] resize-none overflow-y-auto border-none shadow-none focus-visible:ring-0 focus-visible:ring-offset-0',
+            'max-h-[30vh] min-h-[40px] resize-none overflow-y-auto border-none shadow-none focus-visible:ring-0 focus-visible:ring-offset-0',
             !hasFooterControls && 'pe-14',
           )}
           disabled={disabled}

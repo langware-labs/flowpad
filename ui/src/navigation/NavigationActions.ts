@@ -15,20 +15,35 @@ import {
   toplog,
   TypeId,
   VFSPath,
+  viewModeMemory,
   ViewType,
 } from '@sdk';
 import { NavigateFunction } from 'react-router';
 import { isValidIdentifier } from '@sdk/models/TypeId';
-import { getViewMode, rememberedDockViewMode, VIEW_MODE_SWITCH_STATE, ViewMode } from '@src/contexts/view-mode-context';
-import { CAPABILITY_PARAM, DockPointer, JOURNEY_PARAM, JOURNEY_STEP_PARAM, NODE_PARAM } from './DockPointer';
+import {
+  UNSTATED_VIEW_MODE,
+  sessionOpenViewMode,
+  sessionIdForDock,
+  VIEW_MODE_SWITCH_STATE,
+  ViewMode,
+} from '@src/contexts/view-mode-context';
+import {
+  CAPABILITY_PARAM,
+  DockPointer,
+  JOURNEY_PARAM,
+  JOURNEY_STEP_PARAM,
+  NODE_PARAM,
+  WORKSPACE_PARAM,
+} from './DockPointer';
 import { dockPointerForFile } from './local-file-pointer';
 import { getHistoryPosition } from './history-position-store';
 import { beginTabSwitch, dockLabel, tabSwitch } from './tab-switch-state';
 import { FileOptions, TabOptions } from './types';
 import { preserveWindowLayout, stripDockPortion } from './url-builder';
 import { allScope, projectScope } from '@src/lib/scope-filter';
-import { isContentAssetDock } from './content-asset-dock';
+import { contentAssetTargetForDock, isContentAssetDock } from './content-asset-dock';
 import { isAdoptableChildDock, isWorkspaceAnchorDock } from './adoptable-child-dock';
+import { isHostDock } from './tab-hosts';
 import { LOCAL_COMPUTE_NODE } from './asset-doc-types';
 import { vfsLocatorForComputeNode } from './vfs-locator';
 import { dockForDisplayTarget } from './display-target-pointer';
@@ -36,6 +51,7 @@ import { isProjectHomePage, withHomePage } from '@src/project-home-page/home-pag
 import { placeDockInProject, presentDockTab } from './present-dock-tab';
 import { openExternal } from '@src/lib/open-external';
 import { openInBrowserProfile } from '@src/lib/browser-profiles';
+import { appLinkPath, bareWebUrl, isWebUrl, localWebUrl } from '@src/lib/link-kind';
 import { errorMessage } from '@src/lib/error-message';
 import type { LinkSource } from '@src/components/links/link-events';
 import { notify } from '@src/notifications/notify';
@@ -74,6 +90,11 @@ export interface NavigationCommitOptions {
    * mode to a bare URL — only a switch saves the preference.
    */
   viewModeSwitch?: boolean;
+  /**
+   * Open as a TOP-LEVEL tab — the global strip's chips and "+": never carried into
+   * the Vibe workspace on screen as its child.
+   */
+  topLevel?: boolean;
   /** The `tab_switch` start line's `via=` when neither flag above names it. */
   via?: string;
 }
@@ -111,12 +132,10 @@ let pendingDockNavigation: PendingDockNavigation | null = null;
  * reconcile redirect, so the whole loader ran a second time.
  */
 function ownerProjectId(dock: DockPointer): string | null {
-  if (dock.viewType !== ViewType.SHELL) return null;
+  if (!DockPointer.isSessionView(dock.viewType)) return null;
   const tab = tabForDockKey(tabManager.getSnapshot(), dock.tabHash);
   if (tab) return tab.project_id ?? null;
-  const processId = DockPointer.isAgenticProcessPointer(dock.pointer ?? '')
-    ? DockPointer.extractAgenticProcessId(dock.pointer ?? '')
-    : null;
+  const processId = sessionIdForDock(dock);
   // A malformed id (a hand-typed or legacy link) must not throw out of openDock.
   if (!processId || !isValidIdentifier(processId)) return null;
   return AgenticProcess.getByIdFromCache<AgenticProcess>(processId)?.project_id ?? null;
@@ -126,12 +145,13 @@ export const SCOPE_SEEDED_VIEWS: ReadonlySet<ViewType> = new Set([
   ViewType.ASSETS,
   ViewType.EXPLORER,
   ViewType.SHELL,
+  ViewType.VIBE,
 ]);
 
 // URL options that are STICKY across navigation: openDock carries each from the
 // live URL onto any target that doesn't set it. A param here means "topmost
 // until explicitly closed" — clearing it must bypass openDock (see closeJourney).
-export const STICKY_OPTION_PARAMS: readonly string[] = [JOURNEY_PARAM, JOURNEY_STEP_PARAM];
+export const STICKY_OPTION_PARAMS: readonly string[] = [JOURNEY_PARAM, JOURNEY_STEP_PARAM, WORKSPACE_PARAM];
 
 /**
  * The workspace host to carry from `here` onto `target`, or null.
@@ -165,12 +185,20 @@ function hostToCarry(here: DockPointer | null, target: DockPointer): string | nu
  * be wrong for a dock whose own mode differs from the ambient one. This runs
  * at click time, long after mount, when the effective mode is settled.
  */
-function hostOfWorkspaceAnchor(dock: DockPointer): string | null {
-  if (!isWorkspaceAnchorDock(dock) || dock.viewType !== ViewType.SHELL) return null;
-  return (dock.viewMode ?? getViewMode()) === ViewMode.Vibe ? (dock.pointer ?? null) : null;
+/** An asset as a Vibe host's child: rebased onto its project, `?host=` the session. */
+function hostedAssetDock(asset: DockPointer, projectId: string, processId: string): DockPointer {
+  return DockPointer.rebaseAssetsOntoProject(asset, projectId)
+    .withHost(new TypeId(AgenticProcess.type, processId).toString())
+    .withViewMode(ViewMode.Vibe);
 }
 
-const isWebUrl = (link: string) => /^https?:\/\//i.test(link);
+function hostOfWorkspaceAnchor(dock: DockPointer): string | null {
+  if (!isWorkspaceAnchorDock(dock)) return null;
+  // A host tab IS a workspace: what it opens is its child.
+  if (isHostDock(dock)) return dock.pointer ?? null;
+  if (dock.viewType !== ViewType.SHELL) return null;
+  return (dock.viewMode ?? UNSTATED_VIEW_MODE) === ViewMode.Vibe ? (dock.pointer ?? null) : null;
+}
 
 /** A link that cannot be opened says why — the backend's sentence, not the HTTP status — once,
  *  as a toast that times out. It is about this click, so it never becomes a standing warning. */
@@ -235,12 +263,21 @@ export class NavigationActions {
     }
   }
 
-  /** Stamp a mode-less target: its own remembered dock mode, else the live mode
-   *  on screen (`liveMode`, read only when there is no memory). An entry must
-   *  state its mode, or it re-resolves through the stored preference. */
+  /** State a mode-less target's mode. Only a session (and what it hosts) has
+   *  one: its own remembered mode, else the last mode the user selected — never
+   *  the mode on screen, which belongs to the tab being LEFT. A hosted child
+   *  shows in its host's mode (`liveMode`). Every other page states none. */
   private static withTargetViewMode(target: DockPointer, liveMode: () => ViewMode | null): DockPointer {
+    // A process asked for in Vibe by option is the Vibe host dock — map it here,
+    // on the way out, so no opener ever writes the old spelling and pays the
+    // loader's canonical redirect for it.
+    if (target.viewType === ViewType.SHELL && target.viewMode === ViewMode.Vibe) {
+      return target.withViewMode(ViewMode.Vibe);
+    }
     if (target.viewMode !== null) return target;
-    const mode = rememberedDockViewMode(target) ?? liveMode();
+    // Not in cache: opens bare and the shell loader states it from the entity.
+    const session = sessionIdForDock(target) ? viewModeMemory.targetFor(target.targetTypeId) : null;
+    const mode = session ? sessionOpenViewMode(session) : target.hostProcessId ? liveMode() : null;
     return mode ? target.withViewMode(mode) : target;
   }
 
@@ -476,6 +513,29 @@ export class NavigationActions {
     this.commitPointer(this.here.withJourney(null));
   }
 
+  /**
+   * Switch the active workspace and land on its home. `null` (or the default
+   * workspace's id) is the default workspace — the param is cleared, so its URLs
+   * are the ones from before workspaces existed.
+   *
+   * `commitPointer`, not `openDock`: the workspace param is sticky, and
+   * `openDock`'s carry-forward would put the OLD workspace straight back.
+   */
+  openWorkspace(workspaceId: string | null): void {
+    this.commitPointer(DockPointer.root().withOption(WORKSPACE_PARAM, workspaceId || null));
+  }
+
+  /**
+   * Open a project's home INSIDE a workspace — after the project was moved there
+   * (`Project.switchWorkspace`). The loader drops a project outside the URL's
+   * workspace, so the pointer must name the new one; and like `openWorkspace` this
+   * is `commitPointer`, not `openDock`, because the sticky param's carry-forward
+   * would put the OLD workspace straight back (`null` = the default workspace).
+   */
+  openProjectInWorkspace(projectId: string, workspaceId: string | null): void {
+    this.commitPointer(DockPointer.forProject(projectId).withOption(WORKSPACE_PARAM, workspaceId || null));
+  }
+
   // ========== Core Navigation ==========
 
   /**
@@ -547,7 +607,7 @@ export class NavigationActions {
     // around a top-level surface. Carrying it from the live URL is what keeps a
     // click inside workspace A in workspace A, rather than following the shown
     // document's last writer into workspace B.
-    const carriedHost = hostToCarry(here, dock);
+    const carriedHost = opts?.topLevel ? null : hostToCarry(here, dock);
     if (carriedHost) dock = dock.withHost(carriedHost);
 
     // URL-first default scope for scope-aware surfaces (assets, triggers, file
@@ -570,29 +630,10 @@ export class NavigationActions {
       dock = dock.withScopeFilter(projectId ? projectScope(projectId) : allScope());
     }
 
-    // Inherit the live URL's ?viewMode unless the target names its own (mirrors
-    // the scope-seed above); explicit target / ViewToggle mode still wins. Since
-    // useDockViewModeOverrideSync now adopts the URL's mode into the persisted
-    // preference on load, this inheritance matters only for navigations issued
-    // BEFORE that adopt effect commits (e.g. a redirect right after a hard load
-    // on a ?viewMode URL) — not for general mode stickiness.
-    //
-    // The ROOT is stamped too (2026-09-03). It used to be excluded, to keep the
-    // canonical home URL bare and let the persisted preference decide the mode
-    // there — but a bare entry does not STATE its mode, it re-resolves through a
-    // preference that the ViewToggle itself mutates. So Back onto a home entry
-    // rendered it in the mode you had just switched TO: a history step that
-    // visibly did nothing, with Forward lit. Every entry must state its own mode
-    // for a Back step to be visible, home included. The cold-load entry is
-    // canonicalized in `loadHomePage`, which this cannot reach.
-    //
-    // A SESSION or PROJECT dock is the exception, and takes its own remembered
-    // mode instead: it opens in the mode it was last switched to, so switching to
-    // Terminal in one chat no longer repaints every other chat you click into.
-    // Inheritance is still the fallback for a dock with no memory yet; it only
-    // DISPLAYS that mode — memory is minted by `VIEW_MODE_STORE`, not by opening.
-    // Cache-only: a cold deep link has no entity to read here, and the shell
-    // loader redirects a session onto its remembered mode instead.
+    // A session entry STATES its mode: its own memory, else the last mode the
+    // user selected (see `withTargetViewMode`). Opening only DISPLAYS a mode;
+    // memory is minted by `VIEW_MODE_STORE`. Cache-only: a cold deep link has no
+    // entity to read here, and the shell loader states a session's mode instead.
     dock = NavigationActions.withTargetViewMode(
       dock,
       () => NavigationActions.currentBrowserViewMode() ?? this.currentDock?.viewMode ?? null,
@@ -783,13 +824,9 @@ export class NavigationActions {
   /** Resolve a clicked link (terminal output, message text) to the dock that presents it. */
   private async resolveLinkDock(link: string, source: LinkSource | null): Promise<DockPointer> {
     if (!source) throw new Error(t`This link has no source yet`);
+    link = localWebUrl(link) ?? link;
     // An app URL copied from this browser is an internal address, not an iframe.
-    if (isWebUrl(link)) {
-      const url = new URL(link);
-      if (url.origin === window.location.origin && /^\/(dock|win|dev)\//.test(url.pathname)) {
-        link = url.pathname + url.search;
-      }
-    }
+    link = appLinkPath(link, window.location.origin) ?? link;
     const dock = dockForDisplayTarget(await source.resolveDisplayTarget(link));
     if (!dock) throw new Error(t`This link has no available viewer`);
     return dock;
@@ -812,6 +849,15 @@ export class NavigationActions {
     }
   }
 
+  /** The link in `process`'s Display — the `flow show` channel, so it lands in the Display history too. */
+  async showLinkInDisplay(link: string, process: AgenticProcess): Promise<void> {
+    try {
+      await process.show({ link: appLinkPath(link, window.location.origin) ?? link });
+    } catch (error) {
+      notifyLinkError(error);
+    }
+  }
+
   /** The link as a tab of `process`'s vibe workspace — the process opens in vibe mode showing it. */
   async openLinkInVibe(link: string, source: LinkSource | null, process: AgenticProcess): Promise<void> {
     try {
@@ -819,7 +865,7 @@ export class NavigationActions {
         await this.resolveLinkDock(link, source),
         process.project_id ?? source?.project_id,
       );
-      this.openDock(dock.withViewMode(ViewMode.Vibe).withHost(process.typeId.toString()));
+      this.openDock(dock.withHost(process.typeId.toString()).withViewMode(ViewMode.Vibe));
     } catch (error) {
       notifyLinkError(error);
     }
@@ -845,7 +891,15 @@ export class NavigationActions {
 
   private async browserUrlFor(link: string, source: LinkSource | null): Promise<string> {
     if (isWebUrl(link)) return link;
-    return this.getDockUrl(placeDockInProject(await this.resolveLinkDock(link, source), source?.project_id));
+    // `clau.de/reset` is a web page written without its scheme, not a file to look up.
+    const web = bareWebUrl(link);
+    if (web?.sure) return web.url;
+    try {
+      return this.getDockUrl(placeDockInProject(await this.resolveLinkDock(link, source), source?.project_id));
+    } catch (error) {
+      if (web) return web.url;
+      throw error;
+    }
   }
 
   /**
@@ -897,9 +951,12 @@ export class NavigationActions {
       skipPermissions?: boolean;
       viewMode?: string;
       host?: string;
+      /** A top-level tab, never a child of the workspace on screen (see `NavigationCommitOptions.topLevel`). */
+      topLevel?: boolean;
     },
   ): Promise<Shell | null> {
-    const extraOptions = toStringRecord(options);
+    const { topLevel, ...urlOptions } = options ?? {};
+    const extraOptions = toStringRecord(urlOptions);
     const shell = Shell.getByIdFromCache(shellId) ?? (await Shell.getById(shellId));
     if (!shell) {
       return null;
@@ -916,6 +973,7 @@ export class NavigationActions {
           )
         : shell.dockPointer,
       extraOptions,
+      topLevel ? { topLevel: true } : undefined,
     );
     return shell;
   }
@@ -931,17 +989,66 @@ export class NavigationActions {
       navigation: {
         openShellProcess: (processId) => {
           if (contentDock) {
-            this.openDock(
-              DockPointer.rebaseAssetsOntoProject(contentDock, projectId)
-                .withHost(new TypeId(AgenticProcess.type, processId).toString())
-                .withViewMode(ViewMode.Vibe),
-            );
+            this.openDock(hostedAssetDock(contentDock, projectId, processId));
           } else {
             void this.openShellProcess(processId, { viewMode: ViewMode.Vibe });
           }
         },
       },
     });
+  }
+
+  /**
+   * Show a session on another SURFACE — Vibe, Chat or Terminal. The same switch as
+   * the session's own switch makes (marked `viewModeSwitch`, so the mode is recorded):
+   * one tab, re-pointed; the transport follows (`useProcessSurface`). Vibe → its
+   * host dock; leaving Vibe carries the nested tabs out (backend re-point).
+   */
+  switchSessionSurface(processId: string, mode: ViewMode): void {
+    this.openDock(DockPointer.forSession(processId).withViewMode(mode), undefined, { viewModeSwitch: true });
+  }
+
+  /**
+   * Open `processId` as a Vibe tab placed RIGHT AFTER the tab on screen (or after
+   * its host, from a child) — the chat header's New / Recent. A session reopened
+   * this way brings back the children that closed with it (backend reopen path).
+   */
+  async openVibeTabBeside(processId: string): Promise<void> {
+    this.openDock(await this.placeVibeTabBeside(processId), undefined, { topLevel: true });
+  }
+
+  /** Mint (or reopen) `processId`'s Vibe tab right after the tab on screen — or
+   *  after its host, from a child — without navigating. */
+  private async placeVibeTabBeside(processId: string): Promise<DockPointer> {
+    // The snapshot: the tab on screen is already in it (no round trip before the open).
+    const tabs = await tabManager.snapshotOrRefresh();
+    const here = tabForDockKey(tabs, this.here.tabHash ?? '');
+    const anchor = (here?.parent_tab_id && tabs.find((t) => t.id === here.parent_tab_id)) || here;
+    const dock = DockPointer.forSession(processId).withViewMode(ViewMode.Vibe);
+    return presentDockTab(dock, { afterTabId: anchor?.id ?? null, projectId: anchor?.project_id ?? null });
+  }
+
+  /**
+   * Discuss an asset: a Vibe HOST tab with the asset as its child — the chat beside
+   * the asset is that host's session. Resumes the latest Vibe chat about this asset
+   * (`target_typeid_str` = the asset) and creates one only when there is none.
+   * The host tab is placed first; opening the asset under `?host=` then makes it
+   * that tab's child (the tab loader re-parents a warm tab whose host edge is new).
+   */
+  async discussAsset(asset: DockPointer, projectId: string): Promise<void> {
+    // The same chat identity the chat beside an asset uses (`asset-work-context`).
+    const target = contentAssetTargetForDock(asset)?.targetVfsPath;
+    const { lastVibeChatQuery, pickLastVibeChat } = await import('@src/pages/flow-page/vibe-process-resolver');
+    const { createVibeProcessForProject } = await import('@src/pages/flow-page/use-start-vibe-session');
+    const last = target
+      ? pickLastVibeChat(
+          await AgenticProcess.query<AgenticProcess>(lastVibeChatQuery(projectId, target, { openedOnly: false })),
+        )
+      : null;
+    const processId =
+      last?.id ?? (await createVibeProcessForProject({ projectId, targetVfsPath: target, open: false })).id;
+    await this.placeVibeTabBeside(processId);
+    this.openDock(hostedAssetDock(asset, projectId, processId));
   }
 
   async openShellProcess(

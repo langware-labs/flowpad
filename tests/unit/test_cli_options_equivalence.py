@@ -2,8 +2,7 @@
 
 Characterization test: a frozen golden snapshot of every vendor option builder's
 output across a matrix of configs, captured from the PRE-refactor code. The
-consolidation must reproduce it byte-for-byte (with ``system_prompt_append``
-unset). Pure string-manip ⇒ the whole matrix runs in milliseconds.
+consolidation must reproduce it byte-for-byte . Pure string-manip ⇒ the whole matrix runs in milliseconds.
 
 Regenerate the golden (only before the refactor, from known-good code):
 
@@ -143,7 +142,12 @@ _PLATFORMS = ["linux", "win32"]
 # matrix.  Adding these cases to MATRIX would require rewriting the historical
 # fixture, so the inventory combines both sources instead.
 _SUPPLEMENTAL_CONSTRUCTOR_KWARGS: dict[str, dict] = {
-    "claude": {"verbose": True, "plugin_dirs": ["/runtime-plugin"], "settings_json": {"language": "Hebrew"}},
+    "claude": {
+        "verbose": True,
+        "plugin_dirs": ["/runtime-plugin"],
+        "settings_json": {"language": "Hebrew"},
+        "disallowed_tools": ["Bash(git checkout:*)"],
+    },
     "codex": {"bypass_hook_trust": True},
     "copilot": {
         "custom_instruction_dirs": ["/instructions"],
@@ -159,16 +163,15 @@ _SUPPLEMENTAL_CONSTRUCTOR_KWARGS: dict[str, dict] = {
 _MCP_LAUNCH_ONLY = {"mcp_config_json", "mcp_config_fragment"}
 
 _LAUNCH_ONLY_FIELDS: dict[str, set[str]] = {
-    "claude": {"system_prompt_append", "system_prompt_file"} | _MCP_LAUNCH_ONLY,
+    "claude": {"system_prompt_file"} | _MCP_LAUNCH_ONLY,
     "codex": {
         "fork_session_id",
-        "system_prompt_append",
         "system_prompt_file",
         "developer_instructions",
         "extra_config_overrides",
     }
     | _MCP_LAUNCH_ONLY,
-    "copilot": {"fork_session_id", "system_prompt_append", "system_prompt_file"}
+    "copilot": {"fork_session_id", "system_prompt_file"}
     | _MCP_LAUNCH_ONLY,
 }
 

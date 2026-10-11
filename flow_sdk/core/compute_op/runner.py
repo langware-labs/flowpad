@@ -69,12 +69,15 @@ from flow_sdk.core.compute.exec import run_shell
 from flow_sdk.core.compute.process_step import NO_USABLE_LLM_SOURCE, launch_step_process
 from flow_sdk.core.compute.receipt import clear_receipt, read_step_result, receipt_path, result_contract
 from flow_sdk.core.compute.shared_shell import shell_for
+from flow_sdk.core.compute_op.decision import decide_op
 from flow_sdk.schema.data_spec.compute_op_spec import (
     CHECK_TIMEOUT,
     AgentOp,
     AskOp,
     CliOp,
     ComputeOpSpec,
+    DecisionOp,
+    LaunchContext,
     NavigateOp,
     PromptOp,
     fields_of_kind,
@@ -83,11 +86,13 @@ from flow_sdk.schema.data_spec.dock_pointer_spec import DockPointerSpec
 from flow_sdk.schema.data_spec.returned_value_spec import (
     AskResult,
     CliResult,
+    DecisionVerdict,
     ExitCode,
     NavigateResult,
     PromptResult,
     ReturnedValue,
 )
+from flow_sdk.schema.data_spec.spec import DataSpec
 
 #: The name an op's returned value is written under, in an agent's receipt.
 VALUE_KEY = "value"
@@ -133,6 +138,9 @@ class _Seams:
     #: The Wizard entity running this op, when there is one — threaded through
     #: to `_ask` so a question raised mid-wizard can point back to it.
     wizard_id: str = ""
+    #: The caller's scope AS VALUES (``env`` is their JSON): what a ``decision`` op
+    #: decides about, what an agent op mounts as input. ``None`` when not in a run.
+    values: Optional[dict] = None
 
 
 async def check_op(
@@ -175,9 +183,12 @@ async def _check(
     usually also knows the answer (`flow secret get` exits 0 and prints the secret).
     """
     if spec.status_check:
-        return await _status_check(spec)
+        return await _status_check(spec, env)
     if spec.completion_check is None:
         return None
+    said = await _in_process(spec.completion_check, env, check=True, platform=platform)
+    if said is not None:
+        return said.model_copy(update={"exit_code": spec.verdict_of(said)})
     command = spec.completion_check.command_for(platform)
     if not command:
         return CliResult.not_applicable(f"{spec.display_label}: no check for this platform.")
@@ -191,18 +202,101 @@ async def _check(
     return said.model_copy(update={"exit_code": spec.verdict_of(said)})
 
 
-async def _status_check(spec: ComputeOpSpec) -> CliResult:
+async def _status_check(spec: ComputeOpSpec, env: Optional[dict] = None) -> CliResult:
     """A ``status_check``, answered by the status layer in this process (``core.status.check_fact``).
 
+    The fact may name a value of the run (``source_step:{{source}}:connected``), filled like a question's words.
     Never raises: a fact the layer cannot answer is a broken document, reported as such.
     """
     from flow_sdk.core.status.check import UnknownStatusFact, check_fact  # noqa: PLC0415
 
+    fact = fill(str(spec.status_check), env)
+    if "{{" in fact:
+        return CliResult.not_found(f"{spec.display_label}: the run has no value for {fact!r}")
     try:
-        held, detail = await check_fact(str(spec.status_check))
+        held, detail = await check_fact(fact)
     except UnknownStatusFact as exc:
         return CliResult.not_found(f"{spec.display_label}: {exc}")
     return CliResult.satisfied(detail, ran=True) if held else CliResult.not_yet(detail)
+
+
+def _run_source(env: Optional[dict]) -> str:
+    """The data source a run is FOR (the wizard's ``source`` value), bare id; '' when it has none."""
+    raw = _run_value(env, "source")
+    return raw.split("-", 1)[1] if raw.startswith("data_source-") else raw
+
+
+def _check_in_process(spec: ComputeOpSpec) -> bool:
+    """The op's check is a step this backend answers itself (a source's, a web app's) — its detail is a reason."""
+    check = spec.completion_check
+    return check is not None and bool(check.source_step or check.webapp_step)
+
+
+async def _in_process(op: CliOp, env: Optional[dict], *, check: bool, platform: str) -> Optional[CliResult]:
+    """A step of the run's data source or web app, answered in this backend — or ``None`` when ``op`` names
+    none (or the run has no such subject: its ``commands`` are the fallback). The one place both kinds are
+    dispatched, so a check and a call read alike."""
+    if op.source_step and _run_source(env):
+        said = await _source_step(op, env, check=check, platform=platform)
+        return said if check else said.model_copy(update={"value": value_from_stdout(said.stdout)})
+    if op.webapp_step and _run_value(env, "webapp"):
+        return await _webapp_step(op, env, check=check)
+    return None
+
+
+def _run_value(env: Optional[dict], name: str) -> str:
+    """The run's value ``name`` ('' when it has none) — read as the environment every step gets it as."""
+    from flow_sdk.core.wizard.state import input_env  # noqa: PLC0415
+
+    (key,) = input_env({name: ""})
+    return str((env or {}).get(key) or "")
+
+
+async def _webapp_step(op: CliOp, env: Optional[dict], *, check: bool) -> CliResult:
+    """A web app's setup step (``webapp_setup.step``), in this process — its verdict as a cli answer."""
+    from flow_sdk.builtin.webapp_setup import step  # noqa: PLC0415
+
+    webapp = _run_value(env, "webapp")
+    which = str(op.webapp_step)
+    answer = await step(webapp, which, check=check)
+    return CliResult(
+        exit_code=answer.exit_code, detail=answer.detail, ran=answer.ran, value=answer.value,
+        command=f"app step {webapp} {which}" + (" --check" if check else ""),
+        returncode=int(answer.exit_code), stdout="", stderr="" if answer.ok else str(answer.detail or ""),
+    )
+
+
+async def _source_step(op: CliOp, env: Optional[dict], *, check: bool, platform: str) -> CliResult:
+    """``flow source step <source> <step> [--check] [--value]``, in this process: the same exit code, and the
+    same stdout -- what the step shows the person (``--value``, the value a wizard binds), else the CLI's full
+    ``{"ok": true, "step", "answer"}`` -- as the command it stands for would have printed."""
+    from flow_sdk.builtin.data_source import DataSource  # noqa: PLC0415
+
+    step = str(op.source_step)
+    shows = "--value" in (op.command_for(platform) or "--value")
+    source_id = _run_source(env)
+
+    prefix = "FLOWPAD_WIZARD_INPUT_"
+    values = {k[len(prefix):].lower(): str(v) for k, v in (env or {}).items() if k.startswith(prefix) and v}
+    command = f"source step {source_id} {step}" + (" --check" if check else "")
+    source = await DataSource.get_by_id(source_id)
+    if source is None:
+        return CliResult(exit_code=ExitCode.NOT_FOUND, detail=f"no data source {source_id}", command=command)
+    answer = await source.step(step, check=check, values=values)
+    value = answer.value
+    shown = value.get("shown") if isinstance(value, dict) else getattr(value, "shown", None)
+    shown = shown.model_dump(mode="json") if hasattr(shown, "model_dump") else (shown or {})
+    if not answer.ok:
+        stdout = ""
+    elif shows:
+        stdout = json.dumps(shown)
+    else:
+        stdout = json.dumps({"ok": True, "step": step, "answer": answer.model_dump(mode="json")})
+    return CliResult(
+        # The CLI exits with the step's own code (0 done, 1 not yet, 4 no such step): a check's verdict reads it.
+        exit_code=answer.exit_code, detail=answer.detail, ran=answer.ran, command=command,
+        returncode=int(answer.exit_code), stdout=stdout, stderr="" if answer.ok else str(answer.detail or ""),
+    )
 
 
 async def run_op(
@@ -225,6 +319,8 @@ async def run_op(
     navigate: Optional[Navigate] = None,
     on_status: Optional[Callable[[str], None]] = None,
     wizard_id: str = "",
+    #: The scope's values themselves (``env`` carries their JSON) — see ``_Seams.values``.
+    values: Optional[dict] = None,
     #: Report the goal's current state and stop — never ask, never run a
     #: command, never spawn an agent. For a status refresh that must not have
     #: side effects (a person clicking a "what's actually installed right
@@ -246,7 +342,7 @@ async def run_op(
         if isinstance(exe, NavigateOp):
             seams = _Seams(
                 workdir=workdir, platform=platform, env=env, subject=subject, ask_timeout=ask_timeout,
-                shell=shell, launch=launch, say=say, wizard_id=wizard_id,
+                shell=shell, launch=launch, say=say, wizard_id=wizard_id, values=values,
             )
             return await _run_navigate(
                 spec, seams=seams, navigate=navigate or navigate_for_subject, check_only=check_only
@@ -271,6 +367,7 @@ async def run_op(
             launch=launch,
             say=say,
             wizard_id=wizard_id,
+            values=values,
         )
         say(f"{spec.display_label}: {spec.subkind}")
         answer = await _attempt(spec, before, executor=executor, seams=seams)
@@ -521,6 +618,7 @@ async def _call_and_check(
         launch=seams.launch,
         say=seams.say,
         wizard_id=seams.wizard_id,
+        values=seams.values,
     )
     if not call.duration_s:
         call = call.model_copy(update={"duration_s": time.monotonic() - started})
@@ -568,6 +666,10 @@ async def _call_and_check(
         )
     elif reason:
         detail = f"{spec.display_label}: {reason}"
+    elif after.detail and _check_in_process(spec):
+        # A check answered in this backend says WHY in its own words ("WAHA refused the API key"); a
+        # process's exit code cannot, which is all the sentence below has to go on.
+        detail = f"{spec.display_label}: {after.detail}"
     else:
         detail = f"{spec.display_label}: the {spec.subkind} call ran, but the check still fails.{_why(call)}"
     return call.model_copy(update={"exit_code": ExitCode.NOT_YET, "value": None, "check": after, "detail": detail})
@@ -673,7 +775,7 @@ def _with_value(spec: ComputeOpSpec, answer: ReturnedValue, *, said: Optional[Cl
     (``text``, ``stdout``) so a person can still read it.
     """
     if spec.output_spec_kind is None:
-        return answer.model_copy(update={"value": None})
+        return answer if spec.exe_data.PLAIN_VALUE else answer.model_copy(update={"value": None})
     raw = answer.value
     if said is not None and spec.exe_data.VALUE_FROM_CHECK:
         # The same value a later run reads off the check when nothing has to be done.
@@ -705,6 +807,9 @@ async def _cli(
     say: Callable[[str], None],
     **_: Any,
 ) -> CliResult:
+    said = await _in_process(spec.exe_data, env, check=False, platform=platform)
+    if said is not None:
+        return said
     command = spec.exe_data.command_for(platform)
     if not command:
         return CliResult.not_applicable(f"{spec.display_label}: no command for this platform.")
@@ -976,9 +1081,13 @@ async def _ask(
     ask = ask_person if served_here() else ask_through_backend
     detail = fill(spec.exe_data.detail, env)
     while True:
-        answered = await _ask_once(ask, spec, env, timeout=timeout, detail=detail, wizard_id=wizard_id,
-                                   workdir=workdir, say=say)
-        if not (spec.exe_data.recheck and spec.completion_check is not None) or not answered.ok:
+        asking = _ask_once(ask, spec, env, timeout=timeout, detail=detail, wizard_id=wizard_id,
+                           workdir=workdir, say=say)
+        if spec.exe_data.auto_continue and _has_check(spec):
+            answered = await _ask_until_held(asking, spec, workdir=workdir, platform=platform, env=env, shell=shell)
+        else:
+            answered = await asking
+        if not (spec.exe_data.recheck and _has_check(spec)) or not answered.ok:
             return answered
         # The gate: the answer is not the proof. Check the goal; while it does not hold, ask again with
         # the check's own reason under the question.
@@ -987,6 +1096,36 @@ async def _ask(
             return answered
         reason = _last_line(said.stderr if said is not None else "") or "Not done yet."
         detail = f"{fill(spec.exe_data.detail, env)}\n\n**{reason}**".strip()
+
+
+#: How long an ``auto_continue`` question waits between looks at its goal (the next look starts only after
+#: the last one ended, so a slow check never overlaps itself).
+AUTO_CONTINUE_EVERY_SECONDS = 3.0
+
+
+def _has_check(spec: ComputeOpSpec) -> bool:
+    return spec.completion_check is not None or bool(spec.status_check)
+
+
+async def _ask_until_held(asking: Awaitable[AskResult], spec: ComputeOpSpec, *, workdir: Path, platform: str,
+                          env: Optional[dict], shell: Shell) -> AskResult:
+    """The question, closed by itself the moment the op's goal holds (``auto_continue``) -- or the person's answer,
+    whichever comes first. Cancelling the ask withdraws the question from the person's screen."""
+    task = asyncio.ensure_future(asking)
+    try:
+        while not task.done():
+            said = await _check(spec, workdir=workdir, platform=platform, env=env, shell=shell)
+            if said is not None and said.exit_code is ExitCode.OK:
+                task.cancel()
+                await asyncio.gather(task, return_exceptions=True)
+                # A confirm's answer is ``{}`` (``confirm_spec.py``) -- what Send would have answered.
+                return AskResult.satisfied(f"{spec.display_label}: done.", value={})
+            await asyncio.wait({task}, timeout=AUTO_CONTINUE_EVERY_SECONDS)
+        return task.result()
+    finally:
+        if not task.done():
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
 
 
 def _last_line(text: str) -> str:
@@ -1007,6 +1146,7 @@ async def _ask_once(ask, spec: ComputeOpSpec, env: Optional[dict], *, timeout, d
         cancel_label=spec.exe_data.cancel_label,
         secret=spec.exe_data.secret,
         file=spec.exe_data.file,
+        auto=spec.exe_data.auto_continue,
         wizard_id=wizard_id,
         guide=fill(spec.setup or "", env),
         # AI Assist: the agent follows the same guide, for the setup's own span once started.
@@ -1070,6 +1210,7 @@ async def _agent(
     subject: str,
     launch: Launch,
     say: Callable[[str], None],
+    values: Optional[dict] = None,
     **_: Any,
 ) -> PromptResult:
     """A spawned harness with tools. Its value comes through a receipt it writes.
@@ -1084,6 +1225,9 @@ async def _agent(
     prompt = spec.exe_data.prompt if executor else _prompt_for(spec, platform=platform, workdir=workdir)
     if spec.output_spec_kind is not None:
         prompt += result_contract(path, VALUE_KEY, fields_of_kind(spec.output_spec_kind))
+    mounted, context = _agent_scope(spec.exe_data, values)
+    if isinstance(mounted, PromptResult):
+        return mounted
     # An agent that runs a machine-wide installer blocks on the same permission prompt a command does.
     async with _permission_prompt_watch(spec.display_label, platform, say, f"{spec.display_label}: agent") as report:
         said = await launch(
@@ -1091,11 +1235,13 @@ async def _agent(
             prompt=prompt,
             name=spec.display_label,
             workdir=workdir,
-            context_data={"compute_op": spec.name},
-            target_typeid_str=subject,
+            context_data={"compute_op": spec.name, **context.context_data},
+            target_typeid_str=context.target_typeid_str or subject,
             timeout_seconds=spec.exe_data.timeout(),
             on_status=lambda progress: report(getattr(progress, "text", "") or ""),
             executor=executor,
+            input=mounted,
+            shared_context_entities=context.shared_context_entities,
         )
     if spec.output_spec_kind is None or not said.ok:
         return said
@@ -1108,6 +1254,49 @@ async def _agent(
             }
         )
     return said.model_copy(update={"value": receipt.value, "text": said.text or receipt.summary})
+
+
+def _agent_scope(exe: AgentOp, values: Optional[dict]) -> "tuple[Any, LaunchContext]":
+    """What the scope hands this launch: the value to mount as input (``None`` for workdir
+    mode), and the launch context to stamp. A named value that is not what the op said
+    is an answer, not a crash: the ``PromptResult`` that says so comes back in its place."""
+    scope = values or {}
+    mounted: Any = None
+    if exe.input:
+        mounted = scope.get(exe.input)
+        if mounted is None:
+            return PromptResult.not_applicable(f"nothing named {exe.input!r} is in scope to give the agent"), LaunchContext()
+        if not isinstance(mounted, DataSpec):
+            return (
+                PromptResult.not_applicable(f"{exe.input!r} is a {type(mounted).__name__}, not a value an agent can be given"),
+                LaunchContext(),
+            )
+    context = LaunchContext()
+    if exe.launch_context:
+        given = scope.get(exe.launch_context)
+        if isinstance(given, LaunchContext):
+            context = given
+        elif isinstance(given, dict):
+            context = LaunchContext.model_validate(given)
+        elif given is not None:
+            return PromptResult.not_applicable(f"{exe.launch_context!r} is not a launch context"), LaunchContext()
+    return mounted, context
+
+
+async def _decision(
+    spec: ComputeOpSpec,
+    *,
+    values: Optional[dict] = None,
+    say: Callable[[str], None],
+    **_: Any,
+) -> DecisionVerdict:
+    """A closed question about one value in scope. The verdict IS the answer; nothing re-checks it."""
+    exe = spec.exe_data
+    state = (values or {}).get(exe.input)
+    if state is None:
+        return DecisionVerdict.not_applicable(f"{spec.display_label}: nothing named {exe.input!r} is in scope to decide about")
+    say(f"{spec.display_label}: deciding")
+    return await decide_op(exe, state)
 
 
 def _prompt_for(spec: ComputeOpSpec, *, platform: str, workdir: Path) -> str:
@@ -1145,6 +1334,7 @@ def _prompt_for(spec: ComputeOpSpec, *, platform: str, workdir: Path) -> str:
 #: The one call each subkind makes — keyed by its ``exe_data`` class.
 _CALLS: "dict[type, Callable[..., Awaitable[ReturnedValue]]]" = {
     CliOp: _cli,
+    DecisionOp: _decision,
     AskOp: _ask,
     PromptOp: _prompt,
     AgentOp: _agent,

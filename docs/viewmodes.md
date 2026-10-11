@@ -5,6 +5,17 @@ title: View Modes
 
 # View Modes — Vibe / Standard / Advanced / Dev "skin" system
 
+> **2026-10-11 — a mode belongs to a session tab.** The footer selector is gone and
+> there is no app-wide mode. Only a session dock (`/dock/shell/agentic_process-…`,
+> `/dock/vibe/…`) and a child its workspace hosts carry `?viewMode`; every other page
+> drops it (`DockPointer.carriesViewMode`) and has one look. The home is always the
+> tabless Vibe hero. A session's tab remembers the mode it was last shown in
+> (`AgenticProcess.last_mode`, `VIEW_MODE_STORE.tab = TabOpen`); a session with no
+> memory opens in the last mode the user selected with a session's own switch
+> (`lastSelectedViewMode()`). Sections below that describe the footer control or
+> `Project.last_mode` are history.
+
+
 A single global flag, **View mode**, lets a user dial the whole UI across four
 tiers: **Vibe** (creator workspace, the default) ⊂ **Standard** (calm, minimal) ⊂
 **Advanced** (power-user) ⊂ **Dev** (full developer internals). It is picked from
@@ -201,14 +212,12 @@ inside one component with scattered `isAdvanced &&`. Instead:
 
 ```tsx
 // container builds slots ONCE (all hooks already ran above)
-const title = <span className="truncate">{process.name}</span>;
-const download = <ExportEntityButton typeId={process.typeId} defaultTitle={process.name ?? ''} />;
-// …debug, restart, right slots…
+const title = <span className="truncate">{entity.name}</span>;
+const actions = <EntityActions entity={entity} />;
 
 <ViewSwap
-  advanced={<AdvancedInteractiveTabHeader debug={debug} restart={restart}
-              title={title} download={download} right={right} />}
-  standard={<StandardInteractiveTabHeader title={title} />}
+  advanced={<FullHeader title={title} actions={actions} />}
+  standard={<CompactHeader title={title} />}
 />
 ```
 
@@ -218,28 +227,27 @@ arrangements. Nothing is rebuilt or refetched on toggle.
 ## Worked example — the interactive tab header
 
 `ui/src/components/terminal/interactive-terminal/ProcessToolbar.tsx` is the
-stateful container; `InteractiveTabHeader.tsx` holds the two layouts.
+stateful container; `InteractiveTabHeader.tsx` is its ONE layout. The header is
+the slot pattern without the swap: it no longer differs by tier, so there is no
+`ViewSwap` — what differs is decided by which slots the container fills.
 
-Standard strips the toolbar to its essence: only the centered **title**. Share +
-Bookmark are deliberately absent — the top navigation bar already carries them.
-Advanced is the full toolbar; the download/export action sits in the right
-toolbar (it's an Advanced-only action).
-
-| Slot | Standard | Advanced |
+| Slot | Content | When |
 | --- | --- | --- |
-| `debug` (CLI Options, Columns & Trace) | — | ✓ left |
-| `restart` | — | ✓ left |
-| `title` (entity title) | ✓ centered | ✓ centered |
-| `download` (export bundle) | — | ✓ right |
-| `right` (asset mgr, commit/merge, terminal, fork, worktree, session info, transcript) | — | ✓ right |
+| `debug` | `DebugMenu` — CLI options, gutters, raw-stream viewers | terminal **surface** only (`useSessionSurface() === 'terminal'`), and embedded terminals |
+| `title` | entity title, centered | not embedded |
+| `modes` | `SessionSurfaceSwitch` — Terminal / Chat / Vibe | not embedded |
+| `right` | Fork, then `SessionActionsMenu` (session info, transcript, assets, restart, open terminal, worktree, commit & merge, export), then Close | Fork and the nav-out menu items: not embedded; Close: embedded only |
 
 Notes:
-- **Embedded** terminals (chat side panel) always use the Advanced layout —
-  `const standard = !embedded && !isAdvanced` — so that surface is unchanged.
-- All `!embedded` / `hasSession` slot conditions are unchanged; they live inside
-  the slot definitions, so embedded behavior is byte-for-byte identical.
-- `ProcessToolbar` keeps **every** hook (`useSyncExternalStore`, the API-timeout
-  effect, etc.) running in both modes — the header is hidden, the process is not.
+- The debug menu follows the **surface**, not the developer-mode switch: it is
+  about the xterm, so it shows on every terminal and on no chat or Vibe tab.
+- Share + Bookmark are deliberately absent — the top navigation bar already
+  carries them.
+- The restart-required signal is on the session actions **button**, so it is
+  visible with the menu closed.
+- A menu whose items open a dialog or popover is **non-modal**
+  (`<DropdownMenu modal={false}>`), and a popover opened from an item opens on
+  the menu's close event (`onCloseAutoFocus`), not on the item's select.
 
 ## Testing recipe (debugMCP)
 

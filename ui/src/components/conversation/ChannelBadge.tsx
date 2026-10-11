@@ -1,4 +1,5 @@
 import { isAddressable, type ICloudOrigin } from '@sdk';
+import { IconWithBadge } from '@src/components/graph-view/icons/IconWithBadge';
 import { useChannelAttribution } from './channel-attribution';
 
 /**
@@ -19,14 +20,14 @@ export function ChannelBadge({ origin }: { origin: ICloudOrigin | null | undefin
   const attribution = attributionFor(origin);
   if (!attribution) return null;
 
-  const { icon: Icon, label } = attribution;
+  const { icon, badge, label } = attribution;
   const openable = isAddressable(origin);
 
   // Openable origins are a link; the rest is the same pill, inert. Rendering
   // an <a> with no href would be a lie the keyboard notices.
   const body = (
     <>
-      <Icon className="h-3 w-3" />
+      <IconWithBadge Base={icon} Badge={badge} className="h-3 w-3" />
       <span className="font-medium">{label}</span>
     </>
   );

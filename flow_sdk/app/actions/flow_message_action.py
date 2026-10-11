@@ -46,6 +46,7 @@ from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.instance_settings import get_instance_settings
 from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccessResponse
+from flow_sdk.stream_inbox._locks import keyed_loop_lock, new_registry
 from flow_sdk.stream_inbox.agent_scope import (
     AgentStreamInboxScope,
     AgentStreamInboxScopeError,
@@ -291,6 +292,11 @@ async def handle_export_flow_message(body: dict) -> ApiResponse:
     if missing:
         return ApiFailResponse(message=f"not found: {', '.join(missing)}", status_code=404, data={"missing": missing})
 
+    if not spec.include_gitignored:
+        from flow_sdk.builtin.flow_message_bundle import refuse_gitignored  # noqa: PLC0415
+
+        if refused := await refuse_gitignored([TypeId(r) for r in refs]):
+            return refused
     sender = await User.current_sender_participant(None)
     fm = FlowMessage(
         id=FlowMessage.allocate_id({}),
@@ -1573,63 +1579,6 @@ async def resolve_helpdesk(project_id: Optional[str] = None) -> Optional[Helpdes
         if adopted is not None:
             return HelpdeskTarget(adopted.queue_project_id)
     return await _hub_default_helpdesk()
-
-
-#: How much transcript rides with a ticket. Enough for an assignee to see what
-#: the agent actually tried; short enough that a desk is not handed a customer's
-#: entire working session. The tail, not the head — the failure is at the end.
-TICKET_TRANSCRIPT_CHARS = 4000
-
-
-async def _ticket_transcript_excerpt(session_typeid: Optional[str]) -> Optional[str]:
-    """A readable tail of a session the asker attached, for the ticket's text.
-
-    A desk can read a ticket's text before anyone picks it up, but not its attachments — so the
-    session the person CHOSE to include also travels as text (``ask-for-help`` builds it only from
-    a session named in the request's context). Best-effort: unreadable or missing yields ``None``.
-    """
-    if not session_typeid or not session_typeid.startswith("claude_session-"):
-        return None
-    try:
-        import json as _json  # noqa: PLC0415
-        from pathlib import Path  # noqa: PLC0415
-
-        from flow_sdk.builtin.claude_session import ClaudeSession  # noqa: PLC0415
-
-        session_id = session_typeid.split("-", 1)[1]
-        session = await ClaudeSession.get_by_id(session_id)
-        # ``asset_ref`` IS the transcript jsonl — a session is a file-backed
-        # entity whose id is the Claude session id.
-        ref = getattr(session, "asset_ref", None) if session else None
-        path = Path(ref) if ref else None
-        if path is None or not path.is_file():
-            return None
-
-        turns: list[str] = []
-        for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
-            try:
-                row = _json.loads(line)
-            except ValueError:
-                continue
-            message = row.get("message") or {}
-            role = message.get("role") or row.get("type") or "?"
-            content = message.get("content")
-            if isinstance(content, list):
-                text = " ".join(part.get("text", "") for part in content if isinstance(part, dict)).strip()
-            else:
-                text = str(content or "").strip()
-            if text:
-                turns.append(f"{role}: {text}")
-        if not turns:
-            return None
-
-        excerpt = "\n".join(turns)
-        if len(excerpt) > TICKET_TRANSCRIPT_CHARS:
-            excerpt = "…\n" + excerpt[-TICKET_TRANSCRIPT_CHARS:]
-        return excerpt
-    except Exception as e:  # noqa: BLE001
-        logger.info("[helpdesk-start-ticket] transcript excerpt skipped: %s", e)
-        return None
 
 
 def _ticket_title(text: str) -> str:
@@ -3020,8 +2969,9 @@ async def _materialize_invitation(
 
 # Process-local single-flight registry for per-conversation message fetches.
 # Keyed by conversation id. Prevents rapid Refresh clicks from piling up
-# duplicate bundle downloads for the same conversation.
-_conv_fetch_locks: dict[str, asyncio.Lock] = {}
+# duplicate bundle downloads for the same conversation. Weak-valued
+# (``stream_inbox/_locks``): an entry lives only while a fetch holds or awaits it.
+_conv_fetch_locks = new_registry()
 # Conversations already claimed by a detached batch. Unlike ``Lock.locked()``,
 # membership can be checked and claimed without an intervening await, so two
 # drains dispatched in the same event-loop turn cannot both queue the same id
@@ -3364,7 +3314,7 @@ async def _fetch_conversation_messages(conv_id: str, someone_typeid: str) -> boo
     ``_drain_conversation_message_fetches``). A swallowed failure must NOT be
     allowed to certify convergence.
     """
-    lock = _conv_fetch_locks.setdefault(conv_id, asyncio.Lock())
+    lock = keyed_loop_lock(_conv_fetch_locks, conv_id)
     async with lock:
         try:
             # Children-list route, primary source: returns the conversation's

@@ -1,60 +1,20 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Layout } from '@sdk';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { ViewType } from '@src/types/ViewType';
+import { useUiActionRequest } from '@src/navigation/ui-actions';
 import {
   ASSISTANT_ALIVE_TTL_MS,
   ASSISTANT_CHAT_PARAM,
   openAssistantChannel,
   type AssistantChannelMessage,
 } from './assistant-channel';
-
-export interface TriggerRect {
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-}
-
-/** A prompt handed to the assistant from code, for the context at `url`. */
-export interface PendingAsk {
-  text: string;
-  files?: File[];
-  /** The dock URL the ask was made on — the chat it belongs to. */
-  url: string;
-  nonce: number;
-}
-
-interface FloatingChatContextValue {
-  open: boolean;
-  triggerRect: TriggerRect | null;
-  /**
-   * True when the initial `open` value was restored from a previous session
-   * (i.e. the user reloaded with the chat open). The window uses this to skip
-   * the entrance animation on the first paint — no trigger rect to animate
-   * from after a refresh.
-   */
-  restoredFromStorage: boolean;
-  toggle: (rect?: TriggerRect | null) => void;
-  openChat: (rect?: TriggerRect | null) => void;
-  closeChat: () => void;
-  /**
-   * Open the assistant on the CURRENT page's chat and send `text` (with
-   * `files`) as if the user typed it. Goes to the popped-out assistant when
-   * one is open.
-   */
-  ask: (text: string, opts?: { files?: File[]; rect?: TriggerRect | null }) => void;
-  pendingAsk: PendingAsk | null;
-  consumeAsk: (nonce: number) => void;
-  /** A popped-out assistant window is alive; the floating chat stays closed. */
-  popoutAlive: boolean;
-  /** Pop the chat out; `chatUrl` is the page whose chat is showing, so the window opens on it. */
-  popOut: (chatUrl?: string | null) => void;
-  /** The main window reports where it is, for a popout following it. */
-  publishDock: (url: string) => void;
-}
-
-const FloatingChatContext = createContext<FloatingChatContextValue | null>(null);
+import {
+  FloatingChatContext,
+  type FloatingChatContextValue,
+  type PendingAsk,
+  type TriggerRect,
+} from './floating-chat-context';
 
 const OPEN_STORAGE_KEY = 'flowpad.floatingChat.open';
 
@@ -128,6 +88,8 @@ export function FloatingChatProvider({ children }: { children: React.ReactNode }
     setOpen(true);
   }, []);
   const closeChat = useCallback(() => setOpen(false), []);
+  // "ask the assistant" (smart navigation): the same chat its button opens.
+  useUiActionRequest(['assistant-chat'], () => openChat());
   const toggle = useCallback(
     (rect?: TriggerRect | null) => {
       if (popoutAliveRef.current) {
@@ -199,17 +161,4 @@ export function FloatingChatProvider({ children }: { children: React.ReactNode }
       {children}
     </FloatingChatContext.Provider>
   );
-}
-
-export function useFloatingChat(): FloatingChatContextValue {
-  const ctx = useContext(FloatingChatContext);
-  if (!ctx) {
-    throw new Error('useFloatingChat must be used inside <FloatingChatProvider>');
-  }
-  return ctx;
-}
-
-/** The provider's value, or null outside it — for surfaces that only OFFER the assistant. */
-export function useOptionalFloatingChat(): FloatingChatContextValue | null {
-  return useContext(FloatingChatContext);
 }

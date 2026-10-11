@@ -310,7 +310,11 @@ function bytesToBase64(bytes: Uint8Array): string {
   return btoa(bin);
 }
 
-/** Snapshot the live in-session chunks (xterm memory), b64-encoded for display. */
+/**
+ * Snapshot the live in-session chunks (xterm memory), b64-encoded for display. This is the
+ * replay WINDOW: memory starts at `shell.ptyConnection.trimmedThroughSeq + 1` once older
+ * chunks have been dropped, so a gap below that against the recording is not data loss.
+ */
 export function getXtermChunks(shell: Shell): PtyMemoryChunk[] {
   return shell.ptyConnection.getSortedChunks().map((c) => ({
     seq: c.seq,

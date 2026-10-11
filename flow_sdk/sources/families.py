@@ -17,7 +17,7 @@ read path). The family is the payload shape and the destination; what a source c
 
 from __future__ import annotations
 
-from typing import Any, ClassVar, Optional
+from typing import Any, ClassVar, Mapping, Optional
 
 from flow_sdk.sources.base import Family, Source
 from flow_sdk.sources.files import FileSupport
@@ -46,7 +46,8 @@ class RecordSource(Source):
 class MessageSource(RecordSource):
     family: ClassVar[Family] = Family.MESSAGE
 
-    #: Strangers are the point of this channel (a help desk): an empty allowlist admits everyone.
+    #: An empty allowlist admits everyone: strangers are the point of this channel (a help desk), or something
+    #: upstream already admits only who may write (a hub claim's proven sender).
     open_inbound: ClassVar[bool] = False
     #: A send comes back as a record of its own (the provider echoes it); ``False`` when what ``send``
     #: returns is the only copy (speech, a local reply).
@@ -69,6 +70,19 @@ class MessageSource(RecordSource):
     def outbound_spec(cls) -> Optional[type]:
         """The message spec that knows who a reply on this channel is addressed to; ``None`` means email's."""
         return None
+
+    @classmethod
+    def open_inbound_for(cls, config: Mapping[str, Any]) -> bool:
+        """``open_inbound`` for ONE configured source. The class's by default; a driver some of whose
+        sources are a closed room (a group whose hub claim already admits only its members) says so per config."""
+        return cls.open_inbound
+
+    @classmethod
+    def room_of(cls, item: Any) -> str:
+        """The address a conversation is continued at when ``item`` was posted in a ROOM (a group) rather
+        than written to us by its sender; ``""`` — the default — when the conversation is with its other
+        side, whose every sender joins its address."""
+        return ""
 
     @classmethod
     def permalink(cls, external_id: str, thread_key: str = "") -> str:

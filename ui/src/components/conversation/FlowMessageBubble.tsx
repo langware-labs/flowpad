@@ -1,3 +1,7 @@
+import { automationLineage } from '@src/hooks/conversation/useMessageAutomationSessions';
+import { DockPointer } from '@src/navigation/DockPointer';
+import { MessageLifecycle, type Lifecycle } from './message-lifecycle';
+import type { TaskPeople } from './task-it';
 import { t } from '@lingui/core/macro';
 import { isViewer } from './conversation-category';
 import {
@@ -64,6 +68,7 @@ import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { openExternalFromComputeNode } from '@sdk/entities/compute-node';
 import { cn } from '@src/lib/utils';
 import { openArtifact } from '@src/components/artifacts/open-artifact';
+import type { WorkerType } from './conversation-session-constants';
 
 /** Single Download affordance for a message whose body bundle hasn't been
  *  pulled yet. One click materializes every attachment (files + entities) —
@@ -210,6 +215,12 @@ interface FlowMessageBubbleProps {
    *  `native`: Flowpad's own chat, where any sent message can be answered by its id; a channel
    *  reply instead needs the message's source record (`fm.origin`). */
   channelTraits?: { quotes?: boolean; reacts?: boolean; native?: boolean } | null;
+  /** Start a rule on messages like this one (the quick ⚡ and the ⋮ item). Channel messages only. */
+  onAutomate?: (fm: FlowMessage) => void;
+  /** The session an automation started on this message (`useMessageAutomationSessions`). */
+  automationSession?: AgenticProcess | null;
+  /** Where this message, come in on a channel, is on its way to an answer (`message-lifecycle`). */
+  lifecycle?: Lifecycle | null;
   /** The message this one quotes, resolved by the parent from the loaded list. */
   quoted?: { sender: string; text: string; onJump?: () => void } | null;
   /** Answer this message from the composer — set only when the channel replies (`ChannelSpec.replies`). */
@@ -218,6 +229,10 @@ interface FlowMessageBubbleProps {
   messageTask?: Task | null;
   /** "Task it": make this message a task. Omitted → no control (drafts, system rows). */
   onTaskIt?: (fm: FlowMessage) => void;
+  /** Who the message's task can be handed to from here (the conversation's members) and who I am. */
+  taskPeople?: TaskPeople;
+  /** Start a worker pinned to a message (its ⋮ menu). Omitted → no worker bar (drafts). */
+  onLaunchWorker?: (messageId: string, worker: WorkerType) => void;
 }
 
 export function FlowMessageBubble({
@@ -245,8 +260,13 @@ export function FlowMessageBubble({
   messageAttachments,
   messageTask = null,
   onTaskIt,
+  taskPeople,
+  onLaunchWorker,
   showEmailHeaders = false,
   channelTraits = null,
+  lifecycle = null,
+  onAutomate,
+  automationSession = null,
   quoted = null,
   onReply,
 }: FlowMessageBubbleProps) {
@@ -753,7 +773,8 @@ export function FlowMessageBubble({
         senderName={displayName}
         onSenderClick={agentSender ? () => navigation.openDock(agentSender.dockPointer) : undefined}
         onEditName={
-          isCurrentUser
+          // A channel's sender is who they are on the channel — not a Flowpad name to edit.
+          isCurrentUser && channelTraits?.native !== false
             ? (newName) => {
                 setOverrideName(newName);
                 void updateName(newName);
@@ -764,12 +785,23 @@ export function FlowMessageBubble({
           onDeleteMessage && (isCurrentUser || isConversationOwner) ? () => onDeleteMessage(messageId) : undefined
         }
         onForwardMessage={canForward ? () => setForwardOpen(true) : undefined}
+        onLaunchWorker={onLaunchWorker && !fm.is_draft ? (worker) => onLaunchWorker(messageId, worker) : undefined}
         taskIt={
           messageTask
-            ? { onClick: () => navigation.openDock(messageTask.dockPointer), task: messageTask }
+            ? { onClick: () => navigation.openDock(messageTask.dockPointer), task: messageTask, people: taskPeople }
             : onTaskIt && !fm.is_draft
               ? { onClick: () => onTaskIt(fm) }
               : undefined
+        }
+        onAutomate={onAutomate && fm?.origin && !fm.is_draft ? () => onAutomate(fm) : undefined}
+        automation={
+          automationSession
+            ? {
+                name: automationSession.name || automationLineage(automationSession)?.name || t`Automation`,
+                status: String(automationSession.status ?? ''),
+                onOpen: () => navigation.openDock(DockPointer.forProcessRuns({ run: automationSession.id })),
+              }
+            : undefined
         }
         onImplementPlan={onImplementPlan ? () => onImplementPlan(messageId) : undefined}
         onOpenPlanSession={onOpenPlanSession}
@@ -783,6 +815,7 @@ export function FlowMessageBubble({
         onReply={onReply && fm && (channelTraits?.native ? !fm.is_draft : fm.origin) ? () => onReply(fm) : undefined}
         replyInThread={!channelTraits?.quotes}
       />
+      {lifecycle && <MessageLifecycle lifecycle={lifecycle} />}
       {reactError && (
         <p className="ms-10 text-xs text-destructive" role="alert" data-testid="reaction-error">
           {reactError}
@@ -1007,11 +1040,11 @@ export function MessageEntityChip({
   }
   const state = chipStateFor(!!data, attachment, forceShow);
   if (state === 'hidden') return null;
-  // Git-link chip: a git context folder shared through push-notify. The chip
+  // Git-link chip: a git dependency folder shared through push-notify. The chip
   // carries only the repo origin (no bytes); clicking launches the
-  // git-context-folder wizard, which reuses+pulls an existing local checkout
+  // git-dependency wizard, which reuses+pulls an existing local checkout
   // (or clones once when none exists), registers it as a project, and
-  // attaches it as a context folder. After a completed run the staged
+  // adds it as a dependency. After a completed run the staged
   // attachment is marked installed (metadata-only, no clone).
   const folderOrigin: GitOrigin | null =
     typeId.type === 'folder'
@@ -1024,10 +1057,10 @@ export function MessageEntityChip({
         const url = gitOriginCloneUrl(folderOrigin);
         if (!url) return;
         const targetProjectId = projectId ?? dataContext.project?.id ?? null;
-        const result = await launchWizard('git-context-folder', {
+        const result = await launchWizard('git-dependency', {
           title: t`Pull ${attachment?.name ?? 'git folder'}`,
           targetTypeId: typeId.toString(),
-          payload: { projectId: targetProjectId, scope: 'private', mode: 'existing', url },
+          payload: { projectId: targetProjectId, optional: false, mode: 'existing', url },
         });
         if (result.status === 'done' && attachment && !attachment.installed) {
           try {

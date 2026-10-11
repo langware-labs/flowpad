@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { fsManager, GitWorkdir } from '@sdk';
+import { fsManager, GitWorkdir, type GitConflict } from '@sdk';
 import { getGitStatus } from '@src/lib/git-status-cache';
 
 export interface UseGitChangeCountResult {
@@ -13,6 +13,8 @@ export interface UseGitChangeCountResult {
   hasRepo: boolean;
   /** Current branch name, or null. */
   branch: string | null;
+  /** Set while the tree is stuck mid-conflict — the footer offers Resolve. */
+  conflict: GitConflict | null;
   /** Re-fetch the status (e.g. after a push or closing the diff modal). */
   refresh: () => void;
 }
@@ -42,6 +44,7 @@ export function useGitChangeCount(computeNodeId: string | null, workdir: string 
   const [behind, setBehind] = useState(0);
   const [hasRepo, setHasRepo] = useState(false);
   const [branch, setBranch] = useState<string | null>(null);
+  const [conflict, setConflict] = useState<GitConflict | null>(null);
   // Only the latest request may write: after a project switch the previous
   // workdir's status can still land, and a slow repo lands last. Unmount bumps
   // it too, so nothing in flight writes into an unmounted hook.
@@ -59,6 +62,7 @@ export function useGitChangeCount(computeNodeId: string | null, workdir: string 
         setBehind(0);
         setHasRepo(false);
         setBranch(null);
+        setConflict(null);
         return;
       }
       // Shared cache dedups the cross-tab mount burst; force on poll/refresh.
@@ -70,12 +74,14 @@ export function useGitChangeCount(computeNodeId: string | null, workdir: string 
         setAhead(0);
         setBehind(0);
         setBranch(null);
+        setConflict(null);
       } else {
         setHasRepo(true);
         setCount(result.files?.length ?? 0);
         setAhead(result.ahead ?? 0);
         setBehind(result.behind ?? 0);
         setBranch(result.branch ?? null);
+        setConflict(result.conflict ?? null);
       }
     },
     [computeNodeId, workdir],
@@ -107,7 +113,14 @@ export function useGitChangeCount(computeNodeId: string | null, workdir: string 
     const unsubscribeWrites = fsManager.onFileWritten(() => {
       void fetchStatus(true);
     });
+    // A resolver agent (or the user's own terminal) changes git state without
+    // writing through the editor; coming back to the window is when to look,
+    // or a resolved conflict keeps showing until the 10-minute poll. Unforced:
+    // the shared cache absorbs focus bursts.
+    const onFocus = () => void fetchStatus(false);
+    window.addEventListener('focus', onFocus);
     return () => {
+      window.removeEventListener('focus', onFocus);
       latestRequestRef.current++;
       latestFetchRef.current++;
       clearInterval(interval);
@@ -119,5 +132,5 @@ export function useGitChangeCount(computeNodeId: string | null, workdir: string 
     void checkAll(true);
   }, [checkAll]);
 
-  return { count, ahead, behind, hasRepo, branch, refresh };
+  return { count, ahead, behind, hasRepo, branch, conflict, refresh };
 }

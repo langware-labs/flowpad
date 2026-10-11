@@ -156,7 +156,7 @@ async def _started_target(conversation_id: str, newest) -> ReplyTarget:
     conversation = await Conversation.get_one({"id": conversation_id})
     address = list(getattr(conversation, "address", None) or [])
     local = newest.origin_local
-    if not address or local is None:
+    if local is None:
         raise ChannelSendUnavailable("no one else has written in this thread yet")
     source, item = await asyncio.gather(
         DataSource.get_one({"id": local.data_source_id}),
@@ -165,6 +165,13 @@ async def _started_target(conversation_id: str, newest) -> ReplyTarget:
     if source is None:
         raise ChannelSendUnavailable("the data source this arrived through is gone")
     driver = _sending_driver(source, newest.origin.kind)
+    if not address:
+        # A channel whose threads are addressed by themselves (a task's thread is the task) answers its
+        # own message on the thread — never safe for a channel that writes to people: an email reply to
+        # our own message would mail ourselves.
+        if getattr(getattr(driver, "cls", None), "addressed_by_thread", False) and item is not None:
+            return _reply_target(source, item, newest.origin.kind)
+        raise ChannelSendUnavailable("no one else has written in this thread yet")
     return ReplyTarget(
         driver=driver, source=source, channel=newest.origin.kind, to=address[0],
         thread_key=str(getattr(item, "thread_key", "") or ""), subject=str(getattr(item, "name", "") or ""), in_reply_to="",
@@ -299,6 +306,7 @@ async def _run_send(conversation_id: str, target: ReplyTarget, text: str, *, fil
     """The background half. Never raises — a failed reply must not take down
     the request that started it, and the worker's own record is the trail."""
     from flow_sdk.builtin.agentic_process.launch_health import LaunchError  # noqa: PLC0415
+    from flow_sdk.stream_inbox.stream_inbox_on_tag import emit_reply_failed  # noqa: PLC0415
 
     try:
         outcome = await send_to(conversation_id, target, text, files=files, quote=quote)
@@ -312,5 +320,9 @@ async def _run_send(conversation_id: str, target: ReplyTarget, text: str, *, fil
         )
     except LaunchError as exc:
         logger.error("[channel-send] %s → %s failed: %s", target.channel, target.to, exc.as_dict())
-    except Exception:  # noqa: BLE001
+        emit_reply_failed(target.source, conversation_id, str(exc))
+    except Exception as exc:  # noqa: BLE001
         logger.exception("[channel-send] %s → %s failed", target.channel, target.to)
+        # A refusal carries the far end's own words (``HubError.reason``: "WhatsApp refused: …").
+        emit_reply_failed(target.source, conversation_id, str(getattr(exc, "reason", "") or exc))
+

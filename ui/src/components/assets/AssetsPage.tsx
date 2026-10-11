@@ -13,13 +13,14 @@ import {
 import { ProjectHome } from '@src/components/project-home/ProjectHome';
 import { ProjectNameTitle } from '@src/components/project-home/ProjectNameTitle';
 import { ShareContextFolderButton } from '@src/components/assets/ShareContextFolderButton';
-import { useContextFolderForRel } from '@src/hooks/use-context-folder-for-rel';
+import { useDependencyForRel } from '@src/hooks/use-dependency-for-rel';
 import { useIsAdvanced } from '@src/components/view-mode';
 import { InputDialog } from '@src/components/ui/input-dialog';
 import { Button } from '@src/components/ui/button';
 import { getDescriptor } from '@src/components/quick-create';
 import { notify } from '@src/notifications';
 import { DockPointer } from '@src/navigation/DockPointer';
+import { assetTargetLookup, opensThroughLookup } from '@src/navigation/record-type-nav';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { dataContext, RecordType, TypeId, VFSPath } from '@sdk';
 import type { Project } from '@sdk';
@@ -441,11 +442,11 @@ export function AssetsPage() {
     scopedProjectId: isProjectView ? scopeProjectId : urlScopeProjectId,
   });
 
-  // The folder the header's Share acts on: the context folder CONTAINING the
+  // The folder the header's Share acts on: the dependency folder CONTAINING the
   // browsed path when there is one (only its root is a repo — an `fs/` pointer
   // addresses any depth), else the browsed directory itself. Same resolution the
-  // body's browser uses — see useContextFolderForRel.
-  const containingFolder = useContextFolderForRel(scopeProjectId, fsRelPath ?? '');
+  // body's browser uses — see useDependencyForRel.
+  const containingFolder = useDependencyForRel(scopeProjectId, fsRelPath ?? '');
 
   const creatableTypes = useMemo(
     () => new Set(allTypes.filter((t) => t.creatable).map((t) => t.type_name)),
@@ -524,6 +525,12 @@ export function AssetsPage() {
         });
         return;
       }
+      // A type whose target needs a lookup (a dataset opens in its editor app).
+      const lookup = assetTargetLookup(result);
+      if (lookup) {
+        void lookup().then((target) => target && navigateAsset(target));
+        return;
+      }
       navigateAsset(DockPointer.forAssetEditor(result.record_type, path));
     },
     [navigateAsset, navigation],
@@ -566,7 +573,7 @@ export function AssetsPage() {
             <BookOpen className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
             <div className="min-w-0">
               <div className="truncate text-sm font-medium">
-                {/* A context folder gets its own name as the pane title; the
+                {/* A dependency folder gets its own name as the pane title; the
                   project's home carries the project's own (renamable) name;
                   everything else keeps Assets. */}
                 {isFsMode && fsRelPath ? (
@@ -652,7 +659,7 @@ export function AssetsPage() {
               recordType={selectedType}
               onNew={creatableTypes.has(selectedType) ? () => handleNew(selectedType) : undefined}
               refreshKey={refreshKey}
-              onRowClick={hasEditor(selectedType) ? handleRowClick : undefined}
+              onRowClick={hasEditor(selectedType) || opensThroughLookup(selectedType) ? handleRowClick : undefined}
               filter={effectiveFilter}
               onFilterChange={setAssetFilter}
               onProjectFilter={(label) => void handleProjectFilter(label)}

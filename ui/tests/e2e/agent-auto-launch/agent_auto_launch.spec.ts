@@ -85,7 +85,8 @@ test('opening the project auto-launches the oldest agent once, with its intro an
   await page.goto(`/dock/project/${projectId}`);
 
   // 1. Load-time redirect into the session, in Vibe.
-  await expect(page).toHaveURL(/\/dock\/shell\/agentic_process-[0-9a-f-]+.*viewMode=vibe/);
+  // Shown in Vibe, the session is its Vibe host tab (`/dock/vibe/…`).
+  await expect(page).toHaveURL(/\/dock\/vibe\/agentic_process-[0-9a-f-]+/);
 
   // 2. The intro row is the first thing in the pane, signed by the OLDEST agent.
   const intro = page.getByTestId('agent-intro-message');
@@ -112,6 +113,6 @@ test('opening the project auto-launches the oldest agent once, with its intro an
 test('opening the project again does not launch a second session', async ({ page }) => {
   await page.goto(`/dock/project/${projectId}`);
   // The project view renders and the URL stays put: no redirect this time.
-  await expect(page.getByText('Context folders', { exact: true })).toBeVisible();
+  await expect(page.getByText('Dependencies', { exact: true }).first()).toBeVisible();
   await expect(page).toHaveURL(new RegExp(`/dock/project/${projectId}`));
 });

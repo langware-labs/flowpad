@@ -8,7 +8,7 @@
  */
 import { useLingui } from '@lingui/react/macro';
 import { useMemo } from 'react';
-import type { AutomationKind, AutomationRun, RunStatus, ScheduleWhen, ThenPart, WhenPart } from '@sdk';
+import { isMessagePattern, type AutomationKind, type AutomationRun, type RunStatus, type ScheduleWhen, type ThenPart, type WhenPart } from '@sdk';
 
 export interface AutomationWords {
   kind: (kind: AutomationKind) => string;
@@ -98,6 +98,7 @@ export function useAutomationWords(): AutomationWords {
     const when = (w: WhenPart): string => {
       if (w.kind === 'schedule' && w.schedule) return schedule(w.schedule);
       if (w.kind === 'event' && w.event) {
+        if (isMessagePattern(w.event.pattern)) return t`When a message arrives`;
         const what = w.event.title || w.event.pattern;
         return t`When ${what} happens`;
       }

@@ -11,7 +11,7 @@ from __future__ import annotations
 from types import ModuleType
 
 from flow_sdk.external_apis.decision import jev
-from flow_sdk.external_apis.decision.errors import DecisionError, DecisionFailure, reason_for_status
+from flow_sdk.external_apis.decision.errors import DecisionError, DecisionFailure, failure_detail, reason_for_status
 
 _DIALECTS: tuple[ModuleType, ...] = (jev,)
 
@@ -26,4 +26,4 @@ def dialect_for_host(host: str) -> ModuleType:
     )
 
 
-__all__ = ["DecisionError", "DecisionFailure", "dialect_for_host", "reason_for_status"]
+__all__ = ["DecisionError", "DecisionFailure", "dialect_for_host", "failure_detail", "reason_for_status"]

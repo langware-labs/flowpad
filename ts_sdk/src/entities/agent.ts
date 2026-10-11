@@ -1,4 +1,6 @@
+import { launchSurfaceField } from '../process/launch-surface';
 import { APIEntity, registerEntity } from '../APIEntity';
+import { QueryFilter, QueryRequest } from '../FlowSync/query';
 import { TypeId } from '../models/TypeId';
 import type { GitOrigin } from '../models/GitOrigin';
 import type { HubRepoOrigin } from '../models/FSOrigin';
@@ -9,6 +11,9 @@ import { mainFileForType } from '../models/asset-editor';
 import { dataContext } from '../FlowSync/context';
 import { AGENT_AVATAR_FILE, AGENT_AVATAR_REF } from './agent-avatar';
 import type { IDeployment } from './deployment';
+
+/** A hub compute provider a cloud deployment lands on, by the hub's own name — sent to the hub as-is. */
+export type CloudDeployProvider = string;
 import { DataSource, type IDataSource } from './data-source';
 import { AgentMailbox, type IAgentMailbox } from './agent-mailbox';
 import { Trigger } from './trigger';
@@ -272,6 +277,19 @@ export class Agent extends APIEntity<Agent> {
     return this.doc?.parent.child(AGENT_AVATAR_FILE).getDownloadUrl() ?? null;
   }
 
+  /** The agents a rule on this machine may run: enabled, by name — what a picker offers
+   *  (`Agent.runnable_here` in Python). */
+  static async runnableHere(): Promise<Agent[]> {
+    const request = new QueryRequest({
+      type: Agent.type,
+      scope: [],
+      name: 'agents:runnable-here',
+      query: new QueryFilter({ match: { enabled: true } }),
+    });
+    const rows = await Agent.query(request, true);
+    return rows.sort((a, b) => (a.name || '').localeCompare(b.name || '') || String(a.id).localeCompare(String(b.id)));
+  }
+
   /** Create in the selected scope, optionally at an exact authorized folder. */
   static async createInProject(
     project: { typeId?: TypeId } | null,
@@ -323,8 +341,8 @@ export class Agent extends APIEntity<Agent> {
    * `POST /agent/<id>/use`. The counterpart of `run` (one prompt, headless).
    *
    * `projectId` is the project the session should ACT IN, which is not always
-   * the project the agent lives in: an agent supplied by a help desk attached
-   * as a context folder belongs to the desk's checkout, but the session has to
+   * the project the agent lives in: an agent supplied by a help desk added
+   * as a dependency belongs to the desk's checkout, but the session has to
    * open on the customer's project. Omit it and the backend falls back to the
    * agent's own project.
    *
@@ -334,7 +352,11 @@ export class Agent extends APIEntity<Agent> {
    * prompt, or the auto prompt runs second.
    */
   async use(projectId?: string | null, autoPrompt = false): Promise<AgentUseResult> {
-    return (await this.post('use', { project_id: projectId ?? null, ...autoPromptBody(autoPrompt) })) as AgentUseResult;
+    return (await this.post('use', {
+      project_id: projectId ?? null,
+      ...autoPromptBody(autoPrompt),
+      ...launchSurfaceField(),
+    })) as AgentUseResult;
   }
 
   /**
@@ -347,7 +369,11 @@ export class Agent extends APIEntity<Agent> {
    * placement on this machine.
    */
   async useDeployment(deploymentId: string, autoPrompt = false): Promise<AgentUseResult> {
-    return (await this.post('use', { deployment_id: deploymentId, ...autoPromptBody(autoPrompt) })) as AgentUseResult;
+    return (await this.post('use', {
+      deployment_id: deploymentId,
+      ...autoPromptBody(autoPrompt),
+      ...launchSurfaceField(),
+    })) as AgentUseResult;
   }
 
   /**
@@ -364,14 +390,17 @@ export class Agent extends APIEntity<Agent> {
    * `environment` is the placement's credential environment — `production`
    * when omitted. One cloud machine per environment.
    */
-  /** Deploy to a cloud machine (the default), or `provider: 'local'` — this computer. */
+  /**
+   * Deploy to a cloud machine — on `provider` when given, else on the provider the hub chooses — or
+   * `provider: 'local'` — this computer.
+   */
   /**
    * `tokenAllocation`: the cloud placement's own budget (see {@link AgentTokenAllocation}); `null` releases it
    * back to the owner's capped default; omitted leaves it as it is.
    */
   async deploy(
     environment?: string,
-    provider?: 'local',
+    provider?: 'local' | CloudDeployProvider,
     tokenAllocation?: AgentTokenAllocation | null,
   ): Promise<AgentDeployResult> {
     const body = {
@@ -383,17 +412,20 @@ export class Agent extends APIEntity<Agent> {
   }
 
   /**
-   * The cloud placement this agent will have in `environment` (default `production`), before it
+   * The cloud placement this agent will have on `provider` (omitted: the one the hub chooses) in `environment`
+   * (default `production`), before it
    * has a machine, and whether it is ready: each missing value can be filled ("use mine",
    * `credentialsService.useMine`) or a connection authorized (`Deployment.authorize`) before
    * `deploy`, which is refused (409 `not_ready`) until it is.
    */
   async planDeployment(
     environment?: string,
+    provider?: CloudDeployProvider,
     tokenAllocation?: AgentTokenAllocation | null,
   ): Promise<AgentPlannedDeployment> {
     const body = {
       ...(environment ? { environment } : {}),
+      ...(provider ? { provider } : {}),
       ...(tokenAllocation !== undefined ? { token_allocation: tokenAllocation } : {}),
     };
     return (await this.post('plan_deployment', Object.keys(body).length ? body : undefined)) as AgentPlannedDeployment;

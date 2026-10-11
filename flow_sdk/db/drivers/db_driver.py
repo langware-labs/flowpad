@@ -377,6 +377,11 @@ class DBDriver(Generic[RecordType]):
         """Atomically patch fields without creating a missing entity."""
         raise NotImplementedError("update_existing_data_fields is not implemented")
 
+    def defer_to_commit(self, callback: Callable[[], Awaitable[None]]) -> bool:
+        """Synchronously queue ``callback`` to run after the transaction bound to this context commits.
+        ``False`` when none is bound — the caller runs it now (the write it follows is already durable)."""
+        return False
+
     async def after_commit(self, callback: Callable[[], Awaitable[None]]) -> None:
         """Run a notification only after the ambient write commits successfully."""
         raise NotImplementedError("after_commit is not implemented")

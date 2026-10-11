@@ -14,6 +14,7 @@ import pytest
 
 from flow_sdk.builtin.agent import Agent
 from flow_sdk.core import Entity
+from tests.unit._project_deps import link_context_dirs
 from tests.unit.agent._seed import checkout_agent, seed_agent as _agent, seed_project as _project
 
 
@@ -40,7 +41,7 @@ def used(monkeypatch):
     """Stub ``Agent.use`` and capture every session it would have opened."""
     opened: list[_FakeProcess] = []
 
-    async def _use(self, project_id=None, *, deployment=None, owner=None, auto_prompt=False):
+    async def _use(self, project_id=None, *, deployment=None, owner=None, auto_prompt=False, launch_surface=None):
         proc = _FakeProcess(self, project_id, auto_prompt)
         opened.append(proc)
         return proc
@@ -126,7 +127,8 @@ async def test_context_root_agents_are_in_scope(tmp_path, used):
     root = tmp_path / "p6"
     content = tmp_path / "p6-content"
     content.mkdir()
-    project = await _project(root, legacy_include_dirs_=[str(content)])
+    project = await _project(root)
+    await link_context_dirs(project, [content])
     vendor = await _agent(content, "vendor-onboarding", auto_launch=True, auto_launch_prompt="hi")
 
     outcome = await Agent.auto_launch_for(project.id)
@@ -180,7 +182,7 @@ async def test_a_failed_session_open_leaves_the_mark_unset_so_the_next_open_retr
 
     working = Agent.use  # the fixture's stub, restored for the retry below
 
-    async def _boom(self, project_id=None, *, deployment=None, owner=None, auto_prompt=False):
+    async def _boom(self, project_id=None, *, deployment=None, owner=None, auto_prompt=False, launch_surface=None):
         raise RuntimeError("no worker binary")
 
     monkeypatch.setattr(Agent, "use", _boom)

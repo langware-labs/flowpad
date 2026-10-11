@@ -1,12 +1,12 @@
 ---
 type: markdown_index
 id: markdown_index-19ec5c4d-9a34-5922-9864-878be1f4d806
-inputs_hash: 298a429971422f43d1fb16297192adc15c0848d185dbd1a27b1d2b1ff11cc849
+inputs_hash: 50ba94cc812628dc84b0f71578f872a78ddc1c2da3e0b882f5453bb9d32441fd
 template_version: 1
 prompt_version: 1
 parent_ref: markdown_index-6136dbba-27ed-59c3-a192-fe2894f3ec30
 vault_root: /Users/shlom/Documents/dev/flowpad-oss/docs
-generated_at: '2026-09-25T12:04:30Z'
+generated_at: '2026-10-07T14:33:53Z'
 latest_process_ref: ''
 file_count: 7
 subfolder_count: 0
@@ -24,4 +24,4 @@ subfolder_count: 0
 - [Mode Switching (Chat/Headless ⇄ Interactive PTY)](mode-switching.md) — Switching an AgenticProcess between headless CLI and interactive PTY transports: pty_mode versus visible, the single switch-mode seam, and the mid-turn guard.
 - [PTY, Shell State, and WebSocket Transport](pty-websocket.md) — PTY stack reference: Shell-owned state, backend PTY creation, WebSocket transport and REST-over-WS, disk-backed framed replay, and attach, input, resize, close semantics.
 - [Terminal Tabs Management](tabs-management.md) — Terminal tabs under the global Tab entity model: which entity a terminal chip targets, URL-first active state, and the retired Shell-query names.
-- [Terminal Toolbars](terminal-toolbars.md) — The interactive PTY terminal UI: ProcessToolbar controls, CLI options, columns and trace menus, restart-required signal, and how headless mode differs.
+- [Terminal Toolbars](terminal-toolbars.md) — Reference for the interactive terminal UI's ProcessToolbar controls, CLI options, columns and trace dropdowns, restart signal, session state and PTY versus headless mode.

@@ -36,10 +36,11 @@ from flow_sdk.external_apis.llm.errors import (
 class _FakeOpenAI:
     """Enough of ``AsyncOpenAI`` for chat and embeddings, recording what it was handed."""
 
-    def __init__(self, recorder, *, reply=None, embedding_dims=3, error=None):
+    def __init__(self, recorder, *, reply=None, embedding_dims=3, error=None, answered_model=None):
         self._recorder = recorder
         self._reply = reply
         self._dims = embedding_dims
+        self._answered_model = answered_model
         self._error = error
         self.chat = SimpleNamespace(completions=SimpleNamespace(create=self._chat_create))
         self.embeddings = SimpleNamespace(create=self._embeddings_create)
@@ -55,7 +56,8 @@ class _FakeOpenAI:
         self._recorder["embedding_model"] = model
         if self._error:
             raise self._error
-        return SimpleNamespace(data=[SimpleNamespace(embedding=[0.1] * self._dims) for _ in input])
+        data = [SimpleNamespace(embedding=[0.1] * self._dims) for _ in input]
+        return SimpleNamespace(data=data, model=self._answered_model)
 
 
 def _install_openai(monkeypatch, **kwargs):
@@ -255,6 +257,30 @@ async def test_anthropic_has_no_embeddings_api():
     client = LLMClient.for_dialect("anthropic", api_key="k")
     with pytest.raises(LLMNotSupported):
         await client.create_embeddings(["a"])
+
+
+async def test_embeddings_with_model_report_the_model_the_provider_answered_with(monkeypatch):
+    """The RESPONSE's model, not the request's — a relay may route the slug somewhere else."""
+    recorder = _install_openai(monkeypatch, embedding_dims=2, answered_model="text-embedding-3-small")
+    client = LLMClient.for_dialect("openrouter", api_key="k")
+    vectors, answered = await client.create_embeddings_with_model(["a", "b"])
+    assert vectors == [[0.1, 0.1], [0.1, 0.1]]
+    assert answered == "text-embedding-3-small"
+    assert recorder["embedding_model"] == "openai/text-embedding-3-small"
+
+
+async def test_embeddings_with_model_answer_empty_when_the_provider_does_not_say(monkeypatch):
+    _install_openai(monkeypatch, embedding_dims=2)
+    client = LLMClient.for_dialect("openai", api_key="k")
+    assert await client.create_embeddings_with_model(["a"]) == ([[0.1, 0.1]], "")
+    assert await client.create_embeddings_with_model([]) == ([], "")
+
+
+async def test_create_embeddings_still_answers_bare_vectors(monkeypatch):
+    """The old signature is unchanged: callers that never asked for the model never see it."""
+    _install_openai(monkeypatch, embedding_dims=2, answered_model="text-embedding-3-small")
+    client = LLMClient.for_dialect("openai", api_key="k")
+    assert await client.create_embeddings(["a"]) == [[0.1, 0.1]]
 
 
 # ── listing and probing ──────────────────────────────────────────────────────

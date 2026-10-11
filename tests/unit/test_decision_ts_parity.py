@@ -19,8 +19,10 @@ from flow_sdk.schema.data_spec.decision_spec import (
     ChoiceAnswer,
     ChoiceQuestion,
     DecisionResult,
+    DecisionRun,
     DecisionSpec,
     DecisionUsage,
+    DecisionWire,
     ScoreAnswer,
     ScoreQuestion,
     YesNoAnswer,
@@ -55,6 +57,8 @@ def _ts_fields(path: Path, name: str) -> set[str]:
         (ScoreAnswer, _TYPES_TS, "ScoreAnswer"),
         (YesNoAnswer, _TYPES_TS, "YesNoAnswer"),
         (DecisionUsage, _TYPES_TS, "DecisionUsage"),
+        (DecisionRun, _TYPES_TS, "DecisionRun"),
+        (DecisionWire, _TYPES_TS, "DecisionWire"),
         (APIEndpointOffer, _TYPES_TS, "APIEndpointOffer"),
         (DecisionApiSpec, _FUNDING_TS, "DecisionApi"),
     ],
@@ -68,6 +72,7 @@ def test_every_field_is_declared_on_both_sides(spec, path: Path, interface: str)
 def test_every_failure_reason_is_declared_on_both_sides():
     from typing import get_args
 
-    block = re.search(r"export type DecisionFailure\s*=(.*?);", _TYPES_TS.read_text(encoding="utf-8"), re.DOTALL)
+    # One list on the TS side (``DECISION_FAILURES``); ``DecisionFailure`` is derived from it.
+    block = re.search(r"export const DECISION_FAILURES\s*=\s*\[(.*?)\]", _TYPES_TS.read_text(encoding="utf-8"), re.DOTALL)
     ts = set(re.findall(r"'([a-z_]+)'", block.group(1))) if block else set()
     assert set(get_args(DecisionFailure)) == ts

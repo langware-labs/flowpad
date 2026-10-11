@@ -5,18 +5,18 @@
   "vault_root": "/Users/shlom/Documents/dev/flowpad-oss/docs",
   "folder_rel_path": "data-management",
   "folder_name": "data-management",
-  "inputs_hash": "fc1fa459991c4e17e88615586f8183a100b0b29dafe120fc734d8f7e8c688e2e",
+  "inputs_hash": "66d174046c25a9d45d4254c2a9409446319aeb0e123d522860b680960dfb5162",
   "template_version": 1,
   "prompt_version": 1,
-  "self_summary": "How disk and database stay one thing: assets and their identity capsules, the indexer walk and entity sync, DataSpec as the single shape system with its kind registry, data sources and datasets, records, search and the SQLite layer underneath.",
+  "self_summary": "How disk and database stay one thing: assets and their identity capsules, the indexer walk and entity sync, DataSpec as the one schema system (kind, schema, value) with its kind registry, data sources and datasets, evals, records, search and the SQLite layer underneath.",
   "files": [
     {
       "name": "asset-capsules.md",
       "rel_path": "asset-capsules.md",
       "title": "Asset capsules",
-      "summary": "Storing named JSON metadata inside filesystem assets: folder, markdown-comment and source-comment capsule carriers, their shared CapsuleData shape, and the read/write API.",
-      "content_hash": "81df6e52a5fe8841cc3041f079af82d6e1e77b772ff606632bbecd5ff62a784f",
-      "size_bytes": 7546
+      "summary": "Asset capsules: named JSON metadata stored in folders, Markdown comments and source-file comments, with read, write, remove operations and typed errors.",
+      "content_hash": "a160703a9c46b02867abcb88a218aa9d699ee4b76ae66b81174358320dea0009",
+      "size_bytes": 7545
     },
     {
       "name": "asset-management.md",
@@ -38,33 +38,33 @@
       "name": "data-source-asset.md",
       "rel_path": "data-source-asset.md",
       "title": "Data source assets",
-      "summary": "Data sources as folder assets: data_driver.json manifest plus source.py discovered by convention, and the separate DataSource asset holding config, owner and cadence.",
-      "content_hash": "5e8093c57eb83abe44b9ace820eb1e6fe3741bf0e6501c4648ea8610da65f0bb",
-      "size_bytes": 16065
+      "summary": "Layout and conventions of data driver and data source asset folders: manifest, source.py, helper modules, tests, and the DataSourceSpec file authored per configured source.",
+      "content_hash": "eed8f13f5c3c9bcb2b3ed34f754536aa3fb20e3e5fd87e2175f9bb6d57f10dc9",
+      "size_bytes": 19247
     },
     {
       "name": "data-sources-ui.md",
       "rel_path": "data-sources-ui.md",
       "title": "Data Sources UI (Frontend)",
-      "summary": "Frontend Data Sources screen: grid, cards, add/edit dialog driven by DataDrivers, menus, replay, and liveness display.",
-      "content_hash": "d38086fdf0ed95c082e5ccf5c7ca6477354c9981dab6e88a162be216e27beefd",
-      "size_bytes": 6191
+      "summary": "Frontend reference for the Data Sources screen: its components, add/edit/pause/replay/delete actions, and per-source health display",
+      "content_hash": "e3fb2d7f5dff20fb5d57d985f91af1c203736ed200919451515b727ed943c1ae",
+      "size_bytes": 6356
     },
     {
       "name": "data-sources.md",
       "rel_path": "data-sources.md",
       "title": "Data sources",
-      "summary": "Data sources: one DataSource reads one stream via a driver, owning query, cursor and origin, and the fetch-to-SourceItem ingestion pipeline.",
-      "content_hash": "94df860e732461e1d64989402812132d5628b1b9b93507b2b62745a62649540a",
-      "size_bytes": 30706
+      "summary": "How a DataSource ingests one external stream (driver, config, cursor, origin) into SourceItem records, from connecting to curating into a dataset.",
+      "content_hash": "d8c0e58bcba60163462a58b19ab9ae0171baec9c54d7cecb03880f285cc7ee4a",
+      "size_bytes": 33174
     },
     {
       "name": "data-spec.md",
       "rel_path": "data-spec.md",
-      "title": "DataSpec — shape as Pydantic, the spec as the layout",
-      "summary": "DataSpec design: every shape is Pydantic, runtime shapes compile via DataSpec.parse, spec_kind links shapes to the registry, and an asset's disk layout is its class.",
-      "content_hash": "14e7238d9b8545872f9b029fd92ad6e553076b896c065036fa84baf91532e7e3",
-      "size_bytes": 18881
+      "title": "DataSpec — schemas as Pydantic, the schema as the layout",
+      "summary": "DataSpec, the Pydantic base class for every schema: kinds versus schemas versus values, frozen extra-forbid behavior, and compiling runtime-arriving schemas into subclasses.",
+      "content_hash": "5edde292bf982d1f3541ecfee5aeed6798ef73f1b986857ad3c1d794ed449291",
+      "size_bytes": 21606
     },
     {
       "name": "database.md",
@@ -78,9 +78,9 @@
       "name": "datasets.md",
       "rel_path": "datasets.md",
       "title": "Dataset Layout (Authoring Guide)",
-      "summary": "Authoring a dataset on disk: the dataset.json manifest, csv versus io_folder layouts, example and slot sidecars, and the metadata/data convention.",
-      "content_hash": "7c0fa0c57531a66f2570b2a7f7f3a89d318c36263338974f6316dd9f943538ea",
-      "size_bytes": 18397
+      "summary": "Authoring guide to dataset folder layout on disk: dataset.json manifest, csv versus io_folder layouts, example normalization, and the metadata plus data JSON convention.",
+      "content_hash": "5555ea3969563d5d01a3430a46b7bc96d6bfd065feba6c7ecf4f07e75b6238b8",
+      "size_bytes": 20823
     },
     {
       "name": "entity-index-sync.md",
@@ -89,6 +89,14 @@
       "summary": "How filesystem Records and the SQLite Entity index stay linked by a shared (type, id), what sync_to_db does, and when to query which layer.",
       "content_hash": "0fa91d04130647452337742517d0e3603c4569abb99512806b1565e7dac2aae8",
       "size_bytes": 22596
+    },
+    {
+      "name": "evals.md",
+      "rel_path": "evals.md",
+      "title": "Evals — a dataset's own eval, standard results, one report",
+      "summary": "Dataset evals: eval.json spec, eval.py contract, example and run result kinds, verdicts, metrics, slices and the standard report",
+      "content_hash": "2c9b2a20ff27192738c4230ae03bfd349beeb15a1af6fe3ab3886b88ec1f5aed",
+      "size_bytes": 3283
     },
     {
       "name": "folder-layout.md",
@@ -110,9 +118,9 @@
       "name": "gitignore-walk.md",
       "rel_path": "gitignore-walk.md",
       "title": "Gitignore-Aware Filesystem Walk",
-      "summary": "gitignore_walk(), the one pre-order scandir DFS every tree walker shares, and the single skip policy deciding which directories are descended into.",
-      "content_hash": "7d7954dffc68028b6302adb2ee1d2e448bc622004b0d6a628f146329cfc4da8c",
-      "size_bytes": 9476
+      "summary": "The shared gitignore_walk() directory traversal: pre-order scandir DFS, symlink and unreadable-directory handling, and the single skip policy for gitignore and denylist.",
+      "content_hash": "246e2cbf4dd0e6afae3e1a66ef5be3d8ab6fe6de8d8ae1d817d89ac3bcc57dfc",
+      "size_bytes": 9504
     },
     {
       "name": "invalidation.md",
@@ -126,9 +134,9 @@
       "name": "items_origins.md",
       "rel_path": "items_origins.md",
       "title": "Items & origins",
-      "summary": "Origins as value objects saying where a thing really lives: the FSOrigin git/local union, its tolerant discriminator, rel_path placement, and how CloudOrigin differs.",
-      "content_hash": "4d05674bebaea1afcd9cc6c72dfdca6cfa8b35c8b65d8312a7027aa1380c4c47",
-      "size_bytes": 10978
+      "summary": "Items and origins: FSOrigin value objects (git, local) locating asset bytes, contrasted with CloudOrigin, plus driver registry and shape.",
+      "content_hash": "a12b223a4ca3d07dd2d1bf85eb2a16981f1e0f4a09d100445926f7d906ba2b19",
+      "size_bytes": 10972
     },
     {
       "name": "listen-action.md",
@@ -155,6 +163,14 @@
       "size_bytes": 21937
     },
     {
+      "name": "meeting-sources.md",
+      "rel_path": "meeting-sources.md",
+      "title": "Meeting sources — Zoom, Teams, Google Meet",
+      "summary": "Research comparing Zoom, Teams and Google Meet recordings, transcripts and AI notes as data sources, covering auth, permissions, push mechanisms and driver-model fit.",
+      "content_hash": "7c6f95ee68d819b92752d472c24af048c8af02295303adbe2d7947cb63b4244b",
+      "size_bytes": 4438
+    },
+    {
       "name": "record-model.md",
       "rel_path": "record-model.md",
       "title": "Record Model",
@@ -174,33 +190,33 @@
       "name": "scan-and-discovery.md",
       "rel_path": "scan-and-discovery.md",
       "title": "Scan and Discovery",
-      "summary": "How FSIndexer walks roots through waypoints and per-type parsers, commits in batches handing the writer lock to queued writers, plus session lookup and index actions.",
-      "content_hash": "e3aa0d88c194f976ada9b70d2458fc9002afb1ef3e2a67882c72c12b314832fb",
-      "size_bytes": 39443
+      "summary": "Disk-to-index discovery in flow_sdk: the FSIndexer DFS walker, per-type slots, explicit-only indexing, session lookup, RecordQuery filtering and error records",
+      "content_hash": "14d20b5874ac8abc2538f412ef6425e4e4be112a54848625b208252caa25b5e3",
+      "size_bytes": 39764
     },
     {
       "name": "schema-registry.md",
       "rel_path": "schema-registry.md",
       "title": "Schema Registry",
-      "summary": "SchemaRegistry as the single source of type metadata: declarative TypeInfo modules, entity self-registration, merge semantics, kind resolution and persistence.",
-      "content_hash": "0c8dae40242e2933852b660b4ad401a341d56ed27adb4ef085b30f1d7a7a796b",
-      "size_bytes": 25165
+      "summary": "SchemaRegistry as the single source of type metadata: TypeInfo authoring, registration, kind binding to DataSpec schemas, and the EntityType enum.",
+      "content_hash": "172ff51c0f4f59560147b0c39dbcd5641415e326a5dafd1d2d4537371ccb58e6",
+      "size_bytes": 25246
     },
     {
       "name": "source-contract-boundary.md",
       "rel_path": "source-contract-boundary.md",
       "title": "The source contract and the sync runtime",
-      "summary": "The boundary between the flow_sdk/sources contract (async sources, pages, ack) and the ingest sync runtime, with its one dependency direction.",
-      "content_hash": "89723df1cbed6e0cadcdf94e5d6037646470a650bcc4cf0b7b090a82a9b9326a",
-      "size_bytes": 5293
+      "summary": "Boundary between the flow_sdk.sources contract (open, fetch, iterate, send, react, notify) and the sync runtime, with dependency direction rules.",
+      "content_hash": "6e932ba3b3d26079ae472c728c960659c5dc4eaaa0b37abb00225f4c8e468d63",
+      "size_bytes": 6846
     },
     {
       "name": "stream-inbox-projection.md",
       "rel_path": "stream-inbox-projection.md",
       "title": "Stream inbox projection — ingested messages become conversations",
-      "summary": "One-way projection of ingested records into stream-inbox conversations: reference rows, the timestamp law, self-healing reindex, the two lanes and purge semantics.",
-      "content_hash": "2a53857d4600db4bfca6063e6f9e896ade229ce932fa4f80cbb429b748c2c45e",
-      "size_bytes": 12898
+      "summary": "Design of the one-way projection from ingested source items into stream inbox conversations, using reference-row messages, looked-up identity, dedupe locks and reindex repair.",
+      "content_hash": "109d86ffb704790867525099e6dab3aad2fdcaf758ce32871928270b5d7349de",
+      "size_bytes": 15602
     },
     {
       "name": "system-tools.md",
@@ -220,6 +236,6 @@
     }
   ],
   "subfolders": [],
-  "generated_at": "2026-09-25T12:04:30Z",
+  "generated_at": "2026-10-07T14:50:02Z",
   "latest_process_ref": ""
 }

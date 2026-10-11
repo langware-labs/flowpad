@@ -18,8 +18,8 @@ the Restart button. See [PTY Mode vs CLI/Headless Mode](#6-pty-mode-vs-cliheadle
 1. [Component Hierarchy](#1-component-hierarchy)
 2. [ProcessToolbar](#2-processtoolbar)
 3. [Controls Reference](#3-controls-reference)
-   - [CLI Options Dropdown](#31-cli-options-dropdown)
-   - [Columns & Trace Dropdown](#32-columns--trace-dropdown)
+   - [Debug Menu — CLI Options](#31-debug-menu--cli-options)
+   - [Debug Menu — Gutters and Viewers](#32-debug-menu--gutters-and-viewers)
    - [Session Actions](#33-session-actions)
    - [API Timeout Toast](#34-api-timeout-toast)
 4. [Restart Required Signal](#4-restart-required-signal)
@@ -38,8 +38,13 @@ instead.
 ```text
 InteractiveTerminal.tsx
   |-- ProcessToolbar.tsx                 (Claude pane top bar)
-  |     |-- WorktreeButtons.tsx          (worktree-specific actions)
-  |     `-- PTYViewer                    (opened from Columns & Trace)
+  |     |-- InteractiveTabHeader.tsx     (the one layout: debug | title | modes | right)
+  |     |-- DebugMenu.tsx                (left, terminal surface only: CLI options, gutters, viewers)
+  |     |     `-- PTYViewer / PTYEventsViewer / CommandStatusViewer
+  |     |-- SessionSurfaceSwitch.tsx     (Terminal / Chat / Vibe)
+  |     `-- SessionActionsMenu.tsx       (the hamburger right of Fork: every other session action)
+  |           |-- SessionInfoPopover.tsx
+  |           `-- use-worktree-actions.ts (worktree-specific actions)
   |-- PaneBar.tsx                        (sidecar shell pane top bar)
   |-- ColumnHeaderBar.tsx                (trace/time/annotation column headers)
   |-- TraceGutter.tsx
@@ -81,10 +86,11 @@ older `worker_session_id` name.
 
 **File**: `ui/src/components/terminal/interactive-terminal/ProcessToolbar.tsx`
 
-`ProcessToolbar` is a compact top strip for an interactive `AgenticProcess`
-running in a PTY-backed shell. It groups CLI launch flags into one dropdown,
-groups trace/column display controls into another dropdown, and exposes session
-actions such as restart, fork, transcript, worktree, and plain-terminal launch.
+`ProcessToolbar` is the top strip of an `AgenticProcess` session, the same on
+every surface. It carries three things: a debug menu on the left (terminal
+surface only), Fork, and one session actions menu holding every other action —
+session info, transcript, assets, restart, plain-terminal launch, worktree and
+export.
 
 ### Props
 
@@ -136,36 +142,68 @@ model from `context_data` is no longer accurate for the toolbar.
 Controls are laid out left to right:
 
 ```text
-[CLI Options] [Columns & Trace] <spacer>
-[Commit & Merge?] [Open Terminal?] [Fork?] [Open in Worktree?]
-[Restart] [Session Info?] [Open Transcript?] [Close?]
+[Debug?] <centered title> <spacer> [Terminal|Chat|Vibe?] | [Fork?] [Session actions ☰] [Close?]
 ```
 
-`Commit & Merge`, `Open Terminal`, `Fork`, and `Open in Worktree` are hidden when
-`embedded` is true. The `Close` button is shown only when `embedded` is true and
-`onClose` is provided. `Session Info` and `Open Transcript` render only after
-`process.session_id` is set.
+- **Debug** (`DebugMenu`) renders only on the terminal surface —
+  `useSessionSurface() === 'terminal'` — and in embedded
+  terminals, which are always an xterm. It never shows in Chat or Vibe.
+- The **surface switch**, the title and **Fork** are hidden when `embedded` is
+  true. The `Close` button is shown only when `embedded` is true and `onClose`
+  is provided.
+- **Session actions** (`SessionActionsMenu`) is always present. Its items, in
+  order:
 
-Session action icon buttons use a 300 ms tooltip delay. Disabled action buttons
-stay wrapped in a span so their tooltips still fire. The two dropdown trigger
-buttons use `title`, and the session info control opens a popover.
+| Section | Item | `data-testid` | Rendered when |
+|---------|------|---------------|---------------|
+| Session | Session info | `session-action-info` | `process.session_id` is set |
+| Session | Open transcript | `session-action-transcript` | `process.session_id` is set |
+| Session | Manage assets | `session-action-assets` | always |
+| Session | Restart session | `process-toolbar-restart` | always |
+| Workspace | Open terminal | `session-action-terminal` | not embedded |
+| Workspace | Open in Worktree | `session-action-worktree` | not embedded |
+| Workspace | Commit & Merge | `session-action-commit-merge` | not embedded, `process.cliOptions.worktree` |
+| Workspace | Download bundle | `entity-actions-export` | not embedded |
+
+A disabled item takes no pointer events, so a tooltip could never explain it;
+the reason is printed as the item's second line instead.
+
+Both menus are **non-modal** (`<DropdownMenu modal={false}>`): their items open
+dialogs and popovers, and a modal menu holds `pointer-events: none` on `body`
+while it is still closing — a dialog opening on top records that lock as the
+page's own and restores it on close, leaving the app unclickable.
+
+What an item opens:
+
+- **Session info** — a card hanging from the menu button (`PopoverAnchor` on the
+  trigger). It is opened from the menu's `onCloseAutoFocus`, once the menu has
+  finished closing: opened from the item's select, the card reads the menu's
+  dismissal as an interaction outside itself and closes at once.
+- **Manage assets** — `AssetManagerButton` in its `centered` form (a dialog, the
+  shape the asset board takes whenever a menu item opens it). It mounts on its
+  first open, not under every session's top bar.
+- **Download bundle** — `EntityShareDialog`.
 
 ---
 
 ## 3. Controls Reference
 
-### 3.1 CLI Options Dropdown
+### 3.1 Debug Menu — CLI Options
+
+**File**: `ui/src/components/terminal/interactive-terminal/DebugMenu.tsx`
+
+The first section of the debug menu (trigger: `Bug` icon, `aria-label="Debug"`,
+`data-testid="process-toolbar-debug"`).
 
 | Property | Value |
 |----------|-------|
-| Icon | `SlidersHorizontal` |
-| Active color | `text-amber-500 dark:text-amber-400` |
+| Trigger color | `text-amber-500 dark:text-amber-400` |
 | Active when | Any supported CLI option is enabled: Chrome, Full Trust, or Debug |
-| Rendered when | The worker vendor supports at least one of the three flags |
+| Section rendered when | The worker vendor supports at least one of the three flags |
 | Disabled items when | `!isProcessRunning(process.status)` |
 | Applies to | PTY mode only |
 
-The dropdown contains up to three `RichCheckboxItem` controls, each rendered only
+The section contains up to three `RichCheckboxItem` controls, each rendered only
 when `cliCapabilities` supports it:
 
 | Label | Source | Shown when | CLI effect |
@@ -192,38 +230,40 @@ const persistCliFlags = useCallback(
 );
 ```
 
-The backend then flips `process.restart_required`, and the Restart button glows
-until the user restarts (see [Restart Required Signal](#4-restart-required-signal)).
+The backend then flips `process.restart_required`, and the session actions
+button glows until the user restarts (see [Restart Required Signal](#4-restart-required-signal)).
 
 `AgenticProcess.cliOptions` is a getter/setter around `cli_config`. The getter
 also injects `session_id`, `workdir`, `CLAUDE_PROJECT_DIR`, and
 `additional_dirs`, so the toolbar should use `process.cliOptions` rather than
 reading those launch flags from `context_data`.
 
-**PTY mode**: the dropdown is available only in the interactive terminal, and
+**PTY mode**: the menu is available only on the terminal surface, and
 items are enabled only while the process lifecycle status is `RUNNING`. Changing
 these flags requires restarting the PTY so Claude Code is relaunched with the new
 CLI args.
 
-**CLI/headless mode**: this dropdown is not rendered. Headless callers set these
+**CLI/headless mode**: the debug menu is not rendered. Headless callers set these
 options when creating the process (`AgenticProcess.spawn` / `AgenticContext`) or
 by updating `cliOptions` programmatically before a future run. There is no
 Restart button because there is no live xterm/Shell PTY to restart from the UI.
 
-### 3.2 Columns & Trace Dropdown
+### 3.2 Debug Menu — Gutters and Viewers
+
+The remaining sections of the same menu: **Gutters**, the **Time Gutter Fields**
+submenu, and **Viewers**.
 
 | Property | Value |
 |----------|-------|
-| Icon | `BugPlay` |
-| Active color | `text-primary` |
+| Trigger color | `text-primary` (when no CLI option is on) |
 | Active when | Any column is hidden or any time-gutter field is enabled |
 | State owner | `InteractiveTerminal` |
 | Applies to | PTY mode only |
 
-This dropdown changes local terminal display state. It does not save the
+These sections change local terminal display state. It does not save the
 `AgenticProcess`, does not touch `cli_config`, and does not require restart.
 
-Column controls:
+Gutters:
 
 | Item | State | Behavior |
 |------|-------|----------|
@@ -232,7 +272,7 @@ Column controls:
 | Annotations | `colVis.annotations` | Shows or hides the right annotation gutter. |
 | Prompt annotations | `traceFilters.promptAnnotations` | Includes or filters prompt anchor annotations in the annotation gutter. |
 
-Time gutter field controls:
+Time Gutter Fields (submenu):
 
 | Item | State key | Meaning |
 |------|-----------|---------|
@@ -243,8 +283,9 @@ Time gutter field controls:
 | Row time range | `traceFilters.debugTime` | PTY segment duration |
 | Anchor time range | `traceFilters.refTime` | Anchor start/stop range |
 
-The dropdown also contains a `PTY Viewer` item that opens `PTYViewer` with the
-linked `shell` entity. This is meaningful only for PTY-backed sessions.
+The **Viewers** section opens `PTYViewer` and `PTYEventsViewer` with the linked
+`shell` entity, and `CommandStatusViewer` with the process. These are meaningful
+only for PTY-backed sessions.
 
 `InteractiveTerminal` persists these UI preferences through the preference
 registry (`ts_sdk/src/preferences/prefRegistry.ts`), not raw local storage:
@@ -261,9 +302,12 @@ The keys are `preferences.terminal.trace_filters` and
 
 ### 3.3 Session Actions
 
+Fork is an icon button; everything else below is an item of the session actions
+menu (`SessionActionsMenu.tsx`).
+
 #### Commit & Merge
 
-**File**: `ui/src/components/terminal/interactive-terminal/WorktreeButtons.tsx`
+**File**: `ui/src/components/terminal/interactive-terminal/use-worktree-actions.ts` (`useCommitMerge`)
 
 Rendered only when all of the following are true:
 
@@ -276,7 +320,7 @@ Clicking injects a fixed commit-and-merge prompt into the live PTY via:
 shell?.sendInput(text + '\r')
 ```
 
-The button then watches `process.workerStatus`. Once the worker has been busy
+The hook then watches `process.workerStatus` (the item reads `Working…`). Once the worker has been busy
 and transitions back out of a running worker state, it calls
 `navigation.openShellView()`.
 
@@ -324,13 +368,13 @@ PTY. The toolbar then opens that process in a shell-process tab.
 
 #### Open in Worktree
 
-**File**: `ui/src/components/terminal/interactive-terminal/WorktreeButtons.tsx`
+**File**: `ui/src/components/terminal/interactive-terminal/use-worktree-actions.ts` (`useOpenInWorktree`)
 
 Rendered only when `embedded` is false.
 
-The button checks whether the current `workdir` is a git repository with at
-least one commit. It is disabled while that check is loading or when no commit
-exists. When clicked, it starts a new visible process in an isolated worktree:
+The hook checks whether the current `workdir` is a git repository with at
+least one commit — once the menu is opened, not for every header on screen. The
+item is disabled while that check is loading or when no commit exists. When clicked, it starts a new visible process in an isolated worktree:
 
 ```ts
 const { process: newProcess } = await AgenticProcess.spawn(
@@ -353,10 +397,10 @@ This is a PTY flow: `AgenticProcess.spawn` without `headless: true` calls
 |----------|------------------|
 | Icon | `RotateCcw` |
 | Disabled when | `!isProcessRunning(process.status)` or `isRestarting` |
-| Glows when | `process.restart_required && started` (also sets `aria-pressed`) |
+| Highlighted when | `process.restart_required && started` (the menu button glows too) |
 | Handler | `process.restart()` |
 
-The standalone Restart button is immediate and has no confirmation dialog.
+The Restart item is immediate and has no confirmation dialog.
 
 `AgenticProcess.restart()` stops the current shell session, starts it again, and
 emits `restarted`:
@@ -375,14 +419,17 @@ shell?.attachPty({ cols: term?.cols ?? 80, rows: term?.rows ?? 24, force: true }
 ```
 
 The session history is preserved through `process.session_id`. CLI option
-changes are already saved by the dropdown; the Restart button only relaunches
+changes are already saved by the debug menu; Restart only relaunches
 the PTY so they take effect.
 
 #### Session Info
 
 Rendered only when `process.session_id` is set.
 
-The popover reads current values directly from the process entity and
+**File**: `ui/src/components/terminal/interactive-terminal/SessionInfoPopover.tsx`
+
+The popover has no trigger of its own: the menu item opens it and it hangs from
+the menu button. It reads current values directly from the process entity and
 `process.cliOptions`. Rows are copyable.
 
 | Label | Source |
@@ -448,28 +495,26 @@ automatically.
 
 There is no restart overlay and no staged (pending) CLI state. Restart awareness
 is backend-driven: any worker-relevant change (including a CLI flag saved from
-the dropdown) flips `process.restart_required`, and the top-bar Restart button
-in `ProcessToolbar.tsx` reflects it:
+the debug menu) flips `process.restart_required`. Restart is an item of the
+session actions menu, so the signal is carried by the menu **button** in
+`SessionActionsMenu.tsx`, where it is visible with the menu closed:
 
 ```tsx
 <button
-  data-testid="process-toolbar-restart"
-  data-restart-required={process.restart_required ? 'true' : 'false'}
-  disabled={!started || isRestarting}
-  onClick={() => void handleRestart()}
-  aria-pressed={process.restart_required}
-  aria-label={t`Restart session`}
+  data-testid="process-toolbar-menu"
+  data-restart-required={restartRequired ? 'true' : 'false'}
+  aria-label={t`Session actions`}
 >
 ```
 
 While `process.restart_required && started`, the button pulses amber and its
-tooltip reads `Restart required — config changed since start`. Otherwise the
-tooltip reads `Restarting…`, `Session is not running`, or `Restart session`.
-The toolbar re-renders on the flag through `useSyncExternalStore` over
-`dataManager.subscribe(process.typeId, …)`.
+title reads `Restart required — config changed since start`; inside the menu the
+Restart item (`data-testid="process-toolbar-restart"`) is amber and prints the
+same line. The toolbar re-renders on the flag through `useSyncExternalStore`
+over `dataManager.subscribe(process.typeId, …)`.
 
 Nothing blocks terminal interaction: the user keeps working and restarts when
-ready. Clicking calls `process.restart()` (see [Restart](#restart)).
+ready. Choosing Restart calls `process.restart()` (see [Restart](#restart)).
 
 ---
 
@@ -618,9 +663,13 @@ execution.
 
 | File | Role |
 |------|------|
-| `ui/src/components/terminal/interactive-terminal/ProcessToolbar.tsx` | Top toolbar, grouped CLI options, trace dropdown, session actions, `restart_required` Restart button |
+| `ui/src/components/terminal/interactive-terminal/ProcessToolbar.tsx` | Top toolbar container: builds the debug, title, surface-switch and right slots; Fork and Close are the shared `CompactIconAction` |
+| `ui/src/components/terminal/interactive-terminal/InteractiveTabHeader.tsx` | The toolbar's one layout |
+| `ui/src/components/terminal/interactive-terminal/DebugMenu.tsx` | Debug menu: CLI options, gutters, time-gutter fields, raw-stream viewers (terminal surface only) |
+| `ui/src/components/terminal/interactive-terminal/SessionActionsMenu.tsx` | Session actions menu and the `restart_required` signal on its button |
+| `ui/src/components/terminal/interactive-terminal/SessionInfoPopover.tsx` | Session details card opened from the menu |
 | `ui/src/components/terminal/interactive-terminal/process-cli-presentation.ts` | `getWorkerCliCapabilities`: which CLI flags a worker vendor supports |
-| `ui/src/components/terminal/interactive-terminal/WorktreeButtons.tsx` | Commit-and-merge and open-in-worktree controls |
+| `ui/src/components/terminal/interactive-terminal/use-worktree-actions.ts` | Commit-and-merge and open-in-worktree actions |
 | `ui/src/components/terminal/interactive-terminal/InteractiveTerminal.tsx` | ProcessToolbar mounting, xterm/PTYSYNC lifecycle, gutters, sidecar shell, bottom ribbon |
 | `ui/src/components/terminal/interactive-terminal/ColumnHeaderBar.tsx` | Header controls for trace, time, and annotation columns |
 | `ui/src/components/terminal/interactive-terminal/TerminalBottomRibbon.tsx` | Status dot, queue controls, plan button, side-tab toggles |

@@ -1,8 +1,7 @@
 import { t } from '@lingui/core/macro';
 import { useEffect, useRef, useState } from 'react';
-import { isBusy, PrefKey, WorkerMode, type AgenticProcess } from '@sdk';
+import { isBusy, WorkerMode, type AgenticProcess } from '@sdk';
 import { useEntity } from '@src/hooks/entity-hooks';
-import { usePreferenceResolved } from '@src/hooks/use-preference';
 import { useViewMode, viewModePtyMode, ViewMode } from '@src/contexts/view-mode-context';
 import { notify } from '@src/notifications/notify';
 
@@ -53,7 +52,7 @@ export interface SurfaceTransportGate {
 
 /**
  * ONE predicate for "can this session change transport now", shared by the
- * reconcile effect and the footer `ViewToggle`, mirroring the one server answer:
+ * reconcile effect and the session's `SessionSurfaceSwitch`, mirroring the one server answer:
  * `switch-mode` 409s while `is_turn_busy`, in both directions. →PTY used to take
  * the unguarded `open`, so this blocked nothing there (FLOWPAD-2130). Keyed on
  * BUSY: a FAILED session and an `/exit`-ed PTY are not ready but need the click.
@@ -71,7 +70,7 @@ export function surfaceTransportGate(
 
 /**
  * Keep one process's TRANSPORT aligned with the view mode — the whole of what a
- * session needs beyond rendering, now that the footer `ViewToggle` is the single
+ * session needs beyond rendering, now that the session's `SessionSurfaceSwitch` is the single
  * mode selector.
  *
  * Mode selection itself is pure navigation (`?viewMode=`, adopted as the
@@ -125,13 +124,9 @@ export function useProcessSurface({
   canSwitch = true,
   subscribeToProcess = true,
 }: UseProcessSurfaceOptions): AgenticProcess | null {
+  // The tab's stated mode (or the app's one mode) — never the stored preference,
+  // so it is known at once and there is no late-resolving value to wait out.
   const viewMode = useViewMode();
-  // The preference may not have been read in yet (first load in a browser
-  // profile, no localStorage boot seed). `useViewMode` serves the registry
-  // default meanwhile, and recording THAT as the process's last mode would make
-  // the real value look like a user-driven change when it lands — spawning or
-  // killing a worker purely because a preference resolved late.
-  const modeResolved = usePreferenceResolved(PrefKey.VIEW_MODE);
   const { data: liveProcess } = useEntity<AgenticProcess>(process?.typeId ?? null, {
     enabled: subscribeToProcess,
   });
@@ -151,7 +146,7 @@ export function useProcessSurface({
   const [reconcileRevision, setReconcileRevision] = useState(0);
 
   useEffect(() => {
-    if (!modeResolved || !live || switching.current) return;
+    if (!live || switching.current) return;
     const key = live.id;
     const previous = lastReconciledMode.get(key);
     const wantPty = viewModePtyMode(viewMode);
@@ -235,7 +230,7 @@ export function useProcessSurface({
         if (reconciled) setReconcileRevision((revision) => revision + 1);
       }
     })();
-  }, [viewMode, live, ptyMode, turnInFlight, modeResolved, canSwitch, reconcileRevision]);
+  }, [viewMode, live, ptyMode, turnInFlight, canSwitch, reconcileRevision]);
 
   return live;
 }

@@ -2,6 +2,10 @@
 // Compiled by build.rs only for the Windows target and linked only into this binary.
 #include <winver.h>
 
+// RT_MANIFEST (24), id 1: asInvoker — turns Windows' installer-detection elevation off.
+// See flowpad-install.manifest for why. Without it every launch shows a UAC prompt.
+1 24 "flowpad-install.manifest"
+
 1 ICON "../../electron/resources/icons/icon.ico"
 
 1 VERSIONINFO

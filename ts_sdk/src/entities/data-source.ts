@@ -57,6 +57,17 @@ export interface IDataSource extends IEntity {
   poll_interval_seconds?: number;
   window_days?: number;
   thread_timeout_seconds?: number | null;
+  /** Where a file source's payload lands locally: `record` | `none` | `copy` | `symlink`. */
+  reflect?: string;
+  /** The folder a `copy`/`symlink` source places into. */
+  reflect_into?: string;
+  /** The local copy is kept out of git (default true). */
+  gitignored?: boolean;
+  /** Pull only: never write back to the remote (default false). */
+  read_only?: boolean;
+  /** Where a file source's files are on this machine (the folder it places them in, else its own tree);
+   *  null for a record source or one that names no folder yet. Derived by the backend, never stored. */
+  files_root?: string | null;
   cursor?: string | null;
   manifest?: Record<string, unknown>;
   high_water?: string | null;
@@ -74,6 +85,62 @@ export interface IDataSource extends IEntity {
 // them from the wire — this merge makes them part of the class type.
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
 export interface DataSource extends EntityMerge<IDataSource> {}
+
+/** Where a hub webhook claim hands this channel's messages (the hub's `DeliveryTarget`). */
+export interface ChannelRouteTarget {
+  kind: 'none' | 'desktop' | 'node';
+  instance_id?: string;
+  node_typeid?: string;
+  data_source_id?: string;
+}
+
+/** The hub claim that delivers to a channel, as the owner sees it (never a secret). */
+export interface ChannelRouteClaim {
+  id: string;
+  url: string;
+  provider: string;
+  status: 'pending' | 'active' | 'lapsed';
+  claim?: { kind: 'root' | 'account' | 'user' | 'group'; key: string } | null;
+  target: ChannelRouteTarget;
+  deliveries: number;
+  misroutes: number;
+  recent: { at: number; method: string; sub_path?: string; status: number }[];
+}
+
+/** One place a channel's messages can be pointed at: this computer, or a cloud placement of its agent. */
+export interface ChannelRoutePlace {
+  key: string;
+  label: string;
+  node_typeid?: string;
+}
+
+/** `GET data_source/<id>/route`: the claim (null before the channel is connected), its places, the current one. */
+export interface ChannelRoute {
+  claim: ChannelRouteClaim | null;
+  places: ChannelRoutePlace[];
+  /** `this`, a deployment id, or '' when it points elsewhere. */
+  current: string;
+  /** Further places the same messages are ALSO delivered to — one more claim each (`add_route`). */
+  also?: { claim_id: string; key: string; label: string }[];
+}
+
+/** Where a channel's messages arrive, from this instance's point of view: a hub claim delivering to `this`
+ *  computer, another `instance`, a `node`, `nowhere` yet — `unclaimed` when the source receives only through a claim
+ *  and has none (it needs Connect), or `polls` when the source fetches its own. */
+export type ChannelRouted = 'this' | 'instance' | 'node' | 'nowhere' | 'unclaimed' | 'polls';
+
+/** One MessageChannel (`GET data_source/channels`): a message source and the hub claim that delivers to it. A hub
+ *  claim whose channel is not on this instance comes with no `source_id`. */
+export interface MessageChannelRow {
+  source_id: string;
+  name: string;
+  provider: string;
+  channel: string;
+  claim: ChannelRouteClaim | null;
+  routed: ChannelRouted;
+  /** Who answers it: one of its owner's deployments, its owning agent, or nobody yet ('' with no source here). */
+  answered_by: 'deployment' | 'agent' | 'nobody' | '';
+}
 
 /** One thing a provider says can be picked. Mirrors `Choice` in `choice_spec.py`. */
 export interface DataSourceChoice {
@@ -179,6 +246,12 @@ export class DataSource extends APIEntity<DataSource> implements IDataSource {
     return this.status === 'active';
   }
 
+  /** Nobody has decided how it starts yet (`DataSource.poll_refusal`: "has not been evaluated"). Transient
+   *  by design — a save resolves it — but a row that lingers here is never polled. */
+  get isUnresolved(): boolean {
+    return this.status === 'new';
+  }
+
   /** Waiting on the user to finish something outside Flowpad (a Slack invite). */
   get needsSetup(): boolean {
     return this.status === 'setup';
@@ -190,11 +263,21 @@ export class DataSource extends APIEntity<DataSource> implements IDataSource {
     return this.isActive && this.health === 'config_error';
   }
 
-  /** The scheduler will not poll it until a person acts: a setup step is owed, or
-   *  it is parked (`DataSource.poll_refusal`). Resuming a paused source is not
-   *  attention — it is the fix. */
-  get needsAttention(): boolean {
-    return this.needsSetup || this.isParked;
+  /** Running, but a file changed both locally and remotely, so write-back wrote neither and waits for a person
+   *  to make them agree (`error_detail` names the files). Not broken: the source keeps polling. */
+  get isHeld(): boolean {
+    return this.health === 'ok' && this.error_code === 'write_back_held';
+  }
+
+  /** Stopped on purpose: nothing is fetched until a person resumes it. */
+  get isPaused(): boolean {
+    return this.status === 'disabled';
+  }
+
+  /** Running, and the last poll failed on something the scheduler retries by itself. Like `isParked`,
+   *  a PAUSED source carrying a stale error is not this. */
+  get isRetrying(): boolean {
+    return this.isActive && this.health === 'transient_error';
   }
 
   /** Mirrors DataSource.is_due — why a source that looks configured sits idle. */
@@ -203,6 +286,13 @@ export class DataSource extends APIEntity<DataSource> implements IDataSource {
     if (this.health === 'config_error') return false;
     if (!this.next_poll_at) return true;
     return new Date(this.next_poll_at).getTime() <= Date.now();
+  }
+
+  /** Every MessageChannel and where it is routed. */
+  static async channels(): Promise<MessageChannelRow[]> {
+    const info = new ActionInfo('channels', DataSource.type, null, 'GET');
+    const data = await dataManager.callAction<unknown, { channels: MessageChannelRow[] }>(info);
+    return data?.channels ?? [];
   }
 
   /**
@@ -239,6 +329,21 @@ export class DataSource extends APIEntity<DataSource> implements IDataSource {
   /** The setup wizards this source's driver declares, each as it stands for THIS source. */
   async setupStages(): Promise<SetupStageState[]> {
     return this.get('setup_stages');
+  }
+
+  /** Which place the hub hands this channel's messages to — read from the hub, never cached. */
+  async route(): Promise<ChannelRoute> {
+    return this.get('route');
+  }
+
+  /** Point this channel's messages at `place` (`this` or a deployment id). Its URL stays; the vendor is untouched. */
+  async setRoute(place: string): Promise<{ claim: ChannelRouteClaim; current: string }> {
+    return this.post('set_route', { place });
+  }
+
+  /** Also deliver this channel's messages to one of its agent's cloud placements (a deployment id). */
+  async addRoute(place: string): Promise<{ claim: ChannelRouteClaim; place: string }> {
+    return this.post('add_route', { place });
   }
 
   /**
@@ -295,7 +400,13 @@ export class DataSource extends APIEntity<DataSource> implements IDataSource {
 
   /** Send one message into the channel. `to` is what the channel addresses (a chat, a channel
    *  id, an address); the source class decides how it reads it. */
-  async send(message: { to: string; text: string; thread_key?: string; subject?: string; in_reply_to?: string }): Promise<DataSourceSendOutcome> {
+  async send(message: {
+    to: string;
+    text: string;
+    thread_key?: string;
+    subject?: string;
+    in_reply_to?: string;
+  }): Promise<DataSourceSendOutcome> {
     return this.post('send', message);
   }
 
@@ -310,7 +421,13 @@ export class DataSource extends APIEntity<DataSource> implements IDataSource {
   }
 
   /** One sync cycle NOW, reported — unlike `pollNow`, which only marks the source due. */
-  async syncNow(): Promise<{ created: number; updated: number; unchanged: number; health: SourceHealth; status: SourceStatus }> {
+  async syncNow(): Promise<{
+    created: number;
+    updated: number;
+    unchanged: number;
+    health: SourceHealth;
+    status: SourceStatus;
+  }> {
     return this.post('sync');
   }
 
@@ -326,17 +443,22 @@ export class DataSource extends APIEntity<DataSource> implements IDataSource {
    * Idempotent and safe to press repeatedly — it is the button beside "invite
    * the bot to the channel", and the only way out of `setup`.
    */
-  async verify(): Promise<{
-    status: SourceStatus;
-    ready: boolean;
-    /** Which layer answered: a dead token and an un-invited bot both leave the
-     *  source in `setup`, but they are fixed in different places. */
-    layer: 'connection' | 'setup';
-    detail: string;
-    /** What is still not ready. Absent when the connection layer answered —
-     *  it never got as far as the driver's own check. */
-    pending?: string[];
-  }> {
+  async verify(): Promise<VerifyResult> {
     return this.post('verify');
   }
+}
+
+/** What `DataSource.verify` answers — the same shape the stream inbox's attention bar shows in place. */
+export interface VerifyResult {
+  status: SourceStatus;
+  ready: boolean;
+  /** Which layer answered: a dead token and an un-invited bot both leave the
+   *  source in `setup`, but they are fixed in different places. */
+  layer: 'connection' | 'setup';
+  detail: string;
+  /** What is still not ready. Absent when the connection layer answered —
+   *  it never got as far as the driver's own check. */
+  pending?: string[];
+  /** The provider did not answer, so nothing is known about the setup; the status stands. */
+  transient?: boolean;
 }

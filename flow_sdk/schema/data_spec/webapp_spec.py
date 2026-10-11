@@ -30,6 +30,11 @@ class WebappProxyServing(DataSpec):
     health: str = "/"
     #: A fixed port when the process cannot be told one; otherwise the placement picks.
     port: Optional[int] = Field(default=None, ge=1, le=65535)
+    #: Installs what the app needs before it can start (``npm ci``). Empty: derived from its package manager
+    #: when it has a ``package.json`` (``webapp_setup.install_command``), else nothing to install.
+    install_cmd: str = ""
+    #: Builds the app before it starts, when it must be. Empty: no build step.
+    build_cmd: str = ""
 
 
 WebappServing = Annotated[Union[WebappStaticServing, WebappProxyServing], Field(discriminator="type")]
@@ -50,6 +55,20 @@ class WebappEndpointSpec(DataSpec):
     protocol: TaggedProtocol = Field(default_factory=WebAppProtocol)
     serving: WebappServing = Field(default_factory=lambda: WebappStaticServing(type="static"))
     supports_direct_access: bool = False
+
+
+#: A viewer shows a VALUE of a kind (not a whole entity) — once alone, or many as a collection.
+ViewShape = Literal["single", "collection"]
+
+
+class WebappViewSpec(DataSpec):
+    """One kind a viewer app can show, and in which shapes. ``kind`` is a dotted kind matched by the
+    ontology (``navigator`` covers ``navigator.decision``), or ``*`` for any kind -- the generic viewer."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    kind: str
+    shows: list[ViewShape] = ["single"]
 
 
 class WebappManifestSpec(DataSpec):
@@ -74,6 +93,12 @@ class WebappManifestSpec(DataSpec):
     #: ancestor like ``navigator``) and type names (``dataset``). Matched by
     #: ``flow_sdk.builtin.faas.editors`` -- a nested editor needs none of this.
     edits: list[str] = []
+    #: What a VIEWER (``application.web.viewer``) shows: kinds, each as a single value and/or a
+    #: collection. Matched by ``flow_sdk.builtin.faas.editors.viewers_for``.
+    views: list[WebappViewSpec] = []
+    #: A viewer's ES module, relative to the served ``build`` folder; it exports ``viewers``
+    #: (``ts_sdk/src/viewers/contract.ts``).
+    module: str = "viewer.js"
     #: The subdir actually served, relative to the app folder. ``.`` for a
     #: static app that has no build step; ``dist`` for a toolchain that emits one.
     build: str = "."

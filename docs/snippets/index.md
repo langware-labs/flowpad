@@ -1,41 +1,47 @@
 ---
 type: markdown_index
 id: markdown_index-a34feae9-8881-5202-b520-9281688839f2
-inputs_hash: f7d6b2f836466f67180f84bc54bfbc386f869578d79932e446e674cd887f40c8
+inputs_hash: c919d045be156fa641ef78e5ef6dce334a9e41dd4dcd07156d40c7fe7851dce8
 template_version: 1
 prompt_version: 1
 parent_ref: markdown_index-6136dbba-27ed-59c3-a192-fe2894f3ec30
 vault_root: /Users/shlom/Documents/dev/flowpad-oss/docs
-generated_at: '2026-09-25T12:04:30Z'
+generated_at: '2026-10-07T14:33:53Z'
 latest_process_ref: ''
-file_count: 21
+file_count: 27
 subfolder_count: 0
 ---
 
 # snippets
 
 ## Self-Summary
-> The runnable SDK shelf: one page per capability, every fence pinned by a test. Connections, credentials, data sources, datasets, activity, agents on email and chat channels, LLM endpoints, processes, workflows, compute ops and the one call-return contract — copyable code rather than prose.
+> The runnable SDK shelf: one page per capability, every fence pinned by a test. Connections, credentials, data sources, datasets, activity, agents on email, chat and help-desk channels, message threads, LLM endpoints, processes, workflows, compute ops, wizards, decisions, RAG, project dependencies and the one call-return contract.
 
 ## Files
-- [Snippets — the dev onboarding shelf](README.md) — Index of the tested developer snippet pages: each category, what it shows, and the test that pins every fence.
-- [Activity — progress on anything, from anywhere](activity.md) — Activity progress API by example: path-addressed nodes, cheap ticks versus published transitions, and why a finished root is dropped from the live tree.
-- [Agent deployment — snippets](agent-deployment.md) — Snippets for placing an agent, starting sessions, reading placements, pausing, serving it your own way, and running it locally.
-- [Agent email](agent-email.md) — Snippet: allocate an agent mailbox, listen for mail with StreamInbox, run the agent and send threaded replies.
-- [Agent help desk](agent-helpdesk.md) — Snippet: bind a hub help desk to an agent so it answers the desk's conversations as the agent.
-- [An agent on a channel — snippets](agents-on-channels.md) — Put an agent on WhatsApp: declare the credential, let the app answer, or run the answering loop yourself.
-- [Call → ExitCode → Return](call-returns.md) — The one-answer contract: ComputeOp calls, ReturnedValue and its subclasses including PromptResult files, exit codes, timeouts and wizards.
-- [Compute ops — one call that converges, composes, and can ask](compute-ops.md) — Compute op snippets: one convergent call per subkind, asking a person once even outside the backend, a fallback as two ops, caller-owned retries, cancel and silence answers.
+- [Snippets — the dev onboarding shelf](README.md) — Index of the runnable SDK snippet shelf for developer onboarding, listing each category, what it shows and the test pinning it.
+- [Activity — progress on anything, from anywhere](activity.md) — Snippets for the Activity progress API: path-addressed counters, cheap ticks versus lifecycle transitions, child nodes, and the shared ActivityProgressSpec that consumers read.
+- [Agent deployment — snippets](agent-deployment.md) — Runnable snippets on agent deployment: deploying an Agent as a placement on a machine, launching sessions, identity and endpoints
+- [Agent email](agent-email.md) — Snippet allocating an Agent mailbox, processing incoming emails through the agent via StreamInbox, and sending threaded replies.
+- [Agent help desk](agent-helpdesk.md) — Snippet giving an Agent a hub help desk to answer, creating a helpdesk data source owned by the Agent.
+- [An agent on a channel — snippets](agents-on-channels.md) — Snippets for putting an agent on a messaging channel such as WhatsApp, running it in-app or in your own loop, including credential setup.
+- [Call → ExitCode → Return](call-returns.md) — Runnable snippets showing how every call, from ops to agent turns, returns one ReturnedValue with an exit code
+- [Compute ops — one call that converges, composes, and can ask](compute-ops.md) — ComputeOp snippets: idempotent single-call ops of subkind cli, prompt, agent or ask, with completion checks and typed return values.
 - [Connections — Python SDK and CLI](connections.md) — Runnable Python and CLI snippets for OAuth connections: listing the provider catalogue, connecting, testing, and how the local service is borrowed or started.
-- [Data sources — snippets](data-sources.md) — Runnable data-source snippets: connect a feed on a driver, sync it once, read the SourceItems, and the per-provider config and secret keys.
-- [DataSpec](data-spec.md) — Runnable DataSpec snippets: declaring shapes, shapes written in documents, what a call returns, saving and loading, and file-valued fields.
+- [Data sources — snippets](data-sources.md) — Runnable snippets for connecting a DataSource: create from a driver, sync, read rows, subscribe to events, write items, watch a folder.
+- [DataSpec](data-spec.md) — Snippets teaching DataSpec schemas and values: declaring frozen, extra-forbidding classes, validation behavior, spec_kind registration, and the function-IO model of passing values.
+- [Datasets — snippets](datasets.md) — Runnable snippets on datasets: defining typed row schemas as data_schema folders, using the SmartNavigator eval set as the example
+- [Decisions — snippets](decisions.md) — Decision snippets: DecisionSpec closed questions answered with calibrated probabilities through a hub endpoint, with vocabulary mapping to Jev and OpenAI.
 - [Gmail source](gmail-source.md) — Snippet: create a Gmail data source from the shipped driver with credentials read from .env.local, never stored.
-- [LLM endpoints — snippets](llm-endpoints.md) — Runnable snippets for LLMEndpoint, the answer to who pays for tokens: api_key, hub and device kinds, completions, embeddings, model listing and probes.
+- [LLM endpoints — snippets](llm-endpoints.md) — Snippets for LLMEndpoint kinds (api_key, hub, device): credential location, completions, embeddings, model listing, probing, and error behavior.
 - [Simple message block](message-block.md) — Snippet: send a prompt through a process-local MessageBlock and let an Agent reply, with no worker named.
-- [Pipes — wiring a source to whatever consumes it](pipes.md) — Runnable examples wiring a source to its consumer: one sync cycle, folder-to-folder mirroring with reflect, and following changes with ack and redelivery.
-- [Processes and agents — snippets](processes.md) — Process and agent snippets: MCP servers, launching and reading answers, and typed folder in/out with run(input, output_spec).
-- [RAG — snippets](rag.md) — Runnable snippets for RagIndex: marking folders searchable, chunking and embedding markdown, why re-indexing is cheap, and querying the vectors.
-- [Secret stores](secret-stores.md) — Secret stores: load, save and validate named secrets, credentials per environment, binding stores and connections, flow project setup.
-- [Service endpoints — snippets](service-endpoints.md) — ServiceEndpoint snippets: what a placement answers on, the service proxy, web app endpoints, cloud boxes and an agent's chat.
-- [Wizards — a sequence of calls, and what travels between them](wizards.md) — Wizard snippets, every fence tested: step order and a step with nothing to do, values passed between steps as environment, a fallback as two steps with one check, a declared output that binds, and a cycle that answers instead of recursing.
-- [Workflows — snippets](workflows.md) — Plain-Python workflow snippets with flow_sdk.blocks: a mail concierge, Telegram and Slack bots, and one loop on every channel.
+- [Files, quote-replies and reactions on a channel](message-channels.md) — Snippets for sending files, quote-replies, voice notes and reactions on message channels, with capabilities declared as channel_spec data and unsupported content refused.
+- [Threads and replies — one model on every channel](message-threads.md) — Runnable snippets for replying and threading on Flowpad chat and every channel, using reply_to_id and thread_id
+- [Pipes — wiring a source to whatever consumes it](pipes.md) — Pipe snippets wiring a data source to consumers: sync cycles, folder mirroring with reflect modes, and following changes as a stream.
+- [Processes and agents — snippets](processes.md) — Snippets for Agents and AgenticProcesses: attaching MCP servers across harnesses, running on the mock worker, and typed process input and output.
+- [Project dependencies — snippets](project-dependencies.md) — Snippets for declaring project dependencies in flow.json: git, hub and local folder sources, optional dependencies, resolution into session context, autolaunch journey and skills.
+- [Project git share](project-git-share.md) — Runnable snippets for sharing a private GitHub repo with project members through the hub, with role-based pull and push access
+- [RAG — snippets](rag.md) — RagIndex snippets: covering folders, embedding only unseen chunks, pending versus indexing status, and semantic search over indexed markdown.
+- [Secret stores](secret-stores.md) — SecretStore snippets: load, save and validate_keys, and the declare-needs pattern for secrets and connections used by data sources and processes.
+- [Service endpoints — snippets](service-endpoints.md) — Snippets explaining Deployment placements and their ServiceEndpoint children, with subkind categories admin, app, agent and service, protocols, and how services are exposed.
+- [Wizards — a sequence of calls, and what travels between them](wizards.md) — Runnable snippets on wizards that sequence ComputeOp steps, covering order, on_fail, values passed between steps and the final answer
+- [Workflows — snippets](workflows.md) — Workflow snippets for the flow_sdk.blocks plain-Python surface: a mail concierge loop with StreamInbox, agents, resumable position and replies.

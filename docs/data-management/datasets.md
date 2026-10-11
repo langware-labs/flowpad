@@ -383,25 +383,73 @@ editor webapp nested in every shipped source definition carries the pane that
 drives them; the `connect-data-source` skill's `define` mode drives them for an
 agent.
 
-## Typed rows — a spec that NAMES a kind
+## Typed rows — a `spec` that NAMES a kind
 
-`spec` may be the name of a registered dataset kind (`"navigator.dataset"`), typically one a
-`data_spec` folder defines — nested in the dataset itself, so the dataset carries its own
-definitions (see [data-spec](data-spec.md#kinds-defined-by-a-folder)). Then every slot is a typed
+`spec` may be the name of a registered dataset kind (`"navigator.dataset"`), typically one whose
+schema a `data_schema` folder defines — nested in the dataset itself, so the dataset carries its own
+schemas (see [data-spec](data-spec.md#schemas-defined-by-a-folder)). Then every slot is a typed
 value, written by the generic walker as `«slot»/<last kind segment>.json` (`input/request.json`,
 `ground_truth/decision.json`), several gold answers as `ground_truth-1/`, `ground_truth-2/` — any
 one is right.
 
+A row's **key** is its example folder's name (`examples/<key>/`); its **id** is stored in the row
+(`example.json` `metadata.id`, a v4 minted on first write — a row written before that adopts its legacy
+`layout.example_id` on its next write), so a rename or a re-clone keeps it. Every read hands back `key`,
+`id`, `ref` (`<row kind>.id.<id>`, how another row links to this one) and `version`. A key a caller
+chooses is `a-z 0-9 _ -`; `append` numbers rows that bring none (`0001`, `0002`, …).
+
 | verb | what |
 |---|---|
-| `POST append {rows}` | typed rows in; every row is checked first, one bad row writes nothing |
-| `GET example/<id>` | one example's slot VALUES (an editor's read) |
+| `POST append {rows}` | typed rows in; every row is checked first, one bad row writes nothing; a row's `key` names its folder (refused when taken) |
+| `POST put-row {key, row, expected?}` | create the row `key` or replace it — checked first, references included; slots the row leaves out (gold, output, context) and its metadata are kept; `expected` (the `version` read) answers 409 when the row changed since |
+| `POST delete-row {key, expected?}` | remove one row (a key or an id); 404 when absent, 409 while another row references it or (with `expected`) when it changed since |
+| `POST rename-row {key, new_key, expected?}` | move a row to a new key; its id (and every reference to it) stays |
+| `POST check-row {row}` | `{ok, errors, details}` for one row — shape, references and the schema's rules, links checked even when the shape fails; writes nothing |
+| `GET example/<key or id>` | one example's slot VALUES (an editor's read) |
 | `POST annotate {example_id, ground_truth}` | REPLACES the gold: a named output kind is written as its own document (`ground_truth/decision.json`; a list → `ground_truth-N/`), an inline shape as `ground_truth/label.json` |
-| `GET rows` | every example with its slot values, in one read (what the editor loads) |
-| `POST validate` | every row read as the declared shape; names each row that does not fit, with its slot (`ground_truth.route`) |
+| `GET rows` | `{rows, total, problems}`: every row that fits with its slot values, and the ones that do not, by key with all their errors — one bad row hides nothing. `?filter={match, order_by, limit, offset}` (JSON) answers only the rows that match, ordered and paged; `total` counts the matches before paging, and `problems` is still every row that does not fit |
+| `GET count` | `{total, groups}`: how many rows match `?filter=`, and per distinct value of `?group_by=<path>,<path>`: `[{by, count}]`, largest first |
+| `POST put-rows {rows, expected?}` | create or replace several rows (`[{key, input, …}]`) as ONE step: every row checked first, one that does not fit (400, `details` under `<key>.<path>`) or changed since `expected` (`{key: version}`, 409) writes nothing |
+| `POST delete-rows {keys, expected?}` | remove several rows as ONE step, or none: 404 a key that is no row, 409 a row changed since or still referenced. Rows removed together do not hold each other back |
+| `POST sync-rows {rows, prune?, match?}` | make the dataset hold exactly `rows` → `{created, updated, unchanged, deleted}`: a row that reads the same is not rewritten; rows not listed are removed unless `prune` is false, and only those `match` selects when given. All or nothing |
+| `POST rows-changed {op, keys}` | a writer outside the server says rows changed (`Dataset.announce`); the server emits the event below. Writes nothing |
+| `POST validate` | every row read as the declared schema; names each row that does not fit by its `key` (and `example_id`), with its slot (`ground_truth.route`) |
 | `POST score` | each recorded `output` against its gold: a gold field left empty constrains nothing; several golds mean any one is right (`flow_sdk/datasets/score.py`) |
 
-Indexing still reads rows as artifacts (fast, never fatal); `validate` is the check.
+Every refusal and problem carries `details` beside `errors`: `[{path, code, message}]`, `code` one of
+`shape:<pydantic type>`, `dangling_ref`, `inline_row`, `rule`, and on a 409 `conflict` (changed since),
+`gone` (gone since) or `referenced` (a delete another row still points at) — read those, not the lines.
+A field kept in step with a copy outside Flowpad follows the three-way rule:
+`flow_sdk.datasets.merge.three_way(here, there, agreed)` → `"same"` / `"here"` / `"there"` / `"hold"`.
+
+**Asking for some rows.** A `match` is the entity query expression (`flow_sdk/db/drivers/query.py`
+`ExpressionNode`), evaluated in memory over a row as the API hands it out (`flow_sdk/datasets/query.py`;
+the TypeScript twin is `QueryFilter.validate`, and `test_fixtures/dataset_query_cases.json` is run by
+both). A field is a path — `key`, `input.stage`, `input.stage_dates.won` — and a date compares as its
+ISO string. From Python: `Dataset.query(match, order_by=, limit=, offset=)`, `Dataset.count(match, group_by=)`.
+
+**Many rows in one step.** `Dataset.put_many`, `delete_rows` and `sync` take the project's row lock
+once and read what their checks need once. A delete reads only the datasets whose schema can reach
+the row's kind (`links.linkers_of`) — none when nothing links to it — where it used to re-read every
+row of the project per row deleted.
+
+**One run at a time.** A script that mirrors an outside system wraps its whole run in
+`flow_sdk.datasets.run.single_run(project_root, "<name>")`: two runs at once (a trigger's and a
+person's "Sync now") would decide on the same reading and overwrite each other's state. The lock is a
+file under `<project>/.flow/runs/`; a second run waits, or `wait=False` raises `RunBusy`.
+
+**Rows changing is an event.** Every row write emits `dataset.rows.changed` once per call — target
+`dataset:<id>`, data `{op: put|delete|rename|sync, keys (at most 100), count}`, never a value — and
+the tag is forwarded to the app (`tags/ws_forward.py`): `dataset.onRowsChanged(handler)` in
+TypeScript. A writer outside the server process tells the running instance (`Dataset.announce`, the
+`rows-changed` action) — best effort: an event is a hint to re-read, and a write never fails for it.
+
+Indexing still reads rows as artifacts (fast, never fatal); `validate` is the check. One value
+against a kind, outside any dataset: `POST /api/v1/kinds/<kind>/check {value}` → `{ok, errors, details,
+links_checked}` — the SHAPE only, unless `?project=<id>` adds its references and rules; a kind nobody
+registered is a 404, never "fits" (`DataSpec.parse` alone would read it as `Any`). A kind's datasets:
+`GET /api/v1/kinds/<kind>/datasets?project=<id>` (a bare kind the project defines works); its full name:
+`GET /api/v1/kinds/<bare>/resolve?project=<id>`; the row a reference names: `GET /api/v1/refs/<ref>?project=<id>`.
 
 ## Editors
 
@@ -412,7 +460,7 @@ specific first), else one that edits the `dataset` type — the shipped generic 
 behind them is `mountDatasetEditor`: it builds every form from the declared kinds
 (`GET /api/v1/kinds/<kind>`), so one editor serves every typed dataset.
 
-The example is the SmartNavigator eval set. Its row kinds ship as flat `data_spec` folders
-(`flowpad_assistant/agentic-assets/data_spec/navigat*`); its rows do not — they live beside the
-checkout at `dev/dataset/smart-navigator/` (`navigator_eval.DATASET`). Shipped assets stay flat:
+The example is the SmartNavigator eval set. Its row schemas ship as flat `data_schema` folders
+(`flowpad_assistant/agentic-assets/data_schema/navigat*`); its rows do not — they live beside the
+checkout at `dev/dataset/smart-navigator/` (`flow_sdk.core.navigation.DATASET`). Shipped assets stay flat:
 a nested tree inside the install crossed Windows' 260-char MAX_PATH.

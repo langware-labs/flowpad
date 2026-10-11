@@ -19,6 +19,11 @@ PATTERN = re.compile(r"os\.walk\(|\.rglob\(|\.walk\(\)")
 #: file → why a raw recursive walk is acceptable there.
 ALLOWED: dict[str, str] = {
     "flow_sdk/fs_store/operations/markdown_dirs.py": "prunes with is_ignored on every level",
+    "flow_sdk/schema/data_spec/layout.py": "row_version walks ONE example folder (a dataset row's own files)",
+    "flow_sdk/system_projects/flowpad_assistant/.claude/skills/data-management/scripts/dm_ctl.py": (
+        "walks only the schema / dataset folders it just copied into a $TMPDIR probe (no .flow), "
+        "to read their namespaces and re-namespace their JSON"
+    ),
     "flow_sdk/system_projects/flowpad_assistant/.claude/skills/cred-scan/scripts/cred_scan.py": (
         "prunes dependency/build/cache dirs and nested repos on every level; must read the "
         "gitignored .env files (keys only), so gitignore_walk cannot serve it"
@@ -37,7 +42,6 @@ ALLOWED: dict[str, str] = {
     "flow_sdk/graph_workflow_manager/manager.py": "one workflow run's output dir",
     "flow_sdk/fs_store/operations/record_retention.py": "one record's execution/output dir, for its newest mtime",
     "flow_sdk/llm_index/indexer.py": "sidecars under the index's own baseline dir",
-    "flow_sdk/template_engine/engine.py": "template folder shipped with the package",
     "flow_sdk/transcript_analyzer/synthesizers/agent_trace.py": "one trace output dir",
     "flow_sdk/transcript_analyzer/transcript.py": "entry-tree walk, not a filesystem",
     "flow_sdk/schema/data_spec/activity_spec.py": "spec node walk, not a filesystem",

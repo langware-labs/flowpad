@@ -2,6 +2,7 @@ import { t } from '@lingui/core/macro';
 import { MembersAvatarStack } from '@src/components/conversation/MembersAvatarStack';
 import { ProjectGitChecksDialog } from '@src/components/project-home/ProjectGitChecksDialog';
 import { ProjectGitChip, type GitCheck } from '@src/components/project-home/ProjectGitChip';
+import { ProjectHomeMenu } from '@src/components/project-home/ProjectHomeMenu';
 import { GitTargetDialog, type GitTarget } from '@src/components/git/GitTargetDialog';
 import { ProjectCloudLinkButton } from '@src/components/project-home/ProjectCloudLinkButton';
 import { ProjectGitShareToggle } from '@src/components/project-home/ProjectGitShareToggle';
@@ -15,6 +16,7 @@ import { ProjectAgentsStrip } from '@src/components/agents/ProjectAgentsStrip';
 import type { PanelHandlers } from '@src/components/quick-create';
 import { HomeCustomizationCard } from './HomeCustomizationCard';
 import { ProjectLanguageCard } from './ProjectLanguageCard';
+import { ProjectDependenciesCard } from './ProjectDependenciesCard';
 import { VIBE_AGENTS_TAG, VibeAgentsCard } from './VibeAgentsCard';
 import { useHighlight } from '@src/components/wiki-tip/highlight';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@src/components/ui/tabs';
@@ -25,6 +27,7 @@ import { Project, TypeId } from '@sdk';
 import { tagAttrs } from '@src/tags/tag-attrs';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
+import { useUiActionRequest } from '@src/navigation/ui-actions';
 
 /** Journey anchor for the session launcher (`?highlight=NewSession`). */
 const NEW_SESSION_TAG = 'NewSession';
@@ -88,12 +91,16 @@ const CreateTab: React.FC<{
   projectId: string | null;
   spawnProjectId?: string | null;
   panelProps: PanelHandlers;
-}> = ({ projectId, spawnProjectId, panelProps }) => (
+  /** The project's dependencies, above the "Add dependency" tiles — only for
+   *  the active project, whose entity the card reads and writes. */
+  project?: Project | null;
+}> = ({ projectId, spawnProjectId, panelProps, project }) => (
   <div className="flex flex-col gap-6">
     {projectId && <SessionTiles spawnProjectId={spawnProjectId} panelProps={panelProps} />}
     {/* The project's own agents, right under the vendor session tiles: both
         answer "start something", and an agent IS a session starter. */}
     <ProjectAgentsStrip projectId={projectId} />
+    {project && <ProjectDependenciesCard project={project} />}
     <QuickCreatePanel {...panelProps} sections={['build', 'write', 'connect', 'folder', 'helpdesk']} />
   </div>
 );
@@ -137,6 +144,8 @@ export const ProjectHome: React.FC<ProjectHomeProps> = ({ spawnProjectId, create
   const [gitChecks, setGitChecks] = useState<GitCheck[] | null>(null);
   const [gitSetupOpen, setGitSetupOpen] = useState(false);
   const [publishOpen, setPublishOpen] = useState(false);
+  // "publish this project" (smart navigation): the same popup the publish button opens.
+  useUiActionRequest(['publish-dialog'], () => setPublishOpen(true));
   // The invite pane's opener, held while the publish popup stands in front of it.
   const resumeInvite = useRef<(() => void) | null>(null);
   // Invite branches on whether the Project has a hub row. Published: the invite
@@ -170,14 +179,14 @@ export const ProjectHome: React.FC<ProjectHomeProps> = ({ spawnProjectId, create
     async (target: GitTarget) => {
       if (!project?.fs_storage_mount_path) return;
       const path = project.fs_storage_mount_path;
-      await launchWizard('git-context-folder', {
+      await launchWizard('git-dependency', {
         title: t`Set up Git for project sharing`,
         targetTypeId: project.typeId.toString(),
         // The payload is the contract — the prompt does not restate it, so the
         // two cannot disagree about which remote or branch was chosen.
         payload: {
           projectId: project.id,
-          scope: 'private',
+          optional: false,
           mode: 'adopt',
           path,
           // Names a NEW repo only; an existing one is named by its own URL, and
@@ -200,7 +209,14 @@ export const ProjectHome: React.FC<ProjectHomeProps> = ({ spawnProjectId, create
     return Promise.resolve();
   }, [project]);
 
-  const createTab = <CreateTab projectId={projectId} spawnProjectId={spawnProjectId} panelProps={panelProps} />;
+  const createTab = (
+    <CreateTab
+      projectId={projectId}
+      spawnProjectId={spawnProjectId}
+      panelProps={panelProps}
+      project={createOnly ? null : project}
+    />
+  );
 
   // A `?highlight=` target that lives on a tab we aren't showing would never
   // mount, so the generic TagHighlightObserver would find nothing — open the
@@ -230,6 +246,7 @@ export const ProjectHome: React.FC<ProjectHomeProps> = ({ spawnProjectId, create
               </>
             ) : (
               <>
+                {project && <ProjectHomeMenu project={project} />}
                 <ProjectGitChip projectTypeId={projectTypeId} onChecked={setGitChecks} />
                 {project && <ProjectCloudLinkButton project={project} />}
                 {project && <ProjectGitShareToggle project={project} />}
@@ -244,6 +261,7 @@ export const ProjectHome: React.FC<ProjectHomeProps> = ({ spawnProjectId, create
             showInviteButton
             beforeInvite={beforeProjectInvite}
             inviteRoles={shareRoles}
+            uiAction="invite-members"
           />
         </div>
       )}

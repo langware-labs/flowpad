@@ -100,3 +100,15 @@ def test_flowpads_own_chat_replies_by_quoting_and_threading():
 def test_whether_a_channel_offers_reply_is_the_drivers(channel, replies, quotes):
     spec = Conversation(title="t", channel=channel).channel_spec
     assert (spec.replies, spec.quotes) == (replies, quotes)
+
+
+@pytest.mark.parametrize(
+    ("provider", "channel", "title", "quotes"),
+    [("flow_whatsapp", "whatsapp", "WhatsApp", True), ("flow_telegram", "telegram", "Telegram", True), ("flow_slack", "slack", "Slack", False)],
+)
+def test_a_way_to_a_channel_is_titled_by_the_channel_and_answers_as_it_does(provider, channel, title, quotes):
+    """Flow's driver is titled "Flow — no setup" in the picker; its conversations are on WhatsApp, and quote as WhatsApp does."""
+    from flow_sdk.builtin.conversation_channel import channel_spec  # noqa: PLC0415
+
+    spec = channel_spec(channel, provider)
+    assert (spec.title, spec.quotes, spec.transport) == (title, quotes, "source")

@@ -17,12 +17,12 @@
  */
 import { useCallback, useMemo, useState } from 'react';
 import { DataSource } from '@sdk';
-import { Eye, Plus } from 'lucide-react';
+import { Eye, Plus, Waypoints } from 'lucide-react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { useEntitiesQuery } from '@src/hooks/entity-hooks';
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import { ConfirmDialog } from '@src/components/ui/confirm-dialog';
-import { DataSourceRow, HEADER_ROW, ROW_GRID } from './DataSourceRow';
+import { DataSourceRow, HEADER_INSET, HEADER_ROW, ROW_GRID } from './DataSourceRow';
 import { useSourceDelete } from './use-source-delete';
 import { sourcesQuery, useSourceSpecs } from './use-source-specs';
 import { useStartVibeSession } from '@src/pages/flow-page/use-start-vibe-session';
@@ -32,9 +32,13 @@ import { DataSourceDialog } from './DataSourceDialog';
 import { Button } from '@src/components/ui/button';
 import { ReplayDialog } from './ReplayDialog';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { DockPointer } from '@src/navigation/DockPointer';
 import { useIsAdvanced } from '@src/contexts/view-mode-context';
-import { openDriver, parseDataSourcesPointer } from './data-sources-pointer';
+import { openChannels, openDriver, parseDataSourcesPointer } from './data-sources-pointer';
 import { DataDriverPage, DataDriversList } from './DataDriversView';
+import { MessageChannelsList } from './MessageChannelsList';
+import { DataSourcePage } from './DataSourcePage';
+import { useUiActionRequest } from '@src/navigation/ui-actions';
 
 export function DataSourcesView() {
   const { t } = useLingui();
@@ -59,6 +63,8 @@ export function DataSourcesView() {
     setEditing(null);
     setEditorOpen(true);
   }, []);
+  // "connect a data source" (smart navigation): the same editor the Add button opens.
+  useUiActionRequest(['new-data-source-dialog'], openAdd);
 
   const openEdit = useCallback((source: DataSource) => {
     setEditing(source);
@@ -67,7 +73,16 @@ export function DataSourcesView() {
 
   // A delete removes a row rather than changing one, and the live query
   // watches for writes — so this is the one mutation needing a re-read.
-  const { deleting, setDeleting, remove, confirm } = useSourceDelete(() => void refetch());
+  // Deleted from its own page: there is nothing left to show there, so back to the list.
+  const pageId = route.section === 'source' ? route.id : null;
+  const onDeleted = useCallback(
+    (gone: DataSource) => {
+      void refetch();
+      if (gone.id === pageId) navigation.openDock(DockPointer.forDataSources());
+    },
+    [refetch, pageId, navigation],
+  );
+  const { deleting, setDeleting, remove, confirm } = useSourceDelete(onDeleted);
 
   // Newest first: the source you just added is the one you came to look at.
   const sorted = useMemo(
@@ -80,17 +95,33 @@ export function DataSourcesView() {
     [sources],
   );
 
-  // What the URL addresses: one driver, the drivers list, or the sources themselves.
+  // What the URL addresses: one source's page, one driver, the drivers list, or the sources themselves.
+  const pageSource = route.section === 'source' ? (sources.find((s) => s.id === route.id) ?? null) : null;
   const body =
-    route.section === 'drivers' ? (
+    route.section === 'source' ? (
+      <DataSourcePage
+        source={pageSource}
+        id={route.id}
+        tab={route.tab}
+        conversation={route.conversation}
+        thread={route.thread}
+        files={route.files}
+        spec={pageSource ? specFor(pageSource.provider) : null}
+        onEdit={openEdit}
+        onReplay={setReplaying}
+        onDelete={setDeleting}
+      />
+    ) : route.section === 'channels' ? (
+      <MessageChannelsList />
+    ) : route.section === 'drivers' ? (
       route.driver ? (
         <DataDriverPage name={route.driver} sources={sources} />
       ) : (
         <>
           <p className="mb-5 max-w-2xl text-sm text-muted-foreground">
             <Trans>
-              The drivers installed here — the templates a source is made from. Each is a folder: its manifest, its
-              code and its tests. Pick one to see its config and the sources made from it.
+              The drivers installed here — the templates a source is made from. Each is a folder: its manifest, its code
+              and its tests. Pick one to see its config and the sources made from it.
             </Trans>
           </p>
           <DataDriversList sources={sources} />
@@ -133,7 +164,7 @@ export function DataSourcesView() {
           </div>
         ) : (
           <div className="overflow-hidden rounded-lg border border-border">
-            <div className={cn(ROW_GRID, HEADER_ROW)}>
+            <div className={cn(ROW_GRID, HEADER_ROW, HEADER_INSET)}>
               <span>
                 <Trans>Source</Trans>
               </span>
@@ -174,6 +205,19 @@ export function DataSourcesView() {
         </h1>
         {sources.length > 0 && (
           <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">{sources.length}</span>
+        )}
+        {route.section === 'sources' && (
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-7 gap-1.5 px-2 text-muted-foreground"
+            title={t`Every message channel and where its messages arrive`}
+            data-testid="data-sources-view-channels"
+            onClick={() => openChannels(navigation)}
+          >
+            <Waypoints className="size-3.5" />
+            <Trans>Channels</Trans>
+          </Button>
         )}
         {advanced && route.section === 'sources' && (
           <Button

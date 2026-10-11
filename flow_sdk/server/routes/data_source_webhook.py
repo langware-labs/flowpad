@@ -20,6 +20,13 @@ provider that dials by webhook and wants instructions back (a phone carrier aski
 a call) gets them from the class's ``webhook_reply`` — the one case the answer is not the envelope.
 A carrier posts a form, not JSON; a form body is read as its fields.
 
+**One channel, by id, from the hub** — ``POST /<source id>/webhook``: an event a hub webhook claim routed
+to THIS channel (``webhook/@<provider>`` → claim → this desktop / node). The hub already checked the
+vendor's signature at its edge and cut a batch into one event per message, so the vendor's own signature no
+longer covers what arrives: the hub is the trust here. It reaches this app only over the instance's own hub
+socket (replayed on loopback) or through a box's cookie gate, which exempts no path. A source that is not
+here answers 404 — the hub counts a misroute, never a delivery.
+
 ``POST /<source id>/call`` starts a call from our side — a browser's SDP offer, a sound file, a
 number to dial — through the source's ``start_call``, and answers what the starter needs (an SDP
 answer, the call id) in the envelope; ``POST /<source id>/call/<call id>/hangup`` ends it.
@@ -82,6 +89,7 @@ async def webhook_delivery(name: str, request: Request):
     from flow_sdk.builtin.data_source import DataSource  # noqa: PLC0415
 
     account = str(stype.cls.webhook_account(payload) or "")
+    # The account's own source (``find_for_account``'s default part), never a group of it: parts come by a hub claim.
     row = await DataSource.find_for_account(name, stype.identity_config_key, account) if account else None
     if row is None:
         # No amount of retrying makes a source exist; the log is where a person finds out.
@@ -104,6 +112,25 @@ async def webhook_delivery(name: str, request: Request):
     if answer is not None:
         body, media_type = answer
         return Response(content=body, media_type=media_type)
+    return ApiSuccessResponse(data=result)
+
+
+@router.post("/{source_id}/webhook")
+async def channel_delivery(source_id: str, request: Request):
+    from flow_sdk.builtin.data_source import DataSource  # noqa: PLC0415
+
+    row = await DataSource.get_by_id(source_id)
+    stype = await _pushing_type(row.provider, "events_from_webhook") if row is not None else None
+    if row is None or stype is None:
+        logger.warning("[webhook] a hub delivery for channel %s, which is not on this instance", source_id)
+        return PlainTextResponse("no such channel here", status_code=404)
+    raw = await request.body()
+    payload = _payload_of(raw, request.headers.get("content-type", ""))
+    if payload is None:
+        return ApiFailResponse(message="Expected a JSON object body")
+    headers = dict(request.headers)
+    result = await stype.ingest_pushed(row, payload, headers=headers, raw=raw, verified_by_hub=True)
+    result.pop("calls", None)
     return ApiSuccessResponse(data=result)
 
 

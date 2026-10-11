@@ -28,11 +28,15 @@ from pathlib import Path, PurePosixPath
 
 from flow_sdk.assets.git_publish import AssetPublishCode, AssetPublishError, GitAuthor
 from flow_sdk.instances.atomic import locked, read_json, write_json_atomic
+from flow_sdk.stream_inbox._locks import keyed_loop_lock, new_registry
 from flow_sdk.utils.git_folder import KEEP_FILE
+from flow_sdk.utils.git_usable import git_usable
 
 logger = logging.getLogger(__name__)
 
-_locks: dict[str, asyncio.Lock] = {}
+#: One lock per mirror root. Weak-valued (``stream_inbox/_locks``): it lives only while a
+#: sync holds or awaits it, so the registry does not keep one lock per root ever synced.
+_locks = new_registry()
 
 
 def mirror_root(repo_id: str) -> Path:
@@ -118,6 +122,10 @@ def local_tree(mirror: Path, worktree: Path, rel_path: str) -> str | None:
     import subprocess  # noqa: PLC0415
     import tempfile  # noqa: PLC0415
 
+    from flow_sdk.utils.git_usable import git_usable  # noqa: PLC0415
+
+    if not git_usable():  # a Mac without the Command Line Tools: git would open Apple's installer dialog
+        return None
     with tempfile.TemporaryDirectory() as scratch:
         env = {**os.environ, "GIT_INDEX_FILE": str(Path(scratch) / "index"), "GIT_TERMINAL_PROMPT": "0"}
         base = ["git", "--git-dir", str(mirror / ".git"), "--work-tree", str(worktree)]
@@ -132,7 +140,7 @@ def local_tree(mirror: Path, worktree: Path, rel_path: str) -> str | None:
 
 
 def _lock(root: Path) -> asyncio.Lock:
-    return _locks.setdefault(str(root), asyncio.Lock())
+    return keyed_loop_lock(_locks, str(root))
 
 
 def _git_env(token: str) -> dict[str, str]:
@@ -161,6 +169,13 @@ class HubRepoMirror:
     token: str
 
     async def git(self, *args: str, check: bool = True, cwd: Path | None = None) -> tuple[int, str]:
+        if not git_usable():
+            # A Mac without the Command Line Tools has a git STUB, not a missing binary: it would open Apple's
+            # installer dialog instead of raising FileNotFoundError. Say the same thing the missing case says.
+            raise AssetPublishError(
+                AssetPublishCode.HUB_PUBLISH_FAILED,
+                "Git is not installed on this machine — install it from Flowpad's setup, then try again",
+            )
         try:
             proc = await asyncio.create_subprocess_exec(
                 "git",
@@ -241,7 +256,20 @@ def _replace(source: Path, target: Path, *, is_file: bool) -> None:
         return
     if target.exists():
         shutil.rmtree(target)
-    shutil.copytree(source, target, ignore=shutil.ignore_patterns(".git", KEEP_FILE))
+    # The project's own ignore rules hold here too, not only the mirror's: a file the source checkout
+    # keeps out of git is not published by copying it into another one.
+    from flow_sdk.utils.git_ignore import ignored_under, is_under  # noqa: PLC0415
+
+    # The asset itself being ignored is the person's explicit publish; what is ignored INSIDE it stays home.
+    ignored = ignored_under(source) - {Path(source).resolve()}
+    base = shutil.ignore_patterns(".git", KEEP_FILE)
+
+    def _ignore(directory: str, names: list[str]) -> set[str]:
+        skipped = set(base(directory, names))
+        skipped |= {n for n in names if is_under(Path(directory) / n, ignored)}
+        return skipped
+
+    shutil.copytree(source, target, ignore=_ignore)
 
 
 @dataclass(frozen=True)
@@ -302,6 +330,52 @@ async def sync_asset_with_hub(
         return HubRepoSync(head_commit=head, tree=local, pushed=True, pulled_back=False)
 
 
+def _replace_tree(checkout: Path, files: list[str], mirror_root: Path) -> None:
+    """Make the mirror's working tree hold exactly ``files`` of ``checkout``."""
+    for entry in mirror_root.iterdir():
+        if entry.name == ".git":
+            continue
+        shutil.rmtree(entry) if entry.is_dir() and not entry.is_symlink() else entry.unlink()
+    for rel in files:
+        source = checkout / rel
+        # A path git lists but the folder no longer holds (deleted, not yet committed) is not published.
+        if not source.is_file() and not source.is_symlink():
+            continue
+        target = mirror_root / rel
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, target, follow_symlinks=False)
+
+
+async def sync_project_with_hub(*, mirror: HubRepoMirror, checkout: Path, author: GitAuthor, project_typeid: str) -> str:
+    """Make the hub repo hold the project folder as it is now, and return the hub's head commit.
+
+    What travels is what git would track in ``checkout`` — its tracked files and its new ones,
+    never an ignored one — at their working-tree content, the same content an asset publish
+    sends. It goes through the mirror like an asset does, as one commit on top of the hub's
+    branch: publishing again is always a fast-forward, whatever was published in between.
+    """
+    code, listed = await mirror.git(
+        "-C", str(checkout), "ls-files", "-z", "--cached", "--others", "--exclude-standard", check=False, cwd=checkout
+    )
+    if code != 0:
+        raise AssetPublishError(AssetPublishCode.NOT_GIT_BACKED, "The project folder is not a git checkout")
+    files = [f for f in listed.split("\0") if f]
+    async with _lock(mirror.root):
+        await mirror.sync()
+        await asyncio.to_thread(_replace_tree, checkout, files, mirror.root)
+        await mirror.git("add", "-A")
+        _, tree = await mirror.git("write-tree")
+        code, upstream = await mirror.git("rev-parse", "--verify", "--quiet", "HEAD^{tree}", check=False)
+        if code == 0 and upstream == tree:
+            _, head = await mirror.git("rev-parse", "HEAD")
+            return head
+        return await mirror.commit_and_push(
+            f"Publish FlowPad project {project_typeid}",
+            author,
+            [f"FlowPad-Project: {project_typeid}", f"FlowPad-User: {author.typeid or author.email}"],
+        )
+
+
 @dataclass
 class HubRepoCheckout(HubRepoMirror):
     """A WORKING checkout of a hub-hosted repo — a shared project on a recipient.
@@ -323,8 +397,3 @@ class HubRepoCheckout(HubRepoMirror):
         code, out = await self.git("pull", "-q", "--ff-only", "origin", self.branch, check=False)
         if code != 0:
             logger.warning("hub checkout %s: no fast-forward from the hub, keeping local state: %s", self.root, out)
-
-    async def push_head(self) -> None:
-        """Publish this checkout's HEAD as the hub branch — a fast-forward only, so a
-        re-share never rewrites what recipients already cloned."""
-        await self.git("push", "-q", self.clone_url, f"HEAD:refs/heads/{self.branch}")

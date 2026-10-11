@@ -23,6 +23,9 @@ export interface IncomingProjectParams {
    * sender use, so roles, membership and later shares all line up.
    */
   projectId?: string;
+  /** The shared project's name is already a project here: instead of setting it up,
+   *  ask — open that one, or install the shared one under another name. */
+  nameTaken?: { existingProjectId: string; suggestedName: string };
 }
 
 interface IncomingProjectState {

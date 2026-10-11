@@ -9,6 +9,7 @@ import { scopeProjectIds } from '@sdk/utils/scope-filter';
 import { prefetchStartupAssets } from '@sdk/lazy/startup';
 import { useGlobalSearchScope } from '@src/hooks/use-global-search-scope';
 import { renderHook, waitFor } from '@testing-library/react';
+import { MemoryRouter } from 'react-router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('@src/contexts/agent-context', () => ({
@@ -50,6 +51,8 @@ describe('project list on demand', () => {
 
     const hook = renderHook(({ enabled }) => useGlobalSearchScope({ enabled }), {
       initialProps: { enabled: false },
+      // The search scope follows the active workspace, which the URL names.
+      wrapper: MemoryRouter,
     });
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(listProjectsCalls(call.mock.calls)).toHaveLength(0);

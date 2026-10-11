@@ -30,6 +30,7 @@ import {
 
 const MODES: QaViewMode[] = ['standard', 'advanced', 'vibe'];
 /** Headless Chromium has no GPU: WebGL graph views throw on getParameter regardless of the app. */
+const PAGE_LOOK: QaViewMode = 'vibe';
 const HEADLESS_WEBGL = /getParameter|WebGL|webgl/;
 
 let world: World;
@@ -43,10 +44,16 @@ test.afterAll(async () => {
   if (world) await destroyWorld(world);
 });
 
-function places(w: World): { name: string; address: string; path: string }[] {
+function places(w: World, mode: QaViewMode): { name: string; address: string; path: string; session?: boolean }[] {
   return [
-    { name: 'the mock session terminal', address: `shell/agentic_process-${w.processId}`, path: `/shell/agentic_process-${w.processId}` },
-    { name: 'a plain shell', address: `shell/shell-${w.shellId}`, path: `/shell/shell-${w.shellId}` },
+    {
+      name: 'the mock session terminal',
+      address: `shell/agentic_process-${w.processId}`,
+      // Shown in Vibe, a session lands on its Vibe HOST address (`/dock/vibe/…`).
+      path: `/${mode === 'vibe' ? 'vibe' : 'shell'}/agentic_process-${w.processId}`,
+      session: true,
+    },
+    { name: 'a plain shell', address: `shell/shell-${w.shellId}`, path: `/shell/shell-${w.shellId}`, session: true },
     {
       name: 'the report inside the project',
       address: `project/${w.projectId}/editor/markdown/vfs/compute_node-%40local${w.reportPath}`,
@@ -66,16 +73,20 @@ for (const mode of MODES) {
     const exceptions: string[] = [];
     page.on('pageerror', (e) => exceptions.push(e.message));
 
+    // A mode belongs to a session tab: a page asked for in one shows the app's
+    // one look and drops the mode, and only the session places below take it.
     await page.goto(withViewMode('/dock/desktop', mode));
-    await expect(page.locator('html')).toHaveAttribute('data-view', mode);
+    await expect(page.locator('html')).toHaveAttribute('data-view', PAGE_LOOK);
     await awaitSteerable(page);
 
-    for (const place of places(world)) {
+    for (const place of places(world, mode)) {
       await test.step(place.name, async () => {
         const before = toplog.length;
         await navigateTo(page, `${place.address}${place.address.includes('?') ? '&' : '?'}viewMode=${mode}`, place.path);
         await expect(page.getByTestId('dock-load-error')).toHaveCount(0);
-        await expect(page.locator('html')).toHaveAttribute('data-view', mode);
+        await expect(page.locator('html')).toHaveAttribute('data-view', place.session ? mode : PAGE_LOOK);
+        // (A document a Vibe workspace hosts is its child, and shows in its host's mode.)
+        if (!place.session && !/\/process\/|[?&]host=/.test(page.url())) expect(page.url()).not.toContain('viewMode=');
         const redirects = toplog.slice(before).filter((l) => l.includes('loader_redirect'));
         expect(redirects.length, `more than one redirect for ${place.name}:\n${redirects.join('\n')}`).toBeLessThanOrEqual(1);
         expect(await nothingToDisplaySightings(page), `"nothing to display" at ${place.name}`).toEqual([]);

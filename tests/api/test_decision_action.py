@@ -152,3 +152,124 @@ async def test_navigation_decision_answers_then_logs_into_smart_navigation_log(
         assert (row["title"], row["num_examples"]) == ("SmartNavigationLog", 2)
     finally:
         write_instance_pref(PREF_SMART_NAVIGATION_LOG, False)
+
+
+@pytest.mark.asyncio
+async def test_the_classifier_opens_its_own_log_in_its_editor(bootstrapped_client, monkeypatch, tmp_path):
+    """'open smart navigation log' answers the SmartNavigationLog open in its dataset editor; with no
+    log yet, Preferences > Advanced, where the switch is."""
+    import flow_sdk.decision as decision
+    from flow_sdk import config
+    from flow_sdk.core import navigation_log
+    from flow_sdk.preferences import PREF_SMART_NAVIGATION_LOG, write_instance_pref
+
+    from tests.api.test_dataset_editors import _app, _index
+
+    monkeypatch.setattr(config, "FLOWPAD_TEMP_DIR", str(tmp_path / "temp"))
+    # The generic dataset editor the app ships (`edits: ["dataset"]`), indexed like the real one.
+    _app(tmp_path / "apps" / "agentic-assets" / "webapp" / "dataset-editor", edits=["dataset"])
+    await _index(tmp_path / "apps")
+
+    async def _endpoints(**kwargs):
+        return [OFFER]
+
+    monkeypatch.setattr(decision, "decision_endpoints", _endpoints)
+    ask = {"utterance": "open smart navigation log", "here": {"view": "home"}}
+    before = (await bootstrapped_client.post(DECIDE, json=ask)).json()["data"]
+    assert (before["decision"]["route"], before["address"]) == ("quick", "/dock/preferences/advanced")
+
+    write_instance_pref(PREF_SMART_NAVIGATION_LOG, True)
+    try:
+        await bootstrapped_client.post(DECIDE, json={"utterance": "open data sources", "here": {"view": "home"}})
+        await navigation_log.drain()
+        from pathlib import Path
+
+        rows = (await bootstrapped_client.get('/api/v1/graph/dataset?filter={"name":"SmartNavigationLog"}')).json()["data"]
+        [log] = [r for r in rows if Path(r["asset_ref"]).resolve() == navigation_log.folder().resolve()]
+        after = (await bootstrapped_client.post(DECIDE, json=ask)).json()["data"]
+        assert after["address"].startswith("/dock/app/micro_app-")
+        assert after["address"].endswith(f"?subject=dataset-{log['id']}")
+        assert after["dock"]["viewType"] == "app"
+    finally:
+        write_instance_pref(PREF_SMART_NAVIGATION_LOG, False)
+
+
+@pytest.mark.asyncio
+async def test_navigation_decision_reads_the_tab_that_typed_not_the_active_one(bootstrapped_client, monkeypatch):
+    """Two windows open: the one in front shows the eval browser, the sentence was typed in the other
+    (a transcript). The request names its tab, so the decision -- and the log -- read that tab."""
+    import flow_sdk.decision as decision
+    from flow_sdk.server.routes import websocket
+
+    specs: list = []
+
+    async def _decide(spec, *, endpoint=None):
+        specs.append(spec)
+        return DecisionResult(answers={"target": ChoiceAnswer(choice="agentic", confidence=0.99)})
+
+    async def _endpoints(**kwargs):
+        return [OFFER]
+
+    monkeypatch.setattr(decision, "decide", _decide)
+    monkeypatch.setattr(decision, "decision_endpoints", _endpoints)
+    front = websocket.ConnectionInfo(ws=object(), is_tab=True, visible=True, focused=True, browser_context={"CurrentUrl": "/dock/desktop"})
+    typed = websocket.ConnectionInfo(ws=object(), is_tab=True, visible=True, focused=False, browser_context={"CurrentUrl": "/dock/automations"})
+    monkeypatch.setattr(websocket, "_active_connections", {"front": front, "typed": typed})
+    await bootstrapped_client.post(DECIDE, json={"utterance": "show me its log"}, headers={"X-Flow-Connection-Id": "typed"})
+    await bootstrapped_client.post(DECIDE, json={"utterance": "show me its log"})
+    assert [s.state["page"] for s in specs] == ["/dock/automations", "/dock/desktop"], "named tab first; the guess only without one"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("here", [{"view": 7}, {"garbage": 1}])
+async def test_a_malformed_here_is_ignored_not_a_server_error(bootstrapped_client, monkeypatch, here):
+    """The endpoint never fails: a ``here`` that is not a ``navigation.here`` is no ``here`` at all --
+    the decision reads the tab instead (a stress run got HTTP 500)."""
+    import flow_sdk.decision as decision
+
+    async def _endpoints(**kwargs):
+        return [OFFER]
+
+    monkeypatch.setattr(decision, "decision_endpoints", _endpoints)
+    r = await bootstrapped_client.post(DECIDE, json={"utterance": "open data sources", "here": here})
+    assert r.status_code == 200, r.text
+    assert r.json()["data"]["address"] == "/dock/data-sources"
+
+
+@pytest.mark.asyncio
+async def test_logging_a_decision_never_rereads_the_log(bootstrapped_client, monkeypatch, tmp_path):
+    """Each logged decision used to re-read EVERY row twice (``Dataset.at`` + a full re-index): a
+    stress run's log fell ~10 minutes behind at 1,100 rows. A row now costs the row, and the indexed
+    count still follows."""
+    from pathlib import Path
+
+    import flow_sdk.decision as decision
+    from flow_sdk import config
+    from flow_sdk.builtin.dataset import Dataset
+    from flow_sdk.core import navigation_log
+    from flow_sdk.core.navigation_decision import decide_run
+    from flow_sdk.preferences import PREF_SMART_NAVIGATION_LOG, write_instance_pref
+    from flow_sdk.schema.data_spec.layout import FolderLayout
+
+    monkeypatch.setattr(config, "FLOWPAD_TEMP_DIR", str(tmp_path / "temp"))
+
+    async def _endpoints(**kwargs):
+        return [OFFER]
+
+    monkeypatch.setattr(decision, "decision_endpoints", _endpoints)
+    write_instance_pref(PREF_SMART_NAVIGATION_LOG, True)
+    try:
+        request = {"utterance": "open data sources", "here": {"view": "home"}}
+        outcome, answer = await decide_run(request)
+        for _ in range(3):
+            assert await navigation_log.log(request, outcome, answer)
+        reads = []
+        real = FolderLayout.read
+        monkeypatch.setattr(FolderLayout, "read", lambda self, *a, **k: reads.append(1) or real(self, *a, **k))
+        assert await navigation_log.log(request, outcome, answer)
+        assert reads == [], "appending one row read the whole log"
+        here = navigation_log.folder().resolve()
+        [row] = [r for r in await Dataset.get_all({"name": navigation_log.TITLE}) if Path(r.asset_ref).resolve() == here]
+        assert row.num_examples == 4
+    finally:
+        write_instance_pref(PREF_SMART_NAVIGATION_LOG, False)

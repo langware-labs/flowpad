@@ -150,7 +150,7 @@ export function projectShareSource(
 }
 
 /**
- * Context-folder share. A folder ALWAYS travels as a Git origin the receiver
+ * Dependency-folder share. A folder ALWAYS travels as a Git origin the receiver
  * clones — never as copied bytes — so Git here is the POLICY, not a per-share
  * option: `shareConfig.transferMode` is pinned and `gitPreflightRef` is
  * deliberately omitted, which is what keeps the dialog's Git toggle from

@@ -70,14 +70,31 @@ _ASSIGNABLE: tuple[RuntimeKind, ...] = (RuntimeKind.SANDBOX, RuntimeKind.AGENT)
 # real cached value, so membership is tested with ``in`` rather than
 # ``is not None``; otherwise the default case would never cache and would pay a
 # file read on every bootstrap.
-_cache: dict[str, RuntimeKind | None] = {}
+#
+# Each entry carries the config file's stamp it was read at. The hub assigns from
+# ANOTHER process (``flow auth set-runtime``, over the box's shell) while this
+# server is already up — a box boots from a template snapshot with the server
+# running — so a memo that only this process can refresh pins whatever was read
+# first: a sandbox that answered one bootstrap before the hub labelled it called
+# itself a local browser for the rest of its life. One ``stat`` per call keeps the
+# memo honest without the read-and-parse it exists to avoid.
+_cache: dict[str, tuple[int | None, RuntimeKind | None]] = {}
+
+
+def _config_stamp() -> int | None:
+    try:
+        return (get_instance_settings().instance_dir / "config.json").stat().st_mtime_ns
+    except OSError:
+        return None
 
 
 def get_assigned_runtime() -> RuntimeKind | None:
     """What the hub told this instance it is, or ``None`` on a local install."""
     key = get_instance_settings().instance_name
-    if key in _cache:
-        return _cache[key]
+    stamp = _config_stamp()
+    cached = _cache.get(key)
+    if cached is not None and cached[0] == stamp:
+        return cached[1]
     raw = app_config.get_config(_CONFIG_KEY)
     try:
         assigned = RuntimeKind(raw) if raw else None
@@ -87,7 +104,7 @@ def get_assigned_runtime() -> RuntimeKind | None:
         assigned = None
     if assigned is not None and assigned not in _ASSIGNABLE:
         assigned = None
-    _cache[key] = assigned
+    _cache[key] = (stamp, assigned)
     return assigned
 
 
@@ -113,7 +130,7 @@ def set_assigned_runtime(kind: RuntimeKind | str) -> RuntimeKind:
     if assigned not in _ASSIGNABLE:
         raise ValueError(f"Runtime {assigned!r} is not assignable; expected one of {_ASSIGNABLE}")
     app_config.set_config(_CONFIG_KEY, assigned.value)
-    _cache[get_instance_settings().instance_name] = assigned
+    _cache.pop(get_instance_settings().instance_name, None)
     own_sandbox_id.cache_clear()
     return assigned
 
@@ -176,6 +193,26 @@ def set_assigned_compute_node(typeid: str) -> str:
         raise ValueError(f"not a compute node typeid: {typeid!r}")
     app_config.set_config(_COMPUTE_NODE_KEY, typeid)
     return typeid
+
+
+_INSTANCE_UID_KEY = "instance_uid"
+
+
+def instance_uid() -> str:
+    """This instance's own id, minted once and kept in ``<instance_dir>/config.json``.
+
+    What the hub addresses when a webhook claim targets ONE desktop (``X-Flowpad-Instance`` on the hub
+    socket): the machine id is shared by every instance on a laptop (a dev and a prod side by side), and a
+    socket's connection id changes on every reconnect. Not a secret — it names, it does not authorize: the
+    hub only delivers to it on a socket the instance's own signed-in user opened."""
+    import uuid  # noqa: PLC0415
+
+    raw = app_config.get_config(_INSTANCE_UID_KEY)
+    if isinstance(raw, str) and re.fullmatch(r"[0-9a-f-]{36}", raw):
+        return raw
+    minted = str(uuid.uuid4())
+    app_config.set_config(_INSTANCE_UID_KEY, minted)
+    return minted
 
 
 def reset_cache() -> None:

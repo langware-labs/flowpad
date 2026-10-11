@@ -1,17 +1,18 @@
 import { useMemo, useRef, useState, type MouseEvent, type ReactNode } from 'react';
-import { Check, CheckCheck, Clock } from 'lucide-react';
-import { resendConversation, type AgenticProcess, type FlowMessage } from '@sdk';
+import { Check, CheckCheck, Clock, Zap } from 'lucide-react';
+import { isProcessFailed, resendConversation, type AgenticProcess, type FlowMessage } from '@sdk';
 import type { ConversationMessage } from '@sdk/entities/conversation';
 import type { DeliveryStatus } from '@sdk/entities/flow-message';
 import { Task, type ITask } from '@sdk/entities/task';
-import { TaskItIcon, TaskOwnerChip, TaskStatusChip } from './task-it';
-import { CHIP_LAYOUT, chipStyleFor } from './EntityChip';
+import { TaskChips, type TaskPeople } from './task-it';
 import { MessageActionsMenu } from './MessageActionsMenu';
-import { MARKDOWN_LINK_CLASS, MarkdownView } from '@src/components/markdown-view';
+import { FavoriteStar } from '@src/components/favorites/FavoriteStar';
+import { CHIP_LAYOUT } from './EntityChip';
+import { messageFavoriteRef } from '@src/components/favorites/favorite-target';
+import { MarkdownView } from '@src/components/markdown-view';
 import { useLinks } from '@src/components/links/LinkMenu';
 import { LinkifiedText } from '@src/components/links/LinkifiedText';
-import { linkEventProps, type LinkHandlers } from '@src/components/links/link-events';
-import type { Components } from 'react-markdown';
+import type { LinkHandlers } from '@src/components/links/link-events';
 import { AttachmentActionsRow, PromptAttachmentPreview, useAttachmentActions } from './attachment-actions';
 import { useLocalUser } from './useLocalUser';
 import { avatarColorForMessage } from './avatar-color';
@@ -20,6 +21,7 @@ import { ConfirmDialog } from '@src/components/ui/confirm-dialog';
 import { useLingui } from '@lingui/react/macro';
 import { QuotedMessage, ReactionChips } from './ChannelMessageExtras';
 import type { IMessageReaction } from '@sdk/entities/flow-message';
+import type { WorkerType } from './conversation-session-constants';
 
 interface MessageBubbleProps {
   message: ConversationMessage;
@@ -41,9 +43,15 @@ interface MessageBubbleProps {
    *  share dialog to pick the target conversation; the backend then clones the
    *  message (cloned_from_id provenance) into it. */
   onForwardMessage?: () => void;
+  /** Start a worker pinned to this message (⋮ menu, the header's launch bar). */
+  onLaunchWorker?: (worker: WorkerType) => void;
   /** "Task it": make this message a task (a ⋮ menu item) — or, once it is one (`task`), open it
    *  from the chips under the body, which also show its status and owner. */
-  taskIt?: { onClick: () => void; task?: Task | null };
+  taskIt?: { onClick: () => void; task?: Task | null; people?: TaskPeople };
+  /** The quick door to a rule on messages like this one: a ⚡ beside the star, and a ⋮ item. */
+  onAutomate?: () => void;
+  /** The session an automation started on this message: ⚡ + who, a link to it. */
+  automation?: { name: string; status?: string | null; onOpen: () => void };
   /** Spawn a Claude Code session pre-loaded with the receiver-context prompt
    *  (spec + transcript + conversation + attachments). Renders an emerald CTA
    *  chip styled like the primary attachment action when the bubble's message
@@ -204,23 +212,6 @@ function parseClaudeQuote(content: string): { prefix: string; quoted: string } |
  */
 function MessageBody({ content, isBot, links }: { content: string; isBot: boolean; links: LinkHandlers | null }) {
   const bodyClass = `whitespace-pre-wrap break-words text-sm ${isBot ? 'italic text-foreground/70' : 'text-foreground/90'}`;
-  // Markdown links take the same click and menu as the plain-text ones.
-  const components = useMemo<Partial<Components> | undefined>(
-    () =>
-      links
-        ? {
-            a: ({ href, children }) =>
-              href ? (
-                <a href={href} className={MARKDOWN_LINK_CLASS} {...linkEventProps(links, href)}>
-                  {children}
-                </a>
-              ) : (
-                <>{children}</>
-              ),
-          }
-        : undefined,
-    [links],
-  );
   const claudeQuote = parseClaudeQuote(content);
   if (claudeQuote) {
     // The executed reply renders as real Markdown (bold, lists, code fences,
@@ -231,7 +222,7 @@ function MessageBody({ content, isBot, links }: { content: string; isBot: boolea
       <div className={`text-sm ${isBot ? 'text-foreground/70' : 'text-foreground/90'}`}>
         <span className="font-medium text-muted-foreground">{claudeQuote.prefix}</span>
         <div className="mt-1 break-words text-foreground/85">
-          <MarkdownView value={claudeQuote.quoted} compact components={components} />
+          <MarkdownView value={claudeQuote.quoted} compact links={links} />
         </div>
       </div>
     );
@@ -250,7 +241,10 @@ export function MessageBubble({
   onEditName,
   onDeleteMessage,
   onForwardMessage,
+  onLaunchWorker,
   taskIt,
+  onAutomate,
+  automation,
   onImplementPlan,
   onOpenPlanSession,
   onViewPlan,
@@ -270,6 +264,11 @@ export function MessageBubble({
   const { localUser } = useLocalUser();
   // Links in the body resolve against this message, exactly as a terminal's resolve against its shell.
   const linkSource = useRef(flowMessage ?? null);
+  const conversationId = flowMessage?.conversation_id;
+  const favoriteRef = useMemo(
+    () => (flowMessageId && conversationId ? messageFavoriteRef(flowMessageId, conversationId, message.content) : null),
+    [flowMessageId, conversationId, message.content],
+  );
   linkSource.current = flowMessage ?? null;
   const links = useLinks(linkSource, run);
 
@@ -375,6 +374,23 @@ export function MessageBubble({
             </span>
           )}
           {showReceipt && <DeliveryReceipt status={flowMessage?.delivery_status} message={flowMessage} />}
+          {!editing && favoriteRef && (
+            <span className="self-center" data-testid={`message-favorite-star-${flowMessageId}`}>
+              <FavoriteStar {...favoriteRef} size={12} hoverSurface="none" revealOnHover className="p-0.5" />
+            </span>
+          )}
+          {!editing && onAutomate && (
+            <button
+              type="button"
+              onClick={onAutomate}
+              title={t`Automate messages like this`}
+              aria-label={t`Automate messages like this`}
+              className="self-center rounded p-0.5 text-muted-foreground opacity-0 transition-opacity hover:bg-muted hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100"
+              data-testid={`message-automate-quick-${flowMessageId}`}
+            >
+              <Zap className="size-3" />
+            </button>
+          )}
           {!editing && (
             <span className="self-center">
               <MessageActionsMenu
@@ -387,7 +403,9 @@ export function MessageBubble({
                 replyInThread={replyInThread}
                 onReact={onReact ? (emoji) => onReact(emoji, false) : undefined}
                 onForward={onForwardMessage}
+                onLaunchWorker={onLaunchWorker}
                 onTaskIt={taskIt && !taskIt.task ? taskIt.onClick : undefined}
+                onAutomate={onAutomate}
                 onEditName={!isBot && onEditName ? startEdit : undefined}
                 onDelete={onDeleteMessage ? () => setConfirmingDelete(true) : undefined}
               />
@@ -414,34 +432,40 @@ export function MessageBubble({
           />
         )}
         {footer}
-        {/* An opened task stays in view: its chip, then its state at a glance — each opens the task.
-            Making one (Task it) lives in the ⋮ menu with the other actions. */}
-        {taskIt?.task && !editing && (
-          <div className="mt-1.5 flex flex-wrap items-center gap-1.5" data-testid="message-task-chips">
+        {automation && !editing && (
+          <div className="mt-1.5 flex flex-wrap items-center gap-1.5" data-testid="message-automation-chips">
             <button
               type="button"
-              onClick={taskIt.onClick}
-              className={`${CHIP_LAYOUT} ${chipStyleFor(Task.type)}`}
-              title={t`Open task`}
-              aria-label={t`Open task`}
-              data-testid="message-task-it"
+              onClick={automation.onOpen}
+              className={`${CHIP_LAYOUT} border ${
+                isProcessFailed(automation.status)
+                  ? 'border-dashed border-border text-muted-foreground'
+                  : 'border-foreground/25 bg-background text-foreground'
+              }`}
+              title={t`Open the session`}
+              data-testid="message-automation-chip"
+              data-status={automation.status ?? ''}
             >
-              <TaskItIcon className="h-3 w-3 shrink-0" />
-              <span className="max-w-[24rem] truncate">{taskIt.task.title || t`Task`}</span>
+              <Zap className="h-3 w-3 shrink-0" />
+              <span className="max-w-[24rem] truncate">{automation.name}</span>
             </button>
-            <TaskStatusChip status={taskIt.task.status} onClick={taskIt.onClick} />
-            <TaskOwnerChip task={taskIt.task} onClick={taskIt.onClick} />
           </div>
         )}
+        {/* An opened task stays in view: its chip (opens it), its status and its owner — both act here. */}
+        {taskIt?.task && !editing && <TaskChips task={taskIt.task} onOpen={taskIt.onClick} people={taskIt.people} />}
         {reactions && reactions.length > 0 && <ReactionChips reactions={reactions} onToggle={onReact} />}
       </div>
       {onDeleteMessage && (
         <ConfirmDialog
           open={confirmingDelete}
           onOpenChange={setConfirmingDelete}
-          title={t`Delete this message?`}
-          description={t`This permanently deletes the message and all of its data for everyone in the conversation. This can't be undone.`}
-          confirmLabel={t`Delete`}
+          title={flowMessage?.origin ? t`Remove this message from Flowpad?` : t`Delete this message?`}
+          description={
+            flowMessage?.origin
+              ? t`Removes Flowpad's copy. The message stays where it was sent.`
+              : t`This permanently deletes the message and all of its data for everyone in the conversation. This can't be undone.`
+          }
+          confirmLabel={flowMessage?.origin ? t`Remove` : t`Delete`}
           variant="destructive"
           onConfirm={onDeleteMessage}
         />

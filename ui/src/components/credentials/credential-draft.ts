@@ -50,6 +50,9 @@ export interface CredentialDraft {
   name: string;
   title: string;
   description: string;
+  /** What it is needed for, in one line, and the full reason shown behind the info icon. */
+  neededFor: string;
+  justification: string;
   iconName: string;
   helpUrl: string;
   /** The wiki page a person reads; kept as it is on save. */
@@ -139,6 +142,8 @@ export function customDraft(scope: CredentialScopeName): CredentialDraft {
     name: '',
     title: '',
     description: '',
+    neededFor: '',
+    justification: '',
     iconName: '',
     helpUrl: '',
     setupWiki: '',
@@ -157,6 +162,8 @@ export function templateDraft(spec: Credential, scope: CredentialScopeName): Cre
     name: String(spec.name ?? ''),
     title: spec.title || String(spec.name ?? ''),
     description: spec.description || '',
+    neededFor: spec.needed_for || '',
+    justification: spec.justification || '',
     iconName: spec.icon_name || '',
     helpUrl: spec.help_url || '',
     setupWiki: spec.setup_wiki || '',
@@ -191,6 +198,8 @@ function fromRow(row: CredentialStatusRow, mode: 'edit' | 'values'): CredentialD
     name: row.name,
     title: row.title,
     description: row.description,
+    neededFor: row.needed_for ?? '',
+    justification: row.justification ?? '',
     iconName: row.icon_name,
     helpUrl: row.help_url,
     setupWiki: row.setup_wiki ?? '',
@@ -300,6 +309,8 @@ export function toSaveRequest(d: CredentialDraft, projectId: string | null, depl
       name: d.name || slugify(d.title),
       title: d.title.trim(),
       description: d.description.trim(),
+      needed_for: d.neededFor.trim() || undefined,
+      justification: d.justification.trim() || undefined,
       icon_name: d.iconName || undefined,
       help_url: d.helpUrl || undefined,
       setup_wiki: d.setupWiki || undefined,

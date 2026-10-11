@@ -163,9 +163,12 @@ answer.route, answer.target   # ('quick', NavigationTarget(kind='view', value='d
 `navigator.route` is the engine of **NavigationDecision** (`flow_sdk/core/navigation_decision.py`),
 which the top bar asks before starting an assistant turn (`compute_node/@local/navigation-decision`,
 sending only the utterance -- the backend reads where the tab is as `navigation.here`, and answers
-a dock to navigate OR the prompt; see `docs/navigation/navigation-spec.md`). Rules first (a
-URL, path, port, "search for X", an exact screen name or alias), then one decision over every
-place on the map, what is in context here and full-text candidates, acted on only at ≥ 0.85. **With no decision API on the hub it answers `agentic`
+a dock to navigate, a UI action or app page for the UI, OR the prompt; see
+`docs/navigation/navigation-spec.md`). Rules first (a URL, path, port, "search for X", an exact
+screen name or alias or one typo of one, a type's name, "this project's / this session's X"), then
+one decision over every place on the map, what is in context here, full-text candidates and the UI
+actions, acted on at ≥ 0.85 or on a clear lead -- unless the request carries details, which go to
+the assistant. **With no decision API on the hub it answers `agentic`
 for everything, rules included**, so the magic line behaves exactly as before. Measured
 through this function (50 cases × 3, Jev via the local hub): 100% right when it acts, 92% of
 navigation handled, every reasoning request sent to the assistant, P95 329 ms.
@@ -181,3 +184,52 @@ from flow_sdk.builtin.agentic_process.cli_drivers.hub_endpoint_binding import fu
 decision = (await funding_status(refresh=True)).decision
 decision.available, decision.name, decision.reason
 ```
+
+## 9. A decision as a wizard step
+
+The same question as a ComputeOp — subkind `decision`, its `exe_data` the questions and what
+each answer must be — so a sequence can branch on it. `input` names the scope value the
+questions are about; `bind` puts the plain answer (a choice's option, a score's level, yes/no
+as a bool) in scope; `when` runs a later step only while a value matches, and `on_fail: stop`
+ends the run quietly when the gate is not met.
+
+```python
+from flow_sdk.core.wizard.runner import Resolved, run_wizard
+from flow_sdk.schema.data_spec.compute_op_spec import CliOp, ComputeOpSpec, DecisionOp, Require
+from flow_sdk.schema.data_spec.spec import DataSpec
+from flow_sdk.schema.data_spec.wizard_spec import WizardSpec, WizardStepSpec
+
+
+class Ticket(DataSpec):
+    text: str
+
+
+which_team = ComputeOpSpec(name="which-team", subkind="decision", exe_data=DecisionOp(
+    input="TICKET",
+    questions={"team": {"type": "choice", "instructions": "Where should `text` go?",
+                        "options": {"billing": "payments, refunds, invoices", "bug": "the product is broken"}}},
+    require={"team": Require(choice="billing")},
+))
+mark = ComputeOpSpec(name="mark", subkind="cli", exe_data=CliOp(commands={"darwin": "echo routed", "linux": "echo routed"}))
+ops = {"which-team": which_team, "mark": mark}
+
+async def resolve(name):
+    return Resolved(ops[name], trusted=True)
+
+route = WizardSpec(name="route", steps=[
+    WizardStepSpec(id="route", ref="which-team", bind="TEAM", on_fail="stop"),
+    WizardStepSpec(id="billing", ref="mark", when={"TEAM": "billing"}),
+    WizardStepSpec(id="bugs", ref="mark", when={"TEAM": "bug"}),
+])
+result = await run_wizard(route, trusted=True, platform="darwin", resolve_op=resolve,
+                          inputs={"TICKET": Ticket(text="I was charged twice for October.")})
+result.steps["route"].met          # True
+result.steps["route"].confidence   # 0.97
+result.steps["billing"].ran        # True — TEAM was 'billing'
+result.steps["bugs"].ran           # False — passed as not applicable
+result.stopped_at                  # '' — the gate was met, nothing stopped the run
+```
+
+A verdict is never a raise: a Decision API that cannot be reached answers `met=False` with
+`unavailable` naming the closed reason, and `on_fail: stop` turns that into a quiet end.
+

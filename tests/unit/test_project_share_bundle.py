@@ -121,10 +121,10 @@ async def test_the_senders_checkout_stays_on_the_senders_machine(tmp_path):
     metadata = json.loads(metadata_text)
     assert "fs_storage_mount_path" not in metadata
     assert "sender-checkout" not in metadata_text and "sender-notes" not in metadata_text
-    # A git context folder can be resolved on the recipient's machine; a local
-    # one is a path on this machine only.
-    assert list(metadata["shared_context_origins"]) == [str(git_folder.typeid)]
-    assert "legacy_include_dirs_" not in metadata
+    # Context folders travel as the repo's flow.json, never as resolved origins
+    # or paths on the project row.
+    assert "shared_context_origins" not in metadata
+    assert "include_dirs" not in metadata and "context_dir_infos" not in metadata
 
 
 async def test_the_project_row_never_rides_as_an_overlay_envelope(tmp_path):
@@ -231,3 +231,44 @@ async def test_a_failed_clone_surfaces_and_leaves_the_project_to_retry(tmp_path,
         await handle_attachment_install(ma.id, "user", None)
 
     assert not (await MessageAttachment.get_one({"id": ma.id})).scope, "still staged, so Install can retry"
+
+
+async def _receive_with_name_taken(tmp_path: Path) -> tuple[Project, Project, MessageAttachment]:
+    """The recipient already holds a DIFFERENT project under the shared one's name
+    (their own checkout of the repo, an earlier copy)."""
+    project = await _shared_project(tmp_path, origin=_origin())
+    ma = await _receive(project, tmp_path)
+    mine = tmp_path / "recipient-own-checkout"
+    mine.mkdir()
+    existing = await Project(id=str(uuid4()), name=project.name, fs_storage_mount_path=str(mine)).save(notify=False)
+    return project, existing, ma
+
+
+async def test_installing_a_project_whose_name_is_taken_here_asks_the_receiver(tmp_path, git_clone):
+    """Install used to write the shared row straight into the duplicate-name check,
+    which raised out of the action — the route answered 500 "could not be installed"."""
+    project, existing, ma = await _receive_with_name_taken(tmp_path)
+
+    res = await handle_attachment_install(ma.id, "user", None)
+
+    assert res.status_code == 409, res.message
+    assert res.data == {
+        "project_name_conflict": True,
+        "attempted_name": project.name,
+        "suggested_name": f"{project.name}-2",
+        "existing_project_id": existing.id,
+    }
+    assert await Project.get_one({"id": project.id}) is None
+    assert git_clone["clones"] == 0
+    assert not (await MessageAttachment.get_one({"id": ma.id})).scope, "still staged, so the receiver can choose"
+
+
+async def test_the_receiver_installs_it_under_a_name_of_their_own(tmp_path, git_clone):
+    project, existing, ma = await _receive_with_name_taken(tmp_path)
+
+    res = await handle_attachment_install(ma.id, "user", None, name=f"{project.name}-2")
+
+    assert isinstance(res, ApiSuccessResponse), res.message
+    assert (await Project.get_one({"id": project.id})).name == f"{project.name}-2"
+    assert (await Project.get_one({"id": existing.id})).name == project.name
+    assert (await MessageAttachment.get_one({"id": ma.id})).scope == "user"

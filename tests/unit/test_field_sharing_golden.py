@@ -391,8 +391,10 @@ def test_the_two_egress_seams_now_agree():
             # `channel_provider`: the driver behind the channel (two drivers speak `whatsapp`) — local.
             # `awaits_hub`/`origin_project_id`: an ask for help captured here for the hub, and the
             # project it was asked from — this machine's bookkeeping until delivery.
+            # `channel_answered`: whether anything here answers the channel — stamped by the local projection.
             ["hub_updated_date", "message_ids", "owner", "channel_source_id", "is_unread", "unread_count", "channel_spec",
-             "address", "started_at", "ended_at", "channel_provider", "awaits_hub", "origin_project_id"],
+             "address", "started_at", "ended_at", "channel_provider", "awaits_hub", "origin_project_id",
+             "channel_answered"],
             BASE_LOCAL_ONLY,
             # `message_count`/`message_ids` are projections; Conversation's setattr
             # guard refuses them, which is itself the policy under test elsewhere.
@@ -414,6 +416,8 @@ def test_the_two_egress_seams_now_agree():
                 # A projection like `message_count`: only `recompute_unread` may write it.
                 "is_unread",
                 "unread_count",
+                # Stamped by the local projection with `channel_source_id`, never by a caller.
+                "channel_answered",
                 "private_context_entities_",
                 "shared_context_entities",
             ],
@@ -490,7 +494,8 @@ def test_project_hub_body_override_strips_local_project_state():
 
     inst, could_not_fill = _case(Project, name="p")
     popped, added = _override_delta(inst)
-    # 12 of the override's 13 pops. `fs_storage_provider` is an enum the filler
+    # Every one of the override's pops (`shared_context_origins` left the model
+    # with context folders moving to flow.json). `fs_storage_provider` is an enum the filler
     # leaves None, so `exclude_none` removes it before the pop can — the same
     # blind spot that hid Folder's `path`, here made explicit instead of assumed.
     assert "fs_storage_provider" in could_not_fill
@@ -512,7 +517,6 @@ def test_project_hub_body_override_strips_local_project_state():
         "presence",
         "session_code",
         "session_count",
-        "shared_context_origins",
     ]
     assert added == []
     assert "name" in inst._hub_body(), "the hub hosts a project's name verbatim"

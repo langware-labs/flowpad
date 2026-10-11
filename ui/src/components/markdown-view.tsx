@@ -1,6 +1,6 @@
 import { CodeBlockRunButton } from '@src/components/code-block-run-button';
 import { CopyButton } from '@src/components/ui/copy-button';
-import React, { useRef } from 'react';
+import React, { useMemo, useRef } from 'react';
 import { useLingui } from '@lingui/react/macro';
 import ReactMarkdown, { defaultUrlTransform, type Components, type UrlTransform } from 'react-markdown';
 import rehypeHighlight from 'rehype-highlight';
@@ -8,7 +8,10 @@ import rehypeRaw from 'rehype-raw';
 import rehypeSanitize, { defaultSchema } from 'rehype-sanitize';
 import remarkGfm from 'remark-gfm';
 
+import { linkEventProps, type LinkHandlers } from '@src/components/links/link-events';
 import { useLocaleInfo } from '@src/contexts/locale-context';
+import { isWebUrl } from '@src/lib/link-kind';
+import remarkLinkRefs from '@src/lib/remark-link-refs';
 import { resolveTextDirection, type TextDirection } from '@src/lib/text-direction';
 
 /** Parse the `language-xxx` class rehype-highlight puts on the inner <code>. */
@@ -88,16 +91,25 @@ export const MARKDOWN_LINK_CLASS = 'font-medium text-primary underline underline
 
 export function markdownComponents({
   compact = false,
+  dense = false,
   codeChrome = true,
   localeDir,
 }: {
   compact?: boolean;
+  /** Markdown at the surrounding text's size: headings only bold, lists and
+   *  paragraphs tight. For a reply read inline (a live session's remote turn),
+   *  where a document-sized heading would dwarf the exchange around it. */
+  dense?: boolean;
   codeChrome?: boolean;
   localeDir: TextDirection;
 }): Components {
-  const paragraphClass = compact
-    ? 'mb-2 leading-6 last:mb-0 [&:not(:first-child)]:mt-2'
-    : 'mb-4 leading-7 last:mb-0 [&:not(:first-child)]:mt-6';
+  const paragraphClass = dense
+    ? 'my-1 first:mt-0 last:mb-0'
+    : compact
+      ? 'mb-2 leading-6 last:mb-0 [&:not(:first-child)]:mt-2'
+      : 'mb-4 leading-7 last:mb-0 [&:not(:first-child)]:mt-6';
+  const headingClass = (big: string) => (dense ? 'mb-1 mt-2 font-semibold first:mt-0' : big);
+  const listClass = dense ? 'my-1 ms-5 [&>li]:mt-0.5' : 'my-6 ms-6 [&>li]:mt-2';
 
   // Every text-bearing block carries an explicit dir so its base direction (and
   // with it alignment + punctuation side) follows the block's own content
@@ -127,34 +139,40 @@ export function markdownComponents({
       </p>
     ),
     h1: ({ node, children }) => (
-      <h1 dir={dirOf(node)} className="mb-4 scroll-m-20 text-4xl font-extrabold tracking-tight lg:text-5xl">
+      <h1
+        dir={dirOf(node)}
+        className={headingClass('mb-4 scroll-m-20 text-4xl font-extrabold tracking-tight lg:text-5xl')}
+      >
         {children}
       </h1>
     ),
     h2: ({ node, children }) => (
-      <h2 dir={dirOf(node)} className="mb-3 scroll-m-20 border-b pb-2 text-3xl font-semibold tracking-tight first:mt-0">
+      <h2
+        dir={dirOf(node)}
+        className={headingClass('mb-3 scroll-m-20 border-b pb-2 text-3xl font-semibold tracking-tight first:mt-0')}
+      >
         {children}
       </h2>
     ),
     h3: ({ node, children }) => (
-      <h3 dir={dirOf(node)} className="mb-2 scroll-m-20 text-2xl font-semibold tracking-tight">
+      <h3 dir={dirOf(node)} className={headingClass('mb-2 scroll-m-20 text-2xl font-semibold tracking-tight')}>
         {children}
       </h3>
     ),
     ul: ({ node, children }) => (
-      <ul dir={dirOf(node)} className="my-6 ms-6 list-disc [&>li]:mt-2">
+      <ul dir={dirOf(node)} className={`${listClass} list-disc`}>
         {children}
       </ul>
     ),
     ol: ({ node, children }) => (
-      <ol dir={dirOf(node)} className="my-6 ms-6 list-decimal [&>li]:mt-2">
+      <ol dir={dirOf(node)} className={`${listClass} list-decimal`}>
         {children}
       </ol>
     ),
     // No dir here on purpose: the marker sits on the item's start side, so a
     // per-item direction would scatter the markers across both sides of one
     // list. <li> inherits the direction its <ul>/<ol> resolved for the whole.
-    li: ({ children }) => <li className="mt-2">{children}</li>,
+    li: ({ children }) => <li className={dense ? undefined : 'mt-2'}>{children}</li>,
     a: ({ href, children }) => (
       <a href={href} target="_blank" rel="noopener noreferrer" className={MARKDOWN_LINK_CLASS}>
         {children}
@@ -191,20 +209,75 @@ export function markdownComponents({
  *  an `<img>`, where a data URI cannot run anything — never on a link. */
 const withDataImages: UrlTransform = (url, key, node) =>
   node.tagName === 'img' && key === 'src' && url.startsWith('data:image/') ? url : defaultUrlTransform(url);
+/** A drawn image (a QR code) on its own white card: a camera reads dark-on-light, and a backend's black-on-
+ *  transparent drawing vanishes on a dark theme. Other images keep the default rendering. */
+const DataImage: Components['img'] = ({ node: _node, src, alt, ...rest }) =>
+  typeof src === 'string' && src.startsWith('data:image/') ? (
+    <img
+      src={src}
+      alt={alt ?? ''}
+      {...rest}
+      className="my-2 inline-block rounded-md bg-white p-2 shadow-sm"
+      data-testid="md-data-image"
+    />
+  ) : (
+    <img src={src} alt={alt ?? ''} {...rest} />
+  );
 const dataImageSchema = {
   ...defaultSchema,
   protocols: { ...defaultSchema.protocols, src: [...(defaultSchema.protocols?.src ?? []), 'data'] },
 };
 
+/** Keeps the raw reference `remarkLinkRefs` put on a link; it is data, never followed by the browser. */
+const linkRefSchema = {
+  ...defaultSchema,
+  attributes: { ...defaultSchema.attributes, a: [...(defaultSchema.attributes?.a ?? []), 'dataLinkRef'] },
+};
+
+/**
+ * Every link — authored, gfm-autolinked, or a file reference `remarkLinkRefs` found — takes
+ * the link layer's click and menu. Only a web page keeps an href: a path href would send a
+ * middle-click to a dead app route.
+ */
+function linkedAnchors(links: LinkHandlers): Partial<Components> {
+  return {
+    a: ({ node, href, children }) => {
+      const ref = node?.properties?.dataLinkRef;
+      if (typeof ref !== 'string') {
+        return (
+          <a href={href} target="_blank" rel="noopener noreferrer" className={MARKDOWN_LINK_CLASS}>
+            {children}
+          </a>
+        );
+      }
+      return (
+        <a
+          href={isWebUrl(ref) ? ref : undefined}
+          role="link"
+          // A linked `code.py:3` keeps its code chip but reads as a link.
+          className={`cursor-pointer ${MARKDOWN_LINK_CLASS} [&>code]:text-primary [&>code]:underline`}
+          {...linkEventProps(links, ref)}
+        >
+          {children}
+        </a>
+      );
+    },
+  };
+}
+
 export const MarkdownView = ({
   value,
   compact = false,
+  dense = false,
   codeChrome = true,
   components,
   dataImages = false,
+  links = null,
 }: {
   value: string;
   compact?: boolean;
+  /** See `markdownComponents` — markdown at the surrounding text's size. */
+  dense?: boolean;
   codeChrome?: boolean;
   /** Element overrides merged OVER the defaults — for renderers that can resolve
    *  something this component cannot know about on its own. The portal uses it
@@ -213,6 +286,12 @@ export const MarkdownView = ({
   components?: Partial<Components>;
   /** Draw inline `data:image/` images (a QR code in a setup question). Off by default. */
   dataImages?: boolean;
+  /**
+   * The surface's link handlers (`useLinks`). Given, file references in prose and
+   * inline code become links too, and every link opens through the link layer
+   * instead of a browser tab.
+   */
+  links?: LinkHandlers | null;
 }) => {
   // Reactive on purpose. The supported-locale list lands one tick AFTER this
   // tree first renders, so a stored `he` reads as unsupported on the first
@@ -220,12 +299,23 @@ export const MarkdownView = ({
   // for the whole session (see `locale-context.tsx`). Only the tiebreaker for
   // blocks with no strong characters of their own — content still wins.
   const localeDir = useLocaleInfo().dir;
+  const anchors = useMemo(() => (links ? linkedAnchors(links) : undefined), [links]);
   return (
     <ReactMarkdown
-      remarkPlugins={[remarkGfm]}
-      rehypePlugins={[rehypeRaw, dataImages ? [rehypeSanitize, dataImageSchema] : rehypeSanitize, rehypeHighlight]}
+      remarkPlugins={links ? [remarkGfm, remarkLinkRefs] : [remarkGfm]}
+      // `dataImages` and `links` never meet: a setup question has no link source.
+      rehypePlugins={[
+        rehypeRaw,
+        links ? [rehypeSanitize, linkRefSchema] : dataImages ? [rehypeSanitize, dataImageSchema] : rehypeSanitize,
+        rehypeHighlight,
+      ]}
       urlTransform={dataImages ? withDataImages : undefined}
-      components={{ ...markdownComponents({ compact, codeChrome, localeDir }), ...components }}
+      components={{
+        ...markdownComponents({ compact, dense, codeChrome, localeDir }),
+        ...(dataImages ? { img: DataImage } : {}),
+        ...anchors,
+        ...components,
+      }}
     >
       {value}
     </ReactMarkdown>

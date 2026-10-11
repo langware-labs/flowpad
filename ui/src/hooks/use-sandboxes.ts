@@ -75,7 +75,17 @@ export const WORKSPACE_SERVICE = 'workspace';
 // (see paintTab) — something the generic runner has no concept of.
 import type { Step as GenericStep } from './use-step-flow';
 
-export type StepId = 'launch' | 'health' | 'validate' | 'clone' | 'init' | 'index' | 'context' | 'default' | 'open';
+export type StepId =
+  | 'launch'
+  | 'health'
+  | 'validate'
+  | 'clone'
+  | 'init'
+  | 'index'
+  | 'companion'
+  | 'context'
+  | 'default'
+  | 'open';
 export type Step = GenericStep<StepId>;
 
 /** Every row from `validate` to `default` is one `computeNodeTools` command, so
@@ -88,13 +98,14 @@ const STEP_LABELS: Record<StepId, string> = {
   clone: 'Cloning the repository',
   init: 'Setting up the project',
   index: 'Indexing the project',
-  context: 'Attaching context projects',
+  companion: 'Setting up the controller project',
+  context: 'Adding dependencies',
   default: 'Choosing the project to open',
   open: 'Finishing up',
 };
 
 /**
- * Could this setup have context projects to attach?
+ * Could this setup have dependencies to add?
  *
  * A git-backed project can declare them in its manifest, which only the clone
  * can reveal — so the answer is "maybe" for anything with a repo, and the step
@@ -122,7 +133,10 @@ function hasContextWork(setup: SandboxSetup): boolean {
  * showing them idle would report work that is not going to happen.
  */
 function plannedProjectSteps(setup: SandboxSetup): Step[] {
+  // No repo to fetch → the box mounts the project empty instead, and an empty
+  // directory has nothing to index.
   const ids: StepId[] = setup.gitOrigin ? (['validate', 'clone', 'index'] as StepId[]) : (['init'] as StepId[]);
+  if (setup.companions?.length) ids.push('companion');
   if (hasContextWork(setup)) ids.push('context');
   ids.push('default', 'open');
   return ids.map((id) => ({ id, label: STEP_LABELS[id], status: 'idle' }));
@@ -133,16 +147,9 @@ function plannedProjectSteps(setup: SandboxSetup): Step[] {
  *  can render the SAME row set this hook would drive, instead of a placeholder
  *  that has to be kept in sync with it by hand. */
 export function plannedSteps(setup?: SandboxSetup): Step[] {
-  const ids: StepId[] = ['launch', 'health'];
-  if (setup) {
-    // No repo to fetch → the box mounts the project empty instead, and an empty
-    // directory has nothing to index.
-    ids.push(...(setup.gitOrigin ? (['validate', 'clone', 'index'] as StepId[]) : (['init'] as StepId[])));
-    if (hasContextWork(setup)) ids.push('context');
-    ids.push('default');
-  }
-  ids.push('open');
-  return ids.map((id) => ({ id, label: STEP_LABELS[id], status: 'idle' }));
+  const step = (id: StepId): Step => ({ id, label: STEP_LABELS[id], status: 'idle' });
+  // The project rows end in `open`; with no project there is only the box to open.
+  return [step('launch'), step('health'), ...(setup ? plannedProjectSteps(setup) : [step('open')])];
 }
 
 /**
@@ -181,7 +188,7 @@ export function isUserMachine(node: ComputeNode): boolean {
 function defaultSandboxProvider(): ComputeProviderType {
   // Validated against the SANDBOX providers, not against every provider: a hub
   // configured for `local_machine` would otherwise be taken at its word and mint
-  // a node that `isSandbox` — reading the same set — can never list back.
+  // a node that `isSandbox` — reading the same set — never recognizes as a sandbox.
   const configured: ComputeProviderType | undefined = dataContext.bootstrapInfo?.default_compute_provider;
   return configured && SANDBOX_PROVIDERS.has(configured) ? configured : ComputeProviderType.E2B;
 }
@@ -200,26 +207,13 @@ function hubEntityJson(node: ComputeNode, patch: Record<string, unknown> = {}): 
  * Exported so the wire-contract test asserts against the URL production
  * actually navigates to, rather than re-deriving one from copied literals.
  */
-export function workspaceServiceUrl(nodeId: string): string {
+export function workspaceServiceUrl(nodeId: string, next?: string): string {
   const info = new ActionInfo('open-service', ComputeNode.type, nodeId, 'GET');
   info.subpath = WORKSPACE_SERVICE;
+  // `next`: the app path the box opens on once it is up — a launch's `action=launch` link.
+  // The hub accepts only a same-origin path and carries it through its sign-in gate.
+  if (next) info.queryParameters = { ...(info.queryParameters ?? {}), next };
   return info.fullActionUrl;
-}
-
-/**
- * A ComputeNode is a "sandbox" iff its provider is one of `SANDBOX_PROVIDERS`
- * and it was created from the workspace flavor. Named `isSandbox`, not
- * `isDesktop`: `dataContext.isDesktop` already means "running in Electron", and
- * the two answered different questions under one name.
- *
- * The rule itself lives on the entity (`ComputeNode.isSandbox`) rather than here:
- * it used to read the provider AND a magic string out of the untyped
- * `node_config` blob inline, which meant every surface wanting the question had
- * to know that blob's shape. This wrapper stays because callers and tests import
- * it by name.
- */
-export function isSandbox(node: ComputeNode): boolean {
-  return node.isSandbox;
 }
 
 /**
@@ -305,20 +299,32 @@ export interface SandboxSetup {
   name: string;
   /** Adopted by the box, so one project id spans hub and sandbox. */
   projectId?: string;
-  /** Help desks / skills repos to clone and attach as context of this project.
+  /** Help desks / skills repos to clone and add as dependencies of this project.
    *  Defaults to whatever the cloned repo's own manifest declares. */
   contextProjects?: ContextProject[];
+  /** Projects provisioned BESIDE this one, each its own project and never attached — a
+   *  launch's controller, checked out next to the target it works on. */
+  companions?: SandboxCompanion[];
   /** Review-branch content installation, applied to the hub's checkout before
    *  the tree is copied in, then reconciled on the box. Git-backed only. */
   install?: ContentInstallSpec;
 }
 
-/** A repo that becomes its own project on the box AND a context folder of the
+/** A project provisioned beside the main one (`SandboxSetup.companions`). */
+export interface SandboxCompanion {
+  gitOrigin: GitOrigin | HubRepoOrigin;
+  name: string;
+  /** Adopted by the box, so the launch handler finds it by the hub's id. */
+  projectId?: string;
+}
+
+/** A repo that becomes its own project on the box AND a dependency of the
  *  main one — how a help desk's skills and assets come into scope. */
 export interface ContextProject {
   gitOrigin: GitOrigin;
   name: string;
-  scope: 'private' | 'shared';
+  /** False: a required dependency, fetched wherever the project opens. */
+  optional: boolean;
 }
 
 /** Rows the hub reports for one provisioning run, keyed by step. */
@@ -342,7 +348,16 @@ function provisionSetupOf(setup: SandboxSetup): ProvisionSetup {
           context_projects: setup.contextProjects.map((ctx) => ({
             git_origin: ctx.gitOrigin as unknown as Record<string, unknown>,
             name: ctx.name,
-            scope: ctx.scope,
+            optional: ctx.optional,
+          })),
+        }
+      : {}),
+    ...(setup.companions?.length
+      ? {
+          companions: setup.companions.map((c) => ({
+            git_origin: c.gitOrigin as unknown as Record<string, unknown>,
+            name: c.name,
+            ...(c.projectId ? { project_id: c.projectId } : {}),
           })),
         }
       : {}),
@@ -405,6 +420,8 @@ async function provisionSandboxProject(
   }
 }
 
+const NO_NODES: ComputeNode[] = [];
+
 export function useSandboxes() {
   const { user } = useAuth();
 
@@ -415,7 +432,10 @@ export function useSandboxes() {
 
   const { data: nodes, isLoading, refetch } = useEntitiesQuery<ComputeNode>(sandboxesRequest, { enabled: !!user });
 
-  const sandboxes = useMemo(() => (nodes ?? []).filter(isSandbox), [nodes]);
+  // Every machine the user can reach — agent deployment machines carry no workspace
+  // flavor, and filtering on it hid all of them. One shared empty list, so the
+  // effects keyed on it do not re-run while the query is still loading.
+  const sandboxes = nodes ?? NO_NODES;
   // `createSandbox` only needs the list to pick the next auto-name. Reading it
   // through a ref keeps the callback stable across every refetch — including the
   // one it triggers itself — so consumers holding it as a prop don't re-render.
@@ -436,8 +456,8 @@ export function useSandboxes() {
     }
   }, []);
 
-  // Probe only sandboxes we haven't seen yet, and forget ones that vanished —
-  // re-probing the whole list on every add/delete would be one call per sandbox.
+  // Probe only machines we haven't seen yet, and forget ones that vanished —
+  // re-probing the whole list on every add/delete would be one call per machine.
   useEffect(() => {
     const liveIds = new Set(sandboxes.map((d) => d.id));
     setDetails((prev) => {

@@ -40,6 +40,7 @@ from typing import TYPE_CHECKING, Any, ClassVar, Literal, Optional
 
 from pydantic import BaseModel, PrivateAttr, field_validator
 
+from flow_sdk.builtin.agentic_process.system_prompt import launch_surface_fields
 from flow_sdk._compat import UTC
 from flow_sdk.api.api_types.api_field import APIField, Sharing
 from flow_sdk.api.api_types.identifier import is_valid_entity_id
@@ -612,6 +613,27 @@ class Deployment(Entity):
 
         return worst(e.health.state if e.health else "unknown" for e in await self.endpoints())
 
+    @classmethod
+    @action.get(action_name="providers")
+    async def providers_action(cls):
+        """`GET /deployment/providers` — the compute providers a cloud deployment may be placed on.
+
+        The hub owns the answer (its ``DEPLOYMENT_COMPUTE_PROVIDERS``); this relays it as-is. A
+        type-level call has no entity, so the router cannot reflect it to the hub — hence a relay,
+        like ``machine-enroll``. Nothing is cached here; the client caches.
+        """
+        from flow_sdk.cloud_client.shared.errors import HubError  # noqa: PLC0415
+        from flow_sdk.cloud_client.transport.hub_http import hub_base_url, hub_get_or_raise  # noqa: PLC0415
+        from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse  # noqa: PLC0415
+
+        if not hub_base_url():
+            return ApiFailResponse(message="Sign in to the hub to deploy to the cloud", status_code=409)
+        try:
+            providers = await hub_get_or_raise(EntityType.DEPLOYMENT.value, None, "providers")
+        except HubError as exc:
+            return ApiFailResponse(message=exc.reason, status_code=exc.status_code or 502)
+        return ApiSuccessResponse(data=providers if isinstance(providers, list) else [])
+
     @action.get(action_name="endpoints")
     async def endpoints_action(self):
         """`GET /deployment/<id>/endpoints` — what this placement serves.
@@ -1017,13 +1039,9 @@ class Deployment(Entity):
         opts = agent.to_agent_options(worker_type=worker_override, output_format=options.pop("output_format", None))
 
         # The agent's system prompt goes in via ``context_data.instructions`` —
-        # the ONE channel ``resolve_system_instructions`` reads, which
-        # ``prepare_system_instruction_assets`` then materializes as CLAUDE.md /
-        # AGENTS.md / .agents / copilot instructions and hands to the driver as
-        # ``system_prompt_file`` + ``--add-dir``. Setting ``system_prompt_append``
-        # directly would reach Claude only: codex takes ``developer_instructions``
-        # and copilot ``custom_instruction_dirs``, and
-        # ``_apply_system_instruction_assets`` nulls the append field anyway.
+        # the ``INSTRUCTIONS`` layer of ``system_prompt.compose_layers``, which
+        # ``prepare_system_instruction_assets`` projects per vendor (CLAUDE.md /
+        # AGENTS.md / copilot instructions / developer_instructions).
         context_data = {**(options.pop("context_data", None) or {})}
         if agent.system_prompt:
             existing = str(context_data.get("instructions") or "").strip()
@@ -1047,6 +1065,18 @@ class Deployment(Entity):
         # agent writes nothing.
         await agent.attach_declared_mcp_servers()
 
+        # An agent acting in ANOTHER project's checkout still needs its own files: mount
+        # its home and say where it is, so a path in its prompt resolves there.
+        acting_project_id = options.pop("project_id", None) or agent.project_id
+        additional_dirs = list(agent.additional_dirs or [])
+        home = await _foreign_home(agent, acting_project_id)
+        if home:
+            if home not in additional_dirs:
+                additional_dirs.append(home)
+            context_data["instructions"] = "\n\n".join(
+                p for p in (str(context_data.get("instructions") or "").strip(), home_line(home)) if p
+            )
+
         process = AgenticProcess(
             name=options.pop("name", None) or f"{agent.name}: {prompt[:40]}",
             workdir=options.pop("workdir", None),
@@ -1057,9 +1087,9 @@ class Deployment(Entity):
             pty_mode=options.pop("pty_mode", False),
             process_type=options.pop("process_type", ProcessKind.EXECUTION.value),
             worker_type=worker_type_value(worker_override or agent.worker_type or await selected_worker_type()),
-            project_id=options.pop("project_id", None) or agent.project_id,
+            project_id=acting_project_id,
             load_flowpad_assistant=cos_options.get("load_flowpad_assistant", agent.load_flowpad_assistant),
-            additional_dirs=list(agent.additional_dirs or []),
+            additional_dirs=additional_dirs,
             # The agent's MCP assets, resolved from its folder. Set on the
             # constructor rather than via ``process.add_mcp`` because this verb
             # is documented "not saved" and ``add_mcp`` saves. A process may
@@ -1111,7 +1141,7 @@ class Deployment(Entity):
         await proc.save()
         return await take_turn(proc, prompt, spec, wait=wait)
 
-    async def use(self, *, owner=None, **options) -> "AgenticProcess":
+    async def use(self, *, owner=None, launch_surface: str | None = None, **options) -> "AgenticProcess":
         """Open a session AS this agent: a visible, headless Chat process, saved,
         with no first turn — the human types it.
 
@@ -1131,7 +1161,7 @@ class Deployment(Entity):
         # route row (see ``_use_on_hub``); ``run`` still refuses it (see
         # ``agent_run.dispatch_agent_run``).
         if not self.is_local:
-            return await self._use_on_hub(owner=owner)
+            return await self._use_on_hub(owner=owner, launch_surface=launch_surface)
         agent = await self._require_agent()  # ``create_process`` re-reads it from the memoized ``_element``
         # Peeked, not popped — ``create_process`` stays the one owner of the
         # caller-else-agent fallback. It is read here because the acting project
@@ -1154,10 +1184,13 @@ class Deployment(Entity):
             target_typeid_str=str(agent.typeid),
             **options,
         )
+        # The opener's surface (``"app"`` from the Flowpad app) — the COMMON_UI system-prompt layer.
+        if surface := launch_surface_fields(launch_surface):
+            proc.context_data = {**(proc.context_data or {}), **surface}
         await proc.save(owner)
         return proc
 
-    async def _use_on_hub(self, *, owner=None) -> "AgenticProcess":
+    async def _use_on_hub(self, *, owner=None, launch_surface: str | None = None) -> "AgenticProcess":
         """Open a session on this REMOTE placement through the hub, and adopt the
         process it minted as a route row. The hub refuses a placement it never
         made — a cloud row minted locally has no counterpart there."""
@@ -1165,7 +1198,10 @@ class Deployment(Entity):
         from flow_sdk.cloud_client.transport import hub_http  # noqa: PLC0415
 
         agent = await self._require_agent()
-        opened = await hub_http.hub_post(agent.get_type(), {"deployment_id": self.id}, agent.id, "use")
+        # ``launch_surface`` rides along so the placement machine's ``use_action`` can
+        # stamp it (``COMMON_UI`` layer); a hub that does not forward it drops it.
+        body = {"deployment_id": self.id, **launch_surface_fields(launch_surface)}
+        opened = await hub_http.hub_post(agent.get_type(), body, agent.id, "use")
         process_id = str((opened or {}).get("process_id") or "")
         if not is_valid_entity_id(process_id):
             raise RuntimeError("the hub returned an invalid process for this deployment")
@@ -1229,3 +1265,36 @@ def _local_node_typeid() -> str:
 
 
 __all__ = ["NODE_PROVIDERS", "Deployment", "DeploymentIdentity"]
+
+
+def home_line(home: str) -> str:
+    """The one sentence that tells an agent where its own files are."""
+    return f"Your own files are in {home}; paths in your instructions are relative to it."
+
+
+async def _foreign_home(agent, acting_project_id: str | None) -> str | None:
+    """The agent's own folder when it lies outside the acting project's folder, else ``None``.
+
+    ``agent.home()`` knows a project's folder or a repository. An agent in a plain
+    dependency folder (no git, not a project of its own) has neither — but the acting
+    project depends on that folder, so the deepest of its dependency roots holding the
+    agent IS its home."""
+    from flow_sdk.builtin.project import Project  # noqa: PLC0415
+    from flow_sdk.fs_store.path_utils import canonical_posix_path, is_path_under  # noqa: PLC0415
+
+    acting = await Project.get_by_id(acting_project_id) if acting_project_id else None
+    mount = getattr(acting, "fs_storage_mount_path", None)
+    home = await agent.home()
+    if not home and acting is not None and agent.asset_ref:
+        try:
+            ref = canonical_posix_path(agent.asset_ref)
+        except OSError:
+            ref = ""
+        holding = [r for r in acting.direct_context_roots()[1:] if ref and is_path_under(ref, r)]
+        home = max(holding, key=len) if holding else None
+    if not home:
+        return None
+    if mount and is_path_under(home, canonical_posix_path(mount)):
+        return None
+    return home
+

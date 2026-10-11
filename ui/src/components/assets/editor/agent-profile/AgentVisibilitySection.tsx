@@ -132,7 +132,7 @@ export function AgentVisibilitySection({ agent, version }: { agent: Agent; versi
       {launchLink && (
         <div className="mt-3" data-testid="agent-launch-link">
           <p className="mb-1 text-xs text-muted-foreground">
-            <Trans>Launch a new sandbox running this agent</Trans>
+            <Trans>Launch link: opens this agent on a desktop or in a cloud sandbox</Trans>
           </p>
           <div className="flex items-center gap-2 rounded-md border border-border px-2 py-1.5">
             <span className="min-w-0 flex-1 truncate font-mono text-xs text-muted-foreground">{launchLink}</span>
@@ -145,7 +145,7 @@ export function AgentVisibilitySection({ agent, version }: { agent: Agent; versi
             />
           </div>
           <p className="mt-1 text-xs text-muted-foreground" data-testid="agent-launch-link-hint">
-            <Trans>Share the agent with someone first — the link only works for people it's shared with.</Trans>
+            <Trans>The link works for anyone the agent is shared with, or for everyone once it is public.</Trans>
           </p>
         </div>
       )}

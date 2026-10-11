@@ -28,6 +28,8 @@ def _noop_action():
 
 def test_when_reads_each_kind(tmp_path):
     assert describe_when(rule(TriggerType.SCHEDULE, expr="0 9 * * 1-5")).text == "Every weekday at 09:00"
+    message = describe_when(rule(TriggerType.TAG, tag_pattern="stream_inbox.*.message.projected"))
+    assert message.text == "When a message arrives" and message.event.pattern == "stream_inbox.*.message.projected"
     event = describe_when(rule(TriggerType.TAG, tag_pattern="app.ready"))
     assert event.kind == "event" and event.event.title and event.text == f"When {event.event.title} happens"
     file = describe_when(rule(TriggerType.FSOP, watch_path=str(tmp_path), watch_glob="*.md"))

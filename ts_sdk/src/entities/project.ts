@@ -37,7 +37,13 @@ import { GitWorkdir } from './git-workdir';
 import { Workspace } from './workspace';
 import { Wiki } from './wiki';
 import type { ShareResult } from './members';
-import type { IProject, ProjectContextDirInfo, ProjectCustomization, ProjectMember } from './project-types';
+import type {
+  DependencyState,
+  IProject,
+  ProjectContextDirInfo,
+  ProjectCustomization,
+  ProjectMember,
+} from './project-types';
 export type * from './project-types';
 
 /** Who a Project share invites beyond the bare people list. */
@@ -77,31 +83,22 @@ export interface ResolveProjectResult {
   members_count: number;
 }
 
-export interface InstalledContentProject {
-  url: string;
-  branch: string;
-  content_project_id: string | null;
-  folder_id: string | null;
-  path: string;
-  scope: 'private' | 'shared';
-  status: 'installed' | 'already_installed';
+/** The context fields a dependency action answers with — the resolved
+ *  dependencies' folders, as the entity carries them. */
+export interface ProjectContextPayload {
+  include_dirs: string[];
+  context_roots: string[];
+  context_dir_infos: ProjectContextDirInfo[];
 }
 
-export interface ReconcileBootstrapResult {
-  target_project_id: string;
-  content_projects: InstalledContentProject[];
-  status: 'installed' | 'already_installed';
-  helpdesk_id: string | null;
-  journey_ids: string[];
-  skill_ids: string[];
-  auto_launch_journey_id: string | null;
-  failed: Array<{
-    error: string;
-    url?: string;
-    branch?: string;
-    scope?: 'private' | 'shared';
-    path?: string;
-  }>;
+/** `GET project/<id>/dependencies`. */
+export interface ProjectDependencies {
+  dependencies: DependencyState[];
+  /** Required dependencies that are not here and whose warning was not dismissed. */
+  warnings: DependencyState[];
+  /** True while the background resolve that opening the project started is still
+   *  running — `missing` may only mean "not fetched yet". */
+  resolving: boolean;
 }
 
 /** What `adoptHelpdeskFromGit` found after attaching the repo.
@@ -115,8 +112,8 @@ export interface ReconcileBootstrapResult {
  *   ticket. Never render this as success: the customer would believe their
  *   requests now reach the new vendor when they do not.
  * - `no_manifest` — the repo carries no desk. The folder stays attached (it is
- *   still a fine context folder); offer `removeContextDir` rather than
- *   detaching for them.
+ *   still a fine dependency); offer `removeDependency` rather than
+ *   removing it for them.
  * - `invalid_desk_project_id` — a desk is here but names no usable queue, so
  *   tickets would fall through to the hub's default desk, i.e. someone else.
  * - `no_portal_project` — a desk is here but its checkout has no Project row,
@@ -132,12 +129,11 @@ export type AdoptHelpdeskOutcome =
 
 export interface AdoptHelpdeskResult {
   outcome: AdoptHelpdeskOutcome;
+  /** The `flow.json` dependency the repo was added as. */
+  dependency: string;
   /** Local checkout of the repo that was attached. Always present. */
   path: string;
-  folder_id: string | null;
-  scope: 'private' | 'shared';
   already_linked: boolean;
-  scope_changed: boolean;
   /** Null for `no_manifest`; set for every other outcome. */
   helpdesk_id: string | null;
   /** Repo-controlled — never proof of who the desk is. */
@@ -157,23 +153,6 @@ export interface AdoptHelpdeskResult {
   } | null;
 }
 
-export interface AddContextDirFromGitResult {
-  folder_id: string;
-  path: string;
-  scope: 'private' | 'shared';
-  cloned_url: string;
-  already_linked: boolean;
-  scope_changed: boolean;
-}
-
-export interface ProjectContextFolderResolveResult {
-  typeid: string;
-  kind: string;
-  path?: string;
-  message?: string;
-  [key: string]: unknown;
-}
-
 /** One value a setup requirement needs (`SetupVarSpec`). Names only, never a value. */
 export interface ProjectSetupVar {
   env_var: string;
@@ -187,32 +166,105 @@ export interface ProjectSetupVar {
   present: boolean;
 }
 
-/** One thing to set up (`SetupRequirementSpec`): a connection, a credential pack, or a gap. */
-export interface ProjectSetupRequirement {
-  kind: 'oauth' | 'pack' | 'gap';
-  name: string;
-  title: string;
-  vars: ProjectSetupVar[];
-  used_by: string[];
+/** A requirement skipped in a project's setup on THIS machine (`SetupSkipSpec`, on its record). */
+export interface ProjectSetupSkip {
+  at: number;
+  by: string;
   note: string;
 }
 
-/** `GET project/<id>/setup-requirements` — is this project ready here? MUST values only. */
+/** How a skip is made: `local` marks the record here; `always` removes the asset from the project (staged in git). */
+export type ProjectSetupSkipScope = 'local' | 'always';
+
+/** One thing to set up (`SetupRequirementSpec`): a credential (env or oauth), a dependency, a source, a web app,
+ *  or a gap. */
+export interface ProjectSetupRequirement {
+  /** `dependency`: a dependency that is not here — name = the dependency, title = its source, note = why.
+   *  `oauth` is retired: a connection is a `pack` whose `credential_kind` is `oauth`. */
+  kind: 'pack' | 'gap' | 'dependency' | 'source' | 'webapp';
+  name: string;
+  title: string;
+  /** pack: what the credential is needed for, in one line, and the full reason (`CredentialSpec`). */
+  needed_for?: string;
+  justification?: string;
+  /** The record it IS (a credential, data source, web app; the project for a dependency). */
+  typeid: string;
+  /** pack: `env` (values to provide) or `oauth` (a provider's grant to connect). */
+  credential_kind?: 'env' | 'oauth';
+  provider?: string;
+  scopes?: string[];
+  vars: ProjectSetupVar[];
+  used_by: string[];
+  note: string;
+  satisfied?: boolean | null;
+  /** The project does not work without it; `false` turns a feature on and never counts. */
+  required: boolean;
+  skipped: ProjectSetupSkip | null;
+  /** Whether "Skip → Always" can remove it from the project, and if not, why. */
+  can_skip_always: boolean;
+  why_not_always: string;
+}
+
+/** `GET project/<id>/setup-requirements` — is this project ready here? */
 export interface ProjectReadiness {
   project_id: string;
   ready: boolean;
-  /** What still needs someone — what the setup wizard walks through. */
+  /** What still needs someone — required, not skipped. What the setup wizard walks through. */
   to_do: ProjectSetupRequirement[];
+  /** What turns a feature on and is not set up yet: listed, never counted. */
+  optional?: ProjectSetupRequirement[];
+  /** What was skipped on this machine: listed with an Undo. */
+  skipped?: ProjectSetupRequirement[];
   /** What no credential declares: shown, never runnable. */
   gaps: ProjectSetupRequirement[];
 }
 
-/** `GET project/<id>/setup-run` — the app-run setup: going or not, and its steps so far. */
+/** Where one node of the setup tree stands (`setup.node`). */
+export type SetupNodeState = 'pending' | 'running' | 'done' | 'failed' | 'blocked' | 'refused' | 'held' | 'skipped';
+
+/** One step of a node's wizard, as its run answered it. */
+export interface SetupStepAnswer {
+  exit_code?: number;
+  detail?: string;
+  ran?: boolean;
+}
+
+/** A node's `prepare` / `run` wizard result: its own verdict and each step's answer. */
+export interface SetupWizardAnswer extends SetupStepAnswer {
+  steps?: Record<string, SetupStepAnswer>;
+}
+
+/** One asset of the setup tree (`SetupNodeResult`): set up after its children. */
+export interface SetupNodeResult {
+  id: string;
+  label: string;
+  /** Depth under the root (root = 0). */
+  level: number;
+  state: SetupNodeState;
+  detail: string;
+  prepare: SetupWizardAnswer | null;
+  run: SetupWizardAnswer | null;
+  children: SetupNodeResult[];
+  /** Set up already under another parent this run; its subtree shows there. */
+  shared: boolean;
+}
+
+/** The whole setup (`SetupTreeResult`): the root node, and the run's own verdict. */
+export interface SetupTreeResult {
+  state: SetupNodeState;
+  detail: string;
+  root: SetupNodeResult | null;
+  total: number;
+  done: number;
+  ran: boolean;
+}
+
+/** `GET project/<id>/setup-run` — the app-run setup: going or not, and its tree so far. */
 export interface ProjectSetupRun {
   /** The run's address — what its questions name (`Question.run`). */
   run: string;
   running: boolean;
-  result: { exit_code?: number; steps?: Record<string, { exit_code?: number; detail?: string }> } | null;
+  tree: SetupTreeResult | null;
 }
 
 /** One of `POST new-cloud-projects` — a `ProjectOpenLinkSpec` set-up link. */
@@ -221,7 +273,15 @@ export interface NewCloudProjectLink {
   /** A project origin as JSON — what the set-up dialog clones. */
   git_origin: string;
   title?: string;
+  /** Its name is already this project's here: the set-up asks — open that one, or
+   *  install this one under another name ({@link Project.installFromHub}). */
+  existing_project_id?: string;
+  /** A free name to offer instead, when {@link existing_project_id} is set. */
+  suggested_name?: string;
 }
+
+/** What a project is for — mirror of `flow_sdk/schema/data_spec/project_manifest_spec.py` `ProjectSubkind`. */
+export type ProjectSubkind = 'standard' | 'controller' | 'addon';
 
 /** `GET project/<id>/home-page` — `Project.open_home_page()`. */
 export interface ProjectHomePage {
@@ -230,6 +290,10 @@ export interface ProjectHomePage {
   type: string | null;
   /** Set when the backend tried and failed; the rest is null alongside it. */
   error?: string;
+  /** A web app home that was not up: the address of the run bringing it up (the app's own setup node, load
+   *  phase). The app view adopts that run by root and shows "Setting things up" until the server answers.
+   *  Null when the app was up already, or is files Flowpad serves itself. */
+  load_run?: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -255,9 +319,9 @@ export interface ProjectMenuGroup {
   count: number;
 }
 
-/** One directory in the menu: the project's own mount, or a context folder.
- *  Recursive by construction — a context folder that is itself a Project
- *  carries that Project's own context folders, 3+ levels deep. */
+/** One directory in the menu: the project's own mount, or a dependency's folder.
+ *  Recursive by construction — a dependency that is itself a Project
+ *  carries that Project's own dependencies, 3+ levels deep. */
 export interface ProjectMenuNode {
   /** Canonical POSIX path — the node's identity. */
   path: string;
@@ -267,7 +331,7 @@ export interface ProjectMenuNode {
   /** Distance from the root project (root = 0). */
   depth: number;
   /** Null when this folder is not a Project (then `children` is always empty —
-   *  only a Project has context folders of its own). */
+   *  only a Project has dependencies of its own). */
   project_id: string | null;
   is_project: boolean;
   /** The linked Folder entity, from `context_dir_infos`. */
@@ -289,7 +353,7 @@ export interface ProjectAssetMenu {
 export interface ProjectAssetMenuOptions {
   /** Narrow to these record types. Default: every browseable scannable type. */
   types?: string[];
-  /** Recurse into context folders that are themselves Projects. Default true. */
+  /** Recurse into dependencies that are themselves Projects. Default true. */
   recursive?: boolean;
   /** Hard cap on DFS depth (root = 0). Backend clamps to 1..16. */
   maxDepth?: number;
@@ -299,10 +363,28 @@ interface ProjectAssetMenuResponse {
   menu?: ProjectAssetMenu;
 }
 
-interface ProjectContextFolderResolveResponse {
-  include_dirs?: unknown;
-  context_roots?: unknown;
-  context_folder_results?: unknown;
+/** Listeners for "this project's dependencies changed", keyed by project id. */
+const dependencyListeners = new Map<string, Set<() => void>>();
+
+/**
+ * Call `listener` whenever a dependency verb on `projectId` settles — from ANY
+ * Project instance or surface — so every view showing its dependencies reads
+ * them again. Fires after failures too: a refused add may still have written
+ * `flow.json`, and the states are the backend's to report. Returns the
+ * unsubscribe.
+ */
+export function onProjectDependenciesChanged(projectId: string, listener: () => void): () => void {
+  let set = dependencyListeners.get(projectId);
+  if (!set) dependencyListeners.set(projectId, (set = new Set()));
+  set.add(listener);
+  return () => {
+    set.delete(listener);
+    if (!set.size) dependencyListeners.delete(projectId);
+  };
+}
+
+function notifyDependenciesChanged(projectId: string): void {
+  for (const listener of [...(dependencyListeners.get(projectId) ?? [])]) listener();
 }
 
 const LOCAL_MEMBER_ID_KEY = 'flowpad.collaboration.member_id';
@@ -357,17 +439,19 @@ export class Project extends APIEntity<Project> {
   /** Local collaboration presence (session-code join, no roles). Renamed from
    *  `members` so that name is free for the hub role roster. */
   presence: ProjectMember[] = [];
-  /** Context folders: extra directories auto-added to every agentic worker's
-   *  --add-dir set and browseable in the Explorer as their own root. Mirrors
-   *  the backend Project.include_dirs. */
+  /** The resolved dependencies' folders: extra directories auto-added to every
+   *  agentic worker's --add-dir set and browseable in the Explorer as their own
+   *  root. Mirrors the backend Project.include_dirs. */
   include_dirs: string[] = [];
   /** The project's own root followed by its context roots, canonicalized —
    *  mirror of the backend computed `Project.context_roots`. The one answer to
    *  "which directories count as this project's"; do NOT re-derive it from
    *  `fs_storage_mount_path` + `include_dirs`, which canonicalizes differently. */
   context_roots: string[] = [];
-  /** Per-context-folder info (path + origin_kind). Mirrors the backend
-   *  computed Project.context_dir_infos — same paths/order as include_dirs. */
+  /** Per-resolved-dependency info (path, origin_kind, dependency name). Mirrors
+   *  the backend computed Project.context_dir_infos — same paths/order as
+   *  include_dirs. A dependency with no local folder (missing, not installed)
+   *  is absent here; `dependencies()` lists every declared one. */
   context_dir_infos: ProjectContextDirInfo[] = [];
   /** Optional per-project home branding from `.flow/customization/`. Mirrors the
    *  backend computed `Project.customization`. Read-only. */
@@ -653,8 +737,8 @@ export class Project extends APIEntity<Project> {
 
   /**
    * The Assets menu for this project: per-type groups with counts, and the same
-   * nested under each context folder — recursively, because a context folder
-   * that is itself a Project has its own context folders. Counts accumulate, so
+   * nested under each dependency — recursively, because a dependency
+   * that is itself a Project has its own dependencies. Counts accumulate, so
    * a collapsed row already reports its whole subtree.
    *
    * Same action as {@link getAssets} (`project/{id}/get-assets`), menu mode —
@@ -724,71 +808,141 @@ export class Project extends APIEntity<Project> {
     return dataManager.updateEntityFromJson<Project>(response as unknown as Record<string, unknown>);
   }
 
-  /** Adopt the server-computed `include_dirs` off a context-dir action
-   *  response. The backend derives the list from Folder context links (it
+  /** Adopt the server-computed context fields off a dependency action
+   *  response. The backend derives them from the resolved dependencies (it
    *  canonicalizes paths), so the response — not an optimistic local guess —
    *  is the truth. */
-  private adoptContextDirs(response: unknown): void {
-    const dirs = (response as { include_dirs?: unknown } | null)?.include_dirs;
-    if (Array.isArray(dirs)) {
-      this.include_dirs = dirs.filter((d): d is string => typeof d === 'string');
-    }
-    const infos = (response as { context_dir_infos?: unknown } | null)?.context_dir_infos;
-    if (Array.isArray(infos)) {
-      this.context_dir_infos = infos.filter(
+  private adoptContext(response: unknown): void {
+    const r = response as Partial<Record<keyof ProjectContextPayload, unknown>> | null;
+    const strings = (v: unknown) => (v as unknown[]).filter((d): d is string => typeof d === 'string');
+    if (Array.isArray(r?.include_dirs)) this.include_dirs = strings(r.include_dirs);
+    if (Array.isArray(r?.context_roots)) this.context_roots = strings(r.context_roots);
+    if (Array.isArray(r?.context_dir_infos)) {
+      this.context_dir_infos = r.context_dir_infos.filter(
         (item): item is ProjectContextDirInfo =>
           !!item && typeof item === 'object' && typeof (item as ProjectContextDirInfo).path === 'string',
       );
     }
   }
 
-  /** Attach a context folder (auto-added to every agentic worker's --add-dir
-   *  set). Idempotent; the backend mints the Folder entity, links it into the
-   *  requested context bucket — `private` (default, never leaves this machine)
-   *  or `shared` (travels with the project) — and kicks a one-shot index so
-   *  the folder's assets become discoverable. */
-  async addContextDir(path: string, scope: 'private' | 'shared' = 'private'): Promise<void> {
-    this.adoptContextDirs(await this.post('add-context-dir', { path, scope }));
+  /** Every dependency declared in this project's `flow.json`, as it stands on
+   *  this machine, plus the warnings (required, not here, not dismissed). Never
+   *  fetches: a dependency not on this machine yet reads `missing`. */
+  async dependencies(): Promise<ProjectDependencies> {
+    const response = await this.get<Partial<ProjectDependencies> | null>('dependencies');
+    return {
+      dependencies: response?.dependencies ?? [],
+      warnings: response?.warnings ?? [],
+      resolving: response?.resolving === true,
+    };
   }
 
-  /** Clone a git repo and attach it as a context folder, in one call.
-   *
-   * The branch is always PINNED — to `branch` when given, else to the remote's
-   * default. An unpinned origin silently adopts whatever checkout of that URL
-   * happens to be on the machine, on any branch.
-   *
-   * Unlike `addContextDir` this returns a small summary rather than the whole
-   * project, so `include_dirs` on this entity is NOT refreshed — refetch the
-   * project if a surface renders its context folders. */
-  async addContextDirFromGit(
-    url: string,
-    branch: string = '',
-    scope: 'private' | 'shared' = 'private',
-  ): Promise<AddContextDirFromGitResult> {
-    return this.post<AddContextDirFromGitResult>('add-context-dir-from-git', { url, branch, scope });
+  /** Declare a dependency in `flow.json` and resolve it. `source` is an id
+   *  (`<type>-<uuid>` / `<kind>.id.<uuid>`), a `git+<url>#<branch>`,
+   *  `hub:<project-id>` or `file:<path>` string — or a plain local folder (a
+   *  folder inside a git checkout is written as its repo) or a bare git URL.
+   *  `path` points at a sub-folder of the source; `optional` files it under
+   *  `optionalDependencies` (and installs it now); `label` / `description` are
+   *  the entry's human-friendly name; `asset` (a TypeId) declares it in that
+   *  asset's own `flow.json` (ids only). Rejects with the backend's message on a
+   *  bad source. */
+  async addDependency(
+    source: string,
+    options: {
+      name?: string;
+      path?: string;
+      optional?: boolean;
+      label?: string;
+      description?: string;
+      asset?: string;
+    } = {},
+  ): Promise<DependencyState> {
+    return this.changingDependencies(async () => {
+      const response = await this.post<({ dependency: DependencyState } & ProjectContextPayload) | null>(
+        'add-dependency',
+        { source, ...options },
+      );
+      this.adoptContext(response);
+      if (!response?.dependency) throw new Error('add-dependency returned no dependency');
+      return response.dependency;
+    });
   }
 
-  /** Attach a help desk's repo and report the desk it carries.
+  /** Run a dependency verb, then tell every listener for this project
+   *  (see {@link onProjectDependenciesChanged}) — whether it worked or not. */
+  private async changingDependencies<T>(run: () => Promise<T>): Promise<T> {
+    try {
+      return await run();
+    } finally {
+      notifyDependenciesChanged(this.id);
+    }
+  }
+
+  /** Drop a dependency from `flow.json`. The folder on disk is left alone. */
+  async removeDependency(name: string): Promise<DependencyState[]> {
+    return this.changingDependencies(async () => {
+      const response = await this.post<({ dependencies: DependencyState[] } & ProjectContextPayload) | null>(
+        'remove-dependency',
+        { name },
+      );
+      this.adoptContext(response);
+      return response?.dependencies ?? [];
+    });
+  }
+
+  /** Fetch / clone every required dependency that is missing (`update` also
+   *  pulls the ones already here). */
+  async resolveDependencies(options: { update?: boolean } = {}): Promise<DependencyState[]> {
+    return this.changingDependencies(async () => {
+      const response = await this.post<({ dependencies: DependencyState[] } & ProjectContextPayload) | null>(
+        'resolve-dependencies',
+        options.update ? { update: true } : undefined,
+      );
+      this.adoptContext(response);
+      return response?.dependencies ?? [];
+    });
+  }
+
+  /** Bring in an OPTIONAL dependency — optional ones are never fetched on their own. */
+  async installDependency(name: string): Promise<DependencyState> {
+    return this.changingDependencies(async () => {
+      const response = await this.post<({ dependency: DependencyState } & ProjectContextPayload) | null>(
+        'install-dependency',
+        { name },
+      );
+      this.adoptContext(response);
+      if (!response?.dependency) throw new Error('install-dependency returned no dependency');
+      return response.dependency;
+    });
+  }
+
+  /** Stop warning about a missing required dependency until Flowpad restarts
+   *  (the dismissal is backend memory, not a setting). */
+  async dismissDependencyWarning(name: string): Promise<void> {
+    await this.changingDependencies(() => this.post('dismiss-dependency-warning', { name }));
+  }
+
+  /** Add a help desk's repo as a dependency and report the desk it carries.
    *
-   * Attaches through `addContextDirFromGit` unchanged — a desk is adopted by
-   * being a context folder, not by a separate mechanism — and adds the answer
+   * Adds through the same path as `addDependency` — a desk is adopted by
+   * being a dependency, not by a separate mechanism — and adds the answer
    * the UI cannot work out for itself: which desk arrived, whether it is the
    * one that will actually serve, and where its portal is.
    *
    * Read `outcome` before saying anything to the user; see
-   * {@link AdoptHelpdeskOutcome}. Same `include_dirs` caveat as above. */
-  async adoptHelpdeskFromGit(
-    url: string,
-    branch: string = '',
-    scope: 'private' | 'shared' = 'private',
-  ): Promise<AdoptHelpdeskResult> {
-    return this.post<AdoptHelpdeskResult>('adopt-helpdesk-from-git', { url, branch, scope });
+   * {@link AdoptHelpdeskOutcome}. Returns a summary rather than the whole
+   * project, so `include_dirs` on this entity is NOT refreshed — refetch the
+   * project if a surface renders its dependencies. */
+  async adoptHelpdeskFromGit(url: string, branch: string = '', optional: boolean = true): Promise<AdoptHelpdeskResult> {
+    return this.changingDependencies(() =>
+      this.post<AdoptHelpdeskResult>('adopt-helpdesk-from-git', { url, branch, optional }),
+    );
   }
 
   /** Name (or, with null, clear) the asset the Home button opens. Written into
    *  the project manifest (`project_manifest.json`), so it travels with the
    *  repo. The backend refuses an asset outside this project and its direct
-   *  context folders. Returns the home page as now declared. */
+   *  dependencies. Returns the home page as now declared. */
   async setHomePage(typeid: string | null): Promise<{ home_page: string | null }> {
     return this.post<{ home_page: string | null }>('set-home-page', { typeid: typeid ?? '' });
   }
@@ -809,6 +963,17 @@ export class Project extends APIEntity<Project> {
     return data?.projects ?? [];
   }
 
+  /** Mirror a hub project this desktop holds no row for under `name`, and set it up
+   *  (`POST project/<id>/install-from-hub`) — the answer to a {@link newFromHub} link
+   *  whose own name is taken here. Rejects with the 409 `project_name_conflict`
+   *  envelope when `name` is taken too. */
+  static async installFromHub(projectId: string, name: string): Promise<Project | null> {
+    const actionInfo = new ActionInfo('install-from-hub', Project.type, projectId, 'POST');
+    actionInfo.bodyParameters = { name };
+    const data = await dataManager.callAction<{ name: string }, Partial<Project>>(actionInfo);
+    return data ? new Project(data) : null;
+  }
+
   /** Is this project ready here (`GET project/<id>/setup-requirements`)? Static: callers hold an id. */
   static async setupRequirements(projectId: string): Promise<ProjectReadiness | null> {
     const actionInfo = new ActionInfo('setup-requirements', Project.type, projectId, 'GET');
@@ -817,16 +982,74 @@ export class Project extends APIEntity<Project> {
 
   /** Start the setup wizard on the backend (`POST project/<id>/setup`); its questions come to this
    *  app. Answers at once with the run's address, which a screen claims (`claimAskRun`). */
-  static async startSetup(projectId: string): Promise<string> {
+  static async startSetup(projectId: string, root = ''): Promise<string> {
     const actionInfo = new ActionInfo('setup', Project.type, projectId, 'POST');
-    const data = await dataManager.callAction<void, { run: string }>(actionInfo);
+    // `root`: set up one node of the project's setup tree (a web app, a source) and what it needs.
+    if (root) actionInfo.bodyParameters = { root };
+    const data = await dataManager.callAction<{ root: string } | void, { run: string }>(actionInfo);
     return data?.run ?? '';
   }
 
+  /** Skip a requirement of the setup (`POST project/<id>/setup-skip`): `local` marks its record on this machine;
+   *  `always` removes its asset from the project and stages that in git. A dependency is the project's typeid and
+   *  its `name`. Answers with the readiness that follows. */
+  static async skipSetup(
+    projectId: string,
+    typeid: string,
+    scope: ProjectSetupSkipScope = 'local',
+    options: { name?: string; note?: string } = {},
+  ): Promise<ProjectReadiness | null> {
+    const actionInfo = new ActionInfo('setup-skip', Project.type, projectId, 'POST');
+    actionInfo.bodyParameters = { typeid, scope, name: options.name ?? '', note: options.note ?? '' };
+    return (await dataManager.callAction<Record<string, string>, ProjectReadiness>(actionInfo)) ?? null;
+  }
+
+  /** Undo a local skip (`POST project/<id>/setup-unskip`). Answers with the readiness that follows. */
+  static async unskipSetup(projectId: string, typeid: string, name = ''): Promise<ProjectReadiness | null> {
+    const actionInfo = new ActionInfo('setup-unskip', Project.type, projectId, 'POST');
+    actionInfo.bodyParameters = { typeid, name };
+    return (await dataManager.callAction<Record<string, string>, ProjectReadiness>(actionInfo)) ?? null;
+  }
+
   /** The setup run's state (`GET project/<id>/setup-run`). */
-  static async setupRun(projectId: string): Promise<ProjectSetupRun | null> {
+  static async setupRun(projectId: string, root = ''): Promise<ProjectSetupRun | null> {
     const actionInfo = new ActionInfo('setup-run', Project.type, projectId, 'GET');
+    if (root) actionInfo.queryParameters = { root };
     return (await dataManager.callAction<void, ProjectSetupRun>(actionInfo)) ?? null;
+  }
+
+  /** Send this project's files to its cloud repository (`POST project/<id>/share {via: hub_repo}`),
+   *  so another machine or a sandbox can check it out with nothing but a cloud sign-in. Linked
+   *  first when it is not yet; sent again on every call. Throws with the backend's reason. */
+  async publishFiles(): Promise<void> {
+    const actionInfo = new ActionInfo('share', Project.type, this.id, 'POST');
+    actionInfo.bodyParameters = { via: 'hub_repo' };
+    try {
+      await dataManager.callAction<{ via: string }, unknown>(actionInfo);
+    } catch (err: unknown) {
+      const ax = err as { response?: { data?: { message?: string } }; message?: string };
+      throw new Error(ax.response?.data?.message ?? ax.message ?? "The project's files could not be sent.");
+    }
+  }
+
+  /** A launched project, present and checked out on THIS machine (`POST project/<id>/launch-ensure`):
+   *  mirrored from the hub when there is no row, materialized from its origin when there is no
+   *  checkout, returned as is otherwise. Throws with the backend's reason. */
+  static async launchEnsure(projectId: string): Promise<Project> {
+    const actionInfo = new ActionInfo('launch-ensure', Project.type, projectId, 'POST');
+    actionInfo.bodyParameters = {};
+    let data: Record<string, unknown> | undefined;
+    try {
+      data = await dataManager.callAction<Record<string, never>, Record<string, unknown>>(actionInfo);
+    } catch (err: unknown) {
+      const ax = err as { response?: { data?: { message?: string } }; message?: string };
+      // No response at all is this machine's own FlowPad not answering — starting up, or busy —
+      // and the transport's "Network Error" says nothing a person can act on.
+      if (!ax.response) throw new Error("FlowPad on this machine didn't answer. It may still be starting; try again.");
+      throw new Error(ax.response.data?.message ?? ax.message ?? 'The project could not be set up here.');
+    }
+    if (!data) throw new Error('The project could not be set up here.');
+    return dataManager.updateEntityFromJson<Project>(data);
   }
 
   /** The declared home page resolved to its asset (`GET project/<id>/home-page`),
@@ -837,38 +1060,15 @@ export class Project extends APIEntity<Project> {
     return (await dataManager.callAction<void, ProjectHomePage>(actionInfo)) ?? { asset: null, type: null };
   }
 
-  /** Converge the live content dependencies declared by this Project's
-   * `.flowpad/bootstrap.json`. The backend owns clone/link/index idempotency. */
-  async reconcileBootstrap(): Promise<ReconcileBootstrapResult> {
-    return this.post<ReconcileBootstrapResult>('reconcile-bootstrap');
-  }
-
-  /** Get-or-create the `Folder` entity for a directory, WITHOUT attaching it as
-   *  a context folder. Folder ids are deterministic (a Folder's id is its origin
+  /** Get-or-create the `Folder` entity for a directory, WITHOUT declaring it as
+   *  a dependency. Folder ids are deterministic (a Folder's id is its origin
    *  key), so this is a safe get-or-create: it never links, never indexes, and
    *  returns the same typeid for the same directory forever. Use it when a
    *  surface needs an entity for a directory the user is merely browsing (e.g.
-   *  the Assets header's Share); use `addContextDir` when the folder should
+   *  the Assets header's Share); use `addDependency` when the folder should
    *  actually join the project's context. */
   async folderForPath(path: string): Promise<{ typeid: string; path: string; origin_kind: string | null }> {
     return this.post('folder-for-path', { path });
-  }
-
-  /** Detach a context folder. No-op if not attached. */
-  async removeContextDir(path: string): Promise<void> {
-    this.adoptContextDirs(await this.post('remove-context-dir', { path }));
-  }
-
-  /** Resolve received shared context folders into receiver-local paths. */
-  async resolveContextFolders(): Promise<ProjectContextFolderResolveResult[]> {
-    const response = await this.post<ProjectContextFolderResolveResponse>('resolve-context-folders');
-    this.adoptContextDirs(response);
-    const results = response?.context_folder_results;
-    if (!Array.isArray(results)) return [];
-    return results.filter(
-      (item): item is ProjectContextFolderResolveResult =>
-        !!item && typeof item === 'object' && typeof (item as ProjectContextFolderResolveResult).kind === 'string',
-    );
   }
 
   async setupComputeNode(options?: { gitOrigin?: GitOrigin | null }): Promise<ComputeNode | null> {
@@ -1112,6 +1312,7 @@ export class Project extends APIEntity<Project> {
     projectUrl: string,
     targetName?: string,
     branch?: string,
+    workspaceId?: string,
   ): Promise<
     | { kind: 'ok'; project: Project }
     | { kind: 'collision'; suggestedName: string; attemptedName: string }
@@ -1123,10 +1324,12 @@ export class Project extends APIEntity<Project> {
     action.bodyParameters = {
       git_origin: gitOrigin,
       ...(targetName ? { target_name: targetName } : {}),
+      // The workspace whose folder the clone lands in; absent → the default one.
+      ...(workspaceId ? { workspace: workspaceId } : {}),
     };
     try {
       const response = await dataManager.callAction<
-        { git_origin: GitOrigin; target_name?: string },
+        { git_origin: GitOrigin; target_name?: string; workspace?: string },
         { project: unknown }
       >(action);
       if (!response?.project) return { kind: 'error', message: 'No project returned' };
@@ -1148,6 +1351,20 @@ export class Project extends APIEntity<Project> {
       const message = ax.response?.data?.message ?? ax.message ?? 'Unknown error';
       return { kind: 'error', message };
     }
+  }
+
+  /**
+   * Move this project into another workspace (`undefined`: the default one). The backend
+   * closes everything open in it, moves its folder and re-points this same row. Resolves
+   * with whether the new folder was indexed; rejects with the backend's refusal (409 when
+   * the destination already has a folder of that name) for the caller to show.
+   */
+  async switchWorkspace(workspaceId: string | undefined): Promise<{ indexed: boolean }> {
+    const res = await this.post<{ project?: Record<string, unknown>; indexed?: boolean }>('switch-workspace', {
+      workspace: workspaceId ?? '',
+    });
+    if (res?.project) dataManager.updateEntityFromJson<Project>(res.project);
+    return { indexed: res?.indexed !== false };
   }
 
   /**

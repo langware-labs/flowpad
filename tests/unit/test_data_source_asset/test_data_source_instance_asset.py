@@ -88,18 +88,107 @@ async def test_a_poll_writes_the_row_and_leaves_the_file_alone(scope):
     assert (stored.health, stored.cursor) == ("ok", "c3")
 
 
-async def test_a_copied_folder_arrives_parked_until_its_owner_verifies(scope):
-    folder = scope / "agentic-assets" / "data_source" / "received"
+async def _indexed(scope, name: str, provider: str = _Mailbox.provider, **fields) -> DataSource:
+    """A ``data_source.json`` that exists BEFORE its row — what the indexer meets after a folder was
+    copied in, an agent or the CLI wrote the file, or the DB was rebuilt."""
+    folder = scope / "agentic-assets" / "data_source" / name
     folder.mkdir(parents=True)
-    document = {"type": "data_source", "id": str(uuid.uuid4()), "name": "received",
-                "data_driver_name": _Mailbox.provider, "data_driver_config": {"address": "them@x.test"}}
+    document = {"type": "data_source", "id": str(uuid.uuid4()), "name": name, "data_driver_name": provider,
+                "data_driver_config": {"address": f"{name}@x.test"}, **fields}
     (folder / "data_source.json").write_text(json.dumps(document), encoding="utf-8")
-
     await index_path("data_source", folder)
+    return await DataSource.get_by_id(document["id"])
 
-    row = await DataSource.get_by_id(document["id"])
-    assert row.status == SourceStatus.SETUP.value
-    assert row.setup_detail == RECEIVED_SETUP_DETAIL
+
+async def test_a_copied_folder_arrives_parked_until_its_owner_verifies(scope):
+    row = await _indexed(scope, "received")
+
+    assert (row.status, row.setup_detail) == (SourceStatus.SETUP.value, RECEIVED_SETUP_DETAIL)
+
+
+async def _local_owner() -> str:
+    """This machine's user as an owner typeid — bootstrapped when the test DB has none yet."""
+    from flow_sdk.builtin.user import User
+    from flow_sdk.stream_inbox.projection import default_owner
+
+    if await User.get_local() is None:
+        await User(uname="local", name="local").save(notify=False)
+    return str(await default_owner())
+
+
+async def test_a_file_the_local_user_authored_is_not_parked_on_index(scope):
+    """Only a file that names nobody, or someone this machine does not know, is a received share. One
+    naming this machine's own user runs by the create rules — a driver with no setup step is ACTIVE."""
+    row = await _indexed(scope, "mine", owner=await _local_owner())
+
+    assert (row.status, row.setup_detail) == (SourceStatus.ACTIVE.value, "")
+
+
+async def test_a_file_a_local_agent_authored_is_not_parked_on_index(scope):
+    from flow_sdk.builtin.agent import Agent
+
+    agent = Agent(name=f"author {uuid.uuid4().hex[:6]}", worker_type="claude", system_prompt="Be brief.")
+    await agent.save()
+
+    row = await _indexed(scope, "agents", owner=f"agent-{agent.id}")
+
+    assert (row.status, row.setup_detail) == (SourceStatus.ACTIVE.value, "")
+
+
+async def test_a_file_naming_an_owner_this_machine_does_not_know_arrives_parked(scope):
+    row = await _indexed(scope, "theirs", owner=f"user-{uuid.uuid4()}")
+
+    assert (row.status, row.setup_detail) == (SourceStatus.SETUP.value, RECEIVED_SETUP_DETAIL)
+
+
+async def test_a_file_authored_here_for_a_driver_with_a_setup_step_starts_in_setup(scope):
+    from flow_sdk.sources.protocols import Verdict
+
+    class _Invited(_Mailbox):
+        provider = "asset-mailbox-invited-test"
+
+        async def verify(self) -> Verdict:
+            return Verdict(ready=False, detail="Invite the bot.")
+
+    DataDriver.register(DataDriver.for_class(_Invited, kind="datasource.test.invited"))
+
+    row = await _indexed(scope, "invited", _Invited.provider, owner=await _local_owner())
+
+    assert (row.status, row.setup_detail) == (SourceStatus.SETUP.value, "Finish setup, then press Verify.")
+
+
+async def test_a_file_whose_driver_is_not_loaded_waits_new_and_the_poller_tick_settles_it(scope):
+    """The indexer may not import a driver, so a file whose driver is not loaded yet cannot be decided
+    there — deciding without the class would skip the setup step of a driver that owes one. It stays
+    NEW (reported as "not evaluated yet"), and the poller's next tick loads the driver and decides."""
+    from flow_sdk.ingest import poller
+    from flow_sdk.sources.protocols import Verdict
+
+    class _Late(_Mailbox):
+        provider = "asset-mailbox-late-test"
+
+        async def verify(self) -> Verdict:
+            return Verdict(ready=False, detail="Invite the bot.")
+
+    row = await _indexed(scope, "late", _Late.provider, owner=await _local_owner())
+    assert row.status == SourceStatus.NEW.value
+
+    DataDriver.register(DataDriver.for_class(_Late, kind="datasource.test.late"))  # the driver loads
+    await poller.dispatch_due_sources(spawn=lambda coro: coro.close())
+
+    row = await DataSource.get_by_id(row.id)
+    assert (row.status, row.setup_detail) == (SourceStatus.SETUP.value, "Finish setup, then press Verify.")
+
+
+async def test_a_file_for_a_provider_nothing_answers_is_settled_active_so_the_poll_can_say_why(scope):
+    from flow_sdk.ingest import poller
+
+    row = await _indexed(scope, "nobody", "asset-no-such-driver-test", owner=await _local_owner())
+    assert row.status == SourceStatus.NEW.value
+
+    await poller.dispatch_due_sources(spawn=lambda coro: coro.close())
+
+    assert (await DataSource.get_by_id(row.id)).status == SourceStatus.ACTIVE.value
 
 
 async def test_one_owner_watches_an_account_once(scope):

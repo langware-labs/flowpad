@@ -22,7 +22,9 @@ import { useEffect, useRef } from 'react';
 import { OAuthCodeFlowModal } from '@src/components/oauth/OAuthCodeFlowModal';
 import { GitHubDeviceFlowModal } from '@src/components/oauth/GitHubDeviceFlowModal';
 import { HarnessLoginModalRoot } from '@src/components/harness-login/HarnessLoginModal';
+import { HarnessSignInDialogRoot } from '@src/components/harness-login/HarnessSignInDialog';
 import { ProjectSetupDialogRoot } from '@src/components/project-setup/ProjectSetupDialog';
+import { MissingDependenciesDialogRoot } from '@src/components/project-home/MissingDependenciesDialog';
 import MigrateLegacyKeychain from '@src/components/migrate-legacy-keychain';
 import { SessionTakenOverOverlay } from '@src/components/session-taken-over-overlay';
 import { SnifferActiveNotice } from '@src/components/hooks/SnifferActiveNotice';
@@ -47,6 +49,7 @@ import { PrimaryContentProvider } from '@sdk/react/primary-content';
 import { AddAssetDialogRoot } from '@src/components/install/AddAssetDialog';
 import { AskModalRoot } from '@src/components/ask/AskModal';
 import { WizardPopupRoot } from '@src/components/assets/editor/wizard/WizardPopupRoot';
+import { UiActionRoot } from '@src/navigation/UiActionRoot';
 
 // Bootstrap-error UX is handled by the router's root `errorElement`
 // (`<ErrorScreen/>` in `router.tsx`). The root loader (`loadRoot`) re-throws
@@ -144,6 +147,8 @@ const AppContent = ({ children }: { children: React.ReactNode }) => {
         <InputPromptModal />
         <ImageAnnotatorRoot />
         <Spotlight />
+        {/* What a smart-navigation action needs from the tree, and the dialogs it opens anywhere. */}
+        <UiActionRoot />
         <UiTagEmitter />
         <TagHighlightObserver />
         <JourneyController />
@@ -169,7 +174,10 @@ const AppContent = ({ children }: { children: React.ReactNode }) => {
         {/* Harness/LLM-keys setup is a desktop-only concern (local coding CLIs);
             it has no place in hub mode. */}
         {!isHubOnly() && <HarnessLoginModalRoot />}
+        {!isHubOnly() && <HarnessSignInDialogRoot />}
         {!isHubOnly() && <ProjectSetupDialogRoot />}
+        {/* A required dependency of the open project is not on this machine. */}
+        {!isHubOnly() && <MissingDependenciesDialogRoot />}
         <MigrateLegacyKeychain />
         <SessionTakenOverOverlay />
         <SnifferActiveNotice />

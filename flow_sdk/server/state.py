@@ -6,6 +6,7 @@ import logging
 import secrets
 import threading
 import time
+from collections import deque
 from typing import Any, Dict
 
 from .reporters import BufferReporter, ReporterRegistry, WebSocketReporter
@@ -90,12 +91,18 @@ def cancel_cloud_login_session(request_id: str) -> bool:
         return True
 
 
+# Test/debug observation buffers (routes/testing.py). Most-recent-N rings, the
+# same shape as ``tags/ws_forward._recent``: the writers are live in production
+# (``flow ping``, ``flow prompt``) and nothing there ever reads them, so they
+# must not grow with the life of the process.
+TEST_ROUTE_BUFFER_CAP = 200
+
 # Shared state for ping
-ping_results = []
+ping_results: "deque[dict]" = deque(maxlen=TEST_ROUTE_BUFFER_CAP)
 ping_received = threading.Event()
 
 # Shared state for prompts
-prompt_completions = []
+prompt_completions: "deque[dict]" = deque(maxlen=TEST_ROUTE_BUFFER_CAP)
 prompt_received = threading.Event()
 
 

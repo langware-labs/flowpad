@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, ClassVar, FrozenSet, List, NamedTuple, Optiona
 from pydantic import computed_field, model_validator
 
 from flow_sdk._compat import StrEnum  # 3.10-safe StrEnum (project pins py3.10)
-from flow_sdk.api.api_types.api_field import APIField, Sharing
+from flow_sdk.api.api_types.api_field import APIField, Persist, Sharing
 from flow_sdk.builtin.conversation_channel import HOME_CHANNEL, channel_spec
 from flow_sdk.builtin.user import normalize_email, recipient_user_id
 from flow_sdk.core import Entity
@@ -85,7 +85,6 @@ class ConversationStatus(StrEnum):
 if TYPE_CHECKING:  # pragma: no cover
     from flow_sdk.builtin.flow_message import FlowMessage
     from flow_sdk.builtin.message_thread import MessageThread
-    from flow_sdk.cloud_client.client import FlowpadClient
 
 
 # Kept as module-level aliases: `fs_store/operations/conversation.py` imports
@@ -94,33 +93,6 @@ if TYPE_CHECKING:  # pragma: no cover
 _PROJECTION_SENTINEL = PROJECTION_SENTINEL
 
 _PROJECTED_FIELDS = frozenset({"message_ids", "message_count", "is_unread", "unread_count"})
-
-
-# Process-scoped FlowpadClient cache, keyed by api_key. ``Conversation.share`` /
-# ``add_message`` are on the hot path (ping-pong e2e: 10 alice sends back-to-
-# back in ≤6s). Constructing a fresh FlowpadClient per call rebuilds the
-# httpx.AsyncClient and pays a full TCP+TLS handshake to the hub on every
-# request (~80-130ms). The cached client keeps a single AsyncClient alive so
-# subsequent calls reuse the underlying keep-alive connection (~5-20ms).
-_HUB_CLIENT_BY_KEY: dict[str, "FlowpadClient"] = {}
-
-
-def _get_hub_client(api_key: str) -> "FlowpadClient":
-    """Return a process-cached FlowpadClient bound to ``api_key``.
-
-    Safe to call from any async context — FlowpadClient's underlying
-    ``httpx.AsyncClient`` is created lazily on first request and is itself
-    safe for concurrent reuse. The cache key is the api_key so credential
-    rotation produces a fresh client.
-    """
-    from flow_sdk.cloud_client.client import ApiConfig, FlowpadClient  # noqa: PLC0415
-
-    existing = _HUB_CLIENT_BY_KEY.get(api_key)
-    if existing is not None:
-        return existing
-    client = FlowpadClient(ApiConfig.from_env(), api_key=api_key)
-    _HUB_CLIENT_BY_KEY[api_key] = client
-    return client
 
 
 # Shared-context asset types the hub hosts as first-class nodes, so a share can
@@ -180,7 +152,9 @@ class Conversation(ProjectedFields, Entity):
     """
 
     type: str = APIField(default="conversation")
-    title: Optional[str] = APIField(default=None)
+    # Persisted to the record: it is what the conversation is found by (the record's own ``name``
+    # is a generated ``conversation-<id>``, and search reads the record's title).
+    title: Optional[str] = APIField(default=None, persist=Persist.TRUE)
     # Conversation interpretation. ``direct`` (default) is a normal 1:1/group
     # conversation; ``helpdesk`` marks a support ticket whose responder
     # identity is masked behind ``Project.helpdesk.display_name``. Stamped by
@@ -223,6 +197,11 @@ class Conversation(ProjectedFields, Entity):
     # external WhatsApp connector are both ``whatsapp``), and what the channel can do (files, quotes, reactions) is the
     # driver's. Stamped with ``channel_source_id``.
     channel_provider: Optional[str] = APIField(default=None, sharing=Sharing.PRIVATE)
+    # Whether someone other than the person answers this channel's messages — an Agent or a deployment
+    # (``data_source.answered_by``). ``False`` for a person's own channel (their Tasks channel): an inbound
+    # message there waits for no one, so the surface shows no "picked up / handling / replied" line.
+    # ``None`` = not yet known (stamped by the projection with ``channel_source_id``).
+    channel_answered: Optional[bool] = APIField(default=None, sharing=Sharing.PRIVATE)
     # ── the conversation on its channel: an email topic, a chat, a phone call, a Slack thread ──
     # Who it is with, as the channel addresses them (an email address, a phone number, a Slack channel):
     # stamped from its first message and extended as others join, so a reply — or the first message of

@@ -29,16 +29,15 @@ from flow_sdk.builtin.user import User
 from flow_sdk.fs_store.operations.flow_message import default_data_dir, unpacked_dir
 from flow_sdk.fs_store.record_paths import record_stem
 from flow_sdk.request_context.methods import get_current_request_info
-from flow_sdk.utils.archive import is_zip_filename
 from flow_sdk.responses.response import (
     ApiFailResponse,
     ApiResponse,
     ApiResponseStatus,
     ApiSuccessResponse,
 )
+from flow_sdk.utils.archive import is_zip_filename
 
 logger = logging.getLogger(__name__)
-
 
 
 def _origin_map(entry_key: str, ma) -> dict:
@@ -337,16 +336,22 @@ async def _install_git_reference(
     *,
     overwrite: bool,
     someone_typeid,
+    name: str | None = None,
 ) -> ApiResponse:
     """Install a staged git reference (``TypeInfo.receive_transfer``): the type's
     ``restore_reference`` writes its row from the staged metadata — an artifact
     or folder leaves the checkout to open (the git wizard), a project clones
-    here — then mint the favorite if opted in."""
+    here — then mint the favorite if opted in.
+
+    A project whose name another project here already holds is refused with a
+    409 naming that project and a free name, so the receiver chooses: open the
+    one they have, or install this one under ``name``."""
     from flow_sdk.builtin.flow_message_bundle import (  # noqa: PLC0415
         FlowMessageExistsError,
         _notify_received_assets,
         _restore_git_reference_entity_entry,
     )
+    from flow_sdk.builtin.project import DuplicateProjectNameError  # noqa: PLC0415
 
     if not ma.git_transfer:
         return ApiFailResponse(message="git transfer metadata missing", status_code=410)
@@ -362,12 +367,19 @@ async def _install_git_reference(
             _origin_map(entry_key, ma),
             overwrite=overwrite,
             owner_typeid=someone_typeid,
+            name=name,
         )
     except FlowMessageExistsError as e:
         return ApiFailResponse(
             message="artifact already exists — overwrite?",
             status_code=409,
             data={"asset_conflict": True, "conflicts": getattr(e, "conflicts", None)},
+        )
+    except DuplicateProjectNameError as e:
+        return ApiFailResponse(
+            message=f"you already have a project named {e.existing.name!r}",
+            status_code=409,
+            data=await e.conflict(name or ma.name or e.existing.name),
         )
     if not ok:
         return ApiFailResponse(message="git reference restore failed", status_code=500)
@@ -482,8 +494,11 @@ async def handle_attachment_install(
     *,
     overwrite: bool = False,
     someone_typeid=None,
+    name: str | None = None,
 ) -> ApiResponse:
     """Copy a staged attachment into the chosen scope root and index it there.
+
+    ``name`` is the receiver's name for a received project whose own is taken here.
 
     Reuses the bundle restore primitives verbatim: ``_restore_file_backed_entry``
     (idempotent on byte-identical; 409 asset_conflict on a genuine collision —
@@ -530,6 +545,7 @@ async def handle_attachment_install(
             project_id,
             overwrite=overwrite,
             someone_typeid=someone_typeid,
+            name=name,
         )
     # Copy mode: a webapp ARTIFACT can't be a git reference — mirror the shipped
     # folder bytes and serve them.
@@ -737,6 +753,7 @@ async def handle_attachment_uninstall(attachment_id: str, *, someone_typeid=None
         if entry_dir is None or not entry_dir.exists():
             return _staging_gone(" to uninstall")
         from flow_sdk.assets.transfer import remove_transferred_tree
+
         remove_transferred_tree(entry_dir, Path(ma.installed_root))
 
     # Drop the asset entity (row + record folder) and tell the live UI.
@@ -797,7 +814,9 @@ async def handle_staged_files(attachment_id: str) -> ApiResponse:
         for p in sorted(entry_dir.rglob("*"))
         if p.is_file()
     ]
-    asset_root, main_rel = _locate_staged_asset(entry_dir, [f["path"] for f in files], SchemaRegistry.get(ma.asset_type))
+    asset_root, main_rel = _locate_staged_asset(
+        entry_dir, [f["path"] for f in files], SchemaRegistry.get(ma.asset_type)
+    )
     for f in files:
         f["is_main"] = f["path"] == main_rel
     return ApiSuccessResponse(
@@ -888,9 +907,7 @@ async def handle_message_install_all(
     attachments = await MessageAttachment.get_all({"flow_message_id": flow_message_id})
     if not attachments:
         return ApiFailResponse(message=f"message {flow_message_id} staged no attachments", status_code=404)
-    return await _install_all_into_project(
-        attachments, project_id, overwrite=overwrite, someone_typeid=someone_typeid
-    )
+    return await _install_all_into_project(attachments, project_id, overwrite=overwrite, someone_typeid=someone_typeid)
 
 
 async def handle_conversation_install_all(
@@ -948,6 +965,7 @@ async def install_attachment_action() -> ApiResponse:
             project_id,
             overwrite=overwrite,
             someone_typeid=await _local_owner_typeid(),
+            name=(body.get("name") or "").strip() or None,
         )
     except Exception as e:
         logger.error("[message_attachment] install error: %s", e, exc_info=True)

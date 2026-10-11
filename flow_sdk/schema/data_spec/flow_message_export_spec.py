@@ -18,3 +18,5 @@ class FlowMessageExportSpec(DataSpec):
 
     text: str = ""
     asset_references: list[str] = Field(default_factory=list)
+    #: The sender saw which files git excludes (often private) and chose to export them anyway.
+    include_gitignored: bool = False

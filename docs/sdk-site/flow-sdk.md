@@ -136,6 +136,7 @@ At build time: each secret's name, and how to configure or obtain it. No value e
   "title": "Telegram bot",
   "icon_name": "Telegram",
   "description": "The Bot API token a Telegram data source sends and reads with.",
+  "needed_for": "Lets a Telegram data source send and read messages as your bot.",
   "setup": "Create a Telegram bot and store its token.\n1. In Telegram, open a chat with @BotFather (https://t.me/BotFather) and send `/newbot`.\n2. Give it a display name, then a username ending in `bot`. BotFather answers with the token (`123456:ABC-...`).\n3. Store it: pipe the line `TELEGRAM_BOT_TOKEN=<token>` into `flow credentials set telegram --stdin`.\n4. Confirm with `flow credentials check telegram`. Never print or repeat the token.",
   "help_url": "https://t.me/BotFather",
   "value_store": "env",
@@ -888,6 +889,7 @@ The setup text guides a person or an agent.
   "title": "Telegram bot",
   "icon_name": "Telegram",
   "description": "The Bot API token a Telegram data source sends and reads with.",
+  "needed_for": "Lets a Telegram data source send and read messages as your bot.",
   "setup": "Create a Telegram bot and store its token.\n1. In Telegram, open a chat with @BotFather (https://t.me/BotFather) and send `/newbot`.\n2. Give it a display name, then a username ending in `bot`. BotFather answers with the token (`123456:ABC-...`).\n3. Store it: pipe the line `TELEGRAM_BOT_TOKEN=<token>` into `flow credentials set telegram --stdin`.\n4. Confirm with `flow credentials check telegram`. Never print or repeat the token.",
   "help_url": "https://t.me/BotFather",
   "value_store": "env",
@@ -1025,7 +1027,7 @@ async with workflow("acme-support"):                          # names the durabl
 ```text
 You are building on the Flow SDK (Python package `flowpad`, import `flow_sdk`, CLI `flow`).
 Read the Flow SDK guide in flow-sdk.md before writing code. Follow its rules:
-- Every value you pass or return is a DataSpec subclass (frozen, extra="forbid"); never a bare dict.
+- Every value you pass or return is an instance of a DataSpec schema (frozen, extra="forbid"); never a bare dict.
 - Integrations are data driver folders: agentic-assets/data_driver/<name>/ with data_driver.json and one Source subclass in source.py.
 - Never put a secret in config. Declare it in a credential (secret_pack.json with a `setup` text) and read it from a SecretStore; accounts come from connections.
 - In a listen() loop, give every item exactly one ack() or reply().

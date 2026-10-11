@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "typeid": "markdown_index-2c1662c6-f6d3-50df-9f63-0ccc6760cd3c",
+  "parent_ref": "markdown_index-6136dbba-27ed-59c3-a192-fe2894f3ec30",
+  "vault_root": "/Users/shlom/Documents/dev/flowpad-oss/docs",
+  "folder_rel_path": "sdk-site",
+  "folder_name": "sdk-site",
+  "inputs_hash": "46a9cc308231cee3b9616198f219e95839607080b6a06f4e9a9914dc8a8bce09",
+  "template_version": 1,
+  "prompt_version": 1,
+  "self_summary": "The public Flow SDK guide: DataSpec schemas and values, AgenticProcess, and an executable workflow of agents answering channel messages, built into the SDK site.",
+  "files": [
+    {
+      "name": "flow-sdk.md",
+      "rel_path": "flow-sdk.md",
+      "title": "Flow SDK: Agentic orchestration SDK. Git-native agents you own.",
+      "summary": "Flow SDK guide introducing DataSpec and AgenticProcess, with an executable Python workflow example of agents handling channel messages.",
+      "content_hash": "3a35a138d7c30d761492be3edb99e9964c7fb411e1592d4a962488368a2680f9",
+      "size_bytes": 39023
+    }
+  ],
+  "subfolders": [],
+  "generated_at": "2026-10-07T14:33:53Z",
+  "latest_process_ref": ""
+}

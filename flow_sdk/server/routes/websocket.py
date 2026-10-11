@@ -144,6 +144,20 @@ def get_active_connection_info() -> Optional[tuple[str, "ConnectionInfo"]]:
     return max(items, key=_rank)
 
 
+def get_request_connection_info() -> Optional["ConnectionInfo"]:
+    """The tab the current request came from: the one it names (``X-Flow-Connection-Id`` over
+    HTTP, ``carries_initiator`` over WS), else the active tab. "The active tab" is only a guess --
+    with two windows open it is the other one."""
+    from flow_sdk.request_context.methods import get_current_request_info  # noqa: PLC0415
+
+    request_info = get_current_request_info()
+    named = _active_connections.get(request_info.initiator_connection_id) if request_info else None
+    if named is not None:
+        return named
+    active = get_active_connection_info()
+    return active[1] if active else None
+
+
 def get_active_connection() -> Optional[tuple[str, WebSocket]]:
     """Resolve the single 'active' connection used for agent-directed actions.
 
@@ -671,6 +685,12 @@ async def websocket_endpoint(websocket: WebSocket, connection_id: str):
         from flow_sdk.app.actions.watch_registry import cleanup_connection
 
         cleanup_connection(connection_id)
+
+        # A file watch owns a task and a thread, not just a registry row: end
+        # the folder loops this connection was the last to listen to.
+        from flow_sdk.actions.fs.file_watch import release_unwatched
+
+        release_unwatched()
 
         # Release this connection's hub context-watches (unwatch any entity no
         # other connection still holds in context).
