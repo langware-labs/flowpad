@@ -152,13 +152,13 @@ export function PlanInteractionBar({ items, allowPicker = true }: PlanInteractio
 function AnswerInTerminalNotice({ kind }: { kind: 'question' | 'plan' }) {
   const { currentDock, navigation } = useDockNavigation();
 
-  // URL-first, the same two branches as the footer ViewToggle's `select`: on a
+  // URL-first, a mode switch like the session's own: on a
   // dock route the URL carries the mode and is authoritative in the render that
   // commits it, so the click must NAVIGATE — writing the preference alone left
   // `?viewMode=` untouched and the surface never changed. Only a pointerless
   // route (no dock URL to carry the mode) sets the preference directly.
   const openTerminal = () => {
-    if (currentDock) navigation.openDock(currentDock.withViewMode(ViewMode.Advanced));
+    if (currentDock) navigation.openDock(currentDock.withViewMode(ViewMode.Advanced), undefined, { viewModeSwitch: true });
     else setViewMode(ViewMode.Advanced);
   };
 

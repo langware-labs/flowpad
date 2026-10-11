@@ -20,7 +20,7 @@
  * A) → the rejects-with-redirect expectation fails (red). After: redirect carries
  * scope B (green).
  */
-import { AgenticProcess, dataManager } from '@sdk';
+import { AgenticProcess, dataManager, instancePreferences, PrefKey } from '@sdk';
 import { ViewMode } from '@src/contexts/view-mode-context';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { projectScope } from '@src/lib/scope-filter';
@@ -85,13 +85,14 @@ describe('opening a chat scopes the side menu to the chat\'s project', () => {
 
   // A resumed tab, a cold deep link, a hard refresh: an aligned URL that states
   // no mode takes ONE redirect, decided with the scope before a tab is minted,
-  // onto the session's own memory — else the plain chat, never Vibe.
+  // onto the session's own memory — else the last mode the user selected.
   it.each([
     ['remembered', ViewMode.Advanced, ViewMode.Advanced],
-    ['no memory', null, ViewMode.Standard],
+    ['no memory', null, ViewMode.Advanced],
   ])('an aligned URL stating no mode redirects once onto the session mode (%s)', async (_label, lastMode, expected) => {
     const process = arrange();
     process.last_mode = lastMode;
+    instancePreferences.set(PrefKey.VIEW_MODE, ViewMode.Advanced);
     const pointer = process.terminalDockPointer.pointer;
 
     const location = await loadShellRoute(pointer, '/dock/shell', { scope: projectScope(PROCESS_PROJECT_B) }).then(

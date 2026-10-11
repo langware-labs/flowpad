@@ -1,6 +1,5 @@
 import {
   AgenticProcess,
-  dataContext,
   type IDockPointer,
   instancePreferences,
   onPreferenceChange,
@@ -13,7 +12,7 @@ import {
 import { usePreferenceValue } from '@src/hooks/use-preference';
 import { defineGlobal } from '@sdk/utils';
 import { useEffect, useRef, useSyncExternalStore } from 'react';
-import { useLocation } from 'react-router';
+import { NavigationType, useLocation, useNavigationType } from 'react-router';
 import { useCurrentDock } from '@src/navigation/useDockNavigation';
 import { DockPointer } from '@src/navigation/DockPointer';
 
@@ -153,13 +152,12 @@ function ensureVibeFont(): void {
   document.head.appendChild(link);
 }
 
-// Mirror the effective view mode to the Electron application menu: it is shown
-// only in Advanced/Dev (see electron/main.js `set-menu-visible`). A no-op in the
-// browser build (no electronAPI). Keyed on the advanced boolean, not the exact
-// mode, so Advanced↔Dev and Vibe↔Standard transitions don't re-send.
+// Mirror developer mode to the Electron application menu: it is shown only with
+// Dev on (see electron/main.js `set-menu-visible`), on any surface. A no-op in
+// the browser build (no electronAPI).
 let lastMenuVisibleSent: boolean | null = null;
-function syncDesktopMenu(val: ViewMode): void {
-  const visible = isAdvancedMode(val) || getDev();
+function syncDesktopMenu(): void {
+  const visible = getDev();
   if (visible === lastMenuVisibleSent) return;
   const setMenuVisible = (
     window as unknown as {
@@ -173,7 +171,7 @@ function syncDesktopMenu(val: ViewMode): void {
 
 function applyAttribute(val: ViewMode, animate = true): void {
   if (val === ViewMode.Vibe) ensureVibeFont();
-  syncDesktopMenu(val);
+  syncDesktopMenu();
   const root = document.documentElement;
   const prev = root.getAttribute('data-view');
   // Guard: prefMan fires on EVERY pref change, but only a view-mode change need
@@ -242,53 +240,25 @@ export function sessionIdForDock(dock: IDockPointer): string | null {
 }
 
 /**
- * The mode a dock should open in from its own memory — the cache-only read
- * behind the URL-first seed in `NavigationActions.openDock`. The memory lives on
- * the dock's TARGET (the same entity its tab is minted against), when that
- * target's type carries `last_mode`. Null when it has none, it is not in cache
- * (a cold deep link: the shell loader redirects onto the remembered mode), or
- * it has never stored a mode.
+ * The mode a session with no memory of its own opens in: the last one the user
+ * SELECTED (the stored preference, which only a mode switch writes). Dev reads
+ * as the terminal it showed.
  */
-export function rememberedDockViewMode(dock: IDockPointer): ViewMode | null {
-  return rememberedViewMode(viewModeMemory.targetFor(dock.targetTypeId));
-}
-
-// The last mode that wasn't Vibe. Entering Vibe ADOPTS it as the persisted
-// preference (useDockViewModeOverrideSync), which overwrites whatever the user
-// had — so without this latch, an "exit vibe" affordance has nothing to return
-// to and an Advanced (or revealed Dev) user who visits Vibe and leaves lands on
-// Standard. The footer selector can still reach Terminal by hand; this latch is
-// what makes the automatic way back land where the user came from.
-// Module-scope, session-lived, deliberately not persisted.
-let lastNonVibeViewMode: ViewMode | null = null;
-
-function recordNonVibe(val: ViewMode): void {
-  if (val !== ViewMode.Vibe) lastNonVibeViewMode = val;
-}
-recordNonVibe(getViewMode());
-
-/** Where an "exit vibe" affordance should land: the mode in use before Vibe. */
-export function previousNonVibeViewMode(): ViewMode {
-  return lastNonVibeViewMode ?? ViewMode.Standard;
+export function lastSelectedViewMode(): ViewMode {
+  const mode = getViewMode();
+  return mode === ViewMode.Dev ? ViewMode.Advanced : mode;
 }
 
 /**
- * THE mode switch: persist `val` as the preference and report `ModeSwitch` to
- * view-mode memory, against `dock`'s memory target (when the switch happened on
- * a dock) and the current project. Every path that changes mode on purpose —
- * the footer toggle's navigation (via `useDockViewModeOverrideSync`), a
- * pointerless toggle, `window.setView` / `setDev` — lands here, and nothing that
- * merely opens or restores a tab does.
+ * THE mode switch: persist `val` as the last selected mode and record it on the
+ * session `dock` shows. Every path that changes mode on purpose — the in-session
+ * switch's navigation (via `useDockViewModeOverrideSync`), `window.setView` —
+ * lands here, and nothing that merely opens or restores a tab does.
  */
 export function setViewMode(val: ViewMode, dock: IDockPointer | null = null): void {
-  recordNonVibe(val);
   instancePreferences.set(PrefKey.VIEW_MODE, val);
   applyAttribute(getEffectiveViewMode());
-  viewModeMemory.record(
-    ViewModeEvent.ModeSwitch,
-    { tab: viewModeMemory.targetFor(dock?.targetTypeId), project: dataContext.project },
-    val,
-  );
+  viewModeMemory.record(ViewModeEvent.ModeSwitch, { tab: viewModeMemory.targetFor(dock?.targetTypeId) }, val);
 }
 
 /**
@@ -405,7 +375,7 @@ export function isViewModeSwitchState(state: unknown): boolean {
  * Sync the current DockPointer's viewMode override into useViewMode(), and turn
  * a mode SWITCH into `setViewMode`.
  *
- * The footer toggle only navigates (same pointer, `?viewMode=<mode>`), so a
+ * The session switch only navigates (same pointer, another mode), so a
  * switch is read off the URL transition rather than written in the click path:
  * the SAME dock committing with a DIFFERENT mode. Any other load — opening a
  * tab, a seeded or explicit opener mode, a redirect that adds the mode to a bare
@@ -417,6 +387,7 @@ export function useDockViewModeOverrideSync(): void {
   const override = currentDock?.viewMode ?? null;
   const previous = useRef(currentDock);
   const marked = isViewModeSwitchState(useLocation().state);
+  const replayed = useNavigationType() === NavigationType.Pop;
 
   useEffect(() => {
     const prev = previous.current;
@@ -431,13 +402,16 @@ export function useDockViewModeOverrideSync(): void {
       (prev.withViewMode(null).equals(currentDock.withViewMode(null)) ||
         (!!prev.hostProcessId && prev.hostProcessId === currentDock.pointer));
     setDockViewModeOverride(override, samePlace);
-    // A switch is the same dock committing with a different mode. From a bare
-    // URL only the toggle's marker makes it one: a redirect that adds the mode
-    // carries no marker, so it only displays.
-    if (!currentDock || !prev || !override || prev.viewMode === override) return;
-    if (!prev.viewMode && !marked) return;
-    if (samePlace) setViewMode(override, currentDock);
-  }, [currentDock, override, marked]);
+    if (!currentDock || !override) return;
+    // The mode a session is SHOWN in is the mode its tab remembers — however it
+    // got on screen (a switch, an address, Back/Forward) — so leaving and coming
+    // back never changes it.
+    viewModeMemory.record(ViewModeEvent.TabOpen, { tab: viewModeMemory.targetFor(currentDock.targetTypeId) }, override);
+    // SELECTING a mode is the user's own switch, and nothing else: it navigates
+    // with the marker. A redirect that states a mode, an address, and a
+    // Back/Forward step onto an old switch all only display.
+    if (marked && !replayed && samePlace && prev?.viewMode !== override) setViewMode(override, currentDock);
+  }, [currentDock, override, marked, replayed]);
 
   useEffect(() => () => setDockViewModeOverride(null), []);
 }
