@@ -392,6 +392,11 @@ msgstr "تعذر تحديث {0} لهذا المشروع."
 msgid "{0} current · {1} stale · {2} partial · {3} error"
 msgstr "{0} حالي · {1} قديم · {2} جزئي · {3} خطأ"
 
+#. placeholder {0}: root.sources.length
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "{0} data sources"
+msgstr ""
+
 #. placeholder {0}: connection.provider
 #. placeholder {0}: row.title
 #: src/components/agent-resources/AgentCredentialsSection.tsx
@@ -685,6 +690,11 @@ msgstr "{0} سجل على القرص"
 msgid "{0} saved"
 msgstr ""
 
+#. placeholder {0}: root.kinds.length
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "{0} schemas"
+msgstr ""
+
 #. placeholder {0}: secrets.length
 #. placeholder {1}: secrets.length === 1 ? '' : 's'
 #: src/components/account/secrets-section.tsx
@@ -823,10 +833,18 @@ msgstr "{count} {0} مرفقة"
 msgid "{count} pending change(s) — click to view diff"
 msgstr "{count} تغيير معلّق — لعرض الفرق"
 
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "{count} rows"
+msgstr ""
+
 #. placeholder {0}: selected.displayName ?? selected.name
 #: src/components/assets/editor/task/GroupTaskDialog.tsx
 msgid "{created} member task(s) created for \"{0}\"."
 msgstr "تم إنشاء {created} مهمة للأعضاء من أجل \"{0}\"."
+
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "{datasets} datasets"
+msgstr ""
 
 #: src/components/assets/editor/agent-profile/AgentScheduleSection.tsx
 msgid "{day} at {time}"
@@ -1093,6 +1111,10 @@ msgstr ""
 #~ msgid "{replyCount, plural, one {# reply} other {# replies}}"
 #~ msgstr ""
 
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "{rows} rows"
+msgstr ""
+
 #: src/components/automations/automation-words.ts
 msgid "{s}s"
 msgstr ""
@@ -1341,6 +1363,10 @@ msgstr ""
 msgid "1 change not published"
 msgstr ""
 
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "1 data source"
+msgstr ""
+
 #: src/components/status-bar/GitResolveButton.tsx
 msgid "1 file needs merging — let the assistant merge it"
 msgstr ""
@@ -1360,6 +1386,10 @@ msgstr ""
 
 #: src/components/code-editor/SnippetView.tsx
 msgid "1 problem"
+msgstr ""
+
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "1 row"
 msgstr ""
 
 #: src/components/lens-viewer/ClaudeErrorsViewer.tsx
@@ -1568,6 +1598,10 @@ msgstr ""
 
 #: src/components/data-sources/DataSourceDialog.tsx
 msgid "A source is one remote stream — one feed, channel, drive or mailbox. The poller syncs it on the heartbeat."
+msgstr ""
+
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "a source this project does not list"
 msgstr ""
 
 #: src/components/automations/blocks/WhenBlock.tsx
@@ -2890,6 +2924,7 @@ msgid "Anyone you share with can spend this budget and see what it has cost. The
 msgstr ""
 
 #: src/components/automations/automation-words.ts
+#: src/components/schema-tree/SchemaTreeView.tsx
 msgid "anything"
 msgstr ""
 
@@ -7434,6 +7469,14 @@ msgstr ""
 msgid "Data privacy mode"
 msgstr "وضع خصوصية البيانات"
 
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "data source"
+msgstr ""
+
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "Data source"
+msgstr ""
+
 #~ msgid "Data Source Cursor"
 #~ msgstr "مؤشر مصدر البيانات"
 
@@ -7444,6 +7487,7 @@ msgstr ""
 #: src/components/agent-resources/AgentResourcesBody.tsx
 #: src/components/data-sources/DataSourceDialog.tsx
 #: src/components/data-sources/DataSourcesView.tsx
+#: src/components/schema-tree/SchemaTreeView.tsx
 #: src/components/top-nav-bar/use-entity-breadcrumbs.ts
 #: src/i18n/type-labels.ts
 #: src/types/ViewType.ts
@@ -7475,9 +7519,14 @@ msgstr "إحصائيات قاعدة البيانات"
 msgid "Database switched"
 msgstr "تم تبديل قاعدة البيانات"
 
+#: src/components/schema-tree/SchemaTreeView.tsx
 #: src/i18n/type-labels.ts
 msgid "Dataset"
 msgstr "مجموعة بيانات"
+
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "dataset schema"
+msgstr ""
 
 #: src/components/cron-view/CronForm.tsx
 msgid "Day {d}"
@@ -7669,6 +7718,11 @@ msgstr "الإعدادات الافتراضية: page=\"{DEFAULT_PAGE}\"، compo
 #: src/components/hooks-manager/TriggerForm.tsx
 msgid "Define the conditions that must match for this trigger to fire"
 msgstr "تحديد الشروط التي يجب أن تتطابق لإطلاق هذا المشغّل"
+
+#: src/components/schema-tree/SchemaTreeView.tsx
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "Defined in"
+msgstr ""
 
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 msgid "Definition"
@@ -9646,6 +9700,10 @@ msgstr ""
 msgid "everywhere"
 msgstr ""
 
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "Example slots"
+msgstr ""
+
 #: src/components/settings-view/settings-utils.ts
 msgid "Excluded Commands"
 msgstr "الأوامر المستبعدة"
@@ -10255,6 +10313,10 @@ msgstr "تعليق في الخلاصة"
 msgid "Feed Entry"
 msgstr "عنصر الخلاصة"
 
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "Feeds"
+msgstr ""
+
 #: src/components/floating-chat/toolEventDescriptor.ts
 msgid "Fetch"
 msgstr "جلب"
@@ -10287,9 +10349,14 @@ msgstr "جاري جلب الأحدث"
 msgid "Fetching…"
 msgstr "جارٍ الجلب…"
 
+#: src/components/schema-tree/SchemaTreeView.tsx
 #: src/components/terminal/interactive-terminal/command-status-viewer/CommandStatusViewer.tsx
 msgid "Field"
 msgstr "الحقل"
+
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "Fields"
+msgstr ""
 
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
 #: src/components/automations/automation-words.ts
@@ -10764,6 +10831,10 @@ msgstr "التركيز على الرسم البياني المحلي هنا"
 msgid "Focused"
 msgstr "قيد التركيز"
 
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "Fold"
+msgstr ""
+
 #: src/components/open-project-component/project-actions-row.tsx
 msgid "folder"
 msgstr ""
@@ -10771,6 +10842,7 @@ msgstr ""
 #: src/components/data-sources/DataDriversView.tsx
 #: src/components/data-sources/DataDriversView.tsx
 #: src/components/quick-create/ScopeSelection.tsx
+#: src/components/schema-tree/SchemaTreeView.tsx
 #: src/i18n/type-labels.ts
 msgid "Folder"
 msgstr "مجلد"
@@ -11369,6 +11441,10 @@ msgstr "تشغيل سير عمل الرسم البياني"
 msgid "Graph Workflows"
 msgstr "مسارات عمل الرسم البياني"
 
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "group"
+msgstr ""
+
 #: src/i18n/type-labels.ts
 msgid "Group"
 msgstr "مجموعة"
@@ -11645,6 +11721,11 @@ msgstr "السجل"
 
 #: src/components/organization/budgets/BudgetHistoryDialog.tsx
 msgid "History of {scopeLabel}’s budget"
+msgstr ""
+
+#: src/components/schema-tree/SchemaTreeView.tsx
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "Holds"
 msgstr ""
 
 #: src/components/project-home/HomeCustomizationCard.tsx
@@ -12302,6 +12383,10 @@ msgstr "إدراج رمز تعبيري"
 msgid "Insert table"
 msgstr "إدراج جدول"
 
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "inside"
+msgstr ""
+
 #: src/components/assets/editor/wizard/wizard-texts.ts
 #: src/components/install/AddAssetDialog.tsx
 #: src/components/install/InstallButton.tsx
@@ -12853,6 +12938,7 @@ msgstr "النوع"
 #: src/components/data-sources/DataDriversView.tsx
 #: src/components/llm-endpoints/LlmEndpointDialog.tsx
 #: src/components/llm-endpoints/LlmEndpointsList.tsx
+#: src/components/schema-tree/SchemaTreeView.tsx
 msgid "Kind"
 msgstr "النوع"
 
@@ -13283,6 +13369,10 @@ msgstr "جاري الربط…"
 #: src/components/lens-viewer/HeartbeatEventsViewer.tsx
 msgid "List"
 msgstr "قائمة"
+
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "list of"
+msgstr ""
 
 #: src/components/settings-view/settings-utils.ts
 msgid "List of models available for selection"
@@ -14180,6 +14270,10 @@ msgstr "أدوات MCP"
 #: src/components/conversation/task-it.tsx
 #: src/components/token-plan/token-plan-math.ts
 msgid "Me"
+msgstr ""
+
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "Meaning"
 msgstr ""
 
 #: src/components/machine-overview/machine-overview.tsx
@@ -15343,6 +15437,10 @@ msgstr "لا توجد بيانات متاحة"
 msgid "No data."
 msgstr "لا توجد بيانات."
 
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "no dataset"
+msgstr ""
+
 #: src/components/webapp-viewer/webapp-deployments-tab.tsx
 msgid "No deployments observed yet"
 msgstr "لا توجد عمليات نشر حتى الآن"
@@ -15799,6 +15897,10 @@ msgstr "لم يتم تحديد مشروع"
 msgid "No project selected — pick one to enable project-scoped actions"
 msgstr "لم يُحدَّد مشروع — يُرجى اختيار مشروع لتفعيل الإجراءات الخاصة بالمشروع"
 
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "No project to show."
+msgstr ""
+
 #: src/components/project-selector/ProjectSelector.tsx
 msgid "No projects"
 msgstr "لا توجد مشاريع"
@@ -16251,8 +16353,16 @@ msgstr "لا شيء"
 msgid "none — they use their own"
 msgstr "لا يوجد — يستخدمون الخاص بهم"
 
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "none · written by hand"
+msgstr ""
+
 #~ msgid "None (project root)"
 #~ msgstr "بدون (جذر المشروع)"
+
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "none of its own · stored inside the rows of the schema that uses it"
+msgstr ""
 
 #: src/components/automations/TestPanel.tsx
 msgid "None picked: a sample event is used."
@@ -16520,6 +16630,10 @@ msgstr "ملاحظة (اختيارية)"
 msgid "Note: File is missing"
 msgstr "ملاحظة: الملف مفقود"
 
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "nothing"
+msgstr ""
+
 #: src/components/assets/editor/wizard/WizardForm.tsx
 msgid "Nothing — this wizard is run by hand. Add a trigger asset under its agentic-assets/trigger/ folder to have it run itself."
 msgstr "لا شيء — هذا المعالج يُشغَّل يدويًا. أضف أصل مشغّل في المجلد agentic-assets/trigger/ الخاص به ليعمل من تلقاء نفسه."
@@ -16764,6 +16878,10 @@ msgstr "يُستخدم الآن {0}"
 msgid "Nowhere yet"
 msgstr ""
 
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "number"
+msgstr ""
+
 #: src/components/connections-manager/sign-in-method.tsx
 msgid "OAuth"
 msgstr "OAuth"
@@ -16901,6 +17019,10 @@ msgstr ""
 msgid "One line: what this project uses it for"
 msgstr "سطر واحد: فيمَ يستخدمه هذا المشروع"
 
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "one of"
+msgstr ""
+
 #~ msgid "one of this wizard's inputs"
 #~ msgstr ""
 
@@ -16964,6 +17086,7 @@ msgstr ""
 #: src/components/milkdown-editor/MilkdownEditor.tsx
 #: src/components/project-activity-strip/BookmarkColumn.tsx
 #: src/components/runs/RunPreviewRoot.tsx
+#: src/components/schema-tree/SchemaTreeView.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 #: src/components/workers/WorkerToolbar.tsx
 #: src/notifications/ingest.ts
@@ -17040,6 +17163,10 @@ msgstr "يمكن فتح مشروع لتحديد الأسرار التي تستط
 #: src/pages/discover-page/discover-page.tsx
 msgid "Open a project to see its assets."
 msgstr "يمكن فتح مشروع لعرض موارده."
+
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "Open a project to see its schemas."
+msgstr ""
 
 #: src/components/assets/editor/agent-profile/DeployedAgentChatPanel.tsx
 msgid "Open a session on this machine"
@@ -17497,6 +17624,10 @@ msgstr ""
 msgid "Open the chat this session runs in"
 msgstr ""
 
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "Open the data source"
+msgstr ""
+
 #: src/components/data-sources/DataSourcePage.tsx
 msgid "Open the event bus"
 msgstr ""
@@ -17714,6 +17845,7 @@ msgid "Operation failed"
 msgstr "فشلت العملية"
 
 #: src/components/assets/DependencyChips.tsx
+#: src/components/schema-tree/SchemaTreeView.tsx
 msgid "optional"
 msgstr ""
 
@@ -18760,6 +18892,7 @@ msgstr "التقدم"
 
 #: src/components/credentials-view/CredentialView.tsx
 #: src/components/llm-sources/llm-source-visuals.ts
+#: src/components/schema-tree/SchemaTreeView.tsx
 msgid "project"
 msgstr "مشروع"
 
@@ -19418,6 +19551,10 @@ msgstr "يقرأ"
 
 #: src/components/organization/budgets/BudgetHistoryDialog.tsx
 msgid "Reading the history…"
+msgstr ""
+
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "Reading the schemas…"
 msgstr ""
 
 #~ msgid "Reading this team's people…"
@@ -20767,6 +20904,7 @@ msgstr ""
 #~ msgid "rule: {ruleFilterName}"
 #~ msgstr "القاعدة: {ruleFilterName}"
 
+#: src/components/schema-tree/SchemaTreeView.tsx
 #: src/components/ui/settings-pane.tsx
 msgid "Rules"
 msgstr "القواعد"
@@ -21423,6 +21561,26 @@ msgstr ""
 #. placeholder {0}: display(selected).label
 #: src/components/agent-resources/AgentSchedulesSection.tsx
 msgid "Schedules · {0}"
+msgstr ""
+
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "schema"
+msgstr ""
+
+#: src/types/ViewType.ts
+msgid "Schema"
+msgstr ""
+
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "Schema tree"
+msgstr ""
+
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "Schemas"
+msgstr ""
+
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "Schemas defined here"
 msgstr ""
 
 #: src/components/credentials/CredentialDialog.tsx
@@ -24482,6 +24640,10 @@ msgstr ""
 msgid "Tested"
 msgstr ""
 
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "text"
+msgstr ""
+
 #: src/components/ask/AskForm.tsx
 msgid "Thank you — sent."
 msgstr ""
@@ -24944,6 +25106,10 @@ msgstr "لم يتم العثور على الوكيل المطلوب."
 #: src/components/assets/editor/wizard/WizardViewer.tsx
 msgid "The run could not be reset"
 msgstr "تعذّرت إعادة تعيين التشغيل"
+
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "The schemas could not be read."
+msgstr ""
 
 #: src/components/wiki-toolbar/WikiLinkInsertDialog.tsx
 msgid "The selected entity has no name yet. Choose one — it will be saved to the entity AND used as the link text."
@@ -25539,6 +25705,10 @@ msgstr ""
 
 #: src/components/connections-manager/credential-rows-view.tsx
 msgid "This project declares the same variables, and its values win"
+msgstr ""
+
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "This project defines no schema."
 msgstr ""
 
 #: src/routes/loaders/load-project.ts
@@ -26358,6 +26528,7 @@ msgstr "خطوتان سريعتان في متصفحك:"
 #: src/components/machine-overview/machine-overview.tsx
 #: src/components/navigator-panel/NavigatorSearch.tsx
 #: src/components/record-search-bar/RecordSearchBar.tsx
+#: src/components/schema-tree/SchemaTreeView.tsx
 #: src/components/search-index/SweepOrphansDialog.tsx
 #: src/pages/discover-page/DiscoverToolbar.tsx
 #: src/pages/entry/entry-shell.tsx
@@ -26433,6 +26604,10 @@ msgstr "تراجع"
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 msgid "Undo changes"
 msgstr "التراجع عن التغييرات"
+
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "Unfold"
+msgstr ""
 
 #: src/components/conversation/asset-review/AssetInstallActions.tsx
 #: src/components/conversation/asset-review/AssetReviewDialog.tsx
@@ -26860,6 +27035,7 @@ msgstr "الأصول المستخدمة"
 #: src/components/connections-manager.tsx
 #: src/components/llm-endpoints/LlmEndpointDetail.tsx
 #: src/components/llm-endpoints/LlmEndpointsList.tsx
+#: src/components/schema-tree/SchemaTreeView.tsx
 msgid "Used by"
 msgstr "تُستخدم بواسطة"
 
@@ -26914,6 +27090,7 @@ msgid "User Prompt Submit"
 msgstr "إرسال طلب المستخدم"
 
 #: src/components/assets/editor/usage-report/UsageReportAssetEditor.tsx
+#: src/components/schema-tree/SchemaTreeView.tsx
 #: src/pages/live-status/LiveStatus.tsx
 msgid "uses"
 msgstr "الاستخدامات"
@@ -27943,6 +28120,10 @@ msgstr ""
 
 #: src/components/open-project-component/open-project-component.tsx
 msgid "Yes"
+msgstr ""
+
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "yes / no"
 msgstr ""
 
 #: src/components/chats-navigator/useChatHistory.ts

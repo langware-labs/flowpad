@@ -392,6 +392,11 @@ msgstr "{0} could not be updated for this project."
 msgid "{0} current · {1} stale · {2} partial · {3} error"
 msgstr "{0} current · {1} stale · {2} partial · {3} error"
 
+#. placeholder {0}: root.sources.length
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "{0} data sources"
+msgstr "{0} data sources"
+
 #. placeholder {0}: connection.provider
 #. placeholder {0}: row.title
 #: src/components/agent-resources/AgentCredentialsSection.tsx
@@ -685,6 +690,11 @@ msgstr "{0} records on disk"
 msgid "{0} saved"
 msgstr "{0} saved"
 
+#. placeholder {0}: root.kinds.length
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "{0} schemas"
+msgstr "{0} schemas"
+
 #. placeholder {0}: secrets.length
 #. placeholder {1}: secrets.length === 1 ? '' : 's'
 #: src/components/account/secrets-section.tsx
@@ -823,10 +833,18 @@ msgstr "{count} {0} attached"
 msgid "{count} pending change(s) — click to view diff"
 msgstr "{count} pending change(s) — click to view diff"
 
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "{count} rows"
+msgstr "{count} rows"
+
 #. placeholder {0}: selected.displayName ?? selected.name
 #: src/components/assets/editor/task/GroupTaskDialog.tsx
 msgid "{created} member task(s) created for \"{0}\"."
 msgstr "{created} member task(s) created for \"{0}\"."
+
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "{datasets} datasets"
+msgstr "{datasets} datasets"
 
 #: src/components/assets/editor/agent-profile/AgentScheduleSection.tsx
 msgid "{day} at {time}"
@@ -1093,6 +1111,10 @@ msgstr "{repeats} of these already have a budget in {teamName}; their caps will 
 #~ msgid "{replyCount, plural, one {# reply} other {# replies}}"
 #~ msgstr "{replyCount, plural, one {# reply} other {# replies}}"
 
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "{rows} rows"
+msgstr "{rows} rows"
+
 #: src/components/automations/automation-words.ts
 msgid "{s}s"
 msgstr "{s}s"
@@ -1341,6 +1363,10 @@ msgstr "$/day"
 msgid "1 change not published"
 msgstr "1 change not published"
 
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "1 data source"
+msgstr "1 data source"
+
 #: src/components/status-bar/GitResolveButton.tsx
 msgid "1 file needs merging — let the assistant merge it"
 msgstr "1 file needs merging — let the assistant merge it"
@@ -1361,6 +1387,10 @@ msgstr "1 new change in the cloud — pull it"
 #: src/components/code-editor/SnippetView.tsx
 msgid "1 problem"
 msgstr "1 problem"
+
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "1 row"
+msgstr "1 row"
 
 #: src/components/lens-viewer/ClaudeErrorsViewer.tsx
 msgid "1 week"
@@ -1569,6 +1599,10 @@ msgstr "A sign-in is in progress"
 #: src/components/data-sources/DataSourceDialog.tsx
 msgid "A source is one remote stream — one feed, channel, drive or mailbox. The poller syncs it on the heartbeat."
 msgstr "A source is one remote stream — one feed, channel, drive or mailbox. The poller syncs it on the heartbeat."
+
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "a source this project does not list"
+msgstr "a source this project does not list"
 
 #: src/components/automations/blocks/WhenBlock.tsx
 msgid "A subject such as task:* or data_source:<id>. Empty = any."
@@ -2890,6 +2924,7 @@ msgid "Anyone you share with can spend this budget and see what it has cost. The
 msgstr "Anyone you share with can spend this budget and see what it has cost. They draw on the same limits you do — not a separate allowance — and they cannot change the limits, the provider key, or share it on."
 
 #: src/components/automations/automation-words.ts
+#: src/components/schema-tree/SchemaTreeView.tsx
 msgid "anything"
 msgstr "anything"
 
@@ -7434,6 +7469,14 @@ msgstr "Data (JSON)"
 msgid "Data privacy mode"
 msgstr "Data privacy mode"
 
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "data source"
+msgstr "data source"
+
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "Data source"
+msgstr "Data source"
+
 #~ msgid "Data Source Cursor"
 #~ msgstr "Data Source Cursor"
 
@@ -7444,6 +7487,7 @@ msgstr "Data source name"
 #: src/components/agent-resources/AgentResourcesBody.tsx
 #: src/components/data-sources/DataSourceDialog.tsx
 #: src/components/data-sources/DataSourcesView.tsx
+#: src/components/schema-tree/SchemaTreeView.tsx
 #: src/components/top-nav-bar/use-entity-breadcrumbs.ts
 #: src/i18n/type-labels.ts
 #: src/types/ViewType.ts
@@ -7475,9 +7519,14 @@ msgstr "Database Stats"
 msgid "Database switched"
 msgstr "Database switched"
 
+#: src/components/schema-tree/SchemaTreeView.tsx
 #: src/i18n/type-labels.ts
 msgid "Dataset"
 msgstr "Dataset"
+
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "dataset schema"
+msgstr "dataset schema"
 
 #: src/components/cron-view/CronForm.tsx
 msgid "Day {d}"
@@ -7669,6 +7718,11 @@ msgstr "Defaults: page=\"{DEFAULT_PAGE}\", component=\"{DEFAULT_COMPONENT}\""
 #: src/components/hooks-manager/TriggerForm.tsx
 msgid "Define the conditions that must match for this trigger to fire"
 msgstr "Define the conditions that must match for this trigger to fire"
+
+#: src/components/schema-tree/SchemaTreeView.tsx
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "Defined in"
+msgstr "Defined in"
 
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 msgid "Definition"
@@ -9646,6 +9700,10 @@ msgstr "Everything you can see"
 msgid "everywhere"
 msgstr "everywhere"
 
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "Example slots"
+msgstr "Example slots"
+
 #: src/components/settings-view/settings-utils.ts
 msgid "Excluded Commands"
 msgstr "Excluded Commands"
@@ -10255,6 +10313,10 @@ msgstr "Feed comment"
 msgid "Feed Entry"
 msgstr "Feed Entry"
 
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "Feeds"
+msgstr "Feeds"
+
 #: src/components/floating-chat/toolEventDescriptor.ts
 msgid "Fetch"
 msgstr "Fetch"
@@ -10287,9 +10349,14 @@ msgstr "Fetching the latest"
 msgid "Fetching…"
 msgstr "Fetching…"
 
+#: src/components/schema-tree/SchemaTreeView.tsx
 #: src/components/terminal/interactive-terminal/command-status-viewer/CommandStatusViewer.tsx
 msgid "Field"
 msgstr "Field"
+
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "Fields"
+msgstr "Fields"
 
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
 #: src/components/automations/automation-words.ts
@@ -10764,6 +10831,10 @@ msgstr "Focus local graph here"
 msgid "Focused"
 msgstr "Focused"
 
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "Fold"
+msgstr "Fold"
+
 #: src/components/open-project-component/project-actions-row.tsx
 msgid "folder"
 msgstr "folder"
@@ -10771,6 +10842,7 @@ msgstr "folder"
 #: src/components/data-sources/DataDriversView.tsx
 #: src/components/data-sources/DataDriversView.tsx
 #: src/components/quick-create/ScopeSelection.tsx
+#: src/components/schema-tree/SchemaTreeView.tsx
 #: src/i18n/type-labels.ts
 msgid "Folder"
 msgstr "Folder"
@@ -11369,6 +11441,10 @@ msgstr "Graph Workflow Run"
 msgid "Graph Workflows"
 msgstr "Graph Workflows"
 
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "group"
+msgstr "group"
+
 #: src/i18n/type-labels.ts
 msgid "Group"
 msgstr "Group"
@@ -11646,6 +11722,11 @@ msgstr "History"
 #: src/components/organization/budgets/BudgetHistoryDialog.tsx
 msgid "History of {scopeLabel}’s budget"
 msgstr "History of {scopeLabel}’s budget"
+
+#: src/components/schema-tree/SchemaTreeView.tsx
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "Holds"
+msgstr "Holds"
 
 #: src/components/project-home/HomeCustomizationCard.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
@@ -12302,6 +12383,10 @@ msgstr "Insert emoji"
 msgid "Insert table"
 msgstr "Insert table"
 
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "inside"
+msgstr "inside"
+
 #: src/components/assets/editor/wizard/wizard-texts.ts
 #: src/components/install/AddAssetDialog.tsx
 #: src/components/install/InstallButton.tsx
@@ -12853,6 +12938,7 @@ msgstr "kind"
 #: src/components/data-sources/DataDriversView.tsx
 #: src/components/llm-endpoints/LlmEndpointDialog.tsx
 #: src/components/llm-endpoints/LlmEndpointsList.tsx
+#: src/components/schema-tree/SchemaTreeView.tsx
 msgid "Kind"
 msgstr "Kind"
 
@@ -13283,6 +13369,10 @@ msgstr "Linking…"
 #: src/components/lens-viewer/HeartbeatEventsViewer.tsx
 msgid "List"
 msgstr "List"
+
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "list of"
+msgstr "list of"
 
 #: src/components/settings-view/settings-utils.ts
 msgid "List of models available for selection"
@@ -14181,6 +14271,10 @@ msgstr "MCP tools"
 #: src/components/token-plan/token-plan-math.ts
 msgid "Me"
 msgstr "Me"
+
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "Meaning"
+msgstr "Meaning"
 
 #: src/components/machine-overview/machine-overview.tsx
 #: src/components/machine-overview/machine-overview.tsx
@@ -15343,6 +15437,10 @@ msgstr "No data available"
 msgid "No data."
 msgstr "No data."
 
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "no dataset"
+msgstr "no dataset"
+
 #: src/components/webapp-viewer/webapp-deployments-tab.tsx
 msgid "No deployments observed yet"
 msgstr "No deployments observed yet"
@@ -15799,6 +15897,10 @@ msgstr "No project selected"
 msgid "No project selected — pick one to enable project-scoped actions"
 msgstr "No project selected — pick one to enable project-scoped actions"
 
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "No project to show."
+msgstr "No project to show."
+
 #: src/components/project-selector/ProjectSelector.tsx
 msgid "No projects"
 msgstr "No projects"
@@ -16251,8 +16353,16 @@ msgstr "None"
 msgid "none — they use their own"
 msgstr "none — they use their own"
 
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "none · written by hand"
+msgstr "none · written by hand"
+
 #~ msgid "None (project root)"
 #~ msgstr "None (project root)"
+
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "none of its own · stored inside the rows of the schema that uses it"
+msgstr "none of its own · stored inside the rows of the schema that uses it"
 
 #: src/components/automations/TestPanel.tsx
 msgid "None picked: a sample event is used."
@@ -16520,6 +16630,10 @@ msgstr "Note (optional)"
 msgid "Note: File is missing"
 msgstr "Note: File is missing"
 
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "nothing"
+msgstr "nothing"
+
 #: src/components/assets/editor/wizard/WizardForm.tsx
 msgid "Nothing — this wizard is run by hand. Add a trigger asset under its agentic-assets/trigger/ folder to have it run itself."
 msgstr "Nothing — this wizard is run by hand. Add a trigger asset under its agentic-assets/trigger/ folder to have it run itself."
@@ -16764,6 +16878,10 @@ msgstr "Now using {0}"
 msgid "Nowhere yet"
 msgstr "Nowhere yet"
 
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "number"
+msgstr "number"
+
 #: src/components/connections-manager/sign-in-method.tsx
 msgid "OAuth"
 msgstr "OAuth"
@@ -16901,6 +17019,10 @@ msgstr "One decision, nothing runs."
 msgid "One line: what this project uses it for"
 msgstr "One line: what this project uses it for"
 
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "one of"
+msgstr "one of"
+
 #~ msgid "one of this wizard's inputs"
 #~ msgstr "one of this wizard's inputs"
 
@@ -16964,6 +17086,7 @@ msgstr "Only the steps below"
 #: src/components/milkdown-editor/MilkdownEditor.tsx
 #: src/components/project-activity-strip/BookmarkColumn.tsx
 #: src/components/runs/RunPreviewRoot.tsx
+#: src/components/schema-tree/SchemaTreeView.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 #: src/components/workers/WorkerToolbar.tsx
 #: src/notifications/ingest.ts
@@ -17040,6 +17163,10 @@ msgstr "Open a project to choose which of its secrets this machine can see."
 #: src/pages/discover-page/discover-page.tsx
 msgid "Open a project to see its assets."
 msgstr "Open a project to see its assets."
+
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "Open a project to see its schemas."
+msgstr "Open a project to see its schemas."
 
 #: src/components/assets/editor/agent-profile/DeployedAgentChatPanel.tsx
 msgid "Open a session on this machine"
@@ -17497,6 +17624,10 @@ msgstr "Open the automation to fix it"
 msgid "Open the chat this session runs in"
 msgstr "Open the chat this session runs in"
 
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "Open the data source"
+msgstr "Open the data source"
+
 #: src/components/data-sources/DataSourcePage.tsx
 msgid "Open the event bus"
 msgstr "Open the event bus"
@@ -17714,6 +17845,7 @@ msgid "Operation failed"
 msgstr "Operation failed"
 
 #: src/components/assets/DependencyChips.tsx
+#: src/components/schema-tree/SchemaTreeView.tsx
 msgid "optional"
 msgstr "optional"
 
@@ -18760,6 +18892,7 @@ msgstr "Progress"
 
 #: src/components/credentials-view/CredentialView.tsx
 #: src/components/llm-sources/llm-source-visuals.ts
+#: src/components/schema-tree/SchemaTreeView.tsx
 msgid "project"
 msgstr "project"
 
@@ -19419,6 +19552,10 @@ msgstr "Reading"
 #: src/components/organization/budgets/BudgetHistoryDialog.tsx
 msgid "Reading the history…"
 msgstr "Reading the history…"
+
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "Reading the schemas…"
+msgstr "Reading the schemas…"
 
 #~ msgid "Reading this team's people…"
 #~ msgstr "Reading this team's people…"
@@ -20767,6 +20904,7 @@ msgstr "Rule created"
 #~ msgid "rule: {ruleFilterName}"
 #~ msgstr "rule: {ruleFilterName}"
 
+#: src/components/schema-tree/SchemaTreeView.tsx
 #: src/components/ui/settings-pane.tsx
 msgid "Rules"
 msgstr "Rules"
@@ -21424,6 +21562,26 @@ msgstr "Schedules"
 #: src/components/agent-resources/AgentSchedulesSection.tsx
 msgid "Schedules · {0}"
 msgstr "Schedules · {0}"
+
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "schema"
+msgstr "schema"
+
+#: src/types/ViewType.ts
+msgid "Schema"
+msgstr "Schema"
+
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "Schema tree"
+msgstr "Schema tree"
+
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "Schemas"
+msgstr "Schemas"
+
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "Schemas defined here"
+msgstr "Schemas defined here"
 
 #: src/components/credentials/CredentialDialog.tsx
 #: src/components/hooks/EventListPanel.tsx
@@ -24482,6 +24640,10 @@ msgstr "Test with a recent event"
 msgid "Tested"
 msgstr "Tested"
 
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "text"
+msgstr "text"
+
 #: src/components/ask/AskForm.tsx
 msgid "Thank you — sent."
 msgstr "Thank you — sent."
@@ -24944,6 +25106,10 @@ msgstr "The requested agent could not be found."
 #: src/components/assets/editor/wizard/WizardViewer.tsx
 msgid "The run could not be reset"
 msgstr "The run could not be reset"
+
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "The schemas could not be read."
+msgstr "The schemas could not be read."
 
 #: src/components/wiki-toolbar/WikiLinkInsertDialog.tsx
 msgid "The selected entity has no name yet. Choose one — it will be saved to the entity AND used as the link text."
@@ -25540,6 +25706,10 @@ msgstr "This project could not be shared."
 #: src/components/connections-manager/credential-rows-view.tsx
 msgid "This project declares the same variables, and its values win"
 msgstr "This project declares the same variables, and its values win"
+
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "This project defines no schema."
+msgstr "This project defines no schema."
 
 #: src/routes/loaders/load-project.ts
 msgid "This project doesn't exist or is no longer available."
@@ -26358,6 +26528,7 @@ msgstr "Two quick steps in your browser:"
 #: src/components/machine-overview/machine-overview.tsx
 #: src/components/navigator-panel/NavigatorSearch.tsx
 #: src/components/record-search-bar/RecordSearchBar.tsx
+#: src/components/schema-tree/SchemaTreeView.tsx
 #: src/components/search-index/SweepOrphansDialog.tsx
 #: src/pages/discover-page/DiscoverToolbar.tsx
 #: src/pages/entry/entry-shell.tsx
@@ -26433,6 +26604,10 @@ msgstr "Undo"
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 msgid "Undo changes"
 msgstr "Undo changes"
+
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "Unfold"
+msgstr "Unfold"
 
 #: src/components/conversation/asset-review/AssetInstallActions.tsx
 #: src/components/conversation/asset-review/AssetReviewDialog.tsx
@@ -26860,6 +27035,7 @@ msgstr "Used assets"
 #: src/components/connections-manager.tsx
 #: src/components/llm-endpoints/LlmEndpointDetail.tsx
 #: src/components/llm-endpoints/LlmEndpointsList.tsx
+#: src/components/schema-tree/SchemaTreeView.tsx
 msgid "Used by"
 msgstr "Used by"
 
@@ -26914,6 +27090,7 @@ msgid "User Prompt Submit"
 msgstr "User Prompt Submit"
 
 #: src/components/assets/editor/usage-report/UsageReportAssetEditor.tsx
+#: src/components/schema-tree/SchemaTreeView.tsx
 #: src/pages/live-status/LiveStatus.tsx
 msgid "uses"
 msgstr "uses"
@@ -27944,6 +28121,10 @@ msgstr "yes"
 #: src/components/open-project-component/open-project-component.tsx
 msgid "Yes"
 msgstr "Yes"
+
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "yes / no"
+msgstr "yes / no"
 
 #: src/components/chats-navigator/useChatHistory.ts
 #: src/pages/home-landing/feed/FeedEntryCard.tsx
