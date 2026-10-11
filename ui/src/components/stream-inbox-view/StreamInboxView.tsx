@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import type { CSSProperties, PointerEvent as ReactPointerEvent } from 'react';
 import {
   Archive,
   Inbox as InboxIcon,
@@ -75,7 +76,9 @@ import {
   conversationFacets,
   actionsFor,
   compareConversationsByRecency,
+  isViewer,
 } from '@src/components/conversation/conversation-category';
+import { authoredBy, senderOf } from '@sdk/models/MessageSender';
 import { CategoryChips, COMPACT } from '@src/components/conversation/CategoryChips';
 import { MembershipInvitations } from './MembershipInvitations';
 import { RowActions } from '@src/components/conversation/RowActions';
@@ -258,6 +261,7 @@ export function ConversationListRow({
   // on its own: the sender (and everyone post-accept) must see a normal row.
   const { cloudUser, currentUser } = useAuth();
   const myEmail = (cloudUser?.email || currentUser?.email || '').trim().toLowerCase();
+  const localUserId = currentUser?.id ?? null;
   const [accepting, setAccepting] = useState(false);
 
   // Single source of truth for the row's category (invitation / help desk /
@@ -271,7 +275,7 @@ export function ConversationListRow({
     latestMessage,
     latestPtrTs: lastPtr?.ts ?? null,
     invitation,
-    viewer: { email: myEmail, cloudUserId, localUserId: currentUser?.id ?? null },
+    viewer: { email: myEmail, cloudUserId, localUserId },
   });
   const attribution = attributionFor(latestMessage?.origin, conv.channel_spec);
   // Alias kept so the existing invitation-row rendering reads cleanly below.
@@ -330,28 +334,47 @@ export function ConversationListRow({
       const inviter = (firstMessage?.sender_name || '').trim();
       return [inviter || t`Invitation`];
     }
-    const names: string[] = [];
+    // The viewer's own name goes last: the column is short, and the others are who the thread is with.
+    const others: string[] = [];
+    const own: string[] = [];
     const seen = new Set<string>();
-    const pushName = (raw: string | null | undefined) => {
+    const pushName = (raw: string | null | undefined, mine: boolean) => {
       const trimmed = (raw || '').trim();
       if (!trimmed) return;
       const key = trimmed.toLowerCase();
       if (seen.has(key)) return;
-      names.push(trimmed);
+      (mine ? own : others).push(trimmed);
       seen.add(key);
     };
-    pushName(latestMessage?.sender_name);
+    const viewer = { email: myEmail, cloudUserId, localUserId };
+    const sentByMe = (m: FlowMessage | null | undefined) => !!m && authoredBy(senderOf(m), [cloudUserId, localUserId]);
+    pushName(latestMessage?.sender_name, sentByMe(latestMessage));
     if (conv.isChannel) {
       // A channel's people are on the channel, not on the Flowpad roster: whoever opened it (the person,
       // usually) beside whoever spoke last (often the answering agent).
-      pushName(firstMessage?.sender_name);
+      pushName(firstMessage?.sender_name, sentByMe(firstMessage));
     } else {
       for (const p of conv.members ?? []) {
-        pushName(p?.name || (p?.email ? p.email.split('@')[0] : ''));
+        const email = (p?.email || '').trim().toLowerCase();
+        pushName(
+          p?.name || (p?.email ? p.email.split('@')[0] : ''),
+          isViewer(p?.user_id, viewer) || (!!myEmail && email === myEmail),
+        );
       }
     }
+    const names = [...others, ...own];
     return names.length > 0 ? names : [t`Unknown`];
-  }, [isInvitationRow, firstMessage?.sender_name, latestMessage?.sender_name, conv.isChannel, conv.members, t]);
+  }, [
+    isInvitationRow,
+    firstMessage,
+    latestMessage,
+    conv.isChannel,
+    conv.members,
+    cloudUserId,
+    localUserId,
+    myEmail,
+    t,
+  ]);
 
   const senderLabel = participantNames.join(', ');
   // The stream inbox subject is the conversation's own user-set / hub-synced title
@@ -468,7 +491,7 @@ export function ConversationListRow({
         // cheap; when the visible label already shows the full list, the
         // hover-text repeats it harmlessly.
         title={senderLabel}
-        className={`flex w-44 shrink-0 items-center gap-1 ${isUnread ? 'font-semibold text-foreground' : 'text-muted-foreground'}`}
+        className={`flex ${FROM_WIDTH_CLASS} shrink-0 items-center gap-1 ${isUnread ? 'font-semibold text-foreground' : 'text-muted-foreground'}`}
       >
         {isInvitationRow && <MailPlus className="h-3.5 w-3.5 flex-shrink-0 text-violet-500" aria-label="invitation" />}
         <span className="min-w-0 flex-1 truncate">{senderLabel}</span>
@@ -553,6 +576,25 @@ export function ConversationListRow({
 const columnInputClass =
   'h-7 shrink-0 rounded-md border border-border/60 bg-background px-2 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring';
 
+// The From column's width is one CSS variable on the list, so dragging the spacer resizes the
+// header filter and every row without re-rendering a row.
+const FROM_WIDTH_VAR = '--stream-inbox-from-width';
+const FROM_WIDTH_CLASS = 'w-[var(--stream-inbox-from-width)]';
+const FROM_WIDTH_KEY = 'flowpad.stream-inbox.from-width';
+const FROM_WIDTH_DEFAULT = 176;
+const FROM_WIDTH_MIN = 96;
+const FROM_WIDTH_MAX = 640;
+
+function readFromWidth(): number {
+  try {
+    const stored = Number(window.localStorage.getItem(FROM_WIDTH_KEY));
+    if (stored >= FROM_WIDTH_MIN && stored <= FROM_WIDTH_MAX) return stored;
+  } catch {
+    // Storage is unavailable (private window): the default width stands.
+  }
+  return FROM_WIDTH_DEFAULT;
+}
+
 // ── StreamInboxView ───────────────────────────────────────────────────────────────
 
 export function StreamInboxView({
@@ -616,6 +658,41 @@ export function StreamInboxView({
     [channelFilter, ownerChannels],
   );
   const [columnFilter, setColumnFilter] = useState<ColumnFilter>(NO_COLUMN_FILTER);
+  const [fromWidth, setFromWidth] = useState(readFromWidth);
+  const listRef = useRef<HTMLDivElement | null>(null);
+  const commitFromWidth = useCallback((width: number) => {
+    setFromWidth(width);
+    try {
+      window.localStorage.setItem(FROM_WIDTH_KEY, String(width));
+    } catch {
+      // Storage is unavailable: the width holds for this visit only.
+    }
+  }, []);
+  // A drag paints through the CSS variable alone; state and storage are written once, on release.
+  const startFromResize = useCallback(
+    (e: ReactPointerEvent<HTMLSpanElement>) => {
+      e.preventDefault();
+      const startX = e.clientX;
+      // In a right-to-left layout the column grows as the pointer moves left.
+      const sign = getComputedStyle(e.currentTarget).direction === 'rtl' ? -1 : 1;
+      let width = fromWidth;
+      const onMove = (ev: PointerEvent) => {
+        const next = fromWidth + sign * (ev.clientX - startX);
+        width = Math.round(Math.min(FROM_WIDTH_MAX, Math.max(FROM_WIDTH_MIN, next)));
+        listRef.current?.style.setProperty(FROM_WIDTH_VAR, `${width}px`);
+      };
+      const onEnd = () => {
+        window.removeEventListener('pointermove', onMove);
+        window.removeEventListener('pointerup', onEnd);
+        window.removeEventListener('pointercancel', onEnd);
+        commitFromWidth(width);
+      };
+      window.addEventListener('pointermove', onMove);
+      window.addEventListener('pointerup', onEnd);
+      window.addEventListener('pointercancel', onEnd);
+    },
+    [fromWidth, commitFromWidth],
+  );
   const columnFilterActive = isColumnFilterActive(columnFilter);
   const setColumn = useCallback(
     <K extends keyof ColumnFilter>(key: K, value: ColumnFilter[K]) =>
@@ -1288,7 +1365,11 @@ export function StreamInboxView({
         )}
       </div>
 
-      <div className="flex-1 overflow-y-auto">
+      <div
+        ref={listRef}
+        className="flex-1 overflow-y-auto"
+        style={{ [FROM_WIDTH_VAR]: `${fromWidth}px` } as CSSProperties}
+      >
         {/* The header line: select-all, then one filter per row column (From over
             the sender, Subject over the subject line, Date over the time), then the
             owner's attached channels on the right. Rendered even with no
@@ -1318,9 +1399,23 @@ export function StreamInboxView({
               onChange={(e) => setColumn('from', e.target.value)}
               placeholder={t`From`}
               aria-label={t`Filter by sender`}
-              className={`${columnInputClass} w-44`}
+              className={`${columnInputClass} ${FROM_WIDTH_CLASS}`}
               data-testid="stream-inbox-filter-from"
             />
+            {/* The spacer between From and Subject: drag to trade room between the names and the subject.
+                Sits in the gap (negative margins) so the columns keep their alignment with the rows. */}
+            <span
+              role="separator"
+              aria-orientation="vertical"
+              aria-label={t`Resize the From column`}
+              title={t`Drag to resize`}
+              onPointerDown={startFromResize}
+              onDoubleClick={() => commitFromWidth(FROM_WIDTH_DEFAULT)}
+              className="group/spacer -mx-3 flex h-7 w-3 shrink-0 cursor-col-resize touch-none items-center justify-center"
+              data-testid="stream-inbox-from-spacer"
+            >
+              <span className="h-4 w-px bg-border transition-colors group-hover/spacer:bg-foreground" />
+            </span>
             <input
               type="text"
               value={columnFilter.subject}
