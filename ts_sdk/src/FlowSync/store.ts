@@ -257,6 +257,8 @@ export class DataManager<T extends Manageable> extends EventEmitter {
   private subscriptions: SubscriptionMap<T> = new SubscriptionMap<T>();
   private _inFlightGets: Map<string, Promise<unknown>> = new Map();
   private watches: WatchMap = new WatchMap();
+  /** The `/watch` request open for a key, if any (see `postWatch`). */
+  private watchPosts = new TypeIdMap<Promise<void>>();
   private readScope: string | undefined;
   private queryEpoch = 0;
 
@@ -478,12 +480,11 @@ export class DataManager<T extends Manageable> extends EventEmitter {
   }
 
   private onConnectionOpen() {
-    // Reset watch counts so watch() re-POSTs to the backend with the new connection_id.
-    // After a reconnect the backend has lost all watch registrations.
-    const watchedTypeIds = Array.from(this.watches.keys());
-    this.watches.clear();
-    for (const typeId of watchedTypeIds) {
-      void this.watch(typeId);
+    // The backend lost its watch registrations with the socket: register every watched key
+    // again under the new connection_id, once per key. The counts stay — they are the
+    // number of holders, and each holder still has its own release to call.
+    for (const typeId of Array.from(this.watches.keys())) {
+      void this.postWatch(typeId);
     }
   }
 
@@ -2098,21 +2099,7 @@ export class DataManager<T extends Manageable> extends EventEmitter {
   async watch(typeId: TypeId): Promise<() => Promise<void>> {
     const watchersCount = this.watches.get(typeId) || 0;
     this.watches.set(typeId, watchersCount + 1);
-    if (watchersCount === 0) {
-      const connection_manager = ConnectionManager.getInstance();
-      if (connection_manager.connected) {
-        const connection_id = connection_manager.id;
-        try {
-          await apiClient.post<IEntity>(`${config.API_PREFIXES.graph}/${typeId.type}/${typeId.id}/watch`, {
-            connection_id: connection_id,
-          });
-        } catch (e) {
-          // Watch POST failed — don't block callers. The watch will be
-          // re-registered on the next WebSocket reconnect via onConnectionOpen.
-          console.warn(`[Store] watch POST failed for ${typeId.toString()}, will retry on reconnect:`, e);
-        }
-      }
-    }
+    if (watchersCount === 0) await this.postWatch(typeId);
 
     return async () => {
       const watchersCount = this.watches.get(typeId);
@@ -2129,7 +2116,37 @@ export class DataManager<T extends Manageable> extends EventEmitter {
     };
   }
 
+  /**
+   * Tell the backend this connection watches the key. One request per key at a time, kept
+   * while it is open so an `/unwatch` for the same key is sent after it, never across it.
+   * Never rejects: a failed registration is repeated on the next reconnect.
+   */
+  private postWatch(typeId: TypeId): Promise<void> {
+    const open = this.watchPosts.get(typeId);
+    if (open) return open;
+    const connection_manager = ConnectionManager.getInstance();
+    if (!connection_manager.connected) return Promise.resolve();
+    const request = apiClient
+      .post<IEntity>(`${config.API_PREFIXES.graph}/${typeId.type}/${typeId.id}/watch`, {
+        connection_id: connection_manager.id,
+      })
+      .then(
+        () => undefined,
+        (e: unknown) => {
+          console.warn(`[Store] watch POST failed for ${typeId.toString()}, will retry on reconnect:`, e);
+        },
+      )
+      .finally(() => {
+        if (this.watchPosts.get(typeId) === request) this.watchPosts.delete(typeId);
+      });
+    this.watchPosts.set(typeId, request);
+    return request;
+  }
+
   private async unwatch(typeId: TypeId) {
+    await this.watchPosts.get(typeId);
+    // Someone took the key again while its registration was still open: it stays watched.
+    if ((this.watches.get(typeId) ?? 0) > 0) return;
     if (!this.getByTypeIdFromCache(typeId)) {
       // Entity is not in cache, so it is probably deleted
       return;

@@ -238,8 +238,10 @@ export class ComputeNode extends APIEntity<ComputeNode> implements IComputeNode 
     const process = dataManager.updateEntityFromJson<import('../../process/agentic-process').AgenticProcess>(response);
     process._context = context;
 
+    // A lease, not a bare watch: the caller gets no release to keep, so the process's
+    // end gives the count back (AgenticProcess.watchWhileLive).
     if (options?.watchProcess !== false) {
-      await process.watch();
+      await process.watchWhileLive();
     }
 
     return process;

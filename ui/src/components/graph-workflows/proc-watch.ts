@@ -7,11 +7,13 @@
  * `slot_freed` → tear down.
  */
 import { AgenticProcess } from '@sdk/process/agentic-process';
+import { releaseWhenWatched } from '@sdk/process/watch-lease';
 import type { NodeStatusPayload } from '@sdk/services/graph-workflows';
 import { useStudio } from './store';
 
 interface WatchEntry {
-  unwatch?: () => Promise<void>;
+  /** The promise, not the resolved release: a slot freed before the POST returns still releases. */
+  watch?: Promise<() => Promise<void>>;
   off?: () => void;
 }
 
@@ -23,7 +25,8 @@ async function startWatch(processId: string): Promise<void> {
   active.set(processId, entry);
   try {
     const proc = await AgenticProcess.getById(processId);
-    if (!proc) return;
+    // The slot was freed while the process loaded: nothing to watch any more.
+    if (!proc || active.get(processId) !== entry) return;
     const onReport = (report: {
       worker_status?: string;
       process_status?: string;
@@ -38,7 +41,8 @@ async function startWatch(processId: string): Promise<void> {
     };
     proc.on('status_report', onReport);
     entry.off = () => proc.off('status_report', onReport);
-    entry.unwatch = await proc.watch();
+    entry.watch = proc.watch();
+    await entry.watch;
     // Seed from whatever the entity already knows.
     const seed = (proc as unknown as { statusReport?: Record<string, unknown> }).statusReport;
     if (seed) onReport(seed as never);
@@ -52,7 +56,7 @@ function stopWatch(processId: string): void {
   if (!entry) return;
   active.delete(processId);
   entry.off?.();
-  void entry.unwatch?.().catch(() => undefined);
+  releaseWhenWatched(entry.watch);
   useStudio.getState().clearProcStatus(processId);
 }
 
