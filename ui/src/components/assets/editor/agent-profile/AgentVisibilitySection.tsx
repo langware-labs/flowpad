@@ -67,10 +67,7 @@ function PublicAccessButton({ agent }: { agent: Agent }) {
         : await setPublicAccess(agent.typeId, 'visitor', PUBLIC_VIEWER_ROLE);
       setRole(access.role ?? null);
       if (isPublic) {
-        notify.success({
-          title: t`Public access removed`,
-          message: t`Only people you share with can view this agent.`,
-        });
+        notify.success({ title: t`Public access removed`, message: t`Only people you share with can view this agent.` });
       } else {
         notify.success({ title: t`Agent is public`, message: t`Anyone with the link can view this agent.` });
       }
@@ -99,7 +96,7 @@ function PublicAccessButton({ agent }: { agent: Agent }) {
       }
       data-testid="agent-public-access"
     >
-      <Icon className={`me-1.5 h-3.5 w-3.5${busy ? 'animate-spin' : ''}`} />
+      <Icon className={`me-1.5 h-3.5 w-3.5${busy ? ' animate-spin' : ''}`} />
       {isPublic ? <Trans>Remove public access</Trans> : <Trans>Set public</Trans>}
     </Button>
   );
