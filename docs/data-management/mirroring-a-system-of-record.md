@@ -33,7 +33,8 @@ place that knows the outside system.
    ```
 
    Each value of the map is a path into the item (`{"value": x}` a constant); an item becomes one
-   row, keyed by its `key` path. It is `Dataset.sync` underneath: new rows created, changed ones
+   row, keyed by its `key` path. The mirror owns the fields the map names and no others: what the
+   app keeps on a mirrored row (its notes, its tags) stays. It is `Dataset.sync` underneath: new rows created, changed ones
    replaced, unchanged ones untouched, rows whose item is gone removed — all or nothing — written
    as the source's provider (`by`), so the schema's `owned_by` fields accept them. A script (which
    cannot read the store) passes the items it fetched:

@@ -867,8 +867,10 @@ class Dataset(Entity):
         list of dicts (a script: ``local_client.graph_get("source_item", {...})``). ``map`` says how an
         item becomes a row, in the path grammar -- ``{"key": "external_id", "input": {"name": "name",
         "stage": "data.stage", "crm_id": "external_id"}}``: each value is a PATH into the item
-        (``{"value": x}`` is a constant; a nested object maps field by field). An item whose ``key``
-        path is empty is skipped; a key is made a row key (lowercased, other characters ``-``).
+        (``{"value": x}`` is a constant; a nested object maps field by field). The mirror owns the
+        fields the map names and no others: a field the app keeps on a mirrored row stays as it is.
+        An item whose ``key`` path is empty is skipped; a key is made a row key (lowercased, other
+        characters ``-``).
         ``by`` names the outside system these rows are written as (the owner of the schema's
         ``owned_by`` fields); it defaults to the source's provider. ``match`` narrows what ``prune``
         may remove, as in ``sync``."""
@@ -898,6 +900,11 @@ class Dataset(Entity):
                 return [value for value in (shaped(inner, item) for inner in spec) if value is not None]
             raise ValueError(f"map: a path, {{\"value\": x}}, an object or a list is required, not {spec!r}")
 
+        # The mirror owns the fields its map names and no others: what the app keeps on a mirrored
+        # row (its notes, its tags) stays, whatever the source did to the rest.
+        kept, problems = self.rows_and_problems()
+        held = {row.key: row.input.model_dump(mode="json", exclude_none=True) for row in kept}
+        held.update({p["key"]: p["input"] for p in problems if isinstance(p.get("input"), dict)})
         rows, taken = [], set()
         for item in items:
             named = field_of(item, map["key"])
@@ -907,7 +914,8 @@ class Dataset(Entity):
             if not key or key in taken:
                 raise ValueError(f"mirror: two items map to the row key {key!r} (from {named!r})" if key else f"mirror: {named!r} gives no row key")
             taken.add(key)
-            rows.append({"key": key, "input": shaped(map["input"], item)})
+            own = {name: value for name, value in held.get(key, {}).items() if name not in map["input"]}
+            rows.append({"key": key, "input": {**own, **shaped(map["input"], item)}})
         return await self.sync(rows, prune=prune, match=match, by=by or provider)
 
     def _check_delete(self, keys: list[str], expected: dict[str, str]) -> list[Path]:
