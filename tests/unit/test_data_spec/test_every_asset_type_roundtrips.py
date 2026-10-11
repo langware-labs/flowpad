@@ -94,7 +94,9 @@ VALID: dict[str, dict] = {
         "permissions": {},
     },
     # a poll interval below 60s is refused
-    "data_source": {"poll_interval_seconds": 300},
+    # a source's mirror names a dataset and a map whose key path is also a field
+    "data_source": {"poll_interval_seconds": 300,
+                    "mirror": {"dataset": "tasks", "map": {"key": "external_id", "input": {"crm_id": "external_id"}}, "by": "crm"}},
     # `location_type` is a closed enum, and entity-only (not in the spec)
     "micro_app": {"location_type": "Asset"},
     # only a publishable type may appear in an entry; the schema is THIS build's;

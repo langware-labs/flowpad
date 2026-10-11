@@ -426,7 +426,10 @@ export class Dataset extends APIEntity<Dataset> implements IDataset {
   }
 
   /** Create the row `key`, or replace the one there. Checked first — a row that does not fit writes
-   *  nothing. Slots it leaves out (gold, output, context) and the row's metadata are kept. */
+   *  nothing. Slots it leaves out (gold, output, context) and the row's metadata are kept. In a dataset
+   *  a data source mirrors into, the fields its system owns go to that system first (refused as
+   *  `source_refused`, or `not_writable` for one that cannot go back), and a new row takes its record's
+   *  key — the `key` answered is the row's. */
   async put(
     key: string,
     row: Omit<DatasetRowInput, 'key'>,

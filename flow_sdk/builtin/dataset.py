@@ -42,6 +42,7 @@ from pydantic import ValidationError, model_validator
 
 from flow_sdk.api.api_types.api_field import APIField, NoDBAPIField, Persist, Sharing
 from flow_sdk.core import Entity, action
+from flow_sdk.datasets.projection import delete_through, write_through
 from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp
 from flow_sdk.request_context.json_body import current_user_id, read_json_body
 from flow_sdk.request_context.methods import get_current_request_info
@@ -1425,7 +1426,11 @@ class Dataset(Entity):
         if not isinstance(rows, list) or not rows:
             return ApiFailResponse(message="rows: a non-empty list is required", status_code=400)
         try:
-            ids = await self.append(rows, by=body.get("by"))
+            through = await write_through(self, [(r.get("key") if isinstance(r, dict) else None, r) for r in rows], body.get("by"))
+            if through is not None:   # outside-owned fields went to the source's system; these rows are what it answered
+                ids = await self.put_many([{**row, "key": key} for key, row in through[0]], by=through[1])
+            else:
+                ids = await self.append(rows, by=body.get("by"))
         except ValidationError as exc:
             return _misfit(exc, None, self, "a row does not match the dataset's shape")
         except LinkError as exc:
@@ -1451,8 +1456,14 @@ class Dataset(Entity):
         body = await self._row_body("key", "row")
         if isinstance(body, ApiFailResponse):
             return body
+        key = body["key"]
         try:
-            eid = await self.put(body["key"], body["row"], expected=body.get("expected"), by=body.get("by"))
+            through = await write_through(self, [(key, body["row"])], body.get("by"), {key: body.get("expected")})
+            if through is not None:   # outside-owned fields went to the source's system; this row is what it answered
+                (key, row), = through[0]
+                eid = await self.put(key, row, by=through[1])
+            else:
+                eid = await self.put(key, body["row"], expected=body.get("expected"), by=body.get("by"))
         except ValidationError as exc:
             return _misfit(exc, body["row"], self, "the row does not match the dataset's shape")
         except ConflictError as exc:
@@ -1462,7 +1473,7 @@ class Dataset(Entity):
         except ValueError as exc:
             return ApiFailResponse(message=str(exc), status_code=400)
         fresh = await self.refresh_counts()
-        return ApiSuccessResponse(data={"id": eid, "example_id": eid, "key": body["key"], "num_examples": fresh.num_examples})
+        return ApiSuccessResponse(data={"id": eid, "example_id": eid, "key": key, "num_examples": fresh.num_examples})
 
     @action.post(action_name="delete-row")
     async def delete_row_action(self):
@@ -1471,7 +1482,8 @@ class Dataset(Entity):
         if isinstance(body, ApiFailResponse):
             return body
         try:
-            key = self.delete_row(body["key"], expected=body.get("expected"))
+            gone = await delete_through(self, [body["key"]])
+            key = gone[0] if gone is not None else self.delete_row(body["key"], expected=body.get("expected"))
         except LookupError as exc:
             return ApiFailResponse(message=str(exc), status_code=404)
         except ConflictError as exc:
@@ -1504,11 +1516,19 @@ class Dataset(Entity):
         body = await self._row_body("rows")
         if isinstance(body, ApiFailResponse):
             return body
-        ids = await self._bulk(lambda: self.put_many(body["rows"], expected=body.get("expected"), by=body.get("by")))
+        keys = [r.get("key") if isinstance(r, dict) else None for r in body["rows"]] if isinstance(body["rows"], list) else []
+
+        async def put() -> list[str]:
+            through = await write_through(self, [(k, r) for k, r in zip(keys, body["rows"])], body.get("by"), body.get("expected"))
+            if through is None:
+                return await self.put_many(body["rows"], expected=body.get("expected"), by=body.get("by"))
+            keys[:] = [key for key, _ in through[0]]   # outside-owned fields went to the source's system first
+            return await self.put_many([{**row, "key": key} for key, row in through[0]], by=through[1])
+        ids = await self._bulk(put)
         if isinstance(ids, ApiFailResponse):
             return ids
         fresh = await self.refresh_counts()
-        return ApiSuccessResponse(data={"ids": ids, "example_ids": ids, "keys": [r["key"] for r in body["rows"]], "num_examples": fresh.num_examples})
+        return ApiSuccessResponse(data={"ids": ids, "example_ids": ids, "keys": keys, "num_examples": fresh.num_examples})
 
     @action.post(action_name="delete-rows")
     async def delete_rows_action(self):
@@ -1521,7 +1541,8 @@ class Dataset(Entity):
             return ApiFailResponse(message="keys: a list of row keys is required", status_code=400)
 
         async def remove() -> list[str]:
-            return self.delete_rows(body["keys"], expected=body.get("expected"))
+            gone = await delete_through(self, body["keys"])
+            return gone if gone is not None else self.delete_rows(body["keys"], expected=body.get("expected"))
         keys = await self._bulk(remove)
         if isinstance(keys, ApiFailResponse):
             return keys
