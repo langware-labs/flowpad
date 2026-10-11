@@ -9,6 +9,7 @@ import { Terminal as XTerm } from '@xterm/xterm';
 import { useTheme } from 'next-themes';
 import React, { forwardRef, useCallback, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState } from 'react';
 import { useXtermShellAttach } from '../useXtermShellAttach';
+import { retireXterm } from './retire-xterm';
 import { XTERM_BASE_OPTIONS, applyRtlGridContract, registerOsc52ClipboardWrite } from './terminalConfig';
 import { DARK_THEME, LIGHT_THEME } from './terminalThemes';
 
@@ -92,13 +93,7 @@ export const ShellTerminal = forwardRef<ShellTerminalHandle, ShellTerminalProps>
       setTerminalReady(false);
       setTerm(null);
       fitAddonRef.current = null;
-      setTimeout(() => {
-        try {
-          xterm.dispose();
-        } catch {
-          /* ignore */
-        }
-      }, 10);
+      retireXterm(xterm);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [shellId]);
