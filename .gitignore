@@ -344,3 +344,6 @@ flow_sdk/system_projects/**/.claude/journeys/*/runs/
 examples/icon-gallery/.vite/
 examples/icon-gallery/dist/
 artifacts/
+
+# The architecture deck lives here locally; it is not part of the code.
+agentic-assets/deck/flowpad-architecture/
