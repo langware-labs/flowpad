@@ -857,6 +857,59 @@ class Dataset(Entity):
         ``ConflictError`` when ``expected`` (the version read) is not the row's version any more."""
         return self.delete_rows([key_or_id], expected=None if expected is None else {key_or_id: expected})[0]
 
+    async def mirror(self, items: Any, map: dict, *, by: Optional[str] = None, prune: bool = True,   # noqa: A002 -- the word
+                     match: Any = None) -> dict:
+        """Make this dataset the typed MIRROR of a data source: each of the source's items becomes one
+        row of this dataset's kind, and the dataset is made to hold exactly those (``sync``: created /
+        updated / unchanged / deleted; all or nothing; rows are YOUR model -- kinds, links, ``rules``).
+
+        ``items`` is a ``DataSource`` (in the server: its records are read) or the items themselves, a
+        list of dicts (a script: ``local_client.graph_get("source_item", {...})``). ``map`` says how an
+        item becomes a row, in the path grammar -- ``{"key": "external_id", "input": {"name": "name",
+        "stage": "data.stage", "crm_id": "external_id"}}``: each value is a PATH into the item
+        (``{"value": x}`` is a constant; a nested object maps field by field). An item whose ``key``
+        path is empty is skipped; a key is made a row key (lowercased, other characters ``-``).
+        ``by`` names the outside system these rows are written as (the owner of the schema's
+        ``owned_by`` fields); it defaults to the source's provider. ``match`` narrows what ``prune``
+        may remove, as in ``sync``."""
+        import re  # noqa: PLC0415
+
+        from flow_sdk.datasets.query import field_of  # noqa: PLC0415
+
+        if not isinstance(map, dict) or not isinstance(map.get("key"), str) or not isinstance(map.get("input"), dict):
+            raise ValueError('map: {"key": <path>, "input": {<field>: <path>}} is required')
+        provider = None
+        if not isinstance(items, list):
+            from flow_sdk.builtin.source_item import SourceItem  # noqa: PLC0415
+
+            provider = getattr(items, "provider", None) or None
+            found = await SourceItem.get_all({"data_source_id": str(items.id)}) or []
+            items = [item.model_dump(mode="json") for item in found]
+
+        def shaped(spec: Any, item: dict) -> Any:
+            if isinstance(spec, str):
+                return field_of(item, spec)
+            if isinstance(spec, dict) and set(spec) == {"value"}:
+                return spec["value"]
+            if isinstance(spec, dict):
+                made = {name: shaped(inner, item) for name, inner in spec.items()}
+                return {name: value for name, value in made.items() if value is not None}
+            if isinstance(spec, list):
+                return [value for value in (shaped(inner, item) for inner in spec) if value is not None]
+            raise ValueError(f"map: a path, {{\"value\": x}}, an object or a list is required, not {spec!r}")
+
+        rows, taken = [], set()
+        for item in items:
+            named = field_of(item, map["key"])
+            if named in (None, ""):
+                continue
+            key = re.sub(r"[^a-z0-9_-]+", "-", str(named).lower()).strip("-")
+            if not key or key in taken:
+                raise ValueError(f"mirror: two items map to the row key {key!r} (from {named!r})" if key else f"mirror: {named!r} gives no row key")
+            taken.add(key)
+            rows.append({"key": key, "input": shaped(map["input"], item)})
+        return await self.sync(rows, prune=prune, match=match, by=by or provider)
+
     def _check_delete(self, keys: list[str], expected: dict[str, str]) -> list[Path]:
         """The row folders ``keys`` (keys or ids) name, once every one of them may go -- else the
         error ``delete_rows`` documents. Nothing is removed. Called under the row lock."""
@@ -1440,6 +1493,24 @@ class Dataset(Entity):
         if not isinstance(body.get("rows"), list):
             return ApiFailResponse(message="rows: a list is required", status_code=400)
         done = await self._bulk(lambda: self.sync(body["rows"], prune=body.get("prune", True), match=body.get("match"), by=body.get("by")))
+        if isinstance(done, ApiFailResponse):
+            return done
+        fresh = await self.refresh_counts()
+        return ApiSuccessResponse(data={**done, "num_examples": fresh.num_examples})
+
+    @action.post(action_name="mirror")
+    async def mirror_action(self):
+        """``{"source_id", "map", "by"?, "prune"?, "match"?}`` → ``{created, updated, unchanged, deleted,
+        num_examples}``: this dataset made the typed mirror of that data source's items (``Dataset.mirror``)."""
+        from flow_sdk.builtin.data_source import DataSource  # noqa: PLC0415
+
+        body = await self._row_body("source_id", "map")
+        if isinstance(body, ApiFailResponse):
+            return body
+        source = await DataSource.get_by_id(str(body["source_id"]))
+        if source is None:
+            return ApiFailResponse(message=f"no data source {body['source_id']!r}", status_code=404)
+        done = await self._bulk(lambda: self.mirror(source, body["map"], by=body.get("by"), prune=body.get("prune", True), match=body.get("match")))
         if isinstance(done, ApiFailResponse):
             return done
         fresh = await self.refresh_counts()
