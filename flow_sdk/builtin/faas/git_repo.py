@@ -221,6 +221,9 @@ class GitPullResult(_CamelModel):
     message: str
     # Set only when ``kind == "conflict"``: the paths git left unmerged.
     conflicted: list[str] = []
+    # The locally refreshed project, for the caller's once-only auto-launch check.
+    project_id: str | None = None
+    refresh_error: str | None = None
 
 
 # Config a fresh Flowpad repo gets at init time. Single source shared by
@@ -333,7 +336,12 @@ class GitRepo:
         the reason in ``stderr``.
         """
         try:
-            return await self._folder.git(*args, env=env)
+            folder = self._folder
+            if args and args[0] in {"fetch", "pull", "push"}:
+                from flow_sdk.utils.hub_git_auth import hub_git_environment  # noqa: PLC0415
+
+                env = await hub_git_environment(folder, env)
+            return await folder.git(*args, env=env)
         except Exception as exc:  # noqa: BLE001 — a provider failure is an answer here
             logger.debug("git command failed: git %s", " ".join(args), exc_info=True)
             return CliResult.of_process("git " + " ".join(args), None, "", f"{type(exc).__name__}: {exc}")
@@ -1235,13 +1243,15 @@ class GitRepo:
 
         ``get_status`` never touches the network, so its ``behind`` is only as
         fresh as the last fetch. This is the one call that refreshes it. A
-        failed fetch (offline, no access) is not an error here — the status
-        still answers, with ``behind`` as of the previous fetch.
+        failed fetch returns the local status with ``error`` set, so stale
+        tracking refs cannot masquerade as a successful refresh.
         """
         if (await self._git("rev-parse", "--abbrev-ref", "@{u}")).ok:
             fetched = await self._git("fetch", "--quiet")
             if not fetched.ok:
-                logger.debug("git fetch failed in %s: %s", self.work_dir, _said(fetched))
+                status = await self.get_status()
+                status.error = "Could not fetch remote updates"
+                return status
         return await self.get_status()
 
     async def pull(self, branch: str | None = None) -> GitPullResult:
@@ -1329,7 +1339,21 @@ class GitRepo:
         if sub == "pull":
             if method.upper() != "POST":
                 return ApiFailResponse(message="git-ops/pull requires POST", status_code=405)
-            return ApiSuccessResponse(data=(await self.pull()).model_dump(by_alias=True))
+            result = await self.pull()
+            if result.ok and result.kind == "pulled":
+                from flow_sdk.builtin.project import Project  # noqa: PLC0415
+                from flow_sdk.config import ComputeProviderType  # noqa: PLC0415
+
+                if getattr(self._compute_node, "node_provider_type", None) == ComputeProviderType.LOCAL_MACHINE:
+                    project = await Project.find_by_cwd(self.work_dir)
+                    if project is not None:
+                        try:
+                            await project.refresh_pulled_assets()
+                            result.project_id = str(project.id)
+                        except Exception as exc:  # noqa: BLE001 — Git succeeded; report the refresh separately
+                            logger.warning("project refresh after pull failed: %s", exc, exc_info=True)
+                            result.refresh_error = str(exc)
+            return ApiSuccessResponse(data=result.model_dump(by_alias=True))
         if sub == "init":
             if method.upper() != "POST":
                 return ApiFailResponse(message="git-ops/init requires POST", status_code=405)

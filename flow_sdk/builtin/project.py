@@ -739,6 +739,27 @@ class Project(SetupSkippable, Entity):
         except Exception:  # noqa: BLE001 — an asset that cannot index never blocks the open
             log.warning("load-time assets %s of project %s could not be indexed", key, self.id, exc_info=True)
 
+    async def refresh_pulled_assets(self) -> None:
+        """Refresh this checkout's asset projections before deciding what to open.
+
+        A Git pull changes the sources without going through an editor. Reuse
+        the registry walk and targeted reindex, read-only: imported identities
+        and bytes belong to the publisher, not to this checkout's index.
+        """
+        from flow_sdk.assets.scanning import scan_repo_tree  # noqa: PLC0415
+        from flow_sdk.fs_store.indexer.special_folders import IndexDecision, gate_root  # noqa: PLC0415
+        from flow_sdk.fs_store.reindex import reindex_paths  # noqa: PLC0415
+        from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+
+        root = Path(self.fs_storage_mount_path).resolve()
+        if gate_root(str(root), foreground=True) is not IndexDecision.WALK:
+            raise RuntimeError("The pulled project's folder cannot be indexed")
+        scan = await asyncio.to_thread(scan_repo_tree, root, SchemaRegistry.repo_family_to_info())
+        result = await reindex_paths((str(c.path) for c in scan.candidates if c.included), write=False)
+        if scan.issues or result.skipped:
+            raise RuntimeError("Some pulled project assets could not be indexed")
+        _LOAD_READY.difference_update(key for key in tuple(_LOAD_READY) if key[0] == self.id)
+
     async def _index_home_page(self, typeid: str) -> None:
         """``index_missing_assets`` for the declared home page, when its row is missing."""
         from flow_sdk.fs_store.indexer.reconcile import reconcile  # noqa: PLC0415

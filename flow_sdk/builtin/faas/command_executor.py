@@ -17,7 +17,6 @@ import subprocess
 import time
 from typing import TYPE_CHECKING, Mapping, NamedTuple, Sequence
 
-from flow_sdk.compute.providers.env_prefix import build_env_prefix
 from flow_sdk.config import ComputeProviderType
 from flow_sdk.schema.data_spec.returned_value_spec import CliResult
 from flow_sdk.utils.git_usable import EXIT_NOT_FOUND, NOT_USABLE_MESSAGE, git_usable, is_git_argv
@@ -27,9 +26,7 @@ if TYPE_CHECKING:
 
 
 class _EnvPair(NamedTuple):
-    """``build_env_prefix`` reads ``.name``/``.value`` and deliberately refuses a
-    mapping — the dict shape is the bug that module exists to remove. This is the
-    smallest thing that satisfies it."""
+    """The provider env API accepts named values, separately from command text."""
 
     name: str
     value: str
@@ -77,18 +74,14 @@ class ComputeNodeCommandExecutor:
             # This Mac has no Command Line Tools: /usr/bin/git would open Apple's installer dialog (the status bar
             # polls git, so it would open it on every project). Answer as a missing binary; the Git wizard asks.
             return CliResult.of_process(command, EXIT_NOT_FOUND, "", NOT_USABLE_MESSAGE)
-        prefix = build_env_prefix(
-            [_EnvPair(name, value) for name, value in (env or {}).items()],
-            windows=self._windows_shell,
-        )
         if cwd:
             cd = f"cd /d {self._quote(cwd)}" if self._windows_shell else f"cd {self._quote(cwd)}"
-            command = f"{cd} && {prefix}{command}"
-        else:
-            command = f"{prefix}{command}"
+            command = f"{cd} && {command}"
 
         started = time.monotonic()
-        running = self._node.run_command(command, background=False)
+        running = self._node.run_command(
+            command, background=False, env=[_EnvPair(name, value) for name, value in (env or {}).items()]
+        )
         try:
             cli_command = await (asyncio.wait_for(running, timeout) if timeout else running)
         except TimeoutError:

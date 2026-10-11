@@ -7,6 +7,7 @@ in ``system_prompt.md``. A folder still carrying the retired ``agent.md`` is rep
 until ``migration_2026_09_entity_json_mains`` converts it.
 Distinct from SUBAGENT, which is the provider-owned ``.claude/agents/*.md``.
 """
+from flow_sdk.builtin.agent_authoring import agent_document_edit
 from flow_sdk.fs_store.schema_registry import TypeInfo
 from flow_sdk.schema.data_spec.agent_spec import AgentSpec
 from flow_sdk.schema.types import EntityType
@@ -34,4 +35,5 @@ AGENT = TypeInfo(
     # The entity is the authoring surface for its fields, so it re-renders
     # the document on every save rather than writing once.
     owns_main_ref=True,
+    document_edit_context=agent_document_edit,
 )

@@ -49,8 +49,10 @@ class LocalNode:
 
     compute_provider = None
 
-    async def run_command(self, command: str, background: bool = False):
-        p = subprocess.run(["/bin/sh", "-c", command], capture_output=True, text=True)
+    async def run_command(self, command: str, background: bool = False, env=None):
+        from flow_sdk.compute.providers.env_prefix import command_environment
+        p = subprocess.run(["/bin/sh", "-c", command], capture_output=True, text=True,
+                           env={**os.environ, **command_environment(env)})
         return SimpleNamespace(all_stdout=p.stdout, all_stderr=p.stderr, exit_code=p.returncode)
 
 
