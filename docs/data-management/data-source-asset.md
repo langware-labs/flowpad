@@ -243,6 +243,28 @@ names its parent account and shares that callback. Chain delivery targets a sour
 webhooks does not automatically wire these claims. See
 [channel webhook routing](../snippets/channel-webhook-routing.md) before moving a channel.
 
+
+For a local provider, call `source.step("public-webhook", values={"delivery": "direct"})`
+through the running backend. This starts a signed-provider-only listener and returns the callback
+as `value.shown.link`; credential values remain redacted. The callback carries `source_id` to
+select this connection, including group children owned by the same agent, rather than another
+project watching the same provider account. The choice is saved as the source's
+`webhook_delivery` and later checks reuse it. Existing sources default to `hub`; explicitly passing
+`delivery: "hub"` selects the existing hub setup. Direct setup never contacts the hub.
+
+The listener defaults to loopback and preserves its allocated port in the instance's
+`webhook-listener.json`, restoring it at backend startup. It exposes only the provider GET/POST
+routes, never the hub-trusted source-ID route or general APIs; the main API cookie gate is unchanged.
+For externally reachable direct delivery, configure `FLOWPAD_WEBHOOK_HOST` and
+`FLOWPAD_WEBHOOK_BASE_URL` (an HTTP(S) origin); `FLOWPAD_WEBHOOK_PORT` optionally fixes the bind port.
+Remote connectivity and TLS termination must already be provided by the deployment.
+
+`source.step("first-turn", check=True, values={"external_id": "incoming-message-id"})`
+can pin the test conversation to one incoming message. Passing `values.since` as an ISO-8601
+timestamp instead excludes historical conversations when starting a fresh onboarding test. Success returns its incoming and reply IDs
+only when an outbound copy recorded by this node correlates with that message/conversation.
+This proves provider acceptance of the reply, not a handset delivery/read receipt.
+
 ### `reflect`
 
 Supported modes, head first as the default. The values are `ReflectMode`: `record`

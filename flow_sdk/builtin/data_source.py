@@ -44,6 +44,7 @@ from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccess
 from flow_sdk.schema.data_spec.asset_setup_spec import SetupSkipSpec
 from flow_sdk.schema.data_spec.data_driver_spec import ReflectMode
 from flow_sdk.schema.data_spec.source_item_spec import SourceItemSpec
+from flow_sdk.schema.data_spec.webhook_spec import WebhookDelivery
 from flow_sdk.schema.types import EntityType
 from flow_sdk.secrets.store import SecretStoreRef
 from flow_sdk.utils.serialization import iso_to_utc
@@ -149,6 +150,8 @@ class DataSource(SetupSkippable, Entity):
     # A file asset, so it OWNS its path: ``<scope>/agentic-assets/data_source/<name>/``. Declaring it is
     # what enrolls the class in ``Entity.asset_owner_classes()``. PRIVATE: the path is this machine's.
     asset_ref: Optional[str] = APIField(None, sharing=Sharing.PRIVATE)
+
+    webhook_delivery: WebhookDelivery = APIField(default=WebhookDelivery.HUB)
 
     # ── identity / ontology ──
     name: str = APIField(default="")
@@ -1732,13 +1735,17 @@ class DataSource(SetupSkippable, Entity):
             return ReturnedValue.not_found(f"no data driver {self.provider!r}")
         try:
             if name == steps.PUBLIC_WEBHOOK:
-                answer = await self._public_webhook(driver, check=check)
+                answer = await self._public_webhook(driver, check=check, delivery=(values or {}).get("delivery", self.webhook_delivery))
             elif name == steps.VERIFY:
                 answer = await self._verify_step(check=check)
             elif name == steps.ANSWERED:
                 answer = await self._answered_step(check=check)
             elif name == steps.FIRST_TURN:
-                answer = await self._first_turn_step(check=check, wait=float((values or {}).get("wait") or 0))
+                answer = await self._first_turn_step(
+                    check=check, wait=float((values or {}).get("wait") or 0),
+                    external_id=str((values or {}).get("external_id") or ""),
+                    since=str((values or {}).get("since") or ""),
+                )
             else:
                 method = setup_steps(driver.cls).get(name)
                 if method is None:
@@ -1788,30 +1795,55 @@ class DataSource(SetupSkippable, Entity):
         await agent.run_locally()
         return ReturnedValue.satisfied(f"{agent.name} now answers here")
 
-    async def _first_turn_step(self, *, check: bool, wait: float):
-        """The conversation works: a message from an allowed sender (anyone, when none are named) and one
-        after it from someone else — the answer. Without ``check`` it waits up to ``wait`` seconds (the
-        person is sending it from their phone) for that to be true."""
+    async def _first_turn_step(self, *, check: bool, wait: float, external_id: str = "", since: str = ""):
+        """Prove inbound plus our recorded reply in its conversation, optionally pinned to an external id.
+        A recorded outbound proves provider acceptance, not a recipient's delivery/read receipt.
+        Without ``check``, the existing human-typing wait applies."""
         import asyncio  # noqa: PLC0415
         import time  # noqa: PLC0415
 
         from flow_sdk.builtin.source_item import SourceItem  # noqa: PLC0415
         from flow_sdk.schema.data_spec.returned_value_spec import ReturnedValue  # noqa: PLC0415
+        from flow_sdk.sources.setup_steps import FirstTurnProofSpec  # noqa: PLC0415
 
         allowed = {"".join(ch for ch in s if ch.isalnum()) for s in (self.allowed_senders or [])}
 
-        async def talked() -> bool:
-            rows = sorted(await SourceItem.get_all({"data_source_id": str(self.id)}) or [], key=lambda r: r.occurred_at or "")
-            mine = lambda r: not allowed or "".join(ch for ch in str(r.author_external_id or "") if ch.isalnum()) in allowed  # noqa: E731
-            first = next((i for i, r in enumerate(rows) if mine(r)), None)
-            return first is not None and any(not mine(r) for r in rows[first + 1:])
+        after = iso_to_utc(since) if since else None
+        if since and after is None:
+            return ReturnedValue.not_yet("since must be an ISO-8601 timestamp")
+
+        async def talked():
+            rows = await SourceItem.get_all({"data_source_id": str(self.id)}) or []
+            incoming = []
+            for row in rows:
+                if row.sent_by_us or (external_id and row.external_id != external_id):
+                    continue
+                occurred = iso_to_utc(row.occurred_at or "")
+                if after is not None and (occurred is None or occurred < after):
+                    continue
+                author = "".join(ch for ch in str(row.author_external_id or "") if ch.isalnum())
+                if not allowed or author in allowed:
+                    incoming.append(row)
+            for reply in rows:
+                if not reply.sent_by_us:
+                    continue
+                for first in incoming:
+                    same_thread = bool(first.thread_key) and first.thread_key == reply.thread_key
+                    correlated = reply.reply_to_external_id == first.external_id if reply.reply_to_external_id else same_thread
+                    if correlated and (reply.occurred_at or "") >= (first.occurred_at or ""):
+                        return FirstTurnProofSpec(incoming_external_id=first.external_id, reply_external_id=reply.external_id), True
+            return None, bool(incoming)
 
         deadline = time.monotonic() + (0 if check else max(0.0, wait))
         while True:
-            if await talked():
-                return ReturnedValue.satisfied("a message came in and the answer went back", ran=not check)
+            proof, received = await talked()
+            if proof:
+                return ReturnedValue.satisfied("a message came in and the answer went back", ran=not check, value=proof)
             if time.monotonic() >= deadline:
-                return ReturnedValue.not_yet("no conversation yet — send a message from your phone")
+                return ReturnedValue.not_yet(
+                    "Message received; waiting for the agent reply." if received
+                    else "Send a message from your phone to try the agent.",
+                )
             # A wait on a person, polled at a human pace: the person is typing on their phone.
             await asyncio.sleep(2.0)
 
@@ -1827,7 +1859,9 @@ class DataSource(SetupSkippable, Entity):
 
     async def _keep(self, driver, update) -> None:
         """Store what a setup step learned: config on the file, senders on the row, secrets in the credential."""
-        if update.config or update.allowed_senders is not None or update.owner:
+        if update.config or update.allowed_senders is not None or update.owner or update.webhook_delivery is not None:
+            if update.webhook_delivery is not None:
+                self.webhook_delivery = update.webhook_delivery
             if update.config:
                 self.config = {**(self.config or {}), **update.config}
             if update.allowed_senders is not None:
@@ -1860,7 +1894,7 @@ class DataSource(SetupSkippable, Entity):
 
         return await owner_project(self)
 
-    async def _public_webhook(self, driver, *, check: bool):
+    async def _public_webhook(self, driver, *, check: bool, delivery: str = "hub"):
         """The generic step for a driver that takes pushes (its ``webhook`` block): a stable public URL for
         THIS desktop, held by the hub (``webhook/create_for_desktop``) and delivered over its socket, stored
         as the driver's URL variable. A config ``verify_token`` (made here when the driver declares one and it
@@ -1879,7 +1913,32 @@ class DataSource(SetupSkippable, Entity):
             held = (await driver.credentials_for(self)).values.get(hook.url_var)
         except Exception:  # noqa: BLE001 — no credential declared yet: nothing held
             held = None
+        from flow_sdk.sources.setup_steps import SetupShown  # noqa: PLC0415
+
+        delivery = WebhookDelivery(delivery)
+        if delivery is WebhookDelivery.DIRECT:
+            from flow_sdk.server.webhook_listener import callback_base_url  # noqa: PLC0415
+
+            if not callable(getattr(driver.cls, "webhook_authentic", None)):
+                return ReturnedValue.not_applicable("direct delivery requires a driver signature verifier")
+            base = await callback_base_url(start=not check)
+            if base is None:
+                return ReturnedValue.not_yet("direct webhook listener is not running")
+            callback = base + WEBHOOK_ROUTE.format(name=self.provider) + f"?source_id={self.id}"
+            current = held.get_secret_value() if held is not None else ""
+            if check and current != callback:
+                return ReturnedValue.not_yet("direct webhook callback is not configured")
+            config = {}
+            if not (self.config or {}).get("verify_token") and "verify_token" in (driver.config or {}):
+                config["verify_token"] = secrets.token_urlsafe(24)
+            return ReturnedValue.satisfied(
+                "direct webhook is ready", ran=not check,
+                value=SourceUpdateSpec(config=config, webhook_delivery=delivery, secrets={hook.url_var: callback},
+                                       shown=SetupShown(link=callback, connected=True)),
+            )
         if check:
+            if self.webhook_delivery != delivery:
+                return ReturnedValue.not_yet("this source uses a different webhook delivery")
             declared = await self._declared_claim(driver, dict(self.config or {}))
             kind = str((declared or {}).get("kind") or "account")
             if kind != "account":
@@ -1902,7 +1961,7 @@ class DataSource(SetupSkippable, Entity):
             if not data or not data.get("id"):
                 return ReturnedValue.not_yet("the hub did not take this claim — sign in to Flowpad cloud first")
             kind, key = claim["claim"]["kind"], claim["claim"]["key"]
-            return ReturnedValue.satisfied(f"the hub routes this {kind} ({key}) here", value=SourceUpdateSpec(config=config))
+            return ReturnedValue.satisfied(f"the hub routes this {kind} ({key}) here", value=SourceUpdateSpec(config=config, webhook_delivery=delivery))
         if claim is not None:
             # The account on the hub's chain for this vendor (``webhook/@<provider>``): the hub checks the
             # vendor's signature with the claim's own secret and hands each event to THIS channel on THIS
@@ -1910,7 +1969,7 @@ class DataSource(SetupSkippable, Entity):
             data = await hub_post("webhook", claim, None, "chain")
             if not data or not data.get("url"):
                 return ReturnedValue.not_yet("the hub did not take this account — sign in to Flowpad cloud first")
-            update = SourceUpdateSpec(config=config, secrets={hook.url_var: str(data["url"])})
+            update = SourceUpdateSpec(config=config, webhook_delivery=delivery, secrets={hook.url_var: str(data["url"])})
             return ReturnedValue.satisfied(f"public URL {data['url']}", value=update)
         body = {
             "name": f"{self.provider}-{self.id}",
@@ -1921,7 +1980,7 @@ class DataSource(SetupSkippable, Entity):
         data = await hub_post("webhook", body, None, "create_for_desktop")
         if not data or not data.get("url"):
             return ReturnedValue.not_yet("sign in to Flowpad cloud first — the public URL is held by the hub")
-        update = SourceUpdateSpec(config=config, secrets={hook.url_var: str(data["url"])})
+        update = SourceUpdateSpec(config=config, webhook_delivery=delivery, secrets={hook.url_var: str(data["url"])})
         return ReturnedValue.satisfied(f"public URL {data['url']}", value=update)
 
     async def _declared_claim(self, driver, config: dict) -> Optional[dict]:

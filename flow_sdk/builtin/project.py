@@ -625,7 +625,7 @@ class Project(SetupSkippable, Entity):
         return {"home_title": home_title, "has_home_background": has_bg, "brand": brand}
 
     def home_page_typeid(self) -> str | None:
-        """The asset TypeId the project manifest DECLARES as its home page, or ``None``.
+        """The home TypeId or ./asset path the manifest DECLARES, or ``None``.
 
         Declared, not resolved: whether the asset exists and lives in this
         project needs the DB. ``open_home_page`` is the resolver.
@@ -634,6 +634,32 @@ class Project(SetupSkippable, Entity):
 
         root = self.fs_storage_mount_path
         return read_home_page(Path(root)) if root else None
+
+    async def resolve_home_page_typeid(self, reference: str | None = None) -> str | None:
+        """Resolve a portable manifest pointer through the normal asset identity seam.
+
+        Paths are relative to THIS checkout, never the publisher's path. The
+        resolved path must stay inside it (including symlinks), and resolution
+        never stamps an identity into a read-only asset.
+        """
+        from flow_sdk.fs_store.resolve import NotAnAsset, resolve_asset  # noqa: PLC0415
+        from flow_sdk.schema.data_spec.project_manifest_spec import ProjectManifestSpec  # noqa: PLC0415
+
+        reference = reference if reference is not None else self.home_page_typeid()
+        reference = ProjectManifestSpec.model_validate({"home_page": reference}).home_page
+        if not reference or not reference.startswith("./"):
+            return reference
+        if not self.fs_storage_mount_path:
+            return None
+        root = Path(self.fs_storage_mount_path).resolve()
+        target = (root / reference[2:]).resolve()
+        if not target.is_relative_to(root):
+            return None
+        try:
+            resolved = await resolve_asset(target, write=False)
+        except NotAnAsset:
+            return None
+        return str(TypeId(type=resolved.type_name, id=resolved.id))
 
     @action.post(action_name="set-home-page")
     async def set_home_page_action(self, typeid: str = "") -> "ApiResponse":
@@ -649,8 +675,12 @@ class Project(SetupSkippable, Entity):
         if not self.fs_storage_mount_path:
             return ApiFailResponse(message="Project has no local working directory")
         typeid = (typeid or "").strip() or None
-        if typeid is not None and await self._own_asset(typeid) is None:
-            return ApiFailResponse(message=f"{typeid} is not an asset of this project", status_code=400)
+        if typeid is not None:
+            resolved = await self.resolve_home_page_typeid(typeid)
+            if resolved:
+                await self._index_home_page(resolved)
+            if not resolved or await self._own_asset(resolved) is None:
+                return ApiFailResponse(message=f"{typeid} is not an asset of this project", status_code=400)
         try:
             spec = set_home_page(Path(self.fs_storage_mount_path), typeid)
         except ManifestError as exc:
@@ -787,7 +817,7 @@ class Project(SetupSkippable, Entity):
         would race the same placement in the load run. Never wait on the run here."""
         from flow_sdk.core.setup.load import load_project  # noqa: PLC0415
 
-        typeid = self.home_page_typeid()
+        typeid = await self.resolve_home_page_typeid()
         if typeid:
             await self._index_home_page(typeid)
         asset = await self._own_asset(typeid) if typeid else None

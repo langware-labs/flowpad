@@ -24,6 +24,7 @@ portable; without the stamp it would name a fact only the author's DB knows.
 from __future__ import annotations
 
 from enum import StrEnum
+from pathlib import PurePosixPath
 from typing import ClassVar, Optional
 
 from pydantic import ConfigDict, Field, field_validator
@@ -163,10 +164,11 @@ class ProjectManifestSpec(DataSpec):
     #: nearest declaration wins (``flow_sdk/schema/data_spec/_namespace.py``).
     ns: str = ""
     entries: list[PublishedAssetSpec] = Field(default_factory=list)
-    #: The asset the Home button opens for this project — a TypeId
-    #: (``<type>-<uuid>``) of one of the project's own assets: an agent (Home
-    #: resumes its last chat) or a web app (the project opens app-first, on the
-    #: app running). ``None`` = the default home. Lives
+    #: The asset the Home button opens — a TypeId (``<type>-<uuid>``) or a
+    #: project-relative asset path (``./agentic-assets/webapp/admin``).
+    #: Relative paths keep path-derived read-only assets portable across clones.
+    #: Home resumes an agent's last chat or opens a running web app.
+    #: ``None`` = the default home. Lives
     #: here, beside ``ns``, because it is a declaration about the whole project
     #: that must travel with a clone — which is exactly what this file is for.
     home_page: Optional[str] = None
@@ -208,6 +210,11 @@ class ProjectManifestSpec(DataSpec):
         if not isinstance(value, str) or not value.strip():
             return None
         typeid = value.strip()
+        if typeid.startswith("./"):
+            relative = typeid[2:].replace("\\", "/")
+            if not is_safe_rel_path(relative) or PurePosixPath(relative) == PurePosixPath("."):
+                return None
+            return "./" + PurePosixPath(relative).as_posix()
         try:
             _type_name, entity_id = split_typeid(typeid)
         except ValueError:

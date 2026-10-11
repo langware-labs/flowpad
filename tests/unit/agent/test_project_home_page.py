@@ -304,3 +304,42 @@ async def test_opening_a_home_app_whose_dev_server_is_down_starts_its_load_and_a
     assert answer["load_run"] == f"setup-project-{project.id}"
     assert answer["lifecycle"]["state"] == "running"
     assert started == [("", str(app.typeid))], "the provider project owns the shared run"
+
+
+@pytest.mark.parametrize("reference", ["./../foreign", "./agentic-assets/../../foreign", "./C:/foreign", "./.", "./"])
+def test_unsafe_relative_home_reference_is_not_adopted(reference):
+    assert ProjectManifestSpec.model_validate({"home_page": reference}).home_page is None
+
+
+async def test_relative_home_is_portable_across_read_only_webapp_clones(tmp_path):
+    import shutil
+
+    first_root, second_root = tmp_path / "publisher", tmp_path / "clone"
+    first_project = await _project(first_root)
+    first_app = await _web_app(first_root, "console")
+    relative = "./agentic-assets/webapp/console"
+    _declare(first_root, relative)
+    shutil.copytree(first_root, second_root)
+    second_project = await _project(second_root)
+    second = await second_project.open_home_page()
+    first = await first_project.open_home_page()
+    assert first["asset"] == str(first_app.typeid)
+    assert second["type"] == "micro_app" and second["asset"] != first["asset"]
+    assert manifest.read_home_page(second_root) == relative
+    assert "id" not in json.loads((second_root / relative[2:] / "webapp.json").read_text())
+
+
+async def test_relative_home_set_indexes_its_own_target_and_rejects_symlink_escape(tmp_path):
+    own_root, foreign_root = tmp_path / "own", tmp_path / "foreign"
+    project = await _project(own_root)
+    await _project(foreign_root)
+    await _web_app(foreign_root, "foreign")
+    own = await _web_app(own_root, "console")
+    accepted = await project.set_home_page_action(typeid="./agentic-assets/webapp/console")
+    assert isinstance(accepted, ApiSuccessResponse)
+    assert accepted.data["home_page"] == "./agentic-assets/webapp/console"
+    assert (await project.open_home_page())["asset"] == str(own.typeid)
+    (own_root / "escape").symlink_to(foreign_root / "agentic-assets/webapp/foreign", target_is_directory=True)
+    assert not isinstance(await project.set_home_page_action(typeid="./escape"), ApiSuccessResponse)
+    _declare(own_root, "./escape")
+    assert (await project.open_home_page())["asset"] is None

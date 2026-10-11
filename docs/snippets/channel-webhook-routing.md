@@ -45,7 +45,7 @@ the routing rules in this guide are implemented by Flowpad.
 
 | Path                                                          | Receiving endpoint                        | Authentication and identity                                                                                                           |
 | ------------------------------------------------------------- | ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
-| Direct provider callback, or a generic hub deployment webhook | `/api/v1/data_source/webhook/whatsapp`    | Original raw body and vendor signature; looks up the account source by `phone_number_id`. It does not select a separate group source. |
+| Direct provider callback, or a generic hub deployment webhook | `/api/v1/data_source/webhook/whatsapp`    | Original raw body and vendor signature; routes each account/group in the batch. An optional `source_id` query targets one connection and its same-owner groups. |
 | Hub account/user/group claim chain                            | `/api/v1/data_source/{source_id}/webhook` | The hub verifies the original signature, splits the batch and targets an existing source by ID.                                       |
 
 The claim path is:
@@ -71,7 +71,7 @@ route as a public provider callback or treat a client-supplied chain header as a
    target must name a real source ID. Supply config and credentials from §1 and an explicit
    account allowlist. The existing WhatsApp setup wizard handles provider setup; it also has
    test-message steps that contact the configured recipient.
-2. Sign the instance into the hub. Run `await source.step("public-webhook")`. For this driver
+2. For hub delivery, sign the instance into the hub. Run `await source.step("public-webhook")`. For this driver
    it proves an `account` claim under `@whatsapp`, includes its app secret and verify token,
    targets this desktop's `instance_uid()` and source ID, and stores the returned callback URL.
    A missing verify token is generated. Inspect the returned `exit_code` and `detail`; HTTP
@@ -87,6 +87,15 @@ route as a public provider callback or treat a client-supplied chain header as a
    deployment and readiness are covered in [agent deployment](agent-deployment.md).
 5. Confirm an allowed inbound message is stored on this source, produces an agent turn,
    and receives a reply. Check these separately (§6).
+
+For local direct delivery, replace the hub step with
+`await source.step("public-webhook", values={"delivery": "direct"})` through the backend action.
+The callback is returned as `value.shown.link` and saved to the same driver URL credential;
+no hub sign-in is needed. The source remembers this transport choice. The signed-provider-only
+listener preserves its port across restarts and leaves the main API gate intact. It exposes no
+hub-trusted source-ID route. Callback `source_id` scopes both challenge and delivery to the chosen
+connection; stale IDs never fall back to another source. See the
+[data source asset contract](../data-management/data-source-asset.md) for listener configuration.
 
 For manual hub wiring, `POST /api/v1/graph/webhook/chain` accepts `parent`, `claim`,
 `proof` and `target`. An account request uses `parent: "@whatsapp"`,
