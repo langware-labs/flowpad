@@ -32,7 +32,7 @@ import { AgentAvatar } from '@src/components/agents/AgentAvatar';
 import { lucideByName } from '@src/lib/lucide-by-name';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { useTabLifecycles } from '@src/tabs/use-tab-manager';
-import { ContentTabTooltip, humanizeType, LazyProcessTooltip, PROVIDER_META } from '@src/tabs/provider-meta';
+import { ContentTabTooltip, humanizeType, ProcessTabCard, PROVIDER_META } from '@src/tabs/provider-meta';
 import { ViewType, VIEWER_REGISTRY, viewerTitle } from '@src/types/ViewType';
 import { FileText, FolderGit2 } from 'lucide-react';
 import React, { useMemo } from 'react';
@@ -132,15 +132,14 @@ function chipFor(tab: Tab, lifecycle: TabLifecycleEntry | null): TabStripItem {
       hasError: lifecycleOverlay.hasError,
       statusReason,
       renameable: true,
-      tooltip: processId ? (
-        <LazyProcessTooltip
+      card: processId ? (
+        <ProcessTabCard
           processId={processId}
           fallbackName={label || i18n._(meta.label)}
           statusReason={statusReason || undefined}
         />
-      ) : statusReason ? (
-        statusReason
       ) : undefined,
+      tooltip: statusReason || undefined,
       testId: `tab-${key}`,
       dataAttributes: { 'data-indicator-key': key },
     };
