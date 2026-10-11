@@ -695,7 +695,7 @@ msgstr "רשומות בדיסק"
 msgid "{0} saved"
 msgstr ""
 
-#. placeholder {0}: root.kinds.length
+#. placeholder {0}: root.schemas.length
 #: src/components/schema-tree/SchemaTreeView.tsx
 msgid "{0} schemas"
 msgstr ""
@@ -3060,6 +3060,10 @@ msgstr ""
 msgid "Approve"
 msgstr "אישור"
 
+#: src/components/ask/AskItems.tsx
+msgid "Approve and continue"
+msgstr ""
+
 #: src/components/collaboration/LiveSessionView.tsx
 #: src/components/conversation/SessionCard.tsx
 msgid "Approve once"
@@ -5405,6 +5409,7 @@ msgid "Comments"
 msgstr "תגובות"
 
 #: src/components/assets/editor/skill/UsagePanel.tsx
+#: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 msgid "Commit"
 msgstr "commit"
 
@@ -7160,6 +7165,7 @@ msgstr "מעבד:"
 #: src/components/organization/org-detail-panel.tsx
 #: src/components/organization/org-node-management.tsx
 #: src/components/organization/organization-page.tsx
+#: src/components/project-home/ProjectHome.tsx
 #: src/components/project-selector/NewProjectDialog.tsx
 #: src/components/prompt-library/PromptEditDialog.tsx
 #: src/components/quick-create/McpCreateDialog.tsx
@@ -7246,8 +7252,6 @@ msgid "Create it"
 msgstr "צור"
 
 #: src/components/collaboration/StartRoomDialog.tsx
-#: src/components/project-home/ProjectHome.tsx
-#: src/components/quick-create/QuickCreateModal.tsx
 #: src/components/quick-create/QuickCreateModal.tsx
 msgid "Create new"
 msgstr "צור חדש"
@@ -7481,7 +7485,6 @@ msgstr "מצב פרטיות הנתונים"
 msgid "data source"
 msgstr ""
 
-#: src/components/quick-create/QuickCreatePanel.tsx
 #: src/components/schema-tree/SchemaTreeView.tsx
 msgid "Data source"
 msgstr ""
@@ -9842,6 +9845,10 @@ msgstr ""
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
 msgid "Expires after"
 msgstr "פג תוקף אחרי"
+
+#: src/components/project-setup/ProjectSetupDialog.tsx
+msgid "Explain"
+msgstr ""
 
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
 msgid "Explain the result"
@@ -13119,7 +13126,6 @@ msgid "Latest on PyPI"
 msgstr "האחרון ב-PyPI"
 
 #: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
-#: src/components/project-home/ProjectHome.tsx
 #: src/pages/hub-home/HubHome.tsx
 #: src/pages/hub-home/LaunchSandboxDialog.tsx
 #: src/pages/hub-home/NewSandboxDialog.tsx
@@ -14903,8 +14909,6 @@ msgstr ""
 #: src/components/entity-execution-panel/NewSessionPill.tsx
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 #: src/components/project-activity-strip/RecentConversationsStrip.tsx
-#: src/components/project-home/ProjectHome.tsx
-#: src/components/quick-create/QuickCreateModal.tsx
 #: src/components/quick-create/QuickCreateTile.tsx
 #: src/components/stream-inbox-view/StreamInboxView.tsx
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
@@ -17023,8 +17027,12 @@ msgid "once per machine"
 msgstr "פעם אחת לכל מחשב"
 
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
-msgid "Once per project, the first time it is opened. Oldest agent wins if several set this."
+msgid "Once per project, the first time it is opened. Enabling this turns off auto-launch for the other agents in this project."
 msgstr ""
+
+#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
+#~ msgid "Once per project, the first time it is opened. Oldest agent wins if several set this."
+#~ msgstr ""
 
 #: src/components/automations/automation-words.ts
 msgid "Once, at {when}"
@@ -18085,7 +18093,6 @@ msgid "Override the default model via environment"
 msgstr "דריסת מודל ברירת המחדל באמצעות משתנה סביבה"
 
 #: src/components/llm-endpoints/LlmEndpointDetail.tsx
-#: src/components/project-home/ProjectHome.tsx
 msgid "Overview"
 msgstr ""
 
@@ -25672,6 +25679,10 @@ msgstr ""
 msgid "This month"
 msgstr ""
 
+#: src/components/ask/AskItems.tsx
+msgid "This one is required. Without it, setup will end unfinished."
+msgstr ""
+
 #: src/components/organization/budgets/PayingProviderSetup.tsx
 msgid "This organization draws its budget from Flowpad's shared pool. Bringing your own key isn't offered for an organization already set up this way."
 msgstr ""
@@ -27334,7 +27345,6 @@ msgstr ""
 #~ msgstr "דרך התחברות ל-Hub"
 
 #: src/components/links/LinkMenu.tsx
-#: src/components/project-home/ProjectHome.tsx
 #: src/types/ViewType.ts
 msgid "Vibe"
 msgstr ""
@@ -28061,6 +28071,10 @@ msgstr "עבודה על {0}"
 #: src/components/collaboration/LiveSessionView.tsx
 msgid "Working on {hostName}'s machine…"
 msgstr "עובדים על המחשב של {hostName}…"
+
+#: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
+msgid "Working tree"
+msgstr ""
 
 #: src/components/code-editor/DiffContent.tsx
 msgid "Working Tree"
