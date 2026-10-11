@@ -258,3 +258,76 @@ async def test_signed_out_asks_the_hub_nothing(project_list_hub, monkeypatch):
     project_list_hub.append(_hub_project(str(uuid4())))
 
     assert await _new_cloud_projects() == []
+
+
+@pytest.mark.asyncio
+async def test_a_hub_project_whose_name_is_taken_here_is_offered_with_the_choice(project_list_hub, tmp_path):
+    """Its name is already a project here: it is not mirrored, but still offered —
+    with that project and a free name, so the set-up can ask (open theirs, or
+    install this one under another name). Every other project is offered as usual.
+    The sweep used to raise on it — a 500 on every page load, and no offers at all."""
+    from flow_sdk.builtin.project import Project
+
+    taken, other = str(uuid4()), str(uuid4())
+    clash = _hub_project(taken)
+    project = Project(id=str(uuid4()), name=clash["name"], fs_storage_mount_path=str(tmp_path))
+    await project.save(notify=False)
+    project_list_hub.extend([clash, _hub_project(other)])
+
+    try:
+        links = {link["project_id"]: link for link in await _new_cloud_projects()}
+        assert set(links) == {taken, other}
+        assert links[taken]["existing_project_id"] == project.id
+        assert links[taken]["suggested_name"] == f"{clash['name']}-2"
+        assert links[taken]["setup_git"] == "1" and '"owner": "langware-labs"' in links[taken]["git_origin"]
+        assert "existing_project_id" not in links[other]
+        assert await Project.get_one({"id": taken}) is None, "left unmirrored until the receiver chooses"
+    finally:
+        await project.delete()
+
+
+@pytest.fixture
+def clone_stub(tmp_path, monkeypatch):
+    """The clone at the origin driver; the install path above it is real."""
+    import flow_sdk.builtin.agentic_process.agentic_process as agentic_process
+    from flow_sdk.builtin.drivers.git_driver import GitOriginDriver
+
+    checkout = tmp_path / "checkout"
+
+    async def _materialize(_self, _origin, **_kwargs):
+        checkout.mkdir(exist_ok=True)
+        return checkout, None
+
+    async def _none(*_args, **_kwargs):
+        return None
+
+    monkeypatch.setattr(GitOriginDriver, "materialize", _materialize)
+    monkeypatch.setattr(agentic_process, "_index_additional_dir", _none)
+    monkeypatch.setattr("flow_sdk.app.actions.oauth_action._get_github_token_for_current_user", _none)
+    return checkout
+
+
+@pytest.mark.asyncio
+async def test_a_hub_project_installs_under_the_name_the_receiver_chose(project_hub, clone_stub, tmp_path):
+    from flow_sdk.builtin.project import Project
+
+    pid = str(uuid4())
+    project_hub[pid] = _hub_project(pid)
+    mine = Project(id=str(uuid4()), name=project_hub[pid]["name"], fs_storage_mount_path=str(tmp_path / "mine"))
+    await mine.save(notify=False)
+
+    try:
+        taken = await _call_local("POST", f"project/{pid}/install-from-hub", json={"name": mine.name})
+        assert taken.status_code == 409 and taken.json()["data"]["existing_project_id"] == mine.id
+
+        resp = await _call_local("POST", f"project/{pid}/install-from-hub", json={"name": f"{mine.name}-2"})
+
+        assert resp.status_code == 200, resp.text
+        row = await Project.get_one({"id": pid})
+        assert row.name == f"{mine.name}-2" and row.origin.owner == "langware-labs"
+        assert row.fs_storage_mount_path and row.fs_storage_mount_path.endswith("checkout")
+        assert (await Project.get_one({"id": mine.id})).name == mine.name
+    finally:
+        await mine.delete()
+        if row := await Project.get_one({"id": pid}):
+            await row.delete()
