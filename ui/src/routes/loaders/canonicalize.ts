@@ -1,5 +1,5 @@
 import { canonicalCredentialsDockPath } from '@src/navigation/credentials-dock-canonicalization';
-import { canonicalProcessDockPath } from '@src/navigation/process-dock-canonicalization';
+import { canonicalProcessDockPath, canonicalVibeHostPath } from '@src/navigation/process-dock-canonicalization';
 import { canonicalWorkspaceDisplayPath } from '@src/navigation/workspace-display-canonicalization';
 import { canonicalWorldViewDockPath } from '@src/navigation/worldview-dock-canonicalization';
 
@@ -12,13 +12,15 @@ type Canonicalizer = (pathname: string, search: string) => string | null;
  * the final form (I2: at most one redirect per navigation). Pure: no entity, no
  * network, nothing written.
  *
- *  - retired `/display/<proc>` → the process's one shell URL (vibe rides ?viewMode)
+ *  - retired `/display/<proc>` → the process's one shell URL
+ *  - a process URL asking for Vibe by option → the Vibe host dock `/dock/vibe/<proc>`
  *  - the workspace display host only exists with the display pane on screen
  *  - retired WorldView spellings → the WorldView dock
  *  - retired credential views (environment / connections / api-keys) → credentials/<subview>
  */
 const CANONICALIZERS: readonly Canonicalizer[] = [
   canonicalProcessDockPath,
+  canonicalVibeHostPath,
   canonicalWorkspaceDisplayPath,
   canonicalWorldViewDockPath,
   canonicalCredentialsDockPath,

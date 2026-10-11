@@ -167,6 +167,8 @@ interface EntityExecutionPanelProps {
    * not two.
    */
   leadingSlot?: React.ReactNode | ((actions: { startNewSession: () => void }) => React.ReactNode);
+  /** Host actions rendered at the bottom of the settings popover (Vibe's "Open terminal"). */
+  settingsActions?: React.ReactNode;
   /** Placeholder for the composer textbox. Defaults to "Ask about this doc…". */
   placeholder?: string;
   /**
@@ -323,6 +325,7 @@ export function EntityExecutionPanel({
   emptyStateText = 'Ask about this document. The conversation will persist.',
   headerLabel,
   leadingSlot,
+  settingsActions,
   placeholder,
   allowAttachments = false,
   allowImagePaste = true,
@@ -877,9 +880,13 @@ export function EntityExecutionPanel({
     onChange: handleModelChange,
     activeProcess,
   });
+  // A live session changes worker only through the host's own switch flow; a host
+  // without one keeps the worker it started with rather than offering a picker that
+  // does nothing.
+  const workerLocked = !!activeProcess && !onActiveWorkerChange;
   const workerSettingsNode = workerSelectSlot?.({
     value: effectiveWorkerType,
-    disabled: !targetStr || sending || busy,
+    disabled: !targetStr || sending || busy || workerLocked,
     onChange: handleWorkerChange,
     activeProcess,
   });
@@ -940,6 +947,7 @@ export function EntityExecutionPanel({
               showProject={showProjectSetting}
               modelControl={modelSettingsNode}
               workerControl={workerSettingsNode}
+              actions={settingsActions}
               trigger={
                 <button
                   type="button"
@@ -965,7 +973,7 @@ export function EntityExecutionPanel({
                 groups={inlineGroups}
                 worker={activeProcess?.worker_type ?? undefined}
                 agent={launchingAgent}
-                onWorkerChange={handleWorkerChange}
+                onWorkerChange={workerLocked ? undefined : handleWorkerChange}
               />
               {activeProcess && (
                 <ChatActivityLine process={activeProcess} trailing={<TurnEventChip events={liveEvents} />} />

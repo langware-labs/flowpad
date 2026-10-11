@@ -4,7 +4,8 @@ from pathlib import Path
 from flow_sdk.assets.layout import Folder
 
 
-def _folder_backed_types() -> list:
+def folder_backed_types() -> list:
+    """Every registered type whose asset is a folder with a main document, placed under a family directory."""
     from flow_sdk.fs_store.schema_registry import SchemaRegistry
     return [info for name in SchemaRegistry.get_all_types()
             if (info := SchemaRegistry.get(name)) is not None

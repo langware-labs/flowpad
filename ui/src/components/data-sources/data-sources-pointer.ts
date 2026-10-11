@@ -34,12 +34,26 @@ export type DataSourcesRoute =
   | { section: 'channels' }
   /** One configured source. `tab` null = its default (Messages for a message source, else Events). A conversation
    *  opened from its Messages tab stays on its page (`conversation`, and the thread open in it). */
-  | { section: 'source'; id: string; tab: SourceTab | null; conversation?: string | null; thread?: string | null };
+  | {
+      section: 'source';
+      id: string;
+      tab: SourceTab | null;
+      conversation?: string | null;
+      thread?: string | null;
+      /** A file source's simple view, browsed into this folder (relative to the source's files, `/`-joined):
+       *  `<id>/files/<rel…>`. Empty is the source's top. */
+      files?: string | null;
+    };
+
+export const FILES_SEGMENT = 'files';
 
 export function dataSourcesPointer(route: DataSourcesRoute = { section: 'sources' }): string | undefined {
   if (route.section === 'sources') return undefined;
   if (route.section === 'channels') return CHANNELS_SEGMENT;
   if (route.section === 'source') {
+    if (!route.tab && !route.conversation && route.files) {
+      return [route.id, FILES_SEGMENT, ...route.files.split('/').filter(Boolean).map(encodeURIComponent)].join('/');
+    }
     // A conversation is always on the Messages tab: `<id>/messages/<conversation>[/<thread>]`.
     const tab = route.conversation ? 'messages' : route.tab;
     return [route.id, tab, route.conversation, route.conversation && route.thread].filter(Boolean).join('/');
@@ -48,11 +62,17 @@ export function dataSourcesPointer(route: DataSourcesRoute = { section: 'sources
 }
 
 export function parseDataSourcesPointer(pointer?: string | null): DataSourcesRoute {
-  const [head, next, conversation, thread] = (pointer ?? '').split('/').filter(Boolean);
+  const [head, next, conversation, thread, ...rest] = (pointer ?? '').split('/').filter(Boolean);
   if (head === DRIVERS_SEGMENT) return { section: 'drivers', driver: next ? decodeURIComponent(next) : null };
   if (head === CHANNELS_SEGMENT) return { section: 'channels' };
   // A source is addressed by its id: a uuid can never be `drivers`, and anything else is the list.
   if (head && isValidUUIDv4(head)) {
+    if (next === FILES_SEGMENT) {
+      const rel = [conversation, thread, ...rest].filter(Boolean).map(decodeURIComponent);
+      // A folder under the source's files — never above them.
+      const files = rel.includes('..') ? null : rel.join('/') || null;
+      return { section: 'source', id: head, tab: null, files };
+    }
     const tab = (SOURCE_TABS as readonly string[]).includes(next ?? '') ? (next as SourceTab) : null;
     if (tab === 'messages' && conversation && isValidUUIDv4(conversation)) {
       return { section: 'source', id: head, tab, conversation, thread: thread ?? null };
@@ -90,6 +110,11 @@ export function openSource(
     ViewType.DATA_SOURCES,
     dataSourcesPointer({ section: 'source', id, tab, conversation, thread }),
   );
+}
+
+/** Open a file source's simple view browsed into ``files`` (relative to its files; empty = the top). */
+export function openSourceFiles(navigation: NavigationActions, id: string, files: string): void {
+  navigation.openPage(PageId.DESK, ViewType.DATA_SOURCES, dataSourcesPointer({ section: 'source', id, tab: null, files }));
 }
 
 /** Open a configured source's `data_source.json` in the editor. False when the row names no folder. */

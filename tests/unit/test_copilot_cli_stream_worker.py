@@ -5,11 +5,13 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import sys
 from pathlib import Path
 
 import pytest
 
 from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import (
+    STREAM_JSON_LINE_LIMIT_BYTES,
     AgenticContext,
     WorkerSpawnError,
 )
@@ -17,6 +19,7 @@ from flow_sdk.builtin.agentic_process.cli_drivers.copilot import (
     CANCEL_GRACE_SECONDS,
     CopilotCLIStreamWorker,
 )
+from flow_sdk.builtin.agentic_process.cli_drivers.jsonl_tee_worker import STDERR_TAIL_BYTES
 from flow_sdk.external_apis.llm.llm_drivers.flow_data import FlowElementType
 
 from tests.utils.fake_cli import (
@@ -99,6 +102,70 @@ async def test_nonzero_exit_writes_synthetic_error(tmp_path: Path, monkeypatch: 
     out = await _collect(worker, AgenticContext(workdir=str(tmp_path)))
 
     assert any(fd.attributes["element-type"] == FlowElementType.ERROR for fd in out)
+    assert '"type":"flowpad.error"' in transcript.read_text(encoding="utf-8")
+
+
+def _stderr_child(*statements: str) -> list[str]:
+    """A child that runs ``statements`` (writing to ``sys.stderr``) and exits 1."""
+    return [sys.executable, "-c", "import sys\n" + "\n".join(statements) + "\nsys.stderr.flush()\nsys.exit(1)"]
+
+
+@pytest.mark.asyncio
+async def test_failed_turn_reports_only_the_stderr_tail(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    # The worker used to keep EVERY stderr line of the turn (5 MB per 50k
+    # lines, unbounded) and, on a bad exit, join all of them into one transcript
+    # line and one chat error frame. Only the end of stderr explains an exit, so
+    # the worker keeps a fixed byte tail and the error stays a fixed size.
+    transcript = tmp_path / "copilot.jsonl"
+    worker = CopilotCLIStreamWorker(transcript_path=transcript)
+    patch_build_spawn(
+        monkeypatch,
+        CopilotCLIStreamWorker,
+        _stderr_child(
+            "for i in range(20000): sys.stderr.write('warn line %d some stderr noise\\n' % i)",  # ~700 KB
+            "sys.stderr.write('MARKER: the real error\\n')",
+        ),
+        stdin="",
+    )
+
+    out = await _collect(worker, AgenticContext(workdir=str(tmp_path)))
+
+    errors = [fd for fd in out if fd.attributes["element-type"] == FlowElementType.ERROR]
+    assert len(errors) == 1
+    message = str(errors[0].flow_value)
+    assert len(message) <= STDERR_TAIL_BYTES
+    assert message.splitlines()[-1] == "MARKER: the real error"
+    assert message.splitlines()[0].startswith("warn line ")  # a whole line, not the cut fragment
+    assert len(worker._stderr_tail) <= STDERR_TAIL_BYTES
+    last_line = transcript.read_bytes().splitlines()[-1]
+    assert b'"type":"flowpad.error"' in last_line
+    # Two copies of the tail ("message" and "stderr") plus JSON escaping — not
+    # the ~700 KB the child wrote.
+    assert len(last_line) < 3 * STDERR_TAIL_BYTES
+
+
+@pytest.mark.asyncio
+async def test_stderr_line_over_reader_limit_does_not_lose_the_error(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    # One stderr line over the reader's 4 MiB limit used to end the line-based
+    # drain silently, so the real error after it was never read (and a longer
+    # line left the child blocked on a full pipe: the turn never finished).
+    transcript = tmp_path / "copilot.jsonl"
+    worker = CopilotCLIStreamWorker(transcript_path=transcript)
+    patch_build_spawn(
+        monkeypatch,
+        CopilotCLIStreamWorker,
+        _stderr_child(
+            f"sys.stderr.write('x' * {STREAM_JSON_LINE_LIMIT_BYTES + 4096} + '\\n')",
+            "sys.stderr.write('MARKER: the real error\\n')",
+        ),
+        stdin="",
+    )
+
+    out = await _collect(worker, AgenticContext(workdir=str(tmp_path)))
+
+    errors = [fd for fd in out if fd.attributes["element-type"] == FlowElementType.ERROR]
+    assert len(errors) == 1
+    assert str(errors[0].flow_value).splitlines()[-1] == "MARKER: the real error"
     assert '"type":"flowpad.error"' in transcript.read_text(encoding="utf-8")
 
 

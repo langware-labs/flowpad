@@ -4,6 +4,7 @@ import { IEntity, EntityMerge } from '../IEntity';
 import { ActionInfo } from '../models/ActionInfo';
 import { HttpMethod } from '../models/ApiUrl';
 import { TypeId } from '../models/TypeId';
+import { parseTarget, targetOf } from '../tags/EventBus';
 import { HookEventData, TriggerAction, RelationshipSubAction } from './agent-hook-enums';
 import { AgentHook } from './agent-hook';
 import type {
@@ -17,7 +18,9 @@ import type {
   NextRuns,
   RunOnceStarted,
   RunsQuery,
+  TryRow,
 } from './automation-types';
+import type { DecisionVerdict } from '../models/ReturnedValue';
 
 /** One raw trigger-log row (`fs_store/operations/trigger_log.py`). The Automations screen reads runs instead. */
 export interface TriggerLogRow {
@@ -41,6 +44,44 @@ export interface TriggerLogRow {
   [key: string]: unknown;
 }
 
+/** Every tag whose events name a projected stream inbox message (`stream_inbox_on_tag.py`). */
+export const MESSAGE_PROJECTED = 'stream_inbox.*.message.projected';
+
+/** Whether a tag pattern is one a rule on messages arriving listens to: every channel's, or one channel's
+ *  (`stream_inbox.<segment>.message.projected`) — what the backend's subject answers for. */
+const MESSAGE_PATTERN = /^stream_inbox\.[^.]+\.message\.projected$/;
+export const isMessagePattern = (pattern: string | null | undefined): boolean => MESSAGE_PATTERN.test(pattern ?? '');
+
+/** What a rule on messages arriving needs: the sentence, the channels, the agent and its prompt. */
+export interface MessageRule {
+  catch: string;
+  /** Data source ids (bare or `data_source:`-prefixed). Empty = any channel. */
+  sources?: string[];
+  /** `agent-<uuid>`, or the bare uuid. */
+  agent: string;
+  prompt: string;
+  name?: string | null;
+  enabled?: boolean;
+  project_id?: string | null;
+}
+
+/** The fields a message rule is saved as — ONE row shape for the SDK builder and the screen's Save, and the
+ *  one name rule ("Asks for a refund → Billing helper"). `agentName` only feeds the default name. */
+export function messageRuleFields(rule: MessageRule, agentName = ''): Partial<ITrigger> & { name: string } {
+  const sentence = rule.catch.trim().replace(/\.$/, '');
+  const capitalised = `${sentence.charAt(0).toUpperCase()}${sentence.slice(1)}`;
+  return {
+    name: rule.name || `${capitalised} → ${agentName || 'an agent'}`,
+    trigger_type: 'tag',
+    tag_pattern: MESSAGE_PROJECTED,
+    tag_scope: (rule.sources ?? []).map((id) => targetOf('data_source', parseTarget(id)[1] ?? id)),
+    gate: { sentence },
+    then: { run_agent: { agent: rule.agent && !rule.agent.startsWith('agent-') ? `agent-${rule.agent}` : rule.agent, prompt: rule.prompt.trim() } },
+    enabled: rule.enabled ?? true,
+    ...(rule.project_id !== undefined ? { project_id: rule.project_id } : {}),
+  };
+}
+
 export interface ITrigger extends IEntity {
   name: string;
   description?: string;
@@ -55,13 +96,20 @@ export interface ITrigger extends IEntity {
   tag_pattern?: string;
   /** Only fire for events about this target (`type:id`). */
   tag_target?: string;
-  tag_scope?: string;
+  /** Colon-form targets the event's `ctx.scope` must intersect (`data_source:<id>`). */
+  tag_scope?: string[];
   /** Fire at most once per machine, ever — `counter` is the durable record, so
    *  a spent trigger is suppressed rather than deleted and still shows that it
    *  ran. */
   fire_once?: boolean;
   max_fires_per_minute?: number;
-  confirm?: boolean;
+  /** Confirm-against-store gate: `{type, filter}` must match a row. */
+  confirm?: { type?: string; filter?: Record<string, unknown> } | null;
+  /** The `if`: a `compute_op.decision` op's exe_data (questions, require, input, sentence), asked
+   *  before a fire counts. `sentence` is the line a person typed. */
+  gate?: TriggerGate | null;
+  /** What runs on a fire, as a wizard: `{ref}` | `{steps, ops}` | `{run_agent}` | `{run_script}`. */
+  then?: TriggerThen | null;
   // Hook trigger fields
   mask: Record<string, any>;
   action: TriggerAction;
@@ -95,6 +143,24 @@ export interface ITrigger extends IEntity {
   last_seen_size?: number;
 }
 
+/** The row's `gate` — `DecisionOp` in `compute_op_spec.py`, as a plain object. */
+export interface TriggerGate {
+  questions?: Record<string, Record<string, unknown>>;
+  require?: Record<string, Record<string, unknown>>;
+  /** The scope value the questions are about (`MESSAGE` for a stream inbox rule). */
+  input?: string;
+  sentence?: string;
+}
+
+/** The row's `then` — `ThenSpec` in `trigger_spec.py`. Exactly one form is present. */
+export interface TriggerThen {
+  ref?: string;
+  steps?: Record<string, unknown>[];
+  ops?: Record<string, Record<string, unknown>>;
+  run_agent?: { agent: string; prompt: string } | null;
+  run_script?: string | null;
+}
+
 /** One entry of a trigger row's `actions` — `flow_sdk/schema/data_spec/trigger_action.py`. */
 export interface TriggerActionRow {
   action_type: 'nop' | 'notify_entity' | 'run_script' | 'callback' | 'run_agent' | string;
@@ -124,10 +190,12 @@ export class Trigger extends APIEntity<Trigger> implements ITrigger {
   uname?: string;
   tag_pattern?: string;
   tag_target?: string;
-  tag_scope?: string;
+  tag_scope?: string[];
   fire_once?: boolean;
   max_fires_per_minute?: number;
-  confirm?: boolean;
+  confirm?: { type?: string; filter?: Record<string, unknown> } | null;
+  gate?: TriggerGate | null;
+  then?: TriggerThen | null;
   // Hook trigger fields
   mask: Record<string, any> = {};
   action: TriggerAction;
@@ -181,6 +249,8 @@ export class Trigger extends APIEntity<Trigger> implements ITrigger {
     this.fire_once = entity.fire_once;
     this.max_fires_per_minute = entity.max_fires_per_minute;
     this.confirm = entity.confirm;
+    this.gate = entity.gate ?? null;
+    this.then = entity.then ?? null;
     this.expr = entity.expr;
     this.sched_trigger_type = entity.sched_trigger_type;
     this.timezone = entity.timezone ?? null;
@@ -202,12 +272,17 @@ export class Trigger extends APIEntity<Trigger> implements ITrigger {
     return this.actions.find((a) => a.action_type === 'run_agent');
   }
 
-  /** The agent this trigger runs — its explicit target, else its parent. */
+  /** The agent this trigger runs — the `then` sugar's, else the action's explicit target, else its parent. */
   get runAgentTypeId(): string | null {
-    const action = this.runAgentAction;
-    if (!action) return null;
-    const target = action.target_type_id || this.parent_type_id || '';
+    const explicit = this.then?.run_agent ? this.then.run_agent.agent : this.runAgentAction?.target_type_id;
+    if (explicit === undefined) return null;
+    const target = explicit || this.parent_type_id || '';
     return target.startsWith('agent-') ? target : null;
+  }
+
+  /** A rule on messages arriving (docs/snippets/stream-inbox-automations.md §2). */
+  get isMessageRule(): boolean {
+    return this.trigger_type === 'tag' && isMessagePattern(this.tag_pattern);
   }
 
   // ── Automations (docs/automations.md) ──────────────────────────────────────
@@ -237,6 +312,48 @@ export class Trigger extends APIEntity<Trigger> implements ITrigger {
     return (await dataManager.callAction<undefined, NextRuns>(action)) as NextRuns;
   }
 
+  // ── Stream stream inbox automations (docs/snippets/stream-inbox-automations.md) ───────────────
+
+  /**
+   * A rule on messages arriving: when one lands on `sources` (every channel when none), if
+   * `catch` is true of it, have `agent` do `prompt` with the message as its input. The backend
+   * words the sentence into the gate's question (`Trigger.on_message`); this sends the same
+   * fields `create` takes, so the screen's Save and the Python builder make the same row.
+   */
+  static async onMessage(rule: MessageRule): Promise<Trigger> {
+    return Trigger.createAutomation(messageRuleFields({ project_id: null, ...rule }));
+  }
+
+  /** How many of the person's own rules fired in the last hour — the top-bar counter, one light call. */
+  static async startedLastHour(): Promise<number> {
+    const action = new ActionInfo('started_last_hour', Trigger.type, null, 'GET' as HttpMethod);
+    return Number((await dataManager.callAction<undefined, number>(action)) ?? 0);
+  }
+
+  /** The fast test: ask the rule's gate about `text` or one `messageId`. Records nothing, runs nothing. */
+  static async decideOn(triggerId: string, about: { text?: string; messageId?: string }): Promise<DecisionVerdict> {
+    const action = new ActionInfo('decide_on', Trigger.type, triggerId, 'POST' as HttpMethod);
+    action.bodyParameters = about.messageId ? { message_id: about.messageId } : { text: about.text ?? '' };
+    return (await dataManager.callAction<undefined, DecisionVerdict>(action)) as DecisionVerdict;
+  }
+
+  /** The fast test for a rule not saved yet, or edited: the builder's fields and the text (or a message id). */
+  static async decideSpec(spec: Partial<ITrigger>, about: { text?: string; messageId?: string }): Promise<DecisionVerdict> {
+    const action = new ActionInfo('decide_spec', Trigger.type, null, 'POST' as HttpMethod);
+    action.bodyParameters = {
+      spec: { ...spec },
+      ...(about.messageId ? { message_id: about.messageId } : { text: about.text ?? '' }),
+    } as Record<string, unknown>;
+    return (await dataManager.callAction<undefined, DecisionVerdict>(action)) as DecisionVerdict;
+  }
+
+  /** The try list: recent messages on the rule's sources, each with what the gate says of it. */
+  static async decideOnRecent(triggerId: string, options: { limit?: number } = {}): Promise<TryRow[]> {
+    const action = new ActionInfo('decide_on_recent', Trigger.type, triggerId, 'GET' as HttpMethod);
+    action.queryParameters = { limit: String(options.limit ?? 20) };
+    return ((await dataManager.callAction<undefined, TryRow[]>(action)) as TryRow[]) ?? [];
+  }
+
   /** Runs newest first — one automation's, or every automation's. */
   static async runs(query: RunsQuery = {}): Promise<AutomationRun[]> {
     const action = new ActionInfo('runs', Trigger.type, null, 'GET' as HttpMethod);
@@ -244,6 +361,7 @@ export class Trigger extends APIEntity<Trigger> implements ITrigger {
     if (query.triggerId) params.trigger_id = query.triggerId;
     if (query.status) params.status = query.status;
     if (query.includeTests === false) params.include_tests = 'false';
+    if (query.includeDeclined) params.include_declined = 'true';
     if (query.includeBuiltin === false) params.include_builtin = 'false';
     if (query.limit) params.limit = String(query.limit);
     action.queryParameters = params;
@@ -262,9 +380,16 @@ export class Trigger extends APIEntity<Trigger> implements ITrigger {
    * real fire spends. `event` picks what an event automation runs with. Answers
    * at once; the run shows up in {@link Trigger.runs}.
    */
-  static async runOnce(triggerId: string, event?: AutomationTestEvent | null): Promise<RunOnceStarted> {
+  static async runOnce(
+    triggerId: string,
+    event?: AutomationTestEvent | null,
+    options: { messageId?: string } = {},
+  ): Promise<RunOnceStarted> {
     const action = new ActionInfo('test', Trigger.type, triggerId, 'POST' as HttpMethod);
-    action.bodyParameters = event ? { event: { ...event } } : {};
+    action.bodyParameters = {
+      ...(event ? { event: { ...event } } : {}),
+      ...(options.messageId ? { message_id: options.messageId } : {}),
+    };
     return (await dataManager.callAction<undefined, RunOnceStarted>(action)) as RunOnceStarted;
   }
 

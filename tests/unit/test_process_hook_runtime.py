@@ -5,10 +5,9 @@ import json
 import pytest
 
 from flow_sdk.api.api_types.identifier import mint_uuid
-from flow_sdk.builtin.agent_hook import HookEventType
 from flow_sdk.assets.directory import AssetDir
+from flow_sdk.builtin.agent_hook import HookEventType
 from flow_sdk.builtin.agentic_process.cli_drivers.claude.cli import ClaudeAgentOptions
-from flow_sdk.builtin.agentic_process.cli_drivers.claude.cli_worker import ClaudeCLIWorker
 from flow_sdk.builtin.agentic_process.cli_drivers.claude.code_agentic_worker import _local_plugin_configs
 from flow_sdk.builtin.agentic_process.cli_drivers.claude.driver import ClaudeDriver
 from flow_sdk.builtin.agentic_process.cli_drivers.claude.stream_worker import ClaudeCLIStreamWorker
@@ -151,11 +150,9 @@ def test_plugin_dirs_propagate_through_every_claude_context_consumer():
 
     options = ClaudeAgentOptions(plugin_dirs=plugin_dirs)
     stream_options = ClaudeCLIStreamWorker._options_from_context(context)
-    cli_args = ClaudeCLIWorker.build_args("claude", "hi", "session", context)
 
     assert _flag_values(options.cli_cmd(), "--plugin-dir") == plugin_dirs
     assert _flag_values(stream_options.cli_cmd(), "--plugin-dir") == plugin_dirs
-    assert _flag_values(cli_args, "--plugin-dir") == plugin_dirs
     assert _local_plugin_configs(context.plugin_dirs) == [{"type": "local", "path": path} for path in plugin_dirs]
     assert "plugin_dirs" not in options.to_json()
     assert ClaudeAgentOptions.from_json({"plugin_dirs": ["/persisted"]}).plugin_dirs == []

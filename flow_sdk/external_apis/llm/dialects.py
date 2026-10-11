@@ -140,7 +140,7 @@ DIALECTS: dict[LMApiProvider, ProviderDialect] = {
         default_models={
             # The slugs proven against OpenRouter for the CLI harnesses
             # (``cli_drivers/api_auth.py``), so one catalog serves both.
-            "sm": "anthropic/claude-haiku-4.5",
+            "sm": "anthropic/claude-haiku-5.5",
             "md": "anthropic/claude-sonnet-4.5",
             "lg": "anthropic/claude-opus-4.1",
             # Priced by the hub's ``genai_prices`` table through its vendor fallback, so a
@@ -159,7 +159,7 @@ DIALECTS: dict[LMApiProvider, ProviderDialect] = {
         supports_embeddings=False,
         default_models={
             # Vendor-direct spelling is dashed, unlike the dotted OpenRouter slugs.
-            "sm": "claude-haiku-4-5",
+            "sm": "claude-haiku-5-5",
             "md": "claude-sonnet-4-5",
             "lg": "claude-opus-4-1",
         },

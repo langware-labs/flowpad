@@ -1,3 +1,5 @@
+import { automationLineage } from '@src/hooks/conversation/useMessageAutomationSessions';
+import { DockPointer } from '@src/navigation/DockPointer';
 import { MessageLifecycle, type Lifecycle } from './message-lifecycle';
 import type { TaskPeople } from './task-it';
 import { t } from '@lingui/core/macro';
@@ -213,6 +215,10 @@ interface FlowMessageBubbleProps {
    *  `native`: Flowpad's own chat, where any sent message can be answered by its id; a channel
    *  reply instead needs the message's source record (`fm.origin`). */
   channelTraits?: { quotes?: boolean; reacts?: boolean; native?: boolean } | null;
+  /** Start a rule on messages like this one (the quick ⚡ and the ⋮ item). Channel messages only. */
+  onAutomate?: (fm: FlowMessage) => void;
+  /** The session an automation started on this message (`useMessageAutomationSessions`). */
+  automationSession?: AgenticProcess | null;
   /** Where this message, come in on a channel, is on its way to an answer (`message-lifecycle`). */
   lifecycle?: Lifecycle | null;
   /** The message this one quotes, resolved by the parent from the loaded list. */
@@ -259,6 +265,8 @@ export function FlowMessageBubble({
   showEmailHeaders = false,
   channelTraits = null,
   lifecycle = null,
+  onAutomate,
+  automationSession = null,
   quoted = null,
   onReply,
 }: FlowMessageBubbleProps) {
@@ -784,6 +792,16 @@ export function FlowMessageBubble({
             : onTaskIt && !fm.is_draft
               ? { onClick: () => onTaskIt(fm) }
               : undefined
+        }
+        onAutomate={onAutomate && fm?.origin && !fm.is_draft ? () => onAutomate(fm) : undefined}
+        automation={
+          automationSession
+            ? {
+                name: automationSession.name || automationLineage(automationSession)?.name || t`Automation`,
+                status: String(automationSession.status ?? ''),
+                onOpen: () => navigation.openDock(DockPointer.forProcessRuns({ run: automationSession.id })),
+              }
+            : undefined
         }
         onImplementPlan={onImplementPlan ? () => onImplementPlan(messageId) : undefined}
         onOpenPlanSession={onOpenPlanSession}

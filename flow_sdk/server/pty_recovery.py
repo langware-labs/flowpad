@@ -21,10 +21,11 @@ first tick after a client re-watches, not before. Connection membership
 FSM in ``pty_session_manager.PtyRegistry``; this module only handles a dead
 *worker*.
 
-Recovered process ids are recorded for this backend lifetime, so the distinct
-``recovered`` event is delivered when a client (re)watches a recovered process
-("recovered AND a UI is connected", per design) — the SDK then re-attaches its
-PTY stream.
+Recovered process ids are recorded for as long as the respawned worker is the
+process's current one, so the distinct ``recovered`` event is delivered when a
+client (re)watches a recovered process ("recovered AND a UI is connected", per
+design) — the SDK then re-attaches its PTY stream. The id is forgotten with the
+process's other per-process state (close, delete, self-exit).
 """
 
 from __future__ import annotations
@@ -38,14 +39,22 @@ from flow_sdk import toplog
 
 logger = logging.getLogger(__name__)
 
-# Processes recovered during THIS backend lifetime. A client that watches one
-# of these gets a ``recovered`` event (the watchdog itself runs before clients
-# reconnect, so emission is gated on the (re)watch, not on recovery time).
+# Processes whose worker was respawned and is still the current one. A client
+# that watches one of these gets a ``recovered`` event (the watchdog itself runs
+# before clients reconnect, so emission is gated on the (re)watch, not on
+# recovery time). The id is dropped when the process goes away
+# (``forget_recovered``, called from the per-process release): there is no
+# respawned worker left to re-attach to, and the set would otherwise grow by
+# one per recovered process for the life of the backend.
 _RECOVERED_IDS: set[str] = set()
 
 
 def mark_recovered(process_id: str) -> None:
     _RECOVERED_IDS.add(process_id)
+
+
+def forget_recovered(process_id: str) -> None:
+    _RECOVERED_IDS.discard(process_id)
 
 
 def was_recovered(process_id: str) -> bool:

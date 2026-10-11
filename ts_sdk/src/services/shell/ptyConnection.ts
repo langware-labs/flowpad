@@ -74,8 +74,24 @@ export class PtyConnection {
   restarting = false;
   lastSeq = 0;
 
-  /** Live in-session output chunks keyed by seq — feeds pty-sync (VT rebuild, gutters). */
+  /**
+   * Live in-session output chunks keyed by seq — feeds pty-sync (VT rebuild, gutters) and the
+   * attach gap (chunks newer than the recording). A replay WINDOW, not the session's history:
+   * the oldest entries are dropped once the window exceeds a chunk or byte bound, so a TUI that
+   * redraws one line all day (one chunk per frame) costs a fixed amount, not one entry per frame.
+   * Older output is the recording's job (pty-stream), never memory's.
+   */
   readonly chunks: Map<number, OutputChunk> = new Map();
+  /**
+   * The window covers the VirtualTerminal's whole scrollback at one chunk per row
+   * (rows + 10,000 `scrollbackLines`, see PtySyncSession) with room for cursor-only frames,
+   * and ~1.5 MiB of payload. Sized for the replay, not a wait: neither is a timeout or a budget.
+   */
+  static readonly CHUNK_WINDOW_MAX_CHUNKS = 12_288;
+  static readonly CHUNK_WINDOW_MAX_BYTES = 1_572_864;
+  private _chunkBytes = 0;
+  /** Highest seq dropped from the window; 0 while nothing has been dropped. */
+  trimmedThroughSeq = 0;
 
   private readonly decoder = new TextDecoder('utf-8', { fatal: false });
 
@@ -177,7 +193,7 @@ export class PtyConnection {
 
   // ── Sorted chunk accessor ─────────────────────────────────────────────────
 
-  /** Sorted live-session chunks — feeds VirtualTerminal rebuild on resize. */
+  /** Sorted chunks of the replay window — feeds VirtualTerminal rebuild on resize. */
   getSortedChunks(): OutputChunk[] {
     return [...this.chunks.values()].sort((a, b) => a.seq - b.seq);
   }
@@ -226,6 +242,8 @@ export class PtyConnection {
     }
     if (seq !== undefined) {
       this.chunks.set(seq, { seq, data: bytes, timestamp: timestamp_ms ?? Date.now() });
+      this._chunkBytes += bytes.length;
+      this._trimChunks(seq);
     }
     // Feed line listeners regardless of attach state — triggers must fire
     // for orphan-flushed output too so early pattern detection works.
@@ -249,6 +267,36 @@ export class PtyConnection {
       }
     }
     return decoded;
+  }
+
+  /**
+   * Drop the oldest chunks beyond the window. Seqs are inserted in increasing order (the dedup
+   * above refuses anything at or below lastSeq), so the Map's first key is the oldest. The chunk
+   * that just arrived is never dropped: the output listener reads it back by seq.
+   */
+  private _trimChunks(newestSeq: number): void {
+    while (
+      this.chunks.size > PtyConnection.CHUNK_WINDOW_MAX_CHUNKS ||
+      this._chunkBytes > PtyConnection.CHUNK_WINDOW_MAX_BYTES
+    ) {
+      const oldest = this.chunks.keys().next().value as number;
+      if (oldest === newestSeq) break;
+      this._chunkBytes -= this.chunks.get(oldest)!.data.length;
+      this.chunks.delete(oldest);
+      this.trimmedThroughSeq = oldest;
+    }
+  }
+
+  /**
+   * Let the whole replay window go — the program in this PTY ended and no view will replay it
+   * (a restart attaches a new PTY, which `attach` clears for anyway). Only the window: the seq
+   * counter, line buffer, event fires and every listener stay, so the shell reads the same as
+   * before and the next attach dedups and routes as it always did.
+   */
+  releaseWindow(): void {
+    if (this.lastSeq > 0) this.trimmedThroughSeq = this.lastSeq;
+    this.chunks.clear();
+    this._chunkBytes = 0;
   }
 
   // ── Raw text ──────────────────────────────────────────────────────────────
@@ -283,8 +331,8 @@ export class PtyConnection {
    *
    * If chunks have already arrived (e.g. registration happens after a
    * tab-reload's replay completes), the new trigger is run against the
-   * accumulated line history so consumers don't lose visibility of
-   * matches that fired pre-registration. Synthesized fires are flagged
+   * lines still in the replay window (not the whole session) so consumers
+   * don't lose visibility of matches that fired pre-registration. Synthesized fires are flagged
    * ``duringReplay: true`` so the viewer can distinguish catchup hits
    * from live ones.
    *
@@ -297,7 +345,7 @@ export class PtyConnection {
   }
 
   /**
-   * Walk the buffered replay chunks in seq order, decode + ANSI-strip,
+   * Walk the replay window's chunks in seq order, decode + ANSI-strip,
    * split on LF / CRLF / bare CR terminal-row boundaries, and run a single
    * trigger against each line. Used by
    * ``addTrigger`` to retroactively match history when a watcher
@@ -509,12 +557,15 @@ export class PtyConnection {
    * Size the PTY to the view on screen. Kept even when the PTY is not live yet:
    * the next attach asserts it. Always sent when live — the backend may hold
    * another client's size, so a client-side "unchanged" says nothing.
+   *
+   * `repaint`: the view drew output at another size — redraw even at an unchanged size.
+   * Resolves false only when a live send failed.
    */
-  async resize(cols: number, rows: number): Promise<void> {
+  async resize(cols: number, rows: number, opts: { repaint?: boolean } = {}): Promise<boolean> {
     this._viewSize = { cols, rows };
-    if (!this.started) return; // kept for the attach
-    if (!this.computeNodeId) return;
-    await this._sendResize(cols, rows);
+    if (!this.started) return true; // kept for the attach, which repaints
+    if (!this.computeNodeId) return true;
+    return this._sendResize(cols, rows, opts.repaint === true);
   }
 
   /** The view stopped showing this PTY: it no longer claims the size. */
@@ -527,21 +578,23 @@ export class PtyConnection {
     return this._viewSize;
   }
 
-  private async _sendResize(cols: number, rows: number): Promise<void> {
+  private async _sendResize(cols: number, rows: number, repaint = false): Promise<boolean> {
     const { ActionInfo } = await import('../../models/index.js');
     const { dataManager } = await import('../../APIEntity.js');
     const action = new ActionInfo('terminal-command', 'compute_node', this.computeNodeId, 'POST');
     action.subpath = 'resize';
-    action.bodyParameters = { shell_id: this.shellId, cols, rows };
-    toplog.log('pty', `resize shell=${this.shellId} size=${cols}x${rows}`);
+    action.bodyParameters = { shell_id: this.shellId, cols, rows, repaint };
+    toplog.log('pty', `resize shell=${this.shellId} size=${cols}x${rows}${repaint ? ' repaint=drift' : ''}`);
     try {
       await dataManager.callActionOverWS<any, any>(action);
+      return true;
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       toplog.log('pty', `resize_failed shell=${this.shellId} error=${msg}`);
       if (msg.includes('PTY session not found') || msg.includes('Failed to resize PTY')) {
         this.started = false;
       }
+      return false;
     }
   }
 
@@ -720,6 +773,8 @@ export class PtyConnection {
    *  stale once we re-attach to a fresh pid. */
   clear(): void {
     this.chunks.clear();
+    this._chunkBytes = 0;
+    this.trimmedThroughSeq = 0;
     this.lastSeq = 0;
     this._lineBuffer = '';
     this._eventFires.length = 0;
@@ -737,6 +792,8 @@ export class PtyConnection {
     this._eventFireListeners.clear();
     this._eventFires.length = 0;
     this.chunks.clear();
+    this._chunkBytes = 0;
+    this.trimmedThroughSeq = 0;
     this._lineBuffer = '';
   }
 

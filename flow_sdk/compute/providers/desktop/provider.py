@@ -713,7 +713,6 @@ class LocalComputeProvider(ComputeProvider):
         logger.info(f"Running command in local working directory: {command}")
         message_id = str(uuid.uuid4())
         cmd = CLICommand(command, message_id=message_id)
-        self.running_commands[message_id] = cmd
 
         # Shared with the E2B provider so the two can't drift again — and so
         # the escaping has exactly one place to be tested. The values join the
@@ -781,6 +780,13 @@ class LocalComputeProvider(ComputeProvider):
                     if provider_node_id in self._stream_tasks:
                         self._stream_tasks[provider_node_id] = [
                             t for t in self._stream_tasks[provider_node_id] if t not in [stdout_task, stderr_task]
+                        ]
+                    # ...and this command's own task, same rule. Rebind rather
+                    # than mutate in place: shutdown() may be iterating the list.
+                    if provider_node_id in self._commands_tasks:
+                        me = asyncio.current_task()
+                        self._commands_tasks[provider_node_id] = [
+                            t for t in self._commands_tasks[provider_node_id] if t is not me
                         ]
 
             # Background mode: start async task to wait for completion

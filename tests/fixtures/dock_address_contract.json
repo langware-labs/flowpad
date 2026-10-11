@@ -82,7 +82,8 @@
     "token-plan",
     "llm-sources",
     "llm-setup",
-    "assistant"
+    "assistant",
+    "vibe"
   ],
   "subview_vocabularies": {
     "credentials": [
@@ -721,6 +722,14 @@
       "scope_keyed": false,
       "folds_sub_pointer": false,
       "chrome": "fullbleed"
+    },
+    "vibe": {
+      "addressable": true,
+      "pointer": "required",
+      "folds_pointer": false,
+      "scope_keyed": false,
+      "folds_sub_pointer": false,
+      "chrome": "workspace"
     }
   },
   "tab_identity_cases": [
@@ -741,6 +750,13 @@
       "view_type": "shell",
       "pointer": "agentic_process-550e8400-e29b-41d4-a716-446655440000",
       "tab_hash": "shell|agentic_process-550e8400-e29b-41d4-a716-446655440000"
+    },
+    {
+      "name": "a Vibe host folds onto its process shell identity (one row)",
+      "view_type": "vibe",
+      "pointer": "agentic_process-550e8400-e29b-41d4-a716-446655440000",
+      "tab_hash": "shell|agentic_process-550e8400-e29b-41d4-a716-446655440000",
+      "identity_view_type": "shell"
     },
     {
       "name": "plain entity view keys on its pointer",
@@ -815,6 +831,12 @@
       "name": "every llm-sources selection is one tab",
       "view_type": "llm-sources",
       "pointer": "claude",
+      "tab_hash": "llm-sources|"
+    },
+    {
+      "name": "an llm-sources section folds into the same tab",
+      "view_type": "llm-sources",
+      "pointer": "keys",
       "tab_hash": "llm-sources|"
     }
   ],
@@ -1022,6 +1044,12 @@
       "url": "/dock/credentials/environment/550e8400-e29b-41d4-a716-446655440000"
     },
     {
+      "name": "credentials subview with a project and a selected credential",
+      "view_type": "credentials",
+      "pointer": "connections/550e8400-e29b-41d4-a716-446655440000/credential-6f1c2d3e-4a5b-4c6d-8e9f-0a1b2c3d4e5f",
+      "url": "/dock/credentials/connections/550e8400-e29b-41d4-a716-446655440000/credential-6f1c2d3e-4a5b-4c6d-8e9f-0a1b2c3d4e5f"
+    },
+    {
       "name": "project collaboration room tab",
       "view_type": "project",
       "pointer": "550e8400-e29b-41d4-a716-446655440000/collaboration_room/6ba7b810-9dad-41d1-80b4-00c04fd430c8/tab/agentic_process-7c9e6679-7425-40de-944b-e07fc1f90ae7",
@@ -1127,13 +1155,20 @@
       "url": "/dev/graph-workflows"
     },
     {
-      "name": "view mode rides as an option, never a URL family",
+      "name": "the old Vibe spelling still decodes (the loader canonicalizes it to /dock/vibe)",
       "view_type": "shell",
       "pointer": "agentic_process-550e8400-e29b-41d4-a716-446655440000",
       "options": {
         "viewMode": "vibe"
       },
-      "url": "/dock/shell/agentic_process-550e8400-e29b-41d4-a716-446655440000?viewMode=vibe"
+      "url": "/dock/shell/agentic_process-550e8400-e29b-41d4-a716-446655440000?viewMode=vibe",
+      "legacy": true
+    },
+    {
+      "name": "a Vibe host tab has its own address",
+      "view_type": "vibe",
+      "pointer": "agentic_process-550e8400-e29b-41d4-a716-446655440000",
+      "url": "/dock/vibe/agentic_process-550e8400-e29b-41d4-a716-446655440000"
     },
     {
       "name": "legacy base path carries agent + process",
@@ -1189,6 +1224,20 @@
       "page": "desk",
       "view_type": "llm-sources",
       "pointer": "claude"
+    },
+    {
+      "name": "llm sources keys section is a DESK page",
+      "url": "/dock/llm-sources/keys",
+      "page": "desk",
+      "view_type": "llm-sources",
+      "pointer": "keys"
+    },
+    {
+      "name": "llm sources endpoints section is a DESK page",
+      "url": "/dock/llm-sources/endpoints",
+      "page": "desk",
+      "view_type": "llm-sources",
+      "pointer": "endpoints"
     }
   ]
 }

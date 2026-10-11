@@ -31,7 +31,7 @@ import { openCapabilitiesForWorker } from '@src/navigation/open-capabilities';
 export function NewChatButton() {
   const { t } = useLingui();
   const { navigation } = useDockNavigation();
-  const { lastWorker, rememberWorker } = useLastWorkerType();
+  const { lastWorker } = useLastWorkerType();
   const defaultWorker = useDefaultWorkerType();
   const [starting, setStarting] = useState(false);
 
@@ -44,9 +44,6 @@ export function NewChatButton() {
     // it still leaves a trace if a launch promise never settles).
     if (starting) return;
     setStarting(true);
-    // Remembered up front, matching `WorkerToolbar.launch`: the pick is the
-    // user's even if the spawn then fails for a missing binary.
-    rememberWorker(worker);
     void openNewChat(navigation, { workerType: worker })
       .catch((err) => {
         console.error('[NewChatButton] new chat failed', err);
@@ -55,7 +52,7 @@ export function NewChatButton() {
         openCapabilitiesForWorker(navigation, worker);
       })
       .finally(() => setStarting(false));
-  }, [starting, rememberWorker, worker, navigation]);
+  }, [starting, worker, navigation]);
 
   return (
     <Tooltip>

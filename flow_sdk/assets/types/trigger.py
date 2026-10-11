@@ -112,7 +112,20 @@ def row_fields(spec: TriggerSpec, *, parent_type_id: str = "") -> dict:
         )
 
     fields["actions"] = [_action_row(a, parent_type_id=parent_type_id) for a in spec.actions]
+    fields["gate"] = gate_row(spec)
+    fields["then"] = spec.then.model_dump(mode="json", exclude_defaults=True) if spec.then is not None else None
     return fields
+
+
+def gate_row(spec: TriggerSpec) -> Optional[dict]:
+    """The document's ``if`` as the row's ``gate``: a sentence travels as ``{"sentence": …}`` and the
+    row words it on construction (``Trigger._word_gate``); an op is kept as written."""
+    gate = spec.gate
+    if gate is None:
+        return None
+    if isinstance(gate, str):
+        return {"sentence": gate}
+    return gate.model_dump(mode="json", exclude_defaults=False)
 
 
 def _action_row(action, *, parent_type_id: str = "") -> dict:

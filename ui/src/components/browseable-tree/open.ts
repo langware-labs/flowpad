@@ -1,4 +1,5 @@
 import type { DockPointer } from '@src/navigation/DockPointer';
+import { assetTargetLookup, type AssetRow } from '@src/navigation/record-type-nav';
 import type { Browseable } from './types';
 
 /**
@@ -22,8 +23,25 @@ import type { Browseable } from './types';
  */
 export function openBrowseable(node: Browseable, navigate: (pointer: DockPointer) => void): boolean {
   if (node.pointer) navigate(node.pointer);
-  else if (node.activate) void node.activate();
+  else if (node.activate) void node.activate(navigate);
   else return false;
   node.onOpen?.();
   return true;
+}
+
+/**
+ * How an asset row opens: through its type's lookup when the target needs one (a dataset
+ * opens in its editor app), else at `pointer`. One answer for every asset tree, and the same
+ * one the Assets page and the record list give.
+ */
+export function assetRowOpen(asset: AssetRow, pointer: DockPointer): Pick<Browseable, 'pointer' | 'activate'> {
+  const lookup = assetTargetLookup(asset);
+  if (!lookup) return { pointer };
+  return {
+    pointer: null,
+    activate: async (navigate) => {
+      const target = await lookup();
+      if (target) navigate(target);
+    },
+  };
 }

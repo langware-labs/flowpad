@@ -78,6 +78,16 @@ describe('PtyConnection view size', () => {
     expect(sent('resize').map(size)).toEqual(['116x40', '116x40']);
   });
 
+  it('a repaint resize asks the backend to redraw even at an unchanged size; a plain one does not', async () => {
+    // The xterm drew output at a grid the PTY never had: re-sending the PTY's own size is a no-op
+    // winsize change (no SIGWINCH), so only `repaint` makes the program redraw.
+    const pc = new PtyConnection('s6', 'node-1');
+    await pc.attach('s6');
+    expect(await pc.resize(122, 40)).toBe(true);
+    expect(await pc.resize(122, 40, { repaint: true })).toBe(true);
+    expect(sent('resize').map((b) => b.repaint ?? false)).toEqual([false, true]);
+  });
+
   it('a released size is not asserted by a later re-attach', async () => {
     const pc = new PtyConnection('s5', 'node-1');
     await pc.resize(116, 40);

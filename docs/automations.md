@@ -42,6 +42,38 @@ a request itself (`ui/tests/unit/triggers-view-url.test.ts` fails if one does).
 | `bus_map`, `match_pattern` | `automations/bus_map.py`, `tags/bus.explain_subscription_match` | the bus map; the sandbox |
 | `create`, `{id}/update`, `{id}/delete` | `automations/spec_file.py` for file-defined rows | — |
 
+## The gate and the wizard (stream inbox automations)
+
+An automation may carry an **`if`** and a **`then`** (`docs/snippets/stream-inbox-automations.md`):
+
+- **`if`** is a `compute_op.decision` op (`Trigger.gate` on the row): questions for the Decision
+  API and what each answer must be. A string in the file is the sentence a person typed, worded
+  into one yes/no question by the event's **subject** (`automations/decision_subjects.py` — the
+  stream inbox answers for `source_item` targets with a `stream_inbox.message.state`). The gate
+  runs in the TAG fire path after every cheap check and **before the counter**: a "no" writes a
+  `tag_declined` row (`reason_code` `decision_no` / `decision_unavailable`) and spends nothing —
+  no counter, no `fire_once`, no `trigger.fired`. Every ask emits `trigger.decided`.
+- **`then`** is a wizard (`trigger.then`: a `ref`, inline `steps` + `ops`, or the `run_agent` /
+  `run_script` sugar) run by `automations/then.py` through the ordinary wizard runner with the
+  fire's scope: the subject's state under its key (`MESSAGE`), the `LaunchContext` the agent step
+  stamps (the session keyed to the conversation, the message as a chip, what the rule decided
+  under `context_data["automation"]`), the envelope under `EVENT`. The state is in scope only
+  when a gate caught one: a `then` with no gate runs its agent with no input. A rule with a
+  `then` runs that instead of `actions`.
+- Log rows gain `decision`, `subject_id` and `wizard` (an outline — each step's exit code, short
+  detail and session, never its output); `AutomationRun` mirrors them;
+  `AutomationSummary` gains `last_runs` and `passed_over`; the top bar's last-hour count is its own
+  light call (`Trigger.started_last_hour`: the person's own rules, counted on the log tails). The verbs:
+  `Trigger.on_message`, `rule.decide_on`, `rule.decide_on_recent`, `Trigger.runs(include_declined=)`,
+  `run_once(message_id=)`, `Agent.runnable_here()`; the screen's "Would it catch this?" asks
+  `decide_spec` with the fields as typed, before any save. A bare `gate: {sentence}` (the screen's,
+  a file's string `if`) is worded by the row itself on construction (`Trigger._word_gate`), so every
+  writer gates alike, and every reader takes the op from `Trigger.gate_op`. A subject also says how
+  its rules read (`when_text`: "When a message arrives") on the list and in `describe_when`, and
+  answers the lookups by id (`by_id`, `test_event`) so the automation code never names a message.
+  Check reports a missing Decision API under its own area, `decider`: the rule is fine, the machine
+  is not ready.
+
 ## Rules that are easy to break
 
 - **Run once now** runs even when the automation is off and spends nothing a real

@@ -99,6 +99,21 @@ async def test_stored_keys_are_read_by_name_and_never_opened(monkeypatch):
     assert keys == {"openrouter": True, "anthropic": False, "openai": False}
 
 
+async def test_a_stored_keys_masked_hint_is_carried_and_an_old_record_has_none(monkeypatch):
+    """The shadow's ``****last4`` reaches the key slot; a record written before hints existed
+    reads as "" rather than failing, and an empty slot carries nothing."""
+    monkeypatch.setattr(
+        "flow_sdk.cli.auth.secrets.get_secrets",
+        lambda: [
+            {"name": "lm_api.openrouter", "created_at": "2026-10-01", "hint": "****ab12"},
+            {"name": "lm_api.anthropic", "created_at": "2026-09-01"},
+        ],
+    )
+    assert build_mod.stored_key_hints() == {"openrouter": "****ab12", "anthropic": ""}
+    hints = {k.provider: k.hint for k in build_mod._keys()}
+    assert hints == {"openrouter": "****ab12", "anthropic": "", "openai": ""}
+
+
 # ── hub: the hub's own answer ────────────────────────────────────────────────
 
 

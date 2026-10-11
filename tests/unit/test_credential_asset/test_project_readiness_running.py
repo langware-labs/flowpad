@@ -38,8 +38,8 @@ def running(monkeypatch):
 
 
 async def test_a_source_in_setup_and_a_dead_site_make_the_project_not_ready(project, running):
-    running.sources = [SimpleNamespace(name="WhatsApp (WAHA)", provider="no-such-driver", status="setup", setup_detail="WAHA does not answer")]
-    running.apps = [SimpleNamespace(id="a1", name="site", asset_ref="/p/site")]
+    running.sources = [SimpleNamespace(name="WhatsApp (WAHA)", provider="no-such-driver", status="setup", setup_detail="WAHA does not answer", typeid="data_source-s1", asset_ref="/p/agentic-assets/data_source/waha", setup_skipped=None)]
+    running.apps = [SimpleNamespace(id="a1", name="site", asset_ref="/p/site", typeid="micro_app-a1", setup_skipped=None)]
 
     readiness = await project_setup.readiness_of(project)
 
@@ -49,8 +49,8 @@ async def test_a_source_in_setup_and_a_dead_site_make_the_project_not_ready(proj
 
 
 async def test_an_active_source_and_a_running_site_leave_it_ready(project, running):
-    running.sources = [SimpleNamespace(name="feed", provider="no-such-driver", status="active", setup_detail="")]
-    running.apps = [SimpleNamespace(id="a1", name="site", asset_ref="/p/site")]
+    running.sources = [SimpleNamespace(name="feed", provider="no-such-driver", status="active", setup_detail="", typeid="data_source-s2", asset_ref="", setup_skipped=None)]
+    running.apps = [SimpleNamespace(id="a1", name="site", asset_ref="/p/site", typeid="micro_app-a1", setup_skipped=None)]
     running.up = {"a1"}
 
     assert (await project_setup.readiness_of(project)).ready

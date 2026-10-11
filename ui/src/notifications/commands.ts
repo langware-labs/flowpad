@@ -1,6 +1,14 @@
 import { t } from '@lingui/core/macro';
-import { oauthService, OAUTH_PROVIDERS, copyToClipboard, AgenticProcess, snifferManager, tabManager } from '@sdk';
-import { gitResolvePrompt } from '@src/components/status-bar/gitResolvePrompt';
+import {
+  oauthService,
+  OAUTH_PROVIDERS,
+  copyToClipboard,
+  AgenticProcess,
+  dataContext,
+  snifferManager,
+  tabManager,
+} from '@sdk';
+import { gitResolvePrompt } from '@src/lib/git-resolve-prompt';
 import { notify } from './notify';
 import { settleAsk } from './pending-asks';
 import type { NotificationAction } from './types';
@@ -63,14 +71,19 @@ registerCommand('terminal.terminate', (args) => {
   if (args.typeId) void tabManager.closeTarget(String(args.typeId));
 });
 
-// `Resolve` on a failed push/pull toast: launch an agentic process in the current
-// project, seeded with a conflict-resolution prompt for the given branch
-// (`origin: 'pull'` finishes the rebase without pushing). Uses
-// dataContext.project/computeNode (AgenticProcess.openTab default).
+// `Resolve` — THE way out of a git conflict, from any surface that hit one
+// (built by `resolveConflictAction` in lib/git-outcome.ts). Launches an agentic
+// process seeded with the conflict-resolution prompt for the branch
+// (`origin: 'pull'` finishes without pushing) in the repo that conflicted:
+// `workdir`, keeping the current project when it is that repo (a task repo or a
+// context folder is not); absent → the current project.
 registerCommand('git.resolve-conflict', (args) => {
   const branch = String(args.branch ?? '');
   const origin = args.origin === 'pull' ? 'pull' : 'push';
-  void AgenticProcess.openTab('claude_code', gitResolvePrompt(branch, origin)).catch((e: unknown) => {
+  const workdir = typeof args.workdir === 'string' && args.workdir ? args.workdir : null;
+  const where =
+    workdir && workdir !== dataContext.project?.fs_storage_mount_path ? { fs_storage_mount_path: workdir } : undefined;
+  void AgenticProcess.openTab('claude_code', gitResolvePrompt(branch, origin), where).catch((e: unknown) => {
     notify.error({ title: t`Could not start resolver`, message: String(e) });
   });
 });

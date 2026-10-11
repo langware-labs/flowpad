@@ -206,6 +206,17 @@ describe('sandbox provisioning asks the hub for the outcome', () => {
     });
   });
 
+  it('forwards companions — provisioned beside the project, keeping their ids', async () => {
+    const companion = '66666666-7777-4888-8999-aaaaaaaaaaaa';
+    await launchWithGit({ projectId: PROJECT_ID, companions: [{ gitOrigin: ORIGIN, name: 'q', projectId: companion }] });
+
+    expect(bodyOf('provision-project')).toMatchObject({
+      project_id: PROJECT_ID,
+      companions: [{ git_origin: ORIGIN, name: 'q', project_id: companion }],
+    });
+    expect(bodyOf('provision-project')).not.toHaveProperty('context_projects');
+  });
+
   it('opens through open-service, and never resolves a host itself', async () => {
     await launchWithGit();
 

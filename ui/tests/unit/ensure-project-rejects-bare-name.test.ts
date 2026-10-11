@@ -25,7 +25,6 @@ vi.mock('@src/contexts/view-mode-context', async (importOriginal) => ({
   useIsVibe: () => false,
 }));
 vi.mock('@src/tabs/project-entry', () => ({
-  agenticProcessIdForProjectEntry: vi.fn(() => Promise.resolve(null)),
   dockForProjectEntry: vi.fn(),
 }));
 vi.mock('@src/components/agent-layout/agent-layout', () => ({

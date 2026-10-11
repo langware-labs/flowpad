@@ -65,6 +65,9 @@ export interface IDataSource extends IEntity {
   gitignored?: boolean;
   /** Pull only: never write back to the remote (default false). */
   read_only?: boolean;
+  /** Where a file source's files are on this machine (the folder it places them in, else its own tree);
+   *  null for a record source or one that names no folder yet. Derived by the backend, never stored. */
+  files_root?: string | null;
   cursor?: string | null;
   manifest?: Record<string, unknown>;
   high_water?: string | null;
@@ -243,6 +246,12 @@ export class DataSource extends APIEntity<DataSource> implements IDataSource {
     return this.status === 'active';
   }
 
+  /** Nobody has decided how it starts yet (`DataSource.poll_refusal`: "has not been evaluated"). Transient
+   *  by design — a save resolves it — but a row that lingers here is never polled. */
+  get isUnresolved(): boolean {
+    return this.status === 'new';
+  }
+
   /** Waiting on the user to finish something outside Flowpad (a Slack invite). */
   get needsSetup(): boolean {
     return this.status === 'setup';
@@ -260,11 +269,15 @@ export class DataSource extends APIEntity<DataSource> implements IDataSource {
     return this.health === 'ok' && this.error_code === 'write_back_held';
   }
 
-  /** The scheduler will not poll it until a person acts: a setup step is owed, or
-   *  it is parked (`DataSource.poll_refusal`). Resuming a paused source is not
-   *  attention — it is the fix. */
-  get needsAttention(): boolean {
-    return this.needsSetup || this.isParked;
+  /** Stopped on purpose: nothing is fetched until a person resumes it. */
+  get isPaused(): boolean {
+    return this.status === 'disabled';
+  }
+
+  /** Running, and the last poll failed on something the scheduler retries by itself. Like `isParked`,
+   *  a PAUSED source carrying a stale error is not this. */
+  get isRetrying(): boolean {
+    return this.isActive && this.health === 'transient_error';
   }
 
   /** Mirrors DataSource.is_due — why a source that looks configured sits idle. */
@@ -430,17 +443,22 @@ export class DataSource extends APIEntity<DataSource> implements IDataSource {
    * Idempotent and safe to press repeatedly — it is the button beside "invite
    * the bot to the channel", and the only way out of `setup`.
    */
-  async verify(): Promise<{
-    status: SourceStatus;
-    ready: boolean;
-    /** Which layer answered: a dead token and an un-invited bot both leave the
-     *  source in `setup`, but they are fixed in different places. */
-    layer: 'connection' | 'setup';
-    detail: string;
-    /** What is still not ready. Absent when the connection layer answered —
-     *  it never got as far as the driver's own check. */
-    pending?: string[];
-  }> {
+  async verify(): Promise<VerifyResult> {
     return this.post('verify');
   }
+}
+
+/** What `DataSource.verify` answers — the same shape the stream inbox's attention bar shows in place. */
+export interface VerifyResult {
+  status: SourceStatus;
+  ready: boolean;
+  /** Which layer answered: a dead token and an un-invited bot both leave the
+   *  source in `setup`, but they are fixed in different places. */
+  layer: 'connection' | 'setup';
+  detail: string;
+  /** What is still not ready. Absent when the connection layer answered —
+   *  it never got as far as the driver's own check. */
+  pending?: string[];
+  /** The provider did not answer, so nothing is known about the setup; the status stands. */
+  transient?: boolean;
 }

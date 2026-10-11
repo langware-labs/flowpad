@@ -22,6 +22,9 @@ interface ProjectCloudLinkButtonProps {
  * git checkout, have a remote, be clean or pushed, or have GitHub connected.
  * The mutation is the ordinary `project.share()` action behind the cloud-login
  * gate; this component never writes `remote` itself.
+ *
+ * Once linked, "Send files to cloud" copies the whole folder (as git sees it) to that same
+ * repository — what a launch link or a sandbox needs to check the project out.
  */
 export function ProjectCloudLinkButton({ project }: ProjectCloudLinkButtonProps) {
   const { t } = useLingui();
@@ -54,6 +57,21 @@ export function ProjectCloudLinkButton({ project }: ProjectCloudLinkButtonProps)
     }
   }, [project, requireCloudLogin, t]);
 
+  const sendFiles = useCallback(async () => {
+    if (publishInFlight.current) return;
+    publishInFlight.current = true;
+    setPublishing(true);
+    try {
+      await project.publishFiles();
+      notify.success({ title: t`Files sent to cloud`, message: t`This project can now be opened from the cloud.` });
+    } catch (error) {
+      notify.error({ title: t`Could not send the files`, message: errorMessage(error, t`Sending failed.`) });
+    } finally {
+      publishInFlight.current = false;
+      setPublishing(false);
+    }
+  }, [project, t]);
+
   // The Hub Project page is read-only with respect to desktop publication.
   if (hubMode) return null;
 
@@ -73,7 +91,7 @@ export function ProjectCloudLinkButton({ project }: ProjectCloudLinkButtonProps)
     // by three test files and matching the backend's `hub_published_at` /
     // `project_not_published` vocabulary. Renaming it is a code change
     // disguised as a copy change — don't.
-    return url ? (
+    const badge = url ? (
       <a
         href={url}
         onClick={(event) => {
@@ -94,6 +112,28 @@ export function ProjectCloudLinkButton({ project }: ProjectCloudLinkButtonProps)
         className="inline-flex h-7 items-center gap-1.5 rounded-md border border-green-600/30 bg-green-600/10 px-2 text-xs font-medium text-green-700 dark:text-green-400"
       >
         {body}
+      </span>
+    );
+    return (
+      <span className="inline-flex items-center gap-1.5">
+        {badge}
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={() => void sendFiles()}
+          disabled={publishing}
+          data-testid="project-publish-files"
+          title={t`Copy this project's files to its cloud repository, so it can be opened on another machine or in a sandbox`}
+          className="h-7 gap-1.5 px-2 text-xs"
+        >
+          {publishing ? (
+            <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
+          ) : (
+            <CloudUpload className="h-3.5 w-3.5" aria-hidden />
+          )}
+          <Trans>Send files to cloud</Trans>
+        </Button>
       </span>
     );
   }

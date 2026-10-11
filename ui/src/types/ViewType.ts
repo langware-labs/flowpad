@@ -108,6 +108,14 @@ export interface ViewerMeta {
    * without breaking existing links.
    */
   foldsSubPointer?: boolean;
+  /**
+   * When true, this view is a HOST tab: it draws its own nested strip of child
+   * tabs (`Tab.parent_tab_id` = this tab's id), one level deep — a host is never
+   * a child. Which docks a host accepts as children lives in
+   * `navigation/tab-hosts.ts` (mirrored by `_HOST_CHILD_RULES` in
+   * `flow_sdk/builtin/tab.py`). Vibe is the first host.
+   */
+  hostsTabs?: boolean;
 }
 
 export const VIEWER_REGISTRY: Partial<Record<ViewType, ViewerMeta>> = {
@@ -349,6 +357,16 @@ export const VIEWER_REGISTRY: Partial<Record<ViewType, ViewerMeta>> = {
     canAddAsTab: false,
     chrome: 'fullbleed',
   },
+  // A process shown as the Vibe workspace: chat + Display + its nested child tabs.
+  // `DockPointer.tabHash` folds it onto the process's SHELL identity — one process,
+  // one Tab row, re-pointed between the two.
+  [ViewType.VIBE]: {
+    title: msg`Vibe`,
+    iconName: 'Sparkles',
+    tabLocation: 'dedicated',
+    canAddAsTab: false,
+    hostsTabs: true,
+  },
   [ViewType.SUBGRAPH]: {
     title: msg`Subgraph`,
     iconName: 'Workflow',
@@ -552,4 +570,11 @@ export function viewerTitle(viewType: ViewType | string | null | undefined): str
   if (!viewType) return undefined;
   const descriptor = VIEWER_REGISTRY[viewType as ViewType]?.title;
   return descriptor ? i18n._(descriptor) : undefined;
+}
+
+/** Is this view a HOST tab (it draws its own nested strip of child tabs)? The one
+ *  read of `ViewerMeta.hostsTabs`; which children a host accepts lives in
+ *  `navigation/tab-hosts.ts`. */
+export function viewHostsTabs(viewType: ViewType | string | null | undefined): boolean {
+  return !!viewType && !!VIEWER_REGISTRY[viewType as ViewType]?.hostsTabs;
 }

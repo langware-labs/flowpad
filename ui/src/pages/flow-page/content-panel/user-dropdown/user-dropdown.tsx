@@ -15,6 +15,10 @@ import { notify } from '@src/notifications';
 
 import { AccountInfo } from '@src/components/account/account-info';
 import { UserMenuHeader } from './user-menu-header';
+import { WorkspaceSubmenu } from '@src/components/workspace/workspace-switcher';
+import { isHubOnly } from '@src/navigation/hub-runtime';
+import { setDev, useIsDev } from '@src/components/view-mode';
+import { cn } from '@src/lib/utils';
 
 import { trackEvent } from '@src/utils/analytics';
 import { redirectToConsole } from '@src/utils/navigation';
@@ -194,6 +198,7 @@ export function UserDropdown() {
   const { agentId } = useParams();
   const { user, currentUser } = useAuth();
   const { isConnected } = useConnectionStatus();
+  const devMode = useIsDev();
   const { cloudLoginAvailable } = useContext();
   // In Local (private) data-privacy mode the cloud is off-limits, so no login
   // affordance is shown at all.
@@ -421,10 +426,19 @@ export function UserDropdown() {
           <>
             <TooltipProvider>
               <Tooltip>
-                <DropdownMenu>
+                {/* Non-modal: its items open dialogs (Settings, New workspace…). A modal menu
+                    locks `body` (pointer-events: none) while it is still closing, the dialog
+                    opening on top records that lock as the page's own, and restores it on
+                    close — leaving the whole app unclickable until a reload. */}
+                <DropdownMenu modal={false}>
                   <TooltipTrigger asChild>
                     <DropdownMenuTrigger asChild>
-                      <div className="relative cursor-pointer">
+                      {/* The fire ring marks developer mode — unless the box is
+                          unreachable, whose orange pulse must not be mistaken for it. */}
+                      <div
+                        className={cn('relative cursor-pointer rounded-full', devMode && isConnected && 'dev-fire-ring')}
+                        data-dev-mode={devMode ? 'true' : undefined}
+                      >
                         <Avatar
                           className={`h-8 w-8 transition-opacity hover:opacity-80${!isConnected ? 'animate-pulse shadow-[0_0_8px_2px_rgba(249,115,22,0.6)] ring-2 ring-orange-500' : ''}`}
                           title={!isConnected ? t`Service unavailable` : undefined}
@@ -459,6 +473,10 @@ export function UserDropdown() {
                       pictureUrl={pictureIsUrl ? picture : null}
                       pictureIcon={pictureIcon}
                       initials={avatarInitials}
+                      // Desk only: a workspace is a folder of projects on this machine.
+                      bannerSlot={isHubOnly() ? undefined : <WorkspaceSubmenu />}
+                      devMode={devMode}
+                      onAvatarDoubleClick={() => setDev()}
                     />
                     {/* Rule between who you are and what you can do. `mx-0` so it
                     spans the full menu width — the header block is full-bleed

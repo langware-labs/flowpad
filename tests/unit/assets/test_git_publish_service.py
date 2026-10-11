@@ -63,10 +63,14 @@ def hub(tmp_path, monkeypatch):
         "flow_sdk.assets.hub_repo_sync.mirror_root", lambda repo_id: tmp_path / "hub_git" / "mirrors" / repo_id
     )
     monkeypatch.setattr(
-        "flow_sdk.builtin.asset_publishing._actor_author",
+        "flow_sdk.builtin.asset_publishing.actor_author",
         lambda actor: _async(GitAuthor(name="Q", email="q@example.com", typeid=str(actor))),
     )
+    async def notify_updated(self):
+        saved.append(("announced", self.remote))
+
     monkeypatch.setattr(Agent, "save", save)
+    monkeypatch.setattr(Agent, "notify_updated", notify_updated)
     return bare, calls, saved
 
 
@@ -89,6 +93,27 @@ async def test_an_unlinked_project_refuses_before_the_hub_is_asked(tmp_path, mon
 
     assert raised.value.code is AssetPublishCode.PROJECT_NOT_PUBLISHED
     assert calls == []
+
+
+async def test_an_agent_of_a_git_project_sends_the_projects_files_first(tmp_path, monkeypatch, hub) -> None:
+    """Every way of publishing an agent ends here, so this is where its project's files go
+    with it: an agent the hub cannot stand up inside its project cannot be launched."""
+    _, calls, _ = hub
+    root = tmp_path / "project"
+    project = Project(id=mint_uuid(), name="q", remote=True, fs_storage_mount_path=str(root))
+    agent = _agent_in(project, root)
+    (root / ".git").mkdir()
+    _own(monkeypatch, project)
+    sent: list[int] = []
+
+    async def files(self):
+        sent.append(len(calls))
+
+    monkeypatch.setattr(Project, "publish_files_to_hub", files)
+
+    await publish_git_asset(agent, TypeId(type="user", id=mint_uuid()))
+
+    assert sent == [0], "the project's files went once, before the hub was asked anything about the agent"
 
 
 async def test_publish_pushes_the_asset_into_the_hub_repo_and_registers_it(tmp_path, monkeypatch, hub) -> None:
@@ -118,7 +143,8 @@ async def test_publish_pushes_the_asset_into_the_hub_repo_and_registers_it(tmp_p
     assert agent.origin.head_commit == _git(bare, "rev-parse", "main")
     assert agent.origin.tree == _git(bare, "rev-parse", f"main:{REL}")
     assert agent.remote is True
-    assert saved == [(actor, {"notify": False})]
+    # Saved quietly (no file write), then announced: the page that asked gets a receipt, not the row.
+    assert saved == [(actor, {"notify": False}), ("announced", True)]
     assert project.model_dump(mode="json") == project_before
 
     assert result.project == {"id": project.id}

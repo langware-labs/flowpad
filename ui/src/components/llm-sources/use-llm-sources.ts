@@ -16,7 +16,7 @@ import {
   llmSourcesService,
   type LLMEndpointOffer,
   type LLMEndpointTestResult,
-  type LLMFundingKind,
+  LLMFundingKind,
   type LLMFundingStatus,
   type LLMSource,
   type LLMSourceRef,
@@ -118,6 +118,23 @@ export function endpointOf(
 /** Every source `kind` HAS, narrowed to one funding kind. These are offers — judged on their own
  *  credential, without the preference overlay — so `eligible` here means the source itself is
  *  usable, and "which one is in use" comes from `status.resolved` instead. */
+/** Whether a funding kind string names a hub endpoint. The one spelling of that comparison. */
+function isHubKind(kind: string | undefined): boolean {
+  return kind === (LLMFundingKind.Hub as string);
+}
+
+/** The hub endpoints this account may spend. */
+export function hubOffers(status: LLMFundingStatus | null | undefined): LLMEndpointOffer[] {
+  return (status?.available ?? []).filter((offer) => isHubKind(offer.kind));
+}
+
+/** The capability kinds a hub endpoint pays for, each with the endpoint typeid that pays. */
+export function hubFunded(status: LLMFundingStatus | null | undefined): { kind: string; typeid: string }[] {
+  return Object.entries(status?.resolved ?? {}).flatMap(([kind, pick]) =>
+    pick && isHubKind(endpointOf(status, pick)?.kind) ? [{ kind, typeid: pick.endpoint_typeid }] : [],
+  );
+}
+
 export function sourcesOfKind(
   status: LLMFundingStatus | null | undefined,
   kind: string,

@@ -5,7 +5,7 @@ tasks/*/header.json files that were committed by the sender. If the
 header identifies this user as the recipient (via sender + notification
 data), creates the Task, Spec, and Conversation entities in the local DB.
 
-Called on: server startup, after git_pull, on-demand via API.
+Called on: server startup, after a project pull, on-demand via API.
 """
 
 from __future__ import annotations

@@ -63,12 +63,16 @@ async def show_wizard_fresh(wizard: "Wizard") -> None:
     A run already in progress keeps its record (`reset_run` refuses), so this never blanks a page
     that is showing live work.
     """
+    await _clear_last_run(wizard)
+    await navigate_to_wizard(wizard)
+
+
+async def _clear_last_run(wizard: "Wizard") -> None:
     from flow_sdk.core.wizard.execute import _notify_wizard_watchers  # noqa: PLC0415
     from flow_sdk.core.wizard.state import reset_run  # noqa: PLC0415
 
     if reset_run(str(wizard.id)) is not None:
         await _notify_wizard_watchers(str(wizard.id))
-    await navigate_to_wizard(wizard)
 
 
 #: The started run in flight for each wizard (by id) — the one a newer `start_wizard` replaces.
@@ -78,7 +82,9 @@ _STARTS: "dict[str, asyncio.Task]" = {}
 START_REPLACED = "replaced by a newer start"
 
 
-async def start_wizard(wizard: "Wizard", *, unattended: bool) -> "tuple[Optional[ReturnedValue], WizardResult]":
+async def start_wizard(
+    wizard: "Wizard", *, unattended: bool, shown: bool = True
+) -> "tuple[Optional[ReturnedValue], WizardResult]":
     """Start a wizard, stopping a start already in flight for it first.
 
     The newest start wins, for this wizard only: the first-run trigger and the popup's Start button
@@ -91,12 +97,16 @@ async def start_wizard(wizard: "Wizard", *, unattended: bool) -> "tuple[Optional
 
     A replaced caller answers ``busy`` with `START_REPLACED` rather than raising:
     the HTTP edge maps that to 409, and the trigger logs it.
+
+    ``shown=False`` runs it without putting it on screen: for a run nobody asked to watch, on a
+    machine where it has nothing to ask (the first-run setup of a box the hub launched). Its
+    progress still reaches anyone who opens the wizard themselves.
     """
     from flow_sdk.schema.data_spec.returned_value_spec import CliResult, WizardResult  # noqa: PLC0415
 
     key = str(wizard.id)
     previous = _STARTS.get(key)
-    run = asyncio.ensure_future(_start_wizard(wizard, unattended=unattended, previous=previous))
+    run = asyncio.ensure_future(_start_wizard(wizard, unattended=unattended, shown=shown, previous=previous))
     _STARTS[key] = run
     try:
         return await run
@@ -113,7 +123,7 @@ async def start_wizard(wizard: "Wizard", *, unattended: bool) -> "tuple[Optional
 
 
 async def _start_wizard(
-    wizard: "Wizard", *, unattended: bool, previous: "Optional[asyncio.Task]"
+    wizard: "Wizard", *, unattended: bool, previous: "Optional[asyncio.Task]", shown: bool = True
 ) -> "tuple[Optional[ReturnedValue], WizardResult]":
     """Start a wizard: its LLM source first when its document says it needs one, then its steps.
 
@@ -154,13 +164,14 @@ async def _start_wizard(
         # Until it has unwound: its `execute_wizard` releases the run lock on the
         # way out, and `reset_run` below refuses while that lock is held.
         await asyncio.wait({previous})
-    await show_wizard_fresh(wizard)
+    await (show_wizard_fresh(wizard) if shown else _clear_last_run(wizard))
     spec = wizard.spec()
     source = None
     if spec is not None and spec.requires_llm_source:
         source = await _resolve_llm_source()
         _log.info("llm setup: LLM source — %s", source.detail or ("ok" if source.ok else "not done"))
-        await navigate_to_wizard(wizard)
+        if shown:
+            await navigate_to_wizard(wizard)
     result = await wizard.run(unattended=unattended)
     if spec is not None and spec.requires_llm_source:
         source = await _settle_after_install(source)

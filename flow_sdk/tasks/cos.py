@@ -11,7 +11,7 @@ a voice call, a scheduled launch):
 * on a spawning harness the agent's staff (its ``subagents`` + the default ``general-worker``) are
   registered natively (``--agents``);
 * ``context_data.chief_of_staff`` marks the process, so each turn's instructions carry its open
-  tasks (:func:`open_tasks_block`, read by ``AgenticProcess.resolve_system_instructions``).
+  tasks (:func:`open_tasks_block`, the ``COS_TASKS`` layer of ``system_prompt.compose_layers``).
 """
 
 from __future__ import annotations

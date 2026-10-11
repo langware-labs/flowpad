@@ -1,6 +1,8 @@
 """``flow dep`` — a project's dependencies (``flow.json``), through the running app.
 
     flow dep list                                  # every declared dependency and its state here
+    flow dep add data_source-7c1e… --label "Team knowledge"   # an asset, by id
+    flow dep add data_source-0a9d… --asset data_source-7c1e…  # declared in THAT asset's flow.json
     flow dep add ../langware-os                    # a folder in git is written as its repo
     flow dep add git+https://github.com/acme/handbook#main --path legal --optional
     flow dep add hub:8c1f0b2e-…                    # a hub project
@@ -67,18 +69,22 @@ def list_(project: ProjectOpt = None) -> None:
 
 @dep_app.command("add")
 def add(
-    source: Annotated[str, typer.Argument(help="A folder, a git URL, or git+…/hub:…/file:… .")],
+    source: Annotated[str, typer.Argument(help="An id (<type>-<uuid> / <kind>.id.<uuid>), a folder, a git URL, or git+…/hub:…/file:… .")],
     name: Annotated[Optional[str], typer.Option("--name", help="The dependency's name (default: the folder or repo name).")] = None,
     path: Annotated[Optional[str], typer.Option("--path", help="A folder inside the source.")] = None,
     optional: Annotated[bool, typer.Option("--optional", help="Declare it under optionalDependencies.")] = False,
+    label: Annotated[Optional[str], typer.Option("--label", help="A human-friendly name for the entry.")] = None,
+    description: Annotated[Optional[str], typer.Option("--description", help="What it is for.")] = None,
+    asset: Annotated[Optional[str], typer.Option("--asset", help="Declare it in this asset's own flow.json (a TypeId); ids only.")] = None,
     project: ProjectOpt = None,
 ) -> None:
-    """Declare SOURCE in flow.json and resolve it."""
+    """Declare SOURCE in flow.json (the project's, or --asset's) and resolve it."""
     port = discover_port(required=True)
     raw = source.strip()
     if not raw.startswith(("git+", "hub:", "file:")) and os.path.isdir(os.path.expanduser(raw)):
         raw = caller_abs_path(raw)   # a folder is the CALLER's, not the server's working directory
-    body = {"source": raw, "name": name or "", "path": path or "", "optional": optional}
+    body = {"source": raw, "name": name or "", "path": path or "", "optional": optional,
+            "label": label or "", "description": description or "", "asset": asset or ""}
     ok(post_graph_json(_url(port, _project(port, project), "add-dependency"), body, timeout=FETCH_SECONDS, on_error=_refused))
 
 
@@ -109,13 +115,18 @@ def install(name: Annotated[str, typer.Argument(help="An optional dependency's n
 
 
 @dep_app.command("check")
-def check(name: Annotated[str, typer.Argument(help="The dependency's name.")], project: ProjectOpt = None) -> None:
+def check(
+    name: Annotated[str, typer.Argument(help="The dependency's name in the project's flow.json, or the id a deeper one names.")],
+    project: ProjectOpt = None,
+) -> None:
     """Exit 0 when NAME is ready here, NOT_YET otherwise — the setup wizard's completion check."""
     port = discover_port(required=True)
     data = get_graph_json(_url(port, _project(port, project), "dependencies"), on_error=_refused) or {}
-    row = next((d for d in data.get("dependencies") or [] if d.get("name") == name and not d.get("via")), None)
+    rows = data.get("dependencies") or []
+    # ``project_dependencies.requirement_key``: its name in the project's own file, else the id it names.
+    row = next((d for d in rows if (d.get("source") if d.get("via") else d.get("name")) == name), None)
     if row is None:
-        fail(int(ExitCode.NOT_FOUND), "NOT_FOUND", f"{name!r} is not declared in flow.json")
+        fail(int(ExitCode.NOT_FOUND), "NOT_FOUND", f"{name!r} is not a dependency of this project")
     if row.get("state") != "ready":
         fail(int(ExitCode.NOT_YET), "NOT_READY", f"{name}: {row.get('state')} — {row.get('reason') or ''}".rstrip(" —"), {"dependency": row})
     ok({"dependency": row})

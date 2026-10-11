@@ -1068,9 +1068,12 @@ export interface ScanProjectResponse {
 export async function listProjectsFromComputeNode(
   computeNodeId: string,
   signal?: AbortSignal,
+  workspaceId?: string,
 ): Promise<ListProjectsResponse> {
   const actionInfo = new ActionInfo('list-projects', 'compute_node', computeNodeId, 'GET');
   actionInfo.abortSignal = signal ?? null;
+  // Only that workspace's projects; absent → every project (the list before workspaces).
+  if (workspaceId) actionInfo.queryParameters = { workspace: workspaceId };
   return (
     (await dataManager.callAction<undefined, ListProjectsResponse>(actionInfo)) || {
       projects: [],

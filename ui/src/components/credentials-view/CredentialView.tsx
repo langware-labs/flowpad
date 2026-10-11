@@ -87,6 +87,19 @@ export function CredentialView({ typeid, onGone }: { typeid: string; onGone: () 
             </div>
             <p className="mt-1 font-mono text-xs text-muted-foreground">{row.name}</p>
             {row.description && <p className="mt-2 text-sm text-muted-foreground">{row.description}</p>}
+            {row.neededFor && (
+              <p className="mt-2 text-sm" data-testid="credential-needed-for">
+                <span className="text-muted-foreground">
+                  <Trans>Needed for:</Trans>
+                </span>{' '}
+                {row.neededFor}
+              </p>
+            )}
+            {row.justification && (
+              <p className="mt-1 whitespace-pre-wrap text-xs text-muted-foreground" data-testid="credential-justification">
+                {row.justification}
+              </p>
+            )}
           </div>
           <div className="flex shrink-0 gap-2">
             <Button size="sm" onClick={() => setDraft(valuesDraft(source))} data-testid="credential-child-set-values">

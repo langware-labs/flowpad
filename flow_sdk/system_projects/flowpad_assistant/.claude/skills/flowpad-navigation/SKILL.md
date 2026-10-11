@@ -190,7 +190,7 @@ opens a different screen and reports success.
 | Preferences | `preferences` | my preferences, appearance |
 | Runs | `process-runs` | history |
 | Search | `search` | find |
-| Search indexes | `rag` | embeddings, knowledge index, vector index |
+| Search indexes | `rag` | embeddings, knowledge index, vector index, brain, knowledge base |
 | Settings | `settings` | claude settings |
 | Survey | `survey` | — |
 | System Profile | `system_profile` | claude code status, live status |
@@ -227,6 +227,7 @@ These take a pointer; without one they are an error, not a landing. Get the id f
 | Spec | `spec/<id>` | — |
 | Subgraph | `subgraph/<id>` | — |
 | Tag Graph | `tag/<id>` | tags, taxonomy |
+| Vibe | `vibe/<id>` | vibe session, vibe workspace |
 | WorldView | `worldview/<id>` | world, org graph |
 
 A screen marked *(hub)* lives on the hub surface — address it as `hub/<view>`.

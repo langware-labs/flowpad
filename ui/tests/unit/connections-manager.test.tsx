@@ -589,3 +589,51 @@ describe('ConnectionsManager — credential rows', () => {
     expect(text).not.toMatch(/deleted from the vault/i);
   });
 });
+
+describe('ConnectionsManager — an OAuth connection is a credential', () => {
+  const GOOGLE_ROW = {
+    typeid: 'credential-6f1c2d3e-4a5b-4c6d-8e9f-0a1b2c3d4e5f', name: 'google', title: 'Google', description: '',
+    icon_name: '', help_url: '', setup_wiki: '', setup: '', scope: 'project', project_id: 'p1',
+    environment: 'development', value_store: 'connection', lm_provider: '', kind: 'oauth', provider: 'google',
+    scopes: ['drive.readonly'], missing_scopes: ['drive'], state: 'partial', vars: [],
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    h.providers = [
+      { name: 'github', display_name: 'GitHub' },
+      { name: 'google', display_name: 'Google' },
+    ] as unknown[];
+    h.grants = { github: 'none', google: 'none' };
+    h.statuses = { github: 'DISCONNECTED', google: 'DISCONNECTED' };
+    h.status = { project_id: 'p1', vault_enabled: true, credentials: [GOOGLE_ROW], files: [] };
+  });
+  afterEach(() => {
+    cleanup();
+    h.status = { project_id: null, vault_enabled: true, credentials: [], files: [] };
+  });
+
+  it('lists a connection the project declares before it is held, with Connect, as that credential', () => {
+    render(<ConnectionsManager projectTypeId={PROJECT} />);
+    const row = screen.getByTestId('connection-row-oauth-google');
+    expect(row.getAttribute('data-typeid')).toBe(GOOGLE_ROW.typeid);
+    expect(screen.getByTestId('connection-connect-google')).toBeTruthy();
+    expect(screen.getByTestId('connection-missing-scopes-google').textContent).toContain('drive');
+    expect(screen.getByTestId('connection-usage-google').textContent).toBe('This project');
+    // Never also an API-key row; and a provider neither held nor declared has no row at all.
+    expect(screen.queryByTestId('connection-row-project-google')).toBeNull();
+    expect(screen.queryByTestId('connection-kind-github')).toBeNull();
+  });
+
+  it('selects the credential the URL names', () => {
+    render(<ConnectionsManager projectTypeId={PROJECT} selectedTypeid={GOOGLE_ROW.typeid} />);
+    expect(screen.getByTestId('connection-row-oauth-google').getAttribute('aria-current')).toBe('true');
+  });
+
+  it('keeps Add connection the complement: a declared provider is a row, not an offer', async () => {
+    render(<ConnectionsManager projectTypeId={PROJECT} />);
+    await userEvent.click(screen.getByTestId('add-connection-open'));
+    expect(screen.queryByTestId('add-connection-google')).toBeNull();
+    expect(screen.getByTestId('add-connection-github')).toBeTruthy();
+  });
+});

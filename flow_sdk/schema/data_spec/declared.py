@@ -37,7 +37,15 @@ from flow_sdk.assets.placement import AGENTIC_ASSETS_DIR
 from flow_sdk.schema.data_spec._namespace import loading, qualified
 from flow_sdk.schema.data_spec.data_schema_spec import DataSchemaDocSpec
 from flow_sdk.schema.data_spec.dataset_spec import DatasetSpec, ExampleSpec
-from flow_sdk.schema.data_spec.spec import ENUM_PREFIX, KIND_UNION, OPTIONAL_MARK, DataSpec, _compile, _field_def, _normalize_form
+from flow_sdk.schema.data_spec.spec import (
+    ENUM_PREFIX,
+    KIND_UNION,
+    OPTIONAL_MARK,
+    DataSpec,
+    _compile,
+    _field_def,
+    _normalize_form,
+)
 from flow_sdk.schema.types import EntityType
 
 logger = logging.getLogger(__name__)
@@ -187,12 +195,13 @@ def _refs(form: Any) -> list[str]:
     return []
 
 
-def _qualify(form: Any, ns: str) -> Any:
+def _qualify(form: Any, ns: str, own: str = "") -> Any:
     """Bare names of kinds defined in the SAME namespace, written as their registered tag.
 
     An author in project ``acme`` writes ``navigator.request`` for a sibling; the registry knows it
     as ``--acme--.navigator.request``. The tag a form carries must be the key registered, so the
-    rewrite happens here, once, for names this namespace actually defines.
+    rewrite happens here, once, for names this namespace actually defines -- ``own`` among them:
+    the kind being built, which may name itself (a lead referred by a lead).
     """
     if not ns:
         return form
@@ -203,12 +212,12 @@ def _qualify(form: Any, ns: str) -> Any:
         names = []
         for name in _bare(form).split(KIND_UNION):
             q = qualified(name, ns)
-            names.append(q if q in _PENDING or q in _OWNER else name)
+            names.append(q if q == own or q in _PENDING or q in _OWNER else name)
         return mark + KIND_UNION.join(names)
     if isinstance(form, list):
-        return [_qualify(item, ns) for item in form]
+        return [_qualify(item, ns, own) for item in form]
     if isinstance(form, dict):
-        return {k: _qualify(v, ns) for k, v in form.items()}
+        return {k: _qualify(v, ns, own) for k, v in form.items()}
     return form
 
 
@@ -279,7 +288,7 @@ def _build(folder: Path) -> Optional[type]:
 
     record = doc.resolved_subkind == "record"
     raw = {name: f.shape for name, f in (doc.fields or {}).items()} if record else dict(doc.examples or {})
-    forms = {name: _qualify(_normalize_form(form), read.ns) for name, form in raw.items()}
+    forms = {name: _qualify(_normalize_form(form), read.ns, tag) for name, form in raw.items()}
 
     # Build what this one names before compiling it, so no reference resolves to Any.
     for ref in {r for form in forms.values() for r in _refs(form)}:

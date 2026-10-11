@@ -187,7 +187,7 @@ async def test_a_never_indexed_home_page_agent_resolves_on_the_first_open(tmp_pa
 # ── a web app home: the project opens app-first ────────────────────────────
 
 
-async def _web_app(root: Path, name: str):
+async def _web_app(root: Path, name: str, **manifest):
     """A webapp asset folder in the project (``webapp.json`` + a page), indexed; its row."""
     import flow_sdk.fs_store.indexer.registrations  # noqa: F401 — enrolls MICRO_APP
     from flow_sdk.core import Entity
@@ -195,7 +195,7 @@ async def _web_app(root: Path, name: str):
 
     folder = root / "agentic-assets" / "webapp" / name
     folder.mkdir(parents=True)
-    (folder / "webapp.json").write_text(json.dumps({"name": name}), encoding="utf-8")
+    (folder / "webapp.json").write_text(json.dumps({"name": name, **manifest}), encoding="utf-8")
     (folder / "index.html").write_text("<h1>app first</h1>", encoding="utf-8")
     await reindex_paths([str(folder)])
     app = await Entity.get_by_asset_ref(str(folder), resolve_containing=True, strict=True)
@@ -211,7 +211,7 @@ async def test_a_web_app_is_a_home_page_and_resolves_to_itself(tmp_path):
     answer = await project.set_home_page_action(typeid=str(app.typeid))
 
     assert isinstance(answer, ApiSuccessResponse) and answer.data == {"home_page": str(app.typeid)}
-    assert await project.open_home_page() == {"asset": str(app.typeid), "type": "micro_app"}
+    assert await project.open_home_page() == {"asset": str(app.typeid), "type": "micro_app", "load_run": None}
 
 
 async def test_a_web_app_home_with_no_endpoint_here_is_placed_when_it_opens(tmp_path):
@@ -226,7 +226,7 @@ async def test_a_web_app_home_with_no_endpoint_here_is_placed_when_it_opens(tmp_
         await endpoint.delete()
     _declare(root, str(app.typeid))
 
-    assert await project.open_home_page() == {"asset": str(app.typeid), "type": "micro_app"}
+    assert await project.open_home_page() == {"asset": str(app.typeid), "type": "micro_app", "load_run": None}
     assert [e.backend.type for e in await webapp_endpoints(app.id)] == ["static"]
 
 
@@ -241,3 +241,48 @@ async def test_another_projects_web_app_is_never_a_home_page(tmp_path):
 
     assert not isinstance(refused, ApiSuccessResponse)
     assert await mine.open_home_page() == {"asset": None, "type": None}
+
+
+# ── a web app home is LOADED: up by the time its view mounts ────────────────
+
+
+async def test_opening_a_static_home_app_starts_nothing(tmp_path, monkeypatch):
+    """Files Flowpad serves itself are up as soon as they are placed: the open's load finds nothing to do."""
+    from flow_sdk.builtin import project_setup
+
+    async def never(*_a, **_k):
+        raise AssertionError("a static app has nothing to start")
+
+    monkeypatch.setattr(project_setup, "start_setup", never)
+    root = tmp_path / "static-home"
+    project = await _project(root)
+    app = await _web_app(root, "console")
+    _declare(root, str(app.typeid))
+
+    assert (await project.open_home_page())["load_run"] is None
+
+
+async def test_opening_a_home_app_whose_dev_server_is_down_starts_its_load_and_answers_at_once(tmp_path, monkeypatch):
+    """An app that declares a dev server and has no build is not up until that server answers: the open starts
+    the app's own node of the setup tree — its load wizard alone — and answers its address; the view adopts that
+    run as the app's setup. The open never waits on it."""
+    from flow_sdk.builtin import project_setup
+
+    started = []
+
+    async def start(project, *, root, tree=None, **_kw):
+        started.append((root, (await tree.resolve_node(root)).run.name))
+        return f"setup-{root}"
+
+    monkeypatch.setattr(project_setup, "start_setup", start)
+    root = tmp_path / "dev-home"
+    project = await _project(root)
+    app = await _web_app(root, "console", endpoints=[{
+        "name": "web", "serving": {"type": "proxy", "start_cmd": "npx vite --port {port}", "health": "/"},
+    }])
+    _declare(root, str(app.typeid))
+
+    answer = await project.open_home_page()
+
+    assert answer == {"asset": str(app.typeid), "type": "micro_app", "load_run": f"setup-{app.typeid}"}
+    assert started == [(str(app.typeid), str(app.typeid))], "the node's own chain, as the walk will run it"

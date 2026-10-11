@@ -48,11 +48,13 @@ interface Row {
   url: string;
 }
 
-type UrlCase = { name: string; view_type: string; url: string; layout?: string; page?: string };
+type UrlCase = { name: string; view_type: string; url: string; layout?: string; page?: string; legacy?: boolean };
 
 const fixtureRows: Row[] = (contract.url_cases as UrlCase[])
   // Hub-page rows need the hub runtime (isHubOnly); /dev is the legacy developer layout.
-  .filter((c) => c.page !== 'hub' && c.layout !== 'dev' && !c.url.startsWith('/agent/'))
+  // A `legacy` spelling is a canonicalize case (tests/unit/dock-loader/canonicalize.test.ts),
+  // not a URL family: its scoped twin is a world row below.
+  .filter((c) => c.page !== 'hub' && c.layout !== 'dev' && !c.url.startsWith('/agent/') && !c.legacy)
   .map((c) => ({ name: `${c.view_type}: ${c.name}`, url: c.url }));
 
 /** Our world's own entities, so pointer rows resolve something real. */
@@ -69,6 +71,15 @@ const worldRows: Row[] = [
     url: `/dock/project/${P}/editor/markdown/vfs/compute_node-%40local/w/p/report.md`,
   },
   { name: 'project: the project page', url: `/dock/project/${P}` },
+  { name: 'vibe: an agentic process as the Vibe host (aligned to its project)', url: `/dock/vibe/agentic_process-${PROC}` },
+  {
+    name: 'vibe: an agentic process as the Vibe host (scoped)',
+    url: `/dock/vibe/agentic_process-${PROC}?scope-mode=project&scope-activeProjectId=${P}`,
+  },
+  {
+    name: 'shell: the old Vibe spelling redirects once to the Vibe host',
+    url: `/dock/shell/agentic_process-${PROC}?viewMode=vibe&scope-mode=project&scope-activeProjectId=${P}`,
+  },
   {
     // The entity's asset_ref is the REAL path; the URL spells it through a symlink
     // (macOS tmp: /var → /private/var). Warm must still ask nothing.

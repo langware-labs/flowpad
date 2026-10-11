@@ -429,6 +429,7 @@ def stamp_conversation(conversation, item, *, ours: bool) -> bool:
     ``started_at`` is the first message's time (message time, not ingest). ``address`` is who the
     conversation is with as the channel addresses them: each other side's sender joins it; a message
     WE wrote first names them through its recipients — so a conversation we started can be continued.
+    A message posted in a room (``room_of``: a group) names the room instead — never the member who wrote.
     Answers whether anything changed (the caller saves)."""
     from email.utils import getaddresses  # noqa: PLC0415
 
@@ -436,7 +437,10 @@ def stamp_conversation(conversation, item, *, ours: bool) -> bool:
     when = iso_to_utc(item.occurred_at) if item.occurred_at else None
     if when is not None and (conversation.started_at is None or when < conversation.started_at):
         conversation.started_at, changed = when, True
-    if not ours:
+    room = _room_of(item)
+    if room:
+        who = [room]
+    elif not ours:
         who = [str(item.author_external_id).strip()] if (item.author_external_id or "").strip() else []
     elif not conversation.address:
         who = [addr for _name, addr in getaddresses(list(item.recipients or [])) if addr]
@@ -448,6 +452,15 @@ def stamp_conversation(conversation, item, *, ours: bool) -> bool:
         conversation.address = [*(conversation.address or []), *joined]
         changed = True
     return changed
+
+
+def _room_of(item) -> str:
+    """The room ``item`` was posted in, as its channel addresses it (the driver says), or ``""``."""
+    from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415
+
+    driver = DataDriver.loaded(str(getattr(item, "provider", "") or ""))
+    room_of = getattr(driver.cls, "room_of", None) if driver is not None else None
+    return str(room_of(item) or "").strip() if room_of is not None else ""
 
 
 def _origins(item, source, channel: str, key: str):

@@ -6,6 +6,7 @@ import { notify } from '@src/notifications';
 import { ViewMode } from '@src/contexts/view-mode-context';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { embedVibeSubagent } from '@src/pages/flow-page/use-start-vibe-session';
+import { holdLaunchWatch, releaseLaunchWatch } from './launch-watch';
 
 /**
  * Launch an agent: open a NEW session as it, in Vibe mode, starting with the
@@ -49,11 +50,29 @@ export async function prepareAgentSession(processId: string): Promise<AgenticPro
     await new AgenticProcess({ id: processId }).drainQueue().catch(errLog);
     return null;
   }
-  void proc.watch().catch((e) => console.warn('[agent-launcher] watch failed; live updates degraded', e));
-  // A layer, not the persona: the agent's own system prompt is the identity.
-  await embedVibeSubagent(proc, { asPersona: false });
+  // A lease the session view (or the process's end) gives back — see launch-watch.ts.
+  holdLaunchWatch(proc);
+  try {
+    // A layer, not the persona: the agent's own system prompt is the identity.
+    await embedVibeSubagent(proc, { asPersona: false });
+  } catch (e) {
+    // No view will open for a failed prepare: nothing else would give the lease back.
+    releaseLaunchWatch(proc.id);
+    throw e;
+  }
   await proc.drainQueue().catch(errLog);
   return proc;
+}
+
+/**
+ * A NEW session of `agent` acting in `projectId`, ready and started: `use()` with its auto
+ * prompt queued, then `prepareAgentSession`. Returns the process id; the caller opens it.
+ * For an opener that was asked to START one (the launcher, a launch link) — never a resume.
+ */
+export async function startAgentSession(agent: Agent, projectId: string | null): Promise<string> {
+  const { process_id } = await agent.use(projectId, true);
+  await prepareAgentSession(process_id);
+  return process_id;
 }
 
 export function useAgentLauncher(): {
@@ -68,9 +87,8 @@ export function useAgentLauncher(): {
     async (agent: Agent, projectId?: string | null) => {
       setBusyId(agent.id);
       try {
-        const result = await agent.use(projectId ?? null, true);
-        await prepareAgentSession(result.process_id);
-        await navigation.openShellProcess(result.process_id, { viewMode: ViewMode.Vibe });
+        const processId = await startAgentSession(agent, projectId ?? null);
+        await navigation.openShellProcess(processId, { viewMode: ViewMode.Vibe });
       } catch (e) {
         notify.error({
           title: t`Could not use ${agent.displayName}`,
