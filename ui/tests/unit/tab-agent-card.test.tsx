@@ -20,7 +20,10 @@ vi.mock('@src/navigation/useDockNavigation', () => ({
 }));
 vi.mock('@src/lib/open-external', () => ({ openExternal }));
 vi.mock('@src/components/agents/AgentAvatar', () => ({ AgentAvatar: () => <span data-testid="avatar" /> }));
-vi.mock('@src/contexts/view-mode-context', () => ({ useIsAdvanced: () => false }));
+vi.mock('@src/contexts/view-mode-context', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@src/contexts/view-mode-context')>()),
+  useIsAdvanced: () => false,
+}));
 vi.mock('@src/hooks/use-launching-agent', () => ({ useLaunchingAgent: () => launchingAgent.current }));
 vi.mock('@src/hooks/entity-hooks', () => ({
   useEntity: () => ({ data: { id: 'p1', deployment_id: 'd1', workdir: '/work/qa-target' } }),
