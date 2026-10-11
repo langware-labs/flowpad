@@ -25,10 +25,10 @@ describe('shouldStore', () => {
     }
   });
 
-  it('a tab remembers the mode it was created in; a project only a switch', () => {
-    // A session opened in Terminal and never toggled must resume in Terminal
-    // after a project switch — so its mode is minted when its row is created.
-    expect(VIEW_MODE_STORE).toEqual({ tab: ViewModeStore.TabCreate, project: ViewModeStore.ModeSwitch });
+  it('a session tab remembers the mode it was last shown in; a project remembers none', () => {
+    // Leaving a tab and coming back must never change its mode, however that
+    // mode got on screen — and only a session has one.
+    expect(VIEW_MODE_STORE).toEqual({ tab: ViewModeStore.TabOpen, project: ViewModeStore.Never });
   });
 });
 

@@ -291,10 +291,9 @@ msgstr ""
 msgid "{0} — not downloaded (the link expired)"
 msgstr ""
 
-#. placeholder {0}: LABELS[m]
 #: src/components/view-toggle/view-toggle.tsx
-msgid "{0} — not while the agent is working"
-msgstr "{0} — ليس أثناء عمل الوكيل"
+#~ msgid "{0} — not while the agent is working"
+#~ msgstr "{0} — ليس أثناء عمل الوكيل"
 
 #. placeholder {0}: directCleanup.title
 #: src/routes/loaders/load-shell.ts
@@ -27095,7 +27094,6 @@ msgstr "عرض Hook"
 msgid "View hook config"
 msgstr "عرض إعدادات الخطاف"
 
-#: src/components/view-toggle/view-toggle.tsx
 #: src/i18n/pref-labels.ts
 msgid "View mode"
 msgstr "وضع العرض"

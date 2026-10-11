@@ -12,8 +12,7 @@
  *   5. Re-loading a project whose `locale` already matches performs no
  *      redundant save (backend `updated_date` stays put).
  *
- * Mirrors `project-view-mode-memory.test.ts`: same seams (`loadProject`, the
- * single converged writer), same raw-GET assertions so the fire-and-forget
+ * Seams: `loadProject` and the single converged writer, with raw-GET assertions so the fire-and-forget
  * saves are observed at the source of truth rather than in the entity cache.
  */
 import { instancePreferences, PrefKey, Project } from '@sdk';

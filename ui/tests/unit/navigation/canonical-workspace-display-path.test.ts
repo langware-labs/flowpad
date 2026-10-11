@@ -15,9 +15,8 @@ const hosted = `/dock/project/${PROJ}/process/${HOST}/display/${TAIL}`;
 describe('canonicalWorkspaceDisplayPath', () => {
   it('strips the host when the URL is not explicitly vibe', () => {
     expect(canonicalWorkspaceDisplayPath(hosted, '')).toBe(`/dock/project/${PROJ}/${TAIL}`);
-    expect(canonicalWorkspaceDisplayPath(hosted, '?viewMode=standard')).toBe(
-      `/dock/project/${PROJ}/${TAIL}?viewMode=standard`,
-    );
+    // …and the un-hosted document is an ordinary page: it keeps no mode.
+    expect(canonicalWorkspaceDisplayPath(hosted, '?viewMode=standard')).toBe(`/dock/project/${PROJ}/${TAIL}`);
   });
 
   it('leaves an explicitly vibe URL alone', () => {
@@ -26,7 +25,9 @@ describe('canonicalWorkspaceDisplayPath', () => {
 
   it('preserves the rest of the query, including scope', () => {
     const search = '?viewMode=standard&scope-mode=project&highlight=Plan';
-    expect(canonicalWorkspaceDisplayPath(hosted, search)).toBe(`/dock/project/${PROJ}/${TAIL}${search}`);
+    expect(canonicalWorkspaceDisplayPath(hosted, search)).toBe(
+      `/dock/project/${PROJ}/${TAIL}?scope-mode=project&highlight=Plan`,
+    );
   });
 
   it('keeps the layout keyword and any base path', () => {
