@@ -1421,11 +1421,41 @@ class DataSource(SetupSkippable, Entity):
             raise NotImplementedError(f"the {self.provider} driver cannot {verb} a record")
         return live
 
+    async def _record(self, written: Any, status: str) -> dict:
+        """Keep what the outside system answered a write with, at once -- as a sent message is: the
+        record here is current without waiting for the next sync, whose echo lands on the same row
+        (same origin). Answers ``{item_id, origin, status}``."""
+        from flow_sdk.ingest.ingestor import ingest_items  # noqa: PLC0415
+        from flow_sdk.ingest.legacy_lift import envelope_of  # noqa: PLC0415
+
+        report = await ingest_items([envelope_of(written, data_source_id=str(self.id), provider=self.provider)])
+        return {"item_id": report.outcomes[0].entity_id, "origin": written.origin.model_dump(mode="json"), "status": status}
+
+    async def create_item(self, data: dict) -> dict:
+        """Make one record IN THE OUTSIDE SYSTEM through the driver (as ``update_item``). ``data`` is the
+        driver's record shape (its ``record_type``); the record it answers is kept here at once.
+        ``PermissionError`` a read-only source · ``NotImplementedError`` a driver without ``create``
+        · ``ValueError`` data that is not the driver's record shape."""
+        from pydantic import ValidationError  # noqa: PLC0415
+
+        from flow_sdk.sources.values.items import RecordData  # noqa: PLC0415
+
+        if not isinstance(data, dict) or not data:
+            raise ValueError("data: a non-empty object is required")
+        async with await self._mutable("create") as live:
+            shape = getattr(type(live.source), "record_type", RecordData)
+            try:
+                record = shape.model_validate(data)
+            except ValidationError as exc:
+                raise ValueError(f"data is not a {shape.__name__}: {exc.errors()[0]['msg']}") from None
+            written = await live.source.create(record)
+        return await self._record(written, "created")
+
     async def update_item(self, item_id: str, changes: dict) -> dict:
         """Change one record IN THE OUTSIDE SYSTEM -- the record ``item_id`` (a ``SourceItem`` of this
         source) -- through the driver, with the credential the source already holds: how a field the
         app owns goes back to a system of record (a deal's tags to the CRM). ``changes`` are the
-        outside system's own fields. The record here is NOT touched: the next sync reads it back.
+        outside system's own fields. The record the driver answers is kept here at once.
         ``LookupError`` no such item · ``PermissionError`` a read-only source · ``NotImplementedError``
         a driver without ``update``."""
         if not isinstance(changes, dict) or not changes:
@@ -1433,14 +1463,19 @@ class DataSource(SetupSkippable, Entity):
         origin = await self._item_origin(item_id)
         async with await self._mutable("update") as live:
             written = await live.source.update(origin, dict(changes))
-        return {"item_id": item_id, "origin": written.origin.model_dump(mode="json"), "status": "updated"}
+        return await self._record(written, "updated")
 
     async def delete_item(self, item_id: str) -> dict:
-        """Remove one record FROM THE OUTSIDE SYSTEM, through the driver (as ``update_item``). The
-        record here goes with the next sync."""
+        """Remove one record FROM THE OUTSIDE SYSTEM, through the driver (as ``update_item``), and the
+        record kept here with it."""
+        from flow_sdk.builtin.source_item import SourceItem  # noqa: PLC0415
+
         origin = await self._item_origin(item_id)
         async with await self._mutable("delete") as live:
             await live.source.delete(origin)
+        kept = await SourceItem.get_one({"id": item_id, "data_source_id": self.id})
+        if kept is not None:
+            await kept.delete()
         return {"item_id": item_id, "origin": origin.model_dump(mode="json"), "status": "deleted"}
 
     async def _write_back(self, write: Any) -> ApiResponse:
@@ -1452,6 +1487,14 @@ class DataSource(SetupSkippable, Entity):
             return ApiFailResponse(message=str(exc), status_code=403)
         except (ValueError, NotImplementedError) as exc:
             return ApiFailResponse(message=str(exc), status_code=400)
+
+    @core_action.post(action_name="create_item")
+    async def create_item_action(self) -> ApiResponse:
+        """POST /api/v1/graph/data_source/{id}/create_item — make one record in the outside system.
+
+        Body: ``{"data"}``. 403 a read-only source · 400 a driver that cannot, or data it refuses."""
+        body = await self._body()
+        return await self._write_back(lambda: self.create_item(body.get("data")))
 
     @core_action.post(action_name="update_item")
     async def update_item_action(self) -> ApiResponse:
