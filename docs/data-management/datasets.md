@@ -487,7 +487,7 @@ reload and a shared link reach the same place.
 
 A field names a kind the same way whether it LINKS to a row or holds the value, so the tree says
 which: a kind some dataset keeps rows of is marked `uses`, any other `inside` (stored in the row
-itself) — the rule a row write already applies (`links._inline_detail`).
+itself) — the rule a row write applies (`links.is_row_kind`).
 
 One read backs it: `GET /api/v1/kinds?project=<id>` answers a `schema.tree` value
 (`flow_sdk/schema/data_spec/schema_tree_spec.py`, built by `flow_sdk/datasets/schema_tree.py`).

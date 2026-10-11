@@ -1,5 +1,5 @@
 /**
- * The schema tree's pointer: the selection inside ONE project, as a path. The project is the
+ * The schema tree's pointer: the selection, as a path of kinds. The project is the
  * address's scope (`?scope-mode=project&scope-activeProjectId=<id>`), like every project screen.
  *
  *   /dock/schema-tree                          the project

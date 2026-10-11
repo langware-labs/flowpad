@@ -12,7 +12,7 @@
  * `currentDock`. Unfolding is the only local state.
  */
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import { enumValues, PRIMITIVES, unwrap, type SchemaNode, type Shape } from '@sdk';
+import { DataSource, enumValues, linkTargets, Project, unwrap, type SchemaNode, type SchemaUse, type Shape } from '@sdk';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
@@ -23,7 +23,9 @@ import { subjectEditorPointer } from '@src/navigation/subject-editor';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { useContext } from '@src/hooks/useContext';
 import { cn } from '@src/lib/utils';
-import { bareKind, homeOf, loadSchemaRoots, nodeOf, pathAfterLink, usedBy, type SchemaRoot } from './schema-tree-model';
+import {
+  bareKind, DATA_SCHEMA_TYPE, homeOf, loadSchemaRoots, nodeOf, pathAfterLink, usedBy, type SchemaRoot,
+} from './schema-tree-model';
 import { parseSchemaTreePointer, SOURCE_SEGMENT } from './schema-tree-pointer';
 
 /** A tree row's key: its project, then the kinds down to it. */
@@ -54,16 +56,11 @@ export function SchemaTreeView() {
     };
   }, [projectId, t]);
 
-  // Unfolding: the selection and what leads to it are open unless closed by hand.
-  const [opened, setOpened] = useState<ReadonlySet<string>>(new Set());
-  const [closed, setClosed] = useState<ReadonlySet<string>>(new Set());
+  // Unfolding: the selection and what leads to it are open, unless a row was folded or unfolded by hand.
+  const [folds, setFolds] = useState<ReadonlyMap<string, boolean>>(new Map());
   const selected = rowKey(projectId, path);
-  const unfolded = (k: string) => !closed.has(k) && (opened.has(k) || selected === k || selected.startsWith(`${k}/`));
-  const toggle = (k: string) => {
-    const open = unfolded(k);
-    setOpened((was) => new Set(open ? [...was].filter((x) => x !== k) : [...was, k]));
-    setClosed((was) => new Set(open ? [...was, k] : [...was].filter((x) => x !== k)));
-  };
+  const unfolded = (k: string) => folds.get(k) ?? (selected === k || selected.startsWith(`${k}/`));
+  const toggle = (k: string) => setFolds((was) => new Map(was).set(k, !unfolded(k)));
   const select = (rootId: string, to: string[]) => navigation.openDock(DockPointer.forSchemaTree(rootId, to));
 
   if (!projectId) {
@@ -103,7 +100,7 @@ interface TreeProps {
 
 function Row({
   rootId, at, label, type, how, foldable, mono, strong, selected, unfolded, toggle, select,
-}: Omit<TreeProps, 'model'> & { rootId: string; at: string[]; label: string; type: string; how?: 'inside' | 'link'; foldable?: boolean; mono?: boolean; strong?: boolean }) {
+}: Omit<TreeProps, 'model'> & { rootId: string; at: string[]; label: string; type: string; how?: SchemaUse['held']; foldable?: boolean; mono?: boolean; strong?: boolean }) {
   const { t } = useLingui();
   const Icon = iconForType(type);
   const k = rowKey(rootId, at);
@@ -132,13 +129,13 @@ function Row({
 
 function KindRows({
   rootId, kind, at, how, ...tree
-}: TreeProps & { rootId: string; kind: string; at: string[]; how?: 'inside' | 'link' }) {
+}: TreeProps & { rootId: string; kind: string; at: string[]; how?: SchemaUse['held'] }) {
   const node = nodeOf(tree.model, kind);
-  // A kind already on the path (a lead referred by a lead) is not unfolded again.
+  // A kind already on the path (one that names itself) is not unfolded again.
   const uses = node && !at.slice(0, -1).includes(kind) ? node.uses : [];
   return (
     <li>
-      <Row {...tree} rootId={rootId} at={at} label={node?.name ?? bareKind(kind)} type="data_schema" how={how} foldable={uses.length > 0} mono />
+      <Row {...tree} rootId={rootId} at={at} label={node?.name ?? bareKind(kind)} type={DATA_SCHEMA_TYPE} how={how} foldable={uses.length > 0} mono />
       {uses.length > 0 && tree.unfolded(rowKey(rootId, at)) && (
         <ul className="ml-4 border-l border-border pl-1">
           {uses.map((use) => (
@@ -154,16 +151,16 @@ function SchemaRootRows({ root, ...tree }: TreeProps & { root: SchemaRoot }) {
   const group = 'px-6 pb-0.5 pt-2.5 text-[11px] uppercase tracking-wide text-muted-foreground';
   return (
     <div>
-      <Row {...tree} rootId={root.id} at={[]} label={root.name} type="project" strong />
+      <Row {...tree} rootId={root.id} at={[]} label={root.name} type={Project.type} strong />
       <ul className="ml-4 border-l border-border pl-1">
-        {root.kinds.length > 0 && <li className={group}><Trans>Schemas</Trans></li>}
-        {root.kinds.map((node) => (
+        {root.schemas.length > 0 && <li className={group}><Trans>Schemas</Trans></li>}
+        {root.schemas.map((node) => (
           <KindRows key={node.kind} {...tree} rootId={root.id} kind={node.kind} at={[node.kind]} />
         ))}
         {root.sources.length > 0 && <li className={group}><Trans>Data sources</Trans></li>}
         {root.sources.map((source) => (
           <li key={source.id}>
-            <Row {...tree} rootId={root.id} at={[SOURCE_SEGMENT + source.id]} label={source.name} type="data_source" />
+            <Row {...tree} rootId={root.id} at={[SOURCE_SEGMENT + source.id]} label={source.name} type={DataSource.type} />
           </li>
         ))}
       </ul>
@@ -202,11 +199,13 @@ function SchemaCard({
     if (shape == null) return t`anything`;
     if (Array.isArray(shape)) return <>{t`list of`} {holds(shape[0])}</>;
     if (typeof shape === 'object') return `${t`group`}: ${Object.keys(shape).join(', ')}`;
-    const base = unwrap(shape).base as string;
-    const values = enumValues(base);
+    const values = enumValues(shape);
     if (values) return values.join(' | ');
-    if (PRIMITIVES.has(base)) return base === 'string' ? t`text` : base === 'int' || base === 'float' ? t`number` : base === 'bool' ? t`yes / no` : base;
-    const kinds = base.split('|');
+    const kinds = linkTargets(shape);
+    if (!kinds) {
+      const word = unwrap(shape).base as string;
+      return word === 'string' ? t`text` : word === 'int' || word === 'float' ? t`number` : word === 'bool' ? t`yes / no` : word;
+    }
     return (
       <>
         {kinds.length > 1 && <>{t`one of`} </>}
@@ -220,7 +219,7 @@ function SchemaCard({
   if (!root) return <p className="text-muted-foreground">{t`No project to show.`}</p>;
 
   if (source) {
-    const feeds = root.kinds.filter((n) => n.dataset?.source_id === source.id);
+    const feeds = root.schemas.filter((n) => n.dataset?.source_id === source.id);
     return (
       <>
         <Head title={source.name} tag={t`data source`} />
@@ -235,20 +234,20 @@ function SchemaCard({
   }
 
   if (!node) {
-    const rows = root.kinds.reduce((n, k) => n + (k.dataset?.rows ?? 0), 0);
-    const datasets = root.kinds.filter((k) => k.dataset).length;
+    const rows = root.schemas.reduce((n, k) => n + (k.dataset?.rows ?? 0), 0);
+    const datasets = root.schemas.filter((k) => k.dataset).length;
     return (
       <>
         <Head title={root.name} tag={t`project`} />
         <Facts rows={[
           [t`Folder`, root.folder],
           [t`Holds`, [
-            t`${root.kinds.length} schemas`, t`${datasets} datasets`, t`${rows} rows`,
+            t`${root.schemas.length} schemas`, t`${datasets} datasets`, t`${rows} rows`,
             root.sources.length === 1 ? t`1 data source` : t`${root.sources.length} data sources`,
           ].join(' · ')],
         ]} />
         <Section>{t`Schemas defined here`}</Section>
-        {root.kinds.length ? kindLinks(root.kinds) : <p className="text-muted-foreground">{t`This project defines no schema.`}</p>}
+        {root.schemas.length ? kindLinks(root.schemas) : <p className="text-muted-foreground">{t`This project defines no schema.`}</p>}
       </>
     );
   }

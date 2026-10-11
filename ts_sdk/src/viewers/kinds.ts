@@ -52,10 +52,10 @@ export async function resolveKind(name: string, projectId: string): Promise<stri
   return kind;
 }
 
-/** Every schema the project defines, as one tree: each kind with its fields, the kinds they name
+/** Every schema the project defines, as one tree: each with its fields, the kinds they name
  *  (linked, or held inside the row) and the dataset that keeps its rows — 404 (thrown) for an
  *  unknown project. */
-export function projectKinds(projectId: string): Promise<SchemaTree> {
+export function projectSchemas(projectId: string): Promise<SchemaTree> {
   return apiClient.get<SchemaTree>('/api/v1/kinds', { params: { project: projectId } });
 }
 

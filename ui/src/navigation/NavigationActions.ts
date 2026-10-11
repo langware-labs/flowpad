@@ -144,6 +144,7 @@ function ownerProjectId(dock: DockPointer): string | null {
 export const SCOPE_SEEDED_VIEWS: ReadonlySet<ViewType> = new Set([
   ViewType.ASSETS,
   ViewType.EXPLORER,
+  ViewType.SCHEMA_TREE,
   ViewType.SHELL,
   ViewType.VIBE,
 ]);
