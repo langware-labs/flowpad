@@ -19,6 +19,7 @@ vi.mock('@src/components/data-sources/DataSourceDialog', () => ({ DataSourceDial
 vi.mock('@src/notifications', () => ({ notify: { error: vi.fn(), success: vi.fn(), info: vi.fn() } }));
 
 import { AttachedChannelsBar, groupChannels } from '@src/components/stream-inbox-view/AttachedChannelsBar';
+import { useSourceSetupStore } from '@src/components/setup-wizard/source-setup-store';
 
 function mount(rows: DataSource[], selected = new Set<string>()) {
   const onSelectedChange = vi.fn();
@@ -97,7 +98,7 @@ describe('AttachedChannelsBar', () => {
     expect(onSelectedChange).toHaveBeenCalledWith(new Set());
   });
 
-  it('a channel row that is not listening says why — its setup note, or the error that parked it', () => {
+  it('a channel row that is not listening says why — "Setup required", or the error that parked it', () => {
     const parked = fake('p', 'active', 'gmail', {
       health: 'config_error',
       error_code: 'access_denied',
@@ -108,11 +109,11 @@ describe('AttachedChannelsBar', () => {
     fireEvent.click(screen.getByTestId('attached-channels-details'));
     expect(screen.getAllByTestId('attached-channel-verify').map((e) => e.textContent)).toEqual([
       'access denied: Gmail refused the login',
-      'Pair the phone.',
+      'Setup required',
     ]);
   });
 
-  it('pressing the reason runs the verb that recovers that kind: Verify, or Pull for a held file', () => {
+  it('pressing the reason runs what recovers that kind: Setup for a source in setup, Pull for a held file', () => {
     const owed = fake('s', 'setup', 'telegram', { setup_detail: 'Pair the phone.' });
     const held = fake('h', 'active', 'gmail', { health: 'ok', error_code: 'write_back_held', error_detail: 'a.md' });
     const verify = vi.spyOn(owed, 'verify').mockResolvedValue({ status: 'setup', ready: false, layer: 'setup', detail: '' });
@@ -121,10 +122,11 @@ describe('AttachedChannelsBar', () => {
     mount([held, owed]);
     fireEvent.click(screen.getByTestId('attached-channels-details'));
     const [heldReason, owedReason] = screen.getAllByTestId('attached-channel-verify');
-    expect([heldReason.title, owedReason.title]).toEqual(['Pull: a.md', 'Verify: Pair the phone.']);
+    expect([heldReason.title, owedReason.title]).toEqual(['Pull: a.md', 'Setup: Pair the phone.']);
     fireEvent.click(heldReason);
     fireEvent.click(owedReason);
-    expect([pollNow.mock.calls.length, heldVerify.mock.calls.length, verify.mock.calls.length]).toEqual([1, 0, 1]);
+    expect([pollNow.mock.calls.length, heldVerify.mock.calls.length, verify.mock.calls.length]).toEqual([1, 0, 0]);
+    expect(useSourceSetupStore.getState()).toMatchObject({ open: true, payload: { source: owed } });
   });
 
   it('a channel row names its account — the connected phone, the mailbox — when it has one', () => {

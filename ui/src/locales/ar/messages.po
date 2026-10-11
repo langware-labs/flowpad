@@ -22242,7 +22242,7 @@ msgstr "سيتم إعداد <0>{projectName}</0> في مساحة العمل هذ
 
 #: src/components/webapp-display/WebappSetupGate.tsx
 msgid "Set up again"
-msgstr ""
+msgstr "أعد الإعداد"
 
 #~ msgid "Set up an existing git repository as the context folder"
 #~ msgstr "إعداد مستودع Git موجود كمجلد السياق"
@@ -22305,7 +22305,7 @@ msgstr ""
 
 #: src/components/webapp-display/WebappSetupOverlay.tsx
 msgid "Setting things up"
-msgstr ""
+msgstr "جارٍ الإعداد"
 
 #: src/pages/entry/AgentLaunchLanding.tsx
 msgid "Setting up {name} on a new sandbox…"
@@ -22380,7 +22380,7 @@ msgstr ""
 #: src/components/top-nav-bar/ProjectSetupButton.tsx
 #: src/components/top-nav-bar/ProjectSetupButton.tsx
 msgid "Setup required"
-msgstr ""
+msgstr "الإعداد مطلوب"
 
 #: src/components/conversation/MembersAvatarStack.tsx
 msgid "Several contacts match — pick one from the list"
@@ -28179,3 +28179,11 @@ msgstr "تكبير"
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "Zoom out"
 msgstr "تصغير"
+
+#: src/components/data-sources/source-attention.ts
+msgid "Press Setup to finish it."
+msgstr "اضغط على الإعداد لإكماله."
+
+#: src/components/setup-wizard/SourceSetupDialog.tsx
+msgid "Setup could not start."
+msgstr "تعذّر بدء الإعداد."

@@ -212,7 +212,7 @@ test('3. the details popover is where on/off and delete live', async ({ page }) 
   await expect.poll(() => sourceStatus(sourceId)).toBe('setup');
   await expect(mark).toHaveAttribute('data-state', 'parked');
   await expect(mark).toContainText('!');
-  await expect(row.getByTestId('attached-channel-verify')).toHaveText('Finish setup, then press Verify.');
+  await expect(row.getByTestId('attached-channel-verify')).toHaveText('Setup required');
 
   // The Data Sources screen, from the (still open) list's footer; Verify there.
   await list.getByTestId('attached-channels-see-all').click();
