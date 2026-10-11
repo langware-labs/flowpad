@@ -60,7 +60,7 @@ async def _spawn(command: str, *, cwd: str, env: dict, platform: str):
 
 def flow_env() -> dict[str, str]:
     """How a command reaches THIS Flowpad: ``$FLOWPAD_FLOW`` is this install's ``flow`` and
-    ``FLOW_INSTANCE`` this process's instance.
+    ``FLOW_INSTANCE`` this process's instance, and ``FLOWPAD_PYTHON`` its SDK interpreter.
 
     A step that asks Flowpad something (``"$FLOWPAD_FLOW" source step …``) must reach the backend
     that is running it — not whichever ``flow`` is first on PATH, and not the ``prod`` instance an
@@ -70,7 +70,7 @@ def flow_env() -> dict[str, str]:
     from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
 
     script = Path(sys.executable).parent / ("flow.exe" if sys.platform == "win32" else "flow")
-    env = {"FLOW_INSTANCE": get_instance_settings().instance_name}
+    env = {"FLOW_INSTANCE": get_instance_settings().instance_name, "FLOWPAD_PYTHON": sys.executable}
     if script.exists():
         env["FLOWPAD_FLOW"] = str(script)
     return env

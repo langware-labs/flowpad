@@ -11,7 +11,7 @@ places that answered these questions one at a time cannot disagree:
 | ``credential:<name>`` | — | ask each missing value → ``credentials set`` ✓ ``credentials check`` (same) |
 | ``data_source-<id>`` | the connections and credentials it needs, then its last setup stage | — |
 | ``stage:<source>:<wizard>`` | the stage before it (a stage is never set up before the one it follows) | the driver's stage wizard, FOR the source — recorded where the stage list reads it |
-| ``micro_app-<id>`` | — | install → build → start (``webapp_setup``), each with its own check; its ``on_load`` is the same chain |
+| ``micro_app-<id>`` | attached declarations | install → build (``webapp_setup``); ``on_load`` starts its server and verifies its display |
 | ``asset_setup:<name>`` | its declared children | its declared ``prepare`` / ``run`` wizards (and ``on_load``, run on display — ``core/setup/load``) |
 
 A declared ``asset_setup`` attaches to the node it is for: its ``subject`` (a node id, or
@@ -61,11 +61,12 @@ class ProjectTree:
     """One project's derived setup tree. ``load()`` once, then hand ``resolve_node`` / ``resolve_op`` to
     ``execute_setup``. Built in memory per run, like the setup wizard it replaces — nothing is written."""
 
-    def __init__(self, project: Any, *, ai: bool = True):
+    def __init__(self, project: Any, *, ai: bool = True, display: str = ""):
         self.project = project
         self.pid = str(project.id)
         self.root = f"project-{self.pid}"
         self.ai = ai
+        self.display = display
         self.nodes: dict[str, SetupNode] = {}
         self.ops: dict[str, ComputeOpSpec] = {}
         self.gaps: list = []
@@ -215,23 +216,29 @@ class ProjectTree:
         if self._skipped(node_id, label, app.setup_skipped):
             return node_id
         steps = []
-        for step, what in (("install", "Install"), ("build", "Build"), ("start", "Start")):
+        for step, what in (("install", "Install"), ("build", "Build"), ("start", "Start"), ("present", "Verify display")):
             op = _op(f"{node_id}:{step}", f"{what} {label}", step)
             self.ops[op.name] = op
             steps.append({"id": step, "label": what, "kind": "compute", "ref": op.name})
-        chain = WizardSpec.model_validate({"name": node_id, "label": f"Run {label}", "steps": steps})
-        # Loading the app is making sure it is up: the same chain, whose checks are what "up" means
-        # (installed, built, a server answering its health path). Done already, it costs three checks.
-        self.nodes[node_id] = SetupNode(id=node_id, label=label, inputs=(("webapp", str(app.id)),), run=chain, on_load=chain)
+        setup = WizardSpec.model_validate({"name": node_id, "label": f"Set up {label}", "steps": steps[:2]})
+        load = WizardSpec.model_validate({"name": node_id, "label": f"Load {label}", "steps": steps[2:]})
+        # A stopped server is a LOAD, never a missing setup prerequisite.
+        inputs = (("webapp", str(app.id)), ("display", self.display))
+        self.nodes[node_id] = SetupNode(id=node_id, label=label, inputs=inputs, run=setup, on_load=load)
         return node_id
 
     async def load_one(self, asset: Any) -> "ProjectTree":
-        """Only ``asset``'s own node — what a LOAD needs (``core/setup/load``). A web app's node derives from
-        its row alone, so no requirement, source or declared setup is read; any other asset needs the tree."""
-        if getattr(asset, "get_type", lambda: "")() == "micro_app" and getattr(asset, "asset_ref", ""):
-            self._webapp_node(asset)
-            return self
-        return await self.load()
+        """Include declarations attached to the project and the displayed asset.
+
+        Deriving only the app row silently dropped its declared setup/on_load children.
+        The project is the provider lifecycle boundary, even when a caller opens one app.
+        """
+        await self.load()
+        if getattr(asset, "get_type", lambda: "")() == "micro_app" and str(asset.typeid) not in self.nodes:
+            node_id = self._webapp_node(asset)
+            root = self.nodes[self.root]
+            self.nodes[self.root] = dataclasses.replace(root, children=(*root.children, node_id))
+        return self
 
     async def _declared(self, sources: list, under: dict[str, list[str]]) -> None:
         """Every ``asset_setup`` the project's folder or its sources' drivers hold, attached where it is for."""

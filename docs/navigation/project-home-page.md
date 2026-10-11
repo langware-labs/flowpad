@@ -14,8 +14,8 @@ two kinds:
 * a **web app** (`micro_app`) — the project opens app-first, on
   `/dock/app/micro_app-<uuid>` pinned to the project (`projectScope`; the address is
   described in `docs/tabs/display.md`, *Every app is an address*). `Project.open_home_page`
-  places the app's static endpoint on this machine first (`place_webapp_locally`,
-  idempotent), so the view finds something to serve.
+  invokes Load; its presentation step verifies the entry and repairs a missing local
+  endpoint in the shared background run.
 
 Unset (`null`) is the default home.
 
@@ -25,8 +25,15 @@ Unset (`null`) is the default home.
 * `POST /api/v1/graph/project/<id>/set-home-page {typeid}` — an empty `typeid` clears it;
 * the TS SDK: `project.setHomePage(typeid | null)`.
 
-`GET /api/v1/graph/project/<id>/home-page` returns `{asset, type}` for the loader; a failure
+`GET /api/v1/graph/project/<id>/home-page` returns `{asset, type, lifecycle, load_run}` for the loader; a failure
 comes back as a success envelope carrying `error`, so the loader never reads it as "no home".
+Opening invokes the provider's [Load lifecycle](../dependency-lifecycle.md): missing setup
+returns `setup_required`; approval runs setup and then operational `on_load`. The home
+remains addressable while setup is pending. Long setup work runs in the background.
+
+A dependency's Open uses its provider's home, with provider and consumer project identities
+carried separately in the tab URL. Reload retains the consuming project used to configure
+connections and agent bindings; opening the provider's admin does not change asset ownership.
 
 ## When it opens
 

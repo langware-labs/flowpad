@@ -28544,3 +28544,29 @@ msgstr "הגדל"
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "Zoom out"
 msgstr "הקטן"
+
+#: src/components/project-setup/ProjectLoadDialog.tsx
+msgid "{projectName} requires setup"
+msgstr "{projectName} requires setup"
+
+#: src/components/webapp-display/WebappDisplay.tsx
+msgid "Checking the app…"
+msgstr "Checking the app…"
+
+#: src/components/webapp-display/WebappSetupGate.tsx
+msgid "Opening app…"
+msgstr "Opening app…"
+
+#: src/project-home-page/AgentHomeAfterLoad.tsx
+msgid "Opening your agent…"
+msgstr "Opening your agent…"
+
+#: src/components/project-setup/ProjectLoadDialog.tsx
+msgid "Preparing this project for use."
+msgstr "Preparing this project for use."
+
+#: src/components/project-home/ProjectDependenciesCard.tsx
+#: src/components/project-setup/ProjectLoadDialog.tsx
+#: src/components/project-setup/ProjectLoadGate.tsx
+msgid "Preparing…"
+msgstr "Preparing…"

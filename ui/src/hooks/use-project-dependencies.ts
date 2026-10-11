@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   dataContext,
   onProjectDependenciesChanged,
+  onProjectLoadChanged,
   type DependencyState,
   type Project,
   type ProjectContextDirInfo,
@@ -109,6 +110,11 @@ export function useProjectDependencies(
     if (!fetchStates || !projectId) return;
     return onProjectDependenciesChanged(projectId, () => void refetch());
   }, [fetchStates, projectId, refetch]);
+
+  useEffect(() => {
+    if (!fetchStates) return;
+    return onProjectLoadChanged(() => void refetch());
+  }, [fetchStates, refetch]);
 
   /** Declare a dependency. `source` is anything `add-dependency` takes — a
    *  `git+…` / `hub:…` / `file:…` source, a local folder or a bare git URL.

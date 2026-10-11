@@ -111,6 +111,11 @@ site.dependency_warnings()`), counted by the project's setup readiness, and fetc
 setup wizard. `site.dismiss_dependency_warning(name)` silences it until Flowpad restarts.
 `site.install_dependency(name)` brings in an optional one.
 
+Add and install also invoke the resolved provider project's [Load lifecycle](../dependency-lifecycle.md).
+`project_id` identifies that provider, `home_page` exposes its declared home, and `lifecycle`
+reports `setup_required`, `running`, `ready`, or `failed` separately from file resolution.
+Missing setup requires explicit approval; listing dependencies never starts setup.
+
 ## 4. A process in one project opens a document from the other
 
 The process belongs to `site` — `project_id` is the binding, and its working directory

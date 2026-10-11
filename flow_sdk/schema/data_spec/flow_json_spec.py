@@ -52,6 +52,7 @@ from pydantic import ConfigDict, Field, field_validator, model_validator
 
 from flow_sdk.api.api_types.identifier import is_valid_entity_id
 from flow_sdk.fs_store.origin.fs_origin import is_safe_rel_path
+from flow_sdk.schema.data_spec.asset_setup_spec import LoadResult
 from flow_sdk.schema.data_spec.spec import DataSpec
 from flow_sdk.schema.data_spec.value_ref import parse_ref as parse_kind_id
 from flow_sdk.tags.envelope import parse_target
@@ -388,6 +389,11 @@ class DependencyState(DataSpec):
     typeid: Optional[str] = None
     label: Optional[str] = None
     description: Optional[str] = None
+    #: The provider project on this machine; never the consuming project's id.
+    project_id: Optional[str] = None
+    home_page: Optional[str] = None
+    #: Resolution and operational readiness are deliberately separate.
+    lifecycle: Optional[LoadResult] = None
     #: A required, not-ready dependency whose warning was dismissed until the next restart.
     dismissed: bool = False
 

@@ -172,7 +172,7 @@ describe('project home page redirect — a web app home (the project opens app-f
     expect(landed.pathname).toBe(`/dock/app/${APP}`);
     const dock = DockPointer.fromUrl(landed.pathname + landed.search);
     expect(dock?.scopeProjectId).toBe(PROJECT_ID);
-    expect(isProjectHomePage(PROJECT_ID, dock!)).toBe(true);
+    expect(isProjectHomePage(PROJECT_ID, dock)).toBe(true);
     expect(mocks.agentGetById).not.toHaveBeenCalled();
   });
 
@@ -184,6 +184,20 @@ describe('project home page redirect — a web app home (the project opens app-f
     const address = appDockAddress(DockPointer.fromUrl(landed.pathname + landed.search));
 
     expect(address?.microAppId).toBe(APP.slice('micro_app-'.length));
-    expect(address?.options).toEqual({});
+    expect(address?.options).toEqual({ providerProject: PROJECT_ID });
+  });
+});
+
+describe('project home prerequisite gate', () => {
+  it('does not launch the agent before missing setup has been approved', async () => {
+    mocks.openHomePage.mockResolvedValue({ asset: AGENT, type: 'agent', lifecycle: {
+      state: 'setup_required', project_id: PROJECT_ID, detail: 'Setup required', run: null, asset: AGENT,
+    } });
+    const response = await projectHomePageRedirect(new Request(LAUNCH_URL));
+    const dock = DockPointer.fromUrl(locationOf(response));
+    expect(dock.options?.providerProject).toBe(PROJECT_ID);
+    expect(dock.options?.homeAgent).toBe(AGENT);
+    expect(mocks.use).not.toHaveBeenCalled();
+    expect(mocks.agentGetById).not.toHaveBeenCalled();
   });
 });

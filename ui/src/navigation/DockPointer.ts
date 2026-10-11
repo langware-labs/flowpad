@@ -2308,6 +2308,11 @@ export class DockPointer implements IDockPointer {
     if (this.isActiveDisplay && this.hostProcessId) {
       return `${pagePrefix}${ACTIVE_DISPLAY_HASH_NS}|${this.hostProcessId}`;
     }
+    // A dependency home is one tab per provider/consumer pair. Its runtime options
+    // remain presentation-only, but two consumers must never configure one another.
+    if (this.options?.providerProject && this.options?.consumerProject) {
+      return `${pagePrefix}dependency-home|${this.options.providerProject}|${this.options.consumerProject}`;
+    }
     // A scope-keyed view (Assets, Explorer) is a SINGLE tab per scope: every
     // sub-pointer (asset type/folder/editor, explorer folder) of one scope folds
     // into ONE tab. Identity = the scope filter (global when unset), NOT the
@@ -2416,6 +2421,16 @@ export class DockPointer implements IDockPointer {
         options: { [ACTIVE_DISPLAY_PARAM]: '1' },
         tabHash: this.tabHash,
         workspaceContent: true,
+      });
+    }
+    // Dependency homes retain their execution provider and consuming-project context
+    // in storage, so the backend and a reopened chip share the URL's pair identity.
+    if (this.options?.providerProject && this.options?.consumerProject) {
+      return JSON.stringify({
+        viewType: this.viewType,
+        pointer: this.pointer ?? '',
+        options: this.options,
+        tabHash: this.tabHash,
       });
     }
     // Scope-keyed identity is the SCOPE, not the sub-pointer. Normalize the pointer to
