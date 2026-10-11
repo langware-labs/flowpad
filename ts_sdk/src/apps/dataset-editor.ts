@@ -15,6 +15,8 @@ import type { Mounted } from '../viewers/contract';
 import { h } from '../viewers/dom';
 import { appRoot, datasetViewerContext, hostDataset, mountLabel } from './dataset-app';
 import { editorsFor } from './editors';
+import { projectScope, scopeFilterToDockOptions } from '../utils/scope-filter';
+import { ViewType } from '../utils/ui/view-types';
 import { appOption, applyHostTheme, navigateHost } from './host';
 
 /** A row a run answered and nobody has labelled yet -- what a reviewer works through. */
@@ -180,8 +182,8 @@ async function run(root: HTMLElement, status: HTMLElement): Promise<void> {
   // The schema tree is the host's own screen: this dataset's project is the address's scope, its
   // row schema the selection.
   function openSchema() {
-    const scope = new URLSearchParams({ 'scope-mode': 'project', 'scope-activeProjectId': dataset.project_id ?? '' });
-    void scope; navigateHost({ address: `/dock/schema-tree/${dataset.rowKind ?? ''}` }); // LOOP-REVERT
+    const scope = new URLSearchParams(scopeFilterToDockOptions(projectScope(dataset.project_id)));
+    navigateHost({ address: `/dock/${ViewType.SCHEMA_TREE}/${dataset.rowKind ?? ''}?${scope}` });
   }
 
   async function validate() {

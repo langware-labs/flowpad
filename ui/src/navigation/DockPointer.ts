@@ -2238,7 +2238,9 @@ export class DockPointer implements IDockPointer {
    * is the dock's scope, so the loader selects it and the tab belongs to it.
    */
   static forSchemaTree(projectId: string, path: string[] = [], layout: Layout = Layout.DOCK): DockPointer {
-    return new DockPointer(ViewType.SCHEMA_TREE, schemaTreePointer(path), {}, layout); // LOOP-REVERT
+    return new DockPointer(ViewType.SCHEMA_TREE, schemaTreePointer(path), {}, layout).withScopeFilter(
+      projectScope(projectId),
+    );
   }
 
   /**
