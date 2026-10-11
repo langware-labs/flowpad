@@ -15,6 +15,9 @@ import { resolveProcessDisplayName } from '@src/components/terminal/process-disp
 import { formatTimeAgo, useLastStatusChange } from '@src/store/pending-actions-store';
 import { useEntityLocationLabel } from '@src/components/graph-view/ui/EntityIcon';
 import { TabTooltipName } from '@src/components/tabs/TabTooltipName';
+import { AgentCardBody } from '@src/components/agents/AgentIntroCard';
+import { useLaunchingAgent } from '@src/hooks/use-launching-agent';
+import { useIsAdvanced } from '@src/contexts/view-mode-context';
 
 import React, { useMemo } from 'react';
 
@@ -81,6 +84,18 @@ const InfoRow: React.FC<{ label: string; value: string }> = ({ label, value }) =
   </div>
 );
 
+/** A path on one line — clipped, always left-to-right (a session's directory, a document's file). */
+export const WorkdirLine: React.FC<{ workdir: string; className?: string }> = ({ workdir, className }) => (
+  <p
+    className={`truncate font-mono text-[10px] text-muted-foreground ${className ?? ''}`}
+    dir="ltr"
+    title={workdir}
+    data-testid="tab-workdir"
+  >
+    {workdir}
+  </p>
+);
+
 const ProcessInfoTooltip: React.FC<{ process: AgenticProcess; statusReason?: string }> = ({
   process,
   statusReason,
@@ -110,11 +125,7 @@ const ProcessInfoTooltip: React.FC<{ process: AgenticProcess; statusReason?: str
           </span>
         )}
       </div>
-      {workdir && (
-        <p className="max-w-[240px] truncate font-mono text-[10px] text-muted-foreground" title={workdir}>
-          {workdir}
-        </p>
-      )}
+      {workdir && <WorkdirLine workdir={workdir} className="max-w-[240px]" />}
       <div className="space-y-1 border-t pt-1.5">
         <InfoRow
           label="Created"
@@ -131,23 +142,43 @@ const ProcessInfoTooltip: React.FC<{ process: AgenticProcess; statusReason?: str
 };
 
 /**
- * Tooltip body for a process chip. The strip renders chips from `TabRow` alone, so
- * an off-screen chip has no backing entity. This fetches the process ON DEMAND —
- * Radix mounts `TooltipContent`'s children only when the tooltip opens, so the
- * fetch fires on hover, never at strip build. Until it resolves (or 404s), a lean
- * header from the Tab label is shown.
+ * Hover card for a session chip, in every view mode. A session launched as an
+ * agent shows that agent's full card (who it is, what it runs on, where it
+ * lives, a way to open it) above where the session is working; any other
+ * session keeps what it showed before — the process details in advanced mode,
+ * the bare name otherwise. The strip renders chips from `TabRow` alone, so this
+ * fetches the process ON DEMAND: Radix mounts `TooltipContent`'s children only
+ * when the tooltip opens, so the fetch fires on hover, never at strip build.
  */
-export const LazyProcessTooltip: React.FC<{
+export const ProcessTabCard: React.FC<{
   processId: string;
   fallbackName: string;
   statusReason?: string;
 }> = ({ processId, fallbackName, statusReason }) => {
+  const isAdvanced = useIsAdvanced();
   const { data: process } = useEntity<AgenticProcess>(new TypeId(AgenticProcess.type, processId));
-  if (process) return <ProcessInfoTooltip process={process} statusReason={statusReason} />;
+  const agent = useLaunchingAgent(process?.deployment_id);
+  const details = process && isAdvanced ? <ProcessInfoTooltip process={process} statusReason={statusReason} /> : null;
+
+  if (!agent) {
+    if (details) return <div className="p-2.5">{details}</div>;
+    return (
+      <div className="space-y-1 px-3 py-1.5">
+        <TabTooltipName name={fallbackName} className="font-normal" />
+        {statusReason && <p className="text-[11px] text-amber-500">{statusReason}</p>}
+      </div>
+    );
+  }
   return (
-    <div className="min-w-[180px] space-y-1">
-      <TabTooltipName name={fallbackName} />
-      {statusReason && <p className="text-[11px] text-amber-500">{statusReason}</p>}
+    <div className="w-72" data-testid="tab-agent-card">
+      <AgentCardBody agent={agent} />
+      {details ? (
+        <div className="border-t border-border p-2.5">{details}</div>
+      ) : (
+        process?.workdir && (
+          <WorkdirLine workdir={process.workdir} className="border-t border-border px-3 py-2" />
+        )
+      )}
     </div>
   );
 };

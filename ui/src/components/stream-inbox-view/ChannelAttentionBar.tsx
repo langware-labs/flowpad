@@ -7,7 +7,8 @@
  * filtered list is empty or stale, and a tooltip is not where a person learns why.
  * This strip sits between the filter row and the list and says, per source: the
  * reason, the next step, and the verb that takes it — Verify, Resume or Pull — beside
- * the source's settings, its setup wizard and its help page.
+ * the source's settings and its help page. A source in setup reads "Setup required" and
+ * leads with Setup, whatever its driver; its own note is the tooltip.
  *
  * Verify's answer is shown IN the strip, not toasted: the person is looking here.
  * The strip unmounts by itself once the entity updates to a listening state, because
@@ -19,23 +20,25 @@
  */
 import type { ReactNode } from 'react';
 import type { DataDriver, DataSource } from '@sdk';
-import { CheckCircle2, Play, RefreshCw, Settings2 } from 'lucide-react';
+import { CheckCircle2, Play, RefreshCw, Wrench } from 'lucide-react';
 import { i18n } from '@lingui/core';
 import { msg } from '@lingui/core/macro';
 import { useLingui } from '@lingui/react/macro';
-import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { cn } from '@src/lib/utils';
 import { Button } from '@src/components/ui/button';
 import { WikiButton } from '@src/components/wiki-tip';
 import { SetupStagesButton } from '@src/components/setup-wizard/SetupStagesButton';
-import { openSource } from '@src/components/data-sources/data-sources-pointer';
+import { SourceSettingsButton } from '@src/components/data-sources/SourceSetupButton';
 import {
   ATTENTION,
   type AttentionKind,
   type AttentionReason,
+  attentionHeadline,
   attentionText,
+  attentionVerbs,
 } from '@src/components/data-sources/source-attention';
 import { sourceGlyphs } from '@src/components/data-sources/source-icon';
+import { openSourceSetup } from '@src/components/setup-wizard/source-setup-store';
 import { useSourcePull } from '@src/components/data-sources/source-parts';
 import { useSourceToggle } from '@src/components/data-sources/use-source-toggle';
 import { type VerifyOutcome, useSourceVerify } from '@src/components/data-sources/use-source-verify';
@@ -108,23 +111,30 @@ function AttentionRow({
   spec: DataDriver | undefined;
 }) {
   const { t } = useLingui();
-  const { navigation } = useDockNavigation();
   const { verify, busy: verifying, last } = useSourceVerify(source, { quiet: true });
   const { toggle, busy: toggling } = useSourceToggle(source);
   const { pull, pulling } = useSourcePull(source);
   const { Base, Badge } = sourceGlyphs(spec, source.channel);
   const name = source.name || source.provider;
-  const { verb, next: nextStep } = ATTENTION[reason.kind];
+  const { next: nextStep, headline } = ATTENTION[reason.kind];
+  const verbs = attentionVerbs(reason);
+  const inSetup = verbs.includes('setup');
 
   // What is wrong, and what to do. After a Verify press, its answer replaces both until the
   // entity itself moves on (a ready answer unmounts the row as soon as the row updates).
-  const { wrong, next } = verifyAnswer(last) ?? { wrong: attentionText(reason), next: i18n._(nextStep) };
+  // A kind with one name (setup) says only that; the source's note and the next step are its tooltip.
+  const answer = verifyAnswer(last);
+  const step = i18n._(nextStep);
+  const wrong = answer?.wrong ?? attentionHeadline(reason);
+  const next = answer?.next ?? (headline ? '' : step);
+  const behind = !answer && headline ? `${attentionText(reason)} ${step}` : undefined;
 
-  const action = {
+  const actions = {
+    setup: { Icon: Wrench, label: t`Setup`, run: () => openSourceSetup(source), busy: false },
     verify: { Icon: CheckCircle2, label: t`Verify`, run: verify, busy: verifying },
     resume: { Icon: Play, label: t`Resume`, run: toggle, busy: toggling },
     pull: { Icon: RefreshCw, label: t`Pull`, run: pull, busy: pulling },
-  }[verb];
+  };
 
   return (
     <div
@@ -138,40 +148,37 @@ function AttentionRow({
           {name}
           {source.account_key ? <span className="text-muted-foreground"> · {source.account_key}</span> : null}
         </div>
-        <div className="break-words" data-testid="channel-attention-wrong">
+        <div className="break-words" title={behind} data-testid="channel-attention-wrong">
           {wrong}
         </div>
         <div className="flex flex-wrap items-center gap-x-2 text-muted-foreground" data-testid="channel-attention-next">
           <span>{next}</span>
-          {spec?.setup_wiki && reason.kind === 'setup' && (
+          {spec?.setup_wiki && inSetup && (
             <WikiButton wikiword={spec.setup_wiki} label={t`How to finish setup`} />
           )}
         </div>
       </div>
       <div className="flex shrink-0 items-center gap-1">
-        <Button
-          size="sm"
-          variant="secondary"
-          className="h-7 gap-1.5"
-          disabled={action.busy}
-          onClick={() => void action.run()}
-          data-testid={`channel-attention-${verb}`}
-        >
-          <action.Icon className="size-3.5" />
-          {action.label}
-        </Button>
-        <SetupStagesButton source={source} spec={spec} />
-        <Button
-          size="sm"
-          variant="ghost"
-          className="h-7 gap-1.5"
-          onClick={() => openSource(navigation, source.id, 'settings')}
-          aria-label={t`Open settings of ${name}`}
-          data-testid="channel-attention-settings"
-        >
-          <Settings2 className="size-3.5" />
-          {t`Settings`}
-        </Button>
+        {verbs.map((verb) => {
+          const { Icon, label, run, busy } = actions[verb];
+          return (
+            <Button
+              key={verb}
+              size="sm"
+              // Setup is the one thing to press; every other verb sits beside it.
+              variant={verb === 'setup' ? 'default' : 'secondary'}
+              className="h-7 gap-1.5"
+              disabled={busy}
+              onClick={() => void run()}
+              data-testid={`channel-attention-${verb}`}
+            >
+              <Icon className="size-3.5" />
+              {label}
+            </Button>
+          );
+        })}
+        {!inSetup && <SetupStagesButton source={source} spec={spec} />}
+        <SourceSettingsButton source={source} testId="channel-attention-settings" />
       </div>
     </div>
   );
