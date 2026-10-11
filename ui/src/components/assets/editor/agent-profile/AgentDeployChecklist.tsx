@@ -9,11 +9,11 @@ import { StepList } from '@src/components/ui/step-list';
 import { ProjectCloudLinkButton } from '@src/components/project-home/ProjectCloudLinkButton';
 import { useCloudAuthed } from '@src/hooks/use-cloud-authed';
 import { useCloudLoginGate } from '@src/hooks/use-cloud-login-gate';
-import { errorMessage } from '@src/lib/error-message';
 import { isHubOnly } from '@src/navigation/hub-runtime';
 import { notify } from '@src/notifications';
 import type { Step, StepStatus } from '@src/hooks/use-step-flow';
 
+import { AgentPublishButton } from './AgentPublishButton';
 import {
   DEPLOY_STEP_IDS,
   deployBlocker,
@@ -65,7 +65,6 @@ export function AgentDeployChecklist({ agent, onReadinessChange }: AgentDeployCh
   const requireCloudLogin = useCloudLoginGate();
 
   const [loginBusy, setLoginBusy] = useState(false);
-  const [publishBusy, setPublishBusy] = useState(false);
   const [version, setVersion] = useState<AgentVersionState | null>(null);
 
   const projectPublished = project ? project.remote === true : null;
@@ -108,25 +107,6 @@ export function AgentDeployChecklist({ agent, onReadinessChange }: AgentDeployCh
     }
   }, [loginBusy, requireCloudLogin, t]);
 
-  /** Publish this computer's edits into the project's hub repo, then re-read the version. */
-  const runPublish = useCallback(async () => {
-    if (publishBusy) return;
-    setPublishBusy(true);
-    try {
-      await agent.publish({ force: true });
-      notify.success({ title: t`Published` });
-    } catch (error) {
-      notify.error({
-        title: t`Could not publish`,
-        message: errorMessage(error, t`Publish failed.`),
-        forceToast: true,
-      });
-    } finally {
-      setPublishBusy(false);
-      await loadVersion();
-    }
-  }, [agent, loadVersion, publishBusy, t]);
-
   const pending = version?.pending_changes ?? 0;
 
   const labels: Record<DeployStepId, string> = {
@@ -155,7 +135,15 @@ export function AgentDeployChecklist({ agent, onReadinessChange }: AgentDeployCh
         // blocker, so that chip never doubles up with the row's Done marker.
         return project ? <ProjectCloudLinkButton project={project} /> : undefined;
       case 'version':
-        return actionButton(t`Publish`, 'agent-deploy-action-version', publishBusy, () => void runPublish());
+        // Publishes, then re-reads the version.
+        return (
+          <AgentPublishButton
+            agent={agent}
+            onPublished={loadVersion}
+            className="h-6 px-2 text-xs"
+            testId="agent-deploy-action-version"
+          />
+        );
       default:
         return undefined;
     }

@@ -1,6 +1,7 @@
 import { launchSurfaceField } from '../process/launch-surface';
-import { APIEntity, registerEntity } from '../APIEntity';
+import { APIEntity, dataManager, registerEntity } from '../APIEntity';
 import { QueryFilter, QueryRequest } from '../FlowSync/query';
+import { ActionInfo } from '../models/ActionInfo';
 import { TypeId } from '../models/TypeId';
 import type { GitOrigin } from '../models/GitOrigin';
 import type { HubRepoOrigin } from '../models/FSOrigin';
@@ -65,6 +66,13 @@ export interface AgentTokenAllocation {
   source: string;
   cost_usd_per_day?: number | null;
   model: string;
+}
+
+/** How signed-out visitors run an agent: the hub's `VisitorDeployment` -- the LLM endpoint each visitor's
+ *  budget is drawn from, and what each visitor may spend of it. */
+export interface AgentVisitorDeployment {
+  llm_source: string;
+  cap_usd: number;
 }
 
 export interface AgentReadinessItem {
@@ -431,6 +439,20 @@ export class Agent extends APIEntity<Agent> {
     return (await this.post('plan_deployment', Object.keys(body).length ? body : undefined)) as AgentPlannedDeployment;
   }
 
+  /**
+   * Let signed-out visitors run this agent, each in a sandbox of their own funded by a public child of
+   * `setup.llm_source` capped at `setup.cap_usd`: `POST agent/<id>/setup_visitor_deployment`. Hub-owned and
+   * owner-only, so it is reflected to the hub; refused (409) for an agent visitors could not run, (403) for a
+   * source the caller may not allocate from. Visitors reach it only once the agent's `visitor` audience holds
+   * `PUBLIC_DEPLOYER_ROLE`.
+   */
+  async setupVisitorDeployment(setup: AgentVisitorDeployment): Promise<AgentVisitorDeployment> {
+    const info = new ActionInfo('setup_visitor_deployment', this.getType(), this.id, 'POST');
+    info.hubReflect = true;
+    info.bodyParameters = { ...setup };
+    return await dataManager.callAction<unknown, AgentVisitorDeployment>(info);
+  }
+
   /** Every place this agent runs on — this computer first — with what each owns. */
   async listPlaces(): Promise<AgentPlace[]> {
     return (await this.get<AgentPlace[]>('places')) ?? [];
@@ -699,5 +721,3 @@ export interface AgentVersionState {
   has_repo: boolean;
   pending_changes: number;
 }
-
-

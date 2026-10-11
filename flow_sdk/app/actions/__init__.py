@@ -31,5 +31,6 @@ from . import (  # noqa: F401
     share_action,
     task_assign_action,
     task_receive_action,
+    visitor_deployment_action,
     wiki_action,
 )
