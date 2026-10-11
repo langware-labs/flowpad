@@ -1,11 +1,12 @@
-import type { DisplayEntry } from '@sdk';
+import { FSRef, TypeId, type DisplayEntry } from '@sdk';
+import { CopyButton } from '@src/components/ui/copy-button';
 import { Button } from '@src/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import { formatTimeAgo } from '@src/utils/format-time-ago';
-import { latestPerTarget } from './display-stack';
-import { FileText, Globe, History } from 'lucide-react';
+import { displayFilePath, latestPerTarget } from './display-stack';
+import { FileText, FolderOpen, Globe, History } from 'lucide-react';
 import { useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 
@@ -36,11 +37,14 @@ function EntryIcon({ entry }: { entry: DisplayEntry }) {
  * Shown stack, which differ only in their trigger.
  */
 export function DisplayHistoryList({ stack, onOpen }: DisplayHistoryButtonProps) {
+  const { t } = useLingui();
   const rows = latestPerTarget(stack);
   return (
     <ul className="flex max-h-80 flex-col overflow-y-auto">
       {rows.map((entry, i) => {
         const ago = formatTimeAgo(entry.shown_at);
+        const filePath = displayFilePath(entry);
+        const fsRef = filePath ? new FSRef(filePath, new TypeId('compute_node', '@local')) : null;
         return (
           <li key={`${entry.shown_at ?? ''}:${i}`}>
             <button
@@ -53,6 +57,23 @@ export function DisplayHistoryList({ stack, onOpen }: DisplayHistoryButtonProps)
               <span className="min-w-0 flex-1 truncate">{entryLabel(entry)}</span>
               {ago ? <span className="shrink-0 text-xs tabular-nums text-muted-foreground">{ago}</span> : null}
             </button>
+            {filePath && (
+              <div className="flex items-start gap-1 px-2 pb-2 text-muted-foreground">
+                <span className="min-w-0 flex-1 break-all font-mono text-[11px] select-text">{filePath}</span>
+                <CopyButton value={filePath} title={t`Copy path`} className="shrink-0 rounded p-1 hover:bg-muted" />
+                {fsRef?.localComputeNodeId && (
+                  <button
+                    type="button"
+                    title={t`Reveal in Finder`}
+                    aria-label={t`Reveal in Finder`}
+                    onClick={() => void fsRef.open({ select: true })}
+                    className="shrink-0 rounded p-1 hover:bg-muted"
+                  >
+                    <FolderOpen className="h-3 w-3" />
+                  </button>
+                )}
+              </div>
+            )}
           </li>
         );
       })}

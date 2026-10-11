@@ -303,9 +303,11 @@ function SchemaCard({
         <>
           <Section>{t`Rules`}</Section>
           <ul className="list-disc pl-5 text-muted-foreground" data-testid="schema-tree-rules">
-            {node.rules.map((rule) => (
-              <li key={rule.same.join('=')}>{rule.description || rule.same.join(' = ')}</li>
-            ))}
+            {node.rules.map((rule) => {
+              // a rule is `same` (two link paths name one row) or `unique` (no two rows share the fields)
+              const formula = rule.same ? rule.same.join(' = ') : `unique(${(rule.unique ?? []).join(', ')})`;
+              return <li key={formula}>{rule.description || formula}</li>;
+            })}
           </ul>
         </>
       )}

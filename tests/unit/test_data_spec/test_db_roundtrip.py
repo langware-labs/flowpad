@@ -11,6 +11,7 @@ from flow_sdk.builtin.subagent import SubAgent
 from flow_sdk.fs_store.serializer import UnsupportedFieldError
 from flow_sdk.fs_store.serializer.db import DbSerializer, db_persisted_fields
 from flow_sdk.schema.data_spec.dataset_spec import FileRef
+from tests.unit.agent._seed import seed_project
 from tests.unit.test_data_spec._roundtrip import populate
 from tests.unit.test_fs_store.conftest import sync_db  # noqa: F401 — fixture
 
@@ -21,6 +22,9 @@ pytestmark = pytest.mark.timeout(10)  # do not increase without approval
 @pytest.mark.asyncio
 async def test_every_db_persisted_field_survives_the_row(cls: type, sync_db, tmp_records_root) -> None:  # noqa: F811
     original = populate(cls)
+    if cls is Agent:
+        # ``auto_launch`` is one selection per project, so the agent saving it needs a real one.
+        original.project_id = (await seed_project(tmp_records_root / "owner")).id
     await original.save(notify=False)
     rows = await cls.get_all({"id": original.id})
     assert len(rows) == 1

@@ -93,6 +93,41 @@ describe('agent credentials', () => {
     expect(screen.getByText('Create a key at platform.openai.com')).toBeInTheDocument();
   });
 
+  it('an either-or group with nothing set counts as one thing missing, and each member warns', () => {
+    const v = row({}).vars[0];
+    creds.status = status([
+      row({ state: 'missing', vars: [
+        { ...v, env_var: 'KEY_FILE', required: 'ONE_OF', kind: 'file', present: false },
+        { ...v, env_var: 'GCLOUD_ADC', required: 'ONE_OF', kind: 'cli', store: 'cli', present: false, found_in: null, login: 'gcloud auth application-default login' },
+      ] }),
+    ]);
+    render(<AgentCredentialsSection />);
+    fireEvent.click(screen.getByTestId('navigator-section-credentials'));
+    expect(screen.getByTestId('agent-resource-credential-user-openai')).toHaveTextContent('user · 1 missing');
+
+    render(<CredentialView typeid="credential-1" onGone={() => undefined} />);
+    expect(screen.getByTestId('credential-var-state-KEY_FILE')).toHaveTextContent('one of · not set');
+    expect(screen.getByTestId('credential-var-state-GCLOUD_ADC')).toHaveTextContent('one of · not signed in');
+    expect(screen.getByTestId('credential-var-alert-KEY_FILE')).toBeInTheDocument();
+    expect(screen.getByTestId('credential-var-alert-GCLOUD_ADC')).toBeInTheDocument();
+    expect(screen.getByTestId('credential-var-required-KEY_FILE')).toHaveAttribute('title', 'One of these is enough');
+  });
+
+  it('once one member is in, the other is not a warning; a cli variable shows its sign-in command', () => {
+    const v = row({}).vars[0];
+    creds.status = status([
+      row({ vars: [
+        { ...v, env_var: 'KEY_FILE', required: 'ONE_OF', kind: 'file', present: false },
+        { ...v, env_var: 'GCLOUD_ADC', required: 'ONE_OF', kind: 'cli', store: 'cli', present: true, found_in: null, login: 'gcloud auth application-default login' },
+      ] }),
+    ]);
+    render(<CredentialView typeid="credential-1" onGone={() => undefined} />);
+    expect(screen.queryByTestId('credential-var-alert-KEY_FILE')).toBeNull();
+    expect(screen.getByTestId('credential-var-state-KEY_FILE')).toHaveTextContent('one of · not set');
+    expect(screen.getByTestId('credential-var-state-GCLOUD_ADC')).toHaveTextContent('one of · signed in');
+    expect(screen.getByTestId('credential-var-login-GCLOUD_ADC')).toHaveTextContent('gcloud auth application-default login');
+  });
+
   it('Set values opens the one credential form with a values draft', async () => {
     creds.status = status([row({})]);
     render(<CredentialView typeid="credential-1" onGone={() => undefined} />);

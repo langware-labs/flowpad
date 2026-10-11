@@ -1,17 +1,8 @@
-"""Build the ``VAR='value' `` prefix that carries env vars into one command.
+"""Convert named environment values for command execution.
 
-Every compute provider injects env the same way the hub does: by prefixing
-assignments onto the shell command, so the values live for exactly one process
-and are never written to the node's filesystem. (``set_env`` is the other,
-deliberately-persistent path — it is for the ``FLOWPAD_*`` proxy config, never
-for project secrets.)
-
-Each provider used to hand-roll this, which is how the E2B copy drifted into
-taking a ``dict`` while every caller passes ``list[FlowEnv]``. One builder,
-one escaping rule, one place to test.
-
-**The value never appears in a log line.** Callers log the bare ``command``;
-the prefix is joined on immediately before handing the string to the shell.
+Providers use ``command_environment`` with their native environment API so
+secrets never enter command strings, logs, or process arguments. Shell-only
+callers can still use ``build_env_prefix`` with the shared escaping rules.
 """
 
 from __future__ import annotations
@@ -78,3 +69,8 @@ def build_env_prefix(env: Iterable[Any] | None, *, windows: bool | None = None) 
 def _quote_posix(value: str) -> str:
     """Wrap in single quotes, closing/escaping/reopening around any it contains."""
     return "'" + value.replace("'", "'\\''") + "'"
+
+
+def command_environment(env: Iterable[Any] | None) -> dict[str, str]:
+    """Unwrap the command overlay for a provider's native environment API."""
+    return dict(_pairs(env))

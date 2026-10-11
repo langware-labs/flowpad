@@ -28,16 +28,21 @@ export interface FieldDef {
   shape: Shape;
   description?: string;
   required?: boolean;
+  /** The outside system this field's value is a copy of (`"crm"`), when the schema says so
+   *  (`owned_by`): show it read-only — only a writer that writes as that owner (`{by}`) sets it. */
+  owned_by?: string;
 }
 
-/** A rule across rows a record declares: the two link paths must name the same row wherever both
- *  ends are set (`["persona.icp", "icp"]`). Flowpad enforces it; an app may show it. */
-export interface KindRule {
-  same: [string, string];
-  description: string;
-}
+/** A rule across rows a record declares — Flowpad enforces it on every write and read; an app may
+ *  show it. One of: `same` — the two link paths must name the same row wherever both ends are set
+ *  (`["persona.icp", "icp"]`); `unique` — no two rows of a dataset share the value of these fields
+ *  (several: the same combination). */
+export type KindRule =
+  | { same: [string, string]; unique?: undefined; description: string }
+  | { unique: string[]; same?: undefined; description: string };
 
-/** `GET /api/v1/kinds/<kind>` — a record's fields and rules, or a dataset's example slots. */
+/** `GET /api/v1/kinds/<kind>` — a record's fields and rules (the ones it `include`s among them), or a
+ *  dataset's example slots. */
 export interface KindForm {
   kind: string;
   subkind: 'record' | 'dataset';

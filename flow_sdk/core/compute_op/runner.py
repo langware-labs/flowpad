@@ -141,6 +141,8 @@ class _Seams:
     #: The caller's scope AS VALUES (``env`` is their JSON): what a ``decision`` op
     #: decides about, what an agent op mounts as input. ``None`` when not in a run.
     values: Optional[dict] = None
+    #: What the person ALREADY answered, for an ask op — see ``run_op``'s ``answered``.
+    answered: Optional[AskResult] = None
 
 
 async def check_op(
@@ -326,6 +328,10 @@ async def run_op(
     #: side effects (a person clicking a "what's actually installed right
     #: now" action must not be met with an install prompt).
     check_only: bool = False,
+    #: An ask op's answer, given BEFORE the run (a wizard that asked for everything at once): the
+    #: op takes it instead of raising its question. Everything else is unchanged — a goal that
+    #: already holds still asks nobody, and the value is still held to the declared kind.
+    answered: Optional[AskResult] = None,
 ) -> ReturnedValue:
     """Reach the goal or produce the value, or say precisely why not. Never raises.
 
@@ -368,6 +374,7 @@ async def run_op(
             say=say,
             wizard_id=wizard_id,
             values=values,
+            answered=answered,
         )
         say(f"{spec.display_label}: {spec.subkind}")
         answer = await _attempt(spec, before, executor=executor, seams=seams)
@@ -619,6 +626,7 @@ async def _call_and_check(
         say=seams.say,
         wizard_id=seams.wizard_id,
         values=seams.values,
+        answered=seams.answered,
     )
     if not call.duration_s:
         call = call.model_copy(update={"duration_s": time.monotonic() - started})
@@ -868,6 +876,11 @@ def fill(text: str, env: Optional[dict]) -> str:
     return _PLACEHOLDER.sub(one, text)
 
 
+def placeholders(text: str) -> "set[str]":
+    """The value names *text* shows through ``{{name}}`` — what :func:`fill` would look up."""
+    return {match.group(1) for match in _PLACEHOLDER.finditer(text or "")}
+
+
 #: How often a Windows call checks for an open permission prompt or installer window.
 _PERMISSION_PROMPT_POLL_SECONDS = 2.0
 
@@ -1055,14 +1068,18 @@ async def _ask(
     env: Optional[dict] = None,
     platform: str = "",
     shell: Shell = run_shell,
+    answered: Optional[AskResult] = None,
     **_: Any,
 ) -> AskResult:
     """Put the op's declared output to a person and wait for the answer.
 
     A bounded time, unless the op is ``until_answered``. Asked here when this
     process is the backend the answer reaches; handed to the backend otherwise
-    (``ask.ask_through_backend``).
+    (``ask.ask_through_backend``). ``answered``: the person was asked before the
+    run, and this is what they said.
     """
+    if answered is not None:
+        return answered
     from flow_sdk.core.compute_op.ask import ask_person, ask_through_backend, served_here  # noqa: PLC0415
 
     # The caller's span when it gives one, else the op's own, else the product
@@ -1147,6 +1164,7 @@ async def _ask_once(ask, spec: ComputeOpSpec, env: Optional[dict], *, timeout, d
         secret=spec.exe_data.secret,
         file=spec.exe_data.file,
         auto=spec.exe_data.auto_continue,
+        choices=spec.exe_data.choices,
         wizard_id=wizard_id,
         guide=fill(spec.setup or "", env),
         # AI Assist: the agent follows the same guide, for the setup's own span once started.

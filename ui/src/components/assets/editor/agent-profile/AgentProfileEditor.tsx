@@ -398,7 +398,7 @@ export function AgentProfileEditor({ agent, mainRef }: AgentProfileEditorProps) 
                   </div>
                   <p className="mt-1 text-xs text-muted-foreground">
                     <Trans>
-                      Once per project, the first time it is opened. Oldest agent wins if several set this.
+                      Once per project, the first time it is opened. Enabling this turns off auto-launch for the other agents in this project.
                     </Trans>
                   </p>
                   {autoLaunched !== null ? (
