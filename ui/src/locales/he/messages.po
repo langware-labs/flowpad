@@ -10510,8 +10510,8 @@ msgid "Finish the setup above first"
 msgstr ""
 
 #: src/components/data-sources/source-attention.ts
-msgid "Finish the step above, then press Verify."
-msgstr "סיימו את השלב שלמעלה, ואז לחצו על אימות."
+#~ msgid "Finish the step above, then press Verify."
+#~ msgstr "סיימו את השלב שלמעלה, ואז לחצו על אימות."
 
 #: src/components/assets/editor/wizard/wizard-texts.ts
 msgid "finishing"
@@ -14723,8 +14723,8 @@ msgid "Needs attention"
 msgstr ""
 
 #: src/components/data-sources/status-style.ts
-msgid "Needs setup"
-msgstr ""
+#~ msgid "Needs setup"
+#~ msgstr ""
 
 #: src/components/connections-manager/credential-rows-view.tsx
 msgid "Needs values"
@@ -17403,7 +17403,7 @@ msgstr "פתח חילוק"
 msgid "Open Session"
 msgstr "פתח סשן"
 
-#: src/components/stream-inbox-view/ChannelAttentionBar.tsx
+#: src/components/data-sources/SourceSetupButton.tsx
 msgid "Open settings of {name}"
 msgstr "פתיחת ההגדרות של {name}"
 
@@ -18602,6 +18602,10 @@ msgstr "מכינים את סביבת העבודה…"
 #: src/components/data-sources/source-attention.ts
 msgid "Press Resume to listen again."
 msgstr "לחצו על המשך כדי להאזין שוב."
+
+#: src/components/data-sources/source-attention.ts
+msgid "Press Setup to finish it."
+msgstr "לחצו על הגדרה כדי לסיים."
 
 #: src/components/data-sources/source-attention.ts
 msgid "Press Verify to evaluate it now."
@@ -20475,6 +20479,7 @@ msgstr "תוצאות"
 #: src/components/data-sources/SourceMenu.tsx
 #: src/components/machine-overview/machine-overview.tsx
 #: src/components/setup-wizard/SetupWizardDialog.tsx
+#: src/components/stream-inbox-view/AttachedChannelsBar.tsx
 #: src/components/stream-inbox-view/ChannelAttentionBar.tsx
 #: src/journey/JourneyViewer.tsx
 #: src/tabs/useTerminalStripController.tsx
@@ -20620,6 +20625,10 @@ msgstr ""
 #: src/components/conversation/asset-review/AssetReviewDialog.tsx
 msgid "Review each attached asset and choose how to install it."
 msgstr "יש לבדוק כל נכס מצורף ולבחור כיצד להתקין אותו."
+
+#: src/tabs/doc-tab-card.tsx
+msgid "Review in"
+msgstr ""
 
 #: src/components/chats-navigator/ChatHistoryRow.tsx
 #: src/components/chats-navigator/ChatHistoryRow.tsx
@@ -22270,6 +22279,7 @@ msgstr "יש להגדיר את <0>{projectName}</0> בסביבת העבודה ה
 #~ msgid "Set up a git-backed context folder for this project."
 #~ msgstr "יש להגדיר תיקיית קונטקסט מגובה ב-Git לפרויקט זה"
 
+#: src/components/setup-wizard/SourceSetupDialog.tsx
 #: src/components/webapp-display/WebappSetupGate.tsx
 msgid "Set up again"
 msgstr "הגדרה מחדש"
@@ -22333,6 +22343,7 @@ msgstr ""
 #~ msgid "Set{0}"
 #~ msgstr ""
 
+#: src/components/setup-wizard/SourceSetupDialog.tsx
 #: src/components/webapp-display/WebappSetupOverlay.tsx
 msgid "Setting things up"
 msgstr "מגדירים את הכול"
@@ -22355,8 +22366,8 @@ msgstr "הכנת הפרויקט שלך…"
 
 #: src/components/assets/editor/agent-profile/deployment/AgentDeploymentPage.tsx
 #: src/components/data-sources/DataSourcePage.tsx
+#: src/components/data-sources/SourceSetupButton.tsx
 #: src/components/settings-view/SettingsView.tsx
-#: src/components/stream-inbox-view/ChannelAttentionBar.tsx
 #: src/pages/flow-page/content-panel/user-dropdown/user-dropdown.tsx
 #: src/pages/flow-page/content-panel/user-dropdown/user-dropdown.tsx
 #: src/pages/flow-page/content-panel/user-dropdown/user-dropdown.tsx
@@ -22366,12 +22377,20 @@ msgstr "הגדרות"
 
 #: src/components/account/settings-section.tsx
 #: src/components/automations/AutomationPage.tsx
+#: src/components/data-sources/SourceSetupButton.tsx
 #: src/components/setup-wizard/SetupStagesButton.tsx
+#: src/components/setup-wizard/SourceSetupDialog.tsx
+#: src/components/stream-inbox-view/AttachedChannelsBar.tsx
+#: src/components/stream-inbox-view/ChannelAttentionBar.tsx
 msgid "Setup"
 msgstr "הגדרה"
 
 #~ msgid "Setup could not start"
 #~ msgstr ""
+
+#: src/components/setup-wizard/SourceSetupDialog.tsx
+msgid "Setup could not start."
+msgstr "לא ניתן היה להתחיל את ההגדרה."
 
 #~ msgid "Setup did not finish"
 #~ msgstr ""
@@ -22407,6 +22426,8 @@ msgstr ""
 msgid "Setup instructions"
 msgstr ""
 
+#: src/components/data-sources/source-attention.ts
+#: src/components/data-sources/status-style.ts
 #: src/components/top-nav-bar/ProjectSetupButton.tsx
 #: src/components/top-nav-bar/ProjectSetupButton.tsx
 msgid "Setup required"
@@ -28229,11 +28250,3 @@ msgstr "הגדל"
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "Zoom out"
 msgstr "הקטן"
-
-#: src/components/data-sources/source-attention.ts
-msgid "Press Setup to finish it."
-msgstr "לחצו על הגדרה כדי לסיים."
-
-#: src/components/setup-wizard/SourceSetupDialog.tsx
-msgid "Setup could not start."
-msgstr "לא ניתן היה להתחיל את ההגדרה."
