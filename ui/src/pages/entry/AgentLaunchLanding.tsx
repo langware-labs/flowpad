@@ -1,4 +1,5 @@
 import {
+  Agent,
   cloudManager,
   type ComputeNode,
   gitOriginCloneUrl,
@@ -8,13 +9,14 @@ import {
   type HubRepoOrigin,
   type Project,
 } from '@sdk';
+import apiClient from '@sdk/client';
 import { projectOriginOf } from '@sdk/models/FSOrigin';
 import { Button } from '@src/components/ui/button';
 import { Input } from '@src/components/ui/input';
 import { Progress } from '@src/components/ui/progress';
 import { useProjects } from '@src/hooks/use-projects';
 import { type SandboxSetup, useSandboxes, workspaceServiceUrl } from '@src/hooks/use-sandboxes';
-import { errorMessage, isMissingGitCredential } from '@src/lib/error-message';
+import { errorMessage, errorStatus, isMissingGitCredential } from '@src/lib/error-message';
 import { CheckCircle, Cloud, Laptop, Loader2, LogIn } from 'lucide-react';
 import { RuntimeStrip } from '@src/components/top-nav-bar/RuntimeStrip';
 import { StepList } from '@src/components/ui/step-list';
@@ -70,11 +72,18 @@ function ownTarget(info: LaunchInfo): TargetChoice | null {
  * disabled without the reason written under it, and a failure always leaves a way on.
  *
  * Signed out, a quiet anonymous read still names a PUBLIC agent on the sign-in card.
+ *
+ * Signed out, an agent link goes straight to a sandbox of the visitor's own: one click -- the link --
+ * to a machine. `visitor-sandbox` answers it when the owner opened the agent to visitors; the page cannot
+ * ask that in advance, so it tries as soon as the session is known to be signed out, and only a refusal
+ * (not open to visitors, or any failure) shows the sign-in card. Known cost: every visit starts a paid
+ * machine, crawlers included. The answer is the box's gated url, followed once and never kept -- it
+ * carries the gate secret and stops working when the box pauses.
  * Every stage reports to the GA4 launch funnel (`launch-analytics.ts`).
  */
 export default function AgentLaunchLanding({ params }: { params: URLSearchParams }) {
   const { t } = useLingui();
-  const { currentUser } = useAuth();
+  const { currentUser, isBootstrapping } = useAuth();
   const signedIn = !!currentUser;
   const { target: link, agent } = useLaunchTarget(params, signedIn);
   const kind = link.kind === 'project' ? 'project' : 'agent';
@@ -92,6 +101,12 @@ export default function AgentLaunchLanding({ params }: { params: URLSearchParams
   const [failure, setFailure] = useState<string | null>(null);
   const [desktop, setDesktop] = useState<'idle' | 'opening' | 'waiting'>('idle');
   const [signInDropped, setSignInDropped] = useState(false);
+  // ``starting`` until the hub answers; ``refused`` once it did not open a sandbox (then: sign in).
+  const [trial, setTrial] = useState<'starting' | 'refused'>('starting');
+  const [trialError, setTrialError] = useState<string | null>(null);
+  // Only a caller KNOWN to be signed out, on an agent link: before bootstrap ends, signed-out is a guess,
+  // and a signed-in one launches through the choice below.
+  const visitorAgentId = !isBootstrapping && !signedIn && kind === 'agent' ? linkId : null;
 
   // The controller is never offered as its own target, and a target needs somewhere to clone from.
   const candidates = projects.filter((p) => p.id !== info?.project_id && projectOriginOf(p));
@@ -121,6 +136,29 @@ export default function AgentLaunchLanding({ params }: { params: URLSearchParams
     if (outcome === 'cancelled' && !(await refreshSession())) setSignInDropped(true);
     reload();
   };
+
+  // Once per page: the box is the visitor's, and a second call would only wake the same one.
+  const trialStarted = useRef(false);
+  useEffect(() => {
+    if (!visitorAgentId || trialStarted.current) return;
+    trialStarted.current = true;
+    void (async () => {
+      try {
+        const opened = await apiClient.post<{ workspace_url?: string }>(
+          `/api/v1/graph/${Agent.type}/${encodeURIComponent(visitorAgentId)}/visitor-sandbox`,
+          {},
+        );
+        if (!opened?.workspace_url) throw new Error(t`Couldn't set up the sandbox.`);
+        window.location.assign(opened.workspace_url);
+      } catch (e) {
+        // Not open to visitors (401/403) or not set up for them (409) is the ordinary answer: sign in.
+        // Anything else is a failure worth saying, under the same sign-in card.
+        const refused = [401, 403, 409].includes(errorStatus(e));
+        setTrialError(refused ? null : errorMessage(e, t`Couldn't start a sandbox.`));
+        setTrial('refused');
+      }
+    })();
+  }, [visitorAgentId, t]);
 
   // One sandbox per page: the box is the work, so a retry carries on with the one already made
   // rather than leaving a second behind.
@@ -220,7 +258,17 @@ export default function AgentLaunchLanding({ params }: { params: URLSearchParams
       <RuntimeStrip />
       <div className="flex flex-1 items-center justify-center p-6">
         <div className="w-full max-w-md rounded-lg border border-border p-5 text-start" data-testid="launch-panel">
-          {signedOut ? (
+          {signedOut && visitorAgentId && trial === 'starting' ? (
+            <div className="flex flex-col items-center gap-3 text-center" data-testid="launch-visitor-starting">
+              <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+              <p className="text-sm font-medium">
+                {name ? <Trans>Opening {name}…</Trans> : <Trans>Opening your sandbox…</Trans>}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                <Trans>A sandbox of your own, ready in about a minute.</Trans>
+              </p>
+            </div>
+          ) : signedOut ? (
             <div className="flex flex-col items-center gap-3 text-center" data-testid="launch-sign-in-card">
               <p className="text-sm font-medium" data-testid="launch-sign-in-title">
                 {problem === 'session-expired' ? (
@@ -235,6 +283,11 @@ export default function AgentLaunchLanding({ params }: { params: URLSearchParams
                 <LogIn className="h-3.5 w-3.5" />
                 <Trans>Sign In</Trans>
               </Button>
+              {trialError && (
+                <p className={`${errorClass} w-full`} data-testid="launch-try-error">
+                  {trialError}
+                </p>
+              )}
               {signInDropped && (
                 <p className="text-xs text-muted-foreground" data-testid="launch-sign-in-dropped">
                   <Trans>Sign-in wasn't completed. Try again when you're ready.</Trans>

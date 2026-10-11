@@ -490,7 +490,9 @@ export function AgentProfileEditor({ agent, mainRef }: AgentProfileEditorProps) 
               {/* Sharing and the public grant land on the published hub row — nothing to toggle on the hub's own
                   read-only view. Outside the definition's fieldsets: an unreadable agent document must not
                   disable controls that never touch it. */}
-              {!hub && moreOpened && <AgentVisibilitySection agent={agent} version={version} />}
+              {!hub && moreOpened && (
+                <AgentVisibilitySection agent={agent} version={version} onPublished={loadVersion} />
+              )}
             </div>
           </details>
         </section>
