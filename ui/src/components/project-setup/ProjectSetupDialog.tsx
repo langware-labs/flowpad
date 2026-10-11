@@ -17,6 +17,7 @@ import { cn } from '@src/lib/utils';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { Button } from '@src/components/ui/button';
+import { Checkbox } from '@src/components/ui/checkbox';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
 import { AskForm } from '@src/components/ask/AskForm';
@@ -43,6 +44,8 @@ function iconOf(req: ProjectSetupRequirement): LucideIcon {
 }
 
 const rowKey = (req: ProjectSetupRequirement) => `${req.kind}-${req.typeid}-${req.name}`;
+
+const NONE: ReadonlySet<string> = new Set();
 
 /**
  * Where a row opens: its own page with it selected — a credential (env or oauth) on the credentials page, a data
@@ -128,10 +131,10 @@ export function ProjectSetupDialog({
 }) {
   const { t } = useLingui();
   const [readiness, setReadiness] = useState<ProjectReadiness | null>(null);
-  const [busy, setBusy] = useState<string | null>(null);
+  const [busy, setBusy] = useState(NONE);
   const [choosing, setChoosing] = useState<string | null>(null);
+  const [selected, setSelected] = useState(NONE);
   const { navigation } = useDockNavigation();
-
 
   const load = useCallback(async () => {
     setReadiness(await Project.setupRequirements(projectId));
@@ -160,27 +163,37 @@ export function ProjectSetupDialog({
     if (next) setProjectReadiness(next);
   };
 
-  const skip = async (req: ProjectSetupRequirement, scope: ProjectSetupSkipScope) => {
-    const key = rowKey(req);
-    setBusy(key);
-    try {
-      settle(await Project.skipSetup(projectId, req.typeid, scope, { name: req.name }));
-      setChoosing(null);
-    } catch (e) {
-      notify.error({ title: errorMessage(e, t`Could not skip ${req.name}`) });
-    } finally {
-      setBusy(null);
+  /** Skips each of ``reqs``, one after the other (each answer is the readiness that follows), then selects none. */
+  const skip = async (reqs: ProjectSetupRequirement[], scope: ProjectSetupSkipScope) => {
+    setBusy(new Set(reqs.map(rowKey)));
+    for (const req of reqs) {
+      try {
+        settle(await Project.skipSetup(projectId, req.typeid, scope, { name: req.name }));
+        setChoosing(null);
+      } catch (e) {
+        notify.error({ title: errorMessage(e, t`Could not skip ${req.name}`) });
+      }
     }
+    setSelected(NONE);
+    setBusy(NONE);
+  };
+
+  const select = (req: ProjectSetupRequirement, on: boolean) => {
+    const next = new Set(selected);
+    if (on) next.add(rowKey(req));
+    else next.delete(rowKey(req));
+    setSelected(next);
+    setChoosing(null);
   };
 
   const unskip = async (req: ProjectSetupRequirement) => {
-    setBusy(rowKey(req));
+    setBusy(new Set([rowKey(req)]));
     try {
       settle(await Project.unskipSetup(projectId, req.typeid, req.name));
     } catch (e) {
       notify.error({ title: errorMessage(e, t`Could not undo the skip of ${req.name}`) });
     } finally {
-      setBusy(null);
+      setBusy(NONE);
     }
   };
 
@@ -195,16 +208,24 @@ export function ProjectSetupDialog({
   const running = setup.running;
   const questionId = setup.questionId;
 
+  // What can be selected is what can be skipped: a row still to do, while no run is going.
+  const selectedReqs = running
+    ? []
+    : [...(readiness?.to_do ?? []), ...(readiness?.optional ?? [])].filter((req) => selected.has(rowKey(req)));
+  const selecting = selectedReqs.length > 0;
+
   const row = (req: ProjectSetupRequirement, skipped = false) => (
     <RequirementRow
       key={rowKey(req)}
       req={req}
       skipped={skipped}
       running={running}
-      busy={busy === rowKey(req)}
+      busy={busy.has(rowKey(req))}
       choosing={choosing === rowKey(req)}
-      onChoose={(on) => setChoosing(on ? rowKey(req) : null)}
-      onSkip={(scope) => void skip(req, scope)}
+      selected={selected.has(rowKey(req))}
+      onSelect={skipped || running ? undefined : (on) => select(req, on)}
+      onChoose={selecting ? undefined : (on) => setChoosing(on ? rowKey(req) : null)}
+      onSkip={(scope) => void skip([req], scope)}
       onUndo={() => void unskip(req)}
       onOpen={() => openRow(req)}
     />
@@ -224,6 +245,29 @@ export function ProjectSetupDialog({
             </Trans>
           </DialogDescription>
         </DialogHeader>
+
+        {selecting && (
+          <div
+            className="flex items-center gap-2 rounded border bg-muted/50 px-3 py-1.5 text-xs"
+            data-testid="project-setup-selection-bar"
+          >
+            <span className="flex-1 font-medium">
+              <Trans>{selectedReqs.length} selected</Trans>
+            </span>
+            {busy.size > 0 && <Loader2 className="size-3 animate-spin" />}
+            <SkipChoice
+              id="selected"
+              disabled={busy.size > 0}
+              whyNotAlways={
+                selectedReqs.every((req) => req.can_skip_always)
+                  ? ''
+                  : t`Some of the selected cannot be removed from the project`
+              }
+              onSkip={(scope) => void skip(selectedReqs, scope)}
+              onCancel={() => setSelected(NONE)}
+            />
+          </div>
+        )}
 
         {readiness?.ready ? (
           <p className="flex items-center gap-2 text-sm text-emerald-600" data-testid="project-setup-ready">
@@ -312,9 +356,70 @@ const own = (handler: () => void) => (event: MouseEvent) => {
 };
 
 /**
- * One requirement: the whole row opens its page (role=link, Enter too); Skip opens the inline choice —
- * Locally (a mark on its record, here) | Always (removed from the project, staged in git) | Cancel; a skipped row
- * says what will not work and offers Undo.
+ * The skip choice — Locally (a mark on its record, here) | Always (removed from the project, staged in git) |
+ * Cancel — of one row, or of every selected row. ``whyNotAlways`` set means Always is not offered, and why.
+ */
+function SkipChoice({
+  id,
+  disabled = false,
+  whyNotAlways,
+  onSkip,
+  onCancel,
+}: {
+  id: string;
+  disabled?: boolean;
+  whyNotAlways: string;
+  onSkip: (scope: ProjectSetupSkipScope) => void;
+  onCancel: () => void;
+}) {
+  const { t } = useLingui();
+  return (
+    <>
+      <span className="text-muted-foreground">
+        <Trans>Skip it…</Trans>
+      </span>
+      <Button
+        variant="outline"
+        size="sm"
+        className="h-6 px-2 text-xs"
+        data-testid={`project-setup-skip-local-${id}`}
+        disabled={disabled}
+        title={t`On this machine only — undo any time`}
+        onClick={own(() => onSkip('local'))}
+      >
+        <Trans>Locally</Trans>
+      </Button>
+      <span title={whyNotAlways || undefined}>
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-6 px-2 text-xs"
+          data-testid={`project-setup-skip-always-${id}`}
+          disabled={disabled || !!whyNotAlways}
+          title={whyNotAlways ? undefined : t`Remove it from the project — the deletion is staged in git`}
+          onClick={own(() => onSkip('always'))}
+        >
+          <Trans>Always</Trans>
+        </Button>
+      </span>
+      <Button
+        variant="ghost"
+        size="sm"
+        className="h-6 px-2 text-xs"
+        data-testid={`project-setup-skip-cancel-${id}`}
+        disabled={disabled}
+        onClick={own(onCancel)}
+      >
+        <Trans>Cancel</Trans>
+      </Button>
+    </>
+  );
+}
+
+/**
+ * One requirement: the whole row opens its page (role=link, Enter too); its checkbox selects it for the
+ * selection bar, and while any row is selected no row offers its own Skip (no ``onChoose``). Skip opens the
+ * inline choice; a skipped row says what will not work and offers Undo.
  */
 function RequirementRow({
   req,
@@ -322,6 +427,8 @@ function RequirementRow({
   running,
   busy,
   choosing = false,
+  selected = false,
+  onSelect,
   onChoose,
   onSkip,
   onUndo,
@@ -332,6 +439,8 @@ function RequirementRow({
   running: boolean;
   busy: boolean;
   choosing?: boolean;
+  selected?: boolean;
+  onSelect?: (on: boolean) => void;
   onChoose?: (on: boolean) => void;
   onSkip?: (scope: ProjectSetupSkipScope) => void;
   onUndo?: () => void;
@@ -357,6 +466,17 @@ function RequirementRow({
       data-typeid={req.typeid}
     >
       <div className="flex items-center gap-2">
+        {onSelect && (
+          <Checkbox
+            checked={selected}
+            disabled={busy}
+            aria-label={t`Select ${name}`}
+            data-testid={`project-setup-select-${req.name}`}
+            onClick={(event) => event.stopPropagation()}
+            onKeyDown={(event) => event.stopPropagation()}
+            onCheckedChange={(on) => onSelect(on === true)}
+          />
+        )}
         <Icon className="size-4 shrink-0 text-muted-foreground" />
         <span className="font-medium">{name}</span>
         <div className="flex min-w-0 flex-1 items-center gap-1">
@@ -382,13 +502,13 @@ function RequirementRow({
             <Trans>Undo</Trans>
           </Button>
         )}
-        {!running && !busy && !skipped && !choosing && (
+        {!running && !busy && !skipped && !choosing && onChoose && (
           <Button
             variant="ghost"
             size="sm"
             className="h-6 px-2 text-xs"
             data-testid={`project-setup-skip-${req.name}`}
-            onClick={own(() => onChoose?.(true))}
+            onClick={own(() => onChoose(true))}
           >
             <Trans>Skip</Trans>
           </Button>
@@ -396,41 +516,12 @@ function RequirementRow({
       </div>
       {choosing && !busy && (
         <div className="flex items-center gap-2 ps-6 text-xs" data-testid={`project-setup-skip-choice-${req.name}`}>
-          <span className="text-muted-foreground">
-            <Trans>Skip it…</Trans>
-          </span>
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-6 px-2 text-xs"
-            data-testid={`project-setup-skip-local-${req.name}`}
-            title={t`On this machine only — undo any time`}
-            onClick={own(() => onSkip?.('local'))}
-          >
-            <Trans>Locally</Trans>
-          </Button>
-          <span title={req.can_skip_always ? undefined : req.why_not_always}>
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-6 px-2 text-xs"
-              data-testid={`project-setup-skip-always-${req.name}`}
-              disabled={!req.can_skip_always}
-              title={req.can_skip_always ? t`Remove it from the project — the deletion is staged in git` : undefined}
-              onClick={own(() => onSkip?.('always'))}
-            >
-              <Trans>Always</Trans>
-            </Button>
-          </span>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-6 px-2 text-xs"
-            data-testid={`project-setup-skip-cancel-${req.name}`}
-            onClick={own(() => onChoose?.(false))}
-          >
-            <Trans>Cancel</Trans>
-          </Button>
+          <SkipChoice
+            id={req.name}
+            whyNotAlways={req.can_skip_always ? '' : req.why_not_always || t`It cannot be removed from the project`}
+            onSkip={(scope) => onSkip?.(scope)}
+            onCancel={() => onChoose?.(false)}
+          />
           {!req.can_skip_always && req.why_not_always && (
             <span className="truncate text-muted-foreground" data-testid={`project-setup-why-not-always-${req.name}`}>
               {req.why_not_always}

@@ -481,6 +481,15 @@ export const VIEWER_REGISTRY: Partial<Record<ViewType, ViewerMeta>> = {
     tabLocation: 'dedicated',
     canAddAsTab: true,
   },
+  [ViewType.SCHEMA_TREE]: {
+    title: msg`Schema`,
+    iconName: 'ListTree',
+    tabLocation: 'dedicated',
+    canAddAsTab: true,
+    // A project's screen: the project is the address's scope, so there is one chip per
+    // project and the pointer (the kinds unfolded down to the selection) stays in it.
+    scopeKeyed: true,
+  },
   [ViewType.PROCESS_RUNS]: {
     title: msg`Runs`,
     iconName: 'History',

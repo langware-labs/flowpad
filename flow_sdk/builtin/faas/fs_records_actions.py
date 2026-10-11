@@ -1263,6 +1263,13 @@ class FsRecordsActionsMixin:
         finally:
             self._complete_activity(job_name)
 
+    def index_turn(self):
+        """This machine's one index slot, taken in turn: waits for a run already going (the
+        boot-time system pass on a new install) instead of indexing beside it. For work that
+        indexes on its own — a launch checking a project out — so two index passes never write
+        the local database at once."""
+        return self._index_activity("index", queue=True)
+
     async def _run_index_activity(
         self,
         *,

@@ -8,6 +8,7 @@ along). ``GET /api/v1/editors/{typeid}``: the apps that edit an entity, best fir
 by its reference ``<kind>.id.<uuid>``, from the asset that keeps it (``flow_sdk.values``).
 ``POST /api/v1/kinds/{kind}/check``: would this value fit the kind? Writes nothing.
 ``GET /api/v1/kinds/{kind}/datasets?project=``: the datasets whose rows are that kind.
+``GET /api/v1/kinds?project=``: every schema a project defines, as one tree (``flow_sdk.datasets.schema_tree``).
 Standard envelope, so the SDK reads them through ``apiClient``.
 """
 
@@ -201,32 +202,39 @@ async def kind_datasets(kind: str, project: str = "") -> ApiResponse | JSONRespo
     rows of ``kind`` (``Dataset.for_kind``'s own reading), once per folder -- so a stale index
     entry never makes this answer differ from the Python lookup."""
     from flow_sdk.builtin.dataset import Dataset  # noqa: PLC0415
-    from flow_sdk.datasets.links import datasets_for_kind, owner_of, row_kind  # noqa: PLC0415
+    from flow_sdk.datasets.links import row_kind  # noqa: PLC0415
+    from flow_sdk.datasets.schema_tree import held_on_disk  # noqa: PLC0415
     from flow_sdk.db.drivers.query import QueryFilter  # noqa: PLC0415
 
     if project:
         kind = _qualified(kind, await _project_root(project))
     candidates = [d for d in await Dataset.get_all(QueryFilter(type=Dataset.get_type()))
                   if row_kind(d.spec) == kind and (not project or d.project_id == project)]
-
-    def on_disk() -> list:
-        found, seen, held = [], set(), {}
-        for d in candidates:
-            folder = Path(d.asset_ref).resolve() if d.asset_ref else None
-            if folder is None or not folder.is_dir() or folder in seen:
-                continue
-            owner = owner_of(folder)
-            if owner not in held:
-                held[owner] = {f.resolve() for f in datasets_for_kind(kind, owner)}
-            if folder in held[owner]:
-                seen.add(folder)
-                found.append(d)
-        return found
-
-    found = await asyncio.to_thread(on_disk)
+    found = await asyncio.to_thread(held_on_disk, kind, candidates)
     return ApiSuccessResponse(data={"datasets": [
         {"id": d.id, "name": d.name, "title": d.title, "project_id": d.project_id, "asset_ref": d.asset_ref}
         for d in found]})
+
+
+@router.get("/api/v1/kinds", response_model=None)
+async def project_kinds(project: str) -> ApiResponse | JSONResponse:
+    """The schemas ``project`` defines, as one tree (a ``schema.tree`` value): each kind with its
+    fields, the kinds they name (linked, or held inside the row) and the dataset that keeps its
+    rows; 404 when no project has that id."""
+    from flow_sdk.builtin.dataset import Dataset  # noqa: PLC0415
+    from flow_sdk.datasets.schema_tree import schema_tree  # noqa: PLC0415
+    from flow_sdk.db.drivers.query import QueryFilter  # noqa: PLC0415
+    from flow_sdk.fs_store.operations.all_projects import get_cached_projects  # noqa: PLC0415
+
+    root, missing = await _root_or_404(project)
+    if missing:
+        return missing
+    datasets = [d for d in await Dataset.get_all(QueryFilter(type=Dataset.get_type())) if d.project_id == project]
+    # The canonical project list (cached), not a walk of every Project row.
+    roots = {Path(p.fs_storage_mount_path).resolve(): p.id
+             for p in await get_cached_projects() if getattr(p, "fs_storage_mount_path", None)}
+    tree = await asyncio.to_thread(schema_tree, project, root, datasets, roots)
+    return ApiSuccessResponse(data=tree.model_dump(mode="json"))
 
 
 @router.get("/api/v1/values/{ref}")

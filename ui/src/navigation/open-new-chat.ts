@@ -13,6 +13,12 @@ export interface OpenNewChatOptions {
   cwd?: string;
   /** The surface to open in; defaults to the mode on screen. */
   mode?: ViewMode;
+  /** The session's first prompt — typed into a terminal, sent as the first turn of a chat. */
+  prompt?: string;
+  /** What the chat is ABOUT (an entity TypeId or a VFS path), in place of its project. */
+  targetVfsPath?: string;
+  /** Entity TypeIds the session starts with in its context. */
+  sharedContextEntities?: string[];
 }
 
 /**
@@ -72,6 +78,7 @@ export async function openNewChat(
   // user's pick (vendor + shape) even when the harness turns out to be missing.
   if (options.workerType) rememberLaunch(workerToOpener(options.workerType), mode);
 
+  const target = options.targetVfsPath ?? (projectId ? chatTargetForProject(projectId) : undefined);
   const tCreate = performance.now();
   const process = await computeNode.createProcess(
     {
@@ -81,10 +88,12 @@ export async function openNewChat(
       ...(projectId ? { projectId } : {}),
       ...(options.workerType ? { workerType: options.workerType } : {}),
       processType: ProcessKind.Chat,
-      // Keyed to the project, matching `chatTargetForProject`. Omitted
+      // Keyed to the project, matching `chatTargetForProject`, unless the caller
+      // says what the chat is about (a review of one document). Omitted
       // without one: a target is an attachment key, and a bare literal shared
       // by every project-less chat would collide them into one bucket.
-      ...(projectId ? { targetVfsPath: chatTargetForProject(projectId) } : {}),
+      ...(target ? { targetVfsPath: target } : {}),
+      ...(options.sharedContextEntities?.length ? { sharedContextEntities: options.sharedContextEntities } : {}),
       // Headless surfaces stream the transcript as JSON; a PTY has no such stream.
       ...(ptyMode ? {} : { outputFormat: 'stream-json' as const }),
     },
@@ -92,6 +101,9 @@ export async function openNewChat(
       watchProcess: false,
       visible: ptyMode,
       pty_mode: ptyMode,
+      // A PTY takes its first prompt at launch; a headless chat is prompted
+      // below, once its persona is embedded.
+      ...(ptyMode && options.prompt ? { launchPrompt: options.prompt } : {}),
     },
   );
 
@@ -116,6 +128,9 @@ export async function openNewChat(
   // callers keep their existing failure semantics.
   if (surfaceForViewMode(mode) === 'chat') {
     await embedStandardAgent(process);
+  }
+  if (!ptyMode && options.prompt) {
+    process.prompt(options.prompt).catch((e) => console.error('[openNewChat] first prompt failed', e));
   }
   return process;
 }

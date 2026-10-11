@@ -464,3 +464,30 @@ The example is the SmartNavigator eval set. Its row schemas ship as flat `data_s
 (`flowpad_assistant/agentic-assets/data_schema/navigat*`); its rows do not — they live beside the
 checkout at `dev/dataset/smart-navigator/` (`flow_sdk.core.navigation.DATASET`). Shipped assets stay flat:
 a nested tree inside the install crossed Windows' 260-char MAX_PATH.
+
+### The schema tree
+
+The dataset editor's **Schema** button opens the schema tree — a screen of Flowpad itself
+(`ui/src/components/schema-tree/`, view `schema-tree`), not an app: what data the dataset's project
+holds, top to bottom.
+
+* **Left, a tree.** Roots are projects — the dataset's own, plus any project that defines a kind it
+  uses. Under a project: every schema it defines, each unfolding to the kinds its fields name, then
+  the project's data sources.
+* **Right, a card** for what is selected: where the schema is defined, the dataset that keeps its
+  rows (and the data source feeding it), what uses it, its fields and rules. A kind named in a field
+  is a link; following it moves the tree and the card together.
+
+It is a project screen like Files and Assets: the project is the address's SCOPE and the selection
+its pointer — `/dock/schema-tree[/<kind>…]?scope-mode=project&scope-activeProjectId=<id>`, or
+`…/source:<id>` for a data source (`schema-tree-pointer.ts`, `DockPointer.forSchemaTree`). So the
+loader selects the project from the URL, the tab belongs to that project (one per project), the
+address bar reads `<project> › Schema › <schema> › …`, and a row or a link only navigates — Back, a
+reload and a shared link reach the same place.
+
+A field names a kind the same way whether it LINKS to a row or holds the value, so the tree says
+which: a kind some dataset keeps rows of is marked `uses`, any other `inside` (stored in the row
+itself) — the rule a row write already applies (`links._inline_detail`).
+
+One read backs it: `GET /api/v1/kinds?project=<id>` answers a `schema.tree` value
+(`flow_sdk/schema/data_spec/schema_tree_spec.py`, built by `flow_sdk/datasets/schema_tree.py`).

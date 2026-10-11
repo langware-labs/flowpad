@@ -36,7 +36,7 @@ test 2: a mark filters; × shows everything again
 test 3: the details popover is where on/off and delete live
 - [browser] click data-testid="attached-channels-details": one data-testid="attached-channel-row" per channel with its switch and trash
 - [browser] flip the switch off: the mark's ring turns dashed; [api] GET /api/v1/graph/data_source/<id> — `status` is `disabled`
-- [browser] flip it on: a toast says "Resumed — it polls on the next tick."; [api] `status` is `setup` (Slack owes a Verify) and the mark wears the "!" badge with "Finish setup, then press Verify." under its name
+- [browser] flip it on: a toast says "Resumed — it polls on the next tick."; [api] `status` is `setup` (Slack owes a Verify) and the mark wears the "!" badge with "Setup required" under its name
 - [browser] the list's "See all sources" opens the Data Sources screen; press Verify; back on the stream inbox the mark has its green dot
 - [browser] the trash asks "Delete this data source?" — cancel
 

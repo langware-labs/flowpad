@@ -10,6 +10,8 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const h = vi.hoisted(() => ({
+  plans: [] as unknown[],
+  projects: [] as Array<{ id: string; name: string; fs_storage_mount_path?: string }>,
   runs: [] as Array<{ onStep?: (s: string) => void; onNeedsSetup?: (p: unknown) => void }>,
   /** How each run ends, in order: a dock to open, or the error to reject with. */
   outcomes: [] as unknown[],
@@ -21,7 +23,8 @@ vi.mock('@src/pages/entry/launch-runner', async (importOriginal) => {
   const actual = await importOriginal<Record<string, unknown>>();
   return {
     ...actual,
-    runLaunch: (_plan: unknown, run: (typeof h.runs)[number]) => {
+    runLaunch: (plan: unknown, run: (typeof h.runs)[number]) => {
+      h.plans.push(plan);
       h.runs.push(run);
       const outcome = h.outcomes.shift();
       if (outcome === undefined) return new Promise(() => {});
@@ -32,6 +35,7 @@ vi.mock('@src/pages/entry/launch-runner', async (importOriginal) => {
 vi.mock('@src/components/agent-layout/agent-layout', () => ({
   useAgentContext: () => ({ computeNode: { id: 'n1' } }),
 }));
+vi.mock('@src/hooks/use-projects', () => ({ useProjects: () => ({ projects: h.projects }) }));
 vi.mock('@src/hooks/use-workspaces', () => ({ useActiveWorkspace: () => ({ scopeId: undefined }) }));
 vi.mock('@src/navigation/useDockNavigation', () => ({
   useDockNavigation: () => ({ navigation: { openDock: (dock: unknown) => h.opened.push(dock) } }),
@@ -48,6 +52,8 @@ const WITH_CONTROLLER = { target: { projectId: 'spora' }, controllerId: 'q' };
 
 beforeEach(() => {
   h.runs = [];
+  h.plans = [];
+  h.projects = [];
   h.outcomes = [];
   h.opened = [];
   h.setups = [];
@@ -61,6 +67,33 @@ describe('LaunchDialog', () => {
     expect(screen.queryByTestId('launch-step-controller')).toBeNull();
     expect(status('target')).toBe('loading');
     expect(status('session')).toBe('idle');
+  });
+
+  it('a controller sent without a target asks which local project, and runs on the one picked', () => {
+    h.projects = [
+      { id: 'q', name: 'q', fs_storage_mount_path: '/w/q' },
+      { id: 'spora', name: 'spora', fs_storage_mount_path: '/w/spora' },
+      { id: 'cloud-only', name: 'cloud-only' },
+    ];
+
+    render(<LaunchDialog plan={{ target: { local: null }, controllerId: 'q', agentId: 'a' }} onClose={() => {}} />);
+
+    // Nothing runs before the pick; the controller and a project with no folder here are not offered.
+    expect(h.plans).toEqual([]);
+    expect(screen.getByTestId('launch-dialog-title').textContent).toBe('Which project should it work on?');
+    expect(screen.getByTestId('launch-local-projects').querySelectorAll('button')).toHaveLength(1);
+
+    fireEvent.click(screen.getByTestId('launch-local-spora'));
+
+    expect(h.plans).toEqual([{ target: { local: 'spora' }, controllerId: 'q', agentId: 'a' }]);
+    expect(status('controller')).toBe('loading');
+  });
+
+  it('with no project on the machine to pick, it says so and runs nothing', () => {
+    render(<LaunchDialog plan={{ target: { local: null }, controllerId: 'q' }} onClose={() => {}} />);
+
+    expect(screen.getByTestId('launch-local-none')).toBeTruthy();
+    expect(h.plans).toEqual([]);
   });
 
   it('blames the step that stopped, says why, and runs again from the dialog', async () => {

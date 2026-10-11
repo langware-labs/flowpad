@@ -81,6 +81,12 @@ SODOT_FILENAME = "sodot"
 _UNSET = object()
 
 
+
+def _user_asset_home(instance_name: str) -> Path | None:
+    from flow_sdk.instances.paths import user_asset_home  # noqa: PLC0415
+
+    return user_asset_home(instance_name)
+
 class SecretsNotEnabledError(RuntimeError):
     """Raised when ``instance.sod`` is accessed before ``enable_secrets()``.
 
@@ -319,7 +325,7 @@ class BaseInstanceSettings:
             # left them for prod to list (188 by 2026-10-04, 67 of them unreadable).
             # Not under the instance dir: nothing under ``flow_home`` is user
             # content, so an asset there could never be deleted (``is_protected_path``).
-            user_asset_home=None if instance_name == "prod" else Path.home() / "Flowpad workspaces" / ".home" / instance_name,
+            user_asset_home=_user_asset_home(instance_name),
             claude_tasks_dir=claude_home / "tasks",
             claude_history_path=claude_home / "history.jsonl",
             claude_mcp_json_path=claude_home / "mcp.json",
