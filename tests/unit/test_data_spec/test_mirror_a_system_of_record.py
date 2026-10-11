@@ -48,9 +48,14 @@ async def test_mirroring_again_is_a_sync_and_keeps_what_the_app_owns(deals):
     await deals.mirror(ITEMS, MAP, by="crm")
     await deals.put("opp-1", {"input": {**deals.example("opp-1")["input"], "notes": "call back Tuesday"}})   # the app's own field
     moved = [dict(ITEMS[0], data={"stage": "won", "amount": 12, "owner": {"name": "Ami"}})]                # the CRM moved one, dropped the other
-    done = await deals.mirror(moved, {**MAP, "input": {**MAP["input"], "notes": {"value": "call back Tuesday"}}}, by="crm")
+    done = await deals.mirror(moved, MAP, by="crm")
     assert done == {"created": [], "updated": ["opp-1"], "unchanged": [], "deleted": ["opp-2"]}
-    assert deals.example("opp-1")["input"]["stage"] == "won"
+    row = deals.example("opp-1")["input"]
+    assert (row["stage"], row["notes"]) == ("won", "call back Tuesday")                      # the mirror owns only what it maps
+    assert (await deals.mirror(moved, MAP, by="crm"))["unchanged"] == ["opp-1"]              # ... and keeping it is not a change
+    gone = [dict(moved[0], data={"stage": "won", "amount": 12})]                             # the CRM cleared the owner
+    await deals.mirror(gone, MAP, by="crm")
+    assert "owner" not in {k: v for k, v in deals.example("opp-1")["input"].items() if v is not None}   # a mapped field follows the source
     assert (await deals.mirror(moved, MAP, by="crm", prune=False))["deleted"] == []
 
 
