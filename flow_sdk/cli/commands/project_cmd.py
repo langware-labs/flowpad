@@ -31,6 +31,7 @@ from flow_sdk.schema.data_spec.project_setup_spec import REQUIREMENT_GAP
 from flow_sdk.schema.data_spec.returned_value_spec import ExitCode
 
 if TYPE_CHECKING:
+    from flow_sdk.schema.data_spec.compute_op_spec import AskItemSpec
     from flow_sdk.schema.data_spec.project_setup_spec import SetupRequirementSpec
 
 project_app = typer.Typer(
@@ -63,12 +64,12 @@ def _read(prompt: str, secret: bool) -> str:
     return (sys.stdin.readline() or "").rstrip("\r\n")
 
 
-def _read_items(items: list[dict]) -> dict:
+def _read_items(items: "list[AskItemSpec]") -> dict:
     """Everything a run needs, asked at once: one line per item. A confirm takes y; anything else
     takes its value. Left empty, the item is declined."""
     from flow_sdk.core.compute_op import ask  # noqa: PLC0415
 
-    def read(item: Any) -> Any:
+    def read(item: "AskItemSpec") -> Any:
         must = " (required)" if item.required else ""
         said = _read(f"{item.prompt}{must}" + (" [y/N]" if item.is_approval else ""), item.secret).strip()
         if item.is_approval:

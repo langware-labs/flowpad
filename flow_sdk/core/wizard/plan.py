@@ -28,15 +28,10 @@ from typing import Any, Optional
 
 from flow_sdk.core.compute.exec import run_shell
 from flow_sdk.core.compute_op.runner import Shell, check_op, fill, placeholders
-from flow_sdk.core.wizard.runner import MAX_WIZARD_DEPTH, _scope, _unmatched
+from flow_sdk.core.wizard.runner import MAX_WIZARD_DEPTH, _allowed, _scope, _step_path, _unmatched
 from flow_sdk.core.wizard.state import input_env
-from flow_sdk.schema.data_spec.compute_op_spec import (
-    CONFIRM_KIND,
-    AskItemSpec,
-    AskOp,
-    ComputeOpSpec,
-    fields_of_kind,
-)
+from flow_sdk.schema.data_spec.compute_op_spec import AskItemSpec, AskOp, ComputeOpSpec, fields_of_kind
+from flow_sdk.schema.data_spec.confirm_spec import ConfirmSpec
 from flow_sdk.schema.data_spec.returned_value_spec import AskResult, ExitCode
 from flow_sdk.schema.data_spec.wizard_spec import StepKind, WizardPlanSpec, WizardSpec
 
@@ -52,8 +47,8 @@ class _Plan:
     resolve_wizard: Any
     approved: bool
     needs: list[AskItemSpec] = field(default_factory=list)
-    #: How long each need's own question would have waited; ``None`` for one with no deadline.
-    spans: list[Optional[float]] = field(default_factory=list)
+    #: The longest any need's own question would have waited; ``None`` once one has no deadline.
+    timeout: Optional[float] = 0.0
 
 
 async def plan_wizard(
@@ -73,10 +68,7 @@ async def plan_wizard(
         resolve_wizard=resolve_wizard, approved=approved,
     )
     await _walk(plan, spec, values=dict(inputs or {}), produced=set(), path=(), chain=(), required=True)
-    return WizardPlanSpec(
-        needs=plan.needs,
-        timeout_seconds=None if None in plan.spans else max(plan.spans, default=None),
-    )
+    return WizardPlanSpec(needs=plan.needs, timeout_seconds=plan.timeout)
 
 
 async def _walk(
@@ -95,13 +87,12 @@ async def _walk(
         if not (set(step.when) & produced) and not _unmatched(values, step):
             scope = _scope(values, step)
             late = (produced - set(step.args)) | {name for name, source in step.args.items() if source in produced}
-            here = (*path, step.id)
             if step.kind is StepKind.WIZARD:
                 above = (*chain, spec.name or "")
                 callee = await _trusted(plan, plan.resolve_wizard, step.ref)
                 if callee is not None and step.ref not in above and len(above) <= MAX_WIZARD_DEPTH:
                     await _walk(
-                        plan, callee, values=scope, produced=late, path=here, chain=above,
+                        plan, callee, values=scope, produced=late, path=(*path, step.id), chain=above,
                         required=required and step.required,
                     )
             else:
@@ -112,7 +103,7 @@ async def _walk(
                     if said.exit_code is ExitCode.NOT_YET:
                         exe = op.exe_data
                         plan.needs.append(AskItemSpec(
-                            path="/".join(here),
+                            path=_step_path(path, step),
                             op=op.name,
                             prompt=fill(exe.prompt or step.display_label, env),
                             detail=fill(exe.detail, env),
@@ -120,7 +111,10 @@ async def _walk(
                             secret=exe.secret,
                             required=required and step.required,
                         ))
-                        plan.spans.append(None if exe.until_answered else exe.timeout())
+                        if exe.until_answered or plan.timeout is None:
+                            plan.timeout = None
+                        else:
+                            plan.timeout = max(plan.timeout, exe.timeout())
         if step.bind:
             produced.add(step.bind)
 
@@ -128,9 +122,7 @@ async def _walk(
 async def _trusted(plan: _Plan, resolver: Any, ref: str) -> Any:
     """The callee's spec when the run would be allowed to call it; else None (the run says why)."""
     found = await resolver(ref) if resolver is not None else None
-    if found is None or not (found.trusted or plan.approved):
-        return None
-    return found.spec
+    return found.spec if found is not None and _allowed(found, plan.approved) else None
 
 
 def _askable_early(op: ComputeOpSpec, produced: "set[str]", *, kept: bool) -> bool:
@@ -141,7 +133,7 @@ def _askable_early(op: ComputeOpSpec, produced: "set[str]", *, kept: bool) -> bo
         return False
     if (placeholders(exe.prompt) | placeholders(exe.detail)) & produced:
         return False
-    if op.output_spec_kind == CONFIRM_KIND:
+    if op.output_spec_kind == ConfirmSpec.spec_kind:
         return True  # An approval is an approval whenever it is given.
     # One typed value, and somebody keeps it.
     return isinstance(fields_of_kind(op.output_spec_kind), str) and kept
@@ -152,7 +144,6 @@ async def ask_needs(
     plan: WizardPlanSpec,
     *,
     wizard_id: str = "",
-    workdir: Optional[Path] = None,
 ) -> "dict[str, AskResult]":
     """Put every need to the person as ONE question; what they said, per need.
 
@@ -163,18 +154,16 @@ async def ask_needs(
     """
     from flow_sdk.core.compute_op.ask import ask_person, ask_through_backend, served_here  # noqa: PLC0415
 
-    label = spec.label or spec.name or "wizard"
     ask = ask_person if served_here() else ask_through_backend
     said = await ask(
         spec.name or "wizard",
-        label,
+        spec.display_label,
         None,
         timeout=plan.timeout_seconds,
-        label=label,
+        label=spec.display_label,
         detail=spec.description,
-        items=[need.model_dump(mode="json") for need in plan.needs],
+        items=plan.needs,
         wizard_id=wizard_id,
-        workdir=str(workdir or ""),
     )
     if not said.ok:
         # One ending for the whole list: cancelled, timed out, or not shown.

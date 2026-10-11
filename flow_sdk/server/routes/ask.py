@@ -19,11 +19,19 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from flow_sdk.core.compute.declared_value import DeclaredShapeError, to_declared
-from flow_sdk.core.compute_op.ask import AssistRefused, ask_person, assist, open_questions, pending, serve_here
+from flow_sdk.core.compute_op.ask import (
+    AssistRefused,
+    ask_person,
+    assist,
+    held_items,
+    open_questions,
+    pending,
+    serve_here,
+)
 from flow_sdk.core.compute_op.ask import answer as deliver_answer
 from flow_sdk.core.compute_op.ask import cancel as decline
 from flow_sdk.responses.response import ApiSuccessResponse
-from flow_sdk.schema.data_spec.compute_op_spec import AskChoiceSpec
+from flow_sdk.schema.data_spec.compute_op_spec import AskChoiceSpec, AskItemSpec
 
 router = APIRouter(prefix="/api/v1/ask")
 
@@ -71,7 +79,7 @@ class AskRequest(BaseModel):
     #: Several ways to answer, of which the person picks one (``AskOp.choices``).
     choices: list[AskChoiceSpec] = []
     #: Several questions asked as one (``Question.items``).
-    items: list[dict] = []
+    items: list[AskItemSpec] = []
     #: The Wizard entity this question is a step of, when it is one.
     wizard_id: str = ""
     #: How a person finds the value (the op's ``setup.md``).
@@ -142,7 +150,7 @@ async def answer_question(question_id: str, body: AnswerRequest):
     value: Optional[Any] = body.value
     if question.items:
         try:
-            value = _item_values(question.items, value)
+            value = held_items(question.items, value)
         except DeclaredShapeError as mismatch:
             return _fail(str(mismatch), 422)
     elif question.shape is not None:
@@ -156,26 +164,6 @@ async def answer_question(question_id: str, body: AnswerRequest):
     if not deliver_answer(question_id, value):
         return _fail("that question is no longer waiting", 404)
     return ApiSuccessResponse(data={"answered": question_id})
-
-
-def _item_values(items: list[dict], value: Any) -> dict:
-    """A list question's answer, each given value held to ITS item's kind. An item left out is
-    declined, which is an answer; a key that names no item is a mistake."""
-    if not isinstance(value, dict):
-        raise DeclaredShapeError("the answer to a list of questions is an object: {item path: its value}")
-    by_path = {item.get("path"): item for item in items}
-    held: dict = {}
-    for path, given in value.items():
-        item = by_path.get(path)
-        if item is None:
-            raise DeclaredShapeError(f"{path!r} is not one of the questions asked")
-        if item.get("kind"):
-            try:
-                given = to_declared(given, item["kind"])
-            except DeclaredShapeError as mismatch:
-                raise DeclaredShapeError(f"{item.get('prompt') or path}: {mismatch}") from mismatch
-        held[path] = given
-    return held
 
 
 @router.post("/{question_id}/cancel")

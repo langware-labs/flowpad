@@ -85,10 +85,9 @@ async def _run(machine: Machine, platform: str, reply: str | None):
         while True:
             for question in ask.open_questions():
                 # The run asks ONCE, as a list; the one item here is the vcredist ask.
-                paths = [item["path"] for item in question.items if item["op"] == ASK]
-                if paths and reply is not None:
+                if reply is not None and any(item.op == ASK for item in question.items):
                     asked.append(ASK)
-                    ask.answer(question.id, {path: {} for path in paths} if reply == "yes" else {})
+                    ask.answer(question.id, ask.answer_items(question.items, lambda _item: {} if reply == "yes" else None))
             await asyncio.sleep(0.01)
 
     task = asyncio.create_task(person())

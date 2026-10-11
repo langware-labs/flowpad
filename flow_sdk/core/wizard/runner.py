@@ -74,6 +74,16 @@ class Resolved:
     trusted: bool = False
 
 
+def _allowed(found: Resolved, approved: bool) -> bool:
+    """May this run call *found*? Shipped trust does not compose — an explicit approval does."""
+    return found.trusted or approved
+
+
+def _step_path(path: tuple[str, ...], step: WizardStepSpec) -> str:
+    """A step's address from the top wizard down (``node/ask``) — what a pre-given answer is keyed by."""
+    return "/".join((*path, step.id))
+
+
 def wizard_refused(name: Optional[str]) -> WizardResult:
     """The one refusal a wizard answers, however it was reached.
 
@@ -332,7 +342,7 @@ async def _ask_once(run: _Run, root: Any) -> None:
     Only a run that is nobody's callee asks: a nested wizard's questions are already in its
     caller's list. Nothing to ask ⇒ nothing is raised, and the run is exactly what it was.
     """
-    from flow_sdk.core.wizard.plan import ask_needs, plan_wizard  # noqa: PLC0415 — plan imports the op runner too
+    from flow_sdk.core.wizard.plan import ask_needs, plan_wizard  # noqa: PLC0415 — plan imports this module
 
     plan = await plan_wizard(
         run.spec,
@@ -346,8 +356,8 @@ async def _ask_once(run: _Run, root: Any) -> None:
     )
     if not plan.needs:
         return
-    root.current(f"{run.spec.label or run.spec.name or 'wizard'}: waiting for you…")
-    run.answers.update(await ask_needs(run.spec, plan, wizard_id=run.wizard_id, workdir=run.workdir))
+    root.current(f"{run.spec.display_label}: waiting for you…")
+    run.answers.update(await ask_needs(run.spec, plan, wizard_id=run.wizard_id))
 
 
 async def _exit_error(run: _Run, root: Any, result: WizardResult) -> WizardResult:
@@ -460,7 +470,7 @@ async def _resolve(
     found = await resolver(step.ref)
     if found is None:
         return ReturnedValue.not_found(f"there is no {noun} named {step.ref!r}")
-    if not found.trusted and not run.approved:
+    if not _allowed(found, run.approved):
         # In the CALLEE's own answer class — a refused op step is the op's
         # CliResult / PromptResult / AskResult, a refused wizard step a
         # WizardResult — so a reader of `steps` never meets a base ReturnedValue
@@ -493,7 +503,7 @@ async def _call_op(run: _Run, step: WizardStepSpec, child: Any) -> ReturnedValue
         on_status=lambda text: child.current(text),
         wizard_id=run.wizard_id,
         check_only=run.check_only,
-        answered=run.answers.get("/".join((*run.path, step.id))),
+        answered=run.answers.get(_step_path(run.path, step)),
     )
 
 

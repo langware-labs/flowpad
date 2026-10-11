@@ -45,6 +45,7 @@ from pydantic import Field, model_validator
 
 from flow_sdk._compat import StrEnum
 from flow_sdk.schema.data_spec import AssetDocumentSpec, DataSpec
+from flow_sdk.schema.data_spec.confirm_spec import ConfirmSpec
 from flow_sdk.schema.data_spec.decision_spec import ChoiceQuestion, Question, ScoreQuestion, YesNoQuestion
 from flow_sdk.schema.data_spec.dock_pointer_spec import DockPointerSpec
 from flow_sdk.schema.data_spec.io.native import Text
@@ -80,10 +81,6 @@ ASK_TIMEOUT_SECONDS = 60.0
 #: working a provider's console takes minutes. From the launch, the question waits this long and the agent
 #: is stopped at it. An op's ``setup_timeout_seconds`` (a credential's own) sets any other span.
 SETUP_TIMEOUT = 600.0
-
-
-#: The kind of a yes/no answer (``ConfirmSpec``).
-CONFIRM_KIND = "confirm"
 
 
 class OpSubkind(StrEnum):
@@ -393,7 +390,7 @@ class AskItemSpec(DataSpec):
     @property
     def is_approval(self) -> bool:
         """Nothing to type, only to agree to."""
-        return self.kind == CONFIRM_KIND
+        return self.kind == ConfirmSpec.spec_kind
 
 
 class AskOp(ExeData):
@@ -593,7 +590,7 @@ class ComputeOpSpec(AssetDocumentSpec):
             raise ValueError(f"{self.name or 'this op'}: a completion_check or a status_check, not both")
         checked = self.completion_check is not None or bool(self.status_check)
         if getattr(self.exe_data, "auto_continue", False) and not (checked and (
-            (self.exe_data.recheck and self.output_spec_kind == "confirm")
+            (self.exe_data.recheck and self.output_spec_kind == ConfirmSpec.spec_kind)
             or any(choice.command for choice in self.exe_data.choices)
         )):
             raise ValueError(
