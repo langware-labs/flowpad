@@ -12,8 +12,9 @@ import { ContentTabTooltip, WorkdirLine } from '@src/tabs/provider-meta';
 import { tagAttrs } from '@src/tags/tag-attrs';
 import React from 'react';
 
-/** The surfaces a review can start on. */
-const REVIEW_MODES = [ViewMode.Vibe, ViewMode.Standard, ViewMode.Advanced];
+/** The surfaces a review can start on. A function, not a module constant: this file sits in an
+ *  import cycle with the view-mode context, and `ViewMode` is not there yet while it loads. */
+const reviewModes = () => [ViewMode.Vibe, ViewMode.Standard, ViewMode.Advanced];
 
 /**
  * Hover card for a document tab, in every view mode: what the document is and
@@ -53,7 +54,7 @@ export const DocTabCard: React.FC<{
       <div className="flex items-center justify-between gap-2 border-t pt-2">
           <span className="text-[11px] text-muted-foreground">{t`Review in`}</span>
           <div className={SEGMENTED_GROUP} data-testid="doc-tab-card-review">
-            {REVIEW_MODES.map((mode) => {
+            {reviewModes().map((mode) => {
               const Icon = MODE_ICONS[mode];
               // A Vibe session belongs to a project; a projectless tab has none to give it.
               if (mode === ViewMode.Vibe && !tab.project_id) return null;
