@@ -399,7 +399,7 @@ Eight verbs, the same in Python, TypeScript, REST and `dm_ctl`:
 |---|---|---|---|---|
 | rows | `rows(match, …)` (= `query`) | `rows(query)` | `GET rows` | some or all rows, plus every problem |
 | count | `count(match, group_by, metrics)` | `count(query)` | `GET count` | how many match — the SAME question as rows |
-| check | `check_row(row)` (`check` → its lines) | `check(row)` | `check-row` | would this write pass? writes nothing |
+| check | `check_row(row)` (`check` → its lines) | `check(row)` | `check-row` | would this write pass? A row that names its `key` is judged exactly as `put` would judge it (merged with the slots it leaves out, against the rules of the rows that reach it); writes nothing |
 | append | `append(rows)` | `append(rows)` | `append` | new rows |
 | put | `put` / `put_many` | `put` / `putMany` | `put-row` / `put-rows` | create or replace, by key |
 | delete | `delete_row` / `delete_rows` | `deleteRow` / `deleteRows` | `delete-row` / `delete-rows` | refused while linked to (`used_by` says by whom) |
@@ -474,8 +474,14 @@ itself. So "deals of this ICP" is `{"input.persona.icp.key": "fintech"}`, and "d
 `count(group_by=["input.persona.icp.key"])` — no join, no second call. Each dataset a link leads
 into is read once per query. `expand: ["input.persona"]` brings the linked rows back beside, once
 each, as `linked: {<ref>: {dataset_id, key, row}}` (the `/refs/<ref>` answer); the rows keep their
-references, so one can be put back as read. A join on a value that is NOT a link (an email address)
-stays two calls with `$IN` — or make it a link.
+references, so one can be put back as read.
+
+**A join on a value that is not a link** (an email address) is a sub-query in `$IN` / `$NIN` — the
+existing `$PROP` operand, given a match: `{"op": "$IN", "operands": ["input.email", {"op": "$PROP",
+"operands": ["input.email", {"input.metric": "em_reply"}]}]}` is "the rows whose email is among the
+emails of the rows that match" (`$NIN`: among none of them). A third operand names another kind's
+rows (`"crm.person"`); sub-queries nest. It is answered where the rows are, in one call. Where the
+two things really are one — a person — make it a link, and a path follows it.
 
 **Counting.** `count` is one verb. `group_by` entries are paths or date buckets written `word:path`
 (the grammar's `enum:` colon): `week:input.day`, `month:…`, `quarter:…`, `day:…`, keyed
@@ -500,10 +506,12 @@ links to. It is what a delete is refused for, asked ahead of time (`GET used-by?
 **Records beside rows.** A field typed by a record's kind — `"email": "?ingest.source_item"` — holds
 `ingest.source_item.id.<item id>`: a link to an ingested record. A record lives in the instance's
 store, so the link is not judged on a write from disk; over REST, `expand` returns it as
-`linked[<ref>] = {type, id, record}`. A path does not continue INTO a record (keep what you will
-ask about — the address, the day — in the row). Record ids are per machine: keep the provider's
-`external_id` beside the link in a dataset that travels. A script reads records with
+`linked[<ref>] = {type, id, record}`, and a path continues INTO the record
+(`{"input.email.author_display": "Ann"}`, `group_by=["input.email.thread_key"]`): the `rows` and
+`count` actions read the records a question's paths lead to, once each. From disk a record cannot
+be read, so a script hands over the ones it fetched — `ds.rows(match, records={ref: record})`, with
 `flow_sdk.local_client.graph_get("source_item", {"match": {"data_source_id": id}, "limit": 50})`.
+Record ids are per machine: keep the provider's `external_id` beside the link in a dataset that travels.
 
 **When did it change?** There is no row history, on purpose: rows have writers that bypass the SDK,
 so a write log would look complete and not be. A date you will ask about is a FIELD

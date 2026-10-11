@@ -32,6 +32,7 @@ A static Flowpad-SDK app imports `/sdk/flowpad-sdk.js`:
 | per week / month / quarter | `group_by: ["week:input.day"]` (also `day:` `month:` `quarter:`), keyed `2026-09-13` (the week's first day), `2026-09`, `2026-Q3`; `week_start: "sunday"` when your week begins there; `order_by: {"week:input.day": "asc"}` for a series; `bucketOf(day, "week", "sunday")` gives a period's key | same names |
 | people, not rows — first / last / total | `metrics: {people: "distinct:input.email", first: "min:input.day", total: "sum:input.amount"}` (`distinct` · `min` · `max` · `sum`) | same |
 | text anywhere in a row | `ds.rows({q: "pricing objection"})` (every word, list items included); `$LIKE` on a list field = some element contains it | `ds.rows(q=...)` |
+| a join on a value that is not a link ("people who replied AND have a meeting") | a sub-query in `$IN` / `$NIN`: `{op: "$IN", operands: ["input.email", {op: "$PROP", operands: ["input.email", {"input.metric": "em_reply"}]}]}` — a third operand names another kind's rows; one call | same |
 | who links to a row — and rows nothing links to | `ds.usedBy(keys?)` → `{key: [{dataset_id, kind, key}]}` (`[]` = unused); what a delete is refused for, asked first | `ds.used_by(keys=None)` |
 | records (a task, a session, an ingested email) — not rows | `searchRecords(q, {record_type, limit})`; `SourceItem.query(new QueryRequest({type: "source_item", query: new QueryFilter({match: {data_source_id}, limit: 50})}))` — paging goes in `query`, a stray top-level key is refused | a script: `flow_sdk.local_client.graph_get("source_item", {"match": {...}, "limit": 50})`, `.search(q)` |
 | link a row to a record | a field shaped `?ingest.source_item` holds `ingest.source_item.id.<item id>`; `expand` returns it as `linked[ref] = {type, id, record}` (over REST). Keep the provider's `external_id` too — record ids are per machine | same |
@@ -94,12 +95,11 @@ never split `enum:` or `|` yourself. `kindForm(kind).rules` lists the kind's rul
 - **A query reads the rows from disk each time** (there is no index over row fields), and each
   dataset a link path leads into once more: fine for thousands of rows, not for millions. Ask for
   what the page shows (`match`, `limit`), never every row on a timer.
-- **No join on a value that is not a link.** "Rows whose email appears in that other result" is
-  two calls and `$IN` — or make it a link, and a path follows it.
 - **No row history.** A date you will ask about is a field (`stage_dates`, `owned_by` its source);
   a write log would miss every writer that bypasses the SDK. A dataset in git has its commits.
-- **A path does not continue into a record**, and a link to a record is not checked on a write
-  from disk (records live in the instance's store). Keep what you will ask about in the row.
+- **A link to a record is not checked on a write from disk** (records live in the instance's
+  store), and a path continues into a record only where they can be read: over REST always; in a
+  script, hand `rows` / `count` the records you fetched (`records={ref: record}`).
 - **A rule across rows that counts, orders or sums** is not in the schema: write it into the
   kinds' `description.md` and check it in every writer. "The same row" (a tag chain) and "no two
   rows share this value" (`unique`: a natural key) ARE schema `rules` — never app code.

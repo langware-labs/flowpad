@@ -244,10 +244,13 @@ per_company = leads.count(group_by=["input.company.key"], metrics={"people": "di
 found = leads.rows(q="levi", expand=["input.company"])                    # text anywhere in the row; linked rows beside
 names = sorted(v["row"]["input"]["name"] for v in found["linked"].values())
 unused = [key for key, by in leads.used_by().items() if not by]           # rows nothing links to
+levis = {"op": "$PROP", "operands": ["input.company", {"op": "$LIKE", "operands": ["input.name", "levi"]}]}
+colleagues = leads.rows({"op": "$IN", "operands": ["input.company", levis]}, order_by={"key": "asc"})   # a join: one question
 ```
 
 A date bucket is written `week:input.day` (also `day:` / `month:` / `quarter:`; `week_start="sunday"`
 when your week begins there), a metric `distinct:` / `min:` / `max:` / `sum:` and a path. Over HTTP:
 `GET rows?filter={match, expand}&q=…`, `GET count?group_by=week:input.day&metrics={…}&order_by={…}`,
-`GET used-by`. TypeScript: `rows({match, q, expand})` → `linked`, `count({group_by, metrics, order_by,
+`GET used-by`. A join on a value is a sub-query — `$IN [field, {$PROP: [path, match, kind?]}]`: "among the
+values `path` takes in the rows that match". TypeScript: `rows({match, q, expand})` → `linked`, `count({group_by, metrics, order_by,
 week_start})`, `usedBy(keys)`, and `bucketOf(day, 'week', 'sunday')` for the key of a period.

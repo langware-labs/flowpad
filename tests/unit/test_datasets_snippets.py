@@ -142,3 +142,4 @@ async def test_ask_across_links_count_and_find_by_text(project):
     assert [(g["by"]["input.company.key"], g["count"], g["metrics"]["people"]) for g in ns["per_company"]["groups"]] == [("acme", 2, 2), ("bolt", 1, 1)]
     assert [r["key"] for r in ns["found"]["rows"]] == ["dana", "fay"] and ns["names"] == ["Acme", "Bolt"]
     assert ns["unused"] == ["dana", "eli", "fay"]
+    assert [r["key"] for r in ns["colleagues"]["rows"]] == ["dana", "eli", "fay"]      # everyone at a company a Levi is at

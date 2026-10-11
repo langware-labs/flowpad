@@ -617,16 +617,17 @@ class Dataset(Entity):
         ``cache`` keeps the linked rows read across calls -- a caller checking many rows in one pass
         (a sync) passes one dict, so each linked row is read once."""
         try:
-            example = self._row_in(row, 1, keyed=True, cache=cache)
-            key = row.get("key") if isinstance(row.get("key"), str) else None
-            before = None
+            key = row.get("key") if isinstance(row, dict) and isinstance(row.get("key"), str) and row.get("key") else None
             if key:
-                try:
-                    found = self.example(key)
-                except ValidationError:
-                    found = None
-                before = (found or {}).get("input")
-            return self._owned_details(example, before, by) + self._unique_details(key or "(this row)", example, {})
+                # a row that names its key is judged exactly as `put(key, row)` would judge it: merged
+                # with the slots it leaves out, against the row it replaces, and against the rules of
+                # the rows that reach it -- nothing is written
+                self._row_in(row, 1, keyed=True, cache=cache)      # its own shape first: named as given
+                self._prepare_put(key, {k: v for k, v in row.items() if k != "key"}, None,
+                                  {"by": by, "links": cache if cache is not None else {}})
+                return []
+            example = self._row_in(row, 1, keyed=True, cache=cache)
+            return self._owned_details(example, None, by) + self._unique_details("(this row)", example, {})
         except ValidationError as exc:
             from flow_sdk.datasets.links import shape_details  # noqa: PLC0415
 
@@ -983,14 +984,20 @@ class Dataset(Entity):
             rows = kept
         return rows, problems
 
-    def _linked(self) -> Any:
+    def _linked(self, records: Optional[dict] = None) -> Any:
         """Reads the rows links name, for one call: ``linked(ref) -> {dataset_id, key, row} | None`` --
-        the ``/refs/<ref>`` answer. Each dataset a link leads into is read ONCE, on first use."""
+        the ``/refs/<ref>`` answer. Each dataset a link leads into is read ONCE, on first use.
+        ``records`` are RECORDS the caller already read, by reference (``{ref: record as a dict}``): a
+        link to one is followed into it, its fields read as a row's ``input``."""
         from flow_sdk.datasets.links import find_row  # noqa: PLC0415
+        from flow_sdk.schema.data_spec.value_ref import parse_ref  # noqa: PLC0415
 
         owner, cache, folders = self._owner(), {}, {}
 
         def linked(ref: str) -> Optional[dict]:
+            if records and ref in records:
+                rid = parse_ref(ref)[1]  # type: ignore[index]
+                return {"record": records[ref], "row": {"key": rid, "id": rid, "ref": ref, "input": records[ref]}}
             found = find_row(ref, owner, cache=cache)
             if found is None:
                 return None
@@ -1003,8 +1010,33 @@ class Dataset(Entity):
 
         return linked
 
-    def query(self, match: Any = None, *, order_by: Any = None, limit: Optional[int] = None,
-              offset: Optional[int] = None, q: Optional[str] = None, expand: Optional[list[str]] = None) -> dict:
+    def _answered(self, match: Any, records: Optional[dict]) -> Any:
+        """``match`` with its sub-queries answered (``query.with_subqueries``): each asks this dataset,
+        or the one dataset of the kind it names, for the values a path takes in the rows that match."""
+        from flow_sdk.datasets.query import Many, expression, field_of, with_subqueries  # noqa: PLC0415
+        from flow_sdk.schema.data_spec.declared import kind_in  # noqa: PLC0415
+
+        def values(path: str, sub: Any, of: Optional[str]) -> list:
+            source = self
+            if of:
+                found = Dataset.for_kind(kind_in(self._owner(), of) or of, self._owner())
+                if len(found) != 1:
+                    raise ValueError(f"sub-query: expected one dataset of {of!r}, found {len(found)}")
+                source = found[0]
+            linked = source._linked(records)
+            follow = lambda ref: (linked(ref) or {}).get("row")   # noqa: E731
+            seen: dict = {}
+            for row in source.query(sub, records=records)["rows"]:
+                held = field_of(row, path, follow)
+                for value in (held if isinstance(held, Many) else [held]):
+                    if value is not None:
+                        seen.setdefault(repr(value), value)
+            return list(seen.values())
+
+        return with_subqueries(expression(match), values)
+
+    def query(self, match: Any = None, *, order_by: Any = None, limit: Optional[int] = None, offset: Optional[int] = None,
+              q: Optional[str] = None, expand: Optional[list[str]] = None, records: Optional[dict] = None) -> dict:
         """SOME of the rows: ``{rows, total, problems}``. ``match`` is an expression (``{op, operands}``)
         or a plain ``{path: value}`` map over a row as the API hands it out. A path is written as a
         schema's rules write theirs, with the slot spelled out (``flow_sdk.datasets.query``): ``key``,
@@ -1017,11 +1049,19 @@ class Dataset(Entity):
         how many matched before paging, and ``problems`` is EVERY row that does not fit -- a filter
         never hides a broken row. ``expand`` names link paths (``["input.persona"]``): the rows they
         lead to come back beside, once each, as ``linked: {<ref>: {dataset_id, key, row}}`` -- the
-        rows themselves keep their references, so one can be put back as it was read."""
+        rows themselves keep their references, so one can be put back as it was read.
+
+        A JOIN on a value that is not a link is a sub-query in ``$IN`` / ``$NIN``: ``{"op": "$IN",
+        "operands": ["input.email", {"op": "$PROP", "operands": ["input.email", {"input.metric":
+        "em_reply"}]}]}`` -- the rows whose email is among the emails of the rows that match (a third
+        operand names another kind's rows). ``records`` (``{ref: record}``) are records the caller
+        already read: a path then continues into a linked record (``input.email.author_display``) --
+        the ``rows`` action reads them itself; a script passes what ``local_client`` gave it."""
         from flow_sdk.datasets.query import Many, field_of, select  # noqa: PLC0415
 
+        match = self._answered(match, records)
         rows, problems = self.rows_and_problems()
-        linked = self._linked()
+        linked = self._linked(records)
         follow = lambda ref: (linked(ref) or {}).get("row")   # noqa: E731
         page, total = select((self._row_out(r) for r in rows), match=match, order_by=order_by, limit=limit,
                              offset=offset, q=q, follow=follow)
@@ -1036,7 +1076,13 @@ class Dataset(Entity):
                     for ref in (held if isinstance(held, (Many, list)) else [held]):
                         if isinstance(ref, str) and ref not in out["linked"]:
                             found = linked(ref)
-                            if found is not None:
+                            if found is not None and "record" in found:      # a record the caller read
+                                from flow_sdk.datasets.links import record_type_of  # noqa: PLC0415
+                                from flow_sdk.schema.data_spec.value_ref import parse_ref  # noqa: PLC0415
+
+                                kind, rid = parse_ref(ref)  # type: ignore[misc]
+                                out["linked"][ref] = {"type": record_type_of(kind), "id": rid, "record": found["record"]}
+                            elif found is not None:
                                 out["linked"][ref] = found
         return out
 
@@ -1047,7 +1093,7 @@ class Dataset(Entity):
         return self.query(match, **asked)
 
     def count(self, match: Any = None, *, group_by: Optional[list[str]] = None, metrics: Optional[dict[str, str]] = None,
-              order_by: Any = None, week_start: str = "monday", q: Optional[str] = None) -> dict:
+              order_by: Any = None, week_start: str = "monday", q: Optional[str] = None, records: Optional[dict] = None) -> dict:
         """How many rows match -- the SAME ``match`` and ``q`` as ``query``, so a number and the list
         behind it are one question: ``{total, groups}``. ``group_by`` gives the count per distinct
         combination, ``[{by: {<entry>: value}, count}]``; an entry is a path (links followed, as in
@@ -1059,7 +1105,8 @@ class Dataset(Entity):
         (``rows_and_problems`` names them)."""
         from flow_sdk.datasets.query import count  # noqa: PLC0415
 
-        linked = self._linked()
+        linked = self._linked(records)
+        match = self._answered(match, records)
         return count((self._row_out(r) for r in self.rows_and_problems()[0]), match=match, group_by=group_by,
                      metrics=metrics, order_by=order_by, week_start=week_start, q=q,
                      follow=lambda ref: (linked(ref) or {}).get("row"))
@@ -1191,34 +1238,47 @@ class Dataset(Entity):
         try:
             asked = self._query_params()
             found = self.query(asked["match"], order_by=asked["order_by"], limit=asked["limit"], offset=asked["offset"],
-                               q=asked["q"], expand=asked["expand"])
+                               q=asked["q"], expand=asked["expand"], records=await self._records_asked(asked))
         except ValueError as exc:   # the dataset declares no typed rows, or the filter does not read
             return ApiFailResponse(message=str(exc), status_code=400)
-        if asked["expand"]:
-            await self._expand_records(found, asked["expand"])
         return ApiSuccessResponse(data=found)
 
-    async def _expand_records(self, found: dict, expand: list[str]) -> None:
-        """Links to RECORDS among the expanded paths (a row's ``ingest.source_item`` reference), read
-        from the instance's store: ``linked[<ref>] = {type, id, record}``. Here and not in ``query``:
-        records are the server's to read; a script reads them through ``flow_sdk.local_client``."""
+    async def _records_asked(self, asked: dict) -> dict:
+        """The RECORDS the question's paths lead to (a row's ``ingest.source_item`` link, followed or
+        expanded), read from the instance's store: ``{ref: record}`` for ``query`` / ``count``. Asked
+        only when a path could reach one; a script reads them through ``flow_sdk.local_client``."""
         from flow_sdk.datasets.links import record_type_of  # noqa: PLC0415
-        from flow_sdk.datasets.query import Many, field_of  # noqa: PLC0415
+        from flow_sdk.datasets.query import asked_paths, field_of  # noqa: PLC0415
         from flow_sdk.schema.data_spec.value_ref import parse_ref  # noqa: PLC0415
 
+        paths = asked_paths(asked["match"], asked["order_by"] if not asked.get("group_by") else None,
+                            asked.get("group_by"), asked.get("metrics"), asked.get("expand"))
+        if not paths:
+            return {}
         cache: dict = {}
-        linked = found.setdefault("linked", {})
-        follow = lambda ref: (linked.get(ref) or {}).get("row")   # noqa: E731
-        for row in found["rows"]:
-            for path in expand:
-                held = field_of(row, path, follow)
-                for ref in (held if isinstance(held, (Many, list)) else [held]):
-                    parsed = parse_ref(ref) if isinstance(ref, str) and ref not in linked else None
-                    record_type = record_type_of(parsed[0], cache) if parsed else None
-                    if record_type:
-                        record = await Entity.get_by_typeid(f"{record_type}-{parsed[1]}")
-                        if record is not None:
-                            linked[ref] = {"type": record_type, "id": parsed[1], "record": record.model_dump(mode="json")}
+        wanted: dict[str, str] = {}
+        linked = self._linked()
+
+        def follow(ref: str) -> Optional[dict]:
+            record_type = record_type_of(parse_ref(ref)[0], cache)  # type: ignore[index]
+            if record_type:
+                wanted[ref] = f"{record_type}-{parse_ref(ref)[1]}"  # type: ignore[index]
+                return None
+            return (linked(ref) or {}).get("row")
+
+        for row in self.rows_and_problems()[0]:
+            shown = self._row_out(row)
+            for path in paths:
+                held = field_of(shown, path, follow)          # walking is what finds the links
+                for ref in (held if isinstance(held, list) else [held]):
+                    if isinstance(ref, str) and parse_ref(ref) is not None:
+                        follow(ref)                               # ... a link the path ENDS on, too (expand)
+        records = {}
+        for ref, typeid in wanted.items():
+            record = await Entity.get_by_typeid(typeid)
+            if record is not None:
+                records[ref] = record.model_dump(mode="json")
+        return records
 
     @action.get(action_name="count")
     async def count_action(self):
@@ -1227,7 +1287,8 @@ class Dataset(Entity):
         try:
             asked = self._query_params()
             return ApiSuccessResponse(data=self.count(asked["match"], group_by=asked["group_by"], metrics=asked["metrics"],
-                                                      order_by=asked["order_by"], week_start=asked["week_start"], q=asked["q"]))
+                                                      order_by=asked["order_by"], week_start=asked["week_start"], q=asked["q"],
+                                                      records=await self._records_asked(asked)))
         except ValueError as exc:
             return ApiFailResponse(message=str(exc), status_code=400)
 
