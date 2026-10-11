@@ -71,3 +71,42 @@ async def new_cloud_projects() -> ApiResponse:
     someone_typeid = request_info.someone_typeid if request_info else None
     links = await Project.new_from_hub(someone_typeid)
     return ApiSuccessResponse(data={"projects": [link.model_dump(exclude_none=True) for link in links]})
+
+
+@action.post(action_name="install-from-hub", types=[BuiltinEntityType.PROJECT.value], allow_missing_target=True)
+async def install_project_from_hub() -> ApiResponse:
+    """``POST project/<id>/install-from-hub`` ``{name}`` — a hub project this desktop
+    holds no row for, mirrored and set up under the receiver's ``name``: the answer
+    to a ``new-cloud-projects`` link whose own name is a project here already.
+    Refused like an invite's install (409 ``project_name_conflict``) when ``name``
+    is taken too."""
+    from flow_sdk.builtin.project import DuplicateProjectNameError, Project  # noqa: PLC0415
+    from flow_sdk.cloud_client.shared.errors import HubError  # noqa: PLC0415
+
+    request_info = get_current_request_info()
+    if not request_info or not request_info.target_entity_typeid:
+        return ApiFailResponse(
+            message="install-from-hub requires a project: project/<id>/install-from-hub", status_code=400
+        )
+    body = await request_info.get_post_data() or {}
+    name = str(body.get("name") or "").strip()
+    if not name:
+        return ApiFailResponse(message="install-from-hub requires a name", status_code=400)
+    try:
+        project = await Project.hydrate_from_hub(
+            str(request_info.target_entity_typeid.id), request_info.someone_typeid, name=name
+        )
+    except DuplicateProjectNameError as e:
+        return ApiFailResponse(
+            message=f"you already have a project named {e.existing.name!r}",
+            status_code=409,
+            data=await e.conflict(name),
+        )
+    except HubError as e:
+        return ApiFailResponse(message=f"The hub can't be reached: {e}", status_code=502)
+    if project is None:
+        return ApiFailResponse(message="That project is no longer available.", status_code=404)
+    try:
+        return ApiSuccessResponse(data=await project.setup_from_git_origin())
+    except Exception as exc:  # noqa: BLE001 — the receiver gets the reason (a failed clone), not a stack
+        return ApiFailResponse(message=str(exc), status_code=400)

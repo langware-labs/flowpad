@@ -201,6 +201,7 @@ export function NewConversationDialog({ open, onClose }: NewConversationDialogPr
               onChange={setParticipants}
               excludeUserId={cloudUser?.id ?? ctx.user?.id}
               enabled={open}
+              includeTeams
               testId="participant-input"
             />
           </div>
