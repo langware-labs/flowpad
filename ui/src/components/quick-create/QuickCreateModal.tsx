@@ -64,13 +64,9 @@ export function QuickCreateModal({
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
-        {/* Capped and scrollable: with four tile groups this dialog is taller
-            than a ~670px window, and an uncapped DialogContent (centered by a
-            -50% transform, overflow visible) simply hangs off both edges — the
-            last group's tiles land outside the viewport where nothing can click
-            them. grid-rows-[auto,minmax(0,1fr)] lets the header stay put while
-            the panel takes the scroll. */}
-        <DialogContent className="max-h-[85vh] max-w-md grid-rows-[auto,minmax(0,1fr)] overflow-hidden">
+        {/* Use available width for side-by-side groups. Keep the header fixed
+            and the options scrollable when the viewport is short or narrow. */}
+        <DialogContent className="max-h-[85vh] w-[calc(100vw-2rem)] max-w-5xl grid-rows-[auto,minmax(0,1fr)] overflow-hidden">
           <DialogHeader>
             <DialogTitle>
               {showAddExisting ? <Trans>New</Trans> : <Trans>Create new</Trans>}
@@ -97,11 +93,11 @@ export function QuickCreateModal({
 
           <div className="min-h-0 overflow-y-auto pe-1">
             {showAddExisting && <h2 className="mb-3 text-sm font-semibold"><Trans>Create new</Trans></h2>}
-            <QuickCreatePanel {...panelProps} project={explicitProject} allUserTypes={allUserTypes} sections={sections} onDone={() => onOpenChange(false)} />
+            <QuickCreatePanel className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,22.25rem),1fr))]" {...panelProps} project={explicitProject} allUserTypes={allUserTypes} sections={sections} onDone={() => onOpenChange(false)} />
             {showAddExisting && (
               <section className="mt-6 border-t border-border pt-4" aria-label={t`Add existing`}>
                 <h2 className="mb-3 text-sm font-semibold"><Trans>Add existing</Trans></h2>
-                <QuickCreatePanel {...panelProps} project={explicitProject} sections={[...ADOPTION_SECTIONS]} onDone={() => onOpenChange(false)} />
+                <QuickCreatePanel className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,22.25rem),1fr))]" {...panelProps} project={explicitProject} sections={[...ADOPTION_SECTIONS]} onDone={() => onOpenChange(false)} />
               </section>
             )}
           </div>
