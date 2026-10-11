@@ -255,6 +255,8 @@ __pycache__/
 .venv/
 venv/
 .env
+.env.local
+.env.*.local
 
 # Node
 node_modules/
@@ -452,6 +454,7 @@ class GitRepo:
         control path) — the repo is usable either way.
         """
         if await self.is_init():
+            await self.ensure_gitignore()
             return GitRestoreResult(ok=True, message="Already a git repository")
         made = await self._git("init", "--initial-branch=main")
         if not made.ok:
@@ -459,7 +462,27 @@ class GitRepo:
         for key, value in GIT_INIT_CONFIG:
             await self._git("config", key, value)
         await self._seed_gitignore()
+        await self.ensure_gitignore()
         return GitRestoreResult(ok=True, message="Initialized git repository")
+
+    async def ensure_gitignore(self) -> None:
+        """Keep local credentials out of commits; verify with Git, preserving user rules."""
+        tracked = await self._git("ls-files", "--", ".env.local")
+        if not tracked.ok:
+            raise RuntimeError("Could not validate .env.local tracking")
+        if tracked.stdout.strip():
+            raise RuntimeError(".env.local is already tracked; remove it from the Git index first")
+        ignored = await self._git("check-ignore", "-q", "--", ".env.local")
+        if ignored.ok:
+            return
+        if ignored.returncode != 1:
+            raise RuntimeError("Could not validate .env.local ignore rules")
+        path = os.path.join(self.work_dir, ".gitignore")
+        existing = (await self._compute_node.read_files(path))[path] if await self._compute_node.exists(path) else ""
+        separator = "\n" if existing and not existing.endswith("\n") else ""
+        await self._compute_node.write_files(path, f"{existing}{separator}.env.local\n")
+        if not (await self._git("check-ignore", "-q", "--", ".env.local")).ok:
+            raise RuntimeError(".env.local is not excluded by Git after updating .gitignore")
 
     async def _seed_gitignore(self) -> None:
         """Write DEFAULT_GITIGNORE at the repo root, but only if absent.

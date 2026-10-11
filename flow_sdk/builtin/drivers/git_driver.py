@@ -80,6 +80,7 @@ class GitOriginDriver:
         cloned = await git_clone(origin.clone_url(), str(clone_target), branch=origin.branch or None, token=token)
         if not cloned.ok:
             raise RuntimeError(cloned.detail)
+        await (await GitRepo.local(str(clone_target))).ensure_gitignore()
         return await resolved(clone_target)
 
     def matches(self, origin: FSOrigin, local_path: Path) -> bool:
