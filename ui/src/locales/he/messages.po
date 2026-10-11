@@ -1990,6 +1990,11 @@ msgstr ""
 msgid "Add entity link"
 msgstr "הוסף קישור לישות"
 
+#: src/components/quick-create/QuickCreateModal.tsx
+#: src/components/quick-create/QuickCreateModal.tsx
+msgid "Add existing"
+msgstr "הוספת קיים"
+
 #: src/components/assets/editor/task/TaskAttachments.tsx
 msgid "Add file or folder"
 msgstr "הוספת קובץ או תיקייה"
@@ -3059,6 +3064,10 @@ msgstr ""
 #: src/components/hub/AddMachineDialog.tsx
 msgid "Approve"
 msgstr "אישור"
+
+#: src/components/ask/AskItems.tsx
+msgid "Approve and continue"
+msgstr ""
 
 #: src/components/collaboration/LiveSessionView.tsx
 #: src/components/conversation/SessionCard.tsx
@@ -9842,6 +9851,10 @@ msgstr ""
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
 msgid "Expires after"
 msgstr "פג תוקף אחרי"
+
+#: src/components/project-setup/ProjectSetupDialog.tsx
+msgid "Explain"
+msgstr ""
 
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
 msgid "Explain the result"
@@ -25670,6 +25683,10 @@ msgstr ""
 
 #: src/components/token-plan/MembersTable.tsx
 msgid "This month"
+msgstr ""
+
+#: src/components/ask/AskItems.tsx
+msgid "This one is required. Without it, setup will end unfinished."
 msgstr ""
 
 #: src/components/organization/budgets/PayingProviderSetup.tsx

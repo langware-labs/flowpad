@@ -291,11 +291,7 @@ def test_a_message_keeps_exactly_the_digest_it_had():
     header_only = lambda item: sha256_bytes(canonical_entity_bytes({name: getattr(item, name, None) for name in DIGESTED_FIELDS}))   # noqa: E731
     plain = _item()
     assert content_digest(plain) == digest_over(plain, DIGESTED_FIELDS) == header_only(plain)
-    try:
-        message = _item(data=MessageData())
-    except Exception:   # noqa: BLE001 -- a MessageData needing more than defaults is not this test's subject
-        message = None
-    if message is not None:
-        assert content_digest(message) == header_only(message)
+    message = _item(data=MessageData())
+    assert content_digest(message) == header_only(message)
     record = _item(data=RecordData(title="A title"))
     assert content_digest(record) != header_only(record)

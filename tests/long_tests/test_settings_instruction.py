@@ -129,6 +129,12 @@ def _assert_assets_materialized(assets, system_prompt: str, worker_type: WorkerT
         assert system_prompt in path.read_text(encoding="utf-8")
 
 
+#: Workers held to DELIVERY only (the instruction files, asserted by each test, and a live turn).
+#: Copilot loads a custom instruction — it quotes it when asked — but its own model does not
+#: follow one on a bare prompt; the bare CLI does the same with no Flowpad in the loop.
+_DELIVERY_ONLY = frozenset({WorkerType.COPILOT})
+
+
 async def _await_and_assert_marker(
     process: AgenticProcess,
     worker_type: WorkerType,
@@ -138,7 +144,8 @@ async def _await_and_assert_marker(
     turn_started: float,
     label: str = "",
 ) -> None:
-    """Poll for the marker; skip on no-live-turn / infra error, else assert obedience."""
+    """Poll for the marker; skip on no-live-turn / infra error, else assert obedience
+    (delivery only for ``_DELIVERY_ONLY``)."""
     body, saw_fresh = await _await_marker(process, worker_type, marker=marker, deadline_s=20, min_mtime=turn_started)
     if not saw_fresh:
         pytest.skip(
@@ -147,6 +154,8 @@ async def _await_and_assert_marker(
         )
     if any(token in body.lower() for token in _INFRA_ERROR_TOKENS):
         pytest.skip(f"{cli_name} CLI could not complete a live{label} turn: {body[:500]}")
+    if worker_type in _DELIVERY_ONLY:
+        return
     assert marker in body, (
         f"{cli_name}{label}: settings instruction was not obeyed — marker "
         f"{marker!r} absent from assistant response:\n{body[:1000]}"
