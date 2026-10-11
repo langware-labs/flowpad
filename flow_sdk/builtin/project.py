@@ -1906,7 +1906,7 @@ class Project(SetupSkippable, Entity):
         self.remote = True
         await self.save()
         await self.setup_for_desktop()
-        await _index_additional_dir(target_dir, read_only=True)
+        await _index_additional_dir(target_dir, read_only=True, project_id=str(self.id), own=True)
 
         try:
             await self.resolve_dependencies()
@@ -1986,7 +1986,7 @@ class Project(SetupSkippable, Entity):
             self.name = os.path.basename(target_dir.rstrip(os.sep))
         await self.save()
         await self.setup_for_desktop()
-        await _index_additional_dir(target_dir)
+        await _index_additional_dir(target_dir, project_id=str(self.id), own=True)
 
         states = await self.resolve_dependencies()
         return ApiSuccessResponse(
