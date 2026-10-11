@@ -8,6 +8,8 @@ Values are never read.
 from __future__ import annotations
 
 import asyncio
+from dataclasses import dataclass
+from pathlib import Path
 from typing import TYPE_CHECKING, Optional
 
 from flow_sdk.builtin.credential_files import credential_file
@@ -21,8 +23,8 @@ from flow_sdk.builtin.credential_store import CredentialScope, project_scope, se
 from flow_sdk.schema.data_spec.credential_contract import (
     VALUE_STORE_ENV,
     VALUE_STORE_VAULT,
+    CredentialRequirement,
     CredentialVarKind,
-    as_requirement,
     vault_name,
 )
 from flow_sdk.schema.data_spec.credential_status_spec import (
@@ -33,6 +35,7 @@ from flow_sdk.schema.data_spec.credential_status_spec import (
     DetectedKeySpec,
     EnvFallbackStatusSpec,
     ScopeFileStatusSpec,
+    group_held,
 )
 from flow_sdk.schema.data_spec.deployment_secrets_spec import LOCAL_STORE_TYPES, store_word
 
@@ -114,6 +117,19 @@ async def _remote_names(refs: list["SecretStoreRef"]) -> dict[tuple[str, str], O
     return dict(zip((ref.key for ref in unique), await asyncio.gather(*(names(ref) for ref in unique))))
 
 
+async def _signed_in(var) -> bool:
+    """A ``cli`` variable's own check, run on this computer: exit 0 is signed in. A tool that is not
+    installed, or a check with no command for this OS, is not signed in."""
+    from flow_sdk.core.compute.exec import run_shell  # noqa: PLC0415
+    from flow_sdk.schema.data_spec.compute_op_spec import CHECK_TIMEOUT  # noqa: PLC0415
+
+    command = var.check.command_for() if var.check is not None else None
+    if not command:
+        return False
+    said = await run_shell(command, timeout_seconds=var.check.timeout(CHECK_TIMEOUT), workdir=Path.home())
+    return said.returncode == 0 and not said.timed_out
+
+
 async def oauth_states(specs: list["Credential"]) -> dict[str, tuple[str, list[str]]]:
     """``{provider: (state, missing scopes)}`` for the oauth credentials in ``specs`` — read from the ONE truth
     about grants (the connection list, ``core/connections/specs``), and the SDK's own scope check for what a
@@ -147,7 +163,39 @@ async def oauth_states(specs: list["Credential"]) -> dict[str, tuple[str, list[s
     return out
 
 
-async def credentials_status(project: Optional["Project"], deployment_id: str = "") -> CredentialsStatusSpec:
+def _requirement(var, must_here: bool) -> CredentialRequirement:
+    """What this deployment needs of ``var``: its own word, raised to MUST when the deployment requires it."""
+    if must_here:
+        return CredentialRequirement.MUST
+    return CredentialRequirement.ONE_OF if var.is_one_of else CredentialRequirement.OPTIONAL
+
+
+@dataclass
+class _Draft:
+    """An ``env`` credential's row while its sign-ins are still being asked."""
+
+    spec: "Credential"
+    vars: list[CredentialVarStatusSpec]
+    required: set[str]
+    fields: dict
+
+    def settle(self) -> CredentialStatusRowSpec:
+        has_group = any(v.is_one_of for v in self.vars)
+        needed = self.required or (set() if has_group else {v.env_var for v in self.vars})
+        if all(v.present for v in self.vars if v.env_var in needed) and group_held(self.vars):
+            state = "connected"
+        elif any(v.present for v in self.vars):
+            state = "partial"
+        else:
+            state = "missing"
+        return CredentialStatusRowSpec(**self.fields, state=state, vars=self.vars)
+
+
+async def credentials_status(
+    project: Optional["Project"], deployment_id: str = "", *, sign_ins: bool = True
+) -> CredentialsStatusSpec:
+    """``sign_ins=False``: a ``cli`` variable's check (a process) is not run and it reads as not signed
+    in — for a reader that lists what a store can hand over, which a sign-in never is."""
     placement = await placement_for_deployment(deployment_id)
     environment = placement.environment
     pairs = await credentials_in_scope(project)
@@ -160,11 +208,11 @@ async def credentials_status(project: Optional["Project"], deployment_id: str = 
     files = await asyncio.gather(*(asyncio.to_thread(_file_status, s, environment) for s in scopes))
     env_keys = {s.key: keys for s, (_, keys) in zip(scopes, files)}
 
-    refs = {(str(spec.id), name): secret_store_ref(spec, scope, name, placement) for spec, scope in pairs for name in spec.var_names()}
+    refs = {(str(spec.id), name): secret_store_ref(spec, scope, name, placement) for spec, scope in pairs for name in spec.stored_var_names()}
     remote = await _remote_names([ref for ref in refs.values() if ref.type not in LOCAL_STORE_TYPES])
 
     grants = await oauth_states([spec for spec, _ in pairs])
-    rows: list[CredentialStatusRowSpec] = []
+    rows: list["CredentialStatusRowSpec | _Draft"] = []
     for spec, scope in pairs:
         common = dict(
             typeid=str(spec.typeid), name=str(spec.name or ""), title=spec.title or str(spec.name or ""),
@@ -185,6 +233,15 @@ async def credentials_status(project: Optional["Project"], deployment_id: str = 
         required = set(placement.required(spec))
         stores: set[str] = set()
         for env_var, var in (spec.vars or {}).items():
+            shown = dict(env_var=env_var, label=var.label, hint=var.hint, help_url=var.help_url,
+                         required=_requirement(var, env_var in required), kind=var.kind)
+            if var.is_cli:
+                # Not signed in until its check says so, below — once the stored values are known.
+                var_rows.append(CredentialVarStatusSpec(
+                    **shown, secret=False, store="cli", warning="missing",
+                    login=var.login_command, login_spec=var.login, check_spec=var.check,
+                ))
+                continue
             ref = refs[(str(spec.id), env_var)]
             store = store_word(ref)
             stores.add(store)
@@ -204,44 +261,34 @@ async def credentials_status(project: Optional["Project"], deployment_id: str = 
                 warning = None if present else ("unreachable" if held is None else "missing")
             winner = declared.get(env_var)
             shadowed_by = str(winner.spec.typeid) if winner is not None and winner.spec.id != spec.id else None
-            var_rows.append(
-                CredentialVarStatusSpec(
-                    env_var=env_var,
-                    label=var.label,
-                    hint=var.hint,
-                    placeholder=var.placeholder,
-                    pattern=var.pattern,
-                    help_url=var.help_url,
-                    secret=var.secret,
-                    required=as_requirement(env_var in required),
-                    kind=var.kind,
-                    store=store,
-                    present=present,
-                    found_in=found_in,
-                    warning=warning,
-                    shadowed_by=shadowed_by,
-                )
-            )
-        needed = required or set(spec.var_names())
-        met = [v for v in var_rows if v.present]
-        if all(v.present for v in var_rows if v.env_var in needed):
-            state = "connected"
-        elif met:
-            state = "partial"
-        else:
-            state = "missing"
-        rows.append(
-            CredentialStatusRowSpec(
-                **common,
-                setup_wiki=getattr(spec, "setup_wiki", "") or "",
-                setup=getattr(spec, "setup", "") or "",
-                setup_timeout_seconds=getattr(spec, "setup_timeout_seconds", None),
-                value_store=next(iter(stores)) if len(stores) == 1 else "mixed",
-                lm_provider=spec.lm_provider or "",
-                state=state,
-                vars=var_rows,
-            )
-        )
+            var_rows.append(CredentialVarStatusSpec(
+                **shown, placeholder=var.placeholder, pattern=var.pattern, secret=var.secret, store=store,
+                present=present, found_in=found_in, warning=warning, shadowed_by=shadowed_by,
+            ))
+        rows.append(_Draft(spec, var_rows, required, dict(
+            **common,
+            setup_wiki=getattr(spec, "setup_wiki", "") or "",
+            setup=getattr(spec, "setup", "") or "",
+            setup_timeout_seconds=getattr(spec, "setup_timeout_seconds", None),
+            value_store=next(iter(stores)) if len(stores) == 1 else "mixed",
+            lm_provider=spec.lm_provider or "",
+        )))
+
+    # A sign-in lives on this computer: it is asked only for the deployment that IS this computer, and a
+    # ONE_OF one only while no stored member already settles its group. Each check is a process, so they
+    # run together, after every store has answered.
+    drafts = [row for row in rows if isinstance(row, _Draft)]
+    if sign_ins and (not deployment_id or any(str(d.id) == deployment_id and d.is_this_computer for d in deployments)):
+        asked = [
+            (draft, i) for draft in drafts
+            for i, v in enumerate(draft.vars)
+            if v.kind is CredentialVarKind.CLI and not (v.is_one_of and any(o.is_one_of and o.present for o in draft.vars))
+        ]
+        answers = await asyncio.gather(*(_signed_in(draft.spec.vars[draft.vars[i].env_var]) for draft, i in asked))
+        for (draft, i), signed_in in zip(asked, answers):
+            if signed_in:
+                draft.vars[i] = draft.vars[i].model_copy(update={"present": True, "warning": None})
+    rows = [row.settle() if isinstance(row, _Draft) else row for row in rows]
 
     return CredentialsStatusSpec(
         project_id=str(project.id) if project is not None else None,

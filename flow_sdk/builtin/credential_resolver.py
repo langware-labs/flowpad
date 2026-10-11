@@ -119,7 +119,7 @@ def declare(pairs: CredentialPairs) -> dict[str, DeclaredVar]:
     """Fold credentials into one declaration per variable, project overriding user."""
     out: dict[str, DeclaredVar] = {}
     for spec, scope in pairs:
-        for env_var in spec.var_names():
+        for env_var in spec.stored_var_names():
             previous = out.get(env_var)
             if previous is not None and previous.scope.scope == scope.scope:
                 # Two specs in one scope must not declare the same variable;

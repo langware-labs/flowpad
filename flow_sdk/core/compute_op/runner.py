@@ -1147,6 +1147,7 @@ async def _ask_once(ask, spec: ComputeOpSpec, env: Optional[dict], *, timeout, d
         secret=spec.exe_data.secret,
         file=spec.exe_data.file,
         auto=spec.exe_data.auto_continue,
+        choices=spec.exe_data.choices,
         wizard_id=wizard_id,
         guide=fill(spec.setup or "", env),
         # AI Assist: the agent follows the same guide, for the setup's own span once started.

@@ -10,6 +10,7 @@ import {
   DialogTitle,
 } from '@src/components/ui/dialog';
 import { Button } from '@src/components/ui/button';
+import { AskChoiceBlock } from './AskChoiceBlock';
 import { AskValueInput } from './AskValueInput';
 import { MarkdownView } from '@src/components/markdown-view';
 import { useAskModalStore } from './ask-modal-store';
@@ -35,7 +36,7 @@ export function AskModalRoot() {
 }
 
 function AskModal({ questionId, onOpenChange }: { questionId: string; onOpenChange: (open: boolean) => void }) {
-  const { question, values, setValues, error, busy, settledKind, settledMessage, submit, cancel, agentAnswered } =
+  const { question, hasChoices, values, setValues, error, busy, settledKind, settledMessage, submit, answer, cancel, agentAnswered } =
     useAskQuestion(questionId);
   // The question's words were written by the backend (a compute op's prompt, detail and buttons).
   const bt = useBackendText();
@@ -107,7 +108,14 @@ function AskModal({ questionId, onOpenChange }: { questionId: string; onOpenChan
               onAnswered={agentAnswered}
             />
 
-            {fieldsOf(question.fields).map((name) => (
+            <AskChoiceBlock
+              choices={question.choices}
+              busy={busy}
+              submitLabel={question.submit_label ? bt(question.submit_label) : undefined}
+              onAnswer={(value) => void answer(value)}
+            />
+
+            {(hasChoices ? [] : fieldsOf(question.fields)).map((name) => (
               <div key={name} className="flex flex-col gap-1">
                 {name ? (
                   <label className="text-sm" htmlFor={`ask-modal-${name}`}>
@@ -136,9 +144,11 @@ function AskModal({ questionId, onOpenChange }: { questionId: string; onOpenChan
               <Button variant="ghost" disabled={busy} onClick={() => void cancel()} data-testid="ask-modal-cancel">
                 {question.cancel_label ? bt(question.cancel_label) : <Trans>Cancel</Trans>}
               </Button>
-              <Button disabled={busy} onClick={() => void submit()} data-testid="ask-modal-submit">
-                {question.submit_label ? bt(question.submit_label) : <Trans>Send</Trans>}
-              </Button>
+              {hasChoices ? null : (
+                <Button disabled={busy} onClick={() => void submit()} data-testid="ask-modal-submit">
+                  {question.submit_label ? bt(question.submit_label) : <Trans>Send</Trans>}
+                </Button>
+              )}
             </DialogFooter>
           </>
         )}

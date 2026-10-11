@@ -6,7 +6,9 @@ import { useLingui } from '@lingui/react';
 import apiClient from '@sdk/client';
 import { Button } from '@src/components/ui/button';
 import { AskAssist, type AssistState } from './AskAssist';
+import { AskChoiceBlock } from './AskChoiceBlock';
 import { AskValueInput } from './AskValueInput';
+import { hasChoicesOf, type AskChoice } from './use-ask-question';
 import { useBackendText } from '@src/components/assets/editor/wizard/wizard-texts';
 import { MarkdownView } from '@src/components/markdown-view';
 
@@ -35,6 +37,8 @@ interface Question {
   secret?: boolean;
   /** The answer is a file's content (a key file): drawn as a file picker. */
   file?: boolean;
+  /** More than one way to answer (`AskChoiceBlock`); empty for every ordinary question. */
+  choices?: AskChoice[];
   /** The words on the two buttons ("Continue"); empty means Send / Cancel. */
   submit_label?: string;
   cancel_label?: string;
@@ -140,6 +144,8 @@ export function AskForm({
     );
   }
 
+  const hasChoices = hasChoicesOf(question);
+
   return (
     <div className="flex flex-col gap-4" data-testid="ask-view">
       <div>
@@ -168,7 +174,14 @@ export function AskForm({
         onAnswered={agentAnswered}
       />
 
-      {fieldsOf(question.fields).map((name) => (
+      <AskChoiceBlock
+        choices={question.choices}
+        busy={busy}
+        submitLabel={question.submit_label ? bt(question.submit_label) : undefined}
+        onAnswer={(value) => void send('/answer', { value })}
+      />
+
+      {(hasChoices ? [] : fieldsOf(question.fields)).map((name) => (
         <div key={name} className="flex flex-col gap-1">
           {name ? (
             <label className="text-sm" htmlFor={`ask-${name}`}>
@@ -197,7 +210,7 @@ export function AskForm({
       ) : null}
 
       <div className="flex items-center gap-2">
-        {question.auto ? (
+        {hasChoices ? null : question.auto ? (
           <span className="flex items-center gap-2 text-sm text-muted-foreground" data-testid="ask-auto-waiting">
             <Loader2 className="size-4 animate-spin" />
             <Trans>Waiting…</Trans>

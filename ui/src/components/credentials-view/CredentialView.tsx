@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { AlertTriangle, Check, CircleDashed, ExternalLink, Pencil, Trash2 } from 'lucide-react';
-import { credentialsService, dataContext, isRequired } from '@sdk';
+import { credentialsService, CredentialRequirement, dataContext, groupSatisfied, isRequired } from '@sdk';
 import { credentialIcon, useCredentialState } from '@src/components/agent-resources/AgentCredentialsSection';
 import { buildCredentialRows } from './credential-rows';
 import { RequirementChip } from './RequirementChip';
@@ -11,6 +11,7 @@ import { useCredentials } from '@src/components/credentials/use-credentials';
 import { Badge } from '@src/components/ui/badge';
 import { Button } from '@src/components/ui/button';
 import { ConfirmDialog } from '@src/components/ui/confirm-dialog';
+import { CopyableCommand } from '@src/components/version-popover/version-popover';
 import { errorMessage } from '@src/lib/error-message';
 import { cn } from '@src/lib/utils';
 import { notify } from '@src/notifications';
@@ -42,6 +43,11 @@ export function CredentialView({ typeid, onGone }: { typeid: string; onGone: () 
   }
 
   const source = row.source;
+  // An unset member of the either-or group is a warning only while NO member is set.
+  const groupMet = groupSatisfied(source.vars);
+  // How one variable stands — whole phrases, so a translation orders its own words.
+  const words = { in: t`signed in`, out: t`not signed in`, set: t`set`, unset: t`optional · not set`, missing: t`missing` };
+  const oneOfWords = { ...words, in: t`one of · signed in`, out: t`one of · not signed in`, set: t`one of · set`, unset: t`one of · not set` };
   const Icon = credentialIcon(row.iconName);
   const where = row.store === 'vault' ? t`the vault` : row.envPath || '.env.local';
   const remove = async () => {
@@ -145,12 +151,16 @@ export function CredentialView({ typeid, onGone }: { typeid: string; onGone: () 
             <Trans>Variables</Trans>
           </h2>
           <ul className="divide-y rounded-md border" data-testid="credential-child-vars">
-            {source.vars.map((v) => (
+            {source.vars.map((v) => {
+              const oneOf = v.required === CredentialRequirement.ONE_OF;
+              const cli = v.kind === 'cli';
+              const word = cli ? (v.present ? 'in' : 'out') : v.present ? 'set' : oneOf || !isRequired(v) ? 'unset' : 'missing';
+              return (
               <li key={v.env_var} className="flex items-center gap-3 px-3 py-2" data-testid={`credential-var-${v.env_var}`} data-present={v.present || undefined}>
                 {v.present ? (
                   <Check className="h-4 w-4 shrink-0 text-green-600" />
-                ) : isRequired(v) ? (
-                  <AlertTriangle className="h-4 w-4 shrink-0 text-amber-600" />
+                ) : isRequired(v) || (oneOf && !groupMet) ? (
+                  <AlertTriangle className="h-4 w-4 shrink-0 text-amber-600" data-testid={`credential-var-alert-${v.env_var}`} />
                 ) : (
                   <CircleDashed className="h-4 w-4 shrink-0 text-muted-foreground" />
                 )}
@@ -160,16 +170,16 @@ export function CredentialView({ typeid, onGone }: { typeid: string; onGone: () 
                     <RequirementChip required={v.required} testId={`credential-var-required-${v.env_var}`} />
                   </div>
                   {v.label && v.label !== v.env_var && <div className="text-xs text-muted-foreground">{v.label}</div>}
-                </div>
-                <span className="text-xs text-muted-foreground">
-                  {v.present ? (
-                    <Trans>set</Trans>
-                  ) : isRequired(v) ? (
-                    <Trans>missing</Trans>
-                  ) : (
-                    <Trans>optional · not set</Trans>
+                  {/* Nothing is stored for a cli variable: what there is to show is how to sign in. */}
+                  {cli && v.login && (
+                    <div className="mt-1" data-testid={`credential-var-login-${v.env_var}`}>
+                      <CopyableCommand command={v.login} />
+                    </div>
                   )}
-                  {!v.secret && <Trans> · not secret</Trans>}
+                </div>
+                <span className="text-xs text-muted-foreground" data-testid={`credential-var-state-${v.env_var}`}>
+                  {(oneOf ? oneOfWords : words)[word]}
+                  {!cli && !v.secret && <Trans> · not secret</Trans>}
                 </span>
                 {v.warning === 'wrong-store' && (
                   <span className="text-xs text-amber-600" data-testid={`credential-var-warning-${v.env_var}`}>
@@ -177,7 +187,8 @@ export function CredentialView({ typeid, onGone }: { typeid: string; onGone: () 
                   </span>
                 )}
               </li>
-            ))}
+              );
+            })}
           </ul>
         </section>
 

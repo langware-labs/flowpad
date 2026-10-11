@@ -1,10 +1,13 @@
 import { useCallback, useEffect, useState, type KeyboardEvent, type MouseEvent, type ReactNode } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import {
+  CredentialRequirement,
   CredentialsSubview,
   Layout,
+  missingNeeds,
   Project,
   recheckProjectReadiness,
+  requirementOf,
   setProjectReadiness,
   TypeId,
   type ProjectReadiness,
@@ -69,16 +72,19 @@ const namesItself = (req: ProjectSetupRequirement) => req.kind === 'dependency' 
 
 /**
  * What a row says beside its name: why it is not ready, else what the credential is needed for, else what is
- * missing.
+ * missing — an either-or group of values as "A or B".
  */
-function detailOf(req: ProjectSetupRequirement): string {
+function detailOf(req: ProjectSetupRequirement, or: string): string {
   if (namesItself(req)) return req.note || req.title;
   if (req.credential_kind === 'oauth') return req.note || req.needed_for || `connect ${req.title || req.name}`;
   return (
     req.needed_for ||
-    req.vars
-      .filter((v) => !v.present)
-      .map((v) => v.label || v.env_var)
+    [
+      ...missingNeeds(req.vars),
+      // What is listed but not needed (an optional value) stays listed, as before.
+      ...req.vars.filter((v) => !v.present && requirementOf(v) === CredentialRequirement.OPTIONAL).map((v) => [v]),
+    ]
+      .map((need) => need.map((v) => v.label || v.env_var).join(or))
       .join(', ')
   );
 }
@@ -509,7 +515,7 @@ function RequirementRow({
               ? req.required
                 ? t`required — it will not work here until it is set up`
                 : t`optional — skipped here`
-              : detailOf(req)}
+              : detailOf(req, t` or `)}
           </span>
           {!skipped && <JustificationInfo req={req} />}
         </div>

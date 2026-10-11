@@ -38,6 +38,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Optional
 
 if TYPE_CHECKING:  # pragma: no cover
+    from flow_sdk.schema.data_spec.compute_op_spec import AskChoiceSpec
     from flow_sdk.schema.data_spec.returned_value_spec import AskResult
 
 
@@ -70,6 +71,8 @@ class Question:
     file: bool = False
     #: The question closes by itself when its goal holds (an ``auto_continue`` op): nothing to Send.
     auto: bool = False
+    #: Several ways to answer, of which the person picks one (``AskOp.choices``).
+    choices: "list[AskChoiceSpec]" = field(default_factory=list)
     #: The Wizard entity this question is a step of, when it is one — its
     #: TypeId's uuid half. Empty for an op run outside any wizard. This is the
     #: one thread back from a settled question to the run that is still going:
@@ -114,6 +117,7 @@ class Question:
             "secret": self.secret,
             "file": self.file,
             "auto": self.auto,
+            "choices": [choice.model_dump(mode="json") for choice in self.choices],
             "wizard_id": self.wizard_id,
             "run": self.run,
             "guide": self.guide,
@@ -189,6 +193,7 @@ def open_question(
     secret: bool = False,
     file: bool = False,
     auto: bool = False,
+    choices: "Optional[list[AskChoiceSpec]]" = None,
     wizard_id: str = "",
     guide: str = "",
     assist_agent: str = "",
@@ -212,6 +217,7 @@ def open_question(
         secret=secret,
         file=file,
         auto=auto,
+        choices=list(choices or []),
         wizard_id=wizard_id,
         run=ASKING_RUN.get(),
         guide=guide,
@@ -341,6 +347,7 @@ async def ask_person(
     secret: bool = False,
     file: bool = False,
     auto: bool = False,
+    choices: "Optional[list[AskChoiceSpec]]" = None,
     wizard_id: str = "",
     guide: str = "",
     assist_agent: str = "",
@@ -369,6 +376,7 @@ async def ask_person(
         secret=secret,
         file=file,
         auto=auto,
+        choices=choices,
         wizard_id=wizard_id,
         guide=guide,
         assist_agent=assist_agent,
@@ -432,6 +440,7 @@ async def ask_through_backend(
     secret: bool = False,
     file: bool = False,
     auto: bool = False,
+    choices: "Optional[list[AskChoiceSpec]]" = None,
     wizard_id: str = "",
     guide: str = "",
     assist_agent: str = "",
@@ -462,6 +471,7 @@ async def ask_through_backend(
         "secret": secret,
         "file": file,
         "auto": auto,
+        "choices": [choice.model_dump(mode="json") for choice in choices or []],
         "wizard_id": wizard_id,
         "guide": guide,
         "assist_agent": assist_agent,
