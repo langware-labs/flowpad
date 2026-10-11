@@ -103,12 +103,26 @@ function isInterpreterModule(module) {
   return INTERPRETER_MODULES.has(module) || INTERPRETER_MODULES.has(String(module).split('.').pop());
 }
 
-function detectPolicyBlockInLog(text) {
+/**
+ * The application-control block in `text`, or null.
+ *
+ * Two scopes, because the same words mean different things in different output:
+ *   - the SERVER LOG (default): only the `ImportError: DLL load failed while importing X: <policy>`
+ *     form counts — a module of the server's own process refused. The policy text on its own
+ *     (`os error 4551`, "blocked by group policy") in that log is a child the server tried to
+ *     spawn — a worker, a tool — and the server reports it and goes on; the Python classifier
+ *     (flow_sdk/server/failure_classification.py) treats it the same way, non-fatal. Stopping the
+ *     backend wait and offering Repair on it was a false alarm.
+ *   - `{ launcher: true }`: the output of `flow start` itself. There every wording counts, because
+ *     the process refused IS the launcher (uv's `Failed to spawn: flow … os error 4551`).
+ */
+function detectPolicyBlockInLog(text, { launcher = false } = {}) {
   const lines = unwrapRichLines(text).split(/\r?\n/);
   for (let i = lines.length - 1; i >= 0; i--) {
     const line = lines[i];
     if (!POLICY_BLOCK_LINE.test(line)) continue;
     const mod = line.match(/importing ([A-Za-z0-9_.]+)/);
+    if (!launcher && !mod) continue;
     let file = null;
     let start = i;
     for (let j = i - 1; j >= 0 && i - j < 400; j--) {
