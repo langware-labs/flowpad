@@ -11,7 +11,7 @@ import {
 } from '@sdk';
 import { usePreferenceValue } from '@src/hooks/use-preference';
 import { defineGlobal } from '@sdk/utils';
-import { useEffect, useRef, useSyncExternalStore } from 'react';
+import { createContext, type ReactNode, useContext, useEffect, useRef, useSyncExternalStore } from 'react';
 import { NavigationType, useLocation, useNavigationType } from 'react-router';
 import { useCurrentDock } from '@src/navigation/useDockNavigation';
 import { DockPointer } from '@src/navigation/DockPointer';
@@ -349,7 +349,49 @@ export function setDev(val?: boolean): void {
 defineGlobal('setDev', setDev);
 defineGlobal('getDev', getDev);
 
+/**
+ * The mode a session pane OFF SCREEN stays in: the one it was last shown in.
+ *
+ * Session panes are kept alive when you move to another tab or page. The mode on
+ * screen then belongs to wherever you went — and a hidden chat that followed it
+ * re-rendered as another surface, so the reader came back to a different place.
+ * Null outside a pane (and for the pane on screen): the live mode applies.
+ */
+const PinnedViewModeContext = createContext<ViewMode | null>(null);
+
+/** Wrap a kept-alive session pane (`pointer`: the session it shows). While that
+ *  session is the one on screen it follows the live mode; otherwise it keeps the
+ *  last mode it was shown in. Keyed on the ADDRESS, not only on `active`: the
+ *  two flip in different renders, and a pane still marked active for a frame
+ *  must not adopt the mode of the place just navigated to. */
+export function SessionPaneViewMode({
+  active,
+  pointer,
+  children,
+}: {
+  active: boolean;
+  pointer: string | null | undefined;
+  children: ReactNode;
+}) {
+  const live = useLiveViewMode(false);
+  const here = useCurrentDock();
+  const onScreen = active && !!pointer && here?.pointer === pointer && DockPointer.isSessionView(here.viewType);
+  const shown = useRef<ViewMode | null>(null);
+  if (onScreen) shown.current = live;
+  return (
+    <PinnedViewModeContext.Provider value={onScreen ? null : (shown.current ?? live)}>{children}</PinnedViewModeContext.Provider>
+  );
+}
+
 export function useViewMode(): ViewMode {
+  const pinned = useContext(PinnedViewModeContext);
+  const live = useLiveViewMode(pinned === null);
+  return pinned ?? live;
+}
+
+/** The mode on screen. `paint`: also reflect it on the document root (never for
+ *  a pinned, off-screen reader — its mode is not the one on screen). */
+function useLiveViewMode(paint = true): ViewMode {
   const currentDock = useCurrentDock();
   const override = useSyncExternalStore(
     subscribeViewModeOverride,
@@ -360,7 +402,9 @@ export function useViewMode(): ViewMode {
   // override is a projection adopted by a later effect. An address that states
   // no mode shows the app's one mode — never the stored preference.
   const mode = currentDock?.viewMode ?? override ?? UNSTATED_VIEW_MODE;
-  useEffect(() => applyAttribute(mode), [mode]);
+  useEffect(() => {
+    if (paint) applyAttribute(mode);
+  }, [mode, paint]);
   return mode;
 }
 

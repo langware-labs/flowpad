@@ -7,6 +7,7 @@ import { notify } from '@src/notifications';
 import { AlertTriangle, LoaderCircle, PlayCircle, RefreshCw } from 'lucide-react';
 import React, { useEffect, useRef, useState } from 'react';
 import InteractiveTerminal from './interactive-terminal';
+import { SessionPaneViewMode } from '@src/contexts/view-mode-context';
 import { useProcessSurface } from './interactive-terminal/use-process-surface';
 import { retryFailedStart, TerminalRuntimeErrorBanner } from './interactive-terminal/TerminalRuntimeErrorBanner';
 import { estimateCols, estimateRows } from './interactive-terminal/terminalConfig';
@@ -370,13 +371,15 @@ const TerminalPanelBody: React.FC<{
       ) : !isProcess && shellStartError ? (
         <ShellStartFailedState message={shellStartError} onRetry={() => setShellStartAttempt((n) => n + 1)} />
       ) : transportShellId || (isProcess && activeProcess?.isHeadless) ? (
-        <InteractiveTerminal
-          sessionId={transportShellId}
-          className="h-full"
-          active={isActive}
-          process={isProcess ? (activeProcess ?? undefined) : undefined}
-          onTitleChange={handleTitleChange}
-        />
+        <SessionPaneViewMode active={isActive} pointer={tab.dockPointer?.pointer}>
+          <InteractiveTerminal
+            sessionId={transportShellId}
+            className="h-full"
+            active={isActive}
+            process={isProcess ? (activeProcess ?? undefined) : undefined}
+            onTitleChange={handleTitleChange}
+          />
+        </SessionPaneViewMode>
       ) : isProcess && !activeProcess ? null /* process entity still hydrating */ : (
         // Process loaded but has no shell and isn't headless (worker binary
         // missing / start_failure latch / drift): an unconditional visible
