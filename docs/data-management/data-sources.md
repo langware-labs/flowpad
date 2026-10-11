@@ -141,12 +141,15 @@ differs between sources, the source says itself: the credential shape is the man
 `auth` (one resolver, `flow_sdk/ingest/credentials.py`); `build` constructs it over an
 application transport; `message_for` reads a send's arguments; `query` names the one stream it reads; `local_tree_key` / `origin_id_for` place and name reflected files;
 `permalink` addresses its channel's UI; `webhook_challenge` / `webhook_account` /
-`events_from_webhook` take push delivery through the one generic route,
-`/api/v1/data_source/webhook/<name>`, and `webhook_authentic` — when a class declares it —
-must accept the delivery's raw body and headers before anything is ingested. The check is
-`DataDriver.ingest_pushed`'s, so no caller can skip it, and the route answers a refusal
-with 401 (the URL is public; WhatsApp checks Meta's `X-Hub-Signature-256` against the app
-secret). The shipped folders load on the first
+`events_from_webhook` take provider delivery through the generic route,
+`/api/v1/data_source/webhook/<name>`. `webhook_authentic` — when a class declares it —
+checks the original raw body and headers in `DataDriver.ingest_pushed`; this public route
+answers a signature refusal with 401. Hub claim delivery instead names the source at
+`/api/v1/data_source/<id>/webhook` and passes `verified_by_hub=True`: the hub already checked
+the signature before splitting the batch, and the receiving route relies on trusted hub
+transport. See [channel webhook routing](../snippets/channel-webhook-routing.md) for setup,
+account/group selection, admission and the two endpoints' different failure semantics.
+The shipped folders load on the first
 `DataDriver.loaded(provider)` call; an authored folder loads on first use
 (`DataDriver.get`). `tests/unit/test_data_sources_are_self_contained.py` fails on
 any provider knowledge outside an asset folder.

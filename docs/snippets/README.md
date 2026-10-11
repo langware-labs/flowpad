@@ -32,6 +32,12 @@ pinned by a test so it cannot drift silently.
 | [Asset dependencies](asset-dependencies.md) | an asset names what it needs by id (`<type>-<uuid>` / `<kind>.id.<uuid>`) in its own `flow.json`; three layered folder sources where depending on the personal one brings team and company; a missing link named with the path it was needed on; where an id is looked up | `tests/unit/test_asset_dependencies_snippets.py` (runs every python fence), `tests/unit/test_asset_dependencies.py` (every case and corner) |
 | [Stream stream inbox automations](stream-inbox-automations.md) | when a message arrives · if a decision op says it is about X · then a wizard runs: the `trigger.json` with `if` and `then`, `Trigger.on_message`, the decision op asked without firing, the message state the decision and the agent share, the fire path and its rows, the agent step's input, a decision as a wizard step, the verbs the screens use, TypeScript | `tests/unit/test_stream_inbox_automations_snippets.py` (runs every Python fence), `tests/unit/automations/test_stream_inbox_gate.py` (the fire-path corners), `ui/tests/unit/stream-inbox-automations-snippet.test.ts` (the TS fence) |
 
+## Channel routing
+
+[Channel webhook routing](channel-webhook-routing.md) connects the official WhatsApp driver,
+hub account/user/group claims, source-ID delivery, deployment answering and diagnostics.
+Its group setup example is run by `tests/unit/test_agents_on_channels_snippets.py`.
+
 ## Conventions
 
 * **No snippet requires manual service setup.** Most run directly in-process;

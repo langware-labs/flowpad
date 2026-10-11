@@ -776,6 +776,9 @@ async with ZenSource(SourceBinding(config={}, account_key="zen")) as zen:   # th
 
 Chart: Channel (`flow.DataSource`) -> Stream inbox (`flow.StreamInbox`) -> Agent (`flow.AgenticProcess`) -> Reply (`flow.DataSpec`)
 
+For webhook setup, user/group claims and delivery versus answering placement, read
+[channel webhook routing](../snippets/channel-webhook-routing.md) in the source checkout.
+
 ### Let the app answer
 
 Give the agent a channel; nothing of yours keeps running.

@@ -84,6 +84,7 @@ fails** with what the user must do:
 | the gate-safe transport both scripts share (never call it directly) | `scripts/_ctl_common.py` |
 | know what a manifest may declare | `docs/data-management/data-source-asset.md` (repo) |
 | know how the sync loop, health and reflect behave | `docs/data-management/data-sources.md` (repo) |
+| connect a WhatsApp agent through hub claims, or diagnose channel/deployment routing | [Flow SDK channel documentation map](../flowpad-assistance/sdk-channels.md) — source checkout required |
 | present something to the user, or take them somewhere | the `flowpad-navigation` skill |
 
 ## Showing the user

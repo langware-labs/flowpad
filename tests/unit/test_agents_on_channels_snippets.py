@@ -59,6 +59,66 @@ async def test_1_the_credential_is_declared_once(whatsapp):
     assert any(c.name == "whatsapp" and c.scope == "user" for c in status.credentials)
 
 
+@pytest.mark.parametrize("account_claimed", [False, True])
+async def test_channel_routing_group_example(whatsapp, monkeypatch, account_claimed):
+    """The guide claims a saved group source under its account, or stops before verify.
+
+    Graph is the normal WhatsApp double; only the hub transport is replaced.
+    """
+    from flow_sdk.builtin.agent import Agent
+    from flow_sdk.builtin.agent_serve import admits
+    from flow_sdk.cloud_client.transport import hub_http
+    from flow_sdk.instance_settings import runtime
+
+    driver = DataDriver.loaded("whatsapp")
+    agent = Agent(name="routing-example", system_prompt="Answer briefly.")
+    await agent.save()
+    account = driver.create_source(driver.create_config(**whatsapp.config), name="Account", owner=agent)
+    await account.save()
+    posted = []
+
+    async def hub_get(entity, entity_id=None, action=None, *args, **kwargs):
+        assert (entity, action) == ("webhook", "mine")
+        return {"webhooks": [{
+            "id": "account-claim", "provider": "whatsapp", "status": "active",
+            "claim": {"kind": "account", "key": account.config["phone_number_id"]},
+            "target": {"kind": "desktop", "instance_id": "routing-instance", "data_source_id": str(account.id)},
+        }] if account_claimed else []}
+
+    async def hub_post(entity, payload, entity_id=None, action=None, *args, **kwargs):
+        assert (entity, action) == ("webhook", "chain")
+        posted.append(payload)
+        return {"id": "group-claim"}
+
+    monkeypatch.setattr(hub_http, "hub_get", hub_get)
+    monkeypatch.setattr(hub_http, "hub_post", hub_post)
+    monkeypatch.setattr(runtime, "instance_uid", lambda: "routing-instance")
+    group_id = "Y2FwaV9ncm91cDoxMjM0NTY3ODkwMTIzNDU6MTIwMzYzMDAwMDAwMDAwMDAx"
+    page = "channel-webhook-routing.md"
+    ns = {"account_source": account, "agent": agent, "GROUP_ID": group_id}
+    try:
+        await run_fence(fence_under(doc(page), "4."), ns, filename=page,
+                        raises=None if account_claimed else RuntimeError)
+        group = ns["group_source"]
+        assert group.id != account.id
+        assert (await DataSource.get_by_id(str(account.id))).config.get("group", "") == ""
+        if not account_claimed:
+            assert not posted and "account" in ns["claim_result"].detail
+            assert "verdict" not in ns
+            return
+        assert posted == [{
+            "parent": "account-claim", "claim": {"kind": "group", "key": group_id}, "proof": {},
+            "target": {"kind": "desktop", "instance_id": "routing-instance", "data_source_id": str(group.id)},
+        }]
+        assert ns["verdict"]["ready"] and group.status == "active"
+        assert admits(group, whatsapp.sender)
+    finally:
+        if "group_source" in ns:
+            await ns["group_source"].delete()
+        await account.delete()
+        await agent.delete()
+
+
 @pytest.mark.long  # 3.2s: a real turn on the mock worker waits out the transcript's 2s settle window
 async def test_2_variant_a_the_app_answers_on_the_channel(whatsapp, monkeypatch, tmp_path):
     """Nothing of the owner's runs: the deployment's loop (``builtin/agent_loop`` — in the app a

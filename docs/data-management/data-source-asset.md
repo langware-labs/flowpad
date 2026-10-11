@@ -235,6 +235,14 @@ stable public URL as that variable and relays deliveries to
 mine" never copies this computer's. A driver whose callback URL lives in the provider's dashboard
 (voice_phone) declares none; its owner sets the hub URL there by hand.
 
+The manifest also participates in desktop setup: `source.step("public-webhook")` uses a
+source class's `hub_claim(config, secrets)` when declared, otherwise creates a generic desktop
+webhook. An account claim carries its proof and public URL; an account part (such as a group)
+names its parent account and shares that callback. Chain delivery targets a source ID at
+`/api/v1/data_source/<id>/webhook`, not the generic deployment route above. Planning deployment
+webhooks does not automatically wire these claims. See
+[channel webhook routing](../snippets/channel-webhook-routing.md) before moving a channel.
+
 ### `reflect`
 
 Supported modes, head first as the default. The values are `ReflectMode`: `record`
