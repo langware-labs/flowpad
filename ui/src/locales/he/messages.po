@@ -3064,7 +3064,7 @@ msgstr "העברת ההרצה הזו לארכיון והתחלת רשומה חד
 #: src/components/conversation/conversation-category.ts
 #: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Archived"
-msgstr "ממופקד"
+msgstr "מאורכב"
 
 #: src/components/account/database-section.tsx
 msgid "Are you sure you want to clear all data from the database? This will also clear the scan index. A backup will be created first."
@@ -7797,7 +7797,7 @@ msgstr "מחק מפתח API"
 
 #: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Delete archived conversations"
-msgstr "מחוק שיחות ממופקדות"
+msgstr "מחיקת שיחות מאורכבות"
 
 #: src/components/project-activity-strip/BookmarkCard.tsx
 msgid "Delete bookmark"
@@ -15134,7 +15134,7 @@ msgstr "עדיין אין הערות"
 
 #: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "No archived conversations"
-msgstr "אין שיחות ממופקדות"
+msgstr "אין שיחות מאורכבות"
 
 #: src/components/artifacts/artifacts-list.tsx
 msgid "No artifacts yet"
