@@ -150,7 +150,7 @@ jobs:
     name: electron (node unit tests, ${{ matrix.os }})
     if: ${{ github.event_name != 'workflow_dispatch' || inputs.e2e-only == '' }}
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 15
+    timeout-minutes: 10
     strategy:
       fail-fast: false
       matrix:
@@ -173,12 +173,12 @@ jobs:
   # server monitor's stop-retry policy, the failure classifier, the native-deps
   # manifest — FLOWPAD-2231) on a real Windows runner. Not the whole unit tier:
   # that one spawns servers and PTYs and is sharded for Linux. The 15-minute
-  # cap is the same as the Linux shards; `uv sync` dominates it on Windows.
+  # `uv sync` dominates it on Windows (the job takes about a minute).
   backend-unit-windows:
     name: backend (pytest unit, windows subset)
     if: ${{ github.event_name != 'workflow_dispatch' || (inputs.backend-tests && inputs.e2e-only == '') }}
     runs-on: windows-latest
-    timeout-minutes: 15
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
       - name: Set up uv + Python 3.11

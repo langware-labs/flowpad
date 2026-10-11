@@ -720,10 +720,10 @@ def test_enforced_policy_block_stops_the_monitor_with_zero_restarts(monkeypatch,
     assert started == [], "a deterministic failure must not be retried"
     assert info.value.verdict.kind == fc.POLICY_BLOCKED
     record = launch.load_failure_record()
-    assert record["kind"] == "policy-blocked" and record["fatal"] is True and record["restarts_stopped"] is True
-    assert record["module"] == "_multiprocessing" and record["attempts"] == 1
-    assert record["fingerprint"]["hash"] == "abc"
-    assert record["server_log"].endswith("server.log")
+    assert record.kind == "policy-blocked" and record.fatal is True and record.restarts_stopped is True
+    assert record.module == "_multiprocessing" and record.attempts == 1
+    assert record.fingerprint.hash == "abc"
+    assert record.server_log.endswith("server.log")
 
 
 def test_audit_only_evidence_never_stops_the_monitor(monkeypatch, failure_dir):
@@ -775,7 +775,7 @@ def test_unknown_transient_failure_is_retried_with_backoff_but_boundedly(monkeyp
     assert len(started) == fc.CRASH_LOOP_LIMIT - 1, "retried, but not forever"
     assert max(sleeps) >= 8, "the doubling backoff kicked in between retries"
     record = launch.load_failure_record()
-    assert record["kind"] == "crash-loop" and record["attempts"] == fc.CRASH_LOOP_LIMIT
+    assert record.kind == "crash-loop" and record.attempts == fc.CRASH_LOOP_LIMIT
 
 
 def test_a_matching_fatal_record_refuses_to_start_the_same_runtime(monkeypatch, failure_dir, set_infos):
