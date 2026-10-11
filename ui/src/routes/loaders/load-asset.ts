@@ -13,7 +13,7 @@
  * resting URL. Best-effort: a miss/parse-failure is non-fatal (the view renders
  * its own missing/error state); never throws into the parent dock loader.
  */
-import { ContextEntitiesEnum, Project, TypeId, VFSPath, dataContext, dataManager } from '@sdk';
+import { ContextEntitiesEnum, EventBus, Project, TypeId, VFSPath, dataContext, dataManager } from '@sdk';
 import { AssetDocPointer } from '@src/navigation/AssetDocPointer';
 import { AssetMode, AssetRoutingMethod, isBrowseListPointer, isFileOnlyEditor } from '@src/navigation/asset-doc-types';
 import { resolveWikiWord } from '@src/components/wiki/resolve-wiki';
@@ -58,6 +58,11 @@ async function setEntityContext(entity: ContextEntity | null): Promise<void> {
 
 /** Machine paths `/assets/entity` answered with nothing, this session. */
 const pathMisses = new Set<string>();
+// A miss holds until an asset entity is created. Every create is announced on the app bus
+// whether or not this page keeps the row, so the announcement is what ends the memo.
+EventBus.on('app.entity.created', (event) => {
+  if ((event.data?.entity as { asset_ref?: unknown } | null | undefined)?.asset_ref) pathMisses.clear();
+});
 /** Machine paths `/assets/entity` answered with an entity — the URL's own spelling of the path, which
  *  need not match the entity's `asset_ref` (a symlinked dir: `/var/…` in the URL, `/private/var/…` stored). */
 const pathHits = new Map<string, TypeId>();
@@ -133,9 +138,8 @@ export async function loadAssetRoute(
     if (machine) {
       // Cache-first (dock-loading I4): a revisit must not wait on a lookup it
       // already made. A remembered miss (a file nothing indexed) stays a miss
-      // until an entity for the path reaches the cache — the scan above finds it
-      // first — so the negative memo heals itself; the view resolves a miss on
-      // its own either way.
+      // until an asset entity is created, so the negative memo
+      // heals itself; the view resolves a miss on its own either way.
       const known = pathHits.get(machine);
       const cached =
         (known ? (dataManager.getByTypeIdFromCache(known) as unknown as ContextEntity | null) : null) ??
