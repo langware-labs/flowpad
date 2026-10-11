@@ -51,6 +51,7 @@ import {
   type SwitchModeBody,
   WorkerStatus,
   isBusy,
+  isProcessEnded,
   isProcessRunning,
   isReadyForInput,
   isWorkerRunning,
@@ -2215,6 +2216,23 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
     })();
 
     return this._historyLoading;
+  }
+
+  /**
+   * A terminal session is finished for the UI once its worker ended AND its tab is closed
+   * (`visible=false`). An ended session whose tab is still open is on screen; a headless
+   * process (`pty_mode` off) has no tab and is driven by whoever holds it.
+   */
+  override isRetired(): boolean {
+    return this.pty_mode === true && this.visible === false && isProcessEnded(this.status);
+  }
+
+  /** The transcript mirror and the artifact list are re-read by the next view that asks. */
+  override onEvicted(): void {
+    super.onEvicted();
+    this._historyLoaded = false;
+    this._artifacts = [];
+    this._artifactsLoaded = false;
   }
 
   /**
