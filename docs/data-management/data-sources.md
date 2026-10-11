@@ -303,6 +303,14 @@ so "does it send" (`DataDriver.sends`) is the family itself.
 `ingest_items` stays the single chokepoint for `SourceItem` writes; reflection is
 a second destination *beside* it rather than a branch inside it.
 
+A record source may also name a **dataset** its records are mirrored into (`mirror:
+{dataset, map, by?}` in `data_source.json`). That is a projection of the records, not a third mode:
+the records still land as `SourceItem`s, and after every `sync.completed` the dataset is made their
+typed mirror (`flow_sdk/datasets/projection.py`, the twin of the stream inbox projection). A row's
+outside-owned fields then write back through the source's own verbs (`create_item`, `update_item`,
+`delete_item`), and what the driver answers is recorded at once. See
+[mirroring a system of record](mirroring-a-system-of-record.md).
+
 | Mode | Bytes | Notes |
 |---|---|---|
 | `record` | none — the graph | Every `RecordSource` and `MessageSource`. The default |
