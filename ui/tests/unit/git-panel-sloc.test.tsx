@@ -1,10 +1,14 @@
 import '@testing-library/jest-dom/vitest';
 
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { BrowserRouter } from 'react-router';
+import { cleanup, render as rtlRender, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 const gitMocks = vi.hoisted(() => ({
   getStatus: vi.fn(),
+  fileDiff: vi.fn().mockResolvedValue({ diff: 'commit-only diff' }),
+  revision: 'abcdef1234567890',
+  commitFiles: [{ status: 'A', path: 'committed.txt', staged: false, insertions: 3, deletions: 0 }],
   status: {
     error: null as string | null,
     branch: 'main',
@@ -27,13 +31,25 @@ vi.mock('@sdk', async (importOriginal) => {
   return {
     ...actual,
     GitWorkdir: class {
-      async getStatus(options?: { lineCounts?: boolean }) {
+      fileDiff = gitMocks.fileDiff;
+      unpushedCommits() {
+        return Promise.resolve([
+          { hash: gitMocks.revision, message: 'Add committed file', author: 'Author', date: '2026-10-11' },
+        ]);
+      }
+      getStatus(options?: { lineCounts?: boolean; revision?: string }) {
         gitMocks.getStatus(options);
-        return gitMocks.status;
+        return Promise.resolve(
+          options?.revision ? { ...gitMocks.status, files: gitMocks.commitFiles } : gitMocks.status,
+        );
       }
     },
   };
 });
+
+vi.mock('@src/components/code-editor/DiffContent', () => ({
+  DiffContent: ({ diffString }: { diffString: string }) => <pre>{diffString}</pre>,
+}));
 
 vi.mock('@src/lib/open-external', () => ({ openExternal: vi.fn() }));
 
@@ -45,7 +61,12 @@ import { fireEvent } from '@testing-library/react';
 import { openExternal } from '@src/lib/open-external';
 import { GitPanel } from '@src/components/terminal/interactive-terminal/side-windows/GitPanel';
 
-afterEach(cleanup);
+const render = (ui: React.ReactNode) => rtlRender(<BrowserRouter>{ui}</BrowserRouter>);
+
+afterEach(() => {
+  cleanup();
+  window.history.replaceState(null, '', '/');
+});
 
 describe('GitPanel line totals', () => {
   it('sums insertions and deletions across files and shows the net', async () => {
@@ -114,5 +135,33 @@ describe('GitPanel header sync chip', () => {
     for (const other of ['git-panel-no-upstream', 'git-panel-in-sync', 'git-panel-ahead']) {
       if (other !== testId) expect(screen.queryByTestId(other)).not.toBeInTheDocument();
     }
+  });
+});
+
+describe('GitPanel commit review', () => {
+  it('opens a commit with shared read-only rows and diff, then returns to pending changes', async () => {
+    gitMocks.status = {
+      ...gitMocks.status,
+      ahead: 1,
+      upstream: 'origin/main',
+      files: [{ status: 'M', path: 'pending.txt', staged: false, insertions: 1, deletions: 0 }],
+    };
+    render(<GitPanel computeNodeId="@local" workdir="/repo" />);
+    fireEvent.click(await screen.findByTestId('git-panel-ahead'));
+    fireEvent.click(await screen.findByRole('button', { name: /Add committed file/ }));
+    expect(await screen.findByText('committed.txt')).toBeInTheDocument();
+    expect(gitMocks.getStatus).toHaveBeenLastCalledWith({ lineCounts: true, revision: gitMocks.revision });
+    expect(screen.queryByText('pending.txt')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('git-panel-push')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('git-panel-mode')).not.toBeInTheDocument();
+    expect(screen.getByTestId('git-panel-sloc-added')).toHaveTextContent('+3');
+    fireEvent.click(screen.getByText('committed.txt'));
+    expect(await screen.findByText('commit-only diff')).toBeInTheDocument();
+    expect(gitMocks.fileDiff).toHaveBeenLastCalledWith('committed.txt', 'A', gitMocks.revision);
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+    expect(screen.queryByText('commit-only diff')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Working tree' }));
+    expect(await screen.findByText('pending.txt')).toBeInTheDocument();
+    expect(screen.getByTestId('git-panel-push')).toBeInTheDocument();
   });
 });

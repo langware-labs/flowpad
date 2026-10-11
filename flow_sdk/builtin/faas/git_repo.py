@@ -534,8 +534,8 @@ class GitRepo:
             path = path[: -len(".git")]
         return f"https://{host}/{path}" if path else None
 
-    async def get_status(self, *, line_counts: bool = False) -> GitStatus:
-        """Return a rich git-status object.
+    async def get_status(self, *, line_counts: bool = False, revision: str | None = None) -> GitStatus:
+        """Return working-tree status, or the files changed by an immutable commit.
 
         ``line_counts`` fills each file's ``insertions``/``deletions``. It is
         opt-in because it costs three to six more git spawns (see
@@ -553,6 +553,9 @@ class GitRepo:
                 files    = [GitStatusFile(status, path, insertions, deletions), ...],
             )
         """
+        if revision is not None:
+            return await self._get_commit_status(revision, line_counts=line_counts)
+
         # One combined call replaces is_init + get_branch + ahead/behind +
         # file-list (4 git spawns → 1). ``--branch`` prepends a
         # ``## <branch>...<upstream> [ahead N, behind M]`` header line; the
@@ -643,14 +646,74 @@ class GitRepo:
             remote_web_url=self._remote_web_url(remote_url) if remote_url else None,
         )
 
-    async def get_file_diff(self, file_path: str, status: str) -> GitFileDiff:
-        """Return the unified diff for a single file in the working tree.
+    async def _commit_show_args(self, revision: str) -> tuple[str, ...]:
+        """One immutable commit, compared with its first parent (empty tree for roots)."""
+        if not re.fullmatch(r"[0-9a-fA-F]{7,64}", revision):
+            raise ValueError("Expected a commit hash")
+        resolved = await self._git("rev-parse", "--verify", f"{revision}^{{commit}}")
+        if not resolved.ok:
+            raise ValueError(resolved.stderr.strip() or "Could not read commit")
+        return (
+            "show", "--format=", "--root", "--diff-merges=first-parent",
+            "--no-ext-diff", "--no-textconv", "--relative", "-M", resolved.stdout.strip(),
+        )
+
+    async def _get_commit_status(self, revision: str, *, line_counts: bool) -> GitStatus:
+        args = await self._commit_show_args(revision)
+        probes = [self._git(*args, "--name-status", "-z", "--")]
+        if line_counts:
+            probes.append(self._git(*args, "--numstat", "-z", "--"))
+        names, *statistics = await asyncio.gather(*probes)
+        if not names.ok:
+            raise ValueError(names.stderr.strip() or "Could not read commit")
+        counts = {}
+        if line_counts:
+            stats = statistics[0]
+            if not stats.ok:
+                raise ValueError(stats.stderr.strip() or "Could not read commit statistics")
+            entries = iter(stats.stdout.split("\0"))
+            for entry in entries:
+                if not entry:
+                    continue
+                added, removed, path = entry.split("\t", 2)
+                if not path:  # -z renames carry old and new paths as separate fields.
+                    next(entries)
+                    path = next(entries)
+                counts[path] = (
+                    int(added) if added != "-" else None,
+                    int(removed) if removed != "-" else None,
+                )
+        files = []
+        entries = iter(names.stdout.split("\0"))
+        for status in entries:
+            if not status:
+                continue
+            path = next(entries)
+            display_path = path
+            if status[0] in ("R", "C"):
+                new_path = next(entries)
+                display_path = f"{path} → {new_path}"
+                path = new_path
+            added, removed = counts.get(path, (None, None))
+            files.append(GitStatusFile(
+                status=status[0], path=display_path, insertions=added, deletions=removed,
+            ))
+        return GitStatus(files=files)
+
+    async def get_file_diff(self, file_path: str, status: str, *, revision: str | None = None) -> GitFileDiff:
+        """Return a file diff in the working tree, or in a commit against its first parent.
 
         For untracked files (status '?') uses --no-index to show the full
         file as an addition.  For all other statuses, diffs HEAD against
         the working tree (covers both staged and unstaged changes).
         """
-        if status == "?":
+        if revision is not None:
+            paths = file_path.split(" → ", 1) if status == "R" else [file_path]
+            args = await self._commit_show_args(revision)
+            diff = await self._git(*args, "--", *paths)
+            if not diff.ok:
+                raise ValueError(diff.stderr.strip() or "Could not read commit diff")
+        elif status == "?":
             diff = await self._git("diff", "--no-index", "/dev/null", file_path)
         else:
             diff = await self._git("diff", "HEAD", "--", file_path)
@@ -1273,7 +1336,11 @@ class GitRepo:
             return ApiSuccessResponse(data=(await self.init()).model_dump(by_alias=True))
         if sub == "status":
             line_counts = params.get("lineCounts") in (True, "1", "true")
-            return ApiSuccessResponse(data=(await self.get_status(line_counts=line_counts)).model_dump(by_alias=True))
+            try:
+                result = await self.get_status(line_counts=line_counts, revision=params.get("revision"))
+            except ValueError as exc:
+                return ApiFailResponse(message=str(exc), status_code=400)
+            return ApiSuccessResponse(data=result.model_dump(by_alias=True))
         if sub == "unpushed-files":
             return ApiSuccessResponse(data=(await self.get_unpushed_files()).model_dump(by_alias=True))
         if sub == "unpushed-commits":
@@ -1299,7 +1366,11 @@ class GitRepo:
             status = params.get("status", "M")
             if not file_path:
                 return ApiFailResponse(message="Missing required query parameter: file", status_code=400)
-            return ApiSuccessResponse(data=(await self.get_file_diff(file_path, status)).model_dump(by_alias=True))
+            try:
+                result = await self.get_file_diff(file_path, status, revision=params.get("revision"))
+            except ValueError as exc:
+                return ApiFailResponse(message=str(exc), status_code=400)
+            return ApiSuccessResponse(data=result.model_dump(by_alias=True))
         if sub == "asset-diff":
             file_path = params.get("file", "")
             if not file_path:
