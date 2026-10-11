@@ -103,7 +103,14 @@ export function sessionActionsButton(page: Page) {
  * `entity-actions-export`). The menu is portaled, so items are page-scoped.
  */
 export async function sessionAction(page: Page, testId: string) {
-  if ((await page.getByRole('menu').count()) === 0) await sessionActionsButton(page).click();
+  const button = sessionActionsButton(page);
+  // Open is read off the trigger, not off "a menu is in the DOM": a menu that
+  // was just dismissed (this one, or the debug menu) stays mounted until its
+  // exit ends, and a row handed back from it unmounts before it can be clicked.
+  if ((await button.getAttribute('data-state')) !== 'open') {
+    await expect(page.getByRole('menu')).toHaveCount(0);
+    await button.click();
+  }
   return page.getByTestId(testId);
 }
 

@@ -243,7 +243,7 @@ test('4. an agent\'s bar is its own', async ({ page }) => {
   await expect(agentBar.getByTestId('attached-channel'), "a mark of the user's on the agent's line").toHaveCount(0);
 
   await agentBar.getByTestId('attached-channels-add').click();
-  const dialog = page.getByRole('dialog').filter({ hasText: 'Add a data source' });
+  const dialog = page.getByRole('dialog').filter({ has: page.getByTestId('step-crumb-0').filter({ hasText: /^Data sources$/ }) });
   await expect(dialog).toBeVisible();
   // Slack is a group (Flow — no setup / your own Slack app): the tile asks which, then the member opens its form.
   await dialog.getByTestId('provider-group-Slack').click();

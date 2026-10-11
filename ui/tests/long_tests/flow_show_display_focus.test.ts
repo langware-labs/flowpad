@@ -42,8 +42,9 @@ async function resolveTypeId(typeid: string): Promise<Record<string, unknown> | 
 /** The id that currently owns `path`, per a fresh `flow show` resolution. */
 async function showOwnerId(proc: AgenticProcess, target: string): Promise<string | null> {
   const res = await apiClient.post<unknown>(`/graph/agentic_process/${proc.id}/show`, { path: target });
-  const data = ((res as { data?: unknown })?.data ?? res) as { id?: string };
-  return data?.id ?? null;
+  // The show action answers a NavigateResult: what was shown rides its `value`.
+  const data = ((res as { data?: unknown })?.data ?? res) as { value?: { id?: string } };
+  return data?.value?.id ?? null;
 }
 
 const SHOW_INSTRUCTIONS = [

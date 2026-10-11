@@ -49,8 +49,8 @@ export async function submitFromLanding(page: Page, message: string) {
   await input.waitFor({ state: 'visible', timeout: 15_000 });
   await input.fill(message);
   await input.press('Enter');
-  // Wait for navigation to shell terminal page
-  await page.waitForURL(/\/dock\/shell\//, { timeout: 30_000 });
+  // A home prompt opens the session as a Vibe host tab (docs/tab-management.md).
+  await page.waitForURL(/\/dock\/vibe\/agentic_process-/, { timeout: 30_000 });
 }
 
 /**

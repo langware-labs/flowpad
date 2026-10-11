@@ -1,6 +1,6 @@
 import { expect, test, type ConsoleMessage, type Page } from '@playwright/test';
 import { selectViewMode, toPathname } from '../_shared/view-mode';
-import { API, destroyVibeFixture, seedLastVibeChat, type VibeFixture } from '../vibe/_helpers';
+import { API, destroyVibeFixture, openVibe, seedLastVibeChat, type VibeFixture } from '../vibe/_helpers';
 
 /**
  * Browser proof for the navigation collapse: the app root `/` is an ordinary
@@ -40,7 +40,12 @@ test.beforeAll(async ({ browser, request }) => {
   // Warm the session once. The first navigation against a dev server pays for
   // transforming the whole module graph, and that cost belongs in setup, not
   // inside the first assertion that happens to run.
-  await page.goto('/');
+  //
+  // A STATED home, not a bare `/`. A document that opens at a bare `/` is a
+  // launch, and a launch reopens the last place (`last-tab-restore.ts`) — here
+  // the Vibe chat just seeded. Landing on Home forgets that place, so from here
+  // on a bare `/` is Home, which is what every test below starts from.
+  await page.goto('/?viewMode=vibe');
   await page.locator('[data-tag]').first().waitFor();
 });
 test.beforeEach(() => {
@@ -168,7 +173,11 @@ test.describe('vibe exit — the end-to-end proof', () => {
   });
 
   test('re-entering Vibe remounts the workspace', async () => {
-    await enterVibeWorkspace();
+    // By the session's own Vibe address, not "Back to tabs": a session keeps the
+    // surface it was last switched to, and the test above left this one on Chat —
+    // going back to its tab would land there, with no workspace to leave.
+    await openVibe(page, fixture.processId);
+    await expect(page.locator('[data-tag="VibeDisplay"]')).toBeVisible();
     await selectViewMode(page, 'standard');
     await expect(page.locator('[data-tag="VibeDisplay"]')).toHaveCount(0);
     await selectViewMode(page, 'vibe');
