@@ -1,5 +1,5 @@
 /**
- * Messaging a whole team from the inbox's new-conversation picker.
+ * Messaging a whole team from the StreamInbox's new-conversation picker.
  *
  * Locked here:
  *  - Typing a team's name offers the team, as the project invite does — but only
