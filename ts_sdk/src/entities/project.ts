@@ -873,13 +873,28 @@ export class Project extends APIEntity<Project> {
   /** Every dependency declared in this project's `flow.json`, as it stands on
    *  this machine, plus the warnings (required, not here, not dismissed). Never
    *  fetches: a dependency not on this machine yet reads `missing`. */
-  async dependencies(): Promise<ProjectDependencies> {
-    const response = await this.get<Partial<ProjectDependencies> | null>('dependencies');
+  async dependencies(options: { asset?: string } = {}): Promise<ProjectDependencies> {
+    const response = await this.get<Partial<ProjectDependencies> | null>('dependencies', options);
     return {
       dependencies: response?.dependencies ?? [],
       warnings: response?.warnings ?? [],
       resolving: response?.resolving === true,
     };
+  }
+
+  /** Sources this project can offer to the asset, identified independently of display names. */
+  async dependencyCandidates(asset: string): Promise<string[]> {
+    const response = await this.get<{ source_typeids: string[] }>('dependency-candidates', { asset });
+    return response?.source_typeids ?? [];
+  }
+
+  /** Read-only preview of the asset's current declarations plus candidate additions. */
+  async previewDependencies(asset: string, sources: string[]): Promise<Pick<ProjectDependencies, 'dependencies' | 'warnings'>> {
+    const response = await this.post<Pick<ProjectDependencies, 'dependencies' | 'warnings'> | null>(
+      'preview-dependencies', { asset, sources },
+    );
+    if (!response) throw new Error('Could not preview dependencies');
+    return response;
   }
 
   /** Declare a dependency in `flow.json` and resolve it. `source` is an id
@@ -925,11 +940,11 @@ export class Project extends APIEntity<Project> {
   }
 
   /** Drop a dependency from `flow.json`. The folder on disk is left alone. */
-  async removeDependency(name: string): Promise<DependencyState[]> {
+  async removeDependency(name: string, options: { asset?: string } = {}): Promise<DependencyState[]> {
     return this.changingDependencies(async () => {
       const response = await this.post<({ dependencies: DependencyState[] } & ProjectContextPayload) | null>(
         'remove-dependency',
-        { name },
+        { name, ...options },
       );
       this.adoptContext(response);
       return response?.dependencies ?? [];

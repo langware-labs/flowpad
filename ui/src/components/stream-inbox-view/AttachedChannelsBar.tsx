@@ -220,7 +220,7 @@ export function AttachedChannelsBar({ owner, rows, specFor, selected, onSelected
           </Popover>
         </>
       )}
-      {addOpen && <DataSourceDialog open onOpenChange={setAddOpen} owner={owner} only={isMessageDriverSpec} />}
+      {addOpen && <DataSourceDialog open onOpenChange={setAddOpen} owner={owner} only={isMessageDriverSpec} variant="channel" />}
       <ConfirmDialog
         open={!!deleting}
         onOpenChange={(next) => !next && setDeleting(null)}
