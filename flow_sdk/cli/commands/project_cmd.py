@@ -120,7 +120,8 @@ def _state(req: "SetupRequirementSpec") -> str:
         return "ready"
     if req.is_oauth:
         return f"not connected ({req.note})" if req.note else "not connected"
-    names = ", ".join(v.env_var for v in req.missing)
+    ways = " or ".join(v.env_var for v in req.missing if v.is_one_of)
+    names = ", ".join([v.env_var for v in req.missing if not v.is_one_of] + ([ways] if ways else []))
     return f"missing {names}" if names else "missing"
 
 

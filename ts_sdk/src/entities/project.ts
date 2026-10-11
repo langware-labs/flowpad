@@ -28,6 +28,7 @@ import { type GitShare, gitShareFrom } from '../models/GitShare';
 import type { AssetSource } from '../process/asset-descriptor';
 import { isHubOnly } from '../utils/hub-runtime';
 import { ViewType } from '../utils/ui/view-types';
+import type { CredentialRequirement, CredentialVarKind } from './credential';
 import { SubAgent } from './subagent';
 import { Artifact, IArtifact } from './artifact';
 import type { IDeployment } from './deployment';
@@ -164,6 +165,11 @@ export interface ProjectSetupVar {
   /** A file's content (a key file) — asked with a file picker. */
   file: boolean;
   present: boolean;
+  /** `ONE_OF`: one of the requirement's `ONE_OF` variables is enough. */
+  required?: CredentialRequirement;
+  kind?: CredentialVarKind;
+  /** `cli`: the command that signs in on this machine; empty otherwise. */
+  login?: string;
 }
 
 /** A requirement skipped in a project's setup on THIS machine (`SetupSkipSpec`, on its record). */

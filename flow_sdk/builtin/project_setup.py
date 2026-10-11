@@ -32,6 +32,7 @@ from flow_sdk.request_context.detached import add_detached_done_callback, create
 from flow_sdk.schema.data_spec.compute_op_spec import ComputeOpSpec
 from flow_sdk.schema.data_spec.credential_contract import CredentialVarKind
 from flow_sdk.schema.data_spec.project_setup_spec import (
+    ONE_OF_INPUT,
     REQUIREMENT_DEPENDENCY,
     REQUIREMENT_GAP,
     REQUIREMENT_PACK,
@@ -128,16 +129,16 @@ def _from_row(row: "CredentialStatusRowSpec", used_by: list[str], project: "Proj
             satisfied=row.state == "connected", used_by=used_by, note=note.get(row.state, ""),
             skipped=row.setup_skipped, **always,
         )
-    # Required when any value is MUST, and then only the MUST values are asked; a credential of OPTIONAL values
-    # alone is listed as optional, with those.
-    must = [v for v in row.vars if v.is_must]
+    # Required when any value is MUST or ONE_OF, and then only those are asked (a ONE_OF group as one choice);
+    # a credential of OPTIONAL values alone is listed as optional, with those.
+    must = [v for v in row.vars if v.is_must or v.is_one_of]
     return SetupRequirementSpec(
         typeid=row.typeid, kind=REQUIREMENT_PACK, name=row.name, title=row.title, setup=row.setup,
         help_url=row.help_url, setup_timeout_seconds=row.setup_timeout_seconds, **_why(row),
         vars=[
             SetupVarSpec(env_var=v.env_var, label=v.label, hint=v.hint, help_url=v.help_url,
                          pattern=v.pattern, secret=v.secret, file=v.kind is CredentialVarKind.FILE,
-                         present=v.present)
+                         present=v.present, required=v.required, kind=v.kind, login=v.login)
             for v in (must or row.vars)
         ],
         satisfied=row.state == "connected", used_by=used_by, required=bool(must),
@@ -147,7 +148,7 @@ def _from_row(row: "CredentialStatusRowSpec", used_by: list[str], project: "Proj
 
 
 def _from_template(template: "Credential", used_by: list[str]) -> SetupRequirementSpec:
-    required = set(template.required_var_names())
+    required = {name for name, var in (template.vars or {}).items() if var.is_must or var.is_one_of}
     setup = str(getattr(template, "setup", "") or "")
     return SetupRequirementSpec(
         typeid=str(template.typeid), required=bool(required),
@@ -157,7 +158,9 @@ def _from_template(template: "Credential", used_by: list[str]) -> SetupRequireme
         help_url=template.help_url or "", declared=False, **_why(template), satisfied=False, used_by=used_by,
         vars=[
             SetupVarSpec(env_var=name, label=var.label, hint=var.hint, help_url=var.help_url,
-                         pattern=var.pattern, secret=var.secret, file=var.kind is CredentialVarKind.FILE)
+                         pattern=var.pattern, secret=var.secret, file=var.kind is CredentialVarKind.FILE,
+                         required=var.required, kind=var.kind,
+                         login=var.login_command)
             for name, var in (template.vars or {}).items() if name in required
         ],
         note="" if setup.strip() else "no setup instructions: AI Assist unavailable",
@@ -331,7 +334,10 @@ def compile_setup(
             # answers the question — the person's other way to give the value, not a step of its own.
             assist = AI_AGENT if ai and req.setup.strip() else ""
             check = _cli("credentials", "check", req.name, "--project", project_id, *target)
+            ways = [v for v in req.missing if v.is_one_of]  # asked together, as one choice
             for var in req.missing:
+                if var in ways:
+                    continue
                 add({
                     "name": f"ask-{req.name}-{var.env_var}", "label": f"{req.title or req.name}: {var.label or var.env_var}",
                     "subkind": "ask", "output_spec_kind": "string",
@@ -343,6 +349,23 @@ def compile_setup(
                     # The goal's own check: a re-run (resume) asks nobody once the values are stored.
                     "completion_check": check,
                 }, bind=input_name(req.name, var.env_var))
+            # A sign-in with no command for this OS is not a way here.
+            if ways := [v for v in ways if v.login or v.kind is not CredentialVarKind.CLI]:
+                # One question for the whole group: the person picks ONE way. A value way is answered
+                # ``<VAR>=<value>`` and stored by the next step; a sign-in way (cli) is done in a terminal,
+                # and the question closes by itself once the credential's check holds.
+                add({
+                    "name": f"ask-{req.name}-one-of", "label": f"{req.title or req.name}: choose one way",
+                    "subkind": "ask", "output_spec_kind": "string",
+                    "exe_data": {
+                        "prompt": f"{req.title or req.name}: choose one way",
+                        "secret": True, "auto_continue": any(v.login for v in ways),
+                        "choices": [{"value": v.env_var, "label": v.label or v.env_var, "hint": v.hint,
+                                     "secret": v.secret, "file": v.file, "command": v.login} for v in ways],
+                    },
+                    "setup": req.setup, "setup_timeout_seconds": req.setup_timeout_seconds,
+                    "completion_check": check,
+                }, bind=input_name(req.name, ONE_OF_INPUT))
             add({
                 "name": f"store-{req.name}", "label": f"Store {req.title or req.name}",
                 "description": f"{req.name} has every value it needs in {where}.",

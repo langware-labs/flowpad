@@ -43,6 +43,11 @@ msgstr ""
 msgid " (you)"
 msgstr " (אתה)"
 
+#: src/components/connections-manager/credential-rows-view.tsx
+#: src/components/project-setup/ProjectSetupDialog.tsx
+msgid " or "
+msgstr " או "
+
 #: src/components/code-editor/DiffContent.tsx
 msgid "— before"
 msgstr "— לפני"
@@ -585,7 +590,7 @@ msgstr ""
 msgid "{0} misrouted"
 msgstr ""
 
-#. placeholder {0}: row.missing.length
+#. placeholder {0}: missingNeeds(row.vars).length
 #: src/components/agent-resources/AgentCredentialsSection.tsx
 msgid "{0} missing"
 msgstr ""
@@ -4170,6 +4175,7 @@ msgstr ""
 #: src/components/anchored-markdown/CommentPin.tsx
 #: src/components/artifacts/artifact-form.tsx
 #: src/components/ask/AskForm.tsx
+#: src/components/ask/AskItems.tsx
 #: src/components/ask/AskModal.tsx
 #: src/components/ask/AskView.tsx
 #: src/components/asset-manager/AssetManagerButton.tsx
@@ -6000,6 +6006,7 @@ msgstr "העתק שם"
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 #: src/components/terminal/interactive-terminal/side-windows/InputFilesPanel.tsx
 #: src/components/top-nav-bar/CopyPathButton.tsx
+#: src/pages/flow-page/display-history-button.tsx
 msgid "Copy path"
 msgstr "העתק נתיב"
 
@@ -7153,7 +7160,6 @@ msgstr "מעבד:"
 #: src/components/organization/org-detail-panel.tsx
 #: src/components/organization/org-node-management.tsx
 #: src/components/organization/organization-page.tsx
-#: src/components/project-home/ProjectHome.tsx
 #: src/components/project-selector/NewProjectDialog.tsx
 #: src/components/prompt-library/PromptEditDialog.tsx
 #: src/components/quick-create/McpCreateDialog.tsx
@@ -7240,6 +7246,8 @@ msgid "Create it"
 msgstr "צור"
 
 #: src/components/collaboration/StartRoomDialog.tsx
+#: src/components/project-home/ProjectHome.tsx
+#: src/components/quick-create/QuickCreateModal.tsx
 #: src/components/quick-create/QuickCreateModal.tsx
 msgid "Create new"
 msgstr "צור חדש"
@@ -7473,6 +7481,7 @@ msgstr "מצב פרטיות הנתונים"
 msgid "data source"
 msgstr ""
 
+#: src/components/quick-create/QuickCreatePanel.tsx
 #: src/components/schema-tree/SchemaTreeView.tsx
 msgid "Data source"
 msgstr ""
@@ -13110,6 +13119,7 @@ msgid "Latest on PyPI"
 msgstr "האחרון ב-PyPI"
 
 #: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
+#: src/components/project-home/ProjectHome.tsx
 #: src/pages/hub-home/HubHome.tsx
 #: src/pages/hub-home/LaunchSandboxDialog.tsx
 #: src/pages/hub-home/NewSandboxDialog.tsx
@@ -14506,10 +14516,13 @@ msgstr "קבצים מצורפים חסרים"
 msgid "Missing dependencies"
 msgstr ""
 
-#. placeholder {0}: row.missing.join(', ')
 #: src/components/connections-manager/credential-rows-view.tsx
-msgid "Missing: {0}"
-msgstr ""
+#~ msgid "Missing: {0}"
+#~ msgstr ""
+
+#: src/components/connections-manager/credential-rows-view.tsx
+msgid "Missing: {missing}"
+msgstr "חסר: {missing}"
 
 #: src/components/assets/editor/usage-report/UsageReportAssetEditor.tsx
 msgid "model"
@@ -14890,6 +14903,8 @@ msgstr ""
 #: src/components/entity-execution-panel/NewSessionPill.tsx
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 #: src/components/project-activity-strip/RecentConversationsStrip.tsx
+#: src/components/project-home/ProjectHome.tsx
+#: src/components/quick-create/QuickCreateModal.tsx
 #: src/components/quick-create/QuickCreateTile.tsx
 #: src/components/stream-inbox-view/StreamInboxView.tsx
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
@@ -16569,6 +16584,10 @@ msgstr ""
 msgid "Not set up for publishing"
 msgstr "לא מוגדר לפרסום"
 
+#: src/components/credentials-view/CredentialView.tsx
+msgid "not signed in"
+msgstr "לא מחובר"
+
 #: src/components/harness-login/HarnessSignInDialog.tsx
 msgid "Not signed in"
 msgstr "לא מחובר"
@@ -17022,6 +17041,26 @@ msgstr "שורה אחת: למה הפרויקט הזה משתמש בזה"
 #: src/components/schema-tree/SchemaTreeView.tsx
 msgid "one of"
 msgstr ""
+
+#: src/components/credentials-view/CredentialView.tsx
+msgid "one of · not set"
+msgstr "אחד מאלה · לא הוגדר"
+
+#: src/components/credentials-view/CredentialView.tsx
+msgid "one of · not signed in"
+msgstr "אחד מאלה · לא מחובר"
+
+#: src/components/credentials-view/CredentialView.tsx
+msgid "one of · set"
+msgstr "אחד מאלה · הוגדר"
+
+#: src/components/credentials-view/CredentialView.tsx
+msgid "one of · signed in"
+msgstr "אחד מאלה · מחובר"
+
+#: src/components/credentials-view/RequirementChip.tsx
+msgid "One of these is enough"
+msgstr "מספיק אחד מאלה"
 
 #~ msgid "one of this wizard's inputs"
 #~ msgstr ""
@@ -18046,6 +18085,7 @@ msgid "Override the default model via environment"
 msgstr "דריסת מודל ברירת המחדל באמצעות משתנה סביבה"
 
 #: src/components/llm-endpoints/LlmEndpointDetail.tsx
+#: src/components/project-home/ProjectHome.tsx
 msgid "Overview"
 msgstr ""
 
@@ -20445,6 +20485,7 @@ msgstr ""
 msgid "required"
 msgstr ""
 
+#: src/components/ask/AskItems.tsx
 #: src/components/assets/dependency-sources.tsx
 #: src/components/credentials/CredentialDialog.tsx
 #: src/components/project-setup/ProjectSetupDialog.tsx
@@ -20725,6 +20766,8 @@ msgstr ""
 #: src/components/assets/editor/AssetEditorHeader.tsx
 #: src/components/assets/editor/markdown/MarkdownEditor.tsx
 #: src/components/top-nav-bar/CrumbDetailsPopover.tsx
+#: src/pages/flow-page/display-history-button.tsx
+#: src/pages/flow-page/display-history-button.tsx
 msgid "Reveal in Finder"
 msgstr "הצג ב-Finder"
 
@@ -21011,10 +21054,11 @@ msgstr "הפעל מהטרמינל שלך, ואז הפעל את Flowpad מחדש:
 #~ msgid "Run from your terminal:"
 #~ msgstr "הפעל מהטרמינל שלך:"
 
+#: src/components/ask/AskChoiceBlock.tsx
 #: src/components/code-block-run-button.tsx
 #: src/components/code-block-run-button.tsx
 msgid "Run in terminal"
-msgstr ""
+msgstr "הרץ בטרמינל"
 
 #: src/components/assets/editor/wizard/WizardViewer.tsx
 msgid "Run it"
@@ -22060,6 +22104,7 @@ msgstr "סרגל כלים בחירה"
 msgid "Self-Summary"
 msgstr "סיכום עצמי"
 
+#: src/components/ask/AskChoiceBlock.tsx
 #: src/components/ask/AskForm.tsx
 #: src/components/ask/AskModal.tsx
 #: src/components/ask/AskView.tsx
@@ -23212,6 +23257,10 @@ msgstr ""
 #: src/pages/entry/AgentLaunchLanding.tsx
 msgid "Sign-in wasn't completed. Try again when you're ready."
 msgstr ""
+
+#: src/components/credentials-view/CredentialView.tsx
+msgid "signed in"
+msgstr "מחובר"
 
 #: src/components/account/user-info.tsx
 #: src/components/harness-login/funding-pill.ts
@@ -27285,6 +27334,7 @@ msgstr ""
 #~ msgstr "דרך התחברות ל-Hub"
 
 #: src/components/links/LinkMenu.tsx
+#: src/components/project-home/ProjectHome.tsx
 #: src/types/ViewType.ts
 msgid "Vibe"
 msgstr ""
@@ -27459,6 +27509,10 @@ msgstr ""
 msgid "waiting for the code"
 msgstr ""
 
+#: src/components/ask/AskChoiceBlock.tsx
+msgid "Waiting for the sign-in…"
+msgstr "ממתין להתחברות…"
+
 #: src/components/assets/editor/wizard/wizard-texts.ts
 msgid "waiting for you"
 msgstr "ממתין לך"
@@ -27511,6 +27565,10 @@ msgstr ""
 #: src/components/terminal/interactive-terminal/pty-events-viewer/PTYEventsViewer.tsx
 msgid "Watchers register patterns via <0>Shell.addTrigger</0>; matched lines appear here."
 msgstr "משקיפים רושמים דפוסים דרך <0>Shell.addTrigger</0>; שורות תואמות מופיעות כאן."
+
+#: src/components/ask/AskChoiceBlock.tsx
+msgid "Ways to answer"
+msgstr "דרכים לענות"
 
 #: src/components/harness-login/HarnessSignInDialog.tsx
 msgid "We couldn't confirm this sign-in: {statusReason}"

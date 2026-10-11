@@ -9,7 +9,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { TableCell, TableRow } from '../ui/table';
 import { MoreOnHover } from './more-on-hover';
 import { SignInMethodIcon } from './sign-in-method';
-import { credentialEnvFileName } from '@sdk';
+import { credentialEnvFileName, missingNeeds } from '@sdk';
 import type { CredentialRow } from '@src/components/credentials-view/credential-rows';
 import { RequirementChip } from '@src/components/credentials-view/RequirementChip';
 
@@ -57,6 +57,10 @@ export function CredentialConnectionRows({
         const shown = row.vars.slice(0, VARS_SHOWN);
         const extra = row.vars.length - shown.length;
         const connected = row.state === 'connected';
+        // An either-or group with no member set reads "A or B": one of them is enough.
+        const missing = missingNeeds(row.vars)
+          .map((need) => need.map((v) => v.envVar).join(t` or `))
+          .join(', ');
         return (
           <TableRow
             key={row.typeid}
@@ -126,7 +130,7 @@ export function CredentialConnectionRows({
                 />
                 <span
                   className={cn('whitespace-nowrap', !connected && 'text-amber-600')}
-                  title={row.missing.length ? t`Missing: ${row.missing.join(', ')}` : undefined}
+                  title={missing ? t`Missing: ${missing}` : undefined}
                   data-testid={`connection-status-${testKey}`}
                 >
                   {connected ? <Trans>Connected</Trans> : <Trans>Needs values</Trans>}
