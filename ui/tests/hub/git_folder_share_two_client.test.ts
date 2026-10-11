@@ -61,7 +61,11 @@ const get = (apiUrl: string, p: string) => fetch(`${apiUrl}/api/v1${p}`).then((r
 /** A bare `file://` remote + a pushed worktree: a folder in the only state that
  *  preflights as eligible (in a repo, real origin, clean, everything pushed). */
 function makeGitFolder(token: string) {
-  const root = mkdtempSync(path.join(os.tmpdir(), 'flowpad-folder-share-'));
+  // Resolved up front: on macOS a tmpdir is a symlink (/var → /private/var), and a
+  // `file://` origin is identified by its path — the backend writes the dependency
+  // as the RESOLVED remote, so a worktree cloned from the symlinked spelling is a
+  // different origin and gets a second clone instead of being reused.
+  const root = realpathSync(mkdtempSync(path.join(os.tmpdir(), 'flowpad-folder-share-')));
   tempRoots.push(root);
   const remote = path.join(root, 'remote.git');
   const worktree = path.join(root, 'alice-worktree');

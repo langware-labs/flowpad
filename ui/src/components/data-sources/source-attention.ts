@@ -37,14 +37,19 @@ export function attentionReason(source: DataSource): AttentionReason | null {
 
 /** How a channel mark draws one source: lit, dashed, or wearing "!" because a person must act. */
 export type ChannelMark = 'on' | 'off' | 'parked';
-export type AttentionVerb = 'verify' | 'resume' | 'pull';
+export type AttentionVerb = 'setup' | 'verify' | 'resume' | 'pull';
 
 interface AttentionFacts {
   /** Retrying still draws lit — the scheduler will finish on its own. */
   mark: ChannelMark;
-  /** The one verb that recovers it: Verify re-runs the check and un-parks, Resume un-pauses, Pull
-   *  polls now (and carries a held file on once the two agree). */
+  /** The one verb that recovers it: Setup opens the source's own setup, Verify re-runs the check and
+   *  un-parks, Resume un-pauses, Pull polls now (and carries a held file on once the two agree). */
   verb: AttentionVerb;
+  /** A second verb offered beside it — Verify, for whoever finished the setup somewhere else. */
+  also?: AttentionVerb;
+  /** What a person reads first, when the kind has ONE name for every source in it — the source's own
+   *  words are then the detail behind it, never the headline. */
+  headline?: MessageDescriptor;
   /** What is wrong, when the source has no words of its own. */
   fallback: MessageDescriptor;
   /** What to do about it. */
@@ -60,9 +65,11 @@ export const ATTENTION: Record<AttentionKind, AttentionFacts> = {
   },
   setup: {
     mark: 'parked',
-    verb: 'verify',
+    verb: 'setup',
+    also: 'verify',
+    headline: msg`Setup required`,
     fallback: msg`Finish setup, then press Verify.`,
-    next: msg`Finish the step above, then press Verify.`,
+    next: msg`Press Setup to finish it.`,
   },
   parked: {
     mark: 'parked',
@@ -88,6 +95,19 @@ export const ATTENTION: Record<AttentionKind, AttentionFacts> = {
     fallback: msg`The last poll failed; the scheduler retries on its own.`,
     next: msg`Nothing to do unless it keeps failing; Pull tries again now.`,
   },
+};
+
+/** The first line a surface shows: the kind's one name when it has one, else what is wrong. */
+export const attentionHeadline = (reason: AttentionReason): string => {
+  const { headline } = ATTENTION[reason.kind];
+  return headline ? i18n._(headline) : attentionText(reason);
+};
+
+/** The verbs a surface offers for a source, the recovering one first; none when it listens. */
+export const attentionVerbs = (reason: AttentionReason | null): AttentionVerb[] => {
+  if (!reason) return [];
+  const { verb, also } = ATTENTION[reason.kind];
+  return also ? [verb, also] : [verb];
 };
 
 /** What is wrong, in the source's words or the kind's fallback sentence. */

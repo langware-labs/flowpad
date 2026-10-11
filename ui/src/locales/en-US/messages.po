@@ -392,6 +392,11 @@ msgstr "{0} could not be updated for this project."
 msgid "{0} current · {1} stale · {2} partial · {3} error"
 msgstr "{0} current · {1} stale · {2} partial · {3} error"
 
+#. placeholder {0}: root.sources.length
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "{0} data sources"
+msgstr "{0} data sources"
+
 #. placeholder {0}: connection.provider
 #. placeholder {0}: row.title
 #: src/components/agent-resources/AgentCredentialsSection.tsx
@@ -685,6 +690,11 @@ msgstr "{0} records on disk"
 msgid "{0} saved"
 msgstr "{0} saved"
 
+#. placeholder {0}: root.kinds.length
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "{0} schemas"
+msgstr "{0} schemas"
+
 #. placeholder {0}: secrets.length
 #. placeholder {1}: secrets.length === 1 ? '' : 's'
 #: src/components/account/secrets-section.tsx
@@ -698,6 +708,7 @@ msgstr "{0} secret{1}"
 #: src/components/data-sources/ChoiceField.tsx
 #: src/components/graph-context/GraphContextViewer.tsx
 #: src/components/navigator-panel/SelectionActionBar.tsx
+#: src/components/project-setup/ProjectSetupDialog.tsx
 #: src/components/terminal/HistoryModal.tsx
 msgid "{0} selected"
 msgstr "{0} selected"
@@ -822,10 +833,18 @@ msgstr "{count} {0} attached"
 msgid "{count} pending change(s) — click to view diff"
 msgstr "{count} pending change(s) — click to view diff"
 
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "{count} rows"
+msgstr "{count} rows"
+
 #. placeholder {0}: selected.displayName ?? selected.name
 #: src/components/assets/editor/task/GroupTaskDialog.tsx
 msgid "{created} member task(s) created for \"{0}\"."
 msgstr "{created} member task(s) created for \"{0}\"."
+
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "{datasets} datasets"
+msgstr "{datasets} datasets"
 
 #: src/components/assets/editor/agent-profile/AgentScheduleSection.tsx
 msgid "{day} at {time}"
@@ -1092,6 +1111,10 @@ msgstr "{repeats} of these already have a budget in {teamName}; their caps will 
 #~ msgid "{replyCount, plural, one {# reply} other {# replies}}"
 #~ msgstr "{replyCount, plural, one {# reply} other {# replies}}"
 
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "{rows} rows"
+msgstr "{rows} rows"
+
 #: src/components/automations/automation-words.ts
 msgid "{s}s"
 msgstr "{s}s"
@@ -1340,6 +1363,10 @@ msgstr "$/day"
 msgid "1 change not published"
 msgstr "1 change not published"
 
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "1 data source"
+msgstr "1 data source"
+
 #: src/components/status-bar/GitResolveButton.tsx
 msgid "1 file needs merging — let the assistant merge it"
 msgstr "1 file needs merging — let the assistant merge it"
@@ -1360,6 +1387,10 @@ msgstr "1 new change in the cloud — pull it"
 #: src/components/code-editor/SnippetView.tsx
 msgid "1 problem"
 msgstr "1 problem"
+
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "1 row"
+msgstr "1 row"
 
 #: src/components/lens-viewer/ClaudeErrorsViewer.tsx
 msgid "1 week"
@@ -1568,6 +1599,10 @@ msgstr "A sign-in is in progress"
 #: src/components/data-sources/DataSourceDialog.tsx
 msgid "A source is one remote stream — one feed, channel, drive or mailbox. The poller syncs it on the heartbeat."
 msgstr "A source is one remote stream — one feed, channel, drive or mailbox. The poller syncs it on the heartbeat."
+
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "a source this project does not list"
+msgstr "a source this project does not list"
 
 #: src/components/automations/blocks/WhenBlock.tsx
 msgid "A subject such as task:* or data_source:<id>. Empty = any."
@@ -2860,6 +2895,10 @@ msgstr "Any time"
 msgid "anyone"
 msgstr "anyone"
 
+#: src/components/assets/editor/agent-profile/AgentVisibilitySection.tsx
+msgid "Anyone its project is shared with can launch it from this link. Making the agent public lets everyone see it; launching still needs the project shared with them."
+msgstr "Anyone its project is shared with can launch it from this link. Making the agent public lets everyone see it; launching still needs the project shared with them."
+
 #: src/components/terminal/interactive-terminal/EntityShareDialog.tsx
 msgid "Anyone with access can open this {entityType} directly via the link below."
 msgstr "Anyone with access can open this {entityType} directly via the link below."
@@ -2885,6 +2924,7 @@ msgid "Anyone you share with can spend this budget and see what it has cost. The
 msgstr "Anyone you share with can spend this budget and see what it has cost. They draw on the same limits you do — not a separate allowance — and they cannot change the limits, the provider key, or share it on."
 
 #: src/components/automations/automation-words.ts
+#: src/components/schema-tree/SchemaTreeView.tsx
 msgid "anything"
 msgstr "anything"
 
@@ -5008,6 +5048,7 @@ msgstr "Cloning…"
 #: src/components/tabs/TabStrip.tsx
 #: src/components/task-receive/IncomingProjectDialog.tsx
 #: src/components/task-receive/IncomingTaskDialog.tsx
+#: src/components/task-receive/LaunchDialog.tsx
 #: src/components/task-receive/LaunchDialog.tsx
 #: src/components/terminal/interactive-terminal/command-status-viewer/CommandStatusViewer.tsx
 #: src/components/terminal/interactive-terminal/EntityShareDialog.tsx
@@ -7428,6 +7469,14 @@ msgstr "Data (JSON)"
 msgid "Data privacy mode"
 msgstr "Data privacy mode"
 
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "data source"
+msgstr "data source"
+
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "Data source"
+msgstr "Data source"
+
 #~ msgid "Data Source Cursor"
 #~ msgstr "Data Source Cursor"
 
@@ -7438,6 +7487,7 @@ msgstr "Data source name"
 #: src/components/agent-resources/AgentResourcesBody.tsx
 #: src/components/data-sources/DataSourceDialog.tsx
 #: src/components/data-sources/DataSourcesView.tsx
+#: src/components/schema-tree/SchemaTreeView.tsx
 #: src/components/top-nav-bar/use-entity-breadcrumbs.ts
 #: src/i18n/type-labels.ts
 #: src/types/ViewType.ts
@@ -7469,9 +7519,14 @@ msgstr "Database Stats"
 msgid "Database switched"
 msgstr "Database switched"
 
+#: src/components/schema-tree/SchemaTreeView.tsx
 #: src/i18n/type-labels.ts
 msgid "Dataset"
 msgstr "Dataset"
+
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "dataset schema"
+msgstr "dataset schema"
 
 #: src/components/cron-view/CronForm.tsx
 msgid "Day {d}"
@@ -7663,6 +7718,11 @@ msgstr "Defaults: page=\"{DEFAULT_PAGE}\", component=\"{DEFAULT_COMPONENT}\""
 #: src/components/hooks-manager/TriggerForm.tsx
 msgid "Define the conditions that must match for this trigger to fire"
 msgstr "Define the conditions that must match for this trigger to fire"
+
+#: src/components/schema-tree/SchemaTreeView.tsx
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "Defined in"
+msgstr "Defined in"
 
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 msgid "Definition"
@@ -8728,6 +8788,10 @@ msgstr "Draft"
 msgid "Drag to pan · scroll to zoom · click a node to read"
 msgstr "Drag to pan · scroll to zoom · click a node to read"
 
+#: src/components/stream-inbox-view/StreamInboxView.tsx
+msgid "Drag to resize"
+msgstr "Drag to resize"
+
 #: src/components/image-annotator/ImageAnnotator.tsx
 msgid "Draw with the pen or arrow, add text boxes, add a caption, then Save to attach the annotated copy."
 msgstr "Draw with the pen or arrow, add text boxes, add a caption, then Save to attach the annotated copy."
@@ -9636,6 +9700,10 @@ msgstr "Everything you can see"
 msgid "everywhere"
 msgstr "everywhere"
 
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "Example slots"
+msgstr "Example slots"
+
 #: src/components/settings-view/settings-utils.ts
 msgid "Excluded Commands"
 msgstr "Excluded Commands"
@@ -10245,6 +10313,10 @@ msgstr "Feed comment"
 msgid "Feed Entry"
 msgstr "Feed Entry"
 
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "Feeds"
+msgstr "Feeds"
+
 #: src/components/floating-chat/toolEventDescriptor.ts
 msgid "Fetch"
 msgstr "Fetch"
@@ -10277,9 +10349,14 @@ msgstr "Fetching the latest"
 msgid "Fetching…"
 msgstr "Fetching…"
 
+#: src/components/schema-tree/SchemaTreeView.tsx
 #: src/components/terminal/interactive-terminal/command-status-viewer/CommandStatusViewer.tsx
 msgid "Field"
 msgstr "Field"
+
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "Fields"
+msgstr "Fields"
 
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
 #: src/components/automations/automation-words.ts
@@ -10507,8 +10584,8 @@ msgid "Finish the setup above first"
 msgstr "Finish the setup above first"
 
 #: src/components/data-sources/source-attention.ts
-msgid "Finish the step above, then press Verify."
-msgstr "Finish the step above, then press Verify."
+#~ msgid "Finish the step above, then press Verify."
+#~ msgstr "Finish the step above, then press Verify."
 
 #: src/components/assets/editor/wizard/wizard-texts.ts
 msgid "finishing"
@@ -10754,6 +10831,10 @@ msgstr "Focus local graph here"
 msgid "Focused"
 msgstr "Focused"
 
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "Fold"
+msgstr "Fold"
+
 #: src/components/open-project-component/project-actions-row.tsx
 msgid "folder"
 msgstr "folder"
@@ -10761,6 +10842,7 @@ msgstr "folder"
 #: src/components/data-sources/DataDriversView.tsx
 #: src/components/data-sources/DataDriversView.tsx
 #: src/components/quick-create/ScopeSelection.tsx
+#: src/components/schema-tree/SchemaTreeView.tsx
 #: src/i18n/type-labels.ts
 msgid "Folder"
 msgstr "Folder"
@@ -10812,6 +10894,10 @@ msgstr "Footprint"
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestFields.tsx
 msgid "For someone with no token source of their own. They spend it by the request id, up to the cap and until it expires."
 msgstr "For someone with no token source of their own. They spend it by the request id, up to the cap and until it expires."
+
+#: src/pages/entry/AgentLaunchLanding.tsx
+msgid "For the cloud, pick the project it should work on or paste a repository URL. On your desktop you pick a project in FlowPad."
+msgstr "For the cloud, pick the project it should work on or paste a repository URL. On your desktop you pick a project in FlowPad."
 
 #: src/components/settings-view/settings-utils.ts
 msgid "Force a specific authentication method"
@@ -11355,6 +11441,10 @@ msgstr "Graph Workflow Run"
 msgid "Graph Workflows"
 msgstr "Graph Workflows"
 
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "group"
+msgstr "group"
+
 #: src/i18n/type-labels.ts
 msgid "Group"
 msgstr "Group"
@@ -11632,6 +11722,11 @@ msgstr "History"
 #: src/components/organization/budgets/BudgetHistoryDialog.tsx
 msgid "History of {scopeLabel}’s budget"
 msgstr "History of {scopeLabel}’s budget"
+
+#: src/components/schema-tree/SchemaTreeView.tsx
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "Holds"
+msgstr "Holds"
 
 #: src/components/project-home/HomeCustomizationCard.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
@@ -12288,6 +12383,10 @@ msgstr "Insert emoji"
 msgid "Insert table"
 msgstr "Insert table"
 
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "inside"
+msgstr "inside"
+
 #: src/components/assets/editor/wizard/wizard-texts.ts
 #: src/components/install/AddAssetDialog.tsx
 #: src/components/install/InstallButton.tsx
@@ -12570,6 +12669,10 @@ msgstr "Invited {trimmed}."
 msgid "Issue diagnoses recorded by the assistant. Click a row to view the full diagnosis."
 msgstr "Issue diagnoses recorded by the assistant. Click a row to view the full diagnosis."
 
+#: src/components/project-setup/ProjectSetupDialog.tsx
+msgid "It cannot be removed from the project"
+msgstr "It cannot be removed from the project"
+
 #: src/components/automations/MessageRulePage.tsx
 #: src/components/automations/MessageRulePage.tsx
 msgid "It did not work"
@@ -12835,6 +12938,7 @@ msgstr "kind"
 #: src/components/data-sources/DataDriversView.tsx
 #: src/components/llm-endpoints/LlmEndpointDialog.tsx
 #: src/components/llm-endpoints/LlmEndpointsList.tsx
+#: src/components/schema-tree/SchemaTreeView.tsx
 msgid "Kind"
 msgstr "Kind"
 
@@ -13265,6 +13369,10 @@ msgstr "Linking…"
 #: src/components/lens-viewer/HeartbeatEventsViewer.tsx
 msgid "List"
 msgstr "List"
+
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "list of"
+msgstr "list of"
 
 #: src/components/settings-view/settings-utils.ts
 msgid "List of models available for selection"
@@ -14164,6 +14272,10 @@ msgstr "MCP tools"
 msgid "Me"
 msgstr "Me"
 
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "Meaning"
+msgstr "Meaning"
+
 #: src/components/machine-overview/machine-overview.tsx
 #: src/components/machine-overview/machine-overview.tsx
 #: src/components/machine-overview/machine-overview.tsx
@@ -14716,8 +14828,8 @@ msgid "Needs attention"
 msgstr "Needs attention"
 
 #: src/components/data-sources/status-style.ts
-msgid "Needs setup"
-msgstr "Needs setup"
+#~ msgid "Needs setup"
+#~ msgstr "Needs setup"
 
 #: src/components/connections-manager/credential-rows-view.tsx
 msgid "Needs values"
@@ -15325,6 +15437,10 @@ msgstr "No data available"
 msgid "No data."
 msgstr "No data."
 
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "no dataset"
+msgstr "no dataset"
+
 #: src/components/webapp-viewer/webapp-deployments-tab.tsx
 msgid "No deployments observed yet"
 msgstr "No deployments observed yet"
@@ -15781,6 +15897,10 @@ msgstr "No project selected"
 msgid "No project selected — pick one to enable project-scoped actions"
 msgstr "No project selected — pick one to enable project-scoped actions"
 
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "No project to show."
+msgstr "No project to show."
+
 #: src/components/project-selector/ProjectSelector.tsx
 msgid "No projects"
 msgstr "No projects"
@@ -16233,8 +16353,16 @@ msgstr "None"
 msgid "none — they use their own"
 msgstr "none — they use their own"
 
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "none · written by hand"
+msgstr "none · written by hand"
+
 #~ msgid "None (project root)"
 #~ msgstr "None (project root)"
+
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "none of its own · stored inside the rows of the schema that uses it"
+msgstr "none of its own · stored inside the rows of the schema that uses it"
 
 #: src/components/automations/TestPanel.tsx
 msgid "None picked: a sample event is used."
@@ -16502,6 +16630,10 @@ msgstr "Note (optional)"
 msgid "Note: File is missing"
 msgstr "Note: File is missing"
 
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "nothing"
+msgstr "nothing"
+
 #: src/components/assets/editor/wizard/WizardForm.tsx
 msgid "Nothing — this wizard is run by hand. Add a trigger asset under its agentic-assets/trigger/ folder to have it run itself."
 msgstr "Nothing — this wizard is run by hand. Add a trigger asset under its agentic-assets/trigger/ folder to have it run itself."
@@ -16746,6 +16878,10 @@ msgstr "Now using {0}"
 msgid "Nowhere yet"
 msgstr "Nowhere yet"
 
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "number"
+msgstr "number"
+
 #: src/components/connections-manager/sign-in-method.tsx
 msgid "OAuth"
 msgstr "OAuth"
@@ -16883,6 +17019,10 @@ msgstr "One decision, nothing runs."
 msgid "One line: what this project uses it for"
 msgstr "One line: what this project uses it for"
 
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "one of"
+msgstr "one of"
+
 #~ msgid "one of this wizard's inputs"
 #~ msgstr "one of this wizard's inputs"
 
@@ -16946,6 +17086,7 @@ msgstr "Only the steps below"
 #: src/components/milkdown-editor/MilkdownEditor.tsx
 #: src/components/project-activity-strip/BookmarkColumn.tsx
 #: src/components/runs/RunPreviewRoot.tsx
+#: src/components/schema-tree/SchemaTreeView.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 #: src/components/workers/WorkerToolbar.tsx
 #: src/notifications/ingest.ts
@@ -17022,6 +17163,10 @@ msgstr "Open a project to choose which of its secrets this machine can see."
 #: src/pages/discover-page/discover-page.tsx
 msgid "Open a project to see its assets."
 msgstr "Open a project to see its assets."
+
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "Open a project to see its schemas."
+msgstr "Open a project to see its schemas."
 
 #: src/components/assets/editor/agent-profile/DeployedAgentChatPanel.tsx
 msgid "Open a session on this machine"
@@ -17401,7 +17546,7 @@ msgstr "Open session"
 msgid "Open Session"
 msgstr "Open Session"
 
-#: src/components/stream-inbox-view/ChannelAttentionBar.tsx
+#: src/components/data-sources/SourceSetupButton.tsx
 msgid "Open settings of {name}"
 msgstr "Open settings of {name}"
 
@@ -17478,6 +17623,10 @@ msgstr "Open the automation to fix it"
 #: src/components/conversation/LiveSessionActivity.tsx
 msgid "Open the chat this session runs in"
 msgstr "Open the chat this session runs in"
+
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "Open the data source"
+msgstr "Open the data source"
 
 #: src/components/data-sources/DataSourcePage.tsx
 msgid "Open the event bus"
@@ -17696,6 +17845,7 @@ msgid "Operation failed"
 msgstr "Operation failed"
 
 #: src/components/assets/DependencyChips.tsx
+#: src/components/schema-tree/SchemaTreeView.tsx
 msgid "optional"
 msgstr "optional"
 
@@ -18252,6 +18402,10 @@ msgstr "Pick a person or type an email"
 msgid "Pick a project"
 msgstr "Pick a project"
 
+#: src/components/task-receive/LaunchDialog.tsx
+msgid "Pick a project on this machine. It is used where it is — nothing is sent to the cloud."
+msgstr "Pick a project on this machine. It is used where it is — nothing is sent to the cloud."
+
 #: src/components/organization/budgets/PayingProviderSetup.tsx
 msgid "Pick a provider and paste a key to set it up again."
 msgstr "Pick a provider and paste a key to set it up again."
@@ -18327,8 +18481,8 @@ msgid "Pick the local project folder this conversation should run in. We'll use 
 msgstr "Pick the local project folder this conversation should run in. We'll use it as the working directory for Claude Code sessions."
 
 #: src/pages/entry/AgentLaunchLanding.tsx
-msgid "Pick the project it should work on, or paste a repository URL."
-msgstr "Pick the project it should work on, or paste a repository URL."
+#~ msgid "Pick the project it should work on, or paste a repository URL."
+#~ msgstr "Pick the project it should work on, or paste a repository URL."
 
 #: src/components/automations/AutomationPage.tsx
 msgid "Pick the script to run."
@@ -18598,6 +18752,10 @@ msgid "Press Resume to listen again."
 msgstr "Press Resume to listen again."
 
 #: src/components/data-sources/source-attention.ts
+msgid "Press Setup to finish it."
+msgstr "Press Setup to finish it."
+
+#: src/components/data-sources/source-attention.ts
 msgid "Press Verify to evaluate it now."
 msgstr "Press Verify to evaluate it now."
 
@@ -18734,6 +18892,7 @@ msgstr "Progress"
 
 #: src/components/credentials-view/CredentialView.tsx
 #: src/components/llm-sources/llm-source-visuals.ts
+#: src/components/schema-tree/SchemaTreeView.tsx
 msgid "project"
 msgstr "project"
 
@@ -19393,6 +19552,10 @@ msgstr "Reading"
 #: src/components/organization/budgets/BudgetHistoryDialog.tsx
 msgid "Reading the history…"
 msgstr "Reading the history…"
+
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "Reading the schemas…"
+msgstr "Reading the schemas…"
 
 #~ msgid "Reading this team's people…"
 #~ msgstr "Reading this team's people…"
@@ -20361,6 +20524,10 @@ msgstr "Resetting…"
 msgid "Resize navigator"
 msgstr "Resize navigator"
 
+#: src/components/stream-inbox-view/StreamInboxView.tsx
+msgid "Resize the From column"
+msgstr "Resize the From column"
+
 #: src/components/status-bar/GitResolveButton.tsx
 msgid "Resolve"
 msgstr "Resolve"
@@ -20466,6 +20633,7 @@ msgstr "Results"
 #: src/components/data-sources/SourceMenu.tsx
 #: src/components/machine-overview/machine-overview.tsx
 #: src/components/setup-wizard/SetupWizardDialog.tsx
+#: src/components/stream-inbox-view/AttachedChannelsBar.tsx
 #: src/components/stream-inbox-view/ChannelAttentionBar.tsx
 #: src/journey/JourneyViewer.tsx
 #: src/tabs/useTerminalStripController.tsx
@@ -20612,6 +20780,10 @@ msgstr "Review docs on save"
 msgid "Review each attached asset and choose how to install it."
 msgstr "Review each attached asset and choose how to install it."
 
+#: src/tabs/doc-tab-card.tsx
+msgid "Review in"
+msgstr "Review in"
+
 #: src/components/chats-navigator/ChatHistoryRow.tsx
 #: src/components/chats-navigator/ChatHistoryRow.tsx
 msgid "Review prompts"
@@ -20732,6 +20904,7 @@ msgstr "Rule created"
 #~ msgid "rule: {ruleFilterName}"
 #~ msgstr "rule: {ruleFilterName}"
 
+#: src/components/schema-tree/SchemaTreeView.tsx
 #: src/components/ui/settings-pane.tsx
 msgid "Rules"
 msgstr "Rules"
@@ -21390,6 +21563,26 @@ msgstr "Schedules"
 msgid "Schedules · {0}"
 msgstr "Schedules · {0}"
 
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "schema"
+msgstr "schema"
+
+#: src/types/ViewType.ts
+msgid "Schema"
+msgstr "Schema"
+
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "Schema tree"
+msgstr "Schema tree"
+
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "Schemas"
+msgstr "Schemas"
+
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "Schemas defined here"
+msgstr "Schemas defined here"
+
 #: src/components/credentials/CredentialDialog.tsx
 #: src/components/hooks/EventListPanel.tsx
 #: src/components/lens-viewer/HeartbeatEventsViewer.tsx
@@ -21725,6 +21918,10 @@ msgstr "Select {0}"
 #: src/components/asset-manager/AssetManagerPopover.tsx
 msgid "Select {label}"
 msgstr "Select {label}"
+
+#: src/components/project-setup/ProjectSetupDialog.tsx
+msgid "Select {name}"
+msgstr "Select {name}"
 
 #: src/components/GitHubConnectionDialog.tsx
 msgid "Select a branch"
@@ -22257,6 +22454,7 @@ msgstr "Set up <0>{projectName}</0> in this workspace. We'll clone the repo and 
 #~ msgid "Set up a git-backed context folder for this project."
 #~ msgstr "Set up a git-backed context folder for this project."
 
+#: src/components/setup-wizard/SourceSetupDialog.tsx
 #: src/components/webapp-display/WebappSetupGate.tsx
 msgid "Set up again"
 msgstr "Set up again"
@@ -22321,6 +22519,7 @@ msgstr "Set values"
 #~ msgid "Set{0}"
 #~ msgstr "Set{0}"
 
+#: src/components/setup-wizard/SourceSetupDialog.tsx
 #: src/components/webapp-display/WebappSetupOverlay.tsx
 msgid "Setting things up"
 msgstr "Setting things up"
@@ -22343,8 +22542,8 @@ msgstr "Setting up your project…"
 
 #: src/components/assets/editor/agent-profile/deployment/AgentDeploymentPage.tsx
 #: src/components/data-sources/DataSourcePage.tsx
+#: src/components/data-sources/SourceSetupButton.tsx
 #: src/components/settings-view/SettingsView.tsx
-#: src/components/stream-inbox-view/ChannelAttentionBar.tsx
 #: src/pages/flow-page/content-panel/user-dropdown/user-dropdown.tsx
 #: src/pages/flow-page/content-panel/user-dropdown/user-dropdown.tsx
 #: src/pages/flow-page/content-panel/user-dropdown/user-dropdown.tsx
@@ -22354,12 +22553,20 @@ msgstr "Settings"
 
 #: src/components/account/settings-section.tsx
 #: src/components/automations/AutomationPage.tsx
+#: src/components/data-sources/SourceSetupButton.tsx
 #: src/components/setup-wizard/SetupStagesButton.tsx
+#: src/components/setup-wizard/SourceSetupDialog.tsx
+#: src/components/stream-inbox-view/AttachedChannelsBar.tsx
+#: src/components/stream-inbox-view/ChannelAttentionBar.tsx
 msgid "Setup"
 msgstr "Setup"
 
 #~ msgid "Setup could not start"
 #~ msgstr "Setup could not start"
+
+#: src/components/setup-wizard/SourceSetupDialog.tsx
+msgid "Setup could not start."
+msgstr "Setup could not start."
 
 #~ msgid "Setup did not finish"
 #~ msgstr "Setup did not finish"
@@ -22395,6 +22602,8 @@ msgstr "Setup guide"
 msgid "Setup instructions"
 msgstr "Setup instructions"
 
+#: src/components/data-sources/source-attention.ts
+#: src/components/data-sources/status-style.ts
 #: src/components/top-nav-bar/ProjectSetupButton.tsx
 #: src/components/top-nav-bar/ProjectSetupButton.tsx
 msgid "Setup required"
@@ -23310,6 +23519,10 @@ msgstr "Some deployments are stale or partial"
 #: src/components/machine-overview/service-status-led.tsx
 msgid "Some deployments have errors"
 msgstr "Some deployments have errors"
+
+#: src/components/project-setup/ProjectSetupDialog.tsx
+msgid "Some of the selected cannot be removed from the project"
+msgstr "Some of the selected cannot be removed from the project"
 
 #: src/components/automations/TestPanel.tsx
 msgid "Some things need attention."
@@ -24427,6 +24640,10 @@ msgstr "Test with a recent event"
 msgid "Tested"
 msgstr "Tested"
 
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "text"
+msgstr "text"
+
 #: src/components/ask/AskForm.tsx
 msgid "Thank you — sent."
 msgstr "Thank you — sent."
@@ -24480,6 +24697,10 @@ msgstr "That looks like an {0} key. This endpoint calls {1}, whose keys start wi
 #: src/components/task-receive/IncomingProjectDialog.tsx
 msgid "That project is no longer available."
 msgstr "That project is no longer available."
+
+#: src/pages/entry/launch-runner.ts
+msgid "That project isn't on this machine."
+msgstr "That project isn't on this machine."
 
 #: src/components/automations/RunDetail.tsx
 msgid "That run is no longer in the history."
@@ -24769,8 +24990,8 @@ msgid "The lens path could not be parsed."
 msgstr "The lens path could not be parsed."
 
 #: src/components/assets/editor/agent-profile/AgentVisibilitySection.tsx
-msgid "The link works for anyone the agent is shared with, or for everyone once it is public."
-msgstr "The link works for anyone the agent is shared with, or for everyone once it is public."
+#~ msgid "The link works for anyone the agent is shared with, or for everyone once it is public."
+#~ msgstr "The link works for anyone the agent is shared with, or for everyone once it is public."
 
 #: src/components/collaboration/LiveSessionView.tsx
 msgid "The live session has ended."
@@ -24886,6 +25107,10 @@ msgstr "The requested agent could not be found."
 msgid "The run could not be reset"
 msgstr "The run could not be reset"
 
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "The schemas could not be read."
+msgstr "The schemas could not be read."
+
 #: src/components/wiki-toolbar/WikiLinkInsertDialog.tsx
 msgid "The selected entity has no name yet. Choose one — it will be saved to the entity AND used as the link text."
 msgstr "The selected entity has no name yet. Choose one — it will be saved to the entity AND used as the link text."
@@ -24997,6 +25222,10 @@ msgstr "Then: run its rule code"
 #: src/components/task-receive/IncomingTaskDialog.tsx
 #~ msgid "There are merge conflicts in <0>{localPath}</0>. Please resolve them and try again."
 #~ msgstr "There are merge conflicts in <0>{localPath}</0>. Please resolve them and try again."
+
+#: src/components/task-receive/LaunchDialog.tsx
+msgid "There are no projects on this machine yet. Open one, then use the link again."
+msgstr "There are no projects on this machine yet. Open one, then use the link again."
 
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "There is nothing left to send — add a message first."
@@ -25477,6 +25706,10 @@ msgstr "This project could not be shared."
 #: src/components/connections-manager/credential-rows-view.tsx
 msgid "This project declares the same variables, and its values win"
 msgstr "This project declares the same variables, and its values win"
+
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "This project defines no schema."
+msgstr "This project defines no schema."
 
 #: src/routes/loaders/load-project.ts
 msgid "This project doesn't exist or is no longer available."
@@ -26295,6 +26528,7 @@ msgstr "Two quick steps in your browser:"
 #: src/components/machine-overview/machine-overview.tsx
 #: src/components/navigator-panel/NavigatorSearch.tsx
 #: src/components/record-search-bar/RecordSearchBar.tsx
+#: src/components/schema-tree/SchemaTreeView.tsx
 #: src/components/search-index/SweepOrphansDialog.tsx
 #: src/pages/discover-page/DiscoverToolbar.tsx
 #: src/pages/entry/entry-shell.tsx
@@ -26370,6 +26604,10 @@ msgstr "Undo"
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 msgid "Undo changes"
 msgstr "Undo changes"
+
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "Unfold"
+msgstr "Unfold"
 
 #: src/components/conversation/asset-review/AssetInstallActions.tsx
 #: src/components/conversation/asset-review/AssetReviewDialog.tsx
@@ -26797,6 +27035,7 @@ msgstr "Used assets"
 #: src/components/connections-manager.tsx
 #: src/components/llm-endpoints/LlmEndpointDetail.tsx
 #: src/components/llm-endpoints/LlmEndpointsList.tsx
+#: src/components/schema-tree/SchemaTreeView.tsx
 msgid "Used by"
 msgstr "Used by"
 
@@ -26851,6 +27090,7 @@ msgid "User Prompt Submit"
 msgstr "User Prompt Submit"
 
 #: src/components/assets/editor/usage-report/UsageReportAssetEditor.tsx
+#: src/components/schema-tree/SchemaTreeView.tsx
 #: src/pages/live-status/LiveStatus.tsx
 msgid "uses"
 msgstr "uses"
@@ -27619,6 +27859,10 @@ msgstr "Where the key is created, and how to store it: flow credentials set <nam
 msgid "Which engine runs filesystem indexing: the built-in Python FSIndexer, or the external Rust indexer (requires FLOWPAD_RS_INDEXER_BIN on the server; silently falls back to Python when unavailable). Takes effect on the next index run."
 msgstr "Which engine runs filesystem indexing: the built-in Python FSIndexer, or the external Rust indexer (requires FLOWPAD_RS_INDEXER_BIN on the server; silently falls back to Python when unavailable). Takes effect on the next index run."
 
+#: src/components/task-receive/LaunchDialog.tsx
+msgid "Which project should it work on?"
+msgstr "Which project should it work on?"
+
 #: src/components/asset-manager/EntityTypeBar.tsx
 #: src/components/quick-create/registry.ts
 msgid "Whiteboard"
@@ -27878,6 +28122,10 @@ msgstr "yes"
 msgid "Yes"
 msgstr "Yes"
 
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "yes / no"
+msgstr "yes / no"
+
 #: src/components/chats-navigator/useChatHistory.ts
 #: src/pages/home-landing/feed/FeedEntryCard.tsx
 msgid "Yesterday"
@@ -27981,8 +28229,12 @@ msgid "You have no budget you can hand out."
 msgstr "You have no budget you can hand out."
 
 #: src/pages/entry/AgentLaunchLanding.tsx
-msgid "You have no projects here yet. Paste a repository URL."
-msgstr "You have no projects here yet. Paste a repository URL."
+#~ msgid "You have no projects here yet. Paste a repository URL."
+#~ msgstr "You have no projects here yet. Paste a repository URL."
+
+#: src/pages/entry/AgentLaunchLanding.tsx
+msgid "You have no projects in the cloud. Paste a repository URL — or launch in your desktop and pick a project there."
+msgstr "You have no projects in the cloud. Paste a repository URL — or launch in your desktop and pick a project there."
 
 #: src/components/open-project-component/use-open-project.ts
 msgid "You must be logged in"

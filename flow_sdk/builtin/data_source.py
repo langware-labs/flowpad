@@ -139,6 +139,8 @@ def parse_since(raw: str) -> "tuple[Optional[datetime], Optional[str]]":
 #: Set by ``save_runtime``: the one suppressed save whose runtime fields are the news.
 _RUNTIME_WRITE: "ContextVar[bool]" = ContextVar("_data_source_runtime_write", default=False)
 RECEIVED_SETUP_DETAIL = "Received — connect your own account, then press Verify."
+#: Why a source's own Set up cannot start: the setup tree is a project's.
+NO_SETUP_PROJECT = "This source belongs to no project, so there is no setup to run for it — press Verify."
 
 
 class DataSource(SetupSkippable, Entity):
@@ -1457,6 +1459,37 @@ class DataSource(SetupSkippable, Entity):
         if states and states[-1].state == STAGE_DONE and self.status == SourceStatus.SETUP.value:
             states[-1] = states[-1].model_copy(update={"state": STAGE_PENDING, "detail": self.setup_detail or ""})
         return states
+
+    @core_action.post(action_name="setup")
+    async def setup_action(self) -> ApiResponse:
+        """POST /api/v1/graph/data_source/{id}/setup — set THIS source up: its node of its project's setup
+        tree (what its driver needs — a connection, credential values — then its stages, or Verify). The
+        questions come to the app; answers at once with the run's address, which a screen claims."""
+        from flow_sdk.builtin.project_setup import start_setup  # noqa: PLC0415
+
+        project = await self.setup_project()
+        if project is None:
+            return ApiFailResponse(message=NO_SETUP_PROJECT, status_code=409)
+        return ApiSuccessResponse(data={"run": await start_setup(project, root=str(self.typeid))})
+
+    @core_action.get(action_name="setup-run")
+    async def setup_run_action(self) -> ApiResponse:
+        """GET /api/v1/graph/data_source/{id}/setup-run — whether this source's setup is running, and its
+        tree so far. A source no project holds has no run: ``{run: "", running: false, tree: null}``."""
+        from flow_sdk.builtin.project_setup import setup_run  # noqa: PLC0415
+
+        project = await self.setup_project()
+        if project is None:
+            return ApiSuccessResponse(data={"run": "", "running": False, "tree": None})
+        return ApiSuccessResponse(data=setup_run(str(project.id), str(self.typeid)))
+
+    async def setup_project(self):
+        """The project whose setup tree holds this source's node: the one that owns its file (the row's
+        own project, else the project its folder sits under), else its owning agent's. ``None`` for a
+        source in the user scope."""
+        from flow_sdk.builtin.asset_publishing import owning_project  # noqa: PLC0415
+
+        return await owning_project(self) or await self._own_project()
 
     # ── routing: which place a hub webhook claim hands this channel's messages to ──────────────────────
 

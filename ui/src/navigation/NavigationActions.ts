@@ -41,7 +41,7 @@ import { beginTabSwitch, dockLabel, tabSwitch } from './tab-switch-state';
 import { FileOptions, TabOptions } from './types';
 import { preserveWindowLayout, stripDockPortion } from './url-builder';
 import { allScope, projectScope } from '@src/lib/scope-filter';
-import { contentAssetTargetForDock, isContentAssetDock } from './content-asset-dock';
+import { contentAssetTargetForDock, reviewPromptFor, isContentAssetDock } from './content-asset-dock';
 import { isAdoptableChildDock, isWorkspaceAnchorDock } from './adoptable-child-dock';
 import { isHostDock } from './tab-hosts';
 import { LOCAL_COMPUTE_NODE } from './asset-doc-types';
@@ -1049,6 +1049,36 @@ export class NavigationActions {
       last?.id ?? (await createVibeProcessForProject({ projectId, targetVfsPath: target, open: false })).id;
     await this.placeVibeTabBeside(processId);
     this.openDock(hostedAssetDock(asset, projectId, processId));
+  }
+
+  /**
+   * Start a NEW session that reviews a document, on the surface asked for. The
+   * document is the session's target and the prompt names it; an entity-backed
+   * one also rides in the session's shared context. The launching tab stays as
+   * it is: Terminal and Chat open their own tab, Vibe opens a host tab placed
+   * right after the tab on screen.
+   */
+  async reviewDocument(asset: DockPointer, mode: ViewMode, projectId: string | null): Promise<void> {
+    const target = contentAssetTargetForDock(asset);
+    if (!target) return;
+    const prompt = reviewPromptFor(target);
+    const about = {
+      targetVfsPath: target.targetVfsPath,
+      sharedContextEntities: target.typeId ? [target.typeId] : undefined,
+    };
+    if (mode === ViewMode.Vibe) {
+      if (!projectId) return;
+      const { launchVibeSessionForProject } = await import('@src/pages/flow-page/use-start-vibe-session');
+      await launchVibeSessionForProject({
+        ...about,
+        projectId,
+        message: prompt,
+        navigation: { openShellProcess: (processId) => void this.openVibeTabBeside(processId) },
+      });
+      return;
+    }
+    const { openNewChat } = await import('./open-new-chat');
+    await openNewChat(this, { ...about, mode, projectId: projectId ?? undefined, prompt });
   }
 
   async openShellProcess(

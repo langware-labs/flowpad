@@ -7,8 +7,14 @@ import { apiBase } from '../_shared/api';
 
 const API = apiBase();
 // Whiteboard is a REPO asset, so user scope uses the same registry-owned
-// agentic-assets/<type> layout as project scope, rooted at the user's home.
-const USER_WHITEBOARDS = path.join(os.homedir(), 'agentic-assets', 'whiteboard');
+// agentic-assets/<type> layout as project scope, rooted at the instance's user
+// asset root (`BaseSettings.user_asset_root`): the user's home for prod, and
+// `~/Flowpad workspaces/.home/<instance>` for every other instance, so a test
+// instance never writes into the home prod reads.
+const INSTANCE = process.env.FLOW_INSTANCE || 'prod';
+const USER_ASSET_ROOT =
+  INSTANCE === 'prod' ? os.homedir() : path.join(os.homedir(), 'Flowpad workspaces', '.home', INSTANCE);
+const USER_WHITEBOARDS = path.join(USER_ASSET_ROOT, 'agentic-assets', 'whiteboard');
 
 function projectWhiteboards(mount: string): string {
   return path.join(mount, 'agentic-assets', 'whiteboard');
