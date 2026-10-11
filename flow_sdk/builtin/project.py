@@ -196,7 +196,23 @@ class NestedProjectError(ValueError):
 
 
 class DuplicateProjectNameError(ValueError):
-    """A project was about to take a name another visible project already has."""
+    """A project was about to take a name another visible project already has.
+    ``existing`` is that other project."""
+
+    def __init__(self, message: str, existing: "Project"):
+        super().__init__(message)
+        self.existing = existing
+
+    async def conflict(self, attempted: str) -> dict:
+        """What an install refused with this answers (a 409's ``data``): the name it
+        tried, a free one to offer, and the project already holding it — so the
+        receiver chooses between opening theirs and another name."""
+        return {
+            "project_name_conflict": True,
+            "attempted_name": attempted,
+            "suggested_name": await Project.free_name(attempted),
+            "existing_project_id": str(self.existing.id),
+        }
 
 
 class ProjectMoveError(ValueError):
@@ -796,7 +812,9 @@ class Project(SetupSkippable, Entity):
         return ApiSuccessResponse(data={"run": await start_setup(self, root=root)})
 
     @action.post(action_name="setup-skip")
-    async def setup_skip_action(self, typeid: str = "", scope: str = "local", name: str = "", note: str = "") -> "ApiResponse":
+    async def setup_skip_action(
+        self, typeid: str = "", scope: str = "local", name: str = "", note: str = ""
+    ) -> "ApiResponse":
         """`POST /project/<id>/setup-skip {typeid, scope, name?, note?}` — skip a requirement of this project's setup:
         ``local`` marks its record on this machine; ``always`` removes its asset from the project and stages
         that in git (a dependency: ``typeid`` is the project's and ``name`` the dependency's). Answers with the
@@ -2271,19 +2289,40 @@ class Project(SetupSkippable, Entity):
             stored = await type(self)._db.get_by_id(str(self.id), self.type)
             if stored and project_name_key(stored.name) == key:
                 return
+        other = await type(self)._project_named(self.name, exclude_id=str(self.id))
+        if other is not None:
+            raise DuplicateProjectNameError(
+                f"a project named {other.name!r} already exists ({other.fs_storage_mount_path}); "
+                "project names must be unique",
+                existing=other,
+            )
+
+    @classmethod
+    async def _project_named(cls, name: str | None, *, exclude_id: str | None = None) -> "Project | None":
+        """The visible project (other than ``exclude_id``) holding ``name`` (``project_name_key``), or None."""
+        key = project_name_key(name)
+        if not key:
+            return None
         from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp  # noqa: PLC0415
 
         # Names are stored as typed; LIKE (case-insensitive) with the separators widened
         # to "%" narrows to the candidates, and the key decides.
-        candidates = await type(self).get_all(
+        candidates = await cls.get_all(
             QueryFilter(match=ExpressionNode(op=QueryOp.LIKE, operands=["name", key.replace("-", "%")]))
         )
         for other in candidates:
-            if str(other.id) != str(self.id) and other._visible() and project_name_key(other.name) == key:
-                raise DuplicateProjectNameError(
-                    f"a project named {other.name!r} already exists ({other.fs_storage_mount_path}); "
-                    "project names must be unique"
-                )
+            if str(other.id) != exclude_id and other._visible() and project_name_key(other.name) == key:
+                return other
+        return None
+
+    @classmethod
+    async def free_name(cls, base: str) -> str:
+        """``base``, or the first ``<base>-N`` no visible project holds."""
+        name, n = base, 1
+        while await cls._project_named(name) is not None:
+            n += 1
+            name = f"{base}-{n}"
+        return name
 
     # -- Git-reference reception (``TypeInfo.receive_transfer``): an invite
     # message carries the project as its row + GitOrigin; installing it clones.
@@ -2331,12 +2370,15 @@ class Project(SetupSkippable, Entity):
         return True
 
     @classmethod
-    async def hydrate_from_hub(cls, project_id: str, someone_typeid: str | None = None) -> "Project | None":
+    async def hydrate_from_hub(
+        cls, project_id: str, someone_typeid: str | None = None, *, name: str | None = None
+    ) -> "Project | None":
         """This project as the hub holds it, mirrored locally — for a caller
         that holds only its id (a deep link). Hub-first, through the membership
         mirror. ``None`` when the hub refuses (gone, or not yours); raises
         ``HubError`` when the hub can't answer (no hub, signed out, unreachable),
-        so the caller can offer a retry instead of calling it gone."""
+        so the caller can offer a retry instead of calling it gone. ``name``
+        replaces the hub's name — the receiver's choice when it is taken here."""
         from flow_sdk.app.actions.membership_sync import materialize_remote_membership_entity  # noqa: PLC0415
         from flow_sdk.cloud_client.shared.errors import HubError  # noqa: PLC0415
         from flow_sdk.cloud_client.transport import hub_http  # noqa: PLC0415
@@ -2349,6 +2391,8 @@ class Project(SetupSkippable, Entity):
             raise
         if not isinstance(payload, dict) or not payload.get("id"):
             return None
+        if name:
+            payload = {**payload, "name": name}
         return await materialize_remote_membership_entity(cls, payload, someone_typeid)
 
     @classmethod
@@ -2369,6 +2413,30 @@ class Project(SetupSkippable, Entity):
         if project.fs_storage_mount_path:
             return ProjectOpenLinkSpec(project_id=entity_id)
         return project._setup_link() or ProjectOpenLinkSpec(project_id=entity_id, project_error="unavailable")
+
+    @classmethod
+    async def _name_taken_link(cls, row: dict, taken: DuplicateProjectNameError) -> "ProjectOpenLinkSpec | None":
+        """The set-up link of a hub project whose name another project here holds:
+        the usual one, plus that project and a free name to offer instead."""
+        import json  # noqa: PLC0415
+
+        from flow_sdk.fs_store.serializer.hub import HubSerializer  # noqa: PLC0415
+        from flow_sdk.schema.data_spec.open_link_spec import ProjectOpenLinkSpec  # noqa: PLC0415
+
+        data = HubSerializer.unwire(cls, row)
+        origin = as_project_origin(data.get("origin"))
+        if origin is None:
+            return None
+        name = str(data.get("name") or taken.existing.name)
+        conflict = await taken.conflict(name)
+        return ProjectOpenLinkSpec(
+            project_id=str(row["id"]),
+            setup_git="1",
+            git_origin=json.dumps(origin.model_dump(mode="json")),
+            title=name,
+            existing_project_id=conflict["existing_project_id"],
+            suggested_name=conflict["suggested_name"],
+        )
 
     def _setup_link(self) -> "ProjectOpenLinkSpec | None":
         """The "X shared a project with you" set-up for this file-less row, or
@@ -2406,8 +2474,15 @@ class Project(SetupSkippable, Entity):
             project_id = str(row.get("id") or "")
             if not project_id or await cls.get_one({"id": project_id}) is not None:
                 continue
-            project = await materialize_remote_membership_entity(cls, row, someone_typeid)
-            link = project._setup_link() if project is not None else None
+            try:
+                project = await materialize_remote_membership_entity(cls, row, someone_typeid)
+            except DuplicateProjectNameError as e:
+                # Its name is a project here already: it stays unmirrored, offered with
+                # the choice (open theirs, or another name) — and one taken name must
+                # not sink the sweep for every other project.
+                link = await cls._name_taken_link(row, e)
+            else:
+                link = project._setup_link() if project is not None else None
             if link is not None:
                 links.append(link)
         return links
@@ -2621,7 +2696,13 @@ class Project(SetupSkippable, Entity):
         default_name, rel = None, "."
         if asset:
             return await project_dependencies.add_to_asset(
-                self, asset, raw, name=name, label=label, description=description, optional=optional,
+                self,
+                asset,
+                raw,
+                name=name,
+                label=label,
+                description=description,
+                optional=optional,
             )
         if raw.startswith(("git+", "hub:", "file:")) or parse_id(raw):
             parse_source(raw)
@@ -2703,13 +2784,24 @@ class Project(SetupSkippable, Entity):
 
     @action.post(action_name="add-dependency")
     async def add_dependency_action(
-        self, source: str = "", name: str = "", path: str = "", optional: bool = False,
-        label: str = "", description: str = "", asset: str = "",
+        self,
+        source: str = "",
+        name: str = "",
+        path: str = "",
+        optional: bool = False,
+        label: str = "",
+        description: str = "",
+        asset: str = "",
     ) -> "ApiResponse":
         try:
             state = await self.add_dependency(
-                source, name=name or None, path=path or None, optional=optional,
-                label=label or None, description=description or None, asset=asset or None,
+                source,
+                name=name or None,
+                path=path or None,
+                optional=optional,
+                label=label or None,
+                description=description or None,
+                asset=asset or None,
             )
         except ValueError as exc:
             return ApiFailResponse(message=str(exc), status_code=400)

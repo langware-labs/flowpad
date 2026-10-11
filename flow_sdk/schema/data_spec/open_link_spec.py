@@ -45,3 +45,7 @@ class ProjectOpenLinkSpec(OpenLinkSpec):
     setup_git: Optional[Literal["1"]] = None
     #: The hub refused it (``unavailable``) or could not be reached (``unreachable``).
     project_error: Optional[Literal["unavailable", "unreachable"]] = None
+    #: Its name is already this project's here: the set-up asks — open that one, or
+    #: install this one under ``suggested_name`` (or a name the receiver types).
+    existing_project_id: Optional[str] = None
+    suggested_name: Optional[str] = None
