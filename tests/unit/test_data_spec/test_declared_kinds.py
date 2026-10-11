@@ -278,3 +278,50 @@ def test_a_changed_definition_rebuilds_and_rows_written_before_still_read(tmp_pa
     (request / "data_schema.json").write_text(json.dumps(doc))
     assert declared.register_folder(request) == ""
     assert d.validate_rows() == []
+
+
+def test_an_edited_definitions_old_class_is_freed_once_values_used_it(tmp_path):
+    """Every edit of a ``data_schema.json`` compiles a NEW class. The registry lets the old one go,
+    but a value saved / loaded under it reached ``placements(spec)``, whose memo used to be an
+    unbounded ``lru_cache`` keyed by the class -- so one compiled pydantic class per edit stayed
+    pinned for the life of the backend (~14 KB each; ~25 KB when an inline form changed, through
+    ``spec._COMPILED``). Proven on the real path: index hook -> register -> save -> load."""
+    import gc
+    import weakref
+
+    from flow_sdk.assets.types.data_schema import derive_data_schema
+    from flow_sdk.schema.data_spec import spec as spec_mod
+
+    ns = _ns()
+    folder = _spec(
+        tmp_path,
+        "lead",
+        {"fields": {"name": {"shape": "string"}, "address": {"shape": {"city": "string", "zip_a": "?int"}}}},
+        ns=ns,
+    )
+    values = tmp_path / "values"
+
+    def edit_and_use(version: str):
+        doc = json.loads((folder / "data_schema.json").read_text())
+        doc["fields"] = {
+            "name": {"shape": "string", "description": version},
+            "address": {"shape": {"city": "string", f"zip_{version}": "?int"}},
+        }
+        (folder / "data_schema.json").write_text(json.dumps(doc))
+        data: dict = {}
+        derive_data_schema(data, folder, {})  # what indexing the folder does
+        assert data["error"] == "", data
+        cls = _kind(ns, "lead")
+        cls(name=version, address={"city": "x"}).save(values)
+        assert cls.load(values).name == version
+        return cls
+
+    first = edit_and_use("a")
+    dead = weakref.ref(first)
+    compiled_before = len(spec_mod._COMPILED)
+    del first
+    for version in ("b", "c"):
+        edit_and_use(version)
+    gc.collect()  # pydantic classes sit in reference cycles; the memo must not be what keeps them
+    assert dead() is None, "the class an edit replaced is still alive"
+    assert len(spec_mod._COMPILED) <= compiled_before, "an edited-away inline form kept its anonymous class"

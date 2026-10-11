@@ -45,6 +45,8 @@ interface FavoriteStarProps extends FavoriteRef {
    * opens a dialog. A host that owns the hover already offers editing there.
    */
   hoverSurface?: 'card' | 'none';
+  /** Fired after a click CREATES the favorite — never on removal. */
+  onFavorited?: () => void;
   /** Hidden until the host row (a `group`) is hovered; a set favorite stays visible. */
   revealOnHover?: boolean;
 }
@@ -67,6 +69,7 @@ export function FavoriteStar({
   className,
   size = 16,
   hoverSurface = 'card',
+  onFavorited,
   revealOnHover = false,
 }: FavoriteStarProps) {
   const { t } = useLingui();
@@ -148,7 +151,10 @@ export function FavoriteStar({
       // Creating a new favorite → open the 5s edit window on the just-created id.
       if (!favorited) {
         const created = await toggleFavorite({ entityType, entityId, title, icon, nav });
-        if (created?.id && editWindowEnabled) armEditWindow(created.id);
+        if (created?.id) {
+          onFavorited?.();
+          if (editWindowEnabled) armEditWindow(created.id);
+        }
         return;
       }
       // Already favorited (no active window) → remove, as before.
@@ -160,6 +166,7 @@ export function FavoriteStar({
       favorited,
       clearEditWindow,
       armEditWindow,
+      onFavorited,
       toggleFavorite,
       entityType,
       entityId,

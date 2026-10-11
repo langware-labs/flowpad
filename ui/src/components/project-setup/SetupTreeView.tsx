@@ -1,6 +1,6 @@
 import { Trans } from '@lingui/react/macro';
 import type { SetupNodeResult, SetupTreeResult } from '@sdk';
-import { CheckCircle2, Circle, CornerDownRight, Hourglass, Loader2, Lock, XCircle } from 'lucide-react';
+import { CheckCircle2, Circle, CornerDownRight, Hourglass, Loader2, Lock, SkipForward, XCircle } from 'lucide-react';
 
 /**
  * The setup tree as it stands: every asset of the project (or of one node of it), indented under what
@@ -80,6 +80,8 @@ function StateIcon({ node }: { node: SetupNodeResult }) {
       return <Lock className={`${cls} text-amber-600`} />;
     case 'held':
       return <Hourglass className={`${cls} text-muted-foreground`} />;
+    case 'skipped':
+      return <SkipForward className={`${cls} text-muted-foreground`} aria-label="skipped" />;
     default:
       return <Circle className={`${cls} text-muted-foreground`} />;
   }

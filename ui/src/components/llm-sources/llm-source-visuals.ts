@@ -50,32 +50,65 @@ export function dotFor(source: LLMSource | undefined): string {
  * Keyed on `LLMFundingKind` — the kind of the ENDPOINT a verdict names — and never on
  * `Capability.auth_mode`. That distinction is the whole reason this table is here: `auth_mode`
  * is the preference the user *stated*, and the resolver may legitimately not have honoured it.
- * `HarnessLoginModal`'s `authBadge` still derives from the preference and is exactly the drift
- * this module's header describes; read the kind off
- * `LLMFundingStatus.endpoints[resolved.endpoint_typeid]` and a surface cannot lie.
+ * Read the kind off `LLMFundingStatus.endpoints[resolved.endpoint_typeid]` and a surface
+ * cannot lie.
+ *
+ * `short` is the ONE word a row carries for its state — "Plan", "API key", "LLM Endpoint" — and
+ * it doubles as the answer to "what pays": a harness has exactly one of these, never "signed in"
+ * AND "plan". The Assistants & keys modal, the footer chip and the sources page all read this
+ * table, so the vocabulary cannot drift between them.
  *
  * A total `Record` over the enum, like `AUTHORITY_DOT` above, so a fourth funding kind is a
  * type error here rather than a silently missing glyph.
  */
-const KIND_GLYPH: Record<LLMFundingKind, { Icon: LucideIcon; className: string; label: MessageDescriptor }> = {
+export interface FundingGlyph {
+  Icon: LucideIcon;
+  className: string;
+  /** The sentence, for a tooltip. */
+  label: MessageDescriptor;
+  /** The word, for a pill. */
+  short: MessageDescriptor;
+}
+
+const KIND_GLYPH: Record<LLMFundingKind, FundingGlyph> = {
   [LLMFundingKind.Device]: {
     Icon: CircleUserRound,
     className: '',
     label: msg`Funded by your vendor subscription`,
+    short: msg`Plan`,
   },
-  [LLMFundingKind.ApiKey]: { Icon: KeyRound, className: '', label: msg`Funded by a stored API key` },
-  [LLMFundingKind.Hub]: { Icon: Cloud, className: '', label: msg`Funded by a hub endpoint` },
+  [LLMFundingKind.ApiKey]: {
+    Icon: KeyRound,
+    className: '',
+    label: msg`Funded by a stored API key`,
+    short: msg`API key`,
+  },
+  [LLMFundingKind.Hub]: {
+    Icon: Cloud,
+    className: '',
+    label: msg`Funded by a hub endpoint`,
+    short: msg`LLM Endpoint`,
+  },
 };
 
 /** What nothing-funds-this looks like. Amber, because it is the state that stops a spawn. */
-export const NO_FUNDING_GLYPH = {
+export const NO_FUNDING_GLYPH: FundingGlyph = {
   Icon: AlertCircle,
   className: 'text-amber-500',
   label: msg`No LLM source funds this harness`,
+  short: msg`No source`,
+};
+
+/** A harness whose own login is the missing piece: nothing pays, and signing in would fix it. */
+export const SIGNED_OUT_GLYPH: FundingGlyph = {
+  Icon: CircleUserRound,
+  className: 'text-amber-500',
+  label: msg`Not signed in to this assistant`,
+  short: msg`Signed out`,
 };
 
 /** The glyph for a funding kind, falling back to the refusal glyph for an unknown one. */
-export function glyphForFundingKind(kind: string | undefined): typeof NO_FUNDING_GLYPH {
+export function glyphForFundingKind(kind: string | undefined): FundingGlyph {
   return KIND_GLYPH[kind as LLMFundingKind] ?? NO_FUNDING_GLYPH;
 }
 

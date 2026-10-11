@@ -10,6 +10,7 @@ registered, the script is there).
 
 from __future__ import annotations
 
+import asyncio
 import os
 from typing import Any, Optional
 
@@ -23,11 +24,13 @@ SPEC_FIELDS: frozenset[str] = frozenset({
     "tag_pattern", "tag_target", "tag_scope", "max_fires_per_minute", "fire_once", "confirm",
     "watch_path", "recursive", "watch_glob", "ignore_patterns", "respect_gitignore",
     "hook_events", "mask", "actions", "instruction", "workdir",
+    "gate", "then",
 })
 
 
 def trigger_from_spec(fields: dict[str, Any]) -> Any:
-    """An UNSAVED Trigger from builder fields — validated by the entity itself."""
+    """An UNSAVED Trigger from builder fields — validated by the entity itself (a sentence gate is
+    worded on construction, like every row's)."""
     from flow_sdk.builtin.trigger import Trigger  # noqa: PLC0415
 
     picked = {k: v for k, v in (fields or {}).items() if k in SPEC_FIELDS}
@@ -115,6 +118,39 @@ def _state_findings(trigger: Any) -> list[CheckFinding]:
     return out
 
 
+async def _gate_findings(trigger: Any) -> list[CheckFinding]:
+    """The rule's ``if``: worded, well-formed, and askable here."""
+    from pydantic import ValidationError  # noqa: PLC0415
+
+    if not getattr(trigger, "gate", None):
+        return []
+    out: list[CheckFinding] = []
+    try:
+        op = trigger.gate_op
+    except ValidationError as exc:
+        first = exc.errors(include_url=False)[0]
+        out.append(CheckFinding(area="if", ok=False, message=f"The if is not right: {first.get('msg', 'invalid')}"))
+        return out
+    if op is None:
+        out.append(CheckFinding(area="if", ok=False,
+                                message="Nothing knows what this rule decides about, so its sentence cannot be asked."))
+        return out
+    try:
+        from flow_sdk.instance_settings.api_endpoint import decision_endpoints  # noqa: PLC0415
+
+        deciders = await decision_endpoints()
+    except Exception:  # noqa: BLE001 — no answer is "none here"
+        deciders = []
+    if deciders:
+        out.append(CheckFinding(area="decider", ok=True, message=f"Decided by {deciders[0].name}."))
+    else:
+        # Its own area: the rule is fine, what is missing is on this machine.
+        out.append(CheckFinding(area="decider", ok=False,
+                                message="This needs a Decision API to decide. Set one up on LLM sources; "
+                                        "the rule waits until then."))
+    return out
+
+
 async def check(trigger: Any, event: Optional[dict[str, Any]] = None) -> AutomationCheck:
     """Findings for ``trigger`` (saved or not), optionally against one event."""
     from flow_sdk.automations.describe import describe_then, describe_when, kind_of  # noqa: PLC0415
@@ -125,8 +161,10 @@ async def check(trigger: Any, event: Optional[dict[str, Any]] = None) -> Automat
         event_findings, would_fire = _event_findings(trigger, event)
         findings += event_findings
     findings += _state_findings(trigger)
+    # Independent: the gate asks the endpoint list, the then its names.
+    gate_findings, then = await asyncio.gather(_gate_findings(trigger), describe_then(trigger))
+    findings += gate_findings
 
-    then = await describe_then(trigger)
     for part in then:
         if part.kind == "nothing":
             findings.append(CheckFinding(area="then", ok=False, message="It does nothing yet. Add what it should do."))

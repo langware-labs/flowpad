@@ -20,9 +20,11 @@ Three properties make this safe to run on a hot path:
 * **Recursive.** A generated entry is fed back into the worklist, so a handler
   can refine another handler's output and each layer stays one rule
   (shell → flow_command → artifact). Termination is enforced, not hoped for.
-* **Idempotent.** ``parse_delta`` re-derives the whole retained list on every
-  delta, so deriving twice must produce the same list. Handlers are pure and
-  the visited set makes a second pass a no-op.
+* **Idempotent.** A full refold (first read, reset, write-order inversion)
+  re-derives the whole retained list, so deriving twice must produce the same
+  list. Handlers are pure and the visited set makes a second pass a no-op. On
+  an ordinary delta only the new entries are derived (``_derive_from`` with
+  the list's ``known`` set), which is why generated ids must be deterministic.
 """
 
 from __future__ import annotations
@@ -81,9 +83,9 @@ def derive_entries(entries: Iterable[TranscriptEntry]) -> list[TranscriptEntry]:
     its source.
     """
     entries = list(entries)
-    # Re-deriving an already-derived list must add nothing — ``parse_delta``
-    # re-runs this over the whole retained list on every delta. Generated ids
-    # are deterministic (``{source.id}:{suffix}``), so "already present" is an
+    # Re-deriving an already-derived list must add nothing — a full refold
+    # re-runs this over the whole retained list. Generated ids are
+    # deterministic (``{source.id}:{suffix}``), so "already present" is an
     # exact test rather than a heuristic, and it stays correct for a PARTIALLY
     # derived list: a chain whose leaf is missing still grows that leaf.
     known = {e.id for e in entries}

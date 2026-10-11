@@ -139,7 +139,7 @@ class OpenCodeCLIStreamWorker(JsonlTeeStreamWorker):
         # The tier ('sm'/'md') has already been resolved to a concrete slug here;
         # stash it so the transcript can record which model produced the turn.
         self._resolved_model = opts.resolved_model
-        argv, env_from_opts, stdin = opts.to_spawn(instruction=prompt, system_prompt_append=context.instructions)
+        argv, env_from_opts, stdin = opts.to_spawn(instruction=prompt)
         env = build_worker_spawn_env("opencode", env_from_opts)
         argv = resolve_worker_argv0("opencode", argv, env)
         return argv, env, stdin

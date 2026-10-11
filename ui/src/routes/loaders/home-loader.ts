@@ -3,7 +3,7 @@ import { redirect, replace, type LoaderFunctionArgs as LoaderArgs } from 'react-
 import { TimeIt } from '@src/utils/timeit';
 import { adoptScopeProject } from './load-dock-pointer';
 import { DockPointer } from '@src/navigation/DockPointer';
-import { getViewMode } from '@src/contexts/view-mode-context';
+import { UNSTATED_VIEW_MODE } from '@src/contexts/view-mode-context';
 import { registerLoadRedirect, runLoadRedirects } from './load-redirects';
 // Side-effect import: features register their load-redirect resolvers here.
 import '@src/journey/journey-load-redirect';
@@ -74,7 +74,7 @@ export async function loadHomePage(args: LoaderArgs) {
   // and thrown away once.
   if (dock.viewMode === null) {
     // eslint-disable-next-line @typescript-eslint/only-throw-error
-    throw replace(dock.withViewMode(getViewMode()).toUrl(url.pathname));
+    throw replace(dock.withViewMode(UNSTATED_VIEW_MODE).toUrl(url.pathname));
   }
 
   await ensureComputeNodeLoaded();

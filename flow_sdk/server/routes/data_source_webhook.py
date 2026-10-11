@@ -89,6 +89,7 @@ async def webhook_delivery(name: str, request: Request):
     from flow_sdk.builtin.data_source import DataSource  # noqa: PLC0415
 
     account = str(stype.cls.webhook_account(payload) or "")
+    # The account's own source (``find_for_account``'s default part), never a group of it: parts come by a hub claim.
     row = await DataSource.find_for_account(name, stype.identity_config_key, account) if account else None
     if row is None:
         # No amount of retrying makes a source exist; the log is where a person finds out.

@@ -1385,6 +1385,7 @@ class FsRecordsActionsMixin:
         scan_mode=None,
         project_record=None,
         on_started=None,
+        queue: bool = False,
     ) -> bool:
         """Index one project because it was selected/created, not clicked.
 
@@ -1410,6 +1411,9 @@ class FsRecordsActionsMixin:
         ``on_started`` is forwarded to ``_run_index_activity``, which invokes it
         only after the activity is held — so a run skipped for contention does not
         burn a project's one First-Selection chance.
+
+        ``queue=True`` waits for a running index instead of skipping — for a caller
+        whose run is owed (a project just moved to a new folder), not opportunistic.
         """
         from flow_sdk.fs_store.indexer import OrphanAction, get_auto_scan_indexer  # noqa: PLC0415
         from flow_sdk.server.search_filters import ScopeFilter, resolve_project_scope  # noqa: PLC0415
@@ -1438,6 +1442,7 @@ class FsRecordsActionsMixin:
                 indexer=get_auto_scan_indexer() if scan_mode is not None else None,
                 project_record=project_record,
                 on_started=on_started,
+                queue=queue,
             )
             logging.info(
                 "[auto-index] project %s (%s): %d new, %d errors in %.0fms",

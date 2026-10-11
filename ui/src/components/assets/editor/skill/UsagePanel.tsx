@@ -44,6 +44,22 @@ const usageScanCache = new Map<string, UsageSession[]>();
 const usageScanInFlight = new Map<string, Promise<UsageSession[]>>();
 
 /**
+ * Cap on remembered scans — enough to survive remounts of the skills being
+ * worked on. A module-scope Map in a long-lived SPA otherwise grows for every
+ * skill the user scans.
+ */
+export const MAX_CACHED_SCANS = 20;
+
+/** Store as the most recent scan; a Map iterates in insertion order, so its first key is the oldest. */
+function rememberScan(skillName: string, found: UsageSession[]): void {
+  usageScanCache.delete(skillName);
+  usageScanCache.set(skillName, found);
+  while (usageScanCache.size > MAX_CACHED_SCANS) {
+    usageScanCache.delete(usageScanCache.keys().next().value as string);
+  }
+}
+
+/**
  * The asset improvement cycle for a skill: **usage → analyze → review → improve
  * → commit**. Scans past sessions that used this skill (FSIndexer + transcript
  * analyzer), then per selected session runs agent-trace (Analyze) and skillit
@@ -112,7 +128,7 @@ export function UsagePanel({ skill, skillFile }: { skill: Skill; skillFile: FSRe
         a.queryParameters = { skill: skillName };
         const res = await dataManager.callAction<null, { sessions: UsageSession[] }>(a);
         const found = res?.sessions ?? [];
-        usageScanCache.set(skillName, found);
+        rememberScan(skillName, found);
         return found;
       })();
       usageScanInFlight.set(skillName, p);

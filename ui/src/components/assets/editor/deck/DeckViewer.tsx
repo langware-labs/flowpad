@@ -40,6 +40,8 @@ export function DeckViewer({ fsRef, deck }: DeckViewerProps) {
   const [numSlides, setNumSlides] = useState<number | null>(null);
   const [templateVpath, setTemplateVpath] = useState<string | null>(null);
   const deckAreaRef = useRef<HTMLDivElement>(null);
+  // Object URL for the pop-out tab: one per loaded `html`, made on first use.
+  const popOutUrlRef = useRef<string | null>(null);
   const { navigation } = useDockNavigation();
 
   // Re-read when the deck is rebuilt (updated_date advances on reindex).
@@ -87,12 +89,24 @@ export function DeckViewer({ fsRef, deck }: DeckViewerProps) {
 
   const title = deck?.name || deck?.title || 'Deck';
 
+  // The pop-out URL lives as long as the `html` it wraps. The tab is opened
+  // `noopener`, so there is no window handle to hear its load from — the viewer
+  // owns the URL and releases it when the html is replaced or the viewer unmounts.
+  // A tab that already loaded the deck keeps showing it after the revoke.
+  useEffect(
+    () => () => {
+      if (popOutUrlRef.current) URL.revokeObjectURL(popOutUrlRef.current);
+      popOutUrlRef.current = null;
+    },
+    [html],
+  );
+
   const openInNewTab = () => {
     if (!html) return;
     // The portable, self-contained file — opened in a real tab it is unrestricted
     // (fullscreen, presenter view, keyboard all work).
-    const url = URL.createObjectURL(new Blob([html], { type: 'text/html' }));
-    window.open(url, '_blank', 'noopener');
+    popOutUrlRef.current ??= URL.createObjectURL(new Blob([html], { type: 'text/html' }));
+    window.open(popOutUrlRef.current, '_blank', 'noopener');
   };
 
   // Provenance nav uses the template FOLDER resolved from deck.json — the deck

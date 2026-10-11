@@ -411,6 +411,10 @@ class DriverRuntime:
     def open_inbound(self) -> bool:
         return self.can_send and self.cls.open_inbound
 
+    def open_inbound_for(self, config: Any) -> bool:
+        """``open_inbound`` for one source's config (``MessageSource.open_inbound_for``)."""
+        return self.can_send and self.cls.open_inbound_for(config or {})
+
     @property
     def identity_config_key(self) -> str:
         return self.cls.identity_config_key

@@ -16,22 +16,36 @@ test('embedded Close is a pure host callback and destructive controls stay hidde
     join(repo, 'ui/src/components/terminal/interactive-terminal/ProcessToolbar.tsx'),
     'utf8',
   );
+  const menu = readFileSync(
+    join(repo, 'ui/src/components/terminal/interactive-terminal/SessionActionsMenu.tsx'),
+    'utf8',
+  );
   const terminal = readFileSync(
     join(repo, 'ui/src/components/terminal/interactive-terminal/InteractiveTerminal.tsx'),
     'utf8',
   );
 
   const embeddedClose = toolbar.match(
-    /\{\/\* Close — only in embedded mode \*\/\}[\s\S]*?\{embedded && onClose && \([\s\S]*?tooltip=\{t`Close terminal`\}[\s\S]*?onClick=\{onClose\}[\s\S]*?\)\}/,
+    /\{\/\* Close — only in embedded mode \*\/\}[\s\S]*?\{embedded && onClose && \([\s\S]*?label=\{t`Close terminal`\}[\s\S]*?onClick=\{onClose\}[\s\S]*?\)\}/,
   );
   expect(embeddedClose, 'embedded close must directly invoke the host callback').not.toBeNull();
   expect(embeddedClose?.[0]).not.toMatch(/process\.(?:exit|close|stop)/);
 
-  expect(toolbar).toContain('{!embedded && <CommitMergeButton');
-  expect(toolbar).toContain('{!embedded && <OpenInWorktreeButton');
-  expect(toolbar).toMatch(/Open terminal in current folder[\s\S]*?\{!embedded && \([\s\S]*?<SquareTerminal/);
-  // Fork is one slot shared by both headers (8d6e6b2b8); the slot itself is non-embedded-only.
-  expect(toolbar).toMatch(/const forkSlot = !embedded && \([\s\S]*?<GitFork/);
+  // The nav-out actions (terminal, worktree, commit & merge, export) are one
+  // non-embedded-only block of the session actions menu.
+  const navOut = menu.match(/\{!embedded && \(\s*<>[\s\S]*?<\/>\s*\)\}/);
+  expect(navOut, 'nav-out actions must be one non-embedded-only block').not.toBeNull();
+  for (const id of [
+    'session-action-terminal',
+    'session-action-worktree',
+    'session-action-commit-merge',
+    'entity-actions-export',
+  ]) {
+    expect(navOut?.[0]).toContain(id);
+    expect(menu.split(id).length, `${id} appears once, inside the block`).toBe(2);
+  }
+  // Fork is non-embedded-only.
+  expect(toolbar).toMatch(/\{!embedded && \(\s*<CompactIconAction\s+icon=\{GitFork\}/);
   expect(terminal).toContain('embedded={embedded}');
 
   const callers = readFileSync(

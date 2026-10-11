@@ -21,12 +21,13 @@ target-specific Vibe chat while keeping the same content surface mounted.
 
 ## Architecture (non-negotiable)
 
-1. **The URL is the standard agentic-process dock URL + the view mode.** A Vibe
-   session rides the normal `/dock/shell/agentic_process-<id>` URL, with the mode
-   carried by the `?viewMode` search param and reflected as `data-view="vibe"` on
-   `<html>`. Vibe invents no route, no loader, no URL grammar — one process is ONE
-   `Tab` identity in every mode. (A per-mode URL family was tried and collapsed;
-   see [Vibe Display surface](../tabs/display.md) §3.)
+1. **A Vibe session is a HOST tab.** It lives at `/dock/vibe/agentic_process-<id>`,
+   an address that implies the Vibe mode (`data-view="vibe"` on `<html>`), and it
+   hosts its own nested tabs one level deep. Its `tabHash` folds onto the process's
+   shell identity, so one process is ONE `Tab` row in every mode, and it reuses the
+   shell loaders. Old `?viewMode=vibe` process URLs redirect to it once. See
+   [Tab Management → Host tabs](../tab-management.md#host-tabs-nested-tabs-one-level-deep)
+   and [Vibe Display surface](../tabs/display.md) §3.
 2. **Navigation stays URL-first.** Entering Vibe changes only the current dock's
    `viewMode` option. A `flow show` target is an ADDRESS: the workspace navigates
    to the target's own dock carrying `host` + `activeDisplay=1`
@@ -54,9 +55,17 @@ Everything Vibe touches lives in the UI layer. Concretely:
 2. **Layout / chrome** — a centered VibeHome empty state, the process
    chat↔Display split, and the asset chat↔content split. The shared left rail
    retains its reserved footprint in every mode.
-3. **Chrome-less creator surfaces** — on the curated `VIBE_CREATOR_SURFACES`
-   ViewTypes (`content-panel.tsx`), Vibe strips the tab strip + navigator. Any
-   *other* surface keeps normal Standard chrome even in Vibe.
+3. **Vibe is a TAB** — once a prompt is sent, the session opens as a Vibe tab
+   (`/dock/vibe/<process>`) under the global tab strip, beside any other tabs
+   (terminals, documents, other Vibe tabs); its own nested strip (the Display
+   square + its children) sits inside it. Only the Vibe home (the hero prompt,
+   and the no-process pane) is tabless. On the curated `VIBE_CREATOR_SURFACES`
+   ViewTypes (`content-panel.tsx`) Vibe still drops the left navigator.
+   The strip's "+" opens tabs BESIDE the Vibe tab: "New Vibe" goes to the Vibe
+   home, an agent opener starts a chat/terminal in the user's last non-Vibe mode,
+   and a terminal or a chip click is top-level (`NavigationCommitOptions.topLevel`,
+   never adopted into the Vibe tab on screen). The skin follows the active tab;
+   only an explicit mode switch plays the glow.
 4. **Assets tabs keep their Standard structure** — opening an Assets tab in Vibe
    renders the same Standard asset catalog and navigator, so a deep-linked asset
    can expand its type and select its row. The Vibe skin may change the surrounding

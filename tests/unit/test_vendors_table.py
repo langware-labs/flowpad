@@ -80,6 +80,25 @@ def test_vendor_for_path(path, expected):
     assert (vendor.key if vendor else None) == expected
 
 
+@pytest.mark.parametrize(
+    ("path", "expected"),
+    [
+        # A redirected home is found by where it IS, whatever it is called.
+        ("tmp/sandbox/claude-home/projects/x/abc.jsonl", "claude"),
+        ("tmp/sandbox/cx/sessions/rollout.jsonl", "codex"),
+        # ...and it outranks a dot-dir that merely appears further down the path.
+        ("tmp/sandbox/cx/sessions/.claude/rollout.jsonl", "codex"),
+        # A vendor nobody gave a home for is still found by its dot-dir.
+        ("home/u/.copilot/session-state/events.jsonl", "copilot"),
+        ("tmp/elsewhere/other.jsonl", None),
+    ],
+)
+def test_vendor_for_path_asks_the_configured_homes_first(path, expected):
+    homes = {"claude": PurePosixPath("tmp/sandbox/claude-home"), "codex": PurePosixPath("tmp/sandbox/cx")}
+    vendor = vendor_for_path(PurePosixPath(path), homes)
+    assert (vendor.key if vendor else None) == expected
+
+
 def test_consumers_agree_with_the_table():
     from flow_sdk.assets.placement import HarnessType, coerce_harness
     from flow_sdk.builtin.agent import driver_key, worker_type_value

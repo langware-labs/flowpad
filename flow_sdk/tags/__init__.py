@@ -10,6 +10,7 @@ Naming rule: anything with ``tag`` in its name is the unified system;
 from flow_sdk.tags.bus import (
     FixedWindowStormGuard,
     TagEventBus,
+    drain,
     emit_tag,
     event_bus,
     make_tag_event,
@@ -20,6 +21,7 @@ from flow_sdk.tags.bus import (
 from flow_sdk.tags.envelope import FlowEvent, FlowEventCtx, target_of
 
 __all__ = [
+    "drain",
     "FlowEvent",
     "FlowEventCtx",
     "FixedWindowStormGuard",

@@ -37,7 +37,9 @@ remove it with
 
 ## Moving files
 
-- **Mac → guest:** serve a folder on the Mac (`python3 -m http.server 8799 --bind 127.0.0.1 -d <dir>`),
+- **Mac → guest:** serve a folder on the Mac (`python3 -m http.server 8799 --bind 127.0.0.1 -d <dir>`;
+  another session may already hold 8799 — `Address already in use` means pick your own port, never
+  reuse theirs: it serves THEIR wheel),
   fetch in a job: `Invoke-WebRequest -UseBasicParsing http://10.0.2.2:8799/<file> -OutFile C:\…`.
   Use it for wheels, installers and single-file patches.
 - **Small text:** the shared clipboard (`operate.md`), or base64 inside a `vmrun.py` job.
@@ -59,9 +61,24 @@ Then `scripts/expose-port.sh 9222` and from the Mac `curl -s 127.0.0.1:19222/jso
 `webSocketDebuggerUrl` it returns (rewrite its host to `127.0.0.1:19222`) drives the page with any
 CDP client (Playwright `connect_over_cdp`, `websockets`).
 
+- **The chain is flaky under load** (`socket hang up`, a connect that times out while
+  `/json/version` answers): retry the connect; if it keeps failing, kill only the Edge processes
+  whose command line names YOUR `--user-data-dir` and start it again.
+- **A page served by a Mac dev server loads slowly through the portproxy** (hundreds of unbundled
+  modules, each a round trip): navigate with `waitUntil: 'commit'` and wait for the element you
+  need, not for the `load` event.
+- **A custom-protocol link (`flowpad://…`) stops at the browser's own prompt** — "This site is
+  trying to open Flowpad. Open / Cancel". The page HAS fired the link and nothing reaches the app
+  until someone presses Open. The prompt is browser UI, invisible to CDP: press it with
+  `scripts/ui-invoke.ps1` (`control.md`).
+- **The page gets no blur while that prompt is up**, so a page that infers "the app opened" from
+  focus says it did not. To see what the page fired, listen for CDP `Page.frameRequestedNavigation`.
+- A window the job lane started can sit BEHIND another app; a screenshot of the wrong window
+  proves nothing about the page — ask the page (CDP) or the app's log instead.
+
 ## Windows Firewall prompt
 
 The first time a new program listens on a non-loopback address, Windows shows an "allow access"
 dialog that covers the desktop and takes the keyboard. Loopback-only servers don't need it:
-dismiss it with Cancel (`qmp.py shot`, then `qmp.py click`). Pre-adding a firewall rule
+dismiss it with Cancel (`scripts/ui-invoke.ps1`, `control.md`). Pre-adding a firewall rule
 (expose-port step 2) avoids it for ports you publish.

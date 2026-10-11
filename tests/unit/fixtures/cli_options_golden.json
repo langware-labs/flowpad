@@ -1187,10 +1187,10 @@
           "worker_type": "claude",
           "worktree": false
         },
-        "shell_dash": "cd /repo && FOO=bar CLAUDE_PROJECT_DIR=/repo claude --permission-mode plan --verbose --output-format stream-json --resume s1 --model haiku --effort low -p -- $'-rf danger' --add-dir /a",
-        "shell_instr": "cd /repo && FOO=bar CLAUDE_PROJECT_DIR=/repo claude --permission-mode plan --verbose --output-format stream-json --resume s1 --model haiku --effort low -p -- $'fix the bug' --add-dir /a",
-        "shell_multi": "cd /repo && FOO=bar CLAUDE_PROJECT_DIR=/repo claude --permission-mode plan --verbose --output-format stream-json --resume s1 --model haiku --effort low -p -- $'line one\\nline two' --add-dir /a",
-        "shell_none": "cd /repo && FOO=bar CLAUDE_PROJECT_DIR=/repo claude --permission-mode plan --verbose --output-format stream-json --resume s1 --model haiku --effort low -p --add-dir /a",
+        "shell_dash": "cd /repo && FOO=bar CLAUDE_PROJECT_DIR=/repo claude --permission-mode plan --verbose --output-format stream-json --resume s1 --model claude-haiku-5-5 --effort low -p -- $'-rf danger' --add-dir /a",
+        "shell_instr": "cd /repo && FOO=bar CLAUDE_PROJECT_DIR=/repo claude --permission-mode plan --verbose --output-format stream-json --resume s1 --model claude-haiku-5-5 --effort low -p -- $'fix the bug' --add-dir /a",
+        "shell_multi": "cd /repo && FOO=bar CLAUDE_PROJECT_DIR=/repo claude --permission-mode plan --verbose --output-format stream-json --resume s1 --model claude-haiku-5-5 --effort low -p -- $'line one\\nline two' --add-dir /a",
+        "shell_none": "cd /repo && FOO=bar CLAUDE_PROJECT_DIR=/repo claude --permission-mode plan --verbose --output-format stream-json --resume s1 --model claude-haiku-5-5 --effort low -p --add-dir /a",
         "spawn_dash": {
           "argv": [
             "claude",
@@ -1202,7 +1202,7 @@
             "--resume",
             "s1",
             "--model",
-            "haiku",
+            "claude-haiku-5-5",
             "--effort",
             "low",
             "-p",
@@ -1227,7 +1227,7 @@
             "--resume",
             "s1",
             "--model",
-            "haiku",
+            "claude-haiku-5-5",
             "--effort",
             "low",
             "-p",
@@ -1252,7 +1252,7 @@
             "--resume",
             "s1",
             "--model",
-            "haiku",
+            "claude-haiku-5-5",
             "--effort",
             "low",
             "-p",
@@ -1277,7 +1277,7 @@
             "--resume",
             "s1",
             "--model",
-            "haiku",
+            "claude-haiku-5-5",
             "--effort",
             "low",
             "-p",
@@ -1316,10 +1316,10 @@
           "worker_type": "claude",
           "worktree": false
         },
-        "shell_dash": "cd '/repo'; $env:FOO = 'bar'; $env:CLAUDE_PROJECT_DIR = '/repo'; claude --permission-mode plan --verbose --output-format stream-json --resume s1 --model haiku --effort low --add-dir /a -p ([System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('LXJmIGRhbmdlcg==')))",
-        "shell_instr": "cd '/repo'; $env:FOO = 'bar'; $env:CLAUDE_PROJECT_DIR = '/repo'; claude --permission-mode plan --verbose --output-format stream-json --resume s1 --model haiku --effort low --add-dir /a -p ([System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('Zml4IHRoZSBidWc=')))",
-        "shell_multi": "cd '/repo'; $env:FOO = 'bar'; $env:CLAUDE_PROJECT_DIR = '/repo'; claude --permission-mode plan --verbose --output-format stream-json --resume s1 --model haiku --effort low --add-dir /a -p ([System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('bGluZSBvbmUKbGluZSB0d28=')))",
-        "shell_none": "cd '/repo'; $env:FOO = 'bar'; $env:CLAUDE_PROJECT_DIR = '/repo'; claude --permission-mode plan --verbose --output-format stream-json --resume s1 --model haiku --effort low --add-dir /a -p",
+        "shell_dash": "cd '/repo'; $env:FOO = 'bar'; $env:CLAUDE_PROJECT_DIR = '/repo'; claude --permission-mode plan --verbose --output-format stream-json --resume s1 --model claude-haiku-5-5 --effort low --add-dir /a -p ([System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('LXJmIGRhbmdlcg==')))",
+        "shell_instr": "cd '/repo'; $env:FOO = 'bar'; $env:CLAUDE_PROJECT_DIR = '/repo'; claude --permission-mode plan --verbose --output-format stream-json --resume s1 --model claude-haiku-5-5 --effort low --add-dir /a -p ([System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('Zml4IHRoZSBidWc=')))",
+        "shell_multi": "cd '/repo'; $env:FOO = 'bar'; $env:CLAUDE_PROJECT_DIR = '/repo'; claude --permission-mode plan --verbose --output-format stream-json --resume s1 --model claude-haiku-5-5 --effort low --add-dir /a -p ([System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('bGluZSBvbmUKbGluZSB0d28=')))",
+        "shell_none": "cd '/repo'; $env:FOO = 'bar'; $env:CLAUDE_PROJECT_DIR = '/repo'; claude --permission-mode plan --verbose --output-format stream-json --resume s1 --model claude-haiku-5-5 --effort low --add-dir /a -p",
         "spawn_dash": {
           "argv": [
             "claude",
@@ -1331,7 +1331,7 @@
             "--resume",
             "s1",
             "--model",
-            "haiku",
+            "claude-haiku-5-5",
             "--effort",
             "low",
             "-p",
@@ -1356,7 +1356,7 @@
             "--resume",
             "s1",
             "--model",
-            "haiku",
+            "claude-haiku-5-5",
             "--effort",
             "low",
             "-p",
@@ -1381,7 +1381,7 @@
             "--resume",
             "s1",
             "--model",
-            "haiku",
+            "claude-haiku-5-5",
             "--effort",
             "low",
             "-p",
@@ -1406,7 +1406,7 @@
             "--resume",
             "s1",
             "--model",
-            "haiku",
+            "claude-haiku-5-5",
             "--effort",
             "low",
             "-p",
@@ -1580,16 +1580,16 @@
           "worker_type": "claude",
           "worktree": false
         },
-        "shell_dash": "cd . && claude --dangerously-skip-permissions --model haiku -- $'-rf danger'",
-        "shell_instr": "cd . && claude --dangerously-skip-permissions --model haiku -- $'fix the bug'",
-        "shell_multi": "cd . && claude --dangerously-skip-permissions --model haiku -- $'line one\\nline two'",
-        "shell_none": "cd . && claude --dangerously-skip-permissions --model haiku",
+        "shell_dash": "cd . && claude --dangerously-skip-permissions --model claude-haiku-5-5 -- $'-rf danger'",
+        "shell_instr": "cd . && claude --dangerously-skip-permissions --model claude-haiku-5-5 -- $'fix the bug'",
+        "shell_multi": "cd . && claude --dangerously-skip-permissions --model claude-haiku-5-5 -- $'line one\\nline two'",
+        "shell_none": "cd . && claude --dangerously-skip-permissions --model claude-haiku-5-5",
         "spawn_dash": {
           "argv": [
             "claude",
             "--dangerously-skip-permissions",
             "--model",
-            "haiku",
+            "claude-haiku-5-5",
             "--",
             "-rf danger"
           ],
@@ -1600,7 +1600,7 @@
             "claude",
             "--dangerously-skip-permissions",
             "--model",
-            "haiku",
+            "claude-haiku-5-5",
             "--",
             "fix the bug"
           ],
@@ -1611,7 +1611,7 @@
             "claude",
             "--dangerously-skip-permissions",
             "--model",
-            "haiku",
+            "claude-haiku-5-5",
             "--",
             "line one\nline two"
           ],
@@ -1622,7 +1622,7 @@
             "claude",
             "--dangerously-skip-permissions",
             "--model",
-            "haiku"
+            "claude-haiku-5-5"
           ],
           "env": {}
         }
@@ -1648,16 +1648,16 @@
           "worker_type": "claude",
           "worktree": false
         },
-        "shell_dash": "cd '.'; claude --dangerously-skip-permissions --model haiku ([System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('LXJmIGRhbmdlcg==')))",
-        "shell_instr": "cd '.'; claude --dangerously-skip-permissions --model haiku ([System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('Zml4IHRoZSBidWc=')))",
-        "shell_multi": "cd '.'; claude --dangerously-skip-permissions --model haiku ([System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('bGluZSBvbmUKbGluZSB0d28=')))",
-        "shell_none": "cd '.'; claude --dangerously-skip-permissions --model haiku",
+        "shell_dash": "cd '.'; claude --dangerously-skip-permissions --model claude-haiku-5-5 ([System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('LXJmIGRhbmdlcg==')))",
+        "shell_instr": "cd '.'; claude --dangerously-skip-permissions --model claude-haiku-5-5 ([System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('Zml4IHRoZSBidWc=')))",
+        "shell_multi": "cd '.'; claude --dangerously-skip-permissions --model claude-haiku-5-5 ([System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('bGluZSBvbmUKbGluZSB0d28=')))",
+        "shell_none": "cd '.'; claude --dangerously-skip-permissions --model claude-haiku-5-5",
         "spawn_dash": {
           "argv": [
             "claude",
             "--dangerously-skip-permissions",
             "--model",
-            "haiku",
+            "claude-haiku-5-5",
             "--",
             "-rf danger"
           ],
@@ -1668,7 +1668,7 @@
             "claude",
             "--dangerously-skip-permissions",
             "--model",
-            "haiku",
+            "claude-haiku-5-5",
             "--",
             "fix the bug"
           ],
@@ -1679,7 +1679,7 @@
             "claude",
             "--dangerously-skip-permissions",
             "--model",
-            "haiku",
+            "claude-haiku-5-5",
             "--",
             "line one\nline two"
           ],
@@ -1690,7 +1690,7 @@
             "claude",
             "--dangerously-skip-permissions",
             "--model",
-            "haiku"
+            "claude-haiku-5-5"
           ],
           "env": {}
         }

@@ -67,6 +67,7 @@ export interface KeyStatus {
   provider: string;
   stored: boolean;
   created_at: string;
+  hint: string;
 }
 
 export interface HubStatus {

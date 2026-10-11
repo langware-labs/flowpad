@@ -54,7 +54,14 @@ beforeEach(() => {
   mocks.drainQueue.mockReset().mockResolvedValue(undefined);
   mocks.hubOnly.mockReturnValue(false);
   mocks.dataContext.project = null;
-  mocks.getById.mockResolvedValue({ watch: mocks.watch, drainQueue: mocks.drainQueue });
+  // The launch watch is a lease that listens for the process's end, so the stand-in
+  // carries the id and the status subscription a real AgenticProcess has.
+  mocks.getById.mockResolvedValue({
+    id: PROCESS_ID,
+    watch: mocks.watch,
+    drainQueue: mocks.drainQueue,
+    on: vi.fn(() => () => undefined),
+  });
 });
 
 describe('project agent auto-launch redirect', () => {
@@ -62,7 +69,10 @@ describe('project agent auto-launch redirect', () => {
     ['a Hub Project route', `http://flowpad.local/dock/hub/project/${PROJECT_ID}`, () => {}],
     ['a Hub-only build', `http://flowpad.local/dock/project/${PROJECT_ID}`, () => mocks.hubOnly.mockReturnValue(true)],
     ['a deep link (?action=open)', `http://flowpad.local/dock/project/${PROJECT_ID}?action=open`, () => {}],
+    // A launch link's handler picks the session; an auto-launch would race it.
+    ['a launch link (?action=launch)', `http://flowpad.local/?action=launch&target=${PROJECT_ID}`, () => {}],
     ['a route already inside a session', `http://flowpad.local/dock/shell/agentic_process-${PROCESS_ID}`, () => {}],
+    ['a route already inside a Vibe session', `http://flowpad.local/dock/vibe/agentic_process-${PROCESS_ID}`, () => {}],
     // A terminal link to a report lands here — the user asked for the report.
     [
       'an asset opened inside the project',
@@ -90,8 +100,9 @@ describe('project agent auto-launch redirect', () => {
     expect(mocks.drainQueue).toHaveBeenCalledTimes(1);
     expect(response?.status).toBe(302);
     const location = response?.headers.get('Location') ?? '';
-    expect(location).toContain(`/dock/shell/agentic_process-${PROCESS_ID}`);
-    expect(location).toContain('viewMode=vibe');
+    // Vibe is the host tab's own address now, not a mode option on the shell dock.
+    expect(location).toContain(`/dock/vibe/agentic_process-${PROCESS_ID}`);
+    expect(location).not.toContain('viewMode=');
     expect(takeAgentAutoLaunchWarning()).toBeNull();
   });
 

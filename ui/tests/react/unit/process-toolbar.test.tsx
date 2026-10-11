@@ -1,8 +1,9 @@
 import { AgenticProcess, TypeId } from '@sdk';
-import { render, fireEvent } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import React from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { setViewMode, ViewMode } from '@src/contexts/view-mode-context';
+import { setDev } from '@src/contexts/view-mode-context';
 import { nextTerminalName } from '@src/components/terminal/rename-rules';
 import type { TraceFilters, ColVisibility } from '@src/components/terminal/interactive-terminal/InteractiveTerminal';
 import { ProcessToolbar } from '@src/components/terminal/interactive-terminal/ProcessToolbar';
@@ -31,11 +32,10 @@ function makeProcess(overrides: Partial<AgenticProcess> = {}): AgenticProcess {
   } as unknown as AgenticProcess;
 }
 
-/** Find the "Open terminal" button by looking for the SquareTerminal icon inside the toolbar */
-function getOpenTerminalButton(container: HTMLElement): HTMLButtonElement {
-  const toolbar = container.querySelector('[data-testid="process-toolbar"]')!;
-  const terminalIcon = toolbar.querySelector('.lucide-square-terminal')!;
-  return terminalIcon.closest('button')!;
+/** "Open terminal" is an item of the session actions menu (the hamburger right of Fork). */
+async function openTerminalFromTheMenu(): Promise<void> {
+  await userEvent.click(screen.getByRole('button', { name: 'Session actions' }));
+  await userEvent.click(screen.getByTestId('session-action-terminal'));
 }
 
 const defaultTraceFilters: TraceFilters = {
@@ -53,19 +53,16 @@ const defaultColVis: ColVisibility = { trace: true, time: true, annotations: tru
 describe('ProcessToolbar "Open terminal" button', () => {
   beforeEach(() => {
     mockOpenNewShell.mockClear();
-    // The nav-out buttons (Open Terminal, Fork, …) live in the Advanced
-    // toolbar; the default Standard skin shows only Share + Bookmark. Opt the
-    // toolbar into Advanced so the Open Terminal button is present to click.
-    setViewMode(ViewMode.Advanced);
+    setDev(true); // developer mode, as before; the actions menu is on every surface
   });
 
   afterEach(() => {
-    setViewMode(ViewMode.Standard);
+    setDev(false);
   });
 
-  it('opens a new terminal with cwd when workdir is set', () => {
+  it('opens a new terminal with cwd when workdir is set', async () => {
     const process = makeProcess();
-    const { container } = render(
+    render(
       <ProcessToolbar
         process={process}
         traceFilters={defaultTraceFilters}
@@ -75,14 +72,14 @@ describe('ProcessToolbar "Open terminal" button', () => {
       />,
     );
 
-    fireEvent.click(getOpenTerminalButton(container));
+    await openTerminalFromTheMenu();
 
     expect(mockOpenNewShell).toHaveBeenCalledWith({ cwd: '/home/user/project' });
   });
 
-  it('opens a new terminal without cwd when workdir is empty', () => {
+  it('opens a new terminal without cwd when workdir is empty', async () => {
     const process = makeProcess({ workdir: undefined });
-    const { container } = render(
+    render(
       <ProcessToolbar
         process={process}
         traceFilters={defaultTraceFilters}
@@ -92,7 +89,7 @@ describe('ProcessToolbar "Open terminal" button', () => {
       />,
     );
 
-    fireEvent.click(getOpenTerminalButton(container));
+    await openTerminalFromTheMenu();
 
     expect(mockOpenNewShell).toHaveBeenCalledWith({ cwd: undefined });
   });

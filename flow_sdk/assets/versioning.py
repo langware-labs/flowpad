@@ -20,7 +20,7 @@ from flow_sdk.assets.frontmatter import (
     _extract_frontmatter,
     merge_frontmatter,
 )
-from flow_sdk.assets.scope import _folder_backed_types, folder_asset_for
+from flow_sdk.assets.scope import folder_backed_types, folder_asset_for
 
 logger = logging.getLogger(__name__)
 
@@ -94,7 +94,7 @@ def _versionable_folder_types() -> list:
     from flow_sdk.assets.identity_carrier import Frontmatter
 
     # An entity document carries ``version`` as a key of its ``<type>.json`` — the same field, another carrier.
-    return [t for t in _folder_backed_types() if isinstance(t.identity_carrier, Frontmatter) or t.is_entity_document]
+    return [t for t in folder_backed_types() if isinstance(t.identity_carrier, Frontmatter) or t.is_entity_document]
 
 
 def _versionable_main_files() -> set[str]:

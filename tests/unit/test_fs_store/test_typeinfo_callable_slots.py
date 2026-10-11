@@ -96,12 +96,25 @@ def test_registry_presentation_getters_read_through():
     assert SchemaRegistry.get_icon("skill") == "FileBadge"
     assert SchemaRegistry.browseable_by("skill") is ViewMode.STANDARD
     assert SchemaRegistry.is_browseable_in("skill", ViewMode.STANDARD) is True
-    # reclassified types: claude_memory is Advanced+ only, flowpad_diagnosis Dev only
+    # reclassified types: claude_memory is Advanced+ only; flowpad_diagnosis is
+    # developer-only — a FLAG on top of its tier, shown only with Dev on
     assert SchemaRegistry.is_browseable_in("claude_memory", ViewMode.STANDARD) is False
     assert SchemaRegistry.is_browseable_in("claude_memory", ViewMode.ADVANCED) is True
     assert SchemaRegistry.is_browseable_in("flowpad_diagnosis", ViewMode.ADVANCED) is False
-    assert SchemaRegistry.is_browseable_in("flowpad_diagnosis", ViewMode.DEV) is True
+    assert SchemaRegistry.is_browseable_in("flowpad_diagnosis", ViewMode.ADVANCED, dev=True) is True
     assert SchemaRegistry.is_creatable("skill") is True
     # public-entity list is derived from info.api_visible, not entity_cls deref
     assert "skill" in SchemaRegistry.get_public_entity_types()
     assert SchemaRegistry.is_public_entity("skill") is True
+
+
+def test_a_stored_dev_tier_reads_as_advanced_plus_dev_only():
+    """Dev was a third tier; it is a flag now. A TypeInfo persisted with
+    ``browseable_by: "dev"`` must still load — as Advanced, developer-only."""
+    from flow_sdk.fs_store.schema_registry import TypeInfo
+
+    info = TypeInfo.from_dict({"type_name": "legacy_dev_type", "browseable_by": "dev"})
+    assert info.browseable_by is ViewMode.ADVANCED
+    assert info.dev_only is True
+    assert info.to_dict()["browseable_by"] == "advanced"
+    assert info.to_dict()["dev_only"] is True

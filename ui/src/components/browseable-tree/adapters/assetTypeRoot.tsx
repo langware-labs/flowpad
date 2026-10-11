@@ -5,6 +5,7 @@ import { lucideByName } from '@src/lib/lucide-by-name';
 import apiClient from '@sdk/client';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { resultTypeId } from '@src/navigation/record-type-nav';
+import { assetRowOpen } from '../open';
 import { AssetDocPointer } from '@src/navigation/AssetDocPointer';
 import { AssetMode, AssetRoutingMethod } from '@src/navigation/asset-doc-types';
 import { VFSPath, isTypeId, TypeId } from '@sdk';
@@ -201,11 +202,15 @@ export function buildAssetChild(
   onAfterDelete?: () => void,
 ): Browseable {
   const label = result.name || basename(result.asset_ref) || '(untitled)';
-  // Projects open in their collaboration space rather than the asset editor.
-  const pointer =
+  // Projects open in their collaboration space rather than the asset editor. A
+  // type whose target needs a lookup (a dataset opens in its editor app) opens
+  // through the same resolver the record list uses, so both clicks land alike.
+  const open = assetRowOpen(
+    result,
     typeName === 'project'
       ? DockPointer.forProject(result.record_id)
-      : DockPointer.forAssetEditor(typeName, result.asset_ref);
+      : DockPointer.forAssetEditor(typeName, result.asset_ref),
+  );
   // Projects open in their collaboration space and aren't deleted from the
   // asset sidebar; everything else (markdown, agent, skill, workflow, plan,
   // claude_md, …) routes through the same /graph/<type>/<id> DELETE endpoint.
@@ -231,7 +236,7 @@ export function buildAssetChild(
     label,
     icon: <EntityIcon type={typeName} remote={result.remote} density="compact" className="h-3.5 w-3.5 flex-shrink-0" />,
     hasChildren: false,
-    pointer,
+    ...open,
     // Stable typeid (`<type>-<uuid>`) so a typeid-form active pointer selects this
     // row even though `pointer` is the vfs form. `resultTypeId` handles bare-uuid
     // vs full-typeid `record_id`. Doubles as the multi-select membership key.

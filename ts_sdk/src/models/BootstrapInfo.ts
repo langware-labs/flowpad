@@ -53,6 +53,8 @@ export interface AppPaths {
   logs: string;
   /** Per-instance UI preferences file ("Users/alice/.flow/instances/<name>/preferences.json") */
   preferences: string;
+  /** Default parent of a NEW workspace's folder ("Users/alice/Flowpad" for prod). Absent on an older backend. */
+  workspaces_home?: string;
 }
 
 /**
@@ -115,6 +117,9 @@ export interface BootstrapInfo {
   domain?: IWebDomain;
   visitor?: IVisitor;
   default_project?: IProject;
+  /** Every workspace on this instance (desk only) — what loaders read before the
+   *  workspace list is fetched. Absent on an older backend. */
+  workspaces?: IWorkspace[];
   default_workspace?: IWorkspace;
   default_compute_node?: IComputeNode;
   /**

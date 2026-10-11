@@ -153,6 +153,14 @@ export interface ProvisionContextProject {
   optional?: boolean;
 }
 
+/** A project provisioned on the box BESIDE the main one — its own project, never attached
+ *  (a launch's controller). Keeps `project_id`, so one id spans hub and box. */
+export interface ProvisionCompanion {
+  git_origin: Record<string, unknown>;
+  name: string;
+  project_id?: string;
+}
+
 /**
  * What `ops/provision-project` sets a box up with — the creator's recorded
  * choice. No `git_origin` mounts an empty project; no `context_projects` means
@@ -163,12 +171,13 @@ export interface ProvisionSetup {
   project_id?: string;
   git_origin?: Record<string, unknown>;
   context_projects?: ProvisionContextProject[];
+  companions?: ProvisionCompanion[];
   install?: Record<string, unknown>;
 }
 
 /** One step of a provisioning run, in the order it ran. */
 export interface ProvisionStep {
-  id: 'validate' | 'clone' | 'init' | 'index' | 'context' | 'default';
+  id: 'validate' | 'clone' | 'init' | 'index' | 'companion' | 'context' | 'default';
   ok: boolean;
   detail: string;
 }

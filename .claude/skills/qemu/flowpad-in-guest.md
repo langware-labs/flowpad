@@ -27,10 +27,41 @@ backend that must see them.
 | test an unreleased build | on the Mac `python build_ui.py && uv build`, serve `dist/` (`network.md`), then in the guest install the wheel into a **fresh venv** (`uv venv --python 3.11 C:\flowpad-test\<inst>\venv`; `uv pip install --python <venv>\Scripts\python.exe <whl>`) |
 | test `uv tool` behaviour without touching the real install | set `UV_TOOL_DIR` / `UV_TOOL_BIN_DIR` to a scratch folder for that job |
 
+`Flowpad-Setup.exe` is a ~1 MB **launcher**, not the app: it downloads the real installer to
+`%LOCALAPPDATA%\Flowpad\bootstrap\Flowpad-<ver>-Setup.exe` (progress in `flowpad-install.log`
+beside it) and starts it. `/S` on the launcher returns at once with no app installed; if
+`Programs\Flowpad\Flowpad.exe` has not appeared a few minutes later, run the downloaded
+`Flowpad-<ver>-Setup.exe /S` yourself and wait for it — minutes under emulation.
+
 The desktop app auto-updates and runs its own prod backend from the **same** `flowpad` uv tool:
 stop `Flowpad.exe` and its python before `uv tool install --force`, or files are locked ("Access
 denied") and the tool is left half-removed. A half-created venv folder makes uv refuse
 ("not a virtual environment") — use a new folder.
+
+## The desktop app on an unreleased backend (deep links, `flowpad://`)
+
+A venv instance cannot receive `flowpad://` — only the installed app owns the protocol, and a
+packaged app always uses port 9007 (if another session's backend holds 9007, that is theirs:
+ask, don't take it). To put unreleased code behind the real app:
+
+1. Stamp the wheel ABOVE PyPI — `flow_sdk/_version.py` = `<PyPI latest>+local<N>` in a scratch
+   worktree — then `build_ui.py && uv build --wheel`. A lower version makes the app offer the
+   PyPI build over yours at every start.
+2. App and its tool python stopped, then `cmd /c "uv tool install --force --python 3.11 <whl> 2>&1"`.
+3. Start it from a job with the hub in the JOB's env — `$env:FLOWPAD_HUB_URL='http://localhost:8093'; Start-Process "$env:LOCALAPPDATA\Programs\Flowpad\Flowpad.exe"`.
+   `setx` alone does not reach it (a job's environment is the agent's — `control.md`).
+4. `scripts/expose-port.sh 9007` and wait for `http://127.0.0.1:19007/api/v1/graph/bootstrap` on
+   the Mac; `…/api/v1/cloud/status` says which hub it talks to. First boot can take 15 minutes.
+
+Deep links, and how to know one arrived:
+
+- **Ground truth is the app's own log**: `%USERPROFILE%\.flow\logs\main_desktop\*` —
+  `[deep-link] received: flowpad://…`, then `[nav]` lines for every page it loads. Count the
+  receipts before and after; a screenshot of the app proves nothing about WHICH link moved it.
+- `Start-Process 'flowpad://<path>?…'` (user lane) hands a link to the Windows handler — the same
+  hop a browser makes after its prompt is accepted. Use it to test the app side alone.
+- From a browser, the link waits at the browser's own prompt until Open is pressed (`network.md`).
+- The handler is `HKCU\Software\Classes\flowpad\shell\open\command`, written when the app runs.
 
 ## Launching an instance
 

@@ -81,8 +81,8 @@ test.describe('navigation collapse — root is a location', () => {
 
   test('root carries its options through a round trip', async () => {
     // A root URL with options is the shape that had no type before this work.
-    await page.goto('/?highlight=RailChats');
-    await expect.poll(() => here()).toContain('highlight=RailChats');
+    await page.goto('/?highlight=TopNavTabs');
+    await expect.poll(() => here()).toContain('highlight=TopNavTabs');
     await expect.poll(() => here()).toMatch(/^\/\?/);
     expect(errors, errors.join('\n')).toEqual([]);
   });
@@ -119,11 +119,11 @@ test.describe('the race the collapse was for', () => {
       history.pushState(null, '', '/dock/explorer');
       window.dispatchEvent(new PopStateEvent('popstate'));
       // Same tick — the loader has not run, the URL has not settled.
-      history.replaceState(null, '', window.location.pathname + '?highlight=RailChats');
+      history.replaceState(null, '', window.location.pathname + '?highlight=TopNavTabs');
     });
 
     await expect.poll(() => here()).toContain('/dock/explorer');
-    await expect.poll(() => here()).toContain('highlight=RailChats');
+    await expect.poll(() => here()).toContain('highlight=TopNavTabs');
     expect(errors, errors.join('\n')).toEqual([]);
   });
 });
@@ -150,7 +150,7 @@ test.describe('vibe exit — the end-to-end proof', () => {
     url.searchParams.set('viewMode', 'vibe');
     await page.goto(`${url.pathname}${url.search}`);
     await expect(page.locator('html')).toHaveAttribute('data-view', 'vibe');
-    await page.locator('[data-tag="RailChats"]').click();
+    await page.locator('[data-tag="TopNavTabs"]').click();
     await expect(page.locator('[data-tag="VibeDisplay"]')).toBeVisible();
   }
 

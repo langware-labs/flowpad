@@ -51,6 +51,11 @@ class TestInstanceSettings(BaseInstanceSettings):
         that points ``user_home`` somewhere gets its workspace there too."""
         return self.user_home / "Flowpad workspace"
 
+    @property
+    def workspaces_home(self) -> Path:
+        """New workspaces' default parent — follows ``user_home`` like ``workspace_root``."""
+        return self.user_home / "Flowpad"
+
     @classmethod
     def from_env(cls) -> "TestInstanceSettings":
         sandbox = cls._resolve_sandbox()

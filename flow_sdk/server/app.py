@@ -229,6 +229,8 @@ async def _on_server_startup():
     except Exception as _e:  # noqa: BLE001
         print(f"  PTY recovery: failed to start ({_e})")
 
+    await _start_pty_parked_reaper()
+
     # Search uses FTS5 (built into SQLite) — no external index needed.
     print("  Search index: FTS5 (SQLite built-in)")
 
@@ -484,6 +486,10 @@ async def _prune_retired_type_rows() -> None:
 #: The one supervisor of the agent deployments running on this machine (``builtin/agent_serve``).
 _AGENT_SERVER = None
 
+#: The background transcript catch-up walk (``_transcript_catch_up_walk``), held
+#: so ``_shutdown_extras`` can cancel it and its child process with it.
+_TRANSCRIPT_CATCH_UP_TASK = None
+
 
 async def _start_agent_server() -> None:
     """Every running local agent deployment's process runs (and its ``chat`` channel exists)."""
@@ -563,6 +569,23 @@ async def _seed_service_triggers() -> None:
         logging.getLogger(__name__).exception("System triggers: failed to seed")
 
 
+async def _start_pty_parked_reaper() -> None:
+    """Start the PtyRegistry sweep that drops parked connection ids.
+
+    Every page reload parks its (per-page-load) connection id on each shell it
+    watched, and nothing but this loop removes an id that never reconnects.
+    Started with no TTL on purpose: the loop reaps parked ids only and never
+    closes a PTY (the orphan close is a separate, untaken product decision).
+    """
+    try:
+        from flow_sdk.compute.providers.desktop.pty_session_manager import pty_registry
+
+        await pty_registry.start_cleanup_task()
+        print("  PTY parked-id reaper: started (background, periodic)")
+    except Exception as _e:  # noqa: BLE001
+        print(f"  PTY parked-id reaper: failed to start ({_e})")
+
+
 async def _start_fsop_watcher() -> None:
     """Start the FSOp watcher: catch up, then spawn one awatch task per trigger."""
     try:
@@ -604,7 +627,10 @@ async def _start_transcript_streamer() -> None:
     for files that haven't changed since startup, and folder-mode FSOp catch-up
     is intentionally skipped. The walk lazily constructs a streamer per file
     (full initial parse via ``AgentTranscriptFile.__init__``), then
-    ``parse_delta()`` flushes everything as one chunk to subscribers.
+    ``parse_delta()`` flushes everything as one chunk to subscribers, and
+    releases the streamer again unless a subscriber claimed the session —
+    on a fresh instance "pending" is every transcript on the machine, and a
+    parsed copy of each would otherwise sit in memory for the idle TTL.
 
     The walk runs as a background task (not awaited in the lifespan) so the
     server reaches the listen phase immediately — users may have thousands
@@ -625,7 +651,12 @@ async def _start_transcript_streamer() -> None:
             get_instance_settings().transcript_cursors_path,
         )
         await transcript_streamer_registry.start_idle_sweeper()
-        _asyncio.create_task(_transcript_catch_up_walk(), name="transcript-catch-up")
+        # Held so shutdown can cancel it: the walk drives a child process, and
+        # a cancelled walk kills the child with it (``stream_ndjson``).
+        global _TRANSCRIPT_CATCH_UP_TASK
+        _TRANSCRIPT_CATCH_UP_TASK = _asyncio.create_task(
+            _transcript_catch_up_walk(), name="transcript-catch-up",
+        )
         print("  Transcript streamer: started (catch-up scheduled in background)")
     except Exception:
         logging.getLogger(__name__).exception("Transcript streamer: failed to start")
@@ -638,6 +669,13 @@ async def _transcript_catch_up_walk() -> None:
     cursor store filters out every file whose size/mtime is unchanged since
     it was last consumed — so a routine restart parses only what actually
     changed while the server was down, not the full history.
+
+    The parse itself runs in a child process (``transcript_streamer.catch_up``):
+    on a fresh instance "pending" is every transcript on the machine, and
+    parsing them in this process held the GIL for the whole walk. Only files a
+    process owns (or could adopt) come back through ``registry.catch_up``
+    here; the rest get a cursor row. Whatever the child did not finish — or
+    all of it, where a child cannot be spawned — takes the in-process loop.
     """
     try:
         import asyncio as _asyncio
@@ -671,10 +709,13 @@ async def _transcript_catch_up_walk() -> None:
             return pending, total
 
         pending, total = await _asyncio.to_thread(_discover)
-        scanned = 0
-        for jsonl in pending:
+        from flow_sdk.transcript_streamer.catch_up import catch_up_via_child
+
+        remaining = await catch_up_via_child(pending)
+        scanned = len(pending) - len(remaining)
+        for jsonl in remaining:
             try:
-                await transcript_streamer_registry.notify_change(jsonl)
+                await transcript_streamer_registry.catch_up(jsonl)
                 scanned += 1
             except Exception:
                 logging.getLogger(__name__).exception("Transcript streamer catch-up failed for %s", jsonl)
@@ -818,6 +859,26 @@ async def _shutdown_extras():
         await fsop_watcher.stop()
     except Exception:
         pass
+
+    # Stop the PtyRegistry parked-id reaper loop
+    try:
+        from flow_sdk.compute.providers.desktop.pty_session_manager import pty_registry
+
+        await pty_registry.stop_cleanup_task()
+    except Exception:
+        pass
+
+    # Cancel the catch-up walk if it is still running: its child process is
+    # killed by the cancellation, so it cannot outlive the server and keep
+    # parsing transcripts for nobody.
+    global _TRANSCRIPT_CATCH_UP_TASK
+    task, _TRANSCRIPT_CATCH_UP_TASK = _TRANSCRIPT_CATCH_UP_TASK, None
+    if task is not None and not task.done():
+        task.cancel()
+        try:
+            await task
+        except BaseException:  # CancelledError is the expected outcome
+            pass
 
     # Stop the TranscriptStreamer idle sweeper. Streamer dict drops with the
     # process — no other cleanup needed.

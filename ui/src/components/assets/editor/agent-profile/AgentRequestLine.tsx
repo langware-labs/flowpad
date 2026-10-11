@@ -2,7 +2,7 @@ import type { Agent } from '@sdk';
 import { useLingui } from '@lingui/react/macro';
 import { useCallback, useRef } from 'react';
 import { CompactExecutionInput } from '@src/components/entity-execution-panel/CompactExecutionInput';
-import { useOptionalFloatingChat } from '@src/components/floating-chat/FloatingChatContext';
+import { useOptionalFloatingChat } from '@src/components/floating-chat/floating-chat-context';
 
 /**
  * "What would you like the agent <name> to do?" — a request about THIS agent,

@@ -3,30 +3,61 @@
  * The terminal maps these matches onto buffer cells; a message renders them as spans.
  * Candidate recognition only: the backend decides whether a reference exists.
  */
+import { localWebUrl } from '@src/lib/link-kind';
+
 export interface LinkMatch {
   text: string;
   index: number;
 }
 
 /** WebLinksAddon's default URL pattern; one provider serves click and right-click alike. */
-const URL_REGEX = /(https?|HTTPS?):[/]{2}[^\s"'!*(){}|\\^<>`]*[^\s"':,.!?{}|\\^~[\]`()<>]/;
+const URL_REGEX = /(https?|HTTPS?):[/]{2}[^\s"'!*{}|\\^<>`]*[^\s"':,.!?{}|\\^~[\]`(<>]/;
+const URL_TRAIL = /[:,.!?]+$/;
 const POSITION = String.raw`(?::\d+(?::\d+)?|#L\d+)`;
-const BARE_FILE = new RegExp(String.raw`^[\w@.-]+\.(?:[A-Za-z][\w-]+${POSITION}?|[A-Za-z]${POSITION})$`);
+const UUID = String.raw`[0-9a-f]{8}-[0-9a-f-]{27}`;
+const ENTITY_REF = new RegExp(String.raw`^[a-z_]+-(?:@[\w.-]+|${UUID})$`, 'i');
+/** Text that ends the way a whole reference or its clause does: a position, an id, closing punctuation. */
+export const ENDS_WHOLE = new RegExp(String.raw`(?:${POSITION}|${UUID}|[,;!?)\]}])$`, 'i');
+// Names are not ASCII-only (`docs/מדריך/קובץ.md`, `café.md`), and a framework puts brackets,
+// `$`, `+`, `=`, `,` and `%` in folder names (`app/[slug]/page.tsx`, `routes/$id`).
+const WORD = String.raw`[\p{L}\p{N}_@.-]`;
+const SEGMENT = String.raw`[\p{L}\p{N}_@.+=$,%~()\[\] -]`;
+const BARE_FILE = new RegExp(String.raw`^${WORD}+\.(?:[A-Za-z][\w-]+${POSITION}?|[A-Za-z]${POSITION})$`, 'u');
+const RELATIVE_PATH = new RegExp(String.raw`^${WORD}+(?:[/\\]${SEGMENT}+)+[/\\]?(?:[:#]\w+(?::\d+)?)?$`, 'u');
+/** What a test runner appends to the file it names: `tests/a.py::test_x`, `a.py::TestA::test_b[1]`. */
+const TEST_ID = /(?:::[\w[\].-]+)+$/;
 
 const RTL = String.raw`֐-ࣿיִ-﷿ﹰ-﻿`;
-const HAS_RTL = new RegExp(`[${RTL}]`);
+export const HAS_RTL = new RegExp(`[${RTL}]`);
 // Prose wraps references in brackets: `(src/a.ts:49)`. Hebrew glues a prefix on with a hyphen: `ב-src/a.ts`.
 const LEAD = new RegExp(`^(?:[([{]|[${RTL}]+-)*`);
 // A Claude Code row on Windows is pre-reversed into visual order (see terminalConfig.ts), so in a
 // row carrying RTL text the sentence's `.`/`:` and a glued Hebrew prefix land at the path's START
 // / END instead. `./` and `../` stay paths.
 const RTL_LEAD = new RegExp(`^(?:[([{]|[${RTL}]+-|[.,;:!?](?![./\\\\]))*`);
-const TRAIL = new RegExp(`(?:[.,;:!?)\\]}]|-[${RTL}]+)+$`);
+const TRAIL = new RegExp(`(?:[.,;:!?]|-[${RTL}]+)+$`);
+const OPENER: Record<string, string> = { ')': '(', ']': '[', '}': '{' };
+
+/**
+ * `value` without the prose punctuation after it. A closing bracket goes only when it closes
+ * nothing opened inside the reference: `(see a.ts)` loses it, `app/[slug]` and `Rust_(language)` keep it.
+ */
+function trimTrail(value: string, trail: RegExp): string {
+  for (;;) {
+    const cut = value.replace(trail, '');
+    const closer = cut.at(-1) ?? '';
+    const opener = OPENER[closer];
+    if (!opener || cut.split(opener).length >= cut.split(closer).length) return cut;
+    value = cut.slice(0, -1);
+  }
+}
 
 // A quote mark touching a letter is part of a word — `I've`, `users'`, Hebrew `צ'אט`, `צה"ל` —
 // not a quote: otherwise `I've … isn't` quotes, and hides, every path between them.
 const QUOTED = ['"', "'", '`'].map((q) => String.raw`(?<![\p{L}\p{N}_])${q}([^${q}\r\n]+)${q}(?![\p{L}\p{N}_])`);
-const TOKENS = new RegExp(`${QUOTED.join('|')}|[^\\s"'\`<>]+`, 'gu');
+/** Box-drawing and block glyphs: a table's or a panel's borders, never part of a name. */
+export const BOX_GLYPHS = String.raw`\u2500-\u259f`;
+const TOKENS = new RegExp(`${QUOTED.join('|')}|[^\\s"'\`<>${BOX_GLYPHS}]+`, 'gu');
 
 export function fileLinkMatches(text: string): LinkMatch[] {
   const links: LinkMatch[] = [];
@@ -34,7 +65,7 @@ export function fileLinkMatches(text: string): LinkMatch[] {
   for (const match of text.matchAll(TOKENS)) {
     const quoted = match[1] ?? match[2] ?? match[3];
     const lead = quoted === undefined ? leadPattern.exec(match[0])![0].length : 0;
-    const value = quoted ?? match[0].slice(lead).replace(TRAIL, '');
+    const value = quoted ?? trimTrail(match[0].slice(lead), TRAIL).replace(TEST_ID, '');
     // webLinkMatches owns HTTP links, including their path portions.
     if (!value || /^https?:/i.test(value)) continue;
     // Placeholders (`/dock/...`) and bare punctuation or schemes name nothing.
@@ -42,10 +73,11 @@ export function fileLinkMatches(text: string): LinkMatch[] {
     if (/\.\.\.|…/.test(quoted ?? match[0]) || /^[./\\~]*$/.test(value) || /^file:\/*$/i.test(value)) continue;
     if (
       /^(?:file:\/\/|\.{0,2}\/|~\/|[A-Za-z]:[/\\])/.test(value) ||
-      /^[\w@.-]+(?:[/\\][\w@. -]+)+(?:[:#]\w+(?::\d+)?)?$/.test(value) ||
+      RELATIVE_PATH.test(value) ||
+      localWebUrl(value) !== null ||
       // A one-letter extension (`e.g`) is prose unless a position proves it is code (`main.c:3`).
       BARE_FILE.test(value) ||
-      /^[a-z_]+-(?:@[\w.-]+|[0-9a-f]{8}-[0-9a-f-]{27})$/i.test(value)
+      ENTITY_REF.test(value)
     )
       links.push({ text: value, index: match.index + (quoted === undefined ? lead : 1) });
   }
@@ -65,8 +97,8 @@ function isUrl(text: string): boolean {
 
 export function webLinkMatches(text: string): LinkMatch[] {
   return [...text.matchAll(new RegExp(URL_REGEX.source, 'g'))]
-    .filter((match) => isUrl(match[0]))
-    .map((match) => ({ text: match[0], index: match.index }));
+    .map((match) => ({ text: trimTrail(match[0], URL_TRAIL), index: match.index }))
+    .filter((match) => isUrl(match.text));
 }
 
 /** Every file reference and web URL in `text`, in order, never overlapping. */

@@ -1052,9 +1052,15 @@ class PtyActionsMixin:
             )
             return ApiFailResponse(message=f"PTY session not found: {shell_id}", data=response_msg.model_dump())
 
-        toplog.log("pty", "resize shell=%s size=%sx%s", shell_id, cols, rows)
+        # ``repaint``: the client drew output at another size — redraw even at an unchanged size
+        # (attach's policy: resize if different, else winsize jiggle).
+        repaint = bool(body.get("repaint"))
+        toplog.log("pty", "resize shell=%s size=%sx%s repaint=%s", shell_id, cols, rows, repaint)
         try:
-            await pty.resize(cols, rows)
+            if repaint:
+                await pty.repaint(cols, rows)
+            else:
+                await pty.resize(cols, rows)
             response_msg = ResponseMessage(
                 session_id=shell_id,
                 message_id=request_message_id,

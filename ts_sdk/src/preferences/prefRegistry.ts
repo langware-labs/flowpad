@@ -54,6 +54,7 @@ export enum PrefKey {
   // i18n / ui (boot keys read at module load, gate first paint)
   LOCALE = 'preferences.i18n.locale',
   VIEW_MODE = 'preferences.ui.view_mode',
+  DEV_MODE = 'preferences.ui.dev_mode',
   VIBE_MODEL_TIER = 'preferences.ui.vibe_model_tier',
   CHAT_SHOW_TOOLS = 'preferences.chat.show_tools',
   // Snippet view (flow show snippet): folded regions and the Run budget.
@@ -73,6 +74,7 @@ export enum PrefKey {
   HISTORY_SORT_DIR = 'preferences.terminal.history_sort_dir',
   HISTORY_ALL_PROJECTS = 'preferences.terminal.history_all_projects',
   LAST_OPENER = 'preferences.terminal.last_opener',
+  LAST_OPENER_MODE = 'preferences.terminal.last_opener_mode',
   PINNED_OPENERS = 'preferences.terminal.pinned_openers',
   // files
   FILES_SHOW_HIDDEN = 'preferences.files.show_hidden',
@@ -441,16 +443,30 @@ export const PREF_REGISTRY: Record<PrefKey, PrefInfo> = {
     legacyLocalStorageKey: 'viewMode',
     category: 'ui',
     label: 'View mode',
-    description: 'Surface complexity: Vibe (simplest, creator), Standard (minimal), Advanced, or Dev.',
+    // A stored 'dev' (from when Dev was a mode) still reads — as Advanced with the
+    // Dev switch on (`PrefKey.DEV_MODE`) — but is no longer offered.
+    description: 'Surface complexity: Vibe (simplest, creator), Standard (minimal), or Advanced.',
     dataType: PrefDataType.STRING,
-    // Vibe is the default; opt up to Standard/Advanced/Dev via the footer View toggle.
+    // Vibe is the default; opt up to Standard/Advanced via the footer View toggle.
     defaultValue: 'vibe',
     options: [
       { value: 'vibe', label: 'Vibe' },
       { value: 'standard', label: 'Standard' },
       { value: 'advanced', label: 'Advanced' },
-      { value: 'dev', label: 'Dev' },
     ],
+  },
+  [PrefKey.DEV_MODE]: {
+    key: PrefKey.DEV_MODE,
+    // Toggled by double-clicking your avatar in the profile menu, not from
+    // Preferences. A boot key: Dev-only chrome must not flash in or out at first paint.
+    boot: true,
+    category: 'ui',
+    label: 'Developer mode',
+    description:
+      'Shows developer-only tools on top of whichever surface you are on. ' +
+      'A switch, not a view mode: a tab\'s own mode never hides it.',
+    dataType: PrefDataType.BOOL,
+    defaultValue: false,
   },
   [PrefKey.APP_PAGE]: {
     key: PrefKey.APP_PAGE,
@@ -565,6 +581,13 @@ export const PREF_REGISTRY: Record<PrefKey, PrefInfo> = {
     legacyLocalStorageKey: 'flowpad.terminal.lastOpener',
     category: 'terminal',
     label: 'Last terminal opener',
+    dataType: PrefDataType.JSON,
+    defaultValue: null,
+  },
+  [PrefKey.LAST_OPENER_MODE]: {
+    key: PrefKey.LAST_OPENER_MODE,
+    category: 'terminal',
+    label: 'View mode of the last launched session',
     dataType: PrefDataType.JSON,
     defaultValue: null,
   },

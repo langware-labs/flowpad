@@ -98,8 +98,10 @@ export interface Browseable {
   /** Imperative activation fallback for nodes whose navigation cannot be
    *  expressed as a pure DockPointer (async entity resolution / side effects).
    *  Renderers resolve a click as `pointer ?? activate`. Prefer `pointer`
-   *  wherever possible — it keeps navigation URL-first and selectable. */
-  activate?: () => void | Promise<void>;
+   *  wherever possible — it keeps navigation URL-first and selectable.
+   *  `navigate` is the renderer's own dispatcher, for an arm that only has to
+   *  look its pointer up first. */
+  activate?: (navigate: (pointer: DockPointer) => void) => void | Promise<void>;
 
   /** Fired when the row is OPENED — from BOTH the `pointer` and `activate`
    *  arms, so a usage stamp can't miss the (majority) pointer case. Never

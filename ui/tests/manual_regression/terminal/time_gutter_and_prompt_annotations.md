@@ -5,7 +5,7 @@ id: b2072b1d-0e04-5eb7-8603-25f8e36f0f83
 test 1: Time gutter field columns are aligned with fixed widths
 - navigate to {APP_URL}/dock/shell/new_terminal, then open the tab-opener "+" (data-testid="opener-plus-button") and pick the "Claude Code" row (data-testid="opener-menu-row-claude")
 - wait for Claude CLI banner to appear (up to 45 seconds)
-- open the Columns & Trace dropdown in the toolbar
+- open the debug menu (bug icon, left of the process toolbar)
 - enable the "Time gutter" toggle if not already on
 - enable at least two time sub-fields (e.g. PTY time and Seq #)
 - validate the time gutter column is visible (data-testid="time-gutter" or matching border-r element)
@@ -17,7 +17,7 @@ test 2: PTY segment border markers appear in time gutter
 - navigate to an existing Claude process terminal that has run at least one command
   e.g. {APP_URL}/dock/shell/<any agentic_process id>
 - wait for replay to complete (terminal content is visible)
-- open the Columns & Trace dropdown and enable "Time gutter"
+- open the debug menu and enable "Time gutter"
 - scroll through the time gutter
 - validate at least one sky-blue 3px horizontal bar is visible inside the time gutter (segment start border)
 - hover over the sky-blue bar
@@ -35,7 +35,7 @@ test 3: PTY segment border tooltip shows start anchor and end anchor when presen
 test 4: Prompt annotations appear in annotation gutter after replay completes
 - navigate to {APP_URL}/dock/shell/<an agentic_process with at least one completed prompt>
 - wait for terminal replay to complete (content is visible)
-- open the Columns & Trace dropdown
+- open the debug menu
 - enable the "Prompt annotations" toggle (promptAnnotations filter)
 - validate the annotation gutter is visible (data-testid="annotation-gutter")
 - validate at least one prompt annotation marker appears in the gutter aligned to the line containing the prompt text
@@ -79,10 +79,10 @@ test 8: Column visibility persists across page refresh
 - reload the page again
 - validate the trace gutter is now visible again
 
-test 9: BugPlay dropdown — Trace and Annotations column toggles (entry-point parity with column header)
+test 9: debug menu — Trace and Annotations column toggles (entry-point parity with column header)
 - navigate to {APP_URL}/dock/shell/new_terminal, then open the tab-opener "+" (data-testid="opener-plus-button") and pick the "Claude Code" row (data-testid="opener-menu-row-claude")
 - wait for Claude CLI banner
-- open the Columns & Trace dropdown (BugPlay icon in the process toolbar)
+- open the debug menu (bug icon, left of the process toolbar)
 - uncheck "Trace events"
 - validate the trace gutter disappears (same effect as tests 6/7 via header EyeOff)
 - re-check "Trace events"; validate the trace gutter reappears AND traceFilters.events is on
@@ -94,7 +94,7 @@ test 10: Time-gutter row/anchor time-range fields render extra columns
 - navigate to a Claude process that has completed at least one prompt/response cycle
   e.g. {APP_URL}/dock/shell/<an agentic_process id>
 - wait for replay to complete
-- open the Columns & Trace dropdown and enable "Time gutter"
+- open the debug menu and enable "Time gutter"
 - note the current time-gutter width
 - enable "Row time range" (traceFilters.debugTime); validate the gutter widens and a row-time-range field cell appears
 - enable "Anchor time range" (traceFilters.refTime); validate the gutter widens again and the anchor-time-range field cell appears

@@ -95,6 +95,7 @@ export function ContextFolderGitBadge({
           if (!o) void refresh();
         }}
         folderName={folderName}
+        workdir={workdir}
         branch={status?.branch ?? null}
         projectId={projectId}
         folderTypeId={folderTypeId}

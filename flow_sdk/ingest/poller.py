@@ -29,6 +29,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Callable, Optional
 
 from flow_sdk.builtin.data_source import DataSource, SourceStatus
+from flow_sdk.request_context.detached import create_detached_task
 from flow_sdk.server.system_heartbeat import register_heartbeat_task
 
 logger = logging.getLogger(__name__)
@@ -116,7 +117,9 @@ def note_attention(source_id: str, cadence_seconds: int) -> None:
     loop = asyncio.get_running_loop()
     task = _attention_tasks.get(loop)
     if task is None or task.done():
-        _attention_tasks[loop] = asyncio.ensure_future(_attention_loop())
+        # Detached: the lane runs until every lease lapses, and the request that
+        # first armed it must not stay in memory for all of that.
+        _attention_tasks[loop] = create_detached_task(_attention_loop(), name="ingest-attention-lane")
     wake_attention_lane()
 
 
@@ -152,7 +155,7 @@ async def _attention_loop() -> None:
                 continue
             if not _claim(source_id):
                 continue
-            asyncio.ensure_future(_run_poll(source, datetime.now(timezone.utc)))
+            create_detached_task(_run_poll(source, datetime.now(timezone.utc)), name=f"ingest-poll:{source_id}")
         # Wait to the nearest upcoming edge (a due round or a lease expiry)
         # instead of a fixed 1s spin — most wakeups were dead time under a 5s
         # cadence. Clamped so a renewal arming a fresh "due now" round never
@@ -202,6 +205,28 @@ def _claim(source_id: str) -> bool:
     return True
 
 
+async def _resolve_new_sources(only: Optional[set[str]]) -> None:
+    """Settle every row still NEW before selecting what is due.
+
+    NEW means nobody has decided how the source starts. A save decides it — except for a source file
+    the indexer met before its driver was loaded: importing a driver inside the indexer's sync
+    deadlocks, so the row waits for this tick, where loading is legal. Without this it would sit NEW
+    forever: never polled, and no later save to move it. Usually an empty query.
+    """
+    try:
+        pending = await DataSource.get_all({"status": SourceStatus.NEW.value})
+    except Exception:  # noqa: BLE001 — a housekeeping tick must never raise
+        logger.debug("[ingest] could not list unresolved data sources", exc_info=True)
+        return
+    for source in pending:
+        if only is not None and str(source.id) not in only:
+            continue
+        try:
+            await source.resolve_new()
+        except Exception:  # noqa: BLE001 — one bad row must not stop the tick
+            logger.warning("[ingest] could not resolve new source %s", source.id, exc_info=True)
+
+
 async def dispatch_due_sources(
     *,
     now_fn: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
@@ -219,6 +244,7 @@ async def dispatch_due_sources(
     spawn = spawn or asyncio.ensure_future
     dispatched: list[str] = []
 
+    await _resolve_new_sources(only)
     try:
         # ACTIVE only. NEW and SETUP have not finished being configured — a
         # Slack source whose bot was never invited would otherwise be polled

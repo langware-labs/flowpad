@@ -11,6 +11,7 @@ const STATE_LABEL: Record<DependencyStateName, MessageDescriptor> = {
   unreachable: msg`unreachable`,
   not_installed: msg`not installed`,
   invalid: msg`invalid`,
+  not_found: msg`not found`,
 };
 
 /** The translated word for a dependency's state. */
@@ -32,6 +33,7 @@ const STATE_TONE: Record<DependencyStateName, string> = {
   missing: 'border-amber-500/60 bg-amber-500/10 text-foreground',
   unreachable: 'border-amber-500/60 bg-amber-500/10 text-foreground',
   invalid: 'border-destructive/60 bg-destructive/10 text-foreground',
+  not_found: 'border-destructive/60 bg-destructive/10 text-foreground',
 };
 
 const CHIP = 'inline-flex shrink-0 items-center rounded-full border px-1.5 py-px text-[10px] leading-tight';
@@ -70,6 +72,7 @@ const DOT_TONE: Record<DependencyStateName, string> = {
   missing: 'bg-amber-500',
   unreachable: 'bg-amber-500',
   invalid: 'bg-destructive',
+  not_found: 'bg-destructive',
 };
 
 /** The state as a small coloured dot, for rows too narrow for chips (the Assets

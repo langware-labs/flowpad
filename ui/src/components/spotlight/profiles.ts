@@ -2,6 +2,7 @@ import { msg } from '@lingui/core/macro';
 import type { MessageDescriptor } from '@lingui/core';
 import { ViewType } from '@sdk';
 import type { SpotlightProfile } from './types';
+import { DockPointer } from '@src/navigation/DockPointer';
 
 const terminalProfile: SpotlightProfile = {
   id: 'terminal',
@@ -23,7 +24,7 @@ const defaultProfile: SpotlightProfile = {
 };
 
 export function resolveProfile(viewType: ViewType | undefined): SpotlightProfile {
-  if (viewType === ViewType.SHELL) return terminalProfile;
+  if (DockPointer.isSessionView(viewType)) return terminalProfile;
   return defaultProfile;
 }
 

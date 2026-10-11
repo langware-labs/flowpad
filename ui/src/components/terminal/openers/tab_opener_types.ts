@@ -1,7 +1,9 @@
 import type { LucideIcon } from 'lucide-react';
 import type { ComponentType, SVGProps } from 'react';
+import type { ViewMode } from '@src/contexts/view-mode-context';
 
 export type OpenerId =
+  | 'vibe'
   | 'claude'
   | 'codex'
   | 'copilot'
@@ -16,6 +18,7 @@ export type OpenerId =
  *  last-opener + pinned-opener storage. Kept here (next to `OpenerId`) so the
  *  hooks that read those keys can't drift apart. */
 export const VALID_OPENER_IDS: OpenerId[] = [
+  'vibe',
   'claude',
   'codex',
   'copilot',
@@ -35,6 +38,12 @@ export interface OpenerDescriptor {
   Icon: OpenerIcon;
   iconClassName?: string;
   onActivate: () => void;
+  /**
+   * Worker openers only: launch in a given shape. The quick-launch slot
+   * ("another like the last one") calls this with the last launch's mode;
+   * `onActivate` is the menu-row default (a terminal).
+   */
+  launchIn?: (mode: ViewMode) => void;
   available: boolean;
   /**
    * Capability warning — set when the harness behind this opener failed its

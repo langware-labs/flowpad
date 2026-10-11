@@ -27,7 +27,7 @@ import { ContextEntitiesEnum, dataContext, Tab, tabManager, TypeId, type Project
 import { allScope, projectScope } from '@src/lib/scope-filter';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { NavigationActions } from '@src/navigation/NavigationActions';
-import { dockForGlobalEntry, dockForProjectEntry, leaveProjectScope } from '@src/tabs/project-entry';
+import { dockForGlobalEntry, dockForProjectEntry, lastKnownTab, leaveProjectScope } from '@src/tabs/project-entry';
 import { ViewType } from '@src/types/ViewType';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -322,5 +322,17 @@ describe('route-owned startup fallback', () => {
     const restore = vi.spyOn(dataContext, 'setupProject').mockResolvedValue(undefined);
     await loadDockPointer(DockPointer.forProject(PROJECT_P), { requestPath: '/dock/project' });
     expect(restore).not.toHaveBeenCalled();
+  });
+});
+
+describe('lastKnownTab — what the bar\'s "Back to tabs" returns to', () => {
+  it('is the same rule as project entry: unstamped tabs are unknown, never a strip-order guess', () => {
+    expect(lastKnownTab(unstampedTabs(), PROJECT_P)).toBeNull();
+  });
+
+  it('picks the stamped tab of THIS project, and nothing from another', () => {
+    const proc = stampedProcTab();
+    expect(lastKnownTab([...unstampedTabs(), proc], PROJECT_P)).toBe(proc);
+    expect(lastKnownTab([...unstampedTabs(), proc], OTHER_PROJECT)).toBeNull();
   });
 });

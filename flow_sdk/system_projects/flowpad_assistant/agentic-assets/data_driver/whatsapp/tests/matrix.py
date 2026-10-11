@@ -65,14 +65,18 @@ class Double:
     def sign(self, raw: bytes) -> dict:
         return {"X-Hub-Signature-256": sign(raw)}
 
-    def deliver(self, text: str, *, sender: str, thread: Optional[str] = None, files: Optional[list[dict]] = None, reply_to: Optional[str] = None) -> dict:
+    def deliver(self, text: str, *, sender: str, thread: Optional[str] = None, files: Optional[list[dict]] = None,
+                reply_to: Optional[str] = None, group: Optional[str] = None) -> dict:
         """A message from ``sender`` arriving now. The person IS the conversation, so the thread is the
-        sender whatever ``thread`` says; the caller POSTs ``body`` with ``headers`` to ``path``.
+        sender whatever ``thread`` says — unless ``sender`` writes in ``group`` (Meta's ``group_id`` beside
+        ``from``), whose thread is the group; the caller POSTs ``body`` with ``headers`` to ``path``.
 
         ``files`` (``[{name, media_type, as_, bytes, caption}]``) arrive one per message, as WhatsApp
         carries them — ``text`` rides as the first one's caption when it has none; their bytes are held
         for download by media id. ``reply_to`` quotes that message. ``external_id`` is the first message's."""
         context = {"context": {"from": self.phone_number_id, "id": reply_to}} if reply_to else {}
+        if group:
+            context["group_id"] = group
         messages = []
         for i, f in enumerate(files or []):
             messages.append(self._media(f, sender, caption=f.get("caption") or (text if i == 0 else None), **context))
@@ -80,15 +84,18 @@ class Double:
             self._delivered += 1
             messages.append(_text(f"wamid.{self._delivered}", text, ts=str(int(time.time())), **{"from": sender}, **context))
         raw = self._post(*messages, sender=sender)
-        return {"external_id": messages[0]["id"], "thread": sender, "path": WEBHOOK_PATH, "body": raw, "headers": self.sign(raw)}
+        return {"external_id": messages[0]["id"], "thread": group or sender, "path": WEBHOOK_PATH, "body": raw, "headers": self.sign(raw)}
 
-    def react(self, target: str, emoji: str, sender: str) -> dict:
-        """``sender`` puts ``emoji`` on message ``target`` (``""`` takes theirs back); a delivery like ``deliver``'s."""
+    def react(self, target: str, emoji: str, sender: str, group: Optional[str] = None) -> dict:
+        """``sender`` puts ``emoji`` on message ``target`` (``""`` takes theirs back) — in ``group`` when
+        given; a delivery like ``deliver``'s."""
         self._delivered += 1
         reaction = {"message_id": target, **({"emoji": emoji} if emoji else {})}
         message = {"id": f"wamid.{self._delivered}", "from": sender, "timestamp": str(int(time.time())), "type": "reaction", "reaction": reaction}
+        if group:
+            message["group_id"] = group
         raw = self._post(message, sender=sender)
-        return {"external_id": message["id"], "thread": sender, "path": WEBHOOK_PATH, "body": raw, "headers": self.sign(raw)}
+        return {"external_id": message["id"], "thread": group or sender, "path": WEBHOOK_PATH, "body": raw, "headers": self.sign(raw)}
 
     def _media(self, f: dict, sender: str, *, caption: Optional[str], **context) -> dict:
         self._delivered += 1
@@ -134,6 +141,10 @@ class Double:
             out.append({"to": sent.get("to"), "text": (sent.get("text") or {}).get("body"), "thread": (sent.get("context") or {}).get("message_id"),
                         "external_id": f"wamid.OUT{n}", "files": files})
         return out
+
+    def recipient_types(self) -> list[str]:
+        """Each ``/messages`` POST's ``recipient_type`` (``individual`` or ``group``), oldest first."""
+        return [sent.get("recipient_type", "") for _, sent in self._messages()]
 
     def reactions(self) -> list[dict]:
         """Every reaction we put (``emoji``) or took back (``""``), oldest first."""

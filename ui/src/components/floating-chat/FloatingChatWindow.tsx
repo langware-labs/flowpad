@@ -6,7 +6,7 @@ import flowpadIcon from '@src/assets/flowpad-icon.png';
 import { cn } from '@src/lib/utils';
 import { topmost } from '@src/lib/topmost';
 import { GENIE_DURATION_MS, GENIE_EASING, GENIE_SMALL_OPACITY, genieTransform } from '@src/lib/minimize-to-element';
-import { useFloatingChat, type TriggerRect } from './FloatingChatContext';
+import { useFloatingChat, type TriggerRect } from './floating-chat-context';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { ViewType } from '@src/types/ViewType';
 import type { DockPointer } from '@src/navigation/DockPointer';

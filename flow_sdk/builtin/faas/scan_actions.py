@@ -297,7 +297,11 @@ class ScanActionsMixin:
             ApiResponse with projects list and total_count
         """
         try:
-            result = await _list_projects_from_indexer()
+            request_info = get_current_request_info()
+            # ``?workspace=<id>`` keeps the rows of that workspace; absent → every
+            # project, exactly the list before workspaces existed.
+            workspace = request_info.get_param("workspace") if request_info else None
+            result = await _list_projects_from_indexer(workspace=workspace or None)
             return ApiSuccessResponse(data=result)
         except Exception as e:
             logging.exception(f"list-projects failed: {e}")
@@ -515,6 +519,13 @@ class ScanActionsMixin:
             result_data = body.get("result")
 
             context_data = dict(context_raw)
+            # The app's launch stamp, through the one filter (only "app" survives) — COMMON_UI layer.
+            from flow_sdk.builtin.agentic_process.system_prompt import (  # noqa: PLC0415
+                LAUNCH_SURFACE_KEY,
+                launch_surface_fields,
+            )
+
+            context_data.update(launch_surface_fields(context_data.pop(LAUNCH_SURFACE_KEY, None)))
             workdir = context_data.pop("workdir", None)
             project_id = context_data.pop("project_id", None)
             # VFS path of the attached entity (trigger, markdown, …); stored on the process for the runs drawer / chat panel queries.
@@ -958,6 +969,7 @@ class ScanActionsMixin:
             project_id=body.get("projectId"),
             worker_type_raw=(body.get("workerType") or "claude").lower(),
             terminal_theme=theme if theme in ("light", "dark") else None,
+            launch_surface=body.get("launch_surface"),
         )
 
     async def _upsert_session_process_impl(
@@ -969,6 +981,7 @@ class ScanActionsMixin:
         *,
         session_rec=None,
         terminal_theme: str | None = None,
+        launch_surface: str | None = None,
     ) -> ApiResponse:
         """Find or create an AgenticProcess for ``session_id``.
 
@@ -1143,7 +1156,9 @@ class ScanActionsMixin:
                     )
                 )
 
-            context_data = {"workdir": workdir}
+            from flow_sdk.builtin.agentic_process.system_prompt import launch_surface_fields  # noqa: PLC0415
+
+            context_data = {"workdir": workdir, **launch_surface_fields(launch_surface)}
             if project_id:
                 context_data["project_id"] = project_id
 
@@ -1277,6 +1292,7 @@ class ScanActionsMixin:
             worker_type_raw=worker_type,
             terminal_theme=theme_hint if theme_hint in ("light", "dark") else None,
             session_rec=session_rec,
+            launch_surface=request_info.get_param("launch_surface") if request_info else None,
         )
 
     async def _scan_find_session(self) -> ApiResponse:

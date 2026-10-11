@@ -1,5 +1,5 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import {
   annotateImage,
   ImageAnnotatorRoot,
@@ -9,7 +9,6 @@ import {
 // jsdom has no canvas and decodes no images: a context that accepts any call, a toBlob that
 // yields a PNG, and an Image that "loads" on the next tick stand in for the browser.
 const fakeCtx = new Proxy({}, { get: () => vi.fn(() => ({ width: 10 })) });
-const realImage = globalThis.Image;
 beforeAll(() => {
   HTMLCanvasElement.prototype.getContext = vi.fn(() => fakeCtx) as never;
   HTMLCanvasElement.prototype.setPointerCapture = vi.fn();
@@ -26,9 +25,6 @@ beforeAll(() => {
       setTimeout(() => this.onload?.());
     }
   } as never;
-});
-afterAll(() => {
-  globalThis.Image = realImage;
 });
 afterEach(cleanup);
 

@@ -1,9 +1,9 @@
 /**
- * Observability surfaces — PTY Viewer (Columns & Trace dropdown) + Open Transcript.
+ * Observability surfaces — PTY Viewer (debug menu) + Open Transcript (session actions menu).
  * Source: observability_surfaces.md
  *
  * test 1: PTY Viewer is available to all users (no dev-mode gate) from the
- *         Columns & Trace (BugPlay) dropdown; opens a modal showing the raw
+ *         debug menu (bug icon); opens a modal showing the raw
  *         PTY stream; closes cleanly.
  * test 2: Open Transcript navigates to the claude transcript lens once a turn
  *         exists. The button is gated on hasTranscript (a real assistant turn),
@@ -12,10 +12,10 @@
  *         session exists).
  */
 import { test, expect } from '@playwright/test';
-import { dismissSetupModal, gotoNewShell, startClaude, processIdFromUrl, waitForRunningSession, apiBase, activePanel, waitForAssistantTurnOrSkip } from './_ap_helpers';
+import { dismissSetupModal, gotoNewShell, startClaude, processIdFromUrl, waitForRunningSession, apiBase, activePanel, sessionAction, debugMenuButton, waitForAssistantTurnOrSkip } from './_ap_helpers';
 
 test.describe('observability surfaces', () => {
-  test('test 1: PTY Viewer opens from Columns & Trace dropdown (no dev gate)', async ({ page }) => {
+  test('test 1: PTY Viewer opens from the debug menu (no dev gate)', async ({ page }) => {
     test.setTimeout(60_000);
     await dismissSetupModal(page);
     await gotoNewShell(page);
@@ -23,8 +23,8 @@ test.describe('observability surfaces', () => {
     const pid = processIdFromUrl(page);
     await waitForRunningSession(page, apiBase(), pid);
 
-    // Open the Columns & Trace (BugPlay) dropdown.
-    await activePanel(page).locator('button[aria-label="Columns & Trace"]').click();
+    // Open the debug menu (bug icon, left of the toolbar).
+    await debugMenuButton(page).click();
     const ptyItem = page.getByRole('menuitem', { name: 'PTY Viewer' });
     await expect(ptyItem).toBeVisible();
     await ptyItem.click();
@@ -50,8 +50,10 @@ test.describe('observability surfaces', () => {
     const pid = processIdFromUrl(page);
     await waitForRunningSession(page, apiBase(), pid);
 
-    const transcriptBtn = activePanel(page).locator('button:has(svg.lucide-scroll-text)');
+    // "Open transcript" is an item of the session actions menu.
+    let transcriptBtn = await sessionAction(page, 'session-action-transcript');
     await expect(transcriptBtn).toBeVisible();
+    await page.keyboard.press('Escape');
 
     // Drive a real (short) assistant turn so hasTranscript flips true and the
     // button enables. Type into the active xterm panel.
@@ -64,7 +66,8 @@ test.describe('observability surfaces', () => {
     // or conditionally skip when the live-Claude turn can't land on this host.
     await waitForAssistantTurnOrSkip(page, apiBase(), pid);
 
-    await expect(transcriptBtn).toBeEnabled({ timeout: 15_000 });
+    transcriptBtn = await sessionAction(page, 'session-action-transcript');
+    await expect(transcriptBtn).not.toHaveAttribute('data-disabled', /.*/, { timeout: 15_000 });
     await transcriptBtn.click();
 
     // URL navigates to the transcript lens for this session.
@@ -76,14 +79,14 @@ test.describe('observability surfaces', () => {
     await dismissSetupModal(page);
     await gotoNewShell(page);
 
-    // Plain shell, no session → no ProcessToolbar, hence no ScrollText icon.
-    expect(await page.locator('button:has(svg.lucide-scroll-text)').count()).toBe(0);
+    // Plain shell, no session → no ProcessToolbar, hence no session actions menu.
+    expect(await page.locator('[data-testid="process-toolbar-menu"]').count()).toBe(0);
 
     await startClaude(page);
     const pid = processIdFromUrl(page);
     await waitForRunningSession(page, apiBase(), pid);
 
     // Now rendered (hasSession=true), even though disabled until a turn exists.
-    await expect(activePanel(page).locator('button:has(svg.lucide-scroll-text)')).toBeVisible({ timeout: 15_000 });
+    await expect(await sessionAction(page, 'session-action-transcript')).toBeVisible({ timeout: 15_000 });
   });
 });

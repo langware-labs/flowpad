@@ -30,7 +30,7 @@ import {
 } from '@sdk';
 import { useHarnessAvailability } from '@src/components/workers/harness-availability';
 import { harnessStatus } from '@src/components/status/use-status-record';
-import { useIsAdvanced } from '@src/contexts/view-mode-context';
+import { useIsAdvanced, ViewMode } from '@src/contexts/view-mode-context';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { InputDialog } from '@src/components/ui/input-dialog';
 import { type TabStripContextMenuItem } from '@src/components/tabs/TabStrip';
@@ -39,7 +39,7 @@ import { notify } from '@src/notifications';
 import { PROVIDER_META } from '@src/tabs/provider-meta';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { openNewChat } from '@src/navigation/open-new-chat';
-import { Cloud, History, SquareTerminal } from 'lucide-react';
+import { Cloud, History, Sparkles, SquareTerminal } from 'lucide-react';
 import { FlowIcon } from '@sdk/react/FlowIcon';
 import { useContext } from '@sdk/react/hooks';
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
@@ -130,7 +130,7 @@ export function useTerminalStripController({
 
   // "Start <vendor>" — create the AgenticProcess then navigate to its terminal.
   const startAgenticTab = useCallback(
-    async (kind: 'claude' | 'codex' | 'copilot' | 'opencode', workerType?: WorkerType) => {
+    async (kind: 'claude' | 'codex' | 'copilot' | 'opencode', workerType?: WorkerType, mode?: ViewMode) => {
       if (tabCreationLockRef.current) return;
       tabCreationLockRef.current = true;
       setPendingTabCreation(kind);
@@ -150,9 +150,14 @@ export function useTerminalStripController({
         // openNewChat creates AND navigates — it owns the chat-mode propagation,
         // so a second openShellProcess here would re-navigate the same dock
         // without `?viewMode` and strip the mode back off the URL.
+        // The strip's openers start a terminal (PTY) session, whatever mode is
+        // on screen — a tab beside the current one, never another Vibe ("New
+        // Vibe" is its own opener). Only `launchIn` (the quick-launch slot)
+        // names another shape.
         await openNewChat(navigation, {
           ...(spawnProjectId ? { projectId: spawnProjectId } : {}),
           ...(workerType ? { workerType } : {}),
+          mode: mode ?? ViewMode.Advanced,
         });
       } catch (error: unknown) {
         // The spawn failed. ASK what is wrong rather than assuming, because the
@@ -196,13 +201,19 @@ export function useTerminalStripController({
         clearPending();
         return;
       }
-      await navigation.openShell(result.shellId);
+      // A top-level tab, never a child of the Vibe tab on screen.
+      await navigation.openShell(result.shellId, { topLevel: true });
       clearPending();
     },
     [clearPending, navigation, spawnProjectId],
   );
 
   const handleStartTerminal = useCallback(() => startTerminalTab(), [startTerminalTab]);
+  // "New Vibe": the tabless Vibe home, whose prompt opens the next Vibe tab.
+  const handleNewVibe = useCallback(
+    () => navigation.openDock(DockPointer.root().withViewMode(ViewMode.Vibe)),
+    [navigation],
+  );
 
   // "Open Context" — freeze the current global context (the ContextEntitiesEnum
   // slots) into a new GraphContext entity and open it in a tab. URL-first: we
@@ -259,11 +270,21 @@ export function useTerminalStripController({
   const openers = useMemo<OpenerDescriptor[]>(
     () => [
       {
+        // The tabless Vibe home: sending its prompt opens the next Vibe tab.
+        id: 'vibe',
+        label: t`New Vibe`,
+        Icon: Sparkles,
+        onActivate: handleNewVibe,
+        available: true,
+        disabled: isTabCreationPending,
+      },
+      {
         id: 'claude',
         label: t`Start Claude`,
         Icon: PROVIDER_META.claude.Icon,
         iconClassName: PROVIDER_META.claude.iconClassName,
         onActivate: () => void handleStartClaude(),
+        launchIn: (mode) => void startAgenticTab('claude', 'claude_code', mode),
         available: true,
         warning: warnings.claude_code,
         capabilityKind: HARNESS_CAPABILITY_BY_WORKER.claude_code,
@@ -276,6 +297,7 @@ export function useTerminalStripController({
         Icon: PROVIDER_META.codex.Icon,
         iconClassName: PROVIDER_META.codex.iconClassName,
         onActivate: () => void handleStartCodex(),
+        launchIn: (mode) => void startAgenticTab('codex', 'codex', mode),
         available: true,
         warning: warnings.codex,
         capabilityKind: HARNESS_CAPABILITY_BY_WORKER.codex,
@@ -288,6 +310,7 @@ export function useTerminalStripController({
         Icon: PROVIDER_META.copilot.Icon,
         iconClassName: PROVIDER_META.copilot.iconClassName,
         onActivate: () => void handleStartCopilot(),
+        launchIn: (mode) => void startAgenticTab('copilot', 'copilot', mode),
         available: true,
         warning: warnings.copilot,
         capabilityKind: HARNESS_CAPABILITY_BY_WORKER.copilot,
@@ -300,6 +323,7 @@ export function useTerminalStripController({
         Icon: PROVIDER_META.opencode.Icon,
         iconClassName: PROVIDER_META.opencode.iconClassName,
         onActivate: () => void handleStartOpenCode(),
+        launchIn: (mode) => void startAgenticTab('opencode', 'opencode', mode),
         available: true,
         warning: warnings.opencode,
         capabilityKind: HARNESS_CAPABILITY_BY_WORKER.opencode,
@@ -352,6 +376,8 @@ export function useTerminalStripController({
     ],
     [
       modLabel,
+      handleNewVibe,
+      startAgenticTab,
       handleStartClaude,
       handleStartCodex,
       handleStartCopilot,
@@ -380,12 +406,13 @@ export function useTerminalStripController({
 
   const newTabMenuItems = useMemo<TabStripContextMenuItem[]>(
     () => [
+      { label: t`New Vibe`, onSelect: handleNewVibe },
       { label: t`New Claude Session`, onSelect: () => void handleStartClaude() },
       { label: t`New Terminal`, shortcut: `${modLabel}+T`, onSelect: () => void handleStartTerminal() },
       // Advanced-only: freeze the current context into a GraphContext and open it.
       ...(isAdvanced ? [{ label: t`Open Context`, Icon: ContextIcon, onSelect: () => void handleOpenContext() }] : []),
     ],
-    [modLabel, handleStartClaude, handleStartTerminal, isAdvanced, handleOpenContext, ContextIcon],
+    [modLabel, handleNewVibe, handleStartClaude, handleStartTerminal, isAdvanced, handleOpenContext, ContextIcon],
   );
 
   const modals = (
@@ -411,7 +438,8 @@ export function useTerminalStripController({
                 });
                 return;
               }
-              await navigation.openShellProcess(processId);
+              // History from the strip reopens as a terminal (PTY), like its openers.
+              await navigation.openShellProcess(processId, { viewMode: ViewMode.Advanced });
             } catch (err) {
               console.error('[TabbedTerminal] Failed to open session from history:', err);
             }
@@ -425,7 +453,9 @@ export function useTerminalStripController({
         description={t`Paste a Claude CLI session id (UUID) to resume it in a new tab.`}
         placeholder="e.g. 0fa1a8c2-7b1d-4d6c-9d4e-b3e6c2f1d8aa"
         confirmLabel={t`Resume`}
-        onConfirm={(sessionId) => resumeInTerminal(sessionId)}
+        onConfirm={(sessionId) =>
+          resumeInTerminal(sessionId, undefined, undefined, undefined, { viewMode: ViewMode.Advanced })
+        }
       />
     </>
   );

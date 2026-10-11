@@ -59,12 +59,13 @@ describe('project agent auto-launch (no mocks)', () => {
       await router.navigate(`/dock/project/${projectId}`);
     });
 
-    // 3. Redirected into the session, in Vibe, with the intro row.
+    // 3. Redirected into the session, in Vibe — its Vibe HOST tab (`/dock/vibe/…`,
+    //    the session's address when shown in Vibe) — with the intro row.
     await waitFor(
-      () => expect(router.state.location.pathname).toMatch(/\/dock\/shell\/agentic_process-[0-9a-f-]+/),
+      () => expect(router.state.location.pathname).toMatch(/\/dock\/vibe\/agentic_process-[0-9a-f-]+/),
       { timeout: 18000 }, // do not increase timeout without approval
     );
-    expect(router.state.location.search).toContain('viewMode=vibe');
+    // The `/dock/vibe/` path IS the Vibe statement; no `?viewMode=vibe` rides along.
     const intro = await screen.findByTestId('agent-intro-message', {}, { timeout: 18000 }); // do not increase timeout without approval
     expect(intro.textContent).toContain(`Welcome from ${title}.`);
 

@@ -2,7 +2,7 @@
  * Open Terminal button opens a plain shell in the process workdir.
  * Source: open_shell_from_process_workdir.md
  *
- * The SquareTerminal icon (tooltip "Open terminal in <workdir>") in the
+ * The "Open terminal" item of the session actions menu (hamburger) in the
  * non-embedded ProcessToolbar calls navigation.openNewShell({ cwd: workdir }),
  * which creates a Shell with workdir = the process workdir and navigates to it.
  *
@@ -13,7 +13,7 @@
  * (exact accumulated tab counts are not asserted).
  */
 import { test, expect } from '@playwright/test';
-import { dismissSetupModal, gotoNewShell, startClaude, processIdFromUrl, waitForRunningSession, apiBase, fetchProcess, activePanel } from './_ap_helpers';
+import { dismissSetupModal, gotoNewShell, startClaude, processIdFromUrl, waitForRunningSession, apiBase, fetchProcess, sessionAction } from './_ap_helpers';
 
 async function fetchShellWorkdir(page: import('@playwright/test').Page, shellId: string): Promise<string | null> {
   return page.evaluate(async ({ base, id }) => {
@@ -35,8 +35,8 @@ test.describe('open shell from process workdir', () => {
     const workdir: string = proc.workdir;
     expect(workdir).toBeTruthy();
 
-    // SquareTerminal "Open terminal in <workdir>".
-    const openTerminal = activePanel(page).locator('button:has(svg.lucide-square-terminal)');
+    // Session actions menu → "Open terminal" (its second line is the workdir).
+    const openTerminal = await sessionAction(page, 'session-action-terminal');
     await expect(openTerminal).toBeVisible();
     await openTerminal.click();
 
@@ -73,8 +73,8 @@ test.describe('open shell from process workdir', () => {
     const pid = processIdFromUrl(page);
     await waitForRunningSession(page, apiBase(), pid);
 
-    // The non-embedded ProcessToolbar always renders the Open Terminal button.
-    const openTerminal = activePanel(page).locator('button:has(svg.lucide-square-terminal)');
+    // The non-embedded session actions menu always offers Open terminal.
+    const openTerminal = await sessionAction(page, 'session-action-terminal');
     await expect(openTerminal).toBeVisible();
     const urlBefore = page.url();
     await openTerminal.click();

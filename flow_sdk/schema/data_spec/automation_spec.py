@@ -147,7 +147,8 @@ class AutomationRun(DataSpec):
     is_test: bool = False
     #: Why it ran, in words: "Scheduled", "A file changed: docs/a.md", "App ready".
     why: str = ""
-    #: For a skip: storm | confirm_failed | disabled | self_loop | already_fired.
+    #: For a skip: storm | confirm_failed | disabled | self_loop | already_fired |
+    #: decision_no | decision_unavailable.
     reason_code: Optional[str] = None
     error: Optional[str] = None
     duration_ms: Optional[int] = None
@@ -163,6 +164,25 @@ class AutomationRun(DataSpec):
     changes_total: Optional[int] = None
     actions: list[str] = Field(default_factory=list)
     spec_hash: Optional[str] = None
+    #: What the rule's ``if`` decided: met, confidence, reason, answers, endpoint, latency.
+    decision: Optional[dict[str, Any]] = None
+    #: The id of what it decided about — the state is rebuilt from it, never stored.
+    subject_id: Optional[str] = None
+    #: How the ``then`` wizard went (``WizardResult.outline``): its verdict and, per step, the exit
+    #: code, a short detail and the session it started. Never a step's output.
+    wizard: Optional[dict[str, Any]] = None
+
+
+class RunMark(DataSpec):
+    """One execution mark on the list row: enough to draw it and open its session."""
+
+    model_config = ConfigDict(frozen=True)
+    spec_kind: ClassVar[str] = "automation.run_mark"
+
+    id: str
+    ts: str
+    status: RunStatus
+    agentic_process_id: Optional[str] = None
 
 
 # ── The list ──────────────────────────────────────────────────────────────────
@@ -188,6 +208,10 @@ class AutomationSummary(DataSpec):
     #: Failures among the last five real runs.
     recent_failures: int = 0
     recent_runs: int = 0
+    #: The last five real runs, newest first — the row's execution marks.
+    last_runs: list[RunMark] = Field(default_factory=list)
+    #: Fires the gate declined (``decision_no``), among the rows read.
+    passed_over: int = 0
     next_run: Optional[str] = None
     fires: int = 0
     #: A test run or a successful real run exercised the rule as it is now.
@@ -207,7 +231,7 @@ class CheckFinding(DataSpec):
     model_config = ConfigDict(frozen=True)
     spec_kind: ClassVar[str] = "automation.check.finding"
 
-    #: when | event | then | state
+    #: when | event | if | decider | then | state
     area: str
     ok: bool
     message: str

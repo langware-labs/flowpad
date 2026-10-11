@@ -99,6 +99,79 @@ describe('terminal links', () => {
     }
   });
 
+  /** Rows drawn the way a TUI draws them: each at its own cursor position, never soft-wrapped. */
+  async function drawn(cols: number, rows: string[]): Promise<HeadlessTerminal> {
+    const terminal = new HeadlessTerminal({ cols, rows: 8, allowProposedApi: true });
+    await new Promise<void>((resolve) => terminal.write(rows.map((row, i) => `\x1b[${i + 1};1H${row}`).join(''), resolve));
+    return terminal;
+  }
+
+  it('joins a path a fullscreen TUI broke across rows after the terminal was narrowed', async () => {
+    const path = '/private/tmp/claude-501/43be7b79-ac3c/scratchpad/memory_todo.md';
+    const terminal = new HeadlessTerminal({ cols: 42, rows: 8, allowProposedApi: true });
+    try {
+      // The alternate screen keeps a row at its old length through a shrink; the edge is the terminal's width.
+      await new Promise<void>((resolve) => terminal.write('\x1b[?1049h' + 'x'.repeat(42), resolve));
+      terminal.resize(40, 8);
+      const rows = ['  ' + path.slice(0, 38), '  ' + path.slice(38)];
+      await new Promise<void>((resolve) => terminal.write('\x1b[2J' + rows.map((row, i) => `\x1b[${i + 1};1H${row}`).join(''), resolve));
+      expect(terminal.buffer.active.getLine(0)?.length).toBe(42);
+      expect(linkAtCell(terminal as unknown as Terminal, 10, 1)).toBe(path);
+      expect(linkAtCell(terminal as unknown as Terminal, 4, 2)).toBe(path);
+    } finally {
+      terminal.dispose();
+    }
+  });
+
+  it.each([
+    ['a box with a right border too', (piece: string) => `│ ${piece} │`, 4],
+    ['an ascii bar', (piece: string) => `| ${piece}`, 2],
+    ['two blank cells before the edge', (piece: string) => `  ${piece}`, 4],
+  ])('joins a URL broken across rows inside %s', async (_, frame, layout) => {
+    const url = 'https://example.com/a-long/path/that/does-not/fit/in-two-rows?with=query&and=more#end';
+    const room = 40 - layout;
+    const terminal = await drawn(40, [frame(url.slice(0, room)), frame(url.slice(room, 2 * room)), frame(url.slice(2 * room))]);
+    try {
+      for (const y of [1, 2, 3]) expect(linkAtCell(terminal as unknown as Terminal, 3, y)).toBe(url);
+    } finally {
+      terminal.dispose();
+    }
+  });
+
+  it.each([
+    ['prose that ends at the edge, then a row starting with a path', ['  lorem ipsum dolor sit amet consectetur', '  src/app/main.ts is it'], 5, 2],
+    ['a full-width rule above an indented path', ['─'.repeat(40), '  src/app/main.ts'], 5, 2],
+  ])('keeps a row that merely happens to be full apart from the next: %s', async (_, rows, x, y) => {
+    const terminal = await drawn(40, rows);
+    try {
+      expect(linkAtCell(terminal as unknown as Terminal, x, y)).toBe('src/app/main.ts');
+    } finally {
+      terminal.dispose();
+    }
+  });
+
+  /** A path of exactly `length` characters. */
+  const pathOf = (length: number, end = '.md') => `docs/navigation/${'x'.repeat(length - 16 - end.length)}${end}`;
+  it.each([
+    ['a word a sentence goes on with', pathOf(76), '', 'for details.'],
+    ['a short one, after a file extension', pathOf(76), '', 'is the file'],
+    ['the other script', pathOf(76), '', 'לפרטים נוספים'],
+    ['a plain word, after a closing bracket', pathOf(75), ')', 'worked'],
+    ['a capital, after a full stop', pathOf(75), '.', 'It worked'],
+    ['a plain word, after a line position', pathOf(76, '.md:49'), '', 'worked'],
+    ['a plain word, after an id', pathOf(76, '/96a2122d-8f4a-4e39-a6ad-55e372a8b82b'), '', 'worked'],
+  ])('ends a long reference that stops exactly at the edge when the next row resumes the prose with %s', async (_, path, after, prose) => {
+    const written = path + after;
+    const terminal = await drawn(40, ['  ' + written.slice(0, 38), '  ' + written.slice(38), '  ' + prose]);
+    try {
+      expect(written).toHaveLength(76);
+      for (const y of [1, 2]) expect(linkAtCell(terminal as unknown as Terminal, 5, y)).toBe(path);
+      expect(linkAtCell(terminal as unknown as Terminal, 3, 3)).toBeNull();
+    } finally {
+      terminal.dispose();
+    }
+  });
+
   it('preserves URL identity and query/fragment across URL and persisted-tab round trips', () => {
     const url = 'https://example.org/a%20b?next=%2Fdocs#section';
     const dock = dockForDisplayTarget({ kind: 'url', url })!;

@@ -34,6 +34,26 @@ describe('link matches', () => {
     expectFileLinks(`צה"ל כתב docs/a.md לרמטכ"ל`, ['docs/a.md']);
   });
 
+  it('keeps the brackets, signs and non-English letters a real path carries', () => {
+    const line = 'ui/app/[slug]/page.tsx (ui/app/(marketing)/layout.tsx) build/a+b/c=d/out.txt routes/$id/route.ts data/a,b.csv, docs/50%_done.md docs/café/résumé.md docs/מדריך/קובץ.md docs/日本語/ファイル名.md';
+    expectFileLinks(line, [
+      'ui/app/[slug]/page.tsx', 'ui/app/(marketing)/layout.tsx', 'build/a+b/c=d/out.txt', 'routes/$id/route.ts',
+      'data/a,b.csv', 'docs/50%_done.md', 'docs/café/résumé.md', 'docs/מדריך/קובץ.md', 'docs/日本語/ファイル名.md',
+    ]);
+  });
+
+  it('links the file of a test id, a folder written with its slash, and a local address without a scheme', () => {
+    const line = 'tests/unit/test_a.py::TestA::test_b[1] failed, see agentic-assets/data_driver/gmail/ and localhost:5001/dock/hub/home.';
+    expectFileLinks(line, ['tests/unit/test_a.py', 'agentic-assets/data_driver/gmail/', 'localhost:5001/dock/hub/home']);
+  });
+
+  it('keeps a parenthesis that belongs to a web URL and drops one that wraps it', () => {
+    const line = 'https://en.wikipedia.org/wiki/Rust_(programming_language) (https://en.wikipedia.org/wiki/Rust_(programming_language)).';
+    expect(webLinkMatches(line).map((match) => match.text)).toEqual([
+      'https://en.wikipedia.org/wiki/Rust_(programming_language)', 'https://en.wikipedia.org/wiki/Rust_(programming_language)',
+    ]);
+  });
+
   it('does not link placeholders, bare schemes, or abbreviations', () => {
     const line = '- /dock/... and file://, e.g. i.e., x / y ~ ... … mailto: vscode: path:line:col http(s)://host/...';
     expect(fileLinkMatches(line)).toEqual([]);

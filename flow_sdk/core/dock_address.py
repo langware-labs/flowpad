@@ -177,13 +177,17 @@ class ViewType(StrEnum):
     TOKEN_PLAN = "token-plan"  # Hub token plan (me / team / org budgets) - /dock/hub/token-plan[/<scope>]
     # DESK page: what funds this machine's harnesses. Every fact it renders is a box fact
     # (a device token, a stored key, the endpoint BINDING), so it has no hub half.
-    LLM_SOURCES = "llm-sources"  # /dock/llm-sources[/<worker>] -- the harness in focus
+    LLM_SOURCES = "llm-sources"  # /dock/llm-sources[/<worker>|keys|endpoints] -- the harness or section in focus
     # DESK page: the first-run chooser -- "what should issue your LLM calls". Its own address
     # rather than a state on LLM_SOURCES because ``flow llm set auto`` opens it in a BROWSER,
     # and a CLI can hand a user nothing but a URL. LLM_SOURCES answers "what funds each harness
     # and why"; this answers "you have nothing yet, pick something" -- one question, no pointer.
     LLM_SETUP = "llm-setup"  # /dock/llm-setup -- the whole screen is one question
     ASSISTANT = "assistant"  # /win/assistant -- the Flowpad Assistant popped out into its own window
+    # A HOST tab: an agentic process shown as the Vibe workspace (chat + Display +
+    # its nested child tabs). Folds onto the process's shell tab identity, so one
+    # process is one Tab row whichever of the two it is shown as.
+    VIBE = "vibe"  # /dock/vibe/agentic_process-<id>
 
 
 # ── pointer vocabularies for the views whose pointer is a closed set ───────
@@ -600,7 +604,7 @@ VIEW_META: Mapping[ViewType, ViewMeta] = {
     ViewType.RAG: _m(
         _NONE,
         label="Search indexes",
-        aliases=("embeddings", "knowledge index", "vector index"),
+        aliases=("embeddings", "knowledge index", "vector index", "brain", "knowledge base"),
     ),
     # The counter it came from is a query pair (?group=&counter=), not a pointer.
     # Labelled apart from `assets` (the tree): this is one counter's table.
@@ -703,6 +707,10 @@ VIEW_META: Mapping[ViewType, ViewMeta] = {
         subplaces=tuple(
             (h, f"LLM sources > how {name} is funded (its key, plan or allowance)")
             for h, name in (("claude", "Claude Code"), ("codex", "Codex"), ("copilot", "Copilot"), ("opencode", "OpenCode"))
+        )
+        + (
+            ("keys", "LLM sources > the API keys stored on this machine"),
+            ("endpoints", "LLM sources > the hub endpoints this account can spend"),
         ),
     ),
     # Pointer NONE: the screen asks one question and has no selection to address. It is the
@@ -711,6 +719,8 @@ VIEW_META: Mapping[ViewType, ViewMeta] = {
     ViewType.LLM_SETUP: _m(_NONE, label="Set up LLM", aliases=("llm setup", "choose llm", "connect llm")),
     # The chat IS the window: no workspace frame, never a tab (ASK precedent).
     ViewType.ASSISTANT: _m(_NONE, chrome="fullbleed", label="Flowpad Assistant", aliases=("assistant chat", "help chat")),
+    # Pointer REQUIRED: the host is a process; a bare /dock/vibe addresses nothing.
+    ViewType.VIBE: _m(_REQ, label="Vibe", aliases=("vibe workspace", "vibe session"), provides=("process",)),
 }
 
 

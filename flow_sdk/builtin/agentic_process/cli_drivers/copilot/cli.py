@@ -55,7 +55,6 @@ class CopilotAgentOptions(AgentOptions):
 
     EXECUTABLE = "copilot"
     PROMPT_CHANNEL = "stdin"  # copilot reads the prompt from stdin
-    SYSTEM_PROMPT_FLAG = None  # no flag — a system-prompt addition prepends into stdin
 
     def _common_tail(self) -> list[str]:
         """Flags shared by both transports: cwd, model, effort, add-dirs, session."""
@@ -117,10 +116,10 @@ class CopilotAgentOptions(AgentOptions):
         self.env_vars["COPILOT_CUSTOM_INSTRUCTIONS_DIRS"] = ",".join(parts)
 
     def to_spawn(
-        self, instruction: str | None = None, system_prompt_append: str | None = None
+        self, instruction: str | None = None
     ) -> tuple[list[str], dict[str, str], str | None]:
         self._sync_custom_instruction_env()
-        return super().to_spawn(instruction=instruction, system_prompt_append=system_prompt_append)
+        return super().to_spawn(instruction=instruction)
 
     def to_spawn_args(self, instruction: str | None = None) -> tuple[list[str], dict[str, str]]:
         self._sync_custom_instruction_env()

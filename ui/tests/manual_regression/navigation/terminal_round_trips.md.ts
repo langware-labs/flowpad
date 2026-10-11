@@ -95,7 +95,13 @@ test('a terminal survives every trip away and back', async ({ page }) => {
     { name: 'the assets browser', address: 'assets/list/skill', path: '/assets/list/skill' },
     { name: 'the automations screen', address: 'automations', path: '/automations' },
     { name: 'a plain shell', address: `shell/shell-${world.shellId}`, path: `/shell/shell-${world.shellId}` },
-    { name: 'the same session in Vibe', address: `${processAddress}?viewMode=vibe`, path: processPath, modeSwitch: true },
+    // In Vibe the session is its Vibe HOST tab, at `/dock/vibe/…` (the same tab row).
+    {
+      name: 'the same session in Vibe',
+      address: `${processAddress}?viewMode=vibe`,
+      path: `/vibe/agentic_process-${world.processId}`,
+      modeSwitch: true,
+    },
     { name: 'the desktop', address: 'desktop', path: '/desktop' },
   ];
 

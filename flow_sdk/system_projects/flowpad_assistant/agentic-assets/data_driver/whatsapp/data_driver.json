@@ -58,6 +58,12 @@
       "type": "text",
       "advanced": true,
       "label": "API base URL"
+    },
+    "group": {
+      "type": "text",
+      "advanced": true,
+      "label": "Group",
+      "hint": "One group of this number (its group id): this source is that group alone, and everyone in it may write. Empty is the number itself."
     }
   },
   "webhook": {

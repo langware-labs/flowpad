@@ -6,6 +6,8 @@
  *   /dock/automations?trigger=<id>&tab=runs   …its Runs tab
  *   /dock/automations?creating=<kind>[&recipe=<id>]
  *                                             a new automation of that kind
+ *   /dock/automations?creating=message[&source=<data_source id>&message=<flow_message id>]
+ *                                             a new rule on messages arriving, prefilled from one
  *   /dock/automations/runs[?run=<id>&status=failed&trigger=<id>]
  *                                             every run; one open on the right
  *   /dock/automations/bus[?tag=<tag>&target=<type:id>]
@@ -19,13 +21,19 @@ import type { AutomationKind, RunStatus } from '@sdk';
 
 export type AutomationsPlace = 'list' | 'runs' | 'bus';
 export type AutomationTab = 'setup' | 'runs';
+/** What a new automation is made of: one of the four kinds, or a rule on messages arriving
+ *  (an `event` rule underneath, with its own screen). */
+export type CreatingKind = AutomationKind | 'message';
 
 export interface AutomationsRoute {
   place: AutomationsPlace;
   /** An open automation (list place) or the automation the runs are filtered to. */
   trigger?: string | null;
   /** A new automation being made, by kind. */
-  creating?: AutomationKind | null;
+  creating?: CreatingKind | null;
+  /** A message rule's prefill: the channel (data source id) and the message it was started from. */
+  source?: string | null;
+  message?: string | null;
   /** A starter the new automation is prefilled from (`automation-recipes.ts`). */
   recipe?: string | null;
   tab?: AutomationTab | null;
@@ -39,7 +47,7 @@ export interface AutomationsRoute {
 }
 
 const PLACES: readonly AutomationsPlace[] = ['list', 'runs', 'bus'];
-const KINDS: readonly AutomationKind[] = ['schedule', 'event', 'file', 'agent_hook'];
+const KINDS: readonly CreatingKind[] = ['schedule', 'event', 'file', 'agent_hook', 'message'];
 const STATUSES: readonly RunStatus[] = ['running', 'launched', 'succeeded', 'failed', 'skipped'];
 
 export function automationsPointer(place: AutomationsPlace = 'list'): string | undefined {
@@ -52,6 +60,8 @@ export function automationsOptions(route: AutomationsRoute): Record<string, stri
   if (route.trigger) out.trigger = route.trigger;
   if (route.creating) out.creating = route.creating;
   if (route.recipe) out.recipe = route.recipe;
+  if (route.source) out.source = route.source;
+  if (route.message) out.message = route.message;
   if (route.tab && route.tab !== 'setup') out.tab = route.tab;
   if (route.run) out.run = route.run;
   if (route.status) out.status = route.status;
@@ -81,6 +91,8 @@ export function parseAutomationsRoute(
     trigger: o.trigger || null,
     creating: oneOf(o.creating, KINDS),
     recipe: o.recipe || null,
+    source: o.source || null,
+    message: o.message || null,
     tab: o.tab === 'runs' ? 'runs' : null,
     run: o.run || null,
     status: oneOf(o.status, STATUSES),

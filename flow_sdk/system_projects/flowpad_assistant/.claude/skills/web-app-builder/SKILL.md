@@ -188,6 +188,75 @@ The landing page (`/`) is a live status board: it shows whether the FastAPI
 backend, the Next route handlers, and Supabase are reachable — use it to verify
 the bootstrap worked.
 
+## Register the app: `webapp.json`, its setup and its load
+
+Every app folder ships a `webapp.json`. It is how Flowpad knows the folder IS an app, what it
+serves, and how to bring it up — on this machine, on a cloud box, and when a project opens on it
+as its home page. Nothing else registers an app; `flow app serve` / `flow app open` only find it.
+
+```json
+{
+  "name": "<app folder name>",
+  "title": "Shop",
+  "build": ".",
+  "endpoints": [
+    { "name": "web",
+      "serving": { "type": "proxy", "start_cmd": "npx next dev --port {port}", "health": "/",
+                   "install_cmd": "python3 setup.py" } }
+  ]
+}
+```
+
+- `name` is the folder name — one noun. `build` is the subdir Flowpad serves as files: `.` for a
+  static app with no build step (the `template-flowpad` case), `dist` for a toolchain that emits one.
+- `endpoints` says what the app exposes. **No `endpoints` means one: the `build` folder, served by
+  Flowpad as a static site.** A dev server is a `proxy` entry: `start_cmd` with `{port}` where the
+  server takes its port (never a hardcoded port — the placement picks a free one), `health` (a path
+  that answers below 500 once the server is up), and only when the defaults are wrong `install_cmd`
+  (default: `npm ci` when there is a `package.json`) and `build_cmd` (default: no build). Rules and
+  the API shape: `docs/snippets/service-endpoints.md` §3.
+- Declare a dev server only when the app NEEDS one to be the app (Next, Vite with HMR, a backend).
+  A folder of plain files served from `build` is faster and survives a restart; prefer it.
+
+**What Flowpad derives from that — do not write a wizard for it.** A web app in a project is a node of
+the project's setup tree (`docs/glossary.md` → *setup tree*): install → build → start, each step with its
+own check (`node_modules` present, `build` non-empty, the server answering `health`). The same chain is
+the app's **load**: it runs the first time the app is shown on a machine, and again whenever a later show
+finds the server down (it died with the machine). So an app the project opens on — its home page — is up
+by the time its view mounts, and the view shows "Setting things up" with the live steps until it is. A
+show never waits on it: `flow show` and the Home click answer at once.
+
+**When to add `asset_setup.json`.** Only for what install/build/start cannot say — a container the app
+talks to, a one-time seed, a value the person must provide. Put it beside the app at
+`<app folder>/agentic-assets/asset_setup/<name>/asset_setup.json`; it attaches to the app's node:
+
+```json
+{
+  "name": "shop-db",
+  "label": "Shop database",
+  "subject": "micro_app-<the app's id from `flow context`>",
+  "prepare": "shop-ask-db-url",
+  "run": "shop-seed",
+  "on_load": "shop-db-up"
+}
+```
+
+Three slots, three jobs. `prepare` runs on the way DOWN, before the app's own steps: decide, ask the
+person early (a credential, a choice), prove the node can run at all. `run` runs on the way UP, once
+every child is set up: seed data, register a webhook. `on_load` runs when the app is SHOWN — first time
+here, and again when its check no longer holds: start the container, warm a cache. **A load never asks.**
+Anything a person must answer belongs in `prepare`; a load that needs a person stops at a failed step
+and the project's *Setup required* button says so. Each slot names a wizard
+(`agentic-assets/wizard/<name>/wizard.json`) whose steps are compute ops with a `completion_check` —
+the check is what makes a step idempotent and a load cheap (`docs/snippets/wizards.md`,
+`docs/snippets/compute-ops.md`). A declared slot the app does not need stays empty; the derived
+install → build → start chain runs either way.
+
+**Make it the project's home page** when the project should open ON the app: the person picks it in
+the project home's *Home page* picker (the picker offers the apps in the project folder), or the app
+calls `project.setHomePage(typeid)` on the project through the SDK. From then on, launching the project,
+the Home button and closing its last tab land on the app, loaded.
+
 ## Development guides
 
 Read the matching reference before making that kind of change:
@@ -234,13 +303,9 @@ flow show webapp --port <fe-port>     # the port `next dev` printed, never an as
 ```
 
 Run it exactly once (exit 0 = done). See the `flowpad-navigation` skill for the
-full show/navigate contract. Optionally, ALSO register the services as results
-(the results list / restart controls — not the display driver):
-
-```
-<flow-result name="Web App" port="<fe-port>" ref_type="FOLDER" path="frontend" type="webapp" start-cmd="cd frontend && npm run dev" health="/" description="Next.js 16 frontend with Tailwind v4 + shadcn/ui"/>
-<flow-result name="API Server" port="<be-port>" path="backend/main.py" type="app_service" start-cmd="cd backend && .venv/bin/uvicorn main:app --reload --port <be-port>" health="/api/health" description="FastAPI backend service"/>
-```
+full show/navigate contract. How the app is restarted later is not a result you
+register: its `webapp.json` endpoint carries `start_cmd`, and a restart is the
+app's setup node (see *Register the app* above).
 
 Outside FlowPad, just print the URLs (http://localhost:<fe-port>, :<be-port>).
 

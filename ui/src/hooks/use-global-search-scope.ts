@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useAllProjects } from '@src/hooks/use-all-projects';
+import { useActiveWorkspace } from '@src/hooks/use-workspaces';
 import { filterScope, projectScope, scopeProjectIds, type ScopeFilter } from '@src/lib/scope-filter';
 import type { SearchScopeMode } from '@src/components/record-search-bar/SearchScopeToggle';
 
@@ -17,7 +18,9 @@ interface UseGlobalSearchScopeOptions {
 export function useGlobalSearchScope({
   enabled = true,
 }: UseGlobalSearchScopeOptions = {}): { scope: ScopeFilter; isLoading: boolean } {
-  const { projects, isLoading } = useAllProjects({ enabled });
+  // The active workspace's projects: a new workspace searches no project of another.
+  const { scopeId: workspace } = useActiveWorkspace();
+  const { projects, isLoading } = useAllProjects({ enabled, workspace });
 
   const scope = useMemo<ScopeFilter>(() => {
     const ids = new Set<string>();

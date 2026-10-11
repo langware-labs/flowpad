@@ -28,6 +28,23 @@ describe('credentials pointer', () => {
     });
   });
 
+  it('round-trips a selected credential (its typeid) under a project', () => {
+    const pointer = credentialsPointer(CredentialsSubview.CONNECTIONS, 'proj-1', 'credential-9d2e/x y');
+
+    expect(pointer).toBe('connections/proj-1/credential-9d2e%2Fx%20y');
+    expect(parseCredentialsPointer(pointer)).toEqual({
+      tab: CredentialsSubview.CONNECTIONS,
+      projectId: 'proj-1',
+      entry: 'credential-9d2e/x y',
+    });
+  });
+
+  it('selects nothing without a project, or from a mangled segment', () => {
+    expect(credentialsPointer(CredentialsSubview.CONNECTIONS, undefined, 'credential-1')).toBe('connections');
+    expect(parseCredentialsPointer('connections/proj-1/%E0%A4%A').entry).toBeUndefined();
+    expect(parseCredentialsPointer('connections/proj-1').entry).toBeUndefined();
+  });
+
   it('forwards a retired subview to Connections, keeping the project', () => {
     // `environment` and `api-keys` no longer render, but they remain in the
     // cross-language enum and every persisted Tab row is normalized through

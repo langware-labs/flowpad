@@ -25,7 +25,8 @@ TAG = TypeInfo(
     display_name="Tags",
     # Dev-gated browse surface: blessed tags ride the generic Assets browser
     # (max reuse); the observed/anonymous gardening merge is a later slice.
-    browseable_by=ViewMode.DEV,
+    browseable_by=ViewMode.ADVANCED,
+    dev_only=True,
     api_visible=True,
     indexed_by_default=False,
     creatable=False,

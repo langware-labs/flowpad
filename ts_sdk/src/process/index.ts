@@ -14,8 +14,11 @@ export {
   WorkerModelTier,
   parseUIUri,
   isProcessRunning,
+  isProcessLive,
+  isProcessFailed,
   isProcessActive,
   isProcessStartable,
+  isProcessEnded,
   isWorkerRunning,
   isWorkerTerminal,
   hasWorkerStarted,
@@ -37,12 +40,10 @@ export { AgenticProcess, AgenticProcessEventName } from './agentic-process';
 export type {
   AgenticProcessReportEventResult,
   DisplayContextState,
-  DisplayEntry,
   IAgenticProcess,
   MarkdownDoc,
   ProcessState,
   SessionNameState,
-  ShowTarget,
   SpawnResult,
 } from './agentic-process';
 export type { AgentHookData, ProcessHookCallback } from './process-hooks';
@@ -77,3 +78,6 @@ export type {
   WizardProcessResult,
   WizardStatus,
 } from './wizard';
+
+// Which surface launches processes from this runtime — the app sets 'app' at boot.
+export { setLaunchSurface, launchSurfaceField, type LaunchSurface } from './launch-surface';

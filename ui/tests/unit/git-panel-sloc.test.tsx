@@ -8,6 +8,7 @@ const gitMocks = vi.hoisted(() => ({
   status: {
     error: null as string | null,
     branch: 'main',
+    upstream: 'origin/main' as string | null,
     ahead: 0,
     behind: 0,
     remoteUrl: 'git@github.com:org/repo.git' as string | null,
@@ -96,5 +97,22 @@ describe('GitPanel header remote', () => {
     render(<GitPanel computeNodeId="@local" workdir="/repo" />);
     await screen.findByTestId('git-panel-copy-branch');
     expect(screen.queryByTestId('git-panel-copy-remote')).not.toBeInTheDocument();
+  });
+});
+
+describe('GitPanel header sync chip', () => {
+  const base = { ...gitMocks.status, files: [], remoteUrl: null, remoteWebUrl: null };
+
+  it.each([
+    ['no remote branch', { upstream: null, ahead: 0, behind: 0 }, 'git-panel-no-upstream'],
+    ['up to date', { upstream: 'origin/main', ahead: 0, behind: 0 }, 'git-panel-in-sync'],
+    ['ahead', { upstream: 'origin/main', ahead: 2, behind: 0 }, 'git-panel-ahead'],
+  ])('%s shows exactly its chip', async (_name, sync, testId) => {
+    gitMocks.status = { ...base, ...sync };
+    render(<GitPanel computeNodeId="@local" workdir="/repo" />);
+    await screen.findByTestId(testId);
+    for (const other of ['git-panel-no-upstream', 'git-panel-in-sync', 'git-panel-ahead']) {
+      if (other !== testId) expect(screen.queryByTestId(other)).not.toBeInTheDocument();
+    }
   });
 });

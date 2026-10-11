@@ -20,11 +20,12 @@ from dotenv import dotenv_values
 from typer.testing import CliRunner
 
 from flow_sdk.builtin import credential_service, project_setup
+from flow_sdk.builtin.credential import Credential
 from flow_sdk.builtin.credential_service import CredentialError, save_credential
 from flow_sdk.builtin.data_source import DataSource
 from flow_sdk.cli.commands import credentials_cmd, project_cmd
 from flow_sdk.schema.data_spec.compute_op_spec import SETUP_TIMEOUT
-from flow_sdk.schema.data_spec.project_setup_spec import REQUIREMENT_GAP, REQUIREMENT_OAUTH, REQUIREMENT_PACK
+from flow_sdk.schema.data_spec.project_setup_spec import REQUIREMENT_GAP, REQUIREMENT_PACK
 from flow_sdk.schema.data_spec.returned_value_spec import CliResult
 from tests.unit.test_credential_asset._shipped import shipped_credential_folders
 
@@ -67,9 +68,10 @@ async def test_every_shipped_credential_carries_setup_instructions():
         for f in folders if (f / "credential.json").is_file()
     ]
     assert manifests
-    bare = [m["name"] for m in manifests if not str(m.get("setup") or "").strip()]
+    # An oauth credential is obtained by a person's consent click in the browser: no values to describe.
+    bare = [m["name"] for m in manifests if m.get("kind") != "oauth" and not str(m.get("setup") or "").strip()]
     assert bare == [], "a credential Flowpad ships must say how to obtain and store its values"
-    for manifest in manifests:
+    for manifest in (m for m in manifests if m.get("kind") != "oauth"):
         assert f"flow credentials set {manifest['name']} --stdin" in manifest["setup"], (
             f"{manifest['name']}: a value is piped in, never an argument (argv and the agent's transcript both keep it)"
         )
@@ -116,6 +118,8 @@ async def test_the_collector_reads_the_project_and_its_sources_drivers(project, 
     await save_credential(
         manifest={
             "name": "stripe",
+            "needed_for": "Charges cards at checkout.",
+            "justification": "app/pay.py creates a charge on every checkout.",
             "vars": {"STRIPE_KEY": {"label": "Secret key"}},
             "setup": "From the Stripe dashboard.",
         },
@@ -127,10 +131,11 @@ async def test_the_collector_reads_the_project_and_its_sources_drivers(project, 
     reqs = await project_setup.collect_requirements(project)
     by = {(r.kind, r.name): r for r in reqs}
 
-    assert [r.kind for r in reqs] == sorted(
-        (r.kind for r in reqs), key=[REQUIREMENT_OAUTH, REQUIREMENT_PACK, REQUIREMENT_GAP].index
-    )
-    google = by[(REQUIREMENT_OAUTH, "google")]
+    assert [r.kind for r in reqs] == sorted((r.kind for r in reqs), key=[REQUIREMENT_PACK, REQUIREMENT_GAP].index)
+    # A connection the sources act through IS a credential of the project (kind: oauth), declared with the
+    # union of their scopes — an indexed asset with a row, listed like any other credential.
+    google = by[(REQUIREMENT_PACK, "google")]
+    assert google.is_oauth and google.provider == "google" and google.typeid.startswith("credential-")
     assert google.used_by == ["gdrive source", "gcs source"], "one connection, every requester"
     assert set(google.scopes) == {
         "https://www.googleapis.com/auth/drive.readonly",
@@ -138,12 +143,21 @@ async def test_the_collector_reads_the_project_and_its_sources_drivers(project, 
         # A Drive source writes back unless it is read-only: its `writes` permission is asked for too.
         "https://www.googleapis.com/auth/drive",
     }
-    assert google.satisfied is None, "only its check can tell"
+    assert google.satisfied is False and google.vars == [], "no grant here; nothing to type"
+    declared = await Credential.get("google", project)
+    assert declared.scope == "project" and declared.is_oauth and set(declared.scopes) == set(google.scopes)
 
     stripe = by[(REQUIREMENT_PACK, "stripe")]
     assert stripe.used_by == ["project"] and stripe.declared and [v.env_var for v in stripe.missing] == ["STRIPE_KEY"]
     telegram = by[(REQUIREMENT_PACK, "telegram")]
     assert not telegram.declared and telegram.setup and telegram.used_by == ["telegram source"], "a driver's credential"
+    # What it is needed for rides the requirement — from the declared row, and from a shipped template.
+    assert (stripe.needed_for, stripe.justification) == (
+        "Charges cards at checkout.", "app/pay.py creates a charge on every checkout.")
+    declared_stripe = await Credential.get("stripe", project)
+    on_disk = json.loads((Path(declared_stripe.asset_ref) / "credential.json").read_text())
+    assert on_disk["needed_for"] == "Charges cards at checkout.", "declare writes it to credential.json"
+    assert telegram.needed_for, "a template's own line"
     assert by[(REQUIREMENT_PACK, "gmail")].used_by == ["gmail source"], "env names → the template declaring them"
     assert by[(REQUIREMENT_PACK, "twilio")].used_by == ["voice_phone source"]
     assert by[(REQUIREMENT_PACK, "openai")].used_by == ["voice_phone source"], "one source may span several credentials"
@@ -334,9 +348,9 @@ async def test_dry_run_lists_and_changes_nothing(project, templates, cli, monkey
     listed = json.loads(capsys.readouterr().out.strip().splitlines()[-1])
 
     assert code == 0 and cli["ran"] == [] and cli["asked"] == []
-    assert [(r["kind"], r["name"], r["state"]) for r in listed["requirements"]][:2] == [
-        ("oauth", "google", "checked when run"),
-        ("pack", "telegram", "missing TELEGRAM_BOT_TOKEN"),
+    assert [(r["kind"], r["credential_kind"], r["name"], r["state"]) for r in listed["requirements"]][:2] == [
+        ("pack", "oauth", "google", "not connected"),
+        ("pack", "env", "telegram", "missing TELEGRAM_BOT_TOKEN"),
     ]
     assert any(r["kind"] == "gap" for r in listed["requirements"])
 

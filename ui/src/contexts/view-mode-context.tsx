@@ -9,13 +9,13 @@ import {
   TypeId,
   ViewModeEvent,
   viewModeMemory,
-  ViewType,
 } from '@sdk';
-import { usePreference, usePreferenceResolved } from '@src/hooks/use-preference';
+import { usePreferenceValue } from '@src/hooks/use-preference';
 import { defineGlobal } from '@sdk/utils';
 import { useEffect, useRef, useSyncExternalStore } from 'react';
 import { useLocation } from 'react-router';
 import { useCurrentDock } from '@src/navigation/useDockNavigation';
+import { DockPointer } from '@src/navigation/DockPointer';
 
 declare global {
   interface Window {
@@ -27,14 +27,12 @@ declare global {
 }
 
 /**
- * View mode fuses TWO axes on purpose, so one control picks both:
- *  - the session SURFACE — read with `surfaceForViewMode` (vibe workspace / chat
- *    pane / xterm);
- *  - the chrome TIER — read with `isAdvancedMode` (debug toolbars, trace
- *    gutters, `AdvancedOnly`).
- * So `Advanced` means "a terminal AND the full chrome", not just a terminal.
- * Keep that in mind before gating anything new on `isAdvancedMode`: you are
- * attaching it to a surface choice as well as a complexity preference.
+ * A view mode is a session SURFACE — read with `surfaceForViewMode` (vibe
+ * workspace / chat pane / xterm) — stated by each tab's own URL. The chrome
+ * TIER is no longer part of it: power-user chrome (`AdvancedOnly`, `DevOnly`,
+ * `useIsAdvanced`) follows the developer-mode SWITCH (`useIsDev`), on any surface.
+ * `Dev` stays in the enum only for addresses and stored values written while it
+ * was a mode.
  */
 export enum ViewMode {
   // Hierarchy (simplest → fullest): Vibe ⊂ Standard ⊂ Advanced ⊂ Dev.
@@ -44,14 +42,10 @@ export enum ViewMode {
   Dev = 'dev',
 }
 
-// View mode is a *user* preference, now owned by prefMan (`preferences.ui.view_mode`,
-// a boot key mirrored to localStorage for instant first paint). It is reflected as a
-// `data-view` attribute on the document root so CSS / other surfaces can react app-wide.
-// The default mode lives in ONE place: `preferences.ui.view_mode`'s defaultValue
-// in prefRegistry.ts. `instancePreferences.get` already resolves an unset key to
-// it, and `toViewMode` below derives the same value for unknown/garbage reads —
-// so neither restates the product decision. Toggle with window.setView() or the
-// footer pill.
+// The stored `preferences.ui.view_mode` is kept as state (the session switch still
+// writes it, and view-mode memory reads it), but NO UI decides anything from it:
+// an address that states no mode shows `UNSTATED_VIEW_MODE`. The mode on screen is
+// reflected as a `data-view` attribute on the document root so CSS can react.
 
 // Strict validator: unknown/garbage reads as *unset* (null). Used directly for
 // values adopted from a Project's stored `last_mode`, where a default fallback
@@ -97,34 +91,13 @@ export function viewModePtyMode(mode: ViewMode): boolean {
 }
 
 /**
- * Reactive surface, or `null` for NOT KNOWN YET.
- *
- * On the first load in a browser profile there is no localStorage boot seed for
- * `preferences.ui.view_mode`, so `get()` serves the registry default and the
- * session would paint that surface for ~1s until `preferences.json` lands, then
- * repaint into the user's real one. Callers hold the arrangement while this is
- * null instead of painting a guess. After that first load the boot seed makes it
- * true synchronously, so the wait is a first-run cost only.
- *
- * `useViewMode()` deliberately keeps its non-null contract — chrome (isAdvanced
- * &c.) can render against the default and correct itself invisibly. Only the
- * session SURFACE is expensive to get wrong, because it mounts a whole pane.
+ * Reactive session surface. Always known: it follows the tab's stated mode (its
+ * URL) or the app's one mode, never the stored preference — so there is no
+ * first-paint wait for `preferences.json` (which there used to be, while the
+ * preference decided it).
  */
-export function useSessionSurface(): SessionSurface | null {
-  const mode = useViewMode();
-  const resolved = usePreferenceResolved(PrefKey.VIEW_MODE);
-  const currentDock = useCurrentDock();
-  const override = useSyncExternalStore(
-    subscribeViewModeOverride,
-    getViewModeOverrideSnapshot,
-    getViewModeOverrideSnapshot,
-  );
-  // URL-first: after navigation commits, the new dock mode must outrank the
-  // passive override left by the previous URL. `useViewMode()` already returns
-  // that effective mode synchronously; these two values only certify that it is
-  // known even when the persisted preference has not resolved yet.
-  if (currentDock?.viewMode || override) return surfaceForViewMode(mode);
-  return resolved ? surfaceForViewMode(mode) : null;
+export function useSessionSurface(): SessionSurface {
+  return surfaceForViewMode(useViewMode());
 }
 
 const viewModeOverrideListeners = new Set<() => void>();
@@ -145,13 +118,21 @@ function getViewModeOverrideSnapshot(): ViewMode | null {
 }
 
 /**
+ * The mode a surface shows when nothing STATES one. The stored `view_mode`
+ * preference is kept (URLs still carry `?viewMode`, the session switch still
+ * writes it) but no UI decides anything from it any more: everything is a tab,
+ * a tab states its own surface in its URL, and an address that states none is
+ * the app's one mode — Vibe.
+ */
+export const UNSTATED_VIEW_MODE = ViewMode.Vibe;
+
+/**
  * The active mode for non-React callers — the same value `useViewMode()`
- * resolves to, without the hook. Non-component modules (e.g. the `notify()`
- * dispatcher, which gates alert toasts on Dev) must read it through here so
- * they see a dock-URL override, not just the persisted preference.
+ * resolves to, without the hook: the mounted dock's stated mode, else
+ * {@link UNSTATED_VIEW_MODE}. Never the stored preference.
  */
 export function getEffectiveViewMode(): ViewMode {
-  return dockViewModeOverride ?? getViewMode();
+  return dockViewModeOverride ?? UNSTATED_VIEW_MODE;
 }
 
 // Vibe's display font (Plus Jakarta Sans) is injected only when Vibe is actually
@@ -178,7 +159,7 @@ function ensureVibeFont(): void {
 // mode, so Advanced↔Dev and Vibe↔Standard transitions don't re-send.
 let lastMenuVisibleSent: boolean | null = null;
 function syncDesktopMenu(val: ViewMode): void {
-  const visible = isAdvancedMode(val);
+  const visible = isAdvancedMode(val) || getDev();
   if (visible === lastMenuVisibleSent) return;
   const setMenuVisible = (
     window as unknown as {
@@ -217,20 +198,21 @@ function applyAttribute(val: ViewMode, animate = true): void {
   }
 }
 
-function setDockViewModeOverride(val: ViewMode | null): void {
+function setDockViewModeOverride(val: ViewMode | null, animate = true): void {
   if (dockViewModeOverride === val) {
     applyAttribute(getEffectiveViewMode(), false);
     return;
   }
   dockViewModeOverride = val;
-  applyAttribute(getEffectiveViewMode());
+  applyAttribute(getEffectiveViewMode(), animate);
   viewModeOverrideListeners.forEach((listener) => listener());
 }
 
-// One-time migration of the legacy separate `devMode` boolean → viewMode=dev.
+// One-time carry of the oldest encoding, a `devMode` localStorage boolean, onto
+// the Dev switch (it went through viewMode=dev while Dev was a mode).
 if (typeof localStorage !== 'undefined' && localStorage.getItem('devMode') === 'true') {
   localStorage.removeItem('devMode');
-  instancePreferences.set(PrefKey.VIEW_MODE, ViewMode.Dev);
+  instancePreferences.set(PrefKey.DEV_MODE, true);
 }
 
 export function getViewMode(): ViewMode {
@@ -249,12 +231,12 @@ export function rememberedViewMode(target: { last_mode?: string | null } | null 
 
 /**
  * The id of the session a dock addresses, or null when it addresses something
- * else. A session lives at exactly one dock family — `/dock/shell/
- * agentic_process-<id>` — in every mode (vibe is a rendering mode of that same
- * dock, see `canonicalProcessDockPath`), so this is the whole grammar.
+ * else. A session is shown at `/dock/shell/agentic_process-<id>` or as the Vibe
+ * host tab `/dock/vibe/agentic_process-<id>` (`DockPointer.isSessionView`), so this
+ * is the whole grammar.
  */
 export function sessionIdForDock(dock: IDockPointer): string | null {
-  if (dock.viewType !== ViewType.SHELL || !dock.pointer) return null;
+  if (!DockPointer.isSessionView(dock.viewType) || !dock.pointer) return null;
   const prefix = AgenticProcess.type + TypeId.DELIMITER;
   return dock.pointer.startsWith(prefix) ? dock.pointer.slice(prefix.length) : null;
 }
@@ -324,12 +306,13 @@ export function setViewMode(val: ViewMode, dock: IDockPointer | null = null): vo
  * wait, a retry, or a timing budget.
  *
  * Strict by construction: `toViewModeOrNull` returns null for anything that is not
- * a real mode, so a junk param falls through to the stored preference rather than
- * coercing the surface to a default.
+ * a real mode, so a junk param falls through to `UNSTATED_VIEW_MODE`.
  */
 function viewModeFromLocation(): ViewMode | null {
   try {
-    return toViewModeOrNull(new URLSearchParams(window.location.search).get('viewMode'));
+    // The address states the mode — an option, or implied by a Vibe host dock
+    // (`DockPointer.viewMode`). A non-dock path has none.
+    return DockPointer.fromUrl(`${window.location.pathname}${window.location.search}`).viewMode;
   } catch {
     return null;
   }
@@ -341,13 +324,10 @@ function viewModeFromLocation(): ViewMode | null {
 /**
  * The mode the `data-view` ATTRIBUTE should show right now.
  *
- * Deliberately NOT `getEffectiveViewMode()`: that is
- * `dockViewModeOverride ?? getViewMode()`, and the override is null until the
- * dock mounts, so every preference-change tick repainted the attribute from the
- * STORED preference — silently undoing the URL-first first paint below.
- * (`/dock/desktop?viewMode=vibe` painted `vibe`, then the next pref event
- * repainted `standard`.) The URL sits between the two: a mounted dock override
- * still wins, otherwise the address decides, and only then the stored value.
+ * Deliberately NOT `getEffectiveViewMode()`: the override is null until the dock
+ * mounts, so that would paint `UNSTATED_VIEW_MODE` over the URL's own mode on the
+ * first paint. The URL sits between the two: a mounted dock override still wins,
+ * otherwise the address decides, and only then the unstated mode.
  *
  * Scoped to the attribute ON PURPOSE. Seeding `dockViewModeOverride` from the
  * URL instead was tried and reverted: that value also feeds `openDock`'s
@@ -356,7 +336,7 @@ function viewModeFromLocation(): ViewMode | null {
  * routing is not.
  */
 function attributeViewMode(): ViewMode {
-  return dockViewModeOverride ?? viewModeFromLocation() ?? getViewMode();
+  return dockViewModeOverride ?? viewModeFromLocation() ?? UNSTATED_VIEW_MODE;
 }
 
 applyAttribute(attributeViewMode(), false);
@@ -365,21 +345,35 @@ onPreferenceChange(() => applyAttribute(attributeViewMode()));
 defineGlobal('setView', setViewMode);
 defineGlobal('getView', getViewMode);
 
-// --- Dev mode globals ---
+// --- Dev mode: a SWITCH, not a view mode ---
+//
+// Dev used to be the fourth view mode (Vibe < Standard < Advanced < Dev). That
+// made it unreachable where it is needed most: on a session tab the URL's own
+// `?viewMode=` wins over the stored mode, so Dev was shadowed on every terminal,
+// chat and Vibe tab. It is now its own preference, layered over whichever
+// surface is showing. A stored `view_mode = "dev"` — written while Dev was a
+// mode — still reads as Dev on, so nobody silently drops out of it; the next
+// toggle retires that value (to Advanced, the surface Dev showed).
 
-export function setDev(val?: boolean): void {
-  if (val === undefined) {
-    // No-arg = toggle: Dev ↔ Advanced
-    setViewMode(getViewMode() === ViewMode.Dev ? ViewMode.Advanced : ViewMode.Dev);
-  } else if (val) {
-    setViewMode(ViewMode.Dev);
-  } else {
-    setViewMode(ViewMode.Advanced);
-  }
+/** Whether developer mode is on. */
+export function getDev(): boolean {
+  return isDevOn(instancePreferences.get(PrefKey.DEV_MODE), instancePreferences.get(PrefKey.VIEW_MODE));
 }
 
-function getDev(): boolean {
-  return getViewMode() === ViewMode.Dev;
+function isDevOn(devPref: unknown, viewModePref: unknown): boolean {
+  return devPref === true || viewModePref === ViewMode.Dev;
+}
+
+/** Non-hook {@link useTierMode}. */
+export function getTierMode(): ViewMode {
+  return getDev() ? ViewMode.Dev : UNSTATED_VIEW_MODE;
+}
+
+/** Turn developer mode on/off; no argument toggles. */
+export function setDev(val?: boolean): void {
+  const next = val ?? !getDev();
+  if (getViewMode() === ViewMode.Dev) instancePreferences.set(PrefKey.VIEW_MODE, ViewMode.Advanced);
+  instancePreferences.set(PrefKey.DEV_MODE, next);
 }
 
 defineGlobal('setDev', setDev);
@@ -387,17 +381,15 @@ defineGlobal('getDev', getDev);
 
 export function useViewMode(): ViewMode {
   const currentDock = useCurrentDock();
-  const [value] = usePreference<string>(PrefKey.VIEW_MODE);
   const override = useSyncExternalStore(
     subscribeViewModeOverride,
     getViewModeOverrideSnapshot,
     getViewModeOverrideSnapshot,
   );
-  // URL-first: a committed dock URL is authoritative immediately. The
-  // transient override and persisted preference are projections adopted by a
-  // later effect; using them first creates a render where the toggle, session
-  // skin, and transport reconciler can all observe the previous mode.
-  const mode = currentDock?.viewMode ?? override ?? toViewMode(value);
+  // URL-first: a committed dock URL is authoritative immediately; the transient
+  // override is a projection adopted by a later effect. An address that states
+  // no mode shows the app's one mode — never the stored preference.
+  const mode = currentDock?.viewMode ?? override ?? UNSTATED_VIEW_MODE;
   useEffect(() => applyAttribute(mode), [mode]);
   return mode;
 }
@@ -429,26 +421,49 @@ export function useDockViewModeOverrideSync(): void {
   useEffect(() => {
     const prev = previous.current;
     previous.current = currentDock;
-    setDockViewModeOverride(override);
+    // The glow marks a MODE SWITCH — the same place in another mode. Moving to
+    // another tab (a Vibe tab ⇄ a terminal tab) repaints the skin without it.
+    // A session's own CHILD (its Vibe workspace showing a document) is the same
+    // place too: "Open terminal" switches the session from wherever in it you are.
+    const samePlace =
+      !!prev &&
+      !!currentDock &&
+      (prev.withViewMode(null).equals(currentDock.withViewMode(null)) ||
+        (!!prev.hostProcessId && prev.hostProcessId === currentDock.pointer));
+    setDockViewModeOverride(override, samePlace);
     // A switch is the same dock committing with a different mode. From a bare
     // URL only the toggle's marker makes it one: a redirect that adds the mode
     // carries no marker, so it only displays.
     if (!currentDock || !prev || !override || prev.viewMode === override) return;
     if (!prev.viewMode && !marked) return;
-    if (prev.withViewMode(null).equals(currentDock.withViewMode(null))) setViewMode(override, currentDock);
+    if (samePlace) setViewMode(override, currentDock);
   }, [currentDock, override, marked]);
 
   useEffect(() => () => setDockViewModeOverride(null), []);
 }
 
-/** Semantic boolean accessor — true if Advanced or Dev (hierarchy). */
+/** Advanced UI == developer mode: the power-user extras show only with Dev on. */
 export function useIsAdvanced(): boolean {
-  return isAdvancedMode(useViewMode());
+  return useIsDev();
 }
 
-/** Semantic boolean accessor — true only in Dev mode. */
+/** Semantic boolean accessor — true while developer mode is on, on any surface. */
 export function useIsDev(): boolean {
-  return useViewMode() === ViewMode.Dev;
+  // Value subscriptions, not `usePreference`: ~40 always-mounted consumers (rail,
+  // avatar, every Advanced gate) re-render only when one of THESE two changes,
+  // not on every preference save.
+  const dev = usePreferenceValue<boolean>(PrefKey.DEV_MODE);
+  const stored = usePreferenceValue<string>(PrefKey.VIEW_MODE);
+  return isDevOn(dev, stored);
+}
+
+/**
+ * The mode for TIER questions — which rail items, which browseable types: Dev
+ * with developer mode on, else the base tier. Never the surface on screen:
+ * a terminal tab and a Vibe tab offer the same app around them.
+ */
+export function useTierMode(): ViewMode {
+  return useIsDev() ? ViewMode.Dev : UNSTATED_VIEW_MODE;
 }
 
 /** Semantic boolean accessor — true only in Vibe mode (the simplest creator skin). */

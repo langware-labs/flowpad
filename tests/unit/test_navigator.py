@@ -68,6 +68,7 @@ async def test_without_a_decision_api_every_ask_is_todays_even_an_exact_screen_n
         ("take me to preferences", "view", "preferences", "navigate"),
         ("open https://linear.app", "url", "https://linear.app", "show"),
         ("open the app on port 5173", "webapp", "5173", "show"),
+        ("open localhost:5173", "webapp", "5173", "show"),  # a port named as an address (stress run)
         ("search for widget", "view", "search?q=widget", "show"),
         ("open ~/notes/plan.md", "file", "~/notes/plan.md", "show"),
         ("open connecitons", "view", "credentials", "show"),  # a typo of one name (logged live)
@@ -174,6 +175,13 @@ def test_asking_for_its_own_log_is_a_rule(utterance):
     """The classifier opens its own log without asking a model -- by name, or as "your" log."""
     hit = navigator.rule_hit(utterance)
     assert (hit.kind, hit.value) == ("log", "smart-navigation")
+
+
+@pytest.mark.parametrize("utterance", ["discover", "open discover", "show me the marketplace"])
+def test_asking_for_discover_is_a_rule(utterance):
+    """Discover is an app page with no place on the map, so its name is a rule of its own."""
+    hit = navigator.rule_hit(utterance)
+    assert (hit.kind, hit.value) == ("url", "/discover")
 
 
 @pytest.mark.parametrize("utterance", ["open the log", "open my log", "open your log of this session"])

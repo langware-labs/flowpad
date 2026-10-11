@@ -203,7 +203,7 @@ describe('vibe chat start failure', () => {
     // and the first prompt of a session sat through all of them with no
     // feedback. Unknown is not "missing", and it must not cost a wait either.
     h.getSnapshot.mockReturnValue({ resolvedKind: CLAUDE, checked: false, available: false });
-    h.launch.mockResolvedValue({ id: 'p', watch: () => Promise.resolve() });
+    h.launch.mockResolvedValue({ id: 'p', watch: () => Promise.resolve(), on: () => () => undefined });
 
     const { submit } = mountVibe();
     submit();

@@ -102,7 +102,9 @@ VALID: dict[str, dict] = {
     # a timestamp is normalised on read, so it has to be one going in
     "source_item": {"occurred_at": "2026-01-02T03:04:05+00:00"},
     # `lm_provider` is a closed set, and an lm_provider credential is one key
-    "credential": {"lm_provider": "anthropic", "manifest_schema": 2},
+    "credential": {"lm_provider": "anthropic", "manifest_schema": 2,
+                   # an env credential (it funds an LLM); an oauth one's fields round-trip in test_oauth_credential
+                   "kind": "env", "provider": "", "scopes": [], "optional_scopes": []},
 }
 
 #: Fields the disk deliberately does not give back, and why. Each entry is a

@@ -169,3 +169,42 @@ async def test_a_failed_recheck_answered_in_process_says_its_own_reason(monkeypa
                                  env={"FLOWPAD_WIZARD_INPUT_WEBAPP": "a1"})
     assert answer.exit_code is ExitCode.NOT_YET
     assert answer.detail == "Start: port 3000 is held by another program"
+
+
+def test_a_server_on_the_ipv6_loopback_alone_is_seen_by_both_probes():
+    """Vite / Next on ``localhost`` bind ``::1`` only on a modern Node: the port probe and the health probe
+    must find them, or every such start is called "never opened" while its log says ready."""
+    import http.server
+    import socket
+    import threading
+
+    from flow_sdk.core import dev_server
+
+    if not socket.has_ipv6:
+        pytest.skip("no IPv6 loopback here")
+
+    class V6(http.server.ThreadingHTTPServer):
+        address_family = socket.AF_INET6
+
+    class Quiet(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):
+            self.send_response(200)
+            self.end_headers()
+
+        def log_message(self, *_a):
+            pass
+
+    try:
+        server = V6(("::1", 0), Quiet)
+    except OSError:
+        pytest.skip("cannot bind ::1 here")
+    port = server.server_address[1]
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        assert dev_server.port_open(port)
+        assert webapp_setup.health_answers(port, "/")
+    finally:
+        server.shutdown()
+        server.server_close()
+    assert not dev_server.port_open(port) and not webapp_setup.health_answers(port, "/")
