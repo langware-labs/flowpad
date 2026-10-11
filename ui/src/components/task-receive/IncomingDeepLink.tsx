@@ -110,6 +110,9 @@ function useOfferNewCloudProjects(held: boolean) {
             projectName: link.title || 'Shared',
             senderName: 'Someone',
             projectId: link.project_id,
+            nameTaken: link.existing_project_id
+              ? { existingProjectId: link.existing_project_id, suggestedName: link.suggested_name || '' }
+              : undefined,
           });
         }
         if (found.length) setQueue((q) => [...q, ...found]);
@@ -281,6 +284,7 @@ export function IncomingDeepLink() {
           projectName={pendingProject.projectName}
           senderName={pendingProject.senderName}
           projectId={pendingProject.projectId}
+          nameTaken={pendingProject.nameTaken}
           onClose={() => setPendingProject(null)}
         />
       )}

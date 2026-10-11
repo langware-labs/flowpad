@@ -126,11 +126,15 @@ export class MessageAttachment extends APIEntity<MessageAttachment> implements I
    * clone/pull the origin and index — setup does NOT run (call {@link runSetup}
    * explicitly). Returns the DisplayTarget to navigate to (the received entity,
    * or — copy mode only — a spawned Vibe setup session), or null.
+   *
+   * `name` installs a received project under the receiver's own name — the
+   * answer to the 409 `project_name_conflict` the backend sends when the
+   * sender's name is already taken here.
    */
   async install(
     scope: 'user' | 'project',
     projectId?: string,
-    opts: { overwrite?: boolean } = {},
+    opts: { overwrite?: boolean; name?: string } = {},
   ): Promise<ReceiveShowTarget | null> {
     if (!this.id) throw new Error('install requires this.id');
     const action = new ActionInfo('install', MessageAttachment.type, this.id, 'POST');
@@ -138,6 +142,7 @@ export class MessageAttachment extends APIEntity<MessageAttachment> implements I
       scope,
       project_id: projectId ?? null,
       overwrite: opts.overwrite ?? false,
+      name: opts.name ?? null,
     };
     const res = await dataManager.callAction<unknown, { entity?: unknown; show?: ReceiveShowTarget | null }>(action);
     return res?.show ?? null;

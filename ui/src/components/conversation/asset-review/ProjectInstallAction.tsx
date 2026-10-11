@@ -3,6 +3,8 @@ import { Trans } from '@lingui/react/macro';
 import { Download, ExternalLink, Loader2 } from 'lucide-react';
 import { useCallback, useState } from 'react';
 import { Button } from '@src/components/ui/button';
+import { Input } from '@src/components/ui/input';
+import { errorMessage, errorStatus } from '@src/lib/error-message';
 import { useInstallSharedProjectAndOpen } from '@src/components/project-selector/use-ensure-project';
 import { useProjects } from '@src/hooks/use-projects';
 import { isHubOnly } from '@src/navigation/hub-runtime';
@@ -11,7 +13,35 @@ import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { withHomePage } from '@src/project-home-page/home-page-state';
 
 /** What the review popup's project action shows (KTD10). */
-export type ProjectInstallState = 'waiting' | 'install' | 'installing' | 'open' | 'error' | 'unavailable';
+export type ProjectInstallState =
+  | 'waiting'
+  | 'install'
+  | 'installing'
+  | 'open'
+  | 'error'
+  | 'name-taken'
+  | 'unavailable';
+
+/** The backend's 409 when the shared project's name is already a project here. */
+export interface NameConflict {
+  attempted_name: string;
+  suggested_name: string;
+  existing_project_id: string;
+}
+
+/** The 409 `project_name_conflict` a project install refuses with, or null. */
+export function nameConflictOf(err: unknown): NameConflict | null {
+  if (errorStatus(err) !== 409) return null;
+  const data = (err as { response?: { data?: { data?: Partial<NameConflict> & { project_name_conflict?: boolean } } } })
+    .response?.data?.data;
+  return data?.project_name_conflict && data.existing_project_id
+    ? {
+        attempted_name: data.attempted_name ?? '',
+        suggested_name: data.suggested_name ?? '',
+        existing_project_id: data.existing_project_id,
+      }
+    : null;
+}
 
 /**
  * The shared project as this machine holds it. Installed means the LOCAL row
@@ -44,6 +74,11 @@ export function useLocalProject(typeId: TypeId, entityRow?: Project | null) {
  * Either way it lands URL-first on the project's dock, then calls `onDone` so
  * the popup closes behind the navigation. A refused install shows the reason,
  * and retry returns to Install.
+ *
+ * When this desktop already has a project under the shared one's name (often
+ * the same repo, set up earlier), the backend refuses with a 409 and the
+ * receiver chooses: open the project they have, install this one under another
+ * name, or cancel.
  */
 export function ProjectInstallAction({
   typeId,
@@ -65,8 +100,10 @@ export function ProjectInstallAction({
   const { navigation } = useDockNavigation();
   const { row, installed: rowInstalled } = useLocalProject(typeId, entityRow);
   const installed = attachment ? attachment.installed : rowInstalled;
-  const [phase, setPhase] = useState<'idle' | 'installing' | 'error'>('idle');
+  const [phase, setPhase] = useState<'idle' | 'installing' | 'error' | 'name-taken'>('idle');
   const [reason, setReason] = useState<string | null>(null);
+  const [conflict, setConflict] = useState<NameConflict | null>(null);
+  const [newName, setNewName] = useState('');
 
   const projectId = String(typeId.id);
   // Landing: URL only — the project loader adopts the project into context.
@@ -84,19 +121,21 @@ export function ProjectInstallAction({
         ? 'open'
         : phase === 'error'
           ? 'error'
-          : row || attachment
-            ? 'install'
-            : entityUnavailable
-              ? 'unavailable'
-              : 'waiting';
+          : phase === 'name-taken'
+            ? 'name-taken'
+            : row || attachment
+              ? 'install'
+              : entityUnavailable
+                ? 'unavailable'
+                : 'waiting';
 
-  const handleInstall = async () => {
+  const handleInstall = async (name?: string) => {
     if (!attachment && !row) return;
     setPhase('installing');
     setReason(null);
     try {
       if (attachment) {
-        await attachment.install('user');
+        await attachment.install('user', undefined, { name });
         openProject(projectId);
       } else if (row) {
         await install(row instanceof Project ? row : new Project(row as Partial<Project>));
@@ -104,9 +143,22 @@ export function ProjectInstallAction({
       setPhase('idle');
       onDone?.();
     } catch (err) {
-      setReason(err instanceof Error ? err.message : null);
+      const taken = nameConflictOf(err);
+      if (taken) {
+        setConflict(taken);
+        setNewName(taken.suggested_name);
+        setPhase('name-taken');
+        return;
+      }
+      setReason(errorMessage(err, '') || null);
       setPhase('error');
     }
+  };
+
+  const openExisting = () => {
+    if (!conflict) return;
+    openProject(conflict.existing_project_id);
+    onDone?.();
   };
 
   return (
@@ -162,6 +214,44 @@ export function ProjectInstallAction({
           </Button>
         )}
       </div>
+      {state === 'name-taken' && conflict && (
+        <div data-testid="project-name-taken" className="flex flex-col gap-2 text-xs">
+          <p>
+            <Trans>
+              You already have a project named <strong>{conflict.attempted_name}</strong>. Open it, or install this one
+              under another name.
+            </Trans>
+          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button size="sm" variant="secondary" onClick={openExisting} data-testid="project-name-taken-open">
+              <ExternalLink className="h-3.5 w-3.5" />
+              <Trans>Open my project</Trans>
+            </Button>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Input
+              value={newName}
+              onChange={(e) => setNewName(e.target.value)}
+              placeholder={conflict.suggested_name}
+              className="h-8 max-w-xs text-xs"
+              data-testid="project-name-taken-input"
+            />
+            <Button
+              size="sm"
+              variant="secondary"
+              disabled={!newName.trim()}
+              onClick={() => void handleInstall(newName.trim())}
+              data-testid="project-name-taken-install"
+            >
+              <Download className="h-3.5 w-3.5" />
+              <Trans>Install as this name</Trans>
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => setPhase('idle')} data-testid="project-name-taken-cancel">
+              <Trans>Cancel</Trans>
+            </Button>
+          </div>
+        </div>
+      )}
       {state === 'error' && (
         <p data-testid="project-install-error" role="alert" className="text-xs text-destructive">
           <Trans>The project could not be installed.</Trans>
