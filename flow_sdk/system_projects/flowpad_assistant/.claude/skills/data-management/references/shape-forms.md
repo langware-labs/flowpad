@@ -97,6 +97,49 @@ A record may declare that two link paths name the same row wherever both ends ar
   break them in `problems`, and refuses a write to a row that would break a rule of a row that
   reaches it (`would break <kind> <key>`) — so every writer keeps them, Claude included.
 
+A second rule is over the rows of ONE dataset — no two share a value:
+
+```json
+"rules": [
+  {"unique": ["crm_id"], "description": "one row per CRM record"},
+  {"unique": ["region", "code"]}
+]
+```
+
+- `unique` names the record's own single-valued fields (several: the COMBINATION is unique). A row
+  that leaves any of them empty is not judged — an optional natural key stays optional.
+- Every write is refused while another row holds the value (`code: "unique"`, naming that row);
+  two rows of one `put_many` / `sync` cannot take the same value either; a row a `sync` prunes
+  frees its value in that same call. A duplicate that reached the disk anyway (a hand edit, a
+  `git pull`) is in `problems` — the first row by key keeps the value.
+- Declare the natural key of anything mirrored from outside (`crm_id`), and never write "find the
+  row with this id" as a uniqueness check of your own.
+
+## Fields an outside system owns — `owned_by`
+
+```json
+"stage": {"shape": "enum:open|won|lost", "description": "The deal's stage, as the CRM has it.", "owned_by": "crm"}
+```
+
+The value is a COPY of an outside system's. Only a writer that says it writes as that owner sets or
+changes it — `put / put_many / sync / append(..., by="crm")`, TypeScript `{by: "crm"}`, `DM … --by crm`
+— anyone else is refused (`code: "owned"`, with `owned_by` in the detail), and a new row may leave
+an owned field empty but not fill it. `kindForm(kind).fields[name].owned_by` tells an app to show the
+field read-only. It is a guard between cooperating writers (the app, a sync, Claude), not a
+permission: a writer that claims `by` is believed.
+
+## Fields shared by several kinds — `include`
+
+```json
+{"type": "data_schema", "include": ["crm.synced"], "fields": {"name": {"shape": "string", "description": "…"}}}
+```
+
+The record has the included records' fields, rules and owners as if written here — define
+`crm_id` / `updated` / `owner` once (`crm.synced`) and include it in every mirrored kind. A field
+named on both sides is refused (an include never overrides); includes nest; a kind cannot include
+itself. `DM kind` shows the whole record. After changing an included schema, `flow schema apply` its
+whole group, so the kinds that include it are rebuilt.
+
 ## Checking one value
 
 A kind check is the SHAPE only, unless you give it the project: then it checks the value's

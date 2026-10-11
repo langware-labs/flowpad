@@ -135,7 +135,9 @@ export function RuntimeChip({ kind, project }: RuntimeChipProps) {
       openDelay={RUNTIME_HOVER_OPEN_DELAY_MS}
       closeDelay={100}
     >
-      <Popover open={menu.open} onOpenChange={setListOpen}>
+      {/* Block embedded app iframes while open so outside clicks reach Radix's
+          dismiss layer instead of disappearing into another document. */}
+      <Popover modal open={menu.open} onOpenChange={setListOpen}>
         <PopoverAnchor asChild>
           {/* A div, not a button: it holds two controls, and a button inside
               a button is invalid HTML (the nav-bar test pins that). The list

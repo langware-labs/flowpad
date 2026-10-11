@@ -50,6 +50,8 @@ class ExpressionNode(BaseModel):
 
 
 OrderType = Dict[str, Literal["asc", "desc"]]
+#: The keys of a filter beside `match` (`QueryFilter.parse`).
+_FILTER_WORDS = frozenset({"limit", "offset", "order_by", "expand"})
 
 
 class QueryFilter(BaseModel):
@@ -150,7 +152,9 @@ class QueryFilter(BaseModel):
             else:
                 data = filter_json
 
-            if "match" not in data:
+            # A map without `match` is the match itself (`{"status": "open"}`) -- unless every key is a
+            # filter word: `{"limit": 3}` is a page of three, never "the rows whose limit is 3".
+            if "match" not in data and not (data and set(data) <= _FILTER_WORDS):
                 data = {"match": data}
             e = QueryFilter(**data)
             if entity_type:

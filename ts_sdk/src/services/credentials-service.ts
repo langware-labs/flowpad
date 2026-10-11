@@ -12,7 +12,7 @@
 import { dataManager } from '../APIEntity';
 import { ActionInfo } from '../models/ActionInfo';
 import { isHubOnly } from '../utils/hub-runtime';
-import type { CredentialRequirement, CredentialVarKind } from '../entities/credential';
+import type { CredentialRequirement, CredentialVarCommand, CredentialVarKind } from '../entities/credential';
 
 export type CredentialScopeName = 'user' | 'project';
 /** A store a form can choose: the scope's env file, or the vault. */
@@ -39,12 +39,18 @@ export interface CredentialVarStatus {
   /** What this deployment needs: the var's own requirement, raised to `MUST` when the deployment
    *  requires it. Read through `isRequired` — never for truth. */
   required: CredentialRequirement;
-  /** `file`: the value is a file's content, kept as a file; the variable holds its path. */
+  /** `file`: the value is a file's content, kept as a file; the variable holds its path.
+   *  `cli`: nothing is stored — a command-line tool holds the sign-in. */
   kind: CredentialVarKind;
-  /** The store the chosen deployment keeps this variable in. */
+  /** The store the chosen deployment keeps this variable in; `cli` for a `cli` variable. */
   store: CredentialValueStore;
-  /** A value exists in that store. */
+  /** A value exists in that store; for a `cli` variable, its check passed. */
   present: boolean;
+  /** `cli`: the command that signs in on THIS machine; empty for every other kind. */
+  login?: string;
+  /** `cli`: the declared commands, so an edit can save them back. */
+  login_spec?: CredentialVarCommand | null;
+  check_spec?: CredentialVarCommand | null;
   /** Where a value was found at all. */
   found_in: CredentialValueStore | null;
   /** `wrong-store`: a value exists, but in the other local store; `unreachable`: a remote store
@@ -177,6 +183,9 @@ export interface CredentialManifestVar {
   placeholder?: string;
   required?: CredentialRequirement;
   kind?: CredentialVarKind;
+  /** `cli` only. */
+  login?: CredentialVarCommand | null;
+  check?: CredentialVarCommand | null;
   pattern?: string;
   advanced?: boolean;
   account_key?: boolean;

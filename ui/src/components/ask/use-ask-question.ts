@@ -9,6 +9,7 @@ import { showWizard } from '@src/components/assets/editor/wizard/wizard-popup-st
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { pickLiveActivity, useActivitySpec } from '@src/store/activity-store';
 import type { AssistState } from './AskAssist';
+import type { AskItem } from './AskItems';
 
 /**
  * A question a ComputeOp put to a person — the data and actions behind it,
@@ -19,6 +20,18 @@ import type { AssistState } from './AskAssist';
  */
 
 export type Shape = Record<string, unknown> | string | null;
+
+/** One way to answer a "pick one way" question (`AskChoiceBlock`). */
+export interface AskChoice {
+  /** What the answer names — a variable. */
+  value: string;
+  label: string;
+  hint: string;
+  secret: boolean;
+  file: boolean;
+  /** A sign-in command: nothing is typed, the person runs it. Empty: a value is typed. */
+  command: string;
+}
 
 export interface AskQuestion {
   id: string;
@@ -35,6 +48,10 @@ export interface AskQuestion {
   secret?: boolean;
   /** The answer is a file's content (a key file): drawn as a file picker. */
   file?: boolean;
+  /** The ways to answer, when there is more than one; empty for every ordinary question. */
+  choices?: AskChoice[];
+  /** Several questions asked as one (`AskItems`); empty for every ordinary question. */
+  items?: AskItem[];
   /** The Wizard this question is one step of, when it is one. Empty for a
    *  question an op raised outside any wizard. */
   wizard_id?: string;
@@ -44,6 +61,8 @@ export interface AskQuestion {
   assist_available?: boolean;
   assist?: AssistState | null;
 }
+
+export const hasChoicesOf = (question: { choices?: AskChoice[] } | null) => !!question?.choices?.length;
 
 /** The field names to draw. An object shape is its keys; anything else is one
  *  unnamed value, which is what a scalar declaration means. */
@@ -106,7 +125,12 @@ export function useAskQuestion(questionId: string | undefined) {
     return send('/answer', { value });
   }, [question, values, send]);
 
+  /** A chosen way's answer (`AskChoiceBlock`, one string) or a list's (`AskItems`), sent as it is. */
+  const answer = useCallback((value: string | Record<string, unknown>) => send('/answer', { value }), [send]);
+
   const cancel = useCallback(() => send('/cancel'), [send]);
+  /** The cards are the form (`AskChoiceBlock`): no bare field, and no Send of the question's own. */
+  const hasChoices = hasChoicesOf(question);
   /** The question settled while AI Assist worked on it: the agent answered. */
   const agentAnswered = useCallback(() => setSettledKind('answered'), []);
 
@@ -146,6 +170,7 @@ export function useAskQuestion(questionId: string | undefined) {
 
   return {
     question,
+    hasChoices,
     values,
     setValues,
     error,
@@ -153,6 +178,7 @@ export function useAskQuestion(questionId: string | undefined) {
     settledKind,
     settledMessage,
     submit,
+    answer,
     cancel,
     agentAnswered,
     wizardId,

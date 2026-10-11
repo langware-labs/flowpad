@@ -9,6 +9,7 @@ interface GitFileDiffModalProps {
   workdir: string;
   filepath: string;
   status?: string;
+  revision?: string;
   open: boolean;
   onClose: () => void;
 }
@@ -18,6 +19,7 @@ export const GitFileDiffModal: React.FC<GitFileDiffModalProps> = ({
   workdir,
   filepath,
   status = 'M',
+  revision,
   open,
   onClose,
 }) => {
@@ -28,21 +30,25 @@ export const GitFileDiffModal: React.FC<GitFileDiffModalProps> = ({
 
   useEffect(() => {
     if (!open || !computeNodeId || !workdir || !filepath) return;
+    let active = true;
     setLoading(true);
     setDiffData(null);
     setError(null);
     new GitWorkdir(workdir, computeNodeId)
-      .fileDiff(filepath, status)
+      .fileDiff(filepath, status, revision)
       .then((result) => {
-        setDiffData(result ?? null);
+        if (active) setDiffData(result ?? null);
       })
       .catch(() => {
-        setError(t`Failed to fetch diff`);
+        if (active) setError(t`Failed to fetch diff`);
       })
       .finally(() => {
-        setLoading(false);
+        if (active) setLoading(false);
       });
-  }, [open, computeNodeId, workdir, filepath, status, t]);
+    return () => {
+      active = false;
+    };
+  }, [open, computeNodeId, workdir, filepath, status, revision, t]);
 
   const filename = filepath.split('/').pop() ?? filepath;
 
@@ -57,6 +63,7 @@ export const GitFileDiffModal: React.FC<GitFileDiffModalProps> = ({
         <DialogHeader className="shrink-0">
           <DialogTitle className="text-sm font-medium">
             {filename}
+            {revision && <span className="ms-2 font-mono text-xs text-muted-foreground">{revision.slice(0, 7)}</span>}
             <span className="ms-2 text-xs font-normal text-muted-foreground">{filepath}</span>
           </DialogTitle>
         </DialogHeader>

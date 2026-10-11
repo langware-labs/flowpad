@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import asyncio
 import gc
+import os
 import weakref
 
 import pytest
@@ -82,9 +83,10 @@ class _Proc:
 
 
 class _Commands:
-    async def run(self, cmd, on_stdout=None, on_stderr=None, timeout=None, background=False, cwd=None):
+    async def run(self, cmd, on_stdout=None, on_stderr=None, timeout=None, background=False, cwd=None, envs=None):
         p = await asyncio.create_subprocess_shell(
-            cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE, cwd=cwd
+            cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE, cwd=cwd,
+            env={**os.environ, **(envs or {})}
         )
         out, err = await p.communicate()
         if out and on_stdout:

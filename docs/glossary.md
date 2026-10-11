@@ -140,6 +140,22 @@ mechanism: [`ontology.md`](ontology.md).
   schemas, instances are values. (`data_schema.json` is itself a value — of the kind
   `data_schema`, whose schema is `DataSchemaDocSpec`.)
 
+## row · example · record · item (2026-10-11)
+
+Four words were used for neighbours. Say which:
+
+- **row** — one value kept in a **dataset**, with a `key`, an `id`, a `ref` and a `version`. THE
+  public word (`rows`, `put-row`, `delete_rows`, `usedBy`).
+- **example** — the same thing as eval data and on disk (`examples/<key>/`, `ExampleSpec`, `kind:
+  train|eval|test`). Older names keep it (`example()`, `example_id`); new ones say row / `id`.
+- **record** — an entity the instance keeps and indexes (a task, a session, a source item):
+  found with record search, never a dataset row. (`subkind: record` in a data schema is a third,
+  unrelated use: "a schema with fields".)
+- **item** — a `SourceItem`: one record a data source ingested. A row links to one with
+  `ingest.source_item.id.<id>`.
+- **version** means the row's digest here (`expected=`); an asset's `v<n>` and a git revision are
+  other things.
+
 ## Naming rules this implies
 
 - **`GraphWorkflow` always carries the full prefix.** Bare `Graph*` collides with

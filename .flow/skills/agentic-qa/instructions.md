@@ -24,6 +24,8 @@
 
 ## Testing Environment
 
+- Focused run 2026-10-11: fresh publisher FE5055/BE6055 and consumer FE5056/BE6056, distinct local test users, local hub8093, isolated headless Chromium on macOS. Source checkout had concurrent peer edits; source fingerprints are retained with evidence. Scenario failed exclusivity, authenticated update transport, and post-pull auto-launch checks.
+
 - Cycle 2026-08-22→26 (0.2.140-fixes, macOS 24.6, 14 cores): cycle-owned instances via
   `scripts/instance_ctl.sh` — qa-cycle (backend :6001/:6002, frontend :5002), qa-b/qa-c/qa-d for
   parallel 11b agents, dev-1/2/3 for hub tiers; final Phase 11 from a `git worktree`
@@ -1051,3 +1053,20 @@ where they execute. What is left here is this cycle's own evidence:
 - A leftover tab in the user's Chrome Canary debug browser (remote-debugging 9222) on an instance's port wins the backend's "active tab" pick and swallows control-plane navigations (navigation/ category landed on /dock/desktop). navigation/_world.ts now steers its own connection id.
 - The shared out-of-repo snapshot ~/Documents/dev/dataset/smart-navigator/map.json is ONE file for every checkout: a peer regenerating it from newer code turns tests/unit/test_navigation_map.py red in a frozen worktree. Point FLOW_NAVIGATOR_DATASET at a private copy regenerated from the worktree; never overwrite the shared file from a frozen tree.
 - Hub-bound specs (need a healthy hub login): conversation_view_three_spawn_branches, stream_inbox_automations, message_links, attached_channels, two_channels_one_stream_inbox, links_all_modes (conversation leg), channel_files_reactions, channel_matrix + channel_threads (also AGENT_MAILBOX_ENABLED), native_threads (also a second instance).
+
+### 2026-10-11 — Publisher/consumer auto-launch after hub-repo pull
+
+- Fresh instances targeted local hub explicitly; repository provider was `local` and its bare repository was verified on disk. The main checkout defaults to the production hub, so never inherit that default for this scenario.
+- Keep the instance launcher session alive with the browser runner: this execution harness reaped the detached children after the initial setup command exited. Separate headless Chromium contexts avoided the already-owned Playwright MCP profile.
+- Agent publication uses `POST /graph/agent/<id>/publish`; generic `set-published` refuses agents.
+- Consumer first auto-launch and live response passed. Enabling a second agent's auto-launch leaves the first enabled; explicitly disabling the first allowed the later checks to proceed.
+- The existing ten-minute remote-check interval was advanced with Playwright's virtual clock. Git fetch failed for missing hub authentication but returned stale `behind: 0`; the normal UI Pull failed for the same reason.
+- A diagnostic UI Pull succeeded with temporary repository authentication, restored immediately afterward. No second agent tab or auto-launch request followed; the original agent session remained usable. Disk flags were updated while entity rows stayed stale.
+- Evidence: `ui/tests/manual_regression/_results/autolaunch-20261011T125752Z/`. Product code was not changed for this test.
+
+### 2026-10-11 — Fixed publisher/consumer auto-launch regression
+
+- Fresh final run passed all six requested steps against the local hub with a verified local bare Git repository. Evidence: `ui/tests/manual_regression/_results/autolaunch-final-20261011T131900Z/`.
+- Authoring a second auto-launch selection now clears the first; imported legacy flags remain unchanged. Hub Git fetch/pull uses fresh scoped authentication through native process environments. A successful local Pull refreshes asset projections before the shared once-only auto-launch check.
+- Browser proof: normal update notice and UI Pull; second agent opens in a new active tab; the original first-agent tab remains and answers again. Both agents returned live identity responses. No manual auth, flag repair, reindex, or browser refresh was used.
+- Harness adaptations: separate Chromium contexts, API fixture/publication setup, received link handoff into the isolated consumer app, and virtual-clock advancement of the existing remote-check interval.

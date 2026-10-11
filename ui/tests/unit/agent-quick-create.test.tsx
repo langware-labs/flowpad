@@ -128,6 +128,18 @@ describe('Agent Quick Create', () => {
     runInAction(() => contextMap.set(ContextEntitiesEnum.CurrentProjectTypeId, null));
   });
 
+  it('creates in the pinned Overview project rather than the ambient project', async () => {
+    dialogMocks.project = new Project({ id: PROJECT_ID, name: 'ambient', fs_storage_mount_path: '/ambient' });
+    const pinned = new Project({ id: 'e58d0362-3bce-4862-aa34-1902adbbf077', name: 'pinned', fs_storage_mount_path: '/pinned' });
+    const create = vi.spyOn(Agent, 'createInProject').mockResolvedValue(new Agent({ id: AGENT_ID, name: 'Q' }));
+    render(<QuickCreateDialog open onOpenChange={vi.fn()} type="agent" project={pinned} />);
+    expect(screen.getByRole('button', { name: 'pinned', exact: true })).toBeInTheDocument();
+    fireEvent.change(screen.getByPlaceholderText('Path'), { target: { value: '/pinned/custom' } });
+    fireEvent.change(screen.getByPlaceholderText('New agent name'), { target: { value: 'Q' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Create' }));
+    await waitFor(() => expect(create).toHaveBeenCalledWith(pinned, 'Q', expect.objectContaining({ path: '/pinned/custom' })));
+  });
+
   it('keeps a picked Project local until creation and creates in that Project', async () => {
     const ambient = new Project({
       id: PROJECT_ID,

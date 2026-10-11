@@ -245,3 +245,53 @@ async def test_two_concurrent_ingests_of_one_item_make_one_row():
 
     rows = await SourceItem.get_all({"external_id": external_id})
     assert len(rows) == 1, f"one record ingested concurrently made {len(rows)} rows"
+
+
+# ── a record's own fields take part in change detection ──────────────────────
+
+
+@pytest.mark.asyncio
+@pytest.mark.timeout(30)  # do not increase timeout without approval
+async def test_a_records_typed_field_changing_is_an_update():
+    """A record is a row updated in place -- an issue's status, a deal's stage -- and those live in
+    ``data``. Hashing the header alone read a changed status as *unchanged*: the stored record, and
+    every mirror of it, went stale (found mirroring a CRM's deals on a live instance)."""
+    from typing import ClassVar, Optional
+
+    from flow_sdk.sources.values.items import RecordData
+
+    class DealData(RecordData):
+        spec_kind: ClassVar[str] = "unittest.ingest.deal"
+        volatile: ClassVar[frozenset[str]] = frozenset({"views"})
+
+        stage: Optional[str] = None
+        views: int = 0
+
+    external_id = f"ext-{uuid.uuid4().hex[:10]}"
+    record = lambda **data: _item(external_id=external_id, kind="record", data=DealData(title="Acme", **data))   # noqa: E731
+
+    assert (await ingest_item(record(stage="open"))).status == "created"
+    assert (await ingest_item(record(stage="open"))).status == "unchanged"
+    moved = await ingest_item(record(stage="won"))
+    assert moved.status == "updated", "a record's stage changed and the digest did not move"
+    row = await SourceItem.get_one({"id": moved.entity_id})
+    assert row.data.stage == "won"
+    assert (await ingest_item(record(stage="won", views=999))).status == "unchanged"      # a volatile field never moves it
+
+
+def test_a_message_keeps_exactly_the_digest_it_had():
+    """Only records gain fields in the digest: adding one to every item would re-write the corpus."""
+    from flow_sdk.fs_store.serializer.db import digest_over
+    from flow_sdk.ingest.digest import content_digest
+    from flow_sdk.llm_index.core import sha256_bytes
+    from flow_sdk.schema.data_spec.source_item_spec import DIGESTED_FIELDS
+    from flow_sdk.semantic_lock.targets import canonical_entity_bytes
+    from flow_sdk.sources.values.items import MessageData, RecordData
+
+    header_only = lambda item: sha256_bytes(canonical_entity_bytes({name: getattr(item, name, None) for name in DIGESTED_FIELDS}))   # noqa: E731
+    plain = _item()
+    assert content_digest(plain) == digest_over(plain, DIGESTED_FIELDS) == header_only(plain)
+    message = _item(data=MessageData())
+    assert content_digest(message) == header_only(message)
+    record = _item(data=RecordData(title="A title"))
+    assert content_digest(record) != header_only(record)

@@ -36,6 +36,8 @@ export interface UseAssetTypesOptions {
    * browsing skin, and must not decide which of the project's assets exist.
    */
   anyMode?: boolean;
+  /** All user-facing browsing tiers; developer-only types still require Dev. */
+  allUserTypes?: boolean;
   /**
    * Fetch markdown ``vaults``. They are the ONLY runtime piece here — everything
    * else is synchronous from the registry — so a caller that never reads
@@ -95,9 +97,13 @@ export function useAssetTypes(options: UseAssetTypesOptions = {}): {
   const currentMode = useTierMode();
   const mode: ViewMode = options.anyMode
     ? 'dev'
-    : options.vibeAsStandard && currentMode === UiViewMode.Vibe
-      ? 'standard'
-      : currentMode;
+    : options.allUserTypes
+      ? currentMode === UiViewMode.Dev
+        ? 'dev'
+        : 'advanced'
+      : options.vibeAsStandard && currentMode === UiViewMode.Vibe
+        ? 'standard'
+        : currentMode;
   const withVaults = options.withVaults ?? true;
   const { data, isLoading, error, reload } = useLazyAsset(LazyAsset.AssetCatalog, undefined, {
     enabled: withVaults,

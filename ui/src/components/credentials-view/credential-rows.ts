@@ -6,6 +6,8 @@
  */
 import {
   CredentialRequirement,
+  isRequired,
+  oneOfGroup,
   type CredentialKind,
   credentialEnvFileName,
   type CredentialScopeFile,
@@ -40,10 +42,9 @@ export interface CredentialRow {
   store: CredentialValueStore;
   state: CredentialRowState;
   vars: CredentialRowVar[];
-  /** `MUST` when the project cannot work without at least one of its variables — the table's chip. */
+  /** `MUST` when the project cannot work without at least one of its variables (a `ONE_OF` group
+   *  counts: one of them is needed) — the table's chip. */
   required: CredentialRequirement;
-  /** Required variables with no value in this credential's store. */
-  missing: string[];
   /** Every variable is overridden by a project credential of the same name. */
   shadowed: boolean;
   /** The `.env.local` this credential reads, when it keeps values there and the file exists. */
@@ -119,8 +120,10 @@ export function buildCredentialRows(status: CredentialsStatus): CredentialRow[] 
         state: row.state === 'connected' ? 'connected' : 'needs-values',
         vars: row.vars.map((v) => ({ envVar: v.env_var, required: v.required, present: v.present, warning: v.warning })),
         // An oauth credential the project declares is needed whole: there are no variables to weigh.
-        required: row.kind === 'oauth' || row.vars.some((v) => v.required === MUST) ? MUST : CredentialRequirement.OPTIONAL,
-        missing: row.vars.filter((v) => v.required === MUST && !v.present).map((v) => v.env_var),
+        required:
+          row.kind === 'oauth' || row.vars.some(isRequired) || oneOfGroup(row.vars).length > 0
+            ? MUST
+            : CredentialRequirement.OPTIONAL,
         shadowed: row.vars.length > 0 && row.vars.every((v) => !!v.shadowed_by),
         envPath: envFile(row),
         kind: row.kind ?? 'env',

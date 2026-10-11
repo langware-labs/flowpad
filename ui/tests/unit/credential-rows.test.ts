@@ -4,7 +4,7 @@
  * all, which `.env.local` keys are offered for packing.
  */
 import { describe, expect, it } from 'vitest';
-import type { CredentialStatusRow, CredentialsStatus } from '@sdk';
+import { missingNeeds, type CredentialStatusRow, type CredentialsStatus } from '@sdk';
 import {
   buildCredentialRows,
   buildDetectedGroups,
@@ -90,6 +90,10 @@ describe('buildCredentialRows', () => {
     expect(rows.map((r) => `${r.scope}:${r.name}`)).toEqual(['project:alpha', 'project:zeta', 'user:personal']);
   });
 
+  /** What a row still needs, as the table words it: one entry per need. */
+  const needs = (r: { vars: Parameters<typeof missingNeeds>[0] }) =>
+    missingNeeds(r.vars as { envVar: string; present: boolean }[]).map((need) => need.map((x) => x.envVar));
+
   it('a credential without its required values needs values, and says which', () => {
     const [r] = buildCredentialRows(
       status({
@@ -105,7 +109,7 @@ describe('buildCredentialRows', () => {
     );
 
     expect(r.state).toBe('needs-values');
-    expect(r.missing).toEqual(['TOKEN']);
+    expect(needs(r)).toEqual([['TOKEN']]);
   });
 
   it('a credential is MUST when any variable is, OPTIONAL when none is', () => {
@@ -120,6 +124,33 @@ describe('buildCredentialRows', () => {
 
     expect([must.required, optional.required]).toEqual(['MUST', 'OPTIONAL']);
     expect(must.vars.map((x) => x.required)).toEqual(['MUST', 'OPTIONAL']);
+  });
+
+  it('an either-or group makes the credential MUST, and its members stay ONE_OF', () => {
+    const [r] = buildCredentialRows(
+      status({ credentials: [row({ name: 'gcp', scope: 'project', vars: [v('KEY_FILE', { required: 'ONE_OF' }), v('ADC', { required: 'ONE_OF', kind: 'cli' })] })] }),
+    );
+
+    expect(r.required).toBe('MUST');
+    expect(r.vars.map((x) => x.required)).toEqual(['ONE_OF', 'ONE_OF']);
+  });
+
+  it('a group with no member set is ONE need naming all its members; one member set needs none', () => {
+    const group = (keyFile: boolean, adc: boolean) =>
+      row({
+        name: 'gcp',
+        scope: 'project',
+        vars: [
+          v('PROJECT', { present: false }),
+          v('KEY_FILE', { required: 'ONE_OF', present: keyFile }),
+          v('ADC', { required: 'ONE_OF', kind: 'cli', store: 'cli', present: adc, found_in: null }),
+        ],
+      });
+    const [none] = buildCredentialRows(status({ credentials: [group(false, false)] }));
+    const [one] = buildCredentialRows(status({ credentials: [group(false, true)] }));
+
+    expect(needs(none)).toEqual([['PROJECT'], ['KEY_FILE', 'ADC']]);
+    expect(needs(one)).toEqual([['PROJECT']]);
   });
 
   it('keys rows by typeid, so the same name in both scopes is two rows', () => {
@@ -238,7 +269,7 @@ describe('buildCredentialRows — an oauth credential', () => {
     );
     expect(google).toMatchObject({
       typeid: 'credential-g', kind: 'oauth', provider: 'google', scopes: ['drive.readonly'], missingScopes: ['drive'],
-      required: 'MUST', state: 'needs-values', missing: [],
+      required: 'MUST', state: 'needs-values',
     });
   });
 
