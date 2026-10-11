@@ -1273,7 +1273,7 @@ msgstr "تمت مشاركة مشروع معك من قِبل <0>{senderName}</0>"
 
 #: src/components/task-receive/IncomingProjectDialog.tsx
 msgid "<0>{takenAgain}</0> is taken too. Choose another name."
-msgstr ""
+msgstr "<0>{takenAgain}</0> مستخدم أيضًا. اختر اسمًا آخر."
 
 #: src/components/search-index/SweepOrphansDialog.tsx
 msgid "<0>Delete</0> — remove the DB row <1>and</1> the shadow record dir. Reclaims disk space; no recovery path."
@@ -12306,7 +12306,7 @@ msgstr "التثبيت وإعادة التشغيل"
 
 #: src/components/conversation/asset-review/ProjectInstallAction.tsx
 msgid "Install as this name"
-msgstr ""
+msgstr "تثبيت بهذا الاسم"
 
 #: src/components/browseable-tree/adapters/assetContextFoldersRoot.tsx
 msgid "Install dependency"
@@ -17327,7 +17327,7 @@ msgstr "فتح الرسالة"
 #: src/components/conversation/asset-review/ProjectInstallAction.tsx
 #: src/components/task-receive/IncomingProjectDialog.tsx
 msgid "Open my project"
-msgstr ""
+msgstr "فتح مشروعي"
 
 #: src/components/terminal/openers/TerminalOpenerToolbar.tsx
 msgid "Open new tab menu"
@@ -27912,11 +27912,11 @@ msgstr ""
 #. placeholder {0}: conflict.attempted_name
 #: src/components/conversation/asset-review/ProjectInstallAction.tsx
 msgid "You already have a project named <0>{0}</0>. Open it, or install this one under another name."
-msgstr ""
+msgstr "لديك بالفعل مشروع باسم <0>{0}</0>. افتحه، أو ثبّت هذا المشروع باسم آخر."
 
 #: src/components/task-receive/IncomingProjectDialog.tsx
 msgid "You already have a project named <0>{projectName}</0>. Open it, or set this one up under another name."
-msgstr ""
+msgstr "لديك بالفعل مشروع باسم <0>{projectName}</0>. افتحه، أو أعدّ هذا المشروع باسم آخر."
 
 #~ msgid "you are {role}"
 #~ msgstr ""
