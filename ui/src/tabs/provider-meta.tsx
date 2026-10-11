@@ -84,8 +84,8 @@ const InfoRow: React.FC<{ label: string; value: string }> = ({ label, value }) =
   </div>
 );
 
-/** The directory a session works in — one line, clipped, always left-to-right. */
-const WorkdirLine: React.FC<{ workdir: string; className?: string }> = ({ workdir, className }) => (
+/** A path on one line — clipped, always left-to-right (a session's directory, a document's file). */
+export const WorkdirLine: React.FC<{ workdir: string; className?: string }> = ({ workdir, className }) => (
   <p
     className={`truncate font-mono text-[10px] text-muted-foreground ${className ?? ''}`}
     dir="ltr"
