@@ -52,6 +52,16 @@ place that knows the outside system.
 5. **The app reads rows, not the outside system**: `rows({match, expand})`, `count`, and
    `onRowsChanged` to re-read when the mirror wrote. A link out is `openExternal(url)`.
 
+## What a record driver must know
+
+- **A record's typed fields are part of change detection.** A record is a row updated in place: its
+  `data` (an issue's `status`, a deal's `stage`) joins the change digest, so the next sync stores
+  what the outside system changed. Fields that move on their own (a view count, a provider's raw
+  echo) go in the payload class's `volatile` set, or every sync reads as a change.
+- **A record removed outside stays stored until the source says so.** A record source has no
+  tombstones yet: a deal deleted in the CRM keeps its stored item, and so its mirrored row. Until
+  it does, a mirror that must follow deletes passes `mirror` the items it listed itself.
+
 ## What is not there, on purpose
 
 - **A browser app cannot call the outside system directly.** A general "fetch with a stored
