@@ -176,3 +176,28 @@ async def test_a_launch_waits_its_turn_behind_an_index_already_running(tmp_path,
 
     assert resp.status_code == 200, resp.text
     assert order == ["turn taken", "ensure", "turn released"]
+
+
+@pytest.mark.asyncio
+async def test_a_launched_projects_assets_are_the_projects_own(tmp_path, monkeypatch):
+    """The checkout is the project's OWN folder: what it declares is project content. Indexed as the
+    user's, its credentials vanished from the project's setup (nothing asked, nothing injected)."""
+    import json
+
+    from flow_sdk.builtin import project_setup
+    from flow_sdk.builtin.credential_status import credentials_status
+
+    root = tmp_path / "acme"
+    pack = root / "agentic-assets" / "credential" / "google-cloud"
+    pack.mkdir(parents=True)
+    (pack / "credential.json").write_text(json.dumps({"name": "google-cloud", "schema": 2, "vars": {"GCP_KEY": {}}}))
+    (pack / "setup.md").write_text("Create a key.")
+    project = await Project(name=f"launched-{uuid4().hex[:8]}", fs_storage_mount_path=str(root)).save()
+
+    resp = await _call_local("POST", f"project/{project.id}/launch-ensure", json={})
+
+    assert resp.status_code == 200, resp.text
+    rows = [r for r in (await credentials_status(project)).credentials if r.name == "google-cloud"]
+    assert [(r.scope, r.project_id) for r in rows] == [("project", str(project.id))]
+    readiness = await project_setup.readiness_of(project)
+    assert [r.name for r in readiness.to_do] == ["google-cloud"]
