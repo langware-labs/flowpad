@@ -21,6 +21,7 @@ import { Checkbox } from '@src/components/ui/checkbox';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
 import { AskForm } from '@src/components/ask/AskForm';
+import { useOptionalFloatingChat } from '@src/components/floating-chat/floating-chat-context';
 import { errorMessage } from '@src/lib/error-message';
 import { notify } from '@src/notifications';
 import { useProjectSetupStore } from './project-setup-store';
@@ -135,6 +136,7 @@ export function ProjectSetupDialog({
   const [choosing, setChoosing] = useState<string | null>(null);
   const [selected, setSelected] = useState(NONE);
   const { navigation } = useDockNavigation();
+  const assistant = useOptionalFloatingChat();
 
   const load = useCallback(async () => {
     setReadiness(await Project.setupRequirements(projectId));
@@ -205,6 +207,25 @@ export function ProjectSetupDialog({
     navigation.openDock(pointer);
   };
 
+  /** Hands the row to the assistant's chat, which grows out of the button; the dialog closes so the chat is in reach. */
+  const explain = (req: ProjectSetupRequirement, button: HTMLElement) => {
+    const rect = button.getBoundingClientRect();
+    onOpenChange(false);
+    assistant?.ask(
+      [
+        `Explain briefly the setup requirement "${req.title || req.name}" of the project "${projectName}":`,
+        'what it is, why the project needs it, and how I get it.',
+        `It is a ${req.kind}${req.typeid ? ` (${req.typeid})` : ''}.`,
+        req.needed_for && `Needed for: ${req.needed_for}`,
+        req.justification && `Declared reason: ${req.justification}`,
+        req.note && `Current state: ${req.note}`,
+      ]
+        .filter(Boolean)
+        .join('\n'),
+      { rect },
+    );
+  };
+
   const running = setup.running;
   const questionId = setup.questionId;
 
@@ -228,6 +249,7 @@ export function ProjectSetupDialog({
       onSkip={(scope) => void skip([req], scope)}
       onUndo={() => void unskip(req)}
       onOpen={() => openRow(req)}
+      onExplain={assistant ? (button) => explain(req, button) : undefined}
     />
   );
 
@@ -433,6 +455,7 @@ function RequirementRow({
   onSkip,
   onUndo,
   onOpen,
+  onExplain,
 }: {
   req: ProjectSetupRequirement;
   skipped?: boolean;
@@ -445,6 +468,7 @@ function RequirementRow({
   onSkip?: (scope: ProjectSetupSkipScope) => void;
   onUndo?: () => void;
   onOpen: () => void;
+  onExplain?: (button: HTMLElement) => void;
 }) {
   const { t } = useLingui();
   const Icon = iconOf(req);
@@ -490,6 +514,20 @@ function RequirementRow({
           {!skipped && <JustificationInfo req={req} />}
         </div>
         {busy && <Loader2 className="size-3 animate-spin" />}
+        {!busy && !choosing && onExplain && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-6 px-2 text-xs"
+            data-testid={`project-setup-explain-${req.name}`}
+            onClick={(event) => {
+              event.stopPropagation();
+              onExplain(event.currentTarget);
+            }}
+          >
+            <Trans>Explain</Trans>
+          </Button>
+        )}
         {!running && !busy && skipped && (
           <Button
             variant="ghost"
