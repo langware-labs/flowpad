@@ -306,6 +306,7 @@ export const JOURNEY_STEP_PARAM = 'journeyStep';
  * written into context. Not the Vibe workspace `host` (`HOST_PARAM`).
  */
 export const WORKSPACE_PARAM = 'workspace';
+export const WORKSPACE_ENTRY_PARAM = 'workspaceEntry';
 
 /**
  * URL query-param key naming the capability the user was reaching for when they
