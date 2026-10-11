@@ -11,6 +11,7 @@ import {
 } from '@src/components/ui/dialog';
 import { Button } from '@src/components/ui/button';
 import { AskChoiceBlock } from './AskChoiceBlock';
+import { AskItems } from './AskItems';
 import { AskValueInput } from './AskValueInput';
 import { MarkdownView } from '@src/components/markdown-view';
 import { useAskModalStore } from './ask-modal-store';
@@ -40,6 +41,7 @@ function AskModal({ questionId, onOpenChange }: { questionId: string; onOpenChan
     useAskQuestion(questionId);
   // The question's words were written by the backend (a compute op's prompt, detail and buttons).
   const bt = useBackendText();
+  const items = question?.items ?? [];
 
   // Settled, however it got there: nothing left for THIS dialog to say — the
   // page it was sitting over (a wizard's own progress view, or anything else)
@@ -68,7 +70,11 @@ function AskModal({ questionId, onOpenChange }: { questionId: string; onOpenChan
       {/* Above every other dialog (z-50), by z-index rather than by mount order: the
           wizard's own popup can re-mount after a question arrives, and a question
           hidden behind the very popup that raised it cannot be answered. */}
-      <DialogContent className="z-[60] sm:max-w-md" overlayClassName="z-[60]" data-testid="ask-modal">
+      <DialogContent
+        className={items.length > 0 ? 'z-[60] sm:max-w-lg' : 'z-[60] sm:max-w-md'}
+        overlayClassName="z-[60]"
+        data-testid="ask-modal"
+      >
         {settledKind ? (
           settledMessage && (
             <p className="py-2 text-center text-sm text-muted-foreground" data-testid="ask-modal-settled">
@@ -95,7 +101,7 @@ function AskModal({ questionId, onOpenChange }: { questionId: string; onOpenChan
                 plain yes/no confirm, which has nothing to guide anyone THROUGH
                 and whose `setup.md` is written for the next maintainer, not for
                 whoever is answering. */}
-            {question.guide && fieldsOf(question.fields).length > 0 ? (
+            {question.guide && items.length === 0 && fieldsOf(question.fields).length > 0 ? (
               <div className="rounded border bg-muted/30 p-3 text-sm" data-testid="ask-modal-guide">
                 <MarkdownView value={question.guide} compact />
               </div>
@@ -115,7 +121,16 @@ function AskModal({ questionId, onOpenChange }: { questionId: string; onOpenChan
               onAnswer={(value) => void answer(value)}
             />
 
-            {(hasChoices ? [] : fieldsOf(question.fields)).map((name) => (
+            {items.length > 0 ? (
+              <AskItems
+                items={items}
+                busy={busy}
+                onAnswer={(value) => void answer(value)}
+                onCancel={() => void cancel()}
+              />
+            ) : null}
+
+            {(hasChoices || items.length > 0 ? [] : fieldsOf(question.fields)).map((name) => (
               <div key={name} className="flex flex-col gap-1">
                 {name ? (
                   <label className="text-sm" htmlFor={`ask-modal-${name}`}>
@@ -140,16 +155,18 @@ function AskModal({ questionId, onOpenChange }: { questionId: string; onOpenChan
               </p>
             ) : null}
 
-            <DialogFooter>
-              <Button variant="ghost" disabled={busy} onClick={() => void cancel()} data-testid="ask-modal-cancel">
-                {question.cancel_label ? bt(question.cancel_label) : <Trans>Cancel</Trans>}
-              </Button>
-              {hasChoices ? null : (
-                <Button disabled={busy} onClick={() => void submit()} data-testid="ask-modal-submit">
-                  {question.submit_label ? bt(question.submit_label) : <Trans>Send</Trans>}
+            {items.length > 0 ? null : (
+              <DialogFooter>
+                <Button variant="ghost" disabled={busy} onClick={() => void cancel()} data-testid="ask-modal-cancel">
+                  {question.cancel_label ? bt(question.cancel_label) : <Trans>Cancel</Trans>}
                 </Button>
-              )}
-            </DialogFooter>
+                {hasChoices ? null : (
+                  <Button disabled={busy} onClick={() => void submit()} data-testid="ask-modal-submit">
+                    {question.submit_label ? bt(question.submit_label) : <Trans>Send</Trans>}
+                  </Button>
+                )}
+              </DialogFooter>
+            )}
           </>
         )}
       </DialogContent>
