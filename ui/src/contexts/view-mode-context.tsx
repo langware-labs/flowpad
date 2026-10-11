@@ -393,8 +393,16 @@ export function SessionPaneViewMode({
   const onScreen = active && !!pointer && here?.pointer === pointer && DockPointer.isSessionView(here.viewType);
   const shown = useRef<ViewMode | null>(null);
   if (onScreen) shown.current = live;
+  const mode = onScreen ? live : (shown.current ?? live);
+  // `data-pane-view` pins the pane's TEXT METRICS (styles/index.css) to its own
+  // mode: the document's skin follows the place on screen, and a hidden pane
+  // whose font followed it reflowed — and lost the reader's scroll position.
   return (
-    <PinnedViewModeContext.Provider value={onScreen ? null : (shown.current ?? live)}>{children}</PinnedViewModeContext.Provider>
+    <PinnedViewModeContext.Provider value={onScreen ? null : mode}>
+      <div data-pane-view={mode} className="contents">
+        {children}
+      </div>
+    </PinnedViewModeContext.Provider>
   );
 }
 

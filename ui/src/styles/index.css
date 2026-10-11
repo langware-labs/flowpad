@@ -270,10 +270,20 @@
 
   /* Tight, poster-like display headings — mirrors Lovable's ~-0.025em tracking
      at large sizes. Body text keeps normal tracking. */
-  [data-view='vibe'] h1,
-  [data-view='vibe'] h2,
-  [data-view='vibe'] h3 {
+  [data-view='vibe'] :is(h1, h2, h3):not([data-pane-view]:not([data-pane-view='vibe']) *),
+  [data-pane-view='vibe'] :is(h1, h2, h3) {
     letter-spacing: -0.022em;
+  }
+
+  /* A session pane keeps the text metrics of ITS OWN mode, whatever skin the
+     document wears: panes are kept alive off screen, and one whose font followed
+     the place on screen reflowed there and lost the reader's scroll position. */
+  [data-pane-view]:not([data-pane-view='vibe']) {
+    font-family: theme('fontFamily.sans');
+  }
+  [data-pane-view='vibe'] {
+    font-family:
+      'Plus Jakarta Sans', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
   }
 
   @keyframes view-mode-glow-flicker {
