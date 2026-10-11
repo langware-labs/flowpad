@@ -143,6 +143,12 @@ async function openMatrix(page: Page) {
   await page.goto(
     withViewMode(`/dock/lens/codex/transcript/${SESSION}?transcriptMode=chat`, 'advanced'),
   );
+  // The chat/trace mode chips are an Advanced surface, and Advanced follows the
+  // developer switch (`useIsAdvanced() === useIsDev()`), not `?viewMode=`. Flip
+  // it through the app's own `window.setDev`; the preference is backend-owned,
+  // so it also holds across the reload below.
+  await page.waitForFunction(() => typeof window.setDev === 'function');
+  await page.evaluate(() => window.setDev(true));
 }
 
 test.describe('Codex durable transcript projection', () => {
@@ -189,10 +195,13 @@ test.describe('Codex durable transcript projection', () => {
       'utf8',
     );
     const modeSwitch = readFileSync(join(repo, 'ui/src/components/terminal/interactive-terminal/SessionSurfaceSwitch.tsx'), 'utf8');
-    const toolbar = readFileSync(
-      join(repo, 'ui/src/components/terminal/interactive-terminal/ProcessToolbar.tsx'),
-      'utf8',
-    );
+    // R09: the Codex-specific controls and command rendering. CLI options live
+    // in the debug menu, Session Info in the session actions menu, and both ask
+    // the per-vendor presentation module what a Codex session offers and runs.
+    const interactive = join(repo, 'ui/src/components/terminal/interactive-terminal');
+    const debugMenu = readFileSync(join(interactive, 'DebugMenu.tsx'), 'utf8');
+    const sessionInfo = readFileSync(join(interactive, 'SessionInfoPopover.tsx'), 'utf8');
+    const cliPresentation = readFileSync(join(interactive, 'process-cli-presentation.ts'), 'utf8');
 
     expect(sdk).toMatch(/async switchMode\(\s*mode: WorkerMode\b/);
     expect(sdk).toContain('_pendingTransport');
@@ -206,7 +215,12 @@ test.describe('Codex durable transcript projection', () => {
     expect(terminalPanel).toContain('data-pty-mode');
     expect(modeSwitch).toContain('session-surface-${surface}');
     expect(modeSwitch).toContain('ViewMode.Vibe');
-    expect(toolbar).toContain("if (wt === 'codex') return 'Codex'");
-    expect(toolbar).toContain('permission_mode');
+    expect(cliPresentation).toContain("if (normalized === 'codex') return 'codex'");
+    expect(cliPresentation).toContain("const parts = ['codex']");
+    expect(cliPresentation).toContain("fullTrustFlag: '--dangerously-bypass-approvals-and-sandbox'");
+    expect(sessionInfo).toContain('buildSessionResumeCommand({');
+    expect(sessionInfo).toContain('permission_mode');
+    expect(debugMenu).toContain('getWorkerCliCapabilities(process.worker_type)');
+    expect(debugMenu).toContain('permission_mode');
   });
 });

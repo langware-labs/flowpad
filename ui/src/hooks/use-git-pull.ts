@@ -1,6 +1,10 @@
 import { useCallback, useState } from 'react';
 import { GitWorkdir } from '@sdk';
 import { notifyGitFailure, notifyGitOutcome } from '@src/lib/git-outcome';
+import { prepareProjectAutoLaunch } from '@src/agents/agent-auto-launch';
+import { flushAgentAutoLaunchWarning } from '@src/agents/agent-auto-launch-warning';
+import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { ViewMode } from '@src/contexts/view-mode-context';
 
 export interface UseGitPullResult {
   /** Bring the upstream's commits in (pull --rebase --autostash). */
@@ -20,19 +24,28 @@ export function useGitPull(
   onAfter?: () => void,
 ): UseGitPullResult {
   const [busy, setBusy] = useState(false);
+  const { navigation } = useDockNavigation();
 
   const pull = useCallback(async () => {
     if (!computeNodeId || !workdir || busy) return;
     setBusy(true);
     try {
-      notifyGitOutcome('pull', await new GitWorkdir(workdir, computeNodeId).pull(), workdir);
+      const result = await new GitWorkdir(workdir, computeNodeId).pull();
+      notifyGitOutcome('pull', result, workdir);
+      if (result.refreshError) {
+        notifyGitFailure('pull', new Error(result.refreshError), workdir);
+      } else if (result.ok && result.projectId) {
+        const processId = await prepareProjectAutoLaunch(result.projectId, true);
+        flushAgentAutoLaunchWarning();
+        if (processId) await navigation.openShellProcess(processId, { viewMode: ViewMode.Vibe });
+      }
     } catch (e) {
       notifyGitFailure('pull', e, workdir);
     } finally {
       setBusy(false);
       onAfter?.();
     }
-  }, [computeNodeId, workdir, busy, onAfter]);
+  }, [computeNodeId, workdir, busy, onAfter, navigation]);
 
   return { pull, busy };
 }

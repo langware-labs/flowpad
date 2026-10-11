@@ -93,7 +93,8 @@ async def test_e2b_run_command_accepts_a_flowenv_list(any_provider, compute_prov
     cmd = await provider.run_command(node_id, read_back, background=False, env=_env(FLOWPAD_E2B_PROBE="ok"))
 
     assert cmd.all_stdout.strip() == "ok"
-    assert provider.fake_sandbox.last_command.startswith("FLOWPAD_E2B_PROBE='ok' ")
+    # The value travels in the sandbox's own environment, never in the command string.
+    assert "FLOWPAD_E2B_PROBE=" not in provider.fake_sandbox.last_command
 
 
 @pytest.mark.asyncio

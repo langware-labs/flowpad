@@ -52,8 +52,13 @@ it, never overwrite it.
 | read | `DM ds-rows <ds>` / `DM ds-row <ds> dana` | every row has `key` and `id` |
 | read SOME rows | `DM ds-rows <ds> --match '{"op": "$GE", "operands": ["input.day", "2026-09-01"]}' --order '{"input.day": "desc"}' --limit 50` | a field is a path into the row (`key`, `input.stage`); `total` counts the matches before paging; `problems` is still every broken row |
 | count | `DM ds-count <ds> --match '{"input.stage": "won"}' --group-by input.owner` | `{total, groups: [{by, count}]}` |
+| count per week / people, not rows | `DM ds-count <ds> --group-by week:input.day --week-start sunday --metrics '{"people": "distinct:input.email"}' --order '{"week:input.day": "asc"}'` | buckets `day:` `week:` `month:` `quarter:`; metrics `distinct:` `min:` `max:` `sum:` |
+| read across a link | `DM ds-rows <ds> --match '{"input.persona.icp.key": "fintech"}' --expand input.persona` | a path follows links; `linked` holds the rows `--expand` named |
+| find by text | `DM ds-rows <ds> --q 'pricing objection'` | every word, anywhere in the row |
+| who links to a row | `DM ds-used-by <ds> [key …]` | `[]` = nothing links to it (safe to delete) |
 | create or replace MANY | `DM ds-put-many <ds> '[{"key": "dana", "input": {…}}, …]'` | one step: one row that does not fit writes nothing, named by key |
 | mirror an outside system | `DM ds-sync <ds> '[{"key": …, "input": {…}}, …]' [--match '{…}'] [--no-prune]` | the dataset made to hold exactly these rows → `created / updated / unchanged / deleted`; `--match` prunes only the slice it selects |
+| mirror a data source's items | `DM ds-mirror <ds> <source id> '{"key": "external_id", "input": {"name": "name", "stage": "data.stage"}}'` | each item one typed row; a sync underneath (`--by`, `--no-prune`) |
 | delete MANY | `DM ds-delete <ds> dana eli fay` | one step, all or none; rows deleted together do not hold each other back |
 | rename | `DM ds-rename <ds> dana dana_levi [--expected <version>]` | the id (stored in the row) stays, so links to it hold |
 | delete | `DM ds-delete <ds> dana [--expected <version>]` | refused (409) while another row links to it — re-point or delete that one first; with `--expected`, also when it changed since. A row already gone is 404 (`LookupError`), not 409 — a script that removes rows treats it as done |

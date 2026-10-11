@@ -70,7 +70,9 @@ async def ensure_launched_project(project_id: str, someone_typeid: str | None = 
     # Indexing is idempotent, so every launch makes sure — and says so if it cannot.
     from flow_sdk.builtin.agentic_process.agentic_process import _index_additional_dir  # noqa: PLC0415
 
-    await _index_additional_dir(str(project.fs_storage_mount_path), read_only=True, strict=True)
+    await _index_additional_dir(
+        str(project.fs_storage_mount_path), read_only=True, strict=True, project_id=str(project.id), own=True
+    )
     return project
 
 

@@ -47,8 +47,8 @@ from flow_sdk.cli.commands._common import (
     post_graph_json,
     project_for_path,
 )
-from flow_sdk.schema.data_spec.credential_contract import CredentialRequirement
-from flow_sdk.schema.data_spec.project_setup_spec import input_name
+from flow_sdk.schema.data_spec.credential_status_spec import CredentialStatusRowSpec
+from flow_sdk.schema.data_spec.project_setup_spec import ONE_OF_INPUT, input_name
 from flow_sdk.schema.data_spec.returned_value_spec import ExitCode
 
 credentials_app = typer.Typer(
@@ -206,7 +206,7 @@ def declare_credential(
 def _missing(row: Optional[dict]) -> list[str]:
     if row is None:
         return []
-    return [v["env_var"] for v in row.get("vars") or [] if v.get("required") == CredentialRequirement.MUST and not v.get("present")]
+    return CredentialStatusRowSpec.model_validate(row).missing
 
 
 _DEPLOYMENT = typer.Option("--deployment", help="A deployment id (default: this computer).")
@@ -249,7 +249,13 @@ def from_inputs(name: str, env: Optional[dict[str, str]] = None) -> dict[str, st
 
     env = os.environ if env is None else env
     (prefix,) = input_env({input_name(name, ""): ""})
-    return {key[len(prefix):]: value for key, value in env.items() if key.startswith(prefix) and value}
+    values = {key[len(prefix):]: value for key, value in env.items() if key.startswith(prefix) and value}
+    # A ONE_OF choice arrives as one value, ``<VAR>=<value>`` of the member the person picked. A choice that
+    # closed by itself (a sign-in done in a terminal) carries no pair, and stores nothing.
+    var, picked, value = values.pop(ONE_OF_INPUT, "").partition("=")
+    if picked and var.strip():
+        values[var.strip()] = value
+    return values
 
 
 @credentials_app.command("set")

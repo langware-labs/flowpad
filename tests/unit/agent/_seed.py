@@ -23,10 +23,21 @@ async def seed_project(root: Path, **fields) -> Project:
 
 
 async def seed_agent(root: Path, name: str, *, when: datetime | None = None, **fields) -> Agent:
+    auto_launch = fields.pop("auto_launch", False)
     agent = Agent(name=name, asset_ref=str(root / "agentic-assets" / "agent" / name), **fields)
     if when is not None:
         agent.created_date = when  # preserved by the driver: only None is stamped
     await agent.save()
+    if auto_launch:
+        # Seed an imported document, including intentional legacy ambiguity.
+        # Ordinary authored saves now enforce one auto-launch selection.
+        from flow_sdk.assets.document import DocumentPatch, update_document
+        from flow_sdk.fs_store.reindex import reindex_paths
+
+        main = Path(agent.asset_ref) / "agent.json"
+        update_document(main, DocumentPatch(set_fields={"auto_launch": True}))
+        await reindex_paths([str(main)], mint=False)
+        agent = await Agent.get_by_id(agent.id)
     return agent
 
 

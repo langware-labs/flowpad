@@ -75,8 +75,9 @@ _READ: dict[Path, _Read] = {}
 _PENDING: dict[str, Path] = {}
 #: tag -> the folder that defines it (a second folder for the same tag is an error).
 _OWNER: dict[str, Path] = {}
-#: folder -> (the text it was built from, the class built -- None for a documentation node).
-_BUILT: dict[Path, tuple[str, Optional[type]]] = {}
+#: folder -> (the text it was built from, the class built -- None for a documentation node, and
+#: the classes it INCLUDED: a change to one of those rebuilds this one too).
+_BUILT: dict[Path, tuple[str, Optional[type], tuple]] = {}
 #: folder -> why it did not register ("" when it did).
 _ERRORS: dict[Path, str] = {}
 _BUILDING: set[str] = set()
@@ -274,11 +275,11 @@ def _build(folder: Path) -> Optional[type]:
     """Compile and register ONE folder; dependencies first. Raises ``DeclareError``."""
     read = _read(folder)
     built = _BUILT.get(folder)
-    if built is not None and built[0] == read.source:
+    if built is not None and built[0] == read.source and all(DataSpec.parse(k) is c for k, c in built[2]):
         return built[1]
     doc, tag = read.doc, read.tag
     if doc.resolved_subkind is None:
-        _BUILT[folder] = (read.source, None)
+        _BUILT[folder] = (read.source, None, ())
         return None  # a documentation node: it names no shape, so it registers nothing
     owner = _OWNER.get(tag)
     if owner is not None and owner.resolve() != folder.resolve():
@@ -289,6 +290,31 @@ def _build(folder: Path) -> Optional[type]:
     record = doc.resolved_subkind == "record"
     raw = {name: f.shape for name, f in (doc.fields or {}).items()} if record else dict(doc.examples or {})
     forms = {name: _qualify(_normalize_form(form), read.ns, tag) for name, form in raw.items()}
+    # What this record INCLUDES: other records' fields, rules and owners, as if written here. Each is
+    # built first; a field named on both sides is refused (an include never silently overrides).
+    included: list[tuple[str, type]] = []
+    inherited: dict[str, tuple[Any, str]] = {}   # field -> (form, description)
+    owners: dict[str, str] = {name: f.owned_by for name, f in (doc.fields or {}).items() if f.owned_by} if record else {}
+    rules = list(doc.rules or ())
+    for name in (doc.include or ()) if record else ():
+        kind = _qualify(name, read.ns, tag)
+        if kind == tag or kind in _BUILDING:
+            raise DeclareError(f"kind {tag!r} and {kind!r} include each other")
+        if kind in _PENDING:
+            _build_pending(kind)
+        base = DataSpec.parse(kind)
+        if base is Any or not isinstance(getattr(base, "__authoring__", None), dict) or "examples" in base.__authoring__:
+            raise DeclareError(f"include {name!r}: no record kind of that name is defined")
+        included.append((kind, base))
+        for field_name, form in base.__authoring__.items():
+            if field_name in forms or field_name in inherited:
+                raise DeclareError(f"field {field_name!r} is defined here and by the included {name!r}: keep one")
+            inherited[field_name] = (form, base.model_fields[field_name].description or "")
+        owners.update(getattr(base, "__owned__", None) or {})
+        rules = list(getattr(base, "__rules__", None) or ()) + rules
+    described = {name: (f.description or None) for name, f in (doc.fields or {}).items()} if record else {}
+    described.update({name: (text or None) for name, (_, text) in inherited.items()})
+    forms = {**{name: form for name, (form, _) in inherited.items()}, **forms}
 
     # Build what this one names before compiling it, so no reference resolves to Any.
     for ref in {r for form in forms.values() for r in kinds_named(form)}:
@@ -311,7 +337,7 @@ def _build(folder: Path) -> Optional[type]:
             if record:
                 base: Any = DataSpec
                 members = {
-                    name: (annotation, Field(default, description=(doc.fields or {})[name].description or None))
+                    name: (annotation, Field(default, description=described.get(name)))
                     for name, (annotation, default) in defs.items()
                 }
             else:
@@ -327,10 +353,20 @@ def _build(folder: Path) -> Optional[type]:
                 # builder reads; ``to_authoring_form`` still renders the class as its tag.
                 __authoring__=(ClassVar[Any], forms),
                 # Rules across rows (``flow_sdk.datasets.rules``), their paths checked below.
-                __rules__=(ClassVar[Any], tuple(doc.rules or ())),
+                __rules__=(ClassVar[Any], tuple(rules)),
+                # Fields that are a copy of an outside system's: {field: owner} (``owned_by``).
+                __owned__=(ClassVar[Any], dict(owners)),
                 **members,
             )
-        for rule in doc.rules or ():
+        for rule in rules:
+            if rule.unique is not None:
+                missing = [f for f in rule.unique if f not in forms]
+                if missing:
+                    raise DeclareError(f"rule unique {rule.unique}: no field {missing[0]!r} here")
+                listed = [f for f in rule.unique if isinstance(forms[f], (list, dict))]
+                if listed:
+                    raise DeclareError(f"rule unique {rule.unique}: {listed[0]!r} holds several values -- a unique field holds one")
+                continue
             ends = [_path_kinds(forms, path) for path in rule.same]
             if not ends[0] & ends[1]:
                 raise DeclareError(f"rule {rule.same}: {rule.same[0]!r} names a {sorted(ends[0])} row, "
@@ -342,7 +378,7 @@ def _build(folder: Path) -> Optional[type]:
     finally:
         _BUILDING.discard(tag)
     _OWNER[tag] = folder
-    _BUILT[folder] = (read.source, cls)
+    _BUILT[folder] = (read.source, cls, tuple(included))
     return cls
 
 

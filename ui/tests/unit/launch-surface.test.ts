@@ -61,8 +61,8 @@ describe('the app', () => {
   });
 
   it('the agent auto-launch and a session adopted into a terminal carry it', () => {
-    const redirect = readFileSync(join(SRC, 'agents/agent-auto-launch-redirect.ts'), 'utf-8');
-    expect(redirect).toMatch(/AGENT_AUTO_LAUNCH_ENDPOINT,\s*\{[^}]*\.\.\.launchSurfaceField\(\)/s);
+    const launch = readFileSync(join(SRC, 'agents/agent-auto-launch.ts'), 'utf-8');
+    expect(launch).toMatch(/AGENT_AUTO_LAUNCH_ENDPOINT,\s*\{[^}]*\.\.\.launchSurfaceField\(\)/s);
     const process = readFileSync(join(SDK, 'process/agentic-process.ts'), 'utf-8');
     const adopt = process.slice(process.indexOf('static async getByWorkerId'));
     expect(adopt.slice(0, adopt.indexOf('callAction'))).toContain('launchSurfaceField()');

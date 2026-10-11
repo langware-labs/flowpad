@@ -5,8 +5,8 @@ import { Badge } from '../ui/badge';
 
 /**
  * A credential's (or one variable's) `required`: `MUST` — the project does not work
- * without it — or `OPTIONAL`. The word is the enum value itself, so the chip reads
- * the same as the manifest.
+ * without it — `ONE_OF` — one of the variables wearing it is enough — or `OPTIONAL`.
+ * The word is the enum value itself, so the chip reads the same as the manifest.
  */
 export function RequirementChip({
   required,
@@ -19,15 +19,26 @@ export function RequirementChip({
 }) {
   const { t } = useLingui();
   const must = required === CredentialRequirement.MUST;
+  const oneOf = required === CredentialRequirement.ONE_OF;
   return (
     <Badge
       variant="outline"
       data-testid={testId}
       data-required={required}
-      title={must ? t`The project does not work without it` : t`Turns a feature or an integration on`}
+      title={
+        must
+          ? t`The project does not work without it`
+          : oneOf
+            ? t`One of these is enough`
+            : t`Turns a feature or an integration on`
+      }
       className={cn(
         'h-[18px] shrink-0 px-1.5 text-[10px] font-medium tracking-wide',
-        must ? 'border-amber-500/50 text-amber-700 dark:text-amber-400' : 'text-muted-foreground',
+        must
+          ? 'border-amber-500/50 text-amber-700 dark:text-amber-400'
+          : oneOf
+            ? 'border-dashed border-amber-500/50 text-amber-700 dark:text-amber-400'
+            : 'text-muted-foreground',
         className,
       )}
     >

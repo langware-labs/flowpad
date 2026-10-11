@@ -8,26 +8,25 @@ what a Windows node runs), and by counting what reached the node.
 """
 
 import subprocess
-import types
 from pathlib import Path
 
 import pytest
 
 from flow_sdk.builtin.faas.git_repo import GitRepo, _split_sections
+from tests.unit.conftest import LocalNode  # noqa: E402
 
 
-class CountingNode:
-    """Runs each shell string locally, like a POSIX compute node, and keeps them."""
-
-    compute_provider = None
+class CountingNode(LocalNode):
+    """The shared ``LocalNode`` (a POSIX compute node, run here), keeping each command it was sent."""
 
     def __init__(self) -> None:
         self.commands: list[str] = []
+        self.envs: list[dict[str, str]] = []
 
-    async def run_command(self, command: str, background: bool = False):
+    async def run_command(self, command: str, background: bool = False, env=None):
         self.commands.append(command)
-        p = subprocess.run(["/bin/sh", "-c", command], capture_output=True, text=True)
-        return types.SimpleNamespace(all_stdout=p.stdout, all_stderr=p.stderr, exit_code=p.returncode)
+        self.envs.append({pair.name: pair.value for pair in env or ()})
+        return await super().run_command(command, background=background, env=env)
 
     async def exists(self, path: str) -> bool:
         return Path(path).exists()
@@ -111,7 +110,7 @@ async def test_a_dirty_tree_is_read_in_two_invocations_and_answers_what_git_says
     assert (status.remote_url, status.remote_web_url) == ("https://github.com/org/repo.git", "https://github.com/org/repo")
     # One script for status + remote + tracked counts, one for the untracked files.
     assert (len(node.commands), len(old_node.commands)) == (2, 8)
-    assert all("LC_ALL='C'" in c and "GIT_TERMINAL_PROMPT='0'" in c for c in node.commands)
+    assert all(env.get("LC_ALL") == "C" and env.get("GIT_TERMINAL_PROMPT") == "0" for env in node.envs)
     # The real index is untouched and no throwaway file outlives the call.
     assert _git(repo, "status", "--porcelain=v1") == porcelain_before
     assert not list((repo / ".git").glob("flowpad-status-*"))

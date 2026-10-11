@@ -38,6 +38,7 @@ from pydantic import ConfigDict, model_validator
 from flow_sdk._compat import StrEnum
 from flow_sdk.schema.data_spec._form import ShapeForm
 from flow_sdk.schema.data_spec._types import NonBlank
+from flow_sdk.schema.data_spec.compute_op_spec import AskItemSpec
 from flow_sdk.schema.data_spec.returned_value_spec import WizardResult
 from flow_sdk.schema.data_spec.spec import DataSpec
 
@@ -49,6 +50,10 @@ ON_FAIL_CONTINUE = "continue"
 #: ``decision`` op that found nothing to do.
 ON_FAIL_STOP = "stop"
 ON_FAIL_VALUES = (ON_FAIL_ABORT, ON_FAIL_CONTINUE, ON_FAIL_STOP)
+
+#: The step id a wizard's ``exit_error`` op answers under in ``WizardResult.steps``. Reserved:
+#: no step may take it.
+EXIT_ERROR_STEP = "exit_error"
 
 
 class StepKind(StrEnum):
@@ -101,6 +106,11 @@ class WizardStepSpec(DataSpec):
     #: (``{"TEAM": "billing"}``), else it is passed as not applicable. An equality on
     #: values already in scope, like ``args``: never a template, never an expression.
     when: dict[str, str] = {}
+    #: A person who DECLINES this step's question has left the run unfinished: the step fails and
+    #: ``on_fail`` decides what follows. ``False``: a decline is an answer — the wizard that holds
+    #: the declined question stops there quietly, as ``on_fail: stop`` would, and whoever called it
+    #: carries on. On a ``wizard`` step it covers every question underneath.
+    required: bool = True
 
     @model_validator(mode="after")
     def _legal(self) -> "WizardStepSpec":
@@ -161,7 +171,16 @@ class WizardSpec(DataSpec):
     agent: str = ""
     #: The shape this wizard RETURNS, in the authoring form.
     output: Optional[ShapeForm] = None
+    #: A ComputeOp called ONCE when the run ends in error — a step failed, a goal stayed unmet, a
+    #: person declined a required question, a callee was refused. It is told what went wrong
+    #: (``error_step`` / ``error_detail`` in its scope) and answers under the step id
+    #: ``exit_error``; the run's own verdict stays what it was. Empty: nothing runs.
+    exit_error: str = ""
     steps: list[WizardStepSpec] = []
+
+    @property
+    def display_label(self) -> str:
+        return self.label or self.name or "wizard"
 
     @model_validator(mode="after")
     def _conversational_or_stepped(self) -> "WizardSpec":
@@ -179,7 +198,30 @@ class WizardSpec(DataSpec):
             )
         if not self.agent and not self.steps:
             raise ValueError(f"wizard {self.name!r} declares neither an agent nor any steps, so nothing can run it")
+        if any(step.id == EXIT_ERROR_STEP for step in self.steps):
+            raise ValueError(
+                f"wizard {self.name!r}: {EXIT_ERROR_STEP!r} is the id the exit_error op answers under, "
+                "so no step may take it"
+            )
         return self
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# What a run NEEDS from a person, known before it starts (``core/wizard/plan``).
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class WizardPlanSpec(DataSpec):
+    """Everything one run will ask a person — approvals and values — read off the wizard before
+    anything runs, in the order it would have asked, so all of it can be asked at once."""
+
+    spec_kind: ClassVar[str] = "wizard.plan"
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    needs: list[AskItemSpec] = []
+    #: How long the list waits: as long as its most patient question would have — ``None`` (no
+    #: deadline) when any of them has none.
+    timeout_seconds: Optional[float] = None
 
 
 # ─────────────────────────────────────────────────────────────────────────────

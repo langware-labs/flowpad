@@ -16,6 +16,8 @@ from typing import ClassVar, Optional
 from pydantic import ConfigDict
 
 from flow_sdk.schema.data_spec.asset_setup_spec import SetupSkipSpec
+from flow_sdk.schema.data_spec.credential_contract import CredentialRequirement, CredentialVarKind, Requirement
+from flow_sdk.schema.data_spec.credential_status_spec import group_held
 from flow_sdk.schema.data_spec.spec import DataSpec
 
 REQUIREMENT_PACK = "pack"
@@ -35,6 +37,11 @@ def input_name(credential: str, env_var: str) -> str:
     return f"{credential}__{env_var}"
 
 
+#: The wizard value a ONE_OF choice is bound to (``input_name(credential, ONE_OF_INPUT)``): the answer
+#: ``<VAR>=<value>`` of the one member the person picked. Never a variable's own name.
+ONE_OF_INPUT = "__ONE_OF__"
+
+
 class SetupVarSpec(DataSpec):
     """One value a pack needs, as the person is asked for it."""
 
@@ -50,6 +57,15 @@ class SetupVarSpec(DataSpec):
     #: The value is a file's content (a key file) — asked with a file picker, kept as a file.
     file: bool = False
     present: bool = False
+    #: ``ONE_OF``: one way among the requirement's other ONE_OF values — asked as one choice.
+    required: Requirement = CredentialRequirement.MUST
+    kind: CredentialVarKind = CredentialVarKind.TEXT
+    #: cli: the command a person runs on this computer to sign in.
+    login: str = ""
+
+    @property
+    def is_one_of(self) -> bool:
+        return self.required is CredentialRequirement.ONE_OF
 
 
 class SetupRequirementSpec(DataSpec):
@@ -100,7 +116,10 @@ class SetupRequirementSpec(DataSpec):
 
     @property
     def missing(self) -> list[SetupVarSpec]:
-        return [v for v in self.vars if not v.present]
+        """What is still to provide: every absent value, and of a ONE_OF group its members only while
+        none of them is there (any one settles it)."""
+        held = group_held(self.vars)
+        return [v for v in self.vars if not v.present and not (v.is_one_of and held)]
 
     @property
     def is_oauth(self) -> bool:
