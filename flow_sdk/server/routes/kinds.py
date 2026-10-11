@@ -22,6 +22,7 @@ from fastapi import APIRouter, Body
 from fastapi.responses import JSONResponse
 
 from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccessResponse
+from flow_sdk.schema.data_spec.kind_form import kind_form
 from flow_sdk.schema.data_spec.webapp_spec import ViewShape
 
 router = APIRouter()
@@ -32,43 +33,6 @@ def _fail(message: str, status_code: int) -> JSONResponse:
     the graph dispatcher applies ``status_code``), and the SDK client unwraps a 200 to ``data`` --
     so a 404 must be a real 404, or the caller reads "no such kind" as a null answer."""
     return JSONResponse(status_code=status_code, content=ApiFailResponse(message=message).model_dump())
-
-
-def kind_form(kind: str) -> dict | None:
-    """``{kind, fields: {name: {shape, description, required}}, rules: [{same, description}]}`` -- or,
-    for a dataset kind, its example ``slots``. None when nothing registers ``kind``."""
-    from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
-    from flow_sdk.schema.data_spec.dataset_spec import DatasetSpec  # noqa: PLC0415
-    from flow_sdk.schema.data_spec.spec import NoAuthoringForm, to_authoring_form  # noqa: PLC0415
-    from flow_sdk.schema.data_spec.value_ref import kind_of  # noqa: PLC0415
-
-    kind = kind_of(kind)  # a reference to one value has its kind's form
-    shape = SchemaRegistry.kind_type(kind)
-    if not isinstance(shape, type) or not hasattr(shape, "model_fields"):
-        return None
-    if issubclass(shape, DatasetSpec):
-        row = shape.example_type()
-        slots = {"input": row.input_type(), "output": row.output_type(), "context": row.context_type()}
-        return {
-            "kind": kind,
-            "subkind": "dataset",
-            "slots": {k: to_authoring_form(v) for k, v in slots.items() if v is not None and v.model_fields},
-        }
-    # A schema a data schema FOLDER defines keeps the forms its author wrote (``enum:``, ``?``).
-    authored = getattr(shape, "__authoring__", None) or {}
-    fields = {}
-    for name, field in shape.model_fields.items():
-        form = authored.get(name)
-        if form is None:
-            try:
-                form = to_authoring_form(field.annotation)
-            except NoAuthoringForm:
-                form = None
-        fields[name] = {"shape": form, "description": field.description or "", "required": field.is_required()}
-    from flow_sdk.datasets.rules import rules_of  # noqa: PLC0415
-
-    rules = [rule.model_dump(mode="json") for rule in rules_of(shape)]
-    return {"kind": kind, "subkind": "record", "description": shape.__doc__ or "", "fields": fields, "rules": rules}
 
 
 @router.get("/api/v1/kinds/{kind}", response_model=None)
@@ -202,38 +166,35 @@ async def kind_datasets(kind: str, project: str = "") -> ApiResponse | JSONRespo
     rows of ``kind`` (``Dataset.for_kind``'s own reading), once per folder -- so a stale index
     entry never makes this answer differ from the Python lookup."""
     from flow_sdk.builtin.dataset import Dataset  # noqa: PLC0415
-    from flow_sdk.datasets.links import row_kind  # noqa: PLC0415
-    from flow_sdk.datasets.schema_tree import held_on_disk  # noqa: PLC0415
+    from flow_sdk.datasets.links import datasets_holding, row_kind  # noqa: PLC0415
     from flow_sdk.db.drivers.query import QueryFilter  # noqa: PLC0415
 
     if project:
         kind = _qualified(kind, await _project_root(project))
     candidates = [d for d in await Dataset.get_all(QueryFilter(type=Dataset.get_type()))
                   if row_kind(d.spec) == kind and (not project or d.project_id == project)]
-    found = await asyncio.to_thread(held_on_disk, kind, candidates)
+    found = await asyncio.to_thread(datasets_holding, kind, candidates)
     return ApiSuccessResponse(data={"datasets": [
         {"id": d.id, "name": d.name, "title": d.title, "project_id": d.project_id, "asset_ref": d.asset_ref}
         for d in found]})
 
 
 @router.get("/api/v1/kinds", response_model=None)
-async def project_kinds(project: str) -> ApiResponse | JSONResponse:
-    """The schemas ``project`` defines, as one tree (a ``schema.tree`` value): each kind with its
-    fields, the kinds they name (linked, or held inside the row) and the dataset that keeps its
-    rows; 404 when no project has that id."""
+async def project_schemas(project: str) -> ApiResponse | JSONResponse:
+    """The schemas ``project`` defines, as one tree (a ``schema.tree`` value): each with its fields,
+    the kinds they name (linked, or held inside the row) and the dataset that keeps its rows; 404
+    when no project has that id."""
     from flow_sdk.builtin.dataset import Dataset  # noqa: PLC0415
     from flow_sdk.datasets.schema_tree import schema_tree  # noqa: PLC0415
-    from flow_sdk.db.drivers.query import QueryFilter  # noqa: PLC0415
-    from flow_sdk.fs_store.operations.all_projects import get_cached_projects  # noqa: PLC0415
+    from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp  # noqa: PLC0415
+    from flow_sdk.fs_store.indexer.roots import load_project_mounts  # noqa: PLC0415
 
     root, missing = await _root_or_404(project)
     if missing:
         return missing
-    datasets = [d for d in await Dataset.get_all(QueryFilter(type=Dataset.get_type())) if d.project_id == project]
-    # The canonical project list (cached), not a walk of every Project row.
-    roots = {Path(p.fs_storage_mount_path).resolve(): p.id
-             for p in await get_cached_projects() if getattr(p, "fs_storage_mount_path", None)}
-    tree = await asyncio.to_thread(schema_tree, project, root, datasets, roots)
+    datasets = await Dataset.get_all(
+        QueryFilter(type=Dataset.get_type(), match=ExpressionNode(op=QueryOp.EQ, operands=["project_id", project])))
+    tree = await asyncio.to_thread(schema_tree, root, datasets, await load_project_mounts())
     return ApiSuccessResponse(data=tree.model_dump(mode="json"))
 
 
@@ -247,14 +208,14 @@ async def get_value(ref: str, within: str) -> ApiResponse:
 
     parsed = parse_ref(ref)
     if parsed is None:
-        return ApiFailResponse(message=f"{ref!r} is not a reference ('<kind>.id.<uuid>')", status_code=400)
+        return _fail(f"{ref!r} is not a reference ('<kind>.id.<uuid>')", 400)
     owner = await Entity.get_by_typeid(within)
     if owner is None or not getattr(owner, "asset_ref", None):
-        return ApiFailResponse(message=f"no {within} to look in", status_code=404)
+        return _fail(f"no {within} to look in", 404)
     try:
         value = await asyncio.to_thread(resolve_ref, ref, store_of(Path(str(owner.asset_ref))))
     except LookupError as exc:
-        return ApiFailResponse(message=str(exc), status_code=404)
+        return _fail(str(exc), 404)
     return ApiSuccessResponse(data={"kind": parsed[0], "id": parsed[1], "ref": ref, "value": value.model_dump(mode="json")})
 
 
@@ -265,7 +226,7 @@ async def get_editors(typeid: str) -> ApiResponse:
 
     subject = await Entity.get_by_typeid(typeid)
     if subject is None:
-        return ApiFailResponse(message=f"no {typeid}", status_code=404)
+        return _fail(f"no {typeid}", 404)
     return ApiSuccessResponse(data=await editors_for(subject))
 
 
@@ -278,5 +239,5 @@ async def get_viewers(kind: str, shape: ViewShape = "single", within: str = "") 
     try:
         normalize_kind(kind)
     except ValueError as exc:  # a malformed kind (``*`` is a viewer's wildcard, not a kind) is the caller's
-        return ApiFailResponse(message=f"{kind!r} is not a kind: {exc}", status_code=400)
+        return _fail(f"{kind!r} is not a kind: {exc}", 400)
     return ApiSuccessResponse(data=await viewers_for(kind, shape, within or None))

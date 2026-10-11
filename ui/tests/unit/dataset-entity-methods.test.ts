@@ -4,8 +4,10 @@
  * "examples is not a function" -- found in the browser, pinned here.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { ConnectionManager, DATASET_ROWS_CHANGED, Dataset, EventBus, dataManager } from '@sdk';
+import { ConnectionManager, DATASET_ROWS_CHANGED, DataSource, Dataset, EventBus, dataManager } from '@sdk';
+import type { CheckDetail } from '@sdk/entities/dataset';
 import { ExpressionNode } from '@sdk/FlowSync/query';
+import type { KindForm, KindRule } from '@sdk/viewers/contract';
 
 describe('a dataset built from a wire row keeps its actions', () => {
   it('a wire `examples` field does not hide listing the examples', () => {
@@ -169,5 +171,187 @@ describe('hearing that rows changed', () => {
 
   it('names the tag the server emits', () => {
     expect(DATASET_ROWS_CHANGED).toBe('dataset.rows.changed');
+  });
+});
+
+/** A field an outside system owns (`owned_by` in the schema) is set only by a writer that says it
+ *  writes as that owner: `by` travels on every write and on `check`, and only when given. */
+describe('writing as the owner of outside-owned fields', () => {
+  const ds = () => new Dataset({ id: '6d1a2b3c-4d5e-4f6a-8b7c-9d0e1f2a3b4c', name: 'n' } as never);
+  const rows = [{ key: 'a', input: { name: 'A' } }];
+  let call: ReturnType<typeof vi.spyOn>;
+  const body = (n = 0) => (call.mock.calls[n][0] as { bodyParameters: Record<string, unknown> }).bodyParameters;
+
+  beforeEach(() => {
+    call = vi.spyOn(dataManager, 'callAction').mockResolvedValue({} as never);
+  });
+  afterEach(() => vi.restoreAllMocks());
+
+  it('put, putMany, sync, append and check carry `by` when given', async () => {
+    await ds().put('a', { input: { name: 'A' } }, { expected: 'v1', by: 'crm' });
+    await ds().putMany(rows, { by: 'crm' });
+    await ds().sync(rows, { prune: false, by: 'crm' });
+    await ds().append(rows, { by: 'crm' });
+    await ds().check({ key: 'a', input: { name: 'A' } }, { by: 'crm' });
+    expect(body(0)).toEqual({ key: 'a', row: { input: { name: 'A' } }, expected: 'v1', by: 'crm' });
+    expect(body(1)).toEqual({ rows, by: 'crm' });
+    expect(body(2)).toEqual({ rows, prune: false, by: 'crm' });
+    expect(body(3)).toEqual({ rows, by: 'crm' });
+    expect(body(4)).toEqual({ row: { key: 'a', input: { name: 'A' } }, by: 'crm' });
+  });
+
+  it('an app editing its own fields sends no `by`', async () => {
+    await ds().put('a', { input: { name: 'A' } });
+    await ds().putMany(rows);
+    await ds().sync(rows);
+    await ds().append(rows);
+    await ds().check({ input: { name: 'A' } });
+    for (let n = 0; n < 5; n++) expect(body(n)).not.toHaveProperty('by');
+  });
+
+  it('a refusal says which field is owned, and by whom', async () => {
+    const refusal = {
+      response: { status: 400, data: { data: { details: [{ path: 'input.stage', code: 'owned', owned_by: 'crm', message: 'stage is owned by crm' }] } } },
+    };
+    call.mockRejectedValue(refusal as never);
+    const caught = await ds()
+      .put('a', { input: { stage: 'won' } })
+      .catch((error: typeof refusal) => error);
+    const detail: CheckDetail = (caught as typeof refusal).response.data.data.details[0];
+    expect([detail.code, detail.owned_by]).toEqual(['owned', 'crm']);
+  });
+});
+
+/** What a kind's form says beyond shapes: who owns a field, and the rules across rows. */
+describe('a kind form carries owners and both kinds of rule', () => {
+  it('a field may name its owner; a rule is `same` or `unique`', () => {
+    const form: KindForm = {
+      kind: '--acme--.crm.deal',
+      subkind: 'record',
+      fields: { stage: { shape: 'enum:open|won', required: true, owned_by: 'crm' }, notes: { shape: '?string' } },
+      rules: [
+        { same: ['persona.icp', 'icp'], description: '' },
+        { unique: ['crm_id'], description: 'one row per CRM record' },
+      ],
+    };
+    const readOnly = Object.entries(form.fields ?? {}).filter(([, field]) => field.owned_by).map(([name]) => name);
+    const unique = (form.rules ?? []).flatMap((rule: KindRule) => rule.unique ?? []);
+    expect(readOnly).toEqual(['stage']);
+    expect(unique).toEqual(['crm_id']);
+  });
+});
+
+/** Reads that cross links, count more than rows, and read text — each option reaches the server
+ *  exactly as `Dataset._query_params` reads it. */
+describe('asking more of rows and count', () => {
+  const ds = () => new Dataset({ id: '6d1a2b3c-4d5e-4f6a-8b7c-9d0e1f2a3b4c', name: 'n' } as never);
+  let call: ReturnType<typeof vi.spyOn>;
+  const sent = (n = 0) => call.mock.calls[n][0] as { name: string; method: string; queryParameters: Record<string, string> };
+
+  beforeEach(() => {
+    call = vi.spyOn(dataManager, 'callAction').mockResolvedValue({} as never);
+  });
+  afterEach(() => vi.restoreAllMocks());
+
+  it('rows() sends link paths to expand inside the filter, and q beside it', async () => {
+    await ds().rows({ match: { 'input.persona.icp.key': 'fintech' }, expand: ['input.persona', 'input.messages.*'], q: 'pricing objection' });
+    expect(JSON.parse(sent().queryParameters.filter)).toEqual({
+      match: { 'input.persona.icp.key': 'fintech' },
+      expand: ['input.persona', 'input.messages.*'],
+    });
+    expect(sent().queryParameters.q).toBe('pricing objection');
+  });
+
+  it('a join on a value travels as a sub-query the server answers', async () => {
+    const replied = { op: '$PROP', operands: ['input.email', { 'input.metric': 'em_reply' }] };
+    const match = { op: '$AND', operands: [{ 'input.metric': 'em_mtg' }, { op: '$IN', operands: ['input.email', replied] }] };
+    await ds().rows({ match: match as never });
+    expect(JSON.parse(sent().queryParameters.filter)).toEqual({ match });
+    await ds().rows({ match: new ExpressionNode(match) });                       // ... and as an ExpressionNode
+    expect(JSON.parse(sent(1).queryParameters.filter).match.operands[1].operands[1]).toEqual({
+      op: '$PROP',
+      operands: ['input.email', { op: '$EQ', operands: ['input.metric', 'em_reply'] }],
+    });
+  });
+
+  it('rows() answers the linked rows the server put beside', async () => {
+    const linked = { 'crm.co.id.1': { dataset_id: 'd', key: 'acme', row: { key: 'acme', input: { name: 'Acme' } } } };
+    call.mockResolvedValue({ rows: [], total: 0, problems: [], linked } as never);
+    expect((await ds().rows({ expand: ['input.company'] })).linked).toEqual(linked);
+  });
+
+  it('a blank q and an empty expand are not sent', async () => {
+    await ds().rows({ q: '   ', expand: [] });
+    expect(sent().queryParameters).toEqual({});
+  });
+
+  it('count() sends buckets, metrics, order and the week start', async () => {
+    await ds().count({
+      match: { 'input.metric': 'em_reply' },
+      q: 'levi',
+      group_by: ['week:input.day', 'input.metric'],
+      metrics: { people: 'distinct:input.email', first: 'min:input.day' },
+      order_by: { 'week:input.day': 'asc' },
+      week_start: 'sunday',
+    });
+    const p = sent().queryParameters;
+    expect(sent().name).toBe('count');
+    expect(JSON.parse(p.filter)).toEqual({ match: { 'input.metric': 'em_reply' } });
+    expect(p.q).toBe('levi');
+    expect(JSON.parse(p.group_by)).toEqual(['week:input.day', 'input.metric']);
+    expect(JSON.parse(p.metrics)).toEqual({ people: 'distinct:input.email', first: 'min:input.day' });
+    expect(JSON.parse(p.order_by)).toEqual({ 'week:input.day': 'asc' });
+    expect(p.week_start).toBe('sunday');
+  });
+
+  it('count() with only a match sends nothing else', async () => {
+    await ds().count({ match: { 'input.metric': 'em_sent' } });
+    expect(Object.keys(sent().queryParameters)).toEqual(['filter']);
+  });
+
+  it('usedBy() asks who links to the rows, and answers the map', async () => {
+    const used_by = { acme: [{ dataset_id: 'd', kind: 'crm.lead', key: 'dana' }], bolt: [] };
+    call.mockResolvedValue({ used_by } as never);
+    expect(await ds().usedBy(['acme', 'bolt'])).toEqual(used_by);
+    expect([sent().name, sent().method, sent().queryParameters]).toEqual(['used-by', 'GET', { keys: 'acme,bolt' }]);
+    await ds().usedBy();
+    expect(sent(1).queryParameters).toEqual({});
+  });
+});
+
+/** A system of record through a data source: its items mirrored as typed rows, and an app-owned
+ *  field written back through the source's driver — never a client or a key in the frame. */
+describe('mirroring a data source and writing back through it', () => {
+  let call: ReturnType<typeof vi.spyOn>;
+  const sent = (n = 0) => call.mock.calls[n][0] as { name: string; method: string; bodyParameters: Record<string, unknown> };
+
+  beforeEach(() => {
+    call = vi.spyOn(dataManager, 'callAction').mockResolvedValue({} as never);
+  });
+  afterEach(() => vi.restoreAllMocks());
+
+  it('mirror() posts the source and the map; by / prune / match only when given', async () => {
+    const ds = new Dataset({ id: '6d1a2b3c-4d5e-4f6a-8b7c-9d0e1f2a3b4c', name: 'n' } as never);
+    const map = { key: 'external_id', input: { name: 'name', stage: 'data.stage' } };
+    await ds.mirror('src-1', map);
+    expect([sent().name, sent().method, sent().bodyParameters]).toEqual(['mirror', 'POST', { source_id: 'src-1', map }]);
+    await ds.mirror('src-1', map, { by: 'crm', prune: false, match: { 'input.source': 'crm' } });
+    expect(sent(1).bodyParameters).toEqual({ source_id: 'src-1', map, by: 'crm', prune: false, match: { 'input.source': 'crm' } });
+  });
+
+  it('updateItem() and deleteItem() ask the source to write to its own system', async () => {
+    const source = new DataSource({ id: '7e2b3c4d-5e6f-4a7b-9c8d-0e1f2a3b4c5d', name: 'CRM' } as never);
+    const answer = { item_id: 'i1', origin: { kind: 'record', namespace: 'crm', key: 'OPP-1' }, status: 'updated' };
+    call.mockResolvedValue(answer as never);
+    expect(await source.updateItem('i1', { gtmPersona: 'cfo' })).toEqual(answer);
+    expect([sent().name, sent().bodyParameters]).toEqual(['update_item', { item_id: 'i1', changes: { gtmPersona: 'cfo' } }]);
+    await source.deleteItem('i1');
+    expect([sent(1).name, sent(1).bodyParameters]).toEqual(['delete_item', { item_id: 'i1' }]);
+  });
+
+  it('a refused write-back reaches the caller (a read-only source, a driver that cannot)', async () => {
+    const refusal = { response: { status: 403, data: { message: 'this source is read-only' } } };
+    call.mockRejectedValue(refusal as never);
+    await expect(new DataSource({ id: '7e2b3c4d-5e6f-4a7b-9c8d-0e1f2a3b4c5d', name: 'CRM' } as never).updateItem('i1', { x: 1 })).rejects.toBe(refusal);
   });
 });

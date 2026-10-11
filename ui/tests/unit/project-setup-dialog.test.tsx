@@ -187,6 +187,42 @@ describe('ProjectSetupDialog — skipping', () => {
 });
 
 describe('ProjectSetupDialog — a credential says what it is needed for', () => {
+  it('names an either-or group of missing values as "A or B", the rest by commas', async () => {
+    const [key] = NOT_READY.to_do[0].vars;
+    await open({
+      ...NOT_READY,
+      to_do: [
+        req({
+          vars: [
+            { ...key, env_var: 'GCP_PROJECT', label: 'Project', file: false, required: 'MUST', kind: 'text', login: '' },
+            { ...key, required: 'ONE_OF', kind: 'file', login: '' },
+            { ...key, env_var: 'GCLOUD_ADC', label: 'gcloud sign-in', file: false, required: 'ONE_OF', kind: 'cli', login: 'gcloud auth application-default login' },
+          ],
+        }),
+      ],
+    });
+    expect(screen.getByTestId('project-setup-req-google-cloud')).toHaveTextContent('Project, Service account key or gcloud sign-in');
+  });
+
+  it('a group with one member present is not missing', async () => {
+    const [key] = NOT_READY.to_do[0].vars;
+    await open({
+      ...NOT_READY,
+      to_do: [
+        req({
+          vars: [
+            { ...key, env_var: 'GCP_PROJECT', label: 'Project', file: false, required: 'MUST' },
+            { ...key, required: 'ONE_OF' },
+            { ...key, env_var: 'GCLOUD_ADC', label: 'gcloud sign-in', file: false, required: 'ONE_OF', kind: 'cli', present: true },
+          ],
+        }),
+      ],
+    });
+    const row = screen.getByTestId('project-setup-req-google-cloud');
+    expect(row).toHaveTextContent('Project');
+    expect(row).not.toHaveTextContent('Service account key');
+  });
+
   it('shows needed_for beside the name, in place of the missing values', async () => {
     await open({ ...NOT_READY, to_do: [req({ needed_for: 'Reads the files in your bucket.' })] });
     const row = screen.getByTestId('project-setup-req-google-cloud');

@@ -66,25 +66,35 @@ setting them does not flip `restart_required` on a running process.
 |-----|---------|
 | `phone` | The agent's own phone number, the one its WhatsApp channel answers on: `{"country_code": "972", "number": "0500000000"}` (`PhoneNumberSpec`). Input is normalised — `+972` and `0500000000` are accepted; `digits` / `e164` give `972500000000` / `+972500000000`. |
 | `intro` | Welcome text rendered as the agent's first message in Vibe and Standard chat (`AgentIntroMessage`). Presentation only: not in the transcript, never sent to the model. Hidden in Advanced/Dev, which show the raw session. |
-| `auto_launch` | Launch this agent once, the first time the project it lives in is opened. |
+| `auto_launch` | Select this agent to launch once in this project, on opening it or after pulling an update that selects a new agent. |
 | `auto_launch_prompt` | First prompt of that session, delivered through the process prompt queue. Empty opens the session with no first turn. |
 
-Auto-launch is **once per project, ever**. The dock loaders run a load-redirect
+Auto-launch is **once per agent in each project's device state**. Authored saves
+and editor selections turn off the other agents in that project's direct scope;
+enabling a second agent replaces the first selection. Imported legacy documents
+are not rewritten. The dock loaders run a load-redirect
 resolver (`ui/src/agents/agent-auto-launch-redirect.ts`, registered after the
 journey one) that calls `POST /api/v1/agents/auto-launch {project_id}`.
 `Agent.auto_launch_for` scopes candidates to agents rooted in the project or
 one of its dependencies (`flow.json`), `enabled` with `auto_launch` on, and not yet
 in the project's device state (`<instance_dir>/projects/<project_id>/device_state.json`,
 key `agent_auto_launched`, via `flow_sdk/project_device_state.py` — backend-owned so no
-UI `project.save()` can clobber it; read it back with `GET /api/v1/agents/auto-launch?project_id=`). The **oldest** wins — first
+UI `project.save()` can clobber it; read it back with `GET /api/v1/agents/auto-launch?project_id=`). If legacy sources contain multiple selections, the **oldest** wins — first
 indexed (`created_date`), then alphabetical by folder — and every candidate,
-winner and cancelled alike, is recorded before the session opens, so a cancelled
-agent never fires on a later open and a failed launch is not retried. The UI
+winner and cancelled alike, is recorded after the session opens successfully.
+A cancelled agent never fires on a later open; a failed launch remains retryable. The UI
 warns which launches were cancelled. The session is opened with `use()`, the
 prompt is enqueued server-side, and the UI embeds the vibe persona before it
 kicks the queue with `drain-queue`. Never set `auto_launch` on a system agent:
 the system project is a context root of every project. An agent can also be what a
 project's **Home** opens, resuming its last chat (`docs/navigation/project-home-page.md`).
+
+A successful local Git Pull refreshes the project's asset index before returning
+its project ID. The footer then makes the same backend auto-launch check and
+navigates to the new session through normal dock navigation, preserving existing
+tabs. A no-change or failed pull does not launch anything. Hub repository fetch,
+pull and push use the current hub login for that repository URL without storing
+credentials in the checkout.
 
 The same entity supports two execution modes:
 

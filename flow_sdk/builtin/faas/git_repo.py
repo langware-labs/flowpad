@@ -221,6 +221,9 @@ class GitPullResult(_CamelModel):
     message: str
     # Set only when ``kind == "conflict"``: the paths git left unmerged.
     conflicted: list[str] = []
+    # The locally refreshed project, for the caller's once-only auto-launch check.
+    project_id: str | None = None
+    refresh_error: str | None = None
 
 
 # Config a fresh Flowpad repo gets at init time. Single source shared by
@@ -252,6 +255,8 @@ __pycache__/
 .venv/
 venv/
 .env
+.env.local
+.env.*.local
 
 # Node
 node_modules/
@@ -333,7 +338,12 @@ class GitRepo:
         the reason in ``stderr``.
         """
         try:
-            return await self._folder.git(*args, env=env)
+            folder = self._folder
+            if args and args[0] in {"fetch", "pull", "push"}:
+                from flow_sdk.utils.hub_git_auth import hub_git_environment  # noqa: PLC0415
+
+                env = await hub_git_environment(folder, env)
+            return await folder.git(*args, env=env)
         except Exception as exc:  # noqa: BLE001 — a provider failure is an answer here
             logger.debug("git command failed: git %s", " ".join(args), exc_info=True)
             return CliResult.of_process("git " + " ".join(args), None, "", f"{type(exc).__name__}: {exc}")
@@ -444,6 +454,7 @@ class GitRepo:
         control path) — the repo is usable either way.
         """
         if await self.is_init():
+            await self.ensure_gitignore()
             return GitRestoreResult(ok=True, message="Already a git repository")
         made = await self._git("init", "--initial-branch=main")
         if not made.ok:
@@ -451,7 +462,27 @@ class GitRepo:
         for key, value in GIT_INIT_CONFIG:
             await self._git("config", key, value)
         await self._seed_gitignore()
+        await self.ensure_gitignore()
         return GitRestoreResult(ok=True, message="Initialized git repository")
+
+    async def ensure_gitignore(self) -> None:
+        """Keep local credentials out of commits; verify with Git, preserving user rules."""
+        tracked = await self._git("ls-files", "--", ".env.local")
+        if not tracked.ok:
+            raise RuntimeError("Could not validate .env.local tracking")
+        if tracked.stdout.strip():
+            raise RuntimeError(".env.local is already tracked; remove it from the Git index first")
+        ignored = await self._git("check-ignore", "-q", "--", ".env.local")
+        if ignored.ok:
+            return
+        if ignored.returncode != 1:
+            raise RuntimeError("Could not validate .env.local ignore rules")
+        path = os.path.join(self.work_dir, ".gitignore")
+        existing = (await self._compute_node.read_files(path))[path] if await self._compute_node.exists(path) else ""
+        separator = "\n" if existing and not existing.endswith("\n") else ""
+        await self._compute_node.write_files(path, f"{existing}{separator}.env.local\n")
+        if not (await self._git("check-ignore", "-q", "--", ".env.local")).ok:
+            raise RuntimeError(".env.local is not excluded by Git after updating .gitignore")
 
     async def _seed_gitignore(self) -> None:
         """Write DEFAULT_GITIGNORE at the repo root, but only if absent.
@@ -534,8 +565,8 @@ class GitRepo:
             path = path[: -len(".git")]
         return f"https://{host}/{path}" if path else None
 
-    async def get_status(self, *, line_counts: bool = False) -> GitStatus:
-        """Return a rich git-status object.
+    async def get_status(self, *, line_counts: bool = False, revision: str | None = None) -> GitStatus:
+        """Return working-tree status, or the files changed by an immutable commit.
 
         ``line_counts`` fills each file's ``insertions``/``deletions``. It is
         opt-in because it costs three to six more git spawns (see
@@ -553,6 +584,9 @@ class GitRepo:
                 files    = [GitStatusFile(status, path, insertions, deletions), ...],
             )
         """
+        if revision is not None:
+            return await self._get_commit_status(revision, line_counts=line_counts)
+
         # One combined call replaces is_init + get_branch + ahead/behind +
         # file-list (4 git spawns → 1). ``--branch`` prepends a
         # ``## <branch>...<upstream> [ahead N, behind M]`` header line; the
@@ -643,14 +677,74 @@ class GitRepo:
             remote_web_url=self._remote_web_url(remote_url) if remote_url else None,
         )
 
-    async def get_file_diff(self, file_path: str, status: str) -> GitFileDiff:
-        """Return the unified diff for a single file in the working tree.
+    async def _commit_show_args(self, revision: str) -> tuple[str, ...]:
+        """One immutable commit, compared with its first parent (empty tree for roots)."""
+        if not re.fullmatch(r"[0-9a-fA-F]{7,64}", revision):
+            raise ValueError("Expected a commit hash")
+        resolved = await self._git("rev-parse", "--verify", f"{revision}^{{commit}}")
+        if not resolved.ok:
+            raise ValueError(resolved.stderr.strip() or "Could not read commit")
+        return (
+            "show", "--format=", "--root", "--diff-merges=first-parent",
+            "--no-ext-diff", "--no-textconv", "--relative", "-M", resolved.stdout.strip(),
+        )
+
+    async def _get_commit_status(self, revision: str, *, line_counts: bool) -> GitStatus:
+        args = await self._commit_show_args(revision)
+        probes = [self._git(*args, "--name-status", "-z", "--")]
+        if line_counts:
+            probes.append(self._git(*args, "--numstat", "-z", "--"))
+        names, *statistics = await asyncio.gather(*probes)
+        if not names.ok:
+            raise ValueError(names.stderr.strip() or "Could not read commit")
+        counts = {}
+        if line_counts:
+            stats = statistics[0]
+            if not stats.ok:
+                raise ValueError(stats.stderr.strip() or "Could not read commit statistics")
+            entries = iter(stats.stdout.split("\0"))
+            for entry in entries:
+                if not entry:
+                    continue
+                added, removed, path = entry.split("\t", 2)
+                if not path:  # -z renames carry old and new paths as separate fields.
+                    next(entries)
+                    path = next(entries)
+                counts[path] = (
+                    int(added) if added != "-" else None,
+                    int(removed) if removed != "-" else None,
+                )
+        files = []
+        entries = iter(names.stdout.split("\0"))
+        for status in entries:
+            if not status:
+                continue
+            path = next(entries)
+            display_path = path
+            if status[0] in ("R", "C"):
+                new_path = next(entries)
+                display_path = f"{path} → {new_path}"
+                path = new_path
+            added, removed = counts.get(path, (None, None))
+            files.append(GitStatusFile(
+                status=status[0], path=display_path, insertions=added, deletions=removed,
+            ))
+        return GitStatus(files=files)
+
+    async def get_file_diff(self, file_path: str, status: str, *, revision: str | None = None) -> GitFileDiff:
+        """Return a file diff in the working tree, or in a commit against its first parent.
 
         For untracked files (status '?') uses --no-index to show the full
         file as an addition.  For all other statuses, diffs HEAD against
         the working tree (covers both staged and unstaged changes).
         """
-        if status == "?":
+        if revision is not None:
+            paths = file_path.split(" → ", 1) if status == "R" else [file_path]
+            args = await self._commit_show_args(revision)
+            diff = await self._git(*args, "--", *paths)
+            if not diff.ok:
+                raise ValueError(diff.stderr.strip() or "Could not read commit diff")
+        elif status == "?":
             diff = await self._git("diff", "--no-index", "/dev/null", file_path)
         else:
             diff = await self._git("diff", "HEAD", "--", file_path)
@@ -1172,13 +1266,15 @@ class GitRepo:
 
         ``get_status`` never touches the network, so its ``behind`` is only as
         fresh as the last fetch. This is the one call that refreshes it. A
-        failed fetch (offline, no access) is not an error here — the status
-        still answers, with ``behind`` as of the previous fetch.
+        failed fetch returns the local status with ``error`` set, so stale
+        tracking refs cannot masquerade as a successful refresh.
         """
         if (await self._git("rev-parse", "--abbrev-ref", "@{u}")).ok:
             fetched = await self._git("fetch", "--quiet")
             if not fetched.ok:
-                logger.debug("git fetch failed in %s: %s", self.work_dir, _said(fetched))
+                status = await self.get_status()
+                status.error = "Could not fetch remote updates"
+                return status
         return await self.get_status()
 
     async def pull(self, branch: str | None = None) -> GitPullResult:
@@ -1266,14 +1362,32 @@ class GitRepo:
         if sub == "pull":
             if method.upper() != "POST":
                 return ApiFailResponse(message="git-ops/pull requires POST", status_code=405)
-            return ApiSuccessResponse(data=(await self.pull()).model_dump(by_alias=True))
+            result = await self.pull()
+            if result.ok and result.kind == "pulled":
+                from flow_sdk.builtin.project import Project  # noqa: PLC0415
+                from flow_sdk.config import ComputeProviderType  # noqa: PLC0415
+
+                if getattr(self._compute_node, "node_provider_type", None) == ComputeProviderType.LOCAL_MACHINE:
+                    project = await Project.find_by_cwd(self.work_dir)
+                    if project is not None:
+                        try:
+                            await project.refresh_pulled_assets()
+                            result.project_id = str(project.id)
+                        except Exception as exc:  # noqa: BLE001 — Git succeeded; report the refresh separately
+                            logger.warning("project refresh after pull failed: %s", exc, exc_info=True)
+                            result.refresh_error = str(exc)
+            return ApiSuccessResponse(data=result.model_dump(by_alias=True))
         if sub == "init":
             if method.upper() != "POST":
                 return ApiFailResponse(message="git-ops/init requires POST", status_code=405)
             return ApiSuccessResponse(data=(await self.init()).model_dump(by_alias=True))
         if sub == "status":
             line_counts = params.get("lineCounts") in (True, "1", "true")
-            return ApiSuccessResponse(data=(await self.get_status(line_counts=line_counts)).model_dump(by_alias=True))
+            try:
+                result = await self.get_status(line_counts=line_counts, revision=params.get("revision"))
+            except ValueError as exc:
+                return ApiFailResponse(message=str(exc), status_code=400)
+            return ApiSuccessResponse(data=result.model_dump(by_alias=True))
         if sub == "unpushed-files":
             return ApiSuccessResponse(data=(await self.get_unpushed_files()).model_dump(by_alias=True))
         if sub == "unpushed-commits":
@@ -1299,7 +1413,11 @@ class GitRepo:
             status = params.get("status", "M")
             if not file_path:
                 return ApiFailResponse(message="Missing required query parameter: file", status_code=400)
-            return ApiSuccessResponse(data=(await self.get_file_diff(file_path, status)).model_dump(by_alias=True))
+            try:
+                result = await self.get_file_diff(file_path, status, revision=params.get("revision"))
+            except ValueError as exc:
+                return ApiFailResponse(message=str(exc), status_code=400)
+            return ApiSuccessResponse(data=result.model_dump(by_alias=True))
         if sub == "asset-diff":
             file_path = params.get("file", "")
             if not file_path:

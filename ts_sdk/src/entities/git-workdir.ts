@@ -118,6 +118,9 @@ export interface GitPullResult {
   message: string;
   /** Set only when `kind === 'conflict'`: the paths git left unmerged. */
   conflicted: string[];
+  /** Set after a successful pull refreshed this local project's asset index. */
+  projectId?: string | null;
+  refreshError?: string | null;
 }
 
 /**
@@ -164,12 +167,15 @@ export class GitWorkdir {
   // ------------------------------------------------------------------
 
   /**
-   * Full git status (branch, ahead/behind, per-file staged flag). Per-file
+   * Working-tree status, or files changed by `revision` against its first parent. Per-file
    * insertions/deletions are filled only with `lineCounts: true` — they cost a
    * worktree-wide numstat pass, so only a surface that shows them asks.
    */
-  async getStatus(options: { lineCounts?: boolean } = {}): Promise<GitStatus> {
-    return this._call<GitStatus>('status', options.lineCounts ? { lineCounts: 'true' } : {});
+  async getStatus(options: { lineCounts?: boolean; revision?: string } = {}): Promise<GitStatus> {
+    return this._call<GitStatus>('status', {
+      ...(options.lineCounts ? { lineCounts: 'true' } : {}),
+      ...(options.revision ? { revision: options.revision } : {}),
+    });
   }
 
   /** Repo-relative paths touched by commits ahead of @{u} (empty when no upstream). */
@@ -211,9 +217,9 @@ export class GitWorkdir {
   // Diffs / revisions
   // ------------------------------------------------------------------
 
-  /** Unified diff of a file's pending change (untracked `?` shows the whole file). */
-  async fileDiff(file: string, status: string): Promise<GitFileDiff> {
-    return this._call<GitFileDiff>('diff', { file, status });
+  /** File diff: pending changes by default, or a commit against its first parent. */
+  async fileDiff(file: string, status: string, revision?: string): Promise<GitFileDiff> {
+    return this._call<GitFileDiff>('diff', { file, status, ...(revision ? { revision } : {}) });
   }
 
   /** Unified diff of an asset's pending changes plus its changed-file list. */

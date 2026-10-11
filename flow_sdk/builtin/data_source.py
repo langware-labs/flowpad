@@ -22,7 +22,7 @@ from contextvars import ContextVar
 from datetime import datetime, timedelta, timezone
 from math import ceil
 from pathlib import Path
-from typing import TYPE_CHECKING, ClassVar, Optional
+from typing import TYPE_CHECKING, Any, ClassVar, Optional
 
 from pydantic import computed_field, field_validator, model_validator
 
@@ -1394,6 +1394,78 @@ class DataSource(SetupSkippable, Entity):
             return None
         root = target_root(self) if self.reflect in (ReflectMode.COPY.value, ReflectMode.SYMLINK.value) else driver.tree_root(self)
         return str(root) if root is not None else None
+
+    # ── write back: one record of the outside system, through the driver ───────
+    async def _item_origin(self, item_id: str):
+        """The origin (where it lives in the outside system) of one of THIS source's records."""
+        from flow_sdk.builtin.source_item import SourceItem  # noqa: PLC0415
+        from flow_sdk.sources.values.origin import CloudOrigin  # noqa: PLC0415
+
+        item = await SourceItem.get_one({"id": item_id, "data_source_id": self.id}) if item_id else None
+        if item is None:
+            raise LookupError(f"no item {item_id!r} on this source")
+        return CloudOrigin(kind=item.origin_kind, namespace=item.origin_namespace, key=item.origin_key)
+
+    async def _mutable(self, verb: str):
+        """This source opened for a write the driver's contract names (``sources.protocols.Mutable``):
+        refused before any I/O when the row is ``read_only`` or the driver cannot."""
+        from flow_sdk.sources.protocols import Mutable  # noqa: PLC0415
+
+        if self.read_only:
+            raise PermissionError(f"this source is read-only: it does not {verb} in {self.provider}")
+        live = await self.open()
+        if not isinstance(live.source, Mutable):
+            raise NotImplementedError(f"the {self.provider} driver cannot {verb} a record")
+        return live
+
+    async def update_item(self, item_id: str, changes: dict) -> dict:
+        """Change one record IN THE OUTSIDE SYSTEM -- the record ``item_id`` (a ``SourceItem`` of this
+        source) -- through the driver, with the credential the source already holds: how a field the
+        app owns goes back to a system of record (a deal's tags to the CRM). ``changes`` are the
+        outside system's own fields. The record here is NOT touched: the next sync reads it back.
+        ``LookupError`` no such item · ``PermissionError`` a read-only source · ``NotImplementedError``
+        a driver without ``update``."""
+        if not isinstance(changes, dict) or not changes:
+            raise ValueError("changes: a non-empty object is required")
+        origin = await self._item_origin(item_id)
+        async with await self._mutable("update") as live:
+            written = await live.source.update(origin, dict(changes))
+        return {"item_id": item_id, "origin": written.origin.model_dump(mode="json"), "status": "updated"}
+
+    async def delete_item(self, item_id: str) -> dict:
+        """Remove one record FROM THE OUTSIDE SYSTEM, through the driver (as ``update_item``). The
+        record here goes with the next sync."""
+        origin = await self._item_origin(item_id)
+        async with await self._mutable("delete") as live:
+            await live.source.delete(origin)
+        return {"item_id": item_id, "origin": origin.model_dump(mode="json"), "status": "deleted"}
+
+    async def _write_back(self, write: Any) -> ApiResponse:
+        try:
+            return ApiSuccessResponse(data=await write())
+        except LookupError as exc:
+            return ApiFailResponse(message=str(exc), status_code=404)
+        except PermissionError as exc:
+            return ApiFailResponse(message=str(exc), status_code=403)
+        except (ValueError, NotImplementedError) as exc:
+            return ApiFailResponse(message=str(exc), status_code=400)
+
+    @core_action.post(action_name="update_item")
+    async def update_item_action(self) -> ApiResponse:
+        """POST /api/v1/graph/data_source/{id}/update_item — change one record in the outside system.
+
+        Body: ``{"item_id", "changes"}``. 404 no such item · 403 a read-only source · 400 a driver
+        that cannot, or no changes."""
+        body = await self._body()
+        return await self._write_back(lambda: self.update_item(str(body.get("item_id") or ""), body.get("changes")))
+
+    @core_action.post(action_name="delete_item")
+    async def delete_item_action(self) -> ApiResponse:
+        """POST /api/v1/graph/data_source/{id}/delete_item — remove one record from the outside system.
+
+        Body: ``{"item_id"}``."""
+        body = await self._body()
+        return await self._write_back(lambda: self.delete_item(str(body.get("item_id") or "")))
 
     @core_action.post(action_name="items")
     async def items_action(self) -> ApiResponse:

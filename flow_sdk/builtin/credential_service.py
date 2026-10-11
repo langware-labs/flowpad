@@ -122,6 +122,9 @@ async def _write_values(spec: "Credential", scope: CredentialScope, values: dict
     unknown = sorted(set(values) - set(spec.vars or {}))
     if unknown:
         raise CredentialError(f"{', '.join(unknown)} is not a variable of this credential")
+    signed_in = sorted(name for name, v in values.items() if spec.vars[name].is_cli and v not in (None, ""))
+    if signed_in:
+        raise CredentialError(f"{', '.join(signed_in)} is a sign-in, not a value: nothing is stored for it")
     if spec.lm_provider and placement.environment != DEFAULT_ENVIRONMENT and any(values.values()):
         raise CredentialError("an LLM provider key has no per-environment value; deployments are hub-funded")
     # A file var's content, read now: the pattern is checked against it, not against an ``@path``.

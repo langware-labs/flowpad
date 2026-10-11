@@ -1,5 +1,6 @@
 import { Trans, useLingui } from '@lingui/react/macro';
-import { isHubOnly } from '@sdk';
+import { DataSource, isHubOnly, Project } from '@sdk';
+import { DataSourceDialog } from '@src/components/data-sources/DataSourceDialog';
 import { useProject } from '@sdk/react/hooks';
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import {
@@ -191,13 +192,15 @@ function TippedTile({ wikiword, tip, ...tile }: { wikiword: string; tip?: string
  * nothing. Spread `panelProps` onto the panel and render `dialogs` alongside
  * it, outside whatever the tile dismissed.
  */
-export function useQuickCreatePick() {
-  const { project } = useProject();
+export function useQuickCreatePick(explicitProject?: Project | null) {
+  const { project: activeProject } = useProject();
+  const project = explicitProject === undefined ? activeProject : explicitProject;
   const [activeType, setActiveType] = useState<string | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [newMessageOpen, setNewMessageOpen] = useState(false);
   const [newProjectOpen, setNewProjectOpen] = useState(false);
   const [newGitProjectOpen, setNewGitProjectOpen] = useState(false);
+  const [newDataSourceOpen, setNewDataSourceOpen] = useState(false);
   const ctxFolder = useAddDependency({ project });
   const helpdesk = useAddHelpdesk({ project });
   const { checkLoginAndProceed, showLoginDialog, closeLoginDialog } = useLoginRequired();
@@ -252,10 +255,11 @@ export function useQuickCreatePick() {
       {CustomDialog ? (
         <CustomDialog open={dialogOpen} onOpenChange={handleDialogChange} projectId={project?.id ?? null} />
       ) : (
-        <QuickCreateDialog open={dialogOpen} onOpenChange={handleDialogChange} type={activeType} />
+        <QuickCreateDialog open={dialogOpen} onOpenChange={handleDialogChange} type={activeType} project={explicitProject} />
       )}
       {ctxFolder.dialogs}
       {helpdesk.dialogs}
+      {newDataSourceOpen && <DataSourceDialog open onOpenChange={setNewDataSourceOpen} />}
       <NewConversationDialog open={newMessageOpen} onClose={() => setNewMessageOpen(false)} />
       <NewProjectDialog
         open={newProjectOpen}
@@ -281,6 +285,7 @@ export function useQuickCreatePick() {
     onNewMessage,
     onNewProject: () => setNewProjectOpen(true),
     onNewProjectFromGit: () => setNewGitProjectOpen(true),
+    onNewDataSource: () => setNewDataSourceOpen(true),
   };
 
   // `openSource`: the add-a-dependency dialog on its own (the `add-dependency` UI action).
@@ -289,15 +294,15 @@ export function useQuickCreatePick() {
 
 /** What the panel needs from its host — everything but the host's own dismiss
  *  and the display-only `sections` filter. */
-export type PanelHandlers = Omit<QuickCreatePanelProps, 'onDone' | 'sections' | 'extraSessionTiles'>;
+export type PanelHandlers = Omit<QuickCreatePanelProps, 'onDone' | 'sections' | 'extraSessionTiles' | 'leadingSessionTiles' | 'project' | 'chatTitle' | 'allUserTypes'>;
 
 /** The tile groups this panel can render, in order. */
 export type QuickCreateSection = 'chat' | 'build' | 'write' | 'connect' | 'project' | 'folder' | 'helpdesk';
 export const ALL_SECTIONS: QuickCreateSection[] = ['chat', 'build', 'write', 'connect', 'project', 'folder', 'helpdesk'];
 
 /** Sections that point the project at something that ALREADY EXISTS rather than
- *  creating it. `QuickCreateModal` excludes them wholesale — see the reason in
- *  its own header. Expressed once so the two cannot drift. */
+ *  creating it. The modal excludes these from creation and optionally renders
+ *  them under a separate "Add existing" heading. */
 export const ADOPTION_SECTIONS: ReadonlySet<QuickCreateSection> = new Set(['folder', 'helpdesk']);
 
 export interface QuickCreatePanelProps {
@@ -313,6 +318,13 @@ export interface QuickCreatePanelProps {
   onNewProject: () => void;
   /** Open the clone-a-repo-as-a-new-project dialog. */
   onNewProjectFromGit: () => void;
+  /** Configured sources have their own form rather than a name-only asset dialog. */
+  onNewDataSource?: () => void;
+  /** Undefined follows the active project; a supplied project pins this panel. */
+  project?: Project | null;
+  chatTitle?: ReactNode;
+  /** Offer user-facing creation types across browsing modes, preserving Dev gates. */
+  allUserTypes?: boolean;
   /** Dismiss the host, if there is one to dismiss. A modal closes; a page no-ops. */
   onDone?: () => void;
   /**
@@ -327,6 +339,8 @@ export interface QuickCreatePanelProps {
    * strip controller rather than in this panel.
    */
   extraSessionTiles?: SessionTileDef[];
+  /** Host session entries shown before provider launchers. */
+  leadingSessionTiles?: SessionTileDef[];
 }
 
 /** The session-tile shape hosts use for {@link QuickCreatePanelProps.extraSessionTiles}. */
@@ -357,15 +371,21 @@ export function QuickCreatePanel({
   onNewMessage,
   onNewProject,
   onNewProjectFromGit,
+  onNewDataSource,
+  project: explicitProject,
+  chatTitle,
+  allUserTypes = false,
   extraSessionTiles = [],
+  leadingSessionTiles = [],
   onDone,
   sections = ALL_SECTIONS,
 }: QuickCreatePanelProps) {
   const { t } = useLingui();
   // Only `creatable`/`type_name` are read below, both synchronous from the
   // registry — no vaults, so no `/assets/types` request per mount.
-  const { types: serverTypes } = useAssetTypes({ withVaults: false });
-  const { project: currentProject } = useProject();
+  const { types: serverTypes } = useAssetTypes({ withVaults: false, allUserTypes });
+  const { project: activeProject } = useProject();
+  const currentProject = explicitProject === undefined ? activeProject : explicitProject;
   const { navigation } = useDockNavigation();
   const [dependencyKind, setDependencyKind] = useState<DependencyKind>('required');
 
@@ -380,7 +400,10 @@ export function QuickCreatePanel({
     // so a rejected create used to become an unhandled rejection and the user got
     // no feedback at all in any view mode.
     try {
-      const process = await openNewChat(navigation, { workerType });
+      const process = await openNewChat(navigation, {
+        workerType,
+        ...(explicitProject ? { projectId: explicitProject.id, cwd: explicitProject.fs_storage_mount_path ?? undefined } : {}),
+      });
       if (!process) notify.error({ title: t`Failed to start session` });
     } catch (err) {
       console.error('[QuickCreatePanel] start session failed', err);
@@ -444,11 +467,12 @@ export function QuickCreatePanel({
   const folderSources = useDependencySources();
 
   // One registry group's tiles; a group the server leaves empty renders nothing.
-  const assetGroup = (group: QuickCreateGroup, title: ReactNode) => {
+  const assetGroup = (group: QuickCreateGroup, title: ReactNode, extra?: ReactNode) => {
     const items = assetItems.filter((item) => item.group === group);
-    if (items.length === 0) return null;
+    if (items.length === 0 && !extra) return null;
     return (
       <TileSection title={title}>
+        {extra}
         {items.map((item) => (
           <TippedTile
             key={item.type}
@@ -472,8 +496,8 @@ export function QuickCreatePanel({
     // conversation. The message tile is hardcoded — a conversation is neither a
     // registry type nor server-`creatable`.
     chat: (
-      <TileSection title={<Trans>Chat</Trans>}>
-        {[...sessionTiles, ...extraSessionTiles].map((tile) => (
+      <TileSection title={chatTitle ?? <Trans>Chat</Trans>}>
+        {[...leadingSessionTiles, ...sessionTiles, ...extraSessionTiles].map((tile) => (
           <TippedTile
             key={tile.key}
             wikiword={tile.wikiword}
@@ -531,7 +555,18 @@ export function QuickCreatePanel({
     ),
     build: assetGroup('build', <Trans>Build AI</Trans>),
     write: assetGroup('write', <Trans>Write & plan</Trans>),
-    connect: assetGroup('connect', <Trans>Connect</Trans>),
+    connect: assetGroup('connect', <Trans>Connect</Trans>, onNewDataSource && !isHubOnly() ? (
+      <TippedTile
+        wikiword="Data sources"
+        Icon={iconForType(DataSource.type)}
+        label={t`Data source`}
+        data-testid="quick-create-data-source"
+        onClick={() => {
+          onDone?.();
+          onNewDataSource();
+        }}
+      />
+    ) : null),
     folder: (
       <TileSection
         title={

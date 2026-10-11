@@ -58,7 +58,7 @@ from flow_sdk.builtin.agentic_process.display_context import (
     DisplayContextTooLarge,
     NothingShown,
     describe_display_context,
-    same_display_target,
+    same_history_target,
     take_prompt_context,
     with_display_context,
     without_stale_display_context,
@@ -518,9 +518,15 @@ async def _index_additional_dir(
     read_only: bool = False,
     strict: bool = False,
     project_id: str | None = None,
+    own: bool = False,
 ) -> None:
     """Run a one-shot indexer scan over ``path`` so its skills/agents become
     discoverable via ``Entity.assets_by_path``.
+
+    ``own=True`` (with ``project_id``): ``path`` is that project's OWN folder — a checkout a launch or a
+    share made — so what it holds is project content (``scope="project"``). The default is a directory
+    someone added beside their work: the user's. Indexed as the user's, a project's credentials are in
+    neither scope: its setup asks for nothing and its processes are handed nothing.
 
     ``strict`` is reserved for declarative installation: a failed scan must be
     observable there, because reporting a content project as installed without
@@ -553,7 +559,8 @@ async def _index_additional_dir(
             return
         # ``project_id`` names who owns what the walk finds; ``None`` keeps the request-scoped
         # rule (``index_function._walk_requested_by_project``).
-        new_root = FSRef(p, record_type=RecordType.CWD_ROOT, scope="user", read_only=read_only, project_id=project_id)
+        scope = "project" if own and project_id else "user"
+        new_root = FSRef(p, record_type=RecordType.CWD_ROOT, scope=scope, read_only=read_only, project_id=project_id)
         # include_temp=True so /tmp / /var/folders paths aren't filtered out —
         # the user explicitly added this dir, so honor it regardless of location.
         result = await get_shared_indexer().index(IndexerOptions(roots=(new_root,), verbose=False, include_temp=True))
@@ -646,7 +653,7 @@ DISPLAY_STACK_CAP = 50
 def _append_display_entry(stack: list[dict], payload: dict, shown_at: str) -> list[dict]:
     """Append ``payload`` (stamped ``shown_at``) to ``stack``, dropping any earlier
     show of the same target — so repeats never eat the cap. Capped to the newest N."""
-    kept = [e for e in stack if not (isinstance(e, dict) and same_display_target(e, payload))]
+    kept = [e for e in stack if not (isinstance(e, dict) and same_history_target(e, payload))]
     return [*kept, {**payload, "shown_at": shown_at}][-DISPLAY_STACK_CAP:]
 
 
@@ -659,7 +666,10 @@ def _union_display_stacks(a: list, b: list) -> list[dict]:
         if isinstance(entry, dict) and entry.get("shown_at"):
             by_key[entry["shown_at"]] = entry
     merged = sorted(by_key.values(), key=lambda e: e.get("shown_at") or "")
-    return merged[-DISPLAY_STACK_CAP:]
+    result: list[dict] = []
+    for entry in merged:
+        result = _append_display_entry(result, entry, entry["shown_at"])
+    return result
 
 
 class AgenticProcess(Entity):

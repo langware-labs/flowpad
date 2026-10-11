@@ -514,10 +514,16 @@ export const TabStrip: React.FC<TabStripProps> = ({
         data-active={isActive ? 'true' : undefined}
         {...(item.dataAttributes ?? {})}
       >
-        {item.favorite && density === 'normal' && !isEditing && (
-          <TabFavoriteStar favorite={item.favorite} chip={() => tabRefs.current[key] ?? null} />
-        )}
-        {item.standsFor?.icon ?? item.icon}
+        <span className="relative inline-flex shrink-0 items-center justify-center">
+          <span className={item.favorite && !isEditing ? 'inline-flex group-hover:invisible' : 'inline-flex'}>
+            {item.standsFor?.icon ?? item.icon}
+          </span>
+          {item.favorite && !isEditing && (
+            <span className="absolute inset-0 hidden items-center justify-center group-hover:flex">
+              <TabFavoriteStar favorite={item.favorite} chip={() => tabRefs.current[key] ?? null} />
+            </span>
+          )}
+        </span>
         {!iconOnly && item.badge}
         {isEditing ? (
           <input

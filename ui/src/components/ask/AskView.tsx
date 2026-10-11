@@ -4,6 +4,8 @@ import { Loader2 } from 'lucide-react';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { getHistoryPosition } from '@src/navigation/history-position-store';
 import { Button } from '@src/components/ui/button';
+import { AskChoiceBlock } from './AskChoiceBlock';
+import { AskItems } from './AskItems';
 import { AskValueInput } from './AskValueInput';
 import { MarkdownView } from '@src/components/markdown-view';
 import { AskAssist } from './AskAssist';
@@ -32,6 +34,7 @@ export default function AskView() {
   const questionId = currentDock?.pointer;
   const {
     question,
+    hasChoices,
     values,
     setValues,
     error,
@@ -39,6 +42,7 @@ export default function AskView() {
     settledKind,
     settledMessage,
     submit,
+    answer,
     cancel,
     agentAnswered,
     wizardId,
@@ -87,6 +91,7 @@ export default function AskView() {
       </div>
     );
   }
+  const items = question.items ?? [];
   return (
     <div className="flex h-full items-center justify-center p-6" data-testid="ask-view">
       <div className="flex w-full max-w-md flex-col gap-4">
@@ -128,7 +133,18 @@ export default function AskView() {
           )}
         </div>
 
-        {fieldsOf(question.fields).map((name) => (
+        <AskChoiceBlock
+          choices={question.choices}
+          busy={busy}
+          submitLabel={question.submit_label || undefined}
+          onAnswer={(value) => void answer(value)}
+        />
+
+        {items.length > 0 ? (
+          <AskItems items={items} busy={busy} onAnswer={(value) => void answer(value)} onCancel={() => void cancel()} />
+        ) : null}
+
+        {(hasChoices || items.length > 0 ? [] : fieldsOf(question.fields)).map((name) => (
           <div key={name} className="flex flex-col gap-1">
             {name ? (
               <label className="text-sm" htmlFor={`ask-${name}`}>
@@ -153,14 +169,18 @@ export default function AskView() {
           </p>
         ) : null}
 
-        <div className="flex gap-2">
-          <Button data-testid="ask-submit" disabled={busy} onClick={() => void submit()}>
-            {question.submit_label || <Trans>Send</Trans>}
-          </Button>
-          <Button variant="ghost" data-testid="ask-cancel" disabled={busy} onClick={() => void cancel()}>
-            {question.cancel_label || <Trans>Cancel</Trans>}
-          </Button>
-        </div>
+        {items.length > 0 ? null : (
+          <div className="flex gap-2">
+            {hasChoices ? null : (
+              <Button data-testid="ask-submit" disabled={busy} onClick={() => void submit()}>
+                {question.submit_label || <Trans>Send</Trans>}
+              </Button>
+            )}
+            <Button variant="ghost" data-testid="ask-cancel" disabled={busy} onClick={() => void cancel()}>
+              {question.cancel_label || <Trans>Cancel</Trans>}
+            </Button>
+          </div>
+        )}
       </div>
     </div>
   );

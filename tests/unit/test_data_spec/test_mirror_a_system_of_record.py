@@ -1,0 +1,208 @@
+"""A system of record through a data source: its items become typed rows (``Dataset.mirror``), and a
+field the app owns goes back through the source's driver (``DataSource.update_item`` / ``delete_item``)
+-- with the credential the source holds, never the app."""
+
+from __future__ import annotations
+
+import uuid
+from types import SimpleNamespace
+
+import pytest
+
+from flow_sdk.sources.values.items import SourceItemSpec
+from flow_sdk.sources.values.origin import CloudOrigin
+from tests.unit.test_data_spec.test_row_links import _dataset, _schema
+
+pytestmark = pytest.mark.timeout(5)
+
+ITEMS = [
+    {"id": "i1", "external_id": "OPP-1", "name": "Acme renewal", "provider": "crm", "data": {"stage": "open", "amount": 12, "owner": {"name": "Ami"}}},
+    {"id": "i2", "external_id": "OPP-2", "name": "Bolt pilot", "provider": "crm", "data": {"stage": "won", "amount": 30}},
+    {"id": "i3", "external_id": "", "name": "no id yet", "provider": "crm", "data": {"stage": "open"}},
+]
+MAP = {"key": "external_id", "input": {"name": "name", "stage": "data.stage", "crm_id": "external_id", "owner": "data.owner.name", "source": {"value": "crm"}}}
+
+
+@pytest.fixture
+def deals(tmp_path):
+    from flow_sdk.schema.data_spec.declared import load_root
+
+    root, ns = tmp_path / "proj", "unittestmir" + uuid.uuid4().hex[:8]
+    f = lambda shape, **more: {"shape": shape, "description": "x", **more}   # noqa: E731
+    _schema(root, ns, "crm.deal", {"name": f("string", owned_by="crm"), "stage": f("enum:open|won|lost", owned_by="crm"),
+                                   "crm_id": f("string", owned_by="crm"), "owner": f("?string", owned_by="crm"),
+                                   "source": f("?string"), "notes": f("?string")})
+    assert not any(load_root(root).values())
+    return _dataset(root, "deals", f"--{ns}--.crm.deal")
+
+
+async def test_a_sources_items_become_typed_rows(deals):
+    done = await deals.mirror(ITEMS, MAP, by="crm")
+    assert done == {"created": ["opp-1", "opp-2"], "updated": [], "unchanged": [], "deleted": []}     # the item with no key is skipped
+    rows = {r.key: r.input.model_dump(mode="json", exclude_none=True) for r in deals.read_rows()}
+    assert rows["opp-1"] == {"name": "Acme renewal", "stage": "open", "crm_id": "OPP-1", "owner": "Ami", "source": "crm"}
+    assert rows["opp-2"] == {"name": "Bolt pilot", "stage": "won", "crm_id": "OPP-2", "source": "crm"}   # an absent path is left out
+
+
+async def test_mirroring_again_is_a_sync_and_keeps_what_the_app_owns(deals):
+    await deals.mirror(ITEMS, MAP, by="crm")
+    await deals.put("opp-1", {"input": {**deals.example("opp-1")["input"], "notes": "call back Tuesday"}})   # the app's own field
+    moved = [dict(ITEMS[0], data={"stage": "won", "amount": 12, "owner": {"name": "Ami"}})]                # the CRM moved one, dropped the other
+    done = await deals.mirror(moved, MAP, by="crm")
+    assert done == {"created": [], "updated": ["opp-1"], "unchanged": [], "deleted": ["opp-2"]}
+    row = deals.example("opp-1")["input"]
+    assert (row["stage"], row["notes"]) == ("won", "call back Tuesday")                      # the mirror owns only what it maps
+    assert (await deals.mirror(moved, MAP, by="crm"))["unchanged"] == ["opp-1"]              # ... and keeping it is not a change
+    gone = [dict(moved[0], data={"stage": "won", "amount": 12})]                             # the CRM cleared the owner
+    await deals.mirror(gone, MAP, by="crm")
+    assert "owner" not in {k: v for k, v in deals.example("opp-1")["input"].items() if v is not None}   # a mapped field follows the source
+    assert (await deals.mirror(moved, MAP, by="crm", prune=False))["deleted"] == []
+
+
+async def test_a_mirror_is_all_or_nothing_and_says_what_it_cannot_map(deals):
+    from flow_sdk.builtin.dataset import LinkError
+
+    with pytest.raises(LinkError) as refused:                                  # without `by`: the CRM's fields are not ours to set
+        await deals.mirror(ITEMS, MAP)
+    assert {d["code"] for d in refused.value.details} == {"owned"} and deals.read_rows() == []
+    bad = [dict(ITEMS[0]), dict(ITEMS[1], data={"stage": "maybe"})]
+    with pytest.raises(LinkError, match="opp-2.input.stage"):
+        await deals.mirror(bad, MAP, by="crm")
+    assert deals.read_rows() == []
+    with pytest.raises(ValueError, match="two items map to the row key 'opp-1'"):
+        await deals.mirror([ITEMS[0], dict(ITEMS[0], external_id="opp 1")], MAP, by="crm")
+    for wrong in ({}, {"key": "external_id"}, {"key": 3, "input": {}}):
+        with pytest.raises(ValueError, match="map:"):
+            await deals.mirror(ITEMS, wrong, by="crm")
+
+
+async def test_in_the_server_a_data_source_is_mirrored_as_its_provider(deals, monkeypatch):
+    from flow_sdk.builtin.source_item import SourceItem
+
+    asked = []
+
+    async def get_all(match, *a, **k):
+        asked.append(match)
+        return [SimpleNamespace(model_dump=lambda mode="json", item=item: item) for item in ITEMS[:2]]
+
+    monkeypatch.setattr(SourceItem, "get_all", get_all)
+    done = await deals.mirror(SimpleNamespace(id="src-1", provider="crm"), MAP)   # `by` defaults to the source's provider
+    assert asked == [{"data_source_id": "src-1"}] and done["created"] == ["opp-1", "opp-2"]
+
+
+# ── write back through the driver ────────────────────────────────────────────
+
+
+class _Crm:
+    """A driver that can write (``sources.protocols.Mutable``)."""
+
+    def __init__(self):
+        self.calls = []
+
+    async def create(self, data):
+        raise AssertionError("not asked")
+
+    async def update(self, origin, changes):
+        self.calls.append(("update", origin.key, changes))
+        return SourceItemSpec.model_construct(origin=origin, data=None)
+
+    async def delete(self, origin):
+        self.calls.append(("delete", origin.key))
+
+
+class _Feed:
+    """A driver that only reads."""
+
+
+@pytest.fixture
+def source(monkeypatch):
+    from flow_sdk.builtin.data_source import DataSource
+    from flow_sdk.builtin.source_item import SourceItem
+
+    driver, opened = {"it": _Crm()}, []
+
+    class Live:
+        def __init__(self):
+            self.source = driver["it"]
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *exc):
+            return None
+
+    async def open_(self, **kw):
+        opened.append(self.id)
+        return Live()
+
+    async def get_one(match, *a, **k):
+        if match.get("id") == "i1" and match.get("data_source_id"):
+            return SimpleNamespace(origin_kind="record", origin_namespace="crm.example", origin_key="OPP-1")
+        return None
+
+    monkeypatch.setattr(DataSource, "open", open_)
+    monkeypatch.setattr(SourceItem, "get_one", get_one)
+    return DataSource(id=str(uuid.uuid4()), provider="crm", account_key="a", name="CRM deals", config={}), driver, opened
+
+
+async def test_a_change_goes_back_to_the_outside_system_through_the_driver(source):
+    src, driver, _ = source
+    done = await src.update_item("i1", {"gtmPersona": "cfo"})
+    assert driver["it"].calls == [("update", "OPP-1", {"gtmPersona": "cfo"})]
+    assert done == {"item_id": "i1", "origin": CloudOrigin(kind="record", namespace="crm.example", key="OPP-1").model_dump(mode="json"), "status": "updated"}
+    assert (await src.delete_item("i1"))["status"] == "deleted" and driver["it"].calls[-1] == ("delete", "OPP-1")
+
+
+async def test_a_write_back_is_refused_before_any_io(source):
+    src, driver, opened = source
+    with pytest.raises(LookupError, match="no item 'ghost'"):
+        await src.update_item("ghost", {"x": 1})
+    with pytest.raises(ValueError, match="changes"):
+        await src.update_item("i1", {})
+    src.read_only = True
+    with pytest.raises(PermissionError, match="read-only"):
+        await src.update_item("i1", {"x": 1})
+    assert opened == [] and driver["it"].calls == []                           # the driver was never opened
+    src.read_only = False
+    driver["it"] = _Feed()
+    with pytest.raises(NotImplementedError, match="the crm driver cannot update a record"):
+        await src.update_item("i1", {"x": 1})
+    with pytest.raises(NotImplementedError, match="cannot delete"):
+        await src.delete_item("i1")
+
+
+def test_the_write_back_and_mirror_actions_are_routable():
+    import inspect
+
+    from flow_sdk.actions.action_registry import action as registry
+    from flow_sdk.builtin.data_source import DataSource
+
+    registered = set(registry.function_registry)
+    assert {"data_source.update_item", "data_source.delete_item", "dataset.mirror"} <= registered
+    for name in ("update_item_action", "delete_item_action"):
+        assert not set(inspect.signature(getattr(DataSource, name)).parameters) - {"self", "cls"}
+
+
+async def test_the_mirror_action_over_http(deals, monkeypatch):
+    from flow_sdk.builtin.data_source import DataSource
+    from flow_sdk.builtin.dataset import Dataset
+    from flow_sdk.builtin.source_item import SourceItem
+    from tests.unit._graph_client import call_local
+
+    served = Dataset(id=str(uuid.uuid4()), name="deals-http", asset_ref=str(deals._folder().parent / "deals-http"),
+                     data_layout="io_folder", spec={"examples": [{"input": deals.row_kind}]})
+    await served.save()
+
+    async def get_by_id(source_id, *a, **k):
+        return SimpleNamespace(id=source_id, provider="crm") if source_id == "src-1" else None
+
+    async def get_all(match, *a, **k):
+        return [SimpleNamespace(model_dump=lambda mode="json", item=item: item) for item in ITEMS[:2]]
+
+    monkeypatch.setattr(DataSource, "get_by_id", get_by_id)
+    monkeypatch.setattr(SourceItem, "get_all", get_all)
+    done = await call_local("POST", f"dataset/{served.id}/mirror", {"source_id": "src-1", "map": MAP})
+    assert done.status_code == 200, done.text
+    assert done.json()["data"] == {"created": ["opp-1", "opp-2"], "updated": [], "unchanged": [], "deleted": [], "num_examples": 2}
+    assert (await call_local("POST", f"dataset/{served.id}/mirror", {"source_id": "ghost", "map": MAP})).status_code == 404
+    assert (await call_local("POST", f"dataset/{served.id}/mirror", {"source_id": "src-1", "map": {"key": "external_id"}})).status_code == 400

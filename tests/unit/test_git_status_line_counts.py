@@ -5,6 +5,7 @@ commands we send actually produce the right numbers — and the interesting case
 here, an untracked file, is precisely the one plain ``git diff --numstat``
 cannot see. So this module runs real git in a tmp repo.
 """
+import os
 import subprocess
 import types
 from pathlib import Path
@@ -19,8 +20,12 @@ class LocalNode:
 
     compute_provider = None
 
-    async def run_command(self, command: str, background: bool = False):
-        p = subprocess.run(["/bin/sh", "-c", command], capture_output=True, text=True)
+    async def run_command(self, command: str, background: bool = False, env=None):
+        # ``env`` is how GitRepo hands git its variables (GIT_INDEX_FILE, …), as on a real node.
+        from flow_sdk.compute.providers.env_prefix import command_environment
+
+        p = subprocess.run(["/bin/sh", "-c", command], capture_output=True, text=True,
+                           env={**os.environ, **command_environment(env)})
         return types.SimpleNamespace(all_stdout=p.stdout, all_stderr=p.stderr, exit_code=p.returncode)
 
     async def exists(self, path: str) -> bool:
@@ -40,9 +45,9 @@ class RecordingNode(LocalNode):
     def __init__(self) -> None:
         self.commands: list[str] = []
 
-    async def run_command(self, command: str, background: bool = False):
+    async def run_command(self, command: str, background: bool = False, env=None):
         self.commands.append(command)
-        return await super().run_command(command, background)
+        return await super().run_command(command, background, env)
 
 
 def _git(repo: Path, *args: str) -> None:
@@ -178,3 +183,55 @@ async def test_tracked_files_count_through_the_real_index(repo: Path):
     status = await GitRepo(str(repo), node).get_status(line_counts=True)
     assert not [c for c in node.commands if "read-tree" in c]
     assert {f.path: (f.insertions, f.deletions) for f in status.files}["brand_new.txt"] == (1, 0)
+
+
+async def test_commit_review_is_immutable_and_handles_root(repo: Path):
+    revision = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=repo, text=True).strip()
+    (repo / 'tracked.txt').write_text('uncommitted\n')
+    git = GitRepo(str(repo), LocalNode())
+    result = await git.dispatch('status', {'revision': revision, 'lineCounts': 'true'})
+    assert {(f['path'], f['status'], f['insertions']) for f in result.data['files']} == {
+        ('tracked.txt', 'A', 3), ('gone.txt', 'A', 2),
+    }
+    diff = await git.dispatch('diff', {'revision': revision, 'file': 'tracked.txt'})
+    assert '+a\n+b\n+c' in diff.data['diff'] and 'uncommitted' not in diff.data['diff']
+    assert (repo / 'tracked.txt').read_text() == 'uncommitted\n'
+
+
+async def test_commit_review_rename_delete_binary_and_unusual_paths(repo: Path):
+    _git(repo, 'mv', 'tracked.txt', 'renamed file.txt')
+    (repo / 'gone.txt').unlink()
+    (repo / 'tab\tfile.txt').write_text('hello\n')
+    (repo / 'binary.bin').write_bytes(b'\x00\x01')
+    _git(repo, 'add', '-A')
+    _git(repo, 'commit', '-qm', 'changes')
+    revision = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=repo, text=True).strip()
+    git = GitRepo(str(repo), LocalNode())
+    status = await git.get_status(revision=revision, line_counts=True)
+    assert {f.path: (f.status, f.insertions, f.deletions) for f in status.files} == {
+        'tracked.txt → renamed file.txt': ('R', 0, 0), 'gone.txt': ('D', 0, 2),
+        'tab\tfile.txt': ('A', 1, 0), 'binary.bin': ('A', None, None),
+    }
+    diff = await git.get_file_diff('tracked.txt → renamed file.txt', 'R', revision=revision)
+    assert 'rename from tracked.txt' in diff.diff and 'rename to renamed file.txt' in diff.diff
+
+
+async def test_commit_review_merge_uses_first_parent(repo: Path):
+    _git(repo, 'checkout', '-qb', 'feature')
+    (repo / 'feature.txt').write_text('feature\n')
+    _git(repo, 'add', '.')
+    _git(repo, 'commit', '-qm', 'feature')
+    _git(repo, 'checkout', 'main')
+    _git(repo, 'merge', '--no-ff', '-m', 'merge feature', 'feature')
+    revision = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=repo, text=True).strip()
+    git = GitRepo(str(repo), LocalNode())
+    assert [f.path for f in (await git.get_status(revision=revision)).files] == ['feature.txt']
+    assert '+feature' in (await git.get_file_diff('feature.txt', 'A', revision=revision)).diff
+
+
+@pytest.mark.parametrize('revision', ['--all', 'HEAD', 'f' * 40])
+async def test_commit_review_invalid_revision_is_an_error(repo: Path, revision: str):
+    git = GitRepo(str(repo), LocalNode())
+    for subpath in ('status', 'diff'):
+        result = await git.dispatch(subpath, {'revision': revision, 'file': 'tracked.txt'})
+        assert result.status != 'SUCCESS'

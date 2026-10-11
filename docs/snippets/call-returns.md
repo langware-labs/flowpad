@@ -97,7 +97,8 @@ class AskOp(ExeData):                         # compute_op.ask — a person
     assist_agent: str                         # AI Assist: this agent follows setup and answers the SAME question
     until_answered: bool                      # no deadline — refuses alongside timeout_seconds
     recheck: bool                             # Send runs the completion check; until it holds the question stays open
-    auto_continue: bool                       # the check re-runs while open and closes it by itself; needs recheck + confirm
+    auto_continue: bool                       # the check re-runs while open and closes it by itself; needs recheck + confirm, or choices
+    choices: list[AskChoiceSpec]              # several ways to answer, the person picks one (a ONE_OF credential)
 
 class Rung(DataSpec):                         # compute_op.rung — one further attempt, same shape as the op's own
     subkind: Literal[OpSubkind.CLI, OpSubkind.PROMPT, OpSubkind.AGENT]  # never ask

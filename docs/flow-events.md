@@ -708,3 +708,14 @@ subscribers all the way down.
 
 ### Log
 
+## `dataset.rows.changed` — rows of a dataset were written  ✅ (2026-10-10)
+
+| site | tag | target | data |
+|---|---|---|---|
+| every row write of `Dataset` (`append`, `put`, `put_many`, `sync`, `delete_rows`, `rename_row`, `annotate`, `set_data`) | `dataset.rows.changed` | `dataset:<id>` | `{op: put \| delete \| rename \| sync, keys (at most 100), count}` — keys, never values |
+
+One event per CALL (a sync of two thousand rows is one), forwarded to the app
+(`FORWARDED_TAG_PATTERNS`); TypeScript listens with `dataset.onRowsChanged(handler)`. A writer that
+is not the server (a sync script) has no bus the app can hear, so it tells the instance
+(`Dataset.announce` → the `rows-changed` action, which only emits). Laws 4 and 5 apply as written:
+nothing is stored and nothing is replayed — a listener re-reads the rows, and re-reads on focus too.

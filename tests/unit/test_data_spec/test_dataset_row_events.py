@@ -80,11 +80,15 @@ async def test_outside_the_server_a_write_tells_the_server_and_never_fails_for_i
     posted = []
 
     class Answer:
-        status_code = 200
+        status_code, reason, text = 200, "OK", ""
+
+        def json(self):
+            return {"status": "success", "data": {"told": 1}}
 
     monkeypatch.setattr(_common, "discover_port", lambda required=True: 4321)
     monkeypatch.setattr(_common, "local_request", lambda method, url, **kw: posted.append((method, url, kw["json"])) or Answer())
     await d.put_many([{"key": "acme", "input": {"name": "Acme"}}])
+    assert d.announce("put", ["acme"]) is True and posted.pop() is not None       # told, and it says so
     assert posted == [("POST", f"http://127.0.0.1:4321/api/v1/graph/dataset/{d.id}/rows-changed", {"op": "put", "keys": ["acme"], "count": 1})]
     assert heard == []                                                          # this process's bus is not the app's
 

@@ -31,6 +31,8 @@ export interface WizardStepDoc {
    *  not a template language, so there is nothing nested to render. */
   args?: Record<string, string>;
   on_fail?: string;
+  /** `false`: a person declining this step's question is an answer, not an error. Default true. */
+  required?: boolean;
 }
 
 export interface WizardDoc {
@@ -52,6 +54,8 @@ export interface WizardDoc {
   agent?: string;
   /** What the wizard returns, in authoring form. */
   output?: unknown;
+  /** A compute op called once when the run ends in error. */
+  exit_error?: string;
   steps?: WizardStepDoc[];
   [key: string]: unknown;
 }
