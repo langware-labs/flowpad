@@ -105,9 +105,15 @@ reasons (a 400 carries the validation `errors`).
 | --- | --- |
 | a rule across rows that is a count, an order or a sum (not "the same row", not "unique") | check it in every writer — the app AND any script — with the same code, and report breaks |
 
-Rows ARE queried, counted, written in bulk and announced: `ds.rows({match, order_by, limit, offset})`
-and `ds.count({match, group_by})` answer only what a page shows; `putMany` / `deleteRows` / `sync`
-write many rows as one step; `ds.onRowsChanged(handler)` replaces polling (`modes/app.md`).
+| a row's past values (history) | a date you will ask about is a FIELD (`stage_dates`); a dataset in git has its commits |
+| a join on a value that is not a link (an email address) | two calls and `$IN` — or model it as a link: a path follows links |
+
+Rows ARE queried across links, counted, searched, written in bulk and announced (`modes/app.md`):
+`ds.rows({match, q, expand})` — a path follows a link (`input.persona.icp.key`) and `expand` brings
+the linked rows back beside; `ds.count({group_by: ["week:input.day"], metrics: {people:
+"distinct:input.email"}})`; `ds.usedBy()`; `putMany` / `deleteRows` / `sync` as one step;
+`ds.onRowsChanged(handler)` instead of polling. One import home in Python: `from flow_sdk.datasets
+import Dataset, load_root, single_run, three_way, kind_form`.
 
 Two writers at once (an app's server and a sync script) are safe: row writes in one project take
 one lock, and `put` / `delete` with `expected` refuse a row changed since it was read — a row that

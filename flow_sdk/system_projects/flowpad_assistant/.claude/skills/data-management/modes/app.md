@@ -25,10 +25,18 @@ A static Flowpad-SDK app imports `/sdk/flowpad-sdk.js`:
 | the kind a dataset's rows are | `ds.rowKind` (inline spec) | `ds.row_kind` |
 | a kind's fields → build a form | `kindForm("--ns--.kind")` → `{fields: {name: {shape, description, required}}}`; an outage throws | `DataSpec.parse(kind).model_fields` |
 | rows | `ds.rows()` → `{rows, problems}`; each row has `key`, `id`, `ref`, `version`, `input`; each problem `key`, `id`, `ref`, `errors`, `version` and the `input` as stored (unchecked) — show it, keep links to it, repair it with `put(key, …, {expected: problem.version})` | `ds.rows_and_problems()` → rows with `key`, `id`, `version` (`ds.ref_of(r.id)` for the ref) |
-| SOME rows — the list behind a number, a search, a page | `ds.rows({match, order_by, limit, offset})` → `{rows, total, problems}`; `match` is `{op, operands}` (`$EQ $NE $GT $GE $LT $LE $IN $NIN $LIKE $IS_NULL $IS_NOT_NULL`, under `$AND` / `$OR`) or a plain `{path: value}` map; a field is a path into the row (`key`, `input.stage`, `input.stage_dates.won`), a date compares as its ISO string | `ds.query(match, order_by=, limit=, offset=)` → the same dict |
-| a count — a dashboard number | `ds.count({match, group_by: [paths]})` → `{total, groups: [{by, count}]}` — the SAME `match` the list uses, so the number and its rows cannot disagree | `ds.count(match, group_by=[...])` |
+| SOME rows — the list behind a number, a search, a page | `ds.rows({match, q, order_by, limit, offset, expand})` → `{rows, total, problems, linked?}`; `match` is `{op, operands}` (`$EQ $NE $GT $GE $LT $LE $IN $NIN $LIKE $IS_NULL $IS_NOT_NULL`, under `$AND` / `$OR`) or a plain `{path: value}` map; a date compares as its ISO string | `ds.rows(match, q=, order_by=, limit=, offset=, expand=)` → the same dict (`query` is the same call) |
+| a path — in `match`, `order_by`, `group_by`, `expand` | ONE grammar, a rule path with the slot written: `key`, `input.stage`, `input.stage_dates.won`, `input.tags.*` (any element), and **a path follows a link**: `input.persona.icp.key` ("deals of this ICP"), `input.company.name` — no join, no second call | same |
+| the linked rows a page shows (names, not references) | `ds.rows({expand: ["input.persona"]})` → `linked[row.input.persona].row.input.name` — one call, never one `findRow` per link | `ds.rows(expand=[...])["linked"]` |
+| a count — a dashboard number | `ds.count({match, q, group_by, metrics, order_by, week_start})` → `{total, groups: [{by, count, metrics?}], metrics?}` — the SAME `match` the list uses, so the number and its rows cannot disagree | `ds.count(match, group_by=[...], metrics={...})` |
+| per week / month / quarter | `group_by: ["week:input.day"]` (also `day:` `month:` `quarter:`), keyed `2026-09-13` (the week's first day), `2026-09`, `2026-Q3`; `week_start: "sunday"` when your week begins there; `order_by: {"week:input.day": "asc"}` for a series; `bucketOf(day, "week", "sunday")` gives a period's key | same names |
+| people, not rows — first / last / total | `metrics: {people: "distinct:input.email", first: "min:input.day", total: "sum:input.amount"}` (`distinct` · `min` · `max` · `sum`) | same |
+| text anywhere in a row | `ds.rows({q: "pricing objection"})` (every word, list items included); `$LIKE` on a list field = some element contains it | `ds.rows(q=...)` |
+| who links to a row — and rows nothing links to | `ds.usedBy(keys?)` → `{key: [{dataset_id, kind, key}]}` (`[]` = unused); what a delete is refused for, asked first | `ds.used_by(keys=None)` |
+| records (a task, a session, an ingested email) — not rows | `searchRecords(q, {record_type, limit})`; `SourceItem.query(new QueryRequest({type: "source_item", query: new QueryFilter({match: {data_source_id}, limit: 50})}))` — paging goes in `query`, a stray top-level key is refused | a script: `flow_sdk.local_client.graph_get("source_item", {"match": {...}, "limit": 50})`, `.search(q)` |
+| link a row to a record | a field shaped `?ingest.source_item` holds `ingest.source_item.id.<item id>`; `expand` returns it as `linked[ref] = {type, id, record}` (over REST). Keep the provider's `external_id` too — record ids are per machine | same |
 | one row | `ds.example(key)` | `ds.example(key)` |
-| check before saving | `ds.check({input})` → `{ok, errors}` (references included); a lone value: `checkKind(kind, value)` | `ds.check({...})` → a list of errors, `[]` when it fits |
+| check before saving | `ds.check({input})` → `{ok, errors, details}` (references included); a lone value: `checkKind(kind, value)` | `ds.check_row({...})` → the same `{ok, errors, details}` (`ds.check` → its lines, `[]` when it fits) |
 | save | `ds.put(key, {input}, {expected: row.version})` → 409 when someone changed it | `await ds.put(key, {...}, expected=v)` |
 | add | `ds.append([{key, input}])` | `await ds.append([...])` |
 | rename / delete | `ds.rename(key, newKey, {expected: row.version})` (id and links stay) / `ds.deleteRow(key, {expected: row.version})` (409 while referenced or changed) | `ds.rename_row(key, new, expected=v)` / `ds.delete_row(key, expected=v)` |
@@ -83,9 +91,15 @@ never split `enum:` or `|` yourself. `kindForm(kind).rules` lists the kind's rul
 - **Row events are a hint, not a log.** `onRowsChanged` is best effort: an event sent while the
   page was disconnected is not replayed, and a script that ran while Flowpad was stopped told
   nobody. Re-read on the event AND when the page regains focus; no timer is needed.
-- **A query reads the rows from disk each time** (there is no index over row fields): fine for
-  thousands of rows, not for millions. Ask for what the page shows (`match`, `limit`), never
-  every row on a timer.
+- **A query reads the rows from disk each time** (there is no index over row fields), and each
+  dataset a link path leads into once more: fine for thousands of rows, not for millions. Ask for
+  what the page shows (`match`, `limit`), never every row on a timer.
+- **No join on a value that is not a link.** "Rows whose email appears in that other result" is
+  two calls and `$IN` — or make it a link, and a path follows it.
+- **No row history.** A date you will ask about is a field (`stage_dates`, `owned_by` its source);
+  a write log would miss every writer that bypasses the SDK. A dataset in git has its commits.
+- **A path does not continue into a record**, and a link to a record is not checked on a write
+  from disk (records live in the instance's store). Keep what you will ask about in the row.
 - **A rule across rows that counts, orders or sums** is not in the schema: write it into the
   kinds' `description.md` and check it in every writer. "The same row" (a tag chain) and "no two
   rows share this value" (`unique`: a natural key) ARE schema `rules` — never app code.

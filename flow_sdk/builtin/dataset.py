@@ -68,7 +68,7 @@ MANIFEST = "dataset.json"
 
 
 # Re-exported: the enums live with the value models.
-__all__ = ["ConflictError", "Dataset", "DatasetManifestSpec", "LinkError", "DataLayoutEnum", "ExampleKind", "ExampleSpec", "EXAMPLE_META", "MANIFEST"]
+__all__ = ["ConflictError", "Dataset", "DatasetManifestSpec", "LinkError", "RowRefused", "DataLayoutEnum", "ExampleKind", "ExampleSpec", "EXAMPLE_META", "MANIFEST"]
 
 
 #: A field that holds a DATASET shape — ``DatasetSpec.parse`` reads the keyword
@@ -106,6 +106,12 @@ class LinkError(ValueError):
         super().__init__("; ".join(self.errors))
 
 
+#: The name for what ``LinkError`` has grown into: any refusal of a row that is not "changed since"
+#: -- a reference that names nothing, a rule, a ``unique`` value, an ``owned`` field, a shape
+#: (in a batch). Read ``details[].code``; catch either name.
+RowRefused = LinkError
+
+
 class ConflictError(ValueError):
     """``put / delete_row / rename_row(expected=...)``: the row changed since the version the caller
     read (``code`` ``"conflict"``), or is gone since (``"gone"``)."""
@@ -122,6 +128,15 @@ def _put_details(exc: ValidationError, row: Any, dataset: "Dataset") -> list[dic
     from flow_sdk.datasets.links import shape_details  # noqa: PLC0415
 
     return shape_details(exc) + (dataset._raw_link_details(row) if dataset.asset_ref else [])
+
+
+def _misfit(exc: ValidationError, row: Any, dataset: "Dataset", message: str) -> ApiFailResponse:
+    """A row refused for its SHAPE, answered like every other refusal: ``errors`` as lines and
+    ``details`` as ``{path, code, message}`` (the row's broken references in the same answer)."""
+    from flow_sdk.datasets.links import detail_lines  # noqa: PLC0415
+
+    details = _put_details(exc, row, dataset)
+    return ApiFailResponse(message=message, status_code=400, data={"errors": detail_lines(details), "details": details})
 
 
 def _refused(exc: "LinkError | ConflictError", status_code: int) -> ApiFailResponse:
@@ -309,16 +324,28 @@ class Dataset(Entity):
         # A NAMED shape has a document name of its own; an inline one (``{"sentiment": "string"}``)
         # would get a hash-named file, so it keeps the shape-agnostic ``label.json``.
         named = bool(getattr(shape, "spec_kind", ""))
-        dataset_layout_for(self.data_layout).annotate(
-            self._folder(), example_id, payload, dataset_id=self.id, by=by,
-            main=_main_document(shape) if named else ANNOTATION_FILE,
-        )
+        with self._lock():   # a row write like any other: one at a time, and said
+            written = dataset_layout_for(self.data_layout).annotate(
+                self._folder(), example_id, payload, dataset_id=self.id, by=by,
+                main=_main_document(shape) if named else ANNOTATION_FILE,
+            )
+        self._tell("put", [self._key_of(written, example_id)])
 
     def set_data(self, example_id: str, data: dict) -> None:
         """Replace one example's free ``data`` (a suite tag, a note) -- its inputs and golds untouched."""
         from flow_sdk.schema.data_spec.layout import dataset_layout_for  # noqa: PLC0415
 
-        dataset_layout_for(self.data_layout).set_data(self._folder(), example_id, dict(data), dataset_id=self.id)
+        with self._lock():
+            written = dataset_layout_for(self.data_layout).set_data(self._folder(), example_id, dict(data), dataset_id=self.id)
+        self._tell("put", [self._key_of(written, example_id)])
+
+    def _key_of(self, written: Any, given: str) -> str:
+        """The key of the row a layout write touched: the row folder its answer (a path) lies in."""
+        examples = (self._folder() / "examples").resolve()
+        try:
+            return Path(written).resolve().relative_to(examples).parts[0]
+        except (TypeError, ValueError, IndexError):
+            return given
 
     @property
     def row_type(self) -> Any:
@@ -572,6 +599,14 @@ class Dataset(Entity):
 
         return detail_lines(self.check_details(row, by=by))
 
+    def check_row(self, row: dict, *, by: Optional[str] = None) -> dict:
+        """Would this row fit? ``{ok, errors, details}`` -- what the TypeScript ``check`` and the
+        ``check-row`` action answer (``check`` is its ``errors`` alone). Writes nothing."""
+        from flow_sdk.datasets.links import detail_lines  # noqa: PLC0415
+
+        details = self.check_details(row, by=by)
+        return {"ok": not details, "errors": detail_lines(details), "details": details}
+
     def check_details(self, row: dict, *, cache: Optional[dict] = None, by: Optional[str] = None) -> list[dict]:
         """``check`` as ``[{path, code, message}]``: ``code`` is ``shape:<pydantic type>``,
         ``dangling_ref``, ``inline_row``, ``rule``, ``unique`` (another row holds the value) or
@@ -628,14 +663,10 @@ class Dataset(Entity):
         if not keys or not self.id:
             return False
         try:
-            from flow_sdk.cli.commands._common import discover_port, local_request  # noqa: PLC0415
+            from flow_sdk import local_client  # noqa: PLC0415
 
-            port = discover_port(required=False)
-            if port is None:
-                return False
-            resp = local_request("POST", f"http://127.0.0.1:{port}/api/v1/graph/dataset/{self.id}/rows-changed",
-                                 json=self._rows_event(op, keys), timeout=5)
-            return resp.status_code < 400
+            local_client.graph_post(f"dataset/{self.id}/rows-changed", self._rows_event(op, keys), timeout=5)
+            return True
         except Exception:  # noqa: BLE001 -- telling is never a reason for a write to fail
             return False
 
@@ -828,8 +859,7 @@ class Dataset(Entity):
     def _check_delete(self, keys: list[str], expected: dict[str, str]) -> list[Path]:
         """The row folders ``keys`` (keys or ids) name, once every one of them may go -- else the
         error ``delete_rows`` documents. Nothing is removed. Called under the row lock."""
-        from flow_sdk.datasets.links import link_index, linkers_of, referrers  # noqa: PLC0415
-        from flow_sdk.schema.data_spec.layout import FolderLayout, row_id, row_version  # noqa: PLC0415
+        from flow_sdk.schema.data_spec.layout import FolderLayout, row_version  # noqa: PLC0415
 
         layout, folder = FolderLayout(), self._folder()
         found = {given: layout.example_dir(folder, given, dataset_id=self.id) for given in dict.fromkeys(keys)}
@@ -840,18 +870,13 @@ class Dataset(Entity):
         stale = [ex_dir.name for given, ex_dir in found.items() if given in expected and row_version(ex_dir) != expected[given]]
         if stale:
             raise ConflictError(f"row {', '.join(repr(k) for k in stale)} changed since the version read")
-        if self.row_kind and dirs:
-            going = {ex_dir.name for ex_dir in dirs}
-            index = link_index(self._owner(), read=lambda f: Dataset.at(f).read_lenient(),
-                               only=linkers_of(self.row_kind, self._owner()))
-            held = []
-            for ex_dir in dirs if index else []:
-                users = [f"{kind} {key}" for at, kind, key in referrers(self.ref_of(row_id(ex_dir, self.id)), self._owner(), read=None, index=index)
-                         if not (at == folder and key in going)]
-                if users:
-                    held.append({"path": ex_dir.name if len(dirs) > 1 else "", "code": "referenced", "message": f"used by {', '.join(users)}"})
-            if held:
-                raise LinkError(held)
+        going, held = {ex_dir.name for ex_dir in dirs}, []
+        for ex_dir, users in zip(dirs, self._users(dirs)):
+            still = [f"{u['kind']} {u['key']}" for u in users if not (u["folder"] == folder and u["key"] in going)]
+            if still:
+                held.append({"path": ex_dir.name if len(dirs) > 1 else "", "code": "referenced", "message": f"used by {', '.join(still)}"})
+        if held:
+            raise LinkError(held)
         return dirs
 
     def delete_rows(self, keys: list[str], *, expected: Optional[dict[str, str]] = None) -> list[str]:
@@ -958,28 +983,124 @@ class Dataset(Entity):
             rows = kept
         return rows, problems
 
+    def _linked(self) -> Any:
+        """Reads the rows links name, for one call: ``linked(ref) -> {dataset_id, key, row} | None`` --
+        the ``/refs/<ref>`` answer. Each dataset a link leads into is read ONCE, on first use."""
+        from flow_sdk.datasets.links import find_row  # noqa: PLC0415
+
+        owner, cache, folders = self._owner(), {}, {}
+
+        def linked(ref: str) -> Optional[dict]:
+            found = find_row(ref, owner, cache=cache)
+            if found is None:
+                return None
+            folder, key = found
+            if folder not in folders:
+                dataset = self if folder == self._folder() else Dataset.at(folder)
+                folders[folder] = (dataset.id, {r.key: dataset._row_out(r) for r in dataset.read_lenient()[0]})
+            dataset_id, rows = folders[folder]
+            return {"dataset_id": dataset_id, "key": key, "row": rows[key]} if key in rows else None
+
+        return linked
+
     def query(self, match: Any = None, *, order_by: Any = None, limit: Optional[int] = None,
-              offset: Optional[int] = None) -> dict:
+              offset: Optional[int] = None, q: Optional[str] = None, expand: Optional[list[str]] = None) -> dict:
         """SOME of the rows: ``{rows, total, problems}``. ``match`` is an expression (``{op, operands}``)
-        or a plain ``{field: value}`` map over a row as the API hands it out -- a field is a path:
-        ``key``, ``input.stage``, ``input.stage_dates.won`` (``flow_sdk.datasets.query``); ``order_by``
-        is ``{path: "asc"|"desc"}`` (or a list of them); ``limit`` / ``offset`` page the result.
+        or a plain ``{path: value}`` map over a row as the API hands it out. A path is written as a
+        schema's rules write theirs, with the slot spelled out (``flow_sdk.datasets.query``): ``key``,
+        ``input.stage``, ``input.stage_dates.won``, ``input.tags.*`` (any element), and
+        ``input.persona.icp`` -- a path FOLLOWS a link into the linked row (``input.persona.key`` is
+        that row's key). ``q`` keeps the rows whose text holds every word of it. ``order_by`` is
+        ``{path: "asc"|"desc"}`` (or a list of them); ``limit`` / ``offset`` page the result.
+
         ``rows`` are dicts (``key``, ``id``, ``ref``, ``version`` and the slots' values), ``total`` is
         how many matched before paging, and ``problems`` is EVERY row that does not fit -- a filter
-        never hides a broken row."""
-        from flow_sdk.datasets.query import select  # noqa: PLC0415
+        never hides a broken row. ``expand`` names link paths (``["input.persona"]``): the rows they
+        lead to come back beside, once each, as ``linked: {<ref>: {dataset_id, key, row}}`` -- the
+        rows themselves keep their references, so one can be put back as it was read."""
+        from flow_sdk.datasets.query import Many, field_of, select  # noqa: PLC0415
 
         rows, problems = self.rows_and_problems()
-        page, total = select((self._row_out(r) for r in rows), match=match, order_by=order_by, limit=limit, offset=offset)
-        return {"rows": page, "total": total, "problems": problems}
+        linked = self._linked()
+        follow = lambda ref: (linked(ref) or {}).get("row")   # noqa: E731
+        page, total = select((self._row_out(r) for r in rows), match=match, order_by=order_by, limit=limit,
+                             offset=offset, q=q, follow=follow)
+        out = {"rows": page, "total": total, "problems": problems}
+        if expand:
+            if not isinstance(expand, list) or not all(isinstance(p, str) and p for p in expand):
+                raise ValueError("expand: a list of link paths is required")
+            out["linked"] = {}
+            for row in page:
+                for path in expand:
+                    held = field_of(row, path, follow)
+                    for ref in (held if isinstance(held, (Many, list)) else [held]):
+                        if isinstance(ref, str) and ref not in out["linked"]:
+                            found = linked(ref)
+                            if found is not None:
+                                out["linked"][ref] = found
+        return out
 
-    def count(self, match: Any = None, *, group_by: Optional[list[str]] = None) -> dict:
-        """How many rows match: ``{total, groups}`` -- with ``group_by`` (field paths, as in
-        ``query``) also how many per distinct combination, ``[{by: {path: value}, count}]``, largest
-        first. Rows that do not fit their shape are not counted (``rows_and_problems`` names them)."""
+    def rows(self, match: Any = None, **asked: Any) -> dict:
+        """THE read: ``{rows, total, problems}`` -- every row, or those ``match`` selects. The name the
+        TypeScript client, the ``rows`` action and ``dm_ctl ds-rows`` use; ``query`` is the same call.
+        (``read_rows`` / ``rows_and_problems`` hand back typed values for code that scores or syncs.)"""
+        return self.query(match, **asked)
+
+    def count(self, match: Any = None, *, group_by: Optional[list[str]] = None, metrics: Optional[dict[str, str]] = None,
+              order_by: Any = None, week_start: str = "monday", q: Optional[str] = None) -> dict:
+        """How many rows match -- the SAME ``match`` and ``q`` as ``query``, so a number and the list
+        behind it are one question: ``{total, groups}``. ``group_by`` gives the count per distinct
+        combination, ``[{by: {<entry>: value}, count}]``; an entry is a path (links followed, as in
+        ``query``) or a date BUCKET ``<day|week|month|quarter>:<path>`` keyed ``2026-09-13`` (the
+        week's first day; ``week_start`` ``"monday"`` or ``"sunday"``), ``2026-09``, ``2026-Q3``.
+        ``metrics`` names further measures ``{name: "<distinct|min|max|sum>:<path>"}``, answered
+        overall and per group. ``order_by`` orders the groups (by an entry, ``count`` or a metric's
+        name); otherwise largest first. Rows that do not fit their shape are not counted
+        (``rows_and_problems`` names them)."""
         from flow_sdk.datasets.query import count  # noqa: PLC0415
 
-        return count((self._row_out(r) for r in self.rows_and_problems()[0]), match=match, group_by=group_by)
+        linked = self._linked()
+        return count((self._row_out(r) for r in self.rows_and_problems()[0]), match=match, group_by=group_by,
+                     metrics=metrics, order_by=order_by, week_start=week_start, q=q,
+                     follow=lambda ref: (linked(ref) or {}).get("row"))
+
+    def used_by(self, keys: Optional[list[str]] = None) -> dict[str, list[dict]]:
+        """Who links to each row: ``{key: [{dataset_id, kind, key}]}`` for ``keys`` (keys or ids; every
+        row when left out) -- ``[]`` for a row nothing links to. What a delete is refused for ("used
+        by ..."), asked ahead of time; and its opposite, the rows nothing uses. Reads only the datasets
+        whose schema can reach this kind (``links.linkers_of``), once."""
+        from flow_sdk.schema.data_spec.layout import FolderLayout, _example_dirs  # noqa: PLC0415
+
+        self._typed_rows_or_raise()
+        layout, folder = FolderLayout(), self._folder()
+        if keys is None:
+            dirs = list(_example_dirs(folder))
+        else:
+            found = {given: layout.example_dir(folder, given, dataset_id=self.id) for given in dict.fromkeys(keys)}
+            missing = [given for given, ex_dir in found.items() if ex_dir is None]
+            if missing:
+                raise LookupError(f"no example {', '.join(missing)} in {folder}")
+            dirs = list({ex_dir.name: ex_dir for ex_dir in found.values()}.values())
+        return {ex_dir.name: [{k: v for k, v in u.items() if k != "folder"} for u in users]
+                for ex_dir, users in zip(dirs, self._users(dirs))}
+
+    def _users(self, dirs: list[Path]) -> list[list[dict]]:
+        """For each row folder, the rows that hold a reference to it (``used_by``'s entries, plus the
+        referring dataset's ``folder`` for a caller that sets some aside)."""
+        from flow_sdk.datasets.links import link_index, linkers_of  # noqa: PLC0415
+        from flow_sdk.schema.data_spec.layout import row_id  # noqa: PLC0415
+
+        if not self.row_kind or not dirs:
+            return [[] for _ in dirs]
+        datasets: dict = {}
+
+        def read(at: Path) -> tuple[list, list]:
+            datasets[at] = Dataset.at(at)
+            return datasets[at].read_lenient()
+
+        index = link_index(self._owner(), read=read, only=linkers_of(self.row_kind, self._owner()))
+        return [[{"dataset_id": datasets[at].id, "kind": kind, "key": key, "folder": at}
+                 for at, kind, key, _ in index.get(self.ref_of(row_id(ex_dir, self.id)), [])] for ex_dir in dirs]
 
     def read_rows(self) -> list:
         """Every row read as the declared shape (raises on a row that does not fit -- ``validate_rows``
@@ -1027,30 +1148,38 @@ class Dataset(Entity):
     @staticmethod
     def _query_params() -> dict:
         """The read parameters of the request: ``filter`` (JSON or a map: ``match``, ``order_by``,
-        ``limit``, ``offset`` -- or the match itself), top-level ``limit`` / ``offset`` / ``order_by``
-        (the filter's win), and ``group_by`` (a list, or names separated by commas)."""
+        ``limit``, ``offset``, ``expand`` -- or the match itself), the same names top-level (the
+        filter's win), and beside them ``q``, ``group_by`` / ``expand`` (a list, or names separated by
+        commas), ``metrics`` (JSON ``{name: "<op>:<path>"}``) and ``week_start``."""
         import json  # noqa: PLC0415
 
         params = get_current_request_info().request_parameters or {}
-        raw = params.get("filter") or {}
-        if isinstance(raw, str):
-            raw = json.loads(raw)
+
+        def listed(value: Any) -> Optional[list]:
+            if isinstance(value, str):
+                value = json.loads(value) if value.lstrip().startswith("[") else [v.strip() for v in value.split(",") if v.strip()]
+            return value or None
+
+        def obj(value: Any, name: str) -> Any:
+            value = json.loads(value) if isinstance(value, str) and value.strip() else value
+            if value not in (None, "") and not isinstance(value, (dict, list)):
+                raise ValueError(f"{name}: an object is required")
+            return value or None
+
+        raw = obj(params.get("filter"), "filter") or {}
         if not isinstance(raw, dict):
             raise ValueError("filter: an object is required")
-        if not ({"match", "order_by", "limit", "offset"} & set(raw)):
+        if not ({"match", "order_by", "limit", "offset", "expand"} & set(raw)):
             raw = {"match": raw} if raw else {}
-        out = {"match": raw.get("match"), "order_by": raw.get("order_by") or params.get("order_by")}
-        if isinstance(out["order_by"], str):
-            out["order_by"] = json.loads(out["order_by"])
+        out = {"match": raw.get("match"), "order_by": obj(raw.get("order_by") or params.get("order_by"), "order_by"),
+               "expand": listed(raw.get("expand") or params.get("expand")), "q": params.get("q") or None,
+               "group_by": listed(params.get("group_by")), "metrics": obj(params.get("metrics"), "metrics"),
+               "week_start": params.get("week_start") or "monday"}
         for name in ("limit", "offset"):
             value = raw.get(name, params.get(name))
             out[name] = None if value in (None, "") else int(value)
             if out[name] is not None and out[name] < 0:
                 raise ValueError(f"{name}: a number from 0 is required")
-        group_by = params.get("group_by")
-        if isinstance(group_by, str):
-            group_by = json.loads(group_by) if group_by.lstrip().startswith("[") else [g.strip() for g in group_by.split(",") if g.strip()]
-        out["group_by"] = group_by or None
         return out
 
     @action.get(action_name="rows")
@@ -1061,10 +1190,35 @@ class Dataset(Entity):
         ordered and paged (``Dataset.query``); ``total`` counts the matches before paging."""
         try:
             asked = self._query_params()
-            found = self.query(asked["match"], order_by=asked["order_by"], limit=asked["limit"], offset=asked["offset"])
+            found = self.query(asked["match"], order_by=asked["order_by"], limit=asked["limit"], offset=asked["offset"],
+                               q=asked["q"], expand=asked["expand"])
         except ValueError as exc:   # the dataset declares no typed rows, or the filter does not read
             return ApiFailResponse(message=str(exc), status_code=400)
+        if asked["expand"]:
+            await self._expand_records(found, asked["expand"])
         return ApiSuccessResponse(data=found)
+
+    async def _expand_records(self, found: dict, expand: list[str]) -> None:
+        """Links to RECORDS among the expanded paths (a row's ``ingest.source_item`` reference), read
+        from the instance's store: ``linked[<ref>] = {type, id, record}``. Here and not in ``query``:
+        records are the server's to read; a script reads them through ``flow_sdk.local_client``."""
+        from flow_sdk.datasets.links import record_type_of  # noqa: PLC0415
+        from flow_sdk.datasets.query import Many, field_of  # noqa: PLC0415
+        from flow_sdk.schema.data_spec.value_ref import parse_ref  # noqa: PLC0415
+
+        cache: dict = {}
+        linked = found.setdefault("linked", {})
+        follow = lambda ref: (linked.get(ref) or {}).get("row")   # noqa: E731
+        for row in found["rows"]:
+            for path in expand:
+                held = field_of(row, path, follow)
+                for ref in (held if isinstance(held, (Many, list)) else [held]):
+                    parsed = parse_ref(ref) if isinstance(ref, str) and ref not in linked else None
+                    record_type = record_type_of(parsed[0], cache) if parsed else None
+                    if record_type:
+                        record = await Entity.get_by_typeid(f"{record_type}-{parsed[1]}")
+                        if record is not None:
+                            linked[ref] = {"type": record_type, "id": parsed[1], "record": record.model_dump(mode="json")}
 
     @action.get(action_name="count")
     async def count_action(self):
@@ -1072,9 +1226,26 @@ class Dataset(Entity):
         value of ``?group_by=`` (field paths, comma-separated): ``[{by, count}]``."""
         try:
             asked = self._query_params()
-            return ApiSuccessResponse(data=self.count(asked["match"], group_by=asked["group_by"]))
+            return ApiSuccessResponse(data=self.count(asked["match"], group_by=asked["group_by"], metrics=asked["metrics"],
+                                                      order_by=asked["order_by"], week_start=asked["week_start"], q=asked["q"]))
         except ValueError as exc:
             return ApiFailResponse(message=str(exc), status_code=400)
+
+    @action.get(action_name="used-by")
+    async def used_by_action(self):
+        """``GET used-by[?keys=a,b]`` → ``{used_by: {key: [{dataset_id, kind, key}]}}``: who links to each
+        row (every row when ``keys`` is left out); ``[]`` for a row nothing links to. 404 a key that is no row."""
+        params = get_current_request_info().request_parameters or {}
+        keys = params.get("keys")
+        if isinstance(keys, str):
+            keys = [k.strip() for k in keys.split(",") if k.strip()]
+        try:
+            users = self.used_by(keys or None)
+        except LookupError as exc:
+            return ApiFailResponse(message=str(exc), status_code=404)
+        except ValueError as exc:
+            return ApiFailResponse(message=str(exc), status_code=400)
+        return ApiSuccessResponse(data={"used_by": users})
 
     @action.post(action_name="score")
     async def score_action(self):
@@ -1097,14 +1268,13 @@ class Dataset(Entity):
         try:
             ids = await self.append(rows, by=body.get("by"))
         except ValidationError as exc:
-            return ApiFailResponse(message="a row does not match the dataset's shape", status_code=400,
-                                   data={"errors": exc.errors(include_url=False)})
+            return _misfit(exc, None, self, "a row does not match the dataset's shape")
         except LinkError as exc:
             return _refused(exc, 400)
         except ValueError as exc:
             return ApiFailResponse(message=str(exc), status_code=400)
         fresh = await self.refresh_counts()
-        return ApiSuccessResponse(data={"example_ids": ids, "num_examples": fresh.num_examples})
+        return ApiSuccessResponse(data={"ids": ids, "example_ids": ids, "num_examples": fresh.num_examples})
 
     async def _row_body(self, *required: str) -> "dict | ApiFailResponse":
         body = await read_json_body(get_current_request_info())
@@ -1125,8 +1295,7 @@ class Dataset(Entity):
         try:
             eid = await self.put(body["key"], body["row"], expected=body.get("expected"), by=body.get("by"))
         except ValidationError as exc:
-            return ApiFailResponse(message="the row does not match the dataset's shape", status_code=400,
-                                   data={"errors": exc.errors(include_url=False), "details": _put_details(exc, body["row"], self)})
+            return _misfit(exc, body["row"], self, "the row does not match the dataset's shape")
         except ConflictError as exc:
             return _refused(exc, 409)
         except LinkError as exc:
@@ -1134,7 +1303,7 @@ class Dataset(Entity):
         except ValueError as exc:
             return ApiFailResponse(message=str(exc), status_code=400)
         fresh = await self.refresh_counts()
-        return ApiSuccessResponse(data={"example_id": eid, "key": body["key"], "num_examples": fresh.num_examples})
+        return ApiSuccessResponse(data={"id": eid, "example_id": eid, "key": body["key"], "num_examples": fresh.num_examples})
 
     @action.post(action_name="delete-row")
     async def delete_row_action(self):
@@ -1180,7 +1349,7 @@ class Dataset(Entity):
         if isinstance(ids, ApiFailResponse):
             return ids
         fresh = await self.refresh_counts()
-        return ApiSuccessResponse(data={"example_ids": ids, "keys": [r["key"] for r in body["rows"]], "num_examples": fresh.num_examples})
+        return ApiSuccessResponse(data={"ids": ids, "example_ids": ids, "keys": [r["key"] for r in body["rows"]], "num_examples": fresh.num_examples})
 
     @action.post(action_name="delete-rows")
     async def delete_rows_action(self):
@@ -1260,12 +1429,9 @@ class Dataset(Entity):
         if isinstance(body, ApiFailResponse):
             return body
         try:
-            details = self.check_details(body["row"], by=body.get("by"))
+            return ApiSuccessResponse(data=self.check_row(body["row"], by=body.get("by")))
         except ValueError as exc:   # the dataset itself cannot take typed rows
             return ApiFailResponse(message=str(exc), status_code=400)
-        from flow_sdk.datasets.links import detail_lines  # noqa: PLC0415
-
-        return ApiSuccessResponse(data={"ok": not details, "errors": detail_lines(details), "details": details})
 
     @action.get(action_name="example")
     async def example_action(self):
@@ -1279,8 +1445,7 @@ class Dataset(Entity):
         except ValueError as exc:
             return ApiFailResponse(message=str(exc), status_code=400)
         except ValidationError as exc:
-            return ApiFailResponse(message="the example does not match the dataset's shape", status_code=422,
-                                   data={"errors": exc.errors(include_url=False)})
+            return _misfit(exc, None, self, "the row does not match the dataset's shape")   # 400, as every misfit
         if found is None:
             return ApiFailResponse(message=f"no example {example_id}", status_code=404)
         return ApiSuccessResponse(data=found)
