@@ -58,7 +58,7 @@ from flow_sdk.builtin.agentic_process.display_context import (
     DisplayContextTooLarge,
     NothingShown,
     describe_display_context,
-    same_display_target,
+    same_history_target,
     take_prompt_context,
     with_display_context,
     without_stale_display_context,
@@ -646,7 +646,7 @@ DISPLAY_STACK_CAP = 50
 def _append_display_entry(stack: list[dict], payload: dict, shown_at: str) -> list[dict]:
     """Append ``payload`` (stamped ``shown_at``) to ``stack``, dropping any earlier
     show of the same target — so repeats never eat the cap. Capped to the newest N."""
-    kept = [e for e in stack if not (isinstance(e, dict) and same_display_target(e, payload))]
+    kept = [e for e in stack if not (isinstance(e, dict) and same_history_target(e, payload))]
     return [*kept, {**payload, "shown_at": shown_at}][-DISPLAY_STACK_CAP:]
 
 
@@ -659,7 +659,10 @@ def _union_display_stacks(a: list, b: list) -> list[dict]:
         if isinstance(entry, dict) and entry.get("shown_at"):
             by_key[entry["shown_at"]] = entry
     merged = sorted(by_key.values(), key=lambda e: e.get("shown_at") or "")
-    return merged[-DISPLAY_STACK_CAP:]
+    result: list[dict] = []
+    for entry in merged:
+        result = _append_display_entry(result, entry, entry["shown_at"])
+    return result
 
 
 class AgenticProcess(Entity):
