@@ -622,6 +622,10 @@ async def _start_fsop_watcher() -> None:
         from flow_sdk.ingest.change_event import subscribe as subscribe_source_changes
 
         subscribe_source_changes()
+        # A source that declares a mirror has its dataset made the mirror of its records after every sync.
+        from flow_sdk.datasets.projection import start_dataset_projection
+
+        start_dataset_projection()
         print(f"  FSOp watcher: started ({len(fsop_watcher)} trigger(s))")
     except Exception:
         logging.getLogger(__name__).exception("FSOp watcher: failed to start")

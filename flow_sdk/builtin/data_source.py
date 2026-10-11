@@ -245,6 +245,10 @@ class DataSource(SetupSkippable, Entity):
     gitignored: bool = APIField(default=True, description="Keep the local copy out of git")
     #: Pull only. The source never writes to its remote, and asks for no permission that writes.
     read_only: bool = APIField(default=False, description="Never write back to the remote")
+    #: The dataset this source's records are mirrored into after every sync -- ``{dataset, map, by?}``,
+    #: a dataset folder of the source's project and a ``Dataset.mirror`` map. Its rows' outside-owned
+    #: fields then write back through this source (``flow_sdk.datasets.projection``).
+    mirror: Optional[dict] = APIField(default=None, description="Mirror records into a dataset: {dataset, map, by?}")
 
     # ── lifecycle ──
     status: str = APIField(default=SourceStatus.NEW.value, persist=Persist.FALSE)
@@ -313,6 +317,13 @@ class DataSource(SetupSkippable, Entity):
         if isinstance(data.get("allowed_senders"), (list, tuple)):
             data["allowed_senders"] = [s for s in (str(x).strip() for x in data["allowed_senders"]) if s]
         return data
+
+    @field_validator("mirror", mode="before")
+    @classmethod
+    def _mirror(cls, value: Any) -> Any:
+        from flow_sdk.datasets.projection import check_mirror  # noqa: PLC0415
+
+        return check_mirror(value)
 
     @field_validator("owner", mode="before")
     @classmethod
