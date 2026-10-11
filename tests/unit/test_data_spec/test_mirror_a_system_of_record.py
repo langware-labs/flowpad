@@ -9,7 +9,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from flow_sdk.sources.values.items import SourceItemSpec
+from flow_sdk.sources.values.items import RecordData, RecordItem, SourceItemSpec
 from flow_sdk.sources.values.origin import CloudOrigin
 from tests.unit.test_data_spec.test_row_links import _dataset, _schema
 
@@ -100,11 +100,12 @@ class _Crm:
         self.calls = []
 
     async def create(self, data):
-        raise AssertionError("not asked")
+        self.calls.append(("create", data.title))
+        return RecordItem(origin=CloudOrigin(kind="record", namespace="crm.example", key="OPP-9"), data=data)
 
     async def update(self, origin, changes):
         self.calls.append(("update", origin.key, changes))
-        return SourceItemSpec.model_construct(origin=origin, data=None)
+        return RecordItem(origin=origin, data=RecordData(title="Acme renewal"))
 
     async def delete(self, origin):
         self.calls.append(("delete", origin.key))
@@ -137,20 +138,53 @@ def source(monkeypatch):
 
     async def get_one(match, *a, **k):
         if match.get("id") == "i1" and match.get("data_source_id"):
-            return SimpleNamespace(origin_kind="record", origin_namespace="crm.example", origin_key="OPP-1")
+            return SimpleNamespace(id="i1", origin_kind="record", origin_namespace="crm.example", origin_key="OPP-1",
+                                   delete=lambda: _dropped("i1"))
         return None
 
+    async def ingest_items(specs, **kw):
+        kept.extend(specs)
+        return SimpleNamespace(outcomes=[SimpleNamespace(entity_id=f"kept-{s.external_id}") for s in specs])
+
+    async def _dropped(item_id):
+        dropped.append(item_id)
+
+    kept, dropped = [], []
     monkeypatch.setattr(DataSource, "open", open_)
     monkeypatch.setattr(SourceItem, "get_one", get_one)
-    return DataSource(id=str(uuid.uuid4()), provider="crm", account_key="a", name="CRM deals", config={}), driver, opened
+    monkeypatch.setattr("flow_sdk.ingest.ingestor.ingest_items", ingest_items)
+    src = DataSource(id=str(uuid.uuid4()), provider="crm", account_key="a", name="CRM deals", config={})
+    driver["kept"], driver["dropped"] = kept, dropped
+    return src, driver, opened
 
 
 async def test_a_change_goes_back_to_the_outside_system_through_the_driver(source):
     src, driver, _ = source
     done = await src.update_item("i1", {"gtmPersona": "cfo"})
     assert driver["it"].calls == [("update", "OPP-1", {"gtmPersona": "cfo"})]
-    assert done == {"item_id": "i1", "origin": CloudOrigin(kind="record", namespace="crm.example", key="OPP-1").model_dump(mode="json"), "status": "updated"}
+    assert done == {"item_id": "kept-OPP-1", "origin": CloudOrigin(kind="record", namespace="crm.example", key="OPP-1").model_dump(mode="json"), "status": "updated"}
+    # what the outside system answered is kept at once, through the one ingest chokepoint -- not at the next sync
+    assert [(k.data_source_id, k.external_id, k.name) for k in driver["kept"]] == [(src.id, "OPP-1", "Acme renewal")]
     assert (await src.delete_item("i1"))["status"] == "deleted" and driver["it"].calls[-1] == ("delete", "OPP-1")
+    assert driver["dropped"] == ["i1"]                                         # and the record kept here goes with it
+
+
+async def test_a_new_record_is_made_in_the_outside_system_and_kept_here(source):
+    src, driver, _ = source
+    done = await src.create_item({"title": "Call Acme back"})
+    assert driver["it"].calls == [("create", "Call Acme back")]
+    assert done["item_id"] == "kept-OPP-9" and done["status"] == "created" and done["origin"]["key"] == "OPP-9"
+    with pytest.raises(ValueError, match="not a RecordData"):
+        await src.create_item({"title": ["not", "text"]})
+    with pytest.raises(ValueError, match="data"):
+        await src.create_item({})
+    src.read_only = True
+    with pytest.raises(PermissionError, match="read-only"):
+        await src.create_item({"title": "x"})
+    src.read_only = False
+    driver["it"] = _Feed()
+    with pytest.raises(NotImplementedError, match="cannot create"):
+        await src.create_item({"title": "x"})
 
 
 async def test_a_write_back_is_refused_before_any_io(source):
@@ -178,8 +212,8 @@ def test_the_write_back_and_mirror_actions_are_routable():
     from flow_sdk.builtin.data_source import DataSource
 
     registered = set(registry.function_registry)
-    assert {"data_source.update_item", "data_source.delete_item", "dataset.mirror"} <= registered
-    for name in ("update_item_action", "delete_item_action"):
+    assert {"data_source.create_item", "data_source.update_item", "data_source.delete_item", "dataset.mirror"} <= registered
+    for name in ("create_item_action", "update_item_action", "delete_item_action"):
         assert not set(inspect.signature(getattr(DataSource, name)).parameters) - {"self", "cls"}
 
 

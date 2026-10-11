@@ -339,6 +339,14 @@ describe('mirroring a data source and writing back through it', () => {
     expect(sent(1).bodyParameters).toEqual({ source_id: 'src-1', map, by: 'crm', prune: false, match: { 'input.source': 'crm' } });
   });
 
+  it('createItem() asks the source to make a record in its own system, and answers the record kept here', async () => {
+    const source = new DataSource({ id: '7e2b3c4d-1111-4a5b-8c9d-0e1f2a3b4c5d', name: 'CRM' } as never);
+    const answer = { item_id: 'i9', origin: { kind: 'record', namespace: 'crm', key: 'OPP-9' }, status: 'created' };
+    call.mockResolvedValue(answer as never);
+    expect(await source.createItem({ title: 'Call Acme back' })).toEqual(answer);
+    expect([sent().name, sent().method, sent().bodyParameters]).toEqual(['create_item', 'POST', { data: { title: 'Call Acme back' } }]);
+  });
+
   it('updateItem() and deleteItem() ask the source to write to its own system', async () => {
     const source = new DataSource({ id: '7e2b3c4d-5e6f-4a7b-9c8d-0e1f2a3b4c5d', name: 'CRM' } as never);
     const answer = { item_id: 'i1', origin: { kind: 'record', namespace: 'crm', key: 'OPP-1' }, status: 'updated' };

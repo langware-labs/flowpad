@@ -21,6 +21,7 @@ from typing import Any, ClassVar, Mapping, Optional
 
 from flow_sdk.sources.base import Family, Source
 from flow_sdk.sources.files import FileSupport
+from flow_sdk.sources.values.items import RecordData
 
 
 class ObjectSource(Source):
@@ -41,6 +42,9 @@ class ObjectSource(Source):
 
 class RecordSource(Source):
     family: ClassVar[Family] = Family.RECORD
+    #: The record shape this driver reads and ``Mutable.create`` takes (its ``RecordData`` subclass):
+    #: what ``DataSource.create_item`` checks a new record against before any I/O.
+    record_type: ClassVar[type] = RecordData
 
 
 class MessageSource(RecordSource):

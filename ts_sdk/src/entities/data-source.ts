@@ -158,11 +158,11 @@ export interface DataSourceChoiceSet {
   detail: string;
 }
 
-/** What a write to the outside system answered (`updateItem`, `deleteItem`). */
+/** What a write to the outside system answered (`createItem`, `updateItem`, `deleteItem`): `item_id` is the record kept here. */
 export interface DataSourceWriteBack {
   item_id: string;
   origin: { kind: string; namespace: string; key: string; url?: string | null };
-  status: 'updated' | 'deleted';
+  status: 'created' | 'updated' | 'deleted';
 }
 
 // The decorator binds to the declaration IMMEDIATELY below it. Anything slipped in
@@ -437,10 +437,17 @@ export class DataSource extends APIEntity<DataSource> implements IDataSource {
     return this.post('reply', { item_id: itemId, text });
   }
 
+  /** Make one record IN THE OUTSIDE SYSTEM through the source's driver (as `updateItem`). `data` is
+   *  the driver's record shape; the record it answers is kept here at once. 403 a read-only source ·
+   *  400 a driver that cannot, or data it refuses. */
+  async createItem(data: Record<string, unknown>): Promise<DataSourceWriteBack> {
+    return this.post('create_item', { data });
+  }
+
   /** Change one record IN THE OUTSIDE SYSTEM — the record `itemId` of this source — through the
    *  source's driver and the credential it already holds: how a field the app owns goes back to a
-   *  system of record. `changes` are the outside system's own fields; the record here is read back
-   *  by the next sync. 404 no such item · 403 a read-only source · 400 a driver that cannot. */
+   *  system of record. `changes` are the outside system's own fields; the record the driver answers
+   *  is kept here at once. 404 no such item · 403 a read-only source · 400 a driver that cannot. */
   async updateItem(itemId: string, changes: Record<string, unknown>): Promise<DataSourceWriteBack> {
     return this.post('update_item', { item_id: itemId, changes });
   }
