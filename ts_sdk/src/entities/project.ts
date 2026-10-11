@@ -756,6 +756,17 @@ export class Project extends APIEntity<Project> {
     return Project.getAssetMenuById(this.typeId.id, options);
   }
 
+  /** Refresh this project's asset index; omit types to refresh all types. */
+  async refresh(types?: string[]): Promise<void> {
+    const { systemTools } = await import('../services/system-tools-service');
+    const { projectScope } = await import('../utils/scope-filter');
+    if (types === undefined) {
+      await systemTools.fastScanProject(this.id);
+      return;
+    }
+    for (const type of types) await systemTools.indexType(type, projectScope(this.id));
+  }
+
   /** Static form for callers without a Project instance (mirrors `getAssetsById`). */
   static async getAssetMenuById(
     projectId: string,
