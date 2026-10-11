@@ -5,6 +5,7 @@ commands we send actually produce the right numbers — and the interesting case
 here, an untracked file, is precisely the one plain ``git diff --numstat``
 cannot see. So this module runs real git in a tmp repo.
 """
+import os
 import subprocess
 import types
 from pathlib import Path
@@ -19,8 +20,12 @@ class LocalNode:
 
     compute_provider = None
 
-    async def run_command(self, command: str, background: bool = False):
-        p = subprocess.run(["/bin/sh", "-c", command], capture_output=True, text=True)
+    async def run_command(self, command: str, background: bool = False, env=None):
+        # ``env`` is how GitRepo hands git its variables (GIT_INDEX_FILE, …), as on a real node.
+        from flow_sdk.compute.providers.env_prefix import command_environment
+
+        p = subprocess.run(["/bin/sh", "-c", command], capture_output=True, text=True,
+                           env={**os.environ, **command_environment(env)})
         return types.SimpleNamespace(all_stdout=p.stdout, all_stderr=p.stderr, exit_code=p.returncode)
 
     async def exists(self, path: str) -> bool:
@@ -40,9 +45,9 @@ class RecordingNode(LocalNode):
     def __init__(self) -> None:
         self.commands: list[str] = []
 
-    async def run_command(self, command: str, background: bool = False):
+    async def run_command(self, command: str, background: bool = False, env=None):
         self.commands.append(command)
-        return await super().run_command(command, background)
+        return await super().run_command(command, background, env)
 
 
 def _git(repo: Path, *args: str) -> None:

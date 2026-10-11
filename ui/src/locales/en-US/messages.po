@@ -695,7 +695,7 @@ msgstr "{0} records on disk"
 msgid "{0} saved"
 msgstr "{0} saved"
 
-#. placeholder {0}: root.kinds.length
+#. placeholder {0}: root.schemas.length
 #: src/components/schema-tree/SchemaTreeView.tsx
 msgid "{0} schemas"
 msgstr "{0} schemas"
@@ -5414,6 +5414,7 @@ msgid "Comments"
 msgstr "Comments"
 
 #: src/components/assets/editor/skill/UsagePanel.tsx
+#: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 msgid "Commit"
 msgstr "Commit"
 
@@ -7169,6 +7170,7 @@ msgstr "CPU:"
 #: src/components/organization/org-detail-panel.tsx
 #: src/components/organization/org-node-management.tsx
 #: src/components/organization/organization-page.tsx
+#: src/components/project-home/ProjectHome.tsx
 #: src/components/project-selector/NewProjectDialog.tsx
 #: src/components/prompt-library/PromptEditDialog.tsx
 #: src/components/quick-create/McpCreateDialog.tsx
@@ -7255,8 +7257,6 @@ msgid "Create it"
 msgstr "Create it"
 
 #: src/components/collaboration/StartRoomDialog.tsx
-#: src/components/project-home/ProjectHome.tsx
-#: src/components/quick-create/QuickCreateModal.tsx
 #: src/components/quick-create/QuickCreateModal.tsx
 msgid "Create new"
 msgstr "Create new"
@@ -7490,7 +7490,6 @@ msgstr "Data privacy mode"
 msgid "data source"
 msgstr "data source"
 
-#: src/components/quick-create/QuickCreatePanel.tsx
 #: src/components/schema-tree/SchemaTreeView.tsx
 msgid "Data source"
 msgstr "Data source"
@@ -13132,7 +13131,6 @@ msgid "Latest on PyPI"
 msgstr "Latest on PyPI"
 
 #: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
-#: src/components/project-home/ProjectHome.tsx
 #: src/pages/hub-home/HubHome.tsx
 #: src/pages/hub-home/LaunchSandboxDialog.tsx
 #: src/pages/hub-home/NewSandboxDialog.tsx
@@ -14916,8 +14914,6 @@ msgstr "new"
 #: src/components/entity-execution-panel/NewSessionPill.tsx
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 #: src/components/project-activity-strip/RecentConversationsStrip.tsx
-#: src/components/project-home/ProjectHome.tsx
-#: src/components/quick-create/QuickCreateModal.tsx
 #: src/components/quick-create/QuickCreateTile.tsx
 #: src/components/stream-inbox-view/StreamInboxView.tsx
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
@@ -17036,8 +17032,12 @@ msgid "once per machine"
 msgstr "once per machine"
 
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
-msgid "Once per project, the first time it is opened. Oldest agent wins if several set this."
-msgstr "Once per project, the first time it is opened. Oldest agent wins if several set this."
+msgid "Once per project, the first time it is opened. Enabling this turns off auto-launch for the other agents in this project."
+msgstr "Once per project, the first time it is opened. Enabling this turns off auto-launch for the other agents in this project."
+
+#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
+#~ msgid "Once per project, the first time it is opened. Oldest agent wins if several set this."
+#~ msgstr "Once per project, the first time it is opened. Oldest agent wins if several set this."
 
 #: src/components/automations/automation-words.ts
 msgid "Once, at {when}"
@@ -18098,7 +18098,6 @@ msgid "Override the default model via environment"
 msgstr "Override the default model via environment"
 
 #: src/components/llm-endpoints/LlmEndpointDetail.tsx
-#: src/components/project-home/ProjectHome.tsx
 msgid "Overview"
 msgstr "Overview"
 
@@ -27351,7 +27350,6 @@ msgstr "via {via}"
 #~ msgstr "via hub login"
 
 #: src/components/links/LinkMenu.tsx
-#: src/components/project-home/ProjectHome.tsx
 #: src/types/ViewType.ts
 msgid "Vibe"
 msgstr "Vibe"
@@ -28078,6 +28076,10 @@ msgstr "Working on {0}"
 #: src/components/collaboration/LiveSessionView.tsx
 msgid "Working on {hostName}'s machine…"
 msgstr "Working on {hostName}'s machine…"
+
+#: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
+msgid "Working tree"
+msgstr "Working tree"
 
 #: src/components/code-editor/DiffContent.tsx
 msgid "Working Tree"
