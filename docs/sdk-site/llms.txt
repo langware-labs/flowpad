@@ -16,6 +16,10 @@ The whole guide as one Markdown file: flow-sdk.md
 - Chapter 8: Secrets, declared (flow.SecretPack, flow.SecretStore; page anchor #credentials): Declarations hold names; values live in a store git never sees.
 - Chapter 9: Place it anywhere (flow.Deployment; page anchor #ship): Same verbs on this computer or a machine of its own.
 
+## Source-checkout references
+
+- ../snippets/channel-webhook-routing.md: WhatsApp account/user/group claims, delivery targets, authentication, admission, answering placement and diagnostics. Requires a Flowpad source checkout.
+
 ## Rules
 
 You are building on the Flow SDK (Python package `flowpad`, import `flow_sdk`, CLI `flow`).
