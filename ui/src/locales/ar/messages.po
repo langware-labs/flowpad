@@ -1268,8 +1268,13 @@ msgid "<0>{senderName}</0> shared <1>{taskTitle}</1> with you."
 msgstr "<0>{senderName}</0> شارك <1>{taskTitle}</1> معك."
 
 #: src/components/task-receive/IncomingProjectDialog.tsx
+#: src/components/task-receive/IncomingProjectDialog.tsx
 msgid "<0>{senderName}</0> shared a project with you"
 msgstr "تمت مشاركة مشروع معك من قِبل <0>{senderName}</0>"
+
+#: src/components/task-receive/IncomingProjectDialog.tsx
+msgid "<0>{takenAgain}</0> is taken too. Choose another name."
+msgstr ""
 
 #: src/components/search-index/SweepOrphansDialog.tsx
 msgid "<0>Delete</0> — remove the DB row <1>and</1> the shadow record dir. Reclaims disk space; no recovery path."
@@ -4143,6 +4148,7 @@ msgstr ""
 #: src/components/assets/ProjectPickerModal.tsx
 #: src/components/assets/PushContextFolderDialog.tsx
 #: src/components/contact-picker/CreateContactsGroupDialog.tsx
+#: src/components/conversation/asset-review/ProjectInstallAction.tsx
 #: src/components/credentials/CredentialDialog.tsx
 #: src/components/cron-view/CronForm.tsx
 #: src/components/data-sources/DataSourceDialog.tsx
@@ -4192,6 +4198,7 @@ msgstr ""
 #: src/components/spec-editor/SpecEditor.tsx
 #: src/components/spec-editor/SpecEditor.tsx
 #: src/components/stream-inbox-view/StreamInboxView.tsx
+#: src/components/task-receive/IncomingProjectDialog.tsx
 #: src/components/task-receive/IncomingProjectDialog.tsx
 #: src/components/task-receive/IncomingProjectDialog.tsx
 #: src/components/task-receive/IncomingTaskDialog.tsx
@@ -12298,6 +12305,10 @@ msgstr "هل تريد تثبيت {0}؟"
 msgid "Install & restart"
 msgstr "التثبيت وإعادة التشغيل"
 
+#: src/components/conversation/asset-review/ProjectInstallAction.tsx
+msgid "Install as this name"
+msgstr ""
+
 #: src/components/browseable-tree/adapters/assetContextFoldersRoot.tsx
 msgid "Install dependency"
 msgstr ""
@@ -17314,6 +17325,11 @@ msgstr "فتح مجلد السجلات"
 msgid "Open message"
 msgstr "فتح الرسالة"
 
+#: src/components/conversation/asset-review/ProjectInstallAction.tsx
+#: src/components/task-receive/IncomingProjectDialog.tsx
+msgid "Open my project"
+msgstr ""
+
 #: src/components/terminal/openers/TerminalOpenerToolbar.tsx
 msgid "Open new tab menu"
 msgstr "فتح قائمة التبويب الجديد"
@@ -20150,6 +20166,7 @@ msgid "Repo"
 msgstr "المستودع"
 
 #: src/components/task-receive/IncomingProjectDialog.tsx
+#: src/components/task-receive/IncomingProjectDialog.tsx
 #: src/components/task-receive/IncomingTaskDialog.tsx
 msgid "Repo:"
 msgstr "المستودع:"
@@ -22248,6 +22265,7 @@ msgstr ""
 #~ msgid "Set up an existing git repository as the context folder"
 #~ msgstr "إعداد مستودع Git موجود كمجلد السياق"
 
+#: src/components/task-receive/IncomingProjectDialog.tsx
 #: src/components/task-receive/IncomingProjectDialog.tsx
 msgid "Set up as this name"
 msgstr "إعداد بهذا الاسم"
@@ -24459,6 +24477,7 @@ msgid "That looks like an {0} key. This endpoint calls {1}, whose keys start wit
 msgstr ""
 
 #: src/components/task-receive/IncomingDeepLink.tsx
+#: src/components/task-receive/IncomingProjectDialog.tsx
 #: src/components/task-receive/IncomingProjectDialog.tsx
 msgid "That project is no longer available."
 msgstr ""
@@ -27890,6 +27909,15 @@ msgstr ""
 #. placeholder {1}: alreadyAsked.task.title
 #: src/components/help/AskForHelpDialog.tsx
 msgid "You already asked {0}: \"{1}\"."
+msgstr ""
+
+#. placeholder {0}: conflict.attempted_name
+#: src/components/conversation/asset-review/ProjectInstallAction.tsx
+msgid "You already have a project named <0>{0}</0>. Open it, or install this one under another name."
+msgstr ""
+
+#: src/components/task-receive/IncomingProjectDialog.tsx
+msgid "You already have a project named <0>{projectName}</0>. Open it, or set this one up under another name."
 msgstr ""
 
 #~ msgid "you are {role}"

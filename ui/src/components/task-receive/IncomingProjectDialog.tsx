@@ -2,7 +2,9 @@ import { gitOriginCloneUrl } from '@sdk/models/GitOrigin';
 import { formatFSOrigin, isGitOrigin, type ProjectOrigin } from '@sdk/models/FSOrigin';
 import { Project } from '@sdk';
 import { useAgentContext } from '@src/components/agent-layout/agent-layout';
+import { nameConflictOf } from '@src/components/conversation/asset-review/ProjectInstallAction';
 import { useCloneGitProjectAndOpen, useInstallSharedProjectAndOpen } from '@src/components/project-selector';
+import { useSelectExistingProject } from '@src/components/project-selector/use-ensure-project';
 import { Button } from '@src/components/ui/button';
 import {
   Dialog,
@@ -13,6 +15,10 @@ import {
   DialogTitle,
 } from '@src/components/ui/dialog';
 import { Input } from '@src/components/ui/input';
+import { errorMessage } from '@src/lib/error-message';
+import { DockPointer } from '@src/navigation/DockPointer';
+import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { withHomePage } from '@src/project-home-page/home-page-state';
 import { AlertTriangle, CheckCircle2, GitBranch, Loader2 } from 'lucide-react';
 import { useCallback, useRef, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
@@ -27,8 +33,12 @@ import { Trans, useLingui } from '@lingui/react/macro';
  *     (`create-project-from-git`), with the 409 collision path letting the user
  *     accept a suggested `<leaf>-N` folder name.
  * Both end in the same place: an indexed project, opened.
+ *
+ * A shared project whose name is already a project here (`nameTaken`) opens on
+ * the choice instead: open that project, or install the shared one under
+ * another name (`Project.installFromHub`).
  */
-type Step = 'confirm' | 'cloning' | 'collision' | 'success' | 'error';
+type Step = 'confirm' | 'name-taken' | 'cloning' | 'collision' | 'success' | 'error';
 
 interface Props {
   open: boolean;
@@ -37,16 +47,31 @@ interface Props {
   senderName: string;
   /** A shared project's id: install it in place instead of cloning a template. */
   projectId?: string;
+  /** Its name is already a project here: ask instead of setting it up. */
+  nameTaken?: { existingProjectId: string; suggestedName: string };
   onClose: () => void;
 }
 
-export function IncomingProjectDialog({ open, gitOrigin, projectName, senderName, projectId, onClose }: Props) {
+export function IncomingProjectDialog({
+  open,
+  gitOrigin,
+  projectName,
+  senderName,
+  projectId,
+  nameTaken,
+  onClose,
+}: Props) {
   const { t } = useLingui();
   const { computeNode } = useAgentContext();
+  const { navigation } = useDockNavigation();
   const cloneGitProject = useCloneGitProjectAndOpen();
   const installSharedProject = useInstallSharedProjectAndOpen();
+  const landInProject = useSelectExistingProject();
 
-  const [step, setStep] = useState<Step>('confirm');
+  const firstStep: Step = nameTaken && projectId ? 'name-taken' : 'confirm';
+  const [step, setStep] = useState<Step>(firstStep);
+  const [newName, setNewName] = useState(nameTaken?.suggestedName ?? '');
+  const [takenAgain, setTakenAgain] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
   const [suggestedName, setSuggestedName] = useState('');
   const [attemptedName, setAttemptedName] = useState('');
@@ -60,6 +85,7 @@ export function IncomingProjectDialog({ open, gitOrigin, projectName, senderName
   const handleClose = useCallback(() => {
     startedRef.current = false;
     setStep('confirm');
+    setTakenAgain('');
     setErrorMsg('');
     setSuggestedName('');
     setAttemptedName('');
@@ -130,6 +156,39 @@ export function IncomingProjectDialog({ open, gitOrigin, projectName, senderName
     [computeNode, gitOrigin, branch, cloneGitProject, handleClose, t],
   );
 
+  /** The name is taken here: open the project that holds it. */
+  const openExisting = useCallback(() => {
+    if (!nameTaken) return;
+    navigation.openDock(withHomePage(DockPointer.forProject(nameTaken.existingProjectId)));
+    handleClose();
+  }, [nameTaken, navigation, handleClose]);
+
+  /** The name is taken here: install the shared project under the receiver's name. */
+  const runInstallAsName = useCallback(
+    async (id: string, name: string) => {
+      setStep('cloning');
+      setTakenAgain('');
+      try {
+        const project = await Project.installFromHub(id, name);
+        if (!project) throw new Error(t`That project is no longer available.`);
+        await landInProject(project);
+        setStep('success');
+        setTimeout(handleClose, 600);
+      } catch (e) {
+        const taken = nameConflictOf(e);
+        if (taken) {
+          setTakenAgain(taken.attempted_name);
+          setNewName(taken.suggested_name);
+          setStep('name-taken');
+          return;
+        }
+        setErrorMsg(errorMessage(e, String(e)));
+        setStep('error');
+      }
+    },
+    [handleClose, landInProject, t],
+  );
+
   const handleConfirm = useCallback(() => {
     if (startedRef.current) return;
     startedRef.current = true;
@@ -190,6 +249,62 @@ export function IncomingProjectDialog({ open, gitOrigin, projectName, senderName
               </Button>
               <Button onClick={handleConfirm} data-testid="incoming-project-install">
                 <Trans>Set up project</Trans>
+              </Button>
+            </DialogFooter>
+          </>
+        )}
+
+        {/* Name taken — the shared project's name is already a project here */}
+        {step === 'name-taken' && nameTaken && projectId && (
+          <>
+            <DialogHeader>
+              <DialogTitle>
+                <Trans>
+                  <strong>{senderName}</strong> shared a project with you
+                </Trans>
+              </DialogTitle>
+              <DialogDescription>
+                <Trans>
+                  You already have a project named <strong>{projectName}</strong>. Open it, or set this one up under
+                  another name.
+                </Trans>
+              </DialogDescription>
+            </DialogHeader>
+            {originLabel && (
+              <div className="flex items-center gap-2 rounded-md border bg-muted/40 p-3 text-sm text-muted-foreground">
+                <span className="shrink-0">
+                  <Trans>Repo:</Trans>
+                </span>
+                <code className="truncate text-foreground">{originLabel}</code>
+              </div>
+            )}
+            <Input
+              value={newName}
+              onChange={(e) => setNewName(e.target.value)}
+              placeholder={nameTaken.suggestedName}
+              className="text-sm"
+              data-testid="incoming-project-new-name"
+            />
+            {takenAgain && (
+              <p className="text-xs text-destructive" role="alert">
+                <Trans>
+                  <code>{takenAgain}</code> is taken too. Choose another name.
+                </Trans>
+              </p>
+            )}
+            <DialogFooter>
+              <Button variant="ghost" onClick={handleClose}>
+                <Trans>Cancel</Trans>
+              </Button>
+              <Button variant="secondary" onClick={openExisting} data-testid="incoming-project-open-existing">
+                <Trans>Open my project</Trans>
+              </Button>
+              <Button
+                onClick={() => void runInstallAsName(projectId, newName.trim())}
+                disabled={!newName.trim()}
+                data-testid="incoming-project-install-as-name"
+              >
+                <Trans>Set up as this name</Trans>
               </Button>
             </DialogFooter>
           </>
@@ -284,7 +399,8 @@ export function IncomingProjectDialog({ open, gitOrigin, projectName, senderName
                   // runClone() here minted a brand-new project from the template
                   // path and discarded the shared id both ends agree on.
                   startedRef.current = false;
-                  void (projectId ? runInstallShared(projectId) : runClone());
+                  if (nameTaken && projectId) setStep('name-taken');
+                  else void (projectId ? runInstallShared(projectId) : runClone());
                 }}
               >
                 <Trans>Retry</Trans>
