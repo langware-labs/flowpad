@@ -38,7 +38,7 @@ import { sinceTabSwitch } from '@src/navigation/tab-switch-state';
 import { showCleanupModal } from '@src/components/recovery/cleanup-modal';
 import { notify } from '@src/notifications';
 import { buildShellRedirectUrl, detectLayout, DockPointer } from '@src/navigation';
-import { rememberedViewMode, ViewMode } from '@src/contexts/view-mode-context';
+import { lastSelectedViewMode, rememberedViewMode, ViewMode } from '@src/contexts/view-mode-context';
 import { NODE_PARAM } from '@src/navigation/DockPointer';
 import { isHubOnly } from '@src/navigation/hub-runtime';
 import { activeDisplayDock } from '@src/navigation/open-active-display';
@@ -254,7 +254,7 @@ async function reconcileProcessScope(processId: string, requestPath: string, car
   const ownerProjectId = proc.project_id ?? pathProject?.id ?? null;
   // The mode rides the same identity redirect, so the route takes ONE redirect
   // before a tab is minted (I2): a bare URL states the session's remembered
-  // mode, else the plain chat — never Vibe, which is its own address family.
+  // mode, else the last mode the user selected.
   // Restoring writes nothing; memory is minted by `VIEW_MODE_STORE`.
   const want = ownerProjectId ? projectScope(ownerProjectId) : null;
   const aligned = want ? !!carry?.scope && scopeFilterEqual(carry.scope, want) : !carry?.scope;
@@ -264,7 +264,7 @@ async function reconcileProcessScope(processId: string, requestPath: string, car
     proc.terminalDockPointer.pointer,
     carry?.options,
     detectLayout(requestPath),
-  ).withViewMode(carry?.viewMode ?? rememberedViewMode(proc) ?? ViewMode.Standard);
+  ).withViewMode(carry?.viewMode ?? rememberedViewMode(proc) ?? lastSelectedViewMode());
   // eslint-disable-next-line @typescript-eslint/only-throw-error
   throw replace((want ? base.withScopeFilter(want) : base.withoutScopeFilter()).toUrl(requestPath));
 }
