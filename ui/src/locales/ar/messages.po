@@ -698,6 +698,7 @@ msgstr "{0} سر{1}"
 #: src/components/data-sources/ChoiceField.tsx
 #: src/components/graph-context/GraphContextViewer.tsx
 #: src/components/navigator-panel/SelectionActionBar.tsx
+#: src/components/project-setup/ProjectSetupDialog.tsx
 #: src/components/terminal/HistoryModal.tsx
 msgid "{0} selected"
 msgstr "{0} محدد"
@@ -2855,6 +2856,10 @@ msgstr ""
 msgid "anyone"
 msgstr ""
 
+#: src/components/assets/editor/agent-profile/AgentVisibilitySection.tsx
+msgid "Anyone its project is shared with can launch it from this link. Making the agent public lets everyone see it; launching still needs the project shared with them."
+msgstr ""
+
 #: src/components/terminal/interactive-terminal/EntityShareDialog.tsx
 msgid "Anyone with access can open this {entityType} directly via the link below."
 msgstr "يمكن لأي شخص لديه حق الوصول فتح {entityType} مباشرة من خلال الرابط أدناه."
@@ -5001,6 +5006,7 @@ msgstr "جارِ الاستنساخ…"
 #: src/components/tabs/TabStrip.tsx
 #: src/components/task-receive/IncomingProjectDialog.tsx
 #: src/components/task-receive/IncomingTaskDialog.tsx
+#: src/components/task-receive/LaunchDialog.tsx
 #: src/components/task-receive/LaunchDialog.tsx
 #: src/components/terminal/interactive-terminal/command-status-viewer/CommandStatusViewer.tsx
 #: src/components/terminal/interactive-terminal/EntityShareDialog.tsx
@@ -8721,6 +8727,10 @@ msgstr "مسودة"
 msgid "Drag to pan · scroll to zoom · click a node to read"
 msgstr "اسحب للتحريك · مرّر للتكبير · انقر على عقدة للقراءة"
 
+#: src/components/stream-inbox-view/StreamInboxView.tsx
+msgid "Drag to resize"
+msgstr ""
+
 #: src/components/image-annotator/ImageAnnotator.tsx
 msgid "Draw with the pen or arrow, add text boxes, add a caption, then Save to attach the annotated copy."
 msgstr "يمكنك الرسم بالقلم أو السهم، وإضافة مربعات نصية وشرح، ثم الحفظ لإرفاق النسخة المعلّقة."
@@ -10806,6 +10816,10 @@ msgstr "البصمة"
 msgid "For someone with no token source of their own. They spend it by the request id, up to the cap and until it expires."
 msgstr "لمن لا يملك مصدر رموز خاصاً به. ينفق منه عبر معرّف الطلب، حتى الحد الأقصى وإلى أن تنتهي صلاحيته."
 
+#: src/pages/entry/AgentLaunchLanding.tsx
+msgid "For the cloud, pick the project it should work on or paste a repository URL. On your desktop you pick a project in FlowPad."
+msgstr ""
+
 #: src/components/settings-view/settings-utils.ts
 msgid "Force a specific authentication method"
 msgstr "فرض طريقة مصادقة معينة"
@@ -12558,6 +12572,10 @@ msgstr "تمت دعوة {trimmed}."
 #: src/components/account/system-diagnoses.tsx
 msgid "Issue diagnoses recorded by the assistant. Click a row to view the full diagnosis."
 msgstr "تشخيصات المشاكل التي سجلها المساعد. انقر على صف لعرض التشخيص الكامل."
+
+#: src/components/project-setup/ProjectSetupDialog.tsx
+msgid "It cannot be removed from the project"
+msgstr ""
 
 #: src/components/automations/MessageRulePage.tsx
 #: src/components/automations/MessageRulePage.tsx
@@ -18236,6 +18254,10 @@ msgstr "اختيار شخص أو كتابة بريد إلكتروني"
 msgid "Pick a project"
 msgstr "اختيار مشروع"
 
+#: src/components/task-receive/LaunchDialog.tsx
+msgid "Pick a project on this machine. It is used where it is — nothing is sent to the cloud."
+msgstr ""
+
 #: src/components/organization/budgets/PayingProviderSetup.tsx
 msgid "Pick a provider and paste a key to set it up again."
 msgstr ""
@@ -18311,8 +18333,8 @@ msgid "Pick the local project folder this conversation should run in. We'll use 
 msgstr "يُرجى اختيار مجلد المشروع المحلي الذي يجب أن تعمل فيه هذه المحادثة. سيُستخدم كمجلد العمل لجلسات Claude Code."
 
 #: src/pages/entry/AgentLaunchLanding.tsx
-msgid "Pick the project it should work on, or paste a repository URL."
-msgstr ""
+#~ msgid "Pick the project it should work on, or paste a repository URL."
+#~ msgstr ""
 
 #: src/components/automations/AutomationPage.tsx
 msgid "Pick the script to run."
@@ -20344,6 +20366,10 @@ msgstr "جارٍ إعادة التعيين…"
 msgid "Resize navigator"
 msgstr "تغيير حجم الملاح"
 
+#: src/components/stream-inbox-view/StreamInboxView.tsx
+msgid "Resize the From column"
+msgstr ""
+
 #: src/components/status-bar/GitResolveButton.tsx
 msgid "Resolve"
 msgstr ""
@@ -21708,6 +21734,10 @@ msgstr "اختيار {0}"
 #: src/components/asset-manager/AssetManagerPopover.tsx
 msgid "Select {label}"
 msgstr "تحديد {label}"
+
+#: src/components/project-setup/ProjectSetupDialog.tsx
+msgid "Select {name}"
+msgstr ""
 
 #: src/components/GitHubConnectionDialog.tsx
 msgid "Select a branch"
@@ -23293,6 +23323,10 @@ msgstr "بعض الإطلاقات قديمة أو جزئية"
 msgid "Some deployments have errors"
 msgstr "بعض الإطلاقات بها أخطاء"
 
+#: src/components/project-setup/ProjectSetupDialog.tsx
+msgid "Some of the selected cannot be removed from the project"
+msgstr ""
+
 #: src/components/automations/TestPanel.tsx
 msgid "Some things need attention."
 msgstr ""
@@ -24461,6 +24495,10 @@ msgstr ""
 msgid "That project is no longer available."
 msgstr ""
 
+#: src/pages/entry/launch-runner.ts
+msgid "That project isn't on this machine."
+msgstr ""
+
 #: src/components/automations/RunDetail.tsx
 msgid "That run is no longer in the history."
 msgstr ""
@@ -24749,8 +24787,8 @@ msgid "The lens path could not be parsed."
 msgstr "تعذر تحليل مسار Lens."
 
 #: src/components/assets/editor/agent-profile/AgentVisibilitySection.tsx
-msgid "The link works for anyone the agent is shared with, or for everyone once it is public."
-msgstr ""
+#~ msgid "The link works for anyone the agent is shared with, or for everyone once it is public."
+#~ msgstr ""
 
 #: src/components/collaboration/LiveSessionView.tsx
 msgid "The live session has ended."
@@ -24977,6 +25015,10 @@ msgstr ""
 #: src/components/task-receive/IncomingTaskDialog.tsx
 #~ msgid "There are merge conflicts in <0>{localPath}</0>. Please resolve them and try again."
 #~ msgstr "توجد تعارضات في الدمج ضمن <0>{localPath}</0>. يرجى حل هذه التعارضات والمحاولة مرة أخرى."
+
+#: src/components/task-receive/LaunchDialog.tsx
+msgid "There are no projects on this machine yet. Open one, then use the link again."
+msgstr ""
 
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "There is nothing left to send — add a message first."
@@ -27599,6 +27641,10 @@ msgstr ""
 msgid "Which engine runs filesystem indexing: the built-in Python FSIndexer, or the external Rust indexer (requires FLOWPAD_RS_INDEXER_BIN on the server; silently falls back to Python when unavailable). Takes effect on the next index run."
 msgstr "المحرّك الذي ينفّذ فهرسة نظام الملفات: FSIndexer المدمج بلغة Python، أو مُفهرِس Rust الخارجي (يتطلب FLOWPAD_RS_INDEXER_BIN على الخادم؛ ويعود بصمت إلى Python عند عدم توفره). يسري مفعوله في عملية الفهرسة التالية."
 
+#: src/components/task-receive/LaunchDialog.tsx
+msgid "Which project should it work on?"
+msgstr ""
+
 #: src/components/asset-manager/EntityTypeBar.tsx
 #: src/components/quick-create/registry.ts
 msgid "Whiteboard"
@@ -27952,7 +27998,11 @@ msgid "You have no budget you can hand out."
 msgstr "ليست لديك ميزانية يمكنك منحها."
 
 #: src/pages/entry/AgentLaunchLanding.tsx
-msgid "You have no projects here yet. Paste a repository URL."
+#~ msgid "You have no projects here yet. Paste a repository URL."
+#~ msgstr ""
+
+#: src/pages/entry/AgentLaunchLanding.tsx
+msgid "You have no projects in the cloud. Paste a repository URL — or launch in your desktop and pick a project there."
 msgstr ""
 
 #: src/components/open-project-component/use-open-project.ts
