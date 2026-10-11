@@ -483,6 +483,25 @@ export class Dataset extends APIEntity<Dataset> implements IDataset {
     return this.post('rename-row', { key: keyOrId, new_key: newKey, ...(options.expected ? { expected: options.expected } : {}) });
   }
 
+  /** Make this dataset the typed MIRROR of a data source: each of the source's items becomes one
+   *  row of this dataset's kind, and the dataset is made to hold exactly those (as `sync`). `map`
+   *  says how an item becomes a row, in the path grammar — `{key: 'external_id', input: {name:
+   *  'name', stage: 'data.stage'}}` (`{value: x}` is a constant). `by` is the outside system the
+   *  rows are written as (default: the source's provider). */
+  async mirror(
+    sourceId: string,
+    map: { key: string; input: Record<string, unknown> },
+    options: { by?: string; prune?: boolean; match?: DatasetRowQuery['match'] } = {},
+  ): Promise<DatasetSyncResult> {
+    return this.post('mirror', {
+      source_id: sourceId,
+      map,
+      ...writer(options),
+      ...(options.prune === undefined ? {} : { prune: options.prune }),
+      ...(options.match ? { match: matchJson(options.match) } : {}),
+    });
+  }
+
   /** Would this row fit — its shape, its links, its schema's rules across rows (a `unique` value
    *  another row holds), and the fields an outside system owns? Nothing is written. A row that
    *  carries its `key` is checked as a `put` of that row would be; one without, as a new row.
