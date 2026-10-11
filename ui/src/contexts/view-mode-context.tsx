@@ -312,6 +312,21 @@ function attributeViewMode(): ViewMode {
 applyAttribute(attributeViewMode(), false);
 onPreferenceChange(() => applyAttribute(attributeViewMode()));
 
+/**
+ * Paint the skin for the address the router just committed — called from the
+ * router's own subscription, so it lands BEFORE React commits the new view.
+ *
+ * The skin changes text metrics (its font), and the terminal pool puts a
+ * returning pane's scroll offset back while that view commits. Painted from an
+ * effect, the skin flipped AFTER the offset was restored: the text reflowed
+ * under it and the reader came back to a different place. A mode SWITCH is left
+ * to the sync hook, which owns its glow.
+ */
+export function paintViewModeForLocation(locationState: unknown): void {
+  if (isViewModeSwitchState(locationState)) return;
+  applyAttribute(viewModeFromLocation() ?? UNSTATED_VIEW_MODE, false);
+}
+
 defineGlobal('setView', setViewMode);
 defineGlobal('getView', getViewMode);
 
