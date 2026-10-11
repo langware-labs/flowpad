@@ -24278,6 +24278,7 @@ msgid "Tasks {openTaskCount}"
 msgstr ""
 
 #: src/components/account/organization-panel.tsx
+#: src/components/contact-picker/ContactPicker.tsx
 #: src/components/conversation/MembersAvatarStack.tsx
 #: src/components/conversation/MembersAvatarStack.tsx
 #: src/components/token-plan/token-plan-math.ts
