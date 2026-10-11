@@ -30,7 +30,6 @@ import NotFound from '@src/pages/NotFound';
 import App from '@src/App';
 import { markdownRedirectTarget, skillsRedirectTarget } from '@src/navigation/dead-route-redirects';
 import { devToDockPath } from '@src/navigation/url-builder';
-import { paintViewModeForLocation } from '@src/contexts/view-mode-context';
 import {
   createBrowserRouter,
   createRoutesFromElements,
@@ -295,9 +294,6 @@ bindHistoryPosition(router);
 let lastNavigationState = 'idle';
 router.subscribe((state) => {
   const now = state.navigation.state;
-  // Before React renders the committed location (this subscription predates
-  // the RouterProvider's): the skin is in place when the new view lays out.
-  if (now === 'idle') paintViewModeForLocation(state.location.state);
   if (now === 'idle' && lastNavigationState !== 'idle' && toplog.isOn('tab_switch')) {
     toplog.log(
       'tab_switch',

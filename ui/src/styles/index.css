@@ -261,9 +261,11 @@
 
   /* Vibe skin: swap the animated app background for a calm warm-black canvas and
      the system stack for the Plus Jakarta Sans display font (Lovable lookalike). */
+  :root {
+    --font-vibe: 'Plus Jakarta Sans', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  }
   [data-view='vibe'] body {
-    font-family:
-      'Plus Jakarta Sans', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+    font-family: var(--font-vibe);
     background: hsl(var(--background));
     animation: none;
   }
@@ -282,8 +284,7 @@
     font-family: theme('fontFamily.sans');
   }
   [data-pane-view='vibe'] {
-    font-family:
-      'Plus Jakarta Sans', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+    font-family: var(--font-vibe);
   }
 
   @keyframes view-mode-glow-flicker {

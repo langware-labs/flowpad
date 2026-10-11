@@ -182,8 +182,8 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
   const process = subscribedProcess ?? suppliedProcess;
   const { navigation, currentDock } = useDockNavigation();
   const { resolvedTheme } = useTheme();
-  // Skin layer: the view mode's SURFACE decides which pane shows (the footer
-  // ViewToggle is the selector). The xterm stays mounted underneath the chat
+  // Skin layer: the view mode's SURFACE decides which pane shows (the session's
+  // own switch is the selector). The xterm stays mounted underneath the chat
   // overlay (same session, same PTY — see SimpleChatPane), so switching is
   // instant and never resets the terminal. Embedded terminals (chat side panel)
   // and shell-only tabs (no AgenticProcess) always keep the xterm.

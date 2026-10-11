@@ -58,7 +58,6 @@ vi.mock('@sdk/react/hooks', () => ({
 vi.mock('@src/contexts/view-mode-context', () => ({
   useIsAdvanced: () => true,
   getEffectiveViewMode: () => 'advanced',
-  previousNonVibeViewMode: () => 'advanced',
   ViewMode: { Advanced: 'advanced', Vibe: 'vibe' },
 }));
 // No status record read yet: install warnings fail open on that, so no opener carries a
