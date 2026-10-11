@@ -206,3 +206,52 @@ async def test_the_mirror_action_over_http(deals, monkeypatch):
     assert done.json()["data"] == {"created": ["opp-1", "opp-2"], "updated": [], "unchanged": [], "deleted": [], "num_examples": 2}
     assert (await call_local("POST", f"dataset/{served.id}/mirror", {"source_id": "ghost", "map": MAP})).status_code == 404
     assert (await call_local("POST", f"dataset/{served.id}/mirror", {"source_id": "src-1", "map": {"key": "external_id"}})).status_code == 400
+
+
+# ── a record deleted in the outside system ───────────────────────────────────
+
+
+@pytest.mark.timeout(30)  # do not increase timeout without approval
+async def test_a_record_deleted_outside_leaves_the_mirror(deals):
+    """The whole loop on real records: the system drops a deal, the next sync removes its stored
+    record (the source ``lists_everything``), and the next mirror drops its row."""
+    from datetime import datetime, timezone
+
+    from flow_sdk.builtin.data_driver import DataDriver
+    from flow_sdk.builtin.data_source import DataSource
+    from flow_sdk.ingest.sync import sync_source
+    from flow_sdk.sources.base import CollectionSource
+    from flow_sdk.sources.families import RecordSource
+    from flow_sdk.sources.values.items import FeedItemData
+
+    class Crm(RecordSource, CollectionSource):
+        provider = "crmlisttest"
+        lists_everything = True
+        deals: dict = {"opp-1": "Acme renewal", "opp-2": "Bolt pilot"}
+
+        def query(self):
+            return None
+
+        async def _lookup(self, key):
+            return self.deals.get(key)
+
+        async def _scan(self, query):
+            return sorted(self.deals.items())
+
+        def _item(self, key, raw):
+            return SourceItemSpec(origin=self.origin(key), data=FeedItemData(title=raw))
+
+    DataDriver.register(DataDriver.for_class(Crm, kind="datasource.test.crmlist"))
+    source = DataSource(provider=Crm.provider, account_key=f"acct-{uuid.uuid4().hex[:8]}", name=f"crm {uuid.uuid4().hex[:8]}")
+    await source.save()
+    now = datetime(2026, 7, 31, 12, 0, 0, tzinfo=timezone.utc)
+    shape = {"key": "name", "input": {"name": "name", "stage": {"value": "open"}, "crm_id": "external_id"}}
+
+    assert (await sync_source(source, now=now)).created == 2
+    assert sorted((await deals.mirror(source, shape, by="crm"))["created"]) == ["acme-renewal", "bolt-pilot"]
+
+    del Crm.deals["opp-2"]                                                    # deleted in the CRM
+    assert (await sync_source(await DataSource.get_one({"id": source.id}), now=now)).removed == 1
+    done = await deals.mirror(source, shape, by="crm")
+    assert (done["deleted"], done["unchanged"]) == (["bolt-pilot"], ["acme-renewal"])
+    assert [r.key for r in deals.read_rows()] == ["acme-renewal"]
