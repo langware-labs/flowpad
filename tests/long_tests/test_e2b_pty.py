@@ -206,8 +206,8 @@ async def test_two_sandbox_shells_share_one_e2b_sandbox(sandbox_compute_node):
     s1 = await _make_shell(sandbox_compute_node, "share-a")
     s2 = await _make_shell(sandbox_compute_node, "share-b")
     try:
-        await s1.start(rows=24, cols=80)
-        await s2.start(rows=24, cols=80)
+        await s1.start_pty(rows=24, cols=80)
+        await s2.start_pty(rows=24, cols=80)
 
         key1 = (sandbox_compute_node.id, sandbox_compute_node.node_provider_id, s1.id)
         key2 = (sandbox_compute_node.id, sandbox_compute_node.node_provider_id, s2.id)

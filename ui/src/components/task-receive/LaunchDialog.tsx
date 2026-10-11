@@ -4,6 +4,7 @@ import { StepList } from '@src/components/ui/step-list';
 import type { Step } from '@src/hooks/use-step-flow';
 import { errorMessage, isUnfundedHarness } from '@src/lib/error-message';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
+import { useProjects } from '@src/hooks/use-projects';
 import { useActiveWorkspace } from '@src/hooks/use-workspaces';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { LaunchFailure, type LaunchStep, runLaunch } from '@src/pages/entry/launch-runner';
@@ -22,12 +23,20 @@ const ORDER: LaunchStep[] = ['controller', 'target', 'setup', 'session'];
  * Runs once per plan (StrictMode replays the effect). A launch that stops says at which step and
  * why, and can be run again from here: the link's parameters are already gone from the URL.
  * The band on top is the machine this is happening on.
+ *
+ * One question can come first: a controller sent here without a target works on a project that is
+ * only on this machine, so the person picks it here. That project is used where it is — the
+ * cloud never sees it.
  */
-export function LaunchDialog({ plan, onClose }: { plan: LaunchPlan; onClose: () => void }) {
+export function LaunchDialog({ plan: asked, onClose }: { plan: LaunchPlan; onClose: () => void }) {
   const { t } = useLingui();
   const { computeNode } = useAgentContext();
   const { scopeId: workspaceId } = useActiveWorkspace();
   const { navigation } = useDockNavigation();
+  const [plan, setPlan] = useState(asked);
+  const needsPick = 'local' in plan.target && plan.target.local === null;
+  const { projects = [] } = useProjects({ enabled: needsPick });
+  const local = projects.filter((p) => p.id !== plan.controllerId && p.fs_storage_mount_path);
   const order = ORDER.filter((s) => plan.controllerId || (s !== 'controller' && s !== 'setup'));
   const [step, setStep] = useState<LaunchStep>(order[0]);
   const [error, setError] = useState<string | null>(null);
@@ -58,10 +67,10 @@ export function LaunchDialog({ plan, onClose }: { plan: LaunchPlan; onClose: () 
   }, [plan, computeNode, workspaceId, navigation, onClose, t]);
 
   useEffect(() => {
-    if (started.current) return;
+    if (started.current || needsPick) return;
     started.current = true;
     launch();
-  }, [launch]);
+  }, [launch, needsPick]);
 
   const labels: Record<LaunchStep, string> = {
     controller: t`Getting the controller project`,
@@ -87,13 +96,51 @@ export function LaunchDialog({ plan, onClose }: { plan: LaunchPlan; onClose: () 
         <RuntimeStrip className="-mx-6 -mt-6" />
         <DialogHeader>
           <DialogTitle data-testid="launch-dialog-title">
-            {error ? <Trans>Couldn't launch</Trans> : <Trans>Launching…</Trans>}
+            {needsPick ? (
+              <Trans>Which project should it work on?</Trans>
+            ) : error ? (
+              <Trans>Couldn't launch</Trans>
+            ) : (
+              <Trans>Launching…</Trans>
+            )}
           </DialogTitle>
           <DialogDescription>
-            <Trans>Checking out the projects and opening the session.</Trans>
+            {needsPick ? (
+              <Trans>Pick a project on this machine. It is used where it is — nothing is sent to the cloud.</Trans>
+            ) : (
+              <Trans>Checking out the projects and opening the session.</Trans>
+            )}
           </DialogDescription>
         </DialogHeader>
-        <StepList steps={steps} testIdPrefix="launch" />
+        {needsPick ? (
+          <div className="space-y-3">
+            {local.length ? (
+              <ul className="max-h-64 space-y-1 overflow-y-auto" data-testid="launch-local-projects">
+                {local.map((p) => (
+                  <li key={p.id}>
+                    <Button
+                      variant="outline"
+                      className="w-full justify-start"
+                      onClick={() => setPlan({ ...plan, target: { local: String(p.id) } })}
+                      data-testid={`launch-local-${p.id}`}
+                    >
+                      {p.name}
+                    </Button>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-xs text-muted-foreground" data-testid="launch-local-none">
+                <Trans>There are no projects on this machine yet. Open one, then use the link again.</Trans>
+              </p>
+            )}
+            <Button variant="ghost" onClick={onClose} data-testid="launch-close">
+              <Trans>Close</Trans>
+            </Button>
+          </div>
+        ) : (
+          <StepList steps={steps} testIdPrefix="launch" />
+        )}
         {error && (
           <div className="space-y-3">
             <p

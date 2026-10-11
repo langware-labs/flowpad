@@ -183,9 +183,10 @@ describe('run a received skill in a Vibe MCP-UI session', () => {
     // A projectless shared conversation prompts for a project (the chosen
     // behavior); a project-mapped one runs directly. Race the two: pick the
     // first project if the picker appears, else the run already resolved one.
-    // A Vibe session opens at the display URL (/dock/display/agentic_process-…?
-    // viewMode=vibe — the vibe Display FSM), not /dock/shell/.
-    const VIBE_URL = /\/dock\/(display|shell)\/agentic_process-/;
+    // A Vibe session opens as its host tab (/dock/vibe/agentic_process-…) or, once it shows
+    // something, at its display address (/dock/project/<P>/process/agentic_process-…/display/…)
+    // — docs/tab-management.md.
+    const VIBE_URL = /\/dock\/vibe\/agentic_process-|\/dock\/project\/[0-9a-f-]+\/process\/agentic_process-/;
     const pickerRow = page.locator('[data-testid^="project-selector-row-"]').first();
     const shell = page.waitForURL(VIBE_URL, { timeout: 40_000 }).then(() => 'shell' as const).catch(() => null);
     const picker = pickerRow.waitFor({ state: 'visible', timeout: 40_000 }).then(() => 'picker' as const).catch(() => null);
@@ -198,7 +199,7 @@ describe('run a received skill in a Vibe MCP-UI session', () => {
     const opened = (await shell) === 'shell';
     if (!opened) {
       const text = (await page.locator('body').textContent().catch(() => '')) ?? '';
-      step(`NO /dock/shell/ — url=${page.url().replace(alicePage.feUrl, '')} toast=${/could not start|failed/i.test(text)} errs=${JSON.stringify((alicePage.consoleErrors ?? []).slice(-5))}`);
+      step(`NO Vibe session — url=${page.url().replace(alicePage.feUrl, '')} toast=${/could not start|failed/i.test(text)} errs=${JSON.stringify((alicePage.consoleErrors ?? []).slice(-5))}`);
       if (LIVE_AGENT_UNAVAILABLE.test(text)) return void ctx.skip();
       throw new Error('Vibe process did not open after clicking run');
     }

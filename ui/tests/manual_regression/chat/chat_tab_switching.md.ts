@@ -12,10 +12,10 @@ test.describe('Chat Tab Switching', () => {
     await gotoLanding(page);
     await submitFromLanding(page, 'tab switching test');
 
-    // We're now in a shell session at /dock/shell/...
-    await expect(page).toHaveURL(/\/dock\/shell\//, { timeout: 45_000 });
+    // We're now in the session's Vibe tab at /dock/vibe/agentic_process-...
+    await expect(page).toHaveURL(/\/dock\/vibe\/agentic_process-/, { timeout: 45_000 });
     const shellUrl = page.url();
-    expect(shellUrl).toMatch(/\/dock\/shell/);
+    expect(shellUrl).toMatch(/\/dock\/vibe\/agentic_process-/);
 
     // Navigate back to home
     await page.goto('/dock/home');

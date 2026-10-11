@@ -221,7 +221,8 @@ describe('course project share → install → auto-launch (two instances)', () 
 
     // Installing lands him in the project — and opening the project IS entering
     // the session, as a load-time redirect.
-    await bobPage.page.waitForURL(/\/dock\/shell\/agentic_process-[0-9a-f-]+.*viewMode=vibe/, { timeout: 60_000 });
+    // The session opens as a Vibe host tab (docs/tab-management.md): /dock/vibe/agentic_process-<id>.
+    await bobPage.page.waitForURL(/\/dock\/vibe\/agentic_process-[0-9a-f-]+/, { timeout: 60_000 });
     await shot(bobPage.page, '03-bob-course-open');
 
     const installed = await jsonApi(bob.apiUrl, `/graph/project/${projectId}`);
@@ -273,8 +274,9 @@ describe('course project share → install → auto-launch (two instances)', () 
 
     // ── back in the message, the chip is the installed project's chip ────
     await openConversation(bobPage, inviteConversationId);
+    // The same generic attachment chip he installed from (a9d635f32), now in its installed state.
     await bobPage.page
-      .locator('[data-testid="project-chip"][data-state="installed"]')
+      .locator(`[data-testid="entity-chip-project-${projectId}"][data-state="installed"]`)
       .waitFor({ state: 'visible', timeout: 20_000 });
     await shot(bobPage.page, '05-bob-chip-open-project');
   }, 120_000); // do not increase timeout without approval

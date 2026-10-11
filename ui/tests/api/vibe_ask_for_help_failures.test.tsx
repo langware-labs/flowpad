@@ -89,14 +89,18 @@ describe('Ask someone for help — stress-run failures', () => {
     expect(error).toBeUndefined();
     cleanupTasks.push(taskId!);
 
-    const task = await apiClient.get<{ title: string; parent_type_id?: string; artifacts?: { label: string }[] }>(
-      `/graph/task/${taskId}`,
-    );
+    const task = await apiClient.get<{ title: string; parent_type_id?: string }>(`/graph/task/${taskId}`);
     expect(task.title).toBe(`${title} (2)`);
-    expect(task.artifacts?.map((a) => a.label)).toEqual(['shot.png']);
     // The conversation the task was asked in is its hub parent.
     const convId = task.parent_type_id!.replace(/^conversation-/, '');
-    const messages = await apiClient.get<{ text?: string }[]>(`/graph/conversation/${convId}/flow_message`);
-    expect(messages.map((m) => m.text)).toEqual([expect.stringContaining(task.title)]);
+    const messages = await apiClient.get<{ text?: string; attachment?: { attachment_type: string; data: string }[] }[]>(
+      `/graph/conversation/${convId}/flow_message`,
+    );
+    // The request's files ride its opening message — the one carrying the task — and it names the task.
+    const opening = messages.find((m) => m.attachment?.some((a) => a.data === `task-${taskId}`));
+    expect(opening?.attachment?.filter((a) => a.attachment_type === 'file').map((a) => a.data)).toEqual([
+      'data/shot.png',
+    ]);
+    expect(opening?.text).toContain(task.title);
   });
 });

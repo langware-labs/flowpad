@@ -187,7 +187,10 @@ export function AgentVisibilitySection({
             {visitorRole === PUBLIC_DEPLOYER_ROLE ? (
               <Trans>Anyone with the link can try this agent in a sandbox of their own — no sign-in needed.</Trans>
             ) : (
-              <Trans>The link works for anyone the agent is shared with, or for everyone once it is public.</Trans>
+              <Trans>
+                Anyone its project is shared with can launch it from this link. Making the agent public lets everyone
+                see it; launching still needs the project shared with them.
+              </Trans>
             )}
           </p>
         </div>

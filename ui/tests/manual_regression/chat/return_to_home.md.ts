@@ -18,7 +18,7 @@ test.describe('Return to Home', () => {
     await submitFromLanding(page, 'return home test');
 
     // wait for shell terminal to open
-    await expect(page).toHaveURL(/\/dock\/shell\//, { timeout: 45_000 });
+    await expect(page).toHaveURL(/\/dock\/vibe\/agentic_process-/, { timeout: 45_000 });
 
     // click home button to navigate back to landing page
     await goHome(page);

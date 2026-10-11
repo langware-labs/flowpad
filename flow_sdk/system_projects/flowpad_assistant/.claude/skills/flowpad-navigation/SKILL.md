@@ -189,6 +189,7 @@ opens a different screen and reports success.
 | Organization  *(hub)* | `organization` | people, teams, members |
 | Preferences | `preferences` | my preferences, appearance |
 | Runs | `process-runs` | history |
+| Schema | `schema-tree` | schema tree, data schema, schemas, data model |
 | Search | `search` | find |
 | Search indexes | `rag` | embeddings, knowledge index, vector index, brain, knowledge base |
 | Settings | `settings` | claude settings |

@@ -147,6 +147,11 @@ test.describe('doc-chat per type', () => {
 
     for (const { type, editor, machinePath } of DOCS) {
       await page.goto(withViewMode(vfsUrl(editor, machinePath), 'advanced'));
+      // The editor's side drawer (Usage | Eval) is an Advanced surface, and
+      // Advanced is the developer switch now (bd2e5b0d1) — `?viewMode=advanced`
+      // only picks the Terminal surface. Flip it the way the avatar double-click does.
+      await expect(page.getByTestId('top-nav-bar')).toBeVisible();
+      await page.evaluate(() => window.setDev(true));
       // Panel mounts behind the current Eval side-tab.
       await openChatPanel(page);
 
