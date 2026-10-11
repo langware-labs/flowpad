@@ -374,7 +374,7 @@ describe('/launch?agent= and ?project=', () => {
     expect(assign).toHaveBeenCalledWith(workspaceServiceUrl(NODE_ID, path));
   });
 
-  it('a controller asks for a target first, and launches nothing until one is picked', async () => {
+  it('a controller asks for a cloud target first: the cloud waits for one, the desktop picks its own', async () => {
     mocks.launchInfo = { [`agent/${AGENT_ID}`]: controllerInfo };
     mocks.projects = [spora, new Project({ id: AGENT_PROJECT, name: 'q-agent-test', git_origin: hubRepo('x') })];
 
@@ -385,7 +385,11 @@ describe('/launch?agent= and ?project=', () => {
     // The controller is never offered as its own target.
     expect(options).toEqual(['', TARGET_PROJECT]);
     expect(screen.getByTestId('launch-cloud').disabled).toBe(true);
-    expect(screen.getByTestId('launch-desktop').disabled).toBe(true);
+
+    // The desktop is handed the controller and its face only: the project is picked on that machine.
+    fireEvent.click(screen.getByTestId('launch-desktop'));
+    const path = launchPlanToPath({ target: { local: null }, controllerId: AGENT_PROJECT, agentId: AGENT_ID });
+    await waitFor(() => expect(mocks.openInFlowpad).toHaveBeenCalledWith(path));
   });
 
   it('a controller on a picked project: the box gets the target, and the controller BESIDE it', async () => {
@@ -585,7 +589,7 @@ describe('/launch?agent= and ?project=', () => {
     renderLanding(`?agent=${AGENT_ID}`);
 
     await waitFor(() =>
-      expect(screen.getByTestId('launch-hint').textContent).toContain('You have no projects here yet'),
+      expect(screen.getByTestId('launch-hint').textContent).toContain('You have no projects in the cloud'),
     );
     fireEvent.change(screen.getByTestId('launch-target-repo'), { target: { value: 'not a repo' } });
     expect(screen.getByTestId('launch-hint').textContent).toBe("That isn't a repository URL.");
@@ -600,7 +604,7 @@ describe('/launch?agent= and ?project=', () => {
 
     renderLanding(`?agent=${AGENT_ID}`);
 
-    await waitFor(() => expect(screen.getByTestId('launch-hint').textContent).toContain('Pick the project'));
+    await waitFor(() => expect(screen.getByTestId('launch-hint').textContent).toContain('pick the project'));
   });
 
   describe('GA4 funnel', () => {

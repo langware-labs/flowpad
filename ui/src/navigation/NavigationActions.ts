@@ -22,8 +22,7 @@ import { NavigateFunction } from 'react-router';
 import { isValidIdentifier } from '@sdk/models/TypeId';
 import {
   UNSTATED_VIEW_MODE,
-  previousNonVibeViewMode,
-  rememberedDockViewMode,
+  sessionOpenViewMode,
   sessionIdForDock,
   VIEW_MODE_SWITCH_STATE,
   ViewMode,
@@ -42,7 +41,7 @@ import { beginTabSwitch, dockLabel, tabSwitch } from './tab-switch-state';
 import { FileOptions, TabOptions } from './types';
 import { preserveWindowLayout, stripDockPortion } from './url-builder';
 import { allScope, projectScope } from '@src/lib/scope-filter';
-import { contentAssetTargetForDock, isContentAssetDock } from './content-asset-dock';
+import { contentAssetTargetForDock, reviewPromptFor, isContentAssetDock } from './content-asset-dock';
 import { isAdoptableChildDock, isWorkspaceAnchorDock } from './adoptable-child-dock';
 import { isHostDock } from './tab-hosts';
 import { LOCAL_COMPUTE_NODE } from './asset-doc-types';
@@ -93,8 +92,7 @@ export interface NavigationCommitOptions {
   viewModeSwitch?: boolean;
   /**
    * Open as a TOP-LEVEL tab — the global strip's chips and "+": never carried into
-   * the Vibe workspace on screen as its child, and painted in Vibe only when it IS a
-   * Vibe tab (a terminal beside a Vibe tab is a terminal tab, not Vibe content).
+   * the Vibe workspace on screen as its child.
    */
   topLevel?: boolean;
   /** The `tab_switch` start line's `via=` when neither flag above names it. */
@@ -265,9 +263,10 @@ export class NavigationActions {
     }
   }
 
-  /** Stamp a mode-less target: its own remembered dock mode, else the live mode
-   *  on screen (`liveMode`, read only when there is no memory). An entry must
-   *  state its mode, or it re-resolves through the stored preference. */
+  /** State a mode-less target's mode. Only a session (and what it hosts) has
+   *  one: its own remembered mode, else the last mode the user selected — never
+   *  the mode on screen, which belongs to the tab being LEFT. A hosted child
+   *  shows in its host's mode (`liveMode`). Every other page states none. */
   private static withTargetViewMode(target: DockPointer, liveMode: () => ViewMode | null): DockPointer {
     // A process asked for in Vibe by option is the Vibe host dock — map it here,
     // on the way out, so no opener ever writes the old spelling and pays the
@@ -276,17 +275,10 @@ export class NavigationActions {
       return target.withViewMode(ViewMode.Vibe);
     }
     if (target.viewMode !== null) return target;
-    const remembered = rememberedDockViewMode(target);
-    if (remembered) return target.withViewMode(remembered);
-    // A session never takes the mode on screen — that belongs to the tab being
-    // LEFT. In cache with no memory it is the plain chat (the shell loader's own
-    // default, stated here to spare its redirect); not in cache it opens bare
-    // and the loader states it from the entity.
-    if (sessionIdForDock(target)) {
-      return viewModeMemory.targetFor(target.targetTypeId) ? target.withViewMode(ViewMode.Standard) : target;
-    }
-    const live = liveMode();
-    return live ? target.withViewMode(live) : target;
+    // Not in cache: opens bare and the shell loader states it from the entity.
+    const session = sessionIdForDock(target) ? viewModeMemory.targetFor(target.targetTypeId) : null;
+    const mode = session ? sessionOpenViewMode(session) : target.hostProcessId ? liveMode() : null;
+    return mode ? target.withViewMode(mode) : target;
   }
 
   private static clearCommittedPendingNavigation(): void {
@@ -638,22 +630,14 @@ export class NavigationActions {
       dock = dock.withScopeFilter(projectId ? projectScope(projectId) : allScope());
     }
 
-    // Every entry STATES its mode (an address that states none paints the app's
-    // unstated mode, and a Back step onto it would visibly do nothing). A dock
-    // whose target owns memory — a session, a project — takes that memory; a
-    // session with none still never takes the screen's mode (see
-    // `withTargetViewMode`). Everything else is workspace content and follows
-    // the mode on screen. Opening only DISPLAYS a mode; memory is minted by
-    // `VIEW_MODE_STORE`. Cache-only: a cold deep link has no entity to read
-    // here, and the shell loader states a session's mode instead.
+    // A session entry STATES its mode: its own memory, else the last mode the
+    // user selected (see `withTargetViewMode`). Opening only DISPLAYS a mode;
+    // memory is minted by `VIEW_MODE_STORE`. Cache-only: a cold deep link has no
+    // entity to read here, and the shell loader states a session's mode instead.
     dock = NavigationActions.withTargetViewMode(
       dock,
       () => NavigationActions.currentBrowserViewMode() ?? this.currentDock?.viewMode ?? null,
     );
-    // A top-level tab is painted in Vibe only if it IS a Vibe tab.
-    if (opts?.topLevel && dock.viewMode === ViewMode.Vibe && dock.viewType !== ViewType.VIBE) {
-      dock = dock.withViewMode(previousNonVibeViewMode());
-    }
 
     if (this.currentDock?.equals(dock)) {
       toplog.log('navigation', 'openDock no-op (currentDock equals target)', {
@@ -881,7 +865,7 @@ export class NavigationActions {
         await this.resolveLinkDock(link, source),
         process.project_id ?? source?.project_id,
       );
-      this.openDock(dock.withViewMode(ViewMode.Vibe).withHost(process.typeId.toString()));
+      this.openDock(dock.withHost(process.typeId.toString()).withViewMode(ViewMode.Vibe));
     } catch (error) {
       notifyLinkError(error);
     }
@@ -1016,7 +1000,7 @@ export class NavigationActions {
 
   /**
    * Show a session on another SURFACE — Vibe, Chat or Terminal. The same switch as
-   * the footer's mode selector (marked `viewModeSwitch`, so the mode is recorded):
+   * the session's own switch makes (marked `viewModeSwitch`, so the mode is recorded):
    * one tab, re-pointed; the transport follows (`useProcessSurface`). Vibe → its
    * host dock; leaving Vibe carries the nested tabs out (backend re-point).
    */
@@ -1065,6 +1049,36 @@ export class NavigationActions {
       last?.id ?? (await createVibeProcessForProject({ projectId, targetVfsPath: target, open: false })).id;
     await this.placeVibeTabBeside(processId);
     this.openDock(hostedAssetDock(asset, projectId, processId));
+  }
+
+  /**
+   * Start a NEW session that reviews a document, on the surface asked for. The
+   * document is the session's target and the prompt names it; an entity-backed
+   * one also rides in the session's shared context. The launching tab stays as
+   * it is: Terminal and Chat open their own tab, Vibe opens a host tab placed
+   * right after the tab on screen.
+   */
+  async reviewDocument(asset: DockPointer, mode: ViewMode, projectId: string | null): Promise<void> {
+    const target = contentAssetTargetForDock(asset);
+    if (!target) return;
+    const prompt = reviewPromptFor(target);
+    const about = {
+      targetVfsPath: target.targetVfsPath,
+      sharedContextEntities: target.typeId ? [target.typeId] : undefined,
+    };
+    if (mode === ViewMode.Vibe) {
+      if (!projectId) return;
+      const { launchVibeSessionForProject } = await import('@src/pages/flow-page/use-start-vibe-session');
+      await launchVibeSessionForProject({
+        ...about,
+        projectId,
+        message: prompt,
+        navigation: { openShellProcess: (processId) => void this.openVibeTabBeside(processId) },
+      });
+      return;
+    }
+    const { openNewChat } = await import('./open-new-chat');
+    await openNewChat(this, { ...about, mode, projectId: projectId ?? undefined, prompt });
   }
 
   async openShellProcess(

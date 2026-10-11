@@ -2,8 +2,7 @@ import { ContextEntitiesEnum, dataContext, initSdk, isHubOnly, TypeId } from '@s
 import { redirect, replace, type LoaderFunctionArgs as LoaderArgs } from 'react-router';
 import { TimeIt } from '@src/utils/timeit';
 import { adoptScopeProject } from './load-dock-pointer';
-import { DockPointer } from '@src/navigation/DockPointer';
-import { UNSTATED_VIEW_MODE } from '@src/contexts/view-mode-context';
+import { DockPointer, VIEW_MODE_PARAM } from '@src/navigation/DockPointer';
 import { registerLoadRedirect, runLoadRedirects } from './load-redirects';
 // Side-effect import: features register their load-redirect resolvers here.
 import '@src/journey/journey-load-redirect';
@@ -56,25 +55,19 @@ export async function loadHomePage(args: LoaderArgs) {
   const url = new URL(args.request.url);
   const dock = DockPointer.root().withOptionsFromUrl(`${url.pathname}${url.search}`);
 
-  // `/` arrives bare on every cold load — the browser loads the URL directly, so
-  // `openDock`'s viewMode stamping never runs for it. Canonicalize it here so the
-  // FIRST history entry states its mode like every other one; otherwise Back onto
-  // it re-resolves through the (mutable) preference and renders whatever mode is
-  // current, making the step invisible.
+  // The home has no view mode — it is the one open screen. An address that still
+  // carries one (an old bookmark, a history entry from before) is canonicalized
+  // to the plain home, so no entry can show a second home.
   //
   // `replace`, NOT `redirect`: a redirect on the INITIAL document load pushes,
-  // which would leave the bare `/` sitting behind home as an entry that re-runs
-  // this loader and redirects forward again — the classic redirect trap, i.e.
-  // another Back step that does nothing. Measured: with `redirect` the cold load
-  // landed at idx=1; with `replace` it lands at idx=0.
+  // which would leave the stale URL sitting behind home as an entry that re-runs
+  // this loader and redirects forward again — a Back step that does nothing.
   //
   // FIRST, before any awaited work: this throw discards the rest of the pass and
-  // the router re-runs the whole matched loader tree on the canonical URL. It
-  // fires on every bare cold start, so anything done above it is paid for twice
-  // and thrown away once.
-  if (dock.viewMode === null) {
+  // the router re-runs the whole matched loader tree on the canonical URL.
+  if (url.searchParams.has(VIEW_MODE_PARAM)) {
     // eslint-disable-next-line @typescript-eslint/only-throw-error
-    throw replace(dock.withViewMode(UNSTATED_VIEW_MODE).toUrl(url.pathname));
+    throw replace(dock.toUrl(url.pathname));
   }
 
   await ensureComputeNodeLoaded();

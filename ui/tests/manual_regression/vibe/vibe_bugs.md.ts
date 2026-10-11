@@ -181,15 +181,11 @@ test.describe('Vibe Workspace confirmed-bug regressions', () => {
 
       await expect(page).toHaveURL((url) => {
         const processId =
-          url.pathname.match(/\/dock\/shell\/agentic_process-([0-9a-f-]+)/)?.[1] ?? null;
-        return (
-          processId !== null &&
-          processId !== fixture.processId &&
-          url.searchParams.get('viewMode') === 'vibe'
-        );
+          url.pathname.match(/\/dock\/vibe\/agentic_process-([0-9a-f-]+)/)?.[1] ?? null;
+        return processId !== null && processId !== fixture.processId;
       });
       newProcessId =
-        page.url().match(/\/dock\/shell\/agentic_process-([0-9a-f-]+)/)?.[1] ?? null;
+        page.url().match(/\/dock\/vibe\/agentic_process-([0-9a-f-]+)/)?.[1] ?? null;
       expect(newProcessId).toBeTruthy();
       expect(newProcessId).not.toBe(fixture.processId);
 
@@ -201,9 +197,7 @@ test.describe('Vibe Workspace confirmed-bug regressions', () => {
       expect(created.embedded_asset_refs.length).toBeGreaterThan(0);
 
       await page.reload();
-      await expect(page).toHaveURL(
-        new RegExp(`/dock/shell/agentic_process-${newProcessId}\\?.*viewMode=vibe`),
-      );
+      await expect(page).toHaveURL(new RegExp(`/dock/vibe/agentic_process-${newProcessId}(\\?|$)`));
     } finally {
       if (newProcessId) {
         await request

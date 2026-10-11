@@ -39,6 +39,20 @@ describe('MessageAttachment actions', () => {
     expect(lastAction(spy).bodyParameters).toEqual({ scope: 'user', project_id: null, overwrite: true });
   });
 
+  it("install(user, …, {name}) sends the receiver's name for a project whose own is taken", async () => {
+    const spy = vi.spyOn(dataManager, 'callAction').mockResolvedValue(undefined as never);
+    const ma = new MessageAttachment({ id: MA_ID });
+
+    await ma.install('user', undefined, { name: 'course-2' });
+
+    expect(lastAction(spy).bodyParameters).toEqual({
+      scope: 'user',
+      project_id: null,
+      overwrite: false,
+      name: 'course-2',
+    });
+  });
+
   it('uninstall POSTs the uninstall action on the entity', async () => {
     const spy = vi.spyOn(dataManager, 'callAction').mockResolvedValue(undefined as never);
     const ma = new MessageAttachment({ id: MA_ID });

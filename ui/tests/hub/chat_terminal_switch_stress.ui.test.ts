@@ -209,7 +209,7 @@ describe('chat⇄terminal switch stress in the browser — one session, 10 itera
       ).find((candidate) => candidate.dataset.sessionId === processPointer);
       const rawPtyMode = el?.getAttribute('data-pty-mode');
       return {
-        present: !!el && document.querySelector('[data-testid="view-toggle"]') !== null,
+        present: !!el && document.querySelector('[data-testid="session-surface-switch"]') !== null,
         ptyMode: rawPtyMode === 'true' ? true : rawPtyMode === 'false' ? false : null,
       };
     }, `agentic_process-${proc.id as string}`);
@@ -258,7 +258,7 @@ describe('chat⇄terminal switch stress in the browser — one session, 10 itera
     // Fire onClick directly: a Playwright pointer-click can miss on a small
     // segment; el.click() always invokes the production URL-first handler.
     await page!.page
-      .getByTestId(targetPty ? 'view-toggle-advanced' : 'view-toggle-standard')
+      .getByTestId(targetPty ? 'session-surface-terminal' : 'session-surface-chat')
       .evaluate((el) => (el as HTMLButtonElement).click());
     const end = Date.now() + SWITCH_BUDGET_MS;
     while (Date.now() < end) {
@@ -280,7 +280,7 @@ describe('chat⇄terminal switch stress in the browser — one session, 10 itera
     const uiState = await page!.page.evaluate(() => ({
       url: `${window.location.pathname}${window.location.search}`,
       view: document.documentElement.getAttribute('data-view'),
-      selected: document.querySelector('[data-testid^="view-toggle-"][aria-checked="true"]')
+      selected: document.querySelector('[data-testid^="session-surface-"][aria-checked="true"]')
         ?.getAttribute('data-testid') ?? null,
     }));
     throw new Error(

@@ -45,6 +45,7 @@ import {
   ALL_SCOPE_FILTER,
   dockOptionsToScopeFilter,
   pinnedProjectId,
+  projectScope,
   scopeFilterKey,
   scopeFilterToDockOptions,
   withScopeFilterOptions,
@@ -57,6 +58,7 @@ import { DEFAULT_WORLDVIEW_COLOR_MODE, type WorldViewColorMode } from '@src/type
 import { DEFAULT_GRAPH_PRESENTATION, type GraphPresentation } from '@src/types/GraphPresentation';
 import { credentialsPointer } from '@src/components/credentials-view/credentials-pointer';
 import { dataSourcesPointer, type DataSourcesRoute } from '@src/components/data-sources/data-sources-pointer';
+import { schemaTreePointer } from '@src/components/schema-tree/schema-tree-pointer';
 
 /**
  * URL query-param key carrying the "highlight this thing" intent across the
@@ -466,6 +468,19 @@ export class DockPointer implements IDockPointer {
       this.layout = layout ?? Layout.DOCK;
       this.page = (page as PageId | undefined) ?? PageId.DESK;
     }
+    // A mode belongs to a session tab (and what it hosts). Anywhere else the
+    // option is dropped at the door, so no page can be reskinned by an address.
+    if (this.options?.[VIEW_MODE_PARAM] !== undefined && !this.carriesViewMode) {
+      const rest = { ...this.options };
+      delete rest[VIEW_MODE_PARAM];
+      this.options = rest;
+    }
+  }
+
+  /** Whether this dock has a view mode at all: a session's own dock, or a child
+   *  its workspace hosts. Every other page has one look and states no mode. */
+  get carriesViewMode(): boolean {
+    return DockPointer.isSessionView(this.viewType) || !!this.options?.[HOST_PARAM];
   }
 
   /**
@@ -2215,6 +2230,17 @@ export class DockPointer implements IDockPointer {
    */
   static forDataSources(route?: DataSourcesRoute, layout: Layout = Layout.DOCK): DockPointer {
     return new DockPointer(ViewType.DATA_SOURCES, dataSourcesPointer(route), {}, layout);
+  }
+
+  /**
+   * Create dock pointer for `projectId`'s schema tree with `path` selected — the kinds
+   * unfolded down to the selected one (`schemaTreePointer` owns the grammar). The project
+   * is the dock's scope, so the loader selects it and the tab belongs to it.
+   */
+  static forSchemaTree(projectId: string, path: string[] = [], layout: Layout = Layout.DOCK): DockPointer {
+    return new DockPointer(ViewType.SCHEMA_TREE, schemaTreePointer(path), {}, layout).withScopeFilter(
+      projectScope(projectId),
+    );
   }
 
   /**

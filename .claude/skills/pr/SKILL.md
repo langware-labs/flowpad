@@ -85,6 +85,14 @@ Delegate each lens to a subagent when the diff is large; give it the scope from
 step 1 and the lens's own output contract. Skip a lens the diff can't touch
 (no UI files → skip the frontend half of rules.md) and say you skipped it.
 
+The whole review waits for the slowest lens, and that is the correctness lens
+(`code-review` + `security-review`) on a large diff. When the diff spans more than
+one area (backend `flow_sdk/` + `electron/`, or backend + `ui/`/`ts_sdk/`), split
+that lens into **one subagent per area**, all launched in the same message. Each
+gets only its own area's files plus read access to the rest for context, and
+reports cross-area contract mismatches (a file one side writes and the other
+reads) from its own side.
+
 ## Step 4 — Verify, then one report
 
 Before reporting, **verify every finding** by reading the cited lines: drop it

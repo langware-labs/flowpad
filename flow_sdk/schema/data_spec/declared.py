@@ -388,6 +388,20 @@ def kind_in(root: Path, name: str) -> Optional[str]:
     return None
 
 
+def kinds_under(root: Path) -> dict[str, Path]:
+    """``{kind: its folder}`` for every kind a data schema under ``root`` defines, registered first.
+    A documentation node defines none, and neither does a folder that did not register."""
+    errors = load_root(Path(root))
+    with _lock:
+        return {_READ[folder].tag: folder for folder, error in errors.items()
+                if not error and folder in _READ and _READ[folder].doc.resolved_subkind is not None}
+
+
+def folder_of(kind: str) -> Optional[Path]:
+    """The folder that defines a registered kind; None for a kind code defines, or an unknown name."""
+    return _OWNER.get(kind)
+
+
 def load_root(root: Path) -> dict[Path, str]:
     """Register every data schema under ``root`` -- nested at any depth, in dependency order.
 

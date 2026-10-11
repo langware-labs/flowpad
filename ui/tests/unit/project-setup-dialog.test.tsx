@@ -144,6 +144,34 @@ describe('ProjectSetupDialog — skipping', () => {
     expect(skip).not.toHaveBeenCalled();
   });
 
+  it('checking rows hides each row\'s Skip and shows one bar that skips them all, then selects none', async () => {
+    const mapbox = req({ name: 'mapbox', title: 'Mapbox', typeid: 'credential-7f1c2d3e-4a5b-4c6d-8e9f-0a1b2c3d4e5f', required: false });
+    await open({ ...NOT_READY, optional: [mapbox] });
+    const skip = vi.spyOn(Project, 'skipSetup').mockResolvedValue({ ...NOT_READY, optional: [mapbox] });
+    expect(screen.queryByTestId('project-setup-selection-bar')).toBeNull();
+    fireEvent.click(screen.getByTestId('project-setup-select-google-cloud'));
+    fireEvent.click(screen.getByTestId('project-setup-select-mapbox'));
+    expect(screen.getByTestId('project-setup-selection-bar')).toHaveTextContent('2 selected');
+    expect(screen.queryByTestId('project-setup-skip-google-cloud')).toBeNull();
+    expect(screen.queryByTestId('project-setup-skip-mapbox')).toBeNull();
+    await act(async () => fireEvent.click(screen.getByTestId('project-setup-skip-local-selected')));
+    expect(skip.mock.calls).toEqual([
+      ['p1', GCP_TYPEID, 'local', { name: 'google-cloud' }],
+      ['p1', mapbox.typeid, 'local', { name: 'mapbox' }],
+    ]);
+    expect(screen.queryByTestId('project-setup-selection-bar')).toBeNull();
+    expect(screen.getByTestId('project-setup-skip-google-cloud')).toBeInTheDocument();
+    expect(h.openDock).not.toHaveBeenCalled();
+  });
+
+  it('the bar offers Always only when every selected row can be removed, and Cancel selects none', async () => {
+    await open({ ...NOT_READY, to_do: [req({ can_skip_always: false })] });
+    fireEvent.click(screen.getByTestId('project-setup-select-google-cloud'));
+    expect(screen.getByTestId('project-setup-skip-always-selected')).toBeDisabled();
+    fireEvent.click(screen.getByTestId('project-setup-skip-cancel-selected'));
+    expect(screen.queryByTestId('project-setup-selection-bar')).toBeNull();
+  });
+
   it('Undo un-skips it', async () => {
     const mark = { at: 1, by: 'u1', note: '' };
     await open({ ...NOT_READY, to_do: [], ready: true, skipped: [req({ skipped: mark })] });

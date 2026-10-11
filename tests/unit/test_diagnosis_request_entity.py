@@ -209,6 +209,7 @@ async def test_the_sidebar_lists_requests_from_the_hub_newest_run_first(monkeypa
     monkeypatch.setattr(hub_http, "hub_get_or_raise", hub_get_or_raise)
     await DiagnosisRequest(id="a1b2c3d4-0000-4000-8000-00000000000b", name="newer", project_id="p1").save()
 
+    monkeypatch.setattr("flow_sdk.cli.auth.hub_login.hub_auth_available", lambda: True)
     listed = await module.mine()
 
     assert [r["id"][-1] for r in listed] == ["b", "a"]
@@ -244,3 +245,16 @@ async def test_an_edit_asks_the_hub_for_a_new_window_from_now_and_a_new_run_size
     assert abs(expires - (datetime.now(UTC) + timedelta(days=7))) < timedelta(minutes=1)
     with pytest.raises(ValidationError):
         DiagnosisRequestEditSpec(write_hours=24 * 8)
+
+
+async def test_a_signed_out_computer_lists_no_requests_and_does_not_ask_the_hub(monkeypatch):
+    from flow_sdk.builtin import diagnosis_request
+    from flow_sdk.cloud_client.transport import hub_http
+
+    async def hub_get_or_raise(*_args, **_kwargs):
+        raise AssertionError("a signed-out computer asked the hub for its diagnosis requests")
+
+    monkeypatch.setattr(hub_http, "hub_get_or_raise", hub_get_or_raise)
+    monkeypatch.setattr("flow_sdk.cli.auth.hub_login.hub_auth_available", lambda: False)
+
+    assert await diagnosis_request.mine() == []

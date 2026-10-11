@@ -1329,12 +1329,14 @@ async def _restore_git_reference_entity_entry(
     *,
     overwrite: bool,
     owner_typeid: str | None,
+    name: str | None = None,
 ) -> bool:
     """Materialize an entity whose bytes are supplied by git, not the bundle.
 
     Generic over the types that declare ``TypeInfo.receive_transfer`` as a git
     reference: read the staged metadata and origin, then let the type's
     ``restore_reference`` hook write its row (and, for a project, clone it).
+    ``name`` replaces the sender's name — the receiver's choice when it is taken here.
     """
     if not isinstance(transfer, dict) or transfer.get("transfer_mode") != _TRANSFER_MODE_GIT:
         return False
@@ -1346,6 +1348,8 @@ async def _restore_git_reference_entity_entry(
     if cls is None:
         return False
     payload = _read_transfer_metadata(tmp_root, transfer)
+    if name:
+        payload = {**payload, "name": name}
     origin = ORIGIN_ADAPTER.validate_python(origins_map.get(key) or payload.get("origin"))
     if origin is None:
         return False

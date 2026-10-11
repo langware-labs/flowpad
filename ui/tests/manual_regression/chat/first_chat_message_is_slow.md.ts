@@ -34,6 +34,6 @@ test('first home message immediately acknowledges submit and opens chat', async 
 
   await expect(input).toHaveValue('');
   await createRequest;
-  await expect(page).toHaveURL(/\/dock\/shell\/agentic_process-/);
+  await expect(page).toHaveURL(/\/dock\/vibe\/agentic_process-/);
   await expect(page.locator('[data-testid="entity-execution-new"]:visible')).toBeVisible();
 });

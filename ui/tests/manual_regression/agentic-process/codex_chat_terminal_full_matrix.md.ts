@@ -188,7 +188,7 @@ test.describe('Codex durable transcript projection', () => {
       join(repo, 'ui/src/components/terminal/interactive-terminal/use-process-surface.ts'),
       'utf8',
     );
-    const modeSwitch = readFileSync(join(repo, 'ui/src/components/view-toggle/view-toggle.tsx'), 'utf8');
+    const modeSwitch = readFileSync(join(repo, 'ui/src/components/terminal/interactive-terminal/SessionSurfaceSwitch.tsx'), 'utf8');
     const toolbar = readFileSync(
       join(repo, 'ui/src/components/terminal/interactive-terminal/ProcessToolbar.tsx'),
       'utf8',
@@ -204,7 +204,7 @@ test.describe('Codex durable transcript projection', () => {
     expect(modeSwitchHook).toContain('.switchMode(');
     expect(modeSwitchHook).toContain('loadHistory({ force: true })');
     expect(terminalPanel).toContain('data-pty-mode');
-    expect(modeSwitch).toContain('view-toggle-${m}');
+    expect(modeSwitch).toContain('session-surface-${surface}');
     expect(modeSwitch).toContain('ViewMode.Vibe');
     expect(toolbar).toContain("if (wt === 'codex') return 'Codex'");
     expect(toolbar).toContain('permission_mode');

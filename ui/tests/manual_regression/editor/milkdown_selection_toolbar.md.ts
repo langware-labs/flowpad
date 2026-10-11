@@ -33,7 +33,7 @@ async function openFirstMarkdownDoc(page: Page) {
   // enters Advanced. Flip it through the live app API the way the footer view pill
   // does (window.setView, exposed by view-mode-context), then wait for the
   // Advanced-only review chip to render.
-  await page.evaluate(() => window.setView('advanced'));
+  await page.evaluate(() => window.setDev(true));
   await expect(page.locator('[data-testid="editor-mode-chip-review"]')).toBeVisible({ timeout: 10_000 });
 }
 
