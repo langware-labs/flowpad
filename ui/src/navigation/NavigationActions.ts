@@ -22,8 +22,7 @@ import { NavigateFunction } from 'react-router';
 import { isValidIdentifier } from '@sdk/models/TypeId';
 import {
   UNSTATED_VIEW_MODE,
-  lastSelectedViewMode,
-  rememberedViewMode,
+  sessionOpenViewMode,
   sessionIdForDock,
   VIEW_MODE_SWITCH_STATE,
   ViewMode,
@@ -93,8 +92,7 @@ export interface NavigationCommitOptions {
   viewModeSwitch?: boolean;
   /**
    * Open as a TOP-LEVEL tab — the global strip's chips and "+": never carried into
-   * the Vibe workspace on screen as its child, and painted in Vibe only when it IS a
-   * Vibe tab (a terminal beside a Vibe tab is a terminal tab, not Vibe content).
+   * the Vibe workspace on screen as its child.
    */
   topLevel?: boolean;
   /** The `tab_switch` start line's `via=` when neither flag above names it. */
@@ -276,15 +274,11 @@ export class NavigationActions {
     if (target.viewType === ViewType.SHELL && target.viewMode === ViewMode.Vibe) {
       return target.withViewMode(ViewMode.Vibe);
     }
-    if (target.viewMode !== null || !target.carriesViewMode) return target;
-    if (sessionIdForDock(target)) {
-      // Not in cache: opens bare and the shell loader states it from the entity.
-      const session = viewModeMemory.targetFor(target.targetTypeId);
-      return session ? target.withViewMode(rememberedViewMode(session) ?? lastSelectedViewMode()) : target;
-    }
-    if (!target.hostProcessId) return target;
-    const live = liveMode();
-    return live ? target.withViewMode(live) : target;
+    if (target.viewMode !== null) return target;
+    // Not in cache: opens bare and the shell loader states it from the entity.
+    const session = sessionIdForDock(target) ? viewModeMemory.targetFor(target.targetTypeId) : null;
+    const mode = session ? sessionOpenViewMode(session) : target.hostProcessId ? liveMode() : null;
+    return mode ? target.withViewMode(mode) : target;
   }
 
   private static clearCommittedPendingNavigation(): void {
@@ -1006,7 +1000,7 @@ export class NavigationActions {
 
   /**
    * Show a session on another SURFACE — Vibe, Chat or Terminal. The same switch as
-   * the footer's mode selector (marked `viewModeSwitch`, so the mode is recorded):
+   * the session's own switch makes (marked `viewModeSwitch`, so the mode is recorded):
    * one tab, re-pointed; the transport follows (`useProcessSurface`). Vibe → its
    * host dock; leaving Vibe carries the nested tabs out (backend re-point).
    */

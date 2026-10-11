@@ -665,7 +665,7 @@ export class DockPointer implements IDockPointer {
     if (mode === VIBE_MODE && isProcess && (this.viewType === ViewType.SHELL || this.viewType === ViewType.VIBE)) {
       return new DockPointer(ViewType.VIBE, this.pointer, nextOptions, this.layout, this.page);
     }
-    if (mode && this.carriesViewMode) nextOptions[VIEW_MODE_PARAM] = mode;
+    if (mode) nextOptions[VIEW_MODE_PARAM] = mode;
     return new DockPointer(this.viewType, this.pointer, nextOptions, this.layout, this.page);
   }
 

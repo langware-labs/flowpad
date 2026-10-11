@@ -38,7 +38,7 @@ import { sinceTabSwitch } from '@src/navigation/tab-switch-state';
 import { showCleanupModal } from '@src/components/recovery/cleanup-modal';
 import { notify } from '@src/notifications';
 import { buildShellRedirectUrl, detectLayout, DockPointer } from '@src/navigation';
-import { lastSelectedViewMode, rememberedViewMode, ViewMode } from '@src/contexts/view-mode-context';
+import { sessionOpenViewMode, ViewMode } from '@src/contexts/view-mode-context';
 import { NODE_PARAM } from '@src/navigation/DockPointer';
 import { isHubOnly } from '@src/navigation/hub-runtime';
 import { activeDisplayDock } from '@src/navigation/open-active-display';
@@ -264,7 +264,7 @@ async function reconcileProcessScope(processId: string, requestPath: string, car
     proc.terminalDockPointer.pointer,
     carry?.options,
     detectLayout(requestPath),
-  ).withViewMode(carry?.viewMode ?? rememberedViewMode(proc) ?? lastSelectedViewMode());
+  ).withViewMode(carry?.viewMode ?? sessionOpenViewMode(proc));
   // eslint-disable-next-line @typescript-eslint/only-throw-error
   throw replace((want ? base.withScopeFilter(want) : base.withoutScopeFilter()).toUrl(requestPath));
 }

@@ -60,15 +60,6 @@ function toViewMode(v: unknown): ViewMode {
 }
 
 /**
- * The "advanced-or-fuller" threshold from the mode hierarchy (Advanced ⊂ Dev),
- * as a plain predicate so both the `useIsAdvanced` hook and non-hook callers
- * (e.g. syncDesktopMenu) share one definition of where "advanced" begins.
- */
-export function isAdvancedMode(mode: ViewMode): boolean {
-  return mode === ViewMode.Advanced || mode === ViewMode.Dev;
-}
-
-/**
  * The SURFACE a view mode shows an agent session in — the single mapping that
  * makes View mode the one mode selector. Vibe is the vibe workspace, Standard is
  * the chat pane, Advanced/Dev is the raw terminal.
@@ -81,7 +72,7 @@ export type SessionSurface = 'vibe' | 'chat' | 'terminal';
 
 export function surfaceForViewMode(mode: ViewMode): SessionSurface {
   if (mode === ViewMode.Vibe) return 'vibe';
-  return isAdvancedMode(mode) ? 'terminal' : 'chat';
+  return mode === ViewMode.Advanced || mode === ViewMode.Dev ? 'terminal' : 'chat';
 }
 
 /** Transport for a mode: only the terminal surface runs an interactive PTY. */
@@ -171,7 +162,6 @@ function syncDesktopMenu(): void {
 
 function applyAttribute(val: ViewMode, animate = true): void {
   if (val === ViewMode.Vibe) ensureVibeFont();
-  syncDesktopMenu();
   const root = document.documentElement;
   const prev = root.getAttribute('data-view');
   // Guard: prefMan fires on EVERY pref change, but only a view-mode change need
@@ -244,9 +234,16 @@ export function sessionIdForDock(dock: IDockPointer): string | null {
  * SELECTED (the stored preference, which only a mode switch writes). Dev reads
  * as the terminal it showed.
  */
-export function lastSelectedViewMode(): ViewMode {
+function lastSelectedViewMode(): ViewMode {
   const mode = getViewMode();
   return mode === ViewMode.Dev ? ViewMode.Advanced : mode;
+}
+
+/** The mode a session opens in when its address states none: its own memory,
+ *  else the last mode the user selected. The ONE rule — the opener and the shell
+ *  loader both ask it, so a warm open and a cold load cannot disagree. */
+export function sessionOpenViewMode(session: { last_mode?: string | null } | null | undefined): ViewMode {
+  return rememberedViewMode(session) ?? lastSelectedViewMode();
 }
 
 /**
@@ -310,22 +307,11 @@ function attributeViewMode(): ViewMode {
 }
 
 applyAttribute(attributeViewMode(), false);
-onPreferenceChange(() => applyAttribute(attributeViewMode()));
-
-/**
- * Paint the skin for the address the router just committed — called from the
- * router's own subscription, so it lands BEFORE React commits the new view.
- *
- * The skin changes text metrics (its font), and the terminal pool puts a
- * returning pane's scroll offset back while that view commits. Painted from an
- * effect, the skin flipped AFTER the offset was restored: the text reflowed
- * under it and the reader came back to a different place. A mode SWITCH is left
- * to the sync hook, which owns its glow.
- */
-export function paintViewModeForLocation(locationState: unknown): void {
-  if (isViewModeSwitchState(locationState)) return;
-  applyAttribute(viewModeFromLocation() ?? UNSTATED_VIEW_MODE, false);
-}
+syncDesktopMenu();
+onPreferenceChange(() => {
+  applyAttribute(attributeViewMode());
+  syncDesktopMenu();
+});
 
 defineGlobal('setView', setViewMode);
 defineGlobal('getView', getViewMode);
