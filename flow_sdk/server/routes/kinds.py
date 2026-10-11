@@ -222,16 +222,17 @@ async def project_kinds(project: str) -> ApiResponse | JSONResponse:
     fields, the kinds they name (linked, or held inside the row) and the dataset that keeps its
     rows; 404 when no project has that id."""
     from flow_sdk.builtin.dataset import Dataset  # noqa: PLC0415
-    from flow_sdk.builtin.project import Project  # noqa: PLC0415
     from flow_sdk.datasets.schema_tree import schema_tree  # noqa: PLC0415
     from flow_sdk.db.drivers.query import QueryFilter  # noqa: PLC0415
+    from flow_sdk.fs_store.operations.all_projects import get_cached_projects  # noqa: PLC0415
 
     root, missing = await _root_or_404(project)
     if missing:
         return missing
     datasets = [d for d in await Dataset.get_all(QueryFilter(type=Dataset.get_type())) if d.project_id == project]
+    # The canonical project list (cached), not a walk of every Project row.
     roots = {Path(p.fs_storage_mount_path).resolve(): p.id
-             for p in await Project.get_all() if getattr(p, "fs_storage_mount_path", None)}
+             for p in await get_cached_projects() if getattr(p, "fs_storage_mount_path", None)}
     tree = await asyncio.to_thread(schema_tree, project, root, datasets, roots)
     return ApiSuccessResponse(data=tree.model_dump(mode="json"))
 
