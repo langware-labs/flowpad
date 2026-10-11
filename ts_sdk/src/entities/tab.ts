@@ -476,6 +476,11 @@ export class Tab extends APIEntity<Tab> implements ITab {
     return Tab.fromResponse(res?.tabs ?? []);
   }
 
+  /** A closed tab: `visible=false` is the whole of "closed" (the row is never deleted). */
+  override isRetired(): boolean {
+    return this.visible === false;
+  }
+
   /** Instance soft-close (also updates the local flag). */
   async closeTab(): Promise<Tab[]> {
     const rows = await Tab.closeById(this.id);
