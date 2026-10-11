@@ -179,7 +179,7 @@ def _bare(form: str) -> str:
     return form[len(OPTIONAL_MARK) :] if form.startswith(OPTIONAL_MARK) else form
 
 
-def _refs(form: Any) -> list[str]:
+def kinds_named(form: Any) -> list[str]:
     """The kind names a form refers to (``?`` stripped; enums and primitives are not kinds)."""
     from flow_sdk.schema.data_spec._kinds import PRIMITIVES  # noqa: PLC0415
 
@@ -189,9 +189,9 @@ def _refs(form: Any) -> list[str]:
             return []
         return name.split(KIND_UNION)  # a link to several kinds depends on each
     if isinstance(form, list):
-        return [r for item in form for r in _refs(item)]
+        return [r for item in form for r in kinds_named(item)]
     if isinstance(form, dict):
-        return [r for child in form.values() for r in _refs(child)]
+        return [r for child in form.values() for r in kinds_named(child)]
     return []
 
 
@@ -236,7 +236,7 @@ def _path_kinds(forms: dict, path: str) -> set[str]:
             if i + 1 >= len(steps) or steps[i + 1] != "*":
                 raise DeclareError(f"rule path {path!r}: {name!r} is a list -- follow it with '*'")
             form, i = form[0], i + 1
-        kinds = set(_refs(form)) if isinstance(form, str) else set()
+        kinds = set(kinds_named(form)) if isinstance(form, str) else set()
         if not kinds:
             raise DeclareError(f"rule path {path!r}: {name!r} is not a link to a row (its shape is {form!r})")
         i += 1
@@ -291,7 +291,7 @@ def _build(folder: Path) -> Optional[type]:
     forms = {name: _qualify(_normalize_form(form), read.ns, tag) for name, form in raw.items()}
 
     # Build what this one names before compiling it, so no reference resolves to Any.
-    for ref in {r for form in forms.values() for r in _refs(form)}:
+    for ref in {r for form in forms.values() for r in kinds_named(form)}:
         if ref in _BUILDING:
             raise DeclareError(f"kind {tag!r} and {ref!r} refer to each other")
         if ref in _PENDING:

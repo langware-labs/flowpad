@@ -47,11 +47,12 @@ def crm(tmp_path):
     return root, ns, [_dataset(root, "companies", f"--{ns}--.crm.company"), _dataset(root, "leads", f"--{ns}--.crm.lead")]
 
 
-def _tree(root, datasets, roots=None):
+def _tree(root, datasets, projects=None):
     from flow_sdk.datasets.schema_tree import schema_tree
+    from flow_sdk.fs_store.path_utils import canonical_posix_path
 
-    tree = schema_tree("p1", root, datasets, roots if roots is not None else {root.resolve(): "p1"})
-    return {node.name: node for node in tree.kinds}
+    mounts = tuple((canonical_posix_path(str(folder)), pid) for folder, pid in (projects or {root: "p1"}).items())
+    return {node.name: node for node in schema_tree(root, datasets, mounts).schemas}
 
 
 def test_every_kind_the_project_defines_is_listed_with_where_it_is_defined(crm):
@@ -91,5 +92,5 @@ def test_a_kind_another_project_defines_names_that_project(crm, tmp_path):
     _schema(other, ns, "crm.region", {"name": {"shape": "string", "description": "The region."}})
     assert not any(load_root(other).values())
     _schema(root, ns, "crm.office", {"region": {"shape": "crm.region", "description": "Where it is."}})
-    office = _tree(root, datasets, {root.resolve(): "p1", other.resolve(): "p2"})["crm.office"]
+    office = _tree(root, datasets, {root: "p1", other: "p2"})["crm.office"]
     assert [(u.kind, u.held, u.project_id) for u in office.uses] == [(f"--{ns}--.crm.region", "inside", "p2")]

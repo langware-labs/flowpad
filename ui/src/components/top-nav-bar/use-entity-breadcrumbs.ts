@@ -36,7 +36,7 @@ import { useProjectLocation } from '@src/hooks/use-project-location';
 import { useEntity } from '@src/hooks/entity-hooks';
 import { ViewMode } from '@src/contexts/view-mode-context';
 import { parseDataSourcesPointer } from '@src/components/data-sources/data-sources-pointer';
-import { bareKind } from '@src/components/schema-tree/schema-tree-model';
+import { bareKind, DATA_SCHEMA_TYPE } from '@src/components/schema-tree/schema-tree-model';
 import { parseSchemaTreePointer, SOURCE_SEGMENT } from '@src/components/schema-tree/schema-tree-pointer';
 import { useSourceSpecs } from '@src/components/data-sources/use-source-specs';
 
@@ -628,7 +628,7 @@ export function useEntityBreadcrumbs(dock: DockPointer | null): EntityBreadcrumb
         out.push({
           key: `schema-tree-${i}-${step}`,
           label: source ? labelForType(DataSource.type) : bareKind(step),
-          Icon: iconForType(source ? DataSource.type : 'data_schema'),
+          Icon: iconForType(source ? DataSource.type : DATA_SCHEMA_TYPE),
           pointer: last ? null : at(steps.slice(0, i + 1)),
           kind: last ? 'current' : 'ancestor',
         });

@@ -24,7 +24,7 @@ const MODEL: SchemaRoot[] = [{
   id: 'p1',
   name: 'Marketing',
   folder: '/work/marketing',
-  kinds: [kind('gtm.icp', [['gtm.item', 'inside']]), kind('gtm.item'), kind('gtm.persona', [['gtm.icp', 'link']])],
+  schemas: [kind('gtm.icp', [['gtm.item', 'inside']]), kind('gtm.item'), kind('gtm.persona', [['gtm.icp', 'link']])],
   sources: [{ id: 's1', name: 'Gmail', provider: 'gmail' }],
 }];
 const PERSONA = `${NS}gtm.persona`;
@@ -76,11 +76,8 @@ describe('following a link', () => {
   });
 });
 
-// RCA 2026-10-11: the schema tab was stored with no project, so the project's tab strip (which
-// lists `tab.project_id === the active project`) hid it and the address bar kept the ambient
-// project. The tab's project comes from the dock's scope — a dock that carries the project only
-// in its pointer resolves to none. Entered where the loader enters: `Tab.resolveDockTarget`, the
-// resolution `getFromDockPointer` persists on the row.
+// The tab's project comes from the dock's scope (`Tab.resolveDockTarget`, what the loader persists
+// on the row), and the project's strip lists only its own tabs.
 describe('the schema tab belongs to its project', () => {
   it("resolves the dock's project, so the project's strip lists the tab", async () => {
     const dock = DockPointer.forSchemaTree(PROJECT, [PERSONA]);

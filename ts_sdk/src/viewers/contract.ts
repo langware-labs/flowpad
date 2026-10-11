@@ -56,7 +56,7 @@ export interface SchemaUse {
   project_id: string;
 }
 
-/** One kind a project's schema folder defines (a dataset kind's example slots read as its fields). */
+/** One schema a project's data schema folder defines (a dataset kind's example slots read as its fields). */
 export interface SchemaNode {
   kind: string;
   /** The kind without its namespace — the folder name. */
@@ -74,8 +74,7 @@ export interface SchemaNode {
 
 /** `GET /api/v1/kinds?project=<id>` — every schema a project defines. */
 export interface SchemaTree {
-  project_id: string;
-  kinds: SchemaNode[];
+  schemas: SchemaNode[];
 }
 
 export interface ViewRequest {

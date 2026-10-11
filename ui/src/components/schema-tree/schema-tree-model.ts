@@ -2,28 +2,31 @@
  * What the schema tree shows: projects, the schemas each defines and its data sources — and where
  * following a link lands. No React here.
  */
-import { dataManager, projectKinds, QueryRequest, TypeId, type SchemaNode } from '@sdk';
+import { dataManager, DataSource, Project, projectSchemas, QueryRequest, splitNamespace, TypeId, type SchemaNode } from '@sdk';
 
 /** One project in the tree: its schemas and its data sources. */
 export interface SchemaRoot {
   id: string;
   name: string;
   folder: string;
-  kinds: SchemaNode[];
+  schemas: SchemaNode[];
   sources: { id: string; name: string; provider?: string }[];
 }
 
 export const homeOf = (model: SchemaRoot[], kind: string) =>
-  model.find((root) => root.kinds.some((node) => node.kind === kind));
+  model.find((root) => root.schemas.some((node) => node.kind === kind));
 export const nodeOf = (model: SchemaRoot[], kind: string) =>
-  homeOf(model, kind)?.kinds.find((node) => node.kind === kind);
+  homeOf(model, kind)?.schemas.find((node) => node.kind === kind);
+
+/** The entity type of a data schema — the SDK ships no class for it. */
+export const DATA_SCHEMA_TYPE = 'data_schema';
 
 /** A kind without its namespace (`--gtm_studio--.gtm.icp` → `gtm.icp`). */
-export const bareKind = (kind: string) => kind.replace(/^--.+?--\./, '');
+export const bareKind = (kind: string) => splitNamespace(kind)[1];
 
 /** The schemas, in any shown project, whose fields name `kind`. */
 export function usedBy(model: SchemaRoot[], kind: string): SchemaNode[] {
-  return model.flatMap((root) => root.kinds.filter((node) => node.uses.some((use) => use.kind === kind)));
+  return model.flatMap((root) => root.schemas.filter((node) => node.uses.some((use) => use.kind === kind)));
 }
 
 /** Where following a link to `kind` from the selection at `path` lands: under the selected kind
@@ -41,27 +44,25 @@ export function pathAfterLink(model: SchemaRoot[], path: string[], kind: string)
 /** `projectId`'s root, then the root of every project that defines a kind it uses. */
 export async function loadSchemaRoots(projectId: string, model: SchemaRoot[] = []): Promise<SchemaRoot[]> {
   if (!projectId || model.some((root) => root.id === projectId)) return model;
+  const root: SchemaRoot = { id: projectId, name: projectId, folder: '', schemas: [], sources: [] };
+  model.push(root); // claimed before the first await, so a project two schemas use is loaded once
   const [project, tree, sources] = await Promise.all([
-    dataManager.getByTypeId(new TypeId('project', projectId)) as Promise<any>,
-    projectKinds(projectId),
-    dataManager.query<any>(
+    dataManager.getByTypeId<Project>(new TypeId(Project.type, projectId)),
+    projectSchemas(projectId),
+    dataManager.query<DataSource>(
       new QueryRequest({
-        type: 'data_source',
+        type: DataSource.type,
         query: { match: { project_id: projectId } },
         scope: [],
         name: `schema-tree-sources-${projectId}`,
       }),
     ),
   ]);
-  model.push({
-    id: projectId,
-    name: project?.name ?? projectId,
-    folder: project?.fs_storage_mount_path ?? '',
-    kinds: tree.kinds,
-    sources: (sources ?? []).map((s: any) => ({ id: s.id, name: s.name, provider: s.provider })),
-  });
-  for (const used of new Set(tree.kinds.flatMap((node) => node.uses.map((use) => use.project_id)))) {
-    await loadSchemaRoots(used, model);
-  }
+  root.name = project?.name ?? projectId;
+  root.folder = project?.fs_storage_mount_path ?? '';
+  root.schemas = tree.schemas;
+  root.sources = (sources ?? []).map((s) => ({ id: s.id, name: s.name, provider: s.provider }));
+  const used = new Set(tree.schemas.flatMap((node) => node.uses.map((use) => use.project_id)));
+  await Promise.all([...used].map((id) => loadSchemaRoots(id, model)));
   return model;
 }
