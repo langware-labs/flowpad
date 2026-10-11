@@ -98,18 +98,6 @@ test('a long chat keeps its place across a tab switch and a layout change', asyn
   const reading = (await readScroll(page, chat.processId))!;
   expect(reading.top, 'the reader is not in the middle of the chat').toBeLessThan(reading.max - 1_000);
   await pinPane(page, chat.processId);
-  const diag = async (label: string) =>
-    console.log('DIAG', label, JSON.stringify(await page.evaluate((sel) => {
-      const el = document.querySelector<HTMLElement>(sel);
-      return {
-        top: el?.scrollTop, h: el?.scrollHeight, w: el?.clientWidth, ch: el?.clientHeight,
-        dv: document.documentElement.getAttribute('data-view'), font: getComputedStyle(document.body).fontFamily.slice(0, 30),
-        elFont: el ? getComputedStyle(el).fontFamily.slice(0, 30) : null, elSize: el ? getComputedStyle(el).fontSize : null,
-        jakarta: [...document.fonts].filter((f) => f.family.includes('Jakarta')).map((f) => f.status).join(','),
-        url: location.pathname.slice(0, 40) + location.search.slice(0, 30),
-      };
-    }, scroller(chat.processId))));
-  await diag('reading');
 
   const chatChip = `[data-testid="tab-shell|agentic_process-${chat.processId}"]`;
   const otherChip = `[data-testid="tab-shell|agentic_process-${world.processId}"]`;
@@ -136,11 +124,7 @@ test('a long chat keeps its place across a tab switch and a layout change', asyn
     await test.step(`→ ${trip.name}`, async () => {
       await trip.away();
       await page.waitForTimeout(500);
-      await diag(`away ${trip.name}`);
       await trip.back();
-      await diag(`back0 ${trip.name}`);
-      await page.waitForTimeout(2000);
-      await diag(`back2s ${trip.name}`);
       await expect.poll(() => samePaneShowing(page, chat.processId), { message: 'the chat was rebuilt' }).toBe(true);
       await expect
         .poll(async () => (await readScroll(page, chat.processId))?.top, {
