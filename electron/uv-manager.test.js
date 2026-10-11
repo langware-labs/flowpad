@@ -363,6 +363,15 @@ ok(!mgr.isToolDirLockedError(null), 'null error → not a lock (no throw)');
     eq(await m._pythonPinForUpgrade(), bundled, 'pin: release floor equals the bundle → same pin');
     m._getLatestPypiInfo = async () => ({ version: '9.9.9' }); // no requires_python
     eq(await m._pythonPinForUpgrade(), bundled, 'pin: release without requires_python → bundled pin');
+    // After a runtime repair the recorded interpreter is the pin — as long as the release accepts its minor.
+    m._runtimeState = () => ({ python: 'C:\\L\\Flowpad\\runtime\\python-3.11.9\\python.exe', version: '3.11.9' });
+    m.repairedRuntimePython = () => 'C:\\L\\Flowpad\\runtime\\python-3.11.9\\python.exe';
+    m._getLatestPypiInfo = async () => ({ version: '9.9.9', requires_python: '>=3.11' });
+    eq(await m._pythonPinForUpgrade(), 'C:\\L\\Flowpad\\runtime\\python-3.11.9\\python.exe', 'pin: repaired 3.11.9 satisfies >=3.11 → the repaired interpreter');
+    m._getLatestPypiInfo = async () => ({ version: '9.9.9', requires_python: '>=3.12' });
+    eq(await m._pythonPinForUpgrade(), '3.12', 'pin: the release moved to >=3.12 → the repaired 3.11.9 is NOT pinned any more (minor pin, uv-managed)');
+    m._getLatestPypiInfo = async () => { throw new Error('offline'); };
+    eq(await m._pythonPinForUpgrade(), 'C:\\L\\Flowpad\\runtime\\python-3.11.9\\python.exe', 'pin: no answer about the floor → keep the repaired interpreter');
   }
 
   // ── upgrade({version}): install the release the user already agreed to, not "latest" ──
@@ -1714,8 +1723,44 @@ ok(!mgr.isToolDirLockedError(null), 'null error → not a lock (no throw)');
     fs.rmSync(`${venv}.pre-repair`, { recursive: true, force: true });
     await m._rollbackEngine();
     eq(seen[3], ['tool', 'install', 'flowpad', '--python', tryPythonVersion(), '--python-preference', 'only-managed', '--reinstall', '--force'],
-      'without a set-aside venv the rollback pins the minor AND only uv-managed interpreters (a registered python.org one must not win)');
+      'without a set-aside venv and with the previous version unreadable, the rollback pins the minor AND only uv-managed interpreters (a registered python.org one must not win)');
+    // The version the user had is known: the rollback lands on THAT release, not on latest.
+    m.getInstalledVersionSync = () => '0.2.202';
+    await m._installEngineOn('C:\\p\\python.exe');
+    fs.rmSync(`${venv}.pre-repair`, { recursive: true, force: true });
+    m.getInstalledVersionSync = () => '0.2.999'; // what the failed repair left in place
+    await m._rollbackEngine();
+    eq(seen[5], ['tool', 'install', 'flowpad==0.2.202', '--python', tryPythonVersion(), '--python-preference', 'only-managed', '--reinstall', '--force'],
+      'without a set-aside venv the rollback reinstalls the release the user HAD (never "latest")');
+    // The set-aside rename fails (a file held open): nothing was changed, and the rollback changes nothing either.
+    m.getInstalledVersionSync = () => '0.2.202';
+    m._setAsidePreRepairVenv = () => { throw new Error('EBUSY: resource busy or locked, rename'); };
+    const before = seen.length;
+    let err = null;
+    try { await m._installEngineOn('C:\\p\\python.exe'); } catch (e) { err = e; }
+    ok(err && err.nothingChanged && /could not set the current engine aside .*EBUSY.*; the engine was not changed/.test(err.message), 'a failed set-aside says the engine was not changed');
+    eq(seen.length, before, 'no install ran after a failed set-aside');
+    await m._rollbackEngine();
+    eq(seen.length, before, 'the rollback after a failed set-aside runs no uv command: the engine in place is still the previous one');
     fs.rmSync(tmp, { recursive: true, force: true });
+  }
+  {
+    // (runtime repair) the rejected runtime is a DIRECTORY: the remove helper must delete a tree, and say so if it cannot.
+    const os = require('os');
+    const fs = require('fs');
+    const path = require('path');
+    const m = new UvManager(silentLog);
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'flowpad-rt-'));
+    fs.mkdirSync(path.join(dir, 'DLLs'));
+    fs.writeFileSync(path.join(dir, 'DLLs', '_ssl.pyd'), 'x');
+    fs.writeFileSync(path.join(dir, 'python.exe'), 'x');
+    m._removePath(dir);
+    ok(!fs.existsSync(dir), '_removePath removes a directory tree (fs.rmSync without recursive refused it and the error was swallowed)');
+    const f = path.join(os.tmpdir(), `flowpad-rt-${process.pid}.zip`);
+    fs.writeFileSync(f, 'x');
+    m._removePath(f);
+    ok(!fs.existsSync(f), '_removePath removes a file');
+    m._removePath(f); // absent: no error
   }
 
   console.log(`uv-manager.test.js: ${passed} assertions passed`);

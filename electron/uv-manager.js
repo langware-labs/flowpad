@@ -2220,11 +2220,27 @@ class UvManager {
     // blocked interpreter. If that interpreter is gone (the user deleted the folder), say so and
     // fall back to the minor pin: the block will be detected again and the repair offered again.
     const repaired = this.repairedRuntimePython();
+    let minor = null;
+    try {
+      minor = await this._minorPythonPin(release);
+    } catch (e) {
+      if (!repaired) throw e;
+    }
     if (repaired) {
+      // Not for ever: the repair installed ONE minor (3.11.9). The day the engine requires a newer
+      // one, pinning the old interpreter would fail every upgrade with no way out. Then the minor
+      // pin wins (uv-managed, as before the repair); if that build is blocked too, the block is
+      // detected again and a repair is offered again — with a manifest for the new minor once one
+      // ships (runtime-repair.js PYTHON_RUNTIME_MANIFEST).
+      const repairedMinor = this.repairedRuntimeMinor();
+      if (minor && repairedMinor && maxPythonVersion(minor, repairedMinor) !== repairedMinor) {
+        this.log.warn(`[uv] the repaired runtime is Python ${repairedMinor} but the release needs >=${minor}: not pinning to it (uv-managed ${minor} instead)`);
+        return minor;
+      }
       this.log.info(`[uv] pinning the engine to the repaired runtime: ${repaired}`);
       return repaired;
     }
-    return this._minorPythonPin(release);
+    return minor;
   }
 
   /** The "<major>.<minor>" pin without the repaired-runtime override (the pre-repair state). */
@@ -2584,12 +2600,25 @@ class UvManager {
    * later install must reuse. Null otherwise (never repaired, or the folder was removed: logged,
    * and the engine goes back to the minor pin until the block is detected and repaired again).
    */
+  /** "<major>.<minor>" of the repaired runtime (`desktop-runtime.json` records the full version), or null. */
+  repairedRuntimeMinor() {
+    const state = this._runtimeState();
+    const m = String(state.version || '').match(/^(\d+\.\d+)/);
+    return m ? m[1] : null;
+  }
+
   repairedRuntimePython() {
     const state = this._runtimeState();
     if (!state.python) return null;
     if (fs.existsSync(state.python)) return state.python;
     this.log.warn(`[uv] the repaired runtime recorded in desktop-runtime.json is gone (${state.python}); using the minor pin`);
     return null;
+  }
+
+  /** Delete a file OR a directory tree (the rejected runtime is a tree). Throws when it is still there. */
+  _removePath(p) {
+    fs.rmSync(p, { force: true, recursive: true });
+    if (fs.existsSync(p)) throw new Error(`${p} still exists`);
   }
 
   /** Where the repair puts things: `%LOCALAPPDATA%\Flowpad\runtime\{python-<ver>,downloads}`. */
@@ -2623,7 +2652,7 @@ class UvManager {
       finalizeEngine: () => this._finalizeEngine(),
       startBackend: () => startBackend(),
       healthCheck: () => healthCheck(),
-      remove: async (p) => { fs.rmSync(p, { force: true }); },
+      remove: async (p) => this._removePath(p),
     };
     return runtimeRepair.performRuntimeRepair({
       io,
@@ -2862,7 +2891,17 @@ class UvManager {
     // environment is intact on disk and the rollback is a rename back — no network, and exactly
     // the environment the user had, not a fresh install of it.
     await this._drainVenvProcesses();
-    this._setAsidePreRepairVenv();
+    // Remembered for the rollback: the release to put back when the set-aside copy is not there.
+    this._preRepairEngineVersion = installed || null;
+    try {
+      this._setAsidePreRepairVenv();
+    } catch (e) {
+      // The rename failed (a file held open — an antivirus scan, a lingering process): the venv is
+      // still in place and intact, so NOTHING changed. Say so; the rollback below recognises it.
+      const err = new Error(`could not set the current engine aside (${e.message}); the engine was not changed`);
+      err.nothingChanged = true;
+      throw err;
+    }
     this.log.info(`[runtime-repair] installing ${spec} on ${python}`);
     await this._uvToolInstallForce(
       ['tool', 'install', spec, '--python', python, '--reinstall', '--force'],
@@ -2898,10 +2937,14 @@ class UvManager {
 
   /**
    * Put the engine back to the state before the repair. First choice: the set-aside venv, renamed
-   * back into place (exact previous environment, no network). Only when there is none (an older
-   * leftover was cleaned, or the rename itself failed): reinstall on the minor pin, `only-managed` —
-   * with the python.org interpreter now registered (PEP 514), a bare `--python 3.11` could resolve
-   * to IT (seen on the VM), and the rollback must land on uv's own build.
+   * back into place (exact previous environment, no network). When there is none:
+   *   - the venv in place still IS the previous engine (the set-aside rename failed, so the install
+   *     never ran): nothing to do — a "rollback" that reinstalls would change what the user asked
+   *     to keep;
+   *   - otherwise reinstall THE RELEASE THE USER HAD (`flowpad==<version before the repair>`; bare
+   *     `flowpad`, i.e. latest, only when that version could not be read) on the minor pin,
+   *     `only-managed` — with the python.org interpreter now registered (PEP 514), a bare
+   *     `--python 3.11` could resolve to IT (seen on the VM), and the rollback must land on uv's own build.
    */
   async _rollbackEngine() {
     const venvDir = this._toolVenvDir();
@@ -2914,10 +2957,17 @@ class UvManager {
       this._flowBin = await this._resolveFlowBin();
       return;
     }
+    const previous = this._preRepairEngineVersion || null;
+    if (previous && fs.existsSync(venvDir) && this.getInstalledVersionSync() === previous) {
+      this.log.warn(`[runtime-repair] no set-aside engine, and the engine in place is still ${previous}: the switch never happened, nothing to roll back`);
+      this._flowBin = await this._resolveFlowBin();
+      return;
+    }
     const pin = await this._minorPythonPin();
-    this.log.warn(`[runtime-repair] no set-aside engine; rolling back to --python ${pin} (uv-managed)`);
+    const spec = previous ? `${PYPI_PACKAGE}==${previous}` : PYPI_PACKAGE;
+    this.log.warn(`[runtime-repair] no set-aside engine; rolling back to ${spec} on --python ${pin} (uv-managed)`);
     await this._uvToolInstallForce(
-      ['tool', 'install', PYPI_PACKAGE, '--python', pin, '--python-preference', 'only-managed', '--reinstall', '--force'],
+      ['tool', 'install', spec, '--python', pin, '--python-preference', 'only-managed', '--reinstall', '--force'],
     );
     this._flowBin = await this._resolveFlowBin();
   }

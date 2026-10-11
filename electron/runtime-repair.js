@@ -307,11 +307,19 @@ async function performRuntimeRepair({
       //    accepted signer. A signed archive says nothing about its contents; this does.
       const sigs = await io.verifyRuntimeSignatures(targetDir, manifest.signerSubjectCNs);
       if (!sigs || !(sigs.checked > 0) || (sigs.invalid && sigs.invalid.length)) {
-        await io.remove(targetDir).catch(() => {});
+        // The unsigned files must not stay on disk — and the message must say what happened,
+        // not what was meant to happen.
+        let disposal = 'it was removed';
+        try {
+          await io.remove(targetDir);
+        } catch (e) {
+          log.error(`[runtime-repair] could not remove the rejected runtime ${targetDir}: ${e.message}`);
+          disposal = `it could NOT be removed (${e.message}) — delete ${targetDir} by hand`;
+        }
         const bad = (sigs && sigs.invalid && sigs.invalid.length)
           ? sigs.invalid.slice(0, 5).map((i) => `${i.file}: ${i.status}${i.subjectCN ? ` (${i.subjectCN})` : ''}`).join('; ')
           : 'no files checked';
-        throw fail('verify-signatures', `the extracted runtime has unsigned or unexpectedly signed files (${bad}); it was removed`);
+        throw fail('verify-signatures', `the extracted runtime has unsigned or unexpectedly signed files (${bad}); ${disposal}`);
       }
       step('verify-signatures', `${sigs.checked} executable files, all Valid and signed by ${manifest.signerSubjectCNs.join(' / ')}`);
     }

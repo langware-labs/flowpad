@@ -244,6 +244,14 @@ function harness(overrides = {}) {
     ok(h.calls.includes('remove python-3.11.9') && !h.calls.some((c) => c.startsWith('validate') || c.startsWith('engine')), 'runtime removed, interpreter never run');
   }
   {
+    // The rejected runtime cannot be removed (a file held open): the message says it is STILL THERE, not "it was removed".
+    const h = harness({
+      verifyRuntimeSignatures: async () => ({ checked: 32, invalid: [{ file: 'DLLs\\_ssl.pyd', status: 'NotSigned', subjectCN: null }] }),
+      remove: async (p) => { throw new Error(`EBUSY: ${path.basename(p)} is in use`); },
+    });
+    await rejects(h.run(), /it could NOT be removed \(EBUSY: python-3\.11\.9 is in use\) — delete .*python-3\.11\.9 by hand/, 'a failed removal is reported as such');
+  }
+  {
     // Right status, wrong signer, on one file.
     const h = harness({ verifyRuntimeSignatures: async () => ({ checked: 32, invalid: [{ file: 'python.exe', status: 'Valid', subjectCN: 'Nobody Inc.' }] }) });
     await rejects(h.run(), /python\.exe: Valid \(Nobody Inc\.\)/, 'a valid signature by the wrong signer rejects');
