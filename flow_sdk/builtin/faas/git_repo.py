@@ -436,16 +436,14 @@ class GitRepo:
         Windows node's shell is cmd.exe, and callers keep the per-command path there.
         """
         from flow_sdk.config import ComputeProviderType  # noqa: PLC0415
-        from flow_sdk.utils.git_folder import NO_PROMPT_ENV  # noqa: PLC0415
         from flow_sdk.utils.git_usable import EXIT_NOT_FOUND, NOT_USABLE_MESSAGE, git_usable  # noqa: PLC0415
 
         on_this_machine = getattr(self._compute_node, "node_provider_type", None) == ComputeProviderType.LOCAL_MACHINE
         if on_this_machine and not git_usable():
             return CliResult.of_process("git", EXIT_NOT_FOUND, "", NOT_USABLE_MESSAGE)
+        _, env = self._folder._auth(False)  # the env every git call carries
         try:
-            return await self._folder.executor.run(
-                ["sh", "-c", script], cwd=self.work_dir, env={**NO_PROMPT_ENV, "LC_ALL": "C"}
-            )
+            return await self._folder.executor.run(["sh", "-c", script], cwd=self.work_dir, env=env)
         except Exception as exc:  # noqa: BLE001 — a provider failure is an answer here
             logger.debug("git script failed in %s", self.work_dir, exc_info=True)
             return CliResult.of_process("git", None, "", f"{type(exc).__name__}: {exc}")
@@ -488,8 +486,15 @@ class GitRepo:
                     counts.update(await self._untracked_line_counts())
         return status_out, remote_url, counts
 
+    async def _script_numstat(self, script: str) -> dict[str, tuple[int | None, int | None]]:
+        """Run one of the counts scripts (fresh scratch token) and parse its numstat."""
+        counted = await self._git_script(script.format(token=uuid4().hex))
+        return _parse_numstat(counted.stdout) if counted.ok else {}
+
     async def _line_counts(self) -> dict[str, tuple[int | None, int | None]]:
-        """Per-path ``(insertions, deletions)`` for the whole worktree against HEAD.
+        """Per-path ``(insertions, deletions)`` for the whole worktree against HEAD —
+        the per-command path a Windows node takes (a POSIX node reads them inside
+        ``_status_reads``' one script).
 
         Two halves, so the cost tracks the CHANGE, not the size of the repo:
 
@@ -517,8 +522,7 @@ class GitRepo:
     async def _untracked_line_counts(self) -> dict[str, tuple[int | None, int | None]]:
         """``(insertions, 0)`` per untracked, non-ignored file."""
         if not self._windows_shell:
-            counted = await self._git_script(_UNTRACKED_COUNTS_SCRIPT.format(token=uuid4().hex))
-            return _parse_numstat(counted.stdout) if counted.ok else {}
+            return await self._script_numstat(_UNTRACKED_COUNTS_SCRIPT)
         listed = await self._git("ls-files", "--others", "--exclude-standard", "-z")
         if not listed.ok or not listed.stdout.strip("\0"):
             return {}
@@ -552,8 +556,7 @@ class GitRepo:
         a re-hash of.
         """
         if not self._windows_shell:
-            counted = await self._git_script(_UNBORN_COUNTS_SCRIPT.format(token=uuid4().hex))
-            return _parse_numstat(counted.stdout) if counted.ok else {}
+            return await self._script_numstat(_UNBORN_COUNTS_SCRIPT)
         found = await self._git("rev-parse", "--absolute-git-dir")
         git_dir = found.stdout.strip()
         if not found.ok or not git_dir:
@@ -734,11 +737,9 @@ class GitRepo:
         if revision is not None:
             return await self._get_commit_status(revision, line_counts=line_counts)
 
-        # One combined ``status`` replaces is_init + get_branch + ahead/behind +
-        # file-list. ``--branch`` prepends a
+        # ``status_out`` opens with ``--branch``'s
         # ``## <branch>...<upstream> [ahead N, behind M]`` header line; the
-        # remaining lines are the same porcelain v1 file entries parsed below.
-        # rc != 0 ⇒ not a git repository (replaces the separate is_init probe).
+        # remaining lines are porcelain v1 file entries parsed below.
         # ``numstat`` is one count per path, staged and unstaged and untracked
         # together, so a file's ``+/-`` is its whole change against HEAD.
         reads = await self._status_reads(line_counts)
@@ -795,8 +796,6 @@ class GitRepo:
                 )
             )
 
-        # ``ls-remote --get-url`` resolved the upstream's remote, else origin,
-        # through insteadOf rewrites — and never touched the network.
         remote_url = remote_text or None
         if remote_url:
             # Credentials embedded in an https remote never leave the node.

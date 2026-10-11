@@ -13,13 +13,14 @@ from pathlib import Path
 import pytest
 
 from flow_sdk.builtin.faas.git_repo import GitRepo, _split_sections
-from tests.unit.conftest import LocalNode  # noqa: E402
+from tests.unit.conftest import LocalNode
 
 
 class CountingNode(LocalNode):
     """The shared ``LocalNode`` (a POSIX compute node, run here), keeping each command it was sent."""
 
     def __init__(self) -> None:
+        super().__init__()
         self.commands: list[str] = []
         self.envs: list[dict[str, str]] = []
 

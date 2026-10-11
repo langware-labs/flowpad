@@ -225,7 +225,7 @@ class TypeInfo:
     #   from_disk_fn:      Callable[[FSRef, str], list[FSRecord]] — parse payload
     #   identity_carrier:  IdentityCarrier — WHERE the id lives (frontmatter / folder json / …)
     #   id_stable_key_fn:  Callable[[FSRef | Path], str | None] — v5 key
-    #   asset_hash_fn:     Callable[[FSRef], float] — cheap freshness stat
+    #   asset_hash_fn:     Callable[[FSRef], int] — cheap freshness fingerprint, integer ns
     from_disk_fn: Any = field(default=None, compare=False, repr=False, metadata=_MERGE)
     identity_carrier: IdentityCarrier | None = field(default=None, compare=False, repr=False)
     id_stable_key_fn: Any = field(default=None, compare=False, repr=False, metadata=_MERGE)
