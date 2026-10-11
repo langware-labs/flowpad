@@ -10510,8 +10510,8 @@ msgid "Finish the setup above first"
 msgstr "Finish the setup above first"
 
 #: src/components/data-sources/source-attention.ts
-msgid "Finish the step above, then press Verify."
-msgstr "Finish the step above, then press Verify."
+#~ msgid "Finish the step above, then press Verify."
+#~ msgstr "Finish the step above, then press Verify."
 
 #: src/components/assets/editor/wizard/wizard-texts.ts
 msgid "finishing"
@@ -14723,8 +14723,8 @@ msgid "Needs attention"
 msgstr "Needs attention"
 
 #: src/components/data-sources/status-style.ts
-msgid "Needs setup"
-msgstr "Needs setup"
+#~ msgid "Needs setup"
+#~ msgstr "Needs setup"
 
 #: src/components/connections-manager/credential-rows-view.tsx
 msgid "Needs values"
@@ -17403,7 +17403,7 @@ msgstr "Open session"
 msgid "Open Session"
 msgstr "Open Session"
 
-#: src/components/stream-inbox-view/ChannelAttentionBar.tsx
+#: src/components/data-sources/SourceSetupButton.tsx
 msgid "Open settings of {name}"
 msgstr "Open settings of {name}"
 
@@ -18602,6 +18602,10 @@ msgstr "Preparing your workspace…"
 #: src/components/data-sources/source-attention.ts
 msgid "Press Resume to listen again."
 msgstr "Press Resume to listen again."
+
+#: src/components/data-sources/source-attention.ts
+msgid "Press Setup to finish it."
+msgstr "Press Setup to finish it."
 
 #: src/components/data-sources/source-attention.ts
 msgid "Press Verify to evaluate it now."
@@ -20475,6 +20479,7 @@ msgstr "Results"
 #: src/components/data-sources/SourceMenu.tsx
 #: src/components/machine-overview/machine-overview.tsx
 #: src/components/setup-wizard/SetupWizardDialog.tsx
+#: src/components/stream-inbox-view/AttachedChannelsBar.tsx
 #: src/components/stream-inbox-view/ChannelAttentionBar.tsx
 #: src/journey/JourneyViewer.tsx
 #: src/tabs/useTerminalStripController.tsx
@@ -20620,6 +20625,10 @@ msgstr "Review docs on save"
 #: src/components/conversation/asset-review/AssetReviewDialog.tsx
 msgid "Review each attached asset and choose how to install it."
 msgstr "Review each attached asset and choose how to install it."
+
+#: src/tabs/doc-tab-card.tsx
+msgid "Review in"
+msgstr "Review in"
 
 #: src/components/chats-navigator/ChatHistoryRow.tsx
 #: src/components/chats-navigator/ChatHistoryRow.tsx
@@ -22270,6 +22279,7 @@ msgstr "Set up <0>{projectName}</0> in this workspace. We'll clone the repo and 
 #~ msgid "Set up a git-backed context folder for this project."
 #~ msgstr "Set up a git-backed context folder for this project."
 
+#: src/components/setup-wizard/SourceSetupDialog.tsx
 #: src/components/webapp-display/WebappSetupGate.tsx
 msgid "Set up again"
 msgstr "Set up again"
@@ -22333,6 +22343,7 @@ msgstr "Set values"
 #~ msgid "Set{0}"
 #~ msgstr "Set{0}"
 
+#: src/components/setup-wizard/SourceSetupDialog.tsx
 #: src/components/webapp-display/WebappSetupOverlay.tsx
 msgid "Setting things up"
 msgstr "Setting things up"
@@ -22355,8 +22366,8 @@ msgstr "Setting up your project…"
 
 #: src/components/assets/editor/agent-profile/deployment/AgentDeploymentPage.tsx
 #: src/components/data-sources/DataSourcePage.tsx
+#: src/components/data-sources/SourceSetupButton.tsx
 #: src/components/settings-view/SettingsView.tsx
-#: src/components/stream-inbox-view/ChannelAttentionBar.tsx
 #: src/pages/flow-page/content-panel/user-dropdown/user-dropdown.tsx
 #: src/pages/flow-page/content-panel/user-dropdown/user-dropdown.tsx
 #: src/pages/flow-page/content-panel/user-dropdown/user-dropdown.tsx
@@ -22366,12 +22377,20 @@ msgstr "Settings"
 
 #: src/components/account/settings-section.tsx
 #: src/components/automations/AutomationPage.tsx
+#: src/components/data-sources/SourceSetupButton.tsx
 #: src/components/setup-wizard/SetupStagesButton.tsx
+#: src/components/setup-wizard/SourceSetupDialog.tsx
+#: src/components/stream-inbox-view/AttachedChannelsBar.tsx
+#: src/components/stream-inbox-view/ChannelAttentionBar.tsx
 msgid "Setup"
 msgstr "Setup"
 
 #~ msgid "Setup could not start"
 #~ msgstr "Setup could not start"
+
+#: src/components/setup-wizard/SourceSetupDialog.tsx
+msgid "Setup could not start."
+msgstr "Setup could not start."
 
 #~ msgid "Setup did not finish"
 #~ msgstr "Setup did not finish"
@@ -22407,6 +22426,8 @@ msgstr "Setup guide"
 msgid "Setup instructions"
 msgstr "Setup instructions"
 
+#: src/components/data-sources/source-attention.ts
+#: src/components/data-sources/status-style.ts
 #: src/components/top-nav-bar/ProjectSetupButton.tsx
 #: src/components/top-nav-bar/ProjectSetupButton.tsx
 msgid "Setup required"
@@ -28229,11 +28250,3 @@ msgstr "Zoom in"
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "Zoom out"
 msgstr "Zoom out"
-
-#: src/components/data-sources/source-attention.ts
-msgid "Press Setup to finish it."
-msgstr "Press Setup to finish it."
-
-#: src/components/setup-wizard/SourceSetupDialog.tsx
-msgid "Setup could not start."
-msgstr "Setup could not start."
