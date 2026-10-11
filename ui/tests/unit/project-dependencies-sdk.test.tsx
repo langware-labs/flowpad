@@ -37,7 +37,14 @@ const CONTEXT = {
   include_dirs: ['/users/alice/notes'],
   context_roots: ['/w/deps-proj', '/users/alice/notes'],
   context_dir_infos: [
-    { path: '/users/alice/notes', origin_kind: 'local', typeid: 'folder-1', dependency: 'notes', required: true, via: '' },
+    {
+      path: '/users/alice/notes',
+      origin_kind: 'local',
+      typeid: 'folder-1',
+      dependency: 'notes',
+      required: true,
+      via: '',
+    },
   ],
 };
 
@@ -101,7 +108,12 @@ describe('Project.removeDependency', () => {
     const project = makeProject(['/a', '/b']);
     const spy = vi
       .spyOn(dataManager, 'callAction')
-      .mockResolvedValue({ dependencies: [], include_dirs: ['/b'], context_roots: ['/w', '/b'], context_dir_infos: [] });
+      .mockResolvedValue({
+        dependencies: [],
+        include_dirs: ['/b'],
+        context_roots: ['/w', '/b'],
+        context_dir_infos: [],
+      });
 
     const states = await project.removeDependency('a');
 
@@ -172,7 +184,9 @@ describe('onProjectDependenciesChanged', () => {
     const elsewhere = vi.fn();
     const off = onProjectDependenciesChanged(project.id, listener);
     const offElsewhere = onProjectDependenciesChanged('00000000-0000-4000-8000-00000000ffff', elsewhere);
-    const spy = vi.spyOn(dataManager, 'callAction').mockResolvedValue({ dependency: STATE, dependencies: [], ...CONTEXT });
+    const spy = vi
+      .spyOn(dataManager, 'callAction')
+      .mockResolvedValue({ dependency: STATE, dependencies: [], ...CONTEXT });
 
     await project.addDependency('/x');
     await project.removeDependency('x');
@@ -196,5 +210,23 @@ describe('onProjectDependenciesChanged', () => {
     offElsewhere();
     await project.removeDependency('x');
     expect(listener).toHaveBeenCalledTimes(7);
+  });
+});
+
+describe('Project Load lifecycle', () => {
+  const projectId = '77777777-7777-4777-8777-777777777777';
+  const outcome = { state: 'setup_required', detail: 'Tools required', run: null, project_id: projectId, asset: null };
+  it('invokes Load without granting setup approval by default', async () => {
+    const spy = vi.spyOn(dataManager, 'callAction').mockResolvedValue(outcome);
+    expect(await Project.load(projectId)).toEqual(outcome);
+    expect(callOf(spy).name).toBe('load');
+    expect(callOf(spy).bodyParameters).toEqual({ approved: false });
+  });
+  it('reads progress without starting work', async () => {
+    const spy = vi.spyOn(dataManager, 'callAction').mockResolvedValue(outcome);
+    expect(await Project.loadState(projectId)).toEqual(outcome);
+    expect(callOf(spy).name).toBe('load-state');
+    expect(callOf(spy).method).toBe('GET');
+    expect(callOf(spy).bodyParameters).toEqual({});
   });
 });

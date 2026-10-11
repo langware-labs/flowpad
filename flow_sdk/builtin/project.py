@@ -781,22 +781,21 @@ class Project(SetupSkippable, Entity):
         """The declared home page's ``{asset, type}``, only if it is this project's own
         (a cloned manifest must not point Home at another project's asset); else nulls.
 
-        A web app home (the project opens app-first) is made displayable here first: its
-        endpoint on this machine is placed when missing — idempotent, the same placement
-        ``flow show`` does — so the app view the redirect lands on finds something to show.
-        Then it is LOADED (``core/setup/load``): ``load_run`` is the run bringing it up, or null —
-        the view adopts it as the app's setup. Never waited on here."""
-        from flow_sdk.builtin.webapp_placement import show_webapp_locally  # noqa: PLC0415
+        A web app home is LOADED (``core/setup/load``): its shared operational run verifies
+        its entry and local placement, repairing a missing endpoint. ``load_run`` names
+        that background work; the view adopts it. Never place independently here, which
+        would race the same placement in the load run. Never wait on the run here."""
+        from flow_sdk.core.setup.load import load_project  # noqa: PLC0415
 
         typeid = self.home_page_typeid()
         if typeid:
             await self._index_home_page(typeid)
         asset = await self._own_asset(typeid) if typeid else None
+        lifecycle = await load_project(self, asset=asset)
         if asset is None:
-            return {"asset": None, "type": None}
-        answer: dict[str, Any] = {"asset": typeid, "type": asset.get_type()}
-        if asset.get_type() == "micro_app":
-            _endpoint, answer["load_run"] = await show_webapp_locally(asset, self)
+            return {"asset": None, "type": None, "lifecycle": lifecycle.model_dump(mode="json")}
+        answer: dict[str, Any] = {"asset": typeid, "type": asset.get_type(),
+                                  "lifecycle": lifecycle.model_dump(mode="json"), "load_run": lifecycle.run}
         return answer
 
     @action.get(action_name="home-page")
@@ -812,6 +811,35 @@ class Project(SetupSkippable, Entity):
             return ApiSuccessResponse(data={"asset": None, "type": None, "error": str(exc)})
 
     # ── setup: is this project ready here, and the wizard that makes it so ─────────
+
+    @action.post(action_name="load")
+    async def load_action(self, approved: bool = False, asset: str = "", display: str = "") -> "ApiResponse":
+        """Load this provider; only explicit approval allows missing setup to run."""
+        from flow_sdk.core.setup.load import load_project  # noqa: PLC0415
+
+        target = await self._own_asset(asset) if asset else None
+        if asset and target is None:
+            return ApiFailResponse(message="The requested asset does not belong to this project", status_code=400)
+        if display:
+            from flow_sdk.builtin.agentic_process import AgenticProcess  # noqa: PLC0415
+
+            try:
+                identity = TypeId(display)
+                process = await AgenticProcess.get_by_id(identity.id) if identity.type == AgenticProcess.get_type() else None
+            except (ValueError, TypeError, IndexError):
+                process = None
+            if process is None or process.project_id != self.id:
+                return ApiFailResponse(message="The display session does not belong to this project", status_code=400)
+        result = await load_project(self, approved=approved, asset=target, display=display)
+        return ApiSuccessResponse(data=result.model_dump(mode="json"))
+
+    @action.get(action_name="load-state")
+    async def load_state_action(self, asset: str = "") -> "ApiResponse":
+        """Observe the current provider lifecycle, without starting or approving anything."""
+        from flow_sdk.core.setup.load import load_state  # noqa: PLC0415
+
+        result = load_state(str(self.id), asset=asset)
+        return ApiSuccessResponse(data=result.model_dump(mode="json") if result is not None else None)
 
     @action.get(action_name="setup-requirements")
     async def setup_requirements_action(self) -> "ApiResponse":
@@ -2718,7 +2746,7 @@ class Project(SetupSkippable, Entity):
         raw = str(source or "").strip()
         default_name, rel = None, "."
         if asset:
-            return await project_dependencies.add_to_asset(
+            state = await project_dependencies.add_to_asset(
                 self,
                 asset,
                 raw,
@@ -2727,6 +2755,7 @@ class Project(SetupSkippable, Entity):
                 description=description,
                 optional=optional,
             )
+            return await project_dependencies.load_dependency(state)
         if raw.startswith(("git+", "hub:", "file:")) or parse_id(raw):
             parse_source(raw)
         elif Path(raw).expanduser().is_dir():
@@ -2750,7 +2779,7 @@ class Project(SetupSkippable, Entity):
         )
         flow_json.write_dependency(Path(self.fs_storage_mount_path), dep)
         states = await project_dependencies.resolve(self, fetch=True, install=[dep.name] if optional else ())
-        return next(s for s in states if s.name == dep.name and s.via is None)
+        return await project_dependencies.load_dependency(next(s for s in states if s.name == dep.name and s.via is None))
 
     async def remove_dependency(self, name: str) -> "list[DependencyState]":
         """Drop ``name`` from ``flow.json``; its folder leaves the context. The folder on
@@ -2770,7 +2799,7 @@ class Project(SetupSkippable, Entity):
         found = next((s for s in states if s.name == name and s.via is None), None)
         if found is None:
             raise ValueError(f"{name!r} is not declared in flow.json")
-        return found
+        return await project_dependencies.load_dependency(found)
 
     def dismiss_dependency_warning(self, name: str) -> None:
         """Stop warning about a missing required dependency until Flowpad restarts."""

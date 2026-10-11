@@ -66,6 +66,8 @@ DEP_KEY = "dependency"
 #: One resolve at a time per project: two would race on the same links and clones.
 #: Weak-valued (``stream_inbox/_locks``): it lives only while a resolve holds or awaits it.
 _LOCKS = new_registry()
+#: Two consumers may materialize the same provider at once: its path is the natural key.
+_PROVIDER_LOCKS = new_registry()
 #: The detached resolve a project's activation started, by project.
 _TASKS: dict[str, "asyncio.Task"] = {}
 
@@ -198,10 +200,10 @@ async def _hub(dep: FlowDependency, project_id: str, *, fetch: bool, update: boo
     project's hosted repository, or its own git remote."""
     from flow_sdk.cloud_client.shared.errors import HubError  # noqa: PLC0415
     from flow_sdk.cloud_client.transport.hub_http import hub_get_or_raise  # noqa: PLC0415
+    from flow_sdk.db.drivers.db_base_record import BuiltinEntityType  # noqa: PLC0415
     from flow_sdk.fs_store.origin.field import ORIGIN_ADAPTER  # noqa: PLC0415
     from flow_sdk.fs_store.origin.git_origin import GitOrigin  # noqa: PLC0415
     from flow_sdk.fs_store.origin.hub_repo_origin import HubRepoOrigin  # noqa: PLC0415
-    from flow_sdk.db.drivers.db_base_record import BuiltinEntityType  # noqa: PLC0415
 
     if not fetch:
         raise _NotReady("missing", "not on this machine yet — sync to fetch it")
@@ -420,7 +422,68 @@ async def resolve(
         return []
     lock = keyed_loop_lock(_LOCKS, str(project.id))
     async with lock:
-        return await _resolve(project, Path(root_str), fetch=fetch, install=install, update=update, index=index)
+        states = await _resolve(project, Path(root_str), fetch=fetch, install=install, update=update, index=index)
+    return [await describe_dependency(state) for state in states]
+
+
+async def dependency_project(state: DependencyState, *, create: bool = False) -> Optional["Project"]:
+    """Resolve a provider by its natural key, never by the consuming project's context."""
+    from flow_sdk.assets.project_manifest import manifest_path  # noqa: PLC0415
+    from flow_sdk.builtin.project import Project  # noqa: PLC0415
+    from flow_sdk.schema.data_spec.flow_json_spec import parse_id  # noqa: PLC0415
+    from flow_sdk.schema.types import EntityType  # noqa: PLC0415
+
+    if state.state != "ready":
+        return None
+    if state.project_id:
+        return await Project.get_by_id(state.project_id)
+    ref = parse_id(state.typeid or "")
+    if ref is not None and ref[1] == EntityType.PROJECT:
+        return await Project.get_by_id(ref[2])
+    if not state.local_path:
+        return None
+    root = Path(state.local_path).resolve()
+    owners = await Project._mount_owners(str(root))
+    if owners:
+        return owners[0]
+    if create and ((root / flow_json.FLOW_JSON).is_file() or manifest_path(root).is_file()):
+        async with keyed_loop_lock(_PROVIDER_LOCKS, str(root)):
+            return await Project.recover_by_path(str(root))
+    return None
+
+
+async def required_projects(project: "Project") -> list["Project"]:
+    """Distinct resolved provider projects; their own lifecycle owns their working directory."""
+    found: dict[str, Project] = {}
+    for state in await project.dependencies():
+        if state.required:
+            provider = await dependency_project(state)
+            if provider is not None and str(provider.id) != str(project.id):
+                found.setdefault(str(provider.id), provider)
+    return list(found.values())
+
+
+async def describe_dependency(state: DependencyState, *, provider: Optional["Project"] = None) -> DependencyState:
+    """Read-only capability/status projection; listing never starts setup or service work."""
+    from flow_sdk.core.setup.load import load_state  # noqa: PLC0415
+
+    provider = provider or await dependency_project(state)
+    if provider is None:
+        return state
+    return state.model_copy(update={"project_id": str(provider.id), "home_page": provider.home_page_typeid(),
+                                    "lifecycle": load_state(str(provider.id))})
+
+
+async def load_dependency(state: DependencyState, *, approved: bool = False) -> DependencyState:
+    """Adding/installing a dependency invokes its provider's shared Load contract."""
+    from flow_sdk.core.setup.load import load_project  # noqa: PLC0415
+
+    provider = await dependency_project(state, create=True)
+    if provider is None:
+        return state  # a folder or value with no project lifecycle
+    result = await load_project(provider, approved=approved)
+    described = await describe_dependency(state, provider=provider)
+    return described.model_copy(update={"lifecycle": result})
 
 
 def is_resolving(project_id: str) -> bool:
@@ -556,6 +619,11 @@ async def _resolve(
         queue.extend((child, child_base, False, via_path + [dep.name]) for child in children)
 
     states = [s.model_copy(update={"dismissed": True}) if is_dismissed(pid, s.name) and s.state != "ready" else s for s in states]
+    # Materialize declared project providers BEFORE indexing their files. Their
+    # assets belong to them, never to the first consumer that happens to add them.
+    if index:
+        for state in states:
+            await dependency_project(state, create=True)
     added = await _reconcile(project, desired)
     if index:
         await _index(project, [desired[tid] for tid in added])

@@ -456,7 +456,9 @@ def setup_run_address(project_id: str, root: str = "") -> str:
     return setup_activity_path(root or f"project-{project_id}")
 
 
-async def start_setup(project: "Project", *, ai: bool = True, root: str = "", tree: Any = None) -> str:
+async def start_setup(project: "Project", *, ai: bool = True, root: str = "", tree: Any = None,
+                      load_after: bool = True, providers: Any = None, dependency_approval: bool = True,
+                      ancestors: tuple[str, ...] = ()) -> str:
     """Start the project's setup in the background and return its address at once.
 
     The setup is the project's TREE (``core/setup/derive.ProjectTree``): every dependency, connection,
@@ -479,16 +481,47 @@ async def start_setup(project: "Project", *, ai: bool = True, root: str = "", tr
 
         async def run_setup():
             # The run's shell: what the setup does not answer itself runs here, one start per run.
+            from flow_sdk.builtin.project_dependencies import required_projects  # noqa: PLC0415
             from flow_sdk.core.compute.shared_shell import SharedShell  # noqa: PLC0415
+            from flow_sdk.core.setup.load import load_project  # noqa: PLC0415
+            from flow_sdk.schema.data_spec.asset_setup_spec import (  # noqa: PLC0415
+                LoadState,
+                SetupState,
+                SetupTreeResult,
+            )
+
+            dependencies = providers if providers is not None else (await required_projects(project) if not root else [])
+            for provider in dependencies:
+                if str(provider.id) in ancestors:
+                    continue
+                child = await load_project(provider, approved=dependency_approval, ancestors=(*ancestors, pid))
+                if child.state is LoadState.RUNNING:
+                    task = _RUNS.get((str(provider.id), ""))
+                    outcome = await asyncio.shield(task) if task is not None else None
+                    if outcome is not None and outcome.ok:
+                        continue
+                elif child.state is LoadState.READY:
+                    continue
+                return SetupTreeResult(state=SetupState.BLOCKED, detail=f"Dependency {provider.name}: {child.detail}")
 
             async with SharedShell() as base:
-                return await execute_setup(
+                result = await execute_setup(
                     root or tree.root, resolve_node=tree.resolve_node, resolve_op=tree.resolve_op,
                     subject_entity=f"project-{pid}", cwd=Path(mount) if mount else None,
                     shell=functools.partial(_setup_shell, inner=base),
                     # A person pressed Set up on THIS project: every node in it is theirs to run.
                     approved=True,
                 )
+                if result.ok and load_after:
+                    from flow_sdk.core.setup.load import LoadTree  # noqa: PLC0415
+
+                    operational = LoadTree(tree)
+                    result = await execute_setup(
+                        root or tree.root, resolve_node=operational.resolve_node, resolve_op=operational.resolve_op,
+                        subject_entity=f"project-{pid}", cwd=Path(mount) if mount else None,
+                        shell=functools.partial(_setup_shell, inner=base), approved=True,
+                    )
+                return result
 
         # Detached: the run takes minutes and asks the person questions; a plain task
         # (and a plain done-callback) would hold the Set-up request for all of it.
