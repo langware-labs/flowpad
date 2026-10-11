@@ -58,6 +58,9 @@ class DataSourceSpec(AssetDocumentSpec):
     secret_store: Optional[SecretStoreRef] = None
     #: The provider of the account this source acts as; absent = the driver's connector.
     connection: Optional[str] = None
+    #: The dataset this source's records are mirrored into after every sync: ``{dataset, map, by?}``
+    #: (``flow_sdk.datasets.projection``).
+    mirror: Optional[dict[str, Any]] = None
 
     @model_validator(mode="before")
     @classmethod

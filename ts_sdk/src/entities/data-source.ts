@@ -68,6 +68,10 @@ export interface IDataSource extends IEntity {
   gitignored?: boolean;
   /** Pull only: never write back to the remote (default false). */
   read_only?: boolean;
+  /** The dataset this source's records are mirrored into after every sync: a dataset folder of its
+   *  project, a `Dataset.mirror` map, and who the rows are written as (default: the provider). Rows'
+   *  outside-owned fields then write back through this source. */
+  mirror?: { dataset: string; map: { key: string; input: Record<string, unknown> }; by?: string } | null;
   /** Where a file source's files are on this machine (the folder it places them in, else its own tree);
    *  null for a record source or one that names no folder yet. Derived by the backend, never stored. */
   files_root?: string | null;
