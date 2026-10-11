@@ -63,7 +63,13 @@ def flow_runner(client, monkeypatch):
         try:
             with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
                 try:
-                    command.main(args=argv, prog_name="flow", standalone_mode=False)
+                    # standalone_mode=False makes click RETURN the exit code for a
+                    # ``typer.Exit(n)`` (it only raises SystemExit for a real
+                    # ``sys.exit``), so capture both or a refused call (Exit 7)
+                    # reads as 0.
+                    rv = command.main(args=argv, prog_name="flow", standalone_mode=False)
+                    if isinstance(rv, int):
+                        exit_code = rv
                 except SystemExit as exit_:
                     exit_code = int(exit_.code or 0)
         finally:
