@@ -290,10 +290,16 @@ function isUnknownFlagError(err) {
   return /unexpected argument '--exclude-newer/.test(text);
 }
 
-/** uv found no set of versions under the cut-off (as opposed to a network, disk or policy failure). */
+/**
+ * uv found no set of versions under the cut-off (as opposed to a network, disk or policy failure).
+ * Decided on uv's OWN words only: `_runStreaming` errors start with `Command failed: uv … --exclude-newer …`,
+ * so matching the flag's name there would make every failure under a cut-off "a resolution failure" and
+ * send a policy block through all the fallbacks, hiding the real cause behind the last attempt's.
+ */
 function isResolutionError(err) {
-  const text = String((err && (err.stderr || err.stdout || err.message)) || '');
-  return /No solution found when resolving|no versions of [^\n]* are available|were excluded because they were published after|exclude-newer/i.test(text);
+  const own = err && (err.stderr || err.stdout);
+  const text = String(own || String((err && err.message) || '').replace(/^Command failed:[^\n]*\n?/, ''));
+  return /No solution found when resolving|no versions of [^\n]* are available|were excluded because they were published after/i.test(text);
 }
 
 /**
