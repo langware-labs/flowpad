@@ -35,6 +35,11 @@ function sameDisplayTarget(a: ShowTarget, b: ShowTarget): boolean {
   return targetKey(a) === targetKey(b);
 }
 
+/** The resolved file path shared by history identity and its path actions. */
+export function displayFilePath(target: ShowTarget): string | undefined {
+  return target.kind === 'vfs' || target.kind === 'entity' ? target.path : undefined;
+}
+
 /**
  * One entry per target, newest first — each the LATEST show of it. Takes the
  * stack as stored (oldest first). The server already keeps one entry per target;
@@ -44,10 +49,14 @@ export function latestPerTarget(stack: readonly DisplayEntry[]): DisplayEntry[] 
   const seen = new Set<string>();
   const rows: DisplayEntry[] = [];
   for (let i = stack.length - 1; i >= 0; i--) {
-    const key = targetKey(stack[i]);
+    const entry = stack[i];
+    const path = displayFilePath(entry);
+    const key = path
+      ? JSON.stringify(['file', path])
+      : targetKey(entry);
     if (seen.has(key)) continue;
     seen.add(key);
-    rows.push(stack[i]);
+    rows.push(entry);
   }
   return rows;
 }
