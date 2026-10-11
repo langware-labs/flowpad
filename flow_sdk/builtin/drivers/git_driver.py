@@ -16,6 +16,7 @@ import logging
 from pathlib import Path
 from typing import Optional
 
+from flow_sdk.utils.git_ignore import protect_env_local
 from flow_sdk.fs_store.origin.fs_origin import FSOrigin, safe_join
 from flow_sdk.fs_store.origin.git_origin import has_content
 
@@ -80,7 +81,7 @@ class GitOriginDriver:
         cloned = await git_clone(origin.clone_url(), str(clone_target), branch=origin.branch or None, token=token)
         if not cloned.ok:
             raise RuntimeError(cloned.detail)
-        await (await GitRepo.local(str(clone_target))).ensure_gitignore()
+        await asyncio.to_thread(protect_env_local, clone_target)
         return await resolved(clone_target)
 
     def matches(self, origin: FSOrigin, local_path: Path) -> bool:
