@@ -1444,9 +1444,11 @@ class DataSource(SetupSkippable, Entity):
 
     async def create_item(self, data: dict) -> dict:
         """Make one record IN THE OUTSIDE SYSTEM through the driver (as ``update_item``). ``data`` is the
-        driver's record shape (its ``record_type``); the record it answers is kept here at once.
+        record shape the driver's ``create`` names; the record it answers is kept here at once.
         ``PermissionError`` a read-only source · ``NotImplementedError`` a driver without ``create``
         · ``ValueError`` data that is not the driver's record shape."""
+        from typing import get_type_hints  # noqa: PLC0415
+
         from pydantic import ValidationError  # noqa: PLC0415
 
         from flow_sdk.sources.values.items import RecordData  # noqa: PLC0415
@@ -1454,7 +1456,11 @@ class DataSource(SetupSkippable, Entity):
         if not isinstance(data, dict) or not data:
             raise ValueError("data: a non-empty object is required")
         async with await self._mutable("create") as live:
-            shape = getattr(type(live.source), "record_type", RecordData)
+            try:   # the shape the driver's own `create(data: ...)` names
+                shape = get_type_hints(type(live.source).create).get("data", RecordData)
+            except Exception:  # noqa: BLE001 -- an annotation that does not resolve: the base record
+                shape = RecordData
+            shape = shape if isinstance(shape, type) and hasattr(shape, "model_validate") else RecordData
             try:
                 record = shape.model_validate(data)
             except ValidationError as exc:

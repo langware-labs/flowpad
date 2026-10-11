@@ -2,8 +2,6 @@
 ``data_source.json``), and after every sync that dataset is made the mirror of its records
 (``flow_sdk.datasets.projection``) -- nobody has to call ``Dataset.mirror``."""
 
-from __future__ import annotations
-
 import asyncio
 import uuid
 from types import SimpleNamespace
@@ -197,9 +195,7 @@ def served(tmp_path, monkeypatch):
         deal_ids: list[str] = []
 
     class Crm:
-        record_type = TaskData
-
-        async def create(self, data):
+        async def create(self, data: TaskData):          # the record shape `create_item` checks against
             if store.refuse:
                 raise RuntimeError(store.refuse)
             key = f"T-{len(store.records) + 1}"

@@ -42,7 +42,7 @@ from pydantic import ValidationError, model_validator
 
 from flow_sdk.api.api_types.api_field import APIField, NoDBAPIField, Persist, Sharing
 from flow_sdk.core import Entity, action
-from flow_sdk.datasets.projection import delete_through, write_through
+from flow_sdk.datasets.projection import delete_through, is_link, write_through
 from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp
 from flow_sdk.request_context.json_body import current_user_id, read_json_body
 from flow_sdk.request_context.methods import get_current_request_info
@@ -920,7 +920,7 @@ class Dataset(Entity):
                 return list(found) if isinstance(found, Many) else found
             if isinstance(spec, dict) and set(spec) == {"value"}:
                 return spec["value"]
-            if isinstance(spec, dict) and set(spec) == {"link", "by", "path"}:
+            if is_link(spec):
                 index, found = linked_by(str(spec["link"]), str(spec["by"])), field_of(item, spec["path"])
                 ids = [found] if not isinstance(found, Many) else list(found)
                 refs = []
@@ -1482,7 +1482,7 @@ class Dataset(Entity):
         if isinstance(body, ApiFailResponse):
             return body
         try:
-            gone = await delete_through(self, [body["key"]])
+            gone = await delete_through(self, [body["key"]], {body["key"]: body["expected"]} if body.get("expected") else None)
             key = gone[0] if gone is not None else self.delete_row(body["key"], expected=body.get("expected"))
         except LookupError as exc:
             return ApiFailResponse(message=str(exc), status_code=404)
@@ -1541,7 +1541,7 @@ class Dataset(Entity):
             return ApiFailResponse(message="keys: a list of row keys is required", status_code=400)
 
         async def remove() -> list[str]:
-            gone = await delete_through(self, body["keys"])
+            gone = await delete_through(self, body["keys"], body.get("expected"))
             return gone if gone is not None else self.delete_rows(body["keys"], expected=body.get("expected"))
         keys = await self._bulk(remove)
         if isinstance(keys, ApiFailResponse):

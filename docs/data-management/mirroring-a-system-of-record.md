@@ -72,7 +72,7 @@ place that knows the outside system.
    sends nothing. Called directly, the source's verbs are `source.create_item(data)`,
    `update_item(item_id, changes)` and `delete_item(item_id)` — REST
    `POST data_source/<id>/{create,update,delete}_item`, TypeScript `createItem`, `updateItem`,
-   `deleteItem`. `data` is the driver's `record_type` (a `RecordData` subclass), checked before any
+   `deleteItem`. `data` is the record shape the driver's `create` names (a `RecordData` subclass), checked before any
    I/O.
 5. **The app reads rows, not the outside system**: `rows({match, expand})`, `count`, and
    `onRowsChanged` to re-read when the mirror wrote. A link out is `openExternal(url)`.
@@ -99,5 +99,5 @@ place that knows the outside system.
   source's own system, with the driver's own verbs.
 - **A driver that does not implement `create` / `update` / `delete` cannot write back** — the
   capability is discovered (`isinstance(source, Mutable)`), never declared. A driver that can
-  names its record shape (`record_type`): what `create_item` checks a new record against. Writing a driver for a system of
+  types `create(data: <its RecordData>)`: what `create_item` checks a new record against. Writing a driver for a system of
   record: the `connect-data-source` skill, `author <system>`.
