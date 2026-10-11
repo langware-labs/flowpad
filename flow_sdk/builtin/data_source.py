@@ -1499,7 +1499,7 @@ class DataSource(SetupSkippable, Entity):
         # The cycle writes health through its own row handle; read what it left.
         refreshed = await type(self).get_one({"id": self.id}) or self
         return ApiSuccessResponse(data={
-            "created": report.created, "updated": report.updated, "unchanged": report.unchanged,
+            "created": report.created, "updated": report.updated, "unchanged": report.unchanged, "removed": report.removed,
             "health": refreshed.health, "status": refreshed.status, "error_detail": refreshed.error_detail,
         })
 

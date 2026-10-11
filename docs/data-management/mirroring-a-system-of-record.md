@@ -58,9 +58,13 @@ place that knows the outside system.
   `data` (an issue's `status`, a deal's `stage`) joins the change digest, so the next sync stores
   what the outside system changed. Fields that move on their own (a view count, a provider's raw
   echo) go in the payload class's `volatile` set, or every sync reads as a change.
-- **A record removed outside stays stored until the source says so.** A record source has no
-  tombstones yet: a deal deleted in the CRM keeps its stored item, and so its mirrored row. Until
-  it does, a mirror that must follow deletes passes `mirror` the items it listed itself.
+- **A record removed outside is removed here, when the source lists everything.** A driver whose
+  listing is the whole collection (a table, a CRM object) declares `lists_everything = True`. A pass
+  read from the start to the end then proves what exists: a stored record it no longer lists is
+  deleted, the sync answers `removed: N`, and the next `mirror(..., prune=True)` drops its row. A
+  source that lists a window (a feed, a mailbox) leaves it `False`: absence proves nothing. One
+  guard: a listing that comes back empty removes nothing: an outage is likelier than a
+  collection emptied in one step.
 
 ## What is not there, on purpose
 
