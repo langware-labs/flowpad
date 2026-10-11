@@ -230,11 +230,11 @@ def _union_context_bucket(current, incoming):
 def _asset_updated_epoch(record_type: str, src_path: str) -> float | None:
     """Best "real last-modified" epoch for a source path, or None.
 
-    ``getmtime(src_path)`` catches add/remove of children; for folder-backed
-    types the registered ``asset_hash_fn`` returns the deepest INNER-file mtime
-    (a dir's own mtime misses child-content edits). MAX of the two so BOTH an
-    added file (folder mtime moves) and an edited inner file (asset_hash moves)
-    advance the stamp — this is what drives the FE body-reindex reactivity loop.
+    ``getmtime(src_path)`` catches add/remove of children; a dir's own mtime misses
+    child-content edits, so the type's ``asset_hash_fn`` is folded in where it is a
+    time (see ``_ASSET_EPOCH_SLACK_S``). MAX of the two so BOTH an added file and an
+    edited inner file advance the stamp — this is what drives the FE body-reindex
+    reactivity loop.
     """
     epoch: float | None = None
     try:
@@ -253,7 +253,7 @@ def _asset_updated_epoch(record_type: str, src_path: str) -> float | None:
             if 0 < val <= time.time() + _ASSET_EPOCH_SLACK_S:
                 epoch = val if epoch is None else max(epoch, val)
     except (OSError, ValueError, TypeError):
-        pass  # non-mtime asset_hash_fn or bad path → keep getmtime
+        pass  # bad path or a fingerprint that is not a number → keep getmtime
     return epoch
 
 
