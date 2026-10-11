@@ -437,9 +437,8 @@ class Project(SetupSkippable, Entity):
     )
     last_mode: str | None = APIField(
         default=None,
-        description="Last UI view mode used in this project (vibe|standard|advanced|dev). "
-        "Written only by the client's view-mode memory policy (VIEW_MODE_STORE, default: "
-        "on a mode switch); opening a project dock seeds its mode from it.",
+        description="RETIRED: a view mode belongs to a session (AgenticProcess.last_mode), not a "
+        "project. Kept as a column so stored rows still load; nothing reads or writes it.",
     )
     # TRAVELS to the hub (unlike `last_mode` next to it, which is per-device UI
     # state). The language a project is worked in is a property of the WORK, not

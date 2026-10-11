@@ -84,6 +84,8 @@ function processPayload(processId: string, projectId: string) {
     shell_id: null,
     worker_type: 'claude',
     auto_rename: false,
+    // The session states its own mode: this spec is about the terminal tab's bucket.
+    last_mode: 'advanced',
   };
 }
 

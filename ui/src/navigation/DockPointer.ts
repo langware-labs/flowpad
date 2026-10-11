@@ -466,6 +466,19 @@ export class DockPointer implements IDockPointer {
       this.layout = layout ?? Layout.DOCK;
       this.page = (page as PageId | undefined) ?? PageId.DESK;
     }
+    // A mode belongs to a session tab (and what it hosts). Anywhere else the
+    // option is dropped at the door, so no page can be reskinned by an address.
+    if (this.options?.[VIEW_MODE_PARAM] !== undefined && !this.carriesViewMode) {
+      const rest = { ...this.options };
+      delete rest[VIEW_MODE_PARAM];
+      this.options = rest;
+    }
+  }
+
+  /** Whether this dock has a view mode at all: a session's own dock, or a child
+   *  its workspace hosts. Every other page has one look and states no mode. */
+  get carriesViewMode(): boolean {
+    return DockPointer.isSessionView(this.viewType) || !!this.options?.[HOST_PARAM];
   }
 
   /**

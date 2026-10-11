@@ -22,17 +22,19 @@ export function withViewMode(path: string, mode: QaViewMode): string {
   return `${url.pathname}${url.search}${url.hash}`;
 }
 
+const SURFACE: Record<QaViewMode, string> = { vibe: 'vibe', standard: 'chat', advanced: 'terminal', dev: 'terminal' };
+
 /**
- * Select a mode through the real footer control and wait for its URL-backed
- * state to commit. This also replaces a conflicting viewMode already present
- * on the current URL.
+ * Select a mode through the session's own switch (the only mode control: a mode
+ * belongs to a session tab) and wait for its URL-backed state to commit. On a
+ * page that is not a session there is nothing to select — pages have one look —
+ * so this is a no-op there.
  */
 export async function selectViewMode(page: Page, mode: QaViewMode): Promise<void> {
-  const toggle = page.getByTestId(`view-toggle-${mode}`);
-  if ((await toggle.getAttribute('aria-checked')) !== 'true') {
-    await toggle.click();
+  const segment = page.locator(`[data-testid="session-surface-${SURFACE[mode]}"]:visible`).first();
+  if (!(await segment.isVisible().catch(() => false))) return;
+  if ((await segment.getAttribute('aria-checked')) !== 'true') {
+    await segment.click();
   }
-  await expect(toggle).toHaveAttribute('aria-checked', 'true');
-  await expect(page.locator('html')).toHaveAttribute('data-view', mode);
+  await expect(page.locator('html')).toHaveAttribute('data-view', mode === 'dev' ? 'advanced' : mode);
 }
-

@@ -72,7 +72,6 @@ describe('React launched-instance isolation source policy', () => {
       'dock-dead-scope-tab-setup.test.tsx',
       'project-context-locale-follows.test.ts',
       'project-locale-memory.test.ts',
-      'project-view-mode-memory.test.ts',
       'pty_corruption.test.ts',
       'reactivity.test.ts',
       'shell_stress.test.ts',
