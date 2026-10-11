@@ -61,6 +61,12 @@ def _env_file(name: str) -> Path:
     return paths.env_file(name)
 
 
+def _user_asset_home(name: str) -> Path | None:
+    from flow_sdk.instances import paths
+
+    return paths.user_asset_home(name)
+
+
 def _read_json(path: Path) -> dict:
     from flow_sdk.instances.atomic import read_json
 
@@ -187,6 +193,12 @@ def _rm(path: Path) -> None:
 
 def _wipe(name: str, *, backend_only: bool) -> None:
     idir = _instance_dir(name)
+    # The user-scope assets go with the rows that index them. Left behind, every asset the
+    # instance made is a folder with no row: the next boot cannot adopt it and cannot create it
+    # again ("already exists in this scope") — the Tasks channel, for one, never came back.
+    asset_home = _user_asset_home(name)
+    if asset_home is not None:
+        _rm(asset_home)
     if backend_only:
         if idir.is_dir():
             for child in idir.iterdir():

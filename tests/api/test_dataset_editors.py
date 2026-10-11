@@ -111,3 +111,30 @@ async def test_a_kind_reads_as_a_form_with_its_descriptions(bootstrapped_client,
     assert request["fields"]["utterance"]["description"] == "what was typed"
     missing = await bootstrapped_client.get("/api/v1/kinds/nobody.defines.this")
     assert missing.json()["status"] == "FAIL"
+
+
+async def test_a_projects_schemas_read_as_one_tree(bootstrapped_client, user, tmp_path, monkeypatch):
+    from flow_sdk.server.routes import kinds
+
+    ns = f"treetest{uuid.uuid4().hex[:8]}"
+    _spec(tmp_path, "crm.company", {"fields": {"name": {"shape": "string", "description": "The company."}}}, ns)
+    _spec(tmp_path, "crm.note", {"fields": {"text": {"shape": "string"}}}, ns)
+    _spec(tmp_path, "crm.lead", {"fields": {"company": {"shape": "?crm.company"}, "notes": {"shape": ["crm.note"]}}}, ns)
+    _dataset(tmp_path, "companies", {"examples": [{"input": f"--{ns}--.crm.company"}]})
+    await _index(tmp_path)
+    companies = (await _datasets(tmp_path))["companies"]
+
+    project = companies.project_id or "p"
+
+    async def root(asked):
+        return tmp_path if asked == project else None
+
+    monkeypatch.setattr(kinds, "_project_root", root)
+    resp = await bootstrapped_client.get("/api/v1/kinds", params={"project": project})
+    assert resp.json()["status"] == "SUCCESS", resp.text
+    nodes = {n["name"]: n for n in resp.json()["data"]["kinds"]}
+    assert sorted(nodes) == ["crm.company", "crm.lead", "crm.note"]
+    assert [(u["kind"], u["held"]) for u in nodes["crm.lead"]["uses"]] == [
+        (f"--{ns}--.crm.company", "link"), (f"--{ns}--.crm.note", "inside")]
+    assert nodes["crm.company"]["folder"] == "agentic-assets/data_schema/crm.company"
+    assert (await bootstrapped_client.get("/api/v1/kinds", params={"project": "nobody"})).status_code == 404

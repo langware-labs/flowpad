@@ -35,11 +35,18 @@ test('a VFS editor URL selects the real file in the Files tree', async ({ page, 
     );
 
     await expect(page.getByRole('button', { name: 'view', exact: true })).toBeVisible();
+    // Opening the page selects the project, and selecting a project indexes it
+    // (auto-index, `every_selection`): a few seconds in, the file IS a markdown
+    // entity and the top bar re-addresses it as one. Wait for that settled state
+    // — asserting the bar before it lands reads whichever side of the index won.
+    await expect
+      .poll(async () => (await (await request.get(`${API}/api/v1/assets/entity`, { params: { path: file } })).json()).data?.type)
+      .toBe('markdown');
     // The editor's identity row moved into the top navigation bar: the current
     // crumb names the file and its details popover carries the path, the copy
     // button and the reveal actions. Discuss sits in the bar's action cluster.
     const crumb = page.getByTestId('top-nav-crumb-details-trigger');
-    await expect(crumb).toContainText('interface.md');
+    await expect(crumb).toContainText('interface');
     await expect(crumb.locator('svg')).toBeVisible();
     await crumb.click();
     const details = page.getByTestId('top-nav-crumb-details');
@@ -48,9 +55,11 @@ test('a VFS editor URL selects the real file in the Files tree', async ({ page, 
     await expect(details.getByTestId('top-nav-crumb-open-files')).toBeVisible();
     await page.keyboard.press('Escape');
     await expect(details).toBeHidden();
-    // A raw external VFS file is not an indexed entity, so entity-only actions
-    // (Share / favorite) are intentionally absent. Discuss remains available.
-    await expect(page.getByTestId('top-nav-actions').getByTestId('asset-discuss-in-vibe')).toBeVisible();
+    // The indexed file is an entity, so the bar's cluster is the entity toolbar
+    // (Share) with Discuss riding in it.
+    const topBar = page.getByTestId('top-nav-bar');
+    await expect(topBar.getByTestId('entity-actions-share')).toBeVisible();
+    await expect(topBar.getByTestId('asset-discuss-in-vibe')).toBeVisible();
     await expect(page.getByTestId('assets-page-header')).toHaveCount(0);
 
     const editorHeader = page.getByTestId('asset-editor-header');

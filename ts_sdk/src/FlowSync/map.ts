@@ -234,6 +234,15 @@ export class WatchQueryMap<T> {
     }
   }
 
+  /** Whether a live query's results hold the entity cached under any of `keys`. */
+  public holdsEntity(keys: TypeId[]): boolean {
+    for (const watchedQuery of this.watchedQueries.values()) {
+      if (!watchedQuery.results || watchedQuery.request.type !== keys[0].type) continue;
+      if (watchedQuery.results.some((row: any) => keys.some((key) => key.equals(row.typeId)))) return true;
+    }
+    return false;
+  }
+
   /**
    * Insert a newly-created entity into every matching query's results and notify.
    *

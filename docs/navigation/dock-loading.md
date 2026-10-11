@@ -25,7 +25,7 @@ URL ─▶ 1 PARSE      DockPointer.fromUrl                            pure
 | 4 Commit | `setupTabAndAdopt` (`ui/src/tabs/tab-content-lifecycle.ts`) + the per-view loader | Materialize the tab from the tab snapshot and write context (project, process, shell, workdir). |
 | 5 Layout | `ui/src/navigation/dock-layout.ts` | Pick the frame: asset workspace, Vibe workspace, Vibe new-chat / no-process home, or the content panel. A HOST tab (`VIEWER_REGISTRY.hostsTabs`, e.g. `/dock/vibe/…`) renders its workspace whatever the ambient mode. `flow-page` renders the answer. |
 | 6 Render | `flow-page` → layout → `ContentPanel` body | Render. A terminal body (`TabbedTerminal`) is a *slot*: it shows a panel the pool owns. |
-| 7 Attach | `TerminalPanel` (`ui/src/components/terminal/TerminalPanel.tsx`), chat panes | The runtime side effects: `process.start()` / `shell.start()` (`/open` + attach), the pty-stream replay, `loadHistory()` for chat views. Once per tab, not per activation. A terminal's first mount fetches `pty-stream?since=checkpoint`: a stored replay checkpoint plus only the frames after it (below). |
+| 7 Attach | `TerminalPanel` (`ui/src/components/terminal/TerminalPanel.tsx`), chat panes | The runtime side effects: `process.start()` / `shell.start()` (`/open` + attach), the pty-stream replay, `loadHistory()` for chat views. Once per mount of the panel, not per activation — and a panel mounts once per tab, except an ended agent's (I6). A terminal's first mount fetches `pty-stream?since=checkpoint`: a stored replay checkpoint plus only the frames after it (below). |
 
 ## Cold open: checkpoint + tail
 
@@ -74,10 +74,24 @@ Nothing after it → the checkpoint IS the screen, no replay at all.
   and moves nothing, so no panel is re-laid-out and every scroll offset stays. A
   change of layout moves the stack whole, once (to the new slot, or to a
   full-size parking when no slot is on screen), and the pool puts scroll offsets
-  back — it never unmounts a terminal, so nothing re-opens, re-streams or
+  back — it never unmounts a live terminal, so nothing re-opens, re-streams or
   replays. A panel goes when its tab closes. (Moving single panels into a 0×0
   parking re-laid-out a long chat at zero width on every switch away: 7–15 s on
   prod 0.2.179, FLOWPAD-2193.)
+
+  **One narrowing — an ended agent.** A process that has ended (`stopped` /
+  `failed`, `isProcessEnded`) has no PTY left to follow, so its pooled terminal
+  is given back while its tab is **not the one shown**: when the process ends
+  behind another tab, or when the user leaves a tab whose process had already
+  ended. The panel unmounts through the same path a closed tab takes (the xterm
+  is retired, the sync session disposed, the pool's scroll offsets for it
+  forgotten); the tab, its URL and its chip are untouched. Visiting the tab again
+  is a cold mount, the same as a reopened tab: the panel starts the agent again
+  and replays its recording (step 7). The pool never gives back the panel a slot
+  shows or the URL names, a running or not-yet-started process, a plain shell,
+  or a headless chat (it holds no terminal, and remounting a long chat is the
+  redraw this invariant exists to prevent). There is no cap and no eviction by
+  age: every running agent and every shell keeps its mounted terminal.
 
 ## Where each invariant is tested
 
@@ -86,7 +100,7 @@ Nothing after it → the checkpoint IS the screen, no replay at all.
 | I1, I2, I4 | `ui/tests/unit/dock-loader/dock-loader-matrix.test.ts` — the real `loadAgentApp` over every URL family in `tests/fixtures/dock_address_contract.json` plus a row for every `ViewType` the fixture lacks (a coverage guard fails on a new view type without a row), with every `apiClient` request recorded by `ui/tests/utils/dock-loader-harness.ts` |
 | I2 (step 2) | `ui/tests/unit/dock-loader/canonicalize.test.ts` |
 | I5 | `ui/tests/unit/dock-loader/dock-layout.test.ts` |
-| I6 | `ui/tests/unit/terminal-survives-layout-swap.test.tsx`, `ui/tests/unit/terminal_tab_switch_keeps_xterm_mounted.test.tsx`, `ui/tests/unit/terminal-pool-switch-moves-nothing.test.tsx` (a switch moves no pool node; a layout change moves the stack whole; parking is full size) |
+| I6 | `ui/tests/unit/terminal-survives-layout-swap.test.tsx`, `ui/tests/unit/terminal_tab_switch_keeps_xterm_mounted.test.tsx`, `ui/tests/unit/terminal-pool-switch-moves-nothing.test.tsx` (a switch moves no pool node; a layout change moves the stack whole; parking is full size), `ui/tests/unit/terminal-pool-releases-ended-agent.test.tsx` (an ended agent's panel goes once its tab is not shown and comes back cold; a running agent, a plain shell and a headless chat stay), `ui/tests/unit/terminal-pool-forgets-dropped-panel-scroll.test.ts` (a panel that leaves the pool takes its scroll offsets with it) |
 | All, in a browser | `ui/tests/manual_regression/navigation/` — `every_place_renders` (real entities, every mode), `terminal_round_trips` (a live terminal → every kind of place → back) and `chat_round_trips` (a long chat keeps its node and scroll position across a tab switch and a layout change) |
 | Speed | `ui/tests/manual_regression/navigation/tab_switch_perf.md.ts` — budgets on a production build (below), including leaving and returning to a long chat |
 

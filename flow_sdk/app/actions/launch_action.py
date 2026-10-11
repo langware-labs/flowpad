@@ -20,6 +20,7 @@ import logging
 from pathlib import Path
 
 from flow_sdk.actions.action_registry import action
+from flow_sdk.builtin.faas.compute_node import ComputeNode
 from flow_sdk.builtin.project import Project
 from flow_sdk.cloud_client.shared.errors import HubError
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
@@ -80,7 +81,15 @@ async def launch_ensure_project() -> ApiResponse:
         return ApiFailResponse(message="launch-ensure requires a project: project/<id>/launch-ensure", status_code=400)
     project_id = str(request_info.target_entity_typeid.id)
     try:
-        project = await ensure_launched_project(project_id, request_info.someone_typeid)
+        # In turn with any index already running. A launch that arrives while a new install is
+        # still on its boot-time pass used to index beside it, and the two fought for the local
+        # database ("database is locked"); it now waits for that pass and then does its own work.
+        node = await ComputeNode.get_local()
+        if node is None:
+            project = await ensure_launched_project(project_id, request_info.someone_typeid)
+        else:
+            async with node.index_turn():
+                project = await ensure_launched_project(project_id, request_info.someone_typeid)
     except LookupError as e:
         return ApiFailResponse(message=str(e), status_code=404)
     except Exception as e:  # noqa: BLE001 — the launch dialog shows a reason, not a stack

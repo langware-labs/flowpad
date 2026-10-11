@@ -51,6 +51,9 @@ const MODES: QaViewMode[] = ['vibe', 'standard', 'advanced'];
  */
 const HEADLESS_WEBGL = /getParameter|WebGL|webgl/;
 
+/** An option value that is an entity id — the fixture's ids are invented, so nothing answers to them. */
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 type UrlCase = {
   name: string;
   view_type: string;
@@ -134,8 +137,15 @@ test.describe('dock sweep', () => {
       // Only a POINTERLESS address names nothing external, so only it has
       // nothing legitimate to 404 on. A pointer-bearing address refers to
       // content the fixture invents, and its absence is correct behaviour.
+      // An option can name content too (`automations?trigger=<id>`): a 404 on
+      // exactly the id the address invents is that same correct absence, and
+      // nothing else is excused.
       if (!c.pointer) {
-        expect(badResponses, `failed API requests for ${address}`).toEqual([]);
+        const invented = Object.values(c.options ?? {}).filter((v) => UUID.test(v));
+        const unexpected = badResponses.filter(
+          (r) => !(r.startsWith('404 ') && invented.some((id) => r.includes(`/${id}`))),
+        );
+        expect(unexpected, `failed API requests for ${address}`).toEqual([]);
       }
     });
   }

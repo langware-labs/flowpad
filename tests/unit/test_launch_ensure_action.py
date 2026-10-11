@@ -141,3 +141,38 @@ async def test_a_checked_out_project_that_cannot_be_indexed_says_so(tmp_path, mo
 
     assert resp.status_code == 400, resp.text
     assert "indexing reported 2 error(s)" in resp.json()["message"]
+
+
+@pytest.mark.asyncio
+async def test_a_launch_waits_its_turn_behind_an_index_already_running(tmp_path, monkeypatch, calls):
+    """On a new install the boot-time index is still running when a launch link arrives. The
+    launch takes the machine's one index slot in turn rather than indexing beside it."""
+    from contextlib import asynccontextmanager
+
+    from flow_sdk.app.actions import launch_action
+
+    order: list[str] = []
+
+    class Node:
+        @asynccontextmanager
+        async def index_turn(self):
+            order.append("turn taken")
+            try:
+                yield None, None
+            finally:
+                order.append("turn released")
+
+    async def _get_local(cls, **_kwargs):
+        return Node()
+
+    async def _ensure(project_id, someone_typeid=None):
+        order.append("ensure")
+        return Project(id=project_id, name="acme")
+
+    monkeypatch.setattr(launch_action.ComputeNode, "get_local", classmethod(_get_local))
+    monkeypatch.setattr(launch_action, "ensure_launched_project", _ensure)
+
+    resp = await _call_local("POST", f"project/{uuid4()}/launch-ensure", json={})
+
+    assert resp.status_code == 200, resp.text
+    assert order == ["turn taken", "ensure", "turn released"]

@@ -47,6 +47,37 @@ export interface KindForm {
   slots?: Partial<Record<'input' | 'context' | 'output', Shape>>;
 }
 
+/** A kind another kind's fields name: `link` when a dataset keeps rows of it (the field holds a
+ *  reference to one), `inside` when the value is stored in the row itself. */
+export interface SchemaUse {
+  kind: string;
+  held: 'inside' | 'link';
+  /** The project that defines the kind; `''` when no project's schema folder does. */
+  project_id: string;
+}
+
+/** One kind a project's schema folder defines (a dataset kind's example slots read as its fields). */
+export interface SchemaNode {
+  kind: string;
+  /** The kind without its namespace — the folder name. */
+  name: string;
+  subkind: 'record' | 'dataset';
+  description: string;
+  /** Where it is defined, from the project folder. */
+  folder: string;
+  fields: { name: string; shape: Shape | null; description: string; required: boolean }[];
+  rules: KindRule[];
+  uses: SchemaUse[];
+  /** The dataset that keeps its rows, when one does. */
+  dataset: { id: string; title: string; rows: number; source_id: string } | null;
+}
+
+/** `GET /api/v1/kinds?project=<id>` — every schema a project defines. */
+export interface SchemaTree {
+  project_id: string;
+  kinds: SchemaNode[];
+}
+
 export interface ViewRequest {
   /** The kind to show — a registered kind, or any shape (`?string`, `[navigator.candidate]`). */
   kind: Shape;

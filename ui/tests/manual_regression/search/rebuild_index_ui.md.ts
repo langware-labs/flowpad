@@ -34,6 +34,11 @@ async function openSearch(page: Page) {
   // file's Standard) wins over the device seed, by design.
   await page.goto(withViewMode('/dock/search', 'advanced'));
   await page.locator('html[data-view="advanced"]').waitFor({ timeout: 10_000 });
+  // Since host tabs (71e9272c6) <AdvancedOnly> follows the developer switch
+  // (`useIsAdvanced() === useIsDev()`), which the URL's `viewMode` no longer
+  // turns on. Flip it through the app's own `window.setDev`, the call the
+  // avatar double-click makes.
+  await page.evaluate(() => (window as any).setDev(true));
 }
 
 const rebuildBtn = (page: Page) => page.locator('[data-testid="rebuild-index"]');

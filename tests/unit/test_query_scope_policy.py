@@ -50,7 +50,6 @@ ALLOWLIST: dict[str, int] = {
     "graph_workflow_manager/manager.py": 2,
     "system_projects/flowpad_assistant/agentic-assets/data_driver/helpdesk/source.py": 1,
     "migrations/migration_2026_09_process_persona_backfill.py": 1,
-    "server/pty_recovery.py": 1,
     "server/routes/assets.py": 1,
     "server/routes/search.py": 1,
     "server/scheduler.py": 1,

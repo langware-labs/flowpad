@@ -79,7 +79,9 @@ test('1. from scratch: the screen is empty and offers the agent', async ({ page 
 test('2. connect: an rss source over the dialog, pointed at the loopback feed', async ({ page }) => {
   await openScreen(page);
   await page.getByTestId('add-data-source').click();
-  const dialog = page.getByRole('dialog').filter({ hasText: 'Add a data source' });
+  const dialog = page
+    .getByRole('dialog')
+    .filter({ has: page.getByTestId('step-crumb-0').filter({ hasText: /^Data sources$/ }) });
   await expect(dialog).toBeVisible();
   await dialog.getByTestId('provider-rss').click();
   await dialog.locator('#ds-name').fill(SOURCE_NAME);
@@ -207,7 +209,8 @@ test('6. the agent surface: the persona rides the session and the pane shows the
     data: { view: `app/${editorTypeId}?source=${sourceId}` },
   });
   expect(shown.ok(), await shown.text()).toBeTruthy();
-  const target = (await shown.json()).data as { kind?: string; view_type?: string; pointer?: string; options?: Record<string, string> };
+  // `show` answers a NavigateResult — what was shown rides under its `value`.
+  const target = (await shown.json()).data.value as { kind?: string; view_type?: string; pointer?: string; options?: Record<string, string> };
   expect(target.kind).toBe('dock');
   expect(target.view_type).toBe('app');
   expect(target.pointer).toBe(editorTypeId);

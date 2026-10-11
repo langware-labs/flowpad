@@ -14,6 +14,8 @@ from pathlib import Path
 
 import pytest
 
+from flow_sdk.flowpad_types.enums import WorkerType
+from tests.long_tests._transcript_helpers import INSTRUCTION_FILES
 from tests.long_tests.test_claude_cli import _serve_process_hook_route
 from tests.test_settings import test_service_config
 
@@ -129,8 +131,10 @@ async def test_process_hook_acceptance_uses_real_vendor(
             selected_command = handler["powershell" if sys.platform == "win32" else "bash"]
             assert f"--process-id {process.id}" in selected_command
         else:
-            assert not (process.asset_workspace._process_assets_path() / ".flowpad/plugins/codex").exists()
-            assert not process.asset_workspace._process_assets_path().exists()
+            assets = process.asset_workspace._process_assets_path()
+            assert not (assets / ".flowpad/plugins/codex").exists()
+            # Every process carries the common instruction layer; codex hooks add nothing beside it.
+            assert {entry.name for entry in assets.iterdir()} <= set(INSTRUCTION_FILES[WorkerType.CODEX])
     finally:
         for event in configured:
             await process.remove_hook(event)

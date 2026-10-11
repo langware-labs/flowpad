@@ -56,7 +56,9 @@ async function openDialog(page: Page) {
   await page.goto('/dock/data-sources');
   await expect(page.getByTestId('data-sources-view')).toBeVisible();
   await page.getByTestId('add-data-source').click();
-  const dialog = page.getByRole('dialog').filter({ hasText: 'Add a data source' });
+  const dialog = page
+    .getByRole('dialog')
+    .filter({ has: page.getByTestId('step-crumb-0').filter({ hasText: /^Data sources$/ }) });
   await expect(dialog).toBeVisible();
   return dialog;
 }

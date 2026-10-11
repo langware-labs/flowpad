@@ -274,15 +274,15 @@ describe('hub launched-instance isolation source policy', () => {
     expect(STREAM_INBOX_VIEW).toContain('onClick={() => void handleRefresh()}');
   });
 
-  it('opens installed matrix assets through the live URL-first review action', () => {
+  // An installed shared entity's chip opens the entity itself; its review popup (it carries
+  // Uninstall) is behind the developer switch, which a tab's `?viewMode=advanced` no longer turns on.
+  it('opens installed matrix assets through the live URL-first chip action', () => {
     const helperStart = SHARE_MATRIX.indexOf('async function downloadAndOpenAssetClean(');
     const helperEnd = SHARE_MATRIX.indexOf('// ─── Scenario A:', helperStart);
     const helper = SHARE_MATRIX.slice(helperStart, helperEnd);
     expect(helperStart).toBeGreaterThan(-1);
     expect(helperEnd).toBeGreaterThan(helperStart);
     expect(helper).toContain('getByTestId(chipTestId).first().click()');
-    expect(helper).toContain("getByTestId('asset-review-dialog')");
-    expect(helper).toContain("getByTestId('asset-open-entity').click()");
     expect(helper).not.toContain('inst.page.goto(');
   });
 

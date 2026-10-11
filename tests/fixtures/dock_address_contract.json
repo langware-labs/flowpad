@@ -58,6 +58,7 @@
     "signals",
     "data-sources",
     "rag",
+    "schema-tree",
     "asset-list",
     "process-runs",
     "plan",
@@ -707,6 +708,14 @@
       "folds_sub_pointer": false,
       "chrome": "workspace"
     },
+    "schema-tree": {
+      "addressable": true,
+      "pointer": "optional",
+      "folds_pointer": false,
+      "scope_keyed": true,
+      "folds_sub_pointer": false,
+      "chrome": "workspace"
+    },
     "asset-list": {
       "addressable": true,
       "pointer": "none",
@@ -841,6 +850,12 @@
     }
   ],
   "url_cases": [
+    {
+      "name": "a schema selected under the schema that uses it",
+      "view_type": "schema-tree",
+      "pointer": "--acme--.crm.lead/--acme--.crm.company",
+      "url": "/dock/schema-tree/--acme--.crm.lead/--acme--.crm.company"
+    },
     {
       "name": "every message channel and where it is routed",
       "view_type": "data-sources",
