@@ -289,3 +289,66 @@ async def test_a_record_deleted_outside_leaves_the_mirror(deals):
     done = await deals.mirror(source, shape, by="crm")
     assert (done["deleted"], done["unchanged"]) == (["bolt-pilot"], ["acme-renewal"])
     assert [r.key for r in deals.read_rows()] == ["acme-renewal"]
+
+
+# ── the map: lists, and links made from the outside system's ids ─────────────
+
+
+@pytest.fixture
+def tasks(tmp_path):
+    """Deals keyed by the CRM's id (``unique``), and tasks that link to any number of them -- or none."""
+    import json
+
+    from flow_sdk.schema.data_spec.declared import load_root
+
+    root, ns = tmp_path / "proj", "unittestmirlink" + uuid.uuid4().hex[:8]
+    f = lambda shape, **more: {"shape": shape, "description": "x", **more}  # noqa: E731
+    _schema(root, ns, "crm.deal", {"name": f("string"), "crm_id": f("string")})
+    rules = root / "agentic-assets/data_schema/crm.deal/data_schema.json"
+    rules.write_text(json.dumps({**json.loads(rules.read_text()), "rules": [{"unique": ["crm_id"]}]}))
+    _schema(root, ns, "crm.note", {"name": f("string"), "crm_id": f("string")})                 # nothing unique
+    _schema(root, ns, "crm.task", {"title": f("string", owned_by="crm"), "crm_id": f("string", owned_by="crm"),
+                                   "labels": f(["string"], owned_by="crm"), "deals": f(["crm.deal"], owned_by="crm"),
+                                   "main": f("?crm.deal", owned_by="crm"), "notes": f("?string")})
+    assert not any(load_root(root).values())
+    deals = _dataset(root, "deals", f"--{ns}--.crm.deal")
+    _dataset(root, "notes", f"--{ns}--.crm.note")
+    return deals, _dataset(root, "tasks", f"--{ns}--.crm.task")
+
+
+TASKS = [
+    {"external_id": "T-1", "name": "Call back", "data": {"labels": [{"name": "urgent"}, {"name": "q4"}],
+                                                         "targets": [{"deal": "OPP-1"}, {"deal": "OPP-2"}, {"deal": "OPP-404"}]}},
+    {"external_id": "T-2", "name": "Write the plan", "data": {"labels": [], "targets": []}},          # a general task
+]
+TASK_MAP = {"key": "external_id", "input": {
+    "title": "name", "crm_id": "external_id", "labels": "data.labels.*.name",
+    "deals": {"link": "crm.deal", "by": "crm_id", "path": "data.targets.*.deal"},
+    "main": {"link": "crm.deal", "by": "crm_id", "path": "data.targets.0.deal"}}}
+
+
+async def test_a_path_through_a_list_gives_a_list_and_ids_become_links(tasks):
+    deals, tasks_ = tasks
+    await deals.append([{"key": "acme", "input": {"name": "Acme", "crm_id": "OPP-1"}},
+                        {"key": "bolt", "input": {"name": "Bolt", "crm_id": "OPP-2"}}])
+    refs = {row["key"]: row["ref"] for row in deals.rows()["rows"]}
+
+    done = await tasks_.mirror(TASKS, TASK_MAP, by="crm")
+    assert done["created"] == ["t-1", "t-2"]
+    assert done["unlinked"] == [{"key": "t-1", "field": "deals", "value": "OPP-404"}]   # no such deal here: left out, said so
+    rows = {row["key"]: row["input"] for row in tasks_.rows()["rows"]}
+    assert rows["t-1"]["labels"] == ["urgent", "q4"]
+    assert rows["t-1"]["deals"] == [refs["acme"], refs["bolt"]] and rows["t-1"]["main"] == refs["acme"]
+    assert rows["t-2"]["deals"] == [] and rows["t-2"].get("main") is None                      # a general task links nothing
+    assert "unlinked" not in await tasks_.mirror(TASKS[1:], TASK_MAP, by="crm", prune=False)
+
+
+async def test_a_link_is_made_only_by_a_unique_field(tasks):
+    _, tasks_ = tasks
+    by_name = {"key": "external_id", "input": {"title": "name", "main": {"link": "crm.deal", "by": "name", "path": "external_id"}}}
+    with pytest.raises(ValueError, match="name is not a unique field of crm.deal"):
+        await tasks_.mirror(TASKS, by_name, by="crm")
+    with pytest.raises(ValueError, match="crm_id is not a unique field of crm.note"):
+        await tasks_.mirror(TASKS, {"key": "external_id", "input": {"main": {"link": "crm.note", "by": "crm_id", "path": "x"}}}, by="crm")
+    with pytest.raises(ValueError, match="no dataset holds crm.ghost"):
+        await tasks_.mirror(TASKS, {"key": "external_id", "input": {"main": {"link": "crm.ghost", "by": "crm_id", "path": "x"}}}, by="crm")
