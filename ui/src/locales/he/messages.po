@@ -22272,7 +22272,7 @@ msgstr "יש להגדיר את <0>{projectName}</0> בסביבת העבודה ה
 
 #: src/components/webapp-display/WebappSetupGate.tsx
 msgid "Set up again"
-msgstr ""
+msgstr "הגדרה מחדש"
 
 #~ msgid "Set up an existing git repository as the context folder"
 #~ msgstr "הגדירו מאגר git קיים כתיקיית ההקשר"
@@ -22335,7 +22335,7 @@ msgstr ""
 
 #: src/components/webapp-display/WebappSetupOverlay.tsx
 msgid "Setting things up"
-msgstr ""
+msgstr "מגדירים את הכול"
 
 #: src/pages/entry/AgentLaunchLanding.tsx
 msgid "Setting up {name} on a new sandbox…"
@@ -22410,7 +22410,7 @@ msgstr ""
 #: src/components/top-nav-bar/ProjectSetupButton.tsx
 #: src/components/top-nav-bar/ProjectSetupButton.tsx
 msgid "Setup required"
-msgstr ""
+msgstr "נדרשת הגדרה"
 
 #: src/components/conversation/MembersAvatarStack.tsx
 msgid "Several contacts match — pick one from the list"
@@ -28229,3 +28229,11 @@ msgstr "הגדל"
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "Zoom out"
 msgstr "הקטן"
+
+#: src/components/data-sources/source-attention.ts
+msgid "Press Setup to finish it."
+msgstr "לחצו על הגדרה כדי לסיים."
+
+#: src/components/setup-wizard/SourceSetupDialog.tsx
+msgid "Setup could not start."
+msgstr "לא ניתן היה להתחיל את ההגדרה."

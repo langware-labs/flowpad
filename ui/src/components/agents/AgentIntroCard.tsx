@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
-import { Agent } from '@sdk';
-import { ExternalLink, MessageSquare } from 'lucide-react';
+import { Agent, isGitOrigin } from '@sdk';
+import { ExternalLink, Folder, GitBranch, MessageSquare, type LucideIcon } from 'lucide-react';
 
 import { Badge } from '@src/components/ui/badge';
 import { Button } from '@src/components/ui/button';
@@ -12,6 +12,9 @@ import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { labelForType } from '@src/components/graph-view/icons/iconRegistry';
 import { MediaLightbox } from '@src/components/ui/media-lightbox';
 import { cn } from '@src/lib/utils';
+import { openExternal } from '@src/lib/open-external';
+import { assetGitLinkFor } from '@src/hooks/use-asset-git-link';
+import { useEntityLocationLabel } from '@src/components/graph-view/ui/EntityIcon';
 import { AgentAvatar } from './AgentAvatar';
 
 interface AgentIntroCardProps {
@@ -32,18 +35,22 @@ interface AgentIntroCardProps {
 }
 
 /**
- * Who is this? — the agent's intro card, opened from anywhere the agent is
- * named as an actor (a chat turn, the pinned asset row). Avatar, title, slug,
- * the authored one-line description, the runtime it runs on, and one contextual
- * action: open it by default, or use it when shown over a launch tile.
+ * The agent card itself — avatar, title, slug, the authored one-line
+ * description, the runtime it runs on, where it lives (folder and git), and one
+ * contextual action: open it by default, or use it when shown over a launch
+ * tile. ONE body for every surface that explains an agent (the intro popover,
+ * the hover card, a session tab's tooltip), so they cannot drift apart.
  */
-export function AgentIntroCard({
+export function AgentCardBody({
   agent,
-  children,
-  trigger = 'click',
   onUse,
   useDisabled = false,
-}: AgentIntroCardProps) {
+  onAvatarClick,
+}: Pick<AgentIntroCardProps, 'agent' | 'onUse' | 'useDisabled'> & {
+  /** Open the uploaded avatar full size. Omitted where there is nowhere to host
+   *  the lightbox (a tooltip closes under it) — the avatar is then plain. */
+  onAvatarClick?: () => void;
+}) {
   const { t } = useLingui();
   const { navigation } = useDockNavigation();
   const title = agent.displayName;
@@ -54,23 +61,21 @@ export function AgentIntroCard({
     agent.permission_mode,
   ].filter((chip): chip is string => !!chip);
   const ActionIcon = onUse ? MessageSquare : ExternalLink;
-  // The lightbox state lives here, not in the card body: opening it clicks
-  // outside the popover, which closes (unmounts) the body.
-  const [avatarOpen, setAvatarOpen] = useState(false);
-  const avatarImageUrl = agent.avatarImageUrl;
   const avatar = <AgentAvatar agent={agent} className="h-12 w-12 text-lg" glyphClassName="h-6 w-6 text-2xl" />;
+  const openAgent = () => navigation.openDock(agent.dockPointer);
+  const directory = agent.bundleDirectory;
+  const locationLabel = useEntityLocationLabel(agent.remote);
+  const git = assetGitLinkFor(agent.git_origin, true);
+  const branch = isGitOrigin(agent.git_origin) ? agent.git_origin.branch : '';
 
-  // ONE card body, two ways of opening it — never a second description popover
-  // that could drift from this one. Spelled out as two JSX trees rather than a
-  // swapped component tuple so each primitive's own props stay type-checked.
-  const body = (
+  return (
     <>
       <div className="flex items-start gap-3 p-3">
-        {avatarImageUrl ? (
+        {onAvatarClick && agent.avatarImageUrl ? (
           <button
             type="button"
             className="shrink-0 cursor-zoom-in rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            onClick={() => setAvatarOpen(true)}
+            onClick={onAvatarClick}
             aria-label={t`View ${title} avatar`}
             data-testid="agent-intro-card-avatar"
           >
@@ -105,12 +110,35 @@ export function AgentIntroCard({
           ))}
         </div>
       )}
+      {(directory || git.url) && (
+        <div className="space-y-1 px-3 pb-3">
+          {directory && (
+            <CardLink
+              icon={Folder}
+              label={directory}
+              suffix={locationLabel}
+              title={[directory, locationLabel].filter(Boolean).join(' — ')}
+              onClick={openAgent}
+              testId="agent-intro-card-location"
+            />
+          )}
+          {git.url && (
+            <CardLink
+              icon={GitBranch}
+              label={[git.repoLabel, branch].filter(Boolean).join(' · ')}
+              title={git.url}
+              onClick={() => openExternal(git.url!)}
+              testId="agent-intro-card-git"
+            />
+          )}
+        </div>
+      )}
       <div className="border-t border-border p-2">
         <Button
           size="sm"
           variant="ghost"
           className="w-full justify-start"
-          onClick={onUse ?? (() => navigation.openDock(agent.dockPointer))}
+          onClick={onUse ?? openAgent}
           disabled={onUse ? useDisabled : false}
           data-testid={onUse ? 'agent-intro-card-use' : 'agent-intro-card-open'}
           title={onUse ? t`Use agent` : t`Open ${title}`}
@@ -120,6 +148,64 @@ export function AgentIntroCard({
         </Button>
       </div>
     </>
+  );
+}
+
+/** One "where it lives" line of the card: a glyph, a path-like label, a click. */
+function CardLink({
+  icon: Icon,
+  label,
+  suffix,
+  title,
+  onClick,
+  testId,
+}: {
+  icon: LucideIcon;
+  label: string;
+  suffix?: string;
+  title: string;
+  onClick: () => void;
+  testId: string;
+}) {
+  return (
+    <button
+      type="button"
+      className="flex w-full items-center gap-1.5 text-start text-[11px] text-muted-foreground hover:text-foreground"
+      onClick={onClick}
+      title={title}
+      data-testid={testId}
+    >
+      <Icon className="h-3 w-3 shrink-0" />
+      <span className="min-w-0 truncate font-mono" dir="ltr">
+        {label}
+      </span>
+      {suffix && <span className="shrink-0">· {suffix}</span>}
+    </button>
+  );
+}
+
+/**
+ * Who is this? — the agent's intro card, opened from anywhere the agent is
+ * named as an actor (a chat turn, the pinned asset row).
+ */
+export function AgentIntroCard({
+  agent,
+  children,
+  trigger = 'click',
+  onUse,
+  useDisabled = false,
+}: AgentIntroCardProps) {
+  const title = agent.displayName;
+  // The lightbox state lives here, not in the card body: opening it clicks
+  // outside the popover, which closes (unmounts) the body.
+  const [avatarOpen, setAvatarOpen] = useState(false);
+  const avatarImageUrl = agent.avatarImageUrl;
+
+  // ONE card body, two ways of opening it — never a second description popover
+  // that could drift from this one. Spelled out as two JSX trees rather than a
+  // swapped component tuple so each primitive's own props stay type-checked.
+  const body = (
+    <AgentCardBody agent={agent} onUse={onUse} useDisabled={useDisabled} onAvatarClick={() => setAvatarOpen(true)} />
   );
 
   const lightbox = avatarOpen && avatarImageUrl && (
