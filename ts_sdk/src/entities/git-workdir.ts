@@ -118,6 +118,9 @@ export interface GitPullResult {
   message: string;
   /** Set only when `kind === 'conflict'`: the paths git left unmerged. */
   conflicted: string[];
+  /** Set after a successful pull refreshed this local project's asset index. */
+  projectId?: string | null;
+  refreshError?: string | null;
 }
 
 /**
