@@ -1229,7 +1229,7 @@ async function waitForBackend({
     // The block can hit the LAUNCHER's imports (`flow start` → flow_sdk.cli → pydantic → _pydantic_core,
     // seen under Smart App Control on 2026-10-10) before any server log exists: its stderr is the evidence
     // then. Same panel, same rules.
-    const inLauncher = detectPolicyBlockInLog(`${launch.stderr || ''}\n${launch.stdout || ''}`);
+    const inLauncher = detectPolicyBlockInLog(`${launch.stderr || ''}\n${launch.stdout || ''}`, { launcher: true });
     if (inLauncher) {
       result.reason = 'policy-blocked';
       result.policyBlock = { ...inLauncher, path: 'flow start output (the launcher)' };

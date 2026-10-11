@@ -55,12 +55,23 @@ eq(detectPolicyBlockInLog('2026-10-09 [boot] phase=import\nStarting Flow server 
 eq(detectPolicyBlockInLog(''), null, 'empty log');
 eq(detectPolicyBlockInLog('ModuleNotFoundError: No module named flow_sdk'), null, 'a broken install is not a policy block');
 {
-  const m = detectPolicyBlockInLog('error: Failed to spawn: `flow`\n  Caused by: An Application Control policy has blocked this file. (os error 4551)');
-  ok(m && m.module === null && m.line.includes('os error 4551'), 'uv\'s own wording is detected too (no module)');
+  const uvWording = 'error: Failed to spawn: `flow`\n  Caused by: An Application Control policy has blocked this file. (os error 4551)';
+  const m = detectPolicyBlockInLog(uvWording, { launcher: true });
+  ok(m && m.module === null && m.line.includes('os error 4551'), 'launcher output: uv\'s own wording is detected (no module) — the process refused IS the launcher');
+  eq(detectPolicyBlockInLog(uvWording), null, 'server log: the same words without an ImportError are a CHILD the server could not spawn — reported by the server, not fatal for it (as the Python classifier rules)');
 }
 {
-  const m = detectPolicyBlockInLog('x\nThis program is blocked by group policy. For more information, contact your system administrator.');
-  ok(m, 'the shell\'s group-policy wording is detected (enterprise application control)');
+  const gp = 'x\nThis program is blocked by group policy. For more information, contact your system administrator.';
+  ok(detectPolicyBlockInLog(gp, { launcher: true }), 'launcher output: the shell\'s group-policy wording is detected (enterprise application control)');
+  eq(detectPolicyBlockInLog(gp), null, 'server log: group-policy wording alone is not the server\'s own block');
+}
+{
+  // A healthy server whose log carries a worker's refusal: the backend wait must not end on it.
+  const serverLog = '2026-10-10 10:27:01 INFO Starting Flow server on http://127.0.0.1:9007\n' +
+    '2026-10-10 10:27:05 ERROR [worker] spawn failed: An Application Control policy has blocked this file. (os error 4551)\n' +
+    '2026-10-10 10:27:05 INFO worker marked failed; serving continues\n';
+  eq(detectPolicyBlockInLog(serverLog), null, 'a child\'s block inside a running server\'s log is no reason to stop waiting for the server');
+  ok(detectPolicyBlockInLog(serverLog + FIELD_LOG), 'the server\'s own ImportError after it still is');
 }
 {
   // Partially written log: the traceback frames are there but the ImportError line has not been
