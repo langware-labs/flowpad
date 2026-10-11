@@ -19,7 +19,6 @@ import { errorMessage } from '@src/lib/error-message';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { withHomePage } from '@src/project-home-page/home-page-state';
-import { ViewType } from '@src/types/ViewType';
 import { AlertTriangle, CheckCircle2, GitBranch, Loader2 } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
@@ -65,6 +64,7 @@ export function IncomingProjectDialog({
   const { t } = useLingui();
   const { computeNode } = useAgentContext();
   const { navigation, currentDock } = useDockNavigation();
+  const here = currentDock?.toUrl() ?? '';
   const cloneGitProject = useCloneGitProjectAndOpen();
   const installSharedProject = useInstallSharedProjectAndOpen();
   const landInProject = useSelectExistingProject();
@@ -78,8 +78,8 @@ export function IncomingProjectDialog({
   const [attemptedName, setAttemptedName] = useState('');
   const [nameOverride, setNameOverride] = useState('');
   const startedRef = useRef(false);
-  /** The project a successful set-up is opening: the dialog stays up until the URL is on it. */
-  const [landingId, setLandingId] = useState('');
+  /** The location a set-up started on: once it succeeds, the dialog stays up until the app has left it. */
+  const [setupFrom, setSetupFrom] = useState<string | null>(null);
 
   const originLabel = formatFSOrigin(gitOrigin);
   const branch = isGitOrigin(gitOrigin) ? gitOrigin.branch || '' : '';
@@ -93,7 +93,7 @@ export function IncomingProjectDialog({
     setSuggestedName('');
     setAttemptedName('');
     setNameOverride('');
-    setLandingId('');
+    setSetupFrom(null);
     onClose();
   }, [onClose]);
 
@@ -113,7 +113,6 @@ export function IncomingProjectDialog({
         const project = Project.getByIdFromCache(id) ?? (await Project.getById(id));
         if (!project) throw new Error(t`That project is no longer available.`);
         await installSharedProject(project);
-        setLandingId(id);
         setStep('success');
       } catch (e) {
         setErrorMsg(e instanceof Error ? e.message : String(e));
@@ -143,7 +142,6 @@ export function IncomingProjectDialog({
         branch: branch || undefined,
       });
       if (result.kind === 'ok') {
-        setLandingId(result.project.id);
         setStep('success');
         return;
       }
@@ -176,7 +174,6 @@ export function IncomingProjectDialog({
         const project = await Project.installFromHub(id, name);
         if (!project) throw new Error(t`That project is no longer available.`);
         await landInProject(project);
-        setLandingId(project.id);
         setStep('success');
       } catch (e) {
         const taken = nameConflictOf(e);
@@ -193,13 +190,16 @@ export function IncomingProjectDialog({
     [landInProject, t],
   );
 
-  // Close only once the project's page is actually open. On a slow machine its loader takes a
-  // while, and a dialog that closed on a timer left the app home showing — with a prompt box that
-  // looked usable but was about to be navigated away from.
+  // Close only once the app has left the page the set-up started on. Landing in the project
+  // redirects to its home page, which may be an agent's chat or an app rather than the project
+  // dock, and on a slow machine that loader takes a while: a dialog that closed on a timer left
+  // the app home showing, with a prompt box that looked usable but was about to be navigated away.
   useEffect(() => {
-    if (step !== 'success' || !landingId || currentDock?.viewType !== ViewType.PROJECT) return;
-    if (DockPointer.splitProjectPointer(currentDock.pointer).projectId === landingId) handleClose();
-  }, [step, landingId, currentDock, handleClose]);
+    if (step === 'cloning') setSetupFrom((from) => from ?? here);
+  }, [step, here]);
+  useEffect(() => {
+    if (step === 'success' && setupFrom !== null && here !== setupFrom) handleClose();
+  }, [step, setupFrom, here, handleClose]);
 
   const handleConfirm = useCallback(() => {
     if (startedRef.current) return;
