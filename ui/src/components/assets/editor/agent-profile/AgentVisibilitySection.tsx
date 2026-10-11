@@ -67,7 +67,10 @@ function PublicAccessButton({ agent }: { agent: Agent }) {
         : await setPublicAccess(agent.typeId, 'visitor', PUBLIC_VIEWER_ROLE);
       setRole(access.role ?? null);
       if (isPublic) {
-        notify.success({ title: t`Public access removed`, message: t`Only people you share with can view this agent.` });
+        notify.success({
+          title: t`Public access removed`,
+          message: t`Only people you share with can view this agent.`,
+        });
       } else {
         notify.success({ title: t`Agent is public`, message: t`Anyone with the link can view this agent.` });
       }
@@ -96,7 +99,7 @@ function PublicAccessButton({ agent }: { agent: Agent }) {
       }
       data-testid="agent-public-access"
     >
-      <Icon className={`me-1.5 h-3.5 w-3.5${busy ? ' animate-spin' : ''}`} />
+      <Icon className={`me-1.5 h-3.5 w-3.5${busy ? 'animate-spin' : ''}`} />
       {isPublic ? <Trans>Remove public access</Trans> : <Trans>Set public</Trans>}
     </Button>
   );
@@ -145,7 +148,10 @@ export function AgentVisibilitySection({ agent, version }: { agent: Agent; versi
             />
           </div>
           <p className="mt-1 text-xs text-muted-foreground" data-testid="agent-launch-link-hint">
-            <Trans>The link works for anyone the agent is shared with, or for everyone once it is public.</Trans>
+            <Trans>
+              Anyone its project is shared with can launch it from this link. Making the agent public lets everyone see
+              it; launching still needs the project shared with them.
+            </Trans>
           </p>
         </div>
       )}
