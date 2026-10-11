@@ -83,6 +83,7 @@ async function run(root: HTMLElement, status: HTMLElement): Promise<void> {
       h('span', { class: 'mono muted', 'data-testid': 'dataset-editor-kind' }, kind),
       counts, h('span', { style: 'flex:1' }), filter,
       h('button', { 'data-testid': 'dataset-editor-evals', onclick: () => void openEvals() }, 'Evals'),
+      h('button', { 'data-testid': 'dataset-editor-schema', onclick: openSchema }, 'Schema'),
       h('button', { 'data-testid': 'dataset-editor-validate', onclick: () => void validate() }, 'Validate'),
       status),
     split,
@@ -174,6 +175,13 @@ async function run(root: HTMLElement, status: HTMLElement): Promise<void> {
   async function openEvals() {
     const browser = (await editorsFor(subject)).find((e) => e.name === 'eval-browser');
     if (browser) navigateHost({ address: `/dock/app/${browser.typeid}?subject=${subject}` });
+  }
+
+  // The schema tree is the host's own screen: this dataset's project is the address's scope, its
+  // row schema the selection.
+  function openSchema() {
+    const scope = new URLSearchParams({ 'scope-mode': 'project', 'scope-activeProjectId': dataset.project_id ?? '' });
+    void scope; navigateHost({ address: `/dock/schema-tree/${dataset.rowKind ?? ''}` }); // LOOP-REVERT
   }
 
   async function validate() {
