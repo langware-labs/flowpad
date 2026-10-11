@@ -28570,3 +28570,60 @@ msgstr "Preparing this project for use."
 #: src/components/project-setup/ProjectLoadGate.tsx
 msgid "Preparing…"
 msgstr "Preparing…"
+
+#: src/components/agent-resources/AgentDataSourcesSection.tsx
+msgid "Add a project data source to include its dependencies"
+msgstr "Add a project data source to include its dependencies"
+
+#: src/components/agent-resources/AgentDataSourcesSection.tsx
+msgid "Add to agent"
+msgstr "Add to agent"
+
+#: src/components/agent-resources/AgentDataSourcesSection.tsx
+msgid "Added directly"
+msgstr "Added directly"
+
+#: src/components/agent-resources/AgentDataSourcesSection.tsx
+msgid "Changes apply to new sessions."
+msgstr "Changes apply to new sessions."
+
+#: src/components/agent-resources/AgentDataSourcesSection.tsx
+msgid "Choose a data source from this project by name."
+msgstr "Choose a data source from this project by name."
+
+#: src/components/agent-resources/AgentDataSourcesSection.tsx
+msgid "Connect new source"
+msgstr "Connect new source"
+
+#: src/components/agent-resources/AgentDataSourcesSection.tsx
+msgid "Files not available"
+msgstr "Files not available"
+
+#: src/components/agent-resources/AgentDataSourcesSection.tsx
+msgid "Included through this source's dependencies. Changes apply to new sessions."
+msgstr "Included through this source's dependencies. Changes apply to new sessions."
+
+#: src/components/agent-resources/AgentDataSourcesSection.tsx
+msgid "Loading data sources…"
+msgstr "Loading data sources…"
+
+#: src/components/agent-resources/AgentDataSourcesSection.tsx
+msgid "No data sources in this project yet"
+msgstr "No data sources in this project yet"
+
+#: src/components/agent-resources/AgentDataSourcesSection.tsx
+msgid "Reading dependencies…"
+msgstr "Reading dependencies…"
+
+#: src/components/agent-resources/AgentDataSourcesSection.tsx
+msgid "Remove {name} from agent"
+msgstr "Remove {name} from agent"
+
+#: src/components/agent-resources/AgentDataSourcesSection.tsx
+#: src/components/agent-resources/AgentDataSourcesSection.tsx
+msgid "Search data sources"
+msgstr "Search data sources"
+
+#: src/components/agent-resources/AgentDataSourcesSection.tsx
+msgid "Via {path}"
+msgstr "Via {path}"

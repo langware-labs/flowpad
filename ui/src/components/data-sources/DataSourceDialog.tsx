@@ -98,6 +98,7 @@ export function DataSourceDialog({
   editing,
   owner,
   only,
+  variant = 'source',
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -109,6 +110,8 @@ export function DataSourceDialog({
   /** Narrow the provider tiles — the channels line offers only specs that
    *  `sends`. An empty result renders as a sentence, not a blank picker. */
   only?: (spec: DataDriver) => boolean;
+  /** Copy follows the resource being added, not whether providers are filtered. */
+  variant?: 'source' | 'channel';
 }) {
   const { t } = useLingui();
   // Whatever is INSTALLED, not a hardcoded list: a source added as an asset
@@ -330,7 +333,7 @@ export function DataSourceDialog({
   const beforeSetup = !settingUp;
   const crumbs: StepCrumb[] = [
     {
-      label: editing ? t`Edit data source` : only ? t`Add a channel` : t`Data sources`,
+      label: editing ? t`Edit data source` : variant === 'channel' ? t`Add a channel` : t`Data sources`,
       onClick: !editing && beforeSetup && step !== 'provider' ? toProviders : undefined,
     },
   ];
@@ -348,7 +351,7 @@ export function DataSourceDialog({
         crumbs={crumbs}
         description={
           step === 'provider' && beforeSetup ? (
-            only ? (
+            variant === 'channel' ? (
               <Trans>Where people reach this agent — one number, mailbox or chat per channel.</Trans>
             ) : (
               <Trans>

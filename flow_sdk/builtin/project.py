@@ -2731,12 +2731,34 @@ class Project(SetupSkippable, Entity):
     # ``flow_sdk.builtin.project_dependencies`` — the one owner. The verbs below are
     # thin: they write the file, then resolve.
 
-    async def dependencies(self, *, fetch: bool = False) -> "list[DependencyState]":
+    async def dependencies(self, *, fetch: bool = False, asset: str | None = None) -> "list[DependencyState]":
         """Every declared dependency as it stands here. ``fetch=False`` (the default)
         never touches the network: a dependency not on this machine yet reads ``missing``."""
         from flow_sdk.builtin import project_dependencies  # noqa: PLC0415
 
+        if asset:
+            if fetch:
+                await project_dependencies.asset_holder(self, asset)
+                await project_dependencies.resolve(self, fetch=True)
+            return await project_dependencies.inspect_dependencies(self, asset=asset)
         return await project_dependencies.resolve(self, fetch=fetch, index=fetch)
+
+    async def dependency_candidates(self, *, asset: str) -> list[str]:
+        from flow_sdk.builtin import project_dependencies  # noqa: PLC0415
+
+        return await project_dependencies.source_candidates(self, asset=asset)
+
+    async def preview_dependencies(self, *, asset: str, sources: list[str]) -> "list[DependencyState]":
+        from flow_sdk.builtin import project_dependencies  # noqa: PLC0415
+        from flow_sdk.dependencies.resolve import typeid_of  # noqa: PLC0415
+        from flow_sdk.schema.data_spec.flow_json_spec import parse_source  # noqa: PLC0415
+
+        candidates = set(await self.dependency_candidates(asset=asset))
+        for source in sources:
+            parsed = parse_source(source)
+            if parsed.kind != "ref" or typeid_of(parsed) not in candidates:
+                raise ValueError(f"{source!r} is not a data source in this project")
+        return await project_dependencies.inspect_dependencies(self, asset=asset, sources=sources)
 
     async def resolve_dependencies(self, *, update: bool = False) -> "list[DependencyState]":
         """Fetch what is missing (clone, hub), link and index it. ``update`` fast-forwards
@@ -2811,11 +2833,14 @@ class Project(SetupSkippable, Entity):
         states = await project_dependencies.resolve(self, fetch=True, install=[dep.name] if optional else ())
         return await project_dependencies.load_dependency(next(s for s in states if s.name == dep.name and s.via is None))
 
-    async def remove_dependency(self, name: str) -> "list[DependencyState]":
+    async def remove_dependency(self, name: str, *, asset: str | None = None) -> "list[DependencyState]":
         """Drop ``name`` from ``flow.json``; its folder leaves the context. The folder on
         disk is never touched."""
         from flow_sdk.assets import flow_json  # noqa: PLC0415
+        from flow_sdk.builtin import project_dependencies  # noqa: PLC0415
 
+        if asset:
+            return await project_dependencies.remove_from_asset(self, asset, name)
         if not self.fs_storage_mount_path:
             return []
         flow_json.drop_dependency(Path(self.fs_storage_mount_path), name)
@@ -2848,11 +2873,14 @@ class Project(SetupSkippable, Entity):
         return [s.model_dump(mode="json") for s in states]
 
     @action.get(action_name="dependencies")
-    async def dependencies_action(self) -> "ApiResponse":
+    async def dependencies_action(self, asset: str = "") -> "ApiResponse":
         """`GET /project/<id>/dependencies` — every declared dependency, and the warnings."""
         from flow_sdk.builtin import project_dependencies  # noqa: PLC0415
 
-        states = await self.dependencies()
+        try:
+            states = await self.dependencies(asset=asset or None)
+        except ValueError as exc:
+            return ApiFailResponse(message=str(exc), status_code=400)
         warnings = project_dependencies.warnings_for(str(self.id), states)
         return ApiSuccessResponse(
             data={
@@ -2863,6 +2891,27 @@ class Project(SetupSkippable, Entity):
                 "resolving": project_dependencies.is_resolving(str(self.id)),
             }
         )
+
+    @action.get(action_name="dependency-candidates")
+    async def dependency_candidates_action(self, asset: str = "") -> "ApiResponse":
+        try:
+            candidates = await self.dependency_candidates(asset=asset)
+        except ValueError as exc:
+            return ApiFailResponse(message=str(exc), status_code=400)
+        return ApiSuccessResponse(data={"source_typeids": candidates})
+
+    @action.post(action_name="preview-dependencies")
+    async def preview_dependencies_action(self, asset: str = "", sources: list[str] | None = None) -> "ApiResponse":
+        from flow_sdk.builtin import project_dependencies  # noqa: PLC0415
+
+        try:
+            states = await self.preview_dependencies(asset=asset, sources=sources or [])
+        except ValueError as exc:
+            return ApiFailResponse(message=str(exc), status_code=400)
+        return ApiSuccessResponse(data={
+            "dependencies": self._states(states),
+            "warnings": self._states(project_dependencies.warnings_for(str(self.id), states)),
+        })
 
     @action.post(action_name="add-dependency")
     async def add_dependency_action(
@@ -2890,10 +2939,13 @@ class Project(SetupSkippable, Entity):
         return ApiSuccessResponse(data={"dependency": state.model_dump(mode="json"), **self._context_payload()})
 
     @action.post(action_name="remove-dependency")
-    async def remove_dependency_action(self, name: str = "") -> "ApiResponse":
+    async def remove_dependency_action(self, name: str = "", asset: str = "") -> "ApiResponse":
         if not name:
             return ApiFailResponse(message="name is required", status_code=400)
-        states = await self.remove_dependency(name)
+        try:
+            states = await self.remove_dependency(name, asset=asset or None)
+        except ValueError as exc:
+            return ApiFailResponse(message=str(exc), status_code=400)
         return ApiSuccessResponse(data={"dependencies": self._states(states), **self._context_payload()})
 
     @action.post(action_name="resolve-dependencies")
