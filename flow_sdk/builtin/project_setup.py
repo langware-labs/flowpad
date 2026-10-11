@@ -90,12 +90,12 @@ async def project_sources(project: "Project") -> list["DataSource"]:
     from flow_sdk.builtin.data_source import DataSource  # noqa: PLC0415
     from flow_sdk.builtin.project import assets_under_roots  # noqa: PLC0415
     from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp  # noqa: PLC0415
-    from flow_sdk.fs_store.path_utils import canonical_posix_path  # noqa: PLC0415
+    from flow_sdk.fs_store.path_utils import asset_refs_under  # noqa: PLC0415
 
     root = str(getattr(project, "fs_storage_mount_path", "") or "")
     keys = [ExpressionNode(op=QueryOp.EQ, operands=["project_id", str(project.id)])]
-    for prefix in dict.fromkeys(p.rstrip("/") for p in ((root, canonical_posix_path(root)) if root else ())):
-        keys.append(ExpressionNode(op=QueryOp.LIKE, operands=["asset_ref", f"{prefix}/%"]))
+    if root:
+        keys += [ExpressionNode(op=QueryOp.LIKE, operands=["asset_ref", p]) for p in asset_refs_under(root)]
     match = keys[0] if len(keys) == 1 else ExpressionNode(op=QueryOp.OR, operands=keys)
     rows = await DataSource.get_all(QueryFilter(match=match))
     under = {str(r.id) for r in assets_under_roots(rows, [root])} if root else set()
