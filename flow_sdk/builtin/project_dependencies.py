@@ -470,7 +470,7 @@ async def describe_dependency(state: DependencyState, *, provider: Optional["Pro
     provider = provider or await dependency_project(state)
     if provider is None:
         return state
-    return state.model_copy(update={"project_id": str(provider.id), "home_page": provider.home_page_typeid(),
+    return state.model_copy(update={"project_id": str(provider.id), "home_page": await provider.resolve_home_page_typeid(),
                                     "lifecycle": load_state(str(provider.id))})
 
 

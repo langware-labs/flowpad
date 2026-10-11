@@ -63,6 +63,13 @@ DEPENDENCY_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
 #: A project whose every prompt must carry a dozen skills has not chosen; it has listed.
 MAX_ALWAYS_USE_SKILLS = 8
 
+
+def _dependency_name(name: str) -> str:
+    if not DEPENDENCY_NAME.fullmatch(name):
+        raise ValueError(f"{name!r} is not a dependency name (letters, digits, . _ -)")
+    return name
+
+
 SourceKind = Literal["ref", "git", "hub", "file"]
 #: ``not_found``: an id nothing on this machine or on the hub answers to.
 DependencyStateName = Literal["ready", "missing", "unreachable", "not_installed", "invalid", "not_found"]
@@ -218,6 +225,8 @@ class FlowDependency(DataSpec):
     label: Optional[str] = None
     description: Optional[str] = None
 
+    _valid_name = field_validator("name")(_dependency_name)
+
     @property
     def parsed(self) -> DependencySource:
         return parse_source(self.source)
@@ -247,8 +256,7 @@ class AssetFlowJsonSpec(DataSpec):
     @classmethod
     def _entries(cls, value: dict) -> dict:
         for name, entry in value.items():
-            if not DEPENDENCY_NAME.match(name):
-                raise ValueError(f"{name!r} is not a dependency name (letters, digits, . _ -)")
+            _dependency_name(name)
             target = entry if isinstance(entry, str) else entry.target
             if parse_source(target).kind != "ref" and not cls.locations:
                 raise ValueError(f"{name!r}: an asset depends on an id (<type>-<uuid> or <kind>.id.<uuid>), not a location")

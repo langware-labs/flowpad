@@ -326,7 +326,7 @@ async def test_first_turn_holds_once_an_allowed_sender_spoke_and_an_answer_follo
 
     monkeypatch.setattr(SourceItem, "get_all", get_all)
     source = DataSource(provider=name, name="bot", allowed_senders=["+972 50-000-0000"])
-    item = lambda who, at: SimpleNamespace(author_external_id=who, occurred_at=at)  # noqa: E731
+    item = lambda who, at: SimpleNamespace(author_external_id=who, occurred_at=at, sent_by_us=who == "15550001111", external_id=at, thread_key="conversation-1", reply_to_external_id=None)  # noqa: E731
 
     assert (await source.step("first-turn", check=True)).exit_code is ExitCode.NOT_YET
     rows[:] = [item("15550001111", "2026-09-28T10:00:00"), item("972500000000", "2026-09-28T10:01:00")]
@@ -359,3 +359,100 @@ async def test_the_hubs_source_nudge_wakes_the_driver_it_names(monkeypatch):
     await manager.handlers["source_nudge"]({"message_type": "source_nudge", "driver": "some_driver"})
     await manager.handlers["source_nudge"]({"message_type": "source_nudge"})
     assert woke == ["some_driver"]
+
+
+async def test_direct_callback_needs_no_hub_and_redacts_only_secrets(stub, monkeypatch):
+    from flow_sdk.cloud_client.transport import hub_http
+    from flow_sdk.server import webhook_listener
+
+    name, kept = stub
+    source = DataSource(provider=name, name="direct", config={})
+    driver = DataDriver.loaded(name)
+    monkeypatch.setattr(driver.cls, "webhook_authentic", staticmethod(lambda *_: True), raising=False)
+
+    async def callback_base_url(*, start=False):
+        assert start
+        return "http://127.0.0.1:6543"
+
+    async def forbidden(*_a, **_kw):
+        pytest.fail("direct setup must not contact the hub")
+
+    monkeypatch.setattr(webhook_listener, "callback_base_url", callback_base_url)
+    monkeypatch.setattr(hub_http, "hub_post", forbidden)
+    answer = await source.step("public-webhook", values={"delivery": "direct"})
+    assert answer.ok
+    assert answer.value["secrets"] == {}
+    assert answer.value["shown"]["link"] == f"http://127.0.0.1:6543/api/v1/data_source/webhook/{name}?source_id={source.id}"
+    assert source.config["verify_token"]
+    assert kept["credentials"][-1][1]["STUB_WEBHOOK_URL"] == answer.value["shown"]["link"]
+
+
+async def test_direct_callback_requires_driver_authentication(stub):
+    name, _ = stub
+    source = DataSource(provider=name, name="unsigned", config={})
+    answer = await source.step("public-webhook", values={"delivery": "direct"})
+    assert answer.exit_code is ExitCode.NOT_APPLICABLE
+
+
+async def test_first_turn_requires_our_reply_in_the_same_conversation(stub, monkeypatch):
+    from flow_sdk.builtin.source_item import SourceItem
+
+    name, _ = stub
+    source = DataSource(provider=name, name="bot")
+    rows = [SourceItem(external_id="in-1", thread_key="chat-1", author_external_id="person", occurred_at="2026-10-11T00:00:01Z")]
+
+    async def get_all(*_a, **_kw):
+        return rows
+
+    monkeypatch.setattr(SourceItem, "get_all", get_all)
+    rows.append(SourceItem(external_id="stranger", thread_key="chat-1", author_external_id="other", occurred_at="2026-10-11T00:00:02Z"))
+    assert not (await source.step("first-turn", check=True)).ok
+    rows.append(SourceItem(external_id="out-1", thread_key="chat-2", sent_by_us=True, occurred_at="2026-10-11T00:00:03Z"))
+    assert not (await source.step("first-turn", check=True)).ok
+    rows.append(SourceItem(external_id="out-2", thread_key="chat-1", sent_by_us=True, reply_to_external_id="in-1", occurred_at="2026-10-11T00:00:04Z"))
+    answer = await source.step("first-turn", check=True, values={"external_id": "in-1"})
+    assert answer.ok and answer.value.model_dump() == {"incoming_external_id": "in-1", "reply_external_id": "out-2"}
+    assert not (await source.step("first-turn", check=True, values={"external_id": "later-test"})).ok
+
+
+async def test_first_turn_since_does_not_reuse_a_historical_conversation(stub, monkeypatch):
+    from flow_sdk.builtin.source_item import SourceItem
+
+    name, _ = stub
+    source = DataSource(provider=name, name="bot")
+    rows = [
+        SourceItem(external_id="historical-in", thread_key="chat", occurred_at="2026-10-10T12:00:00Z"),
+        SourceItem(external_id="historical-out", thread_key="chat", sent_by_us=True, occurred_at="2026-10-10T12:00:01Z"),
+    ]
+
+    async def get_all(*_a, **_kw):
+        return rows
+
+    monkeypatch.setattr(SourceItem, "get_all", get_all)
+    assert (await source.step("first-turn", check=True)).ok
+    assert not (await source.step("first-turn", check=True, values={"since": "2026-10-11T00:00:00Z"})).ok
+    rows.extend([
+        SourceItem(external_id="new-in", thread_key="chat", occurred_at="2026-10-11T00:00:01Z"),
+        SourceItem(external_id="new-out", thread_key="chat", sent_by_us=True, reply_to_external_id="new-in", occurred_at="2026-10-11T00:00:02Z"),
+    ])
+    proof = await source.step("first-turn", check=True, values={"since": "2026-10-11T00:00:00Z"})
+    assert proof.ok and proof.value.incoming_external_id == "new-in"
+
+
+async def test_first_turn_distinguishes_received_message_from_no_message(stub, monkeypatch):
+    from flow_sdk.builtin.source_item import SourceItem
+
+    name, _ = stub
+    source = DataSource(provider=name, name="bot")
+    rows = []
+
+    async def get_all(*_a, **_kw):
+        return rows
+
+    monkeypatch.setattr(SourceItem, "get_all", get_all)
+    assert (await source.step("first-turn", check=True)).detail.startswith("Send a message")
+    rows.append(SourceItem(external_id="received", thread_key="phone", occurred_at="2026-10-11T21:08:48+00:00"))
+    pending = await source.step("first-turn", check=True)
+    assert not pending.ok and pending.detail == "Message received; waiting for the agent reply."
+    rows.clear()
+    assert (await source.step("first-turn", check=True)).detail.startswith("Send a message")

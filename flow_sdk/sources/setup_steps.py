@@ -23,6 +23,7 @@ from pydantic import ConfigDict, Field
 
 from flow_sdk.schema.data_spec.returned_value_spec import ReturnedValue
 from flow_sdk.schema.data_spec.spec import DataSpec
+from flow_sdk.schema.data_spec.webhook_spec import WebhookDelivery
 
 _STEP_ATTR = "__flow_setup_step__"
 #: Steps every source answers, whatever its driver (``DataSource.step``):
@@ -67,6 +68,8 @@ class SourceUpdateSpec(DataSpec):
 
     #: Merged into the source's config (the file).
     config: dict[str, Any] = Field(default_factory=dict)
+    #: Generic transport preference, kept outside provider config.
+    webhook_delivery: Optional[WebhookDelivery] = None
     #: Replaces the row's allowed senders.
     allowed_senders: Optional[list[str]] = None
     #: ``{auth.vars key: value}`` — stored into the driver's credential, never echoed.
@@ -77,6 +80,14 @@ class SourceUpdateSpec(DataSpec):
     #: What the person should SEE — returned, never stored. ``flow source step … --value`` prints exactly
     #: this, so a wizard step can bind it for the next question (``{{connect.link}}``).
     shown: Optional["SetupShown"] = None
+
+
+class FirstTurnProofSpec(DataSpec):
+    """Provider acceptance of a locally recorded answer to an inbound message."""
+
+    spec_kind: ClassVar[str] = "source.first_turn_proof"
+    incoming_external_id: str
+    reply_external_id: str
 
 
 class SetupShown(DataSpec):

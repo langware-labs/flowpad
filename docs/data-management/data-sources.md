@@ -142,9 +142,11 @@ differs between sources, the source says itself: the credential shape is the man
 application transport; `message_for` reads a send's arguments; `query` names the one stream it reads; `local_tree_key` / `origin_id_for` place and name reflected files;
 `permalink` addresses its channel's UI; `webhook_challenge` / `webhook_account` /
 `events_from_webhook` take provider delivery through the generic route,
-`/api/v1/data_source/webhook/<name>`. `webhook_authentic` — when a class declares it —
-checks the original raw body and headers in `DataDriver.ingest_pushed`; this public route
-answers a signature refusal with 401. Hub claim delivery instead names the source at
+`/api/v1/data_source/webhook/<name>`. A driver with batched accounts or account parts declares
+`webhook_targets(payload)`, returning `WebhookTargetSpec(account, part, payload)` values.
+The public route requires `webhook_authentic` and authenticates the original raw bytes against
+every matched target before any target is ingested; invalid signatures answer 401.
+The per-target payload still passes through `DataDriver.ingest_pushed` and its shared digest gate. Hub claim delivery instead names the source at
 `/api/v1/data_source/<id>/webhook` and passes `verified_by_hub=True`: the hub already checked
 the signature before splitting the batch, and the receiving route relies on trusted hub
 transport. See [channel webhook routing](../snippets/channel-webhook-routing.md) for setup,

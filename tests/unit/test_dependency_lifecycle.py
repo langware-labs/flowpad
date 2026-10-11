@@ -35,3 +35,31 @@ async def test_load_refuses_an_asset_owned_by_a_different_project(tmp_path):
     response = await provider.load_action(approved=True, asset=str(agent.typeid))
     assert response.status_code == 400
     assert load_state(str(provider.id)) is None
+
+
+async def test_relative_provider_home_is_resolved_in_add_and_list_payloads(tmp_path):
+    import json
+
+    from flow_sdk.assets.project_manifest import set_home_page
+    from flow_sdk.core import Entity
+    from flow_sdk.fs_store.reindex import reindex_paths
+    from flow_sdk.fs_store.type_id import TypeId
+
+    consumer = await seed_project(tmp_path / "consumer")
+    root = tmp_path / "portable-provider"
+    provider = await seed_project(root)
+    folder = root / "agentic-assets/webapp/admin"
+    folder.mkdir(parents=True)
+    (folder / "webapp.json").write_text(json.dumps({"name": "admin"}))
+    (folder / "index.html").write_text("<h1>Admin</h1>")
+    await reindex_paths([str(folder)])
+    app = await Entity.get_by_asset_ref(str(folder), resolve_containing=True, strict=True)
+    set_home_page(root, "./agentic-assets/webapp/admin")
+
+    response = await consumer.add_dependency_action(source=provider.fs_storage_mount_path, name="service")
+    added = response.data["dependency"]
+    listed = (await consumer.dependencies_action()).data["dependencies"][0]
+    for row in (added, listed):
+        assert row["home_page"] == str(app.typeid)
+        assert TypeId(row["home_page"]).type == "micro_app"
+        assert row["project_id"] == provider.id

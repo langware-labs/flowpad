@@ -292,6 +292,30 @@ class WhatsAppSource(MessageSource):
         return ""
 
     @classmethod
+    def webhook_targets(cls, payload: dict):
+        """Route each account/group in a batch independently; signing still covers the original body."""
+        from flow_sdk.schema.data_spec.webhook_spec import WebhookTargetSpec
+
+        targets = []
+        for entry in _list(payload.get("entry")):
+            for change in _list(entry.get("changes") if isinstance(entry, dict) else None):
+                value = change.get("value") if isinstance(change, dict) else None
+                if not isinstance(value, dict):
+                    continue
+                metadata = value.get("metadata")
+                account = str(metadata.get("phone_number_id") or "") if isinstance(metadata, dict) else ""
+                groups: dict[str, list] = {}
+                for message in _list(value.get("messages")):
+                    if isinstance(message, dict):
+                        groups.setdefault(str(message.get("group_id") or "").strip(), []).append(message)
+                for part, messages in groups.items():
+                    narrowed = {**payload, "entry": [{**entry, "changes": [
+                        {**change, "value": {**value, "messages": messages}},
+                    ]}]}
+                    targets.append(WebhookTargetSpec(account=account, part=part, payload=narrowed))
+        return targets
+
+    @classmethod
     def webhook_authentic(cls, headers: Mapping[str, str], body: bytes, credentials: ResolvedSecrets) -> bool:
         """Meta's ``X-Hub-Signature-256: sha256=<hex hmac of the raw body>`` under the app secret. A row
         with no app secret accepts nothing."""
