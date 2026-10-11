@@ -1,4 +1,4 @@
-import { Tab, TabLifecycleState, ViewModeEvent, perfTime, tabForDockKey, tabKey, tabManager, toplog } from '@sdk';
+import { Tab, TabLifecycleState, perfTime, tabForDockKey, tabKey, tabManager, toplog } from '@sdk';
 import { isHubOnly } from '@src/navigation/hub-runtime';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { isContentAssetDock } from '@src/navigation/content-asset-dock';
@@ -353,7 +353,6 @@ export async function setupTab(dock: DockPointer, options: SetupTabOptions = {})
       // record selection too — the shell/process loaders' own stamp covers only
       // their tabs. Fire-and-forget: loaders stay fast.
       void tabManager.activate(tab.id).catch(() => {});
-      tabManager.recordViewModeEvent(tab, ViewModeEvent.TabOpen, dock.viewMode);
       options.onMaterialized?.(tabs);
       await adapter.setupTab(dock);
       tabManager.lifecycle.set(key, TabLifecycleState.Opened, { tabId: tab.id });

@@ -32,14 +32,14 @@ describe('legacy Assets fs route canonicalization', () => {
     const dock = new DockPointer(
       ViewType.PROJECT,
       'project-id/fs/docs/agent',
-      { viewMode: 'advanced' },
+      { editorMode: 'view' },
       Layout.WIN,
       PageId.HUB,
     );
     const redirect = captureRedirect(dock, '/win/hub/project/project-id/fs/docs/agent');
 
     expect(redirect?.headers.get('Location')).toBe(
-      '/win/hub/project/project-id/fs/vfs/compute_node-%40local/docs/agent?viewMode=advanced',
+      '/win/hub/project/project-id/fs/vfs/compute_node-%40local/docs/agent?editorMode=view',
     );
   });
 
