@@ -22,7 +22,7 @@ async def _cascade_data_source(entity_id: str) -> None:
 
 DATA_SOURCE = TypeInfo(
     type_name=EntityType.DATA_SOURCE,
-    icon="Antenna",
+    icon="Database",
     display_name="Data sources",
     api_visible=True,
     creatable=True,
