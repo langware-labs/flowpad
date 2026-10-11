@@ -273,6 +273,11 @@ export interface NewCloudProjectLink {
   /** A project origin as JSON — what the set-up dialog clones. */
   git_origin: string;
   title?: string;
+  /** Its name is already this project's here: the set-up asks — open that one, or
+   *  install this one under another name ({@link Project.installFromHub}). */
+  existing_project_id?: string;
+  /** A free name to offer instead, when {@link existing_project_id} is set. */
+  suggested_name?: string;
 }
 
 /** What a project is for — mirror of `flow_sdk/schema/data_spec/project_manifest_spec.py` `ProjectSubkind`. */
@@ -956,6 +961,17 @@ export class Project extends APIEntity<Project> {
     const actionInfo = new ActionInfo('new-cloud-projects', null, null, 'POST');
     const data = await dataManager.callAction<void, { projects?: NewCloudProjectLink[] }>(actionInfo);
     return data?.projects ?? [];
+  }
+
+  /** Mirror a hub project this desktop holds no row for under `name`, and set it up
+   *  (`POST project/<id>/install-from-hub`) — the answer to a {@link newFromHub} link
+   *  whose own name is taken here. Rejects with the 409 `project_name_conflict`
+   *  envelope when `name` is taken too. */
+  static async installFromHub(projectId: string, name: string): Promise<Project | null> {
+    const actionInfo = new ActionInfo('install-from-hub', Project.type, projectId, 'POST');
+    actionInfo.bodyParameters = { name };
+    const data = await dataManager.callAction<{ name: string }, Partial<Project>>(actionInfo);
+    return data ? new Project(data) : null;
   }
 
   /** Is this project ready here (`GET project/<id>/setup-requirements`)? Static: callers hold an id. */

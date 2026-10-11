@@ -229,7 +229,7 @@ describe('MessageEntityChip — project reference', () => {
     openReview();
     expect(actionState()).toBe('open');
     expect(screen.getByTestId('project-preview')).toBeTruthy();
-    expect((screen.getByTestId('project-install-button') as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByTestId('project-install-button').disabled).toBe(true);
 
     fireEvent.click(screen.getByTestId('asset-open-entity'));
     expect(h.openDock).toHaveBeenCalledTimes(1);
@@ -328,7 +328,7 @@ describe('MessageEntityChip — project reference', () => {
 
       fireEvent.click(screen.getByTestId('project-install-button'));
 
-      await waitFor(() => expect(install).toHaveBeenCalledWith('user'));
+      await waitFor(() => expect(install).toHaveBeenCalledWith('user', undefined, { name: undefined }));
       await waitFor(() => expect(h.openDock).toHaveBeenCalledTimes(1));
       expect(String(h.openDock.mock.calls[0][0].toUrl())).toContain(`/project/${PID}`);
       expect(setup).not.toHaveBeenCalled();
@@ -346,6 +346,93 @@ describe('MessageEntityChip — project reference', () => {
       expect(h.openDock).not.toHaveBeenCalled();
       fireEvent.click(screen.getByTestId('project-install-retry'));
       expect(actionState()).toBe('install');
+    });
+
+    it("a refused install shows the server's reason, not the HTTP status line", async () => {
+      vi.spyOn(MessageAttachment.prototype, 'install').mockRejectedValue(
+        Object.assign(new Error('Request failed with status code 500'), {
+          response: { status: 500, data: { status: 'FAIL', message: 'install failed: disk full' } },
+        }),
+      );
+      renderChip(PROJECT_TID, stagedProject());
+      fireEvent.click(genericChip());
+
+      fireEvent.click(screen.getByTestId('project-install-button'));
+
+      await waitFor(() => expect(actionState()).toBe('error'));
+      expect(screen.getByTestId('project-install-error').textContent).toContain('install failed: disk full');
+      expect(screen.getByTestId('project-install-error').textContent).not.toContain('status code 500');
+    });
+
+    describe('the shared name is already a project here', () => {
+      const EXISTING = '55555555-5555-4555-8555-555555555555';
+      const nameTaken = () =>
+        Object.assign(new Error('Request failed with status code 409'), {
+          response: {
+            status: 409,
+            data: {
+              status: 'FAIL',
+              message: "you already have a project named 'Apollo'",
+              data: {
+                project_name_conflict: true,
+                attempted_name: 'Apollo',
+                suggested_name: 'Apollo-2',
+                existing_project_id: EXISTING,
+              },
+            },
+          },
+        });
+
+      async function hitNameTaken() {
+        renderChip(PROJECT_TID, stagedProject());
+        fireEvent.click(genericChip());
+        fireEvent.click(screen.getByTestId('project-install-button'));
+        await waitFor(() => expect(actionState()).toBe('name-taken'));
+      }
+
+      it('asks the receiver instead of failing', async () => {
+        vi.spyOn(MessageAttachment.prototype, 'install').mockRejectedValue(nameTaken());
+        await hitNameTaken();
+
+        expect(screen.getByTestId('project-name-taken').textContent).toContain('Apollo');
+        expect(screen.getByDisplayValue('Apollo-2')).toBe(screen.getByTestId('project-name-taken-input'));
+        expect(screen.queryByTestId('project-install-error')).toBeNull();
+        expect(h.openDock).not.toHaveBeenCalled();
+      });
+
+      it('Open my project lands in the project they already have', async () => {
+        vi.spyOn(MessageAttachment.prototype, 'install').mockRejectedValue(nameTaken());
+        await hitNameTaken();
+
+        fireEvent.click(screen.getByTestId('project-name-taken-open'));
+
+        expect(h.openDock).toHaveBeenCalledTimes(1);
+        expect(String(h.openDock.mock.calls[0][0].toUrl())).toContain(`/project/${EXISTING}`);
+      });
+
+      it('Install as this name installs under the name they chose, then lands in the shared project', async () => {
+        const install = vi
+          .spyOn(MessageAttachment.prototype, 'install')
+          .mockRejectedValueOnce(nameTaken())
+          .mockResolvedValueOnce(null);
+        await hitNameTaken();
+
+        fireEvent.change(screen.getByTestId('project-name-taken-input'), { target: { value: 'Apollo (shared)' } });
+        fireEvent.click(screen.getByTestId('project-name-taken-install'));
+
+        await waitFor(() => expect(install).toHaveBeenLastCalledWith('user', undefined, { name: 'Apollo (shared)' }));
+        await waitFor(() => expect(h.openDock).toHaveBeenCalledTimes(1));
+        expect(String(h.openDock.mock.calls[0][0].toUrl())).toContain(`/project/${PID}`);
+      });
+
+      it('Cancel returns to Install', async () => {
+        vi.spyOn(MessageAttachment.prototype, 'install').mockRejectedValue(nameTaken());
+        await hitNameTaken();
+
+        fireEvent.click(screen.getByTestId('project-name-taken-cancel'));
+
+        expect(actionState()).toBe('install');
+      });
     });
 
     it('a project already cloned here (email link) still offers Clone & Open, to record the install', () => {

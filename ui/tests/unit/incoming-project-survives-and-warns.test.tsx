@@ -16,6 +16,10 @@ vi.mock('@src/components/project-selector', () => ({
   useCloneGitProjectAndOpen: () => vi.fn(),
   useInstallSharedProjectAndOpen: () => vi.fn(),
 }));
+vi.mock('@src/components/project-selector/use-ensure-project', () => ({ useSelectExistingProject: () => vi.fn() }));
+vi.mock('@src/navigation/useDockNavigation', () => ({
+  useDockNavigation: () => ({ navigation: { openDock: vi.fn() }, currentDock: null }),
+}));
 vi.mock('@src/hooks/use-projects', () => ({ useProjects: () => ({ projects: h.projects }) }));
 
 import { IncomingProjectDialog } from '@src/components/task-receive/IncomingProjectDialog';

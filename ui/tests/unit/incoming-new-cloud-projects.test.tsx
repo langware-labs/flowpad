@@ -70,6 +70,23 @@ describe('IncomingDeepLink — hub projects this desktop never saw', () => {
     expect(newFromHub).toHaveBeenCalledTimes(1);
   });
 
+  it('a project whose name is taken here is offered with the choice', async () => {
+    const MINE = '33333333-3333-4333-8333-333333333333';
+    vi.spyOn(Project, 'newFromHub').mockResolvedValue([
+      { ...link(A, 'course'), existing_project_id: MINE, suggested_name: 'course-2' },
+    ]);
+    vi.spyOn(Project, 'getById').mockResolvedValue(null);
+
+    render(<IncomingDeepLink />);
+
+    await vi.waitFor(() =>
+      expect(pending()).toMatchObject({
+        projectId: A,
+        nameTaken: { existingProjectId: MINE, suggestedName: 'course-2' },
+      }),
+    );
+  });
+
   it('signed out, asks nothing — and asks once the session signs in', async () => {
     h.cloudUser = null;
     const newFromHub = vi.spyOn(Project, 'newFromHub').mockResolvedValue([link(A, 'Course A')]);
