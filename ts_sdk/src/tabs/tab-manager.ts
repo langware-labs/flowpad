@@ -285,15 +285,12 @@ export class TabManager {
     return result;
   }
 
-  /** Report a tab event to view-mode memory, against the tab's target and project. */
+  /** Report a tab event to view-mode memory, against the tab's target. */
   recordViewModeEvent(tab: Tab, event: ViewModeEvent, mode: string | null | undefined): void {
     if (!mode || !viewModeMemory.wants(event)) return;
     viewModeMemory.record(
       event,
-      {
-        tab: viewModeMemory.targetFor(this.typeIdOrNull(tab.target_type, tab.target_id)),
-        project: viewModeMemory.targetFor(this.typeIdOrNull(EntityTypes.Project, tab.project_id)),
-      },
+      { tab: viewModeMemory.targetFor(this.typeIdOrNull(tab.target_type, tab.target_id)) },
       mode,
     );
   }

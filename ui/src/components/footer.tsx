@@ -1,5 +1,4 @@
 import { Trans, useLingui } from '@lingui/react/macro';
-import { ViewToggle } from '@src/components/view-toggle/view-toggle';
 import { LanguageSelector } from '@src/components/footer/LanguageSelector';
 import { PendingActionsChip } from '@src/components/footer/PendingActionsChip';
 import { ActivityStatusPill } from '@src/components/footer/ActivityStatusPill';
@@ -10,7 +9,7 @@ import { StatusBar } from '@src/components/status-bar';
 import { FundingChip } from '@src/components/funding-chip/FundingChip';
 import { VersionPopover } from '@src/components/version-popover';
 import { HubReleaseLabel } from '@src/components/version-popover/hub-release-label';
-import { AdvancedOnly, useIsVibe } from '@src/components/view-mode';
+import { AdvancedOnly } from '@src/components/view-mode';
 import { WarningsPopover } from '@src/components/warnings-popover';
 import { PrivacyModePopover } from '@src/components/privacy-mode/privacy-mode-popover';
 import { SubAgent, TypeId } from '@sdk';
@@ -51,11 +50,9 @@ export function Footer({ className = '' }: FooterProps) {
   const { version, project } = useContext();
   const { t } = useLingui();
   const { agentId } = useParams();
-  const isVibe = useIsVibe();
   // Same signal the rail uses (`collapsed-sidebar.tsx`), NOT `isHubOnly()`: this
   // must also hold when a desktop is showing the hub page, and that case has a
-  // desk-serving backend. It hides the view-mode toggle (modes drive the DESK rail
-  // matrix and Assets browseability; the hub rail bypasses both) and Help desk
+  // desk-serving backend. It hides Help desk
   // (desk-only actions — `helpdesk-ticket-list` 404s on the hub, so the button
   // could only fail). `useCurrentDock`, not `useDockNavigation`: only the page id
   // is needed, and the latter also builds a NavigationActions and rewrites the
@@ -81,10 +78,12 @@ export function Footer({ className = '' }: FooterProps) {
     >
       <style>{FOOTER_COLLAPSE_STYLE}</style>
       <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 sm:flex-nowrap sm:justify-between">
-        {/* View toggle + Data-privacy mode + Warnings icons on the left */}
+        {/* Data-privacy mode + Warnings icons on the left. No mode selector: a
+            mode belongs to a session, and its switch lives in that session. */}
         <div className="flex shrink-0 items-center gap-1">
-          {!hubMode && <ViewToggle />}
-          {!isVibe && <PrivacyModePopover />}
+          <AdvancedOnly reserve={false}>
+            <PrivacyModePopover />
+          </AdvancedOnly>
           <WarningsPopover />
         </div>
 

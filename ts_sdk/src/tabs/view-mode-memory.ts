@@ -37,18 +37,14 @@ export interface ViewModeStorePolicy {
   project: ViewModeStore;
 }
 
-// A tab's mode is decided ONCE, when its row is created, and changes only by a
-// switch. A session opened in Terminal must resume in Terminal after a project
-// switch; under `ModeSwitch` a never-toggled session had no memory, and the
-// resume inherited whatever mode was on screen — which turned a terminal into a
-// Vibe tab (2026-10-10). The create event carries the dock's STATED mode, so
-// this rests on the shell loader stating one before the tab is minted; a row
-// from before this policy keeps no memory until a switch and opens in the
-// loader's default. The project scope stays switch-only: opening tabs must not
-// churn it.
+// A session tab remembers the mode it was last SHOWN in: stated when its row is
+// created, restated whenever it is opened in another mode (an address, a switch,
+// Back/Forward), so leaving a tab and coming back never changes it. The stamp's
+// equality guard keeps a plain reopen from costing a save. A project remembers
+// no mode — only a session has one.
 export const VIEW_MODE_STORE: ViewModeStorePolicy = {
-  tab: ViewModeStore.TabCreate,
-  project: ViewModeStore.ModeSwitch,
+  tab: ViewModeStore.TabOpen,
+  project: ViewModeStore.Never,
 };
 
 /** Anything that remembers a mode — `Project` and `AgenticProcess` both fit. */

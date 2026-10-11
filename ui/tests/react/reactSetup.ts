@@ -162,8 +162,7 @@ console.error = (...args: any[]) => {
 // stored `view_mode = "dev"`, which reads as on) handed it to the next file, whose
 // Advanced/Dev-gated assertions then flipped with the file order (CI: WorkerToolbar
 // rendered every worker). Every FILE starts with Dev off; within a file, tests own
-// their sequence (project-view-mode-memory carries a stored `dev` across tests on
-// purpose). Written only when on, so the common case costs no preference save.
+// their sequence. Written only when on, so the common case costs no preference save.
 // Read through the SDK store by its own module paths — files mock both
 // view-mode-context and the `@sdk` barrel, and a mock replaces exactly that id.
 beforeAll(async () => {

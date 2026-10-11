@@ -74,7 +74,8 @@ describe('resolveDockLayout', () => {
 
   it('no dock is the home', () => {
     expect(resolveDockLayout({ dock: null, isVibe: true, hasVibeSession: false }).layout).toBe(DockLayout.VIBE_NEW_CHAT);
-    expect(resolveDockLayout({ dock: null, isVibe: false, hasVibeSession: false }).layout).toBe(DockLayout.CONTENT);
+    // …in every mode: there is one home, and it has no mode of its own.
+    expect(resolveDockLayout({ dock: null, isVibe: false, hasVibeSession: false }).layout).toBe(DockLayout.VIBE_NEW_CHAT);
   });
 
   it('answers for every URL family in the grammar fixture, in every mode', () => {
