@@ -1,6 +1,16 @@
-import { useMemo } from 'react';
-import { QueryRequest, Team, TypeId, type AnyEntity, type ConversationParticipant } from '@sdk';
+import { useEffect, useMemo, useState } from 'react';
+import {
+  getMembers,
+  normalizeEmail,
+  QueryRequest,
+  Team,
+  TypeId,
+  type AnyEntity,
+  type ConversationParticipant,
+  type EntityMember,
+} from '@sdk';
 import { useEntitiesQuery } from '@src/hooks/entity-hooks';
+import { isGroupMember } from '@src/components/organization/member-roles';
 
 /** A team the sharer can share with as a whole (R2). */
 export interface TeamSuggestion {
@@ -30,7 +40,7 @@ export function knownTeams(teams: KnownTeam[]): TeamSuggestion[] {
 }
 
 /** Filter teams by a name query (case-insensitive). Empty → all. */
-export function filterTeams(teams: TeamSuggestion[], query: string): TeamSuggestion[] {
+export function filterTeams<T extends TeamSuggestion>(teams: T[], query: string): T[] {
   const q = query.trim().toLowerCase();
   if (!q) return teams;
   return teams.filter((t) => t.name.toLowerCase().includes(q));
@@ -59,6 +69,17 @@ export function teamParticipant(team: TeamSuggestion): ConversationParticipant {
   };
 }
 
+/**
+ * A team's roster as the PEOPLE to message — for surfaces that address people,
+ * not principals (a new conversation). Nested group rows (a sub-team, an org)
+ * and rows with no address are dropped; only who the roster names directly is sent.
+ */
+export function teamMemberParticipants(roster: EntityMember[]): ConversationParticipant[] {
+  return roster
+    .filter((m) => !isGroupMember(m) && (m.user_id || m.email))
+    .map((m) => ({ user_id: m.user_id ?? null, email: normalizeEmail(m.email), name: m.name ?? null }));
+}
+
 export function isTeamParticipant(p: ConversationParticipant): boolean {
   return p.kind === Team.type && typeof p.typeid === 'string' && p.typeid.length > 0;
 }
@@ -84,4 +105,50 @@ export function useTeamSuggestions(enabled: boolean): { teams: TeamSuggestion[] 
   const { data: rows } = useEntitiesQuery<AnyEntity>(request, { enabled });
   const teams = useMemo(() => (enabled ? knownTeams((rows ?? []) as KnownTeam[]) : []), [enabled, rows]);
   return { teams };
+}
+
+/** A team the user may message: its roster, already read, as the people to add. */
+export interface MessageableTeam extends TeamSuggestion {
+  members: ConversationParticipant[];
+}
+
+/**
+ * The teams the user may message as a whole — those whose roster the hub let
+ * them read. A roster the hub refuses comes back EMPTY (the local server falls
+ * back to its cache), never as an error, and a readable roster always names at
+ * least the reader — so "someone besides me" is the permission signal. Such a
+ * team is not offered at all. One ``members`` read per team, while ``enabled``.
+ */
+export function useMessageableTeams(enabled: boolean, excludeUserId?: string | null): { teams: MessageableTeam[] } {
+  const { teams } = useTeamSuggestions(enabled);
+  const [rosters, setRosters] = useState<Map<string, ConversationParticipant[]>>(() => new Map());
+  const teamIds = useMemo(() => teams.map((t) => t.id).join(','), [teams]);
+
+  useEffect(() => {
+    if (!enabled || !teamIds) return;
+    let live = true;
+    void Promise.all(
+      teamIds.split(',').map(async (id): Promise<[string, ConversationParticipant[]]> => {
+        try {
+          return [id, teamMemberParticipants(await getMembers(new TypeId(Team.type, id)))];
+        } catch {
+          return [id, []];
+        }
+      }),
+    ).then((entries) => {
+      if (live) setRosters(new Map(entries));
+    });
+    return () => {
+      live = false;
+    };
+  }, [enabled, teamIds]);
+
+  return useMemo(
+    () => ({
+      teams: teams
+        .map((t) => ({ ...t, members: (rosters.get(t.id) ?? []).filter((m) => m.user_id !== excludeUserId) }))
+        .filter((t) => t.members.length > 0),
+    }),
+    [teams, rosters, excludeUserId],
+  );
 }

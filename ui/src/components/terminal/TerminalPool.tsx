@@ -1,15 +1,17 @@
-import { tabKey, tabManager } from '@sdk';
+import { AgenticProcess, isProcessEnded, tabKey, tabManager, TypeId } from '@sdk';
+import { useEntity } from '@src/hooks/entity-hooks';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { useTerminalTabs } from '@src/tabs/use-tab-manager';
-import { useCallback, useEffect, useMemo, useSyncExternalStore } from 'react';
+import { Fragment, memo, useCallback, useEffect, useMemo, useSyncExternalStore } from 'react';
 import { createPortal } from 'react-dom';
 import { terminalPool, type TerminalPoolSnapshot } from './terminal-pool';
 import { TerminalPanel } from './TerminalPanel';
 
 /**
  * Owns every terminal runtime for the life of its TAB (docs/navigation/dock-loading.md,
- * I6). Mounted once, above every layout (RootLayout), so no layout swap can unmount
- * a panel. Each panel renders through a portal into the pool's container for its
+ * I6) — except an ENDED agent's, which is given back once its tab is not the one shown
+ * (`ReleaseWhenEnded`). Mounted once, above every layout (RootLayout), so no layout swap
+ * can unmount a panel. Each panel renders through a portal into the pool's container for its
  * key; all containers share one stack, which sits in whichever `TabbedTerminal`
  * slot showed last — or, with none on screen, in the parking element below.
  *
@@ -70,12 +72,53 @@ function PooledPanels({ snapshot }: { snapshot: TerminalPoolSnapshot }) {
         .filter((tab) => snapshot.mounted.has(tabKey(tab)))
         .map((tab) => {
           const key = tabKey(tab);
-          return createPortal(
-            <TerminalPanel tab={tab} isActive={snapshot.shown.has(key) && key === urlKey} />,
-            terminalPool.container(key),
-            key,
+          return (
+            <Fragment key={key}>
+              {tab.target_type === AgenticProcess.type && !!tab.target_id && (
+                <ReleaseWhenEnded
+                  tabHash={key}
+                  processId={tab.target_id}
+                  shown={snapshot.shown.has(key) || key === urlKey}
+                />
+              )}
+              {createPortal(
+                <TerminalPanel tab={tab} isActive={snapshot.shown.has(key) && key === urlKey} />,
+                terminalPool.container(key),
+              )}
+            </Fragment>
           );
         })}
     </>
   );
 }
+
+/**
+ * The narrowing of I6: an agent whose process has ENDED (stopped / failed) has no PTY left to
+ * follow, so its pooled terminal — xterm, sync session, the panel's whole tree — is given back
+ * as soon as its tab is not the one shown: the process ends behind another tab, or the user
+ * leaves a tab whose process already ended. The tab, its URL and its chip stay; the next visit
+ * mounts the panel cold, which starts the agent again and replays its recording, exactly as a
+ * reopened tab does.
+ *
+ * Never given back: the panel a slot shows or the URL names, a running (or not yet started)
+ * process, a plain shell (no process), and a headless chat — it holds no terminal, and
+ * remounting a long chat is the seconds-long redraw the pool exists to avoid.
+ *
+ * Lives beside the panel, not inside it: the decision must not depend on the tree it unmounts.
+ */
+const ReleaseWhenEnded = memo(function ReleaseWhenEnded({
+  tabHash,
+  processId,
+  shown,
+}: {
+  tabHash: string;
+  processId: string;
+  shown: boolean;
+}) {
+  const { data: process } = useEntity<AgenticProcess>(new TypeId(AgenticProcess.type, processId));
+  const ended = !!process?.status && isProcessEnded(process.status) && !process.isHeadless;
+  useEffect(() => {
+    if (ended && !shown) terminalPool.release(tabHash);
+  }, [ended, shown, tabHash]);
+  return null;
+});

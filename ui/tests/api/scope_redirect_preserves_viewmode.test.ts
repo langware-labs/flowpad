@@ -12,7 +12,7 @@
  * asserts the thrown redirect Response carries the project scope and every
  * unrelated query option.
  */
-import { AgenticProcess } from '@sdk';
+import { AgenticProcess, instancePreferences, PrefKey } from '@sdk';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -71,8 +71,8 @@ describe('api: scope-align redirect preserves query options', () => {
   }, 15000);
 
   // A bare session URL states the session's own mode in its one identity redirect: what it was
-  // opened in, else Standard — never the mode on screen (001fd536e).
-  it('standard entry (no viewMode) redirects stating the session\'s own mode: Standard', async () => {
+  // opened in, else the last mode the user selected — never the mode on screen (001fd536e).
+  it('standard entry (no viewMode) redirects stating the last selected mode', async () => {
     const id = uuidv4();
     const projectId = uuidv4();
     await new AgenticProcess({
@@ -82,6 +82,7 @@ describe('api: scope-align redirect preserves query options', () => {
       project_id: projectId,
     } as any).save();
 
+    instancePreferences.set(PrefKey.VIEW_MODE, 'standard');
     const redirect = await captureRedirect(() => loadShellRoute(`agentic_process-${id}`, '/dock/shell'));
 
     expect(redirect).not.toBeNull();

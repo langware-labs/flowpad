@@ -30,6 +30,7 @@ import { AgentCredentialsSection } from './AgentCredentialsSection';
 import { AgentSchedulesSection } from './AgentSchedulesSection';
 import { useQuickCreatePick } from '@src/components/quick-create';
 import { SetupStagesButton } from '@src/components/setup-wizard/SetupStagesButton';
+import { SourceSetupButton } from '@src/components/data-sources/SourceSetupButton';
 
 /** Stable while loading — a fresh `[]` per render would re-run the row memo. */
 const NO_SOURCES: DataSource[] = [];
@@ -186,7 +187,11 @@ export function AgentResourcesBody() {
         testId={`agent-resource-row-${row.key}`}
         action={
           <>
-            <SetupStagesButton source={row.source} spec={specFor(row.source.provider)} />
+            {row.source.needsSetup ? (
+              <SourceSetupButton source={row.source} />
+            ) : (
+              <SetupStagesButton source={row.source} spec={specFor(row.source.provider)} />
+            )}
             <IconButton
               icon={Trash2}
               label={t`Delete ${row.label}`}

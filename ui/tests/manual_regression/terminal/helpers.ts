@@ -84,13 +84,22 @@ export async function dismissSetupModal(page: Page) {
 }
 
 /**
- * Force Advanced through the real footer control. The control navigates to the
- * same dock with `?viewMode=advanced`; the loader then owns preference/project
- * adoption. This also replaces a conflicting URL override instead of mutating
- * the preference underneath it.
+ * Put the tab on the Terminal surface AND turn the developer switch on.
+ * Since host tabs (71e9272c6) "Advanced" is not a view mode: the footer control
+ * only picks the surface, and every advanced-only piece of UI (the ribbon's
+ * power-user side tabs, the annotation gutter) follows the Dev switch
+ * (`useIsAdvanced() === useIsDev()`). The switch is flipped through the app's
+ * own `window.setDev`, the same call the avatar double-click makes.
  */
 export async function ensureAdvancedView(page: Page) {
+  // The footer control acts on the dock the APP has committed, which trails the
+  // address bar by a render after a tab opens: clicked in that gap it re-opens
+  // the PREVIOUS tab in the requested mode. Act once the active panel is the
+  // one the URL names.
+  const pointer = new URL(page.url()).pathname.match(/\/dock\/shell\/((?:shell|agentic_process)-[0-9a-f-]+)/)?.[1];
+  if (pointer) await expect(activePanel(page)).toHaveAttribute('data-session-id', pointer);
   await selectViewMode(page, 'advanced');
+  await page.evaluate(() => window.setDev(true));
 }
 
 /**

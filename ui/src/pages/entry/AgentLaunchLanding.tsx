@@ -107,7 +107,14 @@ export default function AgentLaunchLanding({ params }: { params: URLSearchParams
         }
       : null;
 
-  const path = plan ? launchPlanToPath(plan) : '';
+  // The desktop needs no target from here: a controller sent without one asks, in the app, which
+  // project on that machine to work on — so a project that is nowhere in the cloud can be used.
+  const desktopPlan: LaunchPlan | null =
+    plan ??
+    (controllerId
+      ? { target: { local: null }, controllerId, ...(kind === 'agent' && linkId ? { agentId: linkId } : {}) }
+      : null);
+  const path = desktopPlan ? launchPlanToPath(desktopPlan) : '';
   const openInFlowpad = useOpenInFlowpad(path);
 
   const signIn = async () => {
@@ -171,7 +178,7 @@ export default function AgentLaunchLanding({ params }: { params: URLSearchParams
   // The browser asks before it hands a link to an app, and takes as long as the person does:
   // the page waits for that, and never decides for them that nothing opened.
   const launchOnDesktop = () => {
-    if (!plan) return;
+    if (!desktopPlan) return;
     setDesktop('opening');
     void openInFlowpad().finally(() => setDesktop('waiting'));
   };
@@ -210,8 +217,8 @@ export default function AgentLaunchLanding({ params }: { params: URLSearchParams
       : repoUrl.trim()
         ? t`That isn't a repository URL.`
         : candidates.length
-          ? t`Pick the project it should work on, or paste a repository URL.`
-          : t`You have no projects here yet. Paste a repository URL.`;
+          ? t`For the cloud, pick the project it should work on or paste a repository URL. On your desktop you pick a project in FlowPad.`
+          : t`You have no projects in the cloud. Paste a repository URL — or launch in your desktop and pick a project there.`;
   const locked = cloud !== 'idle';
   const errorClass = 'mt-4 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs';
 
@@ -350,7 +357,7 @@ export default function AgentLaunchLanding({ params }: { params: URLSearchParams
               <div className="flex gap-2">
                 <Button
                   className="flex-1 gap-1.5"
-                  disabled={!plan || locked || desktop === 'opening'}
+                  disabled={!desktopPlan || locked || desktop === 'opening'}
                   onClick={launchOnDesktop}
                   data-testid="launch-desktop"
                 >

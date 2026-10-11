@@ -38,7 +38,7 @@ let initialLocale: string;
 
 /** The URL the vibe home switch navigates to. */
 const vibeHomeUrl = (projectId: string) =>
-  `http://localhost/?scope-mode=project&scope-activeProjectId=${projectId}&viewMode=vibe`;
+  `http://localhost/?scope-mode=project&scope-activeProjectId=${projectId}`;
 
 async function runHomeLoader(projectId: string): Promise<void> {
   try {

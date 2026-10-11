@@ -121,6 +121,9 @@ const AssetListView = lazy(() =>
 const DataSourcesView = lazy(() =>
   import('@src/components/data-sources/DataSourcesView').then((m) => ({ default: m.DataSourcesView })),
 );
+const SchemaTreeView = lazy(() =>
+  import('@src/components/schema-tree/SchemaTreeView').then((m) => ({ default: m.SchemaTreeView })),
+);
 const RagView = lazy(() => import('@src/components/rag/RagView').then((m) => ({ default: m.RagView })));
 const RunsView = lazy(() => import('@src/components/runs/RunsView').then((m) => ({ default: m.RunsView })));
 const SurveyView = lazy(() => import('@src/components/survey/SurveyView').then((m) => ({ default: m.SurveyView })));
@@ -251,7 +254,10 @@ function ContentPanelBody({
   // Chrome-less either because the host asked (embedded, e.g. the vibe display
   // pane) or a Vibe creator surface. No longer vibe-only — hence `suppressChrome`.
   const isVibe = useIsVibe();
-  const suppressChrome = minimalChrome || (isVibe && VIBE_CREATOR_SURFACES.has(bodyViewType));
+  // Only a dock that HAS a mode (a session, or a child its workspace hosts) can
+  // be a Vibe creator surface; an ordinary page keeps its navigator and framing.
+  const suppressChrome =
+    minimalChrome || (isVibe && !!currentDock?.carriesViewMode && VIBE_CREATOR_SURFACES.has(bodyViewType));
 
   // Chrome-less when the surface is full-bleed (Home — a welcome landing, not a
   // tabbed workspace), in the win/ focus layout, or a Vibe creator surface.
@@ -503,6 +509,12 @@ function ContentPanelBody({
         return (
           <Suspense fallback={<PrimaryContentFallback />}>
             <DataSourcesView />
+          </Suspense>
+        );
+      case ViewType.SCHEMA_TREE:
+        return (
+          <Suspense fallback={<PrimaryContentFallback />}>
+            <SchemaTreeView />
           </Suspense>
         );
       case ViewType.RAG:

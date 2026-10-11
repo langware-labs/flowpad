@@ -5,6 +5,17 @@ title: View Modes
 
 # View Modes — Vibe / Standard / Advanced / Dev "skin" system
 
+> **2026-10-11 — a mode belongs to a session tab.** The footer selector is gone and
+> there is no app-wide mode. Only a session dock (`/dock/shell/agentic_process-…`,
+> `/dock/vibe/…`) and a child its workspace hosts carry `?viewMode`; every other page
+> drops it (`DockPointer.carriesViewMode`) and has one look. The home is always the
+> tabless Vibe hero. A session's tab remembers the mode it was last shown in
+> (`AgenticProcess.last_mode`, `VIEW_MODE_STORE.tab = TabOpen`); a session with no
+> memory opens in the last mode the user selected with a session's own switch
+> (`lastSelectedViewMode()`). Sections below that describe the footer control or
+> `Project.last_mode` are history.
+
+
 A single global flag, **View mode**, lets a user dial the whole UI across four
 tiers: **Vibe** (creator workspace, the default) ⊂ **Standard** (calm, minimal) ⊂
 **Advanced** (power-user) ⊂ **Dev** (full developer internals). It is picked from

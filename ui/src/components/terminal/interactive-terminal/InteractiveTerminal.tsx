@@ -182,8 +182,8 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
   const process = subscribedProcess ?? suppliedProcess;
   const { navigation, currentDock } = useDockNavigation();
   const { resolvedTheme } = useTheme();
-  // Skin layer: the view mode's SURFACE decides which pane shows (the footer
-  // ViewToggle is the selector). The xterm stays mounted underneath the chat
+  // Skin layer: the view mode's SURFACE decides which pane shows (the session's
+  // own switch is the selector). The xterm stays mounted underneath the chat
   // overlay (same session, same PTY — see SimpleChatPane), so switching is
   // instant and never resets the terminal. Embedded terminals (chat side panel)
   // and shell-only tabs (no AgenticProcess) always keep the xterm.
@@ -277,6 +277,10 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
   // The process ended (stopped / failed): no PTY to follow until it runs again, so the view gives
   // back what a live session holds — its watch, its output subscription, the shell's chunk window.
   // A plain shell (no process) and a process that has not started are not "ended".
+  // This is the TERMINAL's hold only. In chat mode the chat pane's own hooks keep the process
+  // watched after it ends, by design: "stopped" is a chat's resting state, and the watch is what
+  // carries another window's status change and the watcher-only progress stream. A watch on an
+  // ended process costs nothing — pushes are event-driven and nothing flows for it.
   const processEnded = !!process?.status && isProcessEnded(process.status);
 
   // Live failed-to-start latch → banner. The loader only classifies a latched

@@ -1,0 +1,28 @@
+{
+  "schema": 1,
+  "kind": "policy-blocked",
+  "fatal": true,
+  "repairable": true,
+  "reason": "Windows application control blocked the Python module \"_multiprocessing\" (Smart App Control or an organization's application-control policy decides this per file). Restarting the server cannot change that.",
+  "module": "_multiprocessing",
+  "excerpt": "ImportError: DLL load failed while importing _multiprocessing: An Application Control policy has blocked this file.",
+  "traceback": "Traceback (most recent call last):\n  File \"<frozen runpy>\", line 198, in _run_module_as_main\n  File \"C:\\Users\\nava\\AppData\\Roaming\\uv\\tools\\flowpad\\Lib\\site-packages\\flow_sdk\\server\\run.py\", line 12, in <module>\n    import uvicorn\n  File \"C:\\Users\\nava\\AppData\\Roaming\\uv\\tools\\flowpad\\Lib\\site-packages\\uvicorn\\__init__.py\", line 1, in <module>\n    from uvicorn.config import Config\n  File \"C:\\Users\\nava\\AppData\\Roaming\\uv\\python\\cpython-3.11.17-windows-x86_64-none\\Lib\\multiprocessing\\connection.py\", line 22, in <module>\n    import _multiprocessing\nImportError: DLL load failed while importing _multiprocessing: An Application Control policy has blocked this file.",
+  "source": "server-log",
+  "exit_code": 1,
+  "evidence": {
+    "file": "C:\\Users\\nava\\AppData\\Roaming\\uv\\python\\cpython-3.11.17-windows-x86_64-none\\Lib\\multiprocessing\\connection.py",
+    "enforced": true
+  },
+  "attempts": 3,
+  "restarts_stopped": true,
+  "fingerprint": {
+    "hash": "8323742732a5f3fc",
+    "python": "C:\\Users\\nava\\AppData\\Roaming\\uv\\tools\\flowpad\\Scripts\\python.exe",
+    "engine_version": "0.2.203",
+    "platform": "win32-amd64"
+  },
+  "engine_version": "0.2.203",
+  "server_log": "C:\\Users\\nava\\.flow\\instances\\prod\\logs\\server\\10Oct2026_13_27_05.log",
+  "at": "2026-10-10T10:27:03+00:00",
+  "monitor_pid": 9808
+}

@@ -34,8 +34,8 @@ export function activeDisplayDock(
   // un-rebased document would hijack that scope's existing Assets tab and rename it
   // instead of getting an identity of its own.
   return DockPointer.rebaseAssetsOntoProject(dock, projectId)
-    .withViewMode(ViewMode.Vibe)
     .withHost(host)
+    .withViewMode(ViewMode.Vibe)
     .withActiveDisplay(true);
 }
 

@@ -291,10 +291,9 @@ msgstr ""
 msgid "{0} — not downloaded (the link expired)"
 msgstr ""
 
-#. placeholder {0}: LABELS[m]
 #: src/components/view-toggle/view-toggle.tsx
-msgid "{0} — not while the agent is working"
-msgstr "{0} — לא בזמן שהסוכן עובד"
+#~ msgid "{0} — not while the agent is working"
+#~ msgstr "{0} — לא בזמן שהסוכן עובד"
 
 #. placeholder {0}: directCleanup.title
 #: src/routes/loaders/load-shell.ts
@@ -392,6 +391,11 @@ msgstr "לא ניתן היה לעדכן את {0} עבור פרויקט זה."
 #: src/components/machine-overview/service-status-led.tsx
 msgid "{0} current · {1} stale · {2} partial · {3} error"
 msgstr "{0} עדכני · {1} מיושן · {2} חלקי · {3} שגיאה"
+
+#. placeholder {0}: root.sources.length
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "{0} data sources"
+msgstr ""
 
 #. placeholder {0}: connection.provider
 #. placeholder {0}: row.title
@@ -686,6 +690,11 @@ msgstr "רשומות בדיסק"
 msgid "{0} saved"
 msgstr ""
 
+#. placeholder {0}: root.kinds.length
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "{0} schemas"
+msgstr ""
+
 #. placeholder {0}: secrets.length
 #. placeholder {1}: secrets.length === 1 ? '' : 's'
 #: src/components/account/secrets-section.tsx
@@ -699,6 +708,7 @@ msgstr "{0} סוד{1}"
 #: src/components/data-sources/ChoiceField.tsx
 #: src/components/graph-context/GraphContextViewer.tsx
 #: src/components/navigator-panel/SelectionActionBar.tsx
+#: src/components/project-setup/ProjectSetupDialog.tsx
 #: src/components/terminal/HistoryModal.tsx
 msgid "{0} selected"
 msgstr "{0} נבחרו"
@@ -823,10 +833,18 @@ msgstr "{count} {0} מצורפים"
 msgid "{count} pending change(s) — click to view diff"
 msgstr "{count} שינויים ממתינים — לחצו להצגת ההבדלים"
 
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "{count} rows"
+msgstr ""
+
 #. placeholder {0}: selected.displayName ?? selected.name
 #: src/components/assets/editor/task/GroupTaskDialog.tsx
 msgid "{created} member task(s) created for \"{0}\"."
 msgstr "נוצרו {created} משימות חברים עבור \"{0}\"."
+
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "{datasets} datasets"
+msgstr ""
 
 #: src/components/assets/editor/agent-profile/AgentScheduleSection.tsx
 msgid "{day} at {time}"
@@ -1093,6 +1111,10 @@ msgstr ""
 #~ msgid "{replyCount, plural, one {# reply} other {# replies}}"
 #~ msgstr ""
 
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "{rows} rows"
+msgstr ""
+
 #: src/components/automations/automation-words.ts
 msgid "{s}s"
 msgstr ""
@@ -1268,8 +1290,13 @@ msgid "<0>{senderName}</0> shared <1>{taskTitle}</1> with you."
 msgstr "<0>{senderName}</0> שיתף אתך את <1>{taskTitle}</1>."
 
 #: src/components/task-receive/IncomingProjectDialog.tsx
+#: src/components/task-receive/IncomingProjectDialog.tsx
 msgid "<0>{senderName}</0> shared a project with you"
 msgstr "פרויקט שותף איתך על ידי <0>{senderName}</0>"
+
+#: src/components/task-receive/IncomingProjectDialog.tsx
+msgid "<0>{takenAgain}</0> is taken too. Choose another name."
+msgstr ""
 
 #: src/components/search-index/SweepOrphansDialog.tsx
 msgid "<0>Delete</0> — remove the DB row <1>and</1> the shadow record dir. Reclaims disk space; no recovery path."
@@ -1336,6 +1363,10 @@ msgstr ""
 msgid "1 change not published"
 msgstr ""
 
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "1 data source"
+msgstr ""
+
 #: src/components/status-bar/GitResolveButton.tsx
 msgid "1 file needs merging — let the assistant merge it"
 msgstr ""
@@ -1355,6 +1386,10 @@ msgstr ""
 
 #: src/components/code-editor/SnippetView.tsx
 msgid "1 problem"
+msgstr ""
+
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "1 row"
 msgstr ""
 
 #: src/components/lens-viewer/ClaudeErrorsViewer.tsx
@@ -1563,6 +1598,10 @@ msgstr ""
 
 #: src/components/data-sources/DataSourceDialog.tsx
 msgid "A source is one remote stream — one feed, channel, drive or mailbox. The poller syncs it on the heartbeat."
+msgstr ""
+
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "a source this project does not list"
 msgstr ""
 
 #: src/components/automations/blocks/WhenBlock.tsx
@@ -2856,6 +2895,10 @@ msgstr ""
 msgid "anyone"
 msgstr ""
 
+#: src/components/assets/editor/agent-profile/AgentVisibilitySection.tsx
+msgid "Anyone its project is shared with can launch it from this link. Making the agent public lets everyone see it; launching still needs the project shared with them."
+msgstr ""
+
 #: src/components/terminal/interactive-terminal/EntityShareDialog.tsx
 msgid "Anyone with access can open this {entityType} directly via the link below."
 msgstr "כל אחד עם גישה יכול לפתוח את {entityType} ישירות דרך הקישור למטה."
@@ -2881,6 +2924,7 @@ msgid "Anyone you share with can spend this budget and see what it has cost. The
 msgstr ""
 
 #: src/components/automations/automation-words.ts
+#: src/components/schema-tree/SchemaTreeView.tsx
 msgid "anything"
 msgstr ""
 
@@ -4143,6 +4187,7 @@ msgstr ""
 #: src/components/assets/ProjectPickerModal.tsx
 #: src/components/assets/PushContextFolderDialog.tsx
 #: src/components/contact-picker/CreateContactsGroupDialog.tsx
+#: src/components/conversation/asset-review/ProjectInstallAction.tsx
 #: src/components/credentials/CredentialDialog.tsx
 #: src/components/cron-view/CronForm.tsx
 #: src/components/data-sources/DataSourceDialog.tsx
@@ -4192,6 +4237,7 @@ msgstr ""
 #: src/components/spec-editor/SpecEditor.tsx
 #: src/components/spec-editor/SpecEditor.tsx
 #: src/components/stream-inbox-view/StreamInboxView.tsx
+#: src/components/task-receive/IncomingProjectDialog.tsx
 #: src/components/task-receive/IncomingProjectDialog.tsx
 #: src/components/task-receive/IncomingProjectDialog.tsx
 #: src/components/task-receive/IncomingTaskDialog.tsx
@@ -5002,6 +5048,7 @@ msgstr "משבוט…"
 #: src/components/tabs/TabStrip.tsx
 #: src/components/task-receive/IncomingProjectDialog.tsx
 #: src/components/task-receive/IncomingTaskDialog.tsx
+#: src/components/task-receive/LaunchDialog.tsx
 #: src/components/task-receive/LaunchDialog.tsx
 #: src/components/terminal/interactive-terminal/command-status-viewer/CommandStatusViewer.tsx
 #: src/components/terminal/interactive-terminal/EntityShareDialog.tsx
@@ -7422,6 +7469,14 @@ msgstr ""
 msgid "Data privacy mode"
 msgstr "מצב פרטיות הנתונים"
 
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "data source"
+msgstr ""
+
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "Data source"
+msgstr ""
+
 #~ msgid "Data Source Cursor"
 #~ msgstr "סמן מקור נתונים"
 
@@ -7432,6 +7487,7 @@ msgstr ""
 #: src/components/agent-resources/AgentResourcesBody.tsx
 #: src/components/data-sources/DataSourceDialog.tsx
 #: src/components/data-sources/DataSourcesView.tsx
+#: src/components/schema-tree/SchemaTreeView.tsx
 #: src/components/top-nav-bar/use-entity-breadcrumbs.ts
 #: src/i18n/type-labels.ts
 #: src/types/ViewType.ts
@@ -7463,9 +7519,14 @@ msgstr "סטטיסטיקות מסד נתונים"
 msgid "Database switched"
 msgstr "בסיס נתונים הוחלף"
 
+#: src/components/schema-tree/SchemaTreeView.tsx
 #: src/i18n/type-labels.ts
 msgid "Dataset"
 msgstr "מערך נתונים"
+
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "dataset schema"
+msgstr ""
 
 #: src/components/cron-view/CronForm.tsx
 msgid "Day {d}"
@@ -7657,6 +7718,11 @@ msgstr "ברירות מחדל: page=\"{DEFAULT_PAGE}\", component=\"{DEFAULT_COM
 #: src/components/hooks-manager/TriggerForm.tsx
 msgid "Define the conditions that must match for this trigger to fire"
 msgstr "הגדר את התנאים שחייבים להתאים כדי שטריגר זה יופעל"
+
+#: src/components/schema-tree/SchemaTreeView.tsx
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "Defined in"
+msgstr ""
 
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 msgid "Definition"
@@ -8722,6 +8788,10 @@ msgstr "טיוטה"
 msgid "Drag to pan · scroll to zoom · click a node to read"
 msgstr "גרור כדי להזיז · גלול כדי להגדיל/הקטין · לחץ על צומת כדי לקרוא"
 
+#: src/components/stream-inbox-view/StreamInboxView.tsx
+msgid "Drag to resize"
+msgstr ""
+
 #: src/components/image-annotator/ImageAnnotator.tsx
 msgid "Draw with the pen or arrow, add text boxes, add a caption, then Save to attach the annotated copy."
 msgstr "צייר עם העט או החץ, הוסף תיבות טקסט וכיתוב, ואז שמור כדי לצרף את ההעתק עם ההערות."
@@ -9630,6 +9700,10 @@ msgstr ""
 msgid "everywhere"
 msgstr ""
 
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "Example slots"
+msgstr ""
+
 #: src/components/settings-view/settings-utils.ts
 msgid "Excluded Commands"
 msgstr "פקודות חסומות"
@@ -10239,6 +10313,10 @@ msgstr "הערה בהזנה"
 msgid "Feed Entry"
 msgstr "רשומה בפיד"
 
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "Feeds"
+msgstr ""
+
 #: src/components/floating-chat/toolEventDescriptor.ts
 msgid "Fetch"
 msgstr "אחזור"
@@ -10271,9 +10349,14 @@ msgstr "מביא את הגרסה העדכנית ביותר"
 msgid "Fetching…"
 msgstr "טעינה…"
 
+#: src/components/schema-tree/SchemaTreeView.tsx
 #: src/components/terminal/interactive-terminal/command-status-viewer/CommandStatusViewer.tsx
 msgid "Field"
 msgstr "שדה"
+
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "Fields"
+msgstr ""
 
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
 #: src/components/automations/automation-words.ts
@@ -10501,8 +10584,8 @@ msgid "Finish the setup above first"
 msgstr ""
 
 #: src/components/data-sources/source-attention.ts
-msgid "Finish the step above, then press Verify."
-msgstr "סיימו את השלב שלמעלה, ואז לחצו על אימות."
+#~ msgid "Finish the step above, then press Verify."
+#~ msgstr "סיימו את השלב שלמעלה, ואז לחצו על אימות."
 
 #: src/components/assets/editor/wizard/wizard-texts.ts
 msgid "finishing"
@@ -10748,6 +10831,10 @@ msgstr "המקד את הגרף המקומי כאן"
 msgid "Focused"
 msgstr "במיקוד"
 
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "Fold"
+msgstr ""
+
 #: src/components/open-project-component/project-actions-row.tsx
 msgid "folder"
 msgstr ""
@@ -10755,6 +10842,7 @@ msgstr ""
 #: src/components/data-sources/DataDriversView.tsx
 #: src/components/data-sources/DataDriversView.tsx
 #: src/components/quick-create/ScopeSelection.tsx
+#: src/components/schema-tree/SchemaTreeView.tsx
 #: src/i18n/type-labels.ts
 msgid "Folder"
 msgstr "תיקייה"
@@ -10806,6 +10894,10 @@ msgstr "היקף"
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestFields.tsx
 msgid "For someone with no token source of their own. They spend it by the request id, up to the cap and until it expires."
 msgstr "למי שאין לו מקור טוקנים משלו. הוא משתמש בו לפי מזהה הבקשה, עד התקרה ועד שתוקפו פג."
+
+#: src/pages/entry/AgentLaunchLanding.tsx
+msgid "For the cloud, pick the project it should work on or paste a repository URL. On your desktop you pick a project in FlowPad."
+msgstr ""
 
 #: src/components/settings-view/settings-utils.ts
 msgid "Force a specific authentication method"
@@ -11349,6 +11441,10 @@ msgstr "הרצה בגרף הזרימה"
 msgid "Graph Workflows"
 msgstr "זרימות עבודה גרפיות"
 
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "group"
+msgstr ""
+
 #: src/i18n/type-labels.ts
 msgid "Group"
 msgstr "קבוצה"
@@ -11625,6 +11721,11 @@ msgstr "היסטוריה"
 
 #: src/components/organization/budgets/BudgetHistoryDialog.tsx
 msgid "History of {scopeLabel}’s budget"
+msgstr ""
+
+#: src/components/schema-tree/SchemaTreeView.tsx
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "Holds"
 msgstr ""
 
 #: src/components/project-home/HomeCustomizationCard.tsx
@@ -12282,6 +12383,10 @@ msgstr "הוסף emoji"
 msgid "Insert table"
 msgstr "הוסף טבלה"
 
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "inside"
+msgstr ""
+
 #: src/components/assets/editor/wizard/wizard-texts.ts
 #: src/components/install/AddAssetDialog.tsx
 #: src/components/install/InstallButton.tsx
@@ -12297,6 +12402,10 @@ msgstr "להתקין את {0}?"
 #: src/components/version-popover/version-popover.tsx
 msgid "Install & restart"
 msgstr "התקן והפעל מחדש"
+
+#: src/components/conversation/asset-review/ProjectInstallAction.tsx
+msgid "Install as this name"
+msgstr ""
 
 #: src/components/browseable-tree/adapters/assetContextFoldersRoot.tsx
 msgid "Install dependency"
@@ -12559,6 +12668,10 @@ msgstr "{trimmed} הוזמן."
 #: src/components/account/system-diagnoses.tsx
 msgid "Issue diagnoses recorded by the assistant. Click a row to view the full diagnosis."
 msgstr "אבחנות בעיות שנרשמו על ידי העוזר. לחץ על שורה כדי לצפות באבחנה המלאה."
+
+#: src/components/project-setup/ProjectSetupDialog.tsx
+msgid "It cannot be removed from the project"
+msgstr ""
 
 #: src/components/automations/MessageRulePage.tsx
 #: src/components/automations/MessageRulePage.tsx
@@ -12825,6 +12938,7 @@ msgstr "סוג"
 #: src/components/data-sources/DataDriversView.tsx
 #: src/components/llm-endpoints/LlmEndpointDialog.tsx
 #: src/components/llm-endpoints/LlmEndpointsList.tsx
+#: src/components/schema-tree/SchemaTreeView.tsx
 msgid "Kind"
 msgstr "סוג"
 
@@ -13255,6 +13369,10 @@ msgstr "מקשר…"
 #: src/components/lens-viewer/HeartbeatEventsViewer.tsx
 msgid "List"
 msgstr "רשימה"
+
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "list of"
+msgstr ""
 
 #: src/components/settings-view/settings-utils.ts
 msgid "List of models available for selection"
@@ -14154,6 +14272,10 @@ msgstr "כלים MCP"
 msgid "Me"
 msgstr ""
 
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "Meaning"
+msgstr ""
+
 #: src/components/machine-overview/machine-overview.tsx
 #: src/components/machine-overview/machine-overview.tsx
 #: src/components/machine-overview/machine-overview.tsx
@@ -14706,8 +14828,8 @@ msgid "Needs attention"
 msgstr ""
 
 #: src/components/data-sources/status-style.ts
-msgid "Needs setup"
-msgstr ""
+#~ msgid "Needs setup"
+#~ msgstr ""
 
 #: src/components/connections-manager/credential-rows-view.tsx
 msgid "Needs values"
@@ -15315,6 +15437,10 @@ msgstr "אין נתונים זמינים"
 msgid "No data."
 msgstr "אין נתונים."
 
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "no dataset"
+msgstr ""
+
 #: src/components/webapp-viewer/webapp-deployments-tab.tsx
 msgid "No deployments observed yet"
 msgstr "עדיין לא נצפו פריסות"
@@ -15771,6 +15897,10 @@ msgstr "לא נבחר פרויקט"
 msgid "No project selected — pick one to enable project-scoped actions"
 msgstr "לא נבחר פרויקט — בחר אחד כדי להפעיל פעולות הנתמכות לפרויקט"
 
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "No project to show."
+msgstr ""
+
 #: src/components/project-selector/ProjectSelector.tsx
 msgid "No projects"
 msgstr "אין פרויקטים"
@@ -16223,8 +16353,16 @@ msgstr "אף אחד"
 msgid "none — they use their own"
 msgstr "אין — הם משתמשים בשלהם"
 
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "none · written by hand"
+msgstr ""
+
 #~ msgid "None (project root)"
 #~ msgstr "ללא (שורש הפרויקט)"
+
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "none of its own · stored inside the rows of the schema that uses it"
+msgstr ""
 
 #: src/components/automations/TestPanel.tsx
 msgid "None picked: a sample event is used."
@@ -16492,6 +16630,10 @@ msgstr "הערה (אופציונלי)"
 msgid "Note: File is missing"
 msgstr "הערה: הקובץ חסר"
 
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "nothing"
+msgstr ""
+
 #: src/components/assets/editor/wizard/WizardForm.tsx
 msgid "Nothing — this wizard is run by hand. Add a trigger asset under its agentic-assets/trigger/ folder to have it run itself."
 msgstr "אין — האשף הזה מופעל ידנית. כדי שירוץ מעצמו, הוסיפו נכס טריגר בתיקייה agentic-assets/trigger/ שלו."
@@ -16736,6 +16878,10 @@ msgstr "עכשיו בשימוש: {0}"
 msgid "Nowhere yet"
 msgstr ""
 
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "number"
+msgstr ""
+
 #: src/components/connections-manager/sign-in-method.tsx
 msgid "OAuth"
 msgstr "OAuth"
@@ -16873,6 +17019,10 @@ msgstr ""
 msgid "One line: what this project uses it for"
 msgstr "שורה אחת: למה הפרויקט הזה משתמש בזה"
 
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "one of"
+msgstr ""
+
 #~ msgid "one of this wizard's inputs"
 #~ msgstr ""
 
@@ -16936,6 +17086,7 @@ msgstr ""
 #: src/components/milkdown-editor/MilkdownEditor.tsx
 #: src/components/project-activity-strip/BookmarkColumn.tsx
 #: src/components/runs/RunPreviewRoot.tsx
+#: src/components/schema-tree/SchemaTreeView.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 #: src/components/workers/WorkerToolbar.tsx
 #: src/notifications/ingest.ts
@@ -17012,6 +17163,10 @@ msgstr "יש לפתוח פרויקט כדי לבחור אילו מהסודות �
 #: src/pages/discover-page/discover-page.tsx
 msgid "Open a project to see its assets."
 msgstr "יש לפתוח פרויקט כדי לראות את הנכסים שלו."
+
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "Open a project to see its schemas."
+msgstr ""
 
 #: src/components/assets/editor/agent-profile/DeployedAgentChatPanel.tsx
 msgid "Open a session on this machine"
@@ -17314,6 +17469,11 @@ msgstr "פתח תיקיית יומנים"
 msgid "Open message"
 msgstr "פתח הודעה"
 
+#: src/components/conversation/asset-review/ProjectInstallAction.tsx
+#: src/components/task-receive/IncomingProjectDialog.tsx
+msgid "Open my project"
+msgstr ""
+
 #: src/components/terminal/openers/TerminalOpenerToolbar.tsx
 msgid "Open new tab menu"
 msgstr "פתח תפריט כרטיסייה חדש"
@@ -17386,7 +17546,7 @@ msgstr "פתח חילוק"
 msgid "Open Session"
 msgstr "פתח סשן"
 
-#: src/components/stream-inbox-view/ChannelAttentionBar.tsx
+#: src/components/data-sources/SourceSetupButton.tsx
 msgid "Open settings of {name}"
 msgstr "פתיחת ההגדרות של {name}"
 
@@ -17462,6 +17622,10 @@ msgstr ""
 #: src/components/conversation/LiveSessionActivity.tsx
 #: src/components/conversation/LiveSessionActivity.tsx
 msgid "Open the chat this session runs in"
+msgstr ""
+
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "Open the data source"
 msgstr ""
 
 #: src/components/data-sources/DataSourcePage.tsx
@@ -17681,6 +17845,7 @@ msgid "Operation failed"
 msgstr "הפעולה נכשלה"
 
 #: src/components/assets/DependencyChips.tsx
+#: src/components/schema-tree/SchemaTreeView.tsx
 msgid "optional"
 msgstr ""
 
@@ -18237,6 +18402,10 @@ msgstr "בחרו אדם או הקלידו כתובת דוא״ל"
 msgid "Pick a project"
 msgstr "בחר פרויקט"
 
+#: src/components/task-receive/LaunchDialog.tsx
+msgid "Pick a project on this machine. It is used where it is — nothing is sent to the cloud."
+msgstr ""
+
 #: src/components/organization/budgets/PayingProviderSetup.tsx
 msgid "Pick a provider and paste a key to set it up again."
 msgstr ""
@@ -18312,8 +18481,8 @@ msgid "Pick the local project folder this conversation should run in. We'll use 
 msgstr "בחר את תיקיית הפרויקט המקומית בה צריכה לפעול שיחה זו. אנו נשתמש בה כדיוקטוריום העבודה לסשנים של Claude Code."
 
 #: src/pages/entry/AgentLaunchLanding.tsx
-msgid "Pick the project it should work on, or paste a repository URL."
-msgstr ""
+#~ msgid "Pick the project it should work on, or paste a repository URL."
+#~ msgstr ""
 
 #: src/components/automations/AutomationPage.tsx
 msgid "Pick the script to run."
@@ -18583,6 +18752,10 @@ msgid "Press Resume to listen again."
 msgstr "לחצו על המשך כדי להאזין שוב."
 
 #: src/components/data-sources/source-attention.ts
+msgid "Press Setup to finish it."
+msgstr "לחצו על הגדרה כדי לסיים."
+
+#: src/components/data-sources/source-attention.ts
 msgid "Press Verify to evaluate it now."
 msgstr "לחצו על אימות כדי להעריך אותו עכשיו."
 
@@ -18719,6 +18892,7 @@ msgstr "התקדמות"
 
 #: src/components/credentials-view/CredentialView.tsx
 #: src/components/llm-sources/llm-source-visuals.ts
+#: src/components/schema-tree/SchemaTreeView.tsx
 msgid "project"
 msgstr "פרויקט"
 
@@ -19377,6 +19551,10 @@ msgstr "קורא"
 
 #: src/components/organization/budgets/BudgetHistoryDialog.tsx
 msgid "Reading the history…"
+msgstr ""
+
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "Reading the schemas…"
 msgstr ""
 
 #~ msgid "Reading this team's people…"
@@ -20150,6 +20328,7 @@ msgid "Repo"
 msgstr "מאגר"
 
 #: src/components/task-receive/IncomingProjectDialog.tsx
+#: src/components/task-receive/IncomingProjectDialog.tsx
 #: src/components/task-receive/IncomingTaskDialog.tsx
 msgid "Repo:"
 msgstr "מאגר:"
@@ -20345,6 +20524,10 @@ msgstr "מתבצע איפוס…"
 msgid "Resize navigator"
 msgstr "שנה גודל ניווט"
 
+#: src/components/stream-inbox-view/StreamInboxView.tsx
+msgid "Resize the From column"
+msgstr ""
+
 #: src/components/status-bar/GitResolveButton.tsx
 msgid "Resolve"
 msgstr ""
@@ -20450,6 +20633,7 @@ msgstr "תוצאות"
 #: src/components/data-sources/SourceMenu.tsx
 #: src/components/machine-overview/machine-overview.tsx
 #: src/components/setup-wizard/SetupWizardDialog.tsx
+#: src/components/stream-inbox-view/AttachedChannelsBar.tsx
 #: src/components/stream-inbox-view/ChannelAttentionBar.tsx
 #: src/journey/JourneyViewer.tsx
 #: src/tabs/useTerminalStripController.tsx
@@ -20596,6 +20780,10 @@ msgstr ""
 msgid "Review each attached asset and choose how to install it."
 msgstr "יש לבדוק כל נכס מצורף ולבחור כיצד להתקין אותו."
 
+#: src/tabs/doc-tab-card.tsx
+msgid "Review in"
+msgstr ""
+
 #: src/components/chats-navigator/ChatHistoryRow.tsx
 #: src/components/chats-navigator/ChatHistoryRow.tsx
 msgid "Review prompts"
@@ -20716,6 +20904,7 @@ msgstr ""
 #~ msgid "rule: {ruleFilterName}"
 #~ msgstr "כלל: {ruleFilterName}"
 
+#: src/components/schema-tree/SchemaTreeView.tsx
 #: src/components/ui/settings-pane.tsx
 msgid "Rules"
 msgstr "חוקים"
@@ -21374,6 +21563,26 @@ msgstr ""
 msgid "Schedules · {0}"
 msgstr ""
 
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "schema"
+msgstr ""
+
+#: src/types/ViewType.ts
+msgid "Schema"
+msgstr ""
+
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "Schema tree"
+msgstr ""
+
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "Schemas"
+msgstr ""
+
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "Schemas defined here"
+msgstr ""
+
 #: src/components/credentials/CredentialDialog.tsx
 #: src/components/hooks/EventListPanel.tsx
 #: src/components/lens-viewer/HeartbeatEventsViewer.tsx
@@ -21709,6 +21918,10 @@ msgstr "בחר {0}"
 #: src/components/asset-manager/AssetManagerPopover.tsx
 msgid "Select {label}"
 msgstr "בחרו את {label}"
+
+#: src/components/project-setup/ProjectSetupDialog.tsx
+msgid "Select {name}"
+msgstr ""
 
 #: src/components/GitHubConnectionDialog.tsx
 msgid "Select a branch"
@@ -22241,13 +22454,15 @@ msgstr "יש להגדיר את <0>{projectName}</0> בסביבת העבודה ה
 #~ msgid "Set up a git-backed context folder for this project."
 #~ msgstr "יש להגדיר תיקיית קונטקסט מגובה ב-Git לפרויקט זה"
 
+#: src/components/setup-wizard/SourceSetupDialog.tsx
 #: src/components/webapp-display/WebappSetupGate.tsx
 msgid "Set up again"
-msgstr ""
+msgstr "הגדרה מחדש"
 
 #~ msgid "Set up an existing git repository as the context folder"
 #~ msgstr "הגדירו מאגר git קיים כתיקיית ההקשר"
 
+#: src/components/task-receive/IncomingProjectDialog.tsx
 #: src/components/task-receive/IncomingProjectDialog.tsx
 msgid "Set up as this name"
 msgstr "הגדירו בשם הזה"
@@ -22304,9 +22519,10 @@ msgstr ""
 #~ msgid "Set{0}"
 #~ msgstr ""
 
+#: src/components/setup-wizard/SourceSetupDialog.tsx
 #: src/components/webapp-display/WebappSetupOverlay.tsx
 msgid "Setting things up"
-msgstr ""
+msgstr "מגדירים את הכול"
 
 #: src/pages/entry/AgentLaunchLanding.tsx
 msgid "Setting up {name} on a new sandbox…"
@@ -22326,8 +22542,8 @@ msgstr "הכנת הפרויקט שלך…"
 
 #: src/components/assets/editor/agent-profile/deployment/AgentDeploymentPage.tsx
 #: src/components/data-sources/DataSourcePage.tsx
+#: src/components/data-sources/SourceSetupButton.tsx
 #: src/components/settings-view/SettingsView.tsx
-#: src/components/stream-inbox-view/ChannelAttentionBar.tsx
 #: src/pages/flow-page/content-panel/user-dropdown/user-dropdown.tsx
 #: src/pages/flow-page/content-panel/user-dropdown/user-dropdown.tsx
 #: src/pages/flow-page/content-panel/user-dropdown/user-dropdown.tsx
@@ -22337,12 +22553,20 @@ msgstr "הגדרות"
 
 #: src/components/account/settings-section.tsx
 #: src/components/automations/AutomationPage.tsx
+#: src/components/data-sources/SourceSetupButton.tsx
 #: src/components/setup-wizard/SetupStagesButton.tsx
+#: src/components/setup-wizard/SourceSetupDialog.tsx
+#: src/components/stream-inbox-view/AttachedChannelsBar.tsx
+#: src/components/stream-inbox-view/ChannelAttentionBar.tsx
 msgid "Setup"
 msgstr "הגדרה"
 
 #~ msgid "Setup could not start"
 #~ msgstr ""
+
+#: src/components/setup-wizard/SourceSetupDialog.tsx
+msgid "Setup could not start."
+msgstr "לא ניתן היה להתחיל את ההגדרה."
 
 #~ msgid "Setup did not finish"
 #~ msgstr ""
@@ -22378,10 +22602,12 @@ msgstr ""
 msgid "Setup instructions"
 msgstr ""
 
+#: src/components/data-sources/source-attention.ts
+#: src/components/data-sources/status-style.ts
 #: src/components/top-nav-bar/ProjectSetupButton.tsx
 #: src/components/top-nav-bar/ProjectSetupButton.tsx
 msgid "Setup required"
-msgstr ""
+msgstr "נדרשת הגדרה"
 
 #: src/components/conversation/MembersAvatarStack.tsx
 msgid "Several contacts match — pick one from the list"
@@ -23293,6 +23519,10 @@ msgstr "חלק מהפריסות מיושנות או חלקיות"
 #: src/components/machine-overview/service-status-led.tsx
 msgid "Some deployments have errors"
 msgstr "לחלק מהפריסות יש שגיאות"
+
+#: src/components/project-setup/ProjectSetupDialog.tsx
+msgid "Some of the selected cannot be removed from the project"
+msgstr ""
 
 #: src/components/automations/TestPanel.tsx
 msgid "Some things need attention."
@@ -24278,6 +24508,7 @@ msgid "Tasks {openTaskCount}"
 msgstr ""
 
 #: src/components/account/organization-panel.tsx
+#: src/components/contact-picker/ContactPicker.tsx
 #: src/components/conversation/MembersAvatarStack.tsx
 #: src/components/conversation/MembersAvatarStack.tsx
 #: src/components/token-plan/token-plan-math.ts
@@ -24409,6 +24640,10 @@ msgstr ""
 msgid "Tested"
 msgstr ""
 
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "text"
+msgstr ""
+
 #: src/components/ask/AskForm.tsx
 msgid "Thank you — sent."
 msgstr ""
@@ -24459,7 +24694,12 @@ msgstr ""
 
 #: src/components/task-receive/IncomingDeepLink.tsx
 #: src/components/task-receive/IncomingProjectDialog.tsx
+#: src/components/task-receive/IncomingProjectDialog.tsx
 msgid "That project is no longer available."
+msgstr ""
+
+#: src/pages/entry/launch-runner.ts
+msgid "That project isn't on this machine."
 msgstr ""
 
 #: src/components/automations/RunDetail.tsx
@@ -24750,8 +24990,8 @@ msgid "The lens path could not be parsed."
 msgstr "לא ניתן לנתח את נתיב העדשה."
 
 #: src/components/assets/editor/agent-profile/AgentVisibilitySection.tsx
-msgid "The link works for anyone the agent is shared with, or for everyone once it is public."
-msgstr ""
+#~ msgid "The link works for anyone the agent is shared with, or for everyone once it is public."
+#~ msgstr ""
 
 #: src/components/collaboration/LiveSessionView.tsx
 msgid "The live session has ended."
@@ -24867,6 +25107,10 @@ msgstr "לא ניתן היה למצוא את הסוכן המבוקש."
 msgid "The run could not be reset"
 msgstr "לא ניתן היה לאפס את ההרצה"
 
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "The schemas could not be read."
+msgstr ""
+
 #: src/components/wiki-toolbar/WikiLinkInsertDialog.tsx
 msgid "The selected entity has no name yet. Choose one — it will be saved to the entity AND used as the link text."
 msgstr "לישות שנבחרה אין שם עדיין. בחר אחד — הוא יישמר בישות ויהיה בשימוש כטקסט הקישור."
@@ -24978,6 +25222,10 @@ msgstr ""
 #: src/components/task-receive/IncomingTaskDialog.tsx
 #~ msgid "There are merge conflicts in <0>{localPath}</0>. Please resolve them and try again."
 #~ msgstr "קיימים קונפליקטים בהיתוך ב-<0>{localPath}</0>. אנא פתור אותם ונסה שוב."
+
+#: src/components/task-receive/LaunchDialog.tsx
+msgid "There are no projects on this machine yet. Open one, then use the link again."
+msgstr ""
 
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "There is nothing left to send — add a message first."
@@ -25457,6 +25705,10 @@ msgstr ""
 
 #: src/components/connections-manager/credential-rows-view.tsx
 msgid "This project declares the same variables, and its values win"
+msgstr ""
+
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "This project defines no schema."
 msgstr ""
 
 #: src/routes/loaders/load-project.ts
@@ -26276,6 +26528,7 @@ msgstr "שני צעדים מהירים בדפדפן:"
 #: src/components/machine-overview/machine-overview.tsx
 #: src/components/navigator-panel/NavigatorSearch.tsx
 #: src/components/record-search-bar/RecordSearchBar.tsx
+#: src/components/schema-tree/SchemaTreeView.tsx
 #: src/components/search-index/SweepOrphansDialog.tsx
 #: src/pages/discover-page/DiscoverToolbar.tsx
 #: src/pages/entry/entry-shell.tsx
@@ -26351,6 +26604,10 @@ msgstr "בטל"
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 msgid "Undo changes"
 msgstr "ביטול שינויים"
+
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "Unfold"
+msgstr ""
 
 #: src/components/conversation/asset-review/AssetInstallActions.tsx
 #: src/components/conversation/asset-review/AssetReviewDialog.tsx
@@ -26778,6 +27035,7 @@ msgstr "נכסים בשימוש"
 #: src/components/connections-manager.tsx
 #: src/components/llm-endpoints/LlmEndpointDetail.tsx
 #: src/components/llm-endpoints/LlmEndpointsList.tsx
+#: src/components/schema-tree/SchemaTreeView.tsx
 msgid "Used by"
 msgstr "בשימוש על ידי"
 
@@ -26832,6 +27090,7 @@ msgid "User Prompt Submit"
 msgstr "שליחת פרומפט ממשתמש"
 
 #: src/components/assets/editor/usage-report/UsageReportAssetEditor.tsx
+#: src/components/schema-tree/SchemaTreeView.tsx
 #: src/pages/live-status/LiveStatus.tsx
 msgid "uses"
 msgstr "שימושים"
@@ -27095,7 +27354,6 @@ msgstr "הצג הוק"
 msgid "View hook config"
 msgstr "הצג הגדרות קישור"
 
-#: src/components/view-toggle/view-toggle.tsx
 #: src/i18n/pref-labels.ts
 msgid "View mode"
 msgstr "מצב תצוגה"
@@ -27601,6 +27859,10 @@ msgstr ""
 msgid "Which engine does the heavy file scanning: Python (built in), or Rust (a bundled binary, much faster on large projects). Falls back to Python automatically when the Rust binary is unavailable. Takes effect on the next scan."
 msgstr "איזה מנוע מבצע את סריקת הקבצים הכבדה: Python (מובנה), או Rust (קובץ בינארי מצורף, מהיר בהרבה בפרויקטים גדולים). חוזר אוטומטית ל-Python כשהקובץ הבינארי של Rust אינו זמין. נכנס לתוקף בסריקה הבאה."
 
+#: src/components/task-receive/LaunchDialog.tsx
+msgid "Which project should it work on?"
+msgstr ""
+
 #: src/components/asset-manager/EntityTypeBar.tsx
 #: src/components/quick-create/registry.ts
 msgid "Whiteboard"
@@ -27860,6 +28122,10 @@ msgstr ""
 msgid "Yes"
 msgstr ""
 
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "yes / no"
+msgstr ""
+
 #: src/components/chats-navigator/useChatHistory.ts
 #: src/pages/home-landing/feed/FeedEntryCard.tsx
 msgid "Yesterday"
@@ -27889,6 +28155,15 @@ msgstr ""
 #. placeholder {1}: alreadyAsked.task.title
 #: src/components/help/AskForHelpDialog.tsx
 msgid "You already asked {0}: \"{1}\"."
+msgstr ""
+
+#. placeholder {0}: conflict.attempted_name
+#: src/components/conversation/asset-review/ProjectInstallAction.tsx
+msgid "You already have a project named <0>{0}</0>. Open it, or install this one under another name."
+msgstr ""
+
+#: src/components/task-receive/IncomingProjectDialog.tsx
+msgid "You already have a project named <0>{projectName}</0>. Open it, or set this one up under another name."
 msgstr ""
 
 #~ msgid "you are {role}"
@@ -27954,7 +28229,11 @@ msgid "You have no budget you can hand out."
 msgstr "אין לך תקציב שאפשר לחלק."
 
 #: src/pages/entry/AgentLaunchLanding.tsx
-msgid "You have no projects here yet. Paste a repository URL."
+#~ msgid "You have no projects here yet. Paste a repository URL."
+#~ msgstr ""
+
+#: src/pages/entry/AgentLaunchLanding.tsx
+msgid "You have no projects in the cloud. Paste a repository URL — or launch in your desktop and pick a project there."
 msgstr ""
 
 #: src/components/open-project-component/use-open-project.ts

@@ -2707,6 +2707,19 @@ class Entity(DBEntity):
     async def save(
         self: EntityType, owner: DBEntity | TypeId | types.NoneType = None, notify: bool = True
     ) -> EntityType:
+        from flow_sdk.fs_store.fs_record import record_sync_guard  # noqa: PLC0415
+
+        # Saves of ONE entity take turns (in this process). Two in flight for a row that has no
+        # carrier yet — a local edit, the hub's push, a channel's pull of the same task — would
+        # both take the create path, and the creation reservation refuses the second one rather
+        # than wait. In turn, the second finds the first's carrier and passes as the same entity.
+        # Two DIFFERENT entities aiming at one path still collide, as they should.
+        async with record_sync_guard(self.get_type(), self.id):
+            return await self._save_in_turn(owner, notify)
+
+    async def _save_in_turn(
+        self: EntityType, owner: DBEntity | TypeId | types.NoneType, notify: bool
+    ) -> EntityType:
         user_id = owner
         if isinstance(owner, Entity):
             user_id = owner.typeid

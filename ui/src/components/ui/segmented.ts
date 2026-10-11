@@ -1,7 +1,7 @@
 /**
  * The app's segmented control look — one definition, so every segmented control
  * stays in step when a themed ring or height changes. Consumers today: the
- * footer `ViewToggle` (mode selection) and `WebappDisplayToolbar`. Class strings
+ * session `SessionSurfaceSwitch` (mode selection) and `WebappDisplayToolbar`. Class strings
  * only — the controls have different semantics and keep their own markup.
  */
 
