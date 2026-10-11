@@ -96,6 +96,16 @@ describe('the row actions a dataset client calls', () => {
     expect((call.mock.calls[1][0]).bodyParameters).toEqual({ keys: ['a'], expected: { a: 'v1' } });
   });
 
+  it('a mirrored row the outside system refused, or a field that cannot go back, reaches the caller as is', async () => {
+    for (const code of ['source_refused', 'not_writable']) {
+      const refusal = { response: { status: 400, data: { message: code, data: { details: [{ path: '', code, message: code }] } } } };
+      vi.spyOn(dataManager, 'callAction').mockRejectedValue(refusal as never);
+      await expect(ds().put('t-1', { input: { status: 'DONE' } })).rejects.toBe(refusal);
+      await expect(ds().putMany([{ key: 't-1', input: {} }])).rejects.toBe(refusal);
+      vi.restoreAllMocks();
+    }
+  });
+
   it('a refused bulk write surfaces the server\'s refusal to the caller', async () => {
     const refusal = { response: { status: 409, data: { message: 'used by lead dana', data: { details: [{ path: 'acme', code: 'referenced', message: 'used by lead dana' }] } } } };
     vi.spyOn(dataManager, 'callAction').mockRejectedValue(refusal as never);
