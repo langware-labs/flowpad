@@ -86,12 +86,13 @@ never split `enum:` or `|` yourself. `kindForm(kind).rules` lists the kind's rul
 - **A query reads the rows from disk each time** (there is no index over row fields): fine for
   thousands of rows, not for millions. Ask for what the page shows (`match`, `limit`), never
   every row on a timer.
-- **A rule across rows beyond "two links name the same row"** (a count, an order) is not in the
-  schema: write it into the kinds' `description.md` and check it in every writer. "The same row"
-  rules (a tag chain) go in the schema's `rules` — never in app code.
-- **A field owned by an outside system** (a CRM's stage, an owner) has no mark in the schema:
-  every Flowpad writer can change it, and the next sync puts the outside value back. Say in its
-  `description` who owns it, keep it read-only in the app, and let only the sync write it.
+- **A rule across rows that counts, orders or sums** is not in the schema: write it into the
+  kinds' `description.md` and check it in every writer. "The same row" (a tag chain) and "no two
+  rows share this value" (`unique`: a natural key) ARE schema `rules` — never app code.
+- **`owned_by` is a guard, not a permission.** A field the schema marks as an outside system's is
+  refused to every writer that does not say `by: "<owner>"`, so the app and Claude cannot change
+  it by mistake — but a writer that claims `by` is believed. Show such a field read-only
+  (`kindForm(kind).fields[name].owned_by`) and send `by` only from the sync.
 - **The delete protection is per checkout.** A row kept out of git that links to a row in git
   can lose its target to a `git pull` (a teammate deleted it): that row then shows in
   `problems` (`no <kind> row <uuid>`) — every reader must keep going and report it.

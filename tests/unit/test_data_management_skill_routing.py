@@ -235,3 +235,13 @@ def test_dm_ctl_deletes_one_row_or_several_in_one_step(monkeypatch, capsys):
     capsys.readouterr()
     assert dm_ctl.main(["ds-delete", "leads", "a", "b", "--expected", "v1"]) == 1   # one version cannot vouch for two rows
     assert "--expected takes one key" in capsys.readouterr().out
+
+
+def test_dm_ctl_says_who_a_write_is_for(monkeypatch):
+    row = '{"input": {"name": "A"}}'
+    assert _dm_calls(monkeypatch, ["ds-put", "leads", "a", row, "--by", "crm"])[0][2] == {"key": "a", "row": {"input": {"name": "A"}}, "by": "crm"}
+    assert _dm_calls(monkeypatch, ["ds-put-many", "leads", '[{"key": "a", "input": {}}]', "--by", "crm"])[0][2]["by"] == "crm"
+    assert _dm_calls(monkeypatch, ["ds-sync", "leads", "[]", "--by", "crm"])[0][2] == {"rows": [], "prune": True, "by": "crm"}
+    assert _dm_calls(monkeypatch, ["ds-append", "leads", row, "--by", "crm"])[0][2] == {"rows": [{"input": {"name": "A"}}], "by": "crm"}
+    assert _dm_calls(monkeypatch, ["ds-check", "leads", row, "--by", "crm"])[0][2] == {"row": {"input": {"name": "A"}}, "by": "crm"}
+    assert "by" not in _dm_calls(monkeypatch, ["ds-put", "leads", "a", row])[0][2]         # an app's own edit names no owner

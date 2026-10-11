@@ -34,6 +34,9 @@ Verbs
   ds-check DATASET ROW               would ROW fit? writes nothing
   ds-validate DATASET                every row checked against the dataset's shape
 
+--by OWNER on a write (ds-append / ds-put / ds-put-many / ds-sync) or ds-check says which outside system you
+write as: only it sets the fields a schema marks ``owned_by`` it.
+
 DATASET is a dataset id, name, title, or its folder path. VALUE / ROWS / ROW are JSON, or ``-`` for stdin.
 """
 from __future__ import annotations
@@ -324,14 +327,19 @@ def cmd_ds_count(args) -> dict:
     return _ds(args, "count" + _query({"filter": _row_filter(args), "group_by": args.group_by}), "GET") or {}
 
 
+def _by(args, body: dict) -> dict:
+    """``body`` plus who the write is for (``--by crm``: the owner of the schema's ``owned_by`` fields)."""
+    return {**body, "by": args.by} if getattr(args, "by", "") else body
+
+
 def cmd_ds_put_many(args) -> dict:
     body = {"rows": _json(args.rows)}
-    return _ds(args, "put-rows", body={**body, "expected": _json(args.expected)} if args.expected else body)
+    return _ds(args, "put-rows", body=_by(args, {**body, "expected": _json(args.expected)} if args.expected else body))
 
 
 def cmd_ds_sync(args) -> dict:
     body: dict = {"rows": _json(args.rows), "prune": not args.no_prune}
-    return _ds(args, "sync-rows", body={**body, "match": _json(args.match)} if args.match else body)
+    return _ds(args, "sync-rows", body=_by(args, {**body, "match": _json(args.match)} if args.match else body))
 
 
 def cmd_ds_row(args) -> dict:
@@ -340,12 +348,12 @@ def cmd_ds_row(args) -> dict:
 
 def cmd_ds_append(args) -> dict:
     rows = _json(args.rows)
-    return _ds(args, "append", body={"rows": rows if isinstance(rows, list) else [rows]})
+    return _ds(args, "append", body=_by(args, {"rows": rows if isinstance(rows, list) else [rows]}))
 
 
 def cmd_ds_put(args) -> dict:
     body = {"key": args.key, "row": _json(args.row)}
-    return _ds(args, "put-row", body={**body, "expected": args.expected} if args.expected else body)
+    return _ds(args, "put-row", body=_by(args, {**body, "expected": args.expected} if args.expected else body))
 
 
 def cmd_ds_delete(args) -> dict:
@@ -367,7 +375,7 @@ def cmd_ds_rename(args) -> dict:
 
 
 def cmd_ds_check(args) -> dict:
-    return _ds(args, "check-row", body={"row": _json(args.row)})
+    return _ds(args, "check-row", body=_by(args, {"row": _json(args.row)}))
 
 
 def cmd_ds_validate(args) -> dict:
@@ -377,6 +385,7 @@ def cmd_ds_validate(args) -> dict:
 # ── entry ────────────────────────────────────────────────────────────────────
 
 _DS = ("dataset", {"help": "dataset id, name, title or folder path"})
+_BY = ("--by", {"default": "", "help": "the outside system you write as (\"crm\"): the owner of the schema's owned_by fields"})
 _MATCH = ("--match", {"default": "", "help": 'JSON: {"op": "$GE", "operands": ["input.day", "2026-09-01"]} or {"<path>": value}'})
 VERBS: dict[str, tuple] = {
     "probe-new": (cmd_probe_new, []),
@@ -391,18 +400,18 @@ VERBS: dict[str, tuple] = {
     "ds-rows": (cmd_ds_rows, [_DS, _MATCH, ("--order", {"default": "", "help": 'JSON: {"<path>": "asc"|"desc"}, or a list of them'}),
                               ("--limit", {"type": int, "default": None}), ("--offset", {"type": int, "default": None})]),
     "ds-count": (cmd_ds_count, [_DS, _MATCH, ("--group-by", {"default": "", "help": "field paths, comma-separated"})]),
-    "ds-put-many": (cmd_ds_put_many, [_DS, ("rows", {}), ("--expected", {"default": "", "help": "JSON: {key: the version you read}"})]),
-    "ds-sync": (cmd_ds_sync, [_DS, ("rows", {}), _MATCH, ("--no-prune", {"action": "store_true", "help": "remove nothing"})]),
+    "ds-put-many": (cmd_ds_put_many, [_DS, ("rows", {}), ("--expected", {"default": "", "help": "JSON: {key: the version you read}"}), _BY]),
+    "ds-sync": (cmd_ds_sync, [_DS, ("rows", {}), _MATCH, ("--no-prune", {"action": "store_true", "help": "remove nothing"}), _BY]),
     "ds-row": (cmd_ds_row, [_DS, ("key", {})]),
-    "ds-append": (cmd_ds_append, [_DS, ("rows", {})]),
+    "ds-append": (cmd_ds_append, [_DS, ("rows", {}), _BY]),
     "ds-put": (cmd_ds_put, [_DS, ("key", {}), ("row", {}),
-                            ("--expected", {"default": "", "help": "the version you read; a newer row refuses"})]),
+                            ("--expected", {"default": "", "help": "the version you read; a newer row refuses"}), _BY]),
     "ds-delete": (cmd_ds_delete, [_DS, ("key", {"nargs": "+"}),
                                   ("--expected", {"default": "", "help": "the version you read; a newer row refuses"})]),
     "ds-store-ids": (cmd_ds_store_ids, [_DS]),
     "ds-rename": (cmd_ds_rename, [_DS, ("key", {}), ("new_key", {}),
                                   ("--expected", {"default": "", "help": "the version you read; a newer row refuses"})]),
-    "ds-check": (cmd_ds_check, [_DS, ("row", {})]),
+    "ds-check": (cmd_ds_check, [_DS, ("row", {}), _BY]),
     "ds-validate": (cmd_ds_validate, [_DS]),
 }
 

@@ -103,9 +103,7 @@ reasons (a 400 carries the validation `errors`).
 
 | Missing | Honest answer today |
 | --- | --- |
-| one schema including another (shared `status`/`owner` fields) | repeat the fields; keep them identical |
-| a rule across rows that is not "these two links name the same row" (a count, an order, a sum) | check it in every writer — the app AND any script — with the same code, and report breaks |
-| a field owned by an outside system (a CRM's stage) | say so in its `description`, keep it read-only in the app; only the sync writes it |
+| a rule across rows that is a count, an order or a sum (not "the same row", not "unique") | check it in every writer — the app AND any script — with the same code, and report breaks |
 
 Rows ARE queried, counted, written in bulk and announced: `ds.rows({match, order_by, limit, offset})`
 and `ds.count({match, group_by})` answer only what a page shows; `putMany` / `deleteRows` / `sync`
@@ -119,6 +117,10 @@ Links between rows ARE supported: a field typed by the target kind holds `<kind>
 SDK refuses a reference to a missing row and a delete that would leave one dangling
 (`references/shape-forms.md`). Never STORE a link as a `{type, key}` kind, and never link a
 dataset in git to rows kept out of git (their ids differ per machine).
+
+A field an outside system owns IS marked in the schema (`"owned_by": "crm"`: only a writer with
+`by="crm"` sets it), a natural key IS a rule (`{"unique": ["crm_id"]}`), and shared fields ARE
+defined once (`"include": ["crm.synced"]`) — `references/shape-forms.md`.
 
 Rules across rows ARE supported when they say "these two link paths name the same row" (a tag
 chain: "the persona is one of the row's ICP's") — declare them in the schema's `rules`; Flowpad
