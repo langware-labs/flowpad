@@ -75,7 +75,9 @@ test('a terminal survives every trip away and back', async ({ page }) => {
 
   const processAddress = `shell/agentic_process-${world.processId}`;
   const processPath = `/shell/agentic_process-${world.processId}`;
-  await navigateTo(page, processAddress, processPath);
+  // Stated: a session that names no mode opens in the last one the user selected,
+  // and this spec is about the terminal.
+  await navigateTo(page, `${processAddress}?viewMode=advanced`, processPath);
   await expect(panel(page, world.processId).locator('.xterm')).toBeVisible();
   await expect(panel(page, world.processId)).toContainText(MOCK_MARKER, { timeout: 15_000 });
   await pinTerminalNode(page, world.processId);
