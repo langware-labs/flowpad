@@ -142,7 +142,7 @@ export class MessageAttachment extends APIEntity<MessageAttachment> implements I
       scope,
       project_id: projectId ?? null,
       overwrite: opts.overwrite ?? false,
-      name: opts.name ?? null,
+      ...(opts.name ? { name: opts.name } : {}),
     };
     const res = await dataManager.callAction<unknown, { entity?: unknown; show?: ReceiveShowTarget | null }>(action);
     return res?.show ?? null;
