@@ -31,6 +31,9 @@ export function TabFavoriteStar({ favorite, chip }: { favorite: FavoriteRef; chi
         // on the chip: brighten it, thicken the stroke and tint the inside.
         className={cn(
           'p-0',
+          // On, the star is already lit, so hover has nothing left to change:
+          // a border says "this is a target" (a click un-bookmarks).
+          on && 'hover:ring-1 hover:ring-amber-500',
           !on &&
             'hover:text-amber-600 hover:[&_svg]:fill-amber-500/40 hover:[&_svg]:stroke-[2.5] dark:hover:text-amber-300 dark:hover:[&_svg]:fill-amber-300/40',
         )}
