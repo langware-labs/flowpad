@@ -534,13 +534,18 @@ async def start_setup(project: "Project", *, ai: bool = True, root: str = "", tr
 def _own_check(command: str) -> Optional[tuple[str, str, str]]:
     """``(name, project_id, deployment_id)`` when ``command`` is this interpreter's
     ``flow credentials check`` — the check a setup step runs before it asks — else None."""
+    import re  # noqa: PLC0415
     import shlex  # noqa: PLC0415
     import sys  # noqa: PLC0415
 
-    try:
-        argv = shlex.split(command)
-    except ValueError:
-        return None
+    if command.startswith("& '"):  # Windows: flow_command's PowerShell spelling — the exe and each argument quoted
+        exe, *args = [token.replace("''", "'") for token in re.findall(r"'((?:[^']|'')*)'", command)] or [""]
+        argv = [exe, "-m", "flow_sdk.cli.flow_cli", *args] if " -m flow_sdk.cli.flow_cli " in command else []
+    else:
+        try:
+            argv = shlex.split(command)
+        except ValueError:
+            return None
     if argv[:5] != [sys.executable, "-m", "flow_sdk.cli.flow_cli", "credentials", "check"] or len(argv) < 6:
         return None
     options = argv[6:]
@@ -555,17 +560,17 @@ async def _setup_shell(command: str, *, timeout_seconds: float, workdir: Path, e
 
     Every step checks its goal before it asks, and ``flow credentials check`` as a process imports
     the CLI and, with no backend to reach, opens the database — about a second before each question,
-    measured. The setup runs inside the instance the check would ask, so it asks the same
+    measured, and 27 s on a loaded Windows machine (past the check's limit, so a connected credential
+    read as missing). The setup runs inside the instance the check would ask, so it asks the same
     ``credentials_status`` directly: same row (the project's own before the user's), same verdict
-    (``connected`` is ready), same exit codes. Windows builds the command differently, so it keeps
-    the process. Everything else goes to *inner*, the run's shell."""
+    (``connected`` is ready), same exit codes, on every OS. Everything else goes to *inner*, the
+    run's shell."""
     import json  # noqa: PLC0415
-    import sys  # noqa: PLC0415
     import time  # noqa: PLC0415
 
     from flow_sdk.core.compute.exec import run_shell  # noqa: PLC0415
 
-    own = _own_check(command) if (platform or sys.platform) != "win32" else None
+    own = _own_check(command)
     if own is None:
         return await (inner or run_shell)(command, timeout_seconds=timeout_seconds, workdir=workdir,
                                           extra_env=extra_env, platform=platform, stop=stop,
