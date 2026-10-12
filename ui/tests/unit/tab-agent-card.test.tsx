@@ -55,10 +55,11 @@ describe('ProcessTabCard', () => {
     expect(openExternal).toHaveBeenCalledWith(expect.stringContaining('github.com/acme/qa'));
   });
 
-  it('keeps the bare name for a session with no agent', () => {
+  it('a session with no agent shows where it is working, without the agent card', () => {
     launchingAgent.current = null;
     render(<ProcessTabCard processId="3f2b8c1e-6a4d-4e2b-9c1a-5d7e8f901234" fallbackName="my session" />);
-    expect(screen.getByTestId('tab-tooltip-name')).toHaveTextContent('my session');
+    expect(screen.getByTestId('tab-session-card')).toBeInTheDocument();
+    expect(screen.getByTestId('tab-workdir')).toHaveTextContent('/work/qa-target');
     expect(screen.queryByTestId('tab-agent-card')).not.toBeInTheDocument();
   });
 });

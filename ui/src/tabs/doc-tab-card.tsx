@@ -1,5 +1,7 @@
 import { useLingui } from '@lingui/react/macro';
 import { editorForPath, type Tab } from '@sdk';
+import { useEntity } from '@src/hooks/entity-hooks';
+import { labelForType } from '@src/components/graph-view/icons/iconRegistry';
 import { useEntityLocationLabel } from '@src/components/graph-view/ui/EntityIcon';
 import { TabTooltipName } from '@src/components/tabs/TabTooltipName';
 import { SEGMENTED_BUTTON, SEGMENTED_GROUP, SEGMENTED_IDLE } from '@src/components/ui/segmented';
@@ -10,7 +12,7 @@ import type { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { ContentTabTooltip, WorkdirLine } from '@src/tabs/provider-meta';
 import { tagAttrs } from '@src/tags/tag-attrs';
-import React from 'react';
+import React, { useMemo } from 'react';
 
 /** The surfaces a review can start on. A function, not a module constant: this file sits in an
  *  import cycle with the view-mode context, and `ViewMode` is not there yet while it loads. */
@@ -28,14 +30,27 @@ export const DocTabCard: React.FC<{
   typeLabel: string;
   statusReason?: string;
   location?: boolean;
-}> = ({ tab, dock, typeLabel, statusReason, location }) => {
+  /** The document on screen, when the tab's stored name is its scope ("<project>'s Assets"). */
+  name?: string;
+}> = ({ tab, dock, typeLabel, statusReason, location, name }) => {
   const { t } = useLingui();
   const { navigation } = useDockNavigation();
   const isAdvanced = useIsAdvanced();
   const locationLabel = useEntityLocationLabel(location);
-  const path = contentAssetTargetForDock(dock)?.path;
-  // The file's own kind when it has a path (html, markdown, …), else the tab's type label.
-  const kind = path ? editorForPath(path) : typeLabel;
+  // A path-addressed document carries its path; one addressed by id has it on its entity,
+  // read when the card opens.
+  const dockPath = contentAssetTargetForDock(dock)?.path;
+  const targetTypeId = useMemo(() => dock.targetTypeId, [dock]);
+  const entity = useEntity(targetTypeId, { enabled: !!targetTypeId && !dockPath }).data as
+    | { asset_ref?: string | null }
+    | null
+    | undefined;
+  const path = dockPath || entity?.asset_ref || undefined;
+  // What it is: the entity's type, else the editor the dock opens it in (task, markdown, html…),
+  // else the file's own kind, else the tab's type label.
+  const kind = targetTypeId
+    ? labelForType(targetTypeId.type)
+    : dock.assetEditor || (path ? editorForPath(path) : typeLabel);
 
   return (
     <div className="min-w-[220px] max-w-[320px] space-y-2 p-2.5" data-testid="doc-tab-card">
@@ -43,7 +58,7 @@ export const DocTabCard: React.FC<{
         <ContentTabTooltip tab={tab} typeLabel={typeLabel} statusReason={statusReason} location={location} />
       ) : (
         <div className="space-y-1">
-          <TabTooltipName name={tab.name || typeLabel} />
+          <TabTooltipName name={name || tab.name || typeLabel} />
           {statusReason && <p className="text-[11px] text-amber-500">{statusReason}</p>}
           <p className="text-[11px] text-muted-foreground" data-testid="doc-tab-card-kind">
             {[kind, locationLabel].filter(Boolean).join(' · ')}
@@ -68,7 +83,7 @@ export const DocTabCard: React.FC<{
                   {...tagAttrs(MODE_TAGS[mode], 'button')}
                   onClick={(e) => {
                     e.stopPropagation();
-                    void navigation.reviewDocument(dock, mode, tab.project_id);
+                    void navigation.reviewDocument(dock, mode, tab.project_id, path);
                   }}
                   className={`${SEGMENTED_BUTTON} ${SEGMENTED_IDLE}`}
                 >
