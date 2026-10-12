@@ -52,6 +52,7 @@ import { useEntity } from '@sdk/react/hooks';
 import { useIndexStatus } from '@src/hooks/use-index-status';
 import { ViewType } from '@src/types/ViewType';
 import { AssetListView } from './AssetListView';
+import { DiagnosisRequestsAssetList } from './DiagnosisRequestsAssetList';
 import { LlmEndpointsAssetList } from './LlmEndpointsAssetList';
 import { isProjectHomeSurface, shouldShowIndexPrompt } from './asset-body-content';
 import { ContextFolderBrowser } from './ContextFolderBrowser';
@@ -378,7 +379,6 @@ export function AssetsPage() {
   const neverIndexed = idxState.phase === 'ready' && idxState.status.never_indexed;
   const isAdvanced = useIsAdvanced();
 
-
   const handleRebuildIndex = useCallback(async () => {
     // Project view → Fast index scoped to the project (re-stamps the project's
     // own index sentinel). Global view → legacy full reset+rescan.
@@ -654,6 +654,9 @@ export function AssetsPage() {
             // Not the index-backed list: these rows have no local record at all (see
             // LlmEndpointsAssetList), so the generic browser would always show zero.
             <LlmEndpointsAssetList onOpen={navigateAsset} />
+          ) : selectedType === (RecordType.DIAGNOSIS_REQUEST as string) ? (
+            // Not the index-backed list either: a request has no file to open it by; the hub lists them.
+            <DiagnosisRequestsAssetList scope={effectiveFilter.scope} onOpen={navigateAsset} />
           ) : selectedType ? (
             <AssetListView
               recordType={selectedType}
