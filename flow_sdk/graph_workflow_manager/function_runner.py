@@ -177,13 +177,24 @@ class GraphWorkflowCtx:
         channel (a subprocess must never open the instance DB directly).
         ``path`` is rooted at the API base (e.g. ``/api/v1/graph/usage_report``).
         Returns the response envelope's ``data`` (or the raw JSON body)."""
+        return self._call("POST", path, body, timeout=timeout)
+
+    def get(self, path: str, *, timeout: int = 60) -> dict:
+        """GET from this instance's REST API (see ``post``)."""
+        return self._call("GET", path, None, timeout=timeout)
+
+    def _call(self, method: str, path: str, body: dict | None, *, timeout: int) -> dict:
         import urllib.request
 
+        from flow_sdk.instance_settings.cookie_gate import gate_headers
+
+        url = f"{self._api_base}{path}"
         req = urllib.request.Request(
-            f"{self._api_base}{path}",
-            data=json.dumps(body).encode(),
-            headers={"Content-Type": "application/json"},
-            method="POST",
+            url,
+            data=json.dumps(body).encode() if body is not None else None,
+            # The instance's cookie gate refuses a call without its token.
+            headers={"Content-Type": "application/json", **gate_headers(url)},
+            method=method,
         )
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             payload = json.loads(resp.read() or "{}")

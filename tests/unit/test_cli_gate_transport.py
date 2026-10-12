@@ -140,3 +140,52 @@ def test_an_action_403_is_not_mistaken_for_the_gate():
 
     assert "cookie-gate" not in message
     assert "local mode" in message
+
+
+# ---------------------------------------------------------------------------
+# gate_headers -- the local token (FLOWPAD-2233): no hub secret, so the token of
+# the instance serving the URL's port, read from its .cookie_gate file.
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def instances(sod_env, monkeypatch):
+    """This instance (port 9101) and another running one (port 9102), each with a token."""
+    import json
+
+    from flow_sdk.instance_settings import get_instance_settings, reset_instance_settings
+
+    monkeypatch.setenv("LOCAL_SERVER_PORT", "9101")
+    reset_instance_settings()
+    settings = get_instance_settings()
+    own = settings.instance_dir
+    other = settings.instances_root / "other"
+    for idir, port, token in ((own, 9101, "own-token"), (other, 9102, "other-token")):
+        idir.mkdir(parents=True, exist_ok=True)
+        (idir / ".cookie_gate").write_text(token, encoding="utf-8")
+        (idir / "server.json").write_text(json.dumps({"port": port}), encoding="utf-8")
+    with _armed(None):
+        yield own
+
+
+def test_local_token_of_this_instance(instances):
+    assert gate_headers("http://127.0.0.1:9101/x") == {HEADER_NAME: "own-token"}
+
+
+def test_local_token_of_another_running_instance(instances):
+    assert gate_headers("http://localhost:9102/x") == {HEADER_NAME: "other-token"}
+
+
+def test_no_token_for_a_port_no_instance_serves(instances):
+    assert gate_headers("http://127.0.0.1:9103/x") == {}
+
+
+def test_own_configured_port_without_server_json(instances):
+    (instances / "server.json").unlink()
+
+    assert gate_headers("http://127.0.0.1:9101/x") == {HEADER_NAME: "own-token"}
+
+
+def test_hub_secret_wins_over_the_local_token(instances):
+    with _armed():
+        assert gate_headers("http://127.0.0.1:9101/x") == {HEADER_NAME: SECRET}

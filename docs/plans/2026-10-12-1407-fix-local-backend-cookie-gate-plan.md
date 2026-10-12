@@ -170,7 +170,7 @@ The local backend on `localhost:9007` answers every request without authenticati
 
   * `Sec-Fetch-Site: none`, `Sec-Fetch-Mode: navigate`, `Sec-Fetch-Dest: document`;
 
-  * `Host` is `localhost` or `127.0.0.1` with the port the request arrived on;
+  * the `Host` hostname is `localhost` or `127.0.0.1` (a DNS-rebound name fails here; checking the port adds nothing);
 
   * no hub-armed secret is in force.
 

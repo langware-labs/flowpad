@@ -246,28 +246,66 @@ def gate_headers(url: str) -> dict[str, str]:
     The header rather than ``?cookie-gate=``: a secret in a URL lands in access
     logs.
 
-    Free when unarmed — ``get_cookie_gate`` answers from a ``stat()`` of the
-    marker file and never opens the encrypted store, which is what keeps desktop
-    installs away from a keychain prompt. Starlette is imported only on the
-    armed path, so an ordinary call does not pay for it. Any failure to resolve
-    the secret degrades to no header, never to an exception: being unable to
-    read the gate is a reason to call without it, never a reason to fail.
+    Without a hub-armed secret it sends the target instance's local token
+    (FLOWPAD-2233) — the instance whose ``server.json`` names the URL's port, so
+    one instance's token never rides a request to another.
+
+    ``get_cookie_gate`` answers from a ``stat()`` of the marker file and never
+    opens the encrypted store, which is what keeps desktop installs away from a
+    keychain prompt. Any failure to resolve a secret degrades to no header, never
+    to an exception: being unable to read the gate is a reason to call without
+    it, never a reason to fail.
     """
     try:
         from urllib.parse import urlsplit
 
-        if (urlsplit(url).hostname or "") not in _LOOPBACK_HOSTS:
+        parts = urlsplit(url)
+        if (parts.hostname or "") not in _LOOPBACK_HOSTS:
             return {}
-        secret = get_cookie_gate()
-        if not secret:
-            return {}
-        # Imported from the middleware that READS the header so the two cannot
-        # drift; deferred so the ungated path never pulls in starlette.
+        # Imported from the middleware that READS the header and owns the local
+        # token file, so the two cannot drift.
         from flow_sdk.server.middleware.cookie_gate_middleware import HEADER_NAME
 
+        secret = get_cookie_gate() or _local_token_for_port(parts.port)
+        if not secret:
+            return {}
         return {HEADER_NAME: secret}
     except Exception:
         return {}
+
+
+def _local_token_for_port(port: int | None) -> str | None:
+    """The local token of the instance listening on ``port``, or ``None``.
+
+    Each running instance names its port in ``<instance_dir>/server.json``. When
+    none does (not started yet, or stopped), this instance's own token is used
+    only if ``port`` is this instance's configured port.
+    """
+    import json
+
+    from flow_sdk.server.middleware.cookie_gate_middleware import (
+        LOCAL_TOKEN_FILENAME,
+        read_local_token,
+    )
+
+    if port is None:
+        return None
+    settings = get_instance_settings()
+    serving: Path | None = None
+    try:
+        for idir in settings.instances_root.iterdir():
+            try:
+                info = json.loads((idir / "server.json").read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                continue
+            if isinstance(info, dict) and info.get("port") == port:
+                serving = idir
+                break
+    except OSError:
+        pass
+    if serving is None and port == settings.port:
+        serving = settings.instance_dir
+    return read_local_token(serving / LOCAL_TOKEN_FILENAME) if serving is not None else None
 
 
 def is_gated() -> bool:
