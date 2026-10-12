@@ -6,6 +6,7 @@ const { promisify } = require('util');
 const { SEMVER_RE, isNewer } = require('./semver');
 const { createProgressWatchdog } = require('./progress-watchdog');
 const { showFailureDialog } = require('./failure-dialog');
+const { loadWithCookie } = require('./cookie-gate');
 
 const execFileAsync = promisify(execFile);
 
@@ -2255,7 +2256,7 @@ class UvManager {
       }
 
       if (mainWindow && !mainWindow.isDestroyed() && backendUrl) {
-        mainWindow.loadURL(backendUrl);
+        await loadWithCookie(mainWindow, backendUrl, this.log);
       }
       return true;
     } catch (err) {
@@ -2332,7 +2333,7 @@ class UvManager {
         throw new Error('restored backend did not become healthy');
       }
       if (mainWindow && !mainWindow.isDestroyed() && backendUrl) {
-        mainWindow.loadURL(backendUrl);
+        await loadWithCookie(mainWindow, backendUrl, this.log);
       }
       this.log.info('[uv] Restored the running version after a failed upgrade; will retry the upgrade next launch.');
       return true;

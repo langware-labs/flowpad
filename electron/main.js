@@ -7,6 +7,7 @@ const { offerMoveToApplications } = require('./app-location');
 const { showFailureDialog } = require('./failure-dialog');
 const { decideOffer, savePendingEngine, markPendingEngineConsented, planAfterDesktopUpdate, createReadyReminder } = require('./update-plan');
 const { createRestartApplier } = require('./update-restart');
+const cookieGate = require('./cookie-gate');
 // electron-updater's own token type (its dependency); not re-exported by electron-updater.
 const { CancellationToken } = require('builder-util-runtime');
 const path = require('path');
@@ -732,7 +733,7 @@ function handleDeepLink(url) {
     if (mainWindow && !mainWindow.isDestroyed()) {
       if (mainWindow.isMinimized()) mainWindow.restore();
       mainWindow.focus();
-      mainWindow.loadURL(localUrl);
+      cookieGate.loadWithCookie(mainWindow, localUrl, log);
     } else {
       // Window not ready yet — apply after startup completes.
       pendingDeepLink = localUrl;
@@ -1124,7 +1125,8 @@ async function waitForBackend({
   const result = await runBackendGate({
     probeHealth: async () => {
       try {
-        const response = await fetch(`${BACKEND_URL}/health/status`);
+        // Re-read each probe: a gated engine writes its token on the first request it serves.
+        const response = await fetch(`${BACKEND_URL}/health/status`, { headers: cookieGate.gateHeaders() });
         return response.ok;
       } catch {
         return false; // Backend not ready yet
@@ -1552,7 +1554,7 @@ async function startApp() {
     }
   });
   mainWindow.webContents.once('did-finish-load', () => offerPostponedRestartPrompt()); // the app is on screen: a held-back "Restart now" can show
-  mainWindow.loadURL(startUrl);
+  cookieGate.loadWithCookie(mainWindow, startUrl, log);
 
   // Open DevTools in development
   if (isDev) {
@@ -2014,7 +2016,7 @@ ipcMain.handle('upgrade-flowpad', async () => {
     const { ready } = await waitForBackend({ maxChecks: POST_UPGRADE_HEALTH_CHECKS });
 
     if (ready && mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.loadURL(BACKEND_URL);
+      await cookieGate.loadWithCookie(mainWindow, BACKEND_URL, log);
     }
 
     return { success: ready };
