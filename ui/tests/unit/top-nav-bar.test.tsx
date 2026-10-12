@@ -447,6 +447,38 @@ describe('the navigation bar', () => {
     expect(screen.getByTestId('top-nav-project-popover')).toBeTruthy();
   });
 
+  it.each([0, RUNTIME_HOVER_OPEN_DELAY_MS])('does not open help after dismissing the list at %i ms', async (delay) => {
+    const user = fakeClockUser();
+    renderBar();
+    const trigger = screen.getByTestId('top-nav-project-list');
+    await user.click(trigger);
+    act(() => void vi.advanceTimersByTime(delay));
+    // The modal blocks body pointer events, so click the document outside it.
+    await user.click(document.documentElement);
+    act(() => void vi.advanceTimersByTime(RUNTIME_HOVER_OPEN_DELAY_MS));
+    expect(screen.queryByTestId('top-nav-project-popover')).toBeNull();
+    expect(document.activeElement).toBe(trigger);
+    expect(screen.queryByTestId('top-nav-runtime-hover')).toBeNull();
+    await user.hover(trigger);
+    act(() => void vi.advanceTimersByTime(RUNTIME_HOVER_OPEN_DELAY_MS));
+    expect(screen.getByTestId('top-nav-runtime-hover')).toBeTruthy();
+  });
+
+  it('keeps keyboard focus restoration and allows help on a new keyboard visit', async () => {
+    const user = fakeClockUser();
+    renderBar();
+    const trigger = screen.getByTestId('top-nav-project-list');
+    await user.click(trigger);
+    await user.keyboard('{Escape}');
+    act(() => void vi.advanceTimersByTime(RUNTIME_HOVER_OPEN_DELAY_MS));
+    expect(document.activeElement).toBe(trigger);
+    expect(screen.queryByTestId('top-nav-runtime-hover')).toBeNull();
+    await user.tab();
+    await user.tab({ shift: true });
+    act(() => void vi.advanceTimersByTime(RUNTIME_HOVER_OPEN_DELAY_MS));
+    expect(screen.getByTestId('top-nav-runtime-hover')).toBeTruthy();
+  });
+
   it('reloads the window on click', async () => {
     const user = userEvent.setup();
     renderBar();

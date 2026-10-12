@@ -117,6 +117,7 @@ async def _sync_source(source: DataSource, *, now: Optional[datetime] = None) ->
         return report
     if placed is not None:
         report.outcomes.extend(placed.outcomes)
+        report.removed += placed.removed
 
     # Idle and clean: nothing arrived, the position did not move and the row already reads healthy,
     # so the steady state is one request and zero writes per tick (the poller stamped the next poll).
@@ -158,12 +159,40 @@ async def _place(source: DataSource, found: Pass) -> Optional[IngestReport]:
         # `sync_source` refused the run before traversing if this source cannot place files, so a
         # reflector exists here.
         await reflect_refs(source, found.refs, found.tombstones, found.renames)
+    if found.listed is not None:
+        removed = await _drop_gone(source, found.listed)
+        if removed:
+            report = report or IngestReport()
+            report.removed = removed
     if found.reactions:
         # After the records: a reaction in the same page as its message lands on that message.
         from flow_sdk.stream_inbox.reactions import apply_reactions  # noqa: PLC0415
 
         await apply_reactions(source, found.reactions)
     return report
+
+
+async def _drop_gone(source: DataSource, listed: frozenset) -> int:
+    """Remove this source's stored records that the outside system no longer has -- ``listed`` is its
+    whole collection, proven by the pass (``Pass.listed``). Returns how many went.
+
+    One guard, learned from mirrors: a listing that comes back EMPTY while records are stored removes
+    nothing. An outage that answers "200, no rows" is far likelier than a collection emptied in one
+    step, and the cost of being wrong is every record and every row mirrored from it."""
+    from flow_sdk.builtin.source_item import SourceItem  # noqa: PLC0415
+
+    stored = await SourceItem.get_all({"data_source_id": str(source.id)}) or []
+    gone = [item for item in stored if item.external_id not in listed]
+    if not gone or not listed:
+        if gone:
+            logger.warning("[ingest] %s/%s listed nothing while %d records are stored: none removed",
+                           source.provider, source.name or source.account_key, len(gone))
+        return 0
+    for item in gone:
+        await item.delete()
+    logger.info("[ingest] %s/%s: %d record(s) gone in the outside system, removed",
+                source.provider, source.name or source.account_key, len(gone))
+    return len(gone)
 
 
 async def _fail_source(

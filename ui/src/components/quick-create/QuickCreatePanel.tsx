@@ -333,6 +333,8 @@ export interface QuickCreatePanelProps {
    * renders under its own tagged wrapper, the asset groups + `folder` below it.
    */
   sections?: QuickCreateSection[];
+  /** Let the host adapt the group layout to its available space. */
+  className?: string;
   /**
    * Host-supplied tiles appended to the `chat` group's sessions — e.g. ProjectHome's
    * Terminal opener, whose creation path (and modals) live on the terminal
@@ -379,6 +381,7 @@ export function QuickCreatePanel({
   leadingSessionTiles = [],
   onDone,
   sections = ALL_SECTIONS,
+  className,
 }: QuickCreatePanelProps) {
   const { t } = useLingui();
   // Only `creatable`/`type_name` are read below, both synchronous from the
@@ -639,7 +642,7 @@ export function QuickCreatePanel({
   };
 
   return (
-    <div className="flex flex-col gap-6 pt-1" data-testid="quick-create-panel">
+    <div className={cn('flex flex-col gap-6 pt-1', className)} data-testid="quick-create-panel">
       {sections.map((s) => (
         <Fragment key={s}>{bySection[s]}</Fragment>
       ))}

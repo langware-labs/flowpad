@@ -1856,6 +1856,9 @@ async with ZenSource(SourceBinding(config={}, account_key=&quot;zen&quot;)) as z
 
 Chart: Channel (`flow.DataSource`) -&gt; Stream inbox (`flow.StreamInbox`) -&gt; Agent (`flow.AgenticProcess`) -&gt; Reply (`flow.DataSpec`)
 
+For webhook setup, user/group claims and delivery versus answering placement, read
+[channel webhook routing](../snippets/channel-webhook-routing.md) in the source checkout.
+
 ### Let the app answer
 
 Give the agent a channel; nothing of yours keeps running.
@@ -3049,6 +3052,9 @@ async with ZenSource(SourceBinding(config={}, account_key=&quot;zen&quot;)) as z
 `flow.StreamInbox` — One loop body answers email, Slack, Telegram and WhatsApp.
 
 Chart: Channel (`flow.DataSource`) -&gt; Stream inbox (`flow.StreamInbox`) -&gt; Agent (`flow.AgenticProcess`) -&gt; Reply (`flow.DataSpec`)
+
+For webhook setup, user/group claims and delivery versus answering placement, read
+[channel webhook routing](../snippets/channel-webhook-routing.md) in the source checkout.
 
 ### Let the app answer
 

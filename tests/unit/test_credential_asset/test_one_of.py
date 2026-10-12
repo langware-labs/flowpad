@@ -200,3 +200,14 @@ async def test_the_picked_way_reaches_the_store_step_as_its_variable():
 
     assert from_inputs("google-cloud", env(f"{KEY}={SA_KEY}")) == {KEY: SA_KEY}
     assert from_inputs("google-cloud", env({})) == {}, "closed by a sign-in: nothing to store"
+
+
+async def test_the_setups_own_check_is_answered_in_process_on_every_os():
+    """Windows spells the check as a PowerShell call; it is answered in-process there too. As a process it
+    took 27 s on a loaded Windows box — past the check's limit, so a connected credential read as missing."""
+    from flow_sdk.core.flow_command import flow_command
+
+    for platform in ("win32", "darwin", "linux"):
+        command = flow_command("credentials", "check", "google-cloud", "--project", "p1", platform=platform)
+        assert project_setup._own_check(command) == ("google-cloud", "p1", ""), platform
+    assert project_setup._own_check(flow_command("credentials", "set", "x", platform="win32")) is None

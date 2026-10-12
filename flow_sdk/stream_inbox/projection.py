@@ -42,7 +42,7 @@ from typing import Any, Optional
 
 from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.schema.data_spec.message_sender_spec import MessageSender
-from flow_sdk.stream_inbox._locks import loop_lock, new_registry
+from flow_sdk.stream_inbox._locks import loop_lock, new_registry, single_flight
 from flow_sdk.utils.serialization import iso_to_utc
 
 logger = logging.getLogger(__name__)
@@ -1186,25 +1186,13 @@ async def _on_sync(event) -> None:
     that lands after the running sweep read its batch.
     """
     source_id = str((event.data or {}).get("source_id") or "")
-    if not source_id:
-        return
-    pending = _sweeps.setdefault(asyncio.get_running_loop(), {})
-    if source_id in pending:
-        pending[source_id] = True
-        return
-    pending[source_id] = False
-    try:
-        while True:
-            try:
-                if await reconcile_source(source_id):
-                    _touch()
-            except Exception:  # noqa: BLE001
-                logger.exception("[stream-inbox] reconcile failed for source %s", source_id)
-            if not pending[source_id]:
-                return
-            pending[source_id] = False
-    finally:
-        pending.pop(source_id, None)
+    if source_id:
+        await single_flight(_sweeps, source_id, lambda: _reconcile(source_id), "[stream-inbox] reconcile failed for source %s")
+
+
+async def _reconcile(source_id: str) -> None:
+    if await reconcile_source(source_id):
+        _touch()
 
 
 def _touch() -> None:

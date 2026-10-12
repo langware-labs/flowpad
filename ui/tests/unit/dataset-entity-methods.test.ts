@@ -96,6 +96,16 @@ describe('the row actions a dataset client calls', () => {
     expect((call.mock.calls[1][0]).bodyParameters).toEqual({ keys: ['a'], expected: { a: 'v1' } });
   });
 
+  it('a mirrored row the outside system refused, or a field that cannot go back, reaches the caller as is', async () => {
+    for (const code of ['source_refused', 'not_writable']) {
+      const refusal = { response: { status: 400, data: { message: code, data: { details: [{ path: '', code, message: code }] } } } };
+      vi.spyOn(dataManager, 'callAction').mockRejectedValue(refusal as never);
+      await expect(ds().put('t-1', { input: { status: 'DONE' } })).rejects.toBe(refusal);
+      await expect(ds().putMany([{ key: 't-1', input: {} }])).rejects.toBe(refusal);
+      vi.restoreAllMocks();
+    }
+  });
+
   it('a refused bulk write surfaces the server\'s refusal to the caller', async () => {
     const refusal = { response: { status: 409, data: { message: 'used by lead dana', data: { details: [{ path: 'acme', code: 'referenced', message: 'used by lead dana' }] } } } };
     vi.spyOn(dataManager, 'callAction').mockRejectedValue(refusal as never);
@@ -337,6 +347,14 @@ describe('mirroring a data source and writing back through it', () => {
     expect([sent().name, sent().method, sent().bodyParameters]).toEqual(['mirror', 'POST', { source_id: 'src-1', map }]);
     await ds.mirror('src-1', map, { by: 'crm', prune: false, match: { 'input.source': 'crm' } });
     expect(sent(1).bodyParameters).toEqual({ source_id: 'src-1', map, by: 'crm', prune: false, match: { 'input.source': 'crm' } });
+  });
+
+  it('createItem() asks the source to make a record in its own system, and answers the record kept here', async () => {
+    const source = new DataSource({ id: '7e2b3c4d-1111-4a5b-8c9d-0e1f2a3b4c5d', name: 'CRM' } as never);
+    const answer = { item_id: 'i9', origin: { kind: 'record', namespace: 'crm', key: 'OPP-9' }, status: 'created' };
+    call.mockResolvedValue(answer as never);
+    expect(await source.createItem({ title: 'Call Acme back' })).toEqual(answer);
+    expect([sent().name, sent().method, sent().bodyParameters]).toEqual(['create_item', 'POST', { data: { title: 'Call Acme back' } }]);
   });
 
   it('updateItem() and deleteItem() ask the source to write to its own system', async () => {

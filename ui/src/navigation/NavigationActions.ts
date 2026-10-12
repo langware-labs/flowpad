@@ -34,6 +34,7 @@ import {
   JOURNEY_STEP_PARAM,
   NODE_PARAM,
   WORKSPACE_PARAM,
+  WORKSPACE_ENTRY_PARAM,
 } from './DockPointer';
 import { dockPointerForFile } from './local-file-pointer';
 import { getHistoryPosition } from './history-position-store';
@@ -515,7 +516,7 @@ export class NavigationActions {
   }
 
   /**
-   * Switch the active workspace and land on its home. `null` (or the default
+   * Switch the active workspace and resume its last project and tab. `null` (or the default
    * workspace's id) is the default workspace — the param is cleared, so its URLs
    * are the ones from before workspaces existed.
    *
@@ -523,7 +524,7 @@ export class NavigationActions {
    * `openDock`'s carry-forward would put the OLD workspace straight back.
    */
   openWorkspace(workspaceId: string | null): void {
-    this.commitPointer(DockPointer.root().withOption(WORKSPACE_PARAM, workspaceId || null));
+    this.commitPointer(DockPointer.root().withOption(WORKSPACE_PARAM, workspaceId || null).withOption(WORKSPACE_ENTRY_PARAM, 'resume'));
   }
 
   /**
