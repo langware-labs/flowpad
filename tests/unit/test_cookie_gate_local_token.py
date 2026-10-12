@@ -19,6 +19,7 @@ from starlette.routing import Route
 from starlette.testclient import TestClient
 
 import flow_sdk.server.middleware.cookie_gate_middleware as gate
+import flow_sdk.server.middleware.local_cookiegate_middleware as local
 
 pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
 
@@ -65,7 +66,7 @@ def test_concurrent_first_requests_agree_on_one_token(local_gate):
     results: list[str | None] = []
 
     def create():
-        results.append(gate._create_local_token(local_gate))
+        results.append(local._create_local_token(local_gate))
 
     threads = [threading.Thread(target=create) for _ in range(8)]
     for t in threads:
@@ -75,11 +76,11 @@ def test_concurrent_first_requests_agree_on_one_token(local_gate):
 
     on_disk = local_gate.read_text(encoding="utf-8")
     assert results == [on_disk] * 8
-    assert [p.name for p in local_gate.parent.iterdir()] == [gate.LOCAL_TOKEN_FILENAME]
+    assert [p.name for p in local_gate.parent.iterdir()] == [local.LOCAL_TOKEN_FILENAME]
 
 
 def test_off_switch_without_a_file_passes_and_creates_nothing(local_gate, monkeypatch):
-    monkeypatch.setenv(gate.OFF_SWITCH_ENV, "off")
+    monkeypatch.setenv(local.OFF_SWITCH_ENV, "off")
 
     assert TestClient(_app()).get("/").status_code == 200
     assert not local_gate.exists()
@@ -88,7 +89,7 @@ def test_off_switch_without_a_file_passes_and_creates_nothing(local_gate, monkey
 def test_off_switch_still_enforces_an_existing_token(local_gate, monkeypatch):
     local_gate.parent.mkdir(parents=True)
     local_gate.write_text("existing-token", encoding="utf-8")
-    monkeypatch.setenv(gate.OFF_SWITCH_ENV, "off")
+    monkeypatch.setenv(local.OFF_SWITCH_ENV, "off")
     client = TestClient(_app())
 
     assert client.get("/").status_code == 403
@@ -98,8 +99,8 @@ def test_off_switch_still_enforces_an_existing_token(local_gate, monkeypatch):
 def test_a_token_that_cannot_be_created_fails_closed(tmp_path, monkeypatch):
     blocker = tmp_path / "not-a-dir"
     blocker.write_text("", encoding="utf-8")  # the token's parent is a file: mkdir fails
-    monkeypatch.delenv(gate.OFF_SWITCH_ENV, raising=False)
-    monkeypatch.setattr(gate, "LOCAL_TOKEN_PATH", blocker / gate.LOCAL_TOKEN_FILENAME)
+    monkeypatch.delenv(local.OFF_SWITCH_ENV, raising=False)
+    monkeypatch.setattr(local, "LOCAL_TOKEN_PATH", blocker / local.LOCAL_TOKEN_FILENAME)
 
     with patch.object(gate, "get_cookie_gate", return_value=None):
         response = TestClient(_app()).post("/api/v1/graph/shell")
@@ -128,3 +129,24 @@ def test_a_hub_armed_secret_takes_precedence(local_gate):
         assert client.get("/", headers=_header(HUB_SECRET)).status_code == 200
 
     assert not local_gate.exists()
+
+
+def test_hub_arming_after_startup_is_enforced_on_the_next_request(local_gate):
+    """The gate is chosen per request: a sandbox armed after the app was built
+    gets the sandbox gate at once, not the local one it started with."""
+    client = TestClient(_app())
+    client.get("/")  # local gate, token created
+    token = local_gate.read_text(encoding="utf-8")
+
+    with patch.object(gate, "get_cookie_gate", return_value=HUB_SECRET):
+        assert client.get("/", headers=_header(token)).status_code == 403
+        assert client.get("/", headers=_header(HUB_SECRET)).status_code == 200
+
+
+def test_the_local_gate_ignores_the_sandbox_cookie(local_gate):
+    client = TestClient(_app())
+    client.get("/")
+    token = local_gate.read_text(encoding="utf-8")
+    client.cookies.set("__Host-cookie-gate", token)
+
+    assert client.get("/").status_code == 403

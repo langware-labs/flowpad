@@ -122,7 +122,7 @@ async def gate(
     so a stale gate link still lands in the app rather than 404ing.
     """
     from flow_sdk.instance_settings.cookie_gate import get_cookie_gate
-    from flow_sdk.server.middleware.cookie_gate_middleware import COOKIE_NAME
+    from flow_sdk.server.middleware.sandbox_cookiegate_middleware import COOKIE_NAME
 
     response = RedirectResponse(url=_safe_next(next), status_code=302)
 

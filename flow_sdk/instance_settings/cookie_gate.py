@@ -283,7 +283,7 @@ def _local_token_for_port(port: int | None) -> str | None:
     """
     import json
 
-    from flow_sdk.server.middleware.cookie_gate_middleware import (
+    from flow_sdk.server.middleware.local_cookiegate_middleware import (
         LOCAL_TOKEN_FILENAME,
         read_local_token,
     )
