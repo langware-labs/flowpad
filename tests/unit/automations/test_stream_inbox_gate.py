@@ -285,3 +285,26 @@ async def test_a_flowpad_conversation_message_fires_an_any_channel_rule(
         tag_triggers.unregister_tag_trigger(rule.id)
     start = history(rule)[0]
     assert start["hook_event"] == "tag_fire" and start["subject_id"] == fm.id
+
+
+def test_an_attachment_only_message_still_says_what_it_carried():
+    """A teammate's message that is only a session transcript reaches the decision as ``files``,
+    without the message's own conversation and itself (references every hub message carries)."""
+    from flow_sdk.builtin.flow_message import Attachment, AttachmentType
+    from flow_sdk.schema.data_spec.message_sender_spec import MessageSender
+    from flow_sdk.stream_inbox.message_subject import state_of
+
+    conv, mid = str(uuid.uuid4()), str(uuid.uuid4())
+    fm = FlowMessage(
+        id=mid,
+        text="",
+        conversation_id=conv,
+        sender=MessageSender.user(str(uuid.uuid4())),
+        attachment=[
+            Attachment(attachment_type=AttachmentType.TYPE_ID, data=f"conversation-{conv}"),
+            Attachment(attachment_type=AttachmentType.TYPE_ID, data=f"flow_message-{mid}"),
+            Attachment(attachment_type=AttachmentType.TYPE_ID, data=f"claude_session-{uuid.uuid4()}"),
+            Attachment(attachment_type=AttachmentType.FILE, data="attachment/screenshot.png"),
+        ],
+    )
+    assert state_of(fm, set()).files == ["claude_session", "screenshot.png"]

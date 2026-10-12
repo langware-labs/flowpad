@@ -1,6 +1,6 @@
 {
   "title": "Bug triage",
-  "description": "Takes a bug Ami reports in New BUGS, reproduces it, asks him for what's missing, runs RCA + RCA test, and sends Gadi a report.",
+  "description": "Takes a bug Ami reports in New BUGS, reproduces it, asks him for what's missing, runs RCA + RCA test, and sends Gadi a private report.",
   "avatar": "🐞",
   "worker_type": "claude",
   "model": "lg",

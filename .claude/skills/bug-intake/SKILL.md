@@ -112,12 +112,12 @@ Then deliver it:
 
 ```bash
 flow artifact file <bug-folder>/report.html
-flow conversation attach <reports-conversation> <bug-folder>/report.html "🐞 <one-line title> — <reproduced / not reproduced>, <core cause in a few words>"
-flow conversation attach <reports-conversation> <bug-folder>/repro.sh "Reproduction: bash repro.sh"
+flow conversation attach 35aca1ca-7028-4ee9-9e59-e26a93f978fb <bug-folder>/report.html "🐞 <one-line title> — <reproduced / not reproduced>, <core cause in a few words>"
+flow conversation attach 35aca1ca-7028-4ee9-9e59-e26a93f978fb <bug-folder>/repro.sh "Reproduction: bash repro.sh"
 ```
 
-`<reports-conversation>` is the private conversation titled `Bug triage reports` (find its id
-in `flow conversation list`). If it does not exist, put the report only in the run artifact
-and say so in your final line — never post a report into the bug conversation.
+`35aca1ca-7028-4ee9-9e59-e26a93f978fb` is Gadi's private `Bug triage reports` conversation —
+only he is in it. The report never goes to the bug's own conversation (New BUGS); Ami only
+ever gets the questions of step 3.
 
 Set `status: reported`.

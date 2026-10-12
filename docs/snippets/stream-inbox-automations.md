@@ -99,7 +99,7 @@ from flow_sdk.schema.data_spec.message_state_spec import MessageState
 gate = rule.gate_op    # the row's `gate` as the DecisionOp it is; None when the rule has no worded if
 gate.sentence          # 'asks for a refund or disputes a charge'
 gate.questions["match"].instructions
-#   'Is this true of the message (`text`, `subject`, from `sender`): asks for a refund or disputes a charge?'
+#   'Is this true of the message (`text`, `subject`, `files`, from `sender`): asks for a refund or disputes a charge?'
 gate.require["match"].yes          # 0.85
 
 verdict = await decide_op(gate, MessageState.from_text("Hi, I was billed for a plan I cancelled. Can you reverse it?"))
