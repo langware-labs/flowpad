@@ -515,11 +515,19 @@ export const TabStrip: React.FC<TabStripProps> = ({
         {...(item.dataAttributes ?? {})}
       >
         <span className="relative inline-flex shrink-0 items-center justify-center">
-          <span className={item.favorite && !isEditing ? 'inline-flex group-hover:invisible' : 'inline-flex'}>
+          {/* The star takes the icon's place only after a 2s hover: a pass over the
+              chip on the way to a click must not land on the bookmark toggle. */}
+          <span
+            className={
+              item.favorite && !isEditing
+                ? 'inline-flex transition-[visibility] duration-0 group-hover:invisible group-hover:delay-[2000ms]'
+                : 'inline-flex'
+            }
+          >
             {item.standsFor?.icon ?? item.icon}
           </span>
           {item.favorite && !isEditing && (
-            <span className="absolute inset-0 hidden items-center justify-center group-hover:flex">
+            <span className="invisible absolute inset-0 flex items-center justify-center transition-[visibility] duration-0 group-hover:visible group-hover:delay-[2000ms]">
               <TabFavoriteStar favorite={item.favorite} chip={() => tabRefs.current[key] ?? null} />
             </span>
           )}
