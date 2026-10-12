@@ -22,6 +22,7 @@ import { privacyManager } from './services/privacy_mode';
 import { ConnectionManager } from './websocket';
 import type { BootstrapInfo } from './models/BootstrapInfo';
 import { applyBootstrapUser } from './session-refresh';
+import { adoptHostVisibility, appTypeId } from './apps/host';
 
 declare global {
   interface Window {
@@ -51,6 +52,9 @@ export async function initSdk(params?: {
     return initPromise;
   }
   setupWorkspace = params?.setupWorkspace === true;
+  // A served app (addressed by its endpoint) is parked, not unloaded, when its tab is not shown:
+  // let its `document.hidden` say so, so its timers and polls rest with it (`adoptHostVisibility`).
+  if (appTypeId()) adoptHostVisibility();
   performance.mark?.('sdk:init:start');
   initPromise = (async () => {
     try {

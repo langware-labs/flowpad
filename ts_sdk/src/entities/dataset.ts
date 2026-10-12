@@ -198,6 +198,10 @@ export interface DatasetRowsChange {
   op: 'put' | 'delete' | 'rename' | 'sync';
   keys: string[];
   count: number;
+  /** The rows as a whole after this write (the same `version` a `rows()` read carries); what
+   *  `onRowsChanged` compares on reconnect. `sync` with no keys is "something moved while you were
+   *  away". */
+  version: string;
 }
 
 /** Who a write is made for, as the row actions read it. `by` names the outside system the writer
@@ -363,9 +367,18 @@ export class Dataset extends APIEntity<Dataset> implements IDataset {
    *  `input.stage_dates.won`; a date compares as its ISO string. */
   async rows(
     query: DatasetRowQuery = {},
-  ): Promise<{ rows: DatasetRow[]; total: number; problems: DatasetRowProblem[]; linked?: Record<string, LinkedRow> }> {
-    return this.get('rows', rowQueryParams(query));
+  ): Promise<{ rows: DatasetRow[]; total: number; problems: DatasetRowProblem[]; linked?: Record<string, LinkedRow>; version: string }> {
+    const found = await this.get<{ rows: DatasetRow[]; total: number; problems: DatasetRowProblem[]; linked?: Record<string, LinkedRow>; version: string }>(
+      'rows',
+      rowQueryParams(query),
+    );
+    this.rowsRead = found.version; // a read is a sighting too (`onRowsChanged`)
+    return found;
   }
+
+  /** The rows version the last `rows()` on this instance read — so a listener on it never asks the
+   *  page to re-read what it just read, whichever came first, the read or the subscription. */
+  private rowsRead?: string;
 
   /** How many rows match — the SAME `match` and `q` as `rows`, so a number and the list behind it
    *  are one question — and, with `group_by`, how many per distinct combination (a path, or a date
@@ -390,20 +403,49 @@ export class Dataset extends APIEntity<Dataset> implements IDataset {
   /** Hear that rows of THIS dataset were written — by this app, another one, or a script — instead
    *  of polling: `handler` gets what happened (`op`), up to 100 of the `keys` that moved and how
    *  many moved in all (`count`) — never the values: re-read the rows you show (`rows(query)`).
-   *  One call per write, however many rows it wrote. Best effort (a hint to re-read, not a log):
-   *  an event sent while the page was disconnected is not replayed, so still re-read on focus.
-   *  Returns the function that stops listening. */
+   *  One call per write, however many rows it wrote. The event is enough — no timer, no re-read on
+   *  focus: a write made while the socket was down is told once it is back, as `{op: 'sync',
+   *  keys: [], count: 0, version}` — the rows' version moved past the last one this listener heard
+   *  or this instance read. Returns the function that stops listening. */
   onRowsChanged(handler: (change: DatasetRowsChange) => void): () => void {
     // The server's tags reach this page's bus over the socket. A served app's `initSdk()` does not
     // open one (only the full UI does, after paint), so listening opens it — both are idempotent,
-    // and a socket that cannot open leaves the page re-reading on focus, never an error here.
+    // and a socket that cannot open is not an error here: it is retried, and the catch-up below
+    // runs once it opens.
     startTagBridge();
-    void ConnectionManager.getInstance()
-      .connect()
-      .catch(() => undefined);
-    return EventBus.on(DATASET_ROWS_CHANGED, (event) => handler(event.data as unknown as DatasetRowsChange), {
-      target: targetOf('dataset', this.id),
-    });
+    const connection = ConnectionManager.getInstance();
+    void connection.connect().catch(() => undefined);
+    // The last version THIS listener heard — its own, so two views on one dataset each catch up.
+    let heard: string | undefined;
+    const offTag = EventBus.on(
+      DATASET_ROWS_CHANGED,
+      (event) => {
+        const change = event.data as unknown as DatasetRowsChange;
+        heard = change.version;
+        handler(change);
+      },
+      { target: targetOf('dataset', this.id) },
+    );
+    // What was missed while the socket was down: one small read, and a `sync` only when the version
+    // is one neither this listener heard nor this instance read. The first check is the baseline.
+    const catchUp = async () => {
+      let version: string;
+      try {
+        ({ version } = await this.get<{ version: string }>('rows-version'));
+      } catch {
+        return; // the server is away: the next reconnect asks again
+      }
+      const known = heard ?? this.rowsRead;
+      const moved = known !== undefined && version !== heard && version !== this.rowsRead;
+      heard = version;
+      if (moved) handler({ op: 'sync', keys: [], count: 0, version });
+    };
+    void catchUp();
+    connection.on('on_reconnected', catchUp);
+    return () => {
+      offTag();
+      connection.off('on_reconnected', catchUp);
+    };
   }
 
   /** Every eval run on this dataset, newest first (summaries — no slices). */
