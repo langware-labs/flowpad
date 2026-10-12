@@ -79,7 +79,6 @@ const ROWS: Record<string, RowSpec[]> = {
   ],
   project: [
     [msg`Members`, (e) => people(e.members)],
-    [msg`Published`, (e) => ago(e.hub_published_at)],
     [msg`Mode`, (e) => word(e.last_mode)],
     UPDATED,
   ],
