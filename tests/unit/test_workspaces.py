@@ -392,3 +392,24 @@ async def test_bootstrap_lists_workspaces_with_their_folders(db, home):
     assert rows[0]["root_path"] is None
     assert rows[0]["root"] == canonical_posix_path(home / "Flowpad workspace").lstrip("/")
     assert rows[1]["root_path"] == client.root_path
+
+
+@pytest.mark.timeout(30)
+@pytest.mark.asyncio
+async def test_last_active_project_is_scoped_to_workspace(db, home):
+    from flow_sdk.builtin.project import Project
+    from flow_sdk.builtin.workspace import Workspace
+
+    workspace = await Workspace.new("Client")
+    for name, root, recency in [("older", Path(workspace.root_path), 10),
+                                ("recent", Path(workspace.root_path), 20),
+                                ("outside", home / "Flowpad workspace", 30)]:
+        folder = root / name
+        folder.mkdir(parents=True)
+        project = Project(name=name, fs_storage_mount_path=str(folder), last_active_at=recency)
+        project.id = Project.allocate_id(project.model_dump())
+        await project.save()
+    assert (await Project.get_last_active(str(workspace.id))).name == "recent"
+    assert (await Project.get_last_active()).name == "outside"
+    empty = await Workspace.new("Empty")
+    assert await Project.get_last_active(str(empty.id)) is None

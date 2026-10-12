@@ -6,12 +6,13 @@ from typing import Optional
 from pydantic import model_validator
 
 from flow_sdk.api.api_types.api_field import APIField, NoDBAPIField, Sharing
-from flow_sdk.core import Entity
+from flow_sdk.core import Entity, action
 from flow_sdk.core.entity.entity_model import EntityType
 from flow_sdk.db.db_entity import DBEntity
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.request_context.methods import get_current_request_info
+from flow_sdk.responses.response import ApiResponse, ApiSuccessResponse
 
 #: The default workspace's uname — the ``@local`` row bootstrap mints. Its root is
 #: the instance's ``workspace_root``, resolved per call and never stored.
@@ -229,6 +230,14 @@ class Workspace(Entity):
         from flow_sdk.config import path_in_workspace  # noqa: PLC0415
 
         return path_in_workspace(path, str(self.id))
+
+    @action.get(action_name="last-active-project")
+    async def last_active_project(self) -> ApiResponse:
+        """Resume the most recently used visible project still in this workspace."""
+        from flow_sdk.builtin.project import Project  # noqa: PLC0415
+
+        project = await Project.get_last_active(workspace_id=str(self.id))
+        return ApiSuccessResponse(data={"project_id": str(project.id) if project else None})
 
     async def projects(self) -> list:
         """This workspace's projects, by the location rule."""

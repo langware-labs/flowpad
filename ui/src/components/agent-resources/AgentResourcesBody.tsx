@@ -28,6 +28,7 @@ import { useStagedAssets } from './useStagedAssets';
 import { Empty, IconButton, ResourceRow } from './parts';
 import { AgentCredentialsSection } from './AgentCredentialsSection';
 import { AgentSchedulesSection } from './AgentSchedulesSection';
+import { AgentDataSourcesSection } from './AgentDataSourcesSection';
 import { useQuickCreatePick } from '@src/components/quick-create';
 import { SetupStagesButton } from '@src/components/setup-wizard/SetupStagesButton';
 import { SourceSetupButton } from '@src/components/data-sources/SourceSetupButton';
@@ -96,13 +97,12 @@ export function AgentResourcesBody() {
   // Stream Inbox view; before this, `owner` was never set at all and every source
   // created from this panel came back unowned regardless of which agent's
   // editor it was opened from.
-  const { activeEntityTypeId } = useContext();
+  const { activeEntityTypeId, project } = useContext();
   const editingAgentId = activeEntityTypeId?.type === Agent.type ? activeEntityTypeId : null;
   const editingAgentKey = editingAgentId?.toString() ?? null;
 
   const { navigation, currentDock } = useDockNavigation();
 
-  const [addSourceOpen, setAddSourceOpen] = useState(false);
   const [addChannelOpen, setAddChannelOpen] = useState(false);
   // One rule for "a channel" everywhere: a driver that SENDS is a message channel (the stream
   // inbox's attached-channels bar and the Add channel dialog use the same predicate).
@@ -220,7 +220,7 @@ export function AgentResourcesBody() {
       onConfirm: async () => {
         await apiClient.delete(`${config.API_PREFIXES.graph}/${type}/${id}`);
       },
-      onAfterDelete: () => mcpAssets.refresh(),
+      onAfterDelete: () => { void mcpAssets.refresh(); },
     });
   };
 
@@ -255,46 +255,23 @@ export function AgentResourcesBody() {
         {renderSourceRows(channelRows, 'channel')}
       </NavigatorSection>
 
-      <NavigatorSection
-        scope="agent-resources"
-        id="data-sources"
-        label={t`Data sources`}
-        isLoading={sourcesLoading}
-        itemCount={dataSourceRows.length}
-        action={
-          <IconButton
-            icon={Plus}
-            label={t`Add data source`}
-            onClick={() => setAddSourceOpen(true)}
-            testId="agent-resource-add-data-source"
-          />
-        }
-        emptyState={
-          <Empty>
-            <Trans>Connect a data source to make it available here</Trans>
-          </Empty>
-        }
-      >
-        {renderSourceRows(dataSourceRows, 'data_source')}
-      </NavigatorSection>
+      <AgentDataSourcesSection
+        key={`${project?.id ?? ''}:${editingAgentKey ?? ''}`}
+        project={project}
+        agent={editingAgentId}
+        ownedSources={dataSourceRows.map((row) => row.source)}
+        sourcesLoading={sourcesLoading}
+        onOpen={(typeid) => openChild('data_source', typeid)()}
+        isOpen={isOpen}
+        onDelete={setDeleting}
+      />
 
       {editingAgentId && <AgentSchedulesSection agentTypeId={editingAgentId} />}
 
       {editingAgentId && <AgentCredentialsSection />}
 
-      {/* The project's own add-source form, reused verbatim — `editing` unset
-          is its create mode. Mounted here rather than behind a navigation so
-          the pane never loses the agent being edited. `owner` stamps the
-          created source onto the agent this panel is open for, same as
-          `AttachedChannelsBar`'s call one view over. */}
-      <DataSourceDialog
-        open={addSourceOpen}
-        onOpenChange={setAddSourceOpen}
-        owner={editingAgentId}
-        only={(spec) => !isMessageDriverSpec(spec)}
-      />
       {addChannelOpen && (
-        <DataSourceDialog open onOpenChange={setAddChannelOpen} owner={editingAgentId} only={isMessageDriverSpec} />
+        <DataSourceDialog open onOpenChange={setAddChannelOpen} owner={editingAgentId} only={isMessageDriverSpec} variant="channel" />
       )}
 
       <ConfirmDialog

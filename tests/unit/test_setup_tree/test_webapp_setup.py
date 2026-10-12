@@ -154,7 +154,7 @@ async def test_a_failed_recheck_answered_in_process_says_its_own_reason(monkeypa
     from flow_sdk.schema.data_spec.compute_op_spec import ComputeOpSpec
     from flow_sdk.schema.data_spec.returned_value_spec import CliResult, ReturnedValue
 
-    async def step(webapp, which, *, check):
+    async def step(webapp, which, *, check, display=""):
         return ReturnedValue(exit_code=ExitCode.NOT_YET if check else ExitCode.OK,
                              detail="port 3000 is held by another program" if check else "started")
 

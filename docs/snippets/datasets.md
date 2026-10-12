@@ -187,6 +187,13 @@ kind: `GET /api/v1/kinds/<kind>/datasets?project=<id>` (TypeScript `Dataset.forK
 
 ## 9. Mirror an outside system, and read only what you show
 
+A system of record reached through a data source is mirrored by DECLARING it on the source
+(`"mirror": {dataset, map, by?}` in its `data_source.json`): every sync keeps the dataset so, and a
+row's outside-owned fields write back through the source. The map turns ids into links
+(`{"link": <kind>, "by": <unique field>, "path": "data.deal_ids.*"}`). See
+[mirroring a system of record](../data-management/mirroring-a-system-of-record.md). What follows is
+the same mirror done by hand, from rows your own code builds.
+
 An app that keeps real records — a mirror of a CRM, a log of outreach — writes many rows per run and
 shows a few of them. `sync` makes the dataset hold exactly the rows given, in one step; `query` and
 `count` answer the rows that match, so a number on a dashboard and the list behind it are one question.

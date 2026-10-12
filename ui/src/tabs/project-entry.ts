@@ -37,10 +37,12 @@ function isScopeKeyedView(viewType: string | null | undefined): viewType is View
 export async function dockForScopeEntry(
   projectId: string | null,
   currentDock?: DockPointer | null,
+  fallback?: DockPointer,
 ): Promise<DockPointer> {
   const tabs = (await tabManager.snapshotOrRefresh()).filter((t) => tabInProject(t, projectId));
   const dock = tabDock(tabManager.resolveNext(tabs.filter(tabHasRecency)));
   if (dock) return scopedToEntry(dock, projectId);
+  if (fallback) return scopedToEntry(fallback, projectId);
 
   if (isScopeKeyedView(currentDock?.viewType)) {
     return new DockPointer(currentDock.viewType, '').withScopeFilter(

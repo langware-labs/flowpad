@@ -111,6 +111,14 @@ async def _on_server_startup():
 
     await _ensure_local_entities()
 
+    # A previously enabled direct callback keeps its port across restarts.
+    from flow_sdk.server import webhook_listener
+
+    try:
+        await webhook_listener.restore()
+    except Exception:
+        logging.getLogger(__name__).exception("Direct webhook listener could not start")
+
     # Start putting activity progress on the socket. Installed HERE rather than at import
     # time because the emitter captures the running loop to defer its coalesced flushes
     # onto — at import there is no loop, and every tick would silently go nowhere.
@@ -614,6 +622,10 @@ async def _start_fsop_watcher() -> None:
         from flow_sdk.ingest.change_event import subscribe as subscribe_source_changes
 
         subscribe_source_changes()
+        # A source that declares a mirror has its dataset made the mirror of its records after every sync.
+        from flow_sdk.datasets.projection import start_dataset_projection
+
+        start_dataset_projection()
         print(f"  FSOp watcher: started ({len(fsop_watcher)} trigger(s))")
     except Exception:
         logging.getLogger(__name__).exception("FSOp watcher: failed to start")
@@ -803,6 +815,9 @@ async def _start_cloud_ws_listener() -> None:
 async def _shutdown_extras():
     """Clean up server.json and stop cron scheduler."""
     from flow_sdk.config import clear_server_info
+    from flow_sdk.server import webhook_listener
+
+    await webhook_listener.stop()
 
     if _AGENT_SERVER is not None:
         try:

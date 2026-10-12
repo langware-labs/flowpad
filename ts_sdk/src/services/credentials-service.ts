@@ -209,6 +209,8 @@ export interface CredentialManifestInput {
 }
 
 export interface SaveCredentialRequest {
+  /** Match a variable to its credential/template, creating or extending it as needed. */
+  auto_declare?: boolean;
   /** Required to create; ignored on update, which keeps the credential's scope. */
   scope?: CredentialScopeName;
   project_id?: string | null;

@@ -21,6 +21,7 @@ from pydantic import ConfigDict, Field, model_validator
 
 from flow_sdk.schema.data_spec.credential_contract import assert_value_free
 from flow_sdk.schema.data_spec.frontmatter import AssetDocumentSpec
+from flow_sdk.schema.data_spec.webhook_spec import WebhookDelivery
 from flow_sdk.secrets.store import SecretStoreRef
 
 
@@ -39,6 +40,8 @@ class DataSourceSpec(AssetDocumentSpec):
     config: dict[str, Any] = Field(default_factory=dict, alias="data_driver_config")
     #: Whose source: the local user or an Agent (a TypeId string). Absent = the local user.
     owner: Optional[str] = None
+    #: How signed provider webhooks reach this source; existing sources retain hub delivery.
+    webhook_delivery: WebhookDelivery = WebhookDelivery.HUB
     #: The one place (a Deployment id) that answers this source for its owning agent.
     answer_place: Optional[str] = None
     reflect: Optional[str] = None
@@ -55,6 +58,9 @@ class DataSourceSpec(AssetDocumentSpec):
     secret_store: Optional[SecretStoreRef] = None
     #: The provider of the account this source acts as; absent = the driver's connector.
     connection: Optional[str] = None
+    #: The dataset this source's records are mirrored into after every sync: ``{dataset, map, by?}``
+    #: (``flow_sdk.datasets.projection``).
+    mirror: Optional[dict[str, Any]] = None
 
     @model_validator(mode="before")
     @classmethod

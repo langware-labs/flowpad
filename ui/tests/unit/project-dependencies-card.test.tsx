@@ -4,6 +4,7 @@
  * the project's own.
  */
 import '@testing-library/jest-dom/vitest';
+import { MemoryRouter } from 'react-router';
 
 import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -44,9 +45,11 @@ function makeProject(dependencies: DependencyState[], warnings: DependencyState[
 
 function renderCard(project: ReturnType<typeof makeProject>) {
   return render(
-    <TooltipProvider>
-      <ProjectDependenciesCard project={project as unknown as Project} />
-    </TooltipProvider>,
+    <MemoryRouter>
+      <TooltipProvider>
+        <ProjectDependenciesCard project={project as unknown as Project} />
+      </TooltipProvider>
+    </MemoryRouter>,
   );
 }
 
@@ -80,6 +83,15 @@ describe('ProjectDependenciesCard', () => {
       ['extras', 'not_installed'],
     ]);
     expect(screen.getByText('1 optional dependency not installed')).toBeInTheDocument();
+  });
+
+  it('does not call a dependency ready while its required setup is incomplete', async () => {
+    renderCard(makeProject([dep('service', {
+      project_id: PID,
+      lifecycle: { state: 'setup_required', detail: 'Setup required', run: null, project_id: PID, asset: null },
+    })]));
+    expect(await screen.findByRole('button', { name: 'Setup required' })).toBeInTheDocument();
+    expect(screen.queryByText('ready')).not.toBeInTheDocument();
   });
 
   it('installs an optional dependency that is not installed, and only that one', async () => {

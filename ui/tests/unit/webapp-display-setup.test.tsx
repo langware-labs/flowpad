@@ -1,7 +1,6 @@
 /**
  * A project's web app found NOT RUNNING is set up, not repaired: the display asks for the app's node of the
- * project's setup tree to be started (`useSetupRun` … `autoStart`) and shows "Setting things up" with the
- * live tree while it starts and runs; the repair agent waits.
+ * shared provider Load lifecycle. The approval gate owns missing installation; the repair agent waits.
  */
 import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -23,22 +22,10 @@ vi.mock('@src/components/webapp-display/useWebappDiagnostics', () => ({
 vi.mock('@src/components/webapp-display/useWebappFix', () => ({
   useWebappFix: () => ({ running: false, toolCount: 0, start: mocks.fixStart, autoAttempted: false }),
 }));
-vi.mock('@src/components/project-setup/use-setup-run', () => ({
-  useSetupRun: (...args: unknown[]) => {
-    mocks.setupCalls.push(args);
-    const { autoStart = false } = (args[3] ?? {}) as { autoStart?: boolean };
-    return {
-      tree: {
-        state: 'running', detail: '', total: 2, done: 1, ran: true,
-        root: { id: 'micro_app-a1', label: 'site', level: 0, state: 'running', detail: '', prepare: null, run: null, children: [], shared: false },
-      },
-      // The real hook: starting from the moment it is asked to auto-start until the run is known to be going.
-      running: false,
-      starting: autoStart,
-      questionId: null,
-      settleQuestion: () => {},
-      start: () => Promise.resolve(),
-    };
+vi.mock('@src/components/project-setup/ProjectLoadGate', () => ({
+  ProjectLoadGate: ({ projectId }: { projectId: string }) => {
+    mocks.setupCalls.push([projectId]);
+    return <div data-testid="project-load-gate">Load checks prerequisites; setup requires approval.</div>;
   },
 }));
 
@@ -54,20 +41,18 @@ describe('WebappDisplay — an app that is not running yet', () => {
   });
   afterEach(cleanup);
 
-  it('asks for the app’s own setup and shows the tree instead of the debug panel', () => {
+  it('uses the shared provider lifecycle gate instead of automatically starting setup', () => {
     render(<WebappDisplay endpoint={{ webapp_id: 'a1', project_id: 'p1' } as never} src="http://localhost:4173/" />);
 
-    expect(screen.getByTestId('webapp-setting-up').textContent).toContain('Setting things up');
-    expect(screen.queryByTestId('setup-node-micro_app-a1')).not.toBeNull();
-    const [project, root, , options] = mocks.setupCalls.at(-1) ?? [];
-    expect([project, root, options]).toEqual(['p1', 'micro_app-a1', { autoStart: true }]);
+    expect(screen.getByTestId('project-load-gate').textContent).toContain('setup requires approval');
+    expect(mocks.setupCalls.at(-1)).toEqual(['p1']);
     expect(mocks.fixStart).not.toHaveBeenCalled();
   });
 
   it('an app with no project to set it up in goes straight to repair', async () => {
     render(<WebappDisplay endpoint={null} src="http://localhost:4173/" />);
-    expect(screen.queryByTestId('webapp-setting-up')).toBeNull();
-    expect((mocks.setupCalls.at(-1)?.[3] as { autoStart?: boolean })?.autoStart).toBe(false);
+    expect(screen.queryByTestId('project-load-gate')).toBeNull();
+    expect(mocks.setupCalls).toHaveLength(0);
     await waitFor(() => expect(mocks.fixStart).toHaveBeenCalled());
   });
 });

@@ -77,6 +77,19 @@ def asset_ref_spellings(p: Path | str) -> list[str]:
     return out
 
 
+def asset_refs_under(root: Path | str) -> list[str]:
+    """The SQL ``LIKE`` patterns that match an ``asset_ref`` stored under ``root`` — one per spelling a row
+    may carry (:func:`asset_ref_spellings`), each with ITS OWN separator. A mount is kept in POSIX form
+    while ``FSRef`` stores the resolved path, which on Windows is backslashed: a single ``<root>/%``
+    matches nothing there. A stopgap until ``asset_ref`` is stored in one canonical form (a migration)."""
+
+    def under(spelling: str) -> str:
+        sep = "\\" if "\\" in spelling else "/"
+        return spelling.rstrip("/\\") + sep + "%"
+
+    return list(dict.fromkeys(under(s) for s in asset_ref_spellings(root)))
+
+
 def _path_policy_key(path: Path | str) -> tuple[str, str, str] | None:
     """Return ``(flavour, canonical, root)`` without mangling Windows paths.
 
