@@ -231,10 +231,9 @@ _LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "::1"})
 
 
 def gate_headers(url: str) -> dict[str, str]:
-    """The header a same-machine caller presents to get past its own gate.
+    """The header a same-machine caller presents to get past flowpad's cookie gate.
 
-    Empty for any non-loopback URL, and when this instance has neither a
-    hub-armed secret nor a local token.
+    Empty for any non-loopback URL, and when this instance has no local token.
 
     This is the *machine* transport the middleware documents, and it lives here
     — beside the secret — rather than in any one caller, because there are
@@ -246,9 +245,11 @@ def gate_headers(url: str) -> dict[str, str]:
     The header rather than ``?cookie-gate=``: a secret in a URL lands in access
     logs.
 
-    Without a hub-armed secret it sends this instance's local token
-    (FLOWPAD-2233). One token per machine is the supported case: an end user runs
-    one Flowpad, and dev setups that run several turn the local gate off.
+    It sends this instance's local token (FLOWPAD-2233): a request to a loopback
+    URL comes from this machine, which is the local gate's to check. The hub-armed
+    secret is only for requests from outside (the public URL), never sent from
+    here. One token per machine is the supported case: an end user runs one
+    Flowpad, and dev setups that run several turn the local gate off.
 
     ``get_cookie_gate`` answers from a ``stat()`` of the marker file and never
     opens the encrypted store, which is what keeps desktop installs away from a
@@ -265,9 +266,9 @@ def gate_headers(url: str) -> dict[str, str]:
         # Imported from the middlewares that READ the header and own the local
         # token file, so the two cannot drift.
         from flow_sdk.server.middleware.cookie_gate_middleware import HEADER_NAME
-        from flow_sdk.server.middleware.local_cookiegate_middleware import LOCAL_TOKEN_PATH, read_local_token
+        from flow_sdk.server.middleware.local_cookiegate_middleware import read_local_token
 
-        secret = get_cookie_gate() or read_local_token(LOCAL_TOKEN_PATH)
+        secret = read_local_token()
         if not secret:
             return {}
         return {HEADER_NAME: secret}

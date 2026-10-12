@@ -25,7 +25,8 @@ LOOPBACK = "http://127.0.0.1:9007/api/v1/graph/agentic_process/abc/show"
 
 
 def _armed(secret=SECRET):
-    return patch("flow_sdk.instance_settings.cookie_gate.get_cookie_gate", return_value=secret)
+    """This instance's local cookie-gate token (FLOWPAD-2233) -- what gate_headers sends."""
+    return patch("flow_sdk.server.middleware.local_cookiegate_middleware.read_local_token", return_value=secret)
 
 
 class _Resp:
@@ -64,8 +65,8 @@ def test_secret_never_rides_a_request_off_this_machine():
 
 
 def test_unarmed_instance_sends_nothing():
-    """Every desktop install. The request must be what it was before the gate
-    existed -- no header, and no keychain access to discover that."""
+    """No token yet (or the gate is off). The request must be what it was before
+    the gate existed -- no header."""
     with _armed(None):
         assert gate_headers(LOOPBACK) == {}
 
@@ -75,8 +76,8 @@ def test_an_unreadable_gate_degrades_to_no_header():
     reason to raise -- the CLI has to keep working on an instance whose secret
     store is unavailable."""
     with patch(
-        "flow_sdk.instance_settings.cookie_gate.get_cookie_gate",
-        side_effect=RuntimeError("sod unreadable"),
+        "flow_sdk.server.middleware.local_cookiegate_middleware.read_local_token",
+        side_effect=RuntimeError("token unreadable"),
     ):
         assert gate_headers(LOOPBACK) == {}
 
@@ -143,8 +144,7 @@ def test_an_action_403_is_not_mistaken_for_the_gate():
 
 
 # ---------------------------------------------------------------------------
-# gate_headers -- the local token (FLOWPAD-2233): no hub secret, so this
-# instance's .cookie_gate.
+# gate_headers -- reads the real token file, and never sends the hub secret
 # ---------------------------------------------------------------------------
 
 
@@ -155,16 +155,11 @@ def local_token(tmp_path, monkeypatch):
     path = tmp_path / ".cookie_gate"
     path.write_text("own-token", encoding="utf-8")
     monkeypatch.setattr(local, "LOCAL_TOKEN_PATH", path)
-    with _armed(None):
-        yield path
+    return path
 
 
-def test_local_token_on_loopback(local_token):
+def test_local_token_file_is_sent_on_loopback(local_token):
     assert gate_headers("http://127.0.0.1:9007/x") == {HEADER_NAME: "own-token"}
-
-
-def test_local_token_never_leaves_this_machine(local_token):
-    assert gate_headers("https://hub.example.com/x") == {}
 
 
 def test_no_token_file_no_header(local_token):
@@ -173,6 +168,7 @@ def test_no_token_file_no_header(local_token):
     assert gate_headers("http://127.0.0.1:9007/x") == {}
 
 
-def test_hub_secret_wins_over_the_local_token(local_token):
-    with _armed():
-        assert gate_headers("http://127.0.0.1:9007/x") == {HEADER_NAME: SECRET}
+def test_the_hub_secret_is_never_sent_from_this_machine(local_token):
+    """A loopback request is the local gate's; the hub secret is only for the public URL."""
+    with patch("flow_sdk.instance_settings.cookie_gate.get_cookie_gate", return_value=SECRET):
+        assert gate_headers("http://127.0.0.1:9007/x") == {HEADER_NAME: "own-token"}

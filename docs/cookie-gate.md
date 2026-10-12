@@ -4,12 +4,14 @@ id: 7cc7701f-f1f7-4956-85b9-6ec51416ad18
 
 # cookie-gate
 
-A secret that locks an instance to callers who can present it. There are two, checked in order:
+Two gates, one per way in. `CookieGateMiddleware` picks per request:
 
-- **Hub-armed** — a sandbox the hub armed over loopback. Everything below the local-token section
-  describes it, and it is unchanged by the local token.
-- **Local token** — every other backend, desktop included, since FLOWPAD-2233. See
-  [The local token](#the-local-token).
+- **Local token** — requests from the machine itself (`Host` is `localhost`/`127.0.0.1`): its browser,
+  the CLI, workers, Electron. On a desktop and on a cloud box alike, since FLOWPAD-2233. See
+  [The local token](#the-local-token). A non-loopback `Host` with no hub secret armed also gets this
+  gate: on a desktop it can only be DNS rebinding.
+- **Hub-armed** — requests from outside a box the hub armed, through its public URL. Everything
+  below the local-token section describes it, and it is unchanged by the local token.
 
 **Set, the instance answers nothing without it.** Not the UI, not static assets, not the API, not a
 WebSocket. Just a blank Forbidden page.
@@ -50,8 +52,9 @@ let two local instances overwrite each other), `HttpOnly`, `SameSite=Strict`, `P
 drops `Secure` cookies on `http://localhost`.
 
 **The off switch.** `FLOWPAD_COOKIE_GATE=off`, read once when the backend starts, turns the local gate
-off for that process (a hub-armed sandbox secret is unaffected). The test suite, instance_ctl dev instances, docker-compose, CI e2e and every
-hub-launched box set it. Fails closed: with the switch unset, a token that cannot be created or read
+off for that process (a hub-armed sandbox secret is unaffected). The test suite, instance_ctl dev instances, docker-compose and CI e2e set it.
+Hub-launched boxes must NOT: their own browser needs the local gate, and the hub's loopback calls
+into a box send the box's local token. Fails closed: with the switch unset, a token that cannot be created or read
 refuses the request.
 
 **Not covered yet** (follow-ups): pages on another `localhost` port (same site to the browser) still

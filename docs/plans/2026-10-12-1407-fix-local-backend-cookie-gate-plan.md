@@ -88,7 +88,7 @@ The local backend on `localhost:9007` answers every request without authenticati
 
 **Sandboxes**
 
-* R10. Hub sandboxes are unchanged. A hub-armed secret (`flow auth set-cookie-gate`, `login_callback`'s `cookie-gate` parameter) works as today and takes precedence over the local token.
+* R10. Each request is checked by the gate for the way it came in. From the machine itself (a `localhost`/`127.0.0.1` Host): the local gate, on a desktop and a cloud box alike. From outside a hub-armed box (its public URL): the hub gate, unchanged. A non-loopback Host with no hub secret armed gets the local gate (it can only be DNS rebinding).
 
 ### Success Criteria
 
@@ -124,7 +124,7 @@ The local backend on `localhost:9007` answers every request without authenticati
 
 ### Open Questions
 
-* OQ2. **Blocking for release, not for implementation.** Every hub-launched backend must set `FLOWPAD_COOKIE_GATE=off`: the E2B template, the GCP VM image, and the hub's `LOCAL_MACHINE` compute nodes. Otherwise a token created before the hub arms the box (possibly baked into a shared image) refuses the hub's own arming call, which carries the hub's secret, not the local token. The hub's pre-arm health probe already treats a 403 as "up and gated". This needs confirming and changing in `flowpad-hub`.
+* OQ2. **Blocking for release, not for implementation.** Hub-launched boxes must keep the local gate ON (no off switch), so their own browser is protected. Two hub-side changes: (1) the hub's loopback calls into a box (`/auth/login_callback` and anything else it curls to `127.0.0.1:9007`) send the box's local token, read in the same command (`-H "X-Cookie-Gate: $(cat <instance_dir>/.cookie_gate)"`) or made through the `flow` CLI; arming with `flow auth set-cookie-gate` is a CLI call and unaffected. (2) No shared image (E2B template, GCP VM image) may ship a `.cookie_gate`: each box creates its own on first request. Needs confirming and changing in `flowpad-hub`.
 
 ### Sources
 
@@ -194,7 +194,7 @@ The local backend on `localhost:9007` answers every request without authenticati
 
 * KTD13. **Release order: Electron first, then the engine.** The Electron release with U6 ships before the engine release that turns the gate on. The new Electron works against an old engine (no token file, so no header and no cookie). (session-settled: user-directed — chosen over letting `/health/status` through the gate or gating only when Electron advertises support.) Governs R1, R6.
 
-* KTD14. **A hub-armed secret wins.** When `get_cookie_gate()` returns a secret, the middleware behaves exactly as today and ignores the local token. Sandboxes and their code paths stay untouched. Governs R10.
+* KTD14. **Route by the way in.** `CookieGateMiddleware` sends a request to the hub gate only when a hub secret is armed and the Host is not loopback; everything else goes to the local gate. `gate_headers` therefore sends only the local token: its callers are all on the machine. (session-settled: user-directed — chosen over "hub secret replaces the local gate when armed": a cloud box's own browser is as much a target as a desktop's.) Governs R5, R10.
 
 ### High-Level Technical Design
 
@@ -265,7 +265,7 @@ U2 and U3 first, as one middleware change. Then U5, U6 and U8 independently. U7 
 **Approach:**
 
 1. Add the token path, create-if-absent and cached read inside the middleware module. Get the instance directory from `get_instance_settings()`, as the module already does through `get_cookie_gate`.
-2. On each request, check the hub-armed secret first (KTD14). If none, use the local token: create it if absent and the off switch is unset, then enforce it.
+2. `CookieGateMiddleware` routes each request (KTD14): hub gate for outside requests to an armed box, local gate otherwise. The local gate creates its token if absent and enforces it, unless the off switch was set at startup.
 3. Export the read function for the CLI.
 4. Have the pytest plugin set the off switch for the session, and add an opt-in fixture that turns it off and points at a temporary token.
 
@@ -517,7 +517,7 @@ U2 and U3 first, as one middleware change. Then U5, U6 and U8 independently. U7 
 
 | Risk                                                                                                                 | Mitigation                                                                                                                         |
 | -------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| A hub-launched box creates a local token before the hub arms it, and the hub's arming call is refused (OQ2).         | Every hub-launched backend sets the off switch. Release is blocked until `flowpad-hub` confirms it.                                |
+| The hub's loopback calls into a box lack the box's local token and are refused (OQ2). | The hub sends the local token on loopback calls (or uses the `flow` CLI). Release is blocked until `flowpad-hub` confirms it. |
 | An updated engine under an old Electron fails its health check and is killed after 120 s.                            | Release order (KTD13): the Electron release with U6 ships first.                                                                   |
 | A local caller is missed and starts getting 403s.                                                                    | U5, U6 and U8 work from the research's caller list, and U8 adds a repo scan. The middleware logs every refusal with type and path. |
 | Browser login, OAuth and logout returns into a gated desktop backend are refused until the deferred follow-up lands. | Known gap, tracked under Deferred to Follow-Up Work. Electron's `flowpad://` path carries the injected cookie and is unaffected.   |
