@@ -4,12 +4,16 @@ Follows the ``<family>_on_tag.py`` convention (see ``flow_sdk/ingest/ingest_on_t
 and ``flow_sdk/db/entity_on_tag.py``): the family's tag strings are declared in
 one file rather than invented at whichever call site needed one first.
 
-One tag lives here today::
+One tag lives here today, in two shapes::
 
     stream_inbox.<provider>.message.projected
       target: source_item:<id>
       scope:  data_source:<id>
       data:   {entity_id, source_id}
+
+    stream_inbox.flowpad.message.projected      (a Flowpad conversation message from the hub)
+      target: flow_message:<id>
+      data:   {entity_id, conversation_id}
 
 It says a message is now PLACED IN A CONVERSATION — which is a different fact
 from ``ingest.*.item.created``, and the one a consumer needs, because a thread's
@@ -49,6 +53,28 @@ def projected_envelope(provider: str, source_item_id: str, source_id: str) -> di
         "target": target_of("source_item", source_item_id),
         "data": {"entity_id": source_item_id, "source_id": source_id},
         "scope": [target_of("data_source", source_id)] if source_id else [],
+    }
+
+
+def emit_conversation_message_tag(message_id: str, conversation_id: str) -> None:
+    """Announce a Flowpad conversation message from the hub, now persisted here, on the same
+    family as a channel's — so a rule on "any channel" catches a teammate's message too.
+    No data source: the envelope carries no ``scope``, and a rule narrowed to sources skips it."""
+    from flow_sdk.tags import emit_tag  # noqa: PLC0415
+
+    envelope = conversation_message_envelope(message_id, conversation_id)
+    emit_tag(envelope["tag"], envelope["target"], envelope["data"], ctx={"scope": envelope["scope"]})
+
+
+def conversation_message_envelope(message_id: str, conversation_id: str) -> dict:
+    """The conversation-message envelope's parts — shared by the real announcement and a test fire."""
+    from flow_sdk.tags import target_of  # noqa: PLC0415
+
+    return {
+        "tag": "stream_inbox.flowpad.message.projected",
+        "target": target_of("flow_message", message_id),
+        "data": {"entity_id": message_id, "conversation_id": conversation_id},
+        "scope": [],
     }
 
 

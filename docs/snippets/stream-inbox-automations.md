@@ -121,10 +121,11 @@ sentence and the try list over recent messages. A `DecisionError` is `met=False`
 ```python
 from flow_sdk.automations import decision_subjects
 from flow_sdk.builtin.flow_message import FlowMessage
+from flow_sdk.builtin.user import User
 from flow_sdk.stream_inbox.message_subject import state_of
 
 fm = await FlowMessage.get_one({"source_item_id": item.id})
-state = state_of(fm)
+state = state_of(fm, await User.self_ids())
 state.model_dump(mode="json", exclude_defaults=True)
 # {'sender': 'Dana Levi <dana@customer.test>', 'subject': 'Charged twice for October',
 #  'text': 'I see two charges of $49 …', 'received_at': '…', 'conversation_id': '…', 'message_id': '…'}
