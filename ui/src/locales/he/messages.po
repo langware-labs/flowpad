@@ -374,6 +374,11 @@ msgstr ""
 msgid "{0} caught · {1} passed over"
 msgstr ""
 
+#. placeholder {0}: status.files.length
+#: src/components/entity-card/EntityCard.tsx
+msgid "{0} changed"
+msgstr ""
+
 #. placeholder {0}: connection.provider
 #: src/components/connections-manager.tsx
 msgid "{0} connection failed"
@@ -733,6 +738,16 @@ msgstr "בדיקת {0} נכשלה"
 #. placeholder {0}: info.attemptCount
 #: src/components/conversation/AttachmentDownloadWarning.tsx
 msgid "{0} this session"
+msgstr ""
+
+#. placeholder {0}: status.behind
+#: src/components/entity-card/EntityCard.tsx
+msgid "{0} to pull"
+msgstr ""
+
+#. placeholder {0}: status.ahead
+#: src/components/entity-card/EntityCard.tsx
+msgid "{0} to push"
 msgstr ""
 
 #. placeholder {0}: frame.tool_call_count
@@ -1777,6 +1792,7 @@ msgstr "פעיל"
 
 #: src/components/api-keys-view/api-keys-view.tsx
 #: src/components/data-sources/status-style.ts
+#: src/components/entity-card/entity-card-rows.ts
 #: src/components/locale/LocalePicker.tsx
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Active"
@@ -2828,6 +2844,10 @@ msgstr "הערות על התמונה"
 msgid "Annotate view"
 msgstr "הוספת הערות לתצוגה"
 
+#: src/components/entity-card/entity-card-rows.ts
+msgid "Annotated"
+msgstr ""
+
 #: src/i18n/type-labels.ts
 msgid "Annotation"
 msgstr "הערה"
@@ -3368,6 +3388,10 @@ msgstr "הקצו"
 
 #: src/components/conversation/task-it.tsx
 msgid "Assign to"
+msgstr ""
+
+#: src/components/entity-card/entity-card-rows.ts
+msgid "Assignee"
 msgstr ""
 
 #: src/components/conversation/task-it.tsx
@@ -4023,6 +4047,10 @@ msgstr "שורת מאגר"
 msgid "Buffer terminal sync updates"
 msgstr "אגירת עדכוני סנכרון בטרמינל"
 
+#: src/components/entity-card/entity-card-rows.ts
+msgid "Build"
+msgstr ""
+
 #: src/pages/flow-page/vibe-starter-prompts.ts
 msgid "Build a landing page"
 msgstr "בנו דף נחיתה"
@@ -4481,7 +4509,7 @@ msgid "Changes need merging — let the assistant finish it"
 msgstr ""
 
 #: src/components/data-sources/MessageChannelsList.tsx
-#: src/components/top-nav-bar/ConversationCrumbHoverCard.tsx
+#: src/components/entity-card/entity-card-rows.ts
 msgid "Channel"
 msgstr ""
 
@@ -8892,6 +8920,7 @@ msgstr "התמקד לפי"
 
 #: src/components/data-sources/DataDriversView.tsx
 #: src/components/data-sources/DataSourcePage.tsx
+#: src/components/entity-card/entity-card-rows.ts
 msgid "Driver"
 msgstr ""
 
@@ -8926,6 +8955,10 @@ msgstr "הוסרו {0} רשומות מ-{since}"
 #: src/components/data-sources/ReplayDialog.tsx
 msgid "Drops this source's records and clears its sync position, so the next poll re-reads them. Local state — read and starred — does not come back."
 msgstr "הפעולה מוחקת את רשומות המקור ומאפסת את מצב הסנכרון שלו, כך שבבדיקה הבאה הן ייקראו מחדש. מצב מקומי — קריאה וסימון בכוכב — לא ישוחזר."
+
+#: src/components/entity-card/entity-card-rows.ts
+msgid "Due"
+msgstr ""
 
 #: src/components/assets/editor/AssetCollisionUI.tsx
 msgid "Duplicate assets"
@@ -9280,6 +9313,8 @@ msgstr "הפעלה או השבתה של הוק"
 #: src/components/asset-counters/agent-counters.tsx
 #: src/components/automations/MessageRulePage.tsx
 #: src/components/data-sources/DataSourceDialog.tsx
+#: src/components/entity-card/entity-card-rows.ts
+#: src/components/entity-card/entity-card-rows.ts
 #: src/components/hooks-manager/HookForm.tsx
 #: src/components/hooks-manager/TriggerForm.tsx
 #: src/components/llm-endpoints/LlmEndpointDialog.tsx
@@ -9475,6 +9510,7 @@ msgstr "שגיאה"
 #: src/components/agent-layout/error-screen/error-screen.tsx
 #: src/components/api-keys-view/use-user-api-keys.ts
 #: src/components/api-keys-view/use-user-api-keys.ts
+#: src/components/entity-card/entity-card-rows.ts
 #: src/components/llm-sources/LlmKeysSection.tsx
 #: src/components/machine-overview/node-secrets.tsx
 msgid "Error"
@@ -10816,7 +10852,7 @@ msgstr "מתקן…"
 msgid "Flow Message"
 msgstr "הודעת זרימה"
 
-#: src/components/top-nav-bar/ConversationCrumbHoverCard.tsx
+#: src/components/entity-card/entity-card-rows.ts
 #: src/components/version-popover/version-popover.tsx
 #: src/pages/discover-page/DiscoverChrome.tsx
 msgid "Flowpad"
@@ -11577,6 +11613,10 @@ msgstr "משימת קבוצה נוצרה"
 msgid "Group task created with issues"
 msgstr "משימת קבוצה נוצרה עם בעיות"
 
+#: src/components/entity-card/entity-card-rows.ts
+msgid "Guest"
+msgstr ""
+
 #: src/components/git/GitRemoteField.tsx
 #: src/components/helpdesk/AddHelpdeskDialog.tsx
 #: src/components/project-selector/NewProjectFromGitDialog.tsx
@@ -11674,6 +11714,9 @@ msgstr "כותרת 2"
 msgid "Heading 3"
 msgstr "כותרת 3"
 
+#: src/components/entity-card/entity-card-rows.ts
+#: src/components/entity-card/entity-card-rows.ts
+#: src/components/entity-card/entity-card-rows.ts
 #: src/components/machine-overview/logs-viewer.tsx
 msgid "Health"
 msgstr "בריאות"
@@ -11972,6 +12015,10 @@ msgstr "מנהל וו-וצקים"
 #: src/components/lens-viewer/ClaudeErrorsViewer.tsx
 msgid "Hooks:"
 msgstr "קישורים:"
+
+#: src/components/entity-card/entity-card-rows.ts
+msgid "Host"
+msgstr ""
 
 #: src/components/automations/blocks/WhenBlock.tsx
 msgid "hours"
@@ -13054,6 +13101,10 @@ msgstr "סוג"
 #: src/components/assets/editor/wizard/WizardStepForm.tsx
 #: src/components/data-sources/DataDriversView.tsx
 #: src/components/data-sources/DataDriversView.tsx
+#: src/components/entity-card/entity-card-rows.ts
+#: src/components/entity-card/entity-card-rows.ts
+#: src/components/entity-card/entity-card-rows.ts
+#: src/components/entity-card/entity-card-rows.ts
 #: src/components/llm-endpoints/LlmEndpointDialog.tsx
 #: src/components/llm-endpoints/LlmEndpointsList.tsx
 #: src/components/schema-tree/SchemaTreeView.tsx
@@ -13177,6 +13228,10 @@ msgstr ""
 
 #: src/components/conversation/SessionCard.tsx
 msgid "Last prompt failed"
+msgstr ""
+
+#: src/components/entity-card/entity-card-rows.ts
+msgid "Last run"
 msgstr ""
 
 #: src/components/conversation/AttachmentDownloadWarning.tsx
@@ -14107,6 +14162,7 @@ msgstr "חיפוש פרויקט…"
 msgid "Lowercase letters, digits, - and _ (not development)."
 msgstr ""
 
+#: src/components/entity-card/entity-card-rows.ts
 #: src/components/hub/AddMachineDialog.tsx
 #: src/types/ViewType.ts
 msgid "Machine"
@@ -14432,6 +14488,7 @@ msgstr "חברים"
 
 #: src/components/account/organization-panel.tsx
 #: src/components/contact-picker/CreateContactsGroupDialog.tsx
+#: src/components/entity-card/entity-card-rows.ts
 #: src/components/organization/org-node-management.tsx
 #: src/components/organization/org-node-management.tsx
 msgid "Members"
@@ -14538,7 +14595,8 @@ msgstr "שרשור הודעות"
 
 #: src/components/data-sources/DataDriversView.tsx
 #: src/components/data-sources/DataSourcePage.tsx
-#: src/components/top-nav-bar/ConversationCrumbHoverCard.tsx
+#: src/components/entity-card/entity-card-rows.ts
+#: src/components/entity-card/entity-card-rows.ts
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Messages"
 msgstr "הודעות"
@@ -14645,6 +14703,10 @@ msgstr ""
 msgid "Missing: {missing}"
 msgstr "חסר: {missing}"
 
+#: src/components/entity-card/entity-card-rows.ts
+msgid "Mode"
+msgstr ""
+
 #: src/components/assets/editor/usage-report/UsageReportAssetEditor.tsx
 msgid "model"
 msgstr "מודל"
@@ -14708,6 +14770,7 @@ msgstr "מזהה מודל"
 
 #: src/components/assets/editor/llm-endpoint/LlmEndpointAssetView.tsx
 #: src/components/assets/editor/usage-report/UsageReportAssetEditor.tsx
+#: src/components/entity-card/entity-card-rows.ts
 #: src/components/llm-endpoints/LlmEndpointDetail.tsx
 msgid "Models"
 msgstr "מודלים"
@@ -17060,6 +17123,10 @@ msgstr "OAuth"
 #~ msgid "OAuth + PKCE"
 #~ msgstr "OAuth + PKCE"
 
+#: src/components/entity-card/entity-card-rows.ts
+msgid "Occurred"
+msgstr ""
+
 #: src/components/automations/BusView.tsx
 #: src/components/terminal/interactive-terminal/side-windows/QueuePanel.tsx
 msgid "off"
@@ -17068,6 +17135,7 @@ msgstr "כבוי"
 #: src/components/assets/editor/agent-profile/AgentPlacesColumn.tsx
 #: src/components/assets/editor/agent-profile/deployment/AgentDeploymentPage.tsx
 #: src/components/automations/AutomationRow.tsx
+#: src/components/entity-card/entity-card-rows.ts
 msgid "Off"
 msgstr ""
 
@@ -17098,6 +17166,7 @@ msgstr "פעיל"
 #: src/components/assets/editor/agent-profile/deployment/AgentDeploymentPage.tsx
 #: src/components/automations/blocks/WhenBlock.tsx
 #: src/components/automations/blocks/WhenBlock.tsx
+#: src/components/entity-card/entity-card-rows.ts
 msgid "On"
 msgstr ""
 
@@ -18189,6 +18258,7 @@ msgid "orphans_total"
 msgstr "סה״כ יתומים"
 
 #: src/components/diagnose/diagnosis-details.tsx
+#: src/components/entity-card/entity-card-rows.ts
 msgid "OS"
 msgstr "מערכת הפעלה"
 
@@ -18901,6 +18971,7 @@ msgstr ""
 msgid "Poll interval (seconds)"
 msgstr "מרווח הסנכרון (שניות)"
 
+#: src/components/entity-card/entity-card-rows.ts
 #: src/components/machine-overview/machine-overview.tsx
 msgid "Port"
 msgstr "יציאה"
@@ -19048,6 +19119,10 @@ msgstr "הרצות קודמות"
 msgid "primary"
 msgstr "ראשי"
 
+#: src/components/entity-card/entity-card-rows.ts
+msgid "Priority"
+msgstr ""
+
 #: src/components/graph-context/ContextGraphCanvas.tsx
 msgid "Private"
 msgstr "פרטי"
@@ -19128,6 +19203,7 @@ msgstr "פרויקט"
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/conversation/FlowMessageBubble.tsx
 #: src/components/credentials-view/EnvFilesChip.tsx
+#: src/components/entity-card/entity-card-rows.ts
 #: src/components/entity-execution-panel/ExecutionSettingsPopover.tsx
 #: src/components/explorer-view/ExplorerNavigator.tsx
 #: src/components/hooks-manager/HookForm.tsx
@@ -19137,7 +19213,6 @@ msgstr "פרויקט"
 #: src/components/quick-create/ScopeSelection.tsx
 #: src/components/scope-filter/ScopeFilterBar.tsx
 #: src/components/scope-filter/ScopeFilterIconBar.tsx
-#: src/components/top-nav-bar/ConversationCrumbHoverCard.tsx
 #: src/components/top-nav-bar/RuntimeChip.tsx
 #: src/i18n/type-labels.ts
 #: src/pages/discover-page/DiscoverRow.tsx
@@ -19418,12 +19493,17 @@ msgstr "מאפיינים"
 msgid "protected"
 msgstr "מוגן"
 
+#: src/components/entity-card/entity-card-rows.ts
+msgid "Protocol"
+msgstr ""
+
 #~ msgid "Proved by"
 #~ msgstr ""
 
 #: src/components/assets/editor/llm-endpoint/LlmEndpointAssetView.tsx
 #: src/components/connections-manager.tsx
 #: src/components/data-sources/DataSourceDialog.tsx
+#: src/components/entity-card/entity-card-rows.ts
 #: src/components/hooks-manager/HookForm.tsx
 #: src/components/llm-endpoints/LlmEndpointDialog.tsx
 #: src/components/llm-endpoints/LlmEndpointsList.tsx
@@ -19522,6 +19602,7 @@ msgstr "פרסום הסוכן הזה לענן מעניק לו מכונה המת�
 #: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 #: src/components/assets/editor/PublishedToggle.tsx
+#: src/components/entity-card/entity-card-rows.ts
 #: src/components/project-home/ProjectPublishedButton.tsx
 #: src/lib/publish-state.ts
 #: src/pages/discover-page/discover-page.tsx
@@ -20593,6 +20674,10 @@ msgstr "הדוח נשלח לצוות Flowpad"
 msgid "Reported"
 msgstr "דווח"
 
+#: src/components/entity-card/entity-card-rows.ts
+msgid "Reported by"
+msgstr ""
+
 #: src/components/diagnose/use-diagnosis-report-availability.ts
 msgid "Reporting is disabled in Local data privacy mode"
 msgstr "דיווח אינו זמין במצב פרטיות הנתונים המקומי"
@@ -21136,6 +21221,10 @@ msgstr "טווח שורות"
 msgid "Row time range"
 msgstr "טווח זמן שורה"
 
+#: src/components/entity-card/entity-card-rows.ts
+msgid "Rows"
+msgstr ""
+
 #: src/components/automations/AutomationPage.tsx
 msgid "Rule code saved"
 msgstr ""
@@ -21416,6 +21505,7 @@ msgstr "הפעלה..."
 #: src/components/automations/RunsView.tsx
 #: src/components/data-sources/DataSourcePage.tsx
 #: src/components/data-sources/SourceMenu.tsx
+#: src/components/entity-card/entity-card-rows.ts
 #: src/components/triggers-view/ScheduleTriggerEditor.tsx
 #: src/types/ViewType.ts
 msgid "Runs"
@@ -24031,6 +24121,7 @@ msgstr "סימון כוכב"
 
 #: src/components/assets/editor/agent-profile/deployment/DeploymentProcessPanel.tsx
 #: src/components/assets/editor/wizard/WizardViewer.tsx
+#: src/components/entity-card/entity-card-rows.ts
 #: src/components/project-setup/ProjectSetupDialog.tsx
 #: src/components/setup-wizard/SetupWizardDialog.tsx
 #: src/components/top-nav-bar/use-entity-breadcrumbs.ts
@@ -24150,8 +24241,10 @@ msgid "started"
 msgstr "התחיל"
 
 #: src/components/automations/automation-words.ts
+#: src/components/entity-card/entity-card-rows.ts
+#: src/components/entity-card/entity-card-rows.ts
+#: src/components/entity-card/entity-card-rows.ts
 #: src/components/terminal/interactive-terminal/SessionInfoPopover.tsx
-#: src/components/top-nav-bar/ConversationCrumbHoverCard.tsx
 msgid "Started"
 msgstr "החל"
 
@@ -24221,13 +24314,14 @@ msgstr "מתחיל…"
 #: src/components/conversation/task-it.tsx
 #: src/components/data-sources/DataSourceDetail.tsx
 #: src/components/data-sources/DataSourcesView.tsx
+#: src/components/entity-card/entity-card-rows.ts
+#: src/components/entity-card/entity-card-rows.ts
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 #: src/components/lens-viewer/LlmIndexersViewer.tsx
 #: src/components/machine-overview/machine-overview.tsx
 #: src/components/machine-overview/machine-overview.tsx
 #: src/components/record-search-bar/RecordSearchBar.tsx
 #: src/components/terminal/interactive-terminal/SessionInfoPopover.tsx
-#: src/components/top-nav-bar/ConversationCrumbHoverCard.tsx
 msgid "Status"
 msgstr "סטטוס"
 
@@ -24624,6 +24718,7 @@ msgstr ""
 
 #: src/components/data-sources/DataSourceDetail.tsx
 #: src/components/data-sources/DataSourcesView.tsx
+#: src/components/entity-card/entity-card-rows.ts
 msgid "Synced"
 msgstr ""
 
@@ -27047,6 +27142,7 @@ msgstr ""
 msgid "Unreachable"
 msgstr "לא נגיש"
 
+#: src/components/entity-card/entity-card-rows.ts
 #: src/components/stream-inbox-view/StreamInboxView.tsx
 #: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Unread"
@@ -27144,6 +27240,7 @@ msgstr "עדכן תכנית בהתאם לסעיפי <plan-note>"
 msgid "Update values"
 msgstr ""
 
+#: src/components/entity-card/entity-card-rows.ts
 #: src/lib/publish-state.ts
 msgid "Updated"
 msgstr ""
@@ -27245,6 +27342,7 @@ msgid "Urgent messages → a task"
 msgstr ""
 
 #: src/components/assets/editor/mcp/McpViewer.tsx
+#: src/components/entity-card/entity-card-rows.ts
 #: src/components/version-popover/version-popover.tsx
 msgid "URL"
 msgstr "URL"
@@ -27590,6 +27688,10 @@ msgstr "יש לאמת את ההגדרה תחילה."
 #: src/components/stream-inbox-view/AttachedChannelsBar.tsx
 #~ msgid "Verify: {0}"
 #~ msgstr "אימות: {0}"
+
+#: src/components/entity-card/entity-card-rows.ts
+msgid "Version"
+msgstr ""
 
 #: src/components/assets/editor/skill/UsagePanel.tsx
 msgid "Version-bump + commit the asset"
@@ -28273,7 +28375,7 @@ msgstr "חלון (ימים)"
 msgid "Wipes the DB rows + FTS entries for every indexable type. The index becomes empty until you re-populate it. Files on disk are <0>not</0> touched. After clearing, click <1>Fast</1> to re-index changed entries, or <2>Full</2> to re-index everything."
 msgstr "מוחק שורות DB + רשומות FTS עבור כל סוג ניתן לאינדוקס. האינדקס יתרוקן עד שתמלא אותו מחדש. קבצים בדיסק <0>אינם</0> נגועים. לאחר ניקוי, לחץ <1>מהיר</1> לאינדוקס מחדש של ערכים שהשתנו, או <2>מלא</2> לאינדוקס מחדש של הכול."
 
-#: src/components/top-nav-bar/ConversationCrumbHoverCard.tsx
+#: src/components/entity-card/entity-card-rows.ts
 msgid "With"
 msgstr ""
 
