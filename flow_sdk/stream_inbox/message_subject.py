@@ -45,7 +45,7 @@ class MessageSubject:
 
     def question_for(self, sentence: str) -> YesNoQuestion:
         return YesNoQuestion(
-            instructions=f"Is this true of the message (`text`, `subject`, from `sender`): {sentence.strip().rstrip('.?')}?"
+            instructions=f"Is this true of the message (`text`, `subject`, `files`, from `sender`): {sentence.strip().rstrip('.?')}?"
         )
 
     def launch_context(self, state: MessageState) -> LaunchContext:
@@ -164,6 +164,29 @@ class ConversationMessageSubject(MessageSubject):
         return {key: envelope[key] for key in ("target", "data", "scope")}
 
 
+def _attachment_names(fm: Any) -> list[str]:
+    """What the message carried, by name: a file's name, a URL, ``prompt``, or an entity's type
+    (``claude_session``) — so a message that is only an attachment still says what it is. The
+    message's own conversation and itself (carried as references) are not things it carried."""
+    from flow_sdk.builtin.flow_message import AttachmentType  # noqa: PLC0415
+
+    own = {f"conversation-{getattr(fm, 'conversation_id', '')}", f"flow_message-{getattr(fm, 'id', '')}"}
+    names: list[str] = []
+    for a in getattr(fm, "attachment", None) or []:
+        data = str(a.data or "")
+        if a.attachment_type is AttachmentType.TYPE_ID:
+            name = "" if data in own else data.rsplit("-", 5)[0]
+        elif a.attachment_type is AttachmentType.FILE:
+            name = data.rsplit("/", 1)[-1]
+        elif a.attachment_type is AttachmentType.PROMPT:
+            name = "prompt"
+        else:
+            name = data
+        if name and name not in names:
+            names.append(name)
+    return names
+
+
 async def _self_ids() -> set[str]:
     from flow_sdk.builtin.user import User  # noqa: PLC0415
 
@@ -216,8 +239,5 @@ def state_of(fm: Any, self_ids: set[str]) -> MessageState:
         conversation_id=str(getattr(fm, "conversation_id", "") or ""),
         message_id=str(getattr(fm, "id", "") or ""),
         origin_key=str(getattr(origin, "key", "") or ""),
-        files=[
-            str(getattr(a, "name", "") or getattr(a, "filename", "") or "")
-            for a in (getattr(fm, "attachment", None) or [])
-        ],
+        files=_attachment_names(fm),
     )

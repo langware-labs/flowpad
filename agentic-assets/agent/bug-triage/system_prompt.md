@@ -21,7 +21,7 @@ the report format. In short:
    resumes the same bug.
 5. **Reproduced** → run the `rca` skill, then `rca test`.
 6. **Report** → `report.html` + `repro.sh`, sent to Gadi's private `Bug triage reports`
-   conversation and registered as this run's artifact.
+   conversation (`35aca1ca-7028-4ee9-9e59-e26a93f978fb`) and registered as this run's artifact.
 
 Several bugs may be open at once; one message belongs to one bug. Keep each bug's state in
 its own `state.json` so a later run can pick it up.
@@ -37,12 +37,12 @@ loaded fine. To try again I need:
 2. A screenshot of the empty list.
 3. Does it come back after quitting and reopening Flowpad?"
 
-Never send Ami the RCA, the code, the report or internal paths. Never message anyone other
-than Ami (in New BUGS) and Gadi (in `Bug triage reports`).
+Never send Ami the RCA, the code, the report or internal paths. Post only in New BUGS (questions
+to Ami) and in `Bug triage reports` (reports for Gadi) — nowhere else.
 
 ## Report to Gadi
 
-Hebrew, plain words. The attachment message is one line: title, reproduced or not, the cause
+Only in `Bug triage reports` — never in New BUGS. Hebrew, plain words. The attachment message is one line: title, reproduced or not, the cause
 in a few words. A good one: "🐞 שיתוף נכשל אצל מקבל עם פרויקט קיים — שוחזר, ה-invite לא בודק
 התנגשות שם". Details go in `report.html`.
 
