@@ -10,6 +10,8 @@ Real request middleware + graph dispatcher; the hub hop and the clone are stubbe
 
 from __future__ import annotations
 
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
 from uuid import uuid4
 
 import pytest
@@ -201,3 +203,29 @@ async def test_a_launched_projects_assets_are_the_projects_own(tmp_path, monkeyp
     assert [(r.scope, r.project_id) for r in rows] == [("project", str(project.id))]
     readiness = await project_setup.readiness_of(project)
     assert [r.name for r in readiness.to_do] == ["google-cloud"]
+
+
+@pytest.mark.asyncio
+async def test_a_machine_without_git_gets_it_before_the_clone(monkeypatch, calls):
+    """A fresh Windows machine has no git: the launch installs it (the shipped git-on-path op) and then
+    clones, instead of failing with "install it from Flowpad's setup"."""
+    import flow_sdk.app.actions.launch_action as launch
+    from flow_sdk.core.wizard.runner import Resolved
+
+    pid = str(uuid4())
+
+    async def _hydrate(cls, project_id, someone_typeid=None):
+        return Project(id=project_id, name=f"launched-{pid[:8]}")
+
+    run_op = AsyncMock(return_value=SimpleNamespace(detail="installed"))
+    monkeypatch.setattr(Project, "hydrate_from_hub", classmethod(_hydrate))
+    monkeypatch.setattr(launch.sys, "platform", "win32")
+    monkeypatch.setattr(launch.shutil, "which", lambda _name: None)
+    monkeypatch.setattr("flow_sdk.core.wizard.execute._resolve_op",
+                        AsyncMock(return_value=Resolved(SimpleNamespace(name="git-on-path"), True)))
+    monkeypatch.setattr("flow_sdk.core.compute_op.runner.run_op", run_op)
+
+    resp = await _call_local("POST", f"project/{pid}/launch-ensure", json={})
+
+    assert resp.status_code == 200, resp.text
+    assert run_op.await_args.args[0].name == "git-on-path" and calls["setup"] == [pid]

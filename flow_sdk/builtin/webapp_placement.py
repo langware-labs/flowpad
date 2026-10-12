@@ -25,6 +25,7 @@ import logging
 from pathlib import Path
 from typing import Any, Optional
 
+from flow_sdk.schema.data_spec.asset_setup_spec import LoadResult
 from flow_sdk.schema.data_spec.service_endpoint_spec import PROTOCOL_WEB_APP
 from flow_sdk.schema.data_spec.webapp_spec import WEBAPP_KIND, effective_endpoints
 
@@ -466,18 +467,19 @@ async def place_webapp_locally(app) -> Optional[Any]:
     return row
 
 
-async def show_webapp_locally(app, project=None) -> tuple[Optional[Any], Optional[str]]:
+async def show_webapp_locally(app, project=None) -> tuple[Optional[Any], LoadResult]:
     """Showing a webapp asset here: its static endpoint placed, then the app LOADED (``core/setup/load``).
 
-    ``(endpoint, load_run)`` — the run bringing the app up, or ``None`` when it is up already or is files
-    Flowpad serves itself. One call for every display path (the home page, ``flow show``), so none can
+    ``(endpoint, lifecycle)`` — the typed setup requirement, progress, readiness or failure.
+    One call for every display path (the home page, ``flow show``), so none can
     place without loading. ``project``: the app's, when the caller holds it."""
     from flow_sdk.builtin.asset_publishing import owning_project  # noqa: PLC0415
     from flow_sdk.core.setup.load import load_asset  # noqa: PLC0415
 
     endpoint = await place_webapp_locally(app)
     project = project or await owning_project(app)
-    return endpoint, (await load_asset(project, app) if project is not None else None)
+    lifecycle = await load_asset(project, app)
+    return endpoint, lifecycle
 
 
 async def unplace_webapp(webapp_id: str) -> None:

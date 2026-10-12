@@ -48,6 +48,7 @@ SHAPE_PACKAGES = (
     "flow_sdk.fs_store",
     "flow_sdk.schema",
     "flow_sdk.secrets",
+    "flow_sdk.server",
     "flow_sdk.sources",
 )
 

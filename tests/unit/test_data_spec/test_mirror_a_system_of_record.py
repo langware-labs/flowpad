@@ -9,7 +9,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from flow_sdk.sources.values.items import SourceItemSpec
+from flow_sdk.sources.values.items import RecordData, RecordItem, SourceItemSpec
 from flow_sdk.sources.values.origin import CloudOrigin
 from tests.unit.test_data_spec.test_row_links import _dataset, _schema
 
@@ -100,11 +100,12 @@ class _Crm:
         self.calls = []
 
     async def create(self, data):
-        raise AssertionError("not asked")
+        self.calls.append(("create", data.title))
+        return RecordItem(origin=CloudOrigin(kind="record", namespace="crm.example", key="OPP-9"), data=data)
 
     async def update(self, origin, changes):
         self.calls.append(("update", origin.key, changes))
-        return SourceItemSpec.model_construct(origin=origin, data=None)
+        return RecordItem(origin=origin, data=RecordData(title="Acme renewal"))
 
     async def delete(self, origin):
         self.calls.append(("delete", origin.key))
@@ -137,20 +138,53 @@ def source(monkeypatch):
 
     async def get_one(match, *a, **k):
         if match.get("id") == "i1" and match.get("data_source_id"):
-            return SimpleNamespace(origin_kind="record", origin_namespace="crm.example", origin_key="OPP-1")
+            return SimpleNamespace(id="i1", origin_kind="record", origin_namespace="crm.example", origin_key="OPP-1",
+                                   delete=lambda: _dropped("i1"))
         return None
 
+    async def ingest_items(specs, **kw):
+        kept.extend(specs)
+        return SimpleNamespace(outcomes=[SimpleNamespace(entity_id=f"kept-{s.external_id}") for s in specs])
+
+    async def _dropped(item_id):
+        dropped.append(item_id)
+
+    kept, dropped = [], []
     monkeypatch.setattr(DataSource, "open", open_)
     monkeypatch.setattr(SourceItem, "get_one", get_one)
-    return DataSource(id=str(uuid.uuid4()), provider="crm", account_key="a", name="CRM deals", config={}), driver, opened
+    monkeypatch.setattr("flow_sdk.ingest.ingestor.ingest_items", ingest_items)
+    src = DataSource(id=str(uuid.uuid4()), provider="crm", account_key="a", name="CRM deals", config={})
+    driver["kept"], driver["dropped"] = kept, dropped
+    return src, driver, opened
 
 
 async def test_a_change_goes_back_to_the_outside_system_through_the_driver(source):
     src, driver, _ = source
     done = await src.update_item("i1", {"gtmPersona": "cfo"})
     assert driver["it"].calls == [("update", "OPP-1", {"gtmPersona": "cfo"})]
-    assert done == {"item_id": "i1", "origin": CloudOrigin(kind="record", namespace="crm.example", key="OPP-1").model_dump(mode="json"), "status": "updated"}
+    assert done == {"item_id": "kept-OPP-1", "origin": CloudOrigin(kind="record", namespace="crm.example", key="OPP-1").model_dump(mode="json"), "status": "updated"}
+    # what the outside system answered is kept at once, through the one ingest chokepoint -- not at the next sync
+    assert [(k.data_source_id, k.external_id, k.name) for k in driver["kept"]] == [(src.id, "OPP-1", "Acme renewal")]
     assert (await src.delete_item("i1"))["status"] == "deleted" and driver["it"].calls[-1] == ("delete", "OPP-1")
+    assert driver["dropped"] == ["i1"]                                         # and the record kept here goes with it
+
+
+async def test_a_new_record_is_made_in_the_outside_system_and_kept_here(source):
+    src, driver, _ = source
+    done = await src.create_item({"title": "Call Acme back"})
+    assert driver["it"].calls == [("create", "Call Acme back")]
+    assert done["item_id"] == "kept-OPP-9" and done["status"] == "created" and done["origin"]["key"] == "OPP-9"
+    with pytest.raises(ValueError, match="not a RecordData"):
+        await src.create_item({"title": ["not", "text"]})
+    with pytest.raises(ValueError, match="data"):
+        await src.create_item({})
+    src.read_only = True
+    with pytest.raises(PermissionError, match="read-only"):
+        await src.create_item({"title": "x"})
+    src.read_only = False
+    driver["it"] = _Feed()
+    with pytest.raises(NotImplementedError, match="cannot create"):
+        await src.create_item({"title": "x"})
 
 
 async def test_a_write_back_is_refused_before_any_io(source):
@@ -178,8 +212,8 @@ def test_the_write_back_and_mirror_actions_are_routable():
     from flow_sdk.builtin.data_source import DataSource
 
     registered = set(registry.function_registry)
-    assert {"data_source.update_item", "data_source.delete_item", "dataset.mirror"} <= registered
-    for name in ("update_item_action", "delete_item_action"):
+    assert {"data_source.create_item", "data_source.update_item", "data_source.delete_item", "dataset.mirror"} <= registered
+    for name in ("create_item_action", "update_item_action", "delete_item_action"):
         assert not set(inspect.signature(getattr(DataSource, name)).parameters) - {"self", "cls"}
 
 
@@ -206,3 +240,115 @@ async def test_the_mirror_action_over_http(deals, monkeypatch):
     assert done.json()["data"] == {"created": ["opp-1", "opp-2"], "updated": [], "unchanged": [], "deleted": [], "num_examples": 2}
     assert (await call_local("POST", f"dataset/{served.id}/mirror", {"source_id": "ghost", "map": MAP})).status_code == 404
     assert (await call_local("POST", f"dataset/{served.id}/mirror", {"source_id": "src-1", "map": {"key": "external_id"}})).status_code == 400
+
+
+# ── a record deleted in the outside system ───────────────────────────────────
+
+
+@pytest.mark.timeout(30)  # do not increase timeout without approval
+async def test_a_record_deleted_outside_leaves_the_mirror(deals):
+    """The whole loop on real records: the system drops a deal, the next sync removes its stored
+    record (the source ``lists_everything``), and the next mirror drops its row."""
+    from datetime import datetime, timezone
+
+    from flow_sdk.builtin.data_driver import DataDriver
+    from flow_sdk.builtin.data_source import DataSource
+    from flow_sdk.ingest.sync import sync_source
+    from flow_sdk.sources.base import CollectionSource
+    from flow_sdk.sources.families import RecordSource
+    from flow_sdk.sources.values.items import FeedItemData
+
+    class Crm(RecordSource, CollectionSource):
+        provider = "crmlisttest"
+        lists_everything = True
+        deals: dict = {"opp-1": "Acme renewal", "opp-2": "Bolt pilot"}
+
+        def query(self):
+            return None
+
+        async def _lookup(self, key):
+            return self.deals.get(key)
+
+        async def _scan(self, query):
+            return sorted(self.deals.items())
+
+        def _item(self, key, raw):
+            return SourceItemSpec(origin=self.origin(key), data=FeedItemData(title=raw))
+
+    DataDriver.register(DataDriver.for_class(Crm, kind="datasource.test.crmlist"))
+    source = DataSource(provider=Crm.provider, account_key=f"acct-{uuid.uuid4().hex[:8]}", name=f"crm {uuid.uuid4().hex[:8]}")
+    await source.save()
+    now = datetime(2026, 7, 31, 12, 0, 0, tzinfo=timezone.utc)
+    shape = {"key": "name", "input": {"name": "name", "stage": {"value": "open"}, "crm_id": "external_id"}}
+
+    assert (await sync_source(source, now=now)).created == 2
+    assert sorted((await deals.mirror(source, shape, by="crm"))["created"]) == ["acme-renewal", "bolt-pilot"]
+
+    del Crm.deals["opp-2"]                                                    # deleted in the CRM
+    assert (await sync_source(await DataSource.get_one({"id": source.id}), now=now)).removed == 1
+    done = await deals.mirror(source, shape, by="crm")
+    assert (done["deleted"], done["unchanged"]) == (["bolt-pilot"], ["acme-renewal"])
+    assert [r.key for r in deals.read_rows()] == ["acme-renewal"]
+
+
+# ── the map: lists, and links made from the outside system's ids ─────────────
+
+
+@pytest.fixture
+def tasks(tmp_path):
+    """Deals keyed by the CRM's id (``unique``), and tasks that link to any number of them -- or none."""
+    import json
+
+    from flow_sdk.schema.data_spec.declared import load_root
+
+    root, ns = tmp_path / "proj", "unittestmirlink" + uuid.uuid4().hex[:8]
+    f = lambda shape, **more: {"shape": shape, "description": "x", **more}  # noqa: E731
+    _schema(root, ns, "crm.deal", {"name": f("string"), "crm_id": f("string")})
+    rules = root / "agentic-assets/data_schema/crm.deal/data_schema.json"
+    rules.write_text(json.dumps({**json.loads(rules.read_text()), "rules": [{"unique": ["crm_id"]}]}))
+    _schema(root, ns, "crm.note", {"name": f("string"), "crm_id": f("string")})                 # nothing unique
+    _schema(root, ns, "crm.task", {"title": f("string", owned_by="crm"), "crm_id": f("string", owned_by="crm"),
+                                   "labels": f(["string"], owned_by="crm"), "deals": f(["crm.deal"], owned_by="crm"),
+                                   "main": f("?crm.deal", owned_by="crm"), "notes": f("?string")})
+    assert not any(load_root(root).values())
+    deals = _dataset(root, "deals", f"--{ns}--.crm.deal")
+    _dataset(root, "notes", f"--{ns}--.crm.note")
+    return deals, _dataset(root, "tasks", f"--{ns}--.crm.task")
+
+
+TASKS = [
+    {"external_id": "T-1", "name": "Call back", "data": {"labels": [{"name": "urgent"}, {"name": "q4"}],
+                                                         "targets": [{"deal": "OPP-1"}, {"deal": "OPP-2"}, {"deal": "OPP-404"}]}},
+    {"external_id": "T-2", "name": "Write the plan", "data": {"labels": [], "targets": []}},          # a general task
+]
+TASK_MAP = {"key": "external_id", "input": {
+    "title": "name", "crm_id": "external_id", "labels": "data.labels.*.name",
+    "deals": {"link": "crm.deal", "by": "crm_id", "path": "data.targets.*.deal"},
+    "main": {"link": "crm.deal", "by": "crm_id", "path": "data.targets.0.deal"}}}
+
+
+async def test_a_path_through_a_list_gives_a_list_and_ids_become_links(tasks):
+    deals, tasks_ = tasks
+    await deals.append([{"key": "acme", "input": {"name": "Acme", "crm_id": "OPP-1"}},
+                        {"key": "bolt", "input": {"name": "Bolt", "crm_id": "OPP-2"}}])
+    refs = {row["key"]: row["ref"] for row in deals.rows()["rows"]}
+
+    done = await tasks_.mirror(TASKS, TASK_MAP, by="crm")
+    assert done["created"] == ["t-1", "t-2"]
+    assert done["unlinked"] == [{"key": "t-1", "field": "deals", "value": "OPP-404"}]   # no such deal here: left out, said so
+    rows = {row["key"]: row["input"] for row in tasks_.rows()["rows"]}
+    assert rows["t-1"]["labels"] == ["urgent", "q4"]
+    assert rows["t-1"]["deals"] == [refs["acme"], refs["bolt"]] and rows["t-1"]["main"] == refs["acme"]
+    assert rows["t-2"]["deals"] == [] and rows["t-2"].get("main") is None                      # a general task links nothing
+    assert "unlinked" not in await tasks_.mirror(TASKS[1:], TASK_MAP, by="crm", prune=False)
+
+
+async def test_a_link_is_made_only_by_a_unique_field(tasks):
+    _, tasks_ = tasks
+    by_name = {"key": "external_id", "input": {"title": "name", "main": {"link": "crm.deal", "by": "name", "path": "external_id"}}}
+    with pytest.raises(ValueError, match="name is not a unique field of crm.deal"):
+        await tasks_.mirror(TASKS, by_name, by="crm")
+    with pytest.raises(ValueError, match="crm_id is not a unique field of crm.note"):
+        await tasks_.mirror(TASKS, {"key": "external_id", "input": {"main": {"link": "crm.note", "by": "crm_id", "path": "x"}}}, by="crm")
+    with pytest.raises(ValueError, match="no dataset holds crm.ghost"):
+        await tasks_.mirror(TASKS, {"key": "external_id", "input": {"main": {"link": "crm.ghost", "by": "crm_id", "path": "x"}}}, by="crm")

@@ -87,6 +87,7 @@ class WikiSource(RecordSource, CollectionSource):   # the family first
     provider = "wiki"            # = the manifest's name
     Config = WikiConfig          # its fields = the manifest's config keys
     durable_cursor = False       # True only when the provider can resume from your cursor string
+    lists_everything = False     # True when a full listing is the WHOLE collection (a table, a CRM object): records gone outside are removed here
 
     def query(self):             # the ONE stream this source reads, from its config
         return None              # or a DataQuery built from self.config
@@ -97,6 +98,14 @@ class WikiSource(RecordSource, CollectionSource):   # the family first
 
     async def _lookup(self, key): ...
     def _item(self, key, raw) -> SourceItemSpec: ...
+
+    # A SYSTEM OF RECORD (a CRM, a tracker) also writes back -- implement all three (`Mutable`); the type
+    # `create` names (a RecordData subclass) is what `create_item` checks a new record against. A source then
+    # mirrors into a dataset (`mirror` in data_source.json) and the app's row writes reach the system
+    # through these: docs/data-management/mirroring-a-system-of-record.md
+    async def create(self, data: WikiPageData) -> SourceItemSpec: ...
+    async def update(self, origin, changes: dict) -> SourceItemSpec: ...   # changes = the system's own field names
+    async def delete(self, origin) -> None: ...
 ```
 
 **Pick the family first — it is what the items ARE, and the loader refuses a class that extends

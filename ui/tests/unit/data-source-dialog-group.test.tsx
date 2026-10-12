@@ -7,7 +7,7 @@
 import '@testing-library/jest-dom/vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { Agent, DataDriver, TypeId } from '@sdk';
+import { Agent, DataDriver, DataSource, FieldType, TypeId } from '@sdk';
 
 const hoisted = vi.hoisted(() => ({ specs: [] as unknown[] }));
 vi.mock('@src/components/data-sources/use-source-specs', () => ({
@@ -76,8 +76,8 @@ describe('a driver group', () => {
   hoisted.specs = [own, ours, spec({ name: 'slack', title: 'Slack' })];
 
   it('is one tile whose phase shows each way as its live card, connected with one button', async () => {
-    vi.spyOn(DataDriver.prototype, 'profile').mockImplementation(async function (this: DataDriver) {
-      return this.name === 'ours' ? { available: true, name: 'Flow', number: '+1 555 0100' } : {};
+    vi.spyOn(DataDriver.prototype, 'profile').mockImplementation(function (this: DataDriver) {
+      return Promise.resolve(this.name === 'ours' ? { available: true, name: 'Flow', number: '+1 555 0100' } : {});
     });
     open();
 
@@ -99,7 +99,7 @@ describe('a driver group', () => {
     expect(screen.getByRole('button', { name: 'Connect Chat' })).toBeInTheDocument();
   });
 
-  it('walks in steps: each step replaces the last, and an earlier crumb goes back to it', async () => {
+  it('walks in steps: each step replaces the last, and an earlier crumb goes back to it', () => {
     vi.spyOn(DataDriver.prototype, 'profile').mockResolvedValue({});
     open();
     const crumbs = () => screen.getByTestId('step-crumbs').textContent;
@@ -125,8 +125,8 @@ describe('a driver group', () => {
   });
 
   it('cannot pick a way the hub does not offer, and says why', async () => {
-    vi.spyOn(DataDriver.prototype, 'profile').mockImplementation(async function (this: DataDriver) {
-      return this.name === 'ours' ? { available: false, detail: 'Not on your hub yet.' } : {};
+    vi.spyOn(DataDriver.prototype, 'profile').mockImplementation(function (this: DataDriver) {
+      return Promise.resolve(this.name === 'ours' ? { available: false, detail: 'Not on your hub yet.' } : {});
     });
     open();
     fireEvent.click(screen.getByTestId('provider-group-Chat'));
@@ -135,4 +135,26 @@ describe('a driver group', () => {
     expect(screen.getByTestId('group-member-ours')).toHaveTextContent('Not on your hub yet.');
     expect(screen.getByTestId('group-member-own')).toBeEnabled();
   });
+});
+
+
+it('edits public access while preserving the restricted sender list', async () => {
+  hoisted.specs = [spec({ name: 'chat-policy', config: {
+    allowed_senders: { type: FieldType.LINES, label: 'Allowed senders' },
+  } } as never)];
+  const source = new DataSource({ name: 'Chat', provider: 'chat-policy', allowed_senders: ['15550001111'], open_to_all: true });
+  const save = vi.spyOn(source, 'save').mockResolvedValue(undefined as never);
+  vi.spyOn(source, 'markEdit').mockImplementation(() => undefined);
+  render(<TooltipProvider><DataSourceDialog open editing={source} onOpenChange={vi.fn()} /></TooltipProvider>);
+  const senders = screen.getByLabelText('Allowed senders');
+  expect(senders).toBeDisabled();
+  expect(senders).toHaveValue('15550001111');
+  fireEvent.click(screen.getByLabelText('Open to all'));
+  expect(senders).toBeEnabled();
+  expect(senders).toHaveValue('15550001111');
+  fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+  await waitFor(() => expect(save).toHaveBeenCalledOnce());
+  expect(source.open_to_all).toBe(false);
+  expect(source.allowed_senders).toEqual(['15550001111']);
+  expect(source.config).not.toHaveProperty('open_to_all');
 });

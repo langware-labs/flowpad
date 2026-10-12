@@ -1,3 +1,5 @@
+import { ProjectLoadGate } from '@src/components/project-setup/ProjectLoadGate';
+import { PROVIDER_PROJECT_PARAM } from '@src/project-home-page/dependency-home';
 import { useCallback, useEffect, useRef } from 'react';
 import { type PersistentIframeHandle } from '@src/components/persistent-iframe';
 import { WebappDisplay } from '@src/components/webapp-display/WebappDisplay';
@@ -10,7 +12,8 @@ import { DockPointer } from '@src/navigation/DockPointer';
 import { useContext } from '@src/hooks/useContext';
 import { tryParseDock } from '@src/navigation/try-parse-dock';
 import { buildDockPointer } from '@src/components/conversation/EntityChip';
-import { isTypeId, TypeId } from '@sdk';
+import { useEntity } from '@sdk/react/hooks';
+import { isTypeId, TypeId, WebApp } from '@sdk';
 import { externalUrl, OPEN_EXTERNAL_MESSAGE } from '@sdk/apps/host';
 import { openExternal } from '@src/lib/open-external';
 
@@ -105,6 +108,7 @@ export function AppDisplayViewer({
   const { currentDock, navigation } = useDockNavigation();
   const { project } = useContext();
   const frameRef = useRef<PersistentIframeHandle>(null);
+  const { data: definition } = useEntity<WebApp>(microAppId ? new TypeId(WebApp.type, microAppId) : null);
 
   // No memo: `useAppDisplay` reduces this to strings before anything depends on
   // it, so a fresh object per render produces an identical `src` and the frame
@@ -164,7 +168,7 @@ export function AppDisplayViewer({
   // a setup for an app (a built-in editor, say) that is no node of this project's tree.
   if (appDisplay.loading) return null;
   const setupWebapp = appDisplay.idleDev?.webapp_id ?? (!appDisplay.src ? microAppId : null);
-  const setupProject = appDisplay.idleDev?.project_id ?? project?.id ?? '';
+  const setupProject = appDisplay.idleDev?.project_id ?? definition?.project_id ?? project?.id ?? '';
   if (!appDisplay.src && setupWebapp && setupProject) {
     return <WebappSetupGate projectId={setupProject} webappId={setupWebapp} />;
   }
@@ -177,7 +181,7 @@ export function AppDisplayViewer({
     );
   }
 
-  return (
+  const display = (
     <div className="flex h-full flex-col">
       <WebappDisplayToolbar
         host={appDisplay.src}
@@ -206,6 +210,11 @@ export function AppDisplayViewer({
       </div>
     </div>
   );
+  // Direct app opens have no dependency URL. Their endpoint, not ambient consumer context, owns Load.
+  const provider = appDisplay.endpoint?.project_id ?? definition?.project_id;
+  return provider && !currentDock?.options?.[PROVIDER_PROJECT_PARAM] && !currentDock?.isActiveDisplay
+    ? <ProjectLoadGate key={provider} projectId={provider}>{display}</ProjectLoadGate>
+    : display;
 }
 
 /** `host:port` of a direct address, for the toolbar label. */

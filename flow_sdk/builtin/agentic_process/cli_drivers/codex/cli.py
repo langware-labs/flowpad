@@ -55,9 +55,11 @@ class CodexAgentOptions(AgentOptions):
         json_stream: bool = True,
         ephemeral: bool = True,
         bypass_hook_trust: bool = False,
+        fork_session_id: str | None = None,
     ) -> None:
         super().__init__(workdir=workdir, env_vars=env_vars)
         self.session_id = session_id
+        self.fork_session_id = fork_session_id
         self.resume = resume
         self.model = model
         self.permission_mode = permission_mode
@@ -84,6 +86,13 @@ class CodexAgentOptions(AgentOptions):
     EXECUTABLE = "codex"
     PROMPT_CHANNEL = "stdin"  # codex reads the prompt from stdin (the `-` sentinel)
 
+    def configure_fork(self, source_session_id: str) -> None:
+        if self.json_stream:
+            raise NotImplementedError("Codex session forks require an interactive terminal")
+        self.session_id = None  # Codex allocates the child's native session identity.
+        self.resume = False
+        self.fork_session_id = source_session_id
+
     def _common_tail(self) -> list[str]:
         """Flags shared by both transports: cwd, model, add-dirs, resume."""
         tail: list[str] = []
@@ -93,7 +102,9 @@ class CodexAgentOptions(AgentOptions):
             tail.extend(["-m", self.resolved_model])
         for d in self.add_dirs:
             tail.extend(["--add-dir", d])
-        if self.resume and self.session_id:
+        if self.fork_session_id:
+            tail.extend(["fork", self.fork_session_id])
+        elif self.resume and self.session_id:
             tail.extend(["resume", self.session_id])  # positional subcommand, not a flag
         return tail
 
@@ -189,6 +200,7 @@ class CodexAgentOptions(AgentOptions):
     # declaration of this vendor's wire shape. Key names and value types are
     # frozen — see tests/unit/test_agent_options_serialization_golden.py.
 
+    SPARSE_FIELDS = ("fork_session_id",)
     WORKER_TYPE = "codex"
     SERIALIZED_FIELDS = (
         "session_id",

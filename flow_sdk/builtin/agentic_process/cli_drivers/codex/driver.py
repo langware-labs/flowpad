@@ -146,7 +146,7 @@ class CodexDriver:
     pty_composer_ready_pattern = re.compile(r">_ OpenAI Codex")
     # A PTY launch drops the prompt (codex reads it from stdin); prompt() types it.
     pty_launch_drops_prompt = True
-    pins_resume_cwd = False  # codex mints its own rollout; no transcript-cwd pinning, no fork
+    pins_resume_cwd = False  # codex mints its own rollout; no Claude transcript-cwd pinning
 
     # ── CLI shape ────────────────────────────────────────────────────────────
 
@@ -180,6 +180,8 @@ class CodexDriver:
         """
         cmd = CodexAgentOptions.from_json(process.cli_config)
         cmd.session_id = process.session_id
+        if process.session_id:
+            cmd.fork_session_id = None  # Once adopted, reopen the child instead of forking again.
         cmd.workdir = process.workdir
         cmd.add_dirs = process.resolved_add_dirs
         agents_json = process.get_agents_json()

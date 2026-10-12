@@ -16,8 +16,8 @@ command, question and agent still lives in a ComputeOp, and every node's wizard 
   trust gate exists to prevent.
 * **Check only** runs every node's wizards in check mode — nothing asks, installs or spawns — so "is this
   project ready" and "set this project up" are the same walk.
-* **A load is a one-node tree.** ``core/setup/load`` wraps the resolver so the asset's node arrives with
-  no prepare, no children and its ``on_load`` as ``run``; the walk, the slot and the record are the same.
+* **Load keeps the dependency graph.** ``core/setup/load`` wraps its resolver with no prepare and each
+  node's ``on_load`` as ``run``; the walk, slot and record are shared with setup.
 
 **One report.** The Activity tree is ``<root>`` → one node per asset (its depth under the root in the
 ``level`` counter, so a screen indents it) → ``prepare`` / ``run`` → the wizard's steps. The asset

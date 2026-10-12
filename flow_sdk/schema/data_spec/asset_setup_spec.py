@@ -12,7 +12,7 @@ A node whose child failed does not run: it is ``blocked``, and says which child.
 so one broken leaf never hides the state of the others.
 
 A node may also carry ``on_load``, which is NOT part of that walk: the wizard a LOAD runs when the asset is
-shown (``core/setup/load``). It never asks; a web app's is its own install → build → start.
+shown (``core/setup/load``). It never asks; a web app's checks and starts its server after install/build setup.
 
 Two shapes live here:
 
@@ -94,6 +94,26 @@ class SetupState(StrEnum):
     HELD = "held"
     #: A person skipped it (``setup_skipped`` on its record): settled without running, so its parent goes on.
     SKIPPED = "skipped"
+
+
+class LoadState(StrEnum):
+    READY = "ready"
+    SETUP_REQUIRED = "setup_required"
+    RUNNING = "running"
+    FAILED = "failed"
+
+
+class LoadResult(DataSpec):
+    """A provider project's local lifecycle, independent of the project using it."""
+
+    spec_kind: ClassVar[str] = "project.load"
+    state: LoadState
+    project_id: str
+    detail: str = ""
+    run: Optional[str] = None
+    asset: Optional[str] = None
+    #: Consumer session whose saved presentation this run checked, absent for provider-only loads.
+    display: Optional[str] = None
 
 
 class SetupNodeResult(DataSpec):

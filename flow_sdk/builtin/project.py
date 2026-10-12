@@ -388,11 +388,13 @@ def _invite_message_text(project_name: str, note: Optional[str]) -> str:
 
 class Project(SetupSkippable, Entity):
     @classmethod
-    async def get_last_active(cls) -> Optional["Project"]:
+    async def get_last_active(cls, workspace_id: str | None = None) -> Optional["Project"]:
         """The most recently opened visible project; hydrate only the winner."""
-        from flow_sdk.config import is_hidden_project
+        from flow_sdk.config import is_hidden_project, path_in_workspace
 
         for row in await cls._db.get_entity_locations(cls.get_type(), active_only=True):
+            if workspace_id is not None and not path_in_workspace(row.fs_storage_mount_path, workspace_id):
+                continue
             if not is_hidden_project(row.fs_storage_mount_path or "", row.system):
                 project = await cls.get_by_id(row.id)
                 if project is not None:
@@ -623,7 +625,7 @@ class Project(SetupSkippable, Entity):
         return {"home_title": home_title, "has_home_background": has_bg, "brand": brand}
 
     def home_page_typeid(self) -> str | None:
-        """The asset TypeId the project manifest DECLARES as its home page, or ``None``.
+        """The home TypeId or ./asset path the manifest DECLARES, or ``None``.
 
         Declared, not resolved: whether the asset exists and lives in this
         project needs the DB. ``open_home_page`` is the resolver.
@@ -632,6 +634,32 @@ class Project(SetupSkippable, Entity):
 
         root = self.fs_storage_mount_path
         return read_home_page(Path(root)) if root else None
+
+    async def resolve_home_page_typeid(self, reference: str | None = None) -> str | None:
+        """Resolve a portable manifest pointer through the normal asset identity seam.
+
+        Paths are relative to THIS checkout, never the publisher's path. The
+        resolved path must stay inside it (including symlinks), and resolution
+        never stamps an identity into a read-only asset.
+        """
+        from flow_sdk.fs_store.resolve import NotAnAsset, resolve_asset  # noqa: PLC0415
+        from flow_sdk.schema.data_spec.project_manifest_spec import ProjectManifestSpec  # noqa: PLC0415
+
+        reference = reference if reference is not None else self.home_page_typeid()
+        reference = ProjectManifestSpec.model_validate({"home_page": reference}).home_page
+        if not reference or not reference.startswith("./"):
+            return reference
+        if not self.fs_storage_mount_path:
+            return None
+        root = Path(self.fs_storage_mount_path).resolve()
+        target = (root / reference[2:]).resolve()
+        if not target.is_relative_to(root):
+            return None
+        try:
+            resolved = await resolve_asset(target, write=False)
+        except NotAnAsset:
+            return None
+        return str(TypeId(type=resolved.type_name, id=resolved.id))
 
     @action.post(action_name="set-home-page")
     async def set_home_page_action(self, typeid: str = "") -> "ApiResponse":
@@ -647,8 +675,12 @@ class Project(SetupSkippable, Entity):
         if not self.fs_storage_mount_path:
             return ApiFailResponse(message="Project has no local working directory")
         typeid = (typeid or "").strip() or None
-        if typeid is not None and await self._own_asset(typeid) is None:
-            return ApiFailResponse(message=f"{typeid} is not an asset of this project", status_code=400)
+        if typeid is not None:
+            resolved = await self.resolve_home_page_typeid(typeid)
+            if resolved:
+                await self._index_home_page(resolved)
+            if not resolved or await self._own_asset(resolved) is None:
+                return ApiFailResponse(message=f"{typeid} is not an asset of this project", status_code=400)
         try:
             spec = set_home_page(Path(self.fs_storage_mount_path), typeid)
         except ManifestError as exc:
@@ -779,22 +811,21 @@ class Project(SetupSkippable, Entity):
         """The declared home page's ``{asset, type}``, only if it is this project's own
         (a cloned manifest must not point Home at another project's asset); else nulls.
 
-        A web app home (the project opens app-first) is made displayable here first: its
-        endpoint on this machine is placed when missing — idempotent, the same placement
-        ``flow show`` does — so the app view the redirect lands on finds something to show.
-        Then it is LOADED (``core/setup/load``): ``load_run`` is the run bringing it up, or null —
-        the view adopts it as the app's setup. Never waited on here."""
-        from flow_sdk.builtin.webapp_placement import show_webapp_locally  # noqa: PLC0415
+        A web app home is LOADED (``core/setup/load``): its shared operational run verifies
+        its entry and local placement, repairing a missing endpoint. ``load_run`` names
+        that background work; the view adopts it. Never place independently here, which
+        would race the same placement in the load run. Never wait on the run here."""
+        from flow_sdk.core.setup.load import load_project  # noqa: PLC0415
 
-        typeid = self.home_page_typeid()
+        typeid = await self.resolve_home_page_typeid()
         if typeid:
             await self._index_home_page(typeid)
         asset = await self._own_asset(typeid) if typeid else None
+        lifecycle = await load_project(self, asset=asset)
         if asset is None:
-            return {"asset": None, "type": None}
-        answer: dict[str, Any] = {"asset": typeid, "type": asset.get_type()}
-        if asset.get_type() == "micro_app":
-            _endpoint, answer["load_run"] = await show_webapp_locally(asset, self)
+            return {"asset": None, "type": None, "lifecycle": lifecycle.model_dump(mode="json")}
+        answer: dict[str, Any] = {"asset": typeid, "type": asset.get_type(),
+                                  "lifecycle": lifecycle.model_dump(mode="json"), "load_run": lifecycle.run}
         return answer
 
     @action.get(action_name="home-page")
@@ -810,6 +841,35 @@ class Project(SetupSkippable, Entity):
             return ApiSuccessResponse(data={"asset": None, "type": None, "error": str(exc)})
 
     # ── setup: is this project ready here, and the wizard that makes it so ─────────
+
+    @action.post(action_name="load")
+    async def load_action(self, approved: bool = False, asset: str = "", display: str = "") -> "ApiResponse":
+        """Load this provider; only explicit approval allows missing setup to run."""
+        from flow_sdk.core.setup.load import load_project  # noqa: PLC0415
+
+        target = await self._own_asset(asset) if asset else None
+        if asset and target is None:
+            return ApiFailResponse(message="The requested asset does not belong to this project", status_code=400)
+        if display:
+            from flow_sdk.builtin.agentic_process import AgenticProcess  # noqa: PLC0415
+
+            try:
+                identity = TypeId(display)
+                process = await AgenticProcess.get_by_id(identity.id) if identity.type == AgenticProcess.get_type() else None
+            except (ValueError, TypeError, IndexError):
+                process = None
+            if process is None or process.project_id != self.id:
+                return ApiFailResponse(message="The display session does not belong to this project", status_code=400)
+        result = await load_project(self, approved=approved, asset=target, display=display)
+        return ApiSuccessResponse(data=result.model_dump(mode="json"))
+
+    @action.get(action_name="load-state")
+    async def load_state_action(self, asset: str = "") -> "ApiResponse":
+        """Observe the current provider lifecycle, without starting or approving anything."""
+        from flow_sdk.core.setup.load import load_state  # noqa: PLC0415
+
+        result = load_state(str(self.id), asset=asset)
+        return ApiSuccessResponse(data=result.model_dump(mode="json") if result is not None else None)
 
     @action.get(action_name="setup-requirements")
     async def setup_requirements_action(self) -> "ApiResponse":
@@ -2671,12 +2731,34 @@ class Project(SetupSkippable, Entity):
     # ``flow_sdk.builtin.project_dependencies`` — the one owner. The verbs below are
     # thin: they write the file, then resolve.
 
-    async def dependencies(self, *, fetch: bool = False) -> "list[DependencyState]":
+    async def dependencies(self, *, fetch: bool = False, asset: str | None = None) -> "list[DependencyState]":
         """Every declared dependency as it stands here. ``fetch=False`` (the default)
         never touches the network: a dependency not on this machine yet reads ``missing``."""
         from flow_sdk.builtin import project_dependencies  # noqa: PLC0415
 
+        if asset:
+            if fetch:
+                await project_dependencies.asset_holder(self, asset)
+                await project_dependencies.resolve(self, fetch=True)
+            return await project_dependencies.inspect_dependencies(self, asset=asset)
         return await project_dependencies.resolve(self, fetch=fetch, index=fetch)
+
+    async def dependency_candidates(self, *, asset: str) -> list[str]:
+        from flow_sdk.builtin import project_dependencies  # noqa: PLC0415
+
+        return await project_dependencies.source_candidates(self, asset=asset)
+
+    async def preview_dependencies(self, *, asset: str, sources: list[str]) -> "list[DependencyState]":
+        from flow_sdk.builtin import project_dependencies  # noqa: PLC0415
+        from flow_sdk.dependencies.resolve import typeid_of  # noqa: PLC0415
+        from flow_sdk.schema.data_spec.flow_json_spec import parse_source  # noqa: PLC0415
+
+        candidates = set(await self.dependency_candidates(asset=asset))
+        for source in sources:
+            parsed = parse_source(source)
+            if parsed.kind != "ref" or typeid_of(parsed) not in candidates:
+                raise ValueError(f"{source!r} is not a data source in this project")
+        return await project_dependencies.inspect_dependencies(self, asset=asset, sources=sources)
 
     async def resolve_dependencies(self, *, update: bool = False) -> "list[DependencyState]":
         """Fetch what is missing (clone, hub), link and index it. ``update`` fast-forwards
@@ -2716,7 +2798,7 @@ class Project(SetupSkippable, Entity):
         raw = str(source or "").strip()
         default_name, rel = None, "."
         if asset:
-            return await project_dependencies.add_to_asset(
+            state = await project_dependencies.add_to_asset(
                 self,
                 asset,
                 raw,
@@ -2725,6 +2807,7 @@ class Project(SetupSkippable, Entity):
                 description=description,
                 optional=optional,
             )
+            return await project_dependencies.load_dependency(state)
         if raw.startswith(("git+", "hub:", "file:")) or parse_id(raw):
             parse_source(raw)
         elif Path(raw).expanduser().is_dir():
@@ -2748,13 +2831,16 @@ class Project(SetupSkippable, Entity):
         )
         flow_json.write_dependency(Path(self.fs_storage_mount_path), dep)
         states = await project_dependencies.resolve(self, fetch=True, install=[dep.name] if optional else ())
-        return next(s for s in states if s.name == dep.name and s.via is None)
+        return await project_dependencies.load_dependency(next(s for s in states if s.name == dep.name and s.via is None))
 
-    async def remove_dependency(self, name: str) -> "list[DependencyState]":
+    async def remove_dependency(self, name: str, *, asset: str | None = None) -> "list[DependencyState]":
         """Drop ``name`` from ``flow.json``; its folder leaves the context. The folder on
         disk is never touched."""
         from flow_sdk.assets import flow_json  # noqa: PLC0415
+        from flow_sdk.builtin import project_dependencies  # noqa: PLC0415
 
+        if asset:
+            return await project_dependencies.remove_from_asset(self, asset, name)
         if not self.fs_storage_mount_path:
             return []
         flow_json.drop_dependency(Path(self.fs_storage_mount_path), name)
@@ -2768,7 +2854,7 @@ class Project(SetupSkippable, Entity):
         found = next((s for s in states if s.name == name and s.via is None), None)
         if found is None:
             raise ValueError(f"{name!r} is not declared in flow.json")
-        return found
+        return await project_dependencies.load_dependency(found)
 
     def dismiss_dependency_warning(self, name: str) -> None:
         """Stop warning about a missing required dependency until Flowpad restarts."""
@@ -2787,11 +2873,14 @@ class Project(SetupSkippable, Entity):
         return [s.model_dump(mode="json") for s in states]
 
     @action.get(action_name="dependencies")
-    async def dependencies_action(self) -> "ApiResponse":
+    async def dependencies_action(self, asset: str = "") -> "ApiResponse":
         """`GET /project/<id>/dependencies` — every declared dependency, and the warnings."""
         from flow_sdk.builtin import project_dependencies  # noqa: PLC0415
 
-        states = await self.dependencies()
+        try:
+            states = await self.dependencies(asset=asset or None)
+        except ValueError as exc:
+            return ApiFailResponse(message=str(exc), status_code=400)
         warnings = project_dependencies.warnings_for(str(self.id), states)
         return ApiSuccessResponse(
             data={
@@ -2802,6 +2891,27 @@ class Project(SetupSkippable, Entity):
                 "resolving": project_dependencies.is_resolving(str(self.id)),
             }
         )
+
+    @action.get(action_name="dependency-candidates")
+    async def dependency_candidates_action(self, asset: str = "") -> "ApiResponse":
+        try:
+            candidates = await self.dependency_candidates(asset=asset)
+        except ValueError as exc:
+            return ApiFailResponse(message=str(exc), status_code=400)
+        return ApiSuccessResponse(data={"source_typeids": candidates})
+
+    @action.post(action_name="preview-dependencies")
+    async def preview_dependencies_action(self, asset: str = "", sources: list[str] | None = None) -> "ApiResponse":
+        from flow_sdk.builtin import project_dependencies  # noqa: PLC0415
+
+        try:
+            states = await self.preview_dependencies(asset=asset, sources=sources or [])
+        except ValueError as exc:
+            return ApiFailResponse(message=str(exc), status_code=400)
+        return ApiSuccessResponse(data={
+            "dependencies": self._states(states),
+            "warnings": self._states(project_dependencies.warnings_for(str(self.id), states)),
+        })
 
     @action.post(action_name="add-dependency")
     async def add_dependency_action(
@@ -2829,10 +2939,13 @@ class Project(SetupSkippable, Entity):
         return ApiSuccessResponse(data={"dependency": state.model_dump(mode="json"), **self._context_payload()})
 
     @action.post(action_name="remove-dependency")
-    async def remove_dependency_action(self, name: str = "") -> "ApiResponse":
+    async def remove_dependency_action(self, name: str = "", asset: str = "") -> "ApiResponse":
         if not name:
             return ApiFailResponse(message="name is required", status_code=400)
-        states = await self.remove_dependency(name)
+        try:
+            states = await self.remove_dependency(name, asset=asset or None)
+        except ValueError as exc:
+            return ApiFailResponse(message=str(exc), status_code=400)
         return ApiSuccessResponse(data={"dependencies": self._states(states), **self._context_payload()})
 
     @action.post(action_name="resolve-dependencies")

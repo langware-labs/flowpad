@@ -20,8 +20,10 @@ export interface GitStatusFile {
 export interface GitStatus {
   error: string | null;
   branch: string | null;
-  /** The branch's remote branch (`origin/main`); null when it has none, so `ahead`/`behind` are 0. */
+  /** Configured tracking branch; null does not imply the remote branch is absent. */
   upstream: string | null;
+  /** Same-name origin branch known locally and available to track. */
+  upstreamCandidate?: string | null;
   ahead: number;
   behind: number;
   files: GitStatusFile[];
@@ -176,6 +178,10 @@ export class GitWorkdir {
       ...(options.lineCounts ? { lineCounts: 'true' } : {}),
       ...(options.revision ? { revision: options.revision } : {}),
     });
+  }
+
+  async setUpstream(branch: string): Promise<GitStatus> {
+    return this._post<GitStatus>('set-upstream', { branch });
   }
 
   /** Repo-relative paths touched by commits ahead of @{u} (empty when no upstream). */

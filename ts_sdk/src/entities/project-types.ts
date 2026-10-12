@@ -30,12 +30,26 @@ export interface ProjectContextDirInfo {
   via?: string;
 }
 
+/** Backend-owned project lifecycle; resolving files does not imply runtime readiness. */
+export interface ProjectLoadResult {
+  state: 'ready' | 'setup_required' | 'running' | 'failed';
+  detail: string;
+  run: string | null;
+  project_id: string;
+  asset: string | null;
+  /** Consumer session whose saved display was checked, not just provider readiness. */
+  display?: string | null;
+}
+
 /** Where a declared dependency stands on THIS machine. */
 export type DependencyStateName = 'ready' | 'missing' | 'unreachable' | 'not_installed' | 'invalid' | 'not_found';
 
 /** Mirror of the backend `DependencyState` — one `flow.json` dependency as it
  *  stands here. What every dependency action answers. */
 export interface DependencyState {
+  project_id?: string | null;
+  home_page?: string | null;
+  lifecycle?: ProjectLoadResult | null;
   name: string;
   /** As declared: an id (`<type>-<uuid>` / `<kind>.id.<uuid>`), or — in a project's own
    *  file — `git+<url>#<branch>`, `hub:<project-id>`, `file:<path>`. */

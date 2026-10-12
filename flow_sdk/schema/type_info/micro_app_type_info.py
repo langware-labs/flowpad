@@ -38,8 +38,8 @@ MICRO_APP = TypeInfo(
     post_sync_fn=place_indexed_webapp,
     orphan_cascade_fn=unplace_webapp,
     # DERIVED, not a capsule: `webapp.json` deliberately carries no id, so the
-    # id falls out of the path — a shipped editor then has the SAME id on every
-    # machine, which is what makes a `/dock/app/micro_app-<uuid>` link portable.
-    # A capsule would also make a shared app arrive carrying the sender's id.
+    # id falls out of the local path. Clones at different paths have different
+    # ids; portable project homes reference ./agentic-assets/webapp/<name> and
+    # resolve through the registry. A capsule would carry the sender's id.
     identity_carrier=derived_identity(),
 )

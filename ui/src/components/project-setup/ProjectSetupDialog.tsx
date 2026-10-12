@@ -261,7 +261,7 @@ export function ProjectSetupDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-xl" data-testid="project-setup-dialog">
+      <DialogContent className="max-h-[85vh] max-w-xl overflow-y-auto" data-testid="project-setup-dialog">
         <DialogHeader>
           <DialogTitle>
             <Trans>Set up {projectName}</Trans>

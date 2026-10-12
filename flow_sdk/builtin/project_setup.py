@@ -90,12 +90,12 @@ async def project_sources(project: "Project") -> list["DataSource"]:
     from flow_sdk.builtin.data_source import DataSource  # noqa: PLC0415
     from flow_sdk.builtin.project import assets_under_roots  # noqa: PLC0415
     from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp  # noqa: PLC0415
-    from flow_sdk.fs_store.path_utils import canonical_posix_path  # noqa: PLC0415
+    from flow_sdk.fs_store.path_utils import asset_refs_under  # noqa: PLC0415
 
     root = str(getattr(project, "fs_storage_mount_path", "") or "")
     keys = [ExpressionNode(op=QueryOp.EQ, operands=["project_id", str(project.id)])]
-    for prefix in dict.fromkeys(p.rstrip("/") for p in ((root, canonical_posix_path(root)) if root else ())):
-        keys.append(ExpressionNode(op=QueryOp.LIKE, operands=["asset_ref", f"{prefix}/%"]))
+    if root:
+        keys += [ExpressionNode(op=QueryOp.LIKE, operands=["asset_ref", p]) for p in asset_refs_under(root)]
     match = keys[0] if len(keys) == 1 else ExpressionNode(op=QueryOp.OR, operands=keys)
     rows = await DataSource.get_all(QueryFilter(match=match))
     under = {str(r.id) for r in assets_under_roots(rows, [root])} if root else set()
@@ -456,7 +456,9 @@ def setup_run_address(project_id: str, root: str = "") -> str:
     return setup_activity_path(root or f"project-{project_id}")
 
 
-async def start_setup(project: "Project", *, ai: bool = True, root: str = "", tree: Any = None) -> str:
+async def start_setup(project: "Project", *, ai: bool = True, root: str = "", tree: Any = None,
+                      load_after: bool = True, providers: Any = None, dependency_approval: bool = True,
+                      ancestors: tuple[str, ...] = ()) -> str:
     """Start the project's setup in the background and return its address at once.
 
     The setup is the project's TREE (``core/setup/derive.ProjectTree``): every dependency, connection,
@@ -479,16 +481,47 @@ async def start_setup(project: "Project", *, ai: bool = True, root: str = "", tr
 
         async def run_setup():
             # The run's shell: what the setup does not answer itself runs here, one start per run.
+            from flow_sdk.builtin.project_dependencies import required_projects  # noqa: PLC0415
             from flow_sdk.core.compute.shared_shell import SharedShell  # noqa: PLC0415
+            from flow_sdk.core.setup.load import load_project  # noqa: PLC0415
+            from flow_sdk.schema.data_spec.asset_setup_spec import (  # noqa: PLC0415
+                LoadState,
+                SetupState,
+                SetupTreeResult,
+            )
+
+            dependencies = providers if providers is not None else (await required_projects(project) if not root else [])
+            for provider in dependencies:
+                if str(provider.id) in ancestors:
+                    continue
+                child = await load_project(provider, approved=dependency_approval, ancestors=(*ancestors, pid))
+                if child.state is LoadState.RUNNING:
+                    task = _RUNS.get((str(provider.id), ""))
+                    outcome = await asyncio.shield(task) if task is not None else None
+                    if outcome is not None and outcome.ok:
+                        continue
+                elif child.state is LoadState.READY:
+                    continue
+                return SetupTreeResult(state=SetupState.BLOCKED, detail=f"Dependency {provider.name}: {child.detail}")
 
             async with SharedShell() as base:
-                return await execute_setup(
+                result = await execute_setup(
                     root or tree.root, resolve_node=tree.resolve_node, resolve_op=tree.resolve_op,
                     subject_entity=f"project-{pid}", cwd=Path(mount) if mount else None,
                     shell=functools.partial(_setup_shell, inner=base),
                     # A person pressed Set up on THIS project: every node in it is theirs to run.
                     approved=True,
                 )
+                if result.ok and load_after:
+                    from flow_sdk.core.setup.load import LoadTree  # noqa: PLC0415
+
+                    operational = LoadTree(tree)
+                    result = await execute_setup(
+                        root or tree.root, resolve_node=operational.resolve_node, resolve_op=operational.resolve_op,
+                        subject_entity=f"project-{pid}", cwd=Path(mount) if mount else None,
+                        shell=functools.partial(_setup_shell, inner=base), approved=True,
+                    )
+                return result
 
         # Detached: the run takes minutes and asks the person questions; a plain task
         # (and a plain done-callback) would hold the Set-up request for all of it.
@@ -501,13 +534,18 @@ async def start_setup(project: "Project", *, ai: bool = True, root: str = "", tr
 def _own_check(command: str) -> Optional[tuple[str, str, str]]:
     """``(name, project_id, deployment_id)`` when ``command`` is this interpreter's
     ``flow credentials check`` — the check a setup step runs before it asks — else None."""
+    import re  # noqa: PLC0415
     import shlex  # noqa: PLC0415
     import sys  # noqa: PLC0415
 
-    try:
-        argv = shlex.split(command)
-    except ValueError:
-        return None
+    if command.startswith("& '"):  # Windows: flow_command's PowerShell spelling — the exe and each argument quoted
+        exe, *args = [token.replace("''", "'") for token in re.findall(r"'((?:[^']|'')*)'", command)] or [""]
+        argv = [exe, "-m", "flow_sdk.cli.flow_cli", *args] if " -m flow_sdk.cli.flow_cli " in command else []
+    else:
+        try:
+            argv = shlex.split(command)
+        except ValueError:
+            return None
     if argv[:5] != [sys.executable, "-m", "flow_sdk.cli.flow_cli", "credentials", "check"] or len(argv) < 6:
         return None
     options = argv[6:]
@@ -522,17 +560,17 @@ async def _setup_shell(command: str, *, timeout_seconds: float, workdir: Path, e
 
     Every step checks its goal before it asks, and ``flow credentials check`` as a process imports
     the CLI and, with no backend to reach, opens the database — about a second before each question,
-    measured. The setup runs inside the instance the check would ask, so it asks the same
+    measured, and 27 s on a loaded Windows machine (past the check's limit, so a connected credential
+    read as missing). The setup runs inside the instance the check would ask, so it asks the same
     ``credentials_status`` directly: same row (the project's own before the user's), same verdict
-    (``connected`` is ready), same exit codes. Windows builds the command differently, so it keeps
-    the process. Everything else goes to *inner*, the run's shell."""
+    (``connected`` is ready), same exit codes, on every OS. Everything else goes to *inner*, the
+    run's shell."""
     import json  # noqa: PLC0415
-    import sys  # noqa: PLC0415
     import time  # noqa: PLC0415
 
     from flow_sdk.core.compute.exec import run_shell  # noqa: PLC0415
 
-    own = _own_check(command) if (platform or sys.platform) != "win32" else None
+    own = _own_check(command)
     if own is None:
         return await (inner or run_shell)(command, timeout_seconds=timeout_seconds, workdir=workdir,
                                           extra_env=extra_env, platform=platform, stop=stop,

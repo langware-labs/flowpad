@@ -34,7 +34,7 @@ PROBE_SECONDS = 2.0
 #: An install's own budget (``npm ci`` on a cold cache), the same the CLI's install used.
 INSTALL_SECONDS = 300.0
 
-STEPS = ("install", "build", "start")
+STEPS = ("install", "build", "start", "present")
 
 
 def _answer(code: ExitCode, detail: str, *, ran: bool = True, value: Any = None) -> ReturnedValue:
@@ -99,14 +99,18 @@ async def _endpoint(app, name: str):
     return next((e for e in await webapp_endpoints(app.id) if e.name == name and e.backend.type == "proxy"), None)
 
 
-async def step(webapp_id: str, which: str, *, check: bool) -> ReturnedValue:
-    """One of the app's setup steps (``install`` / ``build`` / ``start``). ``check`` judges what is ON THIS
+async def step(webapp_id: str, which: str, *, check: bool, display: str = "") -> ReturnedValue:
+    """One of the app's setup/load steps (``install`` / ``build`` / ``start`` / ``present``). ``check`` judges what is ON THIS
     MACHINE now and changes nothing. Never raises for an outcome."""
     app = await _app(webapp_id)
     if app is None or not app.asset_ref:
         return _answer(ExitCode.NOT_FOUND, f"there is no web app {webapp_id!r} here", ran=False)
     if which not in STEPS:
         return _answer(ExitCode.NOT_FOUND, f"a web app has no setup step {which!r} (it has {', '.join(STEPS)})", ran=False)
+    if which == "present":
+        from flow_sdk.builtin.webapp_load import present  # noqa: PLC0415
+
+        return await present(app, display=display, check=check)
     folder = Path(app.asset_ref)
     proxy = _proxy(app)
     if proxy is None:

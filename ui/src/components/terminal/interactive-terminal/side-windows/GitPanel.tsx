@@ -343,6 +343,8 @@ export const GitPanel: React.FC<GitPanelProps> = ({ computeNodeId, workdir, onPu
   );
   const [fetchError, setFetchError] = useState<string | null>(null);
   const requestRef = useRef(0);
+  const [settingUpstream, setSettingUpstream] = useState(false);
+  const [upstreamError, setUpstreamError] = useState<string | null>(null);
   const [mode, setMode] = useState<GitMode>('standard');
   // Row currently awaiting destructive confirmation, keyed by `${path}::${key}`.
   const [confirmingKey, setConfirmingKey] = useState<string | null>(null);
@@ -594,14 +596,46 @@ export const GitPanel: React.FC<GitPanelProps> = ({ computeNodeId, workdir, onPu
                   />
                 )}
                 {data && !data.error && data.branch && !data.upstream && (
-                  <HeaderChip
-                    title={
-                      data.remoteUrl ? t`Not on the remote yet — Push publishes this branch` : t`No remote configured`
-                    }
-                    testId="git-panel-no-upstream"
-                  >
-                    <Trans>No remote branch</Trans>
-                  </HeaderChip>
+                  <>
+                    <HeaderChip
+                      title={data.upstreamCandidate ? t`Track ${data.upstreamCandidate}` : t`No upstream configured`}
+                      testId="git-panel-no-upstream"
+                    >
+                      <Trans>No upstream configured</Trans>
+                    </HeaderChip>
+                    {data.upstreamCandidate && (
+                      <Button
+                        variant="link"
+                        size="sm"
+                        className="h-5 px-1 text-xs"
+                        data-testid="git-panel-set-upstream"
+                        disabled={settingUpstream}
+                        onClick={async () => {
+                          setSettingUpstream(true);
+                          setUpstreamError(null);
+                          try {
+                            const result = await git.setUpstream(data.branch!);
+                            if (result.error) setUpstreamError(result.error);
+                            else {
+                              await fetchStatus();
+                              onPushed?.();
+                            }
+                          } catch (error) {
+                            setUpstreamError(String(error));
+                          } finally {
+                            setSettingUpstream(false);
+                          }
+                        }}
+                      >
+                        <Trans>Set it</Trans>
+                      </Button>
+                    )}
+                  </>
+                )}
+                {upstreamError && (
+                  <span role="alert" className="text-xs text-destructive">
+                    {upstreamError}
+                  </span>
                 )}
                 {data && !data.error && data.upstream && data.ahead === 0 && data.behind === 0 && (
                   <HeaderChip title={t`Same commits as ${data.upstream}`} testId="git-panel-in-sync">

@@ -221,3 +221,10 @@ async def _refused(agent, source, item) -> bool:
     engine = TurnEngine(agent, None)
     engine.process_for = no_process
     return await answer(engine, item, source=source) is False
+
+
+async def test_own_outgoing_does_not_run_with_public_access(mail_db):
+    agent = await _agent("ada-public-self-loop")
+    source = await _source(agent.id, [])
+    source.open_to_all = True
+    assert await _refused(agent, source, _item(source.id, MAILBOX))
