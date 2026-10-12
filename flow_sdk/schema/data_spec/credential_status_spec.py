@@ -9,6 +9,7 @@ from typing import Optional
 from pydantic import ConfigDict
 
 from flow_sdk.schema.data_spec.asset_setup_spec import SetupSkipSpec
+from flow_sdk.schema.data_spec.compute_op_spec import CliOp
 from flow_sdk.schema.data_spec.credential_contract import (
     DEFAULT_ENVIRONMENT,
     CredentialRequirement,
@@ -32,10 +33,16 @@ class CredentialVarStatusSpec(DataSpec):
     #: deployment requires it beyond the credential (``DeploymentSecretsSpec.require``).
     required: Requirement = CredentialRequirement.MUST
     kind: CredentialVarKind = CredentialVarKind.TEXT
-    #: The store this deployment keeps the variable in: ``env`` / ``vault`` / a remote store type.
+    #: The store this deployment keeps the variable in: ``env`` / ``vault`` / a remote store type —
+    #: ``cli`` for a sign-in a command-line tool holds.
     store: str = "env"
-    #: A value exists in that store.
+    #: A value exists in that store (cli: its check passed on this computer).
     present: bool = False
+    #: cli: the command a person runs on this computer to sign in.
+    login: str = ""
+    #: cli: the declaration's own ``login`` / ``check`` (every OS) — what an edit of the credential sends back.
+    login_spec: Optional[CliOp] = None
+    check_spec: Optional[CliOp] = None
     #: Where a value was found at all: ``env`` / ``vault`` / the remote store type / None.
     found_in: Optional[str] = None
     #: ``missing`` (no value anywhere), ``wrong-store`` (a value in the other local store) or
@@ -47,6 +54,17 @@ class CredentialVarStatusSpec(DataSpec):
     @property
     def is_must(self) -> bool:
         return self.required is CredentialRequirement.MUST
+
+    @property
+    def is_one_of(self) -> bool:
+        return self.required is CredentialRequirement.ONE_OF
+
+
+def group_held(vars: list) -> bool:
+    """The ONE_OF rule, said once: no group, or one of its members present. ``vars`` are anything with
+    ``is_one_of`` and ``present`` (a status row's, a setup requirement's)."""
+    group = [v for v in vars if v.is_one_of]
+    return not group or any(v.present for v in group)
 
 
 class CredentialStatusRowSpec(DataSpec):
@@ -84,10 +102,16 @@ class CredentialStatusRowSpec(DataSpec):
     setup_skipped: Optional[SetupSkipSpec] = None
     #: Where its folder is on this machine — what "Skip → Always" would remove.
     asset_ref: str = ""
-    #: ``connected`` (every required value present / the grant held and covering), ``partial`` (some values;
+    #: ``connected`` (every MUST value present and one of the ONE_OF ones / the grant held and covering), ``partial`` (some values;
     #: a grant missing scopes), ``needs_reauth`` (oauth: the grant went stale) or ``missing``.
     state: str
     vars: list[CredentialVarStatusSpec] = []
+
+    @property
+    def missing(self) -> list[str]:
+        """The variables still needed: every absent MUST, and a ONE_OF group's members while none is there."""
+        held = group_held(self.vars)
+        return [v.env_var for v in self.vars if not v.present and (v.is_must or (v.is_one_of and not held))]
 
 
 class DetectedKeySpec(DataSpec):

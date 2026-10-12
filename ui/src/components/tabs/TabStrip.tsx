@@ -102,6 +102,10 @@ export interface TabStripItem {
   closable?: boolean;
   /** Hover tooltip content; falls back to statusReason when disabled. */
   tooltip?: React.ReactNode;
+  /** A hover card shown in EVERY view mode, in place of `tooltip` and the bare
+   *  name — it owns its own padding. For a chip that stands for someone (an
+   *  agent's session), where the name alone does not say who that is. */
+  card?: React.ReactNode;
   /** data-testid for the chip. */
   testId?: string;
   /** Value for the data-provider attribute on the icon wrapper (test hook). */
@@ -510,10 +514,16 @@ export const TabStrip: React.FC<TabStripProps> = ({
         data-active={isActive ? 'true' : undefined}
         {...(item.dataAttributes ?? {})}
       >
-        {item.favorite && density === 'normal' && !isEditing && (
-          <TabFavoriteStar favorite={item.favorite} chip={() => tabRefs.current[key] ?? null} />
-        )}
-        {item.standsFor?.icon ?? item.icon}
+        <span className="relative inline-flex shrink-0 items-center justify-center">
+          <span className={item.favorite && !isEditing ? 'inline-flex group-hover:invisible' : 'inline-flex'}>
+            {item.standsFor?.icon ?? item.icon}
+          </span>
+          {item.favorite && !isEditing && (
+            <span className="absolute inset-0 hidden items-center justify-center group-hover:flex">
+              <TabFavoriteStar favorite={item.favorite} chip={() => tabRefs.current[key] ?? null} />
+            </span>
+          )}
+        </span>
         {!iconOnly && item.badge}
         {isEditing ? (
           <input
@@ -573,7 +583,11 @@ export const TabStrip: React.FC<TabStripProps> = ({
         {separator}
         <ContextMenu>
           <TabChipTooltip trigger={<ContextMenuTrigger asChild>{tabContent}</ContextMenuTrigger>}>
-            {isAdvanced && item.tooltip ? (
+            {item.card ? (
+                <TooltipContent side="bottom" className="p-0">
+                  {item.card}
+                </TooltipContent>
+              ) : isAdvanced && item.tooltip ? (
                 <TooltipContent side="bottom" className="border bg-popover p-2.5 text-popover-foreground shadow-md">
                   {item.tooltip}
                 </TooltipContent>

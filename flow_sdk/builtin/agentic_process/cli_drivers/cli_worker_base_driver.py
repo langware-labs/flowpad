@@ -931,10 +931,7 @@ class AgentOptions:
     ) -> None:
         self.workdir: str | None = workdir
         self.env_vars: dict[str, str] = dict(env_vars or {})
-        # Forking is a claude-only concept, but the attribute lives on the base
-        # (default None) so callers can read ``cmd.fork_session_id`` without a
-        # ``hasattr`` guard. Only claude's ``to_json`` serializes it, so the wire
-        # shape (and restart hash) of codex/copilot is unaffected.
+        # Source history for providers that support native session forks.
         self.fork_session_id: str | None = None
         # Launch-time system-prompt file (``apply_instruction_assets``); derived
         # state — not a ctor param, not serialized, so restart hashing is unaffected.
@@ -944,6 +941,10 @@ class AgentOptions:
         # without a hasattr dance, though each reads only its own channel's field.
         self.mcp_config_json: str = ""
         self.mcp_config_fragment: dict[str, Any] = {}
+
+    def configure_fork(self, source_session_id: str) -> None:
+        """Set provider-specific launch intent without reusing the parent's identity."""
+        raise NotImplementedError(f"{self.WORKER_TYPE} does not support session forks")
 
     @property
     def model(self) -> str | None:

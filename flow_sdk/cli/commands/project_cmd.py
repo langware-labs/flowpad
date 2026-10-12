@@ -31,6 +31,7 @@ from flow_sdk.schema.data_spec.project_setup_spec import REQUIREMENT_GAP
 from flow_sdk.schema.data_spec.returned_value_spec import ExitCode
 
 if TYPE_CHECKING:
+    from flow_sdk.schema.data_spec.compute_op_spec import AskItemSpec
     from flow_sdk.schema.data_spec.project_setup_spec import SetupRequirementSpec
 
 project_app = typer.Typer(
@@ -63,6 +64,21 @@ def _read(prompt: str, secret: bool) -> str:
     return (sys.stdin.readline() or "").rstrip("\r\n")
 
 
+def _read_items(items: "list[AskItemSpec]") -> dict:
+    """Everything a run needs, asked at once: one line per item. A confirm takes y; anything else
+    takes its value. Left empty, the item is declined."""
+    from flow_sdk.core.compute_op import ask  # noqa: PLC0415
+
+    def read(item: "AskItemSpec") -> Any:
+        must = " (required)" if item.required else ""
+        said = _read(f"{item.prompt}{must}" + (" [y/N]" if item.is_approval else ""), item.secret).strip()
+        if item.is_approval:
+            return {} if said.lower() in ("y", "yes") else None
+        return said or None
+
+    return ask.answer_items(items, read)
+
+
 async def _answer_questions(stop: asyncio.Event) -> None:
     """The terminal side of every ``ask`` step: take each open question, one at a time, and answer it.
 
@@ -77,6 +93,9 @@ async def _answer_questions(stop: asyncio.Event) -> None:
             if question.id in seen:
                 continue
             seen.add(question.id)
+            if question.items:
+                ask.answer(question.id, await asyncio.to_thread(_read_items, question.items))
+                continue
             offer = "\n(Leave it empty for AI Assist.)" if question.assist_agent else ""
             value: Any = (await asyncio.to_thread(_read, question.prompt + offer, question.secret)).strip()
             if not value and question.assist_agent:
@@ -120,7 +139,8 @@ def _state(req: "SetupRequirementSpec") -> str:
         return "ready"
     if req.is_oauth:
         return f"not connected ({req.note})" if req.note else "not connected"
-    names = ", ".join(v.env_var for v in req.missing)
+    ways = " or ".join(v.env_var for v in req.missing if v.is_one_of)
+    names = ", ".join([v.env_var for v in req.missing if not v.is_one_of] + ([ways] if ways else []))
     return f"missing {names}" if names else "missing"
 
 

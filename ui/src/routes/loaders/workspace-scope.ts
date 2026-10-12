@@ -1,6 +1,7 @@
-import { dataContext, type IWorkspace, type Project, resolveActiveWorkspace } from '@sdk';
+import { dockForScopeEntry, globalHomeDock } from '@src/tabs/project-entry';
+import { dataContext, type IWorkspace, type Project, resolveActiveWorkspace, Workspace } from '@sdk';
 import { lazyAssets, LazyAsset } from '@sdk/lazy';
-import { type DockPointer, WORKSPACE_PARAM } from '@src/navigation/DockPointer';
+import { DockPointer, WORKSPACE_PARAM, WORKSPACE_ENTRY_PARAM } from '@src/navigation/DockPointer';
 
 /**
  * Loader-side view of the active workspace (`?workspace=<id>`, absent = default) — the
@@ -21,4 +22,13 @@ export function projectInDockWorkspace(dock: DockPointer): ((project: Project) =
   const { hasMany, workspace, contains } = resolveActiveWorkspace(knownWorkspaces(), dock.options?.[WORKSPACE_PARAM]);
   if (!hasMany || !workspace) return null;
   return (project) => contains(project.fs_storage_mount_path);
+}
+
+/** Resolve workspace entry before adopting context; the destination loader owns selection. */
+export async function workspaceEntryDock(dock: DockPointer): Promise<DockPointer | null> {
+  if (dock.options?.[WORKSPACE_ENTRY_PARAM] !== 'resume') return null;
+  const { workspace } = resolveActiveWorkspace(knownWorkspaces(), dock.options?.[WORKSPACE_PARAM]);
+  const projectId = workspace?.id ? await Workspace.lastActiveProject(workspace.id) : null;
+  const destination = projectId ? await dockForScopeEntry(projectId, null, DockPointer.root()) : globalHomeDock();
+  return destination.withOption(WORKSPACE_PARAM, workspace?.is_default ? null : workspace?.id ?? null);
 }

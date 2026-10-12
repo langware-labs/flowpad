@@ -36,14 +36,15 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar, Literal, Optional
 
 from pydantic import BaseModel, PrivateAttr, field_validator
 
-from flow_sdk.builtin.agentic_process.system_prompt import launch_surface_fields
 from flow_sdk._compat import UTC
 from flow_sdk.api.api_types.api_field import APIField, Sharing
 from flow_sdk.api.api_types.identifier import is_valid_entity_id
+from flow_sdk.builtin.agentic_process.system_prompt import launch_surface_fields
 from flow_sdk.core import Entity, action
 from flow_sdk.schema.data_spec.credential_contract import DEFAULT_ENVIRONMENT
 from flow_sdk.schema.data_spec.deployment_secrets_spec import DeploymentSecretsSpec, hub_store
@@ -1069,6 +1070,19 @@ class Deployment(Entity):
         # its home and say where it is, so a path in its prompt resolves there.
         acting_project_id = options.pop("project_id", None) or agent.project_id
         additional_dirs = list(agent.additional_dirs or [])
+        # New sessions resolve the agent's current declarations before the worker
+        # snapshots context. The owning project reconciles its complete graph;
+        # this projection adds only the agent's closure, including when it acts
+        # in another project. Resolution never grants consent to run setup.
+        if agent.asset_ref and (Path(agent.asset_ref) / "flow.json").is_file() and (agent.project_id or acting_project_id):
+            from flow_sdk.builtin.project import Project  # noqa: PLC0415
+
+            source_project = await Project.get_by_id(agent.project_id or acting_project_id)
+            if source_project is not None:
+                dependencies = await source_project.dependencies(asset=str(agent.typeid), fetch=True)
+                for dependency in dependencies:
+                    if dependency.state == "ready" and dependency.local_path and dependency.local_path not in additional_dirs:
+                        additional_dirs.append(dependency.local_path)
         home = await _foreign_home(agent, acting_project_id)
         if home:
             if home not in additional_dirs:
@@ -1297,4 +1311,3 @@ async def _foreign_home(agent, acting_project_id: str | None) -> str | None:
     if mount and is_path_under(home, canonical_posix_path(mount)):
         return None
     return home
-

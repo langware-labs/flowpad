@@ -71,10 +71,17 @@ await source.save()
 verdict = await source.verify()                # ACTIVE once the token works
 ```
 
-Point Meta's webhook at `https://<this instance>/api/v1/data_source/webhook/whatsapp` with the same
-`VERIFY_TOKEN`; the thread is at `/dock/agent/<agent id>/stream_inbox`. Deploy the agent and set the
-source's `answer_place` to that placement's id to have the cloud box answer instead — one place
-answers a source, never two.
+For direct provider delivery, point Meta's webhook at
+`https://<this instance>/api/v1/data_source/webhook/whatsapp` with the same `VERIFY_TOKEN`.
+For hub delivery, complete the [account claim and callback setup](channel-webhook-routing.md)
+instead; that guide also covers user/group claims, source-ID delivery and group admission.
+`verify()` alone does not establish or prove inbound delivery. The thread is at
+`/dock/agent/<agent id>/stream_inbox`.
+
+Delivery routing and answering placement are separate. Set the source's `answer_place` to
+one deployment's ID to select its answerer, and route delivery to the machine holding that
+source. With no `answer_place`, each running deployment holding the source may answer.
+Configure the private sender allowlist on the answering machine; it is not shared source config.
 
 ## 3. Variant B — your process runs the loop
 

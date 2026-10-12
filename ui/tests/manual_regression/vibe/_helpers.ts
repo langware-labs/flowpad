@@ -101,7 +101,7 @@ export async function openVibe(page: Page, processId: string): Promise<void> {
       /* sandboxed frame (mcp-ui): no storage, and nothing there needs the flag */
     }
   });
-  await page.goto(`/dock/shell/agentic_process-${processId}?viewMode=vibe`);
+  await page.goto(`/dock/vibe/agentic_process-${processId}`);
   // Deliberately NOT asserting the URL stayed on the process dock. The display is
   // an address now, so a cold landing on a process that already has a pin is
   // redirected to that pin (`restoreDisplayRedirect`) — which is the point. What
@@ -110,9 +110,11 @@ export async function openVibe(page: Page, processId: string): Promise<void> {
   await expect(page.getByTestId('workspace-display-tab')).toBeVisible();
 }
 
-/** The process's own dock URL — where the square Display header navigates. */
+/** The process's own dock URL — where the square Display header navigates.
+ * A Vibe workspace is a HOST TAB with its own view type (71e9272c6): the path
+ * says Vibe, so no `?viewMode=` rides on it. */
 export function processUrlRe(processId: string): RegExp {
-  return new RegExp(`/dock/shell/agentic_process-${processId}\\?.*viewMode=vibe`);
+  return new RegExp(`/dock/vibe/agentic_process-${processId}(\\?|$)`);
 }
 
 /** The address a shown target takes inside a workspace. */

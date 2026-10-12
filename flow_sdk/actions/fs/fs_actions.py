@@ -13,6 +13,7 @@ import os
 import mimetypes
 import re
 import urllib.parse
+from contextlib import AsyncExitStack
 from io import BytesIO
 from pathlib import Path, PurePosixPath
 from typing import AsyncIterator, List
@@ -880,14 +881,17 @@ async def document(request_info: RequestInfo, fs_info: EntityFSReqInfo) -> ApiRe
             if real_path is None:
                 return ApiFailResponse(message="Storage does not support conditional document writes", status_code=501,
                                        data={"code": "conditional_write_unsupported"})
-            version_context = await prepare_document_version(real_path)
-            version_base = (version_context[4] if version_context is not None and
-                            Path(version_context[3]).resolve() == Path(real_path).resolve() else None)
-            result = await asyncio.to_thread(update_document, real_path, patch, expected_revision=expected,
-                                             version_base=version_base, info=entity_info)
-            if result.revision != expected:
-                await finish_document_version(real_path, result, version_context)
-                await _resync_entity_from_disk(real_path)
+            async with AsyncExitStack() as edit:
+                if entity_info is not None and entity_info.document_edit_context is not None:
+                    await edit.enter_async_context(entity_info.document_edit_context(real_path, patch))
+                version_context = await prepare_document_version(real_path)
+                version_base = (version_context[4] if version_context is not None and
+                                Path(version_context[3]).resolve() == Path(real_path).resolve() else None)
+                result = await asyncio.to_thread(update_document, real_path, patch, expected_revision=expected,
+                                                 version_base=version_base, info=entity_info)
+                if result.revision != expected:
+                    await finish_document_version(real_path, result, version_context)
+                    await _resync_entity_from_disk(real_path)
         data = result.model_dump(mode="json")
         body_path = fs_info.vpath.entity_sub_path
         if entity_info is not None and entity_info.body_file is not None:

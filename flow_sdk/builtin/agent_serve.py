@@ -497,7 +497,8 @@ def admits(source, author: str) -> bool:
     driver's declaration that strangers are the point of its channel (a help desk,
     a chat endpoint) — or, per source (``open_inbound_for``), that its claim already
     admits only who may write (a group) — under which an EMPTY list admits everyone; a
-    non-empty list restricts either way, and a paused source admits nobody either way.
+    non-empty list restricts either way. Explicit source ``open_to_all`` overrides
+    the allowlist, but a paused source always admits nobody.
     """
     from flow_sdk.builtin.agent_mailbox import sender_allowed  # noqa: PLC0415
     from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415
@@ -505,6 +506,8 @@ def admits(source, author: str) -> bool:
 
     if getattr(source, "status", None) != SourceStatus.ACTIVE.value:
         return False
+    if getattr(source, "open_to_all", False):
+        return True
     allowlist = [a for a in (getattr(source, "allowed_senders", None) or []) if str(a).strip()]
     if sender_allowed(allowlist, author):
         return True
@@ -943,6 +946,7 @@ def serving_key(source) -> tuple:
         str(getattr(source, "answer_place", "") or ""),
         str(getattr(source, "status", "") or ""),
         tuple(sorted(str(a) for a in (getattr(source, "allowed_senders", None) or []))),
+        bool(getattr(source, "open_to_all", False)),
         getattr(source, "thread_timeout_seconds", None),
     )
 

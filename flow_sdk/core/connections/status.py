@@ -139,7 +139,8 @@ async def _credential_rows(project: Optional["Project"]) -> list[ConnectionSpec]
     """
     from flow_sdk.builtin.credential_status import credentials_status  # noqa: PLC0415
 
-    status = await credentials_status(project)
+    # Stores only: a sign-in a tool holds is no value this list can hand over (and its check is a process).
+    status = await credentials_status(project, sign_ins=False)
     return [
         ConnectionSpec(
             provider=row.name,
@@ -150,7 +151,7 @@ async def _credential_rows(project: Optional["Project"]) -> list[ConnectionSpec]
             connected=True,
             icon=row.icon_name,
             scope=row.scope,
-            env_vars=tuple(var.env_var for var in row.vars),
+            env_vars=tuple(var.env_var for var in row.vars if var.store != "cli"),
         )
         for row in status.credentials
         if row.state == "connected"

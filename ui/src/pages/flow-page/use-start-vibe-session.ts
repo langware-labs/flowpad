@@ -136,6 +136,8 @@ export async function createVibeProcessForProject(opts: {
   open?: boolean;
   model?: VibeModelChoice;
   workerType?: WorkerType;
+  /** Entity TypeIds the session starts with in its context. */
+  sharedContextEntities?: string[];
 }): Promise<AgenticProcess> {
   const { projectId, workdir, targetVfsPath, navigation, open = true, model = VIBE_MODEL_DEFAULT, workerType } = opts;
   const target = targetVfsPath ?? chatTargetForProject(projectId);
@@ -152,6 +154,7 @@ export async function createVibeProcessForProject(opts: {
       outputFormat: 'stream-json',
       model,
       ...(workerType ? { workerType } : {}),
+      ...(opts.sharedContextEntities?.length ? { sharedContextEntities: opts.sharedContextEntities } : {}),
     },
     // Headless JSON-stream transport — the vibe chat is a side panel, not a
     // terminal; PTY transport would pre-fill (not run) the first prompt.
@@ -202,6 +205,7 @@ export async function launchVibeSessionForProject(opts: {
   workerType?: WorkerType;
   /** Called when attachment upload fails (session still opens, text-only). */
   onAttachmentError?: () => void;
+  sharedContextEntities?: string[];
 }): Promise<string> {
   const { projectId, workdir, targetVfsPath, message, files, navigation, model, workerType, onAttachmentError } = opts;
   const proc = await createVibeProcessForProject({
@@ -211,6 +215,7 @@ export async function launchVibeSessionForProject(opts: {
     navigation,
     model,
     workerType,
+    sharedContextEntities: opts.sharedContextEntities,
   });
   // Attachments (if any) must land in the process input dir BEFORE the first
   // turn starts — the agent reads the referenced paths immediately. Upload

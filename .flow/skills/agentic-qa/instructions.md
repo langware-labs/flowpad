@@ -24,6 +24,8 @@
 
 ## Testing Environment
 
+- Focused run 2026-10-11: fresh publisher FE5055/BE6055 and consumer FE5056/BE6056, distinct local test users, local hub8093, isolated headless Chromium on macOS. Source checkout had concurrent peer edits; source fingerprints are retained with evidence. Scenario failed exclusivity, authenticated update transport, and post-pull auto-launch checks.
+
 - Cycle 2026-08-22→26 (0.2.140-fixes, macOS 24.6, 14 cores): cycle-owned instances via
   `scripts/instance_ctl.sh` — qa-cycle (backend :6001/:6002, frontend :5002), qa-b/qa-c/qa-d for
   parallel 11b agents, dev-1/2/3 for hub tiers; final Phase 11 from a `git worktree`
@@ -1029,3 +1031,47 @@ where they execute. What is left here is this cycle's own evidence:
   - dev-1/dev-2 (6018/6017): hub pair.
 - Local hub on :8093 (../test_flowpad/FlowPad, perl setsid) with Neo4j.
 - Host load 13–26 while phases overlapped. Spawn-timing specs failed only under that load, so run SLO and real-worker tiers alone.
+
+## Learnings — 2026-10-10/11 full cycle (trip-manager-demo-2 @ b8f1f992b)
+- Never start a runner with `nohup … &` from a non-interactive shell: the job inherits SIGINT ignored, pytest passes it to every PTY, and bash can then neither trap nor deliver Ctrl-C (`test_shell_terminal_run[…/bin/bash]` red, zsh row green). Use the harness background task, or `perl -e '$SIG{INT}="DEFAULT"; exec @ARGV' …`.
+- `flow test run -- vitest` needs `flow_sdk/testing/vitest_progress_reporter.mjs`, which `.gitignore` (`*.mjs`) kept out of git and out of the wheel. Use the worktree's `.venv/bin/flow` (with `FLOW_INSTANCE=prod` for progress) once the file is present.
+- Plan totals for vitest tiers: list AFTER the tier's instance is live (`vitest list` without it under-counts or prints 0).
+- A frozen worktree has no `.env.local`: OPENROUTER_API_KEY / E2B_KEY must be exported from the main tree's file or ~30 long tests skip. `uv run` re-syncs the venv and uninstalls `e2b`: export `UV_NO_SYNC=1` for every launch/reset of an instance that needs the sandbox.
+- `instance_ctl.sh launch` of a RUNNING instance used to re-scan ports (qa-cycle 6055 → 6054 mid-tier → 218 × Network Error). Fixed in this cycle (relaunch keeps its ports); `flow instance reset --no-relaunch` + `launch` still re-scans, so resolve the port from launcher.json after every reset.
+- `flow instance reset` used to leave `~/Flowpad workspaces/.home/<inst>`: a leftover asset folder without a row breaks the next boot ("Tasks channel: ensure failed … already exists in this scope"). Fixed in this cycle (reset removes the asset home).
+- Hub tiers: fresh accounts are mandatory (`--email <n>-<tag>@local.test`); dev-1@local.test held 504 tasks / 1185 conversations. The help-desk test needs BOB in the hub's HELPDESK_STAFF_EMAILS (only dev-2@local.test is) — mutually exclusive with a fresh BOB today. Hub vitest env: FLOW_INSTANCE, SHARE_INST_1/2, ALICE_/BOB_ EMAIL+PW, FLOWPAD_HUB_URL, optional CAROL_INST.
+- Before trusting ANY browser verdict on a hub-logged-in instance, check the hub's own health beyond /health/status: `GET <hub>/api/v1/graph/llm_endpoint/<id>/chain` must not answer "'dict' object has no attribute 'sodot'". A hub started from a shell that already exports SOD_ENC_KEY cannot decrypt its sod file (load_dotenv does not override) and every page logs 409/404 console errors → all clean-console specs go red. Workaround used: sweep on a signed-out instance (POST /api/v1/cloud/logout after each reset).
+- Stale-test patterns this cycle (all deliberate product changes): files ride the opening message, not the task (ec89dd692); show answers a NavigateResult `value` (a639f2fc2); `sandbox_available` rides GET /graph/info (0bcf0118e); Vibe session URL is /dock/vibe/agentic_process-… (host tabs); "Send diagnostic" replaced the transcript chip (9167b0239); every process has the common instruction layer in its assets dir (16ff147f4); `Shell.start` alias is gone (5d72b3efc).
+
+### Testing environment — 2026-10-10/11
+- Worktree ../flowpad-qa-2026-10-10 (detached b8f1f992b, Python 3.11 venv, node v22.15.0). Host 14 cores, load 10–31 all night from peer sessions (never killed).
+- Owned instances: qa-cycle (phases 2–8), qa-react (hermetic), dev-1..dev-6 (hub tiers, fresh accounts *-qa1011*), qa-pw (Phase 11, E2B, signed out of the hub). Local hub :8093 was another session's process (pid 1931) with a wrong SOD_ENC_KEY — not restarted.
+- Results: ui/tests/manual_regression/_results/2026-10-10T17-38-04Z/.
+- Phase 11 (2026-10-11): the "force view_mode=standard" preflight is obsolete — bd2e5b0d1 retired the global view mode (Dev is a switch, Advanced == Dev, a tab's `?viewMode=advanced` no longer turns Advanced on; an unstated address shows Vibe; /dock/home is the tabless Vibe home; a home prompt opens /dock/vibe/agentic_process-<id>). Advanced-only surfaces (editor review chip, transcript mode chips, the installed-chip review popup) need the developer switch pref.
+- Phase 11 sweep rig that worked: per category `flow instance reset --keep-keychain` → resolve ports from launcher.json → (hub faulty) POST /cloud/logout → per file desktop-db/clear + bootstrap poll → `npx playwright test … --reporter=json`, one exit code per file in a .tsv. 181 files ≈ 2h at load ~12.
+- Concurrent `flow instance reset` on several instances collide on ports (reset re-scans; a sibling's vite grabbed the port → "WIRING BAD"/ERR_CONNECTION_REFUSED voids a run). One reset at a time, or stagger.
+- A leftover tab in the user's Chrome Canary debug browser (remote-debugging 9222) on an instance's port wins the backend's "active tab" pick and swallows control-plane navigations (navigation/ category landed on /dock/desktop). navigation/_world.ts now steers its own connection id.
+- The shared out-of-repo snapshot ~/Documents/dev/dataset/smart-navigator/map.json is ONE file for every checkout: a peer regenerating it from newer code turns tests/unit/test_navigation_map.py red in a frozen worktree. Point FLOW_NAVIGATOR_DATASET at a private copy regenerated from the worktree; never overwrite the shared file from a frozen tree.
+- Hub-bound specs (need a healthy hub login): conversation_view_three_spawn_branches, stream_inbox_automations, message_links, attached_channels, two_channels_one_stream_inbox, links_all_modes (conversation leg), channel_files_reactions, channel_matrix + channel_threads (also AGENT_MAILBOX_ENABLED), native_threads (also a second instance).
+
+### 2026-10-11 — Publisher/consumer auto-launch after hub-repo pull
+
+- Fresh instances targeted local hub explicitly; repository provider was `local` and its bare repository was verified on disk. The main checkout defaults to the production hub, so never inherit that default for this scenario.
+- Keep the instance launcher session alive with the browser runner: this execution harness reaped the detached children after the initial setup command exited. Separate headless Chromium contexts avoided the already-owned Playwright MCP profile.
+- Agent publication uses `POST /graph/agent/<id>/publish`; generic `set-published` refuses agents.
+- Consumer first auto-launch and live response passed. Enabling a second agent's auto-launch leaves the first enabled; explicitly disabling the first allowed the later checks to proceed.
+- The existing ten-minute remote-check interval was advanced with Playwright's virtual clock. Git fetch failed for missing hub authentication but returned stale `behind: 0`; the normal UI Pull failed for the same reason.
+- A diagnostic UI Pull succeeded with temporary repository authentication, restored immediately afterward. No second agent tab or auto-launch request followed; the original agent session remained usable. Disk flags were updated while entity rows stayed stale.
+- Evidence: `ui/tests/manual_regression/_results/autolaunch-20261011T125752Z/`. Product code was not changed for this test.
+
+### 2026-10-11 — Fixed publisher/consumer auto-launch regression
+
+- Fresh final run passed all six requested steps against the local hub with a verified local bare Git repository. Evidence: `ui/tests/manual_regression/_results/autolaunch-final-20261011T131900Z/`.
+- Authoring a second auto-launch selection now clears the first; imported legacy flags remain unchanged. Hub Git fetch/pull uses fresh scoped authentication through native process environments. A successful local Pull refreshes asset projections before the shared once-only auto-launch check.
+- Browser proof: normal update notice and UI Pull; second agent opens in a new active tab; the original first-agent tab remains and answers again. Both agents returned live identity responses. No manual auth, flag repair, reindex, or browser refresh was used.
+- Harness adaptations: separate Chromium contexts, API fixture/publication setup, received link handoff into the isolated consumer app, and virtual-clock advancement of the existing remote-check interval.
+
+### 2026-10-12 — Live WAHA source and burst test
+- waha-8, Chrome extension explicitly requested by user, linked real WhatsApp session. Two synthetic folder sources (catalog CSV and policies Markdown), ten questions including a four-message burst and live source updates: 10/10 exact-value checks passed, one outbound per inbound. Latency 7.39–33.54s, median 19.64s; one sender only, not a capacity benchmark.
+- Dependency name with spaces was accepted by write then rejected on manifest read; fixed canonical FlowDependency validation and covered project/asset writes.
+- Evidence: ui/tests/manual_regression/_results/waha-stress-20261012/. Fresh onboarding sender permissions remain a separate known gap.

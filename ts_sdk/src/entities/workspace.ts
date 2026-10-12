@@ -1,6 +1,7 @@
-import { APIEntity, registerEntity } from '../APIEntity';
+import { APIEntity, dataManager, registerEntity } from '../APIEntity';
 import { EntityTypes } from '../schema/types';
 import { EntityMerge } from '../IEntity';
+import { ActionInfo } from '../models/ActionInfo';
 import { IWorkspace } from './workspace-types';
 export type * from './workspace-types';
 
@@ -18,6 +19,13 @@ export class Workspace extends APIEntity<Workspace> implements IWorkspace {
   root_path?: string | null;
   root?: string;
   is_default?: boolean;
+
+  static async lastActiveProject(id: string): Promise<string | null> {
+    const result = await dataManager.callAction<void, { project_id: string | null }>(
+      new ActionInfo('last-active-project', Workspace.type, id, 'GET'),
+    );
+    return result?.project_id ?? null;
+  }
 
   constructor(entity: Partial<IWorkspace> = {}) {
     super(entity);

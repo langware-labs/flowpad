@@ -3,7 +3,7 @@ import apiClient from '../client';
 import { DATASET_FIELD_KINDS } from '../entities/dataset';
 import type { CheckDetail } from '../entities/dataset';
 import { isValidUUIDv4 } from '../models/TypeId';
-import type { KindForm, Shape } from './contract';
+import type { KindForm, SchemaTree, Shape } from './contract';
 
 /** The backend's reserved primitives: the ones a person types, plus `binary` (bytes, never typed). */
 export const PRIMITIVES: ReadonlySet<string> = new Set([...DATASET_FIELD_KINDS, 'binary', 'date']);
@@ -50,6 +50,13 @@ export async function resolveKind(name: string, projectId: string): Promise<stri
     params: { project: projectId },
   });
   return kind;
+}
+
+/** Every schema the project defines, as one tree: each with its fields, the kinds they name
+ *  (linked, or held inside the row) and the dataset that keeps its rows — 404 (thrown) for an
+ *  unknown project. */
+export function projectSchemas(projectId: string): Promise<SchemaTree> {
+  return apiClient.get<SchemaTree>('/api/v1/kinds', { params: { project: projectId } });
 }
 
 /** `?x` is an optional `x`. */

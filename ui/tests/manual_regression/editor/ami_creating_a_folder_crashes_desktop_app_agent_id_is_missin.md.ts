@@ -28,11 +28,17 @@ test.describe('Creating content in skills view + nav home does not crash (FLOWPA
     // Navigate to home — the app must still be mounted (no white-screen crash).
     await page.goto('/dock/home');
     await page.locator('[data-testid="flow-page"]').waitFor({ state: 'visible', timeout: 30_000 });
-    await expect(page.locator('[data-testid="content-panel"]')).toBeVisible({ timeout: 15_000 });
+    // `/dock/home` states no view mode, so it is the tabless Vibe home
+    // (VibeNewChat) — drawn in place of the content panel, not inside it.
+    const home = page.locator('[data-testid="vibe-new-chat"]');
+    await expect(home).toBeVisible({ timeout: 15_000 });
 
     // The home page is still mounted and interactive after the round-trip — no
     // white-screen crash. (This is the actual FLOWPAD-1623 regression gate.)
-    await expect(page.locator('[data-testid="recent-conversations-strip"]')).toBeVisible({ timeout: 10_000 });
+    const prompt = home.getByPlaceholder('What would you like to work on?');
+    await expect(prompt).toBeVisible({ timeout: 10_000 });
+    await prompt.fill('still responsive');
+    await expect(prompt).toHaveValue('still responsive');
 
     // The scenario's last step is specifically about CRASH-related errors
     // (missing agent_id, unhandled exceptions).

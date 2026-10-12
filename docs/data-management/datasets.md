@@ -385,6 +385,42 @@ agent.
 
 ## Typed rows — a `spec` that NAMES a kind
 
+**The model, on one page.** Five nouns: a **kind** is a name (`--acme--.crm.lead`); a **schema** is
+the definition under it (fields, `rules`, `owned_by`, `include`); a **dataset** is the folder that
+keeps the rows of one kind; a **row** is one value of it, with a `key` (its name, yours to choose),
+an `id` (stored in the row, never computed), a `ref` (`<kind>.id.<id>` — what a link holds) and a
+`version` (pass it back as `expected`); a **problem** is a row that does not fit, reported beside
+the rows that do. "Row" is the word; "example" is the same thing seen as eval data and on disk
+(`examples/<key>/`), which is why some older names (`example()`, `example_id`) still say it.
+
+Eight verbs, the same in Python, TypeScript, REST and `dm_ctl`:
+
+| Verb | Python | TypeScript | REST | Says |
+|---|---|---|---|---|
+| rows | `rows(match, …)` (= `query`) | `rows(query)` | `GET rows` | some or all rows, plus every problem |
+| count | `count(match, group_by, metrics)` | `count(query)` | `GET count` | how many match — the SAME question as rows |
+| check | `check_row(row)` (`check` → its lines) | `check(row)` | `check-row` | would this write pass? A row that names its `key` is judged exactly as `put` would judge it (merged with the slots it leaves out, against the rules of the rows that reach it); writes nothing |
+| append | `append(rows)` | `append(rows)` | `append` | new rows |
+| put | `put` / `put_many` | `put` / `putMany` | `put-row` / `put-rows` | create or replace, by key |
+| delete | `delete_row` / `delete_rows` | `deleteRow` / `deleteRows` | `delete-row` / `delete-rows` | refused while linked to (`used_by` says by whom) |
+| rename | `rename_row` | `rename` | `rename-row` | a new key; the id and every link stay |
+| sync | `sync(rows, prune, match)` | `sync(rows, …)` | `sync-rows` | hold exactly these rows |
+
+(`delete` and `rename` alone are the ENTITY's verbs — they act on the dataset itself — so the row
+verbs carry `_row`. Writes are awaited; reads are plain calls.)
+
+Four laws. (1) Every write is checked first and is all or nothing. (2) A refusal is read by
+`details[].code` — `[{path, code, message}]` on every refusal, with `errors` as its lines: **400** the
+row does not fit (`shape:<type>`, `dangling_ref`, `inline_row`, `rule`, `unique`, `owned`, `row`),
+**404** no such row, **409** it changed since (`conflict`, `gone`) or is still linked to (`referenced`).
+In Python these are `RowRefused` (alias `LinkError`), `LookupError`, `ConflictError`. (3) One bad row
+never hides the others. (4) A change is announced as a hint (`dataset.rows.changed`: keys, never
+values) — re-read.
+
+A script reads from disk (`load_root(<project>)`, then `Dataset.for_kind` — everything it needs is
+`from flow_sdk.datasets import Dataset, load_root, single_run, three_way, kind_form`); an app goes
+over REST (`Dataset.forKind`). What the schema can say, the app never re-implements.
+
 `spec` may be the name of a registered dataset kind (`"navigator.dataset"`), typically one whose
 schema a `data_schema` folder defines — nested in the dataset itself, so the dataset carries its own
 schemas (see [data-spec](data-spec.md#schemas-defined-by-a-folder)). Then every slot is a typed
@@ -407,26 +443,82 @@ chooses is `a-z 0-9 _ -`; `append` numbers rows that bring none (`0001`, `0002`,
 | `POST check-row {row}` | `{ok, errors, details}` for one row — shape, references and the schema's rules, links checked even when the shape fails; writes nothing |
 | `GET example/<key or id>` | one example's slot VALUES (an editor's read) |
 | `POST annotate {example_id, ground_truth}` | REPLACES the gold: a named output kind is written as its own document (`ground_truth/decision.json`; a list → `ground_truth-N/`), an inline shape as `ground_truth/label.json` |
-| `GET rows` | `{rows, total, problems}`: every row that fits with its slot values, and the ones that do not, by key with all their errors — one bad row hides nothing. `?filter={match, order_by, limit, offset}` (JSON) answers only the rows that match, ordered and paged; `total` counts the matches before paging, and `problems` is still every row that does not fit |
-| `GET count` | `{total, groups}`: how many rows match `?filter=`, and per distinct value of `?group_by=<path>,<path>`: `[{by, count}]`, largest first |
+| `GET rows` | `{rows, total, problems, linked?}`: every row that fits with its slot values, and the ones that do not, by key with all their errors — one bad row hides nothing. `?filter={match, order_by, limit, offset, expand}` (JSON) and `?q=` answer only the rows that match, ordered and paged; `total` counts the matches before paging, and `problems` is still every row that does not fit |
+| `GET count` | `{total, groups, metrics?}`: how many rows match `?filter=` / `?q=`, and per `?group_by=<path or bucket>,…`: `[{by, count, metrics?}]`; `?metrics={name: "distinct:<path>"}`, `?order_by=`, `?week_start=` |
+| `GET used-by[?keys=a,b]` | `{used_by: {key: [{dataset_id, kind, key}]}}`: who links to each row; `[]` for a row nothing links to |
 | `POST put-rows {rows, expected?}` | create or replace several rows (`[{key, input, …}]`) as ONE step: every row checked first, one that does not fit (400, `details` under `<key>.<path>`) or changed since `expected` (`{key: version}`, 409) writes nothing |
 | `POST delete-rows {keys, expected?}` | remove several rows as ONE step, or none: 404 a key that is no row, 409 a row changed since or still referenced. Rows removed together do not hold each other back |
 | `POST sync-rows {rows, prune?, match?}` | make the dataset hold exactly `rows` → `{created, updated, unchanged, deleted}`: a row that reads the same is not rewritten; rows not listed are removed unless `prune` is false, and only those `match` selects when given. All or nothing |
+| `POST mirror {source_id, map, by?, prune?, match?}` | make the dataset the typed mirror of a data source's items (`{key: <path>, input: {<field>: <path>}}`) → as `sync-rows`; see [mirroring a system of record](mirroring-a-system-of-record.md) |
 | `POST rows-changed {op, keys}` | a writer outside the server says rows changed (`Dataset.announce`); the server emits the event below. Writes nothing |
 | `POST validate` | every row read as the declared schema; names each row that does not fit by its `key` (and `example_id`), with its slot (`ground_truth.route`) |
 | `POST score` | each recorded `output` against its gold: a gold field left empty constrains nothing; several golds mean any one is right (`flow_sdk/datasets/score.py`) |
 
-Every refusal and problem carries `details` beside `errors`: `[{path, code, message}]`, `code` one of
-`shape:<pydantic type>`, `dangling_ref`, `inline_row`, `rule`, and on a 409 `conflict` (changed since),
-`gone` (gone since) or `referenced` (a delete another row still points at) — read those, not the lines.
+Every refusal and problem carries `details` beside `errors` — the code list is in the model above; read
+those, not the lines. Three numbers are not the same: `num_examples` counts every row folder,
+`count().total` and `rows().total` count the rows that FIT (the rest are `problems`).
 A field kept in step with a copy outside Flowpad follows the three-way rule:
 `flow_sdk.datasets.merge.three_way(here, there, agreed)` → `"same"` / `"here"` / `"there"` / `"hold"`.
 
 **Asking for some rows.** A `match` is the entity query expression (`flow_sdk/db/drivers/query.py`
 `ExpressionNode`), evaluated in memory over a row as the API hands it out (`flow_sdk/datasets/query.py`;
 the TypeScript twin is `QueryFilter.validate`, and `test_fixtures/dataset_query_cases.json` is run by
-both). A field is a path — `key`, `input.stage`, `input.stage_dates.won` — and a date compares as its
-ISO string. From Python: `Dataset.query(match, order_by=, limit=, offset=)`, `Dataset.count(match, group_by=)`.
+both). A date compares as its ISO string. From Python: `Dataset.rows(match, order_by=, limit=, offset=,
+q=, expand=)`, `Dataset.count(match, group_by=, metrics=, order_by=, week_start=, q=)`.
+
+**One path grammar** — the one a schema's `rules` write, with the slot spelled out (a rule path is a
+query path minus `input.`): `key`, `input.stage`, `input.stage_dates.won`; a list by index
+(`input.steps.0`) or `*` for every element (`input.tags.*`: the path then has several values, and a
+test passes when any does); and **a path follows a link** — `input.persona.icp` reads the persona row
+the reference names and carries on in its `input`, `input.persona.key` / `.id` / `.ref` is that row
+itself. So "deals of this ICP" is `{"input.persona.icp.key": "fintech"}`, and "deals per ICP" is
+`count(group_by=["input.persona.icp.key"])` — no join, no second call. Each dataset a link leads
+into is read once per query. `expand: ["input.persona"]` brings the linked rows back beside, once
+each, as `linked: {<ref>: {dataset_id, key, row}}` (the `/refs/<ref>` answer); the rows keep their
+references, so one can be put back as read.
+
+**A join on a value that is not a link** (an email address) is a sub-query in `$IN` / `$NIN` — the
+existing `$PROP` operand, given a match: `{"op": "$IN", "operands": ["input.email", {"op": "$PROP",
+"operands": ["input.email", {"input.metric": "em_reply"}]}]}` is "the rows whose email is among the
+emails of the rows that match" (`$NIN`: among none of them). A third operand names another kind's
+rows (`"crm.person"`); sub-queries nest. It is answered where the rows are, in one call. Where the
+two things really are one — a person — make it a link, and a path follows it.
+
+**Counting.** `count` is one verb. `group_by` entries are paths or date buckets written `word:path`
+(the grammar's `enum:` colon): `week:input.day`, `month:…`, `quarter:…`, `day:…`, keyed
+`2026-09-13` (the week's FIRST day), `2026-09`, `2026-Q3` — read from the date as written, no time
+zone; a week begins on `week_start` (`monday`, or `sunday`). `metrics` names further measures
+`{"people": "distinct:input.email", "first": "min:input.day"}` (`distinct` · `min` · `max` · `sum`),
+answered overall and per group. Groups come largest first, ties by their values; `order_by` (an
+entry, `count`, a metric's name) orders them instead — a time series asks for
+`order_by={"week:input.day": "asc"}`. Not there on purpose: averages (sum ÷ count), empty buckets,
+a second pass over groups.
+
+**Text.** `q="pricing objection"` (on `rows` and `count`) keeps the rows whose text holds every word,
+each anywhere in the row — list items and nested values included. `$LIKE` on a list field means "some
+element contains it"; `$IN` with `{"op": "$PROP", "operands": ["input.tags"]}` is "the list holds
+exactly this". Dataset rows are NOT in record search (a dataset is one record there): a row's text is
+found with `q`; records are found with `searchRecords` (TypeScript), `Entity.search` (Python, in the
+server), `flow_sdk.local_client.search` (a script).
+
+**Who uses a row.** `used_by(keys=None)` → `{key: [{dataset_id, kind, key}]}`; `[]` is a row nothing
+links to. It is what a delete is refused for, asked ahead of time (`GET used-by?keys=a,b`, `usedBy`).
+
+**Records beside rows.** A field typed by a record's kind — `"email": "?ingest.source_item"` — holds
+`ingest.source_item.id.<item id>`: a link to an ingested record. A record lives in the instance's
+store, so the link is not judged on a write from disk; over REST, `expand` returns it as
+`linked[<ref>] = {type, id, record}`, and a path continues INTO the record
+(`{"input.email.author_display": "Ann"}`, `group_by=["input.email.thread_key"]`): the `rows` and
+`count` actions read the records a question's paths lead to, once each. From disk a record cannot
+be read, so a script hands over the ones it fetched — `ds.rows(match, records={ref: record})`, with
+`flow_sdk.local_client.graph_get("source_item", {"match": {"data_source_id": id}, "limit": 50})`.
+Record ids are per machine: keep the provider's `external_id` beside the link in a dataset that travels.
+
+**When did it change?** There is no row history, on purpose: rows have writers that bypass the SDK,
+so a write log would look complete and not be. A date you will ask about is a FIELD
+(`"stage_dates": {"won": "?date", …}`, `owned_by` its source — then `input.stage_dates.won` is
+queryable); a dataset kept in git has `GitWorkdir.fileRevisions`; a label carries who and when in
+`metadata.annotations`.
 
 **Many rows in one step.** `Dataset.put_many`, `delete_rows` and `sync` take the project's row lock
 once and read what their checks need once. A delete reads only the datasets whose schema can reach
@@ -438,11 +530,12 @@ row of the project per row deleted.
 person's "Sync now") would decide on the same reading and overwrite each other's state. The lock is a
 file under `<project>/.flow/runs/`; a second run waits, or `wait=False` raises `RunBusy`.
 
-**Rows changing is an event.** Every row write emits `dataset.rows.changed` once per call — target
+**Rows changing is an event.** Every row write — a label (`annotate`) and a row's free `data` included — emits `dataset.rows.changed` once per call — target
 `dataset:<id>`, data `{op: put|delete|rename|sync, keys (at most 100), count}`, never a value — and
 the tag is forwarded to the app (`tags/ws_forward.py`): `dataset.onRowsChanged(handler)` in
 TypeScript. A writer outside the server process tells the running instance (`Dataset.announce`, the
 `rows-changed` action) — best effort: an event is a hint to re-read, and a write never fails for it.
+An event sent while a page was disconnected is not replayed: re-read on focus too.
 
 Indexing still reads rows as artifacts (fast, never fatal); `validate` is the check. One value
 against a kind, outside any dataset: `POST /api/v1/kinds/<kind>/check {value}` → `{ok, errors, details,
@@ -464,3 +557,30 @@ The example is the SmartNavigator eval set. Its row schemas ship as flat `data_s
 (`flowpad_assistant/agentic-assets/data_schema/navigat*`); its rows do not — they live beside the
 checkout at `dev/dataset/smart-navigator/` (`flow_sdk.core.navigation.DATASET`). Shipped assets stay flat:
 a nested tree inside the install crossed Windows' 260-char MAX_PATH.
+
+### The schema tree
+
+The dataset editor's **Schema** button opens the schema tree — a screen of Flowpad itself
+(`ui/src/components/schema-tree/`, view `schema-tree`), not an app: what data the dataset's project
+holds, top to bottom.
+
+* **Left, a tree.** Roots are projects — the dataset's own, plus any project that defines a kind it
+  uses. Under a project: every schema it defines, each unfolding to the kinds its fields name, then
+  the project's data sources.
+* **Right, a card** for what is selected: where the schema is defined, the dataset that keeps its
+  rows (and the data source feeding it), what uses it, its fields and rules. A kind named in a field
+  is a link; following it moves the tree and the card together.
+
+It is a project screen like Files and Assets: the project is the address's SCOPE and the selection
+its pointer — `/dock/schema-tree[/<kind>…]?scope-mode=project&scope-activeProjectId=<id>`, or
+`…/source:<id>` for a data source (`schema-tree-pointer.ts`, `DockPointer.forSchemaTree`). So the
+loader selects the project from the URL, the tab belongs to that project (one per project), the
+address bar reads `<project> › Schema › <schema> › …`, and a row or a link only navigates — Back, a
+reload and a shared link reach the same place.
+
+A field names a kind the same way whether it LINKS to a row or holds the value, so the tree says
+which: a kind some dataset keeps rows of is marked `uses`, any other `inside` (stored in the row
+itself) — the rule a row write applies (`links.is_row_kind`).
+
+One read backs it: `GET /api/v1/kinds?project=<id>` answers a `schema.tree` value
+(`flow_sdk/schema/data_spec/schema_tree_spec.py`, built by `flow_sdk/datasets/schema_tree.py`).

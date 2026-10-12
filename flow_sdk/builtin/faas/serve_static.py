@@ -12,6 +12,7 @@ import hashlib
 import mimetypes
 import re
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import anyio
 from fastapi import HTTPException
@@ -226,7 +227,11 @@ async def serve_app_bytes(
         async with await anyio.open_file(str(requested_file), "r", encoding="utf-8") as f:
             html = await f.read()
         if base_url:
-            html = inject_base_tag(html, base_url)
+            # Fragment links resolve against <base>, not the document URL.
+            # Keep the app's launch context on hash navigation; relative assets
+            # still resolve against the same root without inheriting its query.
+            base = urlsplit(base_url)
+            html = inject_base_tag(html, base._replace(query=request.url.query).geturl())
         # The document carries the same policy as its assets; without a header a
         # browser caches it heuristically and a cross-origin iframe never refetches.
         html = inject_process_id(inject_api_origin(html), process_id)

@@ -117,6 +117,11 @@ class Credential(SetupSkippable, Entity):
         """Every variable this credential is made of, in manifest order."""
         return list(self.vars or {})
 
+    def stored_var_names(self) -> list[str]:
+        """The variables a value is kept for — what a store holds and a process is handed. A ``cli``
+        variable is not one: its sign-in lives with the tool."""
+        return [name for name, var in (self.vars or {}).items() if not var.is_cli]
+
     def required_var_names(self) -> list[str]:
         """The variables that must have a value for the credential to be connected
         (a deployment may require more: ``Placement.required``)."""
@@ -125,7 +130,7 @@ class Credential(SetupSkippable, Entity):
     @property
     def credentials(self) -> SecretRequirements:
         """The names this credential needs a store to hold — the same accessor a data source has."""
-        return SecretRequirements(self.var_names())
+        return SecretRequirements(self.stored_var_names())
 
     async def secret_store(self, deployment: Optional["Deployment"] = None) -> "SecretStore":
         """The store ``deployment`` (default: this computer) keeps this credential's values in,
@@ -138,7 +143,7 @@ class Credential(SetupSkippable, Entity):
         if scope is None:
             raise LookupError(f"credential {self.name!r} is a template or its project is gone; it has no store")
         placement = await Placement.of(deployment)
-        refs = {ref.key: ref for ref in (secret_store_ref(self, scope, name, placement) for name in self.var_names())}
+        refs = {ref.key: ref for ref in (secret_store_ref(self, scope, name, placement) for name in self.stored_var_names())}
         if len(refs) != 1:
             raise LookupError(f"credential {self.name!r} keeps its variables in {len(refs)} stores here; ask per variable")
         return SecretStore.from_ref(next(iter(refs.values())))

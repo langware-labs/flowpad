@@ -65,6 +65,13 @@ async function projectForRepo(repo: string, branch: string | undefined, run: Lau
   throw new Error(result.kind === 'error' ? result.message : `A folder named ${result.attemptedName} is in the way.`);
 }
 
+/** A target that is only on this machine: used where it is — nothing is fetched, nothing is sent. */
+async function localProject(id: string | null): Promise<Project> {
+  const project = id ? await Project.getById<Project>(id) : null;
+  if (!project) throw new Error(t`That project isn't on this machine.`);
+  return project;
+}
+
 /** The face: the link's agent, else the controller's home page, else the target's. */
 async function launchFace(plan: LaunchPlan, controller: Project | null, target: Project): Promise<ProjectHomePage> {
   if (plan.agentId) return { asset: `${Agent.type}-${plan.agentId}`, type: Agent.type };
@@ -105,7 +112,9 @@ export async function runLaunch(plan: LaunchPlan, run: LaunchRun): Promise<DockP
     'target',
     'projectId' in plan.target
       ? Project.launchEnsure(plan.target.projectId)
-      : projectForRepo(plan.target.repo, plan.target.branch, run),
+      : 'local' in plan.target
+        ? localProject(plan.target.local)
+        : projectForRepo(plan.target.repo, plan.target.branch, run),
   );
 
   if (controller) {

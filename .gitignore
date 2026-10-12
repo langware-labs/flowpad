@@ -173,6 +173,7 @@ venv.bak/
 
 # Vite intermediate files
 *.mjs
+!flow_sdk/testing/*.mjs
 # ...but a shipped skill's own scripts are source (real-browser/scripts/browser.mjs)
 !flow_sdk/system_projects/**/.claude/skills/*/scripts/*.mjs
 

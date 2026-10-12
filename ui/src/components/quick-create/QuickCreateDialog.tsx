@@ -35,6 +35,8 @@ interface QuickCreateDialogProps {
   onOpenChange: (open: boolean) => void;
   /** Descriptor `type` (e.g. 'skill', 'subagent'). Ignored when null. */
   type: string | null;
+  /** Initial creation scope; undefined follows the active project. */
+  project?: Project | null;
 }
 
 function projectPrefix(project: Project | null): string | null {
@@ -57,11 +59,12 @@ function initialScope(project: Project | null): Scope {
   };
 }
 
-export function QuickCreateDialog({ open, onOpenChange, type }: QuickCreateDialogProps) {
+export function QuickCreateDialog({ open, onOpenChange, type, project: explicitProject }: QuickCreateDialogProps) {
   const { t } = useLingui();
   const descriptor = type ? getDescriptor(type) : undefined;
   const { navigation } = useDockNavigation();
-  const { project } = useProject();
+  const { project: activeProject } = useProject();
+  const project = explicitProject === undefined ? activeProject : explicitProject;
   const { computeNode } = useAgentContext();
   // New projects go in the ACTIVE workspace's folder; the picker lists its projects.
   const { root: defaultWorkspacePath, scopeId } = useActiveWorkspace();

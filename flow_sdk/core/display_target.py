@@ -212,7 +212,7 @@ async def _asset_app_payload(micro_app) -> dict:
     """
     from flow_sdk.builtin.webapp_placement import show_webapp_locally  # noqa: PLC0415
 
-    endpoint, load_run = await show_webapp_locally(micro_app)
+    endpoint, lifecycle = await show_webapp_locally(micro_app)
     name = micro_app.title or micro_app.name
     payload = endpoint_target(endpoint, name=name) if endpoint is not None else {"kind": DisplayTargetKind.APP}
     return {
@@ -221,7 +221,8 @@ async def _asset_app_payload(micro_app) -> dict:
         "micro_app_id": micro_app.id,
         "name": name,
         "runtime": "served" if endpoint is not None else "unbuilt",
-        "load_run": load_run,
+        "load_run": lifecycle.run,
+        "lifecycle": lifecycle.model_dump(mode="json"),
     }
 
 

@@ -103,13 +103,16 @@ reasons (a 400 carries the validation `errors`).
 
 | Missing | Honest answer today |
 | --- | --- |
-| one schema including another (shared `status`/`owner` fields) | repeat the fields; keep them identical |
-| a rule across rows that is not "these two links name the same row" (a count, an order, a sum) | check it in every writer — the app AND any script — with the same code, and report breaks |
-| a field owned by an outside system (a CRM's stage) | say so in its `description`, keep it read-only in the app; only the sync writes it |
+| a rule across rows that is a count, an order or a sum (not "the same row", not "unique") | check it in every writer — the app AND any script — with the same code, and report breaks |
 
-Rows ARE queried, counted, written in bulk and announced: `ds.rows({match, order_by, limit, offset})`
-and `ds.count({match, group_by})` answer only what a page shows; `putMany` / `deleteRows` / `sync`
-write many rows as one step; `ds.onRowsChanged(handler)` replaces polling (`modes/app.md`).
+| a row's past values (history) | a date you will ask about is a FIELD (`stage_dates`); a dataset in git has its commits |
+
+Rows ARE queried across links, counted, searched, written in bulk and announced (`modes/app.md`):
+`ds.rows({match, q, expand})` — a path follows a link (`input.persona.icp.key`) and `expand` brings
+the linked rows back beside; `ds.count({group_by: ["week:input.day"], metrics: {people:
+"distinct:input.email"}})`; `ds.usedBy()`; `putMany` / `deleteRows` / `sync` as one step;
+`ds.onRowsChanged(handler)` instead of polling. One import home in Python: `from flow_sdk.datasets
+import Dataset, load_root, single_run, three_way, kind_form`.
 
 Two writers at once (an app's server and a sync script) are safe: row writes in one project take
 one lock, and `put` / `delete` with `expected` refuse a row changed since it was read — a row that
@@ -119,6 +122,10 @@ Links between rows ARE supported: a field typed by the target kind holds `<kind>
 SDK refuses a reference to a missing row and a delete that would leave one dangling
 (`references/shape-forms.md`). Never STORE a link as a `{type, key}` kind, and never link a
 dataset in git to rows kept out of git (their ids differ per machine).
+
+A field an outside system owns IS marked in the schema (`"owned_by": "crm"`: only a writer with
+`by="crm"` sets it), a natural key IS a rule (`{"unique": ["crm_id"]}`), and shared fields ARE
+defined once (`"include": ["crm.synced"]`) — `references/shape-forms.md`.
 
 Rules across rows ARE supported when they say "these two link paths name the same row" (a tag
 chain: "the persona is one of the row's ICP's") — declare them in the schema's `rules`; Flowpad

@@ -47,8 +47,10 @@ import {
   type AttentionReason,
   type ChannelMark,
   attentionReason,
+  attentionHeadline,
   attentionText,
 } from '@src/components/data-sources/source-attention';
+import { openSourceSetup } from '@src/components/setup-wizard/source-setup-store';
 import { useSourcePull } from '@src/components/data-sources/source-parts';
 import { channelKeyOf, ownerOf } from './channel-owner';
 
@@ -218,7 +220,7 @@ export function AttachedChannelsBar({ owner, rows, specFor, selected, onSelected
           </Popover>
         </>
       )}
-      {addOpen && <DataSourceDialog open onOpenChange={setAddOpen} owner={owner} only={isMessageDriverSpec} />}
+      {addOpen && <DataSourceDialog open onOpenChange={setAddOpen} owner={owner} only={isMessageDriverSpec} variant="channel" />}
       <ConfirmDialog
         open={!!deleting}
         onOpenChange={(next) => !next && setDeleting(null)}
@@ -358,7 +360,8 @@ const specFor =
 
 /** One line of a channel list: glyph, name, why it is not delivering, the on/off
  *  switch and a delete. For a row a person must act on, the reason IS the control —
- *  pressing it runs the verb that recovers that kind (`ATTENTION[kind].verb`). */
+ *  pressing it runs the verb that recovers that kind (`ATTENTION[kind].verb`); a source in
+ *  setup reads "Setup required" and pressing it opens its Setup. */
 function ChannelRow({
   source,
   spec,
@@ -378,11 +381,12 @@ function ChannelRow({
   // The words stay the foreground colour (coloured text on a dark theme does not read); the strip
   // above the list says the same thing at full width. A paused row needs no line: its switch says it.
   const flagged = attention && state === 'parked' ? attention : null;
-  const reason = flagged ? attentionText(flagged) : '';
-  const recover =
-    flagged && ATTENTION[flagged.kind].verb === 'pull'
-      ? { label: t`Pull`, run: pull, busy: pulling }
-      : { label: t`Verify`, run: verify, busy: verifying };
+  const recover = {
+    setup: { label: t`Setup`, run: () => openSourceSetup(source), busy: false },
+    verify: { label: t`Verify`, run: verify, busy: verifying },
+    resume: { label: t`Resume`, run: toggle, busy },
+    pull: { label: t`Pull`, run: pull, busy: pulling },
+  }[flagged ? ATTENTION[flagged.kind].verb : 'verify'];
   return (
     <div
       className="flex items-center gap-2.5 px-3 py-2 text-[13px]"
@@ -398,16 +402,16 @@ function ChannelRow({
             {source.account_key}
           </span>
         )}
-        {reason && (
+        {flagged && (
           <button
             type="button"
             onClick={() => void recover.run()}
             disabled={recover.busy}
-            title={`${recover.label}: ${reason}`}
+            title={`${recover.label}: ${attentionText(flagged)}`}
             className="block w-full truncate text-left text-[11px] underline decoration-dotted underline-offset-2 hover:decoration-solid disabled:opacity-60"
             data-testid="attached-channel-verify"
           >
-            {reason}
+            {attentionHeadline(flagged)}
           </button>
         )}
       </span>

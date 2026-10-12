@@ -212,7 +212,7 @@ test('3. the details popover is where on/off and delete live', async ({ page }) 
   await expect.poll(() => sourceStatus(sourceId)).toBe('setup');
   await expect(mark).toHaveAttribute('data-state', 'parked');
   await expect(mark).toContainText('!');
-  await expect(row.getByTestId('attached-channel-verify')).toHaveText('Finish setup, then press Verify.');
+  await expect(row.getByTestId('attached-channel-verify')).toHaveText('Setup required');
 
   // The Data Sources screen, from the (still open) list's footer; Verify there.
   await list.getByTestId('attached-channels-see-all').click();
@@ -243,7 +243,7 @@ test('4. an agent\'s bar is its own', async ({ page }) => {
   await expect(agentBar.getByTestId('attached-channel'), "a mark of the user's on the agent's line").toHaveCount(0);
 
   await agentBar.getByTestId('attached-channels-add').click();
-  const dialog = page.getByRole('dialog').filter({ hasText: 'Add a data source' });
+  const dialog = page.getByRole('dialog').filter({ has: page.getByTestId('step-crumb-0').filter({ hasText: /^Data sources$/ }) });
   await expect(dialog).toBeVisible();
   // Slack is a group (Flow — no setup / your own Slack app): the tile asks which, then the member opens its form.
   await dialog.getByTestId('provider-group-Slack').click();

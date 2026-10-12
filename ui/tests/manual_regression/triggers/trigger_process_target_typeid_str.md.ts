@@ -58,11 +58,15 @@ test('trigger fire attaches process via target_typeid_str + panel shows invocati
     // 2. No pre-existing rows for this fresh trigger.
     expect((await processesForTrigger(rq, tid)).length).toBe(0);
 
-    // 3. Fire the trigger.
+    // 3. Fire the trigger — *Run once now*. It answers `automation.run_once`
+    //    (RunOnceStarted: the run began, its `trigger.fired` envelope id) at once
+    //    and the work continues in the background. A test run spends nothing a
+    //    real fire spends, so there is no counter to read (automations/run_once.py).
     const fired = await (await rq.post(`${API}/api/v1/graph/trigger/${tid}/test`)).json();
-    const fireStatus = fired.status === 'SUCCESS' ? fired.data?.status : fired.status;
-    expect(fireStatus).toBe('fired');
-    expect(fired.data?.counter ?? 0).toBeGreaterThan(0);
+    expect(fired.status, JSON.stringify(fired).slice(0, 300)).toBe('SUCCESS');
+    expect(fired.data?.trigger_id).toBe(tid);
+    expect(fired.data?.event_id, 'the run has a trigger.fired envelope to follow into Runs').toBeTruthy();
+    expect(fired.data?.error ?? null).toBeNull();
 
     // 4. The spawned process carries the serialized key (poll — spawn is async).
     await expect(async () => {

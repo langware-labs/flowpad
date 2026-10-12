@@ -10,8 +10,8 @@ that are easy to get subtly different:
   ``ComputeNode.run_command`` takes a string. A mock cannot tell you this — the
   local leg has to actually spawn a process, and the remote leg has to be
   inspected for the exact string it would send.
-* **``env`` is an additive overlay.** A remote node can only prepend assignments
-  to a command, so "replace the environment" is not expressible there. Both legs
+* **``env`` is an additive overlay.** Providers pass command overlays separately from
+  command text, and retain the ambient environment. Both legs
   therefore mean "these variables on top of what the target already has". If the
   local leg ever passed ``env`` straight to ``subprocess``, PATH would vanish and
   the divergence would only show up on one substrate.
@@ -162,6 +162,7 @@ def _stub_node(path_sep: str = "/", *, stdout: str = "", stderr: str = "", exit_
 
     async def run_command(command, session_id=None, background=True, env=None):
         sent.append(command)
+        node.last_env = env
         if error is not None:
             raise error
         if hang:
@@ -189,12 +190,12 @@ async def test_remote_prefixes_cwd():
     assert sent[0] == "cd '/work/my repo' && git status"
 
 
-async def test_remote_prefixes_env_as_an_overlay():
+async def test_remote_passes_env_separately_from_command():
     node, sent = _stub_node()
-    await ComputeNodeCommandExecutor(node).run(["git", "fetch"], env={"FLOWPAD_GIT_TOKEN": "s3cret"})
+    result = await ComputeNodeCommandExecutor(node).run(["git", "fetch"], env={"FLOWPAD_GIT_TOKEN": "s3cret"})
 
-    # Assignments prepended to the command — the node's own environment is untouched.
-    assert sent[0] == "FLOWPAD_GIT_TOKEN='s3cret' git fetch"
+    assert sent[0] == result.command == "git fetch"
+    assert {item.name: item.value for item in node.last_env} == {"FLOWPAD_GIT_TOKEN": "s3cret"}
 
 
 async def test_remote_maps_the_cli_command_to_a_result():

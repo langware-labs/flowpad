@@ -23,6 +23,8 @@ const mocks = vi.hoisted(() => ({
   failEnsure: null as string | null,
   failStart: null as Error | null,
   noAgent: false,
+  /** The machine does not hold the local target. */
+  noLocal: false,
 }));
 
 vi.mock('@sdk', async (importOriginal) => {
@@ -47,6 +49,10 @@ vi.mock('@sdk', async (importOriginal) => {
       startSetup: (id: string) => {
         mocks.calls.push(`setup:${id}`);
         return Promise.resolve('run-1');
+      },
+      getById: (id: string) => {
+        mocks.calls.push(`local:${id}`);
+        return Promise.resolve(mocks.noLocal ? null : new Project({ id, name: id }));
       },
       openHomePage: (id: string) => Promise.resolve(mocks.homes[id] ?? { asset: null, type: null }),
     }),
@@ -94,6 +100,7 @@ beforeEach(() => {
   mocks.failEnsure = null;
   mocks.failStart = null;
   mocks.noAgent = false;
+  mocks.noLocal = false;
 });
 
 describe('runLaunch', () => {
@@ -115,6 +122,24 @@ describe('runLaunch', () => {
     expect(mocks.started).toEqual([[QA, SPORA]]);
     expect(dock.toUrl()).toContain(SESSION);
     expect(mocks.faces).toEqual([]);
+  });
+
+  it('a target that is only on this machine is used where it is — never fetched from the hub', async () => {
+    mocks.homes = { [Q]: { asset: `agent-${QA}`, type: 'agent' } };
+
+    await runLaunch({ target: { local: SPORA }, controllerId: Q }, { computeNodeId: null });
+
+    expect(mocks.calls).toEqual([`ensure:${Q}`, `local:${SPORA}`, `readiness:${Q}`, `select:${SPORA}`]);
+    expect(mocks.started).toEqual([[QA, SPORA]]);
+  });
+
+  it('a local target this machine does not hold stops at the target step', async () => {
+    mocks.noLocal = true;
+
+    const failure = await runLaunch({ target: { local: SPORA } }, { computeNodeId: null }).catch((e) => e);
+
+    expect(failure.step).toBe('target');
+    expect(failure.message).toBe("That project isn't on this machine.");
   });
 
   it('hands a controller that is not ready to the caller to set up — and never the target', async () => {
