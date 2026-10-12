@@ -226,7 +226,7 @@ _IGNORED_SYSTEM_SUBTYPES: frozenset[str] = frozenset({"turn_duration", "stop_hoo
 # has handed control back to the user and is idle awaiting them, NOT executing a
 # tool. Surfacing that as PENDING_USER ("Idle", no spinner) instead of
 # TOOL_CALL/TOOL_RUNNING is the whole point of ``_pending_user_input_tool``.
-_USER_INPUT_TOOLS: frozenset[str] = frozenset(
+USER_INPUT_TOOLS: frozenset[str] = frozenset(
     {
         "AskUserQuestion",
         "ExitPlanMode",
@@ -282,7 +282,7 @@ def _pending_user_input_tool(chunk: str) -> bool:
                 if (
                     isinstance(b, dict)
                     and b.get("type") == "tool_use"
-                    and b.get("name") in _USER_INPUT_TOOLS
+                    and b.get("name") in USER_INPUT_TOOLS
                     and b.get("id")
                 ):
                     open_ids.add(b["id"])
@@ -668,7 +668,7 @@ def _tail_status(path: "str | _Path") -> WorkerStatus:
     # through to the normal classification below. The cheap substring gate skips
     # the extra parse pass on the hot path unless a user-input tool name is
     # literally present in the tail (it must be, verbatim, for a match).
-    if any(name in chunk for name in _USER_INPUT_TOOLS) and _pending_user_input_tool(chunk):
+    if any(name in chunk for name in USER_INPUT_TOOLS) and _pending_user_input_tool(chunk):
         return WorkerStatus.PENDING_USER
 
     # A user interrupt (Escape / Ctrl-C) is an idle, resumable terminal state —

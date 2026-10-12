@@ -1078,6 +1078,13 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
    * signed-out turn and so cannot tell one refusal from the next.
    */
   worker_status_detail_id?: string | null;
+  /**
+   * The question the worker is blocked on, as its `PreToolUse` hook reported it
+   * (`AskUserQuestion` / `ExitPlanMode`). Claude may keep such a call out of
+   * its transcript until it is answered, so this is how a chat surface can show
+   * it at all. Null once answered; computed on every process payload.
+   */
+  pending_user_input?: { tool_use_id: string; tool_name: string; input: Record<string, unknown> } | null;
 
   get workerStatus(): WorkerStatus | undefined {
     return this._workerStatus;
