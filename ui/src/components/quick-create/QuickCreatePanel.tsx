@@ -1,5 +1,5 @@
 import { Trans, useLingui } from '@lingui/react/macro';
-import { DataSource, isHubOnly, Project } from '@sdk';
+import { DataSource, DiagnosisRequest, isHubOnly, Project } from '@sdk';
 import { DataSourceDialog } from '@src/components/data-sources/DataSourceDialog';
 import { useProject } from '@sdk/react/hooks';
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
@@ -44,7 +44,7 @@ import { useActiveWorkspace } from '@src/hooks/use-workspaces';
 
 /** Registry types deliberately absent from this launcher (still creatable from
  *  the Assets page's per-type "+"). */
-const HIDDEN_ASSET_TYPES = new Set(['dynamic_workflow']);
+const HIDDEN_ASSET_TYPES = new Set(['dynamic_workflow', 'subagent', DiagnosisRequest.type]);
 
 /** Wiki pages behind the non-registry tiles — hoisted so each title is written
  *  once (a wikiword resolves by page title at runtime, so a typo degrades into
@@ -56,7 +56,6 @@ const COPILOT_WIKI = 'Copilot sessions';
 const OPENCODE_WIKI = 'OpenCode sessions';
 const CONVERSATION_WIKI = 'Conversations';
 const PROJECT_WIKI = 'Flowpad project';
-const HELPDESK_WIKI = 'Help desks';
 
 /** A dense grid — a card under every tile the pointer crosses is noise. */
 /** How long a tile waits before explaining itself. Exported so every surface
@@ -294,24 +293,25 @@ export function useQuickCreatePick(explicitProject?: Project | null) {
 
 /** What the panel needs from its host — everything but the host's own dismiss
  *  and the display-only `sections` filter. */
-export type PanelHandlers = Omit<QuickCreatePanelProps, 'onDone' | 'sections' | 'extraSessionTiles' | 'leadingSessionTiles' | 'project' | 'chatTitle' | 'allUserTypes'>;
+export type PanelHandlers = Omit<QuickCreatePanelProps, 'onDone' | 'sections' | 'extraSessionTiles' | 'leadingSessionTiles' | 'project' | 'chatTitle' | 'allUserTypes'> & {
+  /** Open the add-help-desk flow — no tile here; reached through the `add-help-desk` UI action. */
+  onAddHelpdesk: () => void;
+};
 
 /** The tile groups this panel can render, in order. */
-export type QuickCreateSection = 'chat' | 'build' | 'write' | 'connect' | 'project' | 'folder' | 'helpdesk';
-export const ALL_SECTIONS: QuickCreateSection[] = ['chat', 'build', 'write', 'connect', 'project', 'folder', 'helpdesk'];
+export type QuickCreateSection = 'chat' | 'build' | 'write' | 'connect' | 'project' | 'folder';
+export const ALL_SECTIONS: QuickCreateSection[] = ['chat', 'build', 'write', 'connect', 'project', 'folder'];
 
 /** Sections that point the project at something that ALREADY EXISTS rather than
  *  creating it. The modal excludes these from creation and optionally renders
  *  them under a separate "Add existing" heading. */
-export const ADOPTION_SECTIONS: ReadonlySet<QuickCreateSection> = new Set(['folder', 'helpdesk']);
+export const ADOPTION_SECTIONS: ReadonlySet<QuickCreateSection> = new Set(['folder']);
 
 export interface QuickCreatePanelProps {
   /** Open the per-type create dialog (name / folder / scope) for an asset type. */
   onPick: (type: string) => void;
   /** Run a dependency source as the given kind (required / optional). */
   onAddFolder: (source: DependencySource, kind: DependencyKind) => void;
-  /** Open the adopt-a-help-desk dialog. */
-  onAddHelpdesk: () => void;
   /** Open the new-conversation dialog (behind the cloud-login gate). */
   onNewMessage: () => void;
   /** Open the create-a-project dialog (name + parent folder). */
@@ -369,7 +369,6 @@ export interface SessionTileDef {
 export function QuickCreatePanel({
   onPick,
   onAddFolder,
-  onAddHelpdesk,
   onNewMessage,
   onNewProject,
   onNewProjectFromGit,
@@ -619,24 +618,6 @@ export function QuickCreatePanel({
             }}
           />
         ))}
-      </TileSection>
-    ),
-    helpdesk: (
-      <TileSection title={<Trans>Add help desk</Trans>}>
-        <TippedTile
-          wikiword={HELPDESK_WIKI}
-          // From the type registry, like every per-type glyph — `HelpdeskTypeInfo`
-          // declares it, so a change there reaches this tile with no edit here.
-          Icon={iconForType('helpdesk')}
-          label={t`Help desk`}
-          tip={t`Adopt a support desk published as a git repository`}
-          data-testid="quick-create-add-helpdesk"
-          disabled={!currentProject}
-          onClick={() => {
-            onDone?.();
-            onAddHelpdesk();
-          }}
-        />
       </TileSection>
     ),
   };
