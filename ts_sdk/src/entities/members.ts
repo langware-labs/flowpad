@@ -1,4 +1,4 @@
-import { dataManager, type EntityMember } from '../APIEntity';
+import { dataManager, normalizeMember, type EntityMember } from '../APIEntity';
 import { ActionInfo } from '../models/ActionInfo';
 import { TypeId } from '../models/TypeId';
 
@@ -33,7 +33,7 @@ export async function getMembers(typeId: TypeId): Promise<Participant[]> {
   // Defensive: the hub utils coerce empty lists to {} upstream
   // (`resp.json().get('data') or {}` in flow_sdk/utils/hub.py). Treat any
   // non-array response as "no members" so consumers can rely on Participant[].
-  return Array.isArray(res) ? res : [];
+  return (Array.isArray(res) ? res : []).map(normalizeMember);
 }
 
 /**
