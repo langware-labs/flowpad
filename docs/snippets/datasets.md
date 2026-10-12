@@ -49,7 +49,7 @@ from flow_sdk.builtin.dataset import Dataset
 from flow_sdk.core.navigation import DATASET
 
 nav = Dataset.at(DATASET)                 # the entity from disk alone -- no index needed
-summary = (nav.spec, nav.num_examples, nav.kind_counts)   # ('navigator.dataset', 252, {'eval': 250, 'test': 2})
+summary = (nav.spec, nav.num_examples, nav.kind_counts)   # ('navigator.dataset', 253, {'eval': 251, 'test': 2})
 rows = nav.read_rows()
 first = rows[0].input.utterance           # 'open data sources'
 where = rows[0].input.here.view           # 'home' -- the navigation.here it was typed on
