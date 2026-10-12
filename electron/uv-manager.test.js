@@ -1745,6 +1745,17 @@ ok(!mgr.isToolDirLockedError(null), 'null error → not a lock (no throw)');
     eq(seen.length, before, 'no install ran after a failed set-aside');
     await m._rollbackEngine();
     eq(seen.length, before, 'the rollback after a failed set-aside runs no uv command: the engine in place is still the previous one');
+    // A repair after a BLOCKED FIRST install: there was no engine, so there is nothing to put back. The rollback must
+    // not try to reinstall one on the blocked interpreter (it would fail the same way and hide the real cause).
+    fs.rmSync(`${venv}.pre-repair`, { recursive: true, force: true });
+    fs.rmSync(venv, { recursive: true, force: true });
+    m._setAsidePreRepairVenv = UvManager.prototype._setAsidePreRepairVenv;
+    m.getInstalledVersionSync = () => null;
+    const beforeFirst = seen.length;
+    await m._installEngineOn('C:\\p\\python.exe'); // the install itself works on the signed runtime, then something later fails
+    fs.rmSync(venv, { recursive: true, force: true });  // (the half-built environment)
+    await m._rollbackEngine();
+    eq(seen.length, beforeFirst + 1, 'first install: the repair\'s install ran once, and the rollback ran NO uv command (no engine to restore)');
     fs.rmSync(tmp, { recursive: true, force: true });
   }
   {

@@ -16,7 +16,7 @@ const UvManager = require('./uv-manager');
 const { createShutdown, relaunchAfterStop } = require('./shutdown');
 const { createQuitGate, quitDialogOptions, QUIT_RESPONSE } = require('./quit-gate');
 const { waitForBackend: runBackendGate, createLogActivityProbe, createChangeProbe } = require('./backend-wait');
-const { createPolicyBlockProbe, detectPolicyBlockInLog, isInterpreterModule, describeRuntimeBlock, readRuntimeState, canAttemptRepair, priorAttempt } = require('./runtime-repair');
+const { createPolicyBlockProbe, detectPolicyBlockInLog, policyBlockFromInstallError, isInterpreterModule, describeRuntimeBlock, readRuntimeState, canAttemptRepair, priorAttempt } = require('./runtime-repair');
 // FLOWPAD-2231: the monitor's fatal-failure record, the desktop update as a recovery route, the startup journal.
 const fatalFailure = require('./fatal-failure');
 const updateRecovery = require('./update-recovery');
@@ -1343,11 +1343,15 @@ function waitForPanelAction() {
 //   update-recovery.js; never claimed to fix a blocked runtime), Retry anyway (with the warning that an
 //   unchanged runtime will fail the same way), Export logs / Share with us.
 // Resolves true when the backend is healthy again; false when the app is quitting (or quitting into an update).
-async function handleFatalFailure({ match: firstMatch, record: firstRecord }) {
+// `retry`, for a block that hit the engine INSTALL (nothing to start yet): what "Retry anyway" runs instead of
+// starting the engine — it re-runs the install and resolves `{ ok, installBlock? }` like installAndStartBackend.
+// Such a block never launched a backend, so nothing is stopped: a bare `flow stop` would kill whatever holds the port.
+async function handleFatalFailure({ match: firstMatch, record: firstRecord, retry = null }) {
   let match = firstMatch;
   let record = firstRecord;
   let extraDetail = '';
   const stopBackend = () => {
+    if (retry && !(uvManager && uvManager.hasLaunchedBackend())) return;
     if (uvManager) pendingBackendStop = uvManager.stop().catch((e) => log.warn(`[fatal-failure] backend stop failed: ${e.message}`));
   };
   stopBackend(); // the monitor has stopped already on a record; on Electron's own match it would keep restarting
@@ -1461,7 +1465,17 @@ async function handleFatalFailure({ match: firstMatch, record: firstRecord }) {
     sendStatus('Retrying');
     markPhase('backend-start', { retry: true });
     try {
-      await uvManager.start();
+      if (retry) {
+        // The install is what was blocked: run it again (uv keeps what it fetched); a repeat block shows the panel again.
+        const r = await retry();
+        if (!r.ok) {
+          if (r.installBlock) { match = r.installBlock; record = null; extraDetail = ''; }
+          else extraDetail = 'The install failed again.';
+          continue;
+        }
+      } else {
+        await uvManager.start();
+      }
     } catch (err) {
       extraDetail = describeStartupFailure(err);
       continue;
@@ -1711,6 +1725,15 @@ async function installAndStartBackend() {
     }
     log.error(`Failed to start Python backend: ${String(error?.message || error).split('\n')[0]}`);
 
+    // FLOWPAD-2231: Windows application control refused the interpreter DURING the install (uv builds a
+    // dependency from source, compiles bytecode): the same block, earlier than any backend. The panel that
+    // names it and offers the signed runtime (Repair), not the generic error whose Retry fails the same way.
+    const installBlock = policyBlockFromInstallError(error); // the text exists on Windows only; Repair itself is gated there
+    if (installBlock) {
+      log.error(`[fatal-failure] the engine install was blocked by Windows application control: ${installBlock.line}`);
+      return { ok: false, installBlock };
+    }
+
     const details = [
       error?.message || String(error),
       `HOME=${process.env.HOME || ''}`,
@@ -1840,6 +1863,21 @@ async function startApp() {
     let result = await guardedInstallAndStart();
     while (!result.ok) {
       if (isQuitting) return;
+      if (result.installBlock) {
+        // The install itself was blocked: the repair panel; Retry re-runs the install.
+        const recovered = await handleFatalFailure({
+          match: result.installBlock,
+          record: null,
+          retry: async () => {
+            const r = await guardedInstallAndStart();
+            if (r.ok) backendJustUpgraded = !!r.backendJustUpgraded;
+            return r;
+          },
+        });
+        if (!recovered) return;
+        backendReady = true;
+        break;
+      }
       if (result.fatalRecord) {
         // The panel on the monitor's record, without starting the backend (installAndStartBackend).
         const rec = fatalFailure.reconcileFatalReason({ record: result.fatalRecord, probeMatch: null });

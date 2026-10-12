@@ -128,7 +128,7 @@ function detectPolicyBlockInLog(text, { launcher = false } = {}) {
     for (let j = i - 1; j >= 0 && i - j < 400; j--) {
       const frame = lines[j].match(/^\s*File "([^"]+)"/);
       if (frame && !file) file = frame[1];
-      if (/^Traceback \(most recent call last\)/.test(lines[j])) { start = j; break; }
+      if (/^\s*Traceback \(most recent call last\)/.test(lines[j])) { start = j; break; }   // indented when uv nests a build's stderr
       if (!file) start = j;
     }
     return {
@@ -139,6 +139,23 @@ function detectPolicyBlockInLog(text, { launcher = false } = {}) {
     };
   }
   return null;
+}
+
+/**
+ * The application-control block in a FAILED `uv tool install`, or null.
+ *
+ * The block does not always wait for the backend: uv runs the interpreter during the install itself (a
+ * dependency without a wheel is built from source: setuptools imports `unicodedata`; `--compile-bytecode`
+ * runs python too), and an unsigned stdlib module of the uv-managed CPython is refused right there
+ * (2026-10-12, Smart App Control: `ImportError: DLL load failed while importing unicodedata`). The install
+ * output is the evidence then, in the launcher's sense: every wording counts (uv's own `Failed to spawn …
+ * os error 4551` included). `path` says where the evidence came from, for the panel.
+ */
+function policyBlockFromInstallError(err) {
+  if (!err) return null;
+  const text = [err.stderr, err.stdout, err.message].filter(Boolean).map(String).join('\n');
+  const match = detectPolicyBlockInLog(text, { launcher: true });
+  return match ? { ...match, path: 'the engine install (uv tool install output)' } : null;
 }
 
 // A server log older than this at probe creation belongs to a previous launch: its content is
@@ -439,6 +456,7 @@ module.exports = {
   isInterpreterModule,
   unwrapRichLines,
   detectPolicyBlockInLog,
+  policyBlockFromInstallError,
   createPolicyBlockProbe,
   runtimeStatePath,
   readRuntimeState,
