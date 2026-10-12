@@ -4,6 +4,7 @@ import {
   Agent,
   AgenticProcess,
   ClaudeSession,
+  FlowpadDiagnosis,
   CredentialsSubview,
   GraphWorkflow,
   Layout,
@@ -2561,6 +2562,12 @@ export class DockPointer implements IDockPointer {
     // title (host/guest) and the loader its project.
     if (this.viewType === ViewType.LIVE_SESSION) {
       return DockPointer.tryTypeId(RemoteWorkerSession.type, pointer);
+    }
+    // Same again for a diagnosis: the viewType string ('diagnosis') is not the
+    // entity type ('flowpad_diagnosis'), so the fallback named a target that
+    // does not exist and the tab had no entity to title or describe.
+    if (this.viewType === ViewType.DIAGNOSIS) {
+      return DockPointer.tryTypeId(FlowpadDiagnosis.type, pointer);
     }
     // A helpdesk dock targets the portal PROJECT it renders. Same reason as
     // live_session above: the viewType string ('helpdesk') is not an entity
