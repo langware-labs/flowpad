@@ -178,7 +178,7 @@ The local backend on `localhost:9007` answers every request without authenticati
 
 * KTD7. **CORS preflights pass through to** **`CORSMiddleware`.** These are `OPTIONS` requests carrying `Origin` and `Access-Control-Request-Method`. Browsers never attach cookies to them and no route handler runs. The actual request that follows is still gated. Governs R1.
 
-* KTD9. **Callers resolve the token per target instance.** `gate_headers(url)` maps a loopback port to the instance serving it (through `server.json`) and reads that instance's token file. When it can't resolve the port, it uses this instance's token only if the port is this instance's own. Governs R5.
+* KTD9. **Callers send this instance's token.** `gate_headers(url)` sends the local token of the caller's own instance to any loopback URL. (session-settled: user-directed — chosen over resolving each port to its instance through `server.json`: an end user runs one Flowpad, and dev setups that run several turn the gate off.) Governs R5.
 
 * KTD10. **Electron reading utility.** A new `electron/cookie-gate.js`:
 

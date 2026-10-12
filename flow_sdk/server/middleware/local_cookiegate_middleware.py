@@ -47,10 +47,10 @@ class LocalCookieGateMiddleware:
     def __init__(self, app: ASGIApp) -> None:
         self.app = app
         # The off switch is read once: it does not change while the process runs.
-        self.enforce = os.environ.get(OFF_SWITCH_ENV) != "off"
+        self.should_enforce_gate = os.environ.get(OFF_SWITCH_ENV) != "off"
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
-        if not self.enforce:
+        if not self.should_enforce_gate:
             await self.app(scope, receive, send)
             return
 
