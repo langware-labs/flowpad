@@ -1,6 +1,6 @@
 /**
- * The warning over an external page: when it appears, what it says, and that
- * "Open in browser" leaves the app.
+ * How an external page is shown: a refused frame goes straight to the browser,
+ * an unreachable one gets a warning with Open in browser / Try again.
  *
  * `PersistentIframe` is stubbed because jsdom cannot load a cross-origin frame,
  * and the frame's events are not a signal anyway (a refused frame fires `onload`).
@@ -96,29 +96,22 @@ describe('WebUrlDisplay', () => {
     expect(screen.queryByTestId('web-url-warning')).toBeNull();
   });
 
-  it('puts a warning over a refused frame, and Open in browser leaves the app and dismisses the pane', async () => {
-    mocks.post.mockResolvedValue(
-      status({ http_status: 404, frame_blocked: true, frame_block_reason: 'x-frame-options: DENY' }),
-    );
+  it('a refused frame opens in the browser by itself and dismisses the pane, with no card to click', async () => {
+    mocks.post.mockResolvedValue(status({ frame_blocked: true }));
     const onOpenedInBrowser = vi.fn();
     render(<WebUrlDisplay url={URL_} onOpenedInBrowser={onOpenedInBrowser} />);
-    const warning = await screen.findByTestId('web-url-warning');
-    expect(warning.getAttribute('data-issue')).toBe('frame_blocked');
-    expect(warning.textContent).toContain('github.com');
-    expect(warning.textContent).toContain('x-frame-options: DENY');
-    // Over the frame, not instead of it: the check can be wrong.
-    expect(screen.getByTestId('stub-iframe')).toBeTruthy();
-    expect(screen.queryByTestId('web-url-retry')).toBeNull();
-
-    fireEvent.click(screen.getByTestId('web-url-open-in-browser'));
-    expect(mocks.openExternal).toHaveBeenCalledWith(URL_);
+    await waitFor(() => expect(mocks.openExternal).toHaveBeenCalledWith(URL_));
+    expect(mocks.openExternal).toHaveBeenCalledTimes(1);
     expect(onOpenedInBrowser).toHaveBeenCalledTimes(1);
+    expect(screen.queryByTestId('web-url-warning')).toBeNull();
+    // Nothing here will ever show it: the frame is not even loaded.
+    expect(screen.queryByTestId('stub-iframe')).toBeNull();
   });
 
   it('does not fetch the site again when the display remounts', async () => {
     // A tab switch remounts the viewer; the parked frame does not reload, and
     // neither should the check.
-    mocks.post.mockResolvedValue(status({ frame_blocked: true, frame_block_reason: 'x-frame-options: DENY' }));
+    mocks.post.mockResolvedValue(status({ reachable: false, http_status: null, nav_error: 'dns_failure' }));
     const first = render(<WebUrlDisplay url={URL_} />);
     await screen.findByTestId('web-url-warning');
     first.unmount();
@@ -131,7 +124,7 @@ describe('WebUrlDisplay', () => {
   it('offers a retry for an unreachable page, which checks again', async () => {
     mocks.post.mockResolvedValueOnce(status({ reachable: false, http_status: null, nav_error: 'dns_failure' }));
     render(<WebUrlDisplay url={URL_} />);
-    expect((await screen.findByTestId('web-url-warning')).getAttribute('data-issue')).toBe('unreachable');
+    await screen.findByTestId('web-url-warning');
 
     mocks.post.mockResolvedValueOnce(status({}));
     fireEvent.click(screen.getByTestId('web-url-retry'));
@@ -144,7 +137,7 @@ describe('WebUrlDisplay', () => {
     // a live `on_show` with the same web-app pointer. No click.
     mocks.post.mockResolvedValueOnce(status({ reachable: false, http_status: null, nav_error: 'connection_refused' }));
     render(<WebUrlDisplay url={URL_} />);
-    expect((await screen.findByTestId('web-url-warning')).getAttribute('data-issue')).toBe('unreachable');
+    await screen.findByTestId('web-url-warning');
 
     const session = new TypeId('agentic_process', '0b9a3f0e-1c2d-4e5f-8a6b-7c8d9e0f1a2b');
     dataManager.emit('on_entity_event', session, 'on_show', {

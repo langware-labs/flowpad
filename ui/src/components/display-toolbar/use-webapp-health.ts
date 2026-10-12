@@ -21,18 +21,24 @@ export type WebappHealth = 'checking' | 'up' | 'down';
 
 interface HostWatch {
   health: WebappHealth;
-  subscribers: Set<(health: WebappHealth) => void>;
+  /** Failed pings in a row. `health` is a level and says nothing new on the second failure; this does. */
+  failures: number;
+  subscribers: Set<(health: WebappHealth, failures: number) => void>;
   intervalId: number;
   intervalMs: number;
   onVisibility: () => void;
 }
 
 const watches = new Map<string, HostWatch>();
+const FAILURE_CAP = 3;
 
 function publish(watch: HostWatch, health: WebappHealth) {
-  if (watch.health === health) return;
+  // Capped: past the point a caller condemns the app, another failure is no news to anyone.
+  const failures = health === 'down' ? Math.min(watch.failures + 1, FAILURE_CAP) : 0;
+  if (watch.health === health && watch.failures === failures) return;
   watch.health = health;
-  watch.subscribers.forEach((notify) => notify(health));
+  watch.failures = failures;
+  watch.subscribers.forEach((notify) => notify(health, failures));
 }
 
 async function ping(host: string, watch: HostWatch) {
@@ -47,11 +53,16 @@ async function ping(host: string, watch: HostWatch) {
   }
 }
 
-function subscribe(host: string, intervalMs: number, notify: (health: WebappHealth) => void): () => void {
+function subscribe(
+  host: string,
+  intervalMs: number,
+  notify: (health: WebappHealth, failures: number) => void,
+): () => void {
   let watch = watches.get(host);
   if (!watch) {
     const created: HostWatch = {
       health: 'checking',
+      failures: 0,
       subscribers: new Set(),
       intervalId: 0,
       intervalMs,
@@ -73,7 +84,7 @@ function subscribe(host: string, intervalMs: number, notify: (health: WebappHeal
 
   const active = watch;
   active.subscribers.add(notify);
-  notify(active.health);
+  notify(active.health, active.failures);
 
   return () => {
     active.subscribers.delete(notify);
@@ -82,6 +93,24 @@ function subscribe(host: string, intervalMs: number, notify: (health: WebappHeal
     document.removeEventListener('visibilitychange', active.onVisibility);
     watches.delete(host);
   };
+}
+
+/** The level, and how many pings in a row have failed — the same shared poll, no second request. */
+export function useWebappLiveness(
+  host: string | null | undefined,
+  intervalMs = 5000,
+): { health: WebappHealth; failures: number } {
+  const [state, setState] = useState<{ health: WebappHealth; failures: number }>({ health: 'checking', failures: 0 });
+
+  useEffect(() => {
+    if (!host) {
+      setState({ health: 'checking', failures: 0 });
+      return;
+    }
+    return subscribe(host, intervalMs, (health, failures) => setState({ health, failures }));
+  }, [host, intervalMs]);
+
+  return state;
 }
 
 export function useWebappHealth(host: string | null | undefined, intervalMs = 5000): WebappHealth {

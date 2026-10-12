@@ -25632,6 +25632,10 @@ msgstr "عنوان URL لصندوق التدفق الوارد الخاص بال�
 msgid "This app is no longer available."
 msgstr "لم يعد هذا التطبيق متاحًا."
 
+#: src/pages/flow-page/app-display-viewer.tsx
+msgid "This app is not installed here. Add its project again from the project that uses it."
+msgstr ""
+
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "This asset can't be shared with Git. Turn Git sharing off to send a copy."
@@ -26023,6 +26027,10 @@ msgstr "لم يتم التصريح عن أي أسرار في هذا المشرو
 
 #~ msgid "This project has not published anything yet."
 #~ msgstr ""
+
+#: src/components/project-setup/ProjectLoadGate.tsx
+msgid "This project is no longer on this computer. Open it again from the project that uses it."
+msgstr ""
 
 #: src/components/project-home/ProjectCloudLinkButton.tsx
 msgid "This project is now available in the cloud."

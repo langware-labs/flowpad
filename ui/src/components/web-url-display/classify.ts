@@ -1,11 +1,11 @@
 /**
- * Decide whether an external page in the display needs a warning.
+ * Decide what the display must do about an external page.
  *
- * Pure on purpose, like `webapp-display/classify.ts`. Only two findings earn a
- * popup, because only two are true for the user as well as for the backend:
+ * Pure on purpose, like `webapp-display/classify.ts`. Only two findings count,
+ * because only two are true for the user as well as for the backend:
  *
- *   frame_blocked → the site refuses to be framed; the pane can never show it
- *   unreachable   → nothing answers at that address
+ *   frame_blocked → the site refuses to be framed; hand it to the browser
+ *   unreachable   → nothing answers at that address; warn over the frame
  *
  * The HTTP status is deliberately NOT a finding. The backend fetches without the
  * user's cookies, so a private GitHub page 404s there and loads here, and a bot

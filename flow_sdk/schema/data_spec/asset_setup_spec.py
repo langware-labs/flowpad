@@ -116,6 +116,8 @@ class LoadResult(DataSpec):
     asset: Optional[str] = None
     #: Consumer session whose saved presentation this run checked, absent for provider-only loads.
     display: Optional[str] = None
+    #: A FAILED load that setup has not been tried for yet: an approved Load runs setup, then loads again.
+    setup_available: bool = False
 
 
 class SetupNodeResult(DataSpec):
