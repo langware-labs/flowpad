@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:;">
+  <title>Flowpad - License Agreement</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+      background: hsl(0 0% 3.9%);
+      color: hsl(0 0% 98%);
+      height: 100vh;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      padding: 32px;
+      -webkit-font-smoothing: antialiased;
+    }
+    .card {
+      width: 100%;
+      max-width: 720px;
+      background: hsl(0 0% 7%);
+      border: 1px solid hsl(0 0% 16%);
+      border-radius: 12px;
+      overflow: hidden;
+    }
+    header { display: flex; align-items: center; gap: 16px; padding: 22px 24px; border-bottom: 1px solid hsl(0 0% 16%); }
+    header img { width: 40px; height: 40px; }
+    h1 { font-size: 18px; font-weight: 600; }
+    .meta { font-size: 13px; color: hsl(0 0% 63.9%); margin-top: 4px; }
+    .content { padding: 24px; font-size: 15px; }
+    .intro { margin-bottom: 14px; }
+    a { color: hsl(210 90% 65%); }
+    .doc-link { font-size: 16px; display: inline-flex; align-items: center; gap: 8px; }
+    .doc-link svg { width: 16px; height: 16px; }
+    .hint { font-size: 12.5px; color: hsl(0 0% 63.9%); margin-top: 6px; }
+    .check { display: flex; align-items: center; gap: 12px; margin: 22px 0 14px; cursor: pointer; }
+    .check input { width: 20px; height: 20px; accent-color: hsl(210 90% 60%); cursor: pointer; }
+    .small { font-size: 13px; color: hsl(0 0% 70%); margin-top: 10px; }
+    .entity { font-size: 12.5px; color: hsl(0 0% 63.9%); margin-top: 10px; }
+    footer { padding: 16px 24px; border-top: 1px solid hsl(0 0% 16%); display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+    .note { font-size: 13px; color: hsl(0 0% 63.9%); }
+    .buttons { display: flex; gap: 10px; }
+    button { font: inherit; font-size: 14px; padding: 9px 22px; border-radius: 8px; cursor: pointer; border: 1px solid hsl(0 0% 20%); }
+    #decline { background: transparent; color: hsl(0 0% 90%); }
+    #decline:hover { background: hsl(0 0% 12%); }
+    #agree { background: hsl(0 0% 98%); color: hsl(0 0% 9%); border-color: hsl(0 0% 98%); font-weight: 600; }
+    #agree:hover:not(:disabled) { background: hsl(0 0% 85%); }
+    #agree:disabled { background: hsl(0 0% 22%); border-color: hsl(0 0% 22%); color: hsl(0 0% 50%); cursor: not-allowed; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <header>
+      <img src="loading-logo.png" alt="Flowpad">
+      <div>
+        <h1>Flowpad — EULA &amp; AI Acknowledgment</h1>
+        <div class="meta">Last updated: October 5, 2026</div>
+      </div>
+    </header>
+    <div class="content">
+      <p class="intro">Before you continue, please review and accept the terms for using Flowpad.</p>
+      <a class="doc-link" href="https://flowpad.ai/eula" target="_blank">
+        End User License Agreement &amp; AI Acknowledgment
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><path d="M15 3h6v6"/><path d="M10 14 21 3"/></svg>
+      </a>
+      <p class="hint">Opens in a new tab when clicked.</p>
+      <label class="check">
+        <input type="checkbox" id="accept">
+        <span>I agree to the EULA and AI Acknowledgment.</span>
+      </label>
+      <p class="small">View our <a href="https://flowpad.ai/privacy" target="_blank">Privacy Policy</a>.</p>
+      <p class="entity">Licensing entity: LANGWARE INC.</p>
+    </div>
+    <footer>
+      <div class="note" id="note">Check the box to enable acceptance.</div>
+      <div class="buttons">
+        <button id="decline">Decline</button>
+        <button id="agree" disabled>I Agree</button>
+      </div>
+    </footer>
+  </div>
+  <script src="eula-renderer.js"></script>
+</body>
+</html>

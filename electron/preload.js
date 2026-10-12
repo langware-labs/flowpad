@@ -21,6 +21,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Open a URL in the system browser
   openExternal: (url) => ipcRenderer.invoke('open-external', url),
 
+  // First-launch EULA screen: true = "I Agree", false = "Decline"
+  eulaDecision: (agreed) => ipcRenderer.send('eula-decision', !!agreed),
+
   // Capture a viewport-relative rectangle from the active BrowserWindow.
   captureRegion: (region) => ipcRenderer.invoke('capture-region', region),
 

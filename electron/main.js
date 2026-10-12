@@ -220,6 +220,60 @@ function writeDesktopVersion(version) {
   }
 }
 
+// ----------------------------------------------------------------------------
+// First-launch EULA.
+//
+// The user must click "I Agree" once before Flowpad starts. Acceptance is
+// stored per EULA version, so bumping EULA_VERSION (when eula.html changes in a
+// way that needs renewed acceptance) shows the screen again.
+// ----------------------------------------------------------------------------
+const EULA_VERSION = '2026-10-05';
+function getEulaStatePath() {
+  return path.join(app.getPath('userData'), 'eula-accepted.json');
+}
+function isEulaAccepted() {
+  try {
+    const data = JSON.parse(fs.readFileSync(getEulaStatePath(), 'utf8'));
+    return !!data && data.version === EULA_VERSION;
+  } catch {
+    return false;
+  }
+}
+// Shows eula.html in the main window and resolves true on "I Agree", false on
+// "Decline" or if the window is closed.
+async function ensureEulaAccepted() {
+  if (isEulaAccepted()) return true;
+
+  const agreed = await new Promise((resolve) => {
+    const onClosed = () => resolve(false);
+    ipcMain.once('eula-decision', (_event, decision) => {
+      mainWindow.removeListener('closed', onClosed);
+      resolve(!!decision);
+    });
+    mainWindow.once('closed', onClosed);
+    mainWindow.loadFile(path.join(__dirname, 'eula.html'));
+  });
+
+  if (!agreed) {
+    log.info('[eula] declined — quitting');
+    return false;
+  }
+
+  try {
+    fs.writeFileSync(
+      getEulaStatePath(),
+      JSON.stringify({ version: EULA_VERSION, acceptedAt: new Date().toISOString() }),
+      'utf8',
+    );
+  } catch (err) {
+    log.warn(`[eula] failed to persist acceptance: ${err.message}`);
+  }
+  log.info(`[eula] accepted version ${EULA_VERSION}`);
+
+  await mainWindow.loadFile(path.join(__dirname, 'loading.html'));
+  return true;
+}
+
 // Configuration
 const BACKEND_PORT = 9007;
 const BACKEND_URL = `http://localhost:${BACKEND_PORT}`;
@@ -589,6 +643,12 @@ async function startApp() {
   // Wait for the loading page to finish loading so IPC listeners are ready
   if (mainWindow.webContents.isLoading()) {
     await new Promise((resolve) => mainWindow.webContents.once('did-finish-load', resolve));
+  }
+
+  // First launch: require EULA acceptance before starting anything else
+  if (!(await ensureEulaAccepted())) {
+    app.quit();
+    return;
   }
 
   // In development mode, assume backend is running externally
