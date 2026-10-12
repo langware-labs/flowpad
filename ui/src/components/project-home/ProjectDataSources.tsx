@@ -1,16 +1,18 @@
 import { DataSource } from '@sdk';
+import { useMemo } from 'react';
 import { useEntitiesQuery } from '@src/hooks/entity-hooks';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { labelForType } from '@src/components/graph-view/icons/iconRegistry';
 import { IconWithBadge } from '@src/components/graph-view/icons/IconWithBadge';
 import { DesktopTile, TileSection } from '@src/components/quick-create/QuickCreatePanel';
-import { sourcesQuery, useSourceSpecs } from '@src/components/data-sources/use-source-specs';
+import { projectSourcesQuery, useSourceSpecs } from '@src/components/data-sources/use-source-specs';
 import { sourceGlyphs } from '@src/components/data-sources/source-icon';
 import { openSource } from '@src/components/data-sources/data-sources-pointer';
 
-/** Configured sources are instance-wide, just like the dedicated sources page. */
-export function ProjectDataSources() {
-  const { data: sources = [] } = useEntitiesQuery<DataSource>(sourcesQuery);
+/** Project home shows only its sources; the dedicated sources page remains instance-wide. */
+export function ProjectDataSources({ projectId }: { projectId: string }) {
+  const query = useMemo(() => projectSourcesQuery(projectId), [projectId]);
+  const { data: sources = [] } = useEntitiesQuery<DataSource>(query);
   const { specFor } = useSourceSpecs({ enabled: sources.length > 0 });
   const { navigation } = useDockNavigation();
   if (!sources.length) return null;

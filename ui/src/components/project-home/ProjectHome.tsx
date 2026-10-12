@@ -99,7 +99,7 @@ const Overview: React.FC<{ project: Project | null; panelProps: PanelHandlers; d
       {project && <ProjectAgentsStrip projectId={project.id} presentation="browse" />}
       {/* The project's flow.json dependencies — not on the terminal empty state. */}
       {project && dependencies && <ProjectDependenciesCard project={project} />}
-      <ProjectDataSources />
+      {project && <ProjectDataSources projectId={project.id} />}
       <QuickCreateModal
         open={newOpen}
         onOpenChange={setNewOpen}

@@ -1207,36 +1207,13 @@ class AgenticProcess(Entity):
         workdir: str | None = None,
         **kwargs,
     ) -> "AgenticProcess":
-        """Factory: pre-bake the cli_config that ``start_pty()`` turns into
-        ``claude --resume <parent> --fork-session --session-id <new>``.
-
-        Three things must all be set for ``ClaudeAgentOptions.to_spawn_args``
-        to emit the fork incantation:
-          * ``resume=True``
-          * ``session_id=<new>``        (the fork's own pre-allocated sid)
-          * ``fork_session_id=<parent>`` (passed in as ``session_id`` arg)
-
-        Without all three, the spawn falls through to a plain ``claude``
-        invocation — no resume, no fork — and claude starts a completely
-        unrelated session whose transcript never lands on disk (because
-        nobody ever sends it a prompt). The entity ends up with a session_id
-        that resolves to nothing, and any later ``--resume`` fails with
-        "No conversation found with session ID: <sid>". Pre-allocating
-        ``session_id`` here also lets callers persist it on the entity row
-        before the first turn, so transcript discovery doesn't race the
-        ``system:init`` event.
-        """
-        from flow_sdk.builtin.agentic_process.cli_drivers.claude import ClaudeAgentOptions  # noqa: PLC0415
-
-        new_session_id = str(uuid4())
-        cmd = ClaudeAgentOptions(
-            resume=True,
-            fork_session_id=session_id,
-            session_id=new_session_id,
-        )
+        """Create a sibling using the selected provider's native fork options."""
         if not kwargs.get("name"):
             kwargs.setdefault("naming_state", SessionNameState())
-        proc = cls(workdir=workdir, session_id=new_session_id, **kwargs)
+        proc = cls(workdir=workdir, **kwargs)
+        cmd = proc.cli_options
+        cmd.configure_fork(session_id)
+        proc.session_id = cmd.session_id
         proc.cli_config = cmd.to_json()
         return proc
 
@@ -2278,7 +2255,7 @@ class AgenticProcess(Entity):
     async def fork_action(self) -> ApiSuccessResponse | ApiFailResponse:
         """Create a sibling process that shares this session's conversation history.
 
-        Equivalent to: claude --resume <this.session_id> --fork-session
+        Uses the parent provider's native fork command.
         Returns the new AgenticProcess entity data so the caller can open it.
         `visible` (bool, default False) controls whether the new process appears in the tabs view.
         """
@@ -2292,6 +2269,8 @@ class AgenticProcess(Entity):
             new_proc = AgenticProcess.fork(
                 session_id=self.session_id,
                 workdir=self.workdir,
+                worker_type=self.worker_type,
+                cli_config=self.cli_config,
                 project_id=self.project_id,
                 visible=visible,
                 # A chat (headless) fork stays headless: its first prompt boots the
