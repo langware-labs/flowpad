@@ -157,6 +157,9 @@ class _Run:
     #: whole thing ends" even though this step's own answer has been sitting
     #: there the whole time.
     on_step: Optional[Callable[["WizardResult"], Awaitable[None]]] = None
+    #: Told each op's live one-liner ("Start WAHA service: pulling image…"), nested wizards
+    #: included, so a watcher can say what is happening while a long step runs.
+    on_status: Optional[Callable[[str], None]] = None
 
 
 async def run_wizard(
@@ -178,6 +181,7 @@ async def run_wizard(
     wizard_id: str = "",
     check_only: bool = False,
     on_step: Optional[Callable[["WizardResult"], Awaitable[None]]] = None,
+    on_status: Optional[Callable[[str], None]] = None,
     answers: Optional[dict] = None,
     path: tuple[str, ...] = (),
     required: bool = True,
@@ -227,6 +231,7 @@ async def run_wizard(
             wizard_id=wizard_id,
             check_only=check_only,
             on_step=on_step,
+            on_status=on_status,
             answers={} if answers is None else answers,
             path=path,
             required=required,
@@ -500,11 +505,17 @@ async def _call_op(run: _Run, step: WizardStepSpec, child: Any) -> ReturnedValue
         launch=run.launch,
         env=input_env(scope),
         values=scope,
-        on_status=lambda text: child.current(text),
+        on_status=lambda text: _status(run, child, text),
         wizard_id=run.wizard_id,
         check_only=run.check_only,
         answered=run.answers.get(_step_path(run.path, step)),
     )
+
+
+def _status(run: _Run, child: Any, text: str) -> None:
+    child.current(text)
+    if run.on_status is not None:
+        run.on_status(text)
 
 
 async def _call_wizard(run: _Run, step: WizardStepSpec, child: Any) -> ReturnedValue:
@@ -541,6 +552,7 @@ async def _call_wizard(run: _Run, step: WizardStepSpec, child: Any) -> ReturnedV
         parent=child,
         wizard_id=run.wizard_id,
         check_only=run.check_only,
+        on_status=run.on_status,
         answers=run.answers,
         path=(*run.path, step.id),
         required=run.required and step.required,

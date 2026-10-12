@@ -69,6 +69,30 @@ function reloadOnNewEpoch(src: string, epoch: number | undefined, reload: () => 
   if (seen !== undefined && seen !== epoch) reload();
 }
 
+/** The served folder's version the frame was loaded at, by `src` (see `content_version` on the server). */
+const loadedVersion = new Map<string, string>();
+const VERSION_MARK = /<!-- flowpad-content-version: ([0-9a-f]+) -->/;
+
+/**
+ * Reload a parked frame whose app files changed since it loaded. Re-opening a tab hands the
+ * same document back (the frame is kept per `src`), so an app edited meanwhile kept showing
+ * its old code until a manual reload. One small read of the page per show; same version, no reload.
+ */
+async function reloadIfAppChanged(src: string, reload: () => void): Promise<void> {
+  if (!src) return;
+  let version: string | undefined;
+  try {
+    const page = await fetch(src, { cache: 'no-store' });
+    version = page.ok ? VERSION_MARK.exec(await page.text())?.[1] : undefined;
+  } catch {
+    return; // unreachable now: the frame shows its own error
+  }
+  if (!version) return;
+  const seen = loadedVersion.get(src);
+  loadedVersion.set(src, version);
+  if (seen !== undefined && seen !== version) reload();
+}
+
 /**
  * The dock a guest app asks the host to open, or null: `{type: 'flowpad:navigate', address: '/dock/…'}`
  * (only a `/dock/` address that parses is honoured — a guest navigates the app, never the window to
@@ -118,6 +142,10 @@ export function AppDisplayViewer({
   useEffect(() => {
     reloadOnNewEpoch(appDisplay.src, reloadKey, () => frameRef.current?.refresh());
   }, [appDisplay.src, reloadKey]);
+
+  useEffect(() => {
+    void reloadIfAppChanged(appDisplay.src, () => frameRef.current?.refresh());
+  }, [appDisplay.src]);
 
   // The theme is baked into the guest URL for its first paint, so a later change
   // is PUSHED rather than re-addressed: re-addressing would swap `src`, which is

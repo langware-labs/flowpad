@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import mimetypes
+import os
 import re
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -131,6 +132,28 @@ def _etag(file_path: Path) -> str:
     return hashlib.md5(f"{stat.st_mtime_ns}-{stat.st_size}".encode()).hexdigest()
 
 
+#: Folders a served app's version ignores: never part of what the page loads.
+_UNSERVED_DIRS = {".git", "node_modules", "__pycache__", ".flow"}
+
+
+def content_version(root: Path) -> str:
+    """One validator for a whole served folder (paths + mtime + size of every file).
+
+    Stamped into the app's HTML, so a host showing the app can tell its files
+    changed since the frame loaded — an edit to one script included — and reload."""
+    digest = hashlib.md5()
+    for folder, dirs, files in os.walk(root):
+        dirs[:] = sorted(d for d in dirs if d not in _UNSERVED_DIRS)
+        for name in sorted(files):
+            path = Path(folder) / name
+            try:
+                stat = path.stat()
+            except OSError:
+                continue
+            digest.update(f"{path.relative_to(root)}:{stat.st_mtime_ns}:{stat.st_size};".encode())
+    return digest.hexdigest()
+
+
 async def _file_iterator(file_path: Path):
     async with await anyio.open_file(str(file_path), "rb") as f:
         while True:
@@ -235,6 +258,8 @@ async def serve_app_bytes(
         # The document carries the same policy as its assets; without a header a
         # browser caches it heuristically and a cross-origin iframe never refetches.
         html = inject_process_id(inject_api_origin(html), process_id)
+        version = await anyio.to_thread.run_sync(content_version, root_path)
+        html += f"\n<!-- flowpad-content-version: {version} -->\n"
         return HTMLResponse(content=html, headers={"Cache-Control": cache_control})
 
     etag = _etag(requested_file)

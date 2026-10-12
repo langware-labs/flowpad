@@ -60,9 +60,10 @@ def load_state(project_id: str, *, asset: str = "") -> Optional[LoadResult]:
                 answer = task.result()
                 if answer is None:
                     raise RuntimeError("The setup run returned no result")
+                unmet = _unmet(answer, asset)
                 result = LoadResult(
-                    state=LoadState.READY if answer.ok else LoadState.FAILED,
-                    project_id=pid, detail=answer.detail, run=setup_run_address(pid), display=display,
+                    state=LoadState.READY if answer.ok and not unmet else LoadState.FAILED,
+                    project_id=pid, detail=unmet or answer.detail, run=setup_run_address(pid), display=display,
                 )
             except (Exception, asyncio.CancelledError) as exc:
                 result = LoadResult(state=LoadState.FAILED, project_id=pid, detail=str(exc) or "Setup was cancelled", display=display)
@@ -70,13 +71,35 @@ def load_state(project_id: str, *, asset: str = "") -> Optional[LoadResult]:
     return result.model_copy(update={"asset": asset or None}) if result is not None else None
 
 
-def _configuration_failure(node) -> str:
-    """Unmet checks are pending; invalid declarations are failures even in check mode."""
-    if node is None:
+def _configuration_failure(node, apart: frozenset = frozenset()) -> str:
+    """Unmet checks are pending; invalid declarations are failures even in check mode. ``apart``:
+    nodes that stand on their own and are not the one being shown — their trouble is theirs."""
+    if node is None or node.id in apart:
         return ""
     if node.state in (SetupState.FAILED, SetupState.REFUSED):
         return node.detail
-    return next((detail for child in node.children if (detail := _configuration_failure(child))), "")
+    return next((detail for child in node.children if (detail := _configuration_failure(child, apart))), "")
+
+
+async def _apart(tree, target: str) -> frozenset:
+    """The root's children that stand on their own (web apps), except the one being shown."""
+    root = await tree.resolve_node(tree.root)
+    nodes = [(child, await tree.resolve_node(child)) for child in (root.children if root else ())]
+    return frozenset(child for child, node in nodes if node is not None and node.independent and child != target)
+
+
+def _unmet(result, target: str) -> str:
+    """Why the asset being shown is itself not ready, or ``""``. The tree settles without a web app that
+    is not set up, so the one asked for is checked by name."""
+    def find(node):
+        if node is None or node.id == target:
+            return node
+        return next((hit for child in node.children if (hit := find(child)) is not None), None)
+
+    node = find(getattr(result, "root", None)) if target else None
+    if node is None or node.state in (SetupState.DONE, SetupState.SKIPPED):
+        return ""
+    return f"{node.label}: {node.detail}" if node.detail else f"{node.label} is not set up"
 
 
 async def load_project(project: Any, *, approved: bool = False, asset: Any = None, tree: Any = None,
@@ -116,19 +139,22 @@ async def load_project(project: Any, *, approved: bool = False, asset: Any = Non
                           check_only=True, approved=True)
             prerequisites = await execute_setup(tree.root, resolve_node=tree.resolve_node,
                                                 resolve_op=tree.resolve_op, **common)
-            problem = _configuration_failure(prerequisites.root)
+            problem = _configuration_failure(prerequisites.root, await _apart(tree, target))
             if problem:
                 raise ValueError(problem)
             missing = next((c for c in children if c.state is LoadState.SETUP_REQUIRED), None)
-            needs_setup = not prerequisites.ok or missing is not None
+            unmet = _unmet(prerequisites, target)
+            needs_setup = not prerequisites.ok or bool(unmet) or missing is not None
             if needs_setup and not approved:
                 state = LoadState.FAILED if prerequisites.state is SetupState.REFUSED else LoadState.SETUP_REQUIRED
-                result = LoadResult(state=state, project_id=pid, detail=missing.detail if missing else prerequisites.detail)
+                result = LoadResult(state=state, project_id=pid,
+                                    detail=missing.detail if missing else prerequisites.detail or unmet)
             else:
                 operational = LoadTree(tree)
                 running = await execute_setup(tree.root, resolve_node=operational.resolve_node,
                                                resolve_op=operational.resolve_op, **common) if not needs_setup else None
-                if running is not None and running.ok and all(c.state is LoadState.READY for c in children):
+                loaded = running is not None and running.ok and not _unmet(running, target)
+                if loaded and all(c.state is LoadState.READY for c in children):
                     result = LoadResult(state=LoadState.READY, project_id=pid)
                 else:
                     run = await start_setup(project, tree=tree if needs_setup else operational,

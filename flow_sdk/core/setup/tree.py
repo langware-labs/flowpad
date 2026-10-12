@@ -38,6 +38,9 @@ class SetupNode:
     #: Why this node cannot be set up at all (it names a wizard that does not exist): it fails with this, and
     #: nothing of it runs. An author's mistake reported where it is, never a node that quietly counts as done.
     problem: str = ""
+    #: Stands on its own (a web app): one that is not set up is its own trouble, never its parent's or a
+    #: sibling's — the parent settles without it and says which ones it left.
+    independent: bool = False
     #: Why a person skipped it (its record's ``setup_skipped``): it settles SKIPPED, nothing of it runs, and its
     #: parent is not held up by it.
     skipped: str = ""
