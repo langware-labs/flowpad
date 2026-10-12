@@ -16,6 +16,8 @@
     "loading.html",
     "loading-renderer.js",
     "loading-logo.png",
+    "eula.html",
+    "eula-renderer.js",
     "!**/*.map",
     "!dist/**",
     "!build/**",
