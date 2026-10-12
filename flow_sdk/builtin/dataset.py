@@ -140,6 +140,14 @@ def _misfit(exc: ValidationError, row: Any, dataset: "Dataset", message: str) ->
     return ApiFailResponse(message=message, status_code=400, data={"errors": detail_lines(details), "details": details})
 
 
+def _written(data: dict, warnings: list[dict]) -> ApiSuccessResponse:
+    """A row write's answer. ``warnings`` (a record the outside system made but not all of) ride
+    INSIDE ``data`` as well as on the envelope: the SDK hands a caller ``data`` alone."""
+    if warnings:
+        return ApiSuccessResponse(data={**data, "warnings": warnings}, warnings=warnings)
+    return ApiSuccessResponse(data=data)
+
+
 def _refused(exc: "LinkError | ConflictError", status_code: int) -> ApiFailResponse:
     """A refused row write as the API answers it: the message, its lines and its details."""
     return ApiFailResponse(message=str(exc), status_code=status_code, data={"errors": exc.errors, "details": exc.details})
@@ -648,6 +656,14 @@ class Dataset(Entity):
         keys = list(keys)
         return {"op": op, "keys": keys[: self.ROWS_CHANGED_KEYS], "count": len(keys)}
 
+    def rows_version(self) -> str:
+        """The rows as a whole, as one version (``layout.rows_version``): rides on every
+        ``dataset.rows.changed`` and on ``rows()``, and ``GET rows-version`` answers it alone, so a
+        listener whose socket was down learns whether anything moved without reading a row."""
+        from flow_sdk.schema.data_spec.layout import rows_version  # noqa: PLC0415
+
+        return rows_version(self.asset_ref) if self.asset_ref else ""
+
     def emit_rows_changed(self, op: str, keys: list[str]) -> None:
         """Say on THIS process's bus that rows changed (``op``: ``put`` / ``delete`` / ``rename`` /
         ``sync``). What the server does; a writer outside it calls ``announce``."""
@@ -655,7 +671,7 @@ class Dataset(Entity):
         from flow_sdk.tags.envelope import target_of  # noqa: PLC0415
 
         if keys and self.id:
-            emit_tag(self.ROWS_CHANGED, target_of("dataset", self.id), self._rows_event(op, keys))
+            emit_tag(self.ROWS_CHANGED, target_of("dataset", self.id), {**self._rows_event(op, keys), "version": self.rows_version()})
 
     def announce(self, op: str, keys: list[str]) -> bool:
         """Tell the running Flowpad that rows changed, from a process that is not the server (a sync
@@ -768,31 +784,45 @@ class Dataset(Entity):
             out.append((raw["key"], {k: v for k, v in raw.items() if k != "key"}))
         return out
 
-    def _prepare_many(self, rows: list[tuple[str, dict]], expected: dict, seen: dict) -> list[tuple[str, Any, Any]]:
-        """Every row of a batch checked (``_prepare_put``) -- ``[(key, example, old)]``, or ONE error
-        naming every row that does not fit, by key: ``ConflictError`` first (the caller must re-read),
-        else ``LinkError`` carrying every row's details (shape, links, rules) under ``<key>.``."""
+    def _prepare_each(self, rows: list[tuple[str, dict]], expected: dict, seen: dict) -> tuple[list, list[dict]]:
+        """Every row of a batch checked (``_prepare_put``): ``(ready, misfit)`` -- ``[(key, example,
+        old)]`` for the rows that fit, and ``[{key, row, details}]`` for each that does not (its
+        shape, links, rules; the details' paths are the row's own, ``input.x``). ``ConflictError``
+        is raised at once (the caller must re-read); so is a malformed row (not an object, unknown
+        keys) -- that is the caller's mistake, not a value that does not fit."""
         from flow_sdk.datasets.links import shape_details  # noqa: PLC0415
 
-        ready, conflicts, details = [], [], []
+        ready, conflicts, misfit = [], [], []
         for key, row in rows:
             try:
                 example, old = self._prepare_put(key, row, expected.get(key), seen)
             except ConflictError as exc:
                 conflicts.append(str(exc))
             except ValidationError as exc:
-                details += [{**d, "path": f"{key}.{d['path']}".rstrip(".")}
-                            for d in shape_details(exc) + (self._raw_link_details(row, seen.get("links")) if self.asset_ref else [])]
+                misfit.append({"key": key, "row": row, "details": shape_details(exc)
+                               + (self._raw_link_details(row, seen.get("links")) if self.asset_ref else [])})
             except LinkError as exc:
-                details += [{**d, "path": f"{key}.{d['path']}".rstrip(".")} for d in exc.details]
+                misfit.append({"key": key, "row": row, "details": list(exc.details)})
             except ValueError as exc:
-                details.append({"path": key, "code": "row", "message": str(exc)})
+                raise LinkError([{"path": key, "code": "row", "message": str(exc)}]) from exc
             else:
                 ready.append((key, example, old))
         if conflicts:
             raise ConflictError("; ".join(conflicts))
-        if details:
-            raise LinkError(details)
+        return ready, misfit
+
+    @staticmethod
+    def _misfit_error(misfit: list[dict]) -> LinkError:
+        """ONE error naming every row that does not fit, its details under ``<key>.``."""
+        return LinkError([{**d, "path": f"{m['key']}.{d['path']}".rstrip(".")} for m in misfit for d in m["details"]])
+
+    def _prepare_many(self, rows: list[tuple[str, dict]], expected: dict, seen: dict) -> list[tuple[str, Any, Any]]:
+        """Every row of a batch checked -- ``[(key, example, old)]``, or ONE error naming every row
+        that does not fit, by key: ``ConflictError`` first, else ``LinkError`` carrying every row's
+        details under ``<key>.`` (``_prepare_each``)."""
+        ready, misfit = self._prepare_each(rows, expected, seen)
+        if misfit:
+            raise self._misfit_error(misfit)
         return ready
 
     async def put_many(self, rows: list[dict], *, expected: Optional[dict[str, str]] = None,
@@ -812,7 +842,8 @@ class Dataset(Entity):
         self._tell("put", [key for key, _ in keyed])
         return ids
 
-    async def sync(self, rows: list[dict], *, prune: bool = True, match: Any = None, by: Optional[str] = None) -> dict:
+    async def sync(self, rows: list[dict], *, prune: bool = True, match: Any = None, by: Optional[str] = None,
+                   lenient: bool = False) -> dict:
         """Make the dataset hold exactly ``rows`` (``[{key, input, ...}]``) -- what a mirror of an
         outside system calls each run. A key that is new is created, one whose value changed is
         replaced, one that reads the same is left untouched (its version does not move), and -- with
@@ -823,9 +854,17 @@ class Dataset(Entity):
         One step, all or nothing: every row is checked first (as ``put_many``), every removal too (as
         ``delete_rows``: a row still referenced refuses the whole sync). ``by`` is the outside system
         this sync writes for (see ``put``): what lets it set the fields that system owns. Returns
-        ``{created, updated, unchanged, deleted}``, each a list of keys."""
+        ``{created, updated, unchanged, deleted}``, each a list of keys.
+
+        ``lenient`` is for a MIRROR of an outside system, whose values are not this writer's to fix:
+        a row whose value does not fit the row kind (a shape the schema does not allow, a link that
+        does not hold) is kept as it came -- a PROBLEM row, read by ``rows_and_problems`` with its
+        input intact, invisible to ``rows`` -- and named in the answer's ``misfit`` (``[{key,
+        details}]``), while every other row is written. A misfit still listed is never pruned. A row
+        refused as ``owned`` (a field this writer may not set) still refuses the whole sync: that is
+        the caller's mistake, not the outside system's value."""
         from flow_sdk.datasets.query import expression, matches  # noqa: PLC0415
-        from flow_sdk.schema.data_spec.layout import FolderLayout  # noqa: PLC0415
+        from flow_sdk.schema.data_spec.layout import FolderLayout, _ReadShape  # noqa: PLC0415
 
         keyed, layout, folder, node = self._keyed(rows), FolderLayout(), self._folder(), expression(match)
         with self._lock():
@@ -836,8 +875,10 @@ class Dataset(Entity):
                 here = [(r.key, self._row_out(r)) for r in kept] + [(p["key"], {"key": p["key"], "id": p["id"], "input": p["input"]}) for p in problems]
                 gone = [key for key, shown in here if key not in listed and matches(node, shown)]
             # the rows about to go no longer hold their unique values: a new row may take one over
-            ready = self._prepare_many(keyed, {}, {"by": by, "unique_skip": set(gone)})
-            out: dict[str, list[str]] = {"created": [], "updated": [], "unchanged": [], "deleted": []}
+            ready, misfit = self._prepare_each(keyed, {}, {"by": by, "unique_skip": set(gone)})
+            if misfit and (not lenient or any(d.get("code") == "owned" for m in misfit for d in m["details"])):
+                raise self._misfit_error(misfit)
+            out: dict[str, Any] = {"created": [], "updated": [], "unchanged": [], "deleted": []}
             write = []
             for key, example, old in ready:
                 same = old is not None and all(
@@ -848,8 +889,13 @@ class Dataset(Entity):
             self._check_delete(gone, {})
             for key, example in write:
                 layout.put_example(folder, key, example, dataset_id=self.id)
+            if misfit:
+                main = _ReadShape.of(self._typed_rows_or_raise()).mains["input"]
+                for m in misfit:
+                    layout.put_problem_example(folder, m["key"], m["row"].get("input") or {}, dataset_id=self.id, main_document=main)
+                out["misfit"] = [{"key": m["key"], "details": m["details"]} for m in misfit]
             out["deleted"] = [layout.delete_example(folder, key, dataset_id=self.id) for key in gone]
-        self._tell("sync", out["created"] + out["updated"] + out["deleted"])   # nothing moved: nothing said
+        self._tell("sync", out["created"] + out["updated"] + out["deleted"] + [m["key"] for m in misfit])   # nothing moved: nothing said
         return out
 
     def delete_row(self, key_or_id: str, *, expected: Optional[str] = None) -> str:
@@ -862,7 +908,10 @@ class Dataset(Entity):
                      match: Any = None) -> dict:
         """Make this dataset the typed MIRROR of a data source: each of the source's items becomes one
         row of this dataset's kind, and the dataset is made to hold exactly those (``sync``: created /
-        updated / unchanged / deleted; all or nothing; rows are YOUR model -- kinds, links, ``rules``).
+        updated / unchanged / deleted; rows are YOUR model -- kinds, links, ``rules``). The outside
+        system's values are not ours to fix: a record whose value does not fit the row kind is kept as
+        a PROBLEM row (``rows_and_problems``), named in the answer's ``misfit`` (``[{key, details}]``),
+        and every other record is still mirrored (``sync(lenient=True)``).
 
         ``items`` is a ``DataSource`` (in the server: its records are read) or the items themselves, a
         list of dicts (a script: ``local_client.graph_get("source_item", {...})``). ``map`` says how an
@@ -942,19 +991,48 @@ class Dataset(Entity):
         kept, problems = self.rows_and_problems()
         held = {row.key: row.input.model_dump(mode="json", exclude_none=True) for row in kept}
         held.update({p["key"]: p["input"] for p in problems if isinstance(p.get("input"), dict)})
+        # A field the kind REQUIRES that neither the map nor the row supplies -- the app's own list or
+        # map (a deal's objections, its stage dates) -- starts EMPTY on a row the mirror makes: a
+        # required list with nothing in it is `[]`, not absent, or every new record would be a misfit.
+        empties = self._empty_required(self.row_type.input_type())
+        # A row is found by its NATURAL key -- the field the map's key path is mapped to (``crm_id``) --
+        # never by its row key alone: a row made before the mirror (keyed as its author liked) or
+        # renamed since keeps its key, its id and every link to it. A record no row holds gets a key
+        # made from its id.
+        key_field_ = next((name for name, path in map["input"].items() if path == map["key"]), None)
+        keyed_by_natural = {str(fields[key_field_]): key for key, fields in held.items()
+                            if key_field_ and fields.get(key_field_) not in (None, "")} if key_field_ else {}
         rows, taken = [], set()
         for item in items:
             named = field_of(item, map["key"])
             if named in (None, ""):
                 continue
-            key = re.sub(r"[^a-z0-9_-]+", "-", str(named).lower()).strip("-")
+            key = keyed_by_natural.get(str(named)) or re.sub(r"[^a-z0-9_-]+", "-", str(named).lower()).strip("-")
             if not key or key in taken:
                 raise ValueError(f"mirror: two items map to the row key {key!r} (from {named!r})" if key else f"mirror: {named!r} gives no row key")
             taken.add(key)
             own = {name: value for name, value in held.get(key, {}).items() if name not in map["input"]}
-            rows.append({"key": key, "input": {**own, **shaped(map["input"], item, key, "")}})
-        done = await self.sync(rows, prune=prune, match=match, by=by or provider)
+            rows.append({"key": key, "input": {**empties, **own, **shaped(map["input"], item, key, "")}})
+        done = await self.sync(rows, prune=prune, match=match, by=by or provider, lenient=True)
         return {**done, "unlinked": unlinked} if unlinked else done
+
+    @staticmethod
+    def _empty_required(input_type: Any) -> dict[str, Any]:
+        """``{field: [] | {}}`` for every REQUIRED list or map field of ``input_type``: the empty value a
+        writer that does not know the field (a mirror) gives it, so the row fits."""
+        import typing  # noqa: PLC0415
+
+        out: dict[str, Any] = {}
+        for name, field in getattr(input_type, "model_fields", {}).items():
+            if not field.is_required():
+                continue
+            origin = typing.get_origin(field.annotation) or field.annotation
+            if origin in (list, tuple, set, frozenset):
+                out[name] = []
+            elif origin is dict or (isinstance(origin, type) and hasattr(origin, "model_fields")
+                                   and all(not f.is_required() for f in origin.model_fields.values())):
+                out[name] = {}
+        return out
 
     def _check_delete(self, keys: list[str], expected: dict[str, str]) -> list[Path]:
         """The row folders ``keys`` (keys or ids) name, once every one of them may go -- else the
@@ -1340,7 +1418,13 @@ class Dataset(Entity):
                                q=asked["q"], expand=asked["expand"], records=await self._records_asked(asked))
         except ValueError as exc:   # the dataset declares no typed rows, or the filter does not read
             return ApiFailResponse(message=str(exc), status_code=400)
+        found["version"] = self.rows_version()
         return ApiSuccessResponse(data=found)
+
+    @action.get(action_name="rows-version")
+    async def rows_version_action(self):
+        """``{"version"}`` -- ``rows_version``, off the loop: every reconnecting listener asks."""
+        return ApiSuccessResponse(data={"version": await asyncio.to_thread(self.rows_version)})
 
     async def _records_asked(self, asked: dict) -> dict:
         """The RECORDS the question's paths lead to (a row's ``ingest.source_item`` link, followed or
@@ -1425,10 +1509,12 @@ class Dataset(Entity):
         rows = body.get("rows")
         if not isinstance(rows, list) or not rows:
             return ApiFailResponse(message="rows: a non-empty list is required", status_code=400)
+        warnings: list[dict] = []
         try:
             through = await write_through(self, [(r.get("key") if isinstance(r, dict) else None, r) for r in rows], body.get("by"))
             if through is not None:   # outside-owned fields went to the source's system; these rows are what it answered
                 ids = await self.put_many([{**row, "key": key} for key, row in through[0]], by=through[1])
+                warnings = through[2]
             else:
                 ids = await self.append(rows, by=body.get("by"))
         except ValidationError as exc:
@@ -1438,7 +1524,7 @@ class Dataset(Entity):
         except ValueError as exc:
             return ApiFailResponse(message=str(exc), status_code=400)
         fresh = await self.refresh_counts()
-        return ApiSuccessResponse(data={"ids": ids, "example_ids": ids, "num_examples": fresh.num_examples})
+        return _written({"ids": ids, "example_ids": ids, "num_examples": fresh.num_examples}, warnings)
 
     async def _row_body(self, *required: str) -> "dict | ApiFailResponse":
         body = await read_json_body(get_current_request_info())
@@ -1456,12 +1542,13 @@ class Dataset(Entity):
         body = await self._row_body("key", "row")
         if isinstance(body, ApiFailResponse):
             return body
-        key = body["key"]
+        key, warnings = body["key"], []
         try:
             through = await write_through(self, [(key, body["row"])], body.get("by"), {key: body.get("expected")})
             if through is not None:   # outside-owned fields went to the source's system; this row is what it answered
                 (key, row), = through[0]
                 eid = await self.put(key, row, by=through[1])
+                warnings = through[2]
             else:
                 eid = await self.put(key, body["row"], expected=body.get("expected"), by=body.get("by"))
         except ValidationError as exc:
@@ -1473,7 +1560,7 @@ class Dataset(Entity):
         except ValueError as exc:
             return ApiFailResponse(message=str(exc), status_code=400)
         fresh = await self.refresh_counts()
-        return ApiSuccessResponse(data={"id": eid, "example_id": eid, "key": key, "num_examples": fresh.num_examples})
+        return _written({"id": eid, "example_id": eid, "key": key, "num_examples": fresh.num_examples}, warnings)
 
     @action.post(action_name="delete-row")
     async def delete_row_action(self):
@@ -1517,18 +1604,20 @@ class Dataset(Entity):
         if isinstance(body, ApiFailResponse):
             return body
         keys = [r.get("key") if isinstance(r, dict) else None for r in body["rows"]] if isinstance(body["rows"], list) else []
+        warnings: list[dict] = []
 
         async def put() -> list[str]:
             through = await write_through(self, [(k, r) for k, r in zip(keys, body["rows"])], body.get("by"), body.get("expected"))
             if through is None:
                 return await self.put_many(body["rows"], expected=body.get("expected"), by=body.get("by"))
             keys[:] = [key for key, _ in through[0]]   # outside-owned fields went to the source's system first
+            warnings[:] = through[2]
             return await self.put_many([{**row, "key": key} for key, row in through[0]], by=through[1])
         ids = await self._bulk(put)
         if isinstance(ids, ApiFailResponse):
             return ids
         fresh = await self.refresh_counts()
-        return ApiSuccessResponse(data={"ids": ids, "example_ids": ids, "keys": keys, "num_examples": fresh.num_examples})
+        return _written({"ids": ids, "example_ids": ids, "keys": keys, "num_examples": fresh.num_examples}, warnings)
 
     @action.post(action_name="delete-rows")
     async def delete_rows_action(self):

@@ -1,3 +1,4 @@
+import { VISIBILITY_MESSAGE, VISIBILITY_PLEASE_MESSAGE } from '@sdk/apps/host';
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react';
 
 interface PersistentIframeProps {
@@ -51,6 +52,24 @@ class IframeRegistry {
       IframeRegistry.instance = new IframeRegistry();
     }
     return IframeRegistry.instance;
+  }
+
+  private constructor() {
+    // A guest that just loaded asks whether it is on screen: a notice sent before it listened is
+    // gone. Answered for its own frame only (`isGuest`). Here, not in the display component: a
+    // parked frame has no component mounted to answer for it.
+    window.addEventListener('message', (event: MessageEvent) => {
+      if ((event.data as { type?: string } | null)?.type !== VISIBILITY_PLEASE_MESSAGE) return;
+      for (const src of this.iframes.keys()) {
+        if (this.isGuest(src, event.source)) this.tellVisibility(src);
+      }
+    });
+  }
+
+  // A parked frame is hidden with CSS, which its guest cannot see; the SDK folds this notice into
+  // the guest's own `document.hidden` (`adoptHostVisibility` in `@sdk/apps/host`).
+  private tellVisibility(src: string): void {
+    this.postToGuest(src, { type: VISIBILITY_MESSAGE, hidden: this.containers.get(src)?.className !== SHOWN_CLASS });
   }
 
   /**
@@ -197,6 +216,7 @@ class IframeRegistry {
 
       // Show iframe
       container.className = SHOWN_CLASS;
+      this.tellVisibility(src);
 
       // Set up resize observer to keep position updated
       const resizeObserver = new ResizeObserver(() => {
@@ -249,6 +269,7 @@ class IframeRegistry {
     const container = this.containers.get(src);
     if (container) {
       container.className = PARKED_CLASS;
+      this.tellVisibility(src);
     }
     this.clearPositionTracking(src);
   }
