@@ -209,7 +209,7 @@ class ProjectTree:
         apps = await WebApp.get_all({"match": {"project_id": self.pid}})
         # A row whose folder is gone (an app removed, an old install's path) has nothing to set up here:
         # left in, each one failed forever and nothing could clear it.
-        return [app for app in apps if app.asset_ref and Path(app.asset_ref).is_dir()]
+        return [app for app in apps if app.is_file_backed() and app.on_disk()]
 
     def _webapp_node(self, app) -> str:
         node_id = str(app.typeid)

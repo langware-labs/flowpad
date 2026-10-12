@@ -71,21 +71,14 @@ def load_state(project_id: str, *, asset: str = "") -> Optional[LoadResult]:
     return result.model_copy(update={"asset": asset or None}) if result is not None else None
 
 
-def _configuration_failure(node, apart: frozenset = frozenset()) -> str:
-    """Unmet checks are pending; invalid declarations are failures even in check mode. ``apart``:
-    nodes that stand on their own and are not the one being shown — their trouble is theirs."""
-    if node is None or node.id in apart:
+def _configuration_failure(node, target: str = "") -> str:
+    """Unmet checks are pending; invalid declarations are failures even in check mode. A node that
+    stands on its own and is not the one being shown keeps its trouble to itself."""
+    if node is None or (node.independent and node.id != target):
         return ""
     if node.state in (SetupState.FAILED, SetupState.REFUSED):
         return node.detail
-    return next((detail for child in node.children if (detail := _configuration_failure(child, apart))), "")
-
-
-async def _apart(tree, target: str) -> frozenset:
-    """The root's children that stand on their own (web apps), except the one being shown."""
-    root = await tree.resolve_node(tree.root)
-    nodes = [(child, await tree.resolve_node(child)) for child in (root.children if root else ())]
-    return frozenset(child for child, node in nodes if node is not None and node.independent and child != target)
+    return next((detail for child in node.children if (detail := _configuration_failure(child, target))), "")
 
 
 def _unmet(result, target: str) -> str:
@@ -96,7 +89,7 @@ def _unmet(result, target: str) -> str:
             return node
         return next((hit for child in node.children if (hit := find(child)) is not None), None)
 
-    node = find(getattr(result, "root", None)) if target else None
+    node = find(result.root) if target else None
     if node is None or node.state in (SetupState.DONE, SetupState.SKIPPED):
         return ""
     return f"{node.label}: {node.detail}" if node.detail else f"{node.label} is not set up"
@@ -139,7 +132,7 @@ async def load_project(project: Any, *, approved: bool = False, asset: Any = Non
                           check_only=True, approved=True)
             prerequisites = await execute_setup(tree.root, resolve_node=tree.resolve_node,
                                                 resolve_op=tree.resolve_op, **common)
-            problem = _configuration_failure(prerequisites.root, await _apart(tree, target))
+            problem = _configuration_failure(prerequisites.root, target)
             if problem:
                 raise ValueError(problem)
             missing = next((c for c in children if c.state is LoadState.SETUP_REQUIRED), None)
@@ -153,7 +146,10 @@ async def load_project(project: Any, *, approved: bool = False, asset: Any = Non
                 operational = LoadTree(tree)
                 running = await execute_setup(tree.root, resolve_node=operational.resolve_node,
                                                resolve_op=operational.resolve_op, **common) if not needs_setup else None
-                loaded = running is not None and running.ok and not _unmet(running, target)
+                # Showing one app: it is up, whatever the apps beside it are. Otherwise everything up, not
+                # merely nothing held up — an app that is down still gets its load run, which starts it.
+                loaded = running is not None and running.ok and (
+                    not _unmet(running, target) if target else running.done == running.total)
                 if loaded and all(c.state is LoadState.READY for c in children):
                     result = LoadResult(state=LoadState.READY, project_id=pid)
                 else:
