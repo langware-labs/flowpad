@@ -20,7 +20,7 @@ import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { withHomePage } from '@src/project-home-page/home-page-state';
 import { AlertTriangle, CheckCircle2, GitBranch, Loader2 } from 'lucide-react';
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 
 /**
@@ -63,7 +63,8 @@ export function IncomingProjectDialog({
 }: Props) {
   const { t } = useLingui();
   const { computeNode } = useAgentContext();
-  const { navigation } = useDockNavigation();
+  const { navigation, currentDock } = useDockNavigation();
+  const here = currentDock?.toUrl() ?? '';
   const cloneGitProject = useCloneGitProjectAndOpen();
   const installSharedProject = useInstallSharedProjectAndOpen();
   const landInProject = useSelectExistingProject();
@@ -77,6 +78,8 @@ export function IncomingProjectDialog({
   const [attemptedName, setAttemptedName] = useState('');
   const [nameOverride, setNameOverride] = useState('');
   const startedRef = useRef(false);
+  /** The location a set-up started on: once it succeeds, the dialog stays up until the app has left it. */
+  const [setupFrom, setSetupFrom] = useState<string | null>(null);
 
   const originLabel = formatFSOrigin(gitOrigin);
   const branch = isGitOrigin(gitOrigin) ? gitOrigin.branch || '' : '';
@@ -90,6 +93,7 @@ export function IncomingProjectDialog({
     setSuggestedName('');
     setAttemptedName('');
     setNameOverride('');
+    setSetupFrom(null);
     onClose();
   }, [onClose]);
 
@@ -110,13 +114,12 @@ export function IncomingProjectDialog({
         if (!project) throw new Error(t`That project is no longer available.`);
         await installSharedProject(project);
         setStep('success');
-        setTimeout(handleClose, 600);
       } catch (e) {
         setErrorMsg(e instanceof Error ? e.message : String(e));
         setStep('error');
       }
     },
-    [handleClose, installSharedProject, t],
+    [installSharedProject, t],
   );
 
   const runClone = useCallback(
@@ -140,7 +143,6 @@ export function IncomingProjectDialog({
       });
       if (result.kind === 'ok') {
         setStep('success');
-        setTimeout(handleClose, 600);
         return;
       }
       if (result.kind === 'collision') {
@@ -153,7 +155,7 @@ export function IncomingProjectDialog({
       setErrorMsg(result.message);
       setStep('error');
     },
-    [computeNode, gitOrigin, branch, cloneGitProject, handleClose, t],
+    [computeNode, gitOrigin, branch, cloneGitProject, t],
   );
 
   /** The name is taken here: open the project that holds it. */
@@ -173,7 +175,6 @@ export function IncomingProjectDialog({
         if (!project) throw new Error(t`That project is no longer available.`);
         await landInProject(project);
         setStep('success');
-        setTimeout(handleClose, 600);
       } catch (e) {
         const taken = nameConflictOf(e);
         if (taken) {
@@ -186,8 +187,19 @@ export function IncomingProjectDialog({
         setStep('error');
       }
     },
-    [handleClose, landInProject, t],
+    [landInProject, t],
   );
+
+  // Close only once the app has left the page the set-up started on. Landing in the project
+  // redirects to its home page, which may be an agent's chat or an app rather than the project
+  // dock, and on a slow machine that loader takes a while: a dialog that closed on a timer left
+  // the app home showing, with a prompt box that looked usable but was about to be navigated away.
+  useEffect(() => {
+    if (step === 'cloning') setSetupFrom((from) => from ?? here);
+  }, [step, here]);
+  useEffect(() => {
+    if (step === 'success' && setupFrom !== null && here !== setupFrom) handleClose();
+  }, [step, setupFrom, here, handleClose]);
 
   const handleConfirm = useCallback(() => {
     if (startedRef.current) return;
@@ -362,15 +374,20 @@ export function IncomingProjectDialog({
 
         {/* Success */}
         {step === 'success' && (
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <CheckCircle2 className="h-5 w-5 text-emerald-500" />
-              <Trans>Ready!</Trans>
-            </DialogTitle>
-            <DialogDescription>
-              <Trans>Opening your project…</Trans>
-            </DialogDescription>
-          </DialogHeader>
+          <>
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <CheckCircle2 className="h-5 w-5 text-emerald-500" />
+                <Trans>Ready!</Trans>
+              </DialogTitle>
+              <DialogDescription>
+                <Trans>Opening your project…</Trans>
+              </DialogDescription>
+            </DialogHeader>
+            <div className="flex items-center justify-center py-8">
+              <Loader2 className="h-8 w-8 animate-spin text-primary" />
+            </div>
+          </>
         )}
 
         {/* Error */}

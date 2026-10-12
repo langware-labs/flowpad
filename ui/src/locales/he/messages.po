@@ -1309,7 +1309,7 @@ msgstr "פרויקט שותף איתך על ידי <0>{senderName}</0>"
 
 #: src/components/task-receive/IncomingProjectDialog.tsx
 msgid "<0>{takenAgain}</0> is taken too. Choose another name."
-msgstr ""
+msgstr "<0>{takenAgain}</0> תפוס גם הוא. בחרו שם אחר."
 
 #: src/components/search-index/SweepOrphansDialog.tsx
 msgid "<0>Delete</0> — remove the DB row <1>and</1> the shadow record dir. Reclaims disk space; no recovery path."
@@ -3139,7 +3139,7 @@ msgstr "העברת ההרצה הזו לארכיון והתחלת רשומה חד
 #: src/components/conversation/conversation-category.ts
 #: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Archived"
-msgstr "ממופקד"
+msgstr "מאורכב"
 
 #: src/components/account/database-section.tsx
 msgid "Are you sure you want to clear all data from the database? This will also clear the scan index. A backup will be created first."
@@ -7936,7 +7936,7 @@ msgstr "מחק מפתח API"
 
 #: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Delete archived conversations"
-msgstr "מחוק שיחות ממופקדות"
+msgstr "מחיקת שיחות מאורכבות"
 
 #: src/components/project-activity-strip/BookmarkCard.tsx
 msgid "Delete bookmark"
@@ -12519,7 +12519,7 @@ msgstr "התקן והפעל מחדש"
 
 #: src/components/conversation/asset-review/ProjectInstallAction.tsx
 msgid "Install as this name"
-msgstr ""
+msgstr "התקינו בשם הזה"
 
 #: src/components/browseable-tree/adapters/assetContextFoldersRoot.tsx
 msgid "Install dependency"
@@ -15397,7 +15397,7 @@ msgstr "עדיין אין הערות"
 
 #: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "No archived conversations"
-msgstr "אין שיחות ממופקדות"
+msgstr "אין שיחות מאורכבות"
 
 #: src/components/artifacts/artifacts-list.tsx
 msgid "No artifacts yet"
@@ -17668,7 +17668,7 @@ msgstr "פתח הודעה"
 #: src/components/conversation/asset-review/ProjectInstallAction.tsx
 #: src/components/task-receive/IncomingProjectDialog.tsx
 msgid "Open my project"
-msgstr ""
+msgstr "פתחו את הפרויקט שלי"
 
 #: src/components/terminal/openers/TerminalOpenerToolbar.tsx
 msgid "Open new tab menu"
@@ -28505,11 +28505,11 @@ msgstr ""
 #. placeholder {0}: conflict.attempted_name
 #: src/components/conversation/asset-review/ProjectInstallAction.tsx
 msgid "You already have a project named <0>{0}</0>. Open it, or install this one under another name."
-msgstr ""
+msgstr "כבר יש לך פרויקט בשם <0>{0}</0>. פתחו אותו, או התקינו את הפרויקט הזה בשם אחר."
 
 #: src/components/task-receive/IncomingProjectDialog.tsx
 msgid "You already have a project named <0>{projectName}</0>. Open it, or set this one up under another name."
-msgstr ""
+msgstr "כבר יש לך פרויקט בשם <0>{projectName}</0>. פתחו אותו, או הגדירו את הפרויקט הזה בשם אחר."
 
 #~ msgid "you are {role}"
 #~ msgstr ""
