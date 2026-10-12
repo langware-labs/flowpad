@@ -712,10 +712,15 @@ subscribers all the way down.
 
 | site | tag | target | data |
 |---|---|---|---|
-| every row write of `Dataset` (`append`, `put`, `put_many`, `sync`, `delete_rows`, `rename_row`, `annotate`, `set_data`) | `dataset.rows.changed` | `dataset:<id>` | `{op: put \| delete \| rename \| sync, keys (at most 100), count}` — keys, never values |
+| every row write of `Dataset` (`append`, `put`, `put_many`, `sync`, `delete_rows`, `rename_row`, `annotate`, `set_data`) | `dataset.rows.changed` | `dataset:<id>` | `{op: put \| delete \| rename \| sync, keys (at most 100), count, version}` — keys, never values; `version` is the rows as a whole after the write |
 
 One event per CALL (a sync of two thousand rows is one), forwarded to the app
 (`FORWARDED_TAG_PATTERNS`); TypeScript listens with `dataset.onRowsChanged(handler)`. A writer that
 is not the server (a sync script) has no bus the app can hear, so it tells the instance
 (`Dataset.announce` → the `rows-changed` action, which only emits). Laws 4 and 5 apply as written:
-nothing is stored and nothing is replayed — a listener re-reads the rows, and re-reads on focus too.
+nothing is stored and nothing is replayed — a listener re-reads the rows it shows. What the bus does
+not replay, the listener recovers by comparison: `version` (`layout.rows_version`, a stat digest of
+the row files, so any write by anyone moves it) rides on every event and on `GET rows`, and
+`onRowsChanged` asks `GET rows-version` when its socket reconnects — one small read — and calls the
+handler once with `{op: sync, keys: [], count: 0, version}` only when the version is one it neither
+heard nor its dataset instance read. The event is enough: no timer, no re-read on focus.

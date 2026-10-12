@@ -176,17 +176,15 @@ async def _drop_gone(source: DataSource, listed: frozenset) -> int:
     """Remove this source's stored records that the outside system no longer has -- ``listed`` is its
     whole collection, proven by the pass (``Pass.listed``). Returns how many went.
 
-    One guard, learned from mirrors: a listing that comes back EMPTY while records are stored removes
-    nothing. An outage that answers "200, no rows" is far likelier than a collection emptied in one
-    step, and the cost of being wrong is every record and every row mirrored from it."""
+    An EMPTY listing is as much proof as any other: the pass read the collection from start to end
+    without an error (an outage raises and is classified by ``sync_source``; it never reaches here),
+    so a collection that answers "no rows" has none, and the last record goes like the others. A
+    source that cannot tell "no rows" from "no answer" must raise, not list nothing."""
     from flow_sdk.builtin.source_item import SourceItem  # noqa: PLC0415
 
     stored = await SourceItem.get_all({"data_source_id": str(source.id)}) or []
     gone = [item for item in stored if item.external_id not in listed]
-    if not gone or not listed:
-        if gone:
-            logger.warning("[ingest] %s/%s listed nothing while %d records are stored: none removed",
-                           source.provider, source.name or source.account_key, len(gone))
+    if not gone:
         return 0
     for item in gone:
         await item.delete()

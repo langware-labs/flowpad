@@ -29,7 +29,7 @@ import {
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
 import { TabTooltipName } from '@src/components/tabs/TabTooltipName';
 import { TabFavoriteStar } from '@src/components/tabs/TabFavoriteStar';
-import { scanLabelBox, TabScanLabel, type ScanLabelBox } from '@src/components/tabs/TabScanLabel';
+import { isSeeThrough, placeScanTab, type ScanAnchor } from '@src/components/tabs/tab-scan';
 import type { FavoriteRef } from '@src/hooks/use-favorites';
 import { useLocaleInfo } from '@src/contexts/locale-context';
 import { useIsAdvanced } from '@src/contexts/view-mode-context';
@@ -37,7 +37,8 @@ import { useCloseOnIframeFocus } from '@src/hooks/use-close-on-iframe-focus';
 import { animateGlow } from '@src/lib/animate-glow';
 import { consumeTabHighlight, TAB_HIGHLIGHT_MS, useTabHighlights } from '@src/tabs/tab-highlight';
 import { ExternalLink, X, type LucideIcon } from 'lucide-react';
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Trans } from '@lingui/react/macro';
 import { useLingui } from '@lingui/react/macro';
 
@@ -173,10 +174,21 @@ const CHIP_MAX_PX = 200;
 const CHIP_MIN_PX = 40;
 const COMPACT_BELOW_PX = 110;
 const ICON_ONLY_BELOW_PX = 64;
-/** How long a hover is a SCAN. Past it the pointer has settled on this tab: the
- *  scan label steps aside for the chip's own star and hover card. Matches the
- *  `delay-[2000ms]` on the star (a Tailwind literal, so it can't share this). */
-const SCAN_HOVER_MS = 2000;
+/** How long the pointer rests on a tab before its bookmark star takes the
+ *  icon's place. `afterHover` below says the same 2000ms in CSS (a Tailwind
+ *  literal cannot read a constant) — change them together. */
+const STAR_AFTER_MS = 2000;
+type StarMode = 'off' | 'on' | 'afterHover';
+const STAR_ICON_CLASS: Record<StarMode, string> = {
+  off: '',
+  on: 'invisible',
+  afterHover: 'transition-[visibility] duration-0 group-hover:invisible group-hover:delay-[2000ms]',
+};
+const STAR_CLASS: Record<StarMode, string> = {
+  off: '',
+  on: '',
+  afterHover: 'invisible transition-[visibility] duration-0 group-hover:visible group-hover:delay-[2000ms]',
+};
 
 export const TabStrip: React.FC<TabStripProps> = ({
   items,
@@ -220,19 +232,19 @@ export const TabStrip: React.FC<TabStripProps> = ({
   const renameInputRef = useRef<HTMLInputElement>(null);
   const shouldSelectRenameInputRef = useRef(false);
 
+  // The scanner's one piece of state (see tab-scan.ts): which chip is being
+  // read, and what was measured to place its widened twin.
+  const [scan, setScan] = useState<{ key: string; anchor: ScanAnchor } | null>(null);
+
   // Density: one ResizeObserver on the row; all chips share one width
   // (row / count, clamped to the chip max), so a single strip-level state
   // keeps every chip's composition identical — no per-chip measurement.
-  // The scanner's one piece of state (see TabScanLabel): which chip is being
-  // read, and where its label sits.
-  const [scan, setScan] = useState<{ key: string; box: ScanLabelBox } | null>(null);
-
   const [density, setDensity] = useState<ChipDensity>('normal');
   useEffect(() => {
     const container = tabContainerRef.current;
     if (!container) return;
     const compute = () => {
-      // The chips just re-flowed under a resting pointer: a scan label's
+      // The chips just re-flowed under a resting pointer: the widened tab's
       // measured box is stale, and no pointer event will say so.
       setScan(null);
       // Unmeasurable container (0 width — e.g. jsdom, display:none host):
@@ -428,32 +440,59 @@ export const TabStrip: React.FC<TabStripProps> = ({
     [onReorderPreview, onReorderCommit, anchorsAt, editingKey],
   );
 
-  // ── Scanner: the hovered chip at full width (TabScanLabel) ──────────────────
+  // ── Scanner: the hovered chip, widened in place (tab-scan.ts) ───────────────
   // Measured once, on entry — only a chip whose title is actually cut gets one.
-  // It ends when the pointer leaves the ROW, not the chip: crossing the 1px
-  // separator between two chips must hand the label over, not blink it.
-  const scanKey = scan?.key;
+  // The widened tab then sits over its chip and takes the pointer itself, so
+  // the scan lasts while the pointer is on it, on the row, or on something the
+  // tab opened (its menu, its hover card) — one document listener, only while
+  // a scan is on, because those are not one DOM subtree. An open menu holds the
+  // scan wherever the pointer is: the menu belongs to the widened tab, and
+  // ending the scan would close it on the way to its first item.
+  const scanTabRef = useRef<HTMLDivElement>(null);
 
   const startScan = (e: React.PointerEvent<HTMLDivElement>, key: string) => {
-    if (e.pointerType === 'touch') return; // touch has no hover
+    if (e.pointerType === 'touch' || editingKey) return; // touch has no hover
     const chip = e.currentTarget;
     const title = chip.querySelector<HTMLElement>('[data-tab-title]');
     if (title && title.scrollWidth <= title.clientWidth) return setScan(null);
-    const rect = chip.getBoundingClientRect();
-    const buttons = chip.querySelector<HTMLElement>('[data-tab-buttons]');
-    const buttonsRect = buttons?.childElementCount ? buttons.getBoundingClientRect() : null;
-    const closeSlotPx = !buttonsRect ? 0 : dir === 'rtl' ? buttonsRect.right - rect.left : rect.right - buttonsRect.left;
+    if (scan?.key === key) return; // widened back: see-through, so its own chip still gets the pointer
     const row = tabContainerRef.current!.getBoundingClientRect();
-    setScan({ key, box: scanLabelBox(rect, closeSlotPx, dir, row, document.documentElement.clientWidth) });
+    const viewportPx = document.documentElement.clientWidth;
+    setScan({ key, anchor: { chip: chip.getBoundingClientRect(), row, dir, viewportPx } });
   };
 
+  // After STAR_AFTER_MS on one tab: its star takes the icon's place. A
+  // see-through tab cannot offer the star itself, so it steps aside for its chip.
+  const scanKey = scan?.key;
+  const [settledKey, setSettledKey] = useState<string | null>(null);
+  const scanSettled = !!scanKey && settledKey === scanKey;
   useEffect(() => {
     if (!scanKey) return;
-    const timer = setTimeout(() => setScan(null), SCAN_HOVER_MS);
+    const settle = () => (isSeeThrough(scanTabRef.current) ? setScan(null) : setSettledKey(scanKey));
+    const timer = setTimeout(settle, STAR_AFTER_MS);
     return () => clearTimeout(timer);
   }, [scanKey]);
 
-  const scanItem = scan ? items.find((i) => i.key === scan.key) : undefined;
+  useEffect(() => {
+    if (!scanKey) return;
+    const onMove = (e: PointerEvent) => {
+      const at = e.target instanceof Element ? e.target : null;
+      const inside =
+        tabContainerRef.current?.contains(at) ||
+        scanTabRef.current?.contains(at) ||
+        at?.closest('[data-radix-popper-content-wrapper]') ||
+        document.querySelector('[role="menu"]');
+      if (!inside) setScan(null);
+    };
+    document.addEventListener('pointermove', onMove);
+    return () => document.removeEventListener('pointermove', onMove);
+  }, [scanKey]);
+
+  useLayoutEffect(() => {
+    if (scan && scanTabRef.current) placeScanTab(scanTabRef.current, scan.anchor);
+  }, [scan]);
+
+  const scanIndex = scan ? items.findIndex((i) => i.key === scan.key) : -1;
 
   const activeIndex = allVisibleItems.findIndex((i) => i.key === activeKey);
 
@@ -463,14 +502,13 @@ export const TabStrip: React.FC<TabStripProps> = ({
   // color so it reads over truncated text; close is always visible on the
   // active chip, hover-revealed on inactive ones; popout is hover-only and
   // drops out below normal density.
-  const renderButtonOverlay = (key: string, isActive: boolean, isDisabled: boolean, closable = true) => (
+  const renderButtonOverlay = (key: string, isActive: boolean, isDisabled: boolean, closable = true, isScanTab = false) => (
     <div
-      data-tab-buttons
       className={`absolute end-0.5 top-1/2 z-10 flex -translate-y-1/2 items-center gap-0.5 rounded transition-opacity ${
-        isActive ? 'bg-background opacity-100' : 'bg-muted opacity-0 group-hover:opacity-100'
+        isActive ? 'bg-background opacity-100' : `bg-muted ${isScanTab ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`
       }`}
     >
-      {density === 'normal' && onPopout && (
+      {density === 'normal' && !isScanTab && onPopout && (
         <button
           onClick={(e) => {
             e.stopPropagation();
@@ -502,28 +540,40 @@ export const TabStrip: React.FC<TabStripProps> = ({
   );
 
   // One chip in the single ordered row. `list` scopes close-others / close-right.
-  const renderChip = (item: TabStripItem, index: number, list: TabStripItem[]) => {
+  // `isScanTab` renders the same chip a second time as the scanner's widened tab:
+  // full title, fixed over the strip, placed by `placeScanTab`.
+  const renderChip = (item: TabStripItem, index: number, list: TabStripItem[], isScanTab = false) => {
     const { key } = item;
     const isActive = activeKey === key;
     const isDisabled = !!item.isDisabled;
     const hasError = !!item.hasError;
     const isEditing = editingKey === key;
-    const iconOnly = density === 'icon' && !isEditing;
+    const iconOnly = density === 'icon' && !isEditing && !isScanTab;
+    // A chip waits out the delay in CSS; the widened tab mounts already hovered,
+    // where a CSS delay cannot run, so the scan's own timer decides for it.
+    const starMode: StarMode =
+      !item.favorite || isEditing ? 'off' : !isScanTab ? 'afterHover' : scanSettled ? 'on' : 'off';
 
     // Chrome model: equal flex share for every chip — all tabs stay visible and
     // shrink in lockstep; the strip never scrolls. Inline style (not Tailwind
     // literals) so the widths come from the same constants the density math
     // uses. An editing chip is temporarily pinned to the full preferred width
     // so the rename input is usable; neighbors re-equalize around it.
-    const sizing: React.CSSProperties = isEditing
+    const sizing: React.CSSProperties = isScanTab
+      ? { position: 'fixed' }
+      : isEditing
       ? { width: CHIP_MAX_PX, flex: 'none' }
       : { flex: `1 1 ${CHIP_MAX_PX}px`, minWidth: CHIP_MIN_PX, maxWidth: CHIP_MAX_PX };
 
     const tabContent = (
       <div
-        ref={(node) => {
-          tabRefs.current[key] = node;
-        }}
+        ref={
+          isScanTab
+            ? scanTabRef
+            : (node) => {
+                tabRefs.current[key] = node;
+              }
+        }
         style={sizing}
         // `border-t-2` on EVERY state, colored only when active: the accent has
         // to follow the `rounded-t-lg` curve, and a border does that natively.
@@ -535,7 +585,7 @@ export const TabStrip: React.FC<TabStripProps> = ({
           iconOnly ? 'justify-center gap-0 px-1' : 'gap-2 px-3'
         } ${
           isDisabled
-            ? 'cursor-not-allowed border-transparent bg-transparent text-muted-foreground/50'
+            ? `cursor-not-allowed border-transparent text-muted-foreground/50 ${isScanTab ? 'bg-muted' : 'bg-transparent'}`
             : hasError
               ? 'cursor-pointer border-destructive/40 bg-destructive/10 text-destructive hover:bg-destructive/15'
               : isActive
@@ -547,34 +597,29 @@ export const TabStrip: React.FC<TabStripProps> = ({
                 : // Inactive tabs are flat on the band (Chrome-style); the
                   // transparent border keeps their box metrics identical to the
                   // active chip so activation never shifts neighbors.
-                  'cursor-pointer border-transparent text-muted-foreground hover:bg-foreground/5 hover:text-foreground'
-        } ${dragKey === key ? 'opacity-60' : ''}`}
+                  // Over the strip the widened tab needs a surface of its own.
+                  isScanTab
+                  ? 'cursor-pointer border-border bg-muted text-foreground'
+                  : 'cursor-pointer border-transparent text-muted-foreground hover:bg-foreground/5 hover:text-foreground'
+        } ${dragKey === key ? 'opacity-60' : ''} ${isScanTab ? 'z-50 shadow-md' : ''}`}
         onPointerDown={(e) => startDrag(e, key, isDisabled)}
-        onPointerEnter={(e) => startScan(e, key)}
+        onPointerEnter={isScanTab ? undefined : (e) => startScan(e, key)}
         onClick={() => {
           if (isDisabled) return;
           if (justDraggedRef.current) return; // a drag just ended — don't navigate
           onSelect(key);
         }}
-        data-testid={item.testId}
-        data-terminal-target={key}
+        {...(isScanTab
+          ? { 'data-testid': 'tab-scan-tab' }
+          : { 'data-testid': item.testId, 'data-terminal-target': key, ...(item.dataAttributes ?? {}) })}
         data-active={isActive ? 'true' : undefined}
-        {...(item.dataAttributes ?? {})}
       >
         <span className="relative inline-flex shrink-0 items-center justify-center">
           {/* The star takes the icon's place only after a 2s hover: a pass over the
               chip on the way to a click must not land on the bookmark toggle. */}
-          <span
-            className={
-              item.favorite && !isEditing
-                ? 'inline-flex transition-[visibility] duration-0 group-hover:invisible group-hover:delay-[2000ms]'
-                : 'inline-flex'
-            }
-          >
-            {item.standsFor?.icon ?? item.icon}
-          </span>
-          {item.favorite && !isEditing && (
-            <span className="invisible absolute inset-0 flex items-center justify-center transition-[visibility] duration-0 group-hover:visible group-hover:delay-[2000ms]">
+          <span className={`inline-flex ${STAR_ICON_CLASS[starMode]}`}>{item.standsFor?.icon ?? item.icon}</span>
+          {item.favorite && starMode !== 'off' && (
+            <span className={`absolute inset-0 flex items-center justify-center ${STAR_CLASS[starMode]}`}>
               <TabFavoriteStar favorite={item.favorite} chip={() => tabRefs.current[key] ?? null} />
             </span>
           )}
@@ -603,7 +648,9 @@ export const TabStrip: React.FC<TabStripProps> = ({
               data-tab-title
               // The active chip's close button is persistent (overlay) — keep
               // the title clear of it; inactive titles reclaim the full width.
-              className={`min-w-0 flex-1 truncate text-sm font-medium ${isActive ? 'pe-4' : ''} ${item.titleClassName ?? ''}`}
+              // The widened tab takes its width FROM the title; a chip gives the
+              // title whatever the row leaves it.
+              className={`min-w-0 truncate text-sm font-medium ${isScanTab ? 'pe-4' : `flex-1 ${isActive ? 'pe-4' : ''}`} ${item.titleClassName ?? ''}`}
               onDoubleClick={(e) => {
                 if (!item.renameable) return;
                 e.stopPropagation();
@@ -615,7 +662,7 @@ export const TabStrip: React.FC<TabStripProps> = ({
           )
         )}
 
-        {!isEditing && renderButtonOverlay(key, isActive, isDisabled, item.closable !== false)}
+        {!isEditing && renderButtonOverlay(key, isActive, isDisabled, item.closable !== false, isScanTab)}
       </div>
     );
 
@@ -627,7 +674,7 @@ export const TabStrip: React.FC<TabStripProps> = ({
     // colour (both hsl 0 0% 14.9%), so the separator was drawn and invisible.
     const hideSeparator = !dragKey && (index - 1 === activeIndex || index === activeIndex);
     const separator =
-      index > 0 ? (
+      index > 0 && !isScanTab ? (
         <div
           aria-hidden
           className={`h-4 w-px shrink-0 self-center ${hideSeparator ? 'bg-transparent' : 'bg-foreground/20'}`}
@@ -637,7 +684,7 @@ export const TabStrip: React.FC<TabStripProps> = ({
     return (
       <React.Fragment key={key}>
         {separator}
-        <ContextMenu onOpenChange={(open) => open && setScan(null)}>
+        <ContextMenu>
           <TabChipTooltip trigger={<ContextMenuTrigger asChild>{tabContent}</ContextMenuTrigger>}>
             {item.card ? (
                 <TooltipContent side="bottom" className="p-0">
@@ -649,8 +696,7 @@ export const TabStrip: React.FC<TabStripProps> = ({
                 </TooltipContent>
               ) : isDisabled && item.statusReason ? (
                 <TooltipContent side="bottom">{item.statusReason}</TooltipContent>
-              ) : item.title && scanItem?.key !== key ? (
-                // The scan label is already showing the name in full.
+              ) : item.title && !isScanTab ? (
                 <TooltipContent side="bottom">
                   <TabTooltipName name={item.title} className="font-normal" />
                 </TooltipContent>
@@ -712,7 +758,6 @@ export const TabStrip: React.FC<TabStripProps> = ({
         ref={tabContainerRef}
         data-testid="terminal-tabs-row"
         className="flex min-w-0 flex-1 items-end overflow-hidden pe-1"
-        onPointerLeave={() => setScan(null)}
       >
         {items.map((item, index) => renderChip(item, index, items))}
       </div>
@@ -750,16 +795,7 @@ export const TabStrip: React.FC<TabStripProps> = ({
         </TooltipProvider>
       )}
 
-      {scan && scanItem && (
-        <TabScanLabel
-          box={scan.box}
-          active={scanItem.key === activeKey}
-          icon={scanItem.standsFor?.icon ?? scanItem.icon}
-          badge={scanItem.badge}
-          title={scanItem.standsFor?.title ?? scanItem.title}
-          titleClassName={scanItem.titleClassName}
-        />
-      )}
+      {scanIndex >= 0 && createPortal(renderChip(items[scanIndex], scanIndex, items, true), document.body)}
     </div>
   );
 };
