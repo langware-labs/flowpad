@@ -17,6 +17,7 @@ from functools import cache, cached_property, partial
 from pathlib import Path
 from typing import Any, Callable, ClassVar, Literal, Optional, get_args, get_origin
 
+from flow_sdk._driver_package import driver_module_identity
 from flow_sdk.api.api_types.identifier import is_valid_entity_id, mint_uuid
 from flow_sdk.assets.identity_carrier import (
     Absent,
@@ -971,11 +972,13 @@ class _ShapeTables:
 
 def _same_definition(prior: Any, shape: Any) -> bool:
     """Whether *shape* is *prior* defined again: two class objects with one module and one
-    qualified name. Two different classes that claim one kind still differ here."""
+    qualified name -- a notebook cell re-run, or a data driver reloaded after its file changed
+    (a new content digest in its package name, the same folder). Two different classes that
+    claim one kind still differ here."""
     return (
         isinstance(prior, type)
         and isinstance(shape, type)
-        and prior.__module__ == shape.__module__
+        and driver_module_identity(prior.__module__) == driver_module_identity(shape.__module__)
         and prior.__qualname__ == shape.__qualname__
     )
 

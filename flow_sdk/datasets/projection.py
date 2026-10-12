@@ -81,36 +81,32 @@ async def project_source(source: Any) -> Optional[dict]:
     return await dataset.mirror(source, mirror["map"], by=mirror.get("by") or source.provider)
 
 
-#: The source's ``error_code`` while its mirror needs a person: the sweep itself failed (a missing dataset,
-#: a map that does not fit the kind, a refusal), or it ran and some records did not fit the row kind
-#: (``misfit``). Like ``write_back_held``: ``health`` stays OK and the source keeps polling; the card says.
-MIRROR_FAILED = "mirror_failed"
-MIRROR_MISFIT = "mirror_misfit"
-_MIRROR_CODES = (MIRROR_FAILED, MIRROR_MISFIT)
-
-
-def _misfit_detail(misfit: list) -> str:
+def _misfit_detail(misfit: list) -> Optional[str]:
+    if not misfit:
+        return None
     keys = ", ".join(str(m.get("key")) for m in misfit[:3])
     more = f" and {len(misfit) - 3} more" if len(misfit) > 3 else ""
     return f"{len(misfit)} record(s) did not fit the row kind: {keys}{more}"
 
 
 async def _stamp_mirror(source: Any, code: Optional[str], detail: Optional[str]) -> None:
-    """Say on the source row how its mirror stands -- a code and its detail, or neither when it is fine.
-    Only a mirror code is ever cleared here: another code (a held write-back) is the sync's to clear."""
-    from flow_sdk.ingest.health import ERROR_DETAIL_MAX  # noqa: PLC0415
+    """Say on the source row how its mirror stands (``MIRROR_FAILED`` / ``MIRROR_MISFIT``, or neither
+    when it is fine) -- written only when that changes, so a steady state costs no write. Only a
+    mirror code is ever cleared here: another code (a held write-back) is the sync's to clear."""
+    from flow_sdk.ingest.health import MIRROR_CODES, stamp_error  # noqa: PLC0415
 
-    if code is None and source.error_code not in _MIRROR_CODES:
+    if code is None and source.error_code not in MIRROR_CODES:
         return
-    if code is None and source.error_code is None:
-        return
-    source.error_code = code
-    source.error_detail = detail[:ERROR_DETAIL_MAX] if detail else None
-    await source.save_runtime()
+    before = (source.error_code, source.error_detail)
+    stamp_error(source, code, detail)
+    if (source.error_code, source.error_detail) != before:
+        await source.save_runtime()
 
 
 async def _project(source_id: str) -> None:
     from flow_sdk.builtin.data_source import DataSource  # noqa: PLC0415
+
+    from flow_sdk.ingest.health import MIRROR_FAILED, MIRROR_MISFIT  # noqa: PLC0415
 
     source = await DataSource.get_by_id(source_id)
     if source is None or not source.mirror:
@@ -123,7 +119,7 @@ async def _project(source_id: str) -> None:
     logger.info("[mirror] %s → %s: %s", source.name, source.mirror["dataset"],
                 {k: len(v) if isinstance(v, list) else v for k, v in (done or {}).items()})
     misfit = (done or {}).get("misfit") or []
-    await _stamp_mirror(source, MIRROR_MISFIT if misfit else None, _misfit_detail(misfit) if misfit else None)
+    await _stamp_mirror(source, MIRROR_MISFIT if misfit else None, _misfit_detail(misfit))
 
 
 async def _on_sync(event: Any) -> None:
@@ -255,26 +251,28 @@ class _Records:
 
 def _rows_by(dataset: Any, field: str, values: list) -> dict:
     """``{value: row}`` for the rows whose ``field`` (``key``, or ``input.<name>``) holds one of
-    ``values`` -- each read by itself, never the whole dataset."""
-    out = {}
-    for value in values:
-        if value in (None, "") or value in out:
-            continue
-        rows = dataset.rows({field: value})["rows"]
-        if rows:
-            out[value] = rows[0]
-    return out
+    ``values`` -- ONE read, matched in the query language (``$IN``)."""
+    wanted = [v for v in values if v not in (None, "")]
+    if not wanted:
+        return {}
+    rows = dataset.rows({"op": "$IN", "operands": [field, wanted]})["rows"]
+    return {field_of_row(row, field): row for row in rows}
 
 
-def _unlinked(shape: dict, name: str, record: Any, before: Any, outside_id: Any) -> list:
-    """The outside ids a list link field holds in the RECORD that the row did not resolve (no row to
-    link to when it was mirrored) -- what a write of that field would silently drop."""
+def field_of_row(row: dict, field: str) -> Any:
+    """A row's ``key``, or the ``input.<name>`` the query language names."""
+    return row["key"] if field == "key" else row["input"].get(field.removeprefix("input."))
+
+
+def _unlinked(shape: dict, name: str, record: Optional[dict], before: Any, outside_id: Any) -> list:
+    """The outside ids a list link field holds in the RECORD (dumped) that the row did not resolve (no
+    row to link to when it was mirrored) -- what a write of that field would silently drop."""
     from flow_sdk.datasets.query import Many, field_of  # noqa: PLC0415
 
     spec = shape["input"].get(name)
     if not is_link(spec) or not spec["path"].endswith(".*") or record is None:
         return []
-    theirs = field_of(record.model_dump(mode="json"), spec["path"])
+    theirs = field_of(record, spec["path"])
     theirs = [str(v) for v in (list(theirs) if isinstance(theirs, Many) else [theirs]) if v not in (None, "")]
     ours = {str(outside_id(ref, spec["by"])) for ref in (before or []) if ref}
     return [v for v in theirs if v not in ours]
@@ -352,7 +350,8 @@ async def write_through(dataset: Any, rows: list[tuple[Optional[str], dict]], by
             # is NOT the row's to shrink: writing the list as the row has it would drop those links
             # in the outside system. Refused before any I/O; mirror the linked rows first.
             record = await records.get(old.get(key_field_))
-            lost = {name: _unlinked(shape, name, record, old.get(name), outside_id) for name in sent}
+            dumped = record.model_dump(mode="json") if record is not None else None
+            lost = {name: _unlinked(shape, name, dumped, old.get(name), outside_id) for name in sent}
             lost = {name: ids for name, ids in lost.items() if ids}
             if lost:
                 raise LinkError([{"path": f"input.{name}", "code": "unlinked",
