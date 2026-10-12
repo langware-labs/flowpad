@@ -1124,6 +1124,10 @@ msgstr "{repeats} of these already have a budget in {teamName}; their caps will 
 msgid "{rows} rows"
 msgstr "{rows} rows"
 
+#: src/components/assets/DiagnosisRequestsAssetList.tsx
+msgid "{runs} runs · last {last}"
+msgstr "{runs} runs · last {last}"
+
 #: src/components/automations/automation-words.ts
 msgid "{s}s"
 msgstr "{s}s"
@@ -13925,6 +13929,7 @@ msgstr "Loading..."
 #: src/components/ask/AskForm.tsx
 #: src/components/ask/AskModal.tsx
 #: src/components/assets/AssetListView.tsx
+#: src/components/assets/DiagnosisRequestsAssetList.tsx
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
@@ -15598,6 +15603,10 @@ msgstr "No description yet."
 #: src/components/account/system-diagnoses.tsx
 msgid "No diagnoses recorded."
 msgstr "No diagnoses recorded."
+
+#: src/components/assets/DiagnosisRequestsAssetList.tsx
+msgid "No diagnosis requests"
+msgstr "No diagnosis requests"
 
 #: src/components/assets/editor/revisions/AssetDiffTabs.tsx
 msgid "No differences from the current version."

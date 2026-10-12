@@ -1124,6 +1124,10 @@ msgstr ""
 msgid "{rows} rows"
 msgstr ""
 
+#: src/components/assets/DiagnosisRequestsAssetList.tsx
+msgid "{runs} runs · last {last}"
+msgstr ""
+
 #: src/components/automations/automation-words.ts
 msgid "{s}s"
 msgstr ""
@@ -13925,6 +13929,7 @@ msgstr "جاري التحميل..."
 #: src/components/ask/AskForm.tsx
 #: src/components/ask/AskModal.tsx
 #: src/components/assets/AssetListView.tsx
+#: src/components/assets/DiagnosisRequestsAssetList.tsx
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
@@ -15598,6 +15603,10 @@ msgstr ""
 #: src/components/account/system-diagnoses.tsx
 msgid "No diagnoses recorded."
 msgstr "لا توجد تشخيصات مسجلة."
+
+#: src/components/assets/DiagnosisRequestsAssetList.tsx
+msgid "No diagnosis requests"
+msgstr ""
 
 #: src/components/assets/editor/revisions/AssetDiffTabs.tsx
 msgid "No differences from the current version."
