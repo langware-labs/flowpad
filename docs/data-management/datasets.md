@@ -409,9 +409,12 @@ Eight verbs, the same in Python, TypeScript, REST and `dm_ctl`:
 (`delete` and `rename` alone are the ENTITY's verbs — they act on the dataset itself — so the row
 verbs carry `_row`. Writes are awaited; reads are plain calls.)
 
-Four laws. (1) Every write is checked first and is all or nothing. (2) A refusal is read by
+Four laws. (1) Every write is checked first and is all or nothing — except a MIRROR of an outside
+system (`mirror`, `sync(lenient=True)`), which keeps a record that does not fit as a problem row and
+writes the rest (see [mirroring a system of record](mirroring-a-system-of-record.md)). (2) A refusal is read by
 `details[].code` — `[{path, code, message}]` on every refusal, with `errors` as its lines: **400** the
-row does not fit (`shape:<type>`, `dangling_ref`, `inline_row`, `rule`, `unique`, `owned`, `row`),
+row does not fit (`shape:<type>`, `dangling_ref`, `inline_row`, `rule`, `unique`, `owned`, `row`,
+and in a mirrored dataset `not_writable`, `source_refused`, `unlinked`),
 **404** no such row, **409** it changed since (`conflict`, `gone`) or is still linked to (`referenced`).
 In Python these are `RowRefused` (alias `LinkError`), `LookupError`, `ConflictError`. (3) One bad row
 never hides the others. (4) A change is announced as a hint (`dataset.rows.changed`: keys, never
@@ -449,7 +452,7 @@ chooses is `a-z 0-9 _ -`; `append` numbers rows that bring none (`0001`, `0002`,
 | `POST put-rows {rows, expected?}` | create or replace several rows (`[{key, input, …}]`) as ONE step: every row checked first, one that does not fit (400, `details` under `<key>.<path>`) or changed since `expected` (`{key: version}`, 409) writes nothing |
 | `POST delete-rows {keys, expected?}` | remove several rows as ONE step, or none: 404 a key that is no row, 409 a row changed since or still referenced. Rows removed together do not hold each other back |
 | `POST sync-rows {rows, prune?, match?}` | make the dataset hold exactly `rows` → `{created, updated, unchanged, deleted}`: a row that reads the same is not rewritten; rows not listed are removed unless `prune` is false, and only those `match` selects when given. All or nothing |
-| `POST mirror {source_id, map, by?, prune?, match?}` | make the dataset the typed mirror of a data source's items (`{key: <path>, input: {<field>: <path>}}`) → as `sync-rows`; see [mirroring a system of record](mirroring-a-system-of-record.md) |
+| `POST mirror {source_id, map, by?, prune?, match?}` | make the dataset the typed mirror of a data source's items (`{key: <path>, input: {<field>: <path>}}`) → as `sync-rows` plus `misfit?: [{key, details}]` (records kept as problem rows) and `unlinked?: [{key, field, value}]`; NOT all or nothing — one record that does not fit never stops the rest; see [mirroring a system of record](mirroring-a-system-of-record.md) |
 | `POST rows-changed {op, keys}` | a writer outside the server says rows changed (`Dataset.announce`); the server emits the event below. Writes nothing |
 | `POST validate` | every row read as the declared schema; names each row that does not fit by its `key` (and `example_id`), with its slot (`ground_truth.route`) |
 | `POST score` | each recorded `output` against its gold: a gold field left empty constrains nothing; several golds mean any one is right (`flow_sdk/datasets/score.py`) |

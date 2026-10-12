@@ -4,6 +4,7 @@
  * items into examples, `annotate` writes an example's gold label.
  */
 import { APIEntity, registerEntity } from '../APIEntity';
+import type { ApiWarning } from '../ApiResponse';
 import apiClient from '../client';
 import { IEntity, EntityMerge } from '../IEntity';
 import type { EvalExampleRow, EvalRun, EvalTrace } from '../evals/types';
@@ -183,6 +184,10 @@ export interface DatasetSyncResult {
   unchanged: string[];
   deleted: string[];
   num_examples: number;
+  /** `mirror` only: records whose value does not fit the row kind, kept as problem rows (`rows().problems`). */
+  misfit?: { key: string; details: CheckDetail[] }[];
+  /** `mirror` only: link ids no row holds, left out of the row. */
+  unlinked?: { key: string; field: string; value: string }[];
 }
 
 /** The tag a row write emits (`flow_sdk/builtin/dataset.py` `Dataset.ROWS_CHANGED`). */
@@ -341,11 +346,13 @@ export class Dataset extends APIEntity<Dataset> implements IDataset {
     return this.post('promote', { source_item_ids: sourceItemIds });
   }
 
-  /** Typed rows in — each checked against the declared shape; one bad row writes nothing. */
+  /** Typed rows in — each checked against the declared shape; one bad row writes nothing. In a mirrored
+   *  dataset a record the outside system made but not all of is still written, with `warnings`
+   *  (`source_partial`) saying what was not set. */
   async append(
     rows: DatasetRowInput[],
     options: { by?: string } = {},
-  ): Promise<{ example_ids: string[]; num_examples: number }> {
+  ): Promise<{ example_ids: string[]; num_examples: number; warnings?: ApiWarning[] }> {
     return this.post('append', { rows, ...writer(options) });
   }
 
@@ -434,7 +441,7 @@ export class Dataset extends APIEntity<Dataset> implements IDataset {
     key: string,
     row: Omit<DatasetRowInput, 'key'>,
     options: { expected?: string; by?: string } = {},
-  ): Promise<{ example_id: string; key: string; num_examples: number }> {
+  ): Promise<{ example_id: string; key: string; num_examples: number; warnings?: ApiWarning[] }> {
     return this.post('put-row', { key, row, ...(options.expected ? { expected: options.expected } : {}), ...writer(options) });
   }
 
@@ -450,7 +457,7 @@ export class Dataset extends APIEntity<Dataset> implements IDataset {
   async putMany(
     rows: DatasetKeyedRow[],
     options: { expected?: Record<string, string>; by?: string } = {},
-  ): Promise<{ example_ids: string[]; keys: string[]; num_examples: number }> {
+  ): Promise<{ example_ids: string[]; keys: string[]; num_examples: number; warnings?: ApiWarning[] }> {
     return this.post('put-rows', { rows, ...(options.expected ? { expected: options.expected } : {}), ...writer(options) });
   }
 

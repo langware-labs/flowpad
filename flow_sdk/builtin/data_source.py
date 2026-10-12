@@ -1443,12 +1443,16 @@ class DataSource(SetupSkippable, Entity):
     async def _record(self, written: Any, status: str) -> dict:
         """Keep what the outside system answered a write with, at once -- as a sent message is: the
         record here is current without waiting for the next sync, whose echo lands on the same row
-        (same origin). Answers ``{item_id, origin, status}``."""
+        (same origin). Answers ``{item_id, origin, status}``, plus ``warnings`` (``[str]``) when the
+        driver made the record but not all of it (``SourceItemSpec.warnings``)."""
         from flow_sdk.ingest.ingestor import ingest_items  # noqa: PLC0415
         from flow_sdk.ingest.legacy_lift import envelope_of  # noqa: PLC0415
 
         report = await ingest_items([envelope_of(written, data_source_id=str(self.id), provider=self.provider)])
-        return {"item_id": report.outcomes[0].entity_id, "origin": written.origin.model_dump(mode="json"), "status": status}
+        answer = {"item_id": report.outcomes[0].entity_id, "origin": written.origin.model_dump(mode="json"), "status": status}
+        if getattr(written, "warnings", ()):
+            answer["warnings"] = list(written.warnings)
+        return answer
 
     async def create_item(self, data: dict) -> dict:
         """Make one record IN THE OUTSIDE SYSTEM through the driver (as ``update_item``). ``data`` is the
