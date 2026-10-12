@@ -28,7 +28,7 @@ subfolder_count: 16
 - [Capabilities](capabilities.md) — Capability system entities: hierarchical kinds such as harness.claude.cli, persisted check/install/test results, dynamic MCP-server capabilities, and frontend hooks.
 - [ComputeNode action surface — pre-refactor STATUS](compute_node_action_audit.md) — Pre-refactor audit of the hub ComputeNode action surface: clean delegations, envelope problems, provider-bound actions and the planned migration steps.
 - [Contributing to Flowpad](contributing.md) — Getting a Flowpad dev environment running: prerequisites, backend and frontend startup, repository layout, and the contribution workflow.
-- [cookie-gate](cookie-gate.md) — Cookie-gate: an optional pre-shared secret locking an instance to invited callers — arming rules, the gate exchange endpoint and cookie attributes.
+- [cookie-gate](cookie-gate.md) — Cookie-gate: the local token every backend enforces (file, callers, direct-open grant, off switch) and the hub-armed sandbox secret — arming rules, the gate exchange endpoint and cookie attributes.
 - [Data Management](data-management.md) — Overview of the two-layer data model, filesystem FSRecords as source of truth plus SQLite database entities as queryable indexes, linking to detailed subsystem documents.
 - [debugMCP Setup](debugMCP-setup.md) — Setting up debugMCP: launching Chrome Canary with CDP, the debugMcp server, the standard Playwright MCP server, and the usage rules.
 - [Desktop install — test scenarios](desktop-install-test-scenarios.md) — Manual and scripted desktop install test scenarios for the Python pin, in-app Retry panel and clean-room release gate

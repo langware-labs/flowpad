@@ -4,13 +4,58 @@ id: 7cc7701f-f1f7-4956-85b9-6ec51416ad18
 
 # cookie-gate
 
-An optional pre-shared secret that locks an instance to callers who can prove they were sent to it.
+A secret that locks an instance to callers who can present it. There are two, checked in order:
 
-**Unset — the default, and every desktop install — nothing changes.** The gate costs one cached
-dict lookup per request and passes.
+- **Hub-armed** — a sandbox the hub armed over loopback. Everything below the local-token section
+  describes it, and it is unchanged by the local token.
+- **Local token** — every other backend, desktop included, since FLOWPAD-2233. See
+  [The local token](#the-local-token).
 
 **Set, the instance answers nothing without it.** Not the UI, not static assets, not the API, not a
 WebSocket. Just a blank Forbidden page.
+
+## The local token
+
+Without it the backend answered every request unauthenticated, so any web page could drive it: the
+FLOWPAD-2233 proof of concept created a shell (`POST /api/v1/graph/shell`) from a sandboxed iframe and
+ran a command through `run-detached`.
+
+**Where it lives.** `<flow_home>/instances/<instance>/.cookie_gate`, a plain file (0600 on posix; the
+user profile's inherited ACL on Windows). The middleware (`cookie_gate_middleware.py`) creates it on
+the first request it serves, then refuses any request that does not present it. It is the only
+backend code involved; the CLI and Electron read the same file.
+
+**Who presents it.**
+
+| Caller | How |
+|---|---|
+| `flow` CLI, workers, webhook relay, graph-workflow functions | `gate_headers` → `X-Cookie-Gate`, the token of the instance whose `server.json` names the URL's port |
+| Electron | `electron/cookie-gate.js`: the header on its health check, the cookie set in the window before every `loadURL` |
+| A browser opened by the user (typed URL, bookmark, OS launch) | the middleware sets the cookie on that page load (below) |
+| Scripts and assistant instructions | `-H "X-Cookie-Gate: $(cat <instance_dir>/.cookie_gate)"`, or the `flow` CLI |
+
+**What passes without the token.**
+
+- A **direct open**: `Sec-Fetch-Site: none`, `Sec-Fetch-Mode: navigate`, `Sec-Fetch-Dest: document` and
+  a `localhost`/`127.0.0.1` Host. Browsers set these headers and pages cannot, and `none` is what a
+  user-started load sends — never another site's page or link. The response sets the cookie. The Host
+  check stops a DNS-rebound name from being handed it. This is a header rule, not a path exemption.
+- A **CORS preflight** (`OPTIONS` with `Origin` and `Access-Control-Request-Method`): browsers never
+  attach cookies to one and no route runs; the request it clears is gated.
+
+**The desktop cookie** is `cookie-gate-<port>` (per port: cookies ignore the port, so one name would
+let two local instances overwrite each other), `HttpOnly`, `SameSite=Strict`, `Path=/`, one-year
+`Max-Age`, and deliberately **not** `Secure`/`__Host-`: on loopback they protect nothing, and Safari
+drops `Secure` cookies on `http://localhost`.
+
+**The off switch.** `FLOWPAD_COOKIE_GATE=off` stops the file being created. It never disarms a token
+that exists. The test suite, instance_ctl dev instances, docker-compose, CI e2e and every
+hub-launched box set it. Fails closed: with the switch unset, a token that cannot be created or read
+refuses the request.
+
+**Not covered yet** (follow-ups): pages on another `localhost` port (same site to the browser) still
+ride the cookie; browser login/OAuth/logout returns into a gated backend are refused; CORS still
+allows the `null` origin.
 
 ## Why
 
