@@ -8612,6 +8612,10 @@ msgstr "מגלה {typeLabel}…"
 msgid "Discuss"
 msgstr "דיון"
 
+#: src/i18n/pref-labels.ts
+msgid "Disk I/O backend"
+msgstr "מנוע קלט/פלט לדיסק"
+
 #: src/components/diagnose/diagnosis-action-buttons.tsx
 #: src/components/diagnose/diagnosis-action-buttons.tsx
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
@@ -12381,10 +12385,6 @@ msgstr "אונדקסו {indexedCount} רשומות"
 #: src/components/helpdesk/HelpdeskLoadDialog.tsx
 msgid "indexed with the project"
 msgstr "באינדקס הפרויקט"
-
-#: src/i18n/pref-labels.ts
-msgid "Disk I/O backend"
-msgstr "מנוע קלט/פלט לדיסק"
 
 #: src/components/helpdesk/HelpdeskLoadDialog.tsx
 msgid "Indexing"
