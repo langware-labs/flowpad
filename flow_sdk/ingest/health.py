@@ -13,6 +13,7 @@ have not seen before would silently stop a working source.
 from __future__ import annotations
 
 import re
+from typing import Any, Optional
 
 from flow_sdk._compat import StrEnum
 
@@ -21,6 +22,20 @@ from flow_sdk._compat import StrEnum
 #: is stated once here, beside `classify` and `SourceError` — the rest of the
 #: failure contract.
 ERROR_DETAIL_MAX = 500
+
+#: The source's ``error_code`` while its MIRROR needs a person (``datasets/projection``): the sweep itself
+#: failed, or it ran and some records did not fit the row kind. Like ``write_back_held``: ``health`` stays
+#: OK and the source keeps polling -- a sync reads a source carrying one of these as clean.
+MIRROR_FAILED = "mirror_failed"
+MIRROR_MISFIT = "mirror_misfit"
+MIRROR_CODES = frozenset({MIRROR_FAILED, MIRROR_MISFIT})
+
+
+def stamp_error(source: Any, code: Optional[str], detail: Optional[str]) -> None:
+    """The row's verdict pair, written in ONE place for every stamper: the code, and its detail cut to
+    what the card can show."""
+    source.error_code = code
+    source.error_detail = detail[:ERROR_DETAIL_MAX] if detail else None
 
 
 class SourceHealth(StrEnum):

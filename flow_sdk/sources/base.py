@@ -288,6 +288,12 @@ class CollectionSource(Source, ABC):
 
     supported_queries: ClassVar[tuple[type[DataQuery], ...]] = ()
     page_type: ClassVar[type[DataPage]] = DataPage
+    #: The listing the current traversal pages: ``(session, query token, entries)``; None between sessions.
+    _listing: Optional[tuple[object, str, Sequence[tuple[str, Any]]]] = None
+
+    async def __aexit__(self, exc_type, exc, traceback) -> None:
+        self._listing = None        # a listing is a session's: never pinned past it
+        await super().__aexit__(exc_type, exc, traceback)
 
     async def get(self, origin: CloudOrigin) -> Optional[SourceItemSpec]:
         self._require_open()
@@ -312,7 +318,7 @@ class CollectionSource(Source, ABC):
         limit = self.effective_page_size if page_size is None else positive_int(page_size, "page_size", MAX_PAGE_SIZE)
         token = _paging.query_token(query)
         after = None if cursor is None else _paging.decode(cursor, token)
-        listing = getattr(self, "_listing", None)
+        listing = self._listing
         if after is None or listing is None or listing[0] is not session or listing[1] != token:
             listing = (session, token, await self._scan(query))
             self._listing = listing
