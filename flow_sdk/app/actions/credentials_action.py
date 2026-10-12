@@ -82,6 +82,7 @@ async def credentials_action() -> ApiResponse:
                     values=payload.get("values") or {},
                     deployment_id=payload.get("deployment_id"),
                     store=payload.get("store") or legacy_store,
+                    auto_declare=payload.get("auto_declare") is True,
                 )
                 return ApiSuccessResponse(data=_summary(spec))
             if sub_path == "values":

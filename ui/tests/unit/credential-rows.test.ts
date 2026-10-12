@@ -185,6 +185,15 @@ describe('takenInScope', () => {
 });
 
 describe('buildDetectedGroups', () => {
+  it('keeps declared variables and their saved details editable', () => {
+    const groups = buildDetectedGroups(status({
+      credentials: [row({ scope: 'user', project_id: null, vars: [{ ...v('TOKEN'), label: 'My token', hint: 'From settings', secret: false }] })],
+      files: [{ scope: 'user', project_id: null, path: '/h/.env.local', exists: true, blocked: false,
+        block_code: null, block_reason: null, detected: [{ key: 'TOKEN', line: 3 }] }],
+    }), true);
+    expect(groups[0].keys[0]).toMatchObject({ key: 'TOKEN', line: 3, spec: { label: 'My token', hint: 'From settings', secret: false } });
+  });
+
   it('offers only keys no credential in that scope declares', () => {
     const groups = buildDetectedGroups(
       status({
