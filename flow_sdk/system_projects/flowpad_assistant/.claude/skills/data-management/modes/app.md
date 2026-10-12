@@ -95,9 +95,13 @@ never split `enum:` or `|` yourself. `kindForm(kind).rules` lists the kind's rul
 
 ## Still missing — say so in the app and to the user
 
-- **Row events are a hint, not a log.** `onRowsChanged` is best effort: an event sent while the
-  page was disconnected is not replayed, and a script that ran while Flowpad was stopped told
-  nobody. Re-read on the event AND when the page regains focus; no timer is needed.
+- **Row events name keys, not values.** `onRowsChanged` says which rows moved; re-read what the
+  page shows. The event is enough — no timer, no re-read on focus: a write made while the socket was
+  down (a script, Flowpad restarted) is told on reconnect as one `{op: "sync", keys: []}` when the
+  rows' `version` moved past what the listener heard or the instance read.
+- **A parked tab is a hidden page.** The host keeps an app's frame mounted when its tab is not the
+  one shown and makes its `document.hidden` true (a `visibilitychange` fires on each flip). Code that
+  rests while hidden rests when parked — never poll, and never work "while the window is visible".
 - **A query reads the rows from disk each time** (there is no index over row fields), and each
   dataset a link path leads into once more: fine for thousands of rows, not for millions. Ask for
   what the page shows (`match`, `limit`), never every row on a timer.

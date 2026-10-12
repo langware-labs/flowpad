@@ -656,6 +656,14 @@ class Dataset(Entity):
         keys = list(keys)
         return {"op": op, "keys": keys[: self.ROWS_CHANGED_KEYS], "count": len(keys)}
 
+    def rows_version(self) -> str:
+        """The rows as a whole, as one version (``layout.rows_version``): rides on every
+        ``dataset.rows.changed`` and on ``rows()``, and ``GET rows-version`` answers it alone, so a
+        listener whose socket was down learns whether anything moved without reading a row."""
+        from flow_sdk.schema.data_spec.layout import rows_version  # noqa: PLC0415
+
+        return rows_version(self.asset_ref) if self.asset_ref else ""
+
     def emit_rows_changed(self, op: str, keys: list[str]) -> None:
         """Say on THIS process's bus that rows changed (``op``: ``put`` / ``delete`` / ``rename`` /
         ``sync``). What the server does; a writer outside it calls ``announce``."""
@@ -663,7 +671,7 @@ class Dataset(Entity):
         from flow_sdk.tags.envelope import target_of  # noqa: PLC0415
 
         if keys and self.id:
-            emit_tag(self.ROWS_CHANGED, target_of("dataset", self.id), self._rows_event(op, keys))
+            emit_tag(self.ROWS_CHANGED, target_of("dataset", self.id), {**self._rows_event(op, keys), "version": self.rows_version()})
 
     def announce(self, op: str, keys: list[str]) -> bool:
         """Tell the running Flowpad that rows changed, from a process that is not the server (a sync
@@ -776,12 +784,15 @@ class Dataset(Entity):
             out.append((raw["key"], {k: v for k, v in raw.items() if k != "key"}))
         return out
 
-    def _prepare_each(self, rows: list[tuple[str, dict]], expected: dict, seen: dict) -> tuple[list, list[dict]]:
+    def _prepare_many(self, rows: list[tuple[str, dict]], expected: dict, seen: dict, *,
+                      lenient: bool = False) -> tuple[list, list[dict]]:
         """Every row of a batch checked (``_prepare_put``): ``(ready, misfit)`` -- ``[(key, example,
         old)]`` for the rows that fit, and ``[{key, row, details}]`` for each that does not (its
-        shape, links, rules; the details' paths are the row's own, ``input.x``). ``ConflictError``
-        is raised at once (the caller must re-read); so is a malformed row (not an object, unknown
-        keys) -- that is the caller's mistake, not a value that does not fit."""
+        shape, links, rules; the details' paths are the row's own, ``input.x``). Unless ``lenient``,
+        one row that does not fit is ONE ``LinkError`` naming every such row under ``<key>.``;
+        lenient (a mirror) still refuses an ``owned`` detail -- the writer's mistake, not a value.
+        ``ConflictError`` is raised at once (the caller must re-read); so is a malformed row (not an
+        object, unknown keys)."""
         from flow_sdk.datasets.links import shape_details  # noqa: PLC0415
 
         ready, conflicts, misfit = [], [], []
@@ -801,21 +812,9 @@ class Dataset(Entity):
                 ready.append((key, example, old))
         if conflicts:
             raise ConflictError("; ".join(conflicts))
+        if misfit and (not lenient or any(d.get("code") == "owned" for m in misfit for d in m["details"])):
+            raise LinkError([{**d, "path": f"{m['key']}.{d['path']}".rstrip(".")} for m in misfit for d in m["details"]])
         return ready, misfit
-
-    @staticmethod
-    def _misfit_error(misfit: list[dict]) -> LinkError:
-        """ONE error naming every row that does not fit, its details under ``<key>.``."""
-        return LinkError([{**d, "path": f"{m['key']}.{d['path']}".rstrip(".")} for m in misfit for d in m["details"]])
-
-    def _prepare_many(self, rows: list[tuple[str, dict]], expected: dict, seen: dict) -> list[tuple[str, Any, Any]]:
-        """Every row of a batch checked -- ``[(key, example, old)]``, or ONE error naming every row
-        that does not fit, by key: ``ConflictError`` first, else ``LinkError`` carrying every row's
-        details under ``<key>.`` (``_prepare_each``)."""
-        ready, misfit = self._prepare_each(rows, expected, seen)
-        if misfit:
-            raise self._misfit_error(misfit)
-        return ready
 
     async def put_many(self, rows: list[dict], *, expected: Optional[dict[str, str]] = None,
                        by: Optional[str] = None) -> list[str]:
@@ -829,7 +828,7 @@ class Dataset(Entity):
 
         keyed, layout, folder = self._keyed(rows), FolderLayout(), self._folder()
         with self._lock():
-            ready = self._prepare_many(keyed, expected or {}, {"by": by})
+            ready, _ = self._prepare_many(keyed, expected or {}, {"by": by})
             ids = [layout.put_example(folder, key, example, dataset_id=self.id) for key, example, _ in ready]
         self._tell("put", [key for key, _ in keyed])
         return ids
@@ -867,9 +866,8 @@ class Dataset(Entity):
                 here = [(r.key, self._row_out(r)) for r in kept] + [(p["key"], {"key": p["key"], "id": p["id"], "input": p["input"]}) for p in problems]
                 gone = [key for key, shown in here if key not in listed and matches(node, shown)]
             # the rows about to go no longer hold their unique values: a new row may take one over
-            ready, misfit = self._prepare_each(keyed, {}, {"by": by, "unique_skip": set(gone)})
-            if misfit and (not lenient or any(d.get("code") == "owned" for m in misfit for d in m["details"])):
-                raise self._misfit_error(misfit)
+            seen = {"by": by, "unique_skip": set(gone)}
+            ready, misfit = self._prepare_many(keyed, {}, seen, lenient=lenient)
             out: dict[str, Any] = {"created": [], "updated": [], "unchanged": [], "deleted": []}
             write = []
             for key, example, old in ready:
@@ -882,7 +880,7 @@ class Dataset(Entity):
             for key, example in write:
                 layout.put_example(folder, key, example, dataset_id=self.id)
             if misfit:
-                main = _ReadShape.of(self._typed_rows_or_raise()).mains["input"]
+                main = (seen.get("shape") or _ReadShape.of(self._typed_rows_or_raise())).mains["input"]
                 for m in misfit:
                     layout.put_problem_example(folder, m["key"], m["row"].get("input") or {}, dataset_id=self.id, main_document=main)
                 out["misfit"] = [{"key": m["key"], "details": m["details"]} for m in misfit]
@@ -1012,13 +1010,16 @@ class Dataset(Entity):
     def _empty_required(input_type: Any) -> dict[str, Any]:
         """``{field: [] | {}}`` for every REQUIRED list or map field of ``input_type``: the empty value a
         writer that does not know the field (a mirror) gives it, so the row fits."""
-        import typing  # noqa: PLC0415
+        from typing import get_origin  # noqa: PLC0415
+
+        from flow_sdk.schema.data_spec.io.placement import unwrap  # noqa: PLC0415
 
         out: dict[str, Any] = {}
-        for name, field in getattr(input_type, "model_fields", {}).items():
+        for name, field in input_type.model_fields.items():
             if not field.is_required():
                 continue
-            origin = typing.get_origin(field.annotation) or field.annotation
+            core = unwrap(field.annotation)
+            origin = get_origin(core) or core
             if origin in (list, tuple, set, frozenset):
                 out[name] = []
             elif origin is dict or (isinstance(origin, type) and hasattr(origin, "model_fields")
@@ -1410,7 +1411,13 @@ class Dataset(Entity):
                                q=asked["q"], expand=asked["expand"], records=await self._records_asked(asked))
         except ValueError as exc:   # the dataset declares no typed rows, or the filter does not read
             return ApiFailResponse(message=str(exc), status_code=400)
+        found["version"] = self.rows_version()
         return ApiSuccessResponse(data=found)
+
+    @action.get(action_name="rows-version")
+    async def rows_version_action(self):
+        """``{"version"}`` -- ``rows_version``, off the loop: every reconnecting listener asks."""
+        return ApiSuccessResponse(data={"version": await asyncio.to_thread(self.rows_version)})
 
     async def _records_asked(self, asked: dict) -> dict:
         """The RECORDS the question's paths lead to (a row's ``ingest.source_item`` link, followed or
