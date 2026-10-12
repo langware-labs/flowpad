@@ -36,17 +36,14 @@ MINI_ANALYZER_SCRIPT = '''\
 """mini-analyzer — demo GraphWorkflowFunction (subprocess): count today's processes.
 
 Runs in its own process with full flow_sdk import access; queries the
-instance over REST (ctx.api_base pattern) and emits a `summary` event.
+instance over REST (flow_ctx.get, which carries the cookie-gate token) and
+emits a `summary` event.
 """
 import datetime
-import json
-import urllib.request
 
 
 def on_graph_workflow_event(event_name, data, flow_ctx):
-    base = flow_ctx._api_base  # instance REST base
-    with urllib.request.urlopen(f"{base}/api/v1/graph/agentic_process", timeout=15) as resp:
-        rows = json.loads(resp.read()).get("data") or []
+    rows = flow_ctx.get("/api/v1/graph/agentic_process", timeout=15) or []
     today = datetime.date.today().isoformat()
     todays = [r for r in rows if str(r.get("created_date") or "").startswith(today)]
     summary = {
