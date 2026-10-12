@@ -295,16 +295,20 @@ def test_falls_back_to_decode_when_no_jsonl(tmp_path: Path, monkeypatch: pytest.
 
     """
     projects_root = tmp_path / ".claude" / "projects"
-    # Hyphen-free real path so encode→decode round-trips. The sandbox tmp_path
-    # sits under ``/tmp/claude-501/...`` whose embedded ``-501`` breaks the
-    # decode, so we materialize outside ``tempfile.gettempdir()`` under
-    # ``/var/tmp`` (resolves to a hyphen-free ``/private/var/tmp/...``).
+    # Hyphen-free real path so encode→decode round-trips: decode turns every
+    # ``-`` back into ``/``, so a hyphen anywhere in the path corrupts it. The
+    # sandbox ``tmp_path`` sits under ``/tmp/claude-501/...`` whose embedded
+    # ``-501`` would break the decode, so we materialize under the temp root
+    # directly (``tempfile.gettempdir()``/``$TMPDIR``, hyphen-free here) with a
+    # hyphen-free prefix. Honoring ``gettempdir()`` keeps the test portable
+    # across platforms rather than hardcoding a path like ``/var/tmp`` that need
+    # not exist or be writable.
     import tempfile
 
-    with tempfile.TemporaryDirectory(
-        prefix="decoderoundtrip",
-        dir="/var/tmp",
-    ) as real_dir_raw:
+    base = Path(tempfile.gettempdir()).resolve()
+    if "-" in str(base):
+        pytest.skip(f"temp root {base} contains '-'; decode round-trip needs a hyphen-free base")
+    with tempfile.TemporaryDirectory(prefix="decoderoundtrip") as real_dir_raw:
         real_dir = Path(real_dir_raw).resolve()
         encoded = "-" + str(real_dir).lstrip("/").replace("/", "-")
         _make_project_dir(projects_root, encoded, real_cwd=None)  # no JSONL

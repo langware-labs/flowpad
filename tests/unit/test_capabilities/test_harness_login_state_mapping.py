@@ -18,6 +18,8 @@ is the actual trigger, not a stand-in for it.
 
 from __future__ import annotations
 
+import os
+import shutil
 import subprocess
 
 import pytest
@@ -27,6 +29,7 @@ from flow_sdk.builtin.agentic_process.cli_drivers.auth_probe import (
     WorkerAuthStatus,
 )
 from flow_sdk.builtin.capability import Capability
+from flow_sdk.core.capabilities import discovery
 from flow_sdk.core.capabilities.discovery import run_discovery
 from tests.utils.harness_installed import harness_installed  # noqa: F401 — a fixture
 
@@ -36,6 +39,40 @@ CLAUDE_KIND = "harness.claude.cli"
 # personal tool folders are absent. `/bin/sh` keeps the sweep's login-shell
 # recovery from re-reading the user's real dotfiles.
 BARE_PATH = "/usr/bin:/bin:/usr/sbin:/sbin"
+
+
+def degrade_sweep_so_claude_is_unseen(monkeypatch) -> None:
+    """Make the discovery sweep genuinely fail to see ``claude`` — the degraded
+    environment this test models, on any host.
+
+    The modelled environment is a Dock-launched app whose login shell never ran,
+    so the harness CLI is on no folder the sweep can reach. The real ``env_probe``
+    child cannot reproduce that everywhere: it runs ``/bin/sh -ilc``, which
+    re-reads ``/etc/profile`` and re-adds ``/usr/bin``. On a host that happens to
+    ship a ``claude`` there (this sandbox does; macOS/CI do not) the sweep FINDS
+    it, and the premise — a sweep that failed to SEE the CLI — is gone along with
+    the NOT_INSTALLED verdict it exists to assert.
+
+    So run the sweep's REAL in-process resolution (the same ``env_probe.probe``
+    uses), with exactly one change: ``claude`` resolves to nothing, as it would on
+    the box being modelled. Everything downstream stays real — the Capability row,
+    the state mapping, and the real ``auth_probe`` that answers NOT_INSTALLED for a
+    binary the sweep never placed — and ``in_install_dirs`` (which the parent runs
+    in-process for a probe miss) is covered by the same name suppression. Only the
+    incidental host binary the target environment would not have is removed.
+    """
+    inner = shutil.which
+
+    def _which(cmd, mode=os.F_OK | os.X_OK, path=None):
+        return None if cmd == "claude" else inner(cmd, mode, path)
+
+    monkeypatch.setattr(shutil, "which", _which)
+
+    async def _probe(executables):
+        path = os.environ.get("PATH", "")
+        return {"path": path, "executables": {exe: _which(exe, path=path) for exe in executables}}
+
+    monkeypatch.setattr(discovery, "_run_env_probe", _probe)
 
 # The states the footer reads as "installed but not signed in".
 SIGNED_OUT_STATES = {DeviceLoginState.IDLE.value, DeviceLoginState.ERROR.value}
@@ -67,6 +104,7 @@ async def _restore_claude_login():
 async def test_undetermined_login_is_not_reported_as_signed_out(monkeypatch) -> None:
     monkeypatch.setenv("PATH", BARE_PATH)
     monkeypatch.setenv("SHELL", "/bin/sh")
+    degrade_sweep_so_claude_is_unseen(monkeypatch)
     await run_discovery([CLAUDE_KIND])
 
     capability = await Capability.get_by_kind(CLAUDE_KIND)

@@ -139,7 +139,17 @@ def test_no_shell_variable_falls_back_to_the_users_login_shell(monkeypatch):
 
     monkeypatch.delenv("SHELL", raising=False)
 
-    assert env_probe.login_shell() == pwd.getpwuid(os.getuid()).pw_shell
+    # The login shell comes from the passwd database -- or, when the process runs
+    # under a uid that has no passwd entry (a container running as an arbitrary
+    # uid), from the sane default. Compute the expectation the same way so the
+    # test still asserts the fallback-to-login-shell contract without assuming
+    # this uid is in /etc/passwd.
+    try:
+        expected = pwd.getpwuid(os.getuid()).pw_shell or "/bin/sh"
+    except KeyError:
+        expected = "/bin/sh"
+
+    assert env_probe.login_shell() == expected
 
 
 @pytest.mark.long  # 2.77s: a real sweep, its probe child and the capability checks

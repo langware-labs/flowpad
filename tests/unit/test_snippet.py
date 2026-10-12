@@ -365,9 +365,39 @@ def test_output_printed_before_a_hang_survives_the_kill(tmp_path, py_path):
 
 
 def test_unflushed_print_before_a_hang_is_not_lost(tmp_path, py_path):
-    """No flush=True: a piped stdout is block-buffered, and the kill drops the buffer."""
-    r = _run(_snip(tmp_path, "py", "print('started')\nwhile True:\n    pass"), py_path, timeout=0.3)
-    assert r.timed_out and r.stdout == "started\n"
+    """No flush=True: a piped stdout is block-buffered, and the kill drops the buffer — except the
+    runner exports ``PYTHONUNBUFFERED=1`` so the line reaches the pipe at once and the drain keeps
+    it when the process is killed mid-hang.
+
+    The kill lands on the line the snippet printed, not on a wall clock: a fixed timeout would be
+    racing the interpreter's own spawn (0.4–1s under a gVisor sandbox, more than any kill budget a
+    unit test may name), so the print would never run and nothing could be asserted about where its
+    output went. Stopping the instant the snippet first writes is what the sibling flushed test
+    gets for free from its earlier, larger output — here it is made explicit so the unflushed line
+    is proven to have survived the kill, not merely to have outrun the clock."""
+    from flow_sdk.core.compute.exec import run_shell  # noqa: PLC0415
+    from flow_sdk.core.snippet import oneshot_command  # noqa: PLC0415
+
+    path = _snip(tmp_path, "py", "print('started')\nwhile True:\n    pass")
+
+    async def _run_until_first_output() -> object:
+        stop = asyncio.Event()
+        command = oneshot_command(path, tmp_path / "out")
+        # Kill the instant the snippet produces output: deterministically after ``print('started')``
+        # and while it is still in its ``while True`` hang — the exact moment the fixed-timeout form
+        # means to catch, without racing interpreter startup.
+        said = await run_shell(
+            command,
+            timeout_seconds=5.0,
+            workdir=path.parent,
+            extra_env={"PATH": py_path},
+            stop=stop,
+            on_output=stop.set,
+        )
+        return said.trimmed()
+
+    r = asyncio.run(_run_until_first_output())
+    assert not r.ok and r.stdout == "started\n"  # the kill ended it (not ok), and the buffered line was kept
 
 
 def test_hang_kills_the_whole_process_group(tmp_path, py_path):

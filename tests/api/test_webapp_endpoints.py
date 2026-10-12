@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import asyncio
+import shlex
 import socket
 import sys
 import textwrap
@@ -124,7 +125,7 @@ async def test_declared_endpoints_are_started_and_named_per_app(client, tmp_path
             {
                 "name": "api",
                 "protocol": {"spec_kind": "api.rest"},
-                "serving": {"type": "proxy", "start_cmd": f"{sys.executable} {server} {{port}}"},
+                "serving": {"type": "proxy", "start_cmd": f"{shlex.quote(sys.executable)} {shlex.quote(str(server))} {{port}}"},
                 "supports_direct_access": True,
             },
         ],

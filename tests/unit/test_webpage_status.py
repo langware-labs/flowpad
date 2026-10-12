@@ -130,8 +130,16 @@ def test_closed_port_is_refused():
     assert status.nav_error == "connection_refused"
 
 
-def test_unknown_host_is_a_dns_failure():
+def test_unknown_host_is_a_dns_failure(monkeypatch):
     # `.invalid` is reserved (RFC 6761) and never resolves.
+    # httpx trusts the ambient proxy env (HTTP(S)_PROXY) by default. With a proxy
+    # set, the client connects to the proxy -- which answers -- instead of
+    # resolving `.invalid` itself, so no client-side DNS failure occurs and the
+    # probe sees `reachable=True`. Production correctly honours proxies in real
+    # use; this test is about the direct-resolution path, so clear the proxy env
+    # to force httpx to resolve the host itself and get the real gaierror.
+    for var in ("HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy", "ALL_PROXY", "all_proxy"):
+        monkeypatch.delenv(var, raising=False)
     status = _check("http://no-such-host.invalid/")
     assert status.reachable is False
     assert status.nav_error == "dns_failure"

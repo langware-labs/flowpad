@@ -42,6 +42,7 @@ from tests.utils.fake_cli import (
     make_fake_cli_bin,
     patch_build_spawn,
     seed_harness_capability,
+    suppress_on_path_binary,
 )
 
 # ``_build_spawn`` takes ``(context, prompt)`` and returns a 3-tuple
@@ -110,6 +111,10 @@ def test_build_spawn_missing_binary_raises_typed_error(tmp_path: Path, monkeypat
     empty_dir = tmp_path / "empty-bin"
     empty_dir.mkdir()
     monkeypatch.setenv("PATH", _STRIPPED_SERVICE_PATH)
+    # The service PATH must carry no codex — the empty discovered folder is the
+    # only place to find it. A host that ships one (this sandbox's /usr/bin/codex)
+    # would otherwise be resolved by resolve_worker_argv0 and rescue the spawn.
+    suppress_on_path_binary(monkeypatch, "codex")
     seed_harness_capability(monkeypatch, "codex", empty_dir)
 
     with pytest.raises(WorkerSpawnError, match=r"codex executable .* not found on worker PATH"):
@@ -254,6 +259,9 @@ async def test_missing_binary_yields_error_frame_then_raises(tmp_path: Path, mon
     empty_dir = tmp_path / "empty-bin"
     empty_dir.mkdir()
     monkeypatch.setenv("PATH", _STRIPPED_SERVICE_PATH)
+    # See the sibling missing-binary test: suppress any host codex so the empty
+    # discovered folder is genuinely the only candidate.
+    suppress_on_path_binary(monkeypatch, "codex")
     seed_harness_capability(monkeypatch, "codex", empty_dir)
     worker = CodexCLIStreamWorker(transcript_path=tmp_path / "codex.jsonl")
 

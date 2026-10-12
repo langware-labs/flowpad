@@ -27,6 +27,7 @@ from tests.utils.fake_cli import (
     make_fake_cli_bin,
     patch_build_spawn,
     seed_harness_capability,
+    suppress_on_path_binary,
 )
 
 # ``_build_spawn`` takes ``(context, prompt)`` and returns a 3-tuple
@@ -178,6 +179,10 @@ async def test_missing_binary_writes_terminal_error_and_raises(tmp_path: Path, m
     empty_dir = tmp_path / "empty-bin"
     empty_dir.mkdir()
     monkeypatch.setenv("PATH", os.pathsep.join(["/usr/bin", "/bin"]))
+    # The empty discovered folder must be the only place copilot could resolve;
+    # suppress any host copilot (this sandbox ships /usr/bin/copilot) so
+    # resolve_worker_argv0 can't rescue the spawn off the service PATH.
+    suppress_on_path_binary(monkeypatch, "copilot")
     seed_harness_capability(monkeypatch, "copilot", empty_dir)
     transcript = tmp_path / "copilot.jsonl"
     worker = CopilotCLIStreamWorker(transcript_path=transcript)

@@ -325,8 +325,8 @@ def test_parse_server_json_derives_urls_from_the_route_constants(tmp_path):
     info = _parse_server_json(_server_json(tmp_path, {"port": 9008, "server_pid": 1}))
 
     assert info is not None
-    assert info.url == "http://localhost:9008/api/v1/webhook/listen"
-    assert info.health_url == "http://localhost:9008/api/v1/health/status"
+    assert info.url == "http://127.0.0.1:9008/api/v1/webhook/listen"
+    assert info.health_url == "http://127.0.0.1:9008/api/v1/health/status"
     assert info.server_pid == 1
 
 
@@ -336,7 +336,7 @@ def test_parse_server_json_ignores_legacy_path_keys(tmp_path):
     info = _parse_server_json(_server_json(tmp_path, {"port": 9008, "webhook_path": "/w", "health_path": "/h"}))
 
     assert info is not None
-    assert info.url == "http://localhost:9008/api/v1/webhook/listen"
+    assert info.url == "http://127.0.0.1:9008/api/v1/webhook/listen"
 
 
 @pytest.mark.parametrize("data", [{"server_pid": 1}, {"port": "x"}, {"port": None}])

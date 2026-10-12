@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import os
+import shlex
 import signal
 import socket
 import sys
@@ -75,7 +76,7 @@ async def test_a_dead_server_is_started_by_the_op_and_opened(bootstrapped_client
         "server.serve_forever()\n"
     )
     ran_in = tmp_path / "ran-in.txt"
-    repair = f"pwd > {ran_in} && {sys.executable} {serve}"
+    repair = f"pwd > {shlex.quote(str(ran_in))} && {shlex.quote(sys.executable)} {shlex.quote(str(serve))}"
     root = tmp_path / "proj"
     project = await seed_project(root)
     _write_op(root, "open-admin", url, repair)
