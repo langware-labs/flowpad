@@ -14,14 +14,6 @@ import { useChatPlanMode } from './chat-plan-mode-context';
 interface PlanInteractionBarProps {
   /** The live FlowData stream items (same array SimpleChatPane renders). */
   items: FlowData[];
-  /**
-   * May this surface offer the interactive picker at all? False for the
-   * EntityExecutionPanel surfaces (vibe chat, floating chat, asset-editor run
-   * panels), which show only the terminal notice — a deliberate product call,
-   * not a capability one. They then render NOTHING on a headless worker, where
-   * the plain composer below already takes the answer.
-   */
-  allowPicker?: boolean;
 }
 
 interface QuestionOption {
@@ -35,10 +27,7 @@ interface Question {
   options: QuestionOption[];
 }
 
-type Pending =
-  | { kind: 'question'; questions: Question[] }
-  | { kind: 'plan'; plan: string }
-  | null;
+type Pending = { kind: 'question'; questions: Question[] } | { kind: 'plan'; plan: string } | null;
 
 /** Pull the structured tool input off a TOOL_CALL FlowData (`data.input`/`.args`). */
 function toolInput(fd: FlowData): Record<string, unknown> {
@@ -96,7 +85,8 @@ function findPending(items: FlowData[]): Pending {
     if (questions.length === 0) return null;
     return { kind: 'question', questions };
   }
-  const plan = String(toolInput(hit.fd).plan ?? '');
+  const raw = toolInput(hit.fd).plan;
+  const plan = typeof raw === 'string' ? raw : '';
   return { kind: 'plan', plan };
 }
 
@@ -116,7 +106,7 @@ function findPending(items: FlowData[]): Pending {
  *    picker. The user still needs to KNOW a question is waiting — that is the
  *    whole reason the bar renders at all on this transport.
  */
-export function PlanInteractionBar({ items, allowPicker = true }: PlanInteractionBarProps) {
+export function PlanInteractionBar({ items }: PlanInteractionBarProps) {
   const { respondEnabled, canAnswerInline, sending, answer, execute, setPlanPending } = useChatPlanMode();
   const pending = useMemo(() => findPending(items), [items]);
 
@@ -126,10 +116,6 @@ export function PlanInteractionBar({ items, allowPicker = true }: PlanInteractio
   }, [pending?.kind, setPlanPending]);
 
   if (!respondEnabled || !pending) return null;
-
-  // Headless + picker suppressed: the composer under this bar answers fine, and
-  // pointing at a terminal this session does not have would be a lie.
-  if (canAnswerInline && !allowPicker) return null;
 
   return (
     <div className="border-t bg-background px-4 py-3" data-testid="plan-interaction-bar">
@@ -155,7 +141,8 @@ function AnswerInTerminalNotice({ kind }: { kind: 'question' | 'plan' }) {
   // URL-first, a mode switch like the session's own: the address carries the
   // mode, so the click navigates (marked, so it counts as the user's selection).
   const openTerminal = () => {
-    if (currentDock) navigation.openDock(currentDock.withViewMode(ViewMode.Advanced), undefined, { viewModeSwitch: true });
+    if (currentDock)
+      navigation.openDock(currentDock.withViewMode(ViewMode.Advanced), undefined, { viewModeSwitch: true });
   };
 
   return (
