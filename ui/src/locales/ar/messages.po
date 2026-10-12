@@ -8612,6 +8612,10 @@ msgstr "جارٍ اكتشاف {typeLabel}…"
 msgid "Discuss"
 msgstr "نقاش"
 
+#: src/i18n/pref-labels.ts
+msgid "Disk I/O backend"
+msgstr "محرّك الإدخال/الإخراج للقرص"
+
 #: src/components/diagnose/diagnosis-action-buttons.tsx
 #: src/components/diagnose/diagnosis-action-buttons.tsx
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
@@ -12381,10 +12385,6 @@ msgstr "تمت فهرسة {indexedCount} سجل"
 #: src/components/helpdesk/HelpdeskLoadDialog.tsx
 msgid "indexed with the project"
 msgstr "مفهرس مع المشروع"
-
-#: src/i18n/pref-labels.ts
-msgid "Disk I/O backend"
-msgstr "محرّك الإدخال/الإخراج للقرص"
 
 #: src/components/helpdesk/HelpdeskLoadDialog.tsx
 msgid "Indexing"

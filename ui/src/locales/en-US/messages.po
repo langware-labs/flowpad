@@ -8612,6 +8612,10 @@ msgstr "Discovering {typeLabel}…"
 msgid "Discuss"
 msgstr "Discuss"
 
+#: src/i18n/pref-labels.ts
+msgid "Disk I/O backend"
+msgstr "Disk I/O backend"
+
 #: src/components/diagnose/diagnosis-action-buttons.tsx
 #: src/components/diagnose/diagnosis-action-buttons.tsx
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
@@ -12381,10 +12385,6 @@ msgstr "Indexed {indexedCount} records"
 #: src/components/helpdesk/HelpdeskLoadDialog.tsx
 msgid "indexed with the project"
 msgstr "indexed with the project"
-
-#: src/i18n/pref-labels.ts
-msgid "Disk I/O backend"
-msgstr "Disk I/O backend"
 
 #: src/components/helpdesk/HelpdeskLoadDialog.tsx
 msgid "Indexing"
