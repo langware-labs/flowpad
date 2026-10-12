@@ -215,9 +215,11 @@ class DataSource(SetupSkippable, Entity):
     answer_place: Optional[str] = APIField(default=None, description="The Deployment that answers this source")
 
     #: Who may drive the owning agent through this line (``agent_serve.admits``); empty admits nobody unless
-    #: the driver is ``open_inbound``. Third parties' addresses: PRIVATE, row-only — never in the shareable
+    #: the driver is ``open_inbound`` or ``open_to_all`` is set. Third parties' addresses: PRIVATE, row-only — never in the shareable
     #: ``config`` (a form's field is moved here), and a re-read file leaves it as it is.
     allowed_senders: list[str] = APIField(default_factory=list, sharing=Sharing.PRIVATE, persist=Persist.FALSE)
+    #: Explicit public inbound access; private machine policy, never published with the source.
+    open_to_all: bool = APIField(default=False, sharing=Sharing.PRIVATE, persist=Persist.FALSE)
 
     # ── reflection — HOW the payload becomes locally present ──
     #
@@ -1882,7 +1884,7 @@ class DataSource(SetupSkippable, Entity):
                 if after is not None and (occurred is None or occurred < after):
                     continue
                 author = "".join(ch for ch in str(row.author_external_id or "") if ch.isalnum())
-                if not allowed or author in allowed:
+                if self.open_to_all or not allowed or author in allowed:
                     incoming.append(row)
             for reply in rows:
                 if not reply.sent_by_us:
@@ -1919,13 +1921,16 @@ class DataSource(SetupSkippable, Entity):
 
     async def _keep(self, driver, update) -> None:
         """Store what a setup step learned: config on the file, senders on the row, secrets in the credential."""
-        if update.config or update.allowed_senders is not None or update.owner or update.webhook_delivery is not None:
+        if (update.config or update.allowed_senders is not None or update.open_to_all is not None
+                or update.owner or update.webhook_delivery is not None):
             if update.webhook_delivery is not None:
                 self.webhook_delivery = update.webhook_delivery
             if update.config:
                 self.config = {**(self.config or {}), **update.config}
             if update.allowed_senders is not None:
                 self.allowed_senders = list(update.allowed_senders)
+            if update.open_to_all is not None:
+                self.open_to_all = update.open_to_all
             if update.owner:
                 self.owner = TypeId._pydantic_validate(update.owner)
             await self.save()

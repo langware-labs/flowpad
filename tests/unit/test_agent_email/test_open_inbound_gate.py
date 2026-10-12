@@ -34,3 +34,20 @@ def test_a_paused_desk_admits_nobody():
 def test_email_keeps_its_closed_default():
     assert _admits(_source("cloud_email"), "stranger@example.com") is False
     assert _admits(_source("cloud_email", allowed=["Friend@Example.com"]), "friend@example.com ") is True
+
+
+def test_explicit_public_access_overrides_list_but_not_pause_and_refreshes_runtime():
+    from flow_sdk.builtin.agent_serve import serving_key
+
+    source = _source("cloud_email", allowed=["friend@example.com"])
+    restricted = serving_key(source)
+    source.open_to_all = True
+    assert _admits(source, "stranger@example.com")
+    assert serving_key(source) != restricted
+    source.status = "disabled"
+    assert not _admits(source, "stranger@example.com")
+    source.status = "active"
+    source.open_to_all = False
+    assert not _admits(source, "stranger@example.com")
+    assert _admits(source, "friend@example.com")
+    assert serving_key(source) == restricted
