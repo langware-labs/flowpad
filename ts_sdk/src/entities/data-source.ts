@@ -286,6 +286,13 @@ export class DataSource extends APIEntity<DataSource> implements IDataSource {
     return this.health === 'ok' && this.error_code === 'write_back_held';
   }
 
+  /** Running, but the dataset it mirrors into is not the mirror of its records: the sweep failed
+   *  (`mirror_failed`) or some records did not fit the row kind (`mirror_misfit`); `error_detail` says
+   *  which. Not broken: the source keeps polling, and a good sweep clears it. */
+  get isMirrorBroken(): boolean {
+    return this.health === 'ok' && (this.error_code === 'mirror_failed' || this.error_code === 'mirror_misfit');
+  }
+
   /** Stopped on purpose: nothing is fetched until a person resumes it. */
   get isPaused(): boolean {
     return this.status === 'disabled';

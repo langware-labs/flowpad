@@ -94,10 +94,15 @@ class UserProfile(Payload):
 
 
 class SourceItemSpec(DataSpec):
-    """One resource as observed: its identity and its payload."""
+    """One resource as observed: its identity and its payload.
+
+    ``warnings`` is for the record a WRITE answers (``Mutable.create`` / ``update``) when the write
+    took several calls and a later one failed: the record exists, in the shape given, and a person
+    should know what was not set ("2 of 3 links were not made: …"). Never on a record read."""
 
     origin: CloudOrigin
     data: Tagged[DataSpec]
+    warnings: tuple[str, ...] = ()
 
 
 class FileItem(SourceItemSpec):
