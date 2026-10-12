@@ -52,6 +52,7 @@ import logging
 import os
 import secrets
 from pathlib import Path
+from typing import Optional
 
 from starlette.requests import HTTPConnection
 from starlette.responses import HTMLResponse
@@ -98,17 +99,18 @@ _FORBIDDEN_HTML = """<!doctype html>
 <body>
   <div class="box">
     <h1>Forbidden</h1>
-    <p>This link is not valid for this workspace. Open it again from Flowpad.</p>
+    <p>{message}</p>
   </div>
 </body>
 </html>
 """
 
-# Same page for a local backend; the way back in differs from a sandbox's.
-_LOCAL_FORBIDDEN_HTML = _FORBIDDEN_HTML.replace(
-    "This link is not valid for this workspace. Open it again from Flowpad.",
-    "Open Flowpad from its icon, or type this address into your browser.",
-)
+
+def forbidden_html(message: Optional[str] = None) -> str:
+    """The Forbidden page, telling the reader how to get back in."""
+    return _FORBIDDEN_HTML.replace(
+        "{message}", message or "This link is not valid for this workspace. Open it again from Flowpad."
+    )
 
 
 class CookieGateMiddleware:
@@ -154,9 +156,10 @@ class CookieGateMiddleware:
             await self.app(scope, receive, _with_local_cookie(send, conn, token))
             return
 
-        await self._deny(scope, receive, send, html=_LOCAL_FORBIDDEN_HTML)
+        # A local backend: the way back in differs from a sandbox's.
+        await self._deny(scope, receive, send, "Open Flowpad from its icon, or type this address into your browser.")
 
-    async def _deny(self, scope: Scope, receive: Receive, send: Send, html: str = "") -> None:
+    async def _deny(self, scope: Scope, receive: Receive, send: Send, message: Optional[str] = None) -> None:
         # Denials used to be silent, and that silence was expensive. Uvicorn's
         # access logger sets ``propagate=False``, so its 403 lines never reach
         # the root handler ``init_dev_file_logging`` installs -- meaning a gated
@@ -177,7 +180,7 @@ class CookieGateMiddleware:
             # the handshake, which is the correct rejection for a WS upgrade.
             await WebSocketClose(code=1008, reason="cookie-gate")(scope, receive, send)
             return
-        await HTMLResponse(html or _FORBIDDEN_HTML, status_code=403)(scope, receive, send)
+        await HTMLResponse(forbidden_html(message), status_code=403)(scope, receive, send)
 
 
 def _presents(conn: HTTPConnection, secret: str) -> bool:
