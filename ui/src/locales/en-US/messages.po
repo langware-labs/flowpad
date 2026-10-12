@@ -1193,6 +1193,10 @@ msgstr "{trimmed} is ready."
 msgid "{trimmed} was added to {parentLabel}."
 msgstr "{trimmed} was added to {parentLabel}."
 
+#: src/components/project-setup/ProjectSetupDialog.tsx
+msgid "{unfinished} did not finish"
+msgstr "{unfinished} did not finish"
+
 #: src/components/browseable-tree/adapters/useFavoritesRoots.tsx
 msgid "{unopened} new"
 msgstr "{unopened} new"
@@ -2033,7 +2037,6 @@ msgstr "Add Git dependency"
 
 #: src/components/helpdesk/AddHelpdeskDialog.tsx
 #: src/components/helpdesk/AddHelpdeskDialog.tsx
-#: src/components/quick-create/QuickCreatePanel.tsx
 msgid "Add help desk"
 msgstr "Add help desk"
 
@@ -2225,8 +2228,8 @@ msgid "Address book"
 msgstr "Address book"
 
 #: src/components/quick-create/QuickCreatePanel.tsx
-msgid "Adopt a support desk published as a git repository"
-msgstr "Adopt a support desk published as a git repository"
+#~ msgid "Adopt a support desk published as a git repository"
+#~ msgstr "Adopt a support desk published as a git repository"
 
 #: src/components/automations/AutomationsNavigator.tsx
 #: src/components/automations/blocks/WhenBlock.tsx
@@ -3431,6 +3434,10 @@ msgstr "Attach an asset (skill, agent, doc, spec)"
 msgid "Attach files"
 msgstr "Attach files"
 
+#: src/components/version-popover/diagnose-modal.tsx
+msgid "Attach files or a screenshot (or paste one into the description)"
+msgstr "Attach files or a screenshot (or paste one into the description)"
+
 #: src/components/help/AskForHelpDialog.tsx
 msgid "Attach files or a screenshot (or paste one into the details)"
 msgstr "Attach files or a screenshot (or paste one into the details)"
@@ -4474,6 +4481,7 @@ msgid "Changes need merging — let the assistant finish it"
 msgstr "Changes need merging — let the assistant finish it"
 
 #: src/components/data-sources/MessageChannelsList.tsx
+#: src/components/top-nav-bar/ConversationCrumbHoverCard.tsx
 msgid "Channel"
 msgstr "Channel"
 
@@ -6909,6 +6917,10 @@ msgstr "Could not stop"
 msgid "Could not stop covering {path}"
 msgstr "Could not stop covering {path}"
 
+#: src/components/project-setup/ProjectSetupDialog.tsx
+msgid "Could not stop the setup"
+msgstr "Could not stop the setup"
+
 #: src/components/code-editor/SnippetView.tsx
 msgid "Could not stop the snippet"
 msgstr "Could not stop the snippet"
@@ -7299,6 +7311,7 @@ msgstr "Create it"
 #: src/components/project-home/ProjectHome.tsx
 #: src/components/quick-create/QuickCreateModal.tsx
 #: src/components/quick-create/QuickCreateModal.tsx
+#: src/pages/home-landing/HomeLanding.tsx
 msgid "Create new"
 msgstr "Create new"
 
@@ -7900,6 +7913,11 @@ msgstr "Delete {selectedCount} item(s)?"
 #: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Delete 1 conversation"
 msgstr "Delete 1 conversation"
+
+#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
+#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
+msgid "Delete agent"
+msgstr "Delete agent"
 
 #: src/components/entity-execution-panel/EntityExecutionPanel.tsx
 #: src/components/graph-context/GraphContextViewer.tsx
@@ -10794,6 +10812,7 @@ msgstr "Fixing…"
 msgid "Flow Message"
 msgstr "Flow Message"
 
+#: src/components/top-nav-bar/ConversationCrumbHoverCard.tsx
 #: src/components/version-popover/version-popover.tsx
 #: src/pages/discover-page/DiscoverChrome.tsx
 msgid "Flowpad"
@@ -11667,7 +11686,6 @@ msgstr "Held by"
 #: src/components/footer.tsx
 #: src/components/help/AskForHelpDialog.tsx
 #: src/components/helpdesk/HelpdeskBrandHeader.tsx
-#: src/components/quick-create/QuickCreatePanel.tsx
 #: src/types/ViewType.ts
 msgid "Help desk"
 msgstr "Help desk"
@@ -14516,6 +14534,7 @@ msgstr "Message Thread"
 
 #: src/components/data-sources/DataDriversView.tsx
 #: src/components/data-sources/DataSourcePage.tsx
+#: src/components/top-nav-bar/ConversationCrumbHoverCard.tsx
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Messages"
 msgstr "Messages"
@@ -15005,6 +15024,7 @@ msgstr "new"
 #: src/components/quick-create/QuickCreateTile.tsx
 #: src/components/stream-inbox-view/StreamInboxView.tsx
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
+#: src/pages/home-landing/HomeLanding.tsx
 #: src/pages/hub-home/HubHome.tsx
 msgid "New"
 msgstr "New"
@@ -19109,6 +19129,7 @@ msgstr "project"
 #: src/components/quick-create/ScopeSelection.tsx
 #: src/components/scope-filter/ScopeFilterBar.tsx
 #: src/components/scope-filter/ScopeFilterIconBar.tsx
+#: src/components/top-nav-bar/ConversationCrumbHoverCard.tsx
 #: src/components/top-nav-bar/RuntimeChip.tsx
 #: src/i18n/type-labels.ts
 #: src/pages/discover-page/DiscoverRow.tsx
@@ -20890,6 +20911,7 @@ msgstr "Resumed — it polls on the next tick."
 #: src/components/graph-view/webglSupport.tsx
 #: src/components/helpdesk/HelpdeskLoadDialog.tsx
 #: src/components/machine-overview/machine-overview.tsx
+#: src/components/project-setup/ProjectSetupDialog.tsx
 #: src/components/task-receive/IncomingProjectDialog.tsx
 #: src/components/task-receive/IncomingTaskDialog.tsx
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
@@ -22761,6 +22783,11 @@ msgstr "Set values"
 msgid "Setting things up"
 msgstr "Setting things up"
 
+#. placeholder {0}: now.label
+#: src/components/project-setup/ProjectSetupDialog.tsx
+msgid "Setting up {0}"
+msgstr "Setting up {0}"
+
 #: src/pages/entry/AgentLaunchLanding.tsx
 msgid "Setting up {name} on a new sandbox…"
 msgstr "Setting up {name} on a new sandbox…"
@@ -22776,6 +22803,10 @@ msgstr "Setting up the controller"
 #: src/components/task-receive/IncomingProjectDialog.tsx
 msgid "Setting up your project…"
 msgstr "Setting up your project…"
+
+#: src/components/project-setup/ProjectSetupDialog.tsx
+msgid "Setting up…"
+msgstr "Setting up…"
 
 #: src/components/assets/editor/agent-profile/deployment/AgentDeploymentPage.tsx
 #: src/components/data-sources/DataSourcePage.tsx
@@ -24112,6 +24143,7 @@ msgstr "started"
 
 #: src/components/automations/automation-words.ts
 #: src/components/terminal/interactive-terminal/SessionInfoPopover.tsx
+#: src/components/top-nav-bar/ConversationCrumbHoverCard.tsx
 msgid "Started"
 msgstr "Started"
 
@@ -24187,6 +24219,7 @@ msgstr "Starting…"
 #: src/components/machine-overview/machine-overview.tsx
 #: src/components/record-search-bar/RecordSearchBar.tsx
 #: src/components/terminal/interactive-terminal/SessionInfoPopover.tsx
+#: src/components/top-nav-bar/ConversationCrumbHoverCard.tsx
 msgid "Status"
 msgstr "Status"
 
@@ -24263,6 +24296,7 @@ msgstr "Still working — waiting on the cloud. This can take a minute."
 #: src/components/hooks-manager/HookForm.tsx
 #: src/components/hooks-view/HookEditor.tsx
 #: src/components/hooks-view/HooksTable.tsx
+#: src/components/project-setup/ProjectSetupDialog.tsx
 msgid "Stop"
 msgstr "Stop"
 
@@ -24289,6 +24323,7 @@ msgid "stopped"
 msgstr "stopped"
 
 #: src/components/assets/editor/agent-profile/deployment/DeploymentProcessPanel.tsx
+#: src/components/project-setup/ProjectSetupDialog.tsx
 msgid "Stopped"
 msgstr "Stopped"
 
@@ -25558,6 +25593,10 @@ msgstr "This {0} URL is malformed or unavailable."
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 msgid "This action cannot be undone."
 msgstr "This action cannot be undone."
+
+#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
+msgid "this agent"
+msgstr "this agent"
 
 #~ msgid "This agent"
 #~ msgstr "This agent"
@@ -28213,6 +28252,10 @@ msgstr "Window (days)"
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "Wipes the DB rows + FTS entries for every indexable type. The index becomes empty until you re-populate it. Files on disk are <0>not</0> touched. After clearing, click <1>Fast</1> to re-index changed entries, or <2>Full</2> to re-index everything."
 msgstr "Wipes the DB rows + FTS entries for every indexable type. The index becomes empty until you re-populate it. Files on disk are <0>not</0> touched. After clearing, click <1>Fast</1> to re-index changed entries, or <2>Full</2> to re-index everything."
+
+#: src/components/top-nav-bar/ConversationCrumbHoverCard.tsx
+msgid "With"
+msgstr "With"
 
 #: src/pages/hub-home/AutoLoginField.tsx
 msgid "Without signing in, this sandbox can't draw on your token plan — its coding assistants will each need their own login inside the box."

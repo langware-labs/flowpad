@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import hashlib
 import mimetypes
-import os
 import re
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -132,20 +131,17 @@ def _etag(file_path: Path) -> str:
     return hashlib.md5(f"{stat.st_mtime_ns}-{stat.st_size}".encode()).hexdigest()
 
 
-#: Folders a served app's version ignores: never part of what the page loads.
-_UNSERVED_DIRS = {".git", "node_modules", "__pycache__", ".flow"}
-
-
 def content_version(root: Path) -> str:
     """One validator for a whole served folder (paths + mtime + size of every file).
 
     Stamped into the app's HTML, so a host showing the app can tell its files
-    changed since the frame loaded — an edit to one script included — and reload."""
+    changed since the frame loaded — an edit to one script included — and reload.
+    A built folder is usually gitignored, so only the hardcoded denylist prunes."""
+    from flow_sdk.fs_store.indexer.walk import gitignore_walk  # noqa: PLC0415
+
     digest = hashlib.md5()
-    for folder, dirs, files in os.walk(root):
-        dirs[:] = sorted(d for d in dirs if d not in _UNSERVED_DIRS)
-        for name in sorted(files):
-            path = Path(folder) / name
+    for _folder, _dirs, files in gitignore_walk(root, gitignore=False):
+        for path in files:
             try:
                 stat = path.stat()
             except OSError:
