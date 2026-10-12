@@ -57,7 +57,6 @@ def test_the_token_admits_and_survives_a_restart(local_gate):
 
     assert client.get("/", headers=_header(token)).status_code == 200
 
-    gate._local_cache.clear()  # a fresh process
     assert TestClient(_app()).get("/", headers=_header(token)).status_code == 200
     assert local_gate.read_text(encoding="utf-8") == token
 
@@ -100,8 +99,7 @@ def test_a_token_that_cannot_be_created_fails_closed(tmp_path, monkeypatch):
     blocker = tmp_path / "not-a-dir"
     blocker.write_text("", encoding="utf-8")  # the token's parent is a file: mkdir fails
     monkeypatch.delenv(gate.OFF_SWITCH_ENV, raising=False)
-    monkeypatch.setattr(gate, "local_token_path", lambda: blocker / gate.LOCAL_TOKEN_FILENAME)
-    gate._local_cache.clear()
+    monkeypatch.setattr(gate, "LOCAL_TOKEN_PATH", blocker / gate.LOCAL_TOKEN_FILENAME)
 
     with patch.object(gate, "get_cookie_gate", return_value=None):
         response = TestClient(_app()).post("/api/v1/graph/shell")

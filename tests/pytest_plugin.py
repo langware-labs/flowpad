@@ -508,11 +508,9 @@ def local_gate(tmp_path, monkeypatch):
 
     path = tmp_path / "instance" / gate.LOCAL_TOKEN_FILENAME
     monkeypatch.delenv(gate.OFF_SWITCH_ENV, raising=False)
-    monkeypatch.setattr(gate, "local_token_path", lambda: path)
-    gate._local_cache.clear()
+    monkeypatch.setattr(gate, "LOCAL_TOKEN_PATH", path)
     with patch.object(gate, "get_cookie_gate", return_value=None):
         yield path
-    gate._local_cache.clear()
 
 
 # Replaces the per-file ``memory_keyring`` fixtures that patched
