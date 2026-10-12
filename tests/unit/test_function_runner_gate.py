@@ -27,9 +27,6 @@ def api(monkeypatch):
             self.end_headers()
             self.wfile.write(body)
 
-        def do_GET(self):  # noqa: N802
-            self._answer()
-
         def do_POST(self):  # noqa: N802
             self.rfile.read(int(self.headers.get("content-length") or 0))
             self._answer()
@@ -46,12 +43,11 @@ def api(monkeypatch):
     server.shutdown()
 
 
-@pytest.mark.parametrize("method", ["post", "get"])
-def test_ctx_calls_carry_the_gate_token(api, method):
+def test_ctx_post_carries_the_gate_token(api):
     base, seen = api
     ctx = GraphWorkflowCtx("f", "n", "e", base)
 
-    result = ctx.post("/api/v1/x", {"a": 1}) if method == "post" else ctx.get("/api/v1/x")
+    result = ctx.post("/api/v1/x", {"a": 1})
 
     assert result == {"ok": True}
-    assert seen == [(method.upper(), "/api/v1/x", TOKEN)]
+    assert seen == [("POST", "/api/v1/x", TOKEN)]
