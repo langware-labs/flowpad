@@ -6,7 +6,7 @@ date: '2026-10-12'
 artifact_contract: ce-unified-plan/v1
 product_contract_source: ce-plan-bootstrap
 execution: code
-version: 3
+version: 2
 ---
 # Local Backend Cookie Gate - Plan
 
@@ -16,9 +16,9 @@ version: 3
 
 ## Goal Capsule
 
-* **Objective:** A web page the user visits can no longer drive their local Flowpad backend: the ticket's proof of concept (create a shell, then `run-detached`) gets refused. The desktop app, the `flow` CLI, and opening `localhost:9007` in a browser keep working.
+* **Objective:** A page from another website the user visits can no longer drive their local Flowpad backend: the ticket's proof of concept (create a shell, then `run-detached`) gets refused. The desktop app, the `flow` CLI, and opening `localhost:9007` in a browser keep working.
 
-* **Means:** turn on the existing `CookieGateMiddleware` for every local backend, backed by a per-install token in a plain file (KTD1, KTD2).
+* **Means:** the existing `CookieGateMiddleware` gains a per-install local token in a plain file and enforces it. That is the only backend change. Electron and the CLI read the same file and present it (KTD1, KTD10, KTD9).
 
 * **Authority:** Product Contract Requirements win on behavior. KTDs win on mechanism. Units implement; they override neither.
 
@@ -28,9 +28,9 @@ version: 3
 
   * the Electron app can't pass its startup health check;
 
-  * an Open Question marked blocking is reached while still unanswered.
+  * a backend change outside the middleware turns out to be unavoidable.
 
-* **Execution profile:** Python backend and CLI (`flow_sdk/`), Electron shell (`electron/`), and docs, in one repo on branch `FLOWPAD-2233`. One cross-repo dependency (the sandbox template) is tracked in Risks & Dependencies.
+* **Execution profile:** the middleware module (`flow_sdk/server/middleware/`), the CLI transport and other callers, the Electron shell (`electron/`), test setup, and docs, in one repo on branch `FLOWPAD-2233`. One cross-repo dependency (hub images) is tracked in Risks & Dependencies.
 
 ***
 
@@ -38,15 +38,17 @@ version: 3
 
 ### Summary
 
-Every local backend generates a random token at first startup and refuses any HTTP or WebSocket request that doesn't present it, unless an explicit off switch is set. The CLI and Electron read the token from disk. Browsers get it as a cookie, either from a token URL or from a navigation the user started themselves. Hub sandboxes keep their current arming flow and share the same storage.
+The first time a local backend serves a request, its middleware creates a random token file. From then on it refuses any HTTP or WebSocket request that doesn't present that token, unless an explicit off switch is set. Electron reads the file and sets the cookie in its window and the header on its own requests. The CLI reads the file and sets the header. A browser gets the cookie when the user opens the app directly. Hub sandboxes keep working exactly as today.
 
 ### Problem Frame
 
 The local backend on `localhost:9007` answers every request without authentication. The browser lets any web page send requests to it, and the CORS config whitelists the `null` origin with credentials. As a result, a page can create a shell through `POST /api/v1/graph/shell`, read its id, and run a command through `/run-detached` (the PoC in the FLOWPAD-2233 comments). This is the same class as MCP Inspector CVE-2025-49596.
 
-The authentication mechanism already exists. `CookieGateMiddleware` gates everything when a secret is set, but only hub sandboxes ever set one. On desktop it is inert by design: the secret lives in the encrypted store behind a marker file, and `set_cookie_gate` refuses desktop outright (`DesktopGateRefused`).
+`CookieGateMiddleware` already gates every request when a secret is set, but only hub sandboxes ever set one. On desktop it never arms.
 
 ### Key Decisions
+
+* **Backend changes stay in the middleware.** Electron gets a reading utility that sets the cookie, and the CLI reads the token from its path and sets it on each request. (session-settled: user-directed — chosen over spreading the change across backend startup, the auth routes and the secret-store module.) Governs R1–R4, R6, R10.
 
 * **The token is a plain file under flow home, not the encrypted store.** (session-settled: user-directed — chosen over the per-instance encrypted store (sod): Electron has no code to read the store, and reading it can fail open on desktop.) Governs R2.
 
@@ -62,13 +64,13 @@ The authentication mechanism already exists. `CookieGateMiddleware` gates everyt
 
 **Gate**
 
-* R1. Every HTTP request and WebSocket handshake to a local backend is refused unless it presents the instance's token. This holds unless the off switch is set or KTD5/KTD8 lets the request through.
+* R1. Every HTTP request and WebSocket handshake to a local backend is refused unless it presents the instance's token, except when the off switch is set or KTD5 or KTD7 lets the request through.
 
-* R2. The token is a random per-install value in a plain file in the instance folder under flow home (`<flow_home>/instances/<instance>/.cookie_gate`), created at first startup. Only the user can read it: 0600 on macOS and Linux, inherited profile permissions on Windows.
+* R2. The token is a random per-install value in a plain file in the instance folder under flow home (`<flow_home>/instances/<instance>/.cookie_gate`). The backend creates it the first time it serves a request. Only the user can read it: 0600 on macOS and Linux, inherited profile permissions on Windows.
 
-* R3. An explicit off switch disables generating the token at startup. A token that has already been written (for example, by the hub arming a sandbox) is still enforced.
+* R3. An explicit off switch stops the backend from creating the token. A token file that already exists is still enforced.
 
-* R4. If the gate is expected to be on and the token can't be read, requests are refused (fail closed).
+* R4. With the off switch unset, if the token can't be created or read, requests are refused (fail closed).
 
 **Callers**
 
@@ -80,17 +82,13 @@ The authentication mechanism already exists. `CookieGateMiddleware` gates everyt
 
   * opening `http://localhost:<port>` or `http://127.0.0.1:<port>` directly (typed, bookmark, launched from the OS) works;
 
-  * a token URL works;
-
   * a request triggered by another site's page or link gets no cookie and is refused.
 
-* R8. The desktop cookie is `HttpOnly`, `SameSite=Strict`, `Path=/`, kept for one year, and named per port so two local instances don't overwrite each other. The sandbox cookie keeps its current attributes.
-
-* R9. Browser login, OAuth and logout return paths into the local backend keep completing. (Mechanism pending OQ1.)
+* R8. The desktop cookie is `HttpOnly`, `SameSite=Strict`, `Path=/`, kept for one year, and named per port so two local instances don't overwrite each other.
 
 **Sandboxes**
 
-* R10. Hub sandboxes keep the current arming contract (`flow auth set-cookie-gate` and `login_callback`'s `cookie-gate` parameter) and read the same token file as desktop.
+* R10. Hub sandboxes are unchanged. A hub-armed secret (`flow auth set-cookie-gate`, `login_callback`'s `cookie-gate` parameter) works as today and takes precedence over the local token.
 
 ### Success Criteria
 
@@ -100,6 +98,8 @@ The authentication mechanism already exists. `CookieGateMiddleware` gates everyt
 
 * `flow` CLI commands work unchanged against the running instance.
 
+* The backend diff touches only the middleware module (plus tests and test setup).
+
 ### Scope Boundaries
 
 * Removing `null` from CORS `allow_origins` and the postMessage bridge for sandboxed iframes are out of scope.
@@ -108,9 +108,15 @@ The authentication mechanism already exists. `CookieGateMiddleware` gates everyt
 
 * Confirmation for deep links and SPA auto-run actions (`flowpad://…?action=launch`, CWE-939) is out of scope.
 
+* The sandbox gate, its encrypted-store secret, `/auth/gate`, `login_callback` and `DesktopGateRefused` are not changed.
+
 #### Deferred to Follow-Up Work
 
-* Refuse any request carrying `Sec-Fetch-Site: cross-site`, even with a valid cookie (OWASP's second layer). Take it up after this core fix lands.
+* Refuse any request carrying `Sec-Fetch-Site: cross-site`, even with a valid cookie (OWASP's second layer).
+
+* Pages served on another `localhost` port (a shared artifact, a vibe app) and pages Flowpad serves on its own origin can still use the cookie and read API responses. Browsers treat every localhost port as the same site, and CORS accepts any localhost port with credentials. The fix is to refuse cookie-only requests marked `Sec-Fetch-Site: same-site` or `cross-site`, together with the item above.
+
+* Browser login, OAuth and logout return paths into the gated backend (`/auth/login_callback`, `/auth/oauth/complete`, `/auth/oauth/callback`, `/api/v1/cloud/logout_callback`), and handling of cross-site redirects that set the cookie. Until this lands, those arrivals are refused like any other request without the token.
 
 * CORS `null` removal and the iframe bridge (separate ticket).
 
@@ -118,17 +124,7 @@ The authentication mechanism already exists. `CookieGateMiddleware` gates everyt
 
 ### Open Questions
 
-* OQ1. **Blocking for the callback part of U3.** Should these routes be allowed through the gate when they arrive with no token?
-
-  * `/auth/login_callback`, `/auth/oauth/complete`, `/auth/oauth/callback`, `/api/v1/cloud/logout_callback`.
-
-  - Recommendation: yes, as an explicit allowlist (KTD8), because each one checks its own credential before acting. `logout_callback` needs checking first, since logout may not require a credential.
-
-  - The alternative needs a hub change: deliver these through `flowpad://` or a token-carrying hop.
-
-* OQ2. **Blocking for release, not for implementation.** The hub's E2B template must set the off switch, so the template snapshot carries no token and the hub's health probe before arming still passes. This needs confirming and changing in `flowpad-hub`.
-
-* OQ3. Does the hub send desktop logins through `flowpad://` (Electron, cookie injected) or through `http://127.0.0.1:<port>` in the system browser? This decides how many users rely on OQ1.
+* OQ2. **Blocking for release, not for implementation.** Every hub-launched backend must set `FLOWPAD_COOKIE_GATE=off`: the E2B template, the GCP VM image, and the hub's `LOCAL_MACHINE` compute nodes. Otherwise a token created before the hub arms the box (possibly baked into a shared image) refuses the hub's own arming call, which carries the hub's secret, not the local token. The hub's pre-arm health probe already treats a 403 as "up and gated". This needs confirming and changing in `flowpad-hub`.
 
 ### Sources
 
@@ -140,7 +136,7 @@ The authentication mechanism already exists. `CookieGateMiddleware` gates everyt
 
 * W3C Fetch Metadata spec / MDN: `Sec-Fetch-*` headers are browser-set and can't be forged by scripts.
 
-* Jupyter Server security docs: token on by default, token URL once, then a cookie.
+* Jupyter Server security docs: token on by default, then a cookie.
 
 * WebKit bug 231035: Safari rejects `Secure` cookies on `http://localhost`.
 
@@ -152,53 +148,53 @@ The authentication mechanism already exists. `CookieGateMiddleware` gates everyt
 
 ### Key Technical Decisions
 
-* KTD1. **One store: a plain token file, read with a stat-and-mtime cache.** `get_cookie_gate()` reads `<instance_dir>/.cookie_gate`, caching by file modification time as today. The `.cookie_gate_armed` marker, the encrypted-store read and `DesktopGateRefused` are removed. Implements the plain-file Key Decision. Governs R2, R10.
+* KTD1. **The middleware module owns the local token.** It holds:
 
-* KTD2. **Generate at startup, unless the off switch is set.** A never-raising startup step creates the file with exclusive-create when it is absent, next to `mark_desktop_managed` in the FastAPI lifespan. The off switch is the env var `FLOWPAD_COOKIE_GATE=off`. It only skips generation; it never deletes or ignores an existing token. Implements the "on everywhere" Key Decision. Governs R1, R3.
+  * the file path (`<instance_dir>/.cookie_gate`);
 
-* KTD3. **Fail closed once the gate is expected.** The process records at startup whether it generated or found a token. If it did and the token later can't be read, the middleware refuses rather than passing everything. This replaces the documented fail-open, which the doc itself flagged for revisiting once the gate protects more than sandboxes. Governs R4.
+  * create-if-absent on the first request, with exclusive create and 0600 on posix;
 
-* KTD4. **Cookie attributes depend on the runtime.**
+  * a read cached by file modification time;
 
-  * Desktop and every non-sandbox runtime: name `cookie-gate-<port>`, `HttpOnly`, `SameSite=Strict`, `Path=/`, `Max-Age` of one year, no `Secure`.
+  * the off switch.
 
-  * Assigned `sandbox` runtime: `__Host-cookie-gate`, `Secure`, `HttpOnly`, `SameSite=Lax`, as today.
+  It exports one read function. The CLI's `gate_headers` imports it, the same way it already imports `HEADER_NAME` from this module. No other backend module changes. Implements the "backend changes stay in the middleware" Key Decision. Governs R1–R3.
 
-  * One helper owns both. `/auth/gate` and KTD5 both call it, and the middleware accepts both names.
+* KTD2. **The off switch is** **`FLOWPAD_COOKIE_GATE=off`, read by the middleware.** It only stops the token being created; an existing file is still enforced. Governs R3.
 
-  * Governs R8.
+* KTD3. **Fail closed.** With the off switch unset, a token that can't be created or read means 403, never a pass. Governs R4.
 
-* KTD5. **The browser direct-open grant lives in the middleware.** A request without the token gets the cookie set on its own response, and passes, only when all of these hold:
+* KTD4. **The desktop cookie** is named `cookie-gate-<port>` and set `HttpOnly`, `SameSite=Strict`, `Path=/`, `Max-Age` of one year, without `Secure`. The middleware accepts it next to the existing sandbox cookie name. Governs R8.
+
+* KTD5. **Direct-open grant.** A request without the token passes, and gets the KTD4 cookie set on its response, only when all of these hold:
 
   * `Sec-Fetch-Site: none`, `Sec-Fetch-Mode: navigate`, `Sec-Fetch-Dest: document`;
 
   * `Host` is `localhost` or `127.0.0.1` with the port the request arrived on;
 
-  * the runtime is not `sandbox`.
+  * no hub-armed secret is in force.
 
-  It is header-shaped, not a path exemption. Curl and the hub send no `Sec-Fetch-*` headers, so they never match. Governs R7.
+  Curl and the hub send no `Sec-Fetch-*` headers, so they never match. Governs R7.
 
-* KTD6. **Cross-site arrivals that set the cookie answer with a same-origin HTML hop, not a 302.** A `Strict` cookie isn't sent on a redirect whose navigation started on another site. So on desktop, `/auth/gate` (and the KTD8 callbacks) return a tiny page that navigates to `next` from the same origin. Sandboxes keep the 302 with `Lax`. Governs R7, R9.
+* KTD7. **CORS preflights pass through to** **`CORSMiddleware`.** These are `OPTIONS` requests carrying `Origin` and `Access-Control-Request-Method`. Browsers never attach cookies to them and no route handler runs. The actual request that follows is still gated. Governs R1.
 
-* KTD7. **CORS preflights pass through to** **`CORSMiddleware`.** These are `OPTIONS` requests carrying `Origin` and `Access-Control-Request-Method`. Browsers never attach cookies to them, and no route handler runs for them. The actual request that follows is still gated. Governs R1, R7.
+* KTD9. **Callers resolve the token per target instance.** `gate_headers(url)` maps a loopback port to the instance serving it (through `server.json`) and reads that instance's token file. When it can't resolve the port, it uses this instance's token only if the port is this instance's own. Governs R5.
 
-* KTD8. **Self-authenticating return routes are an explicit allowlist (pending OQ1).** It covers a fixed set of GET routes, each of which checks its own credential (api-key, or OAuth `state`) before any side effect. A route in the list that can't show such a check is removed from it. Governs R9.
+* KTD10. **Electron reading utility.** A new `electron/cookie-gate.js`:
 
-* KTD9. **Tokens are resolved per target instance.** `gate_headers(url)` maps a loopback port to the instance serving it (through `server.json`) and sends that instance's token. When it can't resolve the port, it falls back to this instance's token only if the port is this instance's own. Governs R5.
-
-* KTD10. **Electron reads the file and injects the cookie.** A new small module, `electron/cookie-gate.js`, does the following:
-
-  * resolves `~/.flow/instances/<FLOW_INSTANCE>/.cookie_gate`;
+  * reads `~/.flow/instances/<FLOW_INSTANCE>/.cookie_gate`;
 
   * provides the `X-Cookie-Gate` header for main-process `fetch` calls;
 
-  * awaits `session.defaultSession.cookies.set` with the KTD4 desktop attributes before every `loadURL`.
+  * provides the KTD4 cookie details, which Electron sets with `session.defaultSession.cookies.set` before each `loadURL`.
 
-  This follows the repo pattern of a pure module plus a `*.test.js`. Governs R6.
+  Governs R6.
 
-* KTD11. **The test suite defaults to the off switch.** `tests/pytest_plugin.py` sets the off switch for the session. Gate tests opt in through a fixture that writes a token under the test FLOW\_HOME. Without this, the 67 `TestClient(app)` lifespans would create a token and later in-process API tests would get 403s. Governs R3.
+* KTD11. **The test suite defaults to the off switch.** `tests/pytest_plugin.py` sets it for the session, and gate tests opt in through a fixture. Without this, the first request in each in-process test app would create a token and later API tests would get 403s. Governs R3.
 
-* KTD12. **One-time migration for already-armed sandboxes.** At startup, if the legacy marker exists but there is no token file, the secret is copied from the encrypted store into the file and the marker removed. Without it, an upgraded sandbox would silently open. Governs R10.
+* KTD13. **Release order: Electron first, then the engine.** The Electron release with U6 ships before the engine release that turns the gate on. The new Electron works against an old engine (no token file, so no header and no cookie). (session-settled: user-directed — chosen over letting `/health/status` through the gate or gating only when Electron advertises support.) Governs R1, R6.
+
+* KTD14. **A hub-armed secret wins.** When `get_cookie_gate()` returns a secret, the middleware behaves exactly as today and ignores the local token. Sandboxes and their code paths stay untouched. Governs R10.
 
 ### High-Level Technical Design
 
@@ -207,145 +203,103 @@ Who reads the token:
 ```mermaid
 flowchart TB
   F[".cookie_gate file<br/>~/.flow/instances/&lt;name&gt;/"]
-  S["backend startup<br/>(generate if absent, unless off switch)"] -->|writes| F
-  H["hub: flow auth set-cookie-gate<br/>or login_callback"] -->|writes| F
-  F -->|get_cookie_gate| M["CookieGateMiddleware"]
-  F -->|gate_headers| C["flow CLI, workers,<br/>discovery, function runner"]
-  F -->|fs read| E["Electron main process"]
+  M["CookieGateMiddleware<br/>(creates on first request,<br/>unless off switch)"] -->|creates / reads| F
+  F -->|read via middleware export| C["CLI gate_headers:<br/>flow CLI, workers, scripts"]
+  F -->|fs read| E["Electron cookie-gate.js"]
   E -->|X-Cookie-Gate header| M
   E -->|cookies.set before loadURL| W["Electron window"]
   W -->|cookie| M
   C -->|X-Cookie-Gate header| M
-  B["system browser"] -->|"token URL or<br/>Sec-Fetch-Site: none"| M
+  B["system browser"] -->|"Sec-Fetch-Site: none"| M
 ```
 
 The middleware's decision for each request:
 
 ```mermaid
 flowchart TB
-  R[request] --> T{token expected?}
-  T -->|no: off switch, no file| P[pass]
-  T -->|yes| U{token readable?}
+  R[request] --> H{hub-armed secret?}
+  H -->|yes| X[today's sandbox behavior]
+  H -->|no| T{off switch set and no file?}
+  T -->|yes| P[pass]
+  T -->|no| U{token created / readable?}
   U -->|no| D[403, fail closed]
   U -->|yes| V{presents token?<br/>cookie / header / query}
   V -->|yes| P
   V -->|no| O{CORS preflight?}
   O -->|yes| P
-  O -->|no| A{allowlisted return route?<br/>pending OQ1}
-  A -->|yes| P
-  A -->|no| N{"Sec-Fetch-Site none + navigate + document<br/>and loopback Host, not sandbox?"}
+  O -->|no| N{"Sec-Fetch-Site none + navigate + document<br/>and loopback Host?"}
   N -->|yes| G[pass and set desktop cookie]
   N -->|no| D2[403]
 ```
 
 ### Assumptions
 
-* Electron always reads `~/.flow`. It ignores `FLOW_HOME` today (it hardcodes the logs path the same way), so a backend run with a custom `FLOW_HOME` under Electron is unsupported, as it already is.
+* Electron always reads `~/.flow`. It already ignores `FLOW_HOME` for its logs path, so a backend run with a custom `FLOW_HOME` under Electron stays unsupported.
 
-* The hub arms sandboxes before linking any browser to them (`docs/cookie-gate.md`), so choosing cookie attributes by runtime at `/auth/gate` time is safe.
+* Electron's health check may start before the first request has created the token. It re-reads the file on each probe, so the first probe can get a 403 and the next one passes.
 
 ### Sequencing
 
-U1, then U2, then U3 and U4 together. U5 and U6 depend on U1 and U4 and are independent of each other. U7 comes last.
+U2 and U3 first, as one middleware change. Then U5, U6 and U8 independently. U7 last. U1 and U4 were folded into U2 and U3.
 
 ***
 
 ## Implementation Units
 
-### U1. Token file store
+### U2. Local token in the middleware
 
-**Goal:** Make the plain token file the single source of the gate secret, for desktop and sandbox alike.
+**Goal:** The middleware creates, reads and enforces the local token, with the off switch and fail-closed behavior.
 
-**Requirements:** R2, R4, R10. KTD1, KTD3, KTD12.
+**Requirements:** R1–R4, R10. KTD1, KTD2, KTD3, KTD11, KTD14.
 
 **Dependencies:** none.
 
 **Files:**
 
-* `flow_sdk/instance_settings/cookie_gate.py`
-
-* `flow_sdk/instance_settings/base_settings.py`
-
-* `tests/unit/test_cookie_gate.py`
-
-**Approach:**
-
-1. Add a `COOKIE_GATE_FILENAME` constant and a path property next to the existing markers. Retire `COOKIE_GATE_MARKER_FILENAME` once the migration (step 4) has used it.
-2. `set_cookie_gate` writes the file through a temp file plus `os.replace`, creating it with `os.open(..., 0o600)` on posix. Windows relies on inherited permissions. `clear_cookie_gate` deletes the file. Remove `DesktopGateRefused` and its desktop-marker check.
-3. `get_cookie_gate` stats and reads the file with the existing per-instance mtime cache. It never touches the encrypted store.
-4. Add a migration helper for KTD12, called from U2's startup step.
-
-**Patterns to follow:** `flow_sdk/builtin/credential_files.py` (0600 plus `os.replace`); the existing mtime cache and `reset_cache` in `cookie_gate.py`.
-
-**Test scenarios:**
-
-* Writing a token then reading it returns that token. A second read with an unchanged mtime hits the cache.
-
-* Another process rewriting the file (new mtime) is seen without a restart.
-
-* Clearing deletes the file and reads return `None`.
-
-* An empty value is rejected.
-
-* On posix the created file mode is 0600.
-
-* Arming on an instance with the desktop marker now succeeds (the old refusal test is inverted).
-
-* Migration: marker plus a secret in the encrypted store and no file → the file holds the secret and the marker is gone. Marker with no readable secret → no file is written and the event is logged.
-
-**Verification:** `tests/unit/test_cookie_gate.py` passes. No reference to `DesktopGateRefused` or the encrypted store remains in `cookie_gate.py`.
-
-### U2. Startup generation and off switch
-
-**Goal:** Every backend has a token from its first startup unless the off switch is set, and the process knows whether it expects one.
-
-**Requirements:** R1, R3, R4. KTD2, KTD3, KTD11.
-
-**Dependencies:** U1.
-
-**Files:**
-
-* `flow_sdk/server/startup.py`
-
-* `flow_sdk/server/flow_server.py`
-
-* `flow_sdk/instance_settings/cookie_gate.py`
+* `flow_sdk/server/middleware/cookie_gate_middleware.py`
 
 * `tests/pytest_plugin.py`
 
-* `tests/unit/test_cookie_gate_startup.py` (new)
+* `tests/unit/test_cookie_gate_local_token.py` (new)
 
 **Approach:**
 
-1. Add a never-raising `ensure_cookie_gate_token()` next to `mark_desktop_managed`, called from the same lifespan block. It runs the KTD12 migration, then creates the file with exclusive-create if it is still absent and the off switch is not set, then records the "expected" flag (KTD3).
-2. Read the off switch in one place, in `cookie_gate.py`.
-3. Have the pytest plugin set the off switch for the session, and add an opt-in fixture for gate tests.
+1. Add the token path, create-if-absent and cached read inside the middleware module. Get the instance directory from `get_instance_settings()`, as the module already does through `get_cookie_gate`.
+2. On each request, check the hub-armed secret first (KTD14). If none, use the local token: create it if absent and the off switch is unset, then enforce it.
+3. Export the read function for the CLI.
+4. Have the pytest plugin set the off switch for the session, and add an opt-in fixture that turns it off and points at a temporary token.
 
-**Execution note:** land the pytest-plugin switch in the same commit as generation, or the suite goes red.
+**Patterns to follow:** the existing mtime cache in `flow_sdk/instance_settings/cookie_gate.py`; the 0600 plus `os.replace` write in `flow_sdk/builtin/credential_files.py`.
+
+**Execution note:** land the pytest-plugin switch in the same commit, or the suite goes red.
 
 **Test scenarios:**
 
-* First startup with no file creates a random token (at least 32 bytes of entropy). The second startup keeps the same token.
+* First request with no file creates a random token (at least 32 bytes of entropy) at the instance path. On posix the file mode is 0600.
 
-* Two processes starting together produce exactly one token and both read the same value.
+* A second request and a backend restart keep the same token.
 
-* With the off switch set and no file, nothing is created and requests pass.
+* Two concurrent first requests produce exactly one token.
 
-* With the off switch set and an existing file, the token is still enforced.
+* With the off switch set and no file, requests pass and no file is created.
 
-* If the file can't be created (read-only directory), startup still completes and the failure is logged.
+* With the off switch set and an existing file, the token is enforced.
 
-* With the gate expected and the file deleted while running, the next request gets 403, not a pass.
+* If the file can't be created (read-only directory), the request gets 403 and the failure is logged.
 
-**Verification:** the full pytest suite stays green with the plugin default. The new startup tests pass.
+* With the file deleted while running and the off switch unset, the next request recreates the token and the old cookie no longer passes.
 
-### U3. Middleware: direct-open grant, preflight and fail-closed
+* With a hub-armed secret in force, the local token is neither created nor accepted, and today's sandbox behavior holds.
 
-**Goal:** The middleware enforces R1 with the KTD5, KTD7 and KTD8 exceptions and sets the desktop cookie on the direct-open grant.
+**Verification:** the new tests pass. The full suite stays green with the plugin default. The backend diff, excluding tests, touches only the middleware module.
 
-**Requirements:** R1, R4, R7, R9. KTD3, KTD5, KTD7, KTD8.
+### U3. Middleware request decisions
 
-**Dependencies:** U2, plus U4's cookie helper.
+**Goal:** The middleware lets through requests carrying the token, CORS preflights and direct browser opens, and sets the desktop cookie on direct opens.
+
+**Requirements:** R1, R7, R8. KTD4, KTD5, KTD7.
+
+**Dependencies:** U2.
 
 **Files:**
 
@@ -359,19 +313,18 @@ U1, then U2, then U3 and U4 together. U5 and U6 depend on U1 and U4 and are inde
 
 **Approach:**
 
-1. Keep the pure-ASGI shape and run order. Add the decision steps in the order of the HTD flowchart.
-2. For the grant, wrap `send` so the desktop `Set-Cookie` from U4's helper is added to the passed-through response.
-3. Accept both cookie names (KTD4).
-4. Rewrite the 403 page copy for desktop to say how to get in ("Open Flowpad from its icon, or run `flow open`"). Keep it inline, since static assets are gated.
-5. The callback allowlist (KTD8) lands only after OQ1 is answered.
+1. Keep the pure-ASGI shape and its place in the middleware order. Add the decision steps in the order of the HTD flowchart.
+2. For the direct-open grant, wrap `send` so the KTD4 `Set-Cookie` is added to the passed-through response.
+3. Accept `cookie-gate-<port>` alongside the existing cookie, header and query transports.
+4. Rewrite the 403 page copy for local backends to explain how to get in ("Open Flowpad from its icon, or open this address directly in your browser"). Keep it inline, since static assets are gated.
 
 **Test scenarios:**
 
 * Covers the ticket PoC: `POST /api/v1/graph/shell` with `Origin: null` and no token gets 403, and no shell row is created.
 
-* The `X-Cookie-Gate` header, the per-port cookie, the legacy `__Host-` cookie on a sandbox, and the `?cookie-gate=` query each pass.
+* The `X-Cookie-Gate` header, the `cookie-gate-<port>` cookie, and the `?cookie-gate=` query each pass.
 
-* `GET /` with `Sec-Fetch-Site: none`, `Sec-Fetch-Mode: navigate`, `Sec-Fetch-Dest: document` and `Host: localhost:<port>` passes and sets `cookie-gate-<port>` with `HttpOnly`, `SameSite=Strict`, `Max-Age` and no `Secure`.
+* `GET /` with `Sec-Fetch-Site: none`, `Sec-Fetch-Mode: navigate`, `Sec-Fetch-Dest: document` and `Host: localhost:<port>` passes and sets `cookie-gate-<port>` with `HttpOnly`, `SameSite=Strict`, a one-year `Max-Age` and no `Secure`.
 
 * The same with `Host: 127.0.0.1:<port>` passes.
 
@@ -383,78 +336,33 @@ U1, then U2, then U3 and U4 together. U5 and U6 depend on U1 and U4 and are inde
 
   * a missing `Sec-Fetch-*` header;
 
-  * `Host: evil.example:<port>` (DNS-rebinding shape);
+  * `Host: evil.example:<port>`;
 
-  * a sandbox runtime.
+  * a hub-armed secret in force.
 
-* An `OPTIONS` preflight with `Origin` and `Access-Control-Request-Method` reaches CORS. A bare `OPTIONS` without those headers gets 403.
+* An `OPTIONS` preflight with `Origin` and `Access-Control-Request-Method` reaches CORS. A bare `OPTIONS` gets 403.
 
 * A WebSocket handshake without the token closes with 1008. With the cookie it connects.
 
-* With the gate expected and the token unreadable, a request carrying an old valid cookie gets 403.
+**Verification:** the gate test files pass. The ticket's PoC HTML, run against a local backend, shows 403 in the browser console.
 
-**Verification:** the gate test files pass. A manual run of the ticket's PoC HTML against a local backend shows 403 in the console.
+### U5. CLI and other callers
 
-### U4. Cookie helper and `/auth/gate` for desktop
-
-**Goal:** One helper produces the cookie for each runtime, and `/auth/gate` works for desktop browser arrivals.
-
-**Requirements:** R7, R8, R9. KTD4, KTD6.
-
-**Dependencies:** U1.
-
-**Files:**
-
-* `flow_sdk/server/routes/auth.py`
-
-* `flow_sdk/server/middleware/cookie_gate_middleware.py`
-
-* `flow_sdk/cli/flow_cli.py` (rewrite the `set-cookie-gate` help text that asserts the desktop refusal)
-
-* `tests/api/test_cookie_gate.py`
-
-**Approach:**
-
-1. Add the helper that returns the cookie name and attributes from `resolve_runtime`.
-2. Desktop `/auth/gate` sets the per-port cookie and returns the same-origin hop page (KTD6), reusing `_safe_next`.
-3. Sandbox `/auth/gate` is unchanged: `__Host-`, `Secure`, `Lax`, 302.
-4. Remove `login_callback`'s `DesktopGateRefused` catch.
-
-**Test scenarios:**
-
-* Desktop `/auth/gate?cookie-gate=<valid>&next=/dock/home` → 200 HTML that navigates to `/dock/home`, with the per-port cookie set as KTD4 describes.
-
-* Sandbox runtime → 302 to `next` with `__Host-cookie-gate`, `Secure`, `SameSite=Lax`, as the existing tests assert.
-
-* `next=https://evil.example` → the hop targets `/`.
-
-* `/auth/gate` with a wrong token gets 403 from the middleware.
-
-* `login_callback` with a valid api-key and a `cookie-gate` parameter on a desktop-marked instance arms the gate (formerly refused).
-
-**Verification:** the cookie-attribute tests are split into desktop and sandbox cases, and both pass.
-
-### U5. Python callers
-
-**Goal:** Every in-repo Python caller that opens or calls the local backend presents the right token.
+**Goal:** The CLI and every in-repo Python caller read the token from its path and set it on the request.
 
 **Requirements:** R5, R7. KTD9.
 
-**Dependencies:** U1, U4.
+**Dependencies:** U2.
 
 **Files:**
 
-* `flow_sdk/instance_settings/cookie_gate.py` (`gate_headers` per-target lookup)
+* `flow_sdk/instance_settings/cookie_gate.py` (`gate_headers`: read the local token through the middleware export, per target port)
 
-* `flow_sdk/cli/flow_cli.py` (`flow start` browser open; test-login)
+* `flow_sdk/cli/flow_cli.py` (`flow start` opens `http://localhost:<port>` instead of `127.0.0.1`, which the direct-open grant covers)
 
-* `flow_sdk/core/compute_op/ask_window.py`
+* `flow_sdk/core/compute_op/ask_window.py` (same change)
 
-* `flow_sdk/cli/commands/llm_cmd.py`
-
-* `flow_sdk/graph_workflow_manager/function_runner.py`
-
-* `flow_sdk/graph_workflow_manager/service_graph_workflows.py`
+* `flow_sdk/graph_workflow_manager/function_runner.py` and `service_graph_workflows.py` (context calls use `gate_headers`)
 
 * `flow_sdk/cloud_client/webhook_relay.py`
 
@@ -468,32 +376,36 @@ U1, then U2, then U3 and U4 together. U5 and U6 depend on U1 and U4 and are inde
 
 **Approach:**
 
-1. Browser opens (`flow start`, test-login, ask window, `flow llm`) build `http://localhost:<port>/auth/gate?cookie-gate=<token>&next=<path>`. Add a `flow open` command that does the same for the current instance.
-2. The function runner's context `post`/`get` attach `gate_headers`, and the demo script uses the context helper rather than a bare `urlopen`.
-3. The webhook relay attaches the token only when the replayed path starts with the data-source webhook prefix. It drops any inbound `cookie` or `x-cookie-gate` header.
-4. Discovery and hook-report fan-out use KTD9's per-port lookup.
+1. `gate_headers` sends the hub-armed secret when one exists, and otherwise the target instance's local token (KTD9). `local_request` and every caller already built on it need no change.
+2. The function runner and its demo script send their requests through `gate_headers`.
+3. The webhook relay first normalizes the replayed path: it resolves dot segments and rejects `..` and percent-encoded dots or slashes. It attaches the token only when the normalized path is under `/api/v1/data_source/webhook/`, and sends exactly that path. It drops any inbound `cookie` or `x-cookie-gate` header.
+4. Discovery and hook-report fan-out use the per-port lookup.
 
-**Patterns to follow:** `local_request` in `flow_sdk/cli/commands/_common.py`; the existing `?cookie-gate=` browser open in `llm_cmd.py`.
+**Patterns to follow:** `local_request` in `flow_sdk/cli/commands/_common.py`.
 
 **Test scenarios:**
 
-* `gate_headers` for this instance's port returns this instance's token. For another running instance's port it returns that instance's token. For an unknown loopback port it returns nothing. For a non-loopback host it returns nothing.
+* `gate_headers` for this instance's port returns its local token. For another running instance's port it returns that instance's token. For an unknown loopback port or a non-loopback host it returns nothing.
 
-* `flow start`'s browser URL is on `localhost`, carries the token and has a safe `next`.
+* With a hub-armed secret, `gate_headers` returns that secret.
+
+* `flow start` opens a `localhost` URL with no token in it.
 
 * The function-runner context `post` includes `X-Cookie-Gate`.
 
 * The webhook relay attaches the header for `/api/v1/data_source/webhook/...` but not for `/api/v1/graph/shell`, and strips an inbound `x-cookie-gate`.
 
-**Verification:** every caller listed as "not gate-aware" in the research dossier has a test, or is covered by `local_request`.
+* A relayed path of `/api/v1/data_source/webhook/../../graph/shell` (and its percent-encoded form) gets no `X-Cookie-Gate` header, or is not replayed.
+
+**Verification:** every caller the research marked as not sending the token has a test, or goes through `local_request`.
 
 ### U6. Electron
 
-**Goal:** The desktop app starts and loads with the gate on.
+**Goal:** Electron reads the token, sets the cookie in its window and sends the header on its own requests.
 
-**Requirements:** R6. KTD4, KTD10.
+**Requirements:** R6. KTD4, KTD10, KTD13.
 
-**Dependencies:** U1, U4.
+**Dependencies:** U2 (behavior only; Electron ships first per KTD13).
 
 **Files:**
 
@@ -509,9 +421,9 @@ U1, then U2, then U3 and U4 together. U5 and U6 depend on U1 and U4 and are inde
 
 **Approach:**
 
-1. `cookie-gate.js` exports: the token path for an instance, a read that returns `null` when the file is absent, the header object, and the cookie details for a port (desktop attributes, per-port name).
-2. The health poll re-reads the token on each probe until it appears, because the backend creates it on first boot, and sends the header.
-3. Every `loadURL` (startup, deep links, the `uv-manager` loads) first awaits the cookie injection. Child `/win/` windows share the default session.
+1. `cookie-gate.js` exports: the token path for an instance, a read that returns `null` when the file is absent, the header object, and the cookie details for a port.
+2. The health poll re-reads the token on each probe and sends the header when present.
+3. Before every `loadURL` (startup, deep links, the `uv-manager` loads), await `cookies.set` with the cookie details when a token exists. Child `/win/` windows share the default session.
 4. The token never appears in logs.
 
 **Patterns to follow:** `electron/backend-wait.js` with `backend-wait.test.js` (a pure module plus a `node` assert script); `electron/log-redact.js`.
@@ -524,9 +436,9 @@ U1, then U2, then U3 and U4 together. U5 and U6 depend on U1 and U4 and are inde
 
 * Cookie details for port 9007: name `cookie-gate-9007`, `httpOnly: true`, `sameSite: 'strict'`, `secure: false`, path `/`, about one year until expiry.
 
-* The probe sends `X-Cookie-Gate` when a token exists.
+* The probe sends `X-Cookie-Gate` when a token exists and nothing when it doesn't.
 
-**Execution note:** after the unit tests, smoke-test a real Electron launch: a fresh install (no token file yet) and an upgrade (token present). Also open a `flowpad://` deep link.
+**Execution note:** after the unit tests, smoke-test a real Electron launch against both the new engine (fresh install, no token yet; and an upgrade) and the old engine. Also open a `flowpad://` deep link.
 
 **Verification:** `npm test` in `electron/` passes. The manual launch reaches the app window with no 403 in the backend log.
 
@@ -536,7 +448,7 @@ U1, then U2, then U3 and U4 together. U5 and U6 depend on U1 and U4 and are inde
 
 **Requirements:** R1, R3.
 
-**Dependencies:** U1–U6.
+**Dependencies:** U2, U3, U5, U6, U8.
 
 **Files:**
 
@@ -548,58 +460,91 @@ U1, then U2, then U3 and U4 together. U5 and U6 depend on U1 and U4 and are inde
 
 * `scripts/instance_ctl.sh`
 
+* `docker/docker-compose.yml` (set `FLOWPAD_COOKIE_GATE: "off"` in the shared backend env, which keeps the healthchecks and `docker/run_realtime_tests.sh` working)
+
 **Approach:**
 
-1. Rewrite `docs/cookie-gate.md` for on-by-default operation. Update or remove these:
-
-   * "unset on desktop";
-
-   * the desktop refusal;
-
-   * the marker and keychain rationale;
-
-   * fail-open.
-2. Argue the KTD5, KTD7 and KTD8 exceptions against the "no path exempt" doctrine. Add the desktop and sandbox cookie table.
-3. Document `FLOWPAD_COOKIE_GATE=off` in the dev setup docs, and set it in repo-owned dev launchers.
+1. Add a "local token" section to `docs/cookie-gate.md`: on by default, the off switch, fail closed, the direct-open grant and the preflight pass, and how a hub-armed secret takes precedence. Update its "unset on every desktop install" statements.
+2. Document `FLOWPAD_COOKIE_GATE=off` in the dev setup docs, and set it in repo-owned dev launchers.
 
 **Test expectation:** none -- docs and dev-script config only.
 
 **Verification:** the doc no longer contradicts the code. A named dev instance started through `scripts/instance_ctl.sh` serves the Vite frontend without 403s.
 
+### U8. Shell scripts and shipped assistant instructions
+
+**Goal:** Non-Python callers that `curl` the local backend present the token, so R5 holds beyond Python.
+
+**Requirements:** R5.
+
+**Dependencies:** U2.
+
+**Files:**
+
+* `scripts/validate_install.sh` (the PyPI release self-check)
+
+* `scripts/ci_e2e_reset_backend.sh`
+
+* `scripts/docker_install_snippet/in_container.sh`
+
+* `flow_sdk/system_projects/flowpad_assistant/.claude/skills/flowpad-assistance/message.md`
+
+* `flow_sdk/system_projects/flowpad_assistant/.claude/skills/flowpad-assistance/search.md`
+
+* `flow_sdk/system_projects/flowpad_assistant/.claude/agents/asset-cleanup-wizard.md`
+
+* `flow_sdk/system_projects/flowpad_assistant/.claude/skills/flow-diagnose/SKILL.md` and its `references/catalog.md`
+
+* `tests/unit/test_no_bare_local_curl.py` (new)
+
+**Approach:**
+
+1. Sweep `scripts/` and `flow_sdk/system_projects/` for `curl` or HTTP calls to `localhost`, `127.0.0.1` or the backend port. The list above is what review found, not a closed set.
+2. Switch each to the matching `flow` CLI command where one exists, since the CLI already sends the token. Otherwise send `-H "X-Cookie-Gate: $(cat <instance_dir>/.cookie_gate)"`.
+3. flow-diagnose's liveness check treats a 403 from the gate as "up and gated", not "down".
+
+**Test scenarios:**
+
+* A repo scan finds no `curl` to a loopback backend URL in `scripts/` or `flow_sdk/system_projects/` that neither sends the gate header nor goes through `flow`.
+
+* `scripts/validate_install.sh` passes against a freshly installed, gated backend.
+
+**Verification:** the scan test passes. flow-diagnose reports a healthy gated backend as healthy.
+
 ***
 
 ## Risks & Dependencies
 
-| Risk                                                                                                         | Mitigation                                                                                                                       |
-| ------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------- |
-| The sandbox template snapshot bakes in a token, and the hub's pre-arm health probe gets 403 (OQ2).           | The template sets the off switch. Release is blocked until `flowpad-hub` confirms it.                                            |
-| A localhost login or OAuth return breaks for browser users (OQ1, OQ3).                                       | KTD8 allowlist after OQ1. Test each route end to end before release.                                                             |
-| A local caller is missed and starts getting 403s.                                                            | The dossier's caller inventory is a checklist in U5 and U6. The middleware logs every refusal with type and path.                |
-| Users upgrading with an open browser tab get 403 until reload.                                               | The direct-open grant re-issues the cookie on the next typed or bookmarked load. The 403 page tells the user how to get back in. |
-| Two local instances in one browser overwrite each other's cookie.                                            | Per-port cookie name (KTD4).                                                                                                     |
-| Links opened from other desktop apps may arrive with `Sec-Fetch-Site: none` (unverified) and get the cookie. | Accepted. It's the same exposure `flowpad://` deep links have today, and is tracked in the deferred CWE-939 work.                |
+| Risk                                                                                                                 | Mitigation                                                                                                                         |
+| -------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| A hub-launched box creates a local token before the hub arms it, and the hub's arming call is refused (OQ2).         | Every hub-launched backend sets the off switch. Release is blocked until `flowpad-hub` confirms it.                                |
+| An updated engine under an old Electron fails its health check and is killed after 120 s.                            | Release order (KTD13): the Electron release with U6 ships first.                                                                   |
+| A local caller is missed and starts getting 403s.                                                                    | U5, U6 and U8 work from the research's caller list, and U8 adds a repo scan. The middleware logs every refusal with type and path. |
+| Browser login, OAuth and logout returns into a gated desktop backend are refused until the deferred follow-up lands. | Known gap, tracked under Deferred to Follow-Up Work. Electron's `flowpad://` path carries the injected cookie and is unaffected.   |
+| Users upgrading with an open browser tab get 403 until they reload.                                                  | The direct-open grant re-issues the cookie on the next typed or bookmarked load, and the 403 page says how to get back in.         |
+| Links opened from other desktop apps may arrive with `Sec-Fetch-Site: none` (unverified) and get the cookie.         | Accepted: the same exposure `flowpad://` deep links have today, tracked in the deferred CWE-939 work.                              |
 
 ***
 
 ## Verification Contract
 
-| Gate                   | Command / check                                                                                                                                                                                                                                                                                                                                                                                  |
-| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Python unit and API    | `uv run pytest tests/unit/test_cookie_gate.py tests/unit/test_cookie_gate_startup.py tests/unit/test_cookie_gate_middleware.py tests/unit/test_cli_gate_transport.py tests/unit/test_webhook_relay_gate.py tests/unit/test_function_runner_gate.py tests/api/test_cookie_gate.py tests/api/test_cookie_gate_ws.py tests/unit/test_login_callback_runtime.py tests/cli/test_auth_hub_commands.py` |
-| Full suite stays green | `uv run pytest` (in the background, per repo practice; never raise timeouts)                                                                                                                                                                                                                                                                                                                     |
-| Electron               | `npm test` in `electron/`                                                                                                                                                                                                                                                                                                                                                                        |
-| PoC regression         | Open the ticket's PoC HTML in Chrome against a local gated backend: the first `fetch` gets 403 and no shell is created.                                                                                                                                                                                                                                                                          |
-| Desktop smoke          | Electron fresh install plus upgrade launch; open a `flowpad://` deep link; run `flow status`; open `http://localhost:9007` in Chrome and Safari (the latter on macOS).                                                                                                                                                                                                                           |
+| Gate                   | Command / check                                                                                                                                                                                                                                                                                                                                              |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Python unit and API    | `uv run pytest tests/unit/test_cookie_gate_local_token.py tests/unit/test_cookie_gate_middleware.py tests/unit/test_cli_gate_transport.py tests/unit/test_webhook_relay_gate.py tests/unit/test_function_runner_gate.py tests/unit/test_no_bare_local_curl.py tests/api/test_cookie_gate.py tests/api/test_cookie_gate_ws.py tests/unit/test_cookie_gate.py` |
+| Full suite stays green | `uv run pytest` (in the background, per repo practice; never raise timeouts)                                                                                                                                                                                                                                                                                 |
+| Electron               | `npm test` in `electron/`                                                                                                                                                                                                                                                                                                                                    |
+| PoC regression         | Open the ticket's PoC HTML in Chrome against a local gated backend: the first `fetch` gets 403 and no shell is created.                                                                                                                                                                                                                                      |
+| Desktop smoke          | New Electron with the new engine (fresh install and upgrade) and with the old engine; open a `flowpad://` deep link; run `flow status`; open `http://localhost:9007` in Chrome and Safari (the latter on macOS).                                                                                                                                             |
 
 ***
 
 ## Definition of Done
 
-* R1–R8 and R10 are met and covered by the tests above. R9 is met once OQ1 is answered.
+* R1–R8 and R10 are met and covered by the tests above.
 
-* OQ2 is confirmed with `flowpad-hub` before release.
+* The backend diff, excluding tests and test setup, is confined to `flow_sdk/server/middleware/cookie_gate_middleware.py`.
 
-* No reference to `DesktopGateRefused`, `.cookie_gate_armed` (outside the migration) or the store-based gate read remains.
+* OQ2 is confirmed with `flowpad-hub` before release, and the Electron release with U6 ships before the engine release (KTD13).
 
 * `docs/cookie-gate.md` matches the shipped behavior.
 
