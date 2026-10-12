@@ -207,17 +207,12 @@ def check_server_health(port: int, timeout: float = 2.0) -> bool:
     url = f"http://127.0.0.1:{port}/health/status"
     try:
         req = urllib.request.Request(url, method="GET")
-        # Lazy: `gate_headers` pulls in starlette on the armed path, and this
-        # supervisor otherwise never needs it and must not pay for it at
-        # startup. It swallows its own failures and yields {} -- the monitor
-        # must survive anything the settings layer does, since being unable to
-        # read the gate is a reason to probe without it, never a reason to stop
-        # supervising the server.
-        from flow_sdk.instance_settings.cookie_gate import gate_headers
+        # LOCAL_OPENER carries the cookie-gate token. It swallows its own
+        # failures to read the token -- being unable to read the gate is a
+        # reason to probe without it, never a reason to stop supervising.
+        from flow_sdk.instance_settings.cookie_gate import LOCAL_OPENER
 
-        for name, value in gate_headers(url).items():
-            req.add_header(name, value)
-        with urllib.request.urlopen(req, timeout=timeout):
+        with LOCAL_OPENER.open(req, timeout=timeout):
             return True
     except urllib.error.HTTPError as e:
         # Distinguished from "no answer" on purpose. A gated instance that

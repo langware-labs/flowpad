@@ -36,6 +36,7 @@ anyway.
 
 from __future__ import annotations
 
+import urllib.request
 from pathlib import Path
 
 from flow_sdk.instance_settings import get_instance_settings
@@ -274,6 +275,31 @@ def gate_headers(url: str) -> dict[str, str]:
         return {HEADER_NAME: secret}
     except Exception:
         return {}
+
+
+class LocalCookieGateHandler(urllib.request.BaseHandler):
+    """urllib handler: every request to a loopback host carries ``gate_headers``
+    (this instance's local cookie-gate token). Open requests through
+    ``LOCAL_OPENER`` instead of adding the header to each one by hand.
+
+    ``add_unredirected_header``: a redirect off this machine does not carry it.
+    A header the caller set explicitly wins.
+    """
+
+    handler_order = 100  # before the default handlers
+
+    def _add(self, req: urllib.request.Request) -> urllib.request.Request:
+        for name, value in gate_headers(req.full_url).items():
+            if not req.has_header(name.capitalize()):
+                req.add_unredirected_header(name, value)
+        return req
+
+    http_request = _add
+    https_request = _add
+
+
+#: ``urllib`` opener for requests to this machine's backend: ``LOCAL_OPENER.open(req, timeout=...)``.
+LOCAL_OPENER = urllib.request.build_opener(LocalCookieGateHandler())
 
 
 def is_gated() -> bool:
