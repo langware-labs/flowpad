@@ -122,10 +122,14 @@ trap cleanup EXIT
 LOCAL_SERVER_PORT=$PORT "$PYTHON" -m flow_sdk.server.run &
 SERVER_PID=$!
 
+# The server refuses requests without its cookie-gate token, which it writes on the first
+# request it serves; re-read it per call.
+gate() { echo "X-Cookie-Gate: $(cat "${FLOW_HOME:-$HOME/.flow}/instances/${FLOW_INSTANCE:-prod}/.cookie_gate" 2>/dev/null)"; }
+
 echo -e "  Waiting for server on port $PORT..."
 HEALTHY=false
 for i in $(seq 1 30); do
-    if curl -sf "http://127.0.0.1:${PORT}/health/status" >/dev/null 2>&1; then
+    if curl -sf -H "$(gate)" "http://127.0.0.1:${PORT}/health/status" >/dev/null 2>&1; then
         HEALTHY=true
         break
     fi
@@ -142,20 +146,20 @@ fi
 
 if $HEALTHY; then
     check "GET /health/status" \
-        curl -sf "http://127.0.0.1:${PORT}/health/status"
+        curl -sf -H "$(gate)" "http://127.0.0.1:${PORT}/health/status"
 
     check_output "GET / serves HTML" \
         "doctype html" \
-        curl -s "http://127.0.0.1:${PORT}/"
+        curl -s -H "$(gate)" "http://127.0.0.1:${PORT}/"
 
     check "GET /favicon.ico" \
-        curl -sf "http://127.0.0.1:${PORT}/favicon.ico"
+        curl -sf -H "$(gate)" "http://127.0.0.1:${PORT}/favicon.ico"
 
     check "GET /logo.png" \
-        curl -sf "http://127.0.0.1:${PORT}/logo.png"
+        curl -sf -H "$(gate)" "http://127.0.0.1:${PORT}/logo.png"
 
     check "GET /api/v1/graph/bootstrap" \
-        curl -sf "http://127.0.0.1:${PORT}/api/v1/graph/bootstrap"
+        curl -sf -H "$(gate)" "http://127.0.0.1:${PORT}/api/v1/graph/bootstrap"
 fi
 
 cleanup
