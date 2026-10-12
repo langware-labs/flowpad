@@ -1,7 +1,8 @@
 """cookie-gate, sandbox: the hub-armed secret.
 
-Dispatched by ``CookieGateMiddleware`` when ``get_cookie_gate()`` returns a secret
-— a sandbox the hub armed over loopback.
+Dispatched by ``CookieGateMiddleware`` for requests that reach a hub-armed box
+from outside — through its public URL (a non-loopback ``Host``). Requests from the
+box itself go through the local gate instead.
 
 Armed, nothing is answered without the secret — not the UI, not static, not the
 API, not a WebSocket. **No path is exempt**, including ``/health/status``,

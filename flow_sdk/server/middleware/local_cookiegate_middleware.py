@@ -1,8 +1,9 @@
 """cookie-gate, local: the per-install token every non-sandbox backend enforces.
 
-Dispatched by ``CookieGateMiddleware`` when no hub secret is armed — every
-desktop and other local backend (FLOWPAD-2233: an unauthenticated localhost API
-let any web page create a shell and run a command).
+Dispatched by ``CookieGateMiddleware`` for every request that comes from this
+machine (a loopback ``Host``) — on a desktop and on a cloud box alike, since a
+browser on either machine can be pointed at localhost (FLOWPAD-2233: an
+unauthenticated localhost API let any web page create a shell and run a command).
 
 A random token in ``<instance_dir>/.cookie_gate``, created on the first request
 this backend serves, and read from that file by the CLI and Electron.
@@ -140,11 +141,12 @@ def _with_local_cookie(send: Send, conn: HTTPConnection, token: str) -> Send:
 # ---------------------------------------------------------------------------
 
 
-def read_local_token(path: Path) -> str | None:
-    """The local token in ``path``, or ``None`` when there is none. The one
-    reader: this gate (``LOCAL_TOKEN_PATH``) and the CLI's ``gate_headers`` (the
-    target instance's file) both come through here. A plain-file read, so nothing
-    is cached. Never raises."""
+def read_local_token(path: Path | None = None) -> str | None:
+    """The local token (this instance's ``LOCAL_TOKEN_PATH`` by default), or
+    ``None`` when there is none. The one reader: this gate and the CLI's
+    ``gate_headers`` both come through here. A plain-file read, so nothing is
+    cached. Never raises."""
+    path = path or LOCAL_TOKEN_PATH  # resolved per call, not bound at definition
     try:
         value = path.read_text(encoding="utf-8").strip()
     except OSError:

@@ -1,20 +1,22 @@
 """cookie-gate — admission control. Locks this instance to callers who can
 present its secret.
 
-Two gates, chosen per request:
+Two gates, one per way in, chosen per request:
 
-* **sandbox** (``sandbox_cookiegate_middleware``) — when ``get_cookie_gate()``
-  returns a secret: a sandbox the hub armed over loopback.
-* **local** (``local_cookiegate_middleware``) — otherwise: every other backend,
-  desktop included, enforcing the token in ``<instance_dir>/.cookie_gate``
-  (FLOWPAD-2233).
+* **local** (``local_cookiegate_middleware``) — requests from this machine
+  (``Host`` is ``localhost``/``127.0.0.1``): its browser, the CLI, workers,
+  Electron. Enforces the token in ``<instance_dir>/.cookie_gate`` (FLOWPAD-2233).
+  Applies on a desktop and on a cloud box alike.
+* **hub** (``sandbox_cookiegate_middleware``) — requests from outside, through a
+  hub-armed box's public URL (any other ``Host``). Enforces the secret the hub
+  armed (``get_cookie_gate()``).
 
-Per request, not once at construction: a sandbox boots from its template with
-no secret and is armed by the hub later, so a choice made at startup would put
-every sandbox behind the local gate for good. No env var or flag says "sandbox"
-at boot (``E2B_SANDBOX_ID`` is empty in the server process; the runtime is only
-assigned by ``login_callback``). ``get_cookie_gate()`` answers from a ``stat()``,
-so asking per request is cheap.
+A non-loopback ``Host`` with no hub secret armed has no legitimate sender — on a
+desktop it is what DNS rebinding produces — so it gets the local gate.
+
+Per request, not once at construction: a box boots from its template unarmed and
+the hub arms it later. ``get_cookie_gate()`` answers from a ``stat()``, so asking
+per request is cheap.
 
 Registered LAST in ``FlowServer.create`` so it runs FIRST — ``add_middleware`` is
 LIFO. Rejecting here happens before ``RequestTransactionMiddleware`` opens a
@@ -46,8 +48,8 @@ logger = logging.getLogger(__name__)
 
 
 class CookieGateMiddleware:
-    """Gate every HTTP request and WebSocket handshake: the sandbox gate when the
-    hub armed this instance, the local gate otherwise."""
+    """Gate every HTTP request and WebSocket handshake: the hub gate for requests
+    from outside a hub-armed box, the local gate for everything else."""
 
     def __init__(self, app: ASGIApp) -> None:
         # Deferred: both gates import the shared helpers at the bottom of this module.
@@ -64,7 +66,7 @@ class CookieGateMiddleware:
             return
 
         secret = get_cookie_gate()
-        if secret is not None:
+        if secret is not None and HTTPConnection(scope).url.hostname not in ("localhost", "127.0.0.1"):
             await self.sandbox(scope, receive, send, secret)
         else:
             await self.local(scope, receive, send)

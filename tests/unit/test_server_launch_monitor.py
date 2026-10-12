@@ -79,7 +79,7 @@ def _probe(secret, response=None):
         return _Answer()
 
     with (
-        patch("flow_sdk.instance_settings.cookie_gate.get_cookie_gate", return_value=secret),
+        patch("flow_sdk.server.middleware.local_cookiegate_middleware.read_local_token", return_value=secret),
         patch.object(urllib.request, "urlopen", fake_urlopen),
     ):
         healthy = launch.check_server_health(9007)
@@ -95,7 +95,7 @@ def test_health_probe_carries_the_gate_secret_when_gated():
 
 
 def test_health_probe_sends_no_gate_header_when_ungated():
-    """Every desktop install. The probe must be byte-identical to what it was."""
+    """No local token (the gate is off). The probe must be byte-identical to what it was."""
     healthy, req = _probe(None)
 
     assert healthy is True
@@ -116,7 +116,7 @@ def test_health_probe_survives_an_unreadable_gate():
     """Being unable to read the secret is a reason to probe without it, never a
     reason to stop supervising."""
     with (
-        patch("flow_sdk.instance_settings.cookie_gate.get_cookie_gate", side_effect=RuntimeError("sod is gone")),
+        patch("flow_sdk.server.middleware.local_cookiegate_middleware.read_local_token", side_effect=RuntimeError("token unreadable")),
         patch.object(urllib.request, "urlopen", lambda req, timeout=None: _Answer()),
     ):
         assert launch.check_server_health(9007) is True

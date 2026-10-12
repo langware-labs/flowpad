@@ -790,17 +790,17 @@ def _report(row: Row, *, json_output: bool) -> None:
 
 
 def _chooser_url(port: int) -> str:
-    """The chooser's address, carrying the cookie-gate secret when the instance is armed.
+    """The chooser's address, carrying this instance's local cookie-gate token.
 
-    The browser's FIRST contact is necessarily cookie-less, and the gate exempts no path --
-    so on a gated instance a bare URL would open onto a 403 page instead of the chooser. The
-    query transport exists for precisely this case; `gate_headers` tells us whether there is
-    anything to carry.
+    The browser's FIRST contact is necessarily cookie-less, so a bare URL would open onto a
+    403 page instead of the chooser; the query transport exists for precisely this case. The
+    URL is loopback, so it is the local gate's token (FLOWPAD-2233), never the hub's.
     """
-    from flow_sdk.instance_settings.cookie_gate import get_cookie_gate, is_gated
+    from flow_sdk.server.middleware.local_cookiegate_middleware import read_local_token
 
     url = f"http://127.0.0.1:{port}{_CHOOSER_PATH}"
-    return f"{url}?cookie-gate={get_cookie_gate()}" if is_gated() else url
+    token = read_local_token()
+    return f"{url}?cookie-gate={token}" if token else url
 
 
 def _serve_chooser_here() -> int:
