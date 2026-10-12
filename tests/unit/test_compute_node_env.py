@@ -118,3 +118,25 @@ async def test_set_env_special_characters(node, tmp_path, monkeypatch):
     # get_set_env_cmd escapes ' as '\'' inside a single-quoted export.
     escaped = value.replace("'", "'\\''")
     assert f"export FLOWPAD_SPECIAL='{escaped}'" in rc_text
+
+
+@pytest.mark.asyncio
+async def test_executor_env_survives_cwd_without_command_or_log_leak(any_provider, tmp_path, caplog):
+    """A Git-style cwd prefix must not consume the one-command auth overlay."""
+    from types import SimpleNamespace
+
+    from flow_sdk.builtin.faas.command_executor import ComputeNodeCommandExecutor
+
+    provider, node_id = any_provider
+
+    async def run_command(command, **kwargs):
+        return await provider.run_command(node_id, command, **kwargs)
+
+    compute = SimpleNamespace(compute_provider=provider, run_command=run_command)
+    result = await ComputeNodeCommandExecutor(compute).run(
+        ["python3", "-c", "import os; print(bool(os.environ.get('FLOWPAD_SECRET_PROBE'))); print(bool(os.environ.get('PATH')))"],
+        cwd=str(tmp_path), env={"FLOWPAD_SECRET_PROBE": "secret-not-in-command"},
+    )
+    assert result.ok and result.stdout.splitlines() == ["True", "True"]
+    assert "secret-not-in-command" not in result.command
+    assert "secret-not-in-command" not in caplog.text

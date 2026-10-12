@@ -28,6 +28,7 @@ import { type GitShare, gitShareFrom } from '../models/GitShare';
 import type { AssetSource } from '../process/asset-descriptor';
 import { isHubOnly } from '../utils/hub-runtime';
 import { ViewType } from '../utils/ui/view-types';
+import type { CredentialRequirement, CredentialVarKind } from './credential';
 import { SubAgent } from './subagent';
 import { Artifact, IArtifact } from './artifact';
 import type { IDeployment } from './deployment';
@@ -39,6 +40,7 @@ import { Wiki } from './wiki';
 import type { ShareResult } from './members';
 import type {
   DependencyState,
+  ProjectLoadResult,
   IProject,
   ProjectContextDirInfo,
   ProjectCustomization,
@@ -67,10 +69,9 @@ export function inviteFailure(result: ShareResult): Error | null {
   // reported per recipient in the result (the members popover renders it).
   if (invited.length || granted.length) return null;
   if (!failed.length && !failedTeams.length) return null;
-  const who = [
-    ...failed.map((r) => r.email ?? r.user_id ?? '?'),
-    ...failedTeams.map((t) => t.name ?? t.team),
-  ].join(', ');
+  const who = [...failed.map((r) => r.email ?? r.user_id ?? '?'), ...failedTeams.map((t) => t.name ?? t.team)].join(
+    ', ',
+  );
   const message = failed[0]?.message ?? failedTeams[0]?.message;
   return new Error(`Could not invite ${who}: ${message}`);
 }
@@ -164,6 +165,11 @@ export interface ProjectSetupVar {
   /** A file's content (a key file) — asked with a file picker. */
   file: boolean;
   present: boolean;
+  /** `ONE_OF`: one of the requirement's `ONE_OF` variables is enough. */
+  required?: CredentialRequirement;
+  kind?: CredentialVarKind;
+  /** `cli`: the command that signs in on this machine; empty otherwise. */
+  login?: string;
 }
 
 /** A requirement skipped in a project's setup on THIS machine (`SetupSkipSpec`, on its record). */
@@ -285,6 +291,7 @@ export type ProjectSubkind = 'standard' | 'controller' | 'addon';
 
 /** `GET project/<id>/home-page` — `Project.open_home_page()`. */
 export interface ProjectHomePage {
+  lifecycle?: ProjectLoadResult | null;
   /** The declared asset's TypeId, once it resolves inside this project. */
   asset: string | null;
   type: string | null;
@@ -385,6 +392,33 @@ export function onProjectDependenciesChanged(projectId: string, listener: () => 
 
 function notifyDependenciesChanged(projectId: string): void {
   for (const listener of [...(dependencyListeners.get(projectId) ?? [])]) listener();
+}
+
+/** Dependency load outcomes are announced to presentation surfaces; SDK never approves setup. */
+const dependencyLoadListeners = new Set<(dependency: DependencyState, consumerProjectId: string) => void>();
+export function onDependencyLoaded(
+  listener: (dependency: DependencyState, consumerProjectId: string) => void,
+): () => void {
+  dependencyLoadListeners.add(listener);
+  return () => {
+    dependencyLoadListeners.delete(listener);
+  };
+}
+
+const projectLoadListeners = new Set<(projectId: string) => void>();
+const lastProjectLoad = new Map<string, string>();
+export function onProjectLoadChanged(listener: (projectId: string) => void): () => void {
+  projectLoadListeners.add(listener);
+  return () => {
+    projectLoadListeners.delete(listener);
+  };
+}
+function notifyProjectLoad(result: ProjectLoadResult | null): void {
+  if (!result) return;
+  const fingerprint = JSON.stringify(result);
+  if (lastProjectLoad.get(result.project_id) === fingerprint) return;
+  lastProjectLoad.set(result.project_id, fingerprint);
+  for (const listener of projectLoadListeners) listener(result.project_id);
 }
 
 const LOCAL_MEMBER_ID_KEY = 'flowpad.collaboration.member_id';
@@ -756,6 +790,17 @@ export class Project extends APIEntity<Project> {
     return Project.getAssetMenuById(this.typeId.id, options);
   }
 
+  /** Refresh this project's asset index; omit types to refresh all types. */
+  async refresh(types?: string[]): Promise<void> {
+    const { systemTools } = await import('../services/system-tools-service');
+    const { projectScope } = await import('../utils/scope-filter');
+    if (types === undefined) {
+      await systemTools.fastScanProject(this.id);
+      return;
+    }
+    for (const type of types) await systemTools.indexType(type, projectScope(this.id));
+  }
+
   /** Static form for callers without a Project instance (mirrors `getAssetsById`). */
   static async getAssetMenuById(
     projectId: string,
@@ -828,13 +873,28 @@ export class Project extends APIEntity<Project> {
   /** Every dependency declared in this project's `flow.json`, as it stands on
    *  this machine, plus the warnings (required, not here, not dismissed). Never
    *  fetches: a dependency not on this machine yet reads `missing`. */
-  async dependencies(): Promise<ProjectDependencies> {
-    const response = await this.get<Partial<ProjectDependencies> | null>('dependencies');
+  async dependencies(options: { asset?: string } = {}): Promise<ProjectDependencies> {
+    const response = await this.get<Partial<ProjectDependencies> | null>('dependencies', options);
     return {
       dependencies: response?.dependencies ?? [],
       warnings: response?.warnings ?? [],
       resolving: response?.resolving === true,
     };
+  }
+
+  /** Sources this project can offer to the asset, identified independently of display names. */
+  async dependencyCandidates(asset: string): Promise<string[]> {
+    const response = await this.get<{ source_typeids: string[] }>('dependency-candidates', { asset });
+    return response?.source_typeids ?? [];
+  }
+
+  /** Read-only preview of the asset's current declarations plus candidate additions. */
+  async previewDependencies(asset: string, sources: string[]): Promise<Pick<ProjectDependencies, 'dependencies' | 'warnings'>> {
+    const response = await this.post<Pick<ProjectDependencies, 'dependencies' | 'warnings'> | null>(
+      'preview-dependencies', { asset, sources },
+    );
+    if (!response) throw new Error('Could not preview dependencies');
+    return response;
   }
 
   /** Declare a dependency in `flow.json` and resolve it. `source` is an id
@@ -864,6 +924,7 @@ export class Project extends APIEntity<Project> {
       );
       this.adoptContext(response);
       if (!response?.dependency) throw new Error('add-dependency returned no dependency');
+      for (const listener of dependencyLoadListeners) listener(response.dependency, this.id);
       return response.dependency;
     });
   }
@@ -879,11 +940,11 @@ export class Project extends APIEntity<Project> {
   }
 
   /** Drop a dependency from `flow.json`. The folder on disk is left alone. */
-  async removeDependency(name: string): Promise<DependencyState[]> {
+  async removeDependency(name: string, options: { asset?: string } = {}): Promise<DependencyState[]> {
     return this.changingDependencies(async () => {
       const response = await this.post<({ dependencies: DependencyState[] } & ProjectContextPayload) | null>(
         'remove-dependency',
-        { name },
+        { name, ...options },
       );
       this.adoptContext(response);
       return response?.dependencies ?? [];
@@ -912,6 +973,7 @@ export class Project extends APIEntity<Project> {
       );
       this.adoptContext(response);
       if (!response?.dependency) throw new Error('install-dependency returned no dependency');
+      for (const listener of dependencyLoadListeners) listener(response.dependency, this.id);
       return response.dependency;
     });
   }
@@ -1050,6 +1112,28 @@ export class Project extends APIEntity<Project> {
     }
     if (!data) throw new Error('The project could not be set up here.');
     return dataManager.updateEntityFromJson<Project>(data);
+  }
+
+  /** Invoke Load. Setup only executes after explicit approval. */
+  static async load(
+    projectId: string,
+    options: { approved?: boolean; asset?: string; display?: string } = {},
+  ): Promise<ProjectLoadResult> {
+    const actionInfo = new ActionInfo('load', Project.type, projectId, 'POST');
+    actionInfo.bodyParameters = { approved: false, ...options };
+    const result = await dataManager.callAction<typeof actionInfo.bodyParameters, ProjectLoadResult>(actionInfo);
+    if (!result) throw new Error('Project load returned no result');
+    notifyProjectLoad(result);
+    return result;
+  }
+
+  /** Read lifecycle progress without invoking Load again. */
+  static async loadState(projectId: string, asset?: string): Promise<ProjectLoadResult | null> {
+    const actionInfo = new ActionInfo('load-state', Project.type, projectId, 'GET');
+    if (asset) actionInfo.queryParameters = { asset };
+    const result = (await dataManager.callAction<void, ProjectLoadResult>(actionInfo)) ?? null;
+    notifyProjectLoad(result);
+    return result;
   }
 
   /** The declared home page resolved to its asset (`GET project/<id>/home-page`),

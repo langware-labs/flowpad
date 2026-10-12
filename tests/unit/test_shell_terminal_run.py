@@ -27,6 +27,22 @@ async def _is_running(shell: Shell) -> bool:
     return await shell.running() is not None
 
 
+async def _has_exec_ed(shell: Shell, name: str) -> bool:
+    """The foreground job IS *name* — not the shell's fork of itself an instant before it execs:
+    a Ctrl-C landing in that gap is taken by the fork's inherited trap and lost at the exec."""
+    pgid = await shell.running()
+    if pgid is None:
+        return False
+    return any(_name(p) == name for p in await shell._foreground_job(pgid))
+
+
+def _name(process) -> str:
+    try:
+        return process.name()
+    except Exception:  # noqa: BLE001 — a process gone between the walk and the read is not it
+        return ""
+
+
 async def _finished(shell: Shell, marker: str, timeout: float = 10.0) -> int:
     loop = asyncio.get_running_loop()
     deadline = loop.time() + timeout
@@ -81,7 +97,7 @@ async def test_the_end_marker_arrives_however_the_command_ends(tmp_path, monkeyp
     try:
         marker = await shell.run_command(command)
         if ctrl_c:
-            await _until(lambda: _is_running(shell))
+            await _until(lambda: _has_exec_ed(shell, command.split()[0]))
             await shell.write_raw(b"\x03")
         assert await _finished(shell, marker) == exit_code
     finally:

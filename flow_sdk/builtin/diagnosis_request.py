@@ -243,8 +243,13 @@ async def mine() -> list[dict[str, Any]]:
     The hub does not keep the project a request was opened under, so each row takes its
     ``project_id`` from this computer's copy (``None`` for one opened elsewhere).
     """
+    from flow_sdk.cli.auth.hub_login import hub_auth_available  # noqa: PLC0415
     from flow_sdk.cloud_client.transport.hub_http import hub_get_or_raise  # noqa: PLC0415
 
+    # Signed out is an ordinary state, as it is for ``fetch_hub_llm_endpoints``: nothing on the
+    # hub is this user's to read, so the sidebar's count is zero -- not a 401 on every asset page.
+    if not hub_auth_available():
+        return []
     rows = await hub_get_or_raise(EntityType.DIAGNOSIS_REQUEST.value)
     listed = []
     for row in rows if isinstance(rows, list) else []:

@@ -6,7 +6,7 @@ import { Button } from '@src/components/ui/button';
 import { SetupWizardDialog } from './SetupWizardDialog';
 
 /**
- * A source's setup at a glance — one icon, connected (every stage done) or not — and the way back into its setup
+ * A source's setup at a glance — one icon, complete (every stage done) or pending — and the way back into its setup
  * wizard. The stages themselves (`Test ✓ · Production`) are the tooltip. Renders nothing for a driver that declares no `setup_wizards`, so it can sit on every row.
  */
 export function SetupStagesButton({ source, spec }: { source: DataSource; spec?: DataDriver | null }) {
@@ -30,9 +30,9 @@ export function SetupStagesButton({ source, spec }: { source: DataSource; spec?:
   if (!declared) return null;
   const pending = stages?.find((s) => s.state === 'pending');
   const summary = (stages ?? []).map((s) => (s.state === 'done' ? `${s.label} ✓` : s.label)).join(' · ');
-  // Unknown until the stages load: neither connected nor nagging.
-  const connected = stages !== null && !pending;
-  const Icon = connected ? Plug : Unplug;
+  // Unknown until the stages load: do not claim completion.
+  const complete = stages !== null && !pending;
+  const Icon = complete ? Plug : Unplug;
 
   return (
     <>
@@ -40,16 +40,16 @@ export function SetupStagesButton({ source, spec }: { source: DataSource; spec?:
         size="sm"
         variant="ghost"
         className="size-7 p-0"
-        title={pending ? t`Not connected — continue setup: ${pending.label}` : connected ? t`Connected (${summary})` : t`Setup`}
-        aria-label={connected ? t`Connected` : t`Not connected`}
+        title={pending ? t`Continue setup: ${pending.label}` : complete ? t`Setup complete (${summary})` : t`Setup`}
+        aria-label={pending ? t`Finish setup` : complete ? t`Setup complete` : t`Setup`}
         data-testid={`source-setup-${source.id}`}
-        data-connected={connected}
+        data-setup-complete={complete}
         onClick={(e) => {
           e.stopPropagation();
           setOpen(true);
         }}
       >
-        <Icon className={connected ? 'size-4 text-emerald-500' : 'size-4 text-amber-500'} />
+        <Icon className={complete ? 'size-4 text-emerald-500' : 'size-4 text-amber-500'} />
       </Button>
       {open && (
         <SetupWizardDialog

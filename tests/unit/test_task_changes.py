@@ -6,6 +6,8 @@ delegated task (the ledger logs those), a disk re-index, or the task's creation.
 """
 from __future__ import annotations
 
+import asyncio
+
 import pytest
 
 from flow_sdk.api.api_types.identifier import mint_uuid
@@ -129,3 +131,22 @@ async def test_the_assignees_change_on_a_task_received_from_the_hub_is_history()
     task.status = "in_progress"
     await task.save()
     assert [(h["change"], h["to"], h["author"]) for h in await _history(task)] == [("status", "in_progress", ME)]
+
+
+async def test_two_deliveries_of_one_new_task_take_turns_instead_of_colliding():
+    """The hub's push and the Tasks channel's pull can both deliver a task this computer has never
+    seen. Both find no folder yet; the second used to be refused "Asset destination is being
+    created" and its update was dropped. Real saves, real folder — no stand-ins."""
+    from flow_sdk.app.actions.task_receive import materialize_remote_task  # noqa: PLC0415
+
+    task_id = mint_uuid()
+    payload = {"id": task_id, "title": f"race {task_id[:8]}", "status": "to_do", "description": "first"}
+
+    results = await asyncio.gather(
+        materialize_remote_task(dict(payload), someone_typeid=None),
+        materialize_remote_task({**payload, "status": "in_progress"}, someone_typeid=None),
+        return_exceptions=True,
+    )
+
+    assert [r for r in results if isinstance(r, BaseException)] == []
+    assert (await Task.get_one({"id": task_id})) is not None

@@ -306,7 +306,7 @@ def _set_field(root: Path, field: str, value: object, *, clears: bool) -> Projec
 
 
 def read_home_page(root: Path) -> Optional[str]:
-    """The home-page TypeId the manifest declares, or None. Never raises —
+    """The home-page TypeId or project-relative asset path declared, or None. Never raises —
     read on every serialization of the Project and every Home click."""
     spec = _read_lenient(root)
     return spec.home_page if spec is not None else None
@@ -319,7 +319,7 @@ def set_home_page(root: Path, typeid: Optional[str]) -> ProjectManifestSpec:
     nothing rather than a pointer every reader would discard.
     """
     if typeid is not None and ProjectManifestSpec.model_validate({"home_page": typeid}).home_page is None:
-        raise ManifestError(f"home page {typeid!r} is not an asset TypeId (<type>-<uuid>)")
+        raise ManifestError(f"home page {typeid!r} must be an asset TypeId or a ./project-relative asset path")
     return _set_field(root, "home_page", typeid, clears=typeid is None)
 
 

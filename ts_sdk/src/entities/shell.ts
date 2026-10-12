@@ -376,6 +376,20 @@ export class Shell extends APIEntity<Shell> implements IShell {
 
   // ── Entity lifecycle ──────────────────────────────────────────────────────
 
+  override isRetired(): boolean {
+    return this.status === ShellStatus.CLOSED;
+  }
+
+  /**
+   * The connection hooks itself on the app-wide connection manager (re-attach on
+   * reconnect), so an unreleased one keeps this shell and its replay window alive after
+   * the cache let go of it.
+   */
+  override onEvicted(): void {
+    super.onEvicted();
+    this.ptyConnection.dispose();
+  }
+
   async close(): Promise<void> {
     const previousStatus = this.status;
     this.status = ShellStatus.CLOSING;

@@ -53,11 +53,10 @@ import {
 } from './credentials-view/credential-rows';
 import { CREDENTIAL_DEPLOYMENT_OPTION, credentialDeploymentId, useCredentials } from './credentials/use-credentials';
 import { CredentialDialog } from './credentials/CredentialDialog';
-import { DetectedKeys } from './credentials/DetectedKeys';
+import { DetectedKeys, type DetectedKeyDetails } from './credentials/DetectedKeys';
 import {
   customDraft,
   editDraft,
-  packDraft,
   templateDraft,
   valuesDraft,
   type CredentialDraft,
@@ -385,7 +384,7 @@ export const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
     scrolledTo.current = selectedTypeid;
     selectedRef.current.scrollIntoView?.({ block: 'center', behavior: 'smooth' });
   }, [selectedTypeid, allConnections.length, credentialRows.length]);
-  const detectedGroups = React.useMemo(() => buildDetectedGroups(credentialStatus), [credentialStatus]);
+  const detectedGroups = React.useMemo(() => buildDetectedGroups(credentialStatus, true), [credentialStatus]);
   const defaultScope = selectedProject ? 'project' : 'user';
 
   const [addOpen, setAddOpen] = React.useState(false);
@@ -625,7 +624,19 @@ export const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
     openDraft(customDraft(defaultScope));
   };
 
-  const packDetected = (group: DetectedGroup, keys: string[]) => openDraft(packDraft(keys, group.scope));
+  const saveDetected = async (group: DetectedGroup, details: DetectedKeyDetails[]) => {
+    for (const { key, value, spec } of details) {
+      await credentialsService.save({
+        scope: group.scope,
+        project_id: group.projectId,
+        deployment_id: credentialDeployment ?? undefined,
+        auto_declare: true,
+        manifest: { name: '', vars: { [key]: spec ?? {} } },
+        values: value ? { [key]: value } : {},
+      });
+    }
+    await refreshCredentials();
+  };
 
   return (
     // No frame of its own — the host supplies height and padding.
@@ -999,7 +1010,7 @@ export const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
             )}
           </TableBody>
         </Table>
-        <DetectedKeys groups={detectedGroups} onPack={packDetected} />
+        <DetectedKeys groups={detectedGroups} onSave={saveDetected} />
       </div>
 
       {/* Delete says what will actually happen, BEFORE it happens: every value

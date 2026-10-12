@@ -6,7 +6,10 @@ import { useLingui } from '@lingui/react';
 import apiClient from '@sdk/client';
 import { Button } from '@src/components/ui/button';
 import { AskAssist, type AssistState } from './AskAssist';
+import { AskChoiceBlock } from './AskChoiceBlock';
+import { AskItems, type AskItem } from './AskItems';
 import { AskValueInput } from './AskValueInput';
+import { hasChoicesOf, type AskChoice } from './use-ask-question';
 import { useBackendText } from '@src/components/assets/editor/wizard/wizard-texts';
 import { MarkdownView } from '@src/components/markdown-view';
 
@@ -35,6 +38,10 @@ interface Question {
   secret?: boolean;
   /** The answer is a file's content (a key file): drawn as a file picker. */
   file?: boolean;
+  /** More than one way to answer (`AskChoiceBlock`); empty for every ordinary question. */
+  choices?: AskChoice[];
+  /** Several questions asked as one (`AskItems`); empty for every ordinary question. */
+  items?: AskItem[];
   /** The words on the two buttons ("Continue"); empty means Send / Cancel. */
   submit_label?: string;
   cancel_label?: string;
@@ -140,6 +147,9 @@ export function AskForm({
     );
   }
 
+  const hasChoices = hasChoicesOf(question);
+  const items = question.items ?? [];
+
   return (
     <div className="flex flex-col gap-4" data-testid="ask-view">
       <div>
@@ -168,7 +178,23 @@ export function AskForm({
         onAnswered={agentAnswered}
       />
 
-      {fieldsOf(question.fields).map((name) => (
+      <AskChoiceBlock
+        choices={question.choices}
+        busy={busy}
+        submitLabel={question.submit_label ? bt(question.submit_label) : undefined}
+        onAnswer={(value) => void send('/answer', { value })}
+      />
+
+      {items.length > 0 ? (
+        <AskItems
+          items={items}
+          busy={busy}
+          onAnswer={(value) => void send('/answer', { value })}
+          onCancel={() => void send('/cancel')}
+        />
+      ) : null}
+
+      {(hasChoices || items.length > 0 ? [] : fieldsOf(question.fields)).map((name) => (
         <div key={name} className="flex flex-col gap-1">
           {name ? (
             <label className="text-sm" htmlFor={`ask-${name}`}>
@@ -196,21 +222,23 @@ export function AskForm({
         </p>
       ) : null}
 
-      <div className="flex items-center gap-2">
-        {question.auto ? (
-          <span className="flex items-center gap-2 text-sm text-muted-foreground" data-testid="ask-auto-waiting">
-            <Loader2 className="size-4 animate-spin" />
-            <Trans>Waiting…</Trans>
-          </span>
-        ) : (
-          <Button data-testid="ask-submit" disabled={busy} onClick={() => void submit()}>
-            {question.submit_label ? bt(question.submit_label) : <Trans>Send</Trans>}
+      {items.length > 0 ? null : (
+        <div className="flex items-center gap-2">
+          {hasChoices ? null : question.auto ? (
+            <span className="flex items-center gap-2 text-sm text-muted-foreground" data-testid="ask-auto-waiting">
+              <Loader2 className="size-4 animate-spin" />
+              <Trans>Waiting…</Trans>
+            </span>
+          ) : (
+            <Button data-testid="ask-submit" disabled={busy} onClick={() => void submit()}>
+              {question.submit_label ? bt(question.submit_label) : <Trans>Send</Trans>}
+            </Button>
+          )}
+          <Button variant="ghost" data-testid="ask-cancel" disabled={busy} onClick={() => void send('/cancel')}>
+            {question.cancel_label ? bt(question.cancel_label) : <Trans>Cancel</Trans>}
           </Button>
-        )}
-        <Button variant="ghost" data-testid="ask-cancel" disabled={busy} onClick={() => void send('/cancel')}>
-          {question.cancel_label ? bt(question.cancel_label) : <Trans>Cancel</Trans>}
-        </Button>
-      </div>
+        </div>
+      )}
     </div>
   );
 }

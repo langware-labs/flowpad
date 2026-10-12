@@ -79,7 +79,9 @@ async function openScreen(page: Page) {
 
 async function openDialog(page: Page, provider: string) {
   await page.getByTestId('add-data-source').click();
-  const dialog = page.getByRole('dialog').filter({ hasText: 'Add a data source' });
+  const dialog = page
+    .getByRole('dialog')
+    .filter({ has: page.getByTestId('step-crumb-0').filter({ hasText: /^Data sources$/ }) });
   await expect(dialog).toBeVisible();
   const { group } = specNamed(provider);
   if (group) {
@@ -136,7 +138,9 @@ test.describe('Data sources are served by the backend', () => {
   test('every installed spec is offered as a provider', async ({ page }) => {
     await openScreen(page);
     await page.getByTestId('add-data-source').click();
-    const dialog = page.getByRole('dialog').filter({ hasText: 'Add a data source' });
+    const dialog = page
+    .getByRole('dialog')
+    .filter({ has: page.getByTestId('step-crumb-0').filter({ hasText: /^Data sources$/ }) });
     await expect(dialog).toBeVisible();
 
     // The manifest decides, not ui/: `listed: false` keeps a driver out of the picker, and a

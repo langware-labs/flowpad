@@ -23,7 +23,9 @@ import { OAuthCodeFlowModal } from '@src/components/oauth/OAuthCodeFlowModal';
 import { GitHubDeviceFlowModal } from '@src/components/oauth/GitHubDeviceFlowModal';
 import { HarnessLoginModalRoot } from '@src/components/harness-login/HarnessLoginModal';
 import { HarnessSignInDialogRoot } from '@src/components/harness-login/HarnessSignInDialog';
+import { ProjectLoadDialogRoot } from '@src/components/project-setup/ProjectLoadDialog';
 import { ProjectSetupDialogRoot } from '@src/components/project-setup/ProjectSetupDialog';
+import { SourceSetupDialogRoot } from '@src/components/setup-wizard/SourceSetupDialog';
 import { MissingDependenciesDialogRoot } from '@src/components/project-home/MissingDependenciesDialog';
 import MigrateLegacyKeychain from '@src/components/migrate-legacy-keychain';
 import { SessionTakenOverOverlay } from '@src/components/session-taken-over-overlay';
@@ -175,7 +177,13 @@ const AppContent = ({ children }: { children: React.ReactNode }) => {
             it has no place in hub mode. */}
         {!isHubOnly() && <HarnessLoginModalRoot />}
         {!isHubOnly() && <HarnessSignInDialogRoot />}
-        {!isHubOnly() && <ProjectSetupDialogRoot />}
+        {!isHubOnly() && (
+          <>
+            <ProjectSetupDialogRoot />
+            <ProjectLoadDialogRoot />
+          </>
+        )}
+        {!isHubOnly() && <SourceSetupDialogRoot />}
         {/* A required dependency of the open project is not on this machine. */}
         {!isHubOnly() && <MissingDependenciesDialogRoot />}
         <MigrateLegacyKeychain />

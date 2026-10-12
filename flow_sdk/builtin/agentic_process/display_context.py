@@ -70,6 +70,20 @@ def same_display_target(a: Any, b: Any) -> bool:
     return isinstance(a, dict) and isinstance(b, dict) and all(a.get(k) == b.get(k) for k in DISPLAY_TARGET_KEYS)
 
 
+def same_history_target(a: Any, b: Any) -> bool:
+    """A file has one history row even when resolved as an entity after indexing."""
+    if not isinstance(a, dict) or not isinstance(b, dict):
+        return False
+    if (
+        a.get("kind") in ("vfs", "entity")
+        and b.get("kind") in ("vfs", "entity")
+        and a.get("path")
+        and b.get("path")
+    ):
+        return a["path"] == b["path"]
+    return same_display_target(a, b)
+
+
 def fresh_display_context(context_data: Any) -> Optional[dict]:
     """The stored context when its target is still the one on display, else ``None``."""
     if not isinstance(context_data, dict):

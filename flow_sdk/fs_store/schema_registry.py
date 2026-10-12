@@ -146,6 +146,9 @@ class TypeInfo:
     # types that reconcile cross-record relationships (e.g. markdown folder-doc
     # parent/child edges) that the base sync doesn't know about.
     post_sync_fn: Any = field(default=None, compare=False, repr=False)
+    # Optional async context manager around an authored document edit + index refresh.
+    # Disk ingestion does not invoke authoring policy (a checkout may contain legacy state).
+    document_edit_context: Any = field(default=None, compare=False, repr=False)
 
     def __post_init__(self) -> None:
         self.type_name = str(self.type_name)   # an EntityType member is accepted, a str is stored

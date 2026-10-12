@@ -36,6 +36,8 @@ import { useProjectLocation } from '@src/hooks/use-project-location';
 import { useEntity } from '@src/hooks/entity-hooks';
 import { ViewMode } from '@src/contexts/view-mode-context';
 import { parseDataSourcesPointer } from '@src/components/data-sources/data-sources-pointer';
+import { bareKind, DATA_SCHEMA_TYPE } from '@src/components/schema-tree/schema-tree-model';
+import { parseSchemaTreePointer, SOURCE_SEGMENT } from '@src/components/schema-tree/schema-tree-pointer';
 import { useSourceSpecs } from '@src/components/data-sources/use-source-specs';
 
 /**
@@ -605,6 +607,34 @@ export function useEntityBreadcrumbs(dock: DockPointer | null): EntityBreadcrumb
     const path = dock?.resourceVfsPath?.machinePath || assetRef || (isExplorer ? projectPath : null) || null;
     const filename = dock?.resourceVfsPath?.filename || basename(assetRef) || null;
     const directory = isExplorer;
+
+    // The schema tree: `<project> › Schema › <schema> › …` — the pointer is the kinds unfolded
+    // down to the selection (schema-tree-pointer.ts), each one a step back up.
+    if (dock?.viewType === ViewType.SCHEMA_TREE) {
+      const steps = parseSchemaTreePointer(dock.pointer);
+      const schemaTitle = VIEWER_REGISTRY[ViewType.SCHEMA_TREE]?.title;
+      const scopeProjectId = dock.scopeProjectId ?? project?.id ?? null;
+      const at = (path: string[]) => (scopeProjectId ? DockPointer.forSchemaTree(scopeProjectId, path) : null);
+      out.push({
+        key: 'schema-tree',
+        label: schemaTitle ? i18n._(schemaTitle) : viewLabel(dock),
+        Icon: viewIcon(dock),
+        pointer: steps.length ? at([]) : null,
+        kind: steps.length ? 'ancestor' : 'current',
+      });
+      steps.forEach((step, i) => {
+        const last = i === steps.length - 1;
+        const source = step.startsWith(SOURCE_SEGMENT);
+        out.push({
+          key: `schema-tree-${i}-${step}`,
+          label: source ? labelForType(DataSource.type) : bareKind(step),
+          Icon: iconForType(source ? DataSource.type : DATA_SCHEMA_TYPE),
+          pointer: last ? null : at(steps.slice(0, i + 1)),
+          kind: last ? 'current' : 'ancestor',
+        });
+      });
+      return out;
+    }
 
     if (dataSourcesRoute?.section === 'source' && dock) {
       out.push({

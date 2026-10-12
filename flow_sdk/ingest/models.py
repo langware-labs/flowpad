@@ -63,6 +63,8 @@ class IngestOutcome:
 @dataclass
 class IngestReport:
     outcomes: list[IngestOutcome] = field(default_factory=list)
+    #: Records dropped because the outside system no longer has them (a source that lists everything).
+    removed: int = 0
 
     def _count(self, status: IngestStatus) -> int:
         return sum(1 for o in self.outcomes if o.status == status)
@@ -93,4 +95,5 @@ class IngestReport:
             "created": self.created,
             "updated": self.updated,
             "unchanged": self.unchanged,
+            **({"removed": self.removed} if self.removed else {}),   # said only when it happened
         }

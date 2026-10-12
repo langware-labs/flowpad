@@ -138,6 +138,10 @@ class Pass:
     #: Greatest ordinal covered — observability only, never read back as a floor.
     high_water: Optional[str] = None
     unchanged: bool = False
+    #: The ``external_id`` of EVERY record the outside system has, when this pass proved it: a source
+    #: that ``lists_everything``, read from the start to the end. None otherwise -- absence then
+    #: proves nothing, and nothing is removed.
+    listed: Optional[frozenset] = None
     #: Reaction reports the pass found — applied to the messages they name, never stored as records.
     reactions: list = field(default_factory=list)
 
@@ -571,19 +575,30 @@ class DriverRuntime:
             # Inside the session: a provider's media link rarely outlives it (a WhatsApp URL dies in
             # five minutes; a self-hosted gateway may delete the file sooner).
             kept = await self._stage(row, source, kept)
-            return self._records(row, kept, carried, moved_on=carried != started_at)
+            # The whole collection, proven: read from the very start (`complete`), to the very end
+            # (`cursor is None`), unnarrowed, by a source that lists everything. Every LISTED record
+            # counts -- one older than the window is still there.
+            whole = cls.lists_everything and complete and cursor is None and narrow is None
+            return self._records(row, kept, carried, moved_on=carried != started_at, listed=items if whole else None)
 
-    def _records(self, row: Any, items, cursor: Optional[str], *, moved_on: bool) -> Pass:
+    def _records(self, row: Any, items, cursor: Optional[str], *, moved_on: bool, listed: Optional[list] = None) -> Pass:
         messages, reactions = split_reactions(items)
         kept = sorted(messages, key=lambda item: _when(item) or _EPOCH)
         envelopes = [envelope_of(item, data_source_id=str(row.id), provider=self.provider) for item in kept]
         stamps = [when for when in map(_when, kept) if when is not None]
+        every = None
+        if listed is not None:
+            every = frozenset(envelope_of(item, data_source_id=str(row.id), provider=self.provider).external_id
+                              for item in split_reactions(listed)[0])
         return Pass(
+            listed=every,
             items=envelopes,
             cursor=cursor,
             high_water=max(stamps).isoformat() if stamps else None,
             # Nothing arrived and the position did not move: the free no-op a 304 or an empty page is.
-            unchanged=not items and not moved_on,
+            # ... unless the source lists everything: its listing must still be compared with what is
+            # stored (the last record may have just been removed outside).
+            unchanged=not items and not moved_on and every is None,
             reactions=reactions,
         )
 

@@ -20,6 +20,7 @@ The definition's VARIANT (its subkind) is optional:
 
 from __future__ import annotations
 
+import re
 from typing import ClassVar, Literal, Optional
 
 from pydantic import field_validator, model_validator
@@ -41,25 +42,46 @@ class DataSchemaField(DataSpec):
 
     shape: ShapeForm
     description: str = ""
+    #: Who owns the field's value when it is a copy of an outside system's (``"crm"``): only a
+    #: writer that says it writes as that owner (``put(..., by="crm")``) may set or change it.
+    owned_by: Optional[str] = None
+
+    @field_validator("owned_by")
+    @classmethod
+    def _an_owner_is_a_word(cls, owner: Optional[str]) -> Optional[str]:
+        if owner is not None and not re.fullmatch(r"[a-z0-9][a-z0-9_-]*", owner):
+            raise ValueError("owned_by names the owner in a word: a-z 0-9 _ - (\"crm\")")
+        return owner
 
 
 class DataSchemaRule(DataSpec):
-    """A rule across rows a ``record`` declares: the two paths, walked from a row along its link
-    fields (``*`` = every element of a list), must name the same row wherever both ends are set
-    (``{"same": ["persona.icp", "icp"]}``: the persona is one of the row's ICP's). Checked on every
-    write and every read of the rows -- by Flowpad, so every writer keeps it."""
+    """A rule across rows a ``record`` declares -- one of:
+
+    ``{"same": ["persona.icp", "icp"]}``: the two paths, walked from a row along its link fields
+    (``*`` = every element of a list), must name the same row wherever both ends are set (the
+    persona is one of the row's ICP's).
+
+    ``{"unique": ["crm_id"]}``: no two rows of one dataset hold the same value in these fields
+    (several fields: the same COMBINATION). A row that leaves any of them empty is not judged.
+
+    Checked on every write and every read of the rows -- by Flowpad, so every writer keeps it."""
 
     spec_kind: ClassVar[str] = "data_schema.rule"
 
-    same: list[str]
+    same: Optional[list[str]] = None
+    unique: Optional[list[str]] = None
     description: str = ""
 
-    @field_validator("same")
-    @classmethod
-    def _two_paths(cls, same: list[str]) -> list[str]:
-        if len(same) != 2 or not all(isinstance(p, str) and p and all(p.split(".")) for p in same):
+    @model_validator(mode="after")
+    def _one_rule(self) -> "DataSchemaRule":
+        if (self.same is None) == (self.unique is None):
+            raise ValueError('a rule is one of {"same": [path, path]} or {"unique": [field, ...]}')
+        if self.same is not None and (len(self.same) != 2 or not all(isinstance(p, str) and p and all(p.split(".")) for p in self.same)):
             raise ValueError('a rule names exactly two paths: {"same": ["persona.icp", "icp"]}')
-        return same
+        if self.unique is not None and (not self.unique or len(set(self.unique)) != len(self.unique)
+                                        or not all(isinstance(f, str) and f and "." not in f and f != "*" for f in self.unique)):
+            raise ValueError('unique names one or more of the record\'s own fields, each once: {"unique": ["crm_id"]}')
+        return self
 
 
 class DataSchemaDocSpec(AssetDocumentSpec):
@@ -73,6 +95,9 @@ class DataSchemaDocSpec(AssetDocumentSpec):
     fields: Optional[dict[str, DataSchemaField]] = None
     #: ``dataset``: the example slots (``input`` required; ``output`` / ``context``) -> shapes.
     examples: Optional[dict[str, ShapeForm]] = None
+    #: ``record`` only: other record kinds whose fields (and rules) this one has too -- shared
+    #: fields defined once. A field of the same name here is an error, never a silent override.
+    include: Optional[list[str]] = None
     #: ``record`` only: rules across rows (``DataSchemaRule``).
     rules: Optional[list[DataSchemaRule]] = None
     #: Whose ontology this kind belongs to, when it must differ from its project's.
@@ -92,14 +117,17 @@ class DataSchemaDocSpec(AssetDocumentSpec):
 
     @model_validator(mode="after")
     def _one_body_matching_the_subkind(self) -> "DataSchemaDocSpec":
-        bodies = [name for name, body in (("record", self.fields), ("dataset", self.examples)) if body]
+        bodies = [name for name, body in (("record", self.fields or self.include), ("dataset", self.examples)) if body]
         if len(bodies) > 1:
             raise ValueError(f"a data schema defines one shape; this one has {' and '.join(bodies)}")
         if self.subkind and bodies != [self.subkind]:
             found = bodies[0] if bodies else "no body"
             raise ValueError(f"subkind {self.subkind!r} declared, but the body is {found}")
-        if self.rules and not self.fields:
+        if self.rules and not (self.fields or self.include):
             raise ValueError("rules belong to a record (a schema with fields)")
+        if self.include is not None and (not self.include or len(set(self.include)) != len(self.include)
+                                         or not all(isinstance(k, str) and k for k in self.include)):
+            raise ValueError('include names one or more record kinds, each once: {"include": ["crm.tagged"]}')
         if self.examples is not None:
             if "input" not in self.examples:
                 raise ValueError('a dataset data schema names its "input" slot')
@@ -113,7 +141,7 @@ class DataSchemaDocSpec(AssetDocumentSpec):
         """Declared, else read from the body, else None (a documentation node)."""
         if self.subkind:
             return self.subkind
-        if self.fields:
+        if self.fields or self.include:
             return "record"
         if self.examples:
             return "dataset"

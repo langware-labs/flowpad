@@ -107,6 +107,7 @@ export enum ViewType {
   SIGNALS = 'signals', // Retired → automations/bus (was: global event-bus monitor + injector)
   DATA_SOURCES = 'data-sources', // Configured ingestion sources — /dock/data-sources
   RAG = 'rag', // Search indexes and the folders they cover — /dock/rag
+  SCHEMA_TREE = 'schema-tree', // A project's data schemas, top to bottom — /dock/schema-tree[/<kind>…], scoped to a project
   ASSET_LIST = 'asset-list', // One home counter's assets as a table — /dock/asset-list?group=<g>&counter=<c>
   PROCESS_RUNS = 'process-runs', // AgenticProcess execution history — /dock/process-runs[/<processId>]
   PLAN = 'plan', // Plan viewer with Milkdown editor

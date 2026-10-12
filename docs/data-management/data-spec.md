@@ -93,6 +93,17 @@ path walks links; `Dataset.check / append / put` refuse a break (`code: "rule"`)
 rows that break one, and a `put` that would break a rule of a row reaching it is refused
 (`flow_sdk/datasets/rules.py`).
 
+A rule may instead be over the rows of one dataset: `{"unique": ["crm_id"]}` — no two rows share
+the value (several fields: the combination; a row leaving one empty is not judged). Writes are
+refused with `code: "unique"`, a batch is checked against itself, and a duplicate that reached the
+disk is reported in `problems` (`rules.UniqueIndex`).
+
+A field may say an outside system owns its value — `"owned_by": "crm"` — and then only a writer
+that passes `by="crm"` sets or changes it (`code: "owned"` otherwise); `GET /kinds/<kind>` carries
+`owned_by` per field. A record may `"include": ["crm.synced"]` other records: their fields, rules
+and owners are its own (a field named twice is refused; a change to an included schema rebuilds the
+kinds that include it on the next `load_root` / apply of the group).
+
 The marks (`?`, `enum:`, `{"*": …}`) are **input only**: `to_authoring_form`
 renders a hand-written class back with the three structural forms, so an
 `Optional[X]` renders as `X` and a `dict` field renders only on a class that

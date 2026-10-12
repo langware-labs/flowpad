@@ -17,6 +17,7 @@ import { Label } from '@src/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@src/components/ui/select';
 import { Switch } from '@src/components/ui/switch';
 import { Textarea } from '@src/components/ui/textarea';
+import { CopyableCommand } from '@src/components/version-popover/version-popover';
 import { WikiButton } from '@src/components/wiki-tip/WikiButton';
 import { describeApiError } from '@src/lib/error-message';
 import { takenInScope } from '@src/components/credentials-view/credential-rows';
@@ -26,6 +27,8 @@ import {
   draftValues,
   emptyVar,
   hasProblems,
+  isCli,
+  loginCommands,
   namesLocked,
   scopeLocked,
   storeLocked,
@@ -83,6 +86,7 @@ export function CredentialDialog({
     setD((prev) => ({ ...prev, vars: prev.vars.map((v) => (v.id === id ? { ...v, ...patch } : v)) }));
 
   const taken = takenInScope(status, d.scope, d.typeid);
+  const statusRow = status.credentials.find((c) => c.typeid === d.typeid);
   const problems = validateDraft(d, taken);
   const envFileName = credentialEnvFileName(status.environment);
   const deployment = (status.deployments ?? []).find((row) => row.id === status.deployment_id);
@@ -228,7 +232,14 @@ export function CredentialDialog({
                         data-testid={`credential-var-name-${index}`}
                       />
                     )}
-                    {asksValues(d) && v.base.kind === 'file' ? (
+                    {isCli(v) ? (
+                      // Nothing is stored for it: the command-line tool holds the sign-in.
+                      <div className="flex min-w-0 flex-1 flex-col gap-1" data-testid={`credential-var-login-${index}`}>
+                        {loginCommands(v, statusRow).map((command) => (
+                          <CopyableCommand key={command} command={command} />
+                        ))}
+                      </div>
+                    ) : asksValues(d) && v.base.kind === 'file' ? (
                       <div className="min-w-0 flex-1">
                         <FileValueInput
                           id={`credential-var-value-${index}`}

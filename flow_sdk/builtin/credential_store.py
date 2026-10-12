@@ -233,5 +233,5 @@ async def forget_values(
     spec: "Credential", scope: CredentialScope, placements: Iterable[Placement]
 ) -> list[StoreForgottenSpec]:
     """Delete the values a credential owns in every store any of ``placements`` keeps them in, one report each."""
-    refs = [secret_store_ref(spec, scope, name, placement) for placement in placements for name in spec.var_names()]
-    return await forget_in(refs, spec.var_names())
+    refs = [secret_store_ref(spec, scope, name, placement) for placement in placements for name in spec.stored_var_names()]
+    return await forget_in(refs, spec.stored_var_names())

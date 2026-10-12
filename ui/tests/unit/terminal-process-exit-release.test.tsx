@@ -13,6 +13,13 @@
  * `AgenticProcess` in the real store (the status enters through the store's own data-op path,
  * as the WS delivers it). The xterm is a stand-in that records what was written; the recorded
  * stream answers "none"; peripheral chrome is stubbed as the width-drift harness does.
+ *
+ * Scope: TERMINAL mode. The chat pane is among the stubbed chrome, so the watch count asserted
+ * here is the terminal's own. In chat mode the chat pane's hooks (`ChatComposerBar`,
+ * `useObservedTurn`, `useTurnCompletionReconcile`, `useTurnActivity`) keep the process watched
+ * after it ends, and that is by design, not a leak: "stopped" is a chat's resting state, and the
+ * watch carries another window's status change and the watcher-only progress stream. Nothing
+ * flows for an ended process, so the held watch costs nothing.
  */
 import { act, cleanup, render } from '@testing-library/react';
 import { AgenticProcess, apiClient, dataManager, ProcessStatus, Shell, TypeId } from '@sdk';

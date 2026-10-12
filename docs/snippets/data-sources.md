@@ -453,3 +453,21 @@ async with ZenSource(SourceBinding(config={}, account_key="zen")) as zen:   # th
 
 Put it in `agentic-assets/data_driver/zen/source.py` beside a `data_driver.json` naming it, and
 it loads like the shipped ones.
+
+## 13. Read a source's items from a script
+
+Inside the server, `SourceItem.get_all({...})` (§1) reads the store. A script a trigger runs is its
+own process: it asks the running instance, through the same transport the `flow` CLI uses.
+
+```python
+from flow_sdk import local_client
+
+items = local_client.graph_get("source_item", {"match": {"data_source_id": source_id}, "limit": 50})
+recent = local_client.graph_post(f"data_source/{source_id}/items", {"limit": 20})["items"]
+hits = local_client.search("pricing", record_type="source_item", limit=10)["results"]
+```
+
+`graph_get` answers the envelope's `data`; `LocalError` carries the server's status and reasons,
+`NotRunning` says no instance is up. Items are scoped by `data_source_id` (a source belongs to a
+project; an item has no project of its own). Paging goes inside the filter — in TypeScript too:
+`new QueryRequest({type: "source_item", query: new QueryFilter({match: {data_source_id}, limit: 50})})`.

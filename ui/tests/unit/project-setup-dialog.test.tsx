@@ -144,6 +144,34 @@ describe('ProjectSetupDialog — skipping', () => {
     expect(skip).not.toHaveBeenCalled();
   });
 
+  it('checking rows hides each row\'s Skip and shows one bar that skips them all, then selects none', async () => {
+    const mapbox = req({ name: 'mapbox', title: 'Mapbox', typeid: 'credential-7f1c2d3e-4a5b-4c6d-8e9f-0a1b2c3d4e5f', required: false });
+    await open({ ...NOT_READY, optional: [mapbox] });
+    const skip = vi.spyOn(Project, 'skipSetup').mockResolvedValue({ ...NOT_READY, optional: [mapbox] });
+    expect(screen.queryByTestId('project-setup-selection-bar')).toBeNull();
+    fireEvent.click(screen.getByTestId('project-setup-select-google-cloud'));
+    fireEvent.click(screen.getByTestId('project-setup-select-mapbox'));
+    expect(screen.getByTestId('project-setup-selection-bar')).toHaveTextContent('2 selected');
+    expect(screen.queryByTestId('project-setup-skip-google-cloud')).toBeNull();
+    expect(screen.queryByTestId('project-setup-skip-mapbox')).toBeNull();
+    await act(async () => fireEvent.click(screen.getByTestId('project-setup-skip-local-selected')));
+    expect(skip.mock.calls).toEqual([
+      ['p1', GCP_TYPEID, 'local', { name: 'google-cloud' }],
+      ['p1', mapbox.typeid, 'local', { name: 'mapbox' }],
+    ]);
+    expect(screen.queryByTestId('project-setup-selection-bar')).toBeNull();
+    expect(screen.getByTestId('project-setup-skip-google-cloud')).toBeInTheDocument();
+    expect(h.openDock).not.toHaveBeenCalled();
+  });
+
+  it('the bar offers Always only when every selected row can be removed, and Cancel selects none', async () => {
+    await open({ ...NOT_READY, to_do: [req({ can_skip_always: false })] });
+    fireEvent.click(screen.getByTestId('project-setup-select-google-cloud'));
+    expect(screen.getByTestId('project-setup-skip-always-selected')).toBeDisabled();
+    fireEvent.click(screen.getByTestId('project-setup-skip-cancel-selected'));
+    expect(screen.queryByTestId('project-setup-selection-bar')).toBeNull();
+  });
+
   it('Undo un-skips it', async () => {
     const mark = { at: 1, by: 'u1', note: '' };
     await open({ ...NOT_READY, to_do: [], ready: true, skipped: [req({ skipped: mark })] });
@@ -159,6 +187,42 @@ describe('ProjectSetupDialog — skipping', () => {
 });
 
 describe('ProjectSetupDialog — a credential says what it is needed for', () => {
+  it('names an either-or group of missing values as "A or B", the rest by commas', async () => {
+    const [key] = NOT_READY.to_do[0].vars;
+    await open({
+      ...NOT_READY,
+      to_do: [
+        req({
+          vars: [
+            { ...key, env_var: 'GCP_PROJECT', label: 'Project', file: false, required: 'MUST', kind: 'text', login: '' },
+            { ...key, required: 'ONE_OF', kind: 'file', login: '' },
+            { ...key, env_var: 'GCLOUD_ADC', label: 'gcloud sign-in', file: false, required: 'ONE_OF', kind: 'cli', login: 'gcloud auth application-default login' },
+          ],
+        }),
+      ],
+    });
+    expect(screen.getByTestId('project-setup-req-google-cloud')).toHaveTextContent('Project, Service account key or gcloud sign-in');
+  });
+
+  it('a group with one member present is not missing', async () => {
+    const [key] = NOT_READY.to_do[0].vars;
+    await open({
+      ...NOT_READY,
+      to_do: [
+        req({
+          vars: [
+            { ...key, env_var: 'GCP_PROJECT', label: 'Project', file: false, required: 'MUST' },
+            { ...key, required: 'ONE_OF' },
+            { ...key, env_var: 'GCLOUD_ADC', label: 'gcloud sign-in', file: false, required: 'ONE_OF', kind: 'cli', present: true },
+          ],
+        }),
+      ],
+    });
+    const row = screen.getByTestId('project-setup-req-google-cloud');
+    expect(row).toHaveTextContent('Project');
+    expect(row).not.toHaveTextContent('Service account key');
+  });
+
   it('shows needed_for beside the name, in place of the missing values', async () => {
     await open({ ...NOT_READY, to_do: [req({ needed_for: 'Reads the files in your bucket.' })] });
     const row = screen.getByTestId('project-setup-req-google-cloud');

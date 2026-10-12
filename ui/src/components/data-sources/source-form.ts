@@ -30,6 +30,7 @@ export interface SourceDraft {
   provider: string;
   account_key: string;
   enabled: boolean;
+  open_to_all: boolean;
   poll_interval_seconds: number;
   window_days: number;
   /** Quiet this long ends a thread; the next message starts a new one. Null = never. */
@@ -82,6 +83,7 @@ export function emptyDraft(spec?: DataDriver): SourceDraft {
     // so exactly one place knows it.
     account_key: '',
     enabled: true,
+    open_to_all: false,
     poll_interval_seconds: 300,
     window_days: 7,
     thread_timeout_seconds: null,
@@ -118,6 +120,10 @@ export function fieldValue(key: string, field: SpecConfigField, config: Record<s
   // Only scalars round-trip through an input. A nested object in config means
   // the driver grew a shape this form does not model — show nothing rather than
   // "[object Object]", which would be saved back verbatim and corrupt it.
+  return scalarText(raw);
+}
+
+function scalarText(raw: unknown): string {
   if (typeof raw === 'string') return raw;
   if (typeof raw === 'number' || typeof raw === 'boolean') return String(raw);
   return '';
@@ -135,8 +141,8 @@ export function choiceOf(raw: unknown): DataSourceChoice | null {
   if (typeof raw === 'string') return raw.trim() ? { id: raw.trim(), name: raw.trim() } : null;
   if (raw && typeof raw === 'object' && 'id' in raw) {
     const entry = raw as { id?: unknown; name?: unknown };
-    const id = String(entry.id ?? '').trim();
-    return id ? { id, name: String(entry.name ?? '') || id } : null;
+    const id = scalarText(entry.id).trim();
+    return id ? { id, name: scalarText(entry.name) || id } : null;
   }
   return null;
 }
@@ -271,6 +277,7 @@ export function validateDraft(draft: SourceDraft, spec?: DataDriver, { config = 
   if (!spec) problems.push(t`Unknown provider ${draft.provider}.`);
 
   for (const [key, field] of config ? specFields(spec) : []) {
+    if (key === 'allowed_senders' && draft.open_to_all) continue;
     const raw = (draft.fields[key] ?? '').trim();
     const label = field.label || key;
     // A pick satisfies "has a value" on its own, and needs no pattern check: it came off

@@ -17,7 +17,7 @@ import {
   useProjectListMenu,
 } from '@src/components/terminal/project-list-menu';
 import { cn } from '@src/lib/utils';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { gfmSlug } from '@src/lib/heading-slug';
 import { RUNTIME_APPEARANCE } from './runtime-appearance';
 
@@ -115,9 +115,15 @@ export function RuntimeChip({ kind, project }: RuntimeChipProps) {
   // Radix's hover-to-open is ignored. Uncontrolled, the card would re-open
   // over the list and hide it.
   const [hoverOpen, setHoverOpen] = useState(false);
+  // Opening the list ends this hover interaction. Ignore both its pending
+  // timer and the modal's restored focus until the user returns deliberately.
+  const suppressHover = useRef(false);
   const hoverCardOpen = hoverOpen && !menu.open;
   const setListOpen = (open: boolean) => {
-    if (open) setHoverOpen(false);
+    if (open) {
+      suppressHover.current = true;
+      setHoverOpen(false);
+    }
     menu.setOpen(open);
   };
 
@@ -131,11 +137,13 @@ export function RuntimeChip({ kind, project }: RuntimeChipProps) {
   return (
     <HoverCard
       open={hoverCardOpen}
-      onOpenChange={(open) => setHoverOpen(open && !menu.open)}
+      onOpenChange={(open) => setHoverOpen(open && !menu.open && !suppressHover.current)}
       openDelay={RUNTIME_HOVER_OPEN_DELAY_MS}
       closeDelay={100}
     >
-      <Popover open={menu.open} onOpenChange={setListOpen}>
+      {/* Block embedded app iframes while open so outside clicks reach Radix's
+          dismiss layer instead of disappearing into another document. */}
+      <Popover modal open={menu.open} onOpenChange={setListOpen}>
         <PopoverAnchor asChild>
           {/* A div, not a button: it holds two controls, and a button inside
               a button is invalid HTML (the nav-bar test pins that). The list
@@ -178,7 +186,15 @@ export function RuntimeChip({ kind, project }: RuntimeChipProps) {
                 </TooltipContent>
               </Tooltip>
             ) : null}
-            <HoverCardTrigger asChild>
+            <HoverCardTrigger
+              asChild
+              onPointerEnter={() => {
+                if (!menu.open) suppressHover.current = false;
+              }}
+              onKeyDown={(event) => {
+                if (!menu.open && event.key === 'Tab') suppressHover.current = false;
+              }}
+            >
               <PopoverTrigger asChild>
                 <button
                   type="button"

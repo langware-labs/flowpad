@@ -140,7 +140,8 @@ did, and the **needs label** filter lists what is left.
 ## 7. Keep records by key
 
 A row's **key** is its example folder's name. Give one on `append`, then address the row by it —
-never re-compute an example id: it is derived from the key, so `read_rows()` hands both back.
+never compute an id: a row's id is stored in the row (a rename keeps it), and every read hands back
+both `key` and `id`.
 
 ```python
 from flow_sdk.builtin.dataset import Dataset
@@ -149,7 +150,7 @@ mine = Dataset.at(folder)
 await mine.append([{"key": "open-sources", "input": {"utterance": "open data sources"}}])
 await mine.put("open-sources", {"input": {"utterance": "open my data sources"}})  # replace; gold kept
 problems = mine.check({"input": {"utterance": 7}})        # what is wrong -- nothing is written
-new_id = mine.rename_row("open-sources", "sources")       # the id follows the key
+same_id = mine.rename_row("open-sources", "sources")      # a new key; the id (and every link) stays
 keys = [row.key for row in mine.read_rows()]              # ['sources']
 mine.delete_row("sources")
 ```
@@ -185,6 +186,13 @@ back as `put-row {key, row, expected}` and a row changed since answers 409. The 
 kind: `GET /api/v1/kinds/<kind>/datasets?project=<id>` (TypeScript `Dataset.forKind(kind, projectId)`).
 
 ## 9. Mirror an outside system, and read only what you show
+
+A system of record reached through a data source is mirrored by DECLARING it on the source
+(`"mirror": {dataset, map, by?}` in its `data_source.json`): every sync keeps the dataset so, and a
+row's outside-owned fields write back through the source. The map turns ids into links
+(`{"link": <kind>, "by": <unique field>, "path": "data.deal_ids.*"}`). See
+[mirroring a system of record](../data-management/mirroring-a-system-of-record.md). What follows is
+the same mirror done by hand, from rows your own code builds.
 
 An app that keeps real records — a mirror of a CRM, a log of outreach — writes many rows per run and
 shows a few of them. `sync` makes the dataset hold exactly the rows given, in one step; `query` and
@@ -222,3 +230,34 @@ every row write says `dataset.rows.changed` once (the keys that moved, never the
 re-reads when told instead of on a timer. A script outside the server is heard too (the write tells
 the running instance; best effort). An app opens an outside page — the record in the CRM — with
 `openExternal(url)` (http/https only; the host opens it in the person's browser).
+
+## 10. Ask across links, count by week, find by text
+
+A path follows a link, `count` buckets dates and measures more than rows, and `q` reads a row's
+text — so a dashboard number, its trend and the list behind it are the same question asked three ways.
+
+```python
+from flow_sdk.datasets import Dataset
+
+companies, leads = Dataset.at(project / "agentic-assets/dataset/companies"), Dataset.at(project / "agentic-assets/dataset/leads")
+acme, bolt = await companies.put_many([{"key": "acme", "input": {"name": "Acme"}}, {"key": "bolt", "input": {"name": "Bolt"}}])
+await leads.put_many([
+    {"key": "dana", "input": {"name": "Dana Levi", "company": companies.ref_of(acme)}},
+    {"key": "eli", "input": {"name": "Eli Stone", "company": companies.ref_of(acme)}},
+    {"key": "fay", "input": {"name": "Fay Levi", "company": companies.ref_of(bolt)}},
+])
+at_acme = [r["key"] for r in leads.rows({"input.company.name": "Acme"}, order_by={"key": "asc"})["rows"]]   # follows the link
+per_company = leads.count(group_by=["input.company.key"], metrics={"people": "distinct:input.name"}, order_by={"count": "desc"})
+found = leads.rows(q="levi", expand=["input.company"])                    # text anywhere in the row; linked rows beside
+names = sorted(v["row"]["input"]["name"] for v in found["linked"].values())
+unused = [key for key, by in leads.used_by().items() if not by]           # rows nothing links to
+levis = {"op": "$PROP", "operands": ["input.company", {"op": "$LIKE", "operands": ["input.name", "levi"]}]}
+colleagues = leads.rows({"op": "$IN", "operands": ["input.company", levis]}, order_by={"key": "asc"})   # a join: one question
+```
+
+A date bucket is written `week:input.day` (also `day:` / `month:` / `quarter:`; `week_start="sunday"`
+when your week begins there), a metric `distinct:` / `min:` / `max:` / `sum:` and a path. Over HTTP:
+`GET rows?filter={match, expand}&q=…`, `GET count?group_by=week:input.day&metrics={…}&order_by={…}`,
+`GET used-by`. A join on a value is a sub-query — `$IN [field, {$PROP: [path, match, kind?]}]`: "among the
+values `path` takes in the rows that match". TypeScript: `rows({match, q, expand})` → `linked`, `count({group_by, metrics, order_by,
+week_start})`, `usedBy(keys)`, and `bucketOf(day, 'week', 'sunday')` for the key of a period.

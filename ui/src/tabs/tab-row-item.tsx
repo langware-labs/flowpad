@@ -32,7 +32,10 @@ import { AgentAvatar } from '@src/components/agents/AgentAvatar';
 import { lucideByName } from '@src/lib/lucide-by-name';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { useTabLifecycles } from '@src/tabs/use-tab-manager';
-import { ContentTabTooltip, humanizeType, LazyProcessTooltip, PROVIDER_META } from '@src/tabs/provider-meta';
+import { ContentTabTooltip, humanizeType, ProcessTabCard, PROVIDER_META } from '@src/tabs/provider-meta';
+import { DocTabCard } from '@src/tabs/doc-tab-card';
+import { isReviewableDocDock } from '@src/navigation/content-asset-dock';
+import { DockPointer } from '@src/navigation/DockPointer';
 import { ViewType, VIEWER_REGISTRY, viewerTitle } from '@src/types/ViewType';
 import { FileText, FolderGit2 } from 'lucide-react';
 import React, { useMemo } from 'react';
@@ -93,6 +96,28 @@ function tabFavorite(tab: Tab, title: string): FavoriteRef | null {
   return favoriteTargetForDock(dock, typeId ? { typeId, entity: null } : null, title);
 }
 
+/** The review card for a tab whose dock is ONE document — nothing for any other
+ *  tab. A node or `undefined`, never a null-rendering component: the strip
+ *  decides which hover card to show by whether this is set. */
+function docCard(
+  tab: Tab,
+  dock: DockPointer | null | undefined,
+  typeLabel: string,
+  statusReason: string,
+  location?: boolean,
+): React.ReactNode {
+  if (!dock || !isReviewableDocDock(dock)) return undefined;
+  return (
+    <DocTabCard
+      tab={tab}
+      dock={dock}
+      typeLabel={typeLabel}
+      statusReason={statusReason || undefined}
+      location={location}
+    />
+  );
+}
+
 function chipFor(tab: Tab, lifecycle: TabLifecycleEntry | null): TabStripItem {
   const dock = tab.dockPointer;
   const key = tabKey(tab);
@@ -132,15 +157,14 @@ function chipFor(tab: Tab, lifecycle: TabLifecycleEntry | null): TabStripItem {
       hasError: lifecycleOverlay.hasError,
       statusReason,
       renameable: true,
-      tooltip: processId ? (
-        <LazyProcessTooltip
+      card: processId ? (
+        <ProcessTabCard
           processId={processId}
           fallbackName={label || i18n._(meta.label)}
           statusReason={statusReason || undefined}
         />
-      ) : statusReason ? (
-        statusReason
       ) : undefined,
+      tooltip: statusReason || undefined,
       testId: `tab-${key}`,
       dataAttributes: { 'data-indicator-key': key },
     };
@@ -149,6 +173,7 @@ function chipFor(tab: Tab, lifecycle: TabLifecycleEntry | null): TabStripItem {
   // Content tab: per-type icon from the backend TypeInfo registry when the dock
   // has a target entity (CLAUDE.md icon rule), else the viewType registry glyph.
   const meta = VIEWER_REGISTRY[viewType as ViewType];
+  const docDock = dock ? new DockPointer(dock) : null;
   if (tab.target_type && tab.target_id) {
     const typeLabel = viewerTitle(viewType) || humanizeType(tab.target_type);
     return {
@@ -169,6 +194,7 @@ function chipFor(tab: Tab, lifecycle: TabLifecycleEntry | null): TabStripItem {
       isDisabled,
       hasError: lifecycleOverlay.hasError,
       statusReason,
+      card: docCard(tab, docDock, typeLabel, statusReason, tab.target_remote),
       tooltip: (
         <ContentTabTooltip
           tab={tab}
@@ -192,6 +218,7 @@ function chipFor(tab: Tab, lifecycle: TabLifecycleEntry | null): TabStripItem {
     isDisabled,
     hasError: lifecycleOverlay.hasError,
     statusReason,
+    card: docCard(tab, docDock, typeLabel, statusReason),
     tooltip: <ContentTabTooltip tab={tab} typeLabel={typeLabel} statusReason={statusReason || undefined} />,
     testId: `tab-content-${key}`,
   };
@@ -265,6 +292,8 @@ export function useTabStripItems(tabs: Tab[]): TabStripItem[] {
               location={effectiveRemote}
             />
           );
+          // The card follows the asset on screen, like the title and icon above.
+          item.card = docCard(tab, currentDock, typeLabel, item.statusReason ?? '', effectiveRemote);
         }
         return item;
       }),

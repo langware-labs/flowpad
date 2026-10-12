@@ -16,6 +16,7 @@ from __future__ import annotations
 import re
 from typing import TYPE_CHECKING, Any, Iterable, Optional
 
+from flow_sdk.schema.data_spec.credential_contract import CredentialVarKind
 from flow_sdk.schema.data_spec.permission_spec import (
     MECHANISM_API_KEY,
     STATUS_DECLARED,
@@ -83,7 +84,7 @@ async def _owners(names: Iterable[str], project: Any) -> dict[str, str]:
     declared = declare(await credentials_in_scope(project))
     owner = {name: str(declared[name].spec.name) for name in names if name in declared}
     for template in await shipped_templates():
-        for var in template.var_names():
+        for var in template.stored_var_names():
             if var in names:
                 owner.setdefault(var, str(template.name))
     return owner
@@ -260,6 +261,16 @@ async def _local_funding_item(agent: "Agent", project: Any) -> Optional[Readines
     return ReadinessItemSpec(requirement=req, status=STATUS_MISSING, where=kind, fix=f"{reason}: run `flow llm set auto`")
 
 
+def _needed_names(row) -> list[str]:
+    """The stored values a credential requirement stands on: every MUST one, and of a ONE_OF group the
+    members held — or, while none is, every member a store can hold (any one of them would do)."""
+    ways = [v for v in row.vars if v.is_one_of]
+    held = [v for v in ways if v.present]
+    return [v.env_var for v in row.vars if v.is_must] + [
+        v.env_var for v in (held or ways) if v.kind is not CredentialVarKind.CLI
+    ]
+
+
 def _values_item(
     req: RequirementSpec, names: list[str], present: dict[str, tuple[bool, str]], fix: str, remedy: str = ""
 ) -> ReadinessItemSpec:
@@ -298,7 +309,10 @@ async def readiness(agent: "Agent", deployment: Optional["Deployment"] = None) -
     async def item(req: RequirementSpec) -> ReadinessItemSpec:
         if req.kind == REQUIREMENT_CREDENTIAL:
             row = rows.get(req.name)
-            names = req.vars or ([v.env_var for v in row.vars if v.is_must] if row else [])
+            names = req.vars or (_needed_names(row) if row else [])
+            if not names and row is not None and row.state == "connected":
+                # Held with no stored value at all: a sign-in on this computer settles its ONE_OF group.
+                return ReadinessItemSpec(requirement=req, status=STATUS_DECLARED, where="signed in on this computer")
             return _values_item(req, names, present, f"flow credentials set {req.name} --stdin", use_mine)
         if req.kind == REQUIREMENT_VARIABLE:
             return _values_item(req, [req.name], present, f"declare a credential with {req.name}", use_mine)

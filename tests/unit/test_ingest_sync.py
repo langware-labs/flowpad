@@ -17,11 +17,15 @@ from pydantic import PrivateAttr
 
 from flow_sdk.builtin.data_driver import DataDriver
 from flow_sdk.builtin.data_source import DataSource
+from flow_sdk.builtin.source_item import SourceItem
 from flow_sdk.ingest.driver_runtime import Pass
 from flow_sdk.ingest.health import SourceError, SourceHealth
 from flow_sdk.ingest.sync import sync_source
 from flow_sdk.schema.data_spec.source_item_spec import SourceItemSpec
+from flow_sdk.sources.base import CollectionSource
 from flow_sdk.sources.families import RecordSource
+from flow_sdk.sources.values.items import FeedItemData
+from flow_sdk.sources.values.items import SourceItemSpec as ListedItem
 
 NOW = datetime(2026, 7, 31, 12, 0, 0, tzinfo=timezone.utc)
 
@@ -241,3 +245,97 @@ async def test_a_write_failure_is_classified_and_leaves_the_cursor_put(monkeypat
     assert (refreshed.health, refreshed.error_code, refreshed.consecutive_failures) == (SourceHealth.TRANSIENT_ERROR.value, "RuntimeError", 1)
     assert refreshed.cursor is None and refreshed.high_water is None, "records were not committed; the cursor must not move"
     assert refreshed.next_poll_at is not None and refreshed.is_due(NOW + timedelta(seconds=121))
+
+
+# ── a record gone in the outside system ───────────────────────────────────────────────────────────
+
+class _Table(RecordSource, CollectionSource):
+    """A source that lists its whole collection: what ``rows`` holds is everything there is."""
+
+    provider = "tabletest"
+    lists_everything = True
+    rows: ClassVar[dict] = {}
+
+    def query(self) -> None:
+        return None
+
+    async def _lookup(self, key):
+        return self.rows.get(key)
+
+    async def _scan(self, query):
+        return sorted(self.rows.items())
+
+    def _item(self, key, raw) -> ListedItem:
+        return ListedItem(origin=self.origin(key), data=FeedItemData(title=raw))
+
+
+class _Window(_Table):
+    """The same listing from a source that makes no such promise (a feed's recent entries)."""
+
+    provider = "windowtest"
+    lists_everything = False
+
+
+async def _stored(src) -> set:
+    return {item.name for item in await SourceItem.get_all({"data_source_id": str(src.id)}) or []}
+
+
+async def _synced(cls, rows) -> DataSource:
+    DataDriver.register(DataDriver.for_class(cls, kind=f"datasource.test.{cls.provider}"))
+    cls.rows = dict(rows)
+    src = await _source(provider=cls.provider)
+    report = await sync_source(src, now=NOW)
+    assert report.created == len(rows), (await _reread(src)).error_detail
+    return src
+
+
+@pytest.mark.timeout(30)  # do not increase timeout without approval
+async def test_a_record_the_outside_system_no_longer_lists_is_removed():
+    src = await _synced(_Table, {"a": "deal a", "b": "deal b", "c": "deal c"})
+
+    del _Table.rows["b"]
+    report = await sync_source(await _reread(src), now=NOW)
+
+    assert report.removed == 1 and report.as_counts()["removed"] == 1
+    assert await _stored(src) == {"deal a", "deal c"}
+    # A pass that removes nothing does not say "removed" at all.
+    assert "removed" not in (await sync_source(await _reread(src), now=NOW)).as_counts()
+
+
+@pytest.mark.timeout(30)  # do not increase timeout without approval
+async def test_an_empty_listing_removes_nothing():
+    """An outage that answers "no rows" must not cost every record -- and every row mirrored from it."""
+    src = await _synced(_Table, {"a": "deal a", "b": "deal b"})
+
+    _Table.rows = {}
+    report = await sync_source(await _reread(src), now=NOW)
+
+    assert report.removed == 0
+    assert await _stored(src) == {"deal a", "deal b"}
+
+
+@pytest.mark.timeout(30)  # do not increase timeout without approval
+async def test_a_source_that_lists_a_window_never_removes():
+    src = await _synced(_Window, {"a": "entry a", "b": "entry b"})
+
+    del _Window.rows["b"]
+    report = await sync_source(await _reread(src), now=NOW)
+
+    assert report.removed == 0
+    assert await _stored(src) == {"entry a", "entry b"}
+
+
+@pytest.mark.timeout(30)  # do not increase timeout without approval
+async def test_only_a_proven_whole_listing_removes():
+    """``Pass.listed`` is the proof; without it absence means nothing."""
+    src = await _source()
+    DataDriver.register(_FakeType(
+        Pass(items=[_item(src.id, 1), _item(src.id, 2)], cursor="c1"),
+        Pass(items=[], cursor="c2"),
+        Pass(items=[], cursor="c3", listed=frozenset({"item-1"})),
+    ))
+    await sync_source(src, now=NOW)
+
+    assert (await sync_source(await _reread(src), now=NOW)).removed == 0
+    assert (await sync_source(await _reread(src), now=NOW)).removed == 1
+    assert await _stored(src) == {"item 1"}

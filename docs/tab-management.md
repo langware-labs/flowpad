@@ -500,6 +500,20 @@ backend flips `visible=False` / `status=CLOSING` (both **non-null**, so they
 broadcast) + async teardown; the initiating client optimistically removes
 accepted keys; other clients converge via the WS membership refetch.
 
+**(e) Close — what the client cache keeps:** nothing. The entity cache
+(`ts_sdk/src/FlowSync/store.ts`) drops a row its type calls *retired* — a Tab
+with `visible=false`, a `closed` Shell, a `pty_mode` process that ended and whose
+tab is closed — as soon as nothing references it (no subscriber, no watch, no
+live query holding it, no view listening to it), and a broadcast `create` this
+page never asked for is not kept at all. Leaving the cache goes through one
+function (`_evict`: delete op, removal, identity switch, eviction alike), which
+also frees what the entity owns: its flow-data stream, a shell's PTY connection
+(its hooks on the connection manager and its replay window), a process's loaded
+artifacts. Rows that are not retired stay warm (I4 in
+[dock-loading](navigation/dock-loading.md)); an evicted row is simply fetched
+again by the next cache-first read. No cap and no expiry — a reference going
+away is the trigger. Locked by `ui/tests/unit/entity-cache-eviction.test.ts`.
+
 ## 5. The two bugs and the fix
 
 **Bug 1 — project round-trip lost the selected tab.** The old self-heal

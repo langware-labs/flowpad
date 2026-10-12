@@ -2,7 +2,7 @@
  * A tab's own bookmark star, and the "point to" flight it plays.
  *
  * Pinned: the star is the navigation bar's star for THAT tab (same FavoriteRef
- * as `favoriteTargetForDock` gives the bar), it hides until hover while off,
+ * as `favoriteTargetForDock` gives the bar), the strip owns hover visibility,
  * turning it ON — and only on — flies the chip into the bar's star, and the
  * flight leaves the chip on screen (point-to), where minimize hides its source.
  */
@@ -56,11 +56,9 @@ describe('TabFavoriteStar', () => {
       </TooltipProvider>,
     );
 
-  it('off: hidden until the chip is hovered', () => {
+  it('off: reports an unsaved bookmark', () => {
     renderStar();
     const star = screen.getByTestId('tab-favorite-star');
-    expect(star.className).toContain('opacity-0');
-    expect(star.className).toContain('group-hover:opacity-60');
     expect(star.dataset.favorited).toBeUndefined();
   });
 
@@ -72,11 +70,10 @@ describe('TabFavoriteStar', () => {
     expect(fav.toggleFavorite).toHaveBeenCalledWith(expect.objectContaining(favorite));
   });
 
-  it('on: always shown, and turning it OFF flies nothing', async () => {
+  it('on: reports a saved bookmark, and turning it OFF flies nothing', async () => {
     fav.state.current = { id: 'bk-1' };
     renderStar();
     const star = screen.getByTestId('tab-favorite-star');
-    expect(star.className).not.toContain('opacity-0');
     expect(star.dataset.favorited).toBe('true');
 
     fireEvent.click(star.querySelector('button')!);

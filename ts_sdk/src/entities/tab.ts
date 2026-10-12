@@ -341,7 +341,11 @@ export class Tab extends APIEntity<Tab> implements ITab {
     // fallback the tab renders project-less even though the loader resolves the
     // active project from the same cwd.
     let projectId: string | null;
-    if (targetTypeId?.type === EntityTypes.Project) {
+    if (dock.options?.providerProject && dock.options?.consumerProject) {
+      // A dependency home executes in its provider, but the tab belongs to the
+      // explicitly named consumer. This context survives URL/storage reloads.
+      projectId = dock.options.consumerProject;
+    } else if (targetTypeId?.type === EntityTypes.Project) {
       projectId = targetTypeId.id;
     } else if (target?.project_id) {
       projectId = target.project_id;
@@ -474,6 +478,11 @@ export class Tab extends APIEntity<Tab> implements ITab {
     info.bodyParameters = { name };
     const res = await dataManager.callAction<{ name: string }, { tabs: ITab[] }>(info);
     return Tab.fromResponse(res?.tabs ?? []);
+  }
+
+  /** A closed tab: `visible=false` is the whole of "closed" (the row is never deleted). */
+  override isRetired(): boolean {
+    return this.visible === false;
   }
 
   /** Instance soft-close (also updates the local flag). */

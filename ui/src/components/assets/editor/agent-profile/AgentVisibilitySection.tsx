@@ -145,7 +145,10 @@ export function AgentVisibilitySection({ agent, version }: { agent: Agent; versi
             />
           </div>
           <p className="mt-1 text-xs text-muted-foreground" data-testid="agent-launch-link-hint">
-            <Trans>The link works for anyone the agent is shared with, or for everyone once it is public.</Trans>
+            <Trans>
+              Anyone its project is shared with can launch it from this link. Making the agent public lets everyone see
+              it; launching still needs the project shared with them.
+            </Trans>
           </p>
         </div>
       )}

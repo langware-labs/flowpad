@@ -310,3 +310,15 @@ async def test_a_reread_file_keeps_the_allowlist(scope):
 
     row = await DataSource.get_by_id(str(source.id))
     assert row.allowed_senders == ["+972501234567"]
+
+
+async def test_public_access_is_private_row_policy_preserved_on_reindex(scope):
+    source = DataSource(name="public", provider=_Mailbox.provider, config={"address": "me@x.test"}, open_to_all=True)
+    await source.save()
+    assert "open_to_all" in RUNTIME_FIELDS
+    assert "open_to_all" not in _document(source)
+    await index_path("data_source", _folder(source))
+    row = await DataSource.get_by_id(str(source.id))
+    assert row.open_to_all is True
+    await DataSource.update_by_id(source.id, {"open_to_all": False})
+    assert (await DataSource.get_by_id(str(source.id))).open_to_all is False
