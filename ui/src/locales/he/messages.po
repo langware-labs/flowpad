@@ -2915,6 +2915,10 @@ msgstr "כל אחד עם גישה יכול לפתוח את {entityType} ישיר
 msgid "Anyone with the launch link gets a sandbox of their own, up to ${capUsd} each."
 msgstr ""
 
+#: src/components/assets/editor/agent-profile/AgentVisitorDeploymentSection.tsx
+msgid "Anyone with the launch link gets a sandbox of their own, using their own LLM access."
+msgstr ""
+
 #: src/components/conversation/MembersAvatarStack.tsx
 msgid "Anyone with the link can join as a member. It's on your clipboard — it can't be shown again."
 msgstr "כל מי שיש לו הקישור יכול להצטרף כחבר. הקישור הועתק ללוח ההעתקים שלך — לא ניתן להציג אותו שוב."
@@ -4656,8 +4660,8 @@ msgid "Choose an endpoint…"
 msgstr ""
 
 #: src/components/assets/editor/agent-profile/AgentVisitorDeploymentSection.tsx
-msgid "Choose an LLM source…"
-msgstr ""
+#~ msgid "Choose an LLM source…"
+#~ msgstr ""
 
 #: src/components/entity-execution-panel/WorkerUnavailableNotice.tsx
 msgid "Choose another worker"
@@ -13266,7 +13270,11 @@ msgid "Let an agent follow the steps above and answer for you."
 msgstr "אפשר לסוכן לבצע את השלבים שלמעלה ולענות במקומך."
 
 #: src/components/assets/editor/agent-profile/AgentVisitorDeploymentSection.tsx
-msgid "Let anyone with the launch link try this agent in a sandbox of their own — no sign-in needed. Each visitor spends up to the cap, from an LLM endpoint you administer."
+#~ msgid "Let anyone with the launch link try this agent in a sandbox of their own — no sign-in needed. Each visitor spends up to the cap, from an LLM endpoint you administer."
+#~ msgstr ""
+
+#: src/components/assets/editor/agent-profile/AgentVisitorDeploymentSection.tsx
+msgid "Let anyone with the launch link try this agent in a sandbox of their own — no sign-in needed. Fund them from an LLM endpoint you administer, up to a cap each, or let them bring their own LLM access."
 msgstr ""
 
 #: src/components/assets/editor/agent-profile/AgentVisibilitySection.tsx
@@ -15326,6 +15334,10 @@ msgstr "עדיין אין סימניות"
 msgid "no budget"
 msgstr ""
 
+#: src/components/assets/editor/agent-profile/AgentVisitorDeploymentSection.tsx
+msgid "No budget — visitors bring their own"
+msgstr ""
+
 #: src/components/token-plan/BudgetHero.tsx
 #: src/components/token-plan/TokenPlanCard.tsx
 msgid "No budget set"
@@ -17105,8 +17117,8 @@ msgid "Only its row is on the hub: the publishing project isn't linked to the cl
 msgstr ""
 
 #: src/components/assets/editor/agent-profile/AgentVisitorDeploymentSection.tsx
-msgid "Only people you share with can use this agent."
-msgstr ""
+#~ msgid "Only people you share with can use this agent."
+#~ msgstr ""
 
 #: src/components/assets/editor/agent-profile/AgentVisibilitySection.tsx
 msgid "Only people you share with can view this agent."
@@ -27506,6 +27518,10 @@ msgid "Visitor trials stopped"
 msgstr ""
 
 #: src/components/assets/editor/agent-profile/AgentVisitorDeploymentSection.tsx
+msgid "Visitors can no longer start a sandbox of this agent."
+msgstr ""
+
+#: src/components/assets/editor/agent-profile/AgentVisitorDeploymentSection.tsx
 msgid "Visitors can try this agent"
 msgstr ""
 
@@ -28230,8 +28246,8 @@ msgid "You administer no LLM endpoint to allocate from, so this agent spends you
 msgstr ""
 
 #: src/components/assets/editor/agent-profile/AgentVisitorDeploymentSection.tsx
-msgid "You administer no LLM endpoint to fund visitors from."
-msgstr ""
+#~ msgid "You administer no LLM endpoint to fund visitors from."
+#~ msgstr ""
 
 #. placeholder {0}: person?.name || person?.email
 #. placeholder {1}: alreadyAsked.task.title

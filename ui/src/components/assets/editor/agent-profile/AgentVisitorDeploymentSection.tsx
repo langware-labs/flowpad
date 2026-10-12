@@ -1,4 +1,4 @@
-import { clearPublicAccess, PUBLIC_DEPLOYER_ROLE, setPublicAccess, type Agent } from '@sdk';
+import { PUBLIC_VIEWER_ROLE, setPublicAccess, type Agent } from '@sdk';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { Loader2, Rocket } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
@@ -16,23 +16,28 @@ const DEFAULT_CAP_USD = 2;
 
 /**
  * "Visitor trials": let anyone with the launch link — signed out included — run this agent in a sandbox of
- * their own, each funded by a public child of an LLM endpoint the owner administers, capped per visitor.
+ * their own, optionally funded by a public child of an LLM endpoint the owner administers, capped per visitor;
+ * with no endpoint chosen the visitor brings their own token source.
  *
- * Set up is two hub calls, in this order: `setup_visitor_deployment` (the source and the cap, which the hub
- * refuses for an agent visitors could not run) and then the `visitor` audience's `anonymous_deployer` stamp,
- * which is what lets a visitor in. The stamp goes second so it never opens an agent with no budget. It is
- * the same one stamp "Set public" writes, so it replaces a viewer stamp — which is why the role is the
- * Sharing section's (`role`/`setRole`), read once and shared with its "Set public" button. Turn off clears
- * the stamp; the stored source and cap stay, ready for the next Set up.
+ * Set up is `setup_visitor_deployment` with `allow_visitor_deployment: true` (which the hub refuses for an
+ * agent visitors could not run), then — unless the agent is public already — the `visitor` audience's viewer
+ * stamp, which is what lets a visitor reach the agent at all; it is the same one stamp "Set public" writes,
+ * which is why the role is the Sharing section's (`role`/`setRole`). Turn off sends the flag false and leaves
+ * the stamp: whether the agent is public stays the "Set public" button's call. The flag is known (`allowed`)
+ * only once set here.
  */
 export function AgentVisitorDeploymentSection({
   agent,
   role,
   setRole,
+  allowed,
+  setAllowed,
 }: {
   agent: Agent;
   role: string | null;
   setRole: (role: string | null) => void;
+  allowed: boolean | null;
+  setAllowed: (allowed: boolean) => void;
 }) {
   const { t } = useLingui();
   // Allocating from an endpoint takes administering it — the hub checks the same right.
@@ -44,25 +49,35 @@ export function AgentVisitorDeploymentSection({
   const [source, setSource] = useState('');
   const [capUsd, setCapUsd] = useState<number | null>(DEFAULT_CAP_USD);
   const [busy, setBusy] = useState(false);
-  const open = role === PUBLIC_DEPLOYER_ROLE;
+  const open = role === PUBLIC_VIEWER_ROLE && allowed === true;
 
   // The only source there is: nothing to choose.
   useEffect(() => {
     if (!source && sources.length === 1) setSource(endpointTypeId(sources[0].id));
   }, [source, sources]);
 
-  const ready = !!source && capUsd !== null && capUsd > 0;
+  // No source: the visitor brings their own token source, so there is no cap to set.
+  const ready = !source || (capUsd !== null && capUsd > 0);
 
   const handleSetup = async () => {
-    if (!source || capUsd === null || capUsd <= 0) return;
+    if (!ready) return;
     setBusy(true);
     try {
-      await agent.setupVisitorDeployment({ llm_source: source, cap_usd: capUsd });
-      const access = await setPublicAccess(agent.typeId, 'visitor', PUBLIC_DEPLOYER_ROLE);
-      setRole(access.role ?? null);
+      const setup = await agent.setupVisitorDeployment(
+        source
+          ? { allow_visitor_deployment: true, llm_source: source, cap_usd: capUsd }
+          : { allow_visitor_deployment: true },
+      );
+      setAllowed(setup.allow_visitor_deployment);
+      if (role !== PUBLIC_VIEWER_ROLE) {
+        const access = await setPublicAccess(agent.typeId, 'visitor', PUBLIC_VIEWER_ROLE);
+        setRole(access.role ?? null);
+      }
       notify.success({
         title: t`Visitors can try this agent`,
-        message: t`Anyone with the launch link gets a sandbox of their own, up to $${capUsd} each.`,
+        message: source
+          ? t`Anyone with the launch link gets a sandbox of their own, up to $${capUsd} each.`
+          : t`Anyone with the launch link gets a sandbox of their own, using their own LLM access.`,
       });
     } catch (e) {
       notify.error({
@@ -78,9 +93,12 @@ export function AgentVisitorDeploymentSection({
   const handleTurnOff = async () => {
     setBusy(true);
     try {
-      const access = await clearPublicAccess(agent.typeId, 'visitor');
-      setRole(access.role ?? null);
-      notify.success({ title: t`Visitor trials stopped`, message: t`Only people you share with can use this agent.` });
+      const setup = await agent.setupVisitorDeployment({ allow_visitor_deployment: false });
+      setAllowed(setup.allow_visitor_deployment);
+      notify.success({
+        title: t`Visitor trials stopped`,
+        message: t`Visitors can no longer start a sandbox of this agent.`,
+      });
     } catch (e) {
       notify.error({
         title: t`Could not stop visitor trials`,
@@ -107,14 +125,10 @@ export function AgentVisitorDeploymentSection({
         )}
       </div>
       <p className="text-xs text-muted-foreground">
-        {noSources ? (
-          <Trans>You administer no LLM endpoint to fund visitors from.</Trans>
-        ) : (
-          <Trans>
-            Let anyone with the launch link try this agent in a sandbox of their own — no sign-in needed. Each visitor
-            spends up to the cap, from an LLM endpoint you administer.
-          </Trans>
-        )}
+        <Trans>
+          Let anyone with the launch link try this agent in a sandbox of their own — no sign-in needed. Fund them from
+          an LLM endpoint you administer, up to a cap each, or let them bring their own LLM access.
+        </Trans>
       </p>
       <div className="flex flex-wrap items-center gap-2">
         <select
@@ -125,7 +139,7 @@ export function AgentVisitorDeploymentSection({
           aria-label={t`Visitor LLM source`}
           data-testid="agent-visitor-deployment-source"
         >
-          <option value="">{t`Choose an LLM source…`}</option>
+          <option value="">{t`No budget — visitors bring their own`}</option>
           {sources.map((e) => (
             <option key={e.id} value={endpointTypeId(e.id)}>
               {e.name}
@@ -142,7 +156,7 @@ export function AgentVisitorDeploymentSection({
           step="0.5"
           className="h-8 w-24 text-xs"
           value={capUsd ?? ''}
-          disabled={busy || noSources}
+          disabled={busy || !source}
           onChange={(e) => setCapUsd(e.target.value === '' ? null : Number(e.target.value))}
           data-testid="agent-visitor-deployment-cap"
         />
@@ -156,7 +170,7 @@ export function AgentVisitorDeploymentSection({
           {busy ? <Loader2 className="me-1.5 h-3.5 w-3.5 animate-spin" /> : <Rocket className="me-1.5 h-3.5 w-3.5" />}
           {open ? <Trans>Update</Trans> : <Trans>Set up</Trans>}
         </Button>
-        {open && (
+        {(open || (role === PUBLIC_VIEWER_ROLE && allowed === null)) && (
           <Button
             variant="ghost"
             size="sm"
