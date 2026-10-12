@@ -118,10 +118,13 @@ def _is_direct_open(scope: Scope, conn: HTTPConnection) -> bool:
 def local_cookie_header(port: int | None, token: str) -> str:
     """The desktop cookie. No ``Secure`` / ``__Host-``: on loopback they add no
     protection, and Safari drops ``Secure`` cookies on ``http://localhost``.
-    ``SameSite=Strict`` is what keeps another site's page from riding it."""
+    ``SameSite=Lax`` keeps another site's fetch, form POST, iframe or subresource
+    from riding it, and still sends it on a top-level GET navigation — the
+    hub/provider redirects back to ``/auth/login_callback`` and ``/auth/oauth/*``
+    are cross-site, and ``Strict`` refused them."""
     return (
         f"{local_cookie_name(port)}={token}; Max-Age={LOCAL_COOKIE_MAX_AGE}; "
-        "Path=/; HttpOnly; SameSite=Strict"
+        "Path=/; HttpOnly; SameSite=Lax"
     )
 
 
