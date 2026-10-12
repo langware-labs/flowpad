@@ -896,8 +896,8 @@ msgid "{guestName} wants to run prompts on your machine."
 msgstr "{guestName} רוצה להריץ פרומפטים במחשב שלך."
 
 #: src/components/web-url-display/WebUrlDisplay.tsx
-msgid "{host} can't be shown inside Flowpad."
-msgstr ""
+#~ msgid "{host} can't be shown inside Flowpad."
+#~ msgstr ""
 
 #: src/components/conversation/SessionCard.tsx
 #~ msgid "{host} paused the session"
@@ -25428,8 +25428,8 @@ msgid "The setup wizard is not installed."
 msgstr "אשף ההגדרה אינו מותקן."
 
 #: src/components/web-url-display/WebUrlDisplay.tsx
-msgid "The site doesn't allow being embedded in other apps. Open it in your browser instead."
-msgstr ""
+#~ msgid "The site doesn't allow being embedded in other apps. Open it in your browser instead."
+#~ msgstr ""
 
 #: src/components/terminal/interactive-terminal/side-windows/ImprovementResultsModal.tsx
 msgid "The skill matches HEAD."
