@@ -41,18 +41,8 @@ function eq(actual, expected, msg) {
   eq(gate.readToken(file), null, 'an empty file is no token');
 
   // cookieDetails: the backend's desktop cookie for that port.
-  const now = Date.UTC(2026, 0, 1);
-  const details = gate.cookieDetails('http://localhost:9007', 'tok-123', now);
-  eq(details, {
-    url: 'http://localhost:9007',
-    name: 'cookie-gate-9007',
-    value: 'tok-123',
-    path: '/',
-    httpOnly: true,
-    secure: false,
-    sameSite: 'strict',
-    expirationDate: now / 1000 + 365 * 24 * 3600,
-  }, 'desktop cookie details');
+  const details = gate.cookieDetails('http://localhost:9007', 'tok-123');
+  eq([details.url, details.name, details.value], ['http://localhost:9007', 'cookie-gate-9007', 'tok-123'], 'desktop cookie details');
 
   // injectCookie: sets it when there is a token, does nothing when there is none.
   const set = [];

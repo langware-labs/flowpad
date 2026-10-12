@@ -84,7 +84,7 @@ The local backend on `localhost:9007` answers every request without authenticati
 
   * a request triggered by another site's page or link gets no cookie and is refused.
 
-* R8. The desktop cookie is `HttpOnly`, `SameSite=Strict`, `Path=/`, kept for one year, and named per port so two local instances don't overwrite each other.
+* R8. The desktop cookie is `HttpOnly`, `SameSite=Lax`, `Path=/`, kept for one year, and named per port so two local instances don't overwrite each other.
 
 **Sandboxes**
 
@@ -164,7 +164,7 @@ The local backend on `localhost:9007` answers every request without authenticati
 
 * KTD3. **Fail closed.** With the off switch unset, a token that can't be created or read means 403, never a pass. Governs R4.
 
-* KTD4. **The desktop cookie** is named `cookie-gate-<port>` and set `HttpOnly`, `SameSite=Strict`, `Path=/`, `Max-Age` of one year, without `Secure`. The middleware accepts it next to the existing sandbox cookie name. Governs R8.
+* KTD4. **The desktop cookie** is named `cookie-gate-<port>` and set `HttpOnly`, `SameSite=Lax` (Strict refused the cross-site OAuth/login return navigations), `Path=/`, `Max-Age` of one year, without `Secure`. The middleware accepts it next to the existing sandbox cookie name. Governs R8.
 
 * KTD5. **Direct-open grant.** A request without the token passes, and gets the KTD4 cookie set on its response, only when all of these hold:
 
@@ -324,7 +324,7 @@ U2 and U3 first, as one middleware change. Then U5, U6 and U8 independently. U7 
 
 * The `X-Cookie-Gate` header, the `cookie-gate-<port>` cookie, and the `?cookie-gate=` query each pass.
 
-* `GET /` with `Sec-Fetch-Site: none`, `Sec-Fetch-Mode: navigate`, `Sec-Fetch-Dest: document` and `Host: localhost:<port>` passes and sets `cookie-gate-<port>` with `HttpOnly`, `SameSite=Strict`, a one-year `Max-Age` and no `Secure`.
+* `GET /` with `Sec-Fetch-Site: none`, `Sec-Fetch-Mode: navigate`, `Sec-Fetch-Dest: document` and `Host: localhost:<port>` passes and sets `cookie-gate-<port>` with `HttpOnly`, `SameSite=Lax`, a one-year `Max-Age` and no `Secure`.
 
 * The same with `Host: 127.0.0.1:<port>` passes.
 
@@ -433,7 +433,7 @@ U2 and U3 first, as one middleware change. Then U5, U6 and U8 independently. U7 
 
 * A missing file → `null` header and no throw. Once the file appears, the next read returns the token.
 
-* Cookie details for port 9007: name `cookie-gate-9007`, `httpOnly: true`, `sameSite: 'strict'`, `secure: false`, path `/`, about one year until expiry.
+* Cookie details for port 9007: name `cookie-gate-9007`, `httpOnly: true`, `sameSite: 'lax'`, `secure: false`, path `/`, about one year until expiry.
 
 * The probe sends `X-Cookie-Gate` when a token exists and nothing when it doesn't.
 

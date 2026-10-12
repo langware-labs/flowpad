@@ -55,7 +55,7 @@ function cookieDetails(url, token, now = Date.now()) {
     path: '/',
     httpOnly: true,
     secure: false, // Safari drops Secure cookies on http://localhost; loopback gains nothing from it
-    sameSite: 'strict',
+    sameSite: 'lax', // same as the backend's cookie: OAuth/login returns are cross-site GET navigations
     expirationDate: Math.floor(now / 1000) + COOKIE_MAX_AGE_S,
   };
 }
