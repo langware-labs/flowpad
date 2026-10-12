@@ -71,7 +71,6 @@ OFF_SWITCH_ENV = "FLOWPAD_COOKIE_GATE"
 # in the same browser overwrite each other's cookie.
 LOCAL_COOKIE_PREFIX = "cookie-gate-"
 LOCAL_COOKIE_MAX_AGE = 365 * 24 * 3600
-_LOOPBACK_HOSTNAMES = frozenset({"localhost", "127.0.0.1"})
 
 #: This instance's token file — the one the CLI and Electron read.
 LOCAL_TOKEN_PATH = get_instance_settings().instance_dir / LOCAL_TOKEN_FILENAME
@@ -239,7 +238,7 @@ def _is_direct_open(scope: Scope, conn: HTTPConnection) -> bool:
         and headers.get("sec-fetch-site") == "none"
         and headers.get("sec-fetch-mode") == "navigate"
         and headers.get("sec-fetch-dest") == "document"
-        and conn.url.hostname in _LOOPBACK_HOSTNAMES
+        and conn.url.hostname in ("localhost", "127.0.0.1")
     )
 
 
