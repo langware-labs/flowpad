@@ -52,7 +52,13 @@ def set_infos(monkeypatch) -> list[dict]:
 
 
 class _Answer:
-    """`urlopen` is used as a context manager and its body is never read."""
+    """A 200 from the network layer: used as a context manager, body never read."""
+
+    code = 200
+    msg = "OK"
+
+    def info(self):
+        return {}
 
     def __enter__(self):
         return self
@@ -68,11 +74,12 @@ def _headers(req):
 
 
 def _probe(secret, response=None):
-    """Run ``check_server_health`` against a stubbed urlopen, and return the
-    Request it built so the caller can assert on its headers."""
+    """Run ``check_server_health`` with the network stubbed below urllib's
+    handlers (so the cookie-gate handler still runs), and return the Request as
+    it would have gone out, so the caller can assert on its headers."""
     sent = {}
 
-    def fake_urlopen(req, timeout=None):
+    def fake_http_open(_handler, req):
         sent["req"] = req
         if response is not None:
             raise response
@@ -80,7 +87,7 @@ def _probe(secret, response=None):
 
     with (
         patch("flow_sdk.server.middleware.local_cookiegate_middleware.read_local_token", return_value=secret),
-        patch.object(urllib.request, "urlopen", fake_urlopen),
+        patch.object(urllib.request.HTTPHandler, "http_open", fake_http_open),
     ):
         healthy = launch.check_server_health(9007)
     return healthy, sent.get("req")

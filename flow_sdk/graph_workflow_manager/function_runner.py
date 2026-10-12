@@ -186,17 +186,16 @@ class GraphWorkflowCtx:
     def _call(self, method: str, path: str, body: dict | None, *, timeout: int) -> dict:
         import urllib.request
 
-        from flow_sdk.instance_settings.cookie_gate import gate_headers
+        # LOCAL_OPENER carries the cookie-gate token the instance requires.
+        from flow_sdk.instance_settings.cookie_gate import LOCAL_OPENER
 
-        url = f"{self._api_base}{path}"
         req = urllib.request.Request(
-            url,
+            f"{self._api_base}{path}",
             data=json.dumps(body).encode() if body is not None else None,
-            # The instance's cookie gate refuses a call without its token.
-            headers={"Content-Type": "application/json", **gate_headers(url)},
+            headers={"Content-Type": "application/json"},
             method=method,
         )
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
+        with LOCAL_OPENER.open(req, timeout=timeout) as resp:
             payload = json.loads(resp.read() or "{}")
         return payload.get("data") if isinstance(payload, dict) and "data" in payload else payload
 

@@ -267,17 +267,11 @@ def check_server_health(server_info: FlowpadServerInfo, timeout: float = 2.0) ->
     health_url = server_info.health_url
     try:
         req = urllib.request.Request(health_url, method="GET")
-        # Carry the cookie-gate secret when this instance is armed. Without it a
-        # gated server refuses the probe -- the gate has NO path exemptions and
-        # `/health/status` is explicitly included -- and a 403 is
-        # indistinguishable from a dead server from here, so a perfectly healthy
-        # instance reads as down. Same reasoning, and the same header transport,
-        # as `server.launch.check_server_health`.
-        from flow_sdk.instance_settings.cookie_gate import gate_headers
+        # LOCAL_OPENER carries the cookie-gate token: without it the gate refuses
+        # the probe, and a 403 reads as a dead server from here.
+        from flow_sdk.instance_settings.cookie_gate import LOCAL_OPENER
 
-        for name, value in gate_headers(health_url).items():
-            req.add_header(name, value)
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
+        with LOCAL_OPENER.open(req, timeout=timeout) as resp:
             return resp.status == 200
     except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, OSError):
         return False

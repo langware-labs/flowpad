@@ -172,3 +172,46 @@ def test_the_hub_secret_is_never_sent_from_this_machine(local_token):
     """A loopback request is the local gate's; the hub secret is only for the public URL."""
     with patch("flow_sdk.instance_settings.cookie_gate.get_cookie_gate", return_value=SECRET):
         assert gate_headers("http://127.0.0.1:9007/x") == {HEADER_NAME: "own-token"}
+
+
+# ---------------------------------------------------------------------------
+# LocalCookieGateHandler / LOCAL_OPENER -- the urllib transport
+# ---------------------------------------------------------------------------
+
+
+def _opened(url, headers=None):
+    """Open ``url`` through LOCAL_OPENER with the network stubbed; return the Request as sent."""
+    import urllib.request
+
+    from flow_sdk.instance_settings.cookie_gate import LOCAL_OPENER
+
+    sent = {}
+
+    class _Ok:
+        code, msg = 200, "OK"
+
+        def info(self):
+            return {}
+
+    def fake_open(_handler, req):
+        sent["req"] = req
+        return _Ok()
+
+    with patch.object(urllib.request.HTTPHandler, "http_open", fake_open):
+        LOCAL_OPENER.open(urllib.request.Request(url, headers=headers or {}))
+    return {k.lower(): v for k, v in sent["req"].header_items()}
+
+
+def test_local_opener_adds_the_token_on_loopback():
+    with _armed():
+        assert _opened(LOOPBACK)[HEADER_NAME] == SECRET
+
+
+def test_local_opener_adds_nothing_off_this_machine():
+    with _armed():
+        assert HEADER_NAME not in _opened("http://example.com/x")
+
+
+def test_local_opener_keeps_an_explicit_header():
+    with _armed():
+        assert _opened(LOOPBACK, {HEADER_NAME: "caller-chose-this"})[HEADER_NAME] == "caller-chose-this"
