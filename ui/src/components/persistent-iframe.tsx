@@ -41,6 +41,10 @@ class IframeRegistry {
   private activeOwners = new Map<string, IframeOwner>();
   private resizeObservers = new Map<string, ResizeObserver>();
   private positionCleanups = new Map<string, () => void>();
+  // The cache key each frame was last loaded under. Kept HERE, not in the component: a display that
+  // unmounts its frame while the app is down remounts it with the key already advanced, and a
+  // component-local "last key" would then see no change and re-reveal the parked error page.
+  private loadedKeys = new Map<string, unknown>();
 
   static getInstance(): IframeRegistry {
     if (!IframeRegistry.instance) {
@@ -299,6 +303,15 @@ class IframeRegistry {
     this.iframes.delete(src);
     this.loadingStates.delete(src);
     this.errorStates.delete(src);
+    this.loadedKeys.delete(src);
+  }
+
+  /** Reload the frame when it is asked for under a key other than the one it was loaded with. */
+  syncKey(src: string, key: unknown): void {
+    const known = this.loadedKeys.has(src);
+    const stale = known && this.loadedKeys.get(src) !== key;
+    this.loadedKeys.set(src, key);
+    if (stale) this.refresh(src);
   }
 
   refresh(src: string): void {
@@ -338,8 +351,6 @@ const PersistentIframe = forwardRef<PersistentIframeHandle, PersistentIframeProp
     // Availability is decided by `useWebappDiagnostics`, which asks the endpoint's
     // machine to probe its port directly. This component is purely the
     // mechanism: it mounts a frame and reports load state.
-    const cacheKeyRef = useRef(cacheKey);
-
     const refreshIframe = useCallback(() => {
       registry.refresh(src);
     }, [src]);
@@ -356,11 +367,8 @@ const PersistentIframe = forwardRef<PersistentIframeHandle, PersistentIframeProp
     );
 
     useEffect(() => {
-      if (cacheKeyRef.current !== cacheKey) {
-        refreshIframe();
-        cacheKeyRef.current = cacheKey;
-      }
-    }, [cacheKey, refreshIframe]);
+      registry.syncKey(src, cacheKey);
+    }, [cacheKey, src]);
 
     // Get current iframe states
     const isIframeLoading = registry.getLoadingState(src);

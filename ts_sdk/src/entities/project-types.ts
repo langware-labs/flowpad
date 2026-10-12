@@ -39,6 +39,8 @@ export interface ProjectLoadResult {
   asset: string | null;
   /** Consumer session whose saved display was checked, not just provider readiness. */
   display?: string | null;
+  /** A failed load setup has not been tried for yet: an approved Load runs setup, then loads again. */
+  setup_available?: boolean;
 }
 
 /** Where a declared dependency stands on THIS machine. */

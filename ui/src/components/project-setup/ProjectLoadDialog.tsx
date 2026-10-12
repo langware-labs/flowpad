@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { onDependencyLoaded } from '@sdk';
 import { Button } from '@src/components/ui/button';
@@ -33,6 +33,12 @@ function ProjectLoadDialog({ projectId, projectName, initial, onClose }: Project
   const load = useProjectLoad(projectId, initial);
   const state = load.result?.state;
   const needsSetup = state === 'setup_required';
+  // Set up and ready: there is nothing left to say. Only a run this dialog watched closes it.
+  const watched = useRef(false);
+  if (state === 'running') watched.current = true;
+  useEffect(() => {
+    if (state === 'ready' && watched.current) onClose();
+  }, [state, onClose]);
   return (
     <Dialog
       open
