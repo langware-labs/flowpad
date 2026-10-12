@@ -131,6 +131,8 @@ class _Node:
     children: list["_Node"] = field(default_factory=list)
     #: Not the first place this id appears: it stands for the node set up where it first appeared.
     shared: bool = False
+    #: ``SetupNode.independent``: its parent settles without it.
+    independent: bool = False
 
     def render(self) -> SetupNodeResult:
         return SetupNodeResult(
@@ -143,6 +145,7 @@ class _Node:
             run=self.run,
             children=[child.render() for child in self.children],
             shared=self.shared,
+            independent=self.independent,
         )
 
 
@@ -197,10 +200,11 @@ class _Walk:
         level = len(above)
         if node_id in self.first:
             original = self.first[node_id]
-            return _Node(id=node_id, label=original.label, level=level, shared=True)
+            return _Node(id=node_id, label=original.label, level=level, shared=True, independent=original.independent)
         spec = await self.resolve_node(node_id)
         self.specs[node_id] = spec
-        node = _Node(id=node_id, label=(spec.label if spec else "") or node_id, level=level)
+        node = _Node(id=node_id, label=(spec.label if spec else "") or node_id, level=level,
+                     independent=spec is not None and spec.independent)
         self.first[node_id] = node
         if spec is None:
             node.state, node.detail = SetupState.FAILED, f"there is nothing named {node_id!r} to set up"
@@ -313,7 +317,7 @@ class _Walk:
 
         settled = (SetupState.DONE, SetupState.SKIPPED)  # a skipped child holds nothing up
         left = [child for child in node.children if await self.visit(child, scope) not in settled]
-        stuck = [child for child in left if not getattr(self.specs.get(child.id), "independent", False)]
+        stuck = [child for child in left if not child.independent]
         if stuck:
             names = ", ".join(child.label for child in stuck)
             return self.settle(node, act, SetupState.BLOCKED, f"waiting on {names}")

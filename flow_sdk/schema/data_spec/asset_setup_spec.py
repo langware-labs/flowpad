@@ -134,6 +134,8 @@ class SetupNodeResult(DataSpec):
     children: list["SetupNodeResult"] = []
     #: Reached already under another parent this run: its verdict is reused, its subtree is shown there.
     shared: bool = False
+    #: Stands on its own (``SetupNode.independent``): not set up, it held nothing else up.
+    independent: bool = False
 
     @property
     def ok(self) -> bool:

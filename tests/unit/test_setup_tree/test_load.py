@@ -127,3 +127,28 @@ async def test_operational_projection_keeps_children_and_omits_setup(machine):
     node = await tree.resolve_node("asset_setup:service")
     assert node.prepare is None and node.run.name == "service"
     assert (await tree.resolve_node("app")).children == ("asset_setup:home",)
+
+
+def apps(machine):
+    """Two web apps beside each other; ``broken`` can never be installed."""
+    root = machine.tree.root
+    machine.nodes[root] = SetupNode(id=root, children=("good", "broken"))
+    machine.nodes["good"] = SetupNode(id="good", label="Good", run=wizard("install"), independent=True)
+    machine.nodes["broken"] = SetupNode(id="broken", label="Broken", run=wizard("prepare"), independent=True)
+    machine.installed.add("install")
+    return SimpleNamespace(typeid="good"), SimpleNamespace(typeid="broken")
+
+
+@pytest.mark.asyncio
+async def test_an_app_that_is_not_set_up_does_not_block_the_app_beside_it(machine):
+    good, _broken = apps(machine)
+    shown = await load_project(machine.project, tree=machine.tree, asset=good)
+    assert shown.state is LoadState.READY and not machine.ran
+
+
+@pytest.mark.asyncio
+async def test_the_app_being_shown_still_has_to_be_set_up_itself(machine):
+    _good, broken = apps(machine)
+    result = await load_project(machine.project, tree=machine.tree, asset=broken)
+    assert result.state is LoadState.SETUP_REQUIRED and "Broken" in result.detail
+    assert not machine.ran

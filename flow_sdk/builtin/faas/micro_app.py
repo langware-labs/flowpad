@@ -9,6 +9,7 @@ placement (``webapp_placement.place_webapp_locally``); that endpoint is how the
 app is displayed and reached.
 """
 
+from pathlib import Path
 from typing import ClassVar, List, Optional
 
 from flow_sdk.api.api_types.api_field import APIField, EntityField, Sharing
@@ -51,3 +52,7 @@ class WebApp(SetupSkippable, Entity):
         """A row with no folder is a delivery row from before endpoints — DB-only,
         so dropping it (``webapp_placement.prune_delivery_rows``) never touches disk."""
         return bool(self.asset_ref)
+
+    def on_disk(self) -> bool:
+        """A file-backed app whose folder is gone is a stale row -- never offered, never set up."""
+        return not self.is_file_backed() or Path(self.asset_ref).is_dir()

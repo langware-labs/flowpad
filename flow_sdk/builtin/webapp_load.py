@@ -85,10 +85,10 @@ readiness. JavaScript/render failures still belong to the viewer's diagnostics.
         if process is None or not app.project_id or process.project_id != app.project_id:
             return answer("display session is missing or belongs to another project")
 
-    if kind_matches(VIEWER_KIND, str(getattr(app, "kind", "") or "")):
+    if kind_matches(VIEWER_KIND, app.kind):
         # A viewer is a module a host page imports, not a page of its own: it has no index.html to serve,
         # so demanding one failed every shipped viewer. Its entry is its module.
-        module = Path(app.asset_ref) / str(app.build or ".") / str(app.module or "viewer.js").lstrip("/")
+        module = Path(app.asset_ref) / app.build / app.module.lstrip("/")
         if not module.is_file():
             return answer(f"missing viewer module {module}")
         return answer("a viewer module is presented by its host page", ok=True)

@@ -265,3 +265,20 @@ async def test_two_projects_shipping_one_wizard_name_resolve_to_the_nearer_copy(
     monkeypatch.setattr(shipped_lookup, "is_running_install_path", lambda _: False)
     near = "/w/waha-service/agentic-assets/asset_setup/waha-service"
     assert await shipped_lookup.by_name_preferring_this_install(Rows, "waha-setup", near=near) is ours
+
+
+@pytest.mark.asyncio
+async def test_an_app_whose_folder_is_gone_is_not_something_to_set_up(monkeypatch, tmp_path):
+    from flow_sdk.builtin.faas.micro_app import WebApp
+
+    (tmp_path / "here").mkdir()
+    rows = [WebApp(name="here", asset_ref=str(tmp_path / "here")),
+            WebApp(name="gone", asset_ref=str(tmp_path / "old-install" / "gone")),
+            WebApp(name="row-only")]
+
+    async def get_all(_query):
+        return rows
+
+    monkeypatch.setattr(WebApp, "get_all", get_all)
+    tree = ProjectTree(SimpleNamespace(id="p1", name="Shop", fs_storage_mount_path=str(tmp_path)))
+    assert [app.name for app in await tree._webapps()] == ["here"]

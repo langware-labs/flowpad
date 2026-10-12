@@ -18,7 +18,6 @@ shows a ``single`` value, a ``collection``, or both. An app whose folder is gone
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any, Optional
 
 from flow_sdk.builtin.faas.webapp_spec import EDITOR_KIND, VIEWER_KIND
@@ -55,11 +54,6 @@ def _best_kind(declared: list[str], kind: Optional[str]) -> Optional[str]:
     return max((d for d in declared if kind and d != ANY_KIND and kind_matches(d, kind)), key=len, default=None)
 
 
-def _on_disk(app: Any) -> bool:
-    """A file-backed app whose folder is gone is a stale row -- never offered (it would 404)."""
-    return not app.is_file_backed() or Path(app.asset_ref).is_dir()
-
-
 def view_rank(app: Any, kind: str, shape: str, within: Optional[str] = None) -> Optional[tuple[tuple[int, int], str]]:
     """``((tier, -specificity), the declared kind that matched)`` when ``app`` shows ``kind`` as
     ``shape``, else None. Tier 0: nested in ``within``; 1: a declared kind covers it; 2: ``*``."""
@@ -90,7 +84,7 @@ async def editors_for(subject: Any) -> list[dict]:
         (
             (r, app)
             for app in await WebApp.get_all({"kind": EDITOR_KIND})
-            if (r := rank(app, subject)) is not None and _on_disk(app)
+            if (r := rank(app, subject)) is not None and app.on_disk()
         ),
         key=lambda pair: (pair[0], str(pair[1].name)),
     )
@@ -112,7 +106,7 @@ async def viewers_for(kind: str, shape: str = "single", within: Optional[str] = 
         (
             (r, app)
             for app in await WebApp.get_all({"kind": VIEWER_KIND})
-            if (r := view_rank(app, kind, shape, within)) is not None and _on_disk(app)
+            if (r := view_rank(app, kind, shape, within)) is not None and app.on_disk()
         ),
         key=lambda pair: (pair[0][0], str(pair[1].name)),
     )

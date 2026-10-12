@@ -138,3 +138,13 @@ async def test_outdated_endpoint_uses_matching_presentation(tmp_path):
     assert not (await present(app, display=str(process.typeid), check=True)).ok
     assert (await present(app, display=str(process.typeid), check=False)).ok
     assert (await AgenticProcess.get_by_id(process.id)).context_data["last_shown"]["endpoint_id"] == valid.id
+
+
+async def test_a_viewer_is_presented_by_its_module_not_an_index_page(tmp_path):
+    app, _process, entry = await seed(tmp_path)
+    entry.unlink()
+    app.kind = "application.web.viewer"
+    missing = await present(app, check=True)
+    assert missing.exit_code is ExitCode.NOT_YET and "missing viewer module" in missing.detail
+    (Path(app.asset_ref) / "viewer.js").write_text("export default {}")
+    assert (await present(app, check=True)).ok
