@@ -208,7 +208,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
   // screen with a line saying why, instead of a chat whose questions and
   // prompts would land in a terminal nobody sees.
   const switchWait = useSurfaceSwitchWait(process?.id);
-  const showSimpleChat = isHeadless || (wantChat && !embedded && !!process && !switchWait);
+  const showSimpleChat = wantChat ? !embedded && !!process && !switchWait : isHeadless;
   // The chat pane is a full render of the transcript (a 600-row chat ≈ 4 s). The surface
   // is GLOBAL — one view mode for the whole app — so every pooled panel, shown or not,
   // used to mount its pane when the mode flipped to chat and unmount it on the way back:

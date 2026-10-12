@@ -142,7 +142,15 @@ describe('process surface reconciliation during panel startup', () => {
     const view = render(<Surface canSwitch marker="advanced" />);
     await act(async () => {});
 
-    switchMode.mockImplementationOnce(() => Promise.reject(new Error(BACKGROUND_TASKS_RUNNING)));
+    // The shape an HTTP 409 arrives in: axios's generic message, the server's
+    // reason in the response envelope.
+    switchMode.mockImplementationOnce(() =>
+      Promise.reject(
+        Object.assign(new Error('Request failed with status code 409'), {
+          response: { status: 409, data: { status: 'FAIL', message: BACKGROUND_TASKS_RUNNING } },
+        }),
+      ),
+    );
     state.mode = 'standard';
     view.rerender(<Surface canSwitch marker="standard" />);
     await act(async () => {});

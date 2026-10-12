@@ -12,7 +12,8 @@ import { useSurfaceSwitchWait } from './use-process-surface';
 export function SurfaceSwitchWaitNotice({ processId }: { processId: string | null | undefined }) {
   const { t } = useLingui();
   const wait = useSurfaceSwitchWait(processId);
-  if (!wait) return null;
+  // `switching` is a request in flight — too brief to explain.
+  if (!wait || wait === 'switching') return null;
   return (
     <div
       role="status"

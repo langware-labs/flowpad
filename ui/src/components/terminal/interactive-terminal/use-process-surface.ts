@@ -35,10 +35,13 @@ const lastReconciledMode = new Map<string, ViewMode>();
  * mid-turn (`busy`), or its turn ended but background work it launched (a
  * background shell, a subagent) still runs in the PTY and would die with it —
  * the server's `switch-mode` 409s on that with {@link BACKGROUND_TASKS_RUNNING}.
+ * `switching` is a →chat request in flight: `switchMode` stages `pty_mode=false`
+ * before the server answers, so without it the pane flipped to chat and then
+ * back to the terminal when the server refused.
  * Read by {@link useSurfaceSwitchWait} so the screen can say why it has not
  * switched yet.
  */
-export type SurfaceSwitchWait = 'busy' | 'background';
+export type SurfaceSwitchWait = 'busy' | 'background' | 'switching';
 const switchWaits = new Map<string, SurfaceSwitchWait>();
 const switchWaitListeners = new Set<() => void>();
 
@@ -62,6 +65,14 @@ export function useSurfaceSwitchWait(processId: string | null | undefined): Surf
 /** The server's `switch-mode` 409 message while background work still runs
  *  (`BACKGROUND_TASKS_RUNNING` in `agentic_process.py`). */
 export const BACKGROUND_TASKS_RUNNING = 'background tasks are running';
+
+/** The server's reason for refusing a switch: an HTTP refusal carries it in the
+ *  envelope (`response.data.message`), a WebSocket one as the Error's message. */
+function refusalMessage(err: unknown): string {
+  const envelope = (err as { response?: { data?: { message?: unknown } } } | null)?.response?.data;
+  if (typeof envelope?.message === 'string') return envelope.message;
+  return err instanceof Error ? err.message : String(err);
+}
 
 /** Test seam: forget what each process was reconciled to. */
 export function resetSurfaceReconcileState(): void {
@@ -169,6 +180,10 @@ export function useProcessSurface({
   // and an `/exit`-ed PTY are neither); see `surfaceTransportGate`. Read here so
   // the effect RE-RUNS when it flips, which is what retries a decline at idle.
   const turnInFlight = isBusy(live ?? {});
+  // The transcript's latest entry. A short turn can flip `busy` true→false
+  // inside one render, so a switch held back for background work also retries
+  // on every new entry — the task-notification that ends the work is one.
+  const transcriptEntry = live?.worker_status_detail_id ?? null;
   // Guards re-entry with the CURRENT value rather than a closed-over one, and
   // keeps a transport switch from re-rendering every mounted session twice.
   const switching = useRef(false);
@@ -239,6 +254,7 @@ export function useProcessSurface({
     }
 
     switching.current = true;
+    if (!wantPty) setSwitchWait(key, 'switching');
     void (async () => {
       let reconciled = false;
       try {
@@ -260,7 +276,7 @@ export function useProcessSurface({
       } catch (err) {
         // Background work still running in the PTY: not a failure. Wait for it,
         // leaving the mode unrecorded so the next `busy` edge retries.
-        if (err instanceof Error && err.message.includes(BACKGROUND_TASKS_RUNNING)) {
+        if (refusalMessage(err).includes(BACKGROUND_TASKS_RUNNING)) {
           setSwitchWait(key, 'background');
           return;
         }
@@ -275,7 +291,7 @@ export function useProcessSurface({
         if (reconciled) setReconcileRevision((revision) => revision + 1);
       }
     })();
-  }, [viewMode, live, ptyMode, turnInFlight, canSwitch, reconcileRevision]);
+  }, [viewMode, live, ptyMode, turnInFlight, transcriptEntry, canSwitch, reconcileRevision]);
 
   return live;
 }
