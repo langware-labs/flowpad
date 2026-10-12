@@ -86,14 +86,20 @@ def test_off_switch_without_a_file_passes_and_creates_nothing(local_gate, monkey
     assert not local_gate.exists()
 
 
-def test_off_switch_still_enforces_an_existing_token(local_gate, monkeypatch):
+def test_off_switch_turns_the_gate_off_even_with_a_token_file(local_gate, monkeypatch):
     local_gate.parent.mkdir(parents=True)
     local_gate.write_text("existing-token", encoding="utf-8")
     monkeypatch.setenv(local.OFF_SWITCH_ENV, "off")
+
+    assert TestClient(_app()).get("/").status_code == 200
+
+
+def test_the_off_switch_is_read_once_at_construction(local_gate, monkeypatch):
     client = TestClient(_app())
+    client.get("/")  # Starlette builds the middleware on the first request: gate on
+    monkeypatch.setenv(local.OFF_SWITCH_ENV, "off")
 
     assert client.get("/").status_code == 403
-    assert client.get("/", headers=_header("existing-token")).status_code == 200
 
 
 def test_a_token_that_cannot_be_created_fails_closed(tmp_path, monkeypatch):

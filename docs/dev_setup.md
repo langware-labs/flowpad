@@ -56,5 +56,4 @@ FLOWPAD_COOKIE_GATE=off uv run -m flow_sdk.server.run
 ```
 
 `scripts/instance_ctl.sh`, `docker/docker-compose.yml`, CI e2e and the test suite already set it.
-The switch only stops the token being created: if `.cookie_gate` already exists in the instance
-folder (from a run without the switch), delete it to turn the gate off.
+The switch is read when the backend starts: restart the backend after changing it.

@@ -49,8 +49,8 @@ let two local instances overwrite each other), `HttpOnly`, `SameSite=Strict`, `P
 `Max-Age`, and deliberately **not** `Secure`/`__Host-`: on loopback they protect nothing, and Safari
 drops `Secure` cookies on `http://localhost`.
 
-**The off switch.** `FLOWPAD_COOKIE_GATE=off` stops the file being created. It never disarms a token
-that exists. The test suite, instance_ctl dev instances, docker-compose, CI e2e and every
+**The off switch.** `FLOWPAD_COOKIE_GATE=off`, read once when the backend starts, turns the local gate
+off for that process (a hub-armed sandbox secret is unaffected). The test suite, instance_ctl dev instances, docker-compose, CI e2e and every
 hub-launched box set it. Fails closed: with the switch unset, a token that cannot be created or read
 refuses the request.
 

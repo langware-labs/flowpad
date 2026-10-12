@@ -233,8 +233,8 @@ _LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "::1"})
 def gate_headers(url: str) -> dict[str, str]:
     """The header a same-machine caller presents to get past its own gate.
 
-    Empty for an unarmed instance (which is every desktop install) and for any
-    non-loopback URL.
+    Empty for any non-loopback URL, and when the target instance has neither a
+    hub-armed secret nor a local token.
 
     This is the *machine* transport the middleware documents, and it lives here
     — beside the secret — rather than in any one caller, because there are

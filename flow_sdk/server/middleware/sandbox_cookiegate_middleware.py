@@ -43,7 +43,8 @@ class SandboxCookieGateMiddleware:
         self.app = app
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send, secret: str) -> None:
-        if presents(HTTPConnection(scope), secret, COOKIE_NAME):
-            await self.app(scope, receive, send)
+        if not presents(HTTPConnection(scope), secret, COOKIE_NAME):
+            await deny(scope, receive, send)
             return
-        await deny(scope, receive, send)
+
+        await self.app(scope, receive, send)
