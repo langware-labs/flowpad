@@ -39,7 +39,7 @@ def machine(tmp_path, monkeypatch):
             "exe_data": {"commands": {p: f"make {name}" for p in ("linux", "darwin", "win32")}},
             "completion_check": {"commands": {p: f"have {name}" for p in ("linux", "darwin", "win32")}}})
            for name in ("prepare", "install", "service", "home", "app")}
-    installed, ran = set(), []
+    installed, ran, broken = set(), [], set()
     gate = asyncio.Event()
     gate.set()
 
@@ -48,6 +48,8 @@ def machine(tmp_path, monkeypatch):
         if verb == "make":
             await gate.wait()
             ran.append(name)
+            if name in broken:
+                return CliResult.of_process(command, 1, stderr=f"{name} cannot start")
             installed.add(name)
         return CliResult.of_process(command, 0 if name in installed else 1)
 
@@ -70,7 +72,8 @@ def machine(tmp_path, monkeypatch):
     monkeypatch.setattr(wizard_state, "run_dir", lambda key: tmp_path / "runs" / key)
     monkeypatch.setattr(setup_execute, "run_dir", lambda key: tmp_path / "runs" / key)
     tree = SimpleNamespace(root=root, gaps=[], resolve_node=resolve_node, resolve_op=resolve_op)
-    return SimpleNamespace(project=project, tree=tree, installed=installed, ran=ran, gate=gate, nodes=nodes)
+    return SimpleNamespace(project=project, tree=tree, installed=installed, ran=ran, gate=gate, nodes=nodes,
+                           broken=broken)
 
 
 async def settle(machine):
@@ -129,6 +132,51 @@ async def test_operational_projection_keeps_children_and_omits_setup(machine):
     assert (await tree.resolve_node("app")).children == ("asset_setup:home",)
 
 
+async def finish(machine):
+    """The run's end, whatever it was."""
+    await project_setup._RUNS[(machine.project.id, "")]
+    return load_state(machine.project.id)
+
+
+@pytest.mark.asyncio
+async def test_a_failed_load_names_the_step_that_failed_and_offers_setup_once(machine):
+    machine.installed.update(("prepare", "install", "home", "app"))
+    machine.broken.add("service")
+    assert (await load_project(machine.project, tree=machine.tree)).state is LoadState.RUNNING
+    failed = await finish(machine)
+    assert failed.state is LoadState.FAILED and failed.setup_available
+    assert "service" in failed.detail and "waiting on" not in failed.detail
+
+    # The person says go. What setup made is gone too: setup runs, then the load.
+    machine.installed.discard("install")
+    machine.broken.clear()
+    machine.ran.clear()
+    assert (await load_project(machine.project, tree=machine.tree, approved=True)).state is LoadState.RUNNING
+    assert (await finish(machine)).state is LoadState.READY
+    assert machine.ran == ["install", "service"]
+
+
+@pytest.mark.asyncio
+async def test_a_load_that_still_fails_after_setup_stops_there(machine):
+    machine.installed.update(("prepare", "install", "home", "app"))
+    machine.broken.add("service")
+    await load_project(machine.project, tree=machine.tree)
+    assert (await finish(machine)).setup_available
+
+    await load_project(machine.project, tree=machine.tree, approved=True)
+    again = await finish(machine)
+    assert again.state is LoadState.FAILED and not again.setup_available
+
+    # Once it loads, the next failure is a new one and gets its own setup run.
+    machine.broken.clear()
+    await load_project(machine.project, tree=machine.tree)
+    assert (await finish(machine)).state is LoadState.READY
+    machine.installed.discard("service")
+    machine.broken.add("service")
+    await load_project(machine.project, tree=machine.tree)
+    assert (await finish(machine)).setup_available
+
+
 def apps(machine):
     """Two web apps beside each other; ``broken`` can never be installed."""
     root = machine.tree.root
@@ -151,4 +199,31 @@ async def test_the_app_being_shown_still_has_to_be_set_up_itself(machine):
     _good, broken = apps(machine)
     result = await load_project(machine.project, tree=machine.tree, asset=broken)
     assert result.state is LoadState.SETUP_REQUIRED and "Broken" in result.detail
+    assert not machine.ran
+
+
+@pytest.mark.asyncio
+async def test_a_run_for_one_app_is_judged_on_that_app_whoever_asks_how_it_went(machine):
+    """The screen polls the load without naming the app. The app that was asked for could not start:
+    that poll must not settle the run as ready just because the project stands without it."""
+    root = machine.tree.root
+    machine.nodes[root] = SetupNode(id=root, children=("good", "down"))
+    machine.nodes["good"] = SetupNode(id="good", label="Good", on_load=wizard("home"), independent=True)
+    machine.nodes["down"] = SetupNode(id="down", label="Down", on_load=wizard("service"), independent=True)
+    machine.installed.add("home")
+    machine.broken.add("service")
+
+    started = await load_project(machine.project, tree=machine.tree, asset=SimpleNamespace(typeid="down"))
+    assert started.state is LoadState.RUNNING
+    await project_setup._RUNS[(machine.project.id, "")]
+    polled = load_state(machine.project.id)
+    assert polled.state is LoadState.FAILED and "Down" in polled.detail
+    assert load_state(machine.project.id, asset="down").state is LoadState.FAILED
+
+
+@pytest.mark.asyncio
+async def test_an_app_whose_folder_is_gone_is_not_ready(machine):
+    gone = SimpleNamespace(typeid="gone", name="Site", asset_ref="/nowhere/site", on_disk=lambda: False)
+    result = await load_project(machine.project, tree=machine.tree, asset=gone)
+    assert result.state is LoadState.FAILED and "folder is gone: /nowhere/site" in result.detail
     assert not machine.ran

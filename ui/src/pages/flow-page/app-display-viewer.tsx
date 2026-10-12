@@ -13,6 +13,7 @@ import { useContext } from '@src/hooks/useContext';
 import { tryParseDock } from '@src/navigation/try-parse-dock';
 import { buildDockPointer } from '@src/components/conversation/EntityChip';
 import { useEntity } from '@sdk/react/hooks';
+import { Trans } from '@lingui/react/macro';
 import { isTypeId, TypeId, WebApp } from '@sdk';
 import { externalUrl, OPEN_EXTERNAL_MESSAGE } from '@sdk/apps/host';
 import { openExternal } from '@src/lib/open-external';
@@ -132,7 +133,7 @@ export function AppDisplayViewer({
   const { currentDock, navigation } = useDockNavigation();
   const { project } = useContext();
   const frameRef = useRef<PersistentIframeHandle>(null);
-  const { data: definition } = useEntity<WebApp>(microAppId ? new TypeId(WebApp.type, microAppId) : null);
+  const { data: definition, notFound } = useEntity<WebApp>(microAppId ? new TypeId(WebApp.type, microAppId) : null);
 
   // No memo: `useAppDisplay` reduces this to strings before anything depends on
   // it, so a fresh object per render produces an identical `src` and the frame
@@ -195,6 +196,19 @@ export function AppDisplayViewer({
   // Only once its endpoints answered: an app not looked up yet is not down, and setting it up would run
   // a setup for an app (a built-in editor, say) that is no node of this project's tree.
   if (appDisplay.loading) return null;
+  // The app itself is not on this machine (removed, or a link from another one): there is nothing to
+  // set up or wait for, and saying "opening" forever would be a lie.
+  if (microAppId && notFound && !appDisplay.src) {
+    return (
+      <div
+        role="alert"
+        data-testid="app-not-installed"
+        className="flex h-full items-center justify-center p-6 text-center text-sm text-muted-foreground"
+      >
+        <Trans>This app is not installed here. Add its project again from the project that uses it.</Trans>
+      </div>
+    );
+  }
   const setupWebapp = appDisplay.idleDev?.webapp_id ?? (!appDisplay.src ? microAppId : null);
   const setupProject = appDisplay.idleDev?.project_id ?? definition?.project_id ?? project?.id ?? '';
   if (!appDisplay.src && setupWebapp && setupProject) {
