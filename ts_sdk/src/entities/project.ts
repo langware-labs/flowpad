@@ -226,7 +226,7 @@ export interface ProjectReadiness {
 }
 
 /** Where one node of the setup tree stands (`setup.node`). */
-export type SetupNodeState = 'pending' | 'running' | 'done' | 'failed' | 'blocked' | 'refused' | 'held' | 'skipped';
+export type SetupNodeState = 'pending' | 'running' | 'done' | 'failed' | 'blocked' | 'refused' | 'held' | 'skipped' | 'stopped';
 
 /** One step of a node's wizard, as its run answered it. */
 export interface SetupStepAnswer {
@@ -1064,6 +1064,15 @@ export class Project extends APIEntity<Project> {
     const actionInfo = new ActionInfo('setup-skip', Project.type, projectId, 'POST');
     actionInfo.bodyParameters = { typeid, scope, name: options.name ?? '', note: options.note ?? '' };
     return (await dataManager.callAction<Record<string, string>, ProjectReadiness>(actionInfo)) ?? null;
+  }
+
+  /** Stop the setup run going here (`POST project/<id>/setup-stop`): its commands killed, its question withdrawn.
+   *  Starting again resumes. Answers whether a run was stopped. */
+  static async stopSetup(projectId: string, root = ''): Promise<boolean> {
+    const actionInfo = new ActionInfo('setup-stop', Project.type, projectId, 'POST');
+    if (root) actionInfo.bodyParameters = { root };
+    const data = await dataManager.callAction<{ root: string } | void, { stopped: boolean }>(actionInfo);
+    return data?.stopped ?? false;
   }
 
   /** Undo a local skip (`POST project/<id>/setup-unskip`). Answers with the readiness that follows. */
