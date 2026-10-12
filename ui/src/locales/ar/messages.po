@@ -3751,6 +3751,10 @@ msgstr "الخادم الخلفي لا يستجيب. يُرجى المحاولة
 msgid "Background image"
 msgstr "صورة الخلفية"
 
+#: src/components/terminal/interactive-terminal/SurfaceSwitchWaitNotice.tsx
+msgid "Background tasks are still running. The session will switch over as soon as they finish."
+msgstr "لا تزال المهام الخلفية قيد التشغيل. ستنتقل الجلسة فور انتهائها."
+
 #: src/components/account/database-section.tsx
 msgid "Backing up..."
 msgstr "جاري إنشاء نسخة احتياطية..."
@@ -24982,6 +24986,10 @@ msgstr ""
 msgid "The agent has asked a question — answer it in the terminal."
 msgstr "طرح الوكيل سؤالاً — أجب عنه في الطرفية."
 
+#: src/components/terminal/interactive-terminal/SurfaceSwitchWaitNotice.tsx
+msgid "The agent is still working, or waiting for your answer in the terminal. The session will switch over as soon as it finishes."
+msgstr "لا يزال الوكيل يعمل، أو ينتظر إجابتك في الطرفية. ستنتقل الجلسة فور انتهائه."
+
 #: src/pages/entry/launch-runner.ts
 msgid "The agent this link names isn't in the project's files."
 msgstr ""
@@ -27877,7 +27885,7 @@ msgstr "بماذا يمكننا مساعدتك؟"
 #: src/components/top-nav-bar/AddressAskField.tsx
 #: src/components/top-nav-bar/AddressField.tsx
 msgid "What do you want to do?"
-msgstr ""
+msgstr "ماذا تريد أن تفعل؟"
 
 #: src/pages/flow-page/vibe-chat-pane.tsx
 msgid "What do you want to work on"

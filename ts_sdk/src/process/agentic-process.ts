@@ -3080,20 +3080,23 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
    * @param options - Optional instruction to execute
    * @returns Shell session ID and session ID
    */
-  async start(options?: {
-    instruction?: string;
-    visible?: boolean;
-    ptyTimeout?: number;
-    /** Initial PTY dimensions. Authoritative resize is issued by the
-     * InteractiveTerminal once xterm has fitted; this seed exists so the
-     * worker's first paint isn't wrapped at 80 cols on a wide viewport. */
-    cols?: number;
-    rows?: number;
-    /** Explicit user retry of a failed-to-start process: clears the
-     * server-side `start_failure` latch before launching. Without it the
-     * backend refuses to respawn a latched process. */
-    retry?: boolean;
-  }, hooks?: { beforeAttach?: () => void }): Promise<boolean> {
+  async start(
+    options?: {
+      instruction?: string;
+      visible?: boolean;
+      ptyTimeout?: number;
+      /** Initial PTY dimensions. Authoritative resize is issued by the
+       * InteractiveTerminal once xterm has fitted; this seed exists so the
+       * worker's first paint isn't wrapped at 80 cols on a wide viewport. */
+      cols?: number;
+      rows?: number;
+      /** Explicit user retry of a failed-to-start process: clears the
+       * server-side `start_failure` latch before launching. Without it the
+       * backend refuses to respawn a latched process. */
+      retry?: boolean;
+    },
+    hooks?: { beforeAttach?: () => void },
+  ): Promise<boolean> {
     // No client-side STOPPING guard. The server's ``open`` action runs
     // ``reap_if_orphaned()`` at entry: if the row is stuck in STOPPING with
     // a dead worker, it's reset to STOPPED and the start proceeds normally.
@@ -3272,11 +3275,10 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
   async switchMode(mode: WorkerMode): Promise<void> {
     const wantPty = mode === WorkerMode.Interactive;
     const shell = !wantPty && this.shell_id ? Shell.getByIdFromCache(this.shell_id) : null;
-    if (!wantPty) {
-      if (shell) {
-        shell.status = ShellStatus.CLOSING;
-        dataManager.notifyEntityChanged(shell);
-      }
+    const shellStatus = shell?.status;
+    if (shell) {
+      shell.status = ShellStatus.CLOSING;
+      dataManager.notifyEntityChanged(shell);
     }
     // Staged BEFORE the request: backend broadcasts land before the response,
     // and the prior latch would discard the authoritative frame as stale.
@@ -3310,9 +3312,14 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
         shell?.ptyConnection?.markPtyGone();
       }
     } catch (error) {
-      // Rejected (409 mid-turn, or a launch failure) — the intent never became
-      // durable, so roll fields and latch back or the UI stays pinned to it.
+      // Rejected (409 mid-turn or background work running, or a launch failure)
+      // — the intent never became durable, so roll fields and latch back or the
+      // UI stays pinned to it. The PTY was never killed, so its shell isn't closing.
       restoreTransport();
+      if (shell && shellStatus !== undefined) {
+        shell.status = shellStatus;
+        dataManager.notifyEntityChanged(shell);
+      }
       throw error;
     }
   }

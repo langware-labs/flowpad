@@ -38,9 +38,12 @@ vi.mock('@src/notifications/notify', () => ({
 }));
 
 import {
+  BACKGROUND_TASKS_RUNNING,
   resetSurfaceReconcileState,
   useProcessSurface,
+  useSurfaceSwitchWait,
 } from '@src/components/terminal/interactive-terminal/use-process-surface';
+import { notify } from '@src/notifications/notify';
 
 const process = {
   id: crypto.randomUUID(),
@@ -53,8 +56,12 @@ const process = {
   loadHistory: () => Promise.resolve(),
 };
 
+let lastWait: string | null = null;
+const waitOf = () => lastWait;
+
 function Surface({ canSwitch, marker }: { canSwitch: boolean; marker: string }) {
   useProcessSurface({ process: process as never, canSwitch });
+  lastWait = useSurfaceSwitchWait(process.id);
   return <div>{marker}</div>;
 }
 
@@ -105,12 +112,57 @@ describe('process surface reconciliation during panel startup', () => {
     expect(switchMode).toHaveBeenCalledWith('interactive');
   });
 
-  it('keeps first sight non-mutating when no mode transition occurred', async () => {
+  it('keeps first sight non-mutating when the transport already matches', async () => {
     state.mode = 'standard';
-    render(<Surface canSwitch marker="standard-first-sight" />);
+    state.pty = false;
+    render(<Surface canSwitch marker="standard-first-sight-headless" />);
     await act(async () => {});
 
     expect(switchMode).not.toHaveBeenCalled();
+  });
+
+  it('takes a PTY session first seen in chat off its PTY', async () => {
+    // Chat and the terminal are mutually exclusive. A PTY-backed session opened
+    // straight into chat (a reload, a `?viewMode=standard` link) used to keep
+    // its PTY, and a question it then asked waited in a terminal nobody saw.
+    state.mode = 'standard';
+    state.pty = true;
+    render(<Surface canSwitch marker="standard-first-sight-pty" />);
+    await act(async () => {});
+
+    expect(switchMode).toHaveBeenCalledTimes(1);
+    expect(switchMode).toHaveBeenCalledWith('cli');
+  });
+
+  it('waits for background work the server reports, then switches on the next idle edge', async () => {
+    // The turn has ended (`busy` false) but a background shell still runs in the
+    // PTY: `switch-mode` 409s rather than kill it. That is a wait, not an error,
+    // and the finished task's notification turn is what retries it.
+    state.mode = 'advanced';
+    const view = render(<Surface canSwitch marker="advanced" />);
+    await act(async () => {});
+
+    switchMode.mockImplementationOnce(() => Promise.reject(new Error(BACKGROUND_TASKS_RUNNING)));
+    state.mode = 'standard';
+    view.rerender(<Surface canSwitch marker="standard" />);
+    await act(async () => {});
+    expect(switchMode).toHaveBeenCalledTimes(1);
+    expect(state.pty).toBe(true);
+    expect(waitOf()).toBe('background');
+    expect(notify.error).not.toHaveBeenCalled();
+
+    busy.value = true; // the task-notification wakes the agent…
+    view.rerender(<Surface canSwitch marker="standard-busy" />);
+    await act(async () => {});
+    expect(switchMode).toHaveBeenCalledTimes(1);
+
+    busy.value = false; // …and its turn's end retries the switch
+    view.rerender(<Surface canSwitch marker="standard-idle" />);
+    await act(async () => {});
+    expect(switchMode).toHaveBeenCalledTimes(2);
+    expect(switchMode).toHaveBeenLastCalledWith('cli');
+    expect(state.pty).toBe(false);
+    expect(waitOf()).toBe(null);
   });
 
   it('gives a headless process a PTY when first seen in a terminal mode', async () => {

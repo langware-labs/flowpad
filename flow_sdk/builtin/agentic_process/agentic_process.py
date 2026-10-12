@@ -98,7 +98,7 @@ from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse
 from flow_sdk.schema.data_spec.mcp_spec import McpSpec
 from flow_sdk.stream_inbox._locks import any_keyed_lock_held, keyed_lock_held, keyed_loop_lock, new_registry
-from flow_sdk.transcript_analyzer.worker_status import StatusDetail, WorkerStatus
+from flow_sdk.transcript_analyzer.worker_status import StatusDetail, WorkerStatus, running_background_tasks
 from flow_sdk.transcript_analyzer.worker_status import is_terminal as is_worker_terminal
 
 if TYPE_CHECKING:
@@ -125,6 +125,10 @@ _DETACHED_TASKS: set["asyncio.Task"] = set()
 # Grace period before a detached self-restart tears down the worker, giving the
 # HTTP response time to flush back to the (about-to-die) caller.
 _SELF_RESTART_GRACE_S = 0.5
+
+#: ``switch-mode`` 409 message when background work still runs in the PTY. The
+#: frontend matches it to wait for the work instead of reporting a failure.
+BACKGROUND_TASKS_RUNNING = "background tasks are running"
 # Gap between typing and Enter for TUIs that don't submit on paste (codex/copilot);
 # mirrors Shell.write_then_submit's submit_delay. claude submits on paste → no gap.
 _PTY_SUBMIT_SETTLE_S = 0.4
@@ -2032,6 +2036,15 @@ class AgenticProcess(Entity):
         if (resp := self._reject_if_turn_in_flight()) is not None:
             return resp
         if isinstance(switch, SwitchToCliBody):
+            # Leaving the PTY kills its background work (a background shell, a
+            # subagent) along with it. The turn has ended, so ``busy`` is False —
+            # wait for the work's own task-notification instead.
+            if (
+                self.pty_mode
+                and (path := self.transcript_path)
+                and await asyncio.to_thread(running_background_tasks, path)
+            ):
+                return ApiFailResponse(message=BACKGROUND_TASKS_RUNNING, status_code=409)
             return await self._enter_cli_mode()
         # INTERACTIVE: locked start_pty (not _perform_open) so a watchdog race
         # can't double-spawn. Connection id is the one request-scoped value the
