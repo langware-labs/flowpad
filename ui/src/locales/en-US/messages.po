@@ -2159,6 +2159,7 @@ msgid "Add Trigger"
 msgstr "Add Trigger"
 
 #: src/components/credentials/CredentialDialog.tsx
+#: src/components/credentials/DetectedKeys.tsx
 msgid "Add variable"
 msgstr "Add variable"
 
@@ -5669,7 +5670,6 @@ msgstr "connected"
 #: src/components/account/user-info.tsx
 #: src/components/connections-manager/connection-state-visual.ts
 #: src/components/connections-manager/credential-rows-view.tsx
-#: src/components/setup-wizard/SetupStagesButton.tsx
 msgid "Connected"
 msgstr "Connected"
 
@@ -5679,8 +5679,8 @@ msgid "Connected · {0}"
 msgstr "Connected · {0}"
 
 #: src/components/setup-wizard/SetupStagesButton.tsx
-msgid "Connected ({summary})"
-msgstr "Connected ({summary})"
+#~ msgid "Connected ({summary})"
+#~ msgstr "Connected ({summary})"
 
 #: src/pages/hub-home/HubHome.tsx
 msgid "Connected computer"
@@ -5827,9 +5827,10 @@ msgstr "Continue"
 msgid "Continue journey"
 msgstr "Continue journey"
 
+#. placeholder {0}: pending.label
 #: src/components/setup-wizard/SetupStagesButton.tsx
-#~ msgid "Continue setup: {0}"
-#~ msgstr "Continue setup: {0}"
+msgid "Continue setup: {0}"
+msgstr "Continue setup: {0}"
 
 #: src/pages/flow-page/VibeWorkerSwitchDialog.tsx
 msgid "Continue this conversation"
@@ -6744,6 +6745,10 @@ msgstr "Could not save"
 
 #~ msgid "Could not save agent"
 #~ msgstr "Could not save agent"
+
+#: src/components/credentials/DetectedKeys.tsx
+msgid "Could not save environment variables. Your edits are still here; try again."
+msgstr "Could not save environment variables. Your edits are still here; try again."
 
 #: src/components/stream-inbox-view/AgentStreamInboxView.tsx
 msgid "Could not save mailbox settings"
@@ -7702,6 +7707,7 @@ msgstr "Deduplicate errors"
 msgid "default"
 msgstr "default"
 
+#: src/components/credentials/VariableDetails.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
 #: src/components/project-home/HomeCustomizationCard.tsx
 #: src/components/terminal/openers/AskInstallOneOfDialog.tsx
@@ -8301,6 +8307,7 @@ msgstr "Detail"
 #: src/components/assets/editor/agent-trace/AgentTraceView.tsx
 #: src/components/assets/editor/llm-endpoint/LlmEndpointAssetView.tsx
 #: src/components/connections-manager/harness-connection-rows.tsx
+#: src/components/credentials/VariableDetails.tsx
 #: src/components/diagnose/diagnosis-details.tsx
 #: src/components/graph-view/ui/NodePanel.tsx
 #: src/components/harness-login/StatusRow.tsx
@@ -8308,6 +8315,8 @@ msgstr "Detail"
 msgid "Details"
 msgstr "Details"
 
+#: src/components/credentials/VariableDetails.tsx
+#: src/components/credentials/VariableDetails.tsx
 #: src/components/open-project-component/open-project-component.tsx
 msgid "Details for {name}"
 msgstr "Details for {name}"
@@ -8972,6 +8981,10 @@ msgstr "Each selected project's folder is added as a dependency."
 #~ msgid "Each stage is a guided run. Close it any time — running it again picks up where it stopped."
 #~ msgstr "Each stage is a guided run. Close it any time — running it again picks up where it stopped."
 
+#: src/components/credentials/DetectedKeys.tsx
+msgid "Each variable needs a unique name."
+msgstr "Each variable needs a unique name."
+
 #: src/components/conversation/ConversationView.tsx
 msgid "Earlier message"
 msgstr "Earlier message"
@@ -9416,6 +9429,10 @@ msgstr "Env:"
 #: src/components/settings-view/settings-utils.ts
 msgid "Environment"
 msgstr "Environment"
+
+#: src/components/credentials/DetectedKeys.tsx
+msgid "Environment variables"
+msgstr "Environment variables"
 
 #: src/components/settings-view/settings-utils.ts
 msgid "Environment Variables"
@@ -10626,6 +10643,10 @@ msgstr "Finish installing the FlowPad GitHub App on {repo}, then"
 msgid "Finish setting up Flowpad"
 msgstr "Finish setting up Flowpad"
 
+#: src/components/setup-wizard/SetupStagesButton.tsx
+msgid "Finish setup"
+msgstr "Finish setup"
+
 #: src/components/data-sources/source-attention.ts
 msgid "Finish setup, then press Verify."
 msgstr "Finish setup, then press Verify."
@@ -11031,15 +11052,15 @@ msgid "found in {0}, not where it is declared"
 msgstr "found in {0}, not where it is declared"
 
 #: src/components/credentials/DetectedKeys.tsx
-msgid "Found in {fileName} in your home folder"
-msgstr "Found in {fileName} in your home folder"
+#~ msgid "Found in {fileName} in your home folder"
+#~ msgstr "Found in {fileName} in your home folder"
 
 #~ msgid "Found in this project's .env.local"
 #~ msgstr "Found in this project's .env.local"
 
 #: src/components/credentials/DetectedKeys.tsx
-msgid "Found in this project's {fileName}"
-msgstr "Found in this project's {fileName}"
+#~ msgid "Found in this project's {fileName}"
+#~ msgstr "Found in this project's {fileName}"
 
 #: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
 msgid "Free · runs while this computer is awake"
@@ -11667,6 +11688,10 @@ msgstr "Help desks"
 msgid "Help desks or skills repos to load alongside it."
 msgstr "Help desks or skills repos to load alongside it."
 
+#: src/components/credentials/VariableDetails.tsx
+msgid "Help URL"
+msgstr "Help URL"
+
 #: src/components/assets/editor/agent-trace/simple/SimpleSessionReport.tsx
 msgid "Helpers used"
 msgstr "Helpers used"
@@ -11775,6 +11800,10 @@ msgstr "High Memory usage detected"
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "Highlight changes since the last stamp"
 msgstr "Highlight changes since the last stamp"
+
+#: src/components/credentials/VariableDetails.tsx
+msgid "Hint"
+msgstr "Hint"
 
 #: src/components/organization/budgets/BudgetHistoryDialog.tsx
 #: src/components/organization/budgets/BudgetHistoryDialog.tsx
@@ -13038,6 +13067,7 @@ msgid "label"
 msgstr "label"
 
 #: src/components/assets/editor/wizard/WizardStepForm.tsx
+#: src/components/credentials/VariableDetails.tsx
 msgid "Label"
 msgstr "Label"
 
@@ -13348,9 +13378,7 @@ msgid "Line"
 msgstr "Line"
 
 #. placeholder {0}: el.absRow
-#. placeholder {0}: k.line
 #. placeholder {0}: link.line
-#: src/components/credentials/DetectedKeys.tsx
 #: src/components/milkdown-editor/side-windows/BacklinksTab.tsx
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
 msgid "line {0}"
@@ -13387,6 +13415,10 @@ msgstr "Line {0}: no email address."
 #: src/components/entity-execution-panel/EntityExecutionPanel.tsx
 msgid "line {cursorLine}"
 msgstr "line {cursorLine}"
+
+#: src/components/credentials/DetectedKeys.tsx
+msgid "line {line}"
+msgstr "line {line}"
 
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
 msgid "line fallback"
@@ -14803,6 +14835,7 @@ msgstr "N/A"
 #: src/components/assets/editor/mcp/McpViewer.tsx
 #: src/components/assets/editor/wizard/WizardForm.tsx
 #: src/components/conversation/asset-review/ProjectPreview.tsx
+#: src/components/credentials/DetectedKeys.tsx
 #: src/components/data-sources/DataDriversView.tsx
 #: src/components/hooks-view/HooksBrowser.tsx
 #: src/components/hub/AddMachineDialog.tsx
@@ -14826,6 +14859,7 @@ msgid "Name"
 msgstr "Name"
 
 #: src/components/credentials/CredentialDialog.tsx
+#: src/components/credentials/DetectedKeys.tsx
 msgid "NAME"
 msgstr "NAME"
 
@@ -15204,6 +15238,25 @@ msgstr "New team"
 #: src/tabs/useTerminalStripController.tsx
 msgid "New Terminal"
 msgstr "New Terminal"
+
+#: src/components/credentials/VariableDetails.tsx
+msgid "New variable"
+msgstr "New variable"
+
+#. placeholder {0}: index + 1
+#: src/components/credentials/DetectedKeys.tsx
+msgid "New variable {0}"
+msgstr "New variable {0}"
+
+#. placeholder {0}: index + 1
+#: src/components/credentials/DetectedKeys.tsx
+msgid "New variable name {0}"
+msgstr "New variable name {0}"
+
+#. placeholder {0}: index + 1
+#: src/components/credentials/DetectedKeys.tsx
+msgid "New variable value {0}"
+msgstr "New variable value {0}"
 
 #: src/tabs/useTerminalStripController.tsx
 #: src/tabs/useTerminalStripController.tsx
@@ -16496,14 +16549,12 @@ msgstr "Not checked yet"
 
 #: src/components/account/hub-status-visuals.ts
 #: src/components/connections-manager/connection-state-visual.ts
-#: src/components/setup-wizard/SetupStagesButton.tsx
 msgid "Not connected"
 msgstr "Not connected"
 
-#. placeholder {0}: pending.label
 #: src/components/setup-wizard/SetupStagesButton.tsx
-msgid "Not connected — continue setup: {0}"
-msgstr "Not connected — continue setup: {0}"
+#~ msgid "Not connected — continue setup: {0}"
+#~ msgstr "Not connected — continue setup: {0}"
 
 #: src/components/data-sources/MessageChannelsList.tsx
 msgid "Not connected — press Connect"
@@ -16695,8 +16746,8 @@ msgid "Not tested yet"
 msgstr "Not tested yet"
 
 #: src/components/credentials/DetectedKeys.tsx
-msgid "Not used by any credential yet. Pack the keys that belong together into one credential."
-msgstr "Not used by any credential yet. Pack the keys that belong together into one credential."
+#~ msgid "Not used by any credential yet. Pack the keys that belong together into one credential."
+#~ msgstr "Not used by any credential yet. Pack the keys that belong together into one credential."
 
 #: src/components/connections-manager/usage-cell.tsx
 msgid "Not used yet"
@@ -17135,6 +17186,10 @@ msgstr "one of · set"
 msgid "one of · signed in"
 msgstr "one of · signed in"
 
+#: src/components/credentials/VariableDetails.tsx
+msgid "One of a group"
+msgstr "One of a group"
+
 #: src/components/credentials-view/RequirementChip.tsx
 msgid "One of these is enough"
 msgstr "One of these is enough"
@@ -17230,6 +17285,10 @@ msgstr "Open {0} in editor"
 #: src/components/conversation/MessageBubble.tsx
 msgid "Open {displayName}"
 msgstr "Open {displayName}"
+
+#: src/components/credentials/DetectedKeys.tsx
+msgid "Open {key} in {fileName} at line {line}"
+msgstr "Open {key} in {fileName} at line {line}"
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
 msgid "Open {label}"
@@ -17876,6 +17935,10 @@ msgstr "Open this plan from its session to run it"
 msgid "Open this plan from its session to update it"
 msgstr "Open this plan from its session to update it"
 
+#: src/components/data-sources/DataSourceDialog.tsx
+msgid "Open to all"
+msgstr "Open to all"
+
 #: src/components/assets/editor/wizard/WizardStepInspector.tsx
 #: src/components/process-runs/ProcessRunsPanel.tsx
 #: src/components/terminal/interactive-terminal/SessionActionsMenu.tsx
@@ -17975,6 +18038,7 @@ msgid "optional"
 msgstr "optional"
 
 #: src/components/assets/dependency-sources.tsx
+#: src/components/credentials/VariableDetails.tsx
 #: src/components/project-setup/ProjectSetupDialog.tsx
 msgid "Optional"
 msgstr "Optional"
@@ -18199,14 +18263,13 @@ msgstr "Owner"
 #~ msgid "pacing"
 #~ msgstr "pacing"
 
-#. placeholder {0}: picked.length
 #: src/components/credentials/DetectedKeys.tsx
-msgid "Pack {0} into a credential"
-msgstr "Pack {0} into a credential"
+#~ msgid "Pack {0} into a credential"
+#~ msgstr "Pack {0} into a credential"
 
 #: src/components/credentials/DetectedKeys.tsx
-msgid "Pack into a credential"
-msgstr "Pack into a credential"
+#~ msgid "Pack into a credential"
+#~ msgstr "Pack into a credential"
 
 #: src/components/credentials/CredentialDialog.tsx
 msgid "Pack keys into credentials"
@@ -20212,6 +20275,11 @@ msgstr "Remove link"
 msgid "Remove member"
 msgstr "Remove member"
 
+#. placeholder {0}: index + 1
+#: src/components/credentials/DetectedKeys.tsx
+msgid "Remove new variable {0}"
+msgstr "Remove new variable {0}"
+
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Remove option"
 msgstr "Remove option"
@@ -20589,6 +20657,8 @@ msgstr "required"
 #: src/components/ask/AskItems.tsx
 #: src/components/assets/dependency-sources.tsx
 #: src/components/credentials/CredentialDialog.tsx
+#: src/components/credentials/VariableDetails.tsx
+#: src/components/credentials/VariableDetails.tsx
 #: src/components/project-setup/ProjectSetupDialog.tsx
 msgid "Required"
 msgstr "Required"
@@ -21486,6 +21556,10 @@ msgstr "Save Changes"
 msgid "Save code"
 msgstr "Save code"
 
+#: src/components/credentials/DetectedKeys.tsx
+msgid "Save details"
+msgstr "Save details"
+
 #: src/components/asset-manager/AssetManagerButton.tsx
 #: src/components/assets/editor/dynamic-workflow/DynamicWorkflowAssetEditor.tsx
 #: src/components/automations/AutomationPage.tsx
@@ -21553,6 +21627,10 @@ msgstr "Saved Contexts"
 #~ msgid "Saved to this project's .env.local, which stays git-ignored."
 #~ msgstr "Saved to this project's .env.local, which stays git-ignored."
 
+#: src/components/credentials/VariableDetails.tsx
+msgid "Saved with the form. One-of requires at least two variables in the same credential."
+msgstr "Saved with the form. One-of requires at least two variables in the same credential."
+
 #: src/components/triggers-view/TriggerEditor.tsx
 #~ msgid "Saving..."
 #~ msgstr "Saving..."
@@ -21563,6 +21641,7 @@ msgstr "Saved Contexts"
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestFields.tsx
 #: src/components/conversation/ConversationView.tsx
 #: src/components/credentials/CredentialDialog.tsx
+#: src/components/credentials/DetectedKeys.tsx
 #: src/components/cron-view/CronForm.tsx
 #: src/components/help/AskForHelpDialog.tsx
 #: src/components/organization/budgets/OrgSharePanel.tsx
@@ -21996,6 +22075,10 @@ msgstr "Searching inside sessions…"
 msgid "Searching…"
 msgstr "Searching…"
 
+#: src/components/credentials/VariableDetails.tsx
+msgid "Secret (mask value)"
+msgstr "Secret (mask value)"
+
 #: src/components/quick-create/registry.ts
 msgid "Secret created"
 msgstr "Secret created"
@@ -22127,7 +22210,6 @@ msgid "Select a version to install:"
 msgstr "Select a version to install:"
 
 #: src/components/assets/ProjectPickerModal.tsx
-#: src/components/credentials/DetectedKeys.tsx
 #: src/components/graph-context/GraphContextViewer.tsx
 #: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Select all"
@@ -22710,11 +22792,20 @@ msgstr "Settings"
 #: src/components/automations/AutomationPage.tsx
 #: src/components/data-sources/SourceSetupButton.tsx
 #: src/components/setup-wizard/SetupStagesButton.tsx
+#: src/components/setup-wizard/SetupStagesButton.tsx
 #: src/components/setup-wizard/SourceSetupDialog.tsx
 #: src/components/stream-inbox-view/AttachedChannelsBar.tsx
 #: src/components/stream-inbox-view/ChannelAttentionBar.tsx
 msgid "Setup"
 msgstr "Setup"
+
+#: src/components/setup-wizard/SetupStagesButton.tsx
+msgid "Setup complete"
+msgstr "Setup complete"
+
+#: src/components/setup-wizard/SetupStagesButton.tsx
+msgid "Setup complete ({summary})"
+msgstr "Setup complete ({summary})"
 
 #~ msgid "Setup could not start"
 #~ msgstr "Setup could not start"
@@ -26761,6 +26852,10 @@ msgstr "Unavailable"
 msgid "Unavailable feed item"
 msgstr "Unavailable feed item"
 
+#: src/components/credentials/DetectedKeys.tsx
+msgid "Unchanged"
+msgstr "Unchanged"
+
 #: src/components/assets/editor/agent-trace/CallTreeView.tsx
 #: src/components/assets/editor/agent-trace/CallTreeView.tsx
 msgid "Under eval"
@@ -27314,9 +27409,15 @@ msgstr "validated"
 msgid "validation"
 msgstr "validation"
 
+#: src/components/credentials/VariableDetails.tsx
+msgid "Validation pattern"
+msgstr "Validation pattern"
+
 #: src/components/account/secrets-section.tsx
 #: src/components/api-keys-view/api-keys-view.tsx
 #: src/components/credentials/CredentialDialog.tsx
+#: src/components/credentials/DetectedKeys.tsx
+#: src/components/credentials/DetectedKeys.tsx
 msgid "Value"
 msgstr "Value"
 
@@ -27327,6 +27428,10 @@ msgstr "Value for {0}"
 
 #~ msgid "Value for {envVar}"
 #~ msgstr "Value for {envVar}"
+
+#: src/components/credentials/DetectedKeys.tsx
+msgid "Value for {key}"
+msgstr "Value for {key}"
 
 #~ msgid "value name"
 #~ msgstr "value name"
