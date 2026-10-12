@@ -106,9 +106,23 @@ function findPending(items: FlowData[]): Pending {
  *    picker. The user still needs to KNOW a question is waiting — that is the
  *    whole reason the bar renders at all on this transport.
  */
+/** The hook-reported question as a pending interaction (see `hookQuestion`). */
+function pendingFromHook(q: ReturnType<typeof useChatPlanMode>['hookQuestion']): Pending {
+  if (!q) return null;
+  if (q.tool_name === 'AskUserQuestion') {
+    const qs = q.input.questions;
+    const questions = Array.isArray(qs) ? (qs as Question[]) : [];
+    return questions.length ? { kind: 'question', questions } : null;
+  }
+  const plan = q.input.plan;
+  return { kind: 'plan', plan: typeof plan === 'string' ? plan : '' };
+}
+
 export function PlanInteractionBar({ items }: PlanInteractionBarProps) {
-  const { respondEnabled, canAnswerInline, sending, answer, execute, setPlanPending } = useChatPlanMode();
-  const pending = useMemo(() => findPending(items), [items]);
+  const { respondEnabled, canAnswerInline, sending, answer, execute, setPlanPending, hookQuestion } = useChatPlanMode();
+  // The transcript first; the worker's hook when the transcript does not carry
+  // the call yet (Claude may hold a pending AskUserQuestion until it is answered).
+  const pending = useMemo(() => findPending(items) ?? pendingFromHook(hookQuestion), [items, hookQuestion]);
 
   // "Switch back to code" once a plan is ready.
   useEffect(() => {
