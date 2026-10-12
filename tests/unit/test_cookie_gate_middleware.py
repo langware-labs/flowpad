@@ -17,10 +17,9 @@ from starlette.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
 import flow_sdk.server.middleware.cookie_gate_middleware as gate
-from flow_sdk.server.middleware.cookie_gate_middleware import (
-    COOKIE_NAME,
-    _presents,
-)
+import flow_sdk.server.middleware.local_cookiegate_middleware as local
+from flow_sdk.server.middleware.cookie_gate_middleware import presents
+from flow_sdk.server.middleware.sandbox_cookiegate_middleware import COOKIE_NAME
 
 SECRET = "s3cret"
 
@@ -39,26 +38,26 @@ def _conn(*, cookie=None, header=None, query=""):
 
 
 def test_cookie_presents():
-    assert _presents(_conn(cookie=SECRET), SECRET) is True
+    assert presents(_conn(cookie=SECRET), SECRET, COOKIE_NAME) is True
 
 
 def test_header_presents():
-    assert _presents(_conn(header=SECRET), SECRET) is True
+    assert presents(_conn(header=SECRET), SECRET, COOKIE_NAME) is True
 
 
 def test_query_presents():
-    assert _presents(_conn(query=f"cookie-gate={SECRET}"), SECRET) is True
+    assert presents(_conn(query=f"cookie-gate={SECRET}"), SECRET, COOKIE_NAME) is True
 
 
 def test_nothing_presented():
-    assert _presents(_conn(), SECRET) is False
+    assert presents(_conn(), SECRET, COOKIE_NAME) is False
 
 
 @pytest.mark.parametrize("wrong", ["s3cre", "s3crett", "S3CRET", "", "x"])
 def test_wrong_value_in_any_transport(wrong):
-    assert _presents(_conn(cookie=wrong), SECRET) is False
-    assert _presents(_conn(header=wrong), SECRET) is False
-    assert _presents(_conn(query=f"cookie-gate={wrong}"), SECRET) is False
+    assert presents(_conn(cookie=wrong), SECRET, COOKIE_NAME) is False
+    assert presents(_conn(header=wrong), SECRET, COOKIE_NAME) is False
+    assert presents(_conn(query=f"cookie-gate={wrong}"), SECRET, COOKIE_NAME) is False
 
 
 def test_a_wrong_cookie_does_not_veto_a_right_header():
@@ -66,7 +65,7 @@ def test_a_wrong_cookie_does_not_veto_a_right_header():
     poisoned — a stale cookie must not lock out a caller with a valid header."""
     conn = _conn(cookie="stale", header=SECRET)
 
-    assert _presents(conn, SECRET) is True
+    assert presents(conn, SECRET, COOKIE_NAME) is True
 
 
 # ---------------------------------------------------------------------------
@@ -148,7 +147,7 @@ def test_direct_open_passes_and_sets_the_desktop_cookie(token, host):
     assert cookie.startswith(f"cookie-gate-9007={value};")
     assert "HttpOnly" in cookie
     assert "SameSite=Strict" in cookie
-    assert f"Max-Age={gate.LOCAL_COOKIE_MAX_AGE}" in cookie
+    assert f"Max-Age={local.LOCAL_COOKIE_MAX_AGE}" in cookie
     assert "Secure" not in cookie
 
 

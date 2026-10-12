@@ -505,10 +505,11 @@ def local_gate(tmp_path, monkeypatch):
     from unittest.mock import patch
 
     import flow_sdk.server.middleware.cookie_gate_middleware as gate
+    import flow_sdk.server.middleware.local_cookiegate_middleware as local
 
-    path = tmp_path / "instance" / gate.LOCAL_TOKEN_FILENAME
-    monkeypatch.delenv(gate.OFF_SWITCH_ENV, raising=False)
-    monkeypatch.setattr(gate, "LOCAL_TOKEN_PATH", path)
+    path = tmp_path / "instance" / local.LOCAL_TOKEN_FILENAME
+    monkeypatch.delenv(local.OFF_SWITCH_ENV, raising=False)
+    monkeypatch.setattr(local, "LOCAL_TOKEN_PATH", path)
     with patch.object(gate, "get_cookie_gate", return_value=None):
         yield path
 

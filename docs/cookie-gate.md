@@ -21,7 +21,8 @@ FLOWPAD-2233 proof of concept created a shell (`POST /api/v1/graph/shell`) from 
 ran a command through `run-detached`.
 
 **Where it lives.** `<flow_home>/instances/<instance>/.cookie_gate`, a plain file (0600 on posix; the
-user profile's inherited ACL on Windows). The middleware (`cookie_gate_middleware.py`) creates it on
+user profile's inherited ACL on Windows). The local gate (`local_cookiegate_middleware.py`, which `cookie_gate_middleware.py` picks per request
+when no hub secret is armed; the sandbox gate is `sandbox_cookiegate_middleware.py`) creates it on
 the first request it serves, then refuses any request that does not present it. It is the only
 backend code involved; the CLI and Electron read the same file.
 
