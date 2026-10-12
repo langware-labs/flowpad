@@ -10784,6 +10784,10 @@ msgstr "Fix It"
 msgid "Fix the configuration — credentials or settings — then press Verify to resume polling."
 msgstr "Fix the configuration — credentials or settings — then press Verify to resume polling."
 
+#: src/components/data-sources/source-attention.ts
+msgid "Fix the mirror map or the rows it names (the detail says which), then Pull, or wait for the next sync."
+msgstr "Fix the mirror map or the rows it names (the detail says which), then Pull, or wait for the next sync."
+
 #: src/components/webapp-display/useWebappFix.ts
 msgid "Fix the web app"
 msgstr "Fix the web app"
@@ -14591,6 +14595,10 @@ msgstr "Minute, hour, day of month, month, day of week. 0 and 7 are Sunday."
 #: src/components/automations/blocks/WhenBlock.tsx
 msgid "minutes"
 msgstr "minutes"
+
+#: src/components/data-sources/source-attention.ts
+msgid "Mirror needs attention"
+msgstr "Mirror needs attention"
 
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "Mis-Sc"
@@ -25107,6 +25115,10 @@ msgstr "The credential was removed from your account."
 #: src/components/credentials/CredentialDialog.tsx
 msgid "The credentials could not be saved."
 msgstr "The credentials could not be saved."
+
+#: src/components/data-sources/source-attention.ts
+msgid "The dataset this source mirrors into could not be made current."
+msgstr "The dataset this source mirrors into could not be made current."
 
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "The default — what you want 99% of the time."

@@ -10784,6 +10784,10 @@ msgstr "إصلاح"
 msgid "Fix the configuration — credentials or settings — then press Verify to resume polling."
 msgstr "أصلح الإعداد — بيانات الاعتماد أو الإعدادات — ثم اضغط «تحقق» لاستئناف الجلب."
 
+#: src/components/data-sources/source-attention.ts
+msgid "Fix the mirror map or the rows it names (the detail says which), then Pull, or wait for the next sync."
+msgstr ""
+
 #: src/components/webapp-display/useWebappFix.ts
 msgid "Fix the web app"
 msgstr "إصلاح تطبيق الويب"
@@ -14590,6 +14594,10 @@ msgstr ""
 
 #: src/components/automations/blocks/WhenBlock.tsx
 msgid "minutes"
+msgstr ""
+
+#: src/components/data-sources/source-attention.ts
+msgid "Mirror needs attention"
 msgstr ""
 
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
@@ -25106,6 +25114,10 @@ msgstr "تم حذف بيانات الاعتماد من حسابك."
 
 #: src/components/credentials/CredentialDialog.tsx
 msgid "The credentials could not be saved."
+msgstr ""
+
+#: src/components/data-sources/source-attention.ts
+msgid "The dataset this source mirrors into could not be made current."
 msgstr ""
 
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
