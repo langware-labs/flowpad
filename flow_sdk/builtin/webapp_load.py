@@ -8,11 +8,13 @@ from __future__ import annotations
 from pathlib import Path
 
 from flow_sdk.api.api_types.vfs_path import VFSPath
+from flow_sdk.builtin.faas.webapp_spec import VIEWER_KIND
 from flow_sdk.core.display_target import DisplayTargetKind, endpoint_target
 from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.schema.data_spec.returned_value_spec import ExitCode, ReturnedValue
 from flow_sdk.schema.data_spec.service_endpoint_spec import PROTOCOL_WEB_APP
 from flow_sdk.schema.types import EntityType
+from flow_sdk.worldview.ontology import kind_matches
 
 
 def _entry_target(target: dict, entries: list[Path], project) -> bool:
@@ -83,6 +85,13 @@ readiness. JavaScript/render failures still belong to the viewer's diagnostics.
         if process is None or not app.project_id or process.project_id != app.project_id:
             return answer("display session is missing or belongs to another project")
 
+    if kind_matches(VIEWER_KIND, str(getattr(app, "kind", "") or "")):
+        # A viewer is a module a host page imports, not a page of its own: it has no index.html to serve,
+        # so demanding one failed every shipped viewer. Its entry is its module.
+        module = Path(app.asset_ref) / str(app.build or ".") / str(app.module or "viewer.js").lstrip("/")
+        if not module.is_file():
+            return answer(f"missing viewer module {module}")
+        return answer("a viewer module is presented by its host page", ok=True)
     specs = [(name, spec) for name, spec in _app_specs(app) if spec.protocol.spec_kind == PROTOCOL_WEB_APP]
     if not specs:
         return answer("no web.app presentation is declared; presentation check is not applicable", ok=True)

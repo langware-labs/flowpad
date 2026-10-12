@@ -98,7 +98,7 @@ def project(tmp_path, monkeypatch):
     async def driver_of(provider):
         return drivers.get(provider)
 
-    async def by_name(name):
+    async def by_name(name, near=""):
         return wizards.get(name)
 
     async def all_setups(_q):
@@ -246,3 +246,22 @@ async def test_an_app_load_includes_project_and_attached_declarations(project, m
     assert "project-p1" in tree.nodes
     assert tree.nodes["micro_app-a1"].children == ("asset_setup:home-load",)
     assert tree.nodes["asset_setup:home-load"].on_load.name == "waha-container"
+
+
+async def test_two_projects_shipping_one_wizard_name_resolve_to_the_nearer_copy(monkeypatch):
+    """A dependency's own asset_setup runs ITS ``waha-setup``, not the same-named wizard a driver elsewhere ships."""
+    from types import SimpleNamespace
+
+    from flow_sdk.builtin import shipped_lookup
+
+    ours = SimpleNamespace(asset_ref="/w/waha-service/agentic-assets/wizard/waha-setup", id=1)
+    theirs = SimpleNamespace(asset_ref="/x/waha/agentic-assets/data_driver/waha/agentic-assets/wizard/waha-setup", id=2)
+
+    class Rows:
+        @staticmethod
+        async def get_all(_):
+            return [theirs, ours]
+
+    monkeypatch.setattr(shipped_lookup, "is_running_install_path", lambda _: False)
+    near = "/w/waha-service/agentic-assets/asset_setup/waha-service"
+    assert await shipped_lookup.by_name_preferring_this_install(Rows, "waha-setup", near=near) is ours

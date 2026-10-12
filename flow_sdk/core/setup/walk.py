@@ -180,6 +180,7 @@ class _Walk:
     root: Optional[_Node] = None
     activity: Any = None
     ran: bool = False
+    _pending: Optional[asyncio.Future] = None
 
     # ── build: the whole outline before anything runs ─────────────────────
 
@@ -244,6 +245,19 @@ class _Walk:
         except Exception:  # noqa: BLE001 — a broken watcher must not break the setup it watches
             logger.exception("setup on_change callback failed")
 
+    def emit_soon(self) -> None:
+        """Emit from a sync callback. One emit in flight at a time: it renders the tree when it
+        runs, so a line that arrives meanwhile rides it instead of queueing another."""
+        if self.on_change is None or (self._pending is not None and not self._pending.done()):
+            return
+        self._pending = asyncio.ensure_future(self.emit())
+
+    async def settled(self) -> None:
+        """Let a live-line emit land BEFORE the final answer, never after it: a late "still running"
+        would overwrite the finished record."""
+        if self._pending is not None:
+            await self._pending
+
     def node_activity(self, node: _Node) -> Any:
         if self.activity is None:
             return _Quiet()
@@ -298,7 +312,8 @@ class _Walk:
                 scope = {**scope, **node.prepare.value}
 
         settled = (SetupState.DONE, SetupState.SKIPPED)  # a skipped child holds nothing up
-        stuck = [child for child in node.children if await self.visit(child, scope) not in settled]
+        left = [child for child in node.children if await self.visit(child, scope) not in settled]
+        stuck = [child for child in left if not getattr(self.specs.get(child.id), "independent", False)]
         if stuck:
             names = ", ".join(child.label for child in stuck)
             return self.settle(node, act, SetupState.BLOCKED, f"waiting on {names}")
@@ -310,7 +325,9 @@ class _Walk:
             await self._record(spec, node.run)
             if not node.run.ok:
                 return self.settle(node, act, self._unmet(), node.run.detail or "did not finish")
-        return self.settle(node, act, SetupState.DONE, _done_detail(node))
+        # What stands on its own never held this node up; say which of them it settled without.
+        apart = f"; not set up: {', '.join(child.label for child in left)}" if left else ""
+        return self.settle(node, act, SetupState.DONE, _done_detail(node) + apart)
 
     async def _record(self, spec: SetupNode, result: WizardResult) -> None:
         if spec.record is None or self.check_only:
@@ -356,6 +373,12 @@ class _Walk:
             setattr(node, slot, partial)
             await self.emit()
 
+        def on_status(text: str) -> None:
+            # The running node's one-liner: what its command is doing right now.
+            if node.state is SetupState.RUNNING and text != node.detail:
+                node.detail = text
+                self.emit_soon()
+
         task = asyncio.ensure_future(run_wizard(
             wizard,
             subject_entity=self.subject_entity,
@@ -374,6 +397,7 @@ class _Walk:
             wizard_id=self.wizard_id,
             check_only=self.check_only,
             on_step=on_step,
+            on_status=on_status,
         ))
         try:
             result = await self.control.run(self.path, task)
@@ -477,9 +501,12 @@ async def _walk(walk: _Walk, inputs: dict) -> SetupTreeResult:
     try:
         state = await walk.visit(walk.root, inputs)
     except _Stop as refused:
+        await walk.settled()
         return walk.answer(SetupState.REFUSED, str(refused))
     except _Stopped:
+        await walk.settled()
         return walk.answer(SetupState.STOPPED, "Stopped")
+    await walk.settled()
     root = walk.root
     detail = "" if state is SetupState.DONE else f"{root.label}: {root.detail}"
     return walk.answer(state, detail)

@@ -34,7 +34,7 @@ import time
 from pathlib import Path
 from typing import AsyncIterator, Callable, Optional
 
-from flow_sdk.core.compute.exec import command_env, run_shell
+from flow_sdk.core.compute.exec import command_env, last_line, run_shell
 from flow_sdk.schema.data_spec.returned_value_spec import CliResult
 
 logger = logging.getLogger(__name__)
@@ -103,7 +103,7 @@ class SharedShell(contextlib.AbstractAsyncContextManager):
         extra_env: Optional[dict] = None,
         platform: str = "",
         stop: Optional[asyncio.Event] = None,
-        on_output: Optional[Callable[[], None]] = None,
+        on_output: Optional[Callable[[str], None]] = None,
         on_spawn: Optional[Callable[[int], None]] = None,
         fresh: bool = False,
     ) -> CliResult:
@@ -147,7 +147,7 @@ class SharedShell(contextlib.AbstractAsyncContextManager):
                         stderr.append(frame.stderr or "")
                     if on_output is not None:
                         try:
-                            on_output()
+                            on_output(last_line(frame.stdout if frame.stdout is not None else frame.stderr or ""))
                         except Exception:  # noqa: BLE001 -- an observer must not fail the command
                             logger.debug("shared shell: on_output raised", exc_info=True)
 
