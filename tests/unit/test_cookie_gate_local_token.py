@@ -1,0 +1,144 @@
+"""cookie-gate local token (FLOWPAD-2233) — created on first request, fail closed.
+
+The middleware is exercised over a bare Starlette app so the gate decides alone:
+no lifespan, no DB. ``get_cookie_gate`` (the hub-armed secret) is patched to
+``None`` unless a test is about precedence, and the token file lives in tmp_path.
+"""
+
+from __future__ import annotations
+
+import os
+import sys
+import threading
+from unittest.mock import patch
+
+import pytest
+from starlette.applications import Starlette
+from starlette.responses import PlainTextResponse
+from starlette.routing import Route
+from starlette.testclient import TestClient
+
+import flow_sdk.server.middleware.cookie_gate_middleware as gate
+
+pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
+
+HUB_SECRET = "hub-armed-secret"
+
+
+def _app() -> Starlette:
+    async def ok(_request):
+        return PlainTextResponse("ok")
+
+    app = Starlette(routes=[Route("/", ok), Route("/api/v1/graph/shell", ok, methods=["GET", "POST"])])
+    app.add_middleware(gate.CookieGateMiddleware)
+    return app
+
+
+@pytest.fixture
+def local_gate(tmp_path, monkeypatch):
+    """Gate on (off switch cleared), token file under tmp_path, no hub secret."""
+    path = tmp_path / "instance" / gate.LOCAL_TOKEN_FILENAME
+    monkeypatch.delenv(gate.OFF_SWITCH_ENV, raising=False)
+    monkeypatch.setattr(gate, "local_token_path", lambda: path)
+    gate._local_cache.clear()
+    with patch.object(gate, "get_cookie_gate", return_value=None):
+        yield path
+    gate._local_cache.clear()
+
+
+def _header(token: str) -> dict[str, str]:
+    return {gate.HEADER_NAME: token}
+
+
+def test_first_request_creates_a_token_and_is_refused(local_gate):
+    client = TestClient(_app())
+
+    response = client.get("/")
+
+    assert response.status_code == 403
+    token = local_gate.read_text(encoding="utf-8")
+    assert len(token) >= 43  # token_urlsafe(32): 32 bytes of entropy
+    if sys.platform != "win32":
+        assert local_gate.stat().st_mode & 0o777 == 0o600
+
+
+def test_the_token_admits_and_survives_a_restart(local_gate):
+    client = TestClient(_app())
+    client.get("/")
+    token = local_gate.read_text(encoding="utf-8")
+
+    assert client.get("/", headers=_header(token)).status_code == 200
+
+    gate._local_cache.clear()  # a fresh process
+    assert TestClient(_app()).get("/", headers=_header(token)).status_code == 200
+    assert local_gate.read_text(encoding="utf-8") == token
+
+
+def test_concurrent_first_requests_agree_on_one_token(local_gate):
+    results: list[str | None] = []
+
+    def create():
+        results.append(gate._create_local_token(local_gate))
+
+    threads = [threading.Thread(target=create) for _ in range(8)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    on_disk = local_gate.read_text(encoding="utf-8")
+    assert results == [on_disk] * 8
+    assert [p.name for p in local_gate.parent.iterdir()] == [gate.LOCAL_TOKEN_FILENAME]
+
+
+def test_off_switch_without_a_file_passes_and_creates_nothing(local_gate, monkeypatch):
+    monkeypatch.setenv(gate.OFF_SWITCH_ENV, "off")
+
+    assert TestClient(_app()).get("/").status_code == 200
+    assert not local_gate.exists()
+
+
+def test_off_switch_still_enforces_an_existing_token(local_gate, monkeypatch):
+    local_gate.parent.mkdir(parents=True)
+    local_gate.write_text("existing-token", encoding="utf-8")
+    monkeypatch.setenv(gate.OFF_SWITCH_ENV, "off")
+    client = TestClient(_app())
+
+    assert client.get("/").status_code == 403
+    assert client.get("/", headers=_header("existing-token")).status_code == 200
+
+
+def test_a_token_that_cannot_be_created_fails_closed(tmp_path, monkeypatch):
+    blocker = tmp_path / "not-a-dir"
+    blocker.write_text("", encoding="utf-8")  # the token's parent is a file: mkdir fails
+    monkeypatch.delenv(gate.OFF_SWITCH_ENV, raising=False)
+    monkeypatch.setattr(gate, "local_token_path", lambda: blocker / gate.LOCAL_TOKEN_FILENAME)
+    gate._local_cache.clear()
+
+    with patch.object(gate, "get_cookie_gate", return_value=None):
+        response = TestClient(_app()).post("/api/v1/graph/shell")
+
+    assert response.status_code == 403
+
+
+def test_a_deleted_token_is_replaced_and_the_old_one_stops_working(local_gate):
+    client = TestClient(_app())
+    client.get("/")
+    old = local_gate.read_text(encoding="utf-8")
+
+    os.remove(local_gate)
+
+    assert client.get("/", headers=_header(old)).status_code == 403
+    new = local_gate.read_text(encoding="utf-8")
+    assert new != old
+    assert client.get("/", headers=_header(new)).status_code == 200
+
+
+def test_a_hub_armed_secret_takes_precedence(local_gate):
+    with patch.object(gate, "get_cookie_gate", return_value=HUB_SECRET):
+        client = TestClient(_app())
+
+        assert client.get("/").status_code == 403
+        assert client.get("/", headers=_header(HUB_SECRET)).status_code == 200
+
+    assert not local_gate.exists()

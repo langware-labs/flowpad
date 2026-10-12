@@ -20,6 +20,9 @@ import pytest
 os.environ["TESTING"] = "true"
 # A running agent deployment is a loop process the app starts; a test that needs one starts it itself.
 os.environ["AGENT_RUN_DEPLOYMENTS"] = "false"
+# The local cookie-gate token is created on the first request a backend serves; left on, the first
+# in-process request would arm every later API test. Gate tests opt back in (`local_gate` fixtures).
+os.environ["FLOWPAD_COOKIE_GATE"] = "off"
 
 
 # -----------------------------------------------------------------------------
