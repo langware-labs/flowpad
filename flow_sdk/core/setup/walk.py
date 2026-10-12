@@ -28,6 +28,7 @@ to ``on_change`` after every step — the same document the run records.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import sys
 from dataclasses import dataclass, field
@@ -54,6 +55,66 @@ OnChange = Callable[[SetupTreeResult], Awaitable[None]]
 
 class _Stop(Exception):
     """A refusal: the walk ends here, whatever is left."""
+
+
+class SetupControl:
+    """A live run's handle: skip a node, or stop the run, while the walk goes.
+
+    * **Skip.** A node not reached yet settles SKIPPED when the walk gets there; the node running now (or
+      one under it) has its wizard cancelled — its shell's process groups killed, its open question
+      withdrawn, the way a replaced wizard start is — and settles SKIPPED, so the walk goes on.
+    * **Stop.** The running wizard is cancelled the same way; its node and the run settle STOPPED.
+
+    What the person asked for is recorded here, so the walk reads it rather than guessing from the cancel.
+    """
+
+    def __init__(self) -> None:
+        self.skips: dict[str, str] = {}
+        self.stopped = False
+        self._path: tuple[str, ...] = ()
+        self._task: Optional[asyncio.Task] = None
+
+    def skip(self, node_id: str, detail: str = "skipped") -> None:
+        self.skips[node_id] = detail
+        if self._task is not None and node_id in self._path:
+            self._task.cancel()
+
+    def stop(self) -> bool:
+        """Stop the walk at the wizard it is running. ``False`` when it is not in one (nothing to cancel)."""
+        if self._task is None:
+            return False
+        self.stopped = True
+        self._task.cancel()
+        return True
+
+    def skipped(self, path: tuple[str, ...]) -> str:
+        """The skip that covers a node on ``path`` (it or a node above it), else ``""``."""
+        return next((self.skips[i] for i in reversed(path) if i in self.skips), "")
+
+    async def run(self, path: tuple[str, ...], task: "asyncio.Task") -> Any:
+        """Await the wizard ``task`` of the node at ``path`` as the one a skip or a stop reaches.
+
+        Raises ``_Stopped`` / ``_Skipped`` when a person ended it; a cancel of the run itself (the caller's)
+        takes the wizard down with it and propagates."""
+        self._path, self._task = path, task
+        try:
+            return await asyncio.shield(task)
+        except asyncio.CancelledError:
+            if not task.cancelled():  # the run itself was cancelled, not this wizard
+                task.cancel()
+                await asyncio.wait({task})  # its shells and question gone before the run lets go
+                raise
+            raise (_Stopped() if self.stopped else _Skipped()) from None
+        finally:
+            self._path, self._task = (), None
+
+
+class _Skipped(Exception):
+    """The running node's wizard was cancelled by :meth:`SetupControl.skip`."""
+
+
+class _Stopped(Exception):
+    """The running node's wizard was cancelled by :meth:`SetupControl.stop`: the walk ends here."""
 
 
 @dataclass
@@ -111,6 +172,8 @@ class _Walk:
     approved: bool
     wizard_id: str
     on_change: Optional[OnChange]
+    control: SetupControl = field(default_factory=SetupControl)
+    path: tuple[str, ...] = ()
     specs: dict[str, Optional[SetupNode]] = field(default_factory=dict)
     first: dict[str, _Node] = field(default_factory=dict)
     visited: dict[str, SetupState] = field(default_factory=dict)
@@ -196,7 +259,17 @@ class _Walk:
             return state
         if node.id in self.visited:
             return self.visited[node.id]
-        state = await self._visit(node, scope)
+        above, self.path = self.path, (*self.path, node.id)
+        try:
+            state = await self._visit(node, scope)
+        except _Skipped:
+            state = self.settle(node, self.node_activity(node), SetupState.SKIPPED, self.control.skipped(self.path))
+        except _Stopped:  # this node and every one above it: where the run was when it stopped
+            node.state, node.detail = SetupState.STOPPED, "stopped"
+            self.node_activity(node).cancel("Stopped")
+            raise
+        finally:
+            self.path = above
         self.visited[node.id] = state
         await self.emit()
         return state
@@ -210,8 +283,8 @@ class _Walk:
             return node.state
         if spec.problem:
             return self.settle(node, act, SetupState.FAILED, spec.problem)
-        if spec.skipped:
-            return self.settle(node, act, SetupState.SKIPPED, spec.skipped)
+        if skipped := spec.skipped or self.control.skipped(self.path):
+            return self.settle(node, act, SetupState.SKIPPED, skipped)
         node.state = SetupState.RUNNING
         act.current("starting")
         await self.emit()
@@ -229,6 +302,8 @@ class _Walk:
         if stuck:
             names = ", ".join(child.label for child in stuck)
             return self.settle(node, act, SetupState.BLOCKED, f"waiting on {names}")
+        if self.control.skipped(self.path):  # skipped while its children ran
+            raise _Skipped()
 
         if spec.run is not None:
             node.run = await self.wizard(spec, spec.run, act, node, "run", scope)
@@ -281,7 +356,7 @@ class _Walk:
             setattr(node, slot, partial)
             await self.emit()
 
-        result = await run_wizard(
+        task = asyncio.ensure_future(run_wizard(
             wizard,
             subject_entity=self.subject_entity,
             # A person who approved THIS setup approved every node in it — the node's own wizard included,
@@ -299,7 +374,12 @@ class _Walk:
             wizard_id=self.wizard_id,
             check_only=self.check_only,
             on_step=on_step,
-        )
+        ))
+        try:
+            result = await self.control.run(self.path, task)
+        except (_Skipped, _Stopped) as ended:
+            slot_act.cancel("Stopped" if isinstance(ended, _Stopped) else "Skipped")
+            raise
         self.ran = self.ran or result.ran
         if result.ok:
             slot_act.done(result.detail or "done")
@@ -335,6 +415,7 @@ async def setup_tree(
     approved: bool = False,
     wizard_id: str = "",
     on_change: Optional[OnChange] = None,
+    control: Optional[SetupControl] = None,
 ) -> SetupTreeResult:
     """Set up ``root_id`` and everything below it. Never raises for an outcome.
 
@@ -360,6 +441,7 @@ async def setup_tree(
             approved=approved,
             wizard_id=wizard_id,
             on_change=on_change,
+            control=control or SetupControl(),
         )
         try:
             await walk.build(root_id)
@@ -396,6 +478,8 @@ async def _walk(walk: _Walk, inputs: dict) -> SetupTreeResult:
         state = await walk.visit(walk.root, inputs)
     except _Stop as refused:
         return walk.answer(SetupState.REFUSED, str(refused))
+    except _Stopped:
+        return walk.answer(SetupState.STOPPED, "Stopped")
     root = walk.root
     detail = "" if state is SetupState.DONE else f"{root.label}: {root.detail}"
     return walk.answer(state, detail)

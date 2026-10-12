@@ -143,9 +143,7 @@ class ProjectTree:
         """A node skipped here (``mark`` set) settles SKIPPED: nothing of it compiles or runs."""
         if mark is None:
             return False
-        note = str(getattr(mark, "note", "") or "").strip()
-        detail = f"skipped on this machine — {note}" if note else "skipped on this machine"
-        self.nodes[node_id] = SetupNode(id=node_id, label=label, skipped=detail)
+        self.nodes[node_id] = SetupNode(id=node_id, label=label, skipped=skip_detail(mark))
         return True
 
     def _requirement_node(self, req) -> str:
@@ -303,10 +301,23 @@ class ProjectTree:
         return [subject]
 
 
-def requirement_node_id(req) -> str:
-    """The tree node a collected requirement is (``dependency:`` / ``connection:`` / ``credential:<name>``)."""
-    from flow_sdk.schema.data_spec.project_setup_spec import REQUIREMENT_DEPENDENCY  # noqa: PLC0415
+def skip_detail(mark) -> str:
+    """What a node skipped here says (``mark``: its ``SetupSkipSpec``)."""
+    note = str(getattr(mark, "note", "") or "").strip()
+    return f"skipped on this machine — {note}" if note else "skipped on this machine"
 
+
+def requirement_node_id(req) -> str:
+    """The tree node a collected requirement is (``dependency:`` / ``connection:`` / ``credential:<name>``; a
+    source or a web app is its own typeid)."""
+    from flow_sdk.schema.data_spec.project_setup_spec import (  # noqa: PLC0415
+        REQUIREMENT_DEPENDENCY,
+        REQUIREMENT_SOURCE,
+        REQUIREMENT_WEBAPP,
+    )
+
+    if req.kind in (REQUIREMENT_SOURCE, REQUIREMENT_WEBAPP):
+        return str(req.typeid)
     if req.is_oauth:
         return f"connection:{req.provider or req.name}"
     prefix = {REQUIREMENT_DEPENDENCY: "dependency"}.get(req.kind, "credential")

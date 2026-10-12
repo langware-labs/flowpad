@@ -892,6 +892,13 @@ class Project(SetupSkippable, Entity):
 
         return ApiSuccessResponse(data={"run": await start_setup(self, root=root)})
 
+    @action.post(action_name="setup-stop")
+    async def setup_stop_action(self, root: str = "") -> "ApiResponse":
+        """`POST /project/<id>/setup-stop {root?}` — stop the setup run going here. Answers ``{stopped}``."""
+        from flow_sdk.builtin.project_setup import stop_setup  # noqa: PLC0415
+
+        return ApiSuccessResponse(data={"stopped": await stop_setup(str(self.id), root)})
+
     @action.post(action_name="setup-skip")
     async def setup_skip_action(
         self, typeid: str = "", scope: str = "local", name: str = "", note: str = ""

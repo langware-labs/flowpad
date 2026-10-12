@@ -94,6 +94,8 @@ class SetupState(StrEnum):
     HELD = "held"
     #: A person skipped it (``setup_skipped`` on its record): settled without running, so its parent goes on.
     SKIPPED = "skipped"
+    #: A person stopped the run: the node it was on, and the run, end here. Starting again resumes.
+    STOPPED = "stopped"
 
 
 class LoadState(StrEnum):
