@@ -3,7 +3,6 @@ import {
   clearPublicAccess,
   cloudManager,
   getPublicAccess,
-  PUBLIC_DEPLOYER_ROLE,
   PUBLIC_VIEWER_ROLE,
   setPublicAccess,
   type AgentVersionState,
@@ -146,6 +145,8 @@ export function AgentVisibilitySection({
   const launchLink = published ? agentLaunchLink(agent) : null;
   const [shareOpen, setShareOpen] = useState(false);
   const [visitorRole, setVisitorRole] = useVisitorRole(agent, published);
+  // Known only once set here: the flag lives on the hub row, which this page does not read.
+  const [visitorTrials, setVisitorTrials] = useState<boolean | null>(null);
 
   return (
     <section className="mt-4 border-t pt-4" data-testid="agent-visibility">
@@ -184,7 +185,7 @@ export function AgentVisibilitySection({
             />
           </div>
           <p className="mt-1 text-xs text-muted-foreground" data-testid="agent-launch-link-hint">
-            {visitorRole === PUBLIC_DEPLOYER_ROLE ? (
+            {visitorRole === PUBLIC_VIEWER_ROLE && visitorTrials ? (
               <Trans>Anyone with the link can try this agent in a sandbox of their own — no sign-in needed.</Trans>
             ) : (
               <Trans>
@@ -195,7 +196,15 @@ export function AgentVisibilitySection({
           </p>
         </div>
       )}
-      {published && <AgentVisitorDeploymentSection agent={agent} role={visitorRole} setRole={setVisitorRole} />}
+      {published && (
+        <AgentVisitorDeploymentSection
+          agent={agent}
+          role={visitorRole}
+          setRole={setVisitorRole}
+          allowed={visitorTrials}
+          setAllowed={setVisitorTrials}
+        />
+      )}
       <ShareAgentDialog open={shareOpen} onOpenChange={setShareOpen} agent={agent} />
     </section>
   );

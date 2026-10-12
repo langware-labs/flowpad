@@ -73,9 +73,6 @@ export type PublicAudience = 'visitor' | 'authenticated';
 /** The role an owner grants to make an agent readable — the row only, no files or verbs. */
 export const PUBLIC_VIEWER_ROLE = 'anonymous_viewer';
 
-/** The role an owner grants to let signed-out visitors run an agent in a sandbox of their own (`visitor-sandbox`). */
-export const PUBLIC_DEPLOYER_ROLE = 'anonymous_deployer';
-
 /** The hub's `PublicAccess`: the role one audience holds on the target, or null when private to it. */
 export interface PublicAccess {
   audience: PublicAudience;
