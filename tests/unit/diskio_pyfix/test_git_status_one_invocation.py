@@ -110,7 +110,8 @@ async def test_a_dirty_tree_is_read_in_two_invocations_and_answers_what_git_says
     assert (status.branch, status.upstream, status.error, status.conflict) == ("main", None, None, None)
     assert (status.remote_url, status.remote_web_url) == ("https://github.com/org/repo.git", "https://github.com/org/repo")
     # One script for status + remote + tracked counts, one for the untracked files.
-    assert (len(node.commands), len(old_node.commands)) == (2, 8)
+    # The per-command path also asks whether origin carries the branch: its 9th.
+    assert (len(node.commands), len(old_node.commands)) == (2, 9)
     assert all(env.get("LC_ALL") == "C" and env.get("GIT_TERMINAL_PROMPT") == "0" for env in node.envs)
     # The real index is untouched and no throwaway file outlives the call.
     assert _git(repo, "status", "--porcelain=v1") == porcelain_before
@@ -162,3 +163,18 @@ def test_sections_are_told_apart_by_marker_lines():
     assert facts == {"remote-rc": "0", "unborn": "1"}
     # No marker at all: the whole text is the status, nothing is known of the rest.
     assert _split_sections("## main\n?? @@x") == ({"": "## main\n?? @@x"}, {})
+
+
+async def test_a_known_origin_branch_is_offered_without_another_invocation(repo: Path):
+    _git(repo, "remote", "add", "origin", "https://github.com/org/repo.git")
+    node, old_node = CountingNode(), CountingNode()
+
+    assert (await GitRepo(str(repo), node).get_status()).upstream_candidate is None
+
+    _git(repo, "update-ref", "refs/remotes/origin/main", "HEAD")
+    node.commands.clear()
+    status = await GitRepo(str(repo), node).get_status()
+
+    assert status.upstream_candidate == "origin/main"
+    assert status == await _legacy(repo, old_node).get_status()
+    assert len(node.commands) == 1

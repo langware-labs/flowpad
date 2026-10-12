@@ -65,13 +65,16 @@ def _parse_numstat(output: str) -> dict[str, tuple[int | None, int | None]]:
 # marker is the unnamed section — the porcelain status itself.
 _SECTION_OPEN, _SECTION_CLOSE = "@@flowpad-git:", "@@"
 
-# status + remote in one invocation. ``|| exit`` keeps "not a git
-# repository" the script's own exit status, exactly as the bare command's was.
+# status + remote + "does origin carry this branch" in one invocation. ``|| exit``
+# keeps "not a git repository" the script's own exit status, exactly as the bare
+# command's was.
 _STATUS_SCRIPT = """\
 git status --porcelain=v1 --branch --untracked-files=all || exit $?
 printf '\\n@@flowpad-git:remote@@\\n'
 git ls-remote --get-url
 printf '\\n@@flowpad-git:remote-rc=%s@@\\n' "$?"
+b=$(git symbolic-ref -q --short HEAD) && git show-ref --verify --quiet "refs/remotes/origin/$b"
+printf '\\n@@flowpad-git:origin-branch-rc=%s@@\\n' "$?"
 """
 
 # The tracked half of the line counts, appended to the status script: is there a
@@ -450,8 +453,9 @@ class GitRepo:
 
     async def _status_reads(
         self, line_counts: bool
-    ) -> tuple[str, str, dict[str, tuple[int | None, int | None]]] | None:
-        """``(porcelain v1 status, remote URL or "", line counts)``; None when not a repo.
+    ) -> tuple[str, str, dict[str, tuple[int | None, int | None]], bool | None] | None:
+        """``(porcelain v1 status, remote URL or "", line counts, origin has this
+        branch)``; None when not a repo. The last is None when it was not read.
 
         One invocation on a POSIX node — status, the remote and the tracked line
         counts — plus one more only when there is something untracked to count
@@ -465,7 +469,7 @@ class GitRepo:
             # ``ls-remote --get-url`` resolves the upstream's remote, else origin,
             # through insteadOf rewrites — and never touches the network.
             remote = await self._git("ls-remote", "--get-url")
-            return status.stdout, (remote.stdout.strip() if remote.ok else ""), counts
+            return status.stdout, (remote.stdout.strip() if remote.ok else ""), counts, None
 
         reply = await self._git_script(_STATUS_SCRIPT + (_TRACKED_COUNTS_SCRIPT if line_counts else "") + "exit 0\n")
         if not reply.ok:
@@ -484,7 +488,7 @@ class GitRepo:
                 # there is no untracked count anyone would read.
                 if any(line.startswith("??") for line in status_out.splitlines()):
                     counts.update(await self._untracked_line_counts())
-        return status_out, remote_url, counts
+        return status_out, remote_url, counts, facts.get("origin-branch-rc") == "0"
 
     async def _script_numstat(self, script: str) -> dict[str, tuple[int | None, int | None]]:
         """Run one of the counts scripts (fresh scratch token) and parse its numstat."""
@@ -745,7 +749,7 @@ class GitRepo:
         reads = await self._status_reads(line_counts)
         if reads is None:
             return GitStatus(error="not a git repository")
-        status_out, remote_text, numstat = reads
+        status_out, remote_text, numstat, origin_has_branch = reads
 
         branch, upstream, ahead, behind = None, None, 0, 0
 
@@ -808,6 +812,12 @@ class GitRepo:
         operation = await self._open_operation() if unmerged or branch is None else None
         conflict = GitConflict(paths=unmerged, operation=operation) if unmerged or operation else None
 
+        candidate = None
+        if branch and not upstream and remote_url:
+            if origin_has_branch is None:
+                candidate = await self._upstream_candidate(branch)
+            elif origin_has_branch:
+                candidate = f"origin/{branch}"
         return GitStatus(
             error=None,
             branch=branch,
@@ -818,7 +828,7 @@ class GitRepo:
             conflict=conflict,
             remote_url=remote_url,
             remote_web_url=self._remote_web_url(remote_url) if remote_url else None,
-            upstream_candidate=await self._upstream_candidate(branch) if branch and not upstream and remote_url else None,
+            upstream_candidate=candidate,
         )
 
     async def _commit_show_args(self, revision: str) -> tuple[str, ...]:
