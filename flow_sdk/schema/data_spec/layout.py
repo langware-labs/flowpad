@@ -751,17 +751,10 @@ class FolderLayout(DatasetLayout):
         target = examples_dir / check_key(key)
         if target.is_dir() and not stored_row_id(ex.metadata):
             ex = ex.model_copy(update={"metadata": {**ex.metadata, ROW_ID: row_id(target, dataset_id)}})
-        return self._swap_in(target, lambda scratch: self.write_example(scratch, ex, contents=contents))
-
-    @staticmethod
-    def _swap_in(target: Path, build: Any) -> str:
-        """The atomic replace every example write goes through: ``build(scratch)`` writes the example
-        into a scratch dir beside ``target`` and answers its id; the scratch then takes ``target``'s
-        place, so a reader sees the old example or the new one, never half of each."""
         stamp = uuid.uuid4().hex[:8]
-        scratch, old = target.parent / f".{target.name}.new-{stamp}", target.parent / f".{target.name}.old-{stamp}"
+        scratch, old = examples_dir / f".{key}.new-{stamp}", examples_dir / f".{key}.old-{stamp}"
         try:
-            rid = build(scratch)
+            rid = self.write_example(scratch, ex, contents=contents)
             if target.exists():
                 target.rename(old)
             scratch.rename(target)
@@ -786,14 +779,20 @@ class FolderLayout(DatasetLayout):
         target = examples_dir / check_key(key)
         meta = _load_example_meta(target)[0] if target.is_dir() else {}
         rid = row_id(target, dataset_id, meta) if target.is_dir() else mint_uuid()
-
-        def build(scratch: Path) -> str:
+        stamp = uuid.uuid4().hex[:8]
+        scratch, old = examples_dir / f".{key}.new-{stamp}", examples_dir / f".{key}.old-{stamp}"
+        try:
             (scratch / "input").mkdir(parents=True)
             _write(scratch / "input" / main_document, json.dumps(input, indent=2, default=str, ensure_ascii=False) + "\n")
             self.write_example_meta(scratch, {**meta, ROW_ID: rid, "kind": meta.get("kind") or kind}, {})
-            return rid
-
-        return self._swap_in(target, build)
+            if target.exists():
+                target.rename(old)
+            scratch.rename(target)
+        finally:
+            for leftover in (scratch, old):
+                if leftover.exists():
+                    shutil.rmtree(leftover)
+        return rid
 
     def delete_example(self, folder, example_id_: str, *, dataset_id: str) -> str:
         """Remove one example (its whole directory). Returns its key; ``LookupError`` when absent."""
