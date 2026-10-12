@@ -34,18 +34,6 @@ def _app() -> Starlette:
     return app
 
 
-@pytest.fixture
-def local_gate(tmp_path, monkeypatch):
-    """Gate on (off switch cleared), token file under tmp_path, no hub secret."""
-    path = tmp_path / "instance" / gate.LOCAL_TOKEN_FILENAME
-    monkeypatch.delenv(gate.OFF_SWITCH_ENV, raising=False)
-    monkeypatch.setattr(gate, "local_token_path", lambda: path)
-    gate._local_cache.clear()
-    with patch.object(gate, "get_cookie_gate", return_value=None):
-        yield path
-    gate._local_cache.clear()
-
-
 def _header(token: str) -> dict[str, str]:
     return {gate.HEADER_NAME: token}
 
