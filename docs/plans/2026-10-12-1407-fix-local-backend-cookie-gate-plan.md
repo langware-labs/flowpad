@@ -6,7 +6,7 @@ date: '2026-10-12'
 artifact_contract: ce-unified-plan/v1
 product_contract_source: ce-plan-bootstrap
 execution: code
-version: 2
+version: 3
 ---
 # Local Backend Cookie Gate - Plan
 
@@ -122,9 +122,9 @@ The authentication mechanism already exists. `CookieGateMiddleware` gates everyt
 
   * `/auth/login_callback`, `/auth/oauth/complete`, `/auth/oauth/callback`, `/api/v1/cloud/logout_callback`.
 
-  * Recommendation: yes, as an explicit allowlist (KTD8), because each one checks its own credential before acting. `logout_callback` needs checking first, since logout may not require a credential.
+  - Recommendation: yes, as an explicit allowlist (KTD8), because each one checks its own credential before acting. `logout_callback` needs checking first, since logout may not require a credential.
 
-  * The alternative needs a hub change: deliver these through `flowpad://` or a token-carrying hop.
+  - The alternative needs a hub change: deliver these through `flowpad://` or a token-carrying hop.
 
 * OQ2. **Blocking for release, not for implementation.** The hub's E2B template must set the off switch, so the template snapshot carries no token and the hub's health probe before arming still passes. This needs confirming and changing in `flowpad-hub`.
 
