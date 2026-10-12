@@ -1450,7 +1450,7 @@ class DataSource(SetupSkippable, Entity):
 
         report = await ingest_items([envelope_of(written, data_source_id=str(self.id), provider=self.provider)])
         answer = {"item_id": report.outcomes[0].entity_id, "origin": written.origin.model_dump(mode="json"), "status": status}
-        if getattr(written, "warnings", ()):
+        if written.warnings:
             answer["warnings"] = list(written.warnings)
         return answer
 

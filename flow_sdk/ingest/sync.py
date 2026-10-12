@@ -25,7 +25,7 @@ from typing import Optional
 from flow_sdk.builtin.data_driver import DataDriver
 from flow_sdk.builtin.data_source import DataSource
 from flow_sdk.ingest.driver_runtime import Pass, position_of
-from flow_sdk.ingest.health import ERROR_DETAIL_MAX, SourceHealth, classify
+from flow_sdk.ingest.health import MIRROR_CODES, SourceHealth, classify, stamp_error
 from flow_sdk.ingest.ingest_on_tag import emit_sync_tag
 from flow_sdk.ingest.ingestor import ingest_items
 from flow_sdk.ingest.models import IngestMode, IngestReport
@@ -122,7 +122,8 @@ async def _sync_source(source: DataSource, *, now: Optional[datetime] = None) ->
     # Idle and clean: nothing arrived, the position did not move and the row already reads healthy,
     # so the steady state is one request and zero writes per tick (the poller stamped the next poll).
     idle = found.unchanged and found.cursor == source.cursor and (found.manifest or {}) == (source.manifest or {})
-    clean = source.health == SourceHealth.OK.value and not source.error_code and not source.consecutive_failures
+    clean = (source.health == SourceHealth.OK.value and (not source.error_code or source.error_code in MIRROR_CODES)
+             and not source.consecutive_failures)
     # Waiting on a person, not broken: the source keeps polling and its card says what to resolve.
     waiting = ("write_back_held", written.sentence()) if written is not None and written.needs_a_person else (None, None)
     if idle and clean and waiting[0] is None:
@@ -211,8 +212,7 @@ async def _fail_source(
 def _stamp_source(source: DataSource, health: SourceHealth, code: Optional[str], detail: Optional[str], now: datetime) -> None:
     """The source row's verdict fields, written in ONE place — both endings of a run stamp them."""
     source.health = health.value
-    source.error_code = code
-    source.error_detail = detail[:ERROR_DETAIL_MAX] if detail else detail
+    stamp_error(source, code, detail)
     source.schedule_next(now)
 
 
