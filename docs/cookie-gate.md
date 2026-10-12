@@ -30,7 +30,7 @@ backend code involved; the CLI and Electron read the same file.
 
 | Caller | How |
 |---|---|
-| `flow` CLI, workers, webhook relay, graph-workflow functions | `gate_headers` → `X-Cookie-Gate`, the token of the instance whose `server.json` names the URL's port |
+| `flow` CLI, workers, webhook relay, graph-workflow functions | `gate_headers` → `X-Cookie-Gate`, this instance's token (one Flowpad per machine; dev setups running several turn the gate off) |
 | Electron | `electron/cookie-gate.js`: the header on its health check, the cookie set in the window before every `loadURL` |
 | A browser opened by the user (typed URL, bookmark, OS launch) | the middleware sets the cookie on that page load (below) |
 | Scripts and assistant instructions | `-H "X-Cookie-Gate: $(cat <instance_dir>/.cookie_gate)"`, or the `flow` CLI |
