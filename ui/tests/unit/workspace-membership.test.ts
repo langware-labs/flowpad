@@ -107,6 +107,6 @@ describe('the active workspace in the URL', () => {
     expect(String(navigate.mock.calls.at(-1)?.[0])).toContain(`${WORKSPACE_PARAM}=${WIN.id}`);
 
     navigation.openWorkspace(null);
-    expect(String(navigate.mock.calls.at(-1)?.[0])).not.toContain(WORKSPACE_PARAM);
+    expect(new URL(String(navigate.mock.calls.at(-1)?.[0]), 'http://localhost').searchParams.has(WORKSPACE_PARAM)).toBe(false);
   });
 });

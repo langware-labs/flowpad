@@ -11,6 +11,7 @@ fetch), everything else is the real resolver over real rows and files.
 
 from __future__ import annotations
 
+import asyncio
 import json
 from pathlib import Path
 
@@ -337,7 +338,7 @@ async def test_add_dependency_by_id_into_the_project_or_into_one_of_its_assets(t
 
     state = await me_p.add_dependency(str(extra.typeid), asset=str(personal.typeid), label="Extra", optional=False)
 
-    assert (state.state, state.via, state.label) == ("ready", "data_source/personal", "Extra")
+    assert (state.state, state.via, state.label) == ("ready", None, "Extra")
     declared = flow_json.read(Path(personal.asset_ref), AssetFlowJsonSpec)
     assert [e.source for e in declared.entries()] == [str(team.typeid), str(extra.typeid)]
     assert not (Path(me_p.fs_storage_mount_path) / "flow.json").exists(), "the project's own file is untouched"
@@ -397,3 +398,130 @@ async def test_a_skill_folder_declares_too(tmp_path):
 
     assert [(s.name, s.state, s.via_path) for s in states] == [("kb", "ready", ["skills/answer"])]
     assert _canon(kb.files_root) in p.include_dirs
+
+
+async def _reader(project):
+    from flow_sdk.builtin.agent import Agent
+
+    agent = Agent(name="policy-reader", project_id=str(project.id), system_prompt="Read the policies.",
+                  asset_ref=str(Path(project.fs_storage_mount_path) / "agentic-assets" / "agent" / "policy-reader"))
+    await agent.save()
+    return agent
+
+
+async def test_agent_preview_is_scoped_and_performs_no_writes_or_fetches(tmp_path, monkeypatch):
+    (personal, team, company), (project, _, _) = await _layers(tmp_path)
+    agent = await _reader(project)
+    before = dict(project_dependencies._LAST_FAILURE)
+
+    async def forbidden(*args, **kwargs):
+        pytest.fail("read-only inspection attempted a write or network request")
+
+    from flow_sdk.builtin.folder import Folder
+    monkeypatch.setattr(Folder, "mint_for_path", forbidden)
+    monkeypatch.setattr(project_dependencies, "_reconcile", forbidden)
+    monkeypatch.setattr(project_dependencies, "_materialize", forbidden)
+    monkeypatch.setattr(Project, "save", forbidden)
+    monkeypatch.setattr(dep_resolve, "hub_lookup", forbidden)
+    states = await project.preview_dependencies(asset=str(agent.typeid), sources=[str(personal.typeid)])
+    assert [state.typeid for state in states] == [str(s.typeid) for s in (personal, team, company)]
+    direct = project_dependencies.default_name(str(personal.typeid))
+    assert [s.via_path for s in states] == [[], [direct], [direct, "team-kb"]]
+    assert not (Path(agent.asset_ref) / "flow.json").exists()
+    assert not project.include_dirs
+    assert project_dependencies._LAST_FAILURE == before
+
+
+async def test_agent_attachment_idempotence_and_remove_preserve_project_and_sources(tmp_path):
+    (personal, team, company), (project, _, _) = await _layers(tmp_path)
+    agent = await _reader(project)
+    _declare(project, {"dependencies": {"already-personal": str(personal.typeid)}})
+    sources_before = [(s.id, s.project_id, s.owner, Path(s.asset_ref, "data_source.json").read_bytes())
+                      for s in (personal, team, company)]
+    added = await project.add_dependency(str(personal.typeid), name="personal", asset=str(agent.typeid))
+    assert (added.state, added.via_path) == ("ready", [])
+    await project.add_dependency(f"data_source.id.{personal.id}", name="again", asset=str(agent.typeid))
+    assert len(flow_json.read(Path(agent.asset_ref), AssetFlowJsonSpec).entries()) == 1
+    await project.add_dependency(str(team.typeid), name="team", asset=str(agent.typeid))
+    assert [s.typeid for s in await project.dependencies(asset=str(agent.typeid))] == [
+        str(personal.typeid), str(team.typeid), str(company.typeid)]
+    with pytest.raises(ValueError, match="not a direct dependency"):
+        await project.remove_dependency("company-kb", asset=str(agent.typeid))
+    remaining = await project.remove_dependency("personal", asset=str(agent.typeid))
+    assert [(s.typeid, s.via_path) for s in remaining] == [(str(team.typeid), []), (str(company.typeid), ["team"])]
+    await project.remove_dependency("team", asset=str(agent.typeid))
+    assert await project.dependencies(asset=str(agent.typeid)) == []
+    assert {s.files_root for s in (personal, team, company)} <= set(project.include_dirs)
+    assert sources_before == [(s.id, s.project_id, s.owner, Path(s.asset_ref, "data_source.json").read_bytes())
+                              for s in (personal, team, company)]
+
+
+async def test_agent_candidates_and_writes_reject_unrelated_project(tmp_path):
+    (personal, team, company), (project, _, _) = await _layers(tmp_path)
+    agent = await _reader(project)
+    other = await _project(tmp_path, "unrelated")
+    unrelated = await _source(tmp_path, other, "unrelated")
+    other_agent = await _reader(other)
+    candidates = await project.dependency_candidates(asset=str(agent.typeid))
+    assert set(candidates) == {str(s.typeid) for s in (personal, team, company)}
+    with pytest.raises(ValueError, match="not a data source in this project"):
+        await project.preview_dependencies(asset=str(agent.typeid), sources=[str(unrelated.typeid)])
+    with pytest.raises(ValueError, match="not an asset of this project"):
+        await project.add_dependency(str(personal.typeid), asset=str(other_agent.typeid))
+    assert not Path(other_agent.asset_ref, "flow.json").exists()
+
+
+async def test_scoped_walk_handles_diamond_cycle_and_missing_chain(tmp_path):
+    (personal, team, company), (project, _, _) = await _layers(tmp_path)
+    agent = await _reader(project)
+    _depends(agent, {"dependencies": {"personal": str(personal.typeid), "team": str(team.typeid)}})
+    _depends(company, {"dependencies": {"back": str(personal.typeid)}})
+    states = await project.dependencies(asset=str(agent.typeid))
+    assert [s.typeid for s in states] == [str(s.typeid) for s in (personal, team, company)]
+    assert [s.via_path for s in states] == [[], [], ["team"]]
+    await company.delete()
+    missing = next(s for s in await project.dependencies(asset=str(agent.typeid)) if s.source == str(company.typeid))
+    assert (missing.state, missing.via_path) == ("missing", ["team"])
+
+
+@pytest.mark.parametrize("count", [32, 33])
+async def test_stress_real_chain_limit(tmp_path, count):
+    project = await _project(tmp_path, "chain")
+    agent = await _reader(project)
+    sources = [await _source(tmp_path, project, f"node-{i}") for i in range(count)]
+    for parent, child in zip([agent, *sources], sources):
+        _depends(parent, {"dependencies": {child.name: str(child.typeid)}})
+    states = await project.dependencies(asset=str(agent.typeid))
+    assert [s.typeid for s in states if s.state == "ready"] == [str(s.typeid) for s in sources[:32]]
+    assert len(states[-1].via_path) == count - 1
+    assert states[-1].state == ("ready" if count == 32 else "invalid")
+    if count == 33:
+        assert "more than 32" in states[-1].reason
+
+
+async def test_stress_dense_cycles_deduplicate_every_source(tmp_path):
+    project = await _project(tmp_path, "dense")
+    agent = await _reader(project)
+    sources = [await _source(tmp_path, project, f"node-{i}") for i in range(16)]
+    for parent in sources:
+        _depends(parent, {"dependencies": {s.name: str(s.typeid) for s in sources}})
+    _depends(agent, {"dependencies": {"personal": str(sources[0].typeid)}})
+    states = await project.dependencies(asset=str(agent.typeid))
+    assert len(states) == 16
+    assert {s.typeid for s in states if s.state == "ready"} == {str(s.typeid) for s in sources}
+    assert [s.via_path for s in states] == [[]] + [["personal"]] * 15
+
+
+async def test_stress_concurrent_attachment_rounds_preserve_sources(tmp_path):
+    project = await _project(tmp_path, "concurrent")
+    agent = await _reader(project)
+    sources = [await _source(tmp_path, project, f"source-{i}") for i in range(4)]
+    files = [p for s in sources for root in (s.asset_ref, s.files_root) for p in Path(root).rglob("*") if p.is_file()]
+    before = {p: p.read_bytes() for p in files}
+    for _ in range(3):
+        added = await asyncio.gather(*(project.add_dependency(str(s.typeid), name=s.name, asset=str(agent.typeid)) for s in sources))
+        assert {s.typeid for s in added if s.state == "ready"} == {str(s.typeid) for s in sources}
+        assert len(flow_json.read(Path(agent.asset_ref), AssetFlowJsonSpec).entries()) == 4
+        await asyncio.gather(*(project.remove_dependency(s.name, asset=str(agent.typeid)) for s in sources))
+        assert await project.dependencies(asset=str(agent.typeid)) == []
+    assert {p: p.read_bytes() for p in files} == before

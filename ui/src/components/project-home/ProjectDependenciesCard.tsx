@@ -1,3 +1,6 @@
+import { dependencyHomeDock } from '@src/project-home-page/dependency-home';
+import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { openProjectLoad } from '@src/components/project-setup/project-load-store';
 import React, { useCallback, useState } from 'react';
 import { Download, Loader2, Package, RefreshCw, Trash2 } from 'lucide-react';
 import { Plural, Trans, useLingui } from '@lingui/react/macro';
@@ -5,11 +8,7 @@ import type { DependencyState, Project } from '@sdk';
 import { Button } from '@src/components/ui/button';
 import { WikiButton } from '@src/components/wiki-tip';
 import { DEPENDENCIES_WIKI } from '@src/components/assets/dependency-sources';
-import {
-  DependencyKindChip,
-  DependencyStateChip,
-  dependencySourceIcon,
-} from '@src/components/assets/DependencyChips';
+import { DependencyKindChip, DependencyStateChip, dependencySourceIcon } from '@src/components/assets/DependencyChips';
 import { useProjectDependencies } from '@src/hooks/use-project-dependencies';
 import { notify } from '@src/notifications';
 
@@ -25,23 +24,21 @@ interface ProjectDependenciesCardProps {
  */
 export const ProjectDependenciesCard: React.FC<ProjectDependenciesCardProps> = ({ project }) => {
   const { t } = useLingui();
+  const { navigation } = useDockNavigation();
   const { dependencies, warnings, install, remove, resolve } = useProjectDependencies(project);
   // The row whose action is running (`<name>` for install/remove, '*' for a resolve).
   const [busy, setBusy] = useState<string | null>(null);
 
-  const run = useCallback(
-    async (key: string, action: () => Promise<unknown>, failure: string) => {
-      setBusy(key);
-      try {
-        await action();
-      } catch (err) {
-        notify.error({ title: failure, message: err instanceof Error ? err.message : undefined });
-      } finally {
-        setBusy(null);
-      }
-    },
-    [],
-  );
+  const run = useCallback(async (key: string, action: () => Promise<unknown>, failure: string) => {
+    setBusy(key);
+    try {
+      await action();
+    } catch (err) {
+      notify.error({ title: failure, message: err instanceof Error ? err.message : undefined });
+    } finally {
+      setBusy(null);
+    }
+  }, []);
 
   if (dependencies.length === 0) return null;
 
@@ -88,6 +85,7 @@ export const ProjectDependenciesCard: React.FC<ProjectDependenciesCardProps> = (
           const Icon = dependencySourceIcon(dep.source);
           const rowBusy = busy === dep.name;
           const via = dep.via;
+          const home = dependencyHomeDock(dep, project.id);
           return (
             <li
               key={`${dep.via ?? ''}/${dep.name}`}
@@ -108,7 +106,58 @@ export const ProjectDependenciesCard: React.FC<ProjectDependenciesCardProps> = (
                   </span>
                 )}
               </div>
-              <DependencyStateChip dependency={dep} />
+              {dep.lifecycle?.state === 'setup_required' && dep.project_id && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-7 text-xs"
+                  data-testid="dependency-setup"
+                  onClick={() =>
+                    openProjectLoad({
+                      projectId: dep.project_id!,
+                      projectName: dep.label || dep.name,
+                      initial: dep.lifecycle!,
+                    })
+                  }
+                >
+                  <Trans>Setup required</Trans>
+                </Button>
+              )}
+              {dep.lifecycle?.state === 'running' && (
+                <span className="flex items-center gap-1 text-xs" role="status">
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                  <Trans>Preparing…</Trans>
+                </span>
+              )}
+              {dep.lifecycle?.state === 'failed' && dep.project_id && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() =>
+                    openProjectLoad({
+                      projectId: dep.project_id!,
+                      projectName: dep.label || dep.name,
+                      initial: dep.lifecycle!,
+                    })
+                  }
+                >
+                  <Trans>Needs attention</Trans>
+                </Button>
+              )}
+              {home && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-7 text-xs"
+                  data-testid="dependency-open"
+                  onClick={() => navigation.openDock(home)}
+                >
+                  <Trans>Open</Trans>
+                </Button>
+              )}
+              {(dep.state !== 'ready' || !dep.lifecycle || dep.lifecycle.state === 'ready') && (
+                <DependencyStateChip dependency={dep} />
+              )}
               <DependencyKindChip required={dep.required} />
               {installable(dep) && (
                 <Button

@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import { ExternalLink } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { lucideByName } from '@src/lib/lucide-by-name';
-import { APIEntity, TypeId, dataManager, workerFromSessionType, type AnyEntity } from '@sdk';
+import { DataSource, TypeId, dataManager, workerFromSessionType, type AnyEntity } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { withHomePage } from '@src/project-home-page/home-page-state';
@@ -244,6 +244,8 @@ export function buildDockPointer(
       // Entity type is `flowpad_diagnosis` but the view type is `diagnosis`, so the
       // generic fallback can't resolve it — map explicitly to the diagnosis viewer.
       return DockPointer.forDiagnosis(resolved.id);
+    case DataSource.type:
+      return DockPointer.forDataSources({ section: 'source', id: resolved.id, tab: null });
     case 'conversation':
       return DockPointer.forConversation(resolved.id);
     case 'claude_session':
@@ -316,7 +318,6 @@ export function ContextEntityChip({ typeId, inside, onClick, projectId, title, s
   // no asset_ref to fetch and no deferral/prewarm dance — the chip just renders.
   // Generic context chips can point at any entity type; the SDK hook's recursive
   // entity generic has no concrete type here.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data, notFound } = useEntity<AnyEntity>(typeId);
   // ``notFound`` is a terminal 404 — the target has no local row (e.g. a
   // dangling/unmaterialized context reference). Render a muted, non-navigable

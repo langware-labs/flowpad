@@ -72,6 +72,11 @@ class Source:
     durable_cursor: ClassVar[bool] = False
     #: Sub-tick poll cadence while someone is watching; ``None`` means the provider does not tolerate it.
     attention_poll_seconds: ClassVar[Optional[int]] = None
+    #: A pass read from the start to the end lists the WHOLE collection (a table, a CRM object): a
+    #: record it no longer lists is GONE in the outside system, and the application drops its copy.
+    #: False for a source that lists a window (a feed's recent entries, a mailbox since last week),
+    #: where absence proves nothing.
+    lists_everything: ClassVar[bool] = False
     #: Pages one pass may read; ``None`` reads a traversal to its end. A provider whose rate cap
     #: allows one request per interval declares 1.
     pages_per_pass: ClassVar[Optional[int]] = None

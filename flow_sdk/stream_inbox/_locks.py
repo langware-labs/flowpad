@@ -13,7 +13,9 @@ byte-identical copy — a third was inevitable.
 from __future__ import annotations
 
 import asyncio
+import logging
 import weakref
+from typing import Any, Awaitable, Callable
 
 Registry = "weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, asyncio.Lock]"
 
@@ -66,3 +68,25 @@ def keyed_lock_held(registry: "weakref.WeakKeyDictionary", key: str) -> bool:
 def any_keyed_lock_held(registry: "weakref.WeakKeyDictionary") -> bool:
     """Whether any key's lock in *registry* is held. Never creates a lock."""
     return any(lock.locked() for per_loop in list(registry.values()) for lock in list(per_loop.values()))
+
+
+async def single_flight(registry: "weakref.WeakKeyDictionary", key: str, run: Callable[[], Awaitable[Any]], failed: str) -> None:
+    """Run ``run`` for ``key`` once at a time on this loop; a call that lands while it runs buys ONE
+    more round, never a pile of them (a sync that completes during a sweep). A failing round is
+    logged (``failed`` % key) and the next call tries again."""
+    pending = registry.setdefault(asyncio.get_running_loop(), {})
+    if key in pending:
+        pending[key] = True
+        return
+    pending[key] = False
+    try:
+        while True:
+            try:
+                await run()
+            except Exception:  # noqa: BLE001
+                logging.getLogger(__name__).exception(failed, key)
+            if not pending[key]:
+                return
+            pending[key] = False
+    finally:
+        pending.pop(key, None)

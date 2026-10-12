@@ -200,6 +200,7 @@ async def save_credential(
     deployment_id: Optional[str] = None,
     store: Optional[str] = None,
     require_setup: bool = True,
+    auto_declare: bool = False,
 ) -> "Credential":
     """Create a credential in a scope, or update one; then write any values where ``deployment_id``
     (default: this computer) keeps them. ``store`` (``env`` / ``vault``) first makes that deployment
@@ -224,6 +225,10 @@ async def save_credential(
         manifest_in["name"] = existing.name
     else:
         target_scope, project = await _new_scope(str(scope or "").strip(), project_id)
+
+    if auto_declare:
+        manifest_in, existing = await _auto_declaration(manifest_in, target_scope, project)
+        require_setup = False
 
     try:
         parsed = CredentialSpec.model_validate({**manifest_in, "schema": CURRENT_SCHEMA})
@@ -274,6 +279,48 @@ async def save_credential(
     await _write_values(spec, target_scope, dict(values or {}), await Placement.of(deployment))
     await spec.save()
     return spec
+
+
+async def _auto_declaration(manifest: dict, scope: CredentialScope, project: Optional["Project"]):
+    """Match exact variable names, never guess a provider from a prefix or a secret value."""
+    from flow_sdk.builtin.credential_resolver import credentials_in_scope  # noqa: PLC0415
+
+    variables = dict(manifest.get("vars") or {})
+    if len(variables) != 1:
+        raise CredentialError("auto setup expects one variable at a time")
+    key = next(iter(variables))
+    name = str(manifest.get("name") or "").strip()
+    owned = [spec for spec, location in await credentials_in_scope(project) if location.key == scope.key]
+    matches = [spec for spec in owned if key in spec.vars]
+    if name and matches and any(spec.name != name for spec in matches):
+        raise CredentialError(f"{key} already belongs to {matches[0].name}")
+    if not matches and name:
+        matches = [spec for spec in owned if spec.name == name]
+    if len(matches) > 1:
+        raise CredentialError(f"More than one credential declares {key}; edit its credential directly")
+    existing = matches[0] if matches else None
+    template = None
+    if existing is None:
+        templates = await shipped_templates()
+        matches = [spec for spec in templates if spec.name == name] if name else [
+            spec for spec in templates if key in spec.vars
+        ]
+        if len(matches) > 1:
+            raise CredentialError(f"More than one credential matches {key}; enter a credential name")
+        template = matches[0] if matches else None
+    target_name = name or (str(template.name) if template is not None else key.lower().replace("_", "-").strip("-"))
+    if existing is None:
+        existing = next((spec for spec in owned if spec.name == target_name), None)
+    source = existing or template
+    if source is not None and source.kind != CredentialKind.ENV:
+        raise CredentialError("Choose a credential that stores environment variables")
+    resolved = _manifest_of(source) if source is not None else {
+        "name": target_name, "vars": {},
+    }
+    current = resolved["vars"].get(key)
+    base = current.model_dump(mode="json") if current is not None else {}
+    resolved["vars"] = {**resolved["vars"], key: {**base, **variables[key]}}
+    return resolved, existing
 
 
 async def set_credential_values(

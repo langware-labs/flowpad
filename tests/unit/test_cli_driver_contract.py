@@ -227,7 +227,7 @@ def test_codex_and_copilot_do_not_support_plan_mode():
 
 
 def test_codex_and_copilot_do_not_pin_resume_cwd():
-    # Only claude pins the resume cwd (and only claude forks).
+    # Only Claude pins the resume cwd.
     assert CodexDriver.pins_resume_cwd is False
     assert CopilotDriver.pins_resume_cwd is False
     assert OpenCodeDriver.pins_resume_cwd is False
@@ -236,8 +236,8 @@ def test_codex_and_copilot_do_not_pin_resume_cwd():
 
 def test_codex_never_emits_fork_session_flag():
     # ``fork_session_id`` lives on the base options so callers can read it
-    # without a hasattr guard, but only claude serialises/emits it. Setting it
-    # on codex options must not leak a ``--fork-session`` flag into argv or the
+    # without a hasattr guard. Codex uses its native fork subcommand,
+    # never Claude's ``--fork-session`` flag in argv or the
     # shell string on the resume path.
     cmd = CodexAgentOptions(workdir="/repo", session_id="s", resume=True)
     cmd.fork_session_id = "parent-src"
@@ -327,9 +327,8 @@ def test_opencode_composer_pattern_is_a_regex_trait():
     assert OpenCodeDriver.pty_composer_ready_pattern.search("  Ask anything... \"Fix broken tests\"")
 
 
-def test_opencode_can_fork_unlike_codex_and_copilot():
-    """OpenCode is the second forking vendor after claude — but its ``--fork``
-    is a modifier on a resume, not a standalone flag."""
+def test_opencode_fork_is_a_resume_modifier():
+    """OpenCode uses ``--fork`` as a modifier on a resume."""
     forked = OpenCodeAgentOptions(
         workdir="/repo", session_id="ses_a", resume=True, fork_session_id="ses_parent"
     )

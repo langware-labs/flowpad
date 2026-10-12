@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   dataContext,
   onProjectDependenciesChanged,
+  onProjectLoadChanged,
   type DependencyState,
   type Project,
   type ProjectContextDirInfo,
@@ -12,6 +13,8 @@ import {
 export type DependencyKind = 'required' | 'optional';
 
 interface UseProjectDependenciesOptions {
+  /** Read/write this asset's own flow.json rather than the project declaration. */
+  asset?: string;
   /** Fetch the declared dependencies' states (`GET dependencies`). Off for
    *  callers that only need the mutations or the resolved folders, so every
    *  surface that edits dependencies doesn't add a request. Default true. */
@@ -43,10 +46,12 @@ interface UseProjectDependenciesOptions {
  */
 export function useProjectDependencies(
   project: Project | null | undefined,
-  { fetchStates = true }: UseProjectDependenciesOptions = {},
+  { fetchStates = true, asset }: UseProjectDependenciesOptions = {},
 ) {
   const projectRef = useRef<Project | null>(null);
   projectRef.current = project ?? null;
+  const assetRef = useRef(asset);
+  assetRef.current = asset;
 
   // CONTENT-keyed memos, not identity-keyed: entity updates fill the SAME
   // array instance in place (store.deepAssign), so the reference never changes
@@ -73,27 +78,47 @@ export function useProjectDependencies(
   // The background resolve opening the project started is still running.
   const [resolving, setResolving] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState('');
   // Discards a stale response when the project changes mid-flight (same
   // tick-guard as useProjectAssetMenu).
   const tickRef = useRef(0);
+  const scopeKey = `${project?.id ?? ''}:${asset ?? ''}`;
+  const scopeRef = useRef(scopeKey);
+  if (scopeRef.current !== scopeKey) {
+    scopeRef.current = scopeKey;
+    tickRef.current += 1;
+  }
+  const [loadedScope, setLoadedScope] = useState(scopeKey);
 
   const refetch = useCallback(async () => {
     const p = projectRef.current;
+    const requestedScope = scopeRef.current;
     const tick = ++tickRef.current;
     if (!p) {
       setDependencies([]);
       setWarnings([]);
       setResolving(false);
+      setIsLoading(false);
+      setError('');
+      setLoadedScope(requestedScope);
       return;
     }
     setIsLoading(true);
+    setError('');
     try {
-      const next = await p.dependencies();
+      const next = await (assetRef.current ? p.dependencies({ asset: assetRef.current }) : p.dependencies());
       if (tickRef.current !== tick) return;
       setDependencies(next.dependencies);
       setWarnings(next.warnings);
       setResolving(next.resolving);
+      setLoadedScope(requestedScope);
     } catch (err) {
+      if (tickRef.current !== tick) return;
+      setError(err instanceof Error ? err.message : String(err));
+      setDependencies([]);
+      setWarnings([]);
+      setResolving(false);
+      setLoadedScope(requestedScope);
       console.error('[useProjectDependencies] failed', err);
     } finally {
       if (tickRef.current === tick) setIsLoading(false);
@@ -103,12 +128,17 @@ export function useProjectDependencies(
   const projectId = project?.id ?? null;
   useEffect(() => {
     if (fetchStates) void refetch();
-  }, [fetchStates, projectId, contextDirsKey, contextDirInfosKey, refetch]);
+  }, [fetchStates, projectId, asset, contextDirsKey, contextDirInfosKey, refetch]);
 
   useEffect(() => {
     if (!fetchStates || !projectId) return;
     return onProjectDependenciesChanged(projectId, () => void refetch());
   }, [fetchStates, projectId, refetch]);
+
+  useEffect(() => {
+    if (!fetchStates) return;
+    return onProjectLoadChanged(() => void refetch());
+  }, [fetchStates, refetch]);
 
   /** Declare a dependency. `source` is anything `add-dependency` takes — a
    *  `git+…` / `hub:…` / `file:…` source, a local folder or a bare git URL.
@@ -117,7 +147,7 @@ export function useProjectDependencies(
     async (source: string, kind: DependencyKind = 'required', options: { name?: string; path?: string } = {}) => {
       const p = projectRef.current;
       if (!p) return null;
-      return p.addDependency(source, { ...options, optional: kind === 'optional' });
+      return p.addDependency(source, { ...options, optional: kind === 'optional', ...(assetRef.current ? { asset: assetRef.current } : {}) });
     },
     [],
   );
@@ -148,7 +178,8 @@ export function useProjectDependencies(
     async (name: string) => {
       const p = projectRef.current;
       if (!p) return;
-      await p.removeDependency(name);
+      if (assetRef.current) await p.removeDependency(name, { asset: assetRef.current });
+      else await p.removeDependency(name);
     },
     [],
   );
@@ -176,10 +207,11 @@ export function useProjectDependencies(
   return {
     contextDirs,
     contextDirInfos,
-    dependencies,
-    warnings,
-    resolving,
-    isLoading,
+    dependencies: loadedScope === scopeKey ? dependencies : [],
+    warnings: loadedScope === scopeKey ? warnings : [],
+    error: loadedScope === scopeKey ? error : '',
+    resolving: loadedScope === scopeKey && resolving,
+    isLoading: isLoading || (fetchStates && !!project && loadedScope !== scopeKey),
     refetch,
     add,
     addPaths,

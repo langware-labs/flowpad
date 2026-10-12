@@ -1,0 +1,78 @@
+import { useEffect } from 'react';
+import { Trans, useLingui } from '@lingui/react/macro';
+import { onDependencyLoaded } from '@sdk';
+import { Button } from '@src/components/ui/button';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
+import { AskForm } from '@src/components/ask/AskForm';
+import { SetupTreeView } from './SetupTreeView';
+import { useProjectLoad } from './use-project-load';
+import { openProjectLoad, useProjectLoadStore, type ProjectLoadPayload } from './project-load-store';
+
+export function ProjectLoadDialogRoot() {
+  const { open, payload, setOpen } = useProjectLoadStore();
+  useEffect(
+    () =>
+      onDependencyLoaded((dependency) => {
+        if (dependency.project_id && dependency.lifecycle && dependency.lifecycle.state !== 'ready') {
+          openProjectLoad({
+            projectId: dependency.project_id,
+            projectName: dependency.label || dependency.name,
+            initial: dependency.lifecycle,
+          });
+        }
+      }),
+    [],
+  );
+  return open && payload ? (
+    <ProjectLoadDialog key={payload.projectId} {...payload} onClose={() => setOpen(false)} />
+  ) : null;
+}
+
+function ProjectLoadDialog({ projectId, projectName, initial, onClose }: ProjectLoadPayload & { onClose: () => void }) {
+  const { t } = useLingui();
+  const load = useProjectLoad(projectId, initial);
+  const state = load.result?.state;
+  const needsSetup = state === 'setup_required';
+  return (
+    <Dialog
+      open
+      onOpenChange={(open) => {
+        if (!open) onClose();
+      }}
+    >
+      <DialogContent data-testid="project-load-dialog" className="max-h-[85vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>{needsSetup ? t`${projectName} requires setup` : projectName}</DialogTitle>
+          <DialogDescription>{load.result?.detail || t`Preparing this project for use.`}</DialogDescription>
+        </DialogHeader>
+        {load.error && (
+          <p role="alert" className="text-sm text-destructive">
+            {load.error}
+          </p>
+        )}
+        {load.questionId && <AskForm questionId={load.questionId} showOp={false} onSettled={load.settleQuestion} />}
+        {!needsSetup && <SetupTreeView tree={load.tree} />}
+        {(load.starting || state === 'running') && (
+          <p role="status">
+            <Trans>Preparing…</Trans>
+          </p>
+        )}
+        <div className="flex justify-end gap-2">
+          <Button variant="outline" onClick={onClose}>
+            {needsSetup ? t`Not now` : t`Close`}
+          </Button>
+          {needsSetup && (
+            <Button disabled={load.starting} onClick={() => void load.load(true)}>
+              <Trans>Set up</Trans>
+            </Button>
+          )}
+          {state === 'failed' && (
+            <Button disabled={load.starting} onClick={() => void load.load()}>
+              <Trans>Try again</Trans>
+            </Button>
+          )}
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}

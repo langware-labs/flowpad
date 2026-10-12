@@ -1,6 +1,7 @@
 import { ContextEntitiesEnum, dataContext, initSdk, isHubOnly, TypeId } from '@sdk';
 import { redirect, replace, type LoaderFunctionArgs as LoaderArgs } from 'react-router';
 import { TimeIt } from '@src/utils/timeit';
+import { workspaceEntryDock } from './workspace-scope';
 import { adoptScopeProject } from './load-dock-pointer';
 import { DockPointer, VIEW_MODE_PARAM } from '@src/navigation/DockPointer';
 import { registerLoadRedirect, runLoadRedirects } from './load-redirects';
@@ -54,6 +55,12 @@ export async function loadHomePage(args: LoaderArgs) {
 
   const url = new URL(args.request.url);
   const dock = DockPointer.root().withOptionsFromUrl(`${url.pathname}${url.search}`);
+
+  const workspaceEntry = await workspaceEntryDock(dock);
+  if (workspaceEntry) {
+    // eslint-disable-next-line @typescript-eslint/only-throw-error
+    throw replace(workspaceEntry.toUrl(url.pathname));
+  }
 
   // The home has no view mode — it is the one open screen. An address that still
   // carries one (an old bookmark, a history entry from before) is canonicalized

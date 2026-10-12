@@ -217,3 +217,37 @@ $ flow dep add data_source-0a9d… --asset data_source-7c1e… --name company-kb
 $ flow dep list
 $ flow dep check data_source-0a9d…        # a dependency reached through another one, by its id
 ```
+
+## 10. Attach one source to an agent
+
+In the agent's **Data sources** section, choose **Add → From project** and search by
+source name. Selecting Personal previews Personal → Team → Company. Only Personal is
+written to the agent's `flow.json`; the other two remain dependencies of their sources.
+The list distinguishes direct attachments from sources included through another source.
+Removing a direct attachment removes its declaration, not the shared source or its files.
+
+The same operation uses the existing project API with an asset scope:
+
+```python
+from flow_sdk.builtin.agent import Agent
+
+agent = Agent(name=f"policy-assistant-{tag}", project_id=str(reader.id),
+              asset_ref=str(Path(reader.fs_storage_mount_path) / "agentic-assets" / "agent" / f"policy-assistant-{tag}"))
+await agent.save()
+await reader.add_dependency(str(dana_docs.typeid), asset=str(agent.typeid), name="personal", label="Personal")
+states = await reader.dependencies(asset=str(agent.typeid))
+# personal: []; team-kb: ['personal']; company-kb: ['personal', 'team-kb']
+await reader.remove_dependency("personal", asset=str(agent.typeid))
+```
+
+The `preview-dependencies` project action accepts `asset` and `sources` (a list of source
+TypeIds). It reads the proposed closure without installing, syncing, loading setup, or
+changing declarations or project links. `dependency-candidates` lists sources owned by
+the project or reachable through its dependency declarations; display names are labels,
+while identity and persistence use TypeIds.
+
+New agent sessions receive the resolved file roots even when launched in another project.
+Existing sessions keep their launch context. Agent attachments are additive: the acting
+project's existing context is still available. A resolved source is not necessarily synced;
+setup and file availability are shown separately, and require the normal source setup/sync
+flow. Attaching a source does not prove that a model read every file.

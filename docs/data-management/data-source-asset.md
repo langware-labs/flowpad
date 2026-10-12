@@ -29,7 +29,7 @@ agentic-assets/data_source/work_gmail/
 ```
 
 The file (`DataSourceSpec`) is what a person authors and nothing the engine writes: status,
-health, the cursor, the next poll, discovered identities and the allowlist (`allowed_senders`,
+health, the cursor, the next poll, discovered identities and inbound access (`allowed_senders`, `open_to_all`,
 PRIVATE: who may drive the source is this machine's business) are row-only (`Persist.FALSE`), and the
 engine saves them with `save_runtime()`, which never touches the file — a re-read of the file leaves
 them as they are. The config is value-free —
@@ -40,6 +40,12 @@ that row (`find_for_account` on the driver's `identity_config_key`) — the auth
 config merged onto it, its cursor kept — instead of minting a twin. `owner=` takes the entity itself
 (an `Agent`) or its `TypeId`; a source an Agent owns is that agent's channel, the one way to give it one. Deleting the source removes its folder with the items it ingested; a
 row with no folder (one written before sources were files) is removed at boot.
+
+`open_to_all` defaults to false. Setting it explicitly to true admits any sender on an active
+source, while paused sources and self-message loop guards still block replies. When false,
+the allowlist and the driver's existing open-inbound behavior apply. Update these fields on
+the source through its normal update action, not through provider config. Source Edit retains
+the selected senders while public access is enabled, so switching back restores that restriction.
 
 `agentic-assets/<family>/` is where a native asset lives (glossary), and the main
 file is named for its type — the same rule the bundle format follows with
@@ -234,6 +240,36 @@ stable public URL as that variable and relays deliveries to
 `docs/webhooks.md`). Nobody sets `FLOW_WHATSAPP_WEBHOOK_URL` for a cloud deployment, and "use
 mine" never copies this computer's. A driver whose callback URL lives in the provider's dashboard
 (voice_phone) declares none; its owner sets the hub URL there by hand.
+
+The manifest also participates in desktop setup: `source.step("public-webhook")` uses a
+source class's `hub_claim(config, secrets)` when declared, otherwise creates a generic desktop
+webhook. An account claim carries its proof and public URL; an account part (such as a group)
+names its parent account and shares that callback. Chain delivery targets a source ID at
+`/api/v1/data_source/<id>/webhook`, not the generic deployment route above. Planning deployment
+webhooks does not automatically wire these claims. See
+[channel webhook routing](../snippets/channel-webhook-routing.md) before moving a channel.
+
+
+For a local provider, call `source.step("public-webhook", values={"delivery": "direct"})`
+through the running backend. This starts a signed-provider-only listener and returns the callback
+as `value.shown.link`; credential values remain redacted. The callback carries `source_id` to
+select this connection, including group children owned by the same agent, rather than another
+project watching the same provider account. The choice is saved as the source's
+`webhook_delivery` and later checks reuse it. Existing sources default to `hub`; explicitly passing
+`delivery: "hub"` selects the existing hub setup. Direct setup never contacts the hub.
+
+The listener defaults to loopback and preserves its allocated port in the instance's
+`webhook-listener.json`, restoring it at backend startup. It exposes only the provider GET/POST
+routes, never the hub-trusted source-ID route or general APIs; the main API cookie gate is unchanged.
+For externally reachable direct delivery, configure `FLOWPAD_WEBHOOK_HOST` and
+`FLOWPAD_WEBHOOK_BASE_URL` (an HTTP(S) origin); `FLOWPAD_WEBHOOK_PORT` optionally fixes the bind port.
+Remote connectivity and TLS termination must already be provided by the deployment.
+
+`source.step("first-turn", check=True, values={"external_id": "incoming-message-id"})`
+can pin the test conversation to one incoming message. Passing `values.since` as an ISO-8601
+timestamp instead excludes historical conversations when starting a fresh onboarding test. Success returns its incoming and reply IDs
+only when an outbound copy recorded by this node correlates with that message/conversation.
+This proves provider acceptance of the reply, not a handset delivery/read receipt.
 
 ### `reflect`
 

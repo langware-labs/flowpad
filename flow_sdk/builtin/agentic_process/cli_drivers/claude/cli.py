@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from flow_sdk.api.api_types.identifier import mint_uuid
 from flow_sdk.builtin.agentic_process.cli_drivers.cli_serialization import (
     quote_shell_arg,
     serialize_json_cli_value,
@@ -51,6 +52,11 @@ class ClaudeAgentOptions(AgentOptions):
     EXECUTABLE = "claude"
     PROMPT_CHANNEL = "argv"  # claude takes the prompt as a `-- <text>` positional
     SYSTEM_PROMPT_FILE_FLAG = "--append-system-prompt-file"
+
+    def configure_fork(self, source_session_id: str) -> None:
+        self.resume = True
+        self.fork_session_id = source_session_id
+        self.session_id = mint_uuid()
 
     def __init__(
         self,

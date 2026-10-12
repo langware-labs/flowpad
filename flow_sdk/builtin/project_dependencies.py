@@ -66,6 +66,8 @@ DEP_KEY = "dependency"
 #: One resolve at a time per project: two would race on the same links and clones.
 #: Weak-valued (``stream_inbox/_locks``): it lives only while a resolve holds or awaits it.
 _LOCKS = new_registry()
+#: Two consumers may materialize the same provider at once: its path is the natural key.
+_PROVIDER_LOCKS = new_registry()
 #: The detached resolve a project's activation started, by project.
 _TASKS: dict[str, "asyncio.Task"] = {}
 
@@ -198,10 +200,10 @@ async def _hub(dep: FlowDependency, project_id: str, *, fetch: bool, update: boo
     project's hosted repository, or its own git remote."""
     from flow_sdk.cloud_client.shared.errors import HubError  # noqa: PLC0415
     from flow_sdk.cloud_client.transport.hub_http import hub_get_or_raise  # noqa: PLC0415
+    from flow_sdk.db.drivers.db_base_record import BuiltinEntityType  # noqa: PLC0415
     from flow_sdk.fs_store.origin.field import ORIGIN_ADAPTER  # noqa: PLC0415
     from flow_sdk.fs_store.origin.git_origin import GitOrigin  # noqa: PLC0415
     from flow_sdk.fs_store.origin.hub_repo_origin import HubRepoOrigin  # noqa: PLC0415
-    from flow_sdk.db.drivers.db_base_record import BuiltinEntityType  # noqa: PLC0415
 
     if not fetch:
         raise _NotReady("missing", "not on this machine yet — sync to fetch it")
@@ -248,7 +250,8 @@ async def _materialize(dep: FlowDependency, base: Path, *, fetch: bool, update: 
 
 
 async def _ref(
-    project: "Project", dep: FlowDependency, source: DependencySource, via: Optional[str], root: Path, *, fetch: bool, rows: dict
+    project: "Project", dep: FlowDependency, source: DependencySource, via: Optional[str], root: Path, *, fetch: bool, rows: dict,
+    read_only: bool = False,
 ) -> _Found:
     """An id entry: resolved here, else on the hub (whose project holding it is fetched here and
     indexed, so its rows exist), else :class:`_NotReady`. Nothing is linked for an id with no folder
@@ -268,7 +271,7 @@ async def _ref(
     except NotResolved as exc:
         raise _NotReady(exc.state, exc.reason) from exc
     path = canonical_posix_path(resolved.context) if resolved.context else None
-    if path is None or is_path_under(path, canonical_posix_path(str(root))):
+    if read_only or path is None or is_path_under(path, canonical_posix_path(str(root))):
         return _Found(None, path, "local", False, resolved=resolved)
     # The link from the last resolve names this folder already: minting again would re-detect its
     # origin (git subprocesses) on every status read.
@@ -420,7 +423,68 @@ async def resolve(
         return []
     lock = keyed_loop_lock(_LOCKS, str(project.id))
     async with lock:
-        return await _resolve(project, Path(root_str), fetch=fetch, install=install, update=update, index=index)
+        states = await _resolve(project, Path(root_str), fetch=fetch, install=install, update=update, index=index)
+    return [await describe_dependency(state) for state in states]
+
+
+async def dependency_project(state: DependencyState, *, create: bool = False) -> Optional["Project"]:
+    """Resolve a provider by its natural key, never by the consuming project's context."""
+    from flow_sdk.assets.project_manifest import manifest_path  # noqa: PLC0415
+    from flow_sdk.builtin.project import Project  # noqa: PLC0415
+    from flow_sdk.schema.data_spec.flow_json_spec import parse_id  # noqa: PLC0415
+    from flow_sdk.schema.types import EntityType  # noqa: PLC0415
+
+    if state.state != "ready":
+        return None
+    if state.project_id:
+        return await Project.get_by_id(state.project_id)
+    ref = parse_id(state.typeid or "")
+    if ref is not None and ref[1] == EntityType.PROJECT:
+        return await Project.get_by_id(ref[2])
+    if not state.local_path:
+        return None
+    root = Path(state.local_path).resolve()
+    owners = await Project._mount_owners(str(root))
+    if owners:
+        return owners[0]
+    if create and ((root / flow_json.FLOW_JSON).is_file() or manifest_path(root).is_file()):
+        async with keyed_loop_lock(_PROVIDER_LOCKS, str(root)):
+            return await Project.recover_by_path(str(root))
+    return None
+
+
+async def required_projects(project: "Project") -> list["Project"]:
+    """Distinct resolved provider projects; their own lifecycle owns their working directory."""
+    found: dict[str, Project] = {}
+    for state in await project.dependencies():
+        if state.required:
+            provider = await dependency_project(state)
+            if provider is not None and str(provider.id) != str(project.id):
+                found.setdefault(str(provider.id), provider)
+    return list(found.values())
+
+
+async def describe_dependency(state: DependencyState, *, provider: Optional["Project"] = None) -> DependencyState:
+    """Read-only capability/status projection; listing never starts setup or service work."""
+    from flow_sdk.core.setup.load import load_state  # noqa: PLC0415
+
+    provider = provider or await dependency_project(state)
+    if provider is None:
+        return state
+    return state.model_copy(update={"project_id": str(provider.id), "home_page": await provider.resolve_home_page_typeid(),
+                                    "lifecycle": load_state(str(provider.id))})
+
+
+async def load_dependency(state: DependencyState, *, approved: bool = False) -> DependencyState:
+    """Adding/installing a dependency invokes its provider's shared Load contract."""
+    from flow_sdk.core.setup.load import load_project  # noqa: PLC0415
+
+    provider = await dependency_project(state, create=True)
+    if provider is None:
+        return state  # a folder or value with no project lifecycle
+    result = await load_project(provider, approved=approved)
+    described = await describe_dependency(state, provider=provider)
+    return described.model_copy(update={"lifecycle": result})
 
 
 def is_resolving(project_id: str) -> bool:
@@ -453,10 +517,11 @@ def schedule_resolve(project: "Project") -> None:
 
 
 async def _resolve(
-    project: "Project", root: Path, *, fetch: bool, install: Iterable[str], update: bool, index: bool
+    project: "Project", root: Path, *, fetch: bool, install: Iterable[str], update: bool, index: bool,
+    read_only: bool = False, asset: Optional[str] = None, declarations: Optional[AssetFlowJsonSpec] = None,
 ) -> list[DependencyState]:
     try:
-        spec = flow_json.read_strict(root)
+        spec = declarations if declarations is not None else flow_json.read_strict(root)
     except flow_json.FlowJsonError as exc:
         # A broken file declares nothing — but it must not tear down what resolved before.
         return [DependencyState(name="flow.json", source="", state="invalid", reason=str(exc))]
@@ -466,13 +531,13 @@ async def _resolve(
 
     states: list[DependencyState] = []
     desired: dict[str, tuple["Folder", dict]] = {}
-    seen = _own_identities(root, pid)
+    seen = {f"ref:{asset}"} if asset else _own_identities(root, pid)
     declared_by: dict[str, str] = {}
     rows: dict = {}   # dataset rows, read once for every value id this walk resolves
     # (entry, base, own, via_path): ``own`` = declared by this project — its root file or one of its
     # own assets — so its optional entries count; a dependency's own optionals never do.
     queue: deque[tuple[FlowDependency, Path, bool, list[str]]] = deque((d, root, True, []) for d in spec.entries())
-    for label, entries, problem in _own_asset_entries(root):
+    for label, entries, problem in ([] if asset else _own_asset_entries(root)):
         if problem:
             states.append(DependencyState(name=label, source="", state="invalid", reason=problem, via=label, via_path=[label]))
             continue
@@ -517,11 +582,19 @@ async def _resolve(
         visited += 1
         try:
             if source.kind == "ref":
-                found = await _ref(project, dep, source, via, root, fetch=fetch, rows=rows)
+                found = await _ref(project, dep, source, via, root, fetch=fetch, rows=rows, read_only=read_only)
             else:
                 found = None if (fetch and update) else await _from_link(project, dep, via)
                 if found is None:
-                    found = await _materialize(dep, base, fetch=fetch, update=update, cloned=_was_cloned(project, dep.name, via))
+                    if read_only:
+                        # An unlinked local folder needs no entity to be inspected. Remote
+                        # locations are inspected only through already resolved links.
+                        path = expand_file_target(source.target, base=base) if source.kind == "file" else None
+                        if path is None or not path.is_dir():
+                            raise _NotReady("missing", "not on this machine yet — sync to fetch it")
+                        found = _Found(None, canonical_posix_path(str(path)), "local", False)
+                    else:
+                        found = await _materialize(dep, base, fetch=fetch, update=update, cloned=_was_cloned(project, dep.name, via))
         except _NotReady as exc:
             if fetch:
                 _LAST_FAILURE[key] = (exc.state, exc.reason)
@@ -537,7 +610,8 @@ async def _resolve(
                 _LAST_FAILURE[key] = ("unreachable", str(exc))
             states.append(state("unreachable", reason=str(exc)))
             continue
-        _LAST_FAILURE.pop(key, None)
+        if not read_only:
+            _LAST_FAILURE.pop(key, None)
         # A LOCATION inside the project is a mistake; an ID that names one of the project's own
         # assets is simply already in its context (``_ref`` returns it with nothing to link).
         if found.resolved is None and is_path_under(found.path, root_canon):
@@ -556,6 +630,13 @@ async def _resolve(
         queue.extend((child, child_base, False, via_path + [dep.name]) for child in children)
 
     states = [s.model_copy(update={"dismissed": True}) if is_dismissed(pid, s.name) and s.state != "ready" else s for s in states]
+    if read_only:
+        return states
+    # Materialize declared project providers BEFORE indexing their files. Their
+    # assets belong to them, never to the first consumer that happens to add them.
+    if index:
+        for state in states:
+            await dependency_project(state, create=True)
     added = await _reconcile(project, desired)
     if index:
         await _index(project, [desired[tid] for tid in added])
@@ -628,6 +709,90 @@ async def _index(project: "Project", linked: list[tuple["Folder", dict]]) -> Non
 # ── authoring ───────────────────────────────────────────────────────────────
 
 
+async def asset_holder(project: "Project", asset: str, *, write: bool = False):
+    """A reachable folder asset for reads; only this project's own writable assets for edits."""
+    from flow_sdk.builtin.folder import Folder  # noqa: PLC0415
+    from flow_sdk.dependencies.resolve import NotResolved, resolve_local  # noqa: PLC0415
+
+    if not project.fs_storage_mount_path:
+        raise ValueError("this project has no folder to hold a flow.json")
+    target = parse_source(asset)
+    if target.kind != "ref":
+        raise ValueError(f"{asset!r} is not an asset id (<type>-<uuid>)")
+    try:
+        holder = await resolve_local(target, near=Path(project.fs_storage_mount_path))
+    except NotResolved as exc:
+        raise ValueError(exc.reason) from exc
+    if holder is None or holder.declares is None:
+        raise ValueError(f"{asset} is not a folder asset on this machine")
+    if holder.spec.locations:
+        raise ValueError(f"{asset} is a project: declare it in the project's own flow.json")
+    roots = [project.fs_storage_mount_path] if write else project.direct_context_roots()
+    declared_root = holder.declares.resolve()
+    if not any(declared_root.is_relative_to(Path(root).resolve()) for root in roots):
+        raise ValueError(f"{asset} is not an asset of this project")
+    if write and await Folder.is_borrowed_path(str(holder.declares)):
+        raise ValueError(f"{asset} is read-only")
+    return holder
+
+
+async def inspect_dependencies(
+    project: "Project", *, asset: Optional[str] = None, sources: Iterable[str] = (),
+) -> list[DependencyState]:
+    """Inspect the shared walk without fetching, minting folders, indexing or reconciling links."""
+    if not project.fs_storage_mount_path:
+        return []
+    declarations = None
+    if asset:
+        holder = await asset_holder(project, asset)
+        asset = holder.typeid
+        try:
+            declarations = flow_json.read_strict(holder.declares, AssetFlowJsonSpec) or AssetFlowJsonSpec()
+        except flow_json.FlowJsonError as exc:
+            return [DependencyState(name="flow.json", source="", state="invalid", reason=str(exc))]
+        for source in sources:
+            dep = FlowDependency(name=safe_name(default_name(source)), source=source)
+            if not dep.is_ref:
+                raise ValueError("an asset depends on an id, not a location")
+            identity = _identity(dep, holder.declares)
+            if not any(_identity(entry, holder.declares) == identity for entry in declarations.entries()):
+                if declarations.find(dep.name):
+                    raise ValueError(f"dependency name {dep.name!r} is already used")
+                declarations = declarations.with_dependency(dep)
+    states = await _resolve(
+        project, Path(project.fs_storage_mount_path), fetch=False, install=(), update=False, index=False,
+        read_only=True, asset=asset, declarations=declarations,
+    )
+    return [await describe_dependency(state) for state in states]
+
+
+async def source_candidates(project: "Project", *, asset: str) -> list[str]:
+    """Existing project sources plus source identities reachable through its dependency graph."""
+    from flow_sdk.builtin.data_source import DataSource  # noqa: PLC0415
+    from flow_sdk.dependencies.resolve import asset_type_of, typeid_of  # noqa: PLC0415
+    from flow_sdk.schema.types import EntityType  # noqa: PLC0415
+
+    await asset_holder(project, asset)
+    candidates = {str(source.typeid) for source in await DataSource.get_all({"project_id": str(project.id)})}
+    for state in await inspect_dependencies(project):
+        if not state.source:
+            continue
+        parsed = parse_source(state.source)
+        if parsed.kind == "ref" and asset_type_of(parsed) == EntityType.DATA_SOURCE.value:
+            candidates.add(typeid_of(parsed))
+    return sorted(candidates)
+
+
+async def remove_from_asset(project: "Project", asset: str, name: str) -> list[DependencyState]:
+    holder = await asset_holder(project, asset, write=True)
+    declarations = flow_json.read_strict(holder.declares, AssetFlowJsonSpec) or AssetFlowJsonSpec()
+    if declarations.find(name) is None:
+        raise ValueError(f"{name!r} is not a direct dependency of {asset}")
+    flow_json.drop_dependency(holder.declares, name, AssetFlowJsonSpec)
+    await resolve(project, fetch=False, index=False)
+    return await inspect_dependencies(project, asset=asset)
+
+
 async def declaration_for_path(path: str) -> tuple[str, str, str]:
     """``(name, source, path)`` for a folder on disk: inside a git repo it is the repo
     (``git+<url>#<branch>``, ``path`` = where in it); otherwise ``file:<path>``.
@@ -667,36 +832,30 @@ async def add_to_asset(
     project: "Project", asset: str, source: str, *, name: Optional[str] = None, label: Optional[str] = None,
     description: Optional[str] = None, optional: bool = False,
 ) -> DependencyState:
-    """Declare ``source`` (an id) in ``asset``'s own ``flow.json``, then resolve ``project``. The
-    answer is the entry as ``project`` reaches it — or, when it does not reach that asset at all,
-    a ``not_installed`` state saying so."""
-    from flow_sdk.dependencies.resolve import NotResolved, resolve_local  # noqa: PLC0415
+    """Declare an id in the asset, reconcile the whole project, then return the scoped direct row.
 
-    target = parse_source(asset)
-    if target.kind != "ref":
-        raise ValueError(f"{asset!r} is not an asset id (<type>-<uuid>)")
-    try:
-        holder = await resolve_local(target, near=Path(project.fs_storage_mount_path))
-    except NotResolved as exc:
-        raise ValueError(exc.reason) from exc
-    if holder is None or holder.declares is None:
-        raise ValueError(f"{asset} is not a folder asset on this machine — only a folder asset declares dependencies")
-    if holder.spec.locations:
-        raise ValueError(f"{asset} is a project: declare it in the project's own flow.json")
+    Another project declaration may already reach the same id; that must not hide this attachment.
+    """
+    holder = await asset_holder(project, asset, write=True)
     dep = FlowDependency(
         name=name or safe_name(default_name(source)), source=source.strip(), required=not optional,
         label=label or None, description=description or None,
     )
     try:
+        declarations = flow_json.read_strict(holder.declares, AssetFlowJsonSpec) or AssetFlowJsonSpec()
+        identity = _identity(dep, holder.declares)
+        same = next((entry for entry in declarations.entries()
+                     if _identity(entry, holder.declares) == identity), None)
+        if same:
+            dep = same
+        elif declarations.find(dep.name):
+            raise ValueError(f"dependency name {dep.name!r} is already used")
         flow_json.write_dependency(holder.declares, dep, AssetFlowJsonSpec)
     except flow_json.FlowJsonError as exc:
         raise ValueError(str(exc)) from exc
-    states = await resolve(project, fetch=True, install=[dep.name] if optional else ())
-    found = next((s for s in states if s.name == dep.name and s.source == dep.source), None)
-    return found or DependencyState(
-        name=dep.name, source=dep.source, required=dep.required, state="not_installed", label=dep.label,
-        description=dep.description, reason=f"declared in {asset}, which this project does not depend on",
-    )
+    await resolve(project, fetch=True, install=[dep.name] if optional else ())
+    states = await inspect_dependencies(project, asset=asset)
+    return next(s for s in states if s.name == dep.name and not s.via_path)
 
 
 def requirement_key(state: DependencyState) -> str:

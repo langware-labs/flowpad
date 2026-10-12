@@ -98,10 +98,10 @@ class GitStatusFile(_CamelModel):
 class GitStatus(_CamelModel):
     error: str | None = None
     branch: str | None = None
-    # The branch's remote branch (``origin/main``), or None when the branch has
-    # none — never pushed, or its remote branch was deleted. ``ahead``/``behind``
-    # are 0 then, so only this tells "not published" apart from "up to date".
+    # Configured tracking branch; absence does not mean the branch was never pushed.
     upstream: str | None = None
+    # Same-name origin branch known locally, available to adopt without pushing.
+    upstream_candidate: str | None = None
     ahead: int = 0
     behind: int = 0
     files: list[GitStatusFile] = []
@@ -675,6 +675,7 @@ class GitRepo:
             conflict=conflict,
             remote_url=remote_url,
             remote_web_url=self._remote_web_url(remote_url) if remote_url else None,
+            upstream_candidate=await self._upstream_candidate(branch) if branch and not upstream and remote_url else None,
         )
 
     async def _commit_show_args(self, revision: str) -> tuple[str, ...]:
@@ -1261,6 +1262,26 @@ class GitRepo:
     # Remote side: fetch (refresh `behind`) and pull
     # ------------------------------------------------------------------
 
+    async def _upstream_candidate(self, branch: str) -> str | None:
+        candidate = f"origin/{branch}"
+        exists = await self._git("show-ref", "--verify", "--quiet", f"refs/remotes/{candidate}")
+        return candidate if exists.ok else None
+
+    async def set_upstream(self, branch: str) -> GitStatus:
+        """Adopt the known origin branch, never publish or alter commits."""
+        current = await self.get_branch()
+        if not branch or current != branch:
+            return GitStatus(error="The current branch changed. Refresh and try again.")
+        if (await self._git("rev-parse", "--abbrev-ref", "@{u}")).ok:
+            return await self.get_status()
+        candidate = await self._upstream_candidate(branch)
+        if not candidate:
+            return GitStatus(error="No matching origin branch is known. Fetch and try again.")
+        result = await self._git("branch", f"--set-upstream-to={candidate}", "--", branch)
+        if not result.ok:
+            return GitStatus(error=result.stderr or "Could not set upstream")
+        return await self.get_status()
+
     async def fetch(self) -> GitStatus:
         """Fetch the upstream's remote, then answer with the status.
 
@@ -1351,6 +1372,10 @@ class GitRepo:
 
         params = query_params or {}
 
+        if sub == "set-upstream":
+            if method.upper() != "POST":
+                return ApiFailResponse(message="git-ops/set-upstream requires POST", status_code=405)
+            return ApiSuccessResponse(data=(await self.set_upstream(params.get("branch", ""))).model_dump(by_alias=True))
         if sub == "push":
             if method.upper() != "POST":
                 return ApiFailResponse(message="git-ops/push requires POST", status_code=405)

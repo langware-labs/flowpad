@@ -42,6 +42,7 @@ from pydantic import ValidationError, model_validator
 
 from flow_sdk.api.api_types.api_field import APIField, NoDBAPIField, Persist, Sharing
 from flow_sdk.core import Entity, action
+from flow_sdk.datasets.projection import delete_through, is_link, write_through
 from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp
 from flow_sdk.request_context.json_body import current_user_id, read_json_body
 from flow_sdk.request_context.methods import get_current_request_info
@@ -867,7 +868,11 @@ class Dataset(Entity):
         list of dicts (a script: ``local_client.graph_get("source_item", {...})``). ``map`` says how an
         item becomes a row, in the path grammar -- ``{"key": "external_id", "input": {"name": "name",
         "stage": "data.stage", "crm_id": "external_id"}}``: each value is a PATH into the item
-        (``{"value": x}`` is a constant; a nested object maps field by field). The mirror owns the
+        (``{"value": x}`` is a constant; a nested object maps field by field; a path through ``*``
+        gives a list). ``{"link": <kind>, "by": <field>, "path": <path>}`` makes the outside system's
+        id at ``path`` a LINK: the row of ``kind`` whose ``by`` -- a ``unique`` field of that kind --
+        holds it (one reference, or a list through ``*``); an id no row holds is left out and named
+        in the answer's ``unlinked`` (``[{key, field, value}]``). The mirror owns the
         fields the map names and no others: a field the app keeps on a mirrored row stays as it is.
         An item whose ``key`` path is empty is skipped; a key is made a row key (lowercased, other
         characters ``-``).
@@ -876,7 +881,8 @@ class Dataset(Entity):
         may remove, as in ``sync``."""
         import re  # noqa: PLC0415
 
-        from flow_sdk.datasets.query import field_of  # noqa: PLC0415
+        from flow_sdk.datasets.query import Many, field_of  # noqa: PLC0415
+        from flow_sdk.datasets.rules import unique_rules  # noqa: PLC0415
 
         if not isinstance(map, dict) or not isinstance(map.get("key"), str) or not isinstance(map.get("input"), dict):
             raise ValueError('map: {"key": <path>, "input": {<field>: <path>}} is required')
@@ -888,17 +894,48 @@ class Dataset(Entity):
             found = await SourceItem.get_all({"data_source_id": str(items.id)}) or []
             items = [item.model_dump(mode="json") for item in found]
 
-        def shaped(spec: Any, item: dict) -> Any:
+        targets: dict[tuple[str, str], dict[str, str]] = {}
+        unlinked: list[dict] = []
+
+        def linked_by(kind: str, by: str) -> dict[str, str]:
+            """``{<by> value: reference}`` over every row of ``kind`` -- read once per mirror."""
+            if (kind, by) not in targets:
+                found = Dataset.for_kind(kind, self._owner())
+                if not found:
+                    raise ValueError(f"map: no dataset holds {kind} rows to link to")
+                index: dict[str, str] = {}
+                for dataset in found:
+                    if [by] not in [list(rule.unique) for rule in unique_rules(dataset.row_type.input_type())]:
+                        raise ValueError(f"map: {by} is not a unique field of {kind}, so it cannot name one row")
+                    for row in dataset.read_lenient()[0]:
+                        held = getattr(row.input, by, None)
+                        if held not in (None, ""):
+                            index[str(held)] = dataset.ref_of(row.id)
+                targets[(kind, by)] = index
+            return targets[(kind, by)]
+
+        def shaped(spec: Any, item: dict, key: str, where: str) -> Any:
             if isinstance(spec, str):
-                return field_of(item, spec)
+                found = field_of(item, spec)
+                return list(found) if isinstance(found, Many) else found
             if isinstance(spec, dict) and set(spec) == {"value"}:
                 return spec["value"]
+            if is_link(spec):
+                index, found = linked_by(str(spec["link"]), str(spec["by"])), field_of(item, spec["path"])
+                ids = [found] if not isinstance(found, Many) else list(found)
+                refs = []
+                for outside in (str(v) for v in ids if v not in (None, "")):
+                    if outside in index:
+                        refs.append(index[outside])
+                    else:
+                        unlinked.append({"key": key, "field": where, "value": outside})
+                return refs if isinstance(found, Many) else (refs[0] if refs else None)
             if isinstance(spec, dict):
-                made = {name: shaped(inner, item) for name, inner in spec.items()}
+                made = {name: shaped(inner, item, key, f"{where}.{name}" if where else name) for name, inner in spec.items()}
                 return {name: value for name, value in made.items() if value is not None}
             if isinstance(spec, list):
-                return [value for value in (shaped(inner, item) for inner in spec) if value is not None]
-            raise ValueError(f"map: a path, {{\"value\": x}}, an object or a list is required, not {spec!r}")
+                return [value for value in (shaped(inner, item, key, where) for inner in spec) if value is not None]
+            raise ValueError(f"map: a path, {{\"value\": x}}, {{\"link\", \"by\", \"path\"}}, an object or a list is required, not {spec!r}")
 
         # The mirror owns the fields its map names and no others: what the app keeps on a mirrored
         # row (its notes, its tags) stays, whatever the source did to the rest.
@@ -915,8 +952,9 @@ class Dataset(Entity):
                 raise ValueError(f"mirror: two items map to the row key {key!r} (from {named!r})" if key else f"mirror: {named!r} gives no row key")
             taken.add(key)
             own = {name: value for name, value in held.get(key, {}).items() if name not in map["input"]}
-            rows.append({"key": key, "input": {**own, **shaped(map["input"], item)}})
-        return await self.sync(rows, prune=prune, match=match, by=by or provider)
+            rows.append({"key": key, "input": {**own, **shaped(map["input"], item, key, "")}})
+        done = await self.sync(rows, prune=prune, match=match, by=by or provider)
+        return {**done, "unlinked": unlinked} if unlinked else done
 
     def _check_delete(self, keys: list[str], expected: dict[str, str]) -> list[Path]:
         """The row folders ``keys`` (keys or ids) name, once every one of them may go -- else the
@@ -1388,7 +1426,11 @@ class Dataset(Entity):
         if not isinstance(rows, list) or not rows:
             return ApiFailResponse(message="rows: a non-empty list is required", status_code=400)
         try:
-            ids = await self.append(rows, by=body.get("by"))
+            through = await write_through(self, [(r.get("key") if isinstance(r, dict) else None, r) for r in rows], body.get("by"))
+            if through is not None:   # outside-owned fields went to the source's system; these rows are what it answered
+                ids = await self.put_many([{**row, "key": key} for key, row in through[0]], by=through[1])
+            else:
+                ids = await self.append(rows, by=body.get("by"))
         except ValidationError as exc:
             return _misfit(exc, None, self, "a row does not match the dataset's shape")
         except LinkError as exc:
@@ -1414,8 +1456,14 @@ class Dataset(Entity):
         body = await self._row_body("key", "row")
         if isinstance(body, ApiFailResponse):
             return body
+        key = body["key"]
         try:
-            eid = await self.put(body["key"], body["row"], expected=body.get("expected"), by=body.get("by"))
+            through = await write_through(self, [(key, body["row"])], body.get("by"), {key: body.get("expected")})
+            if through is not None:   # outside-owned fields went to the source's system; this row is what it answered
+                (key, row), = through[0]
+                eid = await self.put(key, row, by=through[1])
+            else:
+                eid = await self.put(key, body["row"], expected=body.get("expected"), by=body.get("by"))
         except ValidationError as exc:
             return _misfit(exc, body["row"], self, "the row does not match the dataset's shape")
         except ConflictError as exc:
@@ -1425,7 +1473,7 @@ class Dataset(Entity):
         except ValueError as exc:
             return ApiFailResponse(message=str(exc), status_code=400)
         fresh = await self.refresh_counts()
-        return ApiSuccessResponse(data={"id": eid, "example_id": eid, "key": body["key"], "num_examples": fresh.num_examples})
+        return ApiSuccessResponse(data={"id": eid, "example_id": eid, "key": key, "num_examples": fresh.num_examples})
 
     @action.post(action_name="delete-row")
     async def delete_row_action(self):
@@ -1434,7 +1482,8 @@ class Dataset(Entity):
         if isinstance(body, ApiFailResponse):
             return body
         try:
-            key = self.delete_row(body["key"], expected=body.get("expected"))
+            gone = await delete_through(self, [body["key"]], {body["key"]: body["expected"]} if body.get("expected") else None)
+            key = gone[0] if gone is not None else self.delete_row(body["key"], expected=body.get("expected"))
         except LookupError as exc:
             return ApiFailResponse(message=str(exc), status_code=404)
         except ConflictError as exc:
@@ -1467,11 +1516,19 @@ class Dataset(Entity):
         body = await self._row_body("rows")
         if isinstance(body, ApiFailResponse):
             return body
-        ids = await self._bulk(lambda: self.put_many(body["rows"], expected=body.get("expected"), by=body.get("by")))
+        keys = [r.get("key") if isinstance(r, dict) else None for r in body["rows"]] if isinstance(body["rows"], list) else []
+
+        async def put() -> list[str]:
+            through = await write_through(self, [(k, r) for k, r in zip(keys, body["rows"])], body.get("by"), body.get("expected"))
+            if through is None:
+                return await self.put_many(body["rows"], expected=body.get("expected"), by=body.get("by"))
+            keys[:] = [key for key, _ in through[0]]   # outside-owned fields went to the source's system first
+            return await self.put_many([{**row, "key": key} for key, row in through[0]], by=through[1])
+        ids = await self._bulk(put)
         if isinstance(ids, ApiFailResponse):
             return ids
         fresh = await self.refresh_counts()
-        return ApiSuccessResponse(data={"ids": ids, "example_ids": ids, "keys": [r["key"] for r in body["rows"]], "num_examples": fresh.num_examples})
+        return ApiSuccessResponse(data={"ids": ids, "example_ids": ids, "keys": keys, "num_examples": fresh.num_examples})
 
     @action.post(action_name="delete-rows")
     async def delete_rows_action(self):
@@ -1484,7 +1541,8 @@ class Dataset(Entity):
             return ApiFailResponse(message="keys: a list of row keys is required", status_code=400)
 
         async def remove() -> list[str]:
-            return self.delete_rows(body["keys"], expected=body.get("expected"))
+            gone = await delete_through(self, body["keys"], body.get("expected"))
+            return gone if gone is not None else self.delete_rows(body["keys"], expected=body.get("expected"))
         keys = await self._bulk(remove)
         if isinstance(keys, ApiFailResponse):
             return keys
