@@ -97,7 +97,9 @@ function load(opts = {}) {
   const venv = path.join(HOME, 'uv', 'tools', 'flowpad');
   class FakeUv {
     constructor() { uv.instance = this; }
-    getInstalledFlowBin() { return '/fake/bin/flow'; }
+    getInstalledFlowBin() { return opts.noEngine ? null : '/fake/bin/flow'; }
+    async ensureUv() {}
+    async installLatest() { uv.installs = (uv.installs || 0) + 1; if (opts.installFails) throw opts.installFails(uv.installs); this._flowBin = '/fake/bin/flow'; }
     hadInterruptedInstall() { return false; }
     getInstalledVersionSync() { return opts.engine || '0.2.203'; }
     _toolVenvDir() { return venv; }
@@ -343,6 +345,35 @@ function load(opts = {}) {
     eq(panel.repairable, false, 'no Repair button for a wheel module');
     env.t.setQuitting(true); env.ipcMain.emit('retry-startup'); await settle(); await done;
     delete global.fetch;
+  }
+
+  // ── 2026-10-12: the block hits the engine INSTALL (uv builds pybars3 from source → setuptools → unicodedata) ──
+  {
+    const stderr = 'error: Failed to build `pybars3==0.9.7`\n  Caused by: Call to `setuptools.build_meta:__legacy__.get_requires_for_build_wheel` failed (exit code: 1)\nTraceback (most recent call last):\n  File "C:\\u\\setuptools\\unicode_utils.py", line 2, in <module>\n    import unicodedata\nImportError: DLL load failed while importing unicodedata: An Application Control policy has blocked this file.\n';
+    const env = load({ noEngine: true, binReady: false, installFails: () => Object.assign(new Error('Command failed: uv tool install flowpad --python 3.11 --force\n' + stderr), { stderr, code: 1 }) });
+    env.t.primeLaunchCheck();
+    const r = await env.t.installAndStartBackend();
+    eq([r.ok, r.installBlock && r.installBlock.module], [false, 'unicodedata'], 'a block in the install output comes back as an install block naming the module, not as a generic failure');
+    eq(env.panels().length, 0, 'no generic error panel was shown for it');
+    // The repair panel for it: nothing was launched, so nothing is stopped (a bare `flow stop` kills whatever holds the port).
+    let retries = 0;
+    const done = env.t.handleFatalFailure({ match: r.installBlock, record: null, retry: async () => { retries++; return { ok: false, installBlock: r.installBlock }; } });
+    await settle(10);
+    const [panel] = env.panels();
+    ok(panel && panel.policyBlocked, 'the application-control panel');
+    ok(/unicodedata/.test(panel.detail), 'it names the blocked module');
+    ok(/uv tool install/.test(panel.detail), 'and where the evidence came from');
+    eq(env.uv.stops, 0, 'the install never launched a backend: nothing is stopped');
+    env.ipcMain.emit('retry-startup'); await settle(20);
+    eq(retries, 1, 'Retry anyway re-runs the INSTALL (there is no engine to start)');
+    eq(env.panels().length, 2, 'and a repeat block shows the panel again');
+    env.t.setQuitting(true); env.ipcMain.emit('retry-startup'); await settle(); await done;
+    // A failure that is not a block stays the generic panel path.
+    const env2 = load({ noEngine: true, binReady: false, installFails: () => Object.assign(new Error('Command failed: uv tool install flowpad\nerror: Failed to download distributions: network unreachable'), { stderr: 'network unreachable', code: 1 }) });
+    env2.t.primeLaunchCheck();
+    const r2 = await env2.t.installAndStartBackend();
+    eq([r2.ok, r2.installBlock], [false, undefined], 'a network failure is not an install block');
+    env.t.setQuitting(false);
   }
 
   // ── Export logs: the zip lands where the user chose ─────────────────────

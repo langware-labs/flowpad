@@ -2897,8 +2897,10 @@ class UvManager {
     // environment is intact on disk and the rollback is a rename back — no network, and exactly
     // the environment the user had, not a fresh install of it.
     await this._drainVenvProcesses();
-    // Remembered for the rollback: the release to put back when the set-aside copy is not there.
+    // Remembered for the rollback: the release to put back when the set-aside copy is not there, and whether
+    // there was an engine at all (a repair after a blocked FIRST install has nothing to put back).
     this._preRepairEngineVersion = installed || null;
+    this._hadEngineBeforeRepair = !!installed || fs.existsSync(this._toolVenvDir());
     try {
       this._setAsidePreRepairVenv();
     } catch (e) {
@@ -2964,6 +2966,12 @@ class UvManager {
       return;
     }
     const previous = this._preRepairEngineVersion || null;
+    if (this._hadEngineBeforeRepair === false) {
+      // The repair followed a blocked first install: there was no engine to put back, and reinstalling one on the
+      // blocked interpreter would only fail again. The half-built environment is replaced by the next install.
+      this.log.warn('[runtime-repair] there was no engine before the repair: nothing to roll back');
+      return;
+    }
     if (previous && fs.existsSync(venvDir) && this.getInstalledVersionSync() === previous) {
       this.log.warn(`[runtime-repair] no set-aside engine, and the engine in place is still ${previous}: the switch never happened, nothing to roll back`);
       this._flowBin = await this._resolveFlowBin();
