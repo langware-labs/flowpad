@@ -9,6 +9,7 @@ import {
   isRequired,
   oneOfGroup,
   type CredentialKind,
+  type CredentialManifestVar,
   credentialEnvFileName,
   type CredentialScopeFile,
   type CredentialScopeName,
@@ -65,7 +66,7 @@ export interface DetectedGroup {
   path: string | null;
   /** The file's name — see `EnvFileEntry.name`. */
   name: string;
-  keys: { key: string; line: number }[];
+  keys: { key: string; line: number; spec?: CredentialManifestVar }[];
 }
 
 /** One env file a scope reads: its own `.env.local`, or a file it falls back to. */
@@ -151,22 +152,31 @@ export function takenInScope(
 }
 
 /**
- * The env-file keys no credential in their scope declares yet — what can be
- * packed, one group per file. A key an earlier file of the same scope already
+ * Undeclared env-file keys, or all keys with their editable spec when includeDeclared.
+ * One group per file. A key an earlier file of the same scope already
  * lists is left out of the later one (the earlier file is the one read), and a
  * file whose keys are all taken is left out.
  */
-export function buildDetectedGroups(status: CredentialsStatus): DetectedGroup[] {
+export function buildDetectedGroups(status: CredentialsStatus, includeDeclared = false): DetectedGroup[] {
   return status.files
     .flatMap((file) => {
       const taken = takenInScope(status, file.scope);
+      const variables = new Map(status.credentials
+        .filter((credential) => credential.scope === file.scope && credential.project_id === file.project_id)
+        .flatMap((credential) => credential.vars.map((variable) => [variable.env_var, variable] as const)));
       const earlier = new Set<string>();
       return envFilesOf(file).map((entry) => {
-        const keys = entry.detected.filter((k) => !taken.has(k.key) && !earlier.has(k.key));
+        const keys = entry.detected.filter((k) => (includeDeclared || !taken.has(k.key)) && !earlier.has(k.key)).map((key) => {
+          if (!includeDeclared) return key;
+          const variable = variables.get(key.key);
+          if (!variable) return key;
+          const { label, hint, required, secret, pattern, help_url } = variable;
+          return { ...key, spec: { label, hint, required, secret, pattern, help_url } };
+        });
         entry.detected.forEach((k) => earlier.add(k.key));
         return { scope: entry.scope, projectId: entry.projectId, path: entry.path, name: entry.name, keys };
       });
     })
-    .filter((group) => group.keys.length > 0)
+    .filter((group) => group.keys.length > 0 || (includeDeclared && group.path !== null))
     .sort((a, b) => Number(a.scope === 'user') - Number(b.scope === 'user'));
 }
