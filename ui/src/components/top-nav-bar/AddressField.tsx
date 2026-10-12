@@ -18,8 +18,7 @@ import { cn } from '@src/lib/utils';
 import { ADDRESS_PILL_CLASS } from './address-pill';
 import { CrumbDetailsPopover } from './CrumbDetailsPopover';
 import { ProjectCrumbHoverCard } from './ProjectCrumbHoverCard';
-import { ConversationCrumbHoverCard } from './ConversationCrumbHoverCard';
-import { Conversation } from '@sdk';
+import { EntityCrumbHoverCard } from './EntityCrumbHoverCard';
 import { selectVisibleCrumbs } from './crumb-overflow';
 import type { Crumb } from './use-entity-breadcrumbs';
 import { useUiActionRequest } from '@src/navigation/ui-actions';
@@ -110,13 +109,13 @@ export function AddressField({
     // real filename, the path, and the two ways to go find it. That is where the
     // asset editor's header row went.
     const page = <BreadcrumbPage className="flex min-w-0 items-center gap-1 font-normal">{body}</BreadcrumbPage>;
-    // A conversation crumb (keyed by its TypeId) opens that conversation's card on hover.
-    const conversationId = crumb.key.startsWith(`${Conversation.type}-`)
-      ? crumb.key.slice(Conversation.type.length + 1)
-      : null;
+    // A crumb that names one entity opens that entity's card on hover.
+    const typeId = crumb.typeId;
     const withCard = (node: React.ReactNode) =>
-      conversationId ? (
-        <ConversationCrumbHoverCard conversationId={conversationId}>{node}</ConversationCrumbHoverCard>
+      typeId ? (
+        <EntityCrumbHoverCard typeId={typeId} label={crumb.label}>
+          {node}
+        </EntityCrumbHoverCard>
       ) : (
         node
       );
@@ -154,7 +153,7 @@ export function AddressField({
             <BreadcrumbLink
               className="flex cursor-pointer items-center gap-1 hover:text-foreground"
               onClick={() => go(crumb)}
-              title={conversationId ? undefined : crumb.label}
+              title={typeId ? undefined : crumb.label}
             >
               {body}
             </BreadcrumbLink>,

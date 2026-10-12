@@ -299,7 +299,7 @@ async def _script_at(given: str, trigger: Any) -> Optional[Path]:
         return path if path.exists() else None
     from flow_sdk.diagnose.runner import project_path_of  # noqa: PLC0415
 
-    root = await project_path_of(str(getattr(trigger, "project_id", "") or "") or None)
+    root = await project_path_of(getattr(trigger, "project_id", None))
     if root and (Path(root) / path).exists():
         return Path(root) / path
     return None
