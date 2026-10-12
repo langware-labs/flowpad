@@ -1070,3 +1070,8 @@ where they execute. What is left here is this cycle's own evidence:
 - Authoring a second auto-launch selection now clears the first; imported legacy flags remain unchanged. Hub Git fetch/pull uses fresh scoped authentication through native process environments. A successful local Pull refreshes asset projections before the shared once-only auto-launch check.
 - Browser proof: normal update notice and UI Pull; second agent opens in a new active tab; the original first-agent tab remains and answers again. Both agents returned live identity responses. No manual auth, flag repair, reindex, or browser refresh was used.
 - Harness adaptations: separate Chromium contexts, API fixture/publication setup, received link handoff into the isolated consumer app, and virtual-clock advancement of the existing remote-check interval.
+
+### 2026-10-12 — Live WAHA source and burst test
+- waha-8, Chrome extension explicitly requested by user, linked real WhatsApp session. Two synthetic folder sources (catalog CSV and policies Markdown), ten questions including a four-message burst and live source updates: 10/10 exact-value checks passed, one outbound per inbound. Latency 7.39–33.54s, median 19.64s; one sender only, not a capacity benchmark.
+- Dependency name with spaces was accepted by write then rejected on manifest read; fixed canonical FlowDependency validation and covered project/asset writes.
+- Evidence: ui/tests/manual_regression/_results/waha-stress-20261012/. Fresh onboarding sender permissions remain a separate known gap.
