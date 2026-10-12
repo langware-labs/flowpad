@@ -193,6 +193,8 @@ beforeEach(() => {
     }
     return mocks.anonGet(...args);
   });
+  // Signed out, the page first asks for a visitor sandbox; an agent not open to visitors refuses it.
+  vi.spyOn(apiClient, 'post').mockRejectedValue(privateRefusal());
   sessionStorage.clear();
 });
 
@@ -293,7 +295,9 @@ describe('/launch?agent= and ?project=', () => {
 
     renderLanding(`?agent=${AGENT_ID}`);
 
-    expect(screen.getByTestId('launch-sign-in-title').textContent).toBe('Please sign in to flowpad to continue.');
+    expect((await screen.findByTestId('launch-sign-in-title')).textContent).toBe(
+      'Please sign in to flowpad to continue.',
+    );
     await waitFor(() => expect(mocks.anonGet).toHaveBeenCalledWith(`/api/v1/graph/agent/${AGENT_ID}`));
     expect(screen.queryByTestId('launch-choice')).toBeNull();
     fireEvent.click(screen.getByTestId('launch-sign-in'));
@@ -306,7 +310,7 @@ describe('/launch?agent= and ?project=', () => {
     vi.spyOn(console, 'log').mockImplementation(() => {});
 
     renderLanding(`?agent=${AGENT_ID}`);
-    fireEvent.click(screen.getByTestId('launch-sign-in'));
+    fireEvent.click(await screen.findByTestId('launch-sign-in'));
 
     await waitFor(() => expect(screen.getByTestId('launch-sign-in-dropped').textContent).toContain("wasn't completed"));
     // The session was asked first: a sign-in that went through elsewhere is not called a cancel.
@@ -320,7 +324,7 @@ describe('/launch?agent= and ?project=', () => {
     vi.spyOn(console, 'log').mockImplementation(() => {});
 
     renderLanding(`?agent=${AGENT_ID}`);
-    fireEvent.click(screen.getByTestId('launch-sign-in'));
+    fireEvent.click(await screen.findByTestId('launch-sign-in'));
 
     await waitFor(() => expect(mocks.login).toHaveBeenCalledWith({ popup: false }));
   });
@@ -633,12 +637,12 @@ describe('/launch?agent= and ?project=', () => {
       expect(window.dataLayer[0]).toMatchObject({ agent_id: AGENT_ID, signed_in: 'true', flow: 'launch' });
     });
 
-    it('signed out: the sign-in click is reported, and leaving then is an abandon at sign-in', () => {
+    it('signed out: the sign-in click is reported, and leaving then is an abandon at sign-in', async () => {
       mocks.currentUser = null;
       vi.spyOn(console, 'log').mockImplementation(() => {});
 
       renderLanding(`?agent=${AGENT_ID}`);
-      fireEvent.click(screen.getByTestId('launch-sign-in'));
+      fireEvent.click(await screen.findByTestId('launch-sign-in'));
       window.dispatchEvent(new Event('pagehide'));
 
       expect(funnel()).toEqual([
