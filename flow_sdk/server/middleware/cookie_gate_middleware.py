@@ -58,6 +58,7 @@ from starlette.responses import HTMLResponse
 from starlette.types import ASGIApp, Receive, Scope, Send
 from starlette.websockets import WebSocketClose
 
+from flow_sdk.instance_settings import get_instance_settings
 from flow_sdk.instance_settings.cookie_gate import get_cookie_gate
 
 COOKIE_NAME = "__Host-cookie-gate"
@@ -72,11 +73,10 @@ LOCAL_COOKIE_PREFIX = "cookie-gate-"
 LOCAL_COOKIE_MAX_AGE = 365 * 24 * 3600
 _LOOPBACK_HOSTNAMES = frozenset({"localhost", "127.0.0.1"})
 
-logger = logging.getLogger(__name__)
+#: This instance's token file — the one the CLI and Electron read.
+LOCAL_TOKEN_PATH = get_instance_settings().instance_dir / LOCAL_TOKEN_FILENAME
 
-# Parsed local token per file, keyed by path and invalidated by mtime — the same
-# discipline as ``cookie_gate._cache``: one stat per request, one read per change.
-_local_cache: dict[str, tuple[int, str]] = {}
+logger = logging.getLogger(__name__)
 
 # Fully inline — static is gated too, so an external stylesheet here would itself
 # be Forbidden. The audience is a human who clicked a stale link, not a script
@@ -269,40 +269,16 @@ def _with_local_cookie(send: Send, conn: HTTPConnection, token: str) -> Send:
 # ---------------------------------------------------------------------------
 
 
-def gate_off() -> bool:
-    """``FLOWPAD_COOKIE_GATE=off``: never create a local token. Dev runs, tests and
-    hub-launched boxes set it; an existing token file is still enforced."""
-    return os.environ.get(OFF_SWITCH_ENV, "").strip().lower() == "off"
-
-
-def local_token_path() -> Path:
-    from flow_sdk.instance_settings import get_instance_settings
-
-    return get_instance_settings().instance_dir / LOCAL_TOKEN_FILENAME
-
-
-def read_local_token(path: Path | None = None) -> str | None:
-    """The local token at ``path`` (this instance's by default), or ``None`` when
-    there is none. The one reader: the middleware, the CLI's ``gate_headers`` and
-    tests all come through here. Never raises."""
-    path = path or local_token_path()
-    key = str(path)
-    try:
-        mtime = path.stat().st_mtime_ns
-    except OSError:
-        _local_cache.pop(key, None)
-        return None
-    cached = _local_cache.get(key)
-    if cached is not None and cached[0] == mtime:
-        return cached[1]
+def read_local_token(path: Path) -> str | None:
+    """The local token in ``path``, or ``None`` when there is none. The one
+    reader: the middleware (this instance's ``LOCAL_TOKEN_PATH``) and the CLI's
+    ``gate_headers`` (the target instance's file) both come through here. A
+    plain-file read, so nothing is cached. Never raises."""
     try:
         value = path.read_text(encoding="utf-8").strip()
     except OSError:
         return None
-    if not value:
-        return None
-    _local_cache[key] = (mtime, value)
-    return value
+    return value or None
 
 
 def _create_local_token(path: Path) -> str | None:
@@ -334,17 +310,17 @@ def _local_token() -> tuple[bool, str | None]:
     the gate is expected, a token that cannot be created or read comes back as
     ``(True, None)`` — the caller refuses rather than passing everything.
     """
-    path = local_token_path()
-    token = read_local_token(path)
+    token = read_local_token(LOCAL_TOKEN_PATH)
     if token is not None:
         return True, token
-    if gate_off():
+    # The off switch: dev runs, tests and hub-launched boxes never create a token.
+    if os.environ.get(OFF_SWITCH_ENV) == "off":
         return False, None
     try:
-        token = _create_local_token(path)
+        token = _create_local_token(LOCAL_TOKEN_PATH)
     except OSError as e:
-        logger.warning("cookie-gate: could not create local token at %s: %s", path, e)
+        logger.warning("cookie-gate: could not create local token at %s: %s", LOCAL_TOKEN_PATH, e)
         return True, None
     if token is not None:
-        logger.info("cookie-gate: created local token at %s", path)
+        logger.info("cookie-gate: created local token at %s", LOCAL_TOKEN_PATH)
     return True, token
