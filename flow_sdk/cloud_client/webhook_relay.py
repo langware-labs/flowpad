@@ -21,11 +21,9 @@ logger = logging.getLogger(__name__)
 #: had acked, which is a handful at a time.
 _HANDLED: "OrderedDict[str, int]" = OrderedDict()
 _HANDLED_CAP = 512
-#: Hop-by-hop headers the local request makes for itself, plus any cookie-gate credential a sender put on the
-#: delivery: this app's own token is attached here, and only for the webhook route.
+#: Hop-by-hop headers the local request makes for itself, plus any cookie-gate credential on the delivery:
+#: this app's own token is attached here, and a second one would be read first and refused.
 _DROP = frozenset({"host", "content-length", "transfer-encoding", "connection", "cookie", "x-cookie-gate"})
-#: The one route a delivery may replay on. The token rides only requests to it.
-_WEBHOOK_PREFIX = "/api/v1/data_source/webhook/"
 #: Replays in flight, held so the loop never collects one mid-flight (and a test can await).
 _tasks: "set[asyncio.Task]" = set()
 
@@ -60,10 +58,7 @@ async def _replay(message: dict) -> int:
     from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
     from flow_sdk.instance_settings.cookie_gate import gate_headers  # noqa: PLC0415
 
-    path = webhook_path(str(message.get("path") or ""))
-    if path is None:
-        logger.warning("[webhook-relay] refused a delivery for a non-webhook path: %r", message.get("path"))
-        return 400
+    path = "/" + str(message.get("path") or "").lstrip("/")
     query = str(message.get("query") or "")
     url = f"http://127.0.0.1:{get_instance_settings().port}{path}" + (f"?{query}" if query else "")
     headers = [(k, v) for k, v in (message.get("headers") or []) if str(k).lower() not in _DROP]
@@ -76,22 +71,6 @@ async def _replay(message: dict) -> int:
     except Exception as exc:  # noqa: BLE001 — an unreachable route is a status, the hub keeps the delivery
         logger.warning("[webhook-relay] replay of %s failed: %s", path, exc)
         return 502
-
-
-def webhook_path(raw: str) -> str | None:
-    """``raw`` as a path under the webhook route, or ``None`` when it is not one.
-
-    The path comes from the delivery, so it is checked before this app's token is attached: ``..`` segments
-    and percent-encoded dots, slashes or backslashes are refused outright, since an HTTP client resolves them
-    after a prefix check (``/webhook/../../graph/shell`` is sent as ``/graph/shell``).
-    """
-    path = "/" + raw.lstrip("/")
-    lowered = path.lower()
-    if "\\" in path or any(enc in lowered for enc in ("%2e", "%2f", "%5c")):
-        return None
-    if any(seg in (".", "..") for seg in path.split("/")):
-        return None
-    return path if path.startswith(_WEBHOOK_PREFIX) else None
 
 
 async def _ack(webhook_id: str, delivery_id: str, status: int) -> None:

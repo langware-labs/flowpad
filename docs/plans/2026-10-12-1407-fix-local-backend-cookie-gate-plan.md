@@ -378,7 +378,7 @@ U2 and U3 first, as one middleware change. Then U5, U6 and U8 independently. U7 
 
 1. `gate_headers` sends the hub-armed secret when one exists, and otherwise the target instance's local token (KTD9). `local_request` and every caller already built on it need no change.
 2. The function runner and its demo script send their requests through `gate_headers`.
-3. The webhook relay first normalizes the replayed path: it resolves dot segments and rejects `..` and percent-encoded dots or slashes. It attaches the token only when the normalized path is under `/api/v1/data_source/webhook/`, and sends exactly that path. It drops any inbound `cookie` or `x-cookie-gate` header.
+3. The webhook relay attaches this app's token to the replay and drops any inbound `cookie` or `x-cookie-gate` header. (The replayed path is not restricted: the user chose not to guard a path the hub may not let senders control.)
 4. Discovery and hook-report fan-out use the per-port lookup.
 
 **Patterns to follow:** `local_request` in `flow_sdk/cli/commands/_common.py`.
@@ -393,9 +393,8 @@ U2 and U3 first, as one middleware change. Then U5, U6 and U8 independently. U7 
 
 * The function-runner context `post` includes `X-Cookie-Gate`.
 
-* The webhook relay attaches the header for `/api/v1/data_source/webhook/...` but not for `/api/v1/graph/shell`, and strips an inbound `x-cookie-gate`.
+* The webhook relay attaches this app's `X-Cookie-Gate` and strips an inbound `cookie` / `x-cookie-gate`.
 
-* A relayed path of `/api/v1/data_source/webhook/../../graph/shell` (and its percent-encoded form) gets no `X-Cookie-Gate` header, or is not replayed.
 
 **Verification:** every caller the research marked as not sending the token has a test, or goes through `local_request`.
 
