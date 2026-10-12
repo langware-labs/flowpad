@@ -6,9 +6,9 @@ let any web page create a shell and run a command).
 
 A random token in ``<instance_dir>/.cookie_gate``, created on the first request
 this backend serves, and read from that file by the CLI and Electron.
-``FLOWPAD_COOKIE_GATE=off`` stops the file being created — it never disarms one
-that exists. Failing to create or read it refuses the request: this gate fails
-CLOSED.
+``FLOWPAD_COOKIE_GATE=off`` turns this gate off for the process (dev runs,
+tests, hub-launched boxes). With it on, failing to create or read the token
+refuses the request: this gate fails CLOSED.
 
 Two requests pass without the token, both header-shaped rather than path
 exemptions: a CORS preflight (no cookie ever rides one, and no route runs), and a
@@ -46,13 +46,15 @@ logger = logging.getLogger(__name__)
 class LocalCookieGateMiddleware:
     def __init__(self, app: ASGIApp) -> None:
         self.app = app
+        # The off switch is read once: it does not change while the process runs.
+        self.enforce = os.environ.get(OFF_SWITCH_ENV) != "off"
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
-        enforce, token = _local_token()
-        if not enforce:
-            # Off switch, and no token file was ever written.
+        if not self.enforce:
             await self.app(scope, receive, send)
             return
+
+        token = _local_token()
 
         conn = HTTPConnection(scope)
         if token is not None and presents(conn, token, local_cookie_name(_request_port(scope, conn))):
@@ -172,24 +174,17 @@ def _create_local_token(path: Path) -> str | None:
     return read_local_token(path)
 
 
-def _local_token() -> tuple[bool, str | None]:
-    """``(enforce, token)`` for this request.
-
-    ``enforce`` is False only with the off switch set and no file on disk. Once
-    the gate is expected, a token that cannot be created or read comes back as
-    ``(True, None)`` — the caller refuses rather than passing everything.
-    """
+def _local_token() -> str | None:
+    """This instance's token, created on first use. ``None`` when it cannot be
+    created or read — the caller then refuses rather than passing everything."""
     token = read_local_token(LOCAL_TOKEN_PATH)
     if token is not None:
-        return True, token
-    # The off switch: dev runs, tests and hub-launched boxes never create a token.
-    if os.environ.get(OFF_SWITCH_ENV) == "off":
-        return False, None
+        return token
     try:
         token = _create_local_token(LOCAL_TOKEN_PATH)
     except OSError as e:
         logger.warning("cookie-gate: could not create local token at %s: %s", LOCAL_TOKEN_PATH, e)
-        return True, None
+        return None
     if token is not None:
         logger.info("cookie-gate: created local token at %s", LOCAL_TOKEN_PATH)
-    return True, token
+    return token

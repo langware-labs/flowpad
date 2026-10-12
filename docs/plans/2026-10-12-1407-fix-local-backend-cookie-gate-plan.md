@@ -68,7 +68,7 @@ The local backend on `localhost:9007` answers every request without authenticati
 
 * R2. The token is a random per-install value in a plain file in the instance folder under flow home (`<flow_home>/instances/<instance>/.cookie_gate`). The backend creates it the first time it serves a request. Only the user can read it: 0600 on macOS and Linux, inherited profile permissions on Windows.
 
-* R3. An explicit off switch stops the backend from creating the token. A token file that already exists is still enforced.
+* R3. An explicit off switch turns the local gate off for the backend process; it is read once, at startup.
 
 * R4. With the off switch unset, if the token can't be created or read, requests are refused (fail closed).
 
@@ -160,7 +160,7 @@ The local backend on `localhost:9007` answers every request without authenticati
 
   It exports one read function. The CLI's `gate_headers` imports it, the same way it already imports `HEADER_NAME` from this module. No other backend module changes. Implements the "backend changes stay in the middleware" Key Decision. Governs R1–R3.
 
-* KTD2. **The off switch is** **`FLOWPAD_COOKIE_GATE=off`, read by the middleware.** It only stops the token being created; an existing file is still enforced. Governs R3.
+* KTD2. **The off switch is** **`FLOWPAD_COOKIE_GATE=off`, read by the middleware.** It is read once, when the local gate is constructed, and turns that gate off for the process. Governs R3.
 
 * KTD3. **Fail closed.** With the off switch unset, a token that can't be created or read means 403, never a pass. Governs R4.
 
