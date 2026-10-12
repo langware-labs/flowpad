@@ -8,7 +8,7 @@ import { cn } from '@src/lib/utils';
  * star for THIS tab, whichever tab is active. Same `FavoriteRef`, so the two
  * stars light together.
  *
- * The strip shows it in place of the tab icon on hover. Turning it ON flies
+ * The strip shows it in place of the tab icon after a 2s hover. Turning it ON flies
  * a copy of the chip into the bar's bookmarks star:
  * nothing moved, the flight just says "that is where it is saved".
  */
