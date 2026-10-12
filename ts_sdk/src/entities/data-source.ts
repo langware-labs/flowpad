@@ -52,6 +52,7 @@ export interface IDataSource extends IEntity {
   account_key?: string;
   account_identities?: string[];
   allowed_senders?: string[];
+  open_to_all?: boolean;
   required_capabilities?: string[];
   config?: Record<string, unknown>;
   status?: SourceStatus;
@@ -196,6 +197,7 @@ export class DataSource extends APIEntity<DataSource> implements IDataSource {
    *  Empty admits nobody: see `AgentMailbox.allowed`, the gate this backs for
    *  every channel-bound agent, not only an allocated mailbox. */
   allowed_senders: string[] = [];
+  open_to_all = false;
   required_capabilities: string[] = [];
   config: Record<string, unknown> = {};
   status: SourceStatus = 'new';
@@ -235,6 +237,7 @@ export class DataSource extends APIEntity<DataSource> implements IDataSource {
     this.owner = entity.owner ?? this.owner;
     this.account_identities = entity.account_identities ?? this.account_identities;
     this.allowed_senders = entity.allowed_senders ?? this.allowed_senders;
+    this.open_to_all = entity.open_to_all ?? this.open_to_all;
     this.required_capabilities = entity.required_capabilities ?? this.required_capabilities;
     this.config = entity.config ?? this.config;
     this.status = entity.status ?? this.status;

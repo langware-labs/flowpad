@@ -72,6 +72,8 @@ class SourceUpdateSpec(DataSpec):
     webhook_delivery: Optional[WebhookDelivery] = None
     #: Replaces the row's allowed senders.
     allowed_senders: Optional[list[str]] = None
+    #: Explicit public inbound access, kept on the private row.
+    open_to_all: Optional[bool] = None
     #: ``{auth.vars key: value}`` — stored into the driver's credential, never echoed.
     secrets: dict[str, str] = Field(default_factory=dict)
     #: The owner the source moves to (an agent's typeid) — a channel that is answered by one agent

@@ -29,7 +29,7 @@ agentic-assets/data_source/work_gmail/
 ```
 
 The file (`DataSourceSpec`) is what a person authors and nothing the engine writes: status,
-health, the cursor, the next poll, discovered identities and the allowlist (`allowed_senders`,
+health, the cursor, the next poll, discovered identities and inbound access (`allowed_senders`, `open_to_all`,
 PRIVATE: who may drive the source is this machine's business) are row-only (`Persist.FALSE`), and the
 engine saves them with `save_runtime()`, which never touches the file — a re-read of the file leaves
 them as they are. The config is value-free —
@@ -40,6 +40,12 @@ that row (`find_for_account` on the driver's `identity_config_key`) — the auth
 config merged onto it, its cursor kept — instead of minting a twin. `owner=` takes the entity itself
 (an `Agent`) or its `TypeId`; a source an Agent owns is that agent's channel, the one way to give it one. Deleting the source removes its folder with the items it ingested; a
 row with no folder (one written before sources were files) is removed at boot.
+
+`open_to_all` defaults to false. Setting it explicitly to true admits any sender on an active
+source, while paused sources and self-message loop guards still block replies. When false,
+the allowlist and the driver's existing open-inbound behavior apply. Update these fields on
+the source through its normal update action, not through provider config. Source Edit retains
+the selected senders while public access is enabled, so switching back restores that restriction.
 
 `agentic-assets/<family>/` is where a native asset lives (glossary), and the main
 file is named for its type — the same rule the bundle format follows with

@@ -313,7 +313,8 @@ async def test_public_webhook_chains_a_part_of_an_account_under_the_accounts_cla
     assert answer.exit_code is ExitCode.OK
 
 
-async def test_first_turn_holds_once_an_allowed_sender_spoke_and_an_answer_followed(stub, monkeypatch):
+@pytest.mark.parametrize("open_to_all,sender", [(False, "972500000000"), (True, "15550002222")])
+async def test_first_turn_holds_once_an_allowed_sender_spoke_and_an_answer_followed(stub, monkeypatch, open_to_all, sender):
     from types import SimpleNamespace
 
     from flow_sdk.builtin.source_item import SourceItem
@@ -325,11 +326,11 @@ async def test_first_turn_holds_once_an_allowed_sender_spoke_and_an_answer_follo
         return rows
 
     monkeypatch.setattr(SourceItem, "get_all", get_all)
-    source = DataSource(provider=name, name="bot", allowed_senders=["+972 50-000-0000"])
+    source = DataSource(provider=name, name="bot", allowed_senders=["+972 50-000-0000"], open_to_all=open_to_all)
     item = lambda who, at: SimpleNamespace(author_external_id=who, occurred_at=at, sent_by_us=who == "15550001111", external_id=at, thread_key="conversation-1", reply_to_external_id=None)  # noqa: E731
 
     assert (await source.step("first-turn", check=True)).exit_code is ExitCode.NOT_YET
-    rows[:] = [item("15550001111", "2026-09-28T10:00:00"), item("972500000000", "2026-09-28T10:01:00")]
+    rows[:] = [item("15550001111", "2026-09-28T10:00:00"), item(sender, "2026-09-28T10:01:00")]
     assert (await source.step("first-turn", check=True)).exit_code is ExitCode.NOT_YET, "no answer after the person yet"
     rows.append(item("15550001111", "2026-09-28T10:01:05"))
     assert (await source.step("first-turn", check=True)).exit_code is ExitCode.OK
@@ -456,3 +457,13 @@ async def test_first_turn_distinguishes_received_message_from_no_message(stub, m
     assert not pending.ok and pending.detail == "Message received; waiting for the agent reply."
     rows.clear()
     assert (await source.step("first-turn", check=True)).detail.startswith("Send a message")
+
+
+async def test_setup_can_set_and_revoke_public_access(stub):
+    name, kept = stub
+    source = DataSource(provider=name, name="public bot")
+    driver = DataDriver.loaded(name)
+    await source._keep(driver, SourceUpdateSpec(open_to_all=True))
+    assert source.open_to_all is True
+    await source._keep(driver, SourceUpdateSpec(open_to_all=False))
+    assert source.open_to_all is False and kept["saves"] == 2

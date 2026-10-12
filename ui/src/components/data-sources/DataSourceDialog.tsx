@@ -22,6 +22,7 @@ import { SteppedDialogContent, type StepCrumb } from '@src/components/ui/stepped
 import { Input } from '@src/components/ui/input';
 import { Label } from '@src/components/ui/label';
 import { Switch } from '@src/components/ui/switch';
+import { Checkbox } from '@src/components/ui/checkbox';
 import { Textarea } from '@src/components/ui/textarea';
 import { SetupWizardPanel } from '@src/components/setup-wizard/SetupWizardDialog';
 import { GroupChoice } from './GroupChoice';
@@ -82,6 +83,7 @@ function draftFrom(source: DataSource, spec?: DataDriver): SourceDraft {
     // a boolean is why the toggle cannot resolve the lifecycle itself — see
     // `statusFor`.
     enabled: source.status !== 'disabled',
+    open_to_all: source.open_to_all ?? false,
     poll_interval_seconds: source.poll_interval_seconds,
     window_days: source.window_days,
     thread_timeout_seconds: source.thread_timeout_seconds,
@@ -206,6 +208,7 @@ export function DataSourceDialog({
         const nextName = draft.name.trim();
         const nextStatus = statusFor(draft.enabled, editing.status);
         const changed =
+          (editing.open_to_all ?? false) !== draft.open_to_all ||
           editing.name !== nextName ||
           editing.status !== nextStatus ||
           editing.account_key !== account ||
@@ -226,6 +229,7 @@ export function DataSourceDialog({
         editing.read_only = draft.read_only;
         editing.gitignored = draft.gitignored;
         editing.allowed_senders = allowedSenders;
+        editing.open_to_all = draft.open_to_all;
         await editing.save();
         if (changed) editing.markEdit();
         notify.success({ title: t`Updated ${editing.name}` });
@@ -246,6 +250,7 @@ export function DataSourceDialog({
           gitignored: draft.gitignored,
           owner: owner ? owner.toString() : null,
           allowed_senders: allowedSenders,
+          open_to_all: draft.open_to_all,
         });
         await source.save(project?.typeId && !ownerAgentId ? [project.typeId] : []);
         notify.success({ title: t`Added ${source.name}` });
@@ -287,7 +292,7 @@ export function DataSourceDialog({
         />
       );
     return (
-      <div key={key} className="space-y-1">
+      <fieldset key={key} className="space-y-1" disabled={key === ALLOWED_SENDERS_KEY && draft.open_to_all}>
         <Label htmlFor={`ds-${key}`}>
           {field.label || key}
           {fieldRules(spec, key).required && <span className="ms-1 text-destructive">*</span>}
@@ -309,7 +314,7 @@ export function DataSourceDialog({
           input
         )}
         {field.hint && <p className="text-xs text-muted-foreground">{field.hint}</p>}
-      </div>
+      </fieldset>
     );
   };
 
@@ -495,6 +500,17 @@ export function DataSourceDialog({
                   specFields(spec)
                     .filter(([, f]) => !f.advanced)
                     .map(renderField)
+                )}
+
+                {!byWizard && specFields(spec).some(([key]) => key === ALLOWED_SENDERS_KEY) && (
+                  <div className="flex items-center gap-2 rounded border p-2">
+                    <Checkbox
+                      id="ds-open-to-all"
+                      checked={draft.open_to_all}
+                      onCheckedChange={(checked) => setDraft((d) => ({ ...d, open_to_all: checked === true }))}
+                    />
+                    <Label htmlFor="ds-open-to-all"><Trans>Open to all</Trans></Label>
+                  </div>
                 )}
 
                 <div className="flex items-center justify-between rounded border p-2">
