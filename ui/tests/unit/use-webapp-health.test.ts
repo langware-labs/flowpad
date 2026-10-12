@@ -130,3 +130,28 @@ describe('useWebappHealth', () => {
     expect(fetchSpy.mock.calls.length).toBeGreaterThan(callsWhenHidden);
   });
 });
+
+describe('useWebappLiveness', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    cleanup();
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  it('counts failed pings in a row, and starts over when one answers', async () => {
+    const { useWebappLiveness } = await import('@src/components/display-toolbar/use-webapp-health');
+    const fetchMock = vi.fn().mockRejectedValue(new Error('refused'));
+    vi.stubGlobal('fetch', fetchMock);
+    const { result } = renderHook(() => useWebappLiveness('http://localhost:59991', 1000));
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    expect(result.current).toEqual({ health: 'down', failures: 1 });
+    await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
+    expect(result.current).toEqual({ health: 'down', failures: 2 });
+    fetchMock.mockResolvedValue({});
+    await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
+    expect(result.current).toEqual({ health: 'up', failures: 0 });
+  });
+});

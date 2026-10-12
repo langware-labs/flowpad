@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useLocation } from 'react-router';
 import { useQueryClient } from '@tanstack/react-query';
 import { Trans } from '@lingui/react/macro';
@@ -45,6 +45,15 @@ export function ProjectLoadGate({
       void load();
     }
   }, [result?.state, displayChecked, lifecycle.starting, loadedLocation, location.key, load]);
+  // A load that failed gets its setup once per open, unasked: opening an app means "make it work".
+  // The backend offers it once per failure, so a setup that does not help ends here with its reason.
+  const repaired = useRef<string | null>(null);
+  useEffect(() => {
+    if (result?.state !== 'failed' || !result.setup_available || lifecycle.starting) return;
+    if (loadedLocation !== location.key || repaired.current === location.key) return;
+    repaired.current = location.key;
+    void load(true);
+  }, [result, lifecycle.starting, loadedLocation, location.key, load]);
   const name = project?.displayName || projectId;
   useEffect(() => {
     if (result?.state === 'setup_required') openProjectLoad({ projectId, projectName: name, initial: result });
@@ -52,6 +61,14 @@ export function ProjectLoadGate({
   }, [client, projectId, name, result]);
   if (result?.state === 'ready' && displayChecked && !lifecycle.starting && loadedLocation === location.key)
     return children;
+  if (lifecycle.missing)
+    return (
+      <div className="flex h-full justify-center overflow-auto p-8" data-testid="project-load-missing">
+        <p role="alert" className="max-w-xl">
+          <Trans>This project is no longer on this computer. Open it again from the project that uses it.</Trans>
+        </p>
+      </div>
+    );
   return (
     <div className="flex h-full justify-center overflow-auto p-8" data-testid="project-load-gate">
       <div className="flex w-full max-w-xl flex-col gap-4">
