@@ -1,4 +1,5 @@
 import { ProjectLoadGate } from '@src/components/project-setup/ProjectLoadGate';
+import { webappAsset } from '@src/components/project-setup/use-project-load';
 import { PROVIDER_PROJECT_PARAM } from '@src/project-home-page/dependency-home';
 import { useCallback, useEffect, useRef } from 'react';
 import { type PersistentIframeHandle } from '@src/components/persistent-iframe';
@@ -258,7 +259,15 @@ export function AppDisplayViewer({
   // Direct app opens have no dependency URL. Their endpoint, not ambient consumer context, owns Load.
   const provider = appDisplay.endpoint?.project_id ?? definition?.project_id;
   return provider && !currentDock?.options?.[PROVIDER_PROJECT_PARAM] && !currentDock?.isActiveDisplay
-    ? <ProjectLoadGate key={provider} projectId={provider}>{display}</ProjectLoadGate>
+    ? (
+      <ProjectLoadGate
+        key={provider}
+        projectId={provider}
+        asset={webappAsset(microAppId)}
+      >
+        {display}
+      </ProjectLoadGate>
+    )
     : display;
 }
 

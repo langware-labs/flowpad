@@ -1,4 +1,4 @@
-"""Local dev servers: pick a port, probe it, start a server detached, wait for it.
+"""Local dev servers: probe a port, start a server detached, wait for it.
 
 One home for what ``flow app open`` (the CLI) and a placement exposing a
 webapp's endpoints (``webapp_placement``) both do. Stdlib only and synchronous —
@@ -23,12 +23,6 @@ def log_dir() -> Path:
     from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415 -- leaf module
 
     return get_instance_settings().logs_dir / "app-open"
-
-
-def find_free_port() -> int:
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-        sock.bind(("127.0.0.1", 0))
-        return int(sock.getsockname()[1])
 
 
 #: Both loopbacks. A Node server told ``localhost`` binds ``::1`` alone on a modern Node (it resolves the
@@ -72,11 +66,14 @@ def _slug(name: str) -> str:
     return re.sub(r"[^a-zA-Z0-9_.-]+", "-", name).strip("-") or "webapp"
 
 
-def start_process(command: str, *, cwd: Path, port: int, name: str) -> tuple[subprocess.Popen, str]:
+def start_process(
+    command: str, *, cwd: Path, port: int, name: str, env: Optional[dict[str, str]] = None
+) -> tuple[subprocess.Popen, str]:
     """Start *command* in its own session, logging to ``log_dir()``. Returns ``(process, log_file)``.
 
     ``PORT`` is set as well as whatever the command line says: a server that
     reads its port from the environment needs no ``{port}`` in its command.
+    ``env`` adds to it: the ports of the app's other processes (``FLOWPAD_APP_PORT_<NAME>``).
     ``HOST`` is set to loopback as a HINT (Next honours it; Vite and uvicorn take
     a flag, which the templates pass): the process is reached only through this
     machine's own door (``server/audience_listener.py``), which is what admits a
@@ -95,7 +92,7 @@ def start_process(command: str, *, cwd: Path, port: int, name: str) -> tuple[sub
         stdout=log,
         stderr=subprocess.STDOUT,
         start_new_session=True,
-        env={**os.environ, "PORT": str(port), "HOST": LOOPBACK_HOST},
+        env={**os.environ, **(env or {}), "PORT": str(port), "HOST": LOOPBACK_HOST},
     )
     log.close()
     return proc, str(log_file)
@@ -139,60 +136,6 @@ def stop_group(pid: int) -> None:
     psutil.wait_procs(group)
 
 
-# ── which process is OURS ─────────────────────────────────────────────────────────────────────────────
-# A port answering is not proof the app answers. What a start launched is recorded beside its log
-# (pid + the process's own start time, so a recycled pid is never mistaken for it); "running" asks it.
-
-
-def owner_dir() -> Path:
-    """Where what was started is recorded. Beside the logs, not in them: clearing logs must not turn a
-    server we started into a stranger's."""
-    from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415 -- leaf module
-
-    return get_instance_settings().logs_dir.parent / "app-open"
-
-
-def _owner_file(key: str) -> Path:
-    return owner_dir() / f"{_slug(key)}.json"
-
-
-def record_owner(key: str, pid: int, port: int) -> None:
-    import psutil  # noqa: PLC0415
-
-    from flow_sdk.instances.atomic import write_json_atomic  # noqa: PLC0415
-
-    try:
-        created = psutil.Process(pid).create_time()
-    except psutil.Error:
-        return
-    target = _owner_file(key)
-    target.parent.mkdir(parents=True, exist_ok=True)
-    write_json_atomic(target, {"pid": pid, "port": int(port), "created": created})
-
-
-def owner(key: str) -> Optional[dict]:
-    """What the last start of ``key`` launched, or None when Flowpad never started it (a server the
-    person runs themselves)."""
-    from flow_sdk.instances.atomic import read_json  # noqa: PLC0415
-
-    record = read_json(_owner_file(key))
-    return record if "pid" in record else None
-
-
-def owner_alive(record: dict) -> bool:
-    import psutil  # noqa: PLC0415
-
-    try:
-        process = psutil.Process(int(record["pid"]))
-        return process.create_time() == record.get("created") and process.status() != psutil.STATUS_ZOMBIE
-    except (psutil.Error, ValueError, TypeError):
-        return False
-
-
-def clear_owner(key: str) -> None:
-    _owner_file(key).unlink(missing_ok=True)
-
-
 def install_command(start_cmd: str, folder: Path) -> str:
     """What installs an app's dependencies when it does not say: its package manager's own install
     (read off how it starts), ``npm ci`` with a lockfile, else ``npm install``."""
@@ -205,17 +148,11 @@ def install_command(start_cmd: str, folder: Path) -> str:
 __all__ = [
     "LOOPBACK_HOST",
     "LOOPBACKS",
-    "clear_owner",
-    "find_free_port",
     "install_command",
     "log_dir",
     "log_tail",
     "loopback_urls",
-    "owner",
-    "owner_alive",
-    "owner_dir",
     "port_open",
-    "record_owner",
     "start_detached",
     "start_process",
     "stop_group",

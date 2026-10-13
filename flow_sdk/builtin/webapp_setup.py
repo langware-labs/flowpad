@@ -7,11 +7,12 @@ did the same work by guessing from a checkout; here the app's ``webapp.json`` sa
 is derived the same way (``npm ci`` when there is a lockfile).
 
 **Ours, or not.** A port answering is not proof the APP answers: another program (a container, a
-second checkout) may sit on it. "Running" means the port this app's own endpoint records answers its
-``health`` path — and a start never adopts a port somebody else holds: a fixed one is reported busy, a
-picked one moves on to a free port. What a start launched is recorded (``dev_server.record_owner``), so an
-app that died and whose port another program took since is not mistaken for running; a start that fails
-kills what it launched, and a crash is reported when it happens, not when the wait runs out.
+second checkout) may sit on it. Which port a process runs on, and whether what holds it is this app, is
+decided in one place — ``flow_sdk/core/app_ports.py`` — from what ``webapp.json`` declares
+(``serving.ports``) and what the process table shows now. Nothing is remembered: a server that died,
+moved, or was started by hand is read as what it is. A start never adopts a port somebody else holds;
+a start that fails kills what it launched, and a crash is reported when it happens, not when the wait
+runs out.
 """
 
 from __future__ import annotations
@@ -21,9 +22,11 @@ import logging
 import subprocess
 import urllib.error
 import urllib.request
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Optional
 
+from flow_sdk.core import app_ports
 from flow_sdk.schema.data_spec.returned_value_spec import ExitCode, ReturnedValue
 from flow_sdk.stream_inbox._locks import keyed_loop_lock, new_registry
 
@@ -118,16 +121,16 @@ async def step(webapp_id: str, which: str, *, check: bool, display: str = "") ->
     folder = Path(app.asset_ref)
     if not folder.is_dir():
         return _answer(ExitCode.NOT_FOUND, f"{app.name}'s folder is gone: {folder}", ran=False)
-    proxy = _proxy(app)
-    if proxy is None:
+    processes = _processes(app)
+    if not processes:
         return _answer(ExitCode.OK, f"{app.name} is files Flowpad serves itself", ran=False)
-    mount = proxy
-    serving = mount.serving
+    if which == "start":
+        return await _start_all(app, folder, check=check)
+    # Install and build are the page's; an app that is only an API has its first service's.
+    serving = processes[-1].serving
     if which == "install":
         return await _install(app, folder, serving, check=check)
-    if which == "build":
-        return await _build(app, folder, serving, check=check)
-    return await _start(app, folder, mount, check=check)
+    return await _build(app, folder, serving, check=check)
 
 
 async def _install(app, folder: Path, serving, *, check: bool) -> ReturnedValue:
@@ -138,8 +141,13 @@ async def _install(app, folder: Path, serving, *, check: bool) -> ReturnedValue:
         return _answer(ExitCode.OK, "nothing to install", ran=False)
     if not declared and (folder / "node_modules").is_dir():
         return _answer(ExitCode.OK, "dependencies are installed", ran=False)
+    if declared and serving.install_check:
+        if (folder / serving.install_check).exists():
+            return _answer(ExitCode.OK, "dependencies are installed", ran=False)
+    elif declared and check and (await _start_all(app, folder, check=True)).ok:
+        # A declared install with no check of its own is judged by its result: the app runs.
+        return _answer(ExitCode.OK, "running, so it is installed", ran=False)
     if check:
-        # A declared install has no marker of its own: it is judged by its result, the start.
         return _answer(ExitCode.NOT_YET, "dependencies are not installed", ran=False)
     command = declared or install_command(serving.start_cmd, folder)
     return await _run_step(command, folder, f"install-{app.name}", done=f"installed with `{command}`")
@@ -165,81 +173,193 @@ async def _run_step(command: str, folder: Path, log_name: str, *, done: str) -> 
     return _answer(ExitCode.OK, done)
 
 
-def _server_state(key: str, held: Optional[int], health: str) -> tuple[Optional[dict], bool]:
-    """``(what we last started, the app answers on its port)`` — one trip off the loop.
+@dataclass(frozen=True)
+class _Process:
+    """One process of an app: its page's dev server (``service`` is None), or a service it brings along."""
 
-    **Ours, or not.** With no record Flowpad never started it (the person runs it): its health is all
-    there is to ask. With one, the process it names must still be alive on that port."""
-    from flow_sdk.core import dev_server  # noqa: PLC0415
+    serving: Any
+    mount: Any = None
+    service: Any = None
 
-    record = dev_server.owner(key)
-    alive = record is not None and dev_server.owner_alive(record)
-    ours = record is None or (alive and record.get("port") == held)
-    return (record if alive else None), bool(held) and ours and health_answers(held, health)
+    @property
+    def name(self) -> str:
+        return self.service.name if self.service is not None else ""
 
-
-def _stop(key: str, pid: Optional[int]) -> None:
-    from flow_sdk.core import dev_server  # noqa: PLC0415
-
-    if pid:
-        dev_server.stop_group(pid)
-    dev_server.clear_owner(key)
+    def label(self, app) -> str:
+        return f"{app.name}'s {self.name} service" if self.service is not None else app.name
 
 
-async def _start(app, folder: Path, mount, *, check: bool) -> ReturnedValue:
-    from flow_sdk.core import dev_server  # noqa: PLC0415
-
-    key = str(app.id)
-    serving = mount.serving
-
-    async def look():
-        existing = await _placed(app)
-        held = existing.backend.port if existing is not None else None
-        ours, up = await asyncio.to_thread(_server_state, key, held, serving.health)
-        return existing, held, ours, up
-
-    existing, held, ours, up = await look()
-    if not up and not check:
-        # One start per app: a load and a rooted setup run under different slots and may both arrive here.
-        async with keyed_loop_lock(_START_LOCKS, key):
-            existing, held, ours, up = await look()
-            if not up:
-                return await _launch(app, folder, mount, held, ours)
-    if up:
-        return _answer(ExitCode.OK, f"running at http://127.0.0.1:{held}", ran=False, value=str(held))
-    return _answer(ExitCode.NOT_YET, f"{app.name} is not running", ran=False)
+def _processes(app) -> list[_Process]:
+    """The app's processes in start order: what the page calls first, then the page."""
+    processes = [_Process(service.serving, service=service) for service in (getattr(app, "services", None) or [])]
+    mount = _proxy(app)
+    if mount is not None:
+        processes.append(_Process(mount.serving, mount=mount))
+    return processes
 
 
-async def _launch(app, folder: Path, mount, held, ours) -> ReturnedValue:
-    from flow_sdk.core import dev_server  # noqa: PLC0415
+def _declared(serving) -> Optional[app_ports.Declared]:
+    port = serving.declared_port()
+    return app_ports.Declared(port.port, port.required) if port is not None else None
 
-    key = str(app.id)
-    serving = mount.serving
-    # What we started before is not answering (hung, or dead): it goes before another is started, or it
-    # keeps the port and the next start blames "another program".
-    await asyncio.to_thread(_stop, key, int(ours["pid"]) if ours else None)
-    port = serving.port or held
-    if port and await asyncio.to_thread(dev_server.port_open, port):
-        if serving.port:
-            return _answer(
-                ExitCode.NOT_YET,
-                f"port {port} is held by another program, and {app.name} can only run on that port — "
-                "stop what holds it, then set up again",
-            )
-        port = None  # a port we picked before, taken since: pick again
-    port = port or await asyncio.to_thread(dev_server.find_free_port)
-    command = serving.start_cmd.replace("{port}", str(port))
-    proc, log_file = await asyncio.to_thread(dev_server.start_process, command, cwd=folder, port=port, name=app.name)
 
-    async def failed(detail: str) -> ReturnedValue:
-        await asyncio.to_thread(_stop, key, proc.pid)
-        return _answer(ExitCode.NOT_YET, detail)
+async def _other_apps(app) -> list:
+    """Every other web app this instance knows — their declared ports are not this app's to take."""
+    from flow_sdk.builtin.faas.micro_app import WebApp  # noqa: PLC0415
 
-    # A start command may hand off to a daemon and exit 0 (``docker compose up -d``): only a non-zero
-    # exit is a crash. Such a server has no process of ours to name, so it is judged by health alone.
-    opened = await asyncio.to_thread(
-        dev_server.wait_for_port, port, START_SECONDS, exited=lambda: proc.poll() not in (None, 0)
+    return [other for other in await WebApp.get_all() if str(other.id) != str(app.id)]
+
+
+#: ``(who declares it, its process name, what it declares)`` for every declaring process of an app.
+_DeclaredRow = tuple[str, str, app_ports.Declared]
+
+
+def _declared_by(app) -> list[_DeclaredRow]:
+    rows = [(process.label(app), process.name, _declared(process.serving)) for process in _processes(app)]
+    return [row for row in rows if row[2] is not None]
+
+
+async def _declared_elsewhere(app) -> list[_DeclaredRow]:
+    """What every OTHER app declares — read once per call, whatever the number of processes."""
+    return [row for other in await _other_apps(app) for row in _declared_by(other)]
+
+
+def _elsewhere(app, process: _Process, others: list[_DeclaredRow]) -> tuple[set[int], str]:
+    """``(ports other processes declare, who else REQUIRES this process's required port)``."""
+    mine = _declared(process.serving)
+    rows = [row for row in _declared_by(app) if row[1] != process.name] + others
+    taken = {declared.port for _who, _name, declared in rows}
+    clash = next(
+        (who for who, _name, declared in rows
+         if mine is not None and mine.required and declared.required and declared.port == mine.port),
+        "",
     )
+    return taken, clash
+
+
+#: Ports handed to a start that has not opened them yet: two starts at once never get the same one.
+_STARTING: set[int] = set()
+
+
+def _look(app, process: _Process, taken: set[int], snapshot: Optional[list] = None) -> tuple[app_ports.PortAnswer, list, bool]:
+    """What is declared against what is live — one trip off the loop. ``(the rule's answer, this
+    process's listeners, it answers its health path)``."""
+    serving = process.serving
+    snapshot = app_ports.listeners() if snapshot is None else snapshot
+    siblings = [one.serving.start_cmd for one in _processes(app)]
+    mine = app_ports.of_app(snapshot, Path(app.asset_ref), serving.start_cmd, siblings)
+    answer = app_ports.decide(
+        _declared(serving), mine, snapshot,
+        reserved=taken | _STARTING, answers=lambda port: health_answers(port, serving.health),
+    )
+    # A holder that could not be named was already asked its health by the rule.
+    up = answer.state == "running" and (answer.holder is None or health_answers(answer.port, serving.health))
+    return answer, mine, up
+
+
+async def where(app, serving) -> app_ports.PortAnswer:
+    """Where ``serving`` — a process of ``app`` — runs or should start: the rule's answer, changing nothing."""
+    process = next((one for one in _processes(app) if one.serving is serving), _Process(serving))
+    taken, _clash = _elsewhere(app, process, await _declared_elsewhere(app))
+    return (await asyncio.to_thread(_look, app, process, taken))[0]
+
+
+async def app_declaring(port: int):
+    """The web app one of whose processes declares ``port``, or None."""
+    from flow_sdk.builtin.faas.micro_app import WebApp  # noqa: PLC0415
+
+    for app in await WebApp.get_all():
+        if app.asset_ref and any(declared.port == port for _who, _name, declared in _declared_by(app)):
+            return app
+    return None
+
+
+def port_env(name: str) -> str:
+    """The environment variable a process's port is told to the app's other processes under."""
+    return "FLOWPAD_APP_PORT_" + "".join(ch if ch.isalnum() else "_" for ch in name.upper())
+
+
+async def _start_all(app, folder: Path, *, check: bool) -> ReturnedValue:
+    """Every process of the app, what the page calls first. The answer is the page's; a process that
+    does not come up stops the rest and says which one it was."""
+    processes = _processes(app)
+    others = await _declared_elsewhere(app)
+    # A check reads the process table once for the whole app; a start reads it as it goes.
+    snapshot = await asyncio.to_thread(app_ports.listeners) if check else None
+    env = {port_env(name): str(declared.port) for _who, name, declared in _declared_by(app) if name}
+    ran = False
+    for process in processes:
+        answer = await _start(app, folder, process, others, env, check=check, snapshot=snapshot)
+        ran = ran or answer.ran
+        if not answer.ok:
+            return answer
+        if process.service is not None:
+            env[port_env(process.name)] = str(answer.value)
+    return answer if answer.ran == ran else _answer(answer.exit_code, answer.detail, ran=ran, value=answer.value)
+
+
+async def _start(
+    app, folder: Path, process: _Process, others: list[_DeclaredRow], env: dict, *, check: bool,
+    snapshot: Optional[list] = None,
+) -> ReturnedValue:
+    serving = process.serving
+    who = process.label(app)
+    taken, clash = _elsewhere(app, process, others)
+    if clash:
+        port = _declared(serving).port
+        return _answer(ExitCode.NOT_YET, f"port {port} is declared by both {who} and {clash} — one of them must change", ran=False)
+
+    found, mine, up = await asyncio.to_thread(_look, app, process, taken, snapshot)
+    if not up and not check and found.state != "conflict":
+        # One start per process: a load and a rooted setup run under different slots and may both arrive here.
+        async with keyed_loop_lock(_START_LOCKS, f"{app.id}:{process.name}"):
+            found, mine, up = await asyncio.to_thread(_look, app, process, taken)
+            hung = found.state == "running" and not up
+            # Flowpad's own start, from before the declared port changed, moves; one started by hand
+            # is the person's to stop.
+            stale = found.state == "wrong_port" and all(app_ports.launched_by(one, serving.start_cmd) for one in mine)
+            if hung or stale:
+                # It goes before another is started, or it keeps the port.
+                await asyncio.to_thread(app_ports.stop, mine)
+                found, mine, up = await asyncio.to_thread(_look, app, process, taken)
+            if found.state == "start":
+                return await _launch(app, folder, process, found, env)
+    if found.state in ("conflict", "wrong_port"):
+        # The page's reason is the app's own (its node already carries its name); a service's names it.
+        named = f"{who}: " if process.service is not None else ""
+        return _answer(ExitCode.NOT_YET, f"{named}{found.note}" if found.state == "conflict" else f"{who} {found.note}", ran=False)
+    if up:
+        await _keep(app, process, found.port, serving.start_cmd.replace("{port}", str(found.port)))
+        return _answer(ExitCode.OK, f"running at http://127.0.0.1:{found.port}", ran=False, value=str(found.port))
+    return _answer(ExitCode.NOT_YET, f"{who} is not {'answering' if found.state == 'running' else 'running'}", ran=False)
+
+
+async def _launch(app, folder: Path, process: _Process, found: app_ports.PortAnswer, env: dict) -> ReturnedValue:
+    from flow_sdk.core import dev_server  # noqa: PLC0415
+
+    serving = process.serving
+    who = process.label(app)
+    declared = _declared(serving)
+    port = found.port
+    command = serving.start_cmd.replace("{port}", str(port))
+    _STARTING.add(port)
+    try:
+        proc, log_file = await asyncio.to_thread(
+            dev_server.start_process, command, cwd=folder, port=port, name=f"{app.name}-{process.name}".strip("-"), env=env
+        )
+
+        async def failed(detail: str) -> ReturnedValue:
+            await asyncio.to_thread(dev_server.stop_group, proc.pid)
+            return _answer(ExitCode.NOT_YET, detail)
+
+        # A start command may hand off to a daemon and exit 0 (``docker compose up -d``): only a non-zero
+        # exit is a crash. A server that took another port than the one it was told ends the wait too.
+        opened = await asyncio.to_thread(
+            dev_server.wait_for_port, port, START_SECONDS,
+            exited=lambda: proc.poll() not in (None, 0) or bool(app_ports.listening_under(proc.pid) - {port}),
+        )
+    finally:
+        _STARTING.discard(port)
     code = proc.poll()
     if code:  # also when the port "opened": then it is somebody else's
         # One line: a step's reason is carried up the tree as its last line, and the server's own last
@@ -247,14 +367,75 @@ async def _launch(app, folder: Path, mount, held, ours) -> ReturnedValue:
         said = (await asyncio.to_thread(dev_server.log_tail, log_file, 1)).strip()
         return await failed(f"`{command}` exited (exit {code}){': ' + said if said else ''} — log: {log_file}")
     if not opened:
-        return await failed(f"`{command}` started (pid {proc.pid}) but port {port} never opened — log: {log_file}")
+        own = sorted(await asyncio.to_thread(app_ports.listening_under, proc.pid))
+        if not own:
+            return await failed(f"`{command}` started (pid {proc.pid}) but port {port} never opened — log: {log_file}")
+        if declared is not None and declared.required:
+            return await failed(
+                f"{who} was started on port {port} but listens on port {own[0]} — its start command must use {{port}}"
+            )
+        port = own[0]  # it chose its own port: where it listens is where it is
     if not await asyncio.to_thread(health_answers, port, serving.health):
-        return await failed(f"{app.name} opened port {port} but {serving.health} does not answer — log: {log_file}")
-    if code is None:
-        await asyncio.to_thread(dev_server.record_owner, key, proc.pid, port)
-    if await _keep_route(app, mount, port, command) is False:
-        return await failed(f"{app.name} has no local placement to be served from")
-    return _answer(ExitCode.OK, f"running at http://127.0.0.1:{port}", value=str(port))
+        return await failed(f"{who} opened port {port} but {serving.health} does not answer — log: {log_file}")
+    if await _keep(app, process, port, command) is False:
+        return await failed(f"{who} has no local placement to be served from")
+    detail = f"running at http://127.0.0.1:{port}"
+    return _answer(ExitCode.OK, f"{detail} ({found.note})" if found.note else detail, value=str(port))
+
+
+async def _keep(app, process: _Process, port: int, command: str):
+    """The app's route (a service's endpoint) names where the process runs now. It is a copy of the live
+    answer, kept for the display: written only when it does not already say this port."""
+    if process.service is not None:
+        return await _keep_service(app, process.service, port, command)
+    placed = await _placed(app)
+    if placed is not None and placed.backend.port == port:
+        return True
+    return await _keep_route(app, process.mount, port, command)
+
+
+async def stop(webapp_id: str) -> ReturnedValue:
+    """Stop every process of the app that is running here — whoever started it."""
+    app = await _app(webapp_id)
+    if app is None or not app.asset_ref:
+        return _answer(ExitCode.NOT_FOUND, f"there is no web app {webapp_id!r} here", ran=False)
+
+    def running() -> list:
+        snapshot = app_ports.listeners()
+        return [one for process in _processes(app) for one in _look(app, process, set(), snapshot)[1]]
+
+    found = await asyncio.to_thread(running)
+    if not found:
+        return _answer(ExitCode.OK, f"{app.name} is not running", ran=False)
+    await asyncio.to_thread(app_ports.stop, found)
+    ports = ", ".join(str(port) for port in sorted({one.port for one in found}))
+    return _answer(ExitCode.OK, f"stopped {app.name} (port {ports})")
+
+
+async def ports(webapp_id: str) -> list[dict]:
+    """Each process of the app: the port it declares, and where it is live now."""
+    app = await _app(webapp_id)
+    if app is None or not app.asset_ref:
+        return []
+    others = await _declared_elsewhere(app)
+    snapshot = await asyncio.to_thread(app_ports.listeners)
+    rows = []
+    for process in _processes(app):
+        taken, clash = _elsewhere(app, process, others)
+        found, _mine, _up = await asyncio.to_thread(_look, app, process, taken, snapshot)
+        declared = _declared(process.serving)
+        live = found.state in ("running", "wrong_port")
+        rows.append({
+            "app": app.name,
+            "process": process.name or "page",
+            "declared": declared.port if declared is not None else None,
+            "required": bool(declared is not None and declared.required),
+            "state": "conflict" if clash else "stopped" if found.state == "start" else found.state,
+            "port": found.port if live else None,
+            "pid": found.holder.pid if live and found.holder is not None else None,
+            "note": f"also declared by {clash}" if clash else found.note,
+        })
+    return rows
 
 
 async def _keep_route(app, mount, port: int, command: str) -> bool:
@@ -271,4 +452,18 @@ async def _keep_route(app, mount, port: int, command: str) -> bool:
     _placed_route, saved = await set_app_route(deployment, app, mount, backend)
     if saved:
         tell_hub(deployment)
+    return True
+
+
+async def _keep_service(app, service, port: int, command: str) -> bool:
+    """The service's endpoint on its project's local placement now names this port."""
+    from flow_sdk.builtin.project import Project  # noqa: PLC0415
+    from flow_sdk.builtin.webapp_placement import local_web_deployment, set_service_endpoint  # noqa: PLC0415
+
+    project = await Project.get_by_id(app.project_id) if app.project_id else None
+    deployment = await local_web_deployment(project)
+    if deployment is None:
+        return False
+    backend = {"type": "proxy", "port": port, "start_cmd": command, "health": service.serving.health}
+    await set_service_endpoint(deployment, app, service, backend)
     return True

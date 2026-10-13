@@ -2,6 +2,7 @@ import { ReactNode } from 'react';
 import { TypeId, WebApp } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
 import { ProjectLoadGate } from './ProjectLoadGate';
+import { webappAsset } from './use-project-load';
 
 /**
  * The provider Load for a dock that names one. An app's own row says which project owns it; the id a
@@ -23,7 +24,12 @@ export function OwnerLoadGate({
   if (appId && isLoading) return null;
   const projectId = app?.project_id || urlProject;
   return (
-    <ProjectLoadGate key={projectId} projectId={projectId} display={display}>
+    <ProjectLoadGate
+      key={projectId}
+      projectId={projectId}
+      asset={webappAsset(appId)}
+      display={display}
+    >
       {children}
     </ProjectLoadGate>
   );
