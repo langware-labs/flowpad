@@ -876,7 +876,10 @@ class Project(SetupSkippable, Entity):
     async def _own_apps(self, name: str = "") -> list:
         from flow_sdk.builtin.faas.micro_app import WebApp  # noqa: PLC0415
 
-        apps = [app for app in await WebApp.get_all({"match": {"project_id": self.id}}) if app.asset_ref]
+        apps = [
+            app for app in await WebApp.get_all({"match": {"project_id": self.id}})
+            if app.asset_ref and Path(app.asset_ref).is_dir()
+        ]
         return [app for app in apps if not name or app.name == name]
 
     @action.get(action_name="app-ports")

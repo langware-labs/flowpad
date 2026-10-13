@@ -649,3 +649,50 @@ async def test_a_declared_install_is_judged_by_its_check_or_by_the_app_running(a
     assert (await webapp_setup.step("a1", "start", check=False)).ok
     running = await webapp_setup.step("a1", "install", check=True)
     assert running.ok and running.detail == "running, so it is installed"
+
+
+@pytest.mark.asyncio
+async def test_a_port_held_by_something_that_cannot_be_named_is_the_app_by_its_health_and_cannot_be_stopped(
+    app, monkeypatch
+):
+    """A container's published port (or another user's process) is in no process table we can read.
+    The app's declared port answering its health path is all there is to ask — and there is nothing of
+    ours to end, which stop says instead of calling a served app "not running"."""
+    import http.server
+    import threading
+
+    served = http.server.ThreadingHTTPServer(("127.0.0.1", 0), http.server.SimpleHTTPRequestHandler)
+    threading.Thread(target=served.serve_forever, daemon=True).start()
+    port = served.server_address[1]
+    monkeypatch.setattr(webapp_setup.app_ports, "listeners", lambda: [])
+    try:
+        app.make(ports={"port": port})
+        running = await webapp_setup.step("a1", "start", check=False)
+        assert running.ok and not running.ran and running.value == str(port), running.detail
+        stopped = await webapp_setup.stop("a1")
+        assert stopped.exit_code is ExitCode.NOT_YET and not stopped.ran
+        assert f"served on port {port} by a program Flowpad did not start and cannot stop" in stopped.detail
+        assert webapp_setup.health_answers(port)
+    finally:
+        served.shutdown()
+        served.server_close()
+
+
+@pytest.mark.asyncio
+async def test_an_app_whose_folder_is_gone_reserves_no_port(app, tmp_path, monkeypatch):
+    """Its row outlives its folder until the index drops it; a ghost must not block a live app."""
+    import shutil
+
+    from flow_sdk.builtin.faas.micro_app import WebApp
+
+    port = _free()
+    ghost = app.make(id="a2", at=tmp_path / "ghost", ports={"port": port})
+    shutil.rmtree(tmp_path / "ghost")
+
+    async def rows(_query=None):
+        return list(app.rows.values())
+
+    monkeypatch.undo()
+    monkeypatch.setattr(WebApp, "get_all", rows)
+    live = SimpleNamespace(id="a1", name="site", asset_ref=str(app.folder), project_id="p1", mounts=[], services=[])
+    assert ghost.id not in {other.id for other in await webapp_setup._other_apps(live)}
