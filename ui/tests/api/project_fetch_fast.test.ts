@@ -54,6 +54,7 @@ beforeAll(async () => {
         LOCAL_SERVER_PORT: String(PORT),
         MINIHUB_RELOAD: 'False', // single process, no watchfiles
         FLOWPAD_SKIP_DOTENV: 'true', // honor the env we pin here, not .env.local
+        FLOWPAD_COOKIE_GATE: 'off', // these requests carry no gate token
         FLOWPAD_SKIP_LOCK: 'true', // don't fight the desktop app's singleton lock
       },
       stdio: ['ignore', logHandle.fd, logHandle.fd],
