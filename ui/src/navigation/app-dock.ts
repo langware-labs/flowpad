@@ -7,6 +7,8 @@ import type { DockPointer } from './DockPointer';
 import { withoutScopeFilterOptions } from '@src/lib/scope-filter';
 
 export const APP_RUNTIME_PARAM = 'runtime';
+/** The app's mount on the endpoint that serves it, when that is a placement's audience proxy. */
+export const APP_ROUTE_PARAM = 'route';
 
 /** The entity types an app dock may address. */
 const APP_TYPES = new Set(['artifact', 'micro_app', 'service_endpoint']);
@@ -24,6 +26,10 @@ export interface AppDockAddress {
   /** Bare service_endpoint uuid, for an app addressed by what serves it — e.g. a
    *  dev server shown by port, which has no artifact and no definition. */
   endpointId: string | null;
+  /** With `endpointId`: the app's mount on it, when the endpoint is a placement's audience proxy
+   *  (`admin` / `app`) — every web app of a placement is a route of one of the two. Null for an
+   *  endpoint that is a service of its own. */
+  route: string | null;
   /** The user's runtime preference, if the URL pins one. */
   runtime: AppRuntime | null;
   /**
@@ -40,17 +46,18 @@ export interface AppDockAddress {
 /**
  * Read an app dock's inputs off its pointer — the one place that grammar is split.
  *
- * `/dock/app/<artifact|micro_app|service_endpoint>-<uuid>[?runtime=dev|served]`.
+ * `/dock/app/<artifact|micro_app|service_endpoint>-<uuid>[?runtime=dev|served][&route=<mount>]`.
  *
- * Every form resolves to the `ServiceEndpoint`s that serve the app (`useAppDisplay`),
- * and none carries a port: a port belongs to whichever server happens to be up, so
+ * Every form resolves to what serves the app (`useAppDisplay`) — a route of its placement's
+ * audience proxy — and none carries a port: a port belongs to whichever server happens to be up, so
  * one baked into the address goes stale the moment the server moves.
  *
- * - `artifact-<uuid>` — an app built from source. Its endpoints (a dev server, a
+ * - `artifact-<uuid>` — an app built from source. Its routes (a dev server, a
  *   served build) are found by `artifact_id`, and which one shows is derived.
- * - `micro_app-<uuid>` — a webapp ASSET, found by the endpoint whose `webapp_id`
+ * - `micro_app-<uuid>` — a webapp ASSET, found by the route whose `webapp_id`
  *   names it. Addressing the definition is also what gives it a breadcrumb.
- * - `service_endpoint-<uuid>` — the endpoint itself (a bare dev server).
+ * - `service_endpoint-<uuid>` + `route` — the proxy and the mount (a bare dev server
+ *   shown by port); without `route`, an endpoint that is a service of its own.
  *
  * Null when the pointer is missing, not a TypeId, or names some other type —
  * the caller renders nothing rather than guessing at an app.
@@ -60,11 +67,17 @@ export function appDockAddress(dock: DockPointer | null): AppDockAddress | null 
   // and already returns null instead of throwing on a malformed pointer.
   const target = dock?.targetTypeId ?? null;
   if (!target?.id || !APP_TYPES.has(target.type)) return null;
-  const { [APP_RUNTIME_PARAM]: pinned, ...passthrough } = withoutScopeFilterOptions(dock!.options ?? {});
+  const {
+    [APP_RUNTIME_PARAM]: pinned,
+    [APP_ROUTE_PARAM]: route,
+    ...passthrough
+  } = withoutScopeFilterOptions(dock!.options ?? {});
+  const isEndpoint = target.type === 'service_endpoint';
   return {
     artifactId: target.type === 'artifact' ? target.id : null,
     microAppId: target.type === 'micro_app' ? target.id : null,
-    endpointId: target.type === 'service_endpoint' ? target.id : null,
+    endpointId: isEndpoint ? target.id : null,
+    route: isEndpoint && typeof route === 'string' ? route : null,
     runtime: pinned === 'dev' || pinned === 'served' ? pinned : null,
     options: passthrough as Record<string, string>,
   };

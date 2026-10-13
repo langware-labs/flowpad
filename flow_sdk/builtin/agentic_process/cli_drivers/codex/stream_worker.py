@@ -158,6 +158,10 @@ class CodexCLIStreamWorker(AgenticWorker):
             yield error_frame(message)
             raise WorkerSpawnError("codex", message) from e
 
+        # A cancel that landed while the spawn was pending found no process to signal.
+        if self._cancel_requested:
+            await self._terminate_process()
+
         # Pipe the prompt (with any system-prompt addition already prepended by
         # the options' stdin sink) in, and close stdin so codex starts processing.
         try:

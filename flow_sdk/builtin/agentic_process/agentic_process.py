@@ -2690,16 +2690,16 @@ class AgenticProcess(Entity):
             await self.save()
         return project
 
-    async def _dev_server_typeid(self, port: object, name: object = None) -> str:
-        """The typeid of the endpoint for a dev server on *port* — registered on first show.
+    async def _dev_server_target(self, port: object, name: object = None, audience: object = None) -> dict:
+        """The display target for a dev server on *port* — its route, registered on first show.
 
         A port is how a server is reached, not what it is: showing one gives it a
-        ``proxy`` endpoint on the local placement of this run's project (or of the
-        machine, with no project), and the display holds that. Raises
-        ``InvalidDisplayTarget`` for a bad port.
+        ``proxy`` route on the ``app`` (or ``admin``) proxy of this run's project's local
+        placement (or of the machine's, with no project), and the display holds that.
+        Raises ``InvalidDisplayTarget`` for a bad port or audience.
         """
         from flow_sdk.builtin import webapp_placement  # noqa: PLC0415
-        from flow_sdk.core.display_target import InvalidDisplayTarget  # noqa: PLC0415
+        from flow_sdk.core.display_target import InvalidDisplayTarget, endpoint_target  # noqa: PLC0415
 
         try:
             wanted = int(str(port))
@@ -2708,12 +2708,15 @@ class AgenticProcess(Entity):
         if not 0 < wanted <= 65535:
             raise InvalidDisplayTarget(f"Invalid port: {port!r}")
         try:
-            endpoint = await webapp_placement.register_dev_endpoint(
-                await self._resolve_webapp_project(), port=wanted, name=str(name or "").strip() or None
+            placed = await webapp_placement.register_dev_endpoint(
+                await self._resolve_webapp_project(),
+                port=wanted,
+                name=str(name or "").strip() or None,
+                audience=str(audience or "").strip() or "app",
             )
         except ValueError as e:
             raise InvalidDisplayTarget(str(e)) from e
-        return str(endpoint.typeid)
+        return endpoint_target(placed)
 
     async def _artifact_reference(self, payload: dict) -> tuple[str, str]:
         """What a resolved display target points at: ``(asset_ref, entity_kind)``.
@@ -2787,10 +2790,11 @@ class AgenticProcess(Entity):
 
         try:
             if port:
-                typeid = await self._dev_server_typeid(port, body.get("name"))
-            # `discover=True` — a display verb: showing a just-written file has
-            # to recover it so the bespoke editor renders, not a raw file view.
-            payload = await resolve_display_target(typeid=typeid, path=path, discover=True)
+                payload = await self._dev_server_target(port, body.get("name"), body.get("audience"))
+            else:
+                # `discover=True` — a display verb: showing a just-written file has
+                # to recover it so the bespoke editor renders, not a raw file view.
+                payload = await resolve_display_target(typeid=typeid, path=path, discover=True)
         except InvalidDisplayTarget as e:
             return ApiFailResponse(message=str(e), status_code=400)
         except DisplayTargetNotFound as e:
@@ -2873,7 +2877,7 @@ class AgenticProcess(Entity):
             # paying both latencies in series.
             artifacts, endpoints = await asyncio.gather(
                 webapp_placement.project_artifacts(project),
-                webapp_placement.project_endpoints(project),
+                webapp_placement.project_routes(project),
             )
             by_artifact: dict[str, list] = {}
             for endpoint in endpoints:
@@ -2882,8 +2886,8 @@ class AgenticProcess(Entity):
             rows = []
             for artifact in artifacts:
                 payload = artifact.model_dump(mode="json")
-                # Where the app is served here: its dev server (`proxy`) and/or its
-                # built output (`static`). `flow app open` restarts from these.
+                # Where the app is served here: the routes of its dev server (`proxy`) and/or
+                # its built output (`static`). `flow app open` restarts from these.
                 payload["endpoints"] = by_artifact.get(artifact.id, [])
                 rows.append(payload)
             return ApiSuccessResponse(data={"artifacts": rows})
@@ -2899,6 +2903,7 @@ class AgenticProcess(Entity):
         from flow_sdk.builtin import webapp_placement  # noqa: PLC0415
         from flow_sdk.core.display_target import InvalidDisplayTarget, resolve_display_target  # noqa: PLC0415
         from flow_sdk.fs_store.path_utils import canonical_posix_path  # noqa: PLC0415
+        from flow_sdk.schema.data_spec.service_endpoint_spec import WEB_AUDIENCES  # noqa: PLC0415
 
         body = await _read_json_body()
         if isinstance(body, ApiFailResponse):
@@ -2926,6 +2931,9 @@ class AgenticProcess(Entity):
             artifact_path = raw_path
 
         name = str(body.get("name") or "").strip() or Path(artifact_path).name or "Web App"
+        audience = str(body.get("audience") or "").strip() or "app"
+        if audience not in WEB_AUDIENCES:
+            return ApiFailResponse(message=f"Invalid audience: {audience!r} (admin or app)", status_code=400)
         start_cmd = str(body.get("start_cmd") or "").strip()
         health = str(body.get("health") or "/").strip() or "/"
         description = str(body.get("description") or "").strip() or f"Web app at {artifact_path}"
@@ -2961,7 +2969,11 @@ class AgenticProcess(Entity):
         endpoints: list = []
         if deployment is not None:
             endpoints = await webapp_placement.upsert_artifact_endpoints(
-                deployment, artifact, backends, project_id=project.id if project is not None else None
+                deployment,
+                artifact,
+                backends,
+                project_id=project.id if project is not None else None,
+                audience=audience,
             )
 
         shown = None
@@ -3086,7 +3098,9 @@ class AgenticProcess(Entity):
                 return await self._show_answer(payload)
             typeid = str(body.get("typeid") or "").strip() or None
             if body.get("port") is not None:
-                typeid = await self._dev_server_typeid(body.get("port"), body.get("name"))
+                return await self._show_answer(
+                    await self._dev_server_target(body.get("port"), body.get("name"), body.get("audience"))
+                )
             payload = await resolve_display_target(
                 typeid=typeid,
                 path=str(body.get("path") or "").strip() or None,

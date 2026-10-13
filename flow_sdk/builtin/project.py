@@ -8,7 +8,6 @@ import re
 import string
 import sys
 import tempfile
-import uuid
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING, Any, Callable, List, Literal, Optional
@@ -47,6 +46,7 @@ from flow_sdk.fs_store.path_utils import (
     is_path_under,
     is_protected_path,
     is_valid_project_cwd,
+    legacy_project_scope_id,
 )
 from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.request_context.methods import (
@@ -892,6 +892,13 @@ class Project(SetupSkippable, Entity):
 
         return ApiSuccessResponse(data={"run": await start_setup(self, root=root)})
 
+    @action.post(action_name="setup-stop")
+    async def setup_stop_action(self, root: str = "") -> "ApiResponse":
+        """`POST /project/<id>/setup-stop {root?}` — stop the setup run going here. Answers ``{stopped}``."""
+        from flow_sdk.builtin.project_setup import stop_setup  # noqa: PLC0415
+
+        return ApiSuccessResponse(data={"stopped": await stop_setup(str(self.id), root)})
+
     @action.post(action_name="setup-skip")
     async def setup_skip_action(
         self, typeid: str = "", scope: str = "local", name: str = "", note: str = ""
@@ -1127,14 +1134,7 @@ class Project(SetupSkippable, Entity):
         keeps accepting it as a record-match alias. ``None`` when no path is
         given.
         """
-        if not path:
-            return None
-        if not is_valid_project_cwd(path, include_temp=True):
-            return None
-        return mint_uuid(
-            f"project:{canonical_posix_path(path)}",
-            namespace=uuid.NAMESPACE_DNS,
-        )
+        return legacy_project_scope_id(path)
 
     @classmethod
     def _row_id_policy(cls, data: dict) -> str:

@@ -96,6 +96,34 @@ def test_the_same_class_defined_again_takes_its_kind_over(isolated_kinds) -> Non
     assert DataSpec.parse("demo.endpoint.rerun") is second
 
 
+def _driver_record(package: str):
+    """A record class as a data driver's ``source.py`` defines it, imported under ``package`` (the
+    driver registry names a folder's package for its content: ``flowpad_source_<folder>_<sha8>``)."""
+    from typing import ClassVar
+
+    class TwentyTaskData(DataSpec):
+        __module__ = f"{package}.source"           # bound under this module, as an import would
+        spec_kind: ClassVar[str] = "demo.record.twenty_task"
+        title: str
+
+    return TwentyTaskData
+
+
+def test_a_reloaded_driver_takes_its_kinds_over(isolated_kinds) -> None:
+    """A driver edited on disk comes back under a new content digest in its package name. Its record
+    class is the same definition: it re-binds, so the edit takes effect without a restart (prod logged
+    "kind '…twenty_task' is already bound to TwentyTaskData" on every poll after a driver edit)."""
+    first = _driver_record("flowpad_source_twenty_tasks_0a1b2c3d")
+    second = _driver_record("flowpad_source_twenty_tasks_9f8e7d6c")
+    assert first is not second and DataSpec.parse("demo.record.twenty_task") is second
+
+
+def test_another_drivers_class_of_the_same_name_cannot_take_a_bound_kind(isolated_kinds) -> None:
+    _driver_record("flowpad_source_twenty_tasks_0a1b2c3d")
+    with pytest.raises(ValueError, match="already bound"):
+        _driver_record("flowpad_source_other_tasks_0a1b2c3d")
+
+
 def test_a_different_class_still_cannot_take_a_bound_kind(isolated_kinds) -> None:
     from typing import ClassVar
 

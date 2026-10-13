@@ -14,14 +14,11 @@ import sys
 import time
 from pathlib import Path
 
-# Ensure the repo root and SDK path are on sys.path so "server" and "flow_sdk"
-# are importable even when this script is run directly (e.g. `python run.py`).
-_repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+# Direct script execution needs the directory containing the flow_sdk package.
+# Never add flow_sdk itself: its secrets package would shadow stdlib secrets.
+_repo_root = str(Path(__file__).resolve().parents[2])
 if _repo_root not in sys.path:
     sys.path.insert(0, _repo_root)
-_sdk_path = os.path.join(_repo_root, "sdk", "python")
-if _sdk_path not in sys.path:
-    sys.path.insert(0, _sdk_path)
 
 # On Windows the console/stdio defaults to a legacy code page (e.g. cp1252),
 # so a log line carrying non-ASCII text — a Hebrew project path, an exception

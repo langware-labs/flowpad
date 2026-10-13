@@ -97,6 +97,8 @@ function AddProjectSourceDialog({ project, agent, onClose, onConnect, onAdded }:
   const [busy, setBusy] = useState(false);
   const generation = useRef(0);
   const alive = useRef(true);
+  const connect = useRef(onConnect);
+  connect.current = onConnect;
   const { specFor } = useSourceSpecs();
   const candidates = useEntityBatch<DataSource>(DataSource.type, candidateIds);
   const origins = useEntityBatch<Project>(Project.type, candidates.flatMap((source) => source.project_id ? [source.project_id] : []));
@@ -109,6 +111,12 @@ function AddProjectSourceDialog({ project, agent, onClose, onConnect, onAdded }:
       .finally(() => { if (alive.current) setLoading(false); });
     return () => { alive.current = false; generation.current += 1; };
   }, [project, agent]);
+  const pickable = candidates.filter((source) => !isMessageDriverSpec(specFor(source.provider)));
+  const nothingToPick = !loading && !error && candidates.length === candidateIds.length && pickable.length === 0;
+  useEffect(() => {
+    // Nothing in the project to pick: go straight to connecting a new source, not an empty list.
+    if (nothingToPick) connect.current();
+  }, [nothingToPick]);
   const pick = async (source: DataSource) => {
     const version = ++generation.current;
     setSelected(source);
@@ -152,7 +160,7 @@ function AddProjectSourceDialog({ project, agent, onClose, onConnect, onAdded }:
         : <>
           <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder={t`Search data sources`} aria-label={t`Search data sources`} />
           {loading ? <Empty><Trans>Loading data sources…</Trans></Empty> : !candidateIds.length && !error ? <Empty><Trans>No data sources in this project yet</Trans></Empty> : null}
-          {candidates.filter((source) => !isMessageDriverSpec(specFor(source.provider)) && source.name.toLocaleLowerCase().includes(search.toLocaleLowerCase())).map((source) => <button
+          {pickable.filter((source) => source.name.toLocaleLowerCase().includes(search.toLocaleLowerCase())).map((source) => <button
             key={source.id} className="mt-2 block w-full rounded border p-3 text-start hover:bg-muted" onClick={() => void pick(source)} data-testid={`agent-source-pick-${source.id}`}
           ><span className="block text-sm font-medium">{source.name}</span><span className="text-xs text-muted-foreground">{origins.find((origin) => origin.id === source.project_id)?.name || source.project_id} · {source.provider} · {source.id.slice(0, 8)}</span></button>)}
         </>}

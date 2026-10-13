@@ -63,17 +63,19 @@ export interface AskForHelpResult {
   diagnosing?: boolean;
 }
 
+/** An action body: the request itself, or — with files — a multipart form carrying it in ``request``. */
+export function requestWithFiles<T extends object>(request: T, files: File[]): T | FormData {
+  if (!files.length) return request;
+  const form = new FormData();
+  form.append('request', JSON.stringify(request));
+  for (const file of files) form.append('files', file, file.name);
+  return form;
+}
+
 /** Write a help request here, then let delivery take it to the hub. Files ride along multipart. */
 export async function askForHelp(request: AskForHelpRequest, files: File[] = []): Promise<AskForHelpResult> {
   const action = new ActionInfo('ask-for-help', null, null, 'POST');
-  if (files.length) {
-    const form = new FormData();
-    form.append('request', JSON.stringify(request));
-    for (const file of files) form.append('files', file, file.name);
-    action.bodyParameters = form;
-  } else {
-    action.bodyParameters = request;
-  }
+  action.bodyParameters = requestWithFiles(request, files);
   const res = await dataManager.callAction<unknown, AskForHelpResult>(action);
   return res!;
 }

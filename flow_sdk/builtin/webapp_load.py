@@ -8,11 +8,13 @@ from __future__ import annotations
 from pathlib import Path
 
 from flow_sdk.api.api_types.vfs_path import VFSPath
+from flow_sdk.builtin.faas.webapp_spec import VIEWER_KIND
 from flow_sdk.core.display_target import DisplayTargetKind, endpoint_target
 from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.schema.data_spec.returned_value_spec import ExitCode, ReturnedValue
-from flow_sdk.schema.data_spec.service_endpoint_spec import PROTOCOL_WEB_APP
+from flow_sdk.schema.data_spec.service_endpoint_spec import WebAppProtocol
 from flow_sdk.schema.types import EntityType
+from flow_sdk.worldview.ontology import kind_matches
 
 
 def _entry_target(target: dict, entries: list[Path], project) -> bool:
@@ -41,15 +43,20 @@ def _entry_target(target: dict, entries: list[Path], project) -> bool:
     return False
 
 
-def _matches(endpoint, app, name, spec) -> bool:
+#: The document a browser opens first on a route — the audience proxy speaks ``web.app``.
+ENTRY = WebAppProtocol().entry
+
+
+def _matches(placed, app, mount) -> bool:
+    """Whether *placed* is the route *mount* describes: this app's, on that audience, served that way."""
     from flow_sdk.builtin.webapp_placement import _static_backend
 
-    return (endpoint.name == name and endpoint.project_id == app.project_id
-            and endpoint.protocol.spec_kind == PROTOCOL_WEB_APP
-            and endpoint.backend.type == spec.serving.type
-            and endpoint.protocol.entry == spec.protocol.entry
-            and (spec.serving.type != "static"
-                 or Path(endpoint.backend.root).resolve() == Path(_static_backend(app, spec)["root"]).resolve()))
+    return (placed.webapp_id == str(app.id) and placed.project_id == (app.project_id or None)
+            and placed.subkind == mount.audience
+            and placed.backend.type == mount.serving.type
+            and (mount.path is None or placed.mount == mount.path)
+            and (mount.serving.type != "static"
+                 or Path(placed.backend.root).resolve() == Path(_static_backend(app, mount)["root"]).resolve()))
 
 
 async def present(app, *, display: str = "", check: bool) -> ReturnedValue:
@@ -61,7 +68,7 @@ readiness. JavaScript/render failures still belong to the viewer's diagnostics.
     from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess
     from flow_sdk.builtin.project import Project
     from flow_sdk.builtin.service_endpoint import ServiceEndpoint
-    from flow_sdk.builtin.webapp_placement import _app_specs, _static_backend, place_webapp_locally, webapp_endpoints
+    from flow_sdk.builtin.webapp_placement import _static_backend, app_mounts, place_webapp_locally, webapp_routes
 
     context = f"app={app.typeid}, display={display or '(none)'}"
 
@@ -83,26 +90,31 @@ readiness. JavaScript/render failures still belong to the viewer's diagnostics.
         if process is None or not app.project_id or process.project_id != app.project_id:
             return answer("display session is missing or belongs to another project")
 
-    specs = [(name, spec) for name, spec in _app_specs(app) if spec.protocol.spec_kind == PROTOCOL_WEB_APP]
-    if not specs:
-        return answer("no web.app presentation is declared; presentation check is not applicable", ok=True)
+    if kind_matches(VIEWER_KIND, app.kind):
+        # A viewer is a module a host page imports, not a page of its own: it has no index.html to serve,
+        # so demanding one failed every shipped viewer. Its entry is its module.
+        module = Path(app.asset_ref) / app.build / app.module.lstrip("/")
+        if not module.is_file():
+            return answer(f"missing viewer module {module}")
+        return answer("a viewer module is presented by its host page", ok=True)
+    mounts = app_mounts(app)
+    if not mounts:
+        return answer("no web presentation is declared; presentation check is not applicable", ok=True)
     entries: list[Path] = []
-    endpoints = await webapp_endpoints(app.id)
+    placed = await webapp_routes(str(app.id))
     missing = []
     valid = set()
-    for name, spec in specs:
-        candidates = [e for e in endpoints if _matches(e, app, name, spec)]
-        if spec.serving.type == "static":
-            root = Path(_static_backend(app, spec)["root"]).resolve()
-            entry = (root / spec.protocol.entry).resolve()
-            if not entry.is_relative_to(root):
-                return answer(f"entry {entry} escapes served root {root}")
+    for mount in mounts:
+        candidates = [p for p in placed if _matches(p, app, mount)]
+        if mount.serving.type == "static":
+            root = Path(_static_backend(app, mount)["root"]).resolve()
+            entry = (root / ENTRY).resolve()
             entries.append(entry)
             if not root.is_dir() or not entry.is_file():
                 return answer(f"missing web.app entry {entry}")
-        valid.update(e.id for e in candidates)
+        valid.update((p.id, p.mount) for p in candidates)
         if not candidates:
-            missing.append(name)
+            missing.append(f"{mount.audience}:{mount.path if mount.path is not None else app.name}")
 
     target = (process.context_data or {}).get("last_shown") if process else None
     stale = False
@@ -117,13 +129,17 @@ readiness. JavaScript/render failures still belong to the viewer's diagnostics.
             except (ValueError, TypeError, IndexError):
                 return answer(f"invalid saved endpoint identity: {target!r}")
         endpoint = await ServiceEndpoint.get_by_id(endpoint_id) if endpoint_id else None
-        # A deleted endpoint has no ownership evidence: never guess which app it served.
-        if endpoint is not None and endpoint.webapp_id == app.id:
-            stale = endpoint.remote or endpoint.id not in valid
+        # A deleted endpoint, or a mount it no longer routes, has no ownership evidence: never guess
+        # which app it served.
+        mount = str(target.get("route") or "")
+        shown = endpoint.route(mount) if endpoint is not None else None
+        owned = target.get("micro_app_id") == str(app.id) or (shown is not None and shown.webapp_id == str(app.id))
+        if endpoint is not None and owned:
+            stale = endpoint.remote or (endpoint.id, mount) not in valid
 
     if check:
         if missing:
-            return answer(f"missing or outdated local endpoint: {', '.join(missing)}; target={target!r}")
+            return answer(f"missing or outdated local route: {', '.join(missing)}; target={target!r}")
         if stale:
             return answer(f"saved target bypasses the app's current local presentation: {target!r}")
         return answer("entry, local placement and saved presentation are ready", ok=True)
@@ -139,11 +155,11 @@ readiness. JavaScript/render failures still belong to the viewer's diagnostics.
         if fresh is None or (fresh.context_data or {}).get("last_shown") != target:
             return await present(app, display=display, check=True)
         process = fresh
-        endpoints = await webapp_endpoints(app.id)
-        endpoint = next((e for e in endpoints if any(_matches(e, app, name, spec) for name, spec in specs)), None)
-        if endpoint is None:
-            return answer("no local web.app endpoint after placement")
-        await process.on_show({**endpoint_target(endpoint, name=app.title or app.name),
+        placed = await webapp_routes(str(app.id))
+        route = next((p for p in placed if any(_matches(p, app, mount) for mount in mounts)), None)
+        if route is None:
+            return answer("no local web.app route after placement")
+        await process.on_show({**endpoint_target(route, name=app.title or app.name),
                                "typeid": str(app.typeid), "micro_app_id": app.id})
     result = await present(app, display=display, check=True)
     return result.model_copy(update={"ran": bool(missing or stale)})

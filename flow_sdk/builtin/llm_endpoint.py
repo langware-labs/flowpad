@@ -33,7 +33,9 @@ from flow_sdk.api.api_types.api_field import APIField, Persist, Sharing
 from flow_sdk.core import Entity
 from flow_sdk.core.urls.service_urls import urls_service
 from flow_sdk.flowpad_types.enums.auth_enums import HubRole
+from flow_sdk.flowpad_types.enums.lm_provider_enums import LMApiProvider
 from flow_sdk.schema.data_spec.credential_contract import LM_SECRET_PREFIX
+from flow_sdk.schema.data_spec.spec import DataSpec
 
 if TYPE_CHECKING:
     from flow_sdk.external_apis.llm.client import LLMClient, ProbeResult
@@ -131,6 +133,15 @@ def hub_invoke_path(typeid: Any) -> str:
     ``build_hub_url``, which returns a path relative to the api base.
     """
     return urls_service.api.build_entity_path(typeid, None, "invoke")
+
+
+class LLMEndpointConfig(DataSpec):
+    """What a caller may set on a local key endpoint through :meth:`LLMEndpoint.by_provider`."""
+
+    #: Slugs to change, by tier (``sm`` / ``md`` / ``lg`` / ``embedding``). Merged over the row's
+    #: own, so naming one tier leaves the others alone.
+    models: dict[str, str] | None = None
+    base_url: str | None = None
 
 
 class LLMEndpoint(Entity):
@@ -499,6 +510,37 @@ class LLMEndpoint(Entity):
             return existing
         endpoint = cls(provider=provider, kind=LLMEndpointKind.API_KEY, secret_name=name)
         await endpoint.save()
+        return endpoint
+
+    @classmethod
+    async def by_provider(
+        cls,
+        provider: LMApiProvider | str,
+        key: str | None = None,
+        config: LLMEndpointConfig | None = None,
+    ) -> "LLMEndpoint":
+        """The local row for a provider's key -- storing *key* first when one is given.
+
+        The one call that turns "I have a provider key" into something a process can be pinned
+        to (``llm_endpoint_typeid``). With no *key* the provider's key must already be stored:
+        the environment is not adopted, because a worker spawn resolves its credential with
+        ``allow_environment=False`` and a row backed only by a variable would fund nothing.
+        """
+        from flow_sdk.cli.auth.lm_api_keys import set_lm_api  # noqa: PLC0415
+        from flow_sdk.external_apis.llm.errors import LLMNoCredential  # noqa: PLC0415
+
+        provider = LMApiProvider(provider)
+        if provider is LMApiProvider.FLOWPAD:
+            raise ValueError("flowpad is bound by the hub login; it has no local key endpoint")
+        if key:
+            set_lm_api(key, provider)
+        elif not cls.key_projection(provider.value).resolve_api_key(allow_environment=False):
+            raise LLMNoCredential(f"no {provider.value} key is stored on this machine; pass key=")
+        endpoint = await cls.ensure_for_secret(provider.value)
+        if config is not None:
+            endpoint.models = {**endpoint.models, **(config.models or {})}
+            endpoint.base_url = config.base_url or endpoint.base_url
+            await endpoint.save()
         return endpoint
 
     @classmethod

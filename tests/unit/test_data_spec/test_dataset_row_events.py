@@ -41,8 +41,27 @@ async def test_every_row_write_says_so_once_with_keys_and_no_values(tmp_path, he
         ("put", [numbered]), ("put", ["acme"]), ("put", ["bolt"]), ("put", ["acme", "core"]),
         ("rename", ["core", "core2"]), ("delete", ["bolt"]), ("sync", ["dyne", "0001", "core2"])]
     assert {e.target for e in heard} == {f"dataset:{d.id}"}
-    assert all(set(e.data) == {"op", "keys", "count"} for e in heard)          # which rows -- never what they hold
+    assert all(set(e.data) == {"op", "keys", "count", "version"} for e in heard)   # which rows -- never what they hold
     assert "Acme" not in repr([e.data for e in heard])
+    assert heard[-1].data["version"] == d.rows_version()                          # the version AFTER the write
+    assert len({e.data["version"] for e in heard}) == len(heard)                  # every write moved it
+
+
+async def test_the_rows_version_moves_on_any_write_and_rides_on_a_read(tmp_path, as_server):
+    """The server stamps the version (an outside writer posts op and keys only)."""
+    """A listener whose socket was down asks ``rows-version`` and compares: the same answer
+    ``rows()`` carries, so a read stamps what was seen without a second call."""
+    d = _dataset(tmp_path)
+    assert d.rows_version() == ""                                                  # no rows yet: nothing to version
+    await d.put("acme", {"input": {"name": "Acme"}})
+    v1 = d.rows_version()
+    assert v1 and d.rows_version() == v1                                           # stable while nothing moves
+    (d._folder() / "examples" / "acme" / "note.txt").write_text("by hand")        # a write by ANYONE, not just Flowpad
+    v2 = d.rows_version()
+    assert v2 != v1
+    (d._folder() / "examples" / "acme" / ".DS_Store").write_text("x")             # a hidden file is not the rows
+    assert d.rows_version() == v2
+    assert (await d.rows_version_action()).data == {"version": v2}
 
 
 async def test_a_write_that_changes_nothing_or_is_refused_says_nothing(tmp_path, heard, as_server):
@@ -63,7 +82,7 @@ async def test_a_large_write_names_a_bounded_number_of_keys(tmp_path, heard, as_
     monkeypatch.setattr(Dataset, "ROWS_CHANGED_KEYS", 3)
     d = _dataset(tmp_path)
     await d.put_many([{"key": f"k{n}", "input": {"name": f"N{n}"}} for n in range(8)])
-    assert heard[0].data == {"op": "put", "keys": ["k0", "k1", "k2"], "count": 8}
+    assert heard[0].data == {"op": "put", "keys": ["k0", "k1", "k2"], "count": 8, "version": d.rows_version()}
 
 
 def test_the_tag_is_forwarded_to_the_app():
@@ -112,7 +131,7 @@ async def test_the_server_emits_what_an_outside_writer_announces(tmp_path, heard
     await d.save()
     told = await call_local("POST", f"dataset/{d.id}/rows-changed", {"op": "sync", "keys": ["a", "b"], "count": 2})
     assert told.status_code == 200 and told.json()["data"] == {"told": 2}
-    assert [(e.target, e.data) for e in heard] == [(f"dataset:{d.id}", {"op": "sync", "keys": ["a", "b"], "count": 2})]
+    assert [(e.target, e.data) for e in heard] == [(f"dataset:{d.id}", {"op": "sync", "keys": ["a", "b"], "count": 2, "version": d.rows_version()})]
     assert (await call_local("POST", f"dataset/{d.id}/rows-changed", {"op": "drop", "keys": ["a"]})).status_code == 400
     assert (await call_local("POST", f"dataset/{d.id}/rows-changed", {"op": "put", "keys": "a"})).status_code == 400
 

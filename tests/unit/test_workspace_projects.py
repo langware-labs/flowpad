@@ -667,3 +667,28 @@ async def test_projects_do_not_nest(project_db, tmp_path):
         await create(outer / "ui" / "sim" / "backend" / "app")
     assert [p.fs_storage_mount_path for p in await Project.get_all()] == [
         canonical_posix_path(outer / "ui" / "sim" / "backend")]
+
+
+def test_non_prod_instance_also_scans_prod_workspace(tmp_path, monkeypatch):
+    """A test instance lists prod's ``~/Flowpad workspace`` folders next to its own."""
+    import dataclasses
+
+    import flow_sdk.fs_store.operations.all_projects as ap
+    import flow_sdk.instance_settings as isettings
+
+    home = tmp_path / "home"
+    own = home / "Flowpad workspaces" / "dev-1"
+    (own / "mine").mkdir(parents=True)
+    (home / "Flowpad workspace" / "prod_proj").mkdir(parents=True)
+    patched = dataclasses.replace(
+        isettings.get_instance_settings(),
+        user_home=home,
+        claude_projects_dir=home / ".claude" / "projects",
+        codex_config_path=home / ".codex" / "config.toml",
+        copilot_session_state_dir=home / ".copilot" / "session-state",
+    )
+    monkeypatch.setattr(ap, "get_instance_settings", lambda: patched)
+    monkeypatch.setattr("flow_sdk.config.all_workspace_roots", lambda: [own])
+
+    names = {Path(cwd).name for cwd in ap.scan_project_cwds(include_temp=True)}
+    assert {"mine", "prod_proj"} <= names, names

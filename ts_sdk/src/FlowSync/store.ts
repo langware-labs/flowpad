@@ -1676,8 +1676,11 @@ export class DataManager<T extends Manageable> extends EventEmitter {
     this.streamingRequestsCount++;
     const endpoint = actionInfo.actionUrl;
     const fullUrl = `${config.SERVER_URL}${endpoint}`;
+    // A FormData body (files riding along) sets its own multipart Content-Type.
+    const payload = actionInfo.bodyParameters;
+    const body = payload instanceof FormData ? payload : JSON.stringify(payload);
     const headers = {
-      'Content-Type': 'application/json',
+      ...(typeof body === 'string' ? { 'Content-Type': 'application/json' } : {}),
       Accept: 'text/event-stream',
       'Cache-Control': 'no-cache',
     };
@@ -1690,7 +1693,7 @@ export class DataManager<T extends Manageable> extends EventEmitter {
     const response = await fetch(fullUrl, {
       method: actionInfo.method,
       headers: headers,
-      body: actionInfo.method !== 'GET' ? JSON.stringify(actionInfo.bodyParameters) : undefined,
+      body: actionInfo.method !== 'GET' ? body : undefined,
       credentials: 'include', // Important for visitor cookies
       signal: actionInfo.abortSignal,
     });

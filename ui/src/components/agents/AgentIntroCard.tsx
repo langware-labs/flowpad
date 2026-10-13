@@ -151,8 +151,9 @@ export function AgentCardBody({
   );
 }
 
-/** One "where it lives" line of the card: a glyph, a path-like label, a click. */
-function CardLink({
+/** One "where it lives" line of a card: a glyph, a path-like label, and a click when
+ *  there is somewhere to go. */
+export function CardLink({
   icon: Icon,
   label,
   suffix,
@@ -163,24 +164,34 @@ function CardLink({
   icon: LucideIcon;
   label: string;
   suffix?: string;
-  title: string;
-  onClick: () => void;
+  title?: string;
+  onClick?: () => void;
   testId: string;
 }) {
-  return (
-    <button
-      type="button"
-      className="flex w-full items-center gap-1.5 text-start text-[11px] text-muted-foreground hover:text-foreground"
-      onClick={onClick}
-      title={title}
-      data-testid={testId}
-    >
+  const className = 'flex w-full items-center gap-1.5 text-start text-[11px] text-muted-foreground';
+  const line = (
+    <>
       <Icon className="h-3 w-3 shrink-0" />
       <span className="min-w-0 truncate font-mono" dir="ltr">
         {label}
       </span>
       {suffix && <span className="shrink-0">· {suffix}</span>}
+    </>
+  );
+  return onClick ? (
+    <button
+      type="button"
+      className={`${className} hover:text-foreground`}
+      onClick={onClick}
+      title={title}
+      data-testid={testId}
+    >
+      {line}
     </button>
+  ) : (
+    <div className={className} title={title} data-testid={testId}>
+      {line}
+    </div>
   );
 }
 

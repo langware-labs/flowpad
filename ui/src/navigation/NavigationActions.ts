@@ -1058,12 +1058,13 @@ export class NavigationActions {
    * document is the session's target and the prompt names it; an entity-backed
    * one also rides in the session's shared context. The launching tab stays as
    * it is: Terminal and Chat open their own tab, Vibe opens a host tab placed
-   * right after the tab on screen.
+   * right after the tab on screen. `path` is the file of a document addressed
+   * by id, which its dock does not carry — the caller has the entity in hand.
    */
-  async reviewDocument(asset: DockPointer, mode: ViewMode, projectId: string | null): Promise<void> {
+  async reviewDocument(asset: DockPointer, mode: ViewMode, projectId: string | null, path?: string): Promise<void> {
     const target = contentAssetTargetForDock(asset);
     if (!target) return;
-    const prompt = reviewPromptFor(target);
+    const prompt = reviewPromptFor({ ...target, path: target.path ?? path });
     const about = {
       targetVfsPath: target.targetVfsPath,
       sharedContextEntities: target.typeId ? [target.typeId] : undefined,

@@ -488,6 +488,21 @@ async def workdir_for(agent) -> str:
 
 # ── who may drive the agent through a source ─────────────────────────────────
 
+#: ``(source id, author)`` of each hub connection probe this app took in: the hub sent it to test
+#: the round trip, so the agent answers it whatever the allowlist says. Filled ONLY by the hub-verified
+#: delivery route from its ``x-flowpad-probe`` header — never from anything a message says.
+#: Each probe has its own sender (``probe-<nonce>``) and is answered within minutes, so only the latest
+#: few matter: the oldest is dropped past ``_MAX_PROBES`` rather than the set growing for the app's life.
+_PROBES: dict[tuple[str, str], None] = {}
+_MAX_PROBES = 256
+
+
+def admit_probe(source_id: str, author: str) -> None:
+    """Let the hub's probe sender *author* through *source_id*'s allowlist."""
+    _PROBES[(str(source_id), str(author))] = None
+    while len(_PROBES) > _MAX_PROBES:
+        del _PROBES[next(iter(_PROBES))]
+
 
 def admits(source, author: str) -> bool:
     """Whether *author* may drive the agent through *source*.
@@ -506,7 +521,7 @@ def admits(source, author: str) -> bool:
 
     if getattr(source, "status", None) != SourceStatus.ACTIVE.value:
         return False
-    if getattr(source, "open_to_all", False):
+    if getattr(source, "open_to_all", False) or (str(getattr(source, "id", "")), author) in _PROBES:
         return True
     allowlist = [a for a in (getattr(source, "allowed_senders", None) or []) if str(a).strip()]
     if sender_allowed(allowlist, author):

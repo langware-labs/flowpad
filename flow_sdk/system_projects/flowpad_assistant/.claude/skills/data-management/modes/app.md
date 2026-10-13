@@ -1,3 +1,6 @@
+---
+id: 7259220e-7660-4b62-93aa-ab747453d3aa
+---
 # Mode: app — an app or a script over the user's kinds
 
 > **Ground rules (inline by design):**
@@ -43,8 +46,9 @@ A static Flowpad-SDK app imports `/sdk/flowpad-sdk.js`:
 | rename / delete | `ds.rename(key, newKey, {expected: row.version})` (id and links stay) / `ds.deleteRow(key, {expected: row.version})` (409 while referenced or changed) | `ds.rename_row(key, new, expected=v)` / `ds.delete_row(key, expected=v)` |
 | save MANY, as one step | `ds.putMany([{key, input}], {expected: {key: version}})` — one row that does not fit (400, `details` under `<key>.<path>`) or changed since (409) writes nothing | `await ds.put_many([...], expected={...})` |
 | delete MANY, as one step | `ds.deleteRows(keys, {expected})` — all or none; rows deleted together do not hold each other back | `ds.delete_rows(keys, expected={...})` |
-| mirror an outside system | `ds.sync(rows, {prune, match})` → `{created, updated, unchanged, deleted}` | `await ds.sync(rows, prune=True, match=None)` — what a sync script calls each run: unchanged rows are not rewritten, rows not listed are removed (only those `match` selects, when given) |
-| mirror a data source's items as typed rows (a CRM's deals) | `ds.mirror(sourceId, {key: "external_id", input: {name: "name", stage: "data.stage"}})` → `{created, updated, unchanged, deleted}` | `await ds.mirror(source, map)` in the server; a script: `await ds.mirror(local_client.graph_get("source_item", {...}), map, by="crm")` |
+| mirror an outside system — THE way | no code: a data source with `"mirror": {dataset, by, map}` in its `data_source.json` (`docs/data-management/mirroring-a-system-of-record.md`); after every sync the dataset is the mirror, the app's writes to `owned_by` fields go to the system first, and a failure shows on the source card (`mirror_failed` / `mirror_misfit`). A record that does not fit the kind is a `problems` row, not a stopped sync | the same file; a driver for the system when none is installed: `connect-data-source author <system>` |
+| load rows you computed yourself (joined from two streams, a one-off import) | `ds.sync(rows, {prune, match})` → `{created, updated, unchanged, deleted}` — all or nothing | `await ds.sync(rows, prune=True, match=None)` in a script wrapped in `single_run(...)`: unchanged rows are not rewritten, rows not listed are removed (only those `match` selects, when given). A script that only reshapes a source's items is the declared `mirror`, not this |
+| mirror a source's items by hand (a test, a one-off) | `ds.mirror(sourceId, {key: "external_id", input: {name: "name", stage: "data.stage"}})` → `{created, updated, unchanged, deleted, misfit?, unlinked?}` | `await ds.mirror(source, map, by="crm")` — what the declared mirror calls for you |
 | write an app-owned field BACK to the outside system | `source.updateItem(itemId, changes)` / `source.deleteItem(itemId)` — through the source's driver and credential; never a client or a key of your own | `await source.update_item(item_id, changes)` |
 | one run of a script at a time (a trigger's run and a "Sync now") | — (a script's concern) | `with single_run(project_root, "crm-sync"):` around the WHOLE run (`flow_sdk.datasets.run`) — a second run waits, or `wait=False` raises `RunBusy`; never a lock file of your own |
 | hear that rows changed | `const off = ds.onRowsChanged(({op, keys, count}) => reload())` — one call per write, by this app, another, or a script; keys, never values | a script's writes tell the running Flowpad by themselves (`ds.announce(op, keys)` to say it by hand) |
@@ -91,9 +95,13 @@ never split `enum:` or `|` yourself. `kindForm(kind).rules` lists the kind's rul
 
 ## Still missing — say so in the app and to the user
 
-- **Row events are a hint, not a log.** `onRowsChanged` is best effort: an event sent while the
-  page was disconnected is not replayed, and a script that ran while Flowpad was stopped told
-  nobody. Re-read on the event AND when the page regains focus; no timer is needed.
+- **Row events name keys, not values.** `onRowsChanged` says which rows moved; re-read what the
+  page shows. The event is enough — no timer, no re-read on focus: a write made while the socket was
+  down (a script, Flowpad restarted) is told on reconnect as one `{op: "sync", keys: []}` when the
+  rows' `version` moved past what the listener heard or the instance read.
+- **A parked tab is a hidden page.** The host keeps an app's frame mounted when its tab is not the
+  one shown and makes its `document.hidden` true (a `visibilitychange` fires on each flip). Code that
+  rests while hidden rests when parked — never poll, and never work "while the window is visible".
 - **A query reads the rows from disk each time** (there is no index over row fields), and each
   dataset a link path leads into once more: fine for thousands of rows, not for millions. Ask for
   what the page shows (`match`, `limit`), never every row on a timer.

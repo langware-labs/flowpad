@@ -49,6 +49,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from typing import Annotated, Any, AsyncGenerator, AsyncIterator, ClassVar, Mapping, Optional, Union
@@ -843,15 +844,23 @@ class WhatsAppSource(MessageSource):
 def digits(value: Any) -> str:
     """A wa_id is a phone number in international digits — no ``+``, no spaces. Normalised both
     ways, because one number arrives written three ways, and two spellings of one correspondent
-    would fork the conversation."""
-    return "".join(ch for ch in str(value or "") if ch.isdigit())
+    would fork the conversation. The one wa_id that is not a number is the hub's connection probe
+    sender, ``probe-<nonce>``: kept verbatim, so the agent's answer goes back to it."""
+    text = str(value or "").strip()
+    if _PROBE_SENDER.fullmatch(text):
+        return text
+    return "".join(ch for ch in text if ch.isdigit())
+
+
+#: The hub's connection-probe sender — the round trip's far end, answered like a person.
+_PROBE_SENDER = re.compile(r"probe-[A-Za-z0-9_-]+")
 
 
 def is_group_id(value: Any) -> bool:
     """A group id is Meta's opaque token, never a phone number: a wa_id is digits (however written);
     anything else addressed is a group."""
     text = str(value or "").strip()
-    return bool(text) and not set(text) <= set("+0123456789 -().")
+    return bool(text) and not set(text) <= set("+0123456789 -().") and not _PROBE_SENDER.fullmatch(text)
 
 
 def _group_id(value: Any) -> str:

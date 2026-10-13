@@ -418,8 +418,9 @@ async def test_register_webapp_artifact_attaches_to_project_and_shows(bootstrapp
         "name": "Frontend",
         "runtime": "dev",
         "endpoint_id": dev["id"],
+        "route": dev["route"],
     }
-    assert dev["supports_direct_access"] is True, "a dev server is loaded at its own origin"
+    assert dev["backend"]["type"] == "proxy", "a dev server is loaded at its own origin"
     # No dist/ in this app yet, so nothing to serve statically.
 
     row = await get_agentic_process(bootstrapped_client, pid)
@@ -504,7 +505,9 @@ async def test_register_webapp_artifact_serves_built_output_as_a_static_endpoint
     assert data["shown"]["runtime"] == "dev"
 
     # The static endpoint actually serves the build.
-    page = await bootstrapped_client.get(f"/api/v1/graph/service_endpoint/{by_type['static']['id']}/service/")
+    static = by_type["static"]
+    assert static["id"] == by_type["proxy"]["id"], "the build and the dev server are two routes of ONE proxy"
+    page = await bootstrapped_client.get(f"/api/v1/graph/service_endpoint/{static['id']}/service/{static['route']}/")
     assert page.status_code == 200 and "todo" in page.text
 
     # Re-registering updates the same rows rather than forking them.
@@ -512,9 +515,12 @@ async def test_register_webapp_artifact_serves_built_output_as_a_static_endpoint
         f"{base}/register-webapp-artifact",
         json={"name": "Todo", "path": str(app_dir), "port": "3401", "dist": "dist", "show": False},
     )
-    again_ids = {e["backend"]["type"]: e["id"] for e in ApiResponse(**again.json()).data["endpoints"]}
-    assert again_ids == {t: e["id"] for t, e in by_type.items()}
-    assert len(await ServiceEndpoint.get_all({"match": {"artifact_id": artifact["id"]}})) == 2
+    address = lambda e: (e["id"], e["route"])  # noqa: E731
+    again_at = {e["backend"]["type"]: address(e) for e in ApiResponse(**again.json()).data["endpoints"]}
+    assert again_at == {t: address(e) for t, e in by_type.items()}
+    assert again_at["static"][1] == "Todo" and again_at["proxy"][1] != "Todo", "each runtime its own mount"
+    proxy = await ServiceEndpoint.get_by_id(static["id"])
+    assert len(proxy.backend.routes) == 2 and proxy.backend.routes[again_at["proxy"][1]].backend.port == 3401
 
     # An app named the same as another must still save: name is a label, not an identity.
     other_dir = tmp_path / "todo-two"
@@ -525,8 +531,8 @@ async def test_register_webapp_artifact_serves_built_output_as_a_static_endpoint
         json={"name": "Todo", "path": str(other_dir), "port": "3402", "show": False},
     )
     assert twin.status_code == 200, twin.text
-    twin_ids = {e["id"] for e in ApiResponse(**twin.json()).data["endpoints"]}
-    assert twin_ids and not (twin_ids & set(again_ids.values()))
+    twin_at = {address(e) for e in ApiResponse(**twin.json()).data["endpoints"]}
+    assert len(twin_at) == 2 and not (twin_at & set(again_at.values())), "the twin mounts beside it, never on it"
 
 
 @pytest.mark.asyncio
@@ -999,7 +1005,10 @@ async def test_showing_a_port_registers_its_dev_endpoint_once(bootstrapped_clien
     assert first["kind"] == "app" and first["runtime"] == "dev"
     assert first["typeid"] == f"service_endpoint-{first['endpoint_id']}"
     assert again["endpoint_id"] == first["endpoint_id"], "the same server is the same endpoint"
-    direct = await bootstrapped_client.get(f"/api/v1/graph/service_endpoint/{first['endpoint_id']}/direct-url")
+    assert (first["route"], again["route"]) == ("port-5173", "port-5173")
+    direct = await bootstrapped_client.get(
+        f"/api/v1/graph/service_endpoint/{first['endpoint_id']}/direct-url", params={"route": first["route"]}
+    )
     assert ApiResponse(**direct.json()).data["url"] == "http://localhost:5173"
 
 
@@ -1014,7 +1023,9 @@ async def test_a_dev_endpoint_is_probed_where_it_runs(bootstrapped_client, user)
     assert answer["exit_code"] == 1 and answer["verdict"] == "not_running", answer
     shown = answer["value"]
 
-    resp = await bootstrapped_client.post(f"/api/v1/graph/service_endpoint/{shown['endpoint_id']}/probe")
+    resp = await bootstrapped_client.post(
+        f"/api/v1/graph/service_endpoint/{shown['endpoint_id']}/probe", params={"route": shown["route"]}
+    )
 
     assert resp.status_code == 200, resp.text
     probe = ApiResponse(**resp.json()).data
