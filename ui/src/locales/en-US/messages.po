@@ -2799,6 +2799,10 @@ msgid "Always allow sessions from {guestName}"
 msgstr "Always allow sessions from {guestName}"
 
 #: src/components/collaboration/GuestPermissionChip.tsx
+msgid "Always auto-approve"
+msgstr "Always auto-approve"
+
+#: src/components/collaboration/GuestPermissionChip.tsx
 msgid "Always auto-approved"
 msgstr "Always auto-approved"
 
@@ -3360,6 +3364,10 @@ msgstr "Ask for help"
 msgid "Ask its owner to share the project with {0}."
 msgstr "Ask its owner to share the project with {0}."
 
+#: src/components/collaboration/GuestPermissionChip.tsx
+msgid "Ask me every time"
+msgstr "Ask me every time"
+
 #: src/components/help/AskForHelpButton.tsx
 msgid "Ask someone for help"
 msgstr "Ask someone for help"
@@ -3681,6 +3689,10 @@ msgstr "Auto-allow Bash if Sandboxed"
 #: src/components/settings-view/settings-utils.ts
 msgid "Auto-approve bash when sandbox is active"
 msgstr "Auto-approve bash when sandbox is active"
+
+#: src/components/collaboration/GuestPermissionChip.tsx
+msgid "Auto-approve in this project"
+msgstr "Auto-approve in this project"
 
 #: src/components/terminal/interactive-terminal/process-cli-presentation.ts
 msgid "Auto-approve permissions that are not explicitly denied (--auto)"
@@ -11417,6 +11429,10 @@ msgstr "funds {0}"
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "funds nothing yet"
 msgstr "funds nothing yet"
+
+#: src/components/collaboration/GuestPermissionChip.tsx
+msgid "Future sessions from {guestName}:"
+msgstr "Future sessions from {guestName}:"
 
 #: src/components/assets/editor/asset-cleanup/AssetCleanupReportAssetEditor.tsx
 msgid "garbage"
