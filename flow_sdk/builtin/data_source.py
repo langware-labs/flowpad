@@ -2338,9 +2338,9 @@ _NOT_ADOPTED = frozenset({"id", "type", "env_vars", "expand"})
 
 def remove_source_folder(asset_ref: Optional[str]) -> None:
     """Delete a removed source's folder; left behind, the next index brings the source back."""
-    from flow_sdk.assets.folder import remove_asset_folder  # noqa: PLC0415
+    from flow_sdk.assets.folder import remove_asset_files  # noqa: PLC0415
 
-    remove_asset_folder(EntityType.DATA_SOURCE.value, asset_ref)
+    remove_asset_files(EntityType.DATA_SOURCE.value, asset_ref)
 
 
 async def migrate_list_configs() -> int:

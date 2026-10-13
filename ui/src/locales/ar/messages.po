@@ -1574,12 +1574,16 @@ msgid "A new project folder — everything you create is scoped to it"
 msgstr ""
 
 #: src/components/assets/dependency-sources.tsx
-msgid "A project on the hub — fetched by its id wherever this project opens"
-msgstr ""
+#~ msgid "A project on the hub — fetched by its id wherever this project opens"
+#~ msgstr ""
+
+#: src/components/assets/ProjectDependencyDialog.tsx
+msgid "A project on the hub is fetched wherever this project opens; any other is used from its folder on this computer."
+msgstr "المشروع الموجود على Hub يُجلب أينما فُتح هذا المشروع؛ وأي مشروع آخر يُستخدم من مجلده على هذا الحاسوب."
 
 #: src/components/assets/HubProjectDependencyDialog.tsx
-msgid "A project on the hub, fetched by its id wherever this project opens."
-msgstr ""
+#~ msgid "A project on the hub, fetched by its id wherever this project opens."
+#~ msgstr ""
 
 #: src/components/task-receive/IncomingProjectDialog.tsx
 msgid "A project with that name exists"
@@ -1831,7 +1835,7 @@ msgid "Activity"
 msgstr "النشاط"
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
-#: src/components/assets/HubProjectDependencyDialog.tsx
+#: src/components/assets/ProjectDependencyDialog.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/conversation/MembersAvatarStack.tsx
 #: src/components/credentials-view/EnvFilesChip.tsx
@@ -2063,8 +2067,8 @@ msgid "Add Hook"
 msgstr "إضافة Hook"
 
 #: src/components/assets/HubProjectDependencyDialog.tsx
-msgid "Add hub project"
-msgstr ""
+#~ msgid "Add hub project"
+#~ msgstr ""
 
 #~ msgid "Add input"
 #~ msgstr ""
@@ -2093,6 +2097,10 @@ msgstr ""
 #: src/components/organization/budgets/AddPeopleDialog.tsx
 msgid "Add people to {teamName}"
 msgstr ""
+
+#: src/components/assets/ProjectDependencyDialog.tsx
+msgid "Add project"
+msgstr "إضافة مشروع"
 
 #: src/components/llm-endpoints/AliasesEditor.tsx
 msgid "Add row"
@@ -2879,8 +2887,12 @@ msgstr ""
 #~ msgstr "مشروع Flowpad آخر — يصبح مجلده سياقاً لهذا المشروع"
 
 #: src/components/assets/dependency-sources.tsx
-msgid "Another Flowpad project — this one depends on its folder"
-msgstr ""
+msgid "Another Flowpad project — on this computer or on the hub"
+msgstr "مشروع Flowpad آخر — على هذا الحاسوب أو على Hub"
+
+#: src/components/assets/dependency-sources.tsx
+#~ msgid "Another Flowpad project — this one depends on its folder"
+#~ msgstr ""
 
 #: src/components/llm-endpoints/FundingProvenance.tsx
 msgid "another hub budget — {label}"
@@ -4252,7 +4264,7 @@ msgstr ""
 #: src/components/assets/editor/markdown/ReviewSurface.tsx
 #: src/components/assets/editor/whiteboard/WhiteboardAssetEditor.tsx
 #: src/components/assets/editor/wizard/WizardViewer.tsx
-#: src/components/assets/HubProjectDependencyDialog.tsx
+#: src/components/assets/ProjectDependencyDialog.tsx
 #: src/components/assets/ProjectPickerModal.tsx
 #: src/components/assets/PushContextFolderDialog.tsx
 #: src/components/contact-picker/CreateContactsGroupDialog.tsx
@@ -9025,8 +9037,8 @@ msgstr ""
 #~ msgstr "يُضاف مجلد كل مشروع محدد كمجلد سياق."
 
 #: src/hooks/use-add-dependency.tsx
-msgid "Each selected project's folder is added as a dependency."
-msgstr ""
+#~ msgid "Each selected project's folder is added as a dependency."
+#~ msgstr ""
 
 #: src/components/setup-wizard/SetupWizardDialog.tsx
 #~ msgid "Each stage is a guided run. Close it any time — running it again picks up where it stopped."
@@ -12134,12 +12146,12 @@ msgid "Hub errors suppressed"
 msgstr "تم قمع أخطاء Hub"
 
 #: src/components/assets/dependency-sources.tsx
-msgid "Hub project"
-msgstr ""
+#~ msgid "Hub project"
+#~ msgstr ""
 
 #: src/components/assets/HubProjectDependencyDialog.tsx
-msgid "Hub project id or link"
-msgstr ""
+#~ msgid "Hub project id or link"
+#~ msgstr ""
 
 #: src/components/version-popover/hub-release-label.tsx
 msgid "Hub release, and the UI build serving it"
@@ -16708,6 +16720,10 @@ msgstr "غير مثبّت"
 msgid "Not launched yet in this project"
 msgstr ""
 
+#: src/components/assets/ProjectDependencyDialog.tsx
+msgid "Not listed? Paste a hub project id or link"
+msgstr "غير مدرج؟ الصق معرّف مشروع على Hub أو رابطه"
+
 #: src/i18n/cli-messages.ts
 msgid "Not logged in"
 msgstr "غير مسجّل الدخول"
@@ -17200,6 +17216,10 @@ msgstr "على القرص"
 #: src/components/triggers-view/TriggersList.tsx
 #~ msgid "On file change"
 #~ msgstr "عند تغيير الملف"
+
+#: src/components/assets/ProjectDependencyDialog.tsx
+msgid "On hub"
+msgstr "على Hub"
 
 #: src/components/triggers-view/TriggersList.tsx
 #~ msgid "On schedule"
@@ -25048,7 +25068,7 @@ msgstr "هذا الوكيل لم يعد موجودًا في مساحة عملك.
 #~ msgid "That change could not be applied."
 #~ msgstr "تعذّر تطبيق هذا التغيير."
 
-#: src/components/assets/HubProjectDependencyDialog.tsx
+#: src/components/assets/ProjectDependencyDialog.tsx
 msgid "That doesn't name a hub project — paste its id or a link to it."
 msgstr ""
 

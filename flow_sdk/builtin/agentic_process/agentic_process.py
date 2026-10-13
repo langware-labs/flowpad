@@ -7712,7 +7712,8 @@ class AgenticProcess(Entity):
         try:
             from flow_sdk.fs_store.reindex import reindex_paths  # noqa: PLC0415
 
-            result = await reindex_paths(paths)
+            # A session writes anywhere — scratch folders included — so only a placed file is minted.
+            result = await reindex_paths(paths, placed_only=True)
             counts = result.as_dict()["counts"]
             logger.debug(
                 "AP %s write reindex: %s (in=%d)",
