@@ -12,9 +12,11 @@ import { msg } from '@lingui/core/macro';
 import type { DataSource } from '@sdk';
 
 /** unresolved / setup / parked / paused are never polled until a person acts — the four reasons
- *  `DataSource.poll_refusal` gives; held keeps polling but a file waits on a person; retrying is the
- *  scheduler's own backoff after a transient failure, shown so an empty channel explains itself. */
-export type AttentionKind = 'unresolved' | 'setup' | 'parked' | 'paused' | 'held' | 'retrying';
+ *  `DataSource.poll_refusal` gives; held keeps polling but a file waits on a person; mirror keeps
+ *  polling but the dataset it mirrors into is not current (the sweep failed, or records did not fit);
+ *  retrying is the scheduler's own backoff after a transient failure, shown so an empty channel
+ *  explains itself. */
+export type AttentionKind = 'unresolved' | 'setup' | 'parked' | 'paused' | 'held' | 'mirror' | 'retrying';
 
 export interface AttentionReason {
   kind: AttentionKind;
@@ -31,6 +33,7 @@ export function attentionReason(source: DataSource): AttentionReason | null {
   }
   if (source.isPaused) return { kind: 'paused', text: '' };
   if (source.isHeld) return { kind: 'held', text: source.error_detail || '' };
+  if (source.isMirrorBroken) return { kind: 'mirror', text: source.error_detail || '' };
   if (source.isRetrying) return { kind: 'retrying', text: source.error_detail || '' };
   return null;
 }
@@ -88,6 +91,13 @@ export const ATTENTION: Record<AttentionKind, AttentionFacts> = {
     verb: 'pull',
     fallback: msg`A file changed both here and remotely, so write-back wrote neither.`,
     next: msg`Make the two the same — edit either one — then Pull, or wait for the next sync.`,
+  },
+  mirror: {
+    mark: 'parked',
+    verb: 'pull',
+    headline: msg`Mirror needs attention`,
+    fallback: msg`The dataset this source mirrors into could not be made current.`,
+    next: msg`Fix the mirror map or the rows it names (the detail says which), then Pull, or wait for the next sync.`,
   },
   retrying: {
     mark: 'on',

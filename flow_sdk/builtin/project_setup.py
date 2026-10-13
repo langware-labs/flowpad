@@ -383,6 +383,8 @@ def compile_setup(
 
 #: The runs this backend started, by project — one at a time per project (the slot says so too).
 _RUNS: dict[tuple[str, str], "asyncio.Task"] = {}
+#: Each run's live handle (``core/setup/walk.SetupControl``): a skip reaches the node the run is on.
+_CONTROLS: dict[tuple[str, str], Any] = {}
 
 
 def unsatisfied(req: SetupRequirementSpec) -> bool:
@@ -471,12 +473,14 @@ async def start_setup(project: "Project", *, ai: bool = True, root: str = "", tr
     """
     from flow_sdk.core.setup import execute_setup  # noqa: PLC0415
     from flow_sdk.core.setup.derive import ProjectTree  # noqa: PLC0415
+    from flow_sdk.core.setup.walk import SetupControl  # noqa: PLC0415
 
     pid = str(project.id)
     key = (pid, root)
     running = _RUNS.get(key)
     if running is None or running.done():
         tree = tree or await ProjectTree(project, ai=ai).load()
+        control = _CONTROLS[key] = SetupControl()
         mount = str(getattr(project, "fs_storage_mount_path", "") or "")
 
         async def run_setup():
@@ -510,7 +514,7 @@ async def start_setup(project: "Project", *, ai: bool = True, root: str = "", tr
                     subject_entity=f"project-{pid}", cwd=Path(mount) if mount else None,
                     shell=functools.partial(_setup_shell, inner=base),
                     # A person pressed Set up on THIS project: every node in it is theirs to run.
-                    approved=True,
+                    approved=True, control=control,
                 )
                 if result.ok and load_after:
                     from flow_sdk.core.setup.load import LoadTree  # noqa: PLC0415
@@ -519,7 +523,7 @@ async def start_setup(project: "Project", *, ai: bool = True, root: str = "", tr
                     result = await execute_setup(
                         root or tree.root, resolve_node=operational.resolve_node, resolve_op=operational.resolve_op,
                         subject_entity=f"project-{pid}", cwd=Path(mount) if mount else None,
-                        shell=functools.partial(_setup_shell, inner=base), approved=True,
+                        shell=functools.partial(_setup_shell, inner=base), approved=True, control=control,
                     )
                 return result
 
@@ -527,6 +531,7 @@ async def start_setup(project: "Project", *, ai: bool = True, root: str = "", tr
         # (and a plain done-callback) would hold the Set-up request for all of it.
         task = create_detached_task(run_setup(), name=f"project-setup:{pid}:{root}")
         add_detached_done_callback(task, _log_failure)
+        add_detached_done_callback(task, functools.partial(_release_control, key, control))
         _RUNS[key] = task
     return setup_run_address(pid, root)
 
@@ -591,10 +596,32 @@ async def _setup_shell(command: str, *, timeout_seconds: float, workdir: Path, e
                                 duration_s=time.monotonic() - started)
 
 
+def _release_control(key: tuple[str, str], control: Any, _task: "asyncio.Task") -> None:
+    """A finished run's handle goes — unless a newer run of the same root already took its place."""
+    if _CONTROLS.get(key) is control:
+        del _CONTROLS[key]
+
+
 def _log_failure(task: "asyncio.Task") -> None:
     """A run that raised is recorded nowhere else — say it, rather than let it vanish."""
     if not task.cancelled() and task.exception() is not None:
         logger.error("project setup run failed", exc_info=task.exception())
+
+
+async def stop_setup(project_id: str, root: str = "") -> bool:
+    """Stop the run going for ``root`` (``SetupControl.stop``): the step it is on is cancelled the way a
+    replaced wizard start is — its shells' process groups killed, its open question withdrawn — and the run
+    is awaited until it has let go of its slot. Its record says STOPPED; starting again resumes, every step
+    already done answering "already set up". ``False`` when nothing was running."""
+    key = (project_id, root)
+    task = _RUNS.get(key)
+    if task is None or task.done():
+        return False
+    control = _CONTROLS.get(key)
+    if control is None or not control.stop():
+        task.cancel("stopped by a person")  # not in a step yet (still loading what it depends on)
+    await asyncio.wait({task})
+    return True
 
 
 def setup_run(project_id: str, root: str = "") -> dict[str, Any]:
@@ -655,6 +682,7 @@ async def skip_requirement(project: "Project", typeid: str, *, scope: str = SKIP
       (``can_skip_always``)."""
     import time  # noqa: PLC0415
 
+    from flow_sdk.core.setup.derive import skip_detail  # noqa: PLC0415
     from flow_sdk.core.setup.skip_mark import write_setup_skip  # noqa: PLC0415
     from flow_sdk.schema.data_spec.asset_setup_spec import SetupSkipSpec  # noqa: PLC0415
 
@@ -663,6 +691,7 @@ async def skip_requirement(project: "Project", typeid: str, *, scope: str = SKIP
         if not req.can_skip_always:
             raise SkipRefused(req.why_not_always or f"{req.name} cannot be removed from this project")
         await _remove_from_project(project, req)
+        _skip_live(project, req, "removed from the project")
         return
     if scope != SKIP_LOCAL:
         raise SkipRefused(f"skip {scope!r}? it is {SKIP_LOCAL!r} or {SKIP_ALWAYS!r}")
@@ -671,6 +700,17 @@ async def skip_requirement(project: "Project", typeid: str, *, scope: str = SKIP
         await write_setup_skip(project, {**(project.setup_skipped or {}), req.name: mark})
     else:
         await write_setup_skip(await _record_of(req), mark)
+    _skip_live(project, req, skip_detail(mark))
+
+
+def _skip_live(project: "Project", req: SetupRequirementSpec, detail: str) -> None:
+    """A run going for this project reads the skip now: its node settles SKIPPED, even the one it is on."""
+    from flow_sdk.core.setup.derive import requirement_node_id  # noqa: PLC0415
+
+    node_id, project_id = requirement_node_id(req), str(project.id)
+    for (pid, _root), control in _CONTROLS.items():  # the runs going: a finished one is dropped
+        if pid == project_id:
+            control.skip(node_id, detail)
 
 
 async def unskip_requirement(project: "Project", typeid: str, *, name: str = "") -> None:

@@ -104,6 +104,20 @@ export const WebappDisplay = forwardRef<PersistentIframeHandle, WebappDisplayPro
     fix.start();
   }, [verdict.severity, needsSetup, fix.running, fix.autoAttempted, fix.start]);
 
+  // Every fatal branch unmounts the frame, so what it parked is the broken page. Coming back from one
+  // must load the app again even when the port never went away (a 500, a crash on start, a repair) —
+  // unless the port did go away and come back, which `reloadNonce` has already counted.
+  const [recoveries, setRecoveries] = useState(0);
+  const fatalAt = useRef<number | null>(null);
+  useEffect(() => {
+    if (verdict.severity === 'fatal') {
+      fatalAt.current ??= diagnostics.reloadNonce;
+      return;
+    }
+    if (fatalAt.current === diagnostics.reloadNonce) setRecoveries((n) => n + 1);
+    fatalAt.current = null;
+  }, [verdict.severity, diagnostics.reloadNonce]);
+
   const showBanner = verdict.severity === 'degraded' && dismissedBanner !== verdict.code;
 
   if (needsSetup) {
@@ -153,7 +167,7 @@ export const WebappDisplay = forwardRef<PersistentIframeHandle, WebappDisplayPro
           // The registry parks a dead frame rather than destroying it, so an app
           // that recovers would otherwise re-reveal Chrome's error page. The
           // reload nonce advances on every down→up edge to force a real reload.
-          cacheKey={cacheKey + diagnostics.reloadNonce}
+          cacheKey={cacheKey + diagnostics.reloadNonce + recoveries}
         />
       </div>
     </div>

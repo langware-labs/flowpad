@@ -255,6 +255,24 @@ async def maybe_auto_index(project_id: str, *, created: bool) -> None:
         )
 
 
+async def index_dependency_provider(project_id: str) -> None:
+    """Index a project just added as a dependency, whatever the trigger setting.
+
+    The consumer opens the provider's home page straight from the dependency row,
+    so its assets must exist before that click; waiting for the provider to be
+    selected once left "Opening app…" hanging on a 404. Never raises.
+    """
+    from flow_sdk.builtin.faas.compute_node import ComputeNode  # noqa: PLC0415
+
+    try:
+        node = await ComputeNode.get_local(create=False)
+        if node is not None:
+            await node._auto_index_project(project_id, force=False, trigger="dependency",
+                                           scan_mode=read_auto_index_config().scan_mode)
+    except Exception:
+        log.debug("[auto-index] dependency pass skipped for %s", project_id, exc_info=True)
+
+
 async def _run_auto_index(project_id: str, cfg: AutoIndexConfig, rec=None) -> None:
     """Run one scoped auto-index, stamping the marker once the run really starts.
 

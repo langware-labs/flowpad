@@ -190,7 +190,8 @@ application reads, so the engine asks the type rather than probing.
 | `ns` | `""` (ours) | Whose ontology the shapes this driver registers belong to. A driver OUTSIDE the shipped tree must name one — its own, or its project's — or `load_driver` refuses it, because otherwise a kind it declares lands in ours and can take a shipped one's name. Every kind it mints is prefixed `--<ns>--`; ours is the default and is never written. See [`ontology.md`](../ontology.md) |
 | `durable_cursor` | `False` | Whether `ChangePage.resume_cursor` is persisted and resumed |
 | `pages_per_pass` | `None` | Page chain cap per traversal |
-| `lists_everything` | `False` | A pass read start to end lists the whole collection: a stored record it no longer lists is removed (record sources; never on an empty listing) |
+| `lists_everything` | `False` | A pass read start to end lists the whole collection: a stored record it no longer lists is removed (record sources) — an empty listing too, so `_scan` must raise on an outage rather than list nothing |
+| `page_size` | `50` | Rows per page; a traversal is ONE `_scan` paged from a kept snapshot, so set it to the provider's own page (≤ `MAX_PAGE_SIZE`, 1000) |
 | `attention_poll_seconds` | `None` | Sub-tick cadence while watched (see *Attention*). Telegram declares 5 |
 | `stamps_identity` | `True` | `ObjectSource` only: whether this source's files are ours to write an identity into |
 | `local_tree_key` | `""` | `ObjectSource` only: the config key naming a tree read in place (`root`, `repo`); empty when the bytes are pulled into a cache |

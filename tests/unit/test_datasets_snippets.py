@@ -39,7 +39,7 @@ def folder(tmp_path):
 @needs_dataset
 async def test_read_a_dataset():
     ns = await run_fence(fence_under(DOC, "2."))
-    assert ns["summary"] == ("navigator.dataset", 252, {"eval": 250, "test": 2})
+    assert ns["summary"] == ("navigator.dataset", 253, {"eval": 251, "test": 2})
     assert ns["first"] == "open data sources" and ns["problems"] == []
 
 

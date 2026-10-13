@@ -94,6 +94,8 @@ class SetupState(StrEnum):
     HELD = "held"
     #: A person skipped it (``setup_skipped`` on its record): settled without running, so its parent goes on.
     SKIPPED = "skipped"
+    #: A person stopped the run: the node it was on, and the run, end here. Starting again resumes.
+    STOPPED = "stopped"
 
 
 class LoadState(StrEnum):
@@ -114,6 +116,8 @@ class LoadResult(DataSpec):
     asset: Optional[str] = None
     #: Consumer session whose saved presentation this run checked, absent for provider-only loads.
     display: Optional[str] = None
+    #: A FAILED load that setup has not been tried for yet: an approved Load runs setup, then loads again.
+    setup_available: bool = False
 
 
 class SetupNodeResult(DataSpec):
@@ -132,6 +136,8 @@ class SetupNodeResult(DataSpec):
     children: list["SetupNodeResult"] = []
     #: Reached already under another parent this run: its verdict is reused, its subtree is shown there.
     shared: bool = False
+    #: Stands on its own (``SetupNode.independent``): not set up, it held nothing else up.
+    independent: bool = False
 
     @property
     def ok(self) -> bool:

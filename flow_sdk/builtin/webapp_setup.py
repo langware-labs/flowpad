@@ -9,7 +9,9 @@ is derived the same way (``npm ci`` when there is a lockfile).
 **Ours, or not.** A port answering is not proof the APP answers: another program (a container, a
 second checkout) may sit on it. "Running" means the port this app's own endpoint records answers its
 ``health`` path — and a start never adopts a port somebody else holds: a fixed one is reported busy, a
-picked one moves on to a free port.
+picked one moves on to a free port. What a start launched is recorded (``dev_server.record_owner``), so an
+app that died and whose port another program took since is not mistaken for running; a start that fails
+kills what it launched, and a crash is reported when it happens, not when the wait runs out.
 """
 
 from __future__ import annotations
@@ -23,8 +25,10 @@ from pathlib import Path
 from typing import Any, Optional
 
 from flow_sdk.schema.data_spec.returned_value_spec import ExitCode, ReturnedValue
+from flow_sdk.stream_inbox._locks import keyed_loop_lock, new_registry
 
 logger = logging.getLogger(__name__)
+_START_LOCKS = new_registry()
 
 #: How long a started server gets to answer. The start command's own warm-up (a dev bundler) — not a
 #: budget a slow app should be given more of to look healthy: an app that needs longer is a finding.
@@ -75,7 +79,7 @@ def _proxy(app) -> Optional[tuple[str, Any]]:
 
 def _run(command: str, folder: Path, log_name: str, seconds: float) -> tuple[int, str]:
     """Run ``command`` in ``folder``, its output to a log; ``(exit code, last lines)``."""
-    from flow_sdk.core.dev_server import log_dir  # noqa: PLC0415
+    from flow_sdk.core.dev_server import log_dir, log_tail  # noqa: PLC0415
 
     logs = log_dir()
     logs.mkdir(parents=True, exist_ok=True)
@@ -89,8 +93,7 @@ def _run(command: str, folder: Path, log_name: str, seconds: float) -> tuple[int
         code = done.returncode
     except subprocess.TimeoutExpired:
         code = 124
-    tail = "\n".join(log_file.read_text(errors="replace").splitlines()[-8:])
-    return code, f"{tail}\n(log: {log_file})"
+    return code, f"{log_tail(str(log_file))}\n(log: {log_file})"
 
 
 async def _endpoint(app, name: str):
@@ -112,6 +115,8 @@ async def step(webapp_id: str, which: str, *, check: bool, display: str = "") ->
 
         return await present(app, display=display, check=check)
     folder = Path(app.asset_ref)
+    if not folder.is_dir():
+        return _answer(ExitCode.NOT_FOUND, f"{app.name}'s folder is gone: {folder}", ran=False)
     proxy = _proxy(app)
     if proxy is None:
         return _answer(ExitCode.OK, f"{app.name} is files Flowpad serves itself", ran=False)
@@ -159,16 +164,57 @@ async def _run_step(command: str, folder: Path, log_name: str, *, done: str) -> 
     return _answer(ExitCode.OK, done)
 
 
+def _server_state(key: str, held: Optional[int], health: str) -> tuple[Optional[dict], bool]:
+    """``(what we last started, the app answers on its port)`` — one trip off the loop.
+
+    **Ours, or not.** With no record Flowpad never started it (the person runs it): its health is all
+    there is to ask. With one, the process it names must still be alive on that port."""
+    from flow_sdk.core import dev_server  # noqa: PLC0415
+
+    record = dev_server.owner(key)
+    alive = record is not None and dev_server.owner_alive(record)
+    ours = record is None or (alive and record.get("port") == held)
+    return (record if alive else None), bool(held) and ours and health_answers(held, health)
+
+
+def _stop(key: str, pid: Optional[int]) -> None:
+    from flow_sdk.core import dev_server  # noqa: PLC0415
+
+    if pid:
+        dev_server.stop_group(pid)
+    dev_server.clear_owner(key)
+
+
 async def _start(app, folder: Path, name: str, serving, *, check: bool) -> ReturnedValue:
     from flow_sdk.core import dev_server  # noqa: PLC0415
 
-    existing = await _endpoint(app, name)
-    held = existing.backend.port if existing is not None else None
-    if held and await asyncio.to_thread(health_answers, held, serving.health):
-        return _answer(ExitCode.OK, f"running at http://127.0.0.1:{held}", ran=False, value=str(held))
-    if check:
-        return _answer(ExitCode.NOT_YET, f"{app.name} is not running", ran=False)
+    key = str(app.id)
 
+    async def look():
+        existing = await _endpoint(app, name)
+        held = existing.backend.port if existing is not None else None
+        ours, up = await asyncio.to_thread(_server_state, key, held, serving.health)
+        return existing, held, ours, up
+
+    existing, held, ours, up = await look()
+    if not up and not check:
+        # One start per app: a load and a rooted setup run under different slots and may both arrive here.
+        async with keyed_loop_lock(_START_LOCKS, key):
+            existing, held, ours, up = await look()
+            if not up:
+                return await _launch(app, folder, name, serving, existing, held, ours)
+    if up:
+        return _answer(ExitCode.OK, f"running at http://127.0.0.1:{held}", ran=False, value=str(held))
+    return _answer(ExitCode.NOT_YET, f"{app.name} is not running", ran=False)
+
+
+async def _launch(app, folder: Path, name: str, serving, existing, held, ours) -> ReturnedValue:
+    from flow_sdk.core import dev_server  # noqa: PLC0415
+
+    key = str(app.id)
+    # What we started before is not answering (hung, or dead): it goes before another is started, or it
+    # keeps the port and the next start blames "another program".
+    await asyncio.to_thread(_stop, key, int(ours["pid"]) if ours else None)
     port = serving.port or held
     if port and await asyncio.to_thread(dev_server.port_open, port):
         if serving.port:
@@ -180,24 +226,44 @@ async def _start(app, folder: Path, name: str, serving, *, check: bool) -> Retur
         port = None  # a port we picked before, taken since: pick again
     port = port or await asyncio.to_thread(dev_server.find_free_port)
     command = serving.start_cmd.replace("{port}", str(port))
-    pid, log_file = await asyncio.to_thread(dev_server.start_detached, command, cwd=folder, port=port, name=app.name)
-    if not await asyncio.to_thread(dev_server.wait_for_port, port, START_SECONDS):
-        return _answer(ExitCode.NOT_YET, f"`{command}` started (pid {pid}) but port {port} never opened — log: {log_file}")
+    proc, log_file = await asyncio.to_thread(dev_server.start_process, command, cwd=folder, port=port, name=app.name)
+
+    async def failed(detail: str) -> ReturnedValue:
+        await asyncio.to_thread(_stop, key, proc.pid)
+        return _answer(ExitCode.NOT_YET, detail)
+
+    # A start command may hand off to a daemon and exit 0 (``docker compose up -d``): only a non-zero
+    # exit is a crash. Such a server has no process of ours to name, so it is judged by health alone.
+    opened = await asyncio.to_thread(
+        dev_server.wait_for_port, port, START_SECONDS, exited=lambda: proc.poll() not in (None, 0)
+    )
+    code = proc.poll()
+    if code:  # also when the port "opened": then it is somebody else's
+        # One line: a step's reason is carried up the tree as its last line, and the server's own last
+        # word is the reason, not the path of its log.
+        said = (await asyncio.to_thread(dev_server.log_tail, log_file, 1)).strip()
+        return await failed(f"`{command}` exited (exit {code}){': ' + said if said else ''} — log: {log_file}")
+    if not opened:
+        return await failed(f"`{command}` started (pid {proc.pid}) but port {port} never opened — log: {log_file}")
     if not await asyncio.to_thread(health_answers, port, serving.health):
-        return _answer(ExitCode.NOT_YET, f"{app.name} opened port {port} but {serving.health} does not answer — log: {log_file}")
-    await _keep_endpoint(app, name, port, command, serving.health, existing)
+        return await failed(f"{app.name} opened port {port} but {serving.health} does not answer — log: {log_file}")
+    if code is None:
+        await asyncio.to_thread(dev_server.record_owner, key, proc.pid, port)
+    if await _keep_endpoint(app, name, port, command, serving.health, existing) is False:
+        return await failed(f"{app.name} has no local placement to be served from")
     return _answer(ExitCode.OK, f"running at http://127.0.0.1:{port}", value=str(port))
 
 
-async def _keep_endpoint(app, name: str, port: int, command: str, health: str, existing) -> None:
-    """The app's proxy endpoint on its project's local placement now names this port."""
+async def _keep_endpoint(app, name: str, port: int, command: str, health: str, existing) -> bool:
+    """The app's proxy endpoint on its project's local placement now names this port. False: there is no
+    placement to record it on, so nothing would ever find the server just started."""
     from flow_sdk.builtin.project import Project  # noqa: PLC0415
     from flow_sdk.builtin.webapp_placement import local_web_deployment, tell_hub, upsert_endpoint  # noqa: PLC0415
 
     project = await Project.get_by_id(app.project_id) if app.project_id else None
     deployment = await local_web_deployment(project)
     if deployment is None:
-        return
+        return False
     _row, saved = await upsert_endpoint(
         deployment, existing=existing, name=name, webapp_id=app.id, project_id=app.project_id or None,
         backend={"type": "proxy", "port": port, "start_cmd": command, "health": health},
@@ -207,3 +273,4 @@ async def _keep_endpoint(app, name: str, port: int, command: str, health: str, e
     )
     if saved:
         tell_hub(deployment)
+    return True

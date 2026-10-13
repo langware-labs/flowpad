@@ -18,6 +18,9 @@ from flow_sdk.stream_inbox._locks import keyed_loop_lock, new_registry
 logger = logging.getLogger(__name__)
 _LOCKS = new_registry()
 _RESULTS: dict[str, LoadResult] = {}
+#: ``(provider, asset)`` whose failed load already had its one setup run: a second failure is the
+#: answer, not a loop.
+_REPAIRED: set[tuple[str, str]] = set()
 
 
 class LoadTree:
@@ -52,6 +55,9 @@ def load_state(project_id: str, *, asset: str = "") -> Optional[LoadResult]:
     task = _RUNS.get((pid, ""))
     result = _RESULTS.get(pid)
     display = result.display if result is not None else None
+    # The run was started FOR an app: it is judged on that app whoever asks — a poll that names none
+    # must not settle it as ready because the project stands without it.
+    asset = asset or (result.asset if result is not None else None) or ""
     if task is not None:
         if not task.done():
             result = LoadResult(state=LoadState.RUNNING, project_id=pid, run=setup_run_address(pid), display=display)
@@ -60,9 +66,15 @@ def load_state(project_id: str, *, asset: str = "") -> Optional[LoadResult]:
                 answer = task.result()
                 if answer is None:
                     raise RuntimeError("The setup run returned no result")
+                unmet = _unmet(answer, asset)
+                ready = answer.ok and not unmet
+                if ready:
+                    _REPAIRED.discard((pid, asset))
                 result = LoadResult(
-                    state=LoadState.READY if answer.ok else LoadState.FAILED,
-                    project_id=pid, detail=answer.detail, run=setup_run_address(pid), display=display,
+                    state=LoadState.READY if ready else LoadState.FAILED, project_id=pid,
+                    detail=answer.detail if ready else unmet or _leaf_failure(answer.root) or answer.detail,
+                    run=setup_run_address(pid),
+                    display=display, setup_available=not ready and (pid, asset) not in _REPAIRED, asset=asset or None,
                 )
             except (Exception, asyncio.CancelledError) as exc:
                 result = LoadResult(state=LoadState.FAILED, project_id=pid, detail=str(exc) or "Setup was cancelled", display=display)
@@ -70,18 +82,48 @@ def load_state(project_id: str, *, asset: str = "") -> Optional[LoadResult]:
     return result.model_copy(update={"asset": asset or None}) if result is not None else None
 
 
-def _configuration_failure(node) -> str:
-    """Unmet checks are pending; invalid declarations are failures even in check mode."""
-    if node is None:
+def _configuration_failure(node, target: str = "") -> str:
+    """Unmet checks are pending; invalid declarations are failures even in check mode. A node that
+    stands on its own and is not the one being shown keeps its trouble to itself."""
+    if node is None or (node.independent and node.id != target):
         return ""
     if node.state in (SetupState.FAILED, SetupState.REFUSED):
         return node.detail
-    return next((detail for child in node.children if (detail := _configuration_failure(child))), "")
+    return next((detail for child in node.children if (detail := _configuration_failure(child, target))), "")
+
+
+def _leaf_failure(node) -> str:
+    """The deepest step that failed, in its own words — a parent's "waiting on X" names nothing to fix."""
+    if node is None:
+        return ""
+    deeper = next((detail for child in node.children if (detail := _leaf_failure(child))), "")
+    if deeper:
+        return deeper
+    if node.state in (SetupState.FAILED, SetupState.REFUSED) and node.detail:
+        return f"{node.label}: {node.detail}" if node.label else node.detail
+    return ""
+
+
+def _unmet(result, target: str) -> str:
+    """Why the asset being shown is itself not ready, or ``""``. The tree settles without a web app that
+    is not set up, so the one asked for is checked by name."""
+    def find(node):
+        if node is None or node.id == target:
+            return node
+        return next((hit for child in node.children if (hit := find(child)) is not None), None)
+
+    node = find(result.root) if target else None
+    if node is None or node.state in (SetupState.DONE, SetupState.SKIPPED):
+        return ""
+    return _leaf_failure(node) or (f"{node.label}: {node.detail}" if node.detail else f"{node.label} is not set up")
 
 
 async def load_project(project: Any, *, approved: bool = False, asset: Any = None, tree: Any = None,
                        ancestors: tuple[str, ...] = (), display: str = "") -> LoadResult:
-    """Check or start a provider's lifecycle; approval is explicit and never inferred from Add/Open."""
+    """Check or start a provider's lifecycle; approval is explicit and never inferred from Add/Open.
+
+    ``approved`` on a load that FAILED (``setup_available``) runs setup, then the load again: the screen
+    showing an app sends it once, unasked — opening the app is the person saying "make it work"."""
     from flow_sdk.builtin.project_dependencies import required_projects
     from flow_sdk.builtin.project_setup import start_setup
     from flow_sdk.core.setup.derive import ProjectTree
@@ -92,6 +134,13 @@ async def load_project(project: Any, *, approved: bool = False, asset: Any = Non
     if pid in ancestors:
         return LoadResult(state=LoadState.FAILED, project_id=pid,
                           detail=f"The provider lifecycle has a dependency cycle: {' -> '.join((*ancestors, pid))}")
+    on_disk = getattr(asset, "on_disk", None)
+    if callable(on_disk) and not on_disk():
+        # A stale row is no node of the tree, and a tree without it would settle as ready.
+        gone = _RESULTS[pid] = LoadResult(
+            state=LoadState.FAILED, project_id=pid, asset=target,
+            detail=f"{getattr(asset, 'name', None) or target}'s folder is gone: {asset.asset_ref}")
+        return gone
     # Traverse before taking this provider's lock: opposite ends of a dependency
     # cycle may be loaded concurrently, and must never wait on each other's lock.
     try:
@@ -116,21 +165,34 @@ async def load_project(project: Any, *, approved: bool = False, asset: Any = Non
                           check_only=True, approved=True)
             prerequisites = await execute_setup(tree.root, resolve_node=tree.resolve_node,
                                                 resolve_op=tree.resolve_op, **common)
-            problem = _configuration_failure(prerequisites.root)
+            problem = _configuration_failure(prerequisites.root, target)
             if problem:
                 raise ValueError(problem)
             missing = next((c for c in children if c.state is LoadState.SETUP_REQUIRED), None)
-            needs_setup = not prerequisites.ok or missing is not None
+            unmet = _unmet(prerequisites, target)
+            needs_setup = not prerequisites.ok or bool(unmet) or missing is not None
             if needs_setup and not approved:
                 state = LoadState.FAILED if prerequisites.state is SetupState.REFUSED else LoadState.SETUP_REQUIRED
-                result = LoadResult(state=state, project_id=pid, detail=missing.detail if missing else prerequisites.detail)
+                result = LoadResult(state=state, project_id=pid,
+                                    detail=missing.detail if missing else prerequisites.detail or unmet)
             else:
                 operational = LoadTree(tree)
                 running = await execute_setup(tree.root, resolve_node=operational.resolve_node,
                                                resolve_op=operational.resolve_op, **common) if not needs_setup else None
-                if running is not None and running.ok and all(c.state is LoadState.READY for c in children):
+                # Showing one app: it is up, whatever the apps beside it are. Otherwise everything up, not
+                # merely nothing held up — an app that is down still gets its load run, which starts it.
+                loaded = running is not None and running.ok and (
+                    not _unmet(running, target) if target else running.done == running.total)
+                if loaded and all(c.state is LoadState.READY for c in children):
+                    _REPAIRED.discard((pid, target))
                     result = LoadResult(state=LoadState.READY, project_id=pid)
                 else:
+                    # The load failed and the person said go: setup first (it redoes only what its own
+                    # checks find missing), then the load again. Once — its failure is then the answer.
+                    repair = approved and current is not None and current.setup_available
+                    if repair:
+                        _REPAIRED.add((pid, target))
+                        needs_setup = True
                     run = await start_setup(project, tree=tree if needs_setup else operational,
                                             load_after=needs_setup, providers=providers,
                                             dependency_approval=approved, ancestors=(*ancestors, pid))
@@ -138,9 +200,9 @@ async def load_project(project: Any, *, approved: bool = False, asset: Any = Non
         except Exception as exc:
             logger.warning("load of project %s failed: %s", pid, exc, exc_info=True)
             result = LoadResult(state=LoadState.FAILED, project_id=pid, detail=str(exc))
-        result = result.model_copy(update={"display": display or None})
+        result = result.model_copy(update={"display": display or None, "asset": target or None})
         _RESULTS[pid] = result
-        return result.model_copy(update={"asset": target or None})
+        return result
 
 
 async def load_asset(project: Any, asset: Any) -> LoadResult:

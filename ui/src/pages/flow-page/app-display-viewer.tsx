@@ -13,6 +13,7 @@ import { useContext } from '@src/hooks/useContext';
 import { tryParseDock } from '@src/navigation/try-parse-dock';
 import { buildDockPointer } from '@src/components/conversation/EntityChip';
 import { useEntity } from '@sdk/react/hooks';
+import { Trans } from '@lingui/react/macro';
 import { isTypeId, TypeId, WebApp } from '@sdk';
 import { externalUrl, OPEN_EXTERNAL_MESSAGE } from '@sdk/apps/host';
 import { openExternal } from '@src/lib/open-external';
@@ -69,6 +70,30 @@ function reloadOnNewEpoch(src: string, epoch: number | undefined, reload: () => 
   if (seen !== undefined && seen !== epoch) reload();
 }
 
+/** The served folder's version the frame was loaded at, by `src` (see `content_version` on the server). */
+const loadedVersion = new Map<string, string>();
+const VERSION_MARK = /<!-- flowpad-content-version: ([0-9a-f]+) -->/;
+
+/**
+ * Reload a parked frame whose app files changed since it loaded. Re-opening a tab hands the
+ * same document back (the frame is kept per `src`), so an app edited meanwhile kept showing
+ * its old code until a manual reload. One small read of the page per show; same version, no reload.
+ */
+async function reloadIfAppChanged(src: string, reload: () => void): Promise<void> {
+  if (!src) return;
+  let version: string | undefined;
+  try {
+    const page = await fetch(src, { cache: 'no-store' });
+    version = page.ok ? VERSION_MARK.exec(await page.text())?.[1] : undefined;
+  } catch {
+    return; // unreachable now: the frame shows its own error
+  }
+  if (!version) return;
+  const seen = loadedVersion.get(src);
+  loadedVersion.set(src, version);
+  if (seen !== undefined && seen !== version) reload();
+}
+
 /**
  * The dock a guest app asks the host to open, or null: `{type: 'flowpad:navigate', address: '/dock/…'}`
  * (only a `/dock/` address that parses is honoured — a guest navigates the app, never the window to
@@ -108,7 +133,7 @@ export function AppDisplayViewer({
   const { currentDock, navigation } = useDockNavigation();
   const { project } = useContext();
   const frameRef = useRef<PersistentIframeHandle>(null);
-  const { data: definition } = useEntity<WebApp>(microAppId ? new TypeId(WebApp.type, microAppId) : null);
+  const { data: definition, notFound } = useEntity<WebApp>(microAppId ? new TypeId(WebApp.type, microAppId) : null);
 
   // No memo: `useAppDisplay` reduces this to strings before anything depends on
   // it, so a fresh object per render produces an identical `src` and the frame
@@ -118,6 +143,10 @@ export function AppDisplayViewer({
   useEffect(() => {
     reloadOnNewEpoch(appDisplay.src, reloadKey, () => frameRef.current?.refresh());
   }, [appDisplay.src, reloadKey]);
+
+  useEffect(() => {
+    void reloadIfAppChanged(appDisplay.src, () => frameRef.current?.refresh());
+  }, [appDisplay.src]);
 
   // The theme is baked into the guest URL for its first paint, so a later change
   // is PUSHED rather than re-addressed: re-addressing would swap `src`, which is
@@ -167,6 +196,19 @@ export function AppDisplayViewer({
   // Only once its endpoints answered: an app not looked up yet is not down, and setting it up would run
   // a setup for an app (a built-in editor, say) that is no node of this project's tree.
   if (appDisplay.loading) return null;
+  // The app itself is not on this machine (removed, or a link from another one): there is nothing to
+  // set up or wait for, and saying "opening" forever would be a lie.
+  if (microAppId && notFound && !appDisplay.src) {
+    return (
+      <div
+        role="alert"
+        data-testid="app-not-installed"
+        className="flex h-full items-center justify-center p-6 text-center text-sm text-muted-foreground"
+      >
+        <Trans>This app is not installed here. Add its project again from the project that uses it.</Trans>
+      </div>
+    );
+  }
   const setupWebapp = appDisplay.idleDev?.webapp_id ?? (!appDisplay.src ? microAppId : null);
   const setupProject = appDisplay.idleDev?.project_id ?? definition?.project_id ?? project?.id ?? '';
   if (!appDisplay.src && setupWebapp && setupProject) {
