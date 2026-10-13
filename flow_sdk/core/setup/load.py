@@ -174,7 +174,8 @@ async def load_project(project: Any, *, approved: bool = False, asset: Any = Non
             if needs_setup and not approved:
                 state = LoadState.FAILED if prerequisites.state is SetupState.REFUSED else LoadState.SETUP_REQUIRED
                 result = LoadResult(state=state, project_id=pid,
-                                    detail=missing.detail if missing else prerequisites.detail or unmet)
+                                    detail=missing.detail if missing else prerequisites.detail or unmet,
+                                    tree=prerequisites.trimmed())
             else:
                 operational = LoadTree(tree)
                 running = await execute_setup(tree.root, resolve_node=operational.resolve_node,

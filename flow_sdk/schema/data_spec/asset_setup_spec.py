@@ -118,6 +118,9 @@ class LoadResult(DataSpec):
     display: Optional[str] = None
     #: A FAILED load that setup has not been tried for yet: an approved Load runs setup, then loads again.
     setup_available: bool = False
+    #: What the check found, for a load that stopped at SETUP_REQUIRED: the tree as it stands, so the
+    #: question "set up?" can show what setting up means before anything runs.
+    tree: Optional["SetupTreeResult"] = None
 
 
 class SetupNodeResult(DataSpec):
@@ -175,3 +178,4 @@ class SetupTreeResult(DataSpec):
 
 
 SetupNodeResult.model_rebuild()
+LoadResult.model_rebuild()

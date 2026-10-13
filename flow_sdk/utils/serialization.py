@@ -2,10 +2,11 @@ import json
 from datetime import datetime, timezone
 
 import dpath
-from fastapi.encoders import jsonable_encoder
 
 
 def type_safe_json(jsonable_object, **kwargs):
+    from fastapi.encoders import jsonable_encoder
+
     exclude_none = kwargs.pop("exclude_none", True)
     return jsonable_encoder(jsonable_object, exclude_none=exclude_none, **kwargs)
 

@@ -5,6 +5,7 @@
 import type { IEntity } from '../IEntity';
 import type { GitOrigin } from '../models/GitOrigin';
 import type { ConversationParticipant } from './conversation';
+import type { SetupTreeResult } from './project';
 
 export interface ProjectMember {
   member_id: string;
@@ -41,6 +42,8 @@ export interface ProjectLoadResult {
   display?: string | null;
   /** A failed load setup has not been tried for yet: an approved Load runs setup, then loads again. */
   setup_available?: boolean;
+  /** What the check found, for a `setup_required` load: the tree as it stands before anything runs. */
+  tree?: SetupTreeResult | null;
 }
 
 /** Where a declared dependency stands on THIS machine. */
