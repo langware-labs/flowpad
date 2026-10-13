@@ -156,3 +156,27 @@ def test_ports_local_is_read_and_the_older_port_means_required():
 def test_an_environment_other_than_local_is_refused():
     with pytest.raises(ValueError):
         WebappProxyServing.model_validate({"type": "proxy", "start_cmd": START, "ports": {"cloud": {"port": 80}}})
+
+
+# ── a port and a folder somebody says belong together ────────────────────────────────────────────
+
+
+def test_a_program_on_the_port_that_is_not_serving_from_the_folder_is_a_stranger():
+    assert app_ports.stranger_on(8080, Path(APP), [stranger(8080)]).pid == 900
+    assert app_ports.stranger_on(3300, Path(APP), [here(3300, cwd=f"{APP}/frontend")]) is None
+    assert app_ports.stranger_on(3300, Path(APP), []) is None, "a free port has no stranger on it"
+    # Both loopbacks: the app on one, something else on the other — the folder's own is there.
+    assert app_ports.stranger_on(3300, Path(APP), [stranger(3300), here(3300)]) is None
+
+
+@pytest.mark.parametrize("name", [
+    "com.docker.backend", "com.docker.backend.exe", "docker-proxy", "OrbStack Helper", "limactl", "gvproxy",
+    "wslrelay.exe", "ssh",
+])
+def test_a_program_that_only_forwards_a_port_is_not_named_as_its_holder(name):
+    assert app_ports._forwards(name)
+
+
+@pytest.mark.parametrize("name", ["node", "python3.11", "java", "nginx", "Python.exe"])
+def test_a_server_is_never_taken_for_a_forwarder(name):
+    assert not app_ports._forwards(name)

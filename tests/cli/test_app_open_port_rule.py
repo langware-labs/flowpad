@@ -6,8 +6,6 @@ app and register it — another program, shown as the app.
 
 from __future__ import annotations
 
-import os
-import signal
 import socket
 import subprocess
 import sys
@@ -38,10 +36,7 @@ def serve(tmp_path):
 
     yield run
     for proc in started:
-        try:
-            os.killpg(proc.pid, signal.SIGKILL)
-        except OSError:
-            pass
+        dev_server.stop_group(proc.pid)
         proc.wait()
 
 
