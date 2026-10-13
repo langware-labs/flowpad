@@ -906,6 +906,18 @@ msgstr "ל-{folderName} יש שינויים שעדיין לא נדחפו לשר�
 #~ msgid "{guest} wants to run prompts here"
 #~ msgstr ""
 
+#: src/components/collaboration/GuestPermissionChip.tsx
+msgid "{guestName} can start live sessions on your machine without asking, in every project."
+msgstr ""
+
+#: src/components/collaboration/GuestPermissionChip.tsx
+msgid "{guestName} can start live sessions on your machine without asking, in this project only."
+msgstr ""
+
+#: src/components/collaboration/GuestPermissionChip.tsx
+msgid "{guestName} is waiting for your approval before any prompt runs on your machine."
+msgstr ""
+
 #: src/components/collaboration/LiveSessionView.tsx
 msgid "{guestName} wants to run prompts on your machine."
 msgstr "{guestName} רוצה להריץ פרומפטים במחשב שלך."
@@ -918,9 +930,17 @@ msgstr "{guestName} רוצה להריץ פרומפטים במחשב שלך."
 #~ msgid "{host} paused the session"
 #~ msgstr ""
 
+#: src/components/collaboration/GuestPermissionChip.tsx
+msgid "{hostName} approved this session by hand. A later session may need their approval again."
+msgstr ""
+
 #: src/components/collaboration/LiveSessionView.tsx
 msgid "{hostName} declined the live session."
 msgstr "{hostName} דחה את הסשן החי."
+
+#: src/components/collaboration/GuestPermissionChip.tsx
+msgid "{hostName} lets you start live sessions on their machine without asking — this one started right away."
+msgstr ""
 
 #: src/components/collaboration/LiveSessionView.tsx
 #~ msgid "{hostName} paused the live session."
@@ -2720,6 +2740,10 @@ msgstr ""
 msgid "Always allow sessions from {guestName}"
 msgstr ""
 
+#: src/components/collaboration/GuestPermissionChip.tsx
+msgid "Always auto-approved"
+msgstr ""
+
 #: src/components/assets/editor/agent-profile/AgentPlaceCard.tsx
 msgid "Always on"
 msgstr ""
@@ -3110,6 +3134,10 @@ msgstr "אישור"
 msgid "Approve and continue"
 msgstr ""
 
+#: src/components/collaboration/GuestPermissionChip.tsx
+msgid "Approve now"
+msgstr ""
+
 #: src/components/collaboration/LiveSessionView.tsx
 #: src/components/conversation/SessionCard.tsx
 msgid "Approve once"
@@ -3117,6 +3145,14 @@ msgstr ""
 
 #: src/components/collaboration/LiveSessionView.tsx
 msgid "Approve, and let {guestName} start sessions without asking"
+msgstr ""
+
+#: src/components/collaboration/GuestPermissionChip.tsx
+msgid "Approved by {hostName}"
+msgstr ""
+
+#: src/components/collaboration/GuestPermissionChip.tsx
+msgid "Approved for this session"
 msgstr ""
 
 #: src/components/hub/AddMachineDialog.tsx
@@ -3583,6 +3619,14 @@ msgstr "פקודות Bash יאושרו אוטומטית כשארגז החול פ
 msgid "Auto-approve permissions that are not explicitly denied (--auto)"
 msgstr ""
 
+#: src/components/collaboration/GuestPermissionChip.tsx
+msgid "Auto-approved"
+msgstr ""
+
+#: src/components/collaboration/GuestPermissionChip.tsx
+msgid "Auto-approved in this project"
+msgstr ""
+
 #: src/components/milkdown-editor/MilkdownEditor.tsx
 msgid "Auto-detect direction from first strong character"
 msgstr "זיהוי כיוון אוטומטי מהתו החזק הראשון"
@@ -3693,6 +3737,10 @@ msgstr ""
 #: src/components/conversation/SessionCard.tsx
 #~ msgid "Awaiting {host}"
 #~ msgstr ""
+
+#: src/components/collaboration/GuestPermissionChip.tsx
+msgid "Awaiting {hostName}'s approval"
+msgstr ""
 
 #: src/components/conversation/SessionCard.tsx
 msgid "awaiting approval"
@@ -15035,6 +15083,10 @@ msgstr ""
 msgid "Needs values"
 msgstr ""
 
+#: src/components/collaboration/GuestPermissionChip.tsx
+msgid "Needs your approval"
+msgstr ""
+
 #: src/components/graph-view/GraphView.tsx
 msgid "Neighbors"
 msgstr "צמתים שכנים"
@@ -16972,6 +17024,10 @@ msgstr ""
 
 #: src/pages/discover-page/discover-page.tsx
 msgid "Nothing published yet by the projects you can see."
+msgstr ""
+
+#: src/components/collaboration/GuestPermissionChip.tsx
+msgid "Nothing runs on {hostName}'s machine until they approve this session."
 msgstr ""
 
 #: src/pages/hub-home/NewSandboxDialog.tsx
@@ -28625,6 +28681,10 @@ msgstr "כבר יש לך פרויקט בשם <0>{0}</0>. פתחו אותו, או
 #: src/components/task-receive/IncomingProjectDialog.tsx
 msgid "You already have a project named <0>{projectName}</0>. Open it, or set this one up under another name."
 msgstr "כבר יש לך פרויקט בשם <0>{projectName}</0>. פתחו אותו, או הגדירו את הפרויקט הזה בשם אחר."
+
+#: src/components/collaboration/GuestPermissionChip.tsx
+msgid "You approved this session only — {guestName} will need your approval again next time."
+msgstr ""
 
 #~ msgid "you are {role}"
 #~ msgstr ""
