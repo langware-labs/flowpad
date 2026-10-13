@@ -1756,6 +1756,19 @@ ok(!mgr.isToolDirLockedError(null), 'null error → not a lock (no throw)');
     fs.rmSync(venv, { recursive: true, force: true });  // (the half-built environment)
     await m._rollbackEngine();
     eq(seen.length, beforeFirst + 1, 'first install: the repair\'s install ran once, and the rollback ran NO uv command (no engine to restore)');
+    // A block during --compile-bytecode comes AFTER the venv was populated: `_version.py` is readable, so the venv looks like an
+    // engine. The app knows it was the first install (markFirstInstallBlocked): nothing to restore, nothing reinstalled.
+    fs.rmSync(venv, { recursive: true, force: true });
+    fs.rmSync(`${venv}.pre-repair`, { recursive: true, force: true });
+    fs.mkdirSync(venv, { recursive: true });
+    fs.writeFileSync(path.join(venv, 'HALF'), '');
+    m.getInstalledVersionSync = () => '0.2.209'; // readable, although it is a half-built first install
+    m.markFirstInstallBlocked();
+    const beforeHalf = seen.length;
+    await m._installEngineOn('C:\\p\\python.exe');
+    await m._rollbackEngine();
+    eq(seen.length, beforeHalf + 1, 'first install blocked during bytecode compilation: no rollback command, even though the venv looked like an engine');
+    ok(!fs.existsSync(path.join(venv, 'HALF')), 'and the half-built environment was not put back');
     fs.rmSync(tmp, { recursive: true, force: true });
   }
   {
