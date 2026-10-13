@@ -141,12 +141,17 @@ differs between sources, the source says itself: the credential shape is the man
 `auth` (one resolver, `flow_sdk/ingest/credentials.py`); `build` constructs it over an
 application transport; `message_for` reads a send's arguments; `query` names the one stream it reads; `local_tree_key` / `origin_id_for` place and name reflected files;
 `permalink` addresses its channel's UI; `webhook_challenge` / `webhook_account` /
-`events_from_webhook` take push delivery through the one generic route,
-`/api/v1/data_source/webhook/<name>`, and `webhook_authentic` — when a class declares it —
-must accept the delivery's raw body and headers before anything is ingested. The check is
-`DataDriver.ingest_pushed`'s, so no caller can skip it, and the route answers a refusal
-with 401 (the URL is public; WhatsApp checks Meta's `X-Hub-Signature-256` against the app
-secret). The shipped folders load on the first
+`events_from_webhook` take provider delivery through the generic route,
+`/api/v1/data_source/webhook/<name>`. A driver with batched accounts or account parts declares
+`webhook_targets(payload)`, returning `WebhookTargetSpec(account, part, payload)` values.
+The public route requires `webhook_authentic` and authenticates the original raw bytes against
+every matched target before any target is ingested; invalid signatures answer 401.
+The per-target payload still passes through `DataDriver.ingest_pushed` and its shared digest gate. Hub claim delivery instead names the source at
+`/api/v1/data_source/<id>/webhook` and passes `verified_by_hub=True`: the hub already checked
+the signature before splitting the batch, and the receiving route relies on trusted hub
+transport. See [channel webhook routing](../snippets/channel-webhook-routing.md) for setup,
+account/group selection, admission and the two endpoints' different failure semantics.
+The shipped folders load on the first
 `DataDriver.loaded(provider)` call; an authored folder loads on first use
 (`DataDriver.get`). `tests/unit/test_data_sources_are_self_contained.py` fails on
 any provider knowledge outside an asset folder.
@@ -185,6 +190,8 @@ application reads, so the engine asks the type rather than probing.
 | `ns` | `""` (ours) | Whose ontology the shapes this driver registers belong to. A driver OUTSIDE the shipped tree must name one — its own, or its project's — or `load_driver` refuses it, because otherwise a kind it declares lands in ours and can take a shipped one's name. Every kind it mints is prefixed `--<ns>--`; ours is the default and is never written. See [`ontology.md`](../ontology.md) |
 | `durable_cursor` | `False` | Whether `ChangePage.resume_cursor` is persisted and resumed |
 | `pages_per_pass` | `None` | Page chain cap per traversal |
+| `lists_everything` | `False` | A pass read start to end lists the whole collection: a stored record it no longer lists is removed (record sources) — an empty listing too, so `_scan` must raise on an outage rather than list nothing |
+| `page_size` | `50` | Rows per page; a traversal is ONE `_scan` paged from a kept snapshot, so set it to the provider's own page (≤ `MAX_PAGE_SIZE`, 1000) |
 | `attention_poll_seconds` | `None` | Sub-tick cadence while watched (see *Attention*). Telegram declares 5 |
 | `stamps_identity` | `True` | `ObjectSource` only: whether this source's files are ours to write an identity into |
 | `local_tree_key` | `""` | `ObjectSource` only: the config key naming a tree read in place (`root`, `repo`); empty when the bytes are pulled into a cache |
@@ -296,6 +303,14 @@ so "does it send" (`DataDriver.sends`) is the family itself.
 
 `ingest_items` stays the single chokepoint for `SourceItem` writes; reflection is
 a second destination *beside* it rather than a branch inside it.
+
+A record source may also name a **dataset** its records are mirrored into (`mirror:
+{dataset, map, by?}` in `data_source.json`). That is a projection of the records, not a third mode:
+the records still land as `SourceItem`s, and after every `sync.completed` the dataset is made their
+typed mirror (`flow_sdk/datasets/projection.py`, the twin of the stream inbox projection). A row's
+outside-owned fields then write back through the source's own verbs (`create_item`, `update_item`,
+`delete_item`), and what the driver answers is recorded at once. See
+[mirroring a system of record](mirroring-a-system-of-record.md).
 
 | Mode | Bytes | Notes |
 |---|---|---|

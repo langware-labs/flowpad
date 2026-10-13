@@ -27,7 +27,7 @@ import binascii
 import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Optional
-from urllib.parse import quote, unquote, urlsplit
+from urllib.parse import parse_qs, quote, unquote, urlsplit
 
 from flow_sdk.schema.data_spec.dock_pointer_spec import PROJECT_VFS, DockPointerSpec, tab_pointer_json
 from flow_sdk.schema.data_spec.returned_value_spec import ExitCode, NavigateResult
@@ -123,17 +123,17 @@ async def probe_web_url(url: str) -> tuple[ExitCode, Optional[str], str]:
     return ExitCode.OK, "ok", ""
 
 
-async def _probe_endpoint(endpoint_id: str) -> tuple[ExitCode, Optional[str], str]:
+async def _probe_endpoint(endpoint_id: str, route: Optional[str] = None) -> tuple[ExitCode, Optional[str], str]:
     """A service endpoint, probed where it runs — the same loopback request its
-    ``probe`` action makes."""
+    ``probe`` action makes. On an audience proxy, ``route`` names the app whose process is asked."""
     from flow_sdk.builtin.service_endpoint import ServiceEndpoint  # noqa: PLC0415
     from flow_sdk.core.webapp_probe import probe_webapp  # noqa: PLC0415
 
     endpoint = await ServiceEndpoint.get_by_id(endpoint_id)
     if endpoint is None:
         return ExitCode.NOT_FOUND, "not_found", f"No service endpoint {endpoint_id}."
-    backend = endpoint.backend
-    if getattr(backend, "type", None) != "proxy" or endpoint.remote:
+    backend = endpoint.proxy_of(route)
+    if backend is None or endpoint.remote:
         return ExitCode.OK, None, ""  # nothing on this machine to probe
     health = "/" + str(backend.health or "/").lstrip("/")
     found = await probe_webapp(f"http://127.0.0.1:{backend.port}{health}", backend.port)
@@ -156,7 +156,9 @@ async def probe_target(view_type: str, pointer: str, path: Optional[Path]) -> tu
     if url is not None:
         return await probe_web_url(url)
     if view_type == "app" and pointer.startswith("service_endpoint-"):
-        return await _probe_endpoint(pointer.split("-", 1)[1].split("/", 1)[0])
+        address, _, query = pointer.partition("?")
+        route = parse_qs(query, keep_blank_values=True).get("route", [None])[0]
+        return await _probe_endpoint(address.split("-", 1)[1].split("/", 1)[0], route)
     return ExitCode.OK, None, ""  # a screen or an entity view: resolving it was the check
 
 
@@ -320,7 +322,7 @@ async def probe_display_target(target: dict[str, Any]) -> tuple[ExitCode, Option
     if kind == DisplayTargetKind.VFS and target.get("path"):
         return await probe_target("", "", Path(str(target["path"])))
     if kind == DisplayTargetKind.APP and str(target.get("typeid") or "").startswith("service_endpoint-"):
-        return await _probe_endpoint(str(target["typeid"]).split("-", 1)[1])
+        return await _probe_endpoint(str(target["typeid"]).split("-", 1)[1], target.get("route"))
     if kind == DisplayTargetKind.DOCK:
         return await probe_target(str(target.get("view_type") or ""), str(target.get("pointer") or ""), None)
     return ExitCode.OK, None, ""  # an entity: resolving it was the check

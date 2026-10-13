@@ -17,7 +17,7 @@ import pytest
 from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.indexer.auto_index import ScanMode
 from flow_sdk.fs_store.indexer.builtin import build_default_indexer
-from flow_sdk.fs_store.indexer.index_function import FSIndexer, IndexerOptions
+from flow_sdk.fs_store.indexer.index_function import IndexerOptions
 from flow_sdk.fs_store.indexer.subprocess_scan import SubprocessScanIndexer
 from flow_sdk.fs_store.record_types import RecordType
 
@@ -76,6 +76,13 @@ def project_tree(tmp_path: Path) -> Path:
         json.dumps({"mcpServers": {"one": {"command": "x"}, "two": {"command": "y"}}}),
         encoding="utf-8",
     )
+    native_agent = tmp_path / "agentic-assets" / "agent" / "the-first-agent"
+    native_agent.mkdir(parents=True)
+    (native_agent / "agent.json").write_text(
+        json.dumps({"type": "agent", "name": "the-first-agent", "auto_launch": True}),
+        encoding="utf-8",
+    )
+    (native_agent / "system_prompt.md").write_text("Reply as the first agent.", encoding="utf-8")
     return tmp_path
 
 
@@ -111,7 +118,7 @@ async def test_subprocess_scan_matches_in_process_scan(project_tree: Path) -> No
     # Guard against a vacuous pass if the fixture ever stops producing records.
     assert in_process, "fixture produced no candidates"
     types = {str(r.record_type) for r in via_child}
-    assert {"skill", "subagent", "markdown", "mcp_server"} <= types
+    assert {"skill", "subagent", "agent", "markdown", "mcp_server"} <= types
 
 
 @pytest.mark.asyncio
@@ -263,19 +270,19 @@ async def test_child_resolves_this_instance_not_prod(
     assert refs
 
 
-def test_scan_child_never_recurses_into_another_subprocess() -> None:
-    """The fork-bomb guard.
+def test_scan_child_loads_only_discovery_runtime() -> None:
+    """A fresh child does not import entities, HTTP, or another scan backend."""
+    import subprocess
 
-    ``scan_child`` must pass ScanMode.THREAD explicitly. If it took the default it
-    would re-read the preference, resolve SUBPROCESS, and every child would spawn
-    its own child.
-    """
-    import inspect
-
-    from flow_sdk.fs_store.indexer import scan_child
-
-    # inspect, not a relative path read: this must hold no matter where pytest runs.
-    assert "scan_mode=ScanMode.THREAD" in inspect.getsource(scan_child._run)
-
-    # And the mode it names really does yield the in-process class.
-    assert build_default_indexer(scan_mode=ScanMode.THREAD).__class__ is FSIndexer
+    code = """
+import asyncio, sys
+from flow_sdk.fs_store.indexer.scan_child import _run
+assert asyncio.run(_run({"roots": []})) == 0
+assert "flow_sdk.builtin" not in sys.modules
+assert "fastapi" not in sys.modules
+assert "flow_sdk.transcript_analyzer" not in sys.modules
+assert "flow_sdk.fs_store.indexer.subprocess_scan" not in sys.modules
+"""
+    result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout)["result"]["candidates"] == 0

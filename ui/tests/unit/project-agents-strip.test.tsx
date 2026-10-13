@@ -39,7 +39,7 @@ const EDIT_POINTER = {
   pointer: `editor/agent/typeid/agent-${AGENT_ID}`,
 } as unknown as Agent['dockPointer'];
 
-function renderStrip() {
+function renderStrip(presentation: 'launch' | 'browse' = 'launch') {
   h.project = { id: PROJECT_ID, context_roots: ['/project'] } as Project;
   h.agents = [
     {
@@ -53,7 +53,7 @@ function renderStrip() {
       dockPointer: EDIT_POINTER,
     } as Agent,
   ];
-  return render(<ProjectAgentsStrip projectId={PROJECT_ID} />);
+  return render(<ProjectAgentsStrip projectId={PROJECT_ID} presentation={presentation} />);
 }
 
 afterEach(() => {
@@ -90,5 +90,18 @@ describe('ProjectAgentsStrip agent actions', () => {
     await user.click(use);
     expect(h.launch).toHaveBeenCalledWith(h.agents[0], PROJECT_ID);
     expect(h.openDock).not.toHaveBeenCalled();
+  });
+
+  it('opens existing agents in browse presentation, including disabled agents beyond the launcher limit', async () => {
+    const user = userEvent.setup();
+    const view = renderStrip('browse');
+    const agent = h.agents[0];
+    h.agents = Array.from({ length: 9 }, (_, index) => ({ ...agent, id: `${index}`, enabled: false }));
+    view.rerender(<ProjectAgentsStrip projectId={PROJECT_ID} presentation="browse" />);
+    expect(screen.getAllByTestId('project-agent-tile')).toHaveLength(9);
+    expect(screen.queryByTestId('project-agent-edit')).not.toBeInTheDocument();
+    await user.click(screen.getAllByTestId('project-agent-tile')[8]);
+    expect(h.openDock).toHaveBeenCalledWith(EDIT_POINTER);
+    expect(h.launch).not.toHaveBeenCalled();
   });
 });

@@ -1,3 +1,6 @@
+---
+id: 4b4aa261-f520-4dbb-ad50-218a021d06e8
+---
 # Smart navigation — 200 medium sentences
 
 The second suite for the smart navigator, after the 200 easy ones in

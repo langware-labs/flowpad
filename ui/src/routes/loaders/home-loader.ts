@@ -1,6 +1,8 @@
 import { ContextEntitiesEnum, dataContext, initSdk, isHubOnly, TypeId } from '@sdk';
 import { redirect, replace, type LoaderFunctionArgs as LoaderArgs } from 'react-router';
 import { TimeIt } from '@src/utils/timeit';
+import { isDeepLinkAction } from '@src/navigation/inbound-link';
+import { workspaceEntryDock } from './workspace-scope';
 import { adoptScopeProject } from './load-dock-pointer';
 import { DockPointer, VIEW_MODE_PARAM } from '@src/navigation/DockPointer';
 import { registerLoadRedirect, runLoadRedirects } from './load-redirects';
@@ -55,6 +57,12 @@ export async function loadHomePage(args: LoaderArgs) {
   const url = new URL(args.request.url);
   const dock = DockPointer.root().withOptionsFromUrl(`${url.pathname}${url.search}`);
 
+  const workspaceEntry = await workspaceEntryDock(dock);
+  if (workspaceEntry) {
+    // eslint-disable-next-line @typescript-eslint/only-throw-error
+    throw replace(workspaceEntry.toUrl(url.pathname));
+  }
+
   // The home has no view mode — it is the one open screen. An address that still
   // carries one (an old bookmark, a history entry from before) is canonicalized
   // to the plain home, so no entry can show a second home.
@@ -79,8 +87,12 @@ export async function loadHomePage(args: LoaderArgs) {
   // only two steps the home loader borrows from the dock loader — the rest (tab
   // setup, the other canonicalizers, page redirects) stays out deliberately,
   // because `/` is every cold start and this is the boot path.
-  await adoptScopeProject(dock);
-  t.time('adoptScope');
+  // An inbound handler resolves its own target. Restoring the ambient project
+  // first activates it and queues an unrelated auto-index ahead of the launch.
+  if (!isDeepLinkAction(url.searchParams.get('action'))) {
+    await adoptScopeProject(dock);
+    t.time('adoptScope');
+  }
 
   // Feature load-redirects (journey auto-launch et al) — done here, at load
   // time, so the destination is real URL state (reload/back safe) rather than

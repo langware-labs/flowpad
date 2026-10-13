@@ -116,6 +116,7 @@ for c in json.load(sys.stdin)['data']:
 
 - "my latest conversation with Y" → among the matches, pick the **max `updated_date`**.
 - Multiple plausible matches with similar recency → list them and ask the user; do not guess.
+- No match → send nothing (any other conversation is the wrong person) and ask the user for the contact's email.
 
 ## Step 2 — check cloud login (sends require it)
 

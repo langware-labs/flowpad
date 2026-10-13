@@ -12,6 +12,7 @@ import { ActionInfo } from '../models/ActionInfo';
 import { APIEntity, dataManager, registerEntity } from '../APIEntity';
 import { IEntity, EntityMerge } from '../IEntity';
 import type { SetupStageState } from './data-driver';
+import type { ProjectSetupRun } from './project';
 
 /** Mirror of flow_sdk/ingest/health.py SourceHealth. */
 export type SourceHealth = 'never_synced' | 'ok' | 'transient_error' | 'config_error';
@@ -41,6 +42,8 @@ export interface DataSourceSendOutcome {
 export interface IDataSource extends IEntity {
   /** The source's asset folder on this machine (`agentic-assets/data_source/<name>/`). */
   asset_ref?: string | null;
+  /** The project containing this source, independent of its agent/user owner. */
+  project_id?: string | null;
   owner?: string | null;
   name: string;
   kind?: string;
@@ -49,6 +52,7 @@ export interface IDataSource extends IEntity {
   account_key?: string;
   account_identities?: string[];
   allowed_senders?: string[];
+  open_to_all?: boolean;
   required_capabilities?: string[];
   config?: Record<string, unknown>;
   status?: SourceStatus;
@@ -65,6 +69,10 @@ export interface IDataSource extends IEntity {
   gitignored?: boolean;
   /** Pull only: never write back to the remote (default false). */
   read_only?: boolean;
+  /** The dataset this source's records are mirrored into after every sync: a dataset folder of its
+   *  project, a `Dataset.mirror` map, and who the rows are written as (default: the provider). Rows'
+   *  outside-owned fields then write back through this source. */
+  mirror?: { dataset: string; map: { key: string; input: Record<string, unknown> }; by?: string } | null;
   /** Where a file source's files are on this machine (the folder it places them in, else its own tree);
    *  null for a record source or one that names no folder yet. Derived by the backend, never stored. */
   files_root?: string | null;
@@ -155,6 +163,13 @@ export interface DataSourceChoiceSet {
   detail: string;
 }
 
+/** What a write to the outside system answered (`createItem`, `updateItem`, `deleteItem`): `item_id` is the record kept here. */
+export interface DataSourceWriteBack {
+  item_id: string;
+  origin: { kind: string; namespace: string; key: string; url?: string | null };
+  status: 'created' | 'updated' | 'deleted';
+}
+
 // The decorator binds to the declaration IMMEDIATELY below it. Anything slipped in
 // between silently unhooks it — the class stops registering, and the store then has no
 // constructor for `data_source`, so every list of sources renders empty with nothing
@@ -182,6 +197,7 @@ export class DataSource extends APIEntity<DataSource> implements IDataSource {
    *  Empty admits nobody: see `AgentMailbox.allowed`, the gate this backs for
    *  every channel-bound agent, not only an allocated mailbox. */
   allowed_senders: string[] = [];
+  open_to_all = false;
   required_capabilities: string[] = [];
   config: Record<string, unknown> = {};
   status: SourceStatus = 'new';
@@ -221,6 +237,7 @@ export class DataSource extends APIEntity<DataSource> implements IDataSource {
     this.owner = entity.owner ?? this.owner;
     this.account_identities = entity.account_identities ?? this.account_identities;
     this.allowed_senders = entity.allowed_senders ?? this.allowed_senders;
+    this.open_to_all = entity.open_to_all ?? this.open_to_all;
     this.required_capabilities = entity.required_capabilities ?? this.required_capabilities;
     this.config = entity.config ?? this.config;
     this.status = entity.status ?? this.status;
@@ -267,6 +284,13 @@ export class DataSource extends APIEntity<DataSource> implements IDataSource {
    *  to make them agree (`error_detail` names the files). Not broken: the source keeps polling. */
   get isHeld(): boolean {
     return this.health === 'ok' && this.error_code === 'write_back_held';
+  }
+
+  /** Running, but the dataset it mirrors into is not the mirror of its records: the sweep failed
+   *  (`mirror_failed`) or some records did not fit the row kind (`mirror_misfit`); `error_detail` says
+   *  which. Not broken: the source keeps polling, and a good sweep clears it. */
+  get isMirrorBroken(): boolean {
+    return this.health === 'ok' && (this.error_code === 'mirror_failed' || this.error_code === 'mirror_misfit');
   }
 
   /** Stopped on purpose: nothing is fetched until a person resumes it. */
@@ -329,6 +353,18 @@ export class DataSource extends APIEntity<DataSource> implements IDataSource {
   /** The setup wizards this source's driver declares, each as it stands for THIS source. */
   async setupStages(): Promise<SetupStageState[]> {
     return this.get('setup_stages');
+  }
+
+  /** Set this source up (`POST data_source/<id>/setup`): its node of its project's setup tree — what its
+   *  driver needs, then its stages or Verify. Its questions come to this app. Answers at once with the
+   *  run's address, which a screen claims (`claimAskRun`). Throws when no project holds the source. */
+  async startSetup(): Promise<string> {
+    return (await this.post<{ run: string }>('setup'))?.run ?? '';
+  }
+
+  /** This source's setup run (`GET data_source/<id>/setup-run`): going or not, and its tree so far. */
+  async setupRun(): Promise<ProjectSetupRun | null> {
+    return (await this.get<ProjectSetupRun>('setup-run')) ?? null;
   }
 
   /** Which place the hub hands this channel's messages to — read from the hub, never cached. */
@@ -413,6 +449,26 @@ export class DataSource extends APIEntity<DataSource> implements IDataSource {
   /** Reply to one of this source's records; who it reaches is the channel's rule. */
   async reply(itemId: string, text: string): Promise<DataSourceSendOutcome> {
     return this.post('reply', { item_id: itemId, text });
+  }
+
+  /** Make one record IN THE OUTSIDE SYSTEM through the source's driver (as `updateItem`). `data` is
+   *  the driver's record shape; the record it answers is kept here at once. 403 a read-only source ·
+   *  400 a driver that cannot, or data it refuses. */
+  async createItem(data: Record<string, unknown>): Promise<DataSourceWriteBack> {
+    return this.post('create_item', { data });
+  }
+
+  /** Change one record IN THE OUTSIDE SYSTEM — the record `itemId` of this source — through the
+   *  source's driver and the credential it already holds: how a field the app owns goes back to a
+   *  system of record. `changes` are the outside system's own fields; the record the driver answers
+   *  is kept here at once. 404 no such item · 403 a read-only source · 400 a driver that cannot. */
+  async updateItem(itemId: string, changes: Record<string, unknown>): Promise<DataSourceWriteBack> {
+    return this.post('update_item', { item_id: itemId, changes });
+  }
+
+  /** Remove one record FROM THE OUTSIDE SYSTEM, through the driver (as `updateItem`). */
+  async deleteItem(itemId: string): Promise<DataSourceWriteBack> {
+    return this.post('delete_item', { item_id: itemId });
   }
 
   /** This source's records, newest first. */

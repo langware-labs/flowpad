@@ -32,6 +32,7 @@ import { useHarnessAvailability } from '@src/components/workers/harness-availabi
 import { harnessStatus } from '@src/components/status/use-status-record';
 import { useIsAdvanced, ViewMode } from '@src/contexts/view-mode-context';
 import { DockPointer } from '@src/navigation/DockPointer';
+import { projectScope } from '@src/lib/scope-filter';
 import { InputDialog } from '@src/components/ui/input-dialog';
 import { type TabStripContextMenuItem } from '@src/components/tabs/TabStrip';
 import { useResumeInTerminal } from '@src/hooks/use-resume-in-terminal';
@@ -211,8 +212,11 @@ export function useTerminalStripController({
   const handleStartTerminal = useCallback(() => startTerminalTab(), [startTerminalTab]);
   // "New Vibe": the tabless Vibe home, whose prompt opens the next Vibe tab.
   const handleNewVibe = useCallback(
-    () => navigation.openDock(DockPointer.root().withViewMode(ViewMode.Vibe)),
-    [navigation],
+    () => {
+      const home = DockPointer.root().withViewMode(ViewMode.Vibe);
+      return navigation.openDock(spawnProjectId ? home.withScopeFilter(projectScope(spawnProjectId)) : home);
+    },
+    [navigation, spawnProjectId],
   );
 
   // "Open Context" — freeze the current global context (the ContextEntitiesEnum

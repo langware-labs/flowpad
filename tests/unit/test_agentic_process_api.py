@@ -209,6 +209,8 @@ async def test_fork_action_creates_sibling_with_fork_session_id():
     mock_fork.assert_called_once_with(
         session_id="source-session-abc",
         workdir="/project",
+        worker_type=source.worker_type,
+        cli_config=source.cli_config,
         project_id=None,
         visible=False,
         pty_mode=True,
@@ -240,6 +242,8 @@ async def test_fork_action_visible_false_by_default():
     mock_fork.assert_called_once_with(
         session_id="src-sess",
         workdir="/project",
+        worker_type=source.worker_type,
+        cli_config=source.cli_config,
         project_id=None,
         visible=False,
         pty_mode=True,
@@ -270,6 +274,8 @@ async def test_fork_action_visible_true_when_passed():
     mock_fork.assert_called_once_with(
         session_id="src-sess",
         workdir="/project",
+        worker_type=source.worker_type,
+        cli_config=source.cli_config,
         project_id=None,
         visible=True,
         pty_mode=True,
@@ -296,6 +302,8 @@ async def test_fork_action_propagates_project_id():
     mock_fork.assert_called_once_with(
         session_id="src-sess",
         workdir="/project",
+        worker_type=source.worker_type,
+        cli_config=source.cli_config,
         project_id="proj-xyz",
         visible=False,
         pty_mode=True,

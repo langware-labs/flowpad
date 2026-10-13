@@ -4,6 +4,7 @@ import {
   Agent,
   AgenticProcess,
   ClaudeSession,
+  FlowpadDiagnosis,
   CredentialsSubview,
   GraphWorkflow,
   Layout,
@@ -45,6 +46,7 @@ import {
   ALL_SCOPE_FILTER,
   dockOptionsToScopeFilter,
   pinnedProjectId,
+  projectScope,
   scopeFilterKey,
   scopeFilterToDockOptions,
   withScopeFilterOptions,
@@ -57,6 +59,7 @@ import { DEFAULT_WORLDVIEW_COLOR_MODE, type WorldViewColorMode } from '@src/type
 import { DEFAULT_GRAPH_PRESENTATION, type GraphPresentation } from '@src/types/GraphPresentation';
 import { credentialsPointer } from '@src/components/credentials-view/credentials-pointer';
 import { dataSourcesPointer, type DataSourcesRoute } from '@src/components/data-sources/data-sources-pointer';
+import { schemaTreePointer } from '@src/components/schema-tree/schema-tree-pointer';
 
 /**
  * URL query-param key carrying the "highlight this thing" intent across the
@@ -304,6 +307,7 @@ export const JOURNEY_STEP_PARAM = 'journeyStep';
  * written into context. Not the Vibe workspace `host` (`HOST_PARAM`).
  */
 export const WORKSPACE_PARAM = 'workspace';
+export const WORKSPACE_ENTRY_PARAM = 'workspaceEntry';
 
 /**
  * URL query-param key naming the capability the user was reaching for when they
@@ -2231,6 +2235,17 @@ export class DockPointer implements IDockPointer {
   }
 
   /**
+   * Create dock pointer for `projectId`'s schema tree with `path` selected — the kinds
+   * unfolded down to the selected one (`schemaTreePointer` owns the grammar). The project
+   * is the dock's scope, so the loader selects it and the tab belongs to it.
+   */
+  static forSchemaTree(projectId: string, path: string[] = [], layout: Layout = Layout.DOCK): DockPointer {
+    return new DockPointer(ViewType.SCHEMA_TREE, schemaTreePointer(path), {}, layout).withScopeFilter(
+      projectScope(projectId),
+    );
+  }
+
+  /**
    * Check equality with another dock pointer
    */
   equals(other: DockPointer): boolean {
@@ -2293,6 +2308,11 @@ export class DockPointer implements IDockPointer {
     // ACTIVE_DISPLAY_PARAM on why this flag inverts the host's usual neutrality.
     if (this.isActiveDisplay && this.hostProcessId) {
       return `${pagePrefix}${ACTIVE_DISPLAY_HASH_NS}|${this.hostProcessId}`;
+    }
+    // A dependency home is one tab per provider/consumer pair. Its runtime options
+    // remain presentation-only, but two consumers must never configure one another.
+    if (this.options?.providerProject && this.options?.consumerProject) {
+      return `${pagePrefix}dependency-home|${this.options.providerProject}|${this.options.consumerProject}`;
     }
     // A scope-keyed view (Assets, Explorer) is a SINGLE tab per scope: every
     // sub-pointer (asset type/folder/editor, explorer folder) of one scope folds
@@ -2402,6 +2422,16 @@ export class DockPointer implements IDockPointer {
         options: { [ACTIVE_DISPLAY_PARAM]: '1' },
         tabHash: this.tabHash,
         workspaceContent: true,
+      });
+    }
+    // Dependency homes retain their execution provider and consuming-project context
+    // in storage, so the backend and a reopened chip share the URL's pair identity.
+    if (this.options?.providerProject && this.options?.consumerProject) {
+      return JSON.stringify({
+        viewType: this.viewType,
+        pointer: this.pointer ?? '',
+        options: this.options,
+        tabHash: this.tabHash,
       });
     }
     // Scope-keyed identity is the SCOPE, not the sub-pointer. Normalize the pointer to
@@ -2532,6 +2562,12 @@ export class DockPointer implements IDockPointer {
     // title (host/guest) and the loader its project.
     if (this.viewType === ViewType.LIVE_SESSION) {
       return DockPointer.tryTypeId(RemoteWorkerSession.type, pointer);
+    }
+    // Same again for a diagnosis: the viewType string ('diagnosis') is not the
+    // entity type ('flowpad_diagnosis'), so the fallback named a target that
+    // does not exist and the tab had no entity to title or describe.
+    if (this.viewType === ViewType.DIAGNOSIS) {
+      return DockPointer.tryTypeId(FlowpadDiagnosis.type, pointer);
     }
     // A helpdesk dock targets the portal PROJECT it renders. Same reason as
     // live_session above: the viewType string ('helpdesk') is not an entity

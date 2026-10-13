@@ -208,12 +208,12 @@ describe('OAuthService terminal completion', () => {
     );
   });
 
-  it('names this tab as the initiator and completes a Hub grant from its addressed oauth_msg', async () => {
+  it.each(['code', undefined])('completes a Hub grant with kind %s from its addressed oauth_msg', async (kind) => {
     vi.spyOn(service, 'createOAuthPopupWindow').mockResolvedValue(new TestWindow());
     vi.spyOn(service, 'test').mockResolvedValue({ ok: true });
     const emitted = vi.spyOn(dataManager, 'emit');
     const call = vi.spyOn(dataManager, 'callAction').mockResolvedValue({
-      kind: 'code',
+      ...(kind ? { kind } : {}),
       auth_url: 'https://hub.test/authorize',
       oauth_request_id: 'hub-request',
     });

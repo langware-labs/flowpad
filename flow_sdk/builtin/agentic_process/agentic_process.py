@@ -58,7 +58,7 @@ from flow_sdk.builtin.agentic_process.display_context import (
     DisplayContextTooLarge,
     NothingShown,
     describe_display_context,
-    same_display_target,
+    same_history_target,
     take_prompt_context,
     with_display_context,
     without_stale_display_context,
@@ -518,9 +518,15 @@ async def _index_additional_dir(
     read_only: bool = False,
     strict: bool = False,
     project_id: str | None = None,
+    own: bool = False,
 ) -> None:
     """Run a one-shot indexer scan over ``path`` so its skills/agents become
     discoverable via ``Entity.assets_by_path``.
+
+    ``own=True`` (with ``project_id``): ``path`` is that project's OWN folder — a checkout a launch or a
+    share made — so what it holds is project content (``scope="project"``). The default is a directory
+    someone added beside their work: the user's. Indexed as the user's, a project's credentials are in
+    neither scope: its setup asks for nothing and its processes are handed nothing.
 
     ``strict`` is reserved for declarative installation: a failed scan must be
     observable there, because reporting a content project as installed without
@@ -553,7 +559,8 @@ async def _index_additional_dir(
             return
         # ``project_id`` names who owns what the walk finds; ``None`` keeps the request-scoped
         # rule (``index_function._walk_requested_by_project``).
-        new_root = FSRef(p, record_type=RecordType.CWD_ROOT, scope="user", read_only=read_only, project_id=project_id)
+        scope = "project" if own and project_id else "user"
+        new_root = FSRef(p, record_type=RecordType.CWD_ROOT, scope=scope, read_only=read_only, project_id=project_id)
         # include_temp=True so /tmp / /var/folders paths aren't filtered out —
         # the user explicitly added this dir, so honor it regardless of location.
         result = await get_shared_indexer().index(IndexerOptions(roots=(new_root,), verbose=False, include_temp=True))
@@ -646,7 +653,7 @@ DISPLAY_STACK_CAP = 50
 def _append_display_entry(stack: list[dict], payload: dict, shown_at: str) -> list[dict]:
     """Append ``payload`` (stamped ``shown_at``) to ``stack``, dropping any earlier
     show of the same target — so repeats never eat the cap. Capped to the newest N."""
-    kept = [e for e in stack if not (isinstance(e, dict) and same_display_target(e, payload))]
+    kept = [e for e in stack if not (isinstance(e, dict) and same_history_target(e, payload))]
     return [*kept, {**payload, "shown_at": shown_at}][-DISPLAY_STACK_CAP:]
 
 
@@ -659,7 +666,10 @@ def _union_display_stacks(a: list, b: list) -> list[dict]:
         if isinstance(entry, dict) and entry.get("shown_at"):
             by_key[entry["shown_at"]] = entry
     merged = sorted(by_key.values(), key=lambda e: e.get("shown_at") or "")
-    return merged[-DISPLAY_STACK_CAP:]
+    result: list[dict] = []
+    for entry in merged:
+        result = _append_display_entry(result, entry, entry["shown_at"])
+    return result
 
 
 class AgenticProcess(Entity):
@@ -1197,36 +1207,13 @@ class AgenticProcess(Entity):
         workdir: str | None = None,
         **kwargs,
     ) -> "AgenticProcess":
-        """Factory: pre-bake the cli_config that ``start_pty()`` turns into
-        ``claude --resume <parent> --fork-session --session-id <new>``.
-
-        Three things must all be set for ``ClaudeAgentOptions.to_spawn_args``
-        to emit the fork incantation:
-          * ``resume=True``
-          * ``session_id=<new>``        (the fork's own pre-allocated sid)
-          * ``fork_session_id=<parent>`` (passed in as ``session_id`` arg)
-
-        Without all three, the spawn falls through to a plain ``claude``
-        invocation — no resume, no fork — and claude starts a completely
-        unrelated session whose transcript never lands on disk (because
-        nobody ever sends it a prompt). The entity ends up with a session_id
-        that resolves to nothing, and any later ``--resume`` fails with
-        "No conversation found with session ID: <sid>". Pre-allocating
-        ``session_id`` here also lets callers persist it on the entity row
-        before the first turn, so transcript discovery doesn't race the
-        ``system:init`` event.
-        """
-        from flow_sdk.builtin.agentic_process.cli_drivers.claude import ClaudeAgentOptions  # noqa: PLC0415
-
-        new_session_id = str(uuid4())
-        cmd = ClaudeAgentOptions(
-            resume=True,
-            fork_session_id=session_id,
-            session_id=new_session_id,
-        )
+        """Create a sibling using the selected provider's native fork options."""
         if not kwargs.get("name"):
             kwargs.setdefault("naming_state", SessionNameState())
-        proc = cls(workdir=workdir, session_id=new_session_id, **kwargs)
+        proc = cls(workdir=workdir, **kwargs)
+        cmd = proc.cli_options
+        cmd.configure_fork(session_id)
+        proc.session_id = cmd.session_id
         proc.cli_config = cmd.to_json()
         return proc
 
@@ -2268,7 +2255,7 @@ class AgenticProcess(Entity):
     async def fork_action(self) -> ApiSuccessResponse | ApiFailResponse:
         """Create a sibling process that shares this session's conversation history.
 
-        Equivalent to: claude --resume <this.session_id> --fork-session
+        Uses the parent provider's native fork command.
         Returns the new AgenticProcess entity data so the caller can open it.
         `visible` (bool, default False) controls whether the new process appears in the tabs view.
         """
@@ -2282,6 +2269,8 @@ class AgenticProcess(Entity):
             new_proc = AgenticProcess.fork(
                 session_id=self.session_id,
                 workdir=self.workdir,
+                worker_type=self.worker_type,
+                cli_config=self.cli_config,
                 project_id=self.project_id,
                 visible=visible,
                 # A chat (headless) fork stays headless: its first prompt boots the
@@ -2673,16 +2662,16 @@ class AgenticProcess(Entity):
             await self.save()
         return project
 
-    async def _dev_server_typeid(self, port: object, name: object = None) -> str:
-        """The typeid of the endpoint for a dev server on *port* — registered on first show.
+    async def _dev_server_target(self, port: object, name: object = None, audience: object = None) -> dict:
+        """The display target for a dev server on *port* — its route, registered on first show.
 
         A port is how a server is reached, not what it is: showing one gives it a
-        ``proxy`` endpoint on the local placement of this run's project (or of the
-        machine, with no project), and the display holds that. Raises
-        ``InvalidDisplayTarget`` for a bad port.
+        ``proxy`` route on the ``app`` (or ``admin``) proxy of this run's project's local
+        placement (or of the machine's, with no project), and the display holds that.
+        Raises ``InvalidDisplayTarget`` for a bad port or audience.
         """
         from flow_sdk.builtin import webapp_placement  # noqa: PLC0415
-        from flow_sdk.core.display_target import InvalidDisplayTarget  # noqa: PLC0415
+        from flow_sdk.core.display_target import InvalidDisplayTarget, endpoint_target  # noqa: PLC0415
 
         try:
             wanted = int(str(port))
@@ -2691,12 +2680,15 @@ class AgenticProcess(Entity):
         if not 0 < wanted <= 65535:
             raise InvalidDisplayTarget(f"Invalid port: {port!r}")
         try:
-            endpoint = await webapp_placement.register_dev_endpoint(
-                await self._resolve_webapp_project(), port=wanted, name=str(name or "").strip() or None
+            placed = await webapp_placement.register_dev_endpoint(
+                await self._resolve_webapp_project(),
+                port=wanted,
+                name=str(name or "").strip() or None,
+                audience=str(audience or "").strip() or "app",
             )
         except ValueError as e:
             raise InvalidDisplayTarget(str(e)) from e
-        return str(endpoint.typeid)
+        return endpoint_target(placed)
 
     async def _artifact_reference(self, payload: dict) -> tuple[str, str]:
         """What a resolved display target points at: ``(asset_ref, entity_kind)``.
@@ -2770,10 +2762,11 @@ class AgenticProcess(Entity):
 
         try:
             if port:
-                typeid = await self._dev_server_typeid(port, body.get("name"))
-            # `discover=True` — a display verb: showing a just-written file has
-            # to recover it so the bespoke editor renders, not a raw file view.
-            payload = await resolve_display_target(typeid=typeid, path=path, discover=True)
+                payload = await self._dev_server_target(port, body.get("name"), body.get("audience"))
+            else:
+                # `discover=True` — a display verb: showing a just-written file has
+                # to recover it so the bespoke editor renders, not a raw file view.
+                payload = await resolve_display_target(typeid=typeid, path=path, discover=True)
         except InvalidDisplayTarget as e:
             return ApiFailResponse(message=str(e), status_code=400)
         except DisplayTargetNotFound as e:
@@ -2856,7 +2849,7 @@ class AgenticProcess(Entity):
             # paying both latencies in series.
             artifacts, endpoints = await asyncio.gather(
                 webapp_placement.project_artifacts(project),
-                webapp_placement.project_endpoints(project),
+                webapp_placement.project_routes(project),
             )
             by_artifact: dict[str, list] = {}
             for endpoint in endpoints:
@@ -2865,8 +2858,8 @@ class AgenticProcess(Entity):
             rows = []
             for artifact in artifacts:
                 payload = artifact.model_dump(mode="json")
-                # Where the app is served here: its dev server (`proxy`) and/or its
-                # built output (`static`). `flow app open` restarts from these.
+                # Where the app is served here: the routes of its dev server (`proxy`) and/or
+                # its built output (`static`). `flow app open` restarts from these.
                 payload["endpoints"] = by_artifact.get(artifact.id, [])
                 rows.append(payload)
             return ApiSuccessResponse(data={"artifacts": rows})
@@ -2882,6 +2875,7 @@ class AgenticProcess(Entity):
         from flow_sdk.builtin import webapp_placement  # noqa: PLC0415
         from flow_sdk.core.display_target import InvalidDisplayTarget, resolve_display_target  # noqa: PLC0415
         from flow_sdk.fs_store.path_utils import canonical_posix_path  # noqa: PLC0415
+        from flow_sdk.schema.data_spec.service_endpoint_spec import WEB_AUDIENCES  # noqa: PLC0415
 
         body = await _read_json_body()
         if isinstance(body, ApiFailResponse):
@@ -2909,6 +2903,9 @@ class AgenticProcess(Entity):
             artifact_path = raw_path
 
         name = str(body.get("name") or "").strip() or Path(artifact_path).name or "Web App"
+        audience = str(body.get("audience") or "").strip() or "app"
+        if audience not in WEB_AUDIENCES:
+            return ApiFailResponse(message=f"Invalid audience: {audience!r} (admin or app)", status_code=400)
         start_cmd = str(body.get("start_cmd") or "").strip()
         health = str(body.get("health") or "/").strip() or "/"
         description = str(body.get("description") or "").strip() or f"Web app at {artifact_path}"
@@ -2944,7 +2941,11 @@ class AgenticProcess(Entity):
         endpoints: list = []
         if deployment is not None:
             endpoints = await webapp_placement.upsert_artifact_endpoints(
-                deployment, artifact, backends, project_id=project.id if project is not None else None
+                deployment,
+                artifact,
+                backends,
+                project_id=project.id if project is not None else None,
+                audience=audience,
             )
 
         shown = None
@@ -3069,7 +3070,9 @@ class AgenticProcess(Entity):
                 return await self._show_answer(payload)
             typeid = str(body.get("typeid") or "").strip() or None
             if body.get("port") is not None:
-                typeid = await self._dev_server_typeid(body.get("port"), body.get("name"))
+                return await self._show_answer(
+                    await self._dev_server_target(body.get("port"), body.get("name"), body.get("audience"))
+                )
             payload = await resolve_display_target(
                 typeid=typeid,
                 path=str(body.get("path") or "").strip() or None,
@@ -7745,15 +7748,37 @@ class AgenticProcess(Entity):
         own file by construction; no streamer (a restored process before its
         first delta) falls back to the parse.
         """
+        if self.transcript_path is None:
+            return None
+        streamer = self._transcript_streamer()
+        if streamer is not None:
+            return streamer.transcript
+        return self._load_transcript()
+
+    def _transcript_streamer(self):
+        """The streamer registered for this session's transcript file, if any."""
         path = self.transcript_path
         if path is None:
             return None
         from flow_sdk.transcript_streamer.registry import transcript_streamer_registry  # noqa: PLC0415
 
-        streamer = transcript_streamer_registry.get_streamer_by_path(path)
+        return transcript_streamer_registry.get_streamer_by_path(path)
+
+    async def _read_transcript(self, fn):
+        """``fn(transcript)`` over this session's transcript; None when there is none.
+
+        With a streamer the walk runs on its live copy through
+        :meth:`TranscriptStreamer.read`, which excludes a concurrent
+        ``parse_delta`` — that parse rewrites usage rows the copy already
+        holds, so an unguarded walk can read totals mid-rewrite. Without one
+        (a restored process before its first delta) the file is parsed off the
+        event loop and walked here.
+        """
+        streamer = self._transcript_streamer()
         if streamer is not None:
-            return streamer.transcript
-        return self._load_transcript()
+            return await streamer.read(fn)
+        transcript = await asyncio.to_thread(self._load_transcript)
+        return fn(transcript) if transcript is not None else None
 
     async def _caught_up_transcript(self) -> "AgentTranscriptFile | None":
         """``_current_transcript``, first catching the streamer up to the file on disk.
@@ -7766,17 +7791,16 @@ class AgenticProcess(Entity):
         dispatched to subscribers as usual) instead of answering from the stale copy.
         """
         path = self.transcript_path
-        if path is not None:
-            from flow_sdk.transcript_streamer.registry import transcript_streamer_registry  # noqa: PLC0415
+        streamer = self._transcript_streamer()
+        if streamer is not None:
+            try:
+                behind = streamer.transcript._byte_offset < Path(path).stat().st_size
+            except (OSError, AttributeError):
+                behind = False
+            if behind:
+                from flow_sdk.transcript_streamer.registry import transcript_streamer_registry  # noqa: PLC0415
 
-            streamer = transcript_streamer_registry.get_streamer_by_path(path)
-            if streamer is not None:
-                try:
-                    behind = streamer.transcript._byte_offset < Path(path).stat().st_size
-                except (OSError, AttributeError):
-                    behind = False
-                if behind:
-                    await transcript_streamer_registry.notify_change(Path(path))
+                await transcript_streamer_registry.notify_change(Path(path))
         return self._current_transcript()
 
     def _collect_touched_from_transcript_tail(self) -> list[str]:
@@ -8159,16 +8183,11 @@ class AgenticProcess(Entity):
         changed. Watcher-scoped via ``emit_flow_data`` (only clients watching
         this process), not the global scan-pill ``broadcast_progress``.
 
-        The whole-file parse is offloaded off the event loop (same pattern the
-        streamer uses for ``parse_delta``) so N active workers folding once per
-        debounce second don't serialize their parses on the loop. A fresh
-        transcript object is parsed here (not the streamer's live one) to avoid
-        racing its concurrent ``parse_delta`` mutation.
+        The report is a walk over the transcript the streamer already holds
+        (:meth:`_read_transcript`), never a parse of its own: the walk is
+        milliseconds where a whole-file parse is linear in the session's size.
         """
         try:
-            transcript = await asyncio.to_thread(self._load_transcript)
-            if transcript is None:
-                return
             from flow_sdk.external_apis.llm.llm_drivers.flow_data import (
                 FlowDataType as _FDT,
             )
@@ -8180,13 +8199,17 @@ class AgenticProcess(Entity):
                 ProcessStatusReport,
             )
 
-            report = ProcessStatusReport.from_transcript(
-                transcript,
-                worker_status=(current.value if current is not None else ""),
-                process_status=self.status,
-                busy=current_busy,
-                focused_asset=self._derive_focused_asset(transcript),
+            report = await self._read_transcript(
+                lambda transcript: ProcessStatusReport.from_transcript(
+                    transcript,
+                    worker_status=(current.value if current is not None else ""),
+                    process_status=self.status,
+                    busy=current_busy,
+                    focused_asset=self._derive_focused_asset(transcript),
+                )
             )
+            if report is None:
+                return
             report_dict = report.model_dump()
 
             # A running process IS an activity: mirror this flush onto its Activity so one

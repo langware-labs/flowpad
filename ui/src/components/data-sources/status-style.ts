@@ -28,7 +28,7 @@ export const STATUS_STYLE: Record<SourceStatus, SourceLook> = {
     border: 'border-s-border',
   },
   setup: {
-    label: msg`Needs setup`,
+    label: msg`Setup required`,
     dot: 'bg-amber-500',
     text: 'text-amber-600 dark:text-amber-400',
     border: 'border-s-amber-500/70',

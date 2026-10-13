@@ -298,7 +298,7 @@ def test_to_json_roundtrip():
         json_stream=False,
         ephemeral=False,
     )
-    cmd.fork_session_id = "launch-only-fork"
+    cmd.fork_session_id = "parent-session"
     cmd.system_prompt_file = "/tmp/system-prompt"
     cmd.developer_instructions = "launch derived"
     cmd.extra_config_overrides = [("provider.name", "runtime")]
@@ -311,6 +311,7 @@ def test_to_json_roundtrip():
         "env_vars": {"X": "1"},
         "worker_type": "codex",
         "session_id": "abc",
+        "fork_session_id": "parent-session",
         "resume": True,
         "model": "gpt-5.2",
         "permission_mode": "default",

@@ -1937,6 +1937,36 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
     this.emit('flow_data', flowData);
   }
 
+  // Cache lifetime — what the store asks an entity (FlowSync/store.ts, "one way out")
+
+  /**
+   * True once this row is finished for the UI: nothing shows it any more, so the store may
+   * drop it as soon as nothing references it. False by default — a type opts in by saying
+   * what "finished" means for it (a closed tab, a closed shell, an ended session whose tab
+   * is gone).
+   */
+  isRetired(): boolean {
+    return false;
+  }
+
+  /**
+   * Someone is listening to this entity or to its flow-data stream — a mounted view — so
+   * it is in use whatever the store's own counts say.
+   */
+  hasListeners(): boolean {
+    return this._eventListeners.size > 0 || (this._flowDataStream?.eventNames().length ?? 0) > 0;
+  }
+
+  /**
+   * The store dropped this entity for good (deleted, removed, evicted). Free what hangs
+   * off it; a subclass that owns more (a PTY connection, loaded artifacts) releases that
+   * too. Safe to call twice. The stream object stays, so a holder that outlived the cache
+   * entry sees `'clear'` and renders empty.
+   */
+  onEvicted(): void {
+    this._flowDataStream?.clear();
+  }
+
   /**
    * Mirror of Python `Entity.emit_entity_event` arriving over the WS transport.
    * Dispatched by `DataManager.onFlowData` for envelopes with

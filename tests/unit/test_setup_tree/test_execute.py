@@ -10,7 +10,8 @@ import asyncio
 
 import pytest
 
-from flow_sdk.core.compute_op.ask import ASKING_RUN
+from flow_sdk.api.api_types.identifier import is_valid_entity_id
+from flow_sdk.core.compute_op.ask import ASKING_RUN, answered_here, cancel, open_questions
 from flow_sdk.core.setup import SetupNode, execute_setup, read_setup, setup_activity_path
 from flow_sdk.core.setup import execute as setup_execute
 from flow_sdk.core.wizard import state as wizard_state
@@ -125,3 +126,54 @@ async def test_a_check_takes_no_slot_and_records_nothing(runs):
 
     assert checked.state is SetupState.PENDING, "checking while a setup runs answers, never 'held'"
     assert read_setup("project-1").ok, "the record is the real run's, not the check's"
+
+
+@pytest.mark.asyncio
+async def test_a_running_step_shows_the_commands_latest_line(runs):
+    lines = []
+    installed = []
+
+    async def shell(command, *, on_output=None, **_kw):
+        if command.startswith("install"):
+            on_output("pulling image waha:latest")
+            await asyncio.sleep(0)
+            installed.append(command)
+        return CliResult.of_process(command, 0 if installed else 1)
+
+    async def watch(tree):
+        lines.append(tree.root.detail)
+
+    result = await _execute("project-1", shell=shell, on_change=watch)
+
+    assert result.ok
+    assert any("pulling image waha:latest" in line for line in lines), lines
+    assert read_setup("project-1").ok, "the live line never lands after the final record"
+
+
+@pytest.mark.asyncio
+async def test_a_setup_question_names_no_wizard_it_is_not_a_step_of(runs):
+    """The app builds ``TypeId("wizard", wizard_id)`` from a question — a setup run is no Wizard row."""
+    ask = ComputeOpSpec.model_validate(
+        {"name": "key", "subkind": "ask", "exe_data": {"prompt": "API key"},
+         "output_spec_kind": "string", "completion_check": {"commands": {"linux": "have key"}}}
+    )
+    node = SetupNode(id="p", label="P", run=WizardSpec.model_validate({"name": "w", "steps": [{"id": "key", "kind": "compute", "ref": "key"}]}))
+
+    async def a_node(_id):
+        return node
+
+    async def an_op(_name):
+        return Resolved(ask, True)
+
+    with answered_here(present=True):
+        run = asyncio.create_task(
+            execute_setup("project-1", resolve_node=a_node, resolve_op=an_op, shell=_machine(), platform="linux")
+        )
+        while not open_questions() and not run.done():
+            await asyncio.sleep(0)
+        (question,) = open_questions()
+        wizard_id = question.to_payload()["wizard_id"]
+        cancel(question.id)
+        await run
+
+    assert not wizard_id or is_valid_entity_id(wizard_id), f"not an entity id: {wizard_id!r}"

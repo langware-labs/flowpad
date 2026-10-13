@@ -26,6 +26,8 @@ describe('useAssetTypes — anyMode', () => {
     await dataManager.loadTypes([
       { type_name: 'agent', browseable_by: 'standard', creatable: true, icon: 'Bot' },
       { type_name: 'helpdesk', browseable_by: 'advanced', creatable: false, icon: 'LifeBuoy' },
+      { type_name: 'debug_record', browseable_by: 'standard', dev_only: true },
+      { type_name: 'internal_record', browseable_by: null },
     ] as never);
     vi.spyOn(apiClient, 'get').mockImplementation(() => new Promise(() => {}) as never);
   });
@@ -35,6 +37,18 @@ describe('useAssetTypes — anyMode', () => {
     mode = 'vibe';
     const { result } = renderHook(() => useAssetTypes({ withVaults: false }));
     expect(names(result.current.types)).not.toContain('agent');
+  });
+
+  it('exposes every user-facing tier while keeping developer-only types behind Dev', () => {
+    for (const m of ['vibe', 'standard', 'advanced', 'dev']) {
+      mode = m;
+      const { result, unmount } = renderHook(() => useAssetTypes({ withVaults: false, allUserTypes: true }));
+      const listed = names(result.current.types);
+      expect(listed).toEqual(expect.arrayContaining(['agent', 'helpdesk']));
+      expect(listed.includes('debug_record')).toBe(m === 'dev');
+      expect(listed).not.toContain('internal_record');
+      unmount();
+    }
   });
 
   it('lists every browseable type in every mode', () => {

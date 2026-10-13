@@ -1,3 +1,5 @@
+import { ProjectLoadGate } from '@src/components/project-setup/ProjectLoadGate';
+import { PROVIDER_PROJECT_PARAM } from '@src/project-home-page/dependency-home';
 import { useCallback, useEffect, useRef } from 'react';
 import { type PersistentIframeHandle } from '@src/components/persistent-iframe';
 import { WebappDisplay } from '@src/components/webapp-display/WebappDisplay';
@@ -10,7 +12,9 @@ import { DockPointer } from '@src/navigation/DockPointer';
 import { useContext } from '@src/hooks/useContext';
 import { tryParseDock } from '@src/navigation/try-parse-dock';
 import { buildDockPointer } from '@src/components/conversation/EntityChip';
-import { isTypeId, TypeId } from '@sdk';
+import { useEntity } from '@sdk/react/hooks';
+import { Trans } from '@lingui/react/macro';
+import { isTypeId, TypeId, WebApp } from '@sdk';
 import { externalUrl, OPEN_EXTERNAL_MESSAGE } from '@sdk/apps/host';
 import { openExternal } from '@src/lib/open-external';
 
@@ -39,6 +43,8 @@ export interface AppDisplayViewerProps {
   microAppId?: string | null;
   /** Bare service_endpoint uuid, for an app addressed by what serves it. */
   endpointId?: string | null;
+  /** With `endpointId`: the app's mount on it — the endpoint is its placement's audience proxy. */
+  route?: string | null;
   /** The user's runtime preference from the URL, if it pins one. */
   runtime?: AppRuntime | null;
   /** Dock options handed to the app as its query string (e.g. `source`). */
@@ -64,6 +70,30 @@ function reloadOnNewEpoch(src: string, epoch: number | undefined, reload: () => 
   const seen = shownAtEpoch.get(src);
   shownAtEpoch.set(src, epoch);
   if (seen !== undefined && seen !== epoch) reload();
+}
+
+/** The served folder's version the frame was loaded at, by `src` (see `content_version` on the server). */
+const loadedVersion = new Map<string, string>();
+const VERSION_MARK = /<!-- flowpad-content-version: ([0-9a-f]+) -->/;
+
+/**
+ * Reload a parked frame whose app files changed since it loaded. Re-opening a tab hands the
+ * same document back (the frame is kept per `src`), so an app edited meanwhile kept showing
+ * its old code until a manual reload. One small read of the page per show; same version, no reload.
+ */
+async function reloadIfAppChanged(src: string, reload: () => void): Promise<void> {
+  if (!src) return;
+  let version: string | undefined;
+  try {
+    const page = await fetch(src, { cache: 'no-store' });
+    version = page.ok ? VERSION_MARK.exec(await page.text())?.[1] : undefined;
+  } catch {
+    return; // unreachable now: the frame shows its own error
+  }
+  if (!version) return;
+  const seen = loadedVersion.get(src);
+  loadedVersion.set(src, version);
+  if (seen !== undefined && seen !== version) reload();
 }
 
 /**
@@ -98,6 +128,7 @@ export function AppDisplayViewer({
   artifactId,
   microAppId = null,
   endpointId = null,
+  route = null,
   runtime,
   options,
   reloadKey,
@@ -105,15 +136,20 @@ export function AppDisplayViewer({
   const { currentDock, navigation } = useDockNavigation();
   const { project } = useContext();
   const frameRef = useRef<PersistentIframeHandle>(null);
+  const { data: definition, notFound } = useEntity<WebApp>(microAppId ? new TypeId(WebApp.type, microAppId) : null);
 
   // No memo: `useAppDisplay` reduces this to strings before anything depends on
   // it, so a fresh object per render produces an identical `src` and the frame
   // (keyed on `src`) does not remount.
-  const appDisplay = useAppDisplay({ artifactId, microAppId, endpointId, options: options ?? {} }, runtime ?? null);
+  const appDisplay = useAppDisplay({ artifactId, microAppId, endpointId, route, options: options ?? {} }, runtime ?? null);
 
   useEffect(() => {
     reloadOnNewEpoch(appDisplay.src, reloadKey, () => frameRef.current?.refresh());
   }, [appDisplay.src, reloadKey]);
+
+  useEffect(() => {
+    void reloadIfAppChanged(appDisplay.src, () => frameRef.current?.refresh());
+  }, [appDisplay.src]);
 
   // The theme is baked into the guest URL for its first paint, so a later change
   // is PUSHED rather than re-addressed: re-addressing would swap `src`, which is
@@ -163,8 +199,21 @@ export function AppDisplayViewer({
   // Only once its endpoints answered: an app not looked up yet is not down, and setting it up would run
   // a setup for an app (a built-in editor, say) that is no node of this project's tree.
   if (appDisplay.loading) return null;
+  // The app itself is not on this machine (removed, or a link from another one): there is nothing to
+  // set up or wait for, and saying "opening" forever would be a lie.
+  if (microAppId && notFound && !appDisplay.src) {
+    return (
+      <div
+        role="alert"
+        data-testid="app-not-installed"
+        className="flex h-full items-center justify-center p-6 text-center text-sm text-muted-foreground"
+      >
+        <Trans>This app is not installed here. Add its project again from the project that uses it.</Trans>
+      </div>
+    );
+  }
   const setupWebapp = appDisplay.idleDev?.webapp_id ?? (!appDisplay.src ? microAppId : null);
-  const setupProject = appDisplay.idleDev?.project_id ?? project?.id ?? '';
+  const setupProject = appDisplay.idleDev?.project_id ?? definition?.project_id ?? project?.id ?? '';
   if (!appDisplay.src && setupWebapp && setupProject) {
     return <WebappSetupGate projectId={setupProject} webappId={setupWebapp} />;
   }
@@ -177,7 +226,7 @@ export function AppDisplayViewer({
     );
   }
 
-  return (
+  const display = (
     <div className="flex h-full flex-col">
       <WebappDisplayToolbar
         host={appDisplay.src}
@@ -206,6 +255,11 @@ export function AppDisplayViewer({
       </div>
     </div>
   );
+  // Direct app opens have no dependency URL. Their endpoint, not ambient consumer context, owns Load.
+  const provider = appDisplay.endpoint?.project_id ?? definition?.project_id;
+  return provider && !currentDock?.options?.[PROVIDER_PROJECT_PARAM] && !currentDock?.isActiveDisplay
+    ? <ProjectLoadGate key={provider} projectId={provider}>{display}</ProjectLoadGate>
+    : display;
 }
 
 /** `host:port` of a direct address, for the toolbar label. */

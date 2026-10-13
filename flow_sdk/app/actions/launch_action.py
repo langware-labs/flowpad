@@ -17,9 +17,12 @@ Runs with no local row (``allow_missing_target``): that row is what it is there 
 from __future__ import annotations
 
 import logging
+import shutil
+import sys
 from pathlib import Path
 
 from flow_sdk.actions.action_registry import action
+from flow_sdk.builtin.faas.compute_node import ComputeNode
 from flow_sdk.builtin.project import Project
 from flow_sdk.cloud_client.shared.errors import HubError
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
@@ -50,6 +53,23 @@ def _setup_trouble(error: Exception) -> str:
     return f"Couldn't set up the project: {error}" + (f" — {detail}" if detail else "")
 
 
+async def _ensure_git() -> None:
+    """A launch clones, so it brings git with it: on a fresh machine (a new Windows install has none) the
+    shipped ``git-on-path`` op installs it — MinGit, no administrator rights — and the PATH it extended is
+    adopted before the clone. The person clicked Launch; sending them to find a setup screen first is
+    the step a link exists to remove. A Mac's git stub is left alone: its installer is Apple's dialog."""
+    if sys.platform == "darwin" or shutil.which("git") is not None:
+        return
+    from flow_sdk.core.compute_op.runner import run_op  # noqa: PLC0415
+    from flow_sdk.core.wizard.execute import _resolve_op  # noqa: PLC0415
+
+    found = await _resolve_op("git-on-path")
+    if found is None:
+        return  # the clone then says git is missing, as before
+    answer = await run_op(found.spec, subject="launch", trusted=found.trusted)
+    logger.info("[launch] git was missing; installing it: %s", answer.detail)
+
+
 async def ensure_launched_project(project_id: str, someone_typeid: str | None = None) -> Project:
     """The project ``project_id`` names, with a checkout on this machine. Raises
     ``LookupError`` when neither this machine nor the hub (for this caller) has it."""
@@ -62,6 +82,7 @@ async def ensure_launched_project(project_id: str, someone_typeid: str | None = 
     if project is None:
         raise LookupError("This project isn't available to the account signed in on this machine.")
     if not _checked_out(project):
+        await _ensure_git()
         return await project.setup_from_git_origin()
     # Checked out already — by the hub on a box, or by an earlier try on this machine. That try's
     # index may not have finished (a busy machine), which leaves a project whose agents are not
@@ -69,7 +90,9 @@ async def ensure_launched_project(project_id: str, someone_typeid: str | None = 
     # Indexing is idempotent, so every launch makes sure — and says so if it cannot.
     from flow_sdk.builtin.agentic_process.agentic_process import _index_additional_dir  # noqa: PLC0415
 
-    await _index_additional_dir(str(project.fs_storage_mount_path), read_only=True, strict=True)
+    await _index_additional_dir(
+        str(project.fs_storage_mount_path), read_only=True, strict=True, project_id=str(project.id), own=True
+    )
     return project
 
 
@@ -80,7 +103,15 @@ async def launch_ensure_project() -> ApiResponse:
         return ApiFailResponse(message="launch-ensure requires a project: project/<id>/launch-ensure", status_code=400)
     project_id = str(request_info.target_entity_typeid.id)
     try:
-        project = await ensure_launched_project(project_id, request_info.someone_typeid)
+        # In turn with any index already running. A launch that arrives while a new install is
+        # still on its boot-time pass used to index beside it, and the two fought for the local
+        # database ("database is locked"); it now waits for that pass and then does its own work.
+        node = await ComputeNode.get_local()
+        if node is None:
+            project = await ensure_launched_project(project_id, request_info.someone_typeid)
+        else:
+            async with node.index_turn():
+                project = await ensure_launched_project(project_id, request_info.someone_typeid)
     except LookupError as e:
         return ApiFailResponse(message=str(e), status_code=404)
     except Exception as e:  # noqa: BLE001 — the launch dialog shows a reason, not a stack

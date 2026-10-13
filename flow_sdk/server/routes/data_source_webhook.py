@@ -69,7 +69,13 @@ async def webhook_handshake(name: str, request: Request):
     stype = await _pushing_type(name, "webhook_challenge")
     if stype is None:
         return PlainTextResponse("no webhook for this source", status_code=404)
-    answer = stype.cls.webhook_challenge(dict(request.query_params), [row.config or {} for row in await _rows(name)])
+    rows = await _rows(name)
+    source_id = request.query_params.get("source_id")
+    if source_id:
+        rows = [row for row in rows if str(row.id) == source_id]
+        if not rows:
+            return PlainTextResponse("no such source here", status_code=404)
+    answer = stype.cls.webhook_challenge(dict(request.query_params), [row.config or {} for row in rows])
     if answer is None:
         logger.warning("[webhook] %s verification refused: no source carries that token", name)
         return PlainTextResponse("verification failed", status_code=403)
@@ -87,32 +93,84 @@ async def webhook_delivery(name: str, request: Request):
     if payload is None:
         return ApiFailResponse(message="Expected a JSON object body")
     from flow_sdk.builtin.data_source import DataSource  # noqa: PLC0415
+    from flow_sdk.schema.data_spec.webhook_spec import WebhookTargetSpec  # noqa: PLC0415
 
-    account = str(stype.cls.webhook_account(payload) or "")
-    # The account's own source (``find_for_account``'s default part), never a group of it: parts come by a hub claim.
-    row = await DataSource.find_for_account(name, stype.identity_config_key, account) if account else None
-    if row is None:
-        # No amount of retrying makes a source exist; the log is where a person finds out.
-        logger.warning("[webhook] %s delivery for %r matches no source on this instance", name, account)
+    targets_of = getattr(stype.cls, "webhook_targets", None)
+    targets = targets_of(payload) if targets_of is not None else [
+        WebhookTargetSpec(account=str(stype.cls.webhook_account(payload) or ""), payload=payload)
+    ]
+    selected = None
+    source_id = request.query_params.get("source_id")
+    if source_id:
+        from flow_sdk.api.api_types.identifier import is_valid_uuid  # noqa: PLC0415
+
+        if not is_valid_uuid(source_id):
+            return PlainTextResponse("no such source here", status_code=404)
+        selected = await DataSource.get_by_id(source_id)
+        if selected is None or selected.provider != name:
+            return PlainTextResponse("no such source here", status_code=404)
+    matched = []
+    for target in targets:
+        if not target.account:
+            continue
+        if selected is None:
+            row = await DataSource.find_for_account(name, stype.identity_config_key, target.account, part=target.part)
+        else:
+            # A callback for one project cannot silently select another project's account.
+            key = stype.identity_config_key
+            candidates = [(selected.config or {}).get(key)] if key else [selected.account_key, *(selected.account_identities or [])]
+            if target.account not in {str(c or "").strip() for c in candidates}:
+                continue
+            part = stype.cls.account_part(selected.config or {})
+            if part == target.part:
+                row = selected
+            elif not part and target.part:
+                from flow_sdk.stream_inbox.projection import owner_of  # noqa: PLC0415
+
+                owner = await owner_of(selected)
+                row = await DataSource.find_for_account(name, key, target.account, part=target.part, owner=owner)
+                if row is not None and await owner_of(row) != owner:
+                    row = None
+            else:
+                row = None
+        if row is not None:
+            matched.append((row, target))
+    if not matched:
+        logger.warning("[webhook] %s delivery matches no source on this instance", name)
         return ApiSuccessResponse(data={"ingested": 0, "reason": "no source for this account"})
-    # The URL is public: an unverified body would put words in an allowed sender's mouth and drive
-    # an agent. The source type refuses one its class cannot authenticate.
-    try:
-        result = await stype.ingest_pushed(row, payload, headers=request.headers, raw=raw)
-    except Rejected:
-        logger.warning("[webhook] %s delivery for %r refused: the signature did not verify", name, account)
-        return PlainTextResponse("signature did not verify", status_code=401)
-    calls = result.pop("calls", [])
-    if calls:
-        from flow_sdk.builtin.agent_calls import ring  # noqa: PLC0415
+    # Authenticate the ORIGINAL signed body for EVERY target before ingesting any part.
+    # No public caller can request the hub's trusted bypass, even by adding a header.
+    authentic = getattr(stype.cls, "webhook_authentic", None)
+    headers = {str(k).lower(): v for k, v in request.headers.items()}
+    for row, _target in matched:
+        credentials = await stype.credentials_for(row)
+        if authentic is None or not authentic(headers, raw, credentials):
+            return PlainTextResponse("signature did not verify", status_code=401)
+    results = []
+    for row, target in matched:
+        try:
+            result = await stype.ingest_pushed(row, target.payload, headers=headers, raw=raw)
+        except Rejected:
+            return PlainTextResponse("signature did not verify", status_code=401)
+        calls = result.pop("calls", [])
+        if calls:
+            from flow_sdk.builtin.agent_calls import ring  # noqa: PLC0415
 
-        result["rung"] = [call.call_id for call in calls if await ring(row, call)]
-    reply = getattr(stype.cls, "webhook_reply", None)
-    answer = reply(payload, row.config or {}) if reply is not None else None
-    if answer is not None:
-        body, media_type = answer
-        return Response(content=body, media_type=media_type)
-    return ApiSuccessResponse(data=result)
+            result["rung"] = [call.call_id for call in calls if await ring(row, call)]
+        reply = getattr(stype.cls, "webhook_reply", None)
+        answer = reply(target.payload, row.config or {}) if reply is not None else None
+        if answer is not None:
+            body, media_type = answer
+            return Response(content=body, media_type=media_type)
+        results.append(result)
+    if len(results) == 1:
+        return ApiSuccessResponse(data=results[0])
+    return ApiSuccessResponse(data={
+        "ingested": sum(r.get("ingested", 0) for r in results),
+        "created": sum(r.get("created", 0) for r in results),
+        "reactions": sum(r.get("reactions", 0) for r in results),
+        "ids": [key for r in results for key in r.get("ids", [])],
+    })
 
 
 @router.post("/{source_id}/webhook")
@@ -129,9 +187,44 @@ async def channel_delivery(source_id: str, request: Request):
     if payload is None:
         return ApiFailResponse(message="Expected a JSON object body")
     headers = dict(request.headers)
+    nonce = str(request.headers.get("x-flowpad-probe") or "").strip()
+    if nonce:
+        phase = str(request.headers.get("x-flowpad-probe-phase") or "").strip()
+        if phase == "route":
+            return ApiSuccessResponse(data=await _answer_route_probe(row, nonce, request.headers.get("x-flowpad-probe-claim") or ""))
+        if phase == "agent":
+            from flow_sdk.builtin.agent_serve import admit_probe  # noqa: PLC0415
+
+            admit_probe(str(row.id), f"probe-{nonce}")
     result = await stype.ingest_pushed(row, payload, headers=headers, raw=raw, verified_by_hub=True)
     result.pop("calls", None)
     return ApiSuccessResponse(data=result)
+
+
+async def _answer_route_probe(row, nonce: str, claim_id: str) -> dict:
+    """A hub connection probe's ``route`` leg: tell the hub who would answer this channel and where —
+    ``"<agent> @ <place>"`` — without taking the message in."""
+    from flow_sdk.cloud_client.transport.hub_http import hub_post  # noqa: PLC0415
+
+    text = f"{await _answerer_of(row)} @ {await _place_of(row)}"
+    await hub_post("webhook", {"event_id": nonce, "text": text}, str(claim_id), "reply")
+    return {"probe": nonce, "text": text}
+
+
+async def _answerer_of(row) -> str:
+    from flow_sdk.builtin.agent import Agent  # noqa: PLC0415
+
+    owner = str(getattr(row, "owner", "") or "")
+    agent = await Agent.get_by_id(owner.split("-", 1)[1]) if owner.startswith("agent-") else None
+    return str(getattr(agent, "name", "") or "") if agent is not None else "nobody"
+
+
+async def _place_of(row) -> str:
+    """The label of the place that answers: the source's ``answer_place`` among its route places, else
+    this computer — the delivery reached it here."""
+    place = str(getattr(row, "answer_place", "") or "")
+    places = await row.route_places() if place else []
+    return next((p["label"] for p in places if p["key"] == place), "This computer")
 
 
 @router.post("/{source_id}/call")

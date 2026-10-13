@@ -44,6 +44,7 @@ import { VFSPath } from '../utils/vfs-path';
 import { AgenticContext, IAgenticProcessOptions, ISpawnWorkerOptions, PermissionMode } from './agentic-context';
 import { PROCESS_STATUS_KIND, ProcessStatusReport, parseStatusReport } from './process-status-report';
 import type { ProcessKind } from './process-types';
+import { hasProcessWatch, holdProcessWatch, releaseProcessWatch } from './watch-lease';
 import {
   ProcessIconKey,
   ProcessStatus,
@@ -51,6 +52,7 @@ import {
   type SwitchModeBody,
   WorkerStatus,
   isBusy,
+  isProcessEnded,
   isProcessRunning,
   isReadyForInput,
   isWorkerRunning,
@@ -708,7 +710,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
     await process.save(options.scope ?? []);
 
     if (workerOptions?.headless) {
-      await process.watch();
+      await process.watchWhileLive();
       if (workerOptions.instruction) {
         await process.executeInstruction(workerOptions.instruction, {
           sync: workerOptions.sync ?? false,
@@ -2215,6 +2217,46 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
     })();
 
     return this._historyLoading;
+  }
+
+  /**
+   * A terminal session is finished for the UI once its worker ended AND its tab is closed
+   * (`visible=false`). An ended session whose tab is still open is on screen; a headless
+   * process (`pty_mode` off) has no tab and is driven by whoever holds it.
+   */
+  override isRetired(): boolean {
+    return this.pty_mode === true && this.visible === false && isProcessEnded(this.status);
+  }
+
+  /**
+   * Watch this process until it ends, with no view to hold the watch: a lease, one per
+   * process, given back when the process stops or fails, on `releaseLiveWatch`, or when
+   * the store drops the entity (watch-lease.ts). Resolves once the watch is registered.
+   */
+  watchWhileLive(): Promise<void> {
+    return holdProcessWatch(this);
+  }
+
+  /** Give back the lease `watchWhileLive` took for a process; inert when none is held. */
+  static releaseLiveWatch(processId: string | null | undefined): void {
+    releaseProcessWatch(processId);
+  }
+
+  /** Whether `watchWhileLive` holds a lease for the process. */
+  static hasLiveWatch(processId: string): boolean {
+    return hasProcessWatch(processId);
+  }
+
+  /**
+   * The transcript mirror and the artifact list are re-read by the next view that asks;
+   * a lease on a dropped entity has nothing left to watch.
+   */
+  override onEvicted(): void {
+    super.onEvicted();
+    releaseProcessWatch(this.id);
+    this._historyLoaded = false;
+    this._artifacts = [];
+    this._artifactsLoaded = false;
   }
 
   /**

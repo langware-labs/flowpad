@@ -1,3 +1,6 @@
+---
+id: 2ace2d36-f69e-409a-a55f-ce940ef5dab9
+---
 # Phase 3 · Bundle, declare, index
 
 > **Ground rules (inline by design, repeated in every phase file):**
@@ -89,6 +92,16 @@ Field rules (`flow_sdk/schema/data_spec/credential_spec.py`):
   (the setup wizard shows a file picker), Flowpad keeps it as a private file and
   sets the variable to its path. Pair it with a `pattern` on the content, e.g.
   `"\"type\":\\s*\"service_account\""`.
+- when the code accepts EITHER of several ways (Google's default credentials: a
+  key file or a `gcloud` sign-in), mark each way `"required": "ONE_OF"` — at
+  least two per credential; any one present connects it, and the setup wizard
+  asks them as one choice. A way that is a tool's own sign-in is `"kind": "cli"`
+  with a `login` and a `check` command per OS (`{"commands": {"darwin": …,
+  "linux": …, "win32": …}}`; `check` exits 0 when signed in). Nothing is stored
+  or injected for it, so its key is a label, not a variable the code reads:
+  `"GCLOUD_ADC": {"required": "ONE_OF", "kind": "cli", "login": {…"gcloud auth
+  application-default login"…}, "check": {…"gcloud auth application-default
+  print-access-token"…}}`.
 - `setup` is required: how to obtain each value, from the docs you read in phase
   1 — which console, which page, which button. No values, no example secrets.
   The setup wizard shows it beside each question, and its *AI Assist* hands it to

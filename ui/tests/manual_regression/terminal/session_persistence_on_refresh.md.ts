@@ -74,7 +74,7 @@ test.describe('Terminal session persistence on refresh', () => {
     await expect(input).toBeVisible();
     await input.fill('reply with single word - hello');
     await input.press('Enter');
-    await expect(page).toHaveURL(/\/dock\/shell\/agentic_process-/);
+    await expect(page).toHaveURL(/\/dock\/vibe\/agentic_process-(?!new)/);
     const processUrl = page.url();
     await expect(page.locator('[data-testid="entity-execution-new"]:visible')).toBeVisible();
 

@@ -69,7 +69,8 @@ class Tree:
         self.ops: dict[str, ComputeOpSpec] = {}
         self.asked: list[str] = []
 
-    def node(self, id, *, prepare=None, run=None, children=(), trusted=True, inputs=(), wizard=None):
+    def node(self, id, *, prepare=None, run=None, children=(), trusted=True, inputs=(), wizard=None,
+             independent=False):
         for op in (prepare, run):
             if op:
                 self.ops[op] = _op(op)
@@ -81,6 +82,7 @@ class Tree:
             children=tuple(children),
             trusted=trusted,
             inputs=tuple(inputs),
+            independent=independent,
         )
         return self
 
@@ -457,3 +459,23 @@ async def test_a_skipped_node_settles_skipped_runs_nothing_and_holds_up_no_paren
     assert "key-op" not in machine.installs, "a skipped node's wizard never runs"
     assert result.state is SetupState.DONE and result.done == result.total, "skipped counts as settled"
 
+
+
+@pytest.mark.asyncio
+async def test_a_failed_node_that_stands_on_its_own_holds_up_nobody(tmp_path):
+    tree = (
+        Tree()
+        .node("p", run="p-run", children=["app-a", "app-b", "need"])
+        .node("app-a", run="a-run", independent=True)
+        .node("app-b", run="b-run", independent=True)
+        .node("need", run="need-run")
+    )
+    machine = Machine(broken={"a-run"})
+
+    result = await _setup(tree, "p", machine, tmp_path)
+
+    assert result.state is SetupState.DONE
+    assert _states(result) == {"p": "done", "app-a": "failed", "app-b": "done", "need": "done"}
+    assert machine.installs == ["a-run", "b-run", "need-run", "p-run"]
+    assert result.root.detail == "set up; not set up: APP-A"
+    assert (result.total, result.done) == (4, 3)

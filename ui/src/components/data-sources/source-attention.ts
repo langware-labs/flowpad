@@ -12,9 +12,11 @@ import { msg } from '@lingui/core/macro';
 import type { DataSource } from '@sdk';
 
 /** unresolved / setup / parked / paused are never polled until a person acts — the four reasons
- *  `DataSource.poll_refusal` gives; held keeps polling but a file waits on a person; retrying is the
- *  scheduler's own backoff after a transient failure, shown so an empty channel explains itself. */
-export type AttentionKind = 'unresolved' | 'setup' | 'parked' | 'paused' | 'held' | 'retrying';
+ *  `DataSource.poll_refusal` gives; held keeps polling but a file waits on a person; mirror keeps
+ *  polling but the dataset it mirrors into is not current (the sweep failed, or records did not fit);
+ *  retrying is the scheduler's own backoff after a transient failure, shown so an empty channel
+ *  explains itself. */
+export type AttentionKind = 'unresolved' | 'setup' | 'parked' | 'paused' | 'held' | 'mirror' | 'retrying';
 
 export interface AttentionReason {
   kind: AttentionKind;
@@ -31,20 +33,26 @@ export function attentionReason(source: DataSource): AttentionReason | null {
   }
   if (source.isPaused) return { kind: 'paused', text: '' };
   if (source.isHeld) return { kind: 'held', text: source.error_detail || '' };
+  if (source.isMirrorBroken) return { kind: 'mirror', text: source.error_detail || '' };
   if (source.isRetrying) return { kind: 'retrying', text: source.error_detail || '' };
   return null;
 }
 
 /** How a channel mark draws one source: lit, dashed, or wearing "!" because a person must act. */
 export type ChannelMark = 'on' | 'off' | 'parked';
-export type AttentionVerb = 'verify' | 'resume' | 'pull';
+export type AttentionVerb = 'setup' | 'verify' | 'resume' | 'pull';
 
 interface AttentionFacts {
   /** Retrying still draws lit — the scheduler will finish on its own. */
   mark: ChannelMark;
-  /** The one verb that recovers it: Verify re-runs the check and un-parks, Resume un-pauses, Pull
-   *  polls now (and carries a held file on once the two agree). */
+  /** The one verb that recovers it: Setup opens the source's own setup, Verify re-runs the check and
+   *  un-parks, Resume un-pauses, Pull polls now (and carries a held file on once the two agree). */
   verb: AttentionVerb;
+  /** A second verb offered beside it — Verify, for whoever finished the setup somewhere else. */
+  also?: AttentionVerb;
+  /** What a person reads first, when the kind has ONE name for every source in it — the source's own
+   *  words are then the detail behind it, never the headline. */
+  headline?: MessageDescriptor;
   /** What is wrong, when the source has no words of its own. */
   fallback: MessageDescriptor;
   /** What to do about it. */
@@ -60,9 +68,11 @@ export const ATTENTION: Record<AttentionKind, AttentionFacts> = {
   },
   setup: {
     mark: 'parked',
-    verb: 'verify',
+    verb: 'setup',
+    also: 'verify',
+    headline: msg`Setup required`,
     fallback: msg`Finish setup, then press Verify.`,
-    next: msg`Finish the step above, then press Verify.`,
+    next: msg`Press Setup to finish it.`,
   },
   parked: {
     mark: 'parked',
@@ -82,12 +92,32 @@ export const ATTENTION: Record<AttentionKind, AttentionFacts> = {
     fallback: msg`A file changed both here and remotely, so write-back wrote neither.`,
     next: msg`Make the two the same — edit either one — then Pull, or wait for the next sync.`,
   },
+  mirror: {
+    mark: 'parked',
+    verb: 'pull',
+    headline: msg`Mirror needs attention`,
+    fallback: msg`The dataset this source mirrors into could not be made current.`,
+    next: msg`Fix the mirror map or the rows it names (the detail says which), then Pull, or wait for the next sync.`,
+  },
   retrying: {
     mark: 'on',
     verb: 'pull',
     fallback: msg`The last poll failed; the scheduler retries on its own.`,
     next: msg`Nothing to do unless it keeps failing; Pull tries again now.`,
   },
+};
+
+/** The first line a surface shows: the kind's one name when it has one, else what is wrong. */
+export const attentionHeadline = (reason: AttentionReason): string => {
+  const { headline } = ATTENTION[reason.kind];
+  return headline ? i18n._(headline) : attentionText(reason);
+};
+
+/** The verbs a surface offers for a source, the recovering one first; none when it listens. */
+export const attentionVerbs = (reason: AttentionReason | null): AttentionVerb[] => {
+  if (!reason) return [];
+  const { verb, also } = ATTENTION[reason.kind];
+  return also ? [verb, also] : [verb];
 };
 
 /** What is wrong, in the source's words or the kind's fallback sentence. */

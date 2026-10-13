@@ -1,5 +1,5 @@
 import { useCallback, useMemo } from 'react';
-import { DataSource, DataDriver, QueryRequest } from '@sdk';
+import { DataSource, DataDriver, Project, QueryRequest, TypeId } from '@sdk';
 import { useEntitiesQuery } from '@src/hooks/entity-hooks';
 
 /** The configured sources — ONE named query, shared by DataSourcesView and the
@@ -10,6 +10,14 @@ export const sourcesQuery = new QueryRequest({
   scope: [],
   name: 'data-sources:list',
 });
+
+/** One project's sources — what Project Home lists. */
+export const projectSourcesQuery = (projectId: string) =>
+  new QueryRequest({
+    type: DataSource.type,
+    scope: [new TypeId(Project.type, projectId)],
+    name: `project-data-sources:${projectId}`,
+  });
 
 /**
  * The installed source definitions, and a lookup by name.

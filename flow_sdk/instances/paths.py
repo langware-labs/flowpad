@@ -177,6 +177,12 @@ def frontend_log(name: str) -> Path:
     return instance_dir(name) / "launcher-frontend.log"
 
 
+def user_asset_home(name: str) -> Path | None:
+    """Where a non-prod instance keeps its user-scope assets; ``None`` for prod, whose are the
+    user's own home."""
+    return None if name == "prod" else Path.home() / "Flowpad workspaces" / ".home" / name
+
+
 def env_file(name: str) -> Path:
     """``<repo_root>/.env.<name>.local``.
 

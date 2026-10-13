@@ -1,4 +1,4 @@
-import { TypeId, VFSPath } from '@sdk';
+import { TypeId, VFSPath, editorForPath } from '@sdk';
 import { AssetDocPointer } from './AssetDocPointer';
 import { DockPointer, normalizeRel } from './DockPointer';
 import { AssetMode, AssetRoutingMethod, LOCAL_COMPUTE_NODE, hasOwnChat, isFilelessEditor, isPreviewEditor } from './asset-doc-types';
@@ -70,6 +70,20 @@ export function isPreviewAssetDock(dock: DockPointer): boolean {
 export function isOwnChatAssetDock(dock: DockPointer): boolean {
   const pointer = assetPointerForDock(dock);
   return pointer?.mode === AssetMode.EDITOR && hasOwnChat(pointer.editor);
+}
+
+/** The first prompt of a session started to review a document. The kind is the
+ *  file's own (html, markdown, …) or the entity's type name — never a translated
+ *  label, since this sentence is read by the agent, not the user. */
+export function reviewPromptFor(target: ContentAssetTarget): string {
+  const kind = target.path ? editorForPath(target.path) : target.typeId ? new TypeId(target.typeId).type : 'document';
+  return `Review the ${kind} on ${target.path ?? target.label}:`;
+}
+
+/** A dock showing ONE document an agent could review — a file or a file-backed
+ *  asset, not one with a chat of its own. */
+export function isReviewableDocDock(dock: DockPointer): boolean {
+  return isContentAssetDock(dock) && !isOwnChatAssetDock(dock);
 }
 
 /**
