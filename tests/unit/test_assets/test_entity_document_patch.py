@@ -9,7 +9,12 @@ import pytest
 
 from flow_sdk.assets import document as document_module
 from flow_sdk.assets.document import DocumentConflict, DocumentPatch
-from flow_sdk.assets.entity_document import patch_entity_document, read_entity_document
+from flow_sdk.assets.entity_document import (
+    patch_entity_document,
+    patch_entity_document_bytes,
+    read_entity_document,
+    read_entity_document_bytes,
+)
 from flow_sdk.assets.versioning import strip_version
 from tests.unit._entity_document_probe import TYPE, info
 
@@ -96,3 +101,15 @@ def test_a_version_only_difference_is_not_a_change():
     a = json.dumps({"type": TYPE, "id": "1", "title": "x", "version": 2})
     b = json.dumps({"version": 3, "type": TYPE, "id": "1", "title": "x"})
     assert strip_version(a) == strip_version(b)
+
+
+def test_the_bytes_layer_patches_without_a_filesystem(note):
+    main, _ = note
+    raw, body = main.read_bytes(), (main.parent / "text.md").read_bytes()
+    before = read_entity_document_bytes(raw, body, INFO)
+    patch = DocumentPatch(body="New body.\n", set_fields={"tags": ["x"]})
+    after, new_raw, new_body = patch_entity_document_bytes(raw, body, patch, expected_revision=before.revision, info=INFO)
+    assert json.loads(new_raw)["tags"] == ["x"] and new_body == b"New body.\n" and after.revision != before.revision
+    assert main.read_bytes() == raw  # nothing touched the disk
+    with pytest.raises(DocumentConflict):
+        patch_entity_document_bytes(raw, body, patch, expected_revision="sha256:old", info=INFO)
