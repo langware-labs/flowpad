@@ -10822,7 +10822,7 @@ msgstr "أصلح الإعداد — بيانات الاعتماد أو الإع�
 
 #: src/components/data-sources/source-attention.ts
 msgid "Fix the mirror map or the rows it names (the detail says which), then Pull, or wait for the next sync."
-msgstr ""
+msgstr "أصلِح خريطة النسخ أو الصفوف التي تسمّيها (التفاصيل توضّح أيّها)، ثم اسحب، أو انتظر المزامنة التالية."
 
 #: src/components/webapp-display/useWebappFix.ts
 msgid "Fix the web app"
@@ -14656,7 +14656,7 @@ msgstr ""
 
 #: src/components/data-sources/source-attention.ts
 msgid "Mirror needs attention"
-msgstr ""
+msgstr "النسخة المطابقة تحتاج إلى انتباه"
 
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "Mis-Sc"
@@ -25212,7 +25212,7 @@ msgstr ""
 
 #: src/components/data-sources/source-attention.ts
 msgid "The dataset this source mirrors into could not be made current."
-msgstr ""
+msgstr "تعذّر تحديث مجموعة البيانات التي يُنسخ إليها هذا المصدر."
 
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "The default — what you want 99% of the time."

@@ -53,7 +53,7 @@ export function EntityCardBody({
         <div className="space-y-0.5">
           {rows.map((row, i) => (
             <div key={i} className="flex items-baseline gap-2 text-[11px]">
-              <span className="w-16 shrink-0 text-muted-foreground">{row.label}</span>
+              <span className="w-20 shrink-0 truncate text-muted-foreground">{row.label}</span>
               {row.copy ? (
                 <CopyPathButton path={row.value} testId="entity-card-copy" className="min-w-0 flex-1 py-0" />
               ) : (
