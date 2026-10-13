@@ -37,9 +37,24 @@ def desktop_oauth_complete_url(provider: str) -> str:
 
 
 def get_login_url(redirect_url: str) -> str:
-    """Build the cloud login URL with ``redirect_url`` URL-encoded into the template."""
+    """Build the cloud login URL with ``redirect_url`` URL-encoded into the template,
+    entered through ``gated`` so the browser holds the cookie-gate cookie when the
+    hub sends it back here."""
     template = ApiConfig.from_env().get_full_login_url()
-    return template.replace("{redirect_url}", quote(redirect_url, safe=""))
+    return gated(template.replace("{redirect_url}", quote(redirect_url, safe="")))
+
+
+def gated(url: str) -> str:
+    """``url`` entered through this instance's ``/auth/gate``: the browser presents
+    the token once, gets the gate cookie on this host, and is redirected on to
+    ``url``. The login / OAuth return to this host then carries the cookie, even in
+    a browser that never opened Flowpad. ``url`` unchanged when there is no token."""
+    from flow_sdk.instance_settings.cookie_gate import get_cookie_gate  # noqa: PLC0415
+
+    token = get_cookie_gate()
+    if not token:
+        return url
+    return f"{_desktop_base_url()}/auth/gate?{urlencode({'cookie-gate': token, 'next': url})}"
 
 
 def desktop_login_callback_url() -> str:

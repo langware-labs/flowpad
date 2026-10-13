@@ -86,6 +86,21 @@ async def test_unarmed_gate_route_redirects_without_a_cookie(client):
     assert "set-cookie" not in response.headers
 
 
+@pytest.mark.asyncio
+async def test_gate_on_this_machine_sets_the_local_cookie_and_goes_on_to_the_login(client):
+    """The backend opens the hub login through /auth/gate, so the browser holds the
+    local cookie when the hub sends it back to this host."""
+    login = "https://app.flowpad.ai/api/v1/login?target_path=x"
+    with _armed(), _stored():
+        response = await client.get(
+            "/auth/gate", params={"cookie-gate": SECRET, "next": login}, headers={"host": "127.0.0.1:9007"}
+        )
+
+    assert response.status_code == 302
+    assert response.headers["location"] == login
+    assert response.headers["set-cookie"].startswith(f"cookie-gate-9007={SECRET};")
+
+
 # ---------------------------------------------------------------------------
 # Arming, via the hub's loopback callback
 # ---------------------------------------------------------------------------
