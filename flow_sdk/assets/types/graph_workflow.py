@@ -18,19 +18,19 @@ def _load_doc(flow_dir: Path) -> GraphWorkflowDoc | None:
         return None
 
 
-def graph_workflow_asset_hash(ref: FSRef) -> float:
+def graph_workflow_asset_hash(ref: FSRef) -> int:
     """Max mtime of graph.json + scripts/* — display.json and runs/ excluded."""
     base = ref._path
-    ts = 0.0
+    ts = 0
     try:
-        ts = max(ts, (base / GRAPH_JSON).stat().st_mtime)
+        ts = max(ts, (base / GRAPH_JSON).stat().st_mtime_ns)
     except OSError:
         pass
     scripts = base / "scripts"
     if scripts.is_dir():
         for p in scripts.iterdir():
             try:
-                ts = max(ts, p.stat().st_mtime)
+                ts = max(ts, p.stat().st_mtime_ns)
             except OSError:
                 pass
     return ts

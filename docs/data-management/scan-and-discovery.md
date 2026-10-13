@@ -137,20 +137,39 @@ Walkers are typically synchronous file I/O. `scan()` runs them in chunks of `_SC
 
 The boundary is deliberately drawn there rather than around the whole run: SQLite serializes writers regardless of which process issues them, so moving the writes off-process buys no write throughput while losing the `_session_ctx` contextvar handshake, `record_sync_guard`, the `_COMPUTE_ACTIVITIES` single-flight gate, and `_DB_LIFECYCLE_LOCK` — and it would break the rule stated in `graph_workflow_manager/function_runner.py` that *a subprocess must never open the instance DB directly*. The walk is GIL-bound CPU plus filesystem I/O with no DB at all, which is the part a separate process actually parallelizes.
 
-Wire protocol: `flow_sdk/fs_store/indexer/ndjson_stream.py`, shared with `RSIndexerAdapter`. The child (`python -m flow_sdk.fs_store.indexer.scan_child`) takes one JSON request on stdin — roots, options, and the parent's **effective** records/data roots, which it adopts rather than re-deriving — and emits NDJSON candidates, progress snapshots, and one terminal `{"result": …}` line.
+Wire protocol: `flow_sdk/fs_store/indexer/ndjson_stream.py`, The child (`python -m flow_sdk.fs_store.indexer.scan_child`) takes one JSON request on stdin — roots, options, and the parent's **effective** records/data roots, which it adopts rather than re-deriving — and emits NDJSON candidates, progress snapshots, and one terminal `{"result": …}` line.
 
 Two details are load-bearing:
 
 * **Candidates carry their parent link** (`parent_i` / `parent_ref`), not just resolved `scope` / `project_id` / `read_only`. `index()` derives a record's enclosure `parent_type_id` from `ref._parent` directly (`ref_typeid(getattr(ref, "_parent", None))`), so a purely flattened candidate silently unparents every received asset.
 * **The terminal result line is a safety mechanism.** Without it a child killed mid-stream is indistinguishable from a clean scan, and a truncated candidate set reaching `index()` would let the orphan sweep delete every record the child never emitted. Its absence is a hard failure.
 
-Any failure — spawn error, bad JSON, missing result line, non-zero exit — logs one warning and falls back to the in-process walk, mirroring `_maybe_rs_indexer`. A spawn/interpreter failure (`OSError`/`ValueError`) additionally latches `_CHILD_UNAVAILABLE` for the rest of the process so every later scan does not pay a doomed spawn; `reset_shared_indexer()` clears the latch. The child constructs a plain `FSIndexer` and loads the shared `register_discovery_functions()` walker graph plus declarative type metadata. It does not load entity classes, database parsers, post-sync observers, or the HTTP server; those remain in the parent’s `register_default_functions()` setup. This avoids paying application startup on every scan while preserving the same candidate set. Interpreter startup still makes `thread` cheaper for small projects; `subprocess` buys isolation and GIL-free parallelism on large trees.
+Any failure — spawn error, bad JSON, missing result line, non-zero exit — logs one warning and falls back to the in-process walk. A spawn/interpreter failure (`OSError`/`ValueError`) additionally latches `_CHILD_UNAVAILABLE` for the rest of the process so every later scan does not pay a doomed spawn; `reset_shared_indexer()` clears the latch. The child constructs a plain `FSIndexer` and loads the shared `register_discovery_functions()` walker graph plus declarative type metadata. It does not load entity classes, database parsers, post-sync observers, or the HTTP server; those remain in the parent’s `register_default_functions()` setup. This avoids paying application startup on every scan while preserving the same candidate set. Interpreter startup still makes `thread` cheaper for small projects; `subprocess` buys isolation and GIL-free parallelism on large trees.
 
 The mode is resolved by `selected_scan_mode()` (`builtin.py`): env `FLOWPAD_INDEX_SCAN_MODE` > `preferences.auto_index.index_function` > `subprocess`. It applies **only to the auto-index path** — `get_auto_scan_indexer()` builds a `SubprocessScanIndexer` when the mode is `subprocess`, while `get_shared_indexer()` (a manual "Index" click, every other caller) always stays the in-process `FSIndexer`, so an auto-index preference never silently changes how a user-initiated index walks the disk.
 
-### Rust backend (`RSIndexerAdapter`)
+### Rust backend — one switch (`diskio`)
 
-`build_default_indexer()` honors a second, independent toggle: `indexer_backend` (env `FLOWPAD_INDEXER_BACKEND` > `preferences.advanced.indexer_backend` > `python`). With `rust`, `_maybe_rs_indexer()` returns an `RSIndexerAdapter` (`flow_sdk/fs_store/indexer/rs_adapter.py`) that drives the external `fsindexer-rs` binary resolved from `FLOWPAD_RS_INDEXER_BIN` — the binary is **not vendored**. The adapter presents the same `scan()` / `index()` / `add_function()` / `add_root()` surface (the walk graph lives in the binary; `add_function` is recorded for parity only) and speaks the same NDJSON protocol as the subprocess scan. Selection is fail-open: a selected-but-unresolvable binary logs one warning and falls back to the Python `FSIndexer`. Two documented limits: the custom-slice builders (`project_list`, the single-file self-heal) always construct a Python `FSIndexer` directly, and a destructive `orphan_action` combined with a `scope_filter` is downgraded to `INDEX` because the Rust sweep has no scope-filter narrowing.
+`FLOWPAD_DISKIO_BACKEND=rust` (or the preference `preferences.advanced.diskio_backend`; default
+`python`) is the ONE switch between the Python and the Rust implementation of the heavy disk
+work. It is read on every scan, so flipping it needs no restart, and `build_default_indexer()`
+returns the same `FSIndexer` either way.
+
+With `rust`, `project_folder_walker_fn` asks the `diskio` stage-1 scan
+(`flow_sdk/diskio/stage1.py::scan_stage1`) for the whole project in one request: the vendored
+`flowpad-diskio-scan` binary walks the tree under the same gitignore policy and runs every
+folder-rooted declared scan, and each `FOLDER` ref carries the candidates found in it, which
+`layout_walker` reads instead of scanning the folder again. Everything else — scope and
+project stamping, the into-file walkers, the markdown rule, identity, parsing, every DB write —
+is unchanged Python.
+
+The stream must end in a `diskio.stream_end` line whose per-kind counts equal the lines
+received. A missing terminal, a count mismatch, a non-zero exit or an unreadable line voids the
+stream and that one scan is re-run on Python; a missing binary (Linux today) or one built for
+another contract version fails open to Python with one warning and nothing is spawned. The
+refs are identical on both backends (`tests/unit/diskio/test_rust_scan.py`). Interfaces,
+rules and the pieces that stay Python: [diskio.md](diskio.md); measured numbers:
+[diskio-benchmarks.md](diskio-benchmarks.md).
 
 ---
 
