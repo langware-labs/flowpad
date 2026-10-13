@@ -206,7 +206,9 @@ def _declared(serving) -> Optional[app_ports.Declared]:
 async def _project_apps(project_id) -> list:
     from flow_sdk.builtin.faas.micro_app import WebApp  # noqa: PLC0415
 
-    return await WebApp.get_all({"match": {"project_id": project_id}}) if project_id else []
+    apps = await WebApp.get_all({"match": {"project_id": project_id}}) if project_id else []
+    # An app whose folder is gone declares nothing: its row is only what the index has not dropped yet.
+    return [app for app in apps if app.asset_ref and Path(app.asset_ref).is_dir()]
 
 
 async def _other_apps(app) -> list:
@@ -403,11 +405,23 @@ async def stop(webapp_id: str) -> ReturnedValue:
     if app is None or not app.asset_ref:
         return _answer(ExitCode.NOT_FOUND, f"there is no web app {webapp_id!r} here", ran=False)
 
-    def running() -> list:
+    def running() -> tuple[list, list[int]]:
+        """``(this app's listeners, the ports it is served on by something that cannot be named)``."""
         snapshot = app_ports.listeners()
-        return [one for process in _processes(app) for one in _look(app, process, set(), snapshot)[1]]
+        looks = [_look(app, process, set(), snapshot) for process in _processes(app)]
+        unnamed = [answer.port for answer, _mine, up in looks if up and answer.holder is None]
+        return [one for _answer_, mine, _up in looks for one in mine], unnamed
 
-    found = await asyncio.to_thread(running)
+    found, unnamed = await asyncio.to_thread(running)
+    if unnamed:
+        # A container's published port, another user's process: there is no process of ours to end.
+        ports = ", ".join(str(port) for port in unnamed)
+        return _answer(
+            ExitCode.NOT_YET,
+            f"{app.name} is served on port {ports} by a program Flowpad did not start and cannot stop — "
+            "stop it where it was started",
+            ran=False,
+        )
     if not found:
         return _answer(ExitCode.OK, f"{app.name} is not running", ran=False)
     await asyncio.to_thread(app_ports.stop, found)
