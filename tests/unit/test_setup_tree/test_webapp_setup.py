@@ -96,10 +96,11 @@ def app(tmp_path, monkeypatch):
     monkeypatch.setattr(dev_server, "log_dir", lambda: tmp_path / "logs")
     state.make, state.folder, state.by_hand_start = make, folder, by_hand
     yield state
-    # Whatever a test left serving from its folders goes, however it was started.
-    for pid in [*state.started, *(proc.pid for proc in state.by_hand)]:
-        dev_server.stop_group(pid)
+    # Whatever a test left serving from its folders goes, however it was started. By what listens
+    # there now, not by the pids recorded at start: a pid outlives its process and is handed out again.
     for proc in state.by_hand:
+        if proc.poll() is None:
+            dev_server.stop_group(proc.pid)
         proc.wait()
     webapp_setup.app_ports.stop(
         [one for one in webapp_setup.app_ports.listeners() if str(tmp_path) in os.path.realpath(one.cwd)]
@@ -682,14 +683,13 @@ async def test_an_app_whose_folder_is_gone_reserves_no_port(app, tmp_path, monke
 
     from flow_sdk.builtin.faas.micro_app import WebApp
 
-    port = _free()
-    ghost = app.make(id="a2", at=tmp_path / "ghost", ports={"port": port})
+    live = app.make(ports={"port": _free()})
+    ghost = app.make(id="a2", at=tmp_path / "ghost", ports={"port": _free()})
     shutil.rmtree(tmp_path / "ghost")
 
     async def rows(_query=None):
-        return list(app.rows.values())
+        return [live, ghost]
 
-    monkeypatch.undo()
     monkeypatch.setattr(WebApp, "get_all", rows)
-    live = SimpleNamespace(id="a1", name="site", asset_ref=str(app.folder), project_id="p1", mounts=[], services=[])
-    assert ghost.id not in {other.id for other in await webapp_setup._other_apps(live)}
+    assert [row.id for row in await webapp_setup._project_apps("p1")] == [live.id]
+    assert await webapp_setup._project_apps(None) == []

@@ -17,7 +17,6 @@ import os
 import re
 import signal
 import socket
-import subprocess
 import sys
 from dataclasses import dataclass
 from functools import lru_cache
@@ -114,31 +113,77 @@ def listening_under(pid: int) -> set[int]:
     return ports
 
 
+def _listening_by_pid() -> Optional[dict[int, list[int]]]:
+    """``pid -> its listening ports`` from ONE read of the system's socket table, or None where that
+    read is not allowed (macOS without root). Windows and Linux answer it for every process this user
+    can see — and asking each process instead re-reads the whole table per process there (2 s for 200
+    processes on Windows, measured)."""
+    import psutil  # noqa: PLC0415
+
+    try:
+        connections = psutil.net_connections(kind="tcp")
+    except (psutil.Error, OSError):
+        return None
+    found: dict[int, set[int]] = {}
+    for connection in connections:
+        if connection.status == psutil.CONN_LISTEN and connection.laddr and connection.pid:
+            found.setdefault(connection.pid, set()).add(connection.laddr.port)
+    return {pid: sorted(ports) for pid, ports in found.items()}
+
+
 def listeners() -> list[Listener]:
     """Every listening TCP port of a process this user can read. A port held by another user's process
     is absent — ``port_open`` still sees it, which is how ``decide`` knows a holder it cannot name."""
     import psutil  # noqa: PLC0415
 
+    by_pid = _listening_by_pid()
     found: list[Listener] = []
-    for process in psutil.process_iter():
+    for process in psutil.process_iter() if by_pid is None else map(_process, by_pid):
         try:
-            ports = _listening(process)
+            if process is None:
+                continue
+            ports = _listening(process) if by_pid is None else by_pid[process.pid]
             if not ports:
                 continue
             name = process.name()
             if _forwards(name):
                 continue
             cwd = process.cwd() or ""
-            commands = [" ".join(process.cmdline())]
-            for parent in process.parents()[:_ANCESTORS]:
-                try:
-                    commands.append(" ".join(parent.cmdline()))
-                except psutil.Error:
-                    break
+            commands = [" ".join(process.cmdline()), *_ancestor_commands(process)]
         except (psutil.Error, OSError):
             continue
         found.extend(Listener(process.pid, port, name, cwd, tuple(commands)) for port in ports)
     return found
+
+
+def _ancestor_commands(process) -> list[str]:
+    """The command lines of the nearest ``_ANCESTORS`` ancestors. Walked one parent at a time and
+    stopped at a pid already seen: ``psutil.Process.parents()`` walks the WHOLE chain first, and on
+    Windows that chain ends in a process that is its own parent — it never returns (found on a real
+    Windows 11 box: every look hung)."""
+    import psutil  # noqa: PLC0415
+
+    commands: list[str] = []
+    seen = {process.pid}
+    try:
+        for _ in range(_ANCESTORS):
+            process = process.parent()
+            if process is None or process.pid in seen:
+                break
+            seen.add(process.pid)
+            commands.append(" ".join(process.cmdline()))
+    except (psutil.Error, OSError):
+        pass
+    return commands
+
+
+def _process(pid: int):
+    import psutil  # noqa: PLC0415
+
+    try:
+        return psutil.Process(pid)
+    except psutil.Error:
+        return None
 
 
 def _inside(cwd: str, folder: str) -> bool:
@@ -280,15 +325,17 @@ def stop(found: Iterable[Listener]) -> None:
             os.killpg(group, signal.SIGKILL)
         except OSError:
             pass
-    for pid, process in doomed.items():
+    # Each process of the tree, ended directly: on Windows there is no group to signal, and
+    # ``taskkill /T`` (which asks WMI for the tree) was seen to stall for over 30 s. Only what was
+    # actually signalled is waited for — one that could not be ended would be waited on forever.
+    ended = []
+    for process in doomed.values():
         try:
-            if sys.platform == "win32":
-                subprocess.run(["taskkill", "/PID", str(pid), "/T", "/F"], capture_output=True, check=False)  # noqa: S603, S607
-            else:
-                process.kill()
+            process.kill()
+            ended.append(process)
         except (psutil.Error, OSError):
-            pass
-    psutil.wait_procs(list(doomed.values()))
+            continue
+    psutil.wait_procs(ended)
 
 
 __all__ = ["Declared", "Listener", "PortAnswer", "decide", "free_port", "launched_by", "listeners", "listening_under", "of_app", "stop", "stranger_on"]

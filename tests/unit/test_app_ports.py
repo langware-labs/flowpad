@@ -180,3 +180,24 @@ def test_a_program_that_only_forwards_a_port_is_not_named_as_its_holder(name):
 @pytest.mark.parametrize("name", ["node", "python3.11", "java", "nginx", "Python.exe"])
 def test_a_server_is_never_taken_for_a_forwarder(name):
     assert not app_ports._forwards(name)
+
+
+def test_a_process_that_is_its_own_ancestor_ends_the_walk():
+    """Windows: the chain of parents ends in a process whose parent is itself. The walk must stop there."""
+
+    class Loop:
+        pid = 0
+
+        def parent(self):
+            return self
+
+        def cmdline(self):
+            return ["System Idle Process"]
+
+    class Child(Loop):
+        pid = 4
+
+        def parent(self):
+            return Loop()
+
+    assert app_ports._ancestor_commands(Child()) == ["System Idle Process"]

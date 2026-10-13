@@ -39,6 +39,25 @@ def loopback_urls(port: int, path: str = "/") -> list[str]:
     return [f"http://{'[' + host + ']' if ':' in host else host}:{int(port)}{rel}" for host in LOOPBACKS]
 
 
+def loopback_status(url: str, timeout: float) -> Optional[int]:
+    """The HTTP status ``url`` — an address on THIS machine — answers with, or None when nothing does.
+
+    Asked directly, never through the system's proxy: ``urllib``'s default opener reads the proxy
+    settings and, on Windows, resolves the host by name to decide whether to bypass them — seconds to
+    tens of seconds per probe on a box with slow name lookup, for an address that is always local."""
+    import urllib.error  # noqa: PLC0415
+    import urllib.request  # noqa: PLC0415
+
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    try:
+        with opener.open(url, timeout=timeout) as response:  # noqa: S310 -- loopback only
+            return int(response.status)
+    except urllib.error.HTTPError as error:
+        return int(error.code)
+    except (urllib.error.URLError, OSError, ValueError):
+        return None
+
+
 def port_open(port: int) -> bool:
     for host in LOOPBACKS:
         try:
@@ -126,14 +145,25 @@ def stop_group(pid: int) -> None:
         group = [shell, *shell.children(recursive=True)]
     except psutil.Error:
         group = []
-    try:
-        if sys.platform == "win32":
-            subprocess.run(["taskkill", "/PID", str(pid), "/T", "/F"], capture_output=True, check=False)  # noqa: S603, S607
-        else:
+    # Only what was actually signalled is waited for: a process that could not be ended (another
+    # user's, or an unrelated one that took a recycled pid) would be waited on forever.
+    ended = []
+    if sys.platform == "win32":
+        # Each process of the tree, ended directly. ``taskkill /T`` asks WMI for the tree and was seen
+        # to stall for over 30 s on a real Windows 11 box; the tree is already in hand.
+        for member in group:
+            try:
+                member.kill()
+                ended.append(member)
+            except psutil.Error:
+                pass
+    else:
+        try:
             os.killpg(pid, signal.SIGKILL)
-    except OSError:
-        pass
-    psutil.wait_procs(group)
+            ended = group
+        except OSError:
+            pass
+    psutil.wait_procs(ended)
 
 
 def install_command(start_cmd: str, folder: Path) -> str:
@@ -151,6 +181,7 @@ __all__ = [
     "install_command",
     "log_dir",
     "log_tail",
+    "loopback_status",
     "loopback_urls",
     "port_open",
     "start_detached",

@@ -261,20 +261,9 @@ def _list_webapp_artifacts(process_id: str, query: str) -> list[dict]:
 
 def _answers(port: int) -> bool:
     """Something speaks HTTP on ``port`` — asked only of a holder the process table cannot name."""
-    import urllib.error  # noqa: PLC0415
-    import urllib.request  # noqa: PLC0415
+    from flow_sdk.core.dev_server import loopback_status, loopback_urls  # noqa: PLC0415
 
-    from flow_sdk.core.dev_server import loopback_urls  # noqa: PLC0415
-
-    for url in loopback_urls(port):
-        try:
-            with urllib.request.urlopen(url, timeout=2):  # noqa: S310 -- loopback only
-                return True
-        except urllib.error.HTTPError:
-            return True
-        except (urllib.error.URLError, OSError, ValueError):
-            continue
-    return False
+    return any(loopback_status(url, 2) is not None for url in loopback_urls(port))
 
 
 def _where(port: int, folder: Path, start_cmd: str, name: str) -> tuple[int, bool]:
