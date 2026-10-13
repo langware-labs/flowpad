@@ -11805,6 +11805,7 @@ msgstr "تم إنشاء مهمة المجموعة"
 msgid "Group task created with issues"
 msgstr "تم إنشاء مهمة المجموعة مع وجود بعض المشاكل"
 
+#: src/components/collaboration/SessionRoleBadge.tsx
 #: src/components/entity-card/entity-card-rows.ts
 msgid "Guest"
 msgstr "الضيف"
@@ -12208,6 +12209,7 @@ msgstr "مدير الخطاطيف"
 msgid "Hooks:"
 msgstr "الخطاطيف:"
 
+#: src/components/collaboration/SessionRoleBadge.tsx
 #: src/components/entity-card/entity-card-rows.ts
 msgid "Host"
 msgstr "المضيف"
@@ -28961,6 +28963,14 @@ msgstr ""
 
 #: src/pages/entry/AgentLaunchLanding.tsx
 msgid "You are signed in as {account}."
+msgstr ""
+
+#: src/components/collaboration/SessionRoleBadge.tsx
+msgid "You are the guest — prompts run on the host's machine"
+msgstr ""
+
+#: src/components/collaboration/SessionRoleBadge.tsx
+msgid "You are the host — prompts run on your machine"
 msgstr ""
 
 #: src/components/collaboration/StartRoomDialog.tsx
