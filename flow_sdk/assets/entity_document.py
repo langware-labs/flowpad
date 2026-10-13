@@ -11,7 +11,7 @@ same bytes. This module owns only what is its own — the lock, the revision, an
 """
 from __future__ import annotations
 
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 from typing import Any, Optional
 
 from flow_sdk.assets.document import AssetDocument, DocumentConflict, DocumentPatch, content_revision
@@ -89,7 +89,7 @@ def patch_entity_document_bytes(
     doc = _parse(raw, info)
     before = _as_document(raw, doc, body)
     if expected_revision is not None and expected_revision != before.revision:
-        raise DocumentConflict(PurePosixPath(info.shape.main), before.revision)
+        raise DocumentConflict(Path(info.shape.main), before.revision)
     fields = {key: value for key, value in before.fields.items() if key not in patch.drop_fields}
     fields.update(patch.set_fields)
     # The same normalisation the writer applies, so "changed" means changed, not reformatted.
