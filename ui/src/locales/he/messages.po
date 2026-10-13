@@ -5645,6 +5645,12 @@ msgstr ""
 
 #: src/components/agent-resources/AgentResourcesBody.tsx
 msgid "Connect a channel people can reach this agent on"
+#: src/components/stream-inbox-view/AttachedChannelsBar.tsx
+#: src/components/stream-inbox-view/AttachedChannelsBar.tsx
+#: src/components/stream-inbox-view/AttachedChannelsBar.tsx
+msgid "Connect {label}"
+msgstr "חיבור {label}"
+
 msgstr ""
 
 #: src/components/data-sources/DataSourcesView.tsx
@@ -11324,6 +11330,14 @@ msgstr "תחילת העבודה — נותרו {stepsLeft} שלבים"
 
 #: src/components/task-receive/LaunchDialog.tsx
 msgid "Getting the controller project"
+#: src/components/stream-inbox-view/AttachedChannelsBar.tsx
+msgid "Get your {label} messages here, and answer them from Flowpad."
+msgstr "קבלו כאן את ההודעות שלכם מ-{label}, וענו עליהן מתוך Flowpad."
+
+#: src/components/stream-inbox-view/AttachedChannelsBar.tsx
+msgid "Get your messages here"
+msgstr "קבלו את ההודעות שלכם כאן"
+
 msgstr ""
 
 #: src/components/task-receive/LaunchDialog.tsx

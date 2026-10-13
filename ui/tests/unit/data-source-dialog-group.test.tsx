@@ -10,7 +10,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Agent, DataDriver, DataSource, FieldType, TypeId } from '@sdk';
 
 const hoisted = vi.hoisted(() => ({ specs: [] as unknown[] }));
-vi.mock('@src/components/data-sources/use-source-specs', () => ({
+vi.mock('@src/components/data-sources/use-source-specs', async (original) => ({
+  ...(await original<typeof import('@src/components/data-sources/use-source-specs')>()),
   useSourceSpecs: () => ({
     specs: hoisted.specs,
     specFor: (name: string) => (hoisted.specs as { name: string }[]).find((s) => s.name === name),
