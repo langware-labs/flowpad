@@ -24,7 +24,7 @@ export function SetupTreeView({
   hideRoot = false,
   overview = false,
 }: {
-  tree: SetupTreeResult | null;
+  tree?: SetupTreeResult | null;
   hideRoot?: boolean;
   /** Draw only the first level. */
   overview?: boolean;
@@ -42,7 +42,8 @@ export function SetupTreeView({
       </p>
     ) : null;
   }
-  const nodes = hideRoot ? tree.root.children : [tree.root];
+  const first = hideRoot ? tree.root.children : [tree.root];
+  const nodes = overview ? first.map((node) => ({ ...node, children: [] })) : first;
   return (
     <div className="flex flex-col gap-2" data-testid="setup-tree">
       <p className="text-xs text-muted-foreground" data-testid="setup-tree-progress">
@@ -52,14 +53,14 @@ export function SetupTreeView({
       </p>
       <ul className="flex flex-col gap-0.5 text-sm">
         {nodes.map((node) => (
-          <SetupNodeRow key={node.id} node={node} depth={0} overview={overview} />
+          <SetupNodeRow key={node.id} node={node} depth={0} />
         ))}
       </ul>
     </div>
   );
 }
 
-function SetupNodeRow({ node, depth, overview }: { node: SetupNodeResult; depth: number; overview: boolean }) {
+function SetupNodeRow({ node, depth }: { node: SetupNodeResult; depth: number }) {
   const failed = node.state === 'failed' || node.state === 'refused';
   return (
     <>
@@ -79,11 +80,7 @@ function SetupNodeRow({ node, depth, overview }: { node: SetupNodeResult; depth:
           )}
         </span>
       </li>
-      {!node.shared &&
-        !overview &&
-        node.children.map((child) => (
-          <SetupNodeRow key={child.id} node={child} depth={depth + 1} overview={overview} />
-        ))}
+      {!node.shared && node.children.map((child) => <SetupNodeRow key={child.id} node={child} depth={depth + 1} />)}
     </>
   );
 }

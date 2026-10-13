@@ -105,24 +105,6 @@ class LoadState(StrEnum):
     FAILED = "failed"
 
 
-class LoadResult(DataSpec):
-    """A provider project's local lifecycle, independent of the project using it."""
-
-    spec_kind: ClassVar[str] = "project.load"
-    state: LoadState
-    project_id: str
-    detail: str = ""
-    run: Optional[str] = None
-    asset: Optional[str] = None
-    #: Consumer session whose saved presentation this run checked, absent for provider-only loads.
-    display: Optional[str] = None
-    #: A FAILED load that setup has not been tried for yet: an approved Load runs setup, then loads again.
-    setup_available: bool = False
-    #: What the check found, for a load that stopped at SETUP_REQUIRED: the tree as it stands, so the
-    #: question "set up?" can show what setting up means before anything runs.
-    tree: Optional["SetupTreeResult"] = None
-
-
 class SetupNodeResult(DataSpec):
     """One node as the run left it."""
 
@@ -154,6 +136,11 @@ class SetupNodeResult(DataSpec):
             "children": [child.trimmed() for child in self.children],
         })
 
+    def bare(self) -> "SetupNodeResult":
+        """This node's shape and verdicts alone — no wizard output — for a snapshot that is only looked at."""
+        return self.model_copy(update={"prepare": None, "run": None,
+                                       "children": [child.bare() for child in self.children]})
+
 
 class SetupTreeResult(DataSpec):
     """The whole setup's answer: the root node, and the run's own verdict."""
@@ -176,6 +163,26 @@ class SetupTreeResult(DataSpec):
     def trimmed(self) -> "SetupTreeResult":
         return self.model_copy(update={"root": self.root.trimmed() if self.root is not None else None})
 
+    def bare(self) -> "SetupTreeResult":
+        return self.model_copy(update={"root": self.root.bare() if self.root is not None else None})
+
 
 SetupNodeResult.model_rebuild()
-LoadResult.model_rebuild()
+
+
+class LoadResult(DataSpec):
+    """A provider project's local lifecycle, independent of the project using it."""
+
+    spec_kind: ClassVar[str] = "project.load"
+    state: LoadState
+    project_id: str
+    detail: str = ""
+    run: Optional[str] = None
+    asset: Optional[str] = None
+    #: Consumer session whose saved presentation this run checked, absent for provider-only loads.
+    display: Optional[str] = None
+    #: A FAILED load that setup has not been tried for yet: an approved Load runs setup, then loads again.
+    setup_available: bool = False
+    #: What the check found, for a load that stopped at SETUP_REQUIRED: the tree as it stands, so the
+    #: question "set up?" can show what setting up means before anything runs.
+    tree: Optional[SetupTreeResult] = None

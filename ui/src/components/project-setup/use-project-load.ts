@@ -71,7 +71,8 @@ export function useProjectLoad(projectId: string, initial?: ProjectLoadResult | 
     missing,
     error: error ?? (query.error ? String(query.error) : null),
     load,
-    tree: tree.data?.tree ?? null,
+    // The run's tree while there is a run, else what the check found.
+    tree: tree.data?.tree ?? result?.tree ?? null,
     questionId,
     settleQuestion: () => setQuestionId(null),
   };

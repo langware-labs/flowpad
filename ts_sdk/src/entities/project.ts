@@ -45,6 +45,7 @@ import type {
   ProjectContextDirInfo,
   ProjectCustomization,
   ProjectMember,
+  SetupTreeResult,
 } from './project-types';
 export type * from './project-types';
 
@@ -223,46 +224,6 @@ export interface ProjectReadiness {
   skipped?: ProjectSetupRequirement[];
   /** What no credential declares: shown, never runnable. */
   gaps: ProjectSetupRequirement[];
-}
-
-/** Where one node of the setup tree stands (`setup.node`). */
-export type SetupNodeState = 'pending' | 'running' | 'done' | 'failed' | 'blocked' | 'refused' | 'held' | 'skipped' | 'stopped';
-
-/** One step of a node's wizard, as its run answered it. */
-export interface SetupStepAnswer {
-  exit_code?: number;
-  detail?: string;
-  ran?: boolean;
-}
-
-/** A node's `prepare` / `run` wizard result: its own verdict and each step's answer. */
-export interface SetupWizardAnswer extends SetupStepAnswer {
-  steps?: Record<string, SetupStepAnswer>;
-}
-
-/** One asset of the setup tree (`SetupNodeResult`): set up after its children. */
-export interface SetupNodeResult {
-  id: string;
-  label: string;
-  /** Depth under the root (root = 0). */
-  level: number;
-  state: SetupNodeState;
-  detail: string;
-  prepare: SetupWizardAnswer | null;
-  run: SetupWizardAnswer | null;
-  children: SetupNodeResult[];
-  /** Set up already under another parent this run; its subtree shows there. */
-  shared: boolean;
-}
-
-/** The whole setup (`SetupTreeResult`): the root node, and the run's own verdict. */
-export interface SetupTreeResult {
-  state: SetupNodeState;
-  detail: string;
-  root: SetupNodeResult | null;
-  total: number;
-  done: number;
-  ran: boolean;
 }
 
 /** `GET project/<id>/setup-run` — the app-run setup: going or not, and its tree so far. */
@@ -889,9 +850,13 @@ export class Project extends APIEntity<Project> {
   }
 
   /** Read-only preview of the asset's current declarations plus candidate additions. */
-  async previewDependencies(asset: string, sources: string[]): Promise<Pick<ProjectDependencies, 'dependencies' | 'warnings'>> {
+  async previewDependencies(
+    asset: string,
+    sources: string[],
+  ): Promise<Pick<ProjectDependencies, 'dependencies' | 'warnings'>> {
     const response = await this.post<Pick<ProjectDependencies, 'dependencies' | 'warnings'> | null>(
-      'preview-dependencies', { asset, sources },
+      'preview-dependencies',
+      { asset, sources },
     );
     if (!response) throw new Error('Could not preview dependencies');
     return response;
