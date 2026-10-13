@@ -118,9 +118,10 @@ def stop_group(pid: int) -> None:
     import psutil  # noqa: PLC0415 -- leaf module
 
     try:
-        process = psutil.Process(pid)
+        shell = psutil.Process(pid)
+        group = [shell, *shell.children(recursive=True)]
     except psutil.Error:
-        process = None
+        group = []
     try:
         if sys.platform == "win32":
             subprocess.run(["taskkill", "/PID", str(pid), "/T", "/F"], capture_output=True, check=False)  # noqa: S603, S607
@@ -128,11 +129,7 @@ def stop_group(pid: int) -> None:
             os.killpg(pid, signal.SIGKILL)
     except OSError:
         pass
-    if process is not None:
-        try:
-            process.wait()
-        except psutil.Error:
-            pass
+    psutil.wait_procs(group)
 
 
 # ── which process is OURS ─────────────────────────────────────────────────────────────────────────────
