@@ -21,7 +21,8 @@ from flow_sdk.instance_settings import cookie_gate
 
 SECRET = "s3cret"
 #: Not on loopback (a bare scope has no host): the sandbox cookie.
-COOKIE_NAME = cookie_gate.cookie_name("box.example", 443)
+COOKIE_NAME = cookie_gate._cookie_name("box.example", 443)
+HEADER = cookie_gate._HEADER_NAME
 
 pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
 
@@ -31,15 +32,15 @@ def _conn(*, cookie=None, header=None, query=""):
     if cookie:
         headers.append((b"cookie", f"{COOKIE_NAME}={cookie}".encode()))
     if header:
-        headers.append((b"x-cookie-gate", header.encode()))
+        headers.append((HEADER.encode(), header.encode()))
     return HTTPConnection(
         {"type": "http", "path": "/", "query_string": query.encode(), "headers": headers}
     )
 
 
 def _presents(conn, token):
-    with patch.object(cookie_gate, "get_cookie_gate", return_value=token):
-        return cookie_gate.presents(conn)
+    with patch.object(cookie_gate, "_token", return_value=token):
+        return cookie_gate.verify_cookie(conn)
 
 
 def test_cookie_presents():
@@ -124,7 +125,7 @@ def test_poc_null_origin_shell_create_is_refused(token):
 def test_each_transport_passes(token, transport):
     client, value = token
     if transport == "header":
-        response = client.get("/", headers={cookie_gate.HEADER_NAME: value})
+        response = client.get("/", headers={HEADER: value})
     elif transport == "port_cookie":
         client.cookies.set("cookie-gate-9007", value)
         response = client.get("/")
@@ -184,8 +185,8 @@ def test_outside_requests_need_the_hub_secret_not_the_local_token(local_gate):
         client.get("/")  # nothing created: the local gate is not involved
         assert not local_gate.exists()
 
-        assert client.post("/api/v1/graph/shell", headers={cookie_gate.HEADER_NAME: SECRET}).status_code == 200
-        assert client.post("/api/v1/graph/shell", headers={cookie_gate.HEADER_NAME: "guess"}).status_code == 403
+        assert client.post("/api/v1/graph/shell", headers={HEADER: SECRET}).status_code == 200
+        assert client.post("/api/v1/graph/shell", headers={HEADER: "guess"}).status_code == 403
 
 
 def test_a_rebound_host_without_a_hub_secret_gets_the_local_gate(token):
@@ -194,7 +195,7 @@ def test_a_rebound_host_without_a_hub_secret_gets_the_local_gate(token):
     rebound = {"host": "evil.example:9007"}
 
     assert client.post("/api/v1/graph/shell", headers=rebound).status_code == 403
-    assert client.post("/api/v1/graph/shell", headers={**rebound, cookie_gate.HEADER_NAME: value}).status_code == 200
+    assert client.post("/api/v1/graph/shell", headers={**rebound, HEADER: value}).status_code == 200
 
 
 def test_cors_preflight_passes_but_a_bare_options_does_not(token):

@@ -39,7 +39,7 @@ def app(monkeypatch):
     import flow_sdk.instance_settings.cookie_gate as cookie_gate
 
     monkeypatch.setattr(settings, "get_instance_settings", lambda: SimpleNamespace(port=server.server_port))
-    monkeypatch.setattr(cookie_gate, "gate_headers", lambda url: {"x-cookie-gate": TOKEN})
+    monkeypatch.setattr(cookie_gate, "get_cookie_gate", lambda: TOKEN)
     webhook_relay._HANDLED.clear()
     yield seen
     server.shutdown()

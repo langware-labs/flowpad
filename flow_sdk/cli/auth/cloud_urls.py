@@ -44,14 +44,17 @@ def get_login_url(redirect_url: str) -> str:
     return gated(template.replace("{redirect_url}", quote(redirect_url, safe="")))
 
 
-def gated(url: str) -> str:
-    """``url`` entered through this instance's ``/auth/gate``: the browser presents
-    the token once, gets the gate cookie on this host, and is redirected on to
-    ``url``. The login / OAuth return to this host then carries the cookie, even in
-    a browser that never opened Flowpad. ``url`` unchanged when there is no token."""
+def gated(url: str, base_url: str | None = None) -> str:
+    """``url`` entered through ``/auth/gate`` on ``base_url`` (this instance by
+    default): the browser presents the token once, gets the gate cookie on that host,
+    and is redirected on to ``url``. The login / OAuth return to this host then
+    carries the cookie, even in a browser that never opened Flowpad."""
+    from starlette.datastructures import URL  # noqa: PLC0415
+
     from flow_sdk.instance_settings import cookie_gate  # noqa: PLC0415
 
-    return cookie_gate.gated_url(_desktop_base_url(), url)
+    gate = URL(f"{base_url or _desktop_base_url()}/auth/gate").include_query_params(next=url)
+    return str(cookie_gate.add_query_param(gate))
 
 
 def desktop_login_callback_url() -> str:

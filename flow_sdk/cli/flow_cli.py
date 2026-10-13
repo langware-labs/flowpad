@@ -675,10 +675,10 @@ def auth_set_cookie_gate(
 
     Example: flow auth set-cookie-gate <secret>
     """
-    from flow_sdk.instance_settings.cookie_gate import set_cookie_gate
+    from flow_sdk.instance_settings.cookie_gate import set_cookie
 
     try:
-        set_cookie_gate(value)
+        set_cookie(value)
     except ValueError as e:
         # Empty value: arming on "" would store a secret that reads as unset,
         # leaving the instance open while looking locked. Or DesktopGateRefused:

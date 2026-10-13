@@ -139,18 +139,21 @@ def local_request(method: str, url: str, **kwargs: Any) -> "requests.Response":
     instance is gated — which is what shipped, and what answered every ``flow``
     command inside a gated sandbox with the gate's 403 HTML page.
 
-    ``gate_headers`` decides whether anything is attached; it yields nothing for
-    an unarmed instance or a non-loopback URL, so this is safe to use for every
-    outbound call a command makes.
+    The gate header goes to a loopback URL only, and not at all without a token,
+    so this is safe to use for every outbound call a command makes.
 
     An explicit ``headers`` kwarg wins — the gate header is merged underneath it
     — so a caller can still override it deliberately.
     """
     import requests
 
-    from flow_sdk.instance_settings.cookie_gate import gate_headers
+    from urllib.parse import urlsplit
 
-    headers = {**gate_headers(url), **(kwargs.pop("headers", None) or {})}
+    from flow_sdk.instance_settings import cookie_gate
+    from flow_sdk.utils.networking import is_loopback
+
+    gate = cookie_gate.get_header() if is_loopback(urlsplit(url).hostname) else None
+    headers = {**dict([gate] if gate else []), **(kwargs.pop("headers", None) or {})}
     if headers:
         kwargs["headers"] = headers
     return requests.request(method, url, **kwargs)
@@ -367,14 +370,14 @@ async def backend_frames(
 
     import websockets
 
-    from flow_sdk.instance_settings.cookie_gate import gate_headers
+    from flow_sdk.instance_settings import cookie_gate
 
     # A fresh connection id per call: the backend keys its connection registry on it, and a
     # reused id would evict whatever else is listening under that name.
     url = f"ws://127.0.0.1:{port}/api/v1/connect/ws/flow-cli-{uuid4().hex[:8]}"
-    headers = gate_headers(f"http://127.0.0.1:{port}/")
+    gate = cookie_gate.get_header()
 
-    async with websockets.connect(url, additional_headers=headers or None) as socket:
+    async with websockets.connect(url, additional_headers=[gate] if gate else None) as socket:
         if on_connected is not None:
             await on_connected()
         async for raw in socket:

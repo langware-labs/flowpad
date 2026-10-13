@@ -619,7 +619,7 @@ class BaseInstanceSettings:
         ``electron/uv-manager.js``. It exists because that env var lives in the
         backend process alone: ``flow`` CLI invocations are separate processes
         and cannot see it, so without a persisted fact they cannot tell a
-        desktop install from a sandbox. ``cookie_gate.set_cookie_gate`` reads
+        desktop install from a sandbox. ``cookie_gate.set_cookie`` reads
         this to refuse arming a gate that would lock the desktop app out of its
         own health check.
 
