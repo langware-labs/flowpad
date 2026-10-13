@@ -14,7 +14,7 @@ import { flowIconComponent } from '@sdk/react/FlowIcon';
 import { resolveProcessDisplayName } from '@src/components/terminal/process-display-name';
 import { formatTimeAgo, useLastStatusChange } from '@src/store/pending-actions-store';
 import { useEntityLocationLabel } from '@src/components/graph-view/ui/EntityIcon';
-import { TabTooltipName } from '@src/components/tabs/TabTooltipName';
+import { TabTooltipName, useInTabTip } from '@src/components/tabs/TabTooltipName';
 import { AgentCardBody } from '@src/components/agents/AgentIntroCard';
 import { useLaunchingAgent } from '@src/hooks/use-launching-agent';
 import { useIsAdvanced } from '@src/contexts/view-mode-context';
@@ -157,6 +157,7 @@ export const ProcessTabCard: React.FC<{
   statusReason?: string;
 }> = ({ processId, fallbackName, statusReason }) => {
   const isAdvanced = useIsAdvanced();
+  const inTabTip = useInTabTip();
   const { data: process } = useEntity<AgenticProcess>(new TypeId(AgenticProcess.type, processId));
   const agent = useLaunchingAgent(process?.deployment_id);
   const details = process && isAdvanced ? <ProcessInfoTooltip process={process} statusReason={statusReason} /> : null;
@@ -178,6 +179,8 @@ export const ProcessTabCard: React.FC<{
         </div>
       );
     }
+    // Nothing but the name yet, and a tab tip's header already shows it.
+    if (inTabTip && !statusReason) return null;
     return (
       <div className="space-y-1 px-3 py-1.5">
         <TabTooltipName name={fallbackName} className="font-normal" />
