@@ -5,6 +5,7 @@ import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import { formatClock } from '@src/components/lens-viewer/shared/format-utils';
 import { useClock } from '@src/hooks/useActivity';
 import { cn } from '@src/lib/utils';
+import { GuestPermissionChip, HostApprovalChip } from '@src/components/collaboration/GuestPermissionChip';
 import { OpenSessionChatButton } from './LiveSessionActivity';
 import { sessionCardState, sessionExpiresAt, type SessionCardState } from './session-card-state';
 import { sessionTitle } from './session-turns';
@@ -213,6 +214,19 @@ export function SessionCard({
           </span>
           {session?.approved_at && <SinceApproved approvedAt={session.approved_at} />}
         </>
+      )}
+      {role === 'host' && session && (state === 'active' || state === 'pending') && (
+        <GuestPermissionChip
+          contact={{ userId: session.guest_user_id ?? null, email: null }}
+          projectId={session.project_id ?? null}
+          guestName={guest}
+          pending={state === 'pending'}
+          onApprove={() => void run('approve-once', onApproveOnce)}
+          disabled={!!busy}
+        />
+      )}
+      {role === 'guest' && session && (state === 'active' || state === 'pending') && (
+        <HostApprovalChip hostName={host} pending={state === 'pending'} approvedVia={session.approved_via} />
       )}
       {failedLive && (
         <span className="shrink-0 font-medium text-red-700 dark:text-red-300" data-testid="session-card-failed">
