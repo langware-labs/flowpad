@@ -69,10 +69,9 @@ export function ActivityProgressModal({
   if (!table) return null;
 
   const displayTitle = title || t`Progress`;
+  const doneCount = table.done.toLocaleString();
   const headerLabel =
-    table.total > 0
-      ? `${table.done.toLocaleString()}/${table.total.toLocaleString()}`
-      : `${table.done.toLocaleString()} records`;
+    table.total > 0 ? `${table.done.toLocaleString()}/${table.total.toLocaleString()}` : t`${doneCount} records`;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
