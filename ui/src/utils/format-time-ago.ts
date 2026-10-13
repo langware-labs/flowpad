@@ -1,3 +1,6 @@
+import { i18n } from '@lingui/core';
+import { msg } from '@lingui/core/macro';
+
 /**
  * Single source of truth for the "X ago" relative-time label used by the
  * indexer footer pill, the search "Index Recommended" banner, the scanner
@@ -15,15 +18,15 @@ export function formatTimeAgo(iso: string | Date | null | undefined): string | n
   const t = new Date(iso).getTime();
   if (Number.isNaN(t)) return null;
   const ms = Date.now() - t;
-  if (ms < 0) return 'just now';
+  if (ms < 0) return i18n._(msg`just now`);
   const s = Math.floor(ms / 1000);
-  if (s < 60) return 'just now';
+  if (s < 60) return i18n._(msg`just now`);
   const m = Math.floor(s / 60);
-  if (m < 60) return `${m}m ago`;
+  if (m < 60) return i18n._(msg`${m}m ago`);
   const h = Math.floor(m / 60);
-  if (h < 24) return `${h}h ago`;
+  if (h < 24) return i18n._(msg`${h}h ago`);
   const d = Math.floor(h / 24);
-  if (d < 7) return `${d}d ago`;
+  if (d < 7) return i18n._(msg`${d}d ago`);
   return new Date(t).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 

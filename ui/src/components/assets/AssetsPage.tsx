@@ -671,8 +671,8 @@ export function AssetsPage() {
             <div className="flex h-full items-center justify-center p-6">
               <div className="flex max-w-sm flex-col items-center gap-3 text-center">
                 <PackageSearch className="h-8 w-8 text-muted-foreground" />
-                <div className="text-sm font-medium">{INDEX_PROMPT_TITLE}</div>
-                <p className="text-sm text-muted-foreground">{INDEX_PROMPT_DESCRIPTION}</p>
+                <div className="text-sm font-medium">{i18n._(INDEX_PROMPT_TITLE)}</div>
+                <p className="text-sm text-muted-foreground">{i18n._(INDEX_PROMPT_DESCRIPTION)}</p>
                 <Button
                   size="sm"
                   className="mt-1 gap-1.5"
@@ -681,7 +681,7 @@ export function AssetsPage() {
                   data-testid="empty-state-index-cta"
                 >
                   <PackageSearch className={`h-4 w-4 ${busy ? 'animate-spin' : ''}`} />
-                  {INDEX_BUILD_LABEL}
+                  {i18n._(INDEX_BUILD_LABEL)}
                 </Button>
               </div>
             </div>

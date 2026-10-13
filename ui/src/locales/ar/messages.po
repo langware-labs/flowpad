@@ -155,6 +155,10 @@ msgstr "({selectedCount} عنصر محدد)"
 msgid "(a file)"
 msgstr ""
 
+#: src/components/footer/activity-one-liner.ts
+msgid "(blocked)"
+msgstr "(موقوف)"
+
 #: src/components/collaboration/ProjectViewHeader.tsx
 msgid "(cleared)"
 msgstr "(تم المسح)"
@@ -474,6 +478,11 @@ msgstr "تمت إضافة {0} بنجاح."
 #: src/components/automations/automation-words.ts
 msgid "{0} in {folder}"
 msgstr ""
+
+#. placeholder {0}: row.done - row.skipped
+#: src/components/search-index/ActivityIndicator.tsx
+msgid "{0} indexed"
+msgstr "{0} مفهرسة"
 
 #. placeholder {0}: agent.name
 #: src/components/assets/editor/agent-profile/AgentDeploymentsSection.tsx
@@ -847,6 +856,10 @@ msgstr ""
 msgid "{created} member task(s) created for \"{0}\"."
 msgstr "تم إنشاء {created} مهمة للأعضاء من أجل \"{0}\"."
 
+#: src/utils/format-time-ago.ts
+msgid "{d}d ago"
+msgstr "منذ {d} يوم"
+
 #: src/components/schema-tree/SchemaTreeView.tsx
 msgid "{datasets} datasets"
 msgstr ""
@@ -863,6 +876,10 @@ msgstr ""
 msgid "{displayName} connection failed"
 msgstr ""
 
+#: src/components/search-index/ActivityProgressModal.tsx
+msgid "{doneCount} records"
+msgstr "{doneCount} سجل"
+
 #: src/components/conversation/ThreadStack.tsx
 msgid "{earlier} earlier in this thread"
 msgstr "{earlier} سابقاً في هذا الخيط"
@@ -873,6 +890,10 @@ msgstr ""
 
 #~ msgid "{envVar} saved"
 #~ msgstr ""
+
+#: src/components/footer/activity-one-liner.ts
+msgid "{errors} failed"
+msgstr "{errors} فشل"
 
 #. placeholder {0}: ids.length
 #: src/components/graph-context/GraphContextViewer.tsx
@@ -894,6 +915,10 @@ msgstr "لدى {folderName} تغييرات لم تُدفع بعد. يمكن لل
 #: src/components/collaboration/LiveSessionView.tsx
 msgid "{guestName} wants to run prompts on your machine."
 msgstr "طلب من {guestName} لتشغيل الأوامر على جهازك."
+
+#: src/utils/format-time-ago.ts
+msgid "{h}h ago"
+msgstr "منذ {h} ساعة"
 
 #: src/components/web-url-display/WebUrlDisplay.tsx
 msgid "{host} can't be shown inside Flowpad."
@@ -927,6 +952,10 @@ msgstr ""
 msgid "{hubCount} available"
 msgstr ""
 
+#: src/components/search-index/IndexerStatusPill.tsx
+msgid "{idle} — open Records Scanner"
+msgstr "{idle} — فتح ماسح السجلات"
+
 #. placeholder {0}: ignored !== 1 ? 's' : ''
 #: src/components/lens-viewer/CloudSearchResultsModal.tsx
 msgid "{ignored} issue{0} auto-resolved"
@@ -939,6 +968,14 @@ msgstr "{indexedCount} مفهرسة"
 #: src/components/llm-endpoints/FundingProvenance.tsx
 msgid "{label}"
 msgstr ""
+
+#: src/components/search-index/ActivityIndicator.tsx
+msgid "{label} — click to open Indexing info"
+msgstr "{label} — انقر لفتح معلومات الفهرسة"
+
+#: src/components/search-index/IndexerStatusPill.tsx
+msgid "{label} — click to open Records Scanner"
+msgstr "{label} — انقر لفتح ماسح السجلات"
 
 #: src/components/terminal/interactive-terminal/SessionSurfaceSwitch.tsx
 msgid "{label} — not while the agent is working"
@@ -972,6 +1009,10 @@ msgstr ""
 msgid "{left} of {limit} requests left {windowText}"
 msgstr ""
 
+#: src/components/footer/ActivityStatusPill.tsx
+msgid "{line} — click for details"
+msgstr "{line} — انقر للتفاصيل"
+
 #: src/components/conversation/MembersAvatarStack.tsx
 msgid "{listed} not sent"
 msgstr ""
@@ -983,6 +1024,10 @@ msgstr ""
 #: src/components/automations/automation-words.ts
 msgid "{m}m {rest}s"
 msgstr ""
+
+#: src/utils/format-time-ago.ts
+msgid "{m}m ago"
+msgstr "منذ {m} دقيقة"
 
 #: src/components/conversation/ThreadHeader.tsx
 msgid "{messageCount, plural, one {# message} other {# messages}}"
@@ -1171,6 +1216,10 @@ msgstr ""
 #: src/components/browseable-tree/adapters/useFavoritesRoots.tsx
 #~ msgid "{title} — {0} items"
 #~ msgstr "{title} — {0} عنصر"
+
+#: src/components/search-index/IndexerStatusPill.tsx
+msgid "{tooltip} — click to open Records Scanner"
+msgstr "{tooltip} — انقر لفتح ماسح السجلات"
 
 #. placeholder {0}: totalOrphans === 1 ? '' : 's'
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
@@ -1629,6 +1678,10 @@ msgstr ""
 msgid "A thread quiet this long ends; the next message starts a new one. Empty — never."
 msgstr ""
 
+#: src/components/search-index/IndexRecommendedBanner.tsx
+msgid "a while ago"
+msgstr "منذ مدة"
+
 #: src/components/assets/editor/wizard/WizardStepForm.tsx
 msgid "a wizard name"
 msgstr "اسم معالج"
@@ -1811,6 +1864,7 @@ msgstr "المسار النشط: {activeDbPath}"
 
 #: src/components/assets/editor/agent-profile/AgentPlaceCard.tsx
 #: src/components/graph-view/ui/TopBar.tsx
+#: src/components/search-index/ActivityProgressModalRoot.tsx
 msgid "Activity"
 msgstr "النشاط"
 
@@ -3142,6 +3196,15 @@ msgstr "أرشفة هذا التشغيل وبدء سجل جديد. يبقى مع
 msgid "Archived"
 msgstr "الأرشيف"
 
+#: src/components/footer/activity-words.ts
+#: src/components/search-index/activity-labels.ts
+msgid "Archiving"
+msgstr "جارٍ الأرشفة"
+
+#: src/components/search-index/activity-labels.ts
+msgid "Archiving…"
+msgstr "جارٍ الأرشفة…"
+
 #: src/components/account/database-section.tsx
 msgid "Are you sure you want to clear all data from the database? This will also clear the scan index. A backup will be created first."
 msgstr "هل أنت متأكد من رغبتك في مسح جميع البيانات من قاعدة البيانات؟ سيؤدي ذلك أيضاً إلى مسح فهرس الفحص. سيتم إنشاء نسخة احتياطية أولاً."
@@ -3829,6 +3892,7 @@ msgstr ""
 msgid "Bless \"{name}\" — create its Tag entity"
 msgstr "اعتماد \"{name}\" — إنشاء كيان Tag الخاص به"
 
+#: src/components/footer/activity-words.ts
 #: src/components/lens-viewer/shared/transcript-features/TranscriptEntryItem.tsx
 msgid "blocked"
 msgstr "موقوف"
@@ -4035,6 +4099,10 @@ msgstr ""
 #: src/pages/flow-page/vibe-chat-pane.tsx
 msgid "Build history"
 msgstr "سجل الإصدارات"
+
+#: src/components/search-index/index-copy.ts
+msgid "Build Index"
+msgstr "إنشاء الفهرس"
 
 #: src/pages/home-landing/HomeLanding.tsx
 msgid "Build something <0>amazing</0>"
@@ -4307,6 +4375,10 @@ msgstr "إلغاء"
 #: src/components/conversation/MessageComposer.tsx
 msgid "Cancel reply"
 msgstr ""
+
+#: src/components/footer/activity-words.ts
+msgid "cancelled"
+msgstr "أُلغي"
 
 #: src/components/assets/editor/wizard/WizardViewer.tsx
 msgid "Cancelled by user"
@@ -4960,6 +5032,15 @@ msgstr "مسح التحديد"
 msgid "Cleared"
 msgstr "تم المسح"
 
+#: src/components/footer/activity-words.ts
+#: src/components/search-index/activity-labels.ts
+msgid "Clearing index"
+msgstr "جارٍ مسح الفهرس"
+
+#: src/components/search-index/activity-labels.ts
+msgid "Clearing index…"
+msgstr "جارٍ مسح الفهرس…"
+
 #: src/components/account/database-section.tsx
 msgid "Clearing..."
 msgstr "جاري مسح البيانات..."
@@ -5027,6 +5108,12 @@ msgstr "يمكن النقر لإعادة التسمية"
 #: src/components/collaboration/RoomHeader.tsx
 msgid "Click to rename room"
 msgstr "يمكن النقر لإعادة تسمية الغرفة"
+
+#. placeholder {0}: row.orphan_count
+#. placeholder {1}: row.type
+#: src/components/lens-viewer/FsRecordsScannerViewer.tsx
+msgid "Click to sweep {0} {1} orphans"
+msgstr "انقر لتنظيف {0} من سجلات {1} اليتيمة"
 
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Click to view"
@@ -5516,6 +5603,11 @@ msgstr "الشركة والفريق"
 msgid "Company Announcements"
 msgstr "إعلانات الشركة"
 
+#: src/components/footer/activity-words.ts
+msgid "complete"
+msgstr "اكتمل"
+
+#: src/components/footer/activity-words.ts
 #: src/pages/live-status/LiveStatus.tsx
 msgid "completed"
 msgstr "مكتملة"
@@ -5535,6 +5627,10 @@ msgstr "عقدة الحوسبة"
 #: src/components/machine-overview/machine-overview.tsx
 msgid "Compute Node ID:"
 msgstr "معرف عقدة الحساب:"
+
+#: src/i18n/type-labels.ts
+msgid "Compute Op"
+msgstr "عملية حوسبة"
 
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "Computing diff…"
@@ -7400,8 +7496,9 @@ msgstr "جاري الإنشاء…"
 
 #: src/components/data-sources/DataDriversView.tsx
 #: src/components/llm-endpoints/LlmEndpointsList.tsx
+#: src/i18n/type-labels.ts
 msgid "Credential"
-msgstr ""
+msgstr "بيانات الاعتماد"
 
 #~ msgid "Credential environment"
 #~ msgstr ""
@@ -7534,6 +7631,10 @@ msgstr ""
 #: src/components/privacy-mode/privacy-mode-popover.tsx
 msgid "Data privacy mode"
 msgstr "وضع خصوصية البيانات"
+
+#: src/i18n/type-labels.ts
+msgid "Data Schema"
+msgstr "مخطط البيانات"
 
 #: src/components/schema-tree/SchemaTreeView.tsx
 msgid "data source"
@@ -7803,6 +7904,10 @@ msgstr ""
 #: src/components/entity-execution-panel/current-activity.ts
 msgid "Delegating to"
 msgstr "يفوّض إلى"
+
+#: src/components/search-index/SweepOrphansDialog.tsx
+msgid "delete"
+msgstr "حذف"
 
 #: src/components/account/secrets-section.tsx
 #: src/components/account/system-diagnoses.tsx
@@ -8428,6 +8533,10 @@ msgstr "تم الإبلاغ عن التشخيص إلى فريق Flowpad"
 msgid "Diagnosis request"
 msgstr "طلب تشخيص"
 
+#: src/i18n/type-labels.ts
+msgid "Diagnosis Request"
+msgstr "طلب تشخيص"
+
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
 #: src/components/quick-create/registry.ts
 msgid "Diagnosis request created"
@@ -8622,6 +8731,7 @@ msgstr "نقاش"
 
 #: src/components/diagnose/diagnosis-action-buttons.tsx
 #: src/components/diagnose/diagnosis-action-buttons.tsx
+#: src/components/footer/ActivityStatusPill.tsx
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
@@ -8747,6 +8857,7 @@ msgstr "ليس لديك FlowPad بعد؟"
 msgid "Don't show again until Flowpad restarts"
 msgstr ""
 
+#: src/components/footer/activity-words.ts
 #: src/components/search-index/ActivityProgressModal.tsx
 msgid "done"
 msgstr "تم"
@@ -9973,10 +10084,11 @@ msgstr "صفوف إضافية تم جلبها (الحد الأقصى + الجل�
 msgid "Extracting…"
 msgstr ""
 
+#: src/components/footer/activity-words.ts
 #: src/components/llm-endpoints/TestEndpointButton.tsx
 #: src/components/organization/budgets/EndpointControls.tsx
 msgid "failed"
-msgstr ""
+msgstr "فشل"
 
 #: src/components/automations/automation-words.ts
 #: src/components/automations/RunsView.tsx
@@ -12169,6 +12281,10 @@ msgstr "إذا فشلت"
 msgid "If your browser asks, choose Open. FlowPad then carries on from here."
 msgstr ""
 
+#: src/components/search-index/SweepOrphansDialog.tsx
+msgid "ignore"
+msgstr "تجاهل"
+
 #: src/components/triggers-view/FsopTriggerDetail.tsx
 #~ msgid "ignore patterns"
 #~ msgstr "أنماط التجاهل"
@@ -12374,6 +12490,10 @@ msgstr "فهرس الرسائل المرسلة في هذه الجلسة"
 msgid "Index project on selection"
 msgstr "فهرسة المشروع عند تحديده"
 
+#: src/components/search-index/IndexerStatusPill.tsx
+msgid "Index status unavailable · Retry"
+msgstr "حالة الفهرس غير متاحة · إعادة المحاولة"
+
 #: src/i18n/pref-labels.ts
 msgid "Index when"
 msgstr "متى تتم الفهرسة"
@@ -12382,9 +12502,17 @@ msgstr "متى تتم الفهرسة"
 msgid "indexed"
 msgstr "مفهرس"
 
+#: src/components/search-index/IndexerStatusPill.tsx
+msgid "indexed {ago}"
+msgstr "فُهرست {ago}"
+
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "Indexed {indexedCount} records"
 msgstr "تمت فهرسة {indexedCount} سجل"
+
+#: src/components/browseable-tree/RagFolderIcon.tsx
+msgid "Indexed for search"
+msgstr "مفهرس للبحث"
 
 #: src/components/helpdesk/HelpdeskLoadDialog.tsx
 msgid "indexed with the project"
@@ -12394,7 +12522,10 @@ msgstr "مفهرس مع المشروع"
 msgid "Indexer backend"
 msgstr "محرّك الفهرسة"
 
+#: src/components/footer/activity-words.ts
 #: src/components/helpdesk/HelpdeskLoadDialog.tsx
+#: src/components/search-index/activity-labels.ts
+#: src/components/search-index/activity-labels.ts
 msgid "Indexing"
 msgstr "جارٍ الفهرسة"
 
@@ -12619,6 +12750,10 @@ msgstr "تعليمات لوكيلهم"
 #: src/i18n/pref-labels.ts
 msgid "Interface language and text direction."
 msgstr "لغة الواجهة واتجاه النص."
+
+#: src/components/footer/activity-words.ts
+msgid "interrupted"
+msgstr "انقطع"
 
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 msgid "Intro"
@@ -12919,6 +13054,8 @@ msgid "just cloned"
 msgstr "مستنسخ حديثاً"
 
 #: src/notifications/feed/NotificationFeed.tsx
+#: src/utils/format-time-ago.ts
+#: src/utils/format-time-ago.ts
 msgid "just now"
 msgstr "الآن"
 
@@ -13145,6 +13282,15 @@ msgstr "آخر فهرسة"
 msgid "last_indexed_at"
 msgstr "آخر فهرسة {lastIndexedLabel}"
 
+#. placeholder {0}: row.last_indexed_at
+#: src/components/lens-viewer/FsRecordsScannerViewer.tsx
+msgid "Last indexed: {0}"
+msgstr "آخر فهرسة: {0}"
+
+#: src/components/search-index/IndexerStatusPill.tsx
+msgid "Last indexed: {when}"
+msgstr "آخر فهرسة: {when}"
+
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "Last indexed: never"
 msgstr "آخر فهرسة: أبداً"
@@ -13193,6 +13339,10 @@ msgstr ""
 #: src/components/conversation/SessionCard.tsx
 #~ msgid "Last turn failed"
 #~ msgstr ""
+
+#: src/components/search-index/IndexRecommendedBanner.tsx
+msgid "Last updated {ago} — results may be outdated."
+msgstr "آخر تحديث {ago} — قد تكون النتائج قديمة."
 
 #: src/components/triggers-view/FsopTriggerDetail.tsx
 #~ msgid "last_seen_mtime"
@@ -13598,7 +13748,7 @@ msgstr ""
 #: src/i18n/type-labels.ts
 #: src/types/ViewType.ts
 msgid "LLM Endpoints"
-msgstr ""
+msgstr "نقاط نهاية LLM"
 
 #: src/components/assets/MarkdownIndexPanel.tsx
 msgid "LLM Index"
@@ -13779,6 +13929,10 @@ msgstr "جارٍ تحميل السجل…"
 #: src/components/hooks-view/hooks-view.tsx
 msgid "Loading hooks..."
 msgstr "جاري تحميل الخطاطيف..."
+
+#: src/components/search-index/IndexerStatusPill.tsx
+msgid "Loading index status"
+msgstr "جارٍ تحميل حالة الفهرس"
 
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "Loading index status…"
@@ -14146,6 +14300,10 @@ msgstr "اجعل النسختين متطابقتين — عدّل أيًّا م�
 #: src/components/harness-login/StatusRow.tsx
 msgid "Make this the default assistant"
 msgstr ""
+
+#: src/components/search-index/index-copy.ts
+msgid "Make your records searchable"
+msgstr "اجعل سجلاتك قابلة للبحث"
 
 #~ msgid "Manage"
 #~ msgstr ""
@@ -14979,8 +15137,13 @@ msgid "Never"
 msgstr ""
 
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
+#: src/components/search-index/IndexerStatusPill.tsx
 msgid "never indexed"
 msgstr "لم تُفهرس أبداً"
+
+#: src/components/search-index/IndexerStatusPill.tsx
+msgid "Never indexed"
+msgstr "لم تُفهرس بعد"
 
 #: src/components/automations/AutomationRow.tsx
 msgid "Never ran"
@@ -15973,6 +16136,10 @@ msgstr ""
 msgid "No organization yet"
 msgstr ""
 
+#: src/components/lens-viewer/FsRecordsScannerViewer.tsx
+msgid "No orphans for this type"
+msgstr "لا توجد سجلات يتيمة لهذا النوع"
+
 #: src/components/search-index/SweepOrphansDialog.tsx
 msgid "No orphans found."
 msgstr "لا توجد سجلات يتيمة."
@@ -16647,6 +16814,10 @@ msgstr "غير مسجّل الدخول · شغّل /login"
 #: src/components/project-home/MissingDependenciesDialog.tsx
 #: src/components/project-setup/ProjectLoadDialog.tsx
 msgid "Not now"
+msgstr "ليس الآن"
+
+#: src/components/search-index/IndexNowModal.tsx
+msgid "Not Now"
 msgstr "ليس الآن"
 
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
@@ -18250,7 +18421,7 @@ msgstr "تجاوز النموذج الافتراضي من خلال متغيرا�
 #: src/components/llm-endpoints/LlmEndpointDetail.tsx
 #: src/components/project-home/ProjectHome.tsx
 msgid "Overview"
-msgstr ""
+msgstr "نظرة عامة"
 
 #: src/components/project-activity-strip/ProjectActivityStrip.tsx
 #: src/components/project-activity-strip/RecentConversationsStrip.tsx
@@ -18477,9 +18648,10 @@ msgstr ""
 msgid "Pause this machine"
 msgstr "إيقاف هذا الجهاز مؤقتاً"
 
+#: src/components/footer/activity-words.ts
 #: src/components/stream-inbox-view/AttachedChannelsBar.tsx
 msgid "paused"
-msgstr ""
+msgstr "متوقف مؤقتًا"
 
 #: src/components/assets/editor/agent-profile/AgentPlaceCard.tsx
 #: src/components/assets/editor/agent-profile/AgentPlacesColumn.tsx
@@ -18509,6 +18681,7 @@ msgstr "الذروة"
 msgid "Peak spend rate"
 msgstr "أعلى معدل إنفاق"
 
+#: src/components/footer/activity-words.ts
 #: src/components/organization/member-list.tsx
 msgid "pending"
 msgstr "قيد الانتظار"
@@ -20077,6 +20250,10 @@ msgstr "تحديث الفهرس"
 msgid "Refresh interval must be at least 60 seconds"
 msgstr ""
 
+#: src/components/search-index/IndexRecommendedBanner.tsx
+msgid "Refresh now →"
+msgstr "حدّث الآن ←"
+
 #: src/components/collaboration/ProjectViewHeader.tsx
 msgid "Refresh project index"
 msgstr "تحديث فهرس المشروع"
@@ -20841,6 +21018,15 @@ msgstr "استعادة هذا الملف المحذوف من آخر commit"
 msgid "Restore this file to the last saved version — your edits will be lost"
 msgstr "استعادة هذا الملف إلى آخر نسخة محفوظة — ستفقد تعديلاتك"
 
+#: src/components/footer/activity-words.ts
+#: src/components/search-index/activity-labels.ts
+msgid "Restoring"
+msgstr "جارٍ الاستعادة"
+
+#: src/components/search-index/activity-labels.ts
+msgid "Restoring…"
+msgstr "جارٍ الاستعادة…"
+
 #: src/components/llm-endpoints/FiltersEditor.tsx
 msgid "Restrict beta headers"
 msgstr ""
@@ -21337,6 +21523,7 @@ msgid "Run this live session in which project?"
 msgstr ""
 
 #: src/components/display-toolbar/WebappDisplayToolbar.tsx
+#: src/components/footer/activity-words.ts
 #: src/components/terminal/interactive-terminal/command-status-viewer/CommandStatusViewer.tsx
 msgid "running"
 msgstr "قيد التشغيل"
@@ -21736,6 +21923,12 @@ msgstr "الجذور المفحوصة"
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Scanned: {0}"
 msgstr "تم الفحص: {0}"
+
+#: src/components/footer/activity-words.ts
+#: src/components/search-index/activity-labels.ts
+#: src/components/search-index/activity-labels.ts
+msgid "Scanning"
+msgstr "جارٍ الفحص"
 
 #: src/components/assets/editor/skill/UsagePanel.tsx
 msgid "Scanning {skillName} usage…"
@@ -22930,7 +23123,7 @@ msgstr "مشاركة الرمز {0} للدعوة."
 #: src/components/project-home/ProjectGitShareToggle.tsx
 #: src/components/project-home/ProjectGitShareToggle.tsx
 msgid "Share git with project members"
-msgstr ""
+msgstr "مشاركة git مع أعضاء المشروع"
 
 #: src/i18n/pref-labels.ts
 msgid "Share message status"
@@ -24538,12 +24731,20 @@ msgid "Survey Error"
 msgstr "خطأ في الاستبيان"
 
 #: src/components/search-index/SweepOrphansDialog.tsx
-msgid "Sweep {scopeTotal} ({action})"
-msgstr "تنظيف {scopeTotal} ({action})"
+#~ msgid "Sweep {scopeTotal} ({action})"
+#~ msgstr "تنظيف {scopeTotal} ({action})"
+
+#: src/components/search-index/SweepOrphansDialog.tsx
+msgid "Sweep {scopeTotal} ({actionWord})"
+msgstr "تنظيف {scopeTotal} ({actionWord})"
 
 #: src/components/search-index/SweepOrphansDialog.tsx
 msgid "Sweep action"
 msgstr "إجراء التنظيف"
+
+#: src/components/footer/activity-words.ts
+msgid "sweeping"
+msgstr "جارٍ التنظيف"
 
 #: src/components/search-index/SweepOrphansDialog.tsx
 msgid "Sweeping…"
@@ -27687,6 +27888,16 @@ msgstr "عرض نسخة الجلسة"
 msgid "View Skill"
 msgstr "عرض المهارة"
 
+#. placeholder {0}: row.type
+#: src/components/lens-viewer/FsRecordsScannerViewer.tsx
+msgid "View the {indexedCount} {0} entities indexed this run"
+msgstr "عرض {indexedCount} من كيانات {0} المفهرسة في هذا التشغيل"
+
+#. placeholder {0}: row.type
+#: src/components/lens-viewer/FsRecordsScannerViewer.tsx
+msgid "View the 1 {0} entity indexed this run"
+msgstr "عرض كيان {0} الواحد المفهرس في هذا التشغيل"
+
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 msgid "View the changes in this file"
 msgstr "عرض التغييرات في هذا الملف"
@@ -28287,6 +28498,9 @@ msgstr "قيد العمل"
 
 #: src/components/assets/editor/agent-profile/deployment/ThreadStatus.tsx
 #: src/components/chats-navigator/ChatHistoryRow.tsx
+#: src/components/footer/activity-words.ts
+#: src/components/search-index/activity-labels.ts
+#: src/components/search-index/activity-labels.ts
 msgid "Working"
 msgstr "قيد المعالجة"
 
@@ -28719,6 +28933,10 @@ msgstr "مشاريعك"
 #: src/components/helpdesk/HelpdeskMyItems.tsx
 msgid "Your questions"
 msgstr "أسئلتك"
+
+#: src/components/search-index/index-copy.ts
+msgid "Your records haven't been indexed yet. Building the index takes less than a minute and lets you find anything across all your notes, tasks, and sessions."
+msgstr "لم تتم فهرسة سجلاتك بعد. يستغرق إنشاء الفهرس أقل من دقيقة ويتيح لك العثور على أي شيء في جميع ملاحظاتك ومهامك وجلساتك."
 
 #: src/components/help/AskForHelpDialog.tsx
 msgid "Your request could not be saved."
