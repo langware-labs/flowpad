@@ -8658,6 +8658,10 @@ msgstr "מגלה {typeLabel}…"
 msgid "Discuss"
 msgstr "דיון"
 
+#: src/i18n/pref-labels.ts
+msgid "Disk I/O backend"
+msgstr "מנוע קלט/פלט לדיסק"
+
 #: src/components/diagnose/diagnosis-action-buttons.tsx
 #: src/components/diagnose/diagnosis-action-buttons.tsx
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
@@ -12450,10 +12454,6 @@ msgstr "אונדקסו {indexedCount} רשומות"
 #: src/components/helpdesk/HelpdeskLoadDialog.tsx
 msgid "indexed with the project"
 msgstr "באינדקס הפרויקט"
-
-#: src/i18n/pref-labels.ts
-msgid "Indexer backend"
-msgstr "מנוע האינדוקס"
 
 #: src/components/helpdesk/HelpdeskLoadDialog.tsx
 msgid "Indexing"
@@ -24586,8 +24586,8 @@ msgid "Subprocess"
 msgstr "תת־תהליך"
 
 #: src/i18n/pref-labels.ts
-msgid "Subprocess runs the file walk in a separate process, so a large or slow tree can’t stall the server (database writes stay in the server either way). Thread runs it in-process — lower startup cost, better for small projects. No effect when the Rust indexer backend is selected."
-msgstr "\"תת־תהליך\" מריץ את סריקת הקבצים בתהליך נפרד, כך שעץ גדול או איטי לא יכול לתקוע את השרת (הכתיבות למסד הנתונים נשארות בשרת בכל מקרה). \"תהליכון\" מריץ אותה בתוך התהליך — עלות התחלה נמוכה יותר, מתאים יותר לפרויקטים קטנים. אין לכך השפעה כאשר נבחר מנוע האינדוקס Rust."
+msgid "Subprocess runs the file walk in a separate process, so a large or slow tree can’t stall the server (database writes stay in the server either way). Thread runs it in-process — lower startup cost, better for small projects."
+msgstr "\"תת־תהליך\" מריץ את סריקת הקבצים בתהליך נפרד, כך שעץ גדול או איטי לא יכול לתקוע את השרת (הכתיבות למסד הנתונים נשארות בשרת בכל מקרה). \"תהליכון\" מריץ אותה בתוך התהליך — עלות התחלה נמוכה יותר, מתאים יותר לפרויקטים קטנים."
 
 #: src/components/automations/automation-words.ts
 #: src/components/automations/RunsView.tsx
@@ -28308,8 +28308,8 @@ msgstr ""
 #~ msgstr ""
 
 #: src/i18n/pref-labels.ts
-msgid "Which engine runs filesystem indexing: the built-in Python FSIndexer, or the external Rust indexer (requires FLOWPAD_RS_INDEXER_BIN on the server; silently falls back to Python when unavailable). Takes effect on the next index run."
-msgstr "איזה מנוע מבצע אינדוקס של מערכת הקבצים: FSIndexer המובנה של Python, או מנוע האינדוקס החיצוני בשפת Rust (דורש FLOWPAD_RS_INDEXER_BIN בשרת; חוזר בשקט ל-Python כשאינו זמין). נכנס לתוקף בהרצת האינדוקס הבאה."
+msgid "Which engine does the heavy file scanning: Python (built in), or Rust (a bundled binary, much faster on large projects). Falls back to Python automatically when the Rust binary is unavailable. Takes effect on the next scan."
+msgstr "איזה מנוע מבצע את סריקת הקבצים הכבדה: Python (מובנה), או Rust (קובץ בינארי מצורף, מהיר בהרבה בפרויקטים גדולים). חוזר אוטומטית ל-Python כשהקובץ הבינארי של Rust אינו זמין. נכנס לתוקף בסריקה הבאה."
 
 #: src/components/task-receive/LaunchDialog.tsx
 msgid "Which project should it work on?"

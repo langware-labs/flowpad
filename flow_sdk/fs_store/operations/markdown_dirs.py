@@ -7,6 +7,8 @@ from __future__ import annotations
 
 import functools
 import os
+import stat
+import time
 from pathlib import Path
 
 from flow_sdk.assets.scanning import is_in_doc_dir
@@ -43,13 +45,45 @@ def _find_docs_subdirs(root: Path) -> list[Path]:
     return found
 
 
+# A directory's mtime is only as fine as its filesystem's clock (1s on HFS+, 2s on
+# FAT). One changed inside that window may change again without its mtime moving,
+# so a listing taken that soon after a change is never reused.
+_COARSE_MTIME_NS = 2_000_000_000
+
+# ``(stamp, names)`` of the last Claude projects listing — see ``_claude_project_names``.
+_project_names: tuple[tuple, tuple[str, ...]] | None = None
+
+
+def _claude_project_names(proj_dir: Path) -> tuple[str, ...]:
+    """Sorted entry names of the Claude projects dir, re-listed only when it changed.
+
+    ``doc_search_dirs`` is asked once per indexed markdown file, and its
+    fingerprint used to LIST this directory every time: 412 entries per file,
+    82,400 for a 200-file index run. Adding, removing or renaming an entry moves
+    the directory's own mtime, so one ``stat`` answers "is the last listing still
+    right" — the names, and so the fingerprint, are exactly what a fresh listing
+    would give. Nothing is kept on a clock: every call stats.
+    """
+    global _project_names
+    try:
+        st = os.stat(proj_dir)
+        if not stat.S_ISDIR(st.st_mode):
+            return ()
+        stamp = (str(proj_dir), st.st_dev, st.st_ino, st.st_mtime_ns)
+        cached = _project_names
+        if cached is not None and cached[0] == stamp:
+            return cached[1]
+        names = tuple(sorted(os.listdir(proj_dir)))
+    except OSError:
+        return ()
+    if time.time_ns() - st.st_mtime_ns > _COARSE_MTIME_NS:
+        _project_names = (stamp, names)
+    return names
+
+
 def _fingerprint() -> tuple:
     try:
-        proj_dir = get_instance_settings().claude_projects_dir
-        projects = (
-            tuple(sorted(p.name for p in proj_dir.iterdir()))
-            if proj_dir.is_dir() else ()
-        )
+        projects = _claude_project_names(get_instance_settings().claude_projects_dir)
     except OSError:
         projects = ()
     return (os.getcwd(), os.environ.get("FLOWPAD_DOC_DIRS", ""), projects)
