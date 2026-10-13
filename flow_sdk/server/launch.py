@@ -207,12 +207,11 @@ def check_server_health(port: int, timeout: float = 2.0) -> bool:
     url = f"http://127.0.0.1:{port}/health/status"
     try:
         req = urllib.request.Request(url, method="GET")
-        # LOCAL_OPENER carries the cookie-gate token. It swallows its own
-        # failures to read the token -- being unable to read the gate is a
-        # reason to probe without it, never a reason to stop supervising.
-        from flow_sdk.instance_settings.cookie_gate import LOCAL_OPENER
+        # The installed opener presents the cookie-gate token, and probes without
+        # it when the token cannot be read -- never a reason to stop supervising.
+        import flow_sdk.instance_settings.cookie_gate  # noqa: F401, PLC0415 -- installs the opener that presents the cookie-gate token
 
-        with LOCAL_OPENER.open(req, timeout=timeout):
+        with urllib.request.urlopen(req, timeout=timeout):
             return True
     except urllib.error.HTTPError as e:
         # Distinguished from "no answer" on purpose. A gated instance that

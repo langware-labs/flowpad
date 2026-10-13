@@ -10,11 +10,13 @@ its CLI all present one value.
 
 from __future__ import annotations
 
+import http.cookiejar
 import logging
 import os
 import secrets
 import urllib.request
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from flow_sdk.instance_settings import get_instance_settings
 
@@ -153,29 +155,46 @@ def gate_headers(url: str) -> dict[str, str]:
         return {}
 
 
-class LocalCookieGateHandler(urllib.request.BaseHandler):
-    """urllib handler: every request to a loopback host carries ``gate_headers``
-    (this instance's local cookie-gate token). Open requests through
-    ``LOCAL_OPENER`` instead of adding the header to each one by hand.
+class _GateCookieJar(http.cookiejar.CookieJar):
+    """Carries this instance's token, as the local gate's cookie, to this
+    machine's loopback hosts and nowhere else. Refilled on every request: the
+    token can be created or replaced after the opener is installed."""
 
-    ``add_unredirected_header``: a redirect off this machine does not carry it.
-    A header the caller set explicitly wins.
-    """
+    def add_cookie_header(self, request: urllib.request.Request) -> None:
+        from flow_sdk.server.middleware.local_cookiegate_middleware import local_cookie_name  # noqa: PLC0415
 
-    handler_order = 100  # before the default handlers
+        self.clear()
+        token = get_cookie_gate()
+        if token:
+            name = local_cookie_name(urlsplit(request.full_url).port)
+            # cookiejar files a dotless host such as localhost as "localhost.local".
+            for domain in ("localhost.local", "127.0.0.1"):
+                self.set_cookie(
+                    http.cookiejar.Cookie(
+                        version=0,
+                        name=name,
+                        value=token,
+                        port=None,
+                        port_specified=False,
+                        domain=domain,
+                        domain_specified=False,
+                        domain_initial_dot=False,
+                        path="/",
+                        path_specified=True,
+                        secure=False,
+                        expires=None,
+                        discard=True,
+                        comment=None,
+                        comment_url=None,
+                        rest={"HttpOnly": None},
+                        rfc2109=False,
+                    )
+                )
+        super().add_cookie_header(request)
 
-    def _add(self, req: urllib.request.Request) -> urllib.request.Request:
-        for name, value in gate_headers(req.full_url).items():
-            if not req.has_header(name.capitalize()):
-                req.add_unredirected_header(name, value)
-        return req
 
-    http_request = _add
-    https_request = _add
-
-
-#: ``urllib`` opener for requests to this machine's backend: ``LOCAL_OPENER.open(req, timeout=...)``.
-LOCAL_OPENER = urllib.request.build_opener(LocalCookieGateHandler())
+# Every ``urllib.request.urlopen`` in this process presents the token to this machine.
+urllib.request.install_opener(urllib.request.build_opener(urllib.request.HTTPCookieProcessor(_GateCookieJar())))
 
 
 def is_gated() -> bool:
@@ -183,6 +202,3 @@ def is_gated() -> bool:
     answers nothing without the secret."""
     return get_cookie_gate() is not None
 
-
-def reset_cache() -> None:
-    """Nothing is cached: the token file is read on every call."""

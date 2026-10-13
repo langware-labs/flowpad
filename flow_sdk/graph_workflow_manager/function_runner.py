@@ -179,8 +179,7 @@ class GraphWorkflowCtx:
         Returns the response envelope's ``data`` (or the raw JSON body)."""
         import urllib.request
 
-        # LOCAL_OPENER carries the cookie-gate token the instance requires.
-        from flow_sdk.instance_settings.cookie_gate import LOCAL_OPENER
+        import flow_sdk.instance_settings.cookie_gate  # noqa: F401, PLC0415 -- installs the opener that presents the cookie-gate token
 
         req = urllib.request.Request(
             f"{self._api_base}{path}",
@@ -188,7 +187,7 @@ class GraphWorkflowCtx:
             headers={"Content-Type": "application/json"},
             method="POST",
         )
-        with LOCAL_OPENER.open(req, timeout=timeout) as resp:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
             payload = json.loads(resp.read() or "{}")
         return payload.get("data") if isinstance(payload, dict) and "data" in payload else payload
 

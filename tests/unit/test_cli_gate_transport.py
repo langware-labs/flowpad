@@ -26,7 +26,7 @@ LOOPBACK = "http://127.0.0.1:9007/api/v1/graph/agentic_process/abc/show"
 
 def _armed(secret=SECRET):
     """This instance's local cookie-gate token (FLOWPAD-2233) -- what gate_headers sends."""
-    return patch("flow_sdk.server.middleware.local_cookiegate_middleware.read_local_token", return_value=secret)
+    return patch("flow_sdk.instance_settings.cookie_gate.get_cookie_gate", return_value=secret)
 
 
 class _Resp:
@@ -76,7 +76,7 @@ def test_an_unreadable_gate_degrades_to_no_header():
     reason to raise -- the CLI has to keep working on an instance whose secret
     store is unavailable."""
     with patch(
-        "flow_sdk.server.middleware.local_cookiegate_middleware.read_local_token",
+        "flow_sdk.instance_settings.cookie_gate.get_cookie_gate",
         side_effect=RuntimeError("token unreadable"),
     ):
         assert gate_headers(LOOPBACK) == {}
@@ -144,17 +144,17 @@ def test_an_action_403_is_not_mistaken_for_the_gate():
 
 
 # ---------------------------------------------------------------------------
-# gate_headers -- reads the real token file, and never sends the hub secret
+# gate_headers -- reads the real token file
 # ---------------------------------------------------------------------------
 
 
 @pytest.fixture
 def local_token(tmp_path, monkeypatch):
-    import flow_sdk.server.middleware.local_cookiegate_middleware as local
+    from flow_sdk.instance_settings import cookie_gate
 
     path = tmp_path / ".cookie_gate"
     path.write_text("own-token", encoding="utf-8")
-    monkeypatch.setattr(local, "LOCAL_TOKEN_PATH", path)
+    monkeypatch.setattr(cookie_gate, "LOCAL_TOKEN_PATH", path)
     return path
 
 
@@ -168,22 +168,17 @@ def test_no_token_file_no_header(local_token):
     assert gate_headers("http://127.0.0.1:9007/x") == {}
 
 
-def test_the_hub_secret_is_never_sent_from_this_machine(local_token):
-    """A loopback request is the local gate's; the hub secret is only for the public URL."""
-    with patch("flow_sdk.instance_settings.cookie_gate.get_cookie_gate", return_value=SECRET):
-        assert gate_headers("http://127.0.0.1:9007/x") == {HEADER_NAME: "own-token"}
-
-
 # ---------------------------------------------------------------------------
-# LocalCookieGateHandler / LOCAL_OPENER -- the urllib transport
+# The installed opener -- every urllib.request.urlopen carries the gate cookie
 # ---------------------------------------------------------------------------
 
 
-def _opened(url, headers=None):
-    """Open ``url`` through LOCAL_OPENER with the network stubbed; return the Request as sent."""
+def _opened(url):
+    """``urlopen`` ``url`` with the network stubbed; return the Request's headers as sent."""
+    import email.message
     import urllib.request
 
-    from flow_sdk.instance_settings.cookie_gate import LOCAL_OPENER
+    import flow_sdk.instance_settings.cookie_gate  # noqa: F401 -- installs the opener
 
     sent = {}
 
@@ -191,27 +186,23 @@ def _opened(url, headers=None):
         code, msg = 200, "OK"
 
         def info(self):
-            return {}
+            return email.message.Message()  # the cookie processor reads Set-Cookie from it
 
     def fake_open(_handler, req):
         sent["req"] = req
         return _Ok()
 
     with patch.object(urllib.request.HTTPHandler, "http_open", fake_open):
-        LOCAL_OPENER.open(urllib.request.Request(url, headers=headers or {}))
+        urllib.request.urlopen(urllib.request.Request(url))
     return {k.lower(): v for k, v in sent["req"].header_items()}
 
 
-def test_local_opener_adds_the_token_on_loopback():
+@pytest.mark.parametrize("host", ["127.0.0.1", "localhost"])
+def test_urlopen_presents_the_cookie_on_loopback(host):
     with _armed():
-        assert _opened(LOOPBACK)[HEADER_NAME] == SECRET
+        assert _opened(f"http://{host}:9007/x")["cookie"] == f"cookie-gate-9007={SECRET}"
 
 
-def test_local_opener_adds_nothing_off_this_machine():
+def test_urlopen_presents_nothing_off_this_machine():
     with _armed():
-        assert HEADER_NAME not in _opened("http://example.com/x")
-
-
-def test_local_opener_keeps_an_explicit_header():
-    with _armed():
-        assert _opened(LOOPBACK, {HEADER_NAME: "caller-chose-this"})[HEADER_NAME] == "caller-chose-this"
+        assert "cookie" not in _opened("http://example.com/x")
