@@ -77,10 +77,13 @@ def test_a_revocation_outlives_the_grants_it_refuses_and_no_longer():
 
 def test_the_exchange_is_one_trade_for_every_door():
     """A ticket for the door becomes its cookie and a redirect; another door's ticket is nothing."""
-    traded = grants.exchange(sign_grant(_grant(), SECRET, now=NOW), audience="app", landing="/x")
+    # ``exchange`` reads the real clock, so the ticket is signed now: ``NOW`` is when this file was
+    # imported, and a one-minute ticket from then has expired by the time a full run gets here.
+    now = int(time.time())
+    traded = grants.exchange(sign_grant(_grant(), SECRET, now=now), audience="app", landing="/x")
     assert traded is not None and traded.status_code == 302 and traded.headers["location"] == "/x"
     assert traded.headers["set-cookie"].startswith(grants.COOKIE_NAME)
-    assert grants.exchange(sign_grant(_grant(), SECRET, now=NOW), audience="admin", landing="/") is None
+    assert grants.exchange(sign_grant(_grant(), SECRET, now=now), audience="admin", landing="/") is None
     assert grants.exchange("junk", audience="app", landing="/") is None
 
 
