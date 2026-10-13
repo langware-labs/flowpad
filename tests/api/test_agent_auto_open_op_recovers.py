@@ -137,3 +137,36 @@ def _no_leftover_tasks():
     for task in list(_DETACHED):
         if task.get_name().startswith("auto_open:") and not task.done():
             task.cancel()
+
+
+async def test_a_plain_address_whose_port_an_app_declares_starts_that_app(bootstrapped_client, tmp_path):
+    """Acme's shape: the agent's ``auto_open`` is ``http://localhost:<port>`` — a port, not an app —
+    and nothing repairs it. The app's ``webapp.json`` declares that port, so the app is started and
+    the address opens, instead of the tab recording "Nothing is answering"."""
+    from flow_sdk.builtin import webapp_setup
+    from flow_sdk.builtin.faas.micro_app import WebApp
+    from flow_sdk.core import app_ports
+
+    port = app_ports.free_port()
+    root = tmp_path / "proj"
+    project = await seed_project(root)
+    folder = root / "agentic-assets" / "webapp" / "admin"
+    folder.mkdir(parents=True)
+    (folder / "index.html").write_text("admin")
+    app = WebApp(name="admin", asset_ref=str(folder), build=".", project_id=project.id, mounts=[{"serving": {
+        "type": "proxy", "start_cmd": f"{sys.executable} -m http.server {{port}} --bind 127.0.0.1",
+        "ports": {"local": {"port": port, "required": True}},
+    }}])
+    await app.save()
+    place = {"viewType": "web-app", "pointer": pointer_for_web_url(f"http://localhost:{port}/")}
+    agent = await seed_agent(root, "assistant", auto_open=[place])
+    try:
+        used = await _data(
+            await bootstrapped_client.post(f"/api/v1/graph/agent/{agent.id}/use", json={"project_id": project.id})
+        )
+        [result] = await _session_results(bootstrapped_client, used["process_id"])
+        assert result["exit_code"] == ExitCode.OK, result
+        [row] = await webapp_setup.ports(str(app.id))
+        assert (row["state"], row["port"]) == ("running", port)
+    finally:
+        await webapp_setup.stop(str(app.id))

@@ -846,8 +846,8 @@ async def expose_project_endpoints(project, deployment_typeid: str) -> list:
     it is served (``mounts``) — an app that says nothing is its ``build`` folder,
     to the ``app`` audience — and each mount becomes a route of the placement's
     ``admin`` or ``app`` proxy. A ``proxy`` mount is started on a loopback port
-    here — the port it already has when re-exposed, so a second call does not
-    start a second server. A service the app brings along (``services``) is an
+    here — found running when re-exposed, so a second call does not start a
+    second server. A service the app brings along (``services``) is an
     endpoint of its own. The answer is every endpoint of the placement — the two
     proxies, the services, an agent's chat — and the ids are the box's, which
     the hub adopts.
@@ -860,46 +860,52 @@ async def expose_project_endpoints(project, deployment_typeid: str) -> list:
     for app in apps:
         if not app.asset_ref:
             continue
-        held = {p.backend.type: p for p in await deployment_routes(deployment_typeid) if p.webapp_id == str(app.id)}
         for mount in app_mounts(app):
-            existing = held.get(mount.serving.type)
-            backend = await _placed_backend(app, mount, existing.backend if existing is not None else None)
-            await set_app_route(deployment, app, mount, backend)
-        if app.services:
-            by_name = {row.name: row for row in await ServiceEndpoint.of_deployment(deployment_typeid)}
-            for service in app.services:
-                name = f"{app.name}-{service.name}"
-                existing = by_name.get(name)
-                await upsert_endpoint(
-                    deployment,
-                    name=name,
-                    backend=await _started(app, service.serving, getattr(existing, "backend", None)),
-                    protocol=service.model_dump(mode="json")["protocol"],
-                    webapp_id=str(app.id),
-                    project_id=project.id,
-                    existing=existing,
-                )
+            await set_app_route(deployment, app, mount, await _placed_backend(app, mount))
+        for service in app.services or []:
+            await set_service_endpoint(deployment, app, service, await _started(app, service.serving))
     return await ServiceEndpoint.of_deployment(deployment_typeid)
 
 
-async def _placed_backend(app, mount, existing) -> dict:
-    """A mount's serving template, made concrete on this machine. *existing*: the backend it already has."""
+async def set_service_endpoint(deployment, app, service, backend: dict) -> None:
+    """A service the app brings along is an endpoint of its own on ``deployment``, named ``<app>-<name>``."""
+    from flow_sdk.builtin.service_endpoint import ServiceEndpoint  # noqa: PLC0415
+
+    name = f"{app.name}-{service.name}"
+    existing = next((row for row in await ServiceEndpoint.of_deployment(str(deployment.typeid)) if row.name == name), None)
+    await upsert_endpoint(
+        deployment,
+        name=name,
+        backend=backend,
+        protocol=service.model_dump(mode="json")["protocol"],
+        webapp_id=str(app.id),
+        project_id=app.project_id,
+        existing=existing,
+    )
+
+
+async def _placed_backend(app, mount) -> dict:
+    """A mount's serving template, made concrete on this machine."""
     if mount.serving.type == "static":
         return _static_backend(app, mount)
-    return await _started(app, mount.serving, existing)
+    return await _started(app, mount.serving)
 
 
-async def _started(app, serving, existing) -> dict:
-    """The process *serving* describes, running on a loopback port here — the one it already has, when it has one."""
+async def _started(app, serving) -> dict:
+    """The process *serving* describes, running on a loopback port here. Which port, and whether what
+    holds it is this app, is ``app_ports``' one rule (``webapp_setup.where``).
+
+    Not waited for: the hub asks for a placement's endpoints and reads their health afterwards."""
+    from flow_sdk.builtin import webapp_setup  # noqa: PLC0415
     from flow_sdk.core import dev_server  # noqa: PLC0415
 
-    folder = Path(app.asset_ref)
-    placed = existing.port if existing is not None and existing.type == "proxy" else None
-    port = serving.port or placed or await asyncio.to_thread(dev_server.find_free_port)
-    command = serving.start_cmd.replace("{port}", str(port))
-    if not await asyncio.to_thread(dev_server.port_open, port):
-        await asyncio.to_thread(dev_server.start_detached, command, cwd=folder, port=port, name=app.name)
-    return {"type": "proxy", "port": port, "start_cmd": command, "health": serving.health}
+    found = await webapp_setup.where(app, serving)
+    command = serving.start_cmd.replace("{port}", str(found.port))
+    if found.state == "start":
+        await asyncio.to_thread(dev_server.start_detached, command, cwd=Path(app.asset_ref), port=found.port, name=app.name)
+    elif found.state != "running":
+        _log.warning("%s is not started here: %s", app.name, found.note)
+    return {"type": "proxy", "port": found.port, "start_cmd": command, "health": serving.health}
 
 
 # ── rows written before endpoints existed ───────────────────────────────────

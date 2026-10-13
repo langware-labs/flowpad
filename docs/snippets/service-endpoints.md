@@ -159,6 +159,24 @@ that audience's root; unsaid: the app's own name). No `mounts` means one: the `b
 the `app` audience. A `services` entry is not a page of the app: it is a `service` endpoint of
 its own, named `<app>-<name>`.
 
+**Ports.** Which port a process runs on is decided in one place, `flow_sdk/core/app_ports.py`, from
+two facts and nothing saved:
+
+* **declared** — on the serving: `"ports": { "local": { "port": 3300, "required": true } }`.
+  `required: true`: the process runs on that port or not at all — when another program holds it,
+  starting fails and names who holds it. `required: false`: a preference; a free port is picked when
+  it is taken. Nothing declared: a free port each start. `local` (the machine the process runs on) is
+  the only environment. Two apps may not require the same port. `"port": 3300` is the older spelling
+  of a required port.
+* **live** — the process table. A listening process is this app's when its working folder is inside
+  the app's folder, so a server started by hand, or one that outlived a backend restart, is the app
+  on the port it listens on; a program anywhere else on the port is never taken for the app.
+
+A service starts before the page, and the page is told its port in `FLOWPAD_APP_PORT_<NAME>`.
+`flow app ports` lists declared and live ports; `flow app stop|restart <app>` act on whatever runs.
+A dead `http://localhost:<port>` whose port an app declares starts that app when an agent's
+`auto_open` navigates to it.
+
 ## 4. On a cloud box
 
 `POST /project/<id>/deploy` on the hub places the project in a box, then asks the box to

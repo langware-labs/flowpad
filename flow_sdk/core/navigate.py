@@ -96,6 +96,38 @@ def _is_loopback(url: str) -> bool:
     return host in _LOOPBACK_HOSTS or host.endswith(".localhost")
 
 
+def _local_port(url: str) -> Optional[int]:
+    """The port of an address on this machine, else None."""
+    if not _is_loopback(url):
+        return None
+    try:
+        return urlsplit(url).port
+    except ValueError:
+        return None
+
+
+async def start_app_at(url: str) -> Optional[tuple[ExitCode, Optional[str], str]]:
+    """Start the app that DECLARES the port of a dead address on this machine. None when no app does.
+
+    An agent that opens ``http://localhost:3300`` (an ``auto_open``) names a port, not an app; the
+    declaration (``serving.ports``) is what ties the two. For a caller that can wait for a server to
+    warm up — ``probe_web_url`` itself only says whose port it is."""
+    from flow_sdk.builtin import webapp_setup  # noqa: PLC0415
+
+    port = _local_port(url)
+    app = await webapp_setup.app_declaring(port) if port else None
+    if app is None:
+        return None
+    installed = await webapp_setup.step(str(app.id), "install", check=True)
+    if not installed.ok:
+        return ExitCode.NOT_YET, "not_running", f"{app.name} (port {port}) is not set up here: {installed.detail}."
+    started = await webapp_setup.step(str(app.id), "start", check=False)
+    if not started.ok:
+        return ExitCode.NOT_YET, "not_running", f"{app.name} (port {port}) did not start: {started.detail}"
+    logger.info("navigate: started %s for %s", app.name, url)
+    return ExitCode.OK, "ok", ""
+
+
 async def probe_web_url(url: str) -> tuple[ExitCode, Optional[str], str]:
     """``(exit_code, verdict, detail)`` for a web page shown in the display.
 
@@ -115,6 +147,15 @@ async def probe_web_url(url: str) -> tuple[ExitCode, Optional[str], str]:
     if verdict == "hung":
         return ExitCode.NOT_YET, verdict, f"{host} did not answer in time."
     if verdict is not None:
+        if verdict == "not_running" and (port := _local_port(url)):
+            from flow_sdk.builtin import webapp_setup  # noqa: PLC0415
+
+            app = await webapp_setup.app_declaring(port)
+            if app is not None:
+                return ExitCode.NOT_YET, verdict, (
+                    f"Nothing is answering at port {port}: it is {app.name}'s, and {app.name} is not running — "
+                    f"`flow app restart {app.name}` starts it."
+                )
         return ExitCode.NOT_YET, verdict, f"Nothing is answering at {host}."
     if status.nav_error:  # the probe itself broke: say nothing we do not know
         return ExitCode.OK, None, ""
