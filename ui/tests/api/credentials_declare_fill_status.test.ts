@@ -82,6 +82,7 @@ beforeAll(async () => {
     LOCAL_SERVER_PORT: String(PORT),
     MINIHUB_RELOAD: 'False',
     FLOWPAD_SKIP_DOTENV: 'true',
+    FLOWPAD_COOKIE_GATE: 'off', // these requests carry no gate token
     FLOWPAD_SKIP_LOCK: 'true',
     // AI Assist runs at the backend: its agents are the mock worker on the demo-credential behavior.
     MOCK_TRANSCRIPTS: path.join(tmpRoot, 'transcripts'),

@@ -69,6 +69,7 @@ beforeAll(async () => {
         LOCAL_SERVER_PORT: String(PORT),
         MINIHUB_RELOAD: 'False',
         FLOWPAD_SKIP_DOTENV: 'true',
+        FLOWPAD_COOKIE_GATE: 'off', // these requests carry no gate token
         FLOWPAD_SKIP_LOCK: 'true',
         FLOWPAD_DEFAULT_WORKER: 'claude',
       },
