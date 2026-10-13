@@ -123,7 +123,7 @@ async def gate(request: Request, next: str = Query(None)):
     from flow_sdk.instance_settings import cookie_gate
 
     response = RedirectResponse(url=_gate_next(next), status_code=302)
-    if cookie_gate.presents(request):
+    if cookie_gate.verify_cookie(request):
         header = cookie_gate.set_cookie_header(request)
         if header:
             response.headers.append("set-cookie", header)
@@ -229,10 +229,10 @@ async def login_callback(
         # request would let an anonymous caller lock the instance with a secret
         # only they hold.
         if cookie_gate:
-            from flow_sdk.instance_settings.cookie_gate import DesktopGateRefused, set_cookie_gate
+            from flow_sdk.instance_settings.cookie_gate import DesktopGateRefused, set_cookie
 
             try:
-                set_cookie_gate(cookie_gate)
+                set_cookie(cookie_gate)
                 logger.info("login_callback: cookie-gate armed for this instance")
             except DesktopGateRefused as e:
                 # Same posture as an unassignable runtime below: a login must not

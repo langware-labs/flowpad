@@ -37,7 +37,7 @@ def _app() -> Starlette:
 
 
 def _header(token: str) -> dict[str, str]:
-    return {cookie_gate.HEADER_NAME: token}
+    return {cookie_gate.get_header().name: token}
 
 
 def test_first_request_creates_a_token_and_is_refused(local_gate):
@@ -67,7 +67,7 @@ def test_concurrent_first_requests_agree_on_one_token(local_gate):
     results: list[str | None] = []
 
     def create():
-        results.append(cookie_gate.create_cookie_gate())
+        results.append(cookie_gate._create_token())
 
     threads = [threading.Thread(target=create) for _ in range(8)]
     for t in threads:

@@ -40,6 +40,7 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 from starlette.websockets import WebSocketClose
 
 from flow_sdk.instance_settings import cookie_gate
+from flow_sdk.utils.networking import is_loopback
 
 OFF_SWITCH_ENV = "FLOWPAD_COOKIE_GATE"
 
@@ -64,12 +65,7 @@ class CookieGateMiddleware:
             await self.app(scope, receive, send)
             return
 
-        if not cookie_gate.ensure_cookie_gate():
-            # Fail closed: without a token there is nothing to compare against.
-            await deny(scope, receive, send)
-            return
-
-        is_local_request = cookie_gate.is_loopback(HTTPConnection(scope).url.hostname)
+        is_local_request = is_loopback(HTTPConnection(scope).url.hostname)
         if is_local_request:
             await self.local(scope, receive, send)
         else:

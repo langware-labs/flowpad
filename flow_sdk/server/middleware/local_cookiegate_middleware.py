@@ -23,6 +23,7 @@ from starlette.requests import HTTPConnection
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 from flow_sdk.instance_settings import cookie_gate
+from flow_sdk.utils.networking import is_loopback
 
 from .cookie_gate_middleware import deny
 
@@ -33,7 +34,7 @@ class LocalCookieGateMiddleware:
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         conn = HTTPConnection(scope)
-        if cookie_gate.presents(conn):
+        if cookie_gate.verify_cookie(conn):
             await self.app(scope, receive, send)
             return
 
@@ -43,10 +44,11 @@ class LocalCookieGateMiddleware:
             await self.app(scope, receive, send)
             return
 
-        if _is_direct_open(scope, conn):
+        set_cookie = cookie_gate.set_cookie_header(conn) if _is_direct_open(scope, conn) else None
+        if set_cookie:
             # The user opened this address themselves (typed, bookmark, OS
             # launch): no page can produce these browser-set headers.
-            await self.app(scope, receive, _with_gate_cookie(send, conn))
+            await self.app(scope, receive, _with_set_cookie(send, set_cookie))
             return
 
         await deny(scope, receive, send, "Open Flowpad from its icon, or type this address into your browser.")
@@ -77,16 +79,15 @@ def _is_direct_open(scope: Scope, conn: HTTPConnection) -> bool:
         and headers.get("sec-fetch-site") == "none"
         and headers.get("sec-fetch-mode") == "navigate"
         and headers.get("sec-fetch-dest") == "document"
-        and cookie_gate.is_loopback(conn.url.hostname)
+        and is_loopback(conn.url.hostname)
     )
 
 
-def _with_gate_cookie(send: Send, conn: HTTPConnection) -> Send:
-    header = cookie_gate.set_cookie_header(conn)
-    cookie = header.encode("latin-1") if header else None
+def _with_set_cookie(send: Send, set_cookie: str) -> Send:
+    cookie = set_cookie.encode("latin-1")
 
     async def wrapped(message):
-        if cookie and message["type"] == "http.response.start":
+        if message["type"] == "http.response.start":
             message = {**message, "headers": [*message.get("headers", []), (b"set-cookie", cookie)]}
         await send(message)
 

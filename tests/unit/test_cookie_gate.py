@@ -14,9 +14,8 @@ pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
 # ---------------------------------------------------------------------------
 
 
-def test_unset_instance_is_not_gated(sod_env):
+def test_unset_instance_has_no_token(sod_env):
     assert cookie_gate.get_cookie_gate() is None
-    assert cookie_gate.is_gated() is False
 
 
 # ---------------------------------------------------------------------------
@@ -25,18 +24,49 @@ def test_unset_instance_is_not_gated(sod_env):
 
 
 def test_set_then_get_roundtrip(sod_env):
-    cookie_gate.set_cookie_gate("s3cret")
+    cookie_gate.set_cookie("s3cret")
 
     assert cookie_gate.get_cookie_gate() == "s3cret"
-    assert cookie_gate.is_gated() is True
+    assert cookie_gate.get_cookie_gate() is not None
 
 
 def test_set_rejects_empty(sod_env):
     """Storing "" would read back as unset — open while looking locked."""
     with pytest.raises(ValueError):
-        cookie_gate.set_cookie_gate("")
+        cookie_gate.set_cookie("")
 
-    assert cookie_gate.is_gated() is False
+    assert cookie_gate.get_cookie_gate() is None
+
+
+# ---------------------------------------------------------------------------
+# verify_cookie / add_query_param
+# ---------------------------------------------------------------------------
+
+
+def test_verify_cookie_accepts_the_token_and_nothing_else(sod_env):
+    cookie_gate.set_cookie("s3cret")
+
+    assert cookie_gate.verify_cookie("s3cret") is True
+    assert cookie_gate.verify_cookie("s3cre") is False
+    assert cookie_gate.verify_cookie("") is False
+
+
+def test_verify_cookie_creates_the_token_on_first_use(sod_env):
+    assert cookie_gate.get_cookie_gate() is None
+
+    assert cookie_gate.verify_cookie("guess") is False
+    assert cookie_gate.get_cookie_gate() is not None
+
+
+def test_add_query_param_carries_the_token(sod_env):
+    from starlette.datastructures import URL, QueryParams
+
+    cookie_gate.set_cookie("s3cret")
+    url = cookie_gate.add_query_param(URL("http://127.0.0.1:9007/auth/gate?next=/x"))
+    query = QueryParams(url.query)
+
+    assert url.path == "/auth/gate" and query["next"] == "/x"
+    assert any(cookie_gate.verify_cookie(v) for v in query.values())
 
 
 # ---------------------------------------------------------------------------
@@ -51,7 +81,7 @@ def test_set_refused_on_a_desktop_instance(sod_env):
     sod_env.desktop_marker_path.touch()
 
     with pytest.raises(cookie_gate.DesktopGateRefused):
-        cookie_gate.set_cookie_gate("s3cret")
+        cookie_gate.set_cookie("s3cret")
 
 
 def test_desktop_refusal_leaves_the_instance_open(sod_env):
@@ -60,10 +90,9 @@ def test_desktop_refusal_leaves_the_instance_open(sod_env):
     sod_env.desktop_marker_path.touch()
 
     with pytest.raises(cookie_gate.DesktopGateRefused):
-        cookie_gate.set_cookie_gate("s3cret")
+        cookie_gate.set_cookie("s3cret")
 
     assert cookie_gate.get_cookie_gate() is None
-    assert cookie_gate.is_gated() is False
 
 
 def test_desktop_refusal_is_a_value_error(sod_env):
@@ -76,7 +105,7 @@ def test_sandbox_without_a_desktop_marker_still_arms(sod_env):
     hub runtime assignment — a box that has not finished starting has neither."""
     assert not sod_env.desktop_marker_path.exists()
 
-    cookie_gate.set_cookie_gate("s3cret")
+    cookie_gate.set_cookie("s3cret")
 
     assert cookie_gate.get_cookie_gate() == "s3cret"
 
@@ -104,8 +133,8 @@ def test_does_not_mark_without_electron(sod_env, monkeypatch):
     mark_desktop_managed()
 
     assert not sod_env.desktop_marker_path.exists()
-    cookie_gate.set_cookie_gate("s3cret")
-    assert cookie_gate.is_gated() is True
+    cookie_gate.set_cookie("s3cret")
+    assert cookie_gate.get_cookie_gate() is not None
 
 
 def test_marking_then_arming_is_refused(sod_env, monkeypatch):
@@ -117,9 +146,9 @@ def test_marking_then_arming_is_refused(sod_env, monkeypatch):
     mark_desktop_managed()
 
     with pytest.raises(cookie_gate.DesktopGateRefused):
-        cookie_gate.set_cookie_gate("s3cret")
+        cookie_gate.set_cookie("s3cret")
 
-    assert cookie_gate.is_gated() is False
+    assert cookie_gate.get_cookie_gate() is None
 
 
 def test_marking_is_idempotent(sod_env, monkeypatch):
@@ -139,18 +168,18 @@ def test_marking_is_idempotent(sod_env, monkeypatch):
 
 
 def test_clear_disarms_the_instance(sod_env):
-    cookie_gate.set_cookie_gate("s3cret")
-    assert cookie_gate.is_gated() is True
+    cookie_gate.set_cookie("s3cret")
+    assert cookie_gate.get_cookie_gate() is not None
 
     assert cookie_gate.clear_cookie_gate() is True
 
-    assert cookie_gate.is_gated() is False
+    assert cookie_gate.get_cookie_gate() is None
 
 
 def test_clear_takes_effect_in_this_process_immediately(sod_env):
     """No restart — a server that kept enforcing a deleted token would be locked
     shut with no way back in."""
-    cookie_gate.set_cookie_gate("s3cret")
+    cookie_gate.set_cookie("s3cret")
     assert cookie_gate.get_cookie_gate() == "s3cret"
 
     cookie_gate.clear_cookie_gate()
@@ -161,4 +190,4 @@ def test_clear_takes_effect_in_this_process_immediately(sod_env):
 def test_clear_on_an_unarmed_instance_reports_nothing_changed(sod_env):
     """So a caller can say "already open" instead of implying it did something."""
     assert cookie_gate.clear_cookie_gate() is False
-    assert cookie_gate.is_gated() is False
+    assert cookie_gate.get_cookie_gate() is None

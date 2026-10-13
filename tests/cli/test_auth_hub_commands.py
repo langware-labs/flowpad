@@ -51,7 +51,7 @@ def test_the_hub_driven_commands_are_registered():
 
 
 def test_set_cookie_gate_arms_with_the_value_it_was_given():
-    with patch("flow_sdk.instance_settings.cookie_gate.set_cookie_gate") as arm:
+    with patch("flow_sdk.instance_settings.cookie_gate.set_cookie") as arm:
         result = runner.invoke(app, ["auth", "set-cookie-gate", "s3cret-gate"])
 
     assert result.exit_code == 0
@@ -63,7 +63,7 @@ def test_set_cookie_gate_refuses_an_empty_secret():
     open while looking locked. The store raises; the command must not swallow
     it into a success."""
     with patch(
-        "flow_sdk.instance_settings.cookie_gate.set_cookie_gate",
+        "flow_sdk.instance_settings.cookie_gate.set_cookie",
         side_effect=ValueError("cookie-gate secret must be non-empty"),
     ):
         result = runner.invoke(app, ["auth", "set-cookie-gate", ""])
@@ -88,10 +88,10 @@ def test_set_cookie_gate_takes_a_dash_leading_secret_after_the_separator():
     The hub's fix is to send `--` first. This pins the other half of that
     contract: the CLI must keep treating everything after `--` as the value. It is
     a real risk because the separator is invisible in the signature -- nothing in
-    `set_cookie_gate`'s definition mentions it, so a later refactor (custom
+    `set_cookie`'s definition mentions it, so a later refactor (custom
     parsing, an eager option, `allow_interspersed_args`) could drop the behaviour
     with nothing here to notice."""
-    with patch("flow_sdk.instance_settings.cookie_gate.set_cookie_gate") as arm:
+    with patch("flow_sdk.instance_settings.cookie_gate.set_cookie") as arm:
         result = runner.invoke(app, ["auth", "set-cookie-gate", "--", "-9tNyP6uJ6GaI_QoUw8D"])
 
     assert result.exit_code == 0

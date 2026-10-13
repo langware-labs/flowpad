@@ -15,8 +15,8 @@ from unittest.mock import patch
 import pytest
 
 from flow_sdk.cli.commands import _common
-from flow_sdk.instance_settings.cookie_gate import gate_headers
-from flow_sdk.instance_settings.cookie_gate import HEADER_NAME
+from flow_sdk.instance_settings import cookie_gate
+from flow_sdk.utils.networking import is_loopback
 
 pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
 
@@ -25,8 +25,13 @@ LOOPBACK = "http://127.0.0.1:9007/api/v1/graph/agentic_process/abc/show"
 
 
 def _armed(secret=SECRET):
-    """This instance's local cookie-gate token (FLOWPAD-2233) -- what gate_headers sends."""
-    return patch("flow_sdk.instance_settings.cookie_gate.get_cookie_gate", return_value=secret)
+    """This instance's cookie-gate token (FLOWPAD-2233), without touching the token file."""
+    return patch.object(cookie_gate, "_token", return_value=secret)
+
+
+def _header_name():
+    with _armed():
+        return cookie_gate.get_header().name
 
 
 class _Resp:
@@ -39,47 +44,30 @@ class _Resp:
 
 
 # ---------------------------------------------------------------------------
-# gate_headers -- what is presented, and to whom
+# get_header / is_loopback -- what is presented, and where it may go
 # ---------------------------------------------------------------------------
 
 
-def test_armed_instance_presents_the_secret_on_loopback():
+def test_armed_instance_has_a_header_carrying_the_token():
     with _armed():
-        assert gate_headers(LOOPBACK) == {HEADER_NAME: SECRET}
+        assert cookie_gate.get_header().value == SECRET
 
 
-@pytest.mark.parametrize("host", ["127.0.0.1", "localhost", "::1"])
-def test_every_loopback_spelling_is_covered(host):
-    """`read_all_server_infos` builds `localhost` urls while the command modules
-    build `127.0.0.1` ones -- both are this machine and both must pass."""
-    url = f"http://[{host}]:9007/x" if host == "::1" else f"http://{host}:9007/x"
-    with _armed():
-        assert gate_headers(url) == {HEADER_NAME: SECRET}
-
-
-def test_secret_never_rides_a_request_off_this_machine():
-    """`setup_cmd` can be pointed at a configured remote host. A credential for
-    THIS instance leaving the machine would be a real leak, not a nuisance."""
-    with _armed():
-        assert gate_headers("https://app.flowpad.ai/api/v1/graph/bootstrap") == {}
-
-
-def test_unarmed_instance_sends_nothing():
-    """No token yet (or the gate is off). The request must be what it was before
-    the gate existed -- no header."""
+def test_unarmed_instance_has_no_header():
     with _armed(None):
-        assert gate_headers(LOOPBACK) == {}
+        assert cookie_gate.get_header() is None
 
 
-def test_an_unreadable_gate_degrades_to_no_header():
-    """Being unable to read the secret is a reason to call without it, never a
-    reason to raise -- the CLI has to keep working on an instance whose secret
-    store is unavailable."""
-    with patch(
-        "flow_sdk.instance_settings.cookie_gate.get_cookie_gate",
-        side_effect=RuntimeError("token unreadable"),
-    ):
-        assert gate_headers(LOOPBACK) == {}
+@pytest.mark.parametrize("host", ["127.0.0.1", "localhost", "::1", "[::1]"])
+def test_every_loopback_spelling_is_this_machine(host):
+    """`read_all_server_infos` builds `localhost` urls while the command modules
+    build `127.0.0.1` ones -- both are this machine."""
+    assert is_loopback(host) is True
+
+
+@pytest.mark.parametrize("host", ["app.flowpad.ai", "evil.example", "", None])
+def test_other_hosts_are_not_this_machine(host):
+    assert is_loopback(host) is False
 
 
 # ---------------------------------------------------------------------------
@@ -102,7 +90,21 @@ def _sent(**kwargs):
 
 def test_local_post_attaches_the_gate_header():
     with _armed():
-        assert _sent(json={}).get("headers") == {HEADER_NAME: SECRET}
+        assert _sent(json={}).get("headers") == {_header_name(): SECRET}
+
+
+def test_local_post_never_sends_the_token_off_this_machine():
+    """`setup_cmd` can be pointed at a configured remote host. A credential for
+    THIS instance leaving the machine would be a real leak, not a nuisance."""
+    captured = {}
+
+    def fake_request(method, url, **kw):
+        captured.update(kw)
+        return _Resp(200)
+
+    with _armed(), patch("requests.request", fake_request):
+        _common.local_post("https://app.flowpad.ai/api/v1/graph/bootstrap", json={})
+    assert SECRET not in str(captured.get("headers") or {})
 
 
 def test_local_post_sends_no_headers_at_all_when_ungated():
@@ -113,9 +115,10 @@ def test_local_post_sends_no_headers_at_all_when_ungated():
 
 
 def test_an_explicit_header_wins():
+    name = _header_name()
     with _armed():
-        sent = _sent(json={}, headers={HEADER_NAME: "caller-chose-this"})
-    assert sent["headers"][HEADER_NAME] == "caller-chose-this"
+        sent = _sent(json={}, headers={name: "caller-chose-this"})
+    assert sent["headers"][name] == "caller-chose-this"
 
 
 # ---------------------------------------------------------------------------
@@ -144,28 +147,28 @@ def test_an_action_403_is_not_mistaken_for_the_gate():
 
 
 # ---------------------------------------------------------------------------
-# gate_headers -- reads the real token file
+# get_header -- reads the real token file, creating it on first use
 # ---------------------------------------------------------------------------
 
 
 @pytest.fixture
 def local_token(tmp_path, monkeypatch):
-    from flow_sdk.instance_settings import cookie_gate
-
     path = tmp_path / ".cookie_gate"
     path.write_text("own-token", encoding="utf-8")
     monkeypatch.setattr(cookie_gate, "_token_path", lambda: path)
     return path
 
 
-def test_local_token_file_is_sent_on_loopback(local_token):
-    assert gate_headers("http://127.0.0.1:9007/x") == {HEADER_NAME: "own-token"}
+def test_the_token_file_is_what_is_sent(local_token):
+    assert cookie_gate.get_header().value == "own-token"
 
 
-def test_no_token_file_no_header(local_token):
+def test_no_token_file_creates_one_and_sends_it(local_token):
     local_token.unlink()
 
-    assert gate_headers("http://127.0.0.1:9007/x") == {}
+    header = cookie_gate.get_header()
+
+    assert header is not None and header.value == local_token.read_text(encoding="utf-8")
 
 
 # ---------------------------------------------------------------------------
@@ -177,8 +180,6 @@ def _opened(url):
     """``urlopen`` ``url`` with the network stubbed; return the Request's headers as sent."""
     import email.message
     import urllib.request
-
-    from flow_sdk.instance_settings.cookie_gate import install_gate_opener
 
     sent = {}
 
@@ -193,7 +194,7 @@ def _opened(url):
         return _Ok()
 
     with patch.object(urllib.request, "_opener", None), patch.object(urllib.request.HTTPHandler, "http_open", fake_open):
-        install_gate_opener()  # what the CLI does at startup
+        cookie_gate.install_gate_opener()  # what the CLI does at startup
         urllib.request.urlopen(urllib.request.Request(url))
     return {k.lower(): v for k, v in sent["req"].header_items()}
 

@@ -110,7 +110,7 @@ async def test_gate_on_this_machine_sets_the_local_cookie_and_goes_on_to_the_log
 async def test_callback_with_secret_arms_the_instance(client):
     v, save, set_user, secrets_on = _login_mocks()
     with v, save, set_user, secrets_on, _armed(None):
-        with patch("flow_sdk.instance_settings.cookie_gate.set_cookie_gate") as arm:
+        with patch("flow_sdk.instance_settings.cookie_gate.set_cookie") as arm:
             response = await client.get(
                 f"/auth/login_callback?flowpad-api-key={TEST_API_KEY}&cookie-gate={SECRET}"
             )
@@ -123,7 +123,7 @@ async def test_callback_with_secret_arms_the_instance(client):
 async def test_callback_without_secret_does_not_arm(client):
     v, save, set_user, secrets_on = _login_mocks()
     with v, save, set_user, secrets_on, _armed(None):
-        with patch("flow_sdk.instance_settings.cookie_gate.set_cookie_gate") as arm:
+        with patch("flow_sdk.instance_settings.cookie_gate.set_cookie") as arm:
             response = await client.get(f"/auth/login_callback?flowpad-api-key={TEST_API_KEY}")
 
     assert response.status_code == 200
@@ -141,7 +141,7 @@ async def test_invalid_key_does_not_arm(client):
         ),
         patch("flow_sdk.server.routes.auth.is_secrets_enabled", return_value=True),
         _armed(None),
-        patch("flow_sdk.instance_settings.cookie_gate.set_cookie_gate") as arm,
+        patch("flow_sdk.instance_settings.cookie_gate.set_cookie") as arm,
     ):
         response = await client.get(
             f"/auth/login_callback?flowpad-api-key=bogus&cookie-gate={SECRET}"
@@ -163,7 +163,7 @@ async def test_callback_still_runs_once_armed(client):
     """
     v, save, set_user, secrets_on = _login_mocks()
     with v, save, set_user, secrets_on, _armed(SECRET):
-        with patch("flow_sdk.instance_settings.cookie_gate.set_cookie_gate") as arm:
+        with patch("flow_sdk.instance_settings.cookie_gate.set_cookie") as arm:
             response = await client.get(
                 f"/auth/login_callback?flowpad-api-key={TEST_API_KEY}&cookie-gate={SECRET}"
             )

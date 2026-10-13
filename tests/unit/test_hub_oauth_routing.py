@@ -10,6 +10,8 @@ local registry when the desktop learned to hold its token, so it is no longer a
 stand-in for "hub-only" — Jira is.
 """
 
+from urllib.parse import parse_qs, urlsplit
+
 import pytest
 
 from flow_sdk.core.entity.entity_env.env_types import EntityEnvVars
@@ -135,9 +137,11 @@ async def test_hub_providers_delegate(monkeypatch):
     result = await oauth_action._handle_auth("slack", None)
 
     assert calls == [("hub", "slack")], calls
-    # Returned verbatim: the client's popup branch already speaks this shape, so
-    # it never learns which side ran the flow.
-    assert result.data["auth_url"].startswith("https://slack.com/oauth/v2/authorize")
+    # Entered through this instance's /auth/gate, so the provider's return carries the
+    # gate cookie; the hub's authorize URL is where the gate sends the browser on.
+    auth_url = urlsplit(result.data["auth_url"])
+    assert auth_url.path == "/auth/gate"
+    assert parse_qs(auth_url.query)["next"][0].startswith("https://slack.com/oauth/v2/authorize")
 
 
 @pytest.mark.asyncio

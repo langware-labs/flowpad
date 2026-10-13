@@ -25,7 +25,7 @@ _HANDLED: "OrderedDict[str, int]" = OrderedDict()
 _HANDLED_CAP = 512
 #: Hop-by-hop headers the local request makes for itself, plus any cookie-gate credential on the delivery:
 #: this app's own token is attached here, and a second one would be read first and refused.
-_DROP = frozenset({"host", "content-length", "transfer-encoding", "connection", "cookie", cookie_gate.HEADER_NAME})
+_DROP = frozenset({"host", "content-length", "transfer-encoding", "connection", "cookie"})
 #: Replays in flight, held so the loop never collects one mid-flight (and a test can await).
 _tasks: "set[asyncio.Task]" = set()
 
@@ -58,13 +58,13 @@ async def _replay(message: dict) -> int:
     import httpx  # noqa: PLC0415
 
     from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
-    from flow_sdk.instance_settings.cookie_gate import gate_headers  # noqa: PLC0415
-
     path = "/" + str(message.get("path") or "").lstrip("/")
     query = str(message.get("query") or "")
     url = f"http://127.0.0.1:{get_instance_settings().port}{path}" + (f"?{query}" if query else "")
-    headers = [(k, v) for k, v in (message.get("headers") or []) if str(k).lower() not in _DROP]
-    headers += list(gate_headers(url).items())
+    gate = cookie_gate.get_header()  # the url is loopback
+    drop = _DROP | {gate.name} if gate else _DROP
+    headers = [(k, v) for k, v in (message.get("headers") or []) if str(k).lower() not in drop]
+    headers += [gate] if gate else []
     try:
         body = base64.b64decode(str(message.get("body_b64") or ""))
         async with httpx.AsyncClient(timeout=httpx.Timeout(30.0)) as client:
