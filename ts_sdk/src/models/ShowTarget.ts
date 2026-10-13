@@ -43,6 +43,9 @@ export interface ShowTarget {
   /** app: the ServiceEndpoint the display loads — its dev server (`dev`) or the
    *  folder we serve (`served`). Absent only while nothing serves the app. */
   endpoint_id?: string;
+  /** app: the app's mount on that endpoint, when it is a placement's audience proxy (`admin` /
+   *  `app`) — the address is the pair. Absent for a service that is an endpoint of its own. */
+  route?: string;
   /** app: the Artifact, when the app was shown by it — the endpoint above is
    *  derived from its live endpoints, never pinned into the target (`_app_payload`). */
   artifact_id?: string;

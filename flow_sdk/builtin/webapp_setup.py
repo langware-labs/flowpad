@@ -70,11 +70,11 @@ async def _app(webapp_id: str):
     return await WebApp.get_by_id(bare)
 
 
-def _proxy(app) -> Optional[tuple[str, Any]]:
-    """``(endpoint name, spec)`` of the app's dev server, or None for an app that is only files."""
-    from flow_sdk.builtin.webapp_placement import _app_specs  # noqa: PLC0415
+def _proxy(app) -> Optional[Any]:
+    """The mount that is the app's dev server, or None for an app that is only files."""
+    from flow_sdk.builtin.webapp_placement import app_mounts  # noqa: PLC0415
 
-    return next(((name, spec) for name, spec in _app_specs(app) if spec.serving.type == "proxy"), None)
+    return next((mount for mount in app_mounts(app) if mount.serving.type == "proxy"), None)
 
 
 def _run(command: str, folder: Path, log_name: str, seconds: float) -> tuple[int, str]:
@@ -96,10 +96,11 @@ def _run(command: str, folder: Path, log_name: str, seconds: float) -> tuple[int
     return code, f"{log_tail(str(log_file))}\n(log: {log_file})"
 
 
-async def _endpoint(app, name: str):
-    from flow_sdk.builtin.webapp_placement import webapp_endpoints  # noqa: PLC0415
+async def _placed(app):
+    """The route the app's dev server holds on this machine, or None."""
+    from flow_sdk.builtin.webapp_placement import webapp_routes  # noqa: PLC0415
 
-    return next((e for e in await webapp_endpoints(app.id) if e.name == name and e.backend.type == "proxy"), None)
+    return next((p for p in await webapp_routes(str(app.id)) if p.backend.type == "proxy"), None)
 
 
 async def step(webapp_id: str, which: str, *, check: bool, display: str = "") -> ReturnedValue:
@@ -120,13 +121,13 @@ async def step(webapp_id: str, which: str, *, check: bool, display: str = "") ->
     proxy = _proxy(app)
     if proxy is None:
         return _answer(ExitCode.OK, f"{app.name} is files Flowpad serves itself", ran=False)
-    name, spec = proxy
-    serving = spec.serving
+    mount = proxy
+    serving = mount.serving
     if which == "install":
         return await _install(app, folder, serving, check=check)
     if which == "build":
         return await _build(app, folder, serving, check=check)
-    return await _start(app, folder, name, serving, check=check)
+    return await _start(app, folder, mount, check=check)
 
 
 async def _install(app, folder: Path, serving, *, check: bool) -> ReturnedValue:
@@ -185,13 +186,14 @@ def _stop(key: str, pid: Optional[int]) -> None:
     dev_server.clear_owner(key)
 
 
-async def _start(app, folder: Path, name: str, serving, *, check: bool) -> ReturnedValue:
+async def _start(app, folder: Path, mount, *, check: bool) -> ReturnedValue:
     from flow_sdk.core import dev_server  # noqa: PLC0415
 
     key = str(app.id)
+    serving = mount.serving
 
     async def look():
-        existing = await _endpoint(app, name)
+        existing = await _placed(app)
         held = existing.backend.port if existing is not None else None
         ours, up = await asyncio.to_thread(_server_state, key, held, serving.health)
         return existing, held, ours, up
@@ -202,16 +204,17 @@ async def _start(app, folder: Path, name: str, serving, *, check: bool) -> Retur
         async with keyed_loop_lock(_START_LOCKS, key):
             existing, held, ours, up = await look()
             if not up:
-                return await _launch(app, folder, name, serving, existing, held, ours)
+                return await _launch(app, folder, mount, held, ours)
     if up:
         return _answer(ExitCode.OK, f"running at http://127.0.0.1:{held}", ran=False, value=str(held))
     return _answer(ExitCode.NOT_YET, f"{app.name} is not running", ran=False)
 
 
-async def _launch(app, folder: Path, name: str, serving, existing, held, ours) -> ReturnedValue:
+async def _launch(app, folder: Path, mount, held, ours) -> ReturnedValue:
     from flow_sdk.core import dev_server  # noqa: PLC0415
 
     key = str(app.id)
+    serving = mount.serving
     # What we started before is not answering (hung, or dead): it goes before another is started, or it
     # keeps the port and the next start blames "another program".
     await asyncio.to_thread(_stop, key, int(ours["pid"]) if ours else None)
@@ -249,28 +252,23 @@ async def _launch(app, folder: Path, name: str, serving, existing, held, ours) -
         return await failed(f"{app.name} opened port {port} but {serving.health} does not answer — log: {log_file}")
     if code is None:
         await asyncio.to_thread(dev_server.record_owner, key, proc.pid, port)
-    if await _keep_endpoint(app, name, port, command, serving.health, existing) is False:
+    if await _keep_route(app, mount, port, command) is False:
         return await failed(f"{app.name} has no local placement to be served from")
     return _answer(ExitCode.OK, f"running at http://127.0.0.1:{port}", value=str(port))
 
 
-async def _keep_endpoint(app, name: str, port: int, command: str, health: str, existing) -> bool:
-    """The app's proxy endpoint on its project's local placement now names this port. False: there is no
+async def _keep_route(app, mount, port: int, command: str) -> bool:
+    """The app's dev-server route on its project's local placement now names this port. False: there is no
     placement to record it on, so nothing would ever find the server just started."""
     from flow_sdk.builtin.project import Project  # noqa: PLC0415
-    from flow_sdk.builtin.webapp_placement import local_web_deployment, tell_hub, upsert_endpoint  # noqa: PLC0415
+    from flow_sdk.builtin.webapp_placement import local_web_deployment, set_app_route, tell_hub  # noqa: PLC0415
 
     project = await Project.get_by_id(app.project_id) if app.project_id else None
     deployment = await local_web_deployment(project)
     if deployment is None:
         return False
-    _row, saved = await upsert_endpoint(
-        deployment, existing=existing, name=name, webapp_id=app.id, project_id=app.project_id or None,
-        backend={"type": "proxy", "port": port, "start_cmd": command, "health": health},
-        # A dev server on this machine is loaded at its own address (HMR and absolute paths need that) — as
-        # ``register_dev_endpoint`` registers one.
-        supports_direct_access=True,
-    )
+    backend = {"type": "proxy", "port": port, "start_cmd": command, "health": mount.serving.health}
+    _placed_route, saved = await set_app_route(deployment, app, mount, backend)
     if saved:
         tell_hub(deployment)
     return True

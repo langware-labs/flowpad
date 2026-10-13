@@ -1,4 +1,4 @@
-import type { ServiceEndpoint } from '@sdk';
+import type { ServedApp } from '@sdk';
 import PersistentIframe, { type PersistentIframeHandle } from '@src/components/persistent-iframe';
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import { Trans } from '@lingui/react/macro';
@@ -12,7 +12,7 @@ import { ProjectLoadGate } from '@src/components/project-setup/ProjectLoadGate';
 export interface WebappDisplayProps {
   /** The endpoint serving what the frame shows — the probe asks it what is wrong,
    *  and the repair run is pointed at it. */
-  endpoint: ServiceEndpoint | null;
+  endpoint: ServedApp | null;
   /** The URL the frame loads: the endpoint's direct address or its service path. */
   src: string;
   testId?: string;

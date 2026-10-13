@@ -1,4 +1,4 @@
-import type { ServiceEndpoint } from '@sdk';
+import type { ServedApp } from '@sdk';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useWebappLiveness, type WebappHealth } from '@src/components/display-toolbar/use-webapp-health';
 import { classifyWebappSeverity, type WebappProbe, type WebappVerdict } from './classify';
@@ -38,7 +38,7 @@ export interface WebappDiagnostics extends WebappVerdict {
 interface Options {
   /** The endpoint being shown; `probe` hangs off it. Only a dev server (`proxy`)
    *  on this machine has a process to probe — a served folder has none. */
-  endpoint: ServiceEndpoint | null;
+  endpoint: ServedApp | null;
   /** The URL the iframe points at (also the liveness ping target). */
   host: string;
 }
@@ -57,7 +57,7 @@ export function useWebappDiagnostics({ endpoint, host }: Options): WebappDiagnos
   const lastProbeAt = useRef(0);
   const lastHealth = useRef<WebappHealth>('checking');
 
-  const probeable = !!endpoint && endpoint.backend.type === 'proxy' && !endpoint.remote;
+  const probeable = !!endpoint && endpoint.backend?.type === 'proxy' && !endpoint.remote;
   const runProbe = useCallback(
     async (force = false) => {
       if (!endpoint || !probeable) return;
@@ -75,7 +75,7 @@ export function useWebappDiagnostics({ endpoint, host }: Options): WebappDiagnos
     },
     // Keyed on identity: the SDK mutates cached entities in place.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [endpoint?.id, probeable],
+    [endpoint?.id, endpoint?.mount, probeable],
   );
 
   // Kept in a ref so the effects below can fire the probe without taking a
