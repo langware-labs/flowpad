@@ -18,6 +18,9 @@ export function useProjectLoad(projectId: string, initial?: ProjectLoadResult | 
     queryKey: projectLoadKey(projectId, display),
     queryFn: () => Project.loadState(projectId),
     initialData: initial ?? undefined,
+    // A seeded verdict is whatever the opener last heard, not what the backend holds now: read it once
+    // on mount instead of trusting the seed for the app's five-minute default.
+    staleTime: 0,
     refetchInterval: (q) => (q.state.data?.state === 'running' ? SETUP_POLL_MS : false),
   });
   const result = query.data;
