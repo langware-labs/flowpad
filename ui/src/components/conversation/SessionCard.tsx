@@ -6,6 +6,7 @@ import { formatClock } from '@src/components/lens-viewer/shared/format-utils';
 import { useClock } from '@src/hooks/useActivity';
 import { cn } from '@src/lib/utils';
 import { GuestPermissionChip, HostApprovalChip } from '@src/components/collaboration/GuestPermissionChip';
+import { SessionRoleBadge } from '@src/components/collaboration/SessionRoleBadge';
 import { OpenSessionChatButton } from './LiveSessionActivity';
 import { sessionCardState, sessionExpiresAt, type SessionCardState } from './session-card-state';
 import { sessionTitle } from './session-turns';
@@ -193,6 +194,7 @@ export function SessionCard({
       <span className="max-w-[16rem] shrink-0 truncate font-medium text-foreground" data-testid="session-card-name">
         <Trans>Live session · {other}</Trans>
       </span>
+      <SessionRoleBadge role={role} />
       <span className={cn('h-2 w-2 shrink-0 rounded-full', DOT[state], running && 'animate-pulse')} aria-hidden />
       {promptLine ? (
         <span
