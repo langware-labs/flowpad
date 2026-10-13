@@ -161,3 +161,21 @@ def test_the_host_reads_the_open_external_message_the_sdk_sends():
     host = (root / "ui/src/pages/flow-page/app-display-viewer.tsx").read_text()
     assert re.search(r"OPEN_EXTERNAL_MESSAGE = '([^']+)'", sdk).group(1) == "flowpad:open-external"
     assert "OPEN_EXTERNAL_MESSAGE" in host and "'flowpad:open-external'" not in host.replace("{type: 'flowpad:open-external', url}", "")
+
+
+async def test_a_rule_names_its_rows_by_kind_not_by_this_machines_dataset_id(tmp_path, heard, as_server):
+    """The event's scope carries the row kind, so a rule checked into a project says
+    ``"scope": ["kind:<kind>"]`` -- the same file on every clone, though each has its own dataset id."""
+    from flow_sdk.tags.bus import on_tag as listen
+
+    d = _dataset(tmp_path)
+    mine, others = [], []
+    off = [listen("dataset.rows.changed", mine.append, scope=[f"kind:{d.row_kind}"]),
+           listen("dataset.rows.changed", others.append, scope=["kind:some.other.kind"])]
+    try:
+        await d.put("acme", {"input": {"name": "Acme"}})
+    finally:
+        for stop in off:
+            stop()
+    assert d.row_kind and heard[0].ctx.scope == [f"kind:{d.row_kind}"]
+    assert len(mine) == 1 and not others

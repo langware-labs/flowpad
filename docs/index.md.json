@@ -5,7 +5,7 @@
   "vault_root": "/Users/shlom/Documents/dev/flowpad-oss/docs",
   "folder_rel_path": "",
   "folder_name": "docs",
-  "inputs_hash": "afc634ff96dff27fdd405e4230396c6bca6c0324a025077658efcf80235981e9",
+  "inputs_hash": "126f934ff28653c32bdcab0a73565fc817ccba59d9a56533ec5526eb864460f2",
   "template_version": 1,
   "prompt_version": 1,
   "self_summary": "Flowpad's documentation root. The agentic-process stack and its interfaces, data management from disk to entity row, the ontology of types and kinds, collaboration and the hub, the runnable snippet shelf, and breadcrumbs recording root causes already proven.",
@@ -54,9 +54,9 @@
       "name": "automations.md",
       "rel_path": "automations.md",
       "title": "Automations",
-      "summary": "Automations screen backed by Trigger rows: dock URLs for list, editor, runs and event bus, the UI-to-SDK action chain, if-gate and then-wizard, and fragile rules.",
-      "content_hash": "c6fbd3d70fb761b4dcce3a5f5aabcd9fce905863e388e90bb48fd0747d68cc12",
-      "size_bytes": 8326
+      "summary": "Automations screen backed by Trigger rows: dock URLs, UI-to-SDK action chain, if-gate and then-wizard with run_script, runs_on and run lookup, fragile rules, and built-in descriptions.",
+      "content_hash": "5108fe65bc653eadb7a32746cccb76b2be96ce553644f543fd275333e2afbd29",
+      "size_bytes": 9955
     },
     {
       "name": "boot.md",
@@ -191,8 +191,8 @@
       "rel_path": "flow-events.md",
       "title": "FlowEvents — the unified event bus (delivery worklog)",
       "summary": "Delivery worklog for the unified FlowEvent bus: normative envelope and laws, phase-by-phase status with dated logs, plus app.ready, app.tab.ready, wizard triggers and dataset.rows.changed tags.",
-      "content_hash": "2351f53355422dd88e9566831c94c25a7124b6185665432f2c7e89ca8b2f74a9",
-      "size_bytes": 42509
+      "content_hash": "f87c1aba4e1dd99c93de499791219861c6f0753938655f3599c3eefad5b4506c",
+      "size_bytes": 42785
     },
     {
       "name": "frontend-debug-cheatsheet.md",
@@ -509,7 +509,7 @@
       "rel_path": "data-management",
       "self_summary": "How disk and database stay one thing: assets and their identity capsules, the indexer walk and entity sync, DataSpec as the one schema system (kind, schema, value) with its kind registry, data sources and datasets, mirroring a system of record, evals, records, search and the SQLite layer underneath.",
       "child_typeid": "markdown_index-66704284-b246-51c2-849b-cf3c916f33de",
-      "child_inputs_hash": "f79adfaf7d9c682153fc9c73f4a811d90392a6f73e9d827f461263fc18d09a88"
+      "child_inputs_hash": "3039734354d3649fbc6b8d8f666d1dacd156a36cc4cc0d3d405d8b47441b6b31"
     },
     {
       "name": "flows",
@@ -579,7 +579,7 @@
       "rel_path": "snippets",
       "self_summary": "The runnable SDK shelf: one page per capability, every fence pinned by a test. Connections, credentials, data sources, datasets, activity, agents on email, chat and help-desk channels, channel webhook routing, message threads, stream inbox automations, LLM endpoints, processes, workflows, compute ops, wizards, decisions, RAG, project and asset dependencies and the one call-return contract.",
       "child_typeid": "markdown_index-a34feae9-8881-5202-b520-9281688839f2",
-      "child_inputs_hash": "28def270ed5aeca9543c388d5f65884c6381d788a38f51bac6bfc7b7c7095d50"
+      "child_inputs_hash": "80da085fe199ec13481937145fef23bac833aa71f3a36ebebad58c9e5669d2e2"
     },
     {
       "name": "tabs",
@@ -589,6 +589,6 @@
       "child_inputs_hash": "6e40d1287746f8513502ef604206fe7d8a55168b2c3196f4361c4b402b64303f"
     }
   ],
-  "generated_at": "2026-10-13T12:09:58Z",
+  "generated_at": "2026-10-13T12:04:14Z",
   "latest_process_ref": ""
 }

@@ -1,12 +1,12 @@
 ---
 type: markdown_index
 id: markdown_index-66704284-b246-51c2-849b-cf3c916f33de
-inputs_hash: f79adfaf7d9c682153fc9c73f4a811d90392a6f73e9d827f461263fc18d09a88
+inputs_hash: 3039734354d3649fbc6b8d8f666d1dacd156a36cc4cc0d3d405d8b47441b6b31
 template_version: 1
 prompt_version: 1
 parent_ref: markdown_index-6136dbba-27ed-59c3-a192-fe2894f3ec30
 vault_root: /Users/shlom/Documents/dev/flowpad-oss/docs
-generated_at: '2026-10-13T12:09:58Z'
+generated_at: '2026-10-13T11:16:14Z'
 latest_process_ref: ''
 file_count: 29
 subfolder_count: 0
@@ -38,7 +38,7 @@ subfolder_count: 0
 - [The LLM Folder-Index Pipeline](llm-index.md) — The index.md folder-index pipeline: LLMIndexer's hash-cache-assemble Merkle build, the on-disk artifacts, and the MarkdownIndex entity that indexes them.
 - [MCP Server Operations](mcp-operations.md) — The flow_sdk MCP server Claude Code spawns over stdio: how it launches, its FastMCP and raw-debug modes, and the entity, tag, context and session tools.
 - [Meeting sources — Zoom, Teams, Google Meet](meeting-sources.md) — Research comparing Zoom, Teams and Google Meet recordings, transcripts and AI notes as data sources, covering auth, permissions, push mechanisms and driver-model fit.
-- [Mirroring a system of record](mirroring-a-system-of-record.md) — How-to for mirroring an outside system of record into typed dataset rows: the source's mirror map, write-back through the driver, record-driver rules and failure modes.
+- [Mirroring a system of record](mirroring-a-system-of-record.md) — How-to for mirroring an outside system of record into typed dataset rows: the source's declared mirror map, write-through of owned fields, record-driver rules, failure modes.
 - [Record Model](record-model.md) — The FSRecord class and flow_sdk/fs_store: disk as source of truth, per-type behaviour on TypeInfo, meta models, and what the lean rewrite deliberately dropped.
 - [Record Search (FTS5/SQLite)](record-search.md) — Record search on SQLite FTS5: how FSRecord.sync_to_db indexes entries, how Entity.search and the search route query them, and how bulk reindexing runs.
 - [Scan and Discovery](scan-and-discovery.md) — Disk-to-index discovery in flow_sdk: the FSIndexer DFS walker, subprocess and Rust scan backends, per-type slots, indexing triggers including auto-index, session lookup, RecordQuery and orphan handling.

@@ -34,14 +34,11 @@ Choose the keys: short, stable slugs of what the row is (`dana_levi`, `icp_ai_or
 — `a-z 0-9 _ -`, starting with a letter or digit. The key is the row's readable name; links
 to the row use its stored id, so a `ds-rename` breaks nothing inside Flowpad. A key copied
 OUTSIDE (a CRM field, a URL, a doc) does not follow — store the row's `ref` there instead
-of its key, or, when the key must stay readable, keep it in step with a THREE-WAY rule per
-field: remember the value both sides last agreed on; if only this side changed since, write
-it out; if only the outside changed, take it in; if BOTH changed and differ, write neither —
-hold the field and report it. Never last-writer-wins. `flow_sdk.datasets.merge.three_way(here,
-there, agreed)` decides it (`"same"` / `"here"` / `"there"` / `"hold"`) — use it, do not re-derive it.
-Every clone may run the same sync, each with its own memory of the agreement: a key that names
-no row in YOUR checkout may be a row another machine added that you have not pulled — report
-it, never overwrite it.
+of its key. A value that must live BOTH here and in an outside system is that system's field:
+mirrored in, marked `owned_by`, and an edit here is sent there first (`references/mirroring.md`).
+Never keep it in step yourself — no state file, no merge, no "agreed value".
+A key that names no row in YOUR checkout may be a row another machine added that you have not
+pulled — report it, never overwrite it.
 
 | To… | Run | Notes |
 | --- | --- | --- |
