@@ -154,7 +154,7 @@ describe('AgentResourcesBody — data source list scoped to the open agent (FLOW
     fireEvent.click(screen.getByTestId('navigator-section-data-sources'));
 
     expect(screen.queryByText('source-src-1')).not.toBeInTheDocument();
-    expect(screen.getByText('Connect a data source to make it available here')).toBeInTheDocument();
+    expect(screen.getByText('Add a project data source to include its dependencies')).toBeInTheDocument();
   });
 });
 

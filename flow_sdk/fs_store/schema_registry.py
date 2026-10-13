@@ -17,6 +17,7 @@ from functools import cache, cached_property, partial
 from pathlib import Path
 from typing import Any, Callable, ClassVar, Literal, Optional, get_args, get_origin
 
+from flow_sdk._driver_package import driver_module_identity
 from flow_sdk.api.api_types.identifier import is_valid_entity_id, mint_uuid
 from flow_sdk.assets.identity_carrier import (
     Absent,
@@ -146,6 +147,9 @@ class TypeInfo:
     # types that reconcile cross-record relationships (e.g. markdown folder-doc
     # parent/child edges) that the base sync doesn't know about.
     post_sync_fn: Any = field(default=None, compare=False, repr=False)
+    # Optional async context manager around an authored document edit + index refresh.
+    # Disk ingestion does not invoke authoring policy (a checkout may contain legacy state).
+    document_edit_context: Any = field(default=None, compare=False, repr=False)
 
     def __post_init__(self) -> None:
         self.type_name = str(self.type_name)   # an EntityType member is accepted, a str is stored
@@ -222,7 +226,7 @@ class TypeInfo:
     #   from_disk_fn:      Callable[[FSRef, str], list[FSRecord]] — parse payload
     #   identity_carrier:  IdentityCarrier — WHERE the id lives (frontmatter / folder json / …)
     #   id_stable_key_fn:  Callable[[FSRef | Path], str | None] — v5 key
-    #   asset_hash_fn:     Callable[[FSRef], float] — cheap freshness stat
+    #   asset_hash_fn:     Callable[[FSRef], int] — cheap freshness fingerprint, integer ns
     from_disk_fn: Any = field(default=None, compare=False, repr=False, metadata=_MERGE)
     identity_carrier: IdentityCarrier | None = field(default=None, compare=False, repr=False)
     id_stable_key_fn: Any = field(default=None, compare=False, repr=False, metadata=_MERGE)
@@ -968,11 +972,13 @@ class _ShapeTables:
 
 def _same_definition(prior: Any, shape: Any) -> bool:
     """Whether *shape* is *prior* defined again: two class objects with one module and one
-    qualified name. Two different classes that claim one kind still differ here."""
+    qualified name -- a notebook cell re-run, or a data driver reloaded after its file changed
+    (a new content digest in its package name, the same folder). Two different classes that
+    claim one kind still differ here."""
     return (
         isinstance(prior, type)
         and isinstance(shape, type)
-        and prior.__module__ == shape.__module__
+        and driver_module_identity(prior.__module__) == driver_module_identity(shape.__module__)
         and prior.__qualname__ == shape.__qualname__
     )
 

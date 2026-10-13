@@ -1,6 +1,8 @@
 /**
  * The terminal pool — a runtime (xterm + PTY attach) lives as long as its TAB,
  * not as long as the layout that happens to show it (docs/navigation/dock-loading.md, I6).
+ * The one narrowing: a panel nobody is looking at whose agent has ENDED is given back
+ * (`release`) while its tab stays open; the tab's next visit mounts it cold.
  *
  * Every terminal panel is rendered ONCE, by `<TerminalPool/>` (mounted above every
  * layout in RootLayout), through a React portal into a container `div` the pool
@@ -30,7 +32,7 @@
 type Listener = () => void;
 
 export interface TerminalPoolSnapshot {
-  /** Keys (tabHash) activated at least once — the panels the pool keeps alive. */
+  /** Keys (tabHash) the pool holds a panel for: shown at least once and not given back since. */
   readonly mounted: ReadonlySet<string>;
   /** Keys a slot is showing right now. */
   readonly shown: ReadonlySet<string>;
@@ -60,7 +62,7 @@ class TerminalPoolStore {
 
   getSnapshot = (): TerminalPoolSnapshot => this.snapshot;
 
-  /** True once `key` has been shown — a return to it is a warm switch. */
+  /** True while the pool holds `key`'s panel — a return to it is a warm switch. */
   has(key: string): boolean {
     return this.containers.has(key);
   }
@@ -122,12 +124,18 @@ class TerminalPoolStore {
 
   /** Keep only the keys whose tab still exists; a closed tab's runtime goes. */
   retain(liveKeys: ReadonlySet<string>): void {
-    for (const [key, el] of this.containers) {
-      if (liveKeys.has(key)) continue;
-      el.remove();
-      this.containers.delete(key);
-    }
-    this.publish();
+    this.drop([...this.containers.keys()].filter((key) => !liveKeys.has(key)));
+  }
+
+  /**
+   * Give back `key`'s panel while its tab stays open; the next `show` mounts it cold.
+   * Refused (false) for a key a slot is showing — the panel on screen never goes.
+   */
+  release(key: string): boolean {
+    for (const entry of this.slots.values()) if (entry.key === key) return false;
+    if (!this.containers.has(key)) return false;
+    this.drop([key]);
+    return true;
   }
 
   setParking(el: HTMLElement | null): void {
@@ -169,6 +177,16 @@ class TerminalPoolStore {
     }
   }
 
+  /** The one way a panel leaves the pool: its container, and every scroll offset recorded under it. */
+  private drop(keys: readonly string[]): void {
+    for (const key of keys) {
+      this.containers.get(key)?.remove();
+      this.containers.delete(key);
+    }
+    if (keys.length) this.forgetDetachedScroll();
+    this.publish();
+  }
+
   private onScroll = (e: Event): void => {
     const el = e.target;
     if (el instanceof Element) this.scrolled.set(el, { top: el.scrollTop, left: el.scrollLeft });
@@ -178,13 +196,23 @@ class TerminalPoolStore {
   private restoreScroll(): void {
     const stack = this.stackEl;
     if (!stack) return;
+    this.forgetDetachedScroll();
     for (const [el, at] of this.scrolled) {
-      if (!stack.contains(el)) {
-        if (!el.isConnected) this.scrolled.delete(el);
-        continue;
-      }
+      if (!stack.contains(el)) continue;
       if (el.scrollTop !== at.top) el.scrollTop = at.top;
       if (el.scrollLeft !== at.left) el.scrollLeft = at.left;
+    }
+  }
+
+  /**
+   * A scroller that left the stack and the document is never restored: forget its offset, or the
+   * element — and the whole removed panel it belongs to — stays reachable from this map. "Left the
+   * stack" is part of the test because an unparked stack is itself outside the document.
+   */
+  private forgetDetachedScroll(): void {
+    const stack = this.stackEl;
+    for (const el of this.scrolled.keys()) {
+      if (!stack?.contains(el) && !el.isConnected) this.scrolled.delete(el);
     }
   }
 

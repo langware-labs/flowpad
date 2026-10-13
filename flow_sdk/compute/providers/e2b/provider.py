@@ -22,7 +22,7 @@ from flow_sdk.compute.providers.compute_provider import (
     get_remote_paths_and_data_for_files,
     sandbox_public_url,
 )
-from flow_sdk.compute.providers.env_prefix import build_env_prefix
+from flow_sdk.compute.providers.env_prefix import command_environment
 from flow_sdk.flowpad_types import (
     CLICommand,
     ExecutionEnvironmentStatus,
@@ -375,13 +375,10 @@ class E2BComputeProvider(ComputeProvider):
         message_id = str(uuid.uuid4())
         cmd = CLICommand(command, message_id=message_id)
 
-        # Values join the string here and nowhere else — the log line above
-        # carries the bare command.
-        full_command = build_env_prefix(env) + command
-
         try:
             process = await sandbox.commands.run(
-                full_command,
+                command,
+                envs=command_environment(env),
                 on_stdout=cmd.append_stdout,
                 on_stderr=cmd.append_stderr,
                 timeout=None,

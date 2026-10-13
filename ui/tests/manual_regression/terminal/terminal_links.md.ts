@@ -197,15 +197,14 @@ test('hover and selection do not resolve; a wrapped file link still opens', asyn
   expect(resolutions).toBe(1);
 });
 
-test('a site that refuses embedding retains its external-open escape', async ({ page }) => {
+test('a site that refuses embedding opens in the browser by itself, with no card to click', async ({ page }) => {
   const { shellId } = await openFixtureTerminal(page);
   const url = new URL('/blocked', webUrl).href;
   await printLink(page, shellId, url);
-  await clickPrintedLink(page, url);
-  await expect(page.locator('[data-testid="web-url-frame"]')).toHaveAttribute('src', url);
   const popup = page.waitForEvent('popup');
-  await page.getByTestId('web-url-open-in-browser').click();
+  await clickPrintedLink(page, url);
   const external = await popup;
+  await expect(page.getByTestId('web-url-warning')).toHaveCount(0);
   await expect(external.getByRole('heading')).toHaveText('Web link content');
   await external.close();
 });

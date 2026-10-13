@@ -44,7 +44,7 @@ def claude_projects_fn(
     opts: IndexerOptions,
 ) -> list[FSRef]:
     from flow_sdk.assets.types.claude_project_path import decode_claude_project_dir
-    from flow_sdk.builtin.project import Project  # noqa: PLC0415
+    from flow_sdk.fs_store.path_utils import legacy_project_scope_id  # noqa: PLC0415
     from flow_sdk.fs_store.scope import Scope  # noqa: PLC0415
 
     out: list[FSRef] = []
@@ -67,7 +67,7 @@ def claude_projects_fn(
                     record_type=RecordType.PROJECT,
                     parent=node,
                     scope=Scope.PROJECT.value,
-                    project_id=Project.derive_id_for_path(decoded),
+                    project_id=legacy_project_scope_id(decoded),
                 )
             )
     return out

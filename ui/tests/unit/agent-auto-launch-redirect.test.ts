@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   AGENT_AUTO_LAUNCH_ENDPOINT,
   agentAutoLaunchRedirect,
+  prepareProjectAutoLaunch,
   resetAgentAutoLaunchForTests,
 } from '@src/agents/agent-auto-launch-redirect';
 import { AGENT_AUTO_LAUNCH_WARNING_KEY, takeAgentAutoLaunchWarning } from '@src/agents/agent-auto-launch-warning';
@@ -65,6 +66,17 @@ beforeEach(() => {
 });
 
 describe('project agent auto-launch redirect', () => {
+  it('a completed pull asks again after the project previously had nothing to launch', async () => {
+    mocks.post.mockResolvedValueOnce({ process_id: null }).mockResolvedValueOnce(launched());
+    expect(await prepareProjectAutoLaunch(PROJECT_ID)).toBeNull();
+    expect(await prepareProjectAutoLaunch(PROJECT_ID)).toBeNull();
+    expect(mocks.post).toHaveBeenCalledTimes(1);
+    expect(await prepareProjectAutoLaunch(PROJECT_ID, true)).toBe(PROCESS_ID);
+    expect(mocks.post).toHaveBeenCalledTimes(2);
+    expect(mocks.embed).toHaveBeenCalledTimes(1);
+    expect(mocks.drainQueue).toHaveBeenCalledTimes(1);
+  });
+
   it.each([
     ['a Hub Project route', `http://flowpad.local/dock/hub/project/${PROJECT_ID}`, () => {}],
     ['a Hub-only build', `http://flowpad.local/dock/project/${PROJECT_ID}`, () => mocks.hubOnly.mockReturnValue(true)],

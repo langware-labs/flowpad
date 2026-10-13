@@ -322,9 +322,11 @@ async function downloadAndOpenAssetClean(
   // STAGED RECEPTION (f1276cd5): download STAGES the asset (MessageAttachment,
   // scope=null) — the chip renders dashed and opens the review/install modal,
   // never the editor (consent boundary). Install explicitly into the mapped
-  // project via the backend action, then use the real Advanced-mode chip →
-  // review → Open path. AssetReviewDialog owns the URL-first openDock action;
-  // a hard page.goto here would tear down the live socket/watch graph, rerun
+  // project via the backend action, then open through the real chip. Installed,
+  // it navigates straight to the entity: the review → Open detour is behind the
+  // developer switch now (bd2e5b0d1 — a tab's `?viewMode=advanced` no longer
+  // turns Advanced on). The chip owns the URL-first openDock action; a hard
+  // page.goto here would tear down the live socket/watch graph, rerun
   // bootstrap, and make unrelated project indexing contend with the open.
   const chipMatch = /^entity-chip-([a-z_]+)-(.+)$/.exec(chipTestId);
   if (!chipMatch) throw new Error(`unexpected chip testid ${chipTestId}`);
@@ -355,8 +357,6 @@ async function downloadAndOpenAssetClean(
 
   resetConsoleErrors(inst);
   await inst.page.getByTestId(chipTestId).first().click();
-  await inst.page.getByTestId('asset-review-dialog').waitFor({ state: 'attached' });
-  await inst.page.getByTestId('asset-open-entity').click();
   // Assert the editor CONTAINER attaches (it mounts when the asset resolves) +
   // a clean console — NOT a late toolbar button or strict dock-tab visibility,
   // which lag the actual open by tens of seconds in the dock split view.

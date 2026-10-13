@@ -35,7 +35,7 @@ import json
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Iterator
+from typing import TYPE_CHECKING, Iterator
 
 from flow_sdk.assets.types.claude_sessions import extract_claude_session_from_path
 from flow_sdk.fs_store.fs_record import FSRecord
@@ -46,7 +46,9 @@ from flow_sdk.fs_store.indexer.functions._claude_session_stats import (
 from flow_sdk.fs_store.indexer.index_function import IndexerOptions
 from flow_sdk.fs_store.record_types import RecordType
 from flow_sdk.instance_settings import get_instance_settings
-from flow_sdk.transcript_analyzer.worker_status import WorkerStatus, _tail_status
+
+if TYPE_CHECKING:
+    from flow_sdk.transcript_analyzer.worker_status import WorkerStatus
 
 # Fields populated onto the record by ensure_claude_session_stats. Mirror of
 # the _SessionStatsProp descriptors on the deleted subclass.
@@ -169,6 +171,8 @@ def claude_session_start_time(rec: FSRecord) -> str | None:
 
 def claude_session_status(rec: FSRecord) -> WorkerStatus:
     """Derive WorkerStatus from the last 4 KB of the JSONL (~60µs)."""
+    from flow_sdk.transcript_analyzer.worker_status import WorkerStatus, _tail_status
+
     path = getattr(rec, "jsonl_path", None) or rec.source_file
     if not path:
         return WorkerStatus.IDLE

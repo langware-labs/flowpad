@@ -21,6 +21,8 @@ describe('launch plan', () => {
     ['a project with its face', { target: { projectId: 'p1' }, agentId: 'a1' }],
     ['a controller on a target', { target: { projectId: 'p1' }, controllerId: 'c1', agentId: 'a1' }],
     ['a repository target', { target: { repo: 'https://github.com/acme/site', branch: 'dev' }, controllerId: 'c1' }],
+    ['a target to pick on the machine', { target: { local: null }, controllerId: 'c1', agentId: 'a1' }],
+    ['a target that is only on the machine', { target: { local: 'p9' }, controllerId: 'c1' }],
   ])('round-trips %s', (_label, plan) => {
     expect(roundTrip(plan).back).toEqual(plan);
   });
@@ -30,5 +32,6 @@ describe('launch plan', () => {
     expect(read('action=open&target=p1')).toBeNull();
     expect(read('action=launch&controller=c1')).toBeNull();
     expect(read('action=launch&target=p1&target_repo=https://github.com/acme/site')).toBeNull();
+    expect(read('action=launch&target=p1&target_local=pick')).toBeNull();
   });
 });

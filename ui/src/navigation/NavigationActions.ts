@@ -34,6 +34,7 @@ import {
   JOURNEY_STEP_PARAM,
   NODE_PARAM,
   WORKSPACE_PARAM,
+  WORKSPACE_ENTRY_PARAM,
 } from './DockPointer';
 import { dockPointerForFile } from './local-file-pointer';
 import { getHistoryPosition } from './history-position-store';
@@ -41,7 +42,7 @@ import { beginTabSwitch, dockLabel, tabSwitch } from './tab-switch-state';
 import { FileOptions, TabOptions } from './types';
 import { preserveWindowLayout, stripDockPortion } from './url-builder';
 import { allScope, projectScope } from '@src/lib/scope-filter';
-import { contentAssetTargetForDock, isContentAssetDock } from './content-asset-dock';
+import { contentAssetTargetForDock, reviewPromptFor, isContentAssetDock } from './content-asset-dock';
 import { isAdoptableChildDock, isWorkspaceAnchorDock } from './adoptable-child-dock';
 import { isHostDock } from './tab-hosts';
 import { LOCAL_COMPUTE_NODE } from './asset-doc-types';
@@ -144,6 +145,7 @@ function ownerProjectId(dock: DockPointer): string | null {
 export const SCOPE_SEEDED_VIEWS: ReadonlySet<ViewType> = new Set([
   ViewType.ASSETS,
   ViewType.EXPLORER,
+  ViewType.SCHEMA_TREE,
   ViewType.SHELL,
   ViewType.VIBE,
 ]);
@@ -514,7 +516,7 @@ export class NavigationActions {
   }
 
   /**
-   * Switch the active workspace and land on its home. `null` (or the default
+   * Switch the active workspace and resume its last project and tab. `null` (or the default
    * workspace's id) is the default workspace — the param is cleared, so its URLs
    * are the ones from before workspaces existed.
    *
@@ -522,7 +524,7 @@ export class NavigationActions {
    * `openDock`'s carry-forward would put the OLD workspace straight back.
    */
   openWorkspace(workspaceId: string | null): void {
-    this.commitPointer(DockPointer.root().withOption(WORKSPACE_PARAM, workspaceId || null));
+    this.commitPointer(DockPointer.root().withOption(WORKSPACE_PARAM, workspaceId || null).withOption(WORKSPACE_ENTRY_PARAM, 'resume'));
   }
 
   /**
@@ -1049,6 +1051,37 @@ export class NavigationActions {
       last?.id ?? (await createVibeProcessForProject({ projectId, targetVfsPath: target, open: false })).id;
     await this.placeVibeTabBeside(processId);
     this.openDock(hostedAssetDock(asset, projectId, processId));
+  }
+
+  /**
+   * Start a NEW session that reviews a document, on the surface asked for. The
+   * document is the session's target and the prompt names it; an entity-backed
+   * one also rides in the session's shared context. The launching tab stays as
+   * it is: Terminal and Chat open their own tab, Vibe opens a host tab placed
+   * right after the tab on screen. `path` is the file of a document addressed
+   * by id, which its dock does not carry — the caller has the entity in hand.
+   */
+  async reviewDocument(asset: DockPointer, mode: ViewMode, projectId: string | null, path?: string): Promise<void> {
+    const target = contentAssetTargetForDock(asset);
+    if (!target) return;
+    const prompt = reviewPromptFor({ ...target, path: target.path ?? path });
+    const about = {
+      targetVfsPath: target.targetVfsPath,
+      sharedContextEntities: target.typeId ? [target.typeId] : undefined,
+    };
+    if (mode === ViewMode.Vibe) {
+      if (!projectId) return;
+      const { launchVibeSessionForProject } = await import('@src/pages/flow-page/use-start-vibe-session');
+      await launchVibeSessionForProject({
+        ...about,
+        projectId,
+        message: prompt,
+        navigation: { openShellProcess: (processId) => void this.openVibeTabBeside(processId) },
+      });
+      return;
+    }
+    const { openNewChat } = await import('./open-new-chat');
+    await openNewChat(this, { ...about, mode, projectId: projectId ?? undefined, prompt });
   }
 
   async openShellProcess(

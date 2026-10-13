@@ -98,7 +98,7 @@ def project(tmp_path, monkeypatch):
     async def driver_of(provider):
         return drivers.get(provider)
 
-    async def by_name(name):
+    async def by_name(name, near=""):
         return wizards.get(name)
 
     async def all_setups(_q):
@@ -142,10 +142,8 @@ async def test_the_tree_puts_each_need_under_the_asset_that_needs_it(project):
     assert dict(node["stage:w1:waha-server-stage"].inputs) == {"source": "w1", "owner": "agent-a"}
     assert [g.name for g in tree.gaps] == ["MYSTERY"] and "gap:MYSTERY" not in node
     assert node["asset_setup:waha-container"].trusted is False, "a connector's own wizard is not ours"
-    assert [s.ref for s in node["micro_app-a1"].run.steps] == ["micro_app-a1:install", "micro_app-a1:build", "micro_app-a1:start"]
-    assert node["micro_app-a1"].on_load is node["micro_app-a1"].run, (
-        "loading a web app is making sure it is up: the same chain, judged by its checks"
-    )
+    assert [s.ref for s in node["micro_app-a1"].run.steps] == ["micro_app-a1:install", "micro_app-a1:build"]
+    assert [s.ref for s in node["micro_app-a1"].on_load.steps] == ["micro_app-a1:start", "micro_app-a1:present"]
     assert node["asset_setup:waha-container"].on_load is None, "a declared node loads only what it declares"
 
 
@@ -167,7 +165,7 @@ async def test_the_whole_project_comes_up_leaf_first(project, monkeypatch, tmp_p
             return CliResult.of_process(command, 0 if name in installed else 1)
         return CliResult.of_process(command, 0)  # `flow credentials check`, `flow connections test`: they hold
 
-    async def app_step(webapp, which, *, check):
+    async def app_step(webapp, which, *, check, display=""):
         """Install and build have nothing to do; the app is not running until it is started."""
         if not check:
             ran.append(f"site:{which}")
@@ -188,7 +186,7 @@ async def test_the_whole_project_comes_up_leaf_first(project, monkeypatch, tmp_p
     )
 
     assert result.ok, result.detail
-    assert ran == ["container-op", "server-op", "pair-op", "site:start"]
+    assert ran == ["container-op", "server-op", "pair-op"], "setup does not execute operational on_load"
     assert recorded == [("waha-server-stage", "data_source-w1", True), ("waha-pair-stage", "data_source-w1", True)]
 
 
@@ -239,13 +237,48 @@ async def test_a_declared_load_wizard_that_is_missing_is_a_problem_too(project, 
 
 
 @pytest.mark.asyncio
-async def test_a_web_apps_node_alone_derives_from_its_row_without_the_project(project, monkeypatch):
-    """A load reads one node: for a web app nothing of the project is collected."""
-    async def never(*_a, **_k):
-        raise AssertionError("the project tree was built for a one-node load")
-
-    monkeypatch.setattr(project_setup, "collect_requirements", never)
+async def test_an_app_load_includes_project_and_attached_declarations(project, monkeypatch):
+    monkeypatch.setattr(AssetSetup, "spec", lambda self: AssetSetupSpec(
+        name="home-load", subject="micro_app-a1", on_load="waha-container"))
     app = SimpleNamespace(id="a1", name="site", typeid="micro_app-a1", asset_ref="/p/site", setup_skipped=None,
                           get_type=lambda: "micro_app")
     tree = await ProjectTree(project).load_one(app)
-    assert list(tree.nodes) == ["micro_app-a1"] and tree.nodes["micro_app-a1"].on_load is not None
+    assert "project-p1" in tree.nodes
+    assert tree.nodes["micro_app-a1"].children == ("asset_setup:home-load",)
+    assert tree.nodes["asset_setup:home-load"].on_load.name == "waha-container"
+
+
+async def test_two_projects_shipping_one_wizard_name_resolve_to_the_nearer_copy(monkeypatch):
+    """A dependency's own asset_setup runs ITS ``waha-setup``, not the same-named wizard a driver elsewhere ships."""
+    from types import SimpleNamespace
+
+    from flow_sdk.builtin import shipped_lookup
+
+    ours = SimpleNamespace(asset_ref="/w/waha-service/agentic-assets/wizard/waha-setup", id=1)
+    theirs = SimpleNamespace(asset_ref="/x/waha/agentic-assets/data_driver/waha/agentic-assets/wizard/waha-setup", id=2)
+
+    class Rows:
+        @staticmethod
+        async def get_all(_):
+            return [theirs, ours]
+
+    monkeypatch.setattr(shipped_lookup, "is_running_install_path", lambda _: False)
+    near = "/w/waha-service/agentic-assets/asset_setup/waha-service"
+    assert await shipped_lookup.by_name_preferring_this_install(Rows, "waha-setup", near=near) is ours
+
+
+@pytest.mark.asyncio
+async def test_an_app_whose_folder_is_gone_is_not_something_to_set_up(monkeypatch, tmp_path):
+    from flow_sdk.builtin.faas.micro_app import WebApp
+
+    (tmp_path / "here").mkdir()
+    rows = [WebApp(name="here", asset_ref=str(tmp_path / "here")),
+            WebApp(name="gone", asset_ref=str(tmp_path / "old-install" / "gone")),
+            WebApp(name="row-only")]
+
+    async def get_all(_query):
+        return rows
+
+    monkeypatch.setattr(WebApp, "get_all", get_all)
+    tree = ProjectTree(SimpleNamespace(id="p1", name="Shop", fs_storage_mount_path=str(tmp_path)))
+    assert [app.name for app in await tree._webapps()] == ["here"]

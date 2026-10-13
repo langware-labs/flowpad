@@ -37,7 +37,14 @@ const CONTEXT = {
   include_dirs: ['/users/alice/notes'],
   context_roots: ['/w/deps-proj', '/users/alice/notes'],
   context_dir_infos: [
-    { path: '/users/alice/notes', origin_kind: 'local', typeid: 'folder-1', dependency: 'notes', required: true, via: '' },
+    {
+      path: '/users/alice/notes',
+      origin_kind: 'local',
+      typeid: 'folder-1',
+      dependency: 'notes',
+      required: true,
+      via: '',
+    },
   ],
 };
 
@@ -101,7 +108,12 @@ describe('Project.removeDependency', () => {
     const project = makeProject(['/a', '/b']);
     const spy = vi
       .spyOn(dataManager, 'callAction')
-      .mockResolvedValue({ dependencies: [], include_dirs: ['/b'], context_roots: ['/w', '/b'], context_dir_infos: [] });
+      .mockResolvedValue({
+        dependencies: [],
+        include_dirs: ['/b'],
+        context_roots: ['/w', '/b'],
+        context_dir_infos: [],
+      });
 
     const states = await project.removeDependency('a');
 
@@ -172,7 +184,9 @@ describe('onProjectDependenciesChanged', () => {
     const elsewhere = vi.fn();
     const off = onProjectDependenciesChanged(project.id, listener);
     const offElsewhere = onProjectDependenciesChanged('00000000-0000-4000-8000-00000000ffff', elsewhere);
-    const spy = vi.spyOn(dataManager, 'callAction').mockResolvedValue({ dependency: STATE, dependencies: [], ...CONTEXT });
+    const spy = vi
+      .spyOn(dataManager, 'callAction')
+      .mockResolvedValue({ dependency: STATE, dependencies: [], ...CONTEXT });
 
     await project.addDependency('/x');
     await project.removeDependency('x');
@@ -196,5 +210,50 @@ describe('onProjectDependenciesChanged', () => {
     offElsewhere();
     await project.removeDependency('x');
     expect(listener).toHaveBeenCalledTimes(7);
+  });
+});
+
+describe('Project Load lifecycle', () => {
+  const projectId = '77777777-7777-4777-8777-777777777777';
+  const outcome = { state: 'setup_required', detail: 'Tools required', run: null, project_id: projectId, asset: null };
+  it('invokes Load without granting setup approval by default', async () => {
+    const spy = vi.spyOn(dataManager, 'callAction').mockResolvedValue(outcome);
+    expect(await Project.load(projectId)).toEqual(outcome);
+    expect(callOf(spy).name).toBe('load');
+    expect(callOf(spy).bodyParameters).toEqual({ approved: false });
+  });
+  it('reads progress without starting work', async () => {
+    const spy = vi.spyOn(dataManager, 'callAction').mockResolvedValue(outcome);
+    expect(await Project.loadState(projectId)).toEqual(outcome);
+    expect(callOf(spy).name).toBe('load-state');
+    expect(callOf(spy).method).toBe('GET');
+    expect(callOf(spy).bodyParameters).toEqual({});
+  });
+});
+
+describe('asset-scoped source dependencies', () => {
+  const asset = 'agent-77777777-7777-4777-8777-777777777777';
+  const source = 'data_source-88888888-8888-4888-8888-888888888888';
+  it('reads candidates and previews without changing project context or announcing a mutation', async () => {
+    const project = makeProject(['/existing']);
+    const listener = vi.fn();
+    const off = onProjectDependenciesChanged(project.id, listener);
+    const spy = vi.spyOn(dataManager, 'callAction')
+      .mockResolvedValueOnce({ source_typeids: [source] })
+      .mockResolvedValueOnce({ dependencies: [STATE], warnings: [] });
+    expect(await project.dependencyCandidates(asset)).toEqual([source]);
+    expect(await project.previewDependencies(asset, [source])).toEqual({ dependencies: [STATE], warnings: [] });
+    expect(callOf(spy, 0)).toMatchObject({ name: 'dependency-candidates', method: 'GET' });
+    expect(callOf(spy, 1).bodyParameters).toEqual({ asset, sources: [source] });
+    expect(project.include_dirs).toEqual(['/existing']);
+    expect(listener).not.toHaveBeenCalled();
+    off();
+  });
+  it('removes the direct declaration in the requested asset and adopts full project context', async () => {
+    const project = makeProject();
+    const spy = vi.spyOn(dataManager, 'callAction').mockResolvedValue({ dependencies: [], ...CONTEXT });
+    await project.removeDependency('personal', { asset });
+    expect(callOf(spy).bodyParameters).toEqual({ name: 'personal', asset });
+    expect(project.include_dirs).toEqual(CONTEXT.include_dirs);
   });
 });

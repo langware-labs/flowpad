@@ -36,6 +36,8 @@ import { useProjectLocation } from '@src/hooks/use-project-location';
 import { useEntity } from '@src/hooks/entity-hooks';
 import { ViewMode } from '@src/contexts/view-mode-context';
 import { parseDataSourcesPointer } from '@src/components/data-sources/data-sources-pointer';
+import { bareKind, DATA_SCHEMA_TYPE } from '@src/components/schema-tree/schema-tree-model';
+import { parseSchemaTreePointer, SOURCE_SEGMENT } from '@src/components/schema-tree/schema-tree-pointer';
 import { useSourceSpecs } from '@src/components/data-sources/use-source-specs';
 
 /**
@@ -70,7 +72,7 @@ import { useSourceSpecs } from '@src/components/data-sources/use-source-specs';
  */
 
 export interface Crumb {
-  /** Stable React key: the TypeId string, or 'project' / 'view'. */
+  /** Stable React key — unique in the trail, not an identity: see `typeId`. */
   key: string;
   label: string;
   /** Always resolved through the backend type registry — never a literal. */
@@ -78,6 +80,8 @@ export interface Crumb {
   /** null ⇒ not navigable (the current page, or a type no dock can address). */
   pointer: DockPointer | null;
   kind: 'project' | 'ancestor' | 'current';
+  /** The ONE entity this crumb names, when it names one — what its hover card shows. */
+  typeId?: TypeId;
   /**
    * Where the thing LIVES on disk, when it is file-backed — the absolute machine
    * path and the real basename (with extension, unlike `label`). Both null for a
@@ -479,6 +483,7 @@ export function useEntityBreadcrumbs(dock: DockPointer | null): EntityBreadcrumb
     if (hostProcessTypeId && !isAgentScoped) {
       out.push({
         key: hostProcessTypeId.toString(),
+        typeId: hostProcessTypeId,
         label: hostProcess
           ? entityLabel(hostProcess as AnyEntity, hostProcessTypeId)
           : labelForType(AgenticProcess.type),
@@ -497,6 +502,7 @@ export function useEntityBreadcrumbs(dock: DockPointer | null): EntityBreadcrumb
     if (wikiCrumb) {
       out.push({
         key: wikiCrumb.typeId.toString(),
+        typeId: wikiCrumb.typeId,
         label: wikiCrumb.label,
         Icon: iconForType(wikiCrumb.typeId.type),
         pointer: null,
@@ -508,6 +514,7 @@ export function useEntityBreadcrumbs(dock: DockPointer | null): EntityBreadcrumb
     for (const node of isAgentScoped ? [] : [...ancestors].reverse()) {
       out.push({
         key: node.typeId.toString(),
+        typeId: node.typeId,
         label: entityLabel(node.entity, node.typeId),
         Icon: iconForType(node.typeId.type),
         pointer: buildDockPointer(
@@ -521,6 +528,7 @@ export function useEntityBreadcrumbs(dock: DockPointer | null): EntityBreadcrumb
     if (liveSessionConvTypeId) {
       out.push({
         key: liveSessionConvTypeId.toString(),
+        typeId: liveSessionConvTypeId,
         label: liveSessionConv ? entityLabel(liveSessionConv, liveSessionConvTypeId) : labelForType(CONVERSATION_TYPE),
         Icon: iconForType(CONVERSATION_TYPE),
         pointer: DockPointer.forConversation(liveSessionConvTypeId.id),
@@ -532,6 +540,7 @@ export function useEntityBreadcrumbs(dock: DockPointer | null): EntityBreadcrumb
       const agentEntity = scopedAgent ?? (isAgentStreamInbox ? (resolved.entity as Agent | null) : null);
       out.push({
         key: `agent-${scopedAgentId}`,
+        typeId: scopedAgentTypeId,
         label: agentEntity ? entityLabel(agentEntity, scopedAgentTypeId) : labelForType(Agent.type),
         Icon: iconForType(Agent.type),
         pointer: agentEntity
@@ -606,6 +615,34 @@ export function useEntityBreadcrumbs(dock: DockPointer | null): EntityBreadcrumb
     const filename = dock?.resourceVfsPath?.filename || basename(assetRef) || null;
     const directory = isExplorer;
 
+    // The schema tree: `<project> › Schema › <schema> › …` — the pointer is the kinds unfolded
+    // down to the selection (schema-tree-pointer.ts), each one a step back up.
+    if (dock?.viewType === ViewType.SCHEMA_TREE) {
+      const steps = parseSchemaTreePointer(dock.pointer);
+      const schemaTitle = VIEWER_REGISTRY[ViewType.SCHEMA_TREE]?.title;
+      const scopeProjectId = dock.scopeProjectId ?? project?.id ?? null;
+      const at = (path: string[]) => (scopeProjectId ? DockPointer.forSchemaTree(scopeProjectId, path) : null);
+      out.push({
+        key: 'schema-tree',
+        label: schemaTitle ? i18n._(schemaTitle) : viewLabel(dock),
+        Icon: viewIcon(dock),
+        pointer: steps.length ? at([]) : null,
+        kind: steps.length ? 'ancestor' : 'current',
+      });
+      steps.forEach((step, i) => {
+        const last = i === steps.length - 1;
+        const source = step.startsWith(SOURCE_SEGMENT);
+        out.push({
+          key: `schema-tree-${i}-${step}`,
+          label: source ? labelForType(DataSource.type) : bareKind(step),
+          Icon: iconForType(source ? DataSource.type : DATA_SCHEMA_TYPE),
+          pointer: last ? null : at(steps.slice(0, i + 1)),
+          kind: last ? 'current' : 'ancestor',
+        });
+      });
+      return out;
+    }
+
     if (dataSourcesRoute?.section === 'source' && dock) {
       out.push({
         key: 'data-sources',
@@ -617,6 +654,7 @@ export function useEntityBreadcrumbs(dock: DockPointer | null): EntityBreadcrumb
       const folder = pageSource?.asset_ref ?? null;
       out.push({
         key: `data-source-${dataSourcesRoute.id}`,
+        typeId: sourceTypeId ?? undefined,
         label: pageSource?.name || pageSource?.provider || labelForType(DataSource.type),
         Icon: iconForType(DataSource.type),
         pointer: sourceConvTypeId
@@ -630,6 +668,7 @@ export function useEntityBreadcrumbs(dock: DockPointer | null): EntityBreadcrumb
       if (sourceConvTypeId) {
         out.push({
           key: sourceConvTypeId.toString(),
+          typeId: sourceConvTypeId,
           label: sourceConv ? entityLabel(sourceConv, sourceConvTypeId) : labelForType(Conversation.type),
           Icon: iconForType(Conversation.type),
           pointer: null,
@@ -673,6 +712,7 @@ export function useEntityBreadcrumbs(dock: DockPointer | null): EntityBreadcrumb
     if (subjectTypeId) {
       out.push({
         key: `subject-${subjectTypeId.toString()}`,
+        typeId: subjectTypeId,
         label: subjectEntity ? entityLabel(subjectEntity, subjectTypeId) : labelForType(subjectTypeId.type),
         Icon: iconForType(subjectTypeId.type),
         pointer: subjectEditor && subjectEditor.pointer !== dock?.pointer ? subjectEditor : null,
@@ -686,6 +726,8 @@ export function useEntityBreadcrumbs(dock: DockPointer | null): EntityBreadcrumb
       targetTypeId
         ? {
             key: targetTypeId.toString(),
+            // The project's own page already has the project crumb beside it.
+            typeId: isProjectHome ? undefined : targetTypeId,
             label: isProjectHome ? i18n._(PROJECT_HOME_CRUMB_LABEL) : appTitle || targetTitle,
             Icon: iconForType(targetTypeId.type),
             pointer: null,
@@ -734,6 +776,7 @@ export function useEntityBreadcrumbs(dock: DockPointer | null): EntityBreadcrumb
       const childPath = (childEntity as { asset_ref?: string | null } | null)?.asset_ref ?? null;
       out.push({
         key: childTypeId.toString(),
+        typeId: childTypeId,
         label: childEntity ? entityLabel(childEntity, childTypeId) : labelForType(childTypeId.type),
         Icon: iconForType(childTypeId.type),
         pointer: null,

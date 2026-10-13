@@ -45,6 +45,7 @@ from pydantic import Field, model_validator
 
 from flow_sdk._compat import StrEnum
 from flow_sdk.schema.data_spec import AssetDocumentSpec, DataSpec
+from flow_sdk.schema.data_spec.confirm_spec import ConfirmSpec
 from flow_sdk.schema.data_spec.decision_spec import ChoiceQuestion, Question, ScoreQuestion, YesNoQuestion
 from flow_sdk.schema.data_spec.dock_pointer_spec import DockPointerSpec
 from flow_sdk.schema.data_spec.io.native import Text
@@ -347,6 +348,51 @@ class NavigateOp(ExeData):
     target: Optional[DockPointerSpec] = None
 
 
+class AskChoiceSpec(DataSpec):
+    """One way to answer a question that offers several (``AskOp.choices``).
+
+    A value choice is typed (or picked, a ``file``); the answer is ``<value>=<what was given>``, one string.
+    A ``command`` choice has nothing to type: the person runs the command (a tool's own sign-in) and the
+    question closes by itself once its goal holds (``auto_continue``)."""
+
+    spec_kind: ClassVar[str] = "compute_op.ask.choice"
+
+    #: What the answer names this choice by.
+    value: str
+    label: str = ""
+    hint: str = ""
+    secret: bool = False
+    file: bool = False
+    #: The command the person runs instead of giving a value, on this machine.
+    command: str = ""
+
+
+class AskItemSpec(DataSpec):
+    """One question of several asked as ONE (``Question.items``) — everything a wizard run needs,
+    put to the person before it starts. The list's answer is ``{path: this item's value}``; an item
+    left out is declined."""
+
+    spec_kind: ClassVar[str] = "compute_op.ask.item"
+
+    #: What the answer is keyed by — for a wizard, the asking step from the top down (``node/ask``).
+    path: str
+    #: The ``ask`` op behind it.
+    op: str = ""
+    #: What is asked, and what it is for.
+    prompt: str = ""
+    detail: str = ""
+    #: The answer's declared kind. ``confirm`` is an approval; anything else is one typed value.
+    kind: Optional[str] = None
+    secret: bool = False
+    #: Declining it leaves the run unfinished (``WizardStepSpec.required``).
+    required: bool = True
+
+    @property
+    def is_approval(self) -> bool:
+        """Nothing to type, only to agree to."""
+        return self.kind == ConfirmSpec.spec_kind
+
+
 class AskOp(ExeData):
     """A person, asked for the op's declared output."""
 
@@ -391,6 +437,9 @@ class AskOp(ExeData):
     #: -- the person only watches. No Send button is offered. Needs ``recheck``, a check and a ``confirm`` shape:
     #: closing by itself answers what Send would have, and only a confirm has nothing for a person to type.
     auto_continue: bool = False
+    #: Several ways to answer, of which the person picks ONE (a ONE_OF credential's members). Empty: an
+    #: ordinary question. With a ``command`` choice ``auto_continue`` needs only a check: it is done elsewhere.
+    choices: list[AskChoiceSpec] = []
 
     @model_validator(mode="after")
     def _no_deadline_means_no_deadline(self) -> "AskOp":
@@ -539,11 +588,15 @@ class ComputeOpSpec(AssetDocumentSpec):
     def _attempts_need_a_check(self) -> "ComputeOpSpec":
         if self.completion_check is not None and self.status_check:
             raise ValueError(f"{self.name or 'this op'}: a completion_check or a status_check, not both")
-        if getattr(self.exe_data, "auto_continue", False) and not (
-            self.exe_data.recheck and (self.completion_check is not None or self.status_check)
-            and self.output_spec_kind == "confirm"
-        ):
-            raise ValueError(f"{self.name or 'this op'}: auto_continue needs recheck, a check and output_spec_kind confirm")
+        checked = self.completion_check is not None or bool(self.status_check)
+        if getattr(self.exe_data, "auto_continue", False) and not (checked and (
+            (self.exe_data.recheck and self.output_spec_kind == ConfirmSpec.spec_kind)
+            or any(choice.command for choice in self.exe_data.choices)
+        )):
+            raise ValueError(
+                f"{self.name or 'this op'}: auto_continue needs a check, and either recheck with output_spec_kind "
+                "confirm or a choice that is a command"
+            )
         if self.exe_data.SELF_CHECKING and (self.completion_check is not None or self.status_check):
             raise ValueError(f"{self.name or 'this op'}: a {self.subkind} op is its own check — it takes no other")
         if self.attempts and not self.convergent:

@@ -92,15 +92,66 @@ def rule_breaks(value: Any, owner: Path | str, *, override: Optional[dict] = Non
     schema it breaks -- ``rule`` names both ends, so a caller never has to work them out."""
     rows, out = _Rows(owner, override, cache), []
     for rule in rules_of(value):
+        if rule.same is None:
+            continue   # a rule over the rows of ONE dataset (``unique``): the dataset checks it
         left, right = rule.same
         a, b = _ends(value, left.split("."), rows), _ends(value, right.split("."), rows)
         if a is None or b is None:
             continue
         if any(x != y for x in a for y in b):
             why = f" ({rule.description})" if rule.description else ""
-            out.append({"path": f"{path}{left}", "code": "rule", "rule": rule.model_dump(mode="json"),
+            out.append({"path": f"{path}{left}", "code": "rule", "rule": rule.model_dump(mode="json", exclude_none=True),
                         "message": f"rule: {left} must be the same row as {right}{why}"})
     return out
 
 
-__all__ = ["rule_breaks", "rules_of"]
+def unique_rules(value_or_kind: Any) -> list:
+    """The ``unique`` rules a value's schema -- or a schema class -- declares."""
+    return [rule for rule in rules_of(value_or_kind) if rule.unique is not None]
+
+
+def unique_value(value: Any, rule: Any) -> Optional[tuple]:
+    """What ``value`` holds in a ``unique`` rule's fields, as one comparable key -- None when any of
+    them is empty (the rule does not judge a row that has no value to be unique)."""
+    held = tuple(_field(value, name) for name in rule.unique)
+    if any(v in (None, "", [], {}) for v in held):
+        return None
+    return tuple(v if isinstance(v, (str, int, float, bool)) else repr(v) for v in held)
+
+
+class UniqueIndex:
+    """Who holds which unique value in ONE dataset: ``{rule: {value: row key}}``, filled from the
+    rows as they are and updated as a batch of writes is checked -- so two rows of one call cannot
+    take the same value either."""
+
+    def __init__(self, rules: list) -> None:
+        self.rules = rules
+        self.held: list[dict[tuple, str]] = [{} for _ in rules]
+
+    def take(self, key: str, value: Any) -> list[dict]:
+        """Record that row ``key`` holds ``value``; ``[{path, code: "unique", rule, message}]`` for
+        each rule another row already satisfies with the same value (that row keeps it)."""
+        out = []
+        self.drop(key)
+        for rule, held in zip(self.rules, self.held):
+            mine = unique_value(value, rule)
+            if mine is None:
+                continue
+            other = held.get(mine)
+            if other is not None and other != key:
+                why = f" ({rule.description})" if rule.description else ""
+                shown = ", ".join(f"{name}={_field(value, name)!r}" for name in rule.unique)
+                out.append({"path": rule.unique[0], "code": "unique", "rule": rule.model_dump(mode="json", exclude_none=True),
+                            "message": f"rule: {shown} is already row {other!r}{why}"})
+            else:
+                held[mine] = key
+        return out
+
+    def drop(self, key: str) -> None:
+        """Forget what row ``key`` holds (it is being replaced or removed)."""
+        for held in self.held:
+            for value in [v for v, k in held.items() if k == key]:
+                del held[value]
+
+
+__all__ = ["UniqueIndex", "rule_breaks", "rules_of", "unique_rules", "unique_value"]

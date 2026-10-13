@@ -264,7 +264,7 @@ def test_asset_hash_tracks_inner_file_edits(tmp_path: Path) -> None:
     )
     before = dataset_asset_hash(FSRef(csv_ds))
     import os
-    os.utime(csv_ds / "data.csv", (before + 100, before + 100))
+    os.utime(csv_ds / "data.csv", ns=(before + 100 * 10**9, before + 100 * 10**9))
     assert dataset_asset_hash(FSRef(csv_ds)) > before
 
     io_ds = _seed_io_dataset(tmp_path, "io", examples={"0001": {"input": "a", "expected": "b"}})
@@ -615,7 +615,7 @@ def test_asset_hash_tracks_nested_new_forms(tmp_path: Path) -> None:
     )
     before = dataset_asset_hash(FSRef(ds))
     nested = ds / "examples" / "0001" / "output-2" / "a.txt"
-    os.utime(nested, (before + 100, before + 100))
+    os.utime(nested, ns=(before + 100 * 10**9, before + 100 * 10**9))
     assert dataset_asset_hash(FSRef(ds)) > before
 
 

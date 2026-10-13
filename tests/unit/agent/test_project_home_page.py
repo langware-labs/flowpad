@@ -36,6 +36,16 @@ def _declare(root: Path, home_page, *, entries=()) -> None:
     path.write_text(json.dumps(document), encoding="utf-8")
 
 
+
+def _ready_home(project, asset=None, kind=None):
+    result = {"asset": asset, "type": kind, "lifecycle": {
+        "state": "ready", "project_id": str(project.id), "detail": "", "run": None, "asset": asset, "display": None,
+        "setup_available": False, "tree": None,
+    }}
+    if asset:
+        result["load_run"] = None
+    return result
+
 # ── the manifest: the key costs the ledger nothing ──────────────────────────
 
 
@@ -83,7 +93,7 @@ def test_a_malformed_id_is_refused_at_write_time(tmp_path):
 async def test_no_manifest_is_the_default_home(tmp_path):
     project = await _project(tmp_path / "none")
 
-    assert await project.open_home_page() == {"asset": None, "type": None}
+    assert await project.open_home_page() == _ready_home(project)
 
 
 async def test_the_declared_agent_resolves_to_its_asset(tmp_path):
@@ -92,7 +102,7 @@ async def test_the_declared_agent_resolves_to_its_asset(tmp_path):
     agent = await _agent(root, "intake")
     _declare(root, str(agent.typeid))
 
-    assert await project.open_home_page() == {"asset": str(agent.typeid), "type": "agent"}
+    assert await project.open_home_page() == _ready_home(project, str(agent.typeid), "agent")
 
 
 async def test_the_home_page_action_answers_with_the_resolution(tmp_path):
@@ -104,7 +114,7 @@ async def test_the_home_page_action_answers_with_the_resolution(tmp_path):
     response = await project.home_page_action()
 
     assert isinstance(response, ApiSuccessResponse)
-    assert response.data == {"asset": str(agent.typeid), "type": "agent"}
+    assert response.data == _ready_home(project, str(agent.typeid), "agent")
 
 
 async def test_the_home_page_is_not_customization(tmp_path):
@@ -181,7 +191,7 @@ async def test_a_never_indexed_home_page_agent_resolves_on_the_first_open(tmp_pa
     typeid = checkout_agent(root, "greeter")
     _declare(root, typeid)
 
-    assert await project.open_home_page() == {"asset": typeid, "type": "agent"}
+    assert await project.open_home_page() == _ready_home(project, typeid, "agent")
 
 
 # ── a web app home: the project opens app-first ────────────────────────────
@@ -211,23 +221,29 @@ async def test_a_web_app_is_a_home_page_and_resolves_to_itself(tmp_path):
     answer = await project.set_home_page_action(typeid=str(app.typeid))
 
     assert isinstance(answer, ApiSuccessResponse) and answer.data == {"home_page": str(app.typeid)}
-    assert await project.open_home_page() == {"asset": str(app.typeid), "type": "micro_app", "load_run": None}
+    assert await project.open_home_page() == _ready_home(project, str(app.typeid), "micro_app")
 
 
 async def test_a_web_app_home_with_no_endpoint_here_is_placed_when_it_opens(tmp_path):
-    """The app view the redirect lands on shows only this machine's endpoints: one missing (an app indexed before
+    """The app view the redirect lands on shows only this machine's routes: one missing (an app indexed before
     its project existed, a wiped row) is placed by the open, as ``flow show`` places it."""
-    from flow_sdk.builtin.webapp_placement import webapp_endpoints
+    from flow_sdk.builtin.project_setup import _RUNS
+    from flow_sdk.builtin.webapp_placement import drop_routes, webapp_routes
+    from flow_sdk.core.setup.load import load_state
+    from flow_sdk.schema.data_spec.asset_setup_spec import LoadState
 
     root = tmp_path / "unplaced"
     project = await _project(root)
     app = await _web_app(root, "console")
-    for endpoint in await webapp_endpoints(app.id):
-        await endpoint.delete()
+    await drop_routes(webapp_id=app.id)
+    assert await webapp_routes(app.id) == []
     _declare(root, str(app.typeid))
 
-    assert await project.open_home_page() == {"asset": str(app.typeid), "type": "micro_app", "load_run": None}
-    assert [e.backend.type for e in await webapp_endpoints(app.id)] == ["static"]
+    opened = await project.open_home_page()
+    assert opened["asset"] == str(app.typeid) and opened["lifecycle"]["state"] == "running"
+    assert (await _RUNS[(str(project.id), "")]).ok
+    assert load_state(str(project.id)).state is LoadState.READY
+    assert [(p.subkind, p.backend.type) for p in await webapp_routes(app.id)] == [("app", "static")]
 
 
 async def test_another_projects_web_app_is_never_a_home_page(tmp_path):
@@ -240,7 +256,7 @@ async def test_another_projects_web_app_is_never_a_home_page(tmp_path):
     _declare(Path(mine.fs_storage_mount_path), str(app.typeid))
 
     assert not isinstance(refused, ApiSuccessResponse)
-    assert await mine.open_home_page() == {"asset": None, "type": None}
+    assert await mine.open_home_page() == _ready_home(mine)
 
 
 # ── a web app home is LOADED: up by the time its view mounts ────────────────
@@ -270,19 +286,61 @@ async def test_opening_a_home_app_whose_dev_server_is_down_starts_its_load_and_a
 
     started = []
 
-    async def start(project, *, root, tree=None, **_kw):
-        started.append((root, (await tree.resolve_node(root)).run.name))
-        return f"setup-{root}"
+    async def start(project, *, root="", tree=None, **_kw):
+        app_node = await tree.resolve_node(str(app.typeid))
+        started.append((root, app_node.run.name))
+        return f"setup-project-{project.id}"
 
     monkeypatch.setattr(project_setup, "start_setup", start)
     root = tmp_path / "dev-home"
     project = await _project(root)
-    app = await _web_app(root, "console", endpoints=[{
-        "name": "web", "serving": {"type": "proxy", "start_cmd": "npx vite --port {port}", "health": "/"},
+    app = await _web_app(root, "console", mounts=[{
+        "serving": {"type": "proxy", "start_cmd": "npx vite --port {port}", "health": "/"},
     }])
     _declare(root, str(app.typeid))
 
     answer = await project.open_home_page()
 
-    assert answer == {"asset": str(app.typeid), "type": "micro_app", "load_run": f"setup-{app.typeid}"}
-    assert started == [(str(app.typeid), str(app.typeid))], "the node's own chain, as the walk will run it"
+    assert answer["asset"] == str(app.typeid) and answer["type"] == "micro_app"
+    assert answer["load_run"] == f"setup-project-{project.id}"
+    assert answer["lifecycle"]["state"] == "running"
+    assert started == [("", str(app.typeid))], "the provider project owns the shared run"
+
+
+@pytest.mark.parametrize("reference", ["./../foreign", "./agentic-assets/../../foreign", "./C:/foreign", "./.", "./"])
+def test_unsafe_relative_home_reference_is_not_adopted(reference):
+    assert ProjectManifestSpec.model_validate({"home_page": reference}).home_page is None
+
+
+async def test_relative_home_is_portable_across_read_only_webapp_clones(tmp_path):
+    import shutil
+
+    first_root, second_root = tmp_path / "publisher", tmp_path / "clone"
+    first_project = await _project(first_root)
+    first_app = await _web_app(first_root, "console")
+    relative = "./agentic-assets/webapp/console"
+    _declare(first_root, relative)
+    shutil.copytree(first_root, second_root)
+    second_project = await _project(second_root)
+    second = await second_project.open_home_page()
+    first = await first_project.open_home_page()
+    assert first["asset"] == str(first_app.typeid)
+    assert second["type"] == "micro_app" and second["asset"] != first["asset"]
+    assert manifest.read_home_page(second_root) == relative
+    assert "id" not in json.loads((second_root / relative[2:] / "webapp.json").read_text())
+
+
+async def test_relative_home_set_indexes_its_own_target_and_rejects_symlink_escape(tmp_path):
+    own_root, foreign_root = tmp_path / "own", tmp_path / "foreign"
+    project = await _project(own_root)
+    await _project(foreign_root)
+    await _web_app(foreign_root, "foreign")
+    own = await _web_app(own_root, "console")
+    accepted = await project.set_home_page_action(typeid="./agentic-assets/webapp/console")
+    assert isinstance(accepted, ApiSuccessResponse)
+    assert accepted.data["home_page"] == "./agentic-assets/webapp/console"
+    assert (await project.open_home_page())["asset"] == str(own.typeid)
+    (own_root / "escape").symlink_to(foreign_root / "agentic-assets/webapp/foreign", target_is_directory=True)
+    assert not isinstance(await project.set_home_page_action(typeid="./escape"), ApiSuccessResponse)
+    _declare(own_root, "./escape")
+    assert (await project.open_home_page())["asset"] is None

@@ -739,3 +739,26 @@ async def test_mirror_learns_a_changed_roster_into_the_address_book(monkeypatch)
 
     await mirror_hub_response_into_local(e, "members", roster)
     assert learned == [roster]
+
+
+@pytest.mark.asyncio
+async def test_an_update_of_only_local_fields_stays_local_and_never_asks_the_hub(monkeypatch):
+    """The app saves the whole entity, so a save that changes nothing the hub holds still echoes
+    the hub's clocks in the client's spelling. A reader of a shared project had such a save
+    forwarded and refused (403), and lost the local write with it."""
+    import flow_sdk.server.routes._hub_reflect as mod
+    from flow_sdk.builtin.project import Project
+
+    async def refuse(*_args, **_kwargs):
+        raise AssertionError("a local-only change was sent to the hub")
+
+    monkeypatch.setattr(mod, "hub_put", refuse)
+    project = Project(id=str(uuid.uuid4()), name="shared with me", remote=True)
+    update = Action(action_name="update", function_name="update", handler=lambda self: None, methods=["put"], types=["all"])
+
+    body = {**project.model_dump(mode="json"), "fetched_at": "2026-10-11T00:00:00Z", "updated_date": "2026-10-11T00:00:00Z"}
+    assert await mod.reflect_to_hub(update, project, body, "PUT") is mod.REFLECT_CONTINUE_LOCAL
+
+    # A field the hub does hold still goes there.
+    with pytest.raises(AssertionError, match="sent to the hub"):
+        await mod.reflect_to_hub(update, project, {**body, "name": "renamed"}, "PUT")

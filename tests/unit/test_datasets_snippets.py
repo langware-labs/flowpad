@@ -39,7 +39,7 @@ def folder(tmp_path):
 @needs_dataset
 async def test_read_a_dataset():
     ns = await run_fence(fence_under(DOC, "2."))
-    assert ns["summary"] == ("navigator.dataset", 252, {"eval": 250, "test": 2})
+    assert ns["summary"] == ("navigator.dataset", 253, {"eval": 251, "test": 2})
     assert ns["first"] == "open data sources" and ns["problems"] == []
 
 
@@ -134,3 +134,12 @@ async def test_mirror_an_outside_system_and_read_only_what_you_show(project):
     assert ns["names"] == ["Bolt Ltd"] and ns["found"]["total"] == 1
     assert ns["tally"] == {"total": 3, "groups": [{"by": {"kind": "train"}, "count": 3}]}
     assert ns["gone"] == ["acme", "dyne"]
+
+
+async def test_ask_across_links_count_and_find_by_text(project):
+    ns = await run_fence(fence_under(DOC, "10."), {"project": project})
+    assert ns["at_acme"] == ["dana", "eli"]
+    assert [(g["by"]["input.company.key"], g["count"], g["metrics"]["people"]) for g in ns["per_company"]["groups"]] == [("acme", 2, 2), ("bolt", 1, 1)]
+    assert [r["key"] for r in ns["found"]["rows"]] == ["dana", "fay"] and ns["names"] == ["Acme", "Bolt"]
+    assert ns["unused"] == ["dana", "eli", "fay"]
+    assert [r["key"] for r in ns["colleagues"]["rows"]] == ["dana", "eli", "fay"]      # everyone at a company a Levi is at

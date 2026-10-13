@@ -6,7 +6,9 @@ WebSocket route. What it does depends on where the endpoint lives:
 
 * **here** (a local row) — ``static`` serves files from ``backend.root``;
   ``proxy`` relays to ``127.0.0.1:<port>``; ``channel`` makes the request a message on a
-  channel and answers with its reply (``routes/service_channel.py``). On a cloud box this is where the hub's
+  channel and answers with its reply (``routes/service_channel.py``); ``routed`` — an audience
+  proxy (``admin`` / ``app``) — picks the app by the first path segment (its mount, else the root
+  app) and serves THAT route's files or process with the mount stripped. On a cloud box this is where the hub's
   hop lands: the hub addresses the box's own row at the same id, gate attached.
 * **elsewhere** (``remote`` — a hub row this desktop adopted) — forwarded to the
   hub's ``service`` route, which reaches the machine it runs on.
@@ -111,21 +113,30 @@ async def service_http(request: Request, endpoint_id: str, sub_path: str = "") -
         return _fail(400, str(e))
     if endpoint.remote:
         return await _via_hub(request, endpoint, path)
-    if endpoint.backend.type == "static":
-        return await _serve_static(request, endpoint, sub_path)
-    if endpoint.backend.type == "channel":
+    served = _served(endpoint, sub_path)
+    if served is None:
+        return _fail(404, "no app is served at this path")
+    backend, mount, sub_path = served
+    if mount is not None:
+        path = upstream_path(sub_path, request.url.query)
+    if backend.type == "static":
+        return await _serve_static(request, endpoint, backend.root, sub_path, mount)
+    if backend.type == "channel":
         from flow_sdk.server.routes.service_channel import channel_http  # noqa: PLC0415
 
         return await channel_http(request, endpoint, sub_path, _verified_user(request.headers))
-    return await _proxy_http(request, endpoint, path)
+    return await _proxy_http(request, backend.port, path)
 
 
-async def _serve_static(request: Request, endpoint: ServiceEndpoint, sub_path: str) -> Response:
-    """Serve the endpoint's folder, its documents based at where the BROWSER is.
+async def _serve_static(
+    request: Request, endpoint: ServiceEndpoint, root: str, sub_path: str, mount: Optional[str] = None
+) -> Response:
+    """Serve a folder — the endpoint's own, or one route's — its documents based at where the BROWSER is.
 
     Behind the hub that is the hub's address for this endpoint (its own origin,
     or the hub's path), which only the hub's gate-authenticated hop may state;
-    otherwise it is this tier's endpoint root. Never the request's own path.
+    otherwise it is this tier's endpoint root. Never the request's own path. A
+    route's documents are based one segment deeper, at its mount.
     """
     from flow_sdk.builtin.faas.serve_static import _browser_scheme, serve_app_bytes  # noqa: PLC0415
     from flow_sdk.config import default_service_config  # noqa: PLC0415
@@ -139,8 +150,10 @@ async def _serve_static(request: Request, endpoint: ServiceEndpoint, sub_path: s
         host=request.headers.get("host") or request.url.netloc,
         endpoint_id=endpoint.id,
     )
+    if mount:
+        base = base.rstrip("/") + "/" + mount + "/"
     return await serve_app_bytes(
-        Path(endpoint.backend.root),
+        Path(root),
         sub_path,
         request,
         base_url=base,
@@ -151,8 +164,8 @@ async def _serve_static(request: Request, endpoint: ServiceEndpoint, sub_path: s
     )
 
 
-async def _proxy_http(request: Request, endpoint: ServiceEndpoint, path: str) -> Response:
-    url = f"http://127.0.0.1:{endpoint.backend.port}{path}"
+async def _proxy_http(request: Request, port: int, path: str) -> Response:
+    url = f"http://127.0.0.1:{port}{path}"
     headers = outbound_headers(request.headers.items(), user=_verified_user(request.headers))
     has_body = request.headers.get("content-length", "0") != "0" or "chunked" in request.headers.get(
         "transfer-encoding", ""
@@ -224,12 +237,22 @@ async def service_socket(websocket: WebSocket, endpoint_id: str, sub_path: str =
         base, auth, ssl_context = target
         headers = outbound_headers(websocket.headers.items(), user=None, websocket=True) + auth
         await relay_websocket(websocket, base + path, headers, subprotocols=offered, ssl=ssl_context)
-    elif endpoint.backend.type == "proxy":
-        url = f"ws://127.0.0.1:{endpoint.backend.port}{path}"
+    elif (served := _served(endpoint, sub_path)) is not None and served[0].type == "proxy":
+        url = f"ws://127.0.0.1:{served[0].port}{upstream_path(served[2], websocket.url.query)}"
         headers = outbound_headers(websocket.headers.items(), user=_verified_user(websocket.headers), websocket=True)
         await relay_websocket(websocket, url, headers, subprotocols=offered)
     else:
         await _close(websocket, WS_POLICY, "a static endpoint has no socket")
+
+
+def _served(endpoint: ServiceEndpoint, sub_path: str) -> Optional[tuple[Any, Optional[str], str]]:
+    """``(backend, mount, path under it)`` that answers *sub_path* — the endpoint's own backend (no mount),
+    or, on an audience proxy, the route the path lands on. None when the proxy routes nothing there."""
+    backend = endpoint.backend
+    if backend.type != "routed":
+        return backend, None, sub_path
+    mount, rest = backend.resolve(sub_path)
+    return None if mount is None else (backend.routes[mount].backend, mount, rest)
 
 
 def _hub_socket_target(endpoint: ServiceEndpoint) -> Optional[tuple[str, list, Any]]:

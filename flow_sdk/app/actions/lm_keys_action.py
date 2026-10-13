@@ -19,7 +19,6 @@ from flow_sdk.cli.auth.lm_api_keys import (
     delete_lm_api,
     list_lm_api,
     list_provider_models,
-    set_lm_api,
     validate_lm_api,
 )
 from flow_sdk.core import action
@@ -73,12 +72,9 @@ async def lm_keys_action() -> ApiResponse:
                 key = payload.get("key")
                 if not key:
                     return ApiFailResponse(message="key is required")
-                set_lm_api(key, provider)
-                # A stored key with no row funds nothing: every local consumer reaches this
-                # key through `LLMEndpoint.key_endpoints()`, which is a query over rows. Minting
-                # here — the one place a key is stored through the API — keeps the two halves
-                # from drifting. Find-or-mint, so re-entering a key does not duplicate.
-                await LLMEndpoint.ensure_for_secret(provider.value)
+                # A stored key with no row funds nothing (consumers query rows), so the key and
+                # its row are stored together. Find-or-mint: re-entering a key does not duplicate.
+                await LLMEndpoint.by_provider(provider, key)
                 # Auto-validate on set so the UI can confirm the key immediately;
                 # reuse the in-hand key rather than re-reading the store.
                 result = await validate_lm_api(provider, key=key)

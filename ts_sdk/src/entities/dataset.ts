@@ -4,6 +4,7 @@
  * items into examples, `annotate` writes an example's gold label.
  */
 import { APIEntity, registerEntity } from '../APIEntity';
+import type { ApiWarning } from '../ApiResponse';
 import apiClient from '../client';
 import { IEntity, EntityMerge } from '../IEntity';
 import type { EvalExampleRow, EvalRun, EvalTrace } from '../evals/types';
@@ -69,14 +70,17 @@ export interface DatasetRow extends DatasetRowInput {
 }
 
 /** One thing wrong with a row or a value: where, what kind of problem (`shape:<pydantic type>`,
- *  `dangling_ref`, `inline_row`, `rule`; on a 409 `conflict`, `gone`, `referenced`), and the message
+ *  `dangling_ref`, `inline_row`, `rule`, `unique`, `owned`; on a 409 `conflict`, `gone`, `referenced`), and the message
  *  `errors` carries as a line. */
 export interface CheckDetail {
   path: string;
   code: string;
   message: string;
-  /** `code: "rule"`: the rule broken — both ends (`same`) and why. */
-  rule?: { same: [string, string]; description: string };
+  /** `code: "rule"` / `"unique"`: the rule broken — both ends (`same`) or the fields no two rows
+   *  share (`unique`), and why. */
+  rule?: { same?: [string, string]; unique?: string[]; description: string };
+  /** `code: "owned"`: the outside system that owns the field (the schema's `owned_by`). */
+  owned_by?: string;
 }
 
 /** A row that does not fit: by key, with everything wrong, its version (to repair it with `put`
@@ -98,18 +102,80 @@ export interface DatasetRowProblem {
 /** A row written by key (`putMany`, `sync`): the row's slots and the key it lands under. */
 export type DatasetKeyedRow = Omit<DatasetRowInput, 'key'> & { key: string };
 
-/** Which rows to read: `match` is an expression (`{op, operands}`) or a plain `{path: value}` map
- *  (all must hold); `order_by` is `{path: 'asc' | 'desc'}`, or a list of them (the first wins). */
+/** Which rows to read. `match` is an expression (`{op, operands}`) or a plain `{path: value}` map
+ *  (all must hold); `q` keeps the rows whose text holds every word of it; `order_by` is
+ *  `{path: 'asc' | 'desc'}`, or a list of them (the first wins).
+ *
+ *  A path is written as a schema's rules write theirs, with the slot spelled out: `key`,
+ *  `input.stage`, `input.stage_dates.won`, `input.tags.*` (any element of a list) — and
+ *  `input.persona.icp`: a path FOLLOWS a link into the linked row (`input.persona.key` is that
+ *  row's key). `expand` names link paths whose rows should come back beside (`linked`). */
 export interface DatasetRowQuery {
   match?: ExpressionNode | Partial<ExpressionNode> | MatchMap;
+  q?: string;
   order_by?: OrderByType | OrderByType[];
   limit?: number;
   offset?: number;
+  expand?: string[];
+}
+
+/** The row a link names, as `GET /refs/<ref>` and `rows({expand})` answer it. */
+export interface LinkedRow {
+  dataset_id: string;
+  key: string;
+  row: DatasetRow;
+}
+
+/** How to count. `group_by` entries are paths (links followed, as in `DatasetRowQuery`) or a date
+ *  BUCKET `<day|week|month|quarter>:<path>`, keyed `2026-09-13` (the week's first day),
+ *  `2026-09`, `2026-Q3`; `metrics` names further measures `{name: '<distinct|min|max|sum>:<path>'}`;
+ *  `order_by` orders the groups by an entry, `count` or a metric's name (else largest first). */
+export interface DatasetCountQuery {
+  match?: DatasetRowQuery['match'];
+  q?: string;
+  group_by?: string[];
+  metrics?: Record<string, string>;
+  order_by?: OrderByType | OrderByType[];
+  week_start?: 'monday' | 'sunday';
 }
 
 export interface DatasetRowCount {
   total: number;
-  groups: { by: Record<string, unknown>; count: number }[];
+  /** Present when `metrics` were asked: each measure over every matching row. */
+  metrics?: Record<string, unknown>;
+  groups: { by: Record<string, unknown>; count: number; metrics?: Record<string, unknown> }[];
+}
+
+/** A row that links to another (`usedBy`): the dataset it is in, its kind and its key. */
+export interface RowUser {
+  dataset_id: string;
+  kind: string;
+  key: string;
+}
+
+/** The period a calendar day falls in, as `count` keys a bucket: `day` `2026-09-13` · `week` the
+ *  week's FIRST day · `month` `2026-09` · `quarter` `2026-Q3`. Read from the first ten characters
+ *  as written (no time zone); null for a value that is no date. The twin of the server's
+ *  `bucket_of`, held to it by `test_fixtures/dataset_count_cases.json` — for an app that labels a
+ *  period or asks for one by its key. */
+export function bucketOf(
+  day: unknown,
+  unit: 'day' | 'week' | 'month' | 'quarter',
+  weekStart: 'monday' | 'sunday' = 'monday',
+): string | null {
+  const text = typeof day === 'string' ? day.slice(0, 10) : '';
+  const parts = /^(\d{4})-(\d{2})-(\d{2})$/.exec(text);
+  if (!parts) return null;
+  const date = new Date(Date.UTC(+parts[1], +parts[2] - 1, +parts[3]));
+  if (date.getUTCMonth() !== +parts[2] - 1 || date.getUTCDate() !== +parts[3]) return null; // Feb 30
+  const iso = (d: Date) => d.toISOString().slice(0, 10);
+  if (unit === 'day') return iso(date);
+  if (unit === 'week') {
+    const back = weekStart === 'sunday' ? date.getUTCDay() : (date.getUTCDay() + 6) % 7;
+    return iso(new Date(date.getTime() - back * 864e5));
+  }
+  if (unit === 'month') return text.slice(0, 7);
+  return `${parts[1]}-Q${Math.floor((+parts[2] - 1) / 3) + 1}`;
 }
 
 export interface DatasetSyncResult {
@@ -118,6 +184,10 @@ export interface DatasetSyncResult {
   unchanged: string[];
   deleted: string[];
   num_examples: number;
+  /** `mirror` only: records whose value does not fit the row kind, kept as problem rows (`rows().problems`). */
+  misfit?: { key: string; details: CheckDetail[] }[];
+  /** `mirror` only: link ids no row holds, left out of the row. */
+  unlinked?: { key: string; field: string; value: string }[];
 }
 
 /** The tag a row write emits (`flow_sdk/builtin/dataset.py` `Dataset.ROWS_CHANGED`). */
@@ -128,6 +198,18 @@ export interface DatasetRowsChange {
   op: 'put' | 'delete' | 'rename' | 'sync';
   keys: string[];
   count: number;
+  /** The rows as a whole after this write (the same `version` a `rows()` read carries); what
+   *  `onRowsChanged` compares on reconnect. `sync` with no keys is "something moved while you were
+   *  away". */
+  version: string;
+}
+
+/** Who a write is made for, as the row actions read it. `by` names the outside system the writer
+ *  writes as (`"crm"`): only that writer sets a field the schema marks `owned_by` it — anyone else
+ *  changing one is refused (400, `details[].code === 'owned'`). An app editing its own fields
+ *  leaves it out. A guard against mistakes between cooperating writers, not a permission. */
+function writer(options: { by?: string }): { by?: string } {
+  return options.by ? { by: options.by } : {};
 }
 
 function matchJson(match: NonNullable<DatasetRowQuery['match']>): unknown {
@@ -142,7 +224,11 @@ function rowQueryParams(query: DatasetRowQuery): Record<string, unknown> {
   if (query.order_by) filter.order_by = query.order_by;
   if (query.limit !== undefined) filter.limit = query.limit;
   if (query.offset !== undefined) filter.offset = query.offset;
-  return Object.keys(filter).length ? { filter: JSON.stringify(filter) } : {};
+  if (query.expand?.length) filter.expand = query.expand;
+  return {
+    ...(Object.keys(filter).length ? { filter: JSON.stringify(filter) } : {}),
+    ...(query.q?.trim() ? { q: query.q } : {}),
+  };
 }
 
 export interface IDataset extends IEntity {
@@ -236,7 +322,7 @@ export class Dataset extends APIEntity<Dataset> implements IDataset {
 
   /** The row a reference (`<kind>.id.<uuid>`) names among the project's datasets — 404 (thrown) when
    *  none holds it. */
-  static async findRow(ref: string, projectId: string): Promise<{ dataset_id: string; key: string; row: DatasetRow }> {
+  static async findRow(ref: string, projectId: string): Promise<LinkedRow> {
     return apiClient.get(`/api/v1/refs/${encodeURIComponent(ref)}`, { params: { project: projectId } });
   }
 
@@ -264,9 +350,14 @@ export class Dataset extends APIEntity<Dataset> implements IDataset {
     return this.post('promote', { source_item_ids: sourceItemIds });
   }
 
-  /** Typed rows in — each checked against the declared shape; one bad row writes nothing. */
-  async append(rows: DatasetRowInput[]): Promise<{ example_ids: string[]; num_examples: number }> {
-    return this.post('append', { rows });
+  /** Typed rows in — each checked against the declared shape; one bad row writes nothing. In a mirrored
+   *  dataset a record the outside system made but not all of is still written, with `warnings`
+   *  (`source_partial`) saying what was not set. */
+  async append(
+    rows: DatasetRowInput[],
+    options: { by?: string } = {},
+  ): Promise<{ example_ids: string[]; num_examples: number; warnings?: ApiWarning[] }> {
+    return this.post('append', { rows, ...writer(options) });
   }
 
   /** Every row that fits, with its slots' values, and `problems`: the rows that do not, by key with
@@ -274,35 +365,87 @@ export class Dataset extends APIEntity<Dataset> implements IDataset {
    *  match, ordered and paged — `total` is how many matched before paging; `problems` is still
    *  every row that does not fit. A field is a path into the row: `key`, `input.stage`,
    *  `input.stage_dates.won`; a date compares as its ISO string. */
-  async rows(query: DatasetRowQuery = {}): Promise<{ rows: DatasetRow[]; total: number; problems: DatasetRowProblem[] }> {
-    return this.get('rows', rowQueryParams(query));
+  async rows(
+    query: DatasetRowQuery = {},
+  ): Promise<{ rows: DatasetRow[]; total: number; problems: DatasetRowProblem[]; linked?: Record<string, LinkedRow>; version: string }> {
+    const found = await this.get<{ rows: DatasetRow[]; total: number; problems: DatasetRowProblem[]; linked?: Record<string, LinkedRow>; version: string }>(
+      'rows',
+      rowQueryParams(query),
+    );
+    this.rowsRead = found.version; // a read is a sighting too (`onRowsChanged`)
+    return found;
   }
 
-  /** How many rows match — and, with `group_by` (field paths), how many per distinct combination
-   *  of those fields, largest first. Rows that do not fit their shape are not counted. */
-  async count(query: Pick<DatasetRowQuery, 'match'> & { group_by?: string[] } = {}): Promise<DatasetRowCount> {
-    const params = rowQueryParams(query);
+  /** The rows version the last `rows()` on this instance read — so a listener on it never asks the
+   *  page to re-read what it just read, whichever came first, the read or the subscription. */
+  private rowsRead?: string;
+
+  /** How many rows match — the SAME `match` and `q` as `rows`, so a number and the list behind it
+   *  are one question — and, with `group_by`, how many per distinct combination (a path, or a date
+   *  bucket `week:input.day`), with `metrics` (`distinct:` / `min:` / `max:` / `sum:`) overall and
+   *  per group. Rows that do not fit their shape are not counted. */
+  async count(query: DatasetCountQuery = {}): Promise<DatasetRowCount> {
+    const params = rowQueryParams({ match: query.match, q: query.q });
     if (query.group_by?.length) params.group_by = JSON.stringify(query.group_by);
+    if (query.metrics && Object.keys(query.metrics).length) params.metrics = JSON.stringify(query.metrics);
+    if (query.order_by) params.order_by = JSON.stringify(query.order_by);
+    if (query.week_start) params.week_start = query.week_start;
     return this.get('count', params);
+  }
+
+  /** Who links to each row: `{key: [{dataset_id, kind, key}]}` for `keys` (every row when left
+   *  out) — `[]` for a row nothing links to. What a delete is refused for, asked ahead of time. */
+  async usedBy(keys?: string[]): Promise<Record<string, RowUser[]>> {
+    const found = await this.get<{ used_by: Record<string, RowUser[]> }>('used-by', keys?.length ? { keys: keys.join(',') } : {});
+    return found.used_by;
   }
 
   /** Hear that rows of THIS dataset were written — by this app, another one, or a script — instead
    *  of polling: `handler` gets what happened (`op`), up to 100 of the `keys` that moved and how
    *  many moved in all (`count`) — never the values: re-read the rows you show (`rows(query)`).
-   *  One call per write, however many rows it wrote. Best effort (a hint to re-read, not a log):
-   *  an event sent while the page was disconnected is not replayed, so still re-read on focus.
-   *  Returns the function that stops listening. */
+   *  One call per write, however many rows it wrote. The event is enough — no timer, no re-read on
+   *  focus: a write made while the socket was down is told once it is back, as `{op: 'sync',
+   *  keys: [], count: 0, version}` — the rows' version moved past the last one this listener heard
+   *  or this instance read. Returns the function that stops listening. */
   onRowsChanged(handler: (change: DatasetRowsChange) => void): () => void {
     // The server's tags reach this page's bus over the socket. A served app's `initSdk()` does not
     // open one (only the full UI does, after paint), so listening opens it — both are idempotent,
-    // and a socket that cannot open leaves the page re-reading on focus, never an error here.
+    // and a socket that cannot open is not an error here: it is retried, and the catch-up below
+    // runs once it opens.
     startTagBridge();
-    void ConnectionManager.getInstance()
-      .connect()
-      .catch(() => undefined);
-    return EventBus.on(DATASET_ROWS_CHANGED, (event) => handler(event.data as unknown as DatasetRowsChange), {
-      target: targetOf('dataset', this.id),
-    });
+    const connection = ConnectionManager.getInstance();
+    void connection.connect().catch(() => undefined);
+    // The last version THIS listener heard — its own, so two views on one dataset each catch up.
+    let heard: string | undefined;
+    const offTag = EventBus.on(
+      DATASET_ROWS_CHANGED,
+      (event) => {
+        const change = event.data as unknown as DatasetRowsChange;
+        heard = change.version;
+        handler(change);
+      },
+      { target: targetOf('dataset', this.id) },
+    );
+    // What was missed while the socket was down: one small read, and a `sync` only when the version
+    // is one neither this listener heard nor this instance read. The first check is the baseline.
+    const catchUp = async () => {
+      let version: string;
+      try {
+        ({ version } = await this.get<{ version: string }>('rows-version'));
+      } catch {
+        return; // the server is away: the next reconnect asks again
+      }
+      const known = heard ?? this.rowsRead;
+      const moved = known !== undefined && version !== heard && version !== this.rowsRead;
+      heard = version;
+      if (moved) handler({ op: 'sync', keys: [], count: 0, version });
+    };
+    void catchUp();
+    connection.on('on_reconnected', catchUp);
+    return () => {
+      offTag();
+      connection.off('on_reconnected', catchUp);
+    };
   }
 
   /** Every eval run on this dataset, newest first (summaries — no slices). */
@@ -332,13 +475,16 @@ export class Dataset extends APIEntity<Dataset> implements IDataset {
   }
 
   /** Create the row `key`, or replace the one there. Checked first — a row that does not fit writes
-   *  nothing. Slots it leaves out (gold, output, context) and the row's metadata are kept. */
+   *  nothing. Slots it leaves out (gold, output, context) and the row's metadata are kept. In a dataset
+   *  a data source mirrors into, the fields its system owns go to that system first (refused as
+   *  `source_refused`, or `not_writable` for one that cannot go back), and a new row takes its record's
+   *  key — the `key` answered is the row's. */
   async put(
     key: string,
     row: Omit<DatasetRowInput, 'key'>,
-    options: { expected?: string } = {},
-  ): Promise<{ example_id: string; key: string; num_examples: number }> {
-    return this.post('put-row', { key, row, ...(options.expected ? { expected: options.expected } : {}) });
+    options: { expected?: string; by?: string } = {},
+  ): Promise<{ example_id: string; key: string; num_examples: number; warnings?: ApiWarning[] }> {
+    return this.post('put-row', { key, row, ...(options.expected ? { expected: options.expected } : {}), ...writer(options) });
   }
 
   /** Remove one row, by key or id. Refused (409) while another row links to it, and — with
@@ -352,9 +498,9 @@ export class Dataset extends APIEntity<Dataset> implements IDataset {
    *  (`{key: version}`; 409) writes nothing. */
   async putMany(
     rows: DatasetKeyedRow[],
-    options: { expected?: Record<string, string> } = {},
-  ): Promise<{ example_ids: string[]; keys: string[]; num_examples: number }> {
-    return this.post('put-rows', { rows, ...(options.expected ? { expected: options.expected } : {}) });
+    options: { expected?: Record<string, string>; by?: string } = {},
+  ): Promise<{ example_ids: string[]; keys: string[]; num_examples: number; warnings?: ApiWarning[] }> {
+    return this.post('put-rows', { rows, ...(options.expected ? { expected: options.expected } : {}), ...writer(options) });
   }
 
   /** Remove several rows as ONE step — all of them, or none (404 a key that is no row, 409 a row
@@ -372,12 +518,13 @@ export class Dataset extends APIEntity<Dataset> implements IDataset {
    *  nothing. */
   async sync(
     rows: DatasetKeyedRow[],
-    options: { prune?: boolean; match?: DatasetRowQuery['match'] } = {},
+    options: { prune?: boolean; match?: DatasetRowQuery['match']; by?: string } = {},
   ): Promise<DatasetSyncResult> {
     return this.post('sync-rows', {
       rows,
       ...(options.prune === undefined ? {} : { prune: options.prune }),
       ...(options.match ? { match: matchJson(options.match) } : {}),
+      ...writer(options),
     });
   }
 
@@ -388,10 +535,34 @@ export class Dataset extends APIEntity<Dataset> implements IDataset {
     return this.post('rename-row', { key: keyOrId, new_key: newKey, ...(options.expected ? { expected: options.expected } : {}) });
   }
 
-  /** Would this row fit — its shape, its links and its schema's rules across rows? Nothing is
-   *  written. `details` says where and what kind of problem (`code`), all at once. */
-  async check(row: Omit<DatasetRowInput, 'key'>): Promise<{ ok: boolean; errors: string[]; details: CheckDetail[] }> {
-    return this.post('check-row', { row });
+  /** Make this dataset the typed MIRROR of a data source: each of the source's items becomes one
+   *  row of this dataset's kind, and the dataset is made to hold exactly those (as `sync`). `map`
+   *  says how an item becomes a row, in the path grammar — `{key: 'external_id', input: {name:
+   *  'name', stage: 'data.stage'}}` (`{value: x}` is a constant). `by` is the outside system the
+   *  rows are written as (default: the source's provider). */
+  async mirror(
+    sourceId: string,
+    map: { key: string; input: Record<string, unknown> },
+    options: { by?: string; prune?: boolean; match?: DatasetRowQuery['match'] } = {},
+  ): Promise<DatasetSyncResult> {
+    return this.post('mirror', {
+      source_id: sourceId,
+      map,
+      ...writer(options),
+      ...(options.prune === undefined ? {} : { prune: options.prune }),
+      ...(options.match ? { match: matchJson(options.match) } : {}),
+    });
+  }
+
+  /** Would this row fit — its shape, its links, its schema's rules across rows (a `unique` value
+   *  another row holds), and the fields an outside system owns? Nothing is written. A row that
+   *  carries its `key` is checked as a `put` of that row would be; one without, as a new row.
+   *  `details` says where and what kind of problem (`code`), all at once. */
+  async check(
+    row: DatasetRowInput,
+    options: { by?: string } = {},
+  ): Promise<{ ok: boolean; errors: string[]; details: CheckDetail[] }> {
+    return this.post('check-row', { row, ...writer(options) });
   }
 
   /** Every row checked against the declared shape; `problems` names the rows that do not fit, by key. */

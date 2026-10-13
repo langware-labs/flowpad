@@ -22,7 +22,7 @@ from contextvars import ContextVar
 from datetime import datetime, timedelta, timezone
 from math import ceil
 from pathlib import Path
-from typing import TYPE_CHECKING, ClassVar, Optional
+from typing import TYPE_CHECKING, Any, ClassVar, Optional
 
 from pydantic import computed_field, field_validator, model_validator
 
@@ -44,6 +44,7 @@ from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccess
 from flow_sdk.schema.data_spec.asset_setup_spec import SetupSkipSpec
 from flow_sdk.schema.data_spec.data_driver_spec import ReflectMode
 from flow_sdk.schema.data_spec.source_item_spec import SourceItemSpec
+from flow_sdk.schema.data_spec.webhook_spec import WebhookDelivery
 from flow_sdk.schema.types import EntityType
 from flow_sdk.secrets.store import SecretStoreRef
 from flow_sdk.utils.serialization import iso_to_utc
@@ -139,6 +140,8 @@ def parse_since(raw: str) -> "tuple[Optional[datetime], Optional[str]]":
 #: Set by ``save_runtime``: the one suppressed save whose runtime fields are the news.
 _RUNTIME_WRITE: "ContextVar[bool]" = ContextVar("_data_source_runtime_write", default=False)
 RECEIVED_SETUP_DETAIL = "Received — connect your own account, then press Verify."
+#: Why a source's own Set up cannot start: the setup tree is a project's.
+NO_SETUP_PROJECT = "This source belongs to no project, so there is no setup to run for it — press Verify."
 
 
 class DataSource(SetupSkippable, Entity):
@@ -147,6 +150,8 @@ class DataSource(SetupSkippable, Entity):
     # A file asset, so it OWNS its path: ``<scope>/agentic-assets/data_source/<name>/``. Declaring it is
     # what enrolls the class in ``Entity.asset_owner_classes()``. PRIVATE: the path is this machine's.
     asset_ref: Optional[str] = APIField(None, sharing=Sharing.PRIVATE)
+
+    webhook_delivery: WebhookDelivery = APIField(default=WebhookDelivery.HUB)
 
     # ── identity / ontology ──
     name: str = APIField(default="")
@@ -210,9 +215,11 @@ class DataSource(SetupSkippable, Entity):
     answer_place: Optional[str] = APIField(default=None, description="The Deployment that answers this source")
 
     #: Who may drive the owning agent through this line (``agent_serve.admits``); empty admits nobody unless
-    #: the driver is ``open_inbound``. Third parties' addresses: PRIVATE, row-only — never in the shareable
+    #: the driver is ``open_inbound`` or ``open_to_all`` is set. Third parties' addresses: PRIVATE, row-only — never in the shareable
     #: ``config`` (a form's field is moved here), and a re-read file leaves it as it is.
     allowed_senders: list[str] = APIField(default_factory=list, sharing=Sharing.PRIVATE, persist=Persist.FALSE)
+    #: Explicit public inbound access; private machine policy, never published with the source.
+    open_to_all: bool = APIField(default=False, sharing=Sharing.PRIVATE, persist=Persist.FALSE)
 
     # ── reflection — HOW the payload becomes locally present ──
     #
@@ -240,6 +247,10 @@ class DataSource(SetupSkippable, Entity):
     gitignored: bool = APIField(default=True, description="Keep the local copy out of git")
     #: Pull only. The source never writes to its remote, and asks for no permission that writes.
     read_only: bool = APIField(default=False, description="Never write back to the remote")
+    #: The dataset this source's records are mirrored into after every sync -- ``{dataset, map, by?}``,
+    #: a dataset folder of the source's project and a ``Dataset.mirror`` map. Its rows' outside-owned
+    #: fields then write back through this source (``flow_sdk.datasets.projection``).
+    mirror: Optional[dict] = APIField(default=None, description="Mirror records into a dataset: {dataset, map, by?}")
 
     # ── lifecycle ──
     status: str = APIField(default=SourceStatus.NEW.value, persist=Persist.FALSE)
@@ -309,6 +320,13 @@ class DataSource(SetupSkippable, Entity):
             data["allowed_senders"] = [s for s in (str(x).strip() for x in data["allowed_senders"]) if s]
         return data
 
+    @field_validator("mirror", mode="before")
+    @classmethod
+    def _mirror(cls, value: Any) -> Any:
+        from flow_sdk.datasets.projection import check_mirror  # noqa: PLC0415
+
+        return check_mirror(value)
+
     @field_validator("owner", mode="before")
     @classmethod
     def _owner_entity(cls, owner):
@@ -373,6 +391,22 @@ class DataSource(SetupSkippable, Entity):
             return "this source is disabled"
         if self.health == SourceHealth.CONFIG_ERROR.value:
             return "this source is parked on a configuration error"
+        return ""
+
+    def setup_owed(self) -> str:
+        """What this source still owes before it can run, or ``""`` when it owes nothing.
+
+        A source owes a setup when it is parked in SETUP, or is NEW with a driver that has a check of
+        its own (the poller's next tick parks it there). A NEW source of any other driver turns
+        active on that tick by itself, and DISABLED is a person's decision: neither is something to
+        set up, so neither may hold up the project the source belongs to. The driver is asked only
+        when it is loaded — ``step`` loads it first.
+        """
+        if self.status == SourceStatus.SETUP.value:
+            return self.setup_detail or "not verified"
+        driver = self._driver()
+        if self.status == SourceStatus.NEW.value and driver is not None and driver.has_setup:
+            return "not verified"
         return ""
 
     # ── the access pattern: declare → get and check → bind ──────────────────
@@ -459,7 +493,11 @@ class DataSource(SetupSkippable, Entity):
             return await Project.get_by_id(str(self.project_id))
         agent = await owning_agent(self)
         if agent is not None and getattr(agent, "project_id", None):
-            return await Project.get_by_id(str(agent.project_id))
+            # A shipped agent's project is the SDK's own read-only tree: its channels land in the user
+            # scope, never as new files inside the installed package.
+            from flow_sdk.ingest.credentials import owner_project  # noqa: PLC0415
+
+            return await owner_project(self)
         if get_current_request_info() is None:
             from flow_sdk import context  # noqa: PLC0415
 
@@ -481,12 +519,20 @@ class DataSource(SetupSkippable, Entity):
             fresh = await type(self).get_by_id(str(self.id))
             if fresh is None:
                 return
+            moved = fresh.status != self.status
             for name in RUNTIME_FIELDS:
                 setattr(fresh, name, getattr(self, name))
             await fresh.save()
         finally:
             _RUNTIME_WRITE.reset(runtime)
             _SUPPRESS_STORE.reset(token)
+        if moved:
+            # Its project's load verdict was checked against the old status (``core/setup/load.forget``).
+            from flow_sdk.core.setup.load import forget  # noqa: PLC0415
+
+            project = await self.setup_project()
+            if project is not None:
+                forget(project.id)
 
     async def _existing_account(self) -> "Optional[DataSource]":
         """The source this owner already has on the same account, if any — one source per (driver,
@@ -1017,6 +1063,8 @@ class DataSource(SetupSkippable, Entity):
     async def delete_by_id(cls, eid: str):
         """The path `DELETE /api/v1/graph/data_source/{id}` takes."""
         row = await cls.get_by_id(str(eid))
+        if row is not None:
+            await row.release_hub_claims()
         await cls.delete_children_of(str(eid))
         result = await super().delete_by_id(eid)
         remove_source_folder(getattr(row, "asset_ref", None))
@@ -1393,6 +1441,131 @@ class DataSource(SetupSkippable, Entity):
         root = target_root(self) if self.reflect in (ReflectMode.COPY.value, ReflectMode.SYMLINK.value) else driver.tree_root(self)
         return str(root) if root is not None else None
 
+    # ── write back: one record of the outside system, through the driver ───────
+    async def _item_origin(self, item_id: str):
+        """The origin (where it lives in the outside system) of one of THIS source's records."""
+        from flow_sdk.builtin.source_item import SourceItem  # noqa: PLC0415
+        from flow_sdk.sources.values.origin import CloudOrigin  # noqa: PLC0415
+
+        item = await SourceItem.get_one({"id": item_id, "data_source_id": self.id}) if item_id else None
+        if item is None:
+            raise LookupError(f"no item {item_id!r} on this source")
+        return CloudOrigin(kind=item.origin_kind, namespace=item.origin_namespace, key=item.origin_key)
+
+    async def _mutable(self, verb: str):
+        """This source opened for a write the driver's contract names (``sources.protocols.Mutable``):
+        refused before any I/O when the row is ``read_only`` or the driver cannot."""
+        from flow_sdk.sources.protocols import Mutable  # noqa: PLC0415
+
+        if self.read_only:
+            raise PermissionError(f"this source is read-only: it does not {verb} in {self.provider}")
+        live = await self.open()
+        if not isinstance(live.source, Mutable):
+            raise NotImplementedError(f"the {self.provider} driver cannot {verb} a record")
+        return live
+
+    async def _record(self, written: Any, status: str) -> dict:
+        """Keep what the outside system answered a write with, at once -- as a sent message is: the
+        record here is current without waiting for the next sync, whose echo lands on the same row
+        (same origin). Answers ``{item_id, origin, status}``, plus ``warnings`` (``[str]``) when the
+        driver made the record but not all of it (``SourceItemSpec.warnings``)."""
+        from flow_sdk.ingest.ingestor import ingest_items  # noqa: PLC0415
+        from flow_sdk.ingest.legacy_lift import envelope_of  # noqa: PLC0415
+
+        report = await ingest_items([envelope_of(written, data_source_id=str(self.id), provider=self.provider)])
+        answer = {"item_id": report.outcomes[0].entity_id, "origin": written.origin.model_dump(mode="json"), "status": status}
+        if written.warnings:
+            answer["warnings"] = list(written.warnings)
+        return answer
+
+    async def create_item(self, data: dict) -> dict:
+        """Make one record IN THE OUTSIDE SYSTEM through the driver (as ``update_item``). ``data`` is the
+        record shape the driver's ``create`` names; the record it answers is kept here at once.
+        ``PermissionError`` a read-only source · ``NotImplementedError`` a driver without ``create``
+        · ``ValueError`` data that is not the driver's record shape."""
+        from typing import get_type_hints  # noqa: PLC0415
+
+        from pydantic import ValidationError  # noqa: PLC0415
+
+        from flow_sdk.sources.values.items import RecordData  # noqa: PLC0415
+
+        if not isinstance(data, dict) or not data:
+            raise ValueError("data: a non-empty object is required")
+        async with await self._mutable("create") as live:
+            try:   # the shape the driver's own `create(data: ...)` names
+                shape = get_type_hints(type(live.source).create).get("data", RecordData)
+            except Exception:  # noqa: BLE001 -- an annotation that does not resolve: the base record
+                shape = RecordData
+            shape = shape if isinstance(shape, type) and hasattr(shape, "model_validate") else RecordData
+            try:
+                record = shape.model_validate(data)
+            except ValidationError as exc:
+                raise ValueError(f"data is not a {shape.__name__}: {exc.errors()[0]['msg']}") from None
+            written = await live.source.create(record)
+        return await self._record(written, "created")
+
+    async def update_item(self, item_id: str, changes: dict) -> dict:
+        """Change one record IN THE OUTSIDE SYSTEM -- the record ``item_id`` (a ``SourceItem`` of this
+        source) -- through the driver, with the credential the source already holds: how a field the
+        app owns goes back to a system of record (a deal's tags to the CRM). ``changes`` are the
+        outside system's own fields. The record the driver answers is kept here at once.
+        ``LookupError`` no such item · ``PermissionError`` a read-only source · ``NotImplementedError``
+        a driver without ``update``."""
+        if not isinstance(changes, dict) or not changes:
+            raise ValueError("changes: a non-empty object is required")
+        origin = await self._item_origin(item_id)
+        async with await self._mutable("update") as live:
+            written = await live.source.update(origin, dict(changes))
+        return await self._record(written, "updated")
+
+    async def delete_item(self, item_id: str) -> dict:
+        """Remove one record FROM THE OUTSIDE SYSTEM, through the driver (as ``update_item``), and the
+        record kept here with it."""
+        from flow_sdk.builtin.source_item import SourceItem  # noqa: PLC0415
+
+        origin = await self._item_origin(item_id)
+        async with await self._mutable("delete") as live:
+            await live.source.delete(origin)
+        kept = await SourceItem.get_one({"id": item_id, "data_source_id": self.id})
+        if kept is not None:
+            await kept.delete()
+        return {"item_id": item_id, "origin": origin.model_dump(mode="json"), "status": "deleted"}
+
+    async def _write_back(self, write: Any) -> ApiResponse:
+        try:
+            return ApiSuccessResponse(data=await write())
+        except LookupError as exc:
+            return ApiFailResponse(message=str(exc), status_code=404)
+        except PermissionError as exc:
+            return ApiFailResponse(message=str(exc), status_code=403)
+        except (ValueError, NotImplementedError) as exc:
+            return ApiFailResponse(message=str(exc), status_code=400)
+
+    @core_action.post(action_name="create_item")
+    async def create_item_action(self) -> ApiResponse:
+        """POST /api/v1/graph/data_source/{id}/create_item — make one record in the outside system.
+
+        Body: ``{"data"}``. 403 a read-only source · 400 a driver that cannot, or data it refuses."""
+        body = await self._body()
+        return await self._write_back(lambda: self.create_item(body.get("data")))
+
+    @core_action.post(action_name="update_item")
+    async def update_item_action(self) -> ApiResponse:
+        """POST /api/v1/graph/data_source/{id}/update_item — change one record in the outside system.
+
+        Body: ``{"item_id", "changes"}``. 404 no such item · 403 a read-only source · 400 a driver
+        that cannot, or no changes."""
+        body = await self._body()
+        return await self._write_back(lambda: self.update_item(str(body.get("item_id") or ""), body.get("changes")))
+
+    @core_action.post(action_name="delete_item")
+    async def delete_item_action(self) -> ApiResponse:
+        """POST /api/v1/graph/data_source/{id}/delete_item — remove one record from the outside system.
+
+        Body: ``{"item_id"}``."""
+        body = await self._body()
+        return await self._write_back(lambda: self.delete_item(str(body.get("item_id") or "")))
+
     @core_action.post(action_name="items")
     async def items_action(self) -> ApiResponse:
         """POST /api/v1/graph/data_source/{id}/items — this source's records, newest first.
@@ -1425,7 +1598,7 @@ class DataSource(SetupSkippable, Entity):
         # The cycle writes health through its own row handle; read what it left.
         refreshed = await type(self).get_one({"id": self.id}) or self
         return ApiSuccessResponse(data={
-            "created": report.created, "updated": report.updated, "unchanged": report.unchanged,
+            "created": report.created, "updated": report.updated, "unchanged": report.unchanged, "removed": report.removed,
             "health": refreshed.health, "status": refreshed.status, "error_detail": refreshed.error_detail,
         })
 
@@ -1457,6 +1630,37 @@ class DataSource(SetupSkippable, Entity):
         if states and states[-1].state == STAGE_DONE and self.status == SourceStatus.SETUP.value:
             states[-1] = states[-1].model_copy(update={"state": STAGE_PENDING, "detail": self.setup_detail or ""})
         return states
+
+    @core_action.post(action_name="setup")
+    async def setup_action(self) -> ApiResponse:
+        """POST /api/v1/graph/data_source/{id}/setup — set THIS source up: its node of its project's setup
+        tree (what its driver needs — a connection, credential values — then its stages, or Verify). The
+        questions come to the app; answers at once with the run's address, which a screen claims."""
+        from flow_sdk.builtin.project_setup import start_setup  # noqa: PLC0415
+
+        project = await self.setup_project()
+        if project is None:
+            return ApiFailResponse(message=NO_SETUP_PROJECT, status_code=409)
+        return ApiSuccessResponse(data={"run": await start_setup(project, root=str(self.typeid))})
+
+    @core_action.get(action_name="setup-run")
+    async def setup_run_action(self) -> ApiResponse:
+        """GET /api/v1/graph/data_source/{id}/setup-run — whether this source's setup is running, and its
+        tree so far. A source no project holds has no run: ``{run: "", running: false, tree: null}``."""
+        from flow_sdk.builtin.project_setup import setup_run  # noqa: PLC0415
+
+        project = await self.setup_project()
+        if project is None:
+            return ApiSuccessResponse(data={"run": "", "running": False, "tree": None})
+        return ApiSuccessResponse(data=setup_run(str(project.id), str(self.typeid)))
+
+    async def setup_project(self):
+        """The project whose setup tree holds this source's node: the one that owns its file (the row's
+        own project, else the project its folder sits under), else its owning agent's. ``None`` for a
+        source in the user scope."""
+        from flow_sdk.builtin.asset_publishing import owning_project  # noqa: PLC0415
+
+        return await owning_project(self) or await self._own_project()
 
     # ── routing: which place a hub webhook claim hands this channel's messages to ──────────────────────
 
@@ -1576,6 +1780,21 @@ class DataSource(SetupSkippable, Entity):
             return ApiFailResponse(message="the hub did not take the new place", status_code=502)
         return ApiSuccessResponse(data={"claim": moved, "current": place})
 
+    @core_action.post(action_name="probe_reach")
+    async def probe_reach_action(self) -> ApiResponse:
+        """POST /api/v1/graph/data_source/{id}/probe_reach — ask the hub whether the claim that delivers to this
+        channel is active and its place is live (the hub's ``probe`` ``reach`` phase), with this instance's own
+        hub sign-in: a page testing the route needs no hub key of its own."""
+        from flow_sdk.cloud_client.transport.hub_http import hub_post  # noqa: PLC0415
+
+        claim = await self._hub_route()
+        if claim is None:
+            return ApiFailResponse(message="no hub webhook delivers to this channel yet — connect it first", status_code=404)
+        answer = await hub_post("webhook", {"phase": "reach"}, str(claim.get("id")), "probe")
+        if not answer:
+            return ApiFailResponse(message="the hub did not answer the reach probe", status_code=502)
+        return ApiSuccessResponse(data=answer)
+
     @core_action.post(action_name="add_route")
     async def add_route_action(self) -> ApiResponse:
         """POST /api/v1/graph/data_source/{id}/add_route ``{"place": <deployment id>}`` — ALSO deliver this channel's
@@ -1627,13 +1846,17 @@ class DataSource(SetupSkippable, Entity):
             return ReturnedValue.not_found(f"no data driver {self.provider!r}")
         try:
             if name == steps.PUBLIC_WEBHOOK:
-                answer = await self._public_webhook(driver, check=check)
+                answer = await self._public_webhook(driver, check=check, delivery=(values or {}).get("delivery", self.webhook_delivery))
             elif name == steps.VERIFY:
                 answer = await self._verify_step(check=check)
             elif name == steps.ANSWERED:
                 answer = await self._answered_step(check=check)
             elif name == steps.FIRST_TURN:
-                answer = await self._first_turn_step(check=check, wait=float((values or {}).get("wait") or 0))
+                answer = await self._first_turn_step(
+                    check=check, wait=float((values or {}).get("wait") or 0),
+                    external_id=str((values or {}).get("external_id") or ""),
+                    since=str((values or {}).get("since") or ""),
+                )
             else:
                 method = setup_steps(driver.cls).get(name)
                 if method is None:
@@ -1660,8 +1883,8 @@ class DataSource(SetupSkippable, Entity):
         from flow_sdk.schema.data_spec.returned_value_spec import ReturnedValue  # noqa: PLC0415
 
         if check:
-            active = self.status == SourceStatus.ACTIVE.value
-            return ReturnedValue.satisfied("active") if active else ReturnedValue.not_yet(self.setup_detail or "not verified")
+            owed = self.setup_owed()
+            return ReturnedValue.not_yet(owed) if owed else ReturnedValue.satisfied(self.status)
         verdict = await self.verify() or {}
         detail = str(verdict.get("detail") or "")
         return ReturnedValue.satisfied(detail or "verified") if verdict.get("ready") else ReturnedValue.not_yet(detail)
@@ -1683,30 +1906,55 @@ class DataSource(SetupSkippable, Entity):
         await agent.run_locally()
         return ReturnedValue.satisfied(f"{agent.name} now answers here")
 
-    async def _first_turn_step(self, *, check: bool, wait: float):
-        """The conversation works: a message from an allowed sender (anyone, when none are named) and one
-        after it from someone else — the answer. Without ``check`` it waits up to ``wait`` seconds (the
-        person is sending it from their phone) for that to be true."""
+    async def _first_turn_step(self, *, check: bool, wait: float, external_id: str = "", since: str = ""):
+        """Prove inbound plus our recorded reply in its conversation, optionally pinned to an external id.
+        A recorded outbound proves provider acceptance, not a recipient's delivery/read receipt.
+        Without ``check``, the existing human-typing wait applies."""
         import asyncio  # noqa: PLC0415
         import time  # noqa: PLC0415
 
         from flow_sdk.builtin.source_item import SourceItem  # noqa: PLC0415
         from flow_sdk.schema.data_spec.returned_value_spec import ReturnedValue  # noqa: PLC0415
+        from flow_sdk.sources.setup_steps import FirstTurnProofSpec  # noqa: PLC0415
 
         allowed = {"".join(ch for ch in s if ch.isalnum()) for s in (self.allowed_senders or [])}
 
-        async def talked() -> bool:
-            rows = sorted(await SourceItem.get_all({"data_source_id": str(self.id)}) or [], key=lambda r: r.occurred_at or "")
-            mine = lambda r: not allowed or "".join(ch for ch in str(r.author_external_id or "") if ch.isalnum()) in allowed  # noqa: E731
-            first = next((i for i, r in enumerate(rows) if mine(r)), None)
-            return first is not None and any(not mine(r) for r in rows[first + 1:])
+        after = iso_to_utc(since) if since else None
+        if since and after is None:
+            return ReturnedValue.not_yet("since must be an ISO-8601 timestamp")
+
+        async def talked():
+            rows = await SourceItem.get_all({"data_source_id": str(self.id)}) or []
+            incoming = []
+            for row in rows:
+                if row.sent_by_us or (external_id and row.external_id != external_id):
+                    continue
+                occurred = iso_to_utc(row.occurred_at or "")
+                if after is not None and (occurred is None or occurred < after):
+                    continue
+                author = "".join(ch for ch in str(row.author_external_id or "") if ch.isalnum())
+                if self.open_to_all or not allowed or author in allowed:
+                    incoming.append(row)
+            for reply in rows:
+                if not reply.sent_by_us:
+                    continue
+                for first in incoming:
+                    same_thread = bool(first.thread_key) and first.thread_key == reply.thread_key
+                    correlated = reply.reply_to_external_id == first.external_id if reply.reply_to_external_id else same_thread
+                    if correlated and (reply.occurred_at or "") >= (first.occurred_at or ""):
+                        return FirstTurnProofSpec(incoming_external_id=first.external_id, reply_external_id=reply.external_id), True
+            return None, bool(incoming)
 
         deadline = time.monotonic() + (0 if check else max(0.0, wait))
         while True:
-            if await talked():
-                return ReturnedValue.satisfied("a message came in and the answer went back", ran=not check)
+            proof, received = await talked()
+            if proof:
+                return ReturnedValue.satisfied("a message came in and the answer went back", ran=not check, value=proof)
             if time.monotonic() >= deadline:
-                return ReturnedValue.not_yet("no conversation yet — send a message from your phone")
+                return ReturnedValue.not_yet(
+                    "Message received; waiting for the agent reply." if received
+                    else "Send a message from your phone to try the agent.",
+                )
             # A wait on a person, polled at a human pace: the person is typing on their phone.
             await asyncio.sleep(2.0)
 
@@ -1722,11 +1970,16 @@ class DataSource(SetupSkippable, Entity):
 
     async def _keep(self, driver, update) -> None:
         """Store what a setup step learned: config on the file, senders on the row, secrets in the credential."""
-        if update.config or update.allowed_senders is not None or update.owner:
+        if (update.config or update.allowed_senders is not None or update.open_to_all is not None
+                or update.owner or update.webhook_delivery is not None):
+            if update.webhook_delivery is not None:
+                self.webhook_delivery = update.webhook_delivery
             if update.config:
                 self.config = {**(self.config or {}), **update.config}
             if update.allowed_senders is not None:
                 self.allowed_senders = list(update.allowed_senders)
+            if update.open_to_all is not None:
+                self.open_to_all = update.open_to_all
             if update.owner:
                 self.owner = TypeId._pydantic_validate(update.owner)
             await self.save()
@@ -1755,7 +2008,7 @@ class DataSource(SetupSkippable, Entity):
 
         return await owner_project(self)
 
-    async def _public_webhook(self, driver, *, check: bool):
+    async def _public_webhook(self, driver, *, check: bool, delivery: str = "hub"):
         """The generic step for a driver that takes pushes (its ``webhook`` block): a stable public URL for
         THIS desktop, held by the hub (``webhook/create_for_desktop``) and delivered over its socket, stored
         as the driver's URL variable. A config ``verify_token`` (made here when the driver declares one and it
@@ -1774,7 +2027,32 @@ class DataSource(SetupSkippable, Entity):
             held = (await driver.credentials_for(self)).values.get(hook.url_var)
         except Exception:  # noqa: BLE001 — no credential declared yet: nothing held
             held = None
+        from flow_sdk.sources.setup_steps import SetupShown  # noqa: PLC0415
+
+        delivery = WebhookDelivery(delivery)
+        if delivery is WebhookDelivery.DIRECT:
+            from flow_sdk.server.webhook_listener import callback_base_url  # noqa: PLC0415
+
+            if not callable(getattr(driver.cls, "webhook_authentic", None)):
+                return ReturnedValue.not_applicable("direct delivery requires a driver signature verifier")
+            base = await callback_base_url(start=not check)
+            if base is None:
+                return ReturnedValue.not_yet("direct webhook listener is not running")
+            callback = base + WEBHOOK_ROUTE.format(name=self.provider) + f"?source_id={self.id}"
+            current = held.get_secret_value() if held is not None else ""
+            if check and current != callback:
+                return ReturnedValue.not_yet("direct webhook callback is not configured")
+            config = {}
+            if not (self.config or {}).get("verify_token") and "verify_token" in (driver.config or {}):
+                config["verify_token"] = secrets.token_urlsafe(24)
+            return ReturnedValue.satisfied(
+                "direct webhook is ready", ran=not check,
+                value=SourceUpdateSpec(config=config, webhook_delivery=delivery, secrets={hook.url_var: callback},
+                                       shown=SetupShown(link=callback, connected=True)),
+            )
         if check:
+            if self.webhook_delivery != delivery:
+                return ReturnedValue.not_yet("this source uses a different webhook delivery")
             declared = await self._declared_claim(driver, dict(self.config or {}))
             kind = str((declared or {}).get("kind") or "account")
             if kind != "account":
@@ -1797,7 +2075,7 @@ class DataSource(SetupSkippable, Entity):
             if not data or not data.get("id"):
                 return ReturnedValue.not_yet("the hub did not take this claim — sign in to Flowpad cloud first")
             kind, key = claim["claim"]["kind"], claim["claim"]["key"]
-            return ReturnedValue.satisfied(f"the hub routes this {kind} ({key}) here", value=SourceUpdateSpec(config=config))
+            return ReturnedValue.satisfied(f"the hub routes this {kind} ({key}) here", value=SourceUpdateSpec(config=config, webhook_delivery=delivery))
         if claim is not None:
             # The account on the hub's chain for this vendor (``webhook/@<provider>``): the hub checks the
             # vendor's signature with the claim's own secret and hands each event to THIS channel on THIS
@@ -1805,7 +2083,7 @@ class DataSource(SetupSkippable, Entity):
             data = await hub_post("webhook", claim, None, "chain")
             if not data or not data.get("url"):
                 return ReturnedValue.not_yet("the hub did not take this account — sign in to Flowpad cloud first")
-            update = SourceUpdateSpec(config=config, secrets={hook.url_var: str(data["url"])})
+            update = SourceUpdateSpec(config=config, webhook_delivery=delivery, secrets={hook.url_var: str(data["url"])})
             return ReturnedValue.satisfied(f"public URL {data['url']}", value=update)
         body = {
             "name": f"{self.provider}-{self.id}",
@@ -1816,7 +2094,7 @@ class DataSource(SetupSkippable, Entity):
         data = await hub_post("webhook", body, None, "create_for_desktop")
         if not data or not data.get("url"):
             return ReturnedValue.not_yet("sign in to Flowpad cloud first — the public URL is held by the hub")
-        update = SourceUpdateSpec(config=config, secrets={hook.url_var: str(data["url"])})
+        update = SourceUpdateSpec(config=config, webhook_delivery=delivery, secrets={hook.url_var: str(data["url"])})
         return ReturnedValue.satisfied(f"public URL {data['url']}", value=update)
 
     async def _declared_claim(self, driver, config: dict) -> Optional[dict]:
@@ -2004,9 +2282,23 @@ class DataSource(SetupSkippable, Entity):
         except Exception as exc:  # noqa: BLE001 — reported, never raised
             return f"not undone: {type(exc).__name__}"
 
+    async def release_hub_claims(self) -> str:
+        """Drop the hub claims that deliver to this channel. Left behind, a deleted channel's claim kept
+        taking its number's messages (and probes) on the hub, and this app refused them as a dead channel.
+        Best effort like ``teardown``: a hub that is down never blocks a delete."""
+        from flow_sdk.cloud_client.transport.hub_http import hub_delete  # noqa: PLC0415
+
+        try:
+            for claim in _claims_for(await _hub_claims(), str(self.id)):
+                await hub_delete("webhook", str(claim.get("id")))
+            return ""
+        except Exception as exc:  # noqa: BLE001 — reported, never raised
+            return f"hub claim not released: {type(exc).__name__}"
+
     async def delete(self):
         """The verb in-process callers actually use."""
         await self.teardown()
+        await self.release_hub_claims()
         await self.delete_children_of(self.id)
         await super().delete()
         remove_source_folder(self.asset_ref)

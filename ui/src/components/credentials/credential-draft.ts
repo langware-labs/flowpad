@@ -39,9 +39,20 @@ export interface DraftVar {
   placeholder: string;
   pattern: string;
   helpUrl: string;
-  /** Manifest fields the form does not edit (e.g. `account_key`), kept verbatim. */
+  /** Manifest fields the form does not edit (e.g. `account_key`, a `ONE_OF` requirement, a `cli`
+   *  variable's `login` / `check`), kept verbatim. */
   base: CredentialManifestVar;
   value: string;
+}
+
+/** Nothing is stored for a `cli` variable: no value is asked, demanded or sent. */
+export const isCli = (v: DraftVar) => v.base.kind === 'cli';
+
+/** A `cli` variable's sign-in commands, to show: this machine's when the credential's status
+ *  (`row`) names it, else every distinct one it declares — a template knows no machine. */
+export function loginCommands(v: DraftVar, row?: CredentialStatusRow): string[] {
+  const here = row?.vars.find((s) => s.env_var === v.envVar)?.login;
+  return here ? [here] : [...new Set(Object.values(v.base.login?.commands ?? {}))];
 }
 
 export interface CredentialDraft {
@@ -173,7 +184,7 @@ export function templateDraft(spec: Credential, scope: CredentialScopeName): Cre
     store: lmProvider ? 'vault' : 'env',
     lmProvider,
     // An entity var may still carry a legacy boolean `required`; the draft round-trips to the
-    // manifest, which takes MUST | OPTIONAL only.
+    // manifest, which takes the enum only.
     vars: spec.varNames.map((name) => {
       const v = spec.vars?.[name];
       return fromManifestVar(name, v && { ...v, required: requirementOf(v) });
@@ -218,6 +229,8 @@ function fromRow(row: CredentialStatusRow, mode: 'edit' | 'values'): CredentialD
         secret: v.secret,
         required: v.required,
         kind: v.kind,
+        ...(v.login_spec ? { login: v.login_spec } : {}),
+        ...(v.check_spec ? { check: v.check_spec } : {}),
       }),
     ),
   };
@@ -241,7 +254,7 @@ export const asksDefinition = (d: CredentialDraft) => d.mode !== 'values';
 export const asksValues = (d: CredentialDraft) => d.mode !== 'pack' && d.mode !== 'edit';
 
 function valueProblem(v: DraftVar, d: CredentialDraft): DraftProblem | null {
-  if (!asksValues(d)) return null;
+  if (!asksValues(d) || isCli(v)) return null;
   const value = v.value;
   if (!value) return v.required && d.mode === 'template' ? 'required-value' : null;
   if (value.length > MAX_ENV_VAR_VALUE_LENGTH) return 'too-long';
@@ -283,7 +296,7 @@ export const hasProblems = (p: DraftProblems) => p.form.length > 0 || Object.key
 /** The values to write: filled ones only. */
 export function draftValues(d: CredentialDraft): Record<string, string> {
   if (!asksValues(d)) return {};
-  return Object.fromEntries(d.vars.filter((v) => v.value).map((v) => [v.envVar.trim(), v.value]));
+  return Object.fromEntries(d.vars.filter((v) => v.value && !isCli(v)).map((v) => [v.envVar.trim(), v.value]));
 }
 
 /** The save a draft makes: the definition, its values, and where `deploymentId` (default: this
@@ -300,7 +313,12 @@ export function toSaveRequest(d: CredentialDraft, projectId: string | null, depl
       pattern: v.pattern || undefined,
       help_url: v.helpUrl || undefined,
       secret: v.secret,
-      required: v.required ? CredentialRequirement.MUST : CredentialRequirement.OPTIONAL,
+      // The form has no `ONE_OF` control: a group member stays one.
+      required: v.required
+        ? CredentialRequirement.MUST
+        : requirementOf(v.base) === CredentialRequirement.ONE_OF
+          ? CredentialRequirement.ONE_OF
+          : CredentialRequirement.OPTIONAL,
     };
   }
   return {

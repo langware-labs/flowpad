@@ -30,6 +30,7 @@ describe('appDockAddress', () => {
       artifactId: ARTIFACT,
       microAppId: null,
       endpointId: null,
+      route: null,
       runtime: null,
       options: {},
     });
@@ -61,6 +62,7 @@ describe('appDockAddress', () => {
       artifactId: null,
       microAppId: null,
       endpointId: ENDPOINT,
+      route: null,
       runtime: 'dev',
       options: {},
     });
@@ -79,6 +81,7 @@ describe('appDockAddress', () => {
       artifactId: null,
       microAppId: MICRO_APP,
       endpointId: null,
+      route: null,
       runtime: null,
       options: {},
     });
@@ -91,5 +94,18 @@ describe('appDockAddress', () => {
     // A pointer naming some OTHER entity is not an app address. Reading its uuid
     // as an artifact would query for a row that cannot exist and render blank.
     expect(appDockAddress(new DockPointer(ViewType.APP, `dataset-${ARTIFACT}`))).toBeNull();
+  });
+
+  it('reads the mount beside the proxy, and keeps it out of what the app is handed', () => {
+    const address = appDockAddress(endpointDock({ route: 'port-5173', runtime: 'dev', source: 'abc' }));
+    expect(address).toMatchObject({ endpointId: ENDPOINT, route: 'port-5173', runtime: 'dev' });
+    expect(address?.options).toEqual({ source: 'abc' });
+    // The root app's mount is the empty string — a mount, not an absence.
+    expect(appDockAddress(endpointDock({ route: '' }))?.route).toBe('');
+  });
+
+  it('a mount addresses nothing on an artifact or a definition: what serves them is derived', () => {
+    expect(appDockAddress(appDock({ route: 'x' }))?.route).toBeNull();
+    expect(appDockAddress(assetDock({ route: 'x' }))?.route).toBeNull();
   });
 });

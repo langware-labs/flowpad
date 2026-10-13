@@ -69,7 +69,7 @@ describe('AgentVisibilitySection', () => {
 
     rerender(tree(PUBLISHED));
     expect(screen.getByTestId('agent-launch-link')).toHaveTextContent(`${HUB}/launch?agent=${AGENT_ID}`);
-    expect(screen.getByTestId('agent-launch-link-hint')).toHaveTextContent('for everyone once it is public');
+    expect(screen.getByTestId('agent-launch-link-hint')).toHaveTextContent('launching still needs the project shared with them');
   });
 
   it('omits the launch link while the version is unknown', () => {

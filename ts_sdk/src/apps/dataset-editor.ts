@@ -15,6 +15,8 @@ import type { Mounted } from '../viewers/contract';
 import { h } from '../viewers/dom';
 import { appRoot, datasetViewerContext, hostDataset, mountLabel } from './dataset-app';
 import { editorsFor } from './editors';
+import { projectScope, scopeFilterToDockOptions } from '../utils/scope-filter';
+import { ViewType } from '../utils/ui/view-types';
 import { appOption, applyHostTheme, navigateHost } from './host';
 
 /** A row a run answered and nobody has labelled yet -- what a reviewer works through. */
@@ -83,6 +85,7 @@ async function run(root: HTMLElement, status: HTMLElement): Promise<void> {
       h('span', { class: 'mono muted', 'data-testid': 'dataset-editor-kind' }, kind),
       counts, h('span', { style: 'flex:1' }), filter,
       h('button', { 'data-testid': 'dataset-editor-evals', onclick: () => void openEvals() }, 'Evals'),
+      h('button', { 'data-testid': 'dataset-editor-schema', onclick: openSchema }, 'Schema'),
       h('button', { 'data-testid': 'dataset-editor-validate', onclick: () => void validate() }, 'Validate'),
       status),
     split,
@@ -174,6 +177,13 @@ async function run(root: HTMLElement, status: HTMLElement): Promise<void> {
   async function openEvals() {
     const browser = (await editorsFor(subject)).find((e) => e.name === 'eval-browser');
     if (browser) navigateHost({ address: `/dock/app/${browser.typeid}?subject=${subject}` });
+  }
+
+  // The schema tree is the host's own screen: this dataset's project is the address's scope, its
+  // row schema the selection.
+  function openSchema() {
+    const scope = new URLSearchParams(scopeFilterToDockOptions(projectScope(dataset.project_id)));
+    navigateHost({ address: `/dock/${ViewType.SCHEMA_TREE}/${dataset.rowKind ?? ''}?${scope}` });
   }
 
   async function validate() {

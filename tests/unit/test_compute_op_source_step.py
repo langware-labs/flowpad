@@ -68,6 +68,31 @@ async def test_check_call_recheck_run_in_process_and_bind_what_the_step_shows(so
     assert answer.value.code == "AB2CD3", "the value the CLI's --value printed: what the step shows"
 
 
+async def test_a_check_only_run_says_what_is_missing_in_the_steps_own_words(source, tmp_path):
+    env = {"FLOWPAD_WIZARD_INPUT_SOURCE": f"data_source-{SOURCE}"}
+
+    answer = await run_op(_spec(), trusted=True, workdir=Path(tmp_path), platform="linux", shell=_never, env=env,
+                          check_only=True)
+
+    assert answer.exit_code is ExitCode.NOT_YET and answer.detail == "Connect WhatsApp: no Connect code yet"
+    assert [check for _, check, _ in source["calls"]] == [True], "a check only: nothing was run"
+
+
+async def test_a_check_only_run_of_a_command_keeps_the_plain_sentence(source, tmp_path):
+    async def shell(command, **_kw):
+        return CliResult.of_process(command, 1, "", "exit 1")
+
+    command = ComputeOpSpec.model_validate({
+        "name": "tool", "label": "Install the tool", "subkind": "cli",
+        "exe_data": {"commands": {"linux": "install tool"}}, "completion_check": {"commands": {"linux": "have tool"}},
+    })
+
+    answer = await run_op(command, trusted=True, workdir=Path(tmp_path), platform="linux", shell=shell, env={},
+                          check_only=True)
+
+    assert answer.detail == "Install the tool: not installed yet.", "an exit code is no sentence for a person"
+
+
 async def test_without_value_the_check_prints_what_the_cli_printed(source):
     from flow_sdk.core.compute_op.runner import _source_step
 

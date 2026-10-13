@@ -25,7 +25,7 @@ from typing import Optional
 from flow_sdk.builtin.data_driver import DataDriver
 from flow_sdk.builtin.data_source import DataSource
 from flow_sdk.ingest.driver_runtime import Pass, position_of
-from flow_sdk.ingest.health import ERROR_DETAIL_MAX, SourceHealth, classify
+from flow_sdk.ingest.health import MIRROR_CODES, SourceHealth, classify, stamp_error
 from flow_sdk.ingest.ingest_on_tag import emit_sync_tag
 from flow_sdk.ingest.ingestor import ingest_items
 from flow_sdk.ingest.models import IngestMode, IngestReport
@@ -117,11 +117,13 @@ async def _sync_source(source: DataSource, *, now: Optional[datetime] = None) ->
         return report
     if placed is not None:
         report.outcomes.extend(placed.outcomes)
+        report.removed += placed.removed
 
     # Idle and clean: nothing arrived, the position did not move and the row already reads healthy,
     # so the steady state is one request and zero writes per tick (the poller stamped the next poll).
     idle = found.unchanged and found.cursor == source.cursor and (found.manifest or {}) == (source.manifest or {})
-    clean = source.health == SourceHealth.OK.value and not source.error_code and not source.consecutive_failures
+    clean = (source.health == SourceHealth.OK.value and (not source.error_code or source.error_code in MIRROR_CODES)
+             and not source.consecutive_failures)
     # Waiting on a person, not broken: the source keeps polling and its card says what to resolve.
     waiting = ("write_back_held", written.sentence()) if written is not None and written.needs_a_person else (None, None)
     if idle and clean and waiting[0] is None:
@@ -158,12 +160,38 @@ async def _place(source: DataSource, found: Pass) -> Optional[IngestReport]:
         # `sync_source` refused the run before traversing if this source cannot place files, so a
         # reflector exists here.
         await reflect_refs(source, found.refs, found.tombstones, found.renames)
+    if found.listed is not None:
+        removed = await _drop_gone(source, found.listed)
+        if removed:
+            report = report or IngestReport()
+            report.removed = removed
     if found.reactions:
         # After the records: a reaction in the same page as its message lands on that message.
         from flow_sdk.stream_inbox.reactions import apply_reactions  # noqa: PLC0415
 
         await apply_reactions(source, found.reactions)
     return report
+
+
+async def _drop_gone(source: DataSource, listed: frozenset) -> int:
+    """Remove this source's stored records that the outside system no longer has -- ``listed`` is its
+    whole collection, proven by the pass (``Pass.listed``). Returns how many went.
+
+    An EMPTY listing is as much proof as any other: the pass read the collection from start to end
+    without an error (an outage raises and is classified by ``sync_source``; it never reaches here),
+    so a collection that answers "no rows" has none, and the last record goes like the others. A
+    source that cannot tell "no rows" from "no answer" must raise, not list nothing."""
+    from flow_sdk.builtin.source_item import SourceItem  # noqa: PLC0415
+
+    stored = await SourceItem.get_all({"data_source_id": str(source.id)}) or []
+    gone = [item for item in stored if item.external_id not in listed]
+    if not gone:
+        return 0
+    for item in gone:
+        await item.delete()
+    logger.info("[ingest] %s/%s: %d record(s) gone in the outside system, removed",
+                source.provider, source.name or source.account_key, len(gone))
+    return len(gone)
 
 
 async def _fail_source(
@@ -184,8 +212,7 @@ async def _fail_source(
 def _stamp_source(source: DataSource, health: SourceHealth, code: Optional[str], detail: Optional[str], now: datetime) -> None:
     """The source row's verdict fields, written in ONE place — both endings of a run stamp them."""
     source.health = health.value
-    source.error_code = code
-    source.error_detail = detail[:ERROR_DETAIL_MAX] if detail else detail
+    stamp_error(source, code, detail)
     source.schedule_next(now)
 
 

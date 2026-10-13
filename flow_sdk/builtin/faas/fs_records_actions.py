@@ -1263,6 +1263,13 @@ class FsRecordsActionsMixin:
         finally:
             self._complete_activity(job_name)
 
+    def index_turn(self):
+        """This machine's one index slot, taken in turn: waits for a run already going (the
+        boot-time system pass on a new install) instead of indexing beside it. For work that
+        indexes on its own — a launch checking a project out — so two index passes never write
+        the local database at once."""
+        return self._index_activity("index", queue=True)
+
     async def _run_index_activity(
         self,
         *,
@@ -1690,9 +1697,10 @@ class FsRecordsActionsMixin:
                 if orphan_action != OrphanAction.INDEX
                 else scope_filter
             )
-            # foreground=False even for an explicit ?projects=, unlike the scan
-            # handler — see _resolve_scoped_roots on why an index never prompts.
-            custom_roots = await self._resolve_scoped_roots(roots_scope, foreground=False)
+            # Explicit manual project refresh has the same foreground intent as
+            # browsing it. Background indexing and global orphan sweeps stay gated.
+            foreground = trigger == "manual" and bool(qp.get("projects")) and orphan_action == OrphanAction.INDEX
+            custom_roots = await self._resolve_scoped_roots(roots_scope, foreground=foreground)
             if isinstance(custom_roots, ApiFailResponse):
                 return custom_roots
 

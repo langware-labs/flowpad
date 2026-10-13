@@ -309,7 +309,9 @@ describe('tasks in conversations — one thread both people read and act on', ()
 
   it('9: the whole thread is there, waits for no one and names no task id', async () => {
     await openWholeThread(bobPage, RENAMED);
-    for (const said of [TITLE, `Assigned to ${bob.email}`, 'Status: In progress', REPLY, `Renamed to ${RENAMED}`, `Reassigned to`]) {
+    // The hand-over line is step 8's: without carol (no CAROL_INST) that step did not run and nobody wrote it.
+    const handedOver = carolPage && carolEmail ? ['Reassigned to'] : [];
+    for (const said of [TITLE, `Assigned to ${bob.email}`, 'Status: In progress', REPLY, `Renamed to ${RENAMED}`, ...handedOver]) {
       await seeText(bobPage.page, said);
     }
     await shot(bobPage, '9-thread');

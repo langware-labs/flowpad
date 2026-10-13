@@ -224,6 +224,13 @@ export interface Manageable {
   asset_occurrences?: AssetOccurrence[];
   isExpanded(expansion: ExpansionType | ExpansionType[] | ExpansionRequest): boolean;
   isDbField(fieldName: string): boolean;
+  /** True once the row is finished for the UI (a closed tab, a closed shell): the store
+   *  may drop it when nothing references it. Absent means never. */
+  isRetired?(): boolean;
+  /** A mounted view listens to the entity or its stream — a reference the store cannot count. */
+  hasListeners?(): boolean;
+  /** Called when the store drops the entity for good; it frees what hangs off it. */
+  onEvicted?(): void;
 }
 
 /**
@@ -250,6 +257,8 @@ export class DataManager<T extends Manageable> extends EventEmitter {
   private subscriptions: SubscriptionMap<T> = new SubscriptionMap<T>();
   private _inFlightGets: Map<string, Promise<unknown>> = new Map();
   private watches: WatchMap = new WatchMap();
+  /** The `/watch` request open for a key, if any (see `postWatch`). */
+  private watchPosts = new TypeIdMap<Promise<void>>();
   private readScope: string | undefined;
   private queryEpoch = 0;
 
@@ -471,12 +480,11 @@ export class DataManager<T extends Manageable> extends EventEmitter {
   }
 
   private onConnectionOpen() {
-    // Reset watch counts so watch() re-POSTs to the backend with the new connection_id.
-    // After a reconnect the backend has lost all watch registrations.
-    const watchedTypeIds = Array.from(this.watches.keys());
-    this.watches.clear();
-    for (const typeId of watchedTypeIds) {
-      void this.watch(typeId);
+    // The backend lost its watch registrations with the socket: register every watched key
+    // again under the new connection_id, once per key. The counts stay — they are the
+    // number of holders, and each holder still has its own release to call.
+    for (const typeId of Array.from(this.watches.keys())) {
+      void this.postWatch(typeId);
     }
   }
 
@@ -735,6 +743,12 @@ export class DataManager<T extends Manageable> extends EventEmitter {
           break;
         }
         this.applyCreate(typeId, data);
+        // Every create is broadcast to every connection. One this page never asked for
+        // (no ref before it) and nothing took (no live query, no subscriber) is not kept.
+        if (!existingRef) {
+          const created = this.entities.get(typeId);
+          if (created?.entity && !this.isReferenced(typeId, created)) this._evict(typeId);
+        }
         break;
       }
       case 'update': {
@@ -754,12 +768,12 @@ export class DataManager<T extends Manageable> extends EventEmitter {
         // Aliases share the same `ref` so cache reads stay consistent automatically;
         // subscribers on alias keys still need to be notified.
         this._notifyAllAliases(typeId, ref.entity, ref.entity);
+        // The update may be the one that finished the row (a tab's `visible=false`).
+        this.evictIfUnreferenced(typeId);
         break;
       }
       case 'delete': {
-        const ref = this.entities.get(typeId);
-        const entity = ref?.entity ?? null;
-        this._deleteWithAliases(typeId);
+        const entity = this._evict(typeId);
         this._notifyAllAliases(typeId, entity, null);
         break;
       }
@@ -829,9 +843,10 @@ export class DataManager<T extends Manageable> extends EventEmitter {
   }
 
   public async clearCache() {
-    for (const typeId of this.entities.keys()) {
+    // A copy: dropping a key also drops its aliases from the map being walked.
+    for (const typeId of Array.from(this.entities.keys())) {
       this.subscriptions.get(typeId)?.forEach((cb) => void cb(null));
-      this.entities.delete(typeId);
+      this._evict(typeId);
     }
   }
 
@@ -1000,6 +1015,57 @@ export class DataManager<T extends Manageable> extends EventEmitter {
         if (!alias.equals(typeId)) this.entities.delete(alias);
       }
     }
+  }
+
+  /**
+   * The ONE way an entity leaves the cache for good — a delete, a removal, an identity
+   * switch, an eviction. The key and its aliases go, and the entity frees what hangs off
+   * it (its flow-data stream, a shell's PTY connection, a process's artifacts): the cache
+   * entry is what kept those reachable, so dropping one without the other leaks the rest.
+   * A refetch (`invalidateCacheByTypeId`) is NOT a removal — the object may be on screen —
+   * and keeps to `_deleteWithAliases`. Returns the entity that left, if there was one.
+   */
+  private _evict(typeId: TypeId): T | null {
+    const entity = this.entities.get(typeId)?.entity ?? null;
+    this._deleteWithAliases(typeId);
+    entity?.onEvicted?.();
+    return entity;
+  }
+
+  /**
+   * Whether anything still needs this cache entry: a subscriber, a watch, a live query
+   * holding the row, a mounted view listening to the entity, or a request that owns the
+   * ref. Counted under every key the entity is cached by.
+   */
+  private isReferenced(typeId: TypeId, ref: EntityRef<T>): boolean {
+    if (ref.saveInFlight || ref.status === EntityStatus.FETCHING || ref.pendingUpdate) return true;
+    if (ref.entityPendingPromises.length > 0) return true;
+    const entity = ref.entity;
+    if (entity?.hasListeners?.()) return true;
+    const keys = [typeId];
+    if (entity) {
+      for (const key of [entity.typeId, ...this._aliasTypeIdsFor(entity)]) {
+        if (!keys.some((k) => k.equals(key))) keys.push(key);
+      }
+    }
+    for (const key of keys) {
+      if ((this.subscriptions.get(key)?.size ?? 0) > 0 || (this.watches.get(key) ?? 0) > 0) return true;
+    }
+    return this.watchedQueries.holdsEntity(keys);
+  }
+
+  /**
+   * Drop a cached entity nobody references any more — asked wherever a reason to keep one
+   * ends. Only a row its type calls RETIRED (`isRetired`) qualifies, because many readers
+   * take a loaded entity from the cache synchronously and a warm visit must ask the
+   * backend for nothing. Anything dropped here simply loads again when it is next asked
+   * for. There is no cap and no clock: a reference going away is the trigger.
+   */
+  private evictIfUnreferenced(typeId: TypeId): void {
+    const ref = this.entities.get(typeId);
+    if (!ref?.entity?.isRetired?.()) return;
+    if (this.isReferenced(typeId, ref)) return;
+    this._evict(typeId);
   }
 
   /**
@@ -1186,9 +1252,7 @@ export class DataManager<T extends Manageable> extends EventEmitter {
 
   public removeEntityFromCache(typeId: TypeId): void {
     this.watchedQueries.removeEntityFromResults(typeId.type, typeId);
-    const ref = this.entities.get(typeId);
-    const entity = ref?.entity ?? null;
-    this._deleteWithAliases(typeId);
+    const entity = this._evict(typeId);
     this._notifyAllAliases(typeId, entity, null);
   }
 
@@ -1612,8 +1676,11 @@ export class DataManager<T extends Manageable> extends EventEmitter {
     this.streamingRequestsCount++;
     const endpoint = actionInfo.actionUrl;
     const fullUrl = `${config.SERVER_URL}${endpoint}`;
+    // A FormData body (files riding along) sets its own multipart Content-Type.
+    const payload = actionInfo.bodyParameters;
+    const body = payload instanceof FormData ? payload : JSON.stringify(payload);
     const headers = {
-      'Content-Type': 'application/json',
+      ...(typeof body === 'string' ? { 'Content-Type': 'application/json' } : {}),
       Accept: 'text/event-stream',
       'Cache-Control': 'no-cache',
     };
@@ -1626,7 +1693,7 @@ export class DataManager<T extends Manageable> extends EventEmitter {
     const response = await fetch(fullUrl, {
       method: actionInfo.method,
       headers: headers,
-      body: actionInfo.method !== 'GET' ? JSON.stringify(actionInfo.bodyParameters) : undefined,
+      body: actionInfo.method !== 'GET' ? body : undefined,
       credentials: 'include', // Important for visitor cookies
       signal: actionInfo.abortSignal,
     });
@@ -1855,8 +1922,14 @@ export class DataManager<T extends Manageable> extends EventEmitter {
     const removeWatchCallback = this.watchedQueries.registerWatch(request, queryResult);
     void (request.callback as (entities: U[]) => void | Promise<void>)(queryResult);
 
-    // Return callback to remove watch
-    return removeWatchCallback;
+    // Return callback to remove watch. A query's rows are held by it; once its last
+    // watcher leaves, the finished ones among them have nothing keeping them.
+    return () => {
+      const rows = this.watchedQueries.getWatchedQuery(request)?.results;
+      removeWatchCallback();
+      if (!rows || this.watchedQueries.getWatchedQuery(request)) return;
+      for (const row of [...rows]) this.evictIfUnreferenced(row.typeId);
+    };
   }
 
   // DEPRECATED: Use watchQuery instead
@@ -2021,27 +2094,15 @@ export class DataManager<T extends Manageable> extends EventEmitter {
     // Return unsubscribe function
     return () => {
       if (callback) callbacks?.delete(callback as (entity: T | null) => void | Promise<void>);
+      if (callbacks?.size === 0 && this.subscriptions.get(typeId) === callbacks) this.subscriptions.delete(typeId);
+      this.evictIfUnreferenced(typeId);
     };
   }
 
   async watch(typeId: TypeId): Promise<() => Promise<void>> {
     const watchersCount = this.watches.get(typeId) || 0;
     this.watches.set(typeId, watchersCount + 1);
-    if (watchersCount === 0) {
-      const connection_manager = ConnectionManager.getInstance();
-      if (connection_manager.connected) {
-        const connection_id = connection_manager.id;
-        try {
-          await apiClient.post<IEntity>(`${config.API_PREFIXES.graph}/${typeId.type}/${typeId.id}/watch`, {
-            connection_id: connection_id,
-          });
-        } catch (e) {
-          // Watch POST failed — don't block callers. The watch will be
-          // re-registered on the next WebSocket reconnect via onConnectionOpen.
-          console.warn(`[Store] watch POST failed for ${typeId.toString()}, will retry on reconnect:`, e);
-        }
-      }
-    }
+    if (watchersCount === 0) await this.postWatch(typeId);
 
     return async () => {
       const watchersCount = this.watches.get(typeId);
@@ -2051,12 +2112,44 @@ export class DataManager<T extends Manageable> extends EventEmitter {
       this.watches.set(typeId, watchersCount - 1);
       if (watchersCount - 1 <= 0) {
         this.watches.delete(typeId);
-        return await this.unwatch(typeId);
+        // Unwatch first: it tells the backend only while the entity is still cached.
+        await this.unwatch(typeId);
+        this.evictIfUnreferenced(typeId);
       }
     };
   }
 
+  /**
+   * Tell the backend this connection watches the key. One request per key at a time, kept
+   * while it is open so an `/unwatch` for the same key is sent after it, never across it.
+   * Never rejects: a failed registration is repeated on the next reconnect.
+   */
+  private postWatch(typeId: TypeId): Promise<void> {
+    const open = this.watchPosts.get(typeId);
+    if (open) return open;
+    const connection_manager = ConnectionManager.getInstance();
+    if (!connection_manager.connected) return Promise.resolve();
+    const request = apiClient
+      .post<IEntity>(`${config.API_PREFIXES.graph}/${typeId.type}/${typeId.id}/watch`, {
+        connection_id: connection_manager.id,
+      })
+      .then(
+        () => undefined,
+        (e: unknown) => {
+          console.warn(`[Store] watch POST failed for ${typeId.toString()}, will retry on reconnect:`, e);
+        },
+      )
+      .finally(() => {
+        if (this.watchPosts.get(typeId) === request) this.watchPosts.delete(typeId);
+      });
+    this.watchPosts.set(typeId, request);
+    return request;
+  }
+
   private async unwatch(typeId: TypeId) {
+    await this.watchPosts.get(typeId);
+    // Someone took the key again while its registration was still open: it stays watched.
+    if ((this.watches.get(typeId) ?? 0) > 0) return;
     if (!this.getByTypeIdFromCache(typeId)) {
       // Entity is not in cache, so it is probably deleted
       return;
@@ -2103,7 +2196,7 @@ export class DataManager<T extends Manageable> extends EventEmitter {
       if (!isDeleted) {
         throw new Error('No data returned');
       }
-      this._deleteWithAliases(typeId);
+      this._evict(typeId);
       // Keep query-driven UIs reactive even when backend doesn't emit a delete DataOp.
       // If a delete DataOp arrives later, removeEntityFromResults is idempotent.
       this.watchedQueries.removeEntityFromResults(typeId.type, typeId);

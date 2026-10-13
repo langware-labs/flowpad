@@ -73,13 +73,21 @@ port_claimed_by_other() {
   return 1
 }
 
+# port_free_for <port> <self-name> -> true when <self-name> may take <port>
+port_free_for() {
+  ! port_reserved "$1" && ! port_claimed_by_other "$1" "$2" && ! port_in_use "$1"
+}
+
+# registry_port <name> <frontend|backend> -> the port <name>'s launcher registry records, or nothing
+registry_port() {
+  grep -oE "\"$2_port\": *[0-9]+" "$(registry "$1")" 2>/dev/null | grep -oE '[0-9]+$' || true
+}
+
 # find_free_port <band_base> <preferred> <self-name> -> echoes a free port in [preferred, band_base+99]
 find_free_port() {
   local base="$1" pref="$2" self="${3:-}" p
   for (( p=pref; p<=base+99; p++ )); do
-    port_reserved "$p" && continue
-    port_claimed_by_other "$p" "$self" && continue
-    port_in_use "$p" || { echo "$p"; return 0; }
+    port_free_for "$p" "$self" && { echo "$p"; return 0; }
   done
   return 1
 }
@@ -217,17 +225,25 @@ cmd_launch() {
   # Sweep dead, abandoned instances before allocating a new one.
   cmd_gc --yes || true
 
-  # If already running, tear it down first (idempotent relaunch).
+  # If already running, tear it down first (idempotent relaunch) — and remember its ports: a
+  # relaunch is the same instance, and whatever holds its address (a test tier's env, an open
+  # tab) must still reach it. Scanning from the name's preferred port again moved a relaunched
+  # instance down to any lower port a sibling had freed in the meantime.
+  local prev_fe="" prev_be=""
   if [ -f "$(registry "$name")" ]; then
+    prev_fe="$(registry_port "$name" frontend)"
+    prev_be="$(registry_port "$name" backend)"
     warn "instance '$name' already has a registry — killing it first"
     cmd_kill "$name" --keep-env || true
   fi
 
   local idx; idx="$(name_index "$name")"
   local pref_fe=$((5000 + idx)) pref_be=$((6000 + idx))
-  local fe_port be_port
-  fe_port="$(find_free_port 5000 "$pref_fe" "$name")" || die "no free frontend port in 50xx band"
-  be_port="$(find_free_port 6000 "$pref_be" "$name")" || die "no free backend port in 60xx band"
+  local fe_port="" be_port=""
+  if [ -n "$prev_fe" ] && port_free_for "$prev_fe" "$name"; then fe_port="$prev_fe"; fi
+  if [ -n "$prev_be" ] && port_free_for "$prev_be" "$name"; then be_port="$prev_be"; fi
+  [ -n "$fe_port" ] || fe_port="$(find_free_port 5000 "$pref_fe" "$name")" || die "no free frontend port in 50xx band"
+  [ -n "$be_port" ] || be_port="$(find_free_port 6000 "$pref_be" "$name")" || die "no free backend port in 60xx band"
   [ "$fe_port" = "$pref_fe" ] || warn "frontend pref $pref_fe busy -> using $fe_port"
   [ "$be_port" = "$pref_be" ] || warn "backend  pref $pref_be busy -> using $be_port"
 

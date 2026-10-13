@@ -217,29 +217,41 @@ async def run_pty_recovery() -> None:
     unopened session stays dead until the user loads it. Respawning every dead PTY
     at startup mass-allocated ptys and exhausted the OS pty device pool
     (``OSError: out of pty devices`` — the crash-loop this guards against). When
-    nothing is watched (the common idle tick) we skip the DB enumerations entirely."""
+    nothing is watched (the common idle tick) we skip the DB queries entirely.
+
+    The tick runs every few seconds for as long as ANY watch exists — a finished
+    agent, a project, a conversation — so each pass asks the database only for the
+    rows it can act on (live PTY-transport processes; watched running shells) and
+    never enumerates a table."""
     from flow_sdk.builtin.agentic_process import AgenticProcess
     from flow_sdk.builtin.process_lifecycle import ProcessStatus
+    from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp
 
-    watched = _watched_keys()
+    # Only a watched process or shell can be recovered; a watch on anything else
+    # (or none at all — the common idle tick) needs no query.
+    watched = {key for key in _watched_keys() if key.startswith(("agentic_process:", "shell:"))}
     if not watched:
-        return  # nothing open → nothing to recover; skip the get_all() sweeps
+        return
 
+    # A process that is not RUNNING/STARTING has no worker to respawn.
+    live = [ProcessStatus.RUNNING.value, ProcessStatus.STARTING.value]
     try:
-        procs = await AgenticProcess.local_rows()  # a route row is never respawned here
+        # local_rows: a route row is never respawned here
+        procs = await AgenticProcess.local_rows(
+            entities_filter=QueryFilter(match=ExpressionNode(op=QueryOp.IN, operands=["status", live]))
+        )
     except Exception:
-        # Can't tell which shells are agentic-owned this tick — skip both passes
-        # rather than risk bare-recovering a worker's shell (which would drop its
-        # --resume session).
-        logger.exception("pty-recovery: failed to enumerate processes")
+        # Skip both passes this tick rather than recover on a partial picture.
+        logger.exception("pty-recovery: failed to query live processes")
         return
 
     for proc in procs:
         try:
+            # The transport is read off the hydrated row, not put in the query:
+            # ``pty_mode`` defaults to true, and a stored row that predates the
+            # field has no value for the query to match.
             if not proc.pty_mode:
                 continue  # headless transport → reconcile_orphaned_workers owns it
-            if proc.status not in (ProcessStatus.RUNNING.value, ProcessStatus.STARTING.value):
-                continue
             if not proc.shell_id:
                 continue
             # On-demand gate: only recover a process a UI actually has open.
@@ -278,7 +290,7 @@ async def run_pty_recovery() -> None:
         except Exception:
             logger.exception("pty-recovery: failed to recover %s", getattr(proc, "id", "?"))
 
-    await _recover_bare_shells({p.shell_id for p in procs if p.shell_id}, watched)
+    await _recover_bare_shells(watched)
 
 
 # A bare terminal (no agentic worker) is just a Shell with worker_pid=None, so
@@ -290,27 +302,55 @@ async def run_pty_recovery() -> None:
 _BARE_SHELL_RECOVERY_WINDOW_SECONDS = 3600
 
 
-async def _recover_bare_shells(agentic_shell_ids: set[str], watched: set[str]) -> None:
+async def _recover_bare_shells(watched: set[str]) -> None:
     from datetime import datetime, timezone
 
+    from flow_sdk.builtin.agentic_process import AgenticProcess
     from flow_sdk.builtin.shell import Shell, ShellStatus
+    from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp
 
-    try:
-        shells = await Shell.get_all()
-    except Exception:
-        logger.exception("pty-recovery: failed to enumerate shells")
+    # On-demand gate: only a terminal a UI actually has open, and only a RUNNING
+    # one, is a candidate — so those two conditions ARE the query.
+    watched_shell_ids = sorted(key.partition(":")[2] for key in watched if key.startswith("shell:"))
+    if not watched_shell_ids:
         return
+    try:
+        shells = await Shell.get_all(
+            entities_filter=QueryFilter(
+                match=ExpressionNode(
+                    op=QueryOp.AND,
+                    operands=[
+                        ExpressionNode(op=QueryOp.IN, operands=["id", watched_shell_ids]),
+                        ExpressionNode(op=QueryOp.EQ, operands=["status", ShellStatus.RUNNING.value]),
+                    ],
+                )
+            )
+        )
+    except Exception:
+        logger.exception("pty-recovery: failed to query watched shells")
+        return
+    if not shells:
+        return
+
+    # A shell owned by a process — in ANY lifecycle state — is never recovered as
+    # a bare terminal: a fresh shell there would drop the worker's --resume
+    # session. The agentic pass above is its only respawn path.
+    try:
+        owners = await AgenticProcess.local_rows(
+            entities_filter=QueryFilter(
+                match=ExpressionNode(op=QueryOp.IN, operands=["shell_id", [shell.id for shell in shells]])
+            )
+        )
+    except Exception:
+        # Can't tell which shells are agentic-owned this tick — skip the pass.
+        logger.exception("pty-recovery: failed to resolve shell owners")
+        return
+    agentic_shell_ids = {owner.shell_id for owner in owners}
 
     now = datetime.now(timezone.utc)
     for shell in shells:
         try:
-            if shell.status != ShellStatus.RUNNING.value:
-                continue
-            # Agentic-owned shells are handled by the pass above (with --resume).
             if shell.id in agentic_shell_ids:
-                continue
-            # On-demand gate: only recover a terminal a UI actually has open.
-            if f"shell:{shell.id}" not in watched:
                 continue
             # Recency gate — skip a long-dead "running" record; only revive a
             # terminal the user plausibly still has open. A missing/unparseable

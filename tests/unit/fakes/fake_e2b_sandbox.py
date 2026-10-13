@@ -16,6 +16,7 @@ provider's own logic is untouched.
 from __future__ import annotations
 
 import asyncio
+import os
 from dataclasses import dataclass, field
 
 
@@ -39,6 +40,7 @@ class _FakeCommands:
         timeout=None,
         background: bool = False,
         cwd: str | None = None,
+        envs: dict[str, str] | None = None,
         **_: object,
     ):
         self._owner.commands_run.append(command)
@@ -46,6 +48,7 @@ class _FakeCommands:
 
         process = await asyncio.create_subprocess_shell(
             command,
+            env={**os.environ, **(envs or {})},
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             cwd=cwd if cwd and self._owner.honor_cwd else None,

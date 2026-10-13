@@ -16,11 +16,11 @@ vi.mock('@src/navigation/useDockNavigation', () => ({
   useDockNavigation: () => ({ navigation: { openPage, openTab: vi.fn() } }),
 }));
 vi.mock('@src/notifications', () => ({ notify: { error: vi.fn(), success: vi.fn(), info: vi.fn() } }));
-vi.mock('@src/components/setup-wizard/SetupStagesButton', () => ({ SetupStagesButton: () => null }));
 
 import { ChannelAttentionBar } from '@src/components/stream-inbox-view/ChannelAttentionBar';
 import { attentionAmong } from '@src/components/stream-inbox-view/channel-owner';
 import { attentionReason } from '@src/components/data-sources/source-attention';
+import { useSourceSetupStore } from '@src/components/setup-wizard/source-setup-store';
 
 /** The strip over the given sources, each with its reason — what the stream inbox mounts. */
 const bar = (sources: DataSource[]) => {
@@ -46,6 +46,16 @@ describe('attentionReason', () => {
       { health: 'ok', error_code: 'write_back_held', error_detail: 'notes.md' },
       { kind: 'held', text: 'notes.md' },
     ],
+    [
+      'mirror failed',
+      { health: 'ok', error_code: 'mirror_failed', error_detail: "mirrors into 'ghosts', which its project does not hold" },
+      { kind: 'mirror', text: "mirrors into 'ghosts', which its project does not hold" },
+    ],
+    [
+      'mirror misfit',
+      { health: 'ok', error_code: 'mirror_misfit', error_detail: '1 record(s) did not fit the row kind: t-2' },
+      { kind: 'mirror', text: '1 record(s) did not fit the row kind: t-2' },
+    ],
     ['retrying', { health: 'transient_error', error_detail: 'IMAP: timed out' }, { kind: 'retrying', text: 'IMAP: timed out' }],
     ['listening', {}, null],
   ])('%s: names the kind and speaks the source’s own words', (_name, fields, want) => {
@@ -69,14 +79,25 @@ describe('attentionAmong', () => {
 describe('ChannelAttentionBar', () => {
   afterEach(cleanup);
 
-  it('a setup source shows its note, the next step, Verify and Settings', () => {
+  it('a setup source says "Setup required" — its own note is the tooltip — with Setup, Verify and the settings gear, in that order', () => {
     const s = fake('s', { status: 'setup', setup_detail: 'Received — connect your own account, then press Verify.', account_key: 'me@x.test' });
     render(bar([s]));
     const row = screen.getByTestId(`channel-attention-${s.id}`);
     expect(row.dataset.kind).toBe('setup');
-    expect(screen.getByTestId('channel-attention-wrong').textContent).toBe('Received — connect your own account, then press Verify.');
-    expect(screen.getByTestId('channel-attention-next').textContent).toContain('press Verify');
+    const wrong = screen.getByTestId('channel-attention-wrong');
+    expect(wrong.textContent).toBe('Setup required');
+    expect(wrong.title).toContain('Received — connect your own account, then press Verify.');
+    expect(screen.getByTestId('channel-attention-next').textContent).toBe('');
     expect(row.textContent).toContain('me@x.test');
+    expect([...row.querySelectorAll('button')].map((b) => b.dataset.testid)).toEqual([
+      'channel-attention-setup',
+      'channel-attention-verify',
+      'channel-attention-settings',
+    ]);
+    // The gear carries no words; Setup opens this source's setup, whatever its driver.
+    expect(screen.getByTestId('channel-attention-settings').textContent).toBe('');
+    fireEvent.click(screen.getByTestId('channel-attention-setup'));
+    expect(useSourceSetupStore.getState()).toMatchObject({ open: true, payload: { source: s } });
     fireEvent.click(screen.getByTestId('channel-attention-settings'));
     expect(openPage).toHaveBeenCalled();
     expect(JSON.stringify(openPage.mock.calls[0])).toContain('settings');

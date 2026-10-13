@@ -35,6 +35,7 @@ import pytest
 import tests.unit.test_data_spec.test_asset_roundtrip  # noqa: F401
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
 from flow_sdk.schema.data_spec.compute_op_spec import Rung
+from flow_sdk.schema.data_spec.credential_spec import CredentialVarSpec
 from flow_sdk.schema.data_spec.data_schema_spec import DataSchemaRule
 from tests.unit.test_data_spec._roundtrip import (
     NOT_COMPARED,
@@ -71,6 +72,10 @@ VALID: dict[str, dict] = {
         "fields": {"utterance": {"shape": "string", "description": "what was typed"}},
         "examples": None,
         "ns": "acme",
+        # a rule is ONE of `same` / `unique`, never both filled
+        "rules": [{"same": ["persona.icp", "icp"], "description": "the persona is one of the row's ICP's"},
+                  {"unique": ["utterance"], "description": "said once"}],
+        "include": ["acme.shared"],
     },
     "compute_op": {
         "subkind": "cli",
@@ -89,7 +94,9 @@ VALID: dict[str, dict] = {
         "permissions": {},
     },
     # a poll interval below 60s is refused
-    "data_source": {"poll_interval_seconds": 300},
+    # a source's mirror names a dataset and a map whose key path is also a field
+    "data_source": {"poll_interval_seconds": 300,
+                    "mirror": {"dataset": "tasks", "map": {"key": "external_id", "input": {"crm_id": "external_id"}}, "by": "crm"}},
     # `location_type` is a closed enum, and entity-only (not in the spec)
     "micro_app": {"location_type": "Asset"},
     # only a publishable type may appear in an entry; the schema is THIS build's;
@@ -132,6 +139,9 @@ DERIVED: dict[str, dict[str, str]] = {
 # is tagged exactly like the op's own `subkind`/`exe_data` pair, and the sampler
 # cannot invent that pairing any more than it can for `compute_op` itself.
 OVERRIDES[Rung] = {"subkind": "agent", "exe_data": {"agent": "provisioner", "prompt": "install"}}
+# A credential variable carries `login`/`check` only when it is a `cli` one, which an lm_provider credential
+# (the sample above) cannot hold; a cli variable's round trip is in test_credential_asset/test_one_of.py.
+OVERRIDES[CredentialVarSpec] = {"login": None, "check": None}
 # A data schema's rule names exactly TWO paths -- a pairing the sampler's one-element list cannot make.
 OVERRIDES[DataSchemaRule] = {"same": ["persona.icp", "icp"]}
 

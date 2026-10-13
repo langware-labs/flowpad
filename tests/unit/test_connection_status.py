@@ -275,7 +275,7 @@ def _status(monkeypatch, rows):
         ]
     )
 
-    async def fake(project):
+    async def fake(project, **_):
         return status
 
     monkeypatch.setattr("flow_sdk.builtin.credential_status.credentials_status", fake)

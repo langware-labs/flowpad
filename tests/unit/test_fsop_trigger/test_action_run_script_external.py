@@ -56,6 +56,34 @@ async def test_external_path_executes(tmp_path):
     assert marker.exists(), "script should have created marker file"
 
 
+async def test_a_relative_script_path_is_the_triggers_projects(tmp_path, monkeypatch):
+    """A trigger checked into a project names its script by a project-relative path, and runs the
+    same on every clone: the path is resolved under the trigger's project folder."""
+    import flow_sdk.diagnose.runner as runner
+
+    marker = tmp_path / "marker.txt"
+    (tmp_path / "agentic-assets" / "trigger" / "t").mkdir(parents=True)
+    _make_script(tmp_path / "agentic-assets" / "trigger" / "t", "notify.sh", f"#!/usr/bin/env bash\ntouch {marker}\n")
+    asked = []
+
+    async def project_path_of(project_id):
+        asked.append(project_id)
+        return str(tmp_path) if project_id == "proj-1" else None
+
+    monkeypatch.setattr(runner, "project_path_of", project_path_of)
+    trigger = _make_fake_trigger()
+    trigger.project_id = "proj-1"
+    action = TriggerAction(action_type=ActionType.RUN_SCRIPT, script_path="agentic-assets/trigger/t/notify.sh")
+    result = await RunScriptActionHandler().execute(trigger, action=action, changes=_changes())
+    assert marker.exists() and result.returncode == 0 and asked == ["proj-1"]
+
+    trigger.project_id = "elsewhere"
+    result = await RunScriptActionHandler().execute(trigger, action=action, changes=_changes())
+    from flow_sdk.schema.data_spec.returned_value_spec import ExitCode
+
+    assert result.ran is False and result.exit_code == ExitCode.NOT_FOUND
+
+
 async def test_external_path_stdout_captured(tmp_path):
     """Run result must capture stdout."""
     script = _make_script(tmp_path, "s.sh", '#!/usr/bin/env bash\necho hello-stdout\n')

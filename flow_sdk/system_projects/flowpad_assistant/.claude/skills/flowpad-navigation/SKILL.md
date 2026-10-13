@@ -124,10 +124,12 @@ flow navigate entity <typeid>   # only on an explicit "take me there"
 ## A running web app you started
 
 ```bash
-flow show webapp --port <port>
+flow show webapp --port <port>            # for the project's end users (its `app`)
+flow show webapp --port <port> --admin    # for its operators (its `admin` app: a back office, a console)
 ```
 
-Use the port the dev server actually reported, never an assumed one.
+Use the port the dev server actually reported, never an assumed one. Add `--admin` only when
+what you built is for the people who RUN the project, not the people who use it.
 
 ## A web page (docs, a vendor's guide)
 
@@ -189,6 +191,7 @@ opens a different screen and reports success.
 | Organization  *(hub)* | `organization` | people, teams, members |
 | Preferences | `preferences` | my preferences, appearance |
 | Runs | `process-runs` | history |
+| Schema | `schema-tree` | schema tree, data schema, schemas, data model |
 | Search | `search` | find |
 | Search indexes | `rag` | embeddings, knowledge index, vector index, brain, knowledge base |
 | Settings | `settings` | claude settings |

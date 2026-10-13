@@ -14,7 +14,6 @@ import { useContext } from '@src/hooks/useContext';
 import { smartAskOrOpen } from '@src/navigation/smart-ask';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { DockPointer } from '@src/navigation/DockPointer';
-import { useStartedLastHour } from '@src/hooks/automations/useAutomations';
 import { ViewType } from '@src/types/ViewType';
 import { useHistoryNav } from '@src/navigation/use-history-nav';
 import { useDocumentTitle, windowTitleFor } from '@src/navigation/window-title';
@@ -56,8 +55,6 @@ export function TopNavBar() {
   const { contains } = useActiveWorkspace();
   const project = contextProject && contains(contextProject.fs_storage_mount_path) ? contextProject : null;
   const { canGoBack, canGoForward, goBack, goForward, reload } = useHistoryNav();
-  // Automations started in the last hour, any kind — the ⚡'s counter.
-  const startedLastHour = useStartedLastHour();
   // Home and Tabs are one button that flips: on the (tabless) home it goes BACK to
   // the last active tab; on any tab it goes home. With no tab open, home is all
   // there is, so it stays Home (disabled on the home itself).
@@ -123,14 +120,12 @@ export function TopNavBar() {
         onClick={() => navigation.openTab(ViewType.EXPLORER)}
         testId="top-nav-files"
       />
-      {/* Automations — a place, like Files: the list of rules, every kind. The badge is how many
-          started in the last hour; none shows no badge. */}
+      {/* Automations — the list of rules, every kind. */}
       <NavIconButton
         icon={Zap}
-        label={startedLastHour ? t`Automations · ${startedLastHour} started in the last hour` : t`Automations`}
+        label={t`Automations`}
         onClick={() => navigation.openDock(DockPointer.forAutomations())}
         testId="top-nav-automations"
-        badge={startedLastHour}
       />
       <RuntimeChip kind={runtimeKind} project={project} />
       <ProjectSetupButton project={project} />
