@@ -32,13 +32,15 @@ def normalize_process_hook_events(
     events: Sequence[HookEventType | str],
     *,
     provider: str,
+    supported: frozenset[HookEventType] = SUPPORTED_PROCESS_HOOK_EVENTS,
 ) -> tuple[HookEventType, ...]:
-    """Validate and order the process-hook events supported by every V1 driver."""
+    """Validate and order process-hook events against the driver's ``supported``
+    set (every V1 driver's shared set unless it declares more)."""
     try:
         normalized = {event if isinstance(event, HookEventType) else HookEventType(event) for event in events}
     except ValueError as exc:
         raise ValueError(f"Unsupported {provider.capitalize()} process hook event: {events!r}") from exc
-    unsupported = normalized - SUPPORTED_PROCESS_HOOK_EVENTS
+    unsupported = normalized - supported
     if unsupported:
         names = ", ".join(sorted(event.value for event in unsupported))
         raise ValueError(f"Unsupported {provider.capitalize()} process hook event: {names}")
@@ -49,9 +51,10 @@ def build_process_hook_snapshot(
     events: Sequence[HookEventType | str],
     *,
     provider: str,
+    supported: frozenset[HookEventType] = SUPPORTED_PROCESS_HOOK_EVENTS,
 ) -> dict[str, Any]:
     """Return the path-independent semantic restart payload for one provider."""
-    normalized = normalize_process_hook_events(events, provider=provider)
+    normalized = normalize_process_hook_events(events, provider=provider, supported=supported)
     if not normalized:
         return {}
     return {
