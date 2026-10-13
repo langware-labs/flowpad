@@ -11,6 +11,7 @@
  */
 
 import { useMemo } from 'react';
+import { useLingui } from '@lingui/react/macro';
 import { CheckCircle2, Loader2, PauseCircle, X, XCircle } from 'lucide-react';
 import { AgenticProcess } from '@sdk';
 import { isTerminal, type ActivityProgressSpec } from '@sdk/activity';
@@ -28,6 +29,7 @@ function open(spec: ActivityProgressSpec): void {
 }
 
 export function ActivityStatusPill() {
+  const { t } = useLingui();
   const all = useActivities();
   const receipt = useActivityReceipt();
   const live = useMemo(() => all.filter((s) => forTheBox(s) && !isTerminal(s)), [all]);
@@ -60,7 +62,7 @@ export function ActivityStatusPill() {
         type="button"
         onClick={() => open(shown)}
         className="flex min-w-0 items-center gap-1 rounded-sm px-1.5 text-foreground/80 transition-colors hover:bg-accent hover:text-foreground"
-        title={`${line} — click for details`}
+        title={t`${line} — click for details`}
         aria-label={line}
       >
         <Glyph className={cn('h-3.5 w-3.5 shrink-0', tone, !ended && shown.state !== 'blocked' && 'animate-spin')} />
@@ -78,7 +80,7 @@ export function ActivityStatusPill() {
           type="button"
           onClick={dismissActivityReceipt}
           className="shrink-0 rounded-sm p-0.5 text-muted-foreground hover:bg-accent hover:text-foreground"
-          aria-label="Dismiss"
+          aria-label={t`Dismiss`}
           data-testid="activity-status-dismiss"
         >
           <X className="h-3 w-3" />

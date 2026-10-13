@@ -155,6 +155,10 @@ msgstr "({selectedCount} נבחרו)"
 msgid "(a file)"
 msgstr ""
 
+#: src/components/footer/activity-one-liner.ts
+msgid "(blocked)"
+msgstr "(חסום)"
+
 #: src/components/collaboration/ProjectViewHeader.tsx
 msgid "(cleared)"
 msgstr "(נמחק)"
@@ -479,6 +483,11 @@ msgstr "{0} נוסף בהצלחה."
 #: src/components/automations/automation-words.ts
 msgid "{0} in {folder}"
 msgstr ""
+
+#. placeholder {0}: row.done - row.skipped
+#: src/components/search-index/ActivityIndicator.tsx
+msgid "{0} indexed"
+msgstr "{0} אונדקסו"
 
 #. placeholder {0}: agent.name
 #: src/components/assets/editor/agent-profile/AgentDeploymentsSection.tsx
@@ -862,6 +871,10 @@ msgstr ""
 msgid "{created} member task(s) created for \"{0}\"."
 msgstr "נוצרו {created} משימות חברים עבור \"{0}\"."
 
+#: src/utils/format-time-ago.ts
+msgid "{d}d ago"
+msgstr "לפני {d} ימים"
+
 #: src/components/schema-tree/SchemaTreeView.tsx
 msgid "{datasets} datasets"
 msgstr ""
@@ -878,6 +891,10 @@ msgstr ""
 msgid "{displayName} connection failed"
 msgstr ""
 
+#: src/components/search-index/ActivityProgressModal.tsx
+msgid "{doneCount} records"
+msgstr "{doneCount} רשומות"
+
 #: src/components/conversation/ThreadStack.tsx
 msgid "{earlier} earlier in this thread"
 msgstr "{earlier} מוקדם יותר בשרשור זה"
@@ -888,6 +905,10 @@ msgstr ""
 
 #~ msgid "{envVar} saved"
 #~ msgstr ""
+
+#: src/components/footer/activity-one-liner.ts
+msgid "{errors} failed"
+msgstr "{errors} נכשלו"
 
 #. placeholder {0}: ids.length
 #: src/components/graph-context/GraphContextViewer.tsx
@@ -921,6 +942,10 @@ msgstr ""
 #: src/components/collaboration/LiveSessionView.tsx
 msgid "{guestName} wants to run prompts on your machine."
 msgstr "{guestName} רוצה להריץ פרומפטים במחשב שלך."
+
+#: src/utils/format-time-ago.ts
+msgid "{h}h ago"
+msgstr "לפני {h} שע׳"
 
 #: src/components/web-url-display/WebUrlDisplay.tsx
 #~ msgid "{host} can't be shown inside Flowpad."
@@ -962,6 +987,10 @@ msgstr ""
 msgid "{hubCount} available"
 msgstr ""
 
+#: src/components/search-index/IndexerStatusPill.tsx
+msgid "{idle} — open Records Scanner"
+msgstr "{idle} — פתח את סורק הרשומות"
+
 #. placeholder {0}: ignored !== 1 ? 's' : ''
 #: src/components/lens-viewer/CloudSearchResultsModal.tsx
 msgid "{ignored} issue{0} auto-resolved"
@@ -974,6 +1003,14 @@ msgstr "{indexedCount} מאונדקסים"
 #: src/components/llm-endpoints/FundingProvenance.tsx
 msgid "{label}"
 msgstr ""
+
+#: src/components/search-index/ActivityIndicator.tsx
+msgid "{label} — click to open Indexing info"
+msgstr "{label} — לחץ לפתיחת פרטי האינדוקס"
+
+#: src/components/search-index/IndexerStatusPill.tsx
+msgid "{label} — click to open Records Scanner"
+msgstr "{label} — לחץ לפתיחת סורק הרשומות"
 
 #: src/components/terminal/interactive-terminal/SessionSurfaceSwitch.tsx
 msgid "{label} — not while the agent is working"
@@ -1007,6 +1044,10 @@ msgstr ""
 msgid "{left} of {limit} requests left {windowText}"
 msgstr ""
 
+#: src/components/footer/ActivityStatusPill.tsx
+msgid "{line} — click for details"
+msgstr "{line} — לחץ לפרטים"
+
 #: src/components/conversation/MembersAvatarStack.tsx
 msgid "{listed} not sent"
 msgstr ""
@@ -1018,6 +1059,10 @@ msgstr ""
 #: src/components/automations/automation-words.ts
 msgid "{m}m {rest}s"
 msgstr ""
+
+#: src/utils/format-time-ago.ts
+msgid "{m}m ago"
+msgstr "לפני {m} דק׳"
 
 #: src/components/conversation/ThreadHeader.tsx
 msgid "{messageCount, plural, one {# message} other {# messages}}"
@@ -1159,6 +1204,10 @@ msgstr ""
 msgid "{rows} rows"
 msgstr ""
 
+#: src/components/assets/DiagnosisRequestsAssetList.tsx
+msgid "{runs} runs · last {last}"
+msgstr ""
+
 #: src/components/automations/automation-words.ts
 msgid "{s}s"
 msgstr ""
@@ -1202,6 +1251,10 @@ msgstr ""
 #: src/components/browseable-tree/adapters/useFavoritesRoots.tsx
 #~ msgid "{title} — {0} items"
 #~ msgstr "{title} — {0} פריטים"
+
+#: src/components/search-index/IndexerStatusPill.tsx
+msgid "{tooltip} — click to open Records Scanner"
+msgstr "{tooltip} — לחץ לפתיחת סורק הרשומות"
 
 #. placeholder {0}: totalOrphans === 1 ? '' : 's'
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
@@ -1664,6 +1717,10 @@ msgstr ""
 msgid "A thread quiet this long ends; the next message starts a new one. Empty — never."
 msgstr ""
 
+#: src/components/search-index/IndexRecommendedBanner.tsx
+msgid "a while ago"
+msgstr "לפני זמן מה"
+
 #: src/components/assets/editor/wizard/WizardStepForm.tsx
 msgid "a wizard name"
 msgstr "שם של אשף"
@@ -1847,6 +1904,7 @@ msgstr "פעיל: {activeDbPath}"
 
 #: src/components/assets/editor/agent-profile/AgentPlaceCard.tsx
 #: src/components/graph-view/ui/TopBar.tsx
+#: src/components/search-index/ActivityProgressModalRoot.tsx
 msgid "Activity"
 msgstr "פעילות"
 
@@ -3197,6 +3255,15 @@ msgstr "העברת ההרצה הזו לארכיון והתחלת רשומה חד
 msgid "Archived"
 msgstr "מאורכב"
 
+#: src/components/footer/activity-words.ts
+#: src/components/search-index/activity-labels.ts
+msgid "Archiving"
+msgstr "מעביר לארכיון"
+
+#: src/components/search-index/activity-labels.ts
+msgid "Archiving…"
+msgstr "מעביר לארכיון…"
+
 #: src/components/account/database-section.tsx
 msgid "Are you sure you want to clear all data from the database? This will also clear the scan index. A backup will be created first."
 msgstr "האם אתה בטוח שברצונך למחוק את כל הנתונים מבסיס הנתונים? זה גם ינקה את אינדקס הסריקה. גיבוי יוקם תחילה."
@@ -3830,6 +3897,10 @@ msgstr "שרת הסיוג לא מגיב. אנא נסה שוב מאוחר יות�
 msgid "Background image"
 msgstr "תמונת רקע"
 
+#: src/components/terminal/interactive-terminal/SurfaceSwitchWaitNotice.tsx
+msgid "Background tasks are still running. The session will switch over as soon as they finish."
+msgstr "משימות רקע עדיין רצות. הסשן יעבור ברגע שהן יסתיימו."
+
 #: src/components/account/database-section.tsx
 msgid "Backing up..."
 msgstr "מגבה..."
@@ -3900,6 +3971,7 @@ msgstr ""
 msgid "Bless \"{name}\" — create its Tag entity"
 msgstr "אישור \"{name}\" — יצירת ישות Tag"
 
+#: src/components/footer/activity-words.ts
 #: src/components/lens-viewer/shared/transcript-features/TranscriptEntryItem.tsx
 msgid "blocked"
 msgstr "חסום"
@@ -4110,6 +4182,10 @@ msgstr ""
 #: src/pages/flow-page/vibe-chat-pane.tsx
 msgid "Build history"
 msgstr "היסטוריית בנייה"
+
+#: src/components/search-index/index-copy.ts
+msgid "Build Index"
+msgstr "בנה אינדקס"
 
 #: src/pages/home-landing/HomeLanding.tsx
 msgid "Build something <0>amazing</0>"
@@ -4382,6 +4458,10 @@ msgstr "ביטול"
 #: src/components/conversation/MessageComposer.tsx
 msgid "Cancel reply"
 msgstr ""
+
+#: src/components/footer/activity-words.ts
+msgid "cancelled"
+msgstr "בוטל"
 
 #: src/components/assets/editor/wizard/WizardViewer.tsx
 msgid "Cancelled by user"
@@ -5036,6 +5116,15 @@ msgstr "נקה בחירה"
 msgid "Cleared"
 msgstr "נוקה"
 
+#: src/components/footer/activity-words.ts
+#: src/components/search-index/activity-labels.ts
+msgid "Clearing index"
+msgstr "מנקה את האינדקס"
+
+#: src/components/search-index/activity-labels.ts
+msgid "Clearing index…"
+msgstr "מנקה את האינדקס…"
+
 #: src/components/account/database-section.tsx
 msgid "Clearing..."
 msgstr "ניקוי..."
@@ -5103,6 +5192,12 @@ msgstr "לחץ כדי לשנות שם"
 #: src/components/collaboration/RoomHeader.tsx
 msgid "Click to rename room"
 msgstr "לחץ כדי לשנות שם של החדר"
+
+#. placeholder {0}: row.orphan_count
+#. placeholder {1}: row.type
+#: src/components/lens-viewer/FsRecordsScannerViewer.tsx
+msgid "Click to sweep {0} {1} orphans"
+msgstr "לחץ כדי לנקות {0} רשומות יתומות מסוג {1}"
 
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Click to view"
@@ -5592,6 +5687,11 @@ msgstr "חברה וצוות"
 msgid "Company Announcements"
 msgstr "הודעות חברה"
 
+#: src/components/footer/activity-words.ts
+msgid "complete"
+msgstr "הושלם"
+
+#: src/components/footer/activity-words.ts
 #: src/pages/live-status/LiveStatus.tsx
 msgid "completed"
 msgstr "הושלם"
@@ -5611,6 +5711,10 @@ msgstr "צומת מחשוב"
 #: src/components/machine-overview/machine-overview.tsx
 msgid "Compute Node ID:"
 msgstr "מזהה צומת חישוב:"
+
+#: src/i18n/type-labels.ts
+msgid "Compute Op"
+msgstr "פעולת חישוב"
 
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "Computing diff…"
@@ -7481,8 +7585,9 @@ msgstr "יוצר..."
 
 #: src/components/data-sources/DataDriversView.tsx
 #: src/components/llm-endpoints/LlmEndpointsList.tsx
+#: src/i18n/type-labels.ts
 msgid "Credential"
-msgstr ""
+msgstr "פרטי גישה"
 
 #~ msgid "Credential environment"
 #~ msgstr ""
@@ -7615,6 +7720,10 @@ msgstr ""
 #: src/components/privacy-mode/privacy-mode-popover.tsx
 msgid "Data privacy mode"
 msgstr "מצב פרטיות הנתונים"
+
+#: src/i18n/type-labels.ts
+msgid "Data Schema"
+msgstr "סכמת נתונים"
 
 #: src/components/schema-tree/SchemaTreeView.tsx
 msgid "data source"
@@ -7884,6 +7993,10 @@ msgstr ""
 #: src/components/entity-execution-panel/current-activity.ts
 msgid "Delegating to"
 msgstr "מאציל אל"
+
+#: src/components/search-index/SweepOrphansDialog.tsx
+msgid "delete"
+msgstr "מחיקה"
 
 #: src/components/account/secrets-section.tsx
 #: src/components/account/system-diagnoses.tsx
@@ -8514,6 +8627,10 @@ msgstr "דיאגנוזה דווחה לצוות Flowpad"
 msgid "Diagnosis request"
 msgstr "בקשת אבחון"
 
+#: src/i18n/type-labels.ts
+msgid "Diagnosis Request"
+msgstr "בקשת אבחון"
+
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
 #: src/components/quick-create/registry.ts
 msgid "Diagnosis request created"
@@ -8706,8 +8823,13 @@ msgstr "מגלה {typeLabel}…"
 msgid "Discuss"
 msgstr "דיון"
 
+#: src/i18n/pref-labels.ts
+msgid "Disk I/O backend"
+msgstr "מנוע קלט/פלט לדיסק"
+
 #: src/components/diagnose/diagnosis-action-buttons.tsx
 #: src/components/diagnose/diagnosis-action-buttons.tsx
+#: src/components/footer/ActivityStatusPill.tsx
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
@@ -8824,6 +8946,10 @@ msgstr ""
 msgid "Don't ask again"
 msgstr ""
 
+#: src/components/task-receive/IncomingProjectDialog.tsx
+msgid "Don't ask me again"
+msgstr "אל תשאלו אותי שוב"
+
 #: src/pages/entry/AgentLaunchLanding.tsx
 #: src/pages/entry/OpenInFlowpadActions.tsx
 msgid "Don't have FlowPad yet?"
@@ -8833,6 +8959,7 @@ msgstr "עדיין אין לך FlowPad?"
 msgid "Don't show again until Flowpad restarts"
 msgstr ""
 
+#: src/components/footer/activity-words.ts
 #: src/components/search-index/ActivityProgressModal.tsx
 msgid "done"
 msgstr "הושלם"
@@ -10067,10 +10194,11 @@ msgstr "שורות נוספות שהובאו (limit + overfetch)"
 msgid "Extracting…"
 msgstr ""
 
+#: src/components/footer/activity-words.ts
 #: src/components/llm-endpoints/TestEndpointButton.tsx
 #: src/components/organization/budgets/EndpointControls.tsx
 msgid "failed"
-msgstr ""
+msgstr "נכשל"
 
 #: src/components/automations/automation-words.ts
 #: src/components/automations/RunsView.tsx
@@ -12278,6 +12406,10 @@ msgstr "אם זה נכשל"
 msgid "If your browser asks, choose Open. FlowPad then carries on from here."
 msgstr ""
 
+#: src/components/search-index/SweepOrphansDialog.tsx
+msgid "ignore"
+msgstr "התעלמות"
+
 #: src/components/triggers-view/FsopTriggerDetail.tsx
 #~ msgid "ignore patterns"
 #~ msgstr "דפוסים להתעלמות"
@@ -12483,6 +12615,10 @@ msgstr "אינדקס הפרומפטים שנשלחו בסשן זה"
 msgid "Index project on selection"
 msgstr "אינדוקס פרויקט בעת בחירתו"
 
+#: src/components/search-index/IndexerStatusPill.tsx
+msgid "Index status unavailable · Retry"
+msgstr "מצב האינדקס אינו זמין · נסה שוב"
+
 #: src/i18n/pref-labels.ts
 msgid "Index when"
 msgstr "מתי לבצע אינדוקס"
@@ -12491,19 +12627,30 @@ msgstr "מתי לבצע אינדוקס"
 msgid "indexed"
 msgstr "בחיפוש"
 
+#: src/components/search-index/IndexerStatusPill.tsx
+msgid "indexed {ago}"
+msgstr "אונדקס {ago}"
+
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "Indexed {indexedCount} records"
 msgstr "אונדקסו {indexedCount} רשומות"
+
+#: src/components/browseable-tree/RagFolderIcon.tsx
+msgid "Indexed for search"
+msgstr "מאונדקס לחיפוש"
 
 #: src/components/helpdesk/HelpdeskLoadDialog.tsx
 msgid "indexed with the project"
 msgstr "באינדקס הפרויקט"
 
 #: src/i18n/pref-labels.ts
-msgid "Indexer backend"
-msgstr "מנוע האינדוקס"
+#~ msgid "Indexer backend"
+#~ msgstr "מנוע האינדוקס"
 
+#: src/components/footer/activity-words.ts
 #: src/components/helpdesk/HelpdeskLoadDialog.tsx
+#: src/components/search-index/activity-labels.ts
+#: src/components/search-index/activity-labels.ts
 msgid "Indexing"
 msgstr "אינדוקס"
 
@@ -12728,6 +12875,10 @@ msgstr "הוראות לסוכן שלהם"
 #: src/i18n/pref-labels.ts
 msgid "Interface language and text direction."
 msgstr "שפת הממשק וכיוון הטקסט."
+
+#: src/components/footer/activity-words.ts
+msgid "interrupted"
+msgstr "נקטע"
 
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 msgid "Intro"
@@ -13028,6 +13179,8 @@ msgid "just cloned"
 msgstr "שוכפל זה עתה"
 
 #: src/notifications/feed/NotificationFeed.tsx
+#: src/utils/format-time-ago.ts
+#: src/utils/format-time-ago.ts
 msgid "just now"
 msgstr "הרגע"
 
@@ -13258,6 +13411,15 @@ msgstr "סורק לאחרונה"
 msgid "last_indexed_at"
 msgstr "אונדקס לאחרונה"
 
+#. placeholder {0}: row.last_indexed_at
+#: src/components/lens-viewer/FsRecordsScannerViewer.tsx
+msgid "Last indexed: {0}"
+msgstr "אונדקס לאחרונה: {0}"
+
+#: src/components/search-index/IndexerStatusPill.tsx
+msgid "Last indexed: {when}"
+msgstr "אונדקס לאחרונה: {when}"
+
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "Last indexed: never"
 msgstr "אונדקס לאחרונה: מעולם לא"
@@ -13310,6 +13472,10 @@ msgstr ""
 #: src/components/conversation/SessionCard.tsx
 #~ msgid "Last turn failed"
 #~ msgstr ""
+
+#: src/components/search-index/IndexRecommendedBanner.tsx
+msgid "Last updated {ago} — results may be outdated."
+msgstr "עודכן לאחרונה {ago} — ייתכן שהתוצאות אינן עדכניות."
 
 #: src/components/triggers-view/FsopTriggerDetail.tsx
 #~ msgid "last_seen_mtime"
@@ -13715,7 +13881,7 @@ msgstr ""
 #: src/i18n/type-labels.ts
 #: src/types/ViewType.ts
 msgid "LLM Endpoints"
-msgstr ""
+msgstr "נקודות קצה של LLM"
 
 #: src/components/assets/MarkdownIndexPanel.tsx
 msgid "LLM Index"
@@ -13897,6 +14063,10 @@ msgstr "טוען היסטוריה…"
 msgid "Loading hooks..."
 msgstr "טוען ווקים..."
 
+#: src/components/search-index/IndexerStatusPill.tsx
+msgid "Loading index status"
+msgstr "טוען את מצב האינדקס"
+
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "Loading index status…"
 msgstr "טוען סטטוס אינדקס…"
@@ -14046,6 +14216,7 @@ msgstr "טוען..."
 #: src/components/ask/AskForm.tsx
 #: src/components/ask/AskModal.tsx
 #: src/components/assets/AssetListView.tsx
+#: src/components/assets/DiagnosisRequestsAssetList.tsx
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
@@ -14263,6 +14434,10 @@ msgstr "השוו בין השניים — ערכו את אחד מהם — ואז 
 #: src/components/harness-login/StatusRow.tsx
 msgid "Make this the default assistant"
 msgstr ""
+
+#: src/components/search-index/index-copy.ts
+msgid "Make your records searchable"
+msgstr "הפוך את הרשומות שלך לניתנות לחיפוש"
 
 #~ msgid "Manage"
 #~ msgstr ""
@@ -15112,8 +15287,13 @@ msgid "Never"
 msgstr ""
 
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
+#: src/components/search-index/IndexerStatusPill.tsx
 msgid "never indexed"
-msgstr "לעולם לא אינדקסוד"
+msgstr "טרם אונדקס"
+
+#: src/components/search-index/IndexerStatusPill.tsx
+msgid "Never indexed"
+msgstr "טרם אונדקס"
 
 #: src/components/automations/AutomationRow.tsx
 msgid "Never ran"
@@ -15738,6 +15918,10 @@ msgstr "עדיין אין תיאור."
 msgid "No diagnoses recorded."
 msgstr "לא נרשמו אבחנות."
 
+#: src/components/assets/DiagnosisRequestsAssetList.tsx
+msgid "No diagnosis requests"
+msgstr ""
+
 #: src/components/assets/editor/revisions/AssetDiffTabs.tsx
 msgid "No differences from the current version."
 msgstr "אין הבדלים מהגרסה הנוכחית."
@@ -16102,6 +16286,10 @@ msgstr ""
 #: src/components/organization/organization-page.tsx
 msgid "No organization yet"
 msgstr ""
+
+#: src/components/lens-viewer/FsRecordsScannerViewer.tsx
+msgid "No orphans for this type"
+msgstr "אין רשומות יתומות מסוג זה"
 
 #: src/components/search-index/SweepOrphansDialog.tsx
 msgid "No orphans found."
@@ -16777,6 +16965,10 @@ msgstr "לא מחוברים · הריצו /login"
 #: src/components/project-home/MissingDependenciesDialog.tsx
 #: src/components/project-setup/ProjectLoadDialog.tsx
 msgid "Not now"
+msgstr "לא עכשיו"
+
+#: src/components/search-index/IndexNowModal.tsx
+msgid "Not Now"
 msgstr "לא עכשיו"
 
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
@@ -18390,7 +18582,7 @@ msgstr "דריסת מודל ברירת המחדל באמצעות משתנה סב
 #: src/components/llm-endpoints/LlmEndpointDetail.tsx
 #: src/components/project-home/ProjectHome.tsx
 msgid "Overview"
-msgstr ""
+msgstr "סקירה כללית"
 
 #: src/components/project-activity-strip/ProjectActivityStrip.tsx
 #: src/components/project-activity-strip/RecentConversationsStrip.tsx
@@ -18617,9 +18809,10 @@ msgstr ""
 msgid "Pause this machine"
 msgstr "השהו את המכונה הזו"
 
+#: src/components/footer/activity-words.ts
 #: src/components/stream-inbox-view/AttachedChannelsBar.tsx
 msgid "paused"
-msgstr ""
+msgstr "מושהה"
 
 #: src/components/assets/editor/agent-profile/AgentPlaceCard.tsx
 #: src/components/assets/editor/agent-profile/AgentPlacesColumn.tsx
@@ -18649,6 +18842,7 @@ msgstr "שיא"
 msgid "Peak spend rate"
 msgstr "שיעור הוצאה שיא"
 
+#: src/components/footer/activity-words.ts
 #: src/components/organization/member-list.tsx
 msgid "pending"
 msgstr "בהמתנה"
@@ -20228,6 +20422,10 @@ msgstr "רענן אינדקס"
 msgid "Refresh interval must be at least 60 seconds"
 msgstr ""
 
+#: src/components/search-index/IndexRecommendedBanner.tsx
+msgid "Refresh now →"
+msgstr "רענן עכשיו ←"
+
 #: src/components/collaboration/ProjectViewHeader.tsx
 msgid "Refresh project index"
 msgstr "רענן את אינדקס הפרויקט"
@@ -20996,6 +21194,15 @@ msgstr "שחזור הקובץ המחוק הזה מה-commit האחרון"
 msgid "Restore this file to the last saved version — your edits will be lost"
 msgstr "שחזור הקובץ הזה לגרסה השמורה האחרונה — העריכות שלך יאבדו"
 
+#: src/components/footer/activity-words.ts
+#: src/components/search-index/activity-labels.ts
+msgid "Restoring"
+msgstr "משחזר"
+
+#: src/components/search-index/activity-labels.ts
+msgid "Restoring…"
+msgstr "משחזר…"
+
 #: src/components/llm-endpoints/FiltersEditor.tsx
 msgid "Restrict beta headers"
 msgstr ""
@@ -21497,6 +21704,7 @@ msgid "Run this live session in which project?"
 msgstr ""
 
 #: src/components/display-toolbar/WebappDisplayToolbar.tsx
+#: src/components/footer/activity-words.ts
 #: src/components/terminal/interactive-terminal/command-status-viewer/CommandStatusViewer.tsx
 msgid "running"
 msgstr "פועל"
@@ -21897,6 +22105,12 @@ msgstr "שורשים סרוקים"
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Scanned: {0}"
 msgstr "נסרק: {0}"
+
+#: src/components/footer/activity-words.ts
+#: src/components/search-index/activity-labels.ts
+#: src/components/search-index/activity-labels.ts
+msgid "Scanning"
+msgstr "סורק"
 
 #: src/components/assets/editor/skill/UsagePanel.tsx
 msgid "Scanning {skillName} usage…"
@@ -23100,7 +23314,7 @@ msgstr "שתף קוד {0} להזמנה."
 #: src/components/project-home/ProjectGitShareToggle.tsx
 #: src/components/project-home/ProjectGitShareToggle.tsx
 msgid "Share git with project members"
-msgstr ""
+msgstr "שיתוף git עם חברי הפרויקט"
 
 #: src/i18n/pref-labels.ts
 msgid "Share message status"
@@ -24642,8 +24856,8 @@ msgid "Subprocess"
 msgstr "תת־תהליך"
 
 #: src/i18n/pref-labels.ts
-msgid "Subprocess runs the file walk in a separate process, so a large or slow tree can’t stall the server (database writes stay in the server either way). Thread runs it in-process — lower startup cost, better for small projects. No effect when the Rust indexer backend is selected."
-msgstr "\"תת־תהליך\" מריץ את סריקת הקבצים בתהליך נפרד, כך שעץ גדול או איטי לא יכול לתקוע את השרת (הכתיבות למסד הנתונים נשארות בשרת בכל מקרה). \"תהליכון\" מריץ אותה בתוך התהליך — עלות התחלה נמוכה יותר, מתאים יותר לפרויקטים קטנים. אין לכך השפעה כאשר נבחר מנוע האינדוקס Rust."
+msgid "Subprocess runs the file walk in a separate process, so a large or slow tree can’t stall the server (database writes stay in the server either way). Thread runs it in-process — lower startup cost, better for small projects."
+msgstr "\"תת־תהליך\" מריץ את סריקת הקבצים בתהליך נפרד, כך שעץ גדול או איטי לא יכול לתקוע את השרת (הכתיבות למסד הנתונים נשארות בשרת בכל מקרה). \"תהליכון\" מריץ אותה בתוך התהליך — עלות התחלה נמוכה יותר, מתאים יותר לפרויקטים קטנים."
 
 #: src/components/automations/automation-words.ts
 #: src/components/automations/RunsView.tsx
@@ -24716,12 +24930,20 @@ msgid "Survey Error"
 msgstr "שגיאת סקר"
 
 #: src/components/search-index/SweepOrphansDialog.tsx
-msgid "Sweep {scopeTotal} ({action})"
-msgstr "נקה {scopeTotal} ({action})"
+#~ msgid "Sweep {scopeTotal} ({action})"
+#~ msgstr "נקה {scopeTotal} ({action})"
+
+#: src/components/search-index/SweepOrphansDialog.tsx
+msgid "Sweep {scopeTotal} ({actionWord})"
+msgstr "נקה {scopeTotal} ({actionWord})"
 
 #: src/components/search-index/SweepOrphansDialog.tsx
 msgid "Sweep action"
 msgstr "פעולת ייחוף"
+
+#: src/components/footer/activity-words.ts
+msgid "sweeping"
+msgstr "מנקה"
 
 #: src/components/search-index/SweepOrphansDialog.tsx
 msgid "Sweeping…"
@@ -25173,6 +25395,10 @@ msgstr ""
 #: src/components/terminal/interactive-terminal/PlanInteractionBar.tsx
 msgid "The agent has asked a question — answer it in the terminal."
 msgstr "הסוכן שאל שאלה — יש לענות עליה בטרמינל."
+
+#: src/components/terminal/interactive-terminal/SurfaceSwitchWaitNotice.tsx
+msgid "The agent is still working, or waiting for your answer in the terminal. The session will switch over as soon as it finishes."
+msgstr "הסוכן עדיין עובד, או מחכה לתשובה שלך בטרמינל. הסשן יעבור ברגע שהוא יסיים."
 
 #: src/pages/entry/launch-runner.ts
 msgid "The agent this link names isn't in the project's files."
@@ -27885,6 +28111,16 @@ msgstr "הצג תמליל סשן"
 msgid "View Skill"
 msgstr "צפייה ב-Skill"
 
+#. placeholder {0}: row.type
+#: src/components/lens-viewer/FsRecordsScannerViewer.tsx
+msgid "View the {indexedCount} {0} entities indexed this run"
+msgstr "הצג את {indexedCount} הישויות מסוג {0} שאונדקסו בהרצה זו"
+
+#. placeholder {0}: row.type
+#: src/components/lens-viewer/FsRecordsScannerViewer.tsx
+msgid "View the 1 {0} entity indexed this run"
+msgstr "הצג את הישות מסוג {0} שאונדקסה בהרצה זו"
+
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 msgid "View the changes in this file"
 msgstr "הצגת השינויים בקובץ הזה"
@@ -28095,7 +28331,7 @@ msgstr "עם מה אתה צריך עזרה?"
 #: src/components/top-nav-bar/AddressAskField.tsx
 #: src/components/top-nav-bar/AddressField.tsx
 msgid "What do you want to do?"
-msgstr ""
+msgstr "מה תרצו לעשות?"
 
 #: src/pages/flow-page/vibe-chat-pane.tsx
 msgid "What do you want to work on"
@@ -28364,8 +28600,8 @@ msgstr ""
 #~ msgstr ""
 
 #: src/i18n/pref-labels.ts
-msgid "Which engine runs filesystem indexing: the built-in Python FSIndexer, or the external Rust indexer (requires FLOWPAD_RS_INDEXER_BIN on the server; silently falls back to Python when unavailable). Takes effect on the next index run."
-msgstr "איזה מנוע מבצע אינדוקס של מערכת הקבצים: FSIndexer המובנה של Python, או מנוע האינדוקס החיצוני בשפת Rust (דורש FLOWPAD_RS_INDEXER_BIN בשרת; חוזר בשקט ל-Python כשאינו זמין). נכנס לתוקף בהרצת האינדוקס הבאה."
+msgid "Which engine does the heavy file scanning: Python (built in), or Rust (a bundled binary, much faster on large projects). Falls back to Python automatically when the Rust binary is unavailable. Takes effect on the next scan."
+msgstr "איזה מנוע מבצע את סריקת הקבצים הכבדה: Python (מובנה), או Rust (קובץ בינארי מצורף, מהיר בהרבה בפרויקטים גדולים). חוזר אוטומטית ל-Python כשהקובץ הבינארי של Rust אינו זמין. נכנס לתוקף בסריקה הבאה."
 
 #: src/components/task-receive/LaunchDialog.tsx
 msgid "Which project should it work on?"
@@ -28492,6 +28728,9 @@ msgstr "עובד"
 
 #: src/components/assets/editor/agent-profile/deployment/ThreadStatus.tsx
 #: src/components/chats-navigator/ChatHistoryRow.tsx
+#: src/components/footer/activity-words.ts
+#: src/components/search-index/activity-labels.ts
+#: src/components/search-index/activity-labels.ts
 msgid "Working"
 msgstr "בעיבוד"
 
@@ -28928,6 +29167,10 @@ msgstr "הפרויקטים שלך"
 #: src/components/helpdesk/HelpdeskMyItems.tsx
 msgid "Your questions"
 msgstr "השאלות שלך"
+
+#: src/components/search-index/index-copy.ts
+msgid "Your records haven't been indexed yet. Building the index takes less than a minute and lets you find anything across all your notes, tasks, and sessions."
+msgstr "הרשומות שלך עדיין לא אונדקסו. בניית האינדקס אורכת פחות מדקה ומאפשרת למצוא כל דבר בכל הפתקים, המשימות והסשנים שלך."
 
 #: src/components/help/AskForHelpDialog.tsx
 msgid "Your request could not be saved."

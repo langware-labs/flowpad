@@ -155,6 +155,10 @@ msgstr "({selectedCount} selected)"
 msgid "(a file)"
 msgstr "(a file)"
 
+#: src/components/footer/activity-one-liner.ts
+msgid "(blocked)"
+msgstr "(blocked)"
+
 #: src/components/collaboration/ProjectViewHeader.tsx
 msgid "(cleared)"
 msgstr "(cleared)"
@@ -479,6 +483,11 @@ msgstr "{0} has been added successfully."
 #: src/components/automations/automation-words.ts
 msgid "{0} in {folder}"
 msgstr "{0} in {folder}"
+
+#. placeholder {0}: row.done - row.skipped
+#: src/components/search-index/ActivityIndicator.tsx
+msgid "{0} indexed"
+msgstr "{0} indexed"
 
 #. placeholder {0}: agent.name
 #: src/components/assets/editor/agent-profile/AgentDeploymentsSection.tsx
@@ -862,6 +871,10 @@ msgstr "{count} rows"
 msgid "{created} member task(s) created for \"{0}\"."
 msgstr "{created} member task(s) created for \"{0}\"."
 
+#: src/utils/format-time-ago.ts
+msgid "{d}d ago"
+msgstr "{d}d ago"
+
 #: src/components/schema-tree/SchemaTreeView.tsx
 msgid "{datasets} datasets"
 msgstr "{datasets} datasets"
@@ -878,6 +891,10 @@ msgstr "{display} — renames in Flowpad only"
 msgid "{displayName} connection failed"
 msgstr "{displayName} connection failed"
 
+#: src/components/search-index/ActivityProgressModal.tsx
+msgid "{doneCount} records"
+msgstr "{doneCount} records"
+
 #: src/components/conversation/ThreadStack.tsx
 msgid "{earlier} earlier in this thread"
 msgstr "{earlier} earlier in this thread"
@@ -888,6 +905,10 @@ msgstr "{envFileName} file"
 
 #~ msgid "{envVar} saved"
 #~ msgstr "{envVar} saved"
+
+#: src/components/footer/activity-one-liner.ts
+msgid "{errors} failed"
+msgstr "{errors} failed"
 
 #. placeholder {0}: ids.length
 #: src/components/graph-context/GraphContextViewer.tsx
@@ -921,6 +942,10 @@ msgstr "{guestName} is waiting for your approval before any prompt runs on your 
 #: src/components/collaboration/LiveSessionView.tsx
 msgid "{guestName} wants to run prompts on your machine."
 msgstr "{guestName} wants to run prompts on your machine."
+
+#: src/utils/format-time-ago.ts
+msgid "{h}h ago"
+msgstr "{h}h ago"
 
 #: src/components/web-url-display/WebUrlDisplay.tsx
 #~ msgid "{host} can't be shown inside Flowpad."
@@ -962,6 +987,10 @@ msgstr "{hostName}'s Claude Code"
 msgid "{hubCount} available"
 msgstr "{hubCount} available"
 
+#: src/components/search-index/IndexerStatusPill.tsx
+msgid "{idle} — open Records Scanner"
+msgstr "{idle} — open Records Scanner"
+
 #. placeholder {0}: ignored !== 1 ? 's' : ''
 #: src/components/lens-viewer/CloudSearchResultsModal.tsx
 msgid "{ignored} issue{0} auto-resolved"
@@ -974,6 +1003,14 @@ msgstr "{indexedCount} indexed"
 #: src/components/llm-endpoints/FundingProvenance.tsx
 msgid "{label}"
 msgstr "{label}"
+
+#: src/components/search-index/ActivityIndicator.tsx
+msgid "{label} — click to open Indexing info"
+msgstr "{label} — click to open Indexing info"
+
+#: src/components/search-index/IndexerStatusPill.tsx
+msgid "{label} — click to open Records Scanner"
+msgstr "{label} — click to open Records Scanner"
 
 #: src/components/terminal/interactive-terminal/SessionSurfaceSwitch.tsx
 msgid "{label} — not while the agent is working"
@@ -1007,6 +1044,10 @@ msgstr "{left} left"
 msgid "{left} of {limit} requests left {windowText}"
 msgstr "{left} of {limit} requests left {windowText}"
 
+#: src/components/footer/ActivityStatusPill.tsx
+msgid "{line} — click for details"
+msgstr "{line} — click for details"
+
 #: src/components/conversation/MembersAvatarStack.tsx
 msgid "{listed} not sent"
 msgstr "{listed} not sent"
@@ -1018,6 +1059,10 @@ msgstr "{listed} to invite"
 #: src/components/automations/automation-words.ts
 msgid "{m}m {rest}s"
 msgstr "{m}m {rest}s"
+
+#: src/utils/format-time-ago.ts
+msgid "{m}m ago"
+msgstr "{m}m ago"
 
 #: src/components/conversation/ThreadHeader.tsx
 msgid "{messageCount, plural, one {# message} other {# messages}}"
@@ -1159,6 +1204,10 @@ msgstr "{repeats} of these already have a budget in {teamName}; their caps will 
 msgid "{rows} rows"
 msgstr "{rows} rows"
 
+#: src/components/assets/DiagnosisRequestsAssetList.tsx
+msgid "{runs} runs · last {last}"
+msgstr "{runs} runs · last {last}"
+
 #: src/components/automations/automation-words.ts
 msgid "{s}s"
 msgstr "{s}s"
@@ -1202,6 +1251,10 @@ msgstr "{teamName} now has access, but the invite message wasn't sent."
 #: src/components/browseable-tree/adapters/useFavoritesRoots.tsx
 #~ msgid "{title} — {0} items"
 #~ msgstr "{title} — {0} items"
+
+#: src/components/search-index/IndexerStatusPill.tsx
+msgid "{tooltip} — click to open Records Scanner"
+msgstr "{tooltip} — click to open Records Scanner"
 
 #. placeholder {0}: totalOrphans === 1 ? '' : 's'
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
@@ -1664,6 +1717,10 @@ msgstr "A task is assigned, the app opens, an agent finishes."
 msgid "A thread quiet this long ends; the next message starts a new one. Empty — never."
 msgstr "A thread quiet this long ends; the next message starts a new one. Empty — never."
 
+#: src/components/search-index/IndexRecommendedBanner.tsx
+msgid "a while ago"
+msgstr "a while ago"
+
 #: src/components/assets/editor/wizard/WizardStepForm.tsx
 msgid "a wizard name"
 msgstr "a wizard name"
@@ -1847,6 +1904,7 @@ msgstr "Active: {activeDbPath}"
 
 #: src/components/assets/editor/agent-profile/AgentPlaceCard.tsx
 #: src/components/graph-view/ui/TopBar.tsx
+#: src/components/search-index/ActivityProgressModalRoot.tsx
 msgid "Activity"
 msgstr "Activity"
 
@@ -3197,6 +3255,15 @@ msgstr "Archive this run and start the record fresh. It stays approved to run."
 msgid "Archived"
 msgstr "Archived"
 
+#: src/components/footer/activity-words.ts
+#: src/components/search-index/activity-labels.ts
+msgid "Archiving"
+msgstr "Archiving"
+
+#: src/components/search-index/activity-labels.ts
+msgid "Archiving…"
+msgstr "Archiving…"
+
 #: src/components/account/database-section.tsx
 msgid "Are you sure you want to clear all data from the database? This will also clear the scan index. A backup will be created first."
 msgstr "Are you sure you want to clear all data from the database? This will also clear the scan index. A backup will be created first."
@@ -3830,6 +3897,10 @@ msgstr "Backend server is not responding. Please try again later."
 msgid "Background image"
 msgstr "Background image"
 
+#: src/components/terminal/interactive-terminal/SurfaceSwitchWaitNotice.tsx
+msgid "Background tasks are still running. The session will switch over as soon as they finish."
+msgstr "Background tasks are still running. The session will switch over as soon as they finish."
+
 #: src/components/account/database-section.tsx
 msgid "Backing up..."
 msgstr "Backing up..."
@@ -3900,6 +3971,7 @@ msgstr "Betas allowed"
 msgid "Bless \"{name}\" — create its Tag entity"
 msgstr "Bless \"{name}\" — create its Tag entity"
 
+#: src/components/footer/activity-words.ts
 #: src/components/lens-viewer/shared/transcript-features/TranscriptEntryItem.tsx
 msgid "blocked"
 msgstr "blocked"
@@ -4110,6 +4182,10 @@ msgstr "Build AI"
 #: src/pages/flow-page/vibe-chat-pane.tsx
 msgid "Build history"
 msgstr "Build history"
+
+#: src/components/search-index/index-copy.ts
+msgid "Build Index"
+msgstr "Build Index"
 
 #: src/pages/home-landing/HomeLanding.tsx
 msgid "Build something <0>amazing</0>"
@@ -4382,6 +4458,10 @@ msgstr "Cancel"
 #: src/components/conversation/MessageComposer.tsx
 msgid "Cancel reply"
 msgstr "Cancel reply"
+
+#: src/components/footer/activity-words.ts
+msgid "cancelled"
+msgstr "cancelled"
 
 #: src/components/assets/editor/wizard/WizardViewer.tsx
 msgid "Cancelled by user"
@@ -5036,6 +5116,15 @@ msgstr "Clear selection"
 msgid "Cleared"
 msgstr "Cleared"
 
+#: src/components/footer/activity-words.ts
+#: src/components/search-index/activity-labels.ts
+msgid "Clearing index"
+msgstr "Clearing index"
+
+#: src/components/search-index/activity-labels.ts
+msgid "Clearing index…"
+msgstr "Clearing index…"
+
 #: src/components/account/database-section.tsx
 msgid "Clearing..."
 msgstr "Clearing..."
@@ -5103,6 +5192,12 @@ msgstr "Click to rename"
 #: src/components/collaboration/RoomHeader.tsx
 msgid "Click to rename room"
 msgstr "Click to rename room"
+
+#. placeholder {0}: row.orphan_count
+#. placeholder {1}: row.type
+#: src/components/lens-viewer/FsRecordsScannerViewer.tsx
+msgid "Click to sweep {0} {1} orphans"
+msgstr "Click to sweep {0} {1} orphans"
 
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Click to view"
@@ -5592,6 +5687,11 @@ msgstr "Company & Team"
 msgid "Company Announcements"
 msgstr "Company Announcements"
 
+#: src/components/footer/activity-words.ts
+msgid "complete"
+msgstr "complete"
+
+#: src/components/footer/activity-words.ts
 #: src/pages/live-status/LiveStatus.tsx
 msgid "completed"
 msgstr "completed"
@@ -5611,6 +5711,10 @@ msgstr "Compute Node"
 #: src/components/machine-overview/machine-overview.tsx
 msgid "Compute Node ID:"
 msgstr "Compute Node ID:"
+
+#: src/i18n/type-labels.ts
+msgid "Compute Op"
+msgstr "Compute Op"
 
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "Computing diff…"
@@ -7481,6 +7585,7 @@ msgstr "Creating…"
 
 #: src/components/data-sources/DataDriversView.tsx
 #: src/components/llm-endpoints/LlmEndpointsList.tsx
+#: src/i18n/type-labels.ts
 msgid "Credential"
 msgstr "Credential"
 
@@ -7615,6 +7720,10 @@ msgstr "Data (JSON)"
 #: src/components/privacy-mode/privacy-mode-popover.tsx
 msgid "Data privacy mode"
 msgstr "Data privacy mode"
+
+#: src/i18n/type-labels.ts
+msgid "Data Schema"
+msgstr "Data Schema"
 
 #: src/components/schema-tree/SchemaTreeView.tsx
 msgid "data source"
@@ -7884,6 +7993,10 @@ msgstr "Delegated"
 #: src/components/entity-execution-panel/current-activity.ts
 msgid "Delegating to"
 msgstr "Delegating to"
+
+#: src/components/search-index/SweepOrphansDialog.tsx
+msgid "delete"
+msgstr "delete"
 
 #: src/components/account/secrets-section.tsx
 #: src/components/account/system-diagnoses.tsx
@@ -8514,6 +8627,10 @@ msgstr "Diagnosis reported to the Flowpad team"
 msgid "Diagnosis request"
 msgstr "Diagnosis request"
 
+#: src/i18n/type-labels.ts
+msgid "Diagnosis Request"
+msgstr "Diagnosis Request"
+
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
 #: src/components/quick-create/registry.ts
 msgid "Diagnosis request created"
@@ -8706,8 +8823,13 @@ msgstr "Discovering {typeLabel}…"
 msgid "Discuss"
 msgstr "Discuss"
 
+#: src/i18n/pref-labels.ts
+msgid "Disk I/O backend"
+msgstr "Disk I/O backend"
+
 #: src/components/diagnose/diagnosis-action-buttons.tsx
 #: src/components/diagnose/diagnosis-action-buttons.tsx
+#: src/components/footer/ActivityStatusPill.tsx
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
@@ -8824,6 +8946,10 @@ msgstr "Don't ask"
 msgid "Don't ask again"
 msgstr "Don't ask again"
 
+#: src/components/task-receive/IncomingProjectDialog.tsx
+msgid "Don't ask me again"
+msgstr "Don't ask me again"
+
 #: src/pages/entry/AgentLaunchLanding.tsx
 #: src/pages/entry/OpenInFlowpadActions.tsx
 msgid "Don't have FlowPad yet?"
@@ -8833,6 +8959,7 @@ msgstr "Don't have FlowPad yet?"
 msgid "Don't show again until Flowpad restarts"
 msgstr "Don't show again until Flowpad restarts"
 
+#: src/components/footer/activity-words.ts
 #: src/components/search-index/ActivityProgressModal.tsx
 msgid "done"
 msgstr "done"
@@ -10067,6 +10194,7 @@ msgstr "extra rows fetched (limit + overfetch)"
 msgid "Extracting…"
 msgstr "Extracting…"
 
+#: src/components/footer/activity-words.ts
 #: src/components/llm-endpoints/TestEndpointButton.tsx
 #: src/components/organization/budgets/EndpointControls.tsx
 msgid "failed"
@@ -12278,6 +12406,10 @@ msgstr "If it fails"
 msgid "If your browser asks, choose Open. FlowPad then carries on from here."
 msgstr "If your browser asks, choose Open. FlowPad then carries on from here."
 
+#: src/components/search-index/SweepOrphansDialog.tsx
+msgid "ignore"
+msgstr "ignore"
+
 #: src/components/triggers-view/FsopTriggerDetail.tsx
 #~ msgid "ignore patterns"
 #~ msgstr "ignore patterns"
@@ -12483,6 +12615,10 @@ msgstr "Index of prompts sent in this session"
 msgid "Index project on selection"
 msgstr "Index project on selection"
 
+#: src/components/search-index/IndexerStatusPill.tsx
+msgid "Index status unavailable · Retry"
+msgstr "Index status unavailable · Retry"
+
 #: src/i18n/pref-labels.ts
 msgid "Index when"
 msgstr "Index when"
@@ -12491,19 +12627,30 @@ msgstr "Index when"
 msgid "indexed"
 msgstr "indexed"
 
+#: src/components/search-index/IndexerStatusPill.tsx
+msgid "indexed {ago}"
+msgstr "indexed {ago}"
+
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "Indexed {indexedCount} records"
 msgstr "Indexed {indexedCount} records"
+
+#: src/components/browseable-tree/RagFolderIcon.tsx
+msgid "Indexed for search"
+msgstr "Indexed for search"
 
 #: src/components/helpdesk/HelpdeskLoadDialog.tsx
 msgid "indexed with the project"
 msgstr "indexed with the project"
 
 #: src/i18n/pref-labels.ts
-msgid "Indexer backend"
-msgstr "Indexer backend"
+#~ msgid "Indexer backend"
+#~ msgstr "Indexer backend"
 
+#: src/components/footer/activity-words.ts
 #: src/components/helpdesk/HelpdeskLoadDialog.tsx
+#: src/components/search-index/activity-labels.ts
+#: src/components/search-index/activity-labels.ts
 msgid "Indexing"
 msgstr "Indexing"
 
@@ -12728,6 +12875,10 @@ msgstr "Instructions for their agent"
 #: src/i18n/pref-labels.ts
 msgid "Interface language and text direction."
 msgstr "Interface language and text direction."
+
+#: src/components/footer/activity-words.ts
+msgid "interrupted"
+msgstr "interrupted"
 
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 msgid "Intro"
@@ -13028,6 +13179,8 @@ msgid "just cloned"
 msgstr "just cloned"
 
 #: src/notifications/feed/NotificationFeed.tsx
+#: src/utils/format-time-ago.ts
+#: src/utils/format-time-ago.ts
 msgid "just now"
 msgstr "just now"
 
@@ -13258,6 +13411,15 @@ msgstr "Last Indexed"
 msgid "last_indexed_at"
 msgstr "last indexed {lastIndexedLabel}"
 
+#. placeholder {0}: row.last_indexed_at
+#: src/components/lens-viewer/FsRecordsScannerViewer.tsx
+msgid "Last indexed: {0}"
+msgstr "Last indexed: {0}"
+
+#: src/components/search-index/IndexerStatusPill.tsx
+msgid "Last indexed: {when}"
+msgstr "Last indexed: {when}"
+
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "Last indexed: never"
 msgstr "Last indexed: never"
@@ -13310,6 +13472,10 @@ msgstr "Last test paid with that key"
 #: src/components/conversation/SessionCard.tsx
 #~ msgid "Last turn failed"
 #~ msgstr "Last turn failed"
+
+#: src/components/search-index/IndexRecommendedBanner.tsx
+msgid "Last updated {ago} — results may be outdated."
+msgstr "Last updated {ago} — results may be outdated."
 
 #: src/components/triggers-view/FsopTriggerDetail.tsx
 #~ msgid "last_seen_mtime"
@@ -13897,6 +14063,10 @@ msgstr "Loading history…"
 msgid "Loading hooks..."
 msgstr "Loading hooks..."
 
+#: src/components/search-index/IndexerStatusPill.tsx
+msgid "Loading index status"
+msgstr "Loading index status"
+
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "Loading index status…"
 msgstr "Loading index status…"
@@ -14046,6 +14216,7 @@ msgstr "Loading..."
 #: src/components/ask/AskForm.tsx
 #: src/components/ask/AskModal.tsx
 #: src/components/assets/AssetListView.tsx
+#: src/components/assets/DiagnosisRequestsAssetList.tsx
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
@@ -14263,6 +14434,10 @@ msgstr "Make the two the same — edit either one — then Pull, or wait for the
 #: src/components/harness-login/StatusRow.tsx
 msgid "Make this the default assistant"
 msgstr "Make this the default assistant"
+
+#: src/components/search-index/index-copy.ts
+msgid "Make your records searchable"
+msgstr "Make your records searchable"
 
 #~ msgid "Manage"
 #~ msgstr "Manage"
@@ -15112,8 +15287,13 @@ msgid "Never"
 msgstr "Never"
 
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
+#: src/components/search-index/IndexerStatusPill.tsx
 msgid "never indexed"
 msgstr "never indexed"
+
+#: src/components/search-index/IndexerStatusPill.tsx
+msgid "Never indexed"
+msgstr "Never indexed"
 
 #: src/components/automations/AutomationRow.tsx
 msgid "Never ran"
@@ -15738,6 +15918,10 @@ msgstr "No description yet."
 msgid "No diagnoses recorded."
 msgstr "No diagnoses recorded."
 
+#: src/components/assets/DiagnosisRequestsAssetList.tsx
+msgid "No diagnosis requests"
+msgstr "No diagnosis requests"
+
 #: src/components/assets/editor/revisions/AssetDiffTabs.tsx
 msgid "No differences from the current version."
 msgstr "No differences from the current version."
@@ -16102,6 +16286,10 @@ msgstr "No organization budget yet"
 #: src/components/organization/organization-page.tsx
 msgid "No organization yet"
 msgstr "No organization yet"
+
+#: src/components/lens-viewer/FsRecordsScannerViewer.tsx
+msgid "No orphans for this type"
+msgstr "No orphans for this type"
 
 #: src/components/search-index/SweepOrphansDialog.tsx
 msgid "No orphans found."
@@ -16778,6 +16966,10 @@ msgstr "Not logged in · Please run /login"
 #: src/components/project-setup/ProjectLoadDialog.tsx
 msgid "Not now"
 msgstr "Not now"
+
+#: src/components/search-index/IndexNowModal.tsx
+msgid "Not Now"
+msgstr "Not Now"
 
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 #~ msgid "Not on the remote yet — Push publishes this branch"
@@ -18617,6 +18809,7 @@ msgstr "Pause machine"
 msgid "Pause this machine"
 msgstr "Pause this machine"
 
+#: src/components/footer/activity-words.ts
 #: src/components/stream-inbox-view/AttachedChannelsBar.tsx
 msgid "paused"
 msgstr "paused"
@@ -18649,6 +18842,7 @@ msgstr "peak"
 msgid "Peak spend rate"
 msgstr "Peak spend rate"
 
+#: src/components/footer/activity-words.ts
 #: src/components/organization/member-list.tsx
 msgid "pending"
 msgstr "pending"
@@ -20228,6 +20422,10 @@ msgstr "Refresh index"
 msgid "Refresh interval must be at least 60 seconds"
 msgstr "Refresh interval must be at least 60 seconds"
 
+#: src/components/search-index/IndexRecommendedBanner.tsx
+msgid "Refresh now →"
+msgstr "Refresh now →"
+
 #: src/components/collaboration/ProjectViewHeader.tsx
 msgid "Refresh project index"
 msgstr "Refresh project index"
@@ -20996,6 +21194,15 @@ msgstr "Restore this deleted file from the last commit"
 msgid "Restore this file to the last saved version — your edits will be lost"
 msgstr "Restore this file to the last saved version — your edits will be lost"
 
+#: src/components/footer/activity-words.ts
+#: src/components/search-index/activity-labels.ts
+msgid "Restoring"
+msgstr "Restoring"
+
+#: src/components/search-index/activity-labels.ts
+msgid "Restoring…"
+msgstr "Restoring…"
+
 #: src/components/llm-endpoints/FiltersEditor.tsx
 msgid "Restrict beta headers"
 msgstr "Restrict beta headers"
@@ -21497,6 +21704,7 @@ msgid "Run this live session in which project?"
 msgstr "Run this live session in which project?"
 
 #: src/components/display-toolbar/WebappDisplayToolbar.tsx
+#: src/components/footer/activity-words.ts
 #: src/components/terminal/interactive-terminal/command-status-viewer/CommandStatusViewer.tsx
 msgid "running"
 msgstr "running"
@@ -21897,6 +22105,12 @@ msgstr "Scanned roots"
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Scanned: {0}"
 msgstr "Scanned: {0}"
+
+#: src/components/footer/activity-words.ts
+#: src/components/search-index/activity-labels.ts
+#: src/components/search-index/activity-labels.ts
+msgid "Scanning"
+msgstr "Scanning"
 
 #: src/components/assets/editor/skill/UsagePanel.tsx
 msgid "Scanning {skillName} usage…"
@@ -24642,8 +24856,8 @@ msgid "Subprocess"
 msgstr "Subprocess"
 
 #: src/i18n/pref-labels.ts
-msgid "Subprocess runs the file walk in a separate process, so a large or slow tree can’t stall the server (database writes stay in the server either way). Thread runs it in-process — lower startup cost, better for small projects. No effect when the Rust indexer backend is selected."
-msgstr "Subprocess runs the file walk in a separate process, so a large or slow tree can’t stall the server (database writes stay in the server either way). Thread runs it in-process — lower startup cost, better for small projects. No effect when the Rust indexer backend is selected."
+msgid "Subprocess runs the file walk in a separate process, so a large or slow tree can’t stall the server (database writes stay in the server either way). Thread runs it in-process — lower startup cost, better for small projects."
+msgstr "Subprocess runs the file walk in a separate process, so a large or slow tree can’t stall the server (database writes stay in the server either way). Thread runs it in-process — lower startup cost, better for small projects."
 
 #: src/components/automations/automation-words.ts
 #: src/components/automations/RunsView.tsx
@@ -24716,12 +24930,20 @@ msgid "Survey Error"
 msgstr "Survey Error"
 
 #: src/components/search-index/SweepOrphansDialog.tsx
-msgid "Sweep {scopeTotal} ({action})"
-msgstr "Sweep {scopeTotal} ({action})"
+#~ msgid "Sweep {scopeTotal} ({action})"
+#~ msgstr "Sweep {scopeTotal} ({action})"
+
+#: src/components/search-index/SweepOrphansDialog.tsx
+msgid "Sweep {scopeTotal} ({actionWord})"
+msgstr "Sweep {scopeTotal} ({actionWord})"
 
 #: src/components/search-index/SweepOrphansDialog.tsx
 msgid "Sweep action"
 msgstr "Sweep action"
+
+#: src/components/footer/activity-words.ts
+msgid "sweeping"
+msgstr "sweeping"
 
 #: src/components/search-index/SweepOrphansDialog.tsx
 msgid "Sweeping…"
@@ -25173,6 +25395,10 @@ msgstr "The agent gets the message and can reply in the conversation. Only agent
 #: src/components/terminal/interactive-terminal/PlanInteractionBar.tsx
 msgid "The agent has asked a question — answer it in the terminal."
 msgstr "The agent has asked a question — answer it in the terminal."
+
+#: src/components/terminal/interactive-terminal/SurfaceSwitchWaitNotice.tsx
+msgid "The agent is still working, or waiting for your answer in the terminal. The session will switch over as soon as it finishes."
+msgstr "The agent is still working, or waiting for your answer in the terminal. The session will switch over as soon as it finishes."
 
 #: src/pages/entry/launch-runner.ts
 msgid "The agent this link names isn't in the project's files."
@@ -27885,6 +28111,16 @@ msgstr "View session transcript"
 msgid "View Skill"
 msgstr "View Skill"
 
+#. placeholder {0}: row.type
+#: src/components/lens-viewer/FsRecordsScannerViewer.tsx
+msgid "View the {indexedCount} {0} entities indexed this run"
+msgstr "View the {indexedCount} {0} entities indexed this run"
+
+#. placeholder {0}: row.type
+#: src/components/lens-viewer/FsRecordsScannerViewer.tsx
+msgid "View the 1 {0} entity indexed this run"
+msgstr "View the 1 {0} entity indexed this run"
+
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 msgid "View the changes in this file"
 msgstr "View the changes in this file"
@@ -28364,8 +28600,8 @@ msgstr "Where the key is created, and how to store it: flow credentials set <nam
 #~ msgstr "Where this desk lives"
 
 #: src/i18n/pref-labels.ts
-msgid "Which engine runs filesystem indexing: the built-in Python FSIndexer, or the external Rust indexer (requires FLOWPAD_RS_INDEXER_BIN on the server; silently falls back to Python when unavailable). Takes effect on the next index run."
-msgstr "Which engine runs filesystem indexing: the built-in Python FSIndexer, or the external Rust indexer (requires FLOWPAD_RS_INDEXER_BIN on the server; silently falls back to Python when unavailable). Takes effect on the next index run."
+msgid "Which engine does the heavy file scanning: Python (built in), or Rust (a bundled binary, much faster on large projects). Falls back to Python automatically when the Rust binary is unavailable. Takes effect on the next scan."
+msgstr "Which engine does the heavy file scanning: Python (built in), or Rust (a bundled binary, much faster on large projects). Falls back to Python automatically when the Rust binary is unavailable. Takes effect on the next scan."
 
 #: src/components/task-receive/LaunchDialog.tsx
 msgid "Which project should it work on?"
@@ -28492,6 +28728,9 @@ msgstr "working"
 
 #: src/components/assets/editor/agent-profile/deployment/ThreadStatus.tsx
 #: src/components/chats-navigator/ChatHistoryRow.tsx
+#: src/components/footer/activity-words.ts
+#: src/components/search-index/activity-labels.ts
+#: src/components/search-index/activity-labels.ts
 msgid "Working"
 msgstr "Working"
 
@@ -28928,6 +29167,10 @@ msgstr "Your Projects"
 #: src/components/helpdesk/HelpdeskMyItems.tsx
 msgid "Your questions"
 msgstr "Your questions"
+
+#: src/components/search-index/index-copy.ts
+msgid "Your records haven't been indexed yet. Building the index takes less than a minute and lets you find anything across all your notes, tasks, and sessions."
+msgstr "Your records haven't been indexed yet. Building the index takes less than a minute and lets you find anything across all your notes, tasks, and sessions."
 
 #: src/components/help/AskForHelpDialog.tsx
 msgid "Your request could not be saved."

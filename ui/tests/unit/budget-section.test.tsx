@@ -70,6 +70,7 @@ vi.mock('@sdk', async (importOriginal) => {
       save: h.save,
       delete: h.del,
       getByTypeId: h.getByTypeId,
+      getByTypeIdFromCache: () => null,
     },
     copyToClipboard: h.copyToClipboard,
   };
