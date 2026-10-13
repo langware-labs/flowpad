@@ -20,8 +20,9 @@ afterEach(() => {
   useProjectLoadStore.getState().setOpen(false);
   vi.restoreAllMocks();
 });
-function mount(result: ProjectLoadResult = required) {
-  vi.spyOn(Project, 'loadState').mockResolvedValue(result);
+/** ``observed``: what the backend answers once the question is open (null: it dropped the verdict). */
+function mount(result: ProjectLoadResult = required, observed: ProjectLoadResult | null = result) {
+  vi.spyOn(Project, 'loadState').mockResolvedValue(observed);
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
     <QueryClientProvider client={client}>
@@ -60,11 +61,27 @@ describe('project lifecycle approval', () => {
     mount({ ...required, tree });
     expect(await screen.findByTestId('setup-node-Deals sync')).toHaveAttribute('data-state', 'blocked');
     expect(screen.getByTestId('setup-node-Studio app')).toHaveAttribute('data-state', 'done');
-    expect(screen.getByTestId('setup-tree-progress')).toHaveTextContent('2 of 4 set up');
+    // The count is of the two rows shown, not the run's four nodes.
+    expect(screen.getByTestId('setup-tree-progress')).toHaveTextContent('1 of 2 set up');
     // The root is the title, and the second level is the run's business.
     expect(screen.queryByTestId('setup-node-sales-desk')).toBeNull();
     expect(screen.queryByTestId('setup-node-HubSpot key')).toBeNull();
     expect(load).not.toHaveBeenCalled();
+  });
+  it('a verdict the backend dropped is checked again, and a question no longer true closes', async () => {
+    // What it was checked against changed while the question stood (a source turned active).
+    const load = vi.spyOn(Project, 'load').mockResolvedValue({ ...required, state: 'ready', detail: '' });
+    mount(required, null);
+    await waitFor(() => expect(load).toHaveBeenCalledExactlyOnceWith(projectId, { approved: false }));
+    await waitFor(() => expect(screen.queryByTestId('project-load-dialog')).toBeNull());
+  });
+  it('a dropped verdict that still needs setup asks the question again from the fresh check', async () => {
+    const fresh = { ...required, detail: 'Connect your own account.' };
+    const load = vi.spyOn(Project, 'load').mockResolvedValue(fresh);
+    mount(required, null);
+    expect(await screen.findByText('Connect your own account.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Set up' })).toBeInTheDocument();
+    expect(load).toHaveBeenCalledTimes(1);
   });
   it('only Set up grants explicit approval through the shared Load action', async () => {
     const load = vi.spyOn(Project, 'load').mockResolvedValue({ ...required, state: 'ready', detail: 'Ready' });

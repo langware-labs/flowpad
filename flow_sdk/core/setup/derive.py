@@ -9,7 +9,7 @@ places that answered these questions one at a time cannot disagree:
 | ``dependency:<name>`` | — | ``flow dep sync`` ✓ ``flow dep check`` (``project_setup.compile_setup``) |
 | ``connection:<provider>`` | — | ``flow connections connect`` ✓ ``connections test`` (same) |
 | ``credential:<name>`` | — | ask each missing value → ``credentials set`` ✓ ``credentials check`` (same) |
-| ``data_source-<id>`` | the connections and credentials it needs, then its last setup stage | — |
+| ``data_source-<id>`` | the connections and credentials it needs, then its last setup stage | with no stages: its Verify, which holds unless a setup is owed |
 | ``stage:<source>:<wizard>`` | the stage before it (a stage is never set up before the one it follows) | the driver's stage wizard, FOR the source — recorded where the stage list reads it |
 | ``micro_app-<id>`` | attached declarations | install → build (``webapp_setup``); ``on_load`` starts its server and verifies its display |
 | ``asset_setup:<name>`` | its declared children | its declared ``prepare`` / ``run`` wizards (and ``on_load``, run on display — ``core/setup/load``) |
@@ -189,6 +189,8 @@ class ProjectTree:
             before = stage_id
         # A source whose driver declares no stages still has to verify: the same check as its Verify
         # button (the source turns active when it passes) — else the tree calls "done" a source in setup.
+        # Its check holds unless the source owes a setup (``DataSource.setup_owed``), so one just indexed
+        # and still ``new`` does not hold the project up.
         verify = None
         if not before:
             op = _op(f"{node_id}:verify", "Verify", "verify", kind="source_step")

@@ -39,6 +39,13 @@ function ProjectLoadDialog({ projectId, projectName, initial, onClose }: Project
   useEffect(() => {
     if (state === 'ready' && watched.current) onClose();
   }, [state, onClose]);
+  // The backend dropped the verdict this question was asked from (what it was checked against changed).
+  // Ask again — a check, never an approval — and close if the question is no longer true.
+  const { result, load: check } = load;
+  useEffect(() => {
+    if (result !== null) return;
+    void check().then((next) => next?.state === 'ready' && onClose());
+  }, [result, check, onClose]);
   return (
     <Dialog
       open
