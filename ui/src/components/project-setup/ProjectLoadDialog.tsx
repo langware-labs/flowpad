@@ -57,12 +57,8 @@ function ProjectLoadDialog({ projectId, projectName, initial, onClose }: Project
           </p>
         )}
         {load.questionId && <AskForm questionId={load.questionId} showOp={false} onSettled={load.settleQuestion} />}
-        {needsSetup ? (
-          // What "Set up" would do, one level deep: the steps the project is waiting for, before any runs.
-          <SetupTreeView tree={load.result?.tree ?? null} hideRoot overview />
-        ) : (
-          <SetupTreeView tree={load.tree} />
-        )}
+        {/* Before Set up: what it would do, one level deep. */}
+        <SetupTreeView tree={load.tree} hideRoot={needsSetup} overview={needsSetup} />
         {(load.starting || state === 'running') && (
           <p role="status">
             <Trans>Preparing…</Trans>

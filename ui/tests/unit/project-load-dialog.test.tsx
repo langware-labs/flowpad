@@ -3,7 +3,7 @@ import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { Project, type ProjectLoadResult } from '@sdk';
+import { Project, type ProjectLoadResult, type SetupNodeResult, type SetupTreeResult } from '@sdk';
 import { ProjectLoadDialogRoot } from '@src/components/project-setup/ProjectLoadDialog';
 import { openProjectLoad, useProjectLoadStore } from '@src/components/project-setup/project-load-store';
 const projectId = '77777777-7777-4777-8777-777777777777';
@@ -20,15 +20,15 @@ afterEach(() => {
   useProjectLoadStore.getState().setOpen(false);
   vi.restoreAllMocks();
 });
-function mount() {
-  vi.spyOn(Project, 'loadState').mockResolvedValue(required);
+function mount(result: ProjectLoadResult = required) {
+  vi.spyOn(Project, 'loadState').mockResolvedValue(result);
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
     <QueryClientProvider client={client}>
       <ProjectLoadDialogRoot />
     </QueryClientProvider>,
   );
-  act(() => openProjectLoad(payload));
+  act(() => openProjectLoad({ ...payload, initial: result }));
 }
 describe('project lifecycle approval', () => {
   it('Not now executes nothing; reopening asks the same question', async () => {
@@ -43,17 +43,9 @@ describe('project lifecycle approval', () => {
     expect(load).not.toHaveBeenCalled();
   });
   it('before Set up, the dialog shows the first level of what the check found', async () => {
-    const node = (id: string, state: 'done' | 'blocked' | 'failed', detail = '', children: object[] = []) => ({
-      id,
-      label: id,
-      level: 0,
-      state,
-      detail,
-      children,
-      shared: false,
-      independent: false,
-    });
-    const tree = {
+    const node = (id: string, state: SetupNodeResult['state'], detail = '', children: SetupNodeResult[] = []) =>
+      ({ id, state, detail, children, shared: false }) as SetupNodeResult;
+    const tree: SetupTreeResult = {
       state: 'blocked',
       detail: 'waiting on Deals sync',
       total: 4,
@@ -65,14 +57,7 @@ describe('project lifecycle approval', () => {
       ]),
     };
     const load = vi.spyOn(Project, 'load');
-    vi.spyOn(Project, 'loadState').mockResolvedValue({ ...required, tree } as ProjectLoadResult);
-    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-    render(
-      <QueryClientProvider client={client}>
-        <ProjectLoadDialogRoot />
-      </QueryClientProvider>,
-    );
-    act(() => openProjectLoad({ ...payload, initial: { ...required, tree } as ProjectLoadResult }));
+    mount({ ...required, tree });
     expect(await screen.findByTestId('setup-node-Deals sync')).toHaveAttribute('data-state', 'blocked');
     expect(screen.getByTestId('setup-node-Studio app')).toHaveAttribute('data-state', 'done');
     expect(screen.getByTestId('setup-tree-progress')).toHaveTextContent('2 of 4 set up');
