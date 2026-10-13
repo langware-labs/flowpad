@@ -39,6 +39,8 @@ def test_the_snippet_file_is_on_the_shelf_index():
     [
         ("flow_sdk.builtin.llm_endpoint", "LLMEndpoint"),
         ("flow_sdk.builtin.llm_endpoint", "LLMEndpointKind"),
+        ("flow_sdk.builtin.llm_endpoint", "LLMEndpointConfig"),
+        ("flow_sdk.flowpad_types.enums.lm_provider_enums", "LMApiProvider"),
         ("flow_sdk.lm_api", "set_lm_api"),
         ("flow_sdk.instance_settings.llm_endpoint", "fetch_hub_llm_endpoints"),
         ("flow_sdk.builtin.agentic_process.cli_drivers.llm_source", "list_llm_candidates"),

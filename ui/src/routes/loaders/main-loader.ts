@@ -299,7 +299,11 @@ async function loadAgentAppBody(args: LoaderArgs) {
       // materialization and the per-view loader, so a switch lands even when
       // either fails (the error renders in the project being entered). An
       // entity-owned dock's loader still runs after and its project wins.
-      if (dockForSetup.scopeProjectId) await adoptScopeProject(dockForSetup);
+      // A web page's tab takes the active project (`Tab.resolveDockTarget`), so
+      // an unscoped one restores the remembered project here, before the mint.
+      if (dockForSetup.scopeProjectId || dockForSetup.viewType === ViewType.WEB_APP) {
+        await adoptScopeProject(dockForSetup);
+      }
     }
     let setupHandled = false;
 

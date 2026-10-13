@@ -49,7 +49,7 @@ from flow_sdk.builtin.dataset import Dataset
 from flow_sdk.core.navigation import DATASET
 
 nav = Dataset.at(DATASET)                 # the entity from disk alone -- no index needed
-summary = (nav.spec, nav.num_examples, nav.kind_counts)   # ('navigator.dataset', 252, {'eval': 250, 'test': 2})
+summary = (nav.spec, nav.num_examples, nav.kind_counts)   # ('navigator.dataset', 253, {'eval': 251, 'test': 2})
 rows = nav.read_rows()
 first = rows[0].input.utterance           # 'open data sources'
 where = rows[0].input.here.view           # 'home' -- the navigation.here it was typed on
@@ -222,13 +222,14 @@ expression (`{op, operands}`: `$EQ $NE $GT $GE $LT $LE $IN $NIN $LIKE $IS_NULL $
 `$AND` / `$OR`) or a plain `{path: value}` map; a field is a path into the row as it travels —
 `key`, `input.stage`, `input.stage_dates.won` — and a date compares as its ISO string.
 
-Over HTTP: `GET dataset/<id>/rows?filter={match, order_by, limit, offset}` → `{rows, total, problems}`,
-`GET count?filter=…&group_by=a,b` → `{total, groups}`, `POST put-rows {rows, expected?}`,
+Over HTTP: `GET dataset/<id>/rows?filter={match, order_by, limit, offset}` → `{rows, total, problems, version}`,
+`GET rows-version` → `{version}`, `GET count?filter=…&group_by=a,b` → `{total, groups}`, `POST put-rows {rows, expected?}`,
 `POST delete-rows {keys, expected?}`, `POST sync-rows {rows, prune?, match?}`. TypeScript:
 `dataset.rows(query)`, `count`, `putMany`, `deleteRows`, `sync` — and `dataset.onRowsChanged(handler)`:
 every row write says `dataset.rows.changed` once (the keys that moved, never their values), so a page
-re-reads when told instead of on a timer. A script outside the server is heard too (the write tells
-the running instance; best effort). An app opens an outside page — the record in the CRM — with
+re-reads when told instead of on a timer — or on focus: a write made while the socket was down is told
+on reconnect as one `{op: "sync", keys: []}` (`docs/flow-events.md`). A script outside the server is
+heard too (the write tells the running instance). An app opens an outside page — the record in the CRM — with
 `openExternal(url)` (http/https only; the host opens it in the person's browser).
 
 ## 10. Ask across links, count by week, find by text

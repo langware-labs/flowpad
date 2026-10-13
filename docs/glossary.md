@@ -274,17 +274,34 @@ worker boot, so attaching to a running process flips `restart_required` rather t
   Hub-internal — never a `ServiceEndpoint` and never a REST verb (a REST caller asks for lifecycle and
   outcomes: `ops/<lifecycle>`, `ops/provision-project`, `sign-out`).
 * **`ServiceEndpoint`** — ours. One service a `Deployment` EXPOSES, a child of it: `subkind` (what it
-  is FOR — `admin`, `app`, `agent`, `service`; its kind `service_endpoint.<subkind>` is derived),
+  is FOR — `system`, `admin`, `app`, `agent`, `service`; its kind `service_endpoint.<subkind>` is derived),
   `check` / `health` (how to tell it is alive, and the last check's result — see §7), `protocol` (a
   tagged kind — `web.app`, `api.rest`, `api.chat.openai`, `api.mcp`, `flowpad.workspace`, or a
-  `--ns--` one), `backend` (`static` files, a `proxy` to a loopback port, or a `channel` — each
+  `--ns--` one), `backend` (`static` files, a `proxy` to a loopback port, a `channel` — each
   request a message on a message channel, its recorded reply the answer: every agent deployment's
-  `chat`) and
+  `chat` — or `routed`, an audience proxy's mount-per-app table) and
   `supports_direct_access` (a hint to clients, never a grant). Reached through its `service`
   action — a pure proxy, any method, WebSockets too — and `direct-url`, resolved when asked and
   never stored. INBOUND traffic to a placement; not an `LLMEndpoint`, which is OUTBOUND spend to a
-  model provider and meters it. A `web.*` endpoint gets an origin of its own on the hub. See
-  [service-endpoints](snippets/service-endpoints.md).
+  model provider and meters it. See [service-endpoints](snippets/service-endpoints.md).
+* **`system` / `admin` / `app` (endpoint subkinds)** — ours. The three surfaces a placement answers a
+  browser on, each ONE endpoint. `system` is the machine itself — the Flowpad UI and API (`workspace`)
+  and the hub's `shell-mcp` / `fs-mcp`; not a project's. `admin` is the project's operator-facing
+  web app, `app` its end-user one. Do not say "admin" for the machine's own services (they were
+  `admin` until 2026-10-13), and do not confuse the `admin` subkind with the `admin` access ROLE: the
+  subkind says who an app is FOR, the policy (`admin-login` on the endpoint) says who may open it.
+* **audience / audience proxy** — ours. An audience is who a project's web app is served to: `admin`
+  or `app` (`WEB_AUDIENCES`). A placement's audience proxy is its ONE `ServiceEndpoint` of that
+  subkind, with a `routed` backend; on the hub it has an origin of its own,
+  `<audience>--<deployment-id>.<app_domain>`, and a gate of its own (visitor role for `app`, hub
+  identity for `admin`). An audience nothing is served to has no proxy.
+* **route / mount** — ours. A route is one app behind an audience proxy (`RouteSpec`: a `static` or
+  `proxy` backend plus the `webapp_id` / `artifact_id` it serves); its mount is the single path
+  segment it is served under (`""` = the audience's root app). An app is addressed as the pair
+  *(endpoint, mount)* — `Placed` in Python (`webapp_placement`), `ServedApp` in the TS SDK, `route`
+  in a display target and on the app dock. A webapp declares its mounts in `webapp.json`
+  (`WebappMountSpec`: `audience`, `path`, `serving`). Not react-router's route, and not a
+  `GraphWorkflow` edge.
 * **serve loop / agent loop / `TurnEngine` / `AgentServer`** — ours (`flow_sdk/builtin/agent_serve.py`,
   `agent_loop.py`). How an agent ANSWERS where it is deployed. The `TurnEngine` runs one message as a
   turn: one headless process per (deployment, conversation), one turn at a time, a redelivery answered
@@ -339,9 +356,9 @@ worker boot, so attaching to a running process flips `restart_required` rather t
 
 | `data-integrations` | ours | The `kind: vibe` persona that guides connect → sample → define; mechanics in `connect-data-source` |
 | `promote` / `annotate` | ours | `Dataset` actions: a `SourceItem` becomes an example row; a gold label is written against the dataset's output shape |
-| asset editor | ours | Not a mechanism of its own: a **webapp asset nested inside the asset it edits** (`<asset>/agentic-assets/webapp/<name>/`), marked `kind: application.web.editor`. Discovered by the ordinary repo walker, served by the `static` endpoint indexing gives it, addressed at `/dock/app/micro_app-<id>` — so its breadcrumb reads `Project / <parent> / <name>`. Finding one is a containment query (`useAssetApps`), never a registry. An editor that ships on its own declares `edits` (kinds or type names) and is matched by `flow_sdk/builtin/faas/editors.py`: nested first, then kind, then type. |
+| asset editor | ours | Not a mechanism of its own: a **webapp asset nested inside the asset it edits** (`<asset>/agentic-assets/webapp/<name>/`), marked `kind: application.web.editor`. Discovered by the ordinary repo walker, served by the `static` route indexing gives it, addressed at `/dock/app/micro_app-<id>` — so its breadcrumb reads `Project / <parent> / <name>`. Finding one is a containment query (`useAssetApps`), never a registry. An editor that ships on its own declares `edits` (kinds or type names) and is matched by `flow_sdk/builtin/faas/editors.py`: nested first, then kind, then type. |
 | `data_schema` | ours | A SCHEMA defined by a folder, not code: `agentic-assets/data_schema/<full.kind>/` (`data_schema.json` + `description.md`); the folder name is its kind. Indexing registers it under its project's namespace; nests at any depth; subkind `record` / `dataset` optional (read from the body). Python: `DataSchema` (the row), `DataSchemaDocSpec` (the document). Named `data_spec` until 2026-10-07; a folder still under that name is not read; the asset scan reports it as an issue naming the rename (`TypeInfo.retired_families`). |
-| `micro_app` (family `webapp`) | ours | The DEFINITION of a webapp: a REPO folder asset whose `webapp.json` declares `kind` / `build` / `endpoints`; `asset_ref` is the app folder. It serves nothing: indexing it gives it a `static` `ServiceEndpoint` (`<asset_ref>/<build>`, `webapp_id` = this row) on its project's placement, and that endpoint is what a display loads. On the hub, a builtin app's row is the same: its `hub`-provider placement's endpoints serve it. |
+| `micro_app` (family `webapp`) | ours | The DEFINITION of a webapp: a REPO folder asset whose `webapp.json` declares `kind` / `build` / `mounts` (which audience, where) / `services` (APIs it brings along); `asset_ref` is the app folder. It serves nothing: indexing it gives it a `static` route (`<asset_ref>/<build>`, `webapp_id` = this row) on its project's placement's `app` or `admin` proxy, and that route is what a display loads. On the hub, a builtin app's row is the same: its `hub`-provider placement's `app` proxy routes its bundles. |
 
 ## Help desk (2026-09-02)
 

@@ -1,6 +1,16 @@
 import { Trans } from '@lingui/react/macro';
 import type { SetupNodeResult, SetupTreeResult } from '@sdk';
-import { CheckCircle2, Circle, CornerDownRight, Hourglass, Loader2, Lock, SkipForward, XCircle } from 'lucide-react';
+import {
+  CheckCircle2,
+  Circle,
+  CornerDownRight,
+  Hourglass,
+  Loader2,
+  Lock,
+  SkipForward,
+  Square,
+  XCircle,
+} from 'lucide-react';
 
 /**
  * The setup tree as it stands: every asset of the project (or of one node of it), indented under what
@@ -9,7 +19,16 @@ import { CheckCircle2, Circle, CornerDownRight, Hourglass, Loader2, Lock, SkipFo
  *
  * Failures are marked by their row, not their text: red text on a dark surface is unreadable.
  */
-export function SetupTreeView({ tree, hideRoot = false }: { tree: SetupTreeResult | null; hideRoot?: boolean }) {
+export function SetupTreeView({
+  tree,
+  hideRoot = false,
+  overview = false,
+}: {
+  tree?: SetupTreeResult | null;
+  hideRoot?: boolean;
+  /** Draw only the first level. */
+  overview?: boolean;
+}) {
   if (!tree) return null;
   if (!tree.root) {
     // Refused before anything ran (a cycle in the tree, an untrusted callee): no nodes to draw — the reason
@@ -23,12 +42,16 @@ export function SetupTreeView({ tree, hideRoot = false }: { tree: SetupTreeResul
       </p>
     ) : null;
   }
-  const nodes = hideRoot ? tree.root.children : [tree.root];
+  const first = hideRoot ? tree.root.children : [tree.root];
+  const nodes = overview ? first.map((node) => ({ ...node, children: [] })) : first;
+  // Counted from the rows drawn, not the run's own totals: those include the root and every level a
+  // screen hides, so "2 of 6" would sit above five rows.
+  const drawn = countDrawn(nodes);
   return (
     <div className="flex flex-col gap-2" data-testid="setup-tree">
       <p className="text-xs text-muted-foreground" data-testid="setup-tree-progress">
         <Trans>
-          {tree.done} of {tree.total} set up
+          {drawn.done} of {drawn.total} set up
         </Trans>
       </p>
       <ul className="flex flex-col gap-0.5 text-sm">
@@ -38,6 +61,19 @@ export function SetupTreeView({ tree, hideRoot = false }: { tree: SetupTreeResul
       </ul>
     </div>
   );
+}
+
+/** The rows a list of nodes draws, and how many are settled. A shared row repeats one counted where it is set up. */
+export function countDrawn(nodes: SetupNodeResult[]): { total: number; done: number } {
+  let total = 0;
+  let done = 0;
+  for (const node of nodes) {
+    if (node.shared) continue;
+    const below = countDrawn(node.children);
+    total += 1 + below.total;
+    done += (node.state === 'done' || node.state === 'skipped' ? 1 : 0) + below.done;
+  }
+  return { total, done };
 }
 
 function SetupNodeRow({ node, depth }: { node: SetupNodeResult; depth: number }) {
@@ -82,6 +118,8 @@ function StateIcon({ node }: { node: SetupNodeResult }) {
       return <Hourglass className={`${cls} text-muted-foreground`} />;
     case 'skipped':
       return <SkipForward className={`${cls} text-muted-foreground`} aria-label="skipped" />;
+    case 'stopped':
+      return <Square className={`${cls} text-muted-foreground`} aria-label="stopped" />;
     default:
       return <Circle className={`${cls} text-muted-foreground`} />;
   }

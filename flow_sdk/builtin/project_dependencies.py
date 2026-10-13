@@ -478,10 +478,12 @@ async def describe_dependency(state: DependencyState, *, provider: Optional["Pro
 async def load_dependency(state: DependencyState, *, approved: bool = False) -> DependencyState:
     """Adding/installing a dependency invokes its provider's shared Load contract."""
     from flow_sdk.core.setup.load import load_project  # noqa: PLC0415
+    from flow_sdk.fs_store.indexer.auto_index import index_dependency_provider  # noqa: PLC0415
 
     provider = await dependency_project(state, create=True)
     if provider is None:
         return state  # a folder or value with no project lifecycle
+    await index_dependency_provider(str(provider.id))
     result = await load_project(provider, approved=approved)
     described = await describe_dependency(state, provider=provider)
     return described.model_copy(update={"lifecycle": result})

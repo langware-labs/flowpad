@@ -207,7 +207,10 @@ async def check_webpage_status(url: str, embedder_origin: str) -> WebpageStatus:
             httpx.AsyncClient(
                 timeout=HTTP_PROBE_TIMEOUT_S,
                 follow_redirects=True,
-                headers={"User-Agent": "Mozilla/5.0 (compatible; Flowpad-WebpageStatus/1.0)"},
+                # Asked as a browser navigation asks: a single-page app's server answers a page request
+                # (its shell, with the framing headers) and a 404 with none to anything else.
+                headers={"User-Agent": "Mozilla/5.0 (compatible; Flowpad-WebpageStatus/1.0)",
+                         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"},
             ) as client,
             # Headers are the whole answer; streaming lets us close before the body.
             client.stream("GET", url) as response,

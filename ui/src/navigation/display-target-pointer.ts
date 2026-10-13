@@ -69,8 +69,12 @@ export function dockForDisplayTarget(target: ShowTarget | null | undefined): Doc
   // spelling is what lets the backend's own pointer-entity gate 404 a bogus app
   // address instead of handing the frontend a dock that renders nothing.
   if (target.kind === 'app') {
-    const runtime = target.runtime === 'dev' || target.runtime === 'served' ? { runtime: target.runtime } : undefined;
-    return target.typeid ? new DockPointer(ViewType.APP, target.typeid, runtime) : null;
+    const options: Record<string, string> = {};
+    if (target.runtime === 'dev' || target.runtime === 'served') options.runtime = target.runtime;
+    // Shown by what serves it: the proxy is the typeid, and the mount says which of its apps.
+    if (typeof target.route === 'string' && target.typeid?.startsWith('service_endpoint-')) options.route = target.route;
+    const carried = Object.keys(options).length ? options : undefined;
+    return target.typeid ? new DockPointer(ViewType.APP, target.typeid, carried) : null;
   }
 
   // Entity first, path second: an indexed asset opens in its bespoke editor,

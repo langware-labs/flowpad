@@ -906,3 +906,19 @@ async def test_scoped_account_callback_routes_groups_only_within_its_owner(recor
     result = await webhook_delivery("whatsapp", _Request(query={"source_id": str(account.id)}, body=payload))
     assert result.data["ingested"] == 1
     assert recorded[0].data_source_id == group.id != other_group.id
+
+
+# ── the hub's connection probe ───────────────────────────────────────────────
+
+
+async def test_the_hub_probe_sender_is_kept_verbatim_both_ways(serve):
+    probe = "probe-n0nce_1"
+    payload = _webhook({**_text("wamid.P", "ping"), "from": probe})
+    (item,) = _items(payload)
+    assert (item.author_external_id, item.thread_key) == (probe, probe)
+    graph = serve([(200, {"messages": [{"id": "wamid.OUT"}]})])
+    async with WhatsAppSource(_binding()) as source:
+        await source.reply(source.message_origin("wamid.P", probe), MessageData(text="pong"))
+    (body,) = _posts(graph)
+    assert (body["recipient_type"], body["to"]) == ("individual", probe)
+    assert digits("+972 50-123") == "97250123"

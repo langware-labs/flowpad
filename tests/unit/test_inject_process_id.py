@@ -30,3 +30,21 @@ def test_it_is_idempotent():
 def test_anything_but_a_uuid_leaves_the_page_untouched(value):
     html = "<html><head></head><body></body></html>"
     assert inject_process_id(html, value) == html
+
+
+def test_content_version_changes_when_any_served_file_changes(tmp_path):
+    """The stamp a host compares to reload a parked app frame: any file, not just index.html."""
+    import os
+
+    from flow_sdk.builtin.faas.serve_static import content_version
+
+    (tmp_path / "index.html").write_text("<p>hi</p>")
+    script = tmp_path / "app.js"
+    script.write_text("1")
+    (tmp_path / "node_modules").mkdir()
+    before = content_version(tmp_path)
+    (tmp_path / "node_modules" / "x.js").write_text("ignored")
+    assert content_version(tmp_path) == before
+    script.write_text("22")
+    os.utime(script, ns=(1, 1))
+    assert content_version(tmp_path) != before

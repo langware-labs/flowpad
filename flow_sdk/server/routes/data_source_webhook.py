@@ -187,9 +187,44 @@ async def channel_delivery(source_id: str, request: Request):
     if payload is None:
         return ApiFailResponse(message="Expected a JSON object body")
     headers = dict(request.headers)
+    nonce = str(request.headers.get("x-flowpad-probe") or "").strip()
+    if nonce:
+        phase = str(request.headers.get("x-flowpad-probe-phase") or "").strip()
+        if phase == "route":
+            return ApiSuccessResponse(data=await _answer_route_probe(row, nonce, request.headers.get("x-flowpad-probe-claim") or ""))
+        if phase == "agent":
+            from flow_sdk.builtin.agent_serve import admit_probe  # noqa: PLC0415
+
+            admit_probe(str(row.id), f"probe-{nonce}")
     result = await stype.ingest_pushed(row, payload, headers=headers, raw=raw, verified_by_hub=True)
     result.pop("calls", None)
     return ApiSuccessResponse(data=result)
+
+
+async def _answer_route_probe(row, nonce: str, claim_id: str) -> dict:
+    """A hub connection probe's ``route`` leg: tell the hub who would answer this channel and where —
+    ``"<agent> @ <place>"`` — without taking the message in."""
+    from flow_sdk.cloud_client.transport.hub_http import hub_post  # noqa: PLC0415
+
+    text = f"{await _answerer_of(row)} @ {await _place_of(row)}"
+    await hub_post("webhook", {"event_id": nonce, "text": text}, str(claim_id), "reply")
+    return {"probe": nonce, "text": text}
+
+
+async def _answerer_of(row) -> str:
+    from flow_sdk.builtin.agent import Agent  # noqa: PLC0415
+
+    owner = str(getattr(row, "owner", "") or "")
+    agent = await Agent.get_by_id(owner.split("-", 1)[1]) if owner.startswith("agent-") else None
+    return str(getattr(agent, "name", "") or "") if agent is not None else "nobody"
+
+
+async def _place_of(row) -> str:
+    """The label of the place that answers: the source's ``answer_place`` among its route places, else
+    this computer — the delivery reached it here."""
+    place = str(getattr(row, "answer_place", "") or "")
+    places = await row.route_places() if place else []
+    return next((p["label"] for p in places if p["key"] == place), "This computer")
 
 
 @router.post("/{source_id}/call")

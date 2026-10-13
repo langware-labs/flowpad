@@ -47,7 +47,7 @@ describe('DocTabCard', () => {
     expect(screen.getByText(PATH)).toBeInTheDocument();
 
     fireEvent.click(screen.getByTestId(`doc-tab-card-review-${ViewMode.Vibe}`));
-    expect(reviewDocument).toHaveBeenCalledWith(dock, ViewMode.Vibe, tab.project_id);
+    expect(reviewDocument).toHaveBeenCalledWith(dock, ViewMode.Vibe, tab.project_id, PATH);
     expect(reviewPromptFor(contentAssetTargetForDock(dock)!)).toBe(`Review the html on ${PATH}:`);
   });
 

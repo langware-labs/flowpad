@@ -94,6 +94,8 @@ class SetupState(StrEnum):
     HELD = "held"
     #: A person skipped it (``setup_skipped`` on its record): settled without running, so its parent goes on.
     SKIPPED = "skipped"
+    #: A person stopped the run: the node it was on, and the run, end here. Starting again resumes.
+    STOPPED = "stopped"
 
 
 class LoadState(StrEnum):
@@ -101,19 +103,6 @@ class LoadState(StrEnum):
     SETUP_REQUIRED = "setup_required"
     RUNNING = "running"
     FAILED = "failed"
-
-
-class LoadResult(DataSpec):
-    """A provider project's local lifecycle, independent of the project using it."""
-
-    spec_kind: ClassVar[str] = "project.load"
-    state: LoadState
-    project_id: str
-    detail: str = ""
-    run: Optional[str] = None
-    asset: Optional[str] = None
-    #: Consumer session whose saved presentation this run checked, absent for provider-only loads.
-    display: Optional[str] = None
 
 
 class SetupNodeResult(DataSpec):
@@ -132,6 +121,8 @@ class SetupNodeResult(DataSpec):
     children: list["SetupNodeResult"] = []
     #: Reached already under another parent this run: its verdict is reused, its subtree is shown there.
     shared: bool = False
+    #: Stands on its own (``SetupNode.independent``): not set up, it held nothing else up.
+    independent: bool = False
 
     @property
     def ok(self) -> bool:
@@ -144,6 +135,11 @@ class SetupNodeResult(DataSpec):
             "run": self.run.trimmed() if self.run is not None else None,
             "children": [child.trimmed() for child in self.children],
         })
+
+    def bare(self) -> "SetupNodeResult":
+        """This node's shape and verdicts alone — no wizard output — for a snapshot that is only looked at."""
+        return self.model_copy(update={"prepare": None, "run": None,
+                                       "children": [child.bare() for child in self.children]})
 
 
 class SetupTreeResult(DataSpec):
@@ -167,5 +163,26 @@ class SetupTreeResult(DataSpec):
     def trimmed(self) -> "SetupTreeResult":
         return self.model_copy(update={"root": self.root.trimmed() if self.root is not None else None})
 
+    def bare(self) -> "SetupTreeResult":
+        return self.model_copy(update={"root": self.root.bare() if self.root is not None else None})
+
 
 SetupNodeResult.model_rebuild()
+
+
+class LoadResult(DataSpec):
+    """A provider project's local lifecycle, independent of the project using it."""
+
+    spec_kind: ClassVar[str] = "project.load"
+    state: LoadState
+    project_id: str
+    detail: str = ""
+    run: Optional[str] = None
+    asset: Optional[str] = None
+    #: Consumer session whose saved presentation this run checked, absent for provider-only loads.
+    display: Optional[str] = None
+    #: A FAILED load that setup has not been tried for yet: an approved Load runs setup, then loads again.
+    setup_available: bool = False
+    #: What the check found, for a load that stopped at SETUP_REQUIRED: the tree as it stands, so the
+    #: question "set up?" can show what setting up means before anything runs.
+    tree: Optional[SetupTreeResult] = None

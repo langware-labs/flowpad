@@ -199,8 +199,8 @@ as its home page. Nothing else registers an app; `flow app serve` / `flow app op
   "name": "<app folder name>",
   "title": "Shop",
   "build": ".",
-  "endpoints": [
-    { "name": "web",
+  "mounts": [
+    { "audience": "app",
       "serving": { "type": "proxy", "start_cmd": "npx next dev --port {port}", "health": "/",
                    "install_cmd": "python3 setup.py" } }
   ]
@@ -209,12 +209,18 @@ as its home page. Nothing else registers an app; `flow app serve` / `flow app op
 
 - `name` is the folder name — one noun. `build` is the subdir Flowpad serves as files: `.` for a
   static app with no build step (the `template-flowpad` case), `dist` for a toolchain that emits one.
-- `endpoints` says what the app exposes. **No `endpoints` means one: the `build` folder, served by
-  Flowpad as a static site.** A dev server is a `proxy` entry: `start_cmd` with `{port}` where the
-  server takes its port (never a hardcoded port — the placement picks a free one), `health` (a path
-  that answers below 500 once the server is up), and only when the defaults are wrong `install_cmd`
-  (default: `npm ci` when there is a `package.json`) and `build_cmd` (default: no build). Rules and
-  the API shape: `docs/snippets/service-endpoints.md` §3.
+- `mounts` says who the app is for and how it is served. `audience` is `app` (the project's end
+  users — the default) or `admin` (its operators: a back office, a console for the project itself);
+  wherever the project is placed, each audience is ONE proxy on an origin of its own, and every app
+  for it is a route there. `path` is where under that proxy: `""` makes this app the audience's
+  root, unsaid it mounts at its own name. **No `mounts` means one: the `build` folder, served by
+  Flowpad as a static site to the `app` audience.** A dev server is a `proxy` serving: `start_cmd`
+  with `{port}` where the server takes its port (never a hardcoded port — the placement picks a
+  free one), `health` (a path that answers below 500 once the server is up), and only when the
+  defaults are wrong `install_cmd` (default: `npm ci` when there is a `package.json`) and
+  `build_cmd` (default: no build). An API the app brings along is not a mount: declare it under
+  `services` (`name`, `protocol`, a `proxy` serving). Rules and the API shape:
+  `docs/snippets/service-endpoints.md` §3.
 - Declare a dev server only when the app NEEDS one to be the app (Next, Vite with HMR, a backend).
   A folder of plain files served from `build` is faster and survives a restart; prefer it.
 
