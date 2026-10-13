@@ -828,11 +828,12 @@ async def _start_cloud_ws_listener() -> None:
 
 async def _shutdown_extras():
     """Clean up server.json and stop cron scheduler."""
+    import asyncio as _asyncio
+
     from flow_sdk.config import clear_server_info
     from flow_sdk.server import audience_listener, webhook_listener
 
-    await webhook_listener.stop()
-    await audience_listener.stop()
+    await _asyncio.gather(webhook_listener.stop(), audience_listener.stop())
 
     if _AGENT_SERVER is not None:
         try:

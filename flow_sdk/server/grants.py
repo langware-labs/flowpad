@@ -125,13 +125,12 @@ _revoked: dict[tuple[Optional[str], str], float] = {}
 def revoke(caller: Optional[str], endpoints: Iterable[str], *, now: Optional[float] = None) -> int:
     """Refuse *caller*'s grants (everyone's when None) on *endpoints* for as long as any could still be valid."""
     moment = float(now or time.time())
-    count = 0
+    endpoints = [str(endpoint) for endpoint in endpoints]
     for endpoint in endpoints:
-        _revoked[(caller, str(endpoint))] = moment + GRANT_MAX_AGE
-        count += 1
+        _revoked[(caller, endpoint)] = moment + GRANT_MAX_AGE
     for key in [k for k, until in _revoked.items() if until <= moment]:
         _revoked.pop(key, None)
-    return count
+    return len(endpoints)
 
 
 def is_revoked(grant: Grant, *, now: Optional[float] = None) -> bool:

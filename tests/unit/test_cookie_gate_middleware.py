@@ -10,12 +10,11 @@ import pytest
 from starlette.requests import HTTPConnection
 
 from flow_sdk.server import grants
-from flow_sdk.server.middleware.cookie_gate_middleware import (
-    COOKIE_NAME,
-    QUERY_NAME,
-    _presents,
-)
+from flow_sdk.server.middleware.cookie_gate_middleware import _presents
 from tests.utils.gate import ENDPOINT, SECRET, armed, grant_cookie, ticket
+
+COOKIE_NAME = grants.COOKIE_NAME
+QUERY_NAME = grants.TICKET_PARAM
 
 pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
 

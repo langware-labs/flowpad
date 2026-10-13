@@ -46,15 +46,12 @@ from starlette.responses import HTMLResponse
 from starlette.types import ASGIApp, Receive, Scope, Send
 from starlette.websockets import WebSocketClose
 
-from flow_sdk.instance_settings.cookie_gate import get_cookie_gate
+from flow_sdk.instance_settings import cookie_gate
 from flow_sdk.server import grants
+from flow_sdk.server.service_proxy import SYSTEM_AUDIENCE
 
-#: The grant cookie — one name on every door; each door is its own origin.
-COOKIE_NAME = grants.COOKIE_NAME
+#: The SECRET itself, from a machine that holds it. Browsers carry ``grants.COOKIE_NAME`` / ``grants.TICKET_PARAM``.
 HEADER_NAME = "x-cookie-gate"
-QUERY_NAME = grants.TICKET_PARAM
-#: The door this listener is: a grant for any other is refused here.
-SYSTEM = "system"
 
 logger = logging.getLogger(__name__)
 
@@ -97,7 +94,7 @@ class CookieGateMiddleware:
             await self.app(scope, receive, send)
             return
 
-        secret = get_cookie_gate()
+        secret = cookie_gate.get_cookie_gate()
         if secret is None:
             # Unarmed: the default. No connection is built, nothing is parsed.
             await self.app(scope, receive, send)
@@ -135,8 +132,8 @@ def _presents(conn: HTTPConnection, secret: str) -> bool:
     presented = conn.headers.get(HEADER_NAME)
     if presented and secrets.compare_digest(presented, secret):
         return True
-    grant = grants.read_grant(conn.cookies.get(COOKIE_NAME))
-    if grant is not None and grant.audience == SYSTEM:
+    grant = grants.read_grant(conn.cookies.get(grants.COOKIE_NAME), secret=secret)
+    if grant is not None and grant.audience == SYSTEM_AUDIENCE:
         return True
-    ticket = grants.read_ticket(conn.query_params.get(QUERY_NAME))
-    return ticket is not None and ticket.audience == SYSTEM
+    ticket = grants.read_ticket(conn.query_params.get(grants.TICKET_PARAM), secret=secret)
+    return ticket is not None and ticket.audience == SYSTEM_AUDIENCE

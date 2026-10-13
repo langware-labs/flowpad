@@ -13,15 +13,15 @@ never anything there to check them.
 from __future__ import annotations
 
 import uuid
-from unittest.mock import patch
 
 import pytest
 
+from flow_sdk.server import grants
 from tests.utils.gate import SECRET
 from tests.utils.gate import armed as _stored
 from tests.utils.gate import grant_cookie as _grant
 
-COOKIE = "__Host-grant"
+COOKIE = grants.COOKIE_NAME
 
 pytestmark = [
     pytest.mark.usefixtures("reset_db_for_testclient"),
@@ -30,10 +30,7 @@ pytestmark = [
 
 
 def _armed(secret: str | None = SECRET):
-    return patch(
-        "flow_sdk.server.middleware.cookie_gate_middleware.get_cookie_gate",
-        return_value=secret,
-    )
+    return _stored(secret)
 
 
 def _consume_confirmation(ws):

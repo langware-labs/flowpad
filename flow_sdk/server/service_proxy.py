@@ -25,6 +25,7 @@ import re
 from typing import Iterable, NamedTuple, Optional
 from urllib.parse import quote
 
+from flow_sdk.api.api_types.identifier import is_valid_entity_id
 from flow_sdk.cloud_client.transport.proxy import _HOP as _HOP_BYTES
 from flow_sdk.schema.data_spec.service_endpoint_spec import WEB_AUDIENCES
 
@@ -157,34 +158,43 @@ def _mac(secret: str, message: str) -> str:
     return hmac.new(secret.encode(), message.encode(), hashlib.sha256).hexdigest()
 
 
+def _sign(subject: str, secret: str, *, now: int) -> str:
+    """``v1.<subject>.<ts>.<hmac>`` — the one framing every signed value on the wire uses."""
+    if not secret:
+        raise ValueError("cannot sign without a secret")
+    message = f"{_CALLER_VERSION}.{subject}.{int(now)}"
+    return f"{message}.{_mac(secret, message)}"
+
+
+def _verify(value: Optional[str], secret: Optional[str], *, now: int, max_age: int) -> Optional[str]:
+    """The subject a signed value carries, or None when forged, stale, junk — or there is no secret."""
+    if not value or not secret or len(value) > _MAX_HEADER:
+        return None
+    parts = value.split(".")
+    if len(parts) != 4 or parts[0] != _CALLER_VERSION:
+        return None
+    _, subject, ts, mac = parts
+    if not ts.isdigit() or not hmac.compare_digest(mac, _mac(secret, f"{_CALLER_VERSION}.{subject}.{ts}")):
+        return None
+    age = int(now) - int(ts)
+    if age > max_age or age < -_CALLER_SKEW:
+        return None
+    return subject
+
+
 def sign_caller(caller: str, secret: str, *, now: int) -> str:
     """``v1.<caller>.<ts>.<hmac>``. The hub mints these; here only for tests and a symmetric contract."""
-    if not secret:
-        raise ValueError("cannot sign a caller without a secret")
     if not _CALLER_RE.fullmatch(str(caller or "")):
         raise ValueError(f"{caller!r} cannot be carried as a caller")
-    message = f"{_CALLER_VERSION}.{caller}.{int(now)}"
-    return f"{message}.{_mac(secret, message)}"
+    return _sign(caller, secret, now=now)
 
 
 def verify_caller(
     value: Optional[str], secret: Optional[str], *, now: int, max_age: int = CALLER_MAX_AGE
 ) -> Optional[str]:
     """The caller a signed header names, or None when it is forged, stale, junk — or there is no secret."""
-    if not value or not secret or len(value) > _MAX_HEADER:
-        return None
-    parts = value.split(".")
-    if len(parts) != 4 or parts[0] != _CALLER_VERSION:
-        return None
-    _, caller, ts, mac = parts
-    if not _CALLER_RE.fullmatch(caller) or not ts.isdigit():
-        return None
-    if not hmac.compare_digest(mac, _mac(secret, f"{_CALLER_VERSION}.{caller}.{ts}")):
-        return None
-    age = int(now) - int(ts)
-    if age > max_age or age < -_CALLER_SKEW:
-        return None
-    return caller
+    caller = _verify(value, secret, now=now, max_age=max_age)
+    return caller if caller is not None and _CALLER_RE.fullmatch(caller) else None
 
 
 # ── the grant (one admission, carried as a ticket or kept as a cookie) ───────
@@ -203,7 +213,6 @@ GRANT_MAX_AGE = 12 * 60 * 60
 #: Who a stamped-public endpoint admits without an identity.
 VISITOR = "visitor"
 _SUBJECT_SEP = "|"
-_ENDPOINT_RE = re.compile(r"^[0-9a-fA-F-]{36}$")
 
 
 class Grant(NamedTuple):
@@ -224,9 +233,7 @@ class Grant(NamedTuple):
     def is_valid(self) -> bool:
         """Whether every part can ride the wire: no separator inside, a known door, an id for an endpoint."""
         return bool(
-            _CALLER_RE.fullmatch(self.caller)
-            and self.audience in GRANT_AUDIENCES
-            and _ENDPOINT_RE.fullmatch(self.endpoint)
+            _CALLER_RE.fullmatch(self.caller) and self.audience in GRANT_AUDIENCES and is_valid_entity_id(self.endpoint)
         )
 
     @classmethod
@@ -242,29 +249,13 @@ def sign_grant(grant: Grant, secret: str, *, now: int) -> str:
     """``v1.<caller>|<audience>|<endpoint>.<ts>.<hmac>`` — the caller codec over a grant subject."""
     if not grant.is_valid():
         raise ValueError(f"{grant!r} cannot be carried as a grant")
-    message = f"{_CALLER_VERSION}.{grant.encode()}.{int(now)}"
-    if not secret:
-        raise ValueError("cannot sign a grant without a secret")
-    return f"{message}.{_mac(secret, message)}"
+    return _sign(grant.encode(), secret, now=now)
 
 
 def verify_grant(value: Optional[str], secret: Optional[str], *, now: int, max_age: int) -> Optional[Grant]:
     """The grant a signed value carries, or None when forged, stale, malformed — or there is no secret."""
-    if not value or not secret or len(value) > _MAX_HEADER:
-        return None
-    parts = value.split(".")
-    if len(parts) != 4 or parts[0] != _CALLER_VERSION:
-        return None
-    _, subject, ts, mac = parts
-    grant = Grant.decode(subject)
-    if grant is None or not ts.isdigit():
-        return None
-    if not hmac.compare_digest(mac, _mac(secret, f"{_CALLER_VERSION}.{subject}.{ts}")):
-        return None
-    age = int(now) - int(ts)
-    if age > max_age or age < -_CALLER_SKEW:
-        return None
-    return grant
+    subject = _verify(value, secret, now=now, max_age=max_age)
+    return Grant.decode(subject) if subject is not None else None
 
 
 __all__ = [
