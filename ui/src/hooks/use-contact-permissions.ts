@@ -33,9 +33,9 @@ export function sessionGrantScope(
 /** Live list of one contact's permission rows (the host's local policy). */
 export function useContactPermissions(contact: ContactKey | null) {
   const request = useMemo(() => new QueryRequest({ type: ContactPermission.type }), []);
-  const { data = [], refetch } = useEntitiesQuery<ContactPermission>(request);
+  const { data = [], refetch, isSuccess } = useEntitiesQuery<ContactPermission>(request);
   const permissions = useMemo(() => data.filter((p) => rowMatchesContact(p, contact)), [data, contact]);
-  return { permissions, refetch };
+  return { permissions, refetch, loaded: isSuccess };
 }
 
 /** The (contact, project) row, or null. project null = the global row. */

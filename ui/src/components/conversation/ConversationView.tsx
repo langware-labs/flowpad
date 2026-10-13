@@ -554,6 +554,9 @@ export function ConversationView({
     if (item.kind === ConversationItemKind.POINTER) {
       const id = item.messageId;
       const fm = messagesById.get(id) ?? null;
+      // The pointer list lands before the message window: until the window
+      // arrives every bubble would fetch itself and flash "Loading message…".
+      if (!fm && !messagesLoaded && !messagesError) return null;
       if (fm?.kind === FlowMessageKind.SESSION_EVENT) {
         return <SessionEventLine key={item.key} text={fm.text ?? ''} />;
       }
@@ -739,7 +742,10 @@ export function ConversationView({
   // inside FlowMessageBubble — this only supplies the owner half of the gate.
   const { cloudUser } = useAuth();
   const cloudUserId = cloudUser?.id ?? null;
-  const taskPeople = useMemo(() => ({ members: participants ?? [], me: myEmail, cloudUserId }), [participants, myEmail, cloudUserId]);
+  const taskPeople = useMemo(
+    () => ({ members: participants ?? [], me: myEmail, cloudUserId }),
+    [participants, myEmail, cloudUserId],
+  );
   // Owner = either created_by matches (recipient side, where the hub stamped the
   // cloud-user id) OR the local user holds role "owner" in the participant
   // roster (creator side, where created_by is the local user id). The roster is
@@ -1051,29 +1057,32 @@ export function ConversationView({
           {notSent.text ? ` “${notSent.text}”` : ''} — {notSent.reason}
         </p>
       )}
-      <MessageComposer
-        conversationId={conversationId}
-        onSent={() => void refetch()}
-        // A source-backed conversation replies into its channel, not the hub.
-        channel={channel}
-        onChannelSent={(text) => {
-          setNotSent(null);
-          setSendingText(text);
-        }}
-        placeholder={channelSpec && !channelSpec.home ? t`Reply in ${channelSpec.title}` : undefined}
-        agentId={agentId ?? undefined}
-        sessionHost={channelSpec && !channelSpec.hosts_sessions ? null : sessionHost}
-        onStartLiveSession={() => void startLiveSession()}
-        channelAcceptsFiles={!!channelSpec?.accepts_attachments}
-        replyTo={
-          replyTo
-            ? { id: replyTo.id ?? '', ...messageSummary(replyTo, t`Someone`), inThread: !channelSpec?.quotes }
-            : null
-        }
-        onClearReply={() => setReplyTo(null)}
-        threadTarget={threadTarget}
-        onTaskIt={handleTaskIt}
-      />
+      {/* Held until the message window lands: on an empty feed it would sit at the top for a frame, then jump. */}
+      {(messagesLoaded || !!messagesError) && (
+        <MessageComposer
+          conversationId={conversationId}
+          onSent={() => void refetch()}
+          // A source-backed conversation replies into its channel, not the hub.
+          channel={channel}
+          onChannelSent={(text) => {
+            setNotSent(null);
+            setSendingText(text);
+          }}
+          placeholder={channelSpec && !channelSpec.home ? t`Reply in ${channelSpec.title}` : undefined}
+          agentId={agentId ?? undefined}
+          sessionHost={channelSpec && !channelSpec.hosts_sessions ? null : sessionHost}
+          onStartLiveSession={() => void startLiveSession()}
+          channelAcceptsFiles={!!channelSpec?.accepts_attachments}
+          replyTo={
+            replyTo
+              ? { id: replyTo.id ?? '', ...messageSummary(replyTo, t`Someone`), inThread: !channelSpec?.quotes }
+              : null
+          }
+          onClearReply={() => setReplyTo(null)}
+          threadTarget={threadTarget}
+          onTaskIt={handleTaskIt}
+        />
+      )}
     </div>
   );
 }
