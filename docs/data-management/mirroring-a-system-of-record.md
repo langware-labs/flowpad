@@ -37,6 +37,9 @@ place that knows the outside system.
                                 "deals": {"link": "gtm.opportunity", "by": "crm_id", "path": "data.deal_ids.*"}}}}
    ```
 
+   A link's `by` is a `unique` field of the linked kind (the system holds an id); `"by": "key"` when
+   the system holds the linked row's KEY — a row that is yours, tagged onto its record.
+
    After every sync of the source the dataset is made the mirror of its records
    (`flow_sdk/datasets/projection.py`): each item becomes one row, keyed by its `key` path, which
    must also be mapped to a field (`crm_id` here) — that is how a row finds its record again. It is
@@ -125,17 +128,35 @@ The mirror is a projection of someone else's data; it fails in three ways, each 
 | What | Where it shows | What happens to the rows |
 |---|---|---|
 | a RECORD does not fit the row kind (a status the enum lacks, a wrong type, a link that does not hold) | the row is a **problem** — `rows().problems`, with its input intact; the source card reads `mirror_misfit` ("N record(s) did not fit the row kind: …") | every other record is mirrored; the misfit row is invisible to `rows()` until it fits again, and is never pruned while the record is listed |
-| the SWEEP itself failed (the dataset is missing, the map names no such kind, a `by` that is not the owner, a pruned row others still link to) | the source card reads `mirror_failed` with the reason; `health` stays `ok` and polling goes on | nothing written this sweep; the next good sweep clears the mark |
+| a row is GONE outside while another row here still links to it | the answer names it in `referenced` (code `referenced`, "used by …"); the source card reads `mirror_misfit` ("N row(s) gone outside are still used here: …") | that row is KEPT, and what it links to with it; every other record is mirrored and pruned; it goes on the sweep after the link does |
+| the SWEEP itself failed (the dataset is missing, the map names no such kind, a `by` that is not the owner, a mapped field the schema does not mark `owned_by` that `by` — code `not_owned`) | the source card reads `mirror_failed` with the reason; `health` stays `ok` and polling goes on | nothing written this sweep; the next good sweep clears the mark |
 | the LISTING came back empty | nothing: it is the truth | every row goes (`deleted`) — and comes back on the next sync if the system has them again |
 
-The answer of `Dataset.mirror` (and the `mirror` action) names both kinds of leftovers:
-`misfit: [{key, details}]` and `unlinked: [{key, field, value}]`. The card's mark is the
+The answer of `Dataset.mirror` (and the `mirror` action) names every kind of leftover:
+`misfit: [{key, details}]`, `unlinked: [{key, field, value}]` and `referenced: [{key, details}]`. The card's mark is the
 `write_back_held` pattern (`DataSource.isMirrorBroken` in TypeScript; attention kind `mirror`).
 An app's own batch write (`put_many`, `sync-rows`) is NOT lenient: it fits whole or writes nothing.
 
 Design the schema for this: a field the outside system owns is an open `?string` whose description
 names the values you know — a closed `enum:` there turns the system's next value into a problem row.
 `enum:` is for the fields that are yours.
+
+## Every mapped field is the outside system's
+
+A field the map names is rewritten from the record on every sweep. If the schema let the app write
+it too, an edit would be taken and then silently lost at the next sweep — so a declared mirror
+whose map names a field that is not `owned_by` its `by` is refused (`mirror_failed`, `not_owned`).
+The consequence is the design rule: **a field your users edit that the system must also have is
+the system's field.** Add it to the system, to the map, and mark it `owned_by`. It is edited here,
+sent there first, and an edit made there arrives at the next sync. There is no two-sided merge, no
+stored "agreed" value and no hold state — and so none to get wrong. (`three_way` is for two stores
+with no source between them; a mirrored row never needs it.)
+
+One way in, wherever the write comes from: the row actions (`put-row`, `put-rows`, `append`) and
+Python's `Dataset.put` / `put_many` / `append` share it. Only the server holds a driver, so in any
+other process (a script) `Dataset.put` of an owned field is refused `owned`; a script sends the
+edit with the row action. Deleting a mirrored row in the outside system is the `delete-row` /
+`delete-rows` action.
 
 ## What is not there, on purpose
 

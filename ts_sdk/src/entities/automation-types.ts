@@ -168,9 +168,12 @@ export interface AutomationSummary {
   asset_ref?: string | null;
 }
 
-/** What *Run once now* answers. The run continues in the background unless `background` is false. */
+/** What *Run once now* answers. The run continues in the background unless `background` is false;
+ * `Trigger.run(run_id)` answers it while it is still running and after. */
 export interface RunOnceStarted {
   trigger_id: string;
+  /** Null for a rule that ran to its end inside the call (a hook rule). */
+  run_id?: string | null;
   event_id?: string | null;
   background: boolean;
   error?: string | null;

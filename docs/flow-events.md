@@ -714,6 +714,10 @@ subscribers all the way down.
 |---|---|---|---|
 | every row write of `Dataset` (`append`, `put`, `put_many`, `sync`, `delete_rows`, `rename_row`, `annotate`, `set_data`) | `dataset.rows.changed` | `dataset:<id>` | `{op: put \| delete \| rename \| sync, keys (at most 100), count, version}` — keys, never values; `version` is the rows as a whole after the write |
 
+The event's `ctx.scope` is `["kind:<row kind>"]`, so a rule checked into a project names its rows by
+kind — `"tag": {"on": "dataset.rows.changed", "scope": ["kind:--acme--.crm.task"]}` — the same file on
+every clone, where the dataset's id (the target) is one machine's.
+
 One event per CALL (a sync of two thousand rows is one), forwarded to the app
 (`FORWARDED_TAG_PATTERNS`); TypeScript listens with `dataset.onRowsChanged(handler)`. A writer that
 is not the server (a sync script) has no bus the app can hear, so it tells the instance
