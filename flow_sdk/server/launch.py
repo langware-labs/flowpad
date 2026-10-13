@@ -706,6 +706,9 @@ def get_status() -> dict:
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
+    from flow_sdk.instance_settings.cookie_gate import install_gate_opener
+
+    install_gate_opener()
     port = int(sys.argv[1]) if len(sys.argv) > 1 else 9007
     try:
         launch_monitor(port)
