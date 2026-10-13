@@ -267,11 +267,11 @@ def check_server_health(server_info: FlowpadServerInfo, timeout: float = 2.0) ->
     health_url = server_info.health_url
     try:
         req = urllib.request.Request(health_url, method="GET")
-        # LOCAL_OPENER carries the cookie-gate token: without it the gate refuses
-        # the probe, and a 403 reads as a dead server from here.
-        from flow_sdk.instance_settings.cookie_gate import LOCAL_OPENER
+        # Without the cookie-gate token the gate refuses the probe, and a 403
+        # reads as a dead server from here.
+        import flow_sdk.instance_settings.cookie_gate  # noqa: F401, PLC0415 -- installs the opener that presents the cookie-gate token
 
-        with LOCAL_OPENER.open(req, timeout=timeout) as resp:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
             return resp.status == 200
     except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, OSError):
         return False

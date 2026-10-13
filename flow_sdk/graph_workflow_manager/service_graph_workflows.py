@@ -40,13 +40,14 @@ instance over REST (ctx.api_base pattern) and emits a `summary` event.
 """
 import datetime
 import json
+import urllib.request
 
-from flow_sdk.instance_settings.cookie_gate import LOCAL_OPENER
+import flow_sdk.instance_settings.cookie_gate  # noqa: F401 -- installs the opener that presents the cookie-gate token
 
 
 def on_graph_workflow_event(event_name, data, flow_ctx):
     base = flow_ctx._api_base  # instance REST base
-    with LOCAL_OPENER.open(f"{base}/api/v1/graph/agentic_process", timeout=15) as resp:
+    with urllib.request.urlopen(f"{base}/api/v1/graph/agentic_process", timeout=15) as resp:
         rows = json.loads(resp.read()).get("data") or []
     today = datetime.date.today().isoformat()
     todays = [r for r in rows if str(r.get("created_date") or "").startswith(today)]
