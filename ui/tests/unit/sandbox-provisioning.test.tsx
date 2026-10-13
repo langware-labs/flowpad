@@ -217,19 +217,19 @@ describe('sandbox provisioning asks the hub for the outcome', () => {
     expect(bodyOf('provision-project')).not.toHaveProperty('context_projects');
   });
 
-  it('opens through open-service, and never resolves a host itself', async () => {
+  it('opens through the hub\'s open door, and never resolves a host itself', async () => {
     await launchWithGit();
 
     // ONE public link, whatever the box was set up with. The hub owns the rest:
     // authorization, resuming a paused machine, waiting for the app to answer,
     // and only then the redirect. A client-resolved host could do none of that.
-    expect(h.openedUrl).toContain('/open-service/workspace');
+    expect(h.openedUrl).toContain('/open/system');
     expect(h.openedUrl).not.toContain('e2b.dev');
     expect(ops()).not.toContain('get-host');
   });
 
   it('no longer deep-links into the cloned project', async () => {
-    // open-service takes no landing path, so a box created with a repo opens on
+    // the open door takes no landing path, so a box created with a repo opens on
     // its front door; the box's default project is what lands the user.
     await launchWithGit();
 
@@ -295,7 +295,7 @@ describe('sandbox provisioning asks the hub for the outcome', () => {
     expect(ops()).toEqual(['setup', 'workspace-ready', 'provision-project']);
     expect(bodyOf('provision-project')).toEqual({ name: 'scratch' });
     expect(rows(result)).toEqual(['launch', 'health', 'init', 'default', 'open']);
-    expect(h.openedUrl).toContain('/open-service/workspace');
+    expect(h.openedUrl).toContain('/open/system');
     expect(h.openedUrl).not.toContain(PROJECT_ID);
   });
 
@@ -403,7 +403,7 @@ describe('sandbox provisioning asks the hub for the outcome', () => {
     });
 
     expect(ops()).toEqual(['setup', 'workspace-ready']);
-    expect(h.openedUrl).toContain('/open-service/workspace');
+    expect(h.openedUrl).toContain('/open/system');
     expect(result.current.steps.map((s) => s.id)).toEqual(['launch', 'health', 'open']);
   });
 });
