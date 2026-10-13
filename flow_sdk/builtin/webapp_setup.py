@@ -20,8 +20,6 @@ from __future__ import annotations
 import asyncio
 import logging
 import subprocess
-import urllib.error
-import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Optional
@@ -53,16 +51,12 @@ def health_answers(port: int, path: str = "/") -> bool:
 
     Asked on each loopback (``dev_server.LOOPBACKS``): a Vite or Next server on ``localhost`` listens on
     ``::1`` alone, a uvicorn on ``127.0.0.1`` alone."""
-    from flow_sdk.core.dev_server import loopback_urls  # noqa: PLC0415
+    from flow_sdk.core.dev_server import loopback_status, loopback_urls  # noqa: PLC0415
 
     for url in loopback_urls(port, path):
-        try:
-            with urllib.request.urlopen(url, timeout=PROBE_SECONDS) as response:  # noqa: S310 — loopback only
-                return response.status < 500
-        except urllib.error.HTTPError as error:
-            return error.code < 500
-        except (urllib.error.URLError, OSError, ValueError):
-            continue
+        status = loopback_status(url, PROBE_SECONDS)
+        if status is not None:
+            return status < 500
     return False
 
 
