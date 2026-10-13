@@ -102,7 +102,7 @@ def read_wizard(wizard_dir: Path) -> Optional[WizardSpec]:
     return spec
 
 
-def wizard_asset_hash(ref: FSRef) -> float:
+def wizard_asset_hash(ref: FSRef) -> int:
     """Freshness = the mtime of ``wizard.json``, and only that file.
 
     A wizard folder accumulates run scratch beside the document (the runner's
