@@ -130,7 +130,11 @@ POST /api/v1/graph/service_endpoint/<id>/probe?route=port-5173   # what is wrong
 ```
 
 A dev server (`proxy`) loads at its `direct-url` (its own origin — HMR, absolute
-`/src/...`); built output (`static`) loads through `service`.
+`/src/...`); built output (`static`) loads through `service`. Inside a cloud box
+`direct-url` is the box's **audience door** (`server/audience_listener.py`, a listener per
+audience on `AUDIENCE_PORTS`: admin 9017, app 9027), never the process's own port: the door
+admits a browser by the grant it carries (`docs/cookie-gate.md`) and reaches the process over
+loopback. Launched servers are told `HOST=127.0.0.1` for the same reason.
 
 How a webapp asset is served wherever it is placed is declared in its `webapp.json`:
 
@@ -169,16 +173,26 @@ https://app--<deployment-id>.<app_domain>/<mount>/…     # end users — the vi
 https://admin--<deployment-id>.<app_domain>/<mount>/…   # operators — hub identity (below)
 ```
 
-The hub's session does not reach those origins, so each has its own gate. `app` is authorized by
-the role stamped on the endpoint for a caller with no hub session. `admin` is authorized by WHO
-the caller is: a browser with no session there is sent to the hub
-(`service_endpoint/<id>/admin-login`, where the policy must grant `admin-login` on the
-endpoint), which redirects back to `/__flowpad/session` on the admin host with a short-lived
-ticket, traded for a host-only `fp_admin` cookie. The cookie only says who; whether that caller
-may still use the endpoint is asked of the policy on every request, and the box is told who as
-`X-Flowpad-Caller`. `/__flowpad/*` is reserved on both hosts and never reaches the app. A bare
-`<id>.<app_domain>` host names no service endpoint. The box's own FlowPad app is its `workspace`
-endpoint (`system`), opened through the node's `open-service`.
+The hub's session does not reach those origins, so each has a door of its own — and every door is
+the SAME door. ONE question, `admit(principal, endpoint)` on the hub, asks the policy for
+`open-<subkind>` on the row (`open-system` admin+, `open-admin` editor+, `open-app` members and
+whatever visitor role is stamped on the row); ONE answer, a **grant** `caller|audience|endpoint`,
+carried once as a signed ticket and kept as a cookie. A browser with no grant at an audience host
+is sent to the hub (`service_endpoint/<id>/open?next=`), which decides and redirects back to
+`/__flowpad/session` on that host with the ticket, traded for a host-only `fp_<audience>` cookie
+(`fp_admin`, `fp_app`). An `app` row stamped public admits a visitor with no grant at all. The
+cookie only says who and where; whether that caller may still enter is asked of `admit` on every
+request, and the box is told who as `X-Flowpad-Caller`. `/__flowpad/*` is reserved on both hosts
+and never reaches the app. A bare `<id>.<app_domain>` host names no service endpoint, and the hub's
+own path route (`…/service_endpoint/<id>/service/…`) serves no machine's browser app either — only
+machine protocols and the hub's own bundles. The box's own FlowPad app is its `workspace` endpoint
+(`system`), opened through `compute_node/<id>/open/system` — the same `open`.
+
+On a box that publishes its ports (e2b, a local instance) the hub does not relay at all: `open`
+sends the browser straight to the box's door with the ticket — `https://9007-<box>/auth/gate` for
+`system`, the audience listener's `/auth/gate` for `admin` and `app` — and the box keeps the grant as
+its own `__Host-grant` cookie. When someone's standing narrows, the hub posts `/auth/revoke` to the
+box (`access_changed` signal → `grant_revocation`), so a removed member is out at once there too.
 
 Whether a service may also be reached without the hub (`supports_direct_access`) is the
 PROVIDER's to say, never a row's: a box's process has an address of its own on an e2b box or
@@ -195,8 +209,8 @@ the hub, and the hub to the box.
 
 A machine nothing deployed (a sandbox opened by hand) is its own placement — one
 parented to the ComputeNode itself — serving `workspace`, `shell-mcp`, `fs-mcp` (all
-`system`). `compute_node/<id>/open-service/<name>`
-resolves names through those endpoints only. The hub's builtin apps (the chatbot, …)
+`system`). `compute_node/<id>/open/<system|admin|app>`
+resolves the placement's door for that audience and opens it. The hub's builtin apps (the chatbot, …)
 are placed like anything else: each `hub`-provider placement has ONE `app` proxy whose routes
 are bundles read off the hub's disk (`""` the app, `graph`, `dev`); a custom domain
 (`WebDomain`) names an endpoint (`service_endpoint_id`).

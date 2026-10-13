@@ -8,7 +8,7 @@
       "audience": "app",
       "serving": {
         "type": "proxy",
-        "start_cmd": "cd frontend && npx next dev --port {port}",
+        "start_cmd": "cd frontend && npx next dev --hostname 127.0.0.1 --port {port}",
         "health": "/",
         "install_cmd": "python3 setup.py"
       }

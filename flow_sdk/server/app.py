@@ -119,6 +119,14 @@ async def _on_server_startup():
     except Exception:
         logging.getLogger(__name__).exception("Direct webhook listener could not start")
 
+    # The two audience doors — one listener per audience a browser can enter this box by.
+    from flow_sdk.server import audience_listener
+
+    try:
+        await audience_listener.start()
+    except Exception:
+        logging.getLogger(__name__).exception("Audience listeners could not start")
+
     # Start putting activity progress on the socket. Installed HERE rather than at import
     # time because the emitter captures the running loop to defer its coalesced flushes
     # onto — at import there is no loop, and every tick would silently go nowhere.
@@ -821,9 +829,10 @@ async def _start_cloud_ws_listener() -> None:
 async def _shutdown_extras():
     """Clean up server.json and stop cron scheduler."""
     from flow_sdk.config import clear_server_info
-    from flow_sdk.server import webhook_listener
+    from flow_sdk.server import audience_listener, webhook_listener
 
     await webhook_listener.stop()
+    await audience_listener.stop()
 
     if _AGENT_SERVER is not None:
         try:

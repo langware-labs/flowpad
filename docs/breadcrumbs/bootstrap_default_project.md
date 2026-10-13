@@ -98,8 +98,9 @@ deliberately picked".
    `runtime` is stamped there.
 2. **The one-shot instruction stays one-shot.** Re-asserting it every load would drag a
    user back to the starting project after they navigated away. A second *person* is the
-   hub's problem to solve by re-arming, not this side's — a sandbox sits behind one shared
-   cookie-gate secret, so the box cannot tell a second visitor from the first refreshing.
+   hub's problem to solve by re-arming, not this side's — the hub is the one that admits
+   each person (`compute_node/<id>/open/system`), and it re-arms the one-shot right before
+   it hands them the machine; this side only consumes whatever instruction is pending.
 3. **`_last_active_project` reads fresh, never `get_cached_projects()`.** That cache is
    invalidated when a project is *created*, not when one is *activated*, so it can return
    an entity carrying a stale `last_active_at` — the exact value the decision turns on.

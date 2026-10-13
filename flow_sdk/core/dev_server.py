@@ -34,7 +34,9 @@ def find_free_port() -> int:
 #: Both loopbacks. A Node server told ``localhost`` binds ``::1`` alone on a modern Node (it resolves the
 #: name verbatim), a Python one ``127.0.0.1`` alone: a probe that asks one address calls the other "never
 #: opened" while the server's own log says ready.
-LOOPBACKS = ("127.0.0.1", "::1")
+#: What a launched server is told to bind: this machine only.
+LOOPBACK_HOST = "127.0.0.1"
+LOOPBACKS = (LOOPBACK_HOST, "::1")
 
 
 def loopback_urls(port: int, path: str = "/") -> list[str]:
@@ -75,6 +77,11 @@ def start_process(command: str, *, cwd: Path, port: int, name: str) -> tuple[sub
 
     ``PORT`` is set as well as whatever the command line says: a server that
     reads its port from the environment needs no ``{port}`` in its command.
+    ``HOST`` is set to loopback as a HINT (Next honours it; Vite and uvicorn take
+    a flag, which the templates pass): the process is reached only through this
+    machine's own door (``server/audience_listener.py``), which is what admits a
+    browser to it. A server that binds every interface on a box whose ports are
+    public has no door at all; an author who binds it so in the command owns that.
     """
     logs = log_dir()
     logs.mkdir(parents=True, exist_ok=True)
@@ -88,7 +95,7 @@ def start_process(command: str, *, cwd: Path, port: int, name: str) -> tuple[sub
         stdout=log,
         stderr=subprocess.STDOUT,
         start_new_session=True,
-        env={**os.environ, "PORT": str(port)},
+        env={**os.environ, "PORT": str(port), "HOST": LOOPBACK_HOST},
     )
     log.close()
     return proc, str(log_file)
@@ -196,6 +203,21 @@ def install_command(start_cmd: str, folder: Path) -> str:
 
 
 __all__ = [
-    "LOOPBACKS", "clear_owner", "find_free_port", "install_command", "log_dir", "log_tail", "loopback_urls", "owner",
-    "owner_alive", "owner_dir", "port_open", "record_owner", "start_detached", "start_process", "stop_group", "wait_for_port",
+    "LOOPBACK_HOST",
+    "LOOPBACKS",
+    "clear_owner",
+    "find_free_port",
+    "install_command",
+    "log_dir",
+    "log_tail",
+    "loopback_urls",
+    "owner",
+    "owner_alive",
+    "owner_dir",
+    "port_open",
+    "record_owner",
+    "start_detached",
+    "start_process",
+    "stop_group",
+    "wait_for_port",
 ]
