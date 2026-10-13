@@ -66,10 +66,11 @@ class CookieGateMiddleware:
             return
 
         secret = get_cookie_gate()
-        if secret is not None and HTTPConnection(scope).url.hostname not in ("localhost", "127.0.0.1"):
-            await self.sandbox(scope, receive, send, secret)
-        else:
+        is_local_request = secret is None or HTTPConnection(scope).url.hostname in ("localhost", "127.0.0.1")
+        if is_local_request:
             await self.local(scope, receive, send)
+        else:
+            await self.sandbox(scope, receive, send, secret)
 
 
 # ---------------------------------------------------------------------------
