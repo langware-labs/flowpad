@@ -15,9 +15,9 @@ The handler validates the api-key, finalizes the login, and either redirects to
 import logging
 import os
 from secrets import compare_digest
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlsplit
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
 from flow_sdk.cli.auth.secrets import is_secrets_enabled
@@ -101,6 +101,7 @@ async def oauth_loopback_callback(state: str = Query(""), code: str = Query(""),
 
 @router.get("/gate")
 async def gate(
+    request: Request,
     cookie_gate: str = Query(None, alias="cookie-gate"),
     next: str = Query(None),
 ):
@@ -118,25 +119,40 @@ async def gate(
     curl wants ``login_callback`` and gets it, the browser wants a cookie and
     asks here.
 
-    On an unarmed instance this is inert — it redirects without setting anything,
-    so a stale gate link still lands in the app rather than 404ing.
+    On this machine (a loopback host) it sets the local gate's cookie, and ``next``
+    may be an absolute ``http(s)`` URL: the backend opens the hub login and OAuth
+    authorize pages through here (``cloud_urls.gated``), so the return to this host
+    carries the cookie. Being reachable only with the token is what keeps that
+    redirect from being an open one.
     """
     from flow_sdk.instance_settings.cookie_gate import get_cookie_gate
+    from flow_sdk.server.middleware.local_cookiegate_middleware import local_cookie_header
     from flow_sdk.server.middleware.sandbox_cookiegate_middleware import COOKIE_NAME
 
-    response = RedirectResponse(url=_safe_next(next), status_code=302)
+    response = RedirectResponse(url=_gate_next(next), status_code=302)
 
-    secret = get_cookie_gate()
-    if secret is not None and cookie_gate and compare_digest(cookie_gate, secret):
-        response.set_cookie(
-            COOKIE_NAME,
-            secret,
-            path="/",
-            secure=True,
-            httponly=True,
-            samesite="lax",
-        )
+    cookie = get_cookie_gate()
+    if cookie is not None and cookie_gate and compare_digest(cookie_gate, cookie):
+        if request.url.hostname in ("localhost", "127.0.0.1"):
+            response.headers.append("set-cookie", local_cookie_header(request.url.port, cookie))
+        else:
+            response.set_cookie(
+                COOKIE_NAME,
+                cookie,
+                path="/",
+                secure=True,
+                httponly=True,
+                samesite="lax",
+            )
     return response
+
+
+def _gate_next(candidate: str | None) -> str:
+    """An absolute ``http(s)`` URL as given, else a same-origin path (``_safe_next``)."""
+    parts = urlsplit(candidate or "")
+    if parts.scheme in ("http", "https") and parts.netloc:
+        return candidate
+    return _safe_next(candidate)
 
 
 @router.get("/login_callback", response_class=HTMLResponse)
