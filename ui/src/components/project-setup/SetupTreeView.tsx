@@ -44,11 +44,14 @@ export function SetupTreeView({
   }
   const first = hideRoot ? tree.root.children : [tree.root];
   const nodes = overview ? first.map((node) => ({ ...node, children: [] })) : first;
+  // Counted from the rows drawn, not the run's own totals: those include the root and every level a
+  // screen hides, so "2 of 6" would sit above five rows.
+  const drawn = countDrawn(nodes);
   return (
     <div className="flex flex-col gap-2" data-testid="setup-tree">
       <p className="text-xs text-muted-foreground" data-testid="setup-tree-progress">
         <Trans>
-          {tree.done} of {tree.total} set up
+          {drawn.done} of {drawn.total} set up
         </Trans>
       </p>
       <ul className="flex flex-col gap-0.5 text-sm">
@@ -58,6 +61,19 @@ export function SetupTreeView({
       </ul>
     </div>
   );
+}
+
+/** The rows a list of nodes draws, and how many are settled. A shared row repeats one counted where it is set up. */
+export function countDrawn(nodes: SetupNodeResult[]): { total: number; done: number } {
+  let total = 0;
+  let done = 0;
+  for (const node of nodes) {
+    if (node.shared) continue;
+    const below = countDrawn(node.children);
+    total += 1 + below.total;
+    done += (node.state === 'done' || node.state === 'skipped' ? 1 : 0) + below.done;
+  }
+  return { total, done };
 }
 
 function SetupNodeRow({ node, depth }: { node: SetupNodeResult; depth: number }) {

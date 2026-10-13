@@ -393,6 +393,22 @@ class DataSource(SetupSkippable, Entity):
             return "this source is parked on a configuration error"
         return ""
 
+    def setup_owed(self) -> str:
+        """What this source still owes before it can run, or ``""`` when it owes nothing.
+
+        A source owes a setup when it is parked in SETUP, or is NEW with a driver that has a check of
+        its own (the poller's next tick parks it there). A NEW source of any other driver turns
+        active on that tick by itself, and DISABLED is a person's decision: neither is something to
+        set up, so neither may hold up the project the source belongs to. The driver is asked only
+        when it is loaded — ``step`` loads it first.
+        """
+        if self.status == SourceStatus.SETUP.value:
+            return self.setup_detail or "not verified"
+        driver = self._driver()
+        if self.status == SourceStatus.NEW.value and driver is not None and driver.has_setup:
+            return "not verified"
+        return ""
+
     # ── the access pattern: declare → get and check → bind ──────────────────
     @classmethod
     async def get(cls, name: str) -> "DataSource":
@@ -503,12 +519,20 @@ class DataSource(SetupSkippable, Entity):
             fresh = await type(self).get_by_id(str(self.id))
             if fresh is None:
                 return
+            moved = fresh.status != self.status
             for name in RUNTIME_FIELDS:
                 setattr(fresh, name, getattr(self, name))
             await fresh.save()
         finally:
             _RUNTIME_WRITE.reset(runtime)
             _SUPPRESS_STORE.reset(token)
+        if moved:
+            # Its project's load verdict was checked against the old status (``core/setup/load.forget``).
+            from flow_sdk.core.setup.load import forget  # noqa: PLC0415
+
+            project = await self.setup_project()
+            if project is not None:
+                forget(project.id)
 
     async def _existing_account(self) -> "Optional[DataSource]":
         """The source this owner already has on the same account, if any — one source per (driver,
@@ -1859,8 +1883,8 @@ class DataSource(SetupSkippable, Entity):
         from flow_sdk.schema.data_spec.returned_value_spec import ReturnedValue  # noqa: PLC0415
 
         if check:
-            active = self.status == SourceStatus.ACTIVE.value
-            return ReturnedValue.satisfied("active") if active else ReturnedValue.not_yet(self.setup_detail or "not verified")
+            owed = self.setup_owed()
+            return ReturnedValue.not_yet(owed) if owed else ReturnedValue.satisfied(self.status)
         verdict = await self.verify() or {}
         detail = str(verdict.get("detail") or "")
         return ReturnedValue.satisfied(detail or "verified") if verdict.get("ready") else ReturnedValue.not_yet(detail)
