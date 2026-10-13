@@ -1,3 +1,6 @@
+---
+id: 95d45213-71e2-464b-9177-ed4012977dc3
+---
 # Dependency setup and Load
 
 Adding or installing a resolved project dependency invokes its provider project's Load.

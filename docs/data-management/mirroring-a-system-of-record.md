@@ -1,3 +1,6 @@
+---
+id: d6c39daa-b906-4950-b4aa-81e5cbefa32a
+---
 # Mirroring a system of record
 
 How an app keeps typed rows in step with an outside system that owns them — a CRM's deals, a
