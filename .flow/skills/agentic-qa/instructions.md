@@ -1075,3 +1075,10 @@ where they execute. What is left here is this cycle's own evidence:
 - waha-8, Chrome extension explicitly requested by user, linked real WhatsApp session. Two synthetic folder sources (catalog CSV and policies Markdown), ten questions including a four-message burst and live source updates: 10/10 exact-value checks passed, one outbound per inbound. Latency 7.39–33.54s, median 19.64s; one sender only, not a capacity benchmark.
 - Dependency name with spaces was accepted by write then rejected on manifest read; fixed canonical FlowDependency validation and covered project/asset writes.
 - Evidence: ui/tests/manual_regression/_results/waha-stress-20261012/. Fresh onboarding sender permissions remain a separate known gap.
+
+### 2026-10-12 — QEMU Windows consumer auto-launch test
+
+- Fresh Windows consumer used installed Flowpad0.2.209, dedicated USERPROFILE/FLOW_INSTANCE and Edge profile; existing desktop/VM preserved. Mac publisher and distinct local-hub accounts used. Built-in deepagents selected through supported capability API, funded by hub; no user credentials copied.
+- Result: publication/link delivery passed; first launch failed existing20s assertion, later steps blocked. Controlled diagnostic launch returned200 after96.081s and opened the project dock without an agent session. Guest checkout and first-agent source existed. Auto-index logs recorded105326ms and121102ms; exact slow/stalling cause remains unproven. No timeout increases/product changes.
+- Preflight must resolve hub storage from current OS temp directory and check browser port safety (5061 is blocked by Chromium). Guest Edge must start with normal user environment and its dedicated --user-data-dir; overriding USERPROFILE for Edge prevented its debug port from listening.
+- Evidence: ui/tests/manual_regression/_results/autolaunch-windows-20261012T190104Z/. Guest backend6061 exposed at16061, dedicated CDP9261 at19261; guest localhost8093 proxies host10.0.2.2:8093. Test resources removed after run; shared VM/app preserved.

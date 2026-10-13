@@ -365,3 +365,8 @@ When in doubt, check: "If a developer read only the error, would they look at th
 - **Scenario error**: If the scenario file can't be parsed or a critical setup fails, write result with `status: "error"`.
 - **Timeout**: If a wait/validate exceeds 15s, mark step as `fail` with timeout error.
 - **Element not found**: If click/fill can't find the target element after one retry, mark step as `fail`.
+
+
+### Windows CDP replay isolation (2026-10-12)
+
+Before a fresh fixture, assert the dedicated consumer CDP context has no existing app pages; failed preflight scripts must close their own pages. Preserve shared browser profiles. A single-page replay still timed out on conversation-message-sync, so duplicate polling is not a proven root cause and must not turn that failure into a pass. Keep setup delays and late diagnostic completion separate from the unchanged-cap scenario verdict.

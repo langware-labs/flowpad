@@ -12,20 +12,31 @@ load it (the server itself only starts under ``__main__``), with the hub named O
 
 import subprocess
 import sys
+from pathlib import Path
 
+import pytest
+
+RUN_PY = Path(__file__).resolve().parents[2] / "flow_sdk" / "server" / "run.py"
 PROBE = (
-    "import flow_sdk.server.run\n"
+    "import secrets, sysconfig\n"
+    "from pathlib import Path\n"
+    "assert Path(secrets.__file__).resolve() == (Path(sysconfig.get_path('stdlib')) / 'secrets.py').resolve()\n"
     "from flow_sdk.config import default_service_config\n"
     "print(default_service_config.flowpad_hub_url)\n"
 )
 
 
-def test_the_hub_named_in_the_instance_env_file_is_the_hub_the_backend_uses(tmp_path):
+@pytest.mark.parametrize("direct_script", [False, True], ids=["module", "direct-script"])
+def test_the_hub_named_in_the_instance_env_file_is_the_hub_the_backend_uses(tmp_path, direct_script):
     env_file = tmp_path / "instance.env"
     env_file.write_text("FLOWPAD_HUB_URL=https://hub.example.test\nFLOW_INSTANCE=env-order-test\n")
     env = {"HOME": str(tmp_path), "PATH": "/usr/bin:/bin", "FLOW_HOME": str(tmp_path / "flow"), "ENV": str(env_file)}
 
-    out = subprocess.run([sys.executable, "-c", PROBE], env=env, capture_output=True, text=True, timeout=60)
+    entry = f"import runpy; runpy.run_path({str(RUN_PY)!r})\n" if direct_script else "import flow_sdk.server.run\n"
+    out = subprocess.run(
+        [sys.executable, "-c", entry + PROBE], env=env, cwd=tmp_path if direct_script else None,
+        capture_output=True, text=True, timeout=60,
+    )
 
     assert out.returncode == 0, out.stderr[-2000:]
     assert out.stdout.strip().splitlines()[-1] == "https://hub.example.test", (

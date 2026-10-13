@@ -227,3 +227,13 @@ async def test_an_app_whose_folder_is_gone_is_not_ready(machine):
     result = await load_project(machine.project, tree=machine.tree, asset=gone)
     assert result.state is LoadState.FAILED and "folder is gone: /nowhere/site" in result.detail
     assert not machine.ran
+
+
+@pytest.mark.asyncio
+async def test_setup_required_carries_the_checked_tree_so_the_question_shows_what_setup_means(machine):
+    result = await load_project(machine.project, tree=machine.tree)
+    assert result.state is LoadState.SETUP_REQUIRED and result.tree is not None
+    assert [child.id for child in result.tree.root.children] == ["app", "asset_setup:service"]
+    assert not machine.ran
+    approved = await load_project(machine.project, tree=machine.tree, approved=True)
+    assert approved.tree is None  # a running load is read from its run, not a snapshot

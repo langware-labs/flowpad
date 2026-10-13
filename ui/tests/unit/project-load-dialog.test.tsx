@@ -42,6 +42,45 @@ describe('project lifecycle approval', () => {
     expect(await screen.findByRole('button', { name: 'Set up' })).toBeInTheDocument();
     expect(load).not.toHaveBeenCalled();
   });
+  it('before Set up, the dialog shows the first level of what the check found', async () => {
+    const node = (id: string, state: 'done' | 'blocked' | 'failed', detail = '', children: object[] = []) => ({
+      id,
+      label: id,
+      level: 0,
+      state,
+      detail,
+      children,
+      shared: false,
+      independent: false,
+    });
+    const tree = {
+      state: 'blocked',
+      detail: 'waiting on Deals sync',
+      total: 4,
+      done: 2,
+      ran: false,
+      root: node('gtm-studio', 'blocked', 'waiting on Deals sync', [
+        node('Deals sync', 'blocked', 'waiting on HubSpot key', [node('HubSpot key', 'failed', 'not set')]),
+        node('Studio app', 'done'),
+      ]),
+    };
+    const load = vi.spyOn(Project, 'load');
+    vi.spyOn(Project, 'loadState').mockResolvedValue({ ...required, tree } as ProjectLoadResult);
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <ProjectLoadDialogRoot />
+      </QueryClientProvider>,
+    );
+    act(() => openProjectLoad({ ...payload, initial: { ...required, tree } as ProjectLoadResult }));
+    expect(await screen.findByTestId('setup-node-Deals sync')).toHaveAttribute('data-state', 'blocked');
+    expect(screen.getByTestId('setup-node-Studio app')).toHaveAttribute('data-state', 'done');
+    expect(screen.getByTestId('setup-tree-progress')).toHaveTextContent('2 of 4 set up');
+    // The root is the title, and the second level is the run's business.
+    expect(screen.queryByTestId('setup-node-gtm-studio')).toBeNull();
+    expect(screen.queryByTestId('setup-node-HubSpot key')).toBeNull();
+    expect(load).not.toHaveBeenCalled();
+  });
   it('only Set up grants explicit approval through the shared Load action', async () => {
     const load = vi.spyOn(Project, 'load').mockResolvedValue({ ...required, state: 'ready', detail: 'Ready' });
     mount();

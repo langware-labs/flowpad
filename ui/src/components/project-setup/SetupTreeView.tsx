@@ -19,7 +19,16 @@ import {
  *
  * Failures are marked by their row, not their text: red text on a dark surface is unreadable.
  */
-export function SetupTreeView({ tree, hideRoot = false }: { tree: SetupTreeResult | null; hideRoot?: boolean }) {
+export function SetupTreeView({
+  tree,
+  hideRoot = false,
+  overview = false,
+}: {
+  tree: SetupTreeResult | null;
+  hideRoot?: boolean;
+  /** Draw only the first level. */
+  overview?: boolean;
+}) {
   if (!tree) return null;
   if (!tree.root) {
     // Refused before anything ran (a cycle in the tree, an untrusted callee): no nodes to draw — the reason
@@ -43,14 +52,14 @@ export function SetupTreeView({ tree, hideRoot = false }: { tree: SetupTreeResul
       </p>
       <ul className="flex flex-col gap-0.5 text-sm">
         {nodes.map((node) => (
-          <SetupNodeRow key={node.id} node={node} depth={0} />
+          <SetupNodeRow key={node.id} node={node} depth={0} overview={overview} />
         ))}
       </ul>
     </div>
   );
 }
 
-function SetupNodeRow({ node, depth }: { node: SetupNodeResult; depth: number }) {
+function SetupNodeRow({ node, depth, overview }: { node: SetupNodeResult; depth: number; overview: boolean }) {
   const failed = node.state === 'failed' || node.state === 'refused';
   return (
     <>
@@ -70,7 +79,11 @@ function SetupNodeRow({ node, depth }: { node: SetupNodeResult; depth: number })
           )}
         </span>
       </li>
-      {!node.shared && node.children.map((child) => <SetupNodeRow key={child.id} node={child} depth={depth + 1} />)}
+      {!node.shared &&
+        !overview &&
+        node.children.map((child) => (
+          <SetupNodeRow key={child.id} node={child} depth={depth + 1} overview={overview} />
+        ))}
     </>
   );
 }
