@@ -225,25 +225,25 @@ async def test_a_web_app_is_a_home_page_and_resolves_to_itself(tmp_path):
 
 
 async def test_a_web_app_home_with_no_endpoint_here_is_placed_when_it_opens(tmp_path):
-    """The app view the redirect lands on shows only this machine's endpoints: one missing (an app indexed before
+    """The app view the redirect lands on shows only this machine's routes: one missing (an app indexed before
     its project existed, a wiped row) is placed by the open, as ``flow show`` places it."""
     from flow_sdk.builtin.project_setup import _RUNS
-    from flow_sdk.builtin.webapp_placement import webapp_endpoints
+    from flow_sdk.builtin.webapp_placement import drop_routes, webapp_routes
     from flow_sdk.core.setup.load import load_state
     from flow_sdk.schema.data_spec.asset_setup_spec import LoadState
 
     root = tmp_path / "unplaced"
     project = await _project(root)
     app = await _web_app(root, "console")
-    for endpoint in await webapp_endpoints(app.id):
-        await endpoint.delete()
+    await drop_routes(webapp_id=app.id)
+    assert await webapp_routes(app.id) == []
     _declare(root, str(app.typeid))
 
     opened = await project.open_home_page()
     assert opened["asset"] == str(app.typeid) and opened["lifecycle"]["state"] == "running"
     assert (await _RUNS[(str(project.id), "")]).ok
     assert load_state(str(project.id)).state is LoadState.READY
-    assert [e.backend.type for e in await webapp_endpoints(app.id)] == ["static"]
+    assert [(p.subkind, p.backend.type) for p in await webapp_routes(app.id)] == [("app", "static")]
 
 
 async def test_another_projects_web_app_is_never_a_home_page(tmp_path):
@@ -294,8 +294,8 @@ async def test_opening_a_home_app_whose_dev_server_is_down_starts_its_load_and_a
     monkeypatch.setattr(project_setup, "start_setup", start)
     root = tmp_path / "dev-home"
     project = await _project(root)
-    app = await _web_app(root, "console", endpoints=[{
-        "name": "web", "serving": {"type": "proxy", "start_cmd": "npx vite --port {port}", "health": "/"},
+    app = await _web_app(root, "console", mounts=[{
+        "serving": {"type": "proxy", "start_cmd": "npx vite --port {port}", "health": "/"},
     }])
     _declare(root, str(app.typeid))
 
