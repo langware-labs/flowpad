@@ -122,14 +122,20 @@ class DesktopOAuthSession:
         sent on to ``/auth/oauth/callback`` with the same query, lands on the one landing
         page, and the listener closes itself once it has forwarded.
         """
+        from starlette.datastructures import URL  # noqa: PLC0415
+
         from flow_sdk.cli.auth.cloud_urls import _desktop_base_url  # noqa: PLC0415
+        from flow_sdk.instance_settings import cookie_gate  # noqa: PLC0415
 
         app = FastAPI()
 
         @app.get("/callback")
         async def callback(request: Request):
             server.should_exit = True
-            return RedirectResponse(f"{_desktop_base_url()}/auth/oauth/callback?{request.url.query}", status_code=302)
+            # With the token: the browser that brings the provider's redirect may never
+            # have opened Flowpad, and the gate refuses it without the cookie.
+            landing = cookie_gate.add_query_param(URL(f"{_desktop_base_url()}/auth/oauth/callback?{request.url.query}"))
+            return RedirectResponse(str(landing), status_code=302)
 
         config = uvicorn.Config(app, host="127.0.0.1", port=port, log_level="error")
         server = uvicorn.Server(config)
