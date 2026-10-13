@@ -3,9 +3,13 @@
  * Assets tree — the one a search result opens. It used to open the plain code editor pointed
  * at the asset's folder: an empty buffer beside a file list.
  */
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+
+const projectSchemas = vi.hoisted(() => vi.fn());
+vi.mock('@sdk', async (importOriginal) => ({ ...(await importOriginal<typeof import('@sdk')>()), projectSchemas }));
 
 import { buildAssetChild } from '@src/components/browseable-tree/adapters/assetTypeRoot';
+import { openBrowseable } from '@src/components/browseable-tree/open';
 import { ViewType } from '@src/types/ViewType';
 
 const ID = '6d1a2b3c-4d5e-4f6a-8b7c-9d0e1f2a3b4c';
@@ -24,10 +28,16 @@ describe('the asset tree opens a type on its own screen', () => {
     expect(node.pointer?.viewType).toBe(view);
   });
 
-  it('a data schema opens on its project schema tree, at its kind', () => {
+  it('a data schema opens on its project schema tree, selected by its full kind', async () => {
+    projectSchemas.mockResolvedValue({ schemas: [{ kind: '--demo--.navigation.outcome', name: 'navigation.outcome' }] });
     const node = buildAssetChild('data_schema', row('data_schema', { name: 'navigation.outcome', project_id: PROJECT }), true, 'root');
-    expect(node.pointer?.viewType).toBe(ViewType.SCHEMA_TREE);
-    expect(node.pointer?.pointer).toContain('navigation.outcome');
+    const navigate = vi.fn();
+    expect(openBrowseable(node, navigate)).toBe(true);
+    await vi.waitFor(() => expect(navigate).toHaveBeenCalledTimes(1));
+    const dock = navigate.mock.calls[0][0];
+    expect(projectSchemas).toHaveBeenCalledWith(PROJECT);
+    expect(dock.viewType).toBe(ViewType.SCHEMA_TREE);
+    expect(dock.pointer).toBe('--demo--.navigation.outcome');
   });
 
   it('a help desk opens its project portal', () => {
