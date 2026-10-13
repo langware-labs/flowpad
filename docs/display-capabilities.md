@@ -142,7 +142,13 @@ diagnosis, home. Every route has a chrome-less `/win/` twin (same tabHash).
   local placement → `{kind: app, typeid: service_endpoint-<id>, runtime: dev}` →
   the APP dock → `PersistentIframe` (src = the endpoint's `direct-url`; global
   iframe registry keyed by src; liveness = client-side fetch probe, diagnosis =
-  the endpoint's `probe`).
+  the endpoint's `probe`). A frame whose tab is not shown is PARKED — kept
+  mounted, hidden with CSS — which its guest cannot see, so the registry tells
+  it: `flowpad:visibility {hidden}` on every park and show, and in answer to a
+  guest's `flowpad:visibility-please`; the SDK (`adoptHostVisibility`, installed
+  by a served app's `initSdk`) folds that into the guest's own `document.hidden`
+  / `visibilityState` and fires `visibilitychange`, so a parked app's timers and
+  polls rest like a hidden page's.
 - `flow app open` → discovers/starts a dev server → `register-webapp-artifact`
   action (creates/updates a project-scoped WEBAPP `Artifact`, `show:true` by
   default) — artifacts drive `WebappViewer`'s selector/restart chrome.

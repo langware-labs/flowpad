@@ -1,3 +1,6 @@
+---
+id: b0839dd8-dd27-4c71-866c-9e963239835d
+---
 # Mode: review — is a project's data layer right? (and fix what is not)
 
 > **Ground rules (inline by design):**
@@ -39,6 +42,8 @@ fix, record there every finding you deliberately leave, and why.
 | C11 | Scripts that import `flow_sdk` run on Flowpad's interpreter and call `load_root`; a script that writes many rows takes one lock for its run | the script and its launcher |
 | C12 | Tests and scripts that write leave the real project and any shared outside system as they found them, even when interrupted (a probe, or `try/finally` cleanup) | the test code |
 | C13 | Docs and agent prompts say what the code does | read them against the code |
+| C14 | A dataset that mirrors an outside system is the DECLARED mirror (`"mirror"` in a `data_source.json`), its schema marks the copied fields `owned_by` that source's `by`, and those fields are open shapes (`?string`), not `enum:`; the app shows them read-only and never keeps its own list of "CRM-owned" field names | the source file, the schema, the app's code |
+| C15 | A trigger on `dataset.rows.changed` names its dataset (`tag_target`), and a script trigger's `run_script` is project-relative, never an absolute path of one checkout | the trigger files |
 
 ## 3. Findings, ranked — a check FAILS only on a High or Medium finding
 

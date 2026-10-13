@@ -467,3 +467,26 @@ async def test_setup_can_set_and_revoke_public_access(stub):
     assert source.open_to_all is True
     await source._keep(driver, SourceUpdateSpec(open_to_all=False))
     assert source.open_to_all is False and kept["saves"] == 2
+
+
+async def test_an_agent_shipped_in_a_system_project_keeps_its_secrets_in_the_user_scope(monkeypatch):
+    """The system project is read-only shipped content — its credential folders are the templates — so a
+    source owned by a shipped agent reads and writes the user scope, never collides with a template."""
+    from types import SimpleNamespace
+
+    from flow_sdk.builtin.project import Project
+    from flow_sdk.ingest import credentials as ingest_credentials
+    from flow_sdk.stream_inbox import projection
+
+    projects = {"sys": SimpleNamespace(id="sys", system=True), "mine": SimpleNamespace(id="mine", system=False)}
+
+    async def get_by_id(project_id):
+        return projects.get(project_id)
+
+    monkeypatch.setattr(Project, "get_by_id", get_by_id)
+    for project_id, expected in (("sys", None), ("mine", projects["mine"])):
+        async def owning_agent(_row, _pid=project_id):
+            return SimpleNamespace(project_id=_pid)
+
+        monkeypatch.setattr(projection, "owning_agent", owning_agent)
+        assert await ingest_credentials.owner_project(object()) is expected

@@ -16,6 +16,8 @@ export interface SetupRun {
   settleQuestion: () => void;
   /** Start the setup (or join the one going) — the backend's run, so closing loses nothing. */
   start: () => Promise<void>;
+  /** Stop the run going (absent where a run cannot be stopped). The record then says `stopped`. */
+  stop?: () => Promise<boolean>;
 }
 
 /**
@@ -36,7 +38,11 @@ export function useSetupRun(
   const calls = useMemo<SetupCalls | null>(
     () =>
       projectId
-        ? { start: () => Project.startSetup(projectId, root), read: () => Project.setupRun(projectId, root) }
+        ? {
+            start: () => Project.startSetup(projectId, root),
+            read: () => Project.setupRun(projectId, root),
+            stop: () => Project.stopSetup(projectId, root),
+          }
         : null,
     [projectId, root],
   );
@@ -57,6 +63,7 @@ export function useSourceSetupRun(source: DataSource): SetupRun {
 interface SetupCalls {
   start: () => Promise<string>;
   read: () => Promise<ProjectSetupRun | null>;
+  stop?: () => Promise<boolean>;
 }
 
 function useRun(
@@ -155,5 +162,7 @@ function useRun(
     questionId,
     settleQuestion: () => setQuestionId(null),
     start,
+    // The poll reads the stopped record next and settles the screen.
+    stop: calls?.stop,
   };
 }

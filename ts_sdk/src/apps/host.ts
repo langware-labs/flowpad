@@ -53,7 +53,27 @@ export async function resolveAppHost(): Promise<AppHost> {
  *  (`{typeid}`). URL-first: the HOST navigates; an app never moves the window itself. The host
  *  honours it only from this app's own frame (`app-display-viewer.tsx`). */
 export function navigateHost(target: { address: string } | { typeid: string }): void {
-  window.parent?.postMessage({ type: 'flowpad:navigate', ...target }, '*');
+  postToHost({ type: 'flowpad:navigate', ...target });
+}
+
+/** Whether a host frames this page. A page opened on its own has no one to ask. */
+export function hasHost(): boolean {
+  return window.parent != null && window.parent !== window;
+}
+
+/** Send the host a message (`{type: 'flowpad:…', …}`). Nothing happens without a host. */
+export function postToHost(message: { type: string } & Record<string, unknown>): void {
+  if (hasHost()) window.parent.postMessage(message, '*');
+}
+
+/** Hear the host's messages of one `type`. Returns the function that stops listening. */
+export function onHostMessage<T extends { type: string }>(type: string, handler: (data: T) => void): () => void {
+  const listener = (event: MessageEvent) => {
+    const data = event.data as { type?: string } | null;
+    if (data?.type === type) handler(data as T);
+  };
+  window.addEventListener('message', listener);
+  return () => window.removeEventListener('message', listener);
 }
 
 /** The message an app sends to have the host open an outside page (`openExternal`). */
@@ -77,8 +97,48 @@ export function externalUrl(url: unknown): string | null {
 export function openExternal(url: string): void {
   const address = externalUrl(url);
   if (!address) throw new Error(`openExternal: an absolute http(s) address is required, not ${JSON.stringify(url)}`);
-  if (window.parent && window.parent !== window) window.parent.postMessage({ type: OPEN_EXTERNAL_MESSAGE, url: address }, '*');
+  if (hasHost()) postToHost({ type: OPEN_EXTERNAL_MESSAGE, url: address });
   else window.open(address, '_blank', 'noopener,noreferrer');
+}
+
+/** The host says whether this app's frame is on screen (`{type, hidden}`); the app asks with
+ *  `VISIBILITY_PLEASE` when it loads, since a message sent before its listener existed is gone. */
+export const VISIBILITY_MESSAGE = 'flowpad:visibility';
+export const VISIBILITY_PLEASE_MESSAGE = 'flowpad:visibility-please';
+
+let parkedByHost = false;
+let visibilityAdopted = false;
+
+/**
+ * Make `document.hidden` true while the host has this app's tab parked.
+ *
+ * A served app keeps its frame mounted when its tab is not the one shown (so it never reloads),
+ * hidden with CSS — which the browser does not count as hidden: inside the frame `document.hidden`
+ * stays false and every timer, poll and focus handler keeps running, for every parked app at once.
+ * So the host says when it parks and shows the frame, and this folds that into the page's own
+ * visibility: `document.hidden` / `visibilityState` answer "parked OR the window is hidden", and a
+ * `visibilitychange` fires on each flip. Nothing new to learn — code that already pauses when the
+ * page is hidden (the right thing on its own) pauses when parked too.
+ *
+ * `initSdk()` installs it in a served app (one addressed by a service endpoint); a page opened on
+ * its own, or in a host that does not say, keeps the browser's answer. Idempotent.
+ */
+export function adoptHostVisibility(): void {
+  if (visibilityAdopted) return;
+  visibilityAdopted = true;
+  const browser = (name: 'hidden' | 'visibilityState') => Object.getOwnPropertyDescriptor(Document.prototype, name)!.get!.bind(document);
+  const windowHidden = browser('hidden');
+  const windowState = browser('visibilityState');
+  const hidden = () => parkedByHost || windowHidden() === true;
+  Object.defineProperty(document, 'hidden', { configurable: true, get: hidden });
+  Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => (hidden() ? 'hidden' : windowState()) });
+  onHostMessage<{ type: string; hidden?: unknown }>(VISIBILITY_MESSAGE, (data) => {
+    if (typeof data.hidden !== 'boolean') return;
+    const before = hidden();
+    parkedByHost = data.hidden;
+    if (hidden() !== before) document.dispatchEvent(new Event('visibilitychange'));
+  });
+  postToHost({ type: VISIBILITY_PLEASE_MESSAGE });
 }
 
 /** Why a call failed, in words: the server's message, else the error's own. */
@@ -118,26 +178,14 @@ export function applyHostTheme(): 'light' | 'dark' {
   // because the host addresses this frame by its src and re-addressing it would
   // reload the whole app to recolour it. Later changes arrive as a message, and
   // recolouring is a class flip.
-  window.addEventListener('message', (event) => {
-    const data = event.data as {
-      type?: string;
-      theme?: string;
-      view?: string;
-      primary?: string;
-      primaryInk?: string;
-    } | null;
-    if (data?.type !== 'flowpad:theme') return;
-    applyHostSkin(data.theme === 'dark' ? 'dark' : 'light', data.view ?? null, data.primary, data.primaryInk);
-  });
+  onHostMessage<{ type: string; theme?: string; view?: string; primary?: string; primaryInk?: string }>('flowpad:theme', (data) =>
+    applyHostSkin(data.theme === 'dark' ? 'dark' : 'light', data.view ?? null, data.primary, data.primaryInk),
+  );
   // Ask the host for the current skin. The host cannot know when this document
   // finished loading, and a message sent before this listener existed is gone —
-  // so the guest starts the exchange rather than hoping it was heard.
-  try {
-    window.parent?.postMessage({ type: 'flowpad:skin-please' }, '*');
-  } catch {
-    // No parent, or a host that does not speak this protocol: the URL seed and
-    // the OS preference already gave a correct-enough first paint.
-  }
+  // so the guest starts the exchange rather than hoping it was heard. With no
+  // host, the URL seed and the OS preference already gave a correct first paint.
+  postToHost({ type: 'flowpad:skin-please' });
   return theme;
 }
 

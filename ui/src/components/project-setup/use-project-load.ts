@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Project, type ProjectLoadResult } from '@sdk';
 import { claimAskRun, openQuestionOf } from '@src/components/ask/ask-claims';
+import { errorStatus } from '@src/lib/error-message';
 import { SETUP_POLL_MS } from './use-setup-run';
 
 export const projectLoadKey = (projectId: string, display = '') => ['project-load', projectId, display] as const;
@@ -11,6 +12,7 @@ export function useProjectLoad(projectId: string, initial?: ProjectLoadResult | 
   const client = useQueryClient();
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [missing, setMissing] = useState(false);
   const [questionId, setQuestionId] = useState<string | null>(null);
   const query = useQuery({
     queryKey: projectLoadKey(projectId, display),
@@ -43,6 +45,7 @@ export function useProjectLoad(projectId: string, initial?: ProjectLoadResult | 
     async (approved = false) => {
       setStarting(true);
       setError(null);
+      setMissing(false);
       try {
         await client.cancelQueries({ queryKey: projectLoadKey(projectId, display) });
         const next = await Project.load(projectId, { approved, ...(display ? { display } : {}) });
@@ -50,7 +53,10 @@ export function useProjectLoad(projectId: string, initial?: ProjectLoadResult | 
         await client.invalidateQueries({ queryKey: ['project-load-tree', projectId] });
         return next;
       } catch (e) {
-        setError(e instanceof Error ? e.message : String(e));
+        // The project itself is gone (a dependency removed and added again gets a new one): loading
+        // it again can never work, so it is not reported as an error to retry.
+        if (errorStatus(e) === 404) setMissing(true);
+        else setError(e instanceof Error ? e.message : String(e));
         return null;
       } finally {
         setStarting(false);
@@ -62,6 +68,7 @@ export function useProjectLoad(projectId: string, initial?: ProjectLoadResult | 
   return {
     result,
     starting,
+    missing,
     error: error ?? (query.error ? String(query.error) : null),
     load,
     tree: tree.data?.tree ?? null,

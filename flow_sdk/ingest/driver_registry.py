@@ -33,6 +33,7 @@ from pathlib import Path
 from types import ModuleType
 from typing import TYPE_CHECKING, Iterator, Optional
 
+from flow_sdk._driver_package import driver_package
 from flow_sdk.assets.placement import AGENTIC_ASSETS_DIR
 from flow_sdk.assets.project_manifest import asset_namespace
 from flow_sdk.schema.data_spec._namespace import loading as loading_ns
@@ -81,7 +82,7 @@ def load_module(folder: Path, module: str = "source", *, digest: str = "") -> Mo
     """``<folder>/<module>.py``, imported inside the folder's own package (``digest``: the folder's
     ``content_hash`` when the caller already has it)."""
     folder = folder.resolve()
-    package = f"flowpad_source_{re.sub(r'[^0-9A-Za-z_]', '_', folder.name)}_{(digest or content_hash(folder))[:8]}"
+    package = driver_package(folder.name, digest or content_hash(folder))
     if package not in sys.modules:
         spec = importlib.machinery.ModuleSpec(package, None, is_package=True)
         spec.submodule_search_locations = [str(folder)]

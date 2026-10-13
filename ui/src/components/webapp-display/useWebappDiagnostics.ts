@@ -1,6 +1,6 @@
 import type { ServiceEndpoint } from '@sdk';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useWebappHealth, type WebappHealth } from '@src/components/display-toolbar/use-webapp-health';
+import { useWebappLiveness, type WebappHealth } from '@src/components/display-toolbar/use-webapp-health';
 import { classifyWebappSeverity, type WebappProbe, type WebappVerdict } from './classify';
 
 /**
@@ -44,12 +44,13 @@ interface Options {
 }
 
 export function useWebappDiagnostics({ endpoint, host }: Options): WebappDiagnostics {
-  const health = useWebappHealth(host);
+  // The poll's own count of failed pings in a row: counting `health` transitions here would stall at
+  // one, and an app with no probe (a served folder, a remote one) would read "starting" for ever.
+  const { health, failures: consecutiveFailures } = useWebappLiveness(host);
   const [probe, setProbe] = useState<WebappProbe | null>(null);
   const [reloadNonce, setReloadNonce] = useState(0);
   // Plain state, not refs: these are inputs to the verdict, so they have to be
   // able to trigger a re-render and a re-classification on their own.
-  const [consecutiveFailures, setConsecutiveFailures] = useState(0);
   const [everLoaded, setEverLoaded] = useState(false);
   const [graceExpired, setGraceExpired] = useState(false);
 
@@ -89,7 +90,6 @@ export function useWebappDiagnostics({ endpoint, host }: Options): WebappDiagnos
   // (rather than on mount) also means an app opened onto an already-broken
   // server explains itself without waiting for a liveness transition.
   useEffect(() => {
-    setConsecutiveFailures(0);
     setEverLoaded(false);
     setGraceExpired(false);
     setProbe(null);
@@ -109,14 +109,12 @@ export function useWebappDiagnostics({ endpoint, host }: Options): WebappDiagnos
     lastHealth.current = health;
 
     if (health === 'up') {
-      setConsecutiveFailures(0);
       setEverLoaded(true);
       if (previous === 'down') {
         setReloadNonce((n) => n + 1);
         void runProbeRef.current(true);
       }
     } else if (health === 'down') {
-      setConsecutiveFailures((n) => n + 1);
       void runProbeRef.current();
     }
   }, [health]);

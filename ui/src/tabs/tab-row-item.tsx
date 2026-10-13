@@ -34,6 +34,7 @@ import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { useTabLifecycles } from '@src/tabs/use-tab-manager';
 import { ContentTabTooltip, humanizeType, ProcessTabCard, PROVIDER_META } from '@src/tabs/provider-meta';
 import { DocTabCard } from '@src/tabs/doc-tab-card';
+import { EntityCard, UrlTabCard } from '@src/components/entity-card/EntityCard';
 import { isReviewableDocDock } from '@src/navigation/content-asset-dock';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { ViewType, VIEWER_REGISTRY, viewerTitle } from '@src/types/ViewType';
@@ -99,23 +100,23 @@ function tabFavorite(tab: Tab, title: string): FavoriteRef | null {
 /** The review card for a tab whose dock is ONE document — nothing for any other
  *  tab. A node or `undefined`, never a null-rendering component: the strip
  *  decides which hover card to show by whether this is set. */
-function docCard(
-  tab: Tab,
-  dock: DockPointer | null | undefined,
-  typeLabel: string,
-  statusReason: string,
-  location?: boolean,
-): React.ReactNode {
+function docCard(props: Omit<React.ComponentProps<typeof DocTabCard>, 'dock'> & { dock?: DockPointer | null }) {
+  const { dock } = props;
   if (!dock || !isReviewableDocDock(dock)) return undefined;
-  return (
-    <DocTabCard
-      tab={tab}
-      dock={dock}
-      typeLabel={typeLabel}
-      statusReason={statusReason || undefined}
-      location={location}
-    />
-  );
+  return <DocTabCard {...props} dock={dock} />;
+}
+
+/** The card for the ONE entity a tab is — a shell, a conversation, an app, a project. */
+function entityCard(type: string | null | undefined, id: string | null | undefined, name: string, statusReason?: string) {
+  if (!type || !id) return undefined;
+  return <EntityCard type={type} id={id} fallbackName={name} statusReason={statusReason} />;
+}
+
+/** A tab's own entity. A scope-keyed tab (the Assets browser) has none: its row
+ *  keeps the target of whatever it showed last, while the tab reopens the browser. */
+function tabEntityCard(tab: Tab, name: string, statusReason: string) {
+  if (tab.dockPointer && new DockPointer(tab.dockPointer).scopeKeyed) return undefined;
+  return entityCard(tab.target_type, tab.target_id, name, statusReason || undefined);
 }
 
 function chipFor(tab: Tab, lifecycle: TabLifecycleEntry | null): TabStripItem {
@@ -163,7 +164,9 @@ function chipFor(tab: Tab, lifecycle: TabLifecycleEntry | null): TabStripItem {
           fallbackName={label || i18n._(meta.label)}
           statusReason={statusReason || undefined}
         />
-      ) : undefined,
+      ) : (
+        tabEntityCard(tab, label || i18n._(meta.label), statusReason)
+      ),
       tooltip: statusReason || undefined,
       testId: `tab-${key}`,
       dataAttributes: { 'data-indicator-key': key },
@@ -194,7 +197,9 @@ function chipFor(tab: Tab, lifecycle: TabLifecycleEntry | null): TabStripItem {
       isDisabled,
       hasError: lifecycleOverlay.hasError,
       statusReason,
-      card: docCard(tab, docDock, typeLabel, statusReason, tab.target_remote),
+      card:
+        docCard({ tab, dock: docDock, typeLabel, statusReason: statusReason || undefined, location: tab.target_remote }) ??
+        tabEntityCard(tab, label || typeLabel, statusReason),
       tooltip: (
         <ContentTabTooltip
           tab={tab}
@@ -218,7 +223,9 @@ function chipFor(tab: Tab, lifecycle: TabLifecycleEntry | null): TabStripItem {
     isDisabled,
     hasError: lifecycleOverlay.hasError,
     statusReason,
-    card: docCard(tab, docDock, typeLabel, statusReason),
+    card:
+      docCard({ tab, dock: docDock, typeLabel, statusReason: statusReason || undefined }) ??
+      (docDock?.webUrl ? <UrlTabCard name={label || typeLabel} url={docDock.webUrl} /> : undefined),
     tooltip: <ContentTabTooltip tab={tab} typeLabel={typeLabel} statusReason={statusReason || undefined} />,
     testId: `tab-content-${key}`,
   };
@@ -237,6 +244,7 @@ export function useTabStripItems(tabs: Tab[]): TabStripItem[] {
   const focusVfsFilename = currentDock?.viewType === ViewType.ASSETS ? currentDock.vfsPath?.filename || null : null;
   const focusTypeId = currentDock?.viewType === ViewType.ASSETS ? (currentDock.targetTypeId ?? null) : null;
   const focusType = focusTypeId?.type;
+  const focusId = focusTypeId?.id;
   const focusEditable = !!(focusType && editorForType(focusType));
   const focusEntity = focusTypeId
     ? (dataManager.getByTypeIdFromCache(focusTypeId) as {
@@ -270,33 +278,33 @@ export function useTabStripItems(tabs: Tab[]): TabStripItem[] {
         if (key === currentDock?.tabHash && activeAssetTitle) {
           item.title = activeAssetTitle;
         }
-        // `focusType` is only set on an assets dock, so it implies viewType==='assets'.
-        if (key === currentDock?.tabHash && focusType && focusEditable) {
-          const effectiveRemote = focusEntity?.remote ?? tab.target_remote;
-          item.icon = (
-            <EntityIcon
-              type={focusType}
-              remote={effectiveRemote}
-              density="compact"
-              showLocationTooltip={false}
-              className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
-              aria-label={`${focusType} tab`}
-            />
-          );
-          const typeLabel = viewerTitle(ViewType.ASSETS) || humanizeType(focusType);
-          item.tooltip = (
-            <ContentTabTooltip
-              tab={tab}
-              typeLabel={typeLabel}
-              statusReason={item.statusReason || undefined}
-              location={effectiveRemote}
-            />
-          );
-          // The card follows the asset on screen, like the title and icon above.
-          item.card = docCard(tab, currentDock, typeLabel, item.statusReason ?? '', effectiveRemote);
+        // The ACTIVE Assets tab follows the asset on screen: its icon, tooltip and card.
+        if (key === currentDock?.tabHash && currentDock.viewType === ViewType.ASSETS) {
+          const remote = focusEntity?.remote ?? tab.target_remote;
+          const typeLabel = viewerTitle(ViewType.ASSETS) || humanizeType(focusType ?? '');
+          const statusReason = item.statusReason || undefined;
+          if (focusType && focusEditable) {
+            item.icon = (
+              <EntityIcon
+                type={focusType}
+                remote={remote}
+                density="compact"
+                showLocationTooltip={false}
+                className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
+                aria-label={`${focusType} tab`}
+              />
+            );
+            item.tooltip = (
+              <ContentTabTooltip tab={tab} typeLabel={typeLabel} statusReason={statusReason} location={remote} />
+            );
+          }
+          // A path-addressed document has no `focusType`, and still gets its card.
+          item.card =
+            docCard({ tab, dock: currentDock, typeLabel, statusReason, location: remote, name: item.title }) ??
+            entityCard(focusType, focusId, item.title, statusReason);
         }
         return item;
       }),
-    [tabs, lifecycles, currentDock, focusType, focusEditable, focusEntity, activeAssetTitle],
+    [tabs, lifecycles, currentDock, focusType, focusId, focusEditable, focusEntity, activeAssetTitle],
   );
 }

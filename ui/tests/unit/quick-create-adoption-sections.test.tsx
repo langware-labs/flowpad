@@ -1,14 +1,12 @@
 /**
  * Where the adoption tiles are allowed to appear.
  *
- * `QuickCreateModal` is titled "Create new", and both `folder` and `helpdesk`
- * point the project at something that ALREADY EXISTS — someone else's folder,
- * someone else's support desk. The folder tile taught this the hard way: under
- * a "Create new" heading, users clicked "Project" expecting to make one and got
- * a picker. `helpdesk` is excluded by the same rule.
+ * `QuickCreateModal` is titled "Create new", and `folder` points the project at
+ * something that ALREADY EXISTS — someone else's folder. Under a "Create new"
+ * heading, users clicked "Project" expecting to make one and got a picker.
  *
  * This test exists because that rule is invisible at the call site — nothing
- * stops a later change from putting either section back into the modal, and the
+ * stops a later change from putting the section back into the modal, and the
  * damage is a mislabelled affordance rather than a crash.
  */
 import '@testing-library/jest-dom/vitest';
@@ -18,7 +16,6 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   project: { id: 'p1', name: 'Demo' },
-  onAddHelpdesk: vi.fn(),
 }));
 
 vi.mock('@sdk/react/hooks', async (importOriginal) => {
@@ -48,7 +45,7 @@ import {
 const handlers: PanelHandlers = {
   onPick: vi.fn(),
   onAddFolder: vi.fn(),
-  onAddHelpdesk: mocks.onAddHelpdesk,
+  onAddHelpdesk: vi.fn(),
   onNewMessage: vi.fn(),
   onNewProject: vi.fn(),
   onNewProjectFromGit: vi.fn(),
@@ -60,27 +57,11 @@ afterEach(() => {
 });
 
 describe('quick-create adoption sections', () => {
-  it('treats folder and helpdesk as adoption, not creation', () => {
-    expect([...ADOPTION_SECTIONS].sort()).toEqual(['folder', 'helpdesk']);
+  it('treats folder as adoption, not creation', () => {
+    expect([...ADOPTION_SECTIONS]).toEqual(['folder']);
     // The modal's filter, spelled the same way it is there.
     const modalSections = ALL_SECTIONS.filter((s) => !ADOPTION_SECTIONS.has(s));
-    expect(modalSections).not.toContain('helpdesk');
-    expect(modalSections).not.toContain('folder');
     expect(modalSections).toEqual(['chat', 'build', 'write', 'connect', 'project']);
-  });
-
-  it('renders the Add help desk tile in the helpdesk section', () => {
-    render(
-      <TooltipProvider>
-        <QuickCreatePanel {...handlers} sections={['helpdesk']} />
-      </TooltipProvider>,
-    );
-    expect(screen.getByTestId('quick-create-add-helpdesk')).toBeInTheDocument();
-  });
-
-  it('respects an explicit absent project instead of the active project for adoption', () => {
-    render(<TooltipProvider><QuickCreatePanel {...handlers} project={null} sections={['helpdesk']} /></TooltipProvider>);
-    expect(screen.getByTestId('quick-create-add-helpdesk')).toHaveAttribute('aria-disabled', 'true');
   });
 
   it('dismisses the picker before opening the configured source form', () => {
@@ -116,18 +97,5 @@ describe('quick-create adoption sections', () => {
     expect(vibe.compareDocumentPosition(claude) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     fireEvent.click(vibe);
     expect(start).toHaveBeenCalledOnce();
-  });
-
-  it('disables the tile with no current project — a desk is adopted BY something', () => {
-    mocks.project = null as unknown as { id: string; name: string };
-    render(
-      <TooltipProvider>
-        <QuickCreatePanel {...handlers} sections={['helpdesk']} />
-      </TooltipProvider>,
-    );
-    // `aria-disabled`, not the native attribute: a natively disabled button
-    // drops pointer events and takes its explanatory tip with it.
-    expect(screen.getByTestId('quick-create-add-helpdesk')).toHaveAttribute('aria-disabled', 'true');
-    mocks.project = { id: 'p1', name: 'Demo' };
   });
 });
