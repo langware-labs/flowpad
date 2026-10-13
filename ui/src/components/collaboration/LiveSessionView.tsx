@@ -1,7 +1,6 @@
 import {
   FlowMessage,
   FlowMessageKind,
-  PermissionAction,
   QueryFilter,
   QueryRequest,
   RemoteWorkerSession,
@@ -22,9 +21,8 @@ import { MessageComposer } from '@src/components/conversation/MessageComposer';
 import { SessionEventLine } from '@src/components/conversation/SessionEventLine';
 import { LiveSessionActivity, OpenSessionChatButton } from '@src/components/conversation/LiveSessionActivity';
 import {
-  grantContactPermission,
-  revokeContactPermission,
   sessionGrantScope,
+  setSessionGrantScope,
   useContactPermissions,
   type ContactKey,
 } from '@src/hooks/use-contact-permissions';
@@ -100,14 +98,7 @@ function StandingGrantCheckbox({
   const effectiveScope: 'project' | 'everywhere' = scope === 'global' ? 'everywhere' : (scope ?? pendingScope);
   const apply = useCallback(
     async (on: boolean, which: 'project' | 'everywhere') => {
-      const target = which === 'project' ? projectId : null;
-      // one row at a time: moving scope revokes the other first
-      if (scope === 'project' && which !== 'project')
-        await revokeContactPermission(contact, projectId, PermissionAction.AUTO_APPROVE_SESSION);
-      if (scope === 'global' && which !== 'everywhere')
-        await revokeContactPermission(contact, null, PermissionAction.AUTO_APPROVE_SESSION);
-      if (on) await grantContactPermission(contact, target, PermissionAction.AUTO_APPROVE_SESSION);
-      else await revokeContactPermission(contact, target, PermissionAction.AUTO_APPROVE_SESSION);
+      await setSessionGrantScope(contact, projectId, scope, on ? (which === 'project' ? 'project' : 'global') : null);
       await refetch?.();
     },
     [contact, projectId, scope, refetch],
@@ -214,7 +205,7 @@ export function LiveSessionView({ sessionId }: { sessionId: string }) {
   }
 
   const isHost = sessionRole(session, cloudUser?.id) === 'host';
-  const status = session.status;
+  const status = session.status as RemoteWorkerSessionStatus | undefined;
   const terminal = isSessionTerminal(status);
   const running =
     status === RemoteWorkerSessionStatus.RUNNING || (status === RemoteWorkerSessionStatus.IDLE && !!pendingPrompt);

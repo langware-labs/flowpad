@@ -1,9 +1,14 @@
-import { Trans } from '@lingui/react/macro';
+import { Trans, useLingui } from '@lingui/react/macro';
 import { CircleCheck, ShieldCheck, ShieldQuestion } from 'lucide-react';
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { Button } from '@src/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
-import { sessionGrantScope, useContactPermissions, type ContactKey } from '@src/hooks/use-contact-permissions';
+import {
+  sessionGrantScope,
+  setSessionGrantScope,
+  useContactPermissions,
+  type ContactKey,
+} from '@src/hooks/use-contact-permissions';
 
 /** The chip + its explaining popover, shared by both sides of a session. */
 function PermissionChip({
@@ -67,8 +72,24 @@ export function GuestPermissionChip({
   onApprove: () => void;
   disabled: boolean;
 }) {
-  const { permissions } = useContactPermissions(contact);
+  const { t } = useLingui();
+  const { permissions, refetch } = useContactPermissions(contact);
   const scope = sessionGrantScope(permissions, projectId);
+  const [saving, setSaving] = useState(false);
+  const change = async (next: 'project' | 'global' | null) => {
+    setSaving(true);
+    try {
+      await setSessionGrantScope(contact, projectId, scope, next);
+      await refetch?.();
+    } finally {
+      setSaving(false);
+    }
+  };
+  const options: { value: 'project' | 'global' | null; label: string }[] = [
+    { value: null, label: t`Ask me every time` },
+    ...(projectId ? [{ value: 'project' as const, label: t`Auto-approve in this project` }] : []),
+    { value: 'global', label: t`Always auto-approve` },
+  ];
   const label = pending ? (
     <Trans>Needs your approval</Trans>
   ) : scope === 'global' ? (
@@ -89,6 +110,25 @@ export function GuestPermissionChip({
   );
   return (
     <PermissionChip pending={pending} scope={pending ? 'pending' : (scope ?? 'session')} label={label} detail={detail}>
+      {!pending && (
+        <fieldset className="mt-2 flex flex-col gap-1" disabled={saving} data-testid="live-session-permission-options">
+          <legend className="mb-1 text-[11px] text-muted-foreground">
+            <Trans>Future sessions from {guestName}:</Trans>
+          </legend>
+          {options.map((o) => (
+            <label key={o.value ?? 'ask'} className="flex cursor-pointer items-center gap-2">
+              <input
+                type="radio"
+                name="live-session-permission"
+                checked={scope === o.value}
+                onChange={() => void change(o.value)}
+                data-testid={`live-session-permission-${o.value ?? 'ask'}`}
+              />
+              {o.label}
+            </label>
+          ))}
+        </fieldset>
+      )}
       {pending && (
         <Button
           size="sm"

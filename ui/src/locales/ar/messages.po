@@ -2799,6 +2799,10 @@ msgid "Always allow sessions from {guestName}"
 msgstr ""
 
 #: src/components/collaboration/GuestPermissionChip.tsx
+msgid "Always auto-approve"
+msgstr ""
+
+#: src/components/collaboration/GuestPermissionChip.tsx
 msgid "Always auto-approved"
 msgstr ""
 
@@ -3360,6 +3364,10 @@ msgstr "طلب المساعدة"
 msgid "Ask its owner to share the project with {0}."
 msgstr ""
 
+#: src/components/collaboration/GuestPermissionChip.tsx
+msgid "Ask me every time"
+msgstr ""
+
 #: src/components/help/AskForHelpButton.tsx
 msgid "Ask someone for help"
 msgstr "طلب المساعدة من شخص آخر"
@@ -3681,6 +3689,10 @@ msgstr "السماح التلقائي بـ Bash عند تفعيل العزل"
 #: src/components/settings-view/settings-utils.ts
 msgid "Auto-approve bash when sandbox is active"
 msgstr "الموافقة التلقائية على أوامر Bash عند تفعيل وضع العزل"
+
+#: src/components/collaboration/GuestPermissionChip.tsx
+msgid "Auto-approve in this project"
+msgstr ""
 
 #: src/components/terminal/interactive-terminal/process-cli-presentation.ts
 msgid "Auto-approve permissions that are not explicitly denied (--auto)"
@@ -11416,6 +11428,10 @@ msgstr ""
 
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "funds nothing yet"
+msgstr ""
+
+#: src/components/collaboration/GuestPermissionChip.tsx
+msgid "Future sessions from {guestName}:"
 msgstr ""
 
 #: src/components/assets/editor/asset-cleanup/AssetCleanupReportAssetEditor.tsx
