@@ -55,6 +55,7 @@ from flow_sdk.builtin.agentic_process.cli_drivers import (
 )
 from flow_sdk.builtin.agentic_process.display_context import (
     DISPLAY_CONTEXT_KEY,
+    DISPLAY_KEYS,
     DisplayContextTooLarge,
     NothingShown,
     describe_display_context,
@@ -6025,9 +6026,8 @@ class AgenticProcess(Entity):
         # Drop any stale in-memory display, then re-attach the DB's authoritative
         # copy — so this save can neither clobber a newer show nor resurrect an
         # entry ``on_show`` already deduped away.
-        display_keys = ("display_stack", "last_shown", DISPLAY_CONTEXT_KEY)
-        rebuilt = {k: v for k, v in current_context.items() if k not in display_keys}
-        for k in display_keys:
+        rebuilt = {k: v for k, v in current_context.items() if k not in DISPLAY_KEYS}
+        for k in DISPLAY_KEYS:
             if k in latest_context:
                 rebuilt[k] = latest_context[k]
         self.context_data = rebuilt
