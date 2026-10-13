@@ -26,9 +26,24 @@ from typing import Callable, Iterable, Literal, Optional
 
 from flow_sdk.core.dev_server import LOOPBACKS, port_open
 
-#: Programs that hold a port FOR something else (a container's published port). Who is behind such a
-#: port cannot be read from the process table, so it is judged like a holder that cannot be named.
-_FORWARDERS = frozenset({"com.docker.backend", "docker-proxy", "vpnkit", "gvproxy", "limactl", "rootlessport"})
+#: Programs that hold a port FOR something else (a container's published port, a tunnel). Who is
+#: behind such a port cannot be read from the process table, so it is judged like a holder that
+#: cannot be named: by the app's own health path. Compared by stem, whatever the case or ``.exe``.
+_FORWARDERS = frozenset({
+    "com.docker.backend", "docker-proxy", "vpnkit", "vpnkit-bridge",  # Docker Desktop / Engine
+    "gvproxy", "rootlessport", "pasta", "slirp4netns", "podman",  # Podman, rootless containers
+    "limactl", "hostagent", "colima",  # Lima / Colima / Rancher Desktop
+    "orbstack", "orbstack helper",  # OrbStack
+    "wslrelay", "wslhost",  # WSL2 localhost forwarding
+    "ssh",  # ``ssh -L``: a tunnel to a server somewhere else
+})
+
+
+def _forwards(name: str) -> bool:
+    stem = name.lower()
+    return (stem[:-4] if stem.endswith(".exe") else stem) in _FORWARDERS
+
+
 #: How far up a listener's ancestry its launch command is looked for (server ← runtime ← npx ← shell).
 _ANCESTORS = 6
 
@@ -111,7 +126,7 @@ def listeners() -> list[Listener]:
             if not ports:
                 continue
             name = process.name()
-            if name in _FORWARDERS:
+            if _forwards(name):
                 continue
             cwd = process.cwd() or ""
             commands = [" ".join(process.cmdline())]
@@ -167,6 +182,17 @@ def of_app(snapshot: Iterable[Listener], folder: Path, start_cmd: str, siblings:
         return launched
     others = [command for command in siblings if command and command != start_cmd]
     return [one for one in inside if not any(launched_by(one, command) for command in others)]
+
+
+def stranger_on(port: int, folder: Path, snapshot: Optional[Iterable[Listener]] = None) -> Optional[Listener]:
+    """A program that listens on ``port`` and is NOT serving from ``folder`` — when nothing of the
+    folder's own listens there. None: the port is free, the folder's own, or its holder cannot be named.
+    For a caller handed a port and a folder and asked to believe the two belong together."""
+    home = os.path.realpath(folder)
+    holders = [one for one in (listeners() if snapshot is None else snapshot) if one.port == port]
+    if any(_inside(one.cwd, home) for one in holders):
+        return None
+    return holders[0] if holders else None
 
 
 def free_port(taken: Iterable[int] = (), candidates: Iterable[int] = ()) -> int:
@@ -265,4 +291,4 @@ def stop(found: Iterable[Listener]) -> None:
     psutil.wait_procs(list(doomed.values()))
 
 
-__all__ = ["Declared", "Listener", "PortAnswer", "decide", "free_port", "launched_by", "listeners", "listening_under", "of_app", "stop"]
+__all__ = ["Declared", "Listener", "PortAnswer", "decide", "free_port", "launched_by", "listeners", "listening_under", "of_app", "stop", "stranger_on"]

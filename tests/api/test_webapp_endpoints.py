@@ -561,3 +561,28 @@ async def test_stopping_an_app_this_project_does_not_have_is_not_found(client, t
     project = await _project(tmp_path)
     resp = await client.post(f"/api/v1/graph/project/{project.id}/app-stop", json={"app": "nope"})
     assert resp.status_code == 404
+
+
+async def test_a_route_whose_port_another_program_took_is_not_shown_as_its_app(client, tmp_path):
+    """The route's port is a copy from when its app last ran. ``flow show webapp --port N`` with a
+    stranger on N now shows the bare server it is — and the app's own route is left as it was."""
+    port = _unused_port()
+    project = await _project(tmp_path)
+    folder = tmp_path / "agentic-assets" / "webapp" / "shop"
+    app = await _webapp(project, folder, mounts=[{"serving": _served(port)}])
+    deployment = await webapp_placement.local_web_deployment(project)
+    backend = {"type": "proxy", "port": port, "start_cmd": "x", "health": "/"}
+    owned, _saved = await webapp_placement.set_app_route(deployment, app, webapp_placement.app_mounts(app)[0], backend)
+
+    # Nothing listens: the port is still the app's as far as anyone can tell.
+    assert (await register_dev_endpoint(project, port=port)).webapp_id == str(app.id)
+
+    held = socket.socket()
+    held.bind(("127.0.0.1", port))
+    held.listen()
+    try:
+        shown = await register_dev_endpoint(project, port=port)
+    finally:
+        held.close()
+    assert not shown.webapp_id and shown.mount == f"port-{port}"
+    assert [p.mount for p in await webapp_routes(str(app.id)) if p.backend.type == "proxy"] == [owned.mount]

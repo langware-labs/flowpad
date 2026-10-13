@@ -622,6 +622,10 @@ async def register_dev_endpoint(project, *, port: int, name: Optional[str] = Non
     existing = next((p for p in served if p.backend.port == port and not p.remote), None)
     wanted = mount_name(name or "") or f"port-{port}"
     owned = existing is not None and bool(existing.webapp_id or existing.artifact_id)
+    if owned and await _held_by_a_stranger(existing, port):
+        # The route's port is a copy from when its app last ran. Another program on it now is not
+        # that app: it is shown as the bare server it is, and the app's route is left alone.
+        existing, owned = None, False
     if owned or (existing is not None and existing.subkind == audience and (not name or existing.mount == wanted)):
         return existing
     placed, saved = await set_route(
@@ -636,6 +640,19 @@ async def register_dev_endpoint(project, *, port: int, name: Optional[str] = Non
     if saved:
         tell_hub(deployment)
     return placed
+
+
+async def _held_by_a_stranger(route: Placed, port: int) -> bool:
+    """A program that is not the route's own app listens on ``port`` (``app_ports.stranger_on``)."""
+    from flow_sdk.builtin.artifact import Artifact  # noqa: PLC0415
+    from flow_sdk.builtin.faas.micro_app import WebApp  # noqa: PLC0415
+    from flow_sdk.core import app_ports  # noqa: PLC0415
+
+    owner = await WebApp.get_by_id(route.webapp_id) if route.webapp_id else await Artifact.get_by_id(route.artifact_id)
+    folder = getattr(owner, "asset_ref", None) or getattr(owner, "path", None) if owner is not None else None
+    if not folder:
+        return False
+    return await asyncio.to_thread(app_ports.stranger_on, port, Path(str(folder))) is not None
 
 
 # ── webapp assets: indexed here, served here ────────────────────────────────

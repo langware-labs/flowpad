@@ -2911,6 +2911,18 @@ class AgenticProcess(Entity):
         health = str(body.get("health") or "/").strip() or "/"
         description = str(body.get("description") or "").strip() or f"Web app at {artifact_path}"
 
+        if port is not None:
+            # A port is the caller's claim, not a fact: another program listening on it is not this
+            # app, and registering it would show that program as the app.
+            from flow_sdk.core import app_ports  # noqa: PLC0415
+
+            stranger = await asyncio.to_thread(app_ports.stranger_on, port, Path(artifact_path))
+            if stranger is not None:
+                return ApiFailResponse(
+                    message=f"port {port} is held by another program: {stranger.said()} — it is not the app at {artifact_path}",
+                    status_code=400,
+                )
+
         project = await self._resolve_webapp_project()
         # Provenance is the URL scope's, never the body's — an artifact records
         # who actually ran, not who the payload claims.

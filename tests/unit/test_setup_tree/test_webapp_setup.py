@@ -98,10 +98,7 @@ def app(tmp_path, monkeypatch):
     yield state
     # Whatever a test left serving from its folders goes, however it was started.
     for pid in [*state.started, *(proc.pid for proc in state.by_hand)]:
-        try:
-            os.killpg(pid, signal.SIGKILL)
-        except OSError:
-            pass
+        dev_server.stop_group(pid)
     for proc in state.by_hand:
         proc.wait()
     webapp_setup.app_ports.stop(
@@ -439,7 +436,7 @@ async def test_the_server_outlives_the_shell_that_started_it_and_is_still_found_
     ) else None
     if server is None:
         pytest.skip("this shell became the server itself: there is no shell to lose")
-    os.kill(shell, signal.SIGKILL)
+    os.kill(shell, signal.SIGTERM if sys.platform == "win32" else signal.SIGKILL)
     psutil.wait_procs([psutil.Process(shell)])
     assert webapp_setup.health_answers(port)
 
