@@ -17,8 +17,11 @@ from unittest.mock import patch
 
 import pytest
 
-SECRET = "test-cookie-gate-secret"
-COOKIE = "__Host-cookie-gate"
+from tests.utils.gate import SECRET
+from tests.utils.gate import armed as _stored
+from tests.utils.gate import grant_cookie as _grant
+
+COOKIE = "__Host-grant"
 
 pytestmark = [
     pytest.mark.usefixtures("reset_db_for_testclient"),
@@ -68,16 +71,33 @@ def test_armed_ws_without_cookie_is_rejected():
     assert exc.value.code == 1008  # policy violation, closed before accept
 
 
-def test_armed_ws_with_cookie_connects():
+def test_armed_ws_with_a_system_grant_connects():
+    """Cookies ride the same-origin WS handshake; the grant cookie is what a browser holds."""
     from starlette.testclient import TestClient
 
     from flow_sdk.server.app import app
 
     connection_id = str(uuid.uuid4())
 
-    with _armed(), TestClient(app, cookies={COOKIE: SECRET}) as tc:
+    with _armed(), _stored(), TestClient(app, cookies={COOKIE: _grant()}) as tc:
         with tc.websocket_connect(f"/api/v1/connect/ws/{connection_id}") as ws:
             _consume_confirmation(ws)
+
+
+def test_armed_ws_with_an_audience_grant_is_rejected():
+    from starlette.testclient import TestClient
+    from starlette.websockets import WebSocketDisconnect
+
+    from flow_sdk.server.app import app
+
+    connection_id = str(uuid.uuid4())
+
+    with _armed(), _stored(), TestClient(app, cookies={COOKIE: _grant("app")}) as tc:
+        with pytest.raises(WebSocketDisconnect) as exc:
+            with tc.websocket_connect(f"/api/v1/connect/ws/{connection_id}") as ws:
+                ws.receive_json()
+
+    assert exc.value.code == 1008
 
 
 def test_armed_ws_with_wrong_cookie_is_rejected():

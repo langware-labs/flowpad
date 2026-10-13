@@ -201,7 +201,7 @@ as its home page. Nothing else registers an app; `flow app serve` / `flow app op
   "build": ".",
   "mounts": [
     { "audience": "app",
-      "serving": { "type": "proxy", "start_cmd": "npx next dev --port {port}", "health": "/",
+      "serving": { "type": "proxy", "start_cmd": "npx next dev --hostname 127.0.0.1 --port {port}", "health": "/",
                    "install_cmd": "python3 setup.py" } }
   ]
 }
@@ -221,6 +221,10 @@ as its home page. Nothing else registers an app; `flow app serve` / `flow app op
   `build_cmd` (default: no build). An API the app brings along is not a mount: declare it under
   `services` (`name`, `protocol`, a `proxy` serving). Rules and the API shape:
   `docs/snippets/service-endpoints.md` §3.
+- A dev server binds **loopback only** (`--hostname 127.0.0.1` for Next, `--host 127.0.0.1` for Vite,
+  `host="127.0.0.1"` for uvicorn; Flowpad also sets `HOST=127.0.0.1` in its environment). It is reached
+  through Flowpad's own door for its audience, which is what admits a browser to it; a server that binds
+  every interface on a cloud box is public to anyone who knows the sandbox id, with no door at all.
 - Declare a dev server only when the app NEEDS one to be the app (Next, Vite with HMR, a backend).
   A folder of plain files served from `build` is faster and survives a restart; prefer it.
 
