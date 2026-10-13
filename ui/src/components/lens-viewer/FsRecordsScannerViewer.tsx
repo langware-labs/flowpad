@@ -189,7 +189,9 @@ function TypeRow({
             if (row.orphan_count > 0) onSweepOrphans(row.type);
           }}
           title={
-            row.orphan_count > 0 ? `Click to sweep ${row.orphan_count} ${row.type} orphans` : 'No orphans for this type'
+            row.orphan_count > 0
+              ? t`Click to sweep ${row.orphan_count} ${row.type} orphans`
+              : t`No orphans for this type`
           }
         >
           {row.orphan_count > 0 ? row.orphan_count : '—'}
@@ -206,7 +208,11 @@ function TypeRow({
                 e.stopPropagation();
                 onViewIndexed(row.type);
               }}
-              title={`View the ${indexedCount} ${row.type} ${indexedCount === 1 ? 'entity' : 'entities'} indexed this run`}
+              title={
+                indexedCount === 1
+                  ? t`View the 1 ${row.type} entity indexed this run`
+                  : t`View the ${indexedCount} ${row.type} entities indexed this run`
+              }
             >
               <Trans>{indexedCount} indexed</Trans>
             </button>
@@ -223,7 +229,7 @@ function TypeRow({
           ) : row.stale && !(row.count === 0 && row.last_indexed_at === null) ? (
             <span
               className="text-amber-600 dark:text-amber-400"
-              title={row.last_indexed_at === null ? t`Last indexed: never` : `Last indexed: ${row.last_indexed_at}`}
+              title={row.last_indexed_at === null ? t`Last indexed: never` : t`Last indexed: ${row.last_indexed_at}`}
             >
               {row.last_indexed_at === null ? <Trans>never indexed</Trans> : <Trans>24h+ idle</Trans>}
             </span>
@@ -1083,9 +1089,9 @@ export function FsRecordsScannerViewer() {
                           expanded={expandedType === r.type}
                           detail={details[r.type] ?? null}
                           loadingDetail={loadingDetail === r.type}
-                          onExpand={handleExpand}
-                          onIndex={handleIndexType}
-                          onClear={handleClearType}
+                          onExpand={(type) => void handleExpand(type)}
+                          onIndex={(type) => void handleIndexType(type)}
+                          onClear={(type) => void handleClearType(type)}
                           onSweepOrphans={openSweepDialog}
                           onViewIndexed={setViewIndexedType}
                           indexing={indexingTypes.has(r.type)}
