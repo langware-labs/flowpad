@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 
 from flow_sdk.core import app_ports
-from flow_sdk.core.app_ports import Declared, Listener, decide, of_app
+from flow_sdk.core.app_ports import Declared, Listener, decide, launched_by, of_app
 from flow_sdk.schema.data_spec.webapp_spec import WebappProxyServing
 
 pytestmark = pytest.mark.timeout(5)
@@ -120,6 +120,19 @@ def test_a_page_and_its_api_in_one_folder_are_told_apart_by_how_each_was_started
     assert of_app(snapshot, Path(APP), api, [START, api]) == [service]
     # The page is down: the API beside it is not taken for the page.
     assert of_app([service], Path(APP), START, [START, api]) == []
+
+
+def test_a_quoted_start_command_matches_the_unquoted_command_line_a_process_reports():
+    """Windows: ``"C:\\py\\python.exe" -m http.server {port}`` runs under ``cmd.exe /c "<command>"`` and a
+    process's command line is read back as its arguments joined — the quotes are gone from both."""
+    start = '"C:\\Program Files\\py\\python.exe" -m http.server {port} --bind 127.0.0.1'
+    server = Listener(9, 4000, "python.exe", "C:\\shop", (
+        "C:\\Program Files\\py\\python.exe -m http.server 4000 --bind 127.0.0.1",
+        'C:\\WINDOWS\\system32\\cmd.exe /c "C:\\Program Files\\py\\python.exe" -m http.server 4000 --bind 127.0.0.1"',
+    ))
+    assert launched_by(server, start)
+    assert not launched_by(server, start + " --directory .")
+    assert not launched_by(server, "")
 
 
 def test_a_server_started_by_hand_in_the_folder_is_the_apps():

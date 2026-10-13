@@ -137,17 +137,24 @@ def _inside(cwd: str, folder: str) -> bool:
     return True
 
 
+def _unquoted(text: str) -> str:
+    """Without the quotes a shell strips: a process's command line is its ARGUMENTS joined, so
+    ``"C:\\py\\python.exe" -m x`` is read back as ``C:\\py\\python.exe -m x``."""
+    return text.replace('"', "").replace("'", "").strip()
+
+
 @lru_cache(maxsize=64)
 def _launch_pattern(start_cmd: str) -> "re.Pattern[str]":
-    return re.compile(r"(?:^|\s)" + r"\d+".join(re.escape(part) for part in start_cmd.split("{port}")) + r"$")
+    return re.compile(r"(?:^|\s)" + r"\d+".join(re.escape(part) for part in _unquoted(start_cmd).split("{port}")) + r"$")
 
 
 def launched_by(listener: Listener, start_cmd: str) -> bool:
     """The listener, or an ancestor, was started with exactly ``start_cmd`` — whatever port it was given.
     Exactly: the command line ENDS with it (a shell's is ``sh -c <command>``), so a sibling whose command
-    merely contains this one is not mistaken for it."""
-    command = start_cmd.strip()
-    return bool(command) and any(_launch_pattern(command).search(line.strip()) for line in listener.commands)
+    merely contains this one is not mistaken for it. Quotes do not count: they are the shell's."""
+    if not _unquoted(start_cmd):
+        return False
+    return any(_launch_pattern(start_cmd).search(_unquoted(line)) for line in listener.commands)
 
 
 def of_app(snapshot: Iterable[Listener], folder: Path, start_cmd: str, siblings: Iterable[str] = ()) -> list[Listener]:
