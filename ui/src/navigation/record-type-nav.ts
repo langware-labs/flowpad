@@ -225,6 +225,14 @@ export const RECORD_TYPE_NAV: Partial<Record<string, RecordTypeNav>> = {
       return tid ? DockPointer.forGraphWorkflow(tid.id) : null;
     },
   },
+  // A schema opens on the project's schema tree, at its kind (the schema's name).
+  data_schema: {
+    dockPointer: (r) => (r.project_id && r.name ? DockPointer.forSchemaTree(r.project_id, [r.name]) : null),
+  },
+  // A help desk opens as its project's portal.
+  helpdesk: {
+    dockPointer: (r) => (r.project_id ? DockPointer.forHelpdesk(r.project_id) : null),
+  },
   graph_context: {
     dockPointer: (r) => {
       const tid = resultTypeId(r);
@@ -450,6 +458,17 @@ export function isResultNavigable(result: SearchRow): boolean {
   if (nav?.primaryAction || nav?.resolvePointer) return true;
   if (nav?.dockPointer?.(result)) return true;
   return registeredAssetPointer(result) != null;
+}
+
+/**
+ * Where an asset opens when its type has a screen of its own and no asset editor (a graph
+ * workflow's canvas, a trigger in Automations, a schema on the schema tree); null otherwise.
+ * Asset trees ask this so a row opens what a search result opens, never the asset's raw folder.
+ * An editor-backed type keeps the pointer its row was built with.
+ */
+export function assetScreenPointer(asset: AssetRow): DockPointer | null {
+  if (editorForType(asset.record_type)) return null;
+  return RECORD_TYPE_NAV[asset.record_type]?.dockPointer?.(asset as SearchRow) ?? null;
 }
 
 /** Whether a type's assets open through a lookup (`assetTargetLookup`) — openable with no static editor. */
