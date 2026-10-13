@@ -73,7 +73,7 @@ export function GuestPermissionChip({
   disabled: boolean;
 }) {
   const { t } = useLingui();
-  const { permissions, refetch } = useContactPermissions(contact);
+  const { permissions, refetch, loaded } = useContactPermissions(contact);
   const scope = sessionGrantScope(permissions, projectId);
   const [saving, setSaving] = useState(false);
   const change = async (next: 'project' | 'global' | null) => {
@@ -90,6 +90,8 @@ export function GuestPermissionChip({
     ...(projectId ? [{ value: 'project' as const, label: t`Auto-approve in this project` }] : []),
     { value: 'global', label: t`Always auto-approve` },
   ];
+  // Until the grants load the scope reads "this session only" — showing it would flip a moment later.
+  if (!pending && !loaded) return null;
   const label = pending ? (
     <Trans>Needs your approval</Trans>
   ) : scope === 'global' ? (
