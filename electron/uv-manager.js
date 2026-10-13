@@ -2900,7 +2900,9 @@ class UvManager {
     // Remembered for the rollback: the release to put back when the set-aside copy is not there, and whether
     // there was an engine at all (a repair after a blocked FIRST install has nothing to put back).
     this._preRepairEngineVersion = installed || null;
-    this._hadEngineBeforeRepair = !!installed || fs.existsSync(this._toolVenvDir());
+    // `markFirstInstallBlocked()`: the app knows the blocked install was the FIRST — whatever is in the venv
+    // (a block during --compile-bytecode comes after it was populated, and `_version.py` is readable) is not an engine.
+    this._hadEngineBeforeRepair = this._firstInstallBlocked ? false : (!!installed || fs.existsSync(this._toolVenvDir()));
     try {
       this._setAsidePreRepairVenv();
     } catch (e) {
@@ -2917,6 +2919,9 @@ class UvManager {
     await this._ensureShimOnPath();
     this._flowBin = await this._resolveFlowBin();
   }
+
+  /** The blocked install was the first one: a repair that follows has no previous engine to put back. */
+  markFirstInstallBlocked() { this._firstInstallBlocked = true; }
 
   _preRepairVenvDir() {
     return `${this._toolVenvDir()}.pre-repair`;
@@ -2958,6 +2963,13 @@ class UvManager {
     const venvDir = this._toolVenvDir();
     const aside = this._preRepairVenvDir();
     await this._drainVenvProcesses();
+    if (this._hadEngineBeforeRepair === false) {
+      // The repair followed a blocked first install: there was no engine to put back (what was set aside is the half-built
+      // environment of that install, not an engine), and reinstalling one on the blocked interpreter would only fail again.
+      this.log.warn('[runtime-repair] there was no engine before the repair: nothing to roll back');
+      fs.rmSync(aside, { recursive: true, force: true });
+      return;
+    }
     if (fs.existsSync(aside)) {
       this.log.warn('[runtime-repair] restoring the set-aside engine');
       fs.rmSync(venvDir, { recursive: true, force: true });
@@ -2966,12 +2978,6 @@ class UvManager {
       return;
     }
     const previous = this._preRepairEngineVersion || null;
-    if (this._hadEngineBeforeRepair === false) {
-      // The repair followed a blocked first install: there was no engine to put back, and reinstalling one on the
-      // blocked interpreter would only fail again. The half-built environment is replaced by the next install.
-      this.log.warn('[runtime-repair] there was no engine before the repair: nothing to roll back');
-      return;
-    }
     if (previous && fs.existsSync(venvDir) && this.getInstalledVersionSync() === previous) {
       this.log.warn(`[runtime-repair] no set-aside engine, and the engine in place is still ${previous}: the switch never happened, nothing to roll back`);
       this._flowBin = await this._resolveFlowBin();

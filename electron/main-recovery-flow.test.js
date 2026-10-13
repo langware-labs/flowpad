@@ -107,7 +107,7 @@ function load(opts = {}) {
     deferPackageVersion() {}
     async upgrade() {}
     async checkForUpdatesInBackground() { return false; }
-    async startWithBin(bin) { this._flowBin = bin; uv.starts++; }
+    async startWithBin(bin) { if (opts.startFails) throw opts.startFails(); this._flowBin = bin; uv.starts++; }
     useFlowBin(bin) { this._flowBin = bin; }
     async start() { if (!this._flowBin) throw new Error('flow binary not set — call startWithBin() or installLatest() first'); uv.starts++; }
     stop() { uv.stops++; return Promise.resolve(); }
@@ -368,6 +368,25 @@ function load(opts = {}) {
     eq(retries, 1, 'Retry anyway re-runs the INSTALL (there is no engine to start)');
     eq(env.panels().length, 2, 'and a repeat block shows the panel again');
     env.t.setQuitting(true); env.ipcMain.emit('retry-startup'); await settle(); await done;
+    // A retry that fails for another reason: the failure is described in the repair panel (no second panel from the install).
+    const env3 = load({ noEngine: true, binReady: false, installFails: () => Object.assign(new Error('x'), { stderr: stderr, code: 1 }) });
+    env3.t.primeLaunchCheck();
+    const blk = (await env3.t.installAndStartBackend()).installBlock;
+    const quietEnv = load({ noEngine: true, binReady: false, installFails: () => Object.assign(new Error('Command failed: uv tool install flowpad\nerror: Failed to download distributions: network unreachable'), { stderr: 'network unreachable', code: 1 }) });
+    quietEnv.t.primeLaunchCheck();
+    const q = await quietEnv.t.installAndStartBackend({ quiet: true });
+    eq([q.ok, !!q.error, quietEnv.panels().length], [false, true, 0], 'quiet: the failure comes back to the caller, no panel of its own');
+    const done3 = env3.t.handleFatalFailure({ match: blk, record: null, retry: async () => ({ ok: false, error: Object.assign(new Error('Command failed: uv tool install flowpad'), { stderr: 'error: Failed to download distributions: network unreachable', code: 1 }) }) });
+    await settle(10);
+    env3.ipcMain.emit('retry-startup'); await settle(20);
+    const shown = env3.panels();
+    ok(shown.length === 2 && /The install failed again/.test(shown[1].detail) && /network unreachable/.test(shown[1].detail), 'a retry that fails for another reason: the new failure is in the panel');
+    env3.t.setQuitting(true); env3.ipcMain.emit('retry-startup'); await settle(); await done3;
+    // The engine's LAUNCHER blocked (start() fails, text says Device Guard): not an install block, the old generic path with its own evidence.
+    const env4 = load({ startFails: () => Object.assign(new Error('This computer\u2019s application-control policy (Windows Defender Application Control / Device Guard) blocks the programs Flowpad needs to start its engine.'), { policyBlocked: true }) });
+    env4.t.primeLaunchCheck();
+    const r4 = await env4.t.installAndStartBackend({ quiet: true });
+    eq([r4.ok, r4.installBlock], [false, undefined], 'a blocked launcher (start) is not labelled as a blocked install');
     // A failure that is not a block stays the generic panel path.
     const env2 = load({ noEngine: true, binReady: false, installFails: () => Object.assign(new Error('Command failed: uv tool install flowpad\nerror: Failed to download distributions: network unreachable'), { stderr: 'network unreachable', code: 1 }) });
     env2.t.primeLaunchCheck();

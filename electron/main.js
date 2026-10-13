@@ -1391,7 +1391,7 @@ async function handleFatalFailure({ match: firstMatch, record: firstRecord, retr
       }
       detail +=
         (extraDetail ? `\n\n${extraDetail}` : '') +
-        `\n\nServer log (${match.path}):\n${match.traceback}` +
+        `\n\nEvidence — ${match.path}:\n${match.traceback}` +
         `\n\nWindows Code Integrity events (3077/3089, last 30 min):\n${ciEvents || '(none readable — the policy may not log to the Operational channel, or the log is empty)'}`;
     } else {
       detail = fatalFailure.describeFatalFailure(record || { kind, fatal: true, reason: (match && match.line) || 'The FlowPad engine stopped.' }) +
@@ -1470,7 +1470,7 @@ async function handleFatalFailure({ match: firstMatch, record: firstRecord, retr
         const r = await retry();
         if (!r.ok) {
           if (r.installBlock) { match = r.installBlock; record = null; extraDetail = ''; }
-          else extraDetail = 'The install failed again.';
+          else extraDetail = `The install failed again: ${r.error ? describeStartupFailure(r.error) : 'see the logs'}`;
           continue;
         }
       } else {
@@ -1480,7 +1480,9 @@ async function handleFatalFailure({ match: firstMatch, record: firstRecord, retr
       extraDetail = describeStartupFailure(err);
       continue;
     }
-    const w = await waitForBackend();
+    // A retry that re-ran the install boots an engine that was just unpacked: the same wider window as after any
+    // install (PyPI fetch, bytecode warm-up, antivirus scan on Windows).
+    const w = await waitForBackend(retry ? { maxChecks: POST_UPGRADE_HEALTH_CHECKS } : undefined);
     if (backendWaitAborted(w)) return false;
     if (w.ready) return true;
     stopBackend();
@@ -1567,8 +1569,22 @@ async function showRecoveryEntry(why) {
 // Resolves { ok: true, backendJustUpgraded } — or { ok: false } after rendering
 // the error panel with a Retry button, so startApp() can run it again. A fresh
 // UvManager per attempt: nothing from a failed attempt leaks into the retry.
-async function installAndStartBackend() {
+// A step of the install (uv itself, `uv tool install`, the broken-install reinstall): an error from it is tagged,
+// so the catch below can tell "the install was blocked" from "the engine's launcher was blocked" (start()'s own
+// policyBlockedError, whose text also says Device Guard, keeps its own path and its own evidence).
+async function installStep(fn) {
+  try {
+    return await fn();
+  } catch (err) {
+    if (err && typeof err === 'object') err.fromInstall = true;
+    throw err;
+  }
+}
+
+// `quiet`: the caller (the repair panel's Retry) shows its own panel for a failure — no second panel from here.
+async function installAndStartBackend({ quiet = false } = {}) {
   let backendJustUpgraded = false;
+  let firstInstall = false;
   // Install and start backend via uv + flow CLI
   uvManager = new UvManager(log, { stateDir: FLOW_HOME });
   uvManager.setFailureSharer((text) => shareDiagnostics(text, 'could not finish updating'));
@@ -1691,8 +1707,8 @@ async function installAndStartBackend() {
         if (!uvManager.isBrokenInstallError(startErr)) throw startErr;
         log.warn('Detected broken flow install (cannot import flow_sdk); reinstalling…');
         sendStatus('Repairing Flowpad installation');
-        await uvManager.ensureUv({ onProgress: installProgress('Repairing Flowpad installation') });
-        await uvManager.reinstall({ onProgress: installProgress('Repairing Flowpad installation') });
+        await installStep(() => uvManager.ensureUv({ onProgress: installProgress('Repairing Flowpad installation') }));
+        await installStep(() => uvManager.reinstall({ onProgress: installProgress('Repairing Flowpad installation') }));
         backendJustUpgraded = true;
         const repairedVersion = uvManager.getInstalledVersionSync();
         sendStatus(`Starting flowpad${repairedVersion ? ` v${repairedVersion}` : ''}`);
@@ -1703,10 +1719,11 @@ async function installAndStartBackend() {
       log.info('First-time setup: flow binary not found, installing latest from PyPI');
       sendStatus('Setting up Flowpad (first time)');
 
+      firstInstall = true;
       sendStatus('Checking Python installation');
-      await uvManager.ensureUv({ onProgress: installProgress('Setting up Flowpad — installing uv') });
+      await installStep(() => uvManager.ensureUv({ onProgress: installProgress('Setting up Flowpad — installing uv') }));
 
-      await uvManager.installLatest({ onProgress: installProgress('Installing Flowpad') });
+      await installStep(() => uvManager.installLatest({ onProgress: installProgress('Installing Flowpad') }));
       backendJustUpgraded = true;
 
       const version = uvManager.getInstalledVersionSync();
@@ -1728,9 +1745,14 @@ async function installAndStartBackend() {
     // FLOWPAD-2231: Windows application control refused the interpreter DURING the install (uv builds a
     // dependency from source, compiles bytecode): the same block, earlier than any backend. The panel that
     // names it and offers the signed runtime (Repair), not the generic error whose Retry fails the same way.
-    const installBlock = policyBlockFromInstallError(error); // the text exists on Windows only; Repair itself is gated there
+    // Only an error of the install steps counts: the evidence is uv's output (the text exists on Windows only;
+    // Repair itself is gated there).
+    const installBlock = error && error.fromInstall ? policyBlockFromInstallError(error) : null;
     if (installBlock) {
       log.error(`[fatal-failure] the engine install was blocked by Windows application control: ${installBlock.line}`);
+      // A block on the FIRST install leaves a half-built environment that is not an engine to roll back to
+      // (a block during --compile-bytecode happens after the venv is populated and readable).
+      if (firstInstall && uvManager && typeof uvManager.markFirstInstallBlocked === 'function') uvManager.markFirstInstallBlocked();
       return { ok: false, installBlock };
     }
 
@@ -1752,6 +1774,7 @@ async function installAndStartBackend() {
     // In-app panel with Retry (uv keeps what it already fetched in its
     // cache, so a retry after a slow or flaky download is usually seconds).
     // Only if the loading window is already gone is the failure fatal.
+    if (quiet) return { ok: false, error };
     if (!(await showStartupErrorPanel(describeStartupFailure(error), { retryable: true, policyBlocked: !!(error && error.policyBlocked) }))) {
       app.quit();
     }
@@ -1869,9 +1892,8 @@ async function startApp() {
           match: result.installBlock,
           record: null,
           retry: async () => {
-            const r = await guardedInstallAndStart();
-            if (r.ok) backendJustUpgraded = !!r.backendJustUpgraded;
-            return r;
+            const g = await startGuard.run('startup', () => installAndStartBackend({ quiet: true }));
+            return g.skipped ? { ok: false } : g.result;
           },
         });
         if (!recovered) return;
