@@ -45,16 +45,42 @@ llm = LLMEndpoint(provider="openai", api_key="sk-…")   # never stored, never d
 ## 2. Store a key and get its row
 
 The row is the durable half; the key itself stays in the encrypted sod store and the row
-only names it. `ensure_for_secret` is find-or-mint, idempotent by lookup on that name.
+only names it. `by_provider` does both: it stores the key when one is given, then finds or
+mints the row — idempotent by lookup on the secret's name.
 
 ```python
-from flow_sdk.builtin.llm_endpoint import LLMEndpoint
-from flow_sdk.lm_api import set_lm_api
+from flow_sdk.builtin.llm_endpoint import LLMEndpoint, LLMEndpointConfig
+from flow_sdk.flowpad_types.enums.lm_provider_enums import LMApiProvider
 
-set_lm_api("sk-or-…", "openrouter")
-endpoint = await LLMEndpoint.ensure_for_secret("openrouter")   # same row on every re-run
+endpoint = await LLMEndpoint.by_provider(LMApiProvider.OPENROUTER, key="sk-or-…")
+same = await LLMEndpoint.by_provider(LMApiProvider.OPENROUTER)      # stored now: same row, no key needed
 assert endpoint.secret_name == "lm_api.openrouter"
 
+tuned = await LLMEndpoint.by_provider(                              # change one tier, keep the rest
+    LMApiProvider.OPENROUTER, config=LLMEndpointConfig(models={"sm": "z-ai/glm-4.7-flash"})
+)
+```
+
+With no `key` and nothing stored it raises `LLMNoCredential`; the environment variable is not
+adopted, because a worker spawn never reads it.
+
+Pin a process to the row and that key pays for it, whatever the box or project default is —
+which is how a harness with no login of its own (`opencode`, `deepagents`) is made to run:
+
+```python
+from flow_sdk.builtin.agentic_process import AgenticProcess
+from flow_sdk.flowpad_types.enums import WorkerType
+
+result = await AgenticProcess.run(
+    "Reply with the single word pong.",
+    worker_type=WorkerType.OPENCODE,
+    llm_endpoint_typeid=str(endpoint.typeid),
+)
+```
+
+`by_provider` is `set_lm_api` followed by `ensure_for_secret`; to look a row up without minting:
+
+```python
 same = await LLMEndpoint.find_by_secret("lm_api.openrouter")   # None when nothing is stored yet
 ```
 
