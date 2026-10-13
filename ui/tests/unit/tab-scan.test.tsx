@@ -1,8 +1,8 @@
 /**
  * The tab strip's scanner: hovering a chip whose title is cut widens that tab
- * in place to its full title, drawn over the strip. A scan runs toward the
- * row's start, so the tab widens toward the end (right in LTR, left in RTL),
- * over the tabs already passed, and it never moves or resizes a chip.
+ * in place to its full title, drawn over the strip. It keeps the chip's end
+ * edge (the close button stays put) and widens toward the row's start, and it
+ * never moves or resizes a chip.
  */
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -17,7 +17,6 @@ vi.mock('@src/contexts/locale-context', async (importOriginal) => ({
 
 afterEach(() => {
   cleanup();
-  vi.useRealTimers();
   locale.dir = 'ltr';
 });
 
@@ -29,27 +28,21 @@ const anchor = (dir: 'ltr' | 'rtl', left = 500): ScanAnchor => ({
 });
 
 describe('scanTabBox', () => {
-  it('LTR: keeps the chip\'s left edge and widens right', () => {
-    expect(scanTabBox(anchor('ltr'), 120)).toEqual({
-      forward: true,
-      style: { top: '10px', height: '35px', width: '120px', left: '500px', right: '' },
-    });
+  it('LTR: keeps the chip\'s right edge, where close sits, and widens left', () => {
+    expect(scanTabBox(anchor('ltr'), 120)).toEqual({ top: '10px', height: '35px', width: '120px', left: '', right: '460px' });
   });
 
-  it('RTL: mirrored — keeps the chip\'s right edge and widens left', () => {
-    expect(scanTabBox(anchor('rtl'), 120).style).toMatchObject({ left: '', right: '460px' });
+  it('RTL: mirrored — keeps the chip\'s left edge and widens right', () => {
+    expect(scanTabBox(anchor('rtl'), 120)).toMatchObject({ width: '120px', left: '500px', right: '' });
   });
 
-  it('widens forward only while the tab fits before the row end', () => {
-    expect(scanTabBox(anchor('ltr', 800), 150).forward).toBe(true);
-    expect(scanTabBox(anchor('ltr', 801), 150).forward).toBe(false);
-    expect(scanTabBox(anchor('rtl', 160), 150).forward).toBe(true);
-    expect(scanTabBox(anchor('rtl', 159), 150).forward).toBe(false);
+  it('never leaves the row: it is no wider than the room toward the row start', () => {
+    expect(scanTabBox(anchor('ltr', 100), 200).width).toBe('90px');
+    expect(scanTabBox(anchor('rtl', 850), 200).width).toBe('100px');
   });
 
-  it('with no room before the row end, keeps the other edge and widens back', () => {
-    expect(scanTabBox(anchor('ltr', 900), 120).style).toMatchObject({ left: '', right: '60px' });
-    expect(scanTabBox(anchor('rtl', 60), 120).style).toMatchObject({ left: '60px', right: '' });
+  it('is never narrower than its chip', () => {
+    expect(scanTabBox(anchor('ltr', 50), 20).width).toBe('40px');
   });
 });
 
@@ -102,6 +95,15 @@ describe('TabStrip scanner', () => {
     expect(onSelect).toHaveBeenCalledWith('a');
     fireEvent.click(within(tab).getByLabelText('Close tab'));
     expect(onClose).toHaveBeenCalledWith('a');
+  });
+
+  it('the widened tab keeps open-externally, so it never flashes away', () => {
+    const onPopout = vi.fn();
+    renderStrip({ onPopout });
+    hover('chip-a');
+
+    fireEvent.click(within(screen.getByTestId('tab-scan-tab')).getByTestId('tab-open-external-a'));
+    expect(onPopout).toHaveBeenCalledWith('a');
   });
 
   it('a drag or a rename ends the scan', () => {
