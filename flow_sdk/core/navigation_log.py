@@ -114,7 +114,7 @@ def _create() -> None:
 async def log(request: dict, outcome: Any, answer: Any) -> Optional[str]:
     """Append one decision (when the log is on); the new example id, else None. Never raises."""
     from flow_sdk.builtin.dataset import Dataset  # noqa: PLC0415
-    from flow_sdk.fs_store.reindex import reindex_paths  # noqa: PLC0415
+    from flow_sdk.fs_store.resolve import index_one, resolve_asset  # noqa: PLC0415
     from flow_sdk.preferences import smart_navigation_log_enabled  # noqa: PLC0415
 
     if not smart_navigation_log_enabled() or not (request.get("utterance") or "").strip():
@@ -123,9 +123,14 @@ async def log(request: dict, outcome: Any, answer: Any) -> Optional[str]:
         async with _lock():
             indexed = await _indexed()
             if indexed is None:
-                # The first row: create the folder and index it once, so the UI lists the log.
+                # The first row: create the folder and index it once, so the UI lists the log. It is
+                # the user's: the temp folder is inside no project and no known root, and a row with
+                # no scope is listed under every project.
                 _create()
-                await reindex_paths([str(folder())])
+                try:
+                    await index_one(await resolve_asset(folder(), write=True), notify=True, scope="user")
+                except Exception as exc:  # noqa: BLE001 -- no index (no DB): the folder alone takes the row
+                    logger.debug("smart navigation log: not indexed: %s", exc)
                 indexed = await _indexed()
             # Nothing indexes it here (no DB): the folder alone takes the row.
             ds = indexed or Dataset.at(folder())

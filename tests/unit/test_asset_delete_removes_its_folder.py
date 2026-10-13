@@ -83,3 +83,24 @@ async def test_deleting_an_agent_removes_its_folder_and_its_menu_count(tmp_path:
 
     assert not folder.exists(), f"the agent row is deleted but its folder is still on disk: {sorted(p.name for p in folder.iterdir())}"
     assert await _agent_count(project) == 0, "the Assets menu still counts the deleted agent"
+
+
+@pytest.mark.asyncio
+async def test_deleting_a_prompt_removes_its_file(tmp_path: Path):
+    """A prompt is one file, not a folder — the same promise, a different shape."""
+    root = tmp_path / "notes"
+    root.mkdir()
+    project = Project(id=str(uuid.uuid4()), name=unique_project_name("notes"), fs_storage_mount_path=str(root))
+    await project.save()
+
+    created = await _call(
+        lambda: handle_create_entity(MagicMock()),
+        _request(resource_type="prompt", target=project.typeid, parent=project, body={"name": "greet", "text": "Say hi."}),
+    )
+    prompt = created.data
+    file = Path(prompt.asset_ref)
+    assert file.is_file() and root in file.parents, f"the create did not write the prompt's file: {file}"
+
+    await _call(handle_delete_by_id, _request(resource_type="prompt", target=prompt.typeid))
+
+    assert not file.exists(), "the prompt row is deleted but its file is still on disk"
