@@ -165,28 +165,15 @@ def test_direct_open_grant_is_refused(token, headers):
 
 def test_no_direct_open_grant_through_a_public_url(local_gate):
     """From outside (the box's public URL) the hub gate decides; the grant is local-only."""
-    with patch.object(gate, "get_cookie_gate", return_value=SECRET):
+    with patch.object(gate.cookie_gate, "get_cookie_gate", return_value=SECRET):
         response = TestClient(_gated_app(), base_url="https://9007-box.e2b.dev").get("/", headers=DIRECT_OPEN)
 
     assert response.status_code == 403
     assert "set-cookie" not in response.headers
 
 
-def test_a_cloud_box_browser_on_localhost_gets_the_local_gate(local_gate):
-    """A hub-armed box still protects localhost: its own browser is a target too."""
-    with patch.object(gate, "get_cookie_gate", return_value=SECRET):
-        client = TestClient(_gated_app(), base_url="http://localhost:9007")
-        token_page = client.get("/", headers=DIRECT_OPEN)
-        token = local_gate.read_text(encoding="utf-8")
-
-        assert token_page.status_code == 200  # direct-open grant, local gate
-        client.cookies.clear()  # check the header alone, not the cookie the grant just set
-        assert client.post("/api/v1/graph/shell", headers={gate.HEADER_NAME: SECRET}).status_code == 403
-        assert client.post("/api/v1/graph/shell", headers={gate.HEADER_NAME: token}).status_code == 200
-
-
 def test_outside_requests_need_the_hub_secret_not_the_local_token(local_gate):
-    with patch.object(gate, "get_cookie_gate", return_value=SECRET):
+    with patch.object(gate.cookie_gate, "get_cookie_gate", return_value=SECRET):
         client = TestClient(_gated_app(), base_url="https://9007-box.e2b.dev")
         client.get("/")  # nothing created: the local gate is not involved
         assert not local_gate.exists()

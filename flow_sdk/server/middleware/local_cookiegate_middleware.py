@@ -7,9 +7,9 @@ unauthenticated localhost API let any web page create a shell and run a command)
 
 A random token in ``<instance_dir>/.cookie_gate``, created on the first request
 this backend serves, and read from that file by the CLI and Electron.
-``FLOWPAD_COOKIE_GATE=off`` turns this gate off for the process (dev runs,
-tests, hub-launched boxes). With it on, failing to create or read the token
-refuses the request: this gate fails CLOSED.
+``FLOWPAD_COOKIE_GATE=off`` turns the whole cookie gate off for the process
+(dev runs, tests); ``CookieGateMiddleware`` reads it. With it on, failing to
+create or read the token refuses the request: the gate fails CLOSED.
 
 Two requests pass without the token, both header-shaped rather than path
 exemptions: a CORS preflight (no cookie ever rides one, and no route runs), and a
@@ -19,16 +19,11 @@ cookie on its response.
 
 from __future__ import annotations
 
-import os
-
 from starlette.requests import HTTPConnection
 from starlette.types import ASGIApp, Receive, Scope, Send
 
-from flow_sdk.instance_settings import cookie_gate
-
 from .cookie_gate_middleware import deny, presents
 
-OFF_SWITCH_ENV = "FLOWPAD_COOKIE_GATE"
 # Per port: cookies ignore the port, so one name would let two local instances
 # in the same browser overwrite each other's cookie.
 LOCAL_COOKIE_PREFIX = "cookie-gate-"
@@ -38,18 +33,10 @@ LOCAL_COOKIE_MAX_AGE = 365 * 24 * 3600
 class LocalCookieGateMiddleware:
     def __init__(self, app: ASGIApp) -> None:
         self.app = app
-        # The off switch is read once: it does not change while the process runs.
-        self.should_enforce_gate = os.environ.get(OFF_SWITCH_ENV) != "off"
 
-    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
-        if not self.should_enforce_gate:
-            await self.app(scope, receive, send)
-            return
-
-        token = cookie_gate.get_cookie_gate() or cookie_gate.create_cookie_gate()
-
+    async def __call__(self, scope: Scope, receive: Receive, send: Send, cookie: str) -> None:
         conn = HTTPConnection(scope)
-        if token is not None and presents(conn, token, local_cookie_name(_request_port(scope, conn))):
+        if presents(conn, cookie, local_cookie_name(_request_port(scope, conn))):
             await self.app(scope, receive, send)
             return
 
@@ -59,10 +46,10 @@ class LocalCookieGateMiddleware:
             await self.app(scope, receive, send)
             return
 
-        if token is not None and _is_direct_open(scope, conn):
+        if _is_direct_open(scope, conn):
             # The user opened this address themselves (typed, bookmark, OS
             # launch): no page can produce these browser-set headers.
-            await self.app(scope, receive, _with_local_cookie(send, conn, token))
+            await self.app(scope, receive, _with_local_cookie(send, conn, cookie))
             return
 
         await deny(scope, receive, send, "Open Flowpad from its icon, or type this address into your browser.")

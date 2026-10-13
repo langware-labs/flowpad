@@ -31,6 +31,7 @@ same-origin WS handshake, but nothing was there to check them.
 from __future__ import annotations
 
 import logging
+import os
 import secrets
 from typing import Optional
 
@@ -39,9 +40,10 @@ from starlette.responses import HTMLResponse
 from starlette.types import ASGIApp, Receive, Scope, Send
 from starlette.websockets import WebSocketClose
 
-from flow_sdk.instance_settings.cookie_gate import get_cookie_gate
+from flow_sdk.instance_settings import cookie_gate
 
 HEADER_NAME = "x-cookie-gate"
+OFF_SWITCH_ENV = "FLOWPAD_COOKIE_GATE"
 QUERY_NAME = "cookie-gate"
 
 logger = logging.getLogger(__name__)
@@ -61,16 +63,22 @@ class CookieGateMiddleware:
         self.local = LocalCookieGateMiddleware(app)
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
-        if scope["type"] not in ("http", "websocket"):
+        if os.environ.get(OFF_SWITCH_ENV) == "off" or scope["type"] not in ("http", "websocket"):
             await self.app(scope, receive, send)
             return
 
-        secret = get_cookie_gate()
-        is_local_request = secret is None or HTTPConnection(scope).url.hostname in ("localhost", "127.0.0.1")
+        cookie = cookie_gate.get_cookie_gate() or cookie_gate.create_cookie_gate()
+        if cookie is None:
+            # Fail closed: without a token there is nothing to compare against.
+            logger.error("cookie-gate: no token at %s; refusing every request", cookie_gate.LOCAL_TOKEN_PATH)
+            await deny(scope, receive, send)
+            return
+
+        is_local_request = HTTPConnection(scope).url.hostname in ("localhost", "127.0.0.1")
         if is_local_request:
-            await self.local(scope, receive, send)
+            await self.local(scope, receive, send, cookie)
         else:
-            await self.sandbox(scope, receive, send, secret)
+            await self.sandbox(scope, receive, send, cookie)
 
 
 # ---------------------------------------------------------------------------
