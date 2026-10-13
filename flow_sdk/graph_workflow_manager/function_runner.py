@@ -179,8 +179,6 @@ class GraphWorkflowCtx:
         Returns the response envelope's ``data`` (or the raw JSON body)."""
         import urllib.request
 
-        import flow_sdk.instance_settings.cookie_gate  # noqa: F401, PLC0415 -- installs the opener that presents the cookie-gate token
-
         req = urllib.request.Request(
             f"{self._api_base}{path}",
             data=json.dumps(body).encode(),
@@ -267,4 +265,7 @@ def _main() -> int:
 
 
 if __name__ == "__main__":  # pragma: no cover — exercised via subprocess in tests
+    from flow_sdk.instance_settings.cookie_gate import install_gate_opener
+
+    install_gate_opener()
     sys.exit(_main())

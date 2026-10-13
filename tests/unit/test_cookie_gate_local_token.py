@@ -37,7 +37,7 @@ def _app() -> Starlette:
 
 
 def _header(token: str) -> dict[str, str]:
-    return {gate.HEADER_NAME: token}
+    return {cookie_gate.HEADER_NAME: token}
 
 
 def test_first_request_creates_a_token_and_is_refused(local_gate):
@@ -77,7 +77,7 @@ def test_concurrent_first_requests_agree_on_one_token(local_gate):
 
     on_disk = local_gate.read_text(encoding="utf-8")
     assert results == [on_disk] * 8
-    assert [p.name for p in local_gate.parent.iterdir()] == [cookie_gate.LOCAL_TOKEN_FILENAME]
+    assert [p.name for p in local_gate.parent.iterdir()] == [".cookie_gate"]
 
 
 def test_off_switch_without_a_file_passes_and_creates_nothing(local_gate, monkeypatch):
@@ -99,7 +99,7 @@ def test_a_token_that_cannot_be_created_fails_closed(tmp_path, monkeypatch):
     blocker = tmp_path / "not-a-dir"
     blocker.write_text("", encoding="utf-8")  # the token's parent is a file: mkdir fails
     monkeypatch.delenv(gate.OFF_SWITCH_ENV, raising=False)
-    monkeypatch.setattr(cookie_gate, "LOCAL_TOKEN_PATH", blocker / cookie_gate.LOCAL_TOKEN_FILENAME)
+    monkeypatch.setattr(cookie_gate, "_token_path", lambda: blocker / ".cookie_gate")
 
     response = TestClient(_app()).post("/api/v1/graph/shell")
 

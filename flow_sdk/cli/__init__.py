@@ -57,6 +57,10 @@ def cli_main() -> None:
 
     start_if_requested(sys.stdout)
 
+    from flow_sdk.instance_settings.cookie_gate import install_gate_opener
+
+    install_gate_opener()
+
     from .flow_cli import cli_main as _cli_main
 
     _cli_main()

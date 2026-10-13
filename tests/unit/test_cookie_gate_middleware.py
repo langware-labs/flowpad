@@ -17,10 +17,11 @@ from starlette.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
 import flow_sdk.server.middleware.cookie_gate_middleware as gate
-from flow_sdk.server.middleware.cookie_gate_middleware import presents
-from flow_sdk.server.middleware.sandbox_cookiegate_middleware import COOKIE_NAME
+from flow_sdk.instance_settings import cookie_gate
 
 SECRET = "s3cret"
+#: Not on loopback (a bare scope has no host): the sandbox cookie.
+COOKIE_NAME = cookie_gate.cookie_name("box.example", 443)
 
 pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
 
@@ -36,27 +37,32 @@ def _conn(*, cookie=None, header=None, query=""):
     )
 
 
+def _presents(conn, token):
+    with patch.object(cookie_gate, "get_cookie_gate", return_value=token):
+        return cookie_gate.presents(conn)
+
+
 def test_cookie_presents():
-    assert presents(_conn(cookie=SECRET), SECRET, COOKIE_NAME) is True
+    assert _presents(_conn(cookie=SECRET), SECRET) is True
 
 
 def test_header_presents():
-    assert presents(_conn(header=SECRET), SECRET, COOKIE_NAME) is True
+    assert _presents(_conn(header=SECRET), SECRET) is True
 
 
 def test_query_presents():
-    assert presents(_conn(query=f"cookie-gate={SECRET}"), SECRET, COOKIE_NAME) is True
+    assert _presents(_conn(query=f"cookie-gate={SECRET}"), SECRET) is True
 
 
 def test_nothing_presented():
-    assert presents(_conn(), SECRET, COOKIE_NAME) is False
+    assert _presents(_conn(), SECRET) is False
 
 
 @pytest.mark.parametrize("wrong", ["s3cre", "s3crett", "S3CRET", "", "x"])
 def test_wrong_value_in_any_transport(wrong):
-    assert presents(_conn(cookie=wrong), SECRET, COOKIE_NAME) is False
-    assert presents(_conn(header=wrong), SECRET, COOKIE_NAME) is False
-    assert presents(_conn(query=f"cookie-gate={wrong}"), SECRET, COOKIE_NAME) is False
+    assert _presents(_conn(cookie=wrong), SECRET) is False
+    assert _presents(_conn(header=wrong), SECRET) is False
+    assert _presents(_conn(query=f"cookie-gate={wrong}"), SECRET) is False
 
 
 def test_a_wrong_cookie_does_not_veto_a_right_header():
@@ -64,7 +70,7 @@ def test_a_wrong_cookie_does_not_veto_a_right_header():
     poisoned — a stale cookie must not lock out a caller with a valid header."""
     conn = _conn(cookie="stale", header=SECRET)
 
-    assert presents(conn, SECRET, COOKIE_NAME) is True
+    assert _presents(conn, SECRET) is True
 
 
 # ---------------------------------------------------------------------------
@@ -118,7 +124,7 @@ def test_poc_null_origin_shell_create_is_refused(token):
 def test_each_transport_passes(token, transport):
     client, value = token
     if transport == "header":
-        response = client.get("/", headers={gate.HEADER_NAME: value})
+        response = client.get("/", headers={cookie_gate.HEADER_NAME: value})
     elif transport == "port_cookie":
         client.cookies.set("cookie-gate-9007", value)
         response = client.get("/")
@@ -178,8 +184,8 @@ def test_outside_requests_need_the_hub_secret_not_the_local_token(local_gate):
         client.get("/")  # nothing created: the local gate is not involved
         assert not local_gate.exists()
 
-        assert client.post("/api/v1/graph/shell", headers={gate.HEADER_NAME: SECRET}).status_code == 200
-        assert client.post("/api/v1/graph/shell", headers={gate.HEADER_NAME: "guess"}).status_code == 403
+        assert client.post("/api/v1/graph/shell", headers={cookie_gate.HEADER_NAME: SECRET}).status_code == 200
+        assert client.post("/api/v1/graph/shell", headers={cookie_gate.HEADER_NAME: "guess"}).status_code == 403
 
 
 def test_a_rebound_host_without_a_hub_secret_gets_the_local_gate(token):
@@ -188,7 +194,7 @@ def test_a_rebound_host_without_a_hub_secret_gets_the_local_gate(token):
     rebound = {"host": "evil.example:9007"}
 
     assert client.post("/api/v1/graph/shell", headers=rebound).status_code == 403
-    assert client.post("/api/v1/graph/shell", headers={**rebound, gate.HEADER_NAME: value}).status_code == 200
+    assert client.post("/api/v1/graph/shell", headers={**rebound, cookie_gate.HEADER_NAME: value}).status_code == 200
 
 
 def test_cors_preflight_passes_but_a_bare_options_does_not(token):

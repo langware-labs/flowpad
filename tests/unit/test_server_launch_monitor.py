@@ -7,7 +7,6 @@ import pytest
 from filelock import FileLock
 
 from flow_sdk.server import launch
-from flow_sdk.server.middleware.cookie_gate_middleware import HEADER_NAME
 
 
 class StopMonitor(Exception):
@@ -85,20 +84,24 @@ def _probe(secret, response=None):
             raise response
         return _Answer()
 
+    from flow_sdk.instance_settings.cookie_gate import install_gate_opener
+
     with (
-        patch("flow_sdk.server.middleware.local_cookiegate_middleware.read_local_token", return_value=secret),
+        patch("flow_sdk.instance_settings.cookie_gate.get_cookie_gate", return_value=secret),
         patch.object(urllib.request.HTTPHandler, "http_open", fake_http_open),
+        patch.object(urllib.request, "_opener", None),
     ):
+        install_gate_opener()  # the supervisor runs under the CLI, which installs it
         healthy = launch.check_server_health(9007)
     return healthy, sent.get("req")
 
 
 def test_health_probe_carries_the_gate_secret_when_gated():
-    """Without this header the monitor is refused by the instance it supervises."""
+    """Without the token the monitor is refused by the instance it supervises."""
     healthy, req = _probe("s3cret-gate")
 
     assert healthy is True
-    assert _headers(req).get(HEADER_NAME) == "s3cret-gate"
+    assert "s3cret-gate" in _headers(req).get("cookie", "")
 
 
 def test_health_probe_sends_no_gate_header_when_ungated():
@@ -106,7 +109,7 @@ def test_health_probe_sends_no_gate_header_when_ungated():
     healthy, req = _probe(None)
 
     assert healthy is True
-    assert HEADER_NAME not in _headers(req)
+    assert "cookie" not in _headers(req)
 
 
 def test_health_probe_reports_a_refusal_as_unhealthy_without_raising():
@@ -123,7 +126,7 @@ def test_health_probe_survives_an_unreadable_gate():
     """Being unable to read the secret is a reason to probe without it, never a
     reason to stop supervising."""
     with (
-        patch("flow_sdk.server.middleware.local_cookiegate_middleware.read_local_token", side_effect=RuntimeError("token unreadable")),
+        patch("flow_sdk.instance_settings.cookie_gate.get_cookie_gate", side_effect=RuntimeError("token unreadable")),
         patch.object(urllib.request, "urlopen", lambda req, timeout=None: _Answer()),
     ):
         assert launch.check_server_health(9007) is True
