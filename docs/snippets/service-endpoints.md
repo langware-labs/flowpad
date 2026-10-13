@@ -166,7 +166,7 @@ two facts and nothing saved:
   `required: true`: the process runs on that port or not at all — when another program holds it,
   starting fails and names who holds it. `required: false`: a preference; a free port is picked when
   it is taken. Nothing declared: a free port each start. `local` (the machine the process runs on) is
-  the only environment. Two apps may not require the same port. `"port": 3300` is the older spelling
+  the only environment. Two apps of one project may not require the same port. `"port": 3300` is the older spelling
   of a required port.
 * **live** — the process table. A listening process is this app's when its working folder is inside
   the app's folder, so a server started by hand, or one that outlived a backend restart, is the app
@@ -174,8 +174,8 @@ two facts and nothing saved:
 
 A service starts before the page, and the page is told its port in `FLOWPAD_APP_PORT_<NAME>`.
 `flow app ports` lists declared and live ports; `flow app stop|restart <app>` act on whatever runs.
-A dead `http://localhost:<port>` whose port an app declares starts that app when an agent's
-`auto_open` navigates to it.
+A dead `http://localhost:<port>` whose port an app of the agent's project declares starts that app
+when the agent's `auto_open` navigates to it.
 
 ## 4. On a cloud box
 

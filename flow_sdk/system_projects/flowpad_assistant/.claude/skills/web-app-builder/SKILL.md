@@ -226,7 +226,7 @@ as its home page. Nothing else registers an app; `flow app serve` / `flow app op
   `"ports": { "local": { "port": 3300, "required": true } }`. `required: true` — the app runs on that
   port or not at all: if another program holds it, starting fails and names who holds it.
   `required: false` — the port is a preference, and a free one is picked when it is taken. `local` is
-  the only environment. Two apps may not require the same port. Rules and the API shape:
+  the only environment. Two apps of one project may not require the same port. Rules and the API shape:
   `docs/snippets/service-endpoints.md` §3.
 - A dev server binds **loopback only** (`--hostname 127.0.0.1` for Next, `--host 127.0.0.1` for Vite,
   `host="127.0.0.1"` for uvicorn; Flowpad also sets `HOST=127.0.0.1` in its environment). It is reached
