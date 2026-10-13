@@ -13,6 +13,8 @@ Patching notes:
 
 from __future__ import annotations
 
+import contextlib
+import os
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -26,11 +28,14 @@ pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
 
 
 def _armed(secret: str | None = SECRET):
-    """Force the middleware's view of gate state."""
-    return patch(
-        "flow_sdk.server.middleware.cookie_gate_middleware.get_cookie_gate",
-        return_value=secret,
-    )
+    """Force the gate's view of the token; with one, also lift the suite's off switch."""
+    patches = [patch("flow_sdk.instance_settings.cookie_gate.get_cookie_gate", return_value=secret)]
+    if secret is not None:
+        patches.append(patch.dict(os.environ, {"FLOWPAD_COOKIE_GATE": "on"}))
+    stack = contextlib.ExitStack()
+    for p in patches:
+        stack.enter_context(p)
+    return stack
 
 
 def _stored(secret: str | None = SECRET):

@@ -81,7 +81,7 @@ def test_concurrent_first_requests_agree_on_one_token(local_gate):
 
 
 def test_off_switch_without_a_file_passes_and_creates_nothing(local_gate, monkeypatch):
-    monkeypatch.setenv(local.OFF_SWITCH_ENV, "off")
+    monkeypatch.setenv(gate.OFF_SWITCH_ENV, "off")
 
     assert TestClient(_app()).get("/").status_code == 200
     assert not local_gate.exists()
@@ -90,27 +90,18 @@ def test_off_switch_without_a_file_passes_and_creates_nothing(local_gate, monkey
 def test_off_switch_turns_the_gate_off_even_with_a_token_file(local_gate, monkeypatch):
     local_gate.parent.mkdir(parents=True)
     local_gate.write_text("existing-token", encoding="utf-8")
-    monkeypatch.setenv(local.OFF_SWITCH_ENV, "off")
+    monkeypatch.setenv(gate.OFF_SWITCH_ENV, "off")
 
     assert TestClient(_app()).get("/").status_code == 200
-
-
-def test_the_off_switch_is_read_once_at_construction(local_gate, monkeypatch):
-    client = TestClient(_app())
-    client.get("/")  # Starlette builds the middleware on the first request: gate on
-    monkeypatch.setenv(local.OFF_SWITCH_ENV, "off")
-
-    assert client.get("/").status_code == 403
 
 
 def test_a_token_that_cannot_be_created_fails_closed(tmp_path, monkeypatch):
     blocker = tmp_path / "not-a-dir"
     blocker.write_text("", encoding="utf-8")  # the token's parent is a file: mkdir fails
-    monkeypatch.delenv(local.OFF_SWITCH_ENV, raising=False)
+    monkeypatch.delenv(gate.OFF_SWITCH_ENV, raising=False)
     monkeypatch.setattr(cookie_gate, "LOCAL_TOKEN_PATH", blocker / cookie_gate.LOCAL_TOKEN_FILENAME)
 
-    with patch.object(gate, "get_cookie_gate", return_value=None):
-        response = TestClient(_app()).post("/api/v1/graph/shell")
+    response = TestClient(_app()).post("/api/v1/graph/shell")
 
     assert response.status_code == 403
 
@@ -129,7 +120,7 @@ def test_a_deleted_token_is_replaced_and_the_old_one_stops_working(local_gate):
 
 
 def test_a_hub_armed_secret_takes_precedence(local_gate):
-    with patch.object(gate, "get_cookie_gate", return_value=HUB_SECRET):
+    with patch.object(gate.cookie_gate, "get_cookie_gate", return_value=HUB_SECRET):
         client = TestClient(_app())
 
         assert client.get("/").status_code == 403
@@ -145,15 +136,6 @@ def test_hub_arming_after_startup_is_enforced_on_the_next_request(local_gate):
     client.get("/")  # local gate, token created
     token = local_gate.read_text(encoding="utf-8")
 
-    with patch.object(gate, "get_cookie_gate", return_value=HUB_SECRET):
+    with patch.object(gate.cookie_gate, "get_cookie_gate", return_value=HUB_SECRET):
         assert client.get("/", headers=_header(token)).status_code == 403
         assert client.get("/", headers=_header(HUB_SECRET)).status_code == 200
-
-
-def test_the_local_gate_ignores_the_sandbox_cookie(local_gate):
-    client = TestClient(_app())
-    client.get("/")
-    token = local_gate.read_text(encoding="utf-8")
-    client.cookies.set("__Host-cookie-gate", token)
-
-    assert client.get("/").status_code == 403

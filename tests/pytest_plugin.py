@@ -501,18 +501,14 @@ def isolated_records_root(tmp_path, monkeypatch):
 @pytest.fixture
 def local_gate(tmp_path, monkeypatch):
     """The local cookie-gate token turned on: off switch cleared, token file under
-    tmp_path, no hub-armed secret. Yields the token file's path (not yet created)."""
-    from unittest.mock import patch
-
+    tmp_path. Yields the token file's path (not yet created)."""
     import flow_sdk.server.middleware.cookie_gate_middleware as gate
-    import flow_sdk.server.middleware.local_cookiegate_middleware as local
     from flow_sdk.instance_settings import cookie_gate
 
     path = tmp_path / "instance" / cookie_gate.LOCAL_TOKEN_FILENAME
-    monkeypatch.delenv(local.OFF_SWITCH_ENV, raising=False)
+    monkeypatch.delenv(gate.OFF_SWITCH_ENV, raising=False)
     monkeypatch.setattr(cookie_gate, "LOCAL_TOKEN_PATH", path)
-    with patch.object(gate, "get_cookie_gate", return_value=None):
-        yield path
+    yield path
 
 
 # Replaces the per-file ``memory_keyring`` fixtures that patched

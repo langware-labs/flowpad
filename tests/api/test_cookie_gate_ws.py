@@ -12,6 +12,8 @@ never anything there to check them.
 
 from __future__ import annotations
 
+import contextlib
+import os
 import uuid
 from unittest.mock import patch
 
@@ -27,10 +29,14 @@ pytestmark = [
 
 
 def _armed(secret: str | None = SECRET):
-    return patch(
-        "flow_sdk.server.middleware.cookie_gate_middleware.get_cookie_gate",
-        return_value=secret,
-    )
+    """Force the gate's view of the token; with one, also lift the suite's off switch."""
+    patches = [patch("flow_sdk.instance_settings.cookie_gate.get_cookie_gate", return_value=secret)]
+    if secret is not None:
+        patches.append(patch.dict(os.environ, {"FLOWPAD_COOKIE_GATE": "on"}))
+    stack = contextlib.ExitStack()
+    for p in patches:
+        stack.enter_context(p)
+    return stack
 
 
 def _consume_confirmation(ws):
