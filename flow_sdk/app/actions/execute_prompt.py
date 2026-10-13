@@ -877,12 +877,15 @@ async def _fail_turn(session: "RemoteWorkerSession", err: Exception, someone_typ
         await session.save()
     except Exception:  # noqa: BLE001 — reporting a failure must not raise out of the receive pipeline
         logger.warning("[session] could not save the failed turn session=%s", session.id, exc_info=True)
-    await session._emit_event("failed", text=f"The host could not run this prompt: {reason}", someone_typeid=someone_typeid)
+    await session._emit_event(
+        "failed", text=f"The host could not run this prompt: {reason}", someone_typeid=someone_typeid
+    )
     return ApiFailResponse(message=f"session turn failed: {reason}")
 
 
-async def _queued_turns(session: "RemoteWorkerSession", local_id: Optional[str]) -> list["FlowMessage"]:
-    """This session's unconsumed inbound prompts, oldest first."""
+async def _queued_turns(session: "RemoteWorkerSession") -> list["FlowMessage"]:
+    """This session's unconsumed prompts, oldest first — the guest's and the
+    host's own (the host may type into its session too; it runs here)."""
     from flow_sdk.app.actions.notification_action import _is_prompt_attachment  # noqa: PLC0415
     from flow_sdk.builtin.flow_message import FlowMessage  # noqa: PLC0415
 
@@ -897,7 +900,6 @@ async def _queued_turns(session: "RemoteWorkerSession", local_id: Optional[str])
         for fm in fms
         if not getattr(fm, "prompt_auto_handled", False)
         and not fm.is_draft
-        and (not local_id or fm.sender_id != local_id)
         and any(_is_prompt_attachment(a) for a in (fm.attachment or []))
     ]
     queued.sort(key=lambda m: str(getattr(m, "created_date", "") or ""))
@@ -1131,7 +1133,7 @@ async def redrive_session_prompts(
         conv = await Conversation.get_one({"id": session.conversation_id})
     if not conv:
         return
-    local_id, someone_typeid = await _local_actor(local_user)
+    _local_id, someone_typeid = await _local_actor(local_user)
     async with _session_lock(session):
         # A drain never runs the same message twice, whatever the DB marker says.
         # Selection reads ``prompt_auto_handled``, which is a row a concurrent
@@ -1142,7 +1144,7 @@ async def redrive_session_prompts(
             if session.is_expired():  # the cap can pass mid-drain
                 await session.expire(local_is_host=True, someone_typeid=someone_typeid)
                 return
-            queued = [fm for fm in await _queued_turns(session, local_id) if fm.id not in ran]
+            queued = [fm for fm in await _queued_turns(session) if fm.id not in ran]
             if not queued:
                 return
             fm = queued[0]
@@ -1192,13 +1194,14 @@ async def process_inbound_prompt(fm_id: str, conversation_id: str) -> None:
         if not getattr(conv, "project_id", None) and not getattr(fm, "remote_worker_session_id", None):
             return
 
+        if await _local_is_guest_of(fm, local_id):
+            return  # the host typed into a session we are the guest of — it runs on the host
+
         session, host_id, someone_typeid = await _host_session_for(fm, conv, local_id)
 
         needs_consent = session.status in UNAPPROVED_STATUSES or not session.status
         standing = needs_consent and await _standing_grant(conv, host_id, fm.sender_id)
-        decision = decide_inbound_prompt(
-            status=session.status, standing_grant=standing, expired=session.is_expired()
-        )
+        decision = decide_inbound_prompt(status=session.status, standing_grant=standing, expired=session.is_expired())
         logger.info("[session] inbound fm=%s session=%s status=%s → %s", fm.id, session.id, session.status, decision)
 
         if decision is InboundDecision.IGNORE:
@@ -1217,6 +1220,25 @@ async def process_inbound_prompt(fm_id: str, conversation_id: str) -> None:
         await redrive_session_prompts(session, conv=conv, local_user=local_user)
     except Exception as e:  # noqa: BLE001
         logger.warning("[session] process_inbound_prompt failed: %s", e, exc_info=True)
+
+
+async def _local_is_guest_of(fm: "FlowMessage", local_id: Optional[str]) -> bool:
+    """True when ``fm`` belongs to a session this machine is the GUEST of.
+
+    The host may type into its own session; that prompt rides the conversation
+    to the guest too. The guest must not take it for an inbound request — its
+    mirror row has no project, so the turn could only fail ("not linked to a
+    project on the host") and report that failure back as the host's.
+    """
+    from flow_sdk.builtin.remote_worker_session import RemoteWorkerSession  # noqa: PLC0415
+    from flow_sdk.builtin.user import User  # noqa: PLC0415
+
+    sid = getattr(fm, "remote_worker_session_id", None)
+    session = await RemoteWorkerSession.resolve_state(sid) if sid else None
+    if session is None or not session.guest_user_id:
+        return False
+    cloud_id = (await User.current_sender_participant()).get("user_id")
+    return session.guest_user_id in {i for i in (local_id, cloud_id) if i}
 
 
 async def _standing_grant(conv: "Conversation", host_id: Optional[str], sender_id: Optional[str]) -> bool:

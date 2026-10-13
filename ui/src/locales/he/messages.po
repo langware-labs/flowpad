@@ -11805,6 +11805,7 @@ msgstr "משימת קבוצה נוצרה"
 msgid "Group task created with issues"
 msgstr "משימת קבוצה נוצרה עם בעיות"
 
+#: src/components/collaboration/SessionRoleBadge.tsx
 #: src/components/entity-card/entity-card-rows.ts
 msgid "Guest"
 msgstr "אורח"
@@ -12208,6 +12209,7 @@ msgstr "מנהל וו-וצקים"
 msgid "Hooks:"
 msgstr "קישורים:"
 
+#: src/components/collaboration/SessionRoleBadge.tsx
 #: src/components/entity-card/entity-card-rows.ts
 msgid "Host"
 msgstr "מארח"
@@ -28961,6 +28963,14 @@ msgstr ""
 
 #: src/pages/entry/AgentLaunchLanding.tsx
 msgid "You are signed in as {account}."
+msgstr ""
+
+#: src/components/collaboration/SessionRoleBadge.tsx
+msgid "You are the guest — prompts run on the host's machine"
+msgstr ""
+
+#: src/components/collaboration/SessionRoleBadge.tsx
+msgid "You are the host — prompts run on your machine"
 msgstr ""
 
 #: src/components/collaboration/StartRoomDialog.tsx

@@ -11805,6 +11805,7 @@ msgstr "Group task created"
 msgid "Group task created with issues"
 msgstr "Group task created with issues"
 
+#: src/components/collaboration/SessionRoleBadge.tsx
 #: src/components/entity-card/entity-card-rows.ts
 msgid "Guest"
 msgstr "Guest"
@@ -12208,6 +12209,7 @@ msgstr "Hooks Manager"
 msgid "Hooks:"
 msgstr "Hooks:"
 
+#: src/components/collaboration/SessionRoleBadge.tsx
 #: src/components/entity-card/entity-card-rows.ts
 msgid "Host"
 msgstr "Host"
@@ -28962,6 +28964,14 @@ msgstr "You are not part of an organization. Once you join or create one, its te
 #: src/pages/entry/AgentLaunchLanding.tsx
 msgid "You are signed in as {account}."
 msgstr "You are signed in as {account}."
+
+#: src/components/collaboration/SessionRoleBadge.tsx
+msgid "You are the guest — prompts run on the host's machine"
+msgstr "You are the guest — prompts run on the host's machine"
+
+#: src/components/collaboration/SessionRoleBadge.tsx
+msgid "You are the host — prompts run on your machine"
+msgstr "You are the host — prompts run on your machine"
 
 #: src/components/collaboration/StartRoomDialog.tsx
 msgid "You become the host — you decide what gets shared into the room."
