@@ -221,12 +221,11 @@ function pushRecent(code: string): void {
 }
 
 /**
- * Per-project language memory: every locale change (footer picker, the project's
- * own Language card, `window.setLocale`) converges in `setLocale`, which stamps
- * the current project — so the language a project is read in follows the project.
- * The equality guard breaks the apply→record feedback loop: `applyProjectLocale`
- * → `setLocale(project.locale)` lands here with an already-matching value and
- * no-ops.
+ * Write the project's SHARED language — the `locale` on the row, which travels
+ * to the hub and is what every member opens the project in. Only
+ * `setProjectLocale` (the project home's Language card) gets here; the footer
+ * never does, so an accidental footer switch can't change the language for
+ * everyone.
  */
 function stampProjectLocale(project: Project | null | undefined, code: string): void {
   if (!project || project.locale === code) return;
@@ -241,10 +240,28 @@ function stampProjectLocale(project: Project | null | undefined, code: string): 
 }
 
 /**
+ * This device's own language per project (footer picks), keyed by project id.
+ * Wins over the project's shared `locale` in `applyProjectLocale`.
+ */
+function personalProjectLocales(): Record<string, string> {
+  const value = instancePreferences.get(PrefKey.PROJECT_LOCALES);
+  return value && typeof value === 'object' ? (value as Record<string, string>) : {};
+}
+
+function setPersonalProjectLocale(projectId: string | null | undefined, code: string | null): void {
+  if (!projectId) return;
+  const current = personalProjectLocales();
+  if ((current[projectId] ?? null) === code) return;
+  const next = { ...current };
+  if (code) next[projectId] = code;
+  else delete next[projectId];
+  instancePreferences.set(PrefKey.PROJECT_LOCALES, next);
+}
+
+/**
  * Make a locale the active one — preference, recents, catalog, `<html>` attrs.
  * Deliberately does NOT touch the current project: this is "show the app in this
- * language", not "the user chose this language for this project". Only
- * `setLocale` (a real user choice) records onto the project.
+ * language", not "the user chose this language for this project".
  */
 async function activateLocale(code: string): Promise<void> {
   instancePreferences.set(PrefKey.LOCALE, code); // mirrors to localStorage (boot key)
@@ -253,9 +270,26 @@ async function activateLocale(code: string): Promise<void> {
   applyLocaleAttributes(code);
 }
 
+/**
+ * The user's own language switch (footer chip, Settings, `window.setLocale`).
+ * Local only: inside a project it is remembered as THIS device's language for
+ * that project, and the project's shared `locale` is left alone.
+ */
 export async function setLocale(code: string): Promise<void> {
   const next = isSupported(code) ? code : DEFAULT_LOCALE;
-  stampProjectLocale(dataContext.project, next);
+  setPersonalProjectLocale(dataContext.project?.id, next);
+  await activateLocale(next);
+}
+
+/**
+ * Change the project's language for EVERYONE — the project home's Language card,
+ * the only writer of the shared `locale`. Drops this device's own override for
+ * the project, so the user now reads it the way they just set it for all.
+ */
+export async function setProjectLocale(project: Project, code: string): Promise<void> {
+  const next = isSupported(code) ? code : DEFAULT_LOCALE;
+  stampProjectLocale(project, next);
+  setPersonalProjectLocale(project.id, null);
   await activateLocale(next);
 }
 
@@ -307,8 +341,8 @@ export async function stampNewProjectLocale(project: Project): Promise<void> {
  * unanswered one must not silently take the colour of the last project you were
  * in. Unset is left unset on the row, not stamped: `en-US` here is the meaning
  * of "no answer", not an answer the user gave. It becomes a real stored value
- * the moment they pick one (via the Language card or the footer chip, both of
- * which converge in `setLocale` → `stampProjectLocale`).
+ * the moment someone picks one on the Language card (`setProjectLocale`). A
+ * footer pick is this device's own override, and is checked first.
  *
  * The switch is fire-and-forget so no caller waits on it (the URL-first rule
  * keeps loaders fast); `<html lang/dir>` and the Lingui catalog land a tick
@@ -320,7 +354,8 @@ export function applyProjectLocale(project: Project): void {
   // this would resolve to en-US and yank a Hebrew reader into English on a page
   // that has no per-project language to offer instead. Leave their choice alone.
   if (isHubOnly()) return;
-  const target = isSupported(project.locale) ? project.locale : DEFAULT_LOCALE;
+  const personal = personalProjectLocales()[project.id];
+  const target = isSupported(personal) ? personal : isSupported(project.locale) ? project.locale : DEFAULT_LOCALE;
   if (target === getLocale()) return;
   void activateLocale(target).catch((err) => {
     console.warn('[locale] failed to apply project locale', err);

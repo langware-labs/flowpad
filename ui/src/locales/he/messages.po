@@ -25648,8 +25648,12 @@ msgid "The key box is empty."
 msgstr ""
 
 #: src/components/project-home/ProjectLanguageCard.tsx
-msgid "The language this project is worked in. Choosing one switches the app now, and switches back to it every time you open this project."
-msgstr "השפה שבה עובדים בפרויקט הזה. בחירת שפה משנה את האפליקציה כעת, וחוזרת אליה בכל פעם שהפרויקט נפתח."
+msgid "The language this project is worked in, for everyone in it. To change only your own language, use the language picker in the footer."
+msgstr ""
+
+#: src/components/project-home/ProjectLanguageCard.tsx
+#~ msgid "The language this project is worked in. Choosing one switches the app now, and switches back to it every time you open this project."
+#~ msgstr "השפה שבה עובדים בפרויקט הזה. בחירת שפה משנה את האפליקציה כעת, וחוזרת אליה בכל פעם שהפרויקט נפתח."
 
 #: src/components/data-sources/source-attention.ts
 msgid "The last poll failed on a configuration error."
