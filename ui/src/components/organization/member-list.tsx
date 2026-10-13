@@ -8,6 +8,7 @@ import {
   participantInitials,
   participantLabel,
   participantRoleLabel,
+  participantSubtitle,
 } from '@src/components/conversation/participant-display';
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import { assignableRolesForMember, isGroupMember, memberPrincipalId } from '@src/components/organization/member-roles';
@@ -47,6 +48,7 @@ export function MemberRow({
   const [busy, setBusy] = useState(false);
   const color = avatarColorForParticipant(member as never, isSelf);
   const label = participantLabel(member as never);
+  const subtitle = participantSubtitle(member);
   const initials = participantInitials(member as never);
   const role = participantRoleLabel(member as never);
   const pending = (member.status || '').toLowerCase() === 'pending';
@@ -90,6 +92,7 @@ export function MemberRow({
             <Trans> (you)</Trans>
           </span>
         )}
+        {subtitle && <span className="ml-2 text-xs text-muted-foreground">{subtitle}</span>}
       </span>
       {manage && actions && options.length > 0 && principalId ? (
         <select

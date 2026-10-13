@@ -98,7 +98,12 @@ from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse
 from flow_sdk.schema.data_spec.mcp_spec import McpSpec
 from flow_sdk.stream_inbox._locks import any_keyed_lock_held, keyed_lock_held, keyed_loop_lock, new_registry
-from flow_sdk.transcript_analyzer.worker_status import StatusDetail, WorkerStatus
+from flow_sdk.transcript_analyzer.worker_status import (
+    USER_INPUT_TOOLS,
+    StatusDetail,
+    WorkerStatus,
+    running_background_tasks,
+)
 from flow_sdk.transcript_analyzer.worker_status import is_terminal as is_worker_terminal
 
 if TYPE_CHECKING:
@@ -125,6 +130,20 @@ _DETACHED_TASKS: set["asyncio.Task"] = set()
 # Grace period before a detached self-restart tears down the worker, giving the
 # HTTP response time to flush back to the (about-to-die) caller.
 _SELF_RESTART_GRACE_S = 0.5
+
+#: ``switch-mode`` 409 message when background work still runs in the PTY. The
+#: frontend matches it to wait for the work instead of reporting a failure.
+BACKGROUND_TASKS_RUNNING = "background tasks are running"
+
+#: How far back to look for a pending question's answer (it lands right after).
+_PENDING_INPUT_TAIL_BYTES = 256 * 1024
+
+#: ``context_data`` key: the question the worker is blocked on, as its
+#: ``PreToolUse`` hook reported it. Claude may keep a pending ``AskUserQuestion``
+#: out of its transcript until it is answered, so the transcript alone cannot
+#: say a question is waiting. Cleared by the next prompt; ignored once the
+#: transcript carries the call's result.
+PENDING_USER_INPUT_KEY = "pending_user_input"
 # Gap between typing and Enter for TUIs that don't submit on paste (codex/copilot);
 # mirrors Shell.write_then_submit's submit_delay. claude submits on paste → no gap.
 _PTY_SUBMIT_SETTLE_S = 0.4
@@ -2032,6 +2051,15 @@ class AgenticProcess(Entity):
         if (resp := self._reject_if_turn_in_flight()) is not None:
             return resp
         if isinstance(switch, SwitchToCliBody):
+            # Leaving the PTY kills its background work (a background shell, a
+            # subagent) along with it. The turn has ended, so ``busy`` is False —
+            # wait for the work's own task-notification instead.
+            if (
+                self.pty_mode
+                and (path := self.transcript_path)
+                and await asyncio.to_thread(running_background_tasks, path)
+            ):
+                return ApiFailResponse(message=BACKGROUND_TASKS_RUNNING, status_code=409)
             return await self._enter_cli_mode()
         # INTERACTIVE: locked start_pty (not _perform_open) so a watchdog race
         # can't double-spawn. Connection id is the one request-scoped value the
@@ -3272,6 +3300,10 @@ class AgenticProcess(Entity):
         Args:
             instruction: The prompt text to send.
         """
+        # A new turn answers (or moves past) any question the hook reported.
+        if PENDING_USER_INPUT_KEY in (self.context_data or {}):
+            self.context_data = {k: v for k, v in self.context_data.items() if k != PENDING_USER_INPUT_KEY}
+            await self.save()
         if not self.pty_mode:
             admission = try_admit_prompt(self.id)
             if admission is None:
@@ -5439,6 +5471,55 @@ class AgenticProcess(Entity):
         """Subscribe to every hook delivered to this process."""
         return self.hooks.set_callback(callback)
 
+    def enable_pending_question_hook(self) -> None:
+        """Have the worker report the moment it blocks on a question
+        (``PreToolUse`` for ``USER_INPUT_TOOLS``), where its driver can.
+
+        Set at creation, before the first launch, so it never flips
+        ``restart_required``.
+        """
+        from flow_sdk.builtin.hooks.types import HookScope  # noqa: PLC0415
+
+        event = HookEventType.PRE_TOOL_USE
+        if event not in self.hooks.supported_events(HookScope.PROCESS):
+            return
+        events = set(self.process_hook_events or [])
+        if event.value not in events:
+            self.process_hook_events = sorted({*events, event.value})
+
+    async def _note_pending_user_input(self, raw: dict) -> None:
+        """Record the question a ``PreToolUse`` hook reports the worker is blocked on."""
+        tool_name = raw.get("tool_name")
+        tool_use_id = raw.get("tool_use_id")
+        if tool_name not in USER_INPUT_TOOLS or not tool_use_id:
+            return
+        pending = {"tool_use_id": tool_use_id, "tool_name": tool_name, "input": raw.get("tool_input") or {}}
+        self.context_data = {**(self.context_data or {}), PENDING_USER_INPUT_KEY: pending}
+        await self.save()
+
+    def pending_user_input(self) -> dict | None:
+        """The hook-reported question still waiting for its answer, or None.
+
+        Waiting means the transcript has no result for the call yet — an answer
+        typed in the terminal lands there, and so does Claude's own
+        ``[Tool call interrupted]`` once a resumed session moves past it.
+        """
+        pending = (self.context_data or {}).get(PENDING_USER_INPUT_KEY)
+        if not isinstance(pending, dict) or not pending.get("tool_use_id"):
+            return None
+        path = self.transcript_path
+        if path is not None:
+            try:
+                with path.open("rb") as fh:
+                    fh.seek(0, 2)
+                    fh.seek(max(0, fh.tell() - _PENDING_INPUT_TAIL_BYTES))
+                    tail = fh.read().decode("utf-8", errors="replace")
+            except OSError:
+                tail = ""
+            if f'"tool_use_id":"{pending["tool_use_id"]}"' in tail:
+                return None
+        return pending
+
     async def on_hook(self, data: AgentHookData):
         """Emit and dispatch one canonical, process-targeted hook event.
 
@@ -5453,6 +5534,8 @@ class AgenticProcess(Entity):
         self.hooks.require(event)
         if event.value not in (self.process_hook_events or []):
             raise ValueError(f"process hook event is not configured: {event.value}")
+        if event is HookEventType.PRE_TOOL_USE:
+            await self._note_pending_user_input(data.hook_data.get("raw_hook_data") or {})
 
         payload = data.model_dump(mode="python")
         try:
@@ -6581,6 +6664,7 @@ class AgenticProcess(Entity):
         # signed-out turn writes the identical one, so the harness-login modal
         # keyed on it never re-opened after the user dismissed it once.
         data["worker_status_detail_id"] = detail.entry_id if detail else None
+        data[PENDING_USER_INPUT_KEY] = self.pending_user_input()
         data["status"] = self.status
         busy = is_turn_busy(self, computed)
         data["busy"] = busy
@@ -6662,6 +6746,10 @@ class AgenticProcess(Entity):
                 self.driver.name,
                 self.status,
             )
+        # A question the hook reported outranks a mid-turn tail: the worker is
+        # waiting on the user, not working (see ``pending_user_input``).
+        if discovered is not WorkerStatus.ERROR and self.pending_user_input() is not None:
+            return WorkerStatus.PENDING_USER
         if self.status == ProcessStatus.STOPPED.value:
             return discovered if discovered and is_worker_terminal(discovered) else None
         return discovered
