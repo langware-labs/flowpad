@@ -19,29 +19,20 @@ cookie on its response.
 
 from __future__ import annotations
 
-import logging
 import os
-import secrets
-from pathlib import Path
 
 from starlette.requests import HTTPConnection
 from starlette.types import ASGIApp, Receive, Scope, Send
 
-from flow_sdk.instance_settings import get_instance_settings
+from flow_sdk.instance_settings import cookie_gate
 
 from .cookie_gate_middleware import deny, presents
 
-LOCAL_TOKEN_FILENAME = ".cookie_gate"
 OFF_SWITCH_ENV = "FLOWPAD_COOKIE_GATE"
 # Per port: cookies ignore the port, so one name would let two local instances
 # in the same browser overwrite each other's cookie.
 LOCAL_COOKIE_PREFIX = "cookie-gate-"
 LOCAL_COOKIE_MAX_AGE = 365 * 24 * 3600
-
-#: This instance's token file — the one the CLI and Electron read.
-LOCAL_TOKEN_PATH = get_instance_settings().instance_dir / LOCAL_TOKEN_FILENAME
-
-logger = logging.getLogger(__name__)
 
 
 class LocalCookieGateMiddleware:
@@ -55,7 +46,7 @@ class LocalCookieGateMiddleware:
             await self.app(scope, receive, send)
             return
 
-        token = _local_token()
+        token = cookie_gate.get_cookie_gate() or cookie_gate.create_cookie_gate()
 
         conn = HTTPConnection(scope)
         if token is not None and presents(conn, token, local_cookie_name(_request_port(scope, conn))):
@@ -138,58 +129,3 @@ def _with_local_cookie(send: Send, conn: HTTPConnection, token: str) -> Send:
 
     return wrapped
 
-
-# ---------------------------------------------------------------------------
-# The token file — what the CLI and Electron read to get past this gate.
-# ---------------------------------------------------------------------------
-
-
-def read_local_token(path: Path | None = None) -> str | None:
-    """The local token (this instance's ``LOCAL_TOKEN_PATH`` by default), or
-    ``None`` when there is none. The one reader: this gate and the CLI's
-    ``gate_headers`` both come through here. A plain-file read, so nothing is
-    cached. Never raises."""
-    path = path or LOCAL_TOKEN_PATH  # resolved per call, not bound at definition
-    try:
-        value = path.read_text(encoding="utf-8").strip()
-    except OSError:
-        return None
-    return value or None
-
-
-def _create_local_token(path: Path) -> str | None:
-    """Write a fresh token unless one already exists, then return whatever is there.
-
-    The token is written to a private temp file first and hard-linked into place:
-    ``os.link`` refuses to replace an existing file, so when two processes race on
-    first boot exactly one token survives and both read the same value back. 0600
-    applies on posix; on Windows the file inherits the profile directory's ACL.
-    """
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(f"{path.name}.{os.getpid()}.{secrets.token_hex(4)}.tmp")
-    fd = os.open(tmp, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
-    with os.fdopen(fd, "w", encoding="utf-8") as f:
-        f.write(secrets.token_urlsafe(32))
-    try:
-        os.link(tmp, path)
-    except FileExistsError:
-        pass  # a racing creator won; read its token below
-    finally:
-        tmp.unlink(missing_ok=True)
-    return read_local_token(path)
-
-
-def _local_token() -> str | None:
-    """This instance's token, created on first use. ``None`` when it cannot be
-    created or read — the caller then refuses rather than passing everything."""
-    token = read_local_token(LOCAL_TOKEN_PATH)
-    if token is not None:
-        return token
-    try:
-        token = _create_local_token(LOCAL_TOKEN_PATH)
-    except OSError as e:
-        logger.warning("cookie-gate: could not create local token at %s: %s", LOCAL_TOKEN_PATH, e)
-        return None
-    if token is not None:
-        logger.info("cookie-gate: created local token at %s", LOCAL_TOKEN_PATH)
-    return token

@@ -20,6 +20,7 @@ from starlette.testclient import TestClient
 
 import flow_sdk.server.middleware.cookie_gate_middleware as gate
 import flow_sdk.server.middleware.local_cookiegate_middleware as local
+from flow_sdk.instance_settings import cookie_gate
 
 pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
 
@@ -66,7 +67,7 @@ def test_concurrent_first_requests_agree_on_one_token(local_gate):
     results: list[str | None] = []
 
     def create():
-        results.append(local._create_local_token(local_gate))
+        results.append(cookie_gate.create_cookie_gate())
 
     threads = [threading.Thread(target=create) for _ in range(8)]
     for t in threads:
@@ -76,7 +77,7 @@ def test_concurrent_first_requests_agree_on_one_token(local_gate):
 
     on_disk = local_gate.read_text(encoding="utf-8")
     assert results == [on_disk] * 8
-    assert [p.name for p in local_gate.parent.iterdir()] == [local.LOCAL_TOKEN_FILENAME]
+    assert [p.name for p in local_gate.parent.iterdir()] == [cookie_gate.LOCAL_TOKEN_FILENAME]
 
 
 def test_off_switch_without_a_file_passes_and_creates_nothing(local_gate, monkeypatch):
@@ -106,7 +107,7 @@ def test_a_token_that_cannot_be_created_fails_closed(tmp_path, monkeypatch):
     blocker = tmp_path / "not-a-dir"
     blocker.write_text("", encoding="utf-8")  # the token's parent is a file: mkdir fails
     monkeypatch.delenv(local.OFF_SWITCH_ENV, raising=False)
-    monkeypatch.setattr(local, "LOCAL_TOKEN_PATH", blocker / local.LOCAL_TOKEN_FILENAME)
+    monkeypatch.setattr(cookie_gate, "LOCAL_TOKEN_PATH", blocker / cookie_gate.LOCAL_TOKEN_FILENAME)
 
     with patch.object(gate, "get_cookie_gate", return_value=None):
         response = TestClient(_app()).post("/api/v1/graph/shell")

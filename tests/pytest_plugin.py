@@ -506,10 +506,11 @@ def local_gate(tmp_path, monkeypatch):
 
     import flow_sdk.server.middleware.cookie_gate_middleware as gate
     import flow_sdk.server.middleware.local_cookiegate_middleware as local
+    from flow_sdk.instance_settings import cookie_gate
 
-    path = tmp_path / "instance" / local.LOCAL_TOKEN_FILENAME
+    path = tmp_path / "instance" / cookie_gate.LOCAL_TOKEN_FILENAME
     monkeypatch.delenv(local.OFF_SWITCH_ENV, raising=False)
-    monkeypatch.setattr(local, "LOCAL_TOKEN_PATH", path)
+    monkeypatch.setattr(cookie_gate, "LOCAL_TOKEN_PATH", path)
     with patch.object(gate, "get_cookie_gate", return_value=None):
         yield path
 
