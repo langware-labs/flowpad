@@ -1,5 +1,5 @@
 import type { DockPointer } from '@src/navigation/DockPointer';
-import { assetTargetLookup, type AssetRow } from '@src/navigation/record-type-nav';
+import { assetScreenPointer, assetTargetLookup, type AssetRow } from '@src/navigation/record-type-nav';
 import type { Browseable } from './types';
 
 /**
@@ -31,12 +31,13 @@ export function openBrowseable(node: Browseable, navigate: (pointer: DockPointer
 
 /**
  * How an asset row opens: through its type's lookup when the target needs one (a dataset
- * opens in its editor app), else at `pointer`. One answer for every asset tree, and the same
- * one the Assets page and the record list give.
+ * opens in its editor app), else on its type's own screen when it has one and no asset editor
+ * (a graph workflow, a trigger, a schema), else at `pointer`. One answer for every asset tree,
+ * and the same one the Assets page and the record list give.
  */
 export function assetRowOpen(asset: AssetRow, pointer: DockPointer): Pick<Browseable, 'pointer' | 'activate'> {
   const lookup = assetTargetLookup(asset);
-  if (!lookup) return { pointer };
+  if (!lookup) return { pointer: assetScreenPointer(asset) ?? pointer };
   return {
     pointer: null,
     activate: async (navigate) => {

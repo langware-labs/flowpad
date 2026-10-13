@@ -60,6 +60,10 @@ class AssetEditor(StrEnum):
     CREDENTIAL = "credential"
     # A diagnosis request: a local row whose request and runs live on the hub.
     DIAGNOSIS_REQUEST = "diagnosis_request"
+    # A declared setup node: its steps and their live state, and the wizard each hook fires.
+    ASSET_SETUP = "asset_setup"
+    # A compute op: what it does, whether it is done (Check), and Run.
+    COMPUTE_OP = "compute_op"
     # File-only display viewers — no backing record type, routed by extension
     # on the TS side (like CODE, they never appear in TYPE_TO_EDITOR).
     HTML = "html"
@@ -104,6 +108,8 @@ EDITOR_TYPES: dict[AssetEditor, list[str]] = {
     AssetEditor.LLM_ENDPOINT: [EntityType.LLM_ENDPOINT],
     AssetEditor.CREDENTIAL: [EntityType.CREDENTIAL],
     AssetEditor.DIAGNOSIS_REQUEST: [EntityType.DIAGNOSIS_REQUEST],
+    AssetEditor.ASSET_SETUP: [EntityType.ASSET_SETUP],
+    AssetEditor.COMPUTE_OP: [EntityType.COMPUTE_OP],
     AssetEditor.HTML: [],
     AssetEditor.MCP_APP: [],
     AssetEditor.IMAGE: [],

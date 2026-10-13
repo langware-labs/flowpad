@@ -21,4 +21,5 @@ ASSET_SETUP = TypeInfo(
     family="asset_setup",
     asset_spec=AssetSetupSpec,
     owns_main_ref=True,
+    editor="asset_setup",
 )
