@@ -8658,6 +8658,10 @@ msgstr "جارٍ اكتشاف {typeLabel}…"
 msgid "Discuss"
 msgstr "نقاش"
 
+#: src/i18n/pref-labels.ts
+msgid "Disk I/O backend"
+msgstr "محرّك الإدخال/الإخراج للقرص"
+
 #: src/components/diagnose/diagnosis-action-buttons.tsx
 #: src/components/diagnose/diagnosis-action-buttons.tsx
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
@@ -12450,10 +12454,6 @@ msgstr "تمت فهرسة {indexedCount} سجل"
 #: src/components/helpdesk/HelpdeskLoadDialog.tsx
 msgid "indexed with the project"
 msgstr "مفهرس مع المشروع"
-
-#: src/i18n/pref-labels.ts
-msgid "Indexer backend"
-msgstr "محرّك الفهرسة"
 
 #: src/components/helpdesk/HelpdeskLoadDialog.tsx
 msgid "Indexing"
@@ -24586,8 +24586,8 @@ msgid "Subprocess"
 msgstr "عملية فرعية"
 
 #: src/i18n/pref-labels.ts
-msgid "Subprocess runs the file walk in a separate process, so a large or slow tree can’t stall the server (database writes stay in the server either way). Thread runs it in-process — lower startup cost, better for small projects. No effect when the Rust indexer backend is selected."
-msgstr "«عملية فرعية» يشغّل مسح الملفات في عملية منفصلة، بحيث لا تستطيع شجرة كبيرة أو بطيئة تعطيل الخادم (تبقى عمليات الكتابة في قاعدة البيانات داخل الخادم في الحالتين). «خيط» يشغّله داخل العملية — تكلفة بدء أقل، وأفضل للمشاريع الصغيرة. لا تأثير له عند اختيار محرّك الفهرسة Rust."
+msgid "Subprocess runs the file walk in a separate process, so a large or slow tree can’t stall the server (database writes stay in the server either way). Thread runs it in-process — lower startup cost, better for small projects."
+msgstr "«عملية فرعية» يشغّل مسح الملفات في عملية منفصلة، بحيث لا تستطيع شجرة كبيرة أو بطيئة تعطيل الخادم (تبقى عمليات الكتابة في قاعدة البيانات داخل الخادم في الحالتين). «خيط» يشغّله داخل العملية — تكلفة بدء أقل، وأفضل للمشاريع الصغيرة."
 
 #: src/components/automations/automation-words.ts
 #: src/components/automations/RunsView.tsx
@@ -28308,8 +28308,8 @@ msgstr ""
 #~ msgstr ""
 
 #: src/i18n/pref-labels.ts
-msgid "Which engine runs filesystem indexing: the built-in Python FSIndexer, or the external Rust indexer (requires FLOWPAD_RS_INDEXER_BIN on the server; silently falls back to Python when unavailable). Takes effect on the next index run."
-msgstr "المحرّك الذي ينفّذ فهرسة نظام الملفات: FSIndexer المدمج بلغة Python، أو مُفهرِس Rust الخارجي (يتطلب FLOWPAD_RS_INDEXER_BIN على الخادم؛ ويعود بصمت إلى Python عند عدم توفره). يسري مفعوله في عملية الفهرسة التالية."
+msgid "Which engine does the heavy file scanning: Python (built in), or Rust (a bundled binary, much faster on large projects). Falls back to Python automatically when the Rust binary is unavailable. Takes effect on the next scan."
+msgstr "المحرّك الذي ينفّذ فحص الملفات الثقيل: Python (مدمج)، أو Rust (ملف ثنائي مرفق، أسرع بكثير في المشاريع الكبيرة). يعود تلقائيًا إلى Python عندما لا يتوفر ملف Rust الثنائي. يسري مفعوله عند الفحص التالي."
 
 #: src/components/task-receive/LaunchDialog.tsx
 msgid "Which project should it work on?"
