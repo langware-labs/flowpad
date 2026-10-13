@@ -17,6 +17,7 @@ import {
   dataManager,
   editorForType,
   isTypeId,
+  projectSchemas,
   RecordType,
   TypeId,
 } from '@sdk';
@@ -225,9 +226,17 @@ export const RECORD_TYPE_NAV: Partial<Record<string, RecordTypeNav>> = {
       return tid ? DockPointer.forGraphWorkflow(tid.id) : null;
     },
   },
-  // A schema opens on the project's schema tree, at its kind (the schema's name).
+  // A schema opens on its project's schema tree, selected. The tree addresses a schema by its FULL
+  // kind (namespace included), which a row does not carry — so the project's schemas are asked for
+  // the one with this name. Outside a project it has no tree and opens as its folder.
   data_schema: {
-    dockPointer: (r) => (r.project_id && r.name ? DockPointer.forSchemaTree(r.project_id, [r.name]) : null),
+    resolvePointer: async (asset) => {
+      const row = asset as SearchRow;
+      if (!row.project_id) return row.asset_ref ? DockPointer.forAssetEditor(row.record_type, row.asset_ref) : null;
+      const tree = await projectSchemas(row.project_id).catch(() => null);
+      const node = tree?.schemas.find((schema) => schema.name === row.name || schema.kind === row.name);
+      return DockPointer.forSchemaTree(row.project_id, node ? [node.kind] : []);
+    },
   },
   // A help desk opens as its project's portal.
   helpdesk: {
