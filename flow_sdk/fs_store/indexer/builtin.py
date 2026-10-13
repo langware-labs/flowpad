@@ -56,8 +56,8 @@ def build_default_indexer(scan_mode: "ScanMode | None" = None) -> FSIndexer:
 
     ``scan_mode`` selects where the Python backend's *discovery* phase runs
     (``preferences.auto_index.index_function``). Pass it explicitly to pin the
-    mode — ``scan_child`` MUST do so, since defaulting there would re-read the
-    preference, resolve SUBPROCESS again, and fork-bomb.
+    mode. ``scan_child`` constructs a plain ``FSIndexer`` with the same
+    discovery graph, without selecting a backend or loading runtime bindings.
     """
     # Transcript handlers are opt-in (full-JSONL parse is expensive — see
     # flow_sdk/fs_store/transcript_indexer/).
@@ -72,15 +72,22 @@ def build_default_indexer(scan_mode: "ScanMode | None" = None) -> FSIndexer:
 
 
 def register_default_functions(idx: FSIndexer) -> None:
+    """Bind runtime parsers/observers, then install the shared discovery graph."""
     from flow_sdk.core.asset_type_bindings import register_asset_runtime_bindings
-    register_asset_runtime_bindings()
-    """Wire every production walker onto ``idx`` — the one registration graph.
 
-    Split from ``build_default_indexer`` so a caller that needs the graph but
-    not the roots (``indexable_types``) does not walk
-    anything to get it.
-    """
+    register_asset_runtime_bindings()
     import flow_sdk.fs_store.indexer.registrations  # noqa: F401, PLC0415
+
+    register_discovery_functions(idx)
+
+
+def register_discovery_functions(idx: FSIndexer) -> None:
+    """Install filesystem walkers using declarations, without importing entities.
+
+    The subprocess performs discovery only. Database parsers and post-sync
+    observers belong to the parent index phase, not to every fresh scan child.
+    Both paths share this exact walker graph.
+    """
     from flow_sdk.fs_store.indexer.functions.claude_hook import (
         claude_hook_files_extras_fn,
         claude_hook_files_fn,

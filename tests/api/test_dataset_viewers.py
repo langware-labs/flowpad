@@ -60,7 +60,7 @@ async def test_viewers_rank_nested_then_specific_kind_then_any(bootstrapped_clie
     ], "outside the dataset its nested viewer is nobody's; ties go by name"
 
     [best] = [r for r in (await bootstrapped_client.get(f"/api/v1/viewers/{sub}")).json()["data"] if r["name"] == f"specific-{ns}"]
-    module = await bootstrapped_client.get(f"/api/v1/graph/service_endpoint/{best['endpoint']}/service/{best['module']}")
+    module = await bootstrapped_client.get(f"/api/v1/graph/service_endpoint/{best['endpoint']}/service/{best['route']}/{best['module']}")
     assert module.status_code == 200, module.text
     assert module.headers["content-type"].startswith("text/javascript"), "a browser imports only JavaScript"
 

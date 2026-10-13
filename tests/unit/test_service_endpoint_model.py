@@ -28,9 +28,11 @@ from flow_sdk.schema.data_spec.service_endpoint_spec import (
     McpProtocol,
     ProxyBackend,
     RestProtocol,
+    RoutedBackend,
     StaticBackend,
     WebAppProtocol,
     WorkspaceProtocol,
+    default_subkind,
     surface_of,
 )
 from flow_sdk.schema.types import EntityType
@@ -46,6 +48,7 @@ CONTRACT_FIELDS = {
     "project_id",
     "protocol",
     "status",
+    "subkind",
     "supports_direct_access",
     "type",
     "webapp_id",
@@ -204,6 +207,91 @@ def test_backend_wire_form_matches_the_hub():
         "start_cmd": None,
         "health": "/",
     }
+
+
+# ── subkind: what it is for ─────────────────────────────────────────────────
+
+
+@pytest.mark.parametrize(
+    "protocol, expected",
+    [
+        (PROTOCOL_WORKSPACE, "system"),
+        (PROTOCOL_API_CHAT_OPENAI, "agent"),
+        (PROTOCOL_WEB_APP, "app"),
+        (PROTOCOL_API_REST, "service"),
+        (PROTOCOL_API_MCP, "service"),
+    ],
+)
+def test_a_subkind_is_derived_from_the_protocol_as_on_the_hub(protocol, expected):
+    """MCP is a protocol, not a purpose: the hub's own MCP servers are written ``system`` by name."""
+    assert default_subkind(protocol) == expected
+    assert _endpoint(protocol={"spec_kind": protocol}).subkind == expected
+
+
+def test_the_subkind_set_is_closed():
+    for subkind in ("system", "admin", "app", "agent", "service"):
+        assert _endpoint(subkind=subkind).subkind == subkind
+    with pytest.raises(ValidationError):
+        _endpoint(subkind="mcp")
+
+
+# ── routed: one proxy, a mount per app ──────────────────────────────────────
+
+_ROUTED = {
+    "type": "routed",
+    "routes": {
+        "": {"backend": {"type": "static", "root": "/srv/shop"}, "webapp_id": "w-root", "artifact_id": None},
+        "docs": {
+            "backend": {"type": "proxy", "port": 5173, "start_cmd": None, "health": "/"},
+            "webapp_id": None,
+            "artifact_id": "a-docs",
+        },
+    },
+}
+
+
+def test_a_routed_backend_wire_form_matches_the_hub():
+    endpoint = _endpoint(name="app", subkind="app", protocol={"spec_kind": PROTOCOL_WEB_APP}, backend=_ROUTED)
+    assert isinstance(endpoint.backend, RoutedBackend)
+    assert endpoint.model_dump(mode="json")["backend"] == _ROUTED
+
+
+def test_the_first_segment_picks_the_mount_and_anything_else_is_the_root_app():
+    backend = RoutedBackend.model_validate(_ROUTED)
+    assert backend.resolve("docs/guide/a.html") == ("docs", "guide/a.html")
+    assert backend.resolve("docs") == ("docs", "")
+    assert backend.resolve("assets/app.js") == ("", "assets/app.js")
+    assert backend.resolve("") == ("", "")
+    rootless = RoutedBackend(routes={"docs": _ROUTED["routes"]["docs"]})
+    assert rootless.resolve("assets/app.js") == (None, "")
+
+
+@pytest.mark.parametrize("mount", ["a/b", "../x", " x", "x y", "?q"])
+def test_a_mount_is_one_path_segment(mount):
+    with pytest.raises(ValidationError):
+        RoutedBackend(routes={mount: {"backend": {"type": "static", "root": "/srv"}}})
+
+
+def test_a_route_serves_files_or_a_process_never_a_channel_or_another_proxy():
+    for backend in ({"type": "channel", "data_source_id": "s1"}, {"type": "routed", "routes": {}}):
+        with pytest.raises(ValidationError):
+            RoutedBackend(routes={"x": {"backend": backend}})
+
+
+async def test_the_audience_proxy_is_a_lookup_by_deployment_and_subkind():
+    deployment = f"deployment-{uuid.uuid4()}"
+    web = {"spec_kind": PROTOCOL_WEB_APP}
+    app = _endpoint(name="app", subkind="app", parent_type_id=deployment, protocol=web, backend=_ROUTED)
+    admin = _endpoint(name="admin", subkind="admin", parent_type_id=deployment, protocol=web, backend=_ROUTED)
+    await app.save()
+    await admin.save()
+    await _endpoint(name="chat", parent_type_id=deployment).save()
+
+    assert (await ServiceEndpoint.audience_proxy(deployment, "app")).id == app.id
+    assert (await ServiceEndpoint.audience_proxy(deployment, "admin")).id == admin.id
+    assert await ServiceEndpoint.audience_proxy(f"deployment-{uuid.uuid4()}", "app") is None
+    with pytest.raises(ValueError):
+        await ServiceEndpoint.audience_proxy(deployment, "system")
 
 
 # ── lookup ──────────────────────────────────────────────────────────────────

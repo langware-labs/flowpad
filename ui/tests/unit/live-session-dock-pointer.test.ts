@@ -46,3 +46,11 @@ describe('DockPointer.forLiveSession', () => {
     expect(tid!.id).toBe(SID);
   });
 });
+
+describe('a diagnosis dock', () => {
+  it('targets the FlowpadDiagnosis entity, not a "diagnosis" type that does not exist', () => {
+    const target = new DockPointer(ViewType.DIAGNOSIS, SID).targetTypeId;
+    expect(target?.type).toBe('flowpad_diagnosis');
+    expect(target?.id).toBe(SID);
+  });
+});

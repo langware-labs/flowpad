@@ -14,7 +14,6 @@ import { ActivityDetailsModalRoot } from '@src/components/footer/ActivityDetails
 import { WikiModalRoot } from '@src/components/wiki-tip/WikiModalRoot';
 import { RunPreviewRoot } from '@src/components/runs/RunPreviewRoot';
 import { FilePreviewRoot } from '@src/components/file-preview/FilePreviewRoot';
-import { CleanupModal } from '@src/components/recovery/cleanup-modal';
 import { DeleteAssetModal } from '@src/components/assets/delete-asset-modal';
 import { InputPromptModal } from '@src/components/ui/input-prompt-modal';
 import { ImageAnnotatorRoot } from '@src/components/image-annotator/image-annotator-store';
@@ -144,7 +143,6 @@ const AppContent = ({ children }: { children: React.ReactNode }) => {
         {/* `<DiagnoseErrorModal/>` is mounted in `main.tsx`, above the router:
             the root error boundary replaces this whole tree, and the error
             screen's diagnose button still needs a host. */}
-        <CleanupModal />
         <DeleteAssetModal />
         <InputPromptModal />
         <ImageAnnotatorRoot />

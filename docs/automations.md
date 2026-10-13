@@ -59,7 +59,11 @@ An automation may carry an **`if`** and a **`then`** (`docs/snippets/stream-inbo
   stamps (the session keyed to the conversation, the message as a chip, what the rule decided
   under `context_data["automation"]`), the envelope under `EVENT`. The state is in scope only
   when a gate caught one: a `then` with no gate runs its agent with no input. A rule with a
-  `then` runs that instead of `actions`.
+  `then` runs that instead of `actions`. A `run_script` (in `then` or in the legacy `actions`) may
+  be PROJECT-RELATIVE (`agentic-assets/trigger/<name>/run.sh`): it resolves under the rule's
+  project folder, so a rule checked into a project runs the same on every clone; an absolute path
+  still works but belongs to one checkout. A rule on `dataset.rows.changed` names its dataset with
+  `tag_target` (`dataset:<id>`), or it fires for every dataset write on the machine.
 - Log rows gain `decision`, `subject_id` and `wizard` (an outline — each step's exit code, short
   detail and session, never its output); `AutomationRun` mirrors them;
   `AutomationSummary` gains `last_runs` and `passed_over`; the top bar's last-hour count is its own

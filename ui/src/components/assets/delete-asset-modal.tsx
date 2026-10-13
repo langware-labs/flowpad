@@ -1,5 +1,5 @@
 /**
- * Imperative delete-asset confirmation modal — mirrors the cleanup-modal
+ * Imperative delete-asset confirmation modal — the external-store
  * pattern (external store + singleton component mounted at the app root).
  * Callers anywhere (sidebar toolbar actions, editor header buttons) can
  * trigger the same dialog without owning React state for it.

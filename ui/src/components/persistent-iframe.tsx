@@ -1,3 +1,4 @@
+import { VISIBILITY_MESSAGE, VISIBILITY_PLEASE_MESSAGE } from '@sdk/apps/host';
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react';
 
 interface PersistentIframeProps {
@@ -41,12 +42,34 @@ class IframeRegistry {
   private activeOwners = new Map<string, IframeOwner>();
   private resizeObservers = new Map<string, ResizeObserver>();
   private positionCleanups = new Map<string, () => void>();
+  // The cache key each frame was last loaded under. Kept HERE, not in the component: a display that
+  // unmounts its frame while the app is down remounts it with the key already advanced, and a
+  // component-local "last key" would then see no change and re-reveal the parked error page.
+  private loadedKeys = new Map<string, unknown>();
 
   static getInstance(): IframeRegistry {
     if (!IframeRegistry.instance) {
       IframeRegistry.instance = new IframeRegistry();
     }
     return IframeRegistry.instance;
+  }
+
+  private constructor() {
+    // A guest that just loaded asks whether it is on screen: a notice sent before it listened is
+    // gone. Answered for its own frame only (`isGuest`). Here, not in the display component: a
+    // parked frame has no component mounted to answer for it.
+    window.addEventListener('message', (event: MessageEvent) => {
+      if ((event.data as { type?: string } | null)?.type !== VISIBILITY_PLEASE_MESSAGE) return;
+      for (const src of this.iframes.keys()) {
+        if (this.isGuest(src, event.source)) this.tellVisibility(src);
+      }
+    });
+  }
+
+  // A parked frame is hidden with CSS, which its guest cannot see; the SDK folds this notice into
+  // the guest's own `document.hidden` (`adoptHostVisibility` in `@sdk/apps/host`).
+  private tellVisibility(src: string): void {
+    this.postToGuest(src, { type: VISIBILITY_MESSAGE, hidden: this.containers.get(src)?.className !== SHOWN_CLASS });
   }
 
   /**
@@ -193,6 +216,7 @@ class IframeRegistry {
 
       // Show iframe
       container.className = SHOWN_CLASS;
+      this.tellVisibility(src);
 
       // Set up resize observer to keep position updated
       const resizeObserver = new ResizeObserver(() => {
@@ -245,6 +269,7 @@ class IframeRegistry {
     const container = this.containers.get(src);
     if (container) {
       container.className = PARKED_CLASS;
+      this.tellVisibility(src);
     }
     this.clearPositionTracking(src);
   }
@@ -299,6 +324,15 @@ class IframeRegistry {
     this.iframes.delete(src);
     this.loadingStates.delete(src);
     this.errorStates.delete(src);
+    this.loadedKeys.delete(src);
+  }
+
+  /** Reload the frame when it is asked for under a key other than the one it was loaded with. */
+  syncKey(src: string, key: unknown): void {
+    const known = this.loadedKeys.has(src);
+    const stale = known && this.loadedKeys.get(src) !== key;
+    this.loadedKeys.set(src, key);
+    if (stale) this.refresh(src);
   }
 
   refresh(src: string): void {
@@ -338,8 +372,6 @@ const PersistentIframe = forwardRef<PersistentIframeHandle, PersistentIframeProp
     // Availability is decided by `useWebappDiagnostics`, which asks the endpoint's
     // machine to probe its port directly. This component is purely the
     // mechanism: it mounts a frame and reports load state.
-    const cacheKeyRef = useRef(cacheKey);
-
     const refreshIframe = useCallback(() => {
       registry.refresh(src);
     }, [src]);
@@ -356,11 +388,8 @@ const PersistentIframe = forwardRef<PersistentIframeHandle, PersistentIframeProp
     );
 
     useEffect(() => {
-      if (cacheKeyRef.current !== cacheKey) {
-        refreshIframe();
-        cacheKeyRef.current = cacheKey;
-      }
-    }, [cacheKey, refreshIframe]);
+      registry.syncKey(src, cacheKey);
+    }, [cacheKey, src]);
 
     // Get current iframe states
     const isIframeLoading = registry.getLoadingState(src);

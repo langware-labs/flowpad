@@ -91,7 +91,7 @@ async def execute_setup(
     try:
         result = await setup_tree(
             root_id, resolve_node=resolve_node, activity_path=activity_path, subject_entity=subject_entity,
-            workdir=cwd or workdir, shell=shell, inputs=inputs, approved=approved, wizard_id=SETUP_RUN,
+            workdir=cwd or workdir, shell=shell, inputs=inputs, approved=approved,
             on_change=changed, **resolvers, **seams,
         )
         record_tree(key, result, already_locked=True)

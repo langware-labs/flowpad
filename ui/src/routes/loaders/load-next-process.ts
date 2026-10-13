@@ -39,8 +39,7 @@ export interface CleanupRecord {
   kind: CleanupKind;
   processId?: string;
   shellId?: string;
-  /** User-friendly description of what went wrong — used for the toast on the
-   * single-cleanup path. */
+  /** User-friendly description of what went wrong — shown in the cleanup notification. */
   title: string;
   description?: string;
 }
