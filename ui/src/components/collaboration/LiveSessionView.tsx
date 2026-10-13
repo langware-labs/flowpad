@@ -1,4 +1,5 @@
 import {
+  Conversation,
   FlowMessage,
   FlowMessageKind,
   PermissionAction,
@@ -43,6 +44,9 @@ import {
 import { isPromptMessage } from '@src/components/conversation/attachment-actions/prompt-attachment';
 import { sessionRole } from '@src/hooks/useConversationSessions';
 import { useRetryFailedPrompt } from '@src/components/conversation/useRetryFailedPrompt';
+import { ConversationHeaderSession } from '@src/components/conversation/ConversationHeaderSession';
+import { buildMessageStartPrompt } from '@src/components/conversation/prompt-building';
+import { useConversation } from '@src/components/conversation/useConversation';
 
 /**
  * Client-side resolver seam for the live-session state: today it's the watched
@@ -142,6 +146,28 @@ function StandingGrantCheckbox({
 }
 
 /**
+ * The message ⋮ menu's "start a worker on this message", offered in the live
+ * session: a local session that starts at the session's latest message.
+ */
+function SessionOnLatestMessage({ conversationId, messageId }: { conversationId: string; messageId: string }) {
+  const { conversation, task } = useConversation(conversationId);
+  const buildPrompt = useCallback(
+    () =>
+      buildMessageStartPrompt(new TypeId(Conversation.type, conversationId), new TypeId(FlowMessage.type, messageId)),
+    [conversationId, messageId],
+  );
+  return (
+    <ConversationHeaderSession
+      conversation={conversation ?? null}
+      task={task}
+      buildPrompt={buildPrompt}
+      launchOnly
+      testIdPrefix="live-session"
+    />
+  );
+}
+
+/**
  * The live-session surface — the same Prompt/PromptCompletion FlowMessages the
  * conversation groups away, rendered as a terminal-style exchange ("I am
  * working on the other side"). The GUEST types prompts and watches; the HOST
@@ -224,7 +250,7 @@ export function LiveSessionView({ sessionId }: { sessionId: string }) {
       <Button
         size="sm"
         variant="destructive"
-        className={small ? 'ms-auto h-6 px-2 text-[11px]' : undefined}
+        className={small ? 'h-6 px-2 text-[11px]' : undefined}
         onClick={() => void runAction('disconnect', () => session.disconnect())}
         disabled={!!busy}
         data-testid="live-session-disconnect"
@@ -233,6 +259,10 @@ export function LiveSessionView({ sessionId }: { sessionId: string }) {
         <Trans>Disconnect</Trans>
       </Button>
     );
+  const latestMessageId = messages[messages.length - 1]?.id;
+  const sessionOnLatestMessage = conversationId && latestMessageId && (
+    <SessionOnLatestMessage conversationId={conversationId} messageId={latestMessageId} />
+  );
   const hostName = session.host_name ?? 'the host';
   const guestName = session.guest_name ?? session.guest_user_id ?? 'the guest';
   const guestContact: ContactKey = { userId: session.guest_user_id ?? null, email: null };
@@ -345,6 +375,7 @@ export function LiveSessionView({ sessionId }: { sessionId: string }) {
                 </Button>
               </>
             )}
+            {sessionOnLatestMessage}
             {disconnectButton(false)}
           </div>
           {!terminal && (
@@ -363,7 +394,10 @@ export function LiveSessionView({ sessionId }: { sessionId: string }) {
           <span data-testid="live-session-status-line">
             {statusLine(running ? RemoteWorkerSessionStatus.RUNNING : status, hostName)}
           </span>
-          {disconnectButton(true)}
+          <div className="ms-auto flex items-center gap-2">
+            {sessionOnLatestMessage}
+            {disconnectButton(true)}
+          </div>
         </div>
       )}
 
