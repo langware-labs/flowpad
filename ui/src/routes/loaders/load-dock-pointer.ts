@@ -357,6 +357,9 @@ export async function loadDockPointer(dock: DockPointer, context: DockLoaderCont
       case ViewType.SUBGRAPH:
         loadSubgraphRoute(dock);
         break;
+      case ViewType.WEB_APP:
+        // Context only, and `main-loader` already adopted it ahead of the mint.
+        break;
       default:
         // Explorer, desktop, and other loader-less views: an unscoped one
         // restores the remembered project (a scoped one was adopted up front).

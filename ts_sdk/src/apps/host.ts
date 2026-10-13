@@ -3,9 +3,9 @@
  * value written into the app.
  *
  * Every served app is served by a `ServiceEndpoint`, at
- * `/api/v1/graph/service_endpoint/<id>/service/…`, so the page's path already names
- * the endpoint. An endpoint serving a webapp ASSET names its definition
- * (`webapp_id`); that definition is an ordinary asset, which means it has a
+ * `/api/v1/graph/service_endpoint/<id>/service/<mount>/…`, so the page's path already names
+ * what serves it: its placement's audience proxy, and its mount there. A route serving a
+ * webapp ASSET names its definition (`webapp_id`); that definition is an ordinary asset, which means it has a
  * parent: the asset it is nested inside. An editor therefore learns what it edits
  * by asking who contains its app — the same containment the address bar renders
  * as `Project / rss / editor`.
@@ -21,6 +21,27 @@ import { installTooltips } from '../viewers/dom';
 export function appTypeId(pathname: string = location.pathname): TypeId | null {
   const m = pathname.match(/graph\/(service_endpoint)\/([^/]+)\/service/i);
   return m ? new TypeId(m[1], m[2]) : null;
+}
+
+/** The first path segment under the endpoint's `service` root — the page's mount, when it has one. */
+export function appMount(pathname: string = location.pathname): string {
+  const m = pathname.match(/graph\/service_endpoint\/[^/]+\/service\/([^/]*)/i);
+  return m ? decodeURIComponent(m[1]) : '';
+}
+
+/**
+ * The webapp definition a page of `endpoint` at `pathname` belongs to. On an audience proxy that
+ * is the route the path lands on — its named mount, else the root app; on an endpoint of its own,
+ * the endpoint's.
+ */
+export function servedWebappId(
+  endpoint: { webapp_id?: string | null; backend?: { type?: string; routes?: Record<string, { webapp_id?: string | null }> } },
+  pathname: string = location.pathname,
+): string | null {
+  const routes = endpoint.backend?.type === 'routed' ? (endpoint.backend.routes ?? {}) : null;
+  if (!routes) return endpoint.webapp_id ?? null;
+  const route = routes[appMount(pathname)] ?? routes[''];
+  return route?.webapp_id ?? null;
 }
 
 export interface AppHost {
@@ -39,7 +60,7 @@ export async function resolveAppHost(): Promise<AppHost> {
   if (!typeId) throw new Error('not served by a service endpoint');
   const endpoint = await dataManager.getByTypeId(typeId);
   if (!endpoint) throw new Error(`no ${typeId}`);
-  const webappId = (endpoint as { webapp_id?: string | null }).webapp_id;
+  const webappId = servedWebappId(endpoint as Parameters<typeof servedWebappId>[0]);
   const app = webappId ? await dataManager.getByTypeId(new TypeId('micro_app', webappId)) : endpoint;
   if (!app) throw new Error(`no micro_app-${webappId}`);
   // Nested: the subject is what CONTAINS the app. Matched by kind (an editor that ships on its

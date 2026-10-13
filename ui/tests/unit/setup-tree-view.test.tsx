@@ -41,7 +41,8 @@ describe('SetupTreeView', () => {
   it('draws every node under what needs it, with its state and why it is not done', () => {
     render(<SetupTreeView tree={TREE} hideRoot />);
 
-    expect(screen.getByTestId('setup-tree-progress').textContent).toContain('2 of 4 set up');
+    // The three rows drawn: the hidden root is not one of them, and a shared row repeats one already counted.
+    expect(screen.getByTestId('setup-tree-progress').textContent).toContain('1 of 3 set up');
     expect(screen.queryByTestId('setup-node-project-p1')).toBeNull();
     const failed = screen.getByTestId('setup-node-asset_setup:waha-container');
     expect(failed.getAttribute('data-state')).toBe('failed');
@@ -50,6 +51,19 @@ describe('SetupTreeView', () => {
     expect(screen.getByTestId('setup-node-data_source-w1').textContent).toContain('waiting on WAHA container');
     // A done node keeps quiet: its detail is not news.
     expect(screen.getAllByTestId('setup-node-credential:waha')[0].getAttribute('data-state')).toBe('done');
+  });
+
+  it('counts the rows it draws: an overview leaves out what sits under the first level', () => {
+    render(<SetupTreeView tree={TREE} hideRoot overview />);
+
+    expect(screen.queryByTestId('setup-node-asset_setup:waha-container')).toBeNull();
+    expect(screen.getByTestId('setup-tree-progress').textContent).toContain('1 of 2 set up');
+  });
+
+  it('with the root drawn, the root is a row like any other', () => {
+    render(<SetupTreeView tree={TREE} />);
+
+    expect(screen.getByTestId('setup-tree-progress').textContent).toContain('1 of 4 set up');
   });
 
   it('a setup refused before anything ran says why', () => {

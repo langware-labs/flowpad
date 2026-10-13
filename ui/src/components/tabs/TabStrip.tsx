@@ -29,7 +29,7 @@ import {
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
 import { TabTooltipName } from '@src/components/tabs/TabTooltipName';
 import { TabFavoriteStar } from '@src/components/tabs/TabFavoriteStar';
-import { isSeeThrough, placeScanTab, type ScanAnchor } from '@src/components/tabs/tab-scan';
+import { placeScanTab, type ScanAnchor } from '@src/components/tabs/tab-scan';
 import type { FavoriteRef } from '@src/hooks/use-favorites';
 import { useLocaleInfo } from '@src/contexts/locale-context';
 import { useIsAdvanced } from '@src/contexts/view-mode-context';
@@ -174,21 +174,9 @@ const CHIP_MAX_PX = 200;
 const CHIP_MIN_PX = 40;
 const COMPACT_BELOW_PX = 110;
 const ICON_ONLY_BELOW_PX = 64;
-/** How long the pointer rests on a tab before its bookmark star takes the
- *  icon's place. `afterHover` below says the same 2000ms in CSS (a Tailwind
- *  literal cannot read a constant) — change them together. */
-const STAR_AFTER_MS = 2000;
-type StarMode = 'off' | 'on' | 'afterHover';
-const STAR_ICON_CLASS: Record<StarMode, string> = {
-  off: '',
-  on: 'invisible',
-  afterHover: 'transition-[visibility] duration-0 group-hover:invisible group-hover:delay-[2000ms]',
-};
-const STAR_CLASS: Record<StarMode, string> = {
-  off: '',
-  on: '',
-  afterHover: 'invisible transition-[visibility] duration-0 group-hover:visible group-hover:delay-[2000ms]',
-};
+/** Title padding that clears the button overlay, by how many buttons it holds
+ *  (16px each, 2px gap, 2px inset) — change it with the overlay's buttons. */
+const OVERLAY_CLEARANCE: Record<0 | 1 | 2, string> = { 0: '', 1: 'pe-4', 2: 'pe-9' };
 
 export const TabStrip: React.FC<TabStripProps> = ({
   items,
@@ -455,24 +443,13 @@ export const TabStrip: React.FC<TabStripProps> = ({
     const chip = e.currentTarget;
     const title = chip.querySelector<HTMLElement>('[data-tab-title]');
     if (title && title.scrollWidth <= title.clientWidth) return setScan(null);
-    if (scan?.key === key) return; // widened back: see-through, so its own chip still gets the pointer
+    if (scan?.key === key) return; // already widened: don't re-measure and restart the animation
     const row = tabContainerRef.current!.getBoundingClientRect();
     const viewportPx = document.documentElement.clientWidth;
     setScan({ key, anchor: { chip: chip.getBoundingClientRect(), row, dir, viewportPx } });
   };
 
-  // After STAR_AFTER_MS on one tab: its star takes the icon's place. A
-  // see-through tab cannot offer the star itself, so it steps aside for its chip.
   const scanKey = scan?.key;
-  const [settledKey, setSettledKey] = useState<string | null>(null);
-  const scanSettled = !!scanKey && settledKey === scanKey;
-  useEffect(() => {
-    if (!scanKey) return;
-    const settle = () => (isSeeThrough(scanTabRef.current) ? setScan(null) : setSettledKey(scanKey));
-    const timer = setTimeout(settle, STAR_AFTER_MS);
-    return () => clearTimeout(timer);
-  }, [scanKey]);
-
   useEffect(() => {
     if (!scanKey) return;
     const onMove = (e: PointerEvent) => {
@@ -500,15 +477,16 @@ export const TabStrip: React.FC<TabStripProps> = ({
   // model): in-flow buttons would reserve ~48px of every chip even while
   // invisible and crush the title. The overlay is backed by the chip surface
   // color so it reads over truncated text; close is always visible on the
-  // active chip, hover-revealed on inactive ones; popout is hover-only and
-  // drops out below normal density.
-  const renderButtonOverlay = (key: string, isActive: boolean, isDisabled: boolean, closable = true, isScanTab = false) => (
+  // active chip, hover-revealed on inactive ones; popout is hover-only, sits
+  // just before close, and drops out below normal density — except on the
+  // widened tab, which has the room.
+  const renderButtonOverlay = (key: string, isActive: boolean, isDisabled: boolean, closable: boolean, showPopout: boolean, isScanTab: boolean) => (
     <div
       className={`absolute end-0.5 top-1/2 z-10 flex -translate-y-1/2 items-center gap-0.5 rounded transition-opacity ${
         isActive ? 'bg-background opacity-100' : `bg-muted ${isScanTab ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`
       }`}
     >
-      {density === 'normal' && !isScanTab && onPopout && (
+      {showPopout && onPopout && (
         <button
           onClick={(e) => {
             e.stopPropagation();
@@ -548,11 +526,15 @@ export const TabStrip: React.FC<TabStripProps> = ({
     const isDisabled = !!item.isDisabled;
     const hasError = !!item.hasError;
     const isEditing = editingKey === key;
-    const iconOnly = density === 'icon' && !isEditing && !isScanTab;
-    // A chip waits out the delay in CSS; the widened tab mounts already hovered,
-    // where a CSS delay cannot run, so the scan's own timer decides for it.
-    const starMode: StarMode =
-      !item.favorite || isEditing ? 'off' : !isScanTab ? 'afterHover' : scanSettled ? 'on' : 'off';
+    // The widened tab has the room of a normal chip, whatever the strip's density.
+    const chipDensity = isScanTab ? 'normal' : density;
+    const iconOnly = chipDensity === 'icon' && !isEditing;
+    const closable = item.closable !== false;
+    const showPopout = chipDensity === 'normal' && !!onPopout;
+    const scanClearance = OVERLAY_CLEARANCE[((closable ? 1 : 0) + (showPopout ? 1 : 0)) as 0 | 1 | 2];
+    // The bookmark star takes the icon's place while the pointer is on the tab;
+    // the widened tab exists only under the pointer, so there it is simply on.
+    const showStar = !!item.favorite && !isEditing;
 
     // Chrome model: equal flex share for every chip — all tabs stay visible and
     // shrink in lockstep; the strip never scrolls. Inline style (not Tailwind
@@ -615,11 +597,9 @@ export const TabStrip: React.FC<TabStripProps> = ({
         data-active={isActive ? 'true' : undefined}
       >
         <span className="relative inline-flex shrink-0 items-center justify-center">
-          {/* The star takes the icon's place only after a 2s hover: a pass over the
-              chip on the way to a click must not land on the bookmark toggle. */}
-          <span className={`inline-flex ${STAR_ICON_CLASS[starMode]}`}>{item.standsFor?.icon ?? item.icon}</span>
-          {item.favorite && starMode !== 'off' && (
-            <span className={`absolute inset-0 flex items-center justify-center ${STAR_CLASS[starMode]}`}>
+          <span className={`inline-flex ${!showStar ? '' : isScanTab ? 'invisible' : 'group-hover:invisible'}`}>{item.standsFor?.icon ?? item.icon}</span>
+          {item.favorite && showStar && (
+            <span className={`absolute inset-0 flex items-center justify-center ${isScanTab ? '' : 'invisible group-hover:visible'}`}>
               <TabFavoriteStar favorite={item.favorite} chip={() => tabRefs.current[key] ?? null} />
             </span>
           )}
@@ -650,7 +630,7 @@ export const TabStrip: React.FC<TabStripProps> = ({
               // the title clear of it; inactive titles reclaim the full width.
               // The widened tab takes its width FROM the title; a chip gives the
               // title whatever the row leaves it.
-              className={`min-w-0 truncate text-sm font-medium ${isScanTab ? 'pe-4' : `flex-1 ${isActive ? 'pe-4' : ''}`} ${item.titleClassName ?? ''}`}
+              className={`min-w-0 truncate text-sm font-medium ${isScanTab ? scanClearance : `flex-1 ${isActive ? 'pe-4' : ''}`} ${item.titleClassName ?? ''}`}
               onDoubleClick={(e) => {
                 if (!item.renameable) return;
                 e.stopPropagation();
@@ -662,7 +642,7 @@ export const TabStrip: React.FC<TabStripProps> = ({
           )
         )}
 
-        {!isEditing && renderButtonOverlay(key, isActive, isDisabled, item.closable !== false, isScanTab)}
+        {!isEditing && renderButtonOverlay(key, isActive, isDisabled, closable, showPopout, isScanTab)}
       </div>
     );
 

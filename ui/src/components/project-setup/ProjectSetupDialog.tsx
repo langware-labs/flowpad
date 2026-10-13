@@ -30,7 +30,7 @@ import { useOptionalFloatingChat } from '@src/components/floating-chat/floating-
 import { errorMessage } from '@src/lib/error-message';
 import { notify } from '@src/notifications';
 import { useProjectSetupStore } from './project-setup-store';
-import { SetupTreeView } from './SetupTreeView';
+import { countDrawn, SetupTreeView } from './SetupTreeView';
 import { useSetupRun } from './use-setup-run';
 
 /**
@@ -414,12 +414,14 @@ function SetupStatusLine({
   const { t } = useLingui();
   if (running) {
     const now = currentNode(tree?.root);
+    // The same count as the list below it, which draws the tree without its root.
+    const drawn = countDrawn(tree?.root?.children ?? []);
     return (
       <div className="flex items-center gap-2 text-sm" data-testid="project-setup-status">
         <Loader2 className="size-4 shrink-0 animate-spin text-muted-foreground" />
         <span className="min-w-0 flex-1 truncate">
           {now && now.id !== tree?.root?.id ? t`Setting up ${now.label}` : t`Setting up…`}
-          {tree?.total ? <span className="text-muted-foreground">{` · ${tree.done} / ${tree.total}`}</span> : null}
+          {drawn.total ? <span className="text-muted-foreground">{` · ${drawn.done} / ${drawn.total}`}</span> : null}
         </span>
         {onStop && (
           <Button variant="outline" size="sm" className="h-7 gap-1" data-testid="project-setup-stop" onClick={onStop}>

@@ -163,6 +163,8 @@ export interface ViewerChoice {
   why: 'nested' | 'kind' | 'any';
   /** The declared kind that matched — the key into the module's `viewers`. */
   kind: string;
+  /** The audience proxy that serves the viewer's app, and its mount there. */
   endpoint: string;
+  route?: string | null;
   module: string;
 }

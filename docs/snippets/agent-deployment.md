@@ -13,7 +13,7 @@ resolves the `local` one — the seam for choosing another is `deployment=`.
     Deployment.launch(...)  -> PromptResult      executor: the AgenticProcess
 
 A placement stores no kind: what it places is its PARENT (`element_type`), and what it serves is its
-endpoints' `subkind` (`admin`, `app`, `agent`, `service` — `service-endpoints.md`). The machine it runs on
+endpoints' `subkind` (`system`, `admin`, `app`, `agent`, `service` — `service-endpoints.md`). The machine it runs on
 is a `ComputeNode` (a box): this computer hosts many deployments, a cloud box one. `identity` says who
 the box logs in as for it: `agent`, `user` (its owner) or `none`.
 

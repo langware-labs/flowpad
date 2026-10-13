@@ -362,7 +362,10 @@ async def run_op(
         if before is not None and before.exit_code is ExitCode.NOT_APPLICABLE:
             return exe.ANSWER.not_applicable(f"{spec.display_label}: not applicable here.", check=before)
         if check_only:
-            return exe.ANSWER.not_yet(f"{spec.display_label}: not installed yet.", check=before, ran=False)
+            # A check answered in this backend says what is missing in its own words ("Received — connect
+            # your own account"); "not installed" is only true of something a command installs.
+            own = before.detail if before is not None and _check_in_process(spec) else ""
+            return exe.ANSWER.not_yet(f"{spec.display_label}: {own or 'not installed yet.'}", check=before, ran=False)
 
         seams = _Seams(
             workdir=workdir,

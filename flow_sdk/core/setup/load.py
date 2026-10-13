@@ -47,6 +47,17 @@ class LoadTree:
         return dataclasses.replace(node, prepare=None, run=node.on_load, children=children, record=None)
 
 
+def forget(project_id: str) -> None:
+    """Drop the provider's last verdict: what it was checked against has changed (a setup run of the
+    project ended, one of its sources changed status), and nothing refreshes a kept one. With none,
+    ``load_state`` answers None and the next Load checks again. A RUNNING verdict stays: ``load_state``
+    settles it from its run."""
+    pid = str(project_id)
+    result = _RESULTS.get(pid)
+    if result is not None and result.state is not LoadState.RUNNING:
+        del _RESULTS[pid]
+
+
 def load_state(project_id: str, *, asset: str = "") -> Optional[LoadResult]:
     """Observe the shared run, without starting any work or approving setup."""
     from flow_sdk.builtin.project_setup import _RUNS, setup_run_address
@@ -174,7 +185,8 @@ async def load_project(project: Any, *, approved: bool = False, asset: Any = Non
             if needs_setup and not approved:
                 state = LoadState.FAILED if prerequisites.state is SetupState.REFUSED else LoadState.SETUP_REQUIRED
                 result = LoadResult(state=state, project_id=pid,
-                                    detail=missing.detail if missing else prerequisites.detail or unmet)
+                                    detail=missing.detail if missing else prerequisites.detail or unmet,
+                                    tree=prerequisites.bare())
             else:
                 operational = LoadTree(tree)
                 running = await execute_setup(tree.root, resolve_node=operational.resolve_node,
@@ -213,4 +225,4 @@ async def load_asset(project: Any, asset: Any) -> LoadResult:
     return await load_project(project, asset=asset)
 
 
-__all__ = ["LoadTree", "load_asset", "load_project", "load_state"]
+__all__ = ["LoadTree", "forget", "load_asset", "load_project", "load_state"]

@@ -2,6 +2,8 @@ import { APIEntity, dataManager, registerEntity, type AnyEntity } from '../APIEn
 import { IEntity, EntityMerge } from '../IEntity';
 import { ActionInfo } from '../models';
 import { IDockPointer } from '../models/DockPointer';
+import { dataContext } from '../FlowSync/context';
+import { ViewType } from '../utils/ui/view-types';
 import { TypeId } from '../models/TypeId';
 import { EntityTypes } from '../schema/types';
 import { dockOptionsToScopeFilter } from '../utils/scope-filter';
@@ -357,6 +359,12 @@ export class Tab extends APIEntity<Tab> implements ITab {
       // concurrently clearing context to Global. Scope is a valid ownership
       // hint only for target-less surfaces (assets/project home).
       projectId = byPath?.id ?? (target ? null : scopeProjectId) ?? null;
+      // A web page is target-less and usually opened by a bare URL (`flow show`,
+      // a link, a paste) that names no scope. It belongs to the project it is
+      // opened IN: left Global, that project's strip has no chip to light.
+      if (!projectId && !scope && dock.viewType === ViewType.WEB_APP) {
+        projectId = dataContext.project?.id ?? null;
+      }
     }
 
     return { targetTypeId, target, projectId };

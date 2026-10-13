@@ -13,6 +13,7 @@ import os
 import platform
 import tempfile
 import unicodedata
+import uuid
 from pathlib import Path, PureWindowsPath
 
 
@@ -389,3 +390,16 @@ def vfs_relative_path(abs_path: str) -> str:
         )
         return norm[2:]
     return norm.lstrip("/")
+
+
+def legacy_project_scope_id(path: str | Path) -> str | None:
+    """Existing path-derived record-scope alias; never a new Project entity id.
+
+    Discovery needs this compatibility value before a Project row exists, so
+    computing it must not import the application entity/database runtime.
+    """
+    from flow_sdk.api.api_types.identifier import mint_uuid
+
+    if not path or not is_valid_project_cwd(path, include_temp=True):
+        return None
+    return mint_uuid(f"project:{canonical_posix_path(path)}", namespace=uuid.NAMESPACE_DNS)

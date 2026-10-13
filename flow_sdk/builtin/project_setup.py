@@ -532,6 +532,7 @@ async def start_setup(project: "Project", *, ai: bool = True, root: str = "", tr
         task = create_detached_task(run_setup(), name=f"project-setup:{pid}:{root}")
         add_detached_done_callback(task, _log_failure)
         add_detached_done_callback(task, functools.partial(_release_control, key, control))
+        add_detached_done_callback(task, functools.partial(_forget_load, pid))
         _RUNS[key] = task
     return setup_run_address(pid, root)
 
@@ -600,6 +601,13 @@ def _release_control(key: tuple[str, str], control: Any, _task: "asyncio.Task") 
     """A finished run's handle goes — unless a newer run of the same root already took its place."""
     if _CONTROLS.get(key) is control:
         del _CONTROLS[key]
+
+
+def _forget_load(project_id: str, _task: "asyncio.Task") -> None:
+    """A run of the project ended, whichever node it was for: its load verdict is out of date."""
+    from flow_sdk.core.setup.load import forget  # noqa: PLC0415
+
+    forget(project_id)
 
 
 def _log_failure(task: "asyncio.Task") -> None:

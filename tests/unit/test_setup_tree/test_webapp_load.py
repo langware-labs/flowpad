@@ -6,7 +6,7 @@ import pytest
 from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess
 from flow_sdk.builtin.faas.micro_app import WebApp
 from flow_sdk.builtin.webapp_load import present
-from flow_sdk.builtin.webapp_placement import webapp_endpoints
+from flow_sdk.builtin.webapp_placement import drop_routes, webapp_routes
 from flow_sdk.schema.data_spec.returned_value_spec import ExitCode
 from tests.unit.agent._seed import seed_project
 
@@ -62,8 +62,8 @@ async def test_unrelated_display_is_preserved_while_missing_placement_recovers(t
     app, process, entry = await seed(tmp_path)
     unrelated = {"kind": "vfs", "path": str(entry.with_name("report.html"))}
     await process.on_show(unrelated)
-    for endpoint in await webapp_endpoints(app.id):
-        await endpoint.delete()
+    await drop_routes(webapp_id=app.id)
+    assert await webapp_routes(app.id) == []
     assert not (await present(app, display=str(process.typeid), check=True)).ok
     assert (await present(app, display=str(process.typeid), check=False)).ok
     assert (await AgenticProcess.get_by_id(process.id)).context_data["last_shown"] == unrelated
@@ -113,38 +113,32 @@ async def test_unscoped_load_does_not_attest_to_or_replace_display_recovery(tmp_
 
 
 async def test_api_only_app_does_not_require_html_presentation(tmp_path):
-    from flow_sdk.schema.data_spec.webapp_spec import WebappEndpointSpec
+    from flow_sdk.schema.data_spec.webapp_spec import WebappServiceSpec
 
     app, process, entry = await seed(tmp_path)
-    app.endpoints = [WebappEndpointSpec.model_validate({"name": "api", "protocol": {"spec_kind": "api.rest"},
-                                                     "serving": {"type": "static"}})]
+    app.services = [WebappServiceSpec.model_validate({"name": "api", "protocol": {"spec_kind": "api.rest"},
+                                                     "serving": {"type": "proxy", "start_cmd": "api --port {port}"}})]
     await app.save()
     entry.unlink()
     assert (await present(app, display=str(process.typeid), check=True)).ok
 
 
-async def test_outdated_endpoint_uses_matching_presentation(tmp_path):
-    from flow_sdk.builtin.project import Project
-    from flow_sdk.builtin.webapp_placement import local_web_deployment, place_webapp_locally, upsert_endpoint
+async def test_outdated_route_uses_matching_presentation(tmp_path):
+    """The display holds the mount the app had before its author moved it: the check sees it, the repair re-points it."""
+    from flow_sdk.builtin.webapp_placement import place_webapp_locally
     from flow_sdk.core.display_target import endpoint_target
+    from flow_sdk.schema.data_spec.webapp_spec import WebappMountSpec
 
     app, process, entry = await seed(tmp_path)
-    project = await Project.get_by_id(app.project_id)
-    valid = await place_webapp_locally(app)
-    deployment = await local_web_deployment(project)
-    outdated, _ = await upsert_endpoint(deployment, name="obsolete", webapp_id=app.id, project_id=app.project_id,
-                                       backend={"type": "static", "root": str(entry.parent)})
-    await process.on_show(endpoint_target(outdated))
+    outdated = await place_webapp_locally(app)
+    await process.on_show({**endpoint_target(outdated), "micro_app_id": app.id})
+    assert (await present(app, display=str(process.typeid), check=True)).ok
+    app.mounts = [WebappMountSpec(path="main")]
+    await app.save()
+
     assert not (await present(app, display=str(process.typeid), check=True)).ok
     assert (await present(app, display=str(process.typeid), check=False)).ok
-    assert (await AgenticProcess.get_by_id(process.id)).context_data["last_shown"]["endpoint_id"] == valid.id
 
-
-async def test_a_viewer_is_presented_by_its_module_not_an_index_page(tmp_path):
-    app, _process, entry = await seed(tmp_path)
-    entry.unlink()
-    app.kind = "application.web.viewer"
-    missing = await present(app, check=True)
-    assert missing.exit_code is ExitCode.NOT_YET and "missing viewer module" in missing.detail
-    (Path(app.asset_ref) / "viewer.js").write_text("export default {}")
-    assert (await present(app, check=True)).ok
+    shown = (await AgenticProcess.get_by_id(process.id)).context_data["last_shown"]
+    assert (shown["endpoint_id"], shown["route"]) == (outdated.id, "main")
+    assert [p.mount for p in await webapp_routes(app.id)] == ["main"], "the app moved; it is not served twice"

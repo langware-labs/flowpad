@@ -364,6 +364,9 @@ describe('ProjectSetupDialog — controlling a run', () => {
 
     const status = await screen.findByTestId('project-setup-status');
     await waitFor(() => expect(status).toHaveTextContent('Setting up CREDENTIAL:GMAIL'));
+    // The same count as the list under it: the one row drawn, not the run's two nodes (the root is hidden).
+    expect(status).toHaveTextContent('· 0 / 1');
+    expect(screen.getByTestId('setup-tree-progress')).toHaveTextContent('0 of 1 set up');
     expect(screen.getByTestId('project-setup-skip-google-cloud')).toBeInTheDocument();
     expect(screen.getByTestId('project-setup-select-google-cloud')).toBeInTheDocument();
     await act(async () => fireEvent.click(screen.getByTestId('project-setup-stop')));
