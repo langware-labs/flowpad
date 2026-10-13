@@ -182,22 +182,31 @@ def test_a_server_is_never_taken_for_a_forwarder(name):
     assert not app_ports._forwards(name)
 
 
-def test_a_process_that_is_its_own_ancestor_ends_the_walk():
+def test_a_process_that_is_its_own_ancestor_ends_the_walk(monkeypatch):
     """Windows: the chain of parents ends in a process whose parent is itself. The walk must stop there."""
+    import psutil
 
-    class Loop:
-        pid = 0
+    class Fake:
+        def __init__(self, pid, born=1.0):
+            self.pid, self.born = pid, born
 
-        def parent(self):
-            return self
+        def create_time(self):
+            return self.born
 
         def cmdline(self):
-            return ["System Idle Process"]
+            return [f"proc-{self.pid}"]
 
-    class Child(Loop):
-        pid = 4
+    monkeypatch.setattr(psutil, "Process", lambda pid: Fake(pid))
+    assert app_ports._ancestor_commands(Fake(4, born=2.0), {4: 0, 0: 0}) == ["proc-0"]
+    # A "parent" born after its child is a recycled pid, not an ancestor.
+    monkeypatch.setattr(psutil, "Process", lambda pid: Fake(pid, born=9.0))
+    assert app_ports._ancestor_commands(Fake(4, born=2.0), {4: 7}) == []
 
-        def parent(self):
-            return Loop()
 
-    assert app_ports._ancestor_commands(Child()) == ["System Idle Process"]
+def test_ancestors_are_read_for_a_real_process():
+    """This test's own interpreter was started by something: its command line is found."""
+    import os
+
+    import psutil
+
+    assert app_ports._ancestor_commands(psutil.Process(os.getpid()), app_ports._parents())

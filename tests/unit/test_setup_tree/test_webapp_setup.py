@@ -102,8 +102,9 @@ def app(tmp_path, monkeypatch):
         if proc.poll() is None:
             dev_server.stop_group(proc.pid)
         proc.wait()
+    home = os.path.realpath(tmp_path)
     webapp_setup.app_ports.stop(
-        [one for one in webapp_setup.app_ports.listeners() if str(tmp_path) in os.path.realpath(one.cwd)]
+        [one for one in webapp_setup.app_ports.listeners() if webapp_setup.app_ports._inside(one.cwd, home)]
     )
 
 

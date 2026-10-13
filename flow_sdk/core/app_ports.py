@@ -137,6 +137,7 @@ def listeners() -> list[Listener]:
     import psutil  # noqa: PLC0415
 
     by_pid = _listening_by_pid()
+    parents = _parents()
     found: list[Listener] = []
     for process in psutil.process_iter() if by_pid is None else map(_process, by_pid):
         try:
@@ -149,29 +150,43 @@ def listeners() -> list[Listener]:
             if _forwards(name):
                 continue
             cwd = process.cwd() or ""
-            commands = [" ".join(process.cmdline()), *_ancestor_commands(process)]
+            commands = [" ".join(process.cmdline()), *_ancestor_commands(process, parents)]
         except (psutil.Error, OSError):
             continue
         found.extend(Listener(process.pid, port, name, cwd, tuple(commands)) for port in ports)
     return found
 
 
-def _ancestor_commands(process) -> list[str]:
-    """The command lines of the nearest ``_ANCESTORS`` ancestors. Walked one parent at a time and
-    stopped at a pid already seen: ``psutil.Process.parents()`` walks the WHOLE chain first, and on
-    Windows that chain ends in a process that is its own parent — it never returns (found on a real
-    Windows 11 box: every look hung)."""
+def _parents() -> dict[int, int]:
+    """``pid -> parent pid`` for every process, from ONE read of the process table. Asking each process
+    for its parent re-reads the whole table per question on Windows (a look took over 20 s there)."""
+    import psutil  # noqa: PLC0415
+
+    try:
+        return dict(psutil._ppid_map())  # noqa: SLF001 -- psutil's own one-read map, what ``children()`` uses
+    except Exception:  # noqa: BLE001 -- not there on this psutil: ancestors are simply not read
+        return {}
+
+
+def _ancestor_commands(process, parents: dict[int, int]) -> list[str]:
+    """The command lines of the nearest ``_ANCESTORS`` ancestors. Walked through ``parents`` and stopped
+    at a pid already seen: on Windows the chain ends in a process that is its own parent, and
+    ``psutil.Process.parents()`` — which walks the WHOLE chain first — never returns there. A "parent"
+    younger than its child is a recycled pid, not an ancestor."""
     import psutil  # noqa: PLC0415
 
     commands: list[str] = []
     seen = {process.pid}
     try:
-        for _ in range(_ANCESTORS):
-            process = process.parent()
-            if process is None or process.pid in seen:
+        born = process.create_time()
+        pid = parents.get(process.pid)
+        while pid is not None and pid not in seen and len(commands) < _ANCESTORS:
+            seen.add(pid)
+            parent = psutil.Process(pid)
+            if parent.create_time() > born:
                 break
-            seen.add(process.pid)
-            commands.append(" ".join(process.cmdline()))
+            commands.append(" ".join(parent.cmdline()))
+            born, pid = parent.create_time(), parents.get(pid)
     except (psutil.Error, OSError):
         pass
     return commands
