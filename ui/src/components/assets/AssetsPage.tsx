@@ -52,6 +52,7 @@ import { useEntity } from '@sdk/react/hooks';
 import { useIndexStatus } from '@src/hooks/use-index-status';
 import { ViewType } from '@src/types/ViewType';
 import { AssetListView } from './AssetListView';
+import { DiagnosisRequestsAssetList } from './DiagnosisRequestsAssetList';
 import { LlmEndpointsAssetList } from './LlmEndpointsAssetList';
 import { isProjectHomeSurface, shouldShowIndexPrompt } from './asset-body-content';
 import { ContextFolderBrowser } from './ContextFolderBrowser';
@@ -378,7 +379,6 @@ export function AssetsPage() {
   const neverIndexed = idxState.phase === 'ready' && idxState.status.never_indexed;
   const isAdvanced = useIsAdvanced();
 
-
   const handleRebuildIndex = useCallback(async () => {
     // Project view → Fast index scoped to the project (re-stamps the project's
     // own index sentinel). Global view → legacy full reset+rescan.
@@ -654,6 +654,9 @@ export function AssetsPage() {
             // Not the index-backed list: these rows have no local record at all (see
             // LlmEndpointsAssetList), so the generic browser would always show zero.
             <LlmEndpointsAssetList onOpen={navigateAsset} />
+          ) : selectedType === (RecordType.DIAGNOSIS_REQUEST as string) ? (
+            // Not the index-backed list either: a request has no file to open it by; the hub lists them.
+            <DiagnosisRequestsAssetList scope={effectiveFilter.scope} onOpen={navigateAsset} />
           ) : selectedType ? (
             <AssetListView
               recordType={selectedType}
@@ -668,8 +671,8 @@ export function AssetsPage() {
             <div className="flex h-full items-center justify-center p-6">
               <div className="flex max-w-sm flex-col items-center gap-3 text-center">
                 <PackageSearch className="h-8 w-8 text-muted-foreground" />
-                <div className="text-sm font-medium">{INDEX_PROMPT_TITLE}</div>
-                <p className="text-sm text-muted-foreground">{INDEX_PROMPT_DESCRIPTION}</p>
+                <div className="text-sm font-medium">{i18n._(INDEX_PROMPT_TITLE)}</div>
+                <p className="text-sm text-muted-foreground">{i18n._(INDEX_PROMPT_DESCRIPTION)}</p>
                 <Button
                   size="sm"
                   className="mt-1 gap-1.5"
@@ -678,7 +681,7 @@ export function AssetsPage() {
                   data-testid="empty-state-index-cta"
                 >
                   <PackageSearch className={`h-4 w-4 ${busy ? 'animate-spin' : ''}`} />
-                  {INDEX_BUILD_LABEL}
+                  {i18n._(INDEX_BUILD_LABEL)}
                 </Button>
               </div>
             </div>

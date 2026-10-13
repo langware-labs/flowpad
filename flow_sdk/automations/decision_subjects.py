@@ -91,9 +91,10 @@ def _builtin() -> None:
     if _loaded:
         return
     _loaded = True
-    from flow_sdk.stream_inbox.message_subject import MessageSubject  # noqa: PLC0415
+    from flow_sdk.stream_inbox.message_subject import ConversationMessageSubject, MessageSubject  # noqa: PLC0415
 
     register(MessageSubject())
+    register(ConversationMessageSubject())
 
 
 def all_subjects() -> list[DecisionSubject]:

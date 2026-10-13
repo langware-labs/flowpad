@@ -7,16 +7,21 @@
  * `QA cycle — 1 PASS · 1 RED`. Pure, so the exact wording is pinned by a unit test.
  */
 
+import { i18n } from '@lingui/core';
+import { msg } from '@lingui/core/macro';
 import { deepestRunning, isTerminal, type ActivityProgressSpec } from '@sdk/activity';
+import { activityWord } from './activity-words';
 
 const AT_WORK = new Set(['running', 'blocked', 'paused']);
 
 function nameOf(spec: ActivityProgressSpec): string {
-  return spec.label || spec.name;
+  return activityWord(spec.label || spec.name);
 }
 
 function countOf(spec: ActivityProgressSpec): string {
-  return spec.total == null ? spec.done.toLocaleString() : `${spec.done.toLocaleString()}/${spec.total.toLocaleString()}`;
+  return spec.total == null
+    ? spec.done.toLocaleString()
+    : `${spec.done.toLocaleString()}/${spec.total.toLocaleString()}`;
 }
 
 /** Errors recorded anywhere under (and on) this node. */
@@ -27,7 +32,7 @@ export function errorsInTree(spec: ActivityProgressSpec): number {
 function stepPart(step: ActivityProgressSpec): string {
   let text = nameOf(step);
   if (step.total != null || step.done > 0) text += ` ${countOf(step)}`;
-  if (step.state === 'blocked') text += ' (blocked)';
+  if (step.state === 'blocked') text += ` ${i18n._(msg`(blocked)`)}`;
   const deeper = deepestRunning(step);
   if (deeper && deeper !== step && deeper.path !== step.path) text += ` › ${nameOf(deeper)}`;
   return text;
@@ -35,7 +40,7 @@ function stepPart(step: ActivityProgressSpec): string {
 
 export function activityOneLiner(spec: ActivityProgressSpec): string {
   const name = nameOf(spec);
-  if (isTerminal(spec)) return `${name} — ${spec.message || spec.state}`;
+  if (isTerminal(spec)) return `${name} — ${activityWord(spec.message || spec.state)}`;
 
   const parts = [name];
   if (spec.children.length > 0) {
@@ -48,6 +53,6 @@ export function activityOneLiner(spec: ActivityProgressSpec): string {
     if (spec.current) parts.push(spec.current);
   }
   const errors = errorsInTree(spec);
-  if (errors > 0) parts.push(`${errors} failed`);
+  if (errors > 0) parts.push(i18n._(msg`${errors} failed`));
   return parts.join(' · ');
 }
