@@ -8848,6 +8848,10 @@ msgstr "Don't ask"
 msgid "Don't ask again"
 msgstr "Don't ask again"
 
+#: src/components/task-receive/IncomingProjectDialog.tsx
+msgid "Don't ask me again"
+msgstr "Don't ask me again"
+
 #: src/pages/entry/AgentLaunchLanding.tsx
 #: src/pages/entry/OpenInFlowpadActions.tsx
 msgid "Don't have FlowPad yet?"
