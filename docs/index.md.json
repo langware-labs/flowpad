@@ -5,7 +5,7 @@
   "vault_root": "/Users/alice/Documents/dev/flowpad-oss/docs",
   "folder_rel_path": "",
   "folder_name": "docs",
-  "inputs_hash": "97b047bcba540b7c9f8714126db4f7d25aee30703483763e27f2ad4b4e95a0d1",
+  "inputs_hash": "369e6f7dc33eb7cec6f5bae5a28e265ac7ae784c5f743075fff668f556177419",
   "template_version": 1,
   "prompt_version": 1,
   "self_summary": "Flowpad's documentation root. The agentic-process stack and its interfaces, data management from disk to entity row, the ontology of types and kinds, collaboration and the hub, the runnable snippet shelf, and breadcrumbs recording root causes already proven.",
@@ -38,9 +38,9 @@
       "name": "agents-management.md",
       "rel_path": "agents-management.md",
       "title": "Agent Management",
-      "summary": "Top-level index of agent management: the Agent, Deployment and AgenticProcess model and the agent authoring bundle, linking focused subject docs",
-      "content_hash": "6835467aea38bd1568342d982825640113bf29ab52d31ddc83462397d2f0263b",
-      "size_bytes": 9871
+      "summary": "Top-level index of agent management: the Agent, Deployment and AgenticProcess model, agent.json authoring bundle, intro and auto-launch keys, PTY versus CLI modes, linked subject docs.",
+      "content_hash": "50b68b52f867d4dd662f7181816f2c63d31b525b3811ec93377497e6fd273a42",
+      "size_bytes": 10736
     },
     {
       "name": "api-routing.md",
@@ -54,17 +54,17 @@
       "name": "automations.md",
       "rel_path": "automations.md",
       "title": "Automations",
-      "summary": "Automations screen backed by Trigger rows: dock URLs for list, editor, runs and event bus, the When-Then builder, and its UI-to-SDK chain.",
-      "content_hash": "7daee3b6cbce1a7fcdf3e5e8809855ef8b9f21b814b812ebc354ce7fc75bd7a6",
-      "size_bytes": 5277
+      "summary": "Automations screen backed by Trigger rows: dock URLs for list, editor, runs and event bus, the UI-to-SDK action chain, if-gate and then-wizard, and fragile rules.",
+      "content_hash": "c6fbd3d70fb761b4dcce3a5f5aabcd9fce905863e388e90bb48fd0747d68cc12",
+      "size_bytes": 8326
     },
     {
       "name": "boot.md",
       "rel_path": "boot.md",
       "title": "Server Boot & Bootstrap Flows",
-      "summary": "How the backend gets from process start to serving requests: startup flows, what runs inline versus detached, and the sub-100ms bootstrap budget.",
-      "content_hash": "79016b447a483f349a3f0dfc9aa7b4c3e1882ec64b2c89e29503cb8f4fdce2e5",
-      "size_bytes": 18313
+      "summary": "Backend boot path from process start to serving requests: startup flows, detached tasks, the sub-100ms bootstrap budget, deferred info, shared lazy assets and measurements.",
+      "content_hash": "75ea63358ebb6f46b82813a2637ab7d86bbb37ff3065aeec41259c02e986bc21",
+      "size_bytes": 20214
     },
     {
       "name": "capabilities.md",
@@ -94,9 +94,9 @@
       "name": "cookie-gate.md",
       "rel_path": "cookie-gate.md",
       "title": "cookie-gate",
-      "summary": "Cookie-gate: an optional pre-shared secret locking an instance to invited callers — arming rules, the gate exchange endpoint and cookie attributes.",
-      "content_hash": "29d173b3a98f3f11469d51beaf772fbb66336ebd099b7dc1e92dff3d06582483",
-      "size_bytes": 11046
+      "summary": "Cookie-gate: optional pre-shared secret locking an instance to invited callers: arming rules, desktop refusal, hub-signed tickets and grants, gate exchange, revocation and cookie attributes.",
+      "content_hash": "9d5c5e15d4150676a4382a871633bf991d30ebfa1c4bc588974185e58ff14436",
+      "size_bytes": 12553
     },
     {
       "name": "data-management.md",
@@ -113,6 +113,14 @@
       "summary": "Setting up debugMCP: launching Chrome Canary with CDP, the debugMcp server, the standard Playwright MCP server, and the usage rules.",
       "content_hash": "21ebbacc7febace74827d22373e37b6ae7388ad1f92f2a3c93881b97c667965a",
       "size_bytes": 3388
+    },
+    {
+      "name": "dependency-lifecycle.md",
+      "rel_path": "dependency-lifecycle.md",
+      "title": "Dependency setup and Load",
+      "summary": "Dependency Load and setup: prerequisites including data sources owing setup (DataSource.setup_owed), first-level steps listed with row count, when load results are forgotten, asset_setup, API, CLI.",
+      "content_hash": "48c9522bc44d9494a7d27577c089544ae65a2141609578f3d83b49c2a5431444",
+      "size_bytes": 6689
     },
     {
       "name": "desktop-install-test-scenarios.md",
@@ -134,9 +142,9 @@
       "name": "display-capabilities.md",
       "rel_path": "display-capabilities.md",
       "title": "Global Display Capabilities — Survey & Open Questions",
-      "summary": "Survey of every way Flowpad displays content — files, entities, webapps, artifacts, foreign-HTML trust tiers — across two address systems (dock pointers and flow show targets), with the open design questions.",
-      "content_hash": "04485dea82a7123ceeb1cd5d9f931475eec36f363883a5bafaabbd94304d97b5",
-      "size_bytes": 22967
+      "summary": "Survey of how Flowpad displays files, entities, webapps, artifacts and foreign HTML through dock pointers and flow show targets, with trust tiers, gaps, open questions.",
+      "content_hash": "f50a0ee5bdd701cdf4246962a67b30357820c39dad98f8a084b9e9656b5a6b3e",
+      "size_bytes": 23643
     },
     {
       "name": "doc.md",
@@ -150,9 +158,9 @@
       "name": "electron-structure.md",
       "rel_path": "electron-structure.md",
       "title": "The `electron/` directory — structure, flows, and next steps",
-      "summary": "Structure of the electron/ desktop shell: UvManager installing the PyPI engine, main process files, startup flows, updater, and next steps.",
-      "content_hash": "e6a6ba8b2456c326f4aab800289812b8caa34ef088888377b6ddc95a0eedf73d",
-      "size_bytes": 15516
+      "summary": "Structure of the electron/ desktop shell: UvManager installing the PyPI engine, main-process modules, startup, update and recovery flows, watchdog limits, and unimplemented next steps.",
+      "content_hash": "f7bd5986b924418859def21b7c21b2953d8a4fc4c1d9339025ddf19ce6ed8b7f",
+      "size_bytes": 15626
     },
     {
       "name": "electron.md",
@@ -182,9 +190,9 @@
       "name": "flow-events.md",
       "rel_path": "flow-events.md",
       "title": "FlowEvents — the unified event bus (delivery worklog)",
-      "summary": "Delivery worklog for the unified FlowEvent bus: the normative envelope fields, shared contract fixture, phased build status and dated log entries.",
-      "content_hash": "991244a2603079c5c344703b9202fd3b1c6ae5c11aa9810d91299f7be1b3d018",
-      "size_bytes": 41107
+      "summary": "Delivery worklog for the unified FlowEvent bus: normative envelope and laws, phase-by-phase status with dated logs, plus app.ready, app.tab.ready, wizard triggers and dataset.rows.changed tags.",
+      "content_hash": "2351f53355422dd88e9566831c94c25a7124b6185665432f2c7e89ca8b2f74a9",
+      "size_bytes": 42509
     },
     {
       "name": "frontend-debug-cheatsheet.md",
@@ -214,9 +222,9 @@
       "name": "glossary.md",
       "rel_path": "glossary.md",
       "title": "Glossary — our nouns vs. the ecosystem's",
-      "summary": "Glossary cross-walking Flowpad nouns to Claude Code and OpenClaw terms, with naming rules for provider mirrors versus native entities",
-      "content_hash": "9d07c5c34170bf24a6f72bc636e0c09caf04cd027594a7d7daa23e6df7cd7f8d",
-      "size_bytes": 52984
+      "summary": "Glossary cross-walking Flowpad nouns to Claude Code and OpenClaw terms, separating provider mirrors from native entities, with naming rules for agents, sources, endpoints, credentials, setup.",
+      "content_hash": "e8455c9c7d16b8fce95ea13fe2354d82a571c206187014fc84f439528050b4af",
+      "size_bytes": 64921
     },
     {
       "name": "icons.md",
@@ -262,17 +270,17 @@
       "name": "mcp-ui.md",
       "rel_path": "mcp-ui.md",
       "title": "MCP UI Architecture",
-      "summary": "Interactive chat forms in Vibe: the agent writes a .mcp.html file, the sandbox proxy hosts it, and the app message returns as a prompt.",
-      "content_hash": "0e8f59647000b480a24df4c2cd0d70480e199795041e290b9a639194cc4044d2",
-      "size_bytes": 8256
+      "summary": "MCP UI architecture in Vibe: the agent writes a .mcp.html file, the backend sandbox proxy hosts it, and the app's ui/message returns as a prompt.",
+      "content_hash": "e57a376cdaeac5d46df1463fcb59845d703fe216d762662167a5822d405d1d62",
+      "size_bytes": 8261
     },
     {
       "name": "ontology.md",
       "rel_path": "ontology.md",
       "title": "Ontology — type, subkind, kind",
-      "summary": "Ontology of type, subkind and kind: closed entity types, per-type variants, and open dot-path kinds that name schema shapes, never rows.",
-      "content_hash": "14fe0b964b1e340714631b552860dbe4887a3931c4a3c70d0e897c975944d253",
-      "size_bytes": 15299
+      "summary": "Ontology of type, subkind and kind: closed entity types, per-type variants, open dot-path kinds naming schemas, plus namespaces, how kinds are minted and loaded.",
+      "content_hash": "3cbdfcf9cb2cace021ea18b92c71e474eee174f18f4963b562056be9c74f55dc",
+      "size_bytes": 16065
     },
     {
       "name": "playwright-usage.md",
@@ -310,17 +318,17 @@
       "name": "pty-sync.md",
       "rel_path": "pty-sync.md",
       "title": "PTY Line Synchronization — Annotation Gutter (right) & Trace Gutter (left)",
-      "summary": "The PTY line-synchronization model — PtySyncSession, VirtualTerminal, XtermAdapter — and the annotation gutter's absolute buffer-row coordinates.",
-      "content_hash": "9022fd4fde13ff13b4e9261493d9583a85f701fa4d1f423661df6c77cc3d1298",
-      "size_bytes": 28626
+      "summary": "PTY line-synchronization model (PtySyncSession, VirtualTerminal, XtermAdapter eviction offset), annotation gutter row positioning, and scrollback recovery across frontend reload and backend restart.",
+      "content_hash": "8ed9992262cb3d3fc6334b06217718e4881036402da882c1f7834507fc733d07",
+      "size_bytes": 28898
     },
     {
       "name": "pty-terminal-spec.md",
       "rel_path": "pty-terminal-spec.md",
       "title": "PTY / xterm Terminal System Specification",
-      "summary": "PTY terminal system across OS process, backend sessions, WebSocket transport and xterm.js: byte paths, framed stream persistence, attach-time replay, resize alignment and the two renderers.",
-      "content_hash": "aa69cc029bec17e7c3ce1e7f1df91672e45f082bd62a1025e16adcca64128472",
-      "size_bytes": 55086
+      "summary": "PTY terminal system across OS process, backend sessions, WebSocket transport and xterm.js: byte paths, framed stream persistence, attach-time replay, resize alignment, two renderers, startup budget.",
+      "content_hash": "3c196a6cb4c49ed43b0132ef46ad3d0d739d835f6f62ab30f6b59aa89478f25c",
+      "size_bytes": 55431
     },
     {
       "name": "renderable-fences.md",
@@ -366,17 +374,17 @@
       "name": "system_agents.md",
       "rel_path": "system_agents.md",
       "title": "System Agents",
-      "summary": "System agents: shipped SubAgent prompt assets, their loading and embedding into an AgenticProcess, and steps for adding one — distinct from the launchable Agent entity.",
-      "content_hash": "6ce2f1a034538d77c6c0fc410bbe9e5bb09b03d5694fb0053fe5ab044f0f52d3",
-      "size_bytes": 13179
+      "summary": "System agents: shipped SubAgent prompt assets, their loading and embedding into an AgenticProcess, and steps for adding one, distinct from the launchable Agent entity.",
+      "content_hash": "2eb7873a9b779386e960035809204d59be36ac1a662717b08f24781876bbe31c",
+      "size_bytes": 12413
     },
     {
       "name": "tab-management.md",
       "rel_path": "tab-management.md",
       "title": "Tab Management",
-      "summary": "The Tab entity as the one membership system for content and terminal tabs: ids derived from DockPointer, the SDK TabManager, and the design history.",
-      "content_hash": "7093e9a7a5c09fc17b6bd5b5f85cd76ffd5e7d406f6ddf2f0fc678fb32889177",
-      "size_bytes": 66082
+      "summary": "Tab entity as the one membership system for content and terminal tabs: pointer-hash ids, host tabs, SDK TabManager, client lifecycle states, and historical design record.",
+      "content_hash": "854aeee428a55ed6dc4e7d2da48534e832c2c6f8957a1b359665c3a1af0a209f",
+      "size_bytes": 70439
     },
     {
       "name": "tags.md",
@@ -438,9 +446,9 @@
       "name": "viewmodes.md",
       "rel_path": "viewmodes.md",
       "title": "View Modes — Vibe / Standard / Advanced / Dev \"skin\" system",
-      "summary": "The Vibe/Standard/Advanced/Dev view-mode skin system, and the non-negotiable rule that a mode changes layout and visibility but never data or hooks.",
-      "content_hash": "fd9f766386dc01230ac4f178da62571bc513f77100e805d2c8f8b1b33715c304",
-      "size_bytes": 16622
+      "summary": "Vibe/Standard/Advanced/Dev view-mode system, now per session tab: the skin-layer rule, session transport exception, AdvancedOnly/DevOnly/ViewSwap toolkit, and testing recipe.",
+      "content_hash": "3b6a6c41aa07274b8ff651c19da30c6cb9e20fa65c1adbfad9268438998c8df1",
+      "size_bytes": 17327
     },
     {
       "name": "wikitip.md",
@@ -471,23 +479,23 @@
     {
       "name": "agent",
       "rel_path": "agent",
-      "self_summary": "The agent layer up close: the AgenticProcess four-axis status model and its interface card (fields, actions, TypeScript surface), and Chief of Staff agents that answer fast and hand longer work to SubAgent staff through the task ledger.",
+      "self_summary": "The agent layer up close: the AgenticProcess four-axis status model and its interface card (fields, actions, TypeScript surface), the one composer that layers a worker's system prompt, and Chief of Staff agents that answer fast and hand longer work to SubAgent staff through the task ledger.",
       "child_typeid": "markdown_index-ef6a0b49-4a8e-57b4-b375-c061146f5d56",
-      "child_inputs_hash": "8e12a4b9bc677e160f319a693e5a8f90bc3f4d8eb39d3479e93205736a5d4d12"
+      "child_inputs_hash": "eaac3c54e7c1e3330bb372a97c6042ecb4044320f85e6234a88b56e0d3b412df"
     },
     {
       "name": "agent-management",
       "rel_path": "agent-management",
       "self_summary": "Running and controlling agent sessions: which state survives a restart, the orthogonal headless/PTY transports and how a process switches between them, Claude session lifecycle, the PTY WebSocket stack, and the terminal's tabs and toolbars.",
       "child_typeid": "markdown_index-19ec5c4d-9a34-5922-9864-878be1f4d806",
-      "child_inputs_hash": "50ba94cc812628dc84b0f71578f872a78ddc1c2da3e0b882f5453bb9d32441fd"
+      "child_inputs_hash": "6c210cb3880b199d0942f83b21395d168ba8360ba1ec3c0f7715f51351723a21"
     },
     {
       "name": "breadcrumbs",
       "rel_path": "breadcrumbs",
       "self_summary": "Proven root causes, one per page: a rule established by debugging, why the obvious reading was wrong, and the lever that shows it. Read the one matching your symptom before re-deriving it — personas, composer readiness, live frames, port picking, login state.",
       "child_typeid": "markdown_index-bd7ef5f5-cf38-55ee-b3c9-b1549c57f267",
-      "child_inputs_hash": "6f732baee9de13f459fd5bc0253542a5efc7ff25d61085eb8eeae8fe6bdd5d7c"
+      "child_inputs_hash": "84923e1358e8f7dbff2c41356579779f29ea17f49cda29dfbf001df7a85dee36"
     },
     {
       "name": "collab",
@@ -499,9 +507,9 @@
     {
       "name": "data-management",
       "rel_path": "data-management",
-      "self_summary": "How disk and database stay one thing: assets and their identity capsules, the indexer walk and entity sync, DataSpec as the one schema system (kind, schema, value) with its kind registry, data sources and datasets, evals, records, search and the SQLite layer underneath.",
+      "self_summary": "How disk and database stay one thing: assets and their identity capsules, the indexer walk and entity sync, DataSpec as the one schema system (kind, schema, value) with its kind registry, data sources and datasets, mirroring a system of record, evals, records, search and the SQLite layer underneath.",
       "child_typeid": "markdown_index-66704284-b246-51c2-849b-cf3c916f33de",
-      "child_inputs_hash": "66d174046c25a9d45d4254c2a9409446319aeb0e123d522860b680960dfb5162"
+      "child_inputs_hash": "f79adfaf7d9c682153fc9c73f4a811d90392a6f73e9d827f461263fc18d09a88"
     },
     {
       "name": "flows",
@@ -522,7 +530,7 @@
       "rel_path": "interface",
       "self_summary": "Reference pages for the agentic-process stack, layer by layer: AgenticProcess, Shell, the PTY layer and ComputeNode — their fields, HTTP actions and TypeScript surfaces — plus the driver protocol behind Claude, Codex and Copilot, and session naming.",
       "child_typeid": "markdown_index-034a266f-b952-5882-b474-c3d9a15d4816",
-      "child_inputs_hash": "8436cbf2415c0f42548df4a1059a2e709a2fe0ae004869e4594453dd32be3ae3"
+      "child_inputs_hash": "5e5890ee98d330bb56de2d02aa323db34079406bf4d03f2ae6023730c614ac5c"
     },
     {
       "name": "mockups",
@@ -536,14 +544,14 @@
       "rel_path": "modes",
       "self_summary": "The workspace modes. Vibe is the creator-first one: a side chat beside a live display, with the rules that keep the display authoritative.",
       "child_typeid": "markdown_index-816a84f6-dd60-5ab1-9afc-dd620668e009",
-      "child_inputs_hash": "6ae7be5ee7c49ff122ce3b3b7ac22927e5e51262a10f0cd3a870399b1038d411"
+      "child_inputs_hash": "54512e8d5301db3dacffd605aef6838beb4fc6ec1e8870136eda9993967e021e"
     },
     {
       "name": "navigation",
       "rel_path": "navigation",
-      "self_summary": "How Flowpad navigates: the seven-step dock URL loading algorithm and its invariants, the screen map with you-are-here context and where-to-go routing, and the catalog of example sentences each mapped to its navigation target.",
+      "self_summary": "How Flowpad navigates: the seven-step dock URL loading algorithm and its invariants, the screen map with you-are-here context and where-to-go routing, the home page a project opens on, and the catalogs of example sentences each mapped to its navigation target.",
       "child_typeid": "markdown_index-b91806c7-b7c9-5289-8493-a79f197f9c51",
-      "child_inputs_hash": "c5babb3aec864169d33cb5de1266a4c50a437046ea80cb337c36ac9ca228f470"
+      "child_inputs_hash": "1723a9d033623b559b0456fbc24db7541c5ba64869dd2b3c5f1e01c1b070df25"
     },
     {
       "name": "primitives",
@@ -564,23 +572,23 @@
       "rel_path": "sdk-site",
       "self_summary": "The public Flow SDK guide: DataSpec schemas and values, AgenticProcess, and an executable workflow of agents answering channel messages, built into the SDK site.",
       "child_typeid": "markdown_index-2c1662c6-f6d3-50df-9f63-0ccc6760cd3c",
-      "child_inputs_hash": "46a9cc308231cee3b9616198f219e95839607080b6a06f4e9a9914dc8a8bce09"
+      "child_inputs_hash": "faea95917418034c0315bac7b5ddb65aee4c88b5a0b290bd21fecdc090116e22"
     },
     {
       "name": "snippets",
       "rel_path": "snippets",
-      "self_summary": "The runnable SDK shelf: one page per capability, every fence pinned by a test. Connections, credentials, data sources, datasets, activity, agents on email, chat and help-desk channels, message threads, LLM endpoints, processes, workflows, compute ops, wizards, decisions, RAG, project dependencies and the one call-return contract.",
+      "self_summary": "The runnable SDK shelf: one page per capability, every fence pinned by a test. Connections, credentials, data sources, datasets, activity, agents on email, chat and help-desk channels, channel webhook routing, message threads, stream inbox automations, LLM endpoints, processes, workflows, compute ops, wizards, decisions, RAG, project and asset dependencies and the one call-return contract.",
       "child_typeid": "markdown_index-a34feae9-8881-5202-b520-9281688839f2",
-      "child_inputs_hash": "c919d045be156fa641ef78e5ef6dce334a9e41dd4dcd07156d40c7fe7851dce8"
+      "child_inputs_hash": "28def270ed5aeca9543c388d5f65884c6381d788a38f51bac6bfc7b7c7095d50"
     },
     {
       "name": "tabs",
       "rel_path": "tabs",
       "self_summary": "The Display pane as an address: how `flow show` navigates a URL-owned target and why the display stack belongs to the router rather than to component state.",
       "child_typeid": "markdown_index-7c234c43-b48e-5e33-99b2-84e907274387",
-      "child_inputs_hash": "38e82f24b0ea8ab544edc398dfdfe5cd029740734bf6c253c4b1c303baf8c51a"
+      "child_inputs_hash": "6e40d1287746f8513502ef604206fe7d8a55168b2c3196f4361c4b402b64303f"
     }
   ],
-  "generated_at": "2026-10-07T14:50:03Z",
+  "generated_at": "2026-10-13T10:49:54Z",
   "latest_process_ref": ""
 }
