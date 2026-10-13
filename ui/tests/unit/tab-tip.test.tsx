@@ -26,14 +26,14 @@ const names = () => [...new Set(screen.queryAllByTestId('tab-tooltip-name').map(
 
 describe('tab tip', () => {
   it('a tab with no body shows its full title', () => {
-    openTip({ key: 'a', title: 'Inbox message channel setup states', testId: 'chip' });
-    expect(names()).toEqual(['Inbox message channel setup states']);
+    openTip({ key: 'a', title: 'Message channel setup states for every provider', testId: 'chip' });
+    expect(names()).toEqual(['Message channel setup states for every provider']);
   });
 
   it('a body sits under the header, and its own name line drops out', () => {
     openTip({
       key: 'a',
-      title: 'Inbox message channel setup states',
+      title: 'Message channel setup states for every provider',
       testId: 'chip',
       card: (
         <div data-testid="body">
@@ -42,7 +42,7 @@ describe('tab tip', () => {
         </div>
       ),
     });
-    expect(names()).toEqual(['Inbox message channel setup states']);
+    expect(names()).toEqual(['Message channel setup states for every provider']);
     expect(screen.getAllByTestId('body')[0].textContent).toBe('Claude · running');
   });
 
