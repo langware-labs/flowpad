@@ -46,7 +46,7 @@ def read_trigger_result(trigger_dir: Path) -> "tuple[Optional[TriggerSpec], str]
         return None, f"{TRIGGER_JSON} is not valid JSON: {exc}"
 
 
-def trigger_asset_hash(ref: FSRef) -> float:
+def trigger_asset_hash(ref: FSRef) -> int:
     """Freshness is the mtime of ``trigger.json``, and only that file.
 
     A trigger folder carries an identity capsule beside its document, and a

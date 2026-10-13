@@ -1,10 +1,23 @@
 import { Trans, useLingui } from '@lingui/react/macro';
 import type { Project } from '@sdk';
 import { isHubOnly } from '@src/navigation/hub-runtime';
+import { useState } from 'react';
 import { Link } from 'react-router';
 
 /** How many projects the banner names; the rest are one click away in the project picker. */
 const MAX_LISTED = 3;
+
+const OPENED_KEY = 'flowpad:hub-shared-projects-opened';
+
+/** The projects this browser already followed to FlowPad — the banner stops naming them. */
+function openedIds(): string[] {
+  try {
+    const ids: unknown = JSON.parse(window.localStorage.getItem(OPENED_KEY) || '[]');
+    return Array.isArray(ids) ? ids.map(String) : [];
+  } catch {
+    return [];
+  }
+}
 
 /**
  * The projects other people gave `myId` access to, most recently updated first.
@@ -29,14 +42,29 @@ export function sharedProjectsToOpen(projects: readonly Project[] | undefined, m
  * nothing pointing at FlowPad. Each project links to its landing page, the one
  * with "Open in FlowPad" and the download link, so the way to the app is one click.
  *
+ * A project whose button was clicked is not named again in this browser: the hub
+ * cannot see the desktop, so following the link stands in for "opened it".
+ *
  * Hub-only: the landing route does not exist on a desktop backend.
  */
 export function SharedProjectsBanner({ projects }: { projects: readonly Project[] }) {
   const { t } = useLingui();
-  if (!isHubOnly() || projects.length === 0) return null;
+  const [opened, setOpened] = useState(openedIds);
+  const toOpen = projects.filter((p) => !opened.includes(p.id));
+  if (!isHubOnly() || toOpen.length === 0) return null;
 
-  const listed = projects.slice(0, MAX_LISTED);
-  const more = projects.length - listed.length;
+  const markOpened = (id: string) => {
+    const next = [...opened, id];
+    setOpened(next);
+    try {
+      window.localStorage.setItem(OPENED_KEY, JSON.stringify(next));
+    } catch {
+      /* storage unavailable — the button just stays */
+    }
+  };
+
+  const listed = toOpen.slice(0, MAX_LISTED);
+  const more = toOpen.length - listed.length;
   return (
     <section
       data-testid="hub-home-shared-projects"
@@ -57,6 +85,7 @@ export function SharedProjectsBanner({ projects }: { projects: readonly Project[
             key={project.id}
             to={`/project/${project.id}`}
             data-testid={`hub-home-shared-project-${project.id}`}
+            onClick={() => markOpened(project.id)}
             className="inline-flex items-center rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
           >
             {project.name || t`Untitled project`}

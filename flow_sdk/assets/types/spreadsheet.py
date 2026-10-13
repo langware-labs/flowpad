@@ -113,9 +113,9 @@ def extract_spreadsheet(ref: FSRef, resolved_id: str) -> list[FSRecord]:
     return [rec]
 
 
-def spreadsheet_asset_hash(ref: FSRef) -> float:
+def spreadsheet_asset_hash(ref: FSRef) -> int:
     """The backing file's mtime — a single flat file, so no folder-max needed."""
     try:
-        return ref._path.stat().st_mtime
+        return ref._path.stat().st_mtime_ns
     except OSError:
-        return 0.0
+        return 0

@@ -179,6 +179,10 @@ keyring.set_keyring(_InMemoryKeyring())
 # See flow_sdk/flow_rs_binary.py::vendored_flow_rs_enabled.
 os.environ["FLOWPAD_DISABLE_VENDORED_FLOW_RS"] = "1"
 
+# Pin the disk-I/O kernel to its Python backend, so no test selects the Rust
+# backend by accident. A test that wants it sets the variable itself.
+os.environ["FLOWPAD_DISKIO_BACKEND"] = "python"
+
 # Neutralize inherited Electron-desktop env for the test session. When the suite
 # is launched from inside the Flowpad desktop app's PTY (an agentic-process
 # worker), the desktop exports these vars and they leak into the tests:
