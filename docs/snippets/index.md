@@ -1,12 +1,12 @@
 ---
 type: markdown_index
 id: markdown_index-a34feae9-8881-5202-b520-9281688839f2
-inputs_hash: 28def270ed5aeca9543c388d5f65884c6381d788a38f51bac6bfc7b7c7095d50
+inputs_hash: 80da085fe199ec13481937145fef23bac833aa71f3a36ebebad58c9e5669d2e2
 template_version: 1
 prompt_version: 1
 parent_ref: markdown_index-6136dbba-27ed-59c3-a192-fe2894f3ec30
 vault_root: /Users/shlom/Documents/dev/flowpad-oss/docs
-generated_at: '2026-10-13T10:49:35Z'
+generated_at: '2026-10-13T11:16:14Z'
 latest_process_ref: ''
 file_count: 30
 subfolder_count: 0
@@ -31,7 +31,7 @@ subfolder_count: 0
 - [Connections — Python SDK and CLI](connections.md) — Runnable Python and CLI snippets for OAuth connections: listing the provider catalogue, connecting, testing, and how the local service is borrowed or started.
 - [Data sources — snippets](data-sources.md) — Runnable DataSource snippets: connect and sync a feed, reuse by account, search, mirror folders, subscribe to events, write items, reply, merge sources, write a driver.
 - [DataSpec](data-spec.md) — Tested snippets teaching DataSpec schemas and values: declaring classes, authoring forms and parse, spec_kind registration, ReturnedValue, save/load folders, Text and Binary file fields, identity carriers.
-- [Datasets — snippets](datasets.md) — Runnable dataset snippets: data_schema row kinds, reading and writing rows by key, links, evals, SmartNavigationLog, mirroring via sync, and query, count and text search.
+- [Datasets — snippets](datasets.md) — Runnable dataset snippets: data_schema row kinds, rows by key, links, evals, SmartNavigationLog, mirroring via sync, query, count and text search, and editing outside-owned fields.
 - [Decisions — snippets](decisions.md) — Decision snippets: DecisionSpec closed questions answered with calibrated probabilities through a hub endpoint, the Jev and OpenAI vocabulary, navigator routing, and decision wizard steps.
 - [Gmail source](gmail-source.md) — Snippet: create a Gmail data source from the shipped driver with credentials read from .env.local, never stored.
 - [LLM endpoints — snippets](llm-endpoints.md) — Snippets for LLMEndpoint kinds (api_key, hub, device): credential location, completions, embeddings, model listing, probing, harness resolution, public loginless endpoints, and error behavior.

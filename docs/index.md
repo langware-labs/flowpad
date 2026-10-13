@@ -1,12 +1,12 @@
 ---
 type: markdown_index
 id: markdown_index-6136dbba-27ed-59c3-a192-fe2894f3ec30
-inputs_hash: 369e6f7dc33eb7cec6f5bae5a28e265ac7ae784c5f743075fff668f556177419
+inputs_hash: 13d360e14c7dfb071177dc889399bfe033e38c339e471f8e60f6d0e9c33ade2d
 template_version: 1
 prompt_version: 1
 parent_ref: ''
 vault_root: /Users/shlom/Documents/dev/flowpad-oss/docs
-generated_at: '2026-10-13T10:49:54Z'
+generated_at: '2026-10-13T11:16:14Z'
 latest_process_ref: ''
 file_count: 58
 subfolder_count: 16
@@ -23,7 +23,7 @@ subfolder_count: 16
 - [Agentic process outputs](agentic_process_outputs.md) — How agent runs surface outputs: display, artifacts, workdir versus declared-output modes, and how results reach the client.
 - [Agent Management](agents-management.md) — Top-level index of agent management: the Agent, Deployment and AgenticProcess model, agent.json authoring bundle, intro and auto-launch keys, PTY versus CLI modes, linked subject docs.
 - [API Routing Specification](api-routing.md) — API routing specification: graph URL structure, parsing algorithm, implicit action mapping, action registry, dedicated routes, RequestInfo and frontend ActionInfo/DataManager routing.
-- [Automations](automations.md) — Automations screen backed by Trigger rows: dock URLs for list, editor, runs and event bus, the UI-to-SDK action chain, if-gate and then-wizard, and fragile rules.
+- [Automations](automations.md) — Automations screen backed by Trigger rows: dock URLs, UI-to-SDK action chain, if-gate and then-wizard with run_script, runs_on and run lookup, fragile rules, and built-in descriptions.
 - [Server Boot & Bootstrap Flows](boot.md) — Backend boot path from process start to serving requests: startup flows, detached tasks, the sub-100ms bootstrap budget, deferred info, shared lazy assets and measurements.
 - [Capabilities](capabilities.md) — Capability system entities: hierarchical kinds such as harness.claude.cli, persisted check/install/test results, dynamic MCP-server capabilities, and frontend hooks.
 - [ComputeNode action surface — pre-refactor STATUS](compute_node_action_audit.md) — Pre-refactor audit of the hub ComputeNode action surface: clean delegations, envelope problems, provider-bound actions and the planned migration steps.
