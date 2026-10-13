@@ -27,7 +27,6 @@ from flow_sdk.cli.commands._common import (
 from flow_sdk.cli.commands._common import (
     resolve_process_id as _resolve_process_id,
 )
-from flow_sdk.core.dev_server import port_open as _port_open
 from flow_sdk.core.dev_server import start_detached as _start_detached
 from flow_sdk.core.dev_server import wait_for_port as _wait_for_port
 
@@ -260,6 +259,43 @@ def _list_webapp_artifacts(process_id: str, query: str) -> list[dict]:
     return artifacts if isinstance(artifacts, list) else []
 
 
+def _answers(port: int) -> bool:
+    """Something speaks HTTP on ``port`` — asked only of a holder the process table cannot name."""
+    import urllib.error  # noqa: PLC0415
+    import urllib.request  # noqa: PLC0415
+
+    from flow_sdk.core.dev_server import loopback_urls  # noqa: PLC0415
+
+    for url in loopback_urls(port):
+        try:
+            with urllib.request.urlopen(url, timeout=2):  # noqa: S310 -- loopback only
+                return True
+        except urllib.error.HTTPError:
+            return True
+        except (urllib.error.URLError, OSError, ValueError):
+            continue
+    return False
+
+
+def _where(port: int, folder: Path, start_cmd: str, name: str) -> tuple[int, bool]:
+    """``(the port the app is or will be on, it is already serving)`` — by the one port rule
+    (``flow_sdk/core/app_ports.py``), never "something answers on that port".
+
+    The app already running from its folder is the app, on whatever port it listens. A port ANOTHER
+    program holds is an error that names it: showing that program as the app is the failure this
+    replaces."""
+    from flow_sdk.core import app_ports  # noqa: PLC0415
+
+    snapshot = app_ports.listeners()
+    mine = app_ports.of_app(snapshot, folder, start_cmd)
+    if mine:
+        return mine[0].port, True
+    found = app_ports.decide(app_ports.Declared(port, required=True), mine, snapshot, answers=_answers)
+    if found.state == "conflict":
+        _fail(EXIT_START_FAILED, "PORT_HELD", f"{name}: {found.note}")
+    return found.port, found.state == "running"
+
+
 def _register_webapp(process_id: str, payload: dict) -> dict:
     return _post_process_action(process_id, "register-webapp-artifact", payload)
 
@@ -283,7 +319,8 @@ def _open_artifact(
     pid = None
     log_file = None
 
-    if not no_start and not _port_open(port):
+    port, serving = _where(port, cwd, command or "", artifact.get("name") or "webapp")
+    if not no_start and not serving:
         if not command:
             return None
         pid, log_file = _start_detached(command, cwd=cwd, port=port, name=artifact.get("name") or "webapp")
@@ -340,6 +377,7 @@ def _open_candidate(
     if port is None:
         _fail(EXIT_INVALID_ARG, "NO_PORT", f"Could not infer a port for {candidate.name}")
 
+    port, serving = _where(port, app_dir, candidate.start_cmd, candidate.name)
     start_cmd = candidate.start_cmd.format(port=port)
     started = False
     pid = None
@@ -348,7 +386,7 @@ def _open_candidate(
     if install and candidate.kind != "static":
         _install_dependencies_if_needed(app_dir, start_cmd)
 
-    if not no_start and not _port_open(port):
+    if not no_start and not serving:
         pid, log_file = _start_detached(start_cmd, cwd=app_dir, port=port, name=candidate.name)
         started = True
         if not _wait_for_port(port, timeout):
