@@ -5,7 +5,7 @@
   "vault_root": "/Users/alice/Documents/dev/flowpad-oss/docs",
   "folder_rel_path": "snippets",
   "folder_name": "snippets",
-  "inputs_hash": "28def270ed5aeca9543c388d5f65884c6381d788a38f51bac6bfc7b7c7095d50",
+  "inputs_hash": "80da085fe199ec13481937145fef23bac833aa71f3a36ebebad58c9e5669d2e2",
   "template_version": 1,
   "prompt_version": 1,
   "self_summary": "The runnable SDK shelf: one page per capability, every fence pinned by a test. Connections, credentials, data sources, datasets, activity, agents on email, chat and help-desk channels, channel webhook routing, message threads, stream inbox automations, LLM endpoints, processes, workflows, compute ops, wizards, decisions, RAG, project and asset dependencies and the one call-return contract.",
@@ -118,9 +118,9 @@
       "name": "datasets.md",
       "rel_path": "datasets.md",
       "title": "Datasets — snippets",
-      "summary": "Runnable dataset snippets: data_schema row kinds, reading and writing rows by key, links, evals, SmartNavigationLog, mirroring via sync, and query, count and text search.",
-      "content_hash": "1b153f8188370a12364060ad82397db5ee2a2273981e2780250826a1ded8a94d",
-      "size_bytes": 15566
+      "summary": "Runnable dataset snippets: data_schema row kinds, rows by key, links, evals, SmartNavigationLog, mirroring via sync, query, count and text search, and editing outside-owned fields.",
+      "content_hash": "d88499f76e7630db92ae798e64e1c45cdf07932f9fd870e24d7fc456ae698d59",
+      "size_bytes": 17753
     },
     {
       "name": "decisions.md",
@@ -252,6 +252,6 @@
     }
   ],
   "subfolders": [],
-  "generated_at": "2026-10-13T10:49:35Z",
+  "generated_at": "2026-10-13T11:16:14Z",
   "latest_process_ref": ""
 }
