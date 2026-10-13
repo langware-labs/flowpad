@@ -5,7 +5,7 @@
   "vault_root": "/Users/shlom/Documents/dev/flowpad-oss/docs",
   "folder_rel_path": "",
   "folder_name": "docs",
-  "inputs_hash": "13d360e14c7dfb071177dc889399bfe033e38c339e471f8e60f6d0e9c33ade2d",
+  "inputs_hash": "126f934ff28653c32bdcab0a73565fc817ccba59d9a56533ec5526eb864460f2",
   "template_version": 1,
   "prompt_version": 1,
   "self_summary": "Flowpad's documentation root. The agentic-process stack and its interfaces, data management from disk to entity row, the ontology of types and kinds, collaboration and the hub, the runnable snippet shelf, and breadcrumbs recording root causes already proven.",
@@ -78,9 +78,9 @@
       "name": "compute_node_action_audit.md",
       "rel_path": "compute_node_action_audit.md",
       "title": "ComputeNode action surface — pre-refactor STATUS",
-      "summary": "Pre-refactor audit of the hub ComputeNode action surface: clean delegations, envelope problems, provider-bound actions and the planned migration steps.",
-      "content_hash": "2826b943cb6f3f703e74ef1ee25777ec66245268b9450c6e1115c2741b71a991",
-      "size_bytes": 36414
+      "summary": "Pre-refactor audit of the hub ComputeNode action surface: clean delegations, envelope problems, provider-bound actions, abstraction failures, two box transports, proposed one-liner surface, test plan.",
+      "content_hash": "1d610e76c7b6d2ebf231ffef8a5972701c2dac0abd2ac1a9a1c6b42ad232c935",
+      "size_bytes": 36520
     },
     {
       "name": "contributing.md",
@@ -589,6 +589,6 @@
       "child_inputs_hash": "6e40d1287746f8513502ef604206fe7d8a55168b2c3196f4361c4b402b64303f"
     }
   ],
-  "generated_at": "2026-10-13T11:16:14Z",
+  "generated_at": "2026-10-13T12:04:14Z",
   "latest_process_ref": ""
 }

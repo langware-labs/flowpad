@@ -1,12 +1,12 @@
 ---
 type: markdown_index
 id: markdown_index-6136dbba-27ed-59c3-a192-fe2894f3ec30
-inputs_hash: 13d360e14c7dfb071177dc889399bfe033e38c339e471f8e60f6d0e9c33ade2d
+inputs_hash: 126f934ff28653c32bdcab0a73565fc817ccba59d9a56533ec5526eb864460f2
 template_version: 1
 prompt_version: 1
 parent_ref: ''
 vault_root: /Users/shlom/Documents/dev/flowpad-oss/docs
-generated_at: '2026-10-13T11:16:14Z'
+generated_at: '2026-10-13T12:04:14Z'
 latest_process_ref: ''
 file_count: 58
 subfolder_count: 16
@@ -26,7 +26,7 @@ subfolder_count: 16
 - [Automations](automations.md) — Automations screen backed by Trigger rows: dock URLs, UI-to-SDK action chain, if-gate and then-wizard with run_script, runs_on and run lookup, fragile rules, and built-in descriptions.
 - [Server Boot & Bootstrap Flows](boot.md) — Backend boot path from process start to serving requests: startup flows, detached tasks, the sub-100ms bootstrap budget, deferred info, shared lazy assets and measurements.
 - [Capabilities](capabilities.md) — Capability system entities: hierarchical kinds such as harness.claude.cli, persisted check/install/test results, dynamic MCP-server capabilities, and frontend hooks.
-- [ComputeNode action surface — pre-refactor STATUS](compute_node_action_audit.md) — Pre-refactor audit of the hub ComputeNode action surface: clean delegations, envelope problems, provider-bound actions and the planned migration steps.
+- [ComputeNode action surface — pre-refactor STATUS](compute_node_action_audit.md) — Pre-refactor audit of the hub ComputeNode action surface: clean delegations, envelope problems, provider-bound actions, abstraction failures, two box transports, proposed one-liner surface, test plan.
 - [Contributing to Flowpad](contributing.md) — Getting a Flowpad dev environment running: prerequisites, backend and frontend startup, repository layout, and the contribution workflow.
 - [cookie-gate](cookie-gate.md) — Cookie-gate: optional pre-shared secret locking an instance to invited callers: arming rules, desktop refusal, hub-signed tickets and grants, gate exchange, revocation and cookie attributes.
 - [Data Management](data-management.md) — Overview of the two-layer data model, filesystem FSRecords as source of truth plus SQLite database entities as queryable indexes, linking to detailed subsystem documents.
