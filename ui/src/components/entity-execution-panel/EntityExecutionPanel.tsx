@@ -51,6 +51,7 @@ import { useProcessesForProject } from './hooks/useProcessesForProject';
 import { useAgenticProcessStream } from '@src/hooks/use-agentic-process-stream';
 import { ChatPlanModeProvider } from '@src/components/terminal/interactive-terminal/chat-plan-mode-context';
 import { PlanInteractionBar } from '@src/components/terminal/interactive-terminal/PlanInteractionBar';
+import { SurfaceSwitchWaitNotice } from '@src/components/terminal/interactive-terminal/SurfaceSwitchWaitNotice';
 import { AssetManagerButton } from '@src/components/asset-manager';
 import { useLaunchingAgent } from '@src/hooks/use-launching-agent';
 import { AgentIntroMessage } from '@src/components/agents/AgentIntroMessage';
@@ -932,7 +933,9 @@ export function EntityExecutionPanel({
         historyTriggerLabel={historyTriggerLabel}
         historyOnLeft={historyOnLeft}
         onHistoryOpen={() => setHistoryRequested(true)}
-        afterHistorySlot={typeof afterHistorySlot === 'function' ? afterHistorySlot({ activeProcess }) : afterHistorySlot}
+        afterHistorySlot={
+          typeof afterHistorySlot === 'function' ? afterHistorySlot({ activeProcess }) : afterHistorySlot
+        }
         pastSessionsLabel={pastSessionsLabel}
         noPastSessionsLabel={noPastSessionsLabel}
         settingsSlot={
@@ -986,19 +989,21 @@ export function EntityExecutionPanel({
                 flowData={m}
                 worker={activeProcess?.worker_type ?? undefined}
                 agent={launchingAgent}
-                isUser={m.elementType === FlowElementTypes.USER_MESSAGE || (m.attributes && m.attributes.role === 'user')}
+                isUser={
+                  m.elementType === FlowElementTypes.USER_MESSAGE || (m.attributes && m.attributes.role === 'user')
+                }
               />
             ))
           )}
         </AutoScrollContainer>
-        {/* Pending-interaction notice, `allowPicker={false}`: this surface never
-            offers the structured picker. On a PTY worker it says a question is
-            waiting and opens the terminal (the agent's own picker is blocked
-            there — an answer sent from here is rejected and its text is eaten as
-            keystrokes). On a headless worker it renders nothing: the composer
-            right below already takes the answer as a normal turn. */}
+        {/* A vibe switch held back while the agent works (see SurfaceSwitchWaitNotice). */}
+        <SurfaceSwitchWaitNotice processId={activeProcess?.id} />
+        {/* Pending interaction: the agent's question as a card with its options
+            on a headless worker. On a PTY worker it says a question is waiting
+            and opens the terminal (the agent's own picker is blocked there — an
+            answer sent from here is rejected and its text is eaten as keystrokes). */}
         <ChatPlanModeProvider process={activeProcess}>
-          <PlanInteractionBar items={items} allowPicker={false} />
+          <PlanInteractionBar items={items} />
         </ChatPlanModeProvider>
       </LinkScope>
       {promptContext && (

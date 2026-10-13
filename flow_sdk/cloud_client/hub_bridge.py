@@ -691,6 +691,13 @@ class HubWsBridge:
                     # projection have settled (never on the intermediate CREATE).
                     stream_inbox.touch("inbound-message")
 
+                    # Announce it to message automations — after the row landed, so the
+                    # rule's subject reads it. Our own echoes are refused by the subject.
+                    if not _is_session_traffic(payload):
+                        from flow_sdk.stream_inbox.stream_inbox_on_tag import emit_conversation_message_tag
+
+                        emit_conversation_message_tag(fm_id, conversation_id)
+
                     # OS-level desktop notification for an inbound message from
                     # *another* user. Emitted HERE — after the message is
                     # persisted — not alongside the persist task: the unread count

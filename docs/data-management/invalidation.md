@@ -117,17 +117,19 @@ last-modified time (not the index instant) via `_asset_updated_epoch`
 (`flow_sdk/core/entity/entity_model.py`):
 
 ```
-updated_date = max( getmtime(src_path),           # add/remove of children
-                    asset_hash_fn(src_path) )      # deepest INNER-file mtime
+updated_date = max( getmtime(src_path),                 # add/remove of children
+                    asset_hash_fn(src_path) / 1e9 )     # newest INNER-file mtime
 ```
 
 The `max` is load-bearing for **folder-backed** assets: a directory's own mtime
 does **not** move when a file *inside* it is content-edited (editing `SKILL.md`,
-a deck layout, …). The registered `asset_hash_fn` already computes the deepest
+a deck layout, …). The registered `asset_hash_fn` already computes the newest
 inner-file mtime exactly to catch child-content edits (see `docs/CLAUDE.md`
 rule 14), so folding it in makes **both** an added file and an edited inner file
-advance the stamp. A sane-epoch bound guards against a future non-mtime
-`asset_hash_fn` poisoning the timestamp.
+advance the stamp. The fingerprint is an integer in nanoseconds, hence the
+division. Not every fingerprint is a time — a manifest or entity-document type
+sums several mtimes and sizes — so a value more than a day past the present is
+ignored and the folder mtime stands (`tests/unit/test_asset_updated_epoch.py`).
 
 For **remote** (hub-authoritative) rows `updated_date` is the LWW clock and is
 NOT moved by a local re-index — the hub broadcasts its own clock. See the

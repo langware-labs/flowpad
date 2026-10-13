@@ -36,7 +36,7 @@ def _load_whiteboard_fm(whiteboard_dir: Path) -> dict[str, Any]:
     return parsed if isinstance(parsed, dict) else {}
 
 
-def whiteboard_asset_hash(ref: FSRef) -> float:
+def whiteboard_asset_hash(ref: FSRef) -> int:
     """mtime across the whiteboard's inner content files.
 
     Default base implementation uses dir mtime, which doesn't update when a
@@ -44,10 +44,10 @@ def whiteboard_asset_hash(ref: FSRef) -> float:
     overrides to stat WHITE_BOARD.md + board.json instead.
     """
     base = ref._path
-    ts = 0.0
+    ts = 0
     for name in (WHITE_BOARD_MD, BOARD_JSON):
         try:
-            ts = max(ts, (base / name).stat().st_mtime)
+            ts = max(ts, (base / name).stat().st_mtime_ns)
         except OSError:
             pass
     return ts

@@ -8,7 +8,11 @@ import { consumeInboundParams, DeepLinkAction, inboundParams } from '@src/naviga
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { notify } from '@src/notifications/notify';
 import { withHomePage } from '@src/project-home-page/home-page-state';
-import { type IncomingProjectParams, useIncomingProjectStore } from '@src/store/use-incoming-project-store';
+import {
+  type IncomingProjectParams,
+  isSetupDeclined,
+  useIncomingProjectStore,
+} from '@src/store/use-incoming-project-store';
 import { useIncomingTaskStore } from '@src/store/use-incoming-task-store';
 import { useEffect, useRef, useState } from 'react';
 import { IncomingProjectDialog } from './IncomingProjectDialog';
@@ -104,7 +108,7 @@ function useOfferNewCloudProjects(held: boolean) {
           } catch {
             gitOrigin = null;
           }
-          if (!gitOrigin) continue;
+          if (!gitOrigin || isSetupDeclined(link.project_id)) continue;
           found.push({
             gitOrigin,
             projectName: link.title || 'Shared',
@@ -193,6 +197,7 @@ export function IncomingDeepLink() {
     // indexed Project on THIS box. Checked before the task branch because a
     // git-setup link also carries a git_origin (but no task_id).
     if (isGitSetup && gitOrigin) {
+      if (isSetupDeclined(projectId)) return;
       const pending = { gitOrigin, projectName: title, senderName, projectId };
       if (projectId && claimHydrateHop(projectId)) {
         // Backward compatibility (FLOWPAD-2199; remove in FLOWPAD-2200): the hub's
