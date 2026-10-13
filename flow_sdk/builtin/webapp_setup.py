@@ -203,11 +203,16 @@ def _declared(serving) -> Optional[app_ports.Declared]:
     return app_ports.Declared(port.port, port.required) if port is not None else None
 
 
-async def _other_apps(app) -> list:
-    """Every other web app this instance knows — their declared ports are not this app's to take."""
+async def _project_apps(project_id) -> list:
     from flow_sdk.builtin.faas.micro_app import WebApp  # noqa: PLC0415
 
-    return [other for other in await WebApp.get_all() if str(other.id) != str(app.id)]
+    return await WebApp.get_all({"match": {"project_id": project_id}}) if project_id else []
+
+
+async def _other_apps(app) -> list:
+    """The other web apps of this app's project — their declared ports are not this app's to take.
+    A port an app of ANOTHER project declares is not reserved ahead; it is met live, as any holder is."""
+    return [other for other in await _project_apps(app.project_id) if str(other.id) != str(app.id)]
 
 
 #: ``(who declares it, its process name, what it declares)`` for every declaring process of an app.
@@ -264,11 +269,9 @@ async def where(app, serving) -> app_ports.PortAnswer:
     return (await asyncio.to_thread(_look, app, process, taken))[0]
 
 
-async def app_declaring(port: int):
-    """The web app one of whose processes declares ``port``, or None."""
-    from flow_sdk.builtin.faas.micro_app import WebApp  # noqa: PLC0415
-
-    for app in await WebApp.get_all():
+async def app_declaring(port: int, project_id):
+    """The web app of ``project_id`` one of whose processes declares ``port``, or None."""
+    for app in await _project_apps(project_id):
         if app.asset_ref and any(declared.port == port for _who, _name, declared in _declared_by(app)):
             return app
     return None

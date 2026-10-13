@@ -498,13 +498,13 @@ async def test_a_dead_local_address_starts_the_app_that_declares_its_port(client
     app = await _webapp(project, folder, name="admin", mounts=[{"serving": _served(port)}])
     (folder / "index.html").write_text("admin")
     try:
-        # A probe only asks: it says whose port it is and how to start it.
-        hint = await probe_web_url(f"http://localhost:{port}/")
-        assert hint[:2] == (ExitCode.NOT_YET, "not_running")
-        assert "it is admin's" in hint[2] and "flow app restart admin" in hint[2]
+        # A probe only asks.
+        assert (await probe_web_url(f"http://localhost:{port}/"))[:2] == (ExitCode.NOT_YET, "not_running")
+        # Another project's session does not start this project's app.
+        assert await start_app_at(f"http://localhost:{port}/", str(uuid.uuid4())) is None
 
         # A caller that can wait (an agent's auto_open) starts the app, and the address answers.
-        assert (await start_app_at(f"http://localhost:{port}/"))[0] is ExitCode.OK
+        assert (await start_app_at(f"http://localhost:{port}/", str(project.id)))[0] is ExitCode.OK
         code, verdict, detail = await probe_web_url(f"http://localhost:{port}/")
         assert (code, verdict) == (ExitCode.OK, "ok"), detail
         [route] = [p for p in await webapp_routes(str(app.id)) if p.backend.type == "proxy"]
@@ -520,7 +520,7 @@ async def test_a_dead_local_address_no_app_declares_is_just_dead(client, tmp_pat
     url = f"http://127.0.0.1:{_unused_port()}/"
     code, verdict, detail = await probe_web_url(url)
     assert (code, verdict) == (ExitCode.NOT_YET, "not_running") and detail.startswith("Nothing is answering at ")
-    assert await start_app_at(url) is None
+    assert await start_app_at(url, str((await _project(tmp_path)).id)) is None
 
 
 async def test_the_apps_service_starts_on_this_desktop_and_is_an_endpoint_of_its_own(client, tmp_path):

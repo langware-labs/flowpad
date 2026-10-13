@@ -106,16 +106,17 @@ def _local_port(url: str) -> Optional[int]:
         return None
 
 
-async def start_app_at(url: str) -> Optional[tuple[ExitCode, Optional[str], str]]:
-    """Start the app that DECLARES the port of a dead address on this machine. None when no app does.
+async def start_app_at(url: str, project_id: Optional[str]) -> Optional[tuple[ExitCode, Optional[str], str]]:
+    """Start the app of ``project_id`` that DECLARES the port of a dead address on this machine. None
+    when none does.
 
     An agent that opens ``http://localhost:3300`` (an ``auto_open``) names a port, not an app; the
     declaration (``serving.ports``) is what ties the two. For a caller that can wait for a server to
-    warm up — ``probe_web_url`` itself only says whose port it is."""
+    warm up — a probe only asks."""
     from flow_sdk.builtin import webapp_setup  # noqa: PLC0415
 
     port = _local_port(url)
-    app = await webapp_setup.app_declaring(port) if port else None
+    app = await webapp_setup.app_declaring(port, project_id) if port else None
     if app is None:
         return None
     installed = await webapp_setup.step(str(app.id), "install", check=True)
@@ -147,15 +148,6 @@ async def probe_web_url(url: str) -> tuple[ExitCode, Optional[str], str]:
     if verdict == "hung":
         return ExitCode.NOT_YET, verdict, f"{host} did not answer in time."
     if verdict is not None:
-        if verdict == "not_running" and (port := _local_port(url)):
-            from flow_sdk.builtin import webapp_setup  # noqa: PLC0415
-
-            app = await webapp_setup.app_declaring(port)
-            if app is not None:
-                return ExitCode.NOT_YET, verdict, (
-                    f"Nothing is answering at port {port}: it is {app.name}'s, and {app.name} is not running — "
-                    f"`flow app restart {app.name}` starts it."
-                )
         return ExitCode.NOT_YET, verdict, f"Nothing is answering at {host}."
     if status.nav_error:  # the probe itself broke: say nothing we do not know
         return ExitCode.OK, None, ""
