@@ -55,8 +55,13 @@ def derived_identity(reader: Any = None) -> Derived:
     return Derived(reader=reader)
 
 
-def main_file_mtime(ref: Any, filename: str) -> float:
+def main_file_mtime(ref: Any, filename: str) -> int:
     """Freshness of a folder asset = the mtime of the ONE file that defines it.
+
+    Fingerprint v2: an INTEGER (``st_mtime_ns``), like every per-type freshness function
+    here and in ``assets/types``. The token is ``str()`` of it, so no float formatting has
+    to be reproduced by another backend. A sentinel stamped from the old float form
+    mismatches once and that record re-indexes.
 
     The third copy of this was being written when it moved here. Every
     ``Folder(main=...)`` type wants exactly this rule and for the same reason:
@@ -65,15 +70,15 @@ def main_file_mtime(ref: Any, filename: str) -> float:
     scratch — and hashing the tree would re-index the asset every time any of
     that changed, which is precisely when nothing about the asset did.
 
-    ``0.0`` for a missing file: an asset whose document is gone is not fresh.
+    ``0`` for a missing file: an asset whose document is gone is not fresh.
     """
     try:
-        return (ref._path / filename).stat().st_mtime
+        return (ref._path / filename).stat().st_mtime_ns
     except OSError:
-        return 0.0
+        return 0
 
 
-def manifest_fingerprint(info: Any, ref: Any) -> float:
+def manifest_fingerprint(info: Any, ref: Any) -> int:
     """Freshness of an asset that declares a main file but is not an entity document: the asset's
     own stat (what it was fresh by before — a file added or removed) PLUS its main file's.
 
@@ -86,10 +91,10 @@ def manifest_fingerprint(info: Any, ref: Any) -> float:
         except OSError:
             continue
         total += stat.st_mtime_ns + stat.st_size
-    return float(total)
+    return total
 
 
-def entity_document_fingerprint(info: Any, ref: Any) -> float:
+def entity_document_fingerprint(info: Any, ref: Any) -> int:
     """Freshness of an ENTITY DOCUMENT folder: ``<type>.json`` and its body file
     (``system_prompt.md``). Editing either re-indexes; anything else beside them does not.
 
@@ -105,4 +110,4 @@ def entity_document_fingerprint(info: Any, ref: Any) -> float:
         except OSError:
             continue
         total += stat.st_mtime_ns + stat.st_size
-    return float(total)
+    return total

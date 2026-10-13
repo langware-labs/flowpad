@@ -272,3 +272,15 @@ def test_claude_session_snapshot_and_normalization_carry_lifecycle_fields():
         "reason": "prompt_input_exit",
         "raw_hook_data": end_raw,
     }
+
+
+def test_claude_pre_tool_use_hook_fires_only_for_the_user_input_tools(tmp_path, isolated_wrapper):
+    """The pending-question hook must not run ``flow hooks report`` on every tool
+    call — only on the calls that block on the user."""
+    assets = AssetDir(tmp_path / "assets")
+    ClaudeDriver().prepare_process_hooks(assets, str(mint_uuid()), [HookEventType.PRE_TOOL_USE])
+
+    plugin = assets.os_path / ".flowpad/plugins/claude/flowpad-process-hooks"
+    groups = json.loads((plugin / "hooks/hooks.json").read_text(encoding="utf-8"))["hooks"]["PreToolUse"]
+    assert [group["matcher"] for group in groups] == ["AskUserQuestion|ExitPlanMode"]
+    assert "--wait-for-response" not in groups[0]["hooks"][0]["args"]

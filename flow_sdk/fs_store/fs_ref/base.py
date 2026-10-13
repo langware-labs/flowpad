@@ -55,6 +55,11 @@ class FSRef:
         # (``TypeInfo.layout_for``) need not stat this path again. Never part
         # of identity: two refs are the same ref when their paths are.
         self._layout: "Layout | None" = layout
+        # What the diskio stage-1 scan found IN this folder, by type name — set by the
+        # project folder walker on FOLDER refs it built from one fused scan, so the
+        # per-type walkers read it instead of scanning the folder again. None for
+        # every other ref. Walk-time only: never serialized, never part of identity.
+        self.stage1_scan: dict[str, list] | None = None
 
     @property
     def layout(self) -> "Layout | None":
