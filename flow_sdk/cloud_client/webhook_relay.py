@@ -15,6 +15,8 @@ import base64
 import logging
 from collections import OrderedDict
 
+from flow_sdk.instance_settings import cookie_gate
+
 logger = logging.getLogger(__name__)
 
 #: Delivery ids handled here → the status this app answered. Bounded: the hub re-pushes only what it has not
@@ -23,7 +25,7 @@ _HANDLED: "OrderedDict[str, int]" = OrderedDict()
 _HANDLED_CAP = 512
 #: Hop-by-hop headers the local request makes for itself, plus any cookie-gate credential on the delivery:
 #: this app's own token is attached here, and a second one would be read first and refused.
-_DROP = frozenset({"host", "content-length", "transfer-encoding", "connection", "cookie", "x-cookie-gate"})
+_DROP = frozenset({"host", "content-length", "transfer-encoding", "connection", "cookie", cookie_gate.HEADER_NAME})
 #: Replays in flight, held so the loop never collects one mid-flight (and a test can await).
 _tasks: "set[asyncio.Task]" = set()
 

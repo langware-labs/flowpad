@@ -34,17 +34,17 @@ from __future__ import annotations
 from starlette.requests import HTTPConnection
 from starlette.types import ASGIApp, Receive, Scope, Send
 
-from .cookie_gate_middleware import deny, presents
+from flow_sdk.instance_settings import cookie_gate
 
-COOKIE_NAME = "__Host-cookie-gate"
+from .cookie_gate_middleware import deny
 
 
 class SandboxCookieGateMiddleware:
     def __init__(self, app: ASGIApp) -> None:
         self.app = app
 
-    async def __call__(self, scope: Scope, receive: Receive, send: Send, cookie: str) -> None:
-        if not presents(HTTPConnection(scope), cookie, COOKIE_NAME):
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if not cookie_gate.presents(HTTPConnection(scope)):
             await deny(scope, receive, send)
             return
 

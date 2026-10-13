@@ -9,12 +9,6 @@ from flow_sdk.instance_settings import cookie_gate
 pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
 
 
-@pytest.fixture(autouse=True)
-def _token_file(sod_env, monkeypatch):
-    """The token file under this test's instance dir."""
-    monkeypatch.setattr(cookie_gate, "LOCAL_TOKEN_PATH", sod_env.instance_dir / cookie_gate.LOCAL_TOKEN_FILENAME)
-
-
 # ---------------------------------------------------------------------------
 # Unarmed
 # ---------------------------------------------------------------------------

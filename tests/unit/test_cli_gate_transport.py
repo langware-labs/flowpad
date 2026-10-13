@@ -16,7 +16,7 @@ import pytest
 
 from flow_sdk.cli.commands import _common
 from flow_sdk.instance_settings.cookie_gate import gate_headers
-from flow_sdk.server.middleware.cookie_gate_middleware import HEADER_NAME
+from flow_sdk.instance_settings.cookie_gate import HEADER_NAME
 
 pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
 
@@ -154,7 +154,7 @@ def local_token(tmp_path, monkeypatch):
 
     path = tmp_path / ".cookie_gate"
     path.write_text("own-token", encoding="utf-8")
-    monkeypatch.setattr(cookie_gate, "LOCAL_TOKEN_PATH", path)
+    monkeypatch.setattr(cookie_gate, "_token_path", lambda: path)
     return path
 
 
@@ -178,7 +178,7 @@ def _opened(url):
     import email.message
     import urllib.request
 
-    import flow_sdk.instance_settings.cookie_gate  # noqa: F401 -- installs the opener
+    from flow_sdk.instance_settings.cookie_gate import install_gate_opener
 
     sent = {}
 
@@ -192,7 +192,8 @@ def _opened(url):
         sent["req"] = req
         return _Ok()
 
-    with patch.object(urllib.request.HTTPHandler, "http_open", fake_open):
+    with patch.object(urllib.request, "_opener", None), patch.object(urllib.request.HTTPHandler, "http_open", fake_open):
+        install_gate_opener()  # what the CLI does at startup
         urllib.request.urlopen(urllib.request.Request(url))
     return {k.lower(): v for k, v in sent["req"].header_items()}
 

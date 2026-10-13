@@ -49,12 +49,9 @@ def gated(url: str) -> str:
     the token once, gets the gate cookie on this host, and is redirected on to
     ``url``. The login / OAuth return to this host then carries the cookie, even in
     a browser that never opened Flowpad. ``url`` unchanged when there is no token."""
-    from flow_sdk.instance_settings.cookie_gate import get_cookie_gate  # noqa: PLC0415
+    from flow_sdk.instance_settings import cookie_gate  # noqa: PLC0415
 
-    token = get_cookie_gate()
-    if not token:
-        return url
-    return f"{_desktop_base_url()}/auth/gate?{urlencode({'cookie-gate': token, 'next': url})}"
+    return cookie_gate.gated_url(_desktop_base_url(), url)
 
 
 def desktop_login_callback_url() -> str:

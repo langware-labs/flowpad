@@ -32,7 +32,6 @@ from __future__ import annotations
 
 import logging
 import os
-import secrets
 from typing import Optional
 
 from starlette.requests import HTTPConnection
@@ -42,9 +41,7 @@ from starlette.websockets import WebSocketClose
 
 from flow_sdk.instance_settings import cookie_gate
 
-HEADER_NAME = "x-cookie-gate"
 OFF_SWITCH_ENV = "FLOWPAD_COOKIE_GATE"
-QUERY_NAME = "cookie-gate"
 
 logger = logging.getLogger(__name__)
 
@@ -67,43 +64,21 @@ class CookieGateMiddleware:
             await self.app(scope, receive, send)
             return
 
-        cookie = cookie_gate.get_cookie_gate() or cookie_gate.create_cookie_gate()
-        if cookie is None:
+        if not cookie_gate.ensure_cookie_gate():
             # Fail closed: without a token there is nothing to compare against.
-            logger.error("cookie-gate: no token at %s; refusing every request", cookie_gate.LOCAL_TOKEN_PATH)
             await deny(scope, receive, send)
             return
 
-        is_local_request = HTTPConnection(scope).url.hostname in ("localhost", "127.0.0.1")
+        is_local_request = cookie_gate.is_loopback(HTTPConnection(scope).url.hostname)
         if is_local_request:
-            await self.local(scope, receive, send, cookie)
+            await self.local(scope, receive, send)
         else:
-            await self.sandbox(scope, receive, send, cookie)
+            await self.sandbox(scope, receive, send)
 
 
 # ---------------------------------------------------------------------------
 # Shared by both gates.
 # ---------------------------------------------------------------------------
-
-
-def presents(conn: HTTPConnection, secret: str, cookie_name: str) -> bool:
-    """Whether this caller carries the secret, by any of the three transports:
-    the gate's cookie, the ``X-Cookie-Gate`` header, the ``?cookie-gate=`` query.
-
-    Each is checked independently rather than collapsed into ``a or b or c``.
-    ``or`` yields the first *present* value, so a stale cookie would short-circuit
-    and a valid ``?cookie-gate=`` could never override it — rotating the secret
-    would permanently lock out every browser holding an old cookie, with the one
-    link that should rescue them being the thing that gets ignored.
-    """
-    for presented in (
-        conn.cookies.get(cookie_name),
-        conn.headers.get(HEADER_NAME),
-        conn.query_params.get(QUERY_NAME),
-    ):
-        if presented and secrets.compare_digest(presented, secret):
-            return True
-    return False
 
 
 async def deny(scope: Scope, receive: Receive, send: Send, message: Optional[str] = None) -> None:

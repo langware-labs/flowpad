@@ -42,8 +42,6 @@ import datetime
 import json
 import urllib.request
 
-import flow_sdk.instance_settings.cookie_gate  # noqa: F401 -- installs the opener that presents the cookie-gate token
-
 
 def on_graph_workflow_event(event_name, data, flow_ctx):
     base = flow_ctx._api_base  # instance REST base

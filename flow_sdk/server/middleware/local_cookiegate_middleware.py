@@ -22,21 +22,18 @@ from __future__ import annotations
 from starlette.requests import HTTPConnection
 from starlette.types import ASGIApp, Receive, Scope, Send
 
-from .cookie_gate_middleware import deny, presents
+from flow_sdk.instance_settings import cookie_gate
 
-# Per port: cookies ignore the port, so one name would let two local instances
-# in the same browser overwrite each other's cookie.
-LOCAL_COOKIE_PREFIX = "cookie-gate-"
-LOCAL_COOKIE_MAX_AGE = 365 * 24 * 3600
+from .cookie_gate_middleware import deny
 
 
 class LocalCookieGateMiddleware:
     def __init__(self, app: ASGIApp) -> None:
         self.app = app
 
-    async def __call__(self, scope: Scope, receive: Receive, send: Send, cookie: str) -> None:
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         conn = HTTPConnection(scope)
-        if presents(conn, cookie, local_cookie_name(_request_port(scope, conn))):
+        if cookie_gate.presents(conn):
             await self.app(scope, receive, send)
             return
 
@@ -49,19 +46,10 @@ class LocalCookieGateMiddleware:
         if _is_direct_open(scope, conn):
             # The user opened this address themselves (typed, bookmark, OS
             # launch): no page can produce these browser-set headers.
-            await self.app(scope, receive, _with_local_cookie(send, conn, cookie))
+            await self.app(scope, receive, _with_gate_cookie(send, conn))
             return
 
         await deny(scope, receive, send, "Open Flowpad from its icon, or type this address into your browser.")
-
-
-def _request_port(scope: Scope, conn: HTTPConnection) -> int | None:
-    """The port as the browser addressed it (Host), else the socket's."""
-    return conn.url.port or (scope.get("server") or (None, None))[1]
-
-
-def local_cookie_name(port: int | None) -> str:
-    return f"{LOCAL_COOKIE_PREFIX}{port}"
 
 
 def _is_cors_preflight(scope: Scope, conn: HTTPConnection) -> bool:
@@ -89,30 +77,17 @@ def _is_direct_open(scope: Scope, conn: HTTPConnection) -> bool:
         and headers.get("sec-fetch-site") == "none"
         and headers.get("sec-fetch-mode") == "navigate"
         and headers.get("sec-fetch-dest") == "document"
-        and conn.url.hostname in ("localhost", "127.0.0.1")
+        and cookie_gate.is_loopback(conn.url.hostname)
     )
 
 
-def local_cookie_header(port: int | None, token: str) -> str:
-    """The desktop cookie. No ``Secure`` / ``__Host-``: on loopback they add no
-    protection, and Safari drops ``Secure`` cookies on ``http://localhost``.
-    ``SameSite=Lax`` keeps another site's fetch, form POST, iframe or subresource
-    from riding it, and still sends it on a top-level GET navigation — the
-    hub/provider redirects back to ``/auth/login_callback`` and ``/auth/oauth/*``
-    are cross-site, and ``Strict`` refused them."""
-    return (
-        f"{local_cookie_name(port)}={token}; Max-Age={LOCAL_COOKIE_MAX_AGE}; "
-        "Path=/; HttpOnly; SameSite=Lax"
-    )
-
-
-def _with_local_cookie(send: Send, conn: HTTPConnection, token: str) -> Send:
-    cookie = local_cookie_header(_request_port(conn.scope, conn), token).encode("latin-1")
+def _with_gate_cookie(send: Send, conn: HTTPConnection) -> Send:
+    header = cookie_gate.set_cookie_header(conn)
+    cookie = header.encode("latin-1") if header else None
 
     async def wrapped(message):
-        if message["type"] == "http.response.start":
+        if cookie and message["type"] == "http.response.start":
             message = {**message, "headers": [*message.get("headers", []), (b"set-cookie", cookie)]}
         await send(message)
 
     return wrapped
-

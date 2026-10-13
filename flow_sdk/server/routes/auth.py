@@ -14,7 +14,6 @@ The handler validates the api-key, finalizes the login, and either redirects to
 
 import logging
 import os
-from secrets import compare_digest
 from urllib.parse import urlencode, urlsplit
 
 from fastapi import APIRouter, Query, Request
@@ -100,11 +99,7 @@ async def oauth_loopback_callback(state: str = Query(""), code: str = Query(""),
 
 
 @router.get("/gate")
-async def gate(
-    request: Request,
-    cookie_gate: str = Query(None, alias="cookie-gate"),
-    next: str = Query(None),
-):
+async def gate(request: Request, next: str = Query(None)):
     """Trade the cookie-gate secret for the httpOnly cookie, then redirect.
 
     The browser's one cold request. It cannot already hold the cookie: the
@@ -125,25 +120,13 @@ async def gate(
     carries the cookie. Being reachable only with the token is what keeps that
     redirect from being an open one.
     """
-    from flow_sdk.instance_settings.cookie_gate import get_cookie_gate
-    from flow_sdk.server.middleware.local_cookiegate_middleware import local_cookie_header
-    from flow_sdk.server.middleware.sandbox_cookiegate_middleware import COOKIE_NAME
+    from flow_sdk.instance_settings import cookie_gate
 
     response = RedirectResponse(url=_gate_next(next), status_code=302)
-
-    cookie = get_cookie_gate()
-    if cookie is not None and cookie_gate and compare_digest(cookie_gate, cookie):
-        if request.url.hostname in ("localhost", "127.0.0.1"):
-            response.headers.append("set-cookie", local_cookie_header(request.url.port, cookie))
-        else:
-            response.set_cookie(
-                COOKIE_NAME,
-                cookie,
-                path="/",
-                secure=True,
-                httponly=True,
-                samesite="lax",
-            )
+    if cookie_gate.presents(request):
+        header = cookie_gate.set_cookie_header(request)
+        if header:
+            response.headers.append("set-cookie", header)
     return response
 
 
